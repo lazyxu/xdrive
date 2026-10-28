@@ -35,8 +35,8 @@ test('Desktop home prioritizes user work and actions over diagnostic internals',
     'title="最近活动"',
   ]) assert.ok(sharedHome.includes(token), `shared Home missing: ${token}`)
   for (const token of [
-    'cloudFileRecent(6)',
-    'cloudFileFavorites()',
+    'cloudFileRecent(6, controller.signal)',
+    'cloudFileFavorites(controller.signal)',
     'openPath(relativePath)',
     '本地磁盘空间不足',
     'getLocalDiskSpace()',
