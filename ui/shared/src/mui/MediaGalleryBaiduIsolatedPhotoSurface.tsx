@@ -425,8 +425,8 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
           if(state?.phase==='ready' && photoScope && approved &&
              approved.key===filterRef.current.key &&
              state.key===approved.key && latestAcceptedViewport.current) {
-            const list=node.parentElement?.querySelector<HTMLElement>(
-              '[data-xdrive-places-photo-drawer-items]')
+            const list=node.ownerDocument.querySelector<HTMLElement>(
+              '[data-xdrive-places-album-dialog] [data-xdrive-places-photo-drawer-items]')
             const bounded=(value:number)=>Number.isFinite(value)
               ? Math.max(0,Math.min(10_000,Math.floor(value))) : 0
             pendingResizeDrawer.current={owner:scope??'',key:approved.key,
