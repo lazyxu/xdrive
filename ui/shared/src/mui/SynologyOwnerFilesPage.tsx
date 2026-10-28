@@ -6,6 +6,7 @@ import type {
   XDriveSynologyBackupLocalClient, XDriveSynologyOwnerFileNode,
 } from '../synology-backup-adapter'
 import { XDriveFileExplorer } from './FileExplorer'
+import type { XDriveFileExplorerUnavailableActions } from './FileExplorer'
 import { useXDriveFileExplorerCursorDirectory } from './FileExplorerCursorDirectoryController'
 import type { XDriveFileExplorerCursorPort } from './FileExplorerCursorDirectoryController'
 import { XDriveFileQuickLookDialog } from './FileQuickLookDialog'
@@ -67,7 +68,8 @@ function itemForExplorer(node: XDriveSynologyOwnerFileNode): XDriveFileExplorerI
  */
 export function XDriveSynologyOwnerFilesPage({
   client,
-}: { client: XDriveSynologyBackupLocalClient }) {
+  unavailableActions,
+}: { client: XDriveSynologyBackupLocalClient; unavailableActions?: XDriveFileExplorerUnavailableActions }) {
   // One Host-neutral, scoped cursor Controller owns root and directory reads.
   // The DSM adapter supplies only its real authenticated Owner CGI methods.
   const ownerReadPort = useMemo<XDriveFileExplorerCursorPort<
@@ -390,7 +392,8 @@ export function XDriveSynologyOwnerFilesPage({
               crumbs={crumbs}
               loading={loading}
               emptyReadState={currentScopeVerified ? 'ready' : error ? 'error' : 'unverified'}
-              searchEnabled={false}
+              searchEnabled
+              unavailableActions={unavailableActions}
               groupingEnabled={false}
               externallySorted
               forceVirtualization

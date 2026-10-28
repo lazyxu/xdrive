@@ -97,7 +97,13 @@ requireText(fileExplorer, [
   'startIcon={<CreateNewFolderRoundedIcon />}',
   "fileExplorerShortcutTitle('新建文件夹', 'new-folder', keyboardProfile)",
   'onClick={onCreateFolder}',
-  '<XDriveFileExplorerCommandButton startIcon={<UploadRoundedIcon />} onClick={onUpload}>',
+  // Host capability disables an unsupported action in the same shared UI;
+  // the old exact one-line JSX string changed because the real guard moved
+  // onto the command. Verify both dispatch ownership and disabled semantics.
+  'startIcon={<UploadRoundedIcon />} onClick={onUpload}',
+  'disabled={Boolean(!onUpload || unavailableActions?.uploadFiles)}',
+  'disabled={Boolean(!onCreateFolder || unavailableActions?.createFolder)}',
+  "if (command === 'new-folder' && onCreateFolder && !unavailableActions?.createFolder)",
   'startIcon={<SortRoundedIcon />}',
 ], 'Shared FileExplorer command chrome')
 

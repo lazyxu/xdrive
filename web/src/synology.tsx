@@ -23,6 +23,14 @@ const host: XDriveWorkspaceHostAdapter = {
   platform: 'synology',
   services: {
     localBackupClient: local,
+    // Only the verified same-origin DSM CGI methods are enabled. The shared
+    // Desktop Files command bar remains visible; no fake NAS upload/write.
+    filesUnavailableActions: {
+      search: 'DSM 尚未接通当前 Server Owner 的全库搜索接口。',
+      createFolder: 'DSM Owner 文件目前只读，不能创建文件夹。',
+      uploadFiles: 'DSM Owner 文件上传尚未接通已授权 Host API。',
+      uploadFolder: 'DSM Owner 文件夹上传尚未接通已授权 Host API。',
+    },
     deviceBackups: createXDriveSynologyOwnerBackupSource(local),
     cloudStorage: createXDriveSynologyCloudStorageDataSource(local),
     localStorage: createXDriveSynologyBrowserStorageSource(),

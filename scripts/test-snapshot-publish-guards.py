@@ -25,4 +25,11 @@ promote = body.index('gh api --method PATCH "repos/$repo/git/refs/tags/snapshot"
 assert upload < verified < promote, "tag must only change after remote digest proof"
 assert '[[' + ' "$current_tag" == "$previous_snapshot" ]]' in body
 assert "python3 scripts/test-snapshot-publish-guards.py" in ci
+notify_marker = "      - name: Notify bounded queued-CI prune after verified Snapshot publication\n"
+assert release.count(notify_marker) == 1
+notify = release.split(notify_marker, 1)[1].split("\n      - name:", 1)[0]
+assert "steps.snapshot_eligibility.outputs.publish == 'true'" in notify, (
+    "superseded master publishers must not dispatch redundant cleanup runs"
+)
+assert "-f event_type=xdrive_snapshot_published" in notify
 print("snapshot remote-asset verification and tag-last source contract passed")
