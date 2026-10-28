@@ -744,6 +744,25 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
           .filter(candidate => hasAcceptedCell(candidate.selection)),
         projected.width, projected.height, edgeToEdge, overlayRects)
     : []
+  // During a move, the last signed layer is projected by the SDK as a
+  // VISUAL-ONLY overlay. It cannot open a Cell and is discarded on new
+  // Owner evidence, filter/Owner revision or any map failure. Never treat
+  // a previous camera receipt as a newly authorized Camera Range.
+  const gesturePins=gesturePresentation &&
+      gesturePresentation.owner===(scope??'') &&
+      gesturePresentation.key===currentFilterKey &&
+      gesturePresentation.positions.width>0 && gesturePresentation.positions.height>0
+    ? xDriveSelectVisibleMapPhotoCovers(
+        xDriveVerifiedMapPhotoProjections(gesturePresentation.summary,
+          gesturePresentation.positions,
+          gesturePresentation.cells.map(cell=>cell.selection)),
+        gesturePresentation.positions.width,gesturePresentation.positions.height,
+        edgeToEdge,overlayRects)
+    : []
+  const currentCoverActive=coverPins.length>0
+  const paintedCovers=currentCoverActive ? coverPins : gesturePins
+  const paintedProjection=currentCoverActive ? projected : gesturePresentation?.positions
+  const coverSummary=currentCoverActive ? trustedSummary : gesturePresentation?.summary
   // Two SDK Hosts receive only the current visible React cover selections.
   // While at least one verified Parent photo cover is visible, it owns the
   // complete marker presentation: no competing native numeric Labels appear.
@@ -761,7 +780,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   const ownerCover=(selection:MediaBaiduNativeCellSelection,
     alt:string,fallback:ReactNode):ReactNode=>{
     if(!loadThumbnail)return fallback
-    const representative=trustedSummary?.cells.find(cell=>
+    const representative=coverSummary?.cells.find(cell=>
       cell.cell_x===selection.cell_x && cell.cell_y===selection.cell_y &&
       cell.asset_id===selection.asset_id && cell.node_id===selection.node_id &&
       cell.node_revision===selection.node_revision &&
@@ -817,20 +836,28 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
           overflow:'hidden',backgroundColor:'background.default'}}>
         <Box ref={mount} sx={{position:'absolute',inset:0,
           '& iframe':{width:'100%',height:'100%',display:'block',border:0}}}/>
-        {coverPins.length > 0 && projected ? (
+        {paintedCovers.length > 0 && paintedProjection ? (
           <Box data-xdrive-places-trusted-photo-cover-pins
             sx={{position:'absolute',inset:0,pointerEvents:'none',zIndex:2}}>
-            {coverPins.map((pin) => (
+            {paintedCovers.map((pin) => (
               <Box key={pin.selection.node_id} component="button" type="button"
-                data-xdrive-places-trusted-photo-cover={pin.selection.node_id}
-                aria-label={`查看该区域 ${pin.count} 张照片`}
-                onClick={() => openVerifiedCell(pin.selection)}
+                disabled={!currentCoverActive}
+                data-xdrive-places-trusted-photo-cover={currentCoverActive
+                  ? pin.selection.node_id : undefined}
+                data-xdrive-places-gesture-photo-cover={!currentCoverActive
+                  ? pin.selection.node_id : undefined}
+                aria-label={currentCoverActive
+                  ? `查看该区域 ${pin.count} 张照片` : undefined}
+                onClick={currentCoverActive
+                  ? () => openVerifiedCell(pin.selection) : undefined}
                 sx={{position:'absolute',
-                  left:`${pin.x/projected.width*100}%`,
-                  top:`${pin.y/projected.height*100}%`,
+                  left:`${pin.x/paintedProjection.width*100}%`,
+                  top:`${pin.y/paintedProjection.height*100}%`,
                   transform:'translate(-50%,-50%)',width:{xs:64,sm:72},height:{xs:64,sm:72},p:0,
                   border:'3px solid white',borderRadius:2,overflow:'visible',
-                  cursor:'pointer',pointerEvents:'auto',
+                  cursor:currentCoverActive?'pointer':'default',
+                  pointerEvents:currentCoverActive?'auto':'none',
+                  '&:disabled':{opacity:1},
                   bgcolor:'background.paper',boxShadow:'0 3px 12px rgba(15,23,42,.28)',
                   isolation:'isolate',
                   '&:focus-visible':{outline:'3px solid',outlineColor:'primary.main',
