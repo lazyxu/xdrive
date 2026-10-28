@@ -254,14 +254,26 @@ export function xDriveDiagnosticsSummaryPresentation(
       emptyIssuesMessage,
     }
   }
-  if (limitedScope) {
+  // An empty result is NOT proof of health, even if the caller did not
+  // provide a limited scope label. Informational-only checks are not passes.
+  if (checkedCount === 0) {
+    return {
+      tone: 'neutral', label: '未检查', title: '未完成健康检查',
+      text: '本次没有完成任何检查；不能将未检查的能力视为正常。',
+      emptyIssuesMessage: '本次没有完成任何检查，不能确认系统状态。',
+    }
+  }
+  if (limitedScope || infoCount >= checkedCount) {
+    const passCount = Math.max(0, checkedCount - infoCount)
     return {
       tone: 'neutral',
-      label: checkedCount === 0 ? '未检查' : '已检查',
-      title: checkedCount === 0 ? '未完成健康检查' : '已检查可用接口',
-      text: checkedCount === 0
-        ? '本次没有完成任何受支持的接口检查；不能将未检查的能力视为正常。'
-        : `当前支持的 ${checkedCount} 项检查正常；其他系统能力未检测。`,
+      label: limitedScope ? '已检查' : '仅提示',
+      title: limitedScope ? '已检查可用接口' : '只收到提示类检查',
+      text: limitedScope
+        ? infoCount > 0
+          ? `已执行 ${checkedCount} 项检查，其中 ${passCount} 项正常、${infoCount} 项提示；其他系统能力未检测。`
+          : `当前支持的 ${checkedCount} 项检查正常；其他系统能力未检测。`
+        : '本次结果只有提示类检查，没有确认通过的项目；不能断言系统正常。',
       emptyIssuesMessage,
     }
   }

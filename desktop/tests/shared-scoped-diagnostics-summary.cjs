@@ -58,6 +58,23 @@ test('full Desktop diagnostic presentation retains its established semantics', (
   assert.equal(summary(5, 0, 0, 2, false).tone, 'bad')
 })
 
+test('a completely empty full-scope report is never counted as healthy', () => {
+  const result = summary(0, 0, 0, 0, false)
+  assert.equal(result.tone, 'neutral')
+  assert.equal(result.label, '未检查')
+  assert.match(result.text, /不能将未检查的能力视为正常/)
+})
+
+test('informational-only checks are not counted as verified healthy', () => {
+  const scoped = summary(2, 2, 0, 0, true)
+  assert.equal(scoped.tone, 'neutral')
+  assert.match(scoped.text, /0 项正常、2 项提示/)
+  const full = summary(2, 2, 0, 0, false)
+  assert.equal(full.tone, 'neutral')
+  assert.equal(full.label, '仅提示')
+  assert.match(full.text, /没有确认通过的项目/)
+})
+
 test('the actual shared UI uses the computed badge, summary and empty state', () => {
   assert.match(source, /const summary = xDriveDiagnosticsSummaryPresentation\(/)
   assert.match(source, /tone=\{summary\.tone\} label=\{summary\.label\}/)
