@@ -310,6 +310,10 @@ interface XDriveService {
     suspend fun galleryTagsBatch(accessToken: String, items: List<GalleryAsset>,
         tags: List<String>): Int =
         throw ApiException(501, "Gallery batch tags unavailable")
+    /** Write only a currently loaded Owner selection into an existing manual album. */
+    suspend fun galleryAddToManualAlbum(
+        accessToken: String, album: GalleryAlbum, items: List<GalleryAsset>,
+    ): GalleryAlbum = throw ApiException(501, "Gallery album write unavailable")
     suspend fun galleryThumbnail(accessToken: String, nodeId: Long, revision: Long): ByteArray =
         throw ApiException(501, "Gallery thumbnail unavailable")
     /** Read-only audio: same Range/ETag/Bearer transport as native video,
@@ -1136,6 +1140,44 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         }
         if (labels != normalized) invalidPayload()
         return items.size
+    }
+
+    /** Single POST against the current Owner, with a real collection If-Match.
+     * A missing or invalid ACK must never trigger a second write. */
+    override suspend fun galleryAddToManualAlbum(
+        accessToken: String, album: GalleryAlbum, items: List<GalleryAsset>,
+    ): GalleryAlbum {
+        require(validToken(accessToken) && album.kind == "manual" &&
+            album.id.startsWith("manual:") && validGalleryAlbumId(album.id) &&
+            album.revision > 0 && album.revision < Long.MAX_VALUE - 1 &&
+            album.itemCount >= 0 && album.itemCount <= Long.MAX_VALUE - items.size &&
+            items.size in 1..200 && items.map { it.node.id }.toSet().size == items.size &&
+            items.all { it.node.id > 0 && it.node.revision > 0 &&
+                it.node.type == "file" && it.mediaKind in setOf("image", "video") }) {
+            "Invalid Owner album selection"
+        }
+        val body = JsonObject(mapOf(
+            "node_ids" to JsonArray(items.map { JsonPrimitive(it.node.id) }),
+        ))
+        val response = request(
+            "media/albums", accessToken, bodyObject = body, ifMatch = album.revision,
+            pathTailSegments = listOf(album.id, "items"),
+        )
+        val id = response.string("id")
+        val kind = response.string("kind")
+        val name = response.string("name")
+        val revision = response.long("revision")
+        val count = response.long("item_count")
+        val folder = response.long("album_folder_id")
+        val cover = when (response["cover_node_id"]) {
+            null, JsonNull -> null
+            else -> response.long("cover_node_id").also { if (it <= 0) invalidPayload() }
+        }
+        if (id != album.id || kind != "manual" || name != album.name ||
+            revision !in album.revision..(album.revision + 1) ||
+            count !in album.itemCount..(album.itemCount + items.size) ||
+            folder != album.albumFolderId) invalidPayload()
+        return GalleryAlbum(id, kind, name, count, revision, folder, cover)
     }
 
     /** Authoritative 100k-safe index metadata; never generate time groups

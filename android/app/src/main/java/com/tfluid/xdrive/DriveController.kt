@@ -1640,6 +1640,28 @@ class DriveController(
         }
     }
 
+    /** Fetch eligible album destinations without navigating away from selection. */
+    fun loadGalleryAlbumsForSelection() {
+        val current = state.value
+        val service = api ?: return
+        if (current.screen != Screen.GALLERY || !current.gallerySelectionMode ||
+            !current.galleryLoaded || current.gallerySelectedItems.isEmpty() ||
+            current.galleryViewer != null || current.loading ||
+            current.galleryMetadataWriteAttempted || session == null) return
+        mutableState.value = current.copy(galleryAlbums = emptyList(),
+            galleryAlbumsLoaded = false)
+        request { ticket ->
+            val albums = authenticated(service, ticket) { service.galleryAlbums(it) }
+            checkCurrent(ticket)
+            val latest = state.value
+            if (latest.screen != Screen.GALLERY || !latest.gallerySelectionMode ||
+                latest.galleryViewer != null || latest.gallerySelectedItems.isEmpty())
+                throw CancellationException()
+            mutableState.value = latest.copy(
+                galleryAlbums = albums, galleryAlbumsLoaded = true, error = null)
+        }
+    }
+
     /** Create a real empty manual PhotoCollection, never a local-only album.
      * A missing POST ACK freezes another write until explicit read-only GET. */
     fun createGalleryManualAlbum(input: String) {
@@ -1793,6 +1815,9 @@ class DriveController(
             galleryOffset = 0, galleryTotal = 0, galleryTimelineSets = null,
             galleryJumpIndex = null, galleryJumpEpoch = previous.galleryJumpEpoch + 1,
             galleryPageIntent = "", gallerySelected = null, galleryViewer = null)
+        // A successful membership mutation invalidates collection totals. Returning
+        // from that album must re-read them; otherwise the overview spins forever.
+        if (!state.value.galleryAlbumsLoaded) readGalleryAlbums()
     }
 
     /** Current Owner's bounded, loaded Gallery selection; not a query-wide promise. */
@@ -1826,11 +1851,41 @@ class DriveController(
         } else mutableState.value = current.copy(gallerySelectedItems = selected + item)
     }
 
+    /** Review-only edits to the frozen, selected current Owner media set.
+     * Removal/clear never issues HTTP, reaches unselected nodes, or refreshes
+     * the Gallery. The ordinary selection writer retains its strict snapshot. */
+    fun removeGallerySelected(nodeId: Long) {
+        val current = state.value
+        if (nodeId <= 0 || current.screen != Screen.GALLERY ||
+            !current.gallerySelectionMode || !current.galleryLoaded ||
+            current.galleryViewer != null || current.loading ||
+            current.galleryMetadataWriteAttempted || session == null ||
+            current.gallerySelectedItems.none { it.node.id == nodeId }) return
+        mutableState.value = current.copy(
+            gallerySelectedItems = current.gallerySelectedItems.filterNot {
+                it.node.id == nodeId
+            },
+            error = if (current.error == "一次最多选择 200 项。") null else current.error,
+        )
+    }
+
+    fun clearGallerySelection() {
+        val current = state.value
+        if (current.screen != Screen.GALLERY || !current.gallerySelectionMode ||
+            !current.galleryLoaded || current.galleryViewer != null ||
+            current.loading || current.galleryMetadataWriteAttempted || session == null) return
+        mutableState.value = current.copy(
+            gallerySelectedItems = emptyList(),
+            error = if (current.error == "一次最多选择 200 项。") null else current.error,
+        )
+    }
+
     /** Shared, bounded Owner media metadata operation for favorite/tags.
      * Never replay a physical write on token refresh, failure, or missing ACK. */
     private fun submitGalleryMetadata(
         mutation: suspend (XDriveService, String, List<GalleryAsset>) -> Int,
         patch: (GalleryAsset, Set<Long>) -> GalleryAsset,
+        invalidateAlbumsOnAck: Boolean = false,
     ) {
         val current = state.value
         if (!current.gallerySelectionMode || current.screen != Screen.GALLERY ||
@@ -1858,6 +1913,8 @@ class DriveController(
                     ApiFailureReason.INVALID_RESPONSE)
             mutableState.value = latest.copy(
                 galleryItems = latest.galleryItems.map { item -> patch(item, ids) },
+                galleryAlbums = if (invalidateAlbumsOnAck) emptyList() else latest.galleryAlbums,
+                galleryAlbumsLoaded = if (invalidateAlbumsOnAck) false else latest.galleryAlbumsLoaded,
                 gallerySelectionMode = false, gallerySelectedItems = emptyList(),
                 galleryMetadataWriteAttempted = false, error = null)
         }
@@ -1882,6 +1939,26 @@ class DriveController(
                 service.galleryTagsBatch(token, selected, canonical)
             },
             patch = { item, _ -> item }, // tags are re-read on next Owner GET
+        )
+    }
+
+    /** If-Match protects existing manual album membership. Any uncertain
+     * ACK freezes selection until explicit read-only Gallery reconciliation. */
+    fun addGallerySelectedToAlbum(album: GalleryAlbum) {
+        val current = state.value
+        if (!current.galleryAlbumsLoaded || album.kind != "manual" ||
+            album.revision <= 0 || current.galleryAlbums.none { it == album }) return
+        submitGalleryMetadata(
+            mutation = { service, token, selected ->
+                val saved = service.galleryAddToManualAlbum(token, album, selected)
+                if (saved.id != album.id || saved.kind != "manual" ||
+                    saved.revision < album.revision)
+                    throw ApiException(0, "Gallery album ACK mismatch",
+                        ApiFailureReason.INVALID_RESPONSE)
+                selected.size
+            },
+            patch = { item, _ -> item },
+            invalidateAlbumsOnAck = true,
         )
     }
 

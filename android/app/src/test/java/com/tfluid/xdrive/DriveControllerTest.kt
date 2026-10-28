@@ -12,6 +12,13 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class DriveControllerTest {
+    @Test fun galleryCompactSelectionKeepsPwaTwoRowDockClearance() {
+        assertEquals(144f, galleryDockClearance(true, false).value, 0f)
+        assertEquals(144f, galleryDockClearance(true, true).value, 0f)
+        assertEquals(144f, galleryDockClearance(false, true).value, 0f)
+        assertEquals(88f, galleryDockClearance(false, false).value, 0f)
+    }
+
     @Test fun galleryVisibleColumnsKeepsResponsiveBaselineAndBounds() {
         assertEquals(3, galleryVisibleColumns(390f, 3))
         assertEquals(2, galleryVisibleColumns(390f, 2))
@@ -365,6 +372,169 @@ class DriveControllerTest {
         assertEquals(1, api.galleryTagsCalls.size)
         assertTrue(c.state.value.galleryLoaded)
         assertFalse(c.state.value.galleryMetadataWriteAttempted)
+        c.close()
+    }
+
+
+    @Test fun galleryCompactManualAlbumPickerListsOnlyVerifiedManualSearchResults() {
+        val manual = GalleryAlbum("manual:trip", "manual", "旅行 2026", 2, 3, 0)
+        val smart = GalleryAlbum("smart:trip", "smart", "旅行汇总", 5, 1, 0)
+        val imported = GalleryAlbum("source:trip", "imported", "旅行 2025", 2, 1, 0)
+        assertEquals(listOf(manual),
+            galleryManualAlbumChoices(listOf(smart, imported, manual), "旅行"))
+        assertEquals(listOf(manual),
+            galleryManualAlbumChoices(listOf(smart, imported, manual), "  2026  "))
+        assertTrue(galleryManualAlbumChoices(listOf(smart, imported, manual), "no-match").isEmpty())
+        assertTrue(galleryManualAlbumChoices(listOf(smart, imported), "").isEmpty())
+    }
+
+    @Test fun manualAlbumSelectionRequiresFreshGetAndClearsOnVerifiedWrite() = runTest {
+        val album = GalleryAlbum("manual:trip", "manual", "Trip", 0, 2, 0)
+        val api = object : Service() {
+            var reads = 0
+            var writes = 0
+            override suspend fun galleryAlbums(accessToken: String): List<GalleryAlbum> {
+                assertEquals("access", accessToken)
+                reads++
+                return listOf(album, GalleryAlbum("smart:recent", "smart", "Recent", 0, 1, 0))
+            }
+            override suspend fun galleryAddToManualAlbum(
+                accessToken: String, target: GalleryAlbum, items: List<GalleryAsset>,
+            ): GalleryAlbum {
+                assertEquals("access", accessToken)
+                assertEquals(album, target)
+                assertEquals(listOf(990L), items.map { it.node.id })
+                writes++
+                return album.copy(revision = 3, itemCount = 1)
+            }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.setGallerySelectionMode(true)
+        c.toggleGallerySelection(c.state.value.galleryItems.single())
+        c.addGallerySelectedToAlbum(album)
+        assertEquals(0, api.writes)
+        c.loadGalleryAlbumsForSelection(); runCurrent()
+        assertEquals(1, api.reads)
+        assertTrue(c.state.value.galleryAlbumsLoaded)
+        c.addGallerySelectedToAlbum(album); runCurrent()
+        assertEquals(1, api.writes)
+        assertFalse(c.state.value.gallerySelectionMode)
+        assertTrue(c.state.value.gallerySelectedItems.isEmpty())
+        assertFalse(c.state.value.galleryAlbumsLoaded)
+        c.openGalleryCollections(); runCurrent()
+        assertEquals(2, api.reads)
+        c.close()
+    }
+
+    @Test fun returnFromEditedManualAlbumReloadsInvalidatedCollectionOverview() = runTest {
+        val album = GalleryAlbum("manual:trip", "manual", "Trip", 1, 2, 0)
+        val api = object : Service() {
+            var listReads = 0
+            override suspend fun galleryAlbums(accessToken: String): List<GalleryAlbum> {
+                listReads++
+                return listOf(album)
+            }
+            override suspend fun galleryAlbumPage(
+                accessToken: String, albumId: String, offset: Int, initialLatest: Boolean,
+            ): GalleryPage {
+                assertEquals(album.id, albumId)
+                return GalleryPage(listOf(latestGallery), 1, 0)
+            }
+            override suspend fun galleryAddToManualAlbum(
+                accessToken: String, target: GalleryAlbum, items: List<GalleryAsset>,
+            ) = album.copy(revision = 3, itemCount = 1)
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.openGalleryCollections(); runCurrent()
+        assertEquals(1, api.listReads)
+        c.openGalleryAlbum(album); runCurrent()
+        assertTrue(c.state.value.galleryLoaded)
+        c.setGallerySelectionMode(true)
+        c.toggleGallerySelection(c.state.value.galleryItems.single())
+        c.loadGalleryAlbumsForSelection(); runCurrent()
+        assertEquals(2, api.listReads)
+        c.addGallerySelectedToAlbum(album); runCurrent()
+        assertFalse(c.state.value.galleryAlbumsLoaded)
+        c.closeGalleryAlbum(); runCurrent()
+        assertNull(c.state.value.gallerySelectedAlbum)
+        assertTrue(c.state.value.galleryAlbumsLoaded)
+        assertEquals(3, api.listReads)
+        c.close()
+    }
+
+    @Test fun manualAlbumUncertainAckNeverReplaysAndRefreshesGetOnly() = runTest {
+        val album = GalleryAlbum("manual:trip", "manual", "Trip", 0, 2, 0)
+        val api = object : Service() {
+            var writes = 0
+            override suspend fun galleryAlbums(accessToken: String) = listOf(album)
+            override suspend fun galleryAddToManualAlbum(
+                accessToken: String, target: GalleryAlbum, items: List<GalleryAsset>,
+            ): GalleryAlbum {
+                writes++
+                throw ApiException(503, "ACK lost")
+            }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.setGallerySelectionMode(true)
+        c.toggleGallerySelection(c.state.value.galleryItems.single())
+        c.loadGalleryAlbumsForSelection(); runCurrent()
+        c.addGallerySelectedToAlbum(album); runCurrent()
+        assertEquals(1, api.writes)
+        assertTrue(c.state.value.galleryMetadataWriteAttempted)
+        assertTrue(requireNotNull(c.state.value.error).contains("未确认"))
+        c.addGallerySelectedToAlbum(album); runCurrent()
+        assertEquals(1, api.writes)
+        c.retryGallery(); runCurrent()
+        assertFalse(c.state.value.galleryMetadataWriteAttempted)
+        assertEquals(1, api.writes)
+        c.close()
+    }
+
+    @Test fun gallerySelectionReviewFilterAndLocalEditsNeverWriteOrLeakAcrossOwner() = runTest {
+        val list = listOf(
+            GalleryAsset(DriveNode(11, 1, "Trip.JPG", "file", 4, revision = 1), "image"),
+            GalleryAsset(DriveNode(12, 1, "night.mp4", "file", 9, revision = 2), "video"),
+        )
+        assertEquals(list, gallerySelectedReviewFilter(list, " "))
+        assertEquals(listOf(list.first()), gallerySelectedReviewFilter(list, "trip"))
+        assertEquals(listOf(list[1]), gallerySelectedReviewFilter(list, "  MP4  "))
+        assertTrue(gallerySelectedReviewFilter(list, "not-loaded").isEmpty())
+        assertTrue(gallerySelectedReviewFilter(emptyList(), "trip").isEmpty())
+
+        val api = Service()
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        val row = c.state.value.galleryItems.single()
+        c.setGallerySelectionMode(true)
+        c.toggleGallerySelection(row)
+        c.removeGallerySelected(-1)
+        c.removeGallerySelected(row.node.id + 1)
+        assertEquals(listOf(row), c.state.value.gallerySelectedItems)
+        c.removeGallerySelected(row.node.id)
+        assertTrue(c.state.value.gallerySelectedItems.isEmpty())
+        assertTrue(c.state.value.gallerySelectionMode)
+
+        c.toggleGallerySelection(row)
+        c.clearGallerySelection()
+        assertTrue(c.state.value.gallerySelectedItems.isEmpty())
+        assertTrue(c.state.value.gallerySelectionMode)
+        assertTrue(api.galleryFavoriteCalls.isEmpty())
+        assertTrue(api.galleryTagsCalls.isEmpty())
+        c.toggleGallerySelection(row)
+        c.logout(); runCurrent()
+        assertEquals(Screen.LOGIN, c.state.value.screen)
+        assertFalse(c.state.value.gallerySelectionMode)
+        assertTrue(c.state.value.gallerySelectedItems.isEmpty())
+        c.removeGallerySelected(row.node.id)
+        c.clearGallerySelection()
+        assertTrue(c.state.value.gallerySelectedItems.isEmpty())
         c.close()
     }
 
