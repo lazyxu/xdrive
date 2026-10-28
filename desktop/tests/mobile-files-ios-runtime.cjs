@@ -132,6 +132,16 @@ const menuReasons = (() => {
   )
   return mod.exports
 })()
+// Execute the real shared capability module rather than faking Safari support.
+// Its navigator getter is evaluated at render time, including tests that
+// replace global.navigator with a restricted or file-share-capable host.
+const nativeShareCapability = (() => {
+  const mod = { exports: {} }
+  new Function('module', 'exports', compile('ui/shared/src/mui/NativeShareCapability.ts'))(
+    mod, mod.exports,
+  )
+  return mod.exports
+})()
 const imports = {
   react: React,
   'react/jsx-runtime': require('react/jsx-runtime'),
@@ -154,6 +164,7 @@ const imports = {
   },
   './mobileFilesState': state,
   '../../ui/shared/src/mui/FileExplorerMenuReasons': menuReasons,
+  '../../ui/shared/src/mui/NativeShareCapability': nativeShareCapability,
 }
 const MobileFiles = (() => {
   const mod = { exports: {} }
