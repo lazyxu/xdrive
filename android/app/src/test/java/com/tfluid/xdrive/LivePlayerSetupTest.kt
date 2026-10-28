@@ -77,4 +77,22 @@ class LivePlayerSetupTest {
         assertTrue(goodPlayer.prepared)
         assertEquals(0, goodPlayer.releases)
     }
+
+    @Test fun liveMotionOnlyStartsAfterRealForegroundHoldAndReadyStill() {
+        assertFalse(liveMotionMayStart(false, true, true, false))
+        assertFalse(liveMotionMayStart(true, false, true, false))
+        assertFalse(liveMotionMayStart(true, true, false, false))
+        assertTrue(liveMotionMayStart(true, true, true, false))
+    }
+
+    @Test fun heldPointerSurvivingStopCannotRestartMotionOnResume() {
+        // App was visible and motion legitimately played.
+        assertTrue(liveMotionMayStart(true, true, true, false))
+        // STOP must cut off the active stream immediately.
+        assertFalse(liveMotionMayStart(true, true, false, true))
+        // ON_START alone never reopens the stream with the stale press.
+        assertFalse(liveMotionMayStart(true, true, true, true))
+        // A new explicit user press (after release) reauthorizes one lease.
+        assertTrue(liveMotionMayStart(true, true, true, false))
+    }
 }
