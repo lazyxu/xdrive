@@ -315,7 +315,7 @@ func TestBackupAdminHistoryRejectsDuplicatesAndOversizedCollections(t *testing.T
 	}, Mode: "fast"}
 	for _, entries := range [][]backupAdminHistoryEntry{
 		{entry, entry},
-		make([]backupAdminHistoryEntry, 31),
+		make([]backupAdminHistoryEntry, 101),
 	} {
 		writeBackupTestJSON(t, dir, "backup-admin-history.json", backupAdminHistory{
 			Protocol:   "xdrive-backup-admin-history-v1",
