@@ -22,6 +22,7 @@ import type {
   XDriveFileExplorerPageSort,
 } from '../file-explorer-controller'
 import { useXDriveVirtualCollection } from './VirtualCollectionController'
+import { xDriveBeginForegroundContentTransition } from './ViewerForegroundPriority'
 
 export type XDriveCloudFilesVirtualDirectory<TNode extends { id: number }> = {
   itemCount: number
@@ -273,6 +274,22 @@ export function useXDriveCloudFilesController<
   ) => {
     const effectiveSort = sort ?? virtualTargetRef.current?.sort ?? defaultSort
     const effectiveGrouping = grouping ?? virtualTargetRef.current?.grouping ?? XDRIVE_FILE_EXPLORER_DEFAULT_GROUPING
+    // A directory, sort or grouping switch changes visible content without
+    // changing the Files route. Yield the old disposable thumbnails before
+    // the new first-page request enters its HTTP/IPC transport.
+    const previous = virtualTargetRef.current
+    const contentChanged = previous !== null && (
+      previous.parentID !== id ||
+      previous.sort.key !== effectiveSort.key ||
+      previous.sort.direction !== effectiveSort.direction ||
+      xDriveFileExplorerGroupingSignature(previous.grouping) !==
+        xDriveFileExplorerGroupingSignature(effectiveGrouping)
+    )
+    // An offscreen controller cannot pause Gallery/Viewer; a rejected
+    // directory Range automatically resumes the still-committed old folder.
+    const finishContentTransition = contentChanged
+      ? xDriveBeginForegroundContentTransition('files')
+      : () => undefined
     const requestID = directoryRequestRef.current + 1
     directoryRequestRef.current = requestID
     const firstPageRequest = startDirectoryFirstPage()
@@ -302,6 +319,7 @@ export function useXDriveCloudFilesController<
       if (!firstPageRequest.signal.aborted && requestID === directoryRequestRef.current) reportError(error)
       return false
     } finally {
+      finishContentTransition()
       if (directoryFirstPageAbortRef.current === firstPageRequest) directoryFirstPageAbortRef.current = null
       if (directoryInFlightRequestRef.current === requestID) {
         directoryInFlightRequestRef.current = null
