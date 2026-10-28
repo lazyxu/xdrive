@@ -38,7 +38,7 @@ test('device refresh keeps accepted same-account cards without exposing foreign 
 })
 
 test('only the existing owner-redacted shared device API is used on Web and Desktop', () => {
-  assert.ok(view.includes('void source.list().then((result)'))
+  assert.ok(view.includes('void source.list(controller.signal).then((result)'))
   assert.ok(view.includes('source.foldersPage(deviceID, 100, cursor)'))
   assert.ok(view.includes('source.runs(id, pageSize, (page - 1) * pageSize)'))
   assert.ok(web.includes('<XDriveDeviceBackupPage'))
