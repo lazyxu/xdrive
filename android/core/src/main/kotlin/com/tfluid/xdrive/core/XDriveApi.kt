@@ -398,6 +398,13 @@ interface XDriveService {
         accessToken: String, bounds: OwnerBd09Bounds,
     ): OwnerBd09MapCells =
         throw ApiException(501, "Native Owner BD09 map cells unavailable")
+    /** Map cell → original sparse Gallery Range, reverified by Go on each
+     * page. No WGS84 bounds or client-defined media grant are permitted. */
+    suspend fun galleryBd09CellPage(
+        accessToken: String, bounds: OwnerBd09Bounds, cell: OwnerBd09Cell,
+        offset: Int = 0, sortBy: String = "captured", sortDir: String = "desc",
+    ): GalleryPage =
+        throw ApiException(501, "Native Owner BD09 cell Gallery Range unavailable")
     /** Bounded 64-point Owner map overview, only read-only GPS metadata. */
     suspend fun placesMapOverview(
         accessToken: String, bounds: OwnerMapBounds, detail: Boolean = false,
@@ -1229,6 +1236,43 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
     /** Only the existing signed-release-fenced Owner Map/Cells API can
      * attest that coordinates are official persisted BD09LL. Never apply an
      * inferred WGS84 conversion or send an SDK/browser key in this request. */
+    /** One Server-authorized, version-fenced map-cell Gallery Range.
+     * The Server compares the exact representative to its fresh 8x8 summary
+     * before/after SQL and rejects a stale cell with 409. Do not query the
+     * general /media/items endpoint, guess GPS coordinates or pass an Owner ID. */
+    override suspend fun galleryBd09CellPage(
+        accessToken: String, bounds: OwnerBd09Bounds, cell: OwnerBd09Cell,
+        offset: Int, sortBy: String, sortDir: String,
+    ): GalleryPage {
+        require(validToken(accessToken) && bounds.valid() &&
+            cell.cellX in 0..7 && cell.cellY in 0..7 &&
+            cell.photoCount > 0 && cell.assetId > 0 && cell.nodeId > 0 &&
+            cell.nodeRevision > 0 && bounds.contains(cell.latitude, cell.longitude) &&
+            offset in 0..10_000_000 &&
+            sortBy in setOf("captured", "added") && sortDir in setOf("asc", "desc")) {
+            "Invalid Owner BD09 map cell range"
+        }
+        val query = mapOf(
+            "west" to bounds.west.toString(),
+            "south" to bounds.south.toString(),
+            "east" to bounds.east.toString(),
+            "north" to bounds.north.toString(),
+            "cell_x" to cell.cellX.toString(),
+            "cell_y" to cell.cellY.toString(),
+            "asset_id" to cell.assetId.toString(),
+            "node_id" to cell.nodeId.toString(),
+            "node_revision" to cell.nodeRevision.toString(),
+            "photo_count" to cell.photoCount.toString(),
+            "range" to "true", "limit" to "60",
+            "offset" to offset.toString(),
+            "sort_by" to sortBy, "sort_dir" to sortDir,
+        )
+        val result = request("media/places/baidu-jsapi/cell-items",
+            accessToken, query = query)
+        return parseGalleryRange(result, offset, false, "", sortBy, sortDir,
+            maxTotalCount = cell.photoCount)
+    }
+
     override suspend fun baiduNativeMapCells(
         accessToken: String, bounds: OwnerBd09Bounds,
     ): OwnerBd09MapCells {
@@ -1395,12 +1439,24 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         val result = if (albumId == null) request("media/items", accessToken, query = query)
             else request("media/albums", accessToken, query = query,
                 pathTailSegments = listOf(albumId, "items"))
+        return parseGalleryRange(result, offset, initialLatest,
+            mediaKind, sortBy, sortDir)
+    }
+
+    /** One validated original Owner Gallery DTO for normal Gallery and
+     * signed map-cell Range alike. Never implement a second media parser. */
+    private fun parseGalleryRange(
+        result: JsonObject, offset: Int, initialLatest: Boolean,
+        mediaKind: String, sortBy: String, sortDir: String,
+        maxTotalCount: Long? = null,
+    ): GalleryPage {
         val raw = result["items"] as? JsonArray ?: invalidPayload()
         if (raw.size > 60) invalidPayload()
         val total = result.long("total_count")
         val returnedOffset = result.long("offset")
         val limit = result.long("limit")
-        if (total < 0 || returnedOffset < 0 || returnedOffset > Int.MAX_VALUE ||
+        if (total < 0 || (maxTotalCount != null && total > maxTotalCount) ||
+            returnedOffset < 0 || returnedOffset > Int.MAX_VALUE ||
             limit != 60L || returnedOffset + raw.size > total ||
             (!initialLatest && returnedOffset.toInt() != offset)) invalidPayload()
         val items = raw.map {
