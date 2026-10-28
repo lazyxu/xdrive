@@ -296,7 +296,9 @@ test('responsive Drawer restore stays in one Parent and always reauthorizes both
   assert.match(parent,/selectCellRef\.current\(\s*matched\.selection,intent\.hint\.presentation\)/)
   assert.match(parent,/preview\(cell,XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT,0,/)
   assert.match(parent,/xDrivePlacesDrawerValidRange\(cell,range\)/)
-  assert.match(parent,/node\.querySelector<HTMLElement>\(/)
+  assert.match(parent,/node\.parentElement\?\.querySelector<HTMLElement>\(/)
+  assert.doesNotMatch(parent,/node\.querySelector<HTMLElement>\(/,
+    'the isolated SDK host is not the trusted photo drawer ancestor')
   assert.match(parent,/pendingResizeDrawer\.current=null[\s\S]*?refreshFilteredCells\.current\?\.\(\)/)
   assert.match(helperSource,/A Cell \/cells photo_count counts authorised PhotoAssets/)
   assert.doesNotMatch(parent,/localStorage|sessionStorage|postMessage\([\s\S]*?photoScope/,
