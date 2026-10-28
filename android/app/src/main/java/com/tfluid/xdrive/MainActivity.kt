@@ -3,6 +3,7 @@ package com.tfluid.xdrive
 import android.app.Activity
 import android.app.Application
 import android.content.Context
+import android.content.ContentResolver
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
@@ -18,7 +19,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import android.widget.Toast
-import android.provider.OpenableColumns
 import android.os.Bundle
 import java.io.IOException
 import androidx.activity.result.contract.ActivityResultContracts
@@ -62,6 +62,9 @@ class MainActivity : ComponentActivity() {
     private var sharedFile by mutableStateOf<NativeIncomingShare?>(null)
     private var shareBusy by mutableStateOf(false)
     private var shareError by mutableStateOf<String?>(null)
+    // A SAF result is usable only by the exact picker that launched it, not
+    // another session that happened to re-open the same visible folder.
+    private var pendingUploadPicker: NativeSafUploadTicket? = null
 
     private fun dismissIncomingShare() {
         if (shareBusy) return
@@ -157,33 +160,52 @@ class MainActivity : ComponentActivity() {
     private val uploadSource = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
-        if (uri == null) model.controller.cancelFileUploadPicker()
-        else {
-            var filename = ""
-            var byteSize = -1L
-            try {
-                contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
-                    null, null, null)?.use { cursor ->
-                    if (cursor.moveToFirst()) {
-                        val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                        val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
-                        if (nameIndex >= 0 && !cursor.isNull(nameIndex))
-                            filename = cursor.getString(nameIndex).orEmpty()
-                        if (sizeIndex >= 0 && !cursor.isNull(sizeIndex))
-                            byteSize = cursor.getLong(sizeIndex)
+        val controller = model.controller
+        val ticket = pendingUploadPicker
+        pendingUploadPicker = null
+        // The OS may deliver a late chooser result after account/folder
+        // replacement. Do not clear the *new* Owner's picker or consume bytes.
+        if (ticket != null && ticket.isCurrent(controller.state.value)) {
+            if (uri == null || uri.scheme != ContentResolver.SCHEME_CONTENT ||
+                uri.authority.isNullOrBlank()) {
+                controller.cancelFileUploadPicker()
+            } else {
+                lifecycleScope.launch {
+                    // Content providers are untrusted IPC, potentially slow or
+                    // blocking. NEVER query their metadata on the main thread.
+                    // This shared helper reads only name/size; no file bytes.
+                    val metadata = withContext(Dispatchers.IO) {
+                        queryNativeShareMetadata(applicationContext.contentResolver, uri)
+                    }
+                    // Explicitly defend A→B→A Owner/folder replay while the
+                    // provider was responding; even identical path IDs are not
+                    // sufficient without the original immutable state object.
+                    if (!ticket.isCurrent(controller.state.value)) return@launch
+                    if (metadata == null) {
+                        // Existing Controller handles the safe failure message.
+                        // Invalid provider data must never start UploadSession.
+                        controller.acceptFileUpload("", -1L) {
+                            throw IOException("Invalid SAF source metadata")
+                        }
+                    } else {
+                        controller.acceptFileUpload(metadata.name, metadata.byteSize) {
+                            contentResolver.openInputStream(uri)
+                                ?: throw IOException("Selected file is unavailable")
+                        }
                     }
                 }
-            } catch (_: Exception) {
-                // Invalid SAF provider metadata is rejected by the Controller.
-            }
-            model.controller.acceptFileUpload(filename, byteSize) {
-                contentResolver.openInputStream(uri)
-                    ?: throw IOException("Selected file is unavailable")
             }
         }
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // This Activity cannot reconstruct a same-intent SAF ticket after an
+        // OS recreation. Do not strand the Controller's picker flag or silently
+        // accept a result whose original Owner session is no longer provable.
+        // Existing active uploads/downloads are unaffected.
+        if (savedInstanceState != null &&
+            model.controller.state.value.fileUploadPickerParent != null)
+            model.controller.cancelFileUploadPicker()
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         enableEdgeToEdge()
         setContent {
@@ -208,9 +230,22 @@ class MainActivity : ComponentActivity() {
                             }
                         },
                         onUpload = {
-                            if (model.controller.prepareFileUpload()) {
-                                try { uploadSource.launch(arrayOf("*/*")) }
-                                catch (_: Exception) { model.controller.cancelFileUploadPicker() }
+                            if (pendingUploadPicker == null &&
+                                model.controller.prepareFileUpload()) {
+                                val ticket = NativeSafUploadTicket.capture(
+                                    model.controller.state.value)
+                                if (ticket == null) {
+                                    model.controller.cancelFileUploadPicker()
+                                } else {
+                                    try {
+                                        pendingUploadPicker = ticket
+                                        uploadSource.launch(arrayOf("*/*"))
+                                    } catch (_: Exception) {
+                                        pendingUploadPicker = null
+                                        if (ticket.isCurrent(model.controller.state.value))
+                                            model.controller.cancelFileUploadPicker()
+                                    }
+                                }
                             }
                         })
                     val incoming = sharedFile
