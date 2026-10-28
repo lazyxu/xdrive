@@ -340,7 +340,7 @@ export function XDriveServerBackupManagementPanel({
                   不完整 {integrity.incomplete} 代；源数据不一致 {integrity.inconsistent} 代。
                 </Typography>
                 <Typography variant="body2">
-                  在最近最多 30 条宿主机操作记录中，各快照的最新校验结果：
+                  在最近最多 100 条宿主机操作记录中，各快照的最新校验结果：
                   历史通过 {integrity.historicalPassed} 代，历史失败
                   {integrity.historicalFailed} 代，未见近期校验记录
                   {integrity.withoutRecentReceipt} 代。
