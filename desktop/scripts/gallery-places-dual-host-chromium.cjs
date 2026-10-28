@@ -943,7 +943,7 @@ async function testFullGalleryLIVPViewerReturn(browser,mode,port){
       before.ranges.at(-1).nodeIDs[0]===before.node&&
       before.scopes.length>0&&before.scopes.every(q=>q.count===1&&!q.favorite))
     await photo.click()
-    await page.getByRole('button',{name:'关闭预览'}).waitFor()
+    await page.locator('[data-xdrive-image-phase]').first().waitFor({state:'visible'})
     await page.waitForFunction(()=>{
       const p=window.__mapProbe
       const images=Array.from(document.querySelectorAll(
@@ -971,7 +971,10 @@ async function testFullGalleryLIVPViewerReturn(browser,mode,port){
     if(mode==='isolated')record('isolated: Live Viewer disposes HTTPS SDK Child',
       !page.frames().some(f=>f.url().includes(childHost))&&
       await page.locator('[data-xdrive-baidu-isolated-frame]').count()===0)
-    await page.getByRole('button',{name:'关闭预览'}).click()
+    // iOS full-screen Viewer has a "返回图库" action; reveal its
+    // auto-hidden controls through the shared keyboard-accessible chrome.
+    await page.keyboard.press('Tab')
+    await page.getByRole('button',{name:'返回图库'}).click()
     await page.getByText('当前地图可查看 1 张照片',{exact:true}).waitFor()
     await drawer.waitFor({state:'visible'})
     await drawer.locator('[data-xdrive-places-photo-drawer-item]').first()
