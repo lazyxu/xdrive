@@ -184,7 +184,14 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                     },
                     modifier = Modifier.heightIn(min = 48.dp)
                         .testTag("native-transfer-open"),
-                ) { Text("传输") }
+                ) {
+                    Text(when {
+                        state.transferRecoveryIssue -> "传输·需核对"
+                        state.interruptedNativeTransfers.isNotEmpty() ->
+                            "传输·${state.interruptedNativeTransfers.size}"
+                        else -> "传输"
+                    })
+                }
                 AccountMenu(state, controller, updates?.let { it::show },
                     fileView = if (state.screen == Screen.FILES &&
                         state.filesSection == FilesSection.BROWSE) filesView else null,
