@@ -679,8 +679,8 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 					for ordinal, assetIndex := range []int{0, 1, 3} {
 						if err := tx.Create(&meta.PhotoCollectionAsset{
 							CollectionID: family.ID,
-							AssetID: familyCandidateAssets[assetIndex].ID,
-							Position: int64(ordinal),
+							AssetID:      familyCandidateAssets[assetIndex].ID,
+							Position:     int64(ordinal),
 						}).Error; err != nil {
 							return err
 						}
