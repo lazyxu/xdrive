@@ -2514,6 +2514,42 @@ async function testAdjacent142And28PhotoCovers(browser,mode,port){
       authorized?.limit===48&&errors.length===0)
     await page.keyboard.press('Escape')
     await dialog.waitFor({state:'hidden'})
+    // Continue into the OTHER signed 142-photo Cell. Its initial 48 cards
+    // must retain Owner authority while bounded user-driven next pages append.
+    await big.click()
+    await dialog.waitFor({state:'visible'})
+    await page.waitForFunction(()=>document.querySelectorAll(
+      '[data-xdrive-places-photo-drawer-item]').length===48)
+    const loadMore=page.locator('[data-xdrive-places-photo-drawer-load-more]')
+    await loadMore.click()
+    await page.waitForFunction(()=>document.querySelectorAll(
+      '[data-xdrive-places-photo-drawer-item]').length===96)
+    await loadMore.click()
+    await page.waitForFunction(()=>document.querySelectorAll(
+      '[data-xdrive-places-photo-drawer-item]').length===142)
+    const paged=await page.evaluate(()=>{
+      const verified=window.__mapProbe.photoPreviewRanges.filter(p=>p.total===142)
+      const tiles=Array.from(document.querySelectorAll(
+        '[data-xdrive-places-photo-drawer-item]'))
+      return {verified,tiles:tiles.length,
+        unique:new Set(tiles.map(t=>t.getAttribute(
+          'data-xdrive-places-photo-drawer-item'))).size,
+        more:document.querySelectorAll(
+          '[data-xdrive-places-photo-drawer-load-more]').length,
+        error:document.querySelectorAll(
+          '[data-xdrive-places-photo-drawer-page-error]').length,
+        fixedStrip:document.querySelectorAll(
+          '[data-xdrive-places-photo-collection-strip]').length}
+    })
+    record(mode+': 142-photo Owner Cell advances exact 48/48/46 bounded pages',
+      paged.verified.length===3 &&
+      paged.verified.every((p,i)=>p.limit===48&&p.offset===i*48&&
+        p.items===[48,48,46][i]) && errors.length===0)
+    record(mode+': full 142-photo dialog never mixes Cell tiles or old bottom strip',
+      paged.tiles===142&&paged.unique===142&&paged.more===0&&
+      paged.error===0&&paged.fixedStrip===0&&errors.length===0)
+    await page.keyboard.press('Escape')
+    await dialog.waitFor({state:'hidden'})
   }finally{await context.close()}
 }
 
