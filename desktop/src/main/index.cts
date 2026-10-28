@@ -7646,11 +7646,12 @@ function registerIPCHandlers() {
     )
     }), false,
   ))
-  ipcMain.handle('agent:cloud-quota', () => runAgentAction<AgentCloudQuota>(async () => {
-    const hello = await requireAgentLifecycle().ensureRunning()
-    requireAgentCapability(hello, 'cloud-files')
-    return requireAgentClient().cloudQuota()
-  }, false))
+  ipcMain.handle('agent:cloud-quota', (event, requestID: unknown = undefined) =>
+    runAgentAction<AgentCloudQuota>(() => viewportRequests.run(event.sender, requestID, async signal => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'cloud-files')
+      return requireAgentClient().cloudQuota(signal)
+    }), false))
   ipcMain.handle('agent:get-server-update', () => runAgentAction<AgentServerUpdateState>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'server-update')
