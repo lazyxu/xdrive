@@ -317,12 +317,15 @@ class DriveController(
         checkpoint: RecoveryCheckpoint?, generationTicket: Long,
     ) {
         if (checkpoint == null) return
-        val removed = try {
-            checkpoint.bridge.acknowledgeVerified(
-                checkpoint.server, checkpoint.username, checkpoint.id)
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: Exception) { false }
+        // Final Server/SAF ACK already happened: persist the matching
+        // cleanup even if the Activity is closing, without reviving old UI.
+        // Any cleanup failure leaves the conservative encrypted marker.
+        val removed = withContext(NonCancellable) {
+            try {
+                checkpoint.bridge.acknowledgeVerified(
+                    checkpoint.server, checkpoint.username, checkpoint.id)
+            } catch (_: Exception) { false }
+        }
         if (!removed && generationTicket == generation &&
             state.value.server == checkpoint.server &&
             state.value.username == checkpoint.username) {
@@ -351,7 +354,7 @@ class DriveController(
                 current.username != snapshot.username || session == null) return@launch
             mutableState.value = current.copy(
                 interruptedNativeTransfers = result.getOrDefault(emptyList()),
-                transferRecoveryIssue = result.isFailure || current.transferRecoveryIssue,
+                transferRecoveryIssue = result.isFailure,
             )
         }
     }
@@ -380,7 +383,9 @@ class DriveController(
                     current.interruptedNativeTransfers.filterNot { it.id == id }
                     else current.interruptedNativeTransfers,
                 transferRecoveryClearingId = null,
-                transferRecoveryIssue = current.transferRecoveryIssue || !removed,
+                transferRecoveryIssue = !removed ||
+                    (current.transferRecoveryIssue &&
+                        current.interruptedNativeTransfers.size > 1),
             )
         }
     }
