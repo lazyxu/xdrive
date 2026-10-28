@@ -222,6 +222,7 @@ export function XDriveFileExplorerNavigationPane({
   loadDirectoryPage: (
     parentID: number,
     cursor?: string,
+    signal?: AbortSignal,
   ) => Promise<XDriveFileExplorerNavigationTreePage>
   onNavigate: (crumbs: XDriveFileExplorerNavigationTreeCrumb[]) => void | Promise<void>
   dropDisabled?: boolean
@@ -310,6 +311,9 @@ export function XDriveFileExplorerNavigationPane({
   const nextExpandTokenRef = useRef(0)
   const [loadingIDs, setLoadingIDs] = useState<Set<number>>(() => new Set())
   const loadingIDsRef = useRef(new Map<number, number>())
+  // In-flight tree reads are disposable. One AbortController per expanded
+  // directory, never a global transfer/backup cancellation token.
+  const treeControllersRef = useRef(new Map<number, AbortController>())
   const loadDirectoryPageRef = useRef(loadDirectoryPage)
   const loadDirectoryPageGenerationRef = useRef(1)
   const lifecycleKeyRef = useRef(lifecycleKey)
@@ -363,7 +367,34 @@ export function XDriveFileExplorerNavigationPane({
     setLoadingIDs(new Set())
     setExpandedIDs(new Set())
     setDropTargetID(null)
+    return () => {
+      // A replaced Host/Owner or an unmounted Files page must release its
+      // obsolete in-flight tree GETs, even when older adapters ignore abort.
+      for (const controller of treeControllersRef.current.values()) controller.abort()
+      treeControllersRef.current.clear()
+    }
   }, [lifecycleKey, loadDirectoryPage])
+
+  // The admitted folder changes without changing the app route or Owner.
+  // Its first Range has foreground priority over stale sidebar tree GETs.
+  const treeCurrentPathKey = (trashActive ? 'trash:' : 'files:') +
+    currentCrumbs.map(crumb => crumb.id).join('/')
+  const treeReadScopeRef = useRef({
+    generation: loadDirectoryPageGenerationRef.current, path: treeCurrentPathKey,
+  })
+  useLayoutEffect(() => {
+    if (treeReadScopeRef.current.generation === loadDirectoryPageGenerationRef.current &&
+        treeReadScopeRef.current.path === treeCurrentPathKey) return
+    treeReadScopeRef.current = {
+      generation: loadDirectoryPageGenerationRef.current, path: treeCurrentPathKey,
+    }
+    for (const controller of treeControllersRef.current.values()) controller.abort()
+    treeControllersRef.current.clear()
+    loadingIDsRef.current.clear()
+    pendingExpandRef.current.clear()
+    setLoadingIDs(new Set())
+    setPendingExpandIDs(new Set())
+  }, [treeCurrentPathKey, lifecycleKey, loadDirectoryPage])
 
   useEffect(() => {
     setExpandedSections(loadNavigationSectionState(sectionPreferencesKey))
@@ -496,14 +527,19 @@ export function XDriveFileExplorerNavigationPane({
     ) return
     if (loadingIDsRef.current.get(node.id) === generation) return
 
+    const treeController = new AbortController()
+    treeControllersRef.current.set(node.id, treeController)
     loadingIDsRef.current.set(node.id, generation)
     setLoadingIDs((currentIDs) => new Set(currentIDs).add(node.id))
     try {
       const page = await loadDirectoryPage(
         node.id,
         appendCurrentGeneration ? current?.nextCursor : undefined,
+        treeController.signal,
       )
       if (
+        treeController.signal.aborted ||
+        treeControllersRef.current.get(node.id) !== treeController ||
         generation !== loadDirectoryPageGenerationRef.current ||
         requestLifecycleKey !== lifecycleKeyRef.current
       ) return
@@ -541,17 +577,24 @@ export function XDriveFileExplorerNavigationPane({
       })
     } catch (error) {
       if (
+        !treeController.signal.aborted &&
+        treeControllersRef.current.get(node.id) === treeController &&
         generation === loadDirectoryPageGenerationRef.current &&
         requestLifecycleKey === lifecycleKeyRef.current
       ) onError?.(error)
     } finally {
-      if (loadingIDsRef.current.get(node.id) === generation) {
-        loadingIDsRef.current.delete(node.id)
-        setLoadingIDs((currentIDs) => {
-          const next = new Set(currentIDs)
-          next.delete(node.id)
-          return next
-        })
+      // A late old Promise cannot erase the successor's in-flight/busy
+      // receipt or release its slot after a rapid A -> B -> A navigation.
+      if (treeControllersRef.current.get(node.id) === treeController) {
+        treeControllersRef.current.delete(node.id)
+        if (loadingIDsRef.current.get(node.id) === generation) {
+          loadingIDsRef.current.delete(node.id)
+          setLoadingIDs((currentIDs) => {
+            const next = new Set(currentIDs)
+            next.delete(node.id)
+            return next
+          })
+        }
       }
     }
   }, [commitParentPage, loadDirectoryPage, onError])
