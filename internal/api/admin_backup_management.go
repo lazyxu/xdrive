@@ -99,12 +99,13 @@ type backupAdminRetention struct {
 	HashedBytes           int64    `json:"hashed_bytes"`
 }
 type backupAdminPage struct {
-	Supported bool                      `json:"supported"`
-	Message   string                    `json:"message,omitempty"`
-	Inventory backupAdminInventory      `json:"inventory"`
-	Operation backupAdminStatus         `json:"operation"`
-	Retention *backupAdminRetention     `json:"retention,omitempty"`
-	History   []backupAdminHistoryEntry `json:"history,omitempty"`
+	Supported        bool                        `json:"supported"`
+	Message          string                      `json:"message,omitempty"`
+	Inventory        backupAdminInventory        `json:"inventory"`
+	Operation        backupAdminStatus           `json:"operation"`
+	Retention        *backupAdminRetention       `json:"retention,omitempty"`
+	History          []backupAdminHistoryEntry   `json:"history,omitempty"`
+	BulkVerification *backupAdminVerifyAllReport `json:"bulk_verification,omitempty"`
 }
 
 // Host-authored historical receipts, not current snapshot integrity guarantees.
@@ -140,7 +141,7 @@ func validBackupAdminHistory(events []backupAdminHistoryEntry) bool {
 			if e.SnapshotID == "" || (e.Mode != "fast" && e.Mode != "deep") {
 				return false
 			}
-		case "plan":
+		case "plan", "verify_all":
 			if e.SnapshotID != "" || (e.Mode != "fast" && e.Mode != "deep") {
 				return false
 			}
@@ -281,6 +282,11 @@ func (s *Server) backupAdminState() backupAdminPage {
 		history.Protocol == "xdrive-backup-admin-history-v1" && validBackupAdminHistory(history.Operations) {
 		page.History = history.Operations
 	}
+	var bulk backupAdminVerifyAllReport
+	if err := readSafeBackupAdminJSON(dir, "backup-admin-verify-all-report.json", 16<<10, &bulk); err == nil &&
+		validBackupAdminVerifyAllReport(bulk) {
+		page.BulkVerification = &bulk
+	}
 	if _, err := os.Lstat(filepath.Join(dir, "backup-admin-active.json")); err == nil &&
 		page.Operation.State != "running" {
 		// Never claim idle/success while an active operation may be in progress.
@@ -320,6 +326,13 @@ func validateBackupAdminRequest(request backupAdminRequest) error {
 			request.Format != "" || request.Mode != "" || request.KeepLast != 0 ||
 			request.RetentionDays != 0 || request.Revision != "" {
 			return errors.New("isolated drill requires exact committed v2 confirmation")
+		}
+	case "verify_all":
+		if (request.Mode != "fast" && request.Mode != "deep") ||
+			request.SnapshotID != "" || request.Format != "" ||
+			request.Confirmation != "" || request.KeepLast != 0 ||
+			request.RetentionDays != 0 || request.Revision != "" {
+			return errors.New("verify_all accepts only fast or deep mode")
 		}
 	case "plan":
 		if request.KeepLast < 1 || request.KeepLast > 1000 ||

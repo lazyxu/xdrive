@@ -33,6 +33,11 @@ func validDesktopAdminServerBackupRequest(in client.AdminServerBackupRequest) bo
 	case "drill":
 		return strings.HasPrefix(in.SnapshotID, "v2-") && in.Confirmation == "DRILL "+in.SnapshotID &&
 			in.Format == "" && in.Mode == "" && in.KeepLast == 0 && in.RetentionDays == 0 && in.Revision == ""
+	case "verify_all":
+		return (in.Mode == "fast" || in.Mode == "deep") &&
+			in.SnapshotID == "" && in.Format == "" &&
+			in.KeepLast == 0 && in.RetentionDays == 0 &&
+			in.Revision == "" && in.Confirmation == ""
 	case "plan":
 		return in.SnapshotID == "" && in.KeepLast >= 1 && in.KeepLast <= 1000 &&
 			(in.Mode == "fast" || in.Mode == "deep") && in.Format == "" &&

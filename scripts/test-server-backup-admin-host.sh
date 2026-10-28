@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 umask 077
+# GitHub's server-validation job normally suppresses expected Host errors.
+# Report the actual failing contract assertion without dumping private logs,
+# file contents, environment variables, tokens or backup paths.
+trap 'rc=$?; printf "admin backup Host contract failed at line %s (exit %s)\n" "$LINENO" "$rc" >&2' ERR
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TMP="$(mktemp -d)"
@@ -27,6 +31,10 @@ if [[ "$1" == backup && "$2" == drill ]]; then
   exit 0
 fi
 if [[ "$1" == backup && "$2" == verify && "${3:-}" == --json ]]; then
+  if [[ "${4:-}" == "$XD_CONFIG_DIR/backups/snapshots/"* ]]; then
+    printf '{"protocol":"xdrive-host-backup-verify-v1","state":"success","format":"v1","scope":"backup_snapshot_and_referenced_cas","cas_objects_checked":0,"cas_bytes_hashed":0}\n'
+    exit 0
+  fi
   if [[ "${4:-}" == "${XD_BACKUP_ADMIN_TEST_BAD_VERIFY:-/unreachable}" ]]; then
     printf '{"protocol":"xdrive-host-backup-verify-v1","state":"failed","format":"v2","scope":"backup_snapshot_and_referenced_cas","cas_objects_checked":1,"cas_bytes_hashed":11,"failure_category":"object_sha256_mismatch"}\n'
     exit 22
@@ -38,7 +46,15 @@ if [[ "$1" == backup && "$2" == verify && "${3:-}" == "${XD_BACKUP_ADMIN_TEST_BA
   exit 22
 fi
 if [[ "$1" == backup && "$2" == retention-plan ]]; then
-  printf '{"mode":"read_only","validation":"snapshot_sha256_and_cas_size","keep_last":2,"committed_snapshots":1,"keep_snapshots":["xdrive-backup-20261027T030000Z"],"drop_candidates":[],"retained_objects":1,"drop_only_objects":0,"unreferenced_objects":0,"drop_only_object_bytes":0,"unreferenced_bytes":0,"drop_snapshot_bytes":0,"potential_logical_bytes":0,"delete_enabled":false,"warning":"read-only","hashed_objects":0,"hashed_bytes":0}\n'
+  if [[ " $* " == *" --mode deep "* ]]; then
+    validation=snapshot_sha256_and_full_cas_sha256
+    keep_last=1
+    [[ "${XD_BACKUP_ADMIN_TEST_FAKE_DEEP:-}" != fast ]] || validation=snapshot_sha256_and_cas_size
+  else
+    validation=snapshot_sha256_and_cas_size
+    keep_last=2
+  fi
+  printf '{"mode":"read_only","validation":"%s","keep_last":%s,"committed_snapshots":1,"keep_snapshots":["xdrive-backup-20261027T030000Z"],"drop_candidates":[],"retained_objects":1,"drop_only_objects":0,"unreferenced_objects":0,"drop_only_object_bytes":0,"unreferenced_bytes":0,"drop_snapshot_bytes":0,"potential_logical_bytes":0,"delete_enabled":false,"warning":"read-only","hashed_objects":0,"hashed_bytes":0}\n' "$validation" "$keep_last"
 fi
 FAKE
 chmod 700 "$XD_CONFIG_DIR/bin/xdrive-server"
@@ -486,4 +502,76 @@ backup_admin_process_request "$dir"
 cmp "$TMP/before-invalid-drill" "$XD_BACKUP_ADMIN_TEST_LOG"
 grep -Fq '"state":"failed"' "$dir/backup-admin-status.json"
 
-echo 'Admin Server Backup host bridge: CRUD, history, isolated drill and safety tests passed'
+
+# Admin batch verification enumerates all committed generations (not the 100
+# visible UI rows), is read-only, and stores real results after browser exit.
+write_request verify_all "" "" fast "" ""
+backup_admin_process_request "$dir"
+grep -Fq '"state":"success"' "$dir/backup-admin-status.json"
+grep -Fq "backup verify --json $XD_CONFIG_DIR/backups/snapshots/" "$XD_BACKUP_ADMIN_TEST_LOG"
+python3 - "$dir/backup-admin-verify-all-report.json" <<'PY'
+import json,sys
+r=json.load(open(sys.argv[1],encoding="utf-8"))
+assert r["protocol"]=="xdrive-host-verify-all-v1" and r["state"]=="success",r
+assert r["mode"]=="fast" and r["total_snapshots"]>100,r
+assert r["checked_snapshots"]==r["total_snapshots"]==r["passed_snapshots"],r
+assert r["failed_snapshots"]==0 and r["unverified_snapshots"]==0,r
+assert r["deep_repositories_checked"]==0 and r["deep_repositories_failed"]==0,r
+assert r["failure_sample"]==[],r
+PY
+# The per-snapshot JSON fails closed when a real checksum check fails; other
+# generations are still checked, and the whole result is not green.
+export XD_BACKUP_ADMIN_TEST_BAD_VERIFY="$XD_CONFIG_DIR/backups/incremental/snapshots/$v2"
+write_request verify_all "" "" fast "" ""
+backup_admin_process_request "$dir"
+grep -Fq '"state":"failed"' "$dir/backup-admin-status.json"
+python3 - "$dir/backup-admin-verify-all-report.json" <<'PY'
+import json,sys
+r=json.load(open(sys.argv[1],encoding="utf-8"))
+assert r["state"]=="failed" and r["failed_snapshots"]>=1,r
+assert r["checked_snapshots"]==r["total_snapshots"],r
+assert any(x["snapshot_id"].startswith("v2-default:") for x in r["failure_sample"]),r
+PY
+unset XD_BACKUP_ADMIN_TEST_BAD_VERIFY
+# Deep runs exactly one independent repository-wide CAS audit for the v2
+# default repository, not one scan per generation.
+cp "$XD_BACKUP_ADMIN_TEST_LOG" "$TMP/before-bulk-deep"
+write_request verify_all "" "" deep "" ""
+backup_admin_process_request "$dir"
+grep -Fq '"state":"success"' "$dir/backup-admin-status.json"
+python3 - "$dir/backup-admin-verify-all-report.json" <<'PY'
+import json,sys
+r=json.load(open(sys.argv[1],encoding="utf-8"))
+assert r["mode"]=="deep" and r["state"]=="success",r
+assert r["deep_repositories_checked"]==1 and r["deep_repositories_failed"]==0,r
+PY
+# A helper returning exit 0 but fast-mode evidence is not proof that deep CAS
+# hashing occurred. Keep the failed historical summary instead of a green pass.
+export XD_BACKUP_ADMIN_TEST_FAKE_DEEP=fast
+write_request verify_all "" "" deep "" ""
+backup_admin_process_request "$dir"
+grep -Fq '"state":"failed"' "$dir/backup-admin-status.json"
+python3 - "$dir/backup-admin-verify-all-report.json" <<'PY'
+import json,sys
+r=json.load(open(sys.argv[1],encoding="utf-8"))
+assert r["state"]=="failed" and r["deep_repositories_failed"]==1,r
+assert r["checked_snapshots"]==r["total_snapshots"] and r["failed_snapshots"]==0,r
+PY
+unset XD_BACKUP_ADMIN_TEST_FAKE_DEEP
+# A symlinked generation blocks the entire batch before any Host verifier is
+# invoked, and does not leak the symlink target into the report.
+ln -s /etc "$XD_CONFIG_DIR/backups/snapshots/xdrive-backup-20261028T010000Z"
+cp "$XD_BACKUP_ADMIN_TEST_LOG" "$TMP/before-bulk-unsafe"
+write_request verify_all "" "" fast "" ""
+backup_admin_process_request "$dir"
+cmp "$TMP/before-bulk-unsafe" "$XD_BACKUP_ADMIN_TEST_LOG"
+python3 - "$dir/backup-admin-verify-all-report.json" <<'PY'
+import json,sys
+r=json.load(open(sys.argv[1],encoding="utf-8"))
+assert r["state"]=="failed" and r["failure_category"]=="unsafe_snapshot",r
+assert r["checked_snapshots"]==0 and r["unverified_snapshots"]==r["total_snapshots"],r
+assert "/etc" not in str(r),r
+PY
+rm "$XD_CONFIG_DIR/backups/snapshots/xdrive-backup-20261028T010000Z"
+
+echo 'Admin Server Backup host bridge: CRUD, batch verify, history and safety tests passed'
