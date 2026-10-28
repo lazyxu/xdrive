@@ -254,6 +254,56 @@ can require another **explicit** manual prune to finish retiring its content.
 The selected generation must not be automatically replayed or guessed from
 a stale UI selection; report this outcome conservatively.
 
+### Selected generation read-only preview (internal helper)
+
+The separate internal helper supports:
+
+```bash
+xdrive-backup-repo preview-delete-snapshot \
+  --repo "/absolute/local/backup-repo" \
+  --snapshot xdrive-backup-YYYYMMDDTHHMMSSZ --mode fast
+# Deep: hashes every repository CAS object, including unreferenced objects.
+xdrive-backup-repo preview-delete-snapshot \
+  --repo "/absolute/local/backup-repo" \
+  --snapshot xdrive-backup-YYYYMMDDTHHMMSSZ --mode deep
+```
+
+The Host Manager now also exposes a strictly bounded **operator-only**
+read-only wrapper, without passing an arbitrary Docker flag or Host command:
+
+```bash
+xdrive-server backup preview-delete-snapshot \
+  --snapshot xdrive-backup-YYYYMMDDTHHMMSSZ --mode fast
+# Optional deep full CAS SHA-256 audit and trusted local repository selection:
+xdrive-server backup preview-delete-snapshot \
+  --snapshot xdrive-backup-YYYYMMDDTHHMMSSZ --mode deep \
+  --repository-dir "/absolute/local/backup-repo"
+```
+
+It resolves the same trusted local repository as the selected-delete Host
+command, refuses symlinks and live `/data` overlap, and invokes the bundled
+helper with `--network none`, a strictly **read-only** backup bind mount and
+no `--yes`. Deep preview holds a shared lock on the existing writer lock
+inode for its full read. The actual delete separately owns its exclusive
+lock and rechecks every byte. There remains **no authenticated Admin UI
+entry or browser-provided Host directory**.
+
+This is a fixed, **read-only** candidate calculation. The report explicitly
+names the selected generation, the number of remaining recoverable generations,
+snapshot-specific logical bytes, unique selected CAS objects, shared CAS
+objects, exclusive candidate CAS bytes, orphan CAS bytes, combined potential
+logical reclaim and actually hashed content. No raw CAS digests, Host paths,
+private logs or passwords are emitted. A malformed, symlinked, partially
+committed or unknown generation, an unsafe survivor archive, a pending prune
+journal, or attempting to remove the last recovery point refuses the preview.
+
+The fast mode validates committed snapshot checksums and repository CAS
+presence/size; deep additionally hashes every repository CAS object. Neither
+mode measures real allocated filesystem blocks or authorizes deletion. The
+subsequent exclusive prune **always** repeats a deep check. This internal
+helper is intentionally not yet wired to a web UI, scheduled job or remote
+Host-admin action; those require independent source-bound confirmation.
+
 **Host guard:** both manual prune modes reuse identical checks against
 the configured live file source and the Server container's actual /data mount,
 require an existing regular backup repository lock, and run the exact Server

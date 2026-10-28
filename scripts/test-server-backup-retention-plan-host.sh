@@ -197,6 +197,58 @@ ln -s "$custom_repo/snapshots/$selected" "$custom_repo/snapshots/xdrive-backup-2
 reject_selected --snapshot xdrive-backup-20261024T000000Z --yes
 [[ "$(cat "$custom_repo/snapshots/$selected/preserve")" == 'do not touch' ]]
 
+# Selected preview has no write permission to the repository. It must not
+# transform a read-only view into a prune/delete invocation.
+preview() {
+  : > "$BACKUP_PLAN_TEST_LOG"
+  PATH="$TMP/bin:$PATH" bash "$host" backup preview-delete-snapshot "$@" > "$TMP/preview.out"
+  grep -Fq '"mode":"read_only"' "$TMP/preview.out"
+  grep -Fq '"delete_enabled":false' "$TMP/preview.out"
+  grep -Fxq preview-delete-snapshot "$BACKUP_PLAN_TEST_LOG"
+  grep -Fxq "$selected" "$BACKUP_PLAN_TEST_LOG"
+  grep -Fxq -- --snapshot "$BACKUP_PLAN_TEST_LOG"
+  grep -Fxq -- --network "$BACKUP_PLAN_TEST_LOG"
+  grep -Fxq none "$BACKUP_PLAN_TEST_LOG"
+  grep -Fxq "type=bind,src=$custom_repo,dst=/repo,readonly" "$BACKUP_PLAN_TEST_LOG"
+  if grep -Fxq -- --yes "$BACKUP_PLAN_TEST_LOG" ||
+     grep -Fxq delete-snapshot "$BACKUP_PLAN_TEST_LOG" ||
+     grep -Fxq -- --keep-last "$BACKUP_PLAN_TEST_LOG"; then
+    echo 'selected preview escaped its read-only Docker sandbox' >&2
+    exit 1
+  fi
+}
+preview --snapshot "$selected"
+grep -Fxq fast "$BACKUP_PLAN_TEST_LOG"
+preview --snapshot "$selected" --mode deep
+grep -Fxq deep "$BACKUP_PLAN_TEST_LOG"
+
+reject_preview() {
+  : > "$BACKUP_PLAN_TEST_LOG"
+  if PATH="$TMP/bin:$PATH" bash "$host" backup preview-delete-snapshot "$@" > "$TMP/preview-rejected.out" 2> "$TMP/preview-rejected.err"; then
+    echo "unsafe selected preview unexpectedly succeeded: $*" >&2
+    exit 1
+  fi
+  [[ ! -s "$BACKUP_PLAN_TEST_LOG" ]] || {
+    echo "invalid preview request reached Docker" >&2
+    exit 1
+  }
+}
+reject_preview --yes
+reject_preview --snapshot "$selected" --yes
+reject_preview --snapshot "$selected" --keep-last 1
+reject_preview --snapshot "$selected" --mode invalid
+reject_preview --snapshot '../../etc/shadow'
+reject_preview --snapshot xdrive-backup-20261026T000000Z
+reject_preview --snapshot "$selected" --repository-dir relative
+reject_preview --snapshot "$selected" --repository-dir "$TMP/symlink-repo"
+reject_preview --snapshot xdrive-backup-20261024T000000Z
+exec 8<"$custom_repo/.backup.lock"
+flock -x -n 8
+reject_preview --snapshot "$selected" --mode deep
+grep -Fq 'repository busy' "$TMP/preview-rejected.err"
+flock -u 8
+exec 8<&-
+
 # The manual DELETE path must refuse any repository that overlaps live
 # files, including both a backup nested under the default live location
 # and live data nested under the backup repository itself.
@@ -230,4 +282,4 @@ mv "$TMP/saved-repository-lock" "$custom_repo/.backup.lock"
 [[ "$(cat "$default_repo/snapshots/preserve")" == 'immutable object fixture' ]]
 [[ "$(cat "$custom_repo/snapshots/preserve")" == 'also preserve' ]]
 
-echo "retention-plan host read-only, manual-prune and selected-delete isolation tests passed"
+echo "Host retention, selected-delete and selected-preview read-only isolation tests passed"
