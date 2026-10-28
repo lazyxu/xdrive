@@ -126,7 +126,7 @@ async function fileTrial(mode, attempt) {
   let renderer
   let releasePriority = null
   try {
-    if(mode==='page')priorityModule.xDriveEnterForegroundPage('web:files')
+    if(mode==='page'||mode==='content')priorityModule.xDriveEnterForegroundPage('web:files')
     const component = loadTypescript(filePath)
     const loadThumbnail = async (item, signal) => {
       const response = await fetch(url + '/thumbnail/' + item.id, { signal })
@@ -161,6 +161,12 @@ async function fileTrial(mode, attempt) {
     } else if(mode==='page'){
       await act(async()=>{
         priorityModule.xDriveEnterForegroundPage('web:gallery')
+      })
+    } else if (mode === 'content') {
+      // New directory, same route. Yield old thumbnail connections before the
+      // new first counted Range can enter the transport.
+      await act(async () => {
+        releasePriority = priorityModule.xDriveBeginForegroundContentTransition('files')
       })
     }
     if (mode !== 'baseline') await until(
@@ -207,7 +213,7 @@ async function fileTrial(mode, attempt) {
   } finally {
     releasePriority?.()
     if (renderer) await act(async () => { renderer.unmount() })
-    if(mode==='page')priorityModule.xDriveEnterForegroundPage(null)
+    if(mode==='page'||mode==='content')priorityModule.xDriveEnterForegroundPage(null)
     await httpFixture.close()
     for (const name of Object.keys(before)) {
       if (before[name] === undefined) delete global[name]
@@ -222,7 +228,7 @@ async function galleryTrial(mode, attempt) {
   let scheduler
   let releasePriority = null
   try {
-    if(mode==='page')priorityModule.xDriveEnterForegroundPage('web:gallery')
+    if(mode==='page'||mode==='content')priorityModule.xDriveEnterForegroundPage('web:gallery')
     scheduler = new XDriveMediaThumbnailScheduler(async (nodeID, signal) => {
       const response = await fetch(url + '/thumbnail/' + nodeID, { signal })
       await response.arrayBuffer()
@@ -237,6 +243,7 @@ async function galleryTrial(mode, attempt) {
     if (mode === 'preempt') scheduler.setSuspended(true)
     else if (mode === 'foreground') releasePriority = priorityModule.xDriveAcquireViewerForeground({})
     else if(mode==='page')priorityModule.xDriveEnterForegroundPage('web:files')
+    else if(mode==='content')releasePriority = priorityModule.xDriveBeginForegroundContentTransition('gallery')
     const viewerBody = await viewerRequest
     assert.equal(viewerBody, 'viewer-current-original')
     const elapsedMS = state.viewerFinishedAt - openAt
@@ -279,7 +286,7 @@ async function galleryTrial(mode, attempt) {
   } finally {
     releasePriority?.()
     scheduler?.dispose()
-    if(mode==='page')priorityModule.xDriveEnterForegroundPage(null)
+    if(mode==='page'||mode==='content')priorityModule.xDriveEnterForegroundPage(null)
     await fixture.close()
   }
 }
@@ -290,6 +297,15 @@ test('any committed page change preempts six genuine Files/Gallery HTTP requests
     assert.equal(row.sentThumbnailBytes,0,kind+' stale page bytes must not transfer')
     assert.ok(row.viewerMS<250,kind+' successor page must get freed slots')
     assert.equal(priorityModule.xDriveCurrentForegroundPage(),null)
+  }
+})
+test('same-route folder and album changes preempt real six-slot HTTP thumbnail contention', async () => {
+  for (const [kind, trial] of [['Files', fileTrial], ['Gallery', galleryTrial]]) {
+    const row = await trial('content', 9)
+    assert.equal(row.earlyClosed, 6, kind + ' stale content HTTP must disconnect')
+    assert.equal(row.sentThumbnailBytes, 0, kind + ' stale content must send zero bodies')
+    assert.ok(row.viewerMS < 250, kind + ' new first Range must not wait 650ms')
+    assert.equal(priorityModule.xDriveCurrentForegroundPage(), null)
   }
 })
 test('a shared foreground Viewer lease preempts six genuine HTTP thumbnails in Files and Gallery', async () => {
