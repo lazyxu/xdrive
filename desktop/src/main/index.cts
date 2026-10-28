@@ -6829,7 +6829,7 @@ function registerIPCHandlers() {
   }, false))
 
   const adminStorageOperations = new Set([
-    'stats', 'health', 'history', 'legacy', 'unreferenced', 'staging',
+    'stats', 'health', 'history', 'verification-runs', 'legacy', 'unreferenced', 'staging',
     'cleanup-runs', 'cleanup-failures', 'cleanup-staging', 'cleanup-cache', 'optimization-advice',
   ])
   ipcMain.handle('agent:cloud-admin-storage', (_event, input: unknown) => runAgentAction<unknown>(async () => {
@@ -6845,6 +6845,11 @@ function registerIPCHandlers() {
       (p.offset !== undefined && (!Number.isSafeInteger(p.offset) || p.offset < 0)) ||
       (p.cursor !== undefined && (typeof p.cursor !== 'string' || p.cursor.length > 2048)) ||
       (p.days !== undefined && ![30, 90, 180].includes(p.days)) ||
+      (p.operation === 'verification-runs' &&
+        (!Number.isSafeInteger(p.limit) || (p.limit as number) < 1 || (p.limit as number) > 50 ||
+        (p.cursor !== undefined && !/^[1-9][0-9]{0,19}$/.test(p.cursor)) ||
+        p.days !== undefined || p.offset !== undefined || p.run_id !== undefined ||
+        p.fresh !== undefined || p.kind !== undefined)) ||
       (p.run_id !== undefined && (!Number.isSafeInteger(p.run_id) || p.run_id <= 0)) ||
       (p.fresh !== undefined && typeof p.fresh !== 'boolean') ||
       (p.operation === 'cleanup-failures' && !p.run_id) ||

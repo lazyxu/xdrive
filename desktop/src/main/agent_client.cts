@@ -44,7 +44,8 @@ export type AgentAdminUser = {
   updated_at: string
 }
 export type AgentAdminStorageRequest = {
-  operation: 'stats' | 'health' | 'history' | 'legacy' | 'unreferenced' | 'optimization-advice'
+  operation: 'stats' | 'health' | 'history' | 'verification-runs' | 'legacy'
+    | 'unreferenced' | 'optimization-advice'
     | 'staging' | 'cleanup-runs' | 'cleanup-failures' | 'cleanup-staging' | 'cleanup-cache'
   limit?: number
   offset?: number

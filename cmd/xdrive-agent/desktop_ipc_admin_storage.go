@@ -13,7 +13,8 @@ type desktopIPCAdminStorageController interface {
 }
 
 var desktopAdminStorageOperations = map[string]bool{
-	"stats": true, "health": true, "history": true, "legacy": true, "optimization-advice": true,
+	"stats": true, "health": true, "history": true, "verification-runs": true,
+	"legacy": true, "optimization-advice": true,
 	"unreferenced": true, "staging": true, "cleanup-runs": true,
 	"cleanup-failures": true, "cleanup-staging": true, "cleanup-cache": true,
 }
@@ -31,6 +32,11 @@ func validDesktopAdminStorageRequest(input client.AdminStorageRequest) bool {
 	switch input.Operation {
 	case "history":
 		return input.Days == 30 || input.Days == 90 || input.Days == 180
+	case "verification-runs":
+		return input.Limit >= 1 && input.Limit <= 50 &&
+			input.Offset == 0 && input.Days == 0 && input.RunID == 0 &&
+			!input.Fresh && input.Kind == "" &&
+			validVerificationHistoryCursor(input.Cursor)
 	case "legacy", "unreferenced", "staging", "cleanup-runs":
 		return input.Limit > 0
 	case "cleanup-failures":
