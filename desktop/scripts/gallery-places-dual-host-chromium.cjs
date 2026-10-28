@@ -901,6 +901,109 @@ async function testFullGalleryDirectPhoto(browser,mode,port){
     summary.fullGalleryDirectPhotoModes.push(mode)
   }finally{await context.close()}
 }
+
+// Test the shipped Gallery Page + real Gin Owner Cell Range + shared LIVP
+// Viewer, not a new map or preview implementation. Synthetic MOV bytes are
+// transport-only; real HEIC still pixels must decode on both SDK Hosts.
+async function testFullGalleryLIVPViewerReturn(browser,mode,port){
+  const context=await browser.newContext({
+    viewport:{width:390,height:844},locale:'zh-CN',hasTouch:true,
+    isMobile:true,ignoreHTTPSErrors:true,serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(30000)
+  const errors=[]
+  page.on('pageerror',e=>errors.push(e.name))
+  await page.route('https://api.map.baidu.com/api?**',route=>{
+    assert.equal(new URL(route.request().url()).searchParams.get('ak'),
+      'TEST_ONLY_BROWSER_AK')
+    return route.fulfill({status:200,contentType:'text/javascript',body:sdkStub})
+  })
+  try{
+    await page.goto('https://'+galleryHost+':'+port+'/?mode='+mode+
+      '&full_gallery=1&full_gallery_direct=1&map_real_livp=1'+
+      (mode==='isolated'?'&places_map_mode=isolated':''),{
+      waitUntil:'domcontentloaded'})
+    await page.getByText('当前地图可查看 1 张照片',{exact:true}).waitFor()
+    const pin=page.locator('[data-xdrive-places-trusted-photo-cover]').first()
+    await pin.waitFor({state:'visible'})
+    await pin.click()
+    const drawer=page.locator('[data-xdrive-places-photo-drawer]')
+    await drawer.waitFor({state:'visible'})
+    const photo=drawer.locator('[data-xdrive-places-photo-drawer-item]').first()
+    await photo.waitFor({state:'visible'})
+    const before=await page.evaluate(()=>{
+      const p=window.__mapProbe
+      return {ranges:p.galleryPageReads.filter(x=>x.kind==='cell'),
+        cameras:p.cameras,scopes:p.queries,node:p.livp.nodeID}
+    })
+    record(mode+': real LIVP map drawer contains one signed Owner photo',
+      await drawer.locator('[data-xdrive-places-photo-drawer-item]').count()===1&&
+      before.ranges.length>=1&&before.ranges.at(-1)?.total===1&&
+      before.ranges.at(-1).nodeIDs?.length===1&&
+      before.ranges.at(-1).nodeIDs[0]===before.node&&
+      before.scopes.length>0&&before.scopes.every(q=>q.count===1&&!q.favorite))
+    await photo.click()
+    await page.getByRole('button',{name:'关闭预览'}).waitFor()
+    await page.waitForFunction(()=>{
+      const p=window.__mapProbe
+      const images=Array.from(document.querySelectorAll(
+        '[data-xdrive-image-phase] img:not([aria-hidden="true"])'))
+      return p.galleryPageDirectOpens.at(-1)?.live===true&&
+        p.liveViewer.stillTickets>=1&&
+        images.some(x=>x instanceof HTMLImageElement&&x.complete&&
+          x.naturalWidth===512&&x.naturalHeight===512)
+    })
+    const opened=await page.evaluate(()=>{
+      const p=window.__mapProbe
+      return {open:p.galleryPageDirectOpens.at(-1),
+        ranges:p.galleryPageReads.filter(x=>x.kind==='cell'),
+        stillTickets:p.liveViewer.stillTickets,errors:p.galleryPageErrors}
+    })
+    record(mode+': shared Live Photo Viewer keeps exactly same Owner Cell',
+      opened.open?.kind==='baidu-cell'&&opened.open?.live===true&&
+      opened.open?.total===1&&opened.open?.nodeID===before.node&&
+      opened.ranges.length>before.ranges.length&&
+      opened.ranges.at(-1)?.total===1&&opened.stillTickets>=1&&
+      opened.errors.length===0)
+    record(mode+': actual shared Viewer offers Live Photo hold-to-play',
+      await page.getByRole('button',{name:/按住播放，松开停止/}).count()===1&&
+      errors.length===0)
+    if(mode==='isolated')record('isolated: Live Viewer disposes HTTPS SDK Child',
+      !page.frames().some(f=>f.url().includes(childHost))&&
+      await page.locator('[data-xdrive-baidu-isolated-frame]').count()===0)
+    await page.getByRole('button',{name:'关闭预览'}).click()
+    await page.getByText('当前地图可查看 1 张照片',{exact:true}).waitFor()
+    await drawer.waitFor({state:'visible'})
+    await drawer.locator('[data-xdrive-places-photo-drawer-item]').first()
+      .waitFor({state:'visible'})
+    await page.waitForFunction(previous=>
+      window.__mapProbe.galleryPageDirectClosed===1&&
+      window.__mapProbe.galleryPageReads.filter(x=>x.kind==='cell').length>previous,
+      opened.ranges.length)
+    const returned=await page.evaluate(()=>{
+      const p=window.__mapProbe
+      return {closed:p.galleryPageDirectClosed,
+        range:p.galleryPageReads.filter(x=>x.kind==='cell').at(-1),
+        cameras:p.cameras,scopes:p.queries,
+        map:!!document.querySelector('[data-xdrive-places-cluster-overview]'),
+        drawer:!!document.querySelector('[data-xdrive-places-photo-drawer]'),
+        errors:p.galleryPageErrors}
+    })
+    const camera=before.cameras.at(-1),after=returned.cameras.at(-1)
+    const sameCamera=camera&&after
+      ? camera.latitude===after.latitude&&
+        camera.longitude===after.longitude&&camera.zoom===after.zoom
+      : !camera&&!after
+    record(mode+': Live Viewer Back restores exact map Owner and selection',
+      returned.closed===1&&returned.range?.total===1&&
+      returned.range.nodeIDs?.[0]===before.node&&sameCamera&&
+      returned.scopes.length>0&&
+      returned.scopes.every(q=>q.count===1&&!q.favorite)&&
+      returned.map&&returned.drawer&&returned.errors.length===0&&
+      errors.length===0)
+    summary.fullGalleryLIVPViewerReturnModes.push(mode)
+  }finally{await context.close()}
+}
 async function swipeMobileDrawerGrip(page,direction){
   const rect=await page.locator('[data-xdrive-places-photo-drawer-grip]').boundingBox()
   assert(rect && rect.width>100 && rect.height>=24,'actual visible photo grip required')
