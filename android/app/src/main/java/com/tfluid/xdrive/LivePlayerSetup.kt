@@ -1,7 +1,7 @@
 package com.tfluid.xdrive
 
 /**
- * A native Media3 player can throw after resources have already been allocated
+ * Native Gallery Video and Live Photo Media3 players can throw after resources have already been allocated
  * (for example, setMediaSource or prepare). Compose must not crash, and failed
  * construction must release the partially initialized instance exactly once.
  *
