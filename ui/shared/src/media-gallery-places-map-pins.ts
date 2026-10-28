@@ -102,6 +102,12 @@ export function xDriveVerifiedMapPhotoProjections(
  */
 export const XDRIVE_PLACES_MAP_COVER_MAX = 24
 
+/** Measured, trusted React control geometry in the Parent map canvas.
+ * The SDK Child never supplies these positions or media authority. */
+export type XDrivePlacesMapOverlayRect = Readonly<{
+  left:number; top:number; right:number; bottom:number
+}>
+
 export function xDriveSelectVisibleMapPhotoCovers<T extends Readonly<{
   x:number; y:number; count:number
 }>>(
@@ -109,6 +115,7 @@ export function xDriveSelectVisibleMapPhotoCovers<T extends Readonly<{
   width: number,
   height: number,
   compact: boolean,
+  overlayRects: readonly XDrivePlacesMapOverlayRect[] | null = null,
 ): T[] {
   if (!Array.isArray(verifiedCandidates) || verifiedCandidates.length > 64 ||
       !Number.isSafeInteger(width) || width < 120 || width > 4096 ||
@@ -120,9 +127,17 @@ export function xDriveSelectVisibleMapPhotoCovers<T extends Readonly<{
   const minX = cardRadius + 12
   const maxX = width - cardRadius - 34
   const minY = cardRadius + 34
-  // Reserve the real floating count and full-camera-wall controls at the bottom.
-  // Compact narrow screens may wrap the controls into two rows.
-  const maxY = height - (compact ? 92 : 96)
+  // Before DOM layout is measured, retain the conservative original footer
+  // guard. After layout, protect ONLY actual React controls, including
+  // wrap, large text, rotation and safe-area changes.
+  const measuredRects = Array.isArray(overlayRects) && overlayRects.length <= 8 &&
+    overlayRects.every(rect => rect &&
+      [rect.left,rect.top,rect.right,rect.bottom].every(Number.isFinite) &&
+      rect.left >= 0 && rect.top >= 0 &&
+      rect.right <= width && rect.bottom <= height &&
+      rect.right > rect.left && rect.bottom > rect.top)
+    ? overlayRects : null
+  const maxY = height - (measuredRects ? cardRadius + 12 : compact ? 92 : 96)
   // Exclude rectangular card + badge overlap, including diagonal neighbors.
   const gapX = width < 600 ? 92 : 104
   const gapY = width < 600 ? 82 : 92
@@ -134,6 +149,13 @@ export function xDriveSelectVisibleMapPhotoCovers<T extends Readonly<{
         !Number.isFinite(pin.x) || !Number.isFinite(pin.y) ||
         pin.x < minX || pin.x > maxX ||
         pin.y < minY || pin.y > maxY) continue
+    // Include protruding count badge and an 8px touch gap; never move the
+    // actual BD09 point just to make a card fit under an overlay.
+    if (measuredRects?.some(rect =>
+      pin.x + cardRadius + 16 > rect.left &&
+      pin.x - cardRadius - 12 < rect.right &&
+      pin.y + cardRadius + 12 > rect.top &&
+      pin.y - cardRadius - 16 < rect.bottom)) continue
     if (visible.some(previous => Math.abs(previous.x - pin.x) < gapX &&
         Math.abs(previous.y - pin.y) < gapY)) continue
     visible.push(pin)

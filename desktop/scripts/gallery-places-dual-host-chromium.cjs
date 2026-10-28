@@ -2210,6 +2210,84 @@ async function testPhotoMarkerPresentation(browser,mode,port){
   }finally{await context.close()}
 }
 
+// Real Chromium proves the shared trusted Parent measures floating iOS map
+// controls rather than relying on a stale fixed-pixel bottom dock. Force a
+// narrow/wrapped summary into the camera without altering any SDK/Owner Cell;
+// both inline and isolated Hosts must hide the occluded photo cover, then
+// restore it when the control moves away.
+async function testMapOverlayPinOcclusion(browser,mode,port){
+  const context=await browser.newContext({
+    viewport:{width:390,height:844},locale:'zh-CN',
+    ignoreHTTPSErrors:true,serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(20000)
+  const errors=[]
+  page.on('pageerror',error=>errors.push(error.message))
+  await page.route('https://api.map.baidu.com/api?**',route=>{
+    assert.equal(new URL(route.request().url()).searchParams.get('ak'),
+      'TEST_ONLY_BROWSER_AK')
+    return route.fulfill({status:200,contentType:'text/javascript',body:sdkStub})
+  })
+  try{
+    await page.goto('https://'+galleryHost+':'+port+'/?mode='+mode,
+      {waitUntil:'domcontentloaded'})
+    await page.getByText('当前地图可查看 9 张照片',{exact:true}).waitFor()
+    const cover=page.locator('[data-xdrive-places-trusted-photo-cover]').first()
+    await cover.waitFor({state:'visible'})
+    const original=await cover.boundingBox()
+    assert(original,'original verified photo cover must have a painted rectangle')
+    const before=await page.evaluate(()=>window.__mapProbe.queries.length)
+    const reflow=await page.addStyleTag({content:
+      '[data-xdrive-places-map-photo-summary]{'+
+      'left:calc(50% - 150px)!important;right:auto!important;'+
+      'width:300px!important;min-height:140px!important;'+
+      'bottom:calc(50% - 70px)!important;'+
+      'justify-content:center!important;align-items:center!important;}'})
+    // The actual DOM controls now occupy the previous photo rectangle.
+    // ResizeObserver reselects marker presentation without a new /cells.
+    const occupied=await page.evaluate(pin=>{
+      const summary=document.querySelector('[data-xdrive-places-map-photo-summary]')
+      return Array.from(summary?.children||[]).some(el=>{
+        const box=el.getBoundingClientRect()
+        return box.left<pin.x+pin.width && box.right>pin.x &&
+          box.top<pin.y+pin.height && box.bottom>pin.y
+      })
+    },original)
+    await page.waitForFunction(()=>
+      document.querySelectorAll('[data-xdrive-places-trusted-photo-cover]').length===0)
+    const after=await page.evaluate(()=>({
+      queries:window.__mapProbe.queries.length,
+      count:document.querySelector('[data-xdrive-places-map-photo-summary]')?.textContent,
+      signedCells:document.querySelectorAll(
+        '[data-xdrive-places-cluster-list] button').length,
+      fixedStrip:document.querySelectorAll(
+        '[data-xdrive-places-photo-collection-strip]').length,
+    }))
+    record(mode+': measured map controls hide a genuinely overlapping photo pin',
+      occupied && after.signedCells===1 && after.queries===before &&
+      after.count?.includes('9 张照片') && after.fixedStrip===0 &&
+      errors.length===0)
+    // A hidden presentation is never a revoked Owner Cell: its existing
+    // signed Cell must still load through /cell-items into the real drawer.
+    const list=page.locator('[data-xdrive-places-cluster-list]')
+    if(await list.getAttribute('open')===null)
+      await list.locator('summary').click()
+    await list.locator('button').first().click()
+    await page.locator('[data-xdrive-places-photo-drawer-items] button')
+      .first().waitFor({state:'visible'})
+    const range=await page.evaluate(()=>
+      window.__mapProbe.photoPreviewRanges.at(-1))
+    record(mode+': occluded map photo still opens its current signed Owner Range',
+      range?.total===9 && range?.items===9 && errors.length===0)
+    await page.getByRole('button',{name:'关闭照片抽屉'}).click()
+    await reflow.evaluate(el=>el.remove())
+    await cover.waitFor({state:'visible'})
+    record(mode+': removing a wrapped map overlay restores the photo without refetch',
+      await page.evaluate(()=>window.__mapProbe.queries.length)===before &&
+      errors.length===0)
+  }finally{await context.close()}
+}
+
 // Real browser accessibility and color-scheme semantics for the SAME mounted
 // trusted Owner React map, in inline and independent HTTPS Child SDK modes.
 // This is controlled Chromium (not physical VoiceOver/Safari certification).
@@ -2643,6 +2721,8 @@ async function main(){
     if(!ginURL){
       await testPhotoMarkerPresentation(browser,'inline',port)
       await testPhotoMarkerPresentation(browser,'isolated',port)
+      await testMapOverlayPinOcclusion(browser,'inline',port)
+      await testMapOverlayPinOcclusion(browser,'isolated',port)
       await testDelayedBD09Map(browser,'inline',port)
       await testDelayedBD09Map(browser,'isolated',port)
       await testMapColdH264Poster(browser,'inline',port)
