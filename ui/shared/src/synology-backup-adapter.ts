@@ -1,6 +1,6 @@
 import type { XDriveDiagnosticReport } from './mui/DiagnosticsPage'
 import type { XDriveFileTextPreview } from './file-preview'
-import type { QuotaUsage } from './models'
+import type { QuotaUsage, MediaItemRange, MediaAlbum } from './models'
 import type { XDriveCloudStorageDataSource } from './mui/CloudStoragePage'
 import type {
   XDriveDeviceBackupOverview, XDriveDeviceBackupRunPage,
@@ -110,6 +110,103 @@ export function xDriveValidateSynologyOwnerFilesPage(
 }
 
 
+
+// The browser re-validates the exact redacted Server Owner projection returned
+// by the fixed DSM CGI. Unlike Desktop media RPC, unknown private fields,
+// unsafe numbers and unrelated metadata can never enter shared Gallery JSX.
+const ownerGalleryNodeKeys = new Set([
+  'id', 'parent_id', 'name', 'type', 'size', 'revision', 'created_at', 'updated_at',
+])
+const ownerGalleryMetadataKeys = new Set([
+  'media_kind', 'mime_type', 'width', 'height', 'duration_ms',
+  'captured_at', 'index_state', 'has_thumbnail',
+])
+const ownerGalleryItemKeys = new Set([
+  'node', 'metadata', 'asset_kind', 'favorite', 'live_photo',
+])
+const ownerGalleryAlbumKeys = new Set([
+  'id', 'kind', 'name', 'item_count', 'album_folder_id',
+  'revision', 'cover_node_id', 'updated_at',
+])
+const ownerGalleryAlbumID = /^(?:manual|source|folder|smart):[A-Za-z0-9_:-]{1,150}$/
+const ownerGalleryObject = (raw: unknown): raw is Record<string, unknown> =>
+  raw !== null && typeof raw === 'object' && !Array.isArray(raw)
+const ownerGalleryInt = (raw: unknown, positive = false): raw is number =>
+  Number.isSafeInteger(raw) && (positive ? (raw as number) > 0 : (raw as number) >= 0)
+const ownerGalleryTime = (value: unknown): value is string =>
+  typeof value === 'string' && value.length > 0 && value.length <= 64 &&
+  Number.isFinite(Date.parse(value))
+function validOwnerGalleryItem(value: unknown): boolean {
+  if (!ownerGalleryObject(value) ||
+    Object.keys(value).some((key) => !ownerGalleryItemKeys.has(key)) ||
+    !ownerGalleryObject(value.node) || !ownerGalleryObject(value.metadata)) return false
+  const n = value.node
+  const m = value.metadata
+  return Object.keys(n).every((key) => ownerGalleryNodeKeys.has(key)) &&
+    ownerGalleryInt(n.id, true) && ownerGalleryInt(n.parent_id, true) &&
+    ownerGalleryInt(n.revision, true) && ownerGalleryInt(n.size) &&
+    n.type === 'file' &&
+    typeof n.name === 'string' && n.name.length > 0 && n.name.length <= 512 &&
+    !/[\\u0000\\r\\n]/.test(n.name) &&
+    ownerGalleryTime(n.created_at) && ownerGalleryTime(n.updated_at) &&
+    Object.keys(m).every((key) => ownerGalleryMetadataKeys.has(key)) &&
+    (m.media_kind === 'image' || m.media_kind === 'video') &&
+    typeof m.index_state === 'string' && m.index_state.length <= 64 &&
+    /^[\\x20-\\x7e]*$/.test(m.index_state) &&
+    typeof m.has_thumbnail === 'boolean' &&
+    (m.mime_type === undefined || (typeof m.mime_type === 'string' &&
+      m.mime_type.length <= 128 && /^[\\x20-\\x7e]*$/.test(m.mime_type))) &&
+    (m.width === undefined || (ownerGalleryInt(m.width) && m.width <= 100000)) &&
+    (m.height === undefined || (ownerGalleryInt(m.height) && m.height <= 100000)) &&
+    (m.duration_ms === undefined || ownerGalleryInt(m.duration_ms)) &&
+    (m.captured_at === undefined || ownerGalleryTime(m.captured_at)) &&
+    (value.asset_kind === undefined ||
+      (typeof value.asset_kind === 'string' && value.asset_kind.length <= 64 &&
+       /^[a-z0-9_]*$/.test(value.asset_kind))) &&
+    typeof value.favorite === 'boolean' &&
+    (value.live_photo === undefined || typeof value.live_photo === 'boolean')
+}
+function validateOwnerGalleryPage(raw: unknown, limit: number, offset: number): MediaItemRange {
+  if (!ownerGalleryObject(raw) ||
+    Object.keys(raw).some((key) => !['items', 'total_count', 'offset', 'limit'].includes(key)) ||
+    !Array.isArray(raw.items) || raw.items.length > limit ||
+    !ownerGalleryInt(raw.total_count) || raw.offset !== offset || raw.limit !== limit ||
+    offset + raw.items.length > raw.total_count) {
+    throw new Error('Invalid authenticated Server Owner Gallery Range')
+  }
+  const seen = new Set<number>()
+  for (const item of raw.items) {
+    if (!validOwnerGalleryItem(item) || seen.has(item.node.id)) {
+      throw new Error('Invalid or duplicate authenticated Owner Gallery item')
+    }
+    seen.add(item.node.id)
+  }
+  return raw as unknown as MediaItemRange
+}
+function validateOwnerGalleryAlbums(raw: unknown): MediaAlbum[] {
+  if (!Array.isArray(raw) || raw.length > 4096) {
+    throw new Error('Invalid authenticated Server Owner Gallery albums')
+  }
+  const seen = new Set<string>()
+  for (const value of raw) {
+    if (!ownerGalleryObject(value) ||
+      Object.keys(value).some((key) => !ownerGalleryAlbumKeys.has(key)) ||
+      typeof value.id !== 'string' || !ownerGalleryAlbumID.test(value.id) ||
+      seen.has(value.id) ||
+      !['folder', 'source', 'manual', 'smart', 'imported'].includes(String(value.kind)) ||
+      typeof value.name !== 'string' || value.name.length === 0 || value.name.length > 512 ||
+      !ownerGalleryInt(value.item_count) ||
+      (value.album_folder_id !== undefined && !ownerGalleryInt(value.album_folder_id)) ||
+      (value.revision !== undefined && !ownerGalleryInt(value.revision)) ||
+      (value.cover_node_id !== undefined && !ownerGalleryInt(value.cover_node_id, true)) ||
+      (value.updated_at !== undefined && !ownerGalleryTime(value.updated_at))) {
+      throw new Error('Invalid or duplicate authenticated Owner Gallery album')
+    }
+    seen.add(value.id)
+  }
+  return raw as MediaAlbum[]
+}
+
 export interface XDriveSynologyBackupLocalClient extends XDriveLocalBackupCommonBatchActions, XDriveLocalBackupScheduleActions {
   list(signal?: AbortSignal): Promise<XDriveSynologyLocalSource[]>
   diagnostics(signal?: AbortSignal): Promise<XDriveDiagnosticReport>
@@ -123,6 +220,12 @@ export interface XDriveSynologyBackupLocalClient extends XDriveLocalBackupCommon
   /** Authenticated Agent Server Owner quota, not a DSM volume metric. */
   ownerQuota(signal?: AbortSignal): Promise<QuotaUsage>
   ownerFilesRoot(signal?: AbortSignal): Promise<XDriveSynologyOwnerFileNode>
+  /** Bounded Server Owner Gallery wall and album read; never full Desktop Media RPC. */
+  ownerGalleryItemsRange(
+    kind: 'all' | 'image' | 'video', limit: number, offset: number,
+    albumID?: string, signal?: AbortSignal,
+  ): Promise<MediaItemRange>
+  ownerGalleryAlbums(signal?: AbortSignal): Promise<MediaAlbum[]>
   /** Strict bounded JSON text read, not arbitrary binary or signed content URL. */
   ownerFileTextPreview(nodeID: number, signal?: AbortSignal): Promise<XDriveFileTextPreview>
   /** Current revision must be re-verified by the Owner Server; no Agent cached
@@ -166,7 +269,8 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
     if (!['bootstrap', 'sources', 'status', 'history', 'run', 'control', 'schedule',
       'device-backups', 'device-backup-runs',
       'device-backup-page', 'device-backup-folders', 'cloud-quota',
-      'cloud-root', 'cloud-children', 'cloud-text-preview', 'cloud-media-range', 'cloud-thumbnail'].includes(operation)) {
+      'cloud-root', 'cloud-children', 'cloud-text-preview', 'cloud-media-range', 'cloud-thumbnail',
+       'cloud-gallery-items', 'cloud-gallery-albums'].includes(operation)) {
       throw new Error('Unsupported DSM backup operation')
     }
     // DSM custom CGI is one executable URL. Extra /v1/ PATH_INFO suffixes
@@ -244,6 +348,21 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
         summary: { pass: 2, warn: 0, fail: 0 },
       }
     },
+    ownerGalleryItemsRange: async (kind, limit, offset, albumID = '', signal) => {
+      if (!['all', 'image', 'video'].includes(kind) ||
+        !Number.isSafeInteger(limit) || limit < 1 || limit > 100 ||
+        !Number.isSafeInteger(offset) || offset < 0 || offset > 10000000 ||
+        (albumID !== '' && !ownerGalleryAlbumID.test(albumID))) {
+        throw new Error('Invalid authenticated Owner Gallery read selector')
+      }
+      const query = '/v1/cloud-gallery-items?kind=' + kind +
+        '&limit=' + limit + '&offset=' + offset +
+        (albumID ? '&album_id=' + encodeURIComponent(albumID) : '')
+      return validateOwnerGalleryPage(
+        await request<unknown>(query, 'GET', undefined, signal), limit, offset)
+    },
+    ownerGalleryAlbums: async (signal) => validateOwnerGalleryAlbums(
+      await request<unknown>('/v1/cloud-gallery-albums', 'GET', undefined, signal)),
     ownerFilesRoot: async (signal) =>
       xDriveValidateSynologyOwnerFileRoot(
         await request<unknown>('/v1/cloud-root', 'GET', undefined, signal)),
