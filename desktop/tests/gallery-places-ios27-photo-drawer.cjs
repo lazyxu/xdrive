@@ -29,12 +29,12 @@ const scope = {filters:{sort_by:'captured',sort_dir:'desc'},albumKey:''}
 const item = (id,revision=2) => ({node:{id,revision,name:'photo-' + id + '.jpg',type:'file',
   size:500,created_at:'2026-01-01T00:00:00Z',updated_at:'2026-01-01T00:00:00Z'},
   metadata:{mime_type:'image/jpeg'}})
-const range=(count=2,items=[item(45),item(46)],limit=12)=>({
+const range=(count=2,items=[item(45),item(46)],limit=48)=>({
   total_count:count,offset:0,limit,items,
 })
 
 test('Drawer preview accepts only complete authenticated current Cell ranges',()=>{
-  assert.equal(helper.XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT,12)
+  assert.equal(helper.XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT,48)
   assert.equal(helper.xDrivePlacesDrawerValidRange(selection(),range()),true)
   // Map /cells counts assets; Gallery /cell-items may fold Live motion.
   assert.equal(helper.xDrivePlacesCellAcceptsLogicalRangeCount(selection(3),2),true)
@@ -194,8 +194,11 @@ test('390px trusted photo drawer uses safe-area layout and touch-only pointer gr
   assert.doesNotMatch(sheet,/onTouchEnd=/)
   assert.match(sheet,/safe-area-inset-left/)
   assert.match(sheet,/safe-area-inset-right/)
-  assert.match(sheet,/width:\{xs:'auto',sm:'min\(560px/)
+  assert.match(sheet,/width:\{xs:'calc\(100% - max\(8px, env\(safe-area-inset-left\)\)/)
   assert.match(sheet,/overscrollBehavior:'contain',touchAction:'auto'/)
+  assert.match(sheet,/<Dialog open onClose=\{onClose\} fullWidth maxWidth="md"/)
+  assert.match(sheet,/data-xdrive-places-album-dialog/)
+  assert.match(sheet,/repeat\(auto-fill, minmax\(108px, 1fr\)\)/)
   // Cards opt out of double-tap click suppression while their scroll parent
   // remains free to handle native horizontal/vertical scrolling.
   assert.match(sheet,/appearance:'none',touchAction:'manipulation'/)

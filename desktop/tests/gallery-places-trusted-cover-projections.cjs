@@ -135,15 +135,15 @@ test('mobile photo pins respect compact count-badge, safe edge and landscape con
   assert.deepEqual(xDriveSelectVisibleMapPhotoCovers(pins,390,0,true),[])
 })
 
-test('100k media keeps <=24 verified photo covers; all 64 native Cells stay independently accessible', () => {
+test('all 64 current Owner cells may have bounded photo covers when geometry permits', () => {
   const pins=Array.from({length:64},(_,i)=>({
     count:64-i,x:110+(i%8)*110,y:110+Math.floor(i/8)*108,
   }))
   const output=xDriveSelectVisibleMapPhotoCovers(pins,1000,1000,false)
-  assert.equal(XDRIVE_PLACES_MAP_COVER_MAX,24)
-  assert.equal(output.length,24)
+  assert.equal(XDRIVE_PLACES_MAP_COVER_MAX,64)
+  assert.equal(output.length,64)
   assert.equal(pins.length,64)
-  assert.equal(new Set(output.map(p=>p.count)).size,24)
+  assert.equal(new Set(output.map(p=>p.count)).size,64)
   const surface=fs.readFileSync(path.join(root,
     'ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx'),'utf8')
   assert.match(surface,/xDriveSelectVisibleMapPhotoCovers\(/)
@@ -175,7 +175,7 @@ test('photo overlay has one shared presentation lease for inline and isolated na
   assert.match(child,/renderCells\(false\)/)
   assert.doesNotMatch(child,/\\.node_id\\b|\\.asset_id\\b|photo_url|loadThumbnail|Authorization:/,
     'no private photo transport may enter the isolated SDK Host')
-  assert.equal(XDRIVE_PLACES_MAP_COVER_MAX,24)
+  assert.equal(XDRIVE_PLACES_MAP_COVER_MAX,64)
 })
 
 test('map screenshot no longer owns a fixed photo thumbnail strip', () => {

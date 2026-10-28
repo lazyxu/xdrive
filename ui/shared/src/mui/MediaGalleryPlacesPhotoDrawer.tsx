@@ -64,7 +64,7 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
       aria-label="此地点的照片" data-xdrive-places-album-dialog
       // This is the SAME shared Owner Gallery UI for both map SDK Hosts.
       // MUI Dialog owns focus trap, Escape, backdrop and scroll lock.
-      PaperProps={{sx:{width:{xs:'calc(100% - 16px)',sm:'min(880px, calc(100vw - 40px))'},
+      PaperProps={{sx:{width:{xs:'calc(100% - max(8px, env(safe-area-inset-left)) - max(8px, env(safe-area-inset-right)))',sm:'min(880px, calc(100vw - 40px))'},
         maxWidth:880,maxHeight:'min(86dvh, 820px)',m:1,
         borderRadius:{xs:2.5,sm:3},overflow:'hidden',
         bgcolor:'background.paper',boxShadow:'0 16px 54px rgba(0,0,0,.34)'}}}>
