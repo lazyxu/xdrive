@@ -57,6 +57,7 @@ class DriveAppTest {
     private var gpsOverviewReads = 0
     private var galleryBd09Fixture = false
     private var bd09MapReads = 0
+    private var bd09DrilldownFixture = false
     private var bd09CellFixture = false
     private var bd09CellReads = 0
     private var galleryAutoPagingFixture = false
@@ -149,11 +150,14 @@ class DriveAppTest {
         override suspend fun baiduNativeMapCells(
             accessToken: String, bounds: OwnerBd09Bounds,
         ): OwnerBd09MapCells {
+            val world = OwnerBd09Cell(7, 5, 3, 61, 40, 1, 35.505, 139.706)
+            val child = requireNotNull(bd09CellSubBounds(OwnerBd09Bounds.WORLD, world))
             check(accessToken == "fixture" && galleryBd09Fixture &&
-                bounds == OwnerBd09Bounds.WORLD)
+                (bounds == OwnerBd09Bounds.WORLD ||
+                    (bd09DrilldownFixture && bounds == child)))
             bd09MapReads++
             return OwnerBd09MapCells(listOf(
-                OwnerBd09Cell(7, 5, 3, 61, 40, 1, 35.505, 139.706),
+                if (bounds == child) world.copy(cellX = 0, cellY = 4) else world,
             ), 3)
         }
         override suspend fun galleryBd09CellPage(
@@ -161,10 +165,13 @@ class DriveAppTest {
             cell: OwnerBd09Cell, offset: Int,
             sortBy: String, sortDir: String,
         ): GalleryPage {
+            val world = OwnerBd09Cell(7, 5, 3, 61, 40, 1, 35.505, 139.706)
+            val child = requireNotNull(bd09CellSubBounds(OwnerBd09Bounds.WORLD, world))
+            val scoped = if (bd09DrilldownFixture)
+                bounds == child && cell == world.copy(cellX = 0, cellY = 4)
+            else bounds == OwnerBd09Bounds.WORLD && cell == world
             check(accessToken == "fixture" && galleryBd09Fixture &&
-                bd09CellFixture && bounds == OwnerBd09Bounds.WORLD &&
-                cell.cellX == 7 && cell.cellY == 5 && cell.nodeId == 40L &&
-                cell.nodeRevision == 1L && offset == 0 &&
+                bd09CellFixture && scoped && offset == 0 &&
                 sortBy == "captured" && sortDir == "desc")
             bd09CellReads++
             return GalleryPage(listOf(galleryFixture), 1, 0)
@@ -2508,6 +2515,74 @@ class DriveAppTest {
         compose.runOnIdle { org.junit.Assert.assertEquals(1, gpsOverviewReads) }
     }
 
+
+    @Test fun nativeBd09DrilldownShowsTrueChildCellsAndRestoresParentAfterViewer() {
+        galleryGpsOverviewFixture = true
+        galleryBd09Fixture = true
+        bd09DrilldownFixture = true
+        bd09CellFixture = true
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryLoaded && !controller.state.value.loading
+        }
+        val original = controller.state.value.galleryItems
+        compose.onNodeWithTag("gallery-view-options").performClick()
+        compose.onNodeWithTag("gallery-show-map").performScrollTo().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryMapLoaded && !controller.state.value.loading
+        }
+        compose.onNodeWithTag("gallery-map-open-bd09").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryBd09Cells != null && !controller.state.value.loading
+        }
+        compose.onNodeWithTag("gallery-map-zoom-7-5")
+            .performScrollTo().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryBd09History.size == 1 &&
+                controller.state.value.galleryBd09Cells?.cells?.singleOrNull()?.cellX == 0 &&
+                !controller.state.value.loading
+        }
+        compose.onNodeWithTag("gallery-map-back-one-level").assertExists()
+        compose.onNodeWithTag("gallery-map-bd09-distribution").assertExists()
+        compose.onNodeWithTag("gallery-map-bd09-cell-0-4")
+            .performScrollTo().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryMapCellSelected != null &&
+                controller.state.value.galleryLoaded && !controller.state.value.loading
+        }
+        compose.onNodeWithTag("gallery-map-cell-wall").assertExists()
+        compose.onNodeWithTag("gallery-item-40", useUnmergedTree = true).performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryViewer?.node?.id == 40L
+        }
+        compose.onNodeWithTag("gallery-photo-close").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryMapCellSelected != null &&
+                controller.state.value.galleryViewer == null
+        }
+        compose.onNodeWithTag("gallery-map-cell-back").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryMapCellSelected == null &&
+                controller.state.value.galleryBd09Cells != null
+        }
+        compose.onNodeWithTag("gallery-map-back-one-level").performClick()
+        compose.onNodeWithTag("gallery-map-bd09-cell-7-5").assertExists()
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(OwnerBd09Bounds.WORLD,
+                controller.state.value.galleryBd09Bounds)
+            org.junit.Assert.assertTrue(controller.state.value.galleryBd09History.isEmpty())
+            org.junit.Assert.assertEquals(2, bd09MapReads)
+            org.junit.Assert.assertEquals(1, bd09CellReads)
+        }
+        compose.onNodeWithTag("gallery-map-close").performClick()
+        compose.onNodeWithTag("gallery-wall").assertExists()
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(original, controller.state.value.galleryItems)
+            org.junit.Assert.assertEquals(1, gpsOverviewReads)
+        }
+    }
 
     @Test fun nativeBd09CellOpensSameGalleryViewerAndReturnsThroughMap() {
         galleryGpsOverviewFixture = true
