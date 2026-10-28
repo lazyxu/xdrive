@@ -59,18 +59,23 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
     const view=node.ownerDocument.defaultView
     const apply = () => {
       if (listRef.current !== node || !node.isConnected) return
-      node.scrollTop=initialPresentation.scrollTop
-      node.scrollLeft=initialPresentation.scrollLeft
+      node.scrollTop = initialPresentation.scrollTop
+      node.scrollLeft = initialPresentation.scrollLeft
     }
     apply()
+    let first: number | undefined
     let second: number | undefined
-    const first=view?.requestAnimationFrame(() => {
-      apply()
-      second=view.requestAnimationFrame(() => {
+    if (view) {
+      first=view.requestAnimationFrame(() => {
         apply()
-        if (listRef.current === node) appliedReturn.current=node
+        second=view.requestAnimationFrame(() => {
+          apply()
+          if (listRef.current === node) appliedReturn.current=node
+        })
       })
-    })
+    } else {
+      appliedReturn.current=node
+    }
     return () => {
       if (first !== undefined) view?.cancelAnimationFrame(first)
       if (second !== undefined) view?.cancelAnimationFrame(second)
