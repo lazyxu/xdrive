@@ -4410,14 +4410,15 @@ export class AgentIPCClient {
     return this.request<{ ok: boolean }>('DELETE', `/v1/cloud/admin-users/${id}`)
   }
 
-  cloudBackgroundTaskActiveSummary() {
+  cloudBackgroundTaskActiveSummary(signal?: AbortSignal) {
     return this.request<AgentBackgroundTaskActiveSummary>(
       'GET',
       '/v1/cloud/background-task-summary',
+      undefined, 10_000, signal,
     )
   }
 
-  cloudBackgroundTaskPage(global = false, limit = 50, cursor = '') {
+  cloudBackgroundTaskPage(global = false, limit = 50, cursor = '', signal?: AbortSignal) {
     const query = new URLSearchParams({
       limit: String(Math.min(200, Math.max(1, Math.trunc(limit)))),
       ...(global ? { global: 'true' } : {}),
@@ -4426,6 +4427,7 @@ export class AgentIPCClient {
     return this.request<AgentBackgroundTaskPage>(
       'GET',
       `/v1/cloud/background-task-page?${query.toString()}`,
+      undefined, 10_000, signal,
     )
   }
 
