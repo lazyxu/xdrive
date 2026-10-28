@@ -1748,7 +1748,7 @@ function FileManager({
   }, [setAppView])
 
   const runStorageMaintenance = useCallback(async (
-    kind: 'storage_verify' | 'storage_repair' | 'storage_optimization',
+    kind: 'storage_verify_fast' | 'storage_verify' | 'storage_repair' | 'storage_optimization',
   ) => {
     const result = await api.controlBackgroundTask(`system-maintenance:${kind}`, 'run', true)
     const taskID = (result.result_task_id || result.task_id || '').trim()

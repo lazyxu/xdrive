@@ -929,6 +929,7 @@ func TestSourceVerifyMaintenanceRejectsNonAdminIntent(t *testing.T) {
 		meta.SystemMaintenanceKindMediaVerify,
 		meta.SystemMaintenanceKindMediaRepair,
 		meta.SystemMaintenanceKindStorageVerify,
+		meta.SystemMaintenanceKindStorageVerifyFast,
 		meta.SystemMaintenanceKindStorageRepair,
 	} {
 		_, err := server.requestSystemMaintenanceRun(

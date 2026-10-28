@@ -183,6 +183,7 @@ const (
 	SystemMaintenanceKindMediaVerify         = "media_verify"
 	SystemMaintenanceKindMediaRepair         = "media_repair"
 	SystemMaintenanceKindStorageVerify       = "storage_verify"
+	SystemMaintenanceKindStorageVerifyFast   = "storage_verify_fast"
 	SystemMaintenanceKindStorageRepair       = "storage_repair"
 	SystemMaintenanceKindStorageOptimization = "storage_optimization"
 
