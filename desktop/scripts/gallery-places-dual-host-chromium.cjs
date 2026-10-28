@@ -36,7 +36,7 @@ const summary={sourceCommit:process.env.XD_PR_HEAD || null,
   fullGalleryPageModes:[],fullGalleryDirectPhotoModes:[],mobileDrawerModes:[],
   favoriteMapCloseModes:[],fullDocumentHandoffModes:[],
   fullDocumentComboModes:[],fullDocumentNegativeFilterModes:[],
-  realHEICMapCoverModes:[],realLIVPMapCoverModes:[],
+  sourceRevisionModes:[],realHEICMapCoverModes:[],realLIVPMapCoverModes:[],
   checks:[],passed:false,errors:[]}
 const record=(name,ok)=>{summary.checks.push({name,passed:!!ok});assert(ok,name)}
 const h264GoSource=fs.readFileSync(path.join(root,
@@ -511,6 +511,160 @@ async function testInvalidatedOwnerHandoff(browser,from,port,scenario){
     await context.close()
   }
 }
+/** A current Owner Node can be replaced after its BD09 position was
+ * derived. The existing protected /cells and /cell-items must reject the
+ * old source revision under both SDK Hosts, without a new map renderer or
+ * a client-side fake permission. */
+async function testStaleSourceRevisionOwnerMap(browser,mode,port){
+  const context=await browser.newContext({
+    viewport:{width:390,height:844},locale:'zh-CN',
+    ignoreHTTPSErrors:true,serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(30000)
+  const errors=[]
+  page.on('pageerror',error=>errors.push(error.name))
+  await page.route('https://api.map.baidu.com/api?**',route=>{
+    assert.equal(new URL(route.request().url()).searchParams.get('ak'),
+      'TEST_ONLY_BROWSER_AK')
+    return route.fulfill({status:200,contentType:'text/javascript',body:sdkStub})
+  })
+  const fixtureMutation=action=>page.evaluate(async action=>{
+    const owner=await fetch('/__fixture/map-owner',{cache:'no-store'})
+      .then(response=>response.json())
+    const response=await fetch('/__fixture/map-handoff-invalidate',{
+      method:'POST',cache:'no-store',
+      headers:{Authorization:'Bearer '+owner.token,
+        'Content-Type':'application/json'},
+      body:JSON.stringify({action})})
+    return response.status
+  },action)
+  const capturedCells=()=>page.evaluate(async()=>{
+    const original=window.__mapProbe?.queries?.at(-1)
+    if(!original?.bounds)return {status:0,total:0}
+    const owner=await fetch('/__fixture/map-owner',{cache:'no-store'})
+      .then(response=>response.json())
+    const bounds=original.bounds,filters=original.filters
+    const params=new URLSearchParams({
+      west:String(bounds.west),south:String(bounds.south),
+      east:String(bounds.east),north:String(bounds.north),
+      sort_by:filters.sort_by,sort_dir:filters.sort_dir,
+      album:original.albumKey,favorite:String(filters.favorite),
+      kind:filters.asset_kind,captured_from:filters.captured_from,
+      captured_to:filters.captured_to,time_zone:filters.time_zone,
+    })
+    const response=await fetch('/api/v1/media/places/baidu-jsapi/cells?'+params,{
+      cache:'no-store',headers:{Authorization:'Bearer '+owner.token}})
+    const body=await response.json().catch(()=>({}))
+    return {status:response.status,total:body.total_count,
+      first:body.cells?.[0]??null,bounds,filters,
+      albumKey:original.albumKey}
+  })
+  let mutated=false
+  try{
+    const query='/?handoff_doc=1&handoff_combo=1'+
+      (mode==='isolated'?'&places_map_mode=isolated':'')
+    await page.goto('https://'+galleryHost+':'+port+query,
+      {waitUntil:'domcontentloaded'})
+    await page.getByText('当前地图可查看 2 张照片',{exact:true}).waitFor()
+    const cover=page.locator('[data-xdrive-places-trusted-photo-cover]').first()
+    await cover.waitFor({state:'visible'})
+    const original=await capturedCells()
+    record(mode+': original real Owner Family/Favorite source map has two fresh revisions',
+      original.status===200&&original.total===2&&
+      original.first?.photo_count===2&&original.first.node_revision===1&&
+      original.albumKey==='manual:Family'&&
+      original.filters?.favorite===true&&
+      original.filters?.asset_kind==='image')
+    const changed=await fixtureMutation('source-revision-stale')
+    mutated=changed===204
+    record(mode+': test-only real PostgreSQL Owner Node advanced its revision',
+      changed===204)
+    const fresh=await capturedCells()
+    record(mode+': real Owner map excludes stale BD09 position after Node revision',
+      fresh.status===200&&fresh.total===1&&
+      fresh.first?.photo_count===1&&
+      fresh.first.node_id!==original.first.node_id&&
+      fresh.first.node_revision===1&&fresh.albumKey==='manual:Family')
+    const staleRange=await page.evaluate(async ({cell,bounds})=>{
+      const owner=await fetch('/__fixture/map-owner',{cache:'no-store'})
+        .then(response=>response.json())
+      const params=new URLSearchParams({
+        west:String(bounds.west),south:String(bounds.south),
+        east:String(bounds.east),north:String(bounds.north),
+        cell_x:String(cell.cell_x),cell_y:String(cell.cell_y),
+        asset_id:String(cell.asset_id),node_id:String(cell.node_id),
+        node_revision:String(cell.node_revision),
+        photo_count:String(cell.photo_count),
+        limit:'48',offset:'0',range:'true',
+        sort_by:'added',sort_dir:'asc',album:'manual:Family',
+        favorite:'true',kind:'image',captured_from:'2026-10-19',
+        captured_to:'2026-10-22',time_zone:'Asia/Tokyo',
+      })
+      const response=await fetch('/api/v1/media/places/baidu-jsapi/cell-items?'+params,{
+        cache:'no-store',headers:{Authorization:'Bearer '+owner.token}})
+      const body=await response.json().catch(()=>({}))
+      return {status:response.status,error:body.error}
+    },{cell:original.first,bounds:original.bounds})
+    record(mode+': original signed Cell/Viewer range fails closed after source revision',
+      staleRange.status===409&&staleRange.error==='map_cell_changed')
+    const menu=page.locator('[data-xdrive-places-map-filter-menu]')
+    const openFilters=async()=>{
+      if(!(await menu.evaluate(element=>element.open)))
+        await menu.locator('summary').click()
+    }
+    const dateInput=page.locator(
+      '[data-xdrive-places-map-photo-filters] input[type="date"]').first()
+    await openFilters()
+    await dateInput.fill('2026-10-21')
+    await page.getByText(
+      '当前筛选条件下暂无定位照片；可调整筛选或手动刷新。',
+      {exact:true}).waitFor()
+    record(mode+': obsolete Owner map pins are removed before filtered empty paint',
+      await page.locator('[data-xdrive-places-trusted-photo-cover]').count()===0)
+    await openFilters()
+    await dateInput.fill('2026-10-19')
+    await page.getByText('当前地图可查看 1 张照片',{exact:true}).waitFor()
+    await cover.waitFor({state:'visible'})
+    const recovered=await page.evaluate(()=>({
+      queries:window.__mapProbe.queries,
+      coverExists:Boolean(document.querySelector('[data-xdrive-places-trusted-photo-cover]')),
+      count:document.querySelector('[data-xdrive-places-map-photo-summary]')?.textContent,
+    }))
+    record(mode+': shared map refresh keeps only current Family/Favorite Owner member',
+      recovered.queries.at(-1)?.count===1&&
+      recovered.queries.every(q=>q.albumKey==='manual:Family'&&
+        q.favorite===true)&&recovered.coverExists&&
+      recovered.count?.includes('1 张照片')&&errors.length===0)
+    const restored=await fixtureMutation('source-revision-restore')
+    mutated=false
+    record(mode+': synthetic source revision restored after stale-map assertion',
+      restored===204)
+    await openFilters()
+    await dateInput.fill('2026-10-21')
+    await page.getByText(
+      '当前筛选条件下暂无定位照片；可调整筛选或手动刷新。',
+      {exact:true}).waitFor()
+    await openFilters()
+    await dateInput.fill('2026-10-19')
+    await page.getByText('当前地图可查看 2 张照片',{exact:true}).waitFor()
+    await cover.waitFor({state:'visible'})
+    const afterRestore=await capturedCells()
+    record(mode+': current Owner BD09 identity is restored without widening filters',
+      afterRestore.status===200&&afterRestore.total===2&&
+      afterRestore.first?.photo_count===2&&
+      afterRestore.first.node_revision===1&&
+      afterRestore.albumKey==='manual:Family'&&
+      afterRestore.filters?.favorite===true&&errors.length===0)
+    summary.sourceRevisionModes.push(mode)
+  }finally{
+    if(mutated){
+      const restore=await fixtureMutation('source-revision-restore').catch(()=>0)
+      record(mode+': fixture source revision cleanup after failure',restore===204)
+    }
+    await context.close()
+  }
+}
+
 async function testMode(browser,mode,port){
   const context=await browser.newContext({
     viewport:{width:960,height:760},locale:'zh-CN',ignoreHTTPSErrors:true,
@@ -2225,6 +2379,10 @@ async function main(){
       }
       record('two SDK Hosts deny pending Owner tickets on real Album deletion and revocation',
         summary.ownerScopeInvalidationModes.length===12)
+      await testStaleSourceRevisionOwnerMap(browser,'inline',port)
+      await testStaleSourceRevisionOwnerMap(browser,'isolated',port)
+      record('both SDK Hosts reject stale Node revisions in real Gin Owner map/Cell Range',
+        summary.sourceRevisionModes.join(',')==='inline,isolated')
       await testRealHEICOwnerMapCover(browser,'inline',port)
       await testRealHEICOwnerMapCover(browser,'isolated',port)
       record('both SDK Hosts decoded signed real HEIC-derived JPEG photo pins',
