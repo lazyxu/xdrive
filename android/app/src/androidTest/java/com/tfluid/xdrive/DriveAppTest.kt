@@ -2366,6 +2366,38 @@ class DriveAppTest {
         }
     }
 
+    @Test fun galleryMapHeaderBackDescribesAndReturnsToGalleryNotFiles() {
+        galleryGpsOverviewFixture = true
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryLoaded && !controller.state.value.loading
+        }
+        compose.onNodeWithTag("gallery-view-options").performClick()
+        compose.onNodeWithTag("gallery-show-map").performScrollTo().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryMapOpen &&
+                controller.state.value.galleryMapLoaded &&
+                !controller.state.value.loading
+        }
+        // Only the real, 52dp top-bar Back is tested here. The separate
+        // "返回图库" page action is already exercised by the existing test.
+        compose.onNodeWithContentDescription("返回文件").assertDoesNotExist()
+        compose.onNodeWithContentDescription("返回图库")
+            .assertIsDisplayed().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.GALLERY &&
+                !controller.state.value.galleryMapOpen
+        }
+        compose.onNodeWithTag("gallery-wall").assertExists()
+        compose.onNodeWithTag("gallery-item-40").assertExists()
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(1, gpsOverviewReads)
+            org.junit.Assert.assertNull(controller.state.value.galleryMapOverview)
+        }
+    }
+
     @Test fun galleryMoreOpensRealWgs84SummaryAndBackRestoresOriginalGallery() {
         galleryGpsOverviewFixture = true
         startAndLogin()
