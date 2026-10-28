@@ -18,6 +18,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -100,7 +103,20 @@ internal fun GalleryLivePhotoMotion(
     stillReady: Boolean,
 ) {
     val context = LocalContext.current
-    val currentHeld by rememberUpdatedState(held && stillReady)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val latestHeld by rememberUpdatedState(held)
+    var lifecycleStarted by remember(photo.node.id, photo.node.revision, lifecycleOwner) {
+        mutableStateOf(lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED))
+    }
+    var freshPressRequired by remember(photo.node.id, photo.node.revision, lifecycleOwner) {
+        mutableStateOf(!lifecycleStarted && held)
+    }
+    LaunchedEffect(photo.node.id, photo.node.revision, held) {
+        if (!held) freshPressRequired = false
+    }
+    val activeHeld = liveMotionMayStart(
+        held, stillReady, lifecycleStarted, freshPressRequired)
+    val currentHeld by rememberUpdatedState(activeHeld)
     var lease by remember(photo.node.id, photo.node.revision) {
         mutableStateOf<OwnerVideoPlayback?>(null)
     }
@@ -123,8 +139,8 @@ internal fun GalleryLivePhotoMotion(
         mutableFloatStateOf(16f / 9f)
     }
 
-    LaunchedEffect(photo.node.id, photo.node.revision, held, stillReady) {
-        if (!held || !stillReady) {
+    LaunchedEffect(photo.node.id, photo.node.revision, activeHeld) {
+        if (!activeHeld) {
             frameReady = false
             lease = null
             return@LaunchedEffect
@@ -170,7 +186,21 @@ internal fun GalleryLivePhotoMotion(
     // an exception escaping the Compose composition.
     val playerSetupFailed = lease != null && player == null
 
-    DisposableEffect(player, photo.node.id, photo.node.revision) {
+    DisposableEffect(player, photo.node.id, photo.node.revision, lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_STOP -> {
+                    lifecycleStarted = false
+                    // A touch still held during Activity STOP must never
+                    // restart playback when Android returns to foreground.
+                    if (latestHeld) freshPressRequired = true
+                    player?.pause()
+                }
+                Lifecycle.Event.ON_START -> lifecycleStarted = true
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
         val listener = object : Player.Listener {
             override fun onRenderedFirstFrame() {
                 if (currentHeld && !ended && !failed) frameReady = true
@@ -203,12 +233,13 @@ internal fun GalleryLivePhotoMotion(
         }
         player?.addListener(listener)
         onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
             player?.removeListener(listener)
             player?.release()
         }
     }
 
-    if (!held || !stillReady) return
+    if (!activeHeld) return
     BoxWithConstraints(Modifier.fillMaxSize().testTag("gallery-live-motion-surface"),
         contentAlignment = Alignment.Center) {
         if (player != null) {
