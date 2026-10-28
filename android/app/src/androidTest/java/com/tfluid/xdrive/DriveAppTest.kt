@@ -518,8 +518,17 @@ class DriveAppTest {
             check(filesSortFixture && accessToken == "fixture")
             filesSortQueries += arrangement
             val original = children(accessToken, parentId, offset)
-            return original.copy(items = if (arrangement.order == "desc")
-                original.items.reversed() else original.items)
+            return original.copy(
+                items = if (arrangement.order == "desc")
+                    original.items.reversed() else original.items,
+                groups = if (arrangement.group == "type" && parentId == 1L &&
+                    original.items.size == 2 && original.items[0].isDirectory &&
+                    original.items[1].name.endsWith(".txt"))
+                    listOf(
+                        FileBrowseGroupIndex("folder", 1, 0),
+                        FileBrowseGroupIndex("ext:txt", 1, 1),
+                    ) else emptyList()
+            )
         }
         override suspend fun children(accessToken: String, parentId: Long, offset: Int): NodeRange {
             if (failNext || (paging && offset == 100 && failOnSecondPage)) {
@@ -601,7 +610,11 @@ class DriveAppTest {
                 failure,
             )
         }
-        compose.onNodeWithTag("auth-submit").assertIsDisplayed().assertIsEnabled().performClick()
+        // The bounded readiness check above already asserted visible/enabled.
+        // Re-scroll in the current frame after IME/layout settles, then click
+        // the *real* submit exactly once. Avoid a second stale-frame assertion.
+        compose.onNodeWithTag("auth-submit")
+            .performScrollTo().assertIsEnabled().performClick()
         try {
             compose.waitUntil(timeoutMillis = 10_000) {
                 controller.state.value.screen == Screen.FILES && controller.state.value.loaded
@@ -2270,9 +2283,15 @@ class DriveAppTest {
         compose.onNodeWithContentDescription("账户菜单").performClick()
         compose.onNodeWithTag("files-arrangement-open").assertIsDisplayed().performClick()
         compose.onNodeWithTag("files-arrangement-dialog").assertExists()
-        compose.onNodeWithTag("files-arrange-sort-size").performClick()
-        compose.onNodeWithTag("files-arrange-direction").performClick()
-        compose.onNodeWithTag("files-arrange-folders-first").performClick()
+        // Four group choices make the dialog taller than a 390dp viewport.
+        // Scroll each control into the clipped sheet before tapping it;
+        // an off-screen tap otherwise reaches the wrong surface.
+        compose.onNodeWithTag("files-arrange-sort-size")
+            .performScrollTo().assertIsDisplayed().performClick()
+        compose.onNodeWithTag("files-arrange-direction")
+            .performScrollTo().assertIsDisplayed().performClick()
+        compose.onNodeWithTag("files-arrange-folders-first")
+            .performScrollTo().assertIsDisplayed().performClick()
         compose.onNodeWithTag("files-arrange-apply").assertIsEnabled().performClick()
         compose.waitUntil(timeoutMillis = 10_000) {
             !controller.state.value.loading &&
@@ -2289,6 +2308,36 @@ class DriveAppTest {
         compose.onNodeWithTag("files-arrangement-dialog").assertExists()
         compose.onNodeWithTag("files-arrange-apply").assertIsNotEnabled()
         compose.onNodeWithText("取消").performClick()
+    }
+
+    @Test fun nativeFilesGroupIndexRendersCanonicalHeadersInListAndGrid() {
+        filesSortFixture = true
+        extraRootFile = true
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("files-arrangement-open").performClick()
+        compose.onNodeWithTag("files-arrange-group-type")
+            .performScrollTo().performClick()
+        compose.onNodeWithTag("files-arrange-apply").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.filesArrangement.group == "type" &&
+                controller.state.value.filesGroups.size == 2 &&
+                !controller.state.value.loading
+        }
+        compose.onNodeWithTag("files-group-folder").assertExists()
+        compose.onNodeWithTag("files-group-ext:txt").assertExists()
+        compose.onNodeWithTag("files-item-2").assertExists()
+        compose.onNodeWithTag("files-item-70").assertExists()
+
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithText("图标").performClick()
+        compose.onNodeWithTag("files-grid").assertExists()
+        compose.onNodeWithTag("files-group-folder").assertExists()
+        compose.onNodeWithTag("files-group-ext:txt").assertExists()
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(
+                listOf(FileBrowseArrangement(group = "type")), filesSortQueries)
+        }
     }
 
     @Test fun galleryMoreOpensRealWgs84SummaryAndBackRestoresOriginalGallery() {
@@ -2323,5 +2372,6 @@ class DriveAppTest {
         compose.onNodeWithTag("gallery-item-40").assertExists()
         compose.runOnIdle { org.junit.Assert.assertEquals(1, gpsOverviewReads) }
     }
+
 
 }

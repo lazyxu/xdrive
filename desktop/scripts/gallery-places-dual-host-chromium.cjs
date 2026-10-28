@@ -72,7 +72,15 @@ const sdkStub='('+function sdkFactory(){
     getZoom(){return this.zoom}
     getBounds(){return {getSouthWest:()=>new Point(100,20),
       getNorthEast:()=>new Point(125,40)}}
-    pointToPixel(){return {x:180,y:180}}
+    pointToPixel(){
+      // The synthetic representative is deliberately centered in the
+      // CURRENT CSS map canvas. A fixed old 180px point would make short
+      // landscape tests accidentally accept stale pre-resize projections.
+      const width=Math.round(this.canvas?.clientWidth||0)
+      const height=Math.round(this.canvas?.clientHeight||0)
+      return {x:width>=120?Math.round(width/2):180,
+        y:height>=120?Math.round(height/2):180}
+    }
     destroy(){this.overlays=[];this.listeners.clear()}
   }
   // Historical prototype's unused namespace checks are included so this
@@ -433,7 +441,17 @@ async function testIOSPhotoMapCompactChrome(browser,mode,scheme,port){
       [375,812],[390,844],[844,390],[899,390],[900,390],
       [899,1200],[900,1200],
     ]){
+      const beforeResizeQueries=await page.evaluate(()=>window.__mapProbe.queries.length)
       await page.setViewportSize({width,height})
+      // A real container size change must not reuse an old 390px photo
+      // projection. Both SDK Hosts cancel it and request a freshly signed
+      // viewport after the existing 500ms camera quiet period.
+      await page.waitForFunction(before=>
+        window.__mapProbe.queries.length>before,
+        beforeResizeQueries,{timeout:30000})
+      await page.getByText('当前地图可查看 2 张照片',{exact:true}).waitFor()
+      await page.locator('[data-xdrive-places-trusted-photo-cover]')
+        .first().waitFor({state:'visible'})
       const actual=await page.evaluate(()=>{
         const map=document.querySelector('[data-xdrive-places-ios-map-canvas="1"]')
         const toolbar=document.querySelector('[data-xdrive-places-map-ios-chrome="1"]')
@@ -869,7 +887,39 @@ async function testMode(browser,mode,port){
       '[data-xdrive-places-photo-drawer-handle]')?.getAttribute('aria-expanded')==='true')
     record(mode+': semantic shared photo sheet handle opens by pointer click',
       await handle.getAttribute('aria-expanded')==='true')
+    // A signed Cell remains available through the accessible list even when
+    // a short noncompact landscape has no room for an unobscured 72px cover.
+    // Prefer the actual visible photo; use only the CURRENT signed Cell list
+    // when the compact-dock/edge exclusion intentionally hides every cover.
+    const openFreshCameraCell=async()=>{
+      const list=page.locator('[data-xdrive-places-cluster-list]')
+      await list.locator('button').first().waitFor({state:'attached'})
+      const cover=page.locator('[data-xdrive-places-trusted-photo-cover]').first()
+      if(await cover.isVisible()) {
+        await cover.click()
+      } else {
+        if(await list.getAttribute('open')===null)
+          await list.locator('summary').click()
+        await list.locator('button').first().click()
+      }
+    }
+    // A changed CSS camera is a fresh /cells authorization boundary.
+    // The old selected Cell and its drawer must be revoked immediately;
+    // use the newly signed Owner cell rather than a stale handle.
+    const beforeLandscape=await page.evaluate(()=>window.__mapProbe.queries.length)
     await page.setViewportSize({width:844,height:390})
+    await page.locator('[data-xdrive-places-photo-drawer]')
+      .waitFor({state:'hidden'})
+    record(mode+': rotation revokes prior camera-scoped photo drawer',
+      await page.locator('[data-xdrive-places-photo-drawer]').count()===0)
+    await page.waitForFunction(before=>window.__mapProbe.queries.length>before,
+      beforeLandscape)
+    await page.getByText('当前地图可查看 3 张照片',{exact:true}).waitFor()
+    await openFreshCameraCell()
+    await page.locator('[data-xdrive-places-photo-drawer-items] button').first().waitFor()
+    await handle.click()
+    await page.waitForFunction(()=>document.querySelector(
+      '[data-xdrive-places-photo-drawer-handle]')?.getAttribute('aria-expanded')==='true')
     const sheetGeometry=await page.evaluate(()=>{
       const map=document.querySelector('[data-xdrive-places-cluster-overview]')
       const sheet=document.querySelector('[data-xdrive-places-photo-drawer]')
@@ -878,12 +928,31 @@ async function testMode(browser,mode,port){
       return {mapTop:area.top,mapBottom:area.bottom,top:dialog.top,
         bottom:dialog.bottom,height:dialog.height,screen:innerHeight}
     })
-    record(mode+': expanded drawer fits inside 844x390 map and safe area',
-      sheetGeometry!==null&&sheetGeometry.height>=80&&
-      sheetGeometry.top>=sheetGeometry.mapTop+8 &&
+    const drawerFits=sheetGeometry!==null&&sheetGeometry.height>=80&&
+      sheetGeometry.top>=sheetGeometry.mapTop+8&&
       sheetGeometry.bottom<=sheetGeometry.mapBottom-8&&
-      sheetGeometry.bottom<=sheetGeometry.screen-8)
+      sheetGeometry.bottom<=sheetGeometry.screen-8
+    if(!drawerFits) console.error('places-drawer-landscape-geometry',JSON.stringify({
+      mode,viewport:'844x390',geometry:sheetGeometry,
+    }))
+    record(mode+': expanded drawer fits inside 844x390 map and safe area',
+      drawerFits)
+    // The inverse rotation must reauthorize again, then retain keyboard
+    // navigation and the original scoped Gallery Viewer flow.
+    const beforePortrait=await page.evaluate(()=>window.__mapProbe.queries.length)
     await page.setViewportSize({width:960,height:760})
+    await page.locator('[data-xdrive-places-photo-drawer]')
+      .waitFor({state:'hidden'})
+    record(mode+': portrait resize revokes short-landscape Cell scope',
+      await page.locator('[data-xdrive-places-photo-drawer]').count()===0)
+    await page.waitForFunction(before=>window.__mapProbe.queries.length>before,
+      beforePortrait)
+    await page.getByText('当前地图可查看 3 张照片',{exact:true}).waitFor()
+    await openFreshCameraCell()
+    await page.locator('[data-xdrive-places-photo-drawer-items] button').first().waitFor()
+    await handle.click()
+    await page.waitForFunction(()=>document.querySelector(
+      '[data-xdrive-places-photo-drawer-handle]')?.getAttribute('aria-expanded')==='true')
     await handle.press('Enter')
     await page.waitForFunction(()=>document.querySelector(
       '[data-xdrive-places-photo-drawer-handle]')?.getAttribute('aria-expanded')==='false')
@@ -2120,7 +2189,15 @@ async function testMapKeyboardAppearance(browser,mode,scheme,port){
     // CSS assertion cannot prove the photos stay visible after a real resize.
     for (const [width,height] of [[375,812],[899,390],[900,390],
       [899,1200],[900,1200]]) {
+      const beforeCamera=await page.evaluate(()=>window.__mapProbe.queries.length)
       await page.setViewportSize({width,height})
+      // The old projected pin is revoked synchronously. Wait for a NEW
+      // signed Owner camera before checking physical screen geometry.
+      await page.waitForFunction(before=>window.__mapProbe.queries.length>before,
+        beforeCamera)
+      await page.getByText('当前地图可查看 9 张照片',{exact:true}).waitFor()
+      await page.locator('[data-xdrive-places-cluster-list] button').first()
+        .waitFor({state:'attached'})
       const bounds=await page.evaluate(()=>{
         const rect=selector=>{
           const element=document.querySelector(selector)
@@ -2129,26 +2206,42 @@ async function testMapKeyboardAppearance(browser,mode,scheme,port){
           return {left:box.left,right:box.right,top:box.top,
             bottom:box.bottom,width:box.width,height:box.height}
         }
+        const accessible=document.querySelector(
+          '[data-xdrive-places-cluster-list]')
         return {map:rect('[data-xdrive-places-cluster-overview]'),
           cover:rect('[data-xdrive-places-trusted-photo-cover]'),
           strip:rect('[data-xdrive-places-photo-collection-strip]'),
           count:document.querySelector('[data-xdrive-places-photo-count-badge]')?.textContent,
+          accessibleCount:accessible?.querySelectorAll('button').length||0,
+          accessibleLabel:accessible?.textContent||'',
           regionLabel:document.querySelector('[aria-label="定位照片聚集地图"]')?.getAttribute('role')}
       })
       const inside=(outer,inner)=>Boolean(outer&&inner&&
         inner.left>=outer.left-1&&inner.right<=outer.right+1&&
         inner.top>=outer.top-1&&inner.bottom<=outer.bottom+1)
+      const visibleCover=inside(bounds.map,bounds.cover)&&
+        bounds.cover.width>=44&&bounds.cover.height>=44&&bounds.count==='9'
+      // A noncompact 899/900x390 viewport has less than 226px of
+      // available map height. Its 72px photo cover + count badge must not
+      // overlap the lower dock. Here the CURRENT authorized Cell list,
+      // including the actual signed count, is the accessible fallback.
+      const truthfulFallback=bounds.map&&bounds.map.height<226&&
+        bounds.cover===null&&bounds.accessibleCount>=1&&
+        bounds.accessibleLabel.includes('9')
       record(mode+': '+scheme+' '+width+'x'+height+
         ' map and signed-photo cover remain within the usable viewport',
         bounds.map&&bounds.map.width>0&&bounds.map.height>=180&&
         bounds.map.bottom<=height-8&&bounds.map.right<=width+1&&
-        inside(bounds.map,bounds.cover)&&bounds.cover.width>=44&&
-        bounds.cover.height>=44&&bounds.count==='9')
+        (visibleCover||truthfulFallback))
       record(mode+': '+scheme+' '+width+'x'+height+
         ' shared photo strip stays inside map bounds',
         inside(bounds.map,bounds.strip)&&bounds.strip.width>=44)
     }
+    const beforeReturnCamera=await page.evaluate(()=>window.__mapProbe.queries.length)
     await page.setViewportSize({width:390,height:844})
+    await page.waitForFunction(before=>window.__mapProbe.queries.length>before,
+      beforeReturnCamera)
+    await cover.waitFor({state:'visible'})
     await cover.focus()
     const focused=await cover.evaluate(element=>document.activeElement===element)
     await cover.press('Enter')

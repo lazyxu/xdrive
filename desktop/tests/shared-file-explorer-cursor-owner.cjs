@@ -21,9 +21,10 @@ function loadHook(file, replacements = {}) {
   return moduleRef.exports
 }
 const fence = loadHook('ui/shared/src/mui/FileExplorerOwnerFence.ts')
+const readStrategy = loadHook('ui/shared/src/mui/FileExplorerDirectoryReadStrategy.ts')
 const { useXDriveFileExplorerCursorDirectory } = loadHook(
   'ui/shared/src/mui/FileExplorerCursorDirectoryController.ts',
-  { './FileExplorerOwnerFence': fence },
+  { './FileExplorerOwnerFence': fence, './FileExplorerDirectoryReadStrategy': readStrategy },
 )
 const tick = async () => {
   await Promise.resolve()

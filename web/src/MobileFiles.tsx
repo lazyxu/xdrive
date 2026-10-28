@@ -58,6 +58,7 @@ import type {
   XDriveFileExplorerExternalDropPayload,
 } from '@xdrive/ui/mui'
 import { useXDrivePointerDrag } from '../../ui/shared/src/mui/usePointerDrag'
+import { xDriveCanUseNativeShare } from '../../ui/shared/src/mui/NativeShareCapability'
 import { xDriveFileExplorerMenuDisabledReason, xDriveFileExplorerMenuReasonLabel } from '../../ui/shared/src/mui/FileExplorerMenuReasons'
 import {
   mobileFilesDecodeState, mobileFilesEncodeState, mobileFilesIsMoved, mobileFilesWindow,
@@ -444,10 +445,7 @@ export default function MobileFiles(props: Props) {
   const nativeShareControllerRef = useRef<AbortController | null>(null)
   const nativeShareInvocationRef = useRef(false)
   const canNativeShareFile = Boolean(
-    props.onPrepareNativeShareFile &&
-    typeof navigator !== 'undefined' &&
-    typeof navigator.share === 'function' &&
-    typeof navigator.canShare === 'function',
+    props.onPrepareNativeShareFile && xDriveCanUseNativeShare('file'),
   )
   const [selectionMode, setSelectionMode] = useState(Boolean(props.initialSelectedItems?.length))
   const [selectionLoad, setSelectionLoad] = useState<{ intent: number; loaded: number; total: number } | null>(null)
