@@ -61,3 +61,15 @@ authenticated **first-page GET** to reconcile the uncertain result.
 A second DELETE is forbidden; a failed reconciliation GET retains the
 write-fenced state until a successful read. Additional JVM tests verify
 the complete failure/retry/recovery sequence.
+
+## Same-type navigation coverage (next foreground beats old GET)
+
+Files media identity lookups (`filesMediaItem`), the verified
+Recent/Favorites folder-to-browse path and exact Search/Recent location
+reads are all disposable. Switching to another item, section or navigation
+intent cancels the obsolete Owner GET and fences late non-cooperative results.
+The same-type A→B→A test verifies that neither an old image/Viewer nor a
+stale Show in Folder selection can overwrite the most recent intent.
+
+Native GET-only work keeps using the existing `request()`/generation logic;
+mutations and active SAF streams explicitly never opt into this priority lane.

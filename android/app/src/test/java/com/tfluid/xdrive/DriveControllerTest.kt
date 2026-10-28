@@ -3876,4 +3876,88 @@ class DriveControllerTest {
         assertEquals(1, api.mutationCalls.size)
         c.close()
     }
+
+    @Test fun anotherFilesMediaDetailWinsOverNonCooperativeOldPhotoGet() = runTest {
+        val photoA = DriveNode(119, 1, "first.jpg", "file", 5, revision = 2)
+        val photoB = DriveNode(120, 1, "second.jpg", "file", 5, revision = 3)
+        val late = CompletableDeferred<GalleryAsset>()
+        val requested = mutableListOf<Long>()
+        val api = object : Service() {
+            override suspend fun filesMediaItem(accessToken: String, node: DriveNode): GalleryAsset {
+                assertEquals("access", accessToken)
+                requested += node.id
+                return if (node == photoA && requested.size == 1)
+                    withContext(NonCancellable) { late.await() }
+                else GalleryAsset(node, "image", hasThumbnail = true)
+            }
+        }
+        api.listing = { _, offset -> NodeRange(
+            if (offset == 0) listOf(photoA, photoB) else emptyList(), 2, offset)
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.open(photoA); runCurrent()
+        assertTrue(c.state.value.loading)
+        assertTrue(c.state.value.discardableReadInFlight)
+        c.open(photoB); runCurrent()
+        assertEquals(Screen.GALLERY, c.state.value.screen)
+        assertEquals(photoB, c.state.value.galleryViewer?.node)
+        assertEquals(listOf(photoA.id, photoB.id), requested)
+        late.complete(GalleryAsset(photoA, "image", hasThumbnail = true)); runCurrent()
+        assertEquals(photoB, c.state.value.galleryViewer?.node)
+        assertEquals(listOf(photoA, photoB), c.state.value.items)
+        c.back()
+        assertEquals(Screen.FILES, c.state.value.screen)
+        c.open(photoA); runCurrent()
+        assertEquals(photoA, c.state.value.galleryViewer?.node)
+        assertEquals(listOf(photoA.id, photoB.id, photoA.id), requested)
+        c.close()
+    }
+
+    @Test fun newLocationSelectionPreemptsOldNonCooperativeOwnerLookup() = runTest {
+        val late = CompletableDeferred<OwnedNodeLocation>()
+        val api = Service()
+        api.recentRows = listOf(api.recentFolder, api.favoriteFile)
+        api.locateNode = { nodeId ->
+            if (nodeId == folder.id) withContext(NonCancellable) { late.await() }
+            else OwnedNodeLocation(nodeId, 1, 1, listOf(DriveCrumb(1, "")))
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.changeFilesSection(FilesSection.RECENT); runCurrent()
+        c.locateCollectionItem(api.recentFolder); runCurrent()
+        assertTrue(c.state.value.discardableReadInFlight)
+        c.locateCollectionItem(api.favoriteFile); runCurrent()
+        assertEquals(FilesSection.BROWSE, c.state.value.filesSection)
+        assertEquals(file.id, c.state.value.focusedBrowseNodeId)
+        late.complete(OwnedNodeLocation(folder.id, 1, 1, listOf(DriveCrumb(1, ""))))
+        runCurrent()
+        assertEquals(file.id, c.state.value.focusedBrowseNodeId)
+        assertEquals(listOf(root), c.state.value.path)
+        c.close()
+    }
+
+    @Test fun recentFolderLookupYieldsToNextFilesSectionWithoutStalePath() = runTest {
+        val late = CompletableDeferred<NodeRange>()
+        val api = Service()
+        api.listing = { parent, offset ->
+            if (parent == folder.id) withContext(NonCancellable) { late.await() }
+            else NodeRange(listOf(folder, file), 2, offset)
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.changeFilesSection(FilesSection.RECENT); runCurrent()
+        c.openCollectionItem(api.recentFolder); runCurrent()
+        assertEquals(FilesSection.BROWSE, c.state.value.filesSection)
+        assertTrue(c.state.value.discardableReadInFlight)
+        c.changeFilesSection(FilesSection.FAVORITES); runCurrent()
+        assertEquals(FilesSection.FAVORITES, c.state.value.filesSection)
+        assertEquals(listOf(api.favoriteFile), c.state.value.collectionItems)
+        late.complete(NodeRange(listOf(file.copy(parentId = folder.id)), 1, 0))
+        runCurrent()
+        assertEquals(FilesSection.FAVORITES, c.state.value.filesSection)
+        assertEquals(listOf(api.favoriteFile), c.state.value.collectionItems)
+        assertEquals(listOf(root), c.state.value.path)
+        c.close()
+    }
 }

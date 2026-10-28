@@ -617,7 +617,9 @@ class DriveController(
             session == null ||
             fileKind(node.name, false) !in setOf("image", "video")) return
         val service = api ?: return
-        request { ticket ->
+        // Owner-only media detail is a disposable GET. A second tapped file
+        // must retire an obsolete A request (including A→B→A races).
+        request(discardableRead = true) { ticket ->
             val media = authenticated(service, ticket) { token ->
                 service.filesMediaItem(token, node)
             }
@@ -1340,7 +1342,7 @@ class DriveController(
 
     fun openCollectionItem(item: DriveCollectionItem) {
         val current = state.value
-        if (current.screen != Screen.FILES || current.filesSection == FilesSection.BROWSE ||
+        if (!current.canNavigateFiles() || current.filesSection == FilesSection.BROWSE ||
             current.filesAudioViewer != null || current.filesPdfViewer != null ||
             current.collectionItems.none { it == item }) return
         if (item.node.isDirectory) openCollectionFolder(item)
@@ -1357,7 +1359,7 @@ class DriveController(
      * and last directory with the same Server API. Never trust a display path. */
     private fun openCollectionFolder(item: DriveCollectionItem) {
         val current = state.value
-        if (current.screen != Screen.FILES || current.filesSection == FilesSection.BROWSE ||
+        if (!current.canNavigateFiles() || current.filesSection == FilesSection.BROWSE ||
             !item.node.isDirectory || current.collectionItems.none { it == item }) return
         // Search files already carry directory-only breadcrumbs; recent and
         // favorites include the file leaf. Reuse the actual parent in both.
@@ -1373,7 +1375,7 @@ class DriveController(
         mutableState.value = current.copy(filesSection = FilesSection.BROWSE,
             collectionItems = emptyList(), collectionLoaded = false, error = null, loading = false,
             selected = null, searchQuery = "", searchNextCursor = "")
-        request { ticket ->
+        request(discardableRead = true) { ticket ->
             val root = authenticated(service, ticket) { service.root(it) }
             checkCurrent(ticket)
             if (root.id != candidate.first().id)
@@ -1387,8 +1389,7 @@ class DriveController(
      * Keep results visible on failure instead of selecting a wrong row. */
     fun locateCollectionItem(item: DriveCollectionItem) {
         val current = state.value
-        if (current.screen != Screen.FILES || current.filesSection == FilesSection.BROWSE ||
-            current.loading || current.destinationKind != null ||
+        if (!current.canNavigateFiles() || current.filesSection == FilesSection.BROWSE ||
             current.collectionItems.none { it == item } || session == null) return
         val service = api ?: return
         val section = current.filesSection
