@@ -38,13 +38,14 @@ function deferred() {
 function fixture(adapter, { directionFilter, mounted = true } = {}) {
   const reads = [], accepted = [], errors = [], loading = [], loaded = [], failures = []
   const overviewMountedRef = { current: mounted }
+  const overviewVisibleReadRef = { current: false }
   const overviewReadRef = { current: null }
   const overviewRequestRef = { current: 0 }
   const overviewOwnerRef = { current: { adapter, directionFilter } }
   let selected = null
   const env = {
     useCallback: callback => callback, adapter, directionFilter,
-    overviewMountedRef, overviewReadRef, overviewRequestRef, overviewOwnerRef,
+    overviewMountedRef, overviewVisibleReadRef, overviewReadRef, overviewRequestRef, overviewOwnerRef,
     setLoading: next => loading.push(next),
     setLoadError: value => failures.push(value),
     setHasLoaded: value => loaded.push(value),
@@ -58,6 +59,7 @@ function fixture(adapter, { directionFilter, mounted = true } = {}) {
     get selected() { return selected },
     close() {
       overviewMountedRef.current = false
+      overviewVisibleReadRef.current = false
       overviewReadRef.current?.abort()
       overviewRequestRef.current += 1
     },
@@ -108,7 +110,9 @@ test('SourceManager new refresh cancels in-flight overview even if old transport
   assert.deepEqual(page.accepted.map(rows => rows.map(row => row.source.id)), [[50]],
     'only the newest exact direction-filtered source rows are admitted')
   assert.deepEqual(page.errors, [])
-  assert.equal(page.loading.at(-1), true, 'silent poll does not show a new full-page overlay')
+  assert.equal(page.loading.at(-1), false,
+    'successful silent successor must finish the superseded visible first-read spinner')
+  assert.equal(page.loaded.at(-1), true)
   page.close()
 })
 
