@@ -1,5 +1,6 @@
 import { xDriveDesktopViewportRequest } from './abortableViewportRequest'
-import type { XDriveCloudFilesPort, XDriveFileExplorerSort } from '@xdrive/shared'
+import type { XDriveCloudFilesPort } from '@xdrive/shared'
+import type { XDriveFileExplorerSort } from '@xdrive/ui/mui'
 
 /**
  * The single Desktop/Electron authenticated read adapter for shared Cloud
