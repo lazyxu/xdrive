@@ -2466,7 +2466,7 @@ async function testAdjacent142And28PhotoCovers(browser,mode,port){
         photos:document.querySelectorAll(
           '[data-xdrive-places-trusted-photo-cover]').length,
         spacingX:x&&y?Math.round(y.x-x.x):0,
-        spacingY:x&&y?Math.round(y.y-x.y+(x.y-x.y)):0,
+        spacingY:x&&y?Math.round(y.y-x.y):0,
         count:document.querySelector('[data-xdrive-places-map-photo-summary]')?.textContent,
         strip:document.querySelectorAll(
           '[data-xdrive-places-photo-collection-strip]').length}
@@ -2481,6 +2481,7 @@ async function testAdjacent142And28PhotoCovers(browser,mode,port){
     record(mode+': nearby 142+28 current Owner photos both render, no native mixed labels',
       geometry.total===170&&geometry.photos===2&&
       geometry.spacingX>=98&&geometry.spacingX<=100&&
+      geometry.spacingY>=89&&geometry.spacingY<=91&&
       geometry.count?.includes('170 张照片')&&geometry.strip===0&&
       errors.length===0)
     await small.click()
