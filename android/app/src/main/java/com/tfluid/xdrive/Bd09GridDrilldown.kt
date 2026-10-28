@@ -5,7 +5,7 @@ import com.tfluid.xdrive.core.OwnerBd09Cell
 import com.tfluid.xdrive.core.OwnerBd09MapCells
 
 /** One in-memory verified parent result for exact native Back, never storage. */
-internal data class Bd09GridLevel(
+data class Bd09GridLevel(
     val bounds: OwnerBd09Bounds,
     val cells: OwnerBd09MapCells,
 )
