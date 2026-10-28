@@ -730,6 +730,7 @@ declare global {
           limit?: number,
           offset?: number,
           query?: MediaGalleryQuery,
+          requestID?: string,
         ) => Promise<DesktopResult<AgentMediaItemRange>>
         setMediaFavorite: (nodeID: number, favorite: boolean) => Promise<DesktopResult<{ favorite: boolean }>>
         setMediaFavoriteBatch: (nodeIDs: number[], favorite: boolean) => Promise<DesktopResult<{ updated: number; favorite: boolean }>>
