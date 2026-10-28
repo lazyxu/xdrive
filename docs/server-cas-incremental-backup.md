@@ -219,13 +219,25 @@ Returned byte counts are logical bytes, not guaranteed filesystem-block
 savings. Corrupt/missing CAS, unexpected files, incomplete .partial
 generations, suspicious symlinks or lock contention fail closed.
 
-## Selected v2 snapshot deletion — internal helper foundation
+## Selected v2 snapshot deletion — Host-only, manual opt-in
 
-The **internal** `xdrive-backup-repo delete-snapshot --repo PATH --snapshot
-xdrive-backup-YYYYMMDDTHHMMSSZ --yes` path (under development, not exposed
-through the Administrator UI or Host manager yet) selects exactly one committed
-v2 generation. It does **not** translate selection into a keep-last retention
-policy; older and newer generations may both be protected.
+The internal `xdrive-backup-repo delete-snapshot --repo PATH --snapshot
+xdrive-backup-YYYYMMDDTHHMMSSZ --yes` path selects exactly one committed
+v2 generation. The Host Manager exposes this fixed, **operator-only** wrapper:
+
+```bash
+xdrive-server backup delete-snapshot \
+  --snapshot xdrive-backup-YYYYMMDDTHHMMSSZ --yes
+# Optional selection of an existing, trusted local v2 repository:
+xdrive-server backup delete-snapshot \
+  --snapshot xdrive-backup-YYYYMMDDTHHMMSSZ --yes \
+  --repository-dir "/absolute/local/backup-repo"
+```
+
+It does **not** translate selection into a keep-last retention policy; older
+and newer generations may both be protected. This operator CLI is not a new
+Administrator Web/Desktop action; no browser can supply a Host path or command.
+There is no automatic GC, scheduled deletion, or cloud backend.
 
 This path shares the existing manual prune transaction code. It requires the
 same exclusive `.backup.lock`, validates the entire repository and referenced
@@ -242,10 +254,19 @@ can require another **explicit** manual prune to finish retiring its content.
 The selected generation must not be automatically replayed or guessed from
 a stale UI selection; report this outcome conservatively.
 
-**Scope:** no automatic v2 GC, no scheduling, no new browser-supplied Host
-command/path, no production storage deletion. Admin/Host integration, end-to-end
-protected confirmation and real recovery acceptance are **not** part of this
-internal helper milestone and require later separately verified changes.
+**Host guard:** both manual prune modes reuse identical checks against
+the configured live file source and the Server container's actual /data mount,
+require an existing regular backup repository lock, and run the exact Server
+image's helper with one writable backup-repository bind and `--network none`.
+Invalid names, symlink aliases, missing generations and unexpected arguments
+are rejected before Docker starts. The lower-level helper independently
+revalidates safety under its exclusive lease.
+
+**Scope:** no automatic v2 GC, no scheduling, no browser-controlled Host path
+or shell command, and no production data deletion. The authenticated Admin
+selected-deletion UI, preview-specific binding, and protected confirmation
+remain **not implemented** and require a subsequent separately validated PR.
+Production physical acceptance remains **跳过（未验收）**.
 
 ## Administrator Web / Desktop shared interface (Host-owned Server backups)
 

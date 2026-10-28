@@ -18,6 +18,8 @@ set -euo pipefail
 printf '%s\n' "$@" > "$BACKUP_PLAN_TEST_LOG"
 if printf '%s\n' "$@" | grep -Fxq prune; then
   printf '{"mode":"manual_confirmed","automatic":false}\n'
+elif printf '%s\n' "$@" | grep -Fxq delete-snapshot; then
+  printf '{"mode":"manual_selected","automatic":false}\n'
 else
   printf '{"mode":"read_only","delete_enabled":false}\n'
 fi
@@ -143,30 +145,89 @@ reject_prune --yes --keep-last 2 --repository-dir relative/path
 reject_prune --yes --keep-last 2 --repository-dir "$TMP/nonexistent"
 reject_prune --yes --keep-last 2 --repository-dir "$TMP/symlink-repo"
 
+# A named v2 generation uses the SAME locked/no-network, writable repository
+# mount and never turns a selected snapshot into a keep-last count.
+selected="xdrive-backup-20261025T010000Z"
+mkdir -p "$custom_repo/snapshots/$selected"
+printf 'do not touch' > "$custom_repo/snapshots/$selected/preserve"
+: > "$BACKUP_PLAN_TEST_LOG"
+PATH="$TMP/bin:$PATH" bash "$host" backup delete-snapshot \
+  --snapshot "$selected" --yes --repository-dir "$custom_repo" > "$TMP/select.out"
+grep -Fq '"mode":"manual_selected"' "$TMP/select.out"
+grep -Fxq delete-snapshot "$BACKUP_PLAN_TEST_LOG"
+grep -Fxq "$selected" "$BACKUP_PLAN_TEST_LOG"
+grep -Fxq -- --snapshot "$BACKUP_PLAN_TEST_LOG"
+grep -Fxq -- --yes "$BACKUP_PLAN_TEST_LOG"
+grep -Fxq -- --network "$BACKUP_PLAN_TEST_LOG"
+grep -Fxq none "$BACKUP_PLAN_TEST_LOG"
+grep -Fxq "type=bind,src=$custom_repo,dst=/repo" "$BACKUP_PLAN_TEST_LOG"
+if grep -Fxq prune "$BACKUP_PLAN_TEST_LOG" || \
+   grep -Fxq -- --keep-last "$BACKUP_PLAN_TEST_LOG" || \
+   grep -Fxq -- --privileged "$BACKUP_PLAN_TEST_LOG" || \
+   grep -Fxq "type=bind,src=$custom_repo,dst=/repo,readonly" "$BACKUP_PLAN_TEST_LOG"; then
+  echo 'selected v2 deletion escaped its fixed Docker operation' >&2
+  exit 1
+fi
+
+reject_selected() {
+  : > "$BACKUP_PLAN_TEST_LOG"
+  if PATH="$TMP/bin:$PATH" bash "$host" backup delete-snapshot "$@" >"$TMP/select-rejected.out" 2>"$TMP/select-rejected.err"; then
+    echo "unsafe selected v2 delete argument accepted: $*" >&2
+    exit 1
+  fi
+  [[ ! -s "$BACKUP_PLAN_TEST_LOG" ]] || {
+    echo "invalid selected v2 deletion reached Docker" >&2
+    exit 1
+  }
+}
+reject_selected --snapshot "$selected"
+reject_selected --yes
+reject_selected --snapshot "$selected" --keep-last 1 --yes
+reject_selected --snapshot "$selected" --mode fast --yes
+reject_selected --snapshot "$selected" --yes --delete
+reject_selected --snapshot xdrive-backup-20261025T010000Z.partial --yes
+reject_selected --snapshot xdrive-backup-20261025T010000Z/../secret --yes
+reject_selected --snapshot '../../etc/shadow' --yes
+reject_selected --snapshot 'xdrive-backup-20261025T010000Z;rm' --yes
+reject_selected --snapshot xdrive-backup-20261026T010000Z --yes
+reject_selected --snapshot "$selected" --yes --repository-dir "$TMP/symlink-repo"
+reject_selected --snapshot "$selected" --yes --repository-dir "$TMP/does-not-exist"
+reject_selected --snapshot "$selected" --yes --repository-dir relative
+ln -s "$custom_repo/snapshots/$selected" "$custom_repo/snapshots/xdrive-backup-20261024T000000Z"
+reject_selected --snapshot xdrive-backup-20261024T000000Z --yes
+[[ "$(cat "$custom_repo/snapshots/$selected/preserve")" == 'do not touch' ]]
+
 # The manual DELETE path must refuse any repository that overlaps live
 # files, including both a backup nested under the default live location
 # and live data nested under the backup repository itself.
 live_root="$XD_CONFIG_DIR/data/files"
 mkdir -p "$live_root"
 nested_backup="$live_root/cas-repo"
-mkdir -p "$nested_backup/snapshots"
+mkdir -p "$nested_backup/snapshots/$selected"
 : > "$nested_backup/.backup.lock"
 reject_prune --yes --keep-last 2 --repository-dir "$nested_backup"
+reject_selected --snapshot "$selected" --yes --repository-dir "$nested_backup"
+grep -Fq 'repository overlaps live file storage' "$TMP/select-rejected.err"
 grep -Fq 'repository overlaps live file storage' "$TMP/prune-rejected.err"
 cp "$XD_CONFIG_DIR/config/.env" "$TMP/prune-overlap-env"
 mkdir -p "$custom_repo/live-files"
 printf 'XD_SERVER_IMAGE=xdrive/server:backup-plan-test\nXD_BACKUP_SCHEDULE_FORMAT=v2\nXD_BACKUP_SCHEDULE_REPOSITORY_DIR=%s\nXD_FILES_DATA_DIR=%s\n' "$custom_repo" "$custom_repo/live-files" > "$XD_CONFIG_DIR/config/.env"
 reject_prune --yes --keep-last 2
 grep -Fq 'repository overlaps live file storage' "$TMP/prune-rejected.err"
+reject_selected --snapshot "$selected" --yes
+grep -Fq 'repository overlaps live file storage' "$TMP/select-rejected.err"
 printf 'XD_SERVER_IMAGE=xdrive/server:backup-plan-test\nXD_BACKUP_SCHEDULE_FORMAT=v2\nXD_BACKUP_SCHEDULE_REPOSITORY_DIR=%s\nXD_FILES_DATA_DIR=/\n' "$custom_repo" > "$XD_CONFIG_DIR/config/.env"
 reject_prune --yes --keep-last 2
 grep -Fq 'repository overlaps live file storage' "$TMP/prune-rejected.err"
+reject_selected --snapshot "$selected" --yes
+grep -Fq 'repository overlaps live file storage' "$TMP/select-rejected.err"
 cp "$TMP/prune-overlap-env" "$XD_CONFIG_DIR/config/.env"
 
 mv "$custom_repo/.backup.lock" "$TMP/saved-repository-lock"
 reject_prune --yes --keep-last 2
+reject_selected --snapshot "$selected" --yes
 mv "$TMP/saved-repository-lock" "$custom_repo/.backup.lock"
 [[ "$(cat "$default_repo/snapshots/preserve")" == 'immutable object fixture' ]]
 [[ "$(cat "$custom_repo/snapshots/preserve")" == 'also preserve' ]]
 
-echo "retention-plan host read-only and manual-prune isolation tests passed"
+echo "retention-plan host read-only, manual-prune and selected-delete isolation tests passed"
