@@ -1,0 +1,255 @@
+import SwiftUI
+import WebKit
+import UIKit
+
+/// Opt-in Web/PWA shell. The Web's HttpOnly cookie session is separate from
+/// the native Keychain refresh token. No secret is injected into JS or URLs.
+struct XDriveWebAppHome: View {
+    @State private var serverText: String
+    @State private var openedOrigin: URL?
+    @State private var inputError: String?
+    @State private var pageError: String?
+    @State private var nativeLoginVisible = false
+    @State private var confirmLeave = false
+
+    init() {
+        let saved = UserDefaults.standard.string(forKey: "xdrive.ios.server") ?? ""
+        _serverText = State(initialValue: saved)
+        _openedOrigin = State(initialValue: try? ServerAddress.parse(saved))
+    }
+
+    var body: some View {
+        Group {
+            if let origin = openedOrigin {
+                ZStack(alignment: .trailing) {
+                    XDriveOriginLockedWebView(origin: origin, onPageError: { pageError = $0 })
+                        .ignoresSafeArea(.container, edges: .bottom)
+                        .id(origin.absoluteString)
+
+                    // Temporary native control; move this to the shared App
+                    // settings once a verified native/Web session bridge exists.
+                    Menu {
+                        Button {
+                            confirmLeave = true
+                        } label: {
+                            Label("更换服务器", systemImage: "server.rack")
+                        }
+                        Button {
+                            nativeLoginVisible = true
+                        } label: {
+                            Label("原生登录诊断（独立会话）", systemImage: "person.crop.circle")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle.fill")
+                            .font(.system(size: 21, weight: .semibold))
+                            .foregroundStyle(.primary)
+                            .padding(7)
+                            .background(.regularMaterial, in: Circle())
+                    }
+                    .accessibilityLabel("iOS 原生连接菜单")
+                    .padding(.trailing, 5)
+
+                    if let pageError {
+                        VStack(spacing: 10) {
+                            Label("无法加载 xDrive 网页", systemImage: "wifi.exclamationmark")
+                                .font(.headline)
+                            Text(pageError)
+                                .font(.caption)
+                                .multilineTextAlignment(.center)
+                            Button("更换服务器地址") { confirmLeave = true }
+                                .buttonStyle(.borderedProminent)
+                        }
+                        .padding(20)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+                        .padding(20)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                }
+            } else {
+                connectionForm
+            }
+        }
+        .sheet(isPresented: $nativeLoginVisible) {
+            LoginScreen()
+        }
+        .confirmationDialog(
+            "切换服务器会终止当前网页内未完成的上传或下载。",
+            isPresented: $confirmLeave,
+            titleVisibility: .visible
+        ) {
+            Button("确认切换服务器", role: .destructive) {
+                pageError = nil
+                openedOrigin = nil
+            }
+            Button("取消", role: .cancel) {}
+        }
+    }
+
+    private var connectionForm: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 12) {
+                    Image("Brand")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 48, height: 48)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("xDrive").font(.title.bold())
+                        Text("iOS App · 共用 PWA 页面").foregroundStyle(.secondary)
+                    }
+                }
+                Text("服务器 HTTPS 地址").font(.headline)
+                TextField("https://drive.example.com", text: $serverText)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.URL)
+                    .textContentType(.URL)
+                    .padding(14)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    .accessibilityIdentifier("web-server-origin")
+                if let inputError {
+                    Text(inputError)
+                        .font(.subheadline)
+                        .foregroundStyle(.red)
+                }
+                Button {
+                    do {
+                        let origin = try ServerAddress.parse(serverText)
+                        serverText = origin.absoluteString
+                        UserDefaults.standard.set(serverText, forKey: "xdrive.ios.server")
+                        inputError = nil
+                        pageError = nil
+                        openedOrigin = origin
+                    } catch {
+                        inputError = AuthFailure.message(for: error)
+                    }
+                } label: {
+                    Text("打开 xDrive 文件与图库")
+                        .frame(maxWidth: .infinity, minHeight: 48)
+                }
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("open-shared-web-app")
+                Text("这里打开服务器提供的同一套 Web/PWA Files、图库、Viewer 和地图页面；请在网页内登录。网页 Cookie 与原生 Keychain 登录互不复用。必须使用真实可信的 HTTPS 域名或 IP 证书，不允许绕过证书校验。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("打开原生登录诊断") { nativeLoginVisible = true }
+                    .buttonStyle(.bordered)
+            }
+            .frame(maxWidth: 430, alignment: .leading)
+            .padding(24)
+            .frame(maxWidth: .infinity)
+        }
+        .background(Color(uiColor: .systemGroupedBackground))
+    }
+}
+
+private struct XDriveOriginLockedWebView: UIViewRepresentable {
+    let origin: URL
+    let onPageError: (String?) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(origin: origin, onPageError: onPageError)
+    }
+
+    func makeUIView(context: Context) -> WKWebView {
+        let configuration = WKWebViewConfiguration()
+        // Persistent Web PWA cookie/storage lifecycle; no native bearer token.
+        configuration.websiteDataStore = .default()
+        configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
+        let view = WKWebView(frame: .zero, configuration: configuration)
+        view.navigationDelegate = context.coordinator
+        view.uiDelegate = context.coordinator
+        view.allowsBackForwardNavigationGestures = true
+        view.isOpaque = false
+        view.backgroundColor = UIColor.systemBackground
+        view.load(URLRequest(url: origin, cachePolicy: .useProtocolCachePolicy, timeoutInterval: 30))
+        return view
+    }
+
+    func updateUIView(_ webView: WKWebView, context: Context) {}
+
+    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
+        private let origin: URL
+        private let onPageError: (String?) -> Void
+
+        init(origin: URL, onPageError: @escaping (String?) -> Void) {
+            self.origin = origin
+            self.onPageError = onPageError
+        }
+
+        private func sameOrigin(_ target: URL) -> Bool {
+            guard let source = URLComponents(url: origin, resolvingAgainstBaseURL: false),
+                  let destination = URLComponents(url: target, resolvingAgainstBaseURL: false),
+                  source.scheme?.lowercased() == "https",
+                  destination.scheme?.lowercased() == "https",
+                  source.host?.lowercased() == destination.host?.lowercased(),
+                  (source.port ?? 443) == (destination.port ?? 443),
+                  destination.user == nil, destination.password == nil
+            else { return false }
+            return true
+        }
+
+        private func openExplicitExternalLink(_ action: WKNavigationAction) {
+            guard action.navigationType == .linkActivated,
+                  let url = action.request.url,
+                  url.scheme?.lowercased() == "https",
+                  !sameOrigin(url) else { return }
+            UIApplication.shared.open(url)
+        }
+
+        func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
+                     decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+            guard let url = action.request.url else {
+                decisionHandler(.cancel)
+                return
+            }
+            if action.targetFrame?.isMainFrame == false {
+                // Isolated HTTPS map Child and ordinary same-origin subframes
+                // are supported; never allow insecure HTTP subframe navigation.
+                let scheme = url.scheme?.lowercased()
+                decisionHandler(scheme == "https" || scheme == "about" || scheme == "blob" ? .allow : .cancel)
+                return
+            }
+            if action.targetFrame == nil {
+                if sameOrigin(url) && action.navigationType == .linkActivated {
+                    webView.load(action.request)
+                } else {
+                    openExplicitExternalLink(action)
+                }
+                decisionHandler(.cancel)
+                return
+            }
+            guard sameOrigin(url) else {
+                openExplicitExternalLink(action)
+                decisionHandler(.cancel)
+                return
+            }
+            decisionHandler(.allow)
+        }
+
+        func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
+                     for navigationAction: WKNavigationAction,
+                     windowFeatures: WKWindowFeatures) -> WKWebView? {
+            if let url = navigationAction.request.url,
+               sameOrigin(url), navigationAction.navigationType == .linkActivated {
+                webView.load(navigationAction.request)
+            } else {
+                openExplicitExternalLink(navigationAction)
+            }
+            return nil
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            onPageError(nil)
+        }
+
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!,
+                     withError error: Error) {
+            guard (error as NSError).code != NSURLErrorCancelled else { return }
+            onPageError("请检查服务器连通性和系统信任的 HTTPS 证书。\\n" + error.localizedDescription)
+        }
+
+        // No serverTrust override: WebKit and iOS must validate TLS normally.
+    }
+}
