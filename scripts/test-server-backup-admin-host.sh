@@ -790,6 +790,9 @@ backup_admin_inventory "$dir"
 python3 - "$dir/backup-admin-inventory.json" "$base_total" <<'PY'
 import json,sys
 d=json.load(open(sys.argv[1],encoding="utf-8"))
-assert d["total_snapshots"]==int(sys.argv[2]) and d["truncated"] is False,d
+baseline=int(sys.argv[2])
+assert d["total_snapshots"]==baseline,d
+assert d["truncated"] is (baseline>100),d
+assert len(d["snapshots"])==min(baseline,100),d
 PY
 echo 'Admin Server Backup host bridge: CRUD, batch verify, selected-v2 delete and inventory truncation tests passed'
