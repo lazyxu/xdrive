@@ -2301,6 +2301,9 @@ async function testPhotoCoverDuringMapPan(browser,mode,port){
     await page.goto('https://'+galleryHost+':'+port+'/?mode='+mode,
       {waitUntil:'domcontentloaded'})
     await page.getByText('当前地图可查看 9 张照片',{exact:true}).waitFor()
+    await page.waitForFunction(()=>window.__mapProbe?.queries.some(q=>
+      q.count===9 && q.bounds.west===100 && q.bounds.south===20 &&
+      q.bounds.east===125 && q.bounds.north===40))
     const cover=page.locator('[data-xdrive-places-trusted-photo-cover]').first()
     await cover.waitFor({state:'visible'})
     const before=await cover.boundingBox()
@@ -2321,12 +2324,13 @@ async function testPhotoCoverDuringMapPan(browser,mode,port){
     })
     const moving=page.locator('[data-xdrive-places-gesture-photo-cover]').first()
     await moving.waitFor({state:'visible'})
-    await page.waitForFunction(()=>{
+    await page.waitForFunction(origin=>{
       const cover=document.querySelector('[data-xdrive-places-gesture-photo-cover]')
       if(!cover)return false
       const b=cover.getBoundingClientRect()
-      return Number.isFinite(b.left)&&Number.isFinite(b.top)
-    })
+      return Number.isFinite(b.left)&&Number.isFinite(b.top) &&
+        Math.abs(b.left-origin.x-88)<3 && Math.abs(b.top-origin.y-33)<3
+    },before)
     const after=await moving.boundingBox()
     const state=await page.evaluate(()=>({
       moving:document.querySelectorAll('[data-xdrive-places-gesture-photo-cover]').length,
