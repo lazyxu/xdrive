@@ -934,6 +934,10 @@ export function XDriveMediaGalleryPage({
   const [smartDialogError, setSmartDialogError] = useState('')
   const [shareItem, setShareItem] = useState<MediaItem | null>(null)
   const requestID = useRef(0)
+  // One cancellable first Range for the accepted Gallery content target.
+  // Sorting, Album, Cell and Viewport navigation supersede this disposable
+  // read without touching downloads, uploads or persistent indexer tasks.
+  const firstContentRangeAbort = useRef<AbortController | null>(null)
   const nativeCellOpenAbort = useRef<AbortController | null>(null)
   const changeBaiduMapPhotoScope=useCallback((input:XDriveBaiduMapPhotoScope)=>{
     const next=xDriveCopyBaiduMapPhotoScope(input)
@@ -948,6 +952,8 @@ export function XDriveMediaGalleryPage({
     setBaiduPhotoScopeOwner({owner:preferenceScope,value:next})
   },[preferenceScope])
   useEffect(() => () => {
+    firstContentRangeAbort.current?.abort()
+    firstContentRangeAbort.current = null
     nativeCellOpenAbort.current?.abort()
     nativeCellOpenAbort.current = null
   }, [source, preferenceScope])
@@ -993,42 +999,43 @@ export function XDriveMediaGalleryPage({
         if (!source.listTrashItemRange) {
           throw new Error('当前客户端不支持图库回收站')
         }
-        return source.listTrashItemRange(limit, offset)
+        return source.listTrashItemRange(limit, offset, signal)
       case 'person':
         if (!target.id || !source.listPersonItemRange) {
           throw new Error('当前客户端不支持人物图库范围加载')
         }
-        return source.listPersonItemRange(target.id, limit, offset, target.query)
+        return source.listPersonItemRange(target.id, limit, offset, target.query, signal)
       case 'memory':
         if (!target.id || !source.listMemoryItemRange) {
           throw new Error('当前客户端不支持回忆范围加载')
         }
         return source.listMemoryItemRange(
           target.id, limit, offset, target.query.time_zone ?? mediaTimeZoneRef.current,
+          signal,
         )
       case 'duplicate-review':
         if (!target.id || !source.listDuplicateItemRange) {
           throw new Error('当前客户端不支持重复项审查范围加载')
         }
-        return source.listDuplicateItemRange(target.id, limit, offset)
+        return source.listDuplicateItemRange(target.id, limit, offset, signal)
       case 'burst-review':
         if (!target.id || !source.listBurstReviewItemRange) {
           throw new Error('当前客户端不支持连拍审查范围加载')
         }
-        return source.listBurstReviewItemRange(target.id, limit, offset)
+        return source.listBurstReviewItemRange(target.id, limit, offset, signal)
       case 'pet':
         if (!target.id || !source.listPetItemRange) {
           throw new Error('当前客户端不支持宠物集合范围加载')
         }
-        return source.listPetItemRange(target.id, limit, offset)
+        return source.listPetItemRange(target.id, limit, offset, signal)
       case 'suggested-person':
         if (!target.id || !source.listSuggestedPersonItemRange) {
           throw new Error('当前客户端不支持人物建议范围加载')
         }
-        return source.listSuggestedPersonItemRange(target.id, limit, offset, target.query)
+        return source.listSuggestedPersonItemRange(target.id, limit, offset, target.query, signal)
       case 'album':
         if (!target.id) throw new Error('相册 ID 缺失')
-        return source.listAlbumItemRange(target.id, limit, offset, rangedQuery)
+        return source.listAlbumItemRange(target.id, limit, offset, rangedQuery, signal)
       default:
         return source.listItemRange(limit, offset, rangedQuery, signal)
     }
@@ -1157,6 +1164,9 @@ export function XDriveMediaGalleryPage({
     timeZoneOverride?: string,
   ) => {
     const request = ++requestID.current
+    firstContentRangeAbort.current?.abort()
+    const firstRangeController = new AbortController()
+    firstContentRangeAbort.current = firstRangeController
     nativeCellOpenAbort.current?.abort()
     // A selected Mobile Album is only an intent until its first authorized
     // counted Server range succeeds; keep the previous committed page visible.
@@ -1244,7 +1254,8 @@ export function XDriveMediaGalleryPage({
         target.query.sort_dir === 'asc' &&
         !target.query.search?.trim()
       const rangePromise = loadTargetRange(
-        target, 0, pageSize, undefined, firstAtLatest ? 'latest' : undefined,
+        target, 0, pageSize, firstRangeController.signal,
+        firstAtLatest ? 'latest' : undefined,
       )
       if (target.kind === 'all' && !target.query.folder_id) {
         // Returning from a place photo wall preserves the current bounded
@@ -1390,6 +1401,9 @@ export function XDriveMediaGalleryPage({
       onError?.(loadError)
     } finally {
       finishContentTransition()
+      if (firstContentRangeAbort.current === firstRangeController) {
+        firstContentRangeAbort.current = null
+      }
       if (request === requestID.current) setLoading(false)
     }
   }, [
