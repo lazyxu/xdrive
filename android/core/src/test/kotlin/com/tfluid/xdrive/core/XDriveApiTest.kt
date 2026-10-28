@@ -585,6 +585,54 @@ class XDriveApiTest {
 
 
 
+    @Test fun removingManualAlbumMemberDeletesOnlyMembershipWithRevisionFence() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            val album = GalleryAlbum("manual:trip/2026?key=photo", "manual", "旅行", 3, 7, 0, 40)
+            val item = GalleryAsset(DriveNode(40, 1, "trip.jpg", "file", 42, revision = 5),
+                "image", hasThumbnail = true)
+            val ack = """{"id":"manual:trip/2026?key=photo","kind":"manual","name":"旅行",
+                "revision":8,"album_folder_id":0,"item_count":2,"cover_node_id":null}"""
+            server.enqueue(MockResponse().setResponseCode(200).setBody(ack))
+            val result = api.galleryRemoveFromManualAlbum("owner-secret", album, item)
+            assertEquals(album.id, result.id)
+            assertEquals(8L, result.revision)
+            assertEquals(2L, result.itemCount)
+            assertNull(result.coverNodeId)
+            val req = server.takeRequest()
+            assertEquals("DELETE", req.method)
+            assertEquals("Bearer owner-secret", req.getHeader("Authorization"))
+            assertEquals("\"7\"", req.getHeader("If-Match"))
+            assertTrue(req.requestUrl!!.encodedPath.contains(
+                "/media/albums/manual:trip%2F2026%3Fkey=photo/items/40"))
+            assertNull(req.requestUrl!!.query)
+            assertEquals(0L, req.body.size)
+            server.enqueue(MockResponse().setResponseCode(200).setBody(
+                ack.replace("\"revision\":8", "\"revision\":7")))
+            assertEquals(ApiFailureReason.INVALID_RESPONSE, failure {
+                api.galleryRemoveFromManualAlbum("owner-secret", album, item)
+            }.reason)
+            server.takeRequest()
+            server.enqueue(MockResponse().setResponseCode(409).setBody(
+                """{"error":"revision conflict"}"""))
+            assertEquals(409, failure {
+                api.galleryRemoveFromManualAlbum("owner-secret", album, item)
+            }.statusCode)
+            server.takeRequest()
+            assertEquals(3, server.requestCount)
+            try {
+                api.galleryRemoveFromManualAlbum("owner-secret",
+                    album.copy(kind = "imported"), item)
+                fail("Imported album cannot modify membership")
+            } catch (_: IllegalArgumentException) {}
+            try {
+                api.galleryRemoveFromManualAlbum("owner-secret",
+                    album.copy(itemCount = 0), item)
+                fail("Empty album cannot have a member removed")
+            } catch (_: IllegalArgumentException) {}
+            assertEquals(3, server.requestCount)
+        } }
+    }
+
     @Test fun manualAlbumRenameFencesRevisionAndValidatesServerAck() = runBlocking {
         MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
             val album = GalleryAlbum("manual:trip/2026?x=y", "manual", "旅途", 2, 3, 0)
