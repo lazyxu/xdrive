@@ -6,6 +6,19 @@ const ts = require('typescript')
 
 const repo = path.join(__dirname, '..', '..')
 
+// Reuse the real renderer-local coordinator: same-route content transitions
+// must be observable in these mounted shared Cloud Files controller races.
+const foregroundPriority = (() => {
+  const filename = path.join(repo, 'ui/shared/src/mui/ViewerForegroundPriority.ts')
+  const compiled = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
+    fileName: filename,
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText
+  const module = { exports: {} }
+  new Function('exports', 'module', compiled)(module.exports, module)
+  return module.exports
+})()
+
 function sameDeps(left, right) {
   if (!left || !right || left.length !== right.length) return false
   return left.every((value, index) => Object.is(value, right[index]))
@@ -130,6 +143,7 @@ function loadCloudFilesController(react) {
     if (request === './VirtualCollectionController') {
       return { useXDriveVirtualCollection: useVirtualCollection }
     }
+    if (request === './ViewerForegroundPriority') return foregroundPriority
     return require(request)
   }
   new Function('exports', 'module', 'require', output)(mod.exports, mod, localRequire)
@@ -1265,4 +1279,80 @@ test('U01-B account replacement aborts an in-flight initial counted GET without 
   assert.equal(controller.items[0]?.name, '新账号内容.txt')
   assert.deepEqual(errors, [])
   assert.equal(captures.filter(x => x.account === 'B').length, 1)
+})
+
+test('same-route folder A → B → C cancels B, resumes after C and preserves C on rejected D', async () => {
+  foregroundPriority.xDriveEnterForegroundPage(null)
+  foregroundPriority.xDriveEnterForegroundPage('web:files')
+  const events = []
+  const unsubscribe = foregroundPriority.xDriveObserveViewerForeground(value => events.push(value))
+  const runtime = createHookRuntime()
+  const useController = loadCloudFilesController(runtime.react)
+  const sort = { key: 'name', direction: 'asc' }
+  const blockedB = deferredFirstPage()
+  const blockedD = deferredFirstPage()
+  const requests = []
+  const port = {
+    getRoot: async () => ({ id: 1 }),
+    getQuota: async () => ({ quota_bytes: 100, used_bytes: 10 }),
+    getRange: (id, offset, limit, requestedSort, includeCount, grouping, signal) => {
+      requests.push({ id, signal })
+      if (id === 1) return Promise.resolve(u01Range(10, '原目录.txt', offset, limit))
+      if (id === 2) return blockedB.promise // deliberately ignores AbortSignal
+      if (id === 3) return Promise.resolve(u01Range(30, '新目录.txt', offset, limit))
+      if (id === 4) return blockedD.promise
+      throw new Error('unexpected directory ' + id)
+    },
+  }
+  const render = () => runtime.render(() => useController({
+    port, enabled: true, lifecycleKey: 'owner-a',
+    defaultSort: sort, quotaRefreshIntervalMs: 0, changePollIntervalMs: 0,
+    onError: () => {},
+  }))
+  try {
+    render()
+    await flushAsync()
+    let controller = render()
+    assert.equal(controller.current?.id, 1)
+    assert.equal(events.at(-1), false)
+    const b = controller.loadDirectory(2, [
+      { id: 1, name: '根目录' }, { id: 2, name: 'B' },
+    ], sort)
+    assert.equal(events.at(-1), true, 'B admitted: old disposable thumbnails yield')
+    const staleRequest = requests.find(row => row.id === 2)
+    assert.equal(staleRequest?.signal.aborted, false)
+    const c = controller.loadDirectory(3, [
+      { id: 1, name: '根目录' }, { id: 3, name: 'C' },
+    ], sort)
+    assert.equal(staleRequest.signal.aborted, true, 'C starts by aborting old B first Range')
+    assert.equal(await c, true)
+    assert.equal(events.at(-1), false, 'C commit restores thumbnail admission')
+    controller = render()
+    assert.equal(controller.current?.id, 3)
+    assert.equal(controller.items[0]?.name, '新目录.txt')
+
+    blockedB.resolve(u01Range(20, '迟到的B.txt'))
+    assert.equal(await b, false)
+    assert.equal(events.at(-1), false, 'stale B finally may not re-pause C')
+    controller = render()
+    assert.equal(controller.current?.id, 3)
+    assert.equal(controller.items[0]?.name, '新目录.txt')
+
+    const d = controller.loadDirectory(4, [
+      { id: 1, name: '根目录' }, { id: 4, name: 'D' },
+    ], sort)
+    assert.equal(events.at(-1), true)
+    blockedD.reject(new Error('denied'))
+    assert.equal(await d, false)
+    assert.equal(events.at(-1), false, 'D rejection must resume accepted C')
+    controller = render()
+    assert.equal(controller.current?.id, 3)
+    assert.equal(controller.items[0]?.name, '新目录.txt')
+    assert.equal(foregroundPriority.xDriveCurrentForegroundPage(), 'web:files')
+  } finally {
+    blockedB.resolve(null)
+    blockedD.resolve(null)
+    unsubscribe()
+    foregroundPriority.xDriveEnterForegroundPage(null)
+  }
 })
