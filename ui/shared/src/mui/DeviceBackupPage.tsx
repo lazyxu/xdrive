@@ -255,24 +255,27 @@ function XDriveDeviceBackupServerPage({
 
   useEffect(() => {
     if (!source) return
+    // Only this owner-scoped overview GET is disposable. No Push/Pull, backup
+    // execution, local schedule/configuration or acknowledged mutation receives
+    // the controller. Legacy adapters may ignore the optional signal; the
+    // existing active/source fencing still protects the next accepted page.
+    const controller = new AbortController()
     let active = true
-    // Retain a same-account authoritative snapshot until the next owner
-    // response. A changed Server/account source must never show prior devices.
     setSnapshot((prev) => ({
       source,
       overview: prev.source === source ? prev.overview : null,
       loading: true, failed: false,
     }))
-    void source.list().then((result) => {
-      if (!active) return
+    void source.list(controller.signal).then((result) => {
+      if (!active || controller.signal.aborted) return
       validateXDriveDeviceBackupInitialOverview(result)
       setSnapshot({ source, overview: result, loading: false, failed: false })
     }).catch(() => {
-      if (active) setSnapshot((prev) => prev.source === source
+      if (active && !controller.signal.aborted) setSnapshot((prev) => prev.source === source
         ? { ...prev, loading: false, failed: true }
         : prev)
     })
-    return () => { active = false }
+    return () => { active = false; controller.abort() }
   }, [source, refreshID])
 
   // Device list pages are owner-redacted and optional for older Agents.
