@@ -236,6 +236,36 @@ exec 9>&-
 exec 8>>"$XD_CONFIG_DIR/state/install.lock"
 flock -n 8
 cp "$XD_BACKUP_ADMIN_TEST_LOG" "$TMP/before-install-lock"
+# DB-only recovery is intentionally a different privileged action from a
+# full restore. It must preserve file data and keep safety backup enabled.
+write_request restore_database_only "v1:$db_only" "" "" "" "DATABASE ONLY RESTORE v1:$db_only"
+backup_admin_process_request "$dir"
+grep -Fq "backup verify $XD_CONFIG_DIR/backups/snapshots/$db_only" "$XD_BACKUP_ADMIN_TEST_LOG"
+grep -Fq "restore $XD_CONFIG_DIR/backups/snapshots/$db_only --yes --database-only" "$XD_BACKUP_ADMIN_TEST_LOG"
+grep -Fq '"state":"success"' "$dir/backup-admin-status.json"
+python3 - "$dir/backup-admin-history.json" <<'PY'
+import json,sys
+entry=json.load(open(sys.argv[1],encoding="utf-8"))["operations"][0]
+assert entry["action"]=="restore_database_only" and entry["snapshot_id"]=="v1:xdrive-backup-20261025T010000Z",entry
+assert entry["state"]=="success",entry
+PY
+if grep -Eq -- 'no-safety-backup|--privileged|rm -rf' "$XD_BACKUP_ADMIN_TEST_LOG"; then
+  echo 'unsafe database-only restore flags reached Host manager' >&2; exit 1
+fi
+cp "$XD_BACKUP_ADMIN_TEST_LOG" "$TMP/before-invalid-db-restore"
+write_request restore_database_only "v1:$v1" "" "" "" "DATABASE ONLY RESTORE v1:$v1"
+backup_admin_process_request "$dir"
+cmp "$TMP/before-invalid-db-restore" "$XD_BACKUP_ADMIN_TEST_LOG"
+grep -Fq '"state":"failed"' "$dir/backup-admin-status.json"
+write_request restore_database_only "v2-default:$v2" "" "" "" "DATABASE ONLY RESTORE v2-default:$v2"
+backup_admin_process_request "$dir"
+cmp "$TMP/before-invalid-db-restore" "$XD_BACKUP_ADMIN_TEST_LOG"
+grep -Fq '"state":"failed"' "$dir/backup-admin-status.json"
+write_request restore_database_only "v1:$db_only" "" "" "" "RESTORE v1:$db_only"
+backup_admin_process_request "$dir"
+cmp "$TMP/before-invalid-db-restore" "$XD_BACKUP_ADMIN_TEST_LOG"
+grep -Fq '"state":"failed"' "$dir/backup-admin-status.json"
+
 write_request restore "v2-default:$v2" "" "" "" "RESTORE v2-default:$v2"
 backup_admin_process_request "$dir"
 grep -Fq '"state":"failed"' "$dir/backup-admin-status.json"
