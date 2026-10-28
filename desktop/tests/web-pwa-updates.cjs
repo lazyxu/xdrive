@@ -508,3 +508,97 @@ test('S3A Safari: denied optional Window event preserves update discovery and ma
     assert.equal(h.checked, 1)
   }
 })
+
+test('S3A Safari: denied registration updatefound observer preserves a real waiting worker', async () => {
+  const h = harness({ waiting: true })
+  h.registration.addEventListener = () => { throw Error('restricted registration listener') }
+  assert.doesNotThrow(() => h.mod.startXDrivePwaUpdateObservation())
+  await flush()
+  assert.equal(h.mod.xDrivePwaUpdateSnapshot().phase, 'waiting')
+  assert.equal(h.mod.xDrivePwaUpdateSnapshot().hasController, true)
+  assert.equal(await h.mod.checkXDrivePwaUpdate(), 'waiting')
+  assert.equal(h.checked, 1)
+  assert.equal(h.regEvents.has('updatefound'), false)
+  // Permission restoration must allow a future registration lookup to attach
+  // the real updatefound observer; a failed subscription is NOT sticky.
+  h.registration.addEventListener = (kind, fn) => { h.regEvents.set(kind, fn) }
+  h.events.get('pageshow')()
+  await flush()
+  assert.equal(typeof h.regEvents.get('updatefound'), 'function')
+})
+
+test('S3A Safari: denied installing getter or statechange listener is harmless', async () => {
+  for (const denied of ['installing', 'statechange']) {
+    const h = harness({ waiting: false })
+    h.mod.startXDrivePwaUpdateObservation()
+    await flush()
+    if (denied === 'installing') {
+      Object.defineProperty(h.registration, 'installing', {
+        configurable: true,
+        get() { throw Error('WebKit denied installing') },
+      })
+    } else {
+      h.registration.installing = {
+        addEventListener() { throw Error('WebKit denied statechange') },
+      }
+    }
+    assert.doesNotThrow(() => h.regEvents.get('updatefound')(), denied)
+    assert.equal(h.mod.xDrivePwaUpdateSnapshot().phase, 'idle')
+    assert.equal(await h.mod.checkXDrivePwaUpdate(), 'checked')
+    assert.equal(h.checked, 1)
+  }
+})
+
+test('S3A Safari: denied ServiceWorker state getter cannot create a false waiting status', async () => {
+  const h = harness({ waiting: false })
+  h.mod.startXDrivePwaUpdateObservation()
+  await flush()
+  let observed
+  h.registration.installing = {
+    addEventListener(_kind, fn) { observed = fn },
+  }
+  h.regEvents.get('updatefound')()
+  assert.equal(typeof observed, 'function')
+  Object.defineProperty(h.registration.installing, 'state', {
+    get() { throw Error('WebKit denied worker state') },
+  })
+  assert.doesNotThrow(() => observed())
+  assert.equal(h.mod.xDrivePwaUpdateSnapshot().phase, 'idle')
+  assert.equal(await h.mod.checkXDrivePwaUpdate(), 'checked')
+})
+
+test('S3A Safari: denied waiting getter cannot crash status, explicit check, or retry', async () => {
+  const h = harness({ waiting: true })
+  Object.defineProperty(h.registration, 'waiting', {
+    configurable: true,
+    get() { throw Error('WebKit denied registration.waiting') },
+  })
+  assert.doesNotThrow(() => h.mod.startXDrivePwaUpdateObservation())
+  await flush()
+  assert.equal(h.mod.xDrivePwaUpdateSnapshot().phase, 'idle',
+    'unknown waiting status is not proof of a waiting worker')
+  assert.equal(await h.mod.checkXDrivePwaUpdate(), 'checked')
+  assert.equal(h.mod.xDrivePwaUpdateSnapshot().phase, 'checked')
+  // A later successful read can recover actual waiting status on pageshow.
+  Object.defineProperty(h.registration, 'waiting', {
+    configurable: true, writable: true, value: {},
+  })
+  h.events.get('pageshow')()
+  await flush()
+  assert.equal(h.mod.xDrivePwaUpdateSnapshot().phase, 'waiting')
+})
+
+test('S3A Safari: denied waiting getter on failed update remains a bounded error', async () => {
+  const h = harness({ waiting: true })
+  h.mod.startXDrivePwaUpdateObservation()
+  await flush()
+  Object.defineProperty(h.registration, 'waiting', {
+    configurable: true,
+    get() { throw Error('WebKit denied registration.waiting') },
+  })
+  h.registration.update = async () => { throw Error('offline') }
+  assert.equal(await h.mod.checkXDrivePwaUpdate({ timeoutMs: 100 }), 'error')
+  assert.equal(h.mod.xDrivePwaUpdateSnapshot().phase, 'error')
+  assert.equal(h.mod.xDrivePwaUpdateSnapshot().hasController, true)
+  assert.doesNotMatch(source, /skipWaiting\s*\(|location\.reload\s*\(/)
+})
