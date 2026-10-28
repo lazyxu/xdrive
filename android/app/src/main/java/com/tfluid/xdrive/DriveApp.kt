@@ -123,6 +123,7 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                     }
                     val title = if (state.screen == Screen.TRASH) "回收站"
                         else if (state.screen == Screen.GALLERY) when {
+                            state.galleryMapOpen -> "地点"
                             state.gallerySelectedAlbum != null -> state.gallerySelectedAlbum?.name ?: "相册"
                             state.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS -> "精选集"
                             else -> "照片"
@@ -193,7 +194,9 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                 }
                 Screen.GALLERY -> {
                     val photo = state.galleryViewer
-                    if (photo != null) {
+                    if (state.galleryMapOpen) {
+                        GalleryMapOverview(state, controller)
+                    } else if (photo != null) {
                         Box(Modifier.fillMaxSize()) {
                             key(photo.node.id, photo.node.revision) {
                                 if (photo.mediaKind == "video")
@@ -376,7 +379,8 @@ internal fun AccountMenu(state: DriveState, controller: DriveController, checkUp
                     onClick = {
                         expanded = false
                         if (state.screen == Screen.GALLERY) {
-                            if (state.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS &&
+                            if (state.galleryMapOpen) controller.retryGalleryMapOverview()
+                            else if (state.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS &&
                                 state.gallerySelectedAlbum == null)
                                 controller.refreshGalleryAlbums()
                             else controller.refreshGallery()
