@@ -58,9 +58,9 @@ export function useXDriveFileExplorerOwnerSourceOptions<THost extends object>({
     return () => { active = false }
   }, [host, ownerKey, read, isCurrent])
 
-  const current = snapshot?.host === host && snapshot.ownerKey === ownerKey
+  const current = snapshot?.host === host && snapshot.ownerKey === ownerKey ? snapshot : null
   return {
-    options: current ? snapshot.options : EMPTY_SOURCE_OPTIONS,
-    status: current ? snapshot.status : 'unverified',
+    options: current?.options ?? EMPTY_SOURCE_OPTIONS,
+    status: current?.status ?? 'unverified',
   }
 }

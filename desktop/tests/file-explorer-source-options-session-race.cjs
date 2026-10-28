@@ -79,6 +79,42 @@ test('same-ID Owner switch rejects old Source rows before effect cleanup or late
   Renderer.act(() => renderer.unmount())
 })
 
+test('ready old Owner Source options are hidden immediately on same-node account switch', async () => {
+  const host = {}, first = deferred(), next = deferred()
+  let exposed, renderer
+  function Harness({ ownerKey, read }) {
+    exposed = useXDriveFileExplorerOwnerSourceOptions({ host, ownerKey, read })
+    return null
+  }
+  Renderer.act(() => { renderer = Renderer.create(React.createElement(Harness, { ownerKey: 'A', read: () => first.promise })) })
+  await Renderer.act(async () => { first.resolve([{ id: 42, name: 'private A Source' }]); await tick() })
+  assert.deepEqual(exposed.options, [{ id: 42, name: 'private A Source' }])
+  Renderer.act(() => renderer.update(React.createElement(Harness, { ownerKey: 'B', read: () => next.promise })))
+  assert.deepEqual(exposed.options, [], 'old verified Source must disappear synchronously for B')
+  assert.equal(exposed.status, 'unverified')
+  await Renderer.act(async () => { next.resolve([{ id: 42, name: 'B Source' }]); await tick() })
+  assert.deepEqual(exposed.options, [{ id: 42, name: 'B Source' }])
+  Renderer.act(() => renderer.unmount())
+})
+
+test('a disposed Source read never publishes an error or calls an unmounted owner', async () => {
+  const host = {}, pending = deferred(), errors = []
+  let exposed, renderer
+  function Harness() {
+    exposed = useXDriveFileExplorerOwnerSourceOptions({
+      host, ownerKey: 'A', read: () => pending.promise,
+      onError: error => errors.push(error.message),
+    })
+    return null
+  }
+  Renderer.act(() => { renderer = Renderer.create(React.createElement(Harness)) })
+  assert.equal(exposed.status, 'unverified')
+  Renderer.act(() => renderer.unmount())
+  pending.reject(new Error('late disposed Source failure'))
+  await tick()
+  assert.deepEqual(errors, [])
+})
+
 test('replaced Host and unmounted caller ignore stale errors and preserve truthful read state', async () => {
   const aHost = {}, bHost = {}, a = deferred(), b = deferred(), errors = []
   let exposed, renderer
