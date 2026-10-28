@@ -8031,7 +8031,7 @@ function registerIPCHandlers() {
     }
     return runAgentAction<AgentFileAvailability>(() => requireAgentClient().fileAvailability(path), false)
   })
-  ipcMain.handle('agent:get-file-availability-batch', (_event, value: unknown) => {
+  ipcMain.handle('agent:get-file-availability-batch', (event, value: unknown, requestID: unknown = undefined) => {
     if (!Array.isArray(value) || value.length === 0 || value.length > 2048) {
       return { ok: false, error: { code: 'invalid_input', message: '1 to 2048 file paths are required.' } }
     }
@@ -8041,14 +8041,15 @@ function registerIPCHandlers() {
     if (paths.length === 0) {
       return { ok: false, error: { code: 'invalid_input', message: 'At least one file path is required.' } }
     }
-    return runAgentAction<AgentFileAvailabilityBatch>(() => {
-      const hello = agentState.connected ? agentState.hello : undefined
-      if (!hello) {
-        throw new AgentIPCError('agent_unavailable', 0, 'xdrive-agent is not connected.')
-      }
-      requireAgentCapability(hello, 'file-availability-batch')
-      return requireAgentClient().fileAvailabilityBatch(paths)
-    }, false)
+    return runAgentAction<AgentFileAvailabilityBatch>(() =>
+      viewportRequests.run(event.sender, requestID, async signal => {
+        const hello = agentState.connected ? agentState.hello : undefined
+        if (!hello) {
+          throw new AgentIPCError('agent_unavailable', 0, 'xdrive-agent is not connected.')
+        }
+        requireAgentCapability(hello, 'file-availability-batch')
+        return requireAgentClient().fileAvailabilityBatch(paths, signal)
+      }), false)
   })
   ipcMain.handle('agent:set-file-availability', (_event, path: unknown, action: unknown) => {
     if (
