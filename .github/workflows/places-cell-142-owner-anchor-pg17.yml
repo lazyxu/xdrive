@@ -1,0 +1,71 @@
+name: Places Owner 142 Cell Paging and Viewer Anchor PostgreSQL17
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'internal/api/baidu_photo_map_cell_142_anchor_linux_test.go'
+      - '.github/workflows/places-cell-142-owner-anchor-pg17.yml'
+      - 'internal/api/baidu_photo_map_cell_range.go'
+      - 'internal/api/baidu_photo_map_cells.go'
+      - 'internal/api/media_anchor.go'
+      - 'internal/api/media.go'
+  push:
+    branches: [master]
+    paths:
+      - 'internal/api/baidu_photo_map_cell_142_anchor_linux_test.go'
+      - '.github/workflows/places-cell-142-owner-anchor-pg17.yml'
+      - 'internal/api/baidu_photo_map_cell_range.go'
+      - 'internal/api/baidu_photo_map_cells.go'
+      - 'internal/api/media_anchor.go'
+      - 'internal/api/media.go'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: places-owner-cell142-pg17-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  owner-cell142-anchor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_PLACES_100K_DISPOSABLE_CI: '1'
+      XD_PLACES_CELL_142_ANCHOR_PG17: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Ensure current immutable PR source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(gofmt -l internal/api/baidu_photo_map_cell_142_anchor_linux_test.go | wc -l)" -eq 0
+      - name: Real Owner 142+28 PostgreSQL17 Cell Range, anchor and invalidation
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test ./internal/api -run '^TestPlacesOwnerCell142AnchorPagesPG17$' -count=1 -timeout=12m -v
