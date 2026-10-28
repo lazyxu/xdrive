@@ -1,3 +1,4 @@
+import { xDriveEnterForegroundPage } from '../../ui/shared/src/mui/ViewerForegroundPriority'
 import React, { useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import { Typography, useTheme } from '@mui/material'
@@ -6,6 +7,7 @@ import {
   XDriveApp, XDriveAppPageOutlet, XDriveWorkspaceContent, XDriveSettingsDialog,
   xDriveWorkspaceHostSections,
   xDriveIsWorkspaceAppRoute,
+  xDriveWorkspaceNavigationAllowed,
   createXDriveSynologyBackupLocalClient,
   createXDriveSynologyOwnerBackupSource,
   createXDriveSynologyCloudStorageDataSource,
@@ -39,8 +41,18 @@ function SynologyWorkspace({ appearance, onAppearanceChange }: {
   const [selected, setSelected] = useState<XDriveWorkspaceAppRoute>('overview')
 
   const navigate = (next: XDriveWorkspaceAppRoute) => {
-    if (next === selected) refreshPage((value) => value + 1)
-    else { setSelected(next); refreshPage(0) }
+    // Apply the real canonical Server/Host role gate before page preemption.
+    // Home/Task links and sidebar alike must not bypass privileged routes.
+    if (!xDriveWorkspaceNavigationAllowed(next, host.adminRoleVerified === true)) return
+    if (next === selected) {
+      refreshPage((value) => value + 1)
+      return
+    }
+    // Cancel only the previous page's disposable requests before this
+    // newly authenticated DSM destination mounts its own reader pools.
+    xDriveEnterForegroundPage('synology:' + next)
+    setSelected(next)
+    refreshPage(0)
   }
 
   return (

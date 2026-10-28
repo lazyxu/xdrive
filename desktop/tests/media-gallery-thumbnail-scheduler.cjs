@@ -15,7 +15,15 @@ const output = ts.transpileModule(source, {
   fileName: filename,
 }).outputText
 const mod = { exports: {} }
-new Function('exports', 'module', 'require', output)(mod.exports, mod, require)
+const viewerModule = { exports: {} }
+const prioritySource = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/ViewerForegroundPriority.ts'), 'utf8')
+const priorityOutput = ts.transpileModule(prioritySource, {
+  fileName: 'ViewerForegroundPriority.ts',
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText
+new Function('exports', 'module', priorityOutput)(viewerModule.exports, viewerModule)
+new Function('exports', 'module', 'require', output)(mod.exports, mod,
+  name => name === './ViewerForegroundPriority' ? viewerModule.exports : require(name))
 
 const { XDriveMediaThumbnailScheduler } = mod.exports
 

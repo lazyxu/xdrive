@@ -1,7 +1,8 @@
 import { xDriveClearBaiduMapDiagnostic } from '../../../ui/shared/src/media-gallery-baidu-diagnostics'
 import { xDriveClearBaiduConversionSession } from '../../../ui/shared/src/media-gallery-baidu-jsapi4-markers'
 import type { XDriveBaiduMapAdminUpdate, XDriveGeoNamesUpdate, XDriveGeoNamesRollbackInput, XDrivePhotoAutoUpdate, XDrivePhotoAutoRollbackInput, XDriveSourceWorkerUpdate, XDriveSourceWorkerRollbackInput } from '@xdrive/shared'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { xDriveEnterForegroundPage } from '../../../ui/shared/src/mui/ViewerForegroundPriority'
 import { xDriveDesktopViewportRequest } from './abortableViewportRequest'
 import type { FormEvent, ReactNode } from 'react'
 import {
@@ -200,6 +201,9 @@ export default function App({
   const [windowMaximized, setWindowMaximized] = useState(false)
   const [agent, setAgent] = useState<AgentConnectionState>({ connected: false })
   const [view, setViewActual] = useState<View>('overview')
+  // A new accepted page wins while old disposable File/Gallery reads yield.
+  // The current Host route remains authoritative across Desktop/DSM.
+  useLayoutEffect(() => { xDriveEnterForegroundPage('desktop:' + view) }, [view])
   const [systemDependenciesDraftDirty, setSystemDependenciesDraftDirty] = useState(false)
   const [pendingSystemDependenciesExit, setPendingSystemDependenciesExit] = useState<View | null>(null)
   const activeViewRef = useRef<View>(view)
@@ -215,6 +219,7 @@ export default function App({
       setPendingSystemDependenciesExit(next)
       return
     }
+    xDriveEnterForegroundPage('desktop:' + next)
     setViewActual(next)
   }, [])
 
@@ -783,6 +788,9 @@ export default function App({
   } = useXDriveCloudFilesController<AgentCloudNode, AgentCloudQuota, XDriveFileExplorerSort>({
     port: cloudFilesPort,
     enabled: agent.connected && configured,
+    // Offscreen reads must not compete with foreground content; preserve
+    // mutation/transfer status and the user's explicit file operations.
+    foreground: view === 'files' || view === 'overview',
     lifecycleKey: `${status?.server ?? ''}\n${status?.username ?? ''}`,
     defaultSort: XDRIVE_FILE_EXPLORER_DEFAULT_SORT,
     preserveStateOnDisable: true,
@@ -3336,6 +3344,7 @@ export default function App({
           systemDependenciesDraftRef.current = false
           setSystemDependenciesDraftDirty(false)
           setPendingSystemDependenciesExit(null)
+          xDriveEnterForegroundPage('desktop:' + next)
           setViewActual(next)
         }}
       />

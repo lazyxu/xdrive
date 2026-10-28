@@ -101,6 +101,11 @@ function createHarness() {
     // URL/Back/Forward/dirty-form behavior assertions.
     startTransition(callback) { callback() },
     useEffect(effect) { effect() },
+    useLayoutEffect(effect) { effect() },
+  }
+  const priorityTransitions = []
+  const fakePriority = {
+    xDriveEnterForegroundPage(page) { priorityTransitions.push(page) },
   }
   const fakeShared = {
     xDriveParseWebAppHash: parseHash,
@@ -115,13 +120,17 @@ function createHarness() {
   const module = { exports: {} }
   new Function('module', 'exports', 'require', 'window', compiled.outputText)(
     module, module.exports,
-    (id) => id === 'react' ? react : id === '../../ui/shared/src' ? fakeShared : assert.fail(id), window,
+    (id) => id === 'react' ? react
+      : id === '../../ui/shared/src' ? fakeShared
+      : id === '../../ui/shared/src/mui/ViewerForegroundPriority' ? fakePriority
+      : assert.fail(id), window,
   )
   return {
     runtime: module.exports,
     history,
     window,
     routeEvents,
+    priorityTransitions,
     currentRoute: () => routeEvents[routeEvents.length - 1],
   }
 }
@@ -129,6 +138,24 @@ function createHarness() {
 const admin = { app: 'admin-services', params: { service: 'caddy', tab: 'config' } }
 const files = { app: 'files', params: {} }
 
+test('blocked history navigation does not preempt the current page before authorization', () => {
+  const h=createHarness()
+  let dirty=false
+  const app=h.runtime.useXDriveWebAppRuntime((from,to)=>
+    dirty&&from.app==='admin-services'&&to.app==='files')
+  app.launch({app:'admin-services',params:{service:'caddy',tab:'config'}})
+  assert.equal(h.priorityTransitions.at(-1),'web:admin-services')
+  dirty=true
+  h.history.back()
+  h.history.flush()
+  assert.equal(h.priorityTransitions.at(-1),'web:admin-services',
+    'dirty form guard must prevent premature background cancellation')
+  app.cancelHistoryNavigation()
+  h.history.back();h.history.flush()
+  app.confirmHistoryNavigation();h.history.flush()
+  assert.equal(h.priorityTransitions.at(-1),'web:files',
+    'confirmed Back must give newly committed Files priority')
+})
 test('browser Back cancel restores exact admin history entry without losing draft', () => {
   const h = createHarness()
   let dirty = false

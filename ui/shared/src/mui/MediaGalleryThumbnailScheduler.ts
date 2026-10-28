@@ -1,3 +1,4 @@
+import { xDriveViewerForegroundActive, xDriveObserveViewerForeground } from './ViewerForegroundPriority'
 import type { XDriveByteProgressHandler } from '../file-preview'
 
 export const XDRIVE_MEDIA_THUMBNAIL_CONCURRENCY = 6
@@ -48,6 +49,9 @@ export class XDriveMediaThumbnailScheduler {
   private sequence = 0
   private disposed = false
   private suspended = false
+  private requestedSuspended = false
+  private viewerForeground = xDriveViewerForegroundActive()
+  private stopObservingViewer: (() => void) | null = null
   private pumpScheduled = false
   private readonly queue: ThumbnailTask[] = []
   private readonly queued = new Map<string, ThumbnailTask>()
@@ -88,6 +92,12 @@ export class XDriveMediaThumbnailScheduler {
     this.concurrency = Math.max(1, Math.trunc(concurrency) || 1)
     this.maxCacheEntries = Math.max(1, Math.trunc(maxCacheEntries) || 1)
     this.revokeURL = revokeURL
+    // One subscription per bounded pool. The shared foreground lease
+    // preempts Files, Gallery, album and map background reads alike.
+    this.stopObservingViewer = xDriveObserveViewerForeground((active) => {
+      this.viewerForeground = active
+      this.setSuspended(this.requestedSuspended)
+    })
   }
 
   load = (
@@ -236,9 +246,11 @@ export class XDriveMediaThumbnailScheduler {
    * Cached URL leases remain valid, including URLs borrowed by routed Viewer.
    */
   setSuspended(suspended: boolean) {
-    if (this.disposed || this.suspended === suspended) return
-    this.suspended = suspended
-    if (suspended) {
+    this.requestedSuspended = suspended
+    const effective = suspended || this.viewerForeground
+    if (this.disposed || this.suspended === effective) return
+    this.suspended = effective
+    if (effective) {
       for (const task of [...this.queue]) this.cancelTask(task)
       for (const task of [...this.inFlight.values()]) this.cancelTask(task)
       this.compactQueue()
@@ -262,6 +274,8 @@ export class XDriveMediaThumbnailScheduler {
   dispose() {
     if (this.disposed) return
     this.disposed = true
+    this.stopObservingViewer?.()
+    this.stopObservingViewer = null
     for (const task of [...this.queue]) this.cancelTask(task)
     for (const task of [...this.inFlight.values()]) this.cancelTask(task)
     this.queue.length = 0

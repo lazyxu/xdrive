@@ -58,6 +58,16 @@ function mountComponent(source) {
     }
     if (name === './MediaLoadProgress') return { XDriveMediaLoadingProgress: Placeholder }
     if (name === './LivePhotoSurface') return { XDriveLivePhotoGlyph: Placeholder }
+    if (name === './ViewerForegroundPriority') {
+      // Frozen P070 baseline tests document.hidden separately from Viewer.
+      return {
+        xDriveViewerForegroundActive: () => false,
+        xDriveObserveViewerForeground: notify => {
+          notify(false)
+          return () => undefined
+        },
+      }
+    }
     if (name === './FileExplorerThumbnailVisualState') {
       return { xDriveFileExplorerThumbnailVisualState: () => 'loading' }
     }

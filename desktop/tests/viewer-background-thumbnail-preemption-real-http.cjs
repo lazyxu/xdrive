@@ -16,6 +16,17 @@ const { create, act } = require('react-test-renderer')
 const repo = path.resolve(__dirname, '../..')
 const filePath = path.join(repo, 'ui/shared/src/mui/FileExplorerThumbnail.tsx')
 const galleryPath = path.join(repo, 'ui/shared/src/mui/MediaGalleryThumbnailScheduler.ts')
+const priorityPath = path.join(repo, 'ui/shared/src/mui/ViewerForegroundPriority.ts')
+const priorityModule = (() => {
+  const src = fs.readFileSync(priorityPath, 'utf8')
+  const js = ts.transpileModule(src, {
+    fileName: priorityPath,
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText
+  const result = { exports: {} }
+  new Function('exports', 'module', js)(result.exports, result)
+  return result.exports
+})()
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 async function until(predicate, message, timeout = 2000) {
   const start = performance.now()
@@ -43,6 +54,7 @@ function loadTypescript(filename, stubs = {}) {
     if (name === '@mui/icons-material/ErrorOutlineRounded') return { __esModule: true, default: fallback }
     if (name === './MediaLoadProgress') return { XDriveMediaLoadingProgress: fallback }
     if (name === './LivePhotoSurface') return { XDriveLivePhotoGlyph: fallback }
+    if (name === './ViewerForegroundPriority') return priorityModule
     if (name === './FileExplorerThumbnailVisualState') {
       return { xDriveFileExplorerThumbnailVisualState: () => 'loading' }
     }
@@ -112,7 +124,9 @@ async function fileTrial(mode, attempt) {
   global.window = window
   global.IntersectionObserver = undefined
   let renderer
+  let releasePriority = null
   try {
+    if(mode==='page')priorityModule.xDriveEnterForegroundPage('web:files')
     const component = loadTypescript(filePath)
     const loadThumbnail = async (item, signal) => {
       const response = await fetch(url + '/thumbnail/' + item.id, { signal })
@@ -140,9 +154,19 @@ async function fileTrial(mode, attempt) {
     await until(() => state.waitingViewers.length === 1, 'Viewer GET blocked on six thumbnails')
     if (mode === 'preempt') {
       await act(async () => { renderer.update(view(true)) })
-      await until(() => state.thumbnails.slice(0, 6).every(row => row.closedAt !== null),
-        'cancel all previous Files HTTP requests')
+    } else if (mode === 'foreground') {
+      await act(async () => {
+        releasePriority = priorityModule.xDriveAcquireViewerForeground({})
+      })
+    } else if(mode==='page'){
+      await act(async()=>{
+        priorityModule.xDriveEnterForegroundPage('web:gallery')
+      })
     }
+    if (mode !== 'baseline') await until(
+      () => state.thumbnails.slice(0, 6).every(row => row.closedAt !== null),
+      'cancel all previous Files HTTP requests',
+    )
     const viewerBody = await viewerRequest
     assert.equal(viewerBody, 'viewer-current-original')
     // Viewer is admitted when ONE slot frees, before the remaining bodies
@@ -154,12 +178,18 @@ async function fileTrial(mode, attempt) {
     )
     const cancelled = state.thumbnails.slice(0, 6).filter(row => row.earlyClosed)
     const wastedBytes = state.thumbnails.slice(0, 6).reduce((sum, row) => sum + row.sentBytes, 0)
-    if (mode === 'preempt') {
+    if (mode !== 'baseline') {
       assert.equal(cancelled.length, 6, 'all obscured Files thumbnails disconnect')
       assert.equal(wastedBytes, 0, 'no cancelled thumbnail may send its delayed HTTP body')
       assert.ok(elapsedMS < 250, 'Viewer must be admitted quickly, not wait 650ms: ' + elapsedMS)
       await sleep(30)
       assert.equal(state.thumbnails.length, 6, 'suspended Files may not immediately restart reads')
+      if (releasePriority) {
+        await act(async () => { releasePriority(); releasePriority = null })
+      }
+      if(mode==='page') await act(async()=>{
+        priorityModule.xDriveEnterForegroundPage('web:files')
+      })
       await act(async () => { renderer.update(view(false)) })
       await until(() => state.thumbnails.length >= 12,
         'return to Files resumes only mounted/visible thumbnail reads')
@@ -175,7 +205,9 @@ async function fileTrial(mode, attempt) {
     console.log('VIEWER_BACKGROUND_THUMB_HTTP_SAMPLE ' + JSON.stringify(sample))
     return sample
   } finally {
+    releasePriority?.()
     if (renderer) await act(async () => { renderer.unmount() })
+    if(mode==='page')priorityModule.xDriveEnterForegroundPage(null)
     await httpFixture.close()
     for (const name of Object.keys(before)) {
       if (before[name] === undefined) delete global[name]
@@ -188,7 +220,9 @@ async function galleryTrial(mode, attempt) {
   const { state, url } = fixture
   const { XDriveMediaThumbnailScheduler } = loadTypescript(galleryPath)
   let scheduler
+  let releasePriority = null
   try {
+    if(mode==='page')priorityModule.xDriveEnterForegroundPage('web:gallery')
     scheduler = new XDriveMediaThumbnailScheduler(async (nodeID, signal) => {
       const response = await fetch(url + '/thumbnail/' + nodeID, { signal })
       await response.arrayBuffer()
@@ -201,6 +235,8 @@ async function galleryTrial(mode, attempt) {
     const viewerRequest = fetch(url + '/viewer').then(response => response.text())
     await until(() => state.waitingViewers.length === 1, 'Viewer GET blocked by Gallery')
     if (mode === 'preempt') scheduler.setSuspended(true)
+    else if (mode === 'foreground') releasePriority = priorityModule.xDriveAcquireViewerForeground({})
+    else if(mode==='page')priorityModule.xDriveEnterForegroundPage('web:files')
     const viewerBody = await viewerRequest
     assert.equal(viewerBody, 'viewer-current-original')
     const elapsedMS = state.viewerFinishedAt - openAt
@@ -208,20 +244,23 @@ async function galleryTrial(mode, attempt) {
       state.thumbnails.slice(0, 6).every(row => row.closedAt !== null),
       'baseline Gallery six real HTTP bodies completed',
     )
-    if (mode === 'preempt') await until(
+    if (mode !== 'baseline') await until(
       () => state.thumbnails.slice(0, 6).every(row => row.closedAt !== null),
       'all Gallery thumbnail HTTP transports released',
     )
     const cancelled = state.thumbnails.slice(0, 6).filter(row => row.earlyClosed)
     const wastedBytes = state.thumbnails.slice(0, 6).reduce((sum, row) => sum + row.sentBytes, 0)
     await Promise.all(pending)
-    if (mode === 'preempt') {
+    if (mode !== 'baseline') {
       assert.equal(cancelled.length, 6, 'all Gallery background HTTP disconnects')
       assert.equal(wastedBytes, 0)
       assert.ok(elapsedMS < 250, 'Viewer must bypass cold Gallery thumbnail backlog: ' + elapsedMS)
       assert.equal(await scheduler.load(99999, 0, 1), null,
         'new background thumbnails must not restart under Viewer')
       assert.equal(state.thumbnails.length, 6)
+      releasePriority?.()
+      releasePriority = null
+      if(mode==='page')priorityModule.xDriveEnterForegroundPage('web:gallery')
       scheduler.setSuspended(false)
       const resumed = scheduler.load(100000 + attempt, 0, 1)
       await until(() => state.thumbnails.length === 7, 'resumed Gallery requests')
@@ -238,10 +277,31 @@ async function galleryTrial(mode, attempt) {
     console.log('VIEWER_BACKGROUND_THUMB_HTTP_SAMPLE ' + JSON.stringify(sample))
     return sample
   } finally {
+    releasePriority?.()
     scheduler?.dispose()
+    if(mode==='page')priorityModule.xDriveEnterForegroundPage(null)
     await fixture.close()
   }
 }
+test('any committed page change preempts six genuine Files/Gallery HTTP requests without pausing its successor',async()=>{
+  for(const [kind,trial] of [['Files',fileTrial],['Gallery',galleryTrial]]){
+    const row=await trial('page',8)
+    assert.equal(row.earlyClosed,6,kind+' prior-page HTTP must disconnect')
+    assert.equal(row.sentThumbnailBytes,0,kind+' stale page bytes must not transfer')
+    assert.ok(row.viewerMS<250,kind+' successor page must get freed slots')
+    assert.equal(priorityModule.xDriveCurrentForegroundPage(),null)
+  }
+})
+test('a shared foreground Viewer lease preempts six genuine HTTP thumbnails in Files and Gallery', async () => {
+  // Local-HTTP six-slot contention, NOT a claimed real iPhone/Go 100k speedup.
+  for (const [kind, trial] of [['Files', fileTrial], ['Gallery', galleryTrial]]) {
+    const sample = await trial('foreground', 7)
+    assert.equal(sample.earlyClosed, 6, kind + ' obsolete HTTP requests must abort')
+    assert.equal(sample.sentThumbnailBytes, 0, kind + ' no obsolete response bytes')
+    assert.ok(sample.viewerMS < 250, kind + ' current Viewer should be admitted')
+    assert.equal(priorityModule.xDriveViewerForegroundActive(), false)
+  }
+})
 const median = values => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)]
 for (const [kind, trial] of [['Files', fileTrial], ['Gallery', galleryTrial]]) {
   test('P0 Viewer must preempt six genuine slow background HTTP thumbnails in ' + kind, async () => {
@@ -284,10 +344,10 @@ test('both mounted workspace entry points pause only background thumbnails, not 
   assert.match(files, /suspended=\{suspendBackgroundThumbnails \|\| quickLookItemID !== null\}/,
     'Desktop local QuickLook also preempts its mounted background FileExplorer')
   assert.match(provider, /for \(const cancel of \[\.\.\.cache\.pending\]\) cancel\(\)/)
-  assert.match(provider, /foreground: foreground && !suspended/,
+  assert.match(provider, /foreground: foreground && !thumbnailsSuspended/,
     'cancelled tile effects cannot immediately restart while Viewer is active')
   assert.match(gallery, /thumbnailScheduler\.setSuspended\(thumbnailBackgroundSuspended\)/)
-  assert.match(gallery, /thumbnailBackgroundSuspended = suspendBackgroundThumbnails \|\| previewItem !== null/,
+  assert.match(gallery, /thumbnailBackgroundSuspended = suspendBackgroundThumbnails \|\| previewItem !== null \|\| viewerPriorityActive/,
     'Desktop inline Gallery Viewer and routed PWA Viewer must share one pause gate')
   assert.match(gallery, /<XDriveBackgroundMediaThumbnailSuspended\.Provider value=\{thumbnailBackgroundSuspended\}>/)
   assert.match(media, /if \(suspended\) return/, 'both tile and video-poster effects must stop')

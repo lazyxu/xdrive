@@ -1,4 +1,6 @@
+import { useLayoutEffect } from 'react'
 import type { ComponentProps, ReactNode } from 'react'
+import { xDriveEnterForegroundPage } from './ViewerForegroundPriority'
 import type { SxProps, Theme } from '@mui/material/styles'
 import { XDriveWorkspaceShell } from './WorkspaceShell'
 import { XDriveWorkspaceSidebar } from './WorkspaceSidebar'
@@ -32,6 +34,11 @@ export function XDriveApp({
   children: ReactNode
 }) {
   const responsive = host.platform === 'synology'
+  // The canonical Host renderer owns one page scope for every admitted route.
+  // Desktop's earlier intent notification is idempotent; DSM shares this UI.
+  useLayoutEffect(() => {
+    xDriveEnterForegroundPage(`${host.platform}:${view}`)
+  }, [host.platform, view])
   // Keep a single privileged-route gate before forwarding any sidebar action.
   // Unknown and admin-only destinations must never reach Host callbacks.
   const onNavigate = (destination: string) => {

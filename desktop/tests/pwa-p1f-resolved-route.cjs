@@ -31,6 +31,7 @@ function exerciseRuntime() {
     useRef(value) { return { current: value } },
     useCallback(fn) { return fn },
     useEffect(effect) { effect() },
+    useLayoutEffect(effect) { effect() },
     startTransition(fn) { trace.push({ mode: 'transition' }); fn() },
   }
   const shared = {
@@ -44,10 +45,19 @@ function exerciseRuntime() {
     reportDiagnostics: true,
   })
   assert.equal((compiled.diagnostics || []).filter(x => x.category === ts.DiagnosticCategory.Error).length, 0)
+  const coordinatorText = fs.readFileSync(path.join(root, 'ui/shared/src/mui/ViewerForegroundPriority.ts'), 'utf8')
+  const coordinatorJS = ts.transpileModule(coordinatorText, {
+    fileName: 'ViewerForegroundPriority.ts',
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText
+  const coordinator = { exports: {} }
+  new Function('exports', 'module', coordinatorJS)(coordinator.exports, coordinator)
   const mod = { exports: {} }
   new Function('module', 'exports', 'require', 'window', compiled.outputText)(
     mod, mod.exports,
-    name => name === 'react' ? react : name === '../../ui/shared/src' ? shared : assert.fail(name), window,
+    name => name === 'react' ? react :
+      name === '../../ui/shared/src' ? shared :
+      name === '../../ui/shared/src/mui/ViewerForegroundPriority' ? coordinator.exports : assert.fail(name), window,
   )
   return { runtime: mod.exports.useXDriveWebAppRuntime(), route, trace, window,
     dispatch: kind => (listeners.get(kind) || []).forEach(fn => fn({ type: kind })) }

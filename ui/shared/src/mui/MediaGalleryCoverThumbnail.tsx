@@ -1,3 +1,4 @@
+import { xDriveViewerForegroundActive, xDriveObserveViewerForeground } from './ViewerForegroundPriority'
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Box, Skeleton } from '@mui/material'
@@ -46,9 +47,11 @@ export function XDriveMediaGalleryCoverProvider({
   }, [loadThumbnail])
   const pool = active?.loader === loadThumbnail ? active.pool : null
   const [inlineViewerPaused, setInlineViewerPaused] = useState(false)
+  const [viewerPriorityActive, setViewerPriorityActive] = useState(xDriveViewerForegroundActive)
+  useLayoutEffect(() => xDriveObserveViewerForeground(setViewerPriorityActive), [])
   // The page's routed Viewer pause and its descendant inline Viewer pause
   // both stop the SAME bounded cover pool; cached Owner leases survive.
-  const coverPaused = suspended || inlineViewerPaused
+  const coverPaused = suspended || inlineViewerPaused || viewerPriorityActive
   useLayoutEffect(() => {
     pool?.setSuspended(coverPaused)
   }, [pool, coverPaused])

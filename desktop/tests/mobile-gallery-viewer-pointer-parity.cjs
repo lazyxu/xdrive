@@ -30,6 +30,7 @@ const modules = {
   react: React,
   'react/jsx-runtime': require('react/jsx-runtime'),
   '@mui/material': mui,
+  './ViewerForegroundPriority': require('./viewer-foreground-priority-test-loader.cjs'),
 }
 const compiled = ts.transpileModule(read(filename), {
   fileName: filename,

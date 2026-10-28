@@ -26,6 +26,9 @@ function loadTS(relative, bindings = {}) {
 }
 
 const gesture = loadTS('ui/shared/src/mobile-item-gesture.ts')
+// The real production page coordinator is dependency-free. Exercise it with
+// the actual router instead of replacing navigation priority with a no-op.
+const foreground = loadTS('ui/shared/src/mui/ViewerForegroundPriority.ts')
 
 test('Files and Gallery share a strict stationary-hold / scrolling threshold', () => {
   assert.equal(gesture.XDRIVE_MOBILE_ITEM_HOLD_MS, 450)
@@ -44,6 +47,7 @@ const parse = raw => {
 }
 const viewer = app => ['preview', 'media-viewer', 'pdf-viewer', 'text-viewer', 'audio-player'].includes(app)
 const { useXDriveWebAppRuntime } = loadTS('web/src/webAppRuntime.ts', {
+  '../../ui/shared/src/mui/ViewerForegroundPriority': foreground,
   '../../ui/shared/src': {
     xDriveParseWebAppHash: parse,
     xDriveWebAppHash: hash,
@@ -115,6 +119,7 @@ async function mountedRuntime(initialRoute, state) {
     async call(fn) { await act(async () => { fn(runtime) }) },
     async dispose() {
       await act(async () => { view.unmount() })
+      foreground.xDriveEnterForegroundPage(null)
       global.window = previousWindow
     },
   }

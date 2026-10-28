@@ -78,7 +78,8 @@ test('routed Viewer borrows the actual warm Gallery scheduler without a second m
   }).outputText
   const compiled = { exports: {} }
   new Function('exports', 'module', 'require', output)(
-    compiled.exports, compiled, require)
+    compiled.exports, compiled,
+    name => name === './ViewerForegroundPriority' ? require('./viewer-foreground-priority-test-loader.cjs') : require(name))
   const { XDriveMediaThumbnailScheduler } = compiled.exports
   const revoked = []
   let requests = 0

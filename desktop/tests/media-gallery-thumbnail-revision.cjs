@@ -12,7 +12,15 @@ const transpiled = ts.transpileModule(original, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText
 const mod = { exports: {} }
-new Function('exports', 'module', 'require', transpiled)(mod.exports, mod, require)
+const viewerPriorityShim = {
+  xDriveViewerForegroundActive: () => false,
+  xDriveObserveViewerForeground: notify => {
+    notify(false)
+    return () => undefined
+  },
+}
+new Function('exports', 'module', 'require', transpiled)(mod.exports, mod,
+  name => name === './ViewerForegroundPriority' ? viewerPriorityShim : require(name))
 const { XDriveMediaThumbnailScheduler } = mod.exports
 
 function deferred() {

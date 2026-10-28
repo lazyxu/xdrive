@@ -38,6 +38,15 @@ function realCoverModule() {
   const requireLocal = name => {
     if (name === 'react' || name === 'react/jsx-runtime') return require(name)
     if (name === '@mui/material') return { Box: 'div', Skeleton: 'div' }
+    if (name === './ViewerForegroundPriority') {
+      return {
+        xDriveViewerForegroundActive: () => false,
+        xDriveObserveViewerForeground: observe => {
+          observe(false)
+          return () => undefined
+        },
+      }
+    }
     if (name === './MediaGalleryCoverThumbnailPool') {
       return { XDriveMediaGalleryCoverThumbnailPool: InstrumentedCoverPool }
     }
@@ -92,9 +101,9 @@ test('inline Gallery Viewer pauses the real ancestor CoverProvider without a rou
 })
 
 test('inline cover preemption is wired into the exact shared Gallery Viewer pause', () => {
-  assert.match(gallerySource, /thumbnailBackgroundSuspended = suspendBackgroundThumbnails \|\| previewItem !== null/)
+  assert.match(gallerySource, /thumbnailBackgroundSuspended = suspendBackgroundThumbnails \|\| previewItem !== null \|\| viewerPriorityActive/)
   assert.match(gallerySource, /useXDriveGalleryCoverPauseForInlineViewer\(thumbnailBackgroundSuspended\)/)
-  assert.match(source, /coverPaused = suspended \|\| inlineViewerPaused/)
+  assert.match(source, /coverPaused = suspended \|\| inlineViewerPaused \|\| viewerPriorityActive/)
   assert.match(source, /pool\?\.setSuspended\(coverPaused\)/)
   assert.match(source, /<InlineViewerCoverPauseContext\.Provider value=\{setInlineViewerPaused\}>/)
 })

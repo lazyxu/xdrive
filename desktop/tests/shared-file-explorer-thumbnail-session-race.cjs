@@ -125,6 +125,17 @@ function loadThumbnailProvider(runtime) {
     if (request === './LivePhotoSurface') {
       return { XDriveLivePhotoGlyph: () => null }
     }
+    if (request === './ViewerForegroundPriority') {
+      // This fixture verifies cache/Owner remount isolation; the shared
+      // priority lease is exercised with real HTTP in its own mounted tests.
+      return {
+        xDriveViewerForegroundActive: () => false,
+        xDriveObserveViewerForeground: observe => {
+          observe(false)
+          return () => undefined
+        },
+      }
+    }
     if (request === './FileExplorerThumbnailVisualState') {
       const file = path.join(repo, 'ui/shared/src/mui/FileExplorerThumbnailVisualState.ts')
       const js = ts.transpileModule(fs.readFileSync(file, 'utf8'), {

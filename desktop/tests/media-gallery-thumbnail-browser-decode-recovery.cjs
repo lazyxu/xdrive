@@ -13,8 +13,16 @@ const schedulerCompiled = ts.transpileModule(schedulerSource, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText
 const schedulerModule = { exports: {} }
+const viewerPriorityShim = {
+  xDriveViewerForegroundActive: () => false,
+  xDriveObserveViewerForeground: notify => {
+    notify(false)
+    return () => undefined
+  },
+}
 new Function('exports', 'module', 'require', schedulerCompiled)(
-  schedulerModule.exports, schedulerModule, require,
+  schedulerModule.exports, schedulerModule,
+  name => name === './ViewerForegroundPriority' ? viewerPriorityShim : require(name),
 )
 const { XDriveMediaThumbnailScheduler } = schedulerModule.exports
 

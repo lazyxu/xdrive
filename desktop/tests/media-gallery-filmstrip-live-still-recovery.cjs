@@ -16,7 +16,8 @@ function actualScheduler() {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText
   const mod = { exports: {} }
-  new Function('module', 'exports', 'require', compiled)(mod, mod.exports, require)
+  new Function('module', 'exports', 'require', compiled)(mod, mod.exports,
+    name => name === './ViewerForegroundPriority' ? require('./viewer-foreground-priority-test-loader.cjs') : require(name))
   return mod.exports.XDriveMediaThumbnailScheduler
 }
 

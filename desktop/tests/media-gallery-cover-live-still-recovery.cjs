@@ -15,7 +15,17 @@ function loadModule(js, customRequire = require) {
   new Function('exports', 'module', 'require', js)(module.exports, module, customRequire)
   return module.exports
 }
-const scheduler = loadModule(compile(read('ui', 'shared', 'src', 'mui', 'MediaGalleryThumbnailScheduler.ts'), 'Scheduler.ts'))
+const viewerPriorityShim = {
+  xDriveViewerForegroundActive: () => false,
+  xDriveObserveViewerForeground: notify => {
+    notify(false)
+    return () => undefined
+  },
+}
+const scheduler = loadModule(
+  compile(read('ui', 'shared', 'src', 'mui', 'MediaGalleryThumbnailScheduler.ts'), 'Scheduler.ts'),
+  name => name === './ViewerForegroundPriority' ? viewerPriorityShim : require(name),
+)
 const { XDriveMediaGalleryCoverThumbnailPool: Pool } = loadModule(
   compile(read('ui', 'shared', 'src', 'mui', 'MediaGalleryCoverThumbnailPool.ts'), 'CoverPool.ts'),
   (name) => name === './MediaGalleryThumbnailScheduler' ? scheduler : require(name),

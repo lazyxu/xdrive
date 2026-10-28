@@ -37,6 +37,19 @@ test('shared cloud files port owns the transport-neutral read contract', () => {
   assert.ok(sharedIndex.includes("export * from './cloud-files'"), 'framework-neutral cloud files contract must be exported')
 })
 
+test('offscreen Files change/quota polling yields without cancelling persistent jobs', () => {
+  assert.match(controller,/foreground\?: boolean/)
+  assert.match(controller,/foreground = true/)
+  assert.match(controller,/foregroundRef\.current = foreground/)
+  assert.match(controller,/!foregroundRef\.current/)
+  assert.match(controller,/!enabled \|\| !foreground \|\| quotaRefreshIntervalMs <= 0/)
+  assert.ok(webApp.includes("foreground: appView === 'files' || appView === 'overview'"))
+  assert.ok(desktopApp.includes("foreground: view === 'files' || view === 'overview'"))
+  assert.ok(controller.includes('const loadDirectory = useCallback(async ('),
+    'cross-page Show in Folder remains a permitted explicit read')
+  assert.ok(controller.includes('const refreshQuota = useCallback(async ('),
+    'completed durable work still refreshes quota')
+})
 test('shared cloud files controller owns sparse range loading, quota and initial loading', () => {
   for (const token of [
     'useXDriveCloudFilesController',

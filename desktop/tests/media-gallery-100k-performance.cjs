@@ -22,7 +22,8 @@ function transpile(filename, source = fs.readFileSync(filename, 'utf8'), customR
     fileName: filename,
   }).outputText
   const mod = { exports: {} }
-  new Function('exports', 'module', 'require', output)(mod.exports, mod, customRequire)
+  new Function('exports', 'module', 'require', output)(mod.exports, mod,
+    id => id === './ViewerForegroundPriority' ? require('./viewer-foreground-priority-test-loader.cjs') : customRequire(id))
   return mod.exports
 }
 

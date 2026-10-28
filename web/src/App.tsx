@@ -1,3 +1,4 @@
+import { xDriveAcquireViewerForeground, xDriveEnterForegroundPage } from '../../ui/shared/src/mui/ViewerForegroundPriority'
 import { xDriveClearBaiduMapDiagnostic } from '../../ui/shared/src/media-gallery-baidu-diagnostics'
 import { xDriveNormalizeBaiduMapPhotoScope } from '../../ui/shared/src/media-gallery-baidu-map-photo-scope'
 import { xDriveValidBaiduNativeCameraSnapshot } from '../../ui/shared/src/media-gallery-baidu-native-camera-session'
@@ -99,7 +100,7 @@ import type {
   XDriveWebAppBrowseContext,
   XDriveWebAppRoute,
 } from '../../ui/shared/src'
-import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerCaseInsensitiveNameLookupPageOptions, xDriveFileExplorerEnsureUploadDirectory, xDriveFileExplorerResolveFolderUploadTargets, xDriveLatestRedoableFileOperation, xDriveLatestUndoableFileOperation, xDriveUsernameValidationError, xDrivePasswordValidationError, xDriveWebAppViewer, xDriveSystemDependenciesNeedsExitConfirmation } from '../../ui/shared/src'
+import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerCaseInsensitiveNameLookupPageOptions, xDriveFileExplorerEnsureUploadDirectory, xDriveFileExplorerResolveFolderUploadTargets, xDriveLatestRedoableFileOperation, xDriveLatestUndoableFileOperation, xDriveUsernameValidationError, xDrivePasswordValidationError, xDriveWebAppViewer, xDriveParseWebAppHash, xDriveSystemDependenciesNeedsExitConfirmation } from '../../ui/shared/src'
 import PublicShareView from './PublicShare'
 import WebOverviewPage from './WebOverviewPage'
 import WebUnsupportedFileDialog from './WebUnsupportedFileDialog'
@@ -364,9 +365,16 @@ function App({
   const [offlineSnapshotRoute, setOfflineSnapshotRoute] = useState(
     () => window.location.hash === '#/offline/files',
   )
+  // Standalone Public Share/offline pages do not use webAppRuntime; they
+  // still supersede disposable work from the previous authenticated page.
+  useLayoutEffect(() => {
+    if (publicShareToken) xDriveEnterForegroundPage('web:public-share')
+    else if (offlineSnapshotRoute) xDriveEnterForegroundPage('web:offline')
+  }, [publicShareToken, offlineSnapshotRoute])
   const lastNonOfflineHashRef = useRef(
     window.location.hash === '#/offline/files' ? '#/app/files' : window.location.hash,
   )
+  const standaloneRouteRef = useRef(Boolean(publicShareToken || offlineSnapshotRoute))
   useEffect(() => {
     const syncShareRoute = () => {
       const nextHash = window.location.hash
@@ -380,9 +388,23 @@ function App({
         setOfflineSnapshotRoute(false)
         return
       }
-      if (nextHash !== '#/offline/files') lastNonOfflineHashRef.current = nextHash
-      setPublicShareToken(xDrivePublicShareTokenFromHash(nextHash))
-      setOfflineSnapshotRoute(nextHash === '#/offline/files')
+      const nextShare = xDrivePublicShareTokenFromHash(nextHash)
+      const nextOffline = nextHash === '#/offline/files'
+      // Standalone Share/offline pages do not mount webAppRuntime. Switch
+      // BEFORE their new thumbnail providers mount, so they capture their
+      // own page, not the previous account's foreground scope. Do not preempt
+      // ordinary authenticated /app history here: the dirty-admin guard in
+      // webAppRuntime must decide first whether that navigation is allowed.
+      if (nextShare) xDriveEnterForegroundPage('web:public-share')
+      else if (nextOffline) xDriveEnterForegroundPage('web:offline')
+      else if (standaloneRouteRef.current) {
+        const committed = xDriveParseWebAppHash(nextHash)
+        if (committed) xDriveEnterForegroundPage('web:' + committed.app)
+      }
+      standaloneRouteRef.current = Boolean(nextShare || nextOffline)
+      if (!nextOffline) lastNonOfflineHashRef.current = nextHash
+      setPublicShareToken(nextShare)
+      setOfflineSnapshotRoute(nextOffline)
     }
     window.addEventListener('hashchange', syncShareRoute)
     window.addEventListener('popstate', syncShareRoute)
@@ -435,6 +457,7 @@ function App({
     // Any outstanding earlier refresh is no longer authorized to restore
     // an Owner after logout, account switch or invalid session.
     authEpochRef.current += 1
+    xDriveEnterForegroundPage(null)
     xDriveClearBaiduConversionSession()
     transferApiRef.current?.disposeTransfers()
     // Fail closed across accounts and server instances. Never touch public SW App Shell.
@@ -1103,6 +1126,13 @@ function FileManager({
     if (main) main.scrollTop = 0
   }, [appView])
   const viewerActive = Boolean(xDriveWebAppViewer(route.app))
+  // All routed Viewer entries converge here: Files, search, Gallery, album,
+  // maps and standalone image/video/text/PDF/audio. Popstate/back is included.
+  // The lease starts before paint, even if the Viewer bundle is still lazy.
+  const viewerPriorityOwner = useRef<object>({})
+  useLayoutEffect(() => viewerActive
+    ? xDriveAcquireViewerForeground(viewerPriorityOwner.current)
+    : undefined, [viewerActive])
   // A conservative PWA update/unload blocker: an open media editor might
   // contain unsaved edits even when its exact draft state is not observable.
   const [mediaEditorActive, setMediaEditorActive] = useState(false)
@@ -1464,6 +1494,7 @@ function FileManager({
   } = useXDriveCloudFilesController<Node, QuotaUsage, XDriveFileExplorerSort>({
     port: cloudFilesPort,
     enabled: Boolean(profile && !profile.must_change_password),
+    foreground: appView === 'files' || appView === 'overview',
     lifecycleKey: username,
     defaultSort: XDRIVE_FILE_EXPLORER_DEFAULT_SORT,
     onError: handleError,
