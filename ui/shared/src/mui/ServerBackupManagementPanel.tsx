@@ -11,6 +11,7 @@ import type {
 import { latestServerBackupVerification, serverBackupReceiptDurationSeconds,
   serverBackupReceiptExplanation, summarizeServerBackupIntegrity } from '../server-backup-integrity'
 import { canPruneServerBackup, type XDriveServerBackupPrunePreview } from '../server-backup-prune-preview'
+import { backupRetentionCapacity } from '../server-backup-capacity'
 import { XDriveActionButton } from './ActionButton'
 import { XDriveBackupVerificationReceipt } from './BackupVerificationReceipt'
 import { XDriveBackupRecoveryEvidencePanel } from './BackupRecoveryEvidencePanel'
@@ -127,6 +128,7 @@ export function XDriveServerBackupManagementPanel({
   const keep = Number(keepLast)
   const keepValid = Number.isInteger(keep) && keep >= 1 && keep <= 1000
   const canPrune = canPruneServerBackup(page, keep, verifyMode, prunePreview)
+  const capacity = page?.retention ? backupRetentionCapacity(page.retention) : null
   const policyDays = Number(policyDraft?.days)
   const policyValid = Number.isInteger(policyDays) && policyDays >= 0 && policyDays <= 3650 &&
     !(policyDraft?.format === 'v1' && Boolean(page?.inventory.policy.repository))
@@ -385,19 +387,64 @@ export function XDriveServerBackupManagementPanel({
               ? '当前会话已完成匹配保留数量与校验级别的只读预览；清理时宿主机会再次独占锁验证。'
               : '执行清理前，必须对当前保留数量与校验级别完成一次成功的只读预览；修改参数或切换宿主机后需重新预览。'}
           </Typography>
-          {page?.retention ? (
-            <Alert severity="info">
-              最近一次只读计划：保留 {page.retention.keep_snapshots?.length || 0} 代；
-              可考虑删除 {page.retention.drop_candidates?.length || 0} 代；
-              孤儿 CAS {page.retention.unreferenced_objects || 0} 项；
-              潜在逻辑空间 {displayBytes(page.retention.potential_logical_bytes)}。
-              {page.retention.hashed_objects > 0
-                ? ' 本次预览实际执行 SHA-256 的仓库对象 ' +
-                    page.retention.hashed_objects + ' 个 / ' +
-                    displayBytes(page.retention.hashed_bytes) + '。'
-                : ' 本次预览未提供已执行的仓库对象哈希数量。'}
-              此报告是历史预览，并非删除授权。
-            </Alert>
+          {page?.retention && capacity ? (
+            <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 1.5 }}
+              data-xdrive-admin-backup-capacity-breakdown>
+              <Stack spacing={1}>
+                <Typography variant="subtitle2">上一次只读保留计划 · 容量拆分</Typography>
+                <Typography variant="body2">
+                  当前计划保留 {page.retention.keep_snapshots?.length || 0} 代，
+                  待清理候选 {page.retention.drop_candidates?.length || 0} 代；
+                  已发现提交快照 {capacity.committedSnapshots ?? '未知'} 代。
+                  CAS 检查方式：
+                  {capacity.integrityMode === 'deep' ? 'deep（已对仓库 CAS 进行哈希）'
+                    : capacity.integrityMode === 'fast' ? 'fast（CAS 仅检查存在和大小）'
+                      : '未知'}。
+                </Typography>
+                <Table size="small" aria-label="v2 备份清理逻辑空间分项">
+                  <TableBody>
+                    <TableRow>
+                      <TableCell>候选代快照文件（数据库、Manifest 等）</TableCell>
+                      <TableCell align="right">{displayBytes(capacity.snapshotBytes ?? NaN)}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>仅被候选代引用的 CAS（{capacity.exclusiveObjects ?? '未知'} 个）</TableCell>
+                      <TableCell align="right">{displayBytes(capacity.exclusiveCASBytes ?? NaN)}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>全部已提交代均未引用的孤儿 CAS（{capacity.unreferencedObjects ?? '未知'} 个）</TableCell>
+                      <TableCell align="right">{displayBytes(capacity.unreferencedCASBytes ?? NaN)}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>潜在可清理逻辑字节合计</TableCell>
+                      <TableCell align="right">{displayBytes(capacity.potentialLogicalBytes ?? NaN)}</TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+                <Typography variant="body2">
+                  受保护快照仍引用的 CAS：{capacity.retainedObjects ?? '未知'} 个。
+                  {page.retention.hashed_objects > 0
+                    ? ' 本次报告中实际执行完整 SHA-256 的仓库对象 ' +
+                      page.retention.hashed_objects + ' 个，哈希读取 ' +
+                      displayBytes(page.retention.hashed_bytes) + '。'
+                    : ' 报告未提供已哈希对象数量；fast 不代表 CAS 内容全哈希。'}
+                </Typography>
+                {capacity.totalsConsistent === false ? (
+                  <Alert severity="warning" data-xdrive-admin-backup-capacity-mismatch>
+                    宿主机容量分项与合计不一致；不要将此报告用作清理空间预测。
+                  </Alert>
+                ) : null}
+                {!capacity.componentsComplete ? (
+                  <Typography variant="caption" color="text.secondary">
+                    当前宿主机未提供全部可靠的容量分项；未提供的数值显示为“—”，不推断为零。
+                  </Typography>
+                ) : null}
+                <Typography variant="caption" color="text.secondary">
+                  上述为历史逻辑字节估计，不是实际可释放磁盘空间，不包括文件系统块分配、硬链接、
+                  稀疏文件等差异。此计划不授予删除权限，实际 Prune 会独占锁重新验证所有保留引用。
+                </Typography>
+              </Stack>
+            </Paper>
           ) : null}
         </Stack>
       </Paper>

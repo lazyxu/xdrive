@@ -156,6 +156,11 @@ The JSON report distinguishes:
 - `drop_snapshot_bytes`, `drop_only_object_bytes`, and
   `unreferenced_bytes`: logical byte totals, not guaranteed allocated disk
   blocks, filesystem savings, or permission to delete.
+  The administrator's shared Web/Desktop panel now breaks down these three
+  independently, separately from `retained_objects` and the full logical
+  total. Missing or unsafe integers remain **unknown**, never inferred as
+  zero. A mismatched component sum is visibly flagged. This remains a
+  historical, read-only estimate rather than actual physical reclaim evidence.
 
 Every committed snapshot's exact v2 file set and SHA256SUMS are verified,
 alongside `objects.index` syntax, cross-generation CAS sizes and the existence
