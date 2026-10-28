@@ -87,9 +87,10 @@ class MainActivity : ComponentActivity() {
 
     private fun confirmIncomingShare(target: NativeShareTarget) {
         val share = sharedFile ?: return
+        val exactOwnerView = model.controller.state.value
         if (shareBusy || share.sourceOwner != null &&
             share.sourceOwner != target.identity ||
-            nativeShareTarget(model.controller.state.value) != target) return
+            nativeShareTarget(exactOwnerView) != target) return
         shareBusy = true
         shareError = null
         lifecycleScope.launch {
@@ -102,8 +103,13 @@ class MainActivity : ComponentActivity() {
             }
             // Recheck both actual Owner and the exact verified directory after
             // asynchronous provider metadata. Never replay a stale Picker ACK.
-            val live = nativeShareTarget(model.controller.state.value)
-            if (live != target || share.sourceOwner != null &&
+            val liveState = model.controller.state.value
+            val live = nativeShareTarget(liveState)
+            // A new DriveState object means Owner/path/authorization may have
+            // changed while an untrusted provider answered. Reject even an
+            // A -> B -> A login or folder hop with the same visible IDs.
+            if (liveState !== exactOwnerView || live != target ||
+                share.sourceOwner != null &&
                 share.sourceOwner != live.identity) {
                 shareBusy = false
                 sharedFile = null
