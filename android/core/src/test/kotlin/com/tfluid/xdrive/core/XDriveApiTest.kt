@@ -22,6 +22,53 @@ class XDriveApiTest {
             "size":$size,"revision":$revision}"""
 
 
+    @Test fun manualAlbumUsesOneOwnerPostRevisionFenceAndRejectsInvalidAck() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            val album = GalleryAlbum("manual:2026/trip?x=1", "manual", "Trip", 0, 2, 0)
+            val items = listOf(
+                GalleryAsset(DriveNode(7, 1, "one.jpg", "file", 12, revision = 2), "image"),
+                GalleryAsset(DriveNode(8, 1, "two.mp4", "file", 80, revision = 4), "video"),
+            )
+            val payload = """{"id":"manual:2026/trip?x=1","kind":"manual",
+                "name":"Trip","revision":3,"item_count":2,"album_folder_id":0}"""
+            server.enqueue(MockResponse().setBody(payload))
+            val saved = api.galleryAddToManualAlbum("owner-secret", album, items)
+            assertEquals(3L, saved.revision)
+            assertEquals(2L, saved.itemCount)
+            val req = server.takeRequest()
+            assertEquals("POST", req.method)
+            assertEquals("Bearer owner-secret", req.getHeader("Authorization"))
+            assertEquals("\"2\"", req.getHeader("If-Match"))
+            assertTrue(req.path!!.startsWith("/api/v1/media/albums/"))
+            assertTrue(req.path!!.contains("%2F"))
+            assertTrue(req.path!!.contains("%3F"))
+            assertTrue(req.path!!.endsWith("/items"))
+            assertFalse(req.path!!.contains("owner-secret"))
+            val body = Json.parseToJsonElement(req.body.readUtf8()) as JsonObject
+            assertEquals(listOf(7L, 8L),
+                (body["node_ids"] as JsonArray).map { it.jsonPrimitive.long })
+
+            server.enqueue(MockResponse().setBody(payload.replace(
+                "\"id\":\"manual:2026/trip?x=1\"", "\"id\":\"manual:foreign\"")))
+            assertEquals(ApiFailureReason.INVALID_RESPONSE, failure {
+                api.galleryAddToManualAlbum("owner-secret", album, items)
+            }.reason)
+            server.takeRequest()
+            server.enqueue(MockResponse().setResponseCode(409).setBody(
+                """{"error":"revision conflict"}"""))
+            assertEquals(409, failure {
+                api.galleryAddToManualAlbum("owner-secret", album, items)
+            }.statusCode)
+            server.takeRequest()
+            assertEquals(3, server.requestCount)
+            try {
+                api.galleryAddToManualAlbum("owner-secret", album.copy(kind = "smart"), items)
+                fail("non-manual album mutation accepted")
+            } catch (_: IllegalArgumentException) {}
+            assertEquals(3, server.requestCount)
+        } }
+    }
+
     @Test fun galleryTagParserRejectsInvalidAndDedupesNormalizedLabels() {
         assertEquals(listOf("Family", "旅行"), parseGalleryTagInput("旅行, Family, family, 旅行"))
         assertNull(parseGalleryTagInput(" , "))

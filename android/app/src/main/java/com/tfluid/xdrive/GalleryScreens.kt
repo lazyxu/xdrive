@@ -32,6 +32,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.tfluid.xdrive.core.GalleryAsset
 import com.tfluid.xdrive.core.GalleryTimelineGroup
@@ -46,6 +47,11 @@ internal fun galleryVisibleColumns(widthDp: Float, preference: Int): Int {
     val baseline = maxOf(3, (available / 144f).toInt())
     return (baseline + preference.coerceIn(2, 10) - 3).coerceIn(2, 10)
 }
+
+/** The compact iOS PWA selection toolbar retains two rows; actions that do
+ * not fit move into More. Keep the original 144dp clearance, not a third row. */
+internal fun galleryDockClearance(selection: Boolean, showTimeDock: Boolean): Dp =
+    if (selection || showTimeDock) 144.dp else 88.dp
 
 internal fun galleryTimelineGroupLabel(group: GalleryTimelineGroup): String = when {
     group.key == "unknown" -> "未记录日期"
@@ -253,8 +259,7 @@ internal fun ColumnScope.Gallery(
         val cellWidth = (maxWidth - tileGap * (columns - 1)) / columns
         val rows = (state.galleryItems.size + columns - 1) / columns
         // Floating PWA controls overlay this wall; keep genuine scroll clearance.
-        val dockClearance = if (state.gallerySelectionMode || showTimeDock)
-            144.dp else 88.dp
+        val dockClearance = galleryDockClearance(state.gallerySelectionMode, showTimeDock)
         val blankTop = if (state.gallerySortDir == "asc" &&
             state.galleryLoaded && state.galleryItems.isNotEmpty()) {
             (maxHeight - (cellWidth + tileGap) * rows - dockClearance).coerceAtLeast(0.dp)

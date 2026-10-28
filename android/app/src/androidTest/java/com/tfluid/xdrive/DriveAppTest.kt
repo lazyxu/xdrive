@@ -101,6 +101,8 @@ class DriveAppTest {
     private val gallerySortQueries = mutableListOf<Pair<String, String>>()
     private val galleryFavoriteCalls = mutableListOf<Pair<List<Long>, Boolean>>()
     private val galleryTagsCalls = mutableListOf<Pair<List<Long>, List<String>>>()
+    private val galleryAlbumAdds = mutableListOf<Pair<String, List<Long>>>()
+    private var galleryManualAlbumFixture = false
     private var galleryThumbnailRetryFixture = false
     private val galleryThumbnailCalls = AtomicInteger()
     private val galleryFixture = GalleryAsset(
@@ -112,6 +114,22 @@ class DriveAppTest {
         override suspend fun logout(refreshToken: String) = Unit
         override suspend fun changePassword(accessToken: String, currentPassword: String, newPassword: String) = AuthSession("fixture", "fixture-refresh", "owner")
         override suspend fun root(accessToken: String) = DriveNode(1, name = "", type = "dir")
+        override suspend fun galleryAlbums(accessToken: String): List<GalleryAlbum> {
+            check(accessToken == "fixture")
+            if (!galleryManualAlbumFixture) throw ApiException(501, "Albums fixture disabled")
+            return listOf(
+                GalleryAlbum("manual:fixture", "manual", "旅行", 0, 1, 0),
+                GalleryAlbum("smart:fixture", "smart", "最近", 0, 1, 0),
+            )
+        }
+        override suspend fun galleryAddToManualAlbum(
+            accessToken: String, album: GalleryAlbum, items: List<GalleryAsset>,
+        ): GalleryAlbum {
+            check(accessToken == "fixture" && album.id == "manual:fixture" &&
+                album.revision == 1L && items.map { it.node.id } == listOf(40L))
+            galleryAlbumAdds += album.id to items.map { it.node.id }
+            return album.copy(revision = 2, itemCount = 1)
+        }
         override suspend fun galleryTagsBatch(
             accessToken: String, items: List<GalleryAsset>, tags: List<String>,
         ): Int {
@@ -624,6 +642,72 @@ class DriveAppTest {
     }
 
 
+
+    @Test fun gallerySelectionReviewRemovesAndClearsOnlyActualSelectedOwnerRows() {
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryLoaded && !controller.state.value.loading
+        }
+        compose.onNodeWithTag("gallery-select-mode").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("gallery-item-40").performClick()
+        compose.onNodeWithTag("gallery-selected-mark-40", useUnmergedTree = true).assertExists()
+        compose.onNodeWithTag("gallery-selection-review-open").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("gallery-selection-review").assertExists()
+        compose.onNodeWithTag("gallery-selected-review-item-40").assertExists()
+        compose.onNodeWithTag("gallery-selection-remove-40").assertIsEnabled().performClick()
+        compose.runOnIdle {
+            org.junit.Assert.assertTrue(controller.state.value.gallerySelectedItems.isEmpty())
+            org.junit.Assert.assertTrue(controller.state.value.gallerySelectionMode)
+            org.junit.Assert.assertTrue(galleryFavoriteCalls.isEmpty())
+            org.junit.Assert.assertTrue(galleryTagsCalls.isEmpty())
+        }
+        compose.onNodeWithTag("gallery-review-empty").assertIsDisplayed()
+        compose.onNodeWithTag("gallery-review-return").performClick()
+        compose.onNodeWithTag("gallery-selection-actions").assertExists()
+        compose.onNodeWithTag("gallery-item-40").performClick()
+        compose.onNodeWithTag("gallery-selection-review-open").performClick()
+        compose.onNodeWithTag("gallery-review-clear").assertIsEnabled().performClick()
+        compose.runOnIdle {
+            org.junit.Assert.assertTrue(controller.state.value.gallerySelectedItems.isEmpty())
+            org.junit.Assert.assertTrue(galleryFavoriteCalls.isEmpty())
+            org.junit.Assert.assertTrue(galleryTagsCalls.isEmpty())
+        }
+        compose.onNodeWithTag("gallery-review-return").performClick()
+        compose.onNodeWithTag("gallery-selection-done").performClick()
+        compose.onNodeWithTag("gallery-bottom-dock").assertIsDisplayed()
+    }
+
+    @Test fun selectedGalleryAddsToManualAlbumAndRestoresPwaDock() {
+        galleryManualAlbumFixture = true
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryLoaded && !controller.state.value.loading
+        }
+        compose.onNodeWithTag("gallery-select-mode").performClick()
+        compose.onNodeWithTag("gallery-item-40").performClick()
+        compose.onNodeWithTag("gallery-selection-more").assertIsEnabled().performClick()
+        compose.onNodeWithTag("gallery-selection-add-album").assertIsDisplayed().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryAlbumsLoaded && !controller.state.value.loading
+        }
+        compose.onNodeWithTag("gallery-album-picker").assertExists()
+        compose.onNodeWithTag("gallery-add-album-manual:fixture")
+            .assertIsEnabled().performClick()
+        compose.onNodeWithTag("gallery-album-confirm").assertIsEnabled().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            !controller.state.value.gallerySelectionMode && !controller.state.value.loading
+        }
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(
+                listOf("manual:fixture" to listOf(40L)), galleryAlbumAdds)
+        }
+        compose.onNodeWithTag("gallery-bottom-dock").assertIsDisplayed()
+    }
+
     @Test fun galleryNativeSelectionAddsRealServerTagsAndRestoresDock() {
         startAndLogin()
         compose.onNodeWithContentDescription("账户菜单").performClick()
@@ -633,7 +717,8 @@ class DriveAppTest {
         }
         compose.onNodeWithTag("gallery-select-mode").performClick()
         compose.onNodeWithTag("gallery-item-40").performClick()
-        compose.onNodeWithTag("gallery-selection-tags").assertIsEnabled().performClick()
+        compose.onNodeWithTag("gallery-selection-more").assertIsEnabled().performClick()
+        compose.onNodeWithTag("gallery-selection-tags").assertIsDisplayed().performClick()
         compose.onNodeWithTag("gallery-tags-dialog").assertExists()
         compose.onNodeWithTag("gallery-tags-input").performTextInput("旅行, Family")
         compose.onNodeWithTag("gallery-tags-confirm").assertIsEnabled().performClick()
