@@ -26,6 +26,7 @@ import { XDriveMediaGalleryPlacesPhotoDrawer } from './MediaGalleryPlacesPhotoDr
 import { xDriveValidBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
 import {
   xDriveCurrentMapPhotoCollections, xDriveVerifiedMapPhotoProjections,
+  xDriveSelectVisibleMapPhotoCovers,
 } from '../media-gallery-places-map-strip'
 import {
   xDriveBaiduMapPhotoScopeKey, xDriveCopyBaiduMapPhotoScope,
@@ -98,6 +99,9 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   mapPhotoScope: XDriveBaiduMapPhotoScope
 }) {
   const mount = useRef<HTMLDivElement | null>(null)
+  const mapFrameRef = useRef<{
+    setPhotoCoverSelections(selections: readonly MediaBaiduNativeCellSelection[]): boolean
+  } | null>(null)
   const failureCallback = useRef(onFailure)
   failureCallback.current = onFailure
   const opened = useRef(onOpenCell)
@@ -384,6 +388,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         ...commonMapOptions,childOrigin,
       })
     if (!frame) { failure(); return }
+    mapFrameRef.current = frame
 
     const queryCells = async (bounds: Bounds, liveCamera = false): Promise<boolean> => {
       if (lifetime.signal.aborted) return false
@@ -530,34 +535,36 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
       cancel()
       lifetime.abort()
       if(refresh!==null)clearInterval(refresh)
+      if (mapFrameRef.current === frame) mapFrameRef.current = null
       frame.dispose()
       onReady(false)
     }
   },[childOrigin,mintChildTicket,getInlinePrototypeConfig,getInlineSignedStatus,mode,listOwnerCells,onReady,scope])
 
-  // Select the most informative visible covers and avoid overcrowding.
-  // All 64 map numbers remain in the provider map; only 24 thumbnails load.
-  const coverPins: Array<{selection:MediaBaiduNativeCellSelection;
-    count:number;x:number;y:number}> = []
-  // The worldwide Owner /cells bootstraps SDK fit only: photo cover clicks
-  // must await a true camera viewport, which can regrid the 8x8 Cells.
-  if (scopeIsCurrent && acceptedViewport && projected?.width && projected.height &&
-      loadThumbnail && phase === 'ready') {
-    // Revalidate untrusted SDK projections against the current signed Owner cells.
-    const verifiedCoverCandidates = xDriveVerifiedMapPhotoProjections(
-      trustedSummary, projected, accessible.map(cell => cell.selection))
-    for (const candidate of verifiedCoverCandidates) {
-      if (coverPins.length >= 24) break
-      // Projected SDK coordinates never authorize obsolete Owner selections.
-      if (!hasAcceptedCell(candidate.selection)) continue
-      if (coverPins.some(pin => Math.hypot(pin.x-candidate.x,pin.y-candidate.y) < 88)) continue
-      coverPins.push(candidate)
-    }
-  }
+  // Both Inline and isolated HTTPS Child share the exact same verified
+  // Owner projections and photo-first collision/edge/overlay rules. Do not
+  // show a clipped or photo-dock-covered button just because an SDK point
+  // remains visible at the map border. All Cells remain in the accessible list.
+  const coverPins = scopeIsCurrent && acceptedViewport &&
+      projected?.width && projected.height && loadThumbnail && phase === 'ready'
+    ? xDriveSelectVisibleMapPhotoCovers(
+        xDriveVerifiedMapPhotoProjections(
+          trustedSummary, projected, accessible.map(cell => cell.selection))
+          .filter(candidate => hasAcceptedCell(candidate.selection)),
+        projected.width, projected.height, edgeToEdge, true)
+    : []
   // Only use a CURRENT Parent-owned /cells snapshot, never a Child-generated
   // key as private media authority. A pan/revoke clears both inputs.
   const photoStrip = scopeIsCurrent && acceptedViewport && phase === 'ready'
     ? xDriveCurrentMapPhotoCollections(trustedSummary, projected, accessible.map(cell => cell.selection)) : []
+  // Two SDK Hosts receive only the current visible React cover selections.
+  // Numeric native labels are suppressed for these displayed buttons only.
+  // Each other signed Cell keeps its native label and the full accessible list.
+  useLayoutEffect(() => {
+    mapFrameRef.current?.setPhotoCoverSelections?.(
+      coverPins.map(pin => pin.selection))
+  },[projected,accessible,acceptedViewport,currentFilterKey,phase,
+    summary,edgeToEdge,loadThumbnail])
   // Only the authenticated Owner Cells DTO supplies representative media kind.
   // Both SDK Hosts still get anonymous map geometry, count and ephemeral key;
   // private media bytes, URLs and kind remain in this trusted React Parent.

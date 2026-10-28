@@ -54,6 +54,15 @@ export type XDriveBaiduParentCameraMessage = Readonly<{
   kind: 'restore-camera'
   camera: XDriveBaiduIsolatedCamera
 }>
+/** Cosmetic suppression of numeric Labels already replaced by trusted Parent
+ * photo buttons; it is never a media access or Owner grant. */
+export type XDriveBaiduParentPhotoCoversMessage = Readonly<{
+  version: 1
+  generation: number
+  nonce: string
+  kind: 'photo-covers'
+  keys: readonly string[]
+}>
 export type XDriveBaiduIsolationBoundary = Readonly<{
   parentOrigin: string
   childOrigin: string
@@ -69,6 +78,8 @@ export type XDriveBaiduIsolatedMessageEvent = Readonly<{
 
 export const XDRIVE_BAIDU_ISOLATED_MESSAGE_VERSION = 1
 export const XDRIVE_BAIDU_ISOLATED_MAX_CELLS = 64
+/** Same limit as the trusted Gallery Parent's displayed photo covers. */
+export const XDRIVE_BAIDU_ISOLATED_MAX_PHOTO_COVERS = 24
 export const XDRIVE_BAIDU_ISOLATED_CHILD_BYTES = 8192
 export const XDRIVE_BAIDU_ISOLATED_PARENT_BYTES = 8192
 
@@ -267,4 +278,35 @@ export function xDriveCreateBaiduIsolatedCameraMessage(
     }
     return stringBudget(message, XDRIVE_BAIDU_ISOLATED_PARENT_BYTES) ? message : null
   } catch { return null }
+}
+
+/** Only exact current anonymous Cell keys can be hidden by a rendered photo
+ * button. Camera/Owner changes rotate keys and invalidate stale proposals. */
+export function xDriveCreateBaiduIsolatedPhotoCoversMessage(
+  boundary: XDriveBaiduIsolationBoundary,
+  proposedKeys: readonly unknown[],
+  currentCellKeys: readonly string[],
+): XDriveBaiduParentPhotoCoversMessage | null {
+  if (!xDriveValidBaiduIsolatedBoundary(boundary) ||
+      !Array.isArray(proposedKeys) ||
+      proposedKeys.length > XDRIVE_BAIDU_ISOLATED_MAX_PHOTO_COVERS ||
+      !Array.isArray(currentCellKeys) ||
+      currentCellKeys.length > XDRIVE_BAIDU_ISOLATED_MAX_CELLS) return null
+  const allowed = new Set<string>()
+  for (const key of currentCellKeys) {
+    if (!validKey(key) || allowed.has(key)) return null
+    allowed.add(key)
+  }
+  const keys: string[] = []
+  const seen = new Set<string>()
+  for (const key of proposedKeys) {
+    if (!validKey(key) || seen.has(key) || !allowed.has(key)) return null
+    seen.add(key)
+    keys.push(key)
+  }
+  const message: XDriveBaiduParentPhotoCoversMessage = {
+    version:1, generation:boundary.generation, nonce:boundary.nonce,
+    kind:'photo-covers', keys,
+  }
+  return stringBudget(message,XDRIVE_BAIDU_ISOLATED_PARENT_BYTES) ? message : null
 }

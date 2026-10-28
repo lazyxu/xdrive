@@ -63,11 +63,13 @@ export type XDriveBaiduInlineMapOptions<T> =
 export interface XDriveBaiduInlineMapHost<T> {
   beginAuthorizedInlineSession(signal: AbortSignal): Promise<boolean>
   replaceAuthorizedCells(cells: readonly XDriveTrustedIsolatedMapCell<T>[]): boolean
+  setPhotoCoverSelections(selections: readonly T[]): boolean
   restoreCamera(camera: XDriveBaiduIsolatedCamera): boolean
   dispose(): void
 }
 
 const maxCells = 64
+const maxPhotoCovers = 24
 function validCell<T>(cell: XDriveTrustedIsolatedMapCell<T>): boolean {
   return Boolean(cell && cell.selection !== undefined &&
     Number.isFinite(cell.latitude) && Math.abs(cell.latitude) <= 85 &&
@@ -101,6 +103,7 @@ export function xDriveMountBaiduInlineMap<T>(
   let browserAK: string | null = null
   let labels: Array<{ label: NativeLabel; click: () => void }> = []
   let cells: readonly XDriveTrustedIsolatedMapCell<T>[] = []
+  let coveredSelections = new Set<T>()
   let pendingViewport: ReturnType<typeof setTimeout> | null = null
   let starting: Promise<boolean> | null = null
 
@@ -123,6 +126,7 @@ export function xDriveMountBaiduInlineMap<T>(
     clearTimer()
     clearLabels()
     cells = []
+    coveredSelections.clear()
     clearProjection()
     options.onCancel?.()
   }
@@ -145,13 +149,14 @@ export function xDriveMountBaiduInlineMap<T>(
     }
     options.onProjectedCells?.({width,height,cells:projected})
   }
-  const renderCells = (): boolean => {
+  const renderCells = (republishProjection = true): boolean => {
     clearLabels()
-    clearProjection()
+    if (republishProjection) clearProjection()
     if (!map || !sdk || !ready || !alive) return true
     const current = generation
     try {
       for (const cell of cells) {
+        if (coveredSelections.has(cell.selection)) continue
         const position = new sdk.Point(cell.longitude,cell.latitude)
         const label = new sdk.Label(cell.count > 1
           ? '▣ ' + cell.count.toLocaleString('zh-CN') + '张' : '▣', {
@@ -173,7 +178,7 @@ export function xDriveMountBaiduInlineMap<T>(
         map.addOverlay(label)
         labels.push({label,click})
       }
-      emitProjections()
+      if (republishProjection) emitProjections()
       return true
     } catch {
       clearLabels()
@@ -227,6 +232,7 @@ export function xDriveMountBaiduInlineMap<T>(
     clearLabels()
     clearProjection()
     cells = []
+    coveredSelections.clear()
     ready = false
     if (map) for (const {event,callback} of listeners) {
       try { map.removeEventListener(event,callback) } catch { /* teardown */ }
@@ -314,6 +320,7 @@ export function xDriveMountBaiduInlineMap<T>(
       if (!alive || !Array.isArray(next) || next.length > maxCells ||
           next.some(cell=>!validCell(cell))) {
         cells = []
+        coveredSelections.clear()
         generation++
         clearLabels()
         clearProjection()
@@ -321,7 +328,23 @@ export function xDriveMountBaiduInlineMap<T>(
       }
       generation++
       cells = [...next]
+      coveredSelections.clear()
       return renderCells()
+    },
+    setPhotoCoverSelections(selections) {
+      if (!alive || !ready || !map || !Array.isArray(selections) ||
+          selections.length > maxPhotoCovers) return false
+      const accepted = new Set(cells.map(cell => cell.selection))
+      const next = new Set<T>()
+      for (const selection of selections) {
+        if (!accepted.has(selection) || next.has(selection)) return false
+        next.add(selection)
+      }
+      if (next.size === coveredSelections.size &&
+          [...next].every(item => coveredSelections.has(item))) return true
+      coveredSelections = next
+      // Cosmetic change only: do not clear/re-publish trusted projections.
+      return renderCells(false)
     },
     restoreCamera(camera) {
       if (!alive || !ready || !map || !sdk ||

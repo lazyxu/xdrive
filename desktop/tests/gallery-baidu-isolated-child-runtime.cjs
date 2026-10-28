@@ -11,18 +11,26 @@ const html = read('deploy/baidu-isolated-child/index.html')
 const caddy = read('deploy/baidu-isolated-child/Caddyfile.example')
 
 function childFixture(parentOrigin='https://gallery.example.net',childOrigin='https://map-isolated.example.org',sdkEnabled=false,options={}) {
-  const events = new Map(), sent=[], moves=[], nativeEvents=new Map(), redeems=[]
+  const events = new Map(), sent=[], moves=[], nativeEvents=new Map(), redeems=[], labels=[]
   const parent={postMessage(message,targetOrigin){sent.push({message,targetOrigin})}}
   const messageTarget={textContent:''}
   const scripts=[]
   const fakeSDK={
     Point:function Point(lng,lat){this.lng=lng;this.lat=lat},
-    Label:function Label(){this.setStyle=()=>{};this.addEventListener=()=>{};this.removeEventListener=()=>{}},
+    Label:function Label(value){
+      this.text=value;this.click=null
+      this.setStyle=()=>{}
+      this.addEventListener=(name,cb)=>{if(name==='click')this.click=cb}
+      this.removeEventListener=(name)=>{if(name==='click')this.click=null}
+    },
     Map:function Map(){
       this.centerAndZoom=(point,zoom)=>moves.push({latitude:point.lat,longitude:point.lng,zoom})
       this.addEventListener=(name,listener)=>nativeEvents.set(name,listener)
-      this.addOverlay=()=>{}
-      this.removeOverlay=()=>{}
+      this.addOverlay=label=>{labels.push(label)}
+      this.removeOverlay=label=>{
+        const i=labels.indexOf(label)
+        if(i>=0)labels.splice(i,1)
+      }
       this.getBounds=()=>({getSouthWest:()=>new fakeSDK.Point(115,38),
         getNorthEast:()=>new fakeSDK.Point(117,40)})
       this.getCenter=()=>new fakeSDK.Point(116,39)
@@ -57,7 +65,7 @@ function childFixture(parentOrigin='https://gallery.example.net',childOrigin='ht
   const context=vm.createContext(env)
   const code=new vm.Script(src,{filename:'deploy/baidu-isolated-child/child.js'})
   code.runInContext(context,{timeout:1500})
-  return {events,sent,moves,nativeEvents,redeems,scripts,messageTarget,parent,context,sendObject(source,origin,obj){
+  return {events,sent,moves,nativeEvents,redeems,labels,scripts,messageTarget,parent,context,sendObject(source,origin,obj){
     const literal=JSON.stringify(obj)
     context.payload=literal
     const shaped=vm.runInContext('JSON.parse(payload)',context)
@@ -293,4 +301,45 @@ test('invalid Child map-only Session receipts never load third-party SDK',async(
     assert(!JSON.stringify(f.sent).includes('b'.repeat(64)))
     f.events.get('pagehide')?.()
   }
+})
+
+test('isolated Child shows numeric fallback only for Cells not covered by real Parent photos', async () => {
+  const f=childFixture('https://gallery.example.net','https://map-isolated.example.org',true)
+  const cellA={key:'c'.repeat(32),latitude:35,longitude:139,count:12}
+  const cellB={key:'d'.repeat(32),latitude:36,longitude:140,count:5}
+  const send=(kind,more={})=>f.sendObject(f.parent,'https://gallery.example.net',{
+    version:1,generation:7,nonce:'a'.repeat(64),kind,...more})
+  f.sendObject(f.parent,'https://gallery.example.net',init)
+  send('cells',{cells:[cellA,cellB]})
+  send('map-session',{ticket:'b'.repeat(64)})
+  await waitForChild(()=>f.sent.some(e=>e.message.kind==='map-ready'),'SDK map-ready')
+  assert.equal(f.labels.length,2)
+  assert(f.labels.some(label=>label.text.includes('12张')))
+  send('photo-covers',{keys:[cellA.key]})
+  assert.equal(f.labels.length,1)
+  assert(f.labels[0].text.includes('5张'),
+    'uncovered Cell retains exact Owner count and native click fallback')
+  const before=f.labels[0]
+  send('photo-covers',{keys:[cellA.key,cellA.key]})
+  send('photo-covers',{keys:['e'.repeat(32)]})
+  send('photo-covers',{keys:[cellA.key],node_id:42})
+  send('photo-covers',{keys:[cellA.key],generation:9})
+  assert.equal(f.labels.length,1,'invalid, forged, duplicate, stale suppression is inert')
+  assert.equal(f.labels[0],before)
+  send('photo-covers',{keys:[]})
+  assert.equal(f.labels.length,2,'Parent photo gone restores original SDK label')
+  send('photo-covers',{keys:[cellA.key]})
+  assert.equal(f.labels.length,1)
+  f.nativeEvents.get('movestart')()
+  assert.equal(f.labels.length,0,'camera gesture clears old keys and labels immediately')
+  send('photo-covers',{keys:[]})
+  assert.equal(f.labels.length,0,'stale empty cover update cannot resurrect revoked labels')
+  send('cells',{cells:[{...cellB,key:'f'.repeat(32)}]})
+  assert.equal(f.labels.length,1,'fresh Owner Cell snapshot restores numeric fallback')
+  send('photo-covers',{keys:[cellA.key]})
+  assert.equal(f.labels.length,1,'old anonymous keys cannot hide a new Cell')
+  send('photo-covers',{keys:['f'.repeat(32)]})
+  assert.equal(f.labels.length,0,'fresh visible photo hides only its current Label')
+  f.events.get('pagehide')?.()
+  assert.equal(f.labels.length,0)
 })
