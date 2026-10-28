@@ -311,7 +311,11 @@ test('shared workspace content owns page spacing and Files full-bleed behavior',
   assert.equal(webStyles.includes('.content-wrap'), false, 'Web must not retain local workspace-content layout CSS')
   assert.ok(sharedWorkspaceRoute.includes('export function xDriveWorkspacePresentation'), 'shared route model must own workspace presentation')
   assert.ok(webApp.includes('presentation={xDriveWorkspacePresentation(appView)}'), 'Web workspace must use shared route presentation')
-  assert.ok(desktopApp.includes('presentation={xDriveWorkspacePresentation(view)}'), 'Desktop workspace must use shared route presentation')
+  const routeFrame = fs.readFileSync(path.join(repoRoot, 'ui/shared/src/mui/XDriveAppRouteContent.tsx'), 'utf8')
+  assert.ok(desktopApp.includes('<XDriveAppRouteContent host={workspaceHost} view={view}>') &&
+    routeFrame.includes('const presentation = xDriveWorkspacePresentation(view)') &&
+    routeFrame.includes('presentation={presentation}'),
+    'Desktop must use shared route presentation through the canonical route frame')
   assert.equal(webApp.includes('<XDriveWorkspaceSurface presentation="page" title="文件">'), false, 'Files must not regain generic page chrome')
 })
 
