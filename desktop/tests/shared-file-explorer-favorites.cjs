@@ -50,7 +50,9 @@ test('favorites cross Server, Go client, Agent and Electron bridges', () => {
   for (const token of ['"file-favorites"','CloudFileFavorites(context.Context)','GET /v1/cloud/favorites','POST /v1/cloud/favorites/favorite','POST /v1/cloud/favorites/unfavorite']) {
     assert.ok(agentIPC.includes(token), 'Agent IPC favorite bridge missing: ' + token)
   }
-  for (const token of ['AgentCloudFavoriteItem','cloudFileFavorites()','cloudFavoriteFile(nodeID: number)','cloudUnfavoriteFile(nodeID: number)']) assert.ok(agentClient.includes(token))
+  for (const token of ['AgentCloudFavoriteItem','cloudFileFavorites(signal?: AbortSignal)','cloudFavoriteFile(nodeID: number)','cloudUnfavoriteFile(nodeID: number)']) assert.ok(agentClient.includes(token))
+  assert.ok(agentClient.includes("'/v1/cloud/favorites', undefined, 10_000, signal"),
+    'the optional Desktop Favorites read must reach Agent HTTP cancellation')
   for (const token of ["ipcMain.handle('agent:cloud-favorites'","ipcMain.handle('agent:cloud-favorite'","ipcMain.handle('agent:cloud-unfavorite'","requireAgentCapability(hello, 'file-favorites')"]) assert.ok(desktopMain.includes(token))
   for (const token of ['cloudFileFavorites:','cloudFavoriteFile:','cloudUnfavoriteFile:']) assert.ok(preload.includes(token))
   assert.ok(rendererTypes.includes('AgentCloudFavoriteItem'))
