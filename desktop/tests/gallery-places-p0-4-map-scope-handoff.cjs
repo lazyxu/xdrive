@@ -184,3 +184,93 @@ test('P0-4 in-flight map mode handoff is fenced to the issued Owner, filter and 
     map.indexOf('window.location.replace(url)'),
     'do not navigate with a stale issued ticket')
 })
+
+test('P0-4 Safari denied history.state still strips the map ticket before any SDK', () => {
+  const href = mode.xDrivePlacesMapScopeHandoffURL(
+    'https://gallery.example.org/?theme=dark#/app/gallery?section=places', 'isolated', T)
+  const browser = win(href)
+  let writes = 0
+  Object.defineProperty(browser.history, 'state', { configurable: true,
+    get() { throw Error('SecurityError: Safari denies History.state getter') },
+  })
+  browser.history.replaceState = (state, _title, url) => {
+    assert.equal(state, null, 'unreadable history state is never fabricated')
+    writes++
+    browser.removed.push(url)
+    browser.location.href = url
+  }
+  const policy = { content: 'no-referrer' }
+  browser.document = { querySelector: () => policy }
+  assert.equal(bootstrap.xDriveRestoreMapReferrerAfterScrub(browser), false,
+    'ticket must not be disclosed as a third-party Referer before scrub')
+  assert.deepEqual(bootstrap.xDriveTakeMapScopeHandoffFromURL(browser), {
+    state: 'pending', ticket: T, target: 'isolated',
+  })
+  assert.equal(writes, 1)
+  assert.ok(!browser.location.href.includes(T))
+  assert.match(browser.location.href, /places_map_scope_required=1/,
+    'the restricted scope survives ticket redemption and browser reload')
+  assert.equal(bootstrap.xDriveRestoreMapReferrerAfterScrub(browser), true)
+  assert.equal(policy.content, 'strict-origin-when-cross-origin')
+  assert.equal(bootstrap.xDriveTakeMapScopeHandoffFromURL(browser).state, 'denied',
+    'hard refresh cannot widen a restricted map into full Owner Library')
+})
+
+test('P0-4 unreadable History.state never overrides a denied nonce rewrite', () => {
+  const href = mode.xDrivePlacesMapScopeHandoffURL(
+    'https://gallery.example.org/#/app/gallery?section=places', 'prototype', T)
+  const browser = win(href, false)
+  Object.defineProperty(browser.history, 'state', {
+    get() { throw Error('SecurityError: denied state getter') },
+  })
+  const policy = { content: 'no-referrer' }
+  browser.document = { querySelector: () => policy }
+  assert.equal(bootstrap.xDriveTakeMapScopeHandoffFromURL(browser).state, 'denied')
+  assert.equal(browser.removed.length, 0)
+  assert.ok(browser.location.href.includes(T),
+    'unscrubbed ticket is still present, so the early HTML no-referrer rule must remain')
+  assert.equal(bootstrap.xDriveRestoreMapReferrerAfterScrub(browser), false)
+  assert.equal(policy.content, 'no-referrer')
+  assert.equal(bootstrap.xDriveAbandonMapScopeRequired(browser), false,
+    'even user-initiated abandonment cannot claim success when History rewrite is denied')
+})
+
+test('P0-4 invalid duplicate ticket is scrubbed even with denied History.state', () => {
+  const href = mode.xDrivePlacesMapScopeHandoffURL(
+    'https://gallery.example.org/#/app/gallery', 'prototype', T)
+  const duplicate = new URL(href)
+  duplicate.searchParams.append('places_map_handoff', T)
+  const browser = win(duplicate.href)
+  Object.defineProperty(browser.history, 'state', {
+    get() { throw Error('SecurityError: denied state getter') },
+  })
+  browser.history.replaceState = (state, _title, url) => {
+    assert.equal(state, null)
+    browser.removed.push(url)
+    browser.location.href = url
+  }
+  assert.equal(bootstrap.xDriveTakeMapScopeHandoffFromURL(browser).state, 'denied')
+  assert.equal(browser.removed.length, 1)
+  assert.ok(!browser.location.href.includes(T))
+  assert.match(browser.location.href, /places_map_scope_required=1/)
+})
+
+test('P0-4 explicit abandon handles denied History.state without downgrading rewrite security', () => {
+  const href = 'https://gallery.example.org/?places_map_scope_required=1&theme=dark#/app/gallery'
+  const browser = win(href)
+  Object.defineProperty(browser.history, 'state', {
+    get() { throw Error('SecurityError: denied state getter') },
+  })
+  browser.history.replaceState = (state, _title, url) => {
+    assert.equal(state, null)
+    browser.removed.push(url)
+    browser.location.href = url
+  }
+  assert.equal(bootstrap.xDriveTakeMapScopeHandoffFromURL(browser).state, 'denied')
+  assert.equal(bootstrap.xDriveAbandonMapScopeRequired(browser), true)
+  assert.equal(browser.removed.length, 1)
+  assert.ok(!browser.location.href.includes('places_map_scope_required'))
+  assert.match(browser.location.href, /theme=dark/)
+  assert.equal(bootstrap.xDriveTakeMapScopeHandoffFromURL(browser).state, 'none',
+    'only the explicit abandon action may remove the required restricted scope')
+})

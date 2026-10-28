@@ -13,6 +13,14 @@ export type XDriveMapScopeHandoffState =
   | Readonly<{ state:'ready';ownerID:number;username:string;
       scope:XDriveBaiduMapPhotoScope;camera?:XDriveBaiduNativeCameraSnapshot;revision:number }>
 
+/** Restricted WebKit can deny the optional History.state getter while still
+ * allowing replaceState. A null history payload preserves the crucial
+ * nonce-scrub capability without granting any Owner/map permission. */
+function readableMapHistoryState(browser: Pick<Window, 'history'>): unknown {
+  try { return browser.history.state }
+  catch { return null }
+}
+
 /** Consume the opaque URL hint synchronously BEFORE mounting any Gallery/SDK
  * component; never retain it in History, Storage, logs, a route or a referrer.
  * The hint has NO capability without authenticated Server redemption. */
@@ -30,7 +38,7 @@ export function xDriveTakeMapScopeHandoffFromURL(
     }
     url.searchParams.delete(XDRIVE_PLACES_MAP_HANDOFF_QUERY)
     // Even an invalid/duplicated hint must be stripped before any SDK mount.
-    browser.history.replaceState(browser.history.state, '', url.href)
+    browser.history.replaceState(readableMapHistoryState(browser), '', url.href)
     if (tickets.length !== 1 || !/^[a-f0-9]{64}$/.test(tickets[0]) ||
         required.length !== 1 || required[0] !== '1' ||
         url.protocol !== 'https:' ||
@@ -57,7 +65,7 @@ export function xDriveAbandonMapScopeRequired(
     if (url.origin !== browser.location.origin) return false
     url.searchParams.delete(XDRIVE_PLACES_MAP_HANDOFF_QUERY)
     url.searchParams.delete(XDRIVE_PLACES_MAP_SCOPE_REQUIRED_QUERY)
-    browser.history.replaceState(browser.history.state, '', url.href)
+    browser.history.replaceState(readableMapHistoryState(browser), '', url.href)
     return true
   } catch { return false }
 }
