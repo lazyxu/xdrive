@@ -3822,15 +3822,16 @@ function registerIPCHandlers() {
   )
 
   ipcMain.handle('agent:get-media-trash', (
-    _event,
+    event,
     limit: unknown = 200,
     offset: unknown = 0,
-  ) => runAgentAction<AgentMediaItemRange>(async () => {
+    requestID: unknown = undefined,
+  ) => runAgentAction<AgentMediaItemRange>(() => viewportRequests.run(event.sender, requestID, async (signal) => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'media-gallery')
     const window = normalizeMediaRangeWindow(limit, offset)
-    return requireAgentClient().mediaTrash(window.limit, window.offset)
-  }, false))
+    return requireAgentClient().mediaTrash(window.limit, window.offset, signal)
+  }), false))
 
   ipcMain.handle('agent:get-media-albums', () => runAgentAction<AgentMediaAlbum[]>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
@@ -4225,12 +4226,13 @@ function registerIPCHandlers() {
   ipcMain.handle(
     'agent:get-media-memory-item-range',
     (
-      _event,
+      event,
       memoryID: unknown,
       limit: unknown = 200,
       offset: unknown = 0,
       timeZone: unknown = 'UTC',
-    ) => runAgentAction<AgentMediaItemRange>(async () => {
+      requestID: unknown = undefined,
+    ) => runAgentAction<AgentMediaItemRange>(() => viewportRequests.run(event.sender, requestID, async (signal) => {
       const hello = await requireAgentLifecycle().ensureRunning()
       requireAgentCapability(hello, 'media-gallery')
       const zone = normalizeGalleryTimeZone(timeZone)
@@ -4248,8 +4250,9 @@ function registerIPCHandlers() {
         window.limit,
         window.offset,
         zone,
+        signal,
       )
-    }, false),
+    }), false),
   )
 
   const normalizeMediaCleanupLimit = (limit: unknown = 24) => {
@@ -4303,11 +4306,12 @@ function registerIPCHandlers() {
   ipcMain.handle(
     'agent:get-media-duplicate-item-range',
     (
-      _event,
+      event,
       duplicateID: unknown,
       limit: unknown = 200,
       offset: unknown = 0,
-    ) => runAgentAction<AgentMediaItemRange>(async () => {
+      requestID: unknown = undefined,
+    ) => runAgentAction<AgentMediaItemRange>(() => viewportRequests.run(event.sender, requestID, async (signal) => {
       const hello = await requireAgentLifecycle().ensureRunning()
       requireAgentCapability(hello, 'media-gallery')
       const window = normalizeMediaRangeWindow(limit, offset)
@@ -4315,8 +4319,9 @@ function registerIPCHandlers() {
         normalizeMediaCleanupID(duplicateID, 'Duplicate'),
         window.limit,
         window.offset,
+        signal,
       )
-    }, false),
+    }), false),
   )
 
   ipcMain.handle(
@@ -4334,11 +4339,12 @@ function registerIPCHandlers() {
   ipcMain.handle(
     'agent:get-media-burst-item-range',
     (
-      _event,
+      event,
       burstID: unknown,
       limit: unknown = 200,
       offset: unknown = 0,
-    ) => runAgentAction<AgentMediaItemRange>(async () => {
+      requestID: unknown = undefined,
+    ) => runAgentAction<AgentMediaItemRange>(() => viewportRequests.run(event.sender, requestID, async (signal) => {
       const hello = await requireAgentLifecycle().ensureRunning()
       requireAgentCapability(hello, 'media-gallery')
       const window = normalizeMediaRangeWindow(limit, offset)
@@ -4346,8 +4352,9 @@ function registerIPCHandlers() {
         normalizeMediaCleanupID(burstID, 'Burst'),
         window.limit,
         window.offset,
+        signal,
       )
-    }, false),
+    }), false),
   )
 
   ipcMain.handle(
@@ -4362,11 +4369,12 @@ function registerIPCHandlers() {
   ipcMain.handle(
     'agent:get-media-pet-item-range',
     (
-      _event,
+      event,
       petKind: unknown,
       limit: unknown = 200,
       offset: unknown = 0,
-    ) => runAgentAction<AgentMediaItemRange>(async () => {
+      requestID: unknown = undefined,
+    ) => runAgentAction<AgentMediaItemRange>(() => viewportRequests.run(event.sender, requestID, async (signal) => {
       const hello = await requireAgentLifecycle().ensureRunning()
       requireAgentCapability(hello, 'media-gallery')
       if (petKind !== 'dog' && petKind !== 'cat') {
@@ -4377,8 +4385,9 @@ function registerIPCHandlers() {
         petKind,
         window.limit,
         window.offset,
+        signal,
       )
-    }, false),
+    }), false),
   )
 
   ipcMain.handle(
@@ -4471,12 +4480,13 @@ function registerIPCHandlers() {
   ipcMain.handle(
     'agent:get-media-suggested-person-item-range',
     (
-      _event,
+      event,
       personID: unknown,
       limit: unknown = 200,
       offset: unknown = 0,
       query: unknown = undefined,
-    ) => runAgentAction<AgentMediaItemRange>(async () => {
+      requestID: unknown = undefined,
+    ) => runAgentAction<AgentMediaItemRange>(() => viewportRequests.run(event.sender, requestID, async (signal) => {
       const hello = await requireAgentLifecycle().ensureRunning()
       requireAgentCapability(hello, 'media-gallery')
       if (
@@ -4491,8 +4501,9 @@ function registerIPCHandlers() {
         window.limit,
         window.offset,
         normalizeMediaGalleryQueryForAgent(hello, query),
+        signal,
       )
-    }, false),
+    }), false),
   )
 
   ipcMain.handle(
@@ -4556,12 +4567,13 @@ function registerIPCHandlers() {
   ipcMain.handle(
     'agent:get-media-person-item-range',
     (
-      _event,
+      event,
       personID: unknown,
       limit: unknown = 200,
       offset: unknown = 0,
       query: unknown = undefined,
-    ) => runAgentAction<AgentMediaItemRange>(async () => {
+      requestID: unknown = undefined,
+    ) => runAgentAction<AgentMediaItemRange>(() => viewportRequests.run(event.sender, requestID, async (signal) => {
       const hello = await requireAgentLifecycle().ensureRunning()
       requireAgentCapability(hello, 'media-gallery')
       if (
@@ -4576,8 +4588,9 @@ function registerIPCHandlers() {
         window.limit,
         window.offset,
         normalizeMediaGalleryQueryForAgent(hello, query),
+        signal,
       )
-    }, false),
+    }), false),
   )
 
   ipcMain.handle(
@@ -4937,27 +4950,24 @@ function registerIPCHandlers() {
     offset: unknown = 0,
     query: unknown = undefined,
     requestID: unknown = undefined,
-  ) => runAgentAction<AgentMediaItemRange>(
-    () => viewportRequests.run(event.sender, requestID, async signal => {
-      const hello = await requireAgentLifecycle().ensureRunning()
-      requireAgentCapability(hello, 'media-gallery')
-      if (
-        typeof albumID !== 'string' ||
-        !(['folder:', 'source:', 'manual:', 'smart:'].some((prefix) => albumID.startsWith(prefix) && albumID.length > prefix.length))
-      ) {
-        throw new AgentIPCError('invalid_input', 0, 'Valid media album id is required.')
-      }
-      const window = normalizeMediaRangeWindow(limit, offset)
-      return requireAgentClient().mediaAlbumItemRange(
-        albumID,
-        window.limit,
-        window.offset,
-        normalizeMediaGalleryQueryForAgent(hello, query),
-        signal,
-      )
-    }),
-    false,
-  ))
+  ) => runAgentAction<AgentMediaItemRange>(() => viewportRequests.run(event.sender, requestID, async (signal) => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'media-gallery')
+    if (
+      typeof albumID !== 'string' ||
+      !(['folder:', 'source:', 'manual:', 'smart:'].some((prefix) => albumID.startsWith(prefix) && albumID.length > prefix.length))
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Valid media album id is required.')
+    }
+    const window = normalizeMediaRangeWindow(limit, offset)
+    return requireAgentClient().mediaAlbumItemRange(
+      albumID,
+      window.limit,
+      window.offset,
+      normalizeMediaGalleryQueryForAgent(hello, query),
+      signal,
+    )
+  }), false))
 
 
   ipcMain.handle('agent:set-media-favorite', (_event, nodeID: unknown, favorite: unknown) => runAgentAction<AgentMediaFavorite>(async () => {
@@ -6847,6 +6857,7 @@ function registerIPCHandlers() {
     const value = raw as Record<string, unknown>
     const keys: Record<string, string[]> = {
       create: ['action', 'format'], verify: ['action', 'snapshot_id', 'mode'],
+      verify_all: ['action', 'mode'],
       plan: ['action', 'keep_last', 'mode'], restore: ['action', 'snapshot_id', 'confirmation'],
       drill: ['action', 'snapshot_id', 'confirmation'],
       delete: ['action', 'snapshot_id', 'confirmation'],
@@ -6863,6 +6874,7 @@ function registerIPCHandlers() {
     switch (value.action) {
       case 'create': return validFormat
       case 'verify': return validID && (value.mode === 'fast' || value.mode === 'deep')
+      case 'verify_all': return value.mode === 'fast' || value.mode === 'deep'
       case 'plan': return validKeep && (value.mode === 'fast' || value.mode === 'deep')
       case 'restore': return validID && value.confirmation === 'RESTORE ' + value.snapshot_id
       case 'drill': return validID && (value.snapshot_id as string).startsWith('v2-') &&

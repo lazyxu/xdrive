@@ -60,7 +60,9 @@ export function createDesktopMediaGalleryDataSource(
     applyDuplicateOrganize: (input) => agent.applyMediaDuplicateOrganize(input),
     listSyncFolders: () => agent.getMediaSyncFolders(),
     getSyncFolder: (sourceID, folderID) => agent.getMediaSyncFolder(sourceID, folderID),
-    listTrashItemRange: (limit, offset) => agent.getMediaTrash(limit, offset),
+    listTrashItemRange: (limit, offset, signal) => xDriveDesktopViewportRequest(
+      signal, requestID => agent.getMediaTrash(limit, offset, requestID),
+    ),
     restoreTrashItems: async (items) => {
       for (const root of xDriveMediaGalleryTrashRoots(items)) {
         await agent.cloudRestoreTrash(root.id, root.revision)
@@ -115,29 +117,41 @@ export function createDesktopMediaGalleryDataSource(
     cancelBaiduMapIndexJob: (nodeID, revision) => agent.cancelMediaBaiduIndexJob(nodeID, revision),
     listMemories: (anchorDate = '', limit = 24, timeZone = 'UTC') =>
       agent.getMediaMemories(anchorDate, limit, timeZone),
-    listMemoryItemRange: (memoryID, limit, offset, timeZone = 'UTC') =>
-      agent.getMediaMemoryItemRange(memoryID, limit, offset, timeZone),
+    listMemoryItemRange: (memoryID, limit, offset, timeZone = 'UTC', signal) =>
+      xDriveDesktopViewportRequest(signal, requestID =>
+        agent.getMediaMemoryItemRange(memoryID, limit, offset, timeZone, requestID),
+      ),
     listDuplicateGroups: (limit = 24, offset = 0) => agent.getMediaDuplicateGroups(limit, offset),
-    listDuplicateItemRange: (duplicateID, limit, offset) =>
-      agent.getMediaDuplicateItemRange(duplicateID, limit, offset),
+    listDuplicateItemRange: (duplicateID, limit, offset, signal) =>
+      xDriveDesktopViewportRequest(signal, requestID =>
+        agent.getMediaDuplicateItemRange(duplicateID, limit, offset, requestID),
+      ),
     listBurstReviews: (limit = 24, offset = 0) => agent.getMediaBurstReviews(limit, offset),
-    listBurstReviewItemRange: (burstID, limit, offset) =>
-      agent.getMediaBurstReviewItemRange(burstID, limit, offset),
+    listBurstReviewItemRange: (burstID, limit, offset, signal) =>
+      xDriveDesktopViewportRequest(signal, requestID =>
+        agent.getMediaBurstReviewItemRange(burstID, limit, offset, requestID),
+      ),
     listPets: () => agent.getMediaPets(),
-    listPetItemRange: (petKind, limit, offset) =>
-      agent.getMediaPetItemRange(petKind, limit, offset),
+    listPetItemRange: (petKind, limit, offset, signal) =>
+      xDriveDesktopViewportRequest(signal, requestID =>
+        agent.getMediaPetItemRange(petKind, limit, offset, requestID),
+      ),
     listSuggestedPeople: (includeReviewed = false, limit = 24) =>
       agent.getMediaSuggestedPeopleWithReview(includeReviewed, limit),
     listSuggestedPersonItems: (personID, limit, offset, query) =>
       agent.getMediaSuggestedPersonItems(personID, limit, offset, query),
-    listSuggestedPersonItemRange: (personID, limit, offset, query) =>
-      agent.getMediaSuggestedPersonItemRange(personID, limit, offset, query),
+    listSuggestedPersonItemRange: (personID, limit, offset, query, signal) =>
+      xDriveDesktopViewportRequest(signal, requestID =>
+        agent.getMediaSuggestedPersonItemRange(personID, limit, offset, query, requestID),
+      ),
     listPeople: (includeHidden = false, limit = 100, offset = 0) =>
       agent.getMediaPeople(includeHidden, limit, offset),
     listPersonItems: (personID, limit, offset, query) =>
       agent.getMediaPersonItems(personID, limit, offset, query),
-    listPersonItemRange: (personID, limit, offset, query) =>
-      agent.getMediaPersonItemRange(personID, limit, offset, query),
+    listPersonItemRange: (personID, limit, offset, query, signal) =>
+      xDriveDesktopViewportRequest(signal, requestID =>
+        agent.getMediaPersonItemRange(personID, limit, offset, query, requestID),
+      ),
     reviewSuggestedPerson: (suggestionID, state) =>
       agent.reviewMediaSuggestedPerson(suggestionID, state),
     addSuggestedPersonToPerson: (suggestionID, personID, revision) =>
@@ -156,11 +170,10 @@ export function createDesktopMediaGalleryDataSource(
       agent.splitMediaPerson(personID, revision, nodeIDs, name),
     listAlbumItems: (albumID, limit, offset, query) =>
       agent.getMediaAlbumItems(albumID, limit, offset, query),
-    // Rapid Album A -> B navigation cancels only the disposable counted
-    // Range. Durable album mutations and background indexing are independent.
     listAlbumItemRange: (albumID, limit, offset, query, signal) =>
       xDriveDesktopViewportRequest(signal, requestID =>
-        agent.getMediaAlbumItemRange(albumID, limit, offset, query, requestID)),
+        agent.getMediaAlbumItemRange(albumID, limit, offset, query, requestID),
+      ),
     loadThumbnail: (nodeID, signal, revision, onProgress) => xDriveDesktopViewportRequest(signal, (requestID) => agent.getMediaThumbnail(nodeID, requestID, revision, onProgress)),
     saveVideoPoster: async (nodeID, revision, poster, signal) => {
       signal?.throwIfAborted()

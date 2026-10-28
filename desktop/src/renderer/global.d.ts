@@ -572,6 +572,7 @@ declare global {
         getMediaTrash: (
           limit?: number,
           offset?: number,
+          requestID?: string,
         ) => Promise<DesktopResult<AgentMediaItemRange>>
         getMediaAlbums: () => Promise<DesktopResult<AgentMediaAlbum[]>>
         getMediaAlbumFolders: () => Promise<DesktopResult<MediaAlbumFolder[]>>
@@ -618,6 +619,7 @@ declare global {
           limit?: number,
           offset?: number,
           timeZone?: string,
+          requestID?: string,
         ) => Promise<DesktopResult<AgentMediaItemRange>>
         getMediaDuplicateGroups: (
           limit?: number,
@@ -627,6 +629,7 @@ declare global {
           duplicateID: string,
           limit?: number,
           offset?: number,
+          requestID?: string,
         ) => Promise<DesktopResult<AgentMediaItemRange>>
         getMediaBurstReviews: (
           limit?: number,
@@ -636,12 +639,14 @@ declare global {
           burstID: string,
           limit?: number,
           offset?: number,
+          requestID?: string,
         ) => Promise<DesktopResult<AgentMediaItemRange>>
         getMediaPets: () => Promise<DesktopResult<MediaPetFacet[]>>
         getMediaPetItemRange: (
           petKind: string,
           limit?: number,
           offset?: number,
+          requestID?: string,
         ) => Promise<DesktopResult<AgentMediaItemRange>>
         getMediaSuggestedPeople: (limit?: number) => Promise<DesktopResult<MediaSuggestedPerson[]>>
         getMediaSuggestedPeopleWithReview: (
@@ -659,6 +664,7 @@ declare global {
           limit?: number,
           offset?: number,
           query?: MediaGalleryQuery,
+          requestID?: string,
         ) => Promise<DesktopResult<AgentMediaItemRange>>
         getMediaPeople: (
           includeHidden?: boolean,
@@ -676,6 +682,7 @@ declare global {
           limit?: number,
           offset?: number,
           query?: MediaGalleryQuery,
+          requestID?: string,
         ) => Promise<DesktopResult<AgentMediaItemRange>>
         reviewMediaSuggestedPerson: (
           suggestionID: string,

@@ -28,7 +28,7 @@ test('Desktop Album A -> B abort reaches the scoped Agent HTTP GET, not mutation
   const handler = main.split("ipcMain.handle('agent:get-media-album-item-range'")[1]
     ?.split("ipcMain.handle('agent:set-media-favorite'")[0]
   assert.ok(handler, 'Album Range handler must exist')
-  assert.match(handler, /viewportRequests\.run\(event\.sender,\s*requestID,\s*async signal =>/,
+  assert.match(handler, /viewportRequests\.run\(event\.sender,\s*requestID,\s*async\s*\(?signal\)?\s*=>/,
     'main process must bind cancellation to the invoking window')
   assert.match(handler, /requireAgentClient\(\)\.mediaAlbumItemRange\([\s\S]*?signal,/)
   const clientMethod = agent.split('  mediaAlbumItemRange(')[1]?.split('  setMediaFavorite(')[0]
