@@ -206,7 +206,11 @@ test('Web and Desktop shell composition lives in shared MUI', () => {
   assert.ok(webApp.includes('<XDriveWorkspaceShell'), 'Web should consume the shared workspace shell')
   assert.ok(desktopApp.includes('<XDriveApp') && sharedApp.includes('<XDriveWorkspaceShell'), 'Desktop must consume the shared app shell')
   assert.ok((webApp.match(/<XDriveWorkspaceContent\b/g) || []).length >= 2, 'Web should use shared workspace content for authenticated shells')
-  assert.ok(desktopApp.includes('<XDriveWorkspaceContent'), 'Desktop should use shared workspace content')
+  const routeContent = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'XDriveAppRouteContent.tsx'), 'utf8')
+  assert.ok(desktopApp.includes('<XDriveAppRouteContent') &&
+    routeContent.includes('<XDriveWorkspaceContent') &&
+    routeContent.includes('presentation={presentation}'),
+    'Desktop must use the shared workspace content through the canonical route frame')
   assert.ok(sharedAccount.includes('XDriveAccountAvatarButton'), 'shared account avatar trigger is missing')
   assert.ok(sharedBrand.includes('XDriveBrandLockup'), 'shared brand lockup is missing')
 })
