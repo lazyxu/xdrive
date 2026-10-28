@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 umask 077
+# GitHub's server-validation job normally suppresses expected Host errors.
+# Report the actual failing contract assertion without dumping private logs,
+# file contents, environment variables, tokens or backup paths.
+trap 'rc=$?; printf "admin backup Host contract failed at line %s (exit %s)\n" "$LINENO" "$rc" >&2' ERR
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TMP="$(mktemp -d)"
