@@ -220,10 +220,28 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
                 Text("正在上传：${formatSize(state.fileUploadBytes)} / ${formatSize(state.fileUploadTotal)}",
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.testTag("files-upload-progress"))
-                LinearProgressIndicator(
-                    progress = { if (state.fileUploadTotal == 0L) 1f else
-                        (state.fileUploadBytes.toDouble() / state.fileUploadTotal).toFloat().coerceIn(0f, 1f) },
-                    modifier = Modifier.fillMaxWidth())
+                // Chunk bytes are not a durable UploadSession finalization ACK.
+                // A zero-size upload has no valid denominator; do not paint
+                // a misleading 100% while the Server is still committing it.
+                val fraction = nativePendingUploadProgress(
+                    state.fileUploadBytes, state.fileUploadTotal)
+                if (fraction == null) {
+                    LinearProgressIndicator(
+                        modifier = Modifier.fillMaxWidth()
+                            .testTag("files-upload-progress-bar"))
+                } else {
+                    LinearProgressIndicator(
+                        progress = { fraction },
+                        modifier = Modifier.fillMaxWidth()
+                            .testTag("files-upload-progress-bar"))
+                }
+                if (nativeUploadAwaitingFinalReceipt(state.fileUploadActive,
+                        state.fileUploadBytes, state.fileUploadTotal)) {
+                    Text("文件字节已传输，等待服务器确认保存…",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.testTag("files-upload-awaiting-ack"))
+                }
                 TextButton(onClick = controller::cancelFileUpload,
                     modifier = Modifier.heightIn(min = 48.dp).testTag("files-upload-cancel")) {
                     Text("取消上传")
@@ -884,10 +902,27 @@ internal fun DownloadToDeviceStatus(state: DriveState, controller: DriveControll
         Text("正在保存到设备：${formatSize(state.fileDownloadBytes)} / ${formatSize(state.fileDownloadTotal)}",
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.testTag("${tag}-download-progress"))
-        LinearProgressIndicator(
-            progress = { if (state.fileDownloadTotal == 0L) 1f else
-                (state.fileDownloadBytes.toDouble() / state.fileDownloadTotal).toFloat().coerceIn(0f, 1f) },
-            modifier = Modifier.fillMaxWidth())
+        // SAF destination may still fail during close/verification after
+        // writing the last byte; completion remains an authenticated result.
+        val fraction = nativePendingDownloadProgress(
+            state.fileDownloadBytes, state.fileDownloadTotal)
+        if (fraction == null) {
+            LinearProgressIndicator(
+                modifier = Modifier.fillMaxWidth()
+                    .testTag("${tag}-download-progress-bar"))
+        } else {
+            LinearProgressIndicator(
+                progress = { fraction },
+                modifier = Modifier.fillMaxWidth()
+                    .testTag("${tag}-download-progress-bar"))
+        }
+        if (nativeDownloadAwaitingFinalReceipt(state.fileDownloadActive,
+                state.fileDownloadBytes, state.fileDownloadTotal)) {
+            Text("文件字节已写入，等待设备确认保存…",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag("${tag}-download-awaiting-ack"))
+        }
         TextButton(onClick = controller::cancelFileDownload,
             modifier = Modifier.heightIn(min = 48.dp).testTag("${tag}-download-cancel")) {
             Text("取消下载")
