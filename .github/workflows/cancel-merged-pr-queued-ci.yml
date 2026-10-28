@@ -36,12 +36,13 @@ jobs:
           sparse-checkout: |
             scripts/ci/cancel-merged-pr-queued-ci.cjs
             scripts/ci/cancel-merged-pr-queued-ci.test.cjs
+            scripts/ci/cancel-merged-pr-workflow-contract.test.cjs
           sparse-checkout-cone-mode: false
 
       - name: Validate exact-HEAD queued run selector
         run: |
           node --check scripts/ci/cancel-merged-pr-queued-ci.cjs
-          node --test scripts/ci/cancel-merged-pr-queued-ci.test.cjs
+          node --test scripts/ci/cancel-merged-pr-queued-ci.test.cjs scripts/ci/cancel-merged-pr-workflow-contract.test.cjs
 
       - name: Cancel only the merged PR exact-HEAD queued CI
         uses: actions/github-script@v7
