@@ -2718,6 +2718,32 @@ export function XDriveFileExplorer({
     })()
   }
 
+  // Every entry point applies the same Host-disabled mutation boundary.
+  // Caller-provided context actions are not authority to bypass this fence.
+  const hostUnavailableMenuReason = (id: string): string | undefined => ({
+    rename: unavailableActions?.rename,
+    delete: unavailableActions?.delete,
+    'delete-selected': unavailableActions?.delete,
+    cut: unavailableActions?.cut,
+    copy: unavailableActions?.copy,
+    'move-to': unavailableActions?.moveTo,
+    'copy-to': unavailableActions?.copyTo,
+    paste: unavailableActions?.paste,
+    tags: unavailableActions?.manageTags,
+    'new-folder': unavailableActions?.createFolder,
+    'create-folder': unavailableActions?.createFolder,
+    upload: unavailableActions?.uploadFiles,
+    'upload-folder': unavailableActions?.uploadFolder,
+  })[id]
+  const protectHostMenuItems = (menuItems: XDriveFileExplorerMenuItem[]) =>
+    menuItems.map(action => {
+      const denied = hostUnavailableMenuReason(action.id)
+      return denied ? {
+        ...action, disabled: true, disabledReason: denied,
+        onSelect: () => { /* No authorized Host mutation callback. */ },
+      } : action
+    })
+
   const openItemContextMenuAt = (
     item: XDriveFileExplorerItem,
     mouseX: number,
@@ -2871,7 +2897,7 @@ export function XDriveFileExplorer({
         if (selection.length === contextSelectionCount) setPropertiesItems(selection)
       },
     }]
-    const menuItems = [...actionItems, ...clipboardItems, ...bulkItems, ...organizationItems, ...inspectorItems]
+    const menuItems = protectHostMenuItems([...actionItems, ...clipboardItems, ...bulkItems, ...organizationItems, ...inspectorItems])
     if (menuItems.length === 0) return
     setContextMenu({
       mouseX,
@@ -2894,14 +2920,16 @@ export function XDriveFileExplorer({
   }
 
   const openBackgroundContextMenu = (event: ReactMouseEvent<HTMLElement>) => {
-    const menuItems = [...backgroundMenuItems]
-    if (onPaste) {
+    const menuItems = protectHostMenuItems([...backgroundMenuItems])
+    if (onPaste || unavailableActions?.paste) {
       menuItems.unshift({
         id: 'paste',
         label: '粘贴',
         icon: <ContentPasteRoundedIcon fontSize="small" />,
-        disabled: !canPaste,
-        onSelect: () => onPaste(),
+        disabled: !canPaste || !onPaste || Boolean(unavailableActions?.paste),
+        disabledReason: unavailableActions?.paste ||
+          (!canPaste ? '当前目录暂不能粘贴，请检查剪贴板与目标目录' : undefined),
+        onSelect: () => { if (onPaste && canPaste && !unavailableActions?.paste) onPaste() },
       })
     }
     if (menuItems.length === 0) return
@@ -4171,17 +4199,20 @@ export function XDriveFileExplorer({
   const inspectorFolderCount = selectedItems.length - inspectorFileCount
   const inspectorProperties = inspectorItem ? propertiesForItem(inspectorItem) : []
   const inspectorQuickActions: XDriveFileExplorerMenuItem[] = inspectorItem ? [
-    ...(onManageTags ? [{
+    ...(onManageTags || unavailableActions?.manageTags ? [{
       id: 'tags',
       label: '标签',
       icon: <LocalOfferRoundedIcon fontSize="small" />,
-      onSelect: () => onManageTags([inspectorItem]),
+      disabled: !onManageTags || Boolean(unavailableActions?.manageTags),
+      disabledReason: unavailableActions?.manageTags ??
+        (!onManageTags ? '此宿主未提供标签修改能力。' : undefined),
+      onSelect: () => { if (onManageTags && !unavailableActions?.manageTags) onManageTags([inspectorItem]) },
     }] : []),
-    ...(getItemMenuItems?.(inspectorItem) ?? []).filter((item) => (
+    ...protectHostMenuItems((getItemMenuItems?.(inspectorItem) ?? []).filter((item) => (
       !item.danger &&
       (!compactViewport || !['open-new-tab', 'open-browser-tab'].includes(item.id)) &&
       !['rename', 'delete', 'properties', 'cut', 'copy', 'move', 'version-history'].includes(item.id)
-    )),
+    ))),
   ].slice(0, 4) : []
   const quickLookActions: XDriveFileExplorerMenuItem[] = quickLookItem ? (() => {
     const actions: XDriveFileExplorerMenuItem[] = []
@@ -4200,12 +4231,15 @@ export function XDriveFileExplorer({
         onSelect: () => onDownloadItems([quickLookItem]),
       })
     }
-    if (onManageTags && !seen.has('tags')) {
+    if ((onManageTags || unavailableActions?.manageTags) && !seen.has('tags')) {
       actions.push({
         id: 'tags',
         label: '标签',
         icon: <LocalOfferRoundedIcon fontSize="small" />,
-        onSelect: () => onManageTags([quickLookItem]),
+        disabled: !onManageTags || Boolean(unavailableActions?.manageTags),
+        disabledReason: unavailableActions?.manageTags ??
+          (!onManageTags ? '此宿主未提供标签修改能力。' : undefined),
+        onSelect: () => { if (onManageTags && !unavailableActions?.manageTags) onManageTags([quickLookItem]) },
       })
     }
     return actions.slice(0, 4)

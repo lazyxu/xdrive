@@ -91,3 +91,32 @@ test('disabled native-like Host actions use the same menu and shortcut boundary'
   assert.equal(dsm.includes('window.xdriveDesktop'), false)
   assert.equal(source.includes('POST /v1/cloud/children'), false, 'no new privileged transport')
 })
+
+test('Host denies even custom menu actions that supply apparently live callbacks', () => {
+  const unavailableActions = {
+    delete: 'DSM Owner cannot delete',
+    paste: 'DSM Owner cannot paste',
+    manageTags: 'DSM Owner cannot edit tags',
+  }
+  const reason = actualCallback('hostUnavailableMenuReason', { unavailableActions })
+  const protect = actualCallback('protectHostMenuItems', {
+    hostUnavailableMenuReason: reason,
+  })
+  const calls = []
+  const supplied = ['delete', 'paste', 'tags', 'open'].map(id => ({
+    id, label: id, onSelect: () => calls.push(id),
+  }))
+  const guarded = protect(supplied)
+  for (const action of guarded.slice(0, 3)) {
+    assert.equal(action.disabled, true)
+    assert.ok(action.disabledReason, 'disabled menu must explain its current Host restriction')
+    action.onSelect()
+  }
+  assert.deepEqual(calls, [], 'a custom caller cannot bypass explicit denied Host mutations')
+  guarded[3].onSelect()
+  assert.deepEqual(calls, ['open'], 'authenticated read/open remains available')
+  assert.ok(source.includes('protectHostMenuItems([...backgroundMenuItems])'),
+    'background menu must use the same Host deny boundary')
+  assert.ok(source.includes('...protectHostMenuItems((getItemMenuItems?.(inspectorItem)'),
+    'Inspector cannot bypass a denied Host action')
+})
