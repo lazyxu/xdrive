@@ -74,6 +74,11 @@ export function XDriveSystemMaintenancePage({
           onStart={() => { if (!actionDisabled) setConfirmationOpen(true) }}
         />
         {update.error ? <XDriveStatusAlert tone="warning">{update.error}</XDriveStatusAlert> : null}
+        <XDriveStatusAlert tone="warning" title="恢复前必须另行保管部署配置与密钥">
+          服务器备份包含数据库与文件快照，但不代表已备份宿主机部署配置、
+          加密密钥及证书材料。请将必要的配置和密钥安全地异地保存，并在隔离环境
+          验证可读取、可恢复；不要在管理员网页中上传或展示这些密钥。
+        </XDriveStatusAlert>
         {backupPort ? (
           <XDriveServerBackupManagementPanel port={backupPort} onOpenStorage={onOpenStorage} />
         ) : (
