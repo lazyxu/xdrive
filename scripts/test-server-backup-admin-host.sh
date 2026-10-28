@@ -20,6 +20,35 @@ cat > "$XD_CONFIG_DIR/bin/xdrive-server" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >> "$XD_BACKUP_ADMIN_TEST_LOG"
+if [[ "$1" == backup && "$2" == preview-delete-snapshot ]]; then
+  if [[ "${XD_BACKUP_ADMIN_TEST_BAD_SELECTED_PREVIEW:-}" == bad ]]; then
+    printf '{"protocol":"wrong","delete_enabled":true}\n'
+    exit 0
+  fi
+  name=""
+  mode=""
+  while (( $# > 0 )); do
+    case "$1" in
+      --snapshot) name="$2"; shift 2 ;;
+      --mode) mode="$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+  validation=snapshot_sha256_and_cas_size
+  hashed_objects=0
+  hashed_bytes=0
+  if [[ "$mode" == deep ]]; then
+    validation=snapshot_sha256_and_full_cas_sha256
+    hashed_objects=3
+    hashed_bytes=350
+    if [[ "${XD_BACKUP_ADMIN_TEST_BAD_SELECTED_PREVIEW:-}" == missing_hash ]]; then
+      hashed_objects=0
+      hashed_bytes=0
+    fi
+  fi
+  printf '{"protocol":"xdrive-backup-selected-prune-plan-v1","mode":"read_only","validation":"%s","snapshot":"%s","committed_snapshots":2,"surviving_snapshots":1,"selected_snapshot_bytes":100,"selected_cas_objects":2,"shared_cas_objects":1,"exclusive_cas_objects":1,"exclusive_cas_bytes":200,"unreferenced_objects":1,"unreferenced_bytes":30,"potential_logical_bytes":330,"hashed_objects":%s,"hashed_bytes":%s,"delete_enabled":false}\n' "$validation" "$name" "$hashed_objects" "$hashed_bytes"
+  exit 0
+fi
 if [[ "$1" == backup && "$2" == drill ]]; then
   name="$(basename -- "${3:-}")"
   now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -133,6 +162,34 @@ assert v["cas_objects_checked"]==2 and v["cas_bytes_hashed"]==17,v
 assert "path" not in v and "hash" not in v,v
 PY
 
+ 
+# The selected v2 preview is a Host-resolved, read-only inspection. A forged
+# success stdout must fail and cannot become an administrator success receipt.
+write_request preview_delete "v2-default:$v2" "" deep "" ""
+backup_admin_process_request "$dir"
+grep -Fq "backup preview-delete-snapshot --snapshot $v2 --mode deep --repository-dir $XD_CONFIG_DIR/backups/incremental" "$XD_BACKUP_ADMIN_TEST_LOG"
+grep -Fq '"state":"success"' "$dir/backup-admin-status.json"
+python3 - "$dir/backup-admin-selected-preview.json" <<'PY'
+import json,sys
+r=json.load(open(sys.argv[1],encoding="utf-8"))
+p=r["report"]
+assert r["protocol"]=="xdrive-host-selected-v2-preview-v1"
+assert r["snapshot_id"]=="v2-default:xdrive-backup-20261027T030000Z"
+assert r["mode"]=="deep" and p["mode"]=="read_only" and p["delete_enabled"] is False
+assert p["validation"]=="snapshot_sha256_and_full_cas_sha256"
+assert p["exclusive_cas_bytes"]==200 and p["potential_logical_bytes"]==330
+assert "repository_dir" not in p and "hashes" not in p
+PY
+export XD_BACKUP_ADMIN_TEST_BAD_SELECTED_PREVIEW=missing_hash
+write_request preview_delete "v2-default:$v2" "" deep "" ""
+backup_admin_process_request "$dir"
+grep -Fq '"state":"failed"' "$dir/backup-admin-status.json"
+unset XD_BACKUP_ADMIN_TEST_BAD_SELECTED_PREVIEW
+export XD_BACKUP_ADMIN_TEST_BAD_SELECTED_PREVIEW=bad
+write_request preview_delete "v2-default:$v2" "" fast "" ""
+backup_admin_process_request "$dir"
+grep -Fq '"state":"failed"' "$dir/backup-admin-status.json"
+unset XD_BACKUP_ADMIN_TEST_BAD_SELECTED_PREVIEW
 
 # A scheduled backup holds this exact lock. Admin verification must fail
 # without invoking the Manager rather than racing a snapshot/retention job.

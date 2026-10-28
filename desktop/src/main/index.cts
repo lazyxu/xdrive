@@ -6860,6 +6860,7 @@ function registerIPCHandlers() {
     const keys: Record<string, string[]> = {
       create: ['action', 'format'], verify: ['action', 'snapshot_id', 'mode'],
       verify_all: ['action', 'mode'],
+      preview_delete: ['action', 'snapshot_id', 'mode'],
       plan: ['action', 'keep_last', 'mode'], restore: ['action', 'snapshot_id', 'confirmation'],
       drill: ['action', 'snapshot_id', 'confirmation'],
       delete: ['action', 'snapshot_id', 'confirmation'],
@@ -6877,6 +6878,8 @@ function registerIPCHandlers() {
       case 'create': return validFormat
       case 'verify': return validID && (value.mode === 'fast' || value.mode === 'deep')
       case 'verify_all': return value.mode === 'fast' || value.mode === 'deep'
+      case 'preview_delete': return validID && (value.snapshot_id as string).startsWith('v2-') &&
+        (value.mode === 'fast' || value.mode === 'deep')
       case 'plan': return validKeep && (value.mode === 'fast' || value.mode === 'deep')
       case 'restore': return validID && value.confirmation === 'RESTORE ' + value.snapshot_id
       case 'drill': return validID && (value.snapshot_id as string).startsWith('v2-') &&
