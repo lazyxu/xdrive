@@ -47,7 +47,10 @@ function abortedError(): DOMException { return new DOMException('Request cancell
  * A request without a signal retains the existing bounded retry contract. */
 function retryAbortState(signal?: AbortSignal | null): boolean | null {
   if (!signal) return false
-  try { return typeof signal.aborted === 'boolean' ? signal.aborted : null }
+  try {
+    const observed = signal.aborted // Observe the getter exactly once.
+    return typeof observed === 'boolean' ? observed : null
+  }
   catch { return null }
 }
 
