@@ -1115,7 +1115,7 @@ declare global {
         cancelUpdate: () => Promise<DesktopResult<AgentUpdateState>>
         setSyncRule: (path: string, mode: 'exclude' | 'always-local' | 'default') => Promise<DesktopResult<AgentSettings>>
         getFileAvailability: (path: string) => Promise<DesktopResult<AgentFileAvailability>>
-        getFileAvailabilityBatch: (paths: string[]) => Promise<DesktopResult<AgentFileAvailabilityBatch>>
+        getFileAvailabilityBatch: (paths: string[], requestID?: string) => Promise<DesktopResult<AgentFileAvailabilityBatch>>
         setFileAvailability: (path: string, action: 'keep' | 'release' | 'online' | 'sync') => Promise<DesktopResult<AgentFileAvailability | { ok: boolean }>>
         getConflicts: () => Promise<DesktopResult<AgentConflict[]>>
         openConflict: (id: string, both?: boolean) => Promise<DesktopResult<{ ok: boolean }>>
