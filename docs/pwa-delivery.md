@@ -1,5 +1,25 @@
 # xDrive PWA 交付审查与强化路线图
 
+## 2026-10-28 · P0 同类型导航合入后的当前 MVP 权威状态
+
+**最新核查基线：** `lazyxu/xdrive master@993bedab8b60`（已包含 #2900/#2908/#2910/#2912/#2915）；本节比下方同日早期“#2895 待合入”“旧 #2900 Draft”的记载更新。下方历史记录保留作为开发/性能证据，不能反向覆盖本节。**源码合入、准确 HEAD CI、真机验收是不同状态。**
+
+| 范围 | 当前可信事实 | 剩余真实缺口 |
+| --- | --- | --- |
+| P0 全页面、同类型内容导航 | [#2873](https://github.com/lazyxu/xdrive/pull/2873)、[#2892](https://github.com/lazyxu/xdrive/pull/2892) 和 [#2900](https://github.com/lazyxu/xdrive/pull/2900) **已合入**；#2900 的合并提交 [`e8fc4638`](https://github.com/lazyxu/xdrive/commit/e8fc4638bb6aa07b245454e536aa5481cfdc184d)。切换 Folder/Album/Map Scope、排序或分组时，新可见内容抢占旧可丢弃的 Counted Range/缩略图；A→B→A 与迟到结果有受控回归 | 实体 Safari/Installed 的系统生命周期、手势与真实设备性能仍未验收；不得把旧 HTTP/IPC 取消说成物理连接在所有适配器中一定释放 |
+| P0 持久任务与 Owner 保护 | #2900 只触及可丢弃读取；[Desktop Agent 传递 #2905](https://github.com/lazyxu/xdrive/pull/2905) 已合入。用户显式上传、下载、备份、同步、DSM 同 Owner 已校验下载不会因普通浏览切换被取消；Owner/Root 会话撤销仍必须清理旧字节和权限 | 新 Session/Owner、吊销/断网/跨窗口等受控代码测试继续强制；生产环境专属验收不能冒充通过 |
+| P0 Safari 安装与网络诊断 | [#2895](https://github.com/lazyxu/xdrive/pull/2895)、[#2912](https://github.com/lazyxu/xdrive/pull/2912) 与 [#2915](https://github.com/lazyxu/xdrive/pull/2915) **均已合入**；未知/受限 Cancel、429/503、匿名 readyz 和公开 HEAD 诊断仍 fail-closed，私有写操作不自动重放 | [#2917](https://github.com/lazyxu/xdrive/pull/2917) Safari S5 `window.location`/视口 getter 报错防护当前**待最新 CI/合入**；[#2925](https://github.com/lazyxu/xdrive/pull/2925) SW updatefound/statechange/waiting 可选监听防护当前**待最新 CI/合入**；两者未合入前不能写为完成 |
+| P0 iOS 相册地图视觉 | [#2908](https://github.com/lazyxu/xdrive/pull/2908) 窄屏全地图背景、浮层控件和紧凑照片 dock；[#2910](https://github.com/lazyxu/xdrive/pull/2910) 双 SDK Host 相同的照片 Pin 碰撞/裁切/原生标签 fallback **均已合入**；Owner Parent/独立 HTTPS Child 责任边界不变 | [#2210](https://github.com/lazyxu/xdrive/issues/2210) 仍需地图↔照片墙↔Viewer 的组合历史/刷新/弱网回归、10k/100k 跨 Host 定量性能与实际 iOS 1:1 视觉/无障碍差异；不能从 390px Chromium 推断真机像素一致 |
+| P1 100k/115k 混合媒体 | P1P/P1M 真实 Gin/PostgreSQL17/CAS/Chromium 受控试验已成功。JPEG、H264 动态帧、Live 及返回锚点存在各自基线 | [#2260](https://github.com/lazyxu/xdrive/issues/2260)：同 Runner/同完整物理样本的 JPEG/HEIC/H264/Live 混合 Viewer→Back 资源/CPU/RSS/Go Context.Done、Owner 撤权、弱网及 BEFORE/AFTER 归因仍未完成；`causalConclusion=NOT_ESTABLISHED`，不能编造优化百分比 |
+| P1 iOS 平台专项 | 安装入口/公有离线页、登录后 Files/Gallery、上传分块恢复、Viewer、下载/Range 和 S5 脱敏记录均有共享 Web/PWA 源码 | 真 Safari/Home Screen 的图标启动/可信 HTTPS/深链接/锁屏/进程回收/原生文件选择、4 GiB 下载真实落盘校验、字节系统分享、Safe Area/VoiceOver 等尚无实体证据；保持 `NOT RUN` 或 `跳过（未验收）`，不作为源码/CI/PR 合并门槛 |
+| P2 可选能力 | 局部离线只读目录/相册元数据采用严格 Owner+容量边界，不伪装为真正离线原件 | 彻底离线私有文件、离线编辑/冲突合并、Web Push、后台周期上传、分享接收不属于当前在线 MVP；不提前实现无限私有 Blob 缓存 |
+
+**接下来的源码顺序：** ① #2917/#2925 基于准确 HEAD 修复 CI 并合入；② #2210 只补已合并地图源码未覆盖的组合回归；③ #2260 的同条件混合物理 CAS 试验先测量瓶颈，确认收益后才改生产；④ 继续补可控的移动端 320/375/390/430/899/900、横屏、暗色、键盘、44px 点击区域和账号隔离组合测试。无需重新开发 S1 SW、#2900 页面抢占或 #2908/#2910 地图样式。
+
+**用户永久验收规则：** 无法触及的真实生产环境安全/物理验收标记“按用户决定跳过（未验收）”，不要求生产凭证，不作为研发和合并门槛；源码层 Owner/ACL、Origin/CSP、撤销、Abort、私有响应不缓存和受控 CI 不可跳过。七平台 S5 物理验收矩阵仍保留 `NOT RUN`，不得报告为 `PASS`。
+
+---
+
 ## 2026-10-28 · 当前 MVP 状态与剩余工作（覆盖下方历史日期快照）
 
 **证据截止：** `lazyxu/xdrive master@3bf403fd`（合入 #2892 后的源码检查点；该 SHA 之后新增 PR 状态以链接实时结果为准）。这是受控源码/CI 的状态复核，不是已在 iPhone 安装、通过真实生产证书或设备发布验收的声明。对所有 PR 单独区分准确 HEAD 受影响测试、完整 CI/Final Gate、已合入、真实设备验收；**旧章节里的“尚未开发 / Draft / 当前首要缺口”只代表当时历史，不得拿来重复排期**。

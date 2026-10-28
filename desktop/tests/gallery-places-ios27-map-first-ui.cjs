@@ -146,3 +146,52 @@ test('real Chromium layout measures only painted map controls but still enforces
   assert.doesNotMatch(driver,/actual\.pins\.length>0/)
   assert.match(driver,/actual\.pinButtons\.every\(b=>b\.width>=44&&b\.height>=44\)/)
 })
+
+test('compact map rotation uses fresh owner camera before evaluating photo pins',()=>{
+  const source=read('desktop/scripts/gallery-places-dual-host-chromium.cjs')
+  assert.match(source,/beforeResizeQueries=await page\.evaluate/)
+  assert.match(source,/window\.__mapProbe\.queries\.length>before/)
+  assert.match(source,/await page\.waitForFunction\(before=>/)
+  assert.match(source,/pointToPixel\(\)\{[\s\S]*?this\.canvas\?\.clientWidth/)
+  assert.match(source,/await page\.locator\('\[data-xdrive-places-trusted-photo-cover\]'\)/)
+  // Do not accept an old fixed-pixel test marker which can conceal a stale
+  // projected 390px camera after viewport rotation.
+  assert.doesNotMatch(source,/pointToPixel\(\)\{return \{x:180,y:180\}\}/)
+})
+
+test('camera resize revokes old Cell and auto-restores drawer after fresh Owner Cells and items',()=>{
+  const driver=read('desktop/scripts/gallery-places-dual-host-chromium.cjs')
+  for(const text of [
+    "rotation revokes prior camera-scoped photo drawer",
+    "rotation automatically restores only fresh signed Owner Cell items",
+    "portrait resize revokes short-landscape Cell scope",
+    "portrait automatically restores current Owner drawer",
+    "beforeLandscape=await page.evaluate",
+    "beforePortrait=await page.evaluate",
+    "expanded drawer fits inside 844x390 map and safe area",
+  ]) assert.ok(driver.includes(text),text)
+  assert.match(driver,/probe\.oldDrawer=document\.querySelector/)
+  assert.match(driver,/oldDetached:probe\.oldDrawer\?\.isConnected===false/)
+  assert.match(driver,/window\.__mapProbe\.queries\.length>before\.queries/)
+  assert.match(driver,/window\.__mapProbe\.photoPreviewRanges\.length>before\.previews/)
+  assert.match(driver,/landscapeFresh\.itemTotal===3&&landscapeFresh\.items===3/)
+  assert.match(driver,/portraitFresh\.previewCount===3&&portraitFresh\.newItems===3/)
+  assert.match(driver,/sheetGeometry\.top>=sheetGeometry\.mapTop\+8/)
+  assert.match(driver,/sheetGeometry\.bottom<=sheetGeometry\.mapBottom-8/)
+  assert.match(driver,/sheetGeometry\.bottom<=sheetGeometry\.screen-8/)
+  assert.doesNotMatch(driver,/await openFreshCameraCell\(\)/,
+    'automatic restoration must use new Owner Cell without a second user click')
+})
+
+test('responsive keyboard appearance waits for new Owner camera and bounded map fallback',()=>{
+  const driver=read('desktop/scripts/gallery-places-dual-host-chromium.cjs')
+  assert.match(driver,/beforeCamera=await page\.evaluate/)
+  assert.match(driver,/await page\.waitForFunction\(before=>window\.__mapProbe\.queries\.length>before/)
+  assert.match(driver,/bounds\.map\.height<226/)
+  assert.match(driver,/bounds\.accessibleCount>=1/)
+  assert.match(driver,/bounds\.accessibleLabel\.includes\('9'\)/)
+  assert.match(driver,/visibleCover\|\|truthfulFallback/)
+  assert.match(driver,/beforeReturnCamera=await page\.evaluate/)
+  assert.match(driver,/await cover\.waitFor\(\{state:'visible'\}\)/)
+  assert.match(driver,/bounds\.cover\.width>=44&&bounds\.cover\.height>=44/)
+})

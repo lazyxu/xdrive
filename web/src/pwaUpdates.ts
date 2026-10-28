@@ -66,9 +66,14 @@ function publish(next: XDrivePwaUpdateSnapshot) {
   snapshot = next
   for (const listener of listeners) listener()
 }
+// Safari/WebKit may deny an optional registration.waiting getter. A denied
+// hint can never authorize a waiting-worker update or force a page reload.
+function hasWaitingWorker(found: ServiceWorkerRegistration | null): boolean {
+  try { return Boolean(found?.waiting) } catch { return false }
+}
 function refresh() {
   const previous = snapshot?.phase ?? 'idle'
-  const ready = Boolean(registration?.waiting && accessibleController())
+  const ready = hasWaitingWorker(registration) && accessibleController()
   publish(makeSnapshot(ready ? 'waiting' : previous === 'waiting' ? 'idle' : previous,
     snapshot?.lastError ?? null))
 }
@@ -91,23 +96,36 @@ function observeRegistration(found: ServiceWorkerRegistration) {
   const replaced = registration !== found
   registration = found
   if (!observedRegistrations.has(found)) {
-    observedRegistrations.add(found)
-    found.addEventListener('updatefound', () => {
-      if (registration !== found) return
-      const candidate = found.installing
-      if (!candidate) return
-      candidate.addEventListener('statechange', () => {
-        if (registration === found && candidate.state === 'installed' &&
-          found.waiting && accessibleController()) {
-          markWaiting()
+    try {
+      found.addEventListener('updatefound', () => {
+        if (registration !== found) return
+        // Denied optional Installing/State properties are not proof that a
+        // worker is waiting. Manual update checks and pageshow remain usable.
+        let candidate: ServiceWorker | null = null
+        try { candidate = found.installing } catch { return }
+        if (!candidate) return
+        try {
+          candidate.addEventListener('statechange', () => {
+            if (registration !== found) return
+            try { if (candidate.state !== 'installed') return }
+            catch { return }
+            if (hasWaitingWorker(found) && accessibleController()) markWaiting()
+          })
+        } catch {
+          // A restricted statechange listener cannot interrupt Web startup.
+          // A later registration lookup will still check the real waiting flag.
         }
       })
-    })
+      // Only a successfully registered observer is tracked. A temporary
+      // permission denial must not block a future re-subscription.
+      observedRegistrations.add(found)
+    } catch {
+      // The optional updatefound listener may be denied independently from
+      // getRegistration(). Keep the authoritative current registration.
+    }
   }
-  if (found.waiting && accessibleController()) markWaiting()
+  if (hasWaitingWorker(found) && accessibleController()) markWaiting()
   else if (snapshot?.phase !== 'checking' && (replaced || snapshot?.phase === 'error')) {
-    // Successful discovery of a registered worker clears previous lookup
-    // failures and obsolete 'checked' status from a retired registration.
     publish(makeSnapshot('idle'))
   } else refresh()
 }
@@ -236,11 +254,11 @@ async function checkXDrivePwaUpdateOnce(options: { timeoutMs?: number }): Promis
       return 'error'
     }
     fresh = found
-    if (registration !== found) observeRegistration(found)
+    if (registration !== found || !observedRegistrations.has(found)) observeRegistration(found)
     await Promise.race([found.update(), deadline])
     if (epoch !== registrationLookupEpoch) return snapshot?.phase ?? 'idle'
     remoteUpdateHint = false
-    const phase: XDrivePwaUpdatePhase = found.waiting && accessibleController()
+    const phase: XDrivePwaUpdatePhase = hasWaitingWorker(found) && accessibleController()
       ? 'waiting' : 'checked'
     publish(makeSnapshot(phase))
     return phase
@@ -248,7 +266,7 @@ async function checkXDrivePwaUpdateOnce(options: { timeoutMs?: number }): Promis
     if (epoch !== registrationLookupEpoch) return snapshot?.phase ?? 'idle'
     // A freshly discovered worker's waiting status is stronger evidence than
     // this check's timeout; a retired registration is never such evidence.
-    if (fresh?.waiting && accessibleController()) {
+    if (fresh && hasWaitingWorker(fresh) && accessibleController()) {
       markWaiting()
       return 'waiting'
     }

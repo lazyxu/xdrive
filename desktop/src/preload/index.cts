@@ -709,7 +709,8 @@ const agent = Object.freeze({
   cloudChildrenPage: (
     parentID: number,
     options: { limit?: number; cursor?: string; sort?: 'name' | 'updated' | 'size' | 'type'; order?: 'asc' | 'desc'; name?: string; nameInsensitive?: string } = {},
-  ) => ipcRenderer.invoke('agent:cloud-children-page', parentID, options),
+    requestID?: string,
+  ) => ipcRenderer.invoke('agent:cloud-children-page', parentID, options, requestID),
   cloudChildrenRange: (
     parentID: number,
     offset: number,
@@ -947,6 +948,7 @@ const agent = Object.freeze({
     order: 'asc' | 'desc' = 'asc',
     filters: Record<string, unknown> = {},
     grouping: Record<string, unknown> = {},
+    requestID?: string,
   ) => ipcRenderer.invoke(
     'agent:cloud-search-range',
     query,
@@ -956,6 +958,7 @@ const agent = Object.freeze({
     order,
     filters,
     grouping,
+    requestID,
   ),
   cloudQuota: () => ipcRenderer.invoke('agent:cloud-quota'),
   getServerUpdate: () => ipcRenderer.invoke('agent:get-server-update'),

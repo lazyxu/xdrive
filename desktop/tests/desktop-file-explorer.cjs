@@ -62,7 +62,7 @@ test('Desktop FileExplorer provides system-style navigation, search, and persist
     'canGoUp={!trashActive && canGoUp}',
     'onPathSubmit',
     'onCrumbClick',
-    'loadSearchRange: async (query, filters, searchGrouping, searchSort, offset, limit) =>',
+    'loadSearchRange: async (query, filters, searchGrouping, searchSort, offset, limit, signal) =>',
   ]) {
     assert.ok(explorer.includes(token), `missing Desktop Explorer navigation/search contract: ${token}`)
   }
