@@ -2378,9 +2378,12 @@ async function testDense64OwnerPhotoMap(browser,mode,port){
     const sdkFrame=mode==='inline' ? page :
       page.frames().find(f=>f.url().includes(childHost))
     assert(sdkFrame,'mounted map SDK frame must be inspectable')
+    // An earlier current Owner cover may prevent native labels from ever
+    // being instantiated for the 64 Cells. That is correct: require the
+    // *current* presentation to be photo-only, not a transient label flash.
     await sdkFrame.waitForFunction(()=>{
       const map=window.__xdriveSyntheticMapInstances?.at(-1)
-      return map?.maxOverlays>=64&&map.overlays.length===0
+      return Boolean(map && map.overlays.length===0)
     })
     const state=await page.evaluate(()=>{
       const covers=Array.from(document.querySelectorAll(

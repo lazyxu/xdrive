@@ -255,7 +255,7 @@ test('mounted both SDK Hosts guard 100k synthetic Count and all 64 Owner Cells',
   assert.match(driver,/await testDense64OwnerPhotoMap\(browser,'inline',port\)/)
   assert.match(driver,/await testDense64OwnerPhotoMap\(browser,'isolated',port\)/)
   assert.match(driver,/state\.covers===24&&state\.uniqueCovers===24&&state\.cells===64/)
-  assert.match(driver,/map\?\.maxOverlays>=64&&map\.overlays\.length===0/)
+  assert.match(driver,/map && map\.overlays\.length===0/)
   assert.match(driver,/verified\.preview\?\.total===1562/)
   assert.match(fixture,/const dense64OwnerMap = !genuineGin/)
   assert.match(fixture,/cells=Array\.from\(\{length:64\}/)
