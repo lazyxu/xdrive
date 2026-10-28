@@ -72,6 +72,7 @@ import type { XDriveApi } from './api'
 import { xDriveResolveFileExplorerCapabilities } from '../../ui/shared/src/file-explorer-capabilities'
 import type { XDriveFileExplorerDataAdapter } from '../../ui/shared/src/file-explorer-capabilities'
 import { xDriveFileExplorerVerifiedChildReanchor, xDriveFileExplorerVerifiedChildReveal } from '../../ui/shared/src/mui/FileExplorerReanchor'
+import { xDriveResolveRoutedDirectoryAncestors } from './routedDirectoryAncestors'
 
 /** The existing Files Search input in either responsive presentation. */
 function xDriveWebFilesSearchInput(target: Element | null): target is HTMLInputElement {
@@ -401,27 +402,30 @@ export default function WebFileExplorer({
     }
     routedDirectoryRef.current = routedRequest
     let active = true
+    // Each external ?dir= ancestor walk is a disposable series of GETs.
+    // Abort the actual in-flight Node GET when the route/Owner changes; do
+    // not merely discard its eventual React result after up to 256 lookups.
+    const ancestorLookup = new AbortController()
     void (async () => {
-      const chain: Crumb[] = []
-      let cursor = initialDirectoryID
-      for (let depth = 0; depth < 256; depth += 1) {
-        const node = await api.node(cursor)
-        if (node.type !== 'dir') throw new Error('目标不是文件夹。')
-        chain.push({ id: node.id, name: node.name })
-        if (!node.parent_id) break
-        cursor = node.parent_id
-      }
-      if (!active || !isNavigationIntentCurrent(navigationIntentID)) return
-      chain.reverse()
+      const chain: Crumb[] | null = await xDriveResolveRoutedDirectoryAncestors(
+        initialDirectoryID,
+        (id, signal) => api.node(id, signal),
+        ancestorLookup.signal,
+        () => active && isNavigationIntentCurrent(navigationIntentID),
+      )
+      if (!chain || !active || ancestorLookup.signal.aborted ||
+          !isNavigationIntentCurrent(navigationIntentID)) return
       // Retain the resolved route's ticket when current?.id changes. User
       // navigation invalidates the old intent and must win over the old URL.
       routedRequest.dispatched = true
       await navigateTo(chain, true, navigationIntentID)
     })().catch((error) => {
-      if (active && isNavigationIntentCurrent(navigationIntentID)) onError(error)
+      if (active && !ancestorLookup.signal.aborted &&
+          isNavigationIntentCurrent(navigationIntentID)) onError(error)
     })
     return () => {
       active = false
+      ancestorLookup.abort()
       // A never-dispatched lookup cancelled by StrictMode must replay.
       // Keep already-dispatched tickets until the requested URL/session
       // actually changes, not merely until current directory rerenders.
