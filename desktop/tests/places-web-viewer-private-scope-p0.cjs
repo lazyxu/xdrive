@@ -30,10 +30,13 @@ function load(rel, inject = {}) {
     if(Object.hasOwn(inject,name))return inject[name]
     if(name==='react')return React
     if(name==='../../ui/shared/src')return shared
+    if(name==='../../ui/shared/src/mui/ViewerForegroundPriority')return foreground
     throw Error('Unexpected module '+name+' in '+rel)
   })
   return mod.exports
 }
+// Same coordinator for successive in-memory/hard-reload runtime modules.
+const foreground = load('ui/shared/src/mui/ViewerForegroundPriority.ts')
 const node = (id,revision=2) => ({
   id,revision,name:id+'.jpg',type:'file',size:12,created_at:'',updated_at:'',
 })

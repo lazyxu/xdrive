@@ -50,6 +50,7 @@ function createHarness(storage, denyGetter = false) {
   new Function('exports', 'window', transpile(storageSource))(safe, win)
 
   let liveSession = null, username = null, notice = null, disposeCalls = 0
+  const foregroundTransitions = []
   const keys = {
     ACCESS_KEY: 'xdrive.access_token',
     LEGACY_TOKEN_KEY: 'xdrive.token',
@@ -71,6 +72,7 @@ function createHarness(storage, denyGetter = false) {
     setAuthNotice(next) { notice = next },
     transferApiRef: { current: { disposeTransfers() { disposeCalls++ } } },
     authEpochRef: { current: 0 },
+    xDriveEnterForegroundPage(page) { foregroundTransitions.push(page) },
     xDriveClearBaiduConversionSession() {},
     async xDrivePwaClearOfflineMetadata() {},
   }
@@ -78,7 +80,8 @@ function createHarness(storage, denyGetter = false) {
   new Function('exports', ...Object.keys(vars), sessionCode)(app, ...Object.values(vars))
   return { safe, app, win, keys,
     get session() { return liveSession }, get username() { return username },
-    get notice() { return notice }, get disposeCalls() { return disposeCalls } }
+    get notice() { return notice }, get disposeCalls() { return disposeCalls },
+    get foregroundTransitions() { return [...foregroundTransitions] } }
 }
 
 test('PWA stored login/refresh and logout keep existing browser semantics', () => {
@@ -107,6 +110,8 @@ test('PWA stored login/refresh and logout keep existing browser semantics', () =
   assert.equal(h.username, '')
   assert.equal(h.notice, '会话已失效。')
   assert.equal(h.disposeCalls, 1)
+  assert.deepEqual(h.foregroundTransitions, [null],
+    'logout must invalidate obsolete foreground page before a new Owner can mount')
   for (const key of Object.values(h.keys)) assert.equal(values.has(key), false, key)
 })
 
