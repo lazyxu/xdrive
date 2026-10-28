@@ -169,6 +169,12 @@ test('all routed and shared inline Viewer entry types share the foreground lease
   assert.match(runtime,/xDriveEnterForegroundPage\('web:' \+ next\.app\)/)
   assert.match(runtime,/useLayoutEffect\(\(\) => \{\s*xDriveEnterForegroundPage\('web:' \+ route\.app\)/)
   assert.match(desktopApp,/xDriveEnterForegroundPage\('desktop:' \+ next\)/)
+  const sharedApp=read('ui/shared/src/mui/XDriveApp.tsx')
+  const synologyApp=read('web/src/synology.tsx')
+  assert.match(sharedApp,/useLayoutEffect\(\(\) => \{\s*xDriveEnterForegroundPage\(/)
+  assert.match(sharedApp,/host\.platform.*view/)
+  assert.match(synologyApp,/<XDriveApp/,
+    'DSM uses the canonical Host application and must share the same page preemption')
   assert.match(desktopApp,/xDriveEnterForegroundPage\('desktop:' \+ view\)/)
   assert.match(web,/xDriveEnterForegroundPage\('web:public-share'\)/)
   assert.match(web,/xDriveEnterForegroundPage\('web:offline'\)/)

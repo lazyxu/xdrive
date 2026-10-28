@@ -1,4 +1,6 @@
+import { useLayoutEffect } from 'react'
 import type { ComponentProps, ReactNode } from 'react'
+import { xDriveEnterForegroundPage } from './ViewerForegroundPriority'
 import type { SxProps, Theme } from '@mui/material/styles'
 import { XDriveStatePanel } from './StatePanel'
 import { XDriveWorkspaceShell } from './WorkspaceShell'
@@ -50,6 +52,14 @@ export function XDriveApp({
   children: ReactNode
 }) {
   const responsive = host.platform === 'synology'
+  // Both Desktop and DSM mount this same XDriveApp. Page identity is
+  // accepted only AFTER the Host route/role admission; old disposable
+  // background readers yield, while this Host's current page is admitted.
+  // Desktop's earlier intent signal and this committed Host signal are
+  // intentionally idempotent. DSM never invents an Electron/Agent action.
+  useLayoutEffect(() => {
+    xDriveEnterForegroundPage(`${host.platform}:${view}`)
+  }, [host.platform, view])
   // Keep a single privileged-route gate before forwarding any sidebar action.
   // Unknown and admin-only destinations must never reach Host callbacks.
   const onNavigate = (destination: string) => {
