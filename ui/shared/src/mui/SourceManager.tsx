@@ -57,7 +57,7 @@ import type {
 export interface XDriveSourceManagerAdapter {
   authorizeLocalFolder?(sourceID: number): Promise<{ cancelled: boolean; grant?: { root_id: string; path: string; status: string } }>
   me?(): Promise<{ username: string }>
-  sourceOverview(): Promise<ExternalSourceOverview[]>
+  sourceOverview(signal?: AbortSignal): Promise<ExternalSourceOverview[]>
   createSource(input: CreateExternalSourceInput): Promise<ExternalSource>
   triggerSource(sourceID: number): Promise<ExternalSource>
   sourceRuns(sourceID: number, limit?: number, offset?: number): Promise<ExternalSourceRun[]>
@@ -276,12 +276,39 @@ export function XDriveSourceManager({
     })
   }
 
+  // Source overview is a disposable *read*. A new accepted refresh, Owner,
+  // route, or visible polling generation revokes only this GET; authenticated
+  // Source runs, cancellation commands and configuration writes stay durable.
+  const overviewReadRef = useRef<AbortController | null>(null)
+  const overviewRequestRef = useRef(0)
+  const overviewMountedRef = useRef(false)
+  const overviewVisibleReadRef = useRef(false)
+  const overviewOwnerRef = useRef({ adapter, directionFilter })
+  overviewOwnerRef.current = { adapter, directionFilter }
+
   const load = useCallback(async (silent = false) => {
+    if (!overviewMountedRef.current) return
+    overviewReadRef.current?.abort()
+    const controller = new AbortController()
+    overviewReadRef.current = controller
+    const request = ++overviewRequestRef.current
+    // A silent poll can supersede a still-pending visible first read.
+    // Inherit the obligation to settle its Loading/Error presentation.
+    const visibleRead = !silent || overviewVisibleReadRef.current
+    overviewVisibleReadRef.current = visibleRead
+    const valid = () => (
+      overviewMountedRef.current &&
+      !controller.signal.aborted &&
+      overviewRequestRef.current === request &&
+      overviewOwnerRef.current.adapter === adapter &&
+      overviewOwnerRef.current.directionFilter === directionFilter
+    )
     if (!silent) {
       setLoading(true)
     }
     try {
-      const overview = await adapter.sourceOverview()
+      const overview = await adapter.sourceOverview(controller.signal)
+      if (!valid()) return
       const next: ExternalSourceRow[] = overview
         .filter((item) => directionFilter !== 'pull' || item.source.direction === 'pull')
         .map((item) => ({
@@ -290,17 +317,20 @@ export function XDriveSourceManager({
         credential: item.credential,
       }))
       setRows(next)
-      if (!silent) setLoadError(false)
+      if (visibleRead) setLoadError(false)
       setSelected((current) => current
         ? next.find((row) => row.source.id === current.source.id) ?? current
         : null)
     } catch (error) {
+      if (!valid()) return
       // Keep previously accepted rows on refresh failure. On the first
       // request, report a genuine error rather than claiming zero sources.
-      if (!silent) setLoadError(true)
+      if (visibleRead) setLoadError(true)
       onError(error)
     } finally {
-      if (!silent) {
+      if (overviewReadRef.current === controller) overviewReadRef.current = null
+      if (valid() && visibleRead) {
+        overviewVisibleReadRef.current = false
         setHasLoaded(true)
         setLoading(false)
       }
@@ -388,7 +418,15 @@ export function XDriveSourceManager({
   }, [adapter, onError])
 
   useEffect(() => {
+    overviewMountedRef.current = true
     void load()
+    return () => {
+      overviewMountedRef.current = false
+      overviewReadRef.current?.abort()
+      overviewReadRef.current = null
+      overviewVisibleReadRef.current = false
+      overviewRequestRef.current += 1
+    }
   }, [load])
 
   useEffect(() => {
