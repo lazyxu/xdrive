@@ -13,6 +13,8 @@ const selector = read('scripts/ci/cancel-merged-pr-queued-ci.cjs')
 
 test('rapid merged PRs do not evict each other from the CI cancellation queue', () => {
   assert.match(cancelWorkflow, /pull_request_target:\s*\n\s*types: \[closed\]/)
+  assert.match(cancelWorkflow, /branches: \[master\]/,
+    'only PRs targeting master may enqueue the standalone cancellation workflow')
   assert.match(cancelWorkflow, /group: cancel-queued-merged-pr-\$\{\{ github\.repository \}\}-\$\{\{ github\.event\.pull_request\.number \}\}/,
     'the concurrency identity must include the merged PR number, not a shared global group')
   assert.match(cancelWorkflow, /cancel-in-progress: false/)
