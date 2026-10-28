@@ -98,6 +98,41 @@ data class OwnedNodeLocation(
 /** One precise logical index in the same sort as Android's 100-item directory range. */
 data class DirectoryItemPosition(val nodeId: Long, val revision: Long, val index: Int)
 
+/** True WGS84 viewport; the Server/Baidu owns BD-09 conversion and map projection. */
+data class OwnerMapBounds(
+    val west: Double, val south: Double, val east: Double, val north: Double,
+) {
+    fun valid(): Boolean =
+        listOf(west, south, east, north).all { it.isFinite() } &&
+            south >= -90.0 && north <= 90.0 && south < north &&
+            west in -180.0..180.0 && east in -180.0..180.0 &&
+            west != east && !(west == 180.0 && east == -180.0)
+
+    fun contains(lat: Double, lon: Double): Boolean =
+        valid() && lat.isFinite() && lon.isFinite() &&
+            lat >= south && lat <= north &&
+            (if (west < east) lon >= west && lon <= east
+             else lon >= west || lon <= east)
+
+    companion object {
+        val WORLD = OwnerMapBounds(-180.0, -90.0, 180.0, 90.0)
+    }
+}
+
+/** Real Owner source samples from Go /media/places/overview. Coordinates are
+ * WGS84, NOT provider-converted BD-09 and never guessed from a grid centroid. */
+data class OwnerMapSample(
+    val id: String, val name: String,
+    val sampleLatitude: Double, val sampleLongitude: Double,
+    val latitude: Double, val longitude: Double,
+    val coordinateKind: String, val itemCount: Long,
+    val coverNodeId: Long? = null,
+)
+data class OwnerMapOverview(
+    val samples: List<OwnerMapSample>, val totalPhotoCount: Long,
+    val aggregated: Boolean,
+)
+
 /** Go /media/items?range=true: canonical Owner photo wall, not a Files filter.
  * Keep the Server's sparse absolute offset; mobile first-open starts at tail. */
 data class GalleryAsset(
@@ -297,6 +332,11 @@ interface XDriveService {
     /** Validate a current Files node against its authenticated Owner media DTO. */
     suspend fun filesMediaItem(accessToken: String, node: DriveNode): GalleryAsset =
         throw ApiException(501, "Native Files media detail unavailable")
+    /** Bounded 64-point Owner map overview, only read-only GPS metadata. */
+    suspend fun placesMapOverview(
+        accessToken: String, bounds: OwnerMapBounds, detail: Boolean = false,
+    ): OwnerMapOverview =
+        throw ApiException(501, "Native Owner Places map overview unavailable")
     suspend fun galleryPage(accessToken: String, offset: Int = 0,
         initialLatest: Boolean = false): GalleryPage =
         throw ApiException(501, "Gallery Owner range unavailable")
@@ -1090,6 +1130,69 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
 
     /** Same Owner Bearer/Origin and bounded JSON transport as Files, with the
      * Server's exact iOS Gallery chronological tail and sparse Range contract. */
+    override suspend fun placesMapOverview(
+        accessToken: String, bounds: OwnerMapBounds, detail: Boolean,
+    ): OwnerMapOverview {
+        require(bounds.valid() && validToken(accessToken)) {
+            "Invalid private map overview request"
+        }
+        val response = request("media/places/overview", accessToken, query = mapOf(
+            "west" to bounds.west.toString(), "south" to bounds.south.toString(),
+            "east" to bounds.east.toString(), "north" to bounds.north.toString(),
+            "detail" to if (detail) "1" else "0",
+        ))
+        val rawAggregate = response["aggregated"] as? JsonPrimitive ?: invalidPayload()
+        if (rawAggregate.isString) invalidPayload()
+        val aggregated = rawAggregate.booleanOrNull ?: invalidPayload()
+        val count = response.long("total_photo_count")
+        if (count < 0L) invalidPayload()
+        val rawItems = response["items"] as? JsonArray ?: invalidPayload()
+        if (rawItems.size > 64) invalidPayload()
+        val ids = HashSet<String>()
+        var sum = 0L
+        fun JsonObject.finiteCoordinate(key: String, min: Double, max: Double): Double {
+            val primitive = this[key] as? JsonPrimitive ?: invalidPayload()
+            if (primitive.isString) invalidPayload()
+            val value = primitive.doubleOrNull ?: invalidPayload()
+            if (!value.isFinite() || value < min || value > max) invalidPayload()
+            return value
+        }
+        val items = rawItems.map { entry ->
+            val item = entry as? JsonObject ?: invalidPayload()
+            val id = item.string("id")
+            val kind = item.string("coordinate_kind")
+            val name = item.string("name")
+            if (id.isBlank() || id.length > 512 || id.any { it.isISOControl() } ||
+                name.isBlank() || name.length > 512 || name.any { it.isISOControl() } ||
+                !ids.add(id) ||
+                kind != (if (aggregated) "map_region_sample" else "grid_cell_center") ||
+                !id.startsWith(if (aggregated) "map-region:q:" else "place:"))
+                invalidPayload()
+            val sampleLat = item.finiteCoordinate("sample_latitude", -90.0, 90.0)
+            val sampleLon = item.finiteCoordinate("sample_longitude", -180.0, 180.0)
+            val lat = item.finiteCoordinate("latitude", -90.0, 90.0)
+            val lon = item.finiteCoordinate("longitude", -180.0, 180.0)
+            if (!bounds.contains(sampleLat, sampleLon) ||
+                (aggregated && (lat != sampleLat || lon != sampleLon)))
+                invalidPayload()
+            val itemCount = item.long("item_count")
+            if (itemCount <= 0L || sum > count - itemCount) invalidPayload()
+            sum += itemCount
+            val coverId = when (val cover = item["cover_node_id"]) {
+                null, JsonNull -> null
+                is JsonPrimitive -> if (!cover.isString) cover.longOrNull else null
+                else -> null
+            }
+            if (item["cover_node_id"] != null && item["cover_node_id"] != JsonNull &&
+                (coverId == null || coverId <= 0L)) invalidPayload()
+            OwnerMapSample(id, name, sampleLat, sampleLon, lat, lon,
+                kind, itemCount, coverId)
+        }
+        if (sum != count || (!aggregated && !detail) || (count == 0L) != items.isEmpty())
+            invalidPayload()
+        return OwnerMapOverview(items, count, aggregated)
+    }
+
     override suspend fun galleryPage(accessToken: String, offset: Int, initialLatest: Boolean): GalleryPage =
         ownerGalleryPage(accessToken, offset, initialLatest, "")
 
