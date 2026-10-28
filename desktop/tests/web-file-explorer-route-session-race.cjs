@@ -6,6 +6,18 @@ const ts = require('typescript')
 
 const repo = path.join(__dirname, '..', '..')
 
+// Execute the real production ancestor walker inside the extracted React
+// effect. Do not mock away the AbortSignal or Owner/navigation fences.
+const resolverFilename = path.join(repo, 'web', 'src', 'routedDirectoryAncestors.ts')
+const resolverJS = ts.transpileModule(fs.readFileSync(resolverFilename, 'utf8'), {
+  fileName: resolverFilename,
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText
+const resolverModule = { exports: {} }
+new Function('exports', 'module', resolverJS)(resolverModule.exports, resolverModule)
+const xDriveResolveRoutedDirectoryAncestors =
+  resolverModule.exports.xDriveResolveRoutedDirectoryAncestors
+
 function extractRouteDirectoryEffect() {
   const filename = path.join(repo, 'web', 'src', 'WebFileExplorer.tsx')
   const source = fs.readFileSync(filename, 'utf8')
@@ -25,7 +37,8 @@ function extractRouteDirectoryEffect() {
       node.expression.text === 'useEffect' &&
       node.arguments.length >= 2 &&
       node.arguments[0].getText(sourceFile).includes('initialDirectoryID') &&
-      node.arguments[0].getText(sourceFile).includes('api.node(cursor)')
+      node.arguments[0].getText(sourceFile).includes('xDriveResolveRoutedDirectoryAncestors(') &&
+      node.arguments[0].getText(sourceFile).includes('api.node(id, signal)')
     ) {
       callback = node.arguments[0].getText(sourceFile)
       return
@@ -98,6 +111,7 @@ test('Web route-directory same numeric id must be resolved again after account l
     },
     beginNavigationIntent,
     isNavigationIntentCurrent,
+    xDriveResolveRoutedDirectoryAncestors,
     navigateTo: async (crumbs, _record = true, requestID) => {
       const effectiveRequestID = requestID ?? beginNavigationIntent()
       if (!isNavigationIntentCurrent(effectiveRequestID)) return false
