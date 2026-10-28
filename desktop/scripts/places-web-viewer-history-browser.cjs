@@ -183,6 +183,68 @@ const main=async()=>{
     await page.waitForFunction(()=>window.__scopeHistoryProbe.aborts>=1)
     data=await probe()
     record('real browser exit aborts stale private Owner fetch',data.aborts>=1)
+
+    // Same Owner Cell: real Viewer neighbor navigation must retain the
+    // authorized scope, not fall back to unscoped node/media API.
+    await control('reset')
+    await page.getByRole('button',{name:'打开 Cell 地图照片'}).click()
+    await status('authorized')
+    await page.waitForFunction(()=>!document.querySelector(
+      'button[data-testid="viewer-next"]')?.disabled || Boolean(
+      Array.from(document.querySelectorAll('button')).find(b=>
+        b.textContent==='查看同 Cell 下一张照片'&&!b.disabled)))
+    await page.getByRole('button',{name:'查看同 Cell 下一张照片'}).click()
+    await page.getByText('Owner photo 102',{exact:true}).waitFor()
+    data=await probe()
+    record('same Cell Viewer next keeps exact Owner Range and no point fallback',
+      data.pointReads===0&&data.otherGalleryReads===0&&
+      !!await page.locator('[data-testid="authorized-photo"]').count())
+    // An arbitrary route replacement is not a signed neighbor. It must deny
+    // a Node outside the current Cell even though the filename is plausible.
+    await page.getByRole('button',{name:'尝试打开非成员照片'}).click()
+    await status('error')
+    data=await probe()
+    record('same-route forged nonmember fails closed without point fallback',
+      data.pointReads===0&&data.otherGalleryReads===0&&
+      !await page.locator('[data-testid="authorized-photo"]').count())
+    await page.getByRole('button',{name:'返回地图'}).click()
+    await page.locator('[data-testid="gallery"]').waitFor()
+
+    // Replace a still-pending Cell range with the other map range WITHOUT
+    // leaving the Viewer route. New scope preempts the old disposable read.
+    await control('delay')
+    const beforeSwitch=await probe()
+    await page.getByRole('button',{name:'打开 Cell 地图照片'}).click()
+    await page.waitForFunction(before=>
+      window.__scopeHistoryProbe.rangeStarts>before,beforeSwitch.rangeStarts)
+    await page.getByRole('button',{name:'切换 Viewport 作用域'}).click()
+    await page.waitForFunction(before=>
+      window.__scopeHistoryProbe.rangeStarts>=before+2,beforeSwitch.rangeStarts)
+    await status('authorized')
+    data=await probe()
+    record('same Viewer route changing map scope aborts old pending Cell read',
+      data.aborts>beforeSwitch.aborts&&data.requests.at(-1)==='viewport')
+    record('new Viewport scope alone authorizes current Viewer contents',
+      data.pointReads===0&&data.otherGalleryReads===0&&
+      !!await page.locator('[data-testid="authorized-photo"]').count())
+    await page.getByRole('button',{name:'返回地图'}).click()
+    await page.locator('[data-testid="gallery"]').waitFor()
+
+    // Revoke an Owner while its HTTP response is genuinely in flight.
+    // A late successful response must never be painted after revocation.
+    await control('reset')
+    await control('delay')
+    const beforeRevoke=await probe()
+    await page.getByRole('button',{name:'打开 Cell 地图照片'}).click()
+    await page.waitForFunction(before=>
+      window.__scopeHistoryProbe.rangeStarts>before,beforeRevoke.rangeStarts)
+    await control('revoke')
+    await status('error')
+    data=await probe()
+    record('in-flight Owner revoke denies late Cell completion and fallback',
+      data.rangeDenials>beforeRevoke.rangeDenials&&
+      data.pointReads===0&&data.otherGalleryReads===0&&
+      !await page.locator('[data-testid="authorized-photo"]').count())
     record('no browser page errors',pageErrors.length===0)
     summary.passed=true
   }finally{await context.close()}
