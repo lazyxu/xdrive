@@ -141,8 +141,9 @@ func ProjectOwnerGalleryPage(page MediaItemRange, limit, offset int) (OwnerGalle
 	if !ValidOwnerGalleryWindow(limit, offset) || page.Limit != limit ||
 		page.Offset != offset || page.TotalCount < 0 ||
 		uint64(page.TotalCount) > ownerGalleryMaxSafe ||
-		len(page.Items) > limit ||
-		int64(offset)+int64(len(page.Items)) > page.TotalCount {
+		page.Items == nil || len(page.Items) > limit ||
+		(len(page.Items) == 0 && int64(offset) < page.TotalCount) ||
+		(len(page.Items) > 0 && int64(offset)+int64(len(page.Items)) > page.TotalCount) {
 		return OwnerGalleryPage{}, errors.New("invalid Owner gallery range")
 	}
 	out := OwnerGalleryPage{
@@ -187,8 +188,9 @@ func ValidOwnerGalleryPage(page OwnerGalleryPage, limit, offset int) bool {
 	if !ValidOwnerGalleryWindow(limit, offset) || page.Limit != limit ||
 		page.Offset != offset || page.TotalCount < 0 ||
 		uint64(page.TotalCount) > ownerGalleryMaxSafe ||
-		len(page.Items) > limit ||
-		int64(offset)+int64(len(page.Items)) > page.TotalCount {
+		page.Items == nil || len(page.Items) > limit ||
+		(len(page.Items) == 0 && int64(offset) < page.TotalCount) ||
+		(len(page.Items) > 0 && int64(offset)+int64(len(page.Items)) > page.TotalCount) {
 		return false
 	}
 	seen := make(map[uint64]bool, len(page.Items))

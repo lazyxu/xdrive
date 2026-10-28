@@ -68,10 +68,15 @@ for (const invalid of [
   { ...goodPage, items: [{ ...item, auth_token: 'private' }] },
   { ...goodPage, total_count: -1 }, { ...goodPage, total_count: 0 },
   { ...goodPage, offset: 3 }, { ...goodPage, limit: 101 },
+  { ...goodPage, items: [], total_count: 1 },
 ]) {
   page = invalid
   await assert.rejects(client.ownerGalleryItemsRange('all', 100, 0), /Invalid/)
 }
+page = { items: [], total_count: 1, offset: 100, limit: 100 }
+const pastEnd = await client.ownerGalleryItemsRange('all', 100, 100)
+assert.equal(pastEnd.items.length, 0)
+assert.equal(pastEnd.total_count, 1)
 page = goodPage
 for (const invalid of [
   [goodAlbums[0], goodAlbums[0]],

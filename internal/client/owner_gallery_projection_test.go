@@ -104,3 +104,22 @@ func TestOwnerGalleryAlbumProjectionIsBoundedAndRedacted(t *testing.T) {
 		t.Fatal("duplicate Owner albums accepted")
 	}
 }
+
+func TestOwnerGalleryEmptyRangeBeyondLastItemIsGenuineEmpty(t *testing.T) {
+	empty := MediaItemRange{Items: []MediaItem{}, TotalCount: 3, Offset: 100, Limit: 100}
+	projected, err := ProjectOwnerGalleryPage(empty, 100, 100)
+	if err != nil || !ValidOwnerGalleryPage(projected, 100, 100) || len(projected.Items) != 0 {
+		t.Fatalf("valid out-of-range Gallery page rejected: %+v %v", projected, err)
+	}
+	// An empty window inside the known total is not a valid sparse Range.
+	empty.Offset = 0
+	if _, err := ProjectOwnerGalleryPage(empty, 100, 0); err == nil {
+		t.Fatal("non-advancing Owner Gallery page accepted")
+	}
+	if ValidOwnerGalleryPage(OwnerGalleryPage{Items: []OwnerGalleryItem{}, TotalCount: 3, Limit: 100}, 100, 0) {
+		t.Fatal("stalled Owner Gallery read accepted")
+	}
+	if ValidOwnerGalleryPage(OwnerGalleryPage{TotalCount: 0, Offset: 0, Limit: 100}, 100, 0) {
+		t.Fatal("missing Owner media items array accepted as verified empty")
+	}
+}

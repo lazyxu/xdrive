@@ -171,7 +171,8 @@ function validateOwnerGalleryPage(raw: unknown, limit: number, offset: number): 
     Object.keys(raw).some((key) => !['items', 'total_count', 'offset', 'limit'].includes(key)) ||
     !Array.isArray(raw.items) || raw.items.length > limit ||
     !ownerGalleryInt(raw.total_count) || raw.offset !== offset || raw.limit !== limit ||
-    offset + raw.items.length > raw.total_count) {
+    (raw.items.length === 0 && offset < raw.total_count) ||
+    (raw.items.length > 0 && offset + raw.items.length > raw.total_count)) {
     throw new Error('Invalid authenticated Server Owner Gallery Range')
   }
   const seen = new Set<number>()
