@@ -21,6 +21,8 @@ targets:
         UILaunchScreen: {}
         LSRequiresIPhoneOS: true
         NSLocalNetworkUsageDescription: 用于连接你局域网内的 xDrive 服务器。
+        NSPhotoLibraryUsageDescription: 仅在你点击检查后读取已授权照片及视频的本机元数据；不会自动上传。
+        PHPhotoLibraryPreventAutomaticLimitedAccessAlert: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.lazyxu.xdrive.ios
