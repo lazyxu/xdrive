@@ -3036,7 +3036,7 @@ backup_admin_execute() {
         fi
       else XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup; fi ;;
     verify_all)
-      [[ -z "$snapshot" && -z "$fmt" && -z "$confirm" && -z "$revision" ]] || return 2
+      [[ -z "$snapshot" && -z "$fmt" && -z "$confirm" && -z "$keep" && -z "$revision" ]] || return 2
       [[ "$mode" == fast || "$mode" == deep ]] || return 2
       backup_admin_verify_all "$mode" "$XD_BACKUP_ADMIN_REQUEST_ID"         "$XD_BACKUP_ADMIN_BULK_REPORT_FILE" "$XD_BACKUP_ADMIN_BULK_PROGRESS_FILE" ;;
     verify)
