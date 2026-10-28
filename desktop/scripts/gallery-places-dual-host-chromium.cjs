@@ -896,11 +896,14 @@ async function testMode(browser,mode,port){
       return {mapTop:area.top,mapBottom:area.bottom,top:dialog.top,
         bottom:dialog.bottom,height:dialog.height,screen:innerHeight}
     })
-    record(mode+': expanded drawer fits inside 844x390 map and safe area',
-      sheetGeometry!==null&&sheetGeometry.height>=80&&
+    const drawerFits=sheetGeometry!==null&&sheetGeometry.height>=80&&
       sheetGeometry.top>=sheetGeometry.mapTop+8 &&
       sheetGeometry.bottom<=sheetGeometry.mapBottom-8&&
-      sheetGeometry.bottom<=sheetGeometry.screen-8)
+      sheetGeometry.bottom<=sheetGeometry.screen-8
+    if(!drawerFits) console.error('places-drawer-landscape-geometry',JSON.stringify({
+      mode,viewport:'844x390',geometry:sheetGeometry,
+    }))
+    record(mode+': expanded drawer fits inside 844x390 map and safe area',drawerFits)
     await page.setViewportSize({width:960,height:760})
     await handle.press('Enter')
     await page.waitForFunction(()=>document.querySelector(
