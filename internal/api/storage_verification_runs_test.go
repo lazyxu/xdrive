@@ -55,10 +55,13 @@ func TestStorageVerificationHistoryKeysetAndSafeProjection(t *testing.T) {
 	makeRun := func(kind, status, secret string) uint64 {
 		t.Helper()
 		run := meta.SystemMaintenanceRun{
-			Kind: kind, Status: status,
-			Phase: meta.SystemMaintenancePhaseFinished,
-			StartedAt: now.Add(-time.Minute), FinishedAt: &now,
-			Summary: "/root/secret-"+secret, Error: "private:"+secret,
+			Kind:       kind,
+			Status:     status,
+			Phase:      meta.SystemMaintenancePhaseFinished,
+			StartedAt:  now.Add(-time.Minute),
+			FinishedAt: &now,
+			Summary:    "/root/secret-" + secret,
+			Error:      "private:" + secret,
 			ReportJSON: `{"storage_key":"/root/private"}`,
 		}
 		if err := db.Create(&run).Error; err != nil {
