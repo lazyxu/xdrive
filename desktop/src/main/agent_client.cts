@@ -4614,8 +4614,8 @@ export class AgentIPCClient {
     )
   }
 
-  cloudQuota() {
-    return this.request<AgentCloudQuota>('GET', '/v1/cloud/quota')
+  cloudQuota(signal?: AbortSignal) {
+    return this.request<AgentCloudQuota>('GET', '/v1/cloud/quota', undefined, 10_000, signal)
   }
 
   serverUpdate() {
