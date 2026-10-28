@@ -156,8 +156,11 @@ export function createDesktopMediaGalleryDataSource(
       agent.splitMediaPerson(personID, revision, nodeIDs, name),
     listAlbumItems: (albumID, limit, offset, query) =>
       agent.getMediaAlbumItems(albumID, limit, offset, query),
-    listAlbumItemRange: (albumID, limit, offset, query) =>
-      agent.getMediaAlbumItemRange(albumID, limit, offset, query),
+    // Rapid Album A -> B navigation cancels only the disposable counted
+    // Range. Durable album mutations and background indexing are independent.
+    listAlbumItemRange: (albumID, limit, offset, query, signal) =>
+      xDriveDesktopViewportRequest(signal, requestID =>
+        agent.getMediaAlbumItemRange(albumID, limit, offset, query, requestID)),
     loadThumbnail: (nodeID, signal, revision, onProgress) => xDriveDesktopViewportRequest(signal, (requestID) => agent.getMediaThumbnail(nodeID, requestID, revision, onProgress)),
     saveVideoPoster: async (nodeID, revision, poster, signal) => {
       signal?.throwIfAborted()
