@@ -3331,11 +3331,14 @@ function registerIPCHandlers() {
       }
       return requireAgentClient().removeLocalBoundBackup(sourceID, revision)
     }, false))
-  ipcMain.handle('agent:get-device-backups', () => runAgentAction<AgentDeviceBackupOverview>(async () => {
-    const hello = await requireAgentLifecycle().ensureRunning()
-    requireAgentCapability(hello, 'device-backup-read')
-    return requireAgentClient().deviceBackups()
-  }, false))
+  ipcMain.handle('agent:get-device-backups', (event, requestID: unknown = undefined) =>
+    runAgentAction<AgentDeviceBackupOverview>(
+      () => viewportRequests.run(event.sender, requestID, async signal => {
+        const hello = await requireAgentLifecycle().ensureRunning()
+        requireAgentCapability(hello, 'device-backup-read')
+        if (signal?.aborted) throw new AgentIPCError('aborted', 0, 'Device Backup overview request cancelled.')
+        return requireAgentClient().deviceBackups(signal)
+      }), false))
   // Safe owner-scoped device list pagination, no local Root or mutation.
   ipcMain.handle('agent:get-device-backups-page', (_event, limit: unknown, afterDeviceID: unknown) => runAgentAction<AgentDeviceBackupOverview>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

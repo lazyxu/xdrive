@@ -594,7 +594,7 @@ const agent = Object.freeze({
     return ipcRenderer.invoke('agent:release-media-live-photo-motion', url)
   },
   getSources: () => ipcRenderer.invoke('agent:get-sources'),
-  getDeviceBackups: () => ipcRenderer.invoke('agent:get-device-backups'),
+  getDeviceBackups: (requestID?: string) => ipcRenderer.invoke('agent:get-device-backups', requestID),
   getDeviceBackupsPage: (limit = 100, afterDeviceID = '') =>
     ipcRenderer.invoke('agent:get-device-backups-page', limit, afterDeviceID),
   getDeviceBackupFoldersPage: (deviceID: string, limit = 100, afterSourceID = 0) =>
