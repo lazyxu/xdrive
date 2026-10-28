@@ -37,14 +37,14 @@ export type XDriveOverviewDiskSpace = {
   total_bytes: number
 }
 export type XDriveOverviewPort = {
-  cloudFileRecent(limit: number): Promise<XDriveFileRecentItem<Node>[]>
-  cloudFileFavorites(): Promise<XDriveFileFavoriteItem<Node>[]>
-  getFileAvailabilityBatch(paths: string[]): Promise<Array<{
+  cloudFileRecent(limit: number, signal?: AbortSignal): Promise<XDriveFileRecentItem<Node>[]>
+  cloudFileFavorites(signal?: AbortSignal): Promise<XDriveFileFavoriteItem<Node>[]>
+  getFileAvailabilityBatch(paths: string[], signal?: AbortSignal): Promise<Array<{
     path: string
     availability?: XDriveOverviewFileAvailability
     error?: string
   }>>
-  getLocalDiskSpace(): Promise<XDriveOverviewDiskSpace>
+  getLocalDiskSpace(signal?: AbortSignal): Promise<XDriveOverviewDiskSpace>
   openPath(relativePath: string): Promise<void>
   loadThumbnail(item: XDriveFileExplorerItem, signal?: AbortSignal): Promise<string | null | undefined>
 }
@@ -138,26 +138,33 @@ export function XDriveOverviewPage({
 
   useEffect(() => {
     let active = true
+    let activeLists: AbortController | null = null
     const refreshLists = () => {
+      // Each new refresh supersedes only replaceable list GETs for this Home.
+      // Uploads/downloads/backup/sync have independent lifecycle owners.
+      activeLists?.abort()
+      const controller = new AbortController()
+      activeLists = controller
+      const current = () => active && !controller.signal.aborted
       if (recentSupported) {
-        void port.cloudFileRecent(6).then(rows => {
-          if (!active) return
+        void port.cloudFileRecent(6, controller.signal).then(rows => {
+          if (!current()) return
           setRecentSnapshot({ scope: overviewLifecycleKey, rows })
           setRecentFailure(null)
         }).catch(() => {
-          if (active) setRecentFailure({ scope: overviewLifecycleKey, message: '最近使用读取失败，请刷新重试。' })
+          if (current()) setRecentFailure({ scope: overviewLifecycleKey, message: '最近使用读取失败，请刷新重试。' })
         })
       } else {
         setRecentSnapshot(null)
         setRecentFailure(null)
       }
       if (favoritesSupported) {
-        void port.cloudFileFavorites().then(rows => {
-          if (!active) return
+        void port.cloudFileFavorites(controller.signal).then(rows => {
+          if (!current()) return
           setFavoriteSnapshot({ scope: overviewLifecycleKey, rows: rows.slice(0, 6) })
           setFavoriteFailure(null)
         }).catch(() => {
-          if (active) setFavoriteFailure({ scope: overviewLifecycleKey, message: '收藏读取失败，请刷新重试。' })
+          if (current()) setFavoriteFailure({ scope: overviewLifecycleKey, message: '收藏读取失败，请刷新重试。' })
         })
       } else {
         setFavoriteSnapshot(null)
@@ -166,25 +173,29 @@ export function XDriveOverviewPage({
     }
     refreshLists()
     const timer = setInterval(refreshLists, 30_000)
-    return () => { active = false; clearInterval(timer) }
+    return () => { active = false; activeLists?.abort(); clearInterval(timer) }
   }, [activityRevision, favoritesSupported, overviewLifecycleKey, port, recentSupported])
 
   useEffect(() => {
     let active = true
+    let activeDisk: AbortController | null = null
     if (!localDiskSpaceSupported) {
       setDiskSnapshot(null)
       return () => { active = false }
     }
     const refreshDisk = () => {
-      void port.getLocalDiskSpace().then(value => {
-        if (active) setDiskSnapshot({ scope: overviewLifecycleKey, value })
+      activeDisk?.abort()
+      const controller = new AbortController()
+      activeDisk = controller
+      void port.getLocalDiskSpace(controller.signal).then(value => {
+        if (active && !controller.signal.aborted) setDiskSnapshot({ scope: overviewLifecycleKey, value })
       }).catch(() => {
-        if (active) setDiskSnapshot({ scope: overviewLifecycleKey, value: null })
+        if (active && !controller.signal.aborted) setDiskSnapshot({ scope: overviewLifecycleKey, value: null })
       })
     }
     refreshDisk()
     const timer = setInterval(refreshDisk, 30_000)
-    return () => { active = false; clearInterval(timer) }
+    return () => { active = false; activeDisk?.abort(); clearInterval(timer) }
   }, [localDiskSpaceSupported, overviewLifecycleKey, port])
 
   const overviewItems = useMemo(() => {
@@ -202,13 +213,14 @@ export function XDriveOverviewPage({
 
   useEffect(() => {
     let active = true
+    const controller = new AbortController()
     if (!fileAvailabilitySupported || overviewItems.length === 0) {
       setAvailabilitySnapshot({ scope: overviewLifecycleKey, values: new Map() })
-      return () => { active = false }
+      return () => { active = false; controller.abort() }
     }
     const paths = overviewItems.map(item => item.path)
-    void port.getFileAvailabilityBatch(paths).then(items => {
-      if (!active) return
+    void port.getFileAvailabilityBatch(paths, controller.signal).then(items => {
+      if (!active || controller.signal.aborted) return
       const byPath = new Map(items.map(item => [item.path, item] as const))
       const next = new Map<number, XDriveOverviewFileAvailability | null>()
       for (const item of overviewItems) {
@@ -218,9 +230,9 @@ export function XDriveOverviewPage({
       }
       setAvailabilitySnapshot({ scope: overviewLifecycleKey, values: next })
     }).catch(() => {
-      if (active) setAvailabilitySnapshot({ scope: overviewLifecycleKey, values: new Map() })
+      if (active && !controller.signal.aborted) setAvailabilitySnapshot({ scope: overviewLifecycleKey, values: new Map() })
     })
-    return () => { active = false }
+    return () => { active = false; controller.abort() }
   }, [fileAvailabilitySupported, overviewItems, overviewLifecycleKey, port])
 
   const loadThumbnail = useCallback(
