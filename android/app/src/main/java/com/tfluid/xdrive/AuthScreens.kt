@@ -1,6 +1,7 @@
 package com.tfluid.xdrive
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,6 +30,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.Role
 import com.tfluid.xdrive.core.ServerAddress
 
 @Composable
@@ -151,6 +153,9 @@ internal fun UnifiedLoginForm(
     var keepLogin by remember { mutableStateOf(true) }
     var allowHttp by remember(state.server) { mutableStateOf(state.allowHttp) }
     var advanced by remember { mutableStateOf(false) }
+    // The transport normalizes the URL separately; the UI must not suggest
+    // that an HTTP scheme, including mixed case, can retain credentials.
+    val insecureHttp = server.trimStart().startsWith("http:", ignoreCase = true)
     AuthCard("欢迎使用 xDrive", "连接到你的个人云端", actions) {
         AuthField("服务器", server, { value ->
             // Do not carry an optional private socket from one Server to another.
@@ -167,13 +172,26 @@ internal fun UnifiedLoginForm(
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         AuthField("用户名", username, { username = it }, "username", !state.loading)
         AuthField("密码", password, { password = it }, "password", !state.loading, secret = true)
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(checked = keepLogin && !server.startsWith("http:"), onCheckedChange = { keepLogin = it },
-                enabled = !state.loading && !server.startsWith("http:"),
+        // One accessible checkbox action covers the entire 48dp row, including
+        // its label. Only the parent handles toggles; the child is a visual
+        // indicator, preventing duplicate TalkBack actions or double changes.
+        Row(
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                .toggleable(
+                    value = keepLogin && !insecureHttp,
+                    enabled = !state.loading && !insecureHttp,
+                    role = Role.Checkbox,
+                    onValueChange = { keepLogin = it },
+                ).testTag("keep-login-row"),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Checkbox(checked = keepLogin && !insecureHttp, onCheckedChange = null,
+                enabled = !state.loading && !insecureHttp,
                 modifier = Modifier.testTag("keep-login"))
-            Text("保持登录", style = MaterialTheme.typography.bodyMedium)
+            Text("保持登录", modifier = Modifier.padding(start = 8.dp),
+                style = MaterialTheme.typography.bodyMedium)
         }
-        if (server.startsWith("http:")) {
+        if (insecureHttp) {
             Text("明文 HTTP 连接不能保持登录，请尽量使用 HTTPS。",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         }
@@ -182,9 +200,18 @@ internal fun UnifiedLoginForm(
             Text(if (advanced) "收起连接设置" else "高级连接设置")
         }
         if (advanced) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(allowHttp, { allowHttp = it }, modifier = Modifier.testTag("allow-http"))
-                Text("允许不安全的 HTTP 连接", style = MaterialTheme.typography.bodySmall)
+            Row(
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                    .toggleable(
+                        value = allowHttp, enabled = !state.loading,
+                        role = Role.Checkbox, onValueChange = { allowHttp = it },
+                    ).testTag("allow-http-row"),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(checked = allowHttp, onCheckedChange = null,
+                    enabled = !state.loading, modifier = Modifier.testTag("allow-http"))
+                Text("允许不安全的 HTTP 连接", modifier = Modifier.padding(start = 8.dp),
+                    style = MaterialTheme.typography.bodySmall)
             }
             if (allowHttp) Text("HTTP 不加密密码或文件，仅限明确可信的本地网络。",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
@@ -194,7 +221,7 @@ internal fun UnifiedLoginForm(
             // Keep the entered value until successful navigation so Android
             // Autofill can offer to save it; never persist it in app state.
             // Invalid server or password errors remain editable in place.
-            login(server, allowHttp, lanIp, username, password, keepLogin)
+            login(server, allowHttp, lanIp, username, password, keepLogin && !insecureHttp)
         }
         Text("账户由 xDrive 管理员创建。", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
