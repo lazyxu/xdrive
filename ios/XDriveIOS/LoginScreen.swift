@@ -5,6 +5,7 @@ import SwiftUI
 struct LoginScreen: View {
     @StateObject private var model = LoginViewModel()
     @State private var passwordVisible = false
+    @State private var showPhotoInventory = false
     @Environment(\.colorScheme) private var colorScheme
 
     private var colors: XDrivePalette { XDrivePalette(dark: colorScheme == .dark) }
@@ -28,6 +29,9 @@ struct LoginScreen: View {
             )
         }
         .task { await model.restore() }
+        .sheet(isPresented: $showPhotoInventory) {
+            LocalPhotoInventoryScreen()
+        }
     }
 
     private var card: some View {
@@ -175,9 +179,21 @@ struct LoginScreen: View {
                     .font(.footnote)
                     .foregroundColor(colors.secondary)
             }
-            Text("这是原生 iOS 登录最小版本；文件、图库和 Viewer 尚未接入。")
+            Text("原生文件、图库、Viewer 和后台同步尚未接入。系统相册检查仅在本机执行。")
                 .font(.footnote)
                 .foregroundColor(colors.secondary)
+            Button {
+                showPhotoInventory = true
+            } label: {
+                Label("检查系统相册（不上传）", systemImage: "photo.on.rectangle.angled")
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                    .foregroundColor(colors.primary)
+                    .background(RoundedRectangle(cornerRadius: 12)
+                        .stroke(colors.primary, lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .disabled(model.isLoading)
+            .accessibilityIdentifier("local-photo-inventory")
             if let notice = model.noticeMessage {
                 Text(notice).font(.footnote).foregroundColor(colors.error)
             }
