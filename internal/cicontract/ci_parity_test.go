@@ -939,12 +939,12 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 	// The four channel-mutating steps are separately fenced above.
 	// The fifth guarded occurrence belongs solely to post-publish queue cleanup.
 	// Verify that this notifier cannot dispatch for a superseded master run.
-	const notifyMarker = "      - name: Notify bounded queued-CI prune after verified Snapshot publication\\n"
+	const notifyMarker = "      - name: Notify bounded queued-CI prune after verified Snapshot publication\n"
 	sections := strings.Split(githubRelease, notifyMarker)
 	if len(sections) != 2 {
 		t.Error("GitHub Snapshot must have exactly one post-publish prune notifier")
 	} else {
-		notifier := strings.SplitN(sections[1], "\\n      - name:", 2)[0]
+		notifier := strings.SplitN(sections[1], "\n      - name:", 2)[0]
 		requireRaw(t, "GitHub Snapshot post-publish prune guard", notifier,
 			"if: github.ref == 'refs/heads/master' && steps.snapshot_eligibility.outputs.publish == 'true'",
 			"-f event_type=xdrive_snapshot_published",
