@@ -140,6 +140,8 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                             // wall, not the Files app. Match Android Back and
                             // the iOS PWA navigation's accessible destination.
                             state.galleryMapCellSelected != null -> "返回地图"
+                            state.galleryMapOpen && state.galleryBd09History.isNotEmpty() ->
+                                "返回上一级聚合"
                             state.galleryMapOpen -> "返回图库"
                             state.gallerySelectedAlbum != null -> "返回精选集"
                             state.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS -> "返回图库"
