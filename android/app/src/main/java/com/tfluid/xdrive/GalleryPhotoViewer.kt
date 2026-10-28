@@ -26,6 +26,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -202,6 +203,11 @@ internal fun GalleryPhotoViewer(
                 // TalkBack exposes the same real current-Owner navigation without
                 // inventing extra iOS-foreign overlay arrows or media controls.
                 .semantics {
+                    // Native pinch remains unchanged. TalkBack/switch control
+                    // now sees actual image state and equivalent local actions.
+                    // Do not offer zoom until a real thumbnail/original renders.
+                    if (stage is ImageStage.Ready)
+                        stateDescription = galleryAccessibleZoomLabel(zoom)
                     customActions = buildList {
                         if (canGoOlder) add(CustomAccessibilityAction("上一项") {
                             controller.shiftGalleryViewer(-1)
@@ -211,6 +217,25 @@ internal fun GalleryPhotoViewer(
                             controller.shiftGalleryViewer(1)
                             true
                         })
+                        if (stage is ImageStage.Ready) {
+                            if (zoom < 4.999f) add(CustomAccessibilityAction("放大图片") {
+                                zoom = galleryAccessibleZoomStep(zoom, 1)
+                                pan = Offset.Zero
+                                true
+                            })
+                            if (zoom > 1.001f) {
+                                add(CustomAccessibilityAction("缩小图片") {
+                                    zoom = galleryAccessibleZoomStep(zoom, -1)
+                                    pan = Offset.Zero
+                                    true
+                                })
+                                add(CustomAccessibilityAction("恢复图片大小") {
+                                    zoom = 1f
+                                    pan = Offset.Zero
+                                    true
+                                })
+                            }
+                        }
                     }
                 },
             contentAlignment = Alignment.Center) {
