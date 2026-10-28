@@ -69,7 +69,7 @@ export interface XDriveBaiduInlineMapHost<T> {
 }
 
 const maxCells = 64
-const maxPhotoCovers = 24
+const maxPhotoCovers = 64
 function validCell<T>(cell: XDriveTrustedIsolatedMapCell<T>): boolean {
   return Boolean(cell && cell.selection !== undefined &&
     Number.isFinite(cell.latitude) && Math.abs(cell.latitude) <= 85 &&

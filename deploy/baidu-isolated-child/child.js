@@ -5,7 +5,7 @@
   'use strict'
   const MAX_BYTES = 8192
   const MAX_CELLS = 64
-  const MAX_PHOTO_COVERS = 24
+  const MAX_PHOTO_COVERS = 64
   const status = document.getElementById('xdrive-isolated-map-status')
   const canvas = document.getElementById('xdrive-isolated-map-canvas')
   const validOrigin = value => {

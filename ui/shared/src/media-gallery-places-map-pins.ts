@@ -100,7 +100,7 @@ export function xDriveVerifiedMapPhotoProjections(
  * clipped map edge or behind the floating summary/actions are still available in
  * the full accessible Cell list and original Owner-signed photo wall.
  */
-export const XDRIVE_PLACES_MAP_COVER_MAX = 24
+export const XDRIVE_PLACES_MAP_COVER_MAX = 64
 
 /** Measured, trusted React control geometry in the Parent map canvas.
  * The SDK Child never supplies these positions or media authority. */

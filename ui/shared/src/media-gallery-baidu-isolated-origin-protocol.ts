@@ -81,7 +81,7 @@ export type XDriveBaiduIsolatedMessageEvent = Readonly<{
 export const XDRIVE_BAIDU_ISOLATED_MESSAGE_VERSION = 1
 export const XDRIVE_BAIDU_ISOLATED_MAX_CELLS = 64
 /** Same limit as the trusted Gallery Parent's displayed photo covers. */
-export const XDRIVE_BAIDU_ISOLATED_MAX_PHOTO_COVERS = 24
+export const XDRIVE_BAIDU_ISOLATED_MAX_PHOTO_COVERS = 64
 export const XDRIVE_BAIDU_ISOLATED_CHILD_BYTES = 8192
 export const XDRIVE_BAIDU_ISOLATED_PARENT_BYTES = 8192
 
