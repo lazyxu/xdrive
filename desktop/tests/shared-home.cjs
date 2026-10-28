@@ -63,12 +63,15 @@ test('Web exposes Home as a first-class workspace and keeps platform adapters lo
 })
 
 test('Desktop-only local disk and availability remain outside the shared Home contract', () => {
-  assert.ok(desktopPort.includes('getLocalDiskSpace()'))
-  assert.ok(desktopPort.includes('getFileAvailabilityBatch(paths)'))
+  assert.ok(desktopPort.includes('getLocalDiskSpace(signal)'),
+    'Desktop local-disk read must keep the page-owned AbortSignal')
+  assert.ok(desktopPort.includes('getFileAvailabilityBatch(paths, signal)'),
+    'Desktop availability batch must keep the same page-owned AbortSignal')
   assert.ok(desktopHome.includes('xDriveFileExplorerAvailabilityFromSnapshot'))
   assert.equal(webHome.includes('getLocalDiskSpace'), false)
   assert.equal(webHome.includes('getFileAvailabilityBatch'), false)
-  assert.ok(desktopHome.includes('port.getFileAvailabilityBatch(paths)'))
+  assert.ok(desktopHome.includes('port.getFileAvailabilityBatch(paths, controller.signal)'),
+    'shared Home availability reads must be released on Owner/page change')
   assert.equal(desktopHome.includes('window.xdriveDesktop'), false)
 })
 

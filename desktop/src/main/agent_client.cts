@@ -2656,8 +2656,8 @@ export class AgentIPCClient {
     return this.request<AgentCacheStats>('GET', '/v1/cache')
   }
 
-  localDiskSpace() {
-    return this.request<AgentLocalDiskSpace>('GET', '/v1/local-disk-space')
+  localDiskSpace(signal?: AbortSignal) {
+    return this.request<AgentLocalDiskSpace>('GET', '/v1/local-disk-space', undefined, 10_000, signal)
   }
 
   releaseCache() {
@@ -4108,8 +4108,8 @@ export class AgentIPCClient {
     return this.request<{ ok: boolean }>('PUT', '/v1/cloud/saved-searches/order', { ids })
   }
 
-  cloudFileFavorites() {
-    return this.request<AgentCloudFavoriteItem[]>('GET', '/v1/cloud/favorites')
+  cloudFileFavorites(signal?: AbortSignal) {
+    return this.request<AgentCloudFavoriteItem[]>('GET', '/v1/cloud/favorites', undefined, 10_000, signal)
   }
 
   cloudFavoriteFile(nodeID: number) {
@@ -4120,9 +4120,9 @@ export class AgentIPCClient {
     return this.request<{ ok: boolean }>('POST', '/v1/cloud/favorites/unfavorite', { id: nodeID })
   }
 
-  cloudFileRecent(limit = 16) {
+  cloudFileRecent(limit = 16, signal?: AbortSignal) {
     const query = new URLSearchParams({ limit: String(Math.min(50, Math.max(1, Math.trunc(limit)))) })
-    return this.request<AgentCloudRecentItem[]>('GET', `/v1/cloud/recent?${query.toString()}`)
+    return this.request<AgentCloudRecentItem[]>('GET', `/v1/cloud/recent?${query.toString()}`, undefined, 10_000, signal)
   }
 
   cloudTouchFileRecent(nodeID: number) {
@@ -4708,12 +4708,15 @@ export class AgentIPCClient {
     return this.request<AgentFileAvailability>('GET', `/v1/file-availability?${query.toString()}`)
   }
 
-  fileAvailabilityBatch(paths: string[]) {
+  // A read-only batch query; unlike file-availability actions this POST does
+  // not change state and may be cancelled with the owning Overview view.
+  fileAvailabilityBatch(paths: string[], signal?: AbortSignal) {
     return this.request<AgentFileAvailabilityBatch>(
       'POST',
       '/v1/file-availability/batch',
       { paths },
       30_000,
+      signal,
     )
   }
 

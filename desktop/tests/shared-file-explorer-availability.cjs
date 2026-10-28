@@ -89,15 +89,15 @@ test('Desktop batches local availability instead of issuing one request per row'
     'Agent batch availability route is missing',
   )
   assert.ok(
-    agentClient.includes('fileAvailabilityBatch(paths: string[])'),
+    agentClient.includes('fileAvailabilityBatch(paths: string[], signal?: AbortSignal)'),
     'Electron Agent client batch method is missing',
   )
   assert.ok(
-    preload.includes("getFileAvailabilityBatch: (paths: string[])"),
+    preload.includes("getFileAvailabilityBatch: (paths: string[], requestID?: string)"),
     'preload batch availability bridge is missing',
   )
   assert.ok(
-    globalTypes.includes('getFileAvailabilityBatch: (paths: string[])'),
+    globalTypes.includes('getFileAvailabilityBatch: (paths: string[], requestID?: string)'),
     'renderer batch availability type is missing',
   )
   assert.ok(
@@ -251,7 +251,7 @@ test('Desktop overview reuses shared Home FileExplorer visuals and platform avai
   }
   for (const token of [
     'xDriveFileExplorerAvailabilityFromSnapshot',
-    'port.getFileAvailabilityBatch(paths)',
+    'port.getFileAvailabilityBatch(paths, controller.signal)',
     'availability: availability(projected)',
   ]) {
     assert.ok(desktopOverview.includes(token), 'Desktop overview availability adapter missing: ' + token)
