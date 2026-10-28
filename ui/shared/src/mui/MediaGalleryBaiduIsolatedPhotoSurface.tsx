@@ -623,8 +623,11 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         projected.width, projected.height, edgeToEdge)
     : []
   // Two SDK Hosts receive only the current visible React cover selections.
-  // Numeric native labels are suppressed for these displayed buttons only.
-  // Each other signed Cell keeps its native label and the full accessible list.
+  // While at least one verified Parent photo cover is visible, it owns the
+  // complete marker presentation: no competing native numeric Labels appear.
+  // If no photo cover fits the camera, existing native Labels are the fallback.
+  // Every signed Cell stays accessible through the separate full Cell list and
+  // original Owner Range; unshown cells are never silently excluded from Count.
   useLayoutEffect(() => {
     mapFrameRef.current?.setPhotoCoverSelections?.(
       coverPins.map(pin => pin.selection))

@@ -112,7 +112,11 @@
       // An obsolete Child still has its prior array in memory immediately
       // after gesture cancellation, but its permitted keys are revoked.
       // Never recreate their numeric labels on a delayed cover update.
-      if (!allowedKeys.has(cell.key) || coveredKeys.has(cell.key)) continue
+      // A current, permitted Parent photo overlay owns the entire visible
+      // marker presentation. Never mix uncovered numeric SDK Labels with the
+      // Parent's photo-first buttons; current Cells remain accessible in Parent.
+      // Revoked or malformed cover keys cannot acquire this presentation lease.
+      if (!allowedKeys.has(cell.key) || coveredKeys.size > 0) continue
       try {
         const label = new sdk.Label(cell.count > 1
           ? '▣ ' + cell.count.toLocaleString('zh-CN') + '张' : '▣', {

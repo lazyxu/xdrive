@@ -160,7 +160,11 @@ export function xDriveMountBaiduInlineMap<T>(
     const current = generation
     try {
       for (const cell of cells) {
-        if (coveredSelections.has(cell.selection)) continue
+        // A nonempty *current Owner-verified* React photo selection owns the
+        // whole visible marker layer. Do not mix unselected native numeric
+        // Labels under its photo cards. The complete Cell list and signed
+        // full-camera Range remain available through the trusted Parent.
+        if (coveredSelections.size > 0) continue
         const position = new sdk.Point(cell.longitude,cell.latitude)
         const label = new sdk.Label(cell.count > 1
           ? '▣ ' + cell.count.toLocaleString('zh-CN') + '张' : '▣', {

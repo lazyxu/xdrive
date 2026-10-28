@@ -311,7 +311,7 @@ test('invalid Child map-only Session receipts never load third-party SDK',async(
   }
 })
 
-test('isolated Child shows numeric fallback only for Cells not covered by real Parent photos', async () => {
+test('isolated Child never mixes numeric SDK Labels with current verified Parent photos', async () => {
   const f=childFixture('https://gallery.example.net','https://map-isolated.example.org',true)
   const cellA={key:'c'.repeat(32),latitude:35,longitude:139,count:12}
   const cellB={key:'d'.repeat(32),latitude:36,longitude:140,count:5}
@@ -323,21 +323,21 @@ test('isolated Child shows numeric fallback only for Cells not covered by real P
   await waitForChild(()=>f.sent.some(e=>e.message.kind==='map-ready'),'SDK map-ready')
   assert.equal(f.labels.length,2)
   assert(f.labels.some(label=>label.text.includes('12张')))
+  assert(f.labels.some(label=>label.text.includes('5张')),
+    'native numeric fallback is preserved before any current Parent photo')
   send('photo-covers',{keys:[cellA.key]})
-  assert.equal(f.labels.length,1)
-  assert(f.labels[0].text.includes('5张'),
-    'uncovered Cell retains exact Owner count and native click fallback')
-  const before=f.labels[0]
+  assert.equal(f.labels.length,0,
+    'one verified Parent photo owns the visible marker layer; no native labels mix in')
   send('photo-covers',{keys:[cellA.key,cellA.key]})
   send('photo-covers',{keys:['e'.repeat(32)]})
   send('photo-covers',{keys:[cellA.key],node_id:42})
   send('photo-covers',{keys:[cellA.key],generation:9})
-  assert.equal(f.labels.length,1,'invalid, forged, duplicate, stale suppression is inert')
-  assert.equal(f.labels[0],before)
+  assert.equal(f.labels.length,0,
+    'invalid, forged, duplicate, stale covers cannot disturb the current presentation')
   send('photo-covers',{keys:[]})
   assert.equal(f.labels.length,2,'Parent photo gone restores original SDK label')
   send('photo-covers',{keys:[cellA.key]})
-  assert.equal(f.labels.length,1)
+  assert.equal(f.labels.length,0)
   f.nativeEvents.get('movestart')()
   assert.equal(f.labels.length,0,'camera gesture clears old keys and labels immediately')
   send('photo-covers',{keys:[]})
@@ -347,7 +347,7 @@ test('isolated Child shows numeric fallback only for Cells not covered by real P
   send('photo-covers',{keys:[cellA.key]})
   assert.equal(f.labels.length,1,'old anonymous keys cannot hide a new Cell')
   send('photo-covers',{keys:['f'.repeat(32)]})
-  assert.equal(f.labels.length,0,'fresh visible photo hides only its current Label')
+  assert.equal(f.labels.length,0,'fresh visible photo owns every current native Label')
   f.events.get('pagehide')?.()
   assert.equal(f.labels.length,0)
 })

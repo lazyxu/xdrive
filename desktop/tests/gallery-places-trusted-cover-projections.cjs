@@ -164,11 +164,14 @@ test('photo overlay has one shared presentation lease for inline and isolated na
     'deploy/baidu-isolated-child/child.js'),'utf8')
   assert.match(parent,/mapFrameRef\.current\?\.setPhotoCoverSelections\?\.\(/)
   assert.match(parent,/coverPins\.map\(pin => pin\.selection\)/)
+  assert.match(parent,/complete marker presentation/)
   assert.match(parent,/xDriveVerifiedMapPhotoProjections\(/)
-  assert.match(inline,/coveredSelections\.has\(cell\.selection\)/)
+  assert.match(inline,/coveredSelections\.size > 0/)
+  assert.match(inline,/complete Cell list and signed/)
   assert.match(inline,/return renderCells\(false\)/)
   assert.match(frame,/xDriveCreateBaiduIsolatedPhotoCoversMessage\(/)
-  assert.match(child,/coveredKeys\.has\(cell\.key\)/)
+  assert.match(child,/coveredKeys\.size > 0/)
+  assert.match(child,/current Cells remain accessible in Parent/)
   assert.match(child,/renderCells\(false\)/)
   assert.doesNotMatch(child,/\\.node_id\\b|\\.asset_id\\b|photo_url|loadThumbnail|Authorization:/,
     'no private photo transport may enter the isolated SDK Host')
@@ -186,4 +189,19 @@ test('map screenshot no longer owns a fixed photo thumbnail strip', () => {
   assert.match(surface,/data-xdrive-places-full-camera-wall/)
   assert.match(surface,/data-xdrive-places-cluster-list/)
   assert.match(browser,/noFixedPhotoStrip/)
+})
+
+test('real Chromium proves both SDK Hosts never paint mixed native labels and signed photo covers', () => {
+  const browser=fs.readFileSync(path.join(root,
+    'desktop/scripts/gallery-places-dual-host-chromium.cjs'),'utf8')
+  const fixture=fs.readFileSync(path.join(root,
+    'desktop/scripts/gallery-places-dual-host-chromium.tsx'),'utf8')
+  assert.match(browser,/async function testPhotoMarkerPresentation\(/)
+  assert.match(browser,/await testPhotoMarkerPresentation\(browser,'inline',port\)/)
+  assert.match(browser,/await testPhotoMarkerPresentation\(browser,'isolated',port\)/)
+  assert.match(browser,/sdk\.maxOverlays>=2 && sdk\.overlays\.length===0/)
+  assert.match(browser,/preview\?\.total===5&&preview\?\.items===5/)
+  assert.match(fixture,/const mixedMarkerMap = !genuineGin/)
+  assert.match(fixture,/cells:mixedMarkerMap\?\[first,other\]:\[first\]/)
+  assert.match(browser,/presentation\.pins===1&&presentation\.cellCount===2/)
 })

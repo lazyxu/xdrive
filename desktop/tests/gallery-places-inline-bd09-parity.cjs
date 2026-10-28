@@ -237,7 +237,7 @@ test('shared trusted Parent distinguishes inline SDK and isolated Child failures
   assert.match(shared,/动态地图隔离会话不可用；地点列表与照片墙仍可使用。/)
 })
 
-test('inline native labels yield to trusted React covers without losing other Cells', async () => {
+test('inline native labels yield as a whole to current trusted React photo covers', async () => {
   const f=buildInlineFixture()
   assert.ok(f.host)
   const first={cell_x:1,cell_y:2,node_id:41,node_revision:6,asset_id:31,photo_count:12}
@@ -249,18 +249,20 @@ test('inline native labels yield to trusted React covers without losing other Ce
   assert.equal(f.host.replaceAuthorizedCells(cells),true)
   assert.equal(await f.host.beginAuthorizedInlineSession(new AbortController().signal),true)
   assert.equal(f.map.labels.length,2)
+  const nativeSecond=f.map.labels.find(label=>/5张/.test(label.text))
+  assert.ok(nativeSecond)
+  nativeSecond.trigger()
+  assert.deepEqual(f.clicks,[second],
+    'without trusted photo covers, complete native Cell fallback remains clickable')
   const projections=f.projected.length
   assert.equal(f.host.setPhotoCoverSelections([first]),true)
-  assert.equal(f.map.labels.length,1)
-  assert.match(f.map.labels[0].text,/5张/,
-    'uncovered Owner location keeps its genuine count and click target')
-  f.map.labels[0].trigger()
-  assert.deepEqual(f.clicks,[second])
+  assert.equal(f.map.labels.length,0,
+    'a verified Parent photo suppresses ALL mixed native numeric labels')
   assert.equal(f.projected.length,projections,
     'cosmetic suppression must not clear and re-publish the React photo cover')
   assert.equal(f.host.setPhotoCoverSelections([{...first}]),false)
   assert.equal(f.host.setPhotoCoverSelections([first,first]),false)
-  assert.equal(f.map.labels.length,1,'invalid or duplicate selection cannot hide another Cell')
+  assert.equal(f.map.labels.length,0,'invalid or duplicate selection cannot alter the current Parent presentation')
   assert.equal(f.host.setPhotoCoverSelections([]),true)
   assert.equal(f.map.labels.length,2,'React cover removed: native fallback restored')
   assert.equal(f.host.setPhotoCoverSelections([first]),true)
