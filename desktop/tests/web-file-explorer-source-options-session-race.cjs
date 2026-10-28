@@ -53,10 +53,11 @@ test('Web FileExplorer cannot publish a late prior-account Source read', async (
   const pendingA = deferred(), pendingB = deferred(), errors = []
   let exposed, renderer, account = 'A'
   const api = { sources: () => account === 'A' ? pendingA.promise : pendingB.promise }
+  const readSources = () => api.sources()
   function Harness({ scope }) {
     exposed = useXDriveFileExplorerOwnerSourceOptions({
       host: api, ownerKey: scope,
-      read: () => api.sources(),
+      read: readSources,
       onError: error => errors.push(error instanceof Error ? error.message : String(error)),
     })
     return null
