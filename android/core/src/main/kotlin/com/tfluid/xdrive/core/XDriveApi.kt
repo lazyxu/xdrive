@@ -155,6 +155,45 @@ data class OwnerMapOverview(
     val aggregated: Boolean,
 )
 
+/** BD09 map camera coordinates are intentionally a *different* type than
+ * original PhotoMetadata WGS84. No client-side transformation is authorized. */
+data class OwnerBd09Bounds(
+    val west: Double, val south: Double, val east: Double, val north: Double,
+) {
+    fun valid(): Boolean {
+        if (!listOf(west, south, east, north).all { it.isFinite() } ||
+            west !in -180.0..180.0 || east !in -180.0..180.0 ||
+            south < -90.0 || north > 90.0 || south >= north ||
+            west == east || (west == 180.0 && east == -180.0)) return false
+        // Keep parity with Go baiduPhotoMapCellSteps: the 8x8 SQL grid
+        // rejects numerically unstable tiny viewports before running a query.
+        // A wrapped antimeridian span uses the positive [0, 360] width.
+        val width = (east - west).let { if (it < 0.0) it + 360.0 else it }
+        val height = north - south
+        return width > 1e-10 && width <= 360.0 &&
+            height > 1e-10 && height <= 360.0
+    }
+    fun contains(lat: Double, lon: Double): Boolean =
+        valid() && lat.isFinite() && lon.isFinite() &&
+            lat >= south && lat <= north &&
+            (if (west < east) lon >= west && lon <= east
+             else lon >= west || lon <= east)
+    companion object {
+        val WORLD = OwnerBd09Bounds(-180.0, -90.0, 180.0, 90.0)
+    }
+}
+
+data class OwnerBd09Cell(
+    val cellX: Int, val cellY: Int, val photoCount: Long,
+    val assetId: Long, val nodeId: Long, val nodeRevision: Long,
+    val latitude: Double, val longitude: Double,
+)
+
+/** The trusted 8×8 Owner-projected spatial summary, never a WGS84 guess. */
+data class OwnerBd09MapCells(
+    val cells: List<OwnerBd09Cell>, val totalPhotoCount: Long,
+)
+
 /** Go /media/items?range=true: canonical Owner photo wall, not a Files filter.
  * Keep the Server's sparse absolute offset; mobile first-open starts at tail. */
 data class GalleryAsset(
@@ -354,6 +393,11 @@ interface XDriveService {
     /** Validate a current Files node against its authenticated Owner media DTO. */
     suspend fun filesMediaItem(accessToken: String, node: DriveNode): GalleryAsset =
         throw ApiException(501, "Native Files media detail unavailable")
+    /** BD09-only 8×8 Owner Map/Cells, gated by signed Server release. */
+    suspend fun baiduNativeMapCells(
+        accessToken: String, bounds: OwnerBd09Bounds,
+    ): OwnerBd09MapCells =
+        throw ApiException(501, "Native Owner BD09 map cells unavailable")
     /** Bounded 64-point Owner map overview, only read-only GPS metadata. */
     suspend fun placesMapOverview(
         accessToken: String, bounds: OwnerMapBounds, detail: Boolean = false,
@@ -1182,6 +1226,67 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
 
     /** Same Owner Bearer/Origin and bounded JSON transport as Files, with the
      * Server's exact iOS Gallery chronological tail and sparse Range contract. */
+    /** Only the existing signed-release-fenced Owner Map/Cells API can
+     * attest that coordinates are official persisted BD09LL. Never apply an
+     * inferred WGS84 conversion or send an SDK/browser key in this request. */
+    override suspend fun baiduNativeMapCells(
+        accessToken: String, bounds: OwnerBd09Bounds,
+    ): OwnerBd09MapCells {
+        require(bounds.valid() && validToken(accessToken)) { "Invalid BD09 viewport" }
+        val result = request("media/places/baidu-jsapi/cells", accessToken, query = mapOf(
+            "west" to bounds.west.toString(), "south" to bounds.south.toString(),
+            "east" to bounds.east.toString(), "north" to bounds.north.toString(),
+        ))
+        if (result.string("coordinate_space") != "bd09ll" ||
+            result.string("index_scope") != "owner_gps_auto_index" ||
+            result.long("grid_columns") != 8L || result.long("grid_rows") != 8L)
+            invalidPayload()
+        val total = result.long("total_count")
+        if (total < 0L) invalidPayload()
+        val raw = result["cells"] as? JsonArray ?: invalidPayload()
+        if (raw.size > 64) invalidPayload()
+        val buckets = HashSet<Pair<Int, Int>>()
+        val assetIds = HashSet<Long>()
+        val nodeIds = HashSet<Long>()
+        var sum = 0L
+        fun JsonObject.bd09Coordinate(field: String, min: Double, max: Double): Double {
+            val value = this[field] as? JsonPrimitive ?: invalidPayload()
+            if (value.isString) invalidPayload()
+            val coordinate = value.doubleOrNull ?: invalidPayload()
+            if (!coordinate.isFinite() || coordinate < min || coordinate > max)
+                invalidPayload()
+            return coordinate
+        }
+        val cells = raw.map { element ->
+            val cell = element as? JsonObject ?: invalidPayload()
+            // The endpoint's historical 8 fields do not export original GPS,
+            // photo bytes, unverified media-kind or arbitrary derived metadata.
+            if (cell.keys != setOf("cell_x", "cell_y", "photo_count", "asset_id",
+                    "node_id", "node_revision", "latitude", "longitude"))
+                invalidPayload()
+            val cx = cell.long("cell_x")
+            val cy = cell.long("cell_y")
+            val count = cell.long("photo_count")
+            val assetId = cell.long("asset_id")
+            val nodeId = cell.long("node_id")
+            val revision = cell.long("node_revision")
+            val latitude = cell.bd09Coordinate("latitude", -90.0, 90.0)
+            val longitude = cell.bd09Coordinate("longitude", -180.0, 180.0)
+            if (cx !in 0L..7L || cy !in 0L..7L ||
+                !buckets.add(cx.toInt() to cy.toInt()) ||
+                assetId <= 0 || nodeId <= 0 || revision <= 0 ||
+                !assetIds.add(assetId) || !nodeIds.add(nodeId) ||
+                !bounds.contains(latitude, longitude) ||
+                count <= 0 || sum > total - count)
+                invalidPayload()
+            sum += count
+            OwnerBd09Cell(cx.toInt(), cy.toInt(), count, assetId,
+                nodeId, revision, latitude, longitude)
+        }
+        if (sum != total || (total == 0L) != cells.isEmpty()) invalidPayload()
+        return OwnerBd09MapCells(cells, total)
+    }
+
     override suspend fun placesMapOverview(
         accessToken: String, bounds: OwnerMapBounds, detail: Boolean,
     ): OwnerMapOverview {
