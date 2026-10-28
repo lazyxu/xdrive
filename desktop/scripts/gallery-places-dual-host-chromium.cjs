@@ -2276,6 +2276,143 @@ async function testOwnerCellsFailureRetry(browser,mode,port){
   } finally {await context.close()}
 }
 
+// P0 regression: real mounted React photo markers used to disappear on
+// movestart because all previously signed Cells were synchronously revoked.
+// Keep the PREVIOUS cover visible and SDK-reprojected, but visually inert;
+// only fresh signed Owner /cells may restore clickability after moveend.
+async function testPhotoCoverDuringMapPan(browser,mode,port){
+  const context=await browser.newContext({
+    viewport:{width:960,height:760},locale:'zh-CN',
+    ignoreHTTPSErrors:true,serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(30000)
+  const errors=[]
+  page.on('pageerror',error=>errors.push(error.message))
+  await page.route('https://api.map.baidu.com/api?**',route=>{
+    assert.equal(new URL(route.request().url()).searchParams.get('ak'),
+      'TEST_ONLY_BROWSER_AK')
+    return route.fulfill({status:200,contentType:'text/javascript',body:sdkStub})
+  })
+  try{
+    await page.goto('https://'+galleryHost+':'+port+'/?mode='+mode,
+      {waitUntil:'domcontentloaded'})
+    await page.getByText('当前地图可查看 9 张照片',{exact:true}).waitFor()
+    const cover=page.locator('[data-xdrive-places-trusted-photo-cover]').first()
+    await cover.waitFor({state:'visible'})
+    const before=await cover.boundingBox()
+    assert(before,'current Owner cover must be displayed before SDK gesture')
+    const sdkFrame=mode==='inline'
+      ? page : page.frames().find(f=>f.url().includes(childHost))
+    assert(sdkFrame,'a real JSAPI Host map frame is required')
+    const old=await page.evaluate(()=>({
+      reads:window.__mapProbe.queries.length,
+      previews:window.__mapProbe.photoPreviewRanges.length,
+    }))
+    await sdkFrame.evaluate(()=>{
+      const sdk=window.__xdriveSyntheticMapInstances?.at(-1)
+      if(!sdk)throw Error('no real synthetic SDK mounted')
+      sdk.panOffset={x:88,y:33}
+      sdk.listeners.get('movestart')?.()
+      sdk.listeners.get('moving')?.()
+    })
+    const moving=page.locator('[data-xdrive-places-gesture-photo-cover]').first()
+    await moving.waitFor({state:'visible'})
+    await page.waitForFunction(()=>{
+      const cover=document.querySelector('[data-xdrive-places-gesture-photo-cover]')
+      if(!cover)return false
+      const b=cover.getBoundingClientRect()
+      return Number.isFinite(b.left)&&Number.isFinite(b.top)
+    })
+    const after=await moving.boundingBox()
+    const state=await page.evaluate(()=>({
+      moving:document.querySelectorAll('[data-xdrive-places-gesture-photo-cover]').length,
+      clickable:document.querySelectorAll('[data-xdrive-places-trusted-photo-cover]').length,
+      disabled:document.querySelector('[data-xdrive-places-gesture-photo-cover]')?.disabled,
+      previews:window.__mapProbe.photoPreviewRanges.length,
+      queries:window.__mapProbe.queries.length,
+    }))
+    record(mode+': SDK pan keeps photo cover visible at newly projected BD09 pixel',
+      after&&state.moving>0&&state.clickable===0&&state.disabled===true&&
+      Math.abs(after.x-before.x-88)<3&&Math.abs(after.y-before.y-33)<3&&
+      state.previews===old.previews&&state.queries===old.reads&&errors.length===0)
+    // The old visual button is disabled. Even a programmatic event must not
+    // invoke a stale Owner /cell-items; the current API authority is gone.
+    await moving.evaluate(el=>el.click())
+    const denied=await page.evaluate(()=>({
+      reads:window.__mapProbe.queries.length,
+      previews:window.__mapProbe.photoPreviewRanges.length,
+    }))
+    record(mode+': old camera photo remains inert and cannot reopen stale Cell',
+      denied.previews===old.previews&&denied.reads===old.reads)
+    await sdkFrame.evaluate(()=>{
+      const sdk=window.__xdriveSyntheticMapInstances?.at(-1)
+      sdk.listeners.get('moveend')?.()
+    })
+    await cover.waitFor({state:'visible'})
+    await moving.waitFor({state:'hidden'})
+    const fresh=await page.evaluate(()=>({
+      count:window.__mapProbe.queries.at(-1)?.count,
+      reads:window.__mapProbe.queries.length,
+    }))
+    record(mode+': fresh Owner /cells replaces inert layer after pan debounce',
+      fresh.count===9&&fresh.reads>old.reads&&errors.length===0)
+    await cover.click()
+    await page.locator('[data-xdrive-places-photo-drawer-item]')
+      .first().waitFor({state:'visible'})
+    const preview=await page.evaluate(()=>window.__mapProbe.photoPreviewRanges.at(-1))
+    record(mode+': photo click after pan opens newly verified Owner album',
+      preview?.total===9&&preview?.items===9&&errors.length===0)
+  }finally{await context.close()}
+}
+
+// P0 regression: clicking the blue count on a 28-photo marker opens an
+// actual focus-trapped Gallery-style grid modal, not the old 12-photo strip.
+async function testPhotoCellAlbumDialog28(browser,mode,port){
+  const context=await browser.newContext({
+    viewport:{width:390,height:844},locale:'zh-CN',
+    ignoreHTTPSErrors:true,serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(30000)
+  const errors=[]
+  page.on('pageerror',error=>errors.push(error.message))
+  await page.route('https://api.map.baidu.com/api?**',route=>
+    route.fulfill({status:200,contentType:'text/javascript',body:sdkStub}))
+  try{
+    await page.goto('https://'+galleryHost+':'+port+
+      '/?mode='+mode+'&album_dialog_28=1',{waitUntil:'domcontentloaded'})
+    await page.getByText('当前地图可查看 28 张照片',{exact:true}).waitFor()
+    await page.locator('[data-xdrive-places-trusted-photo-cover]').first().click()
+    const dialog=page.getByRole('dialog',{name:'此地点的照片'})
+    await dialog.waitFor({state:'visible'})
+    await page.waitForFunction(()=>document.querySelectorAll(
+      '[data-xdrive-places-photo-drawer-item]').length===28)
+    const state=await page.evaluate(()=>{
+      const region=document.querySelector('[data-xdrive-places-photo-drawer]')
+      const list=document.querySelector('[data-xdrive-places-photo-drawer-items]')
+      const dialog=document.querySelector('[role="dialog"]')
+      const rect=dialog?.getBoundingClientRect()
+      return {role:dialog?.getAttribute('role'),tiles:list?.children.length,
+        grid:list?getComputedStyle(list).display:'',
+        width:rect?.width,left:rect?.left,right:rect?.right,
+        inside:rect?.left>=0&&rect?.right<=innerWidth+1,
+        total:region?.textContent||'',
+        preview:window.__mapProbe.photoPreviewRanges.at(-1),
+        strip:document.querySelectorAll(
+          '[data-xdrive-places-photo-collection-strip]').length,
+      }
+    })
+    record(mode+': 28 photos open full Gallery grid modal with signed Range',
+      state.role==='dialog'&&state.tiles===28&&state.grid==='grid'&&
+      state.inside&&state.total.includes('28 张照片和视频')&&
+      state.preview?.total===28&&state.preview?.items===28&&
+      state.preview?.limit===48&&state.strip===0&&errors.length===0)
+    await page.keyboard.press('Escape')
+    await dialog.waitFor({state:'hidden'})
+    record(mode+': Escape closes map photo album without unmounting map',
+      await page.locator('[data-xdrive-places-cluster-overview]').count()===1)
+  }finally{await context.close()}
+}
+
 // Real Chromium multi-Cell presentation proof. Two signed Owner Cells share
 // one pixel target and only the highest-count React photo survives declutter.
 // The other Cell remains accessible via the Owner-signed Cell list/Range.
@@ -2844,6 +2981,10 @@ async function main(){
     if(!ginURL){
       await testPhotoMarkerPresentation(browser,'inline',port)
       await testPhotoMarkerPresentation(browser,'isolated',port)
+      await testPhotoCoverDuringMapPan(browser,'inline',port)
+      await testPhotoCoverDuringMapPan(browser,'isolated',port)
+      await testPhotoCellAlbumDialog28(browser,'inline',port)
+      await testPhotoCellAlbumDialog28(browser,'isolated',port)
       await testMapOverlayPinOcclusion(browser,'inline',port)
       await testMapOverlayPinOcclusion(browser,'isolated',port)
       await testDelayedBD09Map(browser,'inline',port)
