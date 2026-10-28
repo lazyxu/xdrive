@@ -86,7 +86,8 @@ export function XDriveSynologyOwnerFilesPage({
   const [rootRevision, setRootRevision] = useState(0)
   const [download, setDownload] = useState<{ name: string; loaded: number; total: number } | null>(null)
   const [verifiedDownload, setVerifiedDownload] = useState<{
-    filename: string; url: string; scopeKey: string; rootRevision: number
+    filename: string; url: string; scopeKey: string
+    client: XDriveSynologyBackupLocalClient; rootRevision: number
   } | null>(null)
 
   const downloadAbort = useRef<AbortController | null>(null)
@@ -139,8 +140,10 @@ export function XDriveSynologyOwnerFilesPage({
   const previewItem = previewIndex >= 0 ? previewItems[previewIndex] : null
   const previewPositionLabel = previewItem
     ? `${previewIndex + 1} / ${previewItems.length} ${preview?.sessionIDs ? '已选择' : '已加载'}` : ''
-  const readyDownload = currentScopeVerified &&
-    verifiedDownload?.scopeKey === currentScopeKey &&
+  // A verified explicit download is not a disposable directory read. Keep
+  // its proven Blob/save action across same-Owner folder and sort changes.
+  // Never offer it after an account/client or root-session replacement.
+  const readyDownload = verifiedDownload?.client === client &&
     verifiedDownload.rootRevision === rootRevision ? verifiedDownload : null
   const loadTextPreview = useCallback((item: XDriveFileExplorerItem, signal?: AbortSignal) => {
     if (typeof item.id !== 'number' || !xDriveFileSupportsTextPreview(item.name, item.kind)) {
@@ -212,7 +215,7 @@ export function XDriveSynologyOwnerFilesPage({
         // only after complete SHA verification, never a premature save.
         const url = URL.createObjectURL(blob)
         verifiedDownloadURL.current = url
-        setVerifiedDownload({ filename, url, scopeKey: currentScopeKey, rootRevision })
+        setVerifiedDownload({ filename, url, scopeKey: currentScopeKey, client, rootRevision })
         setNotice('文件完整性校验成功，请点击“保存文件”；链接 60 秒后失效。')
         window.setTimeout(() => {
           if (verifiedDownloadURL.current !== url) return
@@ -422,8 +425,9 @@ export function XDriveSynologyOwnerFilesPage({
     setRootRevision(epoch => epoch + 1)
   }, [])
 
-  // Folder, sort, account/root revision, client or page unmount may invalidate
-  // an Owner-scoped download. Cancel the private Agent range requests.
+  // An explicit verified Owner download continues while browsing another
+  // directory or changing sort. Only account/client replacement, root-session
+  // revalidation, page unmount, or user Cancel may stop its private range.
   useEffect(() => {
     // A previous account or directory's status must disappear even if its
     // canceled Agent promise settles much later than the new page render.
@@ -437,7 +441,7 @@ export function XDriveSynologyOwnerFilesPage({
         verifiedDownloadURL.current = null
       }
     }
-  }, [client, rootRevision, currentScopeKey])
+  }, [client, rootRevision])
 
   useEffect(() => {
     const onResume = () => {

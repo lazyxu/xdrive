@@ -123,7 +123,7 @@ for (const contract of [
   'xDriveSynologyFetchVerifiedDownload(client, item, controller.signal,',
   'download={readyDownload.filename}',
   'href={readyDownload.url}',
-  'setVerifiedDownload({ filename, url, scopeKey: currentScopeKey, rootRevision })',
+  'setVerifiedDownload({ filename, url, scopeKey: currentScopeKey, client, rootRevision })',
   'URL.revokeObjectURL(url)',
   'downloadAbort.current?.abort()',
   'setDownload({ name: item.name, loaded',
@@ -132,6 +132,27 @@ for (const contract of [
   "itemsRef.current.some(node =>",
   "node.revision === item.revision && node.name === item.name",
 ]) assert.ok(page.includes(contract), 'missing secure DSM download boundary: ' + contract)
+
+// Renderer contract: a user-initiated Owner download is not a disposable
+// thumbnail/first-page read. Folder/sort must not abort its controller;
+// account/client replacement, root revalidation and explicit Cancel still do.
+// The final save link must remain accessible only to that same verified Owner.
+assert.match(page, /const readyDownload = verifiedDownload\?\.client === client &&\s*verifiedDownload\.rootRevision === rootRevision/)
+assert.match(page, /interactionLifecycleKey=\{rootRevision \+ ':' \+ currentScopeKey\}/,
+  'folder/sort changes still retire obsolete disposable thumbnails')
+assert.match(page, /pendingPage\.current\?\.abort\(\)/,
+  'directory page requests are separately cancelable')
+const ownerDownloadEffect = page.split('// An explicit verified Owner download continues')[1]
+  ?.split('  const navigateUp =')[0]
+assert.ok(ownerDownloadEffect, 'download lifecycle guard must remain explicit')
+assert.match(ownerDownloadEffect, /\}, \[client, rootRevision\]\)/,
+  'same Owner folder/sort changes must not cancel user-initiated downloads')
+assert.doesNotMatch(ownerDownloadEffect, /\[client, rootRevision, currentScopeKey\]/)
+assert.match(ownerDownloadEffect, /downloadAbort\.current\?\.abort\(\)/,
+  'account/client/root replacement must still abort unverified downloads')
+assert.match(page, /const cancelDownload = useCallback\(/,
+  'explicit user cancellation stays available')
+
 const explorer = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/FileExplorer.tsx'), 'utf8')
 assert.ok(explorer.includes('onDownloadItems?: (items: XDriveFileExplorerItem[]) => void'))
 assert.ok(!source.includes('cloud/file-preview-ticket'), 'must not use privileged ticket downloads')
