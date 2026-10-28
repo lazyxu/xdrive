@@ -1356,3 +1356,64 @@ test('same-route folder A → B → C cancels B, resumes after C and preserves C
     foregroundPriority.xDriveEnterForegroundPage(null)
   }
 })
+
+
+test('folder A -> pending B -> A restores A while aborted B never settles', async () => {
+  foregroundPriority.xDriveEnterForegroundPage(null)
+  foregroundPriority.xDriveEnterForegroundPage('web:files')
+  const states = []
+  const unsubscribe = foregroundPriority.xDriveObserveViewerForeground(value => states.push(value))
+  const runtime = createHookRuntime()
+  const useController = loadCloudFilesController(runtime.react)
+  const sort = { key: 'name', direction: 'asc' }
+  const stalledB = deferredFirstPage()
+  const requests = []
+  const port = {
+    getRoot: async () => ({ id: 1, name: 'root' }),
+    getQuota: async () => ({ quota_bytes: 100, used_bytes: 10 }),
+    getRange: (id, offset, limit, requestedSort, includeCount, grouping, signal) => {
+      requests.push({ id, signal })
+      if (id === 1) return Promise.resolve(u01Range(10, '原目录A.txt', offset, limit))
+      if (id === 2) return stalledB.promise // cancellation deliberately ignored
+      throw new Error('unexpected directory ' + id)
+    },
+  }
+  const render = () => runtime.render(() => useController({
+    port, enabled: true, lifecycleKey: 'owner-A',
+    defaultSort: sort, quotaRefreshIntervalMs: 0, changePollIntervalMs: 0,
+    onError: () => {},
+  }))
+  try {
+    render()
+    await flushAsync()
+    let files = render()
+    assert.equal(files.current?.id, 1)
+    const b = files.loadDirectory(2, [
+      { id: 1, name: 'root' }, { id: 2, name: 'pending B' },
+    ], sort)
+    assert.equal(states.at(-1), true)
+    const bRequest = requests.find(x => x.id === 2)
+    assert.equal(bRequest?.signal.aborted, false)
+    const backA = files.loadDirectory(1, [{ id: 1, name: 'root' }], sort)
+    assert.equal(bRequest.signal.aborted, true, 'back to A cancels pending B immediately')
+    assert.equal(await backA, true)
+    assert.equal(states.at(-1), false,
+      'return to already-accepted A must not wait for B to settle')
+    files = render()
+    assert.equal(files.current?.id, 1)
+    assert.equal(files.items[0]?.name, '原目录A.txt')
+
+    // Stale aborted B completes *after* A resumed; it may not overwrite A,
+    // enter an error state, or restore a foreign page.
+    stalledB.resolve(u01Range(20, '迟到的目录B.txt'))
+    assert.equal(await b, false)
+    files = render()
+    assert.equal(files.current?.id, 1)
+    assert.equal(files.items[0]?.name, '原目录A.txt')
+    assert.equal(states.at(-1), false)
+  } finally {
+    stalledB.resolve(null)
+    unsubscribe()
+    foregroundPriority.xDriveEnterForegroundPage(null)
+  }
+})
