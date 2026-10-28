@@ -37,7 +37,7 @@ export function createXDriveCloudStorageDataSource(
       signal?.throwIfAborted()
       const statsPromise = port.getStats
         ? tolerateStatsError
-          ? port.getStats(signal).catch((error: unknown) => {
+          ? port.getStats(signal).catch(() => {
             signal?.throwIfAborted()
             return null
           })
