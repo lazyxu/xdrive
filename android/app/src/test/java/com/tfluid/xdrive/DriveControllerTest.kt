@@ -850,6 +850,139 @@ class DriveControllerTest {
         c.close()
     }
 
+    @Test fun manualAlbumRenameAndDeleteUseVerifiedOwnerListAndNeverAStaleRevision() = runTest {
+        val original = GalleryAlbum("manual:trip", "manual", "旧名字", 2, 3, 0)
+        val smart = GalleryAlbum("smart:recent", "smart", "智能相册", 1, 1, 0)
+        val api = object : Service() {
+            var album: GalleryAlbum? = original
+            var reads = 0
+            var renames = 0
+            var deletes = 0
+            override suspend fun galleryAlbums(accessToken: String): List<GalleryAlbum> {
+                assertEquals("access", accessToken)
+                reads++
+                return listOfNotNull(album) + smart
+            }
+            override suspend fun renameGalleryManualAlbum(
+                accessToken: String, target: GalleryAlbum, name: String,
+            ): GalleryAlbum {
+                assertEquals("access", accessToken)
+                assertEquals(album, target)
+                assertEquals("新名字", name)
+                renames++
+                return target.copy(name = name, revision = target.revision + 1)
+                    .also { album = it }
+            }
+            override suspend fun deleteGalleryManualAlbum(
+                accessToken: String, target: GalleryAlbum,
+            ) {
+                assertEquals("access", accessToken)
+                assertEquals(album, target)
+                deletes++
+                album = null
+            }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.openGalleryCollections(); runCurrent()
+        assertEquals(1, api.reads)
+        c.renameGalleryManualAlbum(original, " 新名字 "); runCurrent()
+        assertEquals(1, api.renames)
+        assertEquals(2, api.reads)
+        val renamed = requireNotNull(api.album)
+        assertEquals(listOf(renamed, smart), c.state.value.galleryAlbums)
+        assertTrue(c.state.value.galleryAlbumsLoaded)
+        c.renameGalleryManualAlbum(original, "stale"); runCurrent()
+        c.deleteGalleryManualAlbum(smart); runCurrent()
+        assertEquals(1, api.renames)
+        assertEquals(0, api.deletes)
+        c.deleteGalleryManualAlbum(renamed); runCurrent()
+        assertEquals(1, api.deletes)
+        assertEquals(3, api.reads)
+        assertEquals(listOf(smart), c.state.value.galleryAlbums)
+        assertFalse(c.state.value.galleryAlbumEditAttempted)
+        assertFalse(c.state.value.galleryAlbumEditCommittedNeedsRefresh)
+        c.close()
+    }
+
+    @Test fun manualAlbumRenameMissingAckFreezesWritesUntilReadOnlyGet() = runTest {
+        val album = GalleryAlbum("manual:trip", "manual", "旧名字", 2, 3, 0)
+        val api = object : Service() {
+            var patchCalls = 0
+            var deleteCalls = 0
+            var reads = 0
+            override suspend fun galleryAlbums(accessToken: String): List<GalleryAlbum> {
+                reads++
+                return listOf(album)
+            }
+            override suspend fun renameGalleryManualAlbum(
+                accessToken: String, target: GalleryAlbum, name: String,
+            ): GalleryAlbum {
+                patchCalls++
+                throw ApiException(503, "rename ACK lost")
+            }
+            override suspend fun deleteGalleryManualAlbum(
+                accessToken: String, target: GalleryAlbum,
+            ) { deleteCalls++ }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.openGalleryCollections(); runCurrent()
+        c.renameGalleryManualAlbum(album, "新名字"); runCurrent()
+        assertEquals(1, api.patchCalls)
+        assertTrue(c.state.value.galleryAlbumEditAttempted)
+        assertFalse(c.state.value.galleryAlbumsLoaded)
+        assertTrue(requireNotNull(c.state.value.error).contains("未确认"))
+        c.renameGalleryManualAlbum(album, "另一个名字"); runCurrent()
+        c.deleteGalleryManualAlbum(album); runCurrent()
+        assertEquals(1, api.patchCalls)
+        assertEquals(0, api.deleteCalls)
+        c.retryGalleryAlbums(); runCurrent()
+        assertEquals(2, api.reads)
+        assertTrue(c.state.value.galleryAlbumsLoaded)
+        assertFalse(c.state.value.galleryAlbumEditAttempted)
+        c.close()
+    }
+
+    @Test fun manualAlbumDeleteAckedButFollowupGetFailedNeverResendsDelete() = runTest {
+        val album = GalleryAlbum("manual:trip", "manual", "旧名字", 2, 3, 0)
+        val api = object : Service() {
+            var albumPresent = true
+            var reads = 0
+            var deletes = 0
+            override suspend fun galleryAlbums(accessToken: String): List<GalleryAlbum> {
+                reads++
+                if (reads == 2) throw ApiException(503, "Owner GET failed")
+                return if (albumPresent) listOf(album) else emptyList()
+            }
+            override suspend fun deleteGalleryManualAlbum(
+                accessToken: String, target: GalleryAlbum,
+            ) {
+                deletes++
+                albumPresent = false
+            }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.openGalleryCollections(); runCurrent()
+        c.deleteGalleryManualAlbum(album); runCurrent()
+        assertEquals(1, api.deletes)
+        assertTrue(c.state.value.galleryAlbumEditCommittedNeedsRefresh)
+        assertFalse(c.state.value.galleryAlbumsLoaded)
+        assertTrue(requireNotNull(c.state.value.error).contains("已提交"))
+        c.deleteGalleryManualAlbum(album); runCurrent()
+        assertEquals(1, api.deletes)
+        c.retryGalleryAlbums(); runCurrent()
+        assertTrue(c.state.value.galleryAlbumsLoaded)
+        assertTrue(c.state.value.galleryAlbums.isEmpty())
+        assertFalse(c.state.value.galleryAlbumEditCommittedNeedsRefresh)
+        assertEquals(1, api.deletes)
+        c.close()
+    }
+
     @Test fun manualAlbumCreateOneAckThenAuthoritativeOwnerGet() = runTest {
         val created = GalleryAlbum("manual:new", "manual", "旅行", 0, 1, 0)
         val api = object : Service() {

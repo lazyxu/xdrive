@@ -39,6 +39,13 @@ internal fun ColumnScope.GalleryCollections(
 ) {
     var createOpen by remember(state.server, state.username) { mutableStateOf(false) }
     var createName by remember(state.server, state.username) { mutableStateOf("") }
+    var renameTarget by remember(state.server, state.username) {
+        mutableStateOf<GalleryAlbum?>(null)
+    }
+    var deleteTarget by remember(state.server, state.username) {
+        mutableStateOf<GalleryAlbum?>(null)
+    }
+    var renameDraft by remember(state.server, state.username) { mutableStateOf("") }
     val validCreateName =
         com.tfluid.xdrive.core.normalizeGalleryManualAlbumName(createName) != null
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
@@ -52,7 +59,9 @@ internal fun ColumnScope.GalleryCollections(
             TextButton(
                 onClick = { createName = ""; createOpen = true },
                 enabled = !state.loading && !state.galleryAlbumCreateAttempted &&
-                    !state.galleryAlbumCreateCommittedNeedsRefresh,
+                    !state.galleryAlbumCreateCommittedNeedsRefresh &&
+                    !state.galleryAlbumEditAttempted &&
+                    !state.galleryAlbumEditCommittedNeedsRefresh,
                 modifier = Modifier.heightIn(min = 48.dp)
                     .testTag("gallery-create-manual-album"),
             ) { Text("新建") }
@@ -92,7 +101,13 @@ internal fun ColumnScope.GalleryCollections(
             contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 12.dp),
         ) {
             items(state.galleryAlbums, key = { it.id }) { album ->
-                GalleryAlbumCard(album, controller, cache, state.loading)
+                GalleryAlbumCard(album, controller, cache, state.loading,
+                    onRename = {
+                        renameTarget = it
+                        renameDraft = it.name
+                    },
+                    onDelete = { deleteTarget = it },
+                )
             }
         }
     }
@@ -137,6 +152,81 @@ internal fun ColumnScope.GalleryCollections(
                     .heightIn(min = 48.dp)) { Text("取消") }
         },
     )
+    renameTarget?.let { album ->
+        val newName = com.tfluid.xdrive.core.normalizeGalleryManualAlbumName(renameDraft)
+        val canRename = !state.loading && state.galleryAlbumsLoaded &&
+            state.galleryAlbums.any { it == album } &&
+            !state.galleryAlbumCreateAttempted &&
+            !state.galleryAlbumCreateCommittedNeedsRefresh &&
+            !state.galleryAlbumEditAttempted &&
+            !state.galleryAlbumEditCommittedNeedsRefresh &&
+            album.kind == "manual" && newName != null && newName != album.name
+        AlertDialog(
+            onDismissRequest = { if (!state.loading) renameTarget = null },
+            modifier = Modifier.testTag("gallery-manual-rename-dialog"),
+            title = { Text("重命名相册") },
+            text = {
+                OutlinedTextField(
+                    value = renameDraft,
+                    onValueChange = { if (it.length <= 400) renameDraft = it },
+                    singleLine = true, label = { Text("相册名称") },
+                    modifier = Modifier.fillMaxWidth().testTag("gallery-manual-rename-name"),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (canRename) {
+                            renameTarget = null
+                            controller.renameGalleryManualAlbum(album, renameDraft)
+                        }
+                    },
+                    enabled = canRename,
+                    modifier = Modifier.heightIn(min = 48.dp)
+                        .testTag("gallery-manual-rename-confirm"),
+                ) { Text("保存") }
+            },
+            dismissButton = {
+                TextButton(onClick = { renameTarget = null }, enabled = !state.loading,
+                    modifier = Modifier.heightIn(min = 48.dp)) { Text("取消") }
+            },
+        )
+    }
+    deleteTarget?.let { album ->
+        val canDelete = !state.loading && state.galleryAlbumsLoaded &&
+            state.galleryAlbums.any { it == album } && album.kind == "manual" &&
+            !state.galleryAlbumCreateAttempted &&
+            !state.galleryAlbumCreateCommittedNeedsRefresh &&
+            !state.galleryAlbumEditAttempted &&
+            !state.galleryAlbumEditCommittedNeedsRefresh
+        AlertDialog(
+            onDismissRequest = { if (!state.loading) deleteTarget = null },
+            modifier = Modifier.testTag("gallery-manual-delete-dialog"),
+            title = { Text("删除手动相册？") },
+            text = {
+                Text("将删除「${album.name}」的相册和成员关系，但不会删除原始照片或视频。此操作不能撤销。")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (canDelete) {
+                            deleteTarget = null
+                            controller.deleteGalleryManualAlbum(album)
+                        }
+                    },
+                    enabled = canDelete,
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error),
+                    modifier = Modifier.heightIn(min = 48.dp)
+                        .testTag("gallery-manual-delete-confirm"),
+                ) { Text("删除相册") }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteTarget = null }, enabled = !state.loading,
+                    modifier = Modifier.heightIn(min = 48.dp)) { Text("取消") }
+            },
+        )
+    }
     // The same two-tab capsule and safe-area geometry as Gallery Library.
     Surface(
         modifier = Modifier.fillMaxWidth().navigationBarsPadding()
@@ -178,9 +268,8 @@ internal fun ColumnScope.GalleryCollections(
     }
 }
 
-/** Read-only 144dp card. Fetch the Server-designated cover only after it
- * resolves to a current Owner media revision; never guess a cover from the
- * already-visible Library rows or persist credentials/private image data. */
+/** Owner-authenticated 144dp Collection card. Manual albums expose only
+ * genuine Server actions; a failed cover keeps its own retry. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun GalleryAlbumCard(
@@ -188,7 +277,10 @@ private fun GalleryAlbumCard(
     controller: DriveController,
     cache: LruCache<String, ImageBitmap>,
     busy: Boolean,
+    onRename: (GalleryAlbum) -> Unit,
+    onDelete: (GalleryAlbum) -> Unit,
 ) {
+    var actionsOpen by remember(album.id, album.revision) { mutableStateOf(false) }
     val identity = "${album.id}:${album.revision}:${album.coverNodeId}"
     var bitmap by remember(identity) { mutableStateOf<ImageBitmap?>(null) }
     var failed by remember(identity) { mutableStateOf(false) }
@@ -271,16 +363,44 @@ private fun GalleryAlbumCard(
                     style = MaterialTheme.typography.labelSmall)
             }
         }
-        Column(
-            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            Text(album.name, style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text("${galleryAlbumKindLabel(album)} · ${album.itemCount} 项",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(album.name, style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("${galleryAlbumKindLabel(album)} · ${album.itemCount} 项",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (album.kind == "manual" && album.revision > 0) {
+                Box {
+                    IconButton(
+                        onClick = { actionsOpen = true },
+                        enabled = !busy,
+                        modifier = Modifier.size(48.dp)
+                            .testTag("gallery-manual-more-${album.id}"),
+                    ) {
+                        Icon(painterResource(R.drawable.xd_more_vert),
+                            contentDescription = "手动相册更多操作")
+                    }
+                    DropdownMenu(expanded = actionsOpen,
+                        onDismissRequest = { actionsOpen = false }) {
+                        DropdownMenuItem(
+                            text = { Text("重命名") },
+                            onClick = { actionsOpen = false; onRename(album) },
+                            modifier = Modifier.heightIn(min = 48.dp)
+                                .testTag("gallery-manual-rename-${album.id}"),
+                        )
+                        DropdownMenuItem(
+                            text = { Text("删除相册") },
+                            onClick = { actionsOpen = false; onDelete(album) },
+                            modifier = Modifier.heightIn(min = 48.dp)
+                                .testTag("gallery-manual-delete-${album.id}"),
+                        )
+                    }
+                }
+            }
         }
     }
 }

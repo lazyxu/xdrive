@@ -106,6 +106,8 @@ class DriveAppTest {
     private var galleryCollectionCreateFixture = false
     private var galleryCreatedManual: GalleryAlbum? = null
     private val galleryManualCreates = mutableListOf<String>()
+    private val galleryManualRenames = mutableListOf<String>()
+    private var galleryManualDeletes = 0
     private var galleryThumbnailRetryFixture = false
     private val galleryThumbnailCalls = AtomicInteger()
     private val galleryFixture = GalleryAsset(
@@ -133,6 +135,23 @@ class DriveAppTest {
             galleryManualCreates += name
             return GalleryAlbum("manual:fixture-created", "manual", name, 0, 1, 0)
                 .also { galleryCreatedManual = it }
+        }
+        override suspend fun renameGalleryManualAlbum(
+            accessToken: String, album: GalleryAlbum, name: String,
+        ): GalleryAlbum {
+            check(accessToken == "fixture" && galleryCollectionCreateFixture &&
+                galleryCreatedManual == album && name == "夏季")
+            galleryManualRenames += name
+            return album.copy(name = name, revision = album.revision + 1)
+                .also { galleryCreatedManual = it }
+        }
+        override suspend fun deleteGalleryManualAlbum(
+            accessToken: String, album: GalleryAlbum,
+        ) {
+            check(accessToken == "fixture" && galleryCollectionCreateFixture &&
+                galleryCreatedManual == album)
+            galleryManualDeletes++
+            galleryCreatedManual = null
         }
         override suspend fun galleryAddToManualAlbum(
             accessToken: String, album: GalleryAlbum, items: List<GalleryAsset>,
@@ -661,6 +680,63 @@ class DriveAppTest {
             org.junit.Assert.assertEquals(listOf("旅行"), galleryManualCreates)
         }
         compose.onNodeWithTag("gallery-album-item-manual:fixture-created").assertExists()
+    }
+
+    @Test fun manualAlbumNativeMoreRenameAndConfirmedDeleteLeaveOriginalFiles() {
+        galleryCollectionCreateFixture = true
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryLoaded && !controller.state.value.loading
+        }
+        compose.onNodeWithTag("gallery-open-collections").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryAlbumsLoaded && !controller.state.value.loading
+        }
+        compose.onNodeWithTag("gallery-create-manual-album").performClick()
+        compose.onNodeWithTag("gallery-create-manual-name").performTextInput("旅行")
+        compose.onNodeWithTag("gallery-create-manual-confirm").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryAlbumsLoaded &&
+                controller.state.value.galleryAlbums.singleOrNull()?.name == "旅行" &&
+                !controller.state.value.loading
+        }
+
+        compose.onNodeWithTag("gallery-manual-more-manual:fixture-created").performClick()
+        compose.onNodeWithTag("gallery-manual-rename-manual:fixture-created")
+            .assertIsDisplayed().performClick()
+        compose.onNodeWithTag("gallery-manual-rename-dialog").assertExists()
+        compose.onNodeWithTag("gallery-manual-rename-name").performTextReplacement("夏季")
+        compose.onNodeWithTag("gallery-manual-rename-confirm")
+            .assertIsEnabled().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryAlbumsLoaded &&
+                controller.state.value.galleryAlbums.singleOrNull()?.name == "夏季" &&
+                !controller.state.value.loading
+        }
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(listOf("夏季"), galleryManualRenames)
+            org.junit.Assert.assertEquals(0, galleryManualDeletes)
+        }
+
+        compose.onNodeWithTag("gallery-manual-more-manual:fixture-created").performClick()
+        compose.onNodeWithTag("gallery-manual-delete-manual:fixture-created")
+            .assertIsDisplayed().performClick()
+        compose.onNodeWithTag("gallery-manual-delete-dialog").assertExists()
+        compose.onNodeWithText("不会删除原始照片", substring = true).assertExists()
+        compose.onNodeWithTag("gallery-manual-delete-confirm")
+            .assertIsEnabled().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryAlbumsLoaded &&
+                controller.state.value.galleryAlbums.isEmpty() &&
+                !controller.state.value.loading
+        }
+        compose.onNodeWithTag("gallery-albums-empty").assertExists()
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(1, galleryManualDeletes)
+            org.junit.Assert.assertNull(galleryCreatedManual)
+        }
     }
 
     @Test fun nativeGallerySearchUsesRealOwnerRangeAndClearsWithoutCrossOwnerRows() {
