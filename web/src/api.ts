@@ -1008,8 +1008,8 @@ export class XDriveApi {
     })
   }
 
-  adminServices() {
-    return this.request<XDriveServiceDependenciesSnapshot>('/api/v1/admin/services')
+  adminServices(signal?: AbortSignal) {
+    return this.request<XDriveServiceDependenciesSnapshot>('/api/v1/admin/services', { signal })
   }
 
   adminCaddyHTTPSConfig() {

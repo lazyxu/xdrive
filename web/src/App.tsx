@@ -1786,7 +1786,7 @@ function FileManager({
 
   const serviceDependenciesPort = useMemo(() => ({
     operationScope: profile?.id ? `web:${window.location.origin}:${profile.id}` : '',
-    load: () => api.adminServices(),
+    load: (signal?: AbortSignal) => api.adminServices(signal),
     loadCaddyHTTPSConfig: () => api.adminCaddyHTTPSConfig(),
     saveCaddyHTTPSConfig: (input: import('../../ui/shared/src').XDriveCaddyHTTPSUpdate) =>
       api.adminSaveCaddyHTTPS(input),

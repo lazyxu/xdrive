@@ -42,7 +42,7 @@ const realOverview = renderer => host(renderer, 'data-xdrive-system-dependencies
 const statusText = renderer => host(renderer, 'data-xdrive-system-dependencies-quiet-status')
 
 test('P86 source: real health GET stays immediate, but no navigation-only intermediate loading frame', () => {
-  assert.ok(sourceText.includes('void source.load().then((next) => {'))
+  assert.ok(sourceText.includes('void source.load(controller.signal).then((next) => {'))
   assert.ok(sourceText.includes('setSnapshot(next)'))
   assert.ok(sourceText.includes('const snapshot = snapshotSourceRef.current === source ? snapshotState : null'))
   assert.ok(sourceText.includes('const visibleError = snapshotSourceRef.current === source ? error :'))
