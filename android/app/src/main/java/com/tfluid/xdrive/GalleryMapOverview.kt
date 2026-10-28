@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -29,6 +30,7 @@ import java.util.Locale
 @Composable
 internal fun ColumnScope.GalleryMapOverview(
     state: DriveState, controller: DriveController,
+    bd09Scroll: LazyListState,
 ) {
     val overview = state.galleryMapOverview
     val bd09Cells = state.galleryBd09Cells
@@ -84,7 +86,7 @@ internal fun ColumnScope.GalleryMapOverview(
         state.galleryBd09Requested -> when {
             !state.loading && bd09Cells != null ->
                 GalleryVerifiedBd09Cells(bd09Cells, state.galleryBd09Bounds,
-                    state.galleryBd09History.size, controller)
+                    state.galleryBd09History.size, controller, bd09Scroll)
             else -> Box(Modifier.weight(1f).fillMaxWidth()
                 .testTag("gallery-map-bd09-loading"), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
@@ -158,8 +160,10 @@ private fun ColumnScope.GalleryGpsSamples(overview: OwnerMapOverview) {
 private fun ColumnScope.GalleryVerifiedBd09Cells(
     result: OwnerBd09MapCells, bounds: OwnerBd09Bounds,
     depth: Int, controller: DriveController,
+    listState: LazyListState,
 ) {
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxWidth().weight(1f)
             .testTag("gallery-map-bd09-cells"),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
