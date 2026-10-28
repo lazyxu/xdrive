@@ -280,4 +280,31 @@ class DriveTransferRecoveryIntegrationTest {
         assertEquals(1, recovery.entries.size) // encrypted marker survives logout
         second.close()
     }
+
+    @Test fun failedDownloadCheckpointDeletesReservedSafDocumentBeforeAnyNetwork() = runTest {
+        val recovery = Recovery().apply { failBegin = true }
+        val service = Service(recovery.events)
+        val c = DriveController(this, { service }, sessionPersistence = Vault(recovery))
+        c.connectAndLogin("https://drive.example", false, "", "owner", "pw", true)
+        runCurrent()
+        assertTrue(c.prepareFileExport(file))
+        var opened = 0
+        var discarded = 0
+        c.saveFileExport(
+            openOutput = {
+                opened++
+                ByteArrayOutputStream()
+            },
+            discardOutput = { discarded++ },
+        )
+        runCurrent()
+        assertEquals(listOf("begin:DOWNLOAD"), recovery.events)
+        assertEquals(0, service.downloadCalls)
+        assertEquals(0, opened)
+        assertEquals(1, discarded)
+        assertFalse(c.state.value.fileDownloadSaved)
+        assertFalse(c.state.value.fileDownloadActive)
+        assertTrue(c.state.value.fileDownloadError?.contains("尚未开始传输") == true)
+        c.close()
+    }
 }
