@@ -58,7 +58,10 @@ fi
 # checksumming its files. Independently verify that precise committed v1
 # generation before applying the legacy time-based retention rule.
 verify_scheduled_v1_recovery_point() {
-  local snapshot="$1" name required
+  local snapshot="$1" baseline="$2" name required
+  # An existing verified generation is not proof of a newly created backup.
+  [[ -f "$baseline" ]] || return 1
+  ! grep -Fxq -- "$snapshot" "$baseline" || return 1
   [[ "$snapshot" == "$BACKUP_DIR"/xdrive-backup-* ]] || return 1
   name="${snapshot#"$BACKUP_DIR"/}"
   [[ "$name" =~ ^xdrive-backup-[0-9]{8}T[0-9]{6}Z$ ]] || return 1
@@ -97,7 +100,11 @@ else
   # Capture the writer's final, explicitly committed path without parsing
   # progress text or guessing that a backup appeared by directory mtime.
   receipt_file="$(mktemp "$STATE_DIR/.scheduled-v1-receipt.XXXXXXXX")"
-  trap 'rm -f -- "$receipt_file"; if [[ -n "${lock_dir:-}" ]]; then rmdir "$lock_dir" 2>/dev/null || true; fi' EXIT
+  baseline_file="$(mktemp "$STATE_DIR/.scheduled-v1-before.XXXXXXXX")"
+  trap 'rm -f -- "$receipt_file" "$baseline_file"; if [[ -n "${lock_dir:-}" ]]; then rmdir "$lock_dir" 2>/dev/null || true; fi' EXIT
+  # Snapshot the trusted generation names before calling the writer. An old
+  # path echoed by a wrongly successful command cannot authorize retention.
+  find "$backup_dir" -mindepth 1 -maxdepth 1 -type d -name 'xdrive-backup-*' -print > "$baseline_file"
   if [[ -x "$BIN_DIR/xdrive-server" ]]; then
     XD_CONFIG_DIR="$XDRIVE_HOME" "$BIN_DIR/xdrive-server" backup --output-dir "$backup_dir" | tee "$receipt_file"
   else
@@ -106,7 +113,7 @@ else
 
   if (( retention_days > 0 )); then
     new_snapshot="$(tail -n 1 "$receipt_file")"
-    if ! verify_scheduled_v1_recovery_point "$new_snapshot"; then
+    if ! verify_scheduled_v1_recovery_point "$new_snapshot" "$baseline_file"; then
       echo "scheduled v1 retention refused: newly committed full backup is missing, unsafe or not checksum-verified; old recovery points preserved" >&2
       exit 1
     fi
