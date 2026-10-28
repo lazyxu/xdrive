@@ -51,3 +51,13 @@ PR #2920. It must not be merged before #2920 is integrated and its own
 **exact HEAD** Android JVM/Core/lint/APK/API35 checks pass. Physical
 OEM/iOS screenshot 1:1, real 100k timings and production Owner CA are
 **跳过（未验收）**; this document does not present them as green evidence.
+
+## Stacked PR CI routing
+
+PR #2924 is explicitly dependent on #2920. During Android verification the
+Draft PR may temporarily target `master` so GitHub's master-filtered
+`pull_request` CI actually runs the combined sort+group source. This does
+**not** authorize merging the dependent PR first. When #2920 is integrated,
+its previously verified sort code must be removed from the #2924 diff by
+reparenting the grouping change to current master. The post-reparent exact
+HEAD needs a fresh GitHub status check before release.
