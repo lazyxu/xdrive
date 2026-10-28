@@ -83,7 +83,7 @@ func TestAdminBulkVerificationFailureIsVisibleButNeverGreen(t *testing.T) {
 	r.FailedSnapshots = 1
 	r.FailureSample = []backupAdminVerifyAllFailure{{
 		SnapshotID: "v2-default:xdrive-backup-20261027T030000Z",
-		Category: "object_sha256_mismatch",
+		Category:   "object_sha256_mismatch",
 	}}
 	if !validBackupAdminVerifyAllReport(r) {
 		t.Fatal("real failed batch report incorrectly rejected")
@@ -122,13 +122,13 @@ func TestAdminBulkVerificationReadOnlyStatusAndExactHostHistory(t *testing.T) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	entry := backupAdminHistoryEntry{
 		backupAdminStatus: backupAdminStatus{
-			Protocol: backupAdminProtocol,
-			RequestID: "0123456789abcdef01234567",
-			Action: "verify_all",
-			State: "failed",
-			StartedAt: now,
+			Protocol:   backupAdminProtocol,
+			RequestID:  "0123456789abcdef01234567",
+			Action:     "verify_all",
+			State:      "failed",
+			StartedAt:  now,
 			FinishedAt: now,
-			ErrorCode: "operation_failed",
+			ErrorCode:  "operation_failed",
 		},
 		Mode: "deep",
 	}
