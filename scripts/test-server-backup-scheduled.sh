@@ -16,6 +16,24 @@ cat > "$XD_CONFIG_DIR/bin/xdrive-server" <<'MOCK'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$@" > "$XD_SCHEDULE_TEST_LOG"
+if [[ "${1:-}" == backup && "${2:-}" == --output-dir ]]; then
+  case "${XD_SCHEDULE_MOCK_MODE:-good}" in
+    no_snapshot) exit 0 ;;
+    wrong_path) printf '%s\n' "$XD_CONFIG_DIR/backups/incremental/snapshots/xdrive-backup-20990101T000000Z"; exit 0 ;;
+  esac
+  snap="$XD_CONFIG_DIR/backups/snapshots/xdrive-backup-$(date -u +%Y%m%dT%H%M%SZ)"
+  mkdir -p "$snap"
+  printf 'database dump\n' > "$snap/database.dump"
+  printf 'verify receipt\n' > "$snap/verify.json"
+  printf 'blob contents\n' > "$snap/blobs.tar"
+  printf '{"format_version":1,"consistency_verified":true,"file_data_included":true}\n' > "$snap/manifest.json"
+  (cd "$snap"; sha256sum database.dump verify.json manifest.json blobs.tar > SHA256SUMS.txt)
+  case "${XD_SCHEDULE_MOCK_MODE:-good}" in
+    tampered) printf 'tamper\n' >> "$snap/blobs.tar" ;;
+    database_only) printf '{"format_version":1,"consistency_verified":true,"file_data_included":false}\n' > "$snap/manifest.json" ;;
+  esac
+  printf '%s\n' "$snap"
+fi
 MOCK
 chmod 700 "$XD_CONFIG_DIR/bin/xdrive-server"
 
@@ -64,6 +82,20 @@ invoke
 expect_args backup --output-dir
 [[ ! -d "$old_v1" ]]
 [[ "$(sed -n '3p' "$XD_SCHEDULE_TEST_LOG")" == "$XD_CONFIG_DIR/backups/snapshots" ]]
+
+# Backup command returning success with no committed snapshot must not erase
+# a previous recovery point even if the retention age has elapsed.
+old_failed="$XD_CONFIG_DIR/backups/snapshots/xdrive-backup-19980101T000000Z"
+mkdir "$old_failed"
+touch -d '20 days ago' "$old_failed"
+for scenario in no_snapshot wrong_path tampered database_only; do
+  if XD_SCHEDULE_MOCK_MODE="$scenario" invoke >"$TMP/fail-$scenario.log" 2>&1; then
+    echo "scheduled v1 retention accepted $scenario without a verified full snapshot" >&2; exit 1
+  fi
+  grep -Fq 'old recovery points preserved' "$TMP/fail-$scenario.log"
+  [[ -d "$old_failed" ]] || { echo "old recovery point deleted during $scenario" >&2; exit 1; }
+done
+rmdir "$old_failed"
 
 # Opt-in v2 uses the existing host command, not a second runner/queue; it must
 # NOT delete even old v1 snapshots or v2 repo snapshots and shared objects.
