@@ -282,6 +282,7 @@ export function XDriveSourceManager({
   const overviewReadRef = useRef<AbortController | null>(null)
   const overviewRequestRef = useRef(0)
   const overviewMountedRef = useRef(false)
+  const overviewVisibleReadRef = useRef(false)
   const overviewOwnerRef = useRef({ adapter, directionFilter })
   overviewOwnerRef.current = { adapter, directionFilter }
 
@@ -291,6 +292,10 @@ export function XDriveSourceManager({
     const controller = new AbortController()
     overviewReadRef.current = controller
     const request = ++overviewRequestRef.current
+    // A silent poll can supersede a still-pending visible first read.
+    // Inherit the obligation to settle its Loading/Error presentation.
+    const visibleRead = !silent || overviewVisibleReadRef.current
+    overviewVisibleReadRef.current = visibleRead
     const valid = () => (
       overviewMountedRef.current &&
       !controller.signal.aborted &&
@@ -312,7 +317,7 @@ export function XDriveSourceManager({
         credential: item.credential,
       }))
       setRows(next)
-      if (!silent) setLoadError(false)
+      if (visibleRead) setLoadError(false)
       setSelected((current) => current
         ? next.find((row) => row.source.id === current.source.id) ?? current
         : null)
@@ -320,11 +325,12 @@ export function XDriveSourceManager({
       if (!valid()) return
       // Keep previously accepted rows on refresh failure. On the first
       // request, report a genuine error rather than claiming zero sources.
-      if (!silent) setLoadError(true)
+      if (visibleRead) setLoadError(true)
       onError(error)
     } finally {
       if (overviewReadRef.current === controller) overviewReadRef.current = null
-      if (valid() && !silent) {
+      if (valid() && visibleRead) {
+        overviewVisibleReadRef.current = false
         setHasLoaded(true)
         setLoading(false)
       }
@@ -418,6 +424,7 @@ export function XDriveSourceManager({
       overviewMountedRef.current = false
       overviewReadRef.current?.abort()
       overviewReadRef.current = null
+      overviewVisibleReadRef.current = false
       overviewRequestRef.current += 1
     }
   }, [load])
