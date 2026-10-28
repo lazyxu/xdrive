@@ -211,7 +211,7 @@ struct LoginScreen: View {
                         .stroke(colors.primary, lineWidth: 1))
             }
             .buttonStyle(.plain)
-            .disabled(model.isLoading)
+            .disabled(model.isLoading || model.manualUploadBusy)
             .accessibilityIdentifier("native-owner-root-verify")
             if let owner = model.verifiedOwner {
                 VStack(alignment: .leading, spacing: 5) {
@@ -270,7 +270,7 @@ struct LoginScreen: View {
                         .stroke(colors.primary, lineWidth: 1))
             }
             .buttonStyle(.plain)
-            .disabled(model.isLoading)
+            .disabled(model.isLoading || model.manualUploadBusy)
             .accessibilityIdentifier("local-photo-inventory")
             if let notice = model.noticeMessage {
                 Text(notice).font(.footnote).foregroundColor(colors.error)
