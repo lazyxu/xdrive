@@ -24,7 +24,7 @@ function extractLifecycleEffect() {
       ts.isIdentifier(node.expression) &&
       node.expression.text === 'useEffect' &&
       node.arguments.length >= 2 &&
-      node.arguments[0].getText(sourceFile).includes('actionGenerationRef.current += 1') &&
+      node.arguments[0].getText(sourceFile).includes('createFolderParentIDRef.current = null') &&
       node.arguments[0].getText(sourceFile).includes('setCreateOpen(false)') &&
       ts.isArrayLiteralExpression(node.arguments[1]) &&
       node.arguments[1].elements.some((element) => (
