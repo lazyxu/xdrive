@@ -163,12 +163,15 @@ assert.equal(nearEnd(NaN, 800, 4000), false)
 assert.equal(nearEnd(0, 0, 4000), false)
 const pageSource = fs.readFileSync(
   path.join(repo, 'ui/shared/src/mui/SynologyOwnerFilesPage.tsx'), 'utf8')
-assert.match(pageSource, /verified\s*&&\s*verifiedScopeKey\s*===\s*currentScopeKey/)
+const controllerSource = fs.readFileSync(
+  path.join(repo, 'ui/shared/src/mui/FileExplorerCursorDirectoryController.ts'), 'utf8')
+assert.match(pageSource, /useXDriveFileExplorerCursorDirectory\(/)
+assert.match(controllerSource, /verified\s*&&\s*rootCurrent\s*&&\s*verifiedScopeKey\s*===\s*currentScopeKey/)
 assert.match(pageSource, /currentScopeVerified\s*\?\s*items\.map\(itemForExplorer\)\s*:\s*\[\]/)
 assert.match(pageSource, /onScrollCapture=/)
 assert.match(pageSource, /data-xdrive-file-explorer-scroll-host/)
 assert.match(pageSource, /xDriveSynologyOwnerFilesNearEnd\(/)
-assert.match(pageSource, /setVerifiedScopeKey\(''\)/)
+assert.match(controllerSource, /setVerifiedScopeKey\(''\)/)
 assert.match(pageSource, /<XDriveActionButton compact loading=\{paging\}/)
 
 // Immutable Owner media ranges never expose private Agent credentials or
