@@ -12,13 +12,13 @@ import (
 // Optional read-only Host index, separate from the newest-100 management
 // inventory. Identities only: it is never a recovery or deletion grant.
 type backupAdminSnapshotIndex struct {
-	Protocol        string   `json:"protocol"`
-	GeneratedAt     string   `json:"generated_at"`
-	PolicyRevision  string   `json:"policy_revision"`
-	TotalSnapshots  int      `json:"total_snapshots"`
-	IndexedSnapshots int     `json:"indexed_snapshots"`
-	Truncated       bool     `json:"truncated"`
-	SnapshotIDs     []string `json:"snapshot_ids"`
+	Protocol         string   `json:"protocol"`
+	GeneratedAt      string   `json:"generated_at"`
+	PolicyRevision   string   `json:"policy_revision"`
+	TotalSnapshots   int      `json:"total_snapshots"`
+	IndexedSnapshots int      `json:"indexed_snapshots"`
+	Truncated        bool     `json:"truncated"`
+	SnapshotIDs      []string `json:"snapshot_ids"`
 }
 
 type backupAdminSnapshotPageResponse struct {
@@ -70,7 +70,7 @@ func validBackupSnapshotIndex(index backupAdminSnapshotIndex, inventory backupAd
 		parts := strings.SplitN(id, ":", 2)
 		// The Host sorts "snapshot-name<TAB>namespace" in descending order.
 		key := parts[1] + "\t" + parts[0]
-		if (last != "" && last <= key) {
+		if last != "" && last <= key {
 			return false
 		}
 		last = key
