@@ -190,3 +190,18 @@ test('map screenshot no longer owns a fixed photo thumbnail strip', () => {
   assert.match(surface,/data-xdrive-places-cluster-list/)
   assert.match(browser,/noFixedPhotoStrip/)
 })
+
+test('real Chromium proves both SDK Hosts never paint mixed native labels and signed photo covers', () => {
+  const browser=fs.readFileSync(path.join(root,
+    'desktop/scripts/gallery-places-dual-host-chromium.cjs'),'utf8')
+  const fixture=fs.readFileSync(path.join(root,
+    'desktop/scripts/gallery-places-dual-host-chromium.tsx'),'utf8')
+  assert.match(browser,/async function testPhotoMarkerPresentation\(/)
+  assert.match(browser,/await testPhotoMarkerPresentation\(browser,'inline',port\)/)
+  assert.match(browser,/await testPhotoMarkerPresentation\(browser,'isolated',port\)/)
+  assert.match(browser,/sdk\.maxOverlays>=2 && sdk\.overlays\.length===0/)
+  assert.match(browser,/preview\?\.total===5&&preview\?\.items===5/)
+  assert.match(fixture,/const mixedMarkerMap = !genuineGin/)
+  assert.match(fixture,/cells:mixedMarkerMap\?\[first,other\]:\[first\]/)
+  assert.match(browser,/presentation\.pins===1&&presentation\.cellCount===2/)
+})

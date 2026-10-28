@@ -30,6 +30,11 @@ const favoritesMapEntry = new URLSearchParams(location.search).get('start_favori
 // with no signed Cells, then the test completes indexing without remounting.
 const delayedBD09 = new URLSearchParams(location.search).get('delayed_bd09') === '1'
 const videoPosterMode = new URLSearchParams(location.search).get('map_h264') === '1'
+// Synthetic two-Cell presentation test: both Owner Cells are valid and
+// accessible, but the SDK projects their thumbnails into one overlapping
+// 72px target. Only the largest verified React photo cover should paint.
+const mixedMarkerMap = !genuineGin &&
+  new URLSearchParams(location.search).get('mixed_markers') === '1'
 const realHEICMode = genuineGin &&
   new URLSearchParams(location.search).get('map_real_heic') === '1'
 const realLIVPMode = genuineGin &&
@@ -102,11 +107,16 @@ const pageFor = (bounds:Bounds, favorite:boolean) => {
   const y = Math.min(7,Math.max(0,Math.floor((locationPoint.latitude-bounds.south)/
     ((bounds.north-bounds.south)/8))))
   const count = favorite ? 3 : 9
+  const first={cell_x:x,cell_y:y,photo_count:count,asset_id:33,node_id:75,
+    node_revision:2,latitude:locationPoint.latitude,longitude:locationPoint.longitude,
+    ...(videoPosterMode?{media_kind:'video' as const}:{})}
+  const otherX=(x+3)%8,otherY=(y+3)%8
+  const other={cell_x:otherX,cell_y:otherY,photo_count:5,asset_id:34,node_id:76,
+    node_revision:2,latitude:bounds.south+(otherY+0.5)*(bounds.north-bounds.south)/8,
+    longitude:bounds.west+(otherX+0.5)*width/8}
   return {coordinate_space:'bd09ll' as const,index_scope:'owner_gps_auto_index' as const,
-    grid_columns:8,grid_rows:8,total_count:count,
-    cells:[{cell_x:x,cell_y:y,photo_count:count,asset_id:33,node_id:75,
-      node_revision:2,latitude:locationPoint.latitude,longitude:locationPoint.longitude,
-      ...(videoPosterMode?{media_kind:'video' as const}:{})}]}
+    grid_columns:8,grid_rows:8,total_count:count+(mixedMarkerMap?5:0),
+    cells:mixedMarkerMap?[first,other]:[first]}
 }
 const listOwnerCells=async(bounds:Bounds,signal:AbortSignal,filters:any,albumKey:string)=>{
   if(signal.aborted)throw Error('aborted')

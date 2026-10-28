@@ -58,7 +58,9 @@ const sdkStub='('+function sdkFactory(){
   }
   class BaiduMap {
     constructor(canvas){this.canvas=canvas;this.center=new Point(119.975,30.135)
-      this.zoom=12;this.overlays=[];this.listeners=new Map()}
+      this.zoom=12;this.overlays=[];this.maxOverlays=0;this.listeners=new Map()
+      // Public, synthetic SDK state only; never Owner tokens, GPS or URLs.
+      ;(window.__xdriveSyntheticMapInstances ||= []).push(this)}
     centerAndZoom(point,zoom){this.center=point;this.zoom=zoom}
     setViewport(points){if(points[0])this.center=points[0]}
     enableScrollWheelZoom(){}
@@ -66,7 +68,8 @@ const sdkStub='('+function sdkFactory(){
     enablePinchToZoom(){}
     addEventListener(name,fn){this.listeners.set(name,fn)}
     removeEventListener(name){this.listeners.delete(name)}
-    addOverlay(label){this.overlays.push(label)}
+    addOverlay(label){this.overlays.push(label)
+      this.maxOverlays=Math.max(this.maxOverlays,this.overlays.length)}
     removeOverlay(label){this.overlays=this.overlays.filter(x=>x!==label)}
     getCenter(){return this.center}
     getZoom(){return this.zoom}
@@ -2150,6 +2153,63 @@ async function testOwnerCellsFailureRetry(browser,mode,port){
   } finally {await context.close()}
 }
 
+// Real Chromium multi-Cell presentation proof. Two signed Owner Cells share
+// one pixel target and only the highest-count React photo survives declutter.
+// The other Cell remains accessible via the Owner-signed Cell list/Range.
+// SDK Host inspection reads only synthetic label counts, never private media.
+async function testPhotoMarkerPresentation(browser,mode,port){
+  const context=await browser.newContext({
+    viewport:{width:960,height:760},locale:'zh-CN',
+    ignoreHTTPSErrors:true,serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(20000)
+  const errors=[]
+  page.on('pageerror',error=>errors.push(error.message))
+  await page.route('https://api.map.baidu.com/api?**',route=>{
+    assert.equal(new URL(route.request().url()).searchParams.get('ak'),
+      'TEST_ONLY_BROWSER_AK')
+    return route.fulfill({status:200,contentType:'text/javascript',body:sdkStub})
+  })
+  try{
+    await page.goto('https://'+galleryHost+':'+port+
+      '/?mode='+mode+'&mixed_markers=1',{waitUntil:'domcontentloaded'})
+    await page.getByText('当前地图可查看 14 张照片',{exact:true}).waitFor()
+    await page.locator('[data-xdrive-places-trusted-photo-cover]').first()
+      .waitFor({state:'visible'})
+    const sdkFrame=mode==='inline'
+      ? page : page.frames().find(f=>f.url().includes(childHost))
+    assert(sdkFrame,'actual map SDK Host frame required')
+    await sdkFrame.waitForFunction(()=>{
+      const sdk=window.__xdriveSyntheticMapInstances?.at(-1)
+      return sdk && sdk.maxOverlays>=2 && sdk.overlays.length===0
+    })
+    const presentation=await page.evaluate(()=>{
+      const root=document.querySelector('[data-xdrive-places-cluster-overview]')
+      return {pins:root?.querySelectorAll(
+        '[data-xdrive-places-trusted-photo-cover]').length,
+        cellCount:document.querySelectorAll(
+          '[data-xdrive-places-cluster-list] button').length,
+        strip:document.querySelectorAll(
+          '[data-xdrive-places-photo-collection-strip], '+
+          '[data-xdrive-places-map-photo-strip-shell], '+
+          '[data-xdrive-places-collection-thumb]').length,
+        count:window.__mapProbe.queries.at(-1)?.count}
+    })
+    record(mode+': one verified photo layer removes competing SDK labels',
+      presentation.pins===1&&presentation.cellCount===2&&
+      presentation.count===14&&presentation.strip===0&&errors.length===0)
+    const cells=page.locator('[data-xdrive-places-cluster-list]')
+    if(await cells.getAttribute('open')===null)
+      await cells.locator('summary').click()
+    await cells.locator('button').nth(1).click()
+    await page.locator('[data-xdrive-places-photo-drawer-items] button')
+      .first().waitFor({state:'visible'})
+    const preview=await page.evaluate(()=>window.__mapProbe.photoPreviewRanges.at(-1))
+    record(mode+': decluttered Cell still opens current Owner-signed 5-photo Range',
+      preview?.total===5&&preview?.items===5&&errors.length===0)
+  }finally{await context.close()}
+}
+
 // Real browser accessibility and color-scheme semantics for the SAME mounted
 // trusted Owner React map, in inline and independent HTTPS Child SDK modes.
 // This is controlled Chromium (not physical VoiceOver/Safari certification).
@@ -2581,6 +2641,8 @@ async function main(){
     record('only reviewed synthetic registered sites were accessed',
       requests.every(item=>item.host==='gallery'||item.host==='child'))
     if(!ginURL){
+      await testPhotoMarkerPresentation(browser,'inline',port)
+      await testPhotoMarkerPresentation(browser,'isolated',port)
       await testDelayedBD09Map(browser,'inline',port)
       await testDelayedBD09Map(browser,'isolated',port)
       await testMapColdH264Poster(browser,'inline',port)
