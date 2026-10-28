@@ -97,8 +97,8 @@ func TestBackupSnapshotPageReadsActualHostIndexBeyondFirstHundred(t *testing.T) 
 		}
 	}
 	for _, query := range []string{
-		"?offset=-1", "?offset=1001", "?offset=2&offset=3",
-		"?limit=0", "?limit=101", "?limit=1.2",
+		"?offset=-1", "?offset=", "?offset=1001", "?offset=2&offset=3",
+		"?limit=0", "?limit=", "?limit=101", "?limit=1.2",
 		"?path=/etc", "?snapshot_id=v1:../../etc",
 	} {
 		status, _, _ := callBackupSnapshotPage(t, server, query)
