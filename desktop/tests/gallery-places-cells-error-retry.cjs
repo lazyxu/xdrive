@@ -39,6 +39,8 @@ function harness({badResponse=false,aborted=false}={}){
   const failedCellsScopeRef={current:null}
   const acceptedScope={current:null},acceptedCells={current:[]}
   const latestAcceptedViewport={current:null}
+  // Failed/aborted Owner Cells must discard any one-shot rotation visual hint.
+  const pendingResizeDrawer={current:{owner:'fixture-owner-a',key:'owner:family',hint:{}}}
   const failed=[],summaries=[],published=[],accessible=[]
   const controller=new AbortController()
   const deps={
@@ -55,7 +57,7 @@ function harness({badResponse=false,aborted=false}={}){
     },
     xDriveValidBaiduNativeCellsPage:()=>false,
     xDriveSelectBaiduNativeCell:()=>null,
-    acceptedScope,acceptedCells,restoreHint:{current:null},
+    acceptedScope,acceptedCells,restoreHint:{current:null},pendingResizeDrawer,
     selectCellRef:{current:()=>{}},xDrivePlacesDrawerMatchesFresh:()=>false,
     setAccessible:items=>accessible.push(items),
     setSummary:page=>summaries.push(page),
@@ -68,7 +70,7 @@ function harness({badResponse=false,aborted=false}={}){
   const names=Object.keys(deps)
   const query=new Function(...names,compiledQuery+'; return queryCells;')(...names.map(n=>deps[n]))
   return {run:()=>query(b,true),ref:failedCellsScopeRef,failed,summaries,published,
-    accessible,bounds:b}
+    accessible,bounds:b,pendingResizeDrawer}
 }
 
 test('rejected current Owner /cells cannot keep stale pins or silently show zero photos',async()=>{
@@ -78,6 +80,8 @@ test('rejected current Owner /cells cannot keep stale pins or silently show zero
   assert.deepEqual(f.failed,[{owner:'fixture-owner-a',key:'owner:family'}])
   assert.deepEqual(f.summaries,[null])
   assert.deepEqual(f.published,[[],[]])
+  assert.equal(f.pendingResizeDrawer.current,null,
+    'failed Owner Cells must discard stale rotation intent')
 })
 
 test('invalid signed cells page takes the same fail-closed retry path',async()=>{
@@ -86,6 +90,8 @@ test('invalid signed cells page takes the same fail-closed retry path',async()=>
   assert.deepEqual(f.ref.current,{owner:'fixture-owner-a',key:'owner:family'})
   assert.deepEqual(f.failed,[{owner:'fixture-owner-a',key:'owner:family'}])
   assert.deepEqual(f.published,[[],[]])
+  assert.equal(f.pendingResizeDrawer.current,null,
+    'invalid Owner Cells must discard stale rotation intent')
 })
 
 test('aborted request never grants a retry scope or reports an error',async()=>{
@@ -94,6 +100,8 @@ test('aborted request never grants a retry scope or reports an error',async()=>{
   assert.equal(f.ref.current,null)
   assert.deepEqual(f.failed,[])
   assert.deepEqual(f.published,[[]])
+  assert.equal(f.pendingResizeDrawer.current,null,
+    'aborted Owner Cells must discard stale rotation intent')
 })
 
 test('current failed Owner scope can retry once, in-flight and cross-scope cannot',()=>{
