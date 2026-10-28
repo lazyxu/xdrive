@@ -111,6 +111,9 @@ class NativeTransferRecoveryTest {
     }
 
     @Test fun invalidIdentityAndDuplicateMarkerFailWithoutMutation() {
+        // Android's canonical ServerAddress normalizes the origin root slash.
+        assertEquals(ownerA, TransferRecoveryOwner("https://drive.example/", "alice"))
+        assertEquals("https://drive.example/", ownerA.server)
         val store = MemoryStore()
         val first = ledger(store).begin(ownerA, TransferRecoveryKind.UPLOAD)
         try {
