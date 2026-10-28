@@ -54,7 +54,7 @@ test('shared FileExplorer controller owns typed-path parsing and traversal rules
   }
   assert.ok(web.includes('loadRoot: () => api.root()'), 'Web must keep REST root loading local')
   assert.ok(web.includes('findChildDirectory: async (parentID, name) =>'), 'Web must keep indexed REST child lookup local')
-  assert.ok(desktop.includes('window.xdriveDesktop.agent.cloudRoot()'), 'Desktop must keep Agent root loading local')
+  assert.ok(desktop.includes('hostPort.browse.cloudRoot()'), 'Desktop must keep Agent root loading local')
   assert.ok(desktop.includes('findChildDirectory: async (parentID, name) =>'), 'Desktop must keep indexed Agent child lookup local')
 })
 
@@ -93,7 +93,7 @@ test('shared FileExplorer controller owns search normalization and validation de
   }
   assert.ok(web.includes('loadSearchRange: async (query, filters, searchGrouping, searchSort, offset, limit, signal) =>'), 'Web must keep REST Search range execution local')
   assert.ok(web.includes('api.searchRange('), 'Web Search adapter must use range transport')
-  assert.ok(desktop.includes('window.xdriveDesktop.agent.cloudSearchRange('), 'Desktop must keep Agent Search range execution local')
+  assert.ok(desktop.includes('hostPort.browse.cloudSearchRange('), 'Desktop must keep Agent Search range execution local')
 })
 test('shared FileExplorer controller owns sparse Search range state', () => {
   assert.ok(shared.includes('XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE = 200'), 'shared Search range size must remain framework-neutral')
@@ -165,7 +165,7 @@ test('Web and Desktop delegate typed-path submission while keeping transport ada
   }
   assert.ok(web.includes('loadRoot: () => api.root()'), 'Web must keep REST root loading local')
   assert.ok(web.includes('xDriveFileExplorerPathLookupPageOptions(name)'), 'Web typed-path traversal must use one exact-name page lookup')
-  assert.ok(desktop.includes('window.xdriveDesktop.agent.cloudRoot()'), 'Desktop must keep Agent root loading local')
+  assert.ok(desktop.includes('hostPort.browse.cloudRoot()'), 'Desktop must keep Agent root loading local')
   assert.ok(desktop.includes('xDriveFileExplorerPathLookupPageOptions(name)'), 'Desktop typed-path traversal must use one exact-name page lookup')
 })
 
@@ -232,7 +232,7 @@ test('shared FileExplorer controller owns copy/move planning and queued executio
     assert.equal(source.includes("setActionBusy('drop-items')"), false, `${label} must not own internal-drop busy state locally`)
   }
   assert.ok(web.includes('submitOperation: (plan) => api.createFileOperation('), 'Web must keep REST operation transport local')
-  assert.ok(desktop.includes('window.xdriveDesktop.agent.cloudCreateFileOperation('), 'Desktop must keep Agent operation transport local')
+  assert.ok(desktop.includes('hostPort.write.cloudCreateFileOperation('), 'Desktop must keep Agent operation transport local')
 })
 
 test('shared FileExplorer controller owns archive-aware planning across Web and capable Desktop', () => {
@@ -255,7 +255,7 @@ test('shared FileExplorer controller owns archive-aware planning across Web and 
   assert.ok(web.includes('xDriveFileExplorerWebDownloadPlan(nodes)'), 'Web must retain its compatibility wrapper over shared archive planning')
   assert.ok(web.includes('api.downloadArchive(plan.ids, plan.filename)'), 'Web must keep archive transport local')
   assert.ok(desktop.includes('xDriveFileExplorerArchiveDownloadPlan(nodes)'), 'capable Desktop must use the shared archive-aware plan')
-  assert.ok(desktop.includes('window.xdriveDesktop.agent.cloudDownloadArchive(archivePlan.ids)'), 'Desktop must keep native archive transport local')
+  assert.ok(desktop.includes('hostPort.write.cloudDownloadArchive(archivePlan.ids)'), 'Desktop must keep native archive transport local')
   assert.ok(desktop.includes('xDriveFileExplorerDownloadPlan(nodes)'), 'Desktop must retain file-only fallback for older Agents')
   assert.ok(desktop.includes('cloudDownloadFiles(plan.items)'), 'Desktop fallback must keep legacy native batch download execution')
 })
@@ -287,7 +287,7 @@ test('shared FileExplorer external-drop controller owns target, breadcrumb, and 
     assert.equal(source.includes('const dropExternalFolderEntriesToParent'), false, `${label} must not own external folder target/refresh orchestration`)
   }
   assert.ok(web.includes('uploadFilesToParent: onUploadDroppedFiles'), 'Web must keep dropped-file REST upload execution local')
-  assert.ok(desktop.includes('window.xdriveDesktop.agent.cloudUploadDroppedFiles(parentID, files)'), 'Desktop must keep dropped-file Agent execution local')
+  assert.ok(desktop.includes('hostPort.write.cloudUploadDroppedFiles(parentID, files)'), 'Desktop must keep dropped-file Agent execution local')
 })
 
 test('shared FileExplorer controller owns item lookup and open-item planning', () => {
@@ -352,7 +352,7 @@ test('Web and Desktop keep Search ranges bound to the submitted active query', (
   }
   assert.ok(web.includes('loadSearchRange: async (query, filters, searchGrouping, searchSort, offset, limit, signal) =>'), 'Web must inject REST Search range loading')
   assert.ok(web.includes('api.searchRange('), 'Web must use the Search range REST adapter')
-  assert.ok(desktop.includes('window.xdriveDesktop.agent.cloudSearchRange('), 'Desktop must use the Agent Search range adapter')
+  assert.ok(desktop.includes('hostPort.browse.cloudSearchRange('), 'Desktop must use the Agent Search range adapter')
   assert.ok(workspaceController.includes('sort: navigation.sort'), 'shared workspace must bind Search requests to active-tab sort')
   assert.ok(workspaceController.includes('grouping: navigation.grouping'), 'shared workspace must bind Search requests to active-tab grouping')
   assert.ok(searchController.includes('groupingSignature'), 'Search generation must include grouping identity')

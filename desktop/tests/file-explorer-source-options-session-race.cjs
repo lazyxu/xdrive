@@ -26,7 +26,7 @@ function extractSourcesEffect() {
       ts.isIdentifier(node.expression) &&
       node.expression.text === 'useEffect' &&
       node.arguments.length >= 2 &&
-      node.arguments[0].getText(sourceFile).includes('agent.getSources()')
+      node.arguments[0].getText(sourceFile).includes('hostPort.browse.getSources()')
     ) {
       callbackText = node.arguments[0].getText(sourceFile)
       const deps = node.arguments[1]
@@ -94,7 +94,7 @@ test('Desktop FileExplorer source options reject an old account response after a
   }
 
   const effect = compileEffect(filename, callbackText, {
-    window,
+    hostPort: { browse: window.xdriveDesktop.agent },
     setSearchSourceOptions,
   })
 

@@ -95,7 +95,7 @@ test('Electron and Desktop expose Open With only when Agent advertises it', () =
     'openWithSupported = false',
     'openWithSupported?: boolean',
     'const openLocalNodeWith = async',
-    'window.xdriveDesktop.agent.openWith(relativePath)',
+    'hostPort.write.openWith(relativePath)',
     "id: 'open-with'",
     "label: '打开方式…'",
   ]) {
