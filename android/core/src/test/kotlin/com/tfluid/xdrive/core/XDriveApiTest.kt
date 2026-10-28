@@ -2170,6 +2170,13 @@ class XDriveApiTest {
             }"""))
             assertTrue(api.childrenArranged("owner-secret", 1, 0, target).groups.isEmpty())
             server.takeRequest()
+            // Go omitempty skips the groups field for an empty directory.
+            server.enqueue(MockResponse().setBody("""{
+                "items":[],"total_count":0,"total_count_included":true,
+                "offset":0,"limit":100,"sort":"name","order":"asc"
+            }"""))
+            assertTrue(api.childrenArranged("owner-secret", 1, 0, target).groups.isEmpty())
+            server.takeRequest()
 
             // A 100k directory's offset page does not send/allocate the complete
             // group index a second time. Keep first-page metadata in Controller.

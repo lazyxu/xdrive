@@ -3092,6 +3092,11 @@ class DriveController(
         val previous = state.value
         if (append && (!previous.loaded || previous.path != resolved || page.offset != offset))
             throw ApiException(0, "Directory page changed", ApiFailureReason.INVALID_RESPONSE)
+        if (append && arrangement.group != "none" && previous.filesGroups.isNotEmpty() &&
+            (previous.totalCount != page.totalCount ||
+                page.items.any { incoming -> previous.items.any { it.id == incoming.id } }))
+            throw ApiException(0, "Grouped Owner directory changed during pagination",
+                ApiFailureReason.INVALID_RESPONSE)
         // Do not spin through thousands of speculative empty/duplicate pages
         // when a stale count disagrees with the actual Server range.
         if (page.items.isEmpty() && page.totalCount > offset)

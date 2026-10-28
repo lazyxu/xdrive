@@ -4284,4 +4284,46 @@ class DriveControllerTest {
         c.close()
     }
 
+
+    @Test fun groupedPaginationRejectsChangedCountOrOverlappingNodeWithoutIndexDrift() = runTest {
+        val expectedArrangement = FileBrowseArrangement(group = "type")
+        val groups = listOf(FileBrowseGroupIndex("ext:txt", 200, 0))
+        val api = object : Service() {
+            var changedCount = true
+            override suspend fun childrenArranged(
+                accessToken: String, parentId: Long, offset: Int,
+                arrangement: FileBrowseArrangement,
+            ): NodeRange {
+                if (arrangement != expectedArrangement)
+                    return children(accessToken, parentId, offset)
+                val nodes = (offset until offset + 100).map { index ->
+                    DriveNode(3000L + index, parentId, "file-$index.txt",
+                        "file", size = 10, revision = 1)
+                }.toMutableList()
+                if (offset == 100 && !changedCount) nodes[0] =
+                    DriveNode(3000, parentId, "file-0.txt", "file", size = 10, revision = 1)
+                return NodeRange(nodes, if (offset == 100 && changedCount) 201 else 200,
+                    offset, groups = if (offset == 0) groups else emptyList())
+            }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.changeFilesArrangement(expectedArrangement); runCurrent()
+        val first = c.state.value.items
+        assertEquals(100, first.size)
+        assertEquals(groups, c.state.value.filesGroups)
+        c.loadMore(); runCurrent()
+        assertEquals(first, c.state.value.items)
+        assertEquals(200L, c.state.value.totalCount)
+        assertEquals(0, c.state.value.offset)
+        assertNotNull(c.state.value.error)
+        // Retry only this Owner page. A partial overlapping page remains invalid.
+        api.changedCount = false
+        c.retry(); runCurrent()
+        assertEquals(first, c.state.value.items)
+        assertEquals(groups, c.state.value.filesGroups)
+        assertNotNull(c.state.value.error)
+        c.close()
+    }
+
 }
