@@ -59,9 +59,12 @@ class DriveTransferRecoveryIntegrationTest {
     }
 
     private class Vault(val bridge: Recovery) : DriveSessionPersistence {
-        override fun load(): SavedDriveSession? = null
-        override fun save(server: String, session: AuthSession) = Unit
-        override fun clear() = Unit
+        var saved: SavedDriveSession? = null
+        override fun load(): SavedDriveSession? = saved
+        override fun save(server: String, session: AuthSession) {
+            saved = SavedDriveSession(server, session.username, session.refreshToken)
+        }
+        override fun clear() { saved = null }
         override fun transferRecovery(): DriveTransferRecoveryBridge = bridge
     }
 
@@ -247,5 +250,34 @@ class DriveTransferRecoveryIntegrationTest {
         assertTrue(c.state.value.items.isEmpty())
         assertTrue(c.state.value.nativeTransfers.isEmpty())
         c.close()
+    }
+
+    @Test fun coldRestoredOwnerSeesPriorUnknownTransferWithoutAnyAutoReplay() = runTest {
+        val recovery = Recovery().apply {
+            entries += NativeInterruptedTransfer("old-upload-1",
+                NativeTransferKind.UPLOAD, 1_000L)
+        }
+        val vault = Vault(recovery)
+        val service = Service(recovery.events)
+        val first = DriveController(this, { service }, sessionPersistence = vault)
+        first.connectAndLogin("https://drive.example", false, "", "owner", "pw", true)
+        runCurrent()
+        assertEquals(1, first.state.value.interruptedNativeTransfers.size)
+        assertEquals("old-upload-1",
+            first.state.value.interruptedNativeTransfers.single().id)
+        first.close() // process exit, not an explicit Owner logout
+        val second = DriveController(this, { service }, sessionPersistence = vault)
+        second.restoreSession()
+        runCurrent()
+        assertEquals(Screen.FILES, second.state.value.screen)
+        assertEquals("owner", second.state.value.username)
+        assertEquals(1, second.state.value.interruptedNativeTransfers.size)
+        assertEquals(0, service.uploadCalls) // absolutely no replay on restart
+        assertEquals(0, service.downloadCalls)
+        second.logout()
+        runCurrent()
+        assertTrue(second.state.value.interruptedNativeTransfers.isEmpty())
+        assertEquals(1, recovery.entries.size) // encrypted marker survives logout
+        second.close()
     }
 }
