@@ -31,20 +31,49 @@ if [[ "${1:-}" == backup && "${2:-}" == --output-dir ]]; then
 
   esac
   snap="$XD_CONFIG_DIR/backups/snapshots/xdrive-backup-$(date -u +%Y%m%dT%H%M%SZ)"
-  if [[ "${XD_SCHEDULE_MOCK_MODE:-}" == tampered ]]; then
-    snap="$XD_CONFIG_DIR/backups/snapshots/xdrive-backup-20990101T001000Z"
-  elif [[ "${XD_SCHEDULE_MOCK_MODE:-}" == database_only ]]; then
-    snap="$XD_CONFIG_DIR/backups/snapshots/xdrive-backup-20990101T002000Z"
-  fi
+  case "${XD_SCHEDULE_MOCK_MODE:-good}" in
+    tampered) snap="$XD_CONFIG_DIR/backups/snapshots/xdrive-backup-20990101T001000Z" ;;
+    database_only) snap="$XD_CONFIG_DIR/backups/snapshots/xdrive-backup-20990101T002000Z" ;;
+    traversal) snap="$XD_CONFIG_DIR/backups/snapshots/xdrive-backup-20990101T003000Z" ;;
+    symlink_member) snap="$XD_CONFIG_DIR/backups/snapshots/xdrive-backup-20990101T004000Z" ;;
+    unsafe_hardlink) snap="$XD_CONFIG_DIR/backups/snapshots/xdrive-backup-20990101T005000Z" ;;
+    duplicate_manifest) snap="$XD_CONFIG_DIR/backups/snapshots/xdrive-backup-20990101T006000Z" ;;
+  esac
   mkdir -p "$snap"
   printf 'database dump\n' > "$snap/database.dump"
   printf 'verify receipt\n' > "$snap/verify.json"
-  printf 'blob contents\n' > "$snap/blobs.tar"
+  # Produce a real v1 tar, rather than arbitrary mock bytes, so the
+  # pre-retention test exercises actual archive-header semantics.
+  python3 - "$snap/blobs.tar" "${XD_SCHEDULE_MOCK_MODE:-good}" <<'PY'
+import io,sys,tarfile
+path,mode=sys.argv[1:3]
+with tarfile.open(path,"w") as archive:
+    item=tarfile.TarInfo("./ordinary.txt")
+    item.size=4
+    archive.addfile(item,io.BytesIO(b"data"))
+    if mode=="traversal":
+        item=tarfile.TarInfo("../escape")
+        item.size=4
+        archive.addfile(item,io.BytesIO(b"data"))
+    elif mode=="symlink_member":
+        item=tarfile.TarInfo("./unsafe-link")
+        item.type=tarfile.SYMTYPE
+        item.linkname="../../outside"
+        archive.addfile(item)
+    elif mode=="unsafe_hardlink":
+        item=tarfile.TarInfo("./unsafe-hardlink")
+        item.type=tarfile.LNKTYPE
+        item.linkname="../outside"
+        archive.addfile(item)
+PY
   printf '{"format_version":1,"consistency_verified":true,"file_data_included":true}\n' > "$snap/manifest.json"
   (cd "$snap"; sha256sum database.dump verify.json manifest.json blobs.tar > SHA256SUMS.txt)
   case "${XD_SCHEDULE_MOCK_MODE:-good}" in
     tampered) printf 'tamper\n' >> "$snap/blobs.tar" ;;
     database_only) printf '{"format_version":1,"consistency_verified":true,"file_data_included":false}\n' > "$snap/manifest.json" ;;
+    duplicate_manifest)
+      printf '{"format_version":1,"consistency_verified":true,"file_data_included":true,"file_data_included":false}\n' > "$snap/manifest.json"
+      (cd "$snap"; sha256sum database.dump verify.json manifest.json blobs.tar > SHA256SUMS.txt) ;;
   esac
   printf '%s\n' "$snap"
 fi
@@ -102,7 +131,7 @@ expect_args backup --output-dir
 old_failed="$XD_CONFIG_DIR/backups/snapshots/xdrive-backup-19980101T000000Z"
 mkdir "$old_failed"
 touch -d '20 days ago' "$old_failed"
-for scenario in no_snapshot wrong_path old_path tampered database_only; do
+for scenario in no_snapshot wrong_path old_path tampered database_only traversal symlink_member unsafe_hardlink duplicate_manifest; do
   if XD_SCHEDULE_MOCK_MODE="$scenario" invoke >"$TMP/fail-$scenario.log" 2>&1; then
     echo "scheduled v1 retention accepted $scenario without a verified full snapshot" >&2; exit 1
   fi
