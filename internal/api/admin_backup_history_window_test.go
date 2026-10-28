@@ -11,9 +11,9 @@ func TestBackupAdminAcceptsHundredHostHistoryReceipts(t *testing.T) {
 	for i := 1; i <= 100; i++ {
 		events = append(events, backupAdminHistoryEntry{
 			backupAdminStatus: backupAdminStatus{
-				Protocol: backupAdminProtocol,
+				Protocol:  backupAdminProtocol,
 				RequestID: fmt.Sprintf("%024x", i),
-				Action: "verify", SnapshotID: testBackupID,
+				Action:    "verify", SnapshotID: testBackupID,
 				State: "success", StartedAt: "2026-10-27T03:00:00Z",
 				FinishedAt: "2026-10-27T03:00:01Z",
 			},
@@ -29,9 +29,9 @@ func TestBackupAdminAcceptsHundredHostHistoryReceipts(t *testing.T) {
 	}
 	events = append(events, backupAdminHistoryEntry{
 		backupAdminStatus: backupAdminStatus{
-			Protocol: backupAdminProtocol,
+			Protocol:  backupAdminProtocol,
 			RequestID: "000000000000000000000065",
-			Action: "verify", SnapshotID: testBackupID,
+			Action:    "verify", SnapshotID: testBackupID,
 			State: "success", StartedAt: "2026-10-27T03:00:00Z",
 			FinishedAt: "2026-10-27T03:00:01Z",
 		},
