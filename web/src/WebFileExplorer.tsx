@@ -23,6 +23,7 @@ import {
   useXDriveFileExplorerFavorites,
   useXDriveFileExplorerRecent,
   useXDriveFileExplorerOperationController,
+  useXDriveFileExplorerOwnerSourceOptions,
   useXDriveFileExplorerExternalDropController,
   xDriveCaptureVideoPosterBlob,
   xDriveFileKind,
@@ -232,19 +233,15 @@ export default function WebFileExplorer({
     setTagDialogItems([])
     setTagDialogMode(null)
   }, [navigationSessionStorageKey])
-  const [searchSourceOptions, setSearchSourceOptions] = useState<XDriveFileExplorerSearchSourceOption[]>([])
-  useEffect(() => {
-    let active = true
-    setSearchSourceOptions([])
-    void api.sources().then((sources) => {
-      if (active) setSearchSourceOptions(sources.map((source) => ({ id: source.id, name: source.name })))
-    }).catch((error) => {
-      if (active) onError(error)
-    })
-    return () => {
-      active = false
-    }
-  }, [api, navigationSessionStorageKey, onError])
+  const loadSourceOptions = useCallback(async (): Promise<XDriveFileExplorerSearchSourceOption[]> =>
+    (await api.sources()).map((source) => ({ id: source.id, name: source.name })),
+  [api])
+  const { options: searchSourceOptions } = useXDriveFileExplorerOwnerSourceOptions({
+    host: api,
+    ownerKey: navigationSessionStorageKey ?? '',
+    read: loadSourceOptions,
+    onError,
+  })
 
   const recent = useXDriveFileExplorerRecent<Node>({
     lifecycleKey: navigationSessionStorageKey ?? '',
