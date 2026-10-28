@@ -31,3 +31,16 @@ test('fast and deep keep separate historical kinds, but share authorization and 
   assert.match(tasks, /存储 SHA-256 深度校验/)
   assert.match(read('internal/api/system_maintenance_tasks_integration_test.go'), /SystemMaintenanceKindStorageVerifyFast/)
 })
+
+test('storage repair confirmation stays bound to the same authenticated storage adapter and global scope', () => {
+  const page = read('ui/shared/src/mui/GlobalStorageStatsPage.tsx')
+  assert.match(page, /repairConfirmation\?\.api === api/)
+  assert.match(page, /repairConfirmation\.scope === scope && scope === 'global'/)
+  assert.match(page, /onClick=\{\(\) => \{ if \(scope === 'global'\) setRepairConfirmation\(\{ api, scope \}\) \}\}/)
+  assert.match(page, /title="确认执行在线 CAS 存储修复？"/)
+  assert.match(page, /confirmLabel="确认执行修复"/)
+  assert.match(page, /if \(!repairConfirmCurrent \|\| !onRunStorageMaintenance\)/)
+  assert.match(page, /void runStorageMaintenance\('storage_repair'\)/)
+  assert.match(page, /setRepairConfirmation\(null\)/)
+  assert.match(page, /它不是只读校验、备份恢复或损坏文件内容自动修复/)
+})

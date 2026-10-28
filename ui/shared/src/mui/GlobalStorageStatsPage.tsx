@@ -196,6 +196,12 @@ export default function StorageStatsPanel({
   const [unreferencedLoading, setUnreferencedLoading] = useState(false)
   const [maintenanceLoading, setMaintenanceLoading] = useState<StorageMaintenanceKind | ''>('')
   const [storageVerifyMode, setStorageVerifyMode] = useState<'fast' | 'deep'>('fast')
+  const [repairConfirmation, setRepairConfirmation] = useState<{
+    api: XDriveAdminStoragePort
+    scope: 'global'
+  } | null>(null)
+  const repairConfirmCurrent = repairConfirmation?.api === api &&
+    repairConfirmation.scope === scope && scope === 'global'
   const [loading, setLoading] = useState(true)
   const [loadGeneration, setLoadGeneration] = useState(0)
   const showDeferredLoading = useXDriveDeferredLoading(loading, loadGeneration)
@@ -219,6 +225,7 @@ export default function StorageStatsPanel({
       setStagingCursors([''])
       setStagingNotice('')
       setCleanupConfirmOpen(false)
+      setRepairConfirmation(null)
       setCleanupActionError('')
       setCleanupResultWarning('')
       setCleanupRuns([])
@@ -646,7 +653,7 @@ export default function StorageStatsPanel({
                           loading={maintenanceLoading === 'storage_repair'}
                           loadingLabel="正在提交…"
                           disabled={Boolean(maintenanceLoading)}
-                          onClick={() => { void runStorageMaintenance('storage_repair') }}
+                          onClick={() => { if (scope === 'global') setRepairConfirmation({ api, scope }) }}
                         >
                           运行存储修复
                         </XDriveActionButton>
@@ -1418,6 +1425,36 @@ export default function StorageStatsPanel({
           )}
       </XDriveWorkspaceSurface>
       </Box>
+
+      <XDriveConfirmDialog
+        open={Boolean(repairConfirmCurrent)}
+        title="确认执行在线 CAS 存储修复？"
+        description={(
+          <Stack spacing={1.5}>
+            <Typography variant="body2">
+              这是会修改生产数据的维护任务：迁移仍被引用的 legacy 对象，修复 CAS 元数据及引用状态。
+              它不是只读校验、备份恢复或损坏文件内容自动修复。
+            </Typography>
+            <Typography variant="body2">
+              建议先执行 fast 校验；若怀疑内容损坏，显式运行 deep SHA-256 校验并确认有独立可信备份。
+              实际修复由现有后台任务和 Janitor 排它锁保护，不能据此推断所有原始文件已经恢复。
+            </Typography>
+          </Stack>
+        )}
+        confirmLabel="确认执行修复"
+        confirmIntent="warning"
+        loading={maintenanceLoading === 'storage_repair'}
+        onCancel={() => setRepairConfirmation(null)}
+        onConfirm={() => {
+          // An obsolete Host/Owner or scope confirmation cannot submit.
+          if (!repairConfirmCurrent || !onRunStorageMaintenance) {
+            setRepairConfirmation(null)
+            return
+          }
+          setRepairConfirmation(null)
+          void runStorageMaintenance('storage_repair')
+        }}
+      />
 
       <XDriveConfirmDialog
         open={cleanupConfirmOpen}
