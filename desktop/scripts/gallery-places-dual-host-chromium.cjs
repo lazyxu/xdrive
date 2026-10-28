@@ -956,19 +956,29 @@ async function testMode(browser,mode,port){
     const sheetGeometry=await page.evaluate(()=>{
       const map=document.querySelector('[data-xdrive-places-cluster-overview]')
       const sheet=document.querySelector('[data-xdrive-places-photo-drawer]')
-      if(!map||!sheet)return null
-      const area=map.getBoundingClientRect(),dialog=sheet.getBoundingClientRect()
-      return {mapTop:area.top,mapBottom:area.bottom,top:dialog.top,
-        bottom:dialog.bottom,height:dialog.height,screen:innerHeight}
+      const modal=document.querySelector('[data-xdrive-places-album-dialog] [role="dialog"]') ||
+        document.querySelector('[role="dialog"][aria-labelledby="xdrive-places-album-title"]')
+      if(!map||!sheet||!modal)return null
+      const b=modal.getBoundingClientRect()
+      const content=sheet.getBoundingClientRect()
+      return {top:b.top,bottom:b.bottom,left:b.left,right:b.right,
+        height:b.height,contentHeight:content.height,
+        screen:innerHeight,screenWidth:innerWidth,
+        withinModal:modal.contains(sheet)}
     })
+    // The new Gallery modal is PORTALED over the viewport, not anchored
+    // inside the map's own old bottom sheet. Verify safe-area bounds and
+    // actual nested signed Owner photos instead of retired map offsets.
     const drawerFits=sheetGeometry!==null&&sheetGeometry.height>=80&&
-      sheetGeometry.top>=sheetGeometry.mapTop+8&&
-      sheetGeometry.bottom<=sheetGeometry.mapBottom-8&&
-      sheetGeometry.bottom<=sheetGeometry.screen-8
-    if(!drawerFits) console.error('places-drawer-landscape-geometry',JSON.stringify({
+      sheetGeometry.withinModal&&sheetGeometry.contentHeight>50&&
+      sheetGeometry.top>=0&&sheetGeometry.left>=0&&
+      sheetGeometry.right<=sheetGeometry.screenWidth+1&&
+      sheetGeometry.bottom<=sheetGeometry.screen+1
+    if(!drawerFits) console.error('places-album-landscape-geometry',JSON.stringify({
       mode,viewport:'844x390',geometry:sheetGeometry,
     }))
-    record(mode+': expanded drawer fits inside 844x390 map and safe area',drawerFits)
+    record(mode+': expanded Gallery modal fits 844x390 screen and safe area',
+      drawerFits)
     // Reversing to portrait requires ANOTHER signed /cells + /cell-items.
     // Old landscape DOM and its revoked selection are not reused.
     const beforePortrait=await page.evaluate(()=>{
