@@ -69,7 +69,7 @@ test('same-type directory and album content changes cancel pending thumbnails be
     ['web:files', 'files'], ['desktop:files', 'files'],
     ['synology:files', 'files'], ['web:gallery', 'gallery'],
     ['desktop:gallery', 'gallery'], ['synology:gallery', 'gallery'],
-    ['desktop:map', 'map'],
+    ['desktop:gallery', ['gallery', 'map']], // Maps is a Gallery section, not another Host route
   ]) {
     bus.xDriveEnterForegroundPage(null)
     bus.xDriveEnterForegroundPage(page)
@@ -215,8 +215,12 @@ test('all same-type content entry points are wired to disposable-only preemption
   assert.match(mobile, /props\.trashActive \? 'trash'/)
   assert.match(wide, /virtualCollection\?\.interactionKey \?\? derivedPath/,
     'wide Files already changes its thumbnail cache when accepted query changes')
-  assert.match(galleryCode, /mediaGalleryContentKey\(previousContent\) !== mediaGalleryContentKey\(target\)/,
+  assert.match(galleryCode, /mediaGalleryContentKey\(previousContent\) !== nextContentKey/,
     'album/filter/collection content')
+  assert.match(galleryCode, /pendingContentKey !== null && pendingContentKey !== nextContentKey/,
+    'returning to the accepted album must supersede an uncooperative pending album')
+  assert.match(galleryCode, /pendingFirstContentKeyRef\.current = nextContentKey/,
+    'each new Gallery target takes latest-wins content ownership')
   assert.match(galleryCode, /xDriveBeginForegroundContentTransition\(\['gallery', 'map'\]\)/,
     'both map modes and Gallery share the content lease')
   assert.match(galleryCode, /kind:'baidu-cell'/, 'map cell range')
