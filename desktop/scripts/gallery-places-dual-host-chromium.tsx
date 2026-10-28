@@ -35,6 +35,10 @@ const videoPosterMode = new URLSearchParams(location.search).get('map_h264') ===
 // 72px target. Only the largest verified React photo cover should paint.
 const mixedMarkerMap = !genuineGin &&
   new URLSearchParams(location.search).get('mixed_markers') === '1'
+// Controlled, bounded 64-Cell synthetic projection stress only. The
+// 100000 is a verified-shaped Owner count, NOT a 100k physical media corpus.
+const dense64OwnerMap = !genuineGin &&
+  new URLSearchParams(location.search).get('dense_64_cells') === '1'
 const realHEICMode = genuineGin &&
   new URLSearchParams(location.search).get('map_real_heic') === '1'
 const realLIVPMode = genuineGin &&
@@ -100,6 +104,22 @@ const probe = ((window as any).__mapProbe = {
 const locationPoint = { latitude:30.135, longitude:119.975 }
 const initialScope: Scope = {albumKey:'',filters:{sort_by:'captured',sort_dir:'desc'}}
 const pageFor = (bounds:Bounds, favorite:boolean) => {
+  // Only the current mocked live camera is allowed to expose the 64-Cell
+  // synthetic owner response. Worldwide discovery retains its original
+  // single Cell and no private GPS or media IDs enter the provider Child.
+  if (dense64OwnerMap && bounds.west===100 && bounds.east===125 &&
+      bounds.south===20 && bounds.north===40) {
+    const cells=Array.from({length:64},(_,i)=>{
+      const x=i%8,y=Math.floor(i/8)
+      return {cell_x:x,cell_y:y,photo_count:i<32?1563:1562,
+        asset_id:1000+i,node_id:2000+i,node_revision:2,
+        latitude:20+(y+0.375)*20/8,longitude:100+(x+0.375)*25/8,
+        media_kind:'image' as const}
+    })
+    return {coordinate_space:'bd09ll' as const,
+      index_scope:'owner_gps_auto_index' as const,grid_columns:8,
+      grid_rows:8,total_count:100000,cells}
+  }
   const width = bounds.east > bounds.west ? bounds.east-bounds.west : bounds.east+360-bounds.west
   const offset = locationPoint.longitude >= bounds.west ?
     locationPoint.longitude-bounds.west : locationPoint.longitude+360-bounds.west

@@ -245,3 +245,21 @@ test('both SDK Hosts receive the same current React layout exclusions',()=>{
   assert.match(driver,/testMapOverlayPinOcclusion/)
   assert.doesNotMatch(parent,/data-xdrive-places-photo-collection-strip/)
 })
+
+test('mounted both SDK Hosts guard 100k synthetic Count and all 64 Owner Cells',()=>{
+  const driver=fs.readFileSync(path.join(root,
+    'desktop/scripts/gallery-places-dual-host-chromium.cjs'),'utf8')
+  const fixture=fs.readFileSync(path.join(root,
+    'desktop/scripts/gallery-places-dual-host-chromium.tsx'),'utf8')
+  assert.match(driver,/async function testDense64OwnerPhotoMap\(/)
+  assert.match(driver,/await testDense64OwnerPhotoMap\(browser,'inline',port\)/)
+  assert.match(driver,/await testDense64OwnerPhotoMap\(browser,'isolated',port\)/)
+  assert.match(driver,/state\.covers===24&&state\.uniqueCovers===24&&state\.cells===64/)
+  assert.match(driver,/map\?\.maxOverlays>=64&&map\.overlays\.length===0/)
+  assert.match(driver,/verified\.preview\?\.total===1562/)
+  assert.match(fixture,/const dense64OwnerMap = !genuineGin/)
+  assert.match(fixture,/cells=Array\.from\(\{length:64\}/)
+  assert.match(fixture,/total_count:100000,cells/)
+  assert.match(driver,/dense_64_cells=1/)
+  assert.doesNotMatch(fixture,/dense64OwnerMap && genuineGin/)
+})

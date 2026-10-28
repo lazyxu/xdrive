@@ -75,12 +75,24 @@ const sdkStub='('+function sdkFactory(){
     getZoom(){return this.zoom}
     getBounds(){return {getSouthWest:()=>new Point(100,20),
       getNorthEast:()=>new Point(125,40)}}
-    pointToPixel(){
-      // The synthetic representative is deliberately centered in the
-      // CURRENT CSS map canvas. A fixed old 180px point would make short
-      // landscape tests accidentally accept stale pre-resize projections.
+    pointToPixel(point){
+      // Only the special 64-Cell fixture points have the exact 0.375
+      // in-Cell representative fingerprint. Keep all other existing
+      // SDK fixtures centered, including the two-Cell collision case.
       const width=Math.round(this.canvas?.clientWidth||0)
       const height=Math.round(this.canvas?.clientHeight||0)
+      const gridX=(point?.lng-100)/(25/8)-0.375
+      const gridY=(point?.lat-20)/(20/8)-0.375
+      if(Number.isFinite(gridX)&&Number.isFinite(gridY)&&
+         gridX>=0&&gridX<=7&&gridY>=0&&gridY<=7&&
+         Math.abs(gridX-Math.round(gridX))<1e-7&&
+         Math.abs(gridY-Math.round(gridY))<1e-7&&
+         width>=120&&height>=120) {
+        return {x:Math.round(width*(gridX+0.5)/8),
+          y:Math.round(height*(7.5-gridY)/8)}
+      }
+      // The ordinary synthetic representative remains centered in the
+      // CURRENT CSS map canvas, not at a stale 180px pre-resize point.
       return {x:width>=120?Math.round(width/2):180,
         y:height>=120?Math.round(height/2):180}
     }
@@ -2332,6 +2344,93 @@ async function testPhotoMarkerPresentation(browser,mode,port){
   }finally{await context.close()}
 }
 
+// Actual mounted synthetic 64-Cell / 100k-count map saturation in both
+// SDK Hosts. This is explicitly NOT a 100k PostgreSQL/physical CAS test.
+// The true shared Parent must bound photo cover DOM/thumbnail work, keep
+// all 64 signed-shaped Owner Cells accessible, suppress mixed SDK labels
+// and retain the original authorized Cell Range for an unrendered Cell.
+async function testDense64OwnerPhotoMap(browser,mode,port){
+  const context=await browser.newContext({
+    viewport:{width:960,height:760},locale:'zh-CN',
+    ignoreHTTPSErrors:true,serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(30000)
+  const errors=[]
+  page.on('pageerror',error=>errors.push(error.message))
+  await page.route('https://api.map.baidu.com/api?**',route=>{
+    assert.equal(new URL(route.request().url()).searchParams.get('ak'),
+      'TEST_ONLY_BROWSER_AK')
+    return route.fulfill({status:200,contentType:'text/javascript',body:sdkStub})
+  })
+  try{
+    await page.goto('https://'+galleryHost+':'+port+
+      '/?mode='+mode+'&dense_64_cells=1',{waitUntil:'domcontentloaded'})
+    await page.getByText('当前地图可查看 100,000 张照片',
+      {exact:true}).waitFor()
+    await page.waitForFunction(()=>
+      document.querySelectorAll(
+        '[data-xdrive-places-trusted-photo-cover]').length===24 &&
+      document.querySelectorAll(
+        '[data-xdrive-places-cluster-list] button').length===64)
+    const sdkFrame=mode==='inline' ? page :
+      page.frames().find(f=>f.url().includes(childHost))
+    assert(sdkFrame,'mounted map SDK frame must be inspectable')
+    await sdkFrame.waitForFunction(()=>{
+      const map=window.__xdriveSyntheticMapInstances?.at(-1)
+      return map?.maxOverlays>=64&&map.overlays.length===0
+    })
+    const state=await page.evaluate(()=>{
+      const covers=Array.from(document.querySelectorAll(
+        '[data-xdrive-places-trusted-photo-cover]'))
+      const cells=Array.from(document.querySelectorAll(
+        '[data-xdrive-places-cluster-list] button'))
+      const p=window.__mapProbe
+      return {covers:covers.length,cells:cells.length,
+        uniqueCovers:new Set(covers.map(c=>
+          c.getAttribute('data-xdrive-places-trusted-photo-cover'))).size,
+        latestCount:p.queries.at(-1)?.count,
+        realGin:p.realGin,queries:p.queries.length,
+        sameOwnerScope:p.queries.every(q=>q.albumKey===''&&!q.favorite),
+        fixedStrip:document.querySelectorAll(
+          '[data-xdrive-places-photo-collection-strip], '+
+          '[data-xdrive-places-map-photo-strip-shell], '+
+          '[data-xdrive-places-collection-thumb]').length,
+        wall:document.querySelectorAll(
+          '[data-xdrive-places-full-camera-wall]').length,
+        text:document.querySelector('[data-xdrive-places-map-photo-summary]')?.textContent}
+    })
+    record(mode+': synthetic 100k Owner Count uses <=24 React covers for 64 signed Cells',
+      state.covers===24&&state.uniqueCovers===24&&state.cells===64&&
+      state.latestCount===100000&&!state.realGin&&state.sameOwnerScope&&
+      state.fixedStrip===0&&state.wall===1&&
+      state.text?.includes('100,000 张照片')&&errors.length===0)
+    // The last Cell is intentionally not one of the 24 visible photo
+    // covers. It must STILL be reachable via the current trusted Cell
+    // list, without unscoped Gallery fallback or reloading the map SDK.
+    const originalQueries=state.queries
+    const list=page.locator('[data-xdrive-places-cluster-list]')
+    if(await list.getAttribute('open')===null)
+      await list.locator('summary').click()
+    await list.locator('button').nth(63).click()
+    await page.locator('[data-xdrive-places-photo-drawer-item]')
+      .first().waitFor({state:'visible'})
+    const verified=await page.evaluate(()=>({
+      queryCount:window.__mapProbe.queries.length,
+      preview:window.__mapProbe.photoPreviewRanges.at(-1),
+      selected:document.querySelector(
+        '[data-xdrive-places-photo-drawer]')!==null,
+      fullCellList:document.querySelectorAll(
+        '[data-xdrive-places-cluster-list] button').length,
+    }))
+    record(mode+': nonvisible 64th Cell retains original bounded Owner Range',
+      verified.selected&&verified.fullCellList===64&&
+      verified.queryCount===originalQueries&&
+      verified.preview?.total===1562&&
+      verified.preview?.items>0&&verified.preview?.items<=100&&
+      errors.length===0)
+  }finally{await context.close()}
+}
+
 // Real Chromium proves the shared trusted Parent measures floating iOS map
 // controls rather than relying on a stale fixed-pixel bottom dock. Force a
 // narrow/wrapped summary into the camera without altering any SDK/Owner Cell;
@@ -2843,6 +2942,8 @@ async function main(){
     if(!ginURL){
       await testPhotoMarkerPresentation(browser,'inline',port)
       await testPhotoMarkerPresentation(browser,'isolated',port)
+      await testDense64OwnerPhotoMap(browser,'inline',port)
+      await testDense64OwnerPhotoMap(browser,'isolated',port)
       await testMapOverlayPinOcclusion(browser,'inline',port)
       await testMapOverlayPinOcclusion(browser,'isolated',port)
       await testDelayedBD09Map(browser,'inline',port)
