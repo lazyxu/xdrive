@@ -30,7 +30,15 @@ PhotoKit requests `readWrite` access only after this second explicit tap. A
 iOS. Reopen the panel to refresh counts; changing authorization uses iOS Settings.
 
 The native panel shows PhotoKit's lazy photo/video counts and at most 30 recent
-authorized metadata items (type, date and Live Photo flag). It neither loads
+authorized metadata items (type, date and Live Photo flag). Each visible item now
+has an explicit **检查此项的原始资源组成** action: this re-resolves its currently
+authorized transient PhotoKit identity, enumerates only PHAssetResource metadata
+and distinguishes still, video and Live paired-video resources. A missing Live
+component is reported as incomplete, never backed up as a finished Live Photo.
+Full-resolution resource existence does not prove iCloud bytes are locally
+available; this does not start an iCloud download or upload. No localIdentifier
+or resource filename is saved into credentials, persisted state or Server.
+ It neither loads
 original bytes nor accesses GPS, caches local identifiers, stores personal
 assets or writes anything to Server. This is **local recognition**, not an
 upload, a complete Live Photo pair validator, or a background sync engine.
