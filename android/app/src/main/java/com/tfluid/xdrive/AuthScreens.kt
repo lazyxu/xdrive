@@ -182,12 +182,12 @@ internal fun UnifiedLoginForm(
                     enabled = !state.loading && !insecureHttp,
                     role = Role.Checkbox,
                     onValueChange = { keepLogin = it },
-                ).testTag("keep-login-row"),
+                ).testTag("keep-login"),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Checkbox(checked = keepLogin && !insecureHttp, onCheckedChange = null,
                 enabled = !state.loading && !insecureHttp,
-                modifier = Modifier.testTag("keep-login"))
+                modifier = Modifier.testTag("keep-login-indicator"))
             Text("保持登录", modifier = Modifier.padding(start = 8.dp),
                 style = MaterialTheme.typography.bodyMedium)
         }
@@ -205,11 +205,11 @@ internal fun UnifiedLoginForm(
                     .toggleable(
                         value = allowHttp, enabled = !state.loading,
                         role = Role.Checkbox, onValueChange = { allowHttp = it },
-                    ).testTag("allow-http-row"),
+                    ).testTag("allow-http"),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Checkbox(checked = allowHttp, onCheckedChange = null,
-                    enabled = !state.loading, modifier = Modifier.testTag("allow-http"))
+                    enabled = !state.loading, modifier = Modifier.testTag("allow-http-indicator"))
                 Text("允许不安全的 HTTP 连接", modifier = Modifier.padding(start = 8.dp),
                     style = MaterialTheme.typography.bodySmall)
             }
