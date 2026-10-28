@@ -15,6 +15,7 @@ const cgi = read('internal/synologyui/gateway.go')
 const cgiRouting = read('internal/synologyui/cgi.go')
 const agentRead = read('internal/localbackupipc/remote_backup.go')
 const dsmEntry = read('web/src/synology.tsx')
+const dsmHost = read('web/src/synologyHost.ts')
 const hostSections = read('ui/shared/src/mui/WorkspaceHostSections.tsx')
 const sharedHome = read('ui/shared/src/mui/HomePage.tsx')
 const nasHome = read('ui/shared/src/mui/SynologyHomeOverview.tsx')
@@ -133,7 +134,7 @@ if (!verifiedOwnerDownload.includes('xDriveSynologyFetchVerifiedDownload') ||
     // search route, Host must provide the true disabled reason instead.
     !synologyFiles.includes('searchEnabled') ||
     !synologyFiles.includes('unavailableActions={unavailableActions}') ||
-    !dsmEntry.includes('filesUnavailableActions: {') ||
+    !dsmHost.includes('filesUnavailableActions: {') ||
     !sharedFileExplorer.includes('searchUnavailableReason') ||
     !synologyFiles.includes('forceVirtualization') ||
     !synologyFiles.includes('onOpenItem={item =>') ||
@@ -226,7 +227,7 @@ if (!appRouteContent.includes('xDriveIsSharedHostPageRoute(view)') ||
 if (dsmEntry.includes('coreKeys=') ||
     !dsmEntry.includes("compactPrimaryKeys: ['overview', 'files', 'gallery', 'transfers']") ||
     !routeRegistry.includes('xDriveWorkspaceNavigationAllowed') ||
-    dsmEntry.includes('pages: {') ||
+    dsmEntry.includes('pages: {') || dsmHost.includes('pages: {') ||
     !hostContract.includes('readonly deviceBackups?: XDriveDeviceBackupDataSource') ||
     !hostContract.includes('readonly cloudStorage?: XDriveCloudStorageDataSource') ||
     !appPageOutlet.includes('if (!page)') ||
@@ -284,7 +285,7 @@ if (!desktop.includes('function XDriveDeviceBackupServerPage') ||
     !desktop.includes('<XDriveSynologyBackupLocalPanel client={props.localBackupClient}') ||
     !appPageOutlet.includes('<XDriveDeviceBackupPage key={revision}') ||
     !appPageOutlet.includes('localBackupClient={local} source={services.deviceBackups}') ||
-    !dsmEntry.includes('createXDriveSynologyOwnerBackupSource(local)') ||
+    !dsmHost.includes('createXDriveSynologyOwnerBackupSource(local)') ||
     !desktop.includes('账号设备（只读）') ||
     !desktop.includes('<XDriveDeviceBackupServerPage source={props.source} />') ||
     !nasAdapter.includes("'/v1/device-backups'") ||

@@ -12,6 +12,7 @@ const outlet = read('ui/shared/src/mui/XDriveAppPageOutlet.tsx')
 const routes = read('ui/shared/src/mui/WorkspaceRoute.ts')
 const desktop = read('desktop/src/renderer/App.tsx')
 const synology = read('web/src/synology.tsx')
+const synologyHost = read('web/src/synologyHost.ts')
 const index = read('ui/shared/src/mui/index.tsx')
 
 test('Desktop and DSM mount one shared route content frame, not separate page routers', () => {
@@ -27,6 +28,11 @@ test('Desktop and DSM mount one shared route content frame, not separate page ro
   assert.match(app, /\{overlays\}/)
   assert.ok(app.indexOf('<XDriveAppRouteContent') < app.indexOf('{overlays}'),
     'dialog overlays must stay outside the page scroll region')
+  assert.match(synology, /const host = createXDriveSynologyHost\(\)/)
+  assert.doesNotMatch(synology, /filesUnavailableActions:|backup\.cgi/)
+  assert.match(synologyHost, /createXDriveSynologyBackupLocalClient\(cgi.href\)/)
+  assert.match(synologyHost, /filesUnavailableActions: \{/)
+  assert.doesNotMatch(synologyHost, /window\.xdriveDesktop|ipcRenderer|<XDriveApp|<XDriveAppRouteContent/)
   assert.match(index, /export \* from '\.\/XDriveAppRouteContent'/)
   assert.equal((content.match(/<XDriveAppPageOutlet\b/g) || []).length, 1)
   assert.equal((content.match(/<XDriveWorkspaceContent\b/g) || []).length, 1)
