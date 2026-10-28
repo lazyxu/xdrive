@@ -147,15 +147,15 @@ function validOwnerGalleryItem(value: unknown): boolean {
     ownerGalleryInt(n.revision, true) && ownerGalleryInt(n.size) &&
     n.type === 'file' &&
     typeof n.name === 'string' && n.name.length > 0 && n.name.length <= 512 &&
-    !/[\\u0000\\r\\n]/.test(n.name) &&
+    !/[\u0000\r\n]/.test(n.name) &&
     ownerGalleryTime(n.created_at) && ownerGalleryTime(n.updated_at) &&
     Object.keys(m).every((key) => ownerGalleryMetadataKeys.has(key)) &&
     (m.media_kind === 'image' || m.media_kind === 'video') &&
     typeof m.index_state === 'string' && m.index_state.length <= 64 &&
-    /^[\\x20-\\x7e]*$/.test(m.index_state) &&
+    /^[\x20-\x7e]*$/.test(m.index_state) &&
     typeof m.has_thumbnail === 'boolean' &&
     (m.mime_type === undefined || (typeof m.mime_type === 'string' &&
-      m.mime_type.length <= 128 && /^[\\x20-\\x7e]*$/.test(m.mime_type))) &&
+      m.mime_type.length <= 128 && /^[\x20-\x7e]*$/.test(m.mime_type))) &&
     (m.width === undefined || (ownerGalleryInt(m.width) && m.width <= 100000)) &&
     (m.height === undefined || (ownerGalleryInt(m.height) && m.height <= 100000)) &&
     (m.duration_ms === undefined || ownerGalleryInt(m.duration_ms)) &&
