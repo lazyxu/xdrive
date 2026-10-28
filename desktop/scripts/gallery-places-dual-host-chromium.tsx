@@ -39,6 +39,10 @@ const mixedMarkerMap = !genuineGin &&
 // 28 through the bounded 48-item Owner Range rather than previewing 12.
 const albumDialog28 = !genuineGin &&
   new URLSearchParams(location.search).get('album_dialog_28') === '1'
+// Screenshot-specific adjacent current Owner Cells: old 104x92px visual
+// exclusion erased the 28-photo cover beside an independent 142-photo cover.
+const adjacent142And28 = !genuineGin &&
+  new URLSearchParams(location.search).get('adjacent_photo_142_28') === '1'
 const realHEICMode = genuineGin &&
   new URLSearchParams(location.search).get('map_real_heic') === '1'
 const realLIVPMode = genuineGin &&
@@ -104,6 +108,19 @@ const probe = ((window as any).__mapProbe = {
 const locationPoint = { latitude:30.135, longitude:119.975 }
 const initialScope: Scope = {albumKey:'',filters:{sort_by:'captured',sort_dir:'desc'}}
 const pageFor = (bounds:Bounds, favorite:boolean) => {
+  if(adjacent142And28 && bounds.west===100 && bounds.east===125 &&
+     bounds.south===20 && bounds.north===40) {
+    return {coordinate_space:'bd09ll' as const,
+      index_scope:'owner_gps_auto_index' as const,
+      grid_columns:8,grid_rows:8,total_count:170,cells:[
+        {cell_x:5,cell_y:6,photo_count:142,asset_id:33,node_id:75,
+          node_revision:2,latitude:36.25,longitude:117.1875,
+          media_kind:'image' as const},
+        {cell_x:6,cell_y:5,photo_count:28,asset_id:134,node_id:175,
+          node_revision:2,latitude:33.75,longitude:120.3125,
+          media_kind:'image' as const},
+      ]}
+  }
   const width = bounds.east > bounds.west ? bounds.east-bounds.west : bounds.east+360-bounds.west
   const offset = locationPoint.longitude >= bounds.west ?
     locationPoint.longitude-bounds.west : locationPoint.longitude+360-bounds.west
