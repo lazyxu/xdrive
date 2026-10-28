@@ -21,8 +21,13 @@ if [[ "${1:-}" == backup && "${2:-}" == --output-dir ]]; then
     no_snapshot) exit 0 ;;
     wrong_path) printf '%s\n' "$XD_CONFIG_DIR/backups/incremental/snapshots/xdrive-backup-20990101T000000Z"; exit 0 ;;
     old_path)
-      printf '%s\n' "$XD_CONFIG_DIR/backups/snapshots/xdrive-backup-$(date -u +%Y%m%dT%H%M%SZ)"
-      exit 0 ;;
+      for existing in "$XD_CONFIG_DIR"/backups/snapshots/xdrive-backup-*; do
+        if [[ -f "$existing/SHA256SUMS.txt" ]]; then
+          printf '%s\n' "$existing"
+          exit 0
+        fi
+      done
+      exit 1 ;;
 
   esac
   snap="$XD_CONFIG_DIR/backups/snapshots/xdrive-backup-$(date -u +%Y%m%dT%H%M%SZ)"
