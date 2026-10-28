@@ -35,7 +35,7 @@ const summary={sourceCommit:process.env.XD_PR_HEAD || null,
   ownerScopeInvalidationModes:[],
   fullGalleryPageModes:[],fullGalleryDirectPhotoModes:[],mobileDrawerModes:[],
   favoriteMapCloseModes:[],fullDocumentHandoffModes:[],
-  fullDocumentComboModes:[],
+  fullDocumentComboModes:[],fullDocumentNegativeFilterModes:[],
   realHEICMapCoverModes:[],realLIVPMapCoverModes:[],
   checks:[],passed:false,errors:[]}
 const record=(name,ok)=>{summary.checks.push({name,passed:!!ok});assert(ok,name)}
@@ -317,6 +317,71 @@ async function testFullDocumentMapHandoff(browser,from,port,combined=false){
       !accepted.url.includes('manual:')&&!accepted.url.includes('favorite=true')&&
       !accepted.url.includes('asset_kind')&&!accepted.url.includes('captured_from')&&
       !accepted.url.includes('time_zone'))
+    if(combined){
+      // The original combo scenario proves exact preservation, but its nine
+      // sampled photos all have the same image kind and October 20 capture
+      // date. Exercise the SHIPPED shared filter controls on the restored
+      // Owner map, so a backend that ignores date or kind now fails visibly.
+      const menu=page.locator('[data-xdrive-places-map-filter-menu]')
+      const openFilters=async()=>{
+        if(!(await menu.evaluate(element=>element.open)))
+          await menu.locator('summary').click()
+      }
+      const filteredEmpty='当前筛选条件下暂无定位照片；可调整筛选或手动刷新。'
+      const currentMap=()=>page.evaluate(()=>({
+        queries:window.__mapProbe.queries,
+        covers:document.querySelectorAll(
+          '[data-xdrive-places-trusted-photo-cover]').length,
+        empty:document.querySelector(
+          '[data-xdrive-places-map-photo-summary]')?.textContent,
+      }))
+      await openFilters()
+      await page.locator('[data-xdrive-places-map-photo-filters] input[type="date"]')
+        .first().fill('2026-10-21')
+      await page.getByText(filteredEmpty,{exact:true}).waitFor()
+      const excludedDate=await currentMap()
+      record(label+'→'+target+': real Owner date filter excludes October 20 photos',
+        excludedDate.queries.at(-1)?.count===0&&excludedDate.covers===0&&
+        excludedDate.queries.at(-1)?.albumKey==='manual:Family'&&
+        excludedDate.queries.at(-1)?.filters?.favorite===true&&
+        excludedDate.queries.at(-1)?.filters?.asset_kind==='image'&&
+        excludedDate.queries.at(-1)?.filters?.captured_from==='2026-10-21'&&
+        excludedDate.queries.at(-1)?.filters?.captured_to==='2026-10-22')
+      await openFilters()
+      await page.locator('[data-xdrive-places-map-photo-filters] input[type="date"]')
+        .first().fill('2026-10-19')
+      await page.getByText('当前地图可查看 2 张照片',{exact:true}).waitFor()
+      await page.locator('[data-xdrive-places-trusted-photo-cover]')
+        .first().waitFor({state:'visible'})
+      const recoveredDate=await currentMap()
+      record(label+'→'+target+': date restore recovers exact Family Favorite intersection',
+        recoveredDate.queries.at(-1)?.count===2&&
+        recoveredDate.queries.at(-1)?.filters?.captured_from==='2026-10-19'&&
+        recoveredDate.covers>0)
+      await openFilters()
+      await page.getByRole('combobox',{name:'照片类型'}).click()
+      await page.getByRole('option',{name:'视频',exact:true}).click()
+      await page.getByText(filteredEmpty,{exact:true}).waitFor()
+      const excludedKind=await currentMap()
+      record(label+'→'+target+': real Owner media-kind filter excludes image-only Album',
+        excludedKind.queries.at(-1)?.count===0&&excludedKind.covers===0&&
+        excludedKind.queries.at(-1)?.albumKey==='manual:Family'&&
+        excludedKind.queries.at(-1)?.filters?.favorite===true&&
+        excludedKind.queries.at(-1)?.filters?.asset_kind==='video'&&
+        excludedKind.queries.at(-1)?.filters?.captured_from==='2026-10-19')
+      await openFilters()
+      await page.getByRole('combobox',{name:'照片类型'}).click()
+      await page.getByRole('option',{name:'照片',exact:true}).click()
+      await page.getByText('当前地图可查看 2 张照片',{exact:true}).waitFor()
+      await page.locator('[data-xdrive-places-trusted-photo-cover]')
+        .first().waitFor({state:'visible'})
+      const recoveredKind=await currentMap()
+      record(label+'→'+target+': kind restore recovers Owner pins with no scope expansion',
+        recoveredKind.queries.at(-1)?.count===2&&recoveredKind.covers>0&&
+        recoveredKind.queries.every(q=>q.albumKey==='manual:Family'&&
+          q.favorite===true)&&errors.length===0)
+      summary.fullDocumentNegativeFilterModes.push(from)
+    }
     await page.reload({waitUntil:'domcontentloaded'})
     await page.locator('[data-xdrive-map-handoff-denied="1"]').waitFor()
     const denied=await page.evaluate(()=>({
@@ -2151,6 +2216,8 @@ async function main(){
       await testFullDocumentMapHandoff(browser,'isolated',port,true)
       record('both Hosts preserve real Family Album, Favorite, Date, Kind, Sort after full reload',
         summary.fullDocumentComboModes.join(',')==='inline,isolated')
+      record('both Hosts exclude real date/kind and recover only scoped Owner covers',
+        summary.fullDocumentNegativeFilterModes.join(',')==='inline,isolated')
       for(const scenario of ['album-revision','album-missing',
         'session-revoked','map-epoch-revoked','foreign-owner']){
         await testInvalidatedOwnerHandoff(browser,'inline',port,scenario)
