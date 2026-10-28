@@ -153,6 +153,13 @@ export type XDriveServerBackupPage = {
     truncated?: boolean
     /** Read-only fixed Host namespace counts, not a repository health proof. */
     repositories?: { id: 'v1' | 'v2-default' | 'v2-configured'; snapshot_count: number }[]
+    /** Exact managed-crontab signature only; external schedulers cannot be inferred. */
+    schedule?: {
+      protocol: 'xdrive-host-backup-schedule-v1'
+      source: 'installer_crontab'
+      state: 'registered' | 'not_detected' | 'mismatch' | 'not_configured' | 'unknown'
+      expression: string
+    }
   }
   operation: XDriveServerBackupOperation
   retention?: XDriveServerBackupRetention
