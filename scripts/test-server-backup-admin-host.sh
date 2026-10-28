@@ -20,6 +20,33 @@ cat > "$XD_CONFIG_DIR/bin/xdrive-server" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >> "$XD_BACKUP_ADMIN_TEST_LOG"
+if [[ "$1" == backup && "$2" == delete-snapshot ]]; then
+  shift 2
+  selected=""
+  repository=""
+  yes=0
+  while (( $# > 0 )); do
+    case "$1" in
+      --snapshot) selected="$2"; shift 2 ;;
+      --repository-dir) repository="$2"; shift 2 ;;
+      --yes) yes=1; shift ;;
+      *) exit 2 ;;
+    esac
+  done
+  [[ "$yes" == 1 && "$selected" =~ ^xdrive-backup-[0-9]{8}T[0-9]{6}Z$ &&
+     "$repository" == "$XD_CONFIG_DIR/backups/incremental" ]] || exit 2
+  if [[ "${XD_BACKUP_ADMIN_TEST_DELETE_NOOP:-}" == yes ]]; then exit 0; fi
+  for f in database.dump verify.json manifest.json SHA256SUMS.txt legacy.tar objects.index; do
+    rm -f -- "$repository/snapshots/$selected/$f"
+  done
+  rmdir -- "$repository/snapshots/$selected"
+  if [[ "${XD_BACKUP_ADMIN_TEST_DELETE_FAKE:-}" == yes ]]; then
+    printf '{"mode":"manual_selected","keep_last":1,"retired_snapshots":["wrong-snapshot"],"recovered_transactions":0,"deleted_cas_objects":0,"deleted_cas_logical_bytes":0,"deleted_snapshot_files":6,"deleted_snapshot_file_bytes":30,"verification":"metadata_only","automatic":false}\n'
+    exit 0
+  fi
+  printf '{"mode":"manual_selected","keep_last":1,"retired_snapshots":["%s"],"recovered_transactions":0,"deleted_cas_objects":1,"deleted_cas_logical_bytes":12,"deleted_snapshot_files":6,"deleted_snapshot_file_bytes":30,"verification":"exclusive_lock_and_full_cas_sha256","automatic":false}\n' "$selected"
+  exit 0
+fi
 if [[ "$1" == backup && "$2" == preview-delete-snapshot ]]; then
   if [[ "${XD_BACKUP_ADMIN_TEST_BAD_SELECTED_PREVIEW:-}" == bad ]]; then
     printf '{"protocol":"wrong","delete_enabled":true}\n'
@@ -125,9 +152,9 @@ assert all(x["state"]=="complete" and x["file_data_included"] for x in d["snapsh
 PY
 
 write_request() {
-  python3 - "$dir/backup-admin-request.json" "$1" "$2" "$3" "$4" "$5" "$6" <<'PY'
+  python3 - "$dir/backup-admin-request.json" "$1" "$2" "$3" "$4" "$5" "$6" "${7:-}" <<'PY'
 import datetime,json,sys,uuid
-path,action,snapshot,fmt,mode,keep,confirm=sys.argv[1:]
+path,action,snapshot,fmt,mode,keep,confirm,preview_id=sys.argv[1:]
 request={
   "protocol":"xdrive-backup-admin-v1",
   "request_id":uuid.uuid4().hex[:24],
@@ -139,6 +166,7 @@ request={
   "confirmation":confirm,
   "created_at":datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
 }
+if preview_id: request["preview_request_id"]=preview_id
 with open(path,"w",encoding="utf-8") as out:
     json.dump(request,out,separators=(",",":"))
 PY
@@ -631,4 +659,107 @@ assert "/etc" not in str(r),r
 PY
 rm "$XD_CONFIG_DIR/backups/snapshots/xdrive-backup-20261028T010000Z"
 
-echo 'Admin Server Backup host bridge: CRUD, batch verify, history and safety tests passed'
+# Selected v2 deletion is independent of keep-last prune. The Host accepts
+# exactly one recent deep preview receipt; missing, fast or stale evidence
+# cannot trigger the Manager's destructive subcommand.
+sibling="xdrive-backup-20261027T040000Z"
+fixture "$XD_CONFIG_DIR/backups/incremental/snapshots" v2 "$sibling"
+write_request preview_delete "v2-default:$v2" "" fast "" ""
+backup_admin_process_request "$dir"
+fast_id="$(python3 - "$dir/backup-admin-status.json" <<'PY'
+import json,sys
+print(json.load(open(sys.argv[1],encoding="utf-8"))["request_id"])
+PY
+)"
+cp "$XD_BACKUP_ADMIN_TEST_LOG" "$TMP/before-selected-fast"
+write_request delete_selected "v2-default:$v2" "" "" "" "DELETE v2-default:$v2" "$fast_id"
+backup_admin_process_request "$dir"
+grep -Fq '"state":"failed"' "$dir/backup-admin-status.json"
+cmp "$TMP/before-selected-fast" "$XD_BACKUP_ADMIN_TEST_LOG"
+[[ -d "$XD_CONFIG_DIR/backups/incremental/snapshots/$v2" ]]
+
+# Mismatched preview ID must fail even with exact confirmation.
+write_request preview_delete "v2-default:$v2" "" deep "" ""
+backup_admin_process_request "$dir"
+deep_id="$(python3 - "$dir/backup-admin-status.json" <<'PY'
+import json,sys
+print(json.load(open(sys.argv[1],encoding="utf-8"))["request_id"])
+PY
+)"
+cp "$XD_BACKUP_ADMIN_TEST_LOG" "$TMP/before-selected-wrong-id"
+write_request delete_selected "v2-default:$v2" "" "" "" "DELETE v2-default:$v2" "aaaaaaaaaaaaaaaaaaaaaaaa"
+backup_admin_process_request "$dir"
+grep -Fq '"state":"failed"' "$dir/backup-admin-status.json"
+cmp "$TMP/before-selected-wrong-id" "$XD_BACKUP_ADMIN_TEST_LOG"
+grep -Fq '"error_code":"deep_preview_missing_or_stale"' "$dir/backup-admin-status.json"
+[[ -d "$XD_CONFIG_DIR/backups/incremental/snapshots/$v2" ]]
+
+# Even an exit-zero Manager mock is insufficient without the selected
+# generation actually being retired.
+write_request preview_delete "v2-default:$v2" "" deep "" ""
+backup_admin_process_request "$dir"
+deep_id="$(python3 - "$dir/backup-admin-status.json" <<'PY'
+import json,sys
+print(json.load(open(sys.argv[1],encoding="utf-8"))["request_id"])
+PY
+)"
+export XD_BACKUP_ADMIN_TEST_DELETE_NOOP=yes
+write_request delete_selected "v2-default:$v2" "" "" "" "DELETE v2-default:$v2" "$deep_id"
+backup_admin_process_request "$dir"
+grep -Fq '"state":"failed"' "$dir/backup-admin-status.json"
+unset XD_BACKUP_ADMIN_TEST_DELETE_NOOP
+[[ -d "$XD_CONFIG_DIR/backups/incremental/snapshots/$v2" ]]
+
+# Forged JSON cannot turn an actually removed generation into an accepted
+# success. The target is removed in this disposable fixture, but Host status
+# and history must report an uncertain failure, with no false success receipt.
+write_request preview_delete "v2-default:$v2" "" deep "" ""
+backup_admin_process_request "$dir"
+deep_id="$(python3 - "$dir/backup-admin-status.json" <<'PY'
+import json,sys
+print(json.load(open(sys.argv[1],encoding="utf-8"))["request_id"])
+PY
+)"
+export XD_BACKUP_ADMIN_TEST_DELETE_FAKE=yes
+write_request delete_selected "v2-default:$v2" "" "" "" "DELETE v2-default:$v2" "$deep_id"
+backup_admin_process_request "$dir"
+grep -Fq '"state":"failed"' "$dir/backup-admin-status.json"
+grep -Fq '"error_code":"selected_delete_unverified"' "$dir/backup-admin-status.json"
+[[ ! -e "$XD_CONFIG_DIR/backups/incremental/snapshots/$v2" ]]
+python3 - "$dir/backup-admin-history.json" <<'PY'
+import json,sys
+e=json.load(open(sys.argv[1],encoding="utf-8"))["operations"][0]
+assert e["action"]=="delete_selected" and e["state"]=="failed"
+assert "selected_delete" not in e
+PY
+unset XD_BACKUP_ADMIN_TEST_DELETE_FAKE
+fixture "$XD_CONFIG_DIR/backups/incremental/snapshots" v2 "$v2"
+
+# Fresh deep preview, exact confirmation and matching receipt permit the Host
+# to call ONLY the fixed Server's independently audited selected-retire helper.
+write_request preview_delete "v2-default:$v2" "" deep "" ""
+backup_admin_process_request "$dir"
+deep_id="$(python3 - "$dir/backup-admin-status.json" <<'PY'
+import json,sys
+print(json.load(open(sys.argv[1],encoding="utf-8"))["request_id"])
+PY
+)"
+write_request delete_selected "v2-default:$v2" "" "" "" "DELETE v2-default:$v2" "$deep_id"
+backup_admin_process_request "$dir"
+grep -Fq '"state":"success"' "$dir/backup-admin-status.json"
+grep -Fq "backup delete-snapshot --snapshot $v2 --yes --repository-dir $XD_CONFIG_DIR/backups/incremental" "$XD_BACKUP_ADMIN_TEST_LOG"
+[[ ! -e "$XD_CONFIG_DIR/backups/incremental/snapshots/$v2" ]]
+[[ -d "$XD_CONFIG_DIR/backups/incremental/snapshots/$sibling" ]]
+python3 - "$dir/backup-admin-history.json" <<'PY'
+import json,sys
+row=json.load(open(sys.argv[1],encoding="utf-8"))["operations"][0]
+assert row["action"]=="delete_selected" and row["state"]=="success"
+assert row["snapshot_id"]=="v2-default:xdrive-backup-20261027T030000Z"
+d=row["selected_delete"]
+assert d["retired_snapshots"]==["xdrive-backup-20261027T030000Z"],d
+assert d["verification"]=="exclusive_lock_and_full_cas_sha256" and d["automatic"] is False,d
+assert d["deleted_cas_objects"]==1 and d["deleted_cas_logical_bytes"]==12,d
+assert d["deleted_snapshot_files"]==6 and d["deleted_snapshot_file_bytes"]==30,d
+PY
+
+echo 'Admin Server Backup host bridge: CRUD, batch verify, selected-v2 delete and safety tests passed'

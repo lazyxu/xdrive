@@ -143,6 +143,7 @@ export function XDriveServerBackupManagementPanel({
     selectedPreview.report.mode === 'read_only' &&
     selectedPreview.report.delete_enabled === false &&
     selectedPreview.report.surviving_snapshots >= 1)
+  const selectedDeletionReady = selectedPreviewReady && selectedPreview?.mode === "deep" && selectedComplete
   const policyDays = Number(policyDraft?.days)
   const policyValid = Number.isInteger(policyDays) && policyDays >= 0 && policyDays <= 3650 &&
     !(policyDraft?.format === 'v1' && Boolean(page?.inventory.policy.repository))
@@ -185,6 +186,13 @@ export function XDriveServerBackupManagementPanel({
   const confirm = () => {
     if (!confirmation || confirmText !== confirmation.expected || disabled) return
     const next = confirmation.action
+    if (next.action === "delete_selected" && (!selectedDeletionReady ||
+      !selectedPreview || next.preview_request_id !== selectedPreview.request_id ||
+      next.snapshot_id !== snapshotID)) {
+      setError("深度预览已失效；请重新选择快照并执行 deep 预览。")
+      setConfirmation(null)
+      return
+    }
     setConfirmation(null)
     setConfirmText('')
     void submit(next)
@@ -371,7 +379,7 @@ export function XDriveServerBackupManagementPanel({
             <XDriveActionButton intent="danger" disabled={disabled || !selectedComplete || selected?.format !== 'v1'}
               onClick={() => { if (selected) ask({
                 title: '确认删除旧版 v1 快照？',
-                description: '操作会删除所选传统备份。最后一个有效恢复点不会被删除。v2 不能单独删除文件，必须使用引用感知清理。',
+                description: '操作会删除所选传统 v1 备份。最后一个有效恢复点不会被删除。v2 快照使用独立的 deep 预览和引用感知删除，不能直接删除 CAS 文件。',
                 expected: 'DELETE ' + selected.id,
                 action: { action: 'delete', snapshot_id: selected.id, confirmation: 'DELETE ' + selected.id },
               }) }}>删除 v1 快照</XDriveActionButton>
@@ -379,7 +387,21 @@ export function XDriveServerBackupManagementPanel({
               onClick={() => { if (selected) void submit({
                 action: 'preview_delete', snapshot_id: selected.id, mode: verifyMode,
               }) }}>预览所选 v2 删除影响（只读）</XDriveActionButton>
+            <XDriveActionButton intent="danger" disabled={disabled || !selectedDeletionReady}
+              onClick={() => { if (selected && selectedPreview) ask({
+                title: '确认删除指定 v2 快照？',
+                description: '将永久退役选中的这一代，保留其他备份和其共享 CAS。需要当前会话同一快照的 deep 预览；宿主机仍会在独占锁下再次完整校验。不可撤销，且删除后无法直接恢复这一代。',
+                expected: 'DELETE ' + selected.id,
+                action: {
+                  action: 'delete_selected', snapshot_id: selected.id,
+                  preview_request_id: selectedPreview.request_id,
+                  confirmation: 'DELETE ' + selected.id,
+                },
+              }) }}>删除所选 v2 快照</XDriveActionButton>
           </Stack>
+          <Typography variant="caption" color="text.secondary">
+            指定 v2 快照删除需先选择 deep 校验级别，再对同一快照执行只读预览；只有该次真实校验成功并生成宿主机历史凭据，删除按钮才可用。
+          </Typography>
           {selectedPreviewReady && selectedPreview ? (
             <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 1.5 }}
               data-xdrive-admin-selected-v2-preview>
@@ -401,8 +423,8 @@ export function XDriveServerBackupManagementPanel({
                   不是实际释放的磁盘空间，且不包含硬链接、稀疏分配等影响。
                 </Typography>
                 <Alert severity="info">
-                  此报告不授予删除权限，尚未开放“单独删除 v2”操作。
-                  未来实际删除必须在宿主机独占锁下重新完成所有快照和 CAS 完整性审计。
+                  只有当前会话同一快照的 deep 成功预览、精确二次确认和宿主机历史凭据齐备，
+                  才能申请删除。预览本身不授权删除；最终操作必须重新独占锁完整验证所有引用。
                 </Alert>
               </Stack>
             </Paper>
@@ -655,6 +677,23 @@ export function XDriveServerBackupManagementPanel({
                 {serverBackupReceiptExplanation(historyDetail)}
               </Alert>
               <XDriveBackupVerificationReceipt entry={historyDetail} />
+              {historyDetail.action === 'delete_selected' ? (
+                <Alert severity={historyDetail.state === 'success' && historyDetail.selected_delete
+                  ? 'success' : 'warning'} data-xdrive-admin-backup-selected-delete-receipt>
+                  {historyDetail.state === 'success' && historyDetail.selected_delete
+                    ? ('宿主机已确认退役指定 v2 快照（历史）。完整 CAS 重新校验：' +
+                      historyDetail.selected_delete.verification + '；清理备份 CAS ' +
+                      historyDetail.selected_delete.deleted_cas_objects + ' 个（' +
+                      displayBytes(historyDetail.selected_delete.deleted_cas_logical_bytes) +
+                      ' 逻辑字节）；删除快照文件 ' +
+                      historyDetail.selected_delete.deleted_snapshot_files + ' 个（' +
+                      displayBytes(historyDetail.selected_delete.deleted_snapshot_file_bytes) +
+                      ' 逻辑字节）。保留恢复点 ' +
+                      historyDetail.selected_delete.keep_last + ' 代。')
+                    : '指定 v2 删除失败或结果未得到可信的宿主机回执；请检查现有快照与宿主机私有日志，不要自动重试。'}
+                  {' '}该回执不代表实际回收的文件系统块数，也不证明此刻所有保留备份仍完整。
+                </Alert>
+              ) : null}
               {historyDetail.action === 'drill' ? (
                 <Alert severity={historyDetail.state === 'success' && historyDetail.drill?.state === 'success' &&
                   historyDetail.drill.files_restored && historyDetail.drill.postgresql_restored ? 'success' : 'warning'}

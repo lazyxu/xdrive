@@ -76,10 +76,24 @@ export type XDriveServerBackupDrillReceipt = {
   failure_category: string
 }
 
+export type XDriveServerBackupSelectedDeleteReceipt = {
+  mode: 'manual_selected'
+  keep_last: number
+  retired_snapshots: string[]
+  recovered_transactions: number
+  deleted_cas_objects: number
+  deleted_cas_logical_bytes: number
+  deleted_snapshot_files: number
+  deleted_snapshot_file_bytes: number
+  verification: 'exclusive_lock_and_full_cas_sha256'
+  automatic: false
+}
+
 export type XDriveServerBackupHistoryEntry = XDriveServerBackupOperation & {
   mode?: 'fast' | 'deep'
   verification?: XDriveServerBackupVerificationReceipt
   drill?: XDriveServerBackupDrillReceipt
+  selected_delete?: XDriveServerBackupSelectedDeleteReceipt
 }
 
 export type XDriveServerBackupVerifyAllReport = {
@@ -152,6 +166,7 @@ export type XDriveServerBackupRequest =
   | { action: 'restore'; snapshot_id: string; confirmation: string }
   | { action: 'drill'; snapshot_id: string; confirmation: string }
   | { action: 'delete'; snapshot_id: string; confirmation: string }
+  | { action: 'delete_selected'; snapshot_id: string; confirmation: string; preview_request_id: string }
   | { action: 'prune'; keep_last: number; confirmation: string }
   | { action: 'policy'; format: 'v1' | 'v2'; retention_days: number; revision: string }
 

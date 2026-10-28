@@ -301,21 +301,24 @@ The fast mode validates committed snapshot checksums and repository CAS
 presence/size; deep additionally hashes every repository CAS object. Neither
 mode measures real allocated filesystem blocks or authorizes deletion. The
 subsequent exclusive prune **always** repeats a deep check. This internal
-helper is intentionally not yet wired to a web UI, scheduled job or remote
-Host-admin action; those require independent source-bound confirmation.
+helper never authorizes deletion by itself. The separate authenticated Admin
+read-only preview action is defined below; it does not introduce automatic
+scheduled deletion or a browser-controlled Host path.
 
-**Host guard:** both manual prune modes reuse identical checks against
-the configured live file source and the Server container's actual /data mount,
-require an existing regular backup repository lock, and run the exact Server
-image's helper with one writable backup-repository bind and `--network none`.
+**Host guard:** the selected deletion and read-only preview both reuse fixed
+checks against the configured live file source and the Server container's
+actual /data mount, and require an existing regular backup repository lock.
+The deletion helper uses an exclusive repository lease and a writable backup
+repository bind; preview uses a **read-only** bind (and a shared lease in deep
+mode). Both use `--network none` and the exact Server image helper.
 Invalid names, symlink aliases, missing generations and unexpected arguments
 are rejected before Docker starts. The lower-level helper independently
 revalidates safety under its exclusive lease.
 
 **Scope:** no automatic v2 GC, no scheduling, no browser-controlled Host path
-or shell command, and no production data deletion. The authenticated Admin
-selected-deletion UI, preview-specific binding, and protected confirmation
-remain **not implemented** and require a subsequent separately validated PR.
+or shell command, and no production data deletion. The authenticated Admin preview and specifically confirmed selected-deletion
+paths are implemented in this **Draft PR**, but remain **unmerged and not
+production-validated** until their source/CI gates pass.
 Production physical acceptance remains **跳过（未验收）**.
 
 ## Administrator Web / Desktop shared interface (Host-owned Server backups)
@@ -334,11 +337,17 @@ separate from owning-device Push backups and from online CAS storage checks.
   Immutable snapshot objects are never edited. The original schedule is
   retained; changing to v2 does not enable scheduled pruning.
 - **Delete**: separate explicitly confirmed v1 snapshot deletion with a
-  restricted file allowlist; v2 currently permits only the existing
-  `backup prune --keep-last N --yes` and revalidates shared CAS references.
-  A selected v2 read-only impact preview is being added, **not** a new
-  browser deletion action. The Host-only selected deletion remains an
-  independently validated follow-up; never treat preview as permission to delete.
+  restricted file allowlist. Existing merged v2 management supports manual
+  reference-aware `backup prune --keep-last N --yes`; this Draft additionally
+  implements exact selected-generation deletion. For precise v2 deletion, the
+  Admin UI requires a current selected-snapshot
+  **deep** read-only preview and an exact typed `DELETE <snapshot_id>` confirmation.
+  Host Control independently authenticates the most recent deep-preview request,
+  holds upgrade/schedule/backup operation fences, and runs the separate Host-only
+  `backup delete-snapshot` command. The helper reacquires an exclusive repository
+  lock and fully revalidates every surviving CAS reference and committed generation,
+  refuses deletion of the last v2 restore point, and journals the retirement.
+  No auto-replay of partial or ambiguous destructive operations is permitted.
 - **Verify / restore**: checksum validation and optional full v2 CAS hashing.
   Restoration requires typing the exact snapshot identity and uses the
   original Host command with mandatory pre-restore safety backup.
@@ -354,8 +363,24 @@ request ID. The UI only presents the current matching successful receipt:
 selected metadata bytes, exclusive/shared CAS counts, orphan CAS and a
 logical reclaim estimate. It is **not** a destructive operation or evidence
 of actual free disk blocks. Changing the snapshot, audit mode, Host or
-operation invalidates the UI's preview. No `delete_selected` Admin action
-exists until the independent Host path, safety review and tests complete.
+operation invalidates the UI's preview. The separate `delete_selected` Admin action
+requires the *matching successful deep preview ID* plus the precise snapshot identity
+and exact human confirmation. The Host independently rereads the previous success
+receipt and its history, refuses stale or forged evidence, then invokes only the
+fixed selected-v2 Host wrapper. The preview does not authorize bypassing the
+exclusive full SHA-256 revalidation performed by the deletion worker.
+
+The selected-v2 delete Host adapter also requires an exact JSON result from
+the fixed source-owned `delete-snapshot` helper. A zero exit code or a missing
+target directory without the matching `manual_selected`, exclusive-deep
+SHA-256 receipt **does not count as success**. The Host writes a bounded,
+structured history entry with retired snapshot identity, CAS objects and
+logical bytes, removed snapshot files and verification mode **before** it
+publishes success. An absent or forged result, or failure to persist its
+history, is an uncertain failure requiring operator inspection; it must never
+trigger an automatic destructive retry. The shared Admin history shows these
+historical counts without claiming current recoverability or physical disk
+allocation savings.
 
 The API itself has neither a Docker socket nor arbitrary Host file access.
 Commands are chosen from a fixed allowlist, executed only by the existing

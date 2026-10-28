@@ -2557,13 +2557,13 @@ backup_admin_history_append() {
     "$snapshot" "$mode" "$started" "$finished" "$error_code" "$proof_path" <<'PY'
 import json, os, re, stat, sys, tempfile
 path,state,action,rid,snapshot,mode,started,finished,code,proof_path=sys.argv[1:]
-if state not in ("success","failed") or action not in ("create","verify","verify_all","preview_delete","drill","plan","restore","delete","prune","policy"):
+if state not in ("success","failed") or action not in ("create","verify","verify_all","preview_delete","drill","plan","restore","delete","delete_selected","prune","policy"):
     sys.exit(2)
 if not re.fullmatch(r"[0-9a-f]{24}",rid) or not re.fullmatch(r"[a-z_]{0,60}",code):
     sys.exit(2)
 if snapshot and not re.fullmatch(r"(v1|v2-default|v2-configured):xdrive-backup-[0-9]{8}T[0-9]{6}Z",snapshot):
     sys.exit(2)
-if (action in ("verify","preview_delete","drill","restore","delete")) != bool(snapshot):
+if (action in ("verify","preview_delete","drill","restore","delete","delete_selected")) != bool(snapshot):
     sys.exit(2)
 if (action in ("verify","preview_delete","verify_all","plan")) != (mode in ("fast","deep")):
     sys.exit(2)
@@ -2583,7 +2583,7 @@ if os.path.lexists(path):
         sys.exit(2)
     old=data.get("operations")
     if not isinstance(old,list) or len(old)>30: sys.exit(2)
-if action in ("drill","preview_delete") and not snapshot.startswith(("v2-default:","v2-configured:")): sys.exit(2)
+if action in ("drill","preview_delete","delete_selected") and not snapshot.startswith(("v2-default:","v2-configured:")): sys.exit(2)
 entry=dict(protocol="xdrive-backup-admin-v1",request_id=rid,action=action,
     snapshot_id=snapshot,mode=mode,state=state,started_at=started,
     finished_at=finished,error_code=code)
@@ -2678,6 +2678,42 @@ if action=="drill" and proof_path:
         entry["drill"]=d
     except (OSError,ValueError,UnicodeError,TypeError,KeyError):
         pass
+# A successful selected-v2 retirement MUST have an exact, structured
+# source-owned report; otherwise do not record a durable success.
+if action=="delete_selected" and state=="success":
+    if not proof_path:
+        sys.exit(2)
+    try:
+        fd=os.open(proof_path,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+        with os.fdopen(fd,"rb") as f:
+            st=os.fstat(f.fileno())
+            if not stat.S_ISREG(st.st_mode) or not 0<st.st_size<=2048:
+                raise ValueError("unsafe retirement receipt")
+            raw=f.read(2049)
+        def unique_selected(pairs):
+            obj={}
+            for k,v in pairs:
+                if k in obj: raise ValueError("duplicate retirement property")
+                obj[k]=v
+            return obj
+        d=json.loads(raw.decode("utf-8"),object_pairs_hook=unique_selected)
+        keys={"mode","keep_last","retired_snapshots","recovered_transactions",
+              "deleted_cas_objects","deleted_cas_logical_bytes",
+              "deleted_snapshot_files","deleted_snapshot_file_bytes",
+              "verification","automatic"}
+        if (not isinstance(d,dict) or set(d)!=keys or
+            d["mode"]!="manual_selected" or d["automatic"] is not False or
+            d["verification"]!="exclusive_lock_and_full_cas_sha256" or
+            d["retired_snapshots"]!=[snapshot.split(":",1)[1]]):
+            raise ValueError("untrusted selected retirement")
+        for key in keys-{"mode","retired_snapshots","verification","automatic"}:
+            value=d[key]
+            ceiling=1000 if key=="keep_last" else 1000000000 if key.endswith(("objects","files","transactions")) else 9007199254740991
+            if type(value) is not int or value < (1 if key=="keep_last" else 0) or value>ceiling:
+                raise ValueError("invalid retirement counter")
+        entry["selected_delete"]=d
+    except (OSError,ValueError,KeyError,TypeError,UnicodeError):
+        sys.exit(2)
 events=[entry]+[x for x in old if isinstance(x,dict) and x.get("request_id")!=rid]
 raw=(json.dumps(dict(protocol="xdrive-backup-admin-history-v1",operations=events[:30]),
                 ensure_ascii=False,separators=(",",":"))+"\n").encode()
@@ -3042,8 +3078,129 @@ PY
     "宿主机正在逐代校验备份。" "$started" "" "$stage" 0 0
 }
 
+# Read-only deep evidence is necessary but never sufficient to delete.
+# This fence verifies the last successful Host preview and its exact identity;
+# the immutable-CAS retirement helper independently performs a fresh full deep
+# audit under its exclusive repository lock before any mutation.
+backup_admin_valid_selected_deletion_preview() {
+  local dir="$1" expected_id="$2" expected_snapshot="$3"
+  [[ "$expected_id" =~ ^[0-9a-f]{24}$ &&
+     "$expected_snapshot" =~ ^v2-(default|configured):xdrive-backup-[0-9]{8}T[0-9]{6}Z$ ]] || return 1
+  python3 - "$dir/backup-admin-selected-preview.json" "$dir/backup-admin-history.json" \
+      "$expected_id" "$expected_snapshot" <<'PY'
+import datetime, json, os, re, stat, sys
+preview_path, history_path, expected_id, expected_snapshot = sys.argv[1:]
+def load(path, max_bytes):
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, "rb") as f:
+        st = os.fstat(f.fileno())
+        if not stat.S_ISREG(st.st_mode) or not 0 < st.st_size <= max_bytes:
+            raise ValueError("unsafe host record")
+        raw = f.read(max_bytes + 1)
+    def unique_pairs(pairs):
+        out = {}
+        for key, value in pairs:
+            if key in out: raise ValueError("duplicate key")
+            out[key] = value
+        return out
+    return json.loads(raw.decode("utf-8"), object_pairs_hook=unique_pairs)
+try:
+    p = load(preview_path, 4096)
+    h = load(history_path, 32768)
+    if not isinstance(p, dict) or set(p) != {
+        "protocol","request_id","snapshot_id","mode","report"}:
+        raise ValueError("unsafe preview envelope")
+    if (p["protocol"] != "xdrive-host-selected-v2-preview-v1"
+        or p["request_id"] != expected_id
+        or p["snapshot_id"] != expected_snapshot or p["mode"] != "deep"):
+        raise ValueError("deep preview mismatch")
+    report = p["report"]
+    expected_fields = {
+        "protocol","mode","validation","snapshot","committed_snapshots",
+        "surviving_snapshots","selected_snapshot_bytes","selected_cas_objects",
+        "shared_cas_objects","exclusive_cas_objects","exclusive_cas_bytes",
+        "unreferenced_objects","unreferenced_bytes","potential_logical_bytes",
+        "hashed_objects","hashed_bytes","delete_enabled"}
+    if not isinstance(report, dict) or set(report) != expected_fields:
+        raise ValueError("unsafe preview report")
+    if (report["protocol"] != "xdrive-backup-selected-prune-plan-v1"
+        or report["mode"] != "read_only"
+        or report["validation"] != "snapshot_sha256_and_full_cas_sha256"
+        or report["snapshot"] != expected_snapshot.split(":",1)[1]
+        or report["delete_enabled"] is not False):
+        raise ValueError("preview cannot authorize deletion")
+    numeric = expected_fields - {"protocol","mode","validation","snapshot","delete_enabled"}
+    for key in numeric:
+        maximum = 1000000000 if key.endswith("objects") or key.endswith("snapshots") else 9007199254740991
+        if type(report[key]) is not int or not 0 <= report[key] <= maximum:
+            raise ValueError("invalid preview count")
+    if (not 2 <= report["committed_snapshots"] <= 1000 or
+        report["surviving_snapshots"] != report["committed_snapshots"] - 1 or
+        report["selected_cas_objects"] != report["shared_cas_objects"] +
+                report["exclusive_cas_objects"] or
+        report["hashed_objects"] < report["selected_cas_objects"] + report["unreferenced_objects"] or
+        report["hashed_bytes"] < report["exclusive_cas_bytes"] + report["unreferenced_bytes"] or
+        report["potential_logical_bytes"] != report["selected_snapshot_bytes"] +
+                report["exclusive_cas_bytes"] + report["unreferenced_bytes"]):
+        raise ValueError("unsafe preview totals")
+    events = h.get("operations") if isinstance(h, dict) and h.get("protocol") == "xdrive-backup-admin-history-v1" else None
+    if not isinstance(events, list) or not 1 <= len(events) <= 30:
+        raise ValueError("missing host audit receipt")
+    last = events[0]
+    if not isinstance(last,dict) or (last.get("action"),last.get("state"),
+        last.get("request_id"),last.get("snapshot_id"),last.get("mode")) != (
+            "preview_delete","success",expected_id,expected_snapshot,"deep"):
+        raise ValueError("stale or mismatched history")
+    ended = datetime.datetime.fromisoformat(last["finished_at"].replace("Z","+00:00"))
+    now = datetime.datetime.now(datetime.timezone.utc)
+    if not 0 <= (now-ended).total_seconds() < 900:
+        raise ValueError("expired deep preview")
+except (OSError,ValueError,TypeError,KeyError,AttributeError,UnicodeError,OverflowError):
+    sys.exit(1)
+PY
+}
+
+# Validate exact source-owned retirement JSON. Exit zero alone cannot
+# attest which snapshot was retired or whether exclusive CAS hashing ran.
+backup_admin_valid_selected_deletion_result() {
+  local proof="$1" selected="$2"
+  python3 - "$proof" "$selected" <<'PY'
+import json,os,re,stat,sys
+path,selected=sys.argv[1:]
+try:
+    if not re.fullmatch(r"v2-(default|configured):xdrive-backup-[0-9]{8}T[0-9]{6}Z", selected):
+        raise ValueError("invalid selected identity")
+    fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+    with os.fdopen(fd,"rb") as f:
+        st=os.fstat(f.fileno())
+        if not stat.S_ISREG(st.st_mode) or not 0<st.st_size<=2048: raise ValueError("unsafe proof")
+        raw=f.read(2049)
+    def unique(pairs):
+        out={}
+        for key,val in pairs:
+            if key in out: raise ValueError("duplicate proof key")
+            out[key]=val
+        return out
+    d=json.loads(raw.decode("utf-8"),object_pairs_hook=unique)
+    keys={"mode","keep_last","retired_snapshots","recovered_transactions",
+        "deleted_cas_objects","deleted_cas_logical_bytes","deleted_snapshot_files",
+        "deleted_snapshot_file_bytes","verification","automatic"}
+    if (not isinstance(d,dict) or set(d)!=keys or
+        d["mode"]!="manual_selected" or d["automatic"] is not False or
+        d["verification"]!="exclusive_lock_and_full_cas_sha256" or
+        d["retired_snapshots"]!=[selected.split(":",1)[1]]): raise ValueError("invalid proof")
+    for key in keys-{"mode","retired_snapshots","verification","automatic"}:
+        value=d[key]
+        limit=1000 if key=="keep_last" else 1000000000 if key.endswith(("objects","files","transactions")) else 9007199254740991
+        if type(value) is not int or value<(1 if key=="keep_last" else 0) or value>limit:
+            raise ValueError("invalid counter")
+except (OSError,ValueError,KeyError,TypeError,UnicodeError):
+    sys.exit(1)
+PY
+}
+
 backup_admin_execute() {
-  local action="$1" snapshot="$2" fmt="$3" mode="$4" keep="$5" days="$6" revision="$7" confirm="$8"
+  local action="$1" snapshot="$2" fmt="$3" mode="$4" keep="$5" days="$6" revision="$7" confirm="$8" preview_id="${9:-}"
   local target install_guard="$STATE_DIR/install.lock"
   # A standalone Host installer may be upgrading the Server outside this
   # controller's process. Never overlap its transactional install.lock with
@@ -3121,6 +3278,22 @@ backup_admin_execute() {
       fi
       XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup verify "$target" || return
       XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" restore "$target" --yes ;;
+    delete_selected)
+      [[ "$snapshot" == v2-* && "$confirm" == "DELETE $snapshot" &&
+         "$preview_id" =~ ^[0-9a-f]{24}$ && -z "$fmt" && -z "$mode" &&
+         ( -z "$keep" || "$keep" == 0 ) &&
+         ( -z "$days" || "$days" == 0 ) && -z "$revision" ]] || return 2
+      # Second, Host-owned fence. The browser may not provide a repository,
+      # live filesystem path, image or a fallback deletion strategy.
+      backup_admin_valid_selected_deletion_preview "$(control_dir)" "$preview_id" "$snapshot" || return 76
+      target="$(backup_admin_snapshot_directory "$snapshot")" || return 2
+      [[ -n "$XD_BACKUP_ADMIN_SELECTED_DELETE_JSON_FILE" ]] || return 78
+      XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup delete-snapshot \
+        --snapshot "${snapshot#*:}" --yes \
+        --repository-dir "$(dirname "$(dirname "$target")")" > "$XD_BACKUP_ADMIN_SELECTED_DELETE_JSON_FILE" || return
+      # A missing or forged CLI result is a failure even if the target vanished.
+      backup_admin_valid_selected_deletion_result "$XD_BACKUP_ADMIN_SELECTED_DELETE_JSON_FILE" "$snapshot" || return 78
+      [[ ! -e "$target" && ! -L "$target" ]] || return 78 ;;
     delete)
       [[ "$confirm" == "DELETE $snapshot" ]] || return 2
       backup_admin_delete_v1 "$snapshot" ;;
@@ -3223,9 +3396,9 @@ PY
 
 backup_admin_process_request() {
   local dir="$1" request="$dir/backup-admin-request.json" active="$dir/backup-admin-active.json"
-  local protocol id action snapshot fmt mode keep days revision confirm created started result=0 log tmp
+  local protocol id action snapshot fmt mode keep days revision confirm preview_id created started result=0 log tmp
   local progress_file="$dir/backup-admin-progress.env"
-  local verify_file="" drill_file="" bulk_file="" bulk_progress="$dir/backup-admin-verify-all-progress.json"
+  local verify_file="" drill_file="" selected_delete_file="" bulk_file="" bulk_progress="$dir/backup-admin-verify-all-progress.json"
   [[ -f "$request" && ! -L "$request" && ! -e "$active" && ! -L "$active" ]] || return 0
   mv -- "$request" "$active" || return 0
   protocol="$(json_value "$active" protocol)"
@@ -3238,6 +3411,7 @@ backup_admin_process_request() {
   days="$(backup_admin_json_int "$active" retention_days)"
   revision="$(json_value "$active" revision)"
   confirm="$(json_value "$active" confirmation)"
+  preview_id="$(json_value "$active" preview_request_id)"
   created="$(json_value "$active" created_at)"
   if [[ "$protocol" != "$backup_admin_protocol" || ! "$id" =~ ^[0-9a-f]{24}$ ]] ||
      ! request_time_is_fresh "$created"; then
@@ -3253,6 +3427,8 @@ backup_admin_process_request() {
     verify_file="$(mktemp "$LOG_DIR/.backup-admin-verify.XXXXXXXX" 2>/dev/null || true)"
   elif [[ "$action" == drill ]]; then
     drill_file="$(mktemp "$LOG_DIR/.backup-admin-drill.XXXXXXXX" 2>/dev/null || true)"
+  elif [[ "$action" == delete_selected ]]; then
+    selected_delete_file="$(mktemp "$LOG_DIR/.backup-admin-selected-delete.XXXXXXXX" 2>/dev/null || true)"
   elif [[ "$action" == verify_all ]]; then
     bulk_file="$(mktemp "$LOG_DIR/.backup-admin-verify-all.XXXXXXXX" 2>/dev/null || true)"
   fi
@@ -3283,12 +3459,13 @@ backup_admin_process_request() {
           if [[ "$action" == create ]]; then export XD_BACKUP_PROGRESS_FILE="$progress_file"; fi
           if [[ "$action" == verify ]]; then export XD_BACKUP_ADMIN_VERIFY_JSON_FILE="$verify_file"; fi
           if [[ "$action" == drill ]]; then export XD_BACKUP_ADMIN_DRILL_JSON_FILE="$drill_file"; fi
+          if [[ "$action" == delete_selected ]]; then export XD_BACKUP_ADMIN_SELECTED_DELETE_JSON_FILE="$selected_delete_file"; fi
           if [[ "$action" == verify_all ]]; then
             export XD_BACKUP_ADMIN_REQUEST_ID="$id"
             export XD_BACKUP_ADMIN_BULK_REPORT_FILE="$bulk_file"
             export XD_BACKUP_ADMIN_BULK_PROGRESS_FILE="$bulk_progress"
           fi
-          XD_CONFIG_DIR="$XDRIVE_HOME" backup_admin_execute "$action" "$snapshot" "$fmt" "$mode" "$keep" "$days" "$revision" "$confirm"
+          XD_CONFIG_DIR="$XDRIVE_HOME" backup_admin_execute "$action" "$snapshot" "$fmt" "$mode" "$keep" "$days" "$revision" "$confirm" "$preview_id"
         ) > "$log" 2>&1 &
         pid=$!
         while kill -0 "$pid" 2>/dev/null; do
@@ -3341,24 +3518,48 @@ backup_admin_process_request() {
       result=1
     fi
   fi
-  local finished="$(now_utc)" history_state=success history_error=""
+  local finished="$(now_utc)" history_state=success history_error="" selected_history_written=0
+  # A destructive success must not precede its durable Host evidence.
+  # Failure to persist is an uncertain outcome requiring operator inspection.
+  if [[ "$result" == 0 && "$action" == delete_selected ]]; then
+    if backup_admin_history_append "$dir" success "$action" "$id" "$snapshot" "$mode" "$started" "$finished" "" "$selected_delete_file"; then
+      selected_history_written=1
+    else
+      result=78
+    fi
+  fi
   if [[ "$result" == 0 ]]; then
     backup_admin_status "$dir" success "$action" "$id" "$snapshot" "" "备份操作已完成。" "$started" "$finished"
   else
     history_state=failed
     history_error=operation_failed
-    [[ "$result" == 75 ]] && history_error=lock_busy
-    backup_admin_status "$dir" failed "$action" "$id" "$snapshot" "$history_error" "操作失败；请查看宿主机私有日志。" "$started" "$finished"
+    local failure_message="操作失败；请查看宿主机私有日志。"
+    if [[ "$result" == 75 ]]; then
+      history_error=lock_busy
+    elif [[ "$action" == delete_selected && "$result" == 76 ]]; then
+      history_error=deep_preview_missing_or_stale
+      failure_message="深度预览缺失、过期或不匹配，请重新执行 deep 只读预览。"
+    elif [[ "$action" == delete_selected && "$result" == 78 ]]; then
+      history_error=selected_delete_unverified
+      failure_message="删除结果无法核实；请先刷新备份清单并检查宿主机私有日志，不要自动重试。"
+    fi
+    backup_admin_status "$dir" failed "$action" "$id" "$snapshot" "$history_error" "$failure_message" "$started" "$finished"
   fi
-  # A history I/O failure cannot change the actual backup outcome.
-  backup_admin_history_append "$dir" "$history_state" "$action" "$id" "$snapshot" "$mode" "$started" "$finished" "$history_error" "${verify_file:-$drill_file}" ||
-    echo "[xDrive] warning: private backup history not persisted" >&2
+  # Other actions remain best-effort; selected destructive success requires
+  # a durable receipt before publishing its terminal success status.
+  if [[ "$selected_history_written" != 1 ]]; then
+    backup_admin_history_append "$dir" "$history_state" "$action" "$id" "$snapshot" "$mode" "$started" "$finished" "$history_error" "${verify_file:-${drill_file:-$selected_delete_file}}" ||
+      echo "[xDrive] warning: private backup history not persisted" >&2
+  fi
   rm -f "$active"
   if [[ -n "$verify_file" && -f "$verify_file" && ! -L "$verify_file" ]]; then
     rm -f -- "$verify_file"
   fi
   if [[ -n "$drill_file" && -f "$drill_file" && ! -L "$drill_file" ]]; then
     rm -f -- "$drill_file"
+  fi
+  if [[ -n "$selected_delete_file" && -f "$selected_delete_file" && ! -L "$selected_delete_file" ]]; then
+    rm -f -- "$selected_delete_file"
   fi
   if [[ -n "$bulk_file" && -f "$bulk_file" && ! -L "$bulk_file" ]]; then
     rm -f -- "$bulk_file"
