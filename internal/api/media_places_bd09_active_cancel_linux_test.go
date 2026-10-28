@@ -54,7 +54,7 @@ func TestPlacesBD09Owner95kActivePostgresCancellation(t *testing.T) {
 		// Explicitly exclude this monitor from its own activity predicate.
 		const activeSQL = "SELECT count(*) FROM pg_stat_activity WHERE state='active' AND datname=current_database() AND pid<>pg_backend_pid() AND query LIKE '%xd_baidu_photo_map_positions%' AND query NOT LIKE '%pg_stat_activity%'"
 		active := int64(0)
-		deadline := time.Now().Add(5*time.Second)
+		deadline := time.Now().Add(5 * time.Second)
 		for active == 0 && time.Now().Before(deadline) {
 			select {
 			case <-done:
