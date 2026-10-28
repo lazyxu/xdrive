@@ -558,6 +558,7 @@ func (s *Server) Router() *gin.Engine {
 	admin.GET("/update", s.adminServerUpdateStatus)
 	admin.POST("/update", s.adminStartServerUpdate)
 	admin.GET("/backups", s.adminBackupManagement)
+	admin.GET("/backups/snapshots", s.adminBackupSnapshotPage)
 	admin.POST("/backups/actions", s.adminSubmitBackupManagement)
 	admin.GET("/storage", s.adminStorageStats)
 	admin.GET("/storage/health", s.adminStorageHealth)

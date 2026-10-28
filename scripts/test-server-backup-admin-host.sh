@@ -789,6 +789,44 @@ assert d["repositories"][0]["snapshot_count"]>=105,d
 assert sum(x["snapshot_count"] for x in d["repositories"])==d["total_snapshots"],d
 assert len({r["id"] for r in d["snapshots"]})==100
 PY
+# The read-only Host index must include older generations beyond the UI's
+# newest 100, without exposing Host paths or implying recovery readiness.
+python3 - "$dir/backup-admin-inventory.json" "$dir/backup-admin-snapshot-index.json" <<'PY'
+import json,sys
+inventory=json.load(open(sys.argv[1],encoding="utf-8"))
+index=json.load(open(sys.argv[2],encoding="utf-8"))
+assert index["protocol"]=="xdrive-backup-snapshot-index-v1",index
+assert index["policy_revision"]==inventory["policy"]["revision"],index
+assert index["total_snapshots"]==inventory["total_snapshots"],index
+assert index["indexed_snapshots"]==len(index["snapshot_ids"]),index
+assert index["truncated"] is False,index
+assert len(index["snapshot_ids"])>100,index
+assert index["snapshot_ids"][:100]==[s["id"] for s in inventory["snapshots"]],index
+assert all(x.startswith(("v1:","v2-default:","v2-configured:")) and "/" not in x
+           for x in index["snapshot_ids"]),index
+assert len(set(index["snapshot_ids"]))==len(index["snapshot_ids"]),index
+PY
+# >1000 snapshots: keep accurate total, clearly disclose the index cap.
+for (( n=0; n<900; n++ )); do
+  printf -v extra 'xdrive-backup-20240202T%02d%02d00Z' "$((n / 60))" "$((n % 60))"
+  mkdir "$XD_CONFIG_DIR/backups/snapshots/$extra"
+done
+backup_admin_inventory "$dir"
+python3 - "$dir/backup-admin-inventory.json" "$dir/backup-admin-snapshot-index.json" "$base_total" <<'PY'
+import json,sys
+inventory=json.load(open(sys.argv[1],encoding="utf-8"))
+index=json.load(open(sys.argv[2],encoding="utf-8"))
+assert index["total_snapshots"]==int(sys.argv[3])+105+900,index
+assert index["indexed_snapshots"]==len(index["snapshot_ids"])==1000,index
+assert index["truncated"] is True,index
+assert inventory["total_snapshots"]==index["total_snapshots"],inventory
+assert index["snapshot_ids"][:100]==[s["id"] for s in inventory["snapshots"]],index
+assert len(set(index["snapshot_ids"]))==1000,index
+PY
+for (( n=0; n<900; n++ )); do
+  printf -v extra 'xdrive-backup-20240202T%02d%02d00Z' "$((n / 60))" "$((n % 60))"
+  rmdir "$XD_CONFIG_DIR/backups/snapshots/$extra"
+done
 for (( n=0; n<105; n++ )); do
   printf -v older 'xdrive-backup-20250101T%02d%02d00Z' "$((n / 60))" "$((n % 60))"
   rmdir "$XD_CONFIG_DIR/backups/snapshots/$older"

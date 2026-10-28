@@ -619,6 +619,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("POST /v1/cloud/admin-audit/range", h.cloudAdminAuditRange)
 	mux.HandleFunc("POST /v1/cloud/admin-storage", h.cloudAdminStorage)
 	mux.HandleFunc("GET /v1/cloud/admin-backups", h.cloudAdminServerBackups)
+	mux.HandleFunc("GET /v1/cloud/admin-backups/snapshots", h.cloudAdminBackupSnapshotPage)
 	mux.HandleFunc("POST /v1/cloud/admin-backups/actions", h.cloudAdminServerBackupAction)
 	mux.HandleFunc("GET /v1/cloud/admin-users", h.cloudAdminUsers)
 	mux.HandleFunc("POST /v1/cloud/admin-users", h.cloudAdminCreateUser)
