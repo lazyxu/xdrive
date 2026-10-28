@@ -205,3 +205,43 @@ test('real Chromium proves both SDK Hosts never paint mixed native labels and si
   assert.match(fixture,/cells:mixedMarkerMap\?\[first,other\]:\[first\]/)
   assert.match(browser,/presentation\.pins===1&&presentation\.cellCount===2/)
 })
+
+test('measured Parent-only controls protect their own wrapped buttons without a bottom dock',()=>{
+  // The real count/action pills occupy only the right-hand part of this
+  // canvas. A free photo in the same bottom row must not be discarded.
+  const pins=[
+    {id:'under-controls',count:90,x:470,y:605},
+    {id:'free-bottom',count:80,x:200,y:605},
+    {id:'free-above',count:70,x:470,y:480},
+  ]
+  const controls=[{left:408,top:566,right:555,bottom:686}]
+  assert.deepEqual(xDriveSelectVisibleMapPhotoCovers(pins,900,700,false,controls)
+    .map(pin=>pin.id),['free-bottom','free-above'])
+  assert.deepEqual(xDriveSelectVisibleMapPhotoCovers(pins,900,700,false)
+    .map(pin=>pin.id),['free-above'],
+    'before real DOM measurement the safe legacy bottom boundary remains')
+  for (const invalid of [
+    {left:-100,top:0,right:200,bottom:120},
+    {left:NaN,top:0,right:200,bottom:120},
+    {left:400,top:60,right:300,bottom:120},
+  ]) assert.deepEqual(xDriveSelectVisibleMapPhotoCovers(
+    pins,900,700,false,[invalid]).map(pin=>pin.id),['free-above'])
+  assert.deepEqual(pins.map(pin=>pin.count),[90,80,70],
+    'cosmetic overlay exclusions never mutate Owner count or signed Cell')
+})
+
+test('both SDK Hosts receive the same current React layout exclusions',()=>{
+  const parent=fs.readFileSync(path.join(root,
+    'ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx'),'utf8')
+  const driver=fs.readFileSync(path.join(root,
+    'desktop/scripts/gallery-places-dual-host-chromium.cjs'),'utf8')
+  assert.match(parent,/ref=\{summaryElement\} data-xdrive-places-map-photo-summary/)
+  assert.match(parent,/ref=\{errorElement\} role="alert"/)
+  assert.match(parent,/new win\.ResizeObserver\(measure\)/)
+  assert.match(parent,/setOverlayRects\(/)
+  assert.match(parent,/projected\.width, projected\.height, edgeToEdge, overlayRects\)/)
+  assert.match(parent,/summary,edgeToEdge,loadThumbnail,overlayRects\]/)
+  assert.match(parent,/mapFrameRef\.current\?\.setPhotoCoverSelections\?\.\(/)
+  assert.match(driver,/testMapOverlayPinOcclusion/)
+  assert.doesNotMatch(parent,/data-xdrive-places-photo-collection-strip/)
+})
