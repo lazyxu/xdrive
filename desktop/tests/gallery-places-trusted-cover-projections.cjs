@@ -6,7 +6,7 @@ const path = require('node:path')
 const ts = require('typescript')
 
 const root = path.resolve(__dirname, '../..')
-const sourceFile = 'ui/shared/src/media-gallery-places-map-strip.ts'
+const sourceFile = 'ui/shared/src/media-gallery-places-map-pins.ts'
 const source = fs.readFileSync(path.join(root, sourceFile), 'utf8')
 const compiled = ts.transpileModule(source, {
   fileName: sourceFile,
@@ -19,7 +19,7 @@ assert.deepEqual((compiled.diagnostics || [])
 const fixture = {exports:{}}
 new Function('module', 'exports', compiled.outputText)(fixture, fixture.exports)
 const {
-  xDriveVerifiedMapPhotoProjections, xDriveCurrentMapPhotoCollections,
+  xDriveVerifiedMapPhotoProjections,
   xDriveSelectVisibleMapPhotoCovers, XDRIVE_PLACES_MAP_COVER_MAX,
 } = fixture.exports
 
@@ -40,7 +40,6 @@ test('shared Owner /cells is sole authority for both cover count and selected ph
   assert.equal(verified[0].count,2)
   assert.equal(verified[0].x,194)
   assert.equal(verified[0].y,270)
-  assert.deepEqual(xDriveCurrentMapPhotoCollections(page(),projected(),approved),verified)
 })
 
 test('untrusted SDK cannot spoof count, Owner identity, bounds or pixel geometry', () => {
@@ -90,59 +89,57 @@ test('inline and isolated hosts consume the exact same trusted cover projections
   const surface=fs.readFileSync(path.join(root,
     'ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx'),'utf8')
   assert.match(surface,/xDriveVerifiedMapPhotoProjections\(\s*trustedSummary, projected, accessible\.map\(cell => cell\.selection\)\)/)
-  assert.match(surface,/xDriveCurrentMapPhotoCollections\(trustedSummary, projected,/)
   assert.doesNotMatch(surface,/\[\.\.\.projected\.cells\]\.sort/)
   assert.match(surface,/xDriveMountBaiduInlineMap/)
   assert.match(surface,/xDriveMountBaiduIsolatedFrame/)
 })
 
 
-test('photo-first map clips neither badge nor dock and suppresses diagonal overlap', () => {
+test('photo-first map avoids badge, map-control and diagonal overlap', () => {
   const pins=[
     {count:100,x:210,y:150,id:'largest'},
     {count:90,x:280,y:218,id:'diagonal-collision'},
     {count:80,x:360,y:151,id:'separate'},
     {count:70,x:40,y:100,id:'clipped-left'},
     {count:60,x:862,y:200,id:'clipped-right'},
-    {count:50,x:600,y:750,id:'under-photo-dock'},
+    {count:50,x:600,y:750,id:'under-map-controls'},
     {count:40,x:600,y:620,id:'unobscured'},
+    {count:35,x:750,y:675,id:'reclaimed-map-space'},
   ]
-  const selected=xDriveSelectVisibleMapPhotoCovers(pins,900,800,false,true)
-  assert.deepEqual(selected.map(pin=>pin.id),['largest','separate','unobscured'])
-  assert.deepEqual(pins.map(pin=>pin.count),[100,90,80,70,60,50,40],
+  const selected=xDriveSelectVisibleMapPhotoCovers(pins,900,800,false)
+  assert.deepEqual(selected.map(pin=>pin.id),['largest','separate','unobscured','reclaimed-map-space'])
+  assert.deepEqual(pins.map(pin=>pin.count),[100,90,80,70,60,50,40,35],
     'display selection never mutates original signed projection or count')
-  assert.deepEqual(xDriveSelectVisibleMapPhotoCovers(pins,900,800,false,false)
-    .map(pin=>pin.id),['largest','separate','under-photo-dock','unobscured'])
 })
 
-test('mobile photo pins respect compact count-badge, safe edge and landscape dock', () => {
+test('mobile photo pins respect compact count-badge, safe edge and landscape controls', () => {
   const pins=[
     {count:90,x:120,y:120,id:'selected'},
     {count:80,x:200,y:195,id:'overlapping'},
     {count:70,x:325,y:300,id:'right-clipped'},
     {count:60,x:205,y:210,id:'separate'},
-    {count:50,x:200,y:755,id:'behind-dock'},
+    {count:50,x:200,y:755,id:'behind-map-controls'},
   ]
-  assert.deepEqual(xDriveSelectVisibleMapPhotoCovers(pins,390,844,true,true)
+  assert.deepEqual(xDriveSelectVisibleMapPhotoCovers(pins,390,844,true)
     .map(pin=>pin.id),['selected','separate'])
   assert.deepEqual(xDriveSelectVisibleMapPhotoCovers([
-    {count:10,x:250,y:310,id:'under-landscape-dock'},
+    {count:10,x:250,y:310,id:'under-landscape-controls'},
     {count:8,x:250,y:170,id:'visible-landscape'},
-  ],900,390,true,true).map(pin=>pin.id),['visible-landscape'])
+  ],900,390,true).map(pin=>pin.id),['visible-landscape'])
   assert.deepEqual(xDriveSelectVisibleMapPhotoCovers([
     {count:12,x:46,y:160,id:'wide-compact-cut-border'},
     {count:11,x:120,y:160,id:'wide-compact-valid'},
-  ],900,390,true,true).map(pin=>pin.id),['wide-compact-valid'],
+  ],900,390,true).map(pin=>pin.id),['wide-compact-valid'],
   'wide compact tablet still renders the 72px sm card, not a 64px xs card')
-  assert.deepEqual(xDriveSelectVisibleMapPhotoCovers(pins,Infinity,844,true,true),[])
-  assert.deepEqual(xDriveSelectVisibleMapPhotoCovers(pins,390,0,true,true),[])
+  assert.deepEqual(xDriveSelectVisibleMapPhotoCovers(pins,Infinity,844,true),[])
+  assert.deepEqual(xDriveSelectVisibleMapPhotoCovers(pins,390,0,true),[])
 })
 
 test('100k media keeps <=24 verified photo covers; all 64 native Cells stay independently accessible', () => {
   const pins=Array.from({length:64},(_,i)=>({
     count:64-i,x:110+(i%8)*110,y:110+Math.floor(i/8)*108,
   }))
-  const output=xDriveSelectVisibleMapPhotoCovers(pins,1000,1000,false,true)
+  const output=xDriveSelectVisibleMapPhotoCovers(pins,1000,1000,false)
   assert.equal(XDRIVE_PLACES_MAP_COVER_MAX,24)
   assert.equal(output.length,24)
   assert.equal(pins.length,64)
@@ -176,4 +173,17 @@ test('photo overlay has one shared presentation lease for inline and isolated na
   assert.doesNotMatch(child,/\\.node_id\\b|\\.asset_id\\b|photo_url|loadThumbnail|Authorization:/,
     'no private photo transport may enter the isolated SDK Host')
   assert.equal(XDRIVE_PLACES_MAP_COVER_MAX,24)
+})
+
+test('map screenshot no longer owns a fixed photo thumbnail strip', () => {
+  const surface=fs.readFileSync(path.join(root,
+    'ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx'),'utf8')
+  const browser=fs.readFileSync(path.join(root,
+    'desktop/scripts/gallery-places-dual-host-chromium.cjs'),'utf8')
+  assert.doesNotMatch(surface,/photoStrip|xDriveCurrentMapPhotoCollections|data-xdrive-places-photo-collection-strip|data-xdrive-places-map-photo-strip-shell|data-xdrive-places-collection-thumb/)
+  assert.doesNotMatch(source,/XDRIVE_PLACES_MAP_STRIP_MAX|xDriveCurrentMapPhotoCollections|hasBottomStrip/)
+  assert.match(surface,/data-xdrive-places-map-photo-summary/)
+  assert.match(surface,/data-xdrive-places-full-camera-wall/)
+  assert.match(surface,/data-xdrive-places-cluster-list/)
+  assert.match(browser,/noFixedPhotoStrip/)
 })

@@ -455,9 +455,10 @@ async function testIOSPhotoMapCompactChrome(browser,mode,scheme,port){
       const actual=await page.evaluate(()=>{
         const map=document.querySelector('[data-xdrive-places-ios-map-canvas="1"]')
         const toolbar=document.querySelector('[data-xdrive-places-map-ios-chrome="1"]')
-        const dock=document.querySelector('[data-xdrive-places-map-photo-strip-shell]')
-        const photoButtons=Array.from(
-          document.querySelectorAll('[data-xdrive-places-collection-thumb]'))
+        const noFixedPhotoStrip=!document.querySelector(
+          '[data-xdrive-places-photo-collection-strip], '+
+          '[data-xdrive-places-map-photo-strip-shell], '+
+          '[data-xdrive-places-collection-thumb]')
         const pins=Array.from(
           document.querySelectorAll('[data-xdrive-places-trusted-photo-cover]'))
         const count=document.querySelector('[data-xdrive-places-map-photo-summary]')
@@ -474,8 +475,8 @@ async function testIOSPhotoMapCompactChrome(browser,mode,scheme,port){
           .filter(el=>el.checkVisibility())
           .map(el=>bounds(el)).filter(b=>b&&b.width>0&&b.height>0)
         const badge=document.querySelector('[data-xdrive-places-photo-count-badge]')
-        return {map:bounds(map),toolbar:bounds(toolbar),dock:bounds(dock),
-          dockButtons:photoButtons.map(bounds),hits,
+        return {map:bounds(map),toolbar:bounds(toolbar),
+          footer:bounds(count),noFixedPhotoStrip,hits,
           pins:pins.length,pinButtons:pins.map(bounds),
           badge:badge?getComputedStyle(badge).backgroundColor:null,
           toolbarPosition:toolbar?getComputedStyle(toolbar).position:null,
@@ -494,10 +495,11 @@ async function testIOSPhotoMapCompactChrome(browser,mode,scheme,port){
         actual.toolbar.left>=actual.map.left&&
         actual.toolbar.right<=actual.map.right+1&&
         actual.text.includes('地图'))
-      const touchGeometryOK=actual.dock!==null&&actual.dock.height<=76&&
-        actual.dock.bottom<=actual.map.bottom&&
-        actual.dockButtons.length>0&&
-        actual.dockButtons.every(b=>b.width>=44&&b.height>=44)&&
+      const touchGeometryOK=actual.footer!==null&&
+        actual.footer.bottom<=actual.map.bottom&&
+        actual.footer.left>=actual.map.left&&
+        actual.footer.right<=actual.map.right+1&&
+        actual.noFixedPhotoStrip&&
         actual.hits.length>=3&&
         actual.hits.every(b=>b.width>=44&&b.height>=44)&&
         actual.pins>0&&
@@ -506,12 +508,12 @@ async function testIOSPhotoMapCompactChrome(browser,mode,scheme,port){
       if(!touchGeometryOK) {
         // Sanitized CSS rectangles only; never log Owner GPS, Cell or media.
         console.error('ios-compact-map-hit-targets',JSON.stringify({
-          label,map:actual.map,toolbar:actual.toolbar,dock:actual.dock,
-          dockButtons:actual.dockButtons,hits:actual.hits,
+          label,map:actual.map,toolbar:actual.toolbar,footer:actual.footer,
+          noFixedPhotoStrip:actual.noFixedPhotoStrip,hits:actual.hits,
           pins:actual.pins,pinButtons:actual.pinButtons,
         }))
       }
-      record(label+': 44px+ photo and toolbar targets, compact bottom dock',
+      record(label+': 44px+ map photo and toolbar targets, no fixed photo dock',
         touchGeometryOK)
       record(label+': signed Family∩Favorites stays exactly two covers',
         actual.summary.includes('2 张照片')&&
@@ -890,7 +892,7 @@ async function testMode(browser,mode,port){
     // A signed Cell remains available through the accessible list even when
     // a short noncompact landscape has no room for an unobscured 72px cover.
     // Prefer the actual visible photo; use only the CURRENT signed Cell list
-    // when the compact-dock/edge exclusion intentionally hides every cover.
+    // when the map-controls/edge exclusion intentionally hides every cover.
     const openFreshCameraCell=async()=>{
       const list=page.locator('[data-xdrive-places-cluster-list]')
       await list.locator('button').first().waitFor({state:'attached'})
@@ -2149,29 +2151,28 @@ async function testMapKeyboardAppearance(browser,mode,scheme,port){
     const cover=page.getByRole('button',{name:'查看该区域 9 张照片'}).first()
     await cover.waitFor({state:'visible'})
     const region=page.getByRole('region',{name:'定位照片聚集地图'})
-    const photoNav=page.getByRole('navigation',{name:'浏览地图当前聚合区域照片'})
+    const fullCameraWall=page.getByRole('button',{name:'查看此地图的全部照片'})
     await region.waitFor({state:'visible'})
-    await photoNav.waitFor({state:'visible'})
+    await fullCameraWall.waitFor({state:'visible'})
     const mobile=await page.evaluate(()=>{
       const map=document.querySelector('[data-xdrive-places-cluster-overview]')
       const cover=document.querySelector('[data-xdrive-places-trusted-photo-cover]')
-      const nav=document.querySelector('[data-xdrive-places-photo-collection-strip]')
-      const button=document.querySelector('[data-xdrive-places-collection-thumb]')
       const badge=document.querySelector('[data-xdrive-places-photo-count-badge]')
       const bounds=map?.getBoundingClientRect()
       const target=cover?.getBoundingClientRect()
-      const action=button?.getBoundingClientRect()
       return {mapBottom:bounds?.bottom,coverWidth:target?.width,
-        coverHeight:target?.height,stripWidth:action?.width,
-        stripHeight:action?.height,nav:Boolean(nav),
+        coverHeight:target?.height,
+        noFixedPhotoStrip:!document.querySelector(
+          '[data-xdrive-places-photo-collection-strip], '+
+          '[data-xdrive-places-map-photo-strip-shell], '+
+          '[data-xdrive-places-collection-thumb]'),
         badge:badge?getComputedStyle(badge).backgroundColor:null,
         ownerQueries:window.__mapProbe.queries.every(q=>q.albumKey===''&&!q.favorite)}
     })
     record(mode+': '+scheme+' 390px accessible map and >=44px cover targets',
-      await region.count()===1 && await photoNav.count()===1 &&
+      await region.count()===1 && await fullCameraWall.count()===1 &&
       mobile.mapBottom<=844-8 && mobile.coverWidth>=44 &&
-      mobile.coverHeight>=44&&mobile.stripWidth>=44&&mobile.stripHeight>=44&&
-      mobile.nav&&mobile.ownerQueries)
+      mobile.coverHeight>=44&&mobile.noFixedPhotoStrip&&mobile.ownerQueries)
     record(mode+': '+scheme+' iOS blue map count has correct light/dark theme',
       mobile.badge===(dark?'rgb(10, 132, 255)':'rgb(0, 122, 255)'))
     // On landscape iPhone heights, the same trusted Parent cannot force a
@@ -2210,7 +2211,11 @@ async function testMapKeyboardAppearance(browser,mode,scheme,port){
           '[data-xdrive-places-cluster-list]')
         return {map:rect('[data-xdrive-places-cluster-overview]'),
           cover:rect('[data-xdrive-places-trusted-photo-cover]'),
-          strip:rect('[data-xdrive-places-photo-collection-strip]'),
+          summary:rect('[data-xdrive-places-map-photo-summary]'),
+          noFixedPhotoStrip:!document.querySelector(
+            '[data-xdrive-places-photo-collection-strip], '+
+            '[data-xdrive-places-map-photo-strip-shell], '+
+            '[data-xdrive-places-collection-thumb]'),
           count:document.querySelector('[data-xdrive-places-photo-count-badge]')?.textContent,
           accessibleCount:accessible?.querySelectorAll('button').length||0,
           accessibleLabel:accessible?.textContent||'',
@@ -2223,7 +2228,7 @@ async function testMapKeyboardAppearance(browser,mode,scheme,port){
         bounds.cover.width>=44&&bounds.cover.height>=44&&bounds.count==='9'
       // A noncompact 899/900x390 viewport has less than 226px of
       // available map height. Its 72px photo cover + count badge must not
-      // overlap the lower dock. Here the CURRENT authorized Cell list,
+      // overlap the floating map controls. Here the CURRENT authorized Cell list,
       // including the actual signed count, is the accessible fallback.
       const truthfulFallback=bounds.map&&bounds.map.height<226&&
         bounds.cover===null&&bounds.accessibleCount>=1&&
@@ -2234,8 +2239,9 @@ async function testMapKeyboardAppearance(browser,mode,scheme,port){
         bounds.map.bottom<=height-8&&bounds.map.right<=width+1&&
         (visibleCover||truthfulFallback))
       record(mode+': '+scheme+' '+width+'x'+height+
-        ' shared photo strip stays inside map bounds',
-        inside(bounds.map,bounds.strip)&&bounds.strip.width>=44)
+        ' summary controls stay inside map without fixed strip',
+        inside(bounds.map,bounds.summary)&&bounds.summary.width>=44&&
+        bounds.noFixedPhotoStrip)
     }
     const beforeReturnCamera=await page.evaluate(()=>window.__mapProbe.queries.length)
     await page.setViewportSize({width:390,height:844})
@@ -2254,12 +2260,10 @@ async function testMapKeyboardAppearance(browser,mode,scheme,port){
       focused&&photos===9&&errors.length===0)
     await page.getByRole('button',{name:'关闭照片抽屉'}).click()
     await drawer.waitFor({state:'hidden'})
-    const stripButton=photoNav.getByRole('button',{name:/查看区域 .* 的 9 张照片/}).first()
-    await stripButton.waitFor({state:'visible'})
-    await stripButton.focus()
-    await stripButton.press('Enter')
+    await cover.focus()
+    await cover.press('Enter')
     await drawer.waitFor({state:'visible'})
-    record(mode+': '+scheme+' lower photo strip keyboard Enter reopens Owner drawer',
+    record(mode+': '+scheme+' current map cover keyboard Enter reopens Owner drawer',
       await drawer.locator('[data-xdrive-places-photo-drawer-item]').count()===9&&
       errors.length===0)
   }finally{await context.close()}

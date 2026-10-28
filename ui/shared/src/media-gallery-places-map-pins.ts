@@ -1,10 +1,6 @@
 import type { XDriveTrustedProjectedMapCells } from './media-gallery-baidu-isolated-frame-host'
 import type { MediaBaiduNativeCellSelection, MediaBaiduNativeCellsPage } from './models'
 
-// The strip is a preview of up to TEN true Owner-verified spatial clusters,
-// NEVER a substitute for the full sparse Media Range / virtual photo wall.
-export const XDRIVE_PLACES_MAP_STRIP_MAX = 10
-
 /** Full validated camera projections for the trusted Parent cover pins.
  * A third-party SDK supplies ONLY pixel positions; identity and displayed
  * count are copied from the current Owner-signed /cells and approved scope.
@@ -93,18 +89,6 @@ export function xDriveVerifiedMapPhotoProjections(
     a.selection.cell_y-b.selection.cell_y || a.selection.cell_x-b.selection.cell_x)
 }
 
-/** The iOS-style bottom strip uses the same approved projections as cover pins,
- * capped at ten previews; the full photo wall remains a separate Owner Range. */
-export function xDriveCurrentMapPhotoCollections(
-  page: MediaBaiduNativeCellsPage | null,
-  projected: XDriveTrustedProjectedMapCells<MediaBaiduNativeCellSelection> | null,
-  approved: readonly MediaBaiduNativeCellSelection[],
-): ReadonlyArray<Readonly<{selection:MediaBaiduNativeCellSelection;count:number;x:number;y:number}>> {
-  return xDriveVerifiedMapPhotoProjections(page, projected, approved)
-    .slice(0, XDRIVE_PLACES_MAP_STRIP_MAX)
-}
-
-
 /**
  * Presentation-only decluttering for the two SDK Hosts' ONE trusted React
  * photo overlay. This consumes only Parent-verified /cells projections; it
@@ -113,7 +97,7 @@ export function xDriveCurrentMapPhotoCollections(
  * An axis-aligned exclusion rectangle is intentional: two 72px cards (and
  * their upper-right count badges) can visually overlap diagonally even if
  * their centers are >= 88px apart in Euclidean distance. Pins too close to a
- * clipped map edge or behind the floating photo dock are still available in
+ * clipped map edge or behind the floating summary/actions are still available in
  * the full accessible Cell list and original Owner-signed photo wall.
  */
 export const XDRIVE_PLACES_MAP_COVER_MAX = 24
@@ -125,7 +109,6 @@ export function xDriveSelectVisibleMapPhotoCovers<T extends Readonly<{
   width: number,
   height: number,
   compact: boolean,
-  hasBottomStrip: boolean,
 ): T[] {
   if (!Array.isArray(verifiedCandidates) || verifiedCandidates.length > 64 ||
       !Number.isSafeInteger(width) || width < 120 || width > 4096 ||
@@ -137,9 +120,9 @@ export function xDriveSelectVisibleMapPhotoCovers<T extends Readonly<{
   const minX = cardRadius + 12
   const maxX = width - cardRadius - 34
   const minY = cardRadius + 34
-  const maxY = height - (hasBottomStrip
-    ? (compact ? 90 : 156)
-    : cardRadius + 12)
+  // Reserve the real floating count and full-camera-wall controls at the bottom.
+  // Compact narrow screens may wrap the controls into two rows.
+  const maxY = height - (compact ? 92 : 96)
   // Exclude rectangular card + badge overlap, including diagonal neighbors.
   const gapX = width < 600 ? 92 : 104
   const gapY = width < 600 ? 82 : 92
