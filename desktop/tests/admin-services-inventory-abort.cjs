@@ -74,7 +74,8 @@ test('accepted Admin inventory A→B cancels stale A without clearing new Owner 
   await flush()
   assert.deepEqual(accepted.at(-1), { owner: 'B' }, 'stale A cannot override current B')
   assert.equal(cachedSnapshotRef.current.owner, 'B')
-  assert.deepEqual(errors, [])
+  assert.deepEqual(errors.filter(Boolean), [],
+    'initial reset may clear an earlier error, but stale Owner A cannot publish a nonempty error')
   cleanupB()
   assert.equal(calls[1].signal.aborted, true)
 })
