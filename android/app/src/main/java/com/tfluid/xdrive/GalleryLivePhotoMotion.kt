@@ -153,7 +153,7 @@ internal fun GalleryLivePhotoMotion(
 
     val player = remember(context, lease) {
         val source = lease
-        if (source == null) null else createPreparedLiveResource(
+        if (source == null) null else createPreparedMediaResource(
             build = { ExoPlayer.Builder(context).build() },
             prepare = { owned ->
                 owned.setMediaSource(ProgressiveMediaSource.Factory(
