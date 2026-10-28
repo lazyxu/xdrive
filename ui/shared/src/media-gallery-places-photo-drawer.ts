@@ -7,7 +7,7 @@ import {
 import type { XDriveBaiduMapPhotoScope } from './media-gallery-baidu-map-photo-scope'
 
 /** An Owner-authenticated Cell Range, NOT the anonymous SDK labels, owns the drawer. */
-export const XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT = 12
+export const XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT = 48
 export const XDRIVE_PLACES_DRAWER_RETURN_TTL_MS = 10 * 60 * 1000
 const maxOwners = 8
 
@@ -24,7 +24,7 @@ export type XDrivePlacesDrawerReturn = Readonly<{
 }>
 
 const defaultPresentation: XDrivePlacesDrawerPresentation =
-  { expanded: false, scrollTop: 0, scrollLeft: 0 }
+  { expanded: true, scrollTop: 0, scrollLeft: 0 }
 
 function safePresentation(value?: XDrivePlacesDrawerPresentation):
   XDrivePlacesDrawerPresentation | null {
