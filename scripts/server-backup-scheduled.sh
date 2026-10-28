@@ -69,15 +69,89 @@ verify_scheduled_v1_recovery_point() {
   for required in database.dump verify.json manifest.json blobs.tar SHA256SUMS.txt; do
     [[ -f "$snapshot/$required" && ! -L "$snapshot/$required" ]] || return 1
   done
-  grep -Eq '"format_version"[[:space:]]*:[[:space:]]*1([,}[:space:]])' "$snapshot/manifest.json" || return 1
-  grep -Eq '"consistency_verified"[[:space:]]*:[[:space:]]*true([,}[:space:]])' "$snapshot/manifest.json" || return 1
-  grep -Eq '"file_data_included"[[:space:]]*:[[:space:]]*true([,}[:space:]])' "$snapshot/manifest.json" || return 1
-  # Require the exact expected file list, not merely sha256sum -c: the latter
-  # also accepts incomplete manifests and checks only named members.
+  # Require the exact writer-ordered checksum list. sha256sum -c alone
+  # accepts omission of entire archive members.
   (
     cd "$snapshot" || exit 1
     cmp -s SHA256SUMS.txt <(sha256sum database.dump verify.json manifest.json blobs.tar)
-  )
+  ) || return 1
+  command -v python3 >/dev/null 2>&1 || return 1
+  # Only a new, consistent, full v1 archive with safe extractable members
+  # may authorize retention deletion. Hash correctness alone is insufficient.
+  python3 - "$snapshot/manifest.json" "$snapshot/blobs.tar" <<'PY'
+import json, os, stat, sys, tarfile
+
+manifest_path, tar_path = sys.argv[1:]
+
+def unique(pairs):
+    values = {}
+    for key, value in pairs:
+        if key in values:
+            raise ValueError("duplicate manifest property")
+        values[key] = value
+    return values
+
+def canonical(name):
+    if not name or name.startswith("/") or "\\" in name or "\x00" in name:
+        raise ValueError("unsafe archive member path")
+    parts = name.split("/")
+    if ".." in parts:
+        raise ValueError("archive traversal")
+    return "/".join(p for p in parts if p and p != ".")
+
+try:
+    fd = os.open(manifest_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, "rb") as f:
+        st = os.fstat(f.fileno())
+        if not stat.S_ISREG(st.st_mode) or not 0 < st.st_size <= 16384:
+            raise ValueError("unsafe v1 manifest")
+        manifest = json.load(f, object_pairs_hook=unique)
+    if (not isinstance(manifest, dict) or
+        type(manifest.get("format_version")) is not int or
+        manifest["format_version"] != 1 or
+        manifest.get("consistency_verified") is not True or
+        manifest.get("file_data_included") is not True):
+        raise ValueError("not a consistent full v1 recovery point")
+
+    seen = {}
+    ancestors = set()
+    regular = set()
+    with tarfile.open(tar_path, mode="r:") as archive:
+        for member in archive:
+            name = canonical(member.name)
+            if not name:
+                if not member.isdir():
+                    raise ValueError("unsafe tar root")
+                continue
+            if name in seen:
+                raise ValueError("duplicate normalized tar path")
+            if member.isdir():
+                kind = "dir"
+            elif member.isreg():
+                kind = "file"
+            elif member.islnk():
+                target = canonical(member.linkname)
+                if not target or target not in regular:
+                    raise ValueError("untrusted archive hardlink")
+                kind = "file"
+            else:
+                raise ValueError("unsupported archive member type")
+            segments = name.split("/")
+            for length in range(1, len(segments)):
+                ancestor = "/".join(segments[:length])
+                if seen.get(ancestor) == "file":
+                    raise ValueError("file/descendant archive conflict")
+                ancestors.add(ancestor)
+            if kind == "file" and name in ancestors:
+                raise ValueError("file/ancestor archive conflict")
+            seen[name] = kind
+            if kind == "file":
+                regular.add(name)
+except (OSError, EOFError, TypeError, ValueError, UnicodeError, tarfile.TarError):
+    print("scheduled v1: invalid manifest or unsafe tar members; refusing old-snapshot pruning",
+          file=sys.stderr)
+    sys.exit(1)
+PY
 }
 
 if [[ "$schedule_format" == "v2" ]]; then
