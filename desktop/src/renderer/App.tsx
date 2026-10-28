@@ -1070,9 +1070,11 @@ export default function App({
   const storageStatsSupported = agent.hello?.capabilities.includes('storage-intelligence') ?? false
   const storagePoliciesSupported = info?.platform === 'win32'
   const cloudStorageSource = useMemo(() => createXDriveCloudStorageDataSource({
-    getQuota: () => window.xdriveDesktop.agent.cloudQuota(),
+    getQuota: (signal?: AbortSignal) => xDriveDesktopViewportRequest(signal,
+      requestID => window.xdriveDesktop.agent.cloudQuota(requestID)),
     getStats: storageStatsSupported
-      ? () => window.xdriveDesktop.agent.cloudStorageStats()
+      ? (signal?: AbortSignal) => xDriveDesktopViewportRequest(signal,
+        requestID => window.xdriveDesktop.agent.cloudStorageStats(requestID))
       : undefined,
   }, {
     onQuota: applyCloudQuota,
