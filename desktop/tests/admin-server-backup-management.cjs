@@ -114,3 +114,16 @@ test('Admin backup progress uses the existing Host byte source with unknown tota
   assert.match(panel, /尚无可靠的字节总量/)
   assert.match(read('internal/api/admin_backup_management.go'), /BytesDone/)
 })
+
+test('Host read failures revoke stale backup actions and destructive confirmation receipts', () => {
+  const reload = panel.slice(panel.indexOf('const reload = useCallback('),
+    panel.indexOf('}, [port])'))
+  assert.match(reload, /if \(!result\.supported\) \{[\s\S]*?setConfirmation\(null\)/)
+  assert.match(reload, /catch \(e\) \{[\s\S]*?setLoaded\(null\)/)
+  assert.match(reload, /setPolicyDraft\(null\)/)
+  assert.match(reload, /setPrunePreview\(null\)/)
+  assert.match(reload, /setSelectedPreviewRequestID\(''\)/)
+  assert.match(panel, /!page && !error \?/)
+  assert.match(panel, /!page && error \?/)
+  assert.match(panel, /备份、恢复及删除操作已禁用/)
+})

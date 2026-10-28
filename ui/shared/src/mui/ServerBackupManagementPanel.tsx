@@ -84,6 +84,13 @@ export function XDriveServerBackupManagementPanel({
       if (generation !== sessionGeneration.current || read !== latestRead.current) return
       setLoaded({ port, page: result })
       setError('')
+      // Even a successfully decoded response must revoke open destructive
+      // confirmations when the Host stops supplying current, trusted inventory.
+      if (!result.supported) {
+        setConfirmation(null)
+        setPrunePreview(null)
+        setSelectedPreviewRequestID('')
+      }
       setPolicyDraft(old => old?.revision === result.inventory.policy.revision ? old : {
         format: result.inventory.policy.schedule_format,
         days: String(result.inventory.policy.retention_days),
@@ -94,6 +101,15 @@ export function XDriveServerBackupManagementPanel({
           ? current : result.inventory.snapshots[0]?.id || '')
     } catch (e) {
       if (generation === sessionGeneration.current && read === latestRead.current) {
+        // A failed Host read is not permission to keep using a previously
+        // supported snapshot, policy revision or one-time deep-delete receipt.
+        // Retain no stale action surface until a fresh authenticated read.
+        setLoaded(null)
+        setPolicyDraft(null)
+        setConfirmation(null)
+        setHistoryDetail(null)
+        setPrunePreview(null)
+        setSelectedPreviewRequestID('')
         setError(e instanceof Error ? e.message : '无法更新备份状态；以宿主机记录为准。')
       }
     }
@@ -211,7 +227,8 @@ export function XDriveServerBackupManagementPanel({
         }
       />
       {error ? <Alert severity="error" role="alert">{error}</Alert> : null}
-      {!page ? <Alert severity="info">正在读取宿主机备份状态…</Alert> : null}
+      {!page && !error ? <Alert severity="info">正在读取宿主机备份状态…</Alert> : null}
+      {!page && error ? <Alert severity="warning">无法取得当前宿主机可信清单；备份、恢复及删除操作已禁用，刷新成功前不允许使用旧快照或预览回执。</Alert> : null}
       {page && !page.supported
         ? <Alert severity="warning">备份控制不可用：{page.message || '请检查宿主机控制进程和部署版本。'}。不会执行任何删除或恢复。</Alert>
         : null}
