@@ -30,18 +30,19 @@ chmod 700 "$TMP/bin/docker"
 export XD_DRILL_TEST_SENTINEL="$TMP/docker-invoked"
 export PATH="$TMP/bin:$PATH"
 manager="$ROOT/scripts/xdrive-server-host.sh"
-if "$manager" backup drill ../bad > "$TMP/relative.json" 2>/dev/null; then
+# The repository Host manager is a 0644 script; invoke it explicitly via Bash.
+if bash "$manager" backup drill ../bad > "$TMP/relative.json" 2>/dev/null; then
   echo 'relative path accepted' >&2; exit 1
 fi
-if "$manager" backup drill "$snapshot" --max-mib 9000 >/dev/null 2>&1; then
+if bash "$manager" backup drill "$snapshot" --max-mib 9000 >/dev/null 2>&1; then
   echo 'unbounded memory accepted' >&2; exit 1
 fi
-if "$manager" backup drill "$snapshot" --max-mib xyz >/dev/null 2>&1; then
+if bash "$manager" backup drill "$snapshot" --max-mib xyz >/dev/null 2>&1; then
   echo 'malformed memory accepted' >&2; exit 1
 fi
 [[ ! -e "$XD_DRILL_TEST_SENTINEL" ]]
 printf 'tampered' >> "$snapshot/database.dump"
-if "$manager" backup drill "$snapshot" --max-mib 256 > "$TMP/corrupt.json" 2>/dev/null; then
+if bash "$manager" backup drill "$snapshot" --max-mib 256 > "$TMP/corrupt.json" 2>/dev/null; then
   echo 'corrupt snapshot accepted' >&2; exit 1
 fi
 python3 - "$TMP/corrupt.json" <<'PY'
@@ -57,7 +58,7 @@ PY
 # whether the target is an ordinary file or looks like a valid backup.
 mv "$XD_CONFIG_DIR/backups/incremental/.backup.lock" "$TMP/real-lock"
 ln -s "$TMP/real-lock" "$XD_CONFIG_DIR/backups/incremental/.backup.lock"
-if "$manager" backup drill "$snapshot" > "$TMP/symlink.json" 2>/dev/null; then
+if bash "$manager" backup drill "$snapshot" > "$TMP/symlink.json" 2>/dev/null; then
   echo 'symlinked repository lock accepted' >&2; exit 1
 fi
 python3 - "$TMP/symlink.json" <<'PY'
@@ -69,7 +70,7 @@ PY
 # An unknown but apparently valid v2 repository must not be mounted.
 rogue="$TMP/unknown/snapshots/xdrive-backup-20261027T120000Z"
 mkdir -p "$rogue"
-if "$manager" backup drill "$rogue" > "$TMP/unknown.json" 2>/dev/null; then
+if bash "$manager" backup drill "$rogue" > "$TMP/unknown.json" 2>/dev/null; then
   echo 'unknown repository accepted' >&2; exit 1
 fi
 python3 - "$TMP/unknown.json" <<'PY'
@@ -84,7 +85,7 @@ printf '{"format_version":2,"consistency_verified":true,"file_data_included":tru
 printf 'db' > "$snapshot/database.dump"
 printf '%064d\t%d\n' 0 300000000 > "$snapshot/objects.index"
 (cd "$snapshot"; sha256sum database.dump verify.json manifest.json objects.index legacy.tar > SHA256SUMS.txt)
-if "$manager" backup drill "$snapshot" --max-mib 256 > "$TMP/quota.json" 2>/dev/null; then
+if bash "$manager" backup drill "$snapshot" --max-mib 256 > "$TMP/quota.json" 2>/dev/null; then
   echo 'overquota v2 snapshot accepted' >&2; exit 1
 fi
 python3 - "$TMP/quota.json" <<'PY'
