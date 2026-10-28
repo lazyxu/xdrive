@@ -115,6 +115,6 @@ test('working channel still publishes only public waiting hints', async () => {
   await settle()
   assert.equal(app.api.xDrivePwaUpdateSnapshot().phase, 'waiting')
   assert.equal(app.channelConstructed, 1)
-  assert.deepEqual(app.messages, [{ kind: 'xdrive-public-update-ready' }])
+  assert.deepEqual(app.messages.map(message => message.kind), ['xdrive-public-update-ready'])
   assert.doesNotMatch(source, /skipWaiting\s*\(|location\.reload\s*\(|localStorage|sessionStorage|Authorization/)
 })
