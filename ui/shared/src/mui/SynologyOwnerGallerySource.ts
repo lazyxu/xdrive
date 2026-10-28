@@ -158,7 +158,7 @@ export function createXDriveSynologyOwnerGallerySource(
       // The existing Owner original-Range verifier has a 32 MiB SHA-256 cap.
       // Video/Live Photo and larger originals require a separate verified
       // stream capability; never synthesize a giant Blob or fake URL.
-      if (identity.size <= 0 || identity.size > 32 << 20) return null
+      if (identity.size <= 0 || identity.size > 32 * (1 << 20)) return null
       return xDriveSynologyLoadBoundedMediaPreview(client, {
         id: identity.id, name: identity.name, size: identity.size,
         revision: identity.revision, kind: 'file',
