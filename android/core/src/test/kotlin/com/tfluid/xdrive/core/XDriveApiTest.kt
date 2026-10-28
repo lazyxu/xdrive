@@ -602,7 +602,9 @@ class XDriveApiTest {
             assertTrue(req.path!!.startsWith("/api/v1/media/albums/manual:"))
             assertTrue(req.path!!.contains("%2F"))
             assertTrue(req.path!!.contains("%3F"))
-            assertTrue(req.path!!.contains("%3D"))
+            // '=' is a legal path-segment byte; it need not be percent-encoded.
+            // The '?' must remain path data, never a real URL query.
+            assertNull(req.requestUrl!!.query)
             assertEquals("新名称", body(req)["name"]?.jsonPrimitive?.content)
 
             server.enqueue(MockResponse().setBody(
