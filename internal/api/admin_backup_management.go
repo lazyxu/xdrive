@@ -150,9 +150,10 @@ func validBackupAdminHistory(events []backupAdminHistoryEntry) bool {
 			if e.SnapshotID != "" || (e.Mode != "fast" && e.Mode != "deep") {
 				return false
 			}
-		case "restore", "delete", "delete_selected", "drill":
+		case "restore", "restore_database_only", "delete", "delete_selected", "drill":
 			if e.SnapshotID == "" || e.Mode != "" ||
-				((e.Action == "drill" || e.Action == "delete_selected") && !strings.HasPrefix(e.SnapshotID, "v2-")) {
+				((e.Action == "drill" || e.Action == "delete_selected") && !strings.HasPrefix(e.SnapshotID, "v2-")) ||
+				(e.Action == "restore_database_only" && !strings.HasPrefix(e.SnapshotID, "v1:")) {
 				return false
 			}
 		case "create", "prune", "policy":
@@ -380,6 +381,13 @@ func validateBackupAdminRequest(request backupAdminRequest) error {
 			request.RetentionDays != 0 || request.Revision != "" {
 			return errors.New("restore requires exact snapshot confirmation")
 		}
+	case "restore_database_only":
+		if !strings.HasPrefix(request.SnapshotID, "v1:") ||
+			request.Confirmation != "DATABASE ONLY RESTORE "+request.SnapshotID ||
+			request.Format != "" || request.Mode != "" || request.KeepLast != 0 ||
+			request.RetentionDays != 0 || request.Revision != "" {
+			return errors.New("database-only recovery requires exact v1 confirmation")
+		}
 	case "delete_selected":
 		if !strings.HasPrefix(request.SnapshotID, "v2-") ||
 			request.Confirmation != "DELETE "+request.SnapshotID ||
@@ -466,6 +474,11 @@ func (s *Server) adminSubmitBackupManagement(c *gin.Context) {
 				(request.Action == "verify" || snap.State == "complete") {
 				if (request.Action == "restore" || request.Action == "drill") && !snap.FileDataIncluded {
 					c.JSON(http.StatusConflict, gin.H{"error": "backup_snapshot_database_only"})
+					return
+				}
+				if request.Action == "restore_database_only" &&
+					(snap.Format != "v1" || snap.FileDataIncluded) {
+					c.JSON(http.StatusConflict, gin.H{"error": "backup_snapshot_not_database_only"})
 					return
 				}
 				found = true
