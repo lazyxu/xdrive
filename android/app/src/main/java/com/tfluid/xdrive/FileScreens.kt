@@ -125,7 +125,8 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
             }.takeIf { it >= 0 }
         }
         // Select the actual Node in the first frame, not only its parent folder.
-        val firstItem = targetIndex ?: anchors.position(folderKey)
+        // Both Lazy layouts reserve index zero for the scroll-away chrome.
+        val firstItem = targetIndex?.plus(1) ?: anchors.position(folderKey)
         val listState = rememberLazyListState(initialFirstVisibleItemIndex = firstItem)
         val gridState = rememberLazyGridState(initialFirstVisibleItemIndex = firstItem)
         var olderEdgeArmed by remember(folderKey, viewMode, state.filesArrangement, state.focusedBrowseEpoch) {
@@ -143,7 +144,10 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
                 if (viewMode == FileViewMode.LIST) listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
                 else gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
             }.collect { lastVisible ->
-                if (lastVisible >= (visualRows.size - 3).coerceAtLeast(0)) controller.loadMore()
+                // Count the scroll-away chrome without triggering a page while
+                // only the header is visible (important for 100k directories).
+                if (lastVisible > 0 &&
+                    lastVisible >= (visualRows.size - 2).coerceAtLeast(1)) controller.loadMore()
             }
         }
     }
@@ -167,65 +171,70 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
             }
         }
 
-    Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(state.path.lastOrNull()?.name?.ifEmpty { "浏览" } ?: "浏览",
-            style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        if (state.path.size > 1) Text(state.path.joinToString(" / ") { it.name.ifEmpty { "浏览" } },
-            style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(if (state.browseSelectionMode)
-                "${state.browseSelectedIds.size} 项已选择（最多 200）"
-                else "${state.totalCount} 项",
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.bodySmall,
+    // iOS PWA places the large title, search and collection feedback inside
+    // the virtual scroll host; it must scroll away without resizing the host.
+    // Keep the search draft hoisted so lazy disposal never drops typed text.
+    val browseChrome: @Composable () -> Unit = {
+        Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(state.path.lastOrNull()?.name?.ifEmpty { "浏览" } ?: "浏览",
+                style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            if (state.path.size > 1) Text(state.path.joinToString(" / ") { it.name.ifEmpty { "浏览" } },
+                style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
-            TextButton(onClick = {
-                controller.setBrowseSelectionMode(!state.browseSelectionMode)
-            }, enabled = !state.loading && state.loaded &&
-                !state.browseBatchWriteAttempted && state.destinationKind == null,
-                modifier = Modifier.heightIn(min = 48.dp).testTag("files-select-mode")) {
-                Text(if (state.browseSelectionMode) "完成" else "选择")
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(if (state.browseSelectionMode)
+                    "${state.browseSelectedIds.size} 项已选择（最多 200）"
+                    else "${state.totalCount} 项",
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                TextButton(onClick = {
+                    controller.setBrowseSelectionMode(!state.browseSelectionMode)
+                }, enabled = !state.loading && state.loaded &&
+                    !state.browseBatchWriteAttempted && state.destinationKind == null,
+                    modifier = Modifier.heightIn(min = 48.dp).testTag("files-select-mode")) {
+                    Text(if (state.browseSelectionMode) "完成" else "选择")
+                }
             }
-        }
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
-                value = globalSearchText,
-                onValueChange = { globalSearchText = it.take(256) },
-                modifier = Modifier.weight(1f).testTag("files-global-search-input"),
-                singleLine = true, label = { Text("搜索全部文件") },
-            )
-            TextButton(
-                onClick = { controller.submitGlobalSearch(globalSearchText) },
-                enabled = state.canNavigateFiles() &&
-                    globalSearchText.trim().codePointCount(0, globalSearchText.trim().length) >= 2,
-                modifier = Modifier.heightIn(min = 48.dp).testTag("files-global-search-submit"),
-            ) { Text("搜索") }
-        }
-        ErrorNotice(state.error)
-        if (state.fileUploadCommitted && !state.fileUploadActive) {
-            Text("上传已完成", style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.testTag("files-upload-success"))
-        }
-        if (state.fileUploadActive) {
-            Text("正在上传：${formatSize(state.fileUploadBytes)} / ${formatSize(state.fileUploadTotal)}",
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.testTag("files-upload-progress"))
-            LinearProgressIndicator(
-                progress = { if (state.fileUploadTotal == 0L) 1f else
-                    (state.fileUploadBytes.toDouble() / state.fileUploadTotal).toFloat().coerceIn(0f, 1f) },
-                modifier = Modifier.fillMaxWidth())
-            TextButton(onClick = controller::cancelFileUpload,
-                modifier = Modifier.heightIn(min = 48.dp).testTag("files-upload-cancel")) {
-                Text("取消上传")
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    value = globalSearchText,
+                    onValueChange = { globalSearchText = it.take(256) },
+                    modifier = Modifier.weight(1f).testTag("files-global-search-input"),
+                    singleLine = true, label = { Text("搜索全部文件") },
+                )
+                TextButton(
+                    onClick = { controller.submitGlobalSearch(globalSearchText) },
+                    enabled = state.canNavigateFiles() &&
+                        globalSearchText.trim().codePointCount(0, globalSearchText.trim().length) >= 2,
+                    modifier = Modifier.heightIn(min = 48.dp).testTag("files-global-search-submit"),
+                ) { Text("搜索") }
             }
-        }
-        DownloadToDeviceStatus(state, controller, "files")
-        if (state.error != null) {
-            if (state.loaded) Text("保留上次成功读取的目录。", style = MaterialTheme.typography.bodySmall)
-            TextButton(onClick = controller::retry, enabled = !state.loading,
-                modifier = Modifier.heightIn(min = 48.dp)) { Text("重试") }
+            ErrorNotice(state.error)
+            if (state.fileUploadCommitted && !state.fileUploadActive) {
+                Text("上传已完成", style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.testTag("files-upload-success"))
+            }
+            if (state.fileUploadActive) {
+                Text("正在上传：${formatSize(state.fileUploadBytes)} / ${formatSize(state.fileUploadTotal)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.testTag("files-upload-progress"))
+                LinearProgressIndicator(
+                    progress = { if (state.fileUploadTotal == 0L) 1f else
+                        (state.fileUploadBytes.toDouble() / state.fileUploadTotal).toFloat().coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth())
+                TextButton(onClick = controller::cancelFileUpload,
+                    modifier = Modifier.heightIn(min = 48.dp).testTag("files-upload-cancel")) {
+                    Text("取消上传")
+                }
+            }
+            DownloadToDeviceStatus(state, controller, "files")
+            if (state.error != null) {
+                if (state.loaded) Text("保留上次成功读取的目录。", style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = controller::retry, enabled = !state.loading,
+                    modifier = Modifier.heightIn(min = 48.dp)) { Text("重试") }
+            }
         }
     }
 
@@ -233,6 +242,7 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
         contentColor = MaterialTheme.colorScheme.onSurface) {
         if (viewMode == FileViewMode.LIST) {
             LazyColumn(Modifier.fillMaxSize().testTag("files"), state = listState) {
+                item(key = "files-browse-chrome") { browseChrome() }
                 if (state.loaded && state.items.isEmpty() && state.error == null && !state.loading) item {
                     Text("此文件夹为空", Modifier.padding(24.dp))
                 }
@@ -296,11 +306,17 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
                 if ((state.hasNext && state.error == null) || (state.loading && state.items.isNotEmpty())) item(key = "paging") {
                     PageTail(state)
                 }
+                if (state.error != null && state.items.isNotEmpty())
+                    item(key = "files-read-failure") {
+                        FilesReadFailureTail(state, controller::retry)
+                    }
             }
         } else {
             LazyVerticalGrid(columns = GridCells.Adaptive(minSize = 112.dp),
                 modifier = Modifier.fillMaxSize().testTag("files-grid"), state = gridState,
                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)) {
+                item(key = "files-browse-chrome",
+                    span = { GridItemSpan(maxLineSpan) }) { browseChrome() }
                 if (state.loaded && state.items.isEmpty() && state.error == null && !state.loading)
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         Text("此文件夹为空", Modifier.padding(24.dp))
@@ -354,6 +370,10 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
                 }
                 if ((state.hasNext && state.error == null) || (state.loading && state.items.isNotEmpty()))
                     item(key = "paging", span = { GridItemSpan(maxLineSpan) }) { PageTail(state) }
+                if (state.error != null && state.items.isNotEmpty())
+                    item(key = "files-read-failure", span = { GridItemSpan(maxLineSpan) }) {
+                        FilesReadFailureTail(state, controller::retry)
+                    }
             }
         }
     }
@@ -426,40 +446,48 @@ private fun ColumnScope.FilesCollection(state: DriveState, controller: DriveCont
             state.searchNextCursor.isNotBlank() && !state.loading && state.error == null) {
             snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
                 .collect { index ->
-                    if (index >= (state.collectionItems.size - 3).coerceAtLeast(0))
+                    if (index > 0 &&
+                        index >= (state.collectionItems.size - 2).coerceAtLeast(1))
                         controller.loadMoreSearch()
                 }
         }
     }
-    Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        // Same global Owner search is reachable from Browse, Recent and
-        // Favorites; never filter the currently loaded collection in memory.
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(
-                    value = searchDraft, onValueChange = { searchDraft = it.take(256) },
-                    modifier = Modifier.weight(1f).testTag("files-search-results-input"),
-                    singleLine = true, label = { Text("搜索全部文件") },
-                )
-                TextButton(onClick = { controller.submitGlobalSearch(searchDraft) },
-                    enabled = state.canNavigateFiles() &&
-                        searchDraft.trim().codePointCount(0, searchDraft.trim().length) >= 2,
-                    modifier = Modifier.heightIn(min = 48.dp).testTag("files-search-results-submit")) {
-                    Text("搜索")
+    // iOS PWA places the large title, search and collection feedback inside
+    // the virtual scroll host; it must scroll away without resizing the host.
+    // Keep the search draft hoisted so lazy disposal never drops typed text.
+    val collectionChrome: @Composable () -> Unit = {
+        Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            // Same global Owner search is reachable from Browse, Recent and
+            // Favorites; never filter the currently loaded collection in memory.
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = searchDraft, onValueChange = { searchDraft = it.take(256) },
+                        modifier = Modifier.weight(1f).testTag("files-search-results-input"),
+                        singleLine = true, label = { Text("搜索全部文件") },
+                    )
+                    TextButton(onClick = { controller.submitGlobalSearch(searchDraft) },
+                        enabled = state.canNavigateFiles() &&
+                            searchDraft.trim().codePointCount(0, searchDraft.trim().length) >= 2,
+                        modifier = Modifier.heightIn(min = 48.dp).testTag("files-search-results-submit")) {
+                        Text("搜索")
+                    }
                 }
-            }
-        if (state.collectionLoaded) Text(
-            (if (state.filesSection == FilesSection.SEARCH) "已加载 " else "") +
-                "${state.collectionItems.size} 项",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
-        ErrorNotice(state.error)
-        if (state.error != null) TextButton(onClick = controller::retry, enabled = !state.loading,
-            modifier = Modifier.heightIn(min = 48.dp)) { Text("重试") }
+            if (state.collectionLoaded) Text(
+                (if (state.filesSection == FilesSection.SEARCH) "已加载 " else "") +
+                    "${state.collectionItems.size} 项",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            ErrorNotice(state.error)
+            if (state.error != null) TextButton(onClick = controller::retry, enabled = !state.loading,
+                modifier = Modifier.heightIn(min = 48.dp)) { Text("重试") }
+        }
     }
+
     Surface(Modifier.weight(1f).fillMaxWidth(), color = pageColor) {
         LazyColumn(Modifier.fillMaxSize().testTag("files-collection"), state = listState) {
+            item(key = "files-collection-chrome") { collectionChrome() }
             if (state.collectionLoaded && state.collectionItems.isEmpty() &&
                 state.error == null && !state.loading) item {
                 val empty = when (state.filesSection) {
@@ -506,11 +534,39 @@ private fun ColumnScope.FilesCollection(state: DriveState, controller: DriveCont
                 ((state.searchNextCursor.isNotBlank() && state.error == null) ||
                     (state.loading && state.collectionItems.isNotEmpty())))
                 item(key = "search-paging") { PageTail(state) }
+            if (state.error != null && state.collectionItems.isNotEmpty())
+                item(key = "collection-read-failure") {
+                    FilesReadFailureTail(state, controller::retry)
+                }
         }
     }
 }
 
 /** Compact real Go group metadata. Group headers consume no file paging slot. */
+@Composable
+private fun FilesReadFailureTail(state: DriveState, onRetry: () -> Unit) {
+    // The iOS-style search region now scrolls away. Keep a read-only retry
+    // reachable at the failed page edge, never require scrolling 100k items
+    // back to the header. The Controller decides whether GET reconciliation
+    // is safe; this button never replays an uncertain mutation.
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)
+            .testTag("files-page-error-tail"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text("读取未完成，已保留现有项目",
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error)
+        TextButton(onClick = onRetry, enabled = !state.loading,
+            modifier = Modifier.heightIn(min = 48.dp)
+                .testTag("files-page-tail-retry")) {
+            Text("重试加载")
+        }
+    }
+}
+
 @Composable
 private fun FilesBrowseGroupHeader(
     group: com.tfluid.xdrive.core.FileBrowseGroupIndex,

@@ -562,7 +562,7 @@ class DriveAppTest {
                 else if (manyFiles && parentId == 1L) listOf(DriveNode(2, 1, "假期照片", "dir")) +
                     (1..99).map { index -> if (index == 49)
                         DriveNode(200, 1, "第二相册", "dir")
-                        else DriveNode(100L + index, 1, "item-$index.txt", "file", 128) }
+                        else DriveNode(100L + index, 1, "item-$index.txt", "file", 128, revision = 1) }
                 else if (parentId == 1L) mutableRootRows.toList() +
                     (if (batchTransferFixture) listOf(batchSecondFile) else emptyList()) +
                     (if (filesAudioFixture) listOf(filesAudioNode) else emptyList()) +
@@ -1876,8 +1876,11 @@ class DriveAppTest {
                 failure,
             )
         }
+        // Re-resolve the *same* real menu item after its bounded positioning
+        // wait; an Android popup may re-layout between two separate queries.
+        // Only one click is issued, so the SAF callback cannot be replayed.
         compose.onNodeWithTag("files-upload-action")
-            .assertIsDisplayed().assertIsEnabled().performClick()
+            .performScrollTo().assertIsDisplayed().assertIsEnabled().performClick()
         compose.runOnIdle { org.junit.Assert.assertEquals(1, picks) }
     }
 
@@ -2158,12 +2161,18 @@ class DriveAppTest {
         compose.waitUntil(timeoutMillis = 10_000) { controller.state.value.error != null }
         compose.onNodeWithText("假期照片").assertIsDisplayed()
         compose.onNodeWithText("保留上次成功读取的目录。").assertIsDisplayed()
-        compose.onNodeWithText("重试").performClick()
+        // Search/title scroll away. Retry must also remain available at the
+        // failed page edge instead of requiring a full return to list top.
+        compose.onNodeWithTag("files").performScrollToIndex(2)
+        compose.onNodeWithTag("files-page-tail-retry")
+            .assertIsDisplayed().performClick()
         compose.waitUntil(timeoutMillis = 10_000) {
             controller.state.value.offset == 100 && !controller.state.value.loading
         }
-        compose.onNodeWithText("第二页.txt").assertExists()
-        compose.onNodeWithText("假期照片").assertExists()
+        compose.runOnIdle {
+            org.junit.Assert.assertTrue(controller.state.value.items.any { it.id == 2L })
+            org.junit.Assert.assertTrue(controller.state.value.items.any { it.id == 4L })
+        }
     }
 
     @Test fun longPressOnFolderOpensActionsWithoutEnteringIt() {
@@ -2175,6 +2184,47 @@ class DriveAppTest {
         compose.waitUntil(timeoutMillis = 10_000) { controller.state.value.selected?.id == 2L }
         compose.onNodeWithText("关闭").performClick()
         compose.runOnIdle { org.junit.Assert.assertNull(controller.state.value.selected) }
+    }
+
+    @Test fun filesScrollAwayChromePreservesOwnerViewportAndSelectionAccess() {
+        manyFiles = true
+        startAndLogin()
+        // The iOS PWA search/title live in the scroll host, not a fixed
+        // second header that steals 150dp from large directories.
+        compose.onNodeWithTag("files-global-search-input").assertIsDisplayed()
+        compose.onNodeWithTag("files").performScrollToIndex(70)
+        compose.onNodeWithTag("files-item-170").assertIsDisplayed()
+        compose.onNodeWithTag("files-global-search-input").assertDoesNotExist()
+
+        // Selecting a deep item remains accessible through the fixed More
+        // menu even when the large title and search have scrolled offscreen.
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("files-select-from-menu").performClick()
+        // The fixture must have the genuine revision required by Controller's
+        // Owner/version gate; the previous revision=0 row was correctly
+        // refused and exposed a broken test precondition, not a write failure.
+        compose.runOnIdle {
+            org.junit.Assert.assertTrue(controller.state.value.browseSelectionMode)
+            org.junit.Assert.assertEquals(1L,
+                controller.state.value.items.single { it.id == 170L }.revision)
+        }
+        compose.onNodeWithTag("files-item-170").assertIsDisplayed().performClick()
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(setOf(170L),
+                controller.state.value.browseSelectedIds)
+        }
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("files-select-from-menu").performClick()
+        compose.runOnIdle {
+            org.junit.Assert.assertFalse(controller.state.value.browseSelectionMode)
+        }
+
+        // Reusing one Owner Range does not re-run a query just to reveal Search.
+        compose.onNodeWithTag("files").performScrollToIndex(0)
+        compose.onNodeWithTag("files-global-search-input").assertIsDisplayed()
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(100, controller.state.value.items.size)
+        }
     }
 
     @Test fun listGridSwitchRetainsVisibleItemAnchor() {
