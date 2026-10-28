@@ -34,8 +34,8 @@ func (c *placesBD09PlanCapture) Trace(
 	}
 	statement, _ := fc()
 	lower := strings.ToLower(strings.TrimSpace(statement))
-	if (!strings.HasPrefix(lower, "select ") &&
-		!strings.HasPrefix(lower, "with ")) {
+	if !strings.HasPrefix(lower, "select ") &&
+		!strings.HasPrefix(lower, "with ") {
 		return
 	}
 	if !strings.Contains(lower, "xd_baidu_photo_map_positions") {
@@ -99,11 +99,11 @@ func placesBD09RedactedPlanNodes(
 		RelationName: node.RelationName, IndexName: node.IndexName,
 		JoinType: node.JoinType, ActualRows: node.ActualRows,
 		ActualLoops: node.ActualLoops, ActualTotalTimeMS: node.ActualTotalTimeMS,
-		SharedHitBlocks: node.SharedHitBlocks,
-		SharedReadBlocks: node.SharedReadBlocks,
-		TempReadBlocks: node.TempReadBlocks,
+		SharedHitBlocks:   node.SharedHitBlocks,
+		SharedReadBlocks:  node.SharedReadBlocks,
+		TempReadBlocks:    node.TempReadBlocks,
 		TempWrittenBlocks: node.TempWrittenBlocks,
-		SortMethod: node.SortMethod, SortSpaceUsed: node.SortSpaceUsed,
+		SortMethod:        node.SortMethod, SortSpaceUsed: node.SortSpaceUsed,
 	})
 	for _, child := range node.Plans {
 		placesBD09RedactedPlanNodes(child, depth+1, out)
@@ -156,13 +156,13 @@ func placesBD09ExplainProductionSelect(
 		t.Fatalf("no execution plan nodes for statement %d", ordinal)
 	}
 	return placesBD09ExplainEvidence{
-		Sequence: ordinal,
-		HasCount: strings.Contains(lower, "count("),
-		HasOrderBy: strings.Contains(lower, "order by"),
-		HasLimit: strings.Contains(lower, "limit "),
-		PlanningTimeMS: explained[0].PlanningTime,
+		Sequence:        ordinal,
+		HasCount:        strings.Contains(lower, "count("),
+		HasOrderBy:      strings.Contains(lower, "order by"),
+		HasLimit:        strings.Contains(lower, "limit "),
+		PlanningTimeMS:  explained[0].PlanningTime,
 		ExecutionTimeMS: explained[0].ExecutionTime,
-		Nodes: nodes,
+		Nodes:           nodes,
 	}
 }
 
@@ -185,7 +185,7 @@ func TestPlacesBD09Owner95kCameraExplain(t *testing.T) {
 	}
 	bounds := baiduPhotoMapBounds{
 		CoordinateSpace: meta.BaiduPhotoMapSpaceBD09LL,
-		West: 118, South: 28, East: 123, North: 33,
+		West:            118, South: 28, East: 123, North: 33,
 	}
 	capture := &placesBD09PlanCapture{
 		Interface: logger.Default.LogMode(logger.Silent),
@@ -228,15 +228,15 @@ func TestPlacesBD09Owner95kCameraExplain(t *testing.T) {
 		t.Fatal("redacted PostgreSQL plan artifact output is required")
 	}
 	report := struct {
-		Head               string                      `json:"ci_git_head"`
-		Workload           string                      `json:"workload"`
-		OwnerAssets        int                         `json:"owner_assets"`
-		DerivedBD09        string                      `json:"derived_bd09"`
-		ProviderVerified   bool                        `json:"provider_conversion_verified"`
-		CameraCount        int64                       `json:"camera_count"`
-		PageItems          int                         `json:"page_items"`
-		ProductionRangeMS  float64                     `json:"production_range_ms"`
-		Plans              []placesBD09ExplainEvidence `json:"plans"`
+		Head              string                      `json:"ci_git_head"`
+		Workload          string                      `json:"workload"`
+		OwnerAssets       int                         `json:"owner_assets"`
+		DerivedBD09       string                      `json:"derived_bd09"`
+		ProviderVerified  bool                        `json:"provider_conversion_verified"`
+		CameraCount       int64                       `json:"camera_count"`
+		PageItems         int                         `json:"page_items"`
+		ProductionRangeMS float64                     `json:"production_range_ms"`
+		Plans             []placesBD09ExplainEvidence `json:"plans"`
 	}{
 		Head: head, Workload: "owner100k_two_cities_95k_camera_gallery_range",
 		OwnerAssets: 100000, DerivedBD09: "deterministic_synthetic_offsets",
