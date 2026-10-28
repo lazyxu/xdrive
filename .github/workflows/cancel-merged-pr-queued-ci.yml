@@ -6,6 +6,9 @@ name: Cancel obsolete queued PR CI
 on:
   pull_request_target:
     types: [closed]
+    # GitHub filters PR branches by BASE; stacked/other targets must not
+    # create a skip-only cancellation run.
+    branches: [master]
 
 permissions:
   contents: read
