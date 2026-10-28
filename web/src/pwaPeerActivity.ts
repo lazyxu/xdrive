@@ -138,14 +138,20 @@ export function startXDrivePwaPeerActivityObservation(): void {
     return
   }
   subscribeXDrivePwaWindowActivity(broadcastStatus)
-  window.addEventListener('pageshow', broadcastStatus)
-  window.addEventListener('pagehide', () => {
-    // A frozen tab is unknown, never a positive "all clear" signal.
-    if (sender && channel) send({ kind: 'status', sender, sequence: ++sequence,
-      observed: false, busy: false })
-  })
-  document.addEventListener('visibilitychange', broadcastStatus)
-  window.setInterval(() => { broadcastStatus(); publish() }, heartbeatMS)
+  // Safari can deny each optional lifecycle listener independently. An
+  // unavailable hint must not prevent peer status/remaining hints from
+  // initializing or interfere with normal Web/PWA first paint.
+  try { window.addEventListener('pageshow', broadcastStatus) } catch { /* optional hint */ }
+  try {
+    window.addEventListener('pagehide', () => {
+      // A frozen tab is unknown, never a positive "all clear" signal.
+      if (sender && channel) send({ kind: 'status', sender, sequence: ++sequence,
+        observed: false, busy: false })
+    })
+  } catch { /* optional hint */ }
+  try { document.addEventListener('visibilitychange', broadcastStatus) } catch { /* optional hint */ }
+  try { window.setInterval(() => { broadcastStatus(); publish() }, heartbeatMS) }
+  catch { /* Periodic hints are optional; incoming messages still get validated. */ }
   publish()
   if (sender) send({ kind: 'hello', sender })
   broadcastStatus()

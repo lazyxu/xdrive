@@ -190,7 +190,7 @@ test('FileExplorer LIVP preview reuses the shared Live Photo surface on Web and 
     'Web FileExplorer must use the signed LIVP still preview before thumbnail fallback',
   )
   assert.ok(
-    desktop.includes('getMediaLivePhotoStill(Number(item.id), requestID)') && desktop.includes('xDriveReleaseDiscardedDesktopPreviewURL(late.data'),
+    desktop.includes('getMediaLivePhotoStill(Number(item.id), requestID)') && desktop.includes('hostPort.releaseDiscardedPreviewURL(late.data'),
     'Desktop FileExplorer must use the protected LIVP still preview before thumbnail fallback',
   )
   assert.ok(

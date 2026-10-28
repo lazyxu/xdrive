@@ -113,7 +113,7 @@ internal fun ColumnScope.Gallery(
         TextButton(
             onClick = { controller.setGallerySelectionMode(!state.gallerySelectionMode) },
             enabled = state.galleryLoaded && !state.loading &&
-                !state.galleryFavoriteWriteAttempted && !state.viewerReturnToFiles,
+                !state.galleryMetadataWriteAttempted && !state.viewerReturnToFiles,
             modifier = Modifier.heightIn(min = 48.dp).testTag("gallery-select-mode"),
         ) { Text(if (state.gallerySelectionMode) "完成" else "选择") }
         // Preserve the real Server query clear action without a second bottom row.
@@ -126,7 +126,7 @@ internal fun ColumnScope.Gallery(
         if (state.gallerySelectedAlbum == null) {
             TextButton(
                 onClick = { kindMenuOpen = true },
-                enabled = !state.gallerySelectionMode && !state.galleryFavoriteWriteAttempted,
+                enabled = !state.gallerySelectionMode && !state.galleryMetadataWriteAttempted,
                 modifier = Modifier.heightIn(min = 48.dp)
                     .testTag("gallery-kind-filter")
                     .semantics {
@@ -141,7 +141,7 @@ internal fun ColumnScope.Gallery(
         Box {
             IconButton(
                 onClick = { displayMenuOpen = true },
-                enabled = !state.gallerySelectionMode && !state.galleryFavoriteWriteAttempted,
+                enabled = !state.gallerySelectionMode && !state.galleryMetadataWriteAttempted,
                 modifier = Modifier.size(48.dp)
                     .semantics {
                         stateDescription = "缩略图密度 ${preferredColumns} 档，" +

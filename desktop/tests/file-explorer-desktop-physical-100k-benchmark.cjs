@@ -29,7 +29,7 @@ test('P035/M002-a uses the real production Desktop Main, preload and FileExplore
     "productionDesktop: true",
     "physicalDistinctJPEGCAS: 100000",
   ]) assert.ok(entry.includes(phrase), 'authentic Desktop viewport contract missing: ' + phrase)
-  assert.ok(productionFiles.includes('window.xdriveDesktop.agent.getMediaThumbnail('))
+  assert.ok(productionFiles.includes('hostPort.media.getMediaThumbnail('))
   assert.ok(productionAgent.includes('cloudChildrenRange('))
 })
 

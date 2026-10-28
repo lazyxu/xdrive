@@ -90,7 +90,7 @@ test('Desktop FileExplorer stale Live Photo dispose cannot release through the n
   const actionGenerationRef = { current: 1 }
 
   const loadLivePhotoMotion = compileCallback(filename, callback, {
-    window,
+    hostPort: { media: agentA },
     actionGenerationRef,
   })
 
@@ -153,7 +153,7 @@ test('Desktop FileExplorer Live Photo load finishing after account switch is dis
   const actionGenerationRef = { current: 4 }
 
   const loadLivePhotoMotion = compileCallback(filename, callback, {
-    window,
+    hostPort: { media: agentA },
     actionGenerationRef,
   })
 
@@ -191,6 +191,7 @@ test('Desktop Live motion cancellable IPC reuses sender-bound viewport and local
   const main = read('desktop/src/main/index.cts')
   const client = read('desktop/src/main/agent_client.cts')
   const renderer = read('desktop/src/renderer/DesktopFileExplorer.tsx')
+  const filesHost = read('desktop/src/renderer/DesktopFileExplorerHostPort.ts')
   const gallery = read('desktop/src/renderer/mediaGalleryAdapter.ts')
   const types = read('desktop/src/renderer/global.d.ts')
   for (const [name, source, part] of [
@@ -202,8 +203,10 @@ test('Desktop Live motion cancellable IPC reuses sender-bound viewport and local
     ['Main proxy cleanup', main, 'signal?.addEventListener(\'abort\', releaseOnAbort, { once: true })'],
     ['Agent HTTP', client, 'mediaLivePhotoMotionTicket(nodeID: number, signal?: AbortSignal)'],
     ['Desktop Gallery', gallery, 'xDriveDesktopViewportRequest(signal, async (requestID)'],
-    ['Desktop Files', renderer, 'xDriveDesktopViewportRequest(signal, fetchMotion)'],
+    ['Desktop Files', renderer, 'hostPort.requestViewport(signal, fetchMotion)'],
   ]) assert.ok(source.includes(part), name + ' must preserve request cancellation')
+  assert.ok(filesHost.includes('requestViewport: xDriveDesktopViewportRequest'),
+    'Sender-scoped cancellation must remain in the owning Desktop Host Adapter')
 })
 
 test('Desktop FileExplorer late aborted Live Photo proxy is released through its original Agent only', async () => {
@@ -231,7 +234,8 @@ test('Desktop FileExplorer late aborted Live Photo proxy is released through its
     return result
   }
   const loader = compileCallback(filename, callback, {
-    window, actionGenerationRef, xDriveDesktopViewportRequest,
+    hostPort: { media: oldAgent, requestViewport: xDriveDesktopViewportRequest },
+    actionGenerationRef,
   })
   const controller = new AbortController()
   const pending = loader({ id: 9, name: 'photo.livp', kind: 'file', revision: 2 }, undefined, controller.signal)

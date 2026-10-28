@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, LinearProgress,
   MenuItem, Paper, Stack, Table, TableBody, TableCell, TableContainer,
@@ -10,6 +10,7 @@ import type {
 } from '../server-backup-admin'
 import { latestServerBackupVerification, serverBackupReceiptDurationSeconds,
   serverBackupReceiptExplanation, summarizeServerBackupIntegrity } from '../server-backup-integrity'
+import { canPruneServerBackup, type XDriveServerBackupPrunePreview } from '../server-backup-prune-preview'
 import { XDriveActionButton } from './ActionButton'
 import { XDriveBackupVerificationReceipt } from './BackupVerificationReceipt'
 import { XDriveBackupRecoveryEvidencePanel } from './BackupRecoveryEvidencePanel'
@@ -52,7 +53,11 @@ export function XDriveServerBackupManagementPanel({
   port: XDriveServerBackupPort
   onOpenStorage?: () => void
 }) {
-  const [page, setPage] = useState<XDriveServerBackupPage | null>(null)
+  // A late response from a previous Host/Owner must not repopulate this page.
+  const [loaded, setLoaded] = useState<{ port: XDriveServerBackupPort; page: XDriveServerBackupPage } | null>(null)
+  const page = loaded?.port === port ? loaded.page : null
+  const sessionGeneration = useRef(0)
+  const latestRead = useRef(0)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -66,56 +71,52 @@ export function XDriveServerBackupManagementPanel({
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null)
   const [historyDetail, setHistoryDetail] = useState<XDriveServerBackupHistoryEntry | null>(null)
   const [confirmText, setConfirmText] = useState('')
+  const [prunePreview, setPrunePreview] = useState<XDriveServerBackupPrunePreview | null>(null)
 
   const reload = useCallback(async () => {
-    const result = await port.read()
-    setPage(result)
-    setPolicyDraft(old => old?.revision === result.inventory.policy.revision ? old : {
-      format: result.inventory.policy.schedule_format,
-      days: String(result.inventory.policy.retention_days),
-      revision: result.inventory.policy.revision,
-    })
-    setSnapshotID(current =>
-      result.inventory.snapshots.some(snapshot => snapshot.id === current)
-        ? current : result.inventory.snapshots[0]?.id || '')
-    return result
-  }, [port])
-
-  useEffect(() => {
-    let active = true
-    setPage(null)
-    setSnapshotID('')
-    setPolicyDraft(null)
-    setConfirmation(null)
-    setError('')
-    void port.read().then(result => {
-      if (!active) return
-      setPage(result)
-      setSnapshotID(result.inventory.snapshots[0]?.id || '')
-      setPolicyDraft({
+    const generation = sessionGeneration.current
+    const read = ++latestRead.current
+    try {
+      const result = await port.read()
+      // Both Host identity and request ordering matter: polls can overlap.
+      if (generation !== sessionGeneration.current || read !== latestRead.current) return
+      setLoaded({ port, page: result })
+      setError('')
+      setPolicyDraft(old => old?.revision === result.inventory.policy.revision ? old : {
         format: result.inventory.policy.schedule_format,
         days: String(result.inventory.policy.retention_days),
         revision: result.inventory.policy.revision,
       })
-    }).catch(e => {
-      if (active) setError(e instanceof Error ? e.message : '加载备份清单失败。')
-    })
-    const poll = window.setInterval(() => {
-      if (!active) return
-      void port.read().then(result => {
-        if (!active) return
-        setPage(result)
-        setPolicyDraft(old => old?.revision === result.inventory.policy.revision ? old : {
-          format: result.inventory.policy.schedule_format,
-          days: String(result.inventory.policy.retention_days),
-          revision: result.inventory.policy.revision,
-        })
-      }).catch(() => {
-        if (active) setError('无法更新备份状态；操作结果仍以宿主机记录为准。')
-      })
-    }, 4500)
-    return () => { active = false; window.clearInterval(poll) }
+      setSnapshotID(current =>
+        result.inventory.snapshots.some(snapshot => snapshot.id === current)
+          ? current : result.inventory.snapshots[0]?.id || '')
+    } catch (e) {
+      if (generation === sessionGeneration.current && read === latestRead.current) {
+        setError(e instanceof Error ? e.message : '无法更新备份状态；以宿主机记录为准。')
+      }
+    }
   }, [port])
+
+  useEffect(() => {
+    sessionGeneration.current++
+    latestRead.current = 0
+    setLoaded(null)
+    setSnapshotID('')
+    setPolicyDraft(null)
+    setConfirmation(null)
+    setHistoryDetail(null)
+    setPrunePreview(null)
+    setNotice('')
+    setSubmitting(false)
+    setError('')
+    void reload()
+    const poll = window.setInterval(() => { void reload() }, 4500)
+    return () => {
+      sessionGeneration.current++
+      latestRead.current++
+      window.clearInterval(poll)
+    }
+  }, [reload])
 
   const busy = submitting || workStates.has(page?.operation.state || '')
   const supported = Boolean(page?.supported)
@@ -125,6 +126,7 @@ export function XDriveServerBackupManagementPanel({
   const selectedRestorable = selectedComplete && selected?.file_data_included !== false
   const keep = Number(keepLast)
   const keepValid = Number.isInteger(keep) && keep >= 1 && keep <= 1000
+  const canPrune = canPruneServerBackup(page, keep, verifyMode, prunePreview)
   const policyDays = Number(policyDraft?.days)
   const policyValid = Number.isInteger(policyDays) && policyDays >= 0 && policyDays <= 3650 &&
     !(policyDraft?.format === 'v1' && Boolean(page?.inventory.policy.repository))
@@ -132,16 +134,25 @@ export function XDriveServerBackupManagementPanel({
 
   const submit = async (request: XDriveServerBackupRequest) => {
     if (!supported || busy) return
+    const generation = sessionGeneration.current
     setSubmitting(true)
     setError('')
+    // Only an actual, successful preview from this UI session can enable prune.
+    setPrunePreview(null)
     try {
       const result = await port.submit(request)
+      if (generation !== sessionGeneration.current) return
+      if (request.action === 'plan' && result.request_id) {
+        setPrunePreview({ requestID: result.request_id, keepLast: request.keep_last, mode: request.mode })
+      }
       setNotice('已提交宿主机任务：' + (result.request_id || '等待处理'))
-      await reload().catch(() => undefined)
+      await reload()
     } catch (e) {
-      setError(e instanceof Error ? e.message : '提交备份操作失败。')
+      if (generation === sessionGeneration.current) {
+        setError(e instanceof Error ? e.message : '提交备份操作失败。')
+      }
     } finally {
-      setSubmitting(false)
+      if (generation === sessionGeneration.current) setSubmitting(false)
     }
   }
 
@@ -361,7 +372,7 @@ export function XDriveServerBackupManagementPanel({
               onClick={() => { void submit({ action: 'plan', keep_last: keep, mode: verifyMode }) }}>
               预览保留计划
             </XDriveActionButton>
-            <XDriveActionButton intent="danger" disabled={disabled || !keepValid}
+            <XDriveActionButton intent="danger" disabled={disabled || !canPrune}
               onClick={() => ask({
                 title: '确认清理旧代 v2 备份？',
                 description: '将删除超过保留数量的旧快照和所有保留快照都不引用的备份 CAS。无法撤销；操作不会触及线上 CAS。',
@@ -369,6 +380,11 @@ export function XDriveServerBackupManagementPanel({
                 action: { action: 'prune', keep_last: keep, confirmation: 'PRUNE ' + keep },
               })}>手动清理旧代和孤儿 CAS</XDriveActionButton>
           </Stack>
+          <Typography variant="caption" color="text.secondary" data-xdrive-admin-backup-prune-preview-guard>
+            {canPrune
+              ? '当前会话已完成匹配保留数量与校验级别的只读预览；清理时宿主机会再次独占锁验证。'
+              : '执行清理前，必须对当前保留数量与校验级别完成一次成功的只读预览；修改参数或切换宿主机后需重新预览。'}
+          </Typography>
           {page?.retention ? (
             <Alert severity="info">
               最近一次只读计划：保留 {page.retention.keep_snapshots?.length || 0} 代；

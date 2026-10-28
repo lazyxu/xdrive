@@ -163,10 +163,18 @@ test('Explorer/Gallery preview and poster adapters use sender-scoped release IPC
   const gallery = fs.readFileSync(path.join(repo, 'desktop/src/renderer/mediaGalleryAdapter.ts'), 'utf8')
   const main = fs.readFileSync(path.join(repo, 'desktop/src/main/index.cts'), 'utf8')
   const preload = fs.readFileSync(path.join(repo, 'desktop/src/preload/index.cts'), 'utf8')
-  for (const source of [explorer, gallery]) {
-    assert.match(source, /xDriveLeaseDesktopPreviewURL\(/)
-    assert.match(source, /releaseCloudFilePreviewURL\(/)
-  }
+  const bridge = fs.readFileSync(path.join(repo, 'desktop/src/renderer/DesktopFileExplorerHostPort.ts'), 'utf8')
+  // The Files controller uses its captured Owner media port for late release.
+  // The Desktop Host maps this to the same protected native lease helper.
+  assert.match(explorer, /hostPort\.leasePreviewURL\(/)
+  assert.match(explorer, /hostPort\.releaseDiscardedPreviewURL\(/)
+  assert.match(explorer, /const agent = hostPort\.media/)
+  assert.match(explorer, /agent\.releaseCloudFilePreviewURL\(/)
+  assert.match(bridge, /leasePreviewURL: xDriveLeaseDesktopPreviewURL/)
+  assert.match(bridge, /releaseDiscardedPreviewURL: xDriveReleaseDiscardedDesktopPreviewURL/)
+  assert.match(bridge, /releaseCloudFilePreviewURL: files\.releaseCloudFilePreviewURL/)
+  assert.match(gallery, /xDriveLeaseDesktopPreviewURL\(/)
+  assert.match(gallery, /releaseCloudFilePreviewURL\(/)
   assert.match(explorer, /finally \{\s*\/\/ Poster capture does not own a persistent/)
   assert.match(main, /agent:release-cloud-file-preview-url/)
   assert.match(preload, /agent:release-cloud-file-preview-url/)

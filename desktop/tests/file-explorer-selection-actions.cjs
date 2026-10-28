@@ -74,6 +74,8 @@ function adapterHarness(platform, nodes, options = {}) {
     } } },
     ...options,
   }
+  // The fixture's exact typed Desktop write port follows its per-test Agent.
+  dependencies.hostPort = { write: dependencies.window.xdriveDesktop.agent }
   const availability = source.findExpression('getSelectionActionDisabledReason')
   dependencies.getSelectionActionDisabledReason = availability ? source.compile(availability, dependencies) : undefined
   const allow = source.findExpression('allowSelectionAction')
