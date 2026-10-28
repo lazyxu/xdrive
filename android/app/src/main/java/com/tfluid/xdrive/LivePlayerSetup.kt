@@ -9,7 +9,7 @@ package com.tfluid.xdrive
  * for its current media lease and re-creates on a new verified lease. Never
  * store the source URL, token or a player across Owner/session boundaries.
  */
-internal fun <T : Any> createPreparedLiveResource(
+internal fun <T : Any> createPreparedMediaResource(
     build: () -> T,
     prepare: (T) -> Unit,
     release: (T) -> Unit,
