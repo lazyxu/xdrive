@@ -161,25 +161,28 @@ test('compact map rotation uses fresh owner camera before evaluating photo pins'
   assert.doesNotMatch(source,/pointToPixel\(\)\{return \{x:180,y:180\}\}/)
 })
 
-test('camera resize requires fresh Owner Cell before reopening actual photo drawer',()=>{
+test('camera resize revokes old Cell and auto-restores drawer after fresh Owner Cells and items',()=>{
   const driver=read('desktop/scripts/gallery-places-dual-host-chromium.cjs')
-  for(const fragment of [
+  for(const text of [
     "rotation revokes prior camera-scoped photo drawer",
+    "rotation automatically restores only fresh signed Owner Cell items",
     "portrait resize revokes short-landscape Cell scope",
+    "portrait automatically restores current Owner drawer",
     "beforeLandscape=await page.evaluate",
     "beforePortrait=await page.evaluate",
     "expanded drawer fits inside 844x390 map and safe area",
-  ]) assert.ok(driver.includes(fragment),fragment)
+  ]) assert.ok(driver.includes(text),text)
+  assert.match(driver,/probe\.oldDrawer=document\.querySelector/)
+  assert.match(driver,/oldDetached:probe\.oldDrawer\?\.isConnected===false/)
+  assert.match(driver,/window\.__mapProbe\.queries\.length>before\.queries/)
+  assert.match(driver,/window\.__mapProbe\.photoPreviewRanges\.length>before\.previews/)
+  assert.match(driver,/landscapeFresh\.itemTotal===3&&landscapeFresh\.items===3/)
+  assert.match(driver,/portraitFresh\.previewCount===3&&portraitFresh\.newItems===3/)
   assert.match(driver,/sheetGeometry\.top>=sheetGeometry\.mapTop\+8/)
   assert.match(driver,/sheetGeometry\.bottom<=sheetGeometry\.mapBottom-8/)
   assert.match(driver,/sheetGeometry\.bottom<=sheetGeometry\.screen-8/)
-  assert.match(driver,/window\.__mapProbe\.queries\.length>before/)
-  assert.match(driver,/const openFreshCameraCell=async\(\)=>/)
-  assert.match(driver,/data-xdrive-places-cluster-list/)
-  assert.match(driver,/await openFreshCameraCell\(\)/)
-  assert.match(driver,/await list\.locator\('button'\)\.first\(\)\.click\(\)/)
-  assert.doesNotMatch(driver,/await page\.setViewportSize\(\{width:844,height:390\}\)\s*const sheetGeometry/,
-    'stale pre-rotation drawer must not be reused')
+  assert.doesNotMatch(driver,/await openFreshCameraCell\(\)/,
+    'automatic restoration must use new Owner Cell without a second user click')
 })
 
 test('responsive keyboard appearance waits for new Owner camera and bounded map fallback',()=>{

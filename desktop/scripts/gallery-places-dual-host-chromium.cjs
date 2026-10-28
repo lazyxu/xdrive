@@ -889,39 +889,47 @@ async function testMode(browser,mode,port){
       '[data-xdrive-places-photo-drawer-handle]')?.getAttribute('aria-expanded')==='true')
     record(mode+': semantic shared photo sheet handle opens by pointer click',
       await handle.getAttribute('aria-expanded')==='true')
-    // A signed Cell remains available through the accessible list even when
-    // a short noncompact landscape has no room for an unobscured 72px cover.
-    // Prefer the actual visible photo; use only the CURRENT signed Cell list
-    // when the map-controls/edge exclusion intentionally hides every cover.
-    const openFreshCameraCell=async()=>{
-      const list=page.locator('[data-xdrive-places-cluster-list]')
-      await list.locator('button').first().waitFor({state:'attached'})
-      const cover=page.locator('[data-xdrive-places-trusted-photo-cover]').first()
-      if(await cover.isVisible()) {
-        await cover.click()
-      } else {
-        if(await list.getAttribute('open')===null)
-          await list.locator('summary').click()
-        await list.locator('button').first().click()
-      }
-    }
-    // A changed CSS camera is a fresh /cells authorization boundary.
-    // The old selected Cell and its drawer must be revoked immediately;
-    // use the newly signed Owner cell rather than a stale handle.
-    const beforeLandscape=await page.evaluate(()=>window.__mapProbe.queries.length)
+    // A rotation changes the SDK camera's 8x8 Cell authority. The old
+    // React drawer MUST be detached first. After a NEW signed Owner /cells
+    // page, the shared Parent may automatically restore only the same
+    // representative Node+PhotoAsset+revision with an independent /cell-items
+    // fetch. No click on an obsolete photo cover or accessible Cell is allowed.
+    const beforeLandscape=await page.evaluate(()=>{
+      const probe=window.__mapProbe
+      probe.oldDrawer=document.querySelector('[data-xdrive-places-photo-drawer]')
+      return {queries:probe.queries.length,previews:probe.photoPreviewRanges.length}
+    })
     await page.setViewportSize({width:844,height:390})
-    await page.locator('[data-xdrive-places-photo-drawer]')
-      .waitFor({state:'hidden'})
-    record(mode+': rotation revokes prior camera-scoped photo drawer',
-      await page.locator('[data-xdrive-places-photo-drawer]').count()===0)
-    await page.waitForFunction(before=>window.__mapProbe.queries.length>before,
+    await page.waitForFunction(before=>
+      window.__mapProbe.queries.length>before.queries &&
+      window.__mapProbe.photoPreviewRanges.length>before.previews,
       beforeLandscape)
-    await page.getByText('当前地图可查看 3 张照片',{exact:true}).waitFor()
-    await openFreshCameraCell()
-    await page.locator('[data-xdrive-places-photo-drawer-items] button').first().waitFor()
-    await handle.click()
-    await page.waitForFunction(()=>document.querySelector(
-      '[data-xdrive-places-photo-drawer-handle]')?.getAttribute('aria-expanded')==='true')
+    const sheet=page.locator('[data-xdrive-places-photo-drawer]')
+    await sheet.waitFor({state:'visible'})
+    await sheet.locator('[data-xdrive-places-photo-drawer-items] button')
+      .first().waitFor({state:'visible'})
+    await page.waitForFunction(()=>
+      document.querySelector('[data-xdrive-places-photo-drawer-handle]')
+        ?.getAttribute('aria-expanded')==='true')
+    const landscapeFresh=await page.evaluate(()=>{
+      const probe=window.__mapProbe
+      const newDrawer=document.querySelector('[data-xdrive-places-photo-drawer]')
+      const query=probe.queries.at(-1), preview=probe.photoPreviewRanges.at(-1)
+      return {oldDetached:probe.oldDrawer?.isConnected===false &&
+          probe.oldDrawer!==newDrawer,
+        currentCount:query?.count, favorite:query?.favorite,
+        itemTotal:preview?.total,
+        items:newDrawer?.querySelectorAll(
+          '[data-xdrive-places-photo-drawer-items] button').length,
+        expanded:newDrawer?.querySelector(
+          '[data-xdrive-places-photo-drawer-handle]')?.getAttribute('aria-expanded')}
+    })
+    record(mode+': rotation revokes prior camera-scoped photo drawer',
+      landscapeFresh.oldDetached)
+    record(mode+': rotation automatically restores only fresh signed Owner Cell items',
+      landscapeFresh.currentCount===3&&landscapeFresh.favorite===true&&
+      landscapeFresh.itemTotal===3&&landscapeFresh.items===3&&
+      landscapeFresh.expanded==='true')
     const sheetGeometry=await page.evaluate(()=>{
       const map=document.querySelector('[data-xdrive-places-cluster-overview]')
       const sheet=document.querySelector('[data-xdrive-places-photo-drawer]')
@@ -937,24 +945,40 @@ async function testMode(browser,mode,port){
     if(!drawerFits) console.error('places-drawer-landscape-geometry',JSON.stringify({
       mode,viewport:'844x390',geometry:sheetGeometry,
     }))
-    record(mode+': expanded drawer fits inside 844x390 map and safe area',
-      drawerFits)
-    // The inverse rotation must reauthorize again, then retain keyboard
-    // navigation and the original scoped Gallery Viewer flow.
-    const beforePortrait=await page.evaluate(()=>window.__mapProbe.queries.length)
+    record(mode+': expanded drawer fits inside 844x390 map and safe area',drawerFits)
+    // Reversing to portrait requires ANOTHER signed /cells + /cell-items.
+    // Old landscape DOM and its revoked selection are not reused.
+    const beforePortrait=await page.evaluate(()=>{
+      const probe=window.__mapProbe
+      probe.oldDrawer=document.querySelector('[data-xdrive-places-photo-drawer]')
+      return {queries:probe.queries.length,previews:probe.photoPreviewRanges.length}
+    })
     await page.setViewportSize({width:960,height:760})
-    await page.locator('[data-xdrive-places-photo-drawer]')
-      .waitFor({state:'hidden'})
-    record(mode+': portrait resize revokes short-landscape Cell scope',
-      await page.locator('[data-xdrive-places-photo-drawer]').count()===0)
-    await page.waitForFunction(before=>window.__mapProbe.queries.length>before,
+    await page.waitForFunction(before=>
+      window.__mapProbe.queries.length>before.queries &&
+      window.__mapProbe.photoPreviewRanges.length>before.previews,
       beforePortrait)
-    await page.getByText('当前地图可查看 3 张照片',{exact:true}).waitFor()
-    await openFreshCameraCell()
-    await page.locator('[data-xdrive-places-photo-drawer-items] button').first().waitFor()
-    await handle.click()
-    await page.waitForFunction(()=>document.querySelector(
-      '[data-xdrive-places-photo-drawer-handle]')?.getAttribute('aria-expanded')==='true')
+    await sheet.waitFor({state:'visible'})
+    await sheet.locator('[data-xdrive-places-photo-drawer-items] button')
+      .first().waitFor({state:'visible'})
+    await page.waitForFunction(()=>
+      document.querySelector('[data-xdrive-places-photo-drawer-handle]')
+        ?.getAttribute('aria-expanded')==='true')
+    const portraitFresh=await page.evaluate(()=>{
+      const probe=window.__mapProbe
+      const newDrawer=document.querySelector('[data-xdrive-places-photo-drawer]')
+      const q=probe.queries.at(-1), preview=probe.photoPreviewRanges.at(-1)
+      return {oldDetached:probe.oldDrawer?.isConnected===false &&
+          probe.oldDrawer!==newDrawer,
+        count:q?.count,favorite:q?.favorite,previewCount:preview?.total,
+        newItems:newDrawer?.querySelectorAll(
+          '[data-xdrive-places-photo-drawer-items] button').length}
+    })
+    record(mode+': portrait resize revokes short-landscape Cell scope',
+      portraitFresh.oldDetached)
+    record(mode+': portrait automatically restores current Owner drawer',
+      portraitFresh.count===3&&portraitFresh.favorite===true&&
+      portraitFresh.previewCount===3&&portraitFresh.newItems===3)
     await handle.press('Enter')
     await page.waitForFunction(()=>document.querySelector(
       '[data-xdrive-places-photo-drawer-handle]')?.getAttribute('aria-expanded')==='false')

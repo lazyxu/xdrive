@@ -2557,15 +2557,15 @@ backup_admin_history_append() {
     "$snapshot" "$mode" "$started" "$finished" "$error_code" "$proof_path" <<'PY'
 import json, os, re, stat, sys, tempfile
 path,state,action,rid,snapshot,mode,started,finished,code,proof_path=sys.argv[1:]
-if state not in ("success","failed") or action not in ("create","verify","verify_all","drill","plan","restore","delete","prune","policy"):
+if state not in ("success","failed") or action not in ("create","verify","verify_all","preview_delete","drill","plan","restore","delete","prune","policy"):
     sys.exit(2)
 if not re.fullmatch(r"[0-9a-f]{24}",rid) or not re.fullmatch(r"[a-z_]{0,60}",code):
     sys.exit(2)
 if snapshot and not re.fullmatch(r"(v1|v2-default|v2-configured):xdrive-backup-[0-9]{8}T[0-9]{6}Z",snapshot):
     sys.exit(2)
-if (action in ("verify","drill","restore","delete")) != bool(snapshot):
+if (action in ("verify","preview_delete","drill","restore","delete")) != bool(snapshot):
     sys.exit(2)
-if (action in ("verify","verify_all","plan")) != (mode in ("fast","deep")):
+if (action in ("verify","preview_delete","verify_all","plan")) != (mode in ("fast","deep")):
     sys.exit(2)
 if not (re.fullmatch(r"20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z",started) and
         re.fullmatch(r"20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z",finished)):
@@ -2583,7 +2583,7 @@ if os.path.lexists(path):
         sys.exit(2)
     old=data.get("operations")
     if not isinstance(old,list) or len(old)>30: sys.exit(2)
-if action=="drill" and not snapshot.startswith(("v2-default:","v2-configured:")): sys.exit(2)
+if action in ("drill","preview_delete") and not snapshot.startswith(("v2-default:","v2-configured:")): sys.exit(2)
 entry=dict(protocol="xdrive-backup-admin-v1",request_id=rid,action=action,
     snapshot_id=snapshot,mode=mode,state=state,started_at=started,
     finished_at=finished,error_code=code)
@@ -3081,6 +3081,16 @@ backup_admin_execute() {
       if [[ "$mode" == deep && "$snapshot" == v2-* ]]; then
         XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup retention-plan --repository-dir "$(dirname "$(dirname "$target")")" --keep-last 1 --mode deep
       fi ;;
+    preview_delete)
+      [[ "$snapshot" == v2-* && ( "$mode" == fast || "$mode" == deep ) &&
+         -z "$fmt" && -z "$confirm" && ( -z "$keep" || "$keep" == 0 ) &&
+         ( -z "$days" || "$days" == 0 ) && -z "$revision" ]] || return 2
+      target="$(backup_admin_snapshot_directory "$snapshot")" || return 2
+      # The Server never supplies a Host path. The Host resolves a recognized
+      # committed v2 identity, then invokes the read-only confined helper.
+      XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup preview-delete-snapshot \
+        --snapshot "${snapshot#*:}" --mode "$mode" \
+        --repository-dir "$(dirname "$(dirname "$target")")" ;;
     drill)
       [[ "$snapshot" == v2-* && "$confirm" == "DRILL $snapshot" ]] || return 2
       target="$(backup_admin_snapshot_directory "$snapshot")" || return 2
@@ -3129,6 +3139,86 @@ backup_admin_json_int() {
   local file="$1" key="$2"
   [[ -f "$file" ]] || return 0
   sed -nE 's/.*"'$key'"[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' "$file" | head -n1
+}
+
+# Persist only a complete, strictly validated, bounded read-only Host report.
+# This report never grants deletion authority or supplies a browser Host path.
+backup_admin_persist_selected_preview() {
+  local dir="$1" log="$2" request_id="$3" snapshot="$4" mode="$5"
+  local tmp
+  tmp="$(mktemp "$dir/.backup-admin-selected-preview.XXXXXX")" || return 1
+  if ! python3 - "$log" "$tmp" "$request_id" "$snapshot" "$mode" <<'PY'
+import json, os, re, stat, sys
+source, target, rid, snapshot, mode = sys.argv[1:]
+required = {
+    "protocol", "mode", "validation", "snapshot", "committed_snapshots",
+    "surviving_snapshots", "selected_snapshot_bytes", "selected_cas_objects",
+    "shared_cas_objects", "exclusive_cas_objects", "exclusive_cas_bytes",
+    "unreferenced_objects", "unreferenced_bytes", "potential_logical_bytes",
+    "hashed_objects", "hashed_bytes", "delete_enabled"
+}
+try:
+    if not re.fullmatch(r"[0-9a-f]{24}", rid):
+        raise ValueError("invalid request id")
+    if not re.fullmatch(r"v2-(default|configured):xdrive-backup-[0-9]{8}T[0-9]{6}Z", snapshot):
+        raise ValueError("invalid selected snapshot")
+    if mode not in ("fast", "deep"):
+        raise ValueError("invalid validation mode")
+    fd = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, "rb") as f:
+        st = os.fstat(f.fileno())
+        if not stat.S_ISREG(st.st_mode) or not 0 < st.st_size <= 4096:
+            raise ValueError("invalid source report size")
+        raw = f.read(4097)
+    def unique_fields(pairs):
+        data = {}
+        for key, value in pairs:
+            if key in data: raise ValueError("duplicate report key")
+            data[key] = value
+        return data
+    data = json.loads(raw.decode("utf-8"), object_pairs_hook=unique_fields)
+    if not isinstance(data, dict) or set(data) != required:
+        raise ValueError("invalid report fields")
+    expected = ("snapshot_sha256_and_full_cas_sha256" if mode == "deep"
+                else "snapshot_sha256_and_cas_size")
+    if (data["protocol"] != "xdrive-backup-selected-prune-plan-v1"
+            or data["mode"] != "read_only"
+            or data["validation"] != expected
+            or data["snapshot"] != snapshot.split(":", 1)[1]
+            or data["delete_enabled"] is not False):
+        raise ValueError("mismatched read-only preview")
+    ints = required - {"protocol", "mode", "validation", "snapshot", "delete_enabled"}
+    for key in ints:
+        ceiling = 1000000000 if key.endswith("objects") or key.endswith("snapshots") else 9007199254740991
+        if type(data[key]) is not int or not 0 <= data[key] <= ceiling:
+            raise ValueError("invalid preview counter")
+    if (data["committed_snapshots"] < 2 or
+            data["surviving_snapshots"] != data["committed_snapshots"] - 1 or
+            data["selected_cas_objects"] != data["shared_cas_objects"] + data["exclusive_cas_objects"] or
+            (mode == "deep" and (data["hashed_objects"] <
+                data["selected_cas_objects"] + data["unreferenced_objects"] or
+                data["hashed_bytes"] < data["exclusive_cas_bytes"] + data["unreferenced_bytes"])) or
+            data["potential_logical_bytes"] != data["selected_snapshot_bytes"] +
+                data["exclusive_cas_bytes"] + data["unreferenced_bytes"]):
+        raise ValueError("inconsistent preview totals")
+    envelope = dict(protocol="xdrive-host-selected-v2-preview-v1",
+                    request_id=rid, snapshot_id=snapshot, mode=mode, report=data)
+    with open(target, "w", encoding="utf-8") as f:
+        json.dump(envelope, f, ensure_ascii=True, separators=(",", ":"))
+        f.write("\n")
+        f.flush()
+        os.fsync(f.fileno())
+except (OSError, ValueError, KeyError, TypeError, UnicodeError):
+    sys.exit(1)
+PY
+  then
+    rm -f -- "$tmp"
+    return 1
+  fi
+  chmod 0660 "$tmp" && mv -f -- "$tmp" "$dir/backup-admin-selected-preview.json" || {
+    rm -f -- "$tmp"
+    return 1
+  }
 }
 
 backup_admin_process_request() {
@@ -3218,6 +3308,9 @@ backup_admin_process_request() {
       flock -u 6
     fi
     exec 6>&-
+  fi
+  if [[ "$result" == 0 && "$action" == preview_delete ]]; then
+    backup_admin_persist_selected_preview "$dir" "$log" "$id" "$snapshot" "$mode" || result=1
   fi
   if [[ "$result" == 0 && "$action" == plan ]]; then
     tmp="$(mktemp "$dir/.backup-retention.XXXXXX")" || result=1

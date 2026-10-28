@@ -24,7 +24,10 @@ test('both map choices render exactly one trusted /cells/Wall/Viewer surface', (
   assert.match(shared, /xDriveMountBaiduInlineMap<MediaBaiduNativeCellSelection>/)
   assert.match(shared, /xDriveMountBaiduIsolatedFrame<MediaBaiduNativeCellSelection>/)
   assert.match(shared, /listOwnerCells\(bounds,request.signal,/)
-  assert.match(shared, /data-xdrive-places-photo-collection-strip/)
+  assert.match(shared, /data-xdrive-places-trusted-photo-cover-pins/)
+  assert.match(shared, /data-xdrive-places-map-photo-summary/)
+  assert.doesNotMatch(shared,
+    /data-xdrive-places-photo-collection-strip|data-xdrive-places-map-photo-strip-shell|data-xdrive-places-collection-thumb/)
   assert.match(shared, /data-xdrive-places-full-camera-wall/)
   assert.match(parent, /data-xdrive-places-map-photo-filters/)
   assert.doesNotMatch(parent, /XDriveMediaGalleryBaiduPrototypeMap/)

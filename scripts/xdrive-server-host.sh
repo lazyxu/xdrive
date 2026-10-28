@@ -53,6 +53,7 @@ Usage:
   xdrive-server backup retention-plan [--repository-dir /absolute/local/path] [--keep-last N] [--mode fast|deep]
   xdrive-server backup prune --keep-last N --yes [--repository-dir /absolute/local/path]
   xdrive-server backup delete-snapshot --snapshot xdrive-backup-YYYYMMDDTHHMMSSZ --yes [--repository-dir PATH]
+  xdrive-server backup preview-delete-snapshot --snapshot NAME [--mode fast|deep] [--repository-dir PATH]  # read-only
   xdrive-server backup sources BACKUP_DIR
   xdrive-server restore BACKUP_DIR [server-restore.sh options...]
   xdrive-server verify [--online] [--repair [--dry-run]]
@@ -1304,11 +1305,14 @@ backup_prune_cmd() {
 backup_delete_snapshot_cmd() {
   backup_prune_worker selected "$@"
 }
+backup_preview_delete_snapshot_cmd() {
+  backup_prune_worker preview "$@"
+}
 backup_prune_worker() {
   local operation="$1"
   shift
-  [[ "$operation" == retention || "$operation" == selected ]] || return 2
-  local repository_dir="" keep_last="" snapshot="" confirmed=0
+  [[ "$operation" == retention || "$operation" == selected || "$operation" == preview ]] || return 2
+  local repository_dir="" keep_last="" snapshot="" confirmed=0 cas_mode=fast
   local server_id="" server_image="" configured=""
   local live_files_dir="" mounted_data_dir=""
   while [[ $# -gt 0 ]]; do
@@ -1324,11 +1328,17 @@ backup_prune_worker() {
         shift 2
         ;;
       --snapshot)
-        [[ "$operation" == selected && $# -ge 2 ]] || return 2
+        [[ ( "$operation" == selected || "$operation" == preview ) && $# -ge 2 ]] || return 2
         snapshot="$2"
         shift 2
         ;;
+      --mode)
+        [[ "$operation" == preview && $# -ge 2 ]] || return 2
+        cas_mode="$2"
+        shift 2
+        ;;
       --yes)
+        [[ "$operation" != preview ]] || return 2
         confirmed=1
         shift
         ;;
@@ -1343,9 +1353,15 @@ backup_prune_worker() {
       echo "backup prune: explicit --keep-last N --yes is required" >&2
       return 2
     }
-  else
+  elif [[ "$operation" == selected ]]; then
     [[ -z "$keep_last" && "$snapshot" =~ ^xdrive-backup-[0-9]{8}T[0-9]{6}Z$ && "$confirmed" == 1 ]] || {
       echo "backup delete-snapshot: exact v2 generation name and --yes required" >&2
+      return 2
+    }
+  else
+    [[ -z "$keep_last" && "$snapshot" =~ ^xdrive-backup-[0-9]{8}T[0-9]{6}Z$ &&
+       "$confirmed" == 0 && ( "$cas_mode" == fast || "$cas_mode" == deep ) ]] || {
+      echo "backup preview-delete-snapshot: exact v2 generation and fast/deep mode required" >&2
       return 2
     }
   fi
@@ -1361,7 +1377,7 @@ backup_prune_worker() {
   repository_dir="$(cd "$repository_dir" && pwd -P)" || return 1
   # Neither a symlink nor a non-existent generation may enter selected
   # deletion, even though the lower-level helper independently checks this.
-  if [[ "$operation" == selected ]]; then
+  if [[ "$operation" == selected || "$operation" == preview ]]; then
     [[ -d "$repository_dir/snapshots" && ! -L "$repository_dir/snapshots" &&
        -d "$repository_dir/snapshots/$snapshot" &&
        ! -L "$repository_dir/snapshots/$snapshot" ]] || return 2
@@ -1392,17 +1408,29 @@ backup_prune_worker() {
     echo "backup prune: Server image is not configured" >&2
     return 1
   }
-  # One writable backup-repository bind, no network, no automatic execution.
-  # Both modes use the SAME verified image, live /data separation, and Docker
-  # confinement. No arbitrary image, mount or command comes from Admin UI.
+  # All operations share the same verified Server image and reject live-data
+  # overlaps. Read-only preview never receives a writable bind, --yes, or a
+  # second arbitrary process capability. Deep mode holds a shared writer lock
+  # throughout hashing so it cannot race a cooperating v2 writer.
   local -a args
-  if [[ "$operation" == selected ]]; then
+  local repo_mount="type=bind,src=$repository_dir,dst=/repo"
+  if [[ "$operation" == preview ]]; then
+    args=(preview-delete-snapshot --repo /repo --snapshot "$snapshot" --mode "$cas_mode")
+    repo_mount="$repo_mount,readonly"
+    if [[ "$cas_mode" == deep ]]; then
+      exec 7<"$repository_dir/.backup.lock"
+      flock -s -n 7 || {
+        echo "backup preview-delete-snapshot: repository busy" >&2
+        return 75
+      }
+    fi
+  elif [[ "$operation" == selected ]]; then
     args=(delete-snapshot --repo /repo --snapshot "$snapshot" --yes)
   else
     args=(prune --repo /repo --keep-last "$keep_last" --yes)
   fi
   docker run --rm --network none --user 0:0 \
-    --mount "type=bind,src=$repository_dir,dst=/repo" \
+    --mount "$repo_mount" \
     --entrypoint /usr/local/bin/xdrive-backup-repo \
     "$server_image" "${args[@]}" </dev/null
 }
@@ -1619,6 +1647,10 @@ backup_cmd() {
     delete-snapshot)
       shift
       backup_delete_snapshot_cmd "$@"
+      ;;
+    preview-delete-snapshot)
+      shift
+      backup_preview_delete_snapshot_cmd "$@"
       ;;
     sources)
       shift

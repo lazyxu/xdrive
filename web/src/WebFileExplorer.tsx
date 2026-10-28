@@ -487,10 +487,12 @@ export default function WebFileExplorer({
   const refreshCurrentDirectory = onRefreshCurrentDirectoryIfIdle
 
   const loadTreeDirectoryPage = useCallback(
-    (parentID: number, cursor?: string) => xDriveFileExplorerLoadChildDirectoryPage({
+    (parentID: number, cursor?: string, signal?: AbortSignal) => xDriveFileExplorerLoadChildDirectoryPage({
       parentID,
       cursor,
-      loadPage: (id, options) => api.listPage(id, options),
+      // Preserve opaque cursor and authenticated Owner checks. Only a stale
+      // disposable tree read is cancelled at the real Server HTTP transport.
+      loadPage: (id, options) => api.listPageAbortable(id, options, signal),
     }),
     [api],
   )

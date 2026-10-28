@@ -45,9 +45,13 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     val gallerySaveable = rememberSaveableStateHolder()
     val filesSaveable = rememberSaveableStateHolder()
     val filesStateKey = "files:${state.server}:${state.username}"
-    // Keep scroll/selection viewport during the scoped Files -> Gallery Viewer.
-    // Destroy saveable state on Owner change or leaving Files for normal Gallery.
-    if (state.screen == Screen.FILES || state.viewerReturnToFiles) {
+    // Keep only the UI viewport through Files -> Gallery/Trash -> Files for
+    // the *same authenticated session*. The Controller retains the verified
+    // directory rows; discarding this holder on ordinary app switching instead
+    // resets the Lazy list/grid to item zero. Logout, server/Owner change and
+    // forced reauthentication still dispose it (including stale folder IDs).
+    if (state.screen == Screen.FILES || state.screen == Screen.GALLERY ||
+        state.screen == Screen.TRASH || state.viewerReturnToFiles) {
         DisposableEffect(filesStateKey) {
             onDispose { filesSaveable.removeState(filesStateKey) }
         }
@@ -123,6 +127,7 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                     }
                     val title = if (state.screen == Screen.TRASH) "回收站"
                         else if (state.screen == Screen.GALLERY) when {
+                            state.galleryMapOpen -> "地点"
                             state.gallerySelectedAlbum != null -> state.gallerySelectedAlbum?.name ?: "相册"
                             state.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS -> "精选集"
                             else -> "照片"
@@ -193,7 +198,9 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                 }
                 Screen.GALLERY -> {
                     val photo = state.galleryViewer
-                    if (photo != null) {
+                    if (state.galleryMapOpen) {
+                        GalleryMapOverview(state, controller)
+                    } else if (photo != null) {
                         Box(Modifier.fillMaxSize()) {
                             key(photo.node.id, photo.node.revision) {
                                 if (photo.mediaKind == "video")
@@ -376,7 +383,8 @@ internal fun AccountMenu(state: DriveState, controller: DriveController, checkUp
                     onClick = {
                         expanded = false
                         if (state.screen == Screen.GALLERY) {
-                            if (state.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS &&
+                            if (state.galleryMapOpen) controller.retryGalleryMapOverview()
+                            else if (state.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS &&
                                 state.gallerySelectedAlbum == null)
                                 controller.refreshGalleryAlbums()
                             else controller.refreshGallery()

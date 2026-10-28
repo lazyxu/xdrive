@@ -24,7 +24,12 @@ test('Baidu native gesture cancel invalidates Owner Camera and current Cells tog
   assert.match(cancel, /setAcceptedViewport\(null\)/)
   assert.match(cancel, /invalidated\.current\?\.\(\)/)
   const host = section('    const commonMapOptions = {', '    const queryCells = async')
-  assert.match(host, /onCancel:\(\)=>\{ cameraTouched=true; cancel\(\) \}/)
+  const callback=section('      onCancel:()=>{', '      onCamera:')
+  assert.match(callback,/cameraTouched=true/)
+  assert.match(callback,/const resized=Boolean/)
+  assert.match(callback,/pendingResizeDrawer\.current=null/)
+  assert.match(callback,/\n\s*cancel\(\)\s*\n\s*\},/,
+    'rotation and pan gestures both revoke prior Camera and signed Cells')
   assert.match(source,/let cameraTouched = Boolean\(returnCamera\)/)
   assert.match(host, /onViewport: \(bounds:Bounds\) => \{ void queryCells\(bounds, true\) \}/)
   assert.match(host, /xDriveMountBaiduIsolatedFrame<MediaBaiduNativeCellSelection>/)

@@ -258,3 +258,57 @@ test('P101 source-exact owner fences / no height animation / shared transport / 
   const agents = read('docs/history/AGENTS-2026-10-27-before-consolidation.md')
   assert.equal(agents.split('P101 verified tree disclosure without height animation (mandatory)').length, 2)
 })
+
+test('P101 folder, trash, Owner and unmount retire obsolete tree GETs even when old loader ignores abort', async () => {
+  for (const mode of ['folder', 'trash', 'owner', 'unmount']) {
+    const pending = deferred()
+    const signals = []
+    const loader = async (_parentID, _cursor, signal) => {
+      signals.push(signal)
+      return pending.promise // Stuck Agent/Server ignores abort; UI must still fence it.
+    }
+    let view
+    try {
+      await act(async () => { view = Renderer.create(React.createElement(Pane, props(loader))) })
+      await act(async () => {
+        one(view, 'aria-label', '展开 我的文件').props.onClick({ stopPropagation() {} })
+      })
+      assert.equal(signals.length, 1)
+      assert.equal(signals[0].aborted, false)
+      if (mode === 'folder') {
+        await act(async () => {
+          view.update(React.createElement(Pane, props(loader, {
+            currentCrumbs: [{ id: 1, name: '我的文件' }, { id: 3, name: '新目录' }],
+          })))
+        })
+      } else if (mode === 'trash') {
+        await act(async () => {
+          view.update(React.createElement(Pane, props(loader, { trashActive: true })))
+        })
+      } else if (mode === 'owner') {
+        await act(async () => {
+          view.update(React.createElement(Pane, props(loader, {
+            lifecycleKey: 'p101-owner-B',
+            currentCrumbs: [{ id: 71, name: '新账户' }],
+          })))
+        })
+      } else {
+        await act(async () => { view.unmount(); view = null })
+      }
+      assert.equal(signals[0].aborted, true,
+        mode + ' must abort the tree transport, not just suppress stale UI')
+      await act(async () => {
+        pending.resolve(page([[2, '禁止恢复的旧目录']]))
+        await pending.promise
+      })
+      if (view) {
+        assert.equal(view.root.findAll(node =>
+          node.props?.['aria-label'] === '禁止恢复的旧目录').length, 0,
+          mode + ' stale completion must not resurrect obsolete children')
+      }
+    } finally {
+      pending.resolve(page([]))
+      if (view) await act(async () => { view.unmount() })
+    }
+  }
+})

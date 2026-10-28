@@ -359,6 +359,25 @@ function MobileInlineDisclosureProgress() {
   )
 }
 
+/** Optional Safari/WebKit UA hints are for shortcut labels only, never
+ * authority or OS proof. A denied getter must not blank the Files renderer. */
+function xDriveMobileFilesKeyboardPlatformHint(): string {
+  let platform = ''
+  let userAgent = ''
+  try {
+    if (typeof navigator === 'undefined') return ''
+    try {
+      const observed = navigator.platform
+      if (typeof observed === 'string') platform = observed
+    } catch { /* optional WebKit property unavailable */ }
+    try {
+      const observed = navigator.userAgent
+      if (typeof observed === 'string') userAgent = observed
+    } catch { /* optional WebKit property unavailable */ }
+  } catch { /* entire navigator may be restricted */ }
+  return `${platform} ${userAgent}`.trim()
+}
+
 export default function MobileFiles(props: Props) {
   const storageKey = 'xdrive.mobile.files.v1:' + props.lifecycleKey
   // Browse Home keeps its real rows mounted through organization refreshes.
@@ -537,7 +556,7 @@ export default function MobileFiles(props: Props) {
   // Reuse the same OS-aware command interpreter as the wide FileExplorer.
   // Only the Mobile presentation chooses which real Web callbacks are exposed.
   const filesKeyboardProfile = xDriveFileExplorerKeyboardProfileFromPlatform(
-    typeof navigator === 'undefined' ? '' : `${navigator.platform} ${navigator.userAgent}`,
+    xDriveMobileFilesKeyboardPlatformHint(),
   )
   const selection = [...selected.values()]
   const directoryID = Number(props.crumbs.at(-1)?.id ?? 0) || null

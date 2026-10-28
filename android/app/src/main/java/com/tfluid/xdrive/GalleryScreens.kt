@@ -204,6 +204,19 @@ internal fun ColumnScope.Gallery(
                         displayMenuOpen = false
                     },
                 )
+                // PWA's actual map entry lives in Gallery More, not a third
+                // bottom dock tab. This stage shows real WGS84 Owner data only.
+                HorizontalDivider()
+                DropdownMenuItem(
+                    text = { Text("显示地图") },
+                    enabled = !state.hasActiveNativeTransfer() &&
+                        !state.galleryMetadataWriteAttempted,
+                    modifier = Modifier.testTag("gallery-show-map"),
+                    onClick = {
+                        displayMenuOpen = false
+                        controller.openGalleryMapOverview()
+                    },
+                )
                 // Day-scale is in PWA More rather than the floating
                 // Year/Month/All capsule; keep the real indexed day jump.
                 HorizontalDivider()
