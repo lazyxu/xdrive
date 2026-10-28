@@ -467,9 +467,13 @@ export async function xDrivePwaReadAlbumSummaries(
   owner: XDrivePwaOfflineOwner,
 ): Promise<XDrivePwaOfflineAlbumsRead> {
   const key = xDrivePwaOfflineScopeKey(owner)
+  const readEpoch = offlinePurgeEpoch
   return withStore<XDrivePwaOfflineAlbumsRead>('readonly', (store, done) => {
+    // A logout or peer revoke that races IDB open must not read old Owner labels.
+    if (readEpoch !== offlinePurgeEpoch) { done({ consented: false, revalidated: false, snapshot: null }); return }
     const read = store.get(key)
     read.onsuccess = () => {
+      if (readEpoch !== offlinePurgeEpoch) { done({ consented: false, revalidated: false, snapshot: null }); return }
       const record = read.result as OwnerRecord | undefined
       if (record?.version !== 1 || record.consented !== true) {
         done({ consented: false, revalidated: false, snapshot: null })
@@ -498,9 +502,12 @@ export async function xDrivePwaReadAlbumSummaries(
 /** A cached record is never a live ACL proof, even when navigator.onLine=true. */
 export async function xDrivePwaReadOfflineDirectories(owner: XDrivePwaOfflineOwner): Promise<XDrivePwaOfflineRead> {
   const key = xDrivePwaOfflineScopeKey(owner)
+  const readEpoch = offlinePurgeEpoch
   return withStore<XDrivePwaOfflineRead>('readonly', (store, done) => {
+    if (readEpoch !== offlinePurgeEpoch) { done({ consented: false, revalidated: false, directories: [] }); return }
     const request = store.get(key)
     request.onsuccess = () => {
+      if (readEpoch !== offlinePurgeEpoch) { done({ consented: false, revalidated: false, directories: [] }); return }
       const record = request.result as OwnerRecord | undefined
       if (record?.version !== 1 || record.consented !== true || !Array.isArray(record.directories)) {
         done({ consented: false, revalidated: false, directories: [] })
@@ -531,9 +538,12 @@ export async function xDrivePwaReadOfflineDirectories(owner: XDrivePwaOfflineOwn
  * that a previous login or directory permission is still valid. */
 export async function xDrivePwaReadRelaunchOwner(): Promise<XDrivePwaOfflineOwner | null> {
   if (!offlineSupported()) return null
+  const readEpoch = offlinePurgeEpoch
   return withStore<XDrivePwaOfflineOwner | null>('readonly', (store, done) => {
+    if (readEpoch !== offlinePurgeEpoch) { done(null); return }
     const hintRead = store.get(RELAUNCH_HINT_KEY)
     hintRead.onsuccess = () => {
+      if (readEpoch !== offlinePurgeEpoch) { done(null); return }
       const hint = hintRead.result as OfflineRelaunchHint | undefined
       const now = Date.now()
       if (!hint || hint.key !== RELAUNCH_HINT_KEY || hint.version !== 1 ||
@@ -547,6 +557,7 @@ export async function xDrivePwaReadRelaunchOwner(): Promise<XDrivePwaOfflineOwne
       catch { done(null); return }
       const recordRead = store.get(scope)
       recordRead.onsuccess = () => {
+        if (readEpoch !== offlinePurgeEpoch) { done(null); return }
         const record = recordRead.result as OwnerRecord | undefined
         done(record?.version === 1 && record.consented === true &&
           Array.isArray(record.directories) ? { ...hint.owner } : null)
