@@ -12,6 +12,13 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class DriveControllerTest {
+    @Test fun gallerySelectionDockNeverCoversLastPhotoAfterAlbumAction() {
+        assertEquals(200f, galleryDockClearance(true, false).value, 0f)
+        assertEquals(200f, galleryDockClearance(true, true).value, 0f)
+        assertEquals(144f, galleryDockClearance(false, true).value, 0f)
+        assertEquals(88f, galleryDockClearance(false, false).value, 0f)
+    }
+
     @Test fun galleryVisibleColumnsKeepsResponsiveBaselineAndBounds() {
         assertEquals(3, galleryVisibleColumns(390f, 3))
         assertEquals(2, galleryVisibleColumns(390f, 2))
