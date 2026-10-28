@@ -50,7 +50,7 @@ test('normal Places screen prioritizes one map while preserving advanced UI', ()
   assert.match(source, /xDriveNormalizeBaiduMapPhotoScope/)
 })
 
-test('compact map title visibly discloses SDK isolation boundary in both modes', () => {
+test('compact iOS map hides technical label but preserves explicit SDK boundary in More', () => {
   const source = read(places)
   const toolbar = source.indexOf('data-xdrive-places-map-toolbar')
   const disclosure = source.indexOf('data-xdrive-places-map-runtime-boundary')
@@ -58,6 +58,9 @@ test('compact map title visibly discloses SDK isolation boundary in both modes',
   assert.ok(toolbar >= 0 && disclosure > toolbar && more > disclosure,
     'runtime boundary must be visible without opening More')
   assert.equal((source.match(/data-xdrive-places-map-runtime-boundary/g) || []).length, 1)
+  assert.match(source, /display:compact \? 'none' : 'block'/)
+  assert.match(source, /data-xdrive-places-map-more-panel/)
+  assert.match(source, /同页地图与安全隔离版使用同一份当前 Owner/)
   assert.match(source, /mapMode === 'prototype' \? '同页 · 未隔离' : '安全隔离'/)
   assert.match(source, /第三方脚本不具备独立 Origin 隔离/)
   assert.match(source, /独立 HTTPS Origin 隔离运行/)
@@ -103,7 +106,12 @@ test('photo thumbnails, real Owner camera count and wall action remain on map', 
   // Apple Photos must not inherit the desktop minimum when the iPhone is
   // rotated to 844×390 or 900×390. Real Chromium verifies actual geometry.
   assert.match(source, /@media \(orientation: landscape\) and \(max-height: 600px\)/)
-  assert.match(source, /height:'max\(200px, calc\(100dvh - 165px\)\)'/)
+  assert.match(source, /: 'max\(200px, calc\(100dvh - 165px\)\)'/)
+  assert.match(source, /data-xdrive-places-ios-map-canvas/)
+  assert.match(source, /max\(460px, calc\(100dvh - 124px\)\)/)
+  assert.match(source, /max\(192px, calc\(100dvh - 124px\)\)/)
+  assert.match(source, /data-xdrive-places-map-photo-strip-shell/)
+  assert.match(source, /edgeToEdge \? '0 0 54px' : '0 0 76px'/)
   assert.match(source, /data-xdrive-places-trusted-photo-cover-pins/)
   assert.match(source, /ownerCover\(pin\.selection/)
   assert.match(source, /revision=\{selection\.node_revision\}/)
@@ -111,4 +119,18 @@ test('photo thumbnails, real Owner camera count and wall action remain on map', 
   assert.match(source, /approved.key===filterRef.current.key/)
   assert.match(source, /xDriveMountBaiduIsolatedFrame/)
   assert.match(source, /xDriveMountBaiduInlineMap/)
+})
+
+test('immersive Places uses its own shared controls instead of duplicate Gallery chrome', () => {
+  const gallery = read('ui/shared/src/mui/MediaGallery.tsx')
+  const chrome = read('ui/shared/src/mui/MobileGalleryChrome.tsx')
+  assert.match(gallery, /mapImmersive=\{showPlacesIndex && placesPanels\.map\}/)
+  assert.match(chrome, /mapImmersive\?: boolean/)
+  assert.match(chrome, /!mapImmersive \? \(/)
+  assert.match(chrome, /!mapImmersive && !selectionMode \? \(/)
+  assert.match(chrome, /!mapImmersive && !selectionMode && primaryTab/)
+  assert.match(chrome, /setSearchOpen\(false\)/)
+  assert.match(chrome, /setMoreOpen\(false\)/)
+  assert.match(gallery, /data-xdrive-places-mobile-switch/)
+  assert.match(gallery, /onCloseMap=\{onBack && onSectionChange/)
 })
