@@ -109,6 +109,9 @@ class OwnerBd09ViewportGateTest {
         assertFalse(gate.succeeded(ticket, invalidSnapshot))
         assertEquals(0, gate.cachedCount())
         assertNull(gate.poll(1_700)) // throttle remains in force
+        assertNull(gate.poll(20_000)) // bad response never auto-retries
+        assertTrue(gate.retryAfterFailure(20_100))
+        assertTrue(gate.poll(20_600) is Bd09ViewportDecision.Fetch)
     }
 
     @Test fun boundedConstructionAndNoUnauthenticatedGlobalRateClaims() {
