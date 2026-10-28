@@ -629,6 +629,11 @@ class XDriveApiTest {
                     album.copy(itemCount = 0), item)
                 fail("Empty album cannot have a member removed")
             } catch (_: IllegalArgumentException) {}
+            try {
+                api.galleryRemoveFromManualAlbum("owner-secret",
+                    album, item.copy(node = item.node.copy(type = "dir")))
+                fail("Directory must not be removed as a Gallery member")
+            } catch (_: IllegalArgumentException) {}
             assertEquals(3, server.requestCount)
         } }
     }
