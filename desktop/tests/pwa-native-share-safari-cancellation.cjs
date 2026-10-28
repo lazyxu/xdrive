@@ -14,9 +14,9 @@ const compiled = ts.transpileModule(source, {
 assert.deepEqual((compiled.diagnostics || [])
   .filter(x => x.category === ts.DiagnosticCategory.Error)
   .map(x => ts.flattenDiagnosticMessageText(x.messageText, '\n')), [])
-const exports = {}
-new Function('exports', 'Blob', 'DOMException', compiled.outputText)(exports, Blob, DOMException)
-const read = exports.xDriveReadBoundedNativeShareBlob
+const compiledExports = {}
+new Function('exports', 'Blob', 'DOMException', compiled.outputText)(compiledExports, Blob, DOMException)
+const read = compiledExports.xDriveReadBoundedNativeShareBlob
 
 function response(bytes = [1, 2, 3], hooks = {}) {
   const stream = new ReadableStream({
@@ -127,7 +127,7 @@ test('synchronous reader.cancel denial cannot escape abort event or emit partial
 })
 
 test('16 MiB upper bound and HTTP 200 original-only policy remain unchanged', async () => {
-  assert.equal(exports.XDRIVE_NATIVE_SHARE_MAX_BYTES, 16 * 1024 * 1024)
+  assert.equal(compiledExports.XDRIVE_NATIVE_SHARE_MAX_BYTES, 16 * 1024 * 1024)
   await assert.rejects(read(response([1, 2, 3]), undefined, 2), /文件太大/)
   await assert.rejects(read({ status: 206 }, undefined), /响应不完整/)
   assert.doesNotMatch(source, /localStorage|sessionStorage|skipWaiting|window\.location\.reload|Authorization/)
