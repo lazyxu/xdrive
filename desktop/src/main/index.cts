@@ -6948,8 +6948,14 @@ function registerIPCHandlers() {
     }
     return id
   }
-  ipcMain.handle('agent:cloud-admin-users', () => runAgentAction<AgentAdminUser[]>(async () =>
-    (await requireDesktopAdminUsers()).cloudAdminUsers(), false))
+  ipcMain.handle('agent:cloud-admin-users', (event, requestID: unknown = undefined) =>
+    runAgentAction<AgentAdminUser[]>(() =>
+      viewportRequests.run(event.sender, requestID, async signal => {
+        // Existing administrator role/capability gate remains authoritative.
+        const admin = await requireDesktopAdminUsers()
+        if (signal?.aborted) throw new AgentIPCError('aborted', 0, 'Admin Users list request cancelled.')
+        return admin.cloudAdminUsers(signal)
+      }), false))
   ipcMain.handle('agent:cloud-admin-users-create', (_event, input: unknown) =>
     runAgentAction<AgentAdminUser>(async () => {
       if (!input || typeof input !== 'object' || Array.isArray(input)) {
