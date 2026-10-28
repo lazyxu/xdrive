@@ -21,7 +21,15 @@ export function xDrivePwaRetryableRead(path: string, init: RequestInit): boolean
 
 function retryDelay(response: Response): number | null {
   if (response.status !== 429 && response.status !== 503) return null
-  const header = response.headers.get('Retry-After')?.trim()
+  // Safari or a restricted fetch adapter may deny optional response
+  // headers even when the actual HTTP 429/503 body is still readable.
+  // Never discard the received response or issue an unverified extra GET.
+  let header: string | null = null
+  try {
+    const observed = response.headers.get('Retry-After')
+    if (observed !== null && typeof observed !== 'string') return null
+    header = observed?.trim() ?? null
+  } catch { return null }
   if (!header) return response.status === 429 ? 500 : 300
   // Respect Retry-After, including RFC HTTP-date. Never convert a long server
   // cooldown into an early retry; return the response for the UI instead.
