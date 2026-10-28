@@ -81,6 +81,7 @@ const probe = ((window as any).__mapProbe = {
   h264:{misses:0,warm:0,previewURLs:0,puts:0,putBytes:0},
   heic:{reads:0,bytes:0,mime:'',nodeID:0},
   livp:{reads:0,bytes:0,mime:'',nodeID:0},
+  liveViewer:{stillTickets:0,motionTickets:0},
   handoff:{state:initialHandoff.state,issues:0,consumes:0},
 })
 const locationPoint = { latitude:30.135, longitude:119.975 }
@@ -264,16 +265,36 @@ const mintChildTicket=async()=>({provider:'baidu-jsapi-4.0' as const,child_origi
 
 const signedPreviewURL=async(nodeID:number,kind:'image'|'video'|'live_photo',
   signal?:AbortSignal):Promise<string|null>=>{
-  if(!genuineGin||kind!=='image')return null
+  if(!genuineGin||(kind!=='image'&&!(kind==='live_photo'&&realLIVPMode)))return null
   const token=await ownerToken()
-  const response=await fetch('/api/v1/files/'+nodeID+'/preview-ticket',{
+  const response=await fetch(kind==='live_photo'
+    ? '/api/v1/media/items/'+nodeID+'/live-photo-still-ticket'
+    : '/api/v1/files/'+nodeID+'/preview-ticket',{
     method:'POST',signal,cache:'no-store',
     headers:{Authorization:'Bearer '+token}})
   if(!response.ok)throw Error('real Gin preview ticket denied')
   const receipt=await response.json()
-  if(typeof receipt.url!=='string'||
-      !receipt.url.startsWith('/api/v1/file-preview/')||
+  const prefix=kind==='live_photo'?'/api/v1/media-live-photo-still/':'/api/v1/file-preview/'
+  if(typeof receipt.url!=='string'||!receipt.url.startsWith(prefix)||
       receipt.url.startsWith('//'))throw Error('untrusted preview URL')
+  if(kind==='live_photo')probe.liveViewer.stillTickets++
+  return receipt.url
+}
+
+
+const signedLiveMotion=async(nodeID:number,_progress?:unknown,signal?:AbortSignal)
+  :Promise<string|null>=>{
+  if(!genuineGin||!realLIVPMode||signal?.aborted)return null
+  const token=await ownerToken()
+  const response=await fetch('/api/v1/media/items/'+nodeID+
+    '/live-photo-motion-ticket',{method:'POST',signal,cache:'no-store',
+    headers:{Authorization:'Bearer '+token}})
+  if(!response.ok)throw Error('Owner Live Photo motion ticket denied')
+  const receipt=await response.json()
+  if(typeof receipt.url!=='string'||
+    !receipt.url.startsWith('/api/v1/media-live-photo-motion/')||
+    receipt.url.startsWith('//'))throw Error('invalid Owner Live Photo motion URL')
+  probe.liveViewer.motionTickets++
   return receipt.url
 }
 
@@ -340,7 +361,7 @@ const galleryDataSource={
   getBaiduJSAPI4Status:getInlineSignedStatus,
   getBaiduJSAPIPrototype:getInlinePrototypeConfig,
   mintBaiduIsolatedChildTicket:mintChildTicket,
-  loadThumbnail:async()=>null,
+  loadThumbnail:realLIVPMode?loadThumbnail:async()=>null,
   loadPreviewURL:signedPreviewURL,
 }
 function FullGalleryPage(){
@@ -353,7 +374,9 @@ function FullGalleryPage(){
         String(directViewer.context.totalCount)}
       canPrevious={false} canNext={false}
       filmstripEntries={[]} activeIndex={directViewer.context.activeIndex}
-      loadThumbnail={async()=>null} loadPreviewURL={signedPreviewURL}
+      loadThumbnail={realLIVPMode?loadThumbnail:async()=>null}
+      loadPreviewURL={signedPreviewURL}
+      loadLivePhotoMotion={realLIVPMode?signedLiveMotion:undefined}
       onPrevious={()=>{}} onNext={()=>{}} onFilmstripSelect={()=>{}}
       onClose={()=>{probe.galleryPageDirectClosed++;setDirectViewer(null)}}/>
   }
@@ -361,13 +384,14 @@ function FullGalleryPage(){
     preferenceScope="p04-authenticated-full-gallery"
     initialSection={favoritesMapEntry ? 'favorites' : 'places'} pageSize={48}
     initialMapPhotoScope={{albumKey:'',filters:{
-      sort_by:'captured',sort_dir:'desc',favorite:true}}}
+      sort_by:'captured',sort_dir:'desc',...(realLIVPMode?{}:{favorite:true})}}}
     onOpenViewer={fullGalleryDirectPhoto ? (item,context)=>{
       // Production Page checks fresh Owner Cell Range before this callback.
       probe.galleryPageDirectOpens.push({
         nodeID:item.node.id,revision:item.node.revision,
         kind:context.target.kind,index:context.activeIndex,
         total:context.totalCount,
+        live:Boolean(item.live_photo||item.asset_kind==='live_photo'),
       })
       setDirectViewer({item,context})
     } : undefined}
