@@ -413,8 +413,15 @@ export function XDriveSynologyOwnerFilesPage({
               }}
               onOpenItem={item => {
                 if (item.kind === 'dir') {
+                  // The Host cursor port accepts only validated numeric Node
+                  // IDs. FileExplorer's generic ID also allows strings from
+                  // other sources; those must never become Owner CGI parents.
+                  if (typeof item.id !== 'number' || !Number.isSafeInteger(item.id) || item.id <= 0) {
+                    setNotice('目录 ID 无效，未执行任何 Owner 文件读取。')
+                    return
+                  }
                   setPreview(null)
-                  setCrumbs(current => [...current, { id: item.id, name: item.name }])
+                  setCrumbs(current => [...current, { id: item.id as number, name: item.name }])
                 } else {
                   openFilePreview(item)
                 }
