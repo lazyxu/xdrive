@@ -2648,8 +2648,8 @@ export class AgentIPCClient {
     return this.request<AgentSettings>('PUT', '/v1/settings/sync-rule', { path, mode })
   }
 
-  storageTree() {
-    return this.request<AgentStorageTreeNode>('GET', '/v1/storage-tree', undefined, 45_000)
+  storageTree(signal?: AbortSignal) {
+    return this.request<AgentStorageTreeNode>('GET', '/v1/storage-tree', undefined, 45_000, signal)
   }
 
   cacheStats() {
