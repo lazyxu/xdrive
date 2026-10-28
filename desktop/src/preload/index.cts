@@ -884,10 +884,10 @@ const agent = Object.freeze({
   }) => ipcRenderer.invoke('agent:cloud-set-admin-baidu-jsapi', input),
   cloudSetAdminBaiduMapConfig: (input: { enabled: boolean; revision: number; ak?: string; clear_ak?: boolean }) =>
     ipcRenderer.invoke('agent:cloud-set-admin-baidu-map', input),
-  cloudBackgroundTaskActiveSummary: () =>
-    ipcRenderer.invoke('agent:cloud-background-task-summary'),
-  cloudBackgroundTaskPage: (global = false, limit = 50, cursor = '') =>
-    ipcRenderer.invoke('agent:cloud-background-task-page', global, limit, cursor),
+  cloudBackgroundTaskActiveSummary: (requestID?: string) =>
+    ipcRenderer.invoke('agent:cloud-background-task-summary', requestID),
+  cloudBackgroundTaskPage: (global = false, limit = 50, cursor = '', requestID?: string) =>
+    ipcRenderer.invoke('agent:cloud-background-task-page', global, limit, cursor, requestID),
   cloudBackgroundTasks: (global = false, limit = 100) => ipcRenderer.invoke('agent:cloud-background-tasks', global, limit),
   cloudBackgroundTaskControl: (id: string, action: string, global = false) =>
     ipcRenderer.invoke('agent:cloud-background-task-control', id, action, global),
