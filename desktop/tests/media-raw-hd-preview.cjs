@@ -78,9 +78,11 @@ test('Desktop Gallery and FileExplorer use the same request-scoped Agent analysi
   assert.ok(preload.includes('getMediaAnalysisPreview:'))
   for (const component of [desktop, gallery]) {
     assert.ok(component.includes('xDriveFileNeedsBrowserCompatibleImagePreview'))
-    assert.ok(component.includes('xDriveDesktopViewportRequest('))
     assert.ok(component.includes('getMediaAnalysisPreview('))
   }
+  assert.ok(desktop.includes('hostPort.requestViewport('), 'Files must preserve Owner-scoped viewport cancellation')
+  assert.ok(desktop.includes('hostPort.media.getMediaAnalysisPreview('), 'Files analysis preview must remain a typed media capability')
+  assert.ok(gallery.includes('xDriveDesktopViewportRequest('), 'Gallery retains its native cancellable IPC')
   const original = source('internal/api/file_preview.go')
   assert.equal(original.includes('".dng"'), false, 'RAW original preview-ticket allowlist must remain closed')
   assert.equal(original.includes('".cr3"'), false, 'RAW original preview-ticket allowlist must remain closed')

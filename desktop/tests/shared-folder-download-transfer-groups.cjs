@@ -125,7 +125,7 @@ test('single folder prefers tree download while single-file and multi-selection 
     'folderTreeDownloadSupported = false',
     "nodes.length === 1",
     "nodes[0].type === 'dir'",
-    'window.xdriveDesktop.agent.cloudDownloadFolder(',
+    'hostPort.write.cloudDownloadFolder(',
     "beginActionBusy('download-folder')",
     'folderDownloadSupported={!trashActive && (folderTreeDownloadSupported || archiveDownloadSupported)}',
   ]) {
@@ -136,6 +136,6 @@ test('single folder prefers tree download while single-file and multi-selection 
   const archiveBranch = explorer.indexOf('if (archiveDownloadSupported)', folderBranch)
   assert.ok(folderBranch >= 0 && archiveBranch > folderBranch, 'single-folder tree download must run before archive fallback')
   assert.ok(explorer.includes('await downloadNode(archivePlan.file)'), 'single-file Save As compatibility was removed')
-  assert.ok(explorer.includes('window.xdriveDesktop.agent.cloudDownloadArchive(archivePlan.ids)'), 'multi-selection archive fallback was removed')
+  assert.ok(explorer.includes('hostPort.write.cloudDownloadArchive(archivePlan.ids)'), 'multi-selection archive fallback was removed')
   assert.ok(app.includes("capabilities.includes('folder-download-tree')"), 'Desktop App must pass folder tree capability')
 })

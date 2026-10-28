@@ -135,7 +135,7 @@ async function mountHarness() {
       nodeByID: new Map([[node.id, node]]), trashActive: false,
       fileOperationBusy: false, uploadBusy: false, fileTagsSupported: true,
       archiveDownloadSupported: false, folderTreeDownloadSupported: false,
-      window: { xdriveDesktop: { agent } },
+      hostPort: { write: agent },
       onDownloadStart: feedback.onDownloadStart,
       onDeleteMany: deleteController.removeMany,
       onError: (error) => errors.push(String(error)),

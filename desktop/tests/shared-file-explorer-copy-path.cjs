@@ -81,7 +81,7 @@ test('Web and Desktop keep only clipboard adapters and share path semantics', ()
     'Desktop must retain unchanged local FileExplorer path semantics')
 
   assert.ok(web.includes('navigator.clipboard?.writeText'), 'Web must use the browser clipboard adapter')
-  assert.ok(desktop.includes('window.xdriveDesktop.copyText(text)'), 'Desktop must use the Electron clipboard adapter')
+  assert.ok(desktop.includes('nativePort.copyText(text)'), 'Desktop must use the Electron clipboard adapter')
   assert.ok(preload.includes("import { clipboard, contextBridge, ipcRenderer, webUtils } from 'electron'"),
     'Desktop preload must import Electron clipboard')
   assert.ok(preload.includes('copyText: (text: string) => clipboard.writeText(text)'),

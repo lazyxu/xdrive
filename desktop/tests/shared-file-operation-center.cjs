@@ -215,7 +215,7 @@ test('Explorer multi-select copy move delete queue one operation instead of N re
   assert.ok(web.includes('rememberFileOperation(operation)'), 'Web Files trace must seed the existing App-owned Task Center state')
 
   assert.ok(desktopExplorer.includes('useXDriveFileExplorerOperationController<AgentCloudNode, AgentCloudFileOperation>'), 'Desktop paste/drop must use the shared Explorer operation controller')
-  assert.ok(desktopExplorer.includes('window.xdriveDesktop.agent.cloudCreateFileOperation('), 'Desktop paste/drop transport is not queued')
+  assert.ok(desktopExplorer.includes('hostPort.write.cloudCreateFileOperation('), 'Desktop paste/drop transport is not queued')
   assert.equal(desktopExplorer.includes('xDriveFileExplorerRunQueuedOperation({'), false, 'Desktop must not execute queued copy/move locally')
   assert.equal(desktopExplorer.includes('const plan = planPaste(current.id)'), false, 'Desktop must not plan paste locally')
   assert.equal(desktopExplorer.includes('xDriveFileExplorerDropItemsPlan('), false, 'Desktop must not plan internal drag/drop locally')

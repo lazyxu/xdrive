@@ -21,6 +21,8 @@ function actualAdapter(platform, bindings) {
   walk(ast)
   assert.ok(initializer && exposed, `${platform} real canonical media callback and renderer prop`)
   const all = { useCallback: callback => callback, mediaPropertiesSupported: true, trashActive: false, nextDesktopFilePropertiesRequestID: (() => { let id = 0; return () => `actual-adapter-${++id}` })(), ...bindings }
+  // The real Desktop loader now consumes the owning typed media Host port.
+  if (platform === 'Desktop') all.hostPort = { media: bindings.window?.xdriveDesktop?.agent ?? {} }
   const code = ts.transpileModule(`const loadMediaItem = ${initializer}; return { loadMediaItem, exposed: ${exposed} };`, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS }, fileName: file }).outputText
   return new Function(...Object.keys(all), code)(...Object.values(all))
 }
