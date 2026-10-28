@@ -178,7 +178,10 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                         textAlign = TextAlign.Center)
                 }
                 TextButton(
-                    onClick = { transferCenterOpen = true },
+                    onClick = {
+                        transferCenterOpen = true
+                        controller.refreshTransferRecoveryNotices()
+                    },
                     modifier = Modifier.heightIn(min = 48.dp)
                         .testTag("native-transfer-open"),
                 ) { Text("传输") }
