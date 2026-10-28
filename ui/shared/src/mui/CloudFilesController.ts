@@ -22,7 +22,7 @@ import type {
   XDriveFileExplorerPageSort,
 } from '../file-explorer-controller'
 import { useXDriveVirtualCollection } from './VirtualCollectionController'
-import { xDriveBeginForegroundContentTransition } from './ViewerForegroundPriority'
+import { xDriveBeginForegroundContentTransition, xDriveForegroundContentTransitionPending } from './ViewerForegroundPriority'
 
 export type XDriveCloudFilesVirtualDirectory<TNode extends { id: number }> = {
   itemCount: number
@@ -289,7 +289,7 @@ export function useXDriveCloudFilesController<
       xDriveFileExplorerGroupingSignature(previous.grouping) !==
         xDriveFileExplorerGroupingSignature(effectiveGrouping) ||
       (supersededParentID !== null && supersededParentID !== id)
-    )
+    ) || xDriveForegroundContentTransitionPending('files')
     // An offscreen controller cannot pause Gallery/Viewer; a rejected
     // directory Range automatically resumes the still-committed old folder.
     const finishContentTransition = contentChanged

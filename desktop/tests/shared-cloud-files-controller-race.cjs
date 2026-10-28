@@ -1417,3 +1417,78 @@ test('folder A -> pending B -> A restores A while aborted B never settles', asyn
     foregroundPriority.xDriveEnterForegroundPage(null)
   }
 })
+
+test('same-folder sort or grouping revert supersedes an unresolved range', async () => {
+  for (const variant of ['sort', 'grouping']) {
+    foregroundPriority.xDriveEnterForegroundPage(null)
+    foregroundPriority.xDriveEnterForegroundPage('web:files')
+    const paused = []
+    const stop = foregroundPriority.xDriveObserveViewerForeground(active => paused.push(active))
+    const runtime = createHookRuntime()
+    const useController = loadCloudFilesController(runtime.react)
+    const normalSort = { key: 'name', direction: 'asc' }
+    const reverseSort = { key: 'name', direction: 'desc' }
+    const normalGrouping = { groupBy: 'none', foldersFirst: true }
+    const grouped = { groupBy: 'type', foldersFirst: true }
+    const stuck = deferredFirstPage()
+    const requests = []
+    const port = {
+      getRoot: async () => ({ id: 1, name: 'root' }),
+      getQuota: async () => ({ quota_bytes: 100, used_bytes: 10 }),
+      getRange: (id, offset, limit, sort, includeCount, grouping, signal) => {
+        requests.push({ id, sort, grouping, signal })
+        const isSuperseded = variant === 'sort'
+          ? sort.direction === 'desc'
+          : grouping.groupBy === 'type'
+        if (isSuperseded) return stuck.promise // deliberately ignores abort
+        return Promise.resolve(u01Range(10, 'accepted-original.txt', offset, limit))
+      },
+    }
+    const render = () => runtime.render(() => useController({
+      port, enabled: true, lifecycleKey: 'same-folder-owner',
+      defaultSort: normalSort, quotaRefreshIntervalMs: 0,
+      changePollIntervalMs: 0, onError: () => {},
+    }))
+    try {
+      render()
+      await flushAsync()
+      let files = render()
+      assert.equal(files.current?.id, 1)
+      assert.equal(paused.at(-1), false)
+      // Ordinary refresh of the already accepted same folder is not preemptive.
+      assert.equal(await files.loadDirectory(1, [{ id: 1, name: 'root' }],
+        normalSort, normalGrouping), true)
+      assert.equal(paused.at(-1), false)
+      files = render()
+      const obsolete = files.loadDirectory(1, [{ id: 1, name: 'root' }],
+        variant === 'sort' ? reverseSort : normalSort,
+        variant === 'grouping' ? grouped : normalGrouping)
+      assert.equal(paused.at(-1), true, variant + ' change pauses only old thumbnails')
+      const supersededRequest = requests.at(-1)
+      assert.equal(supersededRequest.signal.aborted, false)
+      // Same parent ID and same content signature as last accepted: the
+      // unresolved intermediate sort/grouping still must be superseded.
+      const returning = files.loadDirectory(1, [{ id: 1, name: 'root' }],
+        normalSort, normalGrouping)
+      assert.equal(supersededRequest.signal.aborted, true,
+        variant + ' stale first Range gets AbortSignal immediately')
+      assert.equal(await returning, true)
+      assert.equal(paused.at(-1), false,
+        variant + ' return resumes without waiting for uncooperative obsolete range')
+      files = render()
+      assert.equal(files.current?.id, 1)
+      assert.equal(files.items[0]?.name, 'accepted-original.txt')
+      assert.equal(foregroundPriority.xDriveForegroundContentTransitionPending('files'), false)
+      stuck.resolve(u01Range(20, 'obsolete-late-result.txt'))
+      assert.equal(await obsolete, false)
+      files = render()
+      assert.equal(files.items[0]?.name, 'accepted-original.txt')
+      assert.equal(paused.at(-1), false,
+        variant + ' late aborted completion cannot re-pause or overwrite current content')
+    } finally {
+      stuck.resolve(null)
+      stop()
+      foregroundPriority.xDriveEnterForegroundPage(null)
+    }
+  }
+})
