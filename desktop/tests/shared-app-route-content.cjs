@@ -46,3 +46,16 @@ test('migrated routes use shared outlet, while legacy Desktop Files retains its 
   assert.match(outlet, /<XDriveSynologyOwnerFilesPage\b/)
   assert.doesNotMatch(content, /window\.xdriveDesktop|fetch\s*\(|backup\.cgi/)
 })
+
+test('DSM Owner Files retains a bounded virtual scroll viewport inside the shared Files frame', () => {
+  const files = read('ui/shared/src/mui/SynologyOwnerFilesPage.tsx')
+  const surface = read('ui/shared/src/mui/WorkspaceSurface.tsx')
+  const explorer = read('ui/shared/src/mui/FileExplorer.tsx')
+  assert.match(files, /<XDriveWorkspaceSurface presentation="page" fillHeight/)
+  assert.match(files, /<Stack spacing=\{1\.5\} sx=\{\{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' \}\}/)
+  assert.match(surface, /fillHeight \? \{/)
+  assert.match(surface, /height: '100%'/)
+  assert.match(surface, /flexDirection: 'column'/)
+  assert.match(explorer, /data-xdrive-file-explorer-scroll-host/)
+  assert.match(explorer, /flex: presentation === 'workspace' \? 1 : undefined/)
+})
