@@ -1400,7 +1400,7 @@ function FileManager({
   useEffect(() => () => galleryThumbnailBridge.leave(), [galleryThumbnailBridge])
   const sourceManagerAdapter = useMemo(() => createXDriveSourceManagerAdapter(api), [api])
   const deviceBackupSource = useMemo(() => ({
-    list: () => api.deviceBackups(),
+    list: (signal?: AbortSignal) => api.deviceBackups(signal),
     listPage: (limit: number, afterDeviceID: string) => api.deviceBackupsPage(limit, afterDeviceID),
     foldersPage: (deviceID: string, limit: number, afterSourceID: number) => api.deviceBackupFoldersPage(deviceID, limit, afterSourceID),
     runs: (sourceID: number, limit: number, offset: number) => api.deviceBackupRunSummaries(sourceID, limit, offset),
