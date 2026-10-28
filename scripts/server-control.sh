@@ -2407,6 +2407,1523 @@ backup_admin_snapshot_complete() {
   fi
 }
 
+# Inspect only the installer's exact managed crontab signature. Never
+# publish cron commands, Host paths or arbitrary operator scheduler entries.
+# Unknown does not mean disabled: NAS/DSM or systemd schedulers are external.
+backup_admin_schedule_status() {
+  local configured raw expected state=unknown expression="" managed_count=0
+  configured="$(env_value XD_BACKUP_SCHEDULE)"
+  if [[ -n "$configured" && ${#configured} -le 80 ]] &&
+     { [[ "$configured" =~ ^([0-9*/,-]+[[:space:]]+){4}[0-9*/,-]+$ ]] ||
+       [[ "$configured" =~ ^@(hourly|daily|weekly|monthly|yearly)$ ]]; }; then
+    expression="$configured"
+  fi
+  if command -v crontab >/dev/null 2>&1 &&
+     raw="$(crontab -l 2>/dev/null)"; then
+    managed_count="$(grep -c '# xdrive-managed-backup
+  local dir="$1" tmp comma="" scope root snap name state bytes file_data created
+  local snapshot_index inventory_total inventory_truncated
+  local repository_v1_count repository_default_count repository_configured_count
+  local backup_admin_schedule_json
+  local default_repo backup_admin_format backup_admin_days backup_admin_repo backup_admin_revision
+  backup_admin_policy_values || return 1
+  backup_admin_schedule_json="$(backup_admin_schedule_status)" || return 1
+  default_repo="$XDRIVE_HOME/backups/incremental"
+  if [[ -d "$default_repo" ]]; then
+    default_repo="$(cd "$default_repo" && pwd -P)" || return 1
+  fi
+  # Only metadata for the newest 100 is materialized; disclose how many
+  # additional canonical generations exist without opening a browser path.
+  snapshot_index="$(mktemp "$dir/.backup-admin-inventory-index.XXXXXX")" || return 1
+  if ! (
+      for scope in v1 v2-default v2-configured; do
+        case "$scope" in
+          v1) root="$XDRIVE_HOME/backups/snapshots" ;;
+          v2-default) root="$XDRIVE_HOME/backups/incremental/snapshots" ;;
+          v2-configured)
+            [[ "$backup_admin_format" == v2 && -n "$backup_admin_repo" &&
+               "$backup_admin_repo" != "$default_repo" ]] || continue
+            root="$backup_admin_repo/snapshots" ;;
+        esac
+        [[ -d "$root" && ! -L "$root" ]] || continue
+        for snap in "$root"/xdrive-backup-*; do
+          [[ -d "$snap" && ! -L "$snap" ]] || continue
+          name="$(basename "$snap")"
+          [[ "$name" =~ ^xdrive-backup-[0-9]{8}T[0-9]{6}Z$ ]] || continue
+          printf '%s\t%s\n' "$name" "$scope"
+        done
+      done | LC_ALL=C sort -r > "$snapshot_index"
+  ); then
+    rm -f -- "$snapshot_index"
+    return 1
+  fi
+  inventory_total="$(wc -l < "$snapshot_index")"
+  if [[ ! "$inventory_total" =~ ^[0-9]+$ ]] || (( inventory_total > 1000000 )); then
+    rm -f -- "$snapshot_index"
+    return 1
+  fi
+  # Count the exact same canonical Host-observed identity index used by the
+  # newest-100 inventory; do not infer total repository health or open CAS.
+  read -r repository_v1_count repository_default_count repository_configured_count < <(
+    awk -F '\t' '
+      $2=="v1" {v1++}
+      $2=="v2-default" {def++}
+      $2=="v2-configured" {custom++}
+      END {printf "%d %d %d\n", v1+0, def+0, custom+0}
+    ' "$snapshot_index"
+  )
+  if [[ ! "$repository_v1_count" =~ ^[0-9]+$ ||
+        ! "$repository_default_count" =~ ^[0-9]+$ ||
+        ! "$repository_configured_count" =~ ^[0-9]+$ ]] ||
+     (( repository_v1_count + repository_default_count + repository_configured_count != inventory_total )); then
+    rm -f -- "$snapshot_index"
+    return 1
+  fi
+  inventory_truncated=false
+  if (( inventory_total > 100 )); then inventory_truncated=true; fi
+  tmp="$(mktemp "$dir/.backup-admin-inventory.XXXXXX")" || {
+    rm -f -- "$snapshot_index"
+    return 1
+  }
+  {
+    printf '{"protocol":"%s","generated_at":"%s","policy":{"schedule_format":"%s","retention_days":%s,"repository":"%s","revision":"%s"},"total_snapshots":%s,"truncated":%s,"repositories":[{"id":"v1","snapshot_count":%s},{"id":"v2-default","snapshot_count":%s},{"id":"v2-configured","snapshot_count":%s}],"schedule":%s,"snapshots":[' \
+      "$backup_admin_protocol" "$(now_utc)" "$backup_admin_format" "$backup_admin_days" "$(json_escape "$backup_admin_repo")" "$backup_admin_revision" "$inventory_total" "$inventory_truncated" \
+      "$repository_v1_count" "$repository_default_count" "$repository_configured_count" "$backup_admin_schedule_json"
+
+    # Show the latest 100 generations across all configured repositories,
+    # not the oldest 100 from the alphabetically first (legacy v1) root.
+    while IFS=$'\t' read -r name scope; do
+      [[ "$name" =~ ^xdrive-backup-[0-9]{8}T[0-9]{6}Z$ ]] || continue
+      case "$scope" in
+        v1) root="$XDRIVE_HOME/backups/snapshots" ;;
+        v2-default) root="$XDRIVE_HOME/backups/incremental/snapshots" ;;
+        v2-configured)
+          [[ "$backup_admin_format" == v2 && -n "$backup_admin_repo" ]] || continue
+          root="$backup_admin_repo/snapshots" ;;
+        *) continue ;;
+      esac
+      snap="$root/$name"
+      [[ -d "$snap" && ! -L "$snap" ]] || continue
+      state=complete
+      if [[ "$scope" == v1 ]]; then
+        backup_admin_snapshot_complete "$snap" v1 || state=incomplete
+      else
+        backup_admin_snapshot_complete "$snap" v2 || state=incomplete
+      fi
+      if [[ "$state" == complete ]] &&
+         grep -Eq '"consistency_verified"[[:space:]]*:[[:space:]]*false' "$snap/manifest.json" 2>/dev/null; then
+        state=inconsistent
+      fi
+      bytes="$(du -sb -- "$snap" 2>/dev/null | cut -f1 || true)"
+      [[ "$bytes" =~ ^[0-9]+$ ]] || bytes=0
+      file_data=true
+      if [[ "$scope" == v1 ]] &&
+         grep -Eq '"file_data_included"[[:space:]]*:[[:space:]]*false' "$snap/manifest.json" 2>/dev/null; then
+        file_data=false
+      fi
+      created="$(printf '%s' "$name" | sed -nE 's/^xdrive-backup-([0-9]{4})([0-9]{2})([0-9]{2})T([0-9]{2})([0-9]{2})([0-9]{2})Z$/\1-\2-\3T\4:\5:\6Z/p')"
+      printf '%s{"id":"%s:%s","name":"%s","format":"%s","created_at":"%s","state":"%s","bytes":%s,"file_data_included":%s}' \
+        "$comma" "$scope" "$name" "$name" \
+        "$([[ "$scope" == v1 ]] && printf v1 || printf v2)" \
+        "$created" "$state" "$bytes" "$file_data"
+      comma=","
+    done < <(sed -n '1,100p' "$snapshot_index")
+    printf ']}\n'
+  } > "$tmp" || { rm -f -- "$tmp" "$snapshot_index"; return 1; }
+  rm -f -- "$snapshot_index"
+  chmod 0660 "$tmp" && mv -f "$tmp" "$dir/backup-admin-inventory.json"
+}
+
+backup_admin_status() {
+  local dir="$1" state="$2" action="$3" request_id="$4" snapshot_id="$5" code="$6" message="$7"
+  local started="$8" finished="$9" stage="${10:-}" bytes_done="${11:-0}" bytes_total="${12:-0}" tmp
+  [[ "$bytes_done" =~ ^[0-9]{1,15}$ ]] || bytes_done=0
+  [[ "$bytes_total" =~ ^[0-9]{1,15}$ ]] || bytes_total=0
+  [[ ${#stage} -le 96 ]] || stage=""
+  tmp="$(mktemp "$dir/.backup-admin-status.XXXXXX")" || return 1
+  printf '{"protocol":"%s","state":"%s","request_id":"%s","action":"%s","snapshot_id":"%s","started_at":"%s","updated_at":"%s","finished_at":"%s","error_code":"%s","message":"%s","stage":"%s","bytes_done":%s,"bytes_total":%s}\n' \
+    "$backup_admin_protocol" "$(json_escape "$state")" "$(json_escape "$request_id")" "$(json_escape "$action")" \
+    "$(json_escape "$snapshot_id")" "$(json_escape "$started")" "$(now_utc)" "$(json_escape "$finished")" \
+    "$(json_escape "$code")" "$(json_escape "$message")" "$(json_escape "$stage")" "$bytes_done" "$bytes_total" > "$tmp"
+  chmod 0660 "$tmp" && mv -f "$tmp" "$dir/backup-admin-status.json"
+}
+
+
+# Persist only Host-observed terminal results; bounded to 30 receipts. No
+# renderer path, log contents or credentials can enter this private record.
+
+# Read only actual backup stage/byte evidence. Verify, restore and GC have
+# unknown byte totals and never receive estimated percentages.
+backup_admin_publish_live_progress() {
+  local dir="$1" action="$2" id="$3" snapshot="$4" started="$5"
+  local file="$dir/backup-admin-progress.env" fields service done_bytes total_bytes
+  [[ "$action" == create ]] || return 0
+  # One O_NOFOLLOW open and fstat against a 2 KiB cap prevents a symlink
+  # replacement between Lstat and grep. No raw file or path is sent to API.
+  fields="$(python3 - "$file" <<'PY'
+import os
+import re
+import stat
+import sys
+
+path = sys.argv[1]
+try:
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, "rb") as stream:
+        st = os.fstat(stream.fileno())
+        if not stat.S_ISREG(st.st_mode) or not 0 < st.st_size <= 2048:
+            sys.exit(1)
+        raw = stream.read(2049)
+    if len(raw) > 2048:
+        sys.exit(1)
+    lines = raw.decode("utf-8").splitlines()
+except (OSError, UnicodeError):
+    sys.exit(1)
+
+values = {}
+for line in lines:
+    key, separator, value = line.partition("=")
+    if separator and key in ("service", "bytes_done", "bytes_total"):
+        values[key] = value
+service = values.get("service", "")
+if (not service or len(service.encode("utf-8")) > 96 or
+        any(ord(char) < 32 or ord(char) == 127 for char in service)):
+    service = "正在创建服务器备份"
+def count(name):
+    value = values.get(name, "")
+    return int(value, 10) if re.fullmatch(r"[0-9]{1,15}", value) else 0
+done = count("bytes_done")
+total = count("bytes_total")
+if total and done > total:
+    done = total
+print(f"{service}\t{done}\t{total}")
+PY
+)" || return 0
+  IFS=$'\t' read -r service done_bytes total_bytes <<< "$fields"
+  backup_admin_status "$dir" running "$action" "$id" "$snapshot" "" \
+    "宿主机正在执行备份操作。" "$started" "" "$service" "$done_bytes" "$total_bytes"
+}
+backup_admin_history_append() {
+  local dir="$1" state="$2" action="$3" id="$4" snapshot="$5" mode="$6"
+  local started="$7" finished="$8" error_code="$9" proof_path="${10:-}"
+  python3 - "$dir/backup-admin-history.json" "$state" "$action" "$id" \
+    "$snapshot" "$mode" "$started" "$finished" "$error_code" "$proof_path" <<'PY'
+import json, os, re, stat, sys, tempfile
+path,state,action,rid,snapshot,mode,started,finished,code,proof_path=sys.argv[1:]
+if state not in ("success","failed") or action not in ("create","verify","verify_all","preview_delete","drill","plan","restore","delete","delete_selected","prune","policy"):
+    sys.exit(2)
+if not re.fullmatch(r"[0-9a-f]{24}",rid) or not re.fullmatch(r"[a-z_]{0,60}",code):
+    sys.exit(2)
+if snapshot and not re.fullmatch(r"(v1|v2-default|v2-configured):xdrive-backup-[0-9]{8}T[0-9]{6}Z",snapshot):
+    sys.exit(2)
+if (action in ("verify","preview_delete","drill","restore","delete","delete_selected")) != bool(snapshot):
+    sys.exit(2)
+if (action in ("verify","preview_delete","verify_all","plan")) != (mode in ("fast","deep")):
+    sys.exit(2)
+if not (re.fullmatch(r"20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z",started) and
+        re.fullmatch(r"20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z",finished)):
+    sys.exit(2)
+old=[]
+if os.path.lexists(path):
+    st=os.lstat(path)
+    if not stat.S_ISREG(st.st_mode) or st.st_size>32768:
+        sys.exit(2)
+    fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW)
+    with os.fdopen(fd,"rb") as f: raw=f.read(32769)
+    if len(raw)>32768: sys.exit(2)
+    data=json.loads(raw)
+    if not isinstance(data,dict) or data.get("protocol")!="xdrive-backup-admin-history-v1":
+        sys.exit(2)
+    old=data.get("operations")
+    if not isinstance(old,list) or len(old)>30: sys.exit(2)
+if action in ("drill","preview_delete","delete_selected") and not snapshot.startswith(("v2-default:","v2-configured:")): sys.exit(2)
+entry=dict(protocol="xdrive-backup-admin-v1",request_id=rid,action=action,
+    snapshot_id=snapshot,mode=mode,state=state,started_at=started,
+    finished_at=finished,error_code=code)
+
+# New Host verification evidence is optional; older history remains usable.
+# Strictly allowlist fixed-schema counters and enumerations. Raw logs, CAS
+# digests, and Host paths never enter this persistent shared record.
+if action=="verify" and proof_path:
+    try:
+        fd=os.open(proof_path,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+        with os.fdopen(fd,"rb") as f:
+            st=os.fstat(f.fileno())
+            if not stat.S_ISREG(st.st_mode) or not 0 < st.st_size <= 2048:
+                raise ValueError("unsafe report file")
+            raw_report=f.read(2049)
+        if not 0 < len(raw_report) <= 2048:
+            raise ValueError("oversized report")
+        def reject_duplicates(pairs):
+            value={}
+            for key,item in pairs:
+                if key in value: raise ValueError("duplicate field")
+                value[key]=item
+            return value
+        proof=json.loads(raw_report.decode("utf-8"),object_pairs_hook=reject_duplicates)
+        required={"protocol","state","format","scope","cas_objects_checked","cas_bytes_hashed"}
+        optional={"failure_category"}
+        allowed={"missing_object","object_sha256_mismatch","object_size_mismatch",
+            "unsafe_repository","unsafe_snapshot","unsafe_object_bucket",
+            "unreadable_or_unsafe_object","object_read_failed","measurement_overflow",
+            "invalid_object_index","invalid_legacy_archive",
+            "snapshot_outside_repository","invalid_cas_report",
+            "snapshot_verification_failed"}
+        category=proof.get("failure_category","") if isinstance(proof,dict) else ""
+        fmt="v1" if snapshot.startswith("v1:") else "v2"
+        if (not isinstance(proof,dict) or not required <= proof.keys() or
+            set(proof)-required-optional or
+            proof["protocol"]!="xdrive-host-backup-verify-v1" or
+            proof["state"] not in ("success","failed") or
+            proof["format"]!=fmt or proof["scope"]!="backup_snapshot_and_referenced_cas" or
+            (state=="success" and proof["state"]!="success") or
+            type(category) is not str or (category and category not in allowed) or
+            (proof["state"]=="failed" and not category)):
+            raise ValueError("invalid verification schema")
+        for key in ("cas_objects_checked","cas_bytes_hashed"):
+            if type(proof[key]) is not int or not 0 <= proof[key] <= 9007199254740991:
+                raise ValueError("invalid count")
+        if fmt=="v1" and (proof["cas_objects_checked"] or proof["cas_bytes_hashed"]):
+            raise ValueError("impossible v1 CAS counts")
+        entry["verification"]=proof
+    except (OSError,ValueError,UnicodeError,TypeError,KeyError):
+        pass  # Never fabricate evidence, and never leak raw error details.
+# A successful Host drill must include its real, schema-checked file+SQL receipt.
+# No CLI stdout is trusted as a production destructive-recovery attestation.
+if action=="drill" and proof_path:
+    try:
+        fd=os.open(proof_path,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+        with os.fdopen(fd,"rb") as f:
+            st=os.fstat(f.fileno())
+            if not stat.S_ISREG(st.st_mode) or not 0 < st.st_size <= 2048:
+                raise ValueError("unsafe drill report")
+            raw=f.read(2049)
+        if not 0 < len(raw) <= 2048: raise ValueError("oversized drill report")
+        def unique(pairs):
+            out={}
+            for k,v in pairs:
+                if k in out: raise ValueError("duplicate key")
+                out[k]=v
+            return out
+        d=json.loads(raw.decode("utf-8"),object_pairs_hook=unique)
+        keys={"protocol","state","environment","snapshot","started_at","finished_at",
+              "files_restored","postgresql_restored","production_verified","max_mib","failure_category"}
+        failure={"unsafe_snapshot","invalid_snapshot_checksum","sandbox_quota_exceeded",
+                 "runtime_unavailable","file_restore_failed","postgresql_restore_failed",
+                 "repository_busy","drill_failed"}
+        if (not isinstance(d,dict) or set(d)!=keys or
+            d["protocol"]!="xdrive-host-isolated-drill-v1" or
+            d["environment"]!="host_ephemeral_offline_tmpfs" or
+            d["snapshot"]!=snapshot.split(":",1)[1] or type(d["max_mib"]) is not int or
+            d["max_mib"]!=1024 or d["production_verified"] is not False or
+            type(d["files_restored"]) is not bool or type(d["postgresql_restored"]) is not bool or
+            not isinstance(d["started_at"],str) or not isinstance(d["finished_at"],str) or
+            not re.fullmatch(r"20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z",d["started_at"]) or
+            not re.fullmatch(r"20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z",d["finished_at"]) or
+            d["finished_at"]<d["started_at"] or
+            ((d["state"]=="success" and
+              not (d["files_restored"] and d["postgresql_restored"] and d["failure_category"]=="")) or
+             (d["state"]=="failed" and
+              not (d["failure_category"] in failure and d["postgresql_restored"] is False))) or
+            d["state"] not in ("success","failed") or
+            (state=="success" and d["state"]!="success")):
+            raise ValueError("invalid drill receipt")
+        entry["drill"]=d
+    except (OSError,ValueError,UnicodeError,TypeError,KeyError):
+        pass
+# A successful selected-v2 retirement MUST have an exact, structured
+# source-owned report; otherwise do not record a durable success.
+if action=="delete_selected" and state=="success":
+    if not proof_path:
+        sys.exit(2)
+    try:
+        fd=os.open(proof_path,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+        with os.fdopen(fd,"rb") as f:
+            st=os.fstat(f.fileno())
+            if not stat.S_ISREG(st.st_mode) or not 0<st.st_size<=2048:
+                raise ValueError("unsafe retirement receipt")
+            raw=f.read(2049)
+        def unique_selected(pairs):
+            obj={}
+            for k,v in pairs:
+                if k in obj: raise ValueError("duplicate retirement property")
+                obj[k]=v
+            return obj
+        d=json.loads(raw.decode("utf-8"),object_pairs_hook=unique_selected)
+        keys={"mode","keep_last","retired_snapshots","recovered_transactions",
+              "deleted_cas_objects","deleted_cas_logical_bytes",
+              "deleted_snapshot_files","deleted_snapshot_file_bytes",
+              "verification","automatic"}
+        if (not isinstance(d,dict) or set(d)!=keys or
+            d["mode"]!="manual_selected" or d["automatic"] is not False or
+            d["verification"]!="exclusive_lock_and_full_cas_sha256" or
+            d["retired_snapshots"]!=[snapshot.split(":",1)[1]]):
+            raise ValueError("untrusted selected retirement")
+        for key in keys-{"mode","retired_snapshots","verification","automatic"}:
+            value=d[key]
+            ceiling=1000 if key=="keep_last" else 1000000000 if key.endswith(("objects","files","transactions")) else 9007199254740991
+            if type(value) is not int or value < (1 if key=="keep_last" else 0) or value>ceiling:
+                raise ValueError("invalid retirement counter")
+        entry["selected_delete"]=d
+    except (OSError,ValueError,KeyError,TypeError,UnicodeError):
+        sys.exit(2)
+events=[entry]+[x for x in old if isinstance(x,dict) and x.get("request_id")!=rid]
+raw=(json.dumps(dict(protocol="xdrive-backup-admin-history-v1",operations=events[:30]),
+                ensure_ascii=False,separators=(",",":"))+"\n").encode()
+if len(raw)>32768: sys.exit(2)
+fd,tmp=tempfile.mkstemp(prefix=".backup-admin-history.",dir=os.path.dirname(path))
+try:
+    with os.fdopen(fd,"wb") as f:
+        os.fchmod(f.fileno(),0o660)
+        f.write(raw); f.flush(); os.fsync(f.fileno())
+    os.replace(tmp,path)
+    # A renamed receipt is crash-durable only after syncing the containing
+    # directory. A failure remains a warning and cannot falsify backup status.
+    directory_fd=os.open(os.path.dirname(path),os.O_RDONLY|os.O_DIRECTORY)
+    try:
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
+finally:
+    if os.path.exists(tmp): os.unlink(tmp)
+PY
+}
+
+backup_admin_write_policy() {
+  local fmt="$1" days="$2" expected="$3" tmp install_lock="$STATE_DIR/install.lock"
+  local backup_admin_format backup_admin_days backup_admin_repo backup_admin_revision
+  [[ "$fmt" == v1 || "$fmt" == v2 ]] || return 1
+  [[ "$days" =~ ^[0-9]{1,4}$ ]] || return 1
+  (( 10#$days <= 3650 )) || return 1
+  backup_admin_policy_values || return 1
+  [[ "$expected" == "$backup_admin_revision" ]] || return 1
+  [[ "$fmt" == v2 || -z "$backup_admin_repo" ]] || return 1
+  [[ -f "$ENV_PATH" && ! -L "$ENV_PATH" ]] || return 1
+  # The installer owns this lock while writing deployment config; a remote
+  # policy edit cannot overwrite an in-progress upgrade transaction.
+  [[ ! -L "$install_lock" && ( ! -e "$install_lock" || -f "$install_lock" ) ]] || return 1
+  exec 4>>"$install_lock"
+  flock -n 4 || { exec 4>&-; return 1; }
+  # Re-read under the installer lease: a policy change between the first
+  # revision comparison and this lock must fail rather than overwrite it.
+  backup_admin_policy_values || { flock -u 4; exec 4>&-; return 1; }
+  [[ "$expected" == "$backup_admin_revision" ]] || { flock -u 4; exec 4>&-; return 1; }
+  tmp="$(mktemp "$CONFIG_DIR/.backup-admin-env.XXXXXX")" || return 1
+  awk '!/^XD_BACKUP_SCHEDULE_FORMAT=/ && !/^XD_BACKUP_RETENTION_DAYS=/' "$ENV_PATH" > "$tmp" || { rm -f "$tmp"; return 1; }
+  printf 'XD_BACKUP_SCHEDULE_FORMAT=%s\nXD_BACKUP_RETENTION_DAYS=%s\n' "$fmt" "$days" >> "$tmp"
+  chmod --reference="$ENV_PATH" "$tmp" || { rm -f "$tmp"; return 1; }
+  chown --reference="$ENV_PATH" "$tmp" 2>/dev/null || true
+  mv -f "$tmp" "$ENV_PATH"
+  local exit_code=$?
+  flock -u 4
+  exec 4>&-
+  return "$exit_code"
+}
+
+backup_admin_delete_v1() {
+  local id="$1" target file name root remaining=0 retired fmt candidate_root
+  local backup_admin_format backup_admin_days backup_admin_repo backup_admin_revision
+  local -a recovery_roots
+  [[ "$id" == v1:xdrive-backup-* ]] || return 1
+  target="$(backup_admin_snapshot_directory "$id")" || return 1
+  backup_admin_snapshot_complete "$target" v1 || return 1
+  root="$XDRIVE_HOME/backups/snapshots"
+  recovery_roots=("$root" "$XDRIVE_HOME/backups/incremental/snapshots")
+  # Count all valid, independent recovery points including a configured v2
+  # repository; never use a path supplied by the remote administrator.
+  backup_admin_policy_values || return 1
+  if [[ "$backup_admin_format" == v2 && -n "$backup_admin_repo" ]]; then
+    candidate_root="$backup_admin_repo/snapshots"
+    [[ -d "$candidate_root" && ! -L "$candidate_root" ]] || return 1
+    if [[ "$candidate_root" != "$XDRIVE_HOME/backups/incremental/snapshots" ]]; then
+      recovery_roots+=("$candidate_root")
+    fi
+  fi
+  for candidate_root in "${recovery_roots[@]}"; do
+    [[ -d "$candidate_root" && ! -L "$candidate_root" ]] || continue
+    for file in "$candidate_root"/xdrive-backup-*; do
+      [[ -d "$file" && "$file" != "$target" && ! -L "$file" ]] || continue
+      fmt=v1
+      [[ "$candidate_root" == "$root" ]] || fmt=v2
+      if [[ "$fmt" == v1 ]] &&
+         grep -Eq '"file_data_included"[[:space:]]*:[[:space:]]*false' "$file/manifest.json" 2>/dev/null; then
+        continue
+      fi
+      # Filenames or metadata alone do not prove another recovery point.
+      if backup_admin_snapshot_complete "$file" "$fmt" &&
+         XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup verify "$file" >/dev/null 2>&1; then
+        remaining=$((remaining + 1))
+      fi
+    done
+  done
+  (( remaining > 0 )) || return 1
+  for file in "$target"/*; do
+    [[ -f "$file" && ! -L "$file" ]] || return 1
+    name="$(basename "$file")"
+    case "$name" in
+      database.dump|blobs.tar|verify.json|manifest.json|SHA256SUMS.txt) ;;
+      *) return 1 ;;
+    esac
+  done
+  retired="$root/.backup-admin-retired-$(basename "$target")"
+  [[ ! -e "$retired" && ! -L "$retired" ]] || return 1
+  mv -- "$target" "$retired" || return 1
+  for name in database.dump blobs.tar verify.json manifest.json SHA256SUMS.txt; do
+    if [[ -f "$retired/$name" && ! -L "$retired/$name" ]]; then
+      rm -- "$retired/$name" || return 1
+    fi
+  done
+  rmdir -- "$retired"
+}
+
+backup_admin_valid_drill_result() {
+  local path="$1" snapshot="$2" expect="$3"
+  python3 - "$path" "$snapshot" "$expect" <<'PY'
+import json,os,re,stat,sys
+path,snapshot,expect=sys.argv[1:]
+try:
+    fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+    with os.fdopen(fd,"rb") as f:
+        st=os.fstat(f.fileno())
+        if not stat.S_ISREG(st.st_mode) or not 0<st.st_size<=2048: raise ValueError("report size")
+        raw=f.read(2049)
+    if not 0<len(raw)<=2048: raise ValueError("report oversized")
+    def unique(pairs):
+        result={}
+        for key,value in pairs:
+            if key in result: raise ValueError("duplicate JSON key")
+            result[key]=value
+        return result
+    x=json.loads(raw.decode("utf-8"),object_pairs_hook=unique)
+    keys={"protocol","state","environment","snapshot","started_at","finished_at",
+          "files_restored","postgresql_restored","production_verified","max_mib","failure_category"}
+    failures={"unsafe_snapshot","invalid_snapshot_checksum","sandbox_quota_exceeded",
+              "runtime_unavailable","file_restore_failed","postgresql_restore_failed",
+              "repository_busy","drill_failed"}
+    if not isinstance(x,dict) or set(x)!=keys: raise ValueError("report keys")
+    if x["protocol"]!="xdrive-host-isolated-drill-v1" or x["environment"]!="host_ephemeral_offline_tmpfs":
+        raise ValueError("unexpected protocol")
+    if x["snapshot"]!=snapshot.split(":",1)[1] or x["max_mib"]!=1024 or type(x["max_mib"]) is not int:
+        raise ValueError("wrong snapshot/limit")
+    if x["production_verified"] is not False or type(x["files_restored"]) is not bool or type(x["postgresql_restored"]) is not bool:
+        raise ValueError("invalid state")
+    for name in ("started_at","finished_at"):
+        if not isinstance(x[name],str) or not re.fullmatch(r"20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z",x[name]):
+            raise ValueError("invalid timestamps")
+    if x["finished_at"]<x["started_at"] or x["state"]!=expect:
+        raise ValueError("inconsistent timestamp/state")
+    if expect=="success" and not (x["files_restored"] and x["postgresql_restored"] and x["failure_category"]==""):
+        raise ValueError("not fully restored")
+    if expect=="failed" and (x["failure_category"] not in failures or x["postgresql_restored"] is not False):
+        raise ValueError("invalid failure")
+except (OSError,ValueError,TypeError,KeyError,UnicodeError):
+    sys.exit(1)
+PY
+}
+
+
+# Fixed Host-only verification of all locally discovered committed generations.
+# This is not a browser loop: the same Host operation lock survives navigation.
+backup_admin_verify_all() {
+  local mode="$1" id="$2" report="$3" progress="$4"
+  local backup_admin_format backup_admin_days backup_admin_repo backup_admin_revision
+  local configured=""
+  [[ "$mode" == fast || "$mode" == deep ]] || return 2
+  [[ "$id" =~ ^[0-9a-f]{24}$ && -n "$report" && -n "$progress" ]] || return 2
+  backup_admin_policy_values || return 2
+  if [[ "$backup_admin_format" == v2 && -n "$backup_admin_repo" ]]; then
+    configured="$backup_admin_repo/snapshots"
+  fi
+  XD_CONFIG_DIR="$XDRIVE_HOME" python3 - "$MANAGER" \
+    "$XDRIVE_HOME/backups/snapshots" "$XDRIVE_HOME/backups/incremental/snapshots" \
+    "$configured" "$mode" "$id" "$report" "$progress" <<'PY'
+import datetime, json, os, re, stat, subprocess, sys, tempfile
+from pathlib import Path
+
+manager, root_v1, root_v2, root_custom, mode, rid, report, progress = sys.argv[1:]
+now = lambda: datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+started = now()
+roots = [("v1", root_v1), ("v2-default", root_v2)]
+if root_custom and os.path.realpath(root_custom) != os.path.realpath(root_v2):
+    roots.append(("v2-configured", root_custom))
+snapshots, v2_repos, sample = [], set(), []
+abort = ""
+checked = passed = failed = deep_checked = deep_failed = 0
+name_re = re.compile(r"xdrive-backup-[0-9]{8}T[0-9]{6}Z\Z")
+categories = {
+    "missing_object", "object_sha256_mismatch", "object_size_mismatch",
+    "unsafe_repository", "unsafe_snapshot", "unsafe_object_bucket",
+    "unreadable_or_unsafe_object", "object_read_failed", "measurement_overflow",
+    "invalid_object_index", "invalid_legacy_archive", "snapshot_outside_repository",
+    "invalid_cas_report", "snapshot_verification_failed",
+}
+
+def write(path, value):
+    data = (json.dumps(value, ensure_ascii=False, separators=(",", ":")) + "\n").encode()
+    if len(data) > 16384: raise ValueError("report too large")
+    folder = os.path.dirname(path)
+    fd, temp = tempfile.mkstemp(prefix=".backup-admin-verify-all.", dir=folder)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            os.fchmod(f.fileno(), 0o660)
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp, path)
+        dirfd = os.open(folder, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try: os.fsync(dirfd)
+        finally: os.close(dirfd)
+    finally:
+        if os.path.lexists(temp): os.unlink(temp)
+
+def publish_progress():
+    write(progress, dict(protocol="xdrive-host-verify-all-progress-v1",
+        request_id=rid, total=len(snapshots), checked=checked, passed=passed, failed=failed))
+
+try:
+    for scope, name in roots:
+        root = Path(name)
+        if not os.path.lexists(root): continue
+        if not stat.S_ISDIR(root.lstat().st_mode):
+            abort = "unsafe_repository"; break
+        with os.scandir(root) as entries:
+            for entry in entries:
+                if not entry.name.startswith("xdrive-backup-"): continue
+                if not name_re.fullmatch(entry.name) or not entry.is_dir(follow_symlinks=False):
+                    abort = "unsafe_snapshot"; break
+                if len(snapshots) == 1000:
+                    abort = "snapshot_limit_exceeded"; break
+                snapshots.append((scope + ":" + entry.name, entry.path, scope))
+                if scope != "v1": v2_repos.add(os.path.realpath(root.parent))
+        if abort: break
+    if not snapshots and not abort: abort = "no_snapshots"
+except (OSError, ValueError):
+    abort = "unsafe_repository"
+
+snapshots.sort(reverse=True)
+try:
+    publish_progress()
+    if not abort:
+        for identity, target, scope in snapshots:
+            good = False
+            category = "snapshot_verification_failed"
+            try:
+                with tempfile.TemporaryFile() as output:
+                    result = subprocess.run([manager, "backup", "verify", "--json", target],
+                        stdin=subprocess.DEVNULL, stdout=output, stderr=sys.stderr,
+                        timeout=1800, check=False)
+                    output.seek(0)
+                    raw = output.read(2049)
+                def unique_fields(pairs):
+                    values = {}
+                    for key, value in pairs:
+                        if key in values: raise ValueError("duplicate report property")
+                        values[key] = value
+                    return values
+                proof = json.loads(raw, object_pairs_hook=unique_fields) if 0 < len(raw) <= 2048 else {}
+                expected_format = "v1" if scope == "v1" else "v2"
+                expected_fields = {"protocol", "state", "format", "scope",
+                                   "cas_objects_checked", "cas_bytes_hashed"}
+                good = (result.returncode == 0 and isinstance(proof, dict) and
+                    set(proof) == expected_fields and
+                    proof.get("protocol") == "xdrive-host-backup-verify-v1" and
+                    proof.get("state") == "success" and proof.get("format") == expected_format and
+                    proof.get("scope") == "backup_snapshot_and_referenced_cas" and
+                    type(proof.get("cas_objects_checked")) is int and
+                    type(proof.get("cas_bytes_hashed")) is int and
+                    0 <= proof["cas_objects_checked"] <= 9007199254740991 and
+                    0 <= proof["cas_bytes_hashed"] <= 9007199254740991 and
+                    (scope != "v1" or (proof["cas_objects_checked"] == 0 and
+                        proof["cas_bytes_hashed"] == 0)))
+                if not good and isinstance(proof, dict) and proof.get("state") == "failed":
+                    c = proof.get("failure_category")
+                    if isinstance(c, str) and c in categories: category = c
+            except (OSError, ValueError, TypeError, subprocess.TimeoutExpired):
+                good = False
+            checked += 1
+            if good: passed += 1
+            else:
+                failed += 1
+                if len(sample) < 20:
+                    sample.append(dict(snapshot_id=identity, category=category))
+            publish_progress()
+        if mode == "deep":
+            # One additional orphan-CAS audit per unique v2 repository, not
+            # one full repository scan per snapshot.
+            for repo in sorted(v2_repos):
+                deep_checked += 1
+                try:
+                    with tempfile.TemporaryFile() as output:
+                        result = subprocess.run([manager, "backup", "retention-plan",
+                            "--repository-dir", repo, "--keep-last", "1", "--mode", "deep"],
+                            stdin=subprocess.DEVNULL, stdout=output, stderr=sys.stderr,
+                            timeout=1800, check=False)
+                        output.seek(0)
+                        raw = output.read(131073)
+                    def unique_fields(pairs):
+                        values = {}
+                        for key, value in pairs:
+                            if key in values: raise ValueError("duplicate deep report field")
+                            values[key] = value
+                        return values
+                    proof = json.loads(raw, object_pairs_hook=unique_fields) if 0 < len(raw) <= 131072 else {}
+                    valid = (
+                        result.returncode == 0 and isinstance(proof, dict) and
+                        proof.get("mode") == "read_only" and
+                        proof.get("validation") == "snapshot_sha256_and_full_cas_sha256" and
+                        type(proof.get("keep_last")) is int and proof["keep_last"] == 1 and
+                        proof.get("delete_enabled") is False and
+                        type(proof.get("committed_snapshots")) is int and
+                        1 <= proof["committed_snapshots"] <= 1000 and
+                        type(proof.get("hashed_objects")) is int and
+                        0 <= proof["hashed_objects"] <= 1000000000 and
+                        type(proof.get("hashed_bytes")) is int and
+                        0 <= proof["hashed_bytes"] <= 9007199254740991
+                    )
+                    if not valid: deep_failed += 1
+                except (OSError, ValueError, TypeError, subprocess.TimeoutExpired):
+                    deep_failed += 1
+    state = ("success" if not abort and checked > 0 and checked == len(snapshots) and
+             failed == 0 and deep_failed == 0 else "failed")
+    result = dict(protocol="xdrive-host-verify-all-v1", request_id=rid,
+        mode=mode, state=state, started_at=started, finished_at=now(),
+        total_snapshots=len(snapshots), checked_snapshots=checked,
+        passed_snapshots=passed, failed_snapshots=failed,
+        unverified_snapshots=len(snapshots)-checked,
+        deep_repositories_checked=deep_checked, deep_repositories_failed=deep_failed,
+        failure_sample=sample, failure_sample_truncated=failed > len(sample),
+        failure_category=abort)
+    write(report, result)
+    sys.exit(0 if state == "success" else 1)
+except (OSError, ValueError, TypeError):
+    print("bulk verification could not persist a bounded Host report", file=sys.stderr)
+    sys.exit(1)
+PY
+}
+
+backup_admin_publish_verify_all_progress() {
+  local dir="$1" action="$2" id="$3" started="$4"
+  [[ "$action" == verify_all ]] || return 0
+  local progress checked total passed failed stage
+  progress="$(python3 - "$dir/backup-admin-verify-all-progress.json" "$id" <<'PY'
+import json, os, stat, sys
+path,rid=sys.argv[1:]
+try:
+    fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+    with os.fdopen(fd,"rb") as f:
+        if not stat.S_ISREG(os.fstat(f.fileno()).st_mode) or os.fstat(f.fileno()).st_size>2048:
+            sys.exit(1)
+        v=json.load(f)
+    if v.get("protocol")!="xdrive-host-verify-all-progress-v1" or v.get("request_id")!=rid:
+        sys.exit(1)
+    fields=[v.get(k) for k in ("checked","total","passed","failed")]
+    if any(type(x) is not int or x<0 or x>1000 for x in fields): sys.exit(1)
+    checked,total,passed,failed=fields
+    if checked>total or passed+failed!=checked: sys.exit(1)
+    print(str(checked)+" "+str(total)+" "+str(passed)+" "+str(failed))
+except (ValueError,KeyError,TypeError,OSError,AttributeError):
+    sys.exit(1)
+PY
+)" || return 0
+  read -r checked total passed failed <<< "$progress"
+  stage="已校验 $checked/$total 代（通过 $passed，失败 $failed）"
+  backup_admin_status "$dir" running "$action" "$id" "" "" \
+    "宿主机正在逐代校验备份。" "$started" "" "$stage" 0 0
+}
+
+# Read-only deep evidence is necessary but never sufficient to delete.
+# This fence verifies the last successful Host preview and its exact identity;
+# the immutable-CAS retirement helper independently performs a fresh full deep
+# audit under its exclusive repository lock before any mutation.
+backup_admin_valid_selected_deletion_preview() {
+  local dir="$1" expected_id="$2" expected_snapshot="$3"
+  [[ "$expected_id" =~ ^[0-9a-f]{24}$ &&
+     "$expected_snapshot" =~ ^v2-(default|configured):xdrive-backup-[0-9]{8}T[0-9]{6}Z$ ]] || return 1
+  python3 - "$dir/backup-admin-selected-preview.json" "$dir/backup-admin-history.json" \
+      "$expected_id" "$expected_snapshot" <<'PY'
+import datetime, json, os, re, stat, sys
+preview_path, history_path, expected_id, expected_snapshot = sys.argv[1:]
+def load(path, max_bytes):
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, "rb") as f:
+        st = os.fstat(f.fileno())
+        if not stat.S_ISREG(st.st_mode) or not 0 < st.st_size <= max_bytes:
+            raise ValueError("unsafe host record")
+        raw = f.read(max_bytes + 1)
+    def unique_pairs(pairs):
+        out = {}
+        for key, value in pairs:
+            if key in out: raise ValueError("duplicate key")
+            out[key] = value
+        return out
+    return json.loads(raw.decode("utf-8"), object_pairs_hook=unique_pairs)
+try:
+    p = load(preview_path, 4096)
+    h = load(history_path, 32768)
+    if not isinstance(p, dict) or set(p) != {
+        "protocol","request_id","snapshot_id","mode","report"}:
+        raise ValueError("unsafe preview envelope")
+    if (p["protocol"] != "xdrive-host-selected-v2-preview-v1"
+        or p["request_id"] != expected_id
+        or p["snapshot_id"] != expected_snapshot or p["mode"] != "deep"):
+        raise ValueError("deep preview mismatch")
+    report = p["report"]
+    expected_fields = {
+        "protocol","mode","validation","snapshot","committed_snapshots",
+        "surviving_snapshots","selected_snapshot_bytes","selected_cas_objects",
+        "shared_cas_objects","exclusive_cas_objects","exclusive_cas_bytes",
+        "unreferenced_objects","unreferenced_bytes","potential_logical_bytes",
+        "hashed_objects","hashed_bytes","delete_enabled"}
+    if not isinstance(report, dict) or set(report) != expected_fields:
+        raise ValueError("unsafe preview report")
+    if (report["protocol"] != "xdrive-backup-selected-prune-plan-v1"
+        or report["mode"] != "read_only"
+        or report["validation"] != "snapshot_sha256_and_full_cas_sha256"
+        or report["snapshot"] != expected_snapshot.split(":",1)[1]
+        or report["delete_enabled"] is not False):
+        raise ValueError("preview cannot authorize deletion")
+    numeric = expected_fields - {"protocol","mode","validation","snapshot","delete_enabled"}
+    for key in numeric:
+        maximum = 1000000000 if key.endswith("objects") or key.endswith("snapshots") else 9007199254740991
+        if type(report[key]) is not int or not 0 <= report[key] <= maximum:
+            raise ValueError("invalid preview count")
+    if (not 2 <= report["committed_snapshots"] <= 1000 or
+        report["surviving_snapshots"] != report["committed_snapshots"] - 1 or
+        report["selected_cas_objects"] != report["shared_cas_objects"] +
+                report["exclusive_cas_objects"] or
+        report["hashed_objects"] < report["selected_cas_objects"] + report["unreferenced_objects"] or
+        report["hashed_bytes"] < report["exclusive_cas_bytes"] + report["unreferenced_bytes"] or
+        report["potential_logical_bytes"] != report["selected_snapshot_bytes"] +
+                report["exclusive_cas_bytes"] + report["unreferenced_bytes"]):
+        raise ValueError("unsafe preview totals")
+    events = h.get("operations") if isinstance(h, dict) and h.get("protocol") == "xdrive-backup-admin-history-v1" else None
+    if not isinstance(events, list) or not 1 <= len(events) <= 30:
+        raise ValueError("missing host audit receipt")
+    last = events[0]
+    if not isinstance(last,dict) or (last.get("action"),last.get("state"),
+        last.get("request_id"),last.get("snapshot_id"),last.get("mode")) != (
+            "preview_delete","success",expected_id,expected_snapshot,"deep"):
+        raise ValueError("stale or mismatched history")
+    ended = datetime.datetime.fromisoformat(last["finished_at"].replace("Z","+00:00"))
+    now = datetime.datetime.now(datetime.timezone.utc)
+    if not 0 <= (now-ended).total_seconds() < 900:
+        raise ValueError("expired deep preview")
+except (OSError,ValueError,TypeError,KeyError,AttributeError,UnicodeError,OverflowError):
+    sys.exit(1)
+PY
+}
+
+# Validate exact source-owned retirement JSON. Exit zero alone cannot
+# attest which snapshot was retired or whether exclusive CAS hashing ran.
+backup_admin_valid_selected_deletion_result() {
+  local proof="$1" selected="$2"
+  python3 - "$proof" "$selected" <<'PY'
+import json,os,re,stat,sys
+path,selected=sys.argv[1:]
+try:
+    if not re.fullmatch(r"v2-(default|configured):xdrive-backup-[0-9]{8}T[0-9]{6}Z", selected):
+        raise ValueError("invalid selected identity")
+    fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+    with os.fdopen(fd,"rb") as f:
+        st=os.fstat(f.fileno())
+        if not stat.S_ISREG(st.st_mode) or not 0<st.st_size<=2048: raise ValueError("unsafe proof")
+        raw=f.read(2049)
+    def unique(pairs):
+        out={}
+        for key,val in pairs:
+            if key in out: raise ValueError("duplicate proof key")
+            out[key]=val
+        return out
+    d=json.loads(raw.decode("utf-8"),object_pairs_hook=unique)
+    keys={"mode","keep_last","retired_snapshots","recovered_transactions",
+        "deleted_cas_objects","deleted_cas_logical_bytes","deleted_snapshot_files",
+        "deleted_snapshot_file_bytes","verification","automatic"}
+    if (not isinstance(d,dict) or set(d)!=keys or
+        d["mode"]!="manual_selected" or d["automatic"] is not False or
+        d["verification"]!="exclusive_lock_and_full_cas_sha256" or
+        d["retired_snapshots"]!=[selected.split(":",1)[1]]): raise ValueError("invalid proof")
+    for key in keys-{"mode","retired_snapshots","verification","automatic"}:
+        value=d[key]
+        limit=1000 if key=="keep_last" else 1000000000 if key.endswith(("objects","files","transactions")) else 9007199254740991
+        if type(value) is not int or value<(1 if key=="keep_last" else 0) or value>limit:
+            raise ValueError("invalid counter")
+except (OSError,ValueError,KeyError,TypeError,UnicodeError):
+    sys.exit(1)
+PY
+}
+
+backup_admin_execute() {
+  local action="$1" snapshot="$2" fmt="$3" mode="$4" keep="$5" days="$6" revision="$7" confirm="$8" preview_id="${9:-}"
+  local target install_guard="$STATE_DIR/install.lock"
+  # A standalone Host installer may be upgrading the Server outside this
+  # controller's process. Never overlap its transactional install.lock with
+  # backup/restore/GC. Policy changes already own the same lock internally.
+  if [[ "$action" != policy ]]; then
+    [[ ! -L "$install_guard" && ( ! -e "$install_guard" || -f "$install_guard" ) ]] || return 75
+    exec 4>>"$install_guard"
+    flock -n 4 || { exec 4>&-; return 75; }
+    # fd 4 remains inherited by backup/restore subprocesses until they exit.
+  fi
+  case "$action" in
+    create)
+      [[ -z "$snapshot" && -z "$confirm" && ( "$fmt" == v1 || "$fmt" == v2 ) ]] || return 2
+      if [[ "$fmt" == v2 ]]; then
+        local backup_admin_format backup_admin_days backup_admin_repo backup_admin_revision
+        backup_admin_policy_values || return 2
+        if [[ "$backup_admin_format" == v2 && -n "$backup_admin_repo" ]]; then
+          XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup --incremental --repository-dir "$backup_admin_repo"
+        else
+          XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup --incremental
+        fi
+      else XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup; fi ;;
+    verify_all)
+      [[ -z "$snapshot" && -z "$fmt" && -z "$confirm" && ( -z "$keep" || "$keep" == 0 ) && -z "$revision" ]] || return 2
+      [[ "$mode" == fast || "$mode" == deep ]] || return 2
+      backup_admin_verify_all "$mode" "$XD_BACKUP_ADMIN_REQUEST_ID"         "$XD_BACKUP_ADMIN_BULK_REPORT_FILE" "$XD_BACKUP_ADMIN_BULK_PROGRESS_FILE" ;;
+    verify)
+      [[ "$mode" == fast || "$mode" == deep ]] || return 2
+      target="$(backup_admin_snapshot_directory "$snapshot")" || return 2
+      if [[ -n "${XD_BACKUP_ADMIN_VERIFY_JSON_FILE:-}" ]]; then
+        XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup verify --json "$target" > "$XD_BACKUP_ADMIN_VERIFY_JSON_FILE" || return
+      else
+        XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup verify "$target" || return
+      fi
+      if [[ "$mode" == deep && "$snapshot" == v2-* ]]; then
+        XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup retention-plan --repository-dir "$(dirname "$(dirname "$target")")" --keep-last 1 --mode deep
+      fi ;;
+    preview_delete)
+      [[ "$snapshot" == v2-* && ( "$mode" == fast || "$mode" == deep ) &&
+         -z "$fmt" && -z "$confirm" && ( -z "$keep" || "$keep" == 0 ) &&
+         ( -z "$days" || "$days" == 0 ) && -z "$revision" ]] || return 2
+      target="$(backup_admin_snapshot_directory "$snapshot")" || return 2
+      # The Server never supplies a Host path. The Host resolves a recognized
+      # committed v2 identity, then invokes the read-only confined helper.
+      XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup preview-delete-snapshot \
+        --snapshot "${snapshot#*:}" --mode "$mode" \
+        --repository-dir "$(dirname "$(dirname "$target")")" ;;
+    drill)
+      [[ "$snapshot" == v2-* && "$confirm" == "DRILL $snapshot" ]] || return 2
+      target="$(backup_admin_snapshot_directory "$snapshot")" || return 2
+      # Fixed RAM ceiling: the browser never supplies a Docker image, path,
+      # shell command, capacity override or access to the live PostgreSQL.
+      [[ -n "${XD_BACKUP_ADMIN_DRILL_JSON_FILE:-}" ]] || return 2
+      if XD_CONFIG_DIR="$XDRIVE_HOME" bash "$MANAGER" backup drill "$target" --max-mib 1024           > "$XD_BACKUP_ADMIN_DRILL_JSON_FILE"; then
+        backup_admin_valid_drill_result "$XD_BACKUP_ADMIN_DRILL_JSON_FILE" "$snapshot" success || return 78
+      else
+        local drill_rc=$?
+        backup_admin_valid_drill_result "$XD_BACKUP_ADMIN_DRILL_JSON_FILE" "$snapshot" failed || true
+        return "$drill_rc"
+      fi ;;
+    plan)
+      [[ "$keep" =~ ^[1-9][0-9]{0,3}$ ]] || return 2
+      [[ "$mode" == fast || "$mode" == deep ]] || return 2
+      (( keep <= 1000 )) || return 2
+      XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup retention-plan --keep-last "$keep" --mode "$mode" ;;
+    restore)
+      [[ "$confirm" == "RESTORE $snapshot" ]] || return 2
+      target="$(backup_admin_snapshot_directory "$snapshot")" || return 2
+      # Database-only legacy snapshots require a separately selected recovery
+      # mode. Never let a full restore attempt clear live file storage when
+      # the selected generation did not actually include any file data.
+      if [[ "$snapshot" == v1:* ]] &&
+         grep -Eq '"file_data_included"[[:space:]]*:[[:space:]]*false' "$target/manifest.json"; then
+        return 2
+      fi
+      XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup verify "$target" || return
+      XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" restore "$target" --yes ;;
+    delete_selected)
+      [[ "$snapshot" == v2-* && "$confirm" == "DELETE $snapshot" &&
+         "$preview_id" =~ ^[0-9a-f]{24}$ && -z "$fmt" && -z "$mode" &&
+         ( -z "$keep" || "$keep" == 0 ) &&
+         ( -z "$days" || "$days" == 0 ) && -z "$revision" ]] || return 2
+      # Second, Host-owned fence. The browser may not provide a repository,
+      # live filesystem path, image or a fallback deletion strategy.
+      backup_admin_valid_selected_deletion_preview "$(control_dir)" "$preview_id" "$snapshot" || return 76
+      target="$(backup_admin_snapshot_directory "$snapshot")" || return 2
+      [[ -n "$XD_BACKUP_ADMIN_SELECTED_DELETE_JSON_FILE" ]] || return 78
+      XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup delete-snapshot \
+        --snapshot "${snapshot#*:}" --yes \
+        --repository-dir "$(dirname "$(dirname "$target")")" > "$XD_BACKUP_ADMIN_SELECTED_DELETE_JSON_FILE" || return
+      # A missing or forged CLI result is a failure even if the target vanished.
+      backup_admin_valid_selected_deletion_result "$XD_BACKUP_ADMIN_SELECTED_DELETE_JSON_FILE" "$snapshot" || return 78
+      [[ ! -e "$target" && ! -L "$target" ]] || return 78 ;;
+    delete)
+      [[ "$confirm" == "DELETE $snapshot" ]] || return 2
+      backup_admin_delete_v1 "$snapshot" ;;
+    prune)
+      [[ "$keep" =~ ^[1-9][0-9]{0,3}$ && "$confirm" == "PRUNE $keep" ]] || return 2
+      (( keep <= 1000 )) || return 2
+      XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup prune --keep-last "$keep" --yes ;;
+    policy)
+      [[ -z "$snapshot" && -z "$confirm" ]] || return 2
+      backup_admin_write_policy "$fmt" "$days" "$revision" ;;
+    *) return 2 ;;
+  esac
+}
+
+backup_admin_json_int() {
+  local file="$1" key="$2"
+  [[ -f "$file" ]] || return 0
+  sed -nE 's/.*"'$key'"[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' "$file" | head -n1
+}
+
+# Persist only a complete, strictly validated, bounded read-only Host report.
+# This report never grants deletion authority or supplies a browser Host path.
+backup_admin_persist_selected_preview() {
+  local dir="$1" log="$2" request_id="$3" snapshot="$4" mode="$5"
+  local tmp
+  tmp="$(mktemp "$dir/.backup-admin-selected-preview.XXXXXX")" || return 1
+  if ! python3 - "$log" "$tmp" "$request_id" "$snapshot" "$mode" <<'PY'
+import json, os, re, stat, sys
+source, target, rid, snapshot, mode = sys.argv[1:]
+required = {
+    "protocol", "mode", "validation", "snapshot", "committed_snapshots",
+    "surviving_snapshots", "selected_snapshot_bytes", "selected_cas_objects",
+    "shared_cas_objects", "exclusive_cas_objects", "exclusive_cas_bytes",
+    "unreferenced_objects", "unreferenced_bytes", "potential_logical_bytes",
+    "hashed_objects", "hashed_bytes", "delete_enabled"
+}
+try:
+    if not re.fullmatch(r"[0-9a-f]{24}", rid):
+        raise ValueError("invalid request id")
+    if not re.fullmatch(r"v2-(default|configured):xdrive-backup-[0-9]{8}T[0-9]{6}Z", snapshot):
+        raise ValueError("invalid selected snapshot")
+    if mode not in ("fast", "deep"):
+        raise ValueError("invalid validation mode")
+    fd = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, "rb") as f:
+        st = os.fstat(f.fileno())
+        if not stat.S_ISREG(st.st_mode) or not 0 < st.st_size <= 4096:
+            raise ValueError("invalid source report size")
+        raw = f.read(4097)
+    def unique_fields(pairs):
+        data = {}
+        for key, value in pairs:
+            if key in data: raise ValueError("duplicate report key")
+            data[key] = value
+        return data
+    data = json.loads(raw.decode("utf-8"), object_pairs_hook=unique_fields)
+    if not isinstance(data, dict) or set(data) != required:
+        raise ValueError("invalid report fields")
+    expected = ("snapshot_sha256_and_full_cas_sha256" if mode == "deep"
+                else "snapshot_sha256_and_cas_size")
+    if (data["protocol"] != "xdrive-backup-selected-prune-plan-v1"
+            or data["mode"] != "read_only"
+            or data["validation"] != expected
+            or data["snapshot"] != snapshot.split(":", 1)[1]
+            or data["delete_enabled"] is not False):
+        raise ValueError("mismatched read-only preview")
+    ints = required - {"protocol", "mode", "validation", "snapshot", "delete_enabled"}
+    for key in ints:
+        ceiling = 1000000000 if key.endswith("objects") or key.endswith("snapshots") else 9007199254740991
+        if type(data[key]) is not int or not 0 <= data[key] <= ceiling:
+            raise ValueError("invalid preview counter")
+    if (data["committed_snapshots"] < 2 or
+            data["surviving_snapshots"] != data["committed_snapshots"] - 1 or
+            data["selected_cas_objects"] != data["shared_cas_objects"] + data["exclusive_cas_objects"] or
+            (mode == "deep" and (data["hashed_objects"] <
+                data["selected_cas_objects"] + data["unreferenced_objects"] or
+                data["hashed_bytes"] < data["exclusive_cas_bytes"] + data["unreferenced_bytes"])) or
+            data["potential_logical_bytes"] != data["selected_snapshot_bytes"] +
+                data["exclusive_cas_bytes"] + data["unreferenced_bytes"]):
+        raise ValueError("inconsistent preview totals")
+    envelope = dict(protocol="xdrive-host-selected-v2-preview-v1",
+                    request_id=rid, snapshot_id=snapshot, mode=mode, report=data)
+    with open(target, "w", encoding="utf-8") as f:
+        json.dump(envelope, f, ensure_ascii=True, separators=(",", ":"))
+        f.write("\n")
+        f.flush()
+        os.fsync(f.fileno())
+except (OSError, ValueError, KeyError, TypeError, UnicodeError):
+    sys.exit(1)
+PY
+  then
+    rm -f -- "$tmp"
+    return 1
+  fi
+  chmod 0660 "$tmp" && mv -f -- "$tmp" "$dir/backup-admin-selected-preview.json" || {
+    rm -f -- "$tmp"
+    return 1
+  }
+}
+
+backup_admin_process_request() {
+  local dir="$1" request="$dir/backup-admin-request.json" active="$dir/backup-admin-active.json"
+  local protocol id action snapshot fmt mode keep days revision confirm preview_id created started result=0 log tmp
+  local progress_file="$dir/backup-admin-progress.env"
+  local verify_file="" drill_file="" selected_delete_file="" bulk_file="" bulk_progress="$dir/backup-admin-verify-all-progress.json"
+  [[ -f "$request" && ! -L "$request" && ! -e "$active" && ! -L "$active" ]] || return 0
+  mv -- "$request" "$active" || return 0
+  protocol="$(json_value "$active" protocol)"
+  id="$(json_value "$active" request_id)"
+  action="$(json_value "$active" action)"
+  snapshot="$(json_value "$active" snapshot_id)"
+  fmt="$(json_value "$active" format)"
+  mode="$(json_value "$active" mode)"
+  keep="$(backup_admin_json_int "$active" keep_last)"
+  days="$(backup_admin_json_int "$active" retention_days)"
+  revision="$(json_value "$active" revision)"
+  confirm="$(json_value "$active" confirmation)"
+  preview_id="$(json_value "$active" preview_request_id)"
+  created="$(json_value "$active" created_at)"
+  if [[ "$protocol" != "$backup_admin_protocol" || ! "$id" =~ ^[0-9a-f]{24}$ ]] ||
+     ! request_time_is_fresh "$created"; then
+    backup_admin_status "$dir" failed "$action" "$id" "$snapshot" invalid_request "请求无效或已过期。" "" "$(now_utc)"
+    rm -f "$active"
+    return 0
+  fi
+  started="$(now_utc)"
+  backup_admin_status "$dir" running "$action" "$id" "$snapshot" "" "宿主机正在执行备份操作。" "$started" ""
+  log="$LOG_DIR/backup-admin-last.log"
+  if [[ "$action" == verify ]]; then
+    # Only Host-owned random temporary inode; no predictable browser path.
+    verify_file="$(mktemp "$LOG_DIR/.backup-admin-verify.XXXXXXXX" 2>/dev/null || true)"
+  elif [[ "$action" == drill ]]; then
+    drill_file="$(mktemp "$LOG_DIR/.backup-admin-drill.XXXXXXXX" 2>/dev/null || true)"
+  elif [[ "$action" == delete_selected ]]; then
+    selected_delete_file="$(mktemp "$LOG_DIR/.backup-admin-selected-delete.XXXXXXXX" 2>/dev/null || true)"
+  elif [[ "$action" == verify_all ]]; then
+    bulk_file="$(mktemp "$LOG_DIR/.backup-admin-verify-all.XXXXXXXX" 2>/dev/null || true)"
+  fi
+  # Keep the Host Control heartbeat fresh during long pg_dump, hashing and
+  # restoration. The backup-operation flock is inherited by the child: a
+  # crashed runner cannot overlap a still-running privileged backup command.
+  local pid tick=0 guard="$STATE_DIR/backup-admin-operation.lock"
+  local scheduled_guard="$STATE_DIR/scheduled-backup.lock"
+  # The existing v1/v2 scheduled runner owns scheduled-backup.lock. Reuse it
+  # so a remote Admin restore/deletion cannot race scheduled snapshot creation
+  # or the legacy v1 retention job. Preserve the Host-only operation lock as
+  # a fence against a Host Control restart while a child is still running.
+  if [[ -L "$guard" || ( -e "$guard" && ! -f "$guard" ) ||
+        -L "$scheduled_guard" || ( -e "$scheduled_guard" && ! -f "$scheduled_guard" ) ||
+        -L "$progress_file" || ( -e "$progress_file" && ! -f "$progress_file" ) ]]; then
+    result=75
+  else
+    exec 6>>"$guard"
+    if ! flock -n 6; then
+      result=75
+    else
+      exec 5>>"$scheduled_guard"
+      if ! flock -n 5; then
+        result=75
+      else
+        rm -f -- "$progress_file"
+        ( umask 077
+          if [[ "$action" == create ]]; then export XD_BACKUP_PROGRESS_FILE="$progress_file"; fi
+          if [[ "$action" == verify ]]; then export XD_BACKUP_ADMIN_VERIFY_JSON_FILE="$verify_file"; fi
+          if [[ "$action" == drill ]]; then export XD_BACKUP_ADMIN_DRILL_JSON_FILE="$drill_file"; fi
+          if [[ "$action" == delete_selected ]]; then export XD_BACKUP_ADMIN_SELECTED_DELETE_JSON_FILE="$selected_delete_file"; fi
+          if [[ "$action" == verify_all ]]; then
+            export XD_BACKUP_ADMIN_REQUEST_ID="$id"
+            export XD_BACKUP_ADMIN_BULK_REPORT_FILE="$bulk_file"
+            export XD_BACKUP_ADMIN_BULK_PROGRESS_FILE="$bulk_progress"
+          fi
+          XD_CONFIG_DIR="$XDRIVE_HOME" backup_admin_execute "$action" "$snapshot" "$fmt" "$mode" "$keep" "$days" "$revision" "$confirm" "$preview_id"
+        ) > "$log" 2>&1 &
+        pid=$!
+        while kill -0 "$pid" 2>/dev/null; do
+          touch_heartbeat
+          tick=$((tick + 1))
+          if (( tick % 2 == 0 )); then
+            backup_admin_publish_live_progress "$dir" "$action" "$id" "$snapshot" "$started" || true
+            backup_admin_publish_verify_all_progress "$dir" "$action" "$id" "$started" || true
+          fi
+          if (( tick % 25 == 0 )); then backup_admin_inventory "$dir" || true; fi
+          sleep 1
+        done
+        if wait "$pid"; then result=0; else result=$?; fi
+        flock -u 5
+      fi
+      exec 5>&-
+      flock -u 6
+    fi
+    exec 6>&-
+  fi
+  if [[ "$result" == 0 && "$action" == preview_delete ]]; then
+    backup_admin_persist_selected_preview "$dir" "$log" "$id" "$snapshot" "$mode" || result=1
+  fi
+  if [[ "$result" == 0 && "$action" == plan ]]; then
+    tmp="$(mktemp "$dir/.backup-retention.XXXXXX")" || result=1
+    if [[ "$result" == 0 ]]; then
+      if (( $(wc -c < "$log") > 32768 )); then result=1
+      else cp "$log" "$tmp" && chmod 0660 "$tmp" &&
+        mv -f "$tmp" "$dir/backup-admin-retention-report.json" || result=1
+      fi
+      [[ "$result" == 0 ]] || rm -f "$tmp"
+    fi
+  fi
+  # Retain a bounded Host-executed report even for verification failures.
+  # No success is possible if the report was not durably published.
+  if [[ "$action" == verify_all ]]; then
+    if [[ -n "$bulk_file" && -f "$bulk_file" && ! -L "$bulk_file" &&
+          -s "$bulk_file" ]] && (( $(wc -c < "$bulk_file") <= 16384 )); then
+      tmp="$(mktemp "$dir/.backup-admin-verify-all-report.XXXXXX")" || result=1
+      if [[ -n "$tmp" && -f "$tmp" ]]; then
+        if cp -- "$bulk_file" "$tmp" && chmod 0660 "$tmp" &&
+           sync -f "$tmp" && mv -f "$tmp" "$dir/backup-admin-verify-all-report.json"; then
+          :
+        else
+          result=1
+        fi
+        [[ -e "$tmp" ]] && rm -f -- "$tmp"
+      fi
+    elif [[ "$result" == 0 ]]; then
+      result=1
+    fi
+  fi
+  local finished="$(now_utc)" history_state=success history_error="" selected_history_written=0
+  # A destructive success must not precede its durable Host evidence.
+  # Failure to persist is an uncertain outcome requiring operator inspection.
+  if [[ "$result" == 0 && "$action" == delete_selected ]]; then
+    if backup_admin_history_append "$dir" success "$action" "$id" "$snapshot" "$mode" "$started" "$finished" "" "$selected_delete_file"; then
+      selected_history_written=1
+    else
+      result=78
+    fi
+  fi
+  if [[ "$result" == 0 ]]; then
+    backup_admin_status "$dir" success "$action" "$id" "$snapshot" "" "备份操作已完成。" "$started" "$finished"
+  else
+    history_state=failed
+    history_error=operation_failed
+    local failure_message="操作失败；请查看宿主机私有日志。"
+    if [[ "$result" == 75 ]]; then
+      history_error=lock_busy
+    elif [[ "$action" == delete_selected && "$result" == 76 ]]; then
+      history_error=deep_preview_missing_or_stale
+      failure_message="深度预览缺失、过期或不匹配，请重新执行 deep 只读预览。"
+    elif [[ "$action" == delete_selected && "$result" == 78 ]]; then
+      history_error=selected_delete_unverified
+      failure_message="删除结果无法核实；请先刷新备份清单并检查宿主机私有日志，不要自动重试。"
+    fi
+    backup_admin_status "$dir" failed "$action" "$id" "$snapshot" "$history_error" "$failure_message" "$started" "$finished"
+  fi
+  # Other actions remain best-effort; selected destructive success requires
+  # a durable receipt before publishing its terminal success status.
+  if [[ "$selected_history_written" != 1 ]]; then
+    backup_admin_history_append "$dir" "$history_state" "$action" "$id" "$snapshot" "$mode" "$started" "$finished" "$history_error" "${verify_file:-${drill_file:-$selected_delete_file}}" ||
+      echo "[xDrive] warning: private backup history not persisted" >&2
+  fi
+  rm -f "$active"
+  if [[ -n "$verify_file" && -f "$verify_file" && ! -L "$verify_file" ]]; then
+    rm -f -- "$verify_file"
+  fi
+  if [[ -n "$drill_file" && -f "$drill_file" && ! -L "$drill_file" ]]; then
+    rm -f -- "$drill_file"
+  fi
+  if [[ -n "$selected_delete_file" && -f "$selected_delete_file" && ! -L "$selected_delete_file" ]]; then
+    rm -f -- "$selected_delete_file"
+  fi
+  if [[ -n "$bulk_file" && -f "$bulk_file" && ! -L "$bulk_file" ]]; then
+    rm -f -- "$bulk_file"
+  fi
+  if [[ -f "$bulk_progress" && ! -L "$bulk_progress" ]]; then
+    rm -f -- "$bulk_progress"
+  fi
+  if [[ -f "$progress_file" && ! -L "$progress_file" ]]; then rm -f -- "$progress_file"; fi
+  backup_admin_inventory "$dir" || true
+}
+
+
+backup_admin_recover_interrupted() {
+  local dir="$1" interrupted_request="$dir/backup-admin-active.json"
+  if [[ ! -f "$interrupted_request" && ! -f "$dir/backup-admin-request.json" ]]; then
+    return 0
+  fi
+  # No queued or active destructive action is replayed across Host restarts.
+  # A new explicit Admin confirmation is required after inspecting the state.
+  [[ -f "$interrupted_request" ]] || interrupted_request="$dir/backup-admin-request.json"
+  local old_action old_id old_snapshot old_mode finished
+  old_action="$(json_value "$interrupted_request" action)"
+  old_id="$(json_value "$interrupted_request" request_id)"
+  old_snapshot="$(json_value "$interrupted_request" snapshot_id)"
+  old_mode="$(json_value "$interrupted_request" mode)"
+  finished="$(now_utc)"
+  backup_admin_status "$dir" failed "$old_action" "$old_id" "$old_snapshot" interrupted "上次备份操作被中断；如需继续请重新确认。" "" "$finished"
+  backup_admin_history_append "$dir" failed "$old_action" "$old_id" "$old_snapshot" "$old_mode" "$finished" "$finished" interrupted || true
+  rm -f -- "$dir/backup-admin-active.json" "$dir/backup-admin-request.json"
+  # Interrupted jobs are never replayed; discard any stale stage evidence.
+  if [[ -f "$dir/backup-admin-progress.env" && ! -L "$dir/backup-admin-progress.env" ]]; then
+    rm -f -- "$dir/backup-admin-progress.env"
+  fi
+  if [[ -f "$dir/backup-admin-verify-all-progress.json" &&
+        ! -L "$dir/backup-admin-verify-all-progress.json" ]]; then
+    rm -f -- "$dir/backup-admin-verify-all-progress.json"
+  fi
+}
+
+serve_cmd() {
+  [[ $# -eq 0 ]] || { echo "usage: server-control.sh serve" >&2; return 2; }
+  local dir pid_file existing lock_dir="" source channel interrupted_backup_file_data
+  local storage_inventory_interval last_storage_inventory_at last_backup_admin_at last_caddy_observation_at now
+  dir="$(prepare_dir)"
+  pid_file="$dir/runner.pid"
+
+  if command -v flock >/dev/null 2>&1; then
+    exec 8>"$dir/runner.lock"
+    if ! flock -n 8; then
+      echo "xdrive-server: host control runner is already active" >&2
+      return 0
+    fi
+  else
+    existing="$(cat "$pid_file" 2>/dev/null || true)"
+    if [[ "$existing" =~ ^[0-9]+$ && "$existing" != "$$" ]] && kill -0 "$existing" 2>/dev/null; then
+      echo "xdrive-server: host control runner is already active" >&2
+      return 0
+    fi
+    lock_dir="$dir/runner.lock.d"
+    if ! mkdir "$lock_dir" 2>/dev/null; then
+      echo "xdrive-server: host control runner lock is held" >&2
+      return 0
+    fi
+  fi
+
+  printf '%s\n' "$$" > "$pid_file"
+  chmod 0660 "$pid_file"
+  CONTROL_PID_FILE="$pid_file"
+  CONTROL_LOCK_DIR="$lock_dir"
+  trap 'rm -f "${CONTROL_PID_FILE:-}"; [[ -z "${CONTROL_LOCK_DIR:-}" ]] || rmdir "${CONTROL_LOCK_DIR}" 2>/dev/null || true' EXIT
+  trap 'exit 0' INT TERM
+  # Identify the code that THIS daemon actually loaded. A new installer
+  # can then detect an older live runner without killing a running update.
+  caddy_host_control_mark_runner "$dir" || true
+  # Never keep a plaintext reveal after the Host runner itself restarts.
+  rm -f -- "$dir/caddy-env-secret-result.json"
+  # A lost Host ACK during Docker recreate cannot become phantom success.
+  # On restart recover only the pinned original Caddy baseline, or leave a
+  # sticky failed record for operator reconciliation.
+  caddy_env_recover_interrupted "$dir" || true
+
+  # An interrupted media activation is never acknowledged after a runner crash.
+  if [[ -f "$dir/media-worker-control-active.json" ]]; then
+    rm -f "$dir/media-worker-control-active.json"
+    media_worker_control_refresh
+    local status_file="$dir/media-worker-control-status.json"
+    local rev="$(media_worker_control_uint "$status_file" revision)"
+    local applied="$(media_worker_control_uint "$status_file" applied_revision)"
+    local enabled="$(json_bool_value "$status_file" enabled)"
+    local observed=false
+    if media_worker_running; then observed=true; fi
+    [[ "$rev" =~ ^[0-9]+$ ]] || rev=0
+    [[ "$applied" =~ ^[0-9]+$ ]] || applied=0
+    [[ "$enabled" == true ]] || enabled=false
+    media_worker_control_write_status failed "$rev" "$applied" "$enabled" "$observed" ""
+  fi
+
+    # A crashed enable must never become an implicit success.
+  if [[ -f "$dir/photo-host-control-active.json" ||
+        -f "$dir/photo-host-control-recovery" ]]; then
+    photo_host_control_recover || true
+    rm -f "$dir/photo-host-control-active.json"
+    photo_host_control_refresh
+    local previous_status="$dir/photo-host-control-status.json"
+    photo_host_control_write_status failed \
+      "$(photo_host_control_uint "$previous_status" revision)" \
+      "$(photo_host_control_uint "$previous_status" applied_revision)" \
+      false "" "$(photo_host_control_probe)" false
+  fi
+
+# Publish liveness before any externally visible idle/recovery status. This
+  # prevents API/UI consumers from observing a ready-looking status while the
+  # host-control heartbeat is still absent during startup.
+  touch_heartbeat
+  # Incomplete privileged operations are not silently retried on restart.
+  backup_admin_recover_interrupted "$dir"
+  backup_admin_inventory "$dir" || true
+
+  if [[ -f "$dir/active.json" ]]; then
+    interrupted_source="$(json_value "$dir/active.json" source)"
+    interrupted_channel="$(json_value "$dir/active.json" channel)"
+    interrupted_request_id="$(json_value "$dir/active.json" request_id)"
+    interrupted_backup_file_data="$(json_bool_value "$dir/active.json" backup_file_data)"
+    [[ "$interrupted_backup_file_data" == "true" ]] || interrupted_backup_file_data=false
+    case "$interrupted_source" in github|gitlab) ;; *) interrupted_source=github ;; esac
+    case "$interrupted_channel" in stable|master) ;; *) interrupted_channel=stable ;; esac
+    write_status failed "$interrupted_source" "$interrupted_channel" "$interrupted_request_id" \
+      "更新中断" 0 9 0 0 "检测到上次服务端更新被宿主机重启或 runner 中断。" \
+      "host update interrupted before completion" "" "$(now_utc)" "$interrupted_backup_file_data"
+    rm -f "$dir/active.json" "$dir/install-progress.env"
+  fi
+
+  source="$(env_value XD_UPDATE_SOURCE)"
+  channel="$(env_value XD_RELEASE_CHANNEL)"
+  case "$source" in github|gitlab) ;; *) source=github ;; esac
+  case "$channel" in stable|master) ;; *) channel=stable ;; esac
+  if [[ ! -f "$dir/status.json" ]]; then
+    write_status idle "$source" "$channel" "" "" 0 9 0 0 "等待管理员发起服务端更新。" "" "" ""
+  fi
+
+  storage_inventory_interval="$(env_value XD_STORAGE_INVENTORY_INTERVAL_SECONDS)"
+  [[ "$storage_inventory_interval" =~ ^[0-9]+$ ]] || storage_inventory_interval=300
+  (( storage_inventory_interval >= 30 )) || storage_inventory_interval=30
+  refresh_storage_host_inventory || true
+  media_worker_control_refresh
+  caddy_env_refresh || true
+  if caddy_host_refresh; then
+    caddy_host_control_mark_main_sample "$dir" || true
+  fi
+  photo_intelligence_host_refresh || true
+  photo_host_control_refresh || true
+  last_storage_inventory_at="$(date +%s)"
+  last_backup_admin_at="$last_storage_inventory_at"
+  last_caddy_observation_at="$last_storage_inventory_at"
+
+  while true; do
+    touch_heartbeat
+    [[ -f "$dir/backup-admin-request.json" ]] && backup_admin_process_request "$dir"
+    [[ -f "$dir/request.json" ]] && process_request
+    [[ -f "$dir/caddy-env-request.json" ]] && caddy_env_process
+    [[ -f "$dir/media-worker-control-request.json" ]] && media_worker_control_process
+    media_worker_control_refresh
+    [[ -f "$dir/photo-host-control-request.json" ]] && photo_host_control_process
+    photo_host_control_refresh || true
+    now="$(date +%s)"
+    caddy_env_reap_secret_result "$dir/caddy-env-secret-result.json" "$now"
+    if (( now - last_caddy_observation_at >= 15 )); then
+      if caddy_host_refresh; then
+        caddy_host_control_mark_main_sample "$dir" || true
+      fi
+      caddy_env_refresh || true
+      photo_intelligence_host_refresh || true
+      last_caddy_observation_at="$now"
+    fi
+    if (( now - last_backup_admin_at >= 30 )); then
+      backup_admin_inventory "$dir" || true
+      last_backup_admin_at="$now"
+    fi
+    if (( now - last_storage_inventory_at >= storage_inventory_interval )); then
+      refresh_storage_host_inventory || true
+      last_storage_inventory_at="$now"
+    fi
+    [[ "${XD_CONTROL_ONCE:-0}" == "1" ]] && break
+    sleep 1
+  done
+}
+
+start_cmd() {
+  [[ $# -eq 0 ]] || { echo "usage: server-control.sh start" >&2; return 2; }
+  local dir pid_file pid
+  dir="$(prepare_dir)"
+  pid_file="$dir/runner.pid"
+  pid="$(cat "$pid_file" 2>/dev/null || true)"
+  if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
+    # A previously installed Caddy may be healthy while an older Bash runner
+    # still emits heartbeat but has NO caddy-runtime-status.json producer.
+    # Never interrupt that process (it could be in a live server update).
+    # Even a current-source Runner needs a read-only repair when the fixed
+    # Caddy snapshot is absent or stale; its code marker is not health proof.
+    if ! caddy_host_control_current_runner "$dir" "$pid" ||
+        ! caddy_host_snapshot_fresh "$dir" ||
+        ! caddy_host_env_snapshot_fresh "$dir"; then
+      start_caddy_compat_observer "$dir" || true
+    fi
+    echo "Host control already running (pid $pid)."
+    return 0
+  fi
+  rm -f -- "$dir/caddy-observer-stop"
+  rm -f "$pid_file"
+  # The installer owns transaction lock fd 9. A long-lived background
+  # runner must not inherit it, otherwise all later updates remain locked.
+  nohup env XD_CONFIG_DIR="$XDRIVE_HOME" "$BIN_DIR/server-control.sh" serve \
+    >>"$LOG_DIR/host-control.log" 2>&1 </dev/null 9>&- &
+  sleep 1
+  pid="$(cat "$pid_file" 2>/dev/null || true)"
+  if [[ ! "$pid" =~ ^[0-9]+$ ]] || ! kill -0 "$pid" 2>/dev/null; then
+    echo "xdrive-server: failed to start host control runner; see $LOG_DIR/host-control.log" >&2
+    return 1
+  fi
+  echo "Host control started (pid $pid)."
+}
+
+stop_cmd() {
+  [[ $# -eq 0 ]] || { echo "usage: server-control.sh stop" >&2; return 2; }
+  local dir pid_file pid
+  dir="$(control_dir)"
+  # Stop the supplemental read-only observer cooperatively, without signaling
+  # a potentially unrelated PID and without touching Docker or Caddy.
+  if [[ -d "$dir" ]]; then : > "$dir/caddy-observer-stop"; fi
+  pid_file="$dir/runner.pid"
+  pid="$(cat "$pid_file" 2>/dev/null || true)"
+  if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
+    kill -TERM "$pid" 2>/dev/null || true
+    for _ in 1 2 3 4 5; do
+      kill -0 "$pid" 2>/dev/null || break
+      sleep 1
+    done
+  fi
+  rm -f "$pid_file"
+}
+
+remove_schedule() {
+  command -v crontab >/dev/null 2>&1 || return 0
+  local existing tmp
+  existing="$(crontab -l 2>/dev/null || true)"
+  tmp="$(mktemp)"
+  printf '%s\n' "$existing" | grep -v '# xdrive-managed-control$' > "$tmp" || true
+  crontab "$tmp"
+  rm -f "$tmp"
+}
+
+install_cmd() {
+  [[ $# -eq 0 ]] || { echo "usage: server-control.sh install" >&2; return 2; }
+  prepare_dir >/dev/null
+  if command -v crontab >/dev/null 2>&1; then
+    local existing tmp
+    existing="$(crontab -l 2>/dev/null || true)"
+    tmp="$(mktemp)"
+    printf '%s\n' "$existing" | grep -v '# xdrive-managed-control$' > "$tmp" || true
+    printf '@reboot XD_CONFIG_DIR=%q %q serve >> %q 2>&1 # xdrive-managed-control\n' \
+      "$XDRIVE_HOME" "$BIN_DIR/server-control.sh" "$LOG_DIR/host-control.log" >> "$tmp"
+    # Once per minute, independently of the long-running Host process.
+    printf '* * * * * XD_CONFIG_DIR=%q %q caddy-watchdog-once >> %q 2>&1 # xdrive-managed-control\n' \
+      "$XDRIVE_HOME" "$BIN_DIR/server-control.sh" "$LOG_DIR/caddy-watchdog.log" >> "$tmp"
+    crontab "$tmp"
+    rm -f "$tmp"
+  fi
+  start_cmd
+}
+
+if [[ "${XD_HOST_CONTROL_SOURCE_ONLY:-0}" == "1" ]]; then
+  return 0
+fi
+
+cmd="${1:-status}"
+shift || true
+case "$cmd" in
+  install) install_cmd "$@" ;;
+  start) start_cmd "$@" ;;
+  serve) serve_cmd "$@" ;;
+  caddy-observe) caddy_compat_observe_cmd "$@" ;;
+  caddy-watchdog-once) caddy_watchdog_once "$@" ;;
+  caddy-rescue) caddy_rescue_manual "$@" ;;
+  stop) stop_cmd "$@" ;;
+  status) status_cmd "$@" ;;
+  remove-schedule) remove_schedule ;;
+  *) echo "usage: server-control.sh <install|start|serve|caddy-observe|caddy-watchdog-once|caddy-rescue|stop|status|remove-schedule>" >&2; exit 2 ;;
+esac
+ <<< "$raw" || true)"
+    [[ "$managed_count" =~ ^[0-9]+$ ]] || managed_count=0
+    if [[ -z "$configured" && "$managed_count" == 0 ]]; then
+      state=not_configured
+    elif [[ -n "$expression" ]]; then
+      expected="$(printf '%s XD_CONFIG_DIR=%q %q >> %q 2>&1 # xdrive-managed-backup' \
+        "$expression" "$XDRIVE_HOME" "$BIN_DIR/server-backup-scheduled.sh" "$LOG_DIR/backup.log")"
+      if [[ "$(grep -Fxc -- "$expected" <<< "$raw" || true)" == 1 &&
+            "$managed_count" == 1 ]]; then
+        state=registered
+      elif (( managed_count > 0 )); then
+        state=mismatch
+      else
+        state=not_detected
+      fi
+    elif (( managed_count > 0 )); then
+      state=mismatch
+    fi
+  fi
+  printf '{"protocol":"xdrive-host-backup-schedule-v1","source":"installer_crontab","state":"%s","expression":"%s"}\n' \
+    "$state" "$(json_escape "$expression")"
+}
+
 backup_admin_inventory() {
   local dir="$1" tmp comma="" scope root snap name state bytes file_data created
   local snapshot_index inventory_total inventory_truncated
