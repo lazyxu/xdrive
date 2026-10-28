@@ -31,6 +31,11 @@ test('older Server backup snapshots use a bounded read-only Host-to-Admin pipeli
   assert.match(pager, /data-xdrive-admin-backup-older-snapshots/)
   assert.match(pager, /const firstOlderOffset = 100/)
   assert.match(pager, /const pageSize = 50/)
+  assert.match(pager, /generation.current \+= 1/)
+  assert.match(pager, /request !== generation.current/)
+  assert.match(pager, /\[readPage, policyRevision\]/)
+  assert.match(pager, /incoming.scope !== 'unverified_identity_only'/)
+
   assert.match(pager, /不能从此列表直接恢复或删除/)
   assert.doesNotMatch(pager, /action: 'restore'|action: 'delete'|action: 'prune'/)
   assert.match(webAPI, /\/api\/v1\/admin\/backups\/snapshots\?offset=/)
