@@ -266,6 +266,25 @@ backup_admin_process_request "$dir"
 cmp "$TMP/before-invalid-db-restore" "$XD_BACKUP_ADMIN_TEST_LOG"
 grep -Fq '"state":"failed"' "$dir/backup-admin-status.json"
 
+# A text fragment that claims database-only is insufficient: duplicate
+# manifest keys or a false consistency flag must not reach restore.
+db_only_manifest="$XD_CONFIG_DIR/backups/snapshots/$db_only/manifest.json"
+cp "$db_only_manifest" "$TMP/db-only-valid-manifest"
+printf '{"format_version":1,"file_data_included":false,"file_data_included":true,"consistency_verified":true}\n' > "$db_only_manifest"
+if backup_admin_valid_database_only_manifest "$db_only_manifest"; then
+  echo 'ambiguous v1 database-only manifest accepted' >&2; exit 1
+fi
+cp "$XD_BACKUP_ADMIN_TEST_LOG" "$TMP/before-ambiguous-db-only"
+write_request restore_database_only "v1:$db_only" "" "" "" "DATABASE ONLY RESTORE v1:$db_only"
+backup_admin_process_request "$dir"
+cmp "$TMP/before-ambiguous-db-only" "$XD_BACKUP_ADMIN_TEST_LOG"
+grep -Fq '"state":"failed"' "$dir/backup-admin-status.json"
+printf '{"format_version":1,"file_data_included":false,"consistency_verified":false}\n' > "$db_only_manifest"
+if backup_admin_valid_database_only_manifest "$db_only_manifest"; then
+  echo 'inconsistent v1 database-only manifest accepted' >&2; exit 1
+fi
+cp "$TMP/db-only-valid-manifest" "$db_only_manifest"
+
 write_request restore "v2-default:$v2" "" "" "" "RESTORE v2-default:$v2"
 backup_admin_process_request "$dir"
 grep -Fq '"state":"failed"' "$dir/backup-admin-status.json"
