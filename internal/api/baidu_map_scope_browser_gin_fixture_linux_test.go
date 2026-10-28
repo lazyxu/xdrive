@@ -108,7 +108,11 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 		&meta.Source{}, &meta.SourceItem{},
 		&meta.SourceCollection{}, &meta.SourceCollectionItem{},
 		&meta.PhotoAsset{}, &meta.PhotoEditRecipe{},
-		&meta.PhotoResource{}, &meta.PhotoMetadata{},
+		&meta.PhotoResource{}, &meta.PhotoMetadata{}, &meta.PhotoCollectionAsset{},
+		// GET /media/items/:id includes Owner-fenced OCR state, even when
+		// this fixture has no analysis results. Real tables must exist so a
+		// Live Photo detail cannot fail before the signed motion ticket.
+		&meta.PhotoAnalysisState{}, &meta.PhotoOCRText{},
 		&meta.BaiduPhotoMapConsent{}, &meta.BaiduPhotoMapPosition{},
 	); err != nil {
 		t.Fatal(err)
