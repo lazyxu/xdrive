@@ -111,6 +111,10 @@
   // NEVER restore allowed keys, click listeners or expired Owner authority.
   const projectGesture = () => {
     if (!gestureCells.length || gestureFrame !== null || !active || disposed) return
+    if (typeof window.requestAnimationFrame !== 'function') {
+      emitCellProjections(true)
+      return
+    }
     gestureFrame=window.requestAnimationFrame(()=>{
       gestureFrame=null
       if (gestureCells.length)emitCellProjections(true)
@@ -118,7 +122,8 @@
   }
   const clearGesture = () => {
     gestureCells=[]
-    if (gestureFrame!==null)window.cancelAnimationFrame(gestureFrame)
+    if (gestureFrame!==null && typeof window.cancelAnimationFrame==='function')
+      window.cancelAnimationFrame(gestureFrame)
     gestureFrame=null
   }
   const renderCells = (republishProjection = true) => {

@@ -162,6 +162,10 @@ export function xDriveMountBaiduInlineMap<T>(
   }
   const projectGesture = () => {
     if (!gestureCells.length || gestureFrame!==null || !alive) return
+    if (typeof browser.requestAnimationFrame !== 'function') {
+      emitProjections(true) // older test/browser Host, still bounded to 64
+      return
+    }
     gestureFrame=browser.requestAnimationFrame(()=>{
       gestureFrame=null
       if (gestureCells.length)emitProjections(true)
@@ -169,7 +173,8 @@ export function xDriveMountBaiduInlineMap<T>(
   }
   const clearGesture = () => {
     gestureCells=[]
-    if (gestureFrame!==null)browser.cancelAnimationFrame(gestureFrame)
+    if (gestureFrame!==null && typeof browser.cancelAnimationFrame==='function')
+      browser.cancelAnimationFrame(gestureFrame)
     gestureFrame=null
   }
   const renderCells = (republishProjection = true): boolean => {
