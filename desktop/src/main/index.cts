@@ -6864,6 +6864,7 @@ function registerIPCHandlers() {
       plan: ['action', 'keep_last', 'mode'], restore: ['action', 'snapshot_id', 'confirmation'],
       drill: ['action', 'snapshot_id', 'confirmation'],
       delete: ['action', 'snapshot_id', 'confirmation'],
+      delete_selected: ['action', 'snapshot_id', 'confirmation', 'preview_request_id'],
       prune: ['action', 'keep_last', 'confirmation'],
       policy: ['action', 'format', 'retention_days', 'revision'],
     }
@@ -6884,6 +6885,9 @@ function registerIPCHandlers() {
       case 'restore': return validID && value.confirmation === 'RESTORE ' + value.snapshot_id
       case 'drill': return validID && (value.snapshot_id as string).startsWith('v2-') &&
         value.confirmation === 'DRILL ' + value.snapshot_id
+      case 'delete_selected': return validID && (value.snapshot_id as string).startsWith('v2-') &&
+        value.confirmation === 'DELETE ' + value.snapshot_id &&
+        typeof value.preview_request_id === 'string' && /^[0-9a-f]{24}$/.test(value.preview_request_id)
       case 'delete': return validID && (value.snapshot_id as string).startsWith('v1:') &&
         value.confirmation === 'DELETE ' + value.snapshot_id
       case 'prune': return validKeep && value.confirmation === 'PRUNE ' + value.keep_last

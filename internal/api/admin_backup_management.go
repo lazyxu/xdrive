@@ -65,18 +65,19 @@ type backupAdminStatus struct {
 }
 
 type backupAdminRequest struct {
-	Protocol      string `json:"protocol"`
-	RequestID     string `json:"request_id"`
-	Action        string `json:"action"`
-	SnapshotID    string `json:"snapshot_id,omitempty"`
-	Format        string `json:"format,omitempty"`
-	Mode          string `json:"mode,omitempty"`
-	KeepLast      int    `json:"keep_last,omitempty"`
-	RetentionDays int    `json:"retention_days"`
-	Revision      string `json:"revision,omitempty"`
-	Confirmation  string `json:"confirmation,omitempty"`
-	RequestedBy   string `json:"requested_by,omitempty"`
-	CreatedAt     string `json:"created_at"`
+	Protocol         string `json:"protocol"`
+	RequestID        string `json:"request_id"`
+	Action           string `json:"action"`
+	SnapshotID       string `json:"snapshot_id,omitempty"`
+	Format           string `json:"format,omitempty"`
+	Mode             string `json:"mode,omitempty"`
+	KeepLast         int    `json:"keep_last,omitempty"`
+	RetentionDays    int    `json:"retention_days"`
+	Revision         string `json:"revision,omitempty"`
+	Confirmation     string `json:"confirmation,omitempty"`
+	PreviewRequestID string `json:"preview_request_id,omitempty"`
+	RequestedBy      string `json:"requested_by,omitempty"`
+	CreatedAt        string `json:"created_at"`
 }
 
 type backupAdminRetention struct {
@@ -112,9 +113,10 @@ type backupAdminPage struct {
 // Host-authored historical receipts, not current snapshot integrity guarantees.
 type backupAdminHistoryEntry struct {
 	backupAdminStatus
-	Mode         string                          `json:"mode,omitempty"`
-	Verification *backupAdminVerificationReceipt `json:"verification,omitempty"`
-	Drill        *backupAdminDrillReceipt        `json:"drill,omitempty"`
+	Mode           string                            `json:"mode,omitempty"`
+	Verification   *backupAdminVerificationReceipt   `json:"verification,omitempty"`
+	Drill          *backupAdminDrillReceipt          `json:"drill,omitempty"`
+	SelectedDelete *backupAdminSelectedDeleteReceipt `json:"selected_delete,omitempty"`
 }
 
 type backupAdminHistory struct {
@@ -134,7 +136,8 @@ func validBackupAdminHistory(events []backupAdminHistoryEntry) bool {
 			(e.SnapshotID != "" && !backupAdminSnapshotID.MatchString(e.SnapshotID)) {
 			return false
 		}
-		if !validBackupVerificationReceipt(e) || !validBackupDrillReceipt(e) {
+		if !validBackupVerificationReceipt(e) || !validBackupDrillReceipt(e) ||
+			!validBackupSelectedDeleteHistory(e) {
 			return false
 		}
 		switch e.Action {
@@ -147,9 +150,9 @@ func validBackupAdminHistory(events []backupAdminHistoryEntry) bool {
 			if e.SnapshotID != "" || (e.Mode != "fast" && e.Mode != "deep") {
 				return false
 			}
-		case "restore", "delete", "drill":
+		case "restore", "delete", "delete_selected", "drill":
 			if e.SnapshotID == "" || e.Mode != "" ||
-				(e.Action == "drill" && !strings.HasPrefix(e.SnapshotID, "v2-")) {
+				((e.Action == "drill" || e.Action == "delete_selected") && !strings.HasPrefix(e.SnapshotID, "v2-")) {
 				return false
 			}
 		case "create", "prune", "policy":
@@ -301,8 +304,7 @@ func (s *Server) backupAdminState() backupAdminPage {
 		page.History[0].RequestID == selected.RequestID &&
 		page.History[0].SnapshotID == selected.SnapshotID &&
 		page.History[0].Mode == selected.Mode {
-		// A Host status alone is not a durable preview receipt. A failed
-		// history write must never make a selected deletion appear eligible.
+		// A Host status alone is not a durable preview receipt.
 		if finished, err := time.Parse(time.RFC3339, page.Operation.FinishedAt); err == nil &&
 			time.Since(finished) >= 0 && time.Since(finished) < 15*time.Minute {
 			page.SelectedPreview = &selected
@@ -325,6 +327,9 @@ func (s *Server) adminBackupManagement(c *gin.Context) {
 func validateBackupAdminRequest(request backupAdminRequest) error {
 	if request.SnapshotID != "" && !backupAdminSnapshotID.MatchString(request.SnapshotID) {
 		return errors.New("invalid backup snapshot identity")
+	}
+	if request.Action != "delete_selected" && request.PreviewRequestID != "" {
+		return errors.New("preview receipt only applies to selected v2 deletion")
 	}
 	switch request.Action {
 	case "create":
@@ -374,6 +379,15 @@ func validateBackupAdminRequest(request backupAdminRequest) error {
 			request.Format != "" || request.Mode != "" || request.KeepLast != 0 ||
 			request.RetentionDays != 0 || request.Revision != "" {
 			return errors.New("restore requires exact snapshot confirmation")
+		}
+	case "delete_selected":
+		if !strings.HasPrefix(request.SnapshotID, "v2-") ||
+			request.Confirmation != "DELETE "+request.SnapshotID ||
+			len(request.PreviewRequestID) != 24 ||
+			strings.Trim(request.PreviewRequestID, "0123456789abcdef") != "" ||
+			request.Format != "" || request.Mode != "" || request.KeepLast != 0 ||
+			request.RetentionDays != 0 || request.Revision != "" {
+			return errors.New("selected v2 deletion requires exact deep preview receipt and confirmation")
 		}
 	case "delete":
 		if !strings.HasPrefix(request.SnapshotID, "v1:") ||
@@ -434,6 +448,16 @@ func (s *Server) adminSubmitBackupManagement(c *gin.Context) {
 	if request.Action == "policy" && request.Revision != page.Inventory.Policy.Revision {
 		c.JSON(http.StatusConflict, gin.H{"error": "backup_policy_revision_changed"})
 		return
+	}
+	if request.Action == "delete_selected" {
+		preview := page.SelectedPreview
+		if preview == nil || preview.RequestID != request.PreviewRequestID ||
+			preview.SnapshotID != request.SnapshotID || preview.Mode != "deep" ||
+			page.Operation.Action != "preview_delete" ||
+			page.Operation.RequestID != preview.RequestID || page.Operation.State != "success" {
+			c.JSON(http.StatusConflict, gin.H{"error": "backup_deep_preview_not_current"})
+			return
+		}
 	}
 	if request.SnapshotID != "" {
 		found := false

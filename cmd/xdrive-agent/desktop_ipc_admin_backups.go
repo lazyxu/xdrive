@@ -23,6 +23,9 @@ func validDesktopAdminServerBackupRequest(in client.AdminServerBackupRequest) bo
 	if in.SnapshotID != "" && !desktopBackupSnapshotID.MatchString(in.SnapshotID) {
 		return false
 	}
+	if in.Action != "delete_selected" && in.PreviewRequestID != "" {
+		return false
+	}
 	switch in.Action {
 	case "create":
 		return (in.Format == "v1" || in.Format == "v2") && in.SnapshotID == "" && in.Mode == "" &&
@@ -48,6 +51,12 @@ func validDesktopAdminServerBackupRequest(in client.AdminServerBackupRequest) bo
 	case "restore":
 		return in.SnapshotID != "" && in.Confirmation == "RESTORE "+in.SnapshotID &&
 			in.Format == "" && in.Mode == "" && in.KeepLast == 0 && in.RetentionDays == 0 && in.Revision == ""
+	case "delete_selected":
+		return strings.HasPrefix(in.SnapshotID, "v2-") &&
+			in.Confirmation == "DELETE "+in.SnapshotID && len(in.PreviewRequestID) == 24 &&
+			strings.Trim(in.PreviewRequestID, "0123456789abcdef") == "" &&
+			in.Format == "" && in.Mode == "" && in.KeepLast == 0 &&
+			in.RetentionDays == 0 && in.Revision == ""
 	case "delete":
 		return strings.HasPrefix(in.SnapshotID, "v1:") && in.Confirmation == "DELETE "+in.SnapshotID &&
 			in.Format == "" && in.Mode == "" && in.KeepLast == 0 && in.RetentionDays == 0 && in.Revision == ""
