@@ -76,12 +76,23 @@ const sdkStub='('+function sdkFactory(){
     getZoom(){return this.zoom}
     getBounds(){return {getSouthWest:()=>new Point(100,20),
       getNorthEast:()=>new Point(125,40)}}
-    pointToPixel(){
-      // The synthetic representative is deliberately centered in the
-      // CURRENT CSS map canvas. A fixed old 180px point would make short
-      // landscape tests accidentally accept stale pre-resize projections.
+    pointToPixel(point){
+      // The screenshot repro uses two exact synthetic BD09 representatives.
+      // Keep their actual pixels separated by 99x90: old oversized
+      // collision pruning hid 28 but these 72px photo cards do NOT overlap.
       const width=Math.round(this.canvas?.clientWidth||0)
       const height=Math.round(this.canvas?.clientHeight||0)
+      if(width>=800&&height>=480&&point &&
+         ((Math.abs(point.lng-117.1875)<0.00001&&
+           Math.abs(point.lat-36.25)<0.00001)||
+          (Math.abs(point.lng-120.3125)<0.00001&&
+           Math.abs(point.lat-33.75)<0.00001))) {
+        const first=Math.abs(point.lng-117.1875)<0.00001
+        return {x:Math.round(width*.64)+(first?0:99)+this.panOffset.x,
+          y:Math.round(height*.31)+(first?0:90)+this.panOffset.y}
+      }
+      // All other synthetic representatives stay centered in the CURRENT
+      // CSS canvas; short landscape and gesture tests are unchanged.
       return {x:(width>=120?Math.round(width/2):180)+this.panOffset.x,
         y:(height>=120?Math.round(height/2):180)+this.panOffset.y}
     }
@@ -2421,6 +2432,72 @@ async function testPhotoCellAlbumDialog28(browser,mode,port){
   }finally{await context.close()}
 }
 
+// Screenshot regression: 142 and 28 nearby Owner Cells must BOTH show
+// real photo covers (not an unexplained white numeric-only SDK label).
+// The two 72px cards are separated by 99x90 pixels and do not overlap.
+async function testAdjacent142And28PhotoCovers(browser,mode,port){
+  const context=await browser.newContext({
+    viewport:{width:960,height:760},locale:'zh-CN',
+    ignoreHTTPSErrors:true,serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(30000)
+  const errors=[]
+  page.on('pageerror',e=>errors.push(e.message))
+  await page.route('https://api.map.baidu.com/api?**',route=>{
+    assert.equal(new URL(route.request().url()).searchParams.get('ak'),
+      'TEST_ONLY_BROWSER_AK')
+    return route.fulfill({status:200,contentType:'text/javascript',body:sdkStub})
+  })
+  try{
+    await page.goto('https://'+galleryHost+':'+port+
+      '/?mode='+mode+'&adjacent_photo_142_28=1',
+      {waitUntil:'domcontentloaded'})
+    await page.getByText('当前地图可查看 170 张照片',{exact:true})
+      .waitFor({state:'visible'})
+    const big=page.getByRole('button',{name:'查看该区域 142 张照片'})
+    const small=page.getByRole('button',{name:'查看该区域 28 张照片'})
+    await big.waitFor({state:'visible'})
+    await small.waitFor({state:'visible'})
+    const geometry=await page.evaluate(()=>{
+      const a=document.querySelector('[aria-label="查看该区域 142 张照片"]')
+      const b=document.querySelector('[aria-label="查看该区域 28 张照片"]')
+      const x=a?.getBoundingClientRect(), y=b?.getBoundingClientRect()
+      return {total:window.__mapProbe.queries.at(-1)?.count,
+        photos:document.querySelectorAll(
+          '[data-xdrive-places-trusted-photo-cover]').length,
+        spacingX:x&&y?Math.round(y.x-x.x):0,
+        spacingY:x&&y?Math.round(y.y-x.y+(x.y-x.y)):0,
+        count:document.querySelector('[data-xdrive-places-map-photo-summary]')?.textContent,
+        strip:document.querySelectorAll(
+          '[data-xdrive-places-photo-collection-strip]').length}
+    })
+    const sdkFrame=mode==='inline'
+      ? page : page.frames().find(frame=>frame.url().includes(childHost))
+    assert(sdkFrame,'both map SDK Hosts must be mounted')
+    await sdkFrame.waitForFunction(()=>{
+      const map=window.__xdriveSyntheticMapInstances?.at(-1)
+      return Boolean(map&&map.overlays.length===0)
+    })
+    record(mode+': nearby 142+28 current Owner photos both render, no native mixed labels',
+      geometry.total===170&&geometry.photos===2&&
+      geometry.spacingX>=98&&geometry.spacingX<=100&&
+      geometry.count?.includes('170 张照片')&&geometry.strip===0&&
+      errors.length===0)
+    await small.click()
+    const dialog=page.getByRole('dialog',{name:'此地点的照片'})
+    await dialog.waitFor({state:'visible'})
+    await page.waitForFunction(()=>document.querySelectorAll(
+      '[data-xdrive-places-photo-drawer-item]').length===28)
+    const authorized=await page.evaluate(()=>
+      window.__mapProbe.photoPreviewRanges.at(-1))
+    record(mode+': screenshot 28-cell opens exact signed 28-item Gallery dialog',
+      authorized?.total===28&&authorized?.items===28&&
+      authorized?.limit===48&&errors.length===0)
+    await page.keyboard.press('Escape')
+    await dialog.waitFor({state:'hidden'})
+  }finally{await context.close()}
+}
+
 // Real Chromium multi-Cell presentation proof. Two signed Owner Cells share
 // one pixel target and only the highest-count React photo survives declutter.
 // The other Cell remains accessible via the Owner-signed Cell list/Range.
@@ -2993,6 +3070,8 @@ async function main(){
       await testPhotoCoverDuringMapPan(browser,'isolated',port)
       await testPhotoCellAlbumDialog28(browser,'inline',port)
       await testPhotoCellAlbumDialog28(browser,'isolated',port)
+      await testAdjacent142And28PhotoCovers(browser,'inline',port)
+      await testAdjacent142And28PhotoCovers(browser,'isolated',port)
       await testMapOverlayPinOcclusion(browser,'inline',port)
       await testMapOverlayPinOcclusion(browser,'isolated',port)
       await testDelayedBD09Map(browser,'inline',port)
