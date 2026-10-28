@@ -25,14 +25,10 @@ import {
 } from '@mui/material'
 import BuildRoundedIcon from '@mui/icons-material/BuildRounded'
 import DnsRoundedIcon from '@mui/icons-material/DnsRounded'
-import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
-import CropSquareRoundedIcon from '@mui/icons-material/CropSquareRounded'
-import FilterNoneRoundedIcon from '@mui/icons-material/FilterNoneRounded'
 import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import PauseRoundedIcon from '@mui/icons-material/PauseRounded'
 import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded'
-import RemoveRoundedIcon from '@mui/icons-material/RemoveRounded'
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded'
 import SyncRoundedIcon from '@mui/icons-material/SyncRounded'
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
@@ -88,6 +84,8 @@ import {
 } from '@xdrive/shared'
 import type { XDriveFileExplorerDownloadResult, XDriveDeviceBackupDataSource, XDriveAdminUsersPort, XDriveAdminAuditPort, XDriveAdminStoragePort, XDriveAdminStorageRequest } from '@xdrive/shared'
 import { DesktopFilesPage } from './DesktopFilesPage'
+import { DesktopHostFrame } from './DesktopHostFrame'
+import { desktopWindowHostAdapter } from './desktopWindowHostAdapter'
 import { createDesktopFileExplorerHostPort } from './DesktopFileExplorerHostPort'
 import { createDesktopCloudFilesHostPort } from './desktopCloudFilesHostPort'
 import type { DesktopFileExplorerAction, DesktopFileExplorerActionIntent } from './DesktopFileExplorer'
@@ -115,55 +113,6 @@ function platformLabel(platform: string) {
   if (platform === 'linux') return 'Linux'
   if (platform === 'darwin') return 'macOS'
   return platform || '未知'
-}
-
-function DesktopFrame({
-  children,
-  maximized,
-  titlebarActions,
-}: {
-  children: ReactNode
-  maximized: boolean
-  titlebarActions?: ReactNode
-}) {
-  return (
-    <div className="desktop-frame">
-      <header className="desktop-titlebar">
-        <XDriveBrandLockup iconSrc={xDriveBrandIcon} variant="titlebar" className="desktop-titlebar-brand" />
-        <div className="desktop-titlebar-actions">{titlebarActions}</div>
-        <div className="desktop-window-controls">
-          <IconButton
-            className="desktop-window-control"
-            aria-label="最小化"
-            title="最小化"
-            disableRipple
-            onClick={() => window.xdriveDesktop.minimizeWindow()}
-          >
-            <RemoveRoundedIcon fontSize="small" />
-          </IconButton>
-          <IconButton
-            className="desktop-window-control"
-            aria-label={maximized ? '还原' : '最大化'}
-            title={maximized ? '还原' : '最大化'}
-            disableRipple
-            onClick={() => window.xdriveDesktop.toggleMaximizeWindow()}
-          >
-            {maximized ? <FilterNoneRoundedIcon fontSize="small" /> : <CropSquareRoundedIcon fontSize="small" />}
-          </IconButton>
-          <IconButton
-            className="desktop-window-control desktop-window-close"
-            aria-label="关闭"
-            title="关闭"
-            disableRipple
-            onClick={() => window.xdriveDesktop.closeWindow()}
-          >
-            <CloseRoundedIcon fontSize="small" />
-          </IconButton>
-        </div>
-      </header>
-      <div className="desktop-body">{children}</div>
-    </div>
-  )
 }
 
 function cacheGiB(bytes: number) {
@@ -1797,7 +1746,7 @@ export default function App({
   }
 
   const renderDesktopFrame = (content: ReactNode, titlebarActions?: ReactNode) => (
-    <DesktopFrame maximized={windowMaximized} titlebarActions={titlebarActions}>
+    <DesktopHostFrame maximized={windowMaximized} titlebarActions={titlebarActions} windowHost={desktopWindowHostAdapter}>
       {content}
       <XDriveFeedbackSnackbar
         open={Boolean(error || notice) && (configured || !agent.connected)}
@@ -1809,7 +1758,7 @@ export default function App({
         dismissible
         alertSx={{ width: '100%', maxWidth: 520, alignItems: 'flex-start', boxShadow: 3 }}
       />
-    </DesktopFrame>
+    </DesktopHostFrame>
   )
 
   const adminServicesPort = useMemo(() => ({
