@@ -4931,28 +4931,33 @@ function registerIPCHandlers() {
   }, false))
 
   ipcMain.handle('agent:get-media-album-item-range', (
-    _event,
+    event,
     albumID: unknown,
     limit: unknown = 200,
     offset: unknown = 0,
     query: unknown = undefined,
-  ) => runAgentAction<AgentMediaItemRange>(async () => {
-    const hello = await requireAgentLifecycle().ensureRunning()
-    requireAgentCapability(hello, 'media-gallery')
-    if (
-      typeof albumID !== 'string' ||
-      !(['folder:', 'source:', 'manual:', 'smart:'].some((prefix) => albumID.startsWith(prefix) && albumID.length > prefix.length))
-    ) {
-      throw new AgentIPCError('invalid_input', 0, 'Valid media album id is required.')
-    }
-    const window = normalizeMediaRangeWindow(limit, offset)
-    return requireAgentClient().mediaAlbumItemRange(
-      albumID,
-      window.limit,
-      window.offset,
-      normalizeMediaGalleryQueryForAgent(hello, query),
-    )
-  }, false))
+    requestID: unknown = undefined,
+  ) => runAgentAction<AgentMediaItemRange>(
+    () => viewportRequests.run(event.sender, requestID, async signal => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      if (
+        typeof albumID !== 'string' ||
+        !(['folder:', 'source:', 'manual:', 'smart:'].some((prefix) => albumID.startsWith(prefix) && albumID.length > prefix.length))
+      ) {
+        throw new AgentIPCError('invalid_input', 0, 'Valid media album id is required.')
+      }
+      const window = normalizeMediaRangeWindow(limit, offset)
+      return requireAgentClient().mediaAlbumItemRange(
+        albumID,
+        window.limit,
+        window.offset,
+        normalizeMediaGalleryQueryForAgent(hello, query),
+        signal,
+      )
+    }),
+    false,
+  ))
 
 
   ipcMain.handle('agent:set-media-favorite', (_event, nodeID: unknown, favorite: unknown) => runAgentAction<AgentMediaFavorite>(async () => {
