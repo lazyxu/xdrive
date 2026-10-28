@@ -67,7 +67,11 @@ test('shared controller and UI own file Star semantics', () => {
 
 test('Web and Desktop use the shared favorite controller with transport-only adapters', () => {
   for (const token of ['useXDriveFileExplorerFavorites<Node>','loadItems: () => api.fileFavorites()','favoriteItem: (nodeID) => api.favoriteFile(nodeID)','unfavoriteItem: (nodeID) => api.unfavoriteFile(nodeID)','favoriteItems={favorites.items}','void favorites.toggle(node.id)']) assert.ok(webExplorer.includes(token))
-  for (const token of ['fileFavorites()','favoriteFile(nodeID: number)','unfavoriteFile(nodeID: number)']) assert.ok(webApi.includes(token))
+  // The optional signal belongs only to replaceable Overview list GETs.
+  // Existing starred-file mutations and signal-free favorites callers remain valid.
+  for (const token of ['fileFavorites(signal?: AbortSignal)','favoriteFile(nodeID: number)','unfavoriteFile(nodeID: number)']) assert.ok(webApi.includes(token))
+  assert.ok(webApi.includes("'/api/v1/file-favorites', { signal }"),
+    'Favorites read must forward the optional disposable AbortSignal')
   for (const token of ['useXDriveFileExplorerFavorites<AgentCloudNode>','enabled: favoritesSupported','cloudFileFavorites()','cloudFavoriteFile(nodeID)','cloudUnfavoriteFile(nodeID)','favoriteItems={favorites.items}']) assert.ok(desktopExplorer.includes(token))
   assert.ok(desktopApp.includes("capabilities.includes('file-favorites')"))
 })
