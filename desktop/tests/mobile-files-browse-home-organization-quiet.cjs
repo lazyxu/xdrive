@@ -60,5 +60,9 @@ test('folder Range state, photo/file thumbnail progress, scroll owner and 52px A
     'XDriveFileExplorerThumbnail',
     'const totalCount = props.virtualCollection?.itemCount ?? props.items.length',
   ]) assert.ok(mobile.includes(text), text)
-  assert.ok(web.includes('loadPage: (id, options) => api.listPage(id, options)'))
+  // The shared navigation tree now supplies a cancellable Owner GET.
+  // Preserve the accepted 100-row directory and mobile chrome while
+  // requiring actual transport cancellation for superseded sidebar reads.
+  assert.ok(web.includes('loadTreeDirectoryPage = useCallback('))
+  assert.ok(web.includes('loadPage: (id, options) => api.listPageAbortable(id, options, signal)'))
 })
