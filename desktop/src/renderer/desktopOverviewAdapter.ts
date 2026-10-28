@@ -60,8 +60,9 @@ export const desktopOverviewPort: XDriveOverviewPort = {
     if (!result.ok) throw new Error('收藏读取失败')
     return result.data
   },
-  async getFileAvailabilityBatch(paths) {
-    const result = await window.xdriveDesktop.agent.getFileAvailabilityBatch(paths)
+  async getFileAvailabilityBatch(paths, signal) {
+    const result = await xDriveDesktopViewportRequest(signal,
+      requestID => window.xdriveDesktop.agent.getFileAvailabilityBatch(paths, requestID))
     if (!result.ok) throw new Error('文件可用性读取失败')
     return result.data.items
   },
