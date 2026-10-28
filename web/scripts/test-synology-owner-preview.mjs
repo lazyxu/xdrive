@@ -82,10 +82,14 @@ async function mount() {
     ['useXDriveFileExplorerOwnerFence'],
     hooks,
   )
+  const readStrategy = loadPlainModule(
+    'ui/shared/src/mui/FileExplorerDirectoryReadStrategy.ts',
+    ['xDriveFileExplorerReadDirectoryPage'],
+  )
   const cursorDirectory = loadPlainModule(
     'ui/shared/src/mui/FileExplorerCursorDirectoryController.ts',
     ['useXDriveFileExplorerCursorDirectory'],
-    { ...hooks, ...ownerFence, AbortController },
+    { ...hooks, ...ownerFence, ...readStrategy, AbortController },
   )
   const client = {
     async ownerFilesRoot() { return { id: 1, name: 'Owner' } },

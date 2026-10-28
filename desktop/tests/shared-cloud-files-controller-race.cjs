@@ -130,6 +130,17 @@ function loadCloudFilesController(react) {
     if (request === './VirtualCollectionController') {
       return { useXDriveVirtualCollection: useVirtualCollection }
     }
+    if (request === './FileExplorerDirectoryReadStrategy') {
+      // Execute the actual shared strategy; never fake a range/cursor result.
+      const readFile = path.join(repo, 'ui', 'shared', 'src', 'mui', 'FileExplorerDirectoryReadStrategy.ts')
+      const js = ts.transpileModule(fs.readFileSync(readFile, 'utf8'), {
+        compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+        fileName: readFile,
+      }).outputText
+      const moduleRef = { exports: {} }
+      new Function('exports', 'module', js)(moduleRef.exports, moduleRef)
+      return moduleRef.exports
+    }
     return require(request)
   }
   new Function('exports', 'module', 'require', output)(mod.exports, mod, localRequire)
