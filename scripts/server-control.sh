@@ -2452,7 +2452,7 @@ backup_admin_snapshot_index() {
   (( total <= 1000000 )) || return 1
   temp="$(mktemp "$dir/.backup-admin-snapshot-page.XXXXXXXX")" || return 1
   if ! python3 - "$source" "$total" "$revision" "$temp" <<'PY'
-import json,os,re,stat,sys
+import datetime,json,os,re,stat,sys
 source,total,revision,target=sys.argv[1],int(sys.argv[2]),sys.argv[3],sys.argv[4]
 valid_name=re.compile(r"xdrive-backup-[0-9]{8}T[0-9]{6}Z\Z")
 scopes={"v1","v2-default","v2-configured"}
@@ -2479,6 +2479,7 @@ try:
         raise ValueError("snapshot index cardinality mismatch")
     # Counts are from the same Host scan used for Admin newest-100 inventory.
     report=dict(protocol="xdrive-backup-snapshot-index-v1",
+                generated_at=datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                 policy_revision=revision,total_snapshots=total,
                 indexed_snapshots=len(ids),truncated=total>len(ids),
                 snapshot_ids=ids)
