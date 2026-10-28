@@ -164,6 +164,7 @@ export type XDriveServerBackupRequest =
   | { action: 'preview_delete'; snapshot_id: string; mode: 'fast' | 'deep' }
   | { action: 'plan'; keep_last: number; mode: 'fast' | 'deep' }
   | { action: 'restore'; snapshot_id: string; confirmation: string }
+  | { action: 'restore_database_only'; snapshot_id: string; confirmation: string }
   | { action: 'drill'; snapshot_id: string; confirmation: string }
   | { action: 'delete'; snapshot_id: string; confirmation: string }
   | { action: 'delete_selected'; snapshot_id: string; confirmation: string; preview_request_id: string }
