@@ -151,7 +151,9 @@ test('Single shared map host previews a fresh Parent-only Range and cancels stal
   assert.match(gallery,/directPhoto.presentation/)
   assert.match(sheet,/data-xdrive-places-photo-drawer-expand/)
   assert.match(sheet,/data-xdrive-places-photo-drawer-close/)
-  assert.ok(gallery.includes('if (index < 0 || !xDrivePlacesCellAcceptsLogicalRangeCount(cell,range.total_count)) {'))
+  assert.ok(gallery.includes('!xDrivePlacesCellAcceptsLogicalRangeCount(cell,range.total_count)'))
+  assert.ok(gallery.includes('anchorNodeID:directPhoto.nodeID'))
+  assert.ok(gallery.includes('itemPage.items[itemIndex]?.node.id!==directPhoto.nodeID'))
   assert.match(gallery,/xDriveRememberPlacesDrawerViewerReturn\(preferenceScope,cell,approved\)/)
 })
 

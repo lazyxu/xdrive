@@ -2548,6 +2548,27 @@ async function testAdjacent142And28PhotoCovers(browser,mode,port){
     record(mode+': full 142-photo dialog never mixes Cell tiles or old bottom strip',
       paged.tiles===142&&paged.unique===142&&paged.more===0&&
       paged.error===0&&paged.fixedStrip===0&&errors.length===0)
+    // The 142nd thumbnail must actually open the Owner-authenticated Viewer.
+    // Re-entering this Cell cannot rely on the first 48-item page.
+    const scrollBefore=await page.locator(
+      '[data-xdrive-places-photo-drawer-items]').evaluate(el=>{
+        el.scrollTop=el.scrollHeight
+        return el.scrollTop
+      })
+    await page.locator('[data-xdrive-places-photo-drawer-item]').last().click()
+    await page.locator('#fixture-viewer').waitFor({state:'visible'})
+    const opened=await page.evaluate(()=>window.__mapProbe.photoOpens.at(-1))
+    record(mode+': item 142 opens Viewer only after Owner anchor and page 96 recheck',
+      scrollBefore>0&&opened?.valid===true&&opened?.anchorIndex===141&&
+      opened?.loadedCount===142&&errors.length===0)
+    await page.locator('#fixture-viewer-back').click()
+    await dialog.waitFor({state:'visible'})
+    await page.waitForFunction(()=>document.querySelectorAll(
+      '[data-xdrive-places-photo-drawer-item]').length===142)
+    const restored=await page.locator(
+      '[data-xdrive-places-photo-drawer-items]').evaluate(el=>el.scrollTop)
+    record(mode+': Viewer Back reauthorizes 142 items before restoring scroll anchor',
+      Math.abs(restored-scrollBefore)<6&&errors.length===0)
     await page.keyboard.press('Escape')
     await dialog.waitFor({state:'hidden'})
   }finally{await context.close()}

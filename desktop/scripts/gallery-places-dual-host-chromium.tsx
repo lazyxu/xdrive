@@ -194,10 +194,15 @@ const listOwnerCellItems=async(selection:any,limit:number,offset:number,
     }))params.set(key,String(value))
     if(sort.filters?.favorite===true)params.set('favorite','true')
     if(sort.albumKey)params.set('album',sort.albumKey)
+    if(sort.anchorNodeID)params.set('anchor_node_id',String(sort.anchorNodeID))
     range=await ownerRequest('cell-items',params,signal)
   }else{
     const count=selection.photo_count
-    range={offset,limit,total_count:count,items:Array.from(
+    range={offset,limit,total_count:count,
+      ...(sort.anchorNodeID && sort.anchorNodeID>=selection.node_id &&
+          sort.anchorNodeID<selection.node_id+count
+        ? {anchor_index:sort.anchorNodeID-selection.node_id} : {}),
+      items:Array.from(
       {length:Math.min(limit,Math.max(0,count-offset))},(_,i)=>{
         const id=selection.node_id+offset+i
         return {node:{id,revision:selection.node_revision,type:'file',
@@ -458,16 +463,27 @@ function TestApp(){
     try{
       // Test fixture's second Owner authorization; production Gallery also
       // performs its own revalidation before opening the real Viewer.
-      const range=await listOwnerCellItems(selection,48,0,{
-        by:approved.filters.sort_by,dir:approved.filters.sort_dir,
-        filters:approved.filters,albumKey:approved.albumKey,
-      },new AbortController().signal)
-      const valid=range.total_count===selection.photo_count &&
-        range.items.some((item:any)=>item.node?.id===nodeID &&
-          item.node?.revision===revision)
+      const sort={by:approved.filters.sort_by,dir:approved.filters.sort_dir,
+        filters:approved.filters,albumKey:approved.albumKey}
+      const signal=new AbortController().signal
+      const first=await listOwnerCellItems(selection,48,0,{
+        ...sort,anchorNodeID:nodeID,
+      },signal)
+      const index=first.anchor_index
+      const pageOffset=Number.isSafeInteger(index)&&index>=0
+        ? Math.floor(index/48)*48 : -1
+      const range=pageOffset<0 ? first : pageOffset===0 ? first :
+        await listOwnerCellItems(selection,48,pageOffset,sort,signal)
+      const selected=pageOffset<0 ? undefined : range.items[index-pageOffset]
+      const valid=Number.isSafeInteger(index)&&index>=0 &&
+        index<first.total_count && first.total_count>0 &&
+        first.total_count<=selection.photo_count &&
+        range.total_count===first.total_count && range.offset===Math.max(0,pageOffset) &&
+        selected?.node?.id===nodeID && selected?.node?.revision===revision
       if(valid)xDriveRememberPlacesDrawerViewerReturn(
         'synthetic-private-owner',selection,approved,Date.now(),presentation)
-      probe.photoOpens.push({valid,expanded:presentation.expanded,
+      probe.photoOpens.push({valid,nodeID,anchorIndex:index,
+        expanded:presentation.expanded,loadedCount:presentation.loadedCount,
         scrollTop:presentation.scrollTop,scrollLeft:presentation.scrollLeft})
       if(valid)setDrawerViewer(nodeID)
     }catch{probe.rangeError=true}

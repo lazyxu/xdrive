@@ -120,3 +120,23 @@ test('Viewer return saves only a bounded page count and reauthorizes after retur
   assert.ok(sheet.includes('(initialPresentation.loadedCount ?? 0)<=items.length'))
   assert.ok(sheet.includes('loadedCount:Math.min(XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT,items.length)'))
 })
+
+test('Gallery reauthorizes late-page Viewer from Server anchor, never first 48 alone', () => {
+  const gallery=read('ui/shared/src/mui/MediaGallery.tsx')
+  const fixture=read('desktop/scripts/gallery-places-dual-host-chromium.tsx')
+  const browser=read('desktop/scripts/gallery-places-dual-host-chromium.cjs')
+  for(const needle of [
+    'anchorNodeID:directPhoto.nodeID',
+    'const index=range.anchor_index',
+    'const pageOffset=Math.floor(index/pageSize)*pageSize',
+    'const itemPage=pageOffset===0 ? range : await listCellItems(',
+    'itemPage.total_count!==range.total_count',
+    'itemPage.items[itemIndex]?.node.revision!==directPhoto.revision',
+    'activeIndex:index,totalCount:range.total_count',
+    'if(controller.signal.aborted || request!==requestID.current) return',
+  ])assert.ok(gallery.includes(needle),needle)
+  assert.ok(fixture.includes('anchor_index:sort.anchorNodeID-selection.node_id'))
+  assert.ok(fixture.includes('anchorNodeID:nodeID'))
+  assert.ok(browser.includes('item 142 opens Viewer only after Owner anchor and page 96 recheck'))
+  assert.ok(browser.includes('Viewer Back reauthorizes 142 items before restoring scroll anchor'))
+})
