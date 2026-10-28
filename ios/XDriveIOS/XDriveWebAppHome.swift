@@ -29,11 +29,15 @@ struct XDriveWebAppHome: View {
                     // Temporary native control; move this to the shared App
                     // settings once a verified native/Web session bridge exists.
                     Menu {
-                        Button("更换服务器", systemImage: "server.rack") {
+                        Button {
                             confirmLeave = true
+                        } label: {
+                            Label("更换服务器", systemImage: "server.rack")
                         }
-                        Button("原生登录诊断（独立会话）", systemImage: "person.crop.circle") {
+                        Button {
                             nativeLoginVisible = true
+                        } label: {
+                            Label("原生登录诊断（独立会话）", systemImage: "person.crop.circle")
                         }
                     } label: {
                         Image(systemName: "ellipsis.circle.fill")
