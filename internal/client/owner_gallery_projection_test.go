@@ -123,3 +123,21 @@ func TestOwnerGalleryEmptyRangeBeyondLastItemIsGenuineEmpty(t *testing.T) {
 		t.Fatal("missing Owner media items array accepted as verified empty")
 	}
 }
+
+func TestOwnerGalleryUntrustedAssetKindCannotCrossProjectionBoundaries(t *testing.T) {
+	original := ownerGalleryFixture()
+	projected, err := ProjectOwnerGalleryPage(original, 100, 0)
+	if err != nil {
+		t.Fatalf("safe projection failed: %v", err)
+	}
+	for _, invalid := range []string{"../../secret", "IMG", "live-photo", "bad\\nline", strings.Repeat("x", 65)} {
+		original.Items[0].AssetKind = invalid
+		if _, err := ProjectOwnerGalleryPage(original, 100, 0); err == nil {
+			t.Errorf("untrusted Server asset kind was projected: %q", invalid)
+		}
+		projected.Items[0].AssetKind = invalid
+		if ValidOwnerGalleryPage(projected, 100, 0) {
+			t.Errorf("untrusted Agent asset kind would enter DSM: %q", invalid)
+		}
+	}
+}

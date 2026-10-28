@@ -96,6 +96,18 @@ func ValidOwnerGalleryAlbumID(value string) bool {
 	return true
 }
 
+func ownerGallerySafeAssetKind(kind string) bool {
+	if len(kind) > 64 {
+		return false
+	}
+	for _, c := range kind {
+		if !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_') {
+			return false
+		}
+	}
+	return true
+}
+
 func ownerGallerySafeNode(n Node) bool {
 	if n.ID == 0 || n.ID > ownerGalleryMaxSafe ||
 		n.ParentID == nil || *n.ParentID == 0 || *n.ParentID > ownerGalleryMaxSafe ||
@@ -154,13 +166,8 @@ func ProjectOwnerGalleryPage(page MediaItemRange, limit, offset int) (OwnerGalle
 	for _, item := range page.Items {
 		n := item.Node
 		if !ownerGallerySafeNode(n) || !ownerGallerySafeMetadata(item.Metadata) ||
-			seen[n.ID] || len(item.AssetKind) > 64 {
+			seen[n.ID] || !ownerGallerySafeAssetKind(item.AssetKind) {
 			return OwnerGalleryPage{}, errors.New("unsafe Owner gallery item")
-		}
-		for _, c := range item.AssetKind {
-			if !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_') {
-				return OwnerGalleryPage{}, errors.New("invalid Owner gallery asset kind")
-			}
 		}
 		seen[n.ID] = true
 		out.Items = append(out.Items, OwnerGalleryItem{
@@ -208,7 +215,7 @@ func ValidOwnerGalleryPage(page OwnerGalleryPage, limit, offset int) bool {
 				DurationMS: item.Metadata.DurationMS,
 				CapturedAt: item.Metadata.CapturedAt, IndexState: item.Metadata.IndexState,
 				HasThumbnail: item.Metadata.HasThumbnail,
-			}) {
+			}) || !ownerGallerySafeAssetKind(item.AssetKind) {
 			return false
 		}
 		seen[n.ID] = true
