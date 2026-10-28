@@ -41,6 +41,7 @@ const desktopConflictsPage = fs.readFileSync(path.join(root, '..', 'ui', 'shared
 const desktopDiagnosticsPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopDiagnosticsPage.tsx'), 'utf8')
 const sharedDiagnosticsPage = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'DiagnosticsPage.tsx'), 'utf8')
 const desktopFilesPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopFilesPage.tsx'), 'utf8')
+const sharedFilesWorkspace = fs.readFileSync(path.join(root, '..', 'ui/shared/src/mui/FilesWorkspacePage.tsx'), 'utf8')
 const desktopSettingsContent = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopSettingsContent.tsx'), 'utf8')
 const renderer = [
   rendererApp,
@@ -65,6 +66,7 @@ const renderer = [
   desktopDiagnosticsPage,
   sharedDiagnosticsPage,
   desktopFilesPage,
+  sharedFilesWorkspace,
   desktopSettingsContent,
 ].join('\n')
 const synologyGuide = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SynologyDsmGuideDialog.tsx'), 'utf8')
@@ -314,11 +316,11 @@ test('desktop transient management surfaces use shared modal features', () => {
   assert.ok(rendererApp.includes('remotePullPage:') &&
     sharedHostOutlet.includes('<XDriveSourceManager'),
     'Desktop must provide the real Source adapter to shared SourceManager')
-  assert.ok(desktopFilesPage.includes('<XDriveShareDialog'), 'Desktop must render the shared share dialog')
+  assert.ok(desktopFilesPage.includes('shareDialog={{') && desktopFilesPage.includes('adapter: desktopShareDialogAdapter') && sharedFilesWorkspace.includes('<XDriveShareDialog {...shareDialog} />'), 'Desktop must render the shared share dialog with its real Host adapter')
   assert.ok(sharedSourceManager.includes('open={createOpen}'), 'shared Source create dialog is missing')
   assert.ok(sharedSourceManager.includes('open={!!setting}'), 'shared Source settings dialog is missing')
   assert.ok(desktopFilesPage.includes('trashActive={trashOpen}'), 'Desktop cloud page must route Trash into FileExplorer')
-  assert.ok(desktopFilesPage.includes('<XDriveVersionHistoryDialog'), 'Desktop cloud page must render the shared version history dialog')
+  assert.ok(desktopFilesPage.includes('historyDialog={{') && desktopFilesPage.includes('adapter: desktopVersionHistoryDialogAdapter') && sharedFilesWorkspace.includes('<XDriveVersionHistoryDialog {...historyDialog} />'), 'Desktop must render shared version history through the real Host adapter')
   assert.ok(desktopFileExplorer.includes('<XDriveFileNameDialog'), 'Desktop FileExplorer must render the shared file-name dialog')
   assert.equal(rendererApp.includes('source-create modal-form-surface'), false, 'Desktop must not retain a local Source create shell')
   assert.equal(rendererApp.includes('source-settings modal-form-surface'), false, 'Desktop must not retain a local Source settings shell')
