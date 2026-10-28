@@ -306,6 +306,10 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
                 if ((state.hasNext && state.error == null) || (state.loading && state.items.isNotEmpty())) item(key = "paging") {
                     PageTail(state)
                 }
+                if (state.error != null && state.items.isNotEmpty())
+                    item(key = "files-read-failure") {
+                        FilesReadFailureTail(state, controller::retry)
+                    }
             }
         } else {
             LazyVerticalGrid(columns = GridCells.Adaptive(minSize = 112.dp),
@@ -366,6 +370,10 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
                 }
                 if ((state.hasNext && state.error == null) || (state.loading && state.items.isNotEmpty()))
                     item(key = "paging", span = { GridItemSpan(maxLineSpan) }) { PageTail(state) }
+                if (state.error != null && state.items.isNotEmpty())
+                    item(key = "files-read-failure", span = { GridItemSpan(maxLineSpan) }) {
+                        FilesReadFailureTail(state, controller::retry)
+                    }
             }
         }
     }
@@ -526,11 +534,39 @@ private fun ColumnScope.FilesCollection(state: DriveState, controller: DriveCont
                 ((state.searchNextCursor.isNotBlank() && state.error == null) ||
                     (state.loading && state.collectionItems.isNotEmpty())))
                 item(key = "search-paging") { PageTail(state) }
+            if (state.error != null && state.collectionItems.isNotEmpty())
+                item(key = "collection-read-failure") {
+                    FilesReadFailureTail(state, controller::retry)
+                }
         }
     }
 }
 
 /** Compact real Go group metadata. Group headers consume no file paging slot. */
+@Composable
+private fun FilesReadFailureTail(state: DriveState, onRetry: () -> Unit) {
+    // The iOS-style search region now scrolls away. Keep a read-only retry
+    // reachable at the failed page edge, never require scrolling 100k items
+    // back to the header. The Controller decides whether GET reconciliation
+    // is safe; this button never replays an uncertain mutation.
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)
+            .testTag("files-page-error-tail"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text("读取未完成，已保留现有项目",
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error)
+        TextButton(onClick = onRetry, enabled = !state.loading,
+            modifier = Modifier.heightIn(min = 48.dp)
+                .testTag("files-page-tail-retry")) {
+            Text("重试加载")
+        }
+    }
+}
+
 @Composable
 private fun FilesBrowseGroupHeader(
     group: com.tfluid.xdrive.core.FileBrowseGroupIndex,
