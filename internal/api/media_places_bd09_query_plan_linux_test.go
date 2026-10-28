@@ -35,7 +35,7 @@ func (c *placesBD09PlanCapture) Trace(
 	statement, _ := fc()
 	lower := strings.ToLower(strings.TrimSpace(statement))
 	if (!strings.HasPrefix(lower, "select ") &&
-		!strings.HasPrefix(lower, "with ") {
+		!strings.HasPrefix(lower, "with ")) {
 		return
 	}
 	if !strings.Contains(lower, "xd_baidu_photo_map_positions") {
