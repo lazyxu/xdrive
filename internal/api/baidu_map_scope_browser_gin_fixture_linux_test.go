@@ -419,7 +419,7 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 	if err := db.Model(&meta.PhotoMetadata{}).Where("asset_id = ?", liveAsset.ID).
 		Updates(map[string]any{
 			"mime_type": mediapkg.LIVPMIMEType,
-			"width": liveInfo.Width, "height": liveInfo.Height,
+			"width":     liveInfo.Width, "height": liveInfo.Height,
 		}).Error; err != nil {
 		t.Fatal(err)
 	}
