@@ -212,7 +212,7 @@ if (!appRouteContent.includes('xDriveIsSharedHostPageRoute(view)') ||
     !appPageOutlet.includes('<XDriveMediaGalleryPage {...services.galleryPage} />') ||
     !appPageOutlet.includes('<XDriveSourceManager {...services.remotePullPage} />') ||
     !appPageOutlet.includes('<XDriveTaskCenterPage') ||
-    !routeRegistry.includes('XDRIVE_SHARED_HOST_PAGE_ROUTES') ||
+    !routeRegistry.includes('XDRIVE_SHARED_HOST_PAGE_ROUTES = XDRIVE_APP_WORKSPACE_ROUTES.filter(') ||
     !desktopShell.includes("adminUsersPage: status?.role === 'admin'") ||
     !desktopShell.includes("adminAuditPage: status?.role === 'admin'") ||
     !desktopShell.includes("adminStoragePage: status?.role === 'admin'") ||

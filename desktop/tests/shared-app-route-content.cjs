@@ -61,6 +61,8 @@ test('migrated routes use shared outlet, while legacy Desktop Files retains its 
   assert.match(app, /<XDriveAppRouteContent/)
   assert.match(app, /revision=\{revision\}/)
   assert.match(app, /pageSx=\{pageSx\}/)
+  assert.match(routes, /XDRIVE_APP_WORKSPACE_ROUTES\.filter\(/)
+  assert.doesNotMatch(routes, /XDRIVE_SHARED_HOST_PAGE_ROUTES = \[/)
   assert.match(outlet, /xDriveWorkspaceRouteRequiresAdmin\(view\) && host\.adminRoleVerified !== true/)
   assert.match(outlet, /<XDriveSynologyOwnerFilesPage\b/)
   assert.doesNotMatch(content, /window\.xdriveDesktop|fetch\s*\(|backup\.cgi/)
