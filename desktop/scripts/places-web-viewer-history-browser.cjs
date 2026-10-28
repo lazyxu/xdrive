@@ -64,7 +64,8 @@ const main=async()=>{
       const kind=url.searchParams.get('kind')
       if(kind!=='cell'&&kind!=='viewport')return send(res,400,{error:'invalid kind'})
       fixture.reads++
-      req.once('close',()=>{if(!res.writableEnded)fixture.aborts++})
+      // Response close (not request-body close) proves transport abort.
+      res.once('close',()=>{if(!res.writableEnded)fixture.aborts++})
       const respond=()=>{
         if(res.writableEnded||res.destroyed)return
         if(fixture.revoked){fixture.denials++;return send(res,403,{error:'OWNER_SCOPE_REVOKED'})}
@@ -194,10 +195,8 @@ const main=async()=>{
     await control('reset')
     await page.getByRole('button',{name:'打开 Cell 地图照片'}).click()
     await status('authorized')
-    await page.waitForFunction(()=>!document.querySelector(
-      'button[data-testid="viewer-next"]')?.disabled || Boolean(
-      Array.from(document.querySelectorAll('button')).find(b=>
-        b.textContent==='查看同 Cell 下一张照片'&&!b.disabled)))
+    await page.waitForFunction(()=>document.querySelector(
+      '[data-testid="viewer-next"]')?.disabled===false)
     await page.getByRole('button',{name:'查看同 Cell 下一张照片'}).click()
     await page.getByText('Owner photo 102',{exact:true}).waitFor()
     data=await probe()
@@ -220,6 +219,7 @@ const main=async()=>{
     await control('delay')
     const beforeSwitch=await probe()
     const serverReadsBeforeSwitch=fixture.reads
+    const serverAbortsBeforeSwitch=fixture.aborts
     await page.getByRole('button',{name:'打开 Cell 地图照片'}).click()
     await page.waitForFunction(before=>
       window.__scopeHistoryProbe.rangeStarts>before,beforeSwitch.rangeStarts)
@@ -230,7 +230,9 @@ const main=async()=>{
     await status('authorized')
     data=await probe()
     record('same Viewer route changing map scope aborts old pending Cell read',
-      data.aborts>beforeSwitch.aborts&&data.requests.at(-1)==='viewport')
+      data.aborts>beforeSwitch.aborts&&
+      fixture.aborts>serverAbortsBeforeSwitch&&
+      data.requests.at(-1)==='viewport')
     record('new Viewport scope alone authorizes current Viewer contents',
       data.pointReads===0&&data.otherGalleryReads===0&&
       !!await page.locator('[data-testid="authorized-photo"]').count())
