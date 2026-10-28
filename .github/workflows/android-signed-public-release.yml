@@ -28,17 +28,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  signed-public-release:
+  build-and-verify:
     if: github.ref == 'refs/heads/master' && inputs.confirm_public_release
     runs-on: ubuntu-latest
     timeout-minutes: 50
     permissions:
-      contents: write
+      contents: read
     env:
       VERSION_CODE: ${{ inputs.version_code }}
       VERSION_NAME: ${{ inputs.version_name }}
       EXPECTED_CERT_SHA256: ${{ vars.ANDROID_RELEASE_CERT_SHA256 }}
-      GH_TOKEN: ${{ github.token }}
     steps:
       - name: Checkout exact master source with no stored Git credentials
         uses: actions/checkout@v4
@@ -51,6 +50,8 @@ jobs:
           node-version: '22'
 
       - name: Verify Android public release and signing contracts
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           node --test android/scripts/update-asset.test.mjs android/scripts/signed-release-plan.test.mjs
@@ -181,15 +182,65 @@ jobs:
           retention-days: 30
           compression-level: 0
 
-      - name: Publish public versioned signed APK (never clobber)
+  publish-public-signed-apk:
+    needs: build-and-verify
+    if: github.ref == 'refs/heads/master' && inputs.confirm_public_release
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: write
+      actions: read
+    env:
+      VERSION_CODE: ${{ inputs.version_code }}
+      VERSION_NAME: ${{ inputs.version_name }}
+      EXPECTED_CERT_SHA256: ${{ vars.ANDROID_RELEASE_CERT_SHA256 }}
+    steps:
+      - name: Checkout same immutable source without Git credentials
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Download exact immutable signed APK and checksum from this run
+        uses: actions/download-artifact@v4
+        with:
+          name: xdrive-android-signed-${{ github.sha }}
+          path: dist/android-signed
+
+      - name: Revalidate same-run build evidence and reject tag race
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          plan="$RUNNER_TEMP/xdrive-android-release-plan.json"
-          release_tag="$(jq -r '.releaseTag' "$plan")"
-          apk_name="$(jq -r '.assetName' "$plan")"
-          # A concurrent user or workflow may have created the tag after
-          # preflight. Do not overwrite any existing Release or git ref.
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          if [[ ! "$EXPECTED_CERT_SHA256" =~ ^[[:xdigit:]]{64}$ ]]; then
+            echo "::error title=Android signer::Missing trusted release certificate pin." >&2
+            exit 1
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$RUNNER_TEMP/xdrive-public-releases.json"
+          node android/scripts/signed-release-plan.mjs \
+            "$VERSION_CODE" "$VERSION_NAME" "$GITHUB_SHA" \
+            "$RUNNER_TEMP/xdrive-public-releases.json" \
+            > "$RUNNER_TEMP/xdrive-android-release-plan.json"
+          release_tag="$(jq -r '.releaseTag' "$RUNNER_TEMP/xdrive-android-release-plan.json")"
+          apk_name="$(jq -r '.assetName' "$RUNNER_TEMP/xdrive-android-release-plan.json")"
+          apk="dist/android-signed/$apk_name"
+          test -s "$apk"
+          test -s dist/android-signed/SHA256SUMS.txt
+          test -s dist/android-signed/RELEASE_NOTES.txt
+          if [[ "$(find dist/android-signed -maxdepth 1 -type f -name '*.apk' | wc -l)" -ne 1 ]]; then
+            echo "::error title=Android release evidence::Expected one immutable signed APK." >&2
+            exit 1
+          fi
+          (cd dist/android-signed && sha256sum -c SHA256SUMS.txt)
+          grep -Fx "Source: $GITHUB_SHA (master)" dist/android-signed/RELEASE_NOTES.txt >/dev/null
+          expected_cert="$(printf '%s' "$EXPECTED_CERT_SHA256" | tr '[:upper:]' '[:lower:]')"
+          grep -Fx "Certificate SHA-256: $expected_cert" dist/android-signed/RELEASE_NOTES.txt >/dev/null
           if gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "::error title=Android release::Release already exists; refuse overwrite." >&2
             exit 1
@@ -199,6 +250,19 @@ jobs:
             echo "::error title=Android release::Tag already exists; refuse overwrite." >&2
             exit 1
           fi
+          echo "Verified exact same-run Android APK and the still-available version tag."
+
+      - name: Publish public versioned signed APK (never clobber)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          plan="$RUNNER_TEMP/xdrive-android-release-plan.json"
+          release_tag="$(jq -r '.releaseTag' "$plan")"
+          apk_name="$(jq -r '.assetName' "$plan")"
+          # GitHub's create operation must fail if a concurrent publisher
+          # created the release after revalidation; no edit or clobber fallback.
           gh release create "$release_tag" \
             "dist/android-signed/$apk_name" \
             dist/android-signed/SHA256SUMS.txt \

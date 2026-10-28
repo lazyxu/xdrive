@@ -90,5 +90,15 @@ test('manual workflow is gated to master, fixed signing and public release evide
     'SHA256SUMS.txt',
     'ref: ' + '$' + '{{ github.sha }}',
   ]) assert(workflow.includes(fragment), 'missing release invariant: ' + fragment);
+  const build = workflow.split('  build-and-verify:')[1]?.split('  publish-public-signed-apk:')[0];
+  const publish = workflow.split('  publish-public-signed-apk:')[1];
+  assert(build && publish, 'require separate signing and publishing jobs');
+  assert.match(build, /permissions:\n      contents: read/);
+  assert.doesNotMatch(build, /contents: write/);
+  assert.match(publish, /needs: build-and-verify/);
+  assert.match(publish, /permissions:\n      contents: write\n      actions: read/);
+  assert.match(publish, /actions\/download-artifact@v4/);
+  assert.match(publish, /sha256sum -c SHA256SUMS.txt/);
+  assert.doesNotMatch(publish, /SIGNING_KEY_B64|SIGNING_PASSWORD|assembleRelease/);
   assert.doesNotMatch(workflow, /app-debug\.apk|assembleDebug|--clobber/);
 });
