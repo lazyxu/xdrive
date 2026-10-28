@@ -126,6 +126,13 @@ test('failed same-page navigation resumes old content; nested and stale completi
     assert.equal(oldStates.at(-1), true, 'B failure may not resume work while C is pending')
     next()
     assert.equal(oldStates.at(-1), false, 'C failure or commit restores admitted Files')
+    const hung = bus.xDriveBeginForegroundContentTransition('files')
+    const accepted = bus.xDriveBeginForegroundContentTransition('files')
+    accepted()
+    assert.equal(oldStates.at(-1), false,
+      'new Folder C completion must resume even when superseded B never settles')
+    hung()
+    assert.equal(oldStates.at(-1), false, 'stale hung B release cannot alter current content')
     const mismatch = bus.xDriveBeginForegroundContentTransition('gallery')
     assert.equal(oldStates.at(-1), false, 'background Gallery cannot pause active Files')
     mismatch()
