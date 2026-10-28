@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef } from 'react'
-import { Box, Button, CircularProgress, IconButton, Stack, Typography } from '@mui/material'
+import { Box, Button, CircularProgress, Dialog, IconButton, Stack, Typography } from '@mui/material'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import ExpandLessRoundedIcon from '@mui/icons-material/ExpandLessRounded'
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
@@ -60,23 +60,19 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
       scrollLeft: bounded(listRef.current?.scrollLeft ?? 0)}
   }
   return (
+    <Dialog open onClose={onClose} fullWidth maxWidth="md"
+      aria-label="此地点的照片" data-xdrive-places-album-dialog
+      // This is the SAME shared Owner Gallery UI for both map SDK Hosts.
+      // MUI Dialog owns focus trap, Escape, backdrop and scroll lock.
+      PaperProps={{sx:{width:{xs:'calc(100% - 16px)',sm:'min(880px, calc(100vw - 40px))'},
+        maxWidth:880,maxHeight:'min(86dvh, 820px)',m:1,
+        borderRadius:{xs:2.5,sm:3},overflow:'hidden',
+        bgcolor:'background.paper',boxShadow:'0 16px 54px rgba(0,0,0,.34)'}}}>
     <Box component="section" role="region" aria-label="当前位置的照片"
       data-xdrive-places-photo-drawer
-      sx={{position:'absolute',
-        left:{xs:'max(8px, env(safe-area-inset-left))',sm:16},
-        right:{xs:'max(8px, env(safe-area-inset-right))',sm:'auto'},
-        bottom:{xs:'max(8px, env(safe-area-inset-bottom))',sm:16},
-        width:{xs:'auto',sm:'min(560px, calc(100% - 32px))'},
-        zIndex:8,pointerEvents:'auto',bgcolor:'background.paper',
-        border:'1px solid',borderColor:'divider',borderRadius:3,
-        boxShadow:'0 12px 42px rgba(15,23,42,.36)',overflow:'hidden',
-        height:expanded ? {xs:'min(75dvh,580px)',sm:'min(76dvh,640px)'} : 'auto',
-        // Landscape photo sheets must fit INSIDE the actual map viewport,
-        // not merely within the device viewport (which also has App chrome).
-        maxHeight:expanded
-          ? {xs:'min(75dvh,580px,calc(100% - 16px))',
-             sm:'min(76dvh,640px,calc(100% - 32px))'}
-          : 'min(250px, calc(100% - 16px))',
+      sx={{width:'100%',minWidth:0,pointerEvents:'auto',
+        height:expanded?'min(80dvh, 760px)':'auto',
+        maxHeight:'min(86dvh, 820px)',overflow:'hidden',
         display:'flex',flexDirection:'column'}}>
       <Box sx={{flexShrink:0}}>
         <Box component="button" type="button"
@@ -176,7 +172,7 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
               overflowY:expanded?'auto':'hidden',minHeight:0,minWidth:0,
               flex:expanded?'1 1 auto':'0 1 auto',
               display:expanded?'grid':'flex',gap:1,
-              gridTemplateColumns:expanded?'repeat(auto-fill, minmax(92px, 1fr))':undefined,
+              gridTemplateColumns:expanded?'repeat(auto-fill, minmax(108px, 1fr))':undefined,
               overscrollBehavior:'contain',touchAction:'auto'}}>
             {items.map(item => (
               <Box key={item.node.id} component="button" type="button"
@@ -288,5 +284,6 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
         </>
       )}
     </Box>
+    </Dialog>
   )
 }
