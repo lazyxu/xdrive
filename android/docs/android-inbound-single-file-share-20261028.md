@@ -25,3 +25,27 @@ Security contract:
   mutation. Physical foreign-provider/installed APK remains 跳过（未验收）.
 
 Until this PR's exact HEAD CI is green, source acceptance remains pending.
+
+## 2026-10-28 implementation
+
+In addition to the original SAF OpenDocument button, Android now accepts one
+`ACTION_SEND` from an external application through the existing MainActivity.
+The Activity is `singleTop` to handle subsequent shares without constructing
+a second uploader. No action is taken for `ACTION_SEND_MULTIPLE`, missing
+read-grant, untrusted `file://`/https URLs, bad ClipData or text-only extras.
+
+The URI stays only in Activity memory. If login or Files/Browse navigation is
+pending, an unobtrusive bottom notice explains the next step; no upload occurs
+until a real verified Owner directory is in view and the user clicks
+**确认上传**. The app reads only provider DISPLAY_NAME/SIZE metadata first,
+asynchronously on IO, rejecting absent/unknown/unsafe values; source bytes are
+opened once by the existing `DriveController.acceptFileUpload` closure, after
+`prepareFileUpload` locks the Owner parent folder. Folder/account is
+revalidated after the provider query and again before creating UploadSession.
+An interrupted/ambiguous upload uses the Controller's established conservative
+no-auto-replay state. No on-disk URI, permission persistence, credentials, RAM
+buffering, WorkManager claim or new write protocol is introduced.
+
+Tests: Android framework ACTION_SEND grant/scheme/ClipData cases; exact
+metadata bounds and file names; Owner/Folder preflight. The real foreign
+provider and installed-device flow remain **跳过（未验收）**.

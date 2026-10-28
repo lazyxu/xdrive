@@ -6,6 +6,18 @@ import android.content.Context
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import android.widget.Toast
  import android.provider.OpenableColumns
 import android.os.Bundle
 import java.io.IOException
@@ -45,6 +57,81 @@ internal class NativeCreateDocument : ActivityResultContract<NativeExportDocumen
 
 class MainActivity : ComponentActivity() {
     private val model by viewModels<DriveViewModel>()
+    // Transient Activity memory only: never saved to Bundle, prefs, URI grant
+    // history or an Owner-unscoped task queue. Cold restarts cannot auto-upload.
+    private var sharedFile by mutableStateOf<NativeIncomingShare?>(null)
+    private var shareBusy by mutableStateOf(false)
+    private var shareError by mutableStateOf<String?>(null)
+
+    private fun dismissIncomingShare() {
+        if (shareBusy) return
+        sharedFile = null
+        shareError = null
+    }
+
+    private fun receiveIncomingShare(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_SEND) return
+        if (shareBusy) return
+        val uri = nativeSingleShareCandidate(intent)
+        if (uri == null) {
+            Toast.makeText(this, "只支持有读取授权的单个共享文件。", Toast.LENGTH_LONG).show()
+            sharedFile = null
+            return
+        }
+        val state = model.controller.state.value
+        val owner = if (state.username.isNotBlank() && state.server.isNotBlank())
+            ShareOwnerIdentity(state.server, state.username) else null
+        sharedFile = NativeIncomingShare(uri, owner)
+        shareError = null
+    }
+
+    private fun confirmIncomingShare(target: NativeShareTarget) {
+        val share = sharedFile ?: return
+        if (shareBusy || share.sourceOwner != null &&
+            share.sourceOwner != target.identity ||
+            nativeShareTarget(model.controller.state.value) != target) return
+        shareBusy = true
+        shareError = null
+        lifecycleScope.launch {
+            val metadata = withContext(Dispatchers.IO) {
+                queryNativeShareMetadata(applicationContext.contentResolver, share.uri)
+            }
+            if (sharedFile !== share) {
+                shareBusy = false
+                return@launch
+            }
+            // Recheck both actual Owner and the exact verified directory after
+            // asynchronous provider metadata. Never replay a stale Picker ACK.
+            val live = nativeShareTarget(model.controller.state.value)
+            if (live != target || share.sourceOwner != null &&
+                share.sourceOwner != live.identity) {
+                shareBusy = false
+                sharedFile = null
+                return@launch
+            }
+            if (metadata == null) {
+                shareBusy = false
+                shareError = "共享来源没有提供有效文件名或准确大小。请在文件页使用上传。"
+                return@launch
+            }
+            val controller = model.controller
+            if (!controller.prepareFileUpload()) {
+                shareBusy = false
+                shareError = "当前目录不可上传，请结束其他操作后重试。"
+                return@launch
+            }
+            // Explicit single user confirmation accepted. The existing
+            // Controller will recheck Owner + parent before any UploadSession.
+            sharedFile = null
+            shareBusy = false
+            val resolver = applicationContext.contentResolver
+            controller.acceptFileUpload(metadata.name, metadata.byteSize) {
+                resolver.openInputStream(share.uri)
+                    ?: throw IOException("The shared source is unavailable")
+            }
+        }
+    }
+
     // SAF owns the destination; no broad storage permission or persistent URI grants.
     private val fileDestination = registerForActivityResult(
         NativeCreateDocument()
@@ -95,6 +182,10 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             XDriveTheme {
+                val driveState by model.controller.state.collectAsStateWithLifecycle()
+                // The app remains interactive while login/navigation is
+                // required; the review dialog appears only for a real folder.
+                Box(Modifier.fillMaxSize()) {
                 DriveApp(model.controller, model.updates, openUpdate = { url ->
                     try {
                         startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE))
@@ -116,8 +207,37 @@ class MainActivity : ComponentActivity() {
                             catch (_: Exception) { model.controller.cancelFileUploadPicker() }
                         }
                     })
+                val incoming = sharedFile
+                if (incoming != null) {
+                    // A logout/server switch invalidates a bound source grant.
+                    androidx.compose.runtime.LaunchedEffect(
+                        driveState.screen, driveState.server, driveState.username,
+                    ) {
+                        if (incoming.sourceOwner != null &&
+                            (incoming.sourceOwner != ShareOwnerIdentity(
+                                driveState.server, driveState.username) ||
+                                driveState.screen == Screen.LOGIN ||
+                                driveState.screen == Screen.CONNECT ||
+                                driveState.screen == Screen.PASSWORD)) {
+                            sharedFile = null
+                            shareError = null
+                        }
+                    }
+                    NativeShareReview(incoming, driveState, shareBusy, shareError,
+                        onDismiss = ::dismissIncomingShare,
+                        onConfirm = ::confirmIncomingShare)
+                }
+                }
             }
         }
+        // Never replay an Intent on Activity recreation. OS grants and source
+        // metadata are intentionally not saved for process resurrection.
+        if (savedInstanceState == null) receiveIncomingShare(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        receiveIncomingShare(intent)
     }
 }
 
