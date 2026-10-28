@@ -199,6 +199,13 @@ class MainActivity : ComponentActivity() {
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // This Activity cannot reconstruct a same-intent SAF ticket after an
+        // OS recreation. Do not strand the Controller's picker flag or silently
+        // accept a result whose original Owner session is no longer provable.
+        // Existing active uploads/downloads are unaffected.
+        if (savedInstanceState != null &&
+            model.controller.state.value.fileUploadPickerParent != null)
+            model.controller.cancelFileUploadPicker()
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         enableEdgeToEdge()
         setContent {
@@ -229,13 +236,15 @@ class MainActivity : ComponentActivity() {
                                     model.controller.state.value)
                                 if (ticket == null) {
                                     model.controller.cancelFileUploadPicker()
-                                } else try {
-                                    pendingUploadPicker = ticket
-                                    uploadSource.launch(arrayOf("*/*"))
-                                } catch (_: Exception) {
-                                    pendingUploadPicker = null
-                                    if (ticket.isCurrent(model.controller.state.value))
-                                        model.controller.cancelFileUploadPicker()
+                                } else {
+                                    try {
+                                        pendingUploadPicker = ticket
+                                        uploadSource.launch(arrayOf("*/*"))
+                                    } catch (_: Exception) {
+                                        pendingUploadPicker = null
+                                        if (ticket.isCurrent(model.controller.state.value))
+                                            model.controller.cancelFileUploadPicker()
+                                    }
                                 }
                             }
                         })
