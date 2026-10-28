@@ -99,6 +99,8 @@ class DriveAppTest {
     private val gallerySearchQueries = mutableListOf<String>()
     private val galleryKindQueries = mutableListOf<Pair<String, String>>()
     private val gallerySortQueries = mutableListOf<Pair<String, String>>()
+    private val galleryFavoriteCalls = mutableListOf<Pair<List<Long>, Boolean>>()
+    private val galleryTagsCalls = mutableListOf<Pair<List<Long>, List<String>>>()
     private var galleryThumbnailRetryFixture = false
     private val galleryThumbnailCalls = AtomicInteger()
     private val galleryFixture = GalleryAsset(
@@ -110,6 +112,22 @@ class DriveAppTest {
         override suspend fun logout(refreshToken: String) = Unit
         override suspend fun changePassword(accessToken: String, currentPassword: String, newPassword: String) = AuthSession("fixture", "fixture-refresh", "owner")
         override suspend fun root(accessToken: String) = DriveNode(1, name = "", type = "dir")
+        override suspend fun galleryTagsBatch(
+            accessToken: String, items: List<GalleryAsset>, tags: List<String>,
+        ): Int {
+            check(accessToken == "fixture" && items.size in 1..200 &&
+                items.all { it.node.id == 40L && it.node.revision == 1L })
+            galleryTagsCalls += items.map { it.node.id } to tags
+            return items.size
+        }
+        override suspend fun galleryFavoriteBatch(
+            accessToken: String, items: List<GalleryAsset>, favorite: Boolean,
+        ): Int {
+            check(accessToken == "fixture" && items.size in 1..200 &&
+                items.all { it.node.id == 40L && it.node.revision == 1L })
+            galleryFavoriteCalls += (items.map { it.node.id } to favorite)
+            return items.size
+        }
         override suspend fun galleryPage(accessToken: String, offset: Int,
             initialLatest: Boolean): GalleryPage {
             galleryRangeReads++
@@ -603,6 +621,57 @@ class DriveAppTest {
             controller.state.value.gallerySearchQuery.isEmpty() &&
                 controller.state.value.galleryItems.singleOrNull()?.node?.id == 40L
         }
+    }
+
+
+    @Test fun galleryNativeSelectionAddsRealServerTagsAndRestoresDock() {
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryLoaded && !controller.state.value.loading
+        }
+        compose.onNodeWithTag("gallery-select-mode").performClick()
+        compose.onNodeWithTag("gallery-item-40").performClick()
+        compose.onNodeWithTag("gallery-selection-tags").assertIsEnabled().performClick()
+        compose.onNodeWithTag("gallery-tags-dialog").assertExists()
+        compose.onNodeWithTag("gallery-tags-input").performTextInput("旅行, Family")
+        compose.onNodeWithTag("gallery-tags-confirm").assertIsEnabled().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            !controller.state.value.gallerySelectionMode &&
+                !controller.state.value.loading
+        }
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(
+                listOf(listOf(40L) to listOf("Family", "旅行")), galleryTagsCalls)
+        }
+        compose.onNodeWithTag("gallery-bottom-dock").assertIsDisplayed()
+    }
+
+    @Test fun galleryNativeSelectionFavoritesCurrentOwnerTileWithoutOpeningViewer() {
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryLoaded && !controller.state.value.loading
+        }
+        compose.onNodeWithTag("gallery-select-mode").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("gallery-item-40").performClick()
+        compose.onNodeWithTag("gallery-selected-mark-40", useUnmergedTree = true).assertExists()
+        compose.onNodeWithTag("gallery-photo-viewer").assertDoesNotExist()
+        compose.onNodeWithTag("gallery-selection-actions").assertIsDisplayed()
+        compose.onNodeWithTag("gallery-selection-favorite").assertIsEnabled().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            !controller.state.value.loading &&
+                controller.state.value.galleryItems.singleOrNull()?.favorite == true &&
+                !controller.state.value.gallerySelectionMode
+        }
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(listOf(listOf(40L) to true),
+                galleryFavoriteCalls)
+        }
+        compose.onNodeWithTag("gallery-bottom-dock").assertIsDisplayed()
+        compose.onNodeWithTag("gallery-item-40").assertExists()
     }
 
     @Test fun nativeGalleryKindFilterUsesServerAndResetsPositionOnChangedScope() {

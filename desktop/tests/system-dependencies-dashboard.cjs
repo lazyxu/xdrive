@@ -96,7 +96,7 @@ test('single shared responsive page has tinted cards, count-filters and four sep
   assert.match(nav, /XDRIVE_SYSTEM_DEPENDENCY_IDS/)
   assert.match(cap, /'photo-face'/)
   assert.ok(web.includes('XDriveServiceDependenciesPage'))
-  assert.ok(desktop.includes('XDriveServiceDependenciesPage'))
+  assert.ok(desktop.includes('adminServicesPage:') && read('ui/shared/src/mui/XDriveAppPageOutlet.tsx').includes('<XDriveServiceDependenciesPage'))
   for (const forbidden of ['docker.sock', 'localStorage.setItem', 'adminStopHost',
     'adminRestartHost', 'window.fetch(']) assert.ok(!page.includes(forbidden))
 })

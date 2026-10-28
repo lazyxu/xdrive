@@ -21,24 +21,23 @@ test('administrator System Maintenance is typed and routed on Web/Desktop', () =
   assert.ok(registry.includes("workspaceKey: 'admin-maintenance', sidebar: true, admin: true"))
   assert.ok(web.includes("appView === 'admin-maintenance' && profile?.role === 'admin'"))
   assert.ok(web.includes("appView.startsWith('admin-')"))
-  assert.ok(desktop.includes("view === 'admin-maintenance' && status?.role === 'admin'"))
+  assert.ok(desktop.includes("adminMaintenancePage: status?.role === 'admin'") && read('ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx').includes("case 'admin-maintenance':"))
   assert.ok(desktop.includes("view === 'global-tasks' || view === 'admin-users' || view === 'admin-audit' || view === 'admin-storage' || view === 'admin-services' || view === 'admin-maintenance'"))
 })
 
 test('only admin group exposes System Maintenance in Web/Desktop including Mobile Web', () => {
-  for (const [source, name, guard] of [
-    [web, 'webSidebarSections', "profile?.role === 'admin'"],
-    [desktop, 'desktopSidebarSections', "status?.role === 'admin'"],
-  ]) {
-    const start = source.indexOf('const ' + name + ': XDriveSidebarSectionModel[]')
-    const end = source.indexOf('\n  ]', start)
-    assert.ok(start >= 0 && end > start)
-    const section = source.slice(start, end)
-    assert.ok(section.includes(guard))
-    assert.equal((section.match(/key: 'admin-maintenance'/g) || []).length, 1)
-    assert.ok(section.indexOf("key: 'admin-maintenance'") > section.indexOf("key: 'admin',"))
-    if (source === desktop) assert.ok(section.indexOf("key: 'diagnostics'") < section.indexOf("key: 'admin',"))
-  }
+  const sections = read('ui', 'shared', 'src', 'mui', 'WorkspaceHostSections.tsx')
+  const webStart = web.indexOf('const webSidebarSections: XDriveSidebarSectionModel[]')
+  const webEnd = web.indexOf(String.fromCharCode(10) + '  ]', webStart)
+  assert.ok(webStart >= 0 && webEnd > webStart)
+  const webNav = web.slice(webStart, webEnd)
+  assert.ok(webNav.includes("profile?.role === 'admin'"))
+  assert.equal((webNav.match(/key: 'admin-maintenance'/g) || []).length, 1)
+  assert.ok(sections.includes('...(adminRoleVerified ? ['))
+  assert.ok(desktop.includes("adminRoleVerified: status?.role === 'admin'"))
+  assert.equal((sections.match(/key: 'admin-maintenance'/g) || []).length, 1)
+  assert.ok(sections.indexOf("key: 'diagnostics'") < sections.indexOf("key: 'admin'"))
+  assert.ok(sections.indexOf("key: 'admin-maintenance'") > sections.indexOf("key: 'admin'"))
 })
 
 test('instance-wide update is absent from personal Settings and mounted only in shared admin page', () => {
@@ -65,7 +64,7 @@ test('existing Server admin REST and Desktop Agent IPC remain authoritative', ()
   assert.ok(web.includes('api.adminStartServerUpdate(source, channel, backupFileData)'))
   assert.ok(desktop.includes('getState: () => window.xdriveDesktop.agent.getServerUpdate()'))
   assert.ok(desktop.includes('window.xdriveDesktop.agent.startServerUpdate(source, channel, backupFileData)'))
-  assert.ok(desktop.includes('supported={serverUpdateSupported}'))
+  assert.ok(desktop.includes('supported: serverUpdateSupported') && read('ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx').includes('<XDriveSystemMaintenancePage'))
 })
 
 test('administrator maintenance requires explicit confirmation before posting a durable host update', () => {

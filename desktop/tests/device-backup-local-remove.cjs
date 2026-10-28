@@ -33,7 +33,7 @@ test('own Desktop alone may remove pristine bound Source through private Agent p
   assert.match(ipc, /"device-backup-local-remove"/)
   assert.match(main, /requireAgentCapability\(hello, 'device-backup-local-remove'\)/)
   assert.match(preload, /removeDeviceBackupLocalSource:/)
-  assert.match(app, /localRemove=\{localBackupRemove\}/)
+  assert.match(app, /localRemove:\s*localBackupRemove/)
   assert.match(page, /localRemove && verifiedLocalDeviceID === device\.id && !device\.revoked/)
   assert.match(dialog, /actions\.remove\(sourceID, settings\.revision\)/)
   assert.match(dialog, /Checkbox checked=\{confirmed\}/)

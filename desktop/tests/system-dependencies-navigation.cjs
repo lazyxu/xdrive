@@ -90,7 +90,7 @@ test('Web and Desktop render the same shared navigation without replacing the Ap
   assert.equal(desktop.includes("label: '服务与依赖'"), false)
   assert.ok(web.includes("location={route.app === 'admin-services' ? route.params : undefined}"))
   assert.ok(web.includes("onLocationChange={(next, options) => launchWebApp("))
-  assert.ok(desktop.includes('navigationResetKey={systemDependenciesNavigationResetKey}'))
+  assert.ok(desktop.includes('navigationResetKey: systemDependenciesNavigationResetKey'))
   assert.ok(page.includes('data-xdrive-system-dependencies-overview'))
   assert.ok(page.includes('data-xdrive-system-dependency-detail'))
   assert.ok(page.includes('系统依赖页内导航'))
@@ -363,7 +363,7 @@ test('Web, Mobile Web, Desktop and shared editor all use the pre-unmount guard',
   assert.ok(web.includes('else launchWebAppRuntime(pending.next, pending.options)'))
   assert.ok(desktop.includes('const [view, setViewActual]'))
   assert.ok(desktop.includes('xDriveSystemDependenciesNeedsExitConfirmation('))
-  assert.ok(desktop.includes('onUnsavedChange={setSystemDependenciesDraftDirty}'))
+  assert.ok(desktop.includes('onUnsavedChange: setSystemDependenciesDraftDirty'))
   assert.ok(desktop.includes('setViewActual(next)'))
   for (const content of [web, desktop]) {
     assert.ok(content.includes('open={pendingSystemDependenciesExit !== null}'))

@@ -26,7 +26,7 @@ function extractAvailabilityEffect() {
       ts.isIdentifier(node.expression) &&
       node.expression.text === 'useEffect' &&
       node.arguments.length >= 2 &&
-      node.arguments[0].getText(sourceFile).includes('getFileAvailabilityBatch(batchPaths)') &&
+      node.arguments[0].getText(sourceFile).includes('hostPort.browse.getFileAvailabilityBatch(batchPaths)') &&
       node.arguments[0].getText(sourceFile).includes('setAvailabilityByID(next)')
     ) {
       callback = node.arguments[0].getText(sourceFile)
@@ -138,7 +138,7 @@ test('Desktop FileExplorer availability response cannot cross account lifecycle 
     fileAvailabilitySupported: true,
     availabilityRequests,
     desktopFileAvailabilityBatchLimit: 2048,
-    window,
+    hostPort: { browse: window.xdriveDesktop.agent },
     setAvailabilityByID,
     setAvailabilityReadFailure,
     desktopFileAvailabilityProbeMessage,

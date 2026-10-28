@@ -155,7 +155,7 @@ test('Desktop FileExplorer same-tick file downloads are synchronously single-fli
     beginActionBusy,
     finishActionBusy,
     isActionBusyCurrent,
-    window,
+    hostPort: { write: window.xdriveDesktop.agent },
     onError: (message) => errors.push(message),
     onFeedback: (tone, message) => feedback.push({ tone, message }),
   })
@@ -223,7 +223,7 @@ test('Desktop FileExplorer stale download completion cannot clear a newer accoun
     beginActionBusy,
     finishActionBusy,
     isActionBusyCurrent,
-    window,
+    hostPort: { write: window.xdriveDesktop.agent },
     onError: (message) => errors.push(message),
     onFeedback: (tone, message) => feedback.push({ tone, message }),
   })
@@ -316,7 +316,7 @@ test('Desktop FileExplorer unmount invalidates pending local action completion',
     beginActionBusy,
     finishActionBusy,
     isActionBusyCurrent,
-    window,
+    hostPort: { write: window.xdriveDesktop.agent },
     onError: (message) => errors.push(message),
     onFeedback: (tone, message) => feedback.push({ tone, message }),
   })

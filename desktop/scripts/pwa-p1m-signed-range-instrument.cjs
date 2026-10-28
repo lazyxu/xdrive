@@ -185,7 +185,14 @@ function driver(s) {
     ",12000,'real Owner signed original Video element before Range completes')",
     ",12000,'real Owner signed original Video element before Range completes')\n  await p1BindSignedViewerRangeTicket(win,base)",
     'bind signed exact ticket before mark')
-  const end='async function sampleOnce(sample, ready) {'
+  // The later P1Q cross-window lifecycle uses the same unscoped probe on
+  // purpose. P1M instruments ONLY the frozen P1D Viewer/Back function;
+  // counting calls in P1Q would wrongly classify independent code as drift.
+  // Old pinned BEFORE/AFTER releases have no P1Q and retain the exact
+  // original sampleOnce boundary. Never loosen the five-call P1D contract.
+  const p1qMarker='// Test-only P1Q: second real authenticated native Chromium window clicks'
+  const end=parts[1].includes(p1qMarker)
+    ? p1qMarker : 'async function sampleOnce(sample, ready) {'
   if(parts[1].split(end).length!==2)throw Error('P1D function boundary ambiguous')
   const [measureRest,tail]=parts[1].split(end)
   const replacement=measureRest.replaceAll('p1ViewerVideoProbeStats(base)',

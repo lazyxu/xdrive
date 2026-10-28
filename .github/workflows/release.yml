@@ -394,17 +394,19 @@ jobs:
           XD_SNAPSHOT_APP_ID: ${{ env.SNAPSHOT_APP_ID }}
           XD_SNAPSHOT_APP_PRIVATE_KEY: ${{ secrets.XD_SNAPSHOT_APP_PRIVATE_KEY }}
         run: bash scripts/ci/mint-snapshot-publisher-token.sh
-      - name: Reject stale master snapshot before channel promotion
+      - name: Classify stale master Snapshot eligibility before channel promotion
         if: github.ref == 'refs/heads/master'
+        id: snapshot_eligibility
         env:
           GH_TOKEN: ${{ steps.snapshot_app_token.outputs.token || github.token }}
         shell: bash
         run: |
           set -euo pipefail
           repo="$GITHUB_REPOSITORY"
-          # Build completion order differs from commit order. Reject an old
-          # finished build BEFORE it changes floating GHCR edge image tags.
-          # This project has a snapshot tag; an unreadable tag fails closed.
+          # A superseded master commit is not a publish failure. Gate EVERY
+          # floating channel mutation, including GHCR edge, on this output.
+          # Unreadable tags, API errors, invalid or diverged ancestry still
+          # fail closed; only a verified "behind" decision is a benign skip.
           published="$(gh api "repos/$repo/git/ref/tags/snapshot" --jq '.object.sha')"
           [[ "$published" =~ ^[0-9a-fA-F]{40}$ ]] || {
             echo "Snapshot tag is unavailable or is not a commit; refusing channel promotion." >&2
@@ -412,11 +414,24 @@ jobs:
           }
           relation="$(gh api "repos/$repo/compare/$published...$GITHUB_SHA" --jq '.status')"
           case "$relation" in
-            ahead|identical) ;;
-            *) echo "Refusing stale Snapshot promotion before channel update: $relation" >&2; exit 1 ;;
+            ahead|identical)
+              echo "publish=true" >> "$GITHUB_OUTPUT"
+              ;;
+            behind)
+              echo "publish=false" >> "$GITHUB_OUTPUT"
+              echo "::notice title=Superseded Snapshot::Skipping publication for $GITHUB_SHA; a newer commit is already published."
+              ;;
+            diverged)
+              echo "::error title=Diverged Snapshot ancestry::Refusing unrelated snapshot promotion." >&2
+              exit 1
+              ;;
+            *)
+              echo "::error title=Unrecognized Snapshot ancestry::Refusing snapshot promotion: $relation" >&2
+              exit 1
+              ;;
           esac
       - name: Probe snapshot Git ref authorization before release mutation
-        if: github.ref == 'refs/heads/master'
+        if: github.ref == 'refs/heads/master' && steps.snapshot_eligibility.outputs.publish == 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ steps.snapshot_app_token.outputs.token || github.token }}
@@ -459,12 +474,14 @@ jobs:
           echo "[xDrive] Snapshot ref permission probe passed for $GITHUB_SHA"
 
       - name: Log in to GHCR for channel promotion
+        if: github.ref != 'refs/heads/master' || steps.snapshot_eligibility.outputs.publish == 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Promote successful server images
+        if: github.ref != 'refs/heads/master' || steps.snapshot_eligibility.outputs.publish == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -482,7 +499,7 @@ jobs:
               "ghcr.io/$owner/$image:$source_tag"
           done
       - name: Publish rolling snapshot prerelease
-        if: github.ref == 'refs/heads/master'
+        if: github.ref == 'refs/heads/master' && steps.snapshot_eligibility.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ steps.snapshot_app_token.outputs.token || github.token }}
         shell: bash

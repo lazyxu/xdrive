@@ -44,6 +44,26 @@ class DriveControllerTest {
         var refreshed = 0
         var refreshFailure: Exception? = null
         var loggedOut = false
+        val galleryTagsCalls = mutableListOf<Pair<List<Long>, List<String>>>()
+        var galleryTagsFailure: Exception? = null
+        override suspend fun galleryTagsBatch(
+            accessToken: String, items: List<GalleryAsset>, tags: List<String>,
+        ): Int {
+            assertEquals("access", accessToken)
+            galleryTagsCalls += items.map { it.node.id } to tags
+            galleryTagsFailure?.let { throw it }
+            return items.size
+        }
+        val galleryFavoriteCalls = mutableListOf<Pair<List<Long>, Boolean>>()
+        var galleryFavoriteFailure: Exception? = null
+        override suspend fun galleryFavoriteBatch(
+            accessToken: String, items: List<GalleryAsset>, favorite: Boolean,
+        ): Int {
+            assertEquals("access", accessToken)
+            galleryFavoriteCalls += (items.map { it.node.id } to favorite)
+            galleryFavoriteFailure?.let { throw it }
+            return items.size
+        }
         val latestGallery = GalleryAsset(
             DriveNode(990L, 1, "today.jpg", "file", size = 5, revision = 1),
             "image", "2026-10-25T01:00:00Z", hasThumbnail = true)
@@ -285,6 +305,92 @@ class DriveControllerTest {
 
     /** Native login no longer has a manual public-IP field. Failure text
      * must guide an actual input without changing pinned Host/SNI behavior. */
+
+    @Test fun gallerySelectionFavoriteCommitsOnceAndBackExitsBeforeFiles() = runTest {
+        val api = Service()
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        val item = c.state.value.galleryItems.single()
+        c.setGallerySelectionMode(true)
+        c.toggleGallerySelection(item)
+        assertEquals(listOf(item), c.state.value.gallerySelectedItems)
+        c.favoriteGallerySelected(true); runCurrent()
+        assertEquals(listOf(listOf(item.node.id) to true), api.galleryFavoriteCalls)
+        assertEquals(true, c.state.value.galleryItems.single().favorite)
+        assertFalse(c.state.value.gallerySelectionMode)
+        assertTrue(c.state.value.gallerySelectedItems.isEmpty())
+        c.setGallerySelectionMode(true)
+        c.toggleGallerySelection(c.state.value.galleryItems.single())
+        c.back()
+        assertEquals(Screen.GALLERY, c.state.value.screen)
+        assertFalse(c.state.value.gallerySelectionMode)
+        assertTrue(c.state.value.gallerySelectedItems.isEmpty())
+        c.close()
+    }
+
+
+    @Test fun galleryTagsCommitOneOwnerMutationAndClearSelection() = runTest {
+        val api = Service()
+        val controller = controller(this, api)
+        controller.login("owner", "password"); runCurrent()
+        controller.openGallery(); runCurrent()
+        controller.setGallerySelectionMode(true)
+        controller.toggleGallerySelection(controller.state.value.galleryItems.single())
+        controller.tagGallerySelected(listOf("Family", "旅行")); runCurrent()
+        assertEquals(listOf(listOf(990L) to listOf("Family", "旅行")),
+            api.galleryTagsCalls)
+        assertFalse(controller.state.value.gallerySelectionMode)
+        assertTrue(controller.state.value.gallerySelectedItems.isEmpty())
+        assertFalse(controller.state.value.galleryMetadataWriteAttempted)
+        controller.close()
+    }
+
+    @Test fun galleryTagsUncertainAckNeverReplaysAndAllowsGetOnlyRefresh() = runTest {
+        val api = Service().apply {
+            galleryTagsFailure = ApiException(503, "ACK lost")
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.setGallerySelectionMode(true)
+        c.toggleGallerySelection(c.state.value.galleryItems.single())
+        c.tagGallerySelected(listOf("旅行")); runCurrent()
+        assertEquals(1, api.galleryTagsCalls.size)
+        assertTrue(c.state.value.galleryMetadataWriteAttempted)
+        assertTrue(requireNotNull(c.state.value.error).contains("未确认"))
+        c.tagGallerySelected(listOf("旅行")); runCurrent()
+        assertEquals(1, api.galleryTagsCalls.size)
+        c.retryGallery(); runCurrent()
+        assertEquals(1, api.galleryTagsCalls.size)
+        assertTrue(c.state.value.galleryLoaded)
+        assertFalse(c.state.value.galleryMetadataWriteAttempted)
+        c.close()
+    }
+
+    @Test fun galleryFavoriteUncertainAckFreezesUntilReadOnlyRefresh() = runTest {
+        val api = Service().apply {
+            galleryFavoriteFailure = ApiException(503, "ACK lost")
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.setGallerySelectionMode(true)
+        c.toggleGallerySelection(c.state.value.galleryItems.single())
+        c.favoriteGallerySelected(false); runCurrent()
+        assertEquals(1, api.galleryFavoriteCalls.size)
+        assertTrue(c.state.value.galleryMetadataWriteAttempted)
+        assertTrue(requireNotNull(c.state.value.error).contains("未确认"))
+        c.favoriteGallerySelected(false); runCurrent()
+        assertEquals(1, api.galleryFavoriteCalls.size)
+        c.back(); runCurrent() // Read-only GET; never duplicate the PATCH.
+        assertEquals(1, api.galleryFavoriteCalls.size)
+        assertFalse(c.state.value.galleryMetadataWriteAttempted)
+        assertFalse(c.state.value.gallerySelectionMode)
+        assertTrue(c.state.value.galleryLoaded)
+        c.close()
+    }
+
     @Test fun unifiedLoginDnsFailureUsesActualServerAndOptionalLanInputs() = runTest {
         val api = object : Service() {
             override suspend fun login(username: String, password: String): AuthSession =

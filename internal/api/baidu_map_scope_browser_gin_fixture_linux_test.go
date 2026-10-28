@@ -3,6 +3,7 @@
 package api
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -45,6 +46,15 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 	origin := os.Getenv("XD_PLACES_P04_GALLERY_ORIGIN")
 	ready := os.Getenv("XD_PLACES_P04_READY_FILE")
 	stop := os.Getenv("XD_PLACES_P04_STOP_FILE")
+	// The parent runner intentionally discards private fixture stdout.
+	// Export only a fixed nonsecret setup stage when a test fatals.
+	stage := "initial-setup"
+	stageFile := os.Getenv("XD_PLACES_P04_FAILURE_STAGE")
+	t.Cleanup(func() {
+		if t.Failed() && stageFile != "" {
+			_ = os.WriteFile(stageFile, []byte(stage), 0600)
+		}
+	})
 	if dsn == "" || ready == "" || stop == "" ||
 		!strings.HasPrefix(origin, "https://gallery.example.net:") {
 		t.Fatal("missing bounded Chromium/Gin fixture configuration")
@@ -90,10 +100,19 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 		&meta.BaiduJSAPIMapEpoch{}, &meta.PhotoCollection{},
 		&meta.BaiduMapScopeHandoff{},
 		&meta.Node{}, &meta.File{}, &meta.FileVersion{},
-		&meta.ContentBlob{}, &meta.MediaMetadata{},
+		&meta.ContentBlob{}, &meta.MediaMetadata{}, &meta.MediaDerivedResource{},
 		&meta.MediaGroup{}, &meta.MediaGroupItem{},
+		// The real media-detail route reads Source collections to show
+		// provenance even when this isolated Owner has no connected sources.
+		// Mirror those empty production tables in this disposable fixture.
+		&meta.Source{}, &meta.SourceItem{},
+		&meta.SourceCollection{}, &meta.SourceCollectionItem{},
 		&meta.PhotoAsset{}, &meta.PhotoEditRecipe{},
-		&meta.PhotoResource{}, &meta.PhotoMetadata{},
+		&meta.PhotoResource{}, &meta.PhotoMetadata{}, &meta.PhotoCollectionAsset{},
+		// GET /media/items/:id includes Owner-fenced OCR state, even when
+		// this fixture has no analysis results. Real tables must exist so a
+		// Live Photo detail cannot fail before the signed motion ticket.
+		&meta.PhotoAnalysisState{}, &meta.PhotoOCRText{},
 		&meta.BaiduPhotoMapConsent{}, &meta.BaiduPhotoMapPosition{},
 	); err != nil {
 		t.Fatal(err)
@@ -140,7 +159,11 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 		Role: meta.UserRoleUser, SessionVersion: 1}
 	foreign := meta.User{Username: "browser-map-foreign", PasswordHash: "synthetic",
 		Role: meta.UserRoleUser, SessionVersion: 1}
-	for _, person := range []*meta.User{&owner, &foreign} {
+	heicOwner := meta.User{Username: "browser-map-heic", PasswordHash: "synthetic",
+		Role: meta.UserRoleUser, SessionVersion: 1}
+	liveOwner := meta.User{Username: "browser-map-livp", PasswordHash: "synthetic",
+		Role: meta.UserRoleUser, SessionVersion: 1}
+	for _, person := range []*meta.User{&owner, &foreign, &heicOwner, &liveOwner} {
 		if err := db.Create(person).Error; err != nil {
 			t.Fatal(err)
 		}
@@ -162,6 +185,297 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 	// has an overlapping BD09 location which must never enter this scope.
 	seedP04BrowserOwnerPhotoCells(t, db, owner.ID, "owner", 9, 3, casKey, checksum, int64(pngData.Len()))
 	seedP04BrowserOwnerPhotoCells(t, db, foreign.ID, "foreign", 1, 0, casKey, checksum, int64(pngData.Len()))
+	// Dedicated test-only HEIC Owner: the original 9+1 asset map and every
+	// pre-existing Viewer/Count assertion remain source-exact unchanged.
+	// The real HEVC-coded sample is decoded by the existing media package,
+	// cached under its production revision/MIME-fenced thumbnail identity,
+	// and later served only by Gin's authenticated /media/items/:id/thumbnail.
+	stage = "heic-seed"
+	seedP04BrowserOwnerPhotoCells(t, db, heicOwner.ID, "heic", 1, 0,
+		casKey, checksum, int64(pngData.Len()))
+	stage = "heic-file"
+	heicOriginal, err := os.ReadFile(filepath.Join("internal", "media", "testdata", "heic-8bit-512.heic"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	stage = "heic-extract"
+	heicInfo, err := mediapkg.Extract("p04-heic-01.HEIC",
+		bytes.NewReader(heicOriginal), int64(len(heicOriginal)))
+	if err != nil || (heicInfo.MIMEType != "image/heic" &&
+		heicInfo.MIMEType != "image/heif") || heicInfo.Width != 512 || heicInfo.Height != 512 {
+		t.Fatalf("real HEVC-coded HEIC fixture cannot be indexed: %v", err)
+	}
+	stage = "heic-decode"
+	heicThumb, err := mediapkg.ThumbnailWithAlpha(bytes.NewReader(heicOriginal),
+		heicInfo.Orientation, mediaThumbnailEdge)
+	if err != nil || heicThumb.SourceKind != "heic" ||
+		heicThumb.MIMEType != "image/jpeg" || len(heicThumb.Data) < 512 {
+		t.Fatalf("real HEIC did not produce the existing JPEG thumbnail: %v", err)
+	}
+	stage = "heic-storage"
+	heicChecksum := fmt.Sprintf("%x", sha256.Sum256(heicOriginal))
+	heicKey, err := storage.ContentAddressedKey(heicChecksum)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if written, err := local.Put(context.Background(), heicKey,
+		bytes.NewReader(heicOriginal)); err != nil || written != int64(len(heicOriginal)) {
+		t.Fatal("failed to seed HEIC original in real test CAS")
+	}
+	if err := db.Create(&meta.ContentBlob{
+		SHA256: heicChecksum, Size: int64(len(heicOriginal)),
+		StorageKey: heicKey, RefCount: 1, State: meta.ContentBlobStateReady,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	stage = "heic-node"
+	var heicNode meta.Node
+	if err := db.Where("owner_id = ? AND name = ?",
+		heicOwner.ID, "p04-heic-01.png").Take(&heicNode).Error; err != nil {
+		t.Fatal(err)
+	}
+	var heicAsset meta.PhotoAsset
+	if err := db.Where("owner_id = ? AND primary_node_id = ?",
+		heicOwner.ID, heicNode.ID).Take(&heicAsset).Error; err != nil {
+		t.Fatal(err)
+	}
+	stage = "heic-metadata"
+	if err := db.Model(&meta.Node{}).Where("id = ?", heicNode.ID).
+		Update("name", "p04-heic-01.HEIC").Error; err != nil {
+		t.Fatal(err)
+	}
+	heicFile := map[string]any{
+		"size":        int64(len(heicOriginal)),
+		"storage_key": heicKey, "sha256": heicChecksum,
+	}
+	for _, model := range []any{&meta.File{}, &meta.FileVersion{}} {
+		if err := db.Model(model).Where("node_id = ?", heicNode.ID).
+			Updates(heicFile).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.Model(&meta.MediaMetadata{}).Where("node_id = ?", heicNode.ID).
+		Updates(map[string]any{
+			"sha256": heicChecksum, "mime_type": heicInfo.MIMEType,
+			"media_kind":  meta.MediaKindImage,
+			"orientation": heicInfo.Orientation,
+		}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&meta.PhotoMetadata{}).Where("asset_id = ?", heicAsset.ID).
+		Update("mime_type", heicInfo.MIMEType).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&meta.PhotoResource{}).Where("node_id = ?", heicNode.ID).
+		Updates(map[string]any{
+			"name": "p04-heic-01.HEIC", "mime_type": heicInfo.MIMEType,
+			"size": int64(len(heicOriginal)), "sha256": heicChecksum,
+		}).Error; err != nil {
+		t.Fatal(err)
+	}
+	stage = "heic-thumbnail-cache"
+	var heicMetadata meta.MediaMetadata
+	if err := db.Where("node_id = ?", heicNode.ID).Take(&heicMetadata).Error; err != nil {
+		t.Fatal(err)
+	}
+	thumbKey := mediaThumbnailStorageKey(heicNode, heicMetadata)
+	if written, err := local.Put(context.Background(), thumbKey,
+		bytes.NewReader(heicThumb.Data)); err != nil || written != int64(len(heicThumb.Data)) {
+		t.Fatal("failed to cache the actual decoded HEIC JPEG thumbnail")
+	}
+	if err := db.Model(&meta.MediaMetadata{}).Where("node_id = ?", heicNode.ID).
+		Updates(map[string]any{
+			"thumbnail_key": thumbKey, "thumbnail_mime_type": "image/jpeg",
+			"thumbnail_width": heicThumb.Width, "thumbnail_height": heicThumb.Height,
+		}).Error; err != nil {
+		t.Fatal(err)
+	}
+	// A source replacement must not leave the signed map Cell on the prior
+	// PNG SHA/timestamp. Keep the original built-in source revision fences.
+	if err := db.Where("node_id = ?", heicNode.ID).Take(&heicMetadata).Error; err != nil {
+		t.Fatal(err)
+	}
+	stage = "heic-position"
+	if err := db.Model(&meta.BaiduPhotoMapPosition{}).
+		Where("asset_id = ?", heicAsset.ID).
+		Update("media_updated_at", heicMetadata.UpdatedAt).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&meta.BaiduPhotoMapConsent{}).
+		Where("asset_id = ?", heicAsset.ID).
+		Update("source_media_updated_at", heicMetadata.UpdatedAt).Error; err != nil {
+		t.Fatal(err)
+	}
+	stage = "heic-ready"
+
+	// Isolate real LIVP still/motion integration from the existing Owner and
+	// standalone HEIC Owner. Reuse the exact tested HEVC still, packaged with
+	// the pre-existing generated QuickTime motion in an actual store-only LIVP.
+	stage = "livp-seed"
+	seedP04BrowserOwnerPhotoCells(t, db, liveOwner.ID, "livp", 1, 0,
+		casKey, checksum, int64(pngData.Len()))
+	var liveArchive bytes.Buffer
+	liveZIP := zip.NewWriter(&liveArchive)
+	liveMotion := testLIVPMOV("P04-HEIC-LIVP-TEST-ID")
+	for _, entry := range []struct {
+		name string
+		data []byte
+	}{
+		{"IMG_HEIC_512.HEIC", heicOriginal},
+		{"IMG_HEIC_512.MOV", liveMotion},
+	} {
+		writer, err := liveZIP.CreateHeader(&zip.FileHeader{
+			Name: entry.name, Method: zip.Store,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := writer.Write(entry.data); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := liveZIP.Close(); err != nil {
+		t.Fatal(err)
+	}
+	liveBytes := liveArchive.Bytes()
+	stage = "livp-inspect"
+	liveInfo, err := mediapkg.Extract("p04-livp-01.livp",
+		bytes.NewReader(liveBytes), int64(len(liveBytes)))
+	if err != nil || liveInfo.ContainerKind != mediapkg.ContainerKindLIVP ||
+		liveInfo.MIMEType != mediapkg.LIVPMIMEType ||
+		liveInfo.Width != 512 || liveInfo.Height != 512 {
+		t.Fatalf("real HEIC still was not indexed as a bounded LIVP archive: %v", err)
+	}
+	liveDescriptor, err := mediapkg.ParseLIVPContainerDescriptor(liveInfo.ContainerJSON)
+	if err != nil || liveDescriptor.Still.MIMEType != heicInfo.MIMEType ||
+		liveDescriptor.Motion.MIMEType != "video/quicktime" ||
+		liveDescriptor.Still.Size != int64(len(heicOriginal)) ||
+		liveDescriptor.Motion.Size != int64(len(liveMotion)) {
+		t.Fatalf("HEIC LIVP still/motion descriptor cannot be verified: %v", err)
+	}
+	for _, entry := range []struct {
+		offset int64
+		size   int64
+		data   []byte
+	}{
+		{liveDescriptor.Still.Offset, liveDescriptor.Still.Size, heicOriginal},
+		{liveDescriptor.Motion.Offset, liveDescriptor.Motion.Size, liveMotion},
+	} {
+		if entry.offset < 0 || entry.size <= 0 ||
+			entry.offset > int64(len(liveBytes)) ||
+			entry.size > int64(len(liveBytes))-entry.offset ||
+			!bytes.Equal(liveBytes[entry.offset:entry.offset+entry.size], entry.data) {
+			t.Fatal("LIVP container offsets do not select exact HEIC still and MOV bytes")
+		}
+	}
+	stage = "livp-cas"
+	liveChecksum := fmt.Sprintf("%x", sha256.Sum256(liveBytes))
+	liveKey, err := storage.ContentAddressedKey(liveChecksum)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if written, err := local.Put(context.Background(), liveKey,
+		bytes.NewReader(liveBytes)); err != nil || written != int64(len(liveBytes)) {
+		t.Fatal("failed to seed LIVP archive CAS original")
+	}
+	if err := db.Create(&meta.ContentBlob{
+		SHA256: liveChecksum, Size: int64(len(liveBytes)),
+		StorageKey: liveKey, RefCount: 1, State: meta.ContentBlobStateReady,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	stage = "livp-metadata"
+	var liveNode meta.Node
+	if err := db.Where("owner_id = ? AND name = ?",
+		liveOwner.ID, "p04-livp-01.png").Take(&liveNode).Error; err != nil {
+		t.Fatal(err)
+	}
+	var liveAsset meta.PhotoAsset
+	if err := db.Where("owner_id = ? AND primary_node_id = ?",
+		liveOwner.ID, liveNode.ID).Take(&liveAsset).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&meta.Node{}).Where("id = ?", liveNode.ID).
+		Update("name", "p04-livp-01.livp").Error; err != nil {
+		t.Fatal(err)
+	}
+	liveFile := map[string]any{
+		"size":        int64(len(liveBytes)),
+		"storage_key": liveKey, "sha256": liveChecksum,
+	}
+	for _, model := range []any{&meta.File{}, &meta.FileVersion{}} {
+		if err := db.Model(model).Where("node_id = ?", liveNode.ID).
+			Updates(liveFile).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.Model(&meta.MediaMetadata{}).Where("node_id = ?", liveNode.ID).
+		Updates(map[string]any{
+			"sha256": liveChecksum, "mime_type": mediapkg.LIVPMIMEType,
+			"media_kind":                  meta.MediaKindImage,
+			"container_kind":              mediapkg.ContainerKindLIVP,
+			"container_json":              liveInfo.ContainerJSON,
+			"orientation":                 liveInfo.Orientation,
+			"live_photo_asset_identifier": liveInfo.LivePhotoAssetIdentifier,
+			"derived_resource_version":    mediapkg.LIVPDerivedResourceVersion,
+		}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&meta.PhotoAsset{}).Where("id = ?", liveAsset.ID).
+		Update("kind", meta.PhotoAssetKindLivePhoto).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&meta.PhotoMetadata{}).Where("asset_id = ?", liveAsset.ID).
+		Updates(map[string]any{
+			"mime_type": mediapkg.LIVPMIMEType,
+			"width":     liveInfo.Width, "height": liveInfo.Height,
+		}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&meta.PhotoResource{}).Where("node_id = ?", liveNode.ID).
+		Updates(map[string]any{
+			"name": "p04-livp-01.livp", "mime_type": mediapkg.LIVPMIMEType,
+			"size": int64(len(liveBytes)), "sha256": liveChecksum,
+		}).Error; err != nil {
+		t.Fatal(err)
+	}
+	stage = "livp-thumbnail"
+	var liveMetadata meta.MediaMetadata
+	if err := db.Where("node_id = ?", liveNode.ID).Take(&liveMetadata).Error; err != nil {
+		t.Fatal(err)
+	}
+	if got := mediaThumbnailSourceMIME(liveMetadata); got != heicInfo.MIMEType ||
+		mediaThumbnailVersion(liveMetadata) != mediapkg.ThumbnailAlphaVersion ||
+		liveMetadata.DerivedResourceVersion != mediapkg.LIVPDerivedResourceVersion {
+		t.Fatal("LIVP cache did not resolve the embedded HEIC still as a v4 image")
+	}
+	liveThumbKey := mediaThumbnailStorageKey(liveNode, liveMetadata)
+	if written, err := local.Put(context.Background(), liveThumbKey,
+		bytes.NewReader(heicThumb.Data)); err != nil || written != int64(len(heicThumb.Data)) {
+		t.Fatal("failed to cache the verified HEIC LIVP still JPEG")
+	}
+	if err := db.Model(&meta.MediaMetadata{}).Where("node_id = ?", liveNode.ID).
+		Updates(map[string]any{
+			"thumbnail_key": liveThumbKey, "thumbnail_mime_type": "image/jpeg",
+			"thumbnail_width": heicThumb.Width, "thumbnail_height": heicThumb.Height,
+		}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Where("node_id = ?", liveNode.ID).Take(&liveMetadata).Error; err != nil {
+		t.Fatal(err)
+	}
+	stage = "livp-position"
+	if err := db.Model(&meta.BaiduPhotoMapPosition{}).
+		Where("asset_id = ?", liveAsset.ID).
+		Update("media_updated_at", liveMetadata.UpdatedAt).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&meta.BaiduPhotoMapConsent{}).
+		Where("asset_id = ?", liveAsset.ID).
+		Update("source_media_updated_at", liveMetadata.UpdatedAt).Error; err != nil {
+		t.Fatal(err)
+	}
+	stage = "livp-ready"
 	v, ciphertext, err := keyring.Seal(baiduJSAPISecretAADID,
 		baiduJSAPISecretKind, []byte("SYNTHETIC_BROWSER_AK_NEVER_USED_WITH_PROVIDER"))
 	if err != nil {
@@ -191,6 +505,14 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	heicToken, err := server.Auth.Issue(heicOwner.ID, heicOwner.SessionVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	liveToken, err := server.Auth.Issue(liveOwner.ID, liveOwner.SessionVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
 	gin.SetMode(gin.TestMode)
 	router := server.Router()
 	mux := http.NewServeMux()
@@ -205,8 +527,12 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 			return
 		}
 		token := ownerToken
-		if r.URL.Query().Get("account") == "foreign" {
+		if r.URL.Query().Get("account") == "foreign" && r.URL.RawQuery == "account=foreign" {
 			token = foreignToken
+		} else if r.URL.Query().Get("account") == "heic" && r.URL.RawQuery == "account=heic" {
+			token = heicToken
+		} else if r.URL.Query().Get("account") == "livp" && r.URL.RawQuery == "account=livp" {
+			token = liveToken
 		} else if r.URL.RawQuery != "" {
 			http.Error(w, "invalid", http.StatusBadRequest)
 			return

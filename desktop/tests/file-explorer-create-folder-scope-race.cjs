@@ -136,13 +136,11 @@ test('Desktop create-folder dialog keeps the directory scope that opened it', as
       uploadBusy: false,
       beginActionBusy: () => token,
       isActionBusyCurrent: () => true,
-      window: {
-        xdriveDesktop: {
-          agent: {
-            cloudCreateDirectory: async (parentID) => {
-              parents.push(parentID)
-              return { ok: true, data: {} }
-            },
+      hostPort: {
+        write: {
+          cloudCreateDirectory: async (parentID) => {
+            parents.push(parentID)
+            return { ok: true, data: {} }
           },
         },
       },

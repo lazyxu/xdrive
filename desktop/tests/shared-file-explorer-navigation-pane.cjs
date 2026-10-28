@@ -110,7 +110,7 @@ test('Web and Desktop use the same navigation pane and paged directory loader', 
   assert.ok(web.includes('loadDirectoryPage={loadTreeDirectoryPage}'), 'Web tree must pass the shared paged loader into the pane')
   assert.ok(web.includes('loadPage: (id, options) => api.listPage(id, options)'), 'Web tree must use the existing paged children REST adapter')
   assert.ok(desktop.includes('loadDirectoryPage={loadTreeDirectoryPage}'), 'Desktop tree must pass the shared paged loader into the pane')
-  assert.ok(desktop.includes('window.xdriveDesktop.agent.cloudChildrenPage(id, options)'), 'Desktop tree must use the existing paged Agent adapter')
+  assert.ok(desktop.includes('hostPort.browse.cloudChildrenPage(id, options)'), 'Desktop tree must use the existing paged Agent adapter')
 })
 
 

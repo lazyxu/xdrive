@@ -45,7 +45,7 @@ test('Only the owning Agent controls local schedule; automatic runs need an expl
   assert.match(main, /requireAgentCapability\(hello, 'device-backup-local-schedule'\)/)
   assert.match(preload, /getDeviceBackupLocalSchedule:/)
   assert.match(preload, /setDeviceBackupLocalSchedule:/)
-  assert.match(app, /localSchedule=\{localBackupSchedule\}/)
+  assert.match(app, /localSchedule:\s*localBackupSchedule/)
   assert.match(page, /verifiedLocalDeviceID === device\.id && !device\.revoked/)
   assert.match(page, /source === source/)
   assert.match(dialog, /actions\.save\(sourceID, loaded\.revision, proposal\)/)

@@ -65,7 +65,7 @@ test('Web and Desktop share one optional capability table, never a fake online t
   assert.match(page, /navigateTo\(verifyTarget\)/)
   assert.match(page, /不代表服务运行、已应用或全实例生效/)
   assert.ok(web.includes('XDriveServiceDependenciesPage'))
-  assert.ok(desktop.includes('XDriveServiceDependenciesPage'))
+  assert.ok(desktop.includes('adminServicesPage:') && read('ui/shared/src/mui/XDriveAppPageOutlet.tsx').includes('<XDriveServiceDependenciesPage'))
   assert.ok(backend.includes('"controlled-restart"'))
   for (const forbidden of ['docker.sock', 'adminStopHost', 'adminRestartHost', 'localStorage.setItem']) {
     assert.equal(page.includes(forbidden), false)

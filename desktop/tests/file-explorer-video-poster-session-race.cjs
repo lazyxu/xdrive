@@ -114,7 +114,7 @@ test('Desktop FileExplorer stale video poster decode cannot backfill the new acc
 
   const actionGenerationRef = { current: 1 }
   const loadThumbnail = compileCallback(filename, callback, {
-    window,
+    hostPort: { media: agentA, requestViewport: (_signal, invoke) => invoke() },
     Blob: class Blob {},
     URL: {
       createObjectURL: () => 'blob:poster-' + (++objectURLCount),
@@ -124,7 +124,6 @@ test('Desktop FileExplorer stale video poster decode cannot backfill the new acc
     xDriveFileKind: () => 'video',
     // This test isolates account-lifecycle fencing; native transport
     // cancellation has separate actual HTTP assertions in viewport-request-cancel.
-    xDriveDesktopViewportRequest: (_signal, invoke) => invoke(),
     xDriveCaptureVideoPosterBlob: () => posterDecode.promise,
   })
 

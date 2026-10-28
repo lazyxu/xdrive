@@ -21,6 +21,93 @@ class XDriveApiTest {
         """{"id":7,"parent_id":1,"name":"note.txt","type":"file",
             "size":$size,"revision":$revision}"""
 
+
+    @Test fun galleryTagParserRejectsInvalidAndDedupesNormalizedLabels() {
+        assertEquals(listOf("Family", "旅行"), parseGalleryTagInput("旅行, Family, family, 旅行"))
+        assertNull(parseGalleryTagInput(" , "))
+        assertNull(parseGalleryTagInput("very long ".repeat(20)))
+        assertNull(parseGalleryTagInput("valid, control\u0001"))
+        assertNull(parseGalleryTagInput((1..33).joinToString(",") { "tag$it" }))
+    }
+
+    @Test fun galleryTagsBatchUsesOneOwnerPostAndChecksWholeResponse() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            val items = listOf(
+                GalleryAsset(DriveNode(7, 1, "one.jpg", "file", 3, revision = 2), "image"),
+                GalleryAsset(DriveNode(8, 1, "two.mp4", "file", 13, revision = 4), "video"),
+            )
+            server.enqueue(MockResponse().setResponseCode(200).setBody(
+                """{"updated":2,"tags":["Family","旅行"]}"""))
+            assertEquals(2, api.galleryTagsBatch("owner-secret", items, listOf("旅行", "Family")))
+            val post = server.takeRequest()
+            assertEquals("POST", post.method)
+            assertEquals("/api/v1/media/batch/tags", post.path)
+            assertEquals("Bearer owner-secret", post.getHeader("Authorization"))
+            val data = Json.parseToJsonElement(post.body.readUtf8()) as JsonObject
+            assertEquals(listOf(7L, 8L), (data["node_ids"] as JsonArray).map {
+                it.jsonPrimitive.long
+            })
+            assertEquals(listOf("Family", "旅行"), (data["tags"] as JsonArray).map {
+                it.jsonPrimitive.content
+            })
+
+            server.enqueue(MockResponse().setBody(
+                """{"updated":1,"tags":["Family","旅行"]}"""))
+            assertEquals(ApiFailureReason.INVALID_RESPONSE, failure {
+                api.galleryTagsBatch("owner-secret", items, listOf("Family", "旅行"))
+            }.reason)
+            server.takeRequest()
+            server.enqueue(MockResponse().setBody(
+                """{"updated":2,"tags":["wrong"]}"""))
+            assertEquals(ApiFailureReason.INVALID_RESPONSE, failure {
+                api.galleryTagsBatch("owner-secret", items, listOf("Family", "旅行"))
+            }.reason)
+            server.takeRequest()
+            assertEquals(3, server.requestCount)
+            try {
+                api.galleryTagsBatch("owner-secret", items + items.first(), listOf("Family"))
+                fail("Duplicated media node accepted")
+            } catch (_: IllegalArgumentException) {}
+            assertEquals(3, server.requestCount)
+        } }
+    }
+
+    @Test fun galleryFavoriteBatchUsesOnePinnedOwnerPatchAndRejectsFalseAcknowledgement() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            val rows = listOf(
+                GalleryAsset(DriveNode(7, 1, "one.jpg", "file", 123, revision = 2),
+                    "image", hasThumbnail = true, favorite = false),
+                GalleryAsset(DriveNode(8, 1, "two.mp4", "file", 333, revision = 4),
+                    "video", hasThumbnail = true, favorite = false),
+            )
+            server.enqueue(MockResponse().setBody("""{"updated":2,"favorite":true}"""))
+            assertEquals(2, api.galleryFavoriteBatch("owner-secret", rows, true))
+            val req = server.takeRequest()
+            assertEquals("PATCH", req.method)
+            assertEquals("/api/v1/media/batch/favorite", req.path)
+            assertEquals("Bearer owner-secret", req.getHeader("Authorization"))
+            val body = Json.parseToJsonElement(req.body.readUtf8()) as JsonObject
+            assertEquals(listOf(7L, 8L),
+                (body["node_ids"] as JsonArray).map { it.jsonPrimitive.long })
+            assertEquals(JsonPrimitive(true), body["favorite"])
+            assertFalse(req.path!!.contains("owner-secret"))
+            server.enqueue(MockResponse().setBody("""{"updated":1,"favorite":true}"""))
+            assertEquals(ApiFailureReason.INVALID_RESPONSE,
+                failure { api.galleryFavoriteBatch("owner-secret", rows, true) }.reason)
+            server.takeRequest()
+            server.enqueue(MockResponse().setBody("""{"updated":2,"favorite":false}"""))
+            assertEquals(ApiFailureReason.INVALID_RESPONSE,
+                failure { api.galleryFavoriteBatch("owner-secret", rows, true) }.reason)
+            server.takeRequest()
+            assertEquals(3, server.requestCount) // never auto-replay a lost/invalid ACK
+            try {
+                api.galleryFavoriteBatch("owner-secret", rows + rows.first(), true)
+                fail("Duplicate Owner media identity accepted")
+            } catch (_: IllegalArgumentException) {}
+            assertEquals(3, server.requestCount)
+        } }
+    }
+
     @Test fun filesMediaItemVerifiesOwnerRevisionAndServerMediaType() = runBlocking {
         MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
             val file = DriveNode(27, 1, "family.jpg", "file", 5, revision = 4)
@@ -611,7 +698,8 @@ class XDriveApiTest {
             server.enqueue(MockResponse().setBody("""{
                 "items":[{"node":{"id":87,"parent_id":1,"name":"latest.jpg","type":"file",
                     "size":128,"revision":6},"metadata":{"media_kind":"image",
-                    "captured_at":"2026-10-25T12:00:00Z","has_thumbnail":true},"live_photo":true}],
+                    "captured_at":"2026-10-25T12:00:00Z","has_thumbnail":true},"live_photo":true,
+                    "favorite":true}],
                 "total_count":121,"offset":120,"limit":60
             }"""))
             val page = api.galleryPage("owner-secret", initialLatest = true)
@@ -620,6 +708,7 @@ class XDriveApiTest {
             assertEquals(87L, page.items.single().node.id)
             assertTrue(page.items.single().livePhoto)
             assertTrue(page.items.single().hasThumbnail)
+            assertEquals(true, page.items.single().favorite)
             val sent = server.takeRequest()
             assertEquals("GET", sent.method)
             assertEquals("Bearer owner-secret", sent.getHeader("Authorization"))

@@ -128,8 +128,9 @@ test('Desktop Live Photo still ticket follows the Owner-scoped native viewport c
     [preload, "ipcRenderer.invoke('agent:get-media-live-photo-still', nodeID, requestID)"],
     [types, "getMediaLivePhotoStill: (nodeID: number, requestID?: string)"],
     [explorer, "agent.getMediaLivePhotoStill(Number(item.id), requestID)"],
+    [explorer, "const agent = hostPort.media"],
     [gallery, "agent.getMediaLivePhotoStill(nodeID, requestID)"],
-    [explorer, "xDriveReleaseDiscardedDesktopPreviewURL(late.data"],
+    [explorer, "hostPort.releaseDiscardedPreviewURL(late.data"],
     [gallery, "xDriveReleaseDiscardedDesktopPreviewURL(late.data"],
   ]
   for (const [file, token] of checks) {

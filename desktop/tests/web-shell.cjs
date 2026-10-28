@@ -9,6 +9,7 @@ const webStyles = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'styles.css'
 const webFileExplorer = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'WebFileExplorer.tsx'), 'utf8')
 const desktopApp = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'App.tsx'), 'utf8')
 const sharedApp = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'XDriveApp.tsx'), 'utf8')
+const sharedHostOutlet = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx'), 'utf8')
 const sharedSidebar = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'SidebarNav.tsx'), 'utf8')
 const sharedWorkspaceSidebar = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'WorkspaceSidebar.tsx'), 'utf8')
 const sharedStorageSummary = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'SidebarStorageSummary.tsx'), 'utf8')
@@ -187,11 +188,15 @@ test('Web and Desktop shell composition lives in shared MUI', () => {
   assert.ok(sharedCloudStorage.includes('export function XDriveCloudStoragePage'), 'shared cloud storage workspace is missing')
   assert.ok(sharedCloudStorage.includes('title="云端存储"'), 'shared cloud storage workspace title is missing')
   assert.ok(webApp.includes('<XDriveCloudStoragePage source={cloudStorageSource} />'), 'Web must render shared cloud storage')
-  assert.ok(desktopApp.includes('<XDriveCloudStoragePage source={cloudStorageSource} />'), 'Desktop must render shared cloud storage')
+  assert.ok(desktopApp.includes('cloudStorage: cloudStorageSource') &&
+    sharedHostOutlet.includes('<XDriveCloudStoragePage'),
+    'Desktop must route real Cloud Storage through the common outlet')
   assert.ok(sharedLocalStorage.includes('export function XDriveLocalStoragePage'), 'shared local-storage presentation is missing')
   assert.ok(sharedLocalStorage.includes('title="浏览器存储"'), 'shared local-storage page must expose browser storage')
   assert.ok(sharedLocalStorage.includes('title="Desktop 存储"'), 'shared local-storage page must support Desktop storage')
-  assert.ok(desktopApp.includes('<XDriveLocalStoragePage source={localStorageSource} />'), 'Desktop must render shared local storage')
+  assert.ok(desktopApp.includes('localStorage: localStorageSource') &&
+    sharedHostOutlet.includes('<XDriveLocalStoragePage'),
+    'Desktop must route real Local Storage through the common outlet')
   assert.ok(webApp.includes('<XDriveLocalStoragePage source={localStorageSource} />'), 'Web must render shared local storage')
 
   assert.ok(sharedWorkspace.includes('XDriveWorkspaceSurface'), 'shared workspace surface is missing')

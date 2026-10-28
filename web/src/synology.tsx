@@ -41,15 +41,15 @@ function SynologyWorkspace({ appearance, onAppearanceChange }: {
   const [selected, setSelected] = useState<XDriveWorkspaceAppRoute>('overview')
 
   const navigate = (next: XDriveWorkspaceAppRoute) => {
-    // The canonical Host route gate must cover Home/Task action links as
-    // well as the sidebar. Rejected destinations never preempt a page.
+    // Apply the real canonical Server/Host role gate before page preemption.
+    // Home/Task links and sidebar alike must not bypass privileged routes.
     if (!xDriveWorkspaceNavigationAllowed(next, host.adminRoleVerified === true)) return
     if (next === selected) {
       refreshPage((value) => value + 1)
       return
     }
-    // Preempt obsolete transient requests BEFORE the new destination mounts.
-    // A parent layout effect alone is too late for child scheduler setup.
+    // Cancel only the previous page's disposable requests before this
+    // newly authenticated DSM destination mounts its own reader pools.
     xDriveEnterForegroundPage('synology:' + next)
     setSelected(next)
     refreshPage(0)
