@@ -1,0 +1,219 @@
+name: Android Signed Public Release
+run-name: Android signed ${{ inputs.version_name }} (code ${{ inputs.version_code }}) · ${{ github.sha }}
+
+# Only a deliberate master workflow_dispatch can publish a public APK.
+# Master push builds continue to upload private debug Artifacts only.
+on:
+  workflow_dispatch:
+    inputs:
+      version_code:
+        description: New Android versionCode, strictly greater than every public Android asset
+        required: true
+        type: string
+      version_name:
+        description: Corresponding release versionName, e.g. 0.1.4
+        required: true
+        type: string
+      confirm_public_release:
+        description: I approve publishing this fixed-key signed APK publicly
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: xdrive-android-signed-public-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  signed-public-release:
+    if: github.ref == 'refs/heads/master' && inputs.confirm_public_release
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    permissions:
+      contents: write
+    env:
+      VERSION_CODE: ${{ inputs.version_code }}
+      VERSION_NAME: ${{ inputs.version_name }}
+      EXPECTED_CERT_SHA256: ${{ vars.ANDROID_RELEASE_CERT_SHA256 }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout exact master source with no stored Git credentials
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Verify Android public release and signing contracts
+        run: |
+          set -euo pipefail
+          node --test android/scripts/update-asset.test.mjs android/scripts/signed-release-plan.test.mjs
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          if [[ ! "$EXPECTED_CERT_SHA256" =~ ^[[:xdigit:]]{64}$ ]]; then
+            echo "::error title=Android signing certificate::Set ANDROID_RELEASE_CERT_SHA256 to the trusted 64-character SHA-256 signing certificate digest." >&2
+            exit 1
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$RUNNER_TEMP/xdrive-public-releases.json"
+          node android/scripts/signed-release-plan.mjs \
+            "$VERSION_CODE" "$VERSION_NAME" "$GITHUB_SHA" \
+            "$RUNNER_TEMP/xdrive-public-releases.json" \
+            > "$RUNNER_TEMP/xdrive-android-release-plan.json"
+          tag="$(jq -r '.releaseTag' "$RUNNER_TEMP/xdrive-android-release-plan.json")"
+          existing_tag="$(git ls-remote --tags origin "refs/tags/$tag")" || {
+            echo "::error title=Android release tag::Cannot verify remote tag existence." >&2
+            exit 1
+          }
+          if [[ -n "$existing_tag" ]]; then
+            echo "::error title=Android release tag::Release tag already exists; increase versionCode." >&2
+            exit 1
+          fi
+          echo "Verified unsigned source and release identity; no public asset modified."
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+
+      - name: Install Android release build SDK
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+
+      - name: Build one release APK with ephemeral private-key material
+        shell: bash
+        env:
+          SIGNING_KEY_B64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_P12_B64 }}
+          SIGNING_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$SIGNING_KEY_B64" || -z "$SIGNING_PASSWORD" ]]; then
+            echo "::error title=Android signing credentials::Both protected Android signing secrets are required. No debug APK will be published." >&2
+            exit 1
+          fi
+          signing_dir="$(mktemp -d "$RUNNER_TEMP/xdrive-android-signing.XXXXXX")"
+          trap 'rm -rf "$signing_dir"' EXIT
+          printf '%s' "$SIGNING_KEY_B64" | base64 --decode > "$signing_dir/xdrive.p12"
+          chmod 600 "$signing_dir/xdrive.p12"
+          test -s "$signing_dir/xdrive.p12"
+          export ANDROID_KEYSTORE_PATH="$signing_dir/xdrive.p12"
+          export ANDROID_KEYSTORE_PASSWORD="$SIGNING_PASSWORD"
+          (
+            cd android
+            bash gradlew --no-daemon \
+              :core:test :app:testDebugUnitTest :app:lintRelease :app:assembleRelease \
+              "-PandroidVersionCode=$VERSION_CODE" \
+              "-PandroidVersionName=$VERSION_NAME"
+          )
+          unset ANDROID_KEYSTORE_PATH ANDROID_KEYSTORE_PASSWORD
+
+      - name: Verify fixed certificate and immutable release APK bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_apk=android/app/build/outputs/apk/release/app-release.apk
+          test -s "$source_apk"
+          report="$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$source_apk")"
+          signer_lines="$(printf '%s\n' "$report" | grep -E '^Signer #[0-9]+ certificate SHA-256 digest: [0-9a-fA-F]{64}$')" || {
+            echo "::error title=Android signature::Cannot validate the release signing certificate." >&2
+            exit 1
+          }
+          if [[ "$(printf '%s\n' "$signer_lines" | wc -l)" -ne 1 ]]; then
+            echo "::error title=Android signature::Exactly one trusted APK signer is required." >&2
+            exit 1
+          fi
+          actual_cert="$(printf '%s\n' "$signer_lines" | awk '{print $NF}' | tr '[:upper:]' '[:lower:]')"
+          expected_cert="$(printf '%s' "$EXPECTED_CERT_SHA256" | tr '[:upper:]' '[:lower:]')"
+          if [[ "$actual_cert" != "$expected_cert" ]]; then
+            echo "::error title=Android signing key mismatch::Refusing APK whose certificate differs from pinned owner certificate." >&2
+            exit 1
+          fi
+          badging="$("$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$source_apk")"
+          package_line="$(printf '%s\n' "$badging" | grep '^package: ' | head -n 1)"
+          expected_prefix="package: name='com.tfluid.xdrive' versionCode='$VERSION_CODE' versionName='$VERSION_NAME'"
+          if [[ "$package_line" != "$expected_prefix"* ]]; then
+            echo "::error title=Android identity::Package ID or version metadata differs from requested release." >&2
+            exit 1
+          fi
+          node android/scripts/update-asset.mjs \
+            android/app/build/outputs/apk/release/output-metadata.json dist/android-signed
+          apk_name="$(jq -r '.assetName' "$RUNNER_TEMP/xdrive-android-release-plan.json")"
+          release_tag="$(jq -r '.releaseTag' "$RUNNER_TEMP/xdrive-android-release-plan.json")"
+          release_apk="dist/android-signed/$apk_name"
+          test -s "$release_apk"
+          cmp "$source_apk" "$release_apk"
+          (
+            cd dist/android-signed
+            sha256sum "$apk_name" > SHA256SUMS.txt
+            sha256sum -c SHA256SUMS.txt
+          )
+          {
+            echo "xDrive Android release (fixed signing certificate)"
+            echo
+            echo "Version: $VERSION_NAME (code $VERSION_CODE)"
+            echo "Source: $GITHUB_SHA (master)"
+            echo "Certificate SHA-256: $actual_cert"
+            echo "APK: $apk_name"
+            echo "SHA256: $(sha256sum "$release_apk" | awk '{print $1}')"
+            echo "Source CI: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo
+            echo "This is not a Debug APK. Android still requires its own user-approved installation."
+          } > dist/android-signed/RELEASE_NOTES.txt
+          printf 'Verified trusted signer, package identity, version and exact APK bytes for %s\n' "$release_tag"
+
+      - name: Upload private-to-run evidence without key material
+        uses: actions/upload-artifact@v4
+        with:
+          name: xdrive-android-signed-${{ github.sha }}
+          path: |
+            dist/android-signed/*.apk
+            dist/android-signed/SHA256SUMS.txt
+            dist/android-signed/RELEASE_NOTES.txt
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+      - name: Publish public versioned signed APK (never clobber)
+        shell: bash
+        run: |
+          set -euo pipefail
+          plan="$RUNNER_TEMP/xdrive-android-release-plan.json"
+          release_tag="$(jq -r '.releaseTag' "$plan")"
+          apk_name="$(jq -r '.assetName' "$plan")"
+          # A concurrent user or workflow may have created the tag after
+          # preflight. Do not overwrite any existing Release or git ref.
+          if gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error title=Android release::Release already exists; refuse overwrite." >&2
+            exit 1
+          fi
+          existing_tag="$(git ls-remote --tags origin "refs/tags/$release_tag")" || exit 1
+          if [[ -n "$existing_tag" ]]; then
+            echo "::error title=Android release::Tag already exists; refuse overwrite." >&2
+            exit 1
+          fi
+          gh release create "$release_tag" \
+            "dist/android-signed/$apk_name" \
+            dist/android-signed/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "xDrive Android $VERSION_NAME (code $VERSION_CODE)" \
+            --notes-file dist/android-signed/RELEASE_NOTES.txt \
+            --prerelease
+          url="https://github.com/$GITHUB_REPOSITORY/releases/download/$release_tag/$apk_name"
+          {
+            echo "### Public fixed-signed Android release"
+            echo
+            echo "- [Direct APK download]($url)"
+            echo "- Version code: $VERSION_CODE"
+            echo "- Source commit: $GITHUB_SHA"
+            echo "- Certificate fingerprint: $EXPECTED_CERT_SHA256"
+            echo "- SHA-256 checksum: release SHA256SUMS.txt"
+          } >> "$GITHUB_STEP_SUMMARY"
