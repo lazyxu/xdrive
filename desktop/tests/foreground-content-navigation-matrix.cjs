@@ -151,6 +151,30 @@ test('failed same-page navigation resumes old content; nested and stale completi
   }
 })
 
+test('pending Memories/Cleanup index cannot keep a later accepted photo wall paused', () => {
+  bus.xDriveEnterForegroundPage(null)
+  bus.xDriveEnterForegroundPage('web:gallery')
+  const states = []
+  const stop = bus.xDriveObserveViewerForeground(value => states.push(value))
+  try {
+    const index = bus.xDriveBeginForegroundContentTransition(['gallery', 'map'])
+    assert.equal(bus.xDriveForegroundContentTransitionPending('gallery'), true)
+    assert.equal(states.at(-1), true)
+    // The index renderer can clear collectionTargetRef to null while its GET
+    // is still unresolved. The photo wall must take new latest-wins ownership.
+    const photo = bus.xDriveBeginForegroundContentTransition(['gallery', 'map'])
+    photo()
+    assert.equal(bus.xDriveForegroundContentTransitionPending('gallery'), false)
+    assert.equal(states.at(-1), false, 'new accepted Album A resumes without waiting for hung index')
+    index() // old promise finally arrives late
+    assert.equal(states.at(-1), false, 'old index completion cannot suspend current photo wall')
+    assert.equal(bus.xDriveForegroundContentTransitionPending('gallery'), false)
+  } finally {
+    stop()
+    bus.xDriveEnterForegroundPage(null)
+  }
+})
+
 test('Viewer leases retain stronger priority over successful folder navigation and Blob cache', async () => {
   bus.xDriveEnterForegroundPage(null)
   bus.xDriveEnterForegroundPage('web:gallery')
@@ -221,6 +245,10 @@ test('all same-type content entry points are wired to disposable-only preemption
     'returning to the accepted album must supersede an uncooperative pending album')
   assert.match(galleryCode, /pendingFirstContentKeyRef\.current = nextContentKey/,
     'each new Gallery target takes latest-wins content ownership')
+  assert.match(galleryCode, /xDriveForegroundContentTransitionPending\(\['gallery', 'map'\]\)/,
+    'a stuck Memories or Cleanup index cannot suppress a later accepted Gallery target')
+  assert.match(galleryCode, /const finishContentTransition = collectionTargetRef\.current \|\|/,
+    'index-to-index navigation must supersede an earlier pending index')
   assert.match(galleryCode, /xDriveBeginForegroundContentTransition\(\['gallery', 'map'\]\)/,
     'both map modes and Gallery share the content lease')
   assert.match(galleryCode, /kind:'baidu-cell'/, 'map cell range')
