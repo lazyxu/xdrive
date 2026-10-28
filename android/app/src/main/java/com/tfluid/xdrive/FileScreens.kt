@@ -902,10 +902,27 @@ internal fun DownloadToDeviceStatus(state: DriveState, controller: DriveControll
         Text("正在保存到设备：${formatSize(state.fileDownloadBytes)} / ${formatSize(state.fileDownloadTotal)}",
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.testTag("${tag}-download-progress"))
-        LinearProgressIndicator(
-            progress = { if (state.fileDownloadTotal == 0L) 1f else
-                (state.fileDownloadBytes.toDouble() / state.fileDownloadTotal).toFloat().coerceIn(0f, 1f) },
-            modifier = Modifier.fillMaxWidth())
+        // SAF destination may still fail during close/verification after
+        // writing the last byte; completion remains an authenticated result.
+        val fraction = nativePendingDownloadProgress(
+            state.fileDownloadBytes, state.fileDownloadTotal)
+        if (fraction == null) {
+            LinearProgressIndicator(
+                modifier = Modifier.fillMaxWidth()
+                    .testTag("${tag}-download-progress-bar"))
+        } else {
+            LinearProgressIndicator(
+                progress = { fraction },
+                modifier = Modifier.fillMaxWidth()
+                    .testTag("${tag}-download-progress-bar"))
+        }
+        if (nativeDownloadAwaitingFinalReceipt(state.fileDownloadActive,
+                state.fileDownloadBytes, state.fileDownloadTotal)) {
+            Text("文件字节已写入，等待设备确认保存…",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag("${tag}-download-awaiting-ack"))
+        }
         TextButton(onClick = controller::cancelFileDownload,
             modifier = Modifier.heightIn(min = 48.dp).testTag("${tag}-download-cancel")) {
             Text("取消下载")
