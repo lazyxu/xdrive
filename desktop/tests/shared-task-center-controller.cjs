@@ -275,8 +275,8 @@ test('Task Center badge includes owner background activity through shared summar
     'const badgeCount = activeLocalTaskCount + activeBackgroundCount',
   ]) assert.ok(controller.includes(token), 'shared active badge contract missing: ' + token)
 
-  assert.ok(webApi.includes('backgroundTaskActiveSummary()'), 'Web summary endpoint adapter missing')
-  assert.ok(web.includes('loadActiveSummary: () => api.backgroundTaskActiveSummary()'), 'Web summary port missing')
+  assert.ok(webApi.includes('backgroundTaskActiveSummary(signal?: AbortSignal)'), 'Web summary endpoint adapter missing')
+  assert.ok(web.includes('loadActiveSummary: (signal?: AbortSignal) => api.backgroundTaskActiveSummary(signal)'), 'Web summary port missing')
   assert.ok(agentIPC.includes('"background-task-summary"'), 'Agent summary capability missing')
   assert.ok(agentClient.includes('cloudBackgroundTaskActiveSummary()'), 'Desktop agent summary client missing')
   assert.ok(desktopPreload.includes('cloudBackgroundTaskActiveSummary:'), 'Desktop preload summary bridge missing')
