@@ -2736,8 +2736,10 @@ export class XDriveApi {
     return `${API_BASE}${ticket.url}`
   }
 
-  deviceBackups() {
-    return this.request<XDriveDeviceBackupOverview>('/api/v1/device-backups')
+  deviceBackups(signal?: AbortSignal) {
+    // Read-only owner-redacted overview may be abandoned on navigation.
+    // Device backup execution and mutations use distinct requests.
+    return this.request<XDriveDeviceBackupOverview>('/api/v1/device-backups', { signal })
   }
 
   // Same redacted endpoint and keyset contract as Desktop's Go Client.
