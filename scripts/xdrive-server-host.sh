@@ -1052,6 +1052,10 @@ backup_verify_cmd() {
       echo "xdrive-server: v2 snapshot contains symlink $required: $dir" >&2
       return 1
     fi
+    if [[ "$backup_version" == "1" && -L "$dir/$required" ]]; then
+      echo "xdrive-server: v1 snapshot contains symlink $required: $dir" >&2
+      return 1
+    fi
   done
   if [[ "$backup_version" == "2" ]]; then
     # Require the exact five committed v2 entries; sha256sum -c alone accepts
@@ -1061,10 +1065,18 @@ backup_verify_cmd() {
       cmp -s SHA256SUMS.txt <(sha256sum database.dump verify.json manifest.json objects.index legacy.tar)
     ) || { echo "xdrive-server: v2 checksum manifest mismatch: $dir" >&2; return 1; }
   else
+    # The v1 writer includes exactly three metadata files and, for a full
+    # backup, blobs.tar in this order. sha256sum -c alone accepts a checksum
+    # list omitting one or more entire backup members (a false green).
+    [[ ! -L "$dir/blobs.tar" ]] || {
+      echo "xdrive-server: v1 snapshot contains symlink blobs.tar: $dir" >&2; return 1;
+    }
+    local -a v1_checksum_files=(database.dump verify.json manifest.json)
+    [[ ! -f "$dir/blobs.tar" ]] || v1_checksum_files+=(blobs.tar)
     (
       cd "$dir" || exit 1
-      sha256sum -c SHA256SUMS.txt || exit 1
-    ) || return 1
+      cmp -s SHA256SUMS.txt <(sha256sum "${v1_checksum_files[@]}")
+    ) || { echo "xdrive-server: v1 checksum manifest mismatch: $dir" >&2; return 1; }
   fi
   if [[ "$backup_version" == "2" ]]; then
     [[ "$(basename "$(dirname "$dir")")" == "snapshots" ]] || {
