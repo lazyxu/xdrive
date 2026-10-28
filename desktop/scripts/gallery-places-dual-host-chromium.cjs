@@ -482,7 +482,8 @@ async function testIOSPhotoMapCompactChrome(browser,mode,scheme,port){
         actual.dockButtons.every(b=>b.width>=44&&b.height>=44)&&
         actual.hits.length>=3&&
         actual.hits.every(b=>b.width>=44&&b.height>=44)&&
-        actual.pins.length>0&&
+        actual.pins>0&&
+        actual.pinButtons.length===actual.pins&&
         actual.pinButtons.every(b=>b.width>=44&&b.height>=44)
       if(!touchGeometryOK) {
         // Sanitized CSS rectangles only; never log Owner GPS, Cell or media.

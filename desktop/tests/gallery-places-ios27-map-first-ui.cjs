@@ -140,5 +140,8 @@ test('real Chromium layout measures only painted map controls but still enforces
   assert.match(driver,/\.filter\(el=>el\.checkVisibility\(\)\)/)
   assert.match(driver,/actual\.hits\.every\(b=>b\.width>=44&&b\.height>=44\)/)
   assert.match(driver,/actual\.dock\.height<=76/)
+  assert.match(driver,/actual\.pins>0/)
+  assert.match(driver,/actual\.pinButtons\.length===actual\.pins/)
+  assert.doesNotMatch(driver,/actual\.pins\.length>0/)
   assert.match(driver,/actual\.pinButtons\.every\(b=>b\.width>=44&&b\.height>=44\)/)
 })
