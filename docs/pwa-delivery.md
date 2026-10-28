@@ -1,5 +1,23 @@
 # xDrive PWA 交付审查与强化路线图
 
+## 2026-10-28 · 最新 iOS PWA MVP 核查：Safari + 旋转地图合入后（权威）
+
+**源码基线：** `lazyxu/xdrive master@08086bf465220979eafcab742cdf841ab76b7657`。以下仅陈述已核实 GitHub 合入及受控代码/Chromium 结果；新 PR 以各自最新 HEAD/CI 为准。下方同日 #2917/#2925「待合入」与更早 #2895「未合入」属于**历史快照，已不代表当前事实**。源码、准确 HEAD CI、发布和实体 iPhone 验收仍是四个不同状态。
+
+| MVP 范围 | 已合入并可复核的结果 | 仍需完成的研发与验收 |
+| --- | --- | --- |
+| App Shell / 浏览优先级 | 安全 SW/公开离线页与 #2873/#2892/#2900 全页面和同类型目录/相册/地图导航前台抢占已合入；只取消旧页面可丢弃读取，不取消上传、下载、备份、同步等持久任务 | iOS Safari/Home Screen 后台、锁屏、OS 回收和实际触控验收仍 `NOT RUN`；受控 Owner/Abort/跨窗口回归继续保留 |
+| Safari 安装、升级、网络 | #2895/#2912/#2915/#2917/#2925 **均已合入**。受限 location/viewport、Service Worker updatefound/statechange/waiting getter、429/503 有界只读重试、公共静态资源诊断都采用 fail-closed；不强制 skipWaiting、reload 或重放私有写操作 | 真实 iPhone 图标启动、可信 HTTPS、深链接/版本升级与分享菜单仍无系统级证据；不把诊断 `NOT_VERIFIED` 写作设备 `PASS` |
+| iOS Files / 文件字节分享 | #2931 **已合入**：Safari 拒绝 `navigator.share/canShare` 时 Files/共享 ShareDialog 可安全渲染，保留单独点击与授权字节分享的既有 16 MiB 上限 | [#2938](https://github.com/lazyxu/xdrive/pull/2938) `navigator.platform/userAgent` 可选 getter 防护已提交，准确 HEAD CI/合入尚未完成；实际 iOS 文件选择、真实系统分享接收和大文件下载哈希仍 `NOT RUN` |
+| 相册地图 1:1 / 双 Host | #2908/#2910/**#2919 已合入**：同一 Owner React Parent、浮层照片控件、照片标记、Inline/独立 HTTPS Child 响应式尺寸变化后旧 Cell/投影撤销与新 Camera 授权；#2919 的真实双 Host、Gin 和 Viewer History 专项成功 | [#2930](https://github.com/lazyxu/xdrive/pull/2930) 旋转时抽屉展开/位置的仅在新 Owner Cell 授权后恢复，已修复旧 HEAD 的 5 项 Desktop 测试夹具/断言问题，最新 HEAD CI **待完成**；[地图剩余 #2210](https://github.com/lazyxu/xdrive/issues/2210) 的跨页面 History/弱网/Owner/实际 10k–100k 验证仍未收口 |
+| P1 真实混合媒体性能 | 100k 逻辑集合和部分 115k 物理 CAS + Chromium JPEG/H264/Live 源码与性能基线已存在，不能说从未做过 | [#2260](https://github.com/lazyxu/xdrive/issues/2260)：同 Runner/同物理样本 JPEG/HEIC/H264/Live Viewer→Back 全生命周期、CPU/RSS/Go Context.Done 与 BEFORE/AFTER 配对归因未建立；`causalConclusion=NOT_ESTABLISHED` |
+| 在线 MVP 以外 | 有界离线目录/相册元数据 opt-in，不把它冒充完整离线原件 | 完整离线编辑、冲突合并、Web Push、iOS 锁屏后台周期上传及分享接收不是当前在线 MVP 阻塞项 |
+
+**下一步源码优先级：** ① #2930/#2938 只基于**最新 HEAD**的受影响测试和 GitHub 必需检查收口；② #2210 双 Host 地图↔照片墙↔Viewer↔返回/撤权/弱网组合；③ #2260 可归因的真实混合媒体配对试验。不要重做已合入 SW、页面抢占或照片 Pin。任何可访问的受控 CI/Owner/ACL/Origin/CSP/Abort/私有响应不缓存测试不可跳过。
+
+**已决定的验收边界：** 不可访问的真实生产环境/物理设备验收标记 **「跳过（未验收）」**，不索取生产账号、证书私钥或 HAR，且不阻塞独立源码开发/合法 PR 合并；S5 七平台真实设备矩阵仍为 `NOT RUN`，不准报告为 `PASS`。
+
+---
 ## 2026-10-28 · P0 同类型导航合入后的当前 MVP 权威状态
 
 **最新核查基线：** `lazyxu/xdrive master@993bedab8b60`（已包含 #2900/#2908/#2910/#2912/#2915）；本节比下方同日早期“#2895 待合入”“旧 #2900 Draft”的记载更新。下方历史记录保留作为开发/性能证据，不能反向覆盖本节。**源码合入、准确 HEAD CI、真机验收是不同状态。**
