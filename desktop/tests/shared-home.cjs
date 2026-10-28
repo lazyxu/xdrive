@@ -70,7 +70,8 @@ test('Desktop-only local disk and availability remain outside the shared Home co
   assert.ok(desktopHome.includes('xDriveFileExplorerAvailabilityFromSnapshot'))
   assert.equal(webHome.includes('getLocalDiskSpace'), false)
   assert.equal(webHome.includes('getFileAvailabilityBatch'), false)
-  assert.ok(desktopHome.includes('port.getFileAvailabilityBatch(paths)'))
+  assert.ok(desktopHome.includes('port.getFileAvailabilityBatch(paths, controller.signal)'),
+    'shared Home availability reads must be released on Owner/page change')
   assert.equal(desktopHome.includes('window.xdriveDesktop'), false)
 })
 
