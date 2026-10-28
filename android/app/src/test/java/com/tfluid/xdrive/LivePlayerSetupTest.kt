@@ -12,7 +12,7 @@ class LivePlayerSetupTest {
 
     @Test fun successfulPrepareRetainsLivePlayerForNormalDisposableRelease() {
         val player = DummyPlayer()
-        val result = createPreparedLiveResource(
+        val result = createPreparedMediaResource(
             build = { player },
             prepare = { it.prepared = true },
             release = { it.releases++ },
@@ -24,7 +24,7 @@ class LivePlayerSetupTest {
 
     @Test fun mediaSourceOrPrepareFailureReleasesAllocatedPlayerExactlyOnce() {
         val player = DummyPlayer()
-        val result = createPreparedLiveResource(
+        val result = createPreparedMediaResource(
             build = { player },
             prepare = { throw IllegalStateException("synthetic codec error") },
             release = { it.releases++ },
@@ -36,7 +36,7 @@ class LivePlayerSetupTest {
     @Test fun buildFailureHasNoPlayerToReleaseAndReturnsUnavailable() {
         var attempts = 0
         var releases = 0
-        val result = createPreparedLiveResource(
+        val result = createPreparedMediaResource(
             build = {
                 attempts++
                 throw IllegalStateException("synthetic unavailable decoder")
@@ -51,7 +51,7 @@ class LivePlayerSetupTest {
 
     @Test fun vendorReleaseFailureCannotMaskOriginalSetupFailureOrCrashComposition() {
         val player = DummyPlayer()
-        val result = createPreparedLiveResource(
+        val result = createPreparedMediaResource(
             build = { player },
             prepare = { throw IllegalArgumentException("synthetic bad source") },
             release = { it.releases++; throw IllegalStateException("synthetic release failure") },
@@ -63,13 +63,13 @@ class LivePlayerSetupTest {
     @Test fun aFreshVerifiedHoldCanTryAgainAfterPreviousLeaseFailed() {
         val badPlayer = DummyPlayer()
         val goodPlayer = DummyPlayer()
-        assertNull(createPreparedLiveResource(
+        assertNull(createPreparedMediaResource(
             build = { badPlayer },
             prepare = { throw IllegalStateException("failed") },
             release = { it.releases++ },
         ))
         assertEquals(1, badPlayer.releases)
-        assertSame(goodPlayer, createPreparedLiveResource(
+        assertSame(goodPlayer, createPreparedMediaResource(
             build = { goodPlayer },
             prepare = { it.prepared = true },
             release = { it.releases++ },
