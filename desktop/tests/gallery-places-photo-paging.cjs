@@ -88,3 +88,35 @@ test('shared Owner Parent alone paginates, fences cancellations and retains the 
   assert.doesNotMatch(dialog,/data-xdrive-places-photo-collection-strip/)
   assert.doesNotMatch(surface,/fetch\s*\(\s*['"]https?:/)
 })
+
+test('Viewer return saves only a bounded page count and reauthorizes after return', () => {
+  const details=esbuild.buildSync({
+    entryPoints: [path.join(root,'ui/shared/src/media-gallery-places-photo-drawer.ts')],
+    bundle:true,format:'cjs',platform:'node',target:'node20',
+    write:false,logLevel:'silent',
+  })
+  const instance={exports:{}}
+  new Function('module','exports','require',details.outputFiles[0].text)(
+    instance,instance.exports,require)
+  const h=instance.exports
+  const scope={albumKey:'',filters:{sort_by:'captured',sort_dir:'desc'}}
+  const view={expanded:true,scrollTop:1220,scrollLeft:0,loadedCount:142}
+  assert.equal(h.XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT,480)
+  assert.equal(h.xDriveRememberPlacesDrawerViewerReturn(
+    'paging-owner',selection(),scope,1000,view),true)
+  view.scrollTop=1
+  const restored=h.xDriveTakePlacesDrawerViewerReturn('paging-owner',1001)
+  assert.equal(restored?.presentation.scrollTop,1220)
+  assert.equal(restored?.presentation.loadedCount,142)
+  assert.equal(h.xDriveTakePlacesDrawerViewerReturn('paging-owner',1002),undefined)
+  for(const value of [0,-1,481,1.5,NaN,Infinity,'48']) {
+    const invalid={expanded:true,scrollTop:1220,scrollLeft:0,loadedCount:value}
+    assert.equal(h.xDriveRememberPlacesDrawerViewerReturn(
+      'paging-owner',selection(),scope,1003,invalid),false)
+  }
+  assert.equal(h.xDriveTakePlacesDrawerViewerReturn('paging-owner',1004),undefined)
+  const sheet=read('ui/shared/src/mui/MediaGalleryPlacesPhotoDrawer.tsx')
+  assert.ok(sheet.includes('const target=Math.min(initialPresentation?.loadedCount ?? 0,total)'))
+  assert.ok(sheet.includes('(initialPresentation.loadedCount ?? 0)<=items.length'))
+  assert.ok(sheet.includes('loadedCount:Math.min(XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT,items.length)'))
+})

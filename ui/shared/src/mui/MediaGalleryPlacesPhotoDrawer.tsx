@@ -1,10 +1,11 @@
-import { useLayoutEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 import { Box, Button, CircularProgress, Dialog, IconButton, Stack, Typography } from '@mui/material'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import ExpandLessRoundedIcon from '@mui/icons-material/ExpandLessRounded'
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
 import PhotoLibraryOutlinedIcon from '@mui/icons-material/PhotoLibraryOutlined'
 import type { MediaItem } from '../models'
+import { XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT } from '../media-gallery-places-photo-drawer'
 import type { XDrivePlacesDrawerPresentation } from '../media-gallery-places-photo-drawer'
 import type { MediaThumbnailLoader } from './MediaGallery'
 import { XDriveMediaGalleryCoverThumbnail } from './MediaGalleryCoverThumbnail'
@@ -50,17 +51,31 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
     if (phase !== 'ready') { appliedReturn.current = false; return }
     const node = listRef.current
     if (!node || appliedReturn.current) return
+    // Wait until the SAME fresh Owner Cell has reauthorized the previously
+    // displayed prefix. Applying a 142-photo scroll to a 48-photo grid would
+    // silently clamp it and lose the Viewer return anchor.
+    const target=Math.min(initialPresentation?.loadedCount ?? 0,total)
+    if (items.length < target && !pageError) return
     appliedReturn.current = true
     if (initialPresentation) {
       node.scrollTop = initialPresentation.scrollTop
       node.scrollLeft = initialPresentation.scrollLeft
     }
-  }, [phase, expanded, initialPresentation])
+  }, [phase, expanded, initialPresentation, items.length, total, pageError])
+  useEffect(() => {
+    if (phase !== 'ready' || !initialPresentation || loadingMore || pageError ||
+        items.length>=total ||
+        (initialPresentation.loadedCount ?? 0)<=items.length) return
+    // User previously visited these pages. Only restore their bounded count
+    // through NEW authenticated /cell-items, never reuse old media bytes.
+    onLoadMore()
+  }, [phase, initialPresentation, loadingMore, pageError, items.length, total, onLoadMore])
   const position = (): XDrivePlacesDrawerPresentation => {
     const bounded = (n: number) => Number.isFinite(n)
       ? Math.max(0, Math.min(10_000, Math.floor(n))) : 0
     return {expanded, scrollTop: bounded(listRef.current?.scrollTop ?? 0),
-      scrollLeft: bounded(listRef.current?.scrollLeft ?? 0)}
+      scrollLeft: bounded(listRef.current?.scrollLeft ?? 0),
+      loadedCount:Math.min(XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT,items.length)}
   }
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="md" disableScrollLock
