@@ -27,6 +27,7 @@ import com.tfluid.xdrive.core.DriveNode
 
 /** A root Files selection consumes Android Back before the Activity can exit. */
 internal fun shouldHandleFilesBack(state: DriveState, editOpen: Boolean, batchConfirmOpen: Boolean): Boolean =
+    state.hasActiveNativeTransfer() ||
     state.destinationKind != null || batchConfirmOpen || editOpen || state.selected != null ||
         state.filesPdfViewer != null || state.filesAudioViewer != null ||
         (state.screen == Screen.FILES &&
@@ -380,16 +381,19 @@ internal fun AccountMenu(state: DriveState, controller: DriveController, checkUp
             if (state.screen == Screen.FILES) DropdownMenuItem(
                 text = { Text("照片") },
                 modifier = Modifier.testTag("switch-to-gallery"),
-                enabled = !state.loading && !state.fileUploadActive && !state.fileDownloadActive,
+                enabled = state.canNavigateFiles(),
                 onClick = { expanded = false; controller.openGallery() })
             if (state.screen == Screen.FILES) DropdownMenuItem(
                 text = { Text("回收站") },
                 modifier = Modifier.testTag("open-trash"),
-                enabled = !state.loading && !state.fileUploadActive && !state.fileDownloadActive,
+                enabled = state.canNavigateFiles(),
                 onClick = { expanded = false; controller.openTrash() })
             if (state.screen == Screen.GALLERY) DropdownMenuItem(
                 text = { Text("文件") },
                 modifier = Modifier.testTag("switch-to-files"),
+                enabled = !state.hasActiveNativeTransfer() &&
+                    !state.galleryMetadataWriteAttempted &&
+                    !state.galleryAlbumCreateAttempted && !state.galleryAlbumEditAttempted,
                 onClick = { expanded = false; controller.openFilesApp() })
             if (fileView != null) {
                 if (onUpload != null) DropdownMenuItem(
