@@ -31,12 +31,12 @@ class AuthToggleUiTest {
 
     @Test fun tappingKeepLoginLabelTogglesOneAccessibleActionAndForwardsChoice() {
         showForm()
-        compose.onNodeWithTag("keep-login-row")
+        compose.onNodeWithTag("keep-login")
             .performScrollTo().assertIsEnabled().assertIsOn()
         // A label tap must be equivalent to tapping the visual checkbox,
         // rather than leaving a separate inert text target for TalkBack.
         compose.onNodeWithText("保持登录").performScrollTo().performClick()
-        compose.onNodeWithTag("keep-login-row").assertIsOff()
+        compose.onNodeWithTag("keep-login").assertIsOff()
         compose.onNodeWithTag("server").performTextInput("https://drive.example")
         compose.onNodeWithTag("username").performTextInput("owner")
         compose.onNodeWithTag("password").performTextInput("fixture-only")
@@ -49,14 +49,14 @@ class AuthToggleUiTest {
     @Test fun mixedCaseHttpCannotOfferCredentialPersistence() {
         formState = DriveState(server = "HTTP://192.168.1.2")
         showForm()
-        compose.onNodeWithTag("keep-login-row")
+        compose.onNodeWithTag("keep-login")
             .performScrollTo().assertIsOff().assertIsNotEnabled()
         compose.onNodeWithText("明文 HTTP 连接不能保持登录，请尽量使用 HTTPS。")
             .performScrollTo().assertIsDisplayed()
-        compose.onNodeWithTag("connection-advanced").performClick()
-        compose.onNodeWithTag("allow-http-row")
+        compose.onNodeWithTag("connection-advanced").performScrollTo().assertIsDisplayed().performClick()
+        compose.onNodeWithTag("allow-http")
             .performScrollTo().assertIsOff().assertIsEnabled().performClick()
-        compose.onNodeWithTag("allow-http-row").assertIsOn()
+        compose.onNodeWithTag("allow-http").assertIsOn()
         compose.onNodeWithTag("username").performTextInput("owner")
         compose.onNodeWithTag("password").performTextInput("fixture-only")
         compose.onNodeWithTag("auth-submit").performScrollTo().performClick()
@@ -68,15 +68,15 @@ class AuthToggleUiTest {
     @Test fun loginInFlightDisablesBothAuthToggles() {
         formState = DriveState(server = "https://drive.example")
         showForm()
-        compose.onNodeWithTag("connection-advanced").performClick()
-        compose.onNodeWithTag("keep-login-row").performScrollTo().assertIsEnabled()
-        compose.onNodeWithTag("allow-http-row").performScrollTo().assertIsEnabled()
+        compose.onNodeWithTag("connection-advanced").performScrollTo().assertIsDisplayed().performClick()
+        compose.onNodeWithTag("keep-login").performScrollTo().assertIsEnabled()
+        compose.onNodeWithTag("allow-http").performScrollTo().assertIsEnabled()
         compose.runOnIdle { formState = formState.copy(loading = true) }
-        compose.onNodeWithTag("keep-login-row").assertIsNotEnabled()
-        compose.onNodeWithTag("allow-http-row").assertIsNotEnabled()
+        compose.onNodeWithTag("keep-login").assertIsNotEnabled()
+        compose.onNodeWithTag("allow-http").assertIsNotEnabled()
         compose.onNodeWithTag("connection-advanced").assertIsNotEnabled()
         compose.runOnIdle { formState = formState.copy(loading = false) }
-        compose.onNodeWithTag("keep-login-row").assertIsEnabled()
-        compose.onNodeWithTag("allow-http-row").assertIsEnabled()
+        compose.onNodeWithTag("keep-login").assertIsEnabled()
+        compose.onNodeWithTag("allow-http").assertIsEnabled()
     }
 }
