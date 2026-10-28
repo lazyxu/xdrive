@@ -1,4 +1,4 @@
-import { xDriveViewerForegroundActive, xDriveObserveViewerForeground, xDriveBeginForegroundContentTransition } from './ViewerForegroundPriority'
+import { xDriveViewerForegroundActive, xDriveObserveViewerForeground, xDriveBeginForegroundContentTransition, xDriveForegroundContentTransitionPending } from './ViewerForegroundPriority'
 import { xDriveMediaGallerySelectionScopeKey } from '../media-gallery-selection-scope'
 import { xDrivePrototypeTrustedSingleton, xDrivePrototypeCanonicalPlaceID, xDrivePrototypeSingletonScopeValid } from '../media-gallery-baidu-prototype-singleton'
 import {
@@ -1236,10 +1236,16 @@ export function XDriveMediaGalleryPage({
     // underlying adapter ignores abort. A matching accepted target alone is
     // not enough to distinguish this return from an ordinary refresh.
     const pendingContentKey = pendingFirstContentKeyRef.current
-    const needsContentPreemption = previousContent !== null && (
-      mediaGalleryContentKey(previousContent) !== nextContentKey ||
-      (pendingContentKey !== null && pendingContentKey !== nextContentKey)
-    )
+    const needsContentPreemption = (
+      previousContent !== null && (
+        mediaGalleryContentKey(previousContent) !== nextContentKey ||
+        (pendingContentKey !== null && pendingContentKey !== nextContentKey)
+      )
+    ) || xDriveForegroundContentTransitionPending(['gallery', 'map'])
+    // If a previous Memories/Cleanup index is still pending, it may have
+    // cleared collectionTargetRef to null without settling its transport.
+    // The incoming photo Range must supersede that lease, even on return to
+    // the exact same album; otherwise the old index can hold thumbnails paused.
     pendingFirstContentKeyRef.current = nextContentKey
     const finishContentTransition = needsContentPreemption
       ? xDriveBeginForegroundContentTransition(['gallery', 'map'])
@@ -1441,7 +1447,8 @@ export function XDriveMediaGalleryPage({
     }
     const request = ++requestID.current
     firstContentRangeAbort.current?.abort()
-    const finishContentTransition = collectionTargetRef.current
+    const finishContentTransition = collectionTargetRef.current ||
+      xDriveForegroundContentTransitionPending(['gallery', 'map'])
       ? xDriveBeginForegroundContentTransition(['gallery', 'map'])
       : () => undefined
     const commitIndex = () => {
@@ -1606,7 +1613,8 @@ export function XDriveMediaGalleryPage({
     }
     const request = ++requestID.current
     firstContentRangeAbort.current?.abort()
-    const finishContentTransition = collectionTargetRef.current
+    const finishContentTransition = collectionTargetRef.current ||
+      xDriveForegroundContentTransitionPending(['gallery', 'map'])
       ? xDriveBeginForegroundContentTransition(['gallery', 'map'])
       : () => undefined
     cleanupMoreInFlightRef.current = false
