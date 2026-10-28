@@ -207,7 +207,9 @@ test('Web and Desktop shell composition lives in shared MUI', () => {
   assert.ok(desktopApp.includes('<XDriveApp') && sharedApp.includes('<XDriveWorkspaceShell'), 'Desktop must consume the shared app shell')
   assert.ok((webApp.match(/<XDriveWorkspaceContent\b/g) || []).length >= 2, 'Web should use shared workspace content for authenticated shells')
   const routeContent = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'XDriveAppRouteContent.tsx'), 'utf8')
-  assert.ok(desktopApp.includes('<XDriveAppRouteContent') &&
+  assert.ok(desktopApp.includes('<XDriveApp') &&
+    !desktopApp.includes('<XDriveAppRouteContent') &&
+    sharedApp.includes('<XDriveAppRouteContent') &&
     routeContent.includes('<XDriveWorkspaceContent') &&
     routeContent.includes('presentation={presentation}'),
     'Desktop must use the shared workspace content through the canonical route frame')
@@ -312,7 +314,9 @@ test('shared workspace content owns page spacing and Files full-bleed behavior',
   assert.ok(sharedWorkspaceRoute.includes('export function xDriveWorkspacePresentation'), 'shared route model must own workspace presentation')
   assert.ok(webApp.includes('presentation={xDriveWorkspacePresentation(appView)}'), 'Web workspace must use shared route presentation')
   const routeFrame = fs.readFileSync(path.join(repoRoot, 'ui/shared/src/mui/XDriveAppRouteContent.tsx'), 'utf8')
-  assert.ok(desktopApp.includes('<XDriveAppRouteContent host={workspaceHost} view={view}>') &&
+  assert.ok(desktopApp.includes('<XDriveApp') &&
+    !desktopApp.includes('<XDriveAppRouteContent') &&
+    sharedApp.includes('<XDriveAppRouteContent') &&
     routeFrame.includes('const presentation = xDriveWorkspacePresentation(view)') &&
     routeFrame.includes('presentation={presentation}'),
     'Desktop must use shared route presentation through the canonical route frame')
