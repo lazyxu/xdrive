@@ -488,6 +488,7 @@ class DriveController(
                 // A valid refreshed session survives a later transient directory read error.
                 // Let request() report it without turning a network outage into logout.
                 if (!restored.mustChangePassword) {
+                    refreshTransferRecoveryNotices()
                     try { loadWithin(restoredApi, emptyList(), 0, ticket) }
                     catch (failure: Exception) {
                         if (failure is ApiException && failure.statusCode == 401) throw failure
@@ -559,7 +560,10 @@ class DriveController(
                 )
                 persistRefreshSession()
                 if (oldApi !== candidate) (oldApi as? Closeable)?.close()
-                if (!result.mustChangePassword) loadWithin(candidate, emptyList(), 0, ticket)
+                if (!result.mustChangePassword) {
+                    refreshTransferRecoveryNotices()
+                    loadWithin(candidate, emptyList(), 0, ticket)
+                }
             } finally {
                 if (api !== candidate) (candidate as? Closeable)?.close()
             }
@@ -592,7 +596,10 @@ class DriveController(
                 username = result.username,
             )
             persistRefreshSession()
-            if (!result.mustChangePassword) loadWithin(service, emptyList(), 0, it)
+            if (!result.mustChangePassword) {
+                refreshTransferRecoveryNotices()
+                loadWithin(service, emptyList(), 0, it)
+            }
         }
     }
 
@@ -611,7 +618,10 @@ class DriveController(
             session = result
             persistRefreshSession()
             mutableState.value = state.value.copy(screen = if (result.mustChangePassword) Screen.PASSWORD else Screen.FILES)
-            if (!result.mustChangePassword) loadWithin(service, emptyList(), 0, ticket)
+            if (!result.mustChangePassword) {
+                refreshTransferRecoveryNotices()
+                loadWithin(service, emptyList(), 0, ticket)
+            }
         }
     }
 
