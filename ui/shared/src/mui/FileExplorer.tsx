@@ -1061,7 +1061,8 @@ export function XDriveFileExplorer({
       (onMoveItemsTo && !unavailableActions?.moveTo) ||
       (onRenameItem && !unavailableActions?.rename) ||
       (onPaste && !unavailableActions?.paste) ||
-      (onDeleteItems && !unavailableActions?.delete)),
+      (onDeleteItems && !unavailableActions?.delete) ||
+      (onManageTags && !unavailableActions?.manageTags)),
     delete: Boolean(onDeleteItems && !unavailableActions?.delete),
   })
   const [editingPath, setEditingPath] = useState(false)
@@ -1106,7 +1107,7 @@ export function XDriveFileExplorer({
   const commandBarOverflowDisabledReasons = {
     undo: canUndo ? null : '当前没有可用的撤销操作',
     redo: canRedo ? null : '当前没有可用的重做操作',
-    paste: canPaste ? null : '当前目录暂不能粘贴，请检查剪贴板与目标目录',
+    paste: unavailableActions?.paste ?? (canPaste ? null : '当前目录暂不能粘贴，请检查剪贴板与目标目录'),
     refresh: loading ? '列表正在读取，暂不能刷新' : null,
   }
   const [touchSelectionMode, setTouchSelectionMode] = useState(false)
@@ -1728,7 +1729,7 @@ export function XDriveFileExplorer({
   if (onMoveItemsTo) supportedSelectionActions.push('move-to')
   if (accountCapabilities.download && onDownloadItems) supportedSelectionActions.push('download')
   if (accountCapabilities.delete && onDeleteItems) supportedSelectionActions.push('delete')
-  if (onManageTags) supportedSelectionActions.push('manage-tags')
+  if (onManageTags && !unavailableActions?.manageTags) supportedSelectionActions.push('manage-tags')
   const selectionDisabledReasons = selectedCount > 0 ? [...new Set(
     supportedSelectionActions
       .map((action) => selectionActionDisabledReason(action))
@@ -5843,7 +5844,7 @@ export function XDriveFileExplorer({
           {(onPaste || unavailableActions?.paste) ? (
             <XDriveFileExplorerCommandButton
               startIcon={<ContentPasteRoundedIcon />}
-              title={fileExplorerShortcutTitle('粘贴', 'paste', keyboardProfile)}
+              title={unavailableActions?.paste || fileExplorerShortcutTitle('粘贴', 'paste', keyboardProfile)}
               disabled={!canPaste || !onPaste || Boolean(unavailableActions?.paste)}
               onClick={() => { if (!unavailableActions?.paste) onPaste?.() }}
             >
