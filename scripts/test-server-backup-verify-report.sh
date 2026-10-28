@@ -34,8 +34,8 @@ PY
 if grep -Fq "$TMP" "$TMP/v1-bad.json"; then
   echo 'private Host path was sent to JSON stdout' >&2; exit 1
 fi
-# v1 integrity must fail closed on incomplete SHA256SUMS, even when
-# sha256sum -c would accept every remaining entry.
+# v1 Host checksum verification must reject omitted, added and symlinked
+# members, including when sha256sum -c would accept the remaining entries.
 printf 'db-only' > "$v1/database.dump"
 (cd "$v1"; sha256sum database.dump verify.json manifest.json > SHA256SUMS.txt)
 cp "$v1/SHA256SUMS.txt" "$TMP/v1-complete.sum"
@@ -98,7 +98,7 @@ if bash "$MANAGER" backup verify --json "$v2" unexpected > "$TMP/extra.json" 2>/
 fi
 echo 'Host JSON backup verify: checksum, CAS stats, failure and privacy passed'
  "$TMP/v1-complete.sum" > "$v1/SHA256SUMS.txt"
-if bash "$MANAGER" backup verify --json "$v1" >"$TMP/v1-omitted.json" 2>"$TMP/v1-omitted.log"; then
+if bash "$MANAGER" backup verify --json "$v1" > "$TMP/v1-omitted.json" 2> "$TMP/v1-omitted.log"; then
   echo 'v1 verify accepted omitted database checksum' >&2; exit 1
 fi
 grep -Fq 'v1 checksum manifest mismatch' "$TMP/v1-omitted.log"
@@ -110,18 +110,16 @@ PY
 cp "$TMP/v1-complete.sum" "$v1/SHA256SUMS.txt"
 printf 'unexpected' > "$v1/extra.txt"
 (cd "$v1"; sha256sum extra.txt >> SHA256SUMS.txt)
-if bash "$MANAGER" backup verify "$v1" >"$TMP/v1-extra.log" 2>&1; then
+if bash "$MANAGER" backup verify "$v1" > "$TMP/v1-extra.log" 2>&1; then
   echo 'v1 verify accepted extra checksum member' >&2; exit 1
 fi
 grep -Fq 'v1 checksum manifest mismatch' "$TMP/v1-extra.log"
 rm -f "$v1/extra.txt"
 cp "$TMP/v1-complete.sum" "$v1/SHA256SUMS.txt"
 
-# Symlinked metadata (even with matching content) cannot constitute a
-# trustworthy Host-verified backup snapshot.
 mv "$v1/database.dump" "$v1/database.original"
 ln -s "$v1/database.original" "$v1/database.dump"
-if bash "$MANAGER" backup verify "$v1" >"$TMP/v1-symlink.log" 2>&1; then
+if bash "$MANAGER" backup verify "$v1" > "$TMP/v1-symlink.log" 2>&1; then
   echo 'v1 verify accepted symlinked database.dump' >&2; exit 1
 fi
 grep -Fq 'v1 snapshot contains symlink database.dump' "$TMP/v1-symlink.log"
