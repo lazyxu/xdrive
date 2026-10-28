@@ -168,3 +168,55 @@ test('Web route-directory same numeric id must be resolved again after account l
 
   if (typeof cleanupB === 'function') cleanupB()
 })
+
+test('denied Safari AbortSignal listener fails closed without crashing Files deep links or leaking GETs', async () => {
+  const { filename, callback } = extractRouteDirectoryEffect()
+  for (const failure of ['add', 'remove', 'abort-during-admission']) {
+    const calls = [], navigations = [], errors = []
+    const routedDirectoryRef = { current: null }
+    const navigationSignal = {
+      aborted: false,
+      addEventListener(kind, listener) {
+        assert.equal(kind, 'abort')
+        if (failure === 'add') throw Error('WebKit denied addEventListener')
+        if (failure === 'abort-during-admission') this.aborted = true
+      },
+      removeEventListener(kind) {
+        assert.equal(kind, 'abort')
+        if (failure === 'remove') throw Error('WebKit denied removeEventListener')
+      },
+    }
+    const effect = compileEffect(filename, callback, {
+      initialDirectoryID: 30,
+      current: { id: 10 },
+      navigationSessionStorageKey: 'restricted-webkit-' + failure,
+      routedDirectoryRef,
+      internalDirectoryRouteRef: { current: null },
+      api: { node: async (id, signal) => {
+        calls.push({ id, signal })
+        return { id, name: 'Authorized folder', type: 'dir', parent_id: null }
+      } },
+      beginNavigationIntent: () => 1,
+      isNavigationIntentCurrent: requestID => requestID === 1,
+      navigationReadSignalForIntent: () => navigationSignal,
+      xDriveResolveRoutedDirectoryAncestors,
+      navigateTo: async (crumbs) => { navigations.push(crumbs); return true },
+      onError: error => { errors.push(error) },
+    })
+    let cleanup
+    assert.doesNotThrow(() => { cleanup = effect() },
+      'optional WebKit listener admission cannot throw during React effect')
+    await flushAsync()
+    if (failure === 'remove') {
+      assert.equal(calls.length, 1, 'admitted navigation still resolves real Owner Node')
+      assert.equal(navigations.length, 1)
+    } else {
+      assert.equal(calls.length, 0, 'unobservable preemption cannot start a private Node GET')
+      assert.equal(navigations.length, 0)
+    }
+    assert.deepEqual(errors, [], 'optional API denial must not become a misleading Owner error')
+    assert.doesNotThrow(() => cleanup?.(), 'Safari-denied listener cleanup must not crash unmount')
+    if (failure !== 'remove') assert.equal(routedDirectoryRef.current, null,
+      'denied or immediately canceled route can safely retry with a future intent')
+  }
+})

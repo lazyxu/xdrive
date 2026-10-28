@@ -410,10 +410,25 @@ export default function WebFileExplorer({
     const ancestorLookup = new AbortController()
     // A new Files intent can win before this effect rerenders; retire its
     // previous Node GET immediately, not only during eventual React cleanup.
-    const navigationSignal = navigationReadSignalForIntent(navigationIntentID)
     const abortForNewNavigation = () => ancestorLookup.abort()
-    if (!navigationSignal || navigationSignal.aborted) ancestorLookup.abort()
-    else navigationSignal.addEventListener('abort', abortForNewNavigation, { once: true })
+    let navigationSignal: AbortSignal | null = null
+    let navigationListenerAttached = false
+    try {
+      navigationSignal = navigationReadSignalForIntent(navigationIntentID)
+      if (!navigationSignal || navigationSignal.aborted) ancestorLookup.abort()
+      else {
+        navigationSignal.addEventListener('abort', abortForNewNavigation, { once: true })
+        navigationListenerAttached = true
+        // The successor might cancel during listener admission. Never start
+        // the first private GET with an already-obsolete navigation identity.
+        if (navigationSignal.aborted) ancestorLookup.abort()
+      }
+    } catch {
+      // Restricted Safari/WebKit may deny optional AbortSignal listeners.
+      // Without guaranteed immediate preemption, fail closed before private
+      // Node GETs rather than let an obsolete request consume a connection.
+      ancestorLookup.abort()
+    }
     void (async () => {
       const chain: Crumb[] | null = await xDriveResolveRoutedDirectoryAncestors(
         initialDirectoryID,
@@ -433,7 +448,10 @@ export default function WebFileExplorer({
     })
     return () => {
       active = false
-      navigationSignal?.removeEventListener('abort', abortForNewNavigation)
+      if (navigationListenerAttached) {
+        try { navigationSignal?.removeEventListener('abort', abortForNewNavigation) }
+        catch { /* optional Safari listener cleanup cannot crash Files unmount */ }
+      }
       ancestorLookup.abort()
       // A never-dispatched lookup cancelled by StrictMode must replay.
       // Keep already-dispatched tickets until the requested URL/session
