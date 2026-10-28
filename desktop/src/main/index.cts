@@ -2862,11 +2862,12 @@ function registerIPCHandlers() {
       requireAgentCapability(hello, 'storage-tree')
       return requireAgentClient().storageTree(signal)
     }), false))
-  ipcMain.handle('agent:get-cache', () => runAgentAction<AgentCacheStats>(async () => {
-    const hello = await requireAgentLifecycle().ensureRunning()
-    requireAgentCapability(hello, 'cache-management')
-    return requireAgentClient().cacheStats()
-  }, false))
+  ipcMain.handle('agent:get-cache', (event, requestID: unknown = undefined) =>
+    runAgentAction<AgentCacheStats>(() => viewportRequests.run(event.sender, requestID, async signal => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'cache-management')
+      return requireAgentClient().cacheStats(signal)
+    }), false))
   ipcMain.handle('agent:get-local-disk-space', () => runAgentAction<AgentLocalDiskSpace>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'local-disk-space')
