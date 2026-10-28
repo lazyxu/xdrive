@@ -26,10 +26,18 @@ function compiledGallery() {
   const mod = { exports: {} }
   new Function('module', 'exports', 'require', compile(gallery, galleryFile))(
     mod, mod.exports, name => {
-      assert.equal(name, '../synology-media-preview')
-      return { xDriveSynologyLoadBoundedMediaPreview: async () => {
-        throw Error('test did not authorize an Owner original preview')
-      } }
+      if (name === '../synology-media-preview') return {
+        xDriveSynologyLoadBoundedMediaPreview: async () => {
+          throw Error('test did not authorize an Owner original preview')
+        },
+      }
+      if (name === '../synology-owner-thumbnail') return {
+        xDriveSynologyLoadOwnerThumbnail: async (local, item, signal) => {
+          const thumb = await local.ownerFileThumbnail(item.id, item.revision, signal)
+          return URL.createObjectURL(new Blob([thumb.data], { type: thumb.contentType }))
+        },
+      }
+      throw Error('unexpected DSM Owner Gallery import: ' + name)
     },
   )
   return mod.exports.createXDriveSynologyOwnerGallerySource

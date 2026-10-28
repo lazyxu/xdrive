@@ -2,6 +2,7 @@ import type { MediaGalleryDataSource } from './MediaGallery'
 import type { MediaGalleryQuery, MediaItem, MediaItemRange } from '../models'
 import type { XDriveSynologyBackupLocalClient } from '../synology-backup-adapter'
 import { xDriveSynologyLoadBoundedMediaPreview } from '../synology-media-preview'
+import { xDriveSynologyLoadOwnerThumbnail } from '../synology-owner-thumbnail'
 
 /**
  * Host-neutral page source for the existing MediaGallery JSX. DSM only supplies
@@ -136,26 +137,30 @@ export function createXDriveSynologyOwnerGallerySource(
       (await loadRange(limit, offset, query, undefined, albumID)).items,
     listAlbumItemRange: (albumID, limit, offset, query, signal) =>
       loadRange(limit, offset, query, signal, albumID),
-    loadThumbnail: async (nodeID, signal, revision) => {
+    loadThumbnail: async (nodeID, signal, revision, onProgress) => {
       if (signal?.aborted || !Number.isSafeInteger(nodeID) || nodeID <= 0) return null
       const known = previews.get(nodeID)
       const ownerRevision = Number.isSafeInteger(revision) && (revision ?? 0) > 0
         ? revision : known?.revision
-      // Never request a thumbnail using a guessed revision or a new Owner ID.
       if (!known || !ownerRevision || ownerRevision !== known.revision) return null
-      const thumbnail = await client.ownerFileThumbnail(nodeID, ownerRevision, signal)
-      // Owner/session, Node revision, source navigation or directory refresh
-      // can supersede an in-flight read without the old Agent resolving.
-      if (signal?.aborted || previews.get(nodeID) !== known) return null
-      const bytes = new Uint8Array(thumbnail.data.length)
-      bytes.set(thumbnail.data)
-      const url = URL.createObjectURL(new Blob([bytes.buffer], { type: thumbnail.contentType }))
-      if (signal?.aborted || previews.get(nodeID) !== known) {
-        URL.revokeObjectURL(url)
-        return null
+      // Files and Gallery use exactly the same verified Server thumbnail,
+      // optional alpha mask and real progress semantics.
+      try {
+        const url = await xDriveSynologyLoadOwnerThumbnail(client, {
+          kind: 'file', id: known.id, revision: ownerRevision,
+          name: known.name, size: known.size,
+        } as Parameters<typeof xDriveSynologyLoadOwnerThumbnail>[1], signal, onProgress)
+        // Owner/session and revision can change while the underlying Agent read
+        // is in flight. Never publish or retain a stale Blob URL.
+        if (signal?.aborted || previews.get(nodeID) !== known) {
+          if (url.startsWith('blob:')) URL.revokeObjectURL(url)
+          return null
+        }
+        return url
+      } catch (error) {
+        if (signal?.aborted || previews.get(nodeID) !== known) return null
+        throw error
       }
-      // Existing MediaGalleryThumbnailScheduler owns LRU/Viewer-lease revocation.
-      return url
     },
     loadPreviewURL: async (nodeID, kind, signal, _fileName, revision, onProgress) => {
       if (kind !== 'image' || signal?.aborted) return null

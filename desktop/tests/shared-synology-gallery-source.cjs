@@ -33,6 +33,18 @@ new Function('module', 'exports', 'require', 'URL', 'Blob', transpiled.outputTex
         return deferredPreview ?? 'blob:verified-original'
       },
     }
+    if (name === '../synology-owner-thumbnail') return {
+      xDriveSynologyLoadOwnerThumbnail: async (client, item, signal, onProgress) => {
+        assert.equal(item.kind, 'file')
+        if (signal?.aborted) throw Error('thumbnail aborted')
+        onProgress?.(0, undefined, null)
+        const image = await client.ownerFileThumbnail(item.id, item.revision, signal)
+        if (signal?.aborted) throw Error('thumbnail aborted')
+        onProgress?.(image.data.length, image.data.length,
+          image.alphaState === 'masked' ? 'data:image/png;base64,' + image.alphaMask : null)
+        return fakeURL.createObjectURL(new Blob([image.data], { type: image.contentType }))
+      },
+    }
     throw new Error('unexpected import into Gallery Owner-only source: ' + name)
   }, fakeURL, Blob,
 )
@@ -124,7 +136,11 @@ test('thumbnail requires previously authenticated Node/revision and preserves ca
   await source.listItemRange(2, 0)
   assert.equal(await source.loadThumbnail(1, undefined, 8), null)
   const signal = new AbortController()
-  assert.equal(await source.loadThumbnail(1, signal.signal, 7), 'blob:owner:1')
+  const progress = []
+  assert.equal(await source.loadThumbnail(1, signal.signal, 7,
+    (...values) => progress.push(values)), 'blob:owner:1')
+  assert.deepEqual(progress, [[0, undefined, null], [4, 4, null]],
+    'Gallery must retain the shared indeterminate-to-verified thumbnail progress')
   assert.deepEqual(calls.filter(x => x[0] === 'thumbnail').map(x => x.slice(1, 3)), [[1, 7]])
   signal.abort()
   assert.equal(await source.loadThumbnail(1, signal.signal, 7), null)
