@@ -183,6 +183,37 @@ struct LoginScreen: View {
                 .font(.footnote)
                 .foregroundColor(colors.secondary)
             Button {
+                Task { await model.verifyOwnerRoot() }
+            } label: {
+                Label("验证 Owner 与云端根目录（只读）", systemImage: "checkmark.shield")
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                    .foregroundColor(colors.primary)
+                    .background(RoundedRectangle(cornerRadius: 12)
+                        .stroke(colors.primary, lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .disabled(model.isLoading)
+            .accessibilityIdentifier("native-owner-root-verify")
+            if let owner = model.verifiedOwner {
+                VStack(alignment: .leading, spacing: 5) {
+                    Label("已验证服务器与当前 Owner 根目录", systemImage: "checkmark.shield.fill")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundColor(colors.primary)
+                    Text("Owner #\(owner.ownerID) · Root #\(owner.rootNodeID)")
+                        .font(.footnote)
+                        .foregroundColor(colors.secondary)
+                    Text("当前仅完成只读身份验证；尚未注册 Device/同步文件夹，也未启动备份。")
+                        .font(.footnote)
+                        .foregroundColor(colors.secondary)
+                }
+                .accessibilityIdentifier("native-owner-root-verified")
+            }
+            if let failure = model.ownerVerificationMessage {
+                Text(failure)
+                    .font(.footnote)
+                    .foregroundColor(colors.error)
+            }
+            Button {
                 showPhotoInventory = true
             } label: {
                 Label("检查系统相册（不上传）", systemImage: "photo.on.rectangle.angled")
