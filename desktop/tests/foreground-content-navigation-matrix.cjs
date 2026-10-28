@@ -202,6 +202,7 @@ test('all same-type content entry points are wired to disposable-only preemption
   const wide = source('ui/shared/src/mui/FileExplorer.tsx')
   const galleryCode = source('ui/shared/src/mui/MediaGallery.tsx')
   const virtual = source('ui/shared/src/mui/VirtualCollectionController.ts')
+  const publicShare = source('web/src/PublicShare.tsx')
   const webRuntime = source('web/src/webAppRuntime.ts')
   const desktopApp = source('desktop/src/renderer/App.tsx')
   const synology = source('web/src/synology.tsx')
@@ -221,7 +222,26 @@ test('all same-type content entry points are wired to disposable-only preemption
   assert.match(galleryCode, /kind:'baidu-cell'/, 'map cell range')
   assert.match(galleryCode, /kind:'baidu-viewport'/, 'map viewport range')
   assert.match(galleryCode, /nativeCellOpenAbort\.current\?\.abort\(\)/)
+  assert.match(galleryCode, /firstContentRangeAbort\.current\?\.abort\(\)/,
+    'new Gallery first Range aborts old Album/People/Map/Trash first Range')
+  for (const call of [
+    'listTrashItemRange(limit, offset, signal)',
+    'listAlbumItemRange(target.id, limit, offset, rangedQuery, signal)',
+    'listPersonItemRange(target.id, limit, offset, target.query, signal)',
+    'listDuplicateItemRange(target.id, limit, offset, signal)',
+    'listBurstReviewItemRange(target.id, limit, offset, signal)',
+    'listPetItemRange(target.id, limit, offset, signal)',
+    'listSuggestedPersonItemRange(target.id, limit, offset, target.query, signal)',
+  ]) {
+    assert.ok(galleryCode.includes(call), 'every disposable Gallery virtual Range must forward AbortSignal: ' + call)
+  }
   assert.match(virtual, /abortInFlight\(\)/, 'superseded 100k sparse ranges')
+  assert.match(publicShare, /for \(const request of activeThumbnailRequests\.current\) request\.abort\(\)/,
+    'Share folder and cursor navigation cancels obsolete disposable JPEGs')
+  assert.match(publicShare, /if \(contentChanged\) setThumbnailVisibilityEpoch\(epoch => epoch \+ 1\)/,
+    'failed Share folder navigation restores retry for still-visible old rows')
+  assert.match(publicShare, /await shareFileAdapter\.list\(path\.at\(-1\)\?\.id \?\? 0, cursor, controller\.signal\)/,
+    'Share first page and cursor reads are cancelable independently of downloads')
   assert.match(webRuntime, /guardBrowserNavigation/, 'unaccepted dirty draft must not preempt')
   assert.match(desktopApp, /xDriveEnterForegroundPage\('desktop:' \+ next\)/)
   assert.match(synology, /xDriveEnterForegroundPage\('synology:' \+ next\)/)
