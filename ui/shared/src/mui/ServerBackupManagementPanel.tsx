@@ -8,6 +8,7 @@ import type {
   XDriveServerBackupPage, XDriveServerBackupPort, XDriveServerBackupRequest,
   XDriveServerBackupSnapshot, XDriveServerBackupHistoryEntry,
 } from '../server-backup-admin'
+import { xDriveServerBackupActionLabel } from '../server-backup-admin'
 import { latestServerBackupVerification, serverBackupReceiptDurationSeconds,
   serverBackupReceiptExplanation, summarizeServerBackupIntegrity } from '../server-backup-integrity'
 import { canPruneServerBackup, type XDriveServerBackupPrunePreview } from '../server-backup-prune-preview'
@@ -678,7 +679,7 @@ export function XDriveServerBackupManagementPanel({
                 {(page?.history || []).map(item => (
                   <TableRow key={item.request_id}>
                     <TableCell>{item.finished_at ? new Date(item.finished_at).toLocaleString() : '—'}</TableCell>
-                    <TableCell>{item.action}</TableCell>
+                    <TableCell>{xDriveServerBackupActionLabel(item.action)}</TableCell>
                     <TableCell sx={{ overflowWrap: 'anywhere' }}>{item.snapshot_id || '—'}</TableCell>
                     <TableCell>{item.state === 'success' ? '成功' : '失败'}{item.error_code ? ' · ' + item.error_code : ''}</TableCell>
                     <TableCell>{item.mode || '—'}</TableCell>
@@ -704,7 +705,7 @@ export function XDriveServerBackupManagementPanel({
         <DialogContent>
           {historyDetail ? (
             <Stack spacing={1.5} sx={{ pt: 1 }}>
-              <Typography variant="body2">动作：{historyDetail.action} ·
+              <Typography variant="body2">动作：{xDriveServerBackupActionLabel(historyDetail.action || '')} ·
                 {historyDetail.state === 'success' ? '已完成' : '失败'}</Typography>
               <Typography variant="body2">快照：{historyDetail.snapshot_id || '—'}</Typography>
               <Typography variant="body2">校验模式：{historyDetail.mode || '不适用'}</Typography>
@@ -724,6 +725,13 @@ export function XDriveServerBackupManagementPanel({
               <Alert severity={historyDetail.state === 'failed' ? 'warning' : 'info'}>
                 {serverBackupReceiptExplanation(historyDetail)}
               </Alert>
+              {historyDetail.action === 'restore_database_only' ? (
+                <Alert severity="warning" data-xdrive-admin-database-only-history-scope>
+                  该历史操作仅恢复 PostgreSQL 数据库，原有文件数据被保留。
+                  即使宿主机记录成功，也不代表数据库与当前文件完全一致，
+                  更不能视为数据库和文件的完整恢复演练。请重新执行存储完整性校验。
+                </Alert>
+              ) : null}
               <XDriveBackupVerificationReceipt entry={historyDetail} />
               {historyDetail.action === 'delete_selected' ? (
                 <Alert severity={historyDetail.state === 'success' && historyDetail.selected_delete
