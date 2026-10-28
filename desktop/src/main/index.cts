@@ -2866,11 +2866,12 @@ function registerIPCHandlers() {
     requireAgentCapability(hello, 'cache-management')
     return requireAgentClient().cacheStats()
   }, false))
-  ipcMain.handle('agent:get-local-disk-space', () => runAgentAction<AgentLocalDiskSpace>(async () => {
-    const hello = await requireAgentLifecycle().ensureRunning()
-    requireAgentCapability(hello, 'local-disk-space')
-    return requireAgentClient().localDiskSpace()
-  }, false))
+  ipcMain.handle('agent:get-local-disk-space', (event, requestID: unknown = undefined) =>
+    runAgentAction<AgentLocalDiskSpace>(() => viewportRequests.run(event.sender, requestID, async signal => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'local-disk-space')
+      return requireAgentClient().localDiskSpace(signal)
+    }), false))
   ipcMain.handle('agent:release-cache', () => runAgentAction<AgentCacheReleaseResult>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'cache-management')
@@ -6025,11 +6026,12 @@ function registerIPCHandlers() {
     return requireAgentClient().cloudReorderFileSavedSearches(ids as number[])
   }, false))
 
-  ipcMain.handle('agent:cloud-favorites', () => runAgentAction<AgentCloudFavoriteItem[]>(async () => {
-    const hello = await requireAgentLifecycle().ensureRunning()
-    requireAgentCapability(hello, 'file-favorites')
-    return requireAgentClient().cloudFileFavorites()
-  }, false))
+  ipcMain.handle('agent:cloud-favorites', (event, requestID: unknown = undefined) =>
+    runAgentAction<AgentCloudFavoriteItem[]>(() => viewportRequests.run(event.sender, requestID, async signal => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'file-favorites')
+      return requireAgentClient().cloudFileFavorites(signal)
+    }), false))
   ipcMain.handle('agent:cloud-favorite', (_event, nodeID: unknown) => runAgentAction<AgentCloudFavoriteItem>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'file-favorites')
@@ -6046,15 +6048,16 @@ function registerIPCHandlers() {
     }
     return requireAgentClient().cloudUnfavoriteFile(nodeID)
   }, false))
-  ipcMain.handle('agent:cloud-recent', (_event, limit: unknown) => runAgentAction<AgentCloudRecentItem[]>(async () => {
-    const hello = await requireAgentLifecycle().ensureRunning()
-    requireAgentCapability(hello, 'file-recent')
-    const value = limit === undefined ? 16 : limit
-    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1 || value > 50) {
-      throw new AgentIPCError('invalid_input', 0, 'Recent item limit must be between 1 and 50.')
-    }
-    return requireAgentClient().cloudFileRecent(value)
-  }, false))
+  ipcMain.handle('agent:cloud-recent', (event, limit: unknown, requestID: unknown = undefined) =>
+    runAgentAction<AgentCloudRecentItem[]>(() => viewportRequests.run(event.sender, requestID, async signal => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'file-recent')
+      const value = limit === undefined ? 16 : limit
+      if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1 || value > 50) {
+        throw new AgentIPCError('invalid_input', 0, 'Recent item limit must be between 1 and 50.')
+      }
+      return requireAgentClient().cloudFileRecent(value, signal)
+    }), false))
   ipcMain.handle('agent:cloud-recent-touch', (_event, nodeID: unknown) => runAgentAction<AgentCloudRecentItem>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'file-recent')
