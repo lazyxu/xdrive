@@ -50,4 +50,7 @@ test('shared backup UI does not permit Restore/Delete of hidden previous selecti
   assert.match(ui, /setSnapshotFilter\(previous => \(\{ \.\.\.previous, \.\.\.patch \}\)\)/)
   assert.match(ui, /筛选只作用于宿主机提供的最新最多 100 代清单/)
   assert.match(ui, /disabled=\{disabled \|\| !selectedRestorable\}/)
+  assert.match(ui, /selectedPreviewReady = Boolean\(selected && selectedPreview/)
+  assert.match(ui, /setSelectedPreviewRequestID\(''\)/)
+  assert.match(ui, /snapshotID=\{selected\?\.id \|\| ''\}/)
 })

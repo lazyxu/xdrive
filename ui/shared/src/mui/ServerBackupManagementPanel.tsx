@@ -134,6 +134,12 @@ export function XDriveServerBackupManagementPanel({
   const changeSnapshotFilter = (patch: Partial<XDriveServerBackupSnapshotFilter>) => {
     setSnapshotFilter(previous => ({ ...previous, ...patch }))
     setConfirmation(null)
+    setSelectedPreviewRequestID('')
+  }
+  const selectSnapshot = (id: string) => {
+    if (id !== snapshotID) setSelectedPreviewRequestID('')
+    setSnapshotID(id)
+    setConfirmation(null)
   }
   const integrity = page ? summarizeServerBackupIntegrity(page) : null
   const selectedComplete = selected?.state === 'complete'
@@ -145,7 +151,7 @@ export function XDriveServerBackupManagementPanel({
   const selectedPreview = page?.selected_preview
   // The preview is informational only. It is never permission to delete a
   // snapshot; the Host must independently audit CAS under an exclusive lock.
-  const selectedPreviewReady = Boolean(selectedPreview && selectedPreviewRequestID &&
+  const selectedPreviewReady = Boolean(selected && selectedPreview && selectedPreviewRequestID &&
     selectedPreview.request_id === selectedPreviewRequestID &&
     selectedPreview.snapshot_id === snapshotID && selectedPreview.mode === verifyMode &&
     page?.operation.action === 'preview_delete' &&
@@ -373,11 +379,11 @@ export function XDriveServerBackupManagementPanel({
               <TableBody>
                 {visibleSnapshots.map(item => (
                   <TableRow key={item.id} selected={snapshotID === item.id}
-                    hover onClick={() => { setSnapshotID(item.id); setConfirmation(null) }}
+                    hover onClick={() => selectSnapshot(item.id)}
                     sx={{ cursor: 'pointer' }}>
                     <TableCell>
                       <input type="radio" name="admin-backup-selected" checked={snapshotID === item.id}
-                        onChange={() => { setSnapshotID(item.id); setConfirmation(null) }}
+                        onChange={() => selectSnapshot(item.id)}
                         aria-label={'选择备份 ' + item.name} />
                     </TableCell>
                     <TableCell sx={{ overflowWrap: 'anywhere' }}>{item.name}</TableCell>
@@ -533,7 +539,7 @@ export function XDriveServerBackupManagementPanel({
       ) : null}
 
       {page?.supported
-        ? <XDriveBackupRecoveryEvidencePanel page={page} snapshotID={snapshotID} />
+        ? <XDriveBackupRecoveryEvidencePanel page={page} snapshotID={selected?.id || ''} />
         : null}
 
       <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
