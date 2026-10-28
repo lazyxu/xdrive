@@ -57,9 +57,24 @@ export type XDriveServerBackupVerificationReceipt = {
   cas_bytes_hashed: number
   failure_category?: string
 }
+export type XDriveServerBackupDrillReceipt = {
+  protocol: 'xdrive-host-isolated-drill-v1'
+  state: 'success' | 'failed'
+  environment: 'host_ephemeral_offline_tmpfs'
+  snapshot: string
+  started_at: string
+  finished_at: string
+  files_restored: boolean
+  postgresql_restored: boolean
+  production_verified: false
+  max_mib: number
+  failure_category: string
+}
+
 export type XDriveServerBackupHistoryEntry = XDriveServerBackupOperation & {
   mode?: 'fast' | 'deep'
   verification?: XDriveServerBackupVerificationReceipt
+  drill?: XDriveServerBackupDrillReceipt
 }
 
 export type XDriveServerBackupPage = {
@@ -81,6 +96,7 @@ export type XDriveServerBackupRequest =
   | { action: 'verify'; snapshot_id: string; mode: 'fast' | 'deep' }
   | { action: 'plan'; keep_last: number; mode: 'fast' | 'deep' }
   | { action: 'restore'; snapshot_id: string; confirmation: string }
+  | { action: 'drill'; snapshot_id: string; confirmation: string }
   | { action: 'delete'; snapshot_id: string; confirmation: string }
   | { action: 'prune'; keep_last: number; confirmation: string }
   | { action: 'policy'; format: 'v1' | 'v2'; retention_days: number; revision: string }

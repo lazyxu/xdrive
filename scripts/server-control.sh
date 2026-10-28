@@ -2557,13 +2557,13 @@ backup_admin_history_append() {
     "$snapshot" "$mode" "$started" "$finished" "$error_code" "$proof_path" <<'PY'
 import json, os, re, stat, sys, tempfile
 path,state,action,rid,snapshot,mode,started,finished,code,proof_path=sys.argv[1:]
-if state not in ("success","failed") or action not in ("create","verify","plan","restore","delete","prune","policy"):
+if state not in ("success","failed") or action not in ("create","verify","drill","plan","restore","delete","prune","policy"):
     sys.exit(2)
 if not re.fullmatch(r"[0-9a-f]{24}",rid) or not re.fullmatch(r"[a-z_]{0,60}",code):
     sys.exit(2)
 if snapshot and not re.fullmatch(r"(v1|v2-default|v2-configured):xdrive-backup-[0-9]{8}T[0-9]{6}Z",snapshot):
     sys.exit(2)
-if (action in ("verify","restore","delete")) != bool(snapshot):
+if (action in ("verify","drill","restore","delete")) != bool(snapshot):
     sys.exit(2)
 if (action in ("verify","plan")) != (mode in ("fast","deep")):
     sys.exit(2)
@@ -2583,6 +2583,7 @@ if os.path.lexists(path):
         sys.exit(2)
     old=data.get("operations")
     if not isinstance(old,list) or len(old)>30: sys.exit(2)
+if action=="drill" and not snapshot.startswith(("v2-default:","v2-configured:")): sys.exit(2)
 entry=dict(protocol="xdrive-backup-admin-v1",request_id=rid,action=action,
     snapshot_id=snapshot,mode=mode,state=state,started_at=started,
     finished_at=finished,error_code=code)
@@ -2634,6 +2635,49 @@ if action=="verify" and proof_path:
         entry["verification"]=proof
     except (OSError,ValueError,UnicodeError,TypeError,KeyError):
         pass  # Never fabricate evidence, and never leak raw error details.
+# A successful Host drill must include its real, schema-checked file+SQL receipt.
+# No CLI stdout is trusted as a production destructive-recovery attestation.
+if action=="drill" and proof_path:
+    try:
+        fd=os.open(proof_path,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+        with os.fdopen(fd,"rb") as f:
+            st=os.fstat(f.fileno())
+            if not stat.S_ISREG(st.st_mode) or not 0 < st.st_size <= 2048:
+                raise ValueError("unsafe drill report")
+            raw=f.read(2049)
+        if not 0 < len(raw) <= 2048: raise ValueError("oversized drill report")
+        def unique(pairs):
+            out={}
+            for k,v in pairs:
+                if k in out: raise ValueError("duplicate key")
+                out[k]=v
+            return out
+        d=json.loads(raw.decode("utf-8"),object_pairs_hook=unique)
+        keys={"protocol","state","environment","snapshot","started_at","finished_at",
+              "files_restored","postgresql_restored","production_verified","max_mib","failure_category"}
+        failure={"unsafe_snapshot","invalid_snapshot_checksum","sandbox_quota_exceeded",
+                 "runtime_unavailable","file_restore_failed","postgresql_restore_failed",
+                 "repository_busy","drill_failed"}
+        if (not isinstance(d,dict) or set(d)!=keys or
+            d["protocol"]!="xdrive-host-isolated-drill-v1" or
+            d["environment"]!="host_ephemeral_offline_tmpfs" or
+            d["snapshot"]!=snapshot.split(":",1)[1] or type(d["max_mib"]) is not int or
+            d["max_mib"]!=1024 or d["production_verified"] is not False or
+            type(d["files_restored"]) is not bool or type(d["postgresql_restored"]) is not bool or
+            not isinstance(d["started_at"],str) or not isinstance(d["finished_at"],str) or
+            not re.fullmatch(r"20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z",d["started_at"]) or
+            not re.fullmatch(r"20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z",d["finished_at"]) or
+            d["finished_at"]<d["started_at"] or
+            ((d["state"]=="success" and
+              not (d["files_restored"] and d["postgresql_restored"] and d["failure_category"]=="")) or
+             (d["state"]=="failed" and
+              not (d["failure_category"] in failure and d["postgresql_restored"] is False))) or
+            d["state"] not in ("success","failed") or
+            (state=="success" and d["state"]!="success")):
+            raise ValueError("invalid drill receipt")
+        entry["drill"]=d
+    except (OSError,ValueError,UnicodeError,TypeError,KeyError):
+        pass
 events=[entry]+[x for x in old if isinstance(x,dict) and x.get("request_id")!=rid]
 raw=(json.dumps(dict(protocol="xdrive-backup-admin-history-v1",operations=events[:30]),
                 ensure_ascii=False,separators=(",",":"))+"\n").encode()
@@ -2743,6 +2787,51 @@ backup_admin_delete_v1() {
   rmdir -- "$retired"
 }
 
+backup_admin_valid_drill_result() {
+  local path="$1" snapshot="$2" expect="$3"
+  python3 - "$path" "$snapshot" "$expect" <<'PY'
+import json,os,re,stat,sys
+path,snapshot,expect=sys.argv[1:]
+try:
+    fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+    with os.fdopen(fd,"rb") as f:
+        st=os.fstat(f.fileno())
+        if not stat.S_ISREG(st.st_mode) or not 0<st.st_size<=2048: raise ValueError("report size")
+        raw=f.read(2049)
+    if not 0<len(raw)<=2048: raise ValueError("report oversized")
+    def unique(pairs):
+        result={}
+        for key,value in pairs:
+            if key in result: raise ValueError("duplicate JSON key")
+            result[key]=value
+        return result
+    x=json.loads(raw.decode("utf-8"),object_pairs_hook=unique)
+    keys={"protocol","state","environment","snapshot","started_at","finished_at",
+          "files_restored","postgresql_restored","production_verified","max_mib","failure_category"}
+    failures={"unsafe_snapshot","invalid_snapshot_checksum","sandbox_quota_exceeded",
+              "runtime_unavailable","file_restore_failed","postgresql_restore_failed",
+              "repository_busy","drill_failed"}
+    if not isinstance(x,dict) or set(x)!=keys: raise ValueError("report keys")
+    if x["protocol"]!="xdrive-host-isolated-drill-v1" or x["environment"]!="host_ephemeral_offline_tmpfs":
+        raise ValueError("unexpected protocol")
+    if x["snapshot"]!=snapshot.split(":",1)[1] or x["max_mib"]!=1024 or type(x["max_mib"]) is not int:
+        raise ValueError("wrong snapshot/limit")
+    if x["production_verified"] is not False or type(x["files_restored"]) is not bool or type(x["postgresql_restored"]) is not bool:
+        raise ValueError("invalid state")
+    for name in ("started_at","finished_at"):
+        if not isinstance(x[name],str) or not re.fullmatch(r"20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z",x[name]):
+            raise ValueError("invalid timestamps")
+    if x["finished_at"]<x["started_at"] or x["state"]!=expect:
+        raise ValueError("inconsistent timestamp/state")
+    if expect=="success" and not (x["files_restored"] and x["postgresql_restored"] and x["failure_category"]==""):
+        raise ValueError("not fully restored")
+    if expect=="failed" and (x["failure_category"] not in failures or x["postgresql_restored"] is not False):
+        raise ValueError("invalid failure")
+except (OSError,ValueError,TypeError,KeyError,UnicodeError):
+    sys.exit(1)
+PY
+}
+
 backup_admin_execute() {
   local action="$1" snapshot="$2" fmt="$3" mode="$4" keep="$5" days="$6" revision="$7" confirm="$8"
   local target install_guard="$STATE_DIR/install.lock"
@@ -2777,6 +2866,19 @@ backup_admin_execute() {
       fi
       if [[ "$mode" == deep && "$snapshot" == v2-* ]]; then
         XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup retention-plan --repository-dir "$(dirname "$(dirname "$target")")" --keep-last 1 --mode deep
+      fi ;;
+    drill)
+      [[ "$snapshot" == v2-* && "$confirm" == "DRILL $snapshot" ]] || return 2
+      target="$(backup_admin_snapshot_directory "$snapshot")" || return 2
+      # Fixed RAM ceiling: the browser never supplies a Docker image, path,
+      # shell command, capacity override or access to the live PostgreSQL.
+      [[ -n "${XD_BACKUP_ADMIN_DRILL_JSON_FILE:-}" ]] || return 2
+      if XD_CONFIG_DIR="$XDRIVE_HOME" bash "$MANAGER" backup drill "$target" --max-mib 1024           > "$XD_BACKUP_ADMIN_DRILL_JSON_FILE"; then
+        backup_admin_valid_drill_result "$XD_BACKUP_ADMIN_DRILL_JSON_FILE" "$snapshot" success || return 78
+      else
+        local drill_rc=$?
+        backup_admin_valid_drill_result "$XD_BACKUP_ADMIN_DRILL_JSON_FILE" "$snapshot" failed || true
+        return "$drill_rc"
       fi ;;
     plan)
       [[ "$keep" =~ ^[1-9][0-9]{0,3}$ ]] || return 2
@@ -2819,7 +2921,7 @@ backup_admin_process_request() {
   local dir="$1" request="$dir/backup-admin-request.json" active="$dir/backup-admin-active.json"
   local protocol id action snapshot fmt mode keep days revision confirm created started result=0 log tmp
   local progress_file="$dir/backup-admin-progress.env"
-  local verify_file=""
+  local verify_file="" drill_file=""
   [[ -f "$request" && ! -L "$request" && ! -e "$active" && ! -L "$active" ]] || return 0
   mv -- "$request" "$active" || return 0
   protocol="$(json_value "$active" protocol)"
@@ -2845,6 +2947,8 @@ backup_admin_process_request() {
   if [[ "$action" == verify ]]; then
     # Only Host-owned random temporary inode; no predictable browser path.
     verify_file="$(mktemp "$LOG_DIR/.backup-admin-verify.XXXXXXXX" 2>/dev/null || true)"
+  elif [[ "$action" == drill ]]; then
+    drill_file="$(mktemp "$LOG_DIR/.backup-admin-drill.XXXXXXXX" 2>/dev/null || true)"
   fi
   # Keep the Host Control heartbeat fresh during long pg_dump, hashing and
   # restoration. The backup-operation flock is inherited by the child: a
@@ -2872,6 +2976,7 @@ backup_admin_process_request() {
         ( umask 077
           if [[ "$action" == create ]]; then export XD_BACKUP_PROGRESS_FILE="$progress_file"; fi
           if [[ "$action" == verify ]]; then export XD_BACKUP_ADMIN_VERIFY_JSON_FILE="$verify_file"; fi
+          if [[ "$action" == drill ]]; then export XD_BACKUP_ADMIN_DRILL_JSON_FILE="$drill_file"; fi
           XD_CONFIG_DIR="$XDRIVE_HOME" backup_admin_execute "$action" "$snapshot" "$fmt" "$mode" "$keep" "$days" "$revision" "$confirm"
         ) > "$log" 2>&1 &
         pid=$!
@@ -2912,11 +3017,14 @@ backup_admin_process_request() {
     backup_admin_status "$dir" failed "$action" "$id" "$snapshot" "$history_error" "操作失败；请查看宿主机私有日志。" "$started" "$finished"
   fi
   # A history I/O failure cannot change the actual backup outcome.
-  backup_admin_history_append "$dir" "$history_state" "$action" "$id" "$snapshot" "$mode" "$started" "$finished" "$history_error" "$verify_file" ||
+  backup_admin_history_append "$dir" "$history_state" "$action" "$id" "$snapshot" "$mode" "$started" "$finished" "$history_error" "${verify_file:-$drill_file}" ||
     echo "[xDrive] warning: private backup history not persisted" >&2
   rm -f "$active"
   if [[ -n "$verify_file" && -f "$verify_file" && ! -L "$verify_file" ]]; then
     rm -f -- "$verify_file"
+  fi
+  if [[ -n "$drill_file" && -f "$drill_file" && ! -L "$drill_file" ]]; then
+    rm -f -- "$drill_file"
   fi
   if [[ -f "$progress_file" && ! -L "$progress_file" ]]; then rm -f -- "$progress_file"; fi
   backup_admin_inventory "$dir" || true

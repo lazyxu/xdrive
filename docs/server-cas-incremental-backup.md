@@ -391,6 +391,35 @@ history yet. The Admin read-only evidence panel continues to show
 `跳过（未验收）` until a separately authenticated, source-bound receipt
 exists. A sandbox drill is not production recovery acceptance.
 
+## Host-only and administrator-triggered isolated restore drill (v2)
+
+The new `backup drill ABSOLUTE_V2_SNAPSHOT [--max-mib N]` Host CLI is
+developed separately in #2874 and performs real read-only CAS/legacy recovery
+and PostgreSQL restore/query in disconnected tmpfs-only Docker containers.
+The Admin UI fixed `drill` action depends on that Host binary.
+
+The authenticated Admin action accepts **only an existing complete v2 snapshot ID**
+and the exact `DRILL <snapshot_id>` confirmation. Web and Desktop accept no
+client-supplied Host path, Docker image, command, network, or RAM limit.
+Host Control resolves the snapshot against its own inventory, holds the existing
+scheduled/upgrade backup locks and always calls the fixed 1024 MiB Host CLI.
+The CLI is fail-closed on unavailable images, corrupt bytes and over-budget data.
+There is no production database mount, live file mount or network connectivity.
+An oversized backup fails clearly instead of silently falling back to destructive
+restore; larger deliberate operator drills remain Host-local.
+
+Only a bounded, schema-checked Host receipt may be persisted in the existing
+30-entry private administrator history: exact snapshot name and executed result,
+real file/SQL recovery booleans, historical timestamps, resource ceiling and fixed
+failure category. Invalid or absent proof can **never** count as a successful
+drill. The shared UI distinguishes that historical Host sandbox result from
+checksum-only verification, actual production restore history and a true
+production destructive-recovery acceptance (still **跳过（未验收）**).
+
+This separate experimental Admin capability must not merge until the dependency
+#2874 and new source-exact security/API/Docker E2E tests pass. It does not change
+backup format, automatic v2 retention, CAS Pack or compression.
+
 ## Compression
 
 Canonical Blob files are stored **without compression** in v2. Images and

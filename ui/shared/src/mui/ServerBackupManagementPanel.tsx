@@ -316,6 +316,13 @@ export function XDriveServerBackupManagementPanel({
               onClick={() => { if (selected) void submit({
                 action: 'verify', snapshot_id: selected.id, mode: verifyMode,
               }) }}>验证所选备份</XDriveActionButton>
+            <XDriveActionButton disabled={disabled || !selectedRestorable || selected?.format !== 'v2'}
+              onClick={() => { if (selected) ask({
+                title: '确认执行离线隔离恢复演练？',
+                description: '使用宿主机受控的离线 Docker RAM 沙箱，最多 1024 MiB 还原文件和 PostgreSQL；不会替换线上文件、数据库或停止服务。任务最长可能运行数十分钟，当前不支持界面取消。演练结果不等于生产环境恢复验收。',
+                expected: 'DRILL ' + selected.id,
+                action: { action: 'drill', snapshot_id: selected.id, confirmation: 'DRILL ' + selected.id },
+              }) }}>隔离演练所选 v2 备份</XDriveActionButton>
             <XDriveActionButton intent="warning" disabled={disabled || !selectedRestorable}
               onClick={() => { if (selected) ask({
                 title: '确认恢复此备份？',
@@ -486,6 +493,19 @@ export function XDriveServerBackupManagementPanel({
                 {serverBackupReceiptExplanation(historyDetail)}
               </Alert>
               <XDriveBackupVerificationReceipt entry={historyDetail} />
+              {historyDetail.action === 'drill' ? (
+                <Alert severity={historyDetail.state === 'success' && historyDetail.drill?.state === 'success' &&
+                  historyDetail.drill.files_restored && historyDetail.drill.postgresql_restored ? 'success' : 'warning'}
+                  data-xdrive-admin-backup-drill-receipt>
+                  {historyDetail.state === 'success' && historyDetail.drill?.state === 'success' &&
+                    historyDetail.drill.files_restored && historyDetail.drill.postgresql_restored
+                    ? '本机离线 RAM 沙箱文件与 PostgreSQL 恢复演练成功（历史）。'
+                    : '隔离演练失败或缺少可验证的两阶段恢复凭据。'}
+                  {' '}生产环境恢复验收：未执行（跳过）。资源上限：1024 MiB；
+                  {historyDetail.drill?.failure_category
+                    ? '失败分类：' + historyDetail.drill.failure_category : '不提供原始宿主机路径或日志。'}
+                </Alert>
+              ) : null}
               <Typography variant="caption" color="text.secondary">
                 对于没有新版宿主机验证报告的历史记录，仍然不推断对象数量或校验字节。
                 详细错误日志仅可由宿主机管理员本地查看。
