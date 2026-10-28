@@ -49,6 +49,7 @@ Usage:
   xdrive-server backup list   # includes an active custom scheduled v2 repository
   xdrive-server backup verify [BACKUP_DIR]  # latest also searches configured v2 repository
   xdrive-server backup verify --json [BACKUP_DIR]  # structured snapshot + CAS result
+  xdrive-server backup drill ABSOLUTE_V2_SNAPSHOT [--max-mib N]  # Host-only RAM rehearsal
   xdrive-server backup retention-plan [--repository-dir /absolute/local/path] [--keep-last N] [--mode fast|deep]
   xdrive-server backup prune --keep-last N --yes [--repository-dir /absolute/local/path]
   xdrive-server backup sources BACKUP_DIR
@@ -1367,6 +1368,192 @@ backup_prune_cmd() {
     "$server_image" prune --repo /repo --keep-last "$keep_last" --yes </dev/null
 }
 
+# Host-only, manually invoked v2 recovery rehearsal. Never call the live
+# server-restore.sh: all restored database/file content stays in bounded RAM.
+backup_isolated_drill_worker() {
+  local target="$1" limit="$2" repo snapshot real lock cid live mount image
+  local cap=$((limit * 1024 * 1024)) value file pgcode token n cas_name db_name user_uid user_gid
+  [[ "$target" == /* && -d "$target" && ! -L "$target" ]] || return 3
+  real="$(readlink -f -- "$target" 2>/dev/null || true)"
+  [[ -n "$real" && -d "$real" ]] || return 3
+  snapshot="$(basename -- "$real")"
+  [[ "$snapshot" =~ ^xdrive-backup-[0-9]{8}T[0-9]{6}Z$ ]] || return 3
+  [[ "$(basename "$(dirname "$real")")" == snapshots ]] || return 3
+  repo="$(readlink -f -- "$(dirname "$(dirname "$real")")" 2>/dev/null || true)"
+  [[ -n "$repo" && "$real" == "$repo/snapshots/$snapshot" ]] || return 3
+  [[ ! -L "$repo" && ! -L "$repo/snapshots" ]] || return 3
+  # Only repositories already recognized by the Host inventory may enter
+  # a sandbox. Arbitrary absolute filesystem locations remain prohibited.
+  backup_snapshot_roots || return 3
+  local allowed_root accepted=false
+  for allowed_root in "${BACKUP_SNAPSHOT_ROOTS[@]}"; do
+    allowed_root="$(readlink -m -- "$allowed_root" 2>/dev/null || true)"
+    if [[ "$allowed_root" == "$repo/snapshots" ]]; then accepted=true; break; fi
+  done
+  [[ "$accepted" == true ]] || return 3
+  # Never mount an online data directory, even as a read-only backup alias.
+  for value in "$XDRIVE_HOME/data" "$(env_value XD_FILES_DATA_DIR)" \
+      "$(env_value XD_POSTGRES_DATA_DIR)"; do
+    [[ -n "$value" ]] || continue
+    value="$(readlink -m -- "$value" 2>/dev/null || true)"
+    [[ -n "$value" ]] || return 3
+    case "$repo/" in "$value/"*) return 3 ;; esac
+    case "$value/" in "$repo/"*) return 3 ;; esac
+  done
+  for live in server postgres; do
+    cid="$(compose ps -aq "$live" 2>/dev/null | head -n1 || true)"
+    [[ -n "$cid" ]] || continue
+    if [[ "$live" == server ]]; then
+      mount="$(docker inspect "$cid" --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Source}}{{end}}{{end}}' </dev/null 2>/dev/null)" || return 3
+    else
+      mount="$(docker inspect "$cid" --format '{{range .Mounts}}{{if eq .Destination "/var/lib/postgresql/data"}}{{.Source}}{{end}}{{end}}' </dev/null 2>/dev/null)" || return 3
+    fi
+    [[ -n "$mount" ]] || return 3
+    mount="$(readlink -m -- "$mount" 2>/dev/null || true)"
+    [[ -n "$mount" ]] || return 3
+    case "$repo/" in "$mount/"*) return 3 ;; esac
+    case "$mount/" in "$repo/"*) return 3 ;; esac
+  done
+  lock="$repo/.backup.lock"
+  [[ -f "$lock" && ! -L "$lock" ]] || return 4
+  exec 7< "$lock" || return 4
+  flock -s -n 7 || return 75
+  [[ -f "$real/manifest.json" && ! -L "$real/manifest.json" ]] || return 4
+  grep -Eq '"format_version"[[:space:]]*:[[:space:]]*2' "$real/manifest.json" || return 4
+  grep -Eq '"consistency_verified"[[:space:]]*:[[:space:]]*true' "$real/manifest.json" || return 4
+  grep -Eq '"file_data_included"[[:space:]]*:[[:space:]]*true' "$real/manifest.json" || return 4
+  for file in database.dump verify.json manifest.json objects.index legacy.tar SHA256SUMS.txt; do
+    [[ -f "$real/$file" && ! -L "$real/$file" ]] || return 4
+  done
+  # Refuse huge, invalid or unbounded input before invoking any Docker process.
+  if python3 - "$real" "$cap" <<'PY'
+import os,re,stat,sys
+root,cap=sys.argv[1],int(sys.argv[2])
+try:
+    def size(name):
+        st=os.lstat(os.path.join(root,name))
+        if not stat.S_ISREG(st.st_mode): raise ValueError("nonregular")
+        return st.st_size
+    total=size("legacy.tar")
+    if total>cap or size("database.dump")>cap: sys.exit(5)
+    fd=os.open(os.path.join(root,"objects.index"),os.O_RDONLY|os.O_NOFOLLOW)
+    with os.fdopen(fd,"rb") as f:
+        st=os.fstat(f.fileno())
+        if not stat.S_ISREG(st.st_mode) or st.st_size>64*1024*1024: raise ValueError("unsafe index")
+        for row in f:
+            fields=row.rstrip(b"\n").split(b"\t")
+            if len(fields)!=2 or not re.fullmatch(rb"[0-9a-f]{64}",fields[0]) or \
+               not re.fullmatch(rb"(0|[1-9][0-9]{0,18})",fields[1]):
+                raise ValueError("invalid index row")
+            total+=int(fields[1])
+            if total>cap: sys.exit(5)
+except (OSError,ValueError):
+    sys.exit(4)
+PY
+  then :; else return $?; fi
+  (
+    cd "$real" || exit 1
+    cmp -s SHA256SUMS.txt <(sha256sum database.dump verify.json manifest.json objects.index legacy.tar)
+  ) || return 4
+  cid="$(compose ps -aq server 2>/dev/null | head -n1 || true)"
+  image=""
+  if [[ -n "$cid" ]]; then
+    image="$(docker inspect "$cid" --format '{{.Config.Image}}' </dev/null 2>/dev/null || true)"
+  fi
+  [[ -n "$image" ]] || image="$(env_value XD_SERVER_IMAGE)"
+  [[ -n "$image" ]] || return 6
+  docker image inspect "$image" >/dev/null 2>&1 || return 6
+  docker image inspect postgres:17-alpine >/dev/null 2>&1 || return 6
+  user_uid="$(id -u)" || return 6
+  user_gid="$(id -g)" || return 6
+  [[ "$user_uid" =~ ^[0-9]+$ && "$user_gid" =~ ^[0-9]+$ ]] || return 6
+  token="$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')" || return 6
+  [[ "$token" =~ ^[0-9a-f]{16}$ ]] || return 6
+  cas_name="xd-drill-cas-$token"
+  db_name="xd-drill-pg-$token"
+  # The distroless xDrive helper sees only the immutable repository and /data
+  # tmpfs. Its restore command hashes CAS before copying it to memory.
+  if ! (
+    trap 'docker rm -f "$cas_name" >/dev/null 2>&1 || true' EXIT INT TERM
+    timeout --signal=TERM --kill-after=10s 900s \
+      docker run --pull never --rm --name "$cas_name" --network none \
+      --read-only --cap-drop ALL --security-opt no-new-privileges \
+      --pids-limit 64 --cpus 2 --memory "$((limit+256))m" \
+      --memory-swap "$((limit+256))m" --user "$user_uid:$user_gid" \
+      --tmpfs "/data:rw,nosuid,nodev,noexec,size=${limit}m,uid=$user_uid,gid=$user_gid,mode=0700" \
+      --mount "type=bind,src=$repo,dst=/repo,readonly" \
+      --entrypoint /usr/local/bin/xdrive-backup-repo "$image" \
+      restore --repo /repo --snapshot "$snapshot" --target /data </dev/null
+  ) >&2; then return 7; fi
+  # PostgreSQL receives ONLY pg_dump custom-format bytes on stdin. No host
+  # mounts, live socket/network, or persistent database storage are available.
+  pgcode="$(cat <<'SH'
+set -eu
+export PGDATA=/sandbox/db HOME=/sandbox TMPDIR=/sandbox/tmp
+mkdir -p "$PGDATA" /sandbox/socket "$TMPDIR"
+chmod 700 "$PGDATA" /sandbox/socket
+initdb -D "$PGDATA" -A trust -U xdrive --no-instructions >/dev/null
+pg_ctl -D "$PGDATA" -o "-c listen_addresses='' -c unix_socket_directories=/sandbox/socket -c shared_buffers=16MB -c max_connections=10 -c fsync=off" -w start >/dev/null
+trap 'pg_ctl -D "$PGDATA" -m immediate stop >/dev/null 2>&1 || true' EXIT
+createdb -h /sandbox/socket -U xdrive xdrive
+pg_restore -Fc --exit-on-error --no-owner --no-privileges -h /sandbox/socket -U xdrive -d xdrive >/dev/null
+for relation in xd_nodes xd_files xd_users; do
+  psql -qAt -h /sandbox/socket -U xdrive -d xdrive -v ON_ERROR_STOP=1 \
+    -c "SELECT count(*) FROM public.$relation" >/dev/null
+done
+SH
+)" || return 8
+  if ! (
+    trap 'docker rm -f "$db_name" >/dev/null 2>&1 || true' EXIT INT TERM
+    timeout --signal=TERM --kill-after=10s 900s \
+      docker run --pull never --rm -i --name "$db_name" --network none \
+      --read-only --cap-drop ALL --security-opt no-new-privileges \
+      --pids-limit 128 --cpus 2 --memory "$((limit+256))m" \
+      --memory-swap "$((limit+256))m" --user 70:70 \
+      --tmpfs "/sandbox:rw,nosuid,nodev,size=${limit}m,uid=70,gid=70,mode=0700" \
+      --tmpfs "/var/lib/postgresql/data:rw,nosuid,nodev,noexec,size=16m,uid=70,gid=70,mode=0700" \
+      --shm-size 32m --entrypoint /bin/sh postgres:17-alpine \
+      -ec "$pgcode" < "$real/database.dump"
+  ) >&2; then return 8; fi
+}
+
+backup_isolated_drill_cmd() {
+  [[ $# -eq 1 || $# -eq 3 ]] || {
+    echo "usage: xdrive-server backup drill ABSOLUTE_V2_SNAPSHOT [--max-mib 256..8192]" >&2
+    return 2
+  }
+  local source="$1" limit=1024 result=0 state=failed category="" exe
+  local name started finished files=false database=false
+  if [[ $# -eq 3 ]]; then
+    [[ "$2" == --max-mib && "$3" =~ ^[1-9][0-9]{2,3}$ ]] || return 2
+    limit="$3"
+  fi
+  (( limit >= 256 && limit <= 8192 )) || return 2
+  name="$(basename -- "$source")"
+  [[ "$name" =~ ^xdrive-backup-[0-9]{8}T[0-9]{6}Z$ ]] || name="unavailable"
+  for exe in docker python3 timeout sha256sum readlink flock; do
+    command -v "$exe" >/dev/null 2>&1 || return 2
+  done
+  started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  if backup_isolated_drill_worker "$source" "$limit"; then state=success
+  else result=$?; fi
+  case "$result" in
+    0) category="" ; files=true; database=true ;;
+    3) category=unsafe_snapshot ;;
+    4) category=invalid_snapshot_checksum ;;
+    5) category=sandbox_quota_exceeded ;;
+    6) category=runtime_unavailable ;;
+    7) category=file_restore_failed ;;
+    8) category=postgresql_restore_failed; files=true ;;
+    75) category=repository_busy ;;
+    *) category=drill_failed ;;
+  esac
+  finished="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  printf '{"protocol":"xdrive-host-isolated-drill-v1","state":"%s","environment":"host_ephemeral_offline_tmpfs","snapshot":"%s","started_at":"%s","finished_at":"%s","files_restored":%s,"postgresql_restored":%s,"production_verified":false,"max_mib":%s,"failure_category":"%s"}\n' \
+    "$state" "$name" "$started" "$finished" "$files" "$database" "$limit" "$category"
+  return "$result"
+}
+
 backup_cmd() {
   local subcommand="${1:-}"
   case "$subcommand" in
@@ -1377,6 +1564,10 @@ backup_cmd() {
     verify)
       shift
       backup_verify_cmd "$@"
+      ;;
+    drill)
+      shift
+      backup_isolated_drill_cmd "$@"
       ;;
     retention-plan)
       shift

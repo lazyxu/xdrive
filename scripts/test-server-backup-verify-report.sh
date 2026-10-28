@@ -14,7 +14,7 @@ printf 'db-only' > "$v1/database.dump"
 printf '{}' > "$v1/verify.json"
 printf '{"format_version":1,"file_data_included":false,"consistency_verified":true}\n' > "$v1/manifest.json"
 (cd "$v1"; sha256sum database.dump verify.json manifest.json > SHA256SUMS.txt)
-"$MANAGER" backup verify --json "$v1" > "$TMP/v1-good.json"
+bash "$MANAGER" backup verify --json "$v1" > "$TMP/v1-good.json"
 python3 - "$TMP/v1-good.json" <<'PY'
 import json,sys
 x=json.load(open(sys.argv[1]))
@@ -23,7 +23,7 @@ assert x["cas_objects_checked"]==0 and x["cas_bytes_hashed"]==0,x
 assert x["scope"]=="backup_snapshot_and_referenced_cas"
 PY
 printf 'tamper' >> "$v1/database.dump"
-if "$MANAGER" backup verify --json "$v1" > "$TMP/v1-bad.json" 2>"$TMP/private.log"; then
+if bash "$MANAGER" backup verify --json "$v1" > "$TMP/v1-bad.json" 2>"$TMP/private.log"; then
   echo 'corrupt v1 backup was accepted' >&2; exit 1
 fi
 python3 - "$TMP/v1-bad.json" <<'PY'
@@ -60,14 +60,14 @@ esac
 DOCKER
 chmod 700 "$TMP/mock-bin/docker"
 export PATH="$TMP/mock-bin:$PATH"
-"$MANAGER" backup verify --json "$v2" > "$TMP/v2-good.json"
+bash "$MANAGER" backup verify --json "$v2" > "$TMP/v2-good.json"
 python3 - "$TMP/v2-good.json" <<'PY'
 import json,sys
 x=json.load(open(sys.argv[1]))
 assert x["state"]=="success" and x["format"]=="v2",x
 assert x["cas_objects_checked"]==2 and x["cas_bytes_hashed"]==17,x
 PY
-if XD_MOCK_CAS=fail "$MANAGER" backup verify --json "$v2" > "$TMP/v2-bad.json" 2>"$TMP/private-cas.log"; then
+if XD_MOCK_CAS=fail bash "$MANAGER" backup verify --json "$v2" > "$TMP/v2-bad.json" 2>"$TMP/private-cas.log"; then
   echo 'corrupt v2 CAS was accepted' >&2; exit 1
 fi
 python3 - "$TMP/v2-bad.json" <<'PY'
@@ -76,7 +76,7 @@ x=json.load(open(sys.argv[1]))
 assert x["state"]=="failed" and x["failure_category"]=="object_sha256_mismatch",x
 assert x["cas_objects_checked"]==1 and x["cas_bytes_hashed"]==11,x
 PY
-if XD_MOCK_CAS=malformed "$MANAGER" backup verify --json "$v2" > "$TMP/v2-fake.json" 2>"$TMP/private-bad.log"; then
+if XD_MOCK_CAS=malformed bash "$MANAGER" backup verify --json "$v2" > "$TMP/v2-fake.json" 2>"$TMP/private-bad.log"; then
   echo 'untrusted CAS receipt was accepted' >&2; exit 1
 fi
 python3 - "$TMP/v2-fake.json" <<'PY'
@@ -88,7 +88,7 @@ PY
 if grep -Fq "$TMP" "$TMP/v2-bad.json"; then
   echo 'CAS JSON leaked Host path' >&2; exit 1
 fi
-if "$MANAGER" backup verify --json "$v2" unexpected > "$TMP/extra.json" 2>/dev/null; then
+if bash "$MANAGER" backup verify --json "$v2" unexpected > "$TMP/extra.json" 2>/dev/null; then
   echo 'extra verify args accepted' >&2; exit 1
 fi
 echo 'Host JSON backup verify: checksum, CAS stats, failure and privacy passed'

@@ -351,6 +351,25 @@ second_incremental_backup_dir="$(
   bash "$ROOT/scripts/server-backup.sh" --config-dir "$XDRIVE_HOME" --incremental
 )"
 [[ -f "$second_incremental_backup_dir/objects.index" ]]
+
+# Actual offline v2 restore into two independent tmpfs-only Docker processes.
+# Confirm the live PostgreSQL/Worker remain running without contacting them
+# during the drill; real restore later still uses its existing integration test.
+backup_drill_stage="manual-host-offline-v2-tmpfs-recovery"
+XD_CONFIG_DIR="$XDRIVE_HOME" bash "$ROOT/scripts/xdrive-server-host.sh" \
+  backup drill "$second_incremental_backup_dir" --max-mib 256 \
+  > "$TMP/isolated-host-drill.json"
+python3 - "$TMP/isolated-host-drill.json" <<'PY'
+import json,sys
+d=json.load(open(sys.argv[1]))
+assert d["protocol"]=="xdrive-host-isolated-drill-v1",d
+assert d["state"]=="success" and d["environment"]=="host_ephemeral_offline_tmpfs",d
+assert d["files_restored"] is True and d["postgresql_restored"] is True,d
+assert d["production_verified"] is False and d["max_mib"]==256,d
+PY
+assert_runtime_services
+backup_drill_stage="v2-incremental-roundtrip"
+
 repo_root="$XDRIVE_HOME/backups/incremental"
 test -d "$repo_root/objects/sha256"
 [[ -f "$repo_root/objects/sha256/${cas_sha:0:2}/$cas_sha" ]]
