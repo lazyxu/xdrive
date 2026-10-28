@@ -289,6 +289,10 @@ function useXDriveBackgroundTasks({
     const global = effectiveScope === 'global'
     const load = global ? port.loadGlobalPage : port.loadMinePage
     if (!load) return
+    // A canceled cursor may never settle; it must not strand the next
+    // pagination control in a permanent Loading More state.
+    if (global) setGlobalLoadingMore(false)
+    else setMineLoadingMore(false)
 
     if (global) {
       setGlobalLoadEpoch((epoch) => epoch + 1)
