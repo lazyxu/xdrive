@@ -415,7 +415,7 @@ internal fun AccountMenu(state: DriveState, controller: DriveController, checkUp
                     enabled = !state.loading && state.loaded,
                     modifier = Modifier.testTag("files-create-folder-action"),
                     onClick = { expanded = false; onCreateFolder() })
-                DropdownMenuItem(text = { Text("排序") },
+                DropdownMenuItem(text = { Text("排序与分组") },
                     enabled = state.canNavigateFiles() && state.loaded &&
                         !state.browseSelectionMode && state.error == null,
                     modifier = Modifier.testTag("files-arrangement-open"),
@@ -446,10 +446,11 @@ internal fun AccountMenu(state: DriveState, controller: DriveController, checkUp
         AlertDialog(
             onDismissRequest = { arrangeOpen = false },
             modifier = Modifier.testTag("files-arrangement-dialog"),
-            title = { Text("排序") },
+            title = { Text("排序与分组") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("按服务器全目录排序，不只重排已加载文件。",
+                Column(Modifier.heightIn(max = 368.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("按服务器全目录排序与分组，不只处理已加载文件。",
                         style = MaterialTheme.typography.bodySmall)
                     for ((sort, label) in listOf("name" to "名称",
                         "updated" to "修改日期", "type" to "类型", "size" to "大小")) {
@@ -468,6 +469,21 @@ internal fun AccountMenu(state: DriveState, controller: DriveController, checkUp
                         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                             .testTag("files-arrange-direction"),
                     ) { Text("方向：" + if (arrangeDraft.order == "asc") "升序" else "降序") }
+                    HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                    Text("分组", style = MaterialTheme.typography.titleSmall)
+                    for ((group, label) in listOf("none" to "不分组",
+                        "type" to "按类型分组", "modified" to "按修改日期分组",
+                        "size" to "按大小分组")) {
+                        TextButton(
+                            onClick = { arrangeDraft = arrangeDraft.copy(group = group) },
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                                .testTag("files-arrange-group-$group"),
+                        ) {
+                            Text(label, modifier = Modifier.weight(1f),
+                                textAlign = TextAlign.Start)
+                            if (arrangeDraft.group == group) Text("✓")
+                        }
+                    }
                     TextButton(
                         onClick = { arrangeDraft = arrangeDraft.copy(
                             foldersFirst = !arrangeDraft.foldersFirst) },
