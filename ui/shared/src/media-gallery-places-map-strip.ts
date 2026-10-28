@@ -103,3 +103,58 @@ export function xDriveCurrentMapPhotoCollections(
   return xDriveVerifiedMapPhotoProjections(page, projected, approved)
     .slice(0, XDRIVE_PLACES_MAP_STRIP_MAX)
 }
+
+
+/**
+ * Presentation-only decluttering for the two SDK Hosts' ONE trusted React
+ * photo overlay. This consumes only Parent-verified /cells projections; it
+ * neither changes the signed Owner count nor filters the complete map sheet.
+ *
+ * An axis-aligned exclusion rectangle is intentional: two 72px cards (and
+ * their upper-right count badges) can visually overlap diagonally even if
+ * their centers are >= 88px apart in Euclidean distance. Pins too close to a
+ * clipped map edge or behind the floating photo dock are still available in
+ * the full accessible Cell list and original Owner-signed photo wall.
+ */
+export const XDRIVE_PLACES_MAP_COVER_MAX = 24
+
+export function xDriveSelectVisibleMapPhotoCovers<T extends Readonly<{
+  x:number; y:number; count:number
+}>>(
+  verifiedCandidates: readonly T[],
+  width: number,
+  height: number,
+  compact: boolean,
+  hasBottomStrip: boolean,
+): T[] {
+  if (!Array.isArray(verifiedCandidates) || verifiedCandidates.length > 64 ||
+      !Number.isSafeInteger(width) || width < 120 || width > 4096 ||
+      !Number.isSafeInteger(height) || height < 120 || height > 4096) return []
+  // MUI covers are 64px at xs and 72px at sm, even when a wide
+  // landscape/tablet still uses the compact (edge-to-edge) Gallery chrome.
+  const cardRadius = width < 600 ? 32 : 36
+  // The badge extends past the top-right corner of the cover.
+  const minX = cardRadius + 12
+  const maxX = width - cardRadius - 34
+  const minY = cardRadius + 34
+  const maxY = height - (hasBottomStrip
+    ? (compact ? 90 : 156)
+    : cardRadius + 12)
+  // Exclude rectangular card + badge overlap, including diagonal neighbors.
+  const gapX = width < 600 ? 92 : 104
+  const gapY = width < 600 ? 82 : 92
+  const visible: T[] = []
+  // The existing Parent verifier already sorts by true signed photo count.
+  // Never fabricate/aggregate counts or re-rank using SDK-provided labels.
+  for (const pin of verifiedCandidates) {
+    if (!pin || !Number.isSafeInteger(pin.count) || pin.count <= 0 ||
+        !Number.isFinite(pin.x) || !Number.isFinite(pin.y) ||
+        pin.x < minX || pin.x > maxX ||
+        pin.y < minY || pin.y > maxY) continue
+    if (visible.some(previous => Math.abs(previous.x - pin.x) < gapX &&
+        Math.abs(previous.y - pin.y) < gapY)) continue
+    visible.push(pin)
+    if (visible.length === XDRIVE_PLACES_MAP_COVER_MAX) break
+  }
+  return visible
+}

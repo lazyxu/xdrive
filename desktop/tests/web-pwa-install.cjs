@@ -227,6 +227,78 @@ test('S2B4: unsafe non-loopback HTTP cannot be mistaken for mobile HTTPS', async
   assert.match(checks[1].detail, /HTTPS/)
 })
 
+
+test('S2 Safari: denied caller cancellation state or listener prevents all diagnostic HEADs', async () => {
+  for (const denied of ['aborted-getter', 'subscription', 'second-getter']) {
+    let reads = 0
+    let subscriptions = 0
+    const signal = {
+      get aborted() {
+        reads++
+        if (denied === 'aborted-getter' ||
+            (denied === 'second-getter' && reads === 2)) {
+          throw new Error('restricted AbortSignal.aborted')
+        }
+        return false
+      },
+      addEventListener() {
+        subscriptions++
+        if (denied === 'subscription') throw new Error('restricted AbortSignal.addEventListener')
+      },
+      removeEventListener() { throw new Error('restricted AbortSignal.removeEventListener') },
+    }
+    const h = harness({ userAgent: 'iPhone Safari' })
+    const checks = await boundedInstallCheck(h.mod.checkXDrivePwaAssets({
+      signal, timeoutMs: 30,
+    }))
+    assert.deepEqual(checks.map(x => x.id),
+      ['context', 'transport', 'manifest', 'worker', 'offline', 'icon192', 'icon512'])
+    assert.equal(checks[0].state, 'pass')
+    assert.equal(checks[1].state, 'pass')
+    assert.equal(h.queries.length, 0, denied + ' must not issue even public HEADs')
+    assert.deepEqual(checks.slice(2).map(x => x.state), Array(5).fill('fail'))
+    assert.ok(checks.slice(2).every(x => /无法监听取消信号/.test(x.detail)))
+    assert.equal(subscriptions, denied === 'aborted-getter' ? 0 : 1)
+  }
+})
+
+test('S2 Safari: cancellation between state check and listener admission starts zero HEADs', async () => {
+  let reads = 0
+  let subscription = 0
+  let cleanup = 0
+  const signal = {
+    get aborted() { reads++; return reads === 2 },
+    addEventListener() { subscription++ },
+    removeEventListener() { cleanup++ },
+  }
+  const h = harness()
+  const checks = await boundedInstallCheck(h.mod.checkXDrivePwaAssets({ signal }))
+  assert.equal(reads, 2, 'must recheck after subscribing')
+  assert.equal(subscription, 1)
+  assert.equal(cleanup, 1)
+  assert.equal(h.queries.length, 0)
+  assert.ok(checks.slice(2).every(x => x.state === 'fail' && /取消/.test(x.detail)))
+})
+
+test('S2 Safari: denied AbortSignal cleanup preserves successful public diagnostic results', async () => {
+  let subscribed = 0
+  let removed = 0
+  const signal = {
+    aborted: false,
+    addEventListener() { subscribed++ },
+    removeEventListener() { removed++; throw new Error('restricted cleanup') },
+  }
+  const h = harness()
+  const checks = await boundedInstallCheck(h.mod.checkXDrivePwaAssets({ signal }))
+  assert.deepEqual(checks.map(x => x.state), Array(7).fill('pass'))
+  assert.equal(h.queries.length, 5)
+  assert.equal(subscribed, 1)
+  assert.equal(removed, 1)
+  assert.ok(h.queries.every(([url, options]) =>
+    url.startsWith('/') && options.credentials === 'omit' &&
+    options.method === 'HEAD' && options.redirect === 'error'))
+})
+
 function successfulPublicHead(url) {
   const mime = url === '/site.webmanifest' ? 'application/manifest+json'
     : url === '/sw.js' ? 'text/javascript'

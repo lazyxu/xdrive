@@ -1,6 +1,26 @@
-> **2026-10-22 当前核实的权威状态：** P0 公共 App Shell/升级与 P1 按账号隔离的只读目录/相册快照已合入。P2-A 同进程 100k 基线 [#2325](https://github.com/lazyxu/xdrive/pull/2325) 和 **P2-A2 真跨 Chrome OS 进程 [#2337](https://github.com/lazyxu/xdrive/pull/2337)** 均合入（后者 `master@1cf0df6b`，准确 HEAD 专项与 77-job Final Gate 成功）。跨进程确实重新下载缩略图，但 loopback 场景尚无可归因的净加速证据，因此 **P2-B 持久私人 Blob 缓存暂不开发**。当前首要缺口是第三步上传中 SW waiting/跨窗口/离线历史撤销的组合 E2E；第四步 BEFORE/AFTER、第五步历史公开资源安全生命周期仍待完成。参见 [五阶段最新权威记录](pwa-five-stage-execution-20261022.md)。下方 P0/P1/P2 初版表格始于 2026-10-12，是历史记录，不应当作今日待办。实体 iOS/Android 仍 `NOT RUN`；不可访问的生产环境安全验收「按用户决定跳过（未验收）」、源码 Owner/ACL/撤销测试照常执行。
-
 # xDrive PWA 交付审查与强化路线图
+
+## 2026-10-28 · 当前 MVP 状态与剩余工作（覆盖下方历史日期快照）
+
+**证据截止：** `lazyxu/xdrive master@3bf403fd`（合入 #2892 后的源码检查点；该 SHA 之后新增 PR 状态以链接实时结果为准）。这是受控源码/CI 的状态复核，不是已在 iPhone 安装、通过真实生产证书或设备发布验收的声明。对所有 PR 单独区分准确 HEAD 受影响测试、完整 CI/Final Gate、已合入、真实设备验收；**旧章节里的“尚未开发 / Draft / 当前首要缺口”只代表当时历史，不得拿来重复排期**。
+
+| 优先级 | 真实已完成（可复核） | 尚缺什么 / 当前边界 |
+| --- | --- | --- |
+| P0 App Shell / SW / 多窗口与撤权 | [#2397](https://github.com/lazyxu/xdrive/pull/2397) 已合入：真实 Gin/PG17/CAS 的旧 SW waiting、在途私有 Range、双窗口登出和旧 Owner 离线目录撤销组合；[#2866](https://github.com/lazyxu/xdrive/pull/2866) 已合入：第二窗口实际登出，原签名 H264 206 Range Go Context.Done / 无旧媒体尾流 | 受控跨窗口 E2E 不等于实体 iOS 27 Safari/Home Screen 切后台、锁屏与 OS 进程回收验收 |
+| P0 全页面前台优先级与 Files 导航 | [#2873](https://github.com/lazyxu/xdrive/pull/2873) 已合入且准确 HEAD [Final Gate](https://github.com/lazyxu/xdrive/actions/runs/40614069563) SUCCESS：每个已接受的页面切换只抢占**旧页面可丢弃读取**，新页和 Viewer 优先；[#2881](https://github.com/lazyxu/xdrive/pull/2881) 已合入：Cookie/JWT 续期仍保留同 Owner `?dir=8`/排序/分组 | [#2892](https://github.com/lazyxu/xdrive/pull/2892) 已合入为 [`3bf403fd`](https://github.com/lazyxu/xdrive/commit/3bf403fd6805f3b68bccb65f2c728ce9e0a232da)，准确 HEAD [CI / Final Gate](https://github.com/lazyxu/xdrive/actions/runs/40621623700) SUCCESS：旧原生 IPC Promise 不响应取消也立即释放**逻辑**六槽；迟到旧任务不释放新槽，持久上传/下载/同步/备份不受影响。页面响应与 Viewer/UI 设备物理证据仍另列 |
+| P0 Safari 安装/受限 API | [#2879](https://github.com/lazyxu/xdrive/pull/2879) 已合入：WebKit 拒绝可选 pageshow/pagehide/visibilitychange 监听时不崩溃；[#2890](https://github.com/lazyxu/xdrive/pull/2890) 已合入，准确 HEAD [CI](https://github.com/lazyxu/xdrive/actions/runs/40621277667) SUCCESS：拒绝 `location/protocol/hostname` 时安装诊断 fail-closed，仍可完成五项无凭据公开 HEAD | 安装图标、系统分享菜单、证书链、后台任务、VoiceOver 等**实际 iPhone / Installed 模式**仍 `NOT RUN` |
+| P0 429/503/安全只读重试 | 有限 GET allowlist、单次 Retry-After、Abort、网络/Server/401/403 分流、已有跨 Owner 真实 Gin 受控测试；上传/下载/授权写操作不自动重放 | [#2895](https://github.com/lazyxu/xdrive/pull/2895) 修复 WebKit AbortSignal 监听被拒后额外私有 GET / 丢失原 503 / 延迟定时器；准确 HEAD Desktop/Web 测试已成功，但完整 Final Gate **尚未结束、未合入**；本代码涉及私有只读请求安全，不为节省 CI 费用擅自归入非安全 PWA UI 快速通道 |
+| P0 地图两 Host / Owner scope | [#2883](https://github.com/lazyxu/xdrive/pull/2883) 真实 Album∩Favorite∩Date∩Kind∩Sort 的双 Host 完整文档一次性授权范围；[#2889](https://github.com/lazyxu/xdrive/pull/2889) 五类会话/相册/Owner 失效；[#2894](https://github.com/lazyxu/xdrive/pull/2894) 生产 Date/Kind 排除真的返回 0/恢复 2 张并正确区分 filtered-empty；[#2898](https://github.com/lazyxu/xdrive/pull/2898) 真 PostgreSQL 删除相册和三条成员后两个 SDK Host 都拒绝旧 ticket。以上均已合入，精确 Gin/双 Host Chromium 专项成功 | [#2210](https://github.com/lazyxu/xdrive/issues/2210) 继续收敛 History/BFCache、图库↔地图↔Viewer 组合返回、100k 当前发布性能和实机 iOS 相册地图 1:1；两 Host 只用同一个受保护 React Parent，不恢复逐照片手动审批 |
+| P1 真 100k/115k Viewer 性能 | [P1P #40514321734](https://github.com/lazyxu/xdrive/actions/runs/40514321734) `completed/success`：100k 逻辑媒体、115k **物理 CAS 原件**、390px Chromium 3/3 通过；JPEG 原图 P50 1201.425ms、H264 呈现帧 P50 1057.647ms、Live hold P50 128.938ms，都是**各自场景指标**。[P1M #40491630543](https://github.com/lazyxu/xdrive/actions/runs/40491630543) `completed/success`：A-B-B-A 四组各 n=3，零失败组 | 两组皆 `causalConclusion=NOT_ESTABLISHED`；P1M 尚未证明二版本物理数据逐字节一致或可归因收益。[#2260](https://github.com/lazyxu/xdrive/issues/2260) 仅继续当前 master 混合 HEIC/可播放 MOV/视频/Live、CPU/RSS/撤权/网络/Owner 与同源配对归因，不重复声称 115k 物理 CAS 从未测过 |
+| P1 功能增强（不作为核心 MVP 前置） | P1-A 离线只读目录与相册元数据 opt-in 有界快照已合入，公有 hashed assets 继续 append-only；已有地图 Viewer/Live 原图与撤权覆盖 | 公共分享 HEIC/视频/Live [#2205](https://github.com/lazyxu/xdrive/issues/2205)、旅行真成员 [#2208](https://github.com/lazyxu/xdrive/issues/2208)、GPS 编辑撤销与分享隐私 [#2209](https://github.com/lazyxu/xdrive/issues/2209) 独立跟踪；不混称基本 Files/Gallery 在线不可用 |
+
+**当前建议执行顺序：** ① 不重做已合并 P0，尤其 #2892 的前台缩略图六槽问题已合入；优先收尾准确 HEAD [#2895](https://github.com/lazyxu/xdrive/pull/2895) 的剩余 CI，并满足实际 GitHub 分支保护后合入。② [#2210](https://github.com/lazyxu/xdrive/issues/2210) 仅补真实没有覆盖的双 Host/History/Viewer 弱网与 UI 差距。③ [#2260](https://github.com/lazyxu/xdrive/issues/2260) 先找实测瓶颈再改生产性能，不把各媒体 P50 互称加速。④ 设备 S5 真机/安装模式、系统分享、触控、Safe Area、横屏、375/390/899/900、VoiceOver 等继续列 `NOT RUN` 或依用户决定 **「跳过（未验收）」**；这些不是源码/CI/PR 的额外阻断，但从不冒称真机 PASS。受控 Owner/ACL/Origin/CSP/Abort/隐私与准确 CI 必须验证。
+
+**证据台账：** [S5 真机验收矩阵](pwa-s5-acceptance.md)、[五阶段历史及截止 10/23 的受控组合](pwa-five-stage-execution-20261022.md)。2026-10-12 原 P0/P1/P2 表格及下面 10/22 快照作为历史信息保留，不能反向覆盖本节。
+
+---
+
+> **2026-10-22 历史快照（非当前状态）：** P0 公共 App Shell/升级与 P1 按账号隔离的只读目录/相册快照已合入。P2-A 同进程 100k 基线 [#2325](https://github.com/lazyxu/xdrive/pull/2325) 和 **P2-A2 真跨 Chrome OS 进程 [#2337](https://github.com/lazyxu/xdrive/pull/2337)** 均合入（后者 `master@1cf0df6b`，准确 HEAD 专项与 77-job Final Gate 成功）。跨进程确实重新下载缩略图，但 loopback 场景尚无可归因的净加速证据，因此 **P2-B 持久私人 Blob 缓存暂不开发**。当前首要缺口是第三步上传中 SW waiting/跨窗口/离线历史撤销的组合 E2E；第四步 BEFORE/AFTER、第五步历史公开资源安全生命周期仍待完成。参见 [五阶段最新权威记录](pwa-five-stage-execution-20261022.md)。下方 P0/P1/P2 初版表格始于 2026-10-12，是历史记录，不应当作今日待办。实体 iOS/Android 仍 `NOT RUN`；不可访问的生产环境安全验收「按用户决定跳过（未验收）」、源码 Owner/ACL/撤销测试照常执行。
 
 **审查基线：2026-10-12，GitHub lazyxu/xdrive master@d7788fb73efc6d5f147b2ed53fd6c991004324ae。** 这是 PWA 专项唯一交付台账；已有移动任务以 docs/mobile-web-followups.md 的 M38–M49/M55/M56 和 docs/mobile-web-platform-matrix.md 为准，不重复实现业务逻辑。每条必须分别写清“实现、组件测试、CI、合并、浏览器验收、真机/物理测量”；未验证不得写完成。
 

@@ -5,6 +5,7 @@
   'use strict'
   const MAX_BYTES = 8192
   const MAX_CELLS = 64
+  const MAX_PHOTO_COVERS = 24
   const status = document.getElementById('xdrive-isolated-map-status')
   const canvas = document.getElementById('xdrive-isolated-map-canvas')
   const validOrigin = value => {
@@ -50,7 +51,7 @@
     typeof data.nonce === 'string' && /^[a-f0-9]{32,64}$/.test(data.nonce) &&
     new TextEncoder().encode(JSON.stringify(data)).length <= MAX_BYTES
   let active = false, parentOrigin = '', generation = 0, nonce = ''
-  let cells = [], allowedKeys = new Set(), map = null, sdk = null
+  let cells = [], allowedKeys = new Set(), coveredKeys = new Set(), map = null, sdk = null
   let script = null, pending = false, disposed = false, sessionFailed = false, labelBindings = []
   let initialOverviewPending = true
   let viewportTimer = null
@@ -102,10 +103,14 @@
     }
     send('cell-projections',{width,height,points})
   }
-  const renderCells = () => {
+  const renderCells = (republishProjection = true) => {
     clearLabels()
     if (!map || !sdk || !active || disposed) return
     for (const cell of cells) {
+      // An obsolete Child still has its prior array in memory immediately
+      // after gesture cancellation, but its permitted keys are revoked.
+      // Never recreate their numeric labels on a delayed cover update.
+      if (!allowedKeys.has(cell.key) || coveredKeys.has(cell.key)) continue
       try {
         const label = new sdk.Label(cell.count > 1
           ? '▣ ' + cell.count.toLocaleString('zh-CN') + '张' : '▣', {
@@ -126,7 +131,7 @@
         labelBindings.push({label,click})
       } catch { clearLabels(); send('map-failed'); return }
     }
-    emitCellProjections()
+    if (republishProjection) emitCellProjections()
   }
   const emitViewport = () => {
     if (!map || !active || disposed) return
@@ -163,6 +168,7 @@
     if (viewportTimer !== null) clearTimeout(viewportTimer)
     viewportTimer = null
     allowedKeys.clear()
+    coveredKeys.clear()
     clearLabels()
     send('cancel')
   }
@@ -245,6 +251,7 @@
         sessionFailed=true
         clearLabels()
         allowedKeys.clear()
+        coveredKeys.clear()
         cells=[]
         try {map?.destroy?.()} catch {}
         map=null
@@ -274,9 +281,25 @@
       cells=data.cells.map(cell=>({key:cell.key,latitude:cell.latitude,
         longitude:cell.longitude,count:cell.count}))
       allowedKeys=next
+      coveredKeys.clear()
       fitInitialOverview()
       renderCells()
       if(!map && status)status.textContent='已建立隔离消息通道；等待仅用于地图的会话。'
+    } else if(data.kind==='photo-covers') {
+      // Cosmetic suppression only. The Child receives ephemeral current
+      // Cell keys, never Owner identifiers, thumbnails or photo metadata.
+      if (!active || !map || !exact(data,
+          ['version','generation','nonce','kind','keys']) ||
+          data.generation!==generation || data.nonce!==nonce ||
+          !Array.isArray(data.keys) || data.keys.length>MAX_PHOTO_COVERS) return
+      const next=new Set()
+      for(const key of data.keys) {
+        if (typeof key!=='string' || !/^[a-f0-9]{32}$/.test(key) ||
+            next.has(key) || !allowedKeys.has(key)) return
+        next.add(key)
+      }
+      coveredKeys=next
+      renderCells(false)
     } else if(data.kind==='map-session') {
       if (!active || !exact(data,['version','generation','nonce','kind','ticket']) ||
           data.generation!==generation || data.nonce!==nonce ||
@@ -303,7 +326,7 @@
     if (viewportTimer !== null) clearTimeout(viewportTimer)
     viewportTimer = null
     active=false;disposed=true;generation=0;nonce=''
-    allowedKeys.clear();cells=[];clearLabels()
+    allowedKeys.clear();coveredKeys.clear();cells=[];clearLabels()
     try { map?.destroy?.() } catch {}
     map=null
     script?.remove();script=null

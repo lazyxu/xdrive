@@ -621,7 +621,8 @@ jobs:
         shell: bash
         run: bash scripts/ci/verify-release-archive-allowlist.sh release
       - name: Notify bounded queued-CI prune after verified Snapshot publication
-        if: github.ref == 'refs/heads/master'
+        # Superseded master publishers must not dispatch cleanup.
+        if: github.ref == 'refs/heads/master' && steps.snapshot_eligibility.outputs.publish == 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ steps.snapshot_app_token.outputs.token || github.token }}

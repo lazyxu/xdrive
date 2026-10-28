@@ -15,6 +15,7 @@ import type { XDriveServiceDependenciesPage } from './ServiceDependenciesPage'
 import type { XDriveConflictsPageProps } from './ConflictsPage'
 import type { XDriveDiagnosticsPage } from './DiagnosticsPage'
 import type { XDriveOverviewPageProps } from './OverviewPage'
+import type { XDriveFileExplorerUnavailableActions } from './FileExplorer'
 import type { XDriveWorkspaceAppRoute } from './WorkspaceRoute'
 
 /** Authenticated domain ports, not Host-owned JSX or a generic Agent proxy. */
@@ -22,6 +23,8 @@ export type XDriveWorkspaceHostServices = {
   /** Transitional Owner-scoped bridge until file/task domain ports converge. */
   readonly overviewPage?: XDriveOverviewPageProps
   readonly localBackupClient?: XDriveSynologyBackupLocalClient
+  /** Host-declared missing Files operations: shared UI displays them disabled. */
+  readonly filesUnavailableActions?: XDriveFileExplorerUnavailableActions
   readonly deviceBackups?: XDriveDeviceBackupDataSource
   readonly cloudStorage?: XDriveCloudStorageDataSource
   readonly localStorage?: XDriveLocalStorageDataSource

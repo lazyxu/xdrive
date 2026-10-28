@@ -172,3 +172,69 @@ test('S3B: user cancellation returns even when the browser transport ignores Abo
   assert.deepEqual(await pending, { state: 'cancelled' })
   assert.equal(signal.aborted, true)
 })
+
+
+test('S3B Safari: denied caller AbortSignal read or subscription prevents all readiness requests', async () => {
+  for (const denied of ['getter', 'subscription', 'recheck']) {
+    let reads = 0
+    let subscriptions = 0
+    let cleanup = 0
+    let requests = 0
+    const signal = {
+      get aborted() {
+        reads++
+        if (denied === 'getter' || (denied === 'recheck' && reads === 2)) {
+          throw Error('WebKit denied AbortSignal.aborted')
+        }
+        return false
+      },
+      addEventListener() {
+        subscriptions++
+        if (denied === 'subscription') throw Error('WebKit denied AbortSignal listener')
+      },
+      removeEventListener() { cleanup++ },
+    }
+    const result = await probe({signal, request:()=>{requests++;return Promise.resolve({status:200})}})
+    assert.deepEqual(result, {state:'browser-restricted'}, denied)
+    assert.equal(requests, 0, 'no public GET may start without observable cancellation')
+    assert.equal(subscriptions, denied === 'getter' ? 0 : 1)
+    assert.equal(cleanup, denied === 'recheck' ? 1 : 0)
+  }
+})
+
+test('S3B Safari: cancellation during listener admission never dispatches readiness GET', async () => {
+  let reads = 0
+  let removals = 0
+  let requests = 0
+  const signal = {
+    get aborted() { reads++; return reads === 2 },
+    addEventListener() {},
+    removeEventListener() { removals++ },
+  }
+  assert.deepEqual(await probe({signal, request:()=>{requests++;return Promise.resolve({status:200})}}),
+    {state:'cancelled'})
+  assert.equal(reads, 2)
+  assert.equal(requests, 0)
+  assert.equal(removals, 1)
+})
+
+test('S3B Safari: denied cleanup cannot discard the actual healthy response', async () => {
+  let removed = 0
+  const signal = {
+    aborted:false,
+    addEventListener() {},
+    removeEventListener() { removed++; throw Error('WebKit denied removeEventListener') },
+  }
+  const result = await probe({signal,request:async()=>({
+    status:200, headers:{get:()=> 'application/json'},json:async()=>({ok:true}),
+  })})
+  assert.deepEqual(result,{state:'ready',httpStatus:200})
+  assert.equal(removed,1)
+})
+
+test('S3B Safari: restricted browser is distinct from offline Server and never a green probe', () => {
+  const ui = fs.readFileSync(path.join(root,'web/src/PwaUpdateSection.tsx'),'utf8')
+  assert.ok(ui.includes("serverResult?.state === 'browser-restricted'"))
+  assert.ok(ui.includes('未发送服务器请求'))
+  assert.doesNotMatch(source,/Authorization|localStorage|sessionStorage|POST|PUT|DELETE|skipWaiting|location.reload/)
+})

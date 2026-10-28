@@ -62,7 +62,7 @@ stale_header = release.split(stale, 1)[1].split(marker, 1)[0]
 assert "id: snapshot_eligibility" in stale_header
 assert 'echo "publish=true" >> "$GITHUB_OUTPUT"' in stale_header
 assert 'echo "publish=false" >> "$GITHUB_OUTPUT"' in stale_header
-assert release.count("steps.snapshot_eligibility.outputs.publish == 'true'") == 4
+assert release.count("steps.snapshot_eligibility.outputs.publish == 'true'") == 5, "four floating-channel steps plus one publish-only cleanup notifier"
 for step, condition in (
     ("Probe snapshot Git ref authorization before release mutation",
      "if: github.ref == 'refs/heads/master' && steps.snapshot_eligibility.outputs.publish == 'true'"),
@@ -71,6 +71,8 @@ for step, condition in (
     ("Promote successful server images",
      "if: github.ref != 'refs/heads/master' || steps.snapshot_eligibility.outputs.publish == 'true'"),
     ("Publish rolling snapshot prerelease",
+     "if: github.ref == 'refs/heads/master' && steps.snapshot_eligibility.outputs.publish == 'true'"),
+    ("Notify bounded queued-CI prune after verified Snapshot publication",
      "if: github.ref == 'refs/heads/master' && steps.snapshot_eligibility.outputs.publish == 'true'"),
 ):
     step_start = "      - name: " + step + "\n"

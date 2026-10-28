@@ -519,13 +519,14 @@ async function testIOSPhotoMapCompactChrome(browser,mode,scheme,port){
 async function testInvalidatedOwnerHandoff(browser,from,port,scenario){
   const target=from==='inline'?'isolated':'prototype'
   assert(['foreign-owner','album-revision','album-missing','album-deleted',
-    'session-revoked','map-epoch-revoked'].includes(scenario))
+    'session-revoked','map-epoch-revoked','network-drop'].includes(scenario))
   const context=await browser.newContext({
     viewport:{width:390,height:844},locale:'zh-CN',
     ignoreHTTPSErrors:true,serviceWorkers:'block'})
   const page=await context.newPage()
   page.setDefaultTimeout(30000)
   const runtimeErrors=[]
+  let droppedConsumes=0
   page.on('pageerror',error=>runtimeErrors.push(error.name))
   await page.route('https://api.map.baidu.com/api?**',route=>{
     assert.equal(new URL(route.request().url()).searchParams.get('ak'),
@@ -566,7 +567,7 @@ async function testInvalidatedOwnerHandoff(browser,from,port,scenario){
       if(!/^[a-f0-9]{64}$/.test(receipt?.ticket||''))
         return {issued:issued.status,changed:0,ticket:''}
       let changed=204
-      if(args.scenario!=='foreign-owner'){
+      if(args.scenario!=='foreign-owner'&&args.scenario!=='network-drop'){
         const response=await fetch(args.actionPath,{method:'POST',
           cache:'no-store',
           headers:{Authorization:'Bearer '+owner.token,
@@ -579,6 +580,17 @@ async function testInvalidatedOwnerHandoff(browser,from,port,scenario){
     record(from+'→'+target+': test Owner issued one-use ticket before '+scenario,
       prepared.issued===200&&prepared.changed===204&&
       /^[a-f0-9]{64}$/.test(prepared.ticket))
+    if(scenario==='network-drop'){
+      // Interrupt the REAL Owner/Gin consumption request at Chromium's
+      // transport boundary after the ticket is issued and before the new
+      // document can mount its map. Never forge a 403/200 fixture response.
+      await page.route('**/api/v1/media/places/baidu-jsapi/scope-handoff/consume',
+        route=>{
+          if(route.request().method()!=='POST')return route.continue()
+          droppedConsumes++
+          return route.abort('failed')
+        })
+    }
     // A real full document replace, not a synthetic consume response.
     await page.evaluate(({ticket,target,foreign})=>{
       const next=new URL(location.href)
@@ -614,6 +626,9 @@ async function testInvalidatedOwnerHandoff(browser,from,port,scenario){
     }))
     record(from+'→'+target+': '+scenario+' reload cannot widen Owner PhotoScope',
       reload.state==='denied'&&reload.queries===0&&reload.maps===0)
+    if(scenario==='network-drop')
+      record(from+'→'+target+': dropped Gin consume is never retried on reload',
+        droppedConsumes===1&&runtimeErrors.length===0)
     summary.ownerScopeInvalidationModes.push(from+':'+scenario)
   }finally{
     if(scenario!=='foreign-owner'){
@@ -2486,12 +2501,12 @@ async function main(){
       record('both Hosts exclude real date/kind and recover only scoped Owner covers',
         summary.fullDocumentNegativeFilterModes.join(',')==='inline,isolated')
       for(const scenario of ['album-revision','album-missing','album-deleted',
-        'session-revoked','map-epoch-revoked','foreign-owner']){
+        'session-revoked','map-epoch-revoked','foreign-owner','network-drop']){
         await testInvalidatedOwnerHandoff(browser,'inline',port,scenario)
         await testInvalidatedOwnerHandoff(browser,'isolated',port,scenario)
       }
-      record('two SDK Hosts deny pending Owner tickets on real Album deletion and revocation',
-        summary.ownerScopeInvalidationModes.length===12)
+      record('two SDK Hosts deny pending Owner tickets on Album/revoke/network failures',
+        summary.ownerScopeInvalidationModes.length===14)
       await testStaleSourceRevisionOwnerMap(browser,'inline',port)
       await testStaleSourceRevisionOwnerMap(browser,'isolated',port)
       record('both SDK Hosts reject stale Node revisions in real Gin Owner map/Cell Range',

@@ -91,7 +91,13 @@ test('owners derive mutability from callbacks, not from Share credentials', () =
   const owner = read('ui/shared/src/mui/FileExplorer.tsx')
   assert(owner.includes('accountCapabilities.download && onDownloadItems'))
   assert(owner.includes('accountCapabilities.delete && onDeleteItems'))
-  assert(owner.includes('write: Boolean(onCreateFolder || onUpload || onUploadFolder ||'))
+  assert(owner.includes('write: Boolean((onCreateFolder && !unavailableActions?.createFolder) ||'))
+  assert(owner.includes('(onUpload && !unavailableActions?.uploadFiles) ||'))
+  assert(owner.includes('(onUploadFolder && !unavailableActions?.uploadFolder) ||'))
+  assert(owner.includes('onCopyItems || onCopyItemsTo || onMoveItemsTo || onRenameItem ||'))
+  assert(owner.includes('delete: Boolean(onDeleteItems)'))
+  assert(owner.includes('search: Boolean(searchEnabled && onSearch && !searchUnavailableReason)'),
+    'Owner-wide Search must require both a real handler and an allowed Host capability')
   assert.equal(source.includes('publicShareChildren('), false)
 })
 

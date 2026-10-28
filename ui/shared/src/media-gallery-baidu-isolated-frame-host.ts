@@ -1,6 +1,8 @@
 import {
   xDriveCreateBaiduIsolatedCellsMessage,
   xDriveCreateBaiduIsolatedCameraMessage,
+  xDriveCreateBaiduIsolatedPhotoCoversMessage,
+  XDRIVE_BAIDU_ISOLATED_MAX_PHOTO_COVERS,
   xDriveParseBaiduIsolatedChildEvent,
   xDriveValidBaiduIsolatedBoundary,
 } from './media-gallery-baidu-isolated-origin-protocol'
@@ -52,6 +54,9 @@ export interface XDriveBaiduIsolatedFrameHost<T> {
   readonly element: HTMLIFrameElement
   /** Replace all current authorized cells, never append to old Owner cells. */
   replaceAuthorizedCells(cells: readonly XDriveTrustedIsolatedMapCell<T>[]): boolean
+  /** Only current Owner selections with visible React photo buttons;
+   * the Child receives random keys, never private image/Node/Owner data. */
+  setPhotoCoverSelections(selections: readonly T[]): boolean
   /** One-use map-only redeem ticket, NEVER a JWT, AK or Owner identity. */
   bootstrapMapSession(ticket: string): boolean
   /** BD-09 camera return hint after SDK map-ready; no original WGS84. */
@@ -308,6 +313,30 @@ export function xDriveMountBaiduIsolatedFrame<T>(
         published = message
         if (ready) post(message)
         return true
+      },
+      setPhotoCoverSelections(selections) {
+        if (!alive || !ready || !mapReady || !boundary || !published ||
+            !iframe.contentWindow || !Array.isArray(selections) ||
+            selections.length > XDRIVE_BAIDU_ISOLATED_MAX_PHOTO_COVERS) return false
+        // A camera-cancel event revokes Parent selection keys before the
+        // next signed /cells receipt. Do not update Child marker styling then.
+        if (ownerSelection.size !== published.cells.length) return false
+        const requested = new Set(selections)
+        if (requested.size !== selections.length) return false
+        const keys: string[] = []
+        // Reference identity must match the current Owner /cells receipt.
+        // Do not serialize T or any of its potentially sensitive fields.
+        for (const [key, selection] of ownerSelection) {
+          if (requested.has(selection)) keys.push(key)
+        }
+        if (keys.length !== requested.size) return false
+        const message = xDriveCreateBaiduIsolatedPhotoCoversMessage(
+          boundary,keys,published.cells.map(cell => cell.key))
+        if (!message) return false
+        try {
+          iframe.contentWindow.postMessage(message,boundary.childOrigin)
+          return true
+        } catch { detach(); return false }
       },
       dispose: detach,
     }

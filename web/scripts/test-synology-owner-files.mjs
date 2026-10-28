@@ -170,6 +170,21 @@ assert.match(pageSource, /data-xdrive-file-explorer-scroll-host/)
 assert.match(pageSource, /xDriveSynologyOwnerFilesNearEnd\(/)
 assert.match(pageSource, /setVerifiedScopeKey\(''\)/)
 assert.match(pageSource, /<XDriveActionButton compact loading=\{paging\}/)
+const explorerSource = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/FileExplorer.tsx'), 'utf8')
+const hostEntrySource = fs.readFileSync(path.join(repo, 'web/src/synology.tsx'), 'utf8')
+const hostOutletSource = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/XDriveAppPageOutlet.tsx'), 'utf8')
+assert.match(pageSource, /unavailableActions=\{unavailableActions\}/)
+assert.match(pageSource, /searchEnabled\s+unavailableActions=/)
+assert.match(hostEntrySource, /filesUnavailableActions:\s*\{/)
+assert.match(hostOutletSource, /unavailableActions=\{services\.filesUnavailableActions\}/)
+assert.match(explorerSource, /searchUnavailableReason\s*\?\s*'搜索暂不可用'/)
+assert.ok(explorerSource.includes("if (command === 'new-folder' && onCreateFolder && !unavailableActions?.createFolder)"),
+  'disabled Host mutations must not be callable through keyboard shortcuts')
+assert.ok(explorerSource.includes("(onUpload && !unavailableActions?.uploadFiles)"),
+  'UI cannot claim a write capability when Host upload is disabled')
+assert.match(explorerSource, /disabled=\{Boolean\(!onUpload \|\| unavailableActions\?\.uploadFiles\)\}/)
+assert.match(explorerSource, /disabled=\{Boolean\(!onCreateFolder \|\| unavailableActions\?\.createFolder\)\}/)
+
 
 // Immutable Owner media ranges never expose private Agent credentials or
 // arbitrary Server download URLs; byte arrays are canonical base64-only.
