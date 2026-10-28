@@ -141,8 +141,10 @@ test('Desktop Files cloud lifecycle uses the shared controller without storage i
 
 test('Desktop Files uses shared workspace content for full-bleed Explorer layout', () => {
   const routeContent = fs.readFileSync(path.join(repoRoot, 'ui/shared/src/mui/XDriveAppRouteContent.tsx'), 'utf8')
-  assert.ok(app.includes('<XDriveAppRouteContent host={workspaceHost} view={view}>'),
-    'Desktop must mount the common route/content frame')
+  const sharedApp = fs.readFileSync(path.join(repoRoot, 'ui/shared/src/mui/XDriveApp.tsx'), 'utf8')
+  assert.ok(app.includes('<XDriveApp') && sharedApp.includes('<XDriveAppRouteContent') &&
+    !app.includes('<XDriveAppRouteContent'),
+    'Desktop must mount the one route/content frame inside the canonical shared application')
   assert.ok(routeContent.includes('<XDriveWorkspaceContent') &&
     routeContent.includes('presentation={presentation}') &&
     routeContent.includes('xDriveWorkspacePresentation(view)'),

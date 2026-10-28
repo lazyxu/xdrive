@@ -43,9 +43,11 @@ test('only the existing owner-redacted shared device API is used on Web and Desk
   assert.ok(view.includes('source.runs(id, pageSize, (page - 1) * pageSize)'))
   assert.ok(web.includes('<XDriveDeviceBackupPage'))
   const frame = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/XDriveAppRouteContent.tsx'), 'utf8')
+  const sharedApp = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/XDriveApp.tsx'), 'utf8')
   const outlet = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/XDriveAppPageOutlet.tsx'), 'utf8')
   assert.ok(desktop.includes('deviceBackupPage: {') &&
-    desktop.includes('<XDriveAppRouteContent host={workspaceHost} view={view}>') &&
+    desktop.includes('<XDriveApp') && !desktop.includes('<XDriveAppRouteContent') &&
+    sharedApp.includes('<XDriveAppRouteContent') &&
     frame.includes('xDriveIsSharedHostPageRoute(view)') &&
     frame.includes('<XDriveAppPageOutlet') &&
     outlet.includes('<XDriveDeviceBackupPage key={revision} {...services.deviceBackupPage} />'),
