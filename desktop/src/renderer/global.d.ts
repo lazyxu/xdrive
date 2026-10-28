@@ -1007,11 +1007,12 @@ declare global {
         cloudRollbackAdminGeoNames: (input: XDriveGeoNamesRollbackInput) => Promise<DesktopResult<XDriveGeoNamesConfig>>
         cloudRevealAdminBaiduMapAK: (revision: number) => Promise<DesktopResult<XDriveBaiduMapAKReveal>>
         cloudSetAdminBaiduMapConfig: (input: XDriveBaiduMapAdminUpdate) => Promise<DesktopResult<XDriveBaiduMapAdminConfig>>
-        cloudBackgroundTaskActiveSummary: () => Promise<DesktopResult<AgentBackgroundTaskActiveSummary>>
+        cloudBackgroundTaskActiveSummary: (requestID?: string) => Promise<DesktopResult<AgentBackgroundTaskActiveSummary>>
         cloudBackgroundTaskPage: (
           global?: boolean,
           limit?: number,
           cursor?: string,
+          requestID?: string,
         ) => Promise<DesktopResult<AgentBackgroundTaskPage>>
         cloudBackgroundTasks: (global?: boolean, limit?: number) => Promise<DesktopResult<AgentBackgroundTask[]>>
         cloudBackgroundTaskControl: (
