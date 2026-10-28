@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -130,6 +131,30 @@ func (h *desktopIPCHandler) cloudAdminServerBackupAction(w http.ResponseWriter, 
 	writeDesktopIPCJSON(w, http.StatusAccepted, out)
 }
 
+// This must reject unknown/repeated inputs before calling Server. No Host
+// paths, restore flags or arbitrary commands may be forwarded by the Agent.
+func boundedAdminBackupSnapshotPageQuery(values url.Values) (int, int, bool) {
+	if len(values) != 2 || len(values["offset"]) != 1 || len(values["limit"]) != 1 {
+		return 0, 0, false
+	}
+	for _, raw := range []string{values.Get("offset"), values.Get("limit")} {
+		if raw == "" || len(raw) > 4 {
+			return 0, 0, false
+		}
+		for _, ch := range raw {
+			if ch < '0' || ch > '9' {
+				return 0, 0, false
+			}
+		}
+	}
+	offset, e1 := strconv.Atoi(values.Get("offset"))
+	limit, e2 := strconv.Atoi(values.Get("limit"))
+	if e1 != nil || e2 != nil || offset < 0 || offset > 1000 || limit < 1 || limit > 100 {
+		return 0, 0, false
+	}
+	return offset, limit, true
+}
+
 func (h *desktopIPCHandler) cloudAdminBackupSnapshotPage(w http.ResponseWriter, r *http.Request) {
 	provider, ok := h.adminBackupProvider(w)
 	if !ok {
@@ -140,14 +165,8 @@ func (h *desktopIPCHandler) cloudAdminBackupSnapshotPage(w http.ResponseWriter, 
 		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_backup_page_unavailable", "Update xDrive Agent to inspect older backups")
 		return
 	}
-	values := r.URL.Query()
-	if len(values) != 2 || len(values["offset"]) != 1 || len(values["limit"]) != 1 {
-		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_backup_page", "invalid bounded backup snapshot page")
-		return
-	}
-	offset, e1 := strconv.Atoi(values.Get("offset"))
-	limit, e2 := strconv.Atoi(values.Get("limit"))
-	if e1 != nil || e2 != nil || offset < 0 || offset > 1000 || limit < 1 || limit > 100 {
+	offset, limit, valid := boundedAdminBackupSnapshotPageQuery(r.URL.Query())
+	if !valid {
 		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_backup_page", "invalid bounded backup snapshot page")
 		return
 	}
