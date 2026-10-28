@@ -4708,12 +4708,15 @@ export class AgentIPCClient {
     return this.request<AgentFileAvailability>('GET', `/v1/file-availability?${query.toString()}`)
   }
 
-  fileAvailabilityBatch(paths: string[]) {
+  // A read-only batch query; unlike file-availability actions this POST does
+  // not change state and may be cancelled with the owning Overview view.
+  fileAvailabilityBatch(paths: string[], signal?: AbortSignal) {
     return this.request<AgentFileAvailabilityBatch>(
       'POST',
       '/v1/file-availability/batch',
       { paths },
       30_000,
+      signal,
     )
   }
 
