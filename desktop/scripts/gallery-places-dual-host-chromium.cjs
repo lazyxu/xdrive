@@ -36,7 +36,7 @@ const summary={sourceCommit:process.env.XD_PR_HEAD || null,
   fullGalleryPageModes:[],fullGalleryDirectPhotoModes:[],mobileDrawerModes:[],
   favoriteMapCloseModes:[],fullDocumentHandoffModes:[],
   fullDocumentComboModes:[],fullDocumentNegativeFilterModes:[],
-  sourceRevisionModes:[],realHEICMapCoverModes:[],realLIVPMapCoverModes:[],
+  iosCompactModes:[],sourceRevisionModes:[],realHEICMapCoverModes:[],realLIVPMapCoverModes:[],
   checks:[],passed:false,errors:[]}
 const record=(name,ok)=>{summary.checks.push({name,passed:!!ok});assert(ok,name)}
 const h264GoSource=fs.readFileSync(path.join(root,
@@ -403,6 +403,105 @@ async function testFullDocumentMapHandoff(browser,from,port,combined=false){
  * Album/Owner state change before full-document mode handoff consumption.
  * The authentic Web startup scrubber must deny SDK, Viewer and all Cells;
  * no origin, bearer, nonce or Album value is logged or persisted in fixtures. */
+/** The same authenticated shared Gallery map in both SDK Hosts is the
+ * mobile iOS photo-map canvas. Inspect actually rendered Chromium layout and
+ * Owner pins: screenshots alone and source-only CSS tests cannot prove that
+ * the map stays visible beneath its floating chrome. */
+async function testIOSPhotoMapCompactChrome(browser,mode,scheme,port){
+  const context=await browser.newContext({
+    viewport:{width:390,height:844},locale:'zh-CN',colorScheme:scheme,
+    ignoreHTTPSErrors:true,serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(30000)
+  const errors=[]
+  page.on('pageerror',error=>errors.push(error.message))
+  await page.route('https://api.map.baidu.com/api?**',route=>{
+    assert.equal(new URL(route.request().url()).searchParams.get('ak'),
+      'TEST_ONLY_BROWSER_AK')
+    return route.fulfill({status:200,contentType:'text/javascript',body:sdkStub})
+  })
+  try{
+    const query='/?handoff_doc=1&handoff_combo=1&ios_compact=1&ui_scheme='+
+      scheme+(mode==='isolated'?'&places_map_mode=isolated':'')
+    await page.goto('https://'+galleryHost+':'+port+query,
+      {waitUntil:'domcontentloaded'})
+    await page.getByText('当前地图可查看 2 张照片',{exact:true}).waitFor()
+    await page.locator('[data-xdrive-places-trusted-photo-cover]')
+      .first().waitFor({state:'visible'})
+    const expectedDark=scheme==='dark'
+    for(const [width,height] of [
+      [375,812],[390,844],[844,390],[899,390],[900,390],
+      [899,1200],[900,1200],
+    ]){
+      await page.setViewportSize({width,height})
+      const actual=await page.evaluate(()=>{
+        const map=document.querySelector('[data-xdrive-places-ios-map-canvas="1"]')
+        const toolbar=document.querySelector('[data-xdrive-places-map-ios-chrome="1"]')
+        const dock=document.querySelector('[data-xdrive-places-map-photo-strip-shell]')
+        const photoButtons=Array.from(
+          document.querySelectorAll('[data-xdrive-places-collection-thumb]'))
+        const pins=Array.from(
+          document.querySelectorAll('[data-xdrive-places-trusted-photo-cover]'))
+        const count=document.querySelector('[data-xdrive-places-map-photo-summary]')
+        const bounds=el=>{
+          if(!el)return null
+          const b=el.getBoundingClientRect()
+          return {x:b.x,y:b.y,width:b.width,height:b.height,
+            top:b.top,bottom:b.bottom,left:b.left,right:b.right}
+        }
+        const hits=Array.from(toolbar?.querySelectorAll('summary,button')||[])
+          .map(el=>bounds(el)).filter(b=>b&&b.height>0)
+        const badge=document.querySelector('[data-xdrive-places-photo-count-badge]')
+        return {map:bounds(map),toolbar:bounds(toolbar),dock:bounds(dock),
+          dockButtons:photoButtons.map(bounds),hits,
+          pins:pins.length,pinButtons:pins.map(bounds),
+          badge:badge?getComputedStyle(badge).backgroundColor:null,
+          toolbarPosition:toolbar?getComputedStyle(toolbar).position:null,
+          text:toolbar?.textContent||'',summary:count?.textContent||'',
+          currentOwnerQueries:window.__mapProbe.queries,
+        }
+      })
+      const label=mode+': '+scheme+' '+width+'x'+height
+      record(label+': one photo-first full-bleed map and floating header',
+        actual.map!==null&&actual.toolbar!==null&&
+        actual.toolbarPosition==='absolute'&&
+        actual.map.height>=Math.max(180,height-160)&&
+        actual.map.bottom<=height-8&&
+        actual.toolbar.top>=actual.map.top&&
+        actual.toolbar.bottom<=actual.map.top+80&&
+        actual.toolbar.left>=actual.map.left&&
+        actual.toolbar.right<=actual.map.right+1&&
+        actual.text.includes('地图'))
+      record(label+': 44px+ photo and toolbar targets, compact bottom dock',
+        actual.dock!==null&&actual.dock.height<=76&&
+        actual.dock.bottom<=actual.map.bottom&&
+        actual.dockButtons.length>0&&
+        actual.dockButtons.every(b=>b.width>=44&&b.height>=44)&&
+        actual.hits.length>=3&&
+        actual.hits.every(b=>b.width>=44&&b.height>=44)&&
+        actual.pins.length>0&&
+        actual.pinButtons.every(b=>b.width>=44&&b.height>=44))
+      record(label+': signed Family∩Favorites stays exactly two covers',
+        actual.summary.includes('2 张照片')&&
+        actual.currentOwnerQueries.length>0&&
+        actual.currentOwnerQueries.every(q=>
+          q.albumKey==='manual:Family'&&q.favorite===true&&q.count===2)&&
+        actual.badge===(expectedDark
+          ?'rgb(10, 132, 255)':'rgb(0, 122, 255)'))
+    }
+    await page.getByRole('button',{name:'关闭地图'}).click()
+    await page.locator('[data-xdrive-ios-map-closed="1"]').waitFor()
+    const closed=await page.evaluate(()=>({
+      map:document.querySelectorAll('[data-xdrive-gallery-places-map]').length,
+      sdk:document.querySelectorAll('[data-xdrive-baidu-isolated-frame]').length,
+      covers:document.querySelectorAll('[data-xdrive-places-trusted-photo-cover]').length,
+    }))
+    record(mode+': '+scheme+' mobile Close unmounts only the current Owner map',
+      closed.map===0&&closed.sdk===0&&closed.covers===0&&errors.length===0)
+    summary.iosCompactModes.push(mode+':'+scheme)
+  }finally{await context.close()}
+}
+
 async function testInvalidatedOwnerHandoff(browser,from,port,scenario){
   const target=from==='inline'?'isolated':'prototype'
   assert(['foreign-owner','album-revision','album-missing','album-deleted',
@@ -2391,6 +2490,13 @@ async function main(){
       await testRealHEICOwnerMapCover(browser,'isolated',port,'livp')
       record('both SDK Hosts decoded HEIC LIVP still and authorized motion',
         summary.realLIVPMapCoverModes.join(',')==='inline,isolated')
+      for(const scheme of ['light','dark']){
+        await testIOSPhotoMapCompactChrome(browser,'inline',scheme,port)
+        await testIOSPhotoMapCompactChrome(browser,'isolated',scheme,port)
+      }
+      record('two SDK Hosts use one iOS map canvas in light and dark',
+        summary.iosCompactModes.join(',')===
+          'inline:light,isolated:light,inline:dark,isolated:dark')
     }
     summary.passed=true
   }finally{await browser.close()}
