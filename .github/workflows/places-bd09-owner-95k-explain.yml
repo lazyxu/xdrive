@@ -55,7 +55,13 @@ jobs:
           if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
             test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
           fi
-          test -z "$(gofmt -l internal/api/media_places_bd09_query_plan_linux_test.go)"
+          # Assignment inherits gofmt's nonzero parse failure under -e;
+          # the old test -z "$(gofmt ...)" swallowed a syntax error.
+          unformatted="$(gofmt -l internal/api/media_places_bd09_query_plan_linux_test.go)"
+          if [[ -n "$unformatted" ]]; then
+            gofmt -d internal/api/media_places_bd09_query_plan_linux_test.go
+            exit 1
+          fi
       - name: Seed original source-exact disposable 100k PostgreSQL17 Owner fixture
         shell: bash
         env:
