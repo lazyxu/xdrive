@@ -72,7 +72,8 @@ test('DSM Owner Files retains a bounded virtual scroll viewport inside the share
   const files = read('ui/shared/src/mui/SynologyOwnerFilesPage.tsx')
   const surface = read('ui/shared/src/mui/WorkspaceSurface.tsx')
   const explorer = read('ui/shared/src/mui/FileExplorer.tsx')
-  assert.match(files, /<XDriveFilesWorkspacePage>/)
+  assert.match(files, /<XDriveFilesWorkspacePage overQuota=\{verifiedOverQuota === true\}>/)
+  assert.match(files, /useXDriveFileExplorerOwnerQuota\(client, rootRevision\)/)
   assert.equal(files.includes('<XDriveWorkspaceSurface'), false,
     'DSM must not add a second Files page frame or duplicate header')
   assert.match(files, /<Stack spacing=\{1\.5\} sx=\{\{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' \}\}/)
