@@ -67,7 +67,8 @@ test('shared FileExplorer uses configurable system-style density without breakin
 
 test('shared FileExplorer uses Windows-style compact navigation and command chrome', () => {
   assert.ok(explorer.includes('data-xdrive-file-explorer-address-bar'), 'address bar marker is missing')
-  assert.ok(explorer.includes('placeholder="搜索全部文件"'), 'search must name the actual owner-wide Server scope')
+  assert.ok(explorer.includes("searchUnavailableReason ? '搜索暂不可用' : '搜索全部文件'"),
+    'Desktop keeps global Server Search; DSM keeps shared control with an honest unavailable label')
   assert.ok(explorer.includes("width: { xs: 180, sm: 280, md: 320, lg: 360 }"), 'search should have useful width')
   assert.ok(explorer.includes('排序与分组'), 'sort and group must share one command surface')
   assert.equal(explorer.includes('<ToggleButtonGroup'), false, 'View menu must be the single layout control')
@@ -423,12 +424,13 @@ test('shared FileExplorer moves lower-priority Toolbar actions into responsive o
     '<MoreHorizRoundedIcon',
     'anchorEl={commandBarOverflowAnchor}',
     'runCommandBarOverflowAction',
-    '(compactViewport || commandBarOverflowLevel >= 2) && onCreateFolder',
-    '(compactViewport || commandBarOverflowLevel >= 1) && onUploadFolder',
+    '(compactViewport || commandBarOverflowLevel >= 2) && (onCreateFolder || unavailableActions?.createFolder)',
+    '(compactViewport || commandBarOverflowLevel >= 1) && (onUploadFolder || unavailableActions?.uploadFolder)',
     'commandBarOverflowLevel >= 1 && navigationPane',
   ]) {
     assert.ok(explorer.includes(token), 'responsive Toolbar overflow missing: ' + token)
   }
+  assert.ok(explorer.includes('disabled={Boolean(!onUploadFolder || unavailableActions?.uploadFolder)}'), 'unsupported Host folder upload stays safely disabled')
 })
 
 test('shared FileExplorer upgrades the native-style Status Bar', () => {

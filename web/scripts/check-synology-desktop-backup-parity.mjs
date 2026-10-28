@@ -128,7 +128,12 @@ if (!verifiedOwnerDownload.includes('xDriveSynologyFetchVerifiedDownload') ||
     !muiExports.includes("export * from './SynologyOwnerFilesPage'") ||
     !sharedFileExplorer.includes('export function XDriveFileExplorer({') ||
     !synologyFiles.includes('<XDriveFileExplorer') ||
-    !synologyFiles.includes('searchEnabled={false}') ||
+    // Search control is shared and visible on DSM; with no authorized CGI
+    // search route, Host must provide the true disabled reason instead.
+    !synologyFiles.includes('searchEnabled') ||
+    !synologyFiles.includes('unavailableActions={unavailableActions}') ||
+    !dsmEntry.includes('filesUnavailableActions: {') ||
+    !sharedFileExplorer.includes('searchUnavailableReason') ||
     !synologyFiles.includes('forceVirtualization') ||
     !synologyFiles.includes('onOpenItem={item =>') ||
     !appPageOutlet.includes('<XDriveSynologyOwnerFilesPage key={revision} client={local}') ||

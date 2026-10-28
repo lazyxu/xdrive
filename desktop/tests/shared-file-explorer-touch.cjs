@@ -90,12 +90,14 @@ test('compact viewports collapse search and keep low-frequency commands discover
   for (const token of [
     'compactViewport && !touchSearchOpen',
     'setTouchSearchOpen(true)',
-    "aria-label={compactViewport ? '关闭搜索框' : '搜索'}",
+    "aria-label={searchUnavailableReason ? '搜索不可用：' + searchUnavailableReason : compactViewport ? '关闭搜索框' : '搜索'}",
     'compactViewport && onPaste',
     'compactViewport && onRefresh',
-    '(compactViewport || commandBarOverflowLevel >= 2) && onCreateFolder',
-    '(compactViewport || commandBarOverflowLevel >= 1) && onUploadFolder',
+    '(compactViewport || commandBarOverflowLevel >= 2) && (onCreateFolder || unavailableActions?.createFolder)',
+    '(compactViewport || commandBarOverflowLevel >= 1) && (onUploadFolder || unavailableActions?.uploadFolder)',
   ]) {
     assert.ok(explorer.includes(token), 'missing compact-viewport search/overflow behavior: ' + token)
   }
+  assert.ok(explorer.includes('disabled={Boolean(searchUnavailableReason)}'), 'unsupported Host Search cannot receive keyboard/click input')
+  assert.ok(explorer.includes('disabled={Boolean(!onCreateFolder || unavailableActions?.createFolder)}'), 'unsupported Create stays disabled, not hidden')
 })
