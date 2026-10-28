@@ -53,8 +53,7 @@ import {
   xDrivePasswordChangeValidationError,
   XDriveConfirmDialog,
   createXDriveCloudStorageDataSource,
-  XDriveWorkspaceContent,
-  xDriveWorkspacePresentation,
+  XDriveAppRouteContent,
   xDriveWorkspaceStorageSummary,
   XDriveSettingsDialog,
   XDriveFeedbackSnackbar,
@@ -62,8 +61,6 @@ import {
   XDriveTransferPopover,
   XDriveApp,
   xDriveWorkspaceHostSections,
-  XDriveAppPageOutlet,
-  xDriveIsSharedHostPageRoute,
   XDriveStatePanel,
   XDriveStatusAlert,
   XDriveStatusBadge,
@@ -2668,7 +2665,7 @@ export default function App({
     )
   }
 
-  // UI-owned JSX for every migrated page lives in ui/shared/XDriveAppPageOutlet.
+  // UI-owned JSX for migrated routes is composed by the shared XDriveAppRouteContent.
   // Only authenticated domain data and real Desktop operations are injected.
   const workspaceHost: XDriveWorkspaceHostAdapter = {
     platform: 'desktop',
@@ -3101,7 +3098,7 @@ export default function App({
       }}
     >
 
-      <XDriveWorkspaceContent presentation={xDriveWorkspacePresentation(view)}>
+      <XDriveAppRouteContent host={workspaceHost} view={view}>
         {(status?.last_error || status?.paused || status?.has_conflict) ? (
           <Stack
             spacing={1}
@@ -3147,7 +3144,7 @@ export default function App({
           </Stack>
         ) : null}
 
-        {xDriveIsSharedHostPageRoute(view) ? <XDriveAppPageOutlet view={view} host={workspaceHost} /> : null}
+
 
 
 
@@ -3281,7 +3278,7 @@ export default function App({
 
         
 
-      </XDriveWorkspaceContent>
+      </XDriveAppRouteContent>
 
         <XDriveSettingsDialog
           open={settingsOpen}
