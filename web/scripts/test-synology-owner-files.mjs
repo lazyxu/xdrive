@@ -178,6 +178,10 @@ assert.match(pageSource, /searchEnabled\s+unavailableActions=/)
 assert.match(hostEntrySource, /filesUnavailableActions:\s*\{/)
 assert.match(hostOutletSource, /unavailableActions=\{services\.filesUnavailableActions\}/)
 assert.match(explorerSource, /searchUnavailableReason\s*\?\s*'搜索暂不可用'/)
+assert.ok(explorerSource.includes("if (command === 'new-folder' && onCreateFolder && !unavailableActions?.createFolder)"),
+  'disabled Host mutations must not be callable through keyboard shortcuts')
+assert.ok(explorerSource.includes("(onUpload && !unavailableActions?.uploadFiles)"),
+  'UI cannot claim a write capability when Host upload is disabled')
 assert.match(explorerSource, /disabled=\{Boolean\(!onUpload \|\| unavailableActions\?\.uploadFiles\)\}/)
 assert.match(explorerSource, /disabled=\{Boolean\(!onCreateFolder \|\| unavailableActions\?\.createFolder\)\}/)
 

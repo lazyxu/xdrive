@@ -1050,7 +1050,9 @@ export function XDriveFileExplorer({
     download: Boolean(onDownloadItems),
     downloadZip: Boolean(onDownloadItems && folderDownloadSupported),
     search: Boolean(searchEnabled && onSearch && !searchUnavailableReason),
-    write: Boolean(onCreateFolder || onUpload || onUploadFolder ||
+    write: Boolean((onCreateFolder && !unavailableActions?.createFolder) ||
+      (onUpload && !unavailableActions?.uploadFiles) ||
+      (onUploadFolder && !unavailableActions?.uploadFolder) ||
       onCopyItems || onCopyItemsTo || onMoveItemsTo || onRenameItem ||
       onPaste || onDeleteItems),
     delete: Boolean(onDeleteItems),
@@ -3956,7 +3958,7 @@ export function XDriveFileExplorer({
       onRefresh()
       return
     }
-    if (command === 'new-folder' && onCreateFolder) {
+    if (command === 'new-folder' && onCreateFolder && !unavailableActions?.createFolder) {
       event.preventDefault()
       onCreateFolder()
       return
