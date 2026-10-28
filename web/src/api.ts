@@ -989,12 +989,12 @@ export class XDriveApi {
     return this.request<MeResult>('/api/v1/me', { signal })
   }
 
-  quota() {
-    return this.request<QuotaUsage>('/api/v1/me/quota')
+  quota(signal?: AbortSignal) {
+    return this.request<QuotaUsage>('/api/v1/me/quota', { signal })
   }
 
-  storageStats() {
-    return this.request<StorageStats>('/api/v1/me/storage')
+  storageStats(signal?: AbortSignal) {
+    return this.request<StorageStats>('/api/v1/me/storage', { signal })
   }
 
   adminStorageStats() {
