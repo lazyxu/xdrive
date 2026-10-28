@@ -405,7 +405,7 @@ async function testFullDocumentMapHandoff(browser,from,port,combined=false){
  * no origin, bearer, nonce or Album value is logged or persisted in fixtures. */
 async function testInvalidatedOwnerHandoff(browser,from,port,scenario){
   const target=from==='inline'?'isolated':'prototype'
-  assert(['foreign-owner','album-revision','album-missing',
+  assert(['foreign-owner','album-revision','album-missing','album-deleted',
     'session-revoked','map-epoch-revoked'].includes(scenario))
   const context=await browser.newContext({
     viewport:{width:390,height:844},locale:'zh-CN',
@@ -2218,13 +2218,13 @@ async function main(){
         summary.fullDocumentComboModes.join(',')==='inline,isolated')
       record('both Hosts exclude real date/kind and recover only scoped Owner covers',
         summary.fullDocumentNegativeFilterModes.join(',')==='inline,isolated')
-      for(const scenario of ['album-revision','album-missing',
+      for(const scenario of ['album-revision','album-missing','album-deleted',
         'session-revoked','map-epoch-revoked','foreign-owner']){
         await testInvalidatedOwnerHandoff(browser,'inline',port,scenario)
         await testInvalidatedOwnerHandoff(browser,'isolated',port,scenario)
       }
-      record('two SDK Hosts deny pending Owner tickets on Album/Session/Owner invalidation',
-        summary.ownerScopeInvalidationModes.length===10)
+      record('two SDK Hosts deny pending Owner tickets on real Album deletion and revocation',
+        summary.ownerScopeInvalidationModes.length===12)
       await testRealHEICOwnerMapCover(browser,'inline',port)
       await testRealHEICOwnerMapCover(browser,'isolated',port)
       record('both SDK Hosts decoded signed real HEIC-derived JPEG photo pins',
