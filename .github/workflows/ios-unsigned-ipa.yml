@@ -1,0 +1,86 @@
+name: iOS Native Unsigned IPA
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios-unsigned-ipa.yml'
+  push:
+    branches: [master]
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios-unsigned-ipa.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Cancel only superseded PR work; never evict independent master or manual artifacts.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  unsigned-ipa:
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - name: Checkout exact source commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Prepare native brand and home screen icon
+        run: bash ios/scripts/prepare-assets.sh
+
+      - name: Generate Xcode project
+        run: |
+          brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+          cd ios
+          xcodegen generate --spec project.yml
+
+      - name: Compile unsigned iOS device app
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project ios/xDriveIOS.xcodeproj \
+            -scheme xDriveIOS \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/xdrive-ios-build" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY='' \
+            build
+
+      - name: Validate app and package SideStore compatible IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="$RUNNER_TEMP/xdrive-ios-build/Build/Products/Release-iphoneos/xDriveIOS.app"
+          test -s "$app/xDriveIOS"
+          test -s "$app/Assets.car"
+          test ! -e "$app/embedded.mobileprovision"
+          actual=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$app/Info.plist")
+          test "$actual" = 'com.lazyxu.xdrive.ios'
+          mkdir -p "$RUNNER_TEMP/unsigned/Payload"
+          cp -R "$app" "$RUNNER_TEMP/unsigned/Payload/"
+          (
+            cd "$RUNNER_TEMP/unsigned"
+            zip -qry "$GITHUB_WORKSPACE/xDrive-unsigned.ipa" Payload
+          )
+          unzip -tq xDrive-unsigned.ipa
+          shasum -a 256 xDrive-unsigned.ipa > xDrive-unsigned.ipa.sha256
+
+      - name: Upload unsigned IPA and SHA-256
+        uses: actions/upload-artifact@v4
+        with:
+          name: xDrive-iOS-unsigned-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            xDrive-unsigned.ipa
+            xDrive-unsigned.ipa.sha256
+          if-no-files-found: error
+          retention-days: 14

@@ -1,0 +1,28 @@
+name: xDriveIOS
+options:
+  bundleIdPrefix: com.lazyxu
+  deploymentTarget:
+    iOS: "16.0"
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+
+targets:
+  xDriveIOS:
+    type: application
+    platform: iOS
+    sources:
+      - path: XDriveIOS
+    info:
+      path: XDriveIOS/Info.plist
+      properties:
+        CFBundleDisplayName: xDrive
+        UILaunchScreen: {}
+        LSRequiresIPhoneOS: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.lazyxu.xdrive.ios
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        SUPPORTS_MACCATALYST: NO
