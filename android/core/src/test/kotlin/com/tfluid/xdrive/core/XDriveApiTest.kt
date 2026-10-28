@@ -2187,6 +2187,9 @@ class XDriveApiTest {
             assertTrue(api.childrenArranged("owner-secret", 1, 100, target).groups.isEmpty())
             server.takeRequest()
         } }
+        // A JUnit4 @Test must compile to JVM void. MockWebServer.use returns
+        // its last RecordedRequest unless this runBlocking lambda ends in Unit.
+        Unit
     }
 
     @Test fun ownerFilesModifiedAndSizeGroupKeysAreStrictlyValidated() = runBlocking {
