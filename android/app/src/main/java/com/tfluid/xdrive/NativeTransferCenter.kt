@@ -12,6 +12,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import java.util.Locale
+import java.util.Date
+import java.text.DateFormat
 
 /** Displays only the current Owner's existing SAF transfer, with no new Runner. */
 @Composable
@@ -22,6 +24,9 @@ internal fun NativeTransferCenter(
 ) {
     val active = state.nativeTransfers.firstOrNull {
         it.status == NativeTransferStatus.RUNNING
+    }
+    var confirmation by remember(state.server, state.username) {
+        mutableStateOf<NativeInterruptedTransfer?>(null)
     }
     var nowMillis by remember { mutableLongStateOf(System.nanoTime() / 1_000_000L) }
     LaunchedEffect(active?.id) {
@@ -43,6 +48,44 @@ internal fun NativeTransferCenter(
                 Text("本次登录的上传与下载 · 最近最多 20 项",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (state.transferRecoveryIssue) {
+                    Text("加密传输恢复记录未能完整读取或清理。新的 HTTPS 传输可能被安全阻止；不会自动覆盖或重传。",
+                        modifier = Modifier.testTag("native-recovery-warning"),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error)
+                }
+                if (state.interruptedNativeTransfers.isNotEmpty()) {
+                    Text("上次中断的操作 · 当前账户",
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.testTag("native-recovery-heading"))
+                    Text("仅保存 Owner、时间和类型的加密标记，不保存文件名或内容。请先在服务器目录或手机文件中核对，再决定清除记录；不会自动续传。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    for (notice in state.interruptedNativeTransfers) {
+                        Column(
+                            Modifier.fillMaxWidth()
+                                .testTag("native-recovery-item-${notice.id}"),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Text(
+                                if (notice.kind == NativeTransferKind.UPLOAD)
+                                    "上传结果未确认" else "本地下载可能不完整",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.error)
+                            Text(DateFormat.getDateTimeInstance(DateFormat.SHORT,
+                                DateFormat.SHORT).format(Date(notice.startedAtUnixMillis)),
+                                style = MaterialTheme.typography.bodySmall)
+                            TextButton(onClick = { confirmation = notice },
+                                enabled = !state.hasActiveNativeTransfer() &&
+                                    state.transferRecoveryClearingId == null && !state.loading,
+                                modifier = Modifier.heightIn(min = 48.dp)
+                                    .testTag("native-recovery-review-${notice.id}")) {
+                                Text("已核对，清除此记录")
+                            }
+                        }
+                    }
+                    HorizontalDivider()
+                }
                 if (state.nativeTransfers.isEmpty()) {
                     Text("本次登录暂无传输记录",
                         modifier = Modifier.testTag("native-transfer-empty"),
@@ -148,6 +191,37 @@ internal fun NativeTransferCenter(
                     .testTag("native-transfer-close")) { Text("完成") }
         },
     )
+    // Requiring a second explicit decision prevents a tap on a long stale
+    // history from silently declaring an unknown finalize as successful.
+    confirmation?.let { notice ->
+        AlertDialog(
+            onDismissRequest = { confirmation = null },
+            modifier = Modifier.testTag("native-recovery-confirm-dialog"),
+            title = { Text("确认已经人工核对？") },
+            text = {
+                Text("只有你已自行核对服务器目标目录或本地下载文件时才清除该恢复记录。" +
+                    "这不会恢复上传、重新下载或把未知结果改成成功。")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        controller.acknowledgeVerifiedInterruptedTransfer(notice.id)
+                        confirmation = null
+                    },
+                    enabled = state.interruptedNativeTransfers.any { it.id == notice.id } &&
+                        !state.hasActiveNativeTransfer() &&
+                        state.transferRecoveryClearingId == null,
+                    modifier = Modifier.testTag("native-recovery-confirm"),
+                ) { Text("我已人工核对") }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { confirmation = null },
+                    modifier = Modifier.testTag("native-recovery-cancel"),
+                ) { Text("暂不清除") }
+            },
+        )
+    }
 }
 
 internal fun nativeTransferStatusLabel(entry: NativeTransferEntry): String =
