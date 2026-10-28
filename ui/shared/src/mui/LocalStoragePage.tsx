@@ -4,7 +4,7 @@ import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
 import { XDriveFolderIcon } from './FolderIcon'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import { Box, Chip, IconButton, Stack, Typography } from '@mui/material'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { formatBytes } from '../format'
 import { XDriveActionButton } from './ActionButton'
 import { XDriveConfirmDialog } from './ConfirmDialog'
@@ -77,7 +77,7 @@ export type XDriveLocalStorageSnapshot = {
 }
 
 export type XDriveLocalStorageDataSource = {
-  load: () => Promise<XDriveLocalStorageSnapshot>
+  load: (signal?: AbortSignal) => Promise<XDriveLocalStorageSnapshot>
   clearBrowserCache?: () => Promise<XDriveBrowserStorageClearResult>
   releaseDesktopCache?: () => Promise<XDriveDesktopStorageReleaseResult>
   setFolderMode?: (path: string, mode: XDriveLocalStorageMode) => Promise<void>
@@ -199,7 +199,16 @@ function LocalFolderRow({
 }
 
 export function XDriveLocalStoragePage({ source }: { source: XDriveLocalStorageDataSource }) {
-  const [snapshot, setSnapshot] = useState<XDriveLocalStorageSnapshot | null>(null)
+  // A previous Server/Owner must never paint local Agent/browser status under
+  // a new Host source while the next authorized read is still pending.
+  const [snapshotReceipt, setSnapshotReceipt] = useState<{
+    owner: XDriveLocalStorageDataSource
+    value: XDriveLocalStorageSnapshot
+  } | null>(null)
+  const snapshot = snapshotReceipt?.owner === source ? snapshotReceipt.value : null
+  const activeRead = useRef<AbortController | null>(null)
+  const readGeneration = useRef(0)
+  const mounted = useRef(false)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [action, setAction] = useState('')
@@ -208,11 +217,22 @@ export function XDriveLocalStoragePage({ source }: { source: XDriveLocalStorageD
   const [notice, setNotice] = useState('')
 
   const load = useCallback(async () => {
+    // This method is also called after completed cache/policy operations.
+    // Those durable operations may finish after route exit; do not launch a
+    // new read or write UI state for an already-unmounted workspace.
+    if (!mounted.current) return
+    activeRead.current?.abort()
+    const controller = new AbortController()
+    activeRead.current = controller
+    const requestID = ++readGeneration.current
+    const isCurrent = () => mounted.current && !controller.signal.aborted &&
+      requestID === readGeneration.current
     setLoading(true)
     setError('')
     try {
-      const next = await source.load()
-      setSnapshot(next)
+      const next = await source.load(controller.signal)
+      if (!isCurrent()) return
+      setSnapshotReceipt({ owner: source, value: next })
       const tree = next.desktopStorage?.storageTree
       if (tree) {
         setExpanded((current) => current.size > 0
@@ -220,13 +240,24 @@ export function XDriveLocalStoragePage({ source }: { source: XDriveLocalStorageD
           : new Set((tree.children || []).map((child) => child.path)))
       }
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : '加载本地存储信息失败')
+      if (isCurrent()) setError(loadError instanceof Error ? loadError.message : '加载本地存储信息失败')
     } finally {
-      setLoading(false)
+      const current = isCurrent()
+      if (activeRead.current === controller) activeRead.current = null
+      if (current) setLoading(false)
     }
   }, [source])
 
-  useEffect(() => { void load() }, [load])
+  useEffect(() => {
+    mounted.current = true
+    void load()
+    return () => {
+      mounted.current = false
+      activeRead.current?.abort()
+      activeRead.current = null
+      readGeneration.current += 1
+    }
+  }, [load])
 
   const browser = snapshot?.browserStorage
   const desktop = snapshot?.desktopStorage
