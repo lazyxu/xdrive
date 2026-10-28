@@ -79,7 +79,7 @@ func TestSelectedDeletionRejectsMissingFastStaleAndForeignPreview(t *testing.T) 
 			writeBackupTestJSON(t, dir, "backup-admin-status.json", backupAdminStatus{
 				Protocol: backupAdminProtocol, State: "success", Action: "preview_delete",
 				RequestID: v.RequestID, SnapshotID: v.SnapshotID,
-				FinishedAt: time.Now().Add(-16*time.Minute).UTC().Format(time.RFC3339),
+				FinishedAt: time.Now().Add(-16 * time.Minute).UTC().Format(time.RFC3339),
 			})
 		}, http.StatusConflict},
 	}
