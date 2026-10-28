@@ -416,20 +416,20 @@ internal fun AccountMenu(state: DriveState, controller: DriveController, checkUp
                 // the popup viewport and can produce transient Compose focus.
                 // This selection action stays available even after the
                 // scroll-away Files search/title leaves the Lazy viewport.
-        // PWA keeps file selection reachable after its large title and
-        // search scroll offscreen. Never strand Selection in a lazy header.
-        if (state.screen == Screen.FILES &&
-            state.filesSection == FilesSection.BROWSE) DropdownMenuItem(
-            text = { Text(if (state.browseSelectionMode) "完成选择" else "选择文件") },
-            enabled = !state.loading && state.loaded &&
-                !state.browseBatchWriteAttempted && state.destinationKind == null &&
-                !state.hasActiveNativeTransfer(),
-            modifier = Modifier.testTag("files-select-from-menu"),
-            onClick = {
-                expanded = false
-                controller.setBrowseSelectionMode(!state.browseSelectionMode)
-            },
-        )
+                // PWA keeps file selection reachable after its large title and
+                // search scroll offscreen. Never strand Selection in a lazy header.
+                if (state.screen == Screen.FILES &&
+                    state.filesSection == FilesSection.BROWSE) DropdownMenuItem(
+                    text = { Text(if (state.browseSelectionMode) "完成选择" else "选择文件") },
+                    enabled = !state.loading && state.loaded &&
+                        !state.browseBatchWriteAttempted && state.destinationKind == null &&
+                        !state.hasActiveNativeTransfer(),
+                    modifier = Modifier.testTag("files-select-from-menu"),
+                    onClick = {
+                        expanded = false
+                        controller.setBrowseSelectionMode(!state.browseSelectionMode)
+                    },
+                )
                 if (onCreateFolder != null) DropdownMenuItem(
                     text = { Text("新建文件夹") },
                     enabled = !state.loading && state.loaded,
