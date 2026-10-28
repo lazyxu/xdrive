@@ -1,4 +1,4 @@
-import { xDriveViewerForegroundActive, xDriveObserveViewerForeground } from './ViewerForegroundPriority'
+import { xDriveViewerForegroundActive, xDriveObserveViewerForeground, xDriveBeginForegroundContentTransition } from './ViewerForegroundPriority'
 import { xDriveMediaGallerySelectionScopeKey } from '../media-gallery-selection-scope'
 import { xDrivePrototypeTrustedSingleton, xDrivePrototypeCanonicalPlaceID, xDrivePrototypeSingletonScopeValid } from '../media-gallery-baidu-prototype-singleton'
 import {
@@ -531,8 +531,10 @@ function mediaGalleryQuerySignature(query: MediaGalleryQuery) {
   )
 }
 
-function mediaGalleryCollectionKey(target: MediaGalleryCollectionTarget | null) {
+function mediaGalleryContentKey(target: MediaGalleryCollectionTarget | null) {
   if (!target) return 'media-gallery:idle'
+  // Excluding requestID distinguishes an actual Album/filtered Range/Map
+  // change from a background refresh of this same accepted collection.
   return [
     'media-gallery',
     target.kind,
@@ -540,8 +542,12 @@ function mediaGalleryCollectionKey(target: MediaGalleryCollectionTarget | null) 
     target.baiduCell ? JSON.stringify(target.baiduCell) : '',
     target.baiduViewport ? JSON.stringify(target.baiduViewport) : '',
     mediaGalleryQuerySignature(target.query),
-    target.requestID,
   ].join(':')
+}
+
+function mediaGalleryCollectionKey(target: MediaGalleryCollectionTarget | null) {
+  if (!target) return 'media-gallery:idle'
+  return mediaGalleryContentKey(target) + ':' + target.requestID
 }
 
 function mediaGalleryTarget(
@@ -1212,6 +1218,11 @@ export function XDriveMediaGalleryPage({
           suggestedPerson,
           person,
         )
+    const previousContent = collectionTargetRef.current
+    const finishContentTransition = previousContent &&
+      mediaGalleryContentKey(previousContent) !== mediaGalleryContentKey(target)
+      ? xDriveBeginForegroundContentTransition(['gallery', 'map'])
+      : () => undefined
     const commitTarget = () => {
       collectionTargetRef.current = target
       setCollectionTarget(target)
@@ -1378,6 +1389,7 @@ export function XDriveMediaGalleryPage({
       setCollectionError(message)
       onError?.(loadError)
     } finally {
+      finishContentTransition()
       if (request === requestID.current) setLoading(false)
     }
   }, [
