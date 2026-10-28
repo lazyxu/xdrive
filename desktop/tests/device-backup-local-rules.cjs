@@ -41,7 +41,7 @@ test('Own Desktop raw ignore rules use exact Root proof; other desktops/Web stay
   assert.match(main, /requireAgentCapability\(hello, 'device-backup-local-rules'\)/)
   assert.match(preload, /getDeviceBackupLocalRules:/)
   assert.match(preload, /setDeviceBackupLocalRules:/)
-  assert.match(app, /localRules=\{localBackupRules\}/)
+  assert.match(app, /localRules:\s*localBackupRules/)
   assert.match(page, /verifiedLocalDeviceID === device\.id && !device\.revoked/)
   assert.match(dialog, /actions\.update\(sourceID, loaded\.revision, rules\)/)
   assert.doesNotMatch(web, /localRules=/)

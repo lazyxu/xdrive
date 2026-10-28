@@ -12,11 +12,11 @@ test('Device Backup local creation is only wired by Desktop Agent capabilities',
   const web = read('web', 'src', 'App.tsx')
   assert.match(app, /!deviceBackupSource \|\| !localFolderGrantSupported/)
   assert.match(app, /agent\.hello\?\.capabilities\.includes\('external-sources'\)/)
-  assert.match(app, /localCreate=\{localBackupCreate\}/)
+  assert.match(app, /localCreate:\s*localBackupCreate/)
   // The browser is shared by two separately capability-gated owning-Desktop
   // actions. Creation itself still requires localCreate and Root grants.
-  assert.match(app, /targetBrowser=\{localBackupCreate \|\| localBackupTarget \? desktopSourceTargetBrowser : undefined\}/)
-  assert.match(app, /localTarget=\{localBackupTarget\}/)
+  assert.match(app, /targetBrowser:\s*localBackupCreate \|\| localBackupTarget \? desktopSourceTargetBrowser : undefined/)
+  assert.match(app, /localTarget:\s*localBackupTarget/)
   assert.match(page, /localTarget && targetBrowser && verifiedLocalDeviceID === device\.id/)
   assert.equal(web.includes('localCreate='), false)
   assert.match(page, /localCreate && targetBrowser/)

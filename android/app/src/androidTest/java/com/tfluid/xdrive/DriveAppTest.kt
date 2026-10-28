@@ -4,6 +4,10 @@ import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -95,6 +99,7 @@ class DriveAppTest {
     private val gallerySearchQueries = mutableListOf<String>()
     private val galleryKindQueries = mutableListOf<Pair<String, String>>()
     private val gallerySortQueries = mutableListOf<Pair<String, String>>()
+    private val galleryFavoriteCalls = mutableListOf<Pair<List<Long>, Boolean>>()
     private var galleryThumbnailRetryFixture = false
     private val galleryThumbnailCalls = AtomicInteger()
     private val galleryFixture = GalleryAsset(
@@ -106,6 +111,14 @@ class DriveAppTest {
         override suspend fun logout(refreshToken: String) = Unit
         override suspend fun changePassword(accessToken: String, currentPassword: String, newPassword: String) = AuthSession("fixture", "fixture-refresh", "owner")
         override suspend fun root(accessToken: String) = DriveNode(1, name = "", type = "dir")
+        override suspend fun galleryFavoriteBatch(
+            accessToken: String, items: List<GalleryAsset>, favorite: Boolean,
+        ): Int {
+            check(accessToken == "fixture" && items.size in 1..200 &&
+                items.all { it.node.id == 40L && it.node.revision == 1L })
+            galleryFavoriteCalls += (items.map { it.node.id } to favorite)
+            return items.size
+        }
         override suspend fun galleryPage(accessToken: String, offset: Int,
             initialLatest: Boolean): GalleryPage {
             galleryRangeReads++
@@ -413,22 +426,43 @@ class DriveAppTest {
         onDownload: ((DriveNode) -> Unit)? = null,
         onUpload: (() -> Unit)? = null,
     ) {
-        compose.setContent { XDriveTheme {
-            DriveApp(controller, onDownload = onDownload, onUpload = onUpload)
-        } }
+        // Read the real Compose IME inset from composition (not a fixed delay
+        // or a guessed keyboard state). Done hides the keyboard; only click
+        // once the actual inset and on-screen submit have both settled.
+        val imeBottomPx = AtomicInteger(-1)
+        compose.setContent {
+            val observedImeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
+            SideEffect { imeBottomPx.set(observedImeBottom) }
+            XDriveTheme {
+                DriveApp(controller, onDownload = onDownload, onUpload = onUpload)
+            }
+        }
         compose.onNodeWithTag("server").performTextInput("https://drive.example")
         compose.onNodeWithTag("server").assertTextEquals("https://drive.example")
         compose.onNodeWithTag("username").performTextInput("owner")
         compose.onNodeWithTag("password").performTextInput("fixture-password")
         compose.onNodeWithTag("password").performImeAction()
-        // Compose can complete the Done callback before Android's IME inset
-        // actually settles. Keep a real visible/enabled submit assertion; let
-        // the bounded fixture wait re-scroll only while the inset is changing.
-        // Never click an offscreen control or suppress a genuine layout failure.
-        compose.waitUntil(timeoutMillis = 10_000) {
-            val submit = compose.onNodeWithTag("auth-submit")
-            runCatching { submit.performScrollTo() }.isSuccess &&
-                runCatching { submit.assertIsDisplayed() }.isSuccess
+        // The real button must be visible and enabled after the real keyboard
+        // reports its bottom inset as zero. Preserve the original 10s bound.
+        // Only scrolling is retried while its viewport animates, not login.
+        try {
+            compose.waitUntil(timeoutMillis = 10_000) {
+                if (imeBottomPx.get() != 0) false
+                else {
+                    val submit = compose.onNodeWithTag("auth-submit")
+                    runCatching { submit.performScrollTo() }.isSuccess &&
+                        runCatching { submit.assertIsDisplayed().assertIsEnabled() }.isSuccess
+                }
+            }
+        } catch (failure: androidx.compose.ui.test.ComposeTimeoutException) {
+            val current = controller.state.value
+            throw AssertionError(
+                "Fixture submit not ready: imeBottomPx=${imeBottomPx.get()}, " +
+                    "screen=${current.screen}, loading=${current.loading}, " +
+                    "errorPresent=${!current.error.isNullOrBlank()}, " +
+                    "factories=${connectFactoryCalls.get()}",
+                failure,
+            )
         }
         compose.onNodeWithTag("auth-submit").assertIsDisplayed().assertIsEnabled().performClick()
         try {
@@ -443,7 +477,8 @@ class DriveAppTest {
                 "Fixture login did not reach loaded Files: " +
                     "screen=${current.screen}, loading=${current.loading}, " +
                     "loaded=${current.loaded}, itemCount=${current.items.size}, " +
-                    "pathDepth=${current.path.size}, factories=${connectFactoryCalls.get()}",
+                    "pathDepth=${current.path.size}, factories=${connectFactoryCalls.get()}, " +
+                    "errorPresent=${current.error != null}, imeBottomPx=${imeBottomPx.get()}",
                 failure,
             )
         }
@@ -577,6 +612,32 @@ class DriveAppTest {
             controller.state.value.gallerySearchQuery.isEmpty() &&
                 controller.state.value.galleryItems.singleOrNull()?.node?.id == 40L
         }
+    }
+
+    @Test fun galleryNativeSelectionFavoritesCurrentOwnerTileWithoutOpeningViewer() {
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryLoaded && !controller.state.value.loading
+        }
+        compose.onNodeWithTag("gallery-select-mode").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("gallery-item-40").performClick()
+        compose.onNodeWithTag("gallery-selected-mark-40", useUnmergedTree = true).assertExists()
+        compose.onNodeWithTag("gallery-photo-viewer").assertDoesNotExist()
+        compose.onNodeWithTag("gallery-selection-actions").assertIsDisplayed()
+        compose.onNodeWithTag("gallery-selection-favorite").assertIsEnabled().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            !controller.state.value.loading &&
+                controller.state.value.galleryItems.singleOrNull()?.favorite == true &&
+                !controller.state.value.gallerySelectionMode
+        }
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(listOf(listOf(40L) to true),
+                galleryFavoriteCalls)
+        }
+        compose.onNodeWithTag("gallery-bottom-dock").assertIsDisplayed()
+        compose.onNodeWithTag("gallery-item-40").assertExists()
     }
 
     @Test fun nativeGalleryKindFilterUsesServerAndResetsPositionOnChangedScope() {
@@ -1322,10 +1383,26 @@ class DriveAppTest {
         var picks = 0
         startAndLogin(onUpload = { picks++ })
         compose.onNodeWithContentDescription("账户菜单").assertIsDisplayed().performClick()
-        // The account menu scrolls on short emulator screens. Verify the
-        // actual enabled SAF action is visible; keep the exact callback check.
+        // The actual platform popup can finish positioning after Compose idle.
+        // Boundedly scroll/observe the same real enabled SAF item; never retry
+        // the upload click or replace its callback with a synthetic invocation.
+        try {
+            compose.waitUntil(timeoutMillis = 10_000) {
+                runCatching {
+                    compose.onNodeWithTag("files-upload-action")
+                        .performScrollTo().assertIsDisplayed().assertIsEnabled()
+                }.isSuccess
+            }
+        } catch (failure: androidx.compose.ui.test.ComposeTimeoutException) {
+            val current = controller.state.value
+            throw AssertionError(
+                "SAF upload action not visible: screen=${current.screen}, " +
+                    "loading=${current.loading}, loaded=${current.loaded}",
+                failure,
+            )
+        }
         compose.onNodeWithTag("files-upload-action")
-            .performScrollTo().assertIsDisplayed().assertIsEnabled().performClick()
+            .assertIsDisplayed().assertIsEnabled().performClick()
         compose.runOnIdle { org.junit.Assert.assertEquals(1, picks) }
     }
 

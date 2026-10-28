@@ -63,7 +63,7 @@ test('Shared administrator page provides create/read/update/delete/verify/restor
 })
 
 test('Desktop uses shared backup management with fixed Administrator IPC', () => {
-  assert.ok(desktopApp.includes("backupPort={agent.hello?.capabilities.includes('admin-backups')"))
+  assert.ok(desktopApp.includes("backupPort: agent.hello?.capabilities.includes('admin-backups')"))
   assert.match(desktopApp, /cloudAdminBackups/)
   assert.match(desktopApp, /cloudAdminBackupAction/)
   assert.match(desktopPreload, /agent:cloud-admin-backups/)

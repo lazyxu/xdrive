@@ -61,7 +61,7 @@ test('different accounts and scopes never paint prior storage numbers while REST
     'scope === \'global\' ? api.adminStorageStats() : api.storageStats()',
   ]) assert.ok(page.includes(token), token)
   assert.ok(web.includes("XDriveGlobalStorageStatsPage as default"))
-  assert.ok(desktop.includes('<XDriveGlobalStorageStatsPage'))
+  assert.ok(desktop.includes('adminStoragePage:') && fs.readFileSync(path.join(root, 'ui/shared/src/mui/XDriveAppPageOutlet.tsx'), 'utf8').includes('<XDriveGlobalStorageStatsPage'))
 })
 
 test('true storage reads, CAS maintenance and transfer ownership are unchanged', () => {

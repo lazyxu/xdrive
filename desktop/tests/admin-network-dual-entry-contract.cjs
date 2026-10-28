@@ -68,7 +68,8 @@ test('shared Caddy MUI page requires at least one enabled HTTPS entry, rejects s
     page.indexOf('公网域名 HTTPS'),
     'the default LAN access method should appear first')
   assert.match(web, /XDriveServiceDependenciesPage/)
-  assert.match(desk, /XDriveServiceDependenciesPage/)
+  assert.match(desk, /adminServicesPage:\s*status\?\.role === 'admin'/)
+  assert.match(read('ui/shared/src/mui/XDriveAppPageOutlet.tsx'), /<XDriveServiceDependenciesPage/)
   for (const bad of ['docker.sock', 'adminRestartHost', 'adminStopHost']) {
     assert.equal(page.includes(bad), false)
   }

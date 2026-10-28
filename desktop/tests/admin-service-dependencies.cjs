@@ -11,6 +11,7 @@ const routes = read('ui', 'shared', 'src', 'web-app.ts')
 const registry = read('web', 'src', 'webApps.ts')
 const desktop = read('desktop', 'src', 'renderer', 'App.tsx')
 const page = read('ui', 'shared', 'src', 'mui', 'ServiceDependenciesPage.tsx')
+const sharedOutlet = read('ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx')
 const baiduDetail = read('ui', 'shared', 'src', 'mui', 'BaiduServerAPIDetail.tsx')
 const api = read('internal', 'api', 'router.go')
 const backend = read('internal', 'api', 'admin_service_dependencies.go')
@@ -29,7 +30,8 @@ test('Admin services is a Web workspace app behind the existing admin role', () 
 
 test('Desktop services uses authenticated Agent IPC, never a renderer bearer or Docker socket', () => {
   assert.ok(desktop.includes("status?.role === 'admin'"))
-  assert.ok(desktop.includes("view === 'admin-services' && status?.role === 'admin'"))
+  assert.ok(desktop.includes("adminServicesPage: status?.role === 'admin'") &&
+    sharedOutlet.includes("<XDriveServiceDependenciesPage {...services.adminServicesPage} />"))
   assert.ok(desktop.includes('cloudAdminServices()'))
   assert.ok(preload.includes("ipcRenderer.invoke('agent:cloud-admin-services')"))
   assert.ok(bridge.includes('"GET /v1/cloud/admin-services"'))

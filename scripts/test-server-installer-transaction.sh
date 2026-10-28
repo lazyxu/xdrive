@@ -99,7 +99,19 @@ case "$url" in
     ;;
   */deploy/docker-compose.yml)
     emit 'name: xdrive
-services: {}
+services:
+  postgres:
+    image: ${XD_POSTGRES_IMAGE:-postgres:17-alpine}
+  server:
+    image: ${XD_SERVER_IMAGE:-ghcr.io/lazyxu/xdrive-server:latest}
+  caddy:
+    image: ${XD_CADDY_IMAGE:-ghcr.io/lazyxu/xdrive-caddy:latest}
+  photo-face:
+    profiles: ["photo-intelligence"]
+    image: ${XD_PHOTO_FACE_IMAGE:-ghcr.io/lazyxu/xdrive-photo-face:latest}
+  media-worker:
+    profiles: ["media-worker"]
+    image: ${XD_MEDIA_WORKER_IMAGE:-ghcr.io/lazyxu/xdrive-media-worker:latest}
 '
     ;;
   */deploy/Caddyfile)
@@ -217,6 +229,29 @@ fi
 
 if [[ "$1" == "pull" ]]; then
   [[ "${TEST_TARGET_PULL_FAIL:-0}" == 1 ]] && exit 1
+  # Native mode shows the exact Docker layer statuses, not Compose JSON.
+  if [[ "${TEST_PULL_MODE:-}" == native-success || "${TEST_PULL_MODE:-}" == native-caddy-failure ]]; then
+    native_image="${2:-}"
+    case "$native_image" in
+      postgres:*) native_service=postgres; native_source=library/postgres ;;
+      */xdrive-server:*) native_service=server; native_source=lazyxu/xdrive-server ;;
+      */xdrive-caddy:*) native_service=caddy; native_source=lazyxu/xdrive-caddy ;;
+      */xdrive-photo-face:*) native_service=photo-face; native_source=lazyxu/xdrive-photo-face ;;
+      */xdrive-media-worker:*) native_service=media-worker; native_source=lazyxu/xdrive-media-worker ;;
+      *) echo "unexpected Docker native pull: $native_image" >&2; exit 12 ;;
+    esac
+    count_file="$TEST_STATE/pull-count-$native_service"
+    count="$(cat "$count_file" 2>/dev/null || echo 0)"
+    printf '%s\n' "$((count + 1))" > "$count_file"
+    printf '%s: Pulling from %s\n' "${native_image##*:}" "$native_source"
+    if [[ "${TEST_PULL_MODE:-}" == native-caddy-failure && "$native_service" == caddy ]]; then
+      echo 'failed to copy: Get "https://pkg-containers.githubusercontent.com/blob?sig=never-print": net/http: TLS handshake timeout' >&2
+      exit 1
+    fi
+    printf '509a7429ad09: Pull complete\n'
+    printf 'Digest: sha256:%064d\n' 0
+    printf 'Status: Downloaded newer image for %s\n' "$native_image"
+  fi
   printf '%s\n' "${2:-}" >> "$TEST_STATE/cached-images"
   exit 0
 fi
@@ -243,10 +278,12 @@ if [[ "$1" != "compose" ]]; then
 fi
 
 progress_mode=""
+compose_file=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     compose) shift ;;
-    --profile|--env-file|-f) shift 2 ;;
+    --profile|--env-file) shift 2 ;;
+    -f) compose_file="$2"; shift 2 ;;
     --progress) progress_mode="$2"; shift 2 ;;
     *) break ;;
   esac
@@ -264,6 +301,17 @@ case "$1" in
     ;;
   pull)
     service="${2:-all}"
+    if [[ "${TEST_REQUIRE_TARGET_COMPOSE:-0}" == 1 ]]; then
+      expected_target="$XD_CONFIG_DIR/state/install-staging/docker-compose.yml"
+      [[ "$compose_file" == "$expected_target" && -f "$compose_file" ]] || {
+        echo "prefetch used old deployment Compose: $compose_file" >&2
+        exit 12
+      }
+      grep -Fq 'image: ${XD_CADDY_IMAGE:-ghcr.io/lazyxu/xdrive-caddy:latest}' "$compose_file" || {
+        echo "prefetch manifest lacks target Caddy service" >&2
+        exit 12
+      }
+    fi
     count_file="$TEST_STATE/pull-count-$service"
     count="$(cat "$count_file" 2>/dev/null || echo 0)"
     count=$((count + 1))
@@ -399,11 +447,15 @@ done
 # All existing fixtures explicitly exercise the old-runtime deep fallback;
 # add independent target-first scenarios below for the new default path.
 export XD_UPGRADE_BACKUP_VERIFIER=legacy
+# Existing fake byte-count and stall tests intentionally opt in to Compose
+# JSON. Production now defaults to native Docker pull for every image.
+export XD_PULL_PROGRESS_MODE=json
 
 set +e
 rm -f "$TMP/state"/pull-count-*
 TEST_STATE="$TMP/state" \
 TEST_PULL_MODE=transient \
+TEST_REQUIRE_TARGET_COMPOSE=1 \
 TEST_HEALTH_OK=0 \
 TEST_BACKUP_LEGACY_DERIVED_FAIL=1 \
 PATH="$TMP/bin:/usr/bin:/bin" \
@@ -772,6 +824,7 @@ mkdir -p "$TMP/caddy-preflight-fail-state"
 set +e
 TEST_STATE="$TMP/caddy-preflight-fail-state" \
 TEST_PULL_MODE=caddy-permanent \
+TEST_REQUIRE_TARGET_COMPOSE=1 \
 TEST_HEALTH_OK=1 \
 PATH="$TMP/bin:/usr/bin:/bin" \
 XD_CONFIG_DIR="$TMP/caddy-preflight-fail-config" \
@@ -861,6 +914,71 @@ for scenario in caddy-release-success caddy-release-wrong-installer caddy-releas
   fi
 done
 
+# Every service uses the same direct Docker pull output as the stage-5
+# Server verifier by default; no invented "known bytes == entire image" 100%.
+grep -Fq 'pull_progress_mode="${XD_PULL_PROGRESS_MODE:-native}"' "$INSTALLER"
+for native_scenario in success caddy-failure; do
+  native_config="$TMP/native-$native_scenario-config"
+  native_state="$TMP/native-$native_scenario-state"
+  cp -a "$TMP/config" "$native_config"
+  mkdir -p "$native_state"
+  sed -i 's/^XD_DOMAIN=.*/XD_DOMAIN=/' "$native_config/.env" "$native_config/config/.env"
+  set +e
+  TEST_STATE="$native_state" \
+  TEST_PULL_MODE="native-$native_scenario" \
+  TEST_HEALTH_OK=1 \
+  XD_PULL_PROGRESS_MODE=native \
+  XD_INSTALL_PROGRESS_FILE="$native_state/install-progress.env" \
+  XD_PULL_ATTEMPTS=3 \
+  XD_PULL_RETRY_DELAY_SECONDS=0 \
+  PATH="$TMP/bin:/usr/bin:/bin" \
+  XD_CONFIG_DIR="$native_config" \
+  XD_SHELL_RC_PATH="$TMP/native-$native_scenario.bashrc" \
+  XD_NONINTERACTIVE=1 \
+  bash "$INSTALLER" --channel master >"$TMP/native-$native_scenario.out" 2>"$TMP/native-$native_scenario.err"
+  native_status=$?
+  set -e
+  grep -Fq 'Docker native layer progress enabled for every image.' "$TMP/native-$native_scenario.out"
+  for ref in postgres:17-alpine ghcr.io/lazyxu/xdrive-server:sha-0123456789ab ghcr.io/lazyxu/xdrive-caddy:sha-0123456789ab; do
+    grep -Fxq "pull $ref" "$native_state/docker-calls"
+  done
+  grep -Fq 'Pulling from library/postgres' "$TMP/native-$native_scenario.out"
+  grep -Fq 'Pulling from lazyxu/xdrive-server' "$TMP/native-$native_scenario.out"
+  grep -Fq 'Pulling from lazyxu/xdrive-caddy' "$TMP/native-$native_scenario.out"
+  grep -Fq '509a7429ad09: Pull complete' "$TMP/native-$native_scenario.out"
+  if grep -Eq ' B / .* B \(100%\)|optional Docker Compose JSON' "$TMP/native-$native_scenario.out"; then
+    echo "native image progress displayed Compose percentage" >&2
+    exit 1
+  fi
+  if [[ "$native_scenario" == success ]]; then
+    [[ "$native_status" -eq 0 ]]
+    [[ "$(cat "$native_state/pull-count-caddy")" -eq 1 ]]
+    grep -Fq 'pull caddy complete.' "$TMP/native-success.out"
+    first_stop="$(grep -n '^stop xdrive-caddy' "$native_state/docker-calls" | head -n1 | cut -d: -f1)"
+    [[ -n "$first_stop" ]]
+    for ref in postgres:17-alpine ghcr.io/lazyxu/xdrive-server:sha-0123456789ab ghcr.io/lazyxu/xdrive-caddy:sha-0123456789ab; do
+      first_pull="$(grep -Fn "pull $ref" "$native_state/docker-calls" | head -n1 | cut -d: -f1)"
+      [[ -n "$first_pull" && "$first_pull" -lt "$first_stop" ]]
+    done
+  else
+    [[ "$native_status" -ne 0 ]]
+    [[ "$(cat "$native_state/pull-count-caddy")" -eq 3 ]]
+    grep -Fq 'service=caddy' "$native_state/install-progress.env"
+    grep -Fq 'bytes_total=0' "$native_state/install-progress.env"
+    grep -Fq 'Docker registry/CDN TLS handshake timed out' "$TMP/native-caddy-failure.err"
+    grep -Fq 'prefetch caddy failed; the old runtime has not been stopped' "$TMP/native-caddy-failure.err"
+    if grep -Eq '^stop |^load -i |^tag xdrive/caddy:test' "$native_state/docker-calls"; then
+      echo "native Caddy pull error altered the running stack" >&2
+      exit 1
+    fi
+    if grep -Fq 'sig=never-print' "$TMP/native-caddy-failure.out" ||
+       grep -Fq 'sig=never-print' "$TMP/native-caddy-failure.err"; then
+      echo "signed CDN URL leaked outside the private Docker pull log" >&2
+      exit 1
+    fi
+  fi
+done
+
 # Default target-first verification: the pinned target is acquired before
 # stopping Caddy and used directly, without running the legacy validator.
 for scenario in target-new target-cached target-orphan target-no-image; do
@@ -876,6 +994,7 @@ for scenario in target-new target-cached target-orphan target-no-image; do
   mkdir -p "$scenario_state"
   set +e
   XD_UPGRADE_BACKUP_VERIFIER=target \
+  XD_PULL_RETRY_DELAY_SECONDS=0 \
   TEST_TARGET_IMAGE_PRESENT="$cached" \
   TEST_TARGET_PULL_FAIL="$pull_fail" \
   TEST_BACKUP_TARGET_REAL_ORPHAN_FAIL="$corrupt" \
@@ -904,6 +1023,7 @@ for scenario in target-new target-cached target-orphan target-no-image; do
   fi
   if [[ "$pull_fail" == 1 && "$cached" == 0 ]]; then
     grep -q 'cannot fetch pinned target verifier' "$TMP/$scenario.err"
+    [[ "$(grep -c '^pull ghcr.io/lazyxu/xdrive-server:sha-0123456789ab$' "$scenario_state/docker-calls")" -eq 3 ]]
     [[ ! -e "$scenario_state/backup-images" ]]
     continue
   fi

@@ -33,7 +33,7 @@ const summary={sourceCommit:process.env.XD_PR_HEAD || null,
   realChromium:true,realReactParent:true,realChildSource:true,
   realGin:false,realBaiduProvider:false,physicalDevice:false,
   fullGalleryPageModes:[],fullGalleryDirectPhotoModes:[],mobileDrawerModes:[],
-  favoriteMapCloseModes:[],
+  favoriteMapCloseModes:[],fullDocumentHandoffModes:[],realHEICMapCoverModes:[],
   checks:[],passed:false,errors:[]}
 const record=(name,ok)=>{summary.checks.push({name,passed:!!ok});assert(ok,name)}
 const h264GoSource=fs.readFileSync(path.join(root,
@@ -101,6 +101,7 @@ let appServer,childSessionRedeems=0,childSDKLoads=0,inlineSDKLoads=0
 let ginURL='',ginProcess=null
 const ginReady=path.join(temp,'real-gin-ready.json')
 const ginStop=path.join(temp,'real-gin-finished')
+const ginFailureStage=path.join(temp,'real-gin-failure-stage')
 async function startRealGin(galleryOrigin){
   const binary=process.env.XD_PLACES_P04_GO_BINARY
   if(!binary)return
@@ -109,7 +110,8 @@ async function startRealGin(galleryOrigin){
     '-test.count=1','-test.timeout=4m'],{
     env:{...process.env,XD_PLACES_P04_BROWSER_GIN:'1',
       XD_PLACES_P04_GALLERY_ORIGIN:galleryOrigin,
-      XD_PLACES_P04_READY_FILE:ginReady,XD_PLACES_P04_STOP_FILE:ginStop},
+      XD_PLACES_P04_READY_FILE:ginReady,XD_PLACES_P04_STOP_FILE:ginStop,
+      XD_PLACES_P04_FAILURE_STAGE:ginFailureStage},
     stdio:['ignore','pipe','pipe'],
   })
   // Never echo fixture stdout/stderr: no token, key or database URL is
@@ -127,7 +129,12 @@ async function startRealGin(galleryOrigin){
       summary.realGin=true
       return
     }
-    if(ginProcess.exitCode!==null)throw Error('real Gin exited before readiness')
+    if(ginProcess.exitCode!==null){
+      const stage=fs.existsSync(ginFailureStage)
+        ? fs.readFileSync(ginFailureStage,'utf8').trim() : 'unknown'
+      throw Error('real Gin exited before readiness at '+
+        (/^[a-z0-9-]{1,40}$/.test(stage)?stage:'redacted'))
+    }
     await new Promise(resolve=>setTimeout(resolve,350))
   }
   throw Error('real Gin startup timeout')
@@ -231,6 +238,79 @@ async function testActualGinIssueRedeem(page,mode){
     ['valid','actual Gin/PostgreSQL Owner Scope and Camera restored'],
     ['replayBlocked','consumed Owner scope ticket cannot replay'],
   ])record(mode+': '+label,result[key]===true)
+}
+
+
+async function testFullDocumentMapHandoff(browser,from,port){
+  const target=from==='inline'?'isolated':'prototype'
+  const context=await browser.newContext({
+    viewport:{width:390,height:844},locale:'zh-CN',
+    ignoreHTTPSErrors:true,serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(30000)
+  const errors=[]
+  page.on('pageerror',error=>errors.push(error.message))
+  await page.route('https://api.map.baidu.com/api?**',route=>{
+    const u=new URL(route.request().url())
+    assert.equal(u.searchParams.get('ak'),'TEST_ONLY_BROWSER_AK')
+    return route.fulfill({status:200,contentType:'text/javascript',body:sdkStub})
+  })
+  try{
+    const fromQuery=from==='isolated'?'&places_map_mode=isolated':''
+    await page.goto('https://'+galleryHost+':'+port+
+      '/?handoff_doc=1'+fromQuery,{waitUntil:'domcontentloaded'})
+    // This is the actual XDriveMediaGalleryPlacesMap Parent, not the old
+    // minimal TestApp fixture. Its authoritative ready signal is the rendered
+    // trusted Owner Count, not TestApp's private __mapProbe.ready boolean.
+    await page.getByText('当前地图可查看 3 张照片',{exact:true}).waitFor()
+    record(from+': original Owner Favorites map is mounted before document handoff',
+      (await page.evaluate(()=>window.__mapProbe.queries))
+        .every(q=>q.favorite===true&&q.albumKey===''))
+    await page.locator('[data-xdrive-places-map-more-menu] > summary').click()
+    await page.locator('[data-xdrive-map-mode-'+target+']').click()
+    await page.waitForURL(url=>url.searchParams.get('places_map_scope_required')==='1'&&
+      (target==='prototype'?!url.searchParams.has('places_map_mode'):
+        url.searchParams.get('places_map_mode')==='isolated'))
+    await page.waitForFunction(()=>window.__mapProbe?.handoff?.state==='ready')
+    await page.getByText('当前地图可查看 3 张照片',{exact:true}).waitFor()
+    const accepted=await page.evaluate(()=>({
+      url:location.href,
+      ownerQueries:window.__mapProbe.queries,
+      handoff:window.__mapProbe.handoff,
+      count:document.querySelector('[data-xdrive-places-map-photo-summary]')?.textContent,
+      cover:document.querySelectorAll('[data-xdrive-places-trusted-photo-cover]').length,
+    }))
+    // Assert independent real-Gin restore properties before waiting for
+    // any third-party SDK pixel projection. A valid Owner /cells Count may
+    // render before asynchronously projected pins; neither should mask an
+    // authentication or filter regression behind a composite assertion.
+    record(from+'→'+target+': one Gin/PostgreSQL Owner handoff consumed',
+      accepted.handoff.consumes===1&&accepted.handoff.state==='ready')
+    record(from+'→'+target+': Favorites-only Owner Cells survived full document',
+      accepted.ownerQueries.length>0&&
+      accepted.ownerQueries.every(q=>q.favorite===true&&q.albumKey==='')&&
+      accepted.count?.includes('3 张照片'))
+    await page.locator('[data-xdrive-places-trusted-photo-cover]')
+      .first().waitFor({state:'visible'})
+    record(from+'→'+target+': restored Owner photo cover actually rendered',
+      await page.locator('[data-xdrive-places-trusted-photo-cover]').count()>0)
+    record(from+'→'+target+': opaque one-use token is scrubbed before SDK load',
+      accepted.url.includes('places_map_scope_required=1')&&
+      !accepted.url.includes('places_map_handoff=')&&
+      !accepted.url.includes('manual:')&&!accepted.url.includes('favorite=true'))
+    await page.reload({waitUntil:'domcontentloaded'})
+    await page.locator('[data-xdrive-map-handoff-denied="1"]').waitFor()
+    const denied=await page.evaluate(()=>({
+      state:window.__mapProbe?.handoff?.state,
+      queries:window.__mapProbe?.queries?.length,
+      map:document.querySelectorAll('[data-xdrive-gallery-places-map]').length,
+      token:location.href.includes('places_map_handoff='),
+    }))
+    record(from+'→'+target+': full reload cannot replay or broaden restricted Owner map',
+      denied.state==='denied'&&denied.queries===0&&denied.map===0&&
+      !denied.token&&errors.length===0)
+    summary.fullDocumentHandoffModes.push(from)
+  }finally{await context.close()}
 }
 
 async function testMode(browser,mode,port){
@@ -1576,6 +1656,66 @@ async function testMapColdH264Poster(browser,mode,port){
   }finally{await context.close()}
 }
 
+
+/** The REAL 512x512 HEVC-coded source in internal/media/testdata is decoded
+ * with production ThumbnailWithAlpha in the opt-in Gin fixture and fetched
+ * over its authenticated Owner /thumbnail route. No Browser HEIC decoder or
+ * fake image MIME is involved: both SDK Hosts reuse the same React cover. */
+async function testRealHEICOwnerMapCover(browser,mode,port){
+  const context=await browser.newContext({
+    viewport:{width:960,height:760},locale:'zh-CN',
+    ignoreHTTPSErrors:true,serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(30000)
+  const errors=[]
+  page.on('pageerror',error=>errors.push(error.message))
+  await page.route('https://api.map.baidu.com/api?**',route=>{
+    const url=new URL(route.request().url())
+    assert.equal(url.searchParams.get('ak'),'TEST_ONLY_BROWSER_AK')
+    return route.fulfill({status:200,contentType:'text/javascript',body:sdkStub})
+  })
+  try{
+    await page.goto('https://'+galleryHost+':'+port+'/?mode='+mode+
+      '&map_real_heic=1',{waitUntil:'domcontentloaded'})
+    await page.getByText('当前地图可查看 1 张照片',{exact:true}).waitFor()
+    const image=page.locator('[data-xdrive-places-trusted-photo-cover] img').first()
+    await image.waitFor({state:'visible'})
+    await page.waitForFunction(()=>{
+      const img=document.querySelector('[data-xdrive-places-trusted-photo-cover] img')
+      return img instanceof HTMLImageElement&&img.complete&&
+        img.naturalWidth===512&&img.naturalHeight===512&&
+        (img.currentSrc||img.src).startsWith('blob:')&&
+        window.__mapProbe?.heic?.reads>=1
+    })
+    const proof=await page.evaluate(async()=>{
+      const img=document.querySelector('[data-xdrive-places-trusted-photo-cover] img')
+      await img.decode()
+      return {heic:{...window.__mapProbe.heic},
+        photoCount:window.__mapProbe.queries.map(q=>q.count),
+        nodeID:window.__mapProbe.heic.nodeID,
+        pixelSize:[img.naturalWidth,img.naturalHeight],
+        blobSource:(img.currentSrc||img.src).startsWith('blob:')}
+    })
+    record(mode+': genuine HEIC original becomes decoded cached Owner JPEG map cover',
+      proof.heic.mime==='image/jpeg'&&proof.heic.bytes>512&&
+      proof.pixelSize[0]===512&&proof.pixelSize[1]===512&&
+      proof.blobSource&&proof.photoCount.length>0&&
+      proof.photoCount.every(n=>n===1)&&proof.nodeID>0)
+    const foreign=await page.evaluate(async nodeID=>{
+      const owner=await fetch('/__fixture/map-owner',{cache:'no-store'}).then(r=>r.json())
+      const reply=await fetch('/api/v1/media/items/'+nodeID+'/thumbnail?revision=1',{
+        cache:'no-store',headers:{Authorization:'Bearer '+owner.token},
+      })
+      return reply.status
+    },proof.nodeID)
+    record(mode+': original Owner cannot read a separate HEIC Owner thumbnail',
+      foreign===403||foreign===404)
+    record(mode+': HEIC cover never sends Node or original bytes to the SDK Child',
+      errors.length===0&&requests.every(x=>
+        x.host==='gallery'||x.host==='child'))
+    summary.realHEICMapCoverModes.push(mode)
+  }finally{await context.close()}
+}
 async function main(){
   await esbuild.build({
     entryPoints:[source],bundle:true,jsx:'automatic',logLevel:'silent',
@@ -1597,9 +1737,13 @@ async function main(){
     const child=host===childHost+':'+port
     const pathname=new URL(req.url||'/','https://'+host).pathname
     requests.push({host:gallery?'gallery':child?'child':'unexpected',path:pathname})
-    if(gallery&&pathname==='/')return content(res,200,'text/html',
-      ginURL?resultHTML.replace('</head>',
-        '<script>window.__P04_REAL_GIN=true</script></head>'):resultHTML)
+    if(gallery&&pathname==='/'){
+      let html=ginURL?resultHTML.replace('</head>',
+        '<script>window.__P04_REAL_GIN=true</script></head>'):resultHTML
+      if(new URL(req.url||'/','https://'+host).searchParams.get('handoff_doc')==='1')
+        html=html.replace('<head>','<head><meta name="referrer" content="no-referrer">')
+      return content(res,200,'text/html',html)
+    }
     if(gallery&&ginURL&&
       (pathname==='/__fixture/map-owner' ||
         pathname.startsWith('/api/v1/media/places/baidu-jsapi/') ||
@@ -1713,6 +1857,14 @@ async function main(){
       await testFavoritesMapClose(browser,'isolated',port)
       record('both Hosts return from map to same authenticated Favorites membership',
         summary.favoriteMapCloseModes.join(',')==='inline,isolated')
+      await testFullDocumentMapHandoff(browser,'inline',port)
+      await testFullDocumentMapHandoff(browser,'isolated',port)
+      record('both SDK Hosts perform real one-use Gin scope handoff across full document',
+        summary.fullDocumentHandoffModes.join(',')==='inline,isolated')
+      await testRealHEICOwnerMapCover(browser,'inline',port)
+      await testRealHEICOwnerMapCover(browser,'isolated',port)
+      record('both SDK Hosts decoded signed real HEIC-derived JPEG photo pins',
+        summary.realHEICMapCoverModes.join(',')==='inline,isolated')
     }
     summary.passed=true
   }finally{await browser.close()}

@@ -43,7 +43,7 @@ test('Desktop Gallery uses authenticated native multi-file picker and refreshes 
   assert.ok(desk.includes('window.xdriveDesktop.agent.cloudUploadFiles(root.data.id)'))
   assert.ok(desk.includes('galleryUploadBusyRef.current'))
   assert.ok(desk.includes('setGalleryUploadRevision((revision) => revision + 1)'))
-  assert.ok(desk.includes('onUploadRequested={() => { void uploadGalleryFiles() }}'))
+  assert.ok(desk.includes('onUploadRequested: () => { void uploadGalleryFiles() }'))
   assert.ok(gallery.includes('seenUploadRevision.current = uploadRevision'))
   assert.ok(gallery.includes('refreshGallery()'))
 })

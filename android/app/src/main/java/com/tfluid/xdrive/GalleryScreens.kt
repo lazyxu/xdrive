@@ -109,8 +109,15 @@ internal fun ColumnScope.Gallery(
         if (state.galleryLoaded) Text("${state.galleryTotal} 项",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // PWA's genuine Select/Done control, without selecting unloaded results.
+        TextButton(
+            onClick = { controller.setGallerySelectionMode(!state.gallerySelectionMode) },
+            enabled = state.galleryLoaded && !state.loading &&
+                !state.galleryFavoriteWriteAttempted && !state.viewerReturnToFiles,
+            modifier = Modifier.heightIn(min = 48.dp).testTag("gallery-select-mode"),
+        ) { Text(if (state.gallerySelectionMode) "完成" else "选择") }
         // Preserve the real Server query clear action without a second bottom row.
-        if (state.gallerySelectedAlbum == null &&
+        if (!state.gallerySelectionMode && state.gallerySelectedAlbum == null &&
             state.gallerySearchQuery.isNotEmpty()) {
             TextButton(onClick = { controller.searchGallery("") },
                 modifier = Modifier.heightIn(min = 48.dp)
@@ -119,6 +126,7 @@ internal fun ColumnScope.Gallery(
         if (state.gallerySelectedAlbum == null) {
             TextButton(
                 onClick = { kindMenuOpen = true },
+                enabled = !state.gallerySelectionMode && !state.galleryFavoriteWriteAttempted,
                 modifier = Modifier.heightIn(min = 48.dp)
                     .testTag("gallery-kind-filter")
                     .semantics {
@@ -133,6 +141,7 @@ internal fun ColumnScope.Gallery(
         Box {
             IconButton(
                 onClick = { displayMenuOpen = true },
+                enabled = !state.gallerySelectionMode && !state.galleryFavoriteWriteAttempted,
                 modifier = Modifier.size(48.dp)
                     .semantics {
                         stateDescription = "缩略图密度 ${preferredColumns} 档，" +
@@ -233,14 +242,22 @@ internal fun ColumnScope.Gallery(
         }
     }
 
+    val timeSets = state.galleryTimelineSets
+    // Indexed PWA year/month dock requires canonical captured/ascending order.
+    val showTimeDock = !state.gallerySelectionMode && timeSets != null &&
+        state.gallerySearchQuery.isEmpty() &&
+        state.gallerySortBy == "captured" && state.gallerySortDir == "asc"
     BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().testTag("gallery-wall")) {
         val columns = galleryVisibleColumns(maxWidth.value, preferredColumns)
         val tileGap = 4.dp // Shared PWA Gallery grid gap.
         val cellWidth = (maxWidth - tileGap * (columns - 1)) / columns
         val rows = (state.galleryItems.size + columns - 1) / columns
+        // Floating PWA controls overlay this wall; keep genuine scroll clearance.
+        val dockClearance = if (state.gallerySelectionMode || showTimeDock)
+            144.dp else 88.dp
         val blankTop = if (state.gallerySortDir == "asc" &&
             state.galleryLoaded && state.galleryItems.isNotEmpty()) {
-            (maxHeight - (cellWidth + tileGap) * rows - 8.dp).coerceAtLeast(0.dp)
+            (maxHeight - (cellWidth + tileGap) * rows - dockClearance).coerceAtLeast(0.dp)
         } else 0.dp
 
         // Initial tail is sparse: prefetch one earlier Range before first positioning.
@@ -302,7 +319,7 @@ internal fun ColumnScope.Gallery(
             columns = GridCells.Fixed(columns),
             state = gridState,
             modifier = Modifier.fillMaxSize().testTag("gallery-grid"),
-            contentPadding = PaddingValues(bottom = 8.dp),
+            contentPadding = PaddingValues(bottom = dockClearance),
             horizontalArrangement = Arrangement.spacedBy(tileGap),
             verticalArrangement = Arrangement.spacedBy(tileGap),
         ) {
@@ -321,125 +338,126 @@ internal fun ColumnScope.Gallery(
                 Spacer(Modifier.fillMaxWidth().height(blankTop))
             }
             items(state.galleryItems, key = { it.node.id }) { item ->
-                GalleryTile(item, controller, bitmaps, containTiles)
+                GalleryTile(item, controller, bitmaps, containTiles,
+                    state.gallerySelectionMode,
+                    state.gallerySelectedItems.any { it.node.id == item.node.id })
             }
         }
-    }
-    val timeSets = state.galleryTimelineSets
-    // PWA source has a time capsule above a separate primary/Search dock.
-    // Android has no actual Collections client yet: preserve a functional
-    // native classification action rather than adding a fake Collections tab.
-    if (timeSets != null && state.gallerySearchQuery.isEmpty() &&
-        state.gallerySortBy == "captured" && state.gallerySortDir == "asc") {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)
-                .testTag("gallery-time-dock"),
-            horizontalArrangement = Arrangement.Center,
-        ) {
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.84f),
-                shape = RoundedCornerShape(50.dp),
-                tonalElevation = 2.dp,
-            ) {
-                Row(Modifier.padding(4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    for ((scale, label) in listOf(
-                        "year" to "年", "month" to "月", "all" to "全部"
-                    )) {
-                        val enabled = !state.loading &&
-                            (scale == "all" || timeSets.forScale(scale).isNotEmpty())
-                        Box(
-                            modifier = Modifier.widthIn(min = 58.dp).heightIn(min = 44.dp)
-                                .background(
-                                    if (timeScale == scale) MaterialTheme.colorScheme.surface
-                                    else Color.Transparent,
-                                    RoundedCornerShape(50.dp),
-                                )
-                                .clickable(enabled = enabled) {
-                                    timeScale = scale
-                                    if (scale == "all") {
-                                        timePickerOpen = false
-                                        if (state.galleryJumpIndex != null)
-                                            controller.refreshGallery()
-                                    } else timePickerOpen = true
+        // Native functional Gallery controls float over this same Owner grid.
+        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+            .testTag("gallery-floating-chrome")) {
+            if (showTimeDock && timeSets != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)
+                        .testTag("gallery-time-dock"),
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.84f),
+                        shape = RoundedCornerShape(50.dp),
+                        tonalElevation = 2.dp,
+                    ) {
+                        Row(Modifier.padding(4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            for ((scale, label) in listOf(
+                                "year" to "年", "month" to "月", "all" to "全部"
+                            )) {
+                                val enabled = !state.loading &&
+                                    (scale == "all" || timeSets.forScale(scale).isNotEmpty())
+                                Box(
+                                    modifier = Modifier.widthIn(min = 58.dp).heightIn(min = 44.dp)
+                                        .background(
+                                            if (timeScale == scale) MaterialTheme.colorScheme.surface
+                                            else Color.Transparent,
+                                            RoundedCornerShape(50.dp),
+                                        )
+                                        .clickable(enabled = enabled) {
+                                            timeScale = scale
+                                            if (scale == "all") {
+                                                timePickerOpen = false
+                                                if (state.galleryJumpIndex != null)
+                                                    controller.refreshGallery()
+                                            } else timePickerOpen = true
+                                        }
+                                        .semantics { selected = timeScale == scale }
+                                        .testTag("gallery-time-scale-" + scale),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(label,
+                                        modifier = Modifier.padding(horizontal = 10.dp),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = if (!enabled)
+                                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                        else if (timeScale == scale)
+                                            MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.onSurface)
                                 }
-                                .semantics { selected = timeScale == scale }
-                                .testTag("gallery-time-scale-" + scale),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(label,
-                                modifier = Modifier.padding(horizontal = 10.dp),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = if (!enabled)
-                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                                else if (timeScale == scale)
-                                    MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onSurface)
+                            }
                         }
                     }
                 }
             }
-        }
-    }
-    // iOS PWA primary capsule: the middle action must be the real
-    // Collections page, never an unrelated media kind filter.
-    Surface(
-        modifier = Modifier.fillMaxWidth().navigationBarsPadding()
-            .testTag("gallery-bottom-dock"),
-        color = Color.Transparent,
-    ) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (state.gallerySelectedAlbum != null) {
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.84f),
-                    shape = RoundedCornerShape(50.dp), tonalElevation = 2.dp,
+            // Real selection controls share the existing floating Gallery viewport.
+            if (state.gallerySelectionMode) GallerySelectionActions(state, controller)
+            else Surface(
+                modifier = Modifier.fillMaxWidth().navigationBarsPadding()
+                    .testTag("gallery-bottom-dock"),
+                color = Color.Transparent,
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    TextButton(
-                        onClick = controller::closeGalleryAlbum,
-                        modifier = Modifier.heightIn(min = 48.dp)
-                            .testTag("gallery-album-back"),
-                    ) { Text("返回精选集") }
-                }
-            } else {
-                Surface(
-                    modifier = Modifier.weight(1f).widthIn(max = 288.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.84f),
-                    shape = RoundedCornerShape(50.dp),
-                    tonalElevation = 2.dp,
-                ) {
-                    Row(Modifier.fillMaxWidth().padding(4.dp),
-                        verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            Modifier.weight(1f).heightIn(min = 44.dp)
-                                .background(MaterialTheme.colorScheme.surface,
-                                    RoundedCornerShape(50.dp))
-                                .testTag("gallery-library-tab"),
-                            contentAlignment = Alignment.Center,
+                    if (state.gallerySelectedAlbum != null) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.84f),
+                            shape = RoundedCornerShape(50.dp), tonalElevation = 2.dp,
                         ) {
-                            Text("图库", style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.primary)
+                            TextButton(
+                                onClick = controller::closeGalleryAlbum,
+                                modifier = Modifier.heightIn(min = 48.dp)
+                                    .testTag("gallery-album-back"),
+                            ) { Text("返回精选集") }
+                        }
+                    } else {
+                        Surface(
+                            modifier = Modifier.weight(1f).widthIn(max = 288.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.84f),
+                            shape = RoundedCornerShape(50.dp),
+                            tonalElevation = 2.dp,
+                        ) {
+                            Row(Modifier.fillMaxWidth().padding(4.dp),
+                                verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    Modifier.weight(1f).heightIn(min = 44.dp)
+                                        .background(MaterialTheme.colorScheme.surface,
+                                            RoundedCornerShape(50.dp))
+                                        .testTag("gallery-library-tab"),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text("图库", style = MaterialTheme.typography.labelLarge,
+                                        color = MaterialTheme.colorScheme.primary)
+                                }
+                                TextButton(
+                                    onClick = controller::openGalleryCollections,
+                                    contentPadding = PaddingValues(horizontal = 5.dp),
+                                    modifier = Modifier.weight(1f).heightIn(min = 44.dp)
+                                        .testTag("gallery-open-collections"),
+                                ) { Text("精选集", maxLines = 1) }
+                            }
                         }
                         TextButton(
-                            onClick = controller::openGalleryCollections,
-                            contentPadding = PaddingValues(horizontal = 5.dp),
-                            modifier = Modifier.weight(1f).heightIn(min = 44.dp)
-                                .testTag("gallery-open-collections"),
-                        ) { Text("精选集", maxLines = 1) }
+                            onClick = {
+                                searchDraft = state.gallerySearchQuery
+                                searchOpen = true
+                            },
+                            contentPadding = PaddingValues(horizontal = 8.dp),
+                            modifier = Modifier.heightIn(min = 50.dp).widthIn(min = 50.dp)
+                                .testTag("gallery-search-button"),
+                        ) { Text("搜索", maxLines = 1) }
                     }
                 }
-                TextButton(
-                    onClick = {
-                        searchDraft = state.gallerySearchQuery
-                        searchOpen = true
-                    },
-                    contentPadding = PaddingValues(horizontal = 8.dp),
-                    modifier = Modifier.heightIn(min = 50.dp).widthIn(min = 50.dp)
-                        .testTag("gallery-search-button"),
-                ) { Text("搜索", maxLines = 1) }
             }
         }
     }
@@ -551,6 +569,8 @@ private fun GalleryTile(
     item: GalleryAsset, controller: DriveController,
     cache: LruCache<String, ImageBitmap>,
     containTiles: Boolean,
+    selectionMode: Boolean,
+    isSelected: Boolean,
 ) {
     val key = "${item.node.id}:${item.node.revision}"
     // A new Owner Range/revision or thumbnail-availability change invalidates
@@ -593,17 +613,25 @@ private fun GalleryTile(
     Box(Modifier.fillMaxWidth().aspectRatio(1f)
         .clip(androidx.compose.foundation.shape.RoundedCornerShape(2.dp))
         .background(MaterialTheme.colorScheme.surfaceContainerLow)
-        // Short tap retains the iOS photo-opening behavior; long press on a
-        // failed tile is the only retry gesture. No action button overlays.
+        // In selection mode the real visible media toggles; never open Viewer.
         .combinedClickable(
             onClick = {
-                if (item.mediaKind == "image" || item.mediaKind == "video")
+                if (selectionMode) controller.toggleGallerySelection(item)
+                else if (item.mediaKind == "image" || item.mediaKind == "video")
                     controller.openGalleryViewer(item)
                 else controller.showGalleryInfo(item)
             },
-            onLongClickLabel = if (failed) "重试缩略图" else null,
-            onLongClick = if (failed) ({ retryAttempt++ }) else null,
+            onLongClickLabel = if (failed) "重试缩略图" else if (!selectionMode) "选择照片" else null,
+            onLongClick = when {
+                failed -> ({ retryAttempt++ })
+                !selectionMode -> ({
+                    controller.setGallerySelectionMode(true)
+                    controller.toggleGallerySelection(item)
+                })
+                else -> null
+            },
         )
+        .semantics { if (selectionMode) selected = isSelected }
         .testTag("gallery-item-${item.node.id}")) {
         val ready = bitmap
         if (ready != null) {
@@ -633,6 +661,15 @@ private fun GalleryTile(
                     .padding(horizontal = 4.dp, vertical = 2.dp)
                     .testTag("gallery-thumbnail-failed-${item.node.id}"),
                 color = Color.White, style = MaterialTheme.typography.labelSmall)
+        }
+        if (isSelected) {
+            Surface(modifier = Modifier.align(Alignment.TopEnd).padding(4.dp)
+                .testTag("gallery-selected-mark-${item.node.id}"),
+                shape = RoundedCornerShape(50.dp),
+                color = MaterialTheme.colorScheme.primary) {
+                Text("✓", modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                    color = MaterialTheme.colorScheme.onPrimary)
+            }
         }
         if (item.livePhoto || item.mediaKind == "video") {
             Text(if (item.livePhoto) "实况" else "视频",

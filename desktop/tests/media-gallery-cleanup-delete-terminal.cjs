@@ -203,10 +203,12 @@ test('G11 Web/Desktop connect the same durable operation lifecycle, without new 
   const dPort = read('desktop/src/renderer/mediaGalleryAdapter.ts')
   assert.match(adapter, /xDriveMediaGalleryDeleteOperation\(/)
   assert.match(adapter, /resolveXDriveTransport\(port\.deleteItems!\(items\)\)/)
-  for (const app of [web, desktop]) {
-    assert.match(app, /fileOperations=\{(?:fileOperations|cloudFileOperations)\}/)
-    assert.match(app, /onFileOperationQueued=\{\(\) => \{ void refresh(?:Cloud)?FileOperations\(\) \}\s*\}/)
-  }
+  assert.match(web, /fileOperations=\{fileOperations\}/)
+  assert.match(web, /onFileOperationQueued=\{\(\) => \{ void refreshFileOperations\(\) \}\s*\}/)
+  assert.match(desktop, /galleryPage:\s*\{[\s\S]*?fileOperations:\s*cloudFileOperations/)
+  assert.match(desktop, /onFileOperationQueued:\s*\(\) => \{ void refreshCloudFileOperations\(\) \}/)
+  assert.match(read('ui/shared/src/mui/XDriveAppPageOutlet.tsx'), /<XDriveMediaGalleryPage/)
+
   assert.match(wPort, /deleteItems: \(items\) => api\.createFileOperation/)
   assert.match(dPort, /deleteItems: \(items\) => agent\.cloudCreateFileOperation/)
   assert.doesNotMatch(callbackInitializer() + completionEffectInitializer(),

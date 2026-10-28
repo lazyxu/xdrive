@@ -26,5 +26,5 @@ test('P94 real failure/retry and verified page receipts remain, with no false fi
  assert.equal(agents.split('Permanent no-jitter contract / P78').length,2)
  assert.equal(agents.split('P94 silent Global Storage diagnostic first-read (mandatory)').length,2)
  assert.ok(read('web/src/StorageStatsPanel.tsx').includes('XDriveGlobalStorageStatsPage'))
- assert.ok(read('desktop/src/renderer/App.tsx').includes('XDriveGlobalStorageStatsPage'))
+ assert.ok(read('desktop/src/renderer/App.tsx').includes('adminStoragePage:') && read('ui/shared/src/mui/XDriveAppPageOutlet.tsx').includes('<XDriveGlobalStorageStatsPage'))
 })

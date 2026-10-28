@@ -79,9 +79,11 @@ assert """    concurrency:
       queue: max
       cancel-in-progress: false
 """ in bundle, "release bundle must queue without discarding pending publishers"
-assert "Reject stale master snapshot before channel promotion" in bundle
-assert "Refusing stale Snapshot promotion before channel update" in bundle
-assert bundle.index("- name: Reject stale master snapshot before channel promotion") < (
+assert "Classify stale master Snapshot eligibility before channel promotion" in bundle
+assert 'echo "publish=false" >> "$GITHUB_OUTPUT"' in bundle
+assert "::notice title=Superseded Snapshot" in bundle
+assert "Diverged Snapshot ancestry" in bundle
+assert bundle.index("- name: Classify stale master Snapshot eligibility before channel promotion") < (
     bundle.index("- name: Promote successful server images")
 ), "a stale completed build must not overwrite GHCR edge before being rejected"
 

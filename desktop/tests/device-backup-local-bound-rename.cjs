@@ -21,7 +21,7 @@ test('own Desktop local rename keeps credential and Root inside Agent', () => {
   assert.match(agent, /cli\.LocalSourceBindingWithToken\(/)
   assert.doesNotMatch(agent, /localpush\.EnsureDevice\(/)
   assert.match(ipc, /device-backup-local-config/)
-  assert.match(app, /localSettings=\{localBackupSettings\}/)
+  assert.match(app, /localSettings:\s*localBackupSettings/)
   assert.match(page, /verifiedLocalDeviceID === device\.id && !device\.revoked/)
   assert.doesNotMatch(web, /localSettings=/)
   assert.doesNotMatch(web, /renameDeviceBackupLocalSource/)

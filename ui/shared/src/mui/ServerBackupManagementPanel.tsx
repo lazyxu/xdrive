@@ -12,6 +12,7 @@ import { latestServerBackupVerification, serverBackupReceiptDurationSeconds,
   serverBackupReceiptExplanation, summarizeServerBackupIntegrity } from '../server-backup-integrity'
 import { XDriveActionButton } from './ActionButton'
 import { XDriveBackupVerificationReceipt } from './BackupVerificationReceipt'
+import { XDriveBackupRecoveryEvidencePanel } from './BackupRecoveryEvidencePanel'
 import { XDriveSectionHeader } from './SectionHeader'
 
 type Confirmation = {
@@ -332,6 +333,10 @@ export function XDriveServerBackupManagementPanel({
           </Stack>
         </Stack>
       </Paper>
+
+      {page?.supported
+        ? <XDriveBackupRecoveryEvidencePanel page={page} snapshotID={snapshotID} />
+        : null}
 
       <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
         <Stack spacing={1.5}>
