@@ -308,30 +308,51 @@ export function XDriveMediaGalleryPlacesMap({
 
   return (
     <Paper variant="outlined" data-xdrive-gallery-places-map
-      sx={{ borderRadius: compact ? 0 : { xs: 0, sm: 2 }, borderWidth: compact ? 0 : 1, overflow: 'visible' }}>
-      <Stack data-xdrive-places-map-toolbar direction="row"
-        alignItems="center" justifyContent="space-between" spacing={1}
-        sx={{px:compact ? 1 : 1.5,py:0.5,minHeight:52,position:'relative',zIndex:12}}>
-        <Box sx={{minWidth:0}}>
+      sx={{position:'relative',borderRadius:compact ? 0 : {xs:0,sm:2},
+        borderWidth:compact ? 0 : 1,overflow:'visible',
+        bgcolor:compact ? 'transparent' : 'background.paper'}}>
+      {/* The map remains the canvas: only the trusted React controls float.
+          Both Baidu SDK Hosts below reuse this exact UI without forks. */}
+      <Stack data-xdrive-places-map-toolbar
+        data-xdrive-places-map-ios-chrome={compact ? '1' : undefined}
+        direction="row" alignItems="center" justifyContent="space-between" spacing={1}
+        sx={{px:compact ? 0 : 1.5,py:compact ? 0 : 0.5,
+          minHeight:compact ? 44 : 52,
+          position:compact ? 'absolute' : 'relative',
+          top:compact ? 'max(8px, env(safe-area-inset-top, 0px))' : undefined,
+          left:compact ? 'max(8px, env(safe-area-inset-left, 0px))' : undefined,
+          right:compact ? 'max(8px, env(safe-area-inset-right, 0px))' : undefined,
+          zIndex:12,pointerEvents:compact ? 'none' : 'auto',
+          '& > *':{pointerEvents:'auto'}}}>
+        <Box sx={{minWidth:0,...(compact ? {
+          height:44,px:1.75,display:'flex',alignItems:'center',borderRadius:'999px',
+          bgcolor:'background.paper',boxShadow:'0 2px 12px rgba(15,23,42,.16)',
+          backdropFilter:'blur(18px)',WebkitBackdropFilter:'blur(18px)',
+        }: {})}}>
           <Stack direction="row" alignItems="center" spacing={0.75}>
-            <Typography variant="body2" fontWeight={700} noWrap>地图照片</Typography>
+            <Typography variant="body2" fontWeight={700} noWrap>
+              {compact ? '地图' : '地图照片'}
+            </Typography>
             <Typography variant="caption" data-xdrive-places-map-runtime-boundary
               aria-label={desktopOnly ? 'Desktop 地图仅经独立 HTTPS 安全窗口运行' :
                 mapMode === 'prototype' ? '同页百度地图，第三方脚本不具备独立 Origin 隔离' :
                 '百度地图在独立 HTTPS Origin 隔离运行'}
-              sx={{fontSize:11,color:'text.secondary',whiteSpace:'nowrap'}}>
+              sx={{fontSize:11,color:'text.secondary',whiteSpace:'nowrap',
+                display:compact ? 'none' : 'block'}}>
               {desktopOnly ? '独立窗口' : mapMode === 'prototype' ? '同页 · 未隔离' : '安全隔离'}
             </Typography>
           </Stack>
           <Typography variant="caption" color="text.secondary" noWrap
-            sx={{display:'block',maxWidth:{xs:170,sm:420}}}>
+            sx={{display:compact ? 'none' : 'block',maxWidth:{xs:170,sm:420}}}>
             {totalCount === null || totalCount === undefined
               ? '轻点照片查看拍摄地点'
               : `探索 ${totalCount.toLocaleString('zh-CN')} 个地点`}
           </Typography>
         </Box>
         <Stack direction="row" spacing={0.75} alignItems="center"
-          data-xdrive-places-map-menu-anchor sx={{position:'static',flexShrink:0}}>
+          data-xdrive-places-map-menu-anchor
+          sx={{position:'static',flexShrink:0,
+            ...(compact ? {gap:0.5,'& > *':{flexShrink:0}} : {})}}>
           {onMapPhotoScopeChange && !desktopOnly ? (
             <ClickAwayListener onClickAway={() => {
               if (filterMenuRef.current) filterMenuRef.current.open = false
@@ -351,8 +372,14 @@ export function XDriveMediaGalleryPlacesMap({
                 sx={{position:'static'}}>
               <Box component="summary" sx={{listStyle:'none',cursor:'pointer',
                 display:'flex',alignItems:'center',justifyContent:'center',
-                minWidth:{xs:44,sm:60},minHeight:44,px:{xs:0.75,sm:1.25},borderRadius:2,
-                bgcolor:hasMapActiveFilters ? 'action.selected' : 'action.hover',
+                minWidth:compact ? 44 : {xs:44,sm:60},minHeight:44,
+                px:compact ? 1.25 : {xs:0.75,sm:1.25},
+                borderRadius:compact ? '999px' : 2,
+                bgcolor:compact ? 'background.paper' :
+                  hasMapActiveFilters ? 'action.selected' : 'action.hover',
+                boxShadow:compact ? '0 2px 12px rgba(15,23,42,.16)' : 'none',
+                backdropFilter:compact ? 'blur(18px)' : undefined,
+                WebkitBackdropFilter:compact ? 'blur(18px)' : undefined,
                 color:hasMapActiveFilters ? 'primary.main' : 'text.primary',
                 fontSize:13,fontWeight:600,
                 '&::-webkit-details-marker':{display:'none'},
@@ -456,7 +483,13 @@ export function XDriveMediaGalleryPlacesMap({
               sx={{position:'static'}}>
             <Box component="summary" sx={{listStyle:'none',cursor:'pointer',
               display:'flex',alignItems:'center',justifyContent:'center',
-              minWidth:{xs:44,sm:60},minHeight:44,px:{xs:0.75,sm:1.25},borderRadius:2,bgcolor:'action.hover',
+              minWidth:compact ? 44 : {xs:44,sm:60},minHeight:44,
+              px:compact ? 1.25 : {xs:0.75,sm:1.25},
+              borderRadius:compact ? '999px' : 2,
+              bgcolor:compact ? 'background.paper' : 'action.hover',
+              boxShadow:compact ? '0 2px 12px rgba(15,23,42,.16)' : 'none',
+              backdropFilter:compact ? 'blur(18px)' : undefined,
+              WebkitBackdropFilter:compact ? 'blur(18px)' : undefined,
               fontSize:13,fontWeight:600,
               '&::-webkit-details-marker':{display:'none'},
               '&:focus-visible':{outline:'2px solid',outlineColor:'primary.main'}}}>
@@ -549,7 +582,12 @@ export function XDriveMediaGalleryPlacesMap({
           {onCloseMap && !desktopOnly ? (
             <IconButton size="small" data-xdrive-places-map-close
               aria-label="关闭地图" onClick={onCloseMap}
-              sx={{minWidth:44,minHeight:44,bgcolor:'action.hover',borderRadius:2,
+              sx={{minWidth:44,minHeight:44,
+                bgcolor:compact ? 'background.paper' : 'action.hover',
+                borderRadius:compact ? '999px' : 2,
+                boxShadow:compact ? '0 2px 12px rgba(15,23,42,.16)' : 'none',
+                backdropFilter:compact ? 'blur(18px)' : undefined,
+                WebkitBackdropFilter:compact ? 'blur(18px)' : undefined,
                 '&:focus-visible':{outline:'2px solid',outlineColor:'primary.main'}}}>
               <CloseRoundedIcon fontSize="small"/>
             </IconButton>
