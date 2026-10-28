@@ -887,6 +887,22 @@ async function testMode(browser,mode,port){
       '[data-xdrive-places-photo-drawer-handle]')?.getAttribute('aria-expanded')==='true')
     record(mode+': semantic shared photo sheet handle opens by pointer click',
       await handle.getAttribute('aria-expanded')==='true')
+    // A signed Cell remains available through the accessible list even when
+    // a short noncompact landscape has no room for an unobscured 72px cover.
+    // Prefer the actual visible photo; use only the CURRENT signed Cell list
+    // when the compact-dock/edge exclusion intentionally hides every cover.
+    const openFreshCameraCell=async()=>{
+      const list=page.locator('[data-xdrive-places-cluster-list]')
+      await list.locator('button').first().waitFor({state:'attached'})
+      const cover=page.locator('[data-xdrive-places-trusted-photo-cover]').first()
+      if(await cover.isVisible()) {
+        await cover.click()
+      } else {
+        if(await list.getAttribute('open')===null)
+          await list.locator('summary').click()
+        await list.locator('button').first().click()
+      }
+    }
     // A changed CSS camera is a fresh /cells authorization boundary.
     // The old selected Cell and its drawer must be revoked immediately;
     // use the newly signed Owner cell rather than a stale handle.
@@ -899,8 +915,7 @@ async function testMode(browser,mode,port){
     await page.waitForFunction(before=>window.__mapProbe.queries.length>before,
       beforeLandscape)
     await page.getByText('当前地图可查看 3 张照片',{exact:true}).waitFor()
-    await mapCover.waitFor({state:'visible'})
-    await mapCover.click()
+    await openFreshCameraCell()
     await page.locator('[data-xdrive-places-photo-drawer-items] button').first().waitFor()
     await handle.click()
     await page.waitForFunction(()=>document.querySelector(
@@ -933,8 +948,7 @@ async function testMode(browser,mode,port){
     await page.waitForFunction(before=>window.__mapProbe.queries.length>before,
       beforePortrait)
     await page.getByText('当前地图可查看 3 张照片',{exact:true}).waitFor()
-    await mapCover.waitFor({state:'visible'})
-    await mapCover.click()
+    await openFreshCameraCell()
     await page.locator('[data-xdrive-places-photo-drawer-items] button').first().waitFor()
     await handle.click()
     await page.waitForFunction(()=>document.querySelector(
