@@ -872,6 +872,40 @@ test('closing system share during preparation cancels its byte-fetch request', a
   }
 })
 
+test('denied WebKit native sharing getters cannot break mounted Files browsing or start byte preparation', async () => {
+  const originalNavigator = Object.getOwnPropertyDescriptor(global, 'navigator')
+  let prepared = 0
+  try {
+    for (const denied of ['share', 'canShare']) {
+      const observed = { share() { throw Error('native share must not run') }, canShare() { return true } }
+      Object.defineProperty(observed, denied, {
+        configurable: true,
+        get() { throw Error('Safari denied optional ' + denied + ' getter') },
+      })
+      Object.defineProperty(global, 'navigator', { configurable: true, value: observed })
+      await withView(async h => {
+        assert.equal(count(h.view, 'data-xdrive-mobile-files-scroll'), 1)
+        await act(async () => { find(h.view, 'data-mobile-files-section', 'favorites').props.onClick() })
+        const row = h.view.root.findAll(node => node.props?.role === 'button' && node.props?.onContextMenu)
+          .find(node => textOf(node.props.children).includes('photo.jpg'))
+        assert.ok(row, 'normal Owner file browsing survives a denied native share API')
+        await act(async () => {
+          row.props.onContextMenu({ preventDefault() {}, clientX: 50, clientY: 100 })
+        })
+        assert.equal(h.view.root.findAll(node => node.props?.['data-mobile-files-native-share-entry']).length, 0,
+          'a denied native share capability cannot offer a fake file byte-share action')
+      }, { props: {
+        favorites: [{ id: 15, name: 'photo.jpg', kind: 'file', revision: 4 }],
+        onPrepareNativeShareFile: () => { prepared++; return Promise.reject(Error('must not prepare')) },
+      } })
+    }
+  } finally {
+    if (originalNavigator) Object.defineProperty(global, 'navigator', originalNavigator)
+    else delete global.navigator
+  }
+  assert.equal(prepared, 0, 'rendering and context menus must not request authenticated file bytes')
+})
+
 test('F-iOS-01A: one visible large heading collapses into the compact title while scroll owner stays mounted', async () => {
   await withView(async h => {
     const nav = find(h.view, 'data-mobile-files-navigation-bar', true)
