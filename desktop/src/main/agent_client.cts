@@ -4375,8 +4375,8 @@ export class AgentIPCClient {
     return this.request<AgentAdminBaiduMapConfig>('PUT', '/v1/cloud/admin-baidu-map', input)
   }
 
-  cloudAdminServices() {
-    return this.request<AgentServiceDependenciesSnapshot>('GET', '/v1/cloud/admin-services')
+  cloudAdminServices(signal?: AbortSignal) {
+    return this.request<AgentServiceDependenciesSnapshot>('GET', '/v1/cloud/admin-services', undefined, 10_000, signal)
   }
   cloudAdminStorage(query: AgentAdminStorageRequest) {
     return this.request<unknown>('POST', '/v1/cloud/admin-storage', query, 120_000)
