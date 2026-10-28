@@ -2351,7 +2351,10 @@ async function testPhotoMarkerPresentation(browser,mode,port){
 // and retain the original authorized Cell Range for an unrendered Cell.
 async function testDense64OwnerPhotoMap(browser,mode,port){
   const context=await browser.newContext({
-    viewport:{width:960,height:760},locale:'zh-CN',
+    // Ensure 8x8 projected representative grid spacing exceeds the
+    // 104x92px photo-card+bubble avoidance footprint. Short-screen
+    // behavior is tested independently by the existing 390px matrix.
+    viewport:{width:1024,height:1080},locale:'zh-CN',
     ignoreHTTPSErrors:true,serviceWorkers:'block'})
   const page=await context.newPage()
   page.setDefaultTimeout(30000)
