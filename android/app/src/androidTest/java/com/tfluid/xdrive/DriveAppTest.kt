@@ -103,6 +103,10 @@ class DriveAppTest {
     private val galleryTagsCalls = mutableListOf<Pair<List<Long>, List<String>>>()
     private val galleryAlbumAdds = mutableListOf<Pair<String, List<Long>>>()
     private var galleryManualAlbumFixture = false
+    private var galleryCoverFixture = false
+    private var galleryCustomCover = false
+    private var galleryCoverRevision = 2L
+    private val galleryCoverCalls = mutableListOf<Long>()
     private var galleryRemoveMemberFixture = false
     private var galleryMemberRemoved = false
     private var galleryMemberRemoveCalls = 0
@@ -124,6 +128,10 @@ class DriveAppTest {
         override suspend fun root(accessToken: String) = DriveNode(1, name = "", type = "dir")
         override suspend fun galleryAlbums(accessToken: String): List<GalleryAlbum> {
             check(accessToken == "fixture")
+            if (galleryCoverFixture) return listOf(
+                GalleryAlbum("manual:cover", "manual", "封面测试",
+                    1, galleryCoverRevision, 0, 40),
+            )
             if (galleryRemoveMemberFixture) return listOf(
                 GalleryAlbum("manual:member", "manual", "假期", 
                     if (galleryMemberRemoved) 0 else 1,
@@ -166,10 +174,25 @@ class DriveAppTest {
             accessToken: String, albumId: String, offset: Int,
             initialLatest: Boolean,
         ): GalleryPage {
-            check(accessToken == "fixture" && galleryRemoveMemberFixture &&
-                albumId == "manual:member")
+            check(accessToken == "fixture")
+            if (galleryCoverFixture && albumId == "manual:cover")
+                return GalleryPage(listOf(galleryFixture), 1, 0)
+            check(galleryRemoveMemberFixture && albumId == "manual:member")
             return GalleryPage(if (galleryMemberRemoved) emptyList() else listOf(galleryFixture),
                 if (galleryMemberRemoved) 0 else 1, 0)
+        }
+        override suspend fun gallerySetManualAlbumCover(
+            accessToken: String, album: GalleryAlbum, nodeId: Long,
+        ): GalleryAlbum {
+            check(accessToken == "fixture" && galleryCoverFixture &&
+                album.id == "manual:cover" &&
+                album.revision == galleryCoverRevision &&
+                nodeId in listOf(0L, 40L))
+            galleryCoverCalls += nodeId
+            galleryCoverRevision++
+            galleryCustomCover = nodeId != 0L
+            return album.copy(revision = galleryCoverRevision,
+                coverNodeId = 40)
         }
         override suspend fun galleryRemoveFromManualAlbum(
             accessToken: String, album: GalleryAlbum, item: GalleryAsset,
@@ -823,6 +846,67 @@ class DriveAppTest {
         compose.onNodeWithTag("gallery-review-return").performClick()
         compose.onNodeWithTag("gallery-selection-done").performClick()
         compose.onNodeWithTag("gallery-bottom-dock").assertIsDisplayed()
+    }
+
+    @Test fun manualAlbumNativeCoverCustomAndAutomaticUseOneOwnerPutEach() {
+        galleryCoverFixture = true
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryLoaded && !controller.state.value.loading
+        }
+        compose.onNodeWithTag("gallery-open-collections").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryAlbumsLoaded &&
+                controller.state.value.galleryAlbums.singleOrNull()?.id == "manual:cover" &&
+                !controller.state.value.loading
+        }
+        compose.onNodeWithTag("gallery-album-item-manual:cover").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.gallerySelectedAlbum?.id == "manual:cover" &&
+                controller.state.value.galleryLoaded &&
+                controller.state.value.galleryItems.size == 1 &&
+                !controller.state.value.loading
+        }
+        compose.onNodeWithTag("gallery-select-mode").performClick()
+        compose.onNodeWithTag("gallery-item-40").performClick()
+        compose.onNodeWithTag("gallery-selection-more").performClick()
+        compose.onNodeWithTag("gallery-selection-set-album-cover")
+            .assertIsDisplayed().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.gallerySelectedAlbum?.revision == 3L &&
+                !controller.state.value.gallerySelectionMode &&
+                !controller.state.value.loading
+        }
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(listOf(40L), galleryCoverCalls)
+            org.junit.Assert.assertTrue(galleryCustomCover)
+        }
+        compose.onNodeWithTag("gallery-album-back").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryAlbumsLoaded &&
+                controller.state.value.galleryAlbums.singleOrNull()?.revision == 3L &&
+                !controller.state.value.loading
+        }
+        compose.onNodeWithTag("gallery-manual-more-manual:cover").performClick()
+        compose.onNodeWithTag("gallery-manual-auto-cover-manual:cover")
+            .assertIsDisplayed().performClick()
+        compose.onNodeWithTag("gallery-manual-auto-cover-dialog").assertExists()
+        compose.onNodeWithText("仍可能显示相册中的首张照片", substring = true)
+            .assertExists()
+        compose.onNodeWithTag("gallery-manual-auto-cover-confirm")
+            .assertIsEnabled().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryAlbumsLoaded &&
+                controller.state.value.galleryAlbums.singleOrNull()?.revision == 4L &&
+                !controller.state.value.loading
+        }
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(listOf(40L, 0L), galleryCoverCalls)
+            org.junit.Assert.assertFalse(galleryCustomCover)
+        }
+        compose.onNodeWithTag("gallery-album-item-manual:cover").assertExists()
     }
 
     @Test fun selectedManualAlbumMemberCanBeRemovedWithoutDeletingOriginalPhoto() {

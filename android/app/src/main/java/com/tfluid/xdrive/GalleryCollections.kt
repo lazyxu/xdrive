@@ -45,6 +45,9 @@ internal fun ColumnScope.GalleryCollections(
     var deleteTarget by remember(state.server, state.username) {
         mutableStateOf<GalleryAlbum?>(null)
     }
+    var resetCoverTarget by remember(state.server, state.username) {
+        mutableStateOf<GalleryAlbum?>(null)
+    }
     var renameDraft by remember(state.server, state.username) { mutableStateOf("") }
     val validCreateName =
         com.tfluid.xdrive.core.normalizeGalleryManualAlbumName(createName) != null
@@ -107,6 +110,7 @@ internal fun ColumnScope.GalleryCollections(
                         renameDraft = it.name
                     },
                     onDelete = { deleteTarget = it },
+                    onResetCover = { resetCoverTarget = it },
                 )
             }
         }
@@ -227,6 +231,42 @@ internal fun ColumnScope.GalleryCollections(
             },
         )
     }
+    resetCoverTarget?.let { album ->
+        val canRestore = !state.loading && state.galleryAlbumsLoaded &&
+            state.galleryAlbums.any { it == album } && album.kind == "manual" &&
+            album.revision > 0 && !state.galleryAlbumCreateAttempted &&
+            !state.galleryAlbumCreateCommittedNeedsRefresh &&
+            !state.galleryAlbumEditAttempted &&
+            !state.galleryAlbumEditCommittedNeedsRefresh
+        AlertDialog(
+            onDismissRequest = { if (!state.loading) resetCoverTarget = null },
+            modifier = Modifier.testTag("gallery-manual-auto-cover-dialog"),
+            title = { Text("恢复自动相册封面？") },
+            text = {
+                Text("相册将由服务器自动选择封面；即使取消自定义封面，仍可能显示相册中的首张照片。不会删除原始照片或视频。")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (canRestore) {
+                            resetCoverTarget = null
+                            controller.restoreGalleryAutomaticAlbumCover(album)
+                        }
+                    },
+                    enabled = canRestore,
+                    modifier = Modifier.heightIn(min = 48.dp)
+                        .testTag("gallery-manual-auto-cover-confirm"),
+                ) { Text("恢复自动封面") }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { resetCoverTarget = null }, enabled = !state.loading,
+                    modifier = Modifier.heightIn(min = 48.dp)
+                        .testTag("gallery-manual-auto-cover-cancel"),
+                ) { Text("取消") }
+            },
+        )
+    }
     // The same two-tab capsule and safe-area geometry as Gallery Library.
     Surface(
         modifier = Modifier.fillMaxWidth().navigationBarsPadding()
@@ -279,6 +319,7 @@ private fun GalleryAlbumCard(
     busy: Boolean,
     onRename: (GalleryAlbum) -> Unit,
     onDelete: (GalleryAlbum) -> Unit,
+    onResetCover: (GalleryAlbum) -> Unit,
 ) {
     var actionsOpen by remember(album.id, album.revision) { mutableStateOf(false) }
     val identity = "${album.id}:${album.revision}:${album.coverNodeId}"
@@ -391,6 +432,12 @@ private fun GalleryAlbumCard(
                             onClick = { actionsOpen = false; onRename(album) },
                             modifier = Modifier.heightIn(min = 48.dp)
                                 .testTag("gallery-manual-rename-${album.id}"),
+                        )
+                        DropdownMenuItem(
+                            text = { Text("恢复自动封面") },
+                            onClick = { actionsOpen = false; onResetCover(album) },
+                            modifier = Modifier.heightIn(min = 48.dp)
+                                .testTag("gallery-manual-auto-cover-${album.id}"),
                         )
                         DropdownMenuItem(
                             text = { Text("删除相册") },
