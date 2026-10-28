@@ -202,6 +202,22 @@ export function XDriveServerBackupManagementPanel({
   const confirm = () => {
     if (!confirmation || confirmText !== confirmation.expected || disabled) return
     const next = confirmation.action
+    // Confirmation may outlive a Host inventory refresh or a UI filter/selection
+    // change. Never submit a different or no-longer-restorable generation.
+    if (next.snapshot_id && (!selected || next.snapshot_id !== selected.id ||
+      (next.action === 'restore' && !selectedRestorable) ||
+      (next.action === 'drill' && (selected.format !== 'v2' || !selectedRestorable)) ||
+      ((next.action === 'delete' || next.action === 'delete_selected') &&
+        !selectedComplete))) {
+      setError('所选备份已变化或不再满足操作条件；请重新选择并确认。')
+      setConfirmation(null)
+      return
+    }
+    if (next.action === 'prune' && !canPrune) {
+      setError('清理预览已失效；必须重新执行与保留数量匹配的只读预览。')
+      setConfirmation(null)
+      return
+    }
     if (next.action === "delete_selected" && (!selectedDeletionReady ||
       !selectedPreview || next.preview_request_id !== selectedPreview.request_id ||
       next.snapshot_id !== snapshotID)) {

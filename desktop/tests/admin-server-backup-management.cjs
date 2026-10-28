@@ -127,3 +127,14 @@ test('Host read failures revoke stale backup actions and destructive confirmatio
   assert.match(panel, /!page && error \?/)
   assert.match(panel, /备份、恢复及删除操作已禁用/)
 })
+
+test('confirmation re-checks current snapshot and current prune preview after refresh', () => {
+  const confirmSource = panel.slice(panel.indexOf('const confirm = () => {'),
+    panel.indexOf('  return (\n    <Stack', panel.indexOf('const confirm = () => {')))
+  assert.match(confirmSource, /next\.snapshot_id !== selected\.id/)
+  assert.match(confirmSource, /next\.action === 'restore' && !selectedRestorable/)
+  assert.match(confirmSource, /next\.action === 'drill'/)
+  assert.match(confirmSource, /next\.action === 'prune' && !canPrune/)
+  assert.match(confirmSource, /setConfirmation\(null\)/)
+  assert.match(confirmSource, /清理预览已失效/)
+})
