@@ -119,6 +119,12 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   const latestAcceptedViewport = useRef<Bounds | null>(null)
   // Owner-approved cells, their camera and filter signature form one scope.
   const currentFilterKey = xDriveBaiduMapPhotoScopeKey(mapPhotoScope)
+  // A true empty filtered Owner range is not necessarily a missing GPS/BD09
+  // derivative. Both SDK Hosts share this one honest empty-state distinction.
+  const hasMembershipFilters = Boolean(mapPhotoScope.albumKey ||
+    mapPhotoScope.filters.favorite !== undefined ||
+    mapPhotoScope.filters.asset_kind ||
+    mapPhotoScope.filters.captured_from || mapPhotoScope.filters.captured_to)
   const scopeSnapshot = xDriveCopyBaiduMapPhotoScope(mapPhotoScope)
   const filterRef = useRef({key:currentFilterKey,snapshot:scopeSnapshot})
   filterRef.current = {key:currentFilterKey,snapshot:scopeSnapshot}
@@ -717,7 +723,9 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
             sx={{bgcolor:'background.paper',px:1,py:0.75,borderRadius:2,boxShadow:2}}>
             {trustedSummary.total_count > 0
               ? `当前地图可查看 ${trustedSummary.total_count.toLocaleString('zh-CN')} 张照片`
-              : '当前地图暂无可显示的定位照片；位置派生完成后会自动重查，也可手动刷新。'}
+              : hasMembershipFilters
+                ? '当前筛选条件下暂无定位照片；可调整筛选或手动刷新。'
+                : '当前地图暂无可显示的定位照片；位置派生完成后会自动重查，也可手动刷新。'}
           </Typography>
           {phase === 'ready' && trustedSummary.total_count === 0 &&
               acceptedScope.current?.key === currentFilterKey ? (
