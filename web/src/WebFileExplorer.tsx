@@ -346,11 +346,12 @@ export default function WebFileExplorer({
         groups: page.groups,
       }
     },
-    loadRoot: () => api.root(),
-    findChildDirectory: async (parentID, name) => {
-      const page = await api.listPage(
+    loadRoot: (signal?: AbortSignal) => api.root(signal),
+    findChildDirectory: async (parentID, name, signal?: AbortSignal) => {
+      const page = await api.listPageAbortable(
         parentID,
         xDriveFileExplorerPathLookupPageOptions(name),
+        signal,
       )
       return page.items[0] ?? null
     },

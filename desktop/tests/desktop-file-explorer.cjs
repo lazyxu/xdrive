@@ -69,7 +69,7 @@ test('Desktop FileExplorer provides system-style navigation, search, and persist
   assert.ok(controller.includes("replace(/\\\\/g, '/')"), 'shared path controller should accept Windows separators')
   assert.equal(explorer.includes('xDriveFileExplorerSubmitPath({'), false, 'Desktop Explorer should delegate typed-path submission to the shared workspace controller')
   assert.ok(explorer.includes('hostPort.browse.cloudRoot()'), 'Desktop typed-path submission should keep Agent root loading local')
-  assert.ok(explorer.includes('findChildDirectory: async (parentID, name) =>'), 'Desktop typed-path traversal should use exact child lookup')
+  assert.ok(explorer.includes('findChildDirectory: async (parentID, name, signal?: AbortSignal) =>'), 'Desktop typed-path traversal should use exact child lookup')
   assert.ok(explorer.includes('xDriveFileExplorerPathLookupPageOptions(name)'), 'Desktop typed-path traversal should request one indexed child')
   assert.ok(explorer.includes('hostPort.browse.cloudChildrenPage('), 'Desktop typed-path lookup must stay on the paged Agent bridge')
   assert.equal(explorer.includes('hostPort.browse.cloudChildren(parentID)'), false, 'Desktop typed-path traversal must not load all children')
@@ -139,8 +139,13 @@ test('Desktop Files cloud lifecycle uses the shared controller without storage i
 
 
 test('Desktop Files uses shared workspace content for full-bleed Explorer layout', () => {
-  assert.ok(app.includes('<XDriveWorkspaceContent'), 'Desktop App must use shared workspace content')
-  assert.ok(app.includes('presentation={xDriveWorkspacePresentation(view)}'), 'Desktop Files should select the shared full-bleed presentation through the route model')
+  const routeContent = fs.readFileSync(path.join(repoRoot, 'ui/shared/src/mui/XDriveAppRouteContent.tsx'), 'utf8')
+  assert.ok(app.includes('<XDriveAppRouteContent host={workspaceHost} view={view}>'),
+    'Desktop must mount the common route/content frame')
+  assert.ok(routeContent.includes('<XDriveWorkspaceContent') &&
+    routeContent.includes('presentation={presentation}') &&
+    routeContent.includes('xDriveWorkspacePresentation(view)'),
+    'the shared frame must select full-bleed Files presentation through the route model')
   assert.ok(workspaceRoute.includes("return view === 'files' ? 'files' : 'page'"), 'shared route model must own full-bleed Files presentation')
   assert.equal(app.includes('<XDrivePageHeader'), false, 'Desktop App should not own duplicate generic page chrome')
   assert.ok(app.includes('<DesktopFilesPage'), 'Desktop Files should render through the extracted full-bleed page')
