@@ -205,9 +205,31 @@ export async function checkXDrivePwaAssets(
   // promise that never settles cannot keep the install dialog spinning.
   let interrupt!: () => void
   const interrupted = new Promise<null>(resolve => { interrupt = () => resolve(null) })
-  const abortFromCaller = () => { controller.abort(); interrupt() }
-  if (options.signal?.aborted) abortFromCaller()
-  else options.signal?.addEventListener('abort', abortFromCaller, { once: true })
+  let active = true
+  const abortFromCaller = () => {
+    if (!active) return
+    controller.abort()
+    interrupt()
+  }
+  let callerCancelObservationDenied = false
+  let callerListenerAttached = false
+  if (options.signal) {
+    try {
+      if (options.signal.aborted) {
+        abortFromCaller()
+      } else {
+        options.signal.addEventListener('abort', abortFromCaller, { once: true })
+        callerListenerAttached = true
+        // Cancellation may race the first state check and listener admission.
+        if (options.signal.aborted) abortFromCaller()
+      }
+    } catch {
+      // A restricted WebKit host can deny either the state getter or listener.
+      // Without a reliable cancel subscription, do not start any resource HEAD.
+      callerCancelObservationDenied = true
+      abortFromCaller()
+    }
+  }
   const budget = typeof options.timeoutMs === 'number' && Number.isFinite(options.timeoutMs)
     ? Math.max(1, Math.min(6000, Math.floor(options.timeoutMs))) : 6000
   let timedOut = false
@@ -247,7 +269,8 @@ export async function checkXDrivePwaAssets(
       } catch {
         return {
           id: asset.id, label: asset.label, state: 'fail',
-          detail: timedOut ? '公开资源检测超时（最多 6 秒）；请检查反向代理与网络。'
+          detail: callerCancelObservationDenied ? '浏览器无法监听取消信号；未发送资源请求。'
+            : timedOut ? '公开资源检测超时（最多 6 秒）；请检查反向代理与网络。'
             : controller.signal.aborted ? '资源检测已取消。'
               : '同源资源请求失败。请检查网络、HTTPS、代理及文件部署。',
         }
@@ -255,7 +278,11 @@ export async function checkXDrivePwaAssets(
     }))
     return [...checks, ...assetChecks]
   } finally {
+    active = false
     clearTimeout(timer)
-    options.signal?.removeEventListener('abort', abortFromCaller)
+    if (callerListenerAttached) {
+      try { options.signal?.removeEventListener('abort', abortFromCaller) }
+      catch { /* Optional WebKit cleanup denial must not discard HEAD results. */ }
+    }
   }
 }

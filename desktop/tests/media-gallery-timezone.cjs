@@ -83,5 +83,5 @@ test('Gallery shared adapter forwards selected IANA timezone through Memories po
   assert.match(web, /api\.mediaMemories\(anchorDate, limit, timeZone\)/)
   assert.match(web, /api\.mediaMemoryItemRange\(memoryID, limit, offset, timeZone, signal\)/)
   assert.match(desktop, /agent\.getMediaMemories\(anchorDate, limit, timeZone\)/)
-  assert.match(desktop, /agent\.getMediaMemoryItemRange\(memoryID, limit, offset, timeZone\)/)
+  assert.match(desktop, /xDriveDesktopViewportRequest\(signal,\s*requestID =>\s*agent\.getMediaMemoryItemRange\(memoryID, limit, offset, timeZone, requestID\)/)
 })

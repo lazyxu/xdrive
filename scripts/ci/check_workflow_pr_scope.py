@@ -21,7 +21,7 @@ PR_EVENT = re.compile(r"^  (?:pull_request|\"pull_request\"|'pull_request'):\s*(
 PR_TOKEN = re.compile(r"(?<![\w-])pull_request(?![\w-])")
 PATH = re.compile(r"^      -\s+(.+?)\s*$")
 ALLOWED_PREFIXES = (
-    "android/", "desktop/", "internal/", "web/", "ui/", "scripts/",
+    "android/", "ios/", "desktop/", "internal/", "web/", "ui/", "scripts/",
     "deploy/", "packaging/", "docs/", ".github/workflows/",
 )
 BROAD_PATTERNS = {"*", "**", "**/*", "./**", ".github/**", ".github/workflows/**"}

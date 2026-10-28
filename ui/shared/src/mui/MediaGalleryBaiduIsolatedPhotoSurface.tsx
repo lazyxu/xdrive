@@ -26,6 +26,7 @@ import { XDriveMediaGalleryPlacesPhotoDrawer } from './MediaGalleryPlacesPhotoDr
 import { xDriveValidBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
 import {
   xDriveCurrentMapPhotoCollections, xDriveVerifiedMapPhotoProjections,
+  xDriveSelectVisibleMapPhotoCovers,
 } from '../media-gallery-places-map-strip'
 import {
   xDriveBaiduMapPhotoScopeKey, xDriveCopyBaiduMapPhotoScope,
@@ -98,6 +99,9 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   mapPhotoScope: XDriveBaiduMapPhotoScope
 }) {
   const mount = useRef<HTMLDivElement | null>(null)
+  const mapFrameRef = useRef<{
+    setPhotoCoverSelections(selections: readonly MediaBaiduNativeCellSelection[]): boolean
+  } | null>(null)
   const failureCallback = useRef(onFailure)
   failureCallback.current = onFailure
   const opened = useRef(onOpenCell)
@@ -384,6 +388,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         ...commonMapOptions,childOrigin,
       })
     if (!frame) { failure(); return }
+    mapFrameRef.current = frame
 
     const queryCells = async (bounds: Bounds, liveCamera = false): Promise<boolean> => {
       if (lifetime.signal.aborted) return false
@@ -530,34 +535,36 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
       cancel()
       lifetime.abort()
       if(refresh!==null)clearInterval(refresh)
+      if (mapFrameRef.current === frame) mapFrameRef.current = null
       frame.dispose()
       onReady(false)
     }
   },[childOrigin,mintChildTicket,getInlinePrototypeConfig,getInlineSignedStatus,mode,listOwnerCells,onReady,scope])
 
-  // Select the most informative visible covers and avoid overcrowding.
-  // All 64 map numbers remain in the provider map; only 24 thumbnails load.
-  const coverPins: Array<{selection:MediaBaiduNativeCellSelection;
-    count:number;x:number;y:number}> = []
-  // The worldwide Owner /cells bootstraps SDK fit only: photo cover clicks
-  // must await a true camera viewport, which can regrid the 8x8 Cells.
-  if (scopeIsCurrent && acceptedViewport && projected?.width && projected.height &&
-      loadThumbnail && phase === 'ready') {
-    // Revalidate untrusted SDK projections against the current signed Owner cells.
-    const verifiedCoverCandidates = xDriveVerifiedMapPhotoProjections(
-      trustedSummary, projected, accessible.map(cell => cell.selection))
-    for (const candidate of verifiedCoverCandidates) {
-      if (coverPins.length >= 24) break
-      // Projected SDK coordinates never authorize obsolete Owner selections.
-      if (!hasAcceptedCell(candidate.selection)) continue
-      if (coverPins.some(pin => Math.hypot(pin.x-candidate.x,pin.y-candidate.y) < 88)) continue
-      coverPins.push(candidate)
-    }
-  }
+  // Both Inline and isolated HTTPS Child share the exact same verified
+  // Owner projections and photo-first collision/edge/overlay rules. Do not
+  // show a clipped or photo-dock-covered button just because an SDK point
+  // remains visible at the map border. All Cells remain in the accessible list.
+  const coverPins = scopeIsCurrent && acceptedViewport &&
+      projected?.width && projected.height && loadThumbnail && phase === 'ready'
+    ? xDriveSelectVisibleMapPhotoCovers(
+        xDriveVerifiedMapPhotoProjections(
+          trustedSummary, projected, accessible.map(cell => cell.selection))
+          .filter(candidate => hasAcceptedCell(candidate.selection)),
+        projected.width, projected.height, edgeToEdge, true)
+    : []
   // Only use a CURRENT Parent-owned /cells snapshot, never a Child-generated
   // key as private media authority. A pan/revoke clears both inputs.
   const photoStrip = scopeIsCurrent && acceptedViewport && phase === 'ready'
     ? xDriveCurrentMapPhotoCollections(trustedSummary, projected, accessible.map(cell => cell.selection)) : []
+  // Two SDK Hosts receive only the current visible React cover selections.
+  // Numeric native labels are suppressed for these displayed buttons only.
+  // Each other signed Cell keeps its native label and the full accessible list.
+  useLayoutEffect(() => {
+    mapFrameRef.current?.setPhotoCoverSelections?.(
+      coverPins.map(pin => pin.selection))
+  },[projected,accessible,acceptedViewport,currentFilterKey,phase,
+    summary,edgeToEdge,loadThumbnail])
   // Only the authenticated Owner Cells DTO supplies representative media kind.
   // Both SDK Hosts still get anonymous map geometry, count and ephemeral key;
   // private media bytes, URLs and kind remain in this trusted React Parent.
@@ -603,14 +610,18 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     <Box component="section" data-xdrive-baidu-isolated-photo-map
       sx={{px:edgeToEdge ? 0 : {xs:1.25,sm:1.5},pb:edgeToEdge ? 0 : 1.5,minWidth:0}}>
       <Box data-xdrive-places-cluster-overview role="region" aria-label="定位照片聚集地图"
-        sx={{position:'relative',width:'100%',height:{
-          xs:'max(520px, calc(100dvh - 148px))',
-          sm:'max(640px, calc(100dvh - 165px))'},
-          // On 375–390px-tall iPhone landscape, the normal 640px desktop
-          // minimum hides map pins, the photo strip and sheet below the fold.
-          // Both SDK Hosts use this same trusted map viewport and Camera.
+        data-xdrive-places-ios-map-canvas={edgeToEdge ? '1' : undefined}
+        sx={{position:'relative',width:'100%',height:edgeToEdge
+          ? 'max(460px, calc(100dvh - 124px))'
+          : {xs:'max(520px, calc(100dvh - 148px))',
+             sm:'max(640px, calc(100dvh - 165px))'},
+          // The 52px app header and the compact Gallery map/list switch
+          // remain outside the canvas; the map's own header now overlays it.
+          // Do not impose a desktop floor in short iPhone landscape.
           '@media (orientation: landscape) and (max-height: 600px)':{
-            height:'max(200px, calc(100dvh - 165px))',
+            height:edgeToEdge
+              ? 'max(192px, calc(100dvh - 124px))'
+              : 'max(200px, calc(100dvh - 165px))',
           },
           maxHeight:1400,borderRadius:edgeToEdge ? 0 : 1.5,
           overflow:'hidden',backgroundColor:'background.default'}}>
@@ -669,17 +680,28 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
               right:{xs:'max(8px, env(safe-area-inset-right))',sm:16},
               bottom:{xs:'max(10px, env(safe-area-inset-bottom))',sm:16},
               zIndex:5,pointerEvents:'none'}}>
-            <Box sx={{pointerEvents:'auto',p:0.8,px:1,borderRadius:2,
-              bgcolor:'background.paper',boxShadow:3,
-              border:'1px solid',borderColor:'divider',maxWidth:{xs:'100%',sm:720},
-              mx:'auto',backdropFilter:'blur(14px)'}}>
-              <Typography variant="caption" sx={{display:'block',mb:0.5,
-                fontWeight:700}}>
+            <Box data-xdrive-places-map-photo-strip-shell
+              sx={{pointerEvents:'auto',p:edgeToEdge ? 0.4 : 0.8,
+              px:edgeToEdge ? 0.6 : 1,
+              borderRadius:edgeToEdge ? 3.5 : 2,
+              bgcolor:edgeToEdge
+                ? (theme => theme.palette.mode==='dark'
+                  ? 'rgba(28,28,30,.86)' : 'rgba(255,255,255,.86)')
+                : 'background.paper',
+              boxShadow:'0 2px 12px rgba(15,23,42,.18)',
+              border:'1px solid',borderColor:'divider',
+              maxWidth:{xs:'100%',sm:720},
+              mx:'auto',backdropFilter:'blur(18px)',
+              WebkitBackdropFilter:'blur(18px)'}}>
+              <Typography variant="caption" sx={{display:edgeToEdge ? 'none' : 'block',
+                mb:0.5,fontWeight:700}}>
                 照片地点 · 当前区域 {trustedSummary?.total_count.toLocaleString('zh-CN')} 张
               </Typography>
               <Box component="nav" aria-label="浏览地图当前聚合区域照片"
-                sx={{display:'flex',gap:0.75,overflowX:'auto',overflowY:'hidden',
-                  pb:0.25,touchAction:'pan-x',scrollbarWidth:'thin'}}>
+                sx={{display:'flex',gap:edgeToEdge ? 0.5 : 0.75,
+                  overflowX:'auto',overflowY:'hidden',pb:edgeToEdge ? 0 : 0.25,
+                  touchAction:'pan-x',scrollbarWidth:edgeToEdge ? 'none' : 'thin',
+                  '&::-webkit-scrollbar':edgeToEdge ? {display:'none'} : undefined}}>
                 {photoStrip.map(pin => (
                   <Button key={pin.selection.cell_x+':'+pin.selection.cell_y}
                     data-xdrive-places-collection-thumb={pin.selection.node_id}
@@ -687,20 +709,29 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
                       (pin.selection.cell_y*8+pin.selection.cell_x+1)+
                       ' 的 '+pin.count.toLocaleString('zh-CN')+' 张照片'}
                     onClick={() => openVerifiedCell(pin.selection)}
-                    sx={{position:'relative',display:'block',flex:'0 0 76px',
-                      width:76,minWidth:76,height:78,p:0.5,
-                      borderRadius:1.5,border:'1px solid',borderColor:'divider',
+                    sx={{position:'relative',display:'block',
+                      flex:edgeToEdge ? '0 0 54px' : '0 0 76px',
+                      width:edgeToEdge ? 54 : 76,minWidth:edgeToEdge ? 54 : 76,
+                      height:edgeToEdge ? 54 : 78,p:edgeToEdge ? 0.25 : 0.5,
+                      borderRadius:edgeToEdge ? 2 : 1.5,
+                      border:'1px solid',borderColor:'divider',
                       bgcolor:'action.hover',textTransform:'none',
                       '&:focus-visible':{outline:'3px solid',
                         outlineColor:'primary.main',outlineOffset:2}}}>
-                    <Box sx={{width:'100%',height:52,borderRadius:1,
+                    <Box sx={{width:'100%',height:edgeToEdge ? 46 : 52,
+                      borderRadius:edgeToEdge ? 1.5 : 1,
                       overflow:'hidden',bgcolor:'background.default'}}>
                       {ownerCover(pin.selection,
                         '区域 '+(pin.selection.cell_y*8+pin.selection.cell_x+1)+'代表照片',
                         <PhotoLibraryOutlinedIcon fontSize="small"/> )}
                     </Box>
                     <Typography variant="caption" component="span"
-                      sx={{fontSize:10,fontWeight:700,display:'block',lineHeight:'16px'}}>
+                      sx={{fontSize:10,fontWeight:700,display:'block',
+                        lineHeight:'16px',
+                        ...(edgeToEdge ? {position:'absolute',right:2,bottom:2,
+                          px:0.5,borderRadius:'999px',bgcolor:'primary.main',
+                          color:'primary.contrastText',
+                          boxShadow:'0 1px 3px rgba(0,0,0,.2)'} : {})}}>
                       {pin.count.toLocaleString('zh-CN')} 张
                     </Typography>
                   </Button>
@@ -715,12 +746,21 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
             left:{xs:'max(10px, env(safe-area-inset-left))',sm:16},
             right:{xs:'max(10px, env(safe-area-inset-right))',sm:16},
             bottom:photoStrip.length>0
-              ? {xs:'calc(135px + env(safe-area-inset-bottom, 0px))',sm:145}
+              ? (edgeToEdge
+                ? 'calc(82px + env(safe-area-inset-bottom, 0px))'
+                : {xs:'calc(135px + env(safe-area-inset-bottom, 0px))',sm:145})
               : {xs:'max(12px, env(safe-area-inset-bottom))',sm:16},
             zIndex:5,display:'flex',alignItems:'center',justifyContent:'space-between',
             gap:1,flexWrap:'wrap',pointerEvents:'none'}}>
           <Typography variant="caption" color="text.primary"
-            sx={{bgcolor:'background.paper',px:1,py:0.75,borderRadius:2,boxShadow:2}}>
+            sx={{bgcolor:edgeToEdge
+                ? (theme => theme.palette.mode==='dark'
+                  ? 'rgba(28,28,30,.86)' : 'rgba(255,255,255,.86)')
+                : 'background.paper',
+              px:1.25,py:0.75,borderRadius:edgeToEdge ? '999px' : 2,
+              boxShadow:2,
+              backdropFilter:edgeToEdge ? 'blur(18px)' : undefined,
+              WebkitBackdropFilter:edgeToEdge ? 'blur(18px)' : undefined}}>
             {trustedSummary.total_count > 0
               ? `当前地图可查看 ${trustedSummary.total_count.toLocaleString('zh-CN')} 张照片`
               : hasMembershipFilters

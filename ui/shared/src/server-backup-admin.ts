@@ -26,6 +26,11 @@ export type XDriveServerBackupRetention = {
   retained_objects: number
   drop_only_objects: number
   unreferenced_objects: number
+  /** Older Host releases omit these. Treat missing or unsafe JS numbers as unavailable. */
+  committed_snapshots?: number
+  drop_snapshot_bytes?: number
+  drop_only_object_bytes?: number
+  unreferenced_bytes?: number
   potential_logical_bytes: number
   hashed_objects: number
   hashed_bytes: number
@@ -77,6 +82,25 @@ export type XDriveServerBackupHistoryEntry = XDriveServerBackupOperation & {
   drill?: XDriveServerBackupDrillReceipt
 }
 
+export type XDriveServerBackupVerifyAllReport = {
+  protocol: 'xdrive-host-verify-all-v1'
+  request_id: string
+  mode: 'fast' | 'deep'
+  state: 'success' | 'failed'
+  started_at: string
+  finished_at: string
+  total_snapshots: number
+  checked_snapshots: number
+  passed_snapshots: number
+  failed_snapshots: number
+  unverified_snapshots: number
+  deep_repositories_checked: number
+  deep_repositories_failed: number
+  failure_sample: { snapshot_id: string; category: string }[]
+  failure_sample_truncated: boolean
+  failure_category: string
+}
+
 export type XDriveServerBackupPage = {
   supported: boolean
   message?: string
@@ -89,11 +113,13 @@ export type XDriveServerBackupPage = {
   operation: XDriveServerBackupOperation
   retention?: XDriveServerBackupRetention
   history?: XDriveServerBackupHistoryEntry[]
+  bulk_verification?: XDriveServerBackupVerifyAllReport
 }
 
 export type XDriveServerBackupRequest =
   | { action: 'create'; format: 'v1' | 'v2' }
   | { action: 'verify'; snapshot_id: string; mode: 'fast' | 'deep' }
+  | { action: 'verify_all'; mode: 'fast' | 'deep' }
   | { action: 'plan'; keep_last: number; mode: 'fast' | 'deep' }
   | { action: 'restore'; snapshot_id: string; confirmation: string }
   | { action: 'drill'; snapshot_id: string; confirmation: string }

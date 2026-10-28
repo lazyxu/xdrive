@@ -322,6 +322,14 @@ interface XDriveService {
     suspend fun galleryAddToManualAlbum(
         accessToken: String, album: GalleryAlbum, items: List<GalleryAsset>,
     ): GalleryAlbum = throw ApiException(501, "Gallery album write unavailable")
+    /** One verified Owner member of a manual PhotoCollection; no file deletion. */
+    suspend fun galleryRemoveFromManualAlbum(
+        accessToken: String, album: GalleryAlbum, item: GalleryAsset,
+    ): GalleryAlbum = throw ApiException(501, "Manual album member removal unavailable")
+    /** Set an existing member as custom cover, or 0 to restore automatic cover. */
+    suspend fun gallerySetManualAlbumCover(
+        accessToken: String, album: GalleryAlbum, nodeId: Long,
+    ): GalleryAlbum = throw ApiException(501, "Manual album cover editing unavailable")
     suspend fun galleryThumbnail(accessToken: String, nodeId: Long, revision: Long): ByteArray =
         throw ApiException(501, "Gallery thumbnail unavailable")
     /** Read-only audio: same Range/ETag/Bearer transport as native video,
@@ -1225,6 +1233,61 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         return GalleryAlbum(id, kind, name, count, revision, folder, cover)
     }
 
+    /** Single Server DELETE of collection membership, not the original media.
+     * A missing or stale ACK is never a reason to replay the mutation. */
+    override suspend fun galleryRemoveFromManualAlbum(
+        accessToken: String, album: GalleryAlbum, item: GalleryAsset,
+    ): GalleryAlbum {
+        require(validToken(accessToken) && validGalleryAlbumId(album.id) &&
+            album.id.startsWith("manual:") && album.kind == "manual" &&
+            album.revision > 0 && album.revision < Long.MAX_VALUE &&
+            album.itemCount > 0 &&
+            item.node.id > 0 && item.node.revision > 0 &&
+            item.node.type == "file" && item.mediaKind in setOf("image", "video")) {
+            "Invalid Owner album member"
+        }
+        val saved = galleryAlbumDTO(request(
+            "media/albums", accessToken, method = "DELETE",
+            ifMatch = album.revision,
+            pathTailSegments = listOf(album.id, "items", item.node.id.toString()),
+        ))
+        // The selected item must have been a real loaded member. Go returns the
+        // old revision on no-op: never report a verified removal in that case.
+        if (saved.id != album.id || saved.kind != "manual" ||
+            saved.name != album.name || saved.albumFolderId != album.albumFolderId ||
+            saved.itemCount != album.itemCount - 1 ||
+            saved.revision != album.revision + 1) invalidPayload()
+        return saved
+    }
+
+    /** Go permits only a current manual-album member as custom cover.
+     * The zero sentinel resets to automatic cover, not an absent picture.
+     * No Owner reads or writes are routed through the device media store. */
+    override suspend fun gallerySetManualAlbumCover(
+        accessToken: String, album: GalleryAlbum, nodeId: Long,
+    ): GalleryAlbum {
+        require(validToken(accessToken) && validGalleryAlbumId(album.id) &&
+            album.kind == "manual" && album.id.startsWith("manual:") &&
+            album.revision > 0 && album.revision < Long.MAX_VALUE &&
+            album.itemCount >= 0 && nodeId >= 0 &&
+            (nodeId == 0L || album.itemCount > 0)) {
+            "Invalid manual album cover target"
+        }
+        val payload = JsonObject(mapOf("node_id" to JsonPrimitive(nodeId)))
+        val saved = galleryAlbumDTO(request("media/albums", accessToken,
+            bodyObject = payload, method = "PUT", ifMatch = album.revision,
+            pathTailSegments = listOf(album.id, "cover")))
+        // Go returns the same revision for an idempotent request. The automatic
+        // choice can still use a real first-media cover, so reset does not
+        // demand cover_node_id=null.
+        if (saved.id != album.id || saved.kind != "manual" ||
+            saved.name != album.name || saved.albumFolderId != album.albumFolderId ||
+            saved.itemCount != album.itemCount ||
+            saved.revision !in album.revision..(album.revision + 1) ||
+            (nodeId > 0 && saved.coverNodeId != nodeId)) invalidPayload()
+        return saved
+    }
+
     /** Authoritative 100k-safe index metadata; never generate time groups
      * from sparse, already-loaded thumbnails. Require exact partition counts.
      * Missing sets are allowed for relevance searches and older Server builds. */
@@ -1606,6 +1669,7 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
             when (method) {
                 null -> builder.post(payload)
                 "PATCH" -> builder.patch(payload)
+                "PUT" -> builder.put(payload)
                 else -> throw IllegalArgumentException("Invalid HTTP method")
             }
         } else when (method) {

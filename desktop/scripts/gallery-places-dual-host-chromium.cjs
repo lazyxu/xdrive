@@ -36,7 +36,7 @@ const summary={sourceCommit:process.env.XD_PR_HEAD || null,
   fullGalleryPageModes:[],fullGalleryDirectPhotoModes:[],mobileDrawerModes:[],
   favoriteMapCloseModes:[],fullDocumentHandoffModes:[],
   fullDocumentComboModes:[],fullDocumentNegativeFilterModes:[],
-  realHEICMapCoverModes:[],realLIVPMapCoverModes:[],
+  iosCompactModes:[],sourceRevisionModes:[],realHEICMapCoverModes:[],realLIVPMapCoverModes:[],
   checks:[],passed:false,errors:[]}
 const record=(name,ok)=>{summary.checks.push({name,passed:!!ok});assert(ok,name)}
 const h264GoSource=fs.readFileSync(path.join(root,
@@ -403,16 +403,130 @@ async function testFullDocumentMapHandoff(browser,from,port,combined=false){
  * Album/Owner state change before full-document mode handoff consumption.
  * The authentic Web startup scrubber must deny SDK, Viewer and all Cells;
  * no origin, bearer, nonce or Album value is logged or persisted in fixtures. */
+/** The same authenticated shared Gallery map in both SDK Hosts is the
+ * mobile iOS photo-map canvas. Inspect actually rendered Chromium layout and
+ * Owner pins: screenshots alone and source-only CSS tests cannot prove that
+ * the map stays visible beneath its floating chrome. */
+async function testIOSPhotoMapCompactChrome(browser,mode,scheme,port){
+  const context=await browser.newContext({
+    viewport:{width:390,height:844},locale:'zh-CN',colorScheme:scheme,
+    ignoreHTTPSErrors:true,serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(30000)
+  const errors=[]
+  page.on('pageerror',error=>errors.push(error.message))
+  await page.route('https://api.map.baidu.com/api?**',route=>{
+    assert.equal(new URL(route.request().url()).searchParams.get('ak'),
+      'TEST_ONLY_BROWSER_AK')
+    return route.fulfill({status:200,contentType:'text/javascript',body:sdkStub})
+  })
+  try{
+    const query='/?handoff_doc=1&handoff_combo=1&ios_compact=1&ui_scheme='+
+      scheme+(mode==='isolated'?'&places_map_mode=isolated':'')
+    await page.goto('https://'+galleryHost+':'+port+query,
+      {waitUntil:'domcontentloaded'})
+    await page.getByText('当前地图可查看 2 张照片',{exact:true}).waitFor()
+    await page.locator('[data-xdrive-places-trusted-photo-cover]')
+      .first().waitFor({state:'visible'})
+    const expectedDark=scheme==='dark'
+    for(const [width,height] of [
+      [375,812],[390,844],[844,390],[899,390],[900,390],
+      [899,1200],[900,1200],
+    ]){
+      await page.setViewportSize({width,height})
+      const actual=await page.evaluate(()=>{
+        const map=document.querySelector('[data-xdrive-places-ios-map-canvas="1"]')
+        const toolbar=document.querySelector('[data-xdrive-places-map-ios-chrome="1"]')
+        const dock=document.querySelector('[data-xdrive-places-map-photo-strip-shell]')
+        const photoButtons=Array.from(
+          document.querySelectorAll('[data-xdrive-places-collection-thumb]'))
+        const pins=Array.from(
+          document.querySelectorAll('[data-xdrive-places-trusted-photo-cover]'))
+        const count=document.querySelector('[data-xdrive-places-map-photo-summary]')
+        const bounds=el=>{
+          if(!el)return null
+          const b=el.getBoundingClientRect()
+          return {x:b.x,y:b.y,width:b.width,height:b.height,
+            top:b.top,bottom:b.bottom,left:b.left,right:b.right}
+        }
+        // A closed <details> can give hidden advanced-menu buttons positive
+        // getBoundingClientRect() dimensions in real Chromium. Only controls
+        // that are actually painted/hit-testable count as 44px touch targets.
+        const hits=Array.from(toolbar?.querySelectorAll('summary,button')||[])
+          .filter(el=>el.checkVisibility())
+          .map(el=>bounds(el)).filter(b=>b&&b.width>0&&b.height>0)
+        const badge=document.querySelector('[data-xdrive-places-photo-count-badge]')
+        return {map:bounds(map),toolbar:bounds(toolbar),dock:bounds(dock),
+          dockButtons:photoButtons.map(bounds),hits,
+          pins:pins.length,pinButtons:pins.map(bounds),
+          badge:badge?getComputedStyle(badge).backgroundColor:null,
+          toolbarPosition:toolbar?getComputedStyle(toolbar).position:null,
+          text:toolbar?.textContent||'',summary:count?.textContent||'',
+          currentOwnerQueries:window.__mapProbe.queries,
+        }
+      })
+      const label=mode+': '+scheme+' '+width+'x'+height
+      record(label+': one photo-first full-bleed map and floating header',
+        actual.map!==null&&actual.toolbar!==null&&
+        actual.toolbarPosition==='absolute'&&
+        actual.map.height>=Math.max(180,height-160)&&
+        actual.map.bottom<=height-8&&
+        actual.toolbar.top>=actual.map.top&&
+        actual.toolbar.bottom<=actual.map.top+80&&
+        actual.toolbar.left>=actual.map.left&&
+        actual.toolbar.right<=actual.map.right+1&&
+        actual.text.includes('地图'))
+      const touchGeometryOK=actual.dock!==null&&actual.dock.height<=76&&
+        actual.dock.bottom<=actual.map.bottom&&
+        actual.dockButtons.length>0&&
+        actual.dockButtons.every(b=>b.width>=44&&b.height>=44)&&
+        actual.hits.length>=3&&
+        actual.hits.every(b=>b.width>=44&&b.height>=44)&&
+        actual.pins>0&&
+        actual.pinButtons.length===actual.pins&&
+        actual.pinButtons.every(b=>b.width>=44&&b.height>=44)
+      if(!touchGeometryOK) {
+        // Sanitized CSS rectangles only; never log Owner GPS, Cell or media.
+        console.error('ios-compact-map-hit-targets',JSON.stringify({
+          label,map:actual.map,toolbar:actual.toolbar,dock:actual.dock,
+          dockButtons:actual.dockButtons,hits:actual.hits,
+          pins:actual.pins,pinButtons:actual.pinButtons,
+        }))
+      }
+      record(label+': 44px+ photo and toolbar targets, compact bottom dock',
+        touchGeometryOK)
+      record(label+': signed Family∩Favorites stays exactly two covers',
+        actual.summary.includes('2 张照片')&&
+        actual.currentOwnerQueries.length>0&&
+        actual.currentOwnerQueries.every(q=>
+          q.albumKey==='manual:Family'&&q.favorite===true&&q.count===2)&&
+        actual.badge===(expectedDark
+          ?'rgb(10, 132, 255)':'rgb(0, 122, 255)'))
+    }
+    await page.getByRole('button',{name:'关闭地图'}).click()
+    await page.locator('[data-xdrive-ios-map-closed="1"]').waitFor()
+    const closed=await page.evaluate(()=>({
+      map:document.querySelectorAll('[data-xdrive-gallery-places-map]').length,
+      sdk:document.querySelectorAll('[data-xdrive-baidu-isolated-frame]').length,
+      covers:document.querySelectorAll('[data-xdrive-places-trusted-photo-cover]').length,
+    }))
+    record(mode+': '+scheme+' mobile Close unmounts only the current Owner map',
+      closed.map===0&&closed.sdk===0&&closed.covers===0&&errors.length===0)
+    summary.iosCompactModes.push(mode+':'+scheme)
+  }finally{await context.close()}
+}
+
 async function testInvalidatedOwnerHandoff(browser,from,port,scenario){
   const target=from==='inline'?'isolated':'prototype'
-  assert(['foreign-owner','album-revision','album-missing',
-    'session-revoked','map-epoch-revoked'].includes(scenario))
+  assert(['foreign-owner','album-revision','album-missing','album-deleted',
+    'session-revoked','map-epoch-revoked','network-drop'].includes(scenario))
   const context=await browser.newContext({
     viewport:{width:390,height:844},locale:'zh-CN',
     ignoreHTTPSErrors:true,serviceWorkers:'block'})
   const page=await context.newPage()
   page.setDefaultTimeout(30000)
   const runtimeErrors=[]
+  let droppedConsumes=0
   page.on('pageerror',error=>runtimeErrors.push(error.name))
   await page.route('https://api.map.baidu.com/api?**',route=>{
     assert.equal(new URL(route.request().url()).searchParams.get('ak'),
@@ -453,7 +567,7 @@ async function testInvalidatedOwnerHandoff(browser,from,port,scenario){
       if(!/^[a-f0-9]{64}$/.test(receipt?.ticket||''))
         return {issued:issued.status,changed:0,ticket:''}
       let changed=204
-      if(args.scenario!=='foreign-owner'){
+      if(args.scenario!=='foreign-owner'&&args.scenario!=='network-drop'){
         const response=await fetch(args.actionPath,{method:'POST',
           cache:'no-store',
           headers:{Authorization:'Bearer '+owner.token,
@@ -466,6 +580,17 @@ async function testInvalidatedOwnerHandoff(browser,from,port,scenario){
     record(from+'→'+target+': test Owner issued one-use ticket before '+scenario,
       prepared.issued===200&&prepared.changed===204&&
       /^[a-f0-9]{64}$/.test(prepared.ticket))
+    if(scenario==='network-drop'){
+      // Interrupt the REAL Owner/Gin consumption request at Chromium's
+      // transport boundary after the ticket is issued and before the new
+      // document can mount its map. Never forge a 403/200 fixture response.
+      await page.route('**/api/v1/media/places/baidu-jsapi/scope-handoff/consume',
+        route=>{
+          if(route.request().method()!=='POST')return route.continue()
+          droppedConsumes++
+          return route.abort('failed')
+        })
+    }
     // A real full document replace, not a synthetic consume response.
     await page.evaluate(({ticket,target,foreign})=>{
       const next=new URL(location.href)
@@ -501,6 +626,9 @@ async function testInvalidatedOwnerHandoff(browser,from,port,scenario){
     }))
     record(from+'→'+target+': '+scenario+' reload cannot widen Owner PhotoScope',
       reload.state==='denied'&&reload.queries===0&&reload.maps===0)
+    if(scenario==='network-drop')
+      record(from+'→'+target+': dropped Gin consume is never retried on reload',
+        droppedConsumes===1&&runtimeErrors.length===0)
     summary.ownerScopeInvalidationModes.push(from+':'+scenario)
   }finally{
     if(scenario!=='foreign-owner'){
@@ -511,6 +639,160 @@ async function testInvalidatedOwnerHandoff(browser,from,port,scenario){
     await context.close()
   }
 }
+/** A current Owner Node can be replaced after its BD09 position was
+ * derived. The existing protected /cells and /cell-items must reject the
+ * old source revision under both SDK Hosts, without a new map renderer or
+ * a client-side fake permission. */
+async function testStaleSourceRevisionOwnerMap(browser,mode,port){
+  const context=await browser.newContext({
+    viewport:{width:390,height:844},locale:'zh-CN',
+    ignoreHTTPSErrors:true,serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(30000)
+  const errors=[]
+  page.on('pageerror',error=>errors.push(error.name))
+  await page.route('https://api.map.baidu.com/api?**',route=>{
+    assert.equal(new URL(route.request().url()).searchParams.get('ak'),
+      'TEST_ONLY_BROWSER_AK')
+    return route.fulfill({status:200,contentType:'text/javascript',body:sdkStub})
+  })
+  const fixtureMutation=action=>page.evaluate(async action=>{
+    const owner=await fetch('/__fixture/map-owner',{cache:'no-store'})
+      .then(response=>response.json())
+    const response=await fetch('/__fixture/map-handoff-invalidate',{
+      method:'POST',cache:'no-store',
+      headers:{Authorization:'Bearer '+owner.token,
+        'Content-Type':'application/json'},
+      body:JSON.stringify({action})})
+    return response.status
+  },action)
+  const capturedCells=()=>page.evaluate(async()=>{
+    const original=window.__mapProbe?.queries?.at(-1)
+    if(!original?.bounds)return {status:0,total:0}
+    const owner=await fetch('/__fixture/map-owner',{cache:'no-store'})
+      .then(response=>response.json())
+    const bounds=original.bounds,filters=original.filters
+    const params=new URLSearchParams({
+      west:String(bounds.west),south:String(bounds.south),
+      east:String(bounds.east),north:String(bounds.north),
+      sort_by:filters.sort_by,sort_dir:filters.sort_dir,
+      album:original.albumKey,favorite:String(filters.favorite),
+      kind:filters.asset_kind,captured_from:filters.captured_from,
+      captured_to:filters.captured_to,time_zone:filters.time_zone,
+    })
+    const response=await fetch('/api/v1/media/places/baidu-jsapi/cells?'+params,{
+      cache:'no-store',headers:{Authorization:'Bearer '+owner.token}})
+    const body=await response.json().catch(()=>({}))
+    return {status:response.status,total:body.total_count,
+      first:body.cells?.[0]??null,bounds,filters,
+      albumKey:original.albumKey}
+  })
+  let mutated=false
+  try{
+    const query='/?handoff_doc=1&handoff_combo=1'+
+      (mode==='isolated'?'&places_map_mode=isolated':'')
+    await page.goto('https://'+galleryHost+':'+port+query,
+      {waitUntil:'domcontentloaded'})
+    await page.getByText('当前地图可查看 2 张照片',{exact:true}).waitFor()
+    const cover=page.locator('[data-xdrive-places-trusted-photo-cover]').first()
+    await cover.waitFor({state:'visible'})
+    const original=await capturedCells()
+    record(mode+': original real Owner Family/Favorite source map has two fresh revisions',
+      original.status===200&&original.total===2&&
+      original.first?.photo_count===2&&original.first.node_revision===1&&
+      original.albumKey==='manual:Family'&&
+      original.filters?.favorite===true&&
+      original.filters?.asset_kind==='image')
+    const changed=await fixtureMutation('source-revision-stale')
+    mutated=changed===204
+    record(mode+': test-only real PostgreSQL Owner Node advanced its revision',
+      changed===204)
+    const fresh=await capturedCells()
+    record(mode+': real Owner map excludes stale BD09 position after Node revision',
+      fresh.status===200&&fresh.total===1&&
+      fresh.first?.photo_count===1&&
+      fresh.first.node_id!==original.first.node_id&&
+      fresh.first.node_revision===1&&fresh.albumKey==='manual:Family')
+    const staleRange=await page.evaluate(async ({cell,bounds})=>{
+      const owner=await fetch('/__fixture/map-owner',{cache:'no-store'})
+        .then(response=>response.json())
+      const params=new URLSearchParams({
+        west:String(bounds.west),south:String(bounds.south),
+        east:String(bounds.east),north:String(bounds.north),
+        cell_x:String(cell.cell_x),cell_y:String(cell.cell_y),
+        asset_id:String(cell.asset_id),node_id:String(cell.node_id),
+        node_revision:String(cell.node_revision),
+        photo_count:String(cell.photo_count),
+        limit:'48',offset:'0',range:'true',
+        sort_by:'added',sort_dir:'asc',album:'manual:Family',
+        favorite:'true',kind:'image',captured_from:'2026-10-19',
+        captured_to:'2026-10-22',time_zone:'Asia/Tokyo',
+      })
+      const response=await fetch('/api/v1/media/places/baidu-jsapi/cell-items?'+params,{
+        cache:'no-store',headers:{Authorization:'Bearer '+owner.token}})
+      const body=await response.json().catch(()=>({}))
+      return {status:response.status,error:body.error}
+    },{cell:original.first,bounds:original.bounds})
+    record(mode+': original signed Cell/Viewer range fails closed after source revision',
+      staleRange.status===409&&staleRange.error==='map_cell_changed')
+    const menu=page.locator('[data-xdrive-places-map-filter-menu]')
+    const openFilters=async()=>{
+      if(!(await menu.evaluate(element=>element.open)))
+        await menu.locator('summary').click()
+    }
+    const dateInput=page.locator(
+      '[data-xdrive-places-map-photo-filters] input[type="date"]').first()
+    await openFilters()
+    await dateInput.fill('2026-10-21')
+    await page.getByText(
+      '当前筛选条件下暂无定位照片；可调整筛选或手动刷新。',
+      {exact:true}).waitFor()
+    record(mode+': obsolete Owner map pins are removed before filtered empty paint',
+      await page.locator('[data-xdrive-places-trusted-photo-cover]').count()===0)
+    await openFilters()
+    await dateInput.fill('2026-10-19')
+    await page.getByText('当前地图可查看 1 张照片',{exact:true}).waitFor()
+    await cover.waitFor({state:'visible'})
+    const recovered=await page.evaluate(()=>({
+      queries:window.__mapProbe.queries,
+      coverExists:Boolean(document.querySelector('[data-xdrive-places-trusted-photo-cover]')),
+      count:document.querySelector('[data-xdrive-places-map-photo-summary]')?.textContent,
+    }))
+    record(mode+': shared map refresh keeps only current Family/Favorite Owner member',
+      recovered.queries.at(-1)?.count===1&&
+      recovered.queries.every(q=>q.albumKey==='manual:Family'&&
+        q.favorite===true)&&recovered.coverExists&&
+      recovered.count?.includes('1 张照片')&&errors.length===0)
+    const restored=await fixtureMutation('source-revision-restore')
+    if(restored===204)mutated=false
+    record(mode+': synthetic source revision restored after stale-map assertion',
+      restored===204)
+    await openFilters()
+    await dateInput.fill('2026-10-21')
+    await page.getByText(
+      '当前筛选条件下暂无定位照片；可调整筛选或手动刷新。',
+      {exact:true}).waitFor()
+    await openFilters()
+    await dateInput.fill('2026-10-19')
+    await page.getByText('当前地图可查看 2 张照片',{exact:true}).waitFor()
+    await cover.waitFor({state:'visible'})
+    const afterRestore=await capturedCells()
+    record(mode+': current Owner BD09 identity is restored without widening filters',
+      afterRestore.status===200&&afterRestore.total===2&&
+      afterRestore.first?.photo_count===2&&
+      afterRestore.first.node_revision===1&&
+      afterRestore.albumKey==='manual:Family'&&
+      afterRestore.filters?.favorite===true&&errors.length===0)
+    summary.sourceRevisionModes.push(mode)
+  }finally{
+    if(mutated){
+      const restore=await fixtureMutation('source-revision-restore').catch(()=>0)
+      record(mode+': fixture source revision cleanup after failure',restore===204)
+    }
+    await context.close()
+  }
+}
+
 async function testMode(browser,mode,port){
   const context=await browser.newContext({
     viewport:{width:960,height:760},locale:'zh-CN',ignoreHTTPSErrors:true,
@@ -2218,13 +2500,17 @@ async function main(){
         summary.fullDocumentComboModes.join(',')==='inline,isolated')
       record('both Hosts exclude real date/kind and recover only scoped Owner covers',
         summary.fullDocumentNegativeFilterModes.join(',')==='inline,isolated')
-      for(const scenario of ['album-revision','album-missing',
-        'session-revoked','map-epoch-revoked','foreign-owner']){
+      for(const scenario of ['album-revision','album-missing','album-deleted',
+        'session-revoked','map-epoch-revoked','foreign-owner','network-drop']){
         await testInvalidatedOwnerHandoff(browser,'inline',port,scenario)
         await testInvalidatedOwnerHandoff(browser,'isolated',port,scenario)
       }
-      record('two SDK Hosts deny pending Owner tickets on Album/Session/Owner invalidation',
-        summary.ownerScopeInvalidationModes.length===10)
+      record('two SDK Hosts deny pending Owner tickets on Album/revoke/network failures',
+        summary.ownerScopeInvalidationModes.length===14)
+      await testStaleSourceRevisionOwnerMap(browser,'inline',port)
+      await testStaleSourceRevisionOwnerMap(browser,'isolated',port)
+      record('both SDK Hosts reject stale Node revisions in real Gin Owner map/Cell Range',
+        summary.sourceRevisionModes.join(',')==='inline,isolated')
       await testRealHEICOwnerMapCover(browser,'inline',port)
       await testRealHEICOwnerMapCover(browser,'isolated',port)
       record('both SDK Hosts decoded signed real HEIC-derived JPEG photo pins',
@@ -2233,6 +2519,13 @@ async function main(){
       await testRealHEICOwnerMapCover(browser,'isolated',port,'livp')
       record('both SDK Hosts decoded HEIC LIVP still and authorized motion',
         summary.realLIVPMapCoverModes.join(',')==='inline,isolated')
+      for(const scheme of ['light','dark']){
+        await testIOSPhotoMapCompactChrome(browser,'inline',scheme,port)
+        await testIOSPhotoMapCompactChrome(browser,'isolated',scheme,port)
+      }
+      record('two SDK Hosts use one iOS map canvas in light and dark',
+        summary.iosCompactModes.join(',')===
+          'inline:light,isolated:light,inline:dark,isolated:dark')
     }
     summary.passed=true
   }finally{await browser.close()}

@@ -1,0 +1,7 @@
+xDriveIOS.xcodeproj/
+XDriveIOS/Info.plist
+XDriveIOS/Assets.xcassets/Brand.imageset/Brand.png
+XDriveIOS/Assets.xcassets/AppIcon.appiconset/AppIcon.png
+build/
+DerivedData/
+*.xcuserstate

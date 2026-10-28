@@ -585,6 +585,130 @@ class XDriveApiTest {
 
 
 
+    @Test fun manualAlbumCoverPutUsesOneOwnerRevisionedRequestAndValidatesAck() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            val album = GalleryAlbum("manual:cover/private?mode=1",
+                "manual", "旅行", 2, 5, 0, 41)
+            val setAck = """{"id":"manual:cover/private?mode=1","kind":"manual",
+                "name":"旅行","item_count":2,"revision":6,
+                "album_folder_id":0,"cover_node_id":40}"""
+            server.enqueue(MockResponse().setResponseCode(200).setBody(setAck))
+            val saved = api.gallerySetManualAlbumCover("owner-secret", album, 40)
+            assertEquals(40L, saved.coverNodeId)
+            assertEquals(6L, saved.revision)
+            val req = server.takeRequest()
+            assertEquals("PUT", req.method)
+            assertEquals("Bearer owner-secret", req.getHeader("Authorization"))
+            assertEquals("\"5\"", req.getHeader("If-Match"))
+            assertTrue(req.requestUrl!!.encodedPath.contains(
+                "/media/albums/manual:cover%2Fprivate%3Fmode"))
+            assertTrue(req.requestUrl!!.encodedPath.endsWith("/cover"))
+            assertNull(req.requestUrl!!.query)
+            assertEquals(40L, body(req)["node_id"]?.jsonPrimitive?.long)
+
+            // Reset may still display the first automatic media cover, and
+            // Go can return the same revision for a confirmed no-op.
+            val resetAck = """{"id":"manual:cover/private?mode=1","kind":"manual",
+                "name":"旅行","item_count":2,"revision":6,
+                "album_folder_id":0,"cover_node_id":41}"""
+            server.enqueue(MockResponse().setResponseCode(200).setBody(resetAck))
+            val reset = api.gallerySetManualAlbumCover("owner-secret",
+                album.copy(revision = 6, coverNodeId = 40), 0)
+            assertEquals(41L, reset.coverNodeId)
+            assertEquals(6L, reset.revision)
+            val resetRequest = server.takeRequest()
+            assertEquals("PUT", resetRequest.method)
+            assertEquals("\"6\"", resetRequest.getHeader("If-Match"))
+            assertEquals(0L, body(resetRequest)["node_id"]?.jsonPrimitive?.long)
+
+            server.enqueue(MockResponse().setResponseCode(200).setBody(
+                setAck.replace("\"revision\":6", "\"revision\":9")))
+            assertEquals(ApiFailureReason.INVALID_RESPONSE, failure {
+                api.gallerySetManualAlbumCover("owner-secret", album, 40)
+            }.reason)
+            server.takeRequest()
+            server.enqueue(MockResponse().setResponseCode(409).setBody(
+                """{"error":"revision conflict"}"""))
+            assertEquals(409, failure {
+                api.gallerySetManualAlbumCover("owner-secret", album, 40)
+            }.statusCode)
+            server.takeRequest()
+            assertEquals(4, server.requestCount)
+
+            try {
+                api.gallerySetManualAlbumCover("owner-secret",
+                    album.copy(kind = "smart"), 40)
+                fail("Smart album cannot set a cover")
+            } catch (_: IllegalArgumentException) {}
+            try {
+                api.gallerySetManualAlbumCover("owner-secret",
+                    album.copy(itemCount = 0), 40)
+                fail("Empty album cannot set a custom cover")
+            } catch (_: IllegalArgumentException) {}
+            try {
+                api.gallerySetManualAlbumCover("owner-secret", album, -1)
+                fail("Invalid cover id")
+            } catch (_: IllegalArgumentException) {}
+            assertEquals(4, server.requestCount)
+        } }
+    }
+
+    @Test fun removingManualAlbumMemberDeletesOnlyMembershipWithRevisionFence() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            val album = GalleryAlbum("manual:trip/2026?key=photo", "manual", "旅行", 3, 7, 0, 40)
+            val item = GalleryAsset(DriveNode(40, 1, "trip.jpg", "file", 42, revision = 5),
+                "image", hasThumbnail = true)
+            val ack = """{"id":"manual:trip/2026?key=photo","kind":"manual","name":"旅行",
+                "revision":8,"album_folder_id":0,"item_count":2,"cover_node_id":null}"""
+            server.enqueue(MockResponse().setResponseCode(200).setBody(ack))
+            val result = api.galleryRemoveFromManualAlbum("owner-secret", album, item)
+            assertEquals(album.id, result.id)
+            assertEquals(8L, result.revision)
+            assertEquals(2L, result.itemCount)
+            assertNull(result.coverNodeId)
+            val req = server.takeRequest()
+            assertEquals("DELETE", req.method)
+            assertEquals("Bearer owner-secret", req.getHeader("Authorization"))
+            assertEquals("\"7\"", req.getHeader("If-Match"))
+            // '?' stays in the encoded album identity, never becomes a
+            // query; '=' may legally remain raw or be percent-encoded.
+            assertTrue(req.requestUrl!!.encodedPath.contains(
+                "/media/albums/manual:trip%2F2026%3Fkey"))
+            assertTrue(req.requestUrl!!.encodedPath.endsWith("/items/40"))
+            assertNull(req.requestUrl!!.query)
+            assertEquals(0L, req.body.size)
+            server.enqueue(MockResponse().setResponseCode(200).setBody(
+                ack.replace("\"revision\":8", "\"revision\":7")))
+            assertEquals(ApiFailureReason.INVALID_RESPONSE, failure {
+                api.galleryRemoveFromManualAlbum("owner-secret", album, item)
+            }.reason)
+            server.takeRequest()
+            server.enqueue(MockResponse().setResponseCode(409).setBody(
+                """{"error":"revision conflict"}"""))
+            assertEquals(409, failure {
+                api.galleryRemoveFromManualAlbum("owner-secret", album, item)
+            }.statusCode)
+            server.takeRequest()
+            assertEquals(3, server.requestCount)
+            try {
+                api.galleryRemoveFromManualAlbum("owner-secret",
+                    album.copy(kind = "imported"), item)
+                fail("Imported album cannot modify membership")
+            } catch (_: IllegalArgumentException) {}
+            try {
+                api.galleryRemoveFromManualAlbum("owner-secret",
+                    album.copy(itemCount = 0), item)
+                fail("Empty album cannot have a member removed")
+            } catch (_: IllegalArgumentException) {}
+            try {
+                api.galleryRemoveFromManualAlbum("owner-secret",
+                    album, item.copy(node = item.node.copy(type = "dir")))
+                fail("Directory must not be removed as a Gallery member")
+            } catch (_: IllegalArgumentException) {}
+            assertEquals(3, server.requestCount)
+        } }
+    }
+
     @Test fun manualAlbumRenameFencesRevisionAndValidatesServerAck() = runBlocking {
         MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
             val album = GalleryAlbum("manual:trip/2026?x=y", "manual", "旅途", 2, 3, 0)

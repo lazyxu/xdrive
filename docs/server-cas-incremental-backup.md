@@ -156,6 +156,11 @@ The JSON report distinguishes:
 - `drop_snapshot_bytes`, `drop_only_object_bytes`, and
   `unreferenced_bytes`: logical byte totals, not guaranteed allocated disk
   blocks, filesystem savings, or permission to delete.
+  The administrator's shared Web/Desktop panel now breaks down these three
+  independently, separately from `retained_objects` and the full logical
+  total. Missing or unsafe integers remain **unknown**, never inferred as
+  zero. A mismatched component sum is visibly flagged. This remains a
+  historical, read-only estimate rather than actual physical reclaim evidence.
 
 Every committed snapshot's exact v2 file set and SHA256SUMS are verified,
 alongside `objects.index` syntax, cross-generation CAS sizes and the existence
@@ -213,6 +218,34 @@ compression/Pack or consumer-cloud backup is enabled by this command.
 Returned byte counts are logical bytes, not guaranteed filesystem-block
 savings. Corrupt/missing CAS, unexpected files, incomplete .partial
 generations, suspicious symlinks or lock contention fail closed.
+
+## Selected v2 snapshot deletion — internal helper foundation
+
+The **internal** `xdrive-backup-repo delete-snapshot --repo PATH --snapshot
+xdrive-backup-YYYYMMDDTHHMMSSZ --yes` path (under development, not exposed
+through the Administrator UI or Host manager yet) selects exactly one committed
+v2 generation. It does **not** translate selection into a keep-last retention
+policy; older and newer generations may both be protected.
+
+This path shares the existing manual prune transaction code. It requires the
+same exclusive `.backup.lock`, validates the entire repository and referenced
+and orphan CAS by SHA-256 before any rename or unlink, independently validates
+the remaining legacy archives, and retains at least one usable committed
+v2 recovery point. It then moves **only** the selected generation into the
+durable `.prune-retired` journal, recalculates references from all surviving
+generations under the same lock, and reclaims only unreferenced repository CAS.
+A corrupt/partial/unknown snapshot, unknown path, missing lock, symlinked
+repository, or last-recovery-point deletion is rejected without a mutation.
+
+A crash after a generation is retired but before the journal is fully consumed
+can require another **explicit** manual prune to finish retiring its content.
+The selected generation must not be automatically replayed or guessed from
+a stale UI selection; report this outcome conservatively.
+
+**Scope:** no automatic v2 GC, no scheduling, no new browser-supplied Host
+command/path, no production storage deletion. Admin/Host integration, end-to-end
+protected confirmation and real recovery acceptance are **not** part of this
+internal helper milestone and require later separately verified changes.
 
 ## Administrator Web / Desktop shared interface (Host-owned Server backups)
 
@@ -286,6 +319,30 @@ a successful online health check does not prove a backup can be restored.
 Backup verification also does not replace a physical PostgreSQL and file
 recovery drill. No automatic v2 GC, compression, Pack or paid cloud service
 is enabled by the Admin UI.
+
+## Administrator batch verification of all local backup generations
+
+The administrator's fixed `verify_all` action runs on Host Control,
+**not** as a browser-side loop. It enumerates all known local v1, default v2
+and configured v2 snapshot roots directly, rather than the 100 displayed rows.
+Malformed `xdrive-backup-*` entries, symlink roots or more than 1000 generations
+fail closed; no truncated list is ever counted as a successful run.
+
+Every discovered generation runs the real `backup verify --json` Host command,
+checking snapshot SHA256SUMS and all referenced CAS SHA-256 bytes. Even fast
+mode verifies referenced immutable CAS content. Deep additionally audits each
+unique v2 repository's orphan/unreferenced CAS once. Work is serialized using
+the existing backup, scheduled and installer operation fences, with no generic
+shell API, storage mutation, automatic GC or restore.
+
+The Host publishes real per-generation counts as task stage progress rather
+than falsely labeling items as bytes. A bounded last-result report persists
+the request ID, timestamps, total/checked/passed/failed/unverified counts,
+deep repository results and at most 20 sanitized failure IDs. The normal
+30-entry Host history retains the terminal operation. A Host restart marks
+an unfinished task interrupted and does not automatically replay it.
+The UI distinguishes historical verification from current integrity or
+a real PostgreSQL/file recovery drill.
 
 ## Machine-readable CAS verification statistics (source-level)
 

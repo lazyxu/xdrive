@@ -376,6 +376,235 @@ class DriveControllerTest {
     }
 
 
+    @Test fun manualAlbumCustomAndAutoCoverUseRealOwnerAckAndList() = runTest {
+        val item = GalleryAsset(DriveNode(40, 1, "cover.jpg", "file", 44,
+            revision = 2), "image", hasThumbnail = true)
+        val initial = GalleryAlbum("manual:cover", "manual", "旅行", 1, 2, 0, 41)
+        val api = object : Service() {
+            var album = initial
+            var listReads = 0
+            var memberReads = 0
+            val updates = mutableListOf<Long>()
+            override suspend fun galleryAlbums(accessToken: String): List<GalleryAlbum> {
+                assertEquals("access", accessToken)
+                listReads++
+                return listOf(album)
+            }
+            override suspend fun galleryAlbumPage(
+                accessToken: String, albumId: String, offset: Int,
+                initialLatest: Boolean,
+            ): GalleryPage {
+                assertEquals(album.id, albumId)
+                memberReads++
+                return GalleryPage(listOf(item), 1, 0)
+            }
+            override suspend fun gallerySetManualAlbumCover(
+                accessToken: String, target: GalleryAlbum, nodeId: Long,
+            ): GalleryAlbum {
+                assertEquals("access", accessToken)
+                assertEquals(album, target)
+                updates += nodeId
+                album = target.copy(revision = target.revision + 1,
+                    coverNodeId = if (nodeId > 0) nodeId else item.node.id)
+                return album
+            }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.openGalleryCollections(); runCurrent()
+        c.openGalleryAlbum(initial); runCurrent()
+        c.setGallerySelectionMode(true)
+        c.toggleGallerySelection(item)
+        c.setGallerySelectedManualAlbumCover(item); runCurrent()
+        assertEquals(listOf(40L), api.updates)
+        assertEquals(api.album, c.state.value.gallerySelectedAlbum)
+        assertFalse(c.state.value.gallerySelectionMode)
+        assertFalse(c.state.value.galleryMetadataWriteAttempted)
+        assertFalse(c.state.value.galleryAlbumsLoaded)
+        assertEquals(listOf(item), c.state.value.galleryItems)
+        c.closeGalleryAlbum(); runCurrent()
+        assertEquals(2, api.listReads)
+        assertEquals(listOf(api.album), c.state.value.galleryAlbums)
+        val custom = api.album
+        c.restoreGalleryAutomaticAlbumCover(custom); runCurrent()
+        assertEquals(listOf(40L, 0L), api.updates)
+        assertEquals(3, api.listReads)
+        assertEquals(custom.revision + 1, api.album.revision)
+        // Go may return the same visible auto cover as the custom one.
+        assertEquals(item.node.id, api.album.coverNodeId)
+        assertEquals(listOf(api.album), c.state.value.galleryAlbums)
+        assertFalse(c.state.value.galleryAlbumEditAttempted)
+        assertFalse(c.state.value.galleryAlbumEditCommittedNeedsRefresh)
+        c.close()
+    }
+
+    @Test fun uncertainManualAlbumCoverAckOnlyReconcilesOwnerGets() = runTest {
+        val item = GalleryAsset(DriveNode(40, 1, "cover.jpg", "file", 44,
+            revision = 2), "image", hasThumbnail = true)
+        val initial = GalleryAlbum("manual:cover", "manual", "旅行", 1, 2, 0, 41)
+        val api = object : Service() {
+            var album = initial
+            var puts = 0
+            var listReads = 0
+            var memberReads = 0
+            override suspend fun galleryAlbums(accessToken: String): List<GalleryAlbum> {
+                listReads++
+                return listOf(album)
+            }
+            override suspend fun galleryAlbumPage(
+                accessToken: String, albumId: String, offset: Int,
+                initialLatest: Boolean,
+            ): GalleryPage {
+                memberReads++
+                return GalleryPage(listOf(item), 1, 0)
+            }
+            override suspend fun gallerySetManualAlbumCover(
+                accessToken: String, target: GalleryAlbum, nodeId: Long,
+            ): GalleryAlbum {
+                puts++
+                album = target.copy(revision = target.revision + 1,
+                    coverNodeId = nodeId)
+                throw ApiException(503, "Owner cover PUT ACK lost")
+            }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.openGalleryCollections(); runCurrent()
+        c.openGalleryAlbum(initial); runCurrent()
+        c.setGallerySelectionMode(true)
+        c.toggleGallerySelection(item)
+        c.setGallerySelectedManualAlbumCover(item); runCurrent()
+        assertEquals(1, api.puts)
+        assertTrue(c.state.value.galleryMetadataWriteAttempted)
+        c.setGallerySelectedManualAlbumCover(item); runCurrent()
+        assertEquals(1, api.puts)
+        c.retryGallery(); runCurrent()
+        assertEquals(1, api.puts)
+        assertEquals(2, api.listReads)
+        assertEquals(2, api.memberReads)
+        assertEquals(api.album, c.state.value.gallerySelectedAlbum)
+        assertFalse(c.state.value.galleryMetadataWriteAttempted)
+        assertFalse(c.state.value.gallerySelectionMode)
+        c.close()
+    }
+
+    @Test fun manualAlbumMemberRemovalChangesOnlyCollectionAndReloadsOwnerRange() = runTest {
+        val original = GalleryAlbum("manual:trip", "manual", "旅途", 1, 2, 0, 40)
+        val member = GalleryAsset(DriveNode(40, 1, "travel.jpg", "file", 42, revision = 5),
+            "image", hasThumbnail = true)
+        val api = object : Service() {
+            var album = original
+            var exists = true
+            var deletes = 0
+            var memberReads = 0
+            var overviewReads = 0
+            override suspend fun galleryAlbums(accessToken: String): List<GalleryAlbum> {
+                overviewReads++
+                return listOf(album)
+            }
+            override suspend fun galleryAlbumPage(
+                accessToken: String, albumId: String, offset: Int,
+                initialLatest: Boolean,
+            ): GalleryPage {
+                assertEquals(original.id, albumId)
+                memberReads++
+                return GalleryPage(if (exists) listOf(member) else emptyList(),
+                    if (exists) 1 else 0, 0)
+            }
+            override suspend fun galleryRemoveFromManualAlbum(
+                accessToken: String, selectedAlbum: GalleryAlbum, item: GalleryAsset,
+            ): GalleryAlbum {
+                assertEquals("access", accessToken)
+                assertEquals(album, selectedAlbum)
+                assertEquals(member, item)
+                deletes++
+                exists = false
+                return album.copy(revision = album.revision + 1,
+                    itemCount = 0, coverNodeId = null).also { album = it }
+            }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.openGalleryCollections(); runCurrent()
+        c.openGalleryAlbum(original); runCurrent()
+        assertEquals(1, api.memberReads)
+        c.setGallerySelectionMode(true)
+        c.toggleGallerySelection(member)
+        c.removeGallerySelectedAlbumMember(member); runCurrent()
+        assertEquals(1, api.deletes)
+        assertEquals(2, api.memberReads)
+        assertTrue(c.state.value.galleryLoaded)
+        assertTrue(c.state.value.galleryItems.isEmpty())
+        assertEquals(0L, c.state.value.galleryTotal)
+        assertEquals(api.album, c.state.value.gallerySelectedAlbum)
+        assertFalse(c.state.value.gallerySelectionMode)
+        assertFalse(c.state.value.galleryMetadataWriteAttempted)
+        assertFalse(c.state.value.galleryAlbumsLoaded)
+        c.closeGalleryAlbum(); runCurrent()
+        assertEquals(2, api.overviewReads)
+        assertEquals(listOf(api.album), c.state.value.galleryAlbums)
+        c.close()
+    }
+
+    @Test fun missingAlbumRemovalAckRequiresGetOfAlbumAndMembersWithoutWriteReplay() = runTest {
+        val original = GalleryAlbum("manual:trip", "manual", "旅途", 1, 2, 0, 40)
+        val member = GalleryAsset(DriveNode(40, 1, "travel.jpg", "file", 42, revision = 5),
+            "image", hasThumbnail = true)
+        val api = object : Service() {
+            var album = original
+            var exists = true
+            var deletes = 0
+            var overviewReads = 0
+            var memberReads = 0
+            override suspend fun galleryAlbums(accessToken: String): List<GalleryAlbum> {
+                overviewReads++
+                return listOf(album)
+            }
+            override suspend fun galleryAlbumPage(
+                accessToken: String, albumId: String, offset: Int,
+                initialLatest: Boolean,
+            ): GalleryPage {
+                memberReads++
+                return GalleryPage(if (exists) listOf(member) else emptyList(),
+                    if (exists) 1 else 0, 0)
+            }
+            override suspend fun galleryRemoveFromManualAlbum(
+                accessToken: String, selectedAlbum: GalleryAlbum, item: GalleryAsset,
+            ): GalleryAlbum {
+                deletes++
+                exists = false
+                album = album.copy(revision = album.revision + 1,
+                    itemCount = 0, coverNodeId = null)
+                throw ApiException(503, "ACK lost after committed removal")
+            }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.openGalleryCollections(); runCurrent()
+        c.openGalleryAlbum(original); runCurrent()
+        c.setGallerySelectionMode(true)
+        c.toggleGallerySelection(member)
+        c.removeGallerySelectedAlbumMember(member); runCurrent()
+        assertEquals(1, api.deletes)
+        assertTrue(c.state.value.galleryMetadataWriteAttempted)
+        assertTrue(requireNotNull(c.state.value.error).contains("未确认"))
+        c.removeGallerySelectedAlbumMember(member); runCurrent()
+        assertEquals(1, api.deletes)
+        c.retryGallery(); runCurrent()
+        assertEquals(1, api.deletes)
+        assertEquals(2, api.overviewReads)
+        assertEquals(2, api.memberReads)
+        assertEquals(api.album, c.state.value.gallerySelectedAlbum)
+        assertTrue(c.state.value.galleryItems.isEmpty())
+        assertFalse(c.state.value.gallerySelectionMode)
+        assertFalse(c.state.value.galleryMetadataWriteAttempted)
+        c.close()
+    }
+
     @Test fun galleryCompactManualAlbumPickerListsOnlyVerifiedManualSearchResults() {
         val manual = GalleryAlbum("manual:trip", "manual", "旅行 2026", 2, 3, 0)
         val smart = GalleryAlbum("smart:trip", "smart", "旅行汇总", 5, 1, 0)
@@ -2311,7 +2540,7 @@ class DriveControllerTest {
         assertNull(c.state.value.fileExportOrigin)
     }
 
-    @Test fun galleryExportCancelAndRefreshRemovePartialSafDocumentAndNoOldOwnerState() = runTest {
+@Test fun galleryExportRefreshRequiresExplicitCancelAndNeverLeaksStaleSafBytes() = runTest {
         val api = Service().apply { downloadGate = CompletableDeferred() }
         val c = controller(this, api)
         c.login("owner", "password"); runCurrent()
@@ -2322,14 +2551,26 @@ class DriveControllerTest {
         var discarded = 0
         c.saveFileExport({ ByteArrayOutputStream() }, { discarded++ }); runCurrent()
         assertTrue(c.state.value.fileDownloadActive)
+        assertEquals(3L, c.state.value.fileDownloadBytes)
+        val before = api.galleryRequests.size
         c.refreshGallery(); runCurrent()
-        assertEquals(1, discarded)
+        assertEquals(0, discarded) // A page refresh must not interrupt the document.
+        assertTrue(c.state.value.fileDownloadActive)
         assertEquals(1, api.downloadReads)
+        assertEquals(before, api.galleryRequests.size)
+        assertEquals(3L, c.state.value.fileDownloadBytes)
+        c.cancelFileDownload(); runCurrent()
+        assertEquals(1, discarded) // Explicit cancel destroys the partial SAF document.
         assertFalse(c.state.value.fileDownloadActive)
         assertFalse(c.state.value.fileDownloadSaved)
+        assertEquals(0L, c.state.value.fileDownloadBytes)
+        c.refreshGallery(); runCurrent()
+        assertEquals(before + 1, api.galleryRequests.size)
         assertTrue(c.state.value.galleryLoaded)
         assertNull(c.state.value.fileExportPending)
         assertNull(c.state.value.fileExportOrigin)
+        assertEquals(1, api.downloadReads) // No upload/download write replay.
+        c.close()
     }
 
     @Test fun gallerySearchAndKindScopeRetireDelayedSafPickerBeforeAnyDownload() = runTest {
@@ -2370,7 +2611,7 @@ class DriveControllerTest {
         c.close()
     }
 
-    @Test fun galleryIndexedJumpCancelsActiveSafDownloadAndDiscardsPartialOutput() = runTest {
+@Test fun galleryIndexedJumpDefersWhileSafDownloadThenUsesExactOwnerIndex() = runTest {
         val api = Service().apply {
             provideGalleryTimeline = true
             downloadGate = CompletableDeferred()
@@ -2385,19 +2626,27 @@ class DriveControllerTest {
         var discarded = 0
         c.saveFileExport({ ByteArrayOutputStream() }, { discarded++ }); runCurrent()
         assertTrue(c.state.value.fileDownloadActive)
+        val before = api.galleryRequests.size
 
-        // A real Server-indexed jump retires the prior media/SAF Owner work.
+        // An indexed GET must not supersede an active foreground SAF write.
         c.jumpGalleryToGroup("year", "2026"); runCurrent()
         assertEquals(1, api.downloadReads)
-        assertEquals(1, discarded)
+        assertEquals(0, discarded)
+        assertNull(c.state.value.galleryJumpIndex)
+        assertEquals(before, api.galleryRequests.size)
+        assertTrue(c.state.value.fileDownloadActive)
+        assertEquals(3L, c.state.value.fileDownloadBytes)
+
+        api.downloadGate?.complete(Unit); runCurrent()
+        assertTrue(c.state.value.fileDownloadSaved)
+        assertFalse(c.state.value.fileDownloadActive)
+        c.jumpGalleryToGroup("year", "2026"); runCurrent()
         assertEquals(60, c.state.value.galleryJumpIndex)
         assertTrue(c.state.value.galleryLoaded)
-        assertFalse(c.state.value.fileDownloadActive)
         assertFalse(c.state.value.fileDownloadSaved)
-        assertEquals(0L, c.state.value.fileDownloadBytes)
-        assertNull(c.state.value.fileExportPending)
-        assertNull(c.state.value.fileExportOrigin)
-        assertNull(c.state.value.fileDownloadError)
+        assertEquals(before + 1, api.galleryRequests.size)
+        assertEquals(1, api.downloadReads)
+        assertEquals(0, discarded)
         assertNull(c.state.value.error)
         c.close()
     }
@@ -2441,7 +2690,7 @@ class DriveControllerTest {
         assertEquals(1, discarded)
     }
 
-    @Test fun changingFolderCancelsInFlightExportAndClearsDownloadChrome() = runTest {
+@Test fun changingFolderWaitsForSafDownloadAndExplicitCancelCleansPartialFile() = runTest {
         val api = Service().apply { downloadGate = CompletableDeferred() }
         val c = controller(this, api)
         c.login("owner", "password"); runCurrent()
@@ -2451,15 +2700,26 @@ class DriveControllerTest {
         c.saveFileExport({ output }, { discarded++ }); runCurrent()
         assertTrue(c.state.value.fileDownloadActive)
         assertEquals(3L, c.state.value.fileDownloadBytes)
-        c.open(folder); runCurrent() // New Owner navigation cancels the pending file transfer.
-        assertEquals(1, api.downloadReads)
+        val beforeCalls = api.calls.size
+        assertTrue(shouldHandleFilesBack(c.state.value, false, false))
+        c.open(folder); runCurrent()
+        c.back(); runCurrent()
+        assertEquals(beforeCalls, api.calls.size)
+        assertEquals(root.id, c.state.value.path.last().id)
+        assertTrue(c.state.value.fileDownloadActive)
+        assertEquals(0, discarded)
+        assertEquals(3L, c.state.value.fileDownloadBytes)
+        c.cancelFileDownload(); runCurrent()
         assertEquals(1, discarded)
-        assertEquals(2L, c.state.value.path.last().id)
         assertFalse(c.state.value.fileDownloadActive)
         assertFalse(c.state.value.fileDownloadSaved)
         assertEquals(0L, c.state.value.fileDownloadBytes)
-        assertEquals(null, c.state.value.fileExportPending)
+        assertNull(c.state.value.fileExportPending)
         assertTrue(output.size() < 5)
+        c.open(folder); runCurrent()
+        assertEquals(folder.id, c.state.value.path.last().id)
+        assertEquals(1, api.downloadReads)
+        c.close()
     }
 
     @Test fun refreshingInvalidatesUnreturnedSafPickerWithoutDownloading() = runTest {
@@ -3500,5 +3760,318 @@ class DriveControllerTest {
         assertTrue(c.state.value.items.isEmpty())
         assertEquals("", c.state.value.username)
         assertTrue(api.calls.isEmpty())
+    }
+
+    @Test fun filesNewGalleryPreemptsStaleDirectoryGetWithoutLateRows() = runTest {
+        val api = Service()
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        val late = CompletableDeferred<NodeRange>()
+        api.listing = { _, offset ->
+            if (offset == 100) withContext(NonCancellable) { late.await() }
+            else NodeRange(listOf(folder, file), 101, offset)
+        }
+        c.loadMore(); runCurrent()
+        assertTrue(c.state.value.loading)
+        assertTrue(c.state.value.discardableReadInFlight)
+        c.openGallery(); runCurrent()
+        assertEquals(Screen.GALLERY, c.state.value.screen)
+        assertFalse(c.state.value.discardableReadInFlight)
+        assertTrue(c.state.value.galleryLoaded)
+        late.complete(NodeRange(listOf(file), 101, 100)); runCurrent()
+        assertEquals(Screen.GALLERY, c.state.value.screen)
+        assertEquals(listOf(api.latestGallery), c.state.value.galleryItems)
+        assertEquals(0, c.state.value.offset)
+        c.close()
+    }
+
+    @Test fun filesTrashAndFolderNavigationCanPreemptAnOldDirectoryGet() = runTest {
+        val lateTrash = CompletableDeferred<NodeRange>()
+        val api = object : Service() {
+            override suspend fun trashPage(accessToken: String, offset: Int): TrashPage {
+                assertEquals("access", accessToken)
+                return TrashPage(emptyList(), 0, offset)
+            }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        api.listing = { parent, offset ->
+            when {
+                offset == 100 -> withContext(NonCancellable) { lateTrash.await() }
+                parent == folder.id -> NodeRange(listOf(file.copy(parentId = folder.id)), 1, 0)
+                else -> NodeRange(listOf(folder, file), 101, 0)
+            }
+        }
+        c.loadMore(); runCurrent()
+        assertTrue(c.state.value.discardableReadInFlight)
+        c.openTrash(); runCurrent()
+        assertEquals(Screen.TRASH, c.state.value.screen)
+        assertTrue(c.state.value.trashLoaded)
+        lateTrash.complete(NodeRange(listOf(file), 101, 100)); runCurrent()
+        assertEquals(Screen.TRASH, c.state.value.screen)
+        c.closeTrash(); runCurrent()
+        val lateFolder = CompletableDeferred<NodeRange>()
+        api.listing = { parent, offset ->
+            when {
+                offset == 100 -> withContext(NonCancellable) { lateFolder.await() }
+                parent == folder.id -> NodeRange(listOf(file.copy(parentId = folder.id)), 1, 0)
+                else -> NodeRange(listOf(folder, file), 101, 0)
+            }
+        }
+        c.loadMore(); runCurrent()
+        assertTrue(c.state.value.discardableReadInFlight)
+        c.open(folder); runCurrent()
+        assertEquals(folder.id, c.state.value.path.last().id)
+        assertEquals(folder.id, c.state.value.items.single().parentId)
+        lateFolder.complete(NodeRange(listOf(file), 101, 100)); runCurrent()
+        assertEquals(folder.id, c.state.value.path.last().id)
+        assertEquals(0, c.state.value.offset)
+        c.close()
+    }
+
+    @Test fun filesPdfViewerPreemptsObsoleteAppendAndKeepsOpenedRevision() = runTest {
+        val pdf = DriveNode(87, 1, "report.pdf", "file", 128, revision = 3)
+        val late = CompletableDeferred<NodeRange>()
+        val api = Service().apply {
+            listing = { _, offset ->
+                if (offset == 100) withContext(NonCancellable) { late.await() }
+                else NodeRange(listOf(pdf), 101, offset)
+            }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.loadMore(); runCurrent()
+        assertTrue(c.state.value.discardableReadInFlight)
+        c.open(pdf)
+        assertEquals(pdf, c.state.value.filesPdfViewer)
+        assertFalse(c.state.value.loading)
+        assertFalse(c.state.value.discardableReadInFlight)
+        late.complete(NodeRange(listOf(file), 101, 100)); runCurrent()
+        assertEquals(pdf, c.state.value.filesPdfViewer)
+        assertEquals(0, c.state.value.offset)
+        c.back()
+        assertNull(c.state.value.filesPdfViewer)
+        c.close()
+    }
+
+    @Test fun filesNavigationNeverCancelsAnInFlightOwnerMutation() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        var writes = 0
+        val api = object : Service() {
+            override suspend fun favoriteFile(accessToken: String, nodeId: Long): DriveCollectionItem {
+                assertEquals("access", accessToken)
+                writes++
+                gate.await()
+                return DriveCollectionItem(file, "readme.txt", listOf(DriveCrumb(1, "")))
+            }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.favoriteFile(file); runCurrent()
+        assertEquals(1, writes)
+        assertTrue(c.state.value.loading)
+        assertFalse(c.state.value.discardableReadInFlight)
+        assertFalse(c.state.value.canNavigateFiles())
+        val reads = api.calls.size
+        c.openGallery()
+        c.openTrash()
+        c.changeFilesSection(FilesSection.RECENT)
+        c.submitGlobalSearch("all files")
+        c.open(folder)
+        c.refresh()
+        assertEquals(Screen.FILES, c.state.value.screen)
+        assertEquals(FilesSection.BROWSE, c.state.value.filesSection)
+        assertTrue(c.state.value.loading)
+        assertEquals(reads, api.calls.size)
+        gate.complete(Unit); runCurrent()
+        assertEquals(1, writes)
+        assertFalse(c.state.value.loading)
+        assertTrue(c.state.value.canNavigateFiles())
+        c.close()
+    }
+
+    @Test fun gallerySafExportCannotBePreemptedByAnotherPageOrOwnerQuery() = runTest {
+        val api = Service().apply { downloadGate = CompletableDeferred() }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        val photo = api.latestGallery
+        c.showGalleryInfo(photo)
+        assertTrue(c.prepareFileExport(photo.node))
+        var discarded = 0
+        c.saveFileExport({ ByteArrayOutputStream() }, { discarded++ }); runCurrent()
+        assertTrue(c.state.value.fileDownloadActive)
+        assertTrue(c.state.value.loading)
+        assertEquals(1, api.downloadReads)
+        val photoRows = c.state.value.galleryItems
+        val galleryRequests = api.galleryRequests.size
+        c.openFilesApp()
+        c.back()
+        c.refreshGallery()
+        c.searchGallery("test")
+        c.filterGalleryKind("video")
+        c.changeGallerySort("added", "desc")
+        c.jumpGalleryToGroup("year", "2026")
+        assertEquals(Screen.GALLERY, c.state.value.screen)
+        assertEquals(photoRows, c.state.value.galleryItems)
+        assertEquals(galleryRequests, api.galleryRequests.size)
+        assertTrue(c.state.value.fileDownloadActive)
+        assertEquals(0, discarded)
+        api.downloadGate?.complete(Unit); runCurrent()
+        assertTrue(c.state.value.fileDownloadSaved)
+        assertFalse(c.state.value.fileDownloadActive)
+        assertEquals(1, api.downloadReads)
+        c.openFilesApp(); runCurrent()
+        assertEquals(Screen.FILES, c.state.value.screen)
+        assertEquals(0, discarded)
+        c.close()
+    }
+
+    @Test fun galleryAlbumBackWaitsForActiveNativeSafExportWithoutCancel() = runTest {
+        val album = GalleryAlbum("manual:trip", "manual", "旅行", 1, 2, 0, 990)
+        val api = object : Service() {
+            override suspend fun galleryAlbums(accessToken: String): List<GalleryAlbum> = listOf(album)
+            override suspend fun galleryAlbumPage(
+                accessToken: String, albumId: String, offset: Int,
+                initialLatest: Boolean,
+            ): GalleryPage {
+                assertEquals(album.id, albumId)
+                return GalleryPage(listOf(latestGallery), 1, 0)
+            }
+        }.apply { downloadGate = CompletableDeferred() }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.openGalleryCollections(); runCurrent()
+        c.openGalleryAlbum(album); runCurrent()
+        val photo = c.state.value.galleryItems.single()
+        c.showGalleryInfo(photo)
+        assertTrue(c.prepareFileExport(photo.node))
+        c.saveFileExport({ ByteArrayOutputStream() }, {}); runCurrent()
+        assertTrue(c.state.value.fileDownloadActive)
+        c.back() // Album Back may cancel a GET, never this active SAF stream.
+        assertEquals(album, c.state.value.gallerySelectedAlbum)
+        assertEquals(Screen.GALLERY, c.state.value.screen)
+        assertTrue(c.state.value.fileDownloadActive)
+        api.downloadGate?.complete(Unit); runCurrent()
+        assertTrue(c.state.value.fileDownloadSaved)
+        c.back(); runCurrent()
+        assertNull(c.state.value.gallerySelectedAlbum)
+        assertEquals(GalleryPrimaryTab.COLLECTIONS, c.state.value.galleryPrimaryTab)
+        c.close()
+    }
+
+    @Test fun uncertainBatchWriteOnlyAllowsReadOnlyRefreshOrRetryBeforeNewNavigation() = runTest {
+        val api = Service()
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.setBrowseSelectionMode(true)
+        c.toggleBrowseSelection(file)
+        api.mutationFailure = ApiException(503, "lost batch ACK")
+        c.trashSelectedBrowseNodes(); runCurrent()
+        assertEquals(1, api.mutationCalls.size)
+        assertTrue(c.state.value.canReconcileBatchBrowse())
+        assertFalse(c.state.value.canNavigateFiles())
+        c.openGallery()
+        c.open(folder)
+        c.changeFilesSection(FilesSection.RECENT)
+        assertEquals(Screen.FILES, c.state.value.screen)
+        assertEquals(listOf(root), c.state.value.path)
+        assertEquals(FilesSection.BROWSE, c.state.value.filesSection)
+        api.failure = ApiException(503, "first reconciliation GET fails")
+        c.retry(); runCurrent()
+        assertEquals(1, api.mutationCalls.size)
+        assertTrue(c.state.value.canReconcileBatchBrowse())
+        assertFalse(c.state.value.loaded)
+        c.refresh(); runCurrent()
+        assertTrue(c.state.value.loaded)
+        assertFalse(c.state.value.browseBatchWriteAttempted)
+        assertFalse(c.state.value.canReconcileBatchBrowse())
+        assertEquals(1, api.mutationCalls.size)
+        c.close()
+    }
+
+    @Test fun anotherFilesMediaDetailWinsOverNonCooperativeOldPhotoGet() = runTest {
+        val photoA = DriveNode(119, 1, "first.jpg", "file", 5, revision = 2)
+        val photoB = DriveNode(120, 1, "second.jpg", "file", 5, revision = 3)
+        val late = CompletableDeferred<GalleryAsset>()
+        val requested = mutableListOf<Long>()
+        val api = object : Service() {
+            override suspend fun filesMediaItem(accessToken: String, node: DriveNode): GalleryAsset {
+                assertEquals("access", accessToken)
+                requested += node.id
+                return if (node == photoA && requested.size == 1)
+                    withContext(NonCancellable) { late.await() }
+                else GalleryAsset(node, "image", hasThumbnail = true)
+            }
+        }
+        api.listing = { _, offset -> NodeRange(
+            if (offset == 0) listOf(photoA, photoB) else emptyList(), 2, offset)
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.open(photoA); runCurrent()
+        assertTrue(c.state.value.loading)
+        assertTrue(c.state.value.discardableReadInFlight)
+        c.open(photoB); runCurrent()
+        assertEquals(Screen.GALLERY, c.state.value.screen)
+        assertEquals(photoB, c.state.value.galleryViewer?.node)
+        assertEquals(listOf(photoA.id, photoB.id), requested)
+        late.complete(GalleryAsset(photoA, "image", hasThumbnail = true)); runCurrent()
+        assertEquals(photoB, c.state.value.galleryViewer?.node)
+        assertEquals(listOf(photoA, photoB), c.state.value.items)
+        c.back()
+        assertEquals(Screen.FILES, c.state.value.screen)
+        c.open(photoA); runCurrent()
+        assertEquals(photoA, c.state.value.galleryViewer?.node)
+        assertEquals(listOf(photoA.id, photoB.id, photoA.id), requested)
+        c.close()
+    }
+
+    @Test fun newLocationSelectionPreemptsOldNonCooperativeOwnerLookup() = runTest {
+        val late = CompletableDeferred<OwnedNodeLocation>()
+        val api = Service()
+        api.recentRows = listOf(api.recentFolder, api.favoriteFile)
+        api.locateNode = { nodeId ->
+            if (nodeId == folder.id) withContext(NonCancellable) { late.await() }
+            else OwnedNodeLocation(nodeId, 1, 1, listOf(DriveCrumb(1, "")))
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.changeFilesSection(FilesSection.RECENT); runCurrent()
+        c.locateCollectionItem(api.recentFolder); runCurrent()
+        assertTrue(c.state.value.discardableReadInFlight)
+        c.locateCollectionItem(api.favoriteFile); runCurrent()
+        assertEquals(FilesSection.BROWSE, c.state.value.filesSection)
+        assertEquals(file.id, c.state.value.focusedBrowseNodeId)
+        late.complete(OwnedNodeLocation(folder.id, 1, 1, listOf(DriveCrumb(1, ""))))
+        runCurrent()
+        assertEquals(file.id, c.state.value.focusedBrowseNodeId)
+        assertEquals(listOf(root), c.state.value.path)
+        c.close()
+    }
+
+    @Test fun recentFolderLookupYieldsToNextFilesSectionWithoutStalePath() = runTest {
+        val late = CompletableDeferred<NodeRange>()
+        val api = Service()
+        api.listing = { parent, offset ->
+            if (parent == folder.id) withContext(NonCancellable) { late.await() }
+            else NodeRange(listOf(folder, file), 2, offset)
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.changeFilesSection(FilesSection.RECENT); runCurrent()
+        c.openCollectionItem(api.recentFolder); runCurrent()
+        assertEquals(FilesSection.BROWSE, c.state.value.filesSection)
+        assertTrue(c.state.value.discardableReadInFlight)
+        c.changeFilesSection(FilesSection.FAVORITES); runCurrent()
+        assertEquals(FilesSection.FAVORITES, c.state.value.filesSection)
+        assertEquals(listOf(api.favoriteFile), c.state.value.collectionItems)
+        late.complete(NodeRange(listOf(file.copy(parentId = folder.id)), 1, 0))
+        runCurrent()
+        assertEquals(FilesSection.FAVORITES, c.state.value.filesSection)
+        assertEquals(listOf(api.favoriteFile), c.state.value.collectionItems)
+        assertEquals(listOf(root), c.state.value.path)
+        c.close()
     }
 }

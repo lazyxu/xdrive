@@ -779,6 +779,10 @@ export type XDriveFileExplorerQuickLookRequest = {
   logicalIndex: number
 }
 
+export type XDriveFileExplorerUnavailableActions = Partial<Record<
+  'search' | 'createFolder' | 'uploadFiles' | 'uploadFolder', string
+>>
+
 export function XDriveFileExplorer({
   items,
   crumbs,
@@ -799,6 +803,7 @@ export function XDriveFileExplorer({
   pathValue,
   onPathSubmit,
   searchEnabled = true,
+  unavailableActions,
   searchValue = '',
   onSearchValueChange,
   onSearch,
@@ -908,6 +913,8 @@ export function XDriveFileExplorer({
   pathValue?: string
   onPathSubmit?: (path: string) => void
   searchEnabled?: boolean
+  /** Host-derived unavailable capabilities remain visible but disabled. */
+  unavailableActions?: XDriveFileExplorerUnavailableActions
   searchValue?: string
   onSearchValueChange?: (value: string) => void
   onSearch?: (value: string) => void
@@ -1029,6 +1036,11 @@ export function XDriveFileExplorer({
   forceVirtualization?: boolean
   virtualCollection?: XDriveFileExplorerVirtualCollection
 }) {
+  // A Host that lacks a real capability keeps the shared command visible but
+  // disabled; never substitute a fabricated transport response.
+  const searchUnavailableReason = unavailableActions?.search ||
+    (!onSearch ? '此宿主未提供已授权的全库搜索能力。' : '')
+
   // The account and public Share data sources resolve one capability contract.
   // Existing owner callbacks remain the authority for which UI actions exist;
   // JWT/ACL authorization is still enforced by the Owner API.
@@ -1037,8 +1049,10 @@ export function XDriveFileExplorer({
     preview: Boolean(onPreviewItem || onOpenQuickLook || loadPreviewURL),
     download: Boolean(onDownloadItems),
     downloadZip: Boolean(onDownloadItems && folderDownloadSupported),
-    search: Boolean(searchEnabled && onSearch),
-    write: Boolean(onCreateFolder || onUpload || onUploadFolder ||
+    search: Boolean(searchEnabled && onSearch && !searchUnavailableReason),
+    write: Boolean((onCreateFolder && !unavailableActions?.createFolder) ||
+      (onUpload && !unavailableActions?.uploadFiles) ||
+      (onUploadFolder && !unavailableActions?.uploadFolder) ||
       onCopyItems || onCopyItemsTo || onMoveItemsTo || onRenameItem ||
       onPaste || onDeleteItems),
     delete: Boolean(onDeleteItems),
@@ -3492,7 +3506,7 @@ export function XDriveFileExplorer({
     }
   }
 
-  const submitSearch = () => onSearch?.(searchValue.trim())
+  const submitSearch = () => { if (!searchUnavailableReason) onSearch?.(searchValue.trim()) }
 
   const defaultTypeLabel = (item: XDriveFileExplorerItem) => (
     item.typeLabel || xDriveFileTypeLabel(item.name, item.kind)
@@ -3929,7 +3943,7 @@ export function XDriveFileExplorer({
       return
     }
     if (command === 'focus-search') {
-      if (!searchEnabled) return
+      if (!searchEnabled || searchUnavailableReason) return
       event.preventDefault()
       if (compactViewport && !touchSearchOpen) {
         setTouchSearchOpen(true)
@@ -3944,7 +3958,7 @@ export function XDriveFileExplorer({
       onRefresh()
       return
     }
-    if (command === 'new-folder' && onCreateFolder) {
+    if (command === 'new-folder' && onCreateFolder && !unavailableActions?.createFolder) {
       event.preventDefault()
       onCreateFolder()
       return
@@ -5601,8 +5615,9 @@ export function XDriveFileExplorer({
           compactViewport && !touchSearchOpen ? (
             <IconButton
               ref={searchToggleRef}
-              aria-label="搜索全部文件和文件夹"
-              title="搜索全部文件和文件夹"
+              aria-label={searchUnavailableReason ? '搜索不可用：' + searchUnavailableReason : '搜索全部文件和文件夹'}
+              title={searchUnavailableReason || '搜索全部文件和文件夹'}
+              disabled={Boolean(searchUnavailableReason)}
               onClick={() => setTouchSearchOpen(true)}
             >
               <SearchRoundedIcon fontSize="small" />
@@ -5610,8 +5625,9 @@ export function XDriveFileExplorer({
           ) : (
             <TextField
               inputRef={searchInputRef}
-              autoFocus={compactViewport && touchSearchOpen}
+              autoFocus={compactViewport && touchSearchOpen && !searchUnavailableReason}
               size="small"
+              disabled={Boolean(searchUnavailableReason)}
               value={searchValue}
               onChange={(event) => onSearchValueChange?.(event.target.value)}
               onKeyDown={(event) => {
@@ -5623,9 +5639,9 @@ export function XDriveFileExplorer({
                   setTouchSearchOpen(false)
                 }
               }}
-              placeholder="搜索全部文件"
-              aria-label="搜索全部文件和文件夹"
-              title={fileExplorerShortcutTitle('搜索全部文件和文件夹', 'focus-search', keyboardProfile)}
+              placeholder={searchUnavailableReason ? '搜索暂不可用' : '搜索全部文件'}
+              aria-label={searchUnavailableReason ? '搜索不可用：' + searchUnavailableReason : '搜索全部文件和文件夹'}
+              title={searchUnavailableReason || fileExplorerShortcutTitle('搜索全部文件和文件夹', 'focus-search', keyboardProfile)}
               sx={compactViewport ? {
                 flex: 1,
                 minWidth: 0,
@@ -5636,14 +5652,15 @@ export function XDriveFileExplorer({
                 '& .MuiOutlinedInput-root': { height: 36, borderRadius: '4px' },
               }}
               slotProps={{
-                htmlInput: { 'aria-label': '搜索全部文件和文件夹' },
+                htmlInput: { 'aria-label': searchUnavailableReason ? '搜索不可用：' + searchUnavailableReason : '搜索全部文件和文件夹' },
                 input: {
                   endAdornment: (
                     <InputAdornment position="end">
                       <IconButton
                         size="small"
-                        aria-label={compactViewport ? '关闭搜索框' : '搜索'}
-                        title={compactViewport ? '关闭搜索框，保留当前条件' : fileExplorerShortcutTitle('搜索', 'focus-search', keyboardProfile)}
+                        disabled={Boolean(searchUnavailableReason)}
+                        aria-label={searchUnavailableReason ? '搜索不可用：' + searchUnavailableReason : compactViewport ? '关闭搜索框' : '搜索'}
+                        title={searchUnavailableReason || (compactViewport ? '关闭搜索框，保留当前条件' : fileExplorerShortcutTitle('搜索', 'focus-search', keyboardProfile))}
                         onClick={compactViewport ? () => setTouchSearchOpen(false) : submitSearch}
                       >
                         {compactViewport ? <CloseRoundedIcon fontSize="small" /> : <SearchRoundedIcon fontSize="small" />}
@@ -5742,8 +5759,9 @@ export function XDriveFileExplorer({
             </>
           ) : (
             <>
-              {onUpload ? (
-                <IconButton aria-label="上传文件" title="上传文件" onClick={onUpload}>
+              {(onUpload || unavailableActions?.uploadFiles) ? (
+                <IconButton aria-label="上传文件" title={unavailableActions?.uploadFiles || '上传文件'}
+                  disabled={Boolean(!onUpload || unavailableActions?.uploadFiles)} onClick={onUpload}>
                   <UploadRoundedIcon fontSize="small" />
                 </IconButton>
               ) : null}
@@ -5752,22 +5770,25 @@ export function XDriveFileExplorer({
           )}
         </Box>
         <Box sx={{ display: compactViewport ? 'none' : 'contents' }}>
-          {onCreateFolder && commandBarOverflowLevel < 2 ? (
+          {(onCreateFolder || unavailableActions?.createFolder) && commandBarOverflowLevel < 2 ? (
             <XDriveFileExplorerCommandButton
               startIcon={<CreateNewFolderRoundedIcon />}
-              title={fileExplorerShortcutTitle('新建文件夹', 'new-folder', keyboardProfile)}
+              disabled={Boolean(!onCreateFolder || unavailableActions?.createFolder)}
+              title={unavailableActions?.createFolder || fileExplorerShortcutTitle('新建文件夹', 'new-folder', keyboardProfile)}
               onClick={onCreateFolder}
             >
               新建文件夹
             </XDriveFileExplorerCommandButton>
           ) : null}
-          {onUpload && commandBarOverflowLevel < 2 ? (
-            <XDriveFileExplorerCommandButton startIcon={<UploadRoundedIcon />} onClick={onUpload}>
+          {(onUpload || unavailableActions?.uploadFiles) && commandBarOverflowLevel < 2 ? (
+            <XDriveFileExplorerCommandButton startIcon={<UploadRoundedIcon />} onClick={onUpload}
+              title={unavailableActions?.uploadFiles} disabled={Boolean(!onUpload || unavailableActions?.uploadFiles)}>
               上传文件
             </XDriveFileExplorerCommandButton>
           ) : null}
-          {onUploadFolder && commandBarOverflowLevel === 0 ? (
-            <XDriveFileExplorerCommandButton startIcon={<DriveFolderUploadRoundedIcon />} onClick={onUploadFolder}>
+          {(onUploadFolder || unavailableActions?.uploadFolder) && commandBarOverflowLevel === 0 ? (
+            <XDriveFileExplorerCommandButton startIcon={<DriveFolderUploadRoundedIcon />} onClick={onUploadFolder}
+              title={unavailableActions?.uploadFolder} disabled={Boolean(!onUploadFolder || unavailableActions?.uploadFolder)}>
               上传文件夹
             </XDriveFileExplorerCommandButton>
           ) : null}
@@ -6148,20 +6169,26 @@ export function XDriveFileExplorer({
         onClose={() => setCommandBarOverflowAnchor(null)}
         slotProps={{ list: { disabledItemsFocusable: true } }}
       >
-        {(compactViewport || commandBarOverflowLevel >= 2) && onCreateFolder ? (
-          <MenuItem onClick={() => runCommandBarOverflowAction(onCreateFolder)}>
+        {(compactViewport || commandBarOverflowLevel >= 2) && (onCreateFolder || unavailableActions?.createFolder) ? (
+          <MenuItem disabled={Boolean(!onCreateFolder || unavailableActions?.createFolder)}
+            title={unavailableActions?.createFolder}
+            onClick={onCreateFolder ? () => runCommandBarOverflowAction(onCreateFolder) : undefined}>
             <Box sx={{ width: 24, mr: 1, display: 'flex' }}><CreateNewFolderRoundedIcon fontSize="small" /></Box>
             新建文件夹
           </MenuItem>
         ) : null}
-        {!compactViewport && commandBarOverflowLevel >= 2 && onUpload ? (
-          <MenuItem onClick={() => runCommandBarOverflowAction(onUpload)}>
+        {!compactViewport && commandBarOverflowLevel >= 2 && (onUpload || unavailableActions?.uploadFiles) ? (
+          <MenuItem disabled={Boolean(!onUpload || unavailableActions?.uploadFiles)}
+            title={unavailableActions?.uploadFiles}
+            onClick={onUpload ? () => runCommandBarOverflowAction(onUpload) : undefined}>
             <Box sx={{ width: 24, mr: 1, display: 'flex' }}><UploadRoundedIcon fontSize="small" /></Box>
             上传文件
           </MenuItem>
         ) : null}
-        {(compactViewport || commandBarOverflowLevel >= 1) && onUploadFolder ? (
-          <MenuItem onClick={() => runCommandBarOverflowAction(onUploadFolder)}>
+        {(compactViewport || commandBarOverflowLevel >= 1) && (onUploadFolder || unavailableActions?.uploadFolder) ? (
+          <MenuItem disabled={Boolean(!onUploadFolder || unavailableActions?.uploadFolder)}
+            title={unavailableActions?.uploadFolder}
+            onClick={onUploadFolder ? () => runCommandBarOverflowAction(onUploadFolder) : undefined}>
             <Box sx={{ width: 24, mr: 1, display: 'flex' }}><DriveFolderUploadRoundedIcon fontSize="small" /></Box>
             上传文件夹
           </MenuItem>

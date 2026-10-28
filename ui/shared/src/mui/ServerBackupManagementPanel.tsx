@@ -11,6 +11,7 @@ import type {
 import { latestServerBackupVerification, serverBackupReceiptDurationSeconds,
   serverBackupReceiptExplanation, summarizeServerBackupIntegrity } from '../server-backup-integrity'
 import { canPruneServerBackup, type XDriveServerBackupPrunePreview } from '../server-backup-prune-preview'
+import { backupRetentionCapacity } from '../server-backup-capacity'
 import { XDriveActionButton } from './ActionButton'
 import { XDriveBackupVerificationReceipt } from './BackupVerificationReceipt'
 import { XDriveBackupRecoveryEvidencePanel } from './BackupRecoveryEvidencePanel'
@@ -127,6 +128,7 @@ export function XDriveServerBackupManagementPanel({
   const keep = Number(keepLast)
   const keepValid = Number.isInteger(keep) && keep >= 1 && keep <= 1000
   const canPrune = canPruneServerBackup(page, keep, verifyMode, prunePreview)
+  const capacity = page?.retention ? backupRetentionCapacity(page.retention) : null
   const policyDays = Number(policyDraft?.days)
   const policyValid = Number.isInteger(policyDays) && policyDays >= 0 && policyDays <= 3650 &&
     !(policyDraft?.format === 'v1' && Boolean(page?.inventory.policy.repository))
@@ -327,6 +329,13 @@ export function XDriveServerBackupManagementPanel({
               onClick={() => { if (selected) void submit({
                 action: 'verify', snapshot_id: selected.id, mode: verifyMode,
               }) }}>验证所选备份</XDriveActionButton>
+            <XDriveActionButton disabled={disabled}
+              onClick={() => ask({
+                title: '确认批量验证全部服务器备份？',
+                description: '宿主机扫描所有已配置的本地 v1/v2 仓库，不受清单最多显示 100 代的限制。最多 1000 代，超限或不安全的快照条目会明确失败。逐代执行真实 SHA-256 校验；deep 还会逐仓库检查孤儿 CAS。可能产生大量磁盘读取，但不会修改生产数据，也不是实际恢复演练。浏览器关闭不会取消宿主机任务。',
+                expected: 'VERIFY ALL',
+                action: { action: 'verify_all', mode: verifyMode },
+              })}>批量验证全部本地备份</XDriveActionButton>
             <XDriveActionButton disabled={disabled || !selectedRestorable || selected?.format !== 'v2'}
               onClick={() => { if (selected) ask({
                 title: '确认执行离线隔离恢复演练？',
@@ -351,6 +360,49 @@ export function XDriveServerBackupManagementPanel({
           </Stack>
         </Stack>
       </Paper>
+
+      {page?.bulk_verification ? (
+        <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}
+          data-xdrive-admin-backup-bulk-verification>
+          <Stack spacing={1}>
+            <Typography variant="subtitle1" fontWeight={600}>最近一次批量备份校验（历史）</Typography>
+            <Alert severity={page.bulk_verification.state === 'success' ? 'info' : 'warning'}>
+              {page.bulk_verification.state === 'success' ? '该次批量校验已完成' : '该次批量校验未全部通过'}；
+              模式 {page.bulk_verification.mode}；发现 {page.bulk_verification.total_snapshots} 代，
+              已核验 {page.bulk_verification.checked_snapshots} 代，
+              通过 {page.bulk_verification.passed_snapshots} 代，
+              失败 {page.bulk_verification.failed_snapshots} 代，
+              未核验 {page.bulk_verification.unverified_snapshots} 代。
+              {page.bulk_verification.mode === 'deep' ? (
+                <> 额外完整仓库审计 {page.bulk_verification.deep_repositories_checked} 个，
+                失败 {page.bulk_verification.deep_repositories_failed} 个。</>
+              ) : null}
+            </Alert>
+            <Typography variant="caption" color="text.secondary">
+              完成时间：{page.bulk_verification.finished_at ?
+                new Date(page.bulk_verification.finished_at).toLocaleString() : '未知'}；
+              请求号：{page.bulk_verification.request_id}。
+              这是历史只读校验，不代表快照此刻仍完整，也不等于 PostgreSQL 与文件恢复演练通过。
+              当前后台任务进度请以上方宿主机状态为准。
+            </Typography>
+            {page.bulk_verification.failure_category ? (
+              <Typography color="error" variant="body2">
+                批量扫描失败分类：{page.bulk_verification.failure_category}
+              </Typography>
+            ) : null}
+            {page.bulk_verification.failure_sample.map(item => (
+              <Typography variant="body2" key={item.snapshot_id} sx={{ overflowWrap: 'anywhere' }}>
+                {item.snapshot_id} · {item.category}
+              </Typography>
+            ))}
+            {page.bulk_verification.failure_sample_truncated ? (
+              <Typography variant="caption" color="text.secondary">
+                仅显示前 20 个失败快照；统计数仍包含全部失败项。
+              </Typography>
+            ) : null}
+          </Stack>
+        </Paper>
+      ) : null}
 
       {page?.supported
         ? <XDriveBackupRecoveryEvidencePanel page={page} snapshotID={snapshotID} />
@@ -385,19 +437,64 @@ export function XDriveServerBackupManagementPanel({
               ? '当前会话已完成匹配保留数量与校验级别的只读预览；清理时宿主机会再次独占锁验证。'
               : '执行清理前，必须对当前保留数量与校验级别完成一次成功的只读预览；修改参数或切换宿主机后需重新预览。'}
           </Typography>
-          {page?.retention ? (
-            <Alert severity="info">
-              最近一次只读计划：保留 {page.retention.keep_snapshots?.length || 0} 代；
-              可考虑删除 {page.retention.drop_candidates?.length || 0} 代；
-              孤儿 CAS {page.retention.unreferenced_objects || 0} 项；
-              潜在逻辑空间 {displayBytes(page.retention.potential_logical_bytes)}。
-              {page.retention.hashed_objects > 0
-                ? ' 本次预览实际执行 SHA-256 的仓库对象 ' +
-                    page.retention.hashed_objects + ' 个 / ' +
-                    displayBytes(page.retention.hashed_bytes) + '。'
-                : ' 本次预览未提供已执行的仓库对象哈希数量。'}
-              此报告是历史预览，并非删除授权。
-            </Alert>
+          {page?.retention && capacity ? (
+            <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 1.5 }}
+              data-xdrive-admin-backup-capacity-breakdown>
+              <Stack spacing={1}>
+                <Typography variant="subtitle2">上一次只读保留计划 · 容量拆分</Typography>
+                <Typography variant="body2">
+                  当前计划保留 {page.retention.keep_snapshots?.length || 0} 代，
+                  待清理候选 {page.retention.drop_candidates?.length || 0} 代；
+                  已发现提交快照 {capacity.committedSnapshots ?? '未知'} 代。
+                  CAS 检查方式：
+                  {capacity.integrityMode === 'deep' ? 'deep（已对仓库 CAS 进行哈希）'
+                    : capacity.integrityMode === 'fast' ? 'fast（CAS 仅检查存在和大小）'
+                      : '未知'}。
+                </Typography>
+                <Table size="small" aria-label="v2 备份清理逻辑空间分项">
+                  <TableBody>
+                    <TableRow>
+                      <TableCell>候选代快照文件（数据库、Manifest 等）</TableCell>
+                      <TableCell align="right">{displayBytes(capacity.snapshotBytes ?? NaN)}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>仅被候选代引用的 CAS（{capacity.exclusiveObjects ?? '未知'} 个）</TableCell>
+                      <TableCell align="right">{displayBytes(capacity.exclusiveCASBytes ?? NaN)}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>全部已提交代均未引用的孤儿 CAS（{capacity.unreferencedObjects ?? '未知'} 个）</TableCell>
+                      <TableCell align="right">{displayBytes(capacity.unreferencedCASBytes ?? NaN)}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>潜在可清理逻辑字节合计</TableCell>
+                      <TableCell align="right">{displayBytes(capacity.potentialLogicalBytes ?? NaN)}</TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+                <Typography variant="body2">
+                  受保护快照仍引用的 CAS：{capacity.retainedObjects ?? '未知'} 个。
+                  {page.retention.hashed_objects > 0
+                    ? ' 本次报告中实际执行完整 SHA-256 的仓库对象 ' +
+                      page.retention.hashed_objects + ' 个，哈希读取 ' +
+                      displayBytes(page.retention.hashed_bytes) + '。'
+                    : ' 报告未提供已哈希对象数量；fast 不代表 CAS 内容全哈希。'}
+                </Typography>
+                {capacity.totalsConsistent === false ? (
+                  <Alert severity="warning" data-xdrive-admin-backup-capacity-mismatch>
+                    宿主机容量分项与合计不一致；不要将此报告用作清理空间预测。
+                  </Alert>
+                ) : null}
+                {!capacity.componentsComplete ? (
+                  <Typography variant="caption" color="text.secondary">
+                    当前宿主机未提供全部可靠的容量分项；未提供的数值显示为“—”，不推断为零。
+                  </Typography>
+                ) : null}
+                <Typography variant="caption" color="text.secondary">
+                  上述为历史逻辑字节估计，不是实际可释放磁盘空间，不包括文件系统块分配、硬链接、
+                  稀疏文件等差异。此计划不授予删除权限，实际 Prune 会独占锁重新验证所有保留引用。
+                </Typography>
+              </Stack>
+            </Paper>
           ) : null}
         </Stack>
       </Paper>

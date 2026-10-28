@@ -68,7 +68,8 @@ export function XDriveAppPageOutlet({
         if (services.remotePullPage) page = <XDriveSourceManager {...services.remotePullPage} />
         break
       case 'files':
-        if (local) page = <XDriveSynologyOwnerFilesPage key={revision} client={local} />
+        if (local) page = <XDriveSynologyOwnerFilesPage key={revision} client={local}
+          unavailableActions={services.filesUnavailableActions} />
         break
       case 'device-backup':
         if (services.deviceBackupPage) {

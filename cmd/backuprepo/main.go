@@ -37,7 +37,7 @@ func run(args []string) error {
 
 func runWithReportWriter(args []string, reportOutput io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("usage: xdrive-backup-repo estimate|capture|verify|restore|retention-plan|prune [flags]")
+		return errors.New("usage: xdrive-backup-repo estimate|capture|verify|restore|retention-plan|prune|delete-snapshot [flags]")
 	}
 	cmd := args[0]
 	f := flag.NewFlagSet(cmd, flag.ContinueOnError)
@@ -85,7 +85,7 @@ func runWithReportWriter(args []string, reportOutput io.Writer) error {
 			jsonPassed = true
 		}
 	})
-	if cmd != "retention-plan" && cmd != "prune" && (keepLastPassed || modePassed || yesPassed) {
+	if cmd != "retention-plan" && cmd != "prune" && cmd != "delete-snapshot" && (keepLastPassed || modePassed || yesPassed) {
 		return errors.New("--keep-last, --mode and --yes require the matching retention/prune subcommand")
 	}
 	if cmd == "retention-plan" && yesPassed {
@@ -93,6 +93,9 @@ func runWithReportWriter(args []string, reportOutput io.Writer) error {
 	}
 	if cmd == "prune" && (modePassed || !keepLastPassed || !*confirmed) {
 		return errors.New("prune requires explicit --keep-last N --yes, without --mode")
+	}
+	if cmd == "delete-snapshot" && (keepLastPassed || modePassed || !*confirmed) {
+		return errors.New("delete-snapshot requires an exact --snapshot NAME and --yes, without --keep-last or --mode")
 	}
 	if cmd != "verify" && jsonPassed {
 		return errors.New("--json is available only for verify")
@@ -125,6 +128,18 @@ func runWithReportWriter(args []string, reportOutput io.Writer) error {
 			return errors.New("prune only accepts --repo, --keep-last and --yes")
 		}
 		result, err := pruneRepository(root, *keepLast)
+		if err != nil {
+			return err
+		}
+		return writePruneReport(result)
+	case "delete-snapshot":
+		if *source != "" || *target != "" || *ownerUID != -1 || *ownerGID != -1 {
+			return errors.New("delete-snapshot only accepts --repo, --snapshot and --yes")
+		}
+		if !canonicalPruneSnapshotName(*snapshot) {
+			return errors.New("delete-snapshot requires a canonical committed v2 generation name")
+		}
+		result, err := pruneSelectedSnapshot(root, *snapshot)
 		if err != nil {
 			return err
 		}

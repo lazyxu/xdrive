@@ -221,3 +221,41 @@ test('shared trusted Parent distinguishes inline SDK and isolated Child failures
   assert.match(shared,/mode === 'inline'[\s\S]*?'同页地图 SDK 不可用；地点列表与照片墙仍可使用。'/)
   assert.match(shared,/动态地图隔离会话不可用；地点列表与照片墙仍可使用。/)
 })
+
+test('inline native labels yield to trusted React covers without losing other Cells', async () => {
+  const f=buildInlineFixture()
+  assert.ok(f.host)
+  const first={cell_x:1,cell_y:2,node_id:41,node_revision:6,asset_id:31,photo_count:12}
+  const second={cell_x:3,cell_y:4,node_id:43,node_revision:6,asset_id:33,photo_count:5}
+  const cells=[
+    {latitude:31,longitude:119,count:12,selection:first},
+    {latitude:32,longitude:120,count:5,selection:second},
+  ]
+  assert.equal(f.host.replaceAuthorizedCells(cells),true)
+  assert.equal(await f.host.beginAuthorizedInlineSession(new AbortController().signal),true)
+  assert.equal(f.map.labels.length,2)
+  const projections=f.projected.length
+  assert.equal(f.host.setPhotoCoverSelections([first]),true)
+  assert.equal(f.map.labels.length,1)
+  assert.match(f.map.labels[0].text,/5张/,
+    'uncovered Owner location keeps its genuine count and click target')
+  f.map.labels[0].trigger()
+  assert.deepEqual(f.clicks,[second])
+  assert.equal(f.projected.length,projections,
+    'cosmetic suppression must not clear and re-publish the React photo cover')
+  assert.equal(f.host.setPhotoCoverSelections([{...first}]),false)
+  assert.equal(f.host.setPhotoCoverSelections([first,first]),false)
+  assert.equal(f.map.labels.length,1,'invalid or duplicate selection cannot hide another Cell')
+  assert.equal(f.host.setPhotoCoverSelections([]),true)
+  assert.equal(f.map.labels.length,2,'React cover removed: native fallback restored')
+  assert.equal(f.host.setPhotoCoverSelections([first]),true)
+  f.map.fire('movestart')
+  assert.equal(f.map.labels.length,0,'pan immediately clears obsolete cells')
+  assert.equal(f.host.setPhotoCoverSelections([first]),false)
+  assert.equal(f.host.replaceAuthorizedCells([cells[0]]),true)
+  assert.equal(f.map.labels.length,1,'fresh Owner receipt resets suppression')
+  assert.equal(f.host.setPhotoCoverSelections([first]),true)
+  assert.equal(f.map.labels.length,0)
+  f.host.dispose()
+  assert.equal(f.host.setPhotoCoverSelections([]),false)
+})

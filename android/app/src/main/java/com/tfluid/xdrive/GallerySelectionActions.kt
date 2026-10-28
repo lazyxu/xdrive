@@ -12,6 +12,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.tfluid.xdrive.core.GalleryAlbum
+import com.tfluid.xdrive.core.GalleryAsset
 import com.tfluid.xdrive.core.parseGalleryTagInput
 
 /** Same compact iOS PWA selection menu: only actual current-Owner actions.
@@ -33,6 +34,7 @@ internal fun GallerySelectionActions(state: DriveState, controller: DriveControl
     var reviewOpen by remember { mutableStateOf(false) }
     var albumsOpen by remember { mutableStateOf(false) }
     var moreOpen by remember { mutableStateOf(false) }
+    var removeMember by remember { mutableStateOf<GalleryAsset?>(null) }
     var albumQuery by remember { mutableStateOf("") }
     var albumID by remember { mutableStateOf("") }
     var albumSelectionIdentity by remember { mutableStateOf<List<Pair<Long, Long>>>(emptyList()) }
@@ -41,6 +43,11 @@ internal fun GallerySelectionActions(state: DriveState, controller: DriveControl
     val enabled = selected.isNotEmpty() && !state.loading &&
         !uncertain && state.error == null
     val allFavorite = selected.isNotEmpty() && selected.all { it.favorite == true }
+    val currentAlbum = state.gallerySelectedAlbum
+    val canRemoveMember = currentAlbum?.kind == "manual" &&
+        currentAlbum.itemCount > 0 && currentAlbum.revision > 0 &&
+        selected.size == 1 && state.galleryLoaded &&
+        state.galleryItems.any { it == selected.single() }
     val selectionChanged = albumsOpen &&
         albumSelectionIdentity != selected.map { it.node.id to it.node.revision }
     val manualAlbums = galleryManualAlbumChoices(state.galleryAlbums, "")
@@ -125,10 +132,62 @@ internal fun GallerySelectionActions(state: DriveState, controller: DriveControl
                                 modifier = Modifier.heightIn(min = 48.dp)
                                     .testTag("gallery-selection-tags"),
                             )
+                            if (canRemoveMember) DropdownMenuItem(
+                                text = { Text("设为相册封面") },
+                                onClick = {
+                                    moreOpen = false
+                                    controller.setGallerySelectedManualAlbumCover(selected.single())
+                                },
+                                modifier = Modifier.heightIn(min = 48.dp)
+                                    .testTag("gallery-selection-set-album-cover"),
+                            )
+                            if (canRemoveMember) DropdownMenuItem(
+                                text = { Text("从相册移除") },
+                                onClick = {
+                                    moreOpen = false
+                                    removeMember = selected.single()
+                                },
+                                modifier = Modifier.heightIn(min = 48.dp)
+                                    .testTag("gallery-selection-remove-album-member"),
+                            )
                         }
                     }
                 }
             }
+        }
+    }
+    removeMember?.let { member ->
+        if (!uncertain) {
+            val canConfirm = enabled && canRemoveMember &&
+                state.gallerySelectedItems == listOf(member)
+            AlertDialog(
+                onDismissRequest = { if (!state.loading) removeMember = null },
+                modifier = Modifier.testTag("gallery-remove-album-member-dialog"),
+                title = { Text("从相册移除？") },
+                text = {
+                    Text("仅将「${member.node.name}」从当前手动相册中移除，不会删除原始照片或视频。")
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            if (canConfirm) {
+                                removeMember = null
+                                controller.removeGallerySelectedAlbumMember(member)
+                            }
+                        },
+                        enabled = canConfirm,
+                        modifier = Modifier.heightIn(min = 48.dp)
+                            .testTag("gallery-remove-album-member-confirm"),
+                    ) { Text("移出相册") }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = { removeMember = null }, enabled = !state.loading,
+                        modifier = Modifier.heightIn(min = 48.dp)
+                            .testTag("gallery-remove-album-member-cancel"),
+                    ) { Text("取消") }
+                },
+            )
         }
     }
     if (tagsOpen && !uncertain) AlertDialog(

@@ -22,6 +22,7 @@ const childOrigin = 'https://map-isolated.example.org:' + location.port
 const genuineGin = (window as any).__P04_REAL_GIN === true
 const darkMapAppearance = new URLSearchParams(location.search).get('ui_scheme') === 'dark'
 const darkMapTheme = createTheme({palette:{mode:'dark'}})
+const lightMapTheme = createTheme({palette:{mode:'light'}})
 const fullGalleryPage = new URLSearchParams(location.search).get('full_gallery') === '1'
 const fullGalleryDirectPhoto = new URLSearchParams(location.search).get('full_gallery_direct') === '1'
 const favoritesMapEntry = new URLSearchParams(location.search).get('start_favorites') === '1'
@@ -42,6 +43,8 @@ const fullDocumentHandoff = genuineGin &&
   new URLSearchParams(location.search).get('handoff_doc') === '1'
 const combinedAlbumHandoff = fullDocumentHandoff &&
   new URLSearchParams(location.search).get('handoff_combo') === '1'
+const compactMapAppearance = fullDocumentHandoff &&
+  new URLSearchParams(location.search).get('ios_compact') === '1'
 const initialHandoff = fullDocumentHandoff
   ? xDriveTakeMapScopeHandoffFromURL(window) : {state:'none' as const}
 if(fullDocumentHandoff)xDriveRestoreMapReferrerAfterScrub(window)
@@ -526,6 +529,7 @@ const postAuthenticatedMapHandoff=async (
  * Parent and Web startup scrubber, backed by actual Gin/PostgreSQL one-use
  * handoff. A pending, revoked or reused nonce never mounts either SDK host. */
 function FullDocumentHandoffMap(){
+  const [closed,setClosed]=useState(false)
   const [snapshot,setSnapshot]=useState<FullDocumentMapState>(()=>
     initialHandoff.state==='none'
       ? {phase:'ready',scope:combinedAlbumHandoff?combinedFamilyScope:freshFavoritesScope}
@@ -555,6 +559,7 @@ function FullDocumentHandoffMap(){
     })
     return()=>{mounted=false}
   },[])
+  if(closed) return <main data-xdrive-ios-map-closed="1">Returned to Owner Gallery</main>
   if(snapshot.phase!=='ready')
     return <main data-xdrive-map-handoff-denied={snapshot.phase==='denied'?'1':undefined}
       data-xdrive-map-handoff-pending={snapshot.phase==='pending'?'1':undefined}>
@@ -562,6 +567,8 @@ function FullDocumentHandoffMap(){
         'Validating authenticated map handoff'}
     </main>
   return <XDriveMediaGalleryPlacesMap
+    compact={compactMapAppearance}
+    onCloseMap={compactMapAppearance ? ()=>setClosed(true) : undefined}
     places={[]} totalCount={null}
     diagnosticScope="p04-authenticated-full-document"
     listBaiduNativeCells={listOwnerCells}
@@ -589,7 +596,12 @@ function FullDocumentHandoffMap(){
     onNativeCameraChange={onCamera} onNativeCameraClear={()=>{}}/>
 }
 createRoot(document.getElementById('root')!).render(
-  fullDocumentHandoff ? <FullDocumentHandoffMap /> :
+  fullDocumentHandoff ? (
+    compactMapAppearance ?
+      <ThemeProvider theme={darkMapAppearance ? darkMapTheme : lightMapTheme}>
+        <FullDocumentHandoffMap/>
+      </ThemeProvider> : <FullDocumentHandoffMap/>
+  ) :
   fullGalleryPage ? <FullGalleryPage /> :
     darkMapAppearance ? <ThemeProvider theme={darkMapTheme}><TestApp /></ThemeProvider> :
     <TestApp />)

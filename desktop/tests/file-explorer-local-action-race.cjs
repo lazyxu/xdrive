@@ -138,11 +138,13 @@ test('Desktop FileExplorer same-tick file downloads are synchronously single-fli
     actionBusyRef,
     actionGenerationRef,
     setActionBusy,
+    isCurrentFilesOwner: () => true,
   })
   const isActionBusyCurrent = extractArrowFunction('isActionBusyCurrent', {
     useCallback: (callback) => callback,
     actionBusyRef,
     actionGenerationRef,
+    isCurrentFilesOwner: () => true,
   })
   const finishActionBusy = extractArrowFunction('finishActionBusy', {
     useCallback: (callback) => callback,
@@ -193,11 +195,13 @@ test('Desktop FileExplorer stale download completion cannot clear a newer accoun
     actionBusyRef,
     actionGenerationRef,
     setActionBusy,
+    isCurrentFilesOwner: () => true,
   })
   const isActionBusyCurrent = extractArrowFunction('isActionBusyCurrent', {
     useCallback: (callback) => callback,
     actionBusyRef,
     actionGenerationRef,
+    isCurrentFilesOwner: () => true,
   })
   const finishActionBusy = extractArrowFunction('finishActionBusy', {
     useCallback: (callback) => callback,
@@ -286,11 +290,13 @@ test('Desktop FileExplorer unmount invalidates pending local action completion',
     actionBusyRef,
     actionGenerationRef,
     setActionBusy,
+    isCurrentFilesOwner: () => true,
   })
   const isActionBusyCurrent = extractArrowFunction('isActionBusyCurrent', {
     useCallback: (callback) => callback,
     actionBusyRef,
     actionGenerationRef,
+    isCurrentFilesOwner: () => true,
   })
   const finishActionBusy = extractArrowFunction('finishActionBusy', {
     useCallback: (callback) => callback,

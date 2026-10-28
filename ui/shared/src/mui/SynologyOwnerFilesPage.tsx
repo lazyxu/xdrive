@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Box, Stack, Typography } from '@mui/material'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
@@ -6,6 +6,9 @@ import type {
   XDriveSynologyBackupLocalClient, XDriveSynologyOwnerFileNode,
 } from '../synology-backup-adapter'
 import { XDriveFileExplorer } from './FileExplorer'
+import type { XDriveFileExplorerUnavailableActions } from './FileExplorer'
+import { useXDriveFileExplorerCursorDirectory } from './FileExplorerCursorDirectoryController'
+import type { XDriveFileExplorerCursorPort } from './FileExplorerCursorDirectoryController'
 import { XDriveFileQuickLookDialog } from './FileQuickLookDialog'
 import { xDriveFileSupportsTextPreview } from '../file-preview'
 import { xDriveFileSupportsThumbnail } from './FileExplorerItemPresentation'
@@ -65,25 +68,34 @@ function itemForExplorer(node: XDriveSynologyOwnerFileNode): XDriveFileExplorerI
  */
 export function XDriveSynologyOwnerFilesPage({
   client,
-}: { client: XDriveSynologyBackupLocalClient }) {
-  const [crumbs, setCrumbs] = useState<XDriveFileExplorerCrumb[]>([])
-  const [items, setItems] = useState<XDriveSynologyOwnerFileNode[]>([])
-  const [sort, setSort] = useState<XDriveFileExplorerSort>({ key: 'name', direction: 'asc' })
-  const [loadingRoot, setLoadingRoot] = useState(true)
-  const [rootError, setRootError] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [verified, setVerified] = useState(false)
-  const [verifiedScopeKey, setVerifiedScopeKey] = useState('')
-  const [error, setError] = useState('')
+  unavailableActions,
+}: { client: XDriveSynologyBackupLocalClient; unavailableActions?: XDriveFileExplorerUnavailableActions }) {
+  // One Host-neutral, scoped cursor Controller owns root and directory reads.
+  // The DSM adapter supplies only its real authenticated Owner CGI methods.
+  const ownerReadPort = useMemo<XDriveFileExplorerCursorPort<
+    XDriveSynologyOwnerFileNode, XDriveFileExplorerSort
+  >>(() => ({
+    readRoot: (signal) => client.ownerFilesRoot(signal),
+    readPage: (parentID, limit, sort, cursor, signal) =>
+      client.ownerFilesPage(parentID, limit, sort.key, sort.direction, cursor, signal),
+  }), [client])
+  const {
+    crumbs, setCrumbs, items, itemsRef, sort, setSort,
+    loadingRoot, rootError, loading, error, paging, hasMore,
+    rootRevision, currentScopeKey, currentScopeVerified, isCurrentOwner,
+    loadMore, refreshAuthenticatedRoot,
+  } = useXDriveFileExplorerCursorDirectory({
+    host: client,
+    port: ownerReadPort,
+    initialSort: { key: 'name', direction: 'asc' },
+    scopeKeyFor: xDriveSynologyOwnerFilesScopeKey,
+    limit: pageSize,
+  })
   const [notice, setNotice] = useState('')
   const [preview, setPreview] = useState<{
     scopeKey: string; rootRevision: number; client: XDriveSynologyBackupLocalClient
     item: XDriveFileExplorerItem; sessionIDs?: (string | number)[]
   } | null>(null)
-  const [paging, setPaging] = useState(false)
-  const [hasMore, setHasMore] = useState(false)
-  const [nextCursor, setNextCursor] = useState('')
-  const [rootRevision, setRootRevision] = useState(0)
   const [download, setDownload] = useState<{ name: string; loaded: number; total: number } | null>(null)
   const [verifiedDownload, setVerifiedDownload] = useState<{
     filename: string; url: string; scopeKey: string
@@ -92,32 +104,6 @@ export function XDriveSynologyOwnerFilesPage({
 
   const downloadAbort = useRef<AbortController | null>(null)
   const verifiedDownloadURL = useRef<string | null>(null)
-  const pageEpoch = useRef(0)
-  const pendingPage = useRef<AbortController | null>(null)
-  const pagingActive = useRef(false)
-  const itemsRef = useRef<XDriveSynologyOwnerFileNode[]>([])
-  const verifiedOwnerRef = useRef<{
-    client: XDriveSynologyBackupLocalClient; rootRevision: number
-  } | null>(null)
-
-  // A folder/sort switch renders before its request effect runs. Never hand
-  // previous-owner/folder rows to the canonical FileExplorer during that gap.
-  const currentScopeKey = xDriveSynologyOwnerFilesScopeKey(crumbs, sort.key, sort.direction)
-  const currentScopeVerified = verified && verifiedScopeKey === currentScopeKey &&
-    verifiedOwnerRef.current?.client === client && verifiedOwnerRef.current.rootRevision === rootRevision
-  const ownerRef = useRef({ client, rootRevision, scopeKey: currentScopeKey })
-  if (ownerRef.current.client !== client || ownerRef.current.rootRevision !== rootRevision ||
-      ownerRef.current.scopeKey !== currentScopeKey) {
-    ownerRef.current = { client, rootRevision, scopeKey: currentScopeKey }
-  }
-  const owner = ownerRef.current
-  const mountedOwnerRef = useRef<typeof owner | null>(owner)
-  useLayoutEffect(() => {
-    mountedOwnerRef.current = owner
-    return () => { if (mountedOwnerRef.current === owner) mountedOwnerRef.current = null }
-  }, [owner])
-  const isCurrentOwner = useCallback(() =>
-    ownerRef.current === owner && mountedOwnerRef.current === owner, [owner])
   const displayedItems = useMemo(
     () => currentScopeVerified ? items.map(itemForExplorer) : [],
     [items, currentScopeVerified],
@@ -291,112 +277,18 @@ export function XDriveSynologyOwnerFilesPage({
     return xDriveSynologyLoadBoundedMediaPreview(client, item, signal, onProgress)
   }, [client])
 
+  // Unavailable/obsolete per-directory messages must not survive a scope switch.
   useEffect(() => {
-    let active = true
-    const controller = new AbortController()
-    setLoadingRoot(true)
-    setRootError('')
-    setCrumbs([])
-    void client.ownerFilesRoot(controller.signal).then(root => {
-      if (active) setCrumbs([{ id: root.id, name: root.name }])
-    }).catch(() => {
-      if (active) {
-        setLoading(false)
-        setRootError('无法通过 Agent 当前 xDrive Server 账号读取云端根目录；未确认任何文件。')
-      }
-    }).finally(() => {
-      if (active) setLoadingRoot(false)
-    })
-    return () => { active = false; controller.abort() }
-  }, [client, rootRevision])
-
-  useEffect(() => {
-    if (crumbs.length === 0) return
-    const epoch = ++pageEpoch.current
-    pendingPage.current?.abort()
-    const controller = new AbortController()
-    pendingPage.current = controller
-    pagingActive.current = false
-    itemsRef.current = []
-    verifiedOwnerRef.current = null
-    setItems([])
-    setHasMore(false)
-    setNextCursor('')
-    setPaging(false)
-    setVerified(false)
-    setVerifiedScopeKey('')
-    setError('')
     setNotice('')
-    setLoading(true)
-    const parent = crumbs[crumbs.length - 1].id
-    if (typeof parent !== 'number') return
-    void client.ownerFilesPage(parent, pageSize, sort.key, sort.direction, '',
-      controller.signal).then(page => {
-      if (controller.signal.aborted || pageEpoch.current !== epoch) return
-      itemsRef.current = page.items
-      setItems(page.items)
-      setNextCursor(page.next_cursor ?? '')
-      setHasMore(page.has_more)
-      verifiedOwnerRef.current = { client, rootRevision }
-      setVerifiedScopeKey(currentScopeKey)
-      setVerified(true)
-    }).catch(() => {
-      if (controller.signal.aborted || pageEpoch.current !== epoch) return
-      setError('该目录读取失败或 Server 会话已失效；不会显示未验证的旧账号文件。')
-    }).finally(() => {
-      if (!controller.signal.aborted && pageEpoch.current === epoch) setLoading(false)
-    })
-    return () => {
-      controller.abort()
-      pageEpoch.current++
-      pagingActive.current = false
-    }
-  }, [client, crumbs, sort.key, sort.direction, currentScopeKey, rootRevision])
-
-  const loadMore = useCallback(() => {
-    const parent = crumbs[crumbs.length - 1]?.id
-    if (typeof parent !== 'number' || !currentScopeVerified || !hasMore ||
-      nextCursor.length === 0 || pagingActive.current || loading) return
-    const epoch = pageEpoch.current
-    const cursor = nextCursor
-    const controller = new AbortController()
-    pendingPage.current?.abort()
-    pendingPage.current = controller
-    pagingActive.current = true
-    setPaging(true)
-    setError('')
-    void client.ownerFilesPage(parent, pageSize, sort.key, sort.direction, cursor,
-      controller.signal).then(page => {
-      if (controller.signal.aborted || pageEpoch.current !== epoch) return
-      const seen = new Set(itemsRef.current.map(node => node.id))
-      if (page.items.some(node => seen.has(node.id))) {
-        setError('Server 返回了重复文件，已保留先前核实的结果；请刷新目录。')
-        return
-      }
-      const updated = [...itemsRef.current, ...page.items]
-      itemsRef.current = updated
-      setItems(updated)
-      setHasMore(page.has_more)
-      setNextCursor(page.next_cursor ?? '')
-    }).catch(() => {
-      if (!controller.signal.aborted && pageEpoch.current === epoch) {
-        setError('继续加载失败，已保留核实的文件；可重试。')
-      }
-    }).finally(() => {
-      if (!controller.signal.aborted && pageEpoch.current === epoch) {
-        pagingActive.current = false
-        setPaging(false)
-      }
-    })
-  }, [client, crumbs, hasMore, nextCursor, loading, currentScopeVerified, sort.key, sort.direction])
+  }, [client, rootRevision, currentScopeKey])
 
   // DSM and Server account identity are not interchangeable. Returning to a
   // background tab or pressing Refresh starts with a newly authenticated root,
   // rather than retaining breadcrumbs or file names from a previous Owner.
   const refreshAuthenticatedOwner = useCallback(() => {
-    mountedOwnerRef.current = null
-    verifiedOwnerRef.current = null
-    // Do not carry an in-progress Owner download into another login/session.
+    refreshAuthenticatedRoot()
+    // Downloads remain bound to the old Owner/revision until explicitly
+    // revoked; the shared cursor Controller never writes or handles bytes.
     downloadAbort.current?.abort()
     downloadAbort.current = null
     setDownload(null)
@@ -405,25 +297,9 @@ export function XDriveSynologyOwnerFilesPage({
       verifiedDownloadURL.current = null
     }
     setVerifiedDownload(null)
-    pendingPage.current?.abort()
-    pageEpoch.current++
-    pagingActive.current = false
-    itemsRef.current = []
-    setItems([])
-    setCrumbs([])
-    setVerified(false)
-    setVerifiedScopeKey('')
-    setHasMore(false)
-    setNextCursor('')
-    setPaging(false)
     setNotice('')
     setPreview(null)
-    setError('')
-    setRootError('')
-    setLoading(true)
-    setLoadingRoot(true)
-    setRootRevision(epoch => epoch + 1)
-  }, [])
+  }, [refreshAuthenticatedRoot])
 
   // An explicit verified Owner download continues while browsing another
   // directory or changing sort. Only account/client replacement, root-session
@@ -520,7 +396,8 @@ export function XDriveSynologyOwnerFilesPage({
               crumbs={crumbs}
               loading={loading}
               emptyReadState={currentScopeVerified ? 'ready' : error ? 'error' : 'unverified'}
-              searchEnabled={false}
+              searchEnabled
+              unavailableActions={unavailableActions}
               groupingEnabled={false}
               externallySorted
               forceVirtualization
@@ -543,8 +420,16 @@ export function XDriveSynologyOwnerFilesPage({
               }}
               onOpenItem={item => {
                 if (item.kind === 'dir') {
+                  // The Host cursor port accepts only validated numeric Node
+                  // IDs. FileExplorer's generic ID also allows strings from
+                  // other sources; those must never become Owner CGI parents.
+                  if (typeof item.id !== 'number' || !Number.isSafeInteger(item.id) || item.id <= 0) {
+                    setNotice('目录 ID 无效，未执行任何 Owner 文件读取。')
+                    return
+                  }
+                  const folderID = item.id
                   setPreview(null)
-                  setCrumbs(current => [...current, { id: item.id, name: item.name }])
+                  setCrumbs(current => [...current, { id: folderID, name: item.name }])
                 } else {
                   openFilePreview(item)
                 }
