@@ -122,12 +122,16 @@ test('actual Web HTTP quota+stats GETs abort stale sockets without affecting new
     })
     const stale = new AbortController()
     const result = source.load(stale.signal)
+    // Attach the expected-rejection handler immediately: abort can reject a
+    // real fetch before the successor GET settles, and Node treats an
+    // otherwise delayed assertion as an unhandled promise rejection.
+    const staleRejected = assert.rejects(result, error => error?.name === 'AbortError')
     await until(() => state.pending === 2, 'two old storage GETs accepted')
     stale.abort()
     old = false
     const next = await source.load(new AbortController().signal)
     assert.equal(next.quota.quota_bytes, 300)
-    await assert.rejects(result, error => error?.name === 'AbortError')
+    await staleRejected
     await until(() => state.closed === 2, 'old connections closed')
     assert.equal(state.delayedBytes, 0, 'no stale response bytes after abort')
   } finally {
