@@ -4390,8 +4390,10 @@ export class AgentIPCClient {
   cloudAdminAuditRange(query: AgentAdminAuditRangeQuery, signal?: AbortSignal) {
     return this.request<AgentAdminAuditRange>('POST', '/v1/cloud/admin-audit/range', query, 20_000, signal)
   }
-  cloudAdminUsers() {
-    return this.request<AgentAdminUser[]>('GET', '/v1/cloud/admin-users')
+  cloudAdminUsers(signal?: AbortSignal) {
+    // Only this administrator listing GET may be discarded on navigation.
+    return this.request<AgentAdminUser[]>('GET', '/v1/cloud/admin-users',
+      undefined, 10_000, signal)
   }
   cloudAdminCreateUser(input: AgentAdminCreateUserInput) {
     return this.request<AgentAdminUser>('POST', '/v1/cloud/admin-users', input)
