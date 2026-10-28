@@ -670,6 +670,16 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 						}
 					}
 				}
+				// Every reset must restore the same three Owner album members,
+				// without reviving any previously issued one-use map ticket.
+				var members int64
+				if err := tx.Model(&meta.PhotoCollectionAsset{}).
+					Where("collection_id = ?", family.ID).Count(&members).Error; err != nil {
+					return err
+				}
+				if members != 3 {
+					return fmt.Errorf("restored Album membership count mismatch")
+				}
 				if err := tx.Model(&meta.User{}).Where("id = ?", owner.ID).
 					Update("session_version", uint64(1)).Error; err != nil {
 					return err
