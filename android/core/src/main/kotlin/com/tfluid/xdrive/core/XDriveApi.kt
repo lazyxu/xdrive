@@ -405,6 +405,16 @@ interface XDriveService {
         offset: Int = 0, sortBy: String = "captured", sortDir: String = "desc",
     ): GalleryPage =
         throw ApiException(501, "Native Owner BD09 cell Gallery Range unavailable")
+    /** Exact signed Owner BD09 camera rectangle → the SAME sparse Gallery
+     * Range DTO as canonical /media/items. The Server alone verifies signed
+     * release, current map epoch and each member's current Node/source GPS.
+     * No WGS84 conversion, photo-consent overrides or owner parameters. */
+    suspend fun galleryBd09ViewportPage(
+        accessToken: String, bounds: OwnerBd09Bounds, offset: Int = 0,
+        sortBy: String = "captured", sortDir: String = "desc",
+    ): GalleryPage =
+        throw ApiException(501, "Native Owner BD09 viewport Gallery Range unavailable")
+
     /** Bounded 64-point Owner map overview, only read-only GPS metadata. */
     suspend fun placesMapOverview(
         accessToken: String, bounds: OwnerMapBounds, detail: Boolean = false,
@@ -1271,6 +1281,28 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
             accessToken, query = query)
         return parseGalleryRange(result, offset, false, "", sortBy, sortDir,
             maxTotalCount = cell.photoCount)
+    }
+
+    /** Read a signed BD09 camera viewport using the existing original Owner
+     * Gallery media range; never silently widen to the global /media/items. */
+    override suspend fun galleryBd09ViewportPage(
+        accessToken: String, bounds: OwnerBd09Bounds,
+        offset: Int, sortBy: String, sortDir: String,
+    ): GalleryPage {
+        require(validToken(accessToken) && bounds.valid() &&
+            offset in 0..10_000_000 &&
+            sortBy in setOf("captured", "added") &&
+            sortDir in setOf("asc", "desc")) { "Invalid BD09 Gallery viewport" }
+        val response = request("media/places/baidu-jsapi/viewport-items",
+            accessToken, query = mapOf(
+                "west" to bounds.west.toString(),
+                "south" to bounds.south.toString(),
+                "east" to bounds.east.toString(),
+                "north" to bounds.north.toString(),
+                "limit" to "60", "offset" to offset.toString(),
+                "range" to "true", "sort_by" to sortBy, "sort_dir" to sortDir,
+            ))
+        return parseGalleryRange(response, offset, false, "", sortBy, sortDir)
     }
 
     override suspend fun baiduNativeMapCells(
