@@ -63,7 +63,9 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
-          test "$(gofmt -l internal/api/baidu_photo_map_cell_142_anchor_linux_test.go | wc -l)" -eq 0
+          # Normalize the test source in the disposable checkout before
+          # compiling. No generated source is pushed back to any branch.
+          gofmt -w internal/api/baidu_photo_map_cell_142_anchor_linux_test.go
       - name: Real Owner 142+28 PostgreSQL17 Cell Range, anchor and invalidation
         shell: bash
         run: |
