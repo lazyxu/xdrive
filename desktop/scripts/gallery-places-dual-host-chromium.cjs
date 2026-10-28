@@ -899,10 +899,18 @@ async function testMode(browser,mode,port){
     await mapCover.click()
     await page.locator('[data-xdrive-places-photo-drawer-items] button').first().waitFor()
     const handle=page.locator('[data-xdrive-places-photo-drawer-handle]')
+    // Gallery modal opens expanded by default, unlike retired small sheet.
+    record(mode+': signed Owner Gallery dialog opens expanded by default',
+      await handle.getAttribute('aria-expanded')==='true')
+    await handle.click()
+    await page.waitForFunction(()=>document.querySelector(
+      '[data-xdrive-places-photo-drawer-handle]')?.getAttribute('aria-expanded')==='false')
+    record(mode+': Gallery dialog handle collapses on first pointer click',
+      await handle.getAttribute('aria-expanded')==='false')
     await handle.click()
     await page.waitForFunction(()=>document.querySelector(
       '[data-xdrive-places-photo-drawer-handle]')?.getAttribute('aria-expanded')==='true')
-    record(mode+': semantic shared photo sheet handle opens by pointer click',
+    record(mode+': Gallery dialog handle expands again by pointer click',
       await handle.getAttribute('aria-expanded')==='true')
     // A rotation changes the SDK camera's 8x8 Cell authority. The old
     // React drawer MUST be detached first. After a NEW signed Owner /cells
