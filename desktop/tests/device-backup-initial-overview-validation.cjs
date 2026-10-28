@@ -80,7 +80,7 @@ test('initial read rejects private fields, malformed pages and unsafe nested rec
 
 test('shared Web/Mobile Web/Desktop checks initial data before React state commit', () => {
   const view = fs.readFileSync(path.join(root, 'ui/shared/src/mui/DeviceBackupPage.tsx'), 'utf8')
-  const request = view.indexOf('void source.list().then((result) => {')
+  const request = view.indexOf('void source.list(controller.signal).then((result) => {')
   const guard = view.indexOf('if (!active) return', request)
   const check = view.indexOf('validateXDriveDeviceBackupInitialOverview(result)', request)
   const commit = view.indexOf('setSnapshot({ source, overview: result, loading: false, failed: false })', request)
