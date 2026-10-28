@@ -3976,7 +3976,7 @@ export class AgentIPCClient {
     order?: 'asc' | 'desc'
     name?: string
     nameInsensitive?: string
-  } = {}) {
+  } = {}, signal?: AbortSignal) {
     const query = new URLSearchParams({
       parent_id: String(parentID),
       limit: String(Math.min(500, Math.max(1, Math.trunc(options.limit ?? 200)))),
@@ -3986,7 +3986,9 @@ export class AgentIPCClient {
     if (options.cursor?.trim()) query.set('cursor', options.cursor.trim())
     if (options.name) query.set('name', options.name)
     if (options.nameInsensitive) query.set('name_ci', options.nameInsensitive)
-    return this.request<AgentCloudChildrenPage>('GET', `/v1/cloud/children?${query.toString()}`)
+    return this.request<AgentCloudChildrenPage>(
+      'GET', `/v1/cloud/children?${query.toString()}`, undefined, 10_000, signal,
+    )
   }
 
   cloudChildrenRange(
@@ -4590,6 +4592,7 @@ export class AgentIPCClient {
     order: 'asc' | 'desc' = 'asc',
     filters: AgentCloudSearchFilters = {},
     grouping?: AgentFileExplorerGrouping,
+    signal?: AbortSignal,
   ) {
     const query = new URLSearchParams({
       q: queryText,
@@ -4605,6 +4608,7 @@ export class AgentIPCClient {
       `/v1/cloud/search?${query.toString()}`,
       undefined,
       filters.availability ? 130_000 : 45_000,
+      signal,
     )
   }
 

@@ -848,6 +848,7 @@ declare global {
         cloudChildrenPage: (
           parentID: number,
           options?: XDriveCloudFilesPageOptions,
+          requestID?: string,
         ) => Promise<DesktopResult<AgentCloudChildrenPage>>
         cloudChildrenRange: (
           parentID: number,
@@ -1060,6 +1061,7 @@ declare global {
           order?: 'asc' | 'desc',
           filters?: XDriveFileExplorerSearchFilters,
           grouping?: XDriveFileExplorerGrouping,
+          requestID?: string,
         ) => Promise<DesktopResult<AgentCloudSearchRange>>
         cloudQuota: () => Promise<DesktopResult<AgentCloudQuota>>
         getServerUpdate: () => Promise<DesktopResult<AgentServerUpdateState>>

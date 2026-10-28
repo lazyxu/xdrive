@@ -488,15 +488,20 @@ export default function DesktopFileExplorer({
     initialNavigationState: navigationState,
     navigationSessionStorageKey,
     onNavigationStateChange,
-    loadSearchRange: async (query, filters, searchGrouping, searchSort, offset, limit) => {
-      const result = await hostPort.browse.cloudSearchRange(
-        query,
-        offset,
-        limit,
-        searchSort.key,
-        searchSort.direction,
-        filters,
-        searchGrouping,
+    loadSearchRange: async (query, filters, searchGrouping, searchSort, offset, limit, signal) => {
+      // Shared Search already cancels superseded first pages and sparse
+      // viewport reads. Carry its signal into the real Main/Agent HTTP GET.
+      const result = await hostPort.requestViewport(signal, requestID =>
+        hostPort.browse.cloudSearchRange(
+          query,
+          offset,
+          limit,
+          searchSort.key,
+          searchSort.direction,
+          filters,
+          searchGrouping,
+          requestID,
+        ),
       )
       if (!result.ok) throw new Error(result.error.message)
       return {
@@ -657,14 +662,18 @@ export default function DesktopFileExplorer({
   const loadColumnPage = useCallback(async (
     parentID: string | number,
     cursor: string,
-    _signal: AbortSignal,
+    signal: AbortSignal,
   ) => {
-    const result = await hostPort.browse.cloudChildrenPage(Number(parentID), {
-      cursor: cursor || undefined,
-      limit: 200,
-      sort: 'name',
-      order: 'asc',
-    })
+    // Column A -> B also retires obsolete cursor reads. This is strictly
+    // a disposable GET, not an upload/download or file mutation.
+    const result = await hostPort.requestViewport(signal, requestID =>
+      hostPort.browse.cloudChildrenPage(Number(parentID), {
+        cursor: cursor || undefined,
+        limit: 200,
+        sort: 'name',
+        order: 'asc',
+      }, requestID),
+    )
     if (!result.ok) throw new Error(result.error.message)
     return {
       items: result.data.items.map((node) => xDriveProjectFileExplorerNode(node, '')),
