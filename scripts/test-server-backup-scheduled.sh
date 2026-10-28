@@ -20,8 +20,17 @@ if [[ "${1:-}" == backup && "${2:-}" == --output-dir ]]; then
   case "${XD_SCHEDULE_MOCK_MODE:-good}" in
     no_snapshot) exit 0 ;;
     wrong_path) printf '%s\n' "$XD_CONFIG_DIR/backups/incremental/snapshots/xdrive-backup-20990101T000000Z"; exit 0 ;;
+    old_path)
+      printf '%s\n' "$XD_CONFIG_DIR/backups/snapshots/xdrive-backup-$(date -u +%Y%m%dT%H%M%SZ)"
+      exit 0 ;;
+
   esac
   snap="$XD_CONFIG_DIR/backups/snapshots/xdrive-backup-$(date -u +%Y%m%dT%H%M%SZ)"
+  if [[ "${XD_SCHEDULE_MOCK_MODE:-}" == tampered ]]; then
+    snap="$XD_CONFIG_DIR/backups/snapshots/xdrive-backup-20990101T001000Z"
+  elif [[ "${XD_SCHEDULE_MOCK_MODE:-}" == database_only ]]; then
+    snap="$XD_CONFIG_DIR/backups/snapshots/xdrive-backup-20990101T002000Z"
+  fi
   mkdir -p "$snap"
   printf 'database dump\n' > "$snap/database.dump"
   printf 'verify receipt\n' > "$snap/verify.json"
@@ -88,7 +97,7 @@ expect_args backup --output-dir
 old_failed="$XD_CONFIG_DIR/backups/snapshots/xdrive-backup-19980101T000000Z"
 mkdir "$old_failed"
 touch -d '20 days ago' "$old_failed"
-for scenario in no_snapshot wrong_path tampered database_only; do
+for scenario in no_snapshot wrong_path old_path tampered database_only; do
   if XD_SCHEDULE_MOCK_MODE="$scenario" invoke >"$TMP/fail-$scenario.log" 2>&1; then
     echo "scheduled v1 retention accepted $scenario without a verified full snapshot" >&2; exit 1
   fi
