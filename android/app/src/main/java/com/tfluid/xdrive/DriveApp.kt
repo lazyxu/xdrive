@@ -24,6 +24,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.util.Locale
 import com.tfluid.xdrive.core.DriveNode
+import com.tfluid.xdrive.core.FileBrowseArrangement
 
 /** A root Files selection consumes Android Back before the Activity can exit. */
 internal fun shouldHandleFilesBack(state: DriveState, editOpen: Boolean, batchConfirmOpen: Boolean): Boolean =
@@ -354,6 +355,12 @@ internal fun AccountMenu(state: DriveState, controller: DriveController, checkUp
     fileView: FileViewMode? = null, onFileViewChange: (FileViewMode) -> Unit = {},
     onCreateFolder: (() -> Unit)? = null, onUpload: (() -> Unit)? = null) {
     var expanded by remember(state.screen) { mutableStateOf(false) }
+    var arrangeOpen by remember(state.screen, state.server, state.username) {
+        mutableStateOf(false)
+    }
+    var arrangeDraft by remember(state.screen, state.server, state.username) {
+        mutableStateOf(FileBrowseArrangement())
+    }
     Box {
         IconButton(onClick = { expanded = true }) { Icon(painterResource(R.drawable.xd_more_vert), "账户菜单") }
         DropdownMenu(expanded, onDismissRequest = { expanded = false }, containerColor = MaterialTheme.colorScheme.surface) {
@@ -408,6 +415,15 @@ internal fun AccountMenu(state: DriveState, controller: DriveController, checkUp
                     enabled = !state.loading && state.loaded,
                     modifier = Modifier.testTag("files-create-folder-action"),
                     onClick = { expanded = false; onCreateFolder() })
+                DropdownMenuItem(text = { Text("排序") },
+                    enabled = state.canNavigateFiles() && state.loaded &&
+                        !state.browseSelectionMode && state.error == null,
+                    modifier = Modifier.testTag("files-arrangement-open"),
+                    onClick = {
+                        expanded = false
+                        arrangeDraft = state.filesArrangement
+                        arrangeOpen = true
+                    })
                 DropdownMenuItem(text = { Text("图标") },
                     trailingIcon = { if (fileView == FileViewMode.GRID) Text("✓", color = MaterialTheme.colorScheme.primary) },
                     onClick = { expanded = false; onFileViewChange(FileViewMode.GRID) })
@@ -425,6 +441,59 @@ internal fun AccountMenu(state: DriveState, controller: DriveController, checkUp
             if (state.screen != Screen.CONNECT) DropdownMenuItem(text = { Text("更换服务器") }, leadingIcon = { Icon(painterResource(R.drawable.xd_settings), null) },
                 onClick = { expanded = false; controller.changeServer() })
         }
+    }
+    if (arrangeOpen && state.screen == Screen.FILES && fileView != null) {
+        AlertDialog(
+            onDismissRequest = { arrangeOpen = false },
+            modifier = Modifier.testTag("files-arrangement-dialog"),
+            title = { Text("排序") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("按服务器全目录排序，不只重排已加载文件。",
+                        style = MaterialTheme.typography.bodySmall)
+                    for ((sort, label) in listOf("name" to "名称",
+                        "updated" to "修改日期", "type" to "类型", "size" to "大小")) {
+                        TextButton(
+                            onClick = { arrangeDraft = arrangeDraft.copy(sort = sort) },
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                                .testTag("files-arrange-sort-$sort"),
+                        ) {
+                            Text(label, modifier = Modifier.weight(1f), textAlign = TextAlign.Start)
+                            if (arrangeDraft.sort == sort) Text("✓")
+                        }
+                    }
+                    TextButton(
+                        onClick = { arrangeDraft = arrangeDraft.copy(
+                            order = if (arrangeDraft.order == "asc") "desc" else "asc") },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                            .testTag("files-arrange-direction"),
+                    ) { Text("方向：" + if (arrangeDraft.order == "asc") "升序" else "降序") }
+                    TextButton(
+                        onClick = { arrangeDraft = arrangeDraft.copy(
+                            foldersFirst = !arrangeDraft.foldersFirst) },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                            .testTag("files-arrange-folders-first"),
+                    ) { Text("文件夹优先：" + if (arrangeDraft.foldersFirst) "开启" else "关闭") }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        arrangeOpen = false
+                        controller.changeFilesArrangement(arrangeDraft)
+                    },
+                    enabled = arrangeDraft != state.filesArrangement &&
+                        state.canNavigateFiles() && !state.browseSelectionMode &&
+                        state.loaded && state.error == null,
+                    modifier = Modifier.heightIn(min = 48.dp)
+                        .testTag("files-arrange-apply"),
+                ) { Text("应用") }
+            },
+            dismissButton = {
+                TextButton(onClick = { arrangeOpen = false },
+                    modifier = Modifier.heightIn(min = 48.dp)) { Text("取消") }
+            },
+        )
     }
 }
 
