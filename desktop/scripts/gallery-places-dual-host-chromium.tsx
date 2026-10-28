@@ -13,6 +13,7 @@ import { xDriveTakeMapScopeHandoffFromURL, xDriveRestoreMapReferrerAfterScrub } 
 import { xDriveRememberPlacesDrawerViewerReturn } from '../../ui/shared/src/media-gallery-places-photo-drawer'
 import { xDriveBaiduNativeCellRangeParams } from '../../ui/shared/src/media-gallery-baidu-jsapi4-cell-range'
 import { xDriveBaiduNativeViewportRangeParams } from '../../ui/shared/src/media-gallery-baidu-jsapi4-viewport-range'
+import { xDriveBaiduNativeCellsFilterParams } from '../../ui/shared/src/media-gallery-baidu-jsapi4-viewport-range'
 
 type Bounds = {coordinate_space:'bd09ll';west:number;east:number;south:number;north:number}
 type Scope = {albumKey:string;filters:{sort_by:'captured';sort_dir:'desc';favorite?:boolean}}
@@ -32,11 +33,15 @@ const realHEICMode = genuineGin &&
   new URLSearchParams(location.search).get('map_real_heic') === '1'
 const realLIVPMode = genuineGin &&
   new URLSearchParams(location.search).get('map_real_livp') === '1'
-const realImageOwnerAccount = realHEICMode?'heic':realLIVPMode?'livp':''
+const realImageOwnerAccount = realHEICMode?'heic':realLIVPMode?'livp':
+  genuineGin&&new URLSearchParams(location.search).get('handoff_foreign')==='1'
+    ? 'foreign' : ''
 // The genuine Web bootstrap must inspect and scrub the opaque one-use URL
 // before a React map, SDK loader or private Owner Cell can mount.
 const fullDocumentHandoff = genuineGin &&
   new URLSearchParams(location.search).get('handoff_doc') === '1'
+const combinedAlbumHandoff = fullDocumentHandoff &&
+  new URLSearchParams(location.search).get('handoff_combo') === '1'
 const initialHandoff = fullDocumentHandoff
   ? xDriveTakeMapScopeHandoffFromURL(window) : {state:'none' as const}
 if(fullDocumentHandoff)xDriveRestoreMapReferrerAfterScrub(window)
@@ -102,7 +107,9 @@ const pageFor = (bounds:Bounds, favorite:boolean) => {
 }
 const listOwnerCells=async(bounds:Bounds,signal:AbortSignal,filters:any,albumKey:string)=>{
   if(signal.aborted)throw Error('aborted')
-  if(albumKey!=='' || (filters?.favorite!==undefined && filters.favorite!==true))
+  if((albumKey!==''&&(!combinedAlbumHandoff||albumKey!=='manual:Family'))||
+    (combinedAlbumHandoff&&albumKey!=='manual:Family')||
+    (filters?.favorite!==undefined&&filters.favorite!==true))
     throw Error('unexpected Owner scope')
   const favorite=filters?.favorite===true
   if(testCellsFailure && !genuineGin && favorite && failFavoriteCellsOnce){
@@ -112,10 +119,17 @@ const listOwnerCells=async(bounds:Bounds,signal:AbortSignal,filters:any,albumKey
   }
   let data
   if(genuineGin){
-    const query=geometry(bounds)
-    query.set('sort_by','captured')
-    query.set('sort_dir','desc')
-    if(favorite)query.set('favorite','true')
+    // Only the opt-in combined-scope test serializes every reviewed filter
+    // through the SAME production Owner /cells adapter used by Web/PWA.
+    const query=combinedAlbumHandoff
+      ? xDriveBaiduNativeCellsFilterParams(bounds,filters,albumKey)
+      : geometry(bounds)
+    if(!query)throw Error('invalid combined Gallery PhotoScope')
+    if(!combinedAlbumHandoff){
+      query.set('sort_by','captured')
+      query.set('sort_dir','desc')
+      if(favorite)query.set('favorite','true')
+    }
     data=await ownerRequest('cells',query,signal)
   }else{
     // Same strictly shaped signed Owner /cells DTO with no derived pins
@@ -126,6 +140,7 @@ const listOwnerCells=async(bounds:Bounds,signal:AbortSignal,filters:any,albumKey
     }
   }
   probe.queries.push({favorite,albumKey,count:data.total_count,
+    filters:JSON.parse(JSON.stringify(filters??{})),
     bounds:JSON.parse(JSON.stringify(bounds))})
   return data
 }
@@ -485,6 +500,13 @@ type FullDocumentMapState =
 const freshFavoritesScope:XDriveBaiduMapPhotoScope={
   albumKey:'',filters:{sort_by:'captured',sort_dir:'desc',favorite:true},
 }
+const combinedFamilyScope:XDriveBaiduMapPhotoScope={
+  albumKey:'manual:Family',filters:{
+    sort_by:'added',sort_dir:'asc',favorite:true,asset_kind:'image',
+    captured_from:'2026-10-19',captured_to:'2026-10-22',
+    time_zone:'Asia/Tokyo',
+  },
+}
 const handoffAPI='/api/v1/media/places/baidu-jsapi/scope-handoff'
 const postAuthenticatedMapHandoff=async (
   suffix:string,payload:unknown,signal?:AbortSignal,
@@ -506,7 +528,7 @@ const postAuthenticatedMapHandoff=async (
 function FullDocumentHandoffMap(){
   const [snapshot,setSnapshot]=useState<FullDocumentMapState>(()=>
     initialHandoff.state==='none'
-      ? {phase:'ready',scope:freshFavoritesScope}
+      ? {phase:'ready',scope:combinedAlbumHandoff?combinedFamilyScope:freshFavoritesScope}
       : {phase:initialHandoff.state==='pending'?'pending':'denied'})
   const claimed=useRef(false)
   useEffect(()=>{
