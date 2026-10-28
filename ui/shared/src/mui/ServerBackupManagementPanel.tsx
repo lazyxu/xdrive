@@ -143,6 +143,8 @@ export function XDriveServerBackupManagementPanel({
   const integrity = page ? summarizeServerBackupIntegrity(page) : null
   const selectedComplete = selected?.state === 'complete'
   const selectedRestorable = selectedComplete && selected?.file_data_included !== false
+  const selectedDatabaseOnly = selectedComplete && selected?.format === 'v1' &&
+    selected.file_data_included === false
   const keep = Number(keepLast)
   const keepValid = Number.isInteger(keep) && keep >= 1 && keep <= 1000
   const canPrune = canPruneServerBackup(page, keep, verifyMode, prunePreview)
@@ -206,6 +208,7 @@ export function XDriveServerBackupManagementPanel({
     // change. Never submit a different or no-longer-restorable generation.
     if ('snapshot_id' in next && next.snapshot_id && (!selected || next.snapshot_id !== selected.id ||
       (next.action === 'restore' && !selectedRestorable) ||
+      (next.action === 'restore_database_only' && !selectedDatabaseOnly) ||
       (next.action === 'drill' && (selected.format !== 'v2' || !selectedRestorable)) ||
       ((next.action === 'delete' || next.action === 'delete_selected') &&
         !selectedComplete))) {
@@ -409,6 +412,18 @@ export function XDriveServerBackupManagementPanel({
                 expected: 'RESTORE ' + selected.id,
                 action: { action: 'restore', snapshot_id: selected.id, confirmation: 'RESTORE ' + selected.id },
               }) }}>恢复所选备份</XDriveActionButton>
+            <XDriveActionButton intent="warning"
+              disabled={disabled || !selectedDatabaseOnly}
+              onClick={() => { if (selectedDatabaseOnly && selected) ask({
+                title: '确认仅恢复数据库（保留现有文件）？',
+                description: '仅适用于明确标记为仅数据库的 v1 备份。宿主机将先创建恢复前安全备份、验证所选数据库归档并停用服务，随后替换 PostgreSQL 数据库；现有文件数据不删除、不从此快照还原。数据库与当前文件可能产生引用不一致，恢复后必须执行数据完整性验证，且可能需要人工修复。该操作会覆盖当前数据库修改并中断所有登录。',
+                expected: 'DATABASE ONLY RESTORE ' + selected.id,
+                action: {
+                  action: 'restore_database_only',
+                  snapshot_id: selected.id,
+                  confirmation: 'DATABASE ONLY RESTORE ' + selected.id,
+                },
+              }) }}>仅恢复 v1 数据库（保留文件）</XDriveActionButton>
             <XDriveActionButton intent="danger" disabled={disabled || !selectedComplete || selected?.format !== 'v1'}
               onClick={() => { if (selected) ask({
                 title: '确认删除旧版 v1 快照？',
