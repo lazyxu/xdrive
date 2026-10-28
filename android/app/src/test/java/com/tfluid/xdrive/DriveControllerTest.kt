@@ -376,6 +376,120 @@ class DriveControllerTest {
     }
 
 
+    @Test fun manualAlbumCustomAndAutoCoverUseRealOwnerAckAndList() = runTest {
+        val item = GalleryAsset(DriveNode(40, 1, "cover.jpg", "file", 44,
+            revision = 2), "image", hasThumbnail = true)
+        val initial = GalleryAlbum("manual:cover", "manual", "旅行", 1, 2, 0, 41)
+        val api = object : Service() {
+            var album = initial
+            var listReads = 0
+            var memberReads = 0
+            val updates = mutableListOf<Long>()
+            override suspend fun galleryAlbums(accessToken: String): List<GalleryAlbum> {
+                assertEquals("access", accessToken)
+                listReads++
+                return listOf(album)
+            }
+            override suspend fun galleryAlbumPage(
+                accessToken: String, albumId: String, offset: Int,
+                initialLatest: Boolean,
+            ): GalleryPage {
+                assertEquals(album.id, albumId)
+                memberReads++
+                return GalleryPage(listOf(item), 1, 0)
+            }
+            override suspend fun gallerySetManualAlbumCover(
+                accessToken: String, target: GalleryAlbum, nodeId: Long,
+            ): GalleryAlbum {
+                assertEquals("access", accessToken)
+                assertEquals(album, target)
+                updates += nodeId
+                album = target.copy(revision = target.revision + 1,
+                    coverNodeId = if (nodeId > 0) nodeId else item.node.id)
+                return album
+            }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.openGalleryCollections(); runCurrent()
+        c.openGalleryAlbum(initial); runCurrent()
+        c.setGallerySelectionMode(true)
+        c.toggleGallerySelection(item)
+        c.setGallerySelectedManualAlbumCover(item); runCurrent()
+        assertEquals(listOf(40L), api.updates)
+        assertEquals(api.album, c.state.value.gallerySelectedAlbum)
+        assertFalse(c.state.value.gallerySelectionMode)
+        assertFalse(c.state.value.galleryMetadataWriteAttempted)
+        assertFalse(c.state.value.galleryAlbumsLoaded)
+        assertEquals(listOf(item), c.state.value.galleryItems)
+        c.closeGalleryAlbum(); runCurrent()
+        assertEquals(2, api.listReads)
+        assertEquals(listOf(api.album), c.state.value.galleryAlbums)
+        val custom = api.album
+        c.restoreGalleryAutomaticAlbumCover(custom); runCurrent()
+        assertEquals(listOf(40L, 0L), api.updates)
+        assertEquals(3, api.listReads)
+        assertEquals(custom.revision + 1, api.album.revision)
+        // Go may return the same visible auto cover as the custom one.
+        assertEquals(item.node.id, api.album.coverNodeId)
+        assertEquals(listOf(api.album), c.state.value.galleryAlbums)
+        assertFalse(c.state.value.galleryAlbumEditAttempted)
+        assertFalse(c.state.value.galleryAlbumEditCommittedNeedsRefresh)
+        c.close()
+    }
+
+    @Test fun uncertainManualAlbumCoverAckOnlyReconcilesOwnerGets() = runTest {
+        val item = GalleryAsset(DriveNode(40, 1, "cover.jpg", "file", 44,
+            revision = 2), "image", hasThumbnail = true)
+        val initial = GalleryAlbum("manual:cover", "manual", "旅行", 1, 2, 0, 41)
+        val api = object : Service() {
+            var album = initial
+            var puts = 0
+            var listReads = 0
+            var memberReads = 0
+            override suspend fun galleryAlbums(accessToken: String): List<GalleryAlbum> {
+                listReads++
+                return listOf(album)
+            }
+            override suspend fun galleryAlbumPage(
+                accessToken: String, albumId: String, offset: Int,
+                initialLatest: Boolean,
+            ): GalleryPage {
+                memberReads++
+                return GalleryPage(listOf(item), 1, 0)
+            }
+            override suspend fun gallerySetManualAlbumCover(
+                accessToken: String, target: GalleryAlbum, nodeId: Long,
+            ): GalleryAlbum {
+                puts++
+                album = target.copy(revision = target.revision + 1,
+                    coverNodeId = nodeId)
+                throw ApiException(503, "Owner cover PUT ACK lost")
+            }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.openGalleryCollections(); runCurrent()
+        c.openGalleryAlbum(initial); runCurrent()
+        c.setGallerySelectionMode(true)
+        c.toggleGallerySelection(item)
+        c.setGallerySelectedManualAlbumCover(item); runCurrent()
+        assertEquals(1, api.puts)
+        assertTrue(c.state.value.galleryMetadataWriteAttempted)
+        c.setGallerySelectedManualAlbumCover(item); runCurrent()
+        assertEquals(1, api.puts)
+        c.retryGallery(); runCurrent()
+        assertEquals(1, api.puts)
+        assertEquals(2, api.listReads)
+        assertEquals(2, api.memberReads)
+        assertEquals(api.album, c.state.value.gallerySelectedAlbum)
+        assertFalse(c.state.value.galleryMetadataWriteAttempted)
+        assertFalse(c.state.value.gallerySelectionMode)
+        c.close()
+    }
+
     @Test fun manualAlbumMemberRemovalChangesOnlyCollectionAndReloadsOwnerRange() = runTest {
         val original = GalleryAlbum("manual:trip", "manual", "旅途", 1, 2, 0, 40)
         val member = GalleryAsset(DriveNode(40, 1, "travel.jpg", "file", 42, revision = 5),

@@ -133,6 +133,15 @@ internal fun GallerySelectionActions(state: DriveState, controller: DriveControl
                                     .testTag("gallery-selection-tags"),
                             )
                             if (canRemoveMember) DropdownMenuItem(
+                                text = { Text("设为相册封面") },
+                                onClick = {
+                                    moreOpen = false
+                                    controller.setGallerySelectedManualAlbumCover(selected.single())
+                                },
+                                modifier = Modifier.heightIn(min = 48.dp)
+                                    .testTag("gallery-selection-set-album-cover"),
+                            )
+                            if (canRemoveMember) DropdownMenuItem(
                                 text = { Text("从相册移除") },
                                 onClick = {
                                     moreOpen = false
