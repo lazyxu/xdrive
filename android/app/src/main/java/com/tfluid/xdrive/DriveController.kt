@@ -91,6 +91,10 @@ data class DriveState(
     /** Mutation ACK valid, but Owner list GET may fail. Never repeat the write. */
     val galleryAlbumEditCommittedNeedsRefresh: Boolean = false,
     val gallerySelectedAlbum: GalleryAlbum? = null,
+    /** Session-only read-only Owner GPS overview. No BD-09 or basemap claim. */
+    val galleryMapOpen: Boolean = false,
+    val galleryMapLoaded: Boolean = false,
+    val galleryMapOverview: OwnerMapOverview? = null,
     val galleryItems: List<GalleryAsset> = emptyList(),
     val galleryOffset: Int = 0,
     val galleryTotal: Long = 0,
@@ -1599,6 +1603,7 @@ class DriveController(
             galleryPrimaryTab = GalleryPrimaryTab.LIBRARY,
             galleryAlbums = emptyList(), galleryAlbumsLoaded = false,
             gallerySelectedAlbum = null,
+            galleryMapOpen = false, galleryMapLoaded = false, galleryMapOverview = null,
             galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
             galleryLoaded = false, gallerySearchQuery = "", galleryMediaKind = "",
             gallerySortBy = "captured", gallerySortDir = "asc",
@@ -1608,6 +1613,63 @@ class DriveController(
         loadGallery(initialLatest = true)
     }
 
+    /** iOS PWA More → 显示地图: native Owner GPS *summary*, not a Baidu
+     * basemap. The 64 real WGS84 sample points are kept in memory only. */
+    fun openGalleryMapOverview() {
+        val current = state.value
+        if (current.screen != Screen.GALLERY || current.galleryMapOpen ||
+            current.galleryPrimaryTab != GalleryPrimaryTab.LIBRARY ||
+            current.gallerySelectedAlbum != null || current.galleryViewer != null ||
+            current.gallerySelectionMode || current.gallerySelected != null ||
+            current.hasActiveNativeTransfer() || current.galleryMetadataWriteAttempted ||
+            current.galleryAlbumCreateAttempted || current.galleryAlbumEditAttempted ||
+            session == null || api == null) return
+        invalidate() // The old Photo Range is a disposable GET.
+        mutableState.value = current.withoutGallerySelection().copy(
+            galleryMapOpen = true, galleryMapLoaded = false, galleryMapOverview = null,
+            loading = false, error = null, gallerySelected = null, galleryViewer = null)
+        loadGalleryMapOverview()
+    }
+
+    fun retryGalleryMapOverview() {
+        val current = state.value
+        if (current.screen != Screen.GALLERY || !current.galleryMapOpen ||
+            current.loading || current.hasActiveNativeTransfer() ||
+            current.galleryMetadataWriteAttempted) return
+        loadGalleryMapOverview()
+    }
+
+    private fun loadGalleryMapOverview() {
+        val service = api ?: return
+        if (session == null || state.value.screen != Screen.GALLERY ||
+            !state.value.galleryMapOpen) return
+        request(discardableRead = true) { ticket ->
+            val overview = authenticated(service, ticket) { token ->
+                service.placesMapOverview(token, OwnerMapBounds.WORLD, false)
+            }
+            checkCurrent(ticket)
+            val latest = state.value
+            if (latest.screen != Screen.GALLERY || !latest.galleryMapOpen)
+                throw CancellationException()
+            mutableState.value = latest.copy(
+                galleryMapLoaded = true, galleryMapOverview = overview, error = null)
+        }
+    }
+
+    fun closeGalleryMapOverview() {
+        val current = state.value
+        if (current.screen != Screen.GALLERY || !current.galleryMapOpen ||
+            current.hasActiveNativeTransfer()) return
+        invalidate()
+        mutableState.value = current.copy(galleryMapOpen = false,
+            galleryMapLoaded = false, galleryMapOverview = null,
+            loading = false, discardableReadInFlight = false,
+            error = null)
+        // If the first Gallery GET was replaced by Map, re-read it on return.
+        // Otherwise retain the exact authenticated photo Range and scroll anchor.
+        if (!state.value.galleryLoaded) loadGallery(initialLatest = true)
+    }
+
     fun openFilesApp() {
         val current = state.value
         if (current.screen != Screen.GALLERY || current.hasActiveNativeTransfer() ||
@@ -1615,13 +1677,15 @@ class DriveController(
             current.galleryAlbumCreateAttempted || current.galleryAlbumEditAttempted) return
         invalidate() // Cancels the outstanding Gallery Range and item thumbnails.
         mutableState.value = current.withoutGallerySelection().copy(
-            screen = Screen.FILES, loading = false, error = null,
+            screen = Screen.FILES, loading = false,
+            discardableReadInFlight = false, error = null,
             fileExportPending = null, fileExportOrigin = null,
             fileDownloadActive = false, fileDownloadSaved = false,
             fileDownloadError = null, fileDownloadBytes = 0, fileDownloadTotal = 0,
             galleryPrimaryTab = GalleryPrimaryTab.LIBRARY,
             galleryAlbums = emptyList(), galleryAlbumsLoaded = false,
             gallerySelectedAlbum = null,
+            galleryMapOpen = false, galleryMapLoaded = false, galleryMapOverview = null,
             galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
             galleryLoaded = false, gallerySearchQuery = "", galleryMediaKind = "",
             gallerySortBy = "captured", gallerySortDir = "asc",
@@ -2899,6 +2963,7 @@ class DriveController(
         }
         if (current.screen == Screen.GALLERY) {
             when {
+                current.galleryMapOpen -> closeGalleryMapOverview()
                 current.gallerySelectionMode -> {
                     if (current.galleryMetadataWriteAttempted) {
                         if (!current.loading) refreshGallery() // GET-only reconciliation
