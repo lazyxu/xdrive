@@ -118,7 +118,7 @@ test('F03 wide command overflow shows disabled reasons, permits keyboard inspect
   const expected = [
     ['undo', '!canUndo', '撤销', 'onUndo'],
     ['redo', '!canRedo', '重做', 'onRedo'],
-    ['paste', '!canPaste', '粘贴', '() => onPaste()'],
+    ['paste', '!canPaste || !onPaste || Boolean(unavailableActions?.paste)', '粘贴', '() => onPaste()'],
     ['refresh', 'loading', '刷新', 'onRefresh'],
   ]
   for (const [kind, predicate, label, callback] of expected) {
@@ -129,6 +129,8 @@ test('F03 wide command overflow shows disabled reasons, permits keyboard inspect
     assert.ok(overflow.includes('disabledReason: commandBarOverflowDisabledReasons.' + kind + ' ?? undefined'), kind + ': visible secondary text')
     assert.ok(overflow.includes('runCommandBarOverflowAction(' + callback + ')'), kind + ': original operation owner')
   }
+  assert.ok(overflow.includes('onPaste && !unavailableActions?.paste'),
+    'overflow Paste must not bypass Host capability restrictions')
   assert.ok(s.includes('当前没有可用的撤销操作'))
   assert.ok(s.includes('当前没有可用的重做操作'))
   assert.ok(s.includes('当前目录暂不能粘贴'))

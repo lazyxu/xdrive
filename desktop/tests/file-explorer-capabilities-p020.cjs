@@ -94,8 +94,16 @@ test('owners derive mutability from callbacks, not from Share credentials', () =
   assert(owner.includes('write: Boolean((onCreateFolder && !unavailableActions?.createFolder) ||'))
   assert(owner.includes('(onUpload && !unavailableActions?.uploadFiles) ||'))
   assert(owner.includes('(onUploadFolder && !unavailableActions?.uploadFolder) ||'))
-  assert(owner.includes('onCopyItems || onCopyItemsTo || onMoveItemsTo || onRenameItem ||'))
-  assert(owner.includes('delete: Boolean(onDeleteItems)'))
+  for (const [callback, capability] of [
+    ['onCopyItems', 'copy'], ['onCutItems', 'cut'],
+    ['onCopyItemsTo', 'copyTo'], ['onMoveItemsTo', 'moveTo'],
+    ['onRenameItem', 'rename'], ['onPaste', 'paste'],
+    ['onDeleteItems', 'delete'], ['onManageTags', 'manageTags'],
+  ]) {
+    assert(owner.includes('(' + callback + ' && !unavailableActions?.' + capability + ')'),
+      callback + ' must be enabled only by a real Host callback that is not denied')
+  }
+  assert(owner.includes('delete: Boolean(onDeleteItems && !unavailableActions?.delete)'))
   assert(owner.includes('search: Boolean(searchEnabled && onSearch && !searchUnavailableReason)'),
     'Owner-wide Search must require both a real handler and an allowed Host capability')
   assert.equal(source.includes('publicShareChildren('), false)

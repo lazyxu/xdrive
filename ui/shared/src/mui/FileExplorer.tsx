@@ -780,7 +780,9 @@ export type XDriveFileExplorerQuickLookRequest = {
 }
 
 export type XDriveFileExplorerUnavailableActions = Partial<Record<
-  'search' | 'createFolder' | 'uploadFiles' | 'uploadFolder', string
+  'search' | 'createFolder' | 'uploadFiles' | 'uploadFolder' |
+  'copy' | 'cut' | 'paste' | 'delete' | 'rename' |
+  'copyTo' | 'moveTo' | 'manageTags', string
 >>
 
 export function XDriveFileExplorer({
@@ -1053,9 +1055,15 @@ export function XDriveFileExplorer({
     write: Boolean((onCreateFolder && !unavailableActions?.createFolder) ||
       (onUpload && !unavailableActions?.uploadFiles) ||
       (onUploadFolder && !unavailableActions?.uploadFolder) ||
-      onCopyItems || onCopyItemsTo || onMoveItemsTo || onRenameItem ||
-      onPaste || onDeleteItems),
-    delete: Boolean(onDeleteItems),
+      (onCopyItems && !unavailableActions?.copy) ||
+      (onCutItems && !unavailableActions?.cut) ||
+      (onCopyItemsTo && !unavailableActions?.copyTo) ||
+      (onMoveItemsTo && !unavailableActions?.moveTo) ||
+      (onRenameItem && !unavailableActions?.rename) ||
+      (onPaste && !unavailableActions?.paste) ||
+      (onDeleteItems && !unavailableActions?.delete) ||
+      (onManageTags && !unavailableActions?.manageTags)),
+    delete: Boolean(onDeleteItems && !unavailableActions?.delete),
   })
   const [editingPath, setEditingPath] = useState(false)
   const derivedPath = useMemo(
@@ -1099,7 +1107,7 @@ export function XDriveFileExplorer({
   const commandBarOverflowDisabledReasons = {
     undo: canUndo ? null : '当前没有可用的撤销操作',
     redo: canRedo ? null : '当前没有可用的重做操作',
-    paste: canPaste ? null : '当前目录暂不能粘贴，请检查剪贴板与目标目录',
+    paste: unavailableActions?.paste ?? (canPaste ? null : '当前目录暂不能粘贴，请检查剪贴板与目标目录'),
     refresh: loading ? '列表正在读取，暂不能刷新' : null,
   }
   const [touchSelectionMode, setTouchSelectionMode] = useState(false)
@@ -1681,11 +1689,22 @@ export function XDriveFileExplorer({
   )
   const selectedCount = selectedKeySet.size
   const unavailableSelectedCount = Math.max(0, selectedCount - selectedItems.length)
+  // Preserve one selection-operation policy for toolbar, menu, touch and
+  // keyboard. A missing Host implementation must not enable an action.
+  const hostSelectionUnavailable: Partial<Record<XDriveFileExplorerSelectionAction, string>> = {
+    cut: unavailableActions?.cut,
+    copy: unavailableActions?.copy,
+    'move-to': unavailableActions?.moveTo,
+    'copy-to': unavailableActions?.copyTo,
+    delete: unavailableActions?.delete,
+    'manage-tags': unavailableActions?.manageTags,
+  }
   const selectionActionDisabledReason = (
     action: XDriveFileExplorerSelectionAction,
     targets: readonly XDriveFileExplorerItem[] = selectedItems,
     count = selectedCount,
   ): string | null => {
+    if (hostSelectionUnavailable[action]) return hostSelectionUnavailable[action] ?? null
     if (count === 0) return '请先选择项目'
     if (targets.length !== count) return '部分所选项目暂不可用，请清除后重新选择。'
     const reason = getSelectionActionDisabledReason?.(action, targets, count)
@@ -1710,7 +1729,7 @@ export function XDriveFileExplorer({
   if (onMoveItemsTo) supportedSelectionActions.push('move-to')
   if (accountCapabilities.download && onDownloadItems) supportedSelectionActions.push('download')
   if (accountCapabilities.delete && onDeleteItems) supportedSelectionActions.push('delete')
-  if (onManageTags) supportedSelectionActions.push('manage-tags')
+  if (onManageTags && !unavailableActions?.manageTags) supportedSelectionActions.push('manage-tags')
   const selectionDisabledReasons = selectedCount > 0 ? [...new Set(
     supportedSelectionActions
       .map((action) => selectionActionDisabledReason(action))
@@ -2699,6 +2718,32 @@ export function XDriveFileExplorer({
     })()
   }
 
+  // Every entry point applies the same Host-disabled mutation boundary.
+  // Caller-provided context actions are not authority to bypass this fence.
+  const hostUnavailableMenuReason = (id: string): string | undefined => ({
+    rename: unavailableActions?.rename,
+    delete: unavailableActions?.delete,
+    'delete-selected': unavailableActions?.delete,
+    cut: unavailableActions?.cut,
+    copy: unavailableActions?.copy,
+    'move-to': unavailableActions?.moveTo,
+    'copy-to': unavailableActions?.copyTo,
+    paste: unavailableActions?.paste,
+    tags: unavailableActions?.manageTags,
+    'new-folder': unavailableActions?.createFolder,
+    'create-folder': unavailableActions?.createFolder,
+    upload: unavailableActions?.uploadFiles,
+    'upload-folder': unavailableActions?.uploadFolder,
+  })[id]
+  const protectHostMenuItems = (menuItems: XDriveFileExplorerMenuItem[]) =>
+    menuItems.map(action => {
+      const denied = hostUnavailableMenuReason(action.id)
+      return denied ? {
+        ...action, disabled: true, disabledReason: denied,
+        onSelect: () => { /* No authorized Host mutation callback. */ },
+      } : action
+    })
+
   const openItemContextMenuAt = (
     item: XDriveFileExplorerItem,
     mouseX: number,
@@ -2717,15 +2762,15 @@ export function XDriveFileExplorer({
     let actionItems = contextSelectionCount > 1 ? [] : (getItemMenuItems?.(item) ?? []).filter((action) => (
       !compactViewport || !['open-new-tab', 'open-browser-tab'].includes(action.id)
     ))
-    if (contextSelectionCount === 1 && onRenameItem) {
+    if (contextSelectionCount === 1 && (onRenameItem || unavailableActions?.rename)) {
       const inlineRename: XDriveFileExplorerMenuItem = {
         id: 'rename',
         label: '重命名',
         icon: <EditRoundedIcon fontSize="small" />,
         dividerBefore: true,
-        disabled: renameDisabled || renameSubmitting,
-        disabledReason: renameSubmitting ? '正在重命名，请完成当前操作后重试。' : renameDisabled ? '当前不可重命名此项目。' : undefined,
-        onSelect: () => beginRename(item),
+        disabled: renameDisabled || renameSubmitting || !onRenameItem || Boolean(unavailableActions?.rename),
+        disabledReason: renameSubmitting ? '正在重命名，请完成当前操作后重试。' : renameDisabled ? '当前不可重命名此项目。' : unavailableActions?.rename || (!onRenameItem ? '此宿主尚未提供文件重命名能力。' : undefined),
+        onSelect: () => { if (onRenameItem && !unavailableActions?.rename) beginRename(item) },
       }
       const renameIndex = actionItems.findIndex((menuItem) => menuItem.id === 'rename')
       if (renameIndex >= 0) {
@@ -2739,8 +2784,16 @@ export function XDriveFileExplorer({
           : [...actionItems, inlineRename]
       }
     }
+    if (contextSelectionCount === 1 && unavailableActions?.delete &&
+        !actionItems.some((entry) => entry.id === 'delete')) {
+      actionItems.push({
+        id: 'delete', label: '删除', icon: <DeleteOutlineRoundedIcon fontSize="small" />,
+        danger: true, disabled: true, disabledReason: unavailableActions.delete,
+        onSelect: () => { /* Disabled: no authorized Host operation. */ },
+      })
+    }
     const clipboardItems: XDriveFileExplorerMenuItem[] = []
-    if (onCutItems) {
+    if (onCutItems || unavailableActions?.cut) {
       clipboardItems.push({
         id: 'cut',
         label: '剪切',
@@ -2751,7 +2804,7 @@ export function XDriveFileExplorer({
         onSelect: () => runSelectionAction('cut', onCutItems, selection, contextSelectionCount),
       })
     }
-    if (onCopyItems) {
+    if (onCopyItems || unavailableActions?.copy) {
       clipboardItems.push({
         id: 'copy',
         label: '复制',
@@ -2762,7 +2815,7 @@ export function XDriveFileExplorer({
         onSelect: () => runSelectionAction('copy', onCopyItems, selection, contextSelectionCount),
       })
     }
-    if (onMoveItemsTo) {
+    if (onMoveItemsTo || unavailableActions?.moveTo) {
       clipboardItems.push({
         id: 'move-to',
         label: '移动到…',
@@ -2773,7 +2826,7 @@ export function XDriveFileExplorer({
         onSelect: () => runSelectionAction('move-to', onMoveItemsTo, selection, contextSelectionCount),
       })
     }
-    if (onCopyItemsTo) {
+    if (onCopyItemsTo || unavailableActions?.copyTo) {
       clipboardItems.push({
         id: 'copy-to',
         label: '复制到…',
@@ -2812,7 +2865,7 @@ export function XDriveFileExplorer({
         onSelect: () => runSelectionAction('download', onDownloadItems, selection, contextSelectionCount),
       })
     }
-    if (contextSelectionCount > 1 && onDeleteItems) {
+    if (contextSelectionCount > 1 && (onDeleteItems || unavailableActions?.delete)) {
       bulkItems.push({
         id: 'delete-selected',
         label: '删除所选项目',
@@ -2824,7 +2877,7 @@ export function XDriveFileExplorer({
         onSelect: () => runSelectionAction('delete', onDeleteItems, selection, contextSelectionCount),
       })
     }
-    const organizationItems: XDriveFileExplorerMenuItem[] = onManageTags ? [{
+    const organizationItems: XDriveFileExplorerMenuItem[] = (onManageTags || unavailableActions?.manageTags) ? [{
       id: 'tags',
       label: '标签…',
       icon: <LocalOfferRoundedIcon fontSize="small" />,
@@ -2844,7 +2897,7 @@ export function XDriveFileExplorer({
         if (selection.length === contextSelectionCount) setPropertiesItems(selection)
       },
     }]
-    const menuItems = [...actionItems, ...clipboardItems, ...bulkItems, ...organizationItems, ...inspectorItems]
+    const menuItems = protectHostMenuItems([...actionItems, ...clipboardItems, ...bulkItems, ...organizationItems, ...inspectorItems])
     if (menuItems.length === 0) return
     setContextMenu({
       mouseX,
@@ -2867,14 +2920,16 @@ export function XDriveFileExplorer({
   }
 
   const openBackgroundContextMenu = (event: ReactMouseEvent<HTMLElement>) => {
-    const menuItems = [...backgroundMenuItems]
-    if (onPaste) {
+    const menuItems = protectHostMenuItems([...backgroundMenuItems])
+    if (onPaste || unavailableActions?.paste) {
       menuItems.unshift({
         id: 'paste',
         label: '粘贴',
         icon: <ContentPasteRoundedIcon fontSize="small" />,
-        disabled: !canPaste,
-        onSelect: () => onPaste(),
+        disabled: !canPaste || !onPaste || Boolean(unavailableActions?.paste),
+        disabledReason: unavailableActions?.paste ||
+          (!canPaste ? '当前目录暂不能粘贴，请检查剪贴板与目标目录' : undefined),
+        onSelect: () => { if (onPaste && canPaste && !unavailableActions?.paste) onPaste() },
       })
     }
     if (menuItems.length === 0) return
@@ -4000,7 +4055,7 @@ export function XDriveFileExplorer({
       else openQuickLook(activeItem)
       return
     }
-    if (command === 'rename' && activeItem && onRenameItem && !renameDisabled) {
+    if (command === 'rename' && activeItem && onRenameItem && !renameDisabled && !unavailableActions?.rename) {
       event.preventDefault()
       beginRename(activeItem)
       return
@@ -4046,7 +4101,8 @@ export function XDriveFileExplorer({
     if (
       (command === 'paste' || command === 'paste-move') &&
       onPaste &&
-      canPaste
+      canPaste &&
+      !unavailableActions?.paste
     ) {
       event.preventDefault()
       onPaste(command === 'paste-move' ? 'move' : undefined)
@@ -4143,17 +4199,20 @@ export function XDriveFileExplorer({
   const inspectorFolderCount = selectedItems.length - inspectorFileCount
   const inspectorProperties = inspectorItem ? propertiesForItem(inspectorItem) : []
   const inspectorQuickActions: XDriveFileExplorerMenuItem[] = inspectorItem ? [
-    ...(onManageTags ? [{
+    ...(onManageTags || unavailableActions?.manageTags ? [{
       id: 'tags',
       label: '标签',
       icon: <LocalOfferRoundedIcon fontSize="small" />,
-      onSelect: () => onManageTags([inspectorItem]),
+      disabled: !onManageTags || Boolean(unavailableActions?.manageTags),
+      disabledReason: unavailableActions?.manageTags ??
+        (!onManageTags ? '此宿主未提供标签修改能力。' : undefined),
+      onSelect: () => { if (onManageTags && !unavailableActions?.manageTags) onManageTags([inspectorItem]) },
     }] : []),
-    ...(getItemMenuItems?.(inspectorItem) ?? []).filter((item) => (
+    ...protectHostMenuItems((getItemMenuItems?.(inspectorItem) ?? []).filter((item) => (
       !item.danger &&
       (!compactViewport || !['open-new-tab', 'open-browser-tab'].includes(item.id)) &&
       !['rename', 'delete', 'properties', 'cut', 'copy', 'move', 'version-history'].includes(item.id)
-    )),
+    ))),
   ].slice(0, 4) : []
   const quickLookActions: XDriveFileExplorerMenuItem[] = quickLookItem ? (() => {
     const actions: XDriveFileExplorerMenuItem[] = []
@@ -4172,12 +4231,15 @@ export function XDriveFileExplorer({
         onSelect: () => onDownloadItems([quickLookItem]),
       })
     }
-    if (onManageTags && !seen.has('tags')) {
+    if ((onManageTags || unavailableActions?.manageTags) && !seen.has('tags')) {
       actions.push({
         id: 'tags',
         label: '标签',
         icon: <LocalOfferRoundedIcon fontSize="small" />,
-        onSelect: () => onManageTags([quickLookItem]),
+        disabled: !onManageTags || Boolean(unavailableActions?.manageTags),
+        disabledReason: unavailableActions?.manageTags ??
+          (!onManageTags ? '此宿主未提供标签修改能力。' : undefined),
+        onSelect: () => { if (onManageTags && !unavailableActions?.manageTags) onManageTags([quickLookItem]) },
       })
     }
     return actions.slice(0, 4)
@@ -5718,12 +5780,12 @@ export function XDriveFileExplorer({
                 </Button>
               </Stack>
               <Stack direction="row" alignItems="center" justifyContent="space-between" gap={0.5} sx={{ width: '100%', minWidth: 0, flexWrap: 'wrap' }}>
-              {onCopyItems ? (
+              {(onCopyItems || unavailableActions?.copy) ? (
                 <IconButton aria-label="复制所选项目" title={selectionActionDisabledReason('copy') || '复制所选项目'} disabled={Boolean(selectionActionDisabledReason('copy'))} onClick={() => runSelectionAction('copy', onCopyItems)}>
                   <ContentCopyRoundedIcon fontSize="small" />
                 </IconButton>
               ) : null}
-              {onCutItems ? (
+              {(onCutItems || unavailableActions?.cut) ? (
                 <IconButton aria-label="剪切所选项目" title={selectionActionDisabledReason('cut') || '剪切所选项目'} disabled={Boolean(selectionActionDisabledReason('cut'))} onClick={() => runSelectionAction('cut', onCutItems)}>
                   <ContentCutRoundedIcon fontSize="small" />
                 </IconButton>
@@ -5738,7 +5800,7 @@ export function XDriveFileExplorer({
                   <DownloadRoundedIcon fontSize="small" />
                 </IconButton>
               ) : null}
-              {onDeleteItems ? (
+              {(onDeleteItems || unavailableActions?.delete) ? (
                 <IconButton aria-label="删除所选项目" title={selectionActionDisabledReason('delete') || '删除所选项目'} disabled={Boolean(selectionActionDisabledReason('delete'))} onClick={() => runSelectionAction('delete', onDeleteItems)} sx={{ color: 'error.main' }}>
                   <DeleteOutlineRoundedIcon fontSize="small" />
                 </IconButton>
@@ -5793,7 +5855,7 @@ export function XDriveFileExplorer({
             </XDriveFileExplorerCommandButton>
           ) : null}
           {commandBarStart}
-          {onCutItems ? (
+          {(onCutItems || unavailableActions?.cut) ? (
             <XDriveFileExplorerCommandButton
               startIcon={<ContentCutRoundedIcon />}
               title={selectionActionDisabledReason('cut') || fileExplorerShortcutTitle('剪切', 'cut', keyboardProfile)}
@@ -5803,7 +5865,7 @@ export function XDriveFileExplorer({
               剪切
             </XDriveFileExplorerCommandButton>
           ) : null}
-          {onCopyItems ? (
+          {(onCopyItems || unavailableActions?.copy) ? (
             <XDriveFileExplorerCommandButton
               startIcon={<ContentCopyRoundedIcon />}
               title={selectionActionDisabledReason('copy') || fileExplorerShortcutTitle('复制', 'copy', keyboardProfile)}
@@ -5813,12 +5875,12 @@ export function XDriveFileExplorer({
               复制
             </XDriveFileExplorerCommandButton>
           ) : null}
-          {onPaste ? (
+          {(onPaste || unavailableActions?.paste) ? (
             <XDriveFileExplorerCommandButton
               startIcon={<ContentPasteRoundedIcon />}
-              title={fileExplorerShortcutTitle('粘贴', 'paste', keyboardProfile)}
-              disabled={!canPaste}
-              onClick={() => onPaste()}
+              title={unavailableActions?.paste || fileExplorerShortcutTitle('粘贴', 'paste', keyboardProfile)}
+              disabled={!canPaste || !onPaste || Boolean(unavailableActions?.paste)}
+              onClick={() => { if (!unavailableActions?.paste) onPaste?.() }}
             >
               粘贴
             </XDriveFileExplorerCommandButton>
@@ -5833,7 +5895,7 @@ export function XDriveFileExplorer({
               下载
             </XDriveFileExplorerCommandButton>
           ) : null}
-          {onDeleteItems ? (
+          {(onDeleteItems || unavailableActions?.delete) ? (
             <XDriveFileExplorerCommandButton
               startIcon={<DeleteOutlineRoundedIcon />}
               title={selectionActionDisabledReason('delete') || fileExplorerShortcutTitle('删除', 'delete', keyboardProfile)}
@@ -6229,12 +6291,12 @@ export function XDriveFileExplorer({
             />
           </MenuItem>
         ) : null}
-        {compactViewport && onPaste ? (
+        {compactViewport && (onPaste || unavailableActions?.paste) ? (
           <MenuItem
-            disabled={!canPaste}
+            disabled={!canPaste || !onPaste || Boolean(unavailableActions?.paste)}
             title={commandBarOverflowDisabledReasons.paste ?? undefined}
             aria-label={commandBarOverflowDisabledReasons.paste ? '粘贴：' + commandBarOverflowDisabledReasons.paste : '粘贴'}
-            onClick={() => runCommandBarOverflowAction(() => onPaste())}
+            onClick={() => { if (onPaste && !unavailableActions?.paste) runCommandBarOverflowAction(() => onPaste()) }}
           >
             <Box sx={{ width: 24, mr: 1, display: 'flex' }}><ContentPasteRoundedIcon fontSize="small" /></Box>
             <ListItemText
@@ -6341,9 +6403,9 @@ export function XDriveFileExplorer({
       >
       {compactViewport && (touchSelectionMode || selectedCount > 0 || selectionLoad || selectionLoadFeedback) ? (
         <Box data-xdrive-file-explorer-selection-scope sx={{ flexShrink: 0, px: 1.25, py: 0.5, borderBottom: 1, borderColor: 'divider' }}>
-          {compactViewport && (onMoveItemsTo || onCopyItemsTo) ? (
+          {compactViewport && (onMoveItemsTo || onCopyItemsTo || unavailableActions?.moveTo || unavailableActions?.copyTo) ? (
             <Stack data-xdrive-file-explorer-destination-actions direction="row" gap={1} sx={{ flexWrap: 'wrap', mb: 0.5 }}>
-              {onMoveItemsTo ? (
+              {(onMoveItemsTo || unavailableActions?.moveTo) ? (
                 <Button
                   startIcon={<ContentCutRoundedIcon />}
                   title={selectionActionDisabledReason('move-to') || '选择移动的目标文件夹'}
@@ -6352,7 +6414,7 @@ export function XDriveFileExplorer({
                   sx={{ minHeight: 44, minWidth: 44, whiteSpace: 'normal', overflowWrap: 'anywhere' }}
                 >移动到…</Button>
               ) : null}
-              {onCopyItemsTo ? (
+              {(onCopyItemsTo || unavailableActions?.copyTo) ? (
                 <Button
                   startIcon={<ContentCopyRoundedIcon />}
                   title={selectionActionDisabledReason('copy-to') || '选择副本的目标文件夹'}

@@ -405,7 +405,7 @@ test('shared FileExplorer keeps Command Bar layout stable across selection chang
   assert.equal(commandBar.includes('selectedItems.length > 0 ? ('), false, 'selection must not replace the whole Command Bar')
   for (const token of [
     'disabled={selectedItems.length === 0}',
-    'disabled={!canPaste}',
+    'disabled={!canPaste || !onPaste || Boolean(unavailableActions?.paste)}',
     "disabled={Boolean(selectionActionDisabledReason('download'))}",
     "disabled={Boolean(selectionActionDisabledReason('copy'))}",
     "disabled={Boolean(selectionActionDisabledReason('cut'))}",

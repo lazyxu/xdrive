@@ -76,7 +76,7 @@ test('shared FileExplorer keeps a stable selection-aware command bar', () => {
     'startIcon={<DownloadRoundedIcon />}',
     'startIcon={<DeleteOutlineRoundedIcon />}',
     'disabled={selectedItems.length === 0}',
-    'disabled={!canPaste}',
+    'disabled={!canPaste || !onPaste || Boolean(unavailableActions?.paste)}',
     '新建文件夹',
     '上传文件',
   ]) {

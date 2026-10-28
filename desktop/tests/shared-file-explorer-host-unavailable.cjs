@@ -43,11 +43,14 @@ test('Host-disabled Search never dispatches even through direct command callback
 })
 
 test('shared Files toolbar exposes unavailable operations in both layouts with real disabled predicates', () => {
-  for (const name of ['search', 'createFolder', 'uploadFiles', 'uploadFolder']) {
+  for (const name of [
+    'search', 'createFolder', 'uploadFiles', 'uploadFolder',
+    'copy', 'cut', 'paste', 'delete', 'rename', 'moveTo', 'copyTo', 'manageTags',
+  ]) {
     assert.ok(explorer.includes("'" + name + "'"), name + ' missing from shared capability contract')
     assert.ok(host.includes(name + ": 'DSM"), name + ' missing genuine DSM Host explanation')
   }
-  for (const field of ['createFolder', 'uploadFiles', 'uploadFolder']) {
+  for (const field of ['createFolder', 'uploadFiles', 'uploadFolder', 'copy', 'cut', 'delete', 'rename', 'moveTo', 'copyTo', 'manageTags']) {
     assert.ok(explorer.includes('unavailableActions?.' + field), field + ' missing disabled reason')
     assert.ok(explorer.includes('!unavailableActions?.' + field), field + ' missing capability predicate')
   }
@@ -55,6 +58,8 @@ test('shared Files toolbar exposes unavailable operations in both layouts with r
   assert.ok(explorer.includes('disabled={Boolean(!onCreateFolder || unavailableActions?.createFolder)}'))
   assert.ok(explorer.includes('disabled={Boolean(!onUpload || unavailableActions?.uploadFiles)}'))
   assert.ok(explorer.includes('disabled={Boolean(!onUploadFolder || unavailableActions?.uploadFolder)}'))
+  assert.ok(explorer.includes('hostSelectionUnavailable[action]'), 'selection actions must fail closed through the same Host policy')
+  assert.ok(explorer.includes("!unavailableActions?.paste"), 'keyboard Paste must not bypass missing Host capability')
   assert.ok(explorer.includes('searchUnavailableReason ||'))
   assert.ok(explorer.includes('disabled={Boolean(searchUnavailableReason)}'))
 })
