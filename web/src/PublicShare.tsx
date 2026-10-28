@@ -222,8 +222,8 @@ export default function PublicShareView({ token }: { token: string }) {
     if (!share || share.type !== 'dir' || !canBrowse) return
     // Abort superseded request-scoped JPEG GETs at user navigation time.
     // Do not abort user-owned original/ZIP downloads or an in-place refresh.
-    const contentChanged = !refresh && Boolean(folder) && (
-      folder!.cursor !== cursor || folder!.path.at(-1)?.id !== path.at(-1)?.id
+    const contentChanged = !refresh && folder !== null && (
+      folder.cursor !== cursor || folder.path.at(-1)?.id !== path.at(-1)?.id
     )
     if (contentChanged) {
       // Cursor/crumb/child folder navigation is a same-page content switch.
