@@ -472,15 +472,24 @@ async function testIOSPhotoMapCompactChrome(browser,mode,scheme,port){
         actual.toolbar.left>=actual.map.left&&
         actual.toolbar.right<=actual.map.right+1&&
         actual.text.includes('地图'))
-      record(label+': 44px+ photo and toolbar targets, compact bottom dock',
-        actual.dock!==null&&actual.dock.height<=76&&
+      const touchGeometryOK=actual.dock!==null&&actual.dock.height<=76&&
         actual.dock.bottom<=actual.map.bottom&&
         actual.dockButtons.length>0&&
         actual.dockButtons.every(b=>b.width>=44&&b.height>=44)&&
         actual.hits.length>=3&&
         actual.hits.every(b=>b.width>=44&&b.height>=44)&&
         actual.pins.length>0&&
-        actual.pinButtons.every(b=>b.width>=44&&b.height>=44))
+        actual.pinButtons.every(b=>b.width>=44&&b.height>=44)
+      if(!touchGeometryOK) {
+        // Sanitized CSS rectangles only; never log Owner GPS, Cell or media.
+        console.error('ios-compact-map-hit-targets',JSON.stringify({
+          label,map:actual.map,toolbar:actual.toolbar,dock:actual.dock,
+          dockButtons:actual.dockButtons,hits:actual.hits,
+          pins:actual.pins,pinButtons:actual.pinButtons,
+        }))
+      }
+      record(label+': 44px+ photo and toolbar targets, compact bottom dock',
+        touchGeometryOK)
       record(label+': signed Family∩Favorites stays exactly two covers',
         actual.summary.includes('2 张照片')&&
         actual.currentOwnerQueries.length>0&&
