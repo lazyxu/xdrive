@@ -2410,6 +2410,7 @@ backup_admin_snapshot_complete() {
 backup_admin_inventory() {
   local dir="$1" tmp comma="" scope root snap name state bytes file_data created
   local snapshot_index inventory_total inventory_truncated
+  local repository_v1_count repository_default_count repository_configured_count
   local default_repo backup_admin_format backup_admin_days backup_admin_repo backup_admin_revision
   backup_admin_policy_values || return 1
   default_repo="$XDRIVE_HOME/backups/incremental"
@@ -2446,6 +2447,23 @@ backup_admin_inventory() {
     rm -f -- "$snapshot_index"
     return 1
   fi
+  # Count the exact same canonical Host-observed identity index used by the
+  # newest-100 inventory; do not infer total repository health or open CAS.
+  read -r repository_v1_count repository_default_count repository_configured_count < <(
+    awk -F '\t' '
+      $2=="v1" {v1++}
+      $2=="v2-default" {def++}
+      $2=="v2-configured" {custom++}
+      END {printf "%d %d %d\n", v1+0, def+0, custom+0}
+    ' "$snapshot_index"
+  )
+  if [[ ! "$repository_v1_count" =~ ^[0-9]+$ ||
+        ! "$repository_default_count" =~ ^[0-9]+$ ||
+        ! "$repository_configured_count" =~ ^[0-9]+$ ]] ||
+     (( repository_v1_count + repository_default_count + repository_configured_count != inventory_total )); then
+    rm -f -- "$snapshot_index"
+    return 1
+  fi
   inventory_truncated=false
   if (( inventory_total > 100 )); then inventory_truncated=true; fi
   tmp="$(mktemp "$dir/.backup-admin-inventory.XXXXXX")" || {
@@ -2453,8 +2471,9 @@ backup_admin_inventory() {
     return 1
   }
   {
-    printf '{"protocol":"%s","generated_at":"%s","policy":{"schedule_format":"%s","retention_days":%s,"repository":"%s","revision":"%s"},"total_snapshots":%s,"truncated":%s,"snapshots":[' \
-      "$backup_admin_protocol" "$(now_utc)" "$backup_admin_format" "$backup_admin_days" "$(json_escape "$backup_admin_repo")" "$backup_admin_revision" "$inventory_total" "$inventory_truncated"
+    printf '{"protocol":"%s","generated_at":"%s","policy":{"schedule_format":"%s","retention_days":%s,"repository":"%s","revision":"%s"},"total_snapshots":%s,"truncated":%s,"repositories":[{"id":"v1","snapshot_count":%s},{"id":"v2-default","snapshot_count":%s},{"id":"v2-configured","snapshot_count":%s}],"snapshots":[' \
+      "$backup_admin_protocol" "$(now_utc)" "$backup_admin_format" "$backup_admin_days" "$(json_escape "$backup_admin_repo")" "$backup_admin_revision" "$inventory_total" "$inventory_truncated" \
+      "$repository_v1_count" "$repository_default_count" "$repository_configured_count"
 
     # Show the latest 100 generations across all configured repositories,
     # not the oldest 100 from the alphabetically first (legacy v1) root.

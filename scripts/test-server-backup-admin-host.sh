@@ -145,6 +145,11 @@ assert d["protocol"]=="xdrive-backup-admin-v1"
 assert d["policy"]["schedule_format"]=="v2"
 assert len(d["policy"]["revision"])==64
 assert d["total_snapshots"]==2 and d["truncated"] is False
+assert d["repositories"]==[
+    {"id":"v1","snapshot_count":1},
+    {"id":"v2-default","snapshot_count":1},
+    {"id":"v2-configured","snapshot_count":0},
+],d
 assert sorted(x["id"] for x in d["snapshots"])==[
     "v1:xdrive-backup-20261026T010000Z",
     "v2-default:xdrive-backup-20261027T030000Z",
@@ -780,6 +785,8 @@ import json,sys
 d=json.load(open(sys.argv[1],encoding="utf-8"))
 assert d["total_snapshots"]==int(sys.argv[2])+105,d
 assert d["truncated"] is True and len(d["snapshots"])==100,d
+assert d["repositories"][0]["snapshot_count"]>=105,d
+assert sum(x["snapshot_count"] for x in d["repositories"])==d["total_snapshots"],d
 assert len({r["id"] for r in d["snapshots"]})==100
 PY
 for (( n=0; n<105; n++ )); do

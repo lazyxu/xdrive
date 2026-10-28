@@ -41,13 +41,19 @@ type backupAdminPolicy struct {
 	Revision       string `json:"revision"`
 }
 
+type backupAdminRepositoryCount struct {
+	ID            string `json:"id"`
+	SnapshotCount int    `json:"snapshot_count"`
+}
+
 type backupAdminInventory struct {
-	Protocol       string                `json:"protocol"`
-	GeneratedAt    string                `json:"generated_at"`
-	Policy         backupAdminPolicy     `json:"policy"`
-	Snapshots      []backupAdminSnapshot `json:"snapshots"`
-	TotalSnapshots *int                  `json:"total_snapshots,omitempty"`
-	Truncated      *bool                 `json:"truncated,omitempty"`
+	Protocol       string                        `json:"protocol"`
+	GeneratedAt    string                        `json:"generated_at"`
+	Policy         backupAdminPolicy             `json:"policy"`
+	Snapshots      []backupAdminSnapshot         `json:"snapshots"`
+	TotalSnapshots *int                          `json:"total_snapshots,omitempty"`
+	Truncated      *bool                         `json:"truncated,omitempty"`
+	Repositories   *[]backupAdminRepositoryCount `json:"repositories,omitempty"`
 }
 
 type backupAdminStatus struct {
@@ -244,6 +250,28 @@ func (s *Server) backupAdminState() backupAdminPage {
 			*inventory.TotalSnapshots > 1_000_000 ||
 			*inventory.Truncated != (*inventory.TotalSnapshots > len(inventory.Snapshots)) {
 			page.Message = "备份清单总数或截断状态不一致。"
+			return page
+		}
+	}
+	// Older Host Managers omit this optional read-only breakdown. A new
+	// report must agree exactly with the independently verified total count.
+	if inventory.Repositories != nil {
+		expected := []string{"v1", "v2-default", "v2-configured"}
+		if inventory.TotalSnapshots == nil || len(*inventory.Repositories) != len(expected) {
+			page.Message = "备份仓库统计结构不可信。"
+			return page
+		}
+		total := 0
+		for i, item := range *inventory.Repositories {
+			if item.ID != expected[i] || item.SnapshotCount < 0 ||
+				item.SnapshotCount > 1_000_000 {
+				page.Message = "备份仓库统计包含无效来源或数量。"
+				return page
+			}
+			total += item.SnapshotCount
+		}
+		if total != *inventory.TotalSnapshots {
+			page.Message = "备份仓库统计与总数不一致。"
 			return page
 		}
 	}

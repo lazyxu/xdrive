@@ -15,6 +15,7 @@ import { backupRetentionCapacity } from '../server-backup-capacity'
 import { XDriveActionButton } from './ActionButton'
 import { XDriveBackupVerificationReceipt } from './BackupVerificationReceipt'
 import { XDriveBackupRecoveryEvidencePanel } from './BackupRecoveryEvidencePanel'
+import { XDriveBackupRepositoryInventory } from './BackupRepositoryInventory'
 import { XDriveSectionHeader } from './SectionHeader'
 
 type Confirmation = {
@@ -272,6 +273,8 @@ export function XDriveServerBackupManagementPanel({
           </Stack>
         </Stack>
       </Paper>
+
+      {page?.supported ? <XDriveBackupRepositoryInventory inventory={page.inventory} /> : null}
 
       <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
         <Stack spacing={1.5}>

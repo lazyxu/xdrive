@@ -151,6 +151,8 @@ export type XDriveServerBackupPage = {
     snapshots: XDriveServerBackupSnapshot[]
     total_snapshots?: number
     truncated?: boolean
+    /** Read-only fixed Host namespace counts, not a repository health proof. */
+    repositories?: { id: 'v1' | 'v2-default' | 'v2-configured'; snapshot_count: number }[]
   }
   operation: XDriveServerBackupOperation
   retention?: XDriveServerBackupRetention
