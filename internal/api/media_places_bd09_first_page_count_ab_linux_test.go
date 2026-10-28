@@ -72,13 +72,20 @@ func TestPlacesBD09Owner95kCameraFirstPageCountAB(t *testing.T) {
 	var standaloneCount, groupedCount, orderedPage int
 	for _, statement := range statements {
 		lower := strings.ToLower(statement)
-		if strings.Contains(lower, "count(") && !strings.Contains(lower, "group by") {
+		// The redacted #2955 production trace has one Count-only SELECT,
+		// one Count+date-order grouped SELECT and one bounded ordered Page.
+		// Classify those OUTER query roles, not incidental GROUP BY tokens
+		// hidden inside folding/Owner membership subqueries.
+		hasCount := strings.Contains(lower, "count(")
+		hasOrder := strings.Contains(lower, "order by")
+		hasLimit := strings.Contains(lower, "limit ")
+		if hasCount && !hasOrder && !hasLimit {
 			standaloneCount++
 		}
-		if strings.Contains(lower, "count(") && strings.Contains(lower, "group by") {
+		if hasCount && hasOrder && !hasLimit {
 			groupedCount++
 		}
-		if strings.Contains(lower, "order by") && strings.Contains(lower, "limit ") {
+		if hasOrder && hasLimit {
 			orderedPage++
 		}
 	}

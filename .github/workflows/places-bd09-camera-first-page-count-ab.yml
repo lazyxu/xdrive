@@ -43,7 +43,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          fetch-depth: 2
+          fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25.x'
@@ -52,9 +52,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-list --count HEAD)" -ge 2
           git rev-parse HEAD | tee camera-count-ab-head.txt
-          git rev-parse HEAD^ | tee camera-count-ab-baseline.txt
+          # Merge-base remains the untouched BEFORE source if gofmt or
+          # focused tests require additional candidate commits.
+          git fetch --quiet origin master
+          git merge-base HEAD origin/master | tee camera-count-ab-baseline.txt
           echo "XD_PLACES_BD09_AB_HEAD=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
           if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
             test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
@@ -64,7 +66,8 @@ jobs:
             gofmt -d internal/api/media_places_bd09_first_page_count_ab_linux_test.go
             exit 1
           fi
-          if cmp -s internal/api/media.go <(git show "HEAD^:internal/api/media.go"); then
+          baseline="$(cat camera-count-ab-baseline.txt)"
+          if cmp -s internal/api/media.go <(git show "$baseline:internal/api/media.go"); then
             echo 'Candidate media.go is identical to frozen BEFORE' >&2
             exit 1
           fi
@@ -74,7 +77,8 @@ jobs:
           set -euo pipefail
           mkdir -p camera-count-ab-results
           cp internal/api/media.go "$RUNNER_TEMP/media-count-after.go"
-          git show "HEAD^:internal/api/media.go" > internal/api/media.go
+          baseline="$(cat camera-count-ab-baseline.txt)"
+          git show "$baseline:internal/api/media.go" > internal/api/media.go
           go test -c -o "$RUNNER_TEMP/camera-before.test" ./internal/api
           cp "$RUNNER_TEMP/media-count-after.go" internal/api/media.go
           go test -c -o "$RUNNER_TEMP/camera-after.test" ./internal/api
