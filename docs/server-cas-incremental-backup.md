@@ -292,6 +292,30 @@ Backup verification also does not replace a physical PostgreSQL and file
 recovery drill. No automatic v2 GC, compression, Pack or paid cloud service
 is enabled by the Admin UI.
 
+## Administrator batch verification of all local backup generations
+
+The administrator's fixed `verify_all` action runs on Host Control,
+**not** as a browser-side loop. It enumerates all known local v1, default v2
+and configured v2 snapshot roots directly, rather than the 100 displayed rows.
+Malformed `xdrive-backup-*` entries, symlink roots or more than 1000 generations
+fail closed; no truncated list is ever counted as a successful run.
+
+Every discovered generation runs the real `backup verify --json` Host command,
+checking snapshot SHA256SUMS and all referenced CAS SHA-256 bytes. Even fast
+mode verifies referenced immutable CAS content. Deep additionally audits each
+unique v2 repository's orphan/unreferenced CAS once. Work is serialized using
+the existing backup, scheduled and installer operation fences, with no generic
+shell API, storage mutation, automatic GC or restore.
+
+The Host publishes real per-generation counts as task stage progress rather
+than falsely labeling items as bytes. A bounded last-result report persists
+the request ID, timestamps, total/checked/passed/failed/unverified counts,
+deep repository results and at most 20 sanitized failure IDs. The normal
+30-entry Host history retains the terminal operation. A Host restart marks
+an unfinished task interrupted and does not automatically replay it.
+The UI distinguishes historical verification from current integrity or
+a real PostgreSQL/file recovery drill.
+
 ## Machine-readable CAS verification statistics (source-level)
 
 The internal, read-only `xdrive-backup-repo verify --repo PATH --snapshot NAME

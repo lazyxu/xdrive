@@ -30,7 +30,7 @@ test('Server backups use authenticated Admin API and a fixed Host Control reques
 })
 
 test('Host Control owns all fixed actions; no generic execution or v2 raw deletion', () => {
-  for (const name of ['create', 'verify', 'drill', 'plan', 'restore', 'delete', 'prune', 'policy']) {
+  for (const name of ['create', 'verify', 'verify_all', 'drill', 'plan', 'restore', 'delete', 'prune', 'policy']) {
     assert.ok(host.includes('\n    ' + name + ')'), 'missing Host command ' + name)
   }
   assert.match(host, /backup_admin_snapshot_directory/)
@@ -38,6 +38,7 @@ test('Host Control owns all fixed actions; no generic execution or v2 raw deleti
   assert.match(host, /backup_admin_delete_v1/)
   assert.match(host, /backup prune --keep-last/)
   assert.match(host, /backup verify/)
+  assert.match(host, /backup_admin_verify_all/)
   assert.match(host, /backup drill/)
   assert.match(host, /backup_admin_valid_drill_result/)
   assert.match(host, /backup_admin_process_request/)
@@ -52,6 +53,8 @@ test('Shared administrator page provides create/read/update/delete/verify/restor
   assert.match(panel, /服务器备份与恢复/)
   assert.match(panel, /action: 'create'/)
   assert.match(panel, /action: 'verify'/)
+  assert.match(panel, /action: 'verify_all'/)
+  assert.match(panel, /data-xdrive-admin-backup-bulk-verification/)
   assert.match(panel, /action: 'drill'/)
   assert.match(panel, /DRILL /)
   assert.match(panel, /action: 'plan'/)

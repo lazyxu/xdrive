@@ -2557,7 +2557,7 @@ backup_admin_history_append() {
     "$snapshot" "$mode" "$started" "$finished" "$error_code" "$proof_path" <<'PY'
 import json, os, re, stat, sys, tempfile
 path,state,action,rid,snapshot,mode,started,finished,code,proof_path=sys.argv[1:]
-if state not in ("success","failed") or action not in ("create","verify","drill","plan","restore","delete","prune","policy"):
+if state not in ("success","failed") or action not in ("create","verify","verify_all","drill","plan","restore","delete","prune","policy"):
     sys.exit(2)
 if not re.fullmatch(r"[0-9a-f]{24}",rid) or not re.fullmatch(r"[a-z_]{0,60}",code):
     sys.exit(2)
@@ -2565,7 +2565,7 @@ if snapshot and not re.fullmatch(r"(v1|v2-default|v2-configured):xdrive-backup-[
     sys.exit(2)
 if (action in ("verify","drill","restore","delete")) != bool(snapshot):
     sys.exit(2)
-if (action in ("verify","plan")) != (mode in ("fast","deep")):
+if (action in ("verify","verify_all","plan")) != (mode in ("fast","deep")):
     sys.exit(2)
 if not (re.fullmatch(r"20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z",started) and
         re.fullmatch(r"20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z",finished)):
@@ -2832,6 +2832,185 @@ except (OSError,ValueError,TypeError,KeyError,UnicodeError):
 PY
 }
 
+
+# Fixed Host-only verification of all locally discovered committed generations.
+# This is not a browser loop: the same Host operation lock survives navigation.
+backup_admin_verify_all() {
+  local mode="$1" id="$2" report="$3" progress="$4"
+  local backup_admin_format backup_admin_days backup_admin_repo backup_admin_revision
+  local configured=""
+  [[ "$mode" == fast || "$mode" == deep ]] || return 2
+  [[ "$id" =~ ^[0-9a-f]{24}$ && -n "$report" && -n "$progress" ]] || return 2
+  backup_admin_policy_values || return 2
+  if [[ "$backup_admin_format" == v2 && -n "$backup_admin_repo" ]]; then
+    configured="$backup_admin_repo/snapshots"
+  fi
+  XD_CONFIG_DIR="$XDRIVE_HOME" python3 - "$MANAGER" \
+    "$XDRIVE_HOME/backups/snapshots" "$XDRIVE_HOME/backups/incremental/snapshots" \
+    "$configured" "$mode" "$id" "$report" "$progress" <<'PY'
+import datetime, json, os, re, stat, subprocess, sys, tempfile
+from pathlib import Path
+
+manager, root_v1, root_v2, root_custom, mode, rid, report, progress = sys.argv[1:]
+now = lambda: datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+started = now()
+roots = [("v1", root_v1), ("v2-default", root_v2)]
+if root_custom and os.path.realpath(root_custom) != os.path.realpath(root_v2):
+    roots.append(("v2-configured", root_custom))
+snapshots, v2_repos, sample = [], set(), []
+abort = ""
+checked = passed = failed = deep_checked = deep_failed = 0
+name_re = re.compile(r"xdrive-backup-[0-9]{8}T[0-9]{6}Z\Z")
+categories = {
+    "missing_object", "object_sha256_mismatch", "object_size_mismatch",
+    "unsafe_repository", "unsafe_snapshot", "unsafe_object_bucket",
+    "unreadable_or_unsafe_object", "object_read_failed", "measurement_overflow",
+    "invalid_object_index", "invalid_legacy_archive", "snapshot_outside_repository",
+    "invalid_cas_report", "snapshot_verification_failed",
+}
+
+def write(path, value):
+    data = (json.dumps(value, ensure_ascii=False, separators=(",", ":")) + "\n").encode()
+    if len(data) > 16384: raise ValueError("report too large")
+    folder = os.path.dirname(path)
+    fd, temp = tempfile.mkstemp(prefix=".backup-admin-verify-all.", dir=folder)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            os.fchmod(f.fileno(), 0o660)
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp, path)
+        dirfd = os.open(folder, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try: os.fsync(dirfd)
+        finally: os.close(dirfd)
+    finally:
+        if os.path.lexists(temp): os.unlink(temp)
+
+def publish_progress():
+    write(progress, dict(protocol="xdrive-host-verify-all-progress-v1",
+        request_id=rid, total=len(snapshots), checked=checked, passed=passed, failed=failed))
+
+try:
+    for scope, name in roots:
+        root = Path(name)
+        if not os.path.lexists(root): continue
+        if not stat.S_ISDIR(root.lstat().st_mode):
+            abort = "unsafe_repository"; break
+        with os.scandir(root) as entries:
+            for entry in entries:
+                if not entry.name.startswith("xdrive-backup-"): continue
+                if not name_re.fullmatch(entry.name) or not entry.is_dir(follow_symlinks=False):
+                    abort = "unsafe_snapshot"; break
+                if len(snapshots) == 1000:
+                    abort = "snapshot_limit_exceeded"; break
+                snapshots.append((scope + ":" + entry.name, entry.path, scope))
+                if scope != "v1": v2_repos.add(os.path.realpath(root.parent))
+        if abort: break
+    if not snapshots and not abort: abort = "no_snapshots"
+except (OSError, ValueError):
+    abort = "unsafe_repository"
+
+snapshots.sort(reverse=True)
+try:
+    publish_progress()
+    if not abort:
+        for identity, target, scope in snapshots:
+            good = False
+            category = "snapshot_verification_failed"
+            try:
+                with tempfile.TemporaryFile() as output:
+                    result = subprocess.run([manager, "backup", "verify", "--json", target],
+                        stdin=subprocess.DEVNULL, stdout=output, stderr=sys.stderr,
+                        timeout=1800, check=False)
+                    output.seek(0)
+                    raw = output.read(2049)
+                proof = json.loads(raw) if 0 < len(raw) <= 2048 else {}
+                expected_format = "v1" if scope == "v1" else "v2"
+                good = (result.returncode == 0 and isinstance(proof, dict) and
+                    proof.get("protocol") == "xdrive-host-backup-verify-v1" and
+                    proof.get("state") == "success" and proof.get("format") == expected_format and
+                    proof.get("scope") == "backup_snapshot_and_referenced_cas" and
+                    type(proof.get("cas_objects_checked")) is int and
+                    type(proof.get("cas_bytes_hashed")) is int and
+                    0 <= proof["cas_objects_checked"] <= 9007199254740991 and
+                    0 <= proof["cas_bytes_hashed"] <= 9007199254740991 and
+                    (scope != "v1" or (proof["cas_objects_checked"] == 0 and
+                        proof["cas_bytes_hashed"] == 0)))
+                if not good and isinstance(proof, dict) and proof.get("state") == "failed":
+                    c = proof.get("failure_category")
+                    if isinstance(c, str) and c in categories: category = c
+            except (OSError, ValueError, TypeError, subprocess.TimeoutExpired):
+                good = False
+            checked += 1
+            if good: passed += 1
+            else:
+                failed += 1
+                if len(sample) < 20:
+                    sample.append(dict(snapshot_id=identity, category=category))
+            publish_progress()
+        if mode == "deep":
+            # One additional orphan-CAS audit per unique v2 repository, not
+            # one full repository scan per snapshot.
+            for repo in sorted(v2_repos):
+                deep_checked += 1
+                try:
+                    with tempfile.TemporaryFile() as output:
+                        result = subprocess.run([manager, "backup", "retention-plan",
+                            "--repository-dir", repo, "--keep-last", "1", "--mode", "deep"],
+                            stdin=subprocess.DEVNULL, stdout=output, stderr=sys.stderr,
+                            timeout=1800, check=False)
+                    if result.returncode != 0: deep_failed += 1
+                except (OSError, ValueError, subprocess.TimeoutExpired):
+                    deep_failed += 1
+    state = ("success" if not abort and checked > 0 and checked == len(snapshots) and
+             failed == 0 and deep_failed == 0 else "failed")
+    result = dict(protocol="xdrive-host-verify-all-v1", request_id=rid,
+        mode=mode, state=state, started_at=started, finished_at=now(),
+        total_snapshots=len(snapshots), checked_snapshots=checked,
+        passed_snapshots=passed, failed_snapshots=failed,
+        unverified_snapshots=len(snapshots)-checked,
+        deep_repositories_checked=deep_checked, deep_repositories_failed=deep_failed,
+        failure_sample=sample, failure_sample_truncated=failed > len(sample),
+        failure_category=abort)
+    write(report, result)
+    sys.exit(0 if state == "success" else 1)
+except (OSError, ValueError, TypeError):
+    print("bulk verification could not persist a bounded Host report", file=sys.stderr)
+    sys.exit(1)
+PY
+}
+
+backup_admin_publish_verify_all_progress() {
+  local dir="$1" action="$2" id="$3" started="$4"
+  [[ "$action" == verify_all ]] || return 0
+  local progress checked total passed failed stage
+  progress="$(python3 - "$dir/backup-admin-verify-all-progress.json" "$id" <<'PY'
+import json, os, stat, sys
+path,rid=sys.argv[1:]
+try:
+    fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+    with os.fdopen(fd,"rb") as f:
+        if not stat.S_ISREG(os.fstat(f.fileno()).st_mode) or os.fstat(f.fileno()).st_size>2048:
+            sys.exit(1)
+        v=json.load(f)
+    if v.get("protocol")!="xdrive-host-verify-all-progress-v1" or v.get("request_id")!=rid:
+        sys.exit(1)
+    fields=[v.get(k) for k in ("checked","total","passed","failed")]
+    if any(type(x) is not int or x<0 or x>1000 for x in fields): sys.exit(1)
+    checked,total,passed,failed=fields
+    if checked>total or passed+failed!=checked: sys.exit(1)
+    print(str(checked)+" "+str(total)+" "+str(passed)+" "+str(failed))
+except (ValueError,KeyError,TypeError,OSError,AttributeError):
+    sys.exit(1)
+PY
+)" || return 0
+  read -r checked total passed failed <<< "$progress"
+  stage="已校验 $checked/$total 代（通过 $passed，失败 $failed）"
+  backup_admin_status "$dir" running "$action" "$id" "" "" \
+    "宿主机正在逐代校验备份。" "$started" "" "$stage" 0 0
+}
+
 backup_admin_execute() {
   local action="$1" snapshot="$2" fmt="$3" mode="$4" keep="$5" days="$6" revision="$7" confirm="$8"
   local target install_guard="$STATE_DIR/install.lock"
@@ -2856,6 +3035,10 @@ backup_admin_execute() {
           XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup --incremental
         fi
       else XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup; fi ;;
+    verify_all)
+      [[ -z "$snapshot" && -z "$fmt" && -z "$confirm" && -z "$revision" ]] || return 2
+      [[ "$mode" == fast || "$mode" == deep ]] || return 2
+      backup_admin_verify_all "$mode" "$XD_BACKUP_ADMIN_REQUEST_ID"         "$XD_BACKUP_ADMIN_BULK_REPORT_FILE" "$XD_BACKUP_ADMIN_BULK_PROGRESS_FILE" ;;
     verify)
       [[ "$mode" == fast || "$mode" == deep ]] || return 2
       target="$(backup_admin_snapshot_directory "$snapshot")" || return 2
@@ -2921,7 +3104,7 @@ backup_admin_process_request() {
   local dir="$1" request="$dir/backup-admin-request.json" active="$dir/backup-admin-active.json"
   local protocol id action snapshot fmt mode keep days revision confirm created started result=0 log tmp
   local progress_file="$dir/backup-admin-progress.env"
-  local verify_file="" drill_file=""
+  local verify_file="" drill_file="" bulk_file="" bulk_progress="$dir/backup-admin-verify-all-progress.json"
   [[ -f "$request" && ! -L "$request" && ! -e "$active" && ! -L "$active" ]] || return 0
   mv -- "$request" "$active" || return 0
   protocol="$(json_value "$active" protocol)"
@@ -2949,6 +3132,8 @@ backup_admin_process_request() {
     verify_file="$(mktemp "$LOG_DIR/.backup-admin-verify.XXXXXXXX" 2>/dev/null || true)"
   elif [[ "$action" == drill ]]; then
     drill_file="$(mktemp "$LOG_DIR/.backup-admin-drill.XXXXXXXX" 2>/dev/null || true)"
+  elif [[ "$action" == verify_all ]]; then
+    bulk_file="$(mktemp "$LOG_DIR/.backup-admin-verify-all.XXXXXXXX" 2>/dev/null || true)"
   fi
   # Keep the Host Control heartbeat fresh during long pg_dump, hashing and
   # restoration. The backup-operation flock is inherited by the child: a
@@ -2977,6 +3162,11 @@ backup_admin_process_request() {
           if [[ "$action" == create ]]; then export XD_BACKUP_PROGRESS_FILE="$progress_file"; fi
           if [[ "$action" == verify ]]; then export XD_BACKUP_ADMIN_VERIFY_JSON_FILE="$verify_file"; fi
           if [[ "$action" == drill ]]; then export XD_BACKUP_ADMIN_DRILL_JSON_FILE="$drill_file"; fi
+          if [[ "$action" == verify_all ]]; then
+            export XD_BACKUP_ADMIN_REQUEST_ID="$id"
+            export XD_BACKUP_ADMIN_BULK_REPORT_FILE="$bulk_file"
+            export XD_BACKUP_ADMIN_BULK_PROGRESS_FILE="$bulk_progress"
+          fi
           XD_CONFIG_DIR="$XDRIVE_HOME" backup_admin_execute "$action" "$snapshot" "$fmt" "$mode" "$keep" "$days" "$revision" "$confirm"
         ) > "$log" 2>&1 &
         pid=$!
@@ -2985,6 +3175,7 @@ backup_admin_process_request() {
           tick=$((tick + 1))
           if (( tick % 2 == 0 )); then
             backup_admin_publish_live_progress "$dir" "$action" "$id" "$snapshot" "$started" || true
+            backup_admin_publish_verify_all_progress "$dir" "$action" "$id" "$started" || true
           fi
           if (( tick % 25 == 0 )); then backup_admin_inventory "$dir" || true; fi
           sleep 1
@@ -3007,6 +3198,25 @@ backup_admin_process_request() {
       [[ "$result" == 0 ]] || rm -f "$tmp"
     fi
   fi
+  # Retain a bounded Host-executed report even for verification failures.
+  # No success is possible if the report was not durably published.
+  if [[ "$action" == verify_all ]]; then
+    if [[ -n "$bulk_file" && -f "$bulk_file" && ! -L "$bulk_file" &&
+          -s "$bulk_file" ]] && (( $(wc -c < "$bulk_file") <= 16384 )); then
+      tmp="$(mktemp "$dir/.backup-admin-verify-all-report.XXXXXX")" || result=1
+      if [[ -n "$tmp" && -f "$tmp" ]]; then
+        if cp -- "$bulk_file" "$tmp" && chmod 0660 "$tmp" &&
+           sync -f "$tmp" && mv -f "$tmp" "$dir/backup-admin-verify-all-report.json"; then
+          :
+        else
+          result=1
+        fi
+        [[ -e "$tmp" ]] && rm -f -- "$tmp"
+      fi
+    elif [[ "$result" == 0 ]]; then
+      result=1
+    fi
+  fi
   local finished="$(now_utc)" history_state=success history_error=""
   if [[ "$result" == 0 ]]; then
     backup_admin_status "$dir" success "$action" "$id" "$snapshot" "" "备份操作已完成。" "$started" "$finished"
@@ -3025,6 +3235,12 @@ backup_admin_process_request() {
   fi
   if [[ -n "$drill_file" && -f "$drill_file" && ! -L "$drill_file" ]]; then
     rm -f -- "$drill_file"
+  fi
+  if [[ -n "$bulk_file" && -f "$bulk_file" && ! -L "$bulk_file" ]]; then
+    rm -f -- "$bulk_file"
+  fi
+  if [[ -f "$bulk_progress" && ! -L "$bulk_progress" ]]; then
+    rm -f -- "$bulk_progress"
   fi
   if [[ -f "$progress_file" && ! -L "$progress_file" ]]; then rm -f -- "$progress_file"; fi
   backup_admin_inventory "$dir" || true
@@ -3051,6 +3267,10 @@ backup_admin_recover_interrupted() {
   # Interrupted jobs are never replayed; discard any stale stage evidence.
   if [[ -f "$dir/backup-admin-progress.env" && ! -L "$dir/backup-admin-progress.env" ]]; then
     rm -f -- "$dir/backup-admin-progress.env"
+  fi
+  if [[ -f "$dir/backup-admin-verify-all-progress.json" &&
+        ! -L "$dir/backup-admin-verify-all-progress.json" ]]; then
+    rm -f -- "$dir/backup-admin-verify-all-progress.json"
   fi
 }
 
