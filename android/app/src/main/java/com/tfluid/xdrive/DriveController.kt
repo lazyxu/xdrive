@@ -313,7 +313,9 @@ class DriveController(
     /** Remote/SAF completion has ALREADY been verified by the original API.
      * A failed local journal cleanup must not invert that real outcome, but
      * leaves a visible warning and the conservative durable marker intact. */
-    private suspend fun verifiedTransferRecovery(checkpoint: RecoveryCheckpoint?) {
+    private suspend fun verifiedTransferRecovery(
+        checkpoint: RecoveryCheckpoint?, generationTicket: Long,
+    ) {
         if (checkpoint == null) return
         val removed = try {
             checkpoint.bridge.acknowledgeVerified(
@@ -321,7 +323,9 @@ class DriveController(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) { false }
-        if (!removed) {
+        if (!removed && generationTicket == generation &&
+            state.value.server == checkpoint.server &&
+            state.value.username == checkpoint.username) {
             mutableState.value = state.value.copy(transferRecoveryIssue = true)
         }
     }
@@ -335,7 +339,13 @@ class DriveController(
             snapshot.screen !in setOf(Screen.FILES, Screen.GALLERY, Screen.TRASH)) return
         val ticket = generation
         scope.launch {
-            val result = runCatching { bridge.pending(snapshot.server, snapshot.username) }
+            val result = try {
+                Result.success(bridge.pending(snapshot.server, snapshot.username))
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                Result.failure(failure)
+            }
             val current = state.value
             if (ticket != generation || current.server != snapshot.server ||
                 current.username != snapshot.username || session == null) return@launch
@@ -357,9 +367,11 @@ class DriveController(
         val ticket = generation
         mutableState.value = snapshot.copy(transferRecoveryClearingId = id)
         scope.launch {
-            val removed = runCatching {
+            val removed = try {
                 bridge.acknowledgeVerified(snapshot.server, snapshot.username, id)
-            }.getOrDefault(false)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) { false }
             val current = state.value
             if (ticket != generation || current.server != snapshot.server ||
                 current.username != snapshot.username || session == null) return@launch
@@ -918,6 +930,7 @@ class DriveController(
             gallerySelected = if (current.screen == Screen.GALLERY) null else current.gallerySelected,
             fileDownloadBytes = 0, fileDownloadTotal = owned.size)
         request(isFileDownload = true) { ticket ->
+            val recovery = beginTransferRecovery(NativeTransferKind.DOWNLOAD, ticket)
             val transferId = beginNativeTransfer(NativeTransferKind.DOWNLOAD, owned.name, owned.size)
             var complete = false
             try {
@@ -932,6 +945,7 @@ class DriveController(
                 checkCurrent(ticket)
                 complete = true
                 finishNativeTransfer(transferId, NativeTransferStatus.COMPLETED, written)
+                verifiedTransferRecovery(recovery, ticket)
                 mutableState.value = state.value.copy(
                     fileDownloadBytes = written, fileDownloadActive = false,
                     fileDownloadSaved = true, error = null)
@@ -993,6 +1007,7 @@ class DriveController(
             fileUploadActive = true, fileUploadCommitted = false,
             fileUploadBytes = 0, fileUploadTotal = size)
         request(isFileUpload = true) { ticket ->
+            val recovery = beginTransferRecovery(NativeTransferKind.UPLOAD, ticket)
             val transferId = beginNativeTransfer(NativeTransferKind.UPLOAD, name, size)
             val result = authenticatedMutation(ticket) { token ->
                 service.uploadFile(token, destination, name, size, openInput) { confirmed ->
@@ -1006,6 +1021,7 @@ class DriveController(
             // Server finalize returned an exact successful Node ACK; later
             // Browse reconciliation can fail without making the upload uncertain.
             finishNativeTransfer(transferId, NativeTransferStatus.COMPLETED, size)
+            verifiedTransferRecovery(recovery, ticket)
             mutableState.value = state.value.copy(
                 fileUploadActive = false, fileUploadCommitted = true,
                 fileUploadBytes = size)
@@ -3570,6 +3586,18 @@ class DriveController(
                             route = state.value.route,
                             error = "登录已失效，请重新登录。",
                         )
+                    } else if (failure is NativeTransferCheckpointFailure) {
+                        // No file bytes or UploadSession has been opened.
+                        // Distinguish a blocked encrypted recovery journal from
+                        // a possibly committed operation with a lost final ACK.
+                        val message = "加密传输检查点不可用，尚未开始传输。请在传输中心核对旧记录或设备安全存储。"
+                        mutableState.value = state.value.copy(
+                            fileDownloadActive = false, fileUploadActive = false,
+                            fileDownloadSaved = false, fileUploadCommitted = false,
+                            fileUploadPickerParent = null,
+                            transferRecoveryIssue = true,
+                            fileDownloadError = if (isFileDownload) message else null,
+                            error = if (isFileUpload) message else null)
                     } else if (isFileDownload) {
                         // Gallery/Files export errors are not Gallery Range errors:
                         // do not offer a misleading "retry older photos" action.
