@@ -1674,13 +1674,14 @@ function FileManager({
   })
 
   const backgroundTaskPort = useMemo(() => ({
-    loadActiveSummary: () => api.backgroundTaskActiveSummary(),
-    loadMinePage: (limit: number, cursor?: string) =>
-      api.backgroundTaskPage(limit, cursor),
+    loadActiveSummary: (signal?: AbortSignal) => api.backgroundTaskActiveSummary(signal),
+    loadMinePage: (limit: number, cursor?: string, signal?: AbortSignal) =>
+      api.backgroundTaskPage(limit, cursor, signal),
     loadGlobalPage: profile?.role === 'admin'
-      ? (limit: number, cursor?: string) =>
-          api.adminBackgroundTaskPage(limit, cursor)
+      ? (limit: number, cursor?: string, signal?: AbortSignal) =>
+          api.adminBackgroundTaskPage(limit, cursor, signal)
       : undefined,
+    // Never use navigation/foreground AbortSignal for durable task control POST.
     control: (id: string, action: string, global: boolean) =>
       api.controlBackgroundTask(id, action, global),
   }), [api, profile?.role])
