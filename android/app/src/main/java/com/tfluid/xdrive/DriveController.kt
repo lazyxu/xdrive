@@ -1793,6 +1793,28 @@ class DriveController(
             verify = { albums -> albums.none { it.id == album.id } },
         )
 
+    /** Restore the canonical Go automatic cover; it may still be a real
+     * first-member photo rather than a null thumbnail. Uses the same
+     * revision-fenced edit writer as rename, with GET-only recovery. */
+    fun restoreGalleryAutomaticAlbumCover(album: GalleryAlbum) {
+        var saved: GalleryAlbum? = null
+        mutateGalleryManualAlbum(
+            album,
+            change = { service, token ->
+                saved = service.gallerySetManualAlbumCover(token, album, 0)
+                val result = saved
+                if (result == null || result.id != album.id ||
+                    result.kind != "manual" || result.name != album.name ||
+                    result.itemCount != album.itemCount ||
+                    result.albumFolderId != album.albumFolderId ||
+                    result.revision !in album.revision..(album.revision + 1))
+                    throw ApiException(0, "Manual album reset cover ACK mismatch",
+                        ApiFailureReason.INVALID_RESPONSE)
+            },
+            verify = { albums -> albums.any { it == saved } },
+        )
+    }
+
     /** A visible Gallery refresh must really re-fetch its current Owner albums,
      * never expose an inert action on the Collections overview. */
     fun refreshGalleryAlbums() {
@@ -2040,6 +2062,53 @@ class DriveController(
             patch = { item, _ -> item },
             invalidateAlbumsOnAck = true,
         )
+    }
+
+    /** Assign one current loaded member as a custom cover using only Go
+     * PhotoCollection metadata. No original media/CAS or Android MediaStore
+     * mutation. An uncertain PUT remains frozen until Owner GET reconciliation. */
+    fun setGallerySelectedManualAlbumCover(item: GalleryAsset) {
+        val current = state.value
+        val album = current.gallerySelectedAlbum ?: return
+        val service = api ?: return
+        if (current.screen != Screen.GALLERY ||
+            current.galleryPrimaryTab != GalleryPrimaryTab.COLLECTIONS ||
+            album.kind != "manual" || album.itemCount <= 0 ||
+            album.revision <= 0 || !current.galleryLoaded ||
+            !current.gallerySelectionMode || current.loading ||
+            current.error != null || current.galleryViewer != null ||
+            current.gallerySelectedItems != listOf(item) ||
+            current.galleryItems.none { it == item } ||
+            item.node.id <= 0 || item.node.revision <= 0 ||
+            item.node.type != "file" || item.mediaKind !in setOf("image", "video") ||
+            current.galleryMetadataWriteAttempted ||
+            current.galleryAlbumCreateAttempted ||
+            current.galleryAlbumEditAttempted || session == null) return
+        mutableState.value = current.copy(galleryMetadataWriteAttempted = true)
+        request { ticket ->
+            val saved = authenticatedMutation(ticket) { token ->
+                service.gallerySetManualAlbumCover(token, album, item.node.id)
+            }
+            checkCurrent(ticket)
+            val latest = state.value
+            if (saved.id != album.id || saved.kind != "manual" ||
+                saved.name != album.name || saved.albumFolderId != album.albumFolderId ||
+                saved.itemCount != album.itemCount ||
+                saved.revision !in album.revision..(album.revision + 1) ||
+                saved.coverNodeId != item.node.id ||
+                latest.screen != Screen.GALLERY ||
+                latest.gallerySelectedAlbum != album ||
+                latest.gallerySelectedItems != listOf(item) ||
+                latest.galleryItems.none { it == item })
+                throw ApiException(0, "Manual album cover ACK mismatch",
+                    ApiFailureReason.INVALID_RESPONSE)
+            // We show only the authoritative Go ACK (not a guessed image).
+            // The Collections overview will GET fresh revision and cover.
+            mutableState.value = latest.withoutGallerySelection().copy(
+                gallerySelectedAlbum = saved,
+                galleryAlbums = emptyList(), galleryAlbumsLoaded = false,
+                error = null)
+        }
     }
 
     /** A single selected, server-loaded member can leave the current manual
