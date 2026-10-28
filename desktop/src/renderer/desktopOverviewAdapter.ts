@@ -48,13 +48,15 @@ const loadThumbnail = async (item: XDriveFileExplorerItem, signal?: AbortSignal)
   }
 
 export const desktopOverviewPort: XDriveOverviewPort = {
-  async cloudFileRecent(limit) {
-    const result = await window.xdriveDesktop.agent.cloudFileRecent(limit)
+  async cloudFileRecent(limit, signal) {
+    const result = await xDriveDesktopViewportRequest(signal,
+      requestID => window.xdriveDesktop.agent.cloudFileRecent(limit, requestID))
     if (!result.ok) throw new Error('最近使用读取失败')
     return result.data
   },
-  async cloudFileFavorites() {
-    const result = await window.xdriveDesktop.agent.cloudFileFavorites()
+  async cloudFileFavorites(signal) {
+    const result = await xDriveDesktopViewportRequest(signal,
+      requestID => window.xdriveDesktop.agent.cloudFileFavorites(requestID))
     if (!result.ok) throw new Error('收藏读取失败')
     return result.data
   },
@@ -63,8 +65,9 @@ export const desktopOverviewPort: XDriveOverviewPort = {
     if (!result.ok) throw new Error('文件可用性读取失败')
     return result.data.items
   },
-  async getLocalDiskSpace() {
-    const result = await window.xdriveDesktop.agent.getLocalDiskSpace()
+  async getLocalDiskSpace(signal) {
+    const result = await xDriveDesktopViewportRequest(signal,
+      requestID => window.xdriveDesktop.agent.getLocalDiskSpace(requestID))
     if (!result.ok) throw new Error('本机磁盘状态读取失败')
     return result.data
   },
