@@ -181,7 +181,26 @@ export type XDriveServerBackupRequest =
   | { action: 'prune'; keep_last: number; confirmation: string }
   | { action: 'policy'; format: 'v1' | 'v2'; retention_days: number; revision: string }
 
+/** Read-only identities beyond newest 100. This payload never grants restore/delete. */
+export type XDriveServerBackupSnapshotIndexPage = {
+  protocol: 'xdrive-backup-snapshot-page-v1'
+  scope: 'unverified_identity_only'
+  total_snapshots: number
+  indexed_snapshots: number
+  truncated: boolean
+  offset: number
+  limit: number
+  next_offset?: number
+  snapshot_ids: string[]
+}
+export type XDriveServerBackupSnapshotIndexQuery = {
+  offset: number
+  limit: number
+}
+
 export type XDriveServerBackupPort = {
   read(): Promise<XDriveServerBackupPage>
   submit(request: XDriveServerBackupRequest): Promise<XDriveServerBackupOperation>
+  /** Old Hosts may not provide this optional read-only capability. */
+  readSnapshotIndexPage?(query: XDriveServerBackupSnapshotIndexQuery): Promise<XDriveServerBackupSnapshotIndexPage>
 }
