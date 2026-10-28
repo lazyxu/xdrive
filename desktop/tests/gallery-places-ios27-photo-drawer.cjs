@@ -306,7 +306,9 @@ test('responsive Drawer restore stays in one Parent and always reauthorizes both
   assert.match(parent,/selectCellRef\.current\(\s*matched\.selection,intent\.hint\.presentation\)/)
   assert.match(parent,/preview\(cell,XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT,0,/)
   assert.match(parent,/xDrivePlacesDrawerValidRange\(cell,range\)/)
-  assert.match(parent,/node\.parentElement\?\.querySelector<HTMLElement>\(/)
+  // MUI ports the album Dialog into the same trusted document, outside
+  // the SDK canvas. Never use the untrusted Child subtree as a selector.
+  assert.match(parent,/node\.ownerDocument\.querySelector<HTMLElement>\(/)
   assert.doesNotMatch(parent,/node\.querySelector<HTMLElement>\(/,
     'the isolated SDK host is not the trusted photo drawer ancestor')
   assert.match(parent,/pendingResizeDrawer\.current=null[\s\S]*?refreshFilteredCells\.current\?\.\(\)/)

@@ -121,7 +121,10 @@ test('photo thumbnails, real Owner camera count and wall action remain on map', 
   assert.match(source, /data-xdrive-places-trusted-photo-cover-pins/)
   assert.match(source, /ownerCover\(pin\.selection/)
   assert.match(source, /revision=\{selection\.node_revision\}/)
-  assert.match(source, /onClick=\{\(\) => openVerifiedCell\(pin.selection\)\}/)
+  // During an SDK gesture the previous cover stays visual-only: no Owner
+  // button activation survives without a fresh signed current Cell.
+  assert.match(source, /disabled=\{!currentCoverActive\}/)
+  assert.match(source, /onClick=\{currentCoverActive\s*\?\s*\(\) => openVerifiedCell\(pin.selection\)\s*:\s*undefined\}/)
   assert.match(source, /approved.key===filterRef.current.key/)
   assert.match(source, /xDriveMountBaiduIsolatedFrame/)
   assert.match(source, /xDriveMountBaiduInlineMap/)
@@ -157,7 +160,7 @@ test('compact map rotation uses fresh owner camera before evaluating photo pins'
   assert.match(source,/beforeResizeQueries=await page\.evaluate/)
   assert.match(source,/window\.__mapProbe\.queries\.length>before/)
   assert.match(source,/await page\.waitForFunction\(before=>/)
-  assert.match(source,/pointToPixel\(\)\{[\s\S]*?this\.canvas\?\.clientWidth/)
+  assert.match(source,/pointToPixel\(point\)\{[\s\S]*?this\.canvas\?\.clientWidth/)
   assert.match(source,/await page\.locator\('\[data-xdrive-places-trusted-photo-cover\]'\)/)
   // Do not accept an old fixed-pixel test marker which can conceal a stale
   // projected 390px camera after viewport rotation.
@@ -173,7 +176,7 @@ test('camera resize revokes old Cell and auto-restores drawer after fresh Owner 
     "portrait automatically restores current Owner drawer",
     "beforeLandscape=await page.evaluate",
     "beforePortrait=await page.evaluate",
-    "expanded drawer fits inside 844x390 map and safe area",
+    "expanded Gallery modal fits 844x390 screen and safe area",
   ]) assert.ok(driver.includes(text),text)
   assert.match(driver,/probe\.oldDrawer=document\.querySelector/)
   assert.match(driver,/oldDetached:probe\.oldDrawer\?\.isConnected===false/)
@@ -181,9 +184,12 @@ test('camera resize revokes old Cell and auto-restores drawer after fresh Owner 
   assert.match(driver,/window\.__mapProbe\.photoPreviewRanges\.length>before\.previews/)
   assert.match(driver,/landscapeFresh\.itemTotal===3&&landscapeFresh\.items===3/)
   assert.match(driver,/portraitFresh\.previewCount===3&&portraitFresh\.newItems===3/)
-  assert.match(driver,/sheetGeometry\.top>=sheetGeometry\.mapTop\+8/)
-  assert.match(driver,/sheetGeometry\.bottom<=sheetGeometry\.mapBottom-8/)
-  assert.match(driver,/sheetGeometry\.bottom<=sheetGeometry\.screen-8/)
+  // A MUI Dialog is portaled into the trusted document and constrained by
+  // the full viewport/safe area, not the retired in-map bottom sheet.
+  assert.match(driver,/sheetGeometry\.withinModal&&sheetGeometry\.contentHeight>50/)
+  assert.match(driver,/sheetGeometry\.top>=0&&sheetGeometry\.left>=0/)
+  assert.match(driver,/sheetGeometry\.right<=sheetGeometry\.screenWidth\+1/)
+  assert.match(driver,/sheetGeometry\.bottom<=sheetGeometry\.screen\+1/)
   assert.doesNotMatch(driver,/await openFreshCameraCell\(\)/,
     'automatic restoration must use new Owner Cell without a second user click')
 })
