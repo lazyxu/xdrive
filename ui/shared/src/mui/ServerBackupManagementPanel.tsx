@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, LinearProgress,
-  MenuItem, Paper, Stack, Table, TableBody, TableCell, TableContainer,
+  MenuItem, Paper, Stack, Table, TableBody, TableCell, TableContainer, TablePagination,
   TableHead, TableRow, TextField, Typography,
 } from '@mui/material'
 import type {
@@ -71,6 +71,9 @@ export function XDriveServerBackupManagementPanel({
   } | null>(null)
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null)
   const [historyDetail, setHistoryDetail] = useState<XDriveServerBackupHistoryEntry | null>(null)
+  const [historyPage, setHistoryPage] = useState(0)
+  const [historyQuery, setHistoryQuery] = useState('')
+  const [historyOutcome, setHistoryOutcome] = useState<'all' | 'success' | 'failed'>('all')
   const [confirmText, setConfirmText] = useState('')
   const [prunePreview, setPrunePreview] = useState<XDriveServerBackupPrunePreview | null>(null)
   const [selectedPreviewRequestID, setSelectedPreviewRequestID] = useState('')
@@ -108,6 +111,9 @@ export function XDriveServerBackupManagementPanel({
         setPolicyDraft(null)
         setConfirmation(null)
         setHistoryDetail(null)
+    setHistoryPage(0)
+    setHistoryQuery('')
+    setHistoryOutcome('all')
         setPrunePreview(null)
         setSelectedPreviewRequestID('')
         setError(e instanceof Error ? e.message : '无法更新备份状态；以宿主机记录为准。')
@@ -165,6 +171,18 @@ export function XDriveServerBackupManagementPanel({
   const policyDays = Number(policyDraft?.days)
   const policyValid = Number.isInteger(policyDays) && policyDays >= 0 && policyDays <= 3650 &&
     !(policyDraft?.format === 'v1' && Boolean(page?.inventory.policy.repository))
+  const filteredHistory = (page?.history || []).filter(item => {
+    if (historyOutcome !== 'all' && item.state !== historyOutcome) return false
+    const query = historyQuery.trim().toLocaleLowerCase()
+    if (!query) return true
+    return [item.action, item.snapshot_id, item.request_id, item.error_code]
+      .some(value => (value || '').toLocaleLowerCase().includes(query))
+  })
+  const historyPageSize = 20
+  const visibleHistoryPage = Math.min(historyPage,
+    Math.max(0, Math.ceil(filteredHistory.length / historyPageSize) - 1))
+  const visibleHistory = filteredHistory.slice(
+    visibleHistoryPage * historyPageSize, (visibleHistoryPage + 1) * historyPageSize)
   const disabled = !supported || busy
 
   const submit = async (request: XDriveServerBackupRequest) => {
@@ -664,8 +682,27 @@ export function XDriveServerBackupManagementPanel({
         <Stack spacing={1.5}>
           <Typography variant="subtitle1" fontWeight={600}>宿主机备份操作与校验历史</Typography>
           <Typography variant="body2" color="text.secondary">
-            最多保留 30 条真实执行结果。历史验证通过不代表当前仍完整；每次恢复前都重新校验。
+            最多保留最近 100 条宿主机真实执行结果，支持筛选和分页。历史验证通过不代表当前仍完整；每次恢复前都重新校验。
           </Typography>
+          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap
+            data-xdrive-admin-backup-history-filters>
+            <TextField size="small" label="搜索动作、快照、请求号或失败代码"
+              value={historyQuery} sx={{ minWidth: 260, flexGrow: 1 }}
+              onChange={e => { setHistoryQuery(e.target.value); setHistoryPage(0) }} />
+            <TextField select size="small" label="结果" sx={{ minWidth: 125 }}
+              value={historyOutcome}
+              onChange={e => {
+                setHistoryOutcome(e.target.value as 'all' | 'success' | 'failed')
+                setHistoryPage(0)
+              }}>
+              <MenuItem value="all">全部</MenuItem>
+              <MenuItem value="success">成功</MenuItem>
+              <MenuItem value="failed">失败</MenuItem>
+            </TextField>
+            <Typography variant="caption" color="text.secondary">
+              筛选结果 {filteredHistory.length} 条
+            </Typography>
+          </Stack>
           <TableContainer sx={{ maxHeight: 320 }}>
             <Table size="small" stickyHeader aria-label="服务器备份操作历史">
               <TableHead>
@@ -675,7 +712,7 @@ export function XDriveServerBackupManagementPanel({
                 </TableRow>
               </TableHead>
               <TableBody>
-                {(page?.history || []).map(item => (
+                {visibleHistory.map(item => (
                   <TableRow key={item.request_id}>
                     <TableCell>{item.finished_at ? new Date(item.finished_at).toLocaleString() : '—'}</TableCell>
                     <TableCell>{item.action}</TableCell>
@@ -691,10 +728,16 @@ export function XDriveServerBackupManagementPanel({
                     </TableCell>
                   </TableRow>
                 ))}
-                {!page?.history?.length ? <TableRow><TableCell colSpan={8}>暂无历史操作记录。</TableCell></TableRow> : null}
+                {!filteredHistory.length ? <TableRow><TableCell colSpan={8}>没有符合条件的历史操作记录。</TableCell></TableRow> : null}
               </TableBody>
             </Table>
           </TableContainer>
+          <TablePagination component="div" count={filteredHistory.length}
+            page={visibleHistoryPage} rowsPerPage={historyPageSize} rowsPerPageOptions={[historyPageSize]}
+            onPageChange={(_, nextPage) => setHistoryPage(nextPage)}
+            labelRowsPerPage="每页" labelDisplayedRows={({ from, to, count }) =>
+              `${from}–${to} / ${count}`} />
+
         </Stack>
       </Paper>
       <Dialog open={Boolean(historyDetail)} onClose={() => setHistoryDetail(null)}
