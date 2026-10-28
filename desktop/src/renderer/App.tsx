@@ -407,8 +407,9 @@ export default function App({
           return result.data.device_id || null
         },
       } : {}),
-      list: async () => {
-        const result = await window.xdriveDesktop.agent.getDeviceBackups()
+      list: async (signal?: AbortSignal) => {
+        const result = await xDriveDesktopViewportRequest(signal, requestID =>
+          window.xdriveDesktop.agent.getDeviceBackups(requestID))
         if (!result.ok) throw new Error(result.error.message)
         return result.data
       },
