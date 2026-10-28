@@ -47,7 +47,7 @@ test('inline SDK host cannot intentionally send WGS84 or private media to the pr
   assert.match(shared, /bootstrapMapSession\(receipt.ticket\)/)
 })
 
-function buildInlineFixture() {
+function buildInlineFixture(config = {}) {
   const compile = ts.transpileModule(inline, {fileName:'media-gallery-baidu-inline-map-host.ts',
     reportDiagnostics:true,compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}})
   assert.deepEqual((compile.diagnostics || []).filter(x => x.category === ts.DiagnosticCategory.Error), [])
@@ -111,8 +111,20 @@ function buildInlineFixture() {
   const canvas={
     tagName:'DIV',style:{},clientWidth:640,clientHeight:480,remove() {this.removed=true},
   }
+  const resizeObservers=[]
+  class ResizeObserverFixture {
+    constructor(callback) {
+      this.callback=callback
+      this.disconnected=false
+      resizeObservers.push(this)
+    }
+    observe(element) { assert.equal(element,canvas);this.element=element }
+    disconnect() { this.disconnected=true }
+    fire() { if(!this.disconnected)this.callback([]) }
+  }
   const doc={
-    defaultView:{location:{protocol:'https:'}},
+    defaultView:{location:{protocol:'https:'},
+      ...(config.withResizeObserver ? {ResizeObserver:ResizeObserverFixture} : {})},
     createElement(tag) {assert.equal(tag,'div');return canvas},
   }
   const host={ownerDocument:doc,appendChild(child){assert.equal(child,canvas)}}
@@ -140,7 +152,7 @@ function buildInlineFixture() {
   }
   return {host:module.exports.xDriveMountBaiduInlineMap(options),options,
     map,canvas,cells,clicks,cancels,viewports,cameras,projected,
-    flushTimers,grantCount:()=>grants,browserConfigCount:()=>browserConfigs,disposed:()=>disposed}
+    resizeObservers,flushTimers,grantCount:()=>grants,browserConfigCount:()=>browserConfigs,disposed:()=>disposed}
 }
 
 test('authenticated inline map retains exact Cell identities; gesture invalidates stale clicks', async () => {
@@ -258,4 +270,57 @@ test('inline native labels yield to trusted React covers without losing other Ce
   assert.equal(f.map.labels.length,0)
   f.host.dispose()
   assert.equal(f.host.setPhotoCoverSelections([]),false)
+})
+
+test('inline responsive map size change revokes stale photo pixels and re-queries the current Owner camera',async()=>{
+  const f=buildInlineFixture({withResizeObserver:true})
+  const selection={cell_x:1,cell_y:1,asset_id:71,node_id:81,node_revision:3,photo_count:4}
+  const cell={latitude:31,longitude:119,count:4,selection}
+  assert.equal(f.host.replaceAuthorizedCells([cell]),true)
+  assert.equal(await f.host.beginAuthorizedInlineSession(new AbortController().signal),true)
+  assert.equal(f.resizeObservers.length,1)
+  assert.equal(f.resizeObservers[0].element,f.canvas)
+  assert.equal(f.projected.at(-1).width,640)
+  assert.equal(f.projected.at(-1).height,480)
+  const oldLabel=f.map.labels[0]
+  f.resizeObservers[0].fire()
+  assert.equal(f.cancels.length,0,'first ResizeObserver notification is not navigation')
+  f.canvas.clientWidth=390
+  f.canvas.clientHeight=844
+  f.resizeObservers[0].fire()
+  assert.equal(f.cancels.length,1,'orientation instantly revokes old accepted /cells')
+  assert.equal(f.map.labels.length,0,'no numeric labels from the old camera')
+  assert.deepEqual(f.projected.at(-1),{width:0,height:0,cells:[]},
+    'old projection is revoked before the next frame can render')
+  oldLabel.trigger()
+  assert.deepEqual(f.clicks,[],'old SDK Label cannot reopen stale Owner photos')
+  assert.equal(f.host.setPhotoCoverSelections([selection]),false)
+  const before=f.viewports.length
+  f.resizeObservers[0].fire()
+  assert.equal(f.cancels.length,1,'identical dimensions must not churn Owner queries')
+  f.canvas.clientWidth=391
+  f.resizeObservers[0].fire()
+  assert.equal(f.cancels.length,1,
+    'multiple resize frames coalesce without repeated Owner cancellation')
+  f.flushTimers()
+  assert.equal(f.viewports.length,before+1,
+    'one debounced fresh authorized camera Range after resize')
+  assert.equal(f.viewports.at(-1).coordinate_space,'bd09ll')
+  assert.equal(f.host.replaceAuthorizedCells([cell]),true)
+  assert.equal(f.projected.at(-1).width,391)
+  assert.equal(f.projected.at(-1).height,844)
+  f.canvas.clientWidth=899
+  f.canvas.clientHeight=390
+  f.resizeObservers[0].fire()
+  assert.equal(f.cancels.length,2,'short landscape also revokes old pixel positions')
+  f.canvas.clientWidth=900
+  f.resizeObservers[0].fire()
+  assert.equal(f.cancels.length,2,'crossing 899/900 does not spam cancel')
+  f.flushTimers()
+  assert.equal(f.viewports.length,before+2)
+  f.host.dispose()
+  assert.equal(f.resizeObservers[0].disconnected,true)
+  const finalCount=f.cancels.length
+  f.resizeObservers[0].fire()
+  assert.equal(f.cancels.length,finalCount,'no resize callback after disposal')
 })

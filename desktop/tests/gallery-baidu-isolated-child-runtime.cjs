@@ -13,8 +13,15 @@ const caddy = read('deploy/baidu-isolated-child/Caddyfile.example')
 function childFixture(parentOrigin='https://gallery.example.net',childOrigin='https://map-isolated.example.org',sdkEnabled=false,options={}) {
   const events = new Map(), sent=[], moves=[], nativeEvents=new Map(), redeems=[], labels=[]
   const parent={postMessage(message,targetOrigin){sent.push({message,targetOrigin})}}
-  const messageTarget={textContent:''}
-  const scripts=[]
+  const messageTarget={textContent:'',
+    ...(options.resizeFixture ? {clientWidth:640,clientHeight:480} : {})}
+  const scripts=[], resizeObservers=[]
+  class ResizeObserverFixture {
+    constructor(callback){this.callback=callback;this.disconnected=false;resizeObservers.push(this)}
+    observe(element){assert.equal(element,messageTarget);this.element=element}
+    disconnect(){this.disconnected=true}
+    fire(){if(!this.disconnected)this.callback([])}
+  }
   const fakeSDK={
     Point:function Point(lng,lat){this.lng=lng;this.lat=lat},
     Label:function Label(value){
@@ -39,6 +46,7 @@ function childFixture(parentOrigin='https://gallery.example.net',childOrigin='ht
   }
   const env={window:{location:{origin:childOrigin},parent,
     ...(sdkEnabled?{BMap:fakeSDK}:{}),
+    ...(options.resizeFixture ? {ResizeObserver:ResizeObserverFixture} : {}),
     addEventListener(type,cb){events.set(type,cb)}},
     ...(sdkEnabled?{
       fetch:async()=>{
@@ -65,7 +73,7 @@ function childFixture(parentOrigin='https://gallery.example.net',childOrigin='ht
   const context=vm.createContext(env)
   const code=new vm.Script(src,{filename:'deploy/baidu-isolated-child/child.js'})
   code.runInContext(context,{timeout:1500})
-  return {events,sent,moves,nativeEvents,redeems,labels,scripts,messageTarget,parent,context,sendObject(source,origin,obj){
+  return {events,sent,moves,nativeEvents,redeems,labels,scripts,resizeObservers,messageTarget,parent,context,sendObject(source,origin,obj){
     const literal=JSON.stringify(obj)
     context.payload=literal
     const shaped=vm.runInContext('JSON.parse(payload)',context)
@@ -342,4 +350,62 @@ test('isolated Child shows numeric fallback only for Cells not covered by real P
   assert.equal(f.labels.length,0,'fresh visible photo hides only its current Label')
   f.events.get('pagehide')?.()
   assert.equal(f.labels.length,0)
+})
+
+test('isolated Child container resize cancels old Owner cells and debounces one fresh BD09 camera',async()=>{
+  const f=childFixture('https://gallery.example.net','https://map-isolated.example.org',
+    true,{resizeFixture:true})
+  const send=(kind,more={})=>f.sendObject(f.parent,'https://gallery.example.net',{
+    version:1,generation:7,nonce:'a'.repeat(64),kind,...more})
+  const oldCell={key:'c'.repeat(32),latitude:35,longitude:139,count:12}
+  f.sendObject(f.parent,'https://gallery.example.net',init)
+  send('cells',{cells:[oldCell]})
+  send('map-session',{ticket:'b'.repeat(64)})
+  await waitForChild(()=>f.resizeObservers.length===1,'Child ResizeObserver attached')
+  assert.equal(f.resizeObservers[0].element,f.messageTarget)
+  const count=kind=>f.sent.filter(packet=>packet.message.kind===kind).length
+  await waitForChild(()=>count('viewport')===1,'initial signed Owner Camera requested')
+  assert.equal(count('cancel'),0)
+  f.resizeObservers[0].fire()
+  assert.equal(count('cancel'),0,'initial/no-op resize must never revoke current Cells')
+  assert.equal(f.labels.length,1)
+  const obsolete=f.labels[0]
+  send('photo-covers',{keys:[oldCell.key]})
+  assert.equal(f.labels.length,0,'cover can suppress its current numeric fallback')
+  f.messageTarget.clientWidth=390
+  f.messageTarget.clientHeight=844
+  f.resizeObservers[0].fire()
+  assert.equal(count('cancel'),1,'orientation immediately cancels obsolete Owner Range')
+  assert.equal(f.labels.length,0)
+  send('photo-covers',{keys:[]})
+  assert.equal(f.labels.length,0,'stale cosmetic message cannot restore labels')
+  const before=count('viewport')
+  f.resizeObservers[0].fire()
+  assert.equal(count('cancel'),1,'same dimensions cause no duplicate query')
+  f.messageTarget.clientWidth=391
+  f.resizeObservers[0].fire()
+  assert.equal(count('cancel'),1,'rapid resize frames coalesce into one Owner cancel')
+  await waitForChild(()=>count('viewport')===before+1,'resize reissued one camera Range')
+  assert.equal(f.sent.filter(x=>x.message.kind==='viewport').at(-1).message.bounds.coordinate_space,
+    'bd09ll')
+  const newCell={...oldCell,key:'d'.repeat(32)}
+  send('cells',{cells:[newCell]})
+  assert.equal(f.labels.length,1,'fresh Cell receipt restores current numeric fallback')
+  send('photo-covers',{keys:[oldCell.key]})
+  assert.equal(f.labels.length,1,'revoked key cannot hide new Cell')
+  f.messageTarget.clientWidth=899
+  f.messageTarget.clientHeight=390
+  f.resizeObservers[0].fire()
+  assert.equal(count('cancel'),2,'short landscape also revokes stale pixel projection')
+  f.messageTarget.clientWidth=900
+  f.resizeObservers[0].fire()
+  assert.equal(count('cancel'),2,'899/900 breakpoint cannot flood Parent cancellation')
+  const beforeDispose=count('viewport')
+  f.events.get('pagehide')?.()
+  assert.equal(f.resizeObservers[0].disconnected,true)
+  f.resizeObservers[0].fire()
+  await new Promise(resolve=>setTimeout(resolve,550))
+  assert.equal(count('viewport'),beforeDispose,'disposed Child cannot send late camera')
+  assert.equal(count('cancel'),2)
+  assert.equal(obsolete.click,null,'old numeric fallback remains detached')
 })

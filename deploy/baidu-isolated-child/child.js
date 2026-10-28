@@ -55,6 +55,8 @@
   let script = null, pending = false, disposed = false, sessionFailed = false, labelBindings = []
   let initialOverviewPending = true
   let viewportTimer = null
+  let observedSize = null, sizeObserver = null, windowResizeFallback = false
+  let resizeRevoked = false
   const send = (kind, fields = {}) => {
     if (!active || disposed) return
     window.parent.postMessage(Object.assign({version:1,generation,nonce,kind},fields),parentOrigin)
@@ -172,6 +174,48 @@
     clearLabels()
     send('cancel')
   }
+  // A resize (including a mobile rotation or container-width change)
+  // invalidates earlier camera pixels and their Owner Cell keys just like
+  // a real SDK gesture. Never keep photo covers attached to old CSS pixels.
+  // The parent still owns the ONLY authorized /cells query after debounce.
+  const refreshChangedSize = () => {
+    if (!active || disposed || !map || !canvas) return
+    const width = Math.round(canvas.clientWidth)
+    const height = Math.round(canvas.clientHeight)
+    if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) ||
+        width < 120 || height < 120 || width > 4096 || height > 4096) return
+    if (!observedSize) { observedSize = {width,height}; return }
+    if (observedSize.width === width && observedSize.height === height) return
+    observedSize = {width,height}
+    // The first resize revokes Owner keys immediately; subsequent frames
+    // only extend the 500ms quiet window until a new signed Cell receipt.
+    if (!resizeRevoked) { stopViewport(); resizeRevoked = true }
+    scheduleViewport()
+  }
+  const observeCanvasSize = () => {
+    refreshChangedSize() // Initial observer notification is not a gesture.
+    if (typeof window.ResizeObserver === 'function') {
+      try {
+        sizeObserver = new window.ResizeObserver(refreshChangedSize)
+        sizeObserver.observe(canvas)
+        return
+      } catch {
+        try { sizeObserver?.disconnect() } catch {}
+        sizeObserver = null
+      }
+    }
+    if (typeof window.addEventListener === 'function') {
+      window.addEventListener('resize',refreshChangedSize)
+      windowResizeFallback = true
+    }
+  }
+  const releaseCanvasSize = () => {
+    try { sizeObserver?.disconnect() } catch {}
+    sizeObserver = null
+    if (windowResizeFallback && typeof window.removeEventListener === 'function')
+      window.removeEventListener('resize',refreshChangedSize)
+    windowResizeFallback = false
+  }
   const bindNative = native => {
     if (disposed || !active || !canvas || typeof native.Map !== 'function' ||
         typeof native.Point !== 'function' || typeof native.Label !== 'function') throw Error('unavailable')
@@ -193,6 +237,7 @@
     send('map-ready')
     emitCellProjections()
     scheduleViewport()
+    observeCanvasSize()
   }
   const loadSDK = () => new Promise((resolve,reject) => {
     if (script || disposed || !active) { reject(Error('unavailable')); return }
@@ -249,6 +294,7 @@
       // Parent may create a fresh, separately signed Child if authorized.
       if (!sessionFailed && !disposed) {
         sessionFailed=true
+        releaseCanvasSize()
         clearLabels()
         allowedKeys.clear()
         coveredKeys.clear()
@@ -282,6 +328,7 @@
         longitude:cell.longitude,count:cell.count}))
       allowedKeys=next
       coveredKeys.clear()
+      resizeRevoked=false
       fitInitialOverview()
       renderCells()
       if(!map && status)status.textContent='已建立隔离消息通道；等待仅用于地图的会话。'
@@ -323,6 +370,7 @@
     }
   }
   const dispose=()=>{
+    releaseCanvasSize()
     if (viewportTimer !== null) clearTimeout(viewportTimer)
     viewportTimer = null
     active=false;disposed=true;generation=0;nonce=''
