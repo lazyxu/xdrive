@@ -74,7 +74,7 @@ function withBrowser({ denied = false, initialHash = '#/app/overview', initialSt
   const shared = {
     xDriveParseWebAppHash(value) {
       const match = typeof value === 'string'
-        ? /^#\\/app\\/(overview|files|admin-users|media-viewer)$/.exec(value) : null
+        ? /^#\/app\/(overview|files|admin-users|media-viewer)$/.exec(value) : null
       return match ? { app: match[1], params: {} } : null
     },
     xDriveWebAppHash(route) { return '#/app/' + route.app },
@@ -156,8 +156,8 @@ test('readable genuine History.state retains Viewer Back and parent route behavi
 })
 
 test('all History.state reads go through the same guarded browser helper', () => {
-  assert.equal((source.match(/window\\.history\\.state/g) || []).length, 1)
+  assert.equal((source.match(/window\.history\.state/g) || []).length, 1)
   assert.ok(source.includes('function xDriveReadableWebHistoryState()'))
   assert.ok(source.includes('const parentHash = (xDriveReadableWebHistoryState()'))
-  assert.doesNotMatch(source, /skipWaiting|localStorage|sessionStorage\\.setItem\\(.*history/)
+  assert.doesNotMatch(source, /skipWaiting|localStorage|sessionStorage\.setItem\\(.*history/)
 })
