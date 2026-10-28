@@ -35,7 +35,8 @@ test('Desktop quota+statistics readers use exactly the existing sender-scoped GE
   ]) {
     assert.match(renderer, new RegExp('agent\\.' + x.method + '\\(requestID\\)'),
       x.method + ' must receive the renderer-owned cancellation ID')
-    assert.match(preload, new RegExp(x.method + ': \\(requestID\\?: string\\) => ipcRenderer\\.invoke\\(\\'agent:' + x.channel + '\\', requestID\\)'))
+    assert.ok(preload.includes(x.method + ": (requestID?: string) => ipcRenderer.invoke('agent:" + x.channel + "', requestID)"),
+      x.method + ' must retain optional scoped cancellation and legacy no-ID callers')
     assert.match(typings, new RegExp(x.method + ': \\(requestID\\?: string\\) => Promise<DesktopResult'))
     const handler = main.split("ipcMain.handle('agent:" + x.channel + "'")[1]
       ?.split('  ipcMain.handle(')[0]
