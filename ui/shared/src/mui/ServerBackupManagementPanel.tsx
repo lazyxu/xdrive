@@ -16,6 +16,7 @@ import { XDriveActionButton } from './ActionButton'
 import { XDriveBackupVerificationReceipt } from './BackupVerificationReceipt'
 import { XDriveBackupRecoveryEvidencePanel } from './BackupRecoveryEvidencePanel'
 import { XDriveBackupRepositoryInventory } from './BackupRepositoryInventory'
+import { XDriveBackupScheduleRegistration } from './BackupScheduleRegistration'
 import { XDriveSectionHeader } from './SectionHeader'
 
 type Confirmation = {
@@ -618,6 +619,8 @@ export function XDriveServerBackupManagementPanel({
           ) : null}
         </Stack>
       </Paper>
+
+      {page?.supported ? <XDriveBackupScheduleRegistration inventory={page.inventory} /> : null}
 
       <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }} data-xdrive-admin-backup-history>
         <Stack spacing={1.5}>
