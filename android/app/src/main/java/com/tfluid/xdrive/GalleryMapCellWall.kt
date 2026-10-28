@@ -118,7 +118,7 @@ internal fun ColumnScope.GalleryMapCellWall(
             contentPadding = PaddingValues(4.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {{
+        ) {
         if (state.galleryItems.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
             Text("此网格中没有可显示的照片或视频。", Modifier.padding(20.dp))
         }
