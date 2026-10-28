@@ -1,4 +1,3 @@
-import { xDriveEnterForegroundPage } from '../../ui/shared/src/mui/ViewerForegroundPriority'
 import React, { useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import { Typography, useTheme } from '@mui/material'
@@ -6,10 +5,8 @@ import {
   XDriveAppearanceThemeProvider,
   XDriveApp, XDriveSettingsDialog,
   xDriveWorkspaceHostSections,
-  xDriveIsWorkspaceAppRoute,
-  xDriveWorkspaceNavigationAllowed,
+  useXDriveWorkspaceNavigationState,
 } from '@xdrive/ui/mui'
-import type { XDriveWorkspaceAppRoute } from '@xdrive/ui/mui'
 import './styles.css'
 import { createXDriveSynologyHost } from './synologyHost'
 
@@ -21,23 +18,13 @@ function SynologyWorkspace({ appearance, onAppearanceChange }: {
 }) {
   const theme = useTheme()
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [pageRevision, refreshPage] = useState(0)
-  const [selected, setSelected] = useState<XDriveWorkspaceAppRoute>('overview')
-
-  const navigate = (next: XDriveWorkspaceAppRoute) => {
-    // Apply the real canonical Server/Host role gate before page preemption.
-    // Home/Task links and sidebar alike must not bypass privileged routes.
-    if (!xDriveWorkspaceNavigationAllowed(next, host.adminRoleVerified === true)) return
-    if (next === selected) {
-      refreshPage((value) => value + 1)
-      return
-    }
-    // Cancel only the previous page's disposable requests before this
-    // newly authenticated DSM destination mounts its own reader pools.
-    xDriveEnterForegroundPage('synology:' + next)
-    setSelected(next)
-    refreshPage(0)
-  }
+  // Shared application navigation owns the same-route refresh lifecycle,
+  // Server-admin gate and disposable foreground priority for every Host.
+  // DSM contributes only authenticated domain ports, never page-specific JSX.
+  const { selected, pageRevision, navigate } = useXDriveWorkspaceNavigationState({
+    platform: host.platform,
+    adminRoleVerified: host.adminRoleVerified === true,
+  })
 
   return (
     <XDriveApp
@@ -56,7 +43,6 @@ function SynologyWorkspace({ appearance, onAppearanceChange }: {
       }}
       onNavigate={(key) => {
         if (key === 'settings') { setSettingsOpen(true); return }
-        if (!xDriveIsWorkspaceAppRoute(key)) return
         navigate(key)
       }}
       revision={pageRevision}
