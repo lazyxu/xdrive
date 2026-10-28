@@ -636,7 +636,7 @@ async function testStaleSourceRevisionOwnerMap(browser,mode,port){
         q.favorite===true)&&recovered.coverExists&&
       recovered.count?.includes('1 张照片')&&errors.length===0)
     const restored=await fixtureMutation('source-revision-restore')
-    mutated=false
+    if(restored===204)mutated=false
     record(mode+': synthetic source revision restored after stale-map assertion',
       restored===204)
     await openFilters()
