@@ -175,13 +175,18 @@ test('all routed and shared inline Viewer entry types share the foreground lease
   assert.match(sharedApp,/host\.platform.*view/)
   assert.match(synologyApp,/<XDriveApp/,
     'DSM uses the canonical Host application and must share the same page preemption')
-  assert.match(synologyApp,/const setSelected = \(next: XDriveWorkspaceAppRoute\) => \{/)
-  assert.match(synologyApp,/if \(next !== selected\) xDriveEnterForegroundPage\('synology:' \+ next\)/)
-  assert.match(synologyApp,/setSelectedActual\(next\)/)
+  // DSM now uses the canonical Host service registry and XDriveAppPageOutlet,
+  // not the old DSM-local per-page JSX or onOpenBackup callback.
+  assert.match(synologyApp,/services:\s*\{/)
+  assert.match(synologyApp,/const navigate = \(next: XDriveWorkspaceAppRoute\) => \{/)
+  assert.match(synologyApp,/if \(!xDriveWorkspaceNavigationAllowed\(next, host\.adminRoleVerified === true\)\) return/,
+    'untrusted or denied destinations must not preempt')
+  assert.match(synologyApp,/xDriveEnterForegroundPage\('synology:' \+ next\)/)
+  assert.match(synologyApp,/<XDriveAppPageOutlet[\s\S]*?onNavigate=\{navigate\}/,
+    'Home/Task and sidebar navigation must share one Host adapter route')
   assert.ok(synologyApp.indexOf("xDriveEnterForegroundPage('synology:' + next)") <
-    synologyApp.indexOf('setSelectedActual(next)'),
-    'DSM must preempt old requests before navigating to a new page')
-  assert.match(synologyApp,/onOpenBackup=\{\(\) => setSelected\('device-backup'\)\}/)
+    synologyApp.indexOf('setSelected(next)'),
+    'preempt old requests BEFORE mounting the authorized DSM destination')
   assert.match(synologyApp,/onNavigate=\{\(key\) => \{/,
     'Sidebar stays behind canonical route admission')
   assert.match(desktopApp,/xDriveEnterForegroundPage\('desktop:' \+ view\)/)
