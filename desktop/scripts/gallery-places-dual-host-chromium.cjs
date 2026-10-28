@@ -1637,13 +1637,17 @@ async function testMobilePhotoDrawer(browser,mode,port){
       geometry.viewport===390&&geometry.left>=0&&
       geometry.right<=geometry.viewport+1&&geometry.mapWidth<=geometry.viewport+1&&
       geometry.mapHeight>=520)
-    await swipeMobileDrawerGrip(page,'up')
+    await page.getByRole('dialog',{name:'此地点的照片'}).waitFor({state:'visible'})
     await drawer.locator('[data-xdrive-places-photo-drawer-expand][aria-label="收起照片抽屉"]').waitFor({state:'visible'})
-    record(mode+': real upward touch expands trusted photo drawer',
-      await drawer.locator('[data-xdrive-places-photo-drawer-expand][aria-label="收起照片抽屉"]').count()===1)
+    record(mode+': Gallery photo modal opens expanded without a 12-thumbnail strip',
+      await drawer.locator('[data-xdrive-places-photo-drawer-item]').count()===3)
     await swipeMobileDrawerGrip(page,'down')
     await drawer.locator('[data-xdrive-places-photo-drawer-expand][aria-label="展开照片抽屉"]').waitFor({state:'visible'})
-    record(mode+': real downward touch collapses without dismissing Owner photos',
+    record(mode+': real downward touch collapses without dismissing Owner album',
+      await drawer.locator('[data-xdrive-places-photo-drawer-item]').count()===3)
+    await swipeMobileDrawerGrip(page,'up')
+    await drawer.locator('[data-xdrive-places-photo-drawer-expand][aria-label="收起照片抽屉"]').waitFor({state:'visible'})
+    record(mode+': real upward touch restores full trusted Gallery grid',
       await drawer.locator('[data-xdrive-places-photo-drawer-item]').count()===3)
     const before=await page.evaluate(()=>window.__mapProbe.galleryPageReads.filter(
       r=>r.kind==='cell').length)
