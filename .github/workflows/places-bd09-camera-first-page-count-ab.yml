@@ -1,0 +1,165 @@
+name: Places BD09 Camera First Page Count PostgreSQL 95k Paired AB
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'internal/api/media.go'
+      - 'internal/api/media_places_bd09_first_page_count_ab_linux_test.go'
+      - '.github/workflows/places-bd09-camera-first-page-count-ab.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: places-camera-count-ab-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  owner-camera-95k-count-ab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=512m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_PLACES_100K_DISPOSABLE_CI: '1'
+      XD_PLACES_BD09_COUNT_AB: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 2
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Freeze exact HEAD parent and candidate, source formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-list --count HEAD)" -ge 2
+          git rev-parse HEAD | tee camera-count-ab-head.txt
+          git rev-parse HEAD^ | tee camera-count-ab-baseline.txt
+          echo "XD_PLACES_BD09_AB_HEAD=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          fi
+          unformatted="$(gofmt -l internal/api/media.go internal/api/media_places_bd09_first_page_count_ab_linux_test.go)"
+          if [[ -n "$unformatted" ]]; then
+            gofmt -d internal/api/media_places_bd09_first_page_count_ab_linux_test.go
+            exit 1
+          fi
+          if cmp -s internal/api/media.go <(git show "HEAD^:internal/api/media.go"); then
+            echo 'Candidate media.go is identical to frozen BEFORE' >&2
+            exit 1
+          fi
+      - name: Build original and candidate Owner Camera Range from same Go test tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p camera-count-ab-results
+          cp internal/api/media.go "$RUNNER_TEMP/media-count-after.go"
+          git show "HEAD^:internal/api/media.go" > internal/api/media.go
+          go test -c -o "$RUNNER_TEMP/camera-before.test" ./internal/api
+          cp "$RUNNER_TEMP/media-count-after.go" internal/api/media.go
+          go test -c -o "$RUNNER_TEMP/camera-after.test" ./internal/api
+          test -z "$(git diff -- internal/api/media.go)"
+      - name: Seed one disposable PostgreSQL17 original 100k Owner dataset
+        shell: bash
+        env:
+          XD_PLACES_BD09_PG100K: '1'
+          XD_PLACES_BD09_ACTION: seed
+        run: |
+          set -euo pipefail
+          go test -count=1 -run '^TestPlacesBD09Owner100kPostgresBaseline$' -v -timeout=35m ./internal/api 2>&1 | tee camera-count-ab-results/seed.log
+      - name: Perform paired 6 samples BEFORE AFTER AFTER BEFORE BEFORE AFTER
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'before after after before before after' > camera-count-ab-results/order.txt
+          index=0
+          for arm in before after after before before after; do
+            index=$((index+1))
+            echo "PLACES_BD09_COUNT_AB_ARM ordinal=$index arm=$arm"
+            XD_PLACES_BD09_AB_ARM="$arm" \
+              "$RUNNER_TEMP/camera-$arm.test" \
+              -test.run '^TestPlacesBD09Owner95kCameraFirstPageCountAB$' \
+              -test.v -test.count=1 -test.timeout=2m \
+              2>&1 | tee "camera-count-ab-results/sample-$index-$arm.log"
+          done
+      - name: Validate one Owner membership/count and material same-runner gain
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, pathlib, re, statistics
+          folder=pathlib.Path('camera-count-ab-results')
+          head=pathlib.Path('camera-count-ab-head.txt').read_text().strip()
+          order=['before','after','after','before','before','after']
+          arms={'before':[],'after':[]}
+          result=[]
+          for ordinal,arm in enumerate(order,1):
+              text=(folder/f'sample-{ordinal}-{arm}.log').read_text()
+              samples=re.findall(r'PLACES_BD09_FIRST_PAGE_COUNT_AB (\{[^\n]+\})',text)
+              assert len(samples)==1, (ordinal,arm,len(samples))
+              sample=json.loads(samples[0])
+              assert sample['ci_git_head']==head and sample['arm']==arm
+              assert sample['camera_count']==95000 and sample['timeline_count']==95000
+              assert sample['items']==sample['next_items']==48
+              assert sample['group_sql']==sample['page_sql']==1
+              assert sample['first_page_sql_count']==(3 if arm=='before' else 2)
+              assert sample['standalone_count_sql']==(1 if arm=='before' else 0)
+              assert sample['provider_conversion_verified'] is False
+              assert 0 < sample['latency_ms'] < 20000
+              arms[arm].append(sample['latency_ms'])
+              result.append(sample)
+          before=statistics.median(arms['before'])
+          after=statistics.median(arms['after'])
+          report={
+              'ci_git_head':head,
+              'before_source_sha':pathlib.Path('camera-count-ab-baseline.txt').read_text().strip(),
+              'workload':'owner100k_two_cities_95k_camera_gallery_range',
+              'provider_conversion_verified':False,
+              'dataset':'100k Owner logical assets / 115k media rows / synthetic BD09',
+              'sample_order':order,
+              'samples':result,
+              'before_median_ms':before,
+              'after_median_ms':after,
+              'after_over_before':after/before,
+              'measured_gain_percent':100*(before-after)/before,
+          }
+          (folder/'paired-ab.json').write_text(json.dumps(report,indent=2)+'\n')
+          print('PLACES_BD09_CAMERA_COUNT_AB_MEDIANS',
+                json.dumps({k:report[k] for k in
+                    ('before_median_ms','after_median_ms','after_over_before','measured_gain_percent')}))
+          # No presumed gain: reject candidates not at least 10% faster on
+          # the SAME seeded Owner and runner, in this small n=3 diagnostic.
+          assert after <= before*.90, 'Candidate did not prove material median benefit'
+          assert max(arms['after']) < 3000, 'Candidate exceeded original 3s user-facing budget'
+          PY
+      - name: Retain bounded source and anonymized matched measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: places-bd09-camera-95k-count-ab-${{ github.run_id }}
+          path: |
+            camera-count-ab-head.txt
+            camera-count-ab-baseline.txt
+            camera-count-ab-results/
+          if-no-files-found: warn
+          retention-days: 14
