@@ -39,6 +39,9 @@ export function xDriveTakeMapScopeHandoffFromURL(
     url.searchParams.delete(XDRIVE_PLACES_MAP_HANDOFF_QUERY)
     // Even an invalid/duplicated hint must be stripped before any SDK mount.
     browser.history.replaceState(readableMapHistoryState(browser), '', url.href)
+    // A non-throwing but ignored History mutation is not proof that the
+    // one-use ticket actually left the address bar/referrer source.
+    if (new URL(browser.location.href).href !== url.href) return {state:'denied'}
     if (tickets.length !== 1 || !/^[a-f0-9]{64}$/.test(tickets[0]) ||
         required.length !== 1 || required[0] !== '1' ||
         url.protocol !== 'https:' ||
@@ -66,6 +69,8 @@ export function xDriveAbandonMapScopeRequired(
     url.searchParams.delete(XDRIVE_PLACES_MAP_HANDOFF_QUERY)
     url.searchParams.delete(XDRIVE_PLACES_MAP_SCOPE_REQUIRED_QUERY)
     browser.history.replaceState(readableMapHistoryState(browser), '', url.href)
+    // A denied/ignored rewrite never authorizes leaving the restricted map.
+    if (new URL(browser.location.href).href !== url.href) return false
     return true
   } catch { return false }
 }

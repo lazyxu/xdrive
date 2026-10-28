@@ -274,3 +274,26 @@ test('P0-4 explicit abandon handles denied History.state without downgrading rew
   assert.equal(bootstrap.xDriveTakeMapScopeHandoffFromURL(browser).state, 'none',
     'only the explicit abandon action may remove the required restricted scope')
 })
+
+test('P0-4 silent History.replaceState no-op never authorizes map ticket redemption', () => {
+  const href = mode.xDrivePlacesMapScopeHandoffURL(
+    'https://gallery.example.org/#/app/gallery', 'prototype', T)
+  const browser = win(href)
+  let calls = 0
+  browser.history.replaceState = () => { calls++ } // A restricted browser adapter ignores URL mutation.
+  const policy = { content: 'no-referrer' }
+  browser.document = { querySelector: () => policy }
+  assert.equal(bootstrap.xDriveTakeMapScopeHandoffFromURL(browser).state, 'denied')
+  assert.equal(calls, 1)
+  assert.ok(browser.location.href.includes(T), 'one-use ticket remained visible')
+  assert.equal(bootstrap.xDriveRestoreMapReferrerAfterScrub(browser), false)
+  assert.equal(policy.content, 'no-referrer', 'unscrubbed ticket keeps the strict referrer shield')
+})
+
+test('P0-4 silent History.replaceState no-op never marks explicit map abandon successful', () => {
+  const browser = win('https://gallery.example.org/?places_map_scope_required=1#/app/gallery')
+  browser.history.replaceState = () => {}
+  assert.equal(bootstrap.xDriveAbandonMapScopeRequired(browser), false)
+  assert.match(browser.location.href, /places_map_scope_required=1/)
+  assert.equal(bootstrap.xDriveTakeMapScopeHandoffFromURL(browser).state, 'denied')
+})
