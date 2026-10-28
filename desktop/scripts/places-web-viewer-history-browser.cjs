@@ -86,6 +86,11 @@ const main=async()=>{
     const r=await fetch(origin+'/fixture/control?op='+op,{method:'POST'})
     assert(r.ok,op+' control failed')
   }
+  const waitServerRead=async(before)=>{
+    for(let n=0;n<160&&fixture.reads<=before;n++)
+      await new Promise(resolve=>setTimeout(resolve,10))
+    assert(fixture.reads>before,'real loopback HTTP Owner read did not start')
+  }
   const executablePath=process.env.XDRIVE_BROWSER_EXECUTABLE
   assert(executablePath&&fs.existsSync(executablePath),'an actual Chromium executable is required')
   browser=await chromium.launch({executablePath,headless:true,args:[
@@ -214,9 +219,11 @@ const main=async()=>{
     // leaving the Viewer route. New scope preempts the old disposable read.
     await control('delay')
     const beforeSwitch=await probe()
+    const serverReadsBeforeSwitch=fixture.reads
     await page.getByRole('button',{name:'打开 Cell 地图照片'}).click()
     await page.waitForFunction(before=>
       window.__scopeHistoryProbe.rangeStarts>before,beforeSwitch.rangeStarts)
+    await waitServerRead(serverReadsBeforeSwitch)
     await page.getByRole('button',{name:'切换 Viewport 作用域'}).click()
     await page.waitForFunction(before=>
       window.__scopeHistoryProbe.rangeStarts>=before+2,beforeSwitch.rangeStarts)
@@ -235,9 +242,11 @@ const main=async()=>{
     await control('reset')
     await control('delay')
     const beforeRevoke=await probe()
+    const serverReadsBeforeRevoke=fixture.reads
     await page.getByRole('button',{name:'打开 Cell 地图照片'}).click()
     await page.waitForFunction(before=>
       window.__scopeHistoryProbe.rangeStarts>before,beforeRevoke.rangeStarts)
+    await waitServerRead(serverReadsBeforeRevoke)
     await control('revoke')
     await status('error')
     data=await probe()
