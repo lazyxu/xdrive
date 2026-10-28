@@ -3546,9 +3546,10 @@ export class XDriveApi {
     })
   }
 
-  backgroundTaskActiveSummary() {
+  backgroundTaskActiveSummary(signal?: AbortSignal) {
     return this.request<XDriveBackgroundTaskActiveSummary>(
       '/api/v1/background-tasks/active-summary',
+      { signal },
     )
   }
 
@@ -3557,21 +3558,23 @@ export class XDriveApi {
     return this.request<XDriveBackgroundTask[]>(`/api/v1/background-tasks?limit=${bounded}`)
   }
 
-  backgroundTaskPage(limit = 50, cursor = '') {
+  backgroundTaskPage(limit = 50, cursor = '', signal?: AbortSignal) {
     const bounded = Math.min(200, Math.max(1, Math.trunc(limit)))
     const query = new URLSearchParams({ limit: String(bounded) })
     if (cursor.trim()) query.set('cursor', cursor.trim())
     return this.request<XDriveBackgroundTaskPage>(
       `/api/v1/background-tasks/page?${query.toString()}`,
+      { signal },
     )
   }
 
-  adminBackgroundTaskPage(limit = 50, cursor = '') {
+  adminBackgroundTaskPage(limit = 50, cursor = '', signal?: AbortSignal) {
     const bounded = Math.min(200, Math.max(1, Math.trunc(limit)))
     const query = new URLSearchParams({ limit: String(bounded) })
     if (cursor.trim()) query.set('cursor', cursor.trim())
     return this.request<XDriveBackgroundTaskPage>(
       `/api/v1/admin/background-tasks/page?${query.toString()}`,
+      { signal },
     )
   }
 
