@@ -4,6 +4,7 @@ import LinkRoundedIcon from '@mui/icons-material/LinkRounded'
 import { Box, Dialog, LinearProgress } from '@mui/material'
 import type { FileShare } from '../models'
 import { XDriveActionButton } from './ActionButton'
+import { xDriveCanUseNativeShare } from './NativeShareCapability'
 import { XDriveDialogActions } from './DialogActions'
 import { XDriveDialogContent } from './DialogContent'
 import { XDriveDialogTitle, useXDriveCompactTouchDialog } from './DialogTitle'
@@ -100,10 +101,7 @@ export function XDriveShareDialog({
   const [maxDownloadsError, setMaxDownloadsError] = useState('')
   const [feedback, setFeedback] = useState<Feedback | null>(null)
   const { compactTouch, dialogPaper } = useXDriveCompactTouchDialog()
-  const nativeShareAvailable =
-    compactTouch &&
-    typeof navigator !== 'undefined' &&
-    typeof navigator.share === 'function'
+  const nativeShareAvailable = compactTouch && xDriveCanUseNativeShare('link')
   const loadRequestRef = useRef(0)
   const nodeLifecycleGenerationRef = useRef(0)
 
