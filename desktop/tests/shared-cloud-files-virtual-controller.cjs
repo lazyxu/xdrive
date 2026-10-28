@@ -129,11 +129,16 @@ function loadController(react) {
     ['ui', 'shared', 'src', 'file-explorer-grouping.ts'],
     null,
   )
+  const readStrategy = loadTypeScriptModule(
+    ['ui', 'shared', 'src', 'mui', 'FileExplorerDirectoryReadStrategy.ts'],
+    null,
+  )
   return loadTypeScriptModule(
     ['ui', 'shared', 'src', 'mui', 'CloudFilesController.ts'],
     react,
     {
       './VirtualCollectionController': virtual,
+      './FileExplorerDirectoryReadStrategy': readStrategy,
       '../file-explorer-controller': fileExplorer,
       '../file-explorer-grouping': grouping,
       '../cloud-files': {

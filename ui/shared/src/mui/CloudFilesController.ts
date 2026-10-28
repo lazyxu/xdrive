@@ -23,6 +23,7 @@ import type {
 } from '../file-explorer-controller'
 import { useXDriveVirtualCollection } from './VirtualCollectionController'
 import { xDriveBeginForegroundContentTransition, xDriveForegroundContentTransitionPending } from './ViewerForegroundPriority'
+import { xDriveFileExplorerReadDirectoryPage } from './FileExplorerDirectoryReadStrategy'
 
 export type XDriveCloudFilesVirtualDirectory<TNode extends { id: number }> = {
   itemCount: number
@@ -155,15 +156,17 @@ export function useXDriveCloudFilesController<
         totalCount: null,
       }
     }
-    const page = await port.getRange(
-      target.parentID,
-      range.offset,
-      range.limit,
-      target.sort,
-      false,
-      target.grouping,
-      signal,
-    )
+    const read = await xDriveFileExplorerReadDirectoryPage<TNode, TSort>({
+      mode: 'range',
+      readRange: (parentID, offset, limit, sort, includeCount, grouping, requestSignal) =>
+        port.getRange(parentID, offset, limit, sort, includeCount, grouping, requestSignal),
+    }, {
+      mode: 'range', parentID: target.parentID, offset: range.offset,
+      limit: range.limit, sort: target.sort, includeCount: false,
+      grouping: target.grouping, signal,
+    })
+    if (read.mode !== 'range') throw new Error('Files counted Range capability changed')
+    const page = read.page
     return {
       items: page.items,
       offset: page.offset,
@@ -302,15 +305,17 @@ export function useXDriveCloudFilesController<
     directoryInFlightParentIDRef.current = id
     setLoading(true)
     try {
-      const range = await port.getRange(
-        id,
-        0,
-        XDRIVE_FILE_EXPLORER_PAGE_SIZE,
-        effectiveSort,
-        true,
-        effectiveGrouping,
-        firstPageRequest.signal,
-      )
+      const read = await xDriveFileExplorerReadDirectoryPage<TNode, TSort>({
+        mode: 'range',
+        readRange: (parentID, offset, limit, sort, includeCount, grouping, signal) =>
+          port.getRange(parentID, offset, limit, sort, includeCount, grouping, signal),
+      }, {
+        mode: 'range', parentID: id, offset: 0, limit: XDRIVE_FILE_EXPLORER_PAGE_SIZE,
+        sort: effectiveSort, includeCount: true, grouping: effectiveGrouping,
+        signal: firstPageRequest.signal,
+      })
+      if (read.mode !== 'range') throw new Error('Files counted Range capability changed')
+      const range = read.page
       if (firstPageRequest.signal.aborted || requestID !== directoryRequestRef.current) return false
       setItems([...range.items])
       if (nextCrumbs) {
@@ -516,15 +521,17 @@ export function useXDriveCloudFilesController<
       if (directoryInFlightRequestRef.current === requestID) {
         directoryInFlightParentIDRef.current = root.id
       }
-      const range = await port.getRange(
-        root.id,
-        0,
-        XDRIVE_FILE_EXPLORER_PAGE_SIZE,
-        defaultSort,
-        true,
-        XDRIVE_FILE_EXPLORER_DEFAULT_GROUPING,
-        firstPageRequest.signal,
-      )
+      const read = await xDriveFileExplorerReadDirectoryPage<TNode, TSort>({
+        mode: 'range',
+        readRange: (parentID, offset, limit, sort, includeCount, grouping, signal) =>
+          port.getRange(parentID, offset, limit, sort, includeCount, grouping, signal),
+      }, {
+        mode: 'range', parentID: root.id, offset: 0, limit: XDRIVE_FILE_EXPLORER_PAGE_SIZE,
+        sort: defaultSort, includeCount: true,
+        grouping: XDRIVE_FILE_EXPLORER_DEFAULT_GROUPING, signal: firstPageRequest.signal,
+      })
+      if (read.mode !== 'range') throw new Error('Files counted Range capability changed')
+      const range = read.page
       if (firstPageRequest.signal.aborted || requestID !== directoryRequestRef.current) return
       if (
         quotaRequestID === quotaRequestRef.current &&

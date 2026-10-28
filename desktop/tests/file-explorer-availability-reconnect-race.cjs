@@ -143,6 +143,12 @@ function loadCloudFilesHook(react) {
     react,
     { '../virtual-collection': virtualCore },
   )
+  // Run the actual shared Range/Cursor strategy, rather than substituting
+  // a no-op in the mounted CloudFiles reconnect and tab-race fixtures.
+  const directoryReadStrategy = loadTypeScriptModule(
+    ['ui', 'shared', 'src', 'mui', 'FileExplorerDirectoryReadStrategy.ts'],
+    null,
+  )
   return loadTypeScriptModule(
     ['ui', 'shared', 'src', 'mui', 'CloudFilesController.ts'],
     react,
@@ -165,6 +171,7 @@ function loadCloudFilesHook(react) {
         ),
       },
       './VirtualCollectionController': virtualController,
+      './FileExplorerDirectoryReadStrategy': directoryReadStrategy,
     },
   ).useXDriveCloudFilesController
 }

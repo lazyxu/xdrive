@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useXDriveFileExplorerOwnerFence } from './FileExplorerOwnerFence'
+import { xDriveFileExplorerReadDirectoryPage } from './FileExplorerDirectoryReadStrategy'
 
 /**
  * Authenticated Owner cursor reader shared by the Files workspace.
@@ -124,7 +125,16 @@ export function useXDriveFileExplorerCursorDirectory<
     setError('')
     setLoading(true)
     const parent = crumbs[crumbs.length - 1].id
-    void port.readPage(parent, limit, sort, '', controller.signal).then(page => {
+    void xDriveFileExplorerReadDirectoryPage<TNode, TSort>({
+      mode: 'cursor',
+      readPage: (parentID, size, order, cursor, signal) =>
+        port.readPage(parentID, size, order, cursor, signal),
+    }, {
+      mode: 'cursor', parentID: parent, limit, sort,
+      cursor: '', signal: controller.signal,
+    }).then(read => {
+      if (read.mode !== 'cursor') return
+      const page = read.page
       if (controller.signal.aborted || epoch !== pageEpoch.current ||
           !isCurrentOwner() || ownerIdentityRef.current.host !== host ||
           ownerIdentityRef.current.revision !== rootRevision) return
@@ -163,7 +173,16 @@ export function useXDriveFileExplorerCursorDirectory<
     pagingActive.current = true
     setPaging(true)
     setError('')
-    void port.readPage(parent, limit, sort, cursor, controller.signal).then(page => {
+    void xDriveFileExplorerReadDirectoryPage<TNode, TSort>({
+      mode: 'cursor',
+      readPage: (parentID, size, order, nextCursor, signal) =>
+        port.readPage(parentID, size, order, nextCursor, signal),
+    }, {
+      mode: 'cursor', parentID: parent, limit, sort,
+      cursor, signal: controller.signal,
+    }).then(read => {
+      if (read.mode !== 'cursor') return
+      const page = read.page
       if (controller.signal.aborted || epoch !== pageEpoch.current || !isCurrentOwner()) return
       const seen = new Set(itemsRef.current.map(item => item.id))
       if (page.items.some(item => seen.has(item.id))) {
