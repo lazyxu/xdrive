@@ -18,14 +18,14 @@ let foregroundPage: string | null = null
 // resume if the new first-page Range fails. Tokens are renderer-local; never
 // persist paths, Owner IDs, coordinates, or credentials.
 let pageGeneration = 0
-const contentTransitions = new Map<object, { page: string; generation: number }>()
+// One latest-wins content admission per page, not an accumulating counter.
+// A superseded loader might never settle despite AbortSignal: its stale
+// finally MUST NOT keep the latest accepted folder or album paused.
+const contentTransitions = new Map<string, { token: object; generation: number }>()
 
 function contentTransitionPending(page: string | null): boolean {
-  if (!page) return false
-  for (const entry of contentTransitions.values()) {
-    if (entry.page === page && entry.generation === pageGeneration) return true
-  }
-  return false
+  return Boolean(page &&
+    contentTransitions.get(page)?.generation === pageGeneration)
 }
 
 export function xDriveCurrentForegroundPage(): string | null {
@@ -67,8 +67,8 @@ function notifyDisposablePause(entry: DisposableObserver) {
  * until its new first authoritative Range commits or fails.
  *
  * Call only after the navigation is admitted (not from a dirty-form guard),
- * and ALWAYS release in finally. Nested/rapid navigations are reference
- * counted; a stale release never resumes a newer pending navigation.
+ * and ALWAYS release in finally. Rapid content navigations use latest-wins
+ * ownership, so even a hung old transport cannot keep the successor paused.
  * Allowed page kinds are explicit so an offscreen Files poll cannot pause
  * the user's visible Gallery/Viewer.
  */
@@ -81,16 +81,17 @@ export function xDriveBeginForegroundContentTransition(
     return () => undefined
   }
   const token = {}
-  contentTransitions.set(token, { page, generation: pageGeneration })
+  const generation = pageGeneration
+  contentTransitions.set(page, { token, generation })
   publishViewerForeground(true)
   let released = false
   return () => {
     if (released) return
     released = true
-    const owned = contentTransitions.get(token)
-    if (!owned) return
-    contentTransitions.delete(token)
-    if (owned.page === foregroundPage && owned.generation === pageGeneration) {
+    const owned = contentTransitions.get(page)
+    if (!owned || owned.token !== token) return
+    contentTransitions.delete(page)
+    if (page === foregroundPage && generation === pageGeneration) {
       publishViewerForeground(false)
     }
   }
