@@ -2454,6 +2454,10 @@ export function XDriveMediaGalleryPage({
       kind:'baidu-cell',id:approved.albumKey || undefined,
       baiduCell:cell,query:cellQuery,requestID:request,
     }
+    // The map's new Cell/Viewport photo wall is a new authorized content
+    // scope; release the old disposable covers before its first Range GET.
+    // Keep the prior map visible until the Owner-scoped response commits.
+    const finishContentTransition = xDriveBeginForegroundContentTransition(['gallery', 'map'])
     void source.listBaiduNativeCellItems(
       cell, pageSize, 0, {
         by:sort.by,dir:sort.dir,filters:approved.filters,
@@ -2564,6 +2568,7 @@ export function XDriveMediaGalleryPage({
         setError('该区域照片列表暂不可用，请刷新地图后重试')
       }
     }).finally(() => {
+      finishContentTransition()
       if (nativeCellOpenAbort.current === controller) nativeCellOpenAbort.current = null
     })
   }, [onOpenViewer, pageSize, places, placesPageOffset, placesTotalCount, preferenceScope, query, section, source,
@@ -2616,6 +2621,10 @@ export function XDriveMediaGalleryPage({
       kind:'baidu-viewport',id:approved.albumKey || undefined,
       baiduViewport:bounds,query:rangeQuery,requestID:request,
     }
+    // The map's new Cell/Viewport photo wall is a new authorized content
+    // scope; release the old disposable covers before its first Range GET.
+    // Keep the prior map visible until the Owner-scoped response commits.
+    const finishContentTransition = xDriveBeginForegroundContentTransition(['gallery', 'map'])
     void source.listBaiduNativeViewportItems(bounds, pageSize, 0, firstQuery,
       controller.signal,approved.albumKey).then(range => {
       if (controller.signal.aborted || request !== requestID.current) return
@@ -2673,6 +2682,7 @@ export function XDriveMediaGalleryPage({
         setError('当前地图的照片列表暂不可用，请更新地图后重试')
       }
     }).finally(() => {
+      finishContentTransition()
       if (nativeCellOpenAbort.current === controller) nativeCellOpenAbort.current = null
     })
   }, [pageSize, places, placesPageOffset, placesTotalCount,
