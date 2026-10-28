@@ -3472,6 +3472,7 @@ export class AgentIPCClient {
     limit = 200,
     offset = 0,
     filters: AgentMediaQuery = {},
+    signal?: AbortSignal,
   ) {
     const query = new URLSearchParams({
       range: 'true',
@@ -3483,6 +3484,9 @@ export class AgentIPCClient {
     return this.request<AgentMediaItemRange>(
       'GET',
       `/v1/media/albums/items?${query.toString()}`,
+      undefined,
+      10_000,
+      signal,
     )
   }
 
