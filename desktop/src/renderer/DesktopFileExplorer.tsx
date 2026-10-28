@@ -53,6 +53,7 @@ import {
   useXDriveFileExplorerExternalDropController,
   useXDriveFileExplorerUploadController,
   useXDriveFileExplorerOwnerActionLifecycle,
+  useXDriveFileExplorerOwnerSourceOptions,
   xDriveFileExplorerUploadGroupLabel,
   XDriveUploadConflictDialog,
   xDriveCaptureVideoPosterBlob,
@@ -333,19 +334,16 @@ export default function DesktopFileExplorer({
     onFeedback: (message) => onFeedback('good', message),
     onChanged: onTrashChanged,
   })
-  const [searchSourceOptions, setSearchSourceOptions] = useState<XDriveFileExplorerSearchSourceOption[]>([])
-  useEffect(() => {
-    let active = true
-    setSearchSourceOptions([])
-    void hostPort.browse.getSources().then((result) => {
-      if (active && result.ok) {
-        setSearchSourceOptions(result.data.map((source) => ({ id: source.id, name: source.name })))
-      }
-    })
-    return () => {
-      active = false
-    }
-  }, [navigationSessionStorageKey])
+  const loadSourceOptions = useCallback(async (): Promise<XDriveFileExplorerSearchSourceOption[]> => {
+    const result = await hostPort.browse.getSources()
+    if (!result.ok) throw new Error('当前 Agent 无法读取文件搜索来源。')
+    return result.data.map((source) => ({ id: source.id, name: source.name }))
+  }, [hostPort])
+  const { options: searchSourceOptions } = useXDriveFileExplorerOwnerSourceOptions({
+    host: hostPort,
+    ownerKey: navigationSessionStorageKey ?? '',
+    read: loadSourceOptions,
+  })
   const [availabilityByID, setAvailabilityByID] = useState<Map<number, DesktopFileAvailabilityEntry>>(
     () => new Map(),
   )
