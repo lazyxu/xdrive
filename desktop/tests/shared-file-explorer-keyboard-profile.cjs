@@ -116,7 +116,7 @@ test('Web detects browser platform while Desktop uses the authoritative desktop 
     'const FILE_KEYBOARD_PROFILE = xDriveWebFilesKeyboardProfile()',
     'keyboardProfile={FILE_KEYBOARD_PROFILE}',
   ]) assert.ok(web.includes(token), 'Web keyboard adapter missing: ' + token)
-  assert.equal(/navigator\\.(?:platform|userAgent)/.test(web), false,
+  assert.equal(/navigator\.(?:platform|userAgent)/.test(web), false,
     'Web module must not evaluate optional Navigator getters during import')
   const webKeyboard = read('web', 'src', 'webFilesKeyboardProfile.ts')
   for (const token of [
