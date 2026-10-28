@@ -103,6 +103,9 @@ class DriveAppTest {
     private val galleryTagsCalls = mutableListOf<Pair<List<Long>, List<String>>>()
     private val galleryAlbumAdds = mutableListOf<Pair<String, List<Long>>>()
     private var galleryManualAlbumFixture = false
+    private var galleryCollectionCreateFixture = false
+    private var galleryCreatedManual: GalleryAlbum? = null
+    private val galleryManualCreates = mutableListOf<String>()
     private var galleryThumbnailRetryFixture = false
     private val galleryThumbnailCalls = AtomicInteger()
     private val galleryFixture = GalleryAsset(
@@ -116,11 +119,20 @@ class DriveAppTest {
         override suspend fun root(accessToken: String) = DriveNode(1, name = "", type = "dir")
         override suspend fun galleryAlbums(accessToken: String): List<GalleryAlbum> {
             check(accessToken == "fixture")
+            if (galleryCollectionCreateFixture) return listOfNotNull(galleryCreatedManual)
             if (!galleryManualAlbumFixture) throw ApiException(501, "Albums fixture disabled")
             return listOf(
                 GalleryAlbum("manual:fixture", "manual", "旅行", 0, 1, 0),
                 GalleryAlbum("smart:fixture", "smart", "最近", 0, 1, 0),
             )
+        }
+        override suspend fun createGalleryManualAlbum(
+            accessToken: String, name: String,
+        ): GalleryAlbum {
+            check(accessToken == "fixture" && galleryCollectionCreateFixture && name == "旅行")
+            galleryManualCreates += name
+            return GalleryAlbum("manual:fixture-created", "manual", name, 0, 1, 0)
+                .also { galleryCreatedManual = it }
         }
         override suspend fun galleryAddToManualAlbum(
             accessToken: String, album: GalleryAlbum, items: List<GalleryAsset>,
@@ -619,6 +631,36 @@ class DriveAppTest {
         compose.onNodeWithText("图标").performClick()
         compose.onNodeWithTag("files-item-1155").assertIsDisplayed().assertIsSelected()
         compose.runOnIdle { org.junit.Assert.assertEquals(2, locateRangeReads) }
+    }
+
+    @Test fun manualAlbumCreateConfirmsOnceThenShowsServerOwnerCard() {
+        galleryCollectionCreateFixture = true
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryLoaded && !controller.state.value.loading
+        }
+        compose.onNodeWithTag("gallery-open-collections").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS &&
+                controller.state.value.galleryAlbumsLoaded && !controller.state.value.loading
+        }
+        compose.onNodeWithTag("gallery-albums-empty").assertExists()
+        compose.onNodeWithTag("gallery-create-manual-album").assertIsEnabled().performClick()
+        compose.onNodeWithTag("gallery-create-manual-dialog").assertExists()
+        compose.onNodeWithTag("gallery-create-manual-confirm").assertIsNotEnabled()
+        compose.onNodeWithTag("gallery-create-manual-name").performTextInput("旅行")
+        compose.onNodeWithTag("gallery-create-manual-confirm").assertIsEnabled().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryAlbumsLoaded &&
+                controller.state.value.galleryAlbums.singleOrNull()?.id == "manual:fixture-created" &&
+                !controller.state.value.loading
+        }
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(listOf("旅行"), galleryManualCreates)
+        }
+        compose.onNodeWithTag("gallery-album-item-manual:fixture-created").assertExists()
     }
 
     @Test fun nativeGallerySearchUsesRealOwnerRangeAndClearsWithoutCrossOwnerRows() {

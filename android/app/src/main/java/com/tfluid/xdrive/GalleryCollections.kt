@@ -29,14 +29,18 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** Real read-only Owner PhotoCollections; never a fake album list made from
- * the currently visible Gallery tiles or a second Android media index. */
+/** Real Owner PhotoCollections. Manual creation writes to the existing Go
+ * Owner API; imported/smart albums remain read-only native cards. */
 @Composable
 internal fun ColumnScope.GalleryCollections(
     state: DriveState,
     controller: DriveController,
     cache: LruCache<String, ImageBitmap>,
 ) {
+    var createOpen by remember(state.server, state.username) { mutableStateOf(false) }
+    var createName by remember(state.server, state.username) { mutableStateOf("") }
+    val validCreateName =
+        com.tfluid.xdrive.core.normalizeGalleryManualAlbumName(createName) != null
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Text("精选集", style = MaterialTheme.typography.headlineSmall,
@@ -45,6 +49,13 @@ internal fun ColumnScope.GalleryCollections(
             Text("${state.galleryAlbums.size} 个相册",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall)
+            TextButton(
+                onClick = { createName = ""; createOpen = true },
+                enabled = !state.loading && !state.galleryAlbumCreateAttempted &&
+                    !state.galleryAlbumCreateCommittedNeedsRefresh,
+                modifier = Modifier.heightIn(min = 48.dp)
+                    .testTag("gallery-create-manual-album"),
+            ) { Text("新建") }
         }
     }
     when {
@@ -53,7 +64,7 @@ internal fun ColumnScope.GalleryCollections(
                 .testTag("gallery-albums-error"),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text("无法读取当前账户的相册，请重试。")
+            Text(state.error ?: "无法读取当前账户的相册，请重试。")
             TextButton(onClick = controller::retryGalleryAlbums,
                 enabled = !state.loading, modifier = Modifier.heightIn(min = 48.dp)
                     .testTag("gallery-albums-retry")) { Text("重试读取相册") }
@@ -85,6 +96,47 @@ internal fun ColumnScope.GalleryCollections(
             }
         }
     }
+    if (createOpen) AlertDialog(
+        onDismissRequest = { if (!state.loading) createOpen = false },
+        modifier = Modifier.testTag("gallery-create-manual-dialog"),
+        title = { Text("新建相册") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("创建当前账号的空手动相册，不复制或上传任何照片。",
+                    style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(
+                    value = createName,
+                    onValueChange = { if (it.length <= 400) createName = it },
+                    singleLine = true, label = { Text("相册名称") },
+                    modifier = Modifier.fillMaxWidth().testTag("gallery-create-manual-name"),
+                )
+                if (createName.isNotEmpty() && !validCreateName) Text(
+                    "名称无效：不能包含控制字符，最多 200 个字符。",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall)
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    if (validCreateName) {
+                        createOpen = false
+                        controller.createGalleryManualAlbum(createName)
+                    }
+                },
+                enabled = validCreateName && state.galleryAlbumsLoaded &&
+                    !state.loading && !state.galleryAlbumCreateAttempted &&
+                    !state.galleryAlbumCreateCommittedNeedsRefresh,
+                modifier = Modifier.testTag("gallery-create-manual-confirm")
+                    .heightIn(min = 48.dp),
+            ) { Text("创建") }
+        },
+        dismissButton = {
+            TextButton(onClick = { createOpen = false }, enabled = !state.loading,
+                modifier = Modifier.testTag("gallery-create-manual-cancel")
+                    .heightIn(min = 48.dp)) { Text("取消") }
+        },
+    )
     // The same two-tab capsule and safe-area geometry as Gallery Library.
     Surface(
         modifier = Modifier.fillMaxWidth().navigationBarsPadding()
