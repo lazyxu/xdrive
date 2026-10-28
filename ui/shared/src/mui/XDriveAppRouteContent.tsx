@@ -35,10 +35,13 @@ export function XDriveAppRouteContent({
   children?: ReactNode
 }) {
   const presentation = xDriveWorkspacePresentation(view)
-  // Only Desktop's existing Files controller remains outside the outlet.
-  // Never use this exception to create another Host-specific page registry.
+  // Only the existing Desktop Files child is transitional. Any Host without
+  // that legacy controller uses the shared outlet, where a missing authorized
+  // Owner Files port produces an explicit unavailable state (not a blank page).
+  // No platform-specific Files route or second page registry is needed.
+  const hasLegacyFilesContent = view === 'files' && children != null && children !== false
   const usesSharedOutlet = xDriveIsSharedHostPageRoute(view) ||
-    (view === 'files' && host.platform === 'synology')
+    (view === 'files' && !hasLegacyFilesContent)
 
   return (
     <XDriveWorkspaceContent

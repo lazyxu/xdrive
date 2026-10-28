@@ -69,8 +69,11 @@ test('one Host-owned capability declaration feeds shared Outlet and canonical Fi
   assert.ok(dsmEntry.includes('const host = createXDriveSynologyHost()'))
   assert.equal(dsmEntry.includes('filesUnavailableActions:'), false,
     'only the authenticated DSM adapter may declare unavailable actions')
-  assert.ok(contract.includes('readonly filesUnavailableActions?: XDriveFileExplorerUnavailableActions'))
-  assert.ok(outlet.includes('unavailableActions={services.filesUnavailableActions}'))
+  assert.ok(contract.includes('readonly ownerFilesPage?: {'))
+  assert.ok(contract.includes('readonly unavailableActions?: XDriveFileExplorerUnavailableActions'))
+  assert.ok(host.includes('ownerFilesPage: {') && host.includes('client: local,'))
+  assert.ok(outlet.includes('client={services.ownerFilesPage.client}'))
+  assert.ok(outlet.includes('unavailableActions={services.ownerFilesPage.unavailableActions}'))
   assert.ok(dsm.includes('unavailableActions={unavailableActions}'))
   assert.ok(dsm.includes('searchEnabled'))
   assert.equal(dsm.includes('searchEnabled={false}'), false)

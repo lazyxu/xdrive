@@ -85,7 +85,9 @@ test('disabled native-like Host actions use the same menu and shortcut boundary'
   for (const key of ['copy','cut','paste','delete','rename','moveTo','copyTo','manageTags']) {
     assert.ok(dsm.includes(key + ": 'DSM"), key + ' must be declared only at authenticated DSM Host boundary')
   }
-  assert.ok(outlet.includes('unavailableActions={services.filesUnavailableActions}'))
+  assert.ok(dsm.includes('ownerFilesPage: {') && dsm.includes('client: local,'))
+  assert.ok(outlet.includes('client={services.ownerFilesPage.client}'))
+  assert.ok(outlet.includes('unavailableActions={services.ownerFilesPage.unavailableActions}'))
   assert.ok(source.includes("command === 'rename' && activeItem && onRenameItem && !renameDisabled && !unavailableActions?.rename"))
   assert.ok(source.includes('!unavailableActions?.paste'), 'shortcut Paste requires a real Host')
   assert.ok(source.includes('onPaste?.()'), 'normal Desktop Paste remains owned by its real callback')

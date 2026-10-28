@@ -31,7 +31,7 @@ test('Desktop and DSM mount one shared route content frame, not separate page ro
   assert.match(synology, /const host = createXDriveSynologyHost\(\)/)
   assert.doesNotMatch(synology, /filesUnavailableActions:|backup\.cgi/)
   assert.match(synologyHost, /createXDriveSynologyBackupLocalClient\(cgi.href\)/)
-  assert.match(synologyHost, /filesUnavailableActions: \{/)
+  assert.match(synologyHost, /ownerFilesPage: \{[\s\S]*client: local,[\s\S]*unavailableActions: \{/)
   assert.doesNotMatch(synologyHost, /window\.xdriveDesktop|ipcRenderer|<XDriveApp|<XDriveAppRouteContent/)
   assert.match(index, /export \* from '\.\/XDriveAppRouteContent'/)
   assert.equal((content.match(/<XDriveAppPageOutlet\b/g) || []).length, 1)
@@ -50,7 +50,9 @@ test('both Hosts use Files viewport presentation without DSM page padding', () =
 
 test('migrated routes use shared outlet, while legacy Desktop Files retains its controller', () => {
   assert.match(content, /xDriveIsSharedHostPageRoute\(view\)/)
-  assert.match(content, /view === 'files' && host\.platform === 'synology'/)
+  assert.match(content, /view === 'files' && !hasLegacyFilesContent/)
+  assert.match(content, /children != null && children !== false/)
+  assert.doesNotMatch(content, /view === 'files' && host\.platform/)
   assert.match(app, /onNavigate=\{onNavigate\}/)
   assert.match(synology, /onNavigate=\{\(key\) => \{/)
   assert.match(synology, /overlays=\{/)
