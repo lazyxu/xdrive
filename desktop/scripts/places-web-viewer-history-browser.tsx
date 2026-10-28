@@ -66,7 +66,8 @@ function Viewer({nodeID,contextID,onClose,onNavigate,onSwitchViewport}: {
     predicate:xDriveWebViewerMediaFile,wantsMedia:true,onNavigate})
   return <main data-testid="viewer">
     <button type="button" onClick={onClose}>返回地图</button>
-    <button type="button" onClick={()=>viewer.goNext()}
+    <button type="button" data-testid="viewer-next"
+      onClick={()=>viewer.goNext()}
       disabled={!viewer.next}>查看同 Cell 下一张照片</button>
     <button type="button" onClick={()=>onNavigate(103)}>尝试打开非成员照片</button>
     <button type="button" onClick={onSwitchViewport}>切换 Viewport 作用域</button>
