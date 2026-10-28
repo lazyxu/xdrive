@@ -499,7 +499,8 @@ const agent = Object.freeze({
     person_identity?: string
     place?: string
   } = {},
-  ) => ipcRenderer.invoke('agent:get-media-album-item-range', albumID, limit, offset, query),
+    requestID?: string,
+  ) => ipcRenderer.invoke('agent:get-media-album-item-range', albumID, limit, offset, query, requestID),
   setMediaFavorite: (nodeID: number, favorite: boolean) => ipcRenderer.invoke('agent:set-media-favorite', nodeID, favorite),
   setMediaFavoriteBatch: (nodeIDs: number[], favorite: boolean) => ipcRenderer.invoke('agent:set-media-favorite-batch', nodeIDs, favorite),
   addMediaTagsBatch: (nodeIDs: number[], tags: string[]) => ipcRenderer.invoke('agent:add-media-tags-batch', nodeIDs, tags),
