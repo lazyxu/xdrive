@@ -158,3 +158,20 @@ test('compact map rotation uses fresh owner camera before evaluating photo pins'
   // projected 390px camera after viewport rotation.
   assert.doesNotMatch(source,/pointToPixel\(\)\{return \{x:180,y:180\}\}/)
 })
+
+test('camera resize requires fresh Owner Cell before reopening actual photo drawer',()=>{
+  const driver=read('desktop/scripts/gallery-places-dual-host-chromium.cjs')
+  for(const fragment of [
+    "rotation revokes prior camera-scoped photo drawer",
+    "portrait resize revokes short-landscape Cell scope",
+    "beforeLandscape=await page.evaluate",
+    "beforePortrait=await page.evaluate",
+    "expanded drawer fits inside 844x390 map and safe area",
+  ]) assert.ok(driver.includes(fragment),fragment)
+  assert.match(driver,/sheetGeometry\.top>=sheetGeometry\.mapTop\+8/)
+  assert.match(driver,/sheetGeometry\.bottom<=sheetGeometry\.mapBottom-8/)
+  assert.match(driver,/sheetGeometry\.bottom<=sheetGeometry\.screen-8/)
+  assert.match(driver,/window\.__mapProbe\.queries\.length>before/)
+  assert.doesNotMatch(driver,/await page\.setViewportSize\(\{width:844,height:390\}\)\s*const sheetGeometry/,
+    'stale pre-rotation drawer must not be reused')
+})

@@ -887,7 +887,24 @@ async function testMode(browser,mode,port){
       '[data-xdrive-places-photo-drawer-handle]')?.getAttribute('aria-expanded')==='true')
     record(mode+': semantic shared photo sheet handle opens by pointer click',
       await handle.getAttribute('aria-expanded')==='true')
+    // A changed CSS camera is a fresh /cells authorization boundary.
+    // The old selected Cell and its drawer must be revoked immediately;
+    // use the newly signed Owner cell rather than a stale handle.
+    const beforeLandscape=await page.evaluate(()=>window.__mapProbe.queries.length)
     await page.setViewportSize({width:844,height:390})
+    await page.locator('[data-xdrive-places-photo-drawer]')
+      .waitFor({state:'hidden'})
+    record(mode+': rotation revokes prior camera-scoped photo drawer',
+      await page.locator('[data-xdrive-places-photo-drawer]').count()===0)
+    await page.waitForFunction(before=>window.__mapProbe.queries.length>before,
+      beforeLandscape)
+    await page.getByText('当前地图可查看 3 张照片',{exact:true}).waitFor()
+    await mapCover.waitFor({state:'visible'})
+    await mapCover.click()
+    await page.locator('[data-xdrive-places-photo-drawer-items] button').first().waitFor()
+    await handle.click()
+    await page.waitForFunction(()=>document.querySelector(
+      '[data-xdrive-places-photo-drawer-handle]')?.getAttribute('aria-expanded')==='true')
     const sheetGeometry=await page.evaluate(()=>{
       const map=document.querySelector('[data-xdrive-places-cluster-overview]')
       const sheet=document.querySelector('[data-xdrive-places-photo-drawer]')
@@ -897,14 +914,31 @@ async function testMode(browser,mode,port){
         bottom:dialog.bottom,height:dialog.height,screen:innerHeight}
     })
     const drawerFits=sheetGeometry!==null&&sheetGeometry.height>=80&&
-      sheetGeometry.top>=sheetGeometry.mapTop+8 &&
+      sheetGeometry.top>=sheetGeometry.mapTop+8&&
       sheetGeometry.bottom<=sheetGeometry.mapBottom-8&&
       sheetGeometry.bottom<=sheetGeometry.screen-8
     if(!drawerFits) console.error('places-drawer-landscape-geometry',JSON.stringify({
       mode,viewport:'844x390',geometry:sheetGeometry,
     }))
-    record(mode+': expanded drawer fits inside 844x390 map and safe area',drawerFits)
+    record(mode+': expanded drawer fits inside 844x390 map and safe area',
+      drawerFits)
+    // The inverse rotation must reauthorize again, then retain keyboard
+    // navigation and the original scoped Gallery Viewer flow.
+    const beforePortrait=await page.evaluate(()=>window.__mapProbe.queries.length)
     await page.setViewportSize({width:960,height:760})
+    await page.locator('[data-xdrive-places-photo-drawer]')
+      .waitFor({state:'hidden'})
+    record(mode+': portrait resize revokes short-landscape Cell scope',
+      await page.locator('[data-xdrive-places-photo-drawer]').count()===0)
+    await page.waitForFunction(before=>window.__mapProbe.queries.length>before,
+      beforePortrait)
+    await page.getByText('当前地图可查看 3 张照片',{exact:true}).waitFor()
+    await mapCover.waitFor({state:'visible'})
+    await mapCover.click()
+    await page.locator('[data-xdrive-places-photo-drawer-items] button').first().waitFor()
+    await handle.click()
+    await page.waitForFunction(()=>document.querySelector(
+      '[data-xdrive-places-photo-drawer-handle]')?.getAttribute('aria-expanded')==='true')
     await handle.press('Enter')
     await page.waitForFunction(()=>document.querySelector(
       '[data-xdrive-places-photo-drawer-handle]')?.getAttribute('aria-expanded')==='false')
