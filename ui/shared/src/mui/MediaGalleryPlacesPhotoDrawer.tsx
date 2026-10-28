@@ -60,7 +60,9 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
       scrollLeft: bounded(listRef.current?.scrollLeft ?? 0)}
   }
   return (
-    <Dialog open onClose={onClose} fullWidth maxWidth="md"
+    <Dialog open onClose={onClose} fullWidth maxWidth="md" disableScrollLock
+      // Avoid a body scrollbar-width resize remounting/invalidation of the
+      // underlying active map while this photo modal opens.
       aria-labelledby="xdrive-places-album-title" data-xdrive-places-album-dialog
       // This is the SAME shared Owner Gallery UI for both map SDK Hosts.
       // MUI Dialog owns focus trap, Escape, backdrop and scroll lock.
