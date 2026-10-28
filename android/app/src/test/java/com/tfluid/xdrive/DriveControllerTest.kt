@@ -3616,4 +3616,132 @@ class DriveControllerTest {
         assertEquals("", c.state.value.username)
         assertTrue(api.calls.isEmpty())
     }
+
+    @Test fun filesNewGalleryPreemptsStaleDirectoryGetWithoutLateRows() = runTest {
+        val api = Service()
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        val late = CompletableDeferred<NodeRange>()
+        api.listing = { _, offset ->
+            if (offset == 100) withContext(NonCancellable) { late.await() }
+            else NodeRange(listOf(folder, file), 101, offset)
+        }
+        c.loadMore(); runCurrent()
+        assertTrue(c.state.value.loading)
+        assertTrue(c.state.value.discardableReadInFlight)
+        c.openGallery(); runCurrent()
+        assertEquals(Screen.GALLERY, c.state.value.screen)
+        assertFalse(c.state.value.discardableReadInFlight)
+        assertTrue(c.state.value.galleryLoaded)
+        late.complete(NodeRange(listOf(file), 101, 100)); runCurrent()
+        assertEquals(Screen.GALLERY, c.state.value.screen)
+        assertEquals(listOf(api.latestGallery), c.state.value.galleryItems)
+        assertEquals(0, c.state.value.offset)
+        c.close()
+    }
+
+    @Test fun filesTrashAndFolderNavigationCanPreemptAnOldDirectoryGet() = runTest {
+        val lateTrash = CompletableDeferred<NodeRange>()
+        val api = object : Service() {
+            override suspend fun trashPage(accessToken: String, offset: Int): TrashPage {
+                assertEquals("access", accessToken)
+                return TrashPage(emptyList(), 0, offset)
+            }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        api.listing = { parent, offset ->
+            when {
+                offset == 100 -> withContext(NonCancellable) { lateTrash.await() }
+                parent == folder.id -> NodeRange(listOf(file.copy(parentId = folder.id)), 1, 0)
+                else -> NodeRange(listOf(folder, file), 101, 0)
+            }
+        }
+        c.loadMore(); runCurrent()
+        assertTrue(c.state.value.discardableReadInFlight)
+        c.openTrash(); runCurrent()
+        assertEquals(Screen.TRASH, c.state.value.screen)
+        assertTrue(c.state.value.trashLoaded)
+        lateTrash.complete(NodeRange(listOf(file), 101, 100)); runCurrent()
+        assertEquals(Screen.TRASH, c.state.value.screen)
+        c.closeTrash(); runCurrent()
+        val lateFolder = CompletableDeferred<NodeRange>()
+        api.listing = { parent, offset ->
+            when {
+                offset == 100 -> withContext(NonCancellable) { lateFolder.await() }
+                parent == folder.id -> NodeRange(listOf(file.copy(parentId = folder.id)), 1, 0)
+                else -> NodeRange(listOf(folder, file), 101, 0)
+            }
+        }
+        c.loadMore(); runCurrent()
+        assertTrue(c.state.value.discardableReadInFlight)
+        c.open(folder); runCurrent()
+        assertEquals(folder.id, c.state.value.path.last().id)
+        assertEquals(folder.id, c.state.value.items.single().parentId)
+        lateFolder.complete(NodeRange(listOf(file), 101, 100)); runCurrent()
+        assertEquals(folder.id, c.state.value.path.last().id)
+        assertEquals(0, c.state.value.offset)
+        c.close()
+    }
+
+    @Test fun filesPdfViewerPreemptsObsoleteAppendAndKeepsOpenedRevision() = runTest {
+        val pdf = DriveNode(87, 1, "report.pdf", "file", 128, revision = 3)
+        val late = CompletableDeferred<NodeRange>()
+        val api = Service().apply {
+            listing = { _, offset ->
+                if (offset == 100) withContext(NonCancellable) { late.await() }
+                else NodeRange(listOf(pdf), 101, offset)
+            }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.loadMore(); runCurrent()
+        assertTrue(c.state.value.discardableReadInFlight)
+        c.open(pdf)
+        assertEquals(pdf, c.state.value.filesPdfViewer)
+        assertFalse(c.state.value.loading)
+        assertFalse(c.state.value.discardableReadInFlight)
+        late.complete(NodeRange(listOf(file), 101, 100)); runCurrent()
+        assertEquals(pdf, c.state.value.filesPdfViewer)
+        assertEquals(0, c.state.value.offset)
+        c.back()
+        assertNull(c.state.value.filesPdfViewer)
+        c.close()
+    }
+
+    @Test fun filesNavigationNeverCancelsAnInFlightOwnerMutation() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        var writes = 0
+        val api = object : Service() {
+            override suspend fun favoriteFile(accessToken: String, nodeId: Long): DriveCollectionItem {
+                assertEquals("access", accessToken)
+                writes++
+                gate.await()
+                return DriveCollectionItem(file, "readme.txt", listOf(DriveCrumb(1, "")))
+            }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.favoriteFile(file); runCurrent()
+        assertEquals(1, writes)
+        assertTrue(c.state.value.loading)
+        assertFalse(c.state.value.discardableReadInFlight)
+        assertFalse(c.state.value.canNavigateFiles())
+        val reads = api.calls.size
+        c.openGallery()
+        c.openTrash()
+        c.changeFilesSection(FilesSection.RECENT)
+        c.submitGlobalSearch("all files")
+        c.open(folder)
+        c.refresh()
+        assertEquals(Screen.FILES, c.state.value.screen)
+        assertEquals(FilesSection.BROWSE, c.state.value.filesSection)
+        assertTrue(c.state.value.loading)
+        assertEquals(reads, api.calls.size)
+        gate.complete(Unit); runCurrent()
+        assertEquals(1, writes)
+        assertFalse(c.state.value.loading)
+        assertTrue(c.state.value.canNavigateFiles())
+        c.close()
+    }
 }

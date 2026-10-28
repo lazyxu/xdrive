@@ -380,12 +380,12 @@ internal fun AccountMenu(state: DriveState, controller: DriveController, checkUp
             if (state.screen == Screen.FILES) DropdownMenuItem(
                 text = { Text("照片") },
                 modifier = Modifier.testTag("switch-to-gallery"),
-                enabled = !state.loading && !state.fileUploadActive && !state.fileDownloadActive,
+                enabled = state.canNavigateFiles(),
                 onClick = { expanded = false; controller.openGallery() })
             if (state.screen == Screen.FILES) DropdownMenuItem(
                 text = { Text("回收站") },
                 modifier = Modifier.testTag("open-trash"),
-                enabled = !state.loading && !state.fileUploadActive && !state.fileDownloadActive,
+                enabled = state.canNavigateFiles(),
                 onClick = { expanded = false; controller.openTrash() })
             if (state.screen == Screen.GALLERY) DropdownMenuItem(
                 text = { Text("文件") },

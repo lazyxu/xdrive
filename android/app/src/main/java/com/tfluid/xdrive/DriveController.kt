@@ -24,6 +24,8 @@ data class DriveState(
     val connectionIp: String? = null,
     val username: String = "",
     val loading: Boolean = false,
+    /** True only for an explicitly cancellable Owner GET, not writes or SAF. */
+    val discardableReadInFlight: Boolean = false,
     val error: String? = null,
     val path: List<DriveNode> = emptyList(),
     val items: List<DriveNode> = emptyList(),
@@ -131,6 +133,12 @@ data class DriveState(
         destinationOffset.toLong() + 100 < destinationTotal &&
         destinationOffset <= Int.MAX_VALUE - 100
 }
+
+/** Page navigation yields only to obsolete GETs, never in-flight writes. */
+internal fun DriveState.canNavigateFiles(): Boolean =
+    screen == Screen.FILES && (!loading || discardableReadInFlight) &&
+        !fileUploadActive && !fileDownloadActive &&
+        destinationKind == null && !browseBatchWriteAttempted
 
 private fun DriveState.withoutGallerySelection(): DriveState = copy(
     gallerySelectionMode = false, gallerySelectedItems = emptyList(),
@@ -451,8 +459,8 @@ class DriveController(
     }
 
     fun open(node: DriveNode) {
-        if (state.value.screen != Screen.FILES || state.value.filesSection != FilesSection.BROWSE ||
-            state.value.destinationKind != null || state.value.browseSelectionMode ||
+        if (!state.value.canNavigateFiles() || state.value.filesSection != FilesSection.BROWSE ||
+            state.value.browseSelectionMode ||
             state.value.filesPdfViewer != null || state.value.filesAudioViewer != null ||
             state.value.items.none { it == node }) return
         if (node.isDirectory) load(state.value.path + node, 0)
@@ -479,12 +487,14 @@ class DriveController(
     /** Enter one current Owner PDF without changing loaded Files rows/viewport. */
     private fun openFilesPdf(node: DriveNode) {
         val current = state.value
-        if (!filesNodeVisible(current, node) || current.loading ||
+        if (!filesNodeVisible(current, node) || !current.canNavigateFiles() ||
             current.browseSelectionMode || current.filesPdfViewer != null ||
             current.filesAudioViewer != null ||
             fileKind(node.name, false) != "pdf" || session == null || api == null) return
+        if (current.discardableReadInFlight) invalidate()
         filesPdfEpoch++
-        mutableState.value = current.copy(filesPdfViewer = node,
+        mutableState.value = state.value.copy(filesPdfViewer = node,
+            loading = false, discardableReadInFlight = false,
             filesPdfBytes = 0, selected = null, error = null)
     }
 
@@ -536,13 +546,15 @@ class DriveController(
      * No second media transport or local media bytes. */
     private fun openFilesAudio(node: DriveNode) {
         val current = state.value
-        if (!filesNodeVisible(current, node) || current.loading ||
+        if (!filesNodeVisible(current, node) || !current.canNavigateFiles() ||
             current.browseSelectionMode || current.filesAudioViewer != null ||
             current.filesPdfViewer != null ||
             fileKind(node.name, false) != "audio" || session == null ||
             api == null) return
+        if (current.discardableReadInFlight) invalidate()
         audioViewerEpoch++
-        mutableState.value = current.copy(filesAudioViewer = node, error = null,
+        mutableState.value = state.value.copy(filesAudioViewer = node, error = null,
+            loading = false, discardableReadInFlight = false,
             selected = null, fileTextPreview = null, fileTextPreviewError = null)
     }
 
@@ -590,7 +602,7 @@ class DriveController(
 
     private fun openFilesMedia(node: DriveNode) {
         val current = state.value
-        if (!filesNodeVisible(current, node) || current.loading ||
+        if (!filesNodeVisible(current, node) || !current.canNavigateFiles() ||
             current.browseSelectionMode ||
             current.filesAudioViewer != null || current.filesPdfViewer != null ||
             session == null ||
@@ -624,13 +636,16 @@ class DriveController(
     /** Long-press details may include folders; never use a stale/foreign row. */
     fun showDetails(node: DriveNode) {
         val current = state.value
-        if (current.screen != Screen.FILES || current.destinationKind != null ||
+        if (!current.canNavigateFiles() ||
             current.filesPdfViewer != null || current.filesAudioViewer != null) return
         val visible = if (current.filesSection == FilesSection.BROWSE) current.items.any { it == node }
             else current.collectionItems.any { it.node == node }
         if (!visible) return
         // The details surface belongs to the current UI generation, not a late append.
-        if (state.value.loading) { invalidate(); mutableState.value = state.value.copy(loading = false) }
+        if (state.value.discardableReadInFlight) {
+            invalidate()
+            mutableState.value = state.value.copy(loading = false, discardableReadInFlight = false)
+        }
         stopTextPreview()
         mutableState.value = state.value.copy(selected = node,
             fileTextPreview = null, fileTextPreviewLoading = false, fileTextPreviewError = null)
@@ -1231,11 +1246,11 @@ class DriveController(
 
     fun changeFilesSection(next: FilesSection) {
         val current = state.value
-        if (current.screen != Screen.FILES || current.destinationKind != null ||
+        if (!current.canNavigateFiles() ||
             current.filesSection == next || next == FilesSection.SEARCH) return
         invalidate() // Unmount/cancel old Owner range/collection before switching.
         mutableState.value = current.copy(filesSection = next, selected = null,
-            loading = false, error = null, collectionItems = emptyList(), collectionLoaded = false,
+            loading = false, discardableReadInFlight = false, error = null, collectionItems = emptyList(), collectionLoaded = false,
             searchQuery = "", searchNextCursor = "",
             browseSelectionMode = false, browseSelectedIds = emptySet(),
             fileExportPending = null, fileDownloadSaved = false,
@@ -1250,7 +1265,7 @@ class DriveController(
      * directory's loaded 100 rows. The query/cursor are scoped to one ticket. */
     fun submitGlobalSearch(input: String) {
         val current = state.value
-        if (current.screen != Screen.FILES || current.destinationKind != null) return
+        if (!current.canNavigateFiles()) return
         val query = input.trim()
         if (query.codePointCount(0, query.length) < 2 || query.toByteArray(Charsets.UTF_8).size > 256) {
             mutableState.value = current.copy(error = "搜索需要至少两个字符，且不能超过 256 字节。")
@@ -1274,7 +1289,7 @@ class DriveController(
         if (session == null || state.value.screen != Screen.FILES ||
             section == FilesSection.BROWSE || state.value.filesSection != section) return
         val query = state.value.searchQuery
-        request { ticket ->
+        request(discardableRead = true) { ticket ->
             val page = authenticated(service, ticket) { token ->
                 when (section) {
                     FilesSection.RECENT -> FileSearchPage(service.fileRecent(token), "")
@@ -1299,7 +1314,7 @@ class DriveController(
         if (session == null) return
         val query = current.searchQuery
         val cursor = current.searchNextCursor
-        request { ticket ->
+        request(discardableRead = true) { ticket ->
             val page = authenticated(service, ticket) { token -> service.searchFiles(token, query, cursor) }
             checkCurrent(ticket)
             val latest = state.value
@@ -1368,7 +1383,7 @@ class DriveController(
             current.collectionItems.none { it == item } || session == null) return
         val service = api ?: return
         val section = current.filesSection
-        request { ticket ->
+        request(discardableRead = true) { ticket ->
             val location = authenticated(service, ticket) {
                 service.nodeLocation(it, item.node.id)
             }
@@ -1459,9 +1474,7 @@ class DriveController(
     /** Owner-scoped deleted roots. This is a separate Files subview, not Gallery. */
     fun openTrash() {
         val current = state.value
-        if (current.screen != Screen.FILES || current.loading || session == null ||
-            current.fileUploadActive || current.fileDownloadActive ||
-            current.destinationKind != null || current.browseBatchWriteAttempted) return
+        if (!current.canNavigateFiles() || session == null || api == null) return
         invalidate()
         mutableState.value = current.copy(screen = Screen.TRASH, loading = false,
             error = null, selected = null, fileExportPending = null,
@@ -1562,9 +1575,7 @@ class DriveController(
      * Files' verified Owner path remains in memory for a return to browsing. */
     fun openGallery() {
         val current = state.value
-        if (current.screen != Screen.FILES || session == null || api == null ||
-            current.fileUploadActive || current.fileDownloadActive ||
-            current.destinationKind != null || current.browseBatchWriteAttempted) return
+        if (!current.canNavigateFiles() || session == null || api == null) return
         invalidate()
         mutableState.value = current.withoutGallerySelection().copy(
             screen = Screen.GALLERY, loading = false, selected = null, error = null,
@@ -2784,8 +2795,8 @@ class DriveController(
     /** Jump to an already-visited ancestor without trusting an unverified path. */
     fun navigateToAncestor(index: Int) {
         val current = state.value
-        if (current.screen != Screen.FILES || current.filesSection != FilesSection.BROWSE ||
-            current.destinationKind != null || index < 0 || index >= current.path.lastIndex) return
+        if (!current.canNavigateFiles() || current.filesSection != FilesSection.BROWSE ||
+            index < 0 || index >= current.path.lastIndex) return
         load(current.path.take(index + 1), 0)
     }
 
@@ -2831,12 +2842,12 @@ class DriveController(
     // Refresh from first Server-authoritative browse page, or restart the
     // bounded current Recent/Favorites/Search query; never mix stale cursors.
     fun refresh() {
-        if (state.value.screen != Screen.FILES || state.value.destinationKind != null) return
+        if (!state.value.canNavigateFiles()) return
         if (state.value.filesSection == FilesSection.BROWSE) load(state.value.path, 0)
         else loadCollection()
     }
     fun retry() {
-        if (state.value.screen != Screen.FILES || state.value.destinationKind != null) return
+        if (!state.value.canNavigateFiles()) return
         if (state.value.filesSection == FilesSection.BROWSE) {
             if (retryPrepend) loadPrevious(retryFailed = true)
             else load(retryPath ?: state.value.path, retryOffset, retryAppend)
@@ -2867,7 +2878,7 @@ class DriveController(
         val offset = (expected - 100).coerceAtLeast(0)
         val path = current.path
         retryPrepend = true
-        request { ticket ->
+        request(discardableRead = true) { ticket ->
             val page = authenticated(service, ticket) {
                 service.children(it, path.last().id, offset)
             }
@@ -2899,7 +2910,7 @@ class DriveController(
         retryOffset = offset
         retryAppend = append
         retryPrepend = false
-        request { loadWithin(service, path, offset, it, append) }
+        request(discardableRead = true) { loadWithin(service, path, offset, it, append) }
     }
 
     private suspend fun loadWithin(service: XDriveService, path: List<DriveNode>, offset: Int, ticket: Long, append: Boolean = false) {
@@ -2989,13 +3000,16 @@ class DriveController(
      * a folder change, refresh, search or other request clears it immediately. */
     private fun request(
         isFileDownload: Boolean = false, isFileUpload: Boolean = false,
+        discardableRead: Boolean = false,
         block: suspend (Long) -> Unit,
     ) {
         invalidate()
         val ticket = generation
         val prior = state.value
         mutableState.value = prior.copy(
-            loading = true, error = null, selected = null,
+            loading = true, discardableReadInFlight = discardableRead &&
+                !isFileDownload && !isFileUpload,
+            error = null, selected = null,
             filesPdfViewer = null, filesPdfBytes = 0,
             filesAudioViewer = null,
             fileExportPending = null, fileExportOrigin = null,
@@ -3091,7 +3105,8 @@ class DriveController(
                 }
             } finally {
                 if (ticket == generation) mutableState.value =
-                    state.value.copy(loading = false, destinationSubmitting = false)
+                    state.value.copy(loading = false, discardableReadInFlight = false,
+                        destinationSubmitting = false)
             }
         }
     }
