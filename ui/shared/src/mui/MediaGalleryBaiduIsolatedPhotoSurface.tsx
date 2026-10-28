@@ -29,6 +29,7 @@ import {
   xDriveVerifiedMapPhotoProjections,
   xDriveSelectVisibleMapPhotoCovers,
 } from '../media-gallery-places-map-pins'
+import type { XDrivePlacesMapOverlayRect } from '../media-gallery-places-map-pins'
 import {
   xDriveBaiduMapPhotoScopeKey, xDriveCopyBaiduMapPhotoScope,
 } from '../media-gallery-baidu-map-photo-scope'
@@ -100,6 +101,8 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   mapPhotoScope: XDriveBaiduMapPhotoScope
 }) {
   const mount = useRef<HTMLDivElement | null>(null)
+  const summaryElement = useRef<HTMLDivElement | null>(null)
+  const errorElement = useRef<HTMLDivElement | null>(null)
   const mapFrameRef = useRef<{
     setPhotoCoverSelections(selections: readonly MediaBaiduNativeCellSelection[]): boolean
   } | null>(null)
@@ -156,6 +159,10 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   // Only the trusted Gallery Parent owns photo identity and Blob URLs.
   const [projected,setProjected] = useState<
     XDriveTrustedProjectedMapCells<MediaBaiduNativeCellSelection> | null>(null)
+  // Cosmetic control geometry only. Never send it to the SDK, bind it to
+  // media identity, or use it to authorize an Owner resource.
+  const [overlayRects,setOverlayRects] =
+    useState<readonly XDrivePlacesMapOverlayRect[] | null>(null)
   const [error,setError] = useState(false)
   const [failedCellsScope,setFailedCellsScope] = useState<{owner:string;key:string} | null>(null)
   type DrawerView = {
@@ -610,6 +617,61 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     }
   },[childOrigin,mintChildTicket,getInlinePrototypeConfig,getInlineSignedStatus,mode,listOwnerCells,onReady,scope])
 
+
+  // Both SDK Hosts share this trusted Parent's real map chrome. Fixed
+  // bottom offsets cannot account for wrapped labels, landscape safe area,
+  // large fonts or the retry alert. This measurement changes only marker
+  // presentation, not the camera, signed Owner /cells or SDK session.
+  useLayoutEffect(() => {
+    const canvas=mount.current
+    const win=canvas?.ownerDocument.defaultView
+    if (!canvas || !win) return
+    const toolbar=canvas.closest('[data-xdrive-gallery-places-map]')
+      ?.querySelector<HTMLElement>('[data-xdrive-places-map-toolbar]') ?? null
+    const controls: Element[]=[
+      ...(toolbar ? [toolbar] : []),
+      ...(summaryElement.current ? Array.from(summaryElement.current.children) : []),
+      ...(errorElement.current ? [errorElement.current] : []),
+    ]
+    const measure=()=>{
+      const mapRect=canvas.getBoundingClientRect()
+      const width=Math.round(mapRect.width),height=Math.round(mapRect.height)
+      if (![width,height].every(Number.isSafeInteger) ||
+          width < 120 || height < 120 || width > 4096 || height > 4096) {
+        setOverlayRects(old=>old===null ? old : null)
+        return
+      }
+      const rects: XDrivePlacesMapOverlayRect[]=[]
+      for (const element of controls) {
+        if (element.getClientRects().length===0) continue
+        const box=element.getBoundingClientRect()
+        if (![box.left,box.right,box.top,box.bottom].every(Number.isFinite)) continue
+        const left=Math.max(0,Math.floor(box.left-mapRect.left))
+        const top=Math.max(0,Math.floor(box.top-mapRect.top))
+        const right=Math.min(width,Math.ceil(box.right-mapRect.left))
+        const bottom=Math.min(height,Math.ceil(box.bottom-mapRect.top))
+        if (right>left && bottom>top)rects.push({left,top,right,bottom})
+      }
+      // Reuse the previous array if browser geometry has not changed;
+      // avoid marker re-renders and extra Host label updates on a no-op.
+      setOverlayRects(old=>old && old.length===rects.length &&
+        old.every((rect,i)=>rect.left===rects[i].left &&
+          rect.top===rects[i].top && rect.right===rects[i].right &&
+          rect.bottom===rects[i].bottom) ? old : rects)
+    }
+    const observer=typeof win.ResizeObserver==='function'
+      ? new win.ResizeObserver(measure) : null
+    for (const element of [canvas,summaryElement.current,...controls]) {
+      if (element)observer?.observe(element)
+    }
+    win.addEventListener('resize',measure)
+    measure()
+    return ()=>{
+      win.removeEventListener('resize',measure)
+      observer?.disconnect()
+    }
+  },[trustedSummary,activeDrawer,failedCellsScope,phase,edgeToEdge])
+
   // Both Inline and isolated HTTPS Child share the exact same verified
   // Owner projections and photo-first collision/edge/overlay rules. Do not
   // show a clipped or map-controls-covered button just because an SDK point
@@ -620,7 +682,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         xDriveVerifiedMapPhotoProjections(
           trustedSummary, projected, accessible.map(cell => cell.selection))
           .filter(candidate => hasAcceptedCell(candidate.selection)),
-        projected.width, projected.height, edgeToEdge)
+        projected.width, projected.height, edgeToEdge, overlayRects)
     : []
   // Two SDK Hosts receive only the current visible React cover selections.
   // While at least one verified Parent photo cover is visible, it owns the
@@ -632,7 +694,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     mapFrameRef.current?.setPhotoCoverSelections?.(
       coverPins.map(pin => pin.selection))
   },[projected,accessible,acceptedViewport,currentFilterKey,phase,
-    summary,edgeToEdge,loadThumbnail])
+    summary,edgeToEdge,loadThumbnail,overlayRects])
   // Only the authenticated Owner Cells DTO supplies representative media kind.
   // Both SDK Hosts still get anonymous map geometry, count and ephemeral key;
   // private media bytes, URLs and kind remain in this trusted React Parent.
@@ -741,7 +803,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
           </Box>
         ) : null}
       {!activeDrawer && trustedSummary ? (
-        <Box data-xdrive-places-map-photo-summary
+        <Box ref={summaryElement} data-xdrive-places-map-photo-summary
           sx={{position:'absolute',
             left:{xs:'max(10px, env(safe-area-inset-left))',sm:16},
             right:{xs:'max(10px, env(safe-area-inset-right))',sm:16},
@@ -787,7 +849,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         {phase === 'ready' && failedCellsScope?.owner === (scope ?? '') &&
             failedCellsScope.key === currentFilterKey &&
             !activeDrawer ? (
-          <Box role="alert" data-xdrive-places-cells-query-error
+          <Box ref={errorElement} role="alert" data-xdrive-places-cells-query-error
             sx={{position:'absolute',left:{xs:'max(10px, env(safe-area-inset-left))',sm:16},
               right:{xs:'max(10px, env(safe-area-inset-right))',sm:16},
               bottom:{xs:'max(12px, env(safe-area-inset-bottom))',sm:16},
