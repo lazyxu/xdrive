@@ -19,6 +19,11 @@ test('DB-only recovery is a distinct, exact-confirmed Admin operation on every H
   assert.match(panel, /仅恢复 v1 数据库（保留文件）/)
   assert.match(panel, /数据库与当前文件可能产生引用不一致/)
   assert.match(shared, /action: 'restore_database_only'/)
+  assert.match(shared, /xDriveServerBackupActionLabel/)
+  assert.match(shared, /restore_database_only: '仅恢复数据库（保留文件）'/)
+  assert.match(panel, /data-xdrive-admin-database-only-history-scope/)
+  assert.match(panel, /不能视为数据库和文件的完整恢复演练/)
+
   assert.match(api, /case "restore_database_only":/)
   assert.match(api, /backup_snapshot_not_database_only/)
   assert.match(agent, /case "restore_database_only":/)
