@@ -52,6 +52,7 @@ import {
   useXDriveFileExplorerOperationController,
   useXDriveFileExplorerExternalDropController,
   useXDriveFileExplorerUploadController,
+  useXDriveFileExplorerOwnerFence,
   xDriveFileExplorerUploadGroupLabel,
   XDriveUploadConflictDialog,
   xDriveCaptureVideoPosterBlob,
@@ -303,6 +304,10 @@ export default function DesktopFileExplorer({
   const [actionBusy, setActionBusy] = useState('')
   const actionBusyRef = useRef<{ key: string; generation: number } | null>(null)
   const actionGenerationRef = useRef(1)
+  // Check the current Server/Owner synchronously, even before passive cleanup.
+  const { isCurrent: isCurrentFilesOwner } = useXDriveFileExplorerOwnerFence(
+    hostPort, navigationSessionStorageKey ?? '',
+  )
 
   useEffect(() => {
     actionGenerationRef.current += 1
@@ -323,19 +328,20 @@ export default function DesktopFileExplorer({
   }, [navigationSessionStorageKey])
 
   const beginActionBusy = useCallback((key: string) => {
-    if (actionBusyRef.current) return null
+    if (!isCurrentFilesOwner() || actionBusyRef.current) return null
     const token = { key, generation: actionGenerationRef.current }
     actionBusyRef.current = token
     setActionBusy(key)
     return token
-  }, [])
+  }, [isCurrentFilesOwner])
 
   const isActionBusyCurrent = useCallback((
     token: { key: string; generation: number },
   ) => (
     token.generation === actionGenerationRef.current &&
-    actionBusyRef.current === token
-  ), [])
+    actionBusyRef.current === token &&
+    isCurrentFilesOwner()
+  ), [isCurrentFilesOwner])
 
   const finishActionBusy = useCallback((
     token: { key: string; generation: number },

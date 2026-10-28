@@ -129,7 +129,7 @@ async function mountHarness() {
     const busy = adapterSource.run([
       ...['actionBusy', 'actionBusyRef', 'actionGenerationRef'].map((name) => adapterSource.variable(name).parent.parent.getText(adapterSource.ast)),
       ...['beginActionBusy', 'isActionBusyCurrent', 'finishActionBusy'].map((name) => `const ${name} = ${adapterSource.expression(name)};`),
-    ].join('\n'), React, '{ actionBusy, actionBusyRef, beginActionBusy, isActionBusyCurrent, finishActionBusy }')
+    ].join('\n'), { ...React, isCurrentFilesOwner: () => true }, '{ actionBusy, actionBusyRef, beginActionBusy, isActionBusyCurrent, finishActionBusy }')
     const dependencies = {
       ...shared, ...busy, useCallback: React.useCallback,
       nodeByID: new Map([[node.id, node]]), trashActive: false,
