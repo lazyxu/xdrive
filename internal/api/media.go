@@ -949,13 +949,15 @@ func (s *Server) queryMediaItemRange(
 		return mediaItemRangeDTO{}, err
 	}
 	var totalCount int64
-	// In a trusted B1 GeoNames hierarchy, the first Range always loads
-	// day-level groups. Each visible node has one captured/added day, and
-	// those groups already COUNT(DISTINCT node_id). Summing them avoids
-	// a second complete Owner/GeoNames scan for the same exact total.
-	// Keep the original independent Count for all other Gallery queries
-	// and subsequent sparse pages.
-	if offset != 0 || options.PlaceHierarchy == nil {
+	// At offset zero, trusted GeoNames hierarchy and signed BD09 Camera
+	// Gallery Ranges both load the SAME day-level timeline groups. One
+	// eligible Node belongs to exactly one captured/added day, and every
+	// group already COUNTs DISTINCT node_id. Its consecutive item counts
+	// are therefore the exact Owner-scoped TotalCount, avoiding a separate
+	// expensive full-viewport Count on the first map photo wall.
+	// Preserve the original independent Count for ordinary Gallery queries
+	// and ALL subsequent sparse map pages.
+	if offset != 0 || (options.PlaceHierarchy == nil && options.BaiduViewport == nil) {
 		if err := query.
 			Session(&gorm.Session{}).
 			Distinct("xd_media_metadata.node_id").
@@ -979,11 +981,11 @@ func (s *Server) queryMediaItemRange(
 		}
 		timelineGroups = sets.Month
 		timelineGroupSets = &sets
-		if options.PlaceHierarchy != nil {
-			// The one-date-per-node invariant means distinct day counts
-			// partition the exact same Owner Range as the global Count.
-			// Reject malformed group offsets rather than publish a false
-			// total or silently expand this Owner-scoped collection.
+		if options.PlaceHierarchy != nil || options.BaiduViewport != nil {
+			// For both verified GeoNames and signed BD09 viewports the
+			// one-date-per-node invariant partitions the SAME Owner Range.
+			// Reject bad offsets/overflow rather than publish an invented
+			// total or expand a filtered Album/Camera collection.
 			for _, day := range sets.Day {
 				if day.ItemCount <= 0 || day.StartIndex != totalCount ||
 					day.ItemCount > int64(^uint64(0)>>1)-totalCount {
