@@ -802,4 +802,53 @@ assert d["total_snapshots"]==baseline,d
 assert d["truncated"] is (baseline>100),d
 assert len(d["snapshots"])==min(baseline,100),d
 PY
+# The displayed schedule is an attestation of an exact xDrive installer
+# crontab entry, never proof that future backups will succeed.
+mkdir -p "$TMP/cron-bin"
+export XD_BACKUP_ADMIN_TEST_CRONTAB="$TMP/mock-crontab"
+cat > "$TMP/cron-bin/crontab" <<'CRON'
+#!/usr/bin/env bash
+[[ "${1:-}" == -l ]] || exit 2
+[[ "${XD_BACKUP_ADMIN_TEST_CRON_FAIL:-}" != yes ]] || exit 75
+cat -- "$XD_BACKUP_ADMIN_TEST_CRONTAB"
+CRON
+chmod 700 "$TMP/cron-bin/crontab"
+export PATH="$TMP/cron-bin:$PATH"
+printf 'XD_BACKUP_SCHEDULE=0 3 * * *\n' >> "$XD_CONFIG_DIR/config/.env"
+printf '0 3 * * * XD_CONFIG_DIR=%q %q >> %q 2>&1 # xdrive-managed-backup\n' \
+  "$XDRIVE_HOME" "$BIN_DIR/server-backup-scheduled.sh" "$LOG_DIR/backup.log" > "$XD_BACKUP_ADMIN_TEST_CRONTAB"
+backup_admin_schedule_status > "$TMP/schedule-registered.json"
+backup_admin_inventory "$dir"
+python3 - "$TMP/schedule-registered.json" "$dir/backup-admin-inventory.json" <<'PY'
+import json,sys
+status=json.load(open(sys.argv[1],encoding="utf-8"))
+inventory=json.load(open(sys.argv[2],encoding="utf-8"))
+assert status==inventory["schedule"], (status,inventory["schedule"])
+assert status==dict(protocol="xdrive-host-backup-schedule-v1",source="installer_crontab",
+                    state="registered",expression="0 3 * * *"),status
+assert "XD_CONFIG_DIR" not in json.dumps(status),status
+PY
+printf '0 4 * * * XD_CONFIG_DIR=%q %q >> %q 2>&1 # xdrive-managed-backup\n' \
+  "$XDRIVE_HOME" "$BIN_DIR/server-backup-scheduled.sh" "$LOG_DIR/backup.log" > "$XD_BACKUP_ADMIN_TEST_CRONTAB"
+backup_admin_schedule_status > "$TMP/schedule-stale.json"
+python3 - "$TMP/schedule-stale.json" <<'PY'
+import json,sys
+x=json.load(open(sys.argv[1],encoding="utf-8"))
+assert x["state"]=="mismatch" and x["expression"]=="0 3 * * *",x
+PY
+XD_BACKUP_ADMIN_TEST_CRON_FAIL=yes backup_admin_schedule_status > "$TMP/schedule-unavailable.json"
+python3 - "$TMP/schedule-unavailable.json" <<'PY'
+import json,sys
+x=json.load(open(sys.argv[1],encoding="utf-8"))
+assert x["state"]=="unknown",x
+PY
+grep -v '^XD_BACKUP_SCHEDULE=' "$XD_CONFIG_DIR/config/.env" > "$TMP/env-without-schedule"
+mv "$TMP/env-without-schedule" "$XD_CONFIG_DIR/config/.env"
+: > "$XD_BACKUP_ADMIN_TEST_CRONTAB"
+backup_admin_schedule_status > "$TMP/schedule-unconfigured.json"
+python3 - "$TMP/schedule-unconfigured.json" <<'PY'
+import json,sys
+x=json.load(open(sys.argv[1],encoding="utf-8"))
+assert x["state"]=="not_configured" and x["expression"]=="",x
+PY
 echo 'Admin Server Backup host bridge: CRUD, batch verify, selected-v2 delete and inventory truncation tests passed'
