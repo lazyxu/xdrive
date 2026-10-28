@@ -125,7 +125,7 @@ type backupAdminHistory struct {
 }
 
 func validBackupAdminHistory(events []backupAdminHistoryEntry) bool {
-	if len(events) > 30 {
+	if len(events) > 100 {
 		return false
 	}
 	seen := make(map[string]bool, len(events))
@@ -284,7 +284,7 @@ func (s *Server) backupAdminState() backupAdminPage {
 		page.Retention = &report
 	}
 	var history backupAdminHistory
-	if err := readSafeBackupAdminJSON(dir, "backup-admin-history.json", 32<<10, &history); err == nil &&
+	if err := readSafeBackupAdminJSON(dir, "backup-admin-history.json", 256<<10, &history); err == nil &&
 		history.Protocol == "xdrive-backup-admin-history-v1" && validBackupAdminHistory(history.Operations) {
 		page.History = history.Operations
 	}

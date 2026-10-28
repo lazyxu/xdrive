@@ -449,7 +449,7 @@ The Host publishes real per-generation counts as task stage progress rather
 than falsely labeling items as bytes. A bounded last-result report persists
 the request ID, timestamps, total/checked/passed/failed/unverified counts,
 deep repository results and at most 20 sanitized failure IDs. The normal
-30-entry Host history retains the terminal operation. A Host restart marks
+100-entry Host history retains the terminal operation. A Host restart marks
 an unfinished task interrupted and does not automatically replay it.
 The UI distinguishes historical verification from current integrity or
 a real PostgreSQL/file recovery drill.
@@ -494,7 +494,7 @@ It shows four independent evidence classes: structural backup candidate,
 most recent historical checksum/CAS verification, most recent Host-recorded
 *actual restore action*, and isolated recovery-drill acceptance. A successful
 destructive restore action is **not** evidence of an isolated drill. History is
-bounded to 30 receipts, and no history is not a failed backup.
+bounded to 100 receipts, and no history is not a failed backup.
 
 For PR-triggered CI, `GITHUB_SHA` is a synthetic merge checkout, not
 necessarily the feature head or the eventual squash-merge commit. For the
@@ -576,7 +576,7 @@ An oversized backup fails clearly instead of silently falling back to destructiv
 restore; larger deliberate operator drills remain Host-local.
 
 Only a bounded, schema-checked Host receipt may be persisted in the existing
-30-entry private administrator history: exact snapshot name and executed result,
+100-entry private administrator history: exact snapshot name and executed result,
 real file/SQL recovery booleans, historical timestamps, resource ceiling and fixed
 failure category. Invalid or absent proof can **never** count as a successful
 drill. The shared UI distinguishes that historical Host sandbox result from

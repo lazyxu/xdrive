@@ -474,25 +474,25 @@ rm "$dir/backup-admin-history.json"
 mv "$dir/backup-admin-history.saved" "$dir/backup-admin-history.json"
 
 
-# A full 30-row history is trimmed on the next real Host action. Seed the
-# previous history in one operation to keep CI fast (no 35 fsync subprocesses).
+# A full 100-row history is trimmed on the next real Host action. Seed the
+# previous history in one operation to keep CI fast (no 101 fsync subprocesses).
 python3 - "$dir/backup-admin-history.json" "$v2" <<'PY'
 import json,sys
 path,snapshot=sys.argv[1:]
 entries=[dict(protocol="xdrive-backup-admin-v1",request_id=f"{n:024x}",action="verify",
     snapshot_id="v2-default:"+snapshot,mode="fast",state="success",
     started_at="2026-10-27T03:00:00Z",finished_at="2026-10-27T03:00:01Z",
-    error_code="") for n in range(30,0,-1)]
+    error_code="") for n in range(100,0,-1)]
 with open(path,"w",encoding="utf-8") as f:
     json.dump(dict(protocol="xdrive-backup-admin-history-v1",operations=entries),f)
 PY
-backup_admin_history_append "$dir" success verify 00000000000000000000001f \
+backup_admin_history_append "$dir" success verify 000000000000000000000065 \
   "v2-default:$v2" fast 2026-10-27T03:00:00Z 2026-10-27T03:00:01Z ""
 python3 - "$dir/backup-admin-history.json" <<'PY'
 import json,sys
 events=json.load(open(sys.argv[1],encoding="utf-8"))["operations"]
-assert len(events)==30,len(events)
-assert events[0]["request_id"]==f"{31:024x}"
+assert len(events)==100,len(events)
+assert events[0]["request_id"]==f"{101:024x}"
 assert events[-1]["request_id"]==f"{2:024x}"
 assert all(e["state"]=="success" and e["mode"]=="fast" for e in events)
 PY
