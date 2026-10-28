@@ -369,6 +369,76 @@ class DriveControllerTest {
     }
 
 
+    @Test fun manualAlbumSelectionRequiresFreshGetAndClearsOnVerifiedWrite() = runTest {
+        val album = GalleryAlbum("manual:trip", "manual", "Trip", 0, 2, 0)
+        val api = object : Service() {
+            var reads = 0
+            var writes = 0
+            override suspend fun galleryAlbums(accessToken: String): List<GalleryAlbum> {
+                assertEquals("access", accessToken)
+                reads++
+                return listOf(album, GalleryAlbum("smart:recent", "smart", "Recent", 0, 1, 0))
+            }
+            override suspend fun galleryAddToManualAlbum(
+                accessToken: String, target: GalleryAlbum, items: List<GalleryAsset>,
+            ): GalleryAlbum {
+                assertEquals("access", accessToken)
+                assertEquals(album, target)
+                assertEquals(listOf(990L), items.map { it.node.id })
+                writes++
+                return album.copy(revision = 3, itemCount = 1)
+            }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.setGallerySelectionMode(true)
+        c.toggleGallerySelection(c.state.value.galleryItems.single())
+        c.addGallerySelectedToAlbum(album)
+        assertEquals(0, api.writes)
+        c.loadGalleryAlbumsForSelection(); runCurrent()
+        assertEquals(1, api.reads)
+        assertTrue(c.state.value.galleryAlbumsLoaded)
+        c.addGallerySelectedToAlbum(album); runCurrent()
+        assertEquals(1, api.writes)
+        assertFalse(c.state.value.gallerySelectionMode)
+        assertTrue(c.state.value.gallerySelectedItems.isEmpty())
+        assertFalse(c.state.value.galleryAlbumsLoaded)
+        c.openGalleryCollections(); runCurrent()
+        assertEquals(2, api.reads)
+        c.close()
+    }
+
+    @Test fun manualAlbumUncertainAckNeverReplaysAndRefreshesGetOnly() = runTest {
+        val album = GalleryAlbum("manual:trip", "manual", "Trip", 0, 2, 0)
+        val api = object : Service() {
+            var writes = 0
+            override suspend fun galleryAlbums(accessToken: String) = listOf(album)
+            override suspend fun galleryAddToManualAlbum(
+                accessToken: String, target: GalleryAlbum, items: List<GalleryAsset>,
+            ): GalleryAlbum {
+                writes++
+                throw ApiException(503, "ACK lost")
+            }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.setGallerySelectionMode(true)
+        c.toggleGallerySelection(c.state.value.galleryItems.single())
+        c.loadGalleryAlbumsForSelection(); runCurrent()
+        c.addGallerySelectedToAlbum(album); runCurrent()
+        assertEquals(1, api.writes)
+        assertTrue(c.state.value.galleryMetadataWriteAttempted)
+        assertTrue(requireNotNull(c.state.value.error).contains("未确认"))
+        c.addGallerySelectedToAlbum(album); runCurrent()
+        assertEquals(1, api.writes)
+        c.retryGallery(); runCurrent()
+        assertFalse(c.state.value.galleryMetadataWriteAttempted)
+        assertEquals(1, api.writes)
+        c.close()
+    }
+
     @Test fun gallerySelectionReviewFilterAndLocalEditsNeverWriteOrLeakAcrossOwner() = runTest {
         val list = listOf(
             GalleryAsset(DriveNode(11, 1, "Trip.JPG", "file", 4, revision = 1), "image"),

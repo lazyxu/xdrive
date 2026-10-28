@@ -1634,6 +1634,28 @@ class DriveController(
         }
     }
 
+    /** Fetch eligible album destinations without navigating away from selection. */
+    fun loadGalleryAlbumsForSelection() {
+        val current = state.value
+        val service = api ?: return
+        if (current.screen != Screen.GALLERY || !current.gallerySelectionMode ||
+            !current.galleryLoaded || current.gallerySelectedItems.isEmpty() ||
+            current.galleryViewer != null || current.loading ||
+            current.galleryMetadataWriteAttempted || session == null) return
+        mutableState.value = current.copy(galleryAlbums = emptyList(),
+            galleryAlbumsLoaded = false)
+        request { ticket ->
+            val albums = authenticated(service, ticket) { service.galleryAlbums(it) }
+            checkCurrent(ticket)
+            val latest = state.value
+            if (latest.screen != Screen.GALLERY || !latest.gallerySelectionMode ||
+                latest.galleryViewer != null || latest.gallerySelectedItems.isEmpty())
+                throw CancellationException()
+            mutableState.value = latest.copy(
+                galleryAlbums = albums, galleryAlbumsLoaded = true, error = null)
+        }
+    }
+
     /** A visible Gallery refresh must really re-fetch its current Owner albums,
      * never expose an inert action on the Collections overview. */
     fun refreshGalleryAlbums() {
@@ -1801,6 +1823,7 @@ class DriveController(
     private fun submitGalleryMetadata(
         mutation: suspend (XDriveService, String, List<GalleryAsset>) -> Int,
         patch: (GalleryAsset, Set<Long>) -> GalleryAsset,
+        invalidateAlbumsOnAck: Boolean = false,
     ) {
         val current = state.value
         if (!current.gallerySelectionMode || current.screen != Screen.GALLERY ||
@@ -1828,6 +1851,8 @@ class DriveController(
                     ApiFailureReason.INVALID_RESPONSE)
             mutableState.value = latest.copy(
                 galleryItems = latest.galleryItems.map { item -> patch(item, ids) },
+                galleryAlbums = if (invalidateAlbumsOnAck) emptyList() else latest.galleryAlbums,
+                galleryAlbumsLoaded = if (invalidateAlbumsOnAck) false else latest.galleryAlbumsLoaded,
                 gallerySelectionMode = false, gallerySelectedItems = emptyList(),
                 galleryMetadataWriteAttempted = false, error = null)
         }
@@ -1852,6 +1877,26 @@ class DriveController(
                 service.galleryTagsBatch(token, selected, canonical)
             },
             patch = { item, _ -> item }, // tags are re-read on next Owner GET
+        )
+    }
+
+    /** If-Match protects existing manual album membership. Any uncertain
+     * ACK freezes selection until explicit read-only Gallery reconciliation. */
+    fun addGallerySelectedToAlbum(album: GalleryAlbum) {
+        val current = state.value
+        if (!current.galleryAlbumsLoaded || album.kind != "manual" ||
+            album.revision <= 0 || current.galleryAlbums.none { it == album }) return
+        submitGalleryMetadata(
+            mutation = { service, token, selected ->
+                val saved = service.galleryAddToManualAlbum(token, album, selected)
+                if (saved.id != album.id || saved.kind != "manual" ||
+                    saved.revision < album.revision)
+                    throw ApiException(0, "Gallery album ACK mismatch",
+                        ApiFailureReason.INVALID_RESPONSE)
+                selected.size
+            },
+            patch = { item, _ -> item },
+            invalidateAlbumsOnAck = true,
         )
     }
 

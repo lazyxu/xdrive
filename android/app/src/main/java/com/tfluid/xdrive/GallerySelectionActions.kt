@@ -1,6 +1,8 @@
 package com.tfluid.xdrive
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -17,6 +19,7 @@ internal fun GallerySelectionActions(state: DriveState, controller: DriveControl
     val uncertain = state.galleryMetadataWriteAttempted
     var tagsOpen by remember { mutableStateOf(false) }
     var reviewOpen by remember { mutableStateOf(false) }
+    var albumsOpen by remember { mutableStateOf(false) }
     var tagsDraft by remember { mutableStateOf("") }
     val tags = remember(tagsDraft) { parseGalleryTagInput(tagsDraft) }
     val enabled = selected.isNotEmpty() && !state.loading &&
@@ -69,6 +72,15 @@ internal fun GallerySelectionActions(state: DriveState, controller: DriveControl
                             .heightIn(min = 48.dp),
                     ) { Text("添加标签") }
                 }
+                OutlinedButton(
+                    onClick = {
+                        albumsOpen = true
+                        controller.loadGalleryAlbumsForSelection()
+                    },
+                    enabled = enabled,
+                    modifier = Modifier.fillMaxWidth()
+                        .testTag("gallery-selection-add-album").heightIn(min = 48.dp),
+                ) { Text("添加到相册") }
             }
         }
     }
@@ -114,4 +126,54 @@ internal fun GallerySelectionActions(state: DriveState, controller: DriveControl
     )
     if (reviewOpen && !uncertain)
         GallerySelectionReviewDialog(state, controller) { reviewOpen = false }
+    if (albumsOpen && !uncertain) {
+        val writable = state.galleryAlbums.filter {
+            it.kind == "manual" && it.revision > 0
+        }
+        AlertDialog(
+            onDismissRequest = { if (!state.loading) albumsOpen = false },
+            modifier = Modifier.testTag("gallery-album-picker"),
+            title = { Text("添加到相册") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("将已选 " + selected.size + " 项加入已有手动相册（不复制原文件）。",
+                        style = MaterialTheme.typography.bodySmall)
+                    when {
+                        state.loading -> CircularProgressIndicator(
+                            modifier = Modifier.testTag("gallery-album-picker-loading"))
+                        !state.galleryAlbumsLoaded -> {
+                            Text(state.error ?: "相册列表未载入。",
+                                color = MaterialTheme.colorScheme.error)
+                            TextButton(
+                                onClick = controller::loadGalleryAlbumsForSelection,
+                                modifier = Modifier.testTag("gallery-album-picker-retry"),
+                            ) { Text("重试读取相册") }
+                        }
+                        writable.isEmpty() -> Text("没有可写的手动相册；请先在精选集创建。")
+                        else -> LazyColumn(
+                            modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp),
+                        ) {
+                            items(writable, key = { it.id }) { album ->
+                                TextButton(
+                                    onClick = {
+                                        albumsOpen = false
+                                        controller.addGallerySelectedToAlbum(album)
+                                    },
+                                    enabled = enabled,
+                                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                                        .testTag("gallery-add-album-" + album.id),
+                                ) { Text(album.name + " · " + album.itemCount + " 项") }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { albumsOpen = false }, enabled = !state.loading,
+                    modifier = Modifier.testTag("gallery-album-picker-close")) {
+                    Text("关闭")
+                }
+            },
+        )
+    }
 }
