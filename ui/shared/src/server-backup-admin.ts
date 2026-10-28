@@ -101,6 +101,32 @@ export type XDriveServerBackupVerifyAllReport = {
   failure_category: string
 }
 
+export type XDriveServerBackupSelectedPreview = {
+  protocol: "xdrive-host-selected-v2-preview-v1"
+  request_id: string
+  snapshot_id: string
+  mode: "fast" | "deep"
+  report: {
+    protocol: "xdrive-backup-selected-prune-plan-v1"
+    mode: "read_only"
+    validation: string
+    snapshot: string
+    committed_snapshots: number
+    surviving_snapshots: number
+    selected_snapshot_bytes: number
+    selected_cas_objects: number
+    shared_cas_objects: number
+    exclusive_cas_objects: number
+    exclusive_cas_bytes: number
+    unreferenced_objects: number
+    unreferenced_bytes: number
+    potential_logical_bytes: number
+    hashed_objects: number
+    hashed_bytes: number
+    delete_enabled: false
+  }
+}
+
 export type XDriveServerBackupPage = {
   supported: boolean
   message?: string
@@ -114,12 +140,14 @@ export type XDriveServerBackupPage = {
   retention?: XDriveServerBackupRetention
   history?: XDriveServerBackupHistoryEntry[]
   bulk_verification?: XDriveServerBackupVerifyAllReport
+  selected_preview?: XDriveServerBackupSelectedPreview
 }
 
 export type XDriveServerBackupRequest =
   | { action: 'create'; format: 'v1' | 'v2' }
   | { action: 'verify'; snapshot_id: string; mode: 'fast' | 'deep' }
   | { action: 'verify_all'; mode: 'fast' | 'deep' }
+  | { action: 'preview_delete'; snapshot_id: string; mode: 'fast' | 'deep' }
   | { action: 'plan'; keep_last: number; mode: 'fast' | 'deep' }
   | { action: 'restore'; snapshot_id: string; confirmation: string }
   | { action: 'drill'; snapshot_id: string; confirmation: string }

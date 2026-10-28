@@ -534,11 +534,16 @@ export default function DesktopFileExplorer({
   const refreshCurrentDirectoryIfCurrent = onRefreshCurrentDirectoryIfIdle
 
   const loadTreeDirectoryPage = useCallback(
-    (parentID: number, cursor?: string) => xDriveFileExplorerLoadChildDirectoryPage({
+    (parentID: number, cursor?: string, signal?: AbortSignal) => xDriveFileExplorerLoadChildDirectoryPage({
       parentID,
       cursor,
+      // Stale sidebar reads get a sender-scoped cancellation ID. The same
+      // Host method still supports deliberate destination/lookup reads
+      // without a signal or request ID.
       loadPage: async (id, options) => {
-        const result = await hostPort.browse.cloudChildrenPage(id, options)
+        const result = await hostPort.requestViewport(signal, requestID =>
+          hostPort.browse.cloudChildrenPage(id, options, requestID),
+        )
         if (!result.ok) throw new Error(result.error.message)
         return result.data
       },

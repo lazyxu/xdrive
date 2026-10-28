@@ -4326,4 +4326,135 @@ class DriveControllerTest {
         c.close()
     }
 
+    @Test fun galleryGpsOverviewUsesRealOwnerReadAndBackRetainsLoadedPhotos() = runTest {
+        val sample = OwnerMapSample("map-region:q:-180:-90:180:90:0:0", "照片区域 1-1",
+            35.5, 139.7, 35.5, 139.7, "map_region_sample", 3, 42)
+        val wanted = OwnerMapOverview(listOf(sample), 3, true)
+        val api = object : Service() {
+            var mapReads = 0
+            override suspend fun placesMapOverview(
+                accessToken: String, bounds: OwnerMapBounds, detail: Boolean,
+            ): OwnerMapOverview {
+                assertEquals("access", accessToken)
+                assertEquals(OwnerMapBounds.WORLD, bounds)
+                assertFalse(detail)
+                mapReads++
+                return wanted
+            }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        val rows = c.state.value.galleryItems
+        val photosRead = api.galleryRequests.size
+        c.openGalleryMapOverview(); runCurrent()
+        assertEquals(Screen.GALLERY, c.state.value.screen)
+        assertTrue(c.state.value.galleryMapOpen)
+        assertTrue(c.state.value.galleryMapLoaded)
+        assertEquals(wanted, c.state.value.galleryMapOverview)
+        assertEquals(1, api.mapReads)
+        assertEquals(rows, c.state.value.galleryItems)
+        assertEquals(photosRead, api.galleryRequests.size)
+        c.back(); runCurrent()
+        assertFalse(c.state.value.galleryMapOpen)
+        assertFalse(c.state.value.galleryMapLoaded)
+        assertNull(c.state.value.galleryMapOverview)
+        assertEquals(rows, c.state.value.galleryItems)
+        assertEquals(photosRead, api.galleryRequests.size)
+        assertEquals(Screen.GALLERY, c.state.value.screen)
+        c.close()
+    }
+
+    @Test fun delayedNoncooperativeGpsOverviewCannotLeakAfterBackOrOwnerLogout() = runTest {
+        val delayed = CompletableDeferred<OwnerMapOverview>()
+        val api = object : Service() {
+            override suspend fun placesMapOverview(
+                accessToken: String, bounds: OwnerMapBounds, detail: Boolean,
+            ): OwnerMapOverview =
+                withContext(NonCancellable) { delayed.await() }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        val before = c.state.value.galleryItems
+        c.openGalleryMapOverview(); runCurrent()
+        assertTrue(c.state.value.galleryMapOpen)
+        assertTrue(c.state.value.loading)
+        assertTrue(c.state.value.discardableReadInFlight)
+        c.back(); runCurrent()
+        assertFalse(c.state.value.galleryMapOpen)
+        assertFalse(c.state.value.loading)
+        val returned = OwnerMapOverview(listOf(OwnerMapSample(
+            "map-region:q:-180:-90:180:90:0:0", "Late", 35.0, 139.0,
+            35.0, 139.0, "map_region_sample", 1)), 1, true)
+        delayed.complete(returned); runCurrent()
+        assertNull(c.state.value.galleryMapOverview)
+        assertEquals(before, c.state.value.galleryItems)
+        assertEquals(Screen.GALLERY, c.state.value.screen)
+        c.logout(); runCurrent()
+        assertEquals(Screen.LOGIN, c.state.value.screen)
+        assertNull(c.state.value.galleryMapOverview)
+        assertFalse(c.state.value.galleryMapOpen)
+        c.close()
+    }
+
+    @Test fun failedGpsOverviewRequiresReadOnlyRetryAndNeverReportsEmptyMap() = runTest {
+        val api = object : Service() {
+            var attempts = 0
+            override suspend fun placesMapOverview(
+                accessToken: String, bounds: OwnerMapBounds, detail: Boolean,
+            ): OwnerMapOverview {
+                attempts++
+                if (attempts == 1) throw ApiException(503, "Owner GPS unavailable")
+                return OwnerMapOverview(emptyList(), 0, true)
+            }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.openGalleryMapOverview(); runCurrent()
+        assertTrue(c.state.value.galleryMapOpen)
+        assertFalse(c.state.value.galleryMapLoaded)
+        assertNull(c.state.value.galleryMapOverview)
+        assertNotNull(c.state.value.error)
+        c.retryGalleryMapOverview(); runCurrent()
+        assertEquals(2, api.attempts)
+        assertNull(c.state.value.error)
+        assertTrue(c.state.value.galleryMapLoaded)
+        assertTrue(c.state.value.galleryMapOverview!!.samples.isEmpty())
+        c.openFilesApp(); runCurrent()
+        assertEquals(Screen.FILES, c.state.value.screen)
+        assertNull(c.state.value.galleryMapOverview)
+        assertFalse(c.state.value.galleryMapOpen)
+        c.close()
+    }
+
+    @Test fun galleryGpsOpenIsDeniedDuringSelectionOrActiveSafWrite() = runTest {
+        val api = object : Service() {
+            var reads = 0
+            override suspend fun placesMapOverview(
+                accessToken: String, bounds: OwnerMapBounds, detail: Boolean,
+            ): OwnerMapOverview {
+                reads++
+                return OwnerMapOverview(emptyList(), 0, true)
+            }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.setGallerySelectionMode(true)
+        c.openGalleryMapOverview(); runCurrent()
+        assertFalse(c.state.value.galleryMapOpen)
+        c.setGallerySelectionMode(false)
+        c.showGalleryInfo(api.latestGallery)
+        c.openGalleryMapOverview(); runCurrent()
+        assertFalse(c.state.value.galleryMapOpen)
+        c.dismissGalleryInfo()
+        c.openGalleryMapOverview(); runCurrent()
+        assertTrue(c.state.value.galleryMapOpen)
+        assertEquals(1, api.reads)
+        c.close()
+    }
+
+
 }

@@ -9,6 +9,7 @@ export type XDriveWorkspacePresentation = 'dialog' | 'page'
 
 export function XDriveWorkspaceSurface({
   presentation = 'dialog',
+  fillHeight = false,
   open = false,
   onClose,
   title,
@@ -20,6 +21,8 @@ export function XDriveWorkspaceSurface({
   children,
 }: {
   presentation?: XDriveWorkspacePresentation
+  /** Constrain a full-screen Files workspace without affecting ordinary pages. */
+  fillHeight?: boolean
   open?: boolean
   onClose?: () => void
   title: string
@@ -34,11 +37,31 @@ export function XDriveWorkspaceSurface({
 
   if (presentation === 'page') {
     return (
-      <Box component="section" className="workspace-page-surface" sx={{ width: '100%', minWidth: 0 }}>
+      <Box component="section" className="workspace-page-surface" sx={{
+        width: '100%',
+        minWidth: 0,
+        ...(fillHeight ? {
+          flex: 1,
+          minHeight: 0,
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+        } : {}),
+      }}>
         {showPageHeader ? (
           <XDrivePageHeader title={title} subtitle={subtitle} actions={pageActions} />
         ) : null}
-        <Box sx={{ mt: showPageHeader ? 2 : 0 }}>{children}</Box>
+        <Box sx={{
+          mt: showPageHeader ? 2 : 0,
+          ...(fillHeight ? {
+            flex: 1,
+            minHeight: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+          } : {}),
+        }}>{children}</Box>
       </Box>
     )
   }

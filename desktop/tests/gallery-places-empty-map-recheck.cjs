@@ -106,7 +106,13 @@ test('manual refresh and empty-map interval never widen Owner scope or call the 
   assert.match(refresh,/const worldwideDiscovery = skipPending && initialWorldEmpty && !cameraTouched/)
   assert.match(refresh,/void queryCells\(bounds,worldwideDiscovery \? false : last\.live\)/)
   assert.match(source,/let cameraTouched = Boolean\(returnCamera\)/)
-  assert.match(source,/onCancel:\(\)=>\{ cameraTouched=true; cancel\(\) \}/)
+  const callback=source.slice(source.indexOf('      onCancel:()=>{'),
+    source.indexOf('      onCamera:',source.indexOf('      onCancel:()=>{')))
+  assert.match(callback,/cameraTouched=true/)
+  assert.match(callback,/const resized=Boolean/)
+  assert.match(callback,/pendingResizeDrawer\.current=null/)
+  assert.match(callback,/\n\s*cancel\(\)\s*\n\s*\},/,
+    'gesture and resize must unconditionally invalidate old Camera and Cells')
   assert.match(source,/const refocus = !liveCamera && initialWorldEmpty && !cameraTouched/)
   assert.match(source,/queueMicrotask\(\(\) => \{/)
   assert.match(source,/frame\.restoreCamera\(\{coordinate_space:'bd09ll'/)

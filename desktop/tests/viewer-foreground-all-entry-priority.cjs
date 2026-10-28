@@ -175,15 +175,18 @@ test('all routed and shared inline Viewer entry types share the foreground lease
   assert.match(sharedApp,/host\.platform.*view/)
   assert.match(synologyApp,/<XDriveApp/,
     'DSM uses the canonical Host application and must share the same page preemption')
-  // DSM now uses the canonical Host service registry and XDriveAppPageOutlet,
-  // not the old DSM-local per-page JSX or onOpenBackup callback.
+  // DSM now uses the canonical Host service registry and the one shared
+  // route-content frame, not DSM-local per-page JSX or onOpenBackup callbacks.
   assert.match(synologyApp,/services:\s*\{/)
   assert.match(synologyApp,/const navigate = \(next: XDriveWorkspaceAppRoute\) => \{/)
   assert.match(synologyApp,/if \(!xDriveWorkspaceNavigationAllowed\(next, host\.adminRoleVerified === true\)\) return/,
     'untrusted or denied destinations must not preempt')
   assert.match(synologyApp,/xDriveEnterForegroundPage\('synology:' \+ next\)/)
-  assert.match(synologyApp,/<XDriveAppPageOutlet[\s\S]*?onNavigate=\{navigate\}/,
-    'Home/Task and sidebar navigation must share one Host adapter route')
+  const routeContent = read('ui/shared/src/mui/XDriveAppRouteContent.tsx')
+  assert.match(synologyApp,/<XDriveAppRouteContent[\s\S]*?onNavigate=\{navigate\}/,
+    'Home/Task and sidebar navigation must share the same Host route-content frame')
+  assert.match(routeContent,/<XDriveAppPageOutlet[\s\S]*?onNavigate=\{onNavigate\}/,
+    'shared route-content frame must forward authenticated navigation into the same outlet')
   assert.ok(synologyApp.indexOf("xDriveEnterForegroundPage('synology:' + next)") <
     synologyApp.indexOf('setSelected(next)'),
     'preempt old requests BEFORE mounting the authorized DSM destination')

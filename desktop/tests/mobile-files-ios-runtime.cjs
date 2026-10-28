@@ -906,6 +906,46 @@ test('denied WebKit native sharing getters cannot break mounted Files browsing o
   assert.equal(prepared, 0, 'rendering and context menus must not request authenticated file bytes')
 })
 
+test('Safari denied platform/userAgent getters preserve mounted Files browsing and context menus', async () => {
+  const originalNavigator = Object.getOwnPropertyDescriptor(global, 'navigator')
+  let opened = 0
+  try {
+    for (const denied of ['platform', 'userAgent', 'navigator']) {
+      if (denied === 'navigator') {
+        Object.defineProperty(global, 'navigator', {
+          configurable: true,
+          get() { throw Error('WebKit SecurityError: navigator unavailable') },
+        })
+      } else {
+        const observed = { platform: 'MacIntel', userAgent: 'iPhone Safari' }
+        Object.defineProperty(observed, denied, {
+          configurable: true,
+          get() { throw Error('WebKit SecurityError: ' + denied + ' denied') },
+        })
+        Object.defineProperty(global, 'navigator', { configurable: true, value: observed })
+      }
+      await withView(async h => {
+        assert.equal(count(h.view, 'data-xdrive-mobile-files-scroll'), 1,
+          'optional OS hint failure cannot blank the file browser')
+        await act(async () => {
+          find(h.view, 'data-mobile-files-section', 'favorites').props.onClick()
+        })
+        const row = h.view.root.findAll(node => node.props?.role === 'button' && node.props?.onClick)
+          .find(node => textOf(node.props.children).includes('photo.jpg'))
+        assert.ok(row, 'Owner file remains accessible without optional platform hints')
+        await act(async () => { row.props.onClick() })
+      }, { props: {
+        favorites: [{ id: 15, name: 'photo.jpg', kind: 'file' }],
+        onOpenFavorite: async () => { opened++; return true },
+      } })
+    }
+  } finally {
+    if (originalNavigator) Object.defineProperty(global, 'navigator', originalNavigator)
+    else delete global.navigator
+  }
+  assert.equal(opened, 3)
+})
+
 test('F-iOS-01A: one visible large heading collapses into the compact title while scroll owner stays mounted', async () => {
   await withView(async h => {
     const nav = find(h.view, 'data-mobile-files-navigation-bar', true)

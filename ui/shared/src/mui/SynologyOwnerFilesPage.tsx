@@ -333,12 +333,13 @@ export function XDriveSynologyOwnerFilesPage({
   }, [])
 
   return (
-    <XDriveWorkspaceSurface presentation="page" title="云端文件"
+    <XDriveWorkspaceSurface presentation="page" fillHeight title="云端文件"
       subtitle="使用共用 FileExplorer 查看 Server Owner 文件，支持文本、受限图片/PDF 以及原生视频/音频 Range 播放。"
       pageActions={<XDriveActionButton startIcon={<RefreshRoundedIcon />}
         compact onClick={refreshAuthenticatedOwner}
         disabled={loadingRoot || (crumbs.length > 0 && (loading || paging))}>刷新</XDriveActionButton>}>
-      <Stack spacing={1.5} onScrollCapture={(event) => {
+      <Stack spacing={1.5} sx={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}
+        onScrollCapture={(event) => {
         // FileExplorer owns the virtualized scroll host. Scope this listener
         // to that exact host and retain the explicit button as a fallback.
         const host = event.target

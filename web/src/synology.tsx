@@ -4,7 +4,7 @@ import ReactDOM from 'react-dom/client'
 import { Typography, useTheme } from '@mui/material'
 import {
   XDriveAppearanceThemeProvider,
-  XDriveApp, XDriveAppPageOutlet, XDriveWorkspaceContent, XDriveSettingsDialog,
+  XDriveApp, XDriveAppRouteContent, XDriveSettingsDialog,
   xDriveWorkspaceHostSections,
   xDriveIsWorkspaceAppRoute,
   xDriveWorkspaceNavigationAllowed,
@@ -92,11 +92,10 @@ function SynologyWorkspace({ appearance, onAppearanceChange }: {
         navigate(key)
       }}
     >
-      <XDriveWorkspaceContent presentation="page" responsive
-        sx={{ p: { xs: 2, md: '34px 40px 48px' } }}>
-        <XDriveAppPageOutlet view={selected} host={host} revision={pageRevision}
-          onNavigate={navigate} />
-      </XDriveWorkspaceContent>
+      <XDriveAppRouteContent
+        host={host} view={selected} revision={pageRevision}
+        onNavigate={navigate} pageSx={{ p: { xs: 2, md: '34px 40px 48px' } }}
+      />
       <XDriveSettingsDialog
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}

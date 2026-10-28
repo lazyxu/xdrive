@@ -53,6 +53,8 @@ class DriveAppTest {
     private var locateRangeReads = 0
     private val locatedFile = DriveNode(1155, 1, "target-155.txt", "file", 12, revision = 2)
     private val mutableRootRows = mutableListOf(DriveNode(2, 1, "假期照片", "dir", revision = 1))
+    private var galleryGpsOverviewFixture = false
+    private var gpsOverviewReads = 0
     private var galleryAutoPagingFixture = false
     private var galleryManyPhotos = false
     private var galleryTimelineFixture = false
@@ -128,6 +130,18 @@ class DriveAppTest {
         override suspend fun logout(refreshToken: String) = Unit
         override suspend fun changePassword(accessToken: String, currentPassword: String, newPassword: String) = AuthSession("fixture", "fixture-refresh", "owner")
         override suspend fun root(accessToken: String) = DriveNode(1, name = "", type = "dir")
+        override suspend fun placesMapOverview(
+            accessToken: String, bounds: OwnerMapBounds, detail: Boolean,
+        ): OwnerMapOverview {
+            check(accessToken == "fixture" && galleryGpsOverviewFixture &&
+                bounds == OwnerMapBounds.WORLD && !detail)
+            gpsOverviewReads++
+            return OwnerMapOverview(listOf(
+                OwnerMapSample("map-region:q:-180:-90:180:90:0:0", "照片区域 1-1",
+                    35.505, 139.706, 35.505, 139.706,
+                    "map_region_sample", 3, 40),
+            ), 3, true)
+        }
         override suspend fun galleryAlbums(accessToken: String): List<GalleryAlbum> {
             check(accessToken == "fixture")
             if (galleryCoverFixture) return listOf(
@@ -596,7 +610,11 @@ class DriveAppTest {
                 failure,
             )
         }
-        compose.onNodeWithTag("auth-submit").assertIsDisplayed().assertIsEnabled().performClick()
+        // The bounded readiness check above already asserted visible/enabled.
+        // Re-scroll in the current frame after IME/layout settles, then click
+        // the *real* submit exactly once. Avoid a second stale-frame assertion.
+        compose.onNodeWithTag("auth-submit")
+            .performScrollTo().assertIsEnabled().performClick()
         try {
             compose.waitUntil(timeoutMillis = 10_000) {
                 controller.state.value.screen == Screen.FILES && controller.state.value.loaded
@@ -1255,6 +1273,32 @@ class DriveAppTest {
         compose.onNodeWithTag("files-grid").assertExists()
         compose.onNodeWithTag("files-thumbnail-ready-72", useUnmergedTree = true).assertExists()
         compose.runOnIdle { org.junit.Assert.assertEquals(2, galleryThumbnailReads) }
+    }
+
+    @Test fun filesListViewportSurvivesSameOwnerGalleryRoundTrip() {
+        manyFiles = true
+        startAndLogin()
+        // The 100 real fixture rows use the same lazy-list viewport as Files.
+        // Target id 170 is offscreen at launch; no fake row is injected.
+        compose.onNodeWithTag("files").performScrollToIndex(70)
+        compose.onNodeWithTag("files-item-170").assertIsDisplayed()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.GALLERY &&
+                controller.state.value.galleryLoaded
+        }
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-files").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.FILES &&
+                runCatching {
+                    compose.onNodeWithTag("files-item-170").assertIsDisplayed()
+                }.isSuccess
+        }
+        // Returning to the Files app must not flash or settle at its first row.
+        compose.onNodeWithTag("files-item-170").assertIsDisplayed()
+        compose.onNodeWithTag("files-item-2").assertDoesNotExist()
     }
 
     @Test fun nativeGalleryOpensRealOwnerPhotoWallAndReturnsToFiles() {
@@ -2321,5 +2365,39 @@ class DriveAppTest {
                 listOf(FileBrowseArrangement(group = "type")), filesSortQueries)
         }
     }
+
+    @Test fun galleryMoreOpensRealWgs84SummaryAndBackRestoresOriginalGallery() {
+        galleryGpsOverviewFixture = true
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryLoaded && !controller.state.value.loading
+        }
+        compose.onNodeWithTag("gallery-item-40").assertExists()
+        compose.onNodeWithTag("gallery-view-options").performClick()
+        compose.onNodeWithTag("gallery-show-map").performScrollTo().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryMapOpen &&
+                controller.state.value.galleryMapLoaded &&
+                !controller.state.value.loading
+        }
+        compose.onNodeWithTag("gallery-map-count").assertExists()
+        compose.onNodeWithTag("gallery-map-aggregation-label").assertExists()
+        compose.onNodeWithTag("gallery-map-wgs84-distribution").assertExists()
+        compose.onNodeWithTag("gallery-map-unavailable-basemap").assertExists()
+        compose.onNodeWithTag(
+            "gallery-map-sample-map-region:q:-180:-90:180:90:0:0").assertExists()
+        compose.runOnIdle { org.junit.Assert.assertEquals(1, gpsOverviewReads) }
+        compose.onNodeWithTag("gallery-map-close").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.GALLERY &&
+                !controller.state.value.galleryMapOpen
+        }
+        compose.onNodeWithTag("gallery-wall").assertExists()
+        compose.onNodeWithTag("gallery-item-40").assertExists()
+        compose.runOnIdle { org.junit.Assert.assertEquals(1, gpsOverviewReads) }
+    }
+
 
 }
