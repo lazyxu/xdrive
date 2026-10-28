@@ -271,8 +271,13 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         !state.items.some(source => source.node.id===item.node.id &&
           source.node.revision===item.node.revision)) return
     if (!photoOpener.current) { openDrawerAll();return }
+    // The Viewer opens through its own newly authorized Owner Cell Range.
+    // Dismiss this Gallery modal now: its focus trap/backdrop must never
+    // obscure the foreground Viewer, but the bounded presentation return
+    // intent has already been handed to the original Gallery callback.
     photoOpener.current(state.selection,approved.scope,item.node.id,item.node.revision,
       presentation)
+    closeDrawer()
   }
   const scopeIsCurrent = acceptedScope.current?.key === currentFilterKey
   const trustedSummary = scopeIsCurrent ? summary : null
