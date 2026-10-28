@@ -49,6 +49,8 @@ data class DriveState(
     val fileTextPreviewLoading: Boolean = false,
     val fileTextPreviewError: String? = null,
     val filesSection: FilesSection = FilesSection.BROWSE,
+    /** Current login's full Owner range order, never reorder a sparse client page. */
+    val filesArrangement: FileBrowseArrangement = FileBrowseArrangement(),
     val collectionItems: List<DriveCollectionItem> = emptyList(),
     val collectionLoaded: Boolean = false,
     val searchQuery: String = "",
@@ -1393,6 +1395,7 @@ class DriveController(
             current.collectionItems.none { it == item } || session == null) return
         val service = api ?: return
         val section = current.filesSection
+        val arrangement = current.filesArrangement
         request(discardableRead = true) { ticket ->
             val location = authenticated(service, ticket) {
                 service.nodeLocation(it, item.node.id)
@@ -1404,14 +1407,14 @@ class DriveController(
             if (parent.isEmpty() || root.id != parent.first().id)
                 throw ApiException(0, "Node location changed", ApiFailureReason.INVALID_RESPONSE)
             val position = authenticated(service, ticket) {
-                service.childPosition(it, location.parentId, location.nodeId)
+                service.childPositionArranged(it, location.parentId, location.nodeId, arrangement)
             }
             checkCurrent(ticket)
             if (position.revision != location.revision)
                 throw ApiException(0, "Node position changed", ApiFailureReason.INVALID_RESPONSE)
             val pageStart = (position.index / 100) * 100
             val page = authenticated(service, ticket) {
-                service.children(it, location.parentId, pageStart)
+                service.childrenArranged(it, location.parentId, pageStart, arrangement)
             }
             checkCurrent(ticket)
             val localIndex = position.index - pageStart
@@ -2976,7 +2979,7 @@ class DriveController(
         retryPrepend = true
         request(discardableRead = true) { ticket ->
             val page = authenticated(service, ticket) {
-                service.children(it, path.last().id, offset)
+                service.childrenArranged(it, path.last().id, offset, current.filesArrangement)
             }
             checkCurrent(ticket)
             val latest = state.value
@@ -2999,6 +3002,48 @@ class DriveController(
     fun nextPage() { if (state.value.filesSection == FilesSection.BROWSE && state.value.hasNext && !state.value.loading) load(state.value.path, state.value.offset + 100) }
     fun previousPage() { if (state.value.filesSection == FilesSection.BROWSE && state.value.offset > 0 && !state.value.loading) load(state.value.path, (state.value.offset - 100).coerceAtLeast(0)) }
 
+    /** A new sort is committed only after its first Server-authenticated Range
+     * arrives. Failed sorts preserve the previous rows/order/scroll snapshot. */
+    fun changeFilesArrangement(target: FileBrowseArrangement) {
+        val current = state.value
+        if (!current.canNavigateFiles() || current.filesSection != FilesSection.BROWSE ||
+            current.path.isEmpty() || !current.loaded || current.browseSelectionMode ||
+            current.error != null || current.filesArrangement == target ||
+            current.filesPdfViewer != null || current.filesAudioViewer != null ||
+            session == null) return
+        val service = api ?: return
+        val path = current.path.toList()
+        request(discardableRead = true) { ticket ->
+            val page = authenticated(service, ticket) {
+                service.childrenArranged(it, path.last().id, 0, target)
+            }
+            checkCurrent(ticket)
+            val latest = state.value
+            if (latest.screen != Screen.FILES || latest.filesSection != FilesSection.BROWSE ||
+                latest.path != path || latest.filesArrangement != current.filesArrangement)
+                throw CancellationException()
+            if (page.offset != 0 || page.totalCount < 0 ||
+                page.items.size.toLong() != minOf(100L, page.totalCount) ||
+                page.items.map { it.id }.toSet().size != page.items.size ||
+                page.items.any { it.parentId != path.last().id })
+                throw ApiException(0, "Changed Files arrangement Range invalid",
+                    ApiFailureReason.INVALID_RESPONSE)
+            mutableState.value = latest.copy(
+                filesArrangement = target, items = page.items, loaded = true,
+                offset = 0, browseWindowStart = 0, totalCount = page.totalCount,
+                focusedBrowseNodeId = null, focusedBrowseIndex = 0,
+                focusedBrowseEpoch = latest.focusedBrowseEpoch + 1,
+                browseSelectionMode = false, browseSelectedIds = emptySet(),
+                selected = null, error = null,
+                fileExportPending = null, fileDownloadSaved = false,
+            )
+            retryPath = path
+            retryOffset = 0
+            retryAppend = false
+            retryPrepend = false
+        }
+    }
+
     private fun load(path: List<DriveNode>, offset: Int, append: Boolean = false) {
         val service = api ?: return
         if (session == null || state.value.filesSection != FilesSection.BROWSE) return
@@ -3018,7 +3063,10 @@ class DriveController(
         retryAppend = append
         val resolved = if (path.isEmpty()) listOf(authenticated(service, ticket) { service.root(it) }) else path
         checkCurrent(ticket)
-        val page = authenticated(service, ticket) { service.children(it, resolved.last().id, offset) }
+        val arrangement = state.value.filesArrangement
+        val page = authenticated(service, ticket) {
+            service.childrenArranged(it, resolved.last().id, offset, arrangement)
+        }
         checkCurrent(ticket)
         val previous = state.value
         if (append && (!previous.loaded || previous.path != resolved || page.offset != offset))

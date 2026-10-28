@@ -30,6 +30,8 @@ class DriveAppTest {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var failNext = false
     private var paging = false
+    private var filesSortFixture = false
+    private val filesSortQueries = mutableListOf<FileBrowseArrangement>()
     private var failOnSecondPage = false
     private var manyFiles = false
     private var favoriteDeletes = 0
@@ -492,6 +494,18 @@ class DriveAppTest {
             check(textPreviewFixture && node.id == 3L && node.revision == 2L)
             textPreviewReads++
             return FileTextPreview("hello xDrive", false, node.size)
+        }
+        override suspend fun childrenArranged(
+            accessToken: String, parentId: Long, offset: Int,
+            arrangement: FileBrowseArrangement,
+        ): NodeRange {
+            if (arrangement == FileBrowseArrangement())
+                return children(accessToken, parentId, offset)
+            check(filesSortFixture && accessToken == "fixture")
+            filesSortQueries += arrangement
+            val original = children(accessToken, parentId, offset)
+            return original.copy(items = if (arrangement.order == "desc")
+                original.items.reversed() else original.items)
         }
         override suspend fun children(accessToken: String, parentId: Long, offset: Int): NodeRange {
             if (failNext || (paging && offset == 100 && failOnSecondPage)) {
@@ -2233,5 +2247,33 @@ class DriveAppTest {
         compose.onNodeWithContentDescription("账户菜单").performClick()
         compose.onNodeWithText("列表").performClick()
         compose.onNodeWithTag("files").assertExists()
+    }
+
+    @Test fun nativeFilesArrangementUsesRealOwnerOrderingAndAppliesOnlyOnConfirmedPage() {
+        filesSortFixture = true
+        extraRootFile = true
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("files-arrangement-open").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("files-arrangement-dialog").assertExists()
+        compose.onNodeWithTag("files-arrange-sort-size").performClick()
+        compose.onNodeWithTag("files-arrange-direction").performClick()
+        compose.onNodeWithTag("files-arrange-folders-first").performClick()
+        compose.onNodeWithTag("files-arrange-apply").assertIsEnabled().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            !controller.state.value.loading &&
+                controller.state.value.filesArrangement ==
+                    FileBrowseArrangement("size", "desc", false)
+        }
+        compose.onNodeWithTag("files-item-70").assertExists()
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(
+                listOf(FileBrowseArrangement("size", "desc", false)), filesSortQueries)
+        }
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("files-arrangement-open").performClick()
+        compose.onNodeWithTag("files-arrangement-dialog").assertExists()
+        compose.onNodeWithTag("files-arrange-apply").assertIsNotEnabled()
+        compose.onNodeWithText("取消").performClick()
     }
 }

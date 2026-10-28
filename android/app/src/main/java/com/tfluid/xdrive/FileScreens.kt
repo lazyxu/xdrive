@@ -84,7 +84,8 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
     val pageColor = Color(if (dark) SharedVisuals.darkMobilePage else SharedVisuals.lightMobilePage)
     val rowColor = Color(if (dark) SharedVisuals.darkMobileRow else SharedVisuals.lightMobileRow)
     val folderKey = state.path.map { it.id }
-    val anchors = remember { FilesViewportAnchors() }
+    // Sort changes invalidate positional indices; never paint the old index as a new Node.
+    val anchors = remember(state.filesArrangement) { FilesViewportAnchors() }
     // 48 decoded thumbnails, 64 negative hints. In-memory for this Files screen
     // only; unmount on logout/Owner switch, never store private bytes on disk.
     val thumbnailCache = remember { LruCache<String, ImageBitmap>(48) }
@@ -107,7 +108,7 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
     // to show item zero while the actual item-50 assertion ran (CI #40139739454).
     // Key the Lazy state by folder and view; seed it with the last observed
     // viewport index rather than scrolling asynchronously after the new UI mounts.
-    key(folderKey, viewMode, state.focusedBrowseEpoch) {
+    key(folderKey, viewMode, state.filesArrangement, state.focusedBrowseEpoch) {
         val targetIndex = state.focusedBrowseIndex.takeIf {
             state.focusedBrowseNodeId != null &&
                 state.items.getOrNull(it)?.id == state.focusedBrowseNodeId
@@ -116,10 +117,10 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
         val firstItem = targetIndex ?: anchors.position(folderKey)
         val listState = rememberLazyListState(initialFirstVisibleItemIndex = firstItem)
         val gridState = rememberLazyGridState(initialFirstVisibleItemIndex = firstItem)
-        var olderEdgeArmed by remember(folderKey, viewMode, state.focusedBrowseEpoch) {
+        var olderEdgeArmed by remember(folderKey, viewMode, state.filesArrangement, state.focusedBrowseEpoch) {
             mutableStateOf(false)
         }
-        LaunchedEffect(folderKey, viewMode, state.focusedBrowseEpoch) {
+        LaunchedEffect(folderKey, viewMode, state.filesArrangement, state.focusedBrowseEpoch) {
             snapshotFlow {
                 if (viewMode == FileViewMode.LIST) listState.firstVisibleItemIndex
                 else gridState.firstVisibleItemIndex
