@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   xDriveBackgroundTaskKindLabel,
   xDriveBackgroundTaskStateLabel,
@@ -27,6 +27,7 @@ import type {
   XDriveHomeListItem,
 } from '@xdrive/ui/mui'
 import type { XDriveApi } from './api'
+import { xDriveCreateOverviewDisposableReadScope } from './overviewDisposableReads'
 
 function recentTime(value: string) {
   const parsed = new Date(value)
@@ -84,6 +85,7 @@ export default function WebOverviewPage({
     failed: boolean
   } | null>(null)
   const readRequestRef = useRef(0)
+  const overviewReadScope = useMemo(xDriveCreateOverviewDisposableReadScope, [])
   const uploadInputRef = useRef<HTMLInputElement | null>(null)
   const folderUploadInputRef = useRef<HTMLInputElement | null>(null)
   const uploadPickerParentIDRef = useRef<number | null>(null)
@@ -98,22 +100,23 @@ export default function WebOverviewPage({
   useEffect(() => {
     let active = true
     const refreshLists = () => {
+      const read = overviewReadScope.begin()
       const epoch = ++readRequestRef.current
       setReadState({ source: api, scope: lifecycleKey, epoch, pending: true, failed: false })
       void Promise.all([
-        api.fileRecent(6),
-        api.fileFavorites(),
+        api.fileRecent(6, read.signal),
+        api.fileFavorites(read.signal),
       ]).then(([recent, favorites]) => {
-        if (!active || readRequestRef.current !== epoch) return
+        if (!active || !read.isCurrent() || readRequestRef.current !== epoch) return
         setListsSnapshot({
           source: api, scope: lifecycleKey,
           recent, favorites: favorites.slice(0, 6),
         })
       }).catch(() => {
-        if (!active || readRequestRef.current !== epoch) return
+        if (!active || !read.isCurrent() || readRequestRef.current !== epoch) return
         setReadState({ source: api, scope: lifecycleKey, epoch, pending: false, failed: true })
       }).finally(() => {
-        if (!active || readRequestRef.current !== epoch) return
+        if (!active || !read.isCurrent() || readRequestRef.current !== epoch) return
         setReadState((previous) => previous?.source === api &&
           previous.scope === lifecycleKey && previous.epoch === epoch
           ? { ...previous, pending: false } : previous)
@@ -124,9 +127,10 @@ export default function WebOverviewPage({
     return () => {
       active = false
       readRequestRef.current += 1
+      overviewReadScope.cancel()
       window.clearInterval(timer)
     }
-  }, [activityRevision, api, lifecycleKey])
+  }, [activityRevision, api, lifecycleKey, overviewReadScope])
 
   const acceptedLists = listsSnapshot?.source === api && listsSnapshot.scope === lifecycleKey
     ? listsSnapshot : null
