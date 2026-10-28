@@ -176,6 +176,30 @@ Android's hosted-emulator job is GitHub-specific in this increment, like the
 existing provider-specific jobs. GitLab does not build an Android APK yet; the
 shared Server/Web/Desktop CI parity contract remains enforced unchanged.
 
+### Explicit public fixed-key Android release (owner action only)
+
+In addition to the automatic Debug Artifact, the repository now has a
+**manual**, master-only [Android Signed Public Release workflow](https://github.com/lazyxu/xdrive/actions/workflows/android-signed-public-release.yml).
+It will **not** publish on an ordinary master push, on a PR, or unless the owner
+explicitly checks the release confirmation input.
+
+It requires the owner to register the **fixed PKCS12 signing keystore**
+(`ANDROID_RELEASE_KEYSTORE_P12_B64`), its password
+(`ANDROID_RELEASE_KEYSTORE_PASSWORD`), and the separately verified public
+signing certificate fingerprint (`ANDROID_RELEASE_CERT_SHA256`). Without them,
+no public APK can be produced. A run verifies the true Release signer, package
+ID and monotonically increased versionCode before publishing
+`xdrive-android-<versionCode>-<versionName>.apk` as an immutable versioned
+GitHub prerelease asset, with SHA256SUMS.txt. Unlike Actions Artifacts, an
+actual **published public Release asset** is downloadable without logging in.
+The app's existing anonymous update checker recognizes this asset name.
+
+See [manual signing and release setup](docs/android-signed-public-release-20261028.md)
+for the exact inputs, safeguards and local signer-fingerprint verification.
+This does **not** auto-publish debug APKs, rotate certificates, embed keys,
+change the independent server Snapshot publisher, or imply an installed update
+has been tested on physical devices.
+
 ## Public update checks (also before login)
 
 Open the top-right menu → **检查更新**, even on the initial Server configuration
