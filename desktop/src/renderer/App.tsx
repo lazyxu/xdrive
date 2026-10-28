@@ -89,6 +89,7 @@ import {
 import type { XDriveFileExplorerDownloadResult, XDriveDeviceBackupDataSource, XDriveAdminUsersPort, XDriveAdminAuditPort, XDriveAdminStoragePort, XDriveAdminStorageRequest } from '@xdrive/shared'
 import { DesktopFilesPage } from './DesktopFilesPage'
 import { createDesktopFileExplorerHostPort } from './DesktopFileExplorerHostPort'
+import { createDesktopCloudFilesHostPort } from './desktopCloudFilesHostPort'
 import type { DesktopFileExplorerAction, DesktopFileExplorerActionIntent } from './DesktopFileExplorer'
 import { desktopOverviewPort } from './desktopOverviewAdapter'
 import { createDesktopMediaGalleryDataSource } from './mediaGalleryAdapter'
@@ -97,7 +98,6 @@ import { DesktopSettingsContent } from './DesktopSettingsContent'
 import { createDesktopSourceManagerAdapter, desktopSourceTargetBrowser } from './sourceManagerAdapter'
 import type {
   XDriveAppearance,
-  XDriveCloudFilesPort,
 } from '@xdrive/shared'
 
 type View = XDriveWorkspaceAppRoute
@@ -730,44 +730,12 @@ export default function App({
       return result.data
     },
   }), [status?.server, status?.username])
-  const cloudFilesPort = useMemo<XDriveCloudFilesPort<AgentCloudNode, AgentCloudQuota, XDriveFileExplorerSort>>(() => ({
-    getRoot: async () => {
-      const result = await window.xdriveDesktop.agent.cloudRoot()
-      if (!result.ok) throw new Error(result.error.message)
-      return result.data
-    },
-    getPage: async (parentID, options) => {
-      const result = await window.xdriveDesktop.agent.cloudChildrenPage(parentID, options)
-      if (!result.ok) throw new Error(result.error.message)
-      return result.data
-    },
-    getRange: async (parentID, offset, limit, sort, includeCount, grouping, signal) => {
-      const result = await xDriveDesktopViewportRequest(signal, (requestID) => window.xdriveDesktop.agent.cloudChildrenRange(
-        parentID,
-        offset,
-        limit,
-        sort.key,
-        sort.direction,
-        includeCount,
-        grouping,
-        requestID,
-      ))
-      if (!result.ok) throw new Error(result.error.message)
-      return result.data
-    },
-    getChanges: cloudChangeFeedSupported
-      ? async (after, limit) => {
-          const result = await window.xdriveDesktop.agent.cloudChanges(after, limit)
-          if (!result.ok) throw new Error(result.error.message)
-          return result.data
-        }
-      : undefined,
-    getQuota: async () => {
-      const result = await window.xdriveDesktop.agent.cloudQuota()
-      if (!result.ok) throw new Error(result.error.message)
-      return result.data
-    },
-  }), [cloudChangeFeedSupported])
+  const cloudFilesPort = useMemo(
+    () => createDesktopCloudFilesHostPort(
+      () => window.xdriveDesktop.agent, cloudChangeFeedSupported,
+    ),
+    [cloudChangeFeedSupported],
+  )
   const handleCloudFilesError = useCallback((cloudError: unknown) => {
     setError(cloudError instanceof Error ? cloudError.message : String(cloudError))
   }, [])
