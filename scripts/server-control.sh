@@ -3200,6 +3200,41 @@ except (OSError,ValueError,KeyError,TypeError,UnicodeError):
 PY
 }
 
+# An exact v1 database-only identity must have an unambiguous, regular,
+# bounded JSON manifest. Grepping a JSON fragment can accept duplicate keys,
+# inconsistent declarations, or a symlink-swapped file.
+backup_admin_valid_database_only_manifest() {
+  local manifest="$1"
+  command -v python3 >/dev/null 2>&1 || return 2
+  python3 - "$manifest" <<'PY'
+import json,os,stat,sys
+
+def unique(pairs):
+    result={}
+    for key,value in pairs:
+        if key in result: raise ValueError("duplicate manifest field")
+        result[key]=value
+    return result
+
+try:
+    fd=os.open(sys.argv[1],os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+    with os.fdopen(fd,"rb") as f:
+        st=os.fstat(f.fileno())
+        if not stat.S_ISREG(st.st_mode) or not 0<st.st_size<=16384:
+            raise ValueError("unsafe manifest inode")
+        data=json.load(f,object_pairs_hook=unique)
+    if not isinstance(data,dict):
+        raise ValueError("invalid manifest")
+    if (type(data.get("format_version")) is not int or
+        data["format_version"]!=1 or
+        data.get("file_data_included") is not False or
+        data.get("consistency_verified") is not True):
+        raise ValueError("not a consistent database-only v1 snapshot")
+except (OSError,ValueError,TypeError,UnicodeError,KeyError):
+    sys.exit(1)
+PY
+}
+
 backup_admin_execute() {
   local action="$1" snapshot="$2" fmt="$3" mode="$4" keep="$5" days="$6" revision="$7" confirm="$8" preview_id="${9:-}"
   local target install_guard="$STATE_DIR/install.lock"
@@ -3289,8 +3324,7 @@ backup_admin_execute() {
       target="$(backup_admin_snapshot_directory "$snapshot")" || return 2
       backup_admin_snapshot_complete "$target" v1 || return 2
       [[ -f "$target/manifest.json" && ! -L "$target/manifest.json" ]] || return 2
-      grep -Eq '"format_version"[[:space:]]*:[[:space:]]*1([,}[:space:]])' "$target/manifest.json" || return 2
-      grep -Eq '"file_data_included"[[:space:]]*:[[:space:]]*false([,}[:space:]])' "$target/manifest.json" || return 2
+      backup_admin_valid_database_only_manifest "$target/manifest.json" || return 2
       XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup verify "$target" || return
       # --no-safety-backup is intentionally never available to the UI.
       XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" restore "$target" --yes --database-only ;;
