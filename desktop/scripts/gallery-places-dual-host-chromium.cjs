@@ -72,7 +72,15 @@ const sdkStub='('+function sdkFactory(){
     getZoom(){return this.zoom}
     getBounds(){return {getSouthWest:()=>new Point(100,20),
       getNorthEast:()=>new Point(125,40)}}
-    pointToPixel(){return {x:180,y:180}}
+    pointToPixel(){
+      // The synthetic representative is deliberately centered in the
+      // CURRENT CSS map canvas. A fixed old 180px point would make short
+      // landscape tests accidentally accept stale pre-resize projections.
+      const width=Math.round(this.canvas?.clientWidth||0)
+      const height=Math.round(this.canvas?.clientHeight||0)
+      return {x:width>=120?Math.round(width/2):180,
+        y:height>=120?Math.round(height/2):180}
+    }
     destroy(){this.overlays=[];this.listeners.clear()}
   }
   // Historical prototype's unused namespace checks are included so this
@@ -433,7 +441,17 @@ async function testIOSPhotoMapCompactChrome(browser,mode,scheme,port){
       [375,812],[390,844],[844,390],[899,390],[900,390],
       [899,1200],[900,1200],
     ]){
+      const beforeResizeQueries=await page.evaluate(()=>window.__mapProbe.queries.length)
       await page.setViewportSize({width,height})
+      // A real container size change must not reuse an old 390px photo
+      // projection. Both SDK Hosts cancel it and request a freshly signed
+      // viewport after the existing 500ms camera quiet period.
+      await page.waitForFunction(before=>
+        window.__mapProbe.queries.length>before,
+        beforeResizeQueries,{timeout:30000})
+      await page.getByText('当前地图可查看 2 张照片',{exact:true}).waitFor()
+      await page.locator('[data-xdrive-places-trusted-photo-cover]')
+        .first().waitFor({state:'visible'})
       const actual=await page.evaluate(()=>{
         const map=document.querySelector('[data-xdrive-places-ios-map-canvas="1"]')
         const toolbar=document.querySelector('[data-xdrive-places-map-ios-chrome="1"]')
