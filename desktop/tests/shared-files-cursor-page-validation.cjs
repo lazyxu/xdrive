@@ -45,7 +45,7 @@ test('invalid requests are rejected without invoking either Host transport', asy
   let calls = 0
   const port = { mode: 'cursor', readPage: async () => { calls++; return null } }
   for (const r of [
-    request('', 0), request('', -1), request('', 1001), request('', 1.5),
+    request('', 0), request('', -1), request('', 201), request('', 1001), request('', 1.5),
     request('', 200, 0), request('', 200, -1),
     request('', 200, Number.MAX_SAFE_INTEGER + 1),
     request('x\ny'), request('x\ry'), request(String.fromCharCode(0)),
@@ -67,7 +67,9 @@ test('malformed and unbounded cursor pages cannot be rendered', async () => {
     { ...valid, items: [node(0)] },
     { ...valid, items: [node(Number.MAX_SAFE_INTEGER + 1)] },
     { ...valid, items: [null] },
+    { ...valid, items: [] },
     { ...valid, next_cursor: '' },
+    { ...valid, has_more: false, next_cursor: 'unexpected-terminal' },
     { ...valid, next_cursor: 'current' },
     { ...valid, next_cursor: 'x\ny' },
     { ...valid, next_cursor: 'x'.repeat(1025) },
@@ -78,13 +80,13 @@ test('malformed and unbounded cursor pages cannot be rendered', async () => {
   }
 })
 
-test('terminal page and empty authorized slices are valid; Range read is unchanged', async () => {
+test('terminal empty page and nonempty continued pages are valid; Range read is unchanged', async () => {
   const terminal = { items: [], has_more: false }
-  const emptyContinued = { items: [], has_more: true, next_cursor: 'next==+' }
+  const fullContinued = { items: [node(9)], has_more: true, next_cursor: 'next==+' }
   const terminalResponse = await read({ mode: 'cursor', readPage: async () => terminal }, request())
-  const continuedResponse = await read({ mode: 'cursor', readPage: async () => emptyContinued }, request())
+  const continuedResponse = await read({ mode: 'cursor', readPage: async () => fullContinued }, request())
   assert.strictEqual(terminalResponse.page, terminal)
-  assert.strictEqual(continuedResponse.page, emptyContinued)
+  assert.strictEqual(continuedResponse.page, fullContinued)
   const indexed = {
     items: [node(3)], total_count: 100000, offset: 50, limit: 200,
     total_count_included: true, sort: 'name', order: 'asc',

@@ -63,6 +63,8 @@ export type XDriveFileExplorerDirectoryReadResult<TNode extends { id: number }> 
 /**
  * Cursor pages have no random-access count. Fail closed on malformed or
  * non-advancing responses BEFORE a shared Files controller publishes rows.
+ * Match the existing authorized Owner CGI's 200-item cursor protocol; do not
+ * admit impossible empty continuation pages or terminal cursor tokens.
  * Transport, Owner ACL and token redaction are still the Host's responsibility.
  * Keep the authentic returned object unchanged (no invented range/count).
  */
@@ -72,7 +74,8 @@ function verifyCursorPage<TNode extends { id: number }>(
   requestedCursor: string,
 ): void {
   if (!page || !Array.isArray(page.items) || typeof page.has_more !== 'boolean' ||
-      page.items.length > requestedLimit) {
+      page.items.length > requestedLimit ||
+      (page.has_more && page.items.length === 0)) {
     throw new Error('Invalid Files Host cursor page')
   }
   const seen = new Set<number>()
@@ -89,6 +92,9 @@ function verifyCursorPage<TNode extends { id: number }>(
   }
   if (page.has_more && (!cursor || cursor === requestedCursor)) {
     throw new Error('Non-advancing Files Host cursor page')
+  }
+  if (!page.has_more && cursor) {
+    throw new Error('Invalid terminal Files Host cursor token')
   }
 }
 
@@ -114,7 +120,7 @@ export async function xDriveFileExplorerReadDirectoryPage<
     // Reject invalid paging input before invoking an authenticated Host port.
     // A cursor is an opaque token, never an offset or a client-side guess.
     if (!Number.isSafeInteger(request.parentID) || request.parentID <= 0 ||
-        !Number.isSafeInteger(request.limit) || request.limit < 1 || request.limit > 1000 ||
+        !Number.isSafeInteger(request.limit) || request.limit < 1 || request.limit > 200 ||
         typeof request.cursor !== 'string' || request.cursor.length > 1024 ||
         /[\x00-\x1f\x7f]/.test(request.cursor)) {
       throw new Error('Invalid Files Host cursor request')
