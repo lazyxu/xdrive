@@ -34,7 +34,7 @@ func TestPlacesBD09Owner95kActivePostgresCancellation(t *testing.T) {
 	}
 	bounds := baiduPhotoMapBounds{
 		CoordinateSpace: meta.BaiduPhotoMapSpaceBD09LL,
-		West: 118, South: 28, East: 123, North: 33,
+		West:            118, South: 28, East: 123, North: 33,
 	}
 	type returnResult struct {
 		cancelled bool
@@ -91,7 +91,7 @@ func TestPlacesBD09Owner95kActivePostgresCancellation(t *testing.T) {
 		samples = append(samples, map[string]any{
 			"ordinal": i, "observed_active_postgres_select": true,
 			"old_owner_range_rejected": true,
-			"go_cancel_return_ms": elapsedMS,
+			"go_cancel_return_ms":      elapsedMS,
 		})
 	}
 	// A terminated query must never poison the original Owner/source scope:
@@ -110,11 +110,11 @@ func TestPlacesBD09Owner95kActivePostgresCancellation(t *testing.T) {
 	report := map[string]any{
 		"ci_git_head": head, "owner_assets": 100000,
 		"sample_count": len(samples), "samples": samples,
-		"fresh_camera_count": page.TotalCount,
-		"fresh_page_items": len(page.Items),
-		"fixture": "disposable PG17 original production Owner query; synthetic BD09 positions",
+		"fresh_camera_count":           page.TotalCount,
+		"fresh_page_items":             len(page.Items),
+		"fixture":                      "disposable PG17 original production Owner query; synthetic BD09 positions",
 		"provider_conversion_verified": false,
-		"browser_abort_verified": false,
+		"browser_abort_verified":       false,
 	}
 	bytes, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
