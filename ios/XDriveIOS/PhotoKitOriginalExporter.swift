@@ -171,7 +171,8 @@ enum XDrivePhotoKitOriginalExporter {
             .appendingPathComponent("xdrive-photo-export-" + UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(
             at: folder, withIntermediateDirectories: false,
-            attributes: [.posixPermissions: NSNumber(value: 0o700)]
+            attributes: [.posixPermissions: NSNumber(value: 0o700),
+                         .protectionKey: FileProtectionType.complete]
         )
         var staged: [XDriveStagedPhotoKitResource] = []
         do {
@@ -186,7 +187,8 @@ enum XDrivePhotoKitOriginalExporter {
                 let url = folder.appendingPathComponent("resource-\(index)", isDirectory: false)
                 guard FileManager.default.createFile(
                     atPath: url.path, contents: nil,
-                    attributes: [.posixPermissions: NSNumber(value: 0o600)]
+                    attributes: [.posixPermissions: NSNumber(value: 0o600),
+                                 .protectionKey: FileProtectionType.complete]
                 ) else { throw XDrivePhotoKitExportFailure.storageUnavailable }
 
                 let options = PHAssetResourceRequestOptions()
