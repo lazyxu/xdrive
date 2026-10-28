@@ -70,7 +70,7 @@ test('Desktop FileExplorer provides system-style navigation, search, and persist
   assert.ok(controller.includes("replace(/\\\\/g, '/')"), 'shared path controller should accept Windows separators')
   assert.equal(explorer.includes('xDriveFileExplorerSubmitPath({'), false, 'Desktop Explorer should delegate typed-path submission to the shared workspace controller')
   assert.ok(explorer.includes('hostPort.browse.cloudRoot()'), 'Desktop typed-path submission should keep Agent root loading local')
-  assert.ok(explorer.includes('findChildDirectory: async (parentID, name) =>'), 'Desktop typed-path traversal should use exact child lookup')
+  assert.ok(explorer.includes('findChildDirectory: async (parentID, name, signal?: AbortSignal) =>'), 'Desktop typed-path traversal should use exact child lookup')
   assert.ok(explorer.includes('xDriveFileExplorerPathLookupPageOptions(name)'), 'Desktop typed-path traversal should request one indexed child')
   assert.ok(explorer.includes('hostPort.browse.cloudChildrenPage('), 'Desktop typed-path lookup must stay on the paged Agent bridge')
   assert.equal(explorer.includes('hostPort.browse.cloudChildren(parentID)'), false, 'Desktop typed-path traversal must not load all children')

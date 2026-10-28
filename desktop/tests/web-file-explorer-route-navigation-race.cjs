@@ -6,6 +6,27 @@ const ts = require('typescript')
 
 const repo = path.join(__dirname, '..', '..')
 
+// Execute the real production ancestor walker inside the extracted React
+// effect. Do not mock away the AbortSignal or Owner/navigation fences.
+const resolverFilename = path.join(repo, 'web', 'src', 'routedDirectoryAncestors.ts')
+const resolverJS = ts.transpileModule(fs.readFileSync(resolverFilename, 'utf8'), {
+  fileName: resolverFilename,
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText
+const resolverModule = { exports: {} }
+new Function('exports', 'module', resolverJS)(resolverModule.exports, resolverModule)
+const xDriveResolveRoutedDirectoryAncestors =
+  resolverModule.exports.xDriveResolveRoutedDirectoryAncestors
+
+const scopedReadFile = path.join(repo, 'ui/shared/src/mui/FileExplorerDisposableNavigationReads.ts')
+const scopedReadJS = ts.transpileModule(fs.readFileSync(scopedReadFile, 'utf8'), {
+  fileName: scopedReadFile,
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText
+const readScopeExports = { exports: {} }
+new Function('exports', 'module', scopedReadJS)(readScopeExports.exports, readScopeExports)
+const createReadScope = readScopeExports.exports.xDriveCreateFileExplorerDisposableNavigationReads
+
 function extractRouteDirectoryEffect() {
   const filename = path.join(repo, 'web', 'src', 'WebFileExplorer.tsx')
   const source = fs.readFileSync(filename, 'utf8')
@@ -25,7 +46,8 @@ function extractRouteDirectoryEffect() {
       node.expression.text === 'useEffect' &&
       node.arguments.length >= 2 &&
       node.arguments[0].getText(sourceFile).includes('initialDirectoryID') &&
-      node.arguments[0].getText(sourceFile).includes('api.node(cursor)')
+      node.arguments[0].getText(sourceFile).includes('xDriveResolveRoutedDirectoryAncestors(') &&
+      node.arguments[0].getText(sourceFile).includes('api.node(id, signal)')
     ) {
       callback = node.arguments[0].getText(sourceFile)
       return
@@ -75,16 +97,22 @@ async function flushAsync() {
 function routeHarness() {
   const { filename, callback } = extractRouteDirectoryEffect()
   const pending = deferred()
+  let nodeSignal
   let navigationGeneration = 0
+  const readScope = createReadScope()
   const navigations = []
   const errors = []
 
   const beginNavigationIntent = () => {
+    readScope.cancel()
     navigationGeneration += 1
     return navigationGeneration
   }
   const isNavigationIntentCurrent = (requestID) => (
     requestID === navigationGeneration
+  )
+  const navigationReadSignalForIntent = id => (
+    isNavigationIntentCurrent(id) ? readScope.signalFor(id) : null
   )
   const navigateTo = async (crumbs, _record = true, requestID) => {
     const effectiveRequestID = requestID ?? beginNavigationIntent()
@@ -100,11 +128,13 @@ function routeHarness() {
     internalDirectoryRouteRef: { current: null },
     navigationSessionStorageKey: 'files:account-a',
     api: {
-      node: () => pending.promise,
+      node: (_id, signal) => { nodeSignal = signal; return pending.promise },
     },
     navigateTo,
     beginNavigationIntent,
     isNavigationIntentCurrent,
+    navigationReadSignalForIntent,
+    xDriveResolveRoutedDirectoryAncestors,
     onError: (error) => errors.push(
       error instanceof Error ? error.message : String(error),
     ),
@@ -113,6 +143,7 @@ function routeHarness() {
   return {
     effect,
     pending,
+    get nodeSignal() { return nodeSignal },
     navigations,
     errors,
     beginNavigationIntent,
@@ -143,6 +174,8 @@ test('Web route-directory completion cannot override a newer manual navigation i
   assert.deepEqual(harness.errors, [])
 
   cleanup()
+  assert.equal(harness.nodeSignal?.aborted, true,
+    'StrictMode/route cleanup aborts the obsolete Node HTTP request')
 })
 
 test('Web route-directory rejection cannot publish an error after a newer manual navigation intent', async () => {
@@ -164,6 +197,8 @@ test('Web route-directory rejection cannot publish an error after a newer manual
   assert.deepEqual(harness.navigations, [])
 
   cleanup()
+  assert.equal(harness.nodeSignal?.aborted, true,
+    'StrictMode/route cleanup aborts the obsolete Node HTTP request')
 })
 
 test('acknowledged old child URL cannot undo committed Files Back; new external URL and account still reauthorize', async () => {
@@ -172,6 +207,7 @@ test('acknowledged old child URL cannot undo committed Files Back; new external 
   const internalDirectoryRouteRef = { current: { directoryID: 2, lifecycleKey: 'files:account-a' } }
   const nodeCalls = [], navigations = []
   let generation = 0
+  const extraReadScope = createReadScope()
   const execute = (initialDirectoryID, currentID, lifecycleKey) => compileEffect(filename, callback, {
     initialDirectoryID, current: { id: currentID }, navigationSessionStorageKey: lifecycleKey,
     routedDirectoryRef, internalDirectoryRouteRef,
@@ -179,9 +215,11 @@ test('acknowledged old child URL cannot undo committed Files Back; new external 
       nodeCalls.push({ id, lifecycleKey })
       return { id, parent_id: null, name: String(id), type: 'dir' }
     } },
-    beginNavigationIntent: () => ++generation,
+    beginNavigationIntent: () => { extraReadScope.cancel(); return ++generation },
     isNavigationIntentCurrent: id => generation === id,
+    navigationReadSignalForIntent: id => generation === id ? extraReadScope.signalFor(id) : null,
     navigateTo: async crumbs => { navigations.push(crumbs.at(-1).id); return true },
+    xDriveResolveRoutedDirectoryAncestors,
     onError: error => { throw error },
   })
 

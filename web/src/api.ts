@@ -2907,8 +2907,8 @@ export class XDriveApi {
     })
   }
 
-  root() {
-    return this.request<Node>('/api/v1/nodes/root')
+  root(signal?: AbortSignal) {
+    return this.request<Node>('/api/v1/nodes/root', { signal })
   }
 
   node(id: number, signal?: AbortSignal) {

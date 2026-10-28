@@ -484,16 +484,24 @@ export default function DesktopFileExplorer({
         groups: result.data.groups,
       }
     },
-    loadRoot: async () => {
-      const result = await hostPort.browse.cloudRoot()
+    loadRoot: async (signal?: AbortSignal) => {
+      // Manual typed-path root is a disposable GET. Use the existing
+      // request/sender-scoped abort IPC; ordinary root consumers still omit ID.
+      const result = signal
+        ? await hostPort.requestViewport(signal, requestID =>
+            hostPort.browse.cloudRoot(requestID))
+        : await hostPort.browse.cloudRoot()
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
-    findChildDirectory: async (parentID, name) => {
-      const result = await hostPort.browse.cloudChildrenPage(
-        parentID,
-        xDriveFileExplorerPathLookupPageOptions(name),
-      )
+    findChildDirectory: async (parentID, name, signal?: AbortSignal) => {
+      // Typed-path child GETs are disposable; re-use the existing
+      // sender-scoped cancellation bridge, never cancel Agent writes.
+      const options = xDriveFileExplorerPathLookupPageOptions(name)
+      const result = signal
+        ? await hostPort.requestViewport(signal, requestID =>
+            hostPort.browse.cloudChildrenPage(parentID, options, requestID))
+        : await hostPort.browse.cloudChildrenPage(parentID, options)
       if (!result.ok) throw new Error(result.error.message)
       return result.data.items[0] ?? null
     },
