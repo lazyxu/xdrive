@@ -160,10 +160,19 @@ data class OwnerMapOverview(
 data class OwnerBd09Bounds(
     val west: Double, val south: Double, val east: Double, val north: Double,
 ) {
-    fun valid(): Boolean = listOf(west, south, east, north).all { it.isFinite() } &&
-        west in -180.0..180.0 && east in -180.0..180.0 &&
-        south >= -90.0 && north <= 90.0 && south < north &&
-        west != east && !(west == 180.0 && east == -180.0)
+    fun valid(): Boolean {
+        if (!listOf(west, south, east, north).all { it.isFinite() } ||
+            west !in -180.0..180.0 || east !in -180.0..180.0 ||
+            south < -90.0 || north > 90.0 || south >= north ||
+            west == east || (west == 180.0 && east == -180.0)) return false
+        // Keep parity with Go baiduPhotoMapCellSteps: the 8x8 SQL grid
+        // rejects numerically unstable tiny viewports before running a query.
+        // A wrapped antimeridian span uses the positive [0, 360] width.
+        val width = (east - west).let { if (it < 0.0) it + 360.0 else it }
+        val height = north - south
+        return width > 1e-10 && width <= 360.0 &&
+            height > 1e-10 && height <= 360.0
+    }
     fun contains(lat: Double, lon: Double): Boolean =
         valid() && lat.isFinite() && lon.isFinite() &&
             lat >= south && lat <= north &&
