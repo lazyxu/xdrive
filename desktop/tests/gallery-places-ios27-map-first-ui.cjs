@@ -154,7 +154,7 @@ test('compact map rotation uses fresh owner camera before evaluating photo pins'
   assert.match(source,/beforeResizeQueries=await page\.evaluate/)
   assert.match(source,/window\.__mapProbe\.queries\.length>before/)
   assert.match(source,/await page\.waitForFunction\(before=>/)
-  assert.match(source,/pointToPixel\(\)\{[\s\S]*?this\.canvas\?\.clientWidth/)
+  assert.match(source,/pointToPixel\((?:point)?\)\{[\s\S]*?this\.canvas\?\.clientWidth/)
   assert.match(source,/await page\.locator\('\[data-xdrive-places-trusted-photo-cover\]'\)/)
   // Do not accept an old fixed-pixel test marker which can conceal a stale
   // projected 390px camera after viewport rotation.
