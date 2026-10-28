@@ -73,6 +73,9 @@ internal fun GalleryPhotoViewer(
     // Never poll a failed or revoked private media request in the background.
     var retryNonce by remember(photo.node.id, photo.node.revision) { mutableIntStateOf(0) }
     var liveHeld by remember(photo.node.id, photo.node.revision) { mutableStateOf(false) }
+    val liveSwipeFence = remember(photo.node.id, photo.node.revision) {
+        GalleryLiveHoldSwipeFence()
+    }
     var originalProgress by remember(photo.node.id, photo.node.revision) {
         mutableStateOf(0L to (null as Long?))
     }
@@ -161,7 +164,10 @@ internal fun GalleryPhotoViewer(
                 .galleryLivePhotoHold(
                     enabled = photo.livePhoto && stage is ImageStage.Ready,
                     sourceIdentity = "${photo.node.id}:${photo.node.revision}",
-                ) { pressed -> liveHeld = pressed }
+                ) { pressed ->
+                    if (pressed) liveSwipeFence.liveHoldActivated()
+                    liveHeld = pressed
+                }
                 // One-finger swipes are only page navigation at default zoom.
                 // Pinch/pan remains owned by the image transformable recognizer.
                 // Passively observe INITIAL-pass movement before the nested
@@ -176,6 +182,7 @@ internal fun GalleryPhotoViewer(
                             pass = PointerEventPass.Initial,
                         )
                         val origin = down.position
+                        liveSwipeFence.beginGesture()
                         var singlePointer = true
                         while (true) {
                             val event = awaitPointerEvent(PointerEventPass.Initial)
@@ -187,11 +194,13 @@ internal fun GalleryPhotoViewer(
                             if (!pointer.pressed) {
                                 val dx = pointer.position.x - origin.x
                                 val dy = pointer.position.y - origin.y
-                                if (singlePointer && currentZoom <= 1.001f &&
-                                    pointer.uptimeMillis - down.uptimeMillis <= 800L &&
-                                    kotlin.math.abs(dx) >= swipeThreshold &&
-                                    kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.25f &&
-                                    controller.state.value.galleryViewer == photo) {
+                                if (liveSwipeFence.mayShift(
+                                        deltaX = dx, deltaY = dy,
+                                        durationMillis = pointer.uptimeMillis - down.uptimeMillis,
+                                        thresholdPx = swipeThreshold,
+                                        singlePointer = singlePointer,
+                                        atDefaultZoom = currentZoom <= 1.001f,
+                                    ) && controller.state.value.galleryViewer == photo) {
                                     controller.shiftGalleryViewer(if (dx < 0f) 1 else -1)
                                 }
                                 break
