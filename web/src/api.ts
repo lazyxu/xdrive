@@ -3094,8 +3094,8 @@ export class XDriveApi {
     })
   }
 
-  fileFavorites() {
-    return this.request<XDriveFileFavoriteItem<Node>[]>('/api/v1/file-favorites')
+  fileFavorites(signal?: AbortSignal) {
+    return this.request<XDriveFileFavoriteItem<Node>[]>('/api/v1/file-favorites', { signal })
   }
 
   favoriteFile(nodeID: number) {
@@ -3110,8 +3110,8 @@ export class XDriveApi {
     })
   }
 
-  fileRecent(limit = 16) {
-    return this.request<XDriveFileRecentItem<Node>[]>(`/api/v1/file-recent?limit=${Math.min(50, Math.max(1, Math.trunc(limit)))}`)
+  fileRecent(limit = 16, signal?: AbortSignal) {
+    return this.request<XDriveFileRecentItem<Node>[]>(`/api/v1/file-recent?limit=${Math.min(50, Math.max(1, Math.trunc(limit)))}`, { signal })
   }
 
   touchFileRecent(nodeID: number) {
