@@ -45,6 +45,8 @@ type FileThumbnailQueueEntry = {
   resolve: (value: string | null | undefined) => void
   reject: (reason?: unknown) => void
   started: boolean
+  /** Logical scheduling slot: may be released before an uncooperative loader settles. */
+  slotHeld: boolean
   cancelled: boolean
 }
 
@@ -66,6 +68,7 @@ const fileThumbnailPrefetchMarginPx = 240
 
 let fileThumbnailActive = 0
 const fileThumbnailQueue: FileThumbnailQueueEntry[] = []
+let fileThumbnailPumpScheduled = false
 let fileThumbnailVisibilityObserver: IntersectionObserver | null = null
 const fileThumbnailVisibilityCallbacks = new Map<Element, FileThumbnailVisibilityEntry>()
 const fileThumbnailScrollActivity = new WeakMap<Element, number>()
@@ -159,6 +162,28 @@ function disposeFileThumbnailCache(cache: FileThumbnailCache) {
   cache.values.clear()
 }
 
+// Cancellation may synchronously drain an entire old page's pending set.
+// Coalesce pumping until that set has been cancelled, so old queued tiles
+// cannot take a newly released slot ahead of the incoming foreground page.
+function scheduleFileThumbnailPump() {
+  if (fileThumbnailPumpScheduled) return
+  fileThumbnailPumpScheduled = true
+  queueMicrotask(() => {
+    fileThumbnailPumpScheduled = false
+    pumpFileThumbnailQueue()
+  })
+}
+
+function releaseFileThumbnailSlot(entry: FileThumbnailQueueEntry) {
+  if (!entry.slotHeld) return
+  entry.slotHeld = false
+  fileThumbnailActive = Math.max(0, fileThumbnailActive - 1)
+  // AbortSignal is advisory for native/IPC transports: even if the old
+  // loader never settles, its cancelled task cannot monopolize this queue.
+  // A late finally must not free the new page's separately owned slot.
+  scheduleFileThumbnailPump()
+}
+
 function pumpFileThumbnailQueue() {
   while (
     fileThumbnailActive < fileThumbnailConcurrency &&
@@ -167,6 +192,7 @@ function pumpFileThumbnailQueue() {
     const entry = fileThumbnailQueue.shift()!
     if (entry.cancelled) continue
     entry.started = true
+    entry.slotHeld = true
     fileThumbnailActive += 1
     void entry.task(entry.controller.signal)
       .then((value) => {
@@ -179,8 +205,7 @@ function pumpFileThumbnailQueue() {
         if (!entry.cancelled) entry.reject(error)
       })
       .finally(() => {
-        fileThumbnailActive = Math.max(0, fileThumbnailActive - 1)
-        pumpFileThumbnailQueue()
+        releaseFileThumbnailSlot(entry)
       })
   }
 }
@@ -188,7 +213,7 @@ function pumpFileThumbnailQueue() {
 function scheduleFileThumbnail(task: (signal: AbortSignal) => Promise<string | null | undefined>) {
   let entry!: FileThumbnailQueueEntry
   const promise = new Promise<string | null | undefined>((resolve, reject) => {
-    entry = { task, controller: new AbortController(), resolve, reject, started: false, cancelled: false }
+    entry = { task, controller: new AbortController(), resolve, reject, started: false, slotHeld: false, cancelled: false }
     fileThumbnailQueue.push(entry)
     pumpFileThumbnailQueue()
   })
@@ -201,6 +226,8 @@ function scheduleFileThumbnail(task: (signal: AbortSignal) => Promise<string | n
       if (!entry.started) {
         const index = fileThumbnailQueue.indexOf(entry)
         if (index >= 0) fileThumbnailQueue.splice(index, 1)
+      } else {
+        releaseFileThumbnailSlot(entry)
       }
       entry.resolve(undefined)
     },
