@@ -215,8 +215,13 @@ test('390px trusted photo drawer uses safe-area layout and touch-only pointer gr
   assert.match(sheet,/touchActivated\.current=\{nodeID:item\.node\.id,at:event\.timeStamp\}/)
   assert.match(sheet,/event\.timeStamp-handled\.at<900/)
   assert.doesNotMatch(sheet,/dispatchEvent\(|\.click\(\)/)
-  assert.match(host,/calc\(135px \+ env\(safe-area-inset-bottom, 0px\)\)/)
-  assert.match(host,/max\(10px, env\(safe-area-inset-bottom\)\)/)
+  // The fixed photo strip is removed; the real count and complete camera-wall
+  // actions remain anchored to the safe area, not an obsolete 135px dock.
+  assert.match(host,/bottom:\{xs:'max\(12px, env\(safe-area-inset-bottom\)\)',sm:16\}/)
+  assert.match(host,/data-xdrive-places-map-photo-summary/)
+  assert.match(host,/data-xdrive-places-full-camera-wall/)
+  assert.doesNotMatch(host,/calc\(135px \+ env\(safe-area-inset-bottom, 0px\)\)/)
+  assert.doesNotMatch(host,/data-xdrive-places-photo-collection-strip/)
   const viewer=read('ui/shared/src/mui/FileOpenPreviewDialog.tsx')
   const smoke=read('desktop/scripts/gallery-places-dual-host-chromium.cjs')
   assert.match(smoke,/type:type\+'-bubble'/)
