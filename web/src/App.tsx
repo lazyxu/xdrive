@@ -1537,8 +1537,8 @@ function FileManager({
 
 
   const cloudStorageSource = useMemo(() => createXDriveCloudStorageDataSource({
-    getQuota: () => api.quota(),
-    getStats: () => api.storageStats(),
+    getQuota: signal => api.quota(signal),
+    getStats: signal => api.storageStats(signal),
   }, {
     onQuota: applyQuota,
     tolerateStatsError: true,
