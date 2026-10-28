@@ -153,14 +153,22 @@ internal fun GalleryLivePhotoMotion(
 
     val player = remember(context, lease) {
         val source = lease
-        if (source == null) null else ExoPlayer.Builder(context).build().apply {
-            setMediaSource(ProgressiveMediaSource.Factory(
-                OkHttpDataSource.Factory(source.client))
-                .createMediaSource(MediaItem.fromUri(source.url)))
-            playWhenReady = true
-            prepare()
-        }
+        if (source == null) null else createPreparedLiveResource(
+            build = { ExoPlayer.Builder(context).build() },
+            prepare = { owned ->
+                owned.setMediaSource(ProgressiveMediaSource.Factory(
+                    OkHttpDataSource.Factory(source.client))
+                    .createMediaSource(MediaItem.fromUri(source.url)))
+                owned.playWhenReady = true
+                owned.prepare()
+            },
+            release = { it.release() },
+        )
     }
+    // A verified Owner stream is not proof that this Android codec/player
+    // initialized correctly. Expose an error, not an inert loading spinner or
+    // an exception escaping the Compose composition.
+    val playerSetupFailed = lease != null && player == null
 
     DisposableEffect(player, photo.node.id, photo.node.revision) {
         val listener = object : Player.Listener {
@@ -223,7 +231,7 @@ internal fun GalleryLivePhotoMotion(
                 )
             }
         }
-        if (!frameReady || ended || failed) {
+        if (!frameReady || ended || failed || playerSetupFailed) {
             Row(
                 Modifier.align(Alignment.TopEnd).padding(12.dp)
                     .background(Color.Black.copy(alpha = 0.65f))
@@ -239,7 +247,7 @@ internal fun GalleryLivePhotoMotion(
                 }
                 Text(
                     when {
-                        failed -> "动态暂不可播放"
+                        failed || playerSetupFailed -> "动态暂不可播放"
                         ended -> "动态播放结束"
                         bufferedMs > 0 -> "已缓冲 ${liveBufferClock(bufferedMs)}" +
                             (if (durationMs > 0) " / ${liveBufferClock(durationMs)}" else "")
