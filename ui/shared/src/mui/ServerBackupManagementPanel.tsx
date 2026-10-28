@@ -716,7 +716,7 @@ export function XDriveServerBackupManagementPanel({
                 {visibleHistory.map(item => (
                   <TableRow key={item.request_id}>
                     <TableCell>{item.finished_at ? new Date(item.finished_at).toLocaleString() : '—'}</TableCell>
-                    <TableCell>{xDriveServerBackupActionLabel(item.action)}</TableCell>
+                    <TableCell>{xDriveServerBackupActionLabel(item.action || '')}</TableCell>
                     <TableCell sx={{ overflowWrap: 'anywhere' }}>{item.snapshot_id || '—'}</TableCell>
                     <TableCell>{item.state === 'success' ? '成功' : '失败'}{item.error_code ? ' · ' + item.error_code : ''}</TableCell>
                     <TableCell>{item.mode || '—'}</TableCell>
