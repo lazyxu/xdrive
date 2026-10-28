@@ -152,6 +152,19 @@ except (OSError, EOFError, TypeError, ValueError, UnicodeError, tarfile.TarError
           file=sys.stderr)
     sys.exit(1)
 PY
+  # Checksums and tar headers do not prove PostgreSQL can even parse the
+  # archived dump. Refuse legacy auto-retention until its custom-format TOC
+  # parses in a bounded, offline, read-only container. This is not a complete
+  # PostgreSQL restore drill.
+  command -v docker >/dev/null 2>&1 || return 1
+  command -v timeout >/dev/null 2>&1 || return 1
+  timeout --signal=TERM --kill-after=10s 120s \
+    docker run --rm -i --pull never --network none --read-only \
+      --cap-drop ALL --security-opt no-new-privileges \
+      --pids-limit 64 --cpus 2 --memory 256m --memory-swap 256m \
+      --user 70:70 --entrypoint pg_restore \
+      postgres:17-alpine --list \
+      < "$snapshot/database.dump" > /dev/null || return 1
 }
 
 if [[ "$schedule_format" == "v2" ]]; then
