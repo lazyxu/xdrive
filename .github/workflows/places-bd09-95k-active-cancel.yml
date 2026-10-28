@@ -1,0 +1,116 @@
+name: Places BD09 95k Actual PostgreSQL In-flight Cancellation
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - internal/api/media_places_bd09_active_cancel_linux_test.go
+      - .github/workflows/places-bd09-95k-active-cancel.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: places-bd09-95k-cancel-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  places-95k-inflight-pg-cancel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=512m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_PLACES_100K_DISPOSABLE_CI: '1'
+      XD_PLACES_BD09_CANCEL_OUTPUT: ${{ github.workspace }}/artifacts/bd09-95k-active-cancel.json
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Freeze exact source and fail closed on gofmt/parse errors
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD | tee bd09-cancel-source.txt
+          echo "XD_PLACES_BD09_HEAD=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          fi
+          unformatted="$(gofmt -l internal/api/media_places_bd09_active_cancel_linux_test.go)"
+          if [[ -n "$unformatted" ]]; then
+            gofmt -d internal/api/media_places_bd09_active_cancel_linux_test.go
+            exit 1
+          fi
+      - name: Seed original 100k Owner and 115k metadata disposable PostgreSQL17 fixture
+        shell: bash
+        env:
+          XD_PLACES_BD09_PG100K: '1'
+          XD_PLACES_BD09_ACTION: seed
+        run: |
+          set -euo pipefail
+          go test -count=1 -run '^TestPlacesBD09Owner100kPostgresBaseline$' -v -timeout=35m ./internal/api 2>&1 | tee bd09-active-seed.log
+      - name: Cancel running original Owner Camera SQL three times; verify clean read afterwards
+        shell: bash
+        env:
+          XD_PLACES_BD09_CANCEL_ACTIVE: '1'
+        run: |
+          set -euo pipefail
+          go test -count=1 -run '^TestPlacesBD09Owner95kActivePostgresCancellation$' -v -timeout=12m ./internal/api 2>&1 | tee bd09-active-probe.log
+      - name: Verify bounded sanitized evidence, 95k Owner recovery and exact HEAD
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          path=Path('artifacts/bd09-95k-active-cancel.json')
+          assert path.is_file() and 450 < path.stat().st_size < 12000
+          data=json.loads(path.read_text())
+          assert data['ci_git_head']==Path('bd09-cancel-source.txt').read_text().strip()
+          assert data['owner_assets']==100000 and data['sample_count']==3
+          assert data['fresh_camera_count']==95000 and data['fresh_page_items']==48
+          assert data['provider_conversion_verified'] is False
+          assert data['browser_abort_verified'] is False
+          assert len(data['samples'])==3
+          for i,sample in enumerate(data['samples'],1):
+              assert sample['ordinal']==i
+              assert sample['observed_active_postgres_select'] is True
+              assert sample['old_owner_range_rejected'] is True
+              assert 0 <= sample['go_cancel_return_ms'] <= 1500
+          saved=path.read_text().lower()
+          for token in ('"owner_id"','"asset_id"','"node_id"','"gps"',
+                        '"sql"','"pid"','"jwt"','"cookie"','"token"'):
+              assert token not in saved
+          print('Actual 95k PostgreSQL in-flight Owner Camera cancellation verified')
+          PY
+      - name: Retain only redacted source-exact Owner cancellation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: places-bd09-95k-inflight-${{ github.run_id }}
+          path: |
+            artifacts/bd09-95k-active-cancel.json
+            bd09-cancel-source.txt
+            bd09-active-seed.log
+            bd09-active-probe.log
+          if-no-files-found: warn
+          retention-days: 14
