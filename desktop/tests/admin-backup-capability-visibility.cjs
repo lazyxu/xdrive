@@ -13,6 +13,8 @@ test('Admin maintenance never silently hides server backup CRUD when Host capabi
   assert.match(page, /backupPort \? \(/)
   assert.match(page, /data-xdrive-admin-backup-host-unavailable/)
   assert.match(page, /服务器备份、恢复与备份仓库校验/)
+  assert.match(page, /恢复前必须另行保管部署配置与密钥/)
+  assert.match(page, /不要在管理员网页中上传或展示这些密钥/)
   assert.match(page, /无法在此创建、查询、修改策略、删除、恢复或校验服务器备份/)
   assert.match(page, /Host Control \/ Agent/)
   assert.match(page, /不会绕过宿主权限直接访问备份目录/)
