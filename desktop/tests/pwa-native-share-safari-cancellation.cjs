@@ -20,7 +20,10 @@ const read = exports.xDriveReadBoundedNativeShareBlob
 
 function response(bytes = [1, 2, 3], hooks = {}) {
   const stream = new ReadableStream({
-    start(controller) { controller.enqueue(Uint8Array.from(bytes)); controller.close() },
+    start(controller) {
+      controller.enqueue(Uint8Array.from(bytes))
+      if (!hooks.keepOpen) controller.close()
+    },
     cancel() { hooks.onCancel?.() },
   })
   return new Response(stream, {
@@ -48,7 +51,7 @@ test('bounded native share supports an AbortSignal without optional throwIfAbort
 test('denied AbortSignal listener fails closed and releases already acquired media stream', async () => {
   let cancelled = 0
   let removals = 0
-  const streamed = response([1, 2, 3], { onCancel: () => cancelled++ })
+  const streamed = response([1, 2, 3], { onCancel: () => cancelled++, keepOpen: true })
   const signal = {
     aborted: false,
     addEventListener() { throw new Error('Safari denied AbortSignal listener') },
@@ -63,7 +66,7 @@ test('denied AbortSignal listener fails closed and releases already acquired med
 test('cancel between listener subscription and byte read cannot expose a partial share', async () => {
   let cancelled = 0
   let aborted = false
-  const streamed = response([7, 8, 9], { onCancel: () => cancelled++ })
+  const streamed = response([7, 8, 9], { onCancel: () => cancelled++, keepOpen: true })
   const signal = {
     get aborted() { return aborted },
     addEventListener() { aborted = true },
