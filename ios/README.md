@@ -10,6 +10,8 @@ Visual reference: Android `AuthScreens.kt` and `SharedVisuals.kt`; uses the cano
   keep-login switch, loading and real error messages.
 - Real HTTPS `POST /api/v1/auth/login`, `/auth/refresh` and `/auth/logout`.
   The server URL must be an HTTPS origin without paths, credentials or query.
+- iOS local-network usage description is embedded for direct LAN connections;
+  approve local network access when prompted on the iPhone.
 - Platform trust evaluation is **never** bypassed; login requests do not follow
   redirects and credentials are never sent to another host or over HTTP.
 - Only the refresh token is saved to device-only, unlocked Keychain when keep-login

@@ -20,6 +20,7 @@ targets:
         CFBundleDisplayName: xDrive
         UILaunchScreen: {}
         LSRequiresIPhoneOS: true
+        NSLocalNetworkUsageDescription: 用于连接你局域网内的 xDrive 服务器。
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.lazyxu.xdrive.ios

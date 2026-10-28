@@ -66,6 +66,7 @@ jobs:
           test ! -e "$app/embedded.mobileprovision"
           actual=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$app/Info.plist")
           test "$actual" = 'com.lazyxu.xdrive.ios'
+          /usr/libexec/PlistBuddy -c 'Print NSLocalNetworkUsageDescription' "$app/Info.plist" | grep -Fq 'xDrive'
           mkdir -p "$RUNNER_TEMP/unsigned/Payload"
           cp -R "$app" "$RUNNER_TEMP/unsigned/Payload/"
           (
