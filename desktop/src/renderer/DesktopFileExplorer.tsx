@@ -512,8 +512,13 @@ export default function DesktopFileExplorer({
         groups: result.data.groups,
       }
     },
-    loadRoot: async () => {
-      const result = await hostPort.browse.cloudRoot()
+    loadRoot: async (signal?: AbortSignal) => {
+      // Manual typed-path root is a disposable GET. Use the existing
+      // request/sender-scoped abort IPC; ordinary root consumers still omit ID.
+      const result = signal
+        ? await hostPort.requestViewport(signal, requestID =>
+            hostPort.browse.cloudRoot(requestID))
+        : await hostPort.browse.cloudRoot()
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },

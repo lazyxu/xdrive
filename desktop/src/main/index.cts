@@ -5738,11 +5738,13 @@ function registerIPCHandlers() {
     return requireAgentClient().triggerSource(sourceID)
   }, false))
 
-  ipcMain.handle('agent:cloud-root', () => runAgentAction<AgentCloudNode>(async () => {
-    const hello = await requireAgentLifecycle().ensureRunning()
-    requireAgentCapability(hello, 'cloud-files')
-    return requireAgentClient().cloudRoot()
-  }, false))
+  ipcMain.handle('agent:cloud-root', (event, requestID: unknown = undefined) =>
+    runAgentAction<AgentCloudNode>(
+      () => viewportRequests.run(event.sender, requestID, async (signal) => {
+        const hello = await requireAgentLifecycle().ensureRunning()
+        requireAgentCapability(hello, 'cloud-files')
+        return requireAgentClient().cloudRoot(signal)
+      }), false))
   ipcMain.handle('agent:cloud-children', (_event, parentID: unknown) => runAgentAction<AgentCloudNode[]>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'cloud-files')

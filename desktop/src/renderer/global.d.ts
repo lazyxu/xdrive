@@ -843,7 +843,7 @@ declare global {
         updateSource: (sourceID: number, revision: number, input: AgentUpdateSourceInput) => Promise<DesktopResult<AgentSource>>
         deleteSource: (sourceID: number, revision: number) => Promise<DesktopResult<{ ok: boolean }>>
         triggerSource: (sourceID: number) => Promise<DesktopResult<AgentSource>>
-        cloudRoot: () => Promise<DesktopResult<AgentCloudNode>>
+        cloudRoot: (requestID?: string) => Promise<DesktopResult<AgentCloudNode>>
         cloudChildren: (parentID: number) => Promise<DesktopResult<AgentCloudNode[]>>
         cloudChildrenPage: (
           parentID: number,

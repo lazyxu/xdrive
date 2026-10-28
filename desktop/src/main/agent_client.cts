@@ -3960,8 +3960,9 @@ export class AgentIPCClient {
     return this.request<AgentSource>('POST', '/v1/sources/trigger', { source_id: sourceID })
   }
 
-  cloudRoot() {
-    return this.request<AgentCloudNode>('GET', '/v1/cloud/root')
+  cloudRoot(signal?: AbortSignal) {
+    // Keep the existing authenticated GET endpoint and 10-second timeout.
+    return this.request<AgentCloudNode>('GET', '/v1/cloud/root', undefined, 10_000, signal)
   }
 
   cloudChildren(parentID: number) {
