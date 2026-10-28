@@ -33,9 +33,9 @@ type selectedPrunePlan struct {
 
 func planSelectedPrune(repo, snapshot, casMode string) (selectedPrunePlan, error) {
 	result := selectedPrunePlan{
-		Protocol: "xdrive-backup-selected-prune-plan-v1",
-		Mode: "read_only",
-		Snapshot: snapshot,
+		Protocol:      "xdrive-backup-selected-prune-plan-v1",
+		Mode:          "read_only",
+		Snapshot:      snapshot,
 		DeleteEnabled: false,
 	}
 	if !canonicalPruneSnapshotName(snapshot) {
