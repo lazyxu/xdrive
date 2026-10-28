@@ -39,6 +39,8 @@ func validBackupAdminVerifyAllReport(p backupAdminVerifyAllReport) bool {
 		p.TotalSnapshots < 0 || p.TotalSnapshots > 1000 ||
 		p.CheckedSnapshots < 0 || p.CheckedSnapshots > p.TotalSnapshots ||
 		p.PassedSnapshots < 0 || p.FailedSnapshots < 0 ||
+		p.PassedSnapshots > p.CheckedSnapshots ||
+		p.FailedSnapshots > p.CheckedSnapshots ||
 		p.PassedSnapshots+p.FailedSnapshots != p.CheckedSnapshots ||
 		p.UnverifiedSnapshots != p.TotalSnapshots-p.CheckedSnapshots ||
 		p.DeepRepositoriesChecked < 0 || p.DeepRepositoriesChecked > 2 ||

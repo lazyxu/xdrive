@@ -48,6 +48,10 @@ func TestAdminBulkVerificationSourceBoundReport(t *testing.T) {
 	copy.UnverifiedSnapshots = 1
 	invalid = append(invalid, copy)
 	copy = valid
+	copy.PassedSnapshots = 1 << 30
+	copy.FailedSnapshots = 1 << 30
+	invalid = append(invalid, copy)
+	copy = valid
 	copy.DeepRepositoriesChecked = 1
 	invalid = append(invalid, copy)
 	copy = valid
