@@ -96,6 +96,9 @@ data class DriveState(
     val galleryMapOpen: Boolean = false,
     val galleryMapLoaded: Boolean = false,
     val galleryMapOverview: OwnerMapOverview? = null,
+    /** Explicitly requested verified BD09LL Owner cells; never raw WGS84. */
+    val galleryBd09Requested: Boolean = false,
+    val galleryBd09Cells: OwnerBd09MapCells? = null,
     val galleryItems: List<GalleryAsset> = emptyList(),
     val galleryOffset: Int = 0,
     val galleryTotal: Long = 0,
@@ -1620,6 +1623,7 @@ class DriveController(
             galleryAlbums = emptyList(), galleryAlbumsLoaded = false,
             gallerySelectedAlbum = null,
             galleryMapOpen = false, galleryMapLoaded = false, galleryMapOverview = null,
+            galleryBd09Requested = false, galleryBd09Cells = null,
             galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
             galleryLoaded = false, gallerySearchQuery = "", galleryMediaKind = "",
             gallerySortBy = "captured", gallerySortDir = "asc",
@@ -1643,6 +1647,7 @@ class DriveController(
         invalidate() // The old Photo Range is a disposable GET.
         mutableState.value = current.withoutGallerySelection().copy(
             galleryMapOpen = true, galleryMapLoaded = false, galleryMapOverview = null,
+            galleryBd09Requested = false, galleryBd09Cells = null,
             loading = false, error = null, gallerySelected = null, galleryViewer = null)
         loadGalleryMapOverview()
     }
@@ -1652,7 +1657,52 @@ class DriveController(
         if (current.screen != Screen.GALLERY || !current.galleryMapOpen ||
             current.loading || current.hasActiveNativeTransfer() ||
             current.galleryMetadataWriteAttempted) return
-        loadGalleryMapOverview()
+        if (current.galleryBd09Requested) loadGalleryBd09MapCells()
+        else loadGalleryMapOverview()
+    }
+
+    /** A real Server-signed 8x8 BD09 index, requested only after the
+     * verified WGS84 overview is visible. Never treat WGS84 as BD09. */
+    fun openGalleryVerifiedBd09Cells() {
+        val current = state.value
+        if (current.screen != Screen.GALLERY || !current.galleryMapOpen ||
+            !current.galleryMapLoaded || current.galleryMapOverview == null ||
+            current.galleryBd09Requested || current.loading ||
+            current.hasActiveNativeTransfer() || current.galleryMetadataWriteAttempted ||
+            session == null || api == null) return
+        mutableState.value = current.copy(
+            galleryBd09Requested = true, galleryBd09Cells = null, error = null)
+        loadGalleryBd09MapCells()
+    }
+
+    /** Returning to GPS never reloads or reprojects BD09 as WGS84.
+     * In-flight results are discarded by generation even if transport
+     * cancellation is non-cooperative. */
+    fun showGalleryGpsOverview() {
+        val current = state.value
+        if (current.screen != Screen.GALLERY || !current.galleryMapOpen ||
+            !current.galleryBd09Requested || current.hasActiveNativeTransfer()) return
+        invalidate()
+        mutableState.value = current.copy(
+            galleryBd09Requested = false, galleryBd09Cells = null,
+            loading = false, discardableReadInFlight = false, error = null)
+        if (!state.value.galleryMapLoaded) loadGalleryMapOverview()
+    }
+
+    private fun loadGalleryBd09MapCells() {
+        val service = api ?: return
+        if (session == null || state.value.screen != Screen.GALLERY ||
+            !state.value.galleryMapOpen || !state.value.galleryBd09Requested) return
+        request(discardableRead = true) { ticket ->
+            val cells = authenticated(service, ticket) { token ->
+                service.baiduNativeMapCells(token, OwnerBd09Bounds.WORLD)
+            }
+            checkCurrent(ticket)
+            val latest = state.value
+            if (latest.screen != Screen.GALLERY || !latest.galleryMapOpen ||
+                !latest.galleryBd09Requested) throw CancellationException()
+            mutableState.value = latest.copy(galleryBd09Cells = cells, error = null)
+        }
     }
 
     private fun loadGalleryMapOverview() {
@@ -1679,6 +1729,7 @@ class DriveController(
         invalidate()
         mutableState.value = current.copy(galleryMapOpen = false,
             galleryMapLoaded = false, galleryMapOverview = null,
+            galleryBd09Requested = false, galleryBd09Cells = null,
             loading = false, discardableReadInFlight = false,
             error = null)
         // If the first Gallery GET was replaced by Map, re-read it on return.
@@ -1702,6 +1753,7 @@ class DriveController(
             galleryAlbums = emptyList(), galleryAlbumsLoaded = false,
             gallerySelectedAlbum = null,
             galleryMapOpen = false, galleryMapLoaded = false, galleryMapOverview = null,
+            galleryBd09Requested = false, galleryBd09Cells = null,
             galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
             galleryLoaded = false, gallerySearchQuery = "", galleryMediaKind = "",
             gallerySortBy = "captured", gallerySortDir = "asc",

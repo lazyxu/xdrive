@@ -4326,6 +4326,121 @@ class DriveControllerTest {
         c.close()
     }
 
+    @Test fun bd09CellsUseSignedOwnerApiAndReturnToOriginalGpsWithoutRefetch() = runTest {
+        val overview = OwnerMapOverview(listOf(
+            OwnerMapSample("gps-a", "真实 GPS", 35.5, 139.7, 35.5, 139.7,
+                "map_region_sample", 3, 42)), 3, true)
+        val cells = OwnerBd09MapCells(listOf(
+            OwnerBd09Cell(7, 5, 3, 61, 42, 1, 35.505, 139.706)), 3)
+        val api = object : Service() {
+            var wgsReads = 0
+            var bdReads = 0
+            override suspend fun placesMapOverview(
+                accessToken: String, bounds: OwnerMapBounds, detail: Boolean,
+            ): OwnerMapOverview {
+                assertEquals("access", accessToken)
+                assertEquals(OwnerMapBounds.WORLD, bounds)
+                assertFalse(detail)
+                wgsReads++
+                return overview
+            }
+            override suspend fun baiduNativeMapCells(
+                accessToken: String, bounds: OwnerBd09Bounds,
+            ): OwnerBd09MapCells {
+                assertEquals("access", accessToken)
+                assertEquals(OwnerBd09Bounds.WORLD, bounds)
+                bdReads++
+                return cells
+            }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.openGalleryMapOverview(); runCurrent()
+        val rows = c.state.value.galleryItems
+        assertEquals(1, api.wgsReads)
+        c.openGalleryVerifiedBd09Cells(); runCurrent()
+        assertTrue(c.state.value.galleryMapOpen)
+        assertTrue(c.state.value.galleryBd09Requested)
+        assertEquals(cells, c.state.value.galleryBd09Cells)
+        assertEquals(1, api.bdReads)
+        assertEquals(rows, c.state.value.galleryItems)
+        c.showGalleryGpsOverview(); runCurrent()
+        assertFalse(c.state.value.galleryBd09Requested)
+        assertNull(c.state.value.galleryBd09Cells)
+        assertEquals(overview, c.state.value.galleryMapOverview)
+        assertEquals(1, api.wgsReads)
+        assertEquals(1, api.bdReads)
+        c.back(); runCurrent()
+        assertNull(c.state.value.galleryMapOverview)
+        assertNull(c.state.value.galleryBd09Cells)
+        assertEquals(rows, c.state.value.galleryItems)
+        c.close()
+    }
+
+    @Test fun deniedBd09ReleaseFailsVisibleAndRetryIsReadOnly() = runTest {
+        val api = object : Service() {
+            var attempts = 0
+            override suspend fun placesMapOverview(
+                accessToken: String, bounds: OwnerMapBounds, detail: Boolean,
+            ) = OwnerMapOverview(emptyList(), 0, true)
+            override suspend fun baiduNativeMapCells(
+                accessToken: String, bounds: OwnerBd09Bounds,
+            ): OwnerBd09MapCells {
+                attempts++
+                if (attempts == 1) throw ApiException(503, "Map runtime not released")
+                return OwnerBd09MapCells(emptyList(), 0)
+            }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.openGalleryMapOverview(); runCurrent()
+        c.openGalleryVerifiedBd09Cells(); runCurrent()
+        assertTrue(c.state.value.galleryBd09Requested)
+        assertNull(c.state.value.galleryBd09Cells)
+        assertNotNull(c.state.value.error)
+        assertEquals(1, api.attempts)
+        c.retryGalleryMapOverview(); runCurrent()
+        assertNull(c.state.value.error)
+        assertEquals(OwnerBd09MapCells(emptyList(), 0), c.state.value.galleryBd09Cells)
+        assertEquals(2, api.attempts)
+        c.showGalleryGpsOverview(); runCurrent()
+        assertNull(c.state.value.galleryBd09Cells)
+        c.logout(); runCurrent()
+        assertFalse(c.state.value.galleryMapOpen)
+        assertNull(c.state.value.galleryBd09Cells)
+        c.close()
+    }
+
+    @Test fun lateBd09ResponseCannotPaintAfterReturningToGps() = runTest {
+        val delayed = CompletableDeferred<OwnerBd09MapCells>()
+        val api = object : Service() {
+            override suspend fun placesMapOverview(
+                accessToken: String, bounds: OwnerMapBounds, detail: Boolean,
+            ) = OwnerMapOverview(emptyList(), 0, true)
+            override suspend fun baiduNativeMapCells(
+                accessToken: String, bounds: OwnerBd09Bounds,
+            ): OwnerBd09MapCells = withContext(NonCancellable) { delayed.await() }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.openGalleryMapOverview(); runCurrent()
+        c.openGalleryVerifiedBd09Cells(); runCurrent()
+        assertTrue(c.state.value.loading)
+        assertTrue(c.state.value.discardableReadInFlight)
+        c.showGalleryGpsOverview(); runCurrent()
+        assertFalse(c.state.value.galleryBd09Requested)
+        assertFalse(c.state.value.loading)
+        delayed.complete(OwnerBd09MapCells(listOf(
+            OwnerBd09Cell(2, 4, 1, 22, 33, 1, 35.0, 139.0)), 1))
+        runCurrent()
+        assertNull(c.state.value.galleryBd09Cells)
+        assertTrue(c.state.value.galleryMapLoaded)
+        c.close()
+    }
+
     @Test fun galleryGpsOverviewUsesRealOwnerReadAndBackRetainsLoadedPhotos() = runTest {
         val sample = OwnerMapSample("map-region:q:-180:-90:180:90:0:0", "照片区域 1-1",
             35.5, 139.7, 35.5, 139.7, "map_region_sample", 3, 42)

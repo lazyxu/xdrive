@@ -55,6 +55,8 @@ class DriveAppTest {
     private val mutableRootRows = mutableListOf(DriveNode(2, 1, "假期照片", "dir", revision = 1))
     private var galleryGpsOverviewFixture = false
     private var gpsOverviewReads = 0
+    private var galleryBd09Fixture = false
+    private var bd09MapReads = 0
     private var galleryAutoPagingFixture = false
     private var galleryManyPhotos = false
     private var galleryTimelineFixture = false
@@ -141,6 +143,16 @@ class DriveAppTest {
                     35.505, 139.706, 35.505, 139.706,
                     "map_region_sample", 3, 40),
             ), 3, true)
+        }
+        override suspend fun baiduNativeMapCells(
+            accessToken: String, bounds: OwnerBd09Bounds,
+        ): OwnerBd09MapCells {
+            check(accessToken == "fixture" && galleryBd09Fixture &&
+                bounds == OwnerBd09Bounds.WORLD)
+            bd09MapReads++
+            return OwnerBd09MapCells(listOf(
+                OwnerBd09Cell(7, 5, 3, 61, 40, 1, 35.505, 139.706),
+            ), 3)
         }
         override suspend fun galleryAlbums(accessToken: String): List<GalleryAlbum> {
             check(accessToken == "fixture")
@@ -2431,5 +2443,49 @@ class DriveAppTest {
         compose.runOnIdle { org.junit.Assert.assertEquals(1, gpsOverviewReads) }
     }
 
+
+    @Test fun nativeMapReadsRealBd09CellsAndReturnsToUnchangedGpsOverview() {
+        galleryGpsOverviewFixture = true
+        galleryBd09Fixture = true
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryLoaded && !controller.state.value.loading
+        }
+        compose.onNodeWithTag("gallery-view-options").performClick()
+        compose.onNodeWithTag("gallery-show-map").performScrollTo().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryMapLoaded && !controller.state.value.loading
+        }
+        compose.onNodeWithTag("gallery-map-wgs84-distribution").assertExists()
+        compose.onNodeWithTag("gallery-map-open-bd09").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryBd09Requested &&
+                controller.state.value.galleryBd09Cells?.totalPhotoCount == 3L &&
+                !controller.state.value.loading
+        }
+        compose.onNodeWithTag("gallery-map-bd09-count").assertExists()
+        compose.onNodeWithTag("gallery-map-bd09-distribution").assertExists()
+        compose.onNodeWithTag("gallery-map-bd09-cell-7-5").assertExists()
+        compose.onNodeWithTag("gallery-map-unavailable-basemap").assertExists()
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(1, gpsOverviewReads)
+            org.junit.Assert.assertEquals(1, bd09MapReads)
+        }
+        compose.onNodeWithTag("gallery-map-back-to-gps").performClick()
+        compose.onNodeWithTag("gallery-map-wgs84-distribution").assertExists()
+        compose.runOnIdle {
+            org.junit.Assert.assertNull(controller.state.value.galleryBd09Cells)
+            org.junit.Assert.assertEquals(1, gpsOverviewReads)
+        }
+        compose.onNodeWithTag("gallery-map-close").performClick()
+        compose.onNodeWithTag("gallery-wall").assertExists()
+        compose.onNodeWithTag("gallery-item-40").assertExists()
+        compose.runOnIdle {
+            org.junit.Assert.assertNull(controller.state.value.galleryMapOverview)
+            org.junit.Assert.assertNull(controller.state.value.galleryBd09Cells)
+        }
+    }
 
 }
