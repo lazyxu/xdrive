@@ -1820,8 +1820,11 @@ class DriveAppTest {
                 failure,
             )
         }
+        // Re-resolve the *same* real menu item after its bounded positioning
+        // wait; an Android popup may re-layout between two separate queries.
+        // Only one click is issued, so the SAF callback cannot be replayed.
         compose.onNodeWithTag("files-upload-action")
-            .assertIsDisplayed().assertIsEnabled().performClick()
+            .performScrollTo().assertIsDisplayed().assertIsEnabled().performClick()
         compose.runOnIdle { org.junit.Assert.assertEquals(1, picks) }
     }
 

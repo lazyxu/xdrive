@@ -402,20 +402,6 @@ internal fun AccountMenu(state: DriveState, controller: DriveController, checkUp
                     !state.galleryMetadataWriteAttempted &&
                     !state.galleryAlbumCreateAttempted && !state.galleryAlbumEditAttempted,
                 onClick = { expanded = false; controller.openFilesApp() })
-            // PWA keeps file selection reachable after its large title and
-            // search scroll offscreen. Never strand Selection in a lazy header.
-            if (state.screen == Screen.FILES &&
-                state.filesSection == FilesSection.BROWSE) DropdownMenuItem(
-                text = { Text(if (state.browseSelectionMode) "完成选择" else "选择文件") },
-                enabled = !state.loading && state.loaded &&
-                    !state.browseBatchWriteAttempted && state.destinationKind == null &&
-                    !state.hasActiveNativeTransfer(),
-                modifier = Modifier.testTag("files-select-from-menu"),
-                onClick = {
-                    expanded = false
-                    controller.setBrowseSelectionMode(!state.browseSelectionMode)
-                },
-            )
             if (fileView != null) {
                 if (onUpload != null) DropdownMenuItem(
                     text = { Text("上传文件") },
@@ -424,6 +410,26 @@ internal fun AccountMenu(state: DriveState, controller: DriveController, checkUp
                         !state.browseSelectionMode,
                     modifier = Modifier.testTag("files-upload-action"),
                     onClick = { expanded = false; onUpload() })
+                // Keep the existing SAF upload item ahead of the new selection
+                // shortcut. On 320x640 Android menus, appending the shortcut
+                // before upload pushes a previously visible real action below
+                // the popup viewport and can produce transient Compose focus.
+                // This selection action stays available even after the
+                // scroll-away Files search/title leaves the Lazy viewport.
+        // PWA keeps file selection reachable after its large title and
+        // search scroll offscreen. Never strand Selection in a lazy header.
+        if (state.screen == Screen.FILES &&
+            state.filesSection == FilesSection.BROWSE) DropdownMenuItem(
+            text = { Text(if (state.browseSelectionMode) "完成选择" else "选择文件") },
+            enabled = !state.loading && state.loaded &&
+                !state.browseBatchWriteAttempted && state.destinationKind == null &&
+                !state.hasActiveNativeTransfer(),
+            modifier = Modifier.testTag("files-select-from-menu"),
+            onClick = {
+                expanded = false
+                controller.setBrowseSelectionMode(!state.browseSelectionMode)
+            },
+        )
                 if (onCreateFolder != null) DropdownMenuItem(
                     text = { Text("新建文件夹") },
                     enabled = !state.loading && state.loaded,
