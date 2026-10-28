@@ -54,8 +54,10 @@ export type XDriveBaiduParentCameraMessage = Readonly<{
   kind: 'restore-camera'
   camera: XDriveBaiduIsolatedCamera
 }>
-/** Cosmetic suppression of numeric Labels already replaced by trusted Parent
- * photo buttons; it is never a media access or Owner grant. */
+/** Cosmetic, current-Cell presentation lease: a nonempty verified Parent photo
+ * selection hides the Child's competing native numeric Labels as a whole.
+ * An empty selection restores native fallback Labels. Keys are anonymous,
+ * bounded and never authorize media bytes, an Owner grant or a Range. */
 export type XDriveBaiduParentPhotoCoversMessage = Readonly<{
   version: 1
   generation: number
