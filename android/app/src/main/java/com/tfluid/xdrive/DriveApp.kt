@@ -390,6 +390,9 @@ internal fun AccountMenu(state: DriveState, controller: DriveController, checkUp
             if (state.screen == Screen.GALLERY) DropdownMenuItem(
                 text = { Text("文件") },
                 modifier = Modifier.testTag("switch-to-files"),
+                enabled = !state.hasActiveNativeTransfer() &&
+                    !state.galleryMetadataWriteAttempted &&
+                    !state.galleryAlbumCreateAttempted && !state.galleryAlbumEditAttempted,
                 onClick = { expanded = false; controller.openFilesApp() })
             if (fileView != null) {
                 if (onUpload != null) DropdownMenuItem(

@@ -33,3 +33,13 @@ Source change alone does not prove accurate-HEAD CI or pixel-level 1:1.
 Required checks: Android JVM/Core, Lint, Debug APK, API35 instrumentation and
 repository protection gates. Physical/OEM runtime, production Server/CA,
 and iOS PWA screenshot comparisons: **跳过（未验收）**.
+
+## Gallery SAF transfer follow-up
+
+Gallery → Files, album Back, query/sort/filter/date jumps and explicit refresh
+must not invalidate an actively streaming SAF export. The existing download
+status retains its explicit cancel action; this is a safe **blocking gate**
+while Android still has only foreground single-file transfer, not a claim
+that background resume is implemented. The same guard drives Compose enabled
+state and Controller entry points; real Owner writes/uncertain ACK remain
+protected. Two JVM tests cover an active Gallery export and album Back.

@@ -3744,4 +3744,75 @@ class DriveControllerTest {
         assertTrue(c.state.value.canNavigateFiles())
         c.close()
     }
+
+    @Test fun gallerySafExportCannotBePreemptedByAnotherPageOrOwnerQuery() = runTest {
+        val api = Service().apply { downloadGate = CompletableDeferred() }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        val photo = api.latestGallery
+        c.showGalleryInfo(photo)
+        assertTrue(c.prepareFileExport(photo.node))
+        var discarded = 0
+        c.saveFileExport({ ByteArrayOutputStream() }, { discarded++ }); runCurrent()
+        assertTrue(c.state.value.fileDownloadActive)
+        assertTrue(c.state.value.loading)
+        assertEquals(1, api.downloadReads)
+        val photoRows = c.state.value.galleryItems
+        val galleryRequests = api.galleryRequests.size
+        c.openFilesApp()
+        c.back()
+        c.refreshGallery()
+        c.searchGallery("test")
+        c.filterGalleryKind("video")
+        c.changeGallerySort("added", "desc")
+        c.jumpGalleryToGroup("year", "2026")
+        assertEquals(Screen.GALLERY, c.state.value.screen)
+        assertEquals(photoRows, c.state.value.galleryItems)
+        assertEquals(galleryRequests, api.galleryRequests.size)
+        assertTrue(c.state.value.fileDownloadActive)
+        assertEquals(0, discarded)
+        api.downloadGate?.complete(Unit); runCurrent()
+        assertTrue(c.state.value.fileDownloadSaved)
+        assertFalse(c.state.value.fileDownloadActive)
+        assertEquals(1, api.downloadReads)
+        c.openFilesApp(); runCurrent()
+        assertEquals(Screen.FILES, c.state.value.screen)
+        assertEquals(0, discarded)
+        c.close()
+    }
+
+    @Test fun galleryAlbumBackWaitsForActiveNativeSafExportWithoutCancel() = runTest {
+        val album = GalleryAlbum("manual:trip", "manual", "旅行", 1, 2, 0, 990)
+        val api = object : Service() {
+            override suspend fun galleryAlbums(accessToken: String): List<GalleryAlbum> = listOf(album)
+            override suspend fun galleryAlbumPage(
+                accessToken: String, albumId: String, offset: Int,
+                initialLatest: Boolean,
+            ): GalleryPage {
+                assertEquals(album.id, albumId)
+                return GalleryPage(listOf(latestGallery), 1, 0)
+            }
+        }.apply { downloadGate = CompletableDeferred() }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.openGalleryCollections(); runCurrent()
+        c.openGalleryAlbum(album); runCurrent()
+        val photo = c.state.value.galleryItems.single()
+        c.showGalleryInfo(photo)
+        assertTrue(c.prepareFileExport(photo.node))
+        c.saveFileExport({ ByteArrayOutputStream() }, {}); runCurrent()
+        assertTrue(c.state.value.fileDownloadActive)
+        c.back() // Album Back may cancel a GET, never this active SAF stream.
+        assertEquals(album, c.state.value.gallerySelectedAlbum)
+        assertEquals(Screen.GALLERY, c.state.value.screen)
+        assertTrue(c.state.value.fileDownloadActive)
+        api.downloadGate?.complete(Unit); runCurrent()
+        assertTrue(c.state.value.fileDownloadSaved)
+        c.back(); runCurrent()
+        assertNull(c.state.value.gallerySelectedAlbum)
+        assertEquals(GalleryPrimaryTab.COLLECTIONS, c.state.value.galleryPrimaryTab)
+        c.close()
+    }
 }

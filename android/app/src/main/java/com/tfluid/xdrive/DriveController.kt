@@ -135,9 +135,12 @@ data class DriveState(
 }
 
 /** Page navigation yields only to obsolete GETs, never in-flight writes. */
+internal fun DriveState.hasActiveNativeTransfer(): Boolean =
+    fileUploadActive || fileDownloadActive
+
 internal fun DriveState.canNavigateFiles(): Boolean =
     screen == Screen.FILES && (!loading || discardableReadInFlight) &&
-        !fileUploadActive && !fileDownloadActive &&
+        !hasActiveNativeTransfer() &&
         destinationKind == null && !browseBatchWriteAttempted
 
 private fun DriveState.withoutGallerySelection(): DriveState = copy(
@@ -1596,7 +1599,7 @@ class DriveController(
 
     fun openFilesApp() {
         val current = state.value
-        if (current.screen != Screen.GALLERY ||
+        if (current.screen != Screen.GALLERY || current.hasActiveNativeTransfer() ||
             current.galleryMetadataWriteAttempted ||
             current.galleryAlbumCreateAttempted || current.galleryAlbumEditAttempted) return
         invalidate() // Cancels the outstanding Gallery Range and item thumbnails.
@@ -1899,6 +1902,7 @@ class DriveController(
         if (previous.screen != Screen.GALLERY ||
             previous.galleryPrimaryTab != GalleryPrimaryTab.COLLECTIONS ||
             previous.gallerySelectedAlbum == null || previous.galleryViewer != null ||
+            previous.hasActiveNativeTransfer() ||
             previous.galleryMetadataWriteAttempted) return
         invalidate()
         mutableState.value = previous.withoutGallerySelection().copy(gallerySelectedAlbum = null,
@@ -2140,6 +2144,7 @@ class DriveController(
     }
 
     fun refreshGallery() {
+        if (state.value.hasActiveNativeTransfer()) return
         if (state.value.galleryMetadataWriteAttempted && state.value.loading) return
         if (state.value.galleryMetadataWriteAttempted &&
             state.value.gallerySelectedAlbum != null) {
@@ -2170,7 +2175,7 @@ class DriveController(
                 current.gallerySelectedAlbum == null) ||
             current.galleryViewer != null || current.gallerySelected != null ||
             current.gallerySelectionMode || current.galleryMetadataWriteAttempted ||
-            session == null || api == null ||
+            current.hasActiveNativeTransfer() || session == null || api == null ||
             (current.gallerySortBy == by && current.gallerySortDir == dir)) return
         invalidate() // Cancel old Owner pages, thumbnails and pending SAF picker.
         mutableState.value = current.withoutGallerySelection().copy(loading = false, error = null,
@@ -2188,7 +2193,8 @@ class DriveController(
     /** A new Owner-wide query replaces the entire Gallery Range intent. */
     fun searchGallery(input: String) {
         val current = state.value
-        if (current.gallerySelectionMode || current.galleryMetadataWriteAttempted) return
+        if (current.gallerySelectionMode || current.galleryMetadataWriteAttempted ||
+            current.hasActiveNativeTransfer()) return
         if (current.screen != Screen.GALLERY ||
             current.galleryPrimaryTab != GalleryPrimaryTab.LIBRARY ||
             current.gallerySelectedAlbum != null || session == null || api == null) return
@@ -2212,7 +2218,8 @@ class DriveController(
     fun filterGalleryKind(kind: String) {
         if (kind != "" && kind != "image" && kind != "video") return
         val current = state.value
-        if (current.gallerySelectionMode || current.galleryMetadataWriteAttempted) return
+        if (current.gallerySelectionMode || current.galleryMetadataWriteAttempted ||
+            current.hasActiveNativeTransfer()) return
         if (current.screen != Screen.GALLERY ||
             current.galleryPrimaryTab != GalleryPrimaryTab.LIBRARY ||
             current.gallerySelectedAlbum != null || session == null || api == null ||
@@ -2295,7 +2302,8 @@ class DriveController(
     /** Jump ONLY by a Server-indexed Owner time group. */
     fun jumpGalleryToGroup(scale: String, key: String) {
         val current = state.value
-        if (current.gallerySelectionMode || current.galleryMetadataWriteAttempted) return
+        if (current.gallerySelectionMode || current.galleryMetadataWriteAttempted ||
+            current.hasActiveNativeTransfer()) return
         if (current.screen != Screen.GALLERY || !current.galleryLoaded ||
             current.gallerySearchQuery.isNotEmpty() ||
             current.gallerySortBy != "captured" || current.gallerySortDir != "asc" ||
