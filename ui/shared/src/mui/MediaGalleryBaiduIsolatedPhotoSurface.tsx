@@ -17,7 +17,8 @@ import type { XDriveBaiduCellRangeSort } from '../media-gallery-baidu-jsapi4-cel
 import { xDriveBaiduCellReturnMatchesFreshSelection } from '../media-gallery-baidu-cell-return-session'
 import {
   XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT, xDrivePlacesDrawerValidRange,
-  xDrivePlacesDrawerMatchesFresh, xDriveTakePlacesDrawerViewerReturn,
+  xDrivePlacesDrawerMatchesFresh, xDrivePlacesDrawerMatchesResizedCell,
+  xDriveTakePlacesDrawerViewerReturn,
 } from '../media-gallery-places-photo-drawer'
 import type {
   XDrivePlacesDrawerReturn, XDrivePlacesDrawerPresentation,
@@ -167,6 +168,13 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     returnPresentation?: XDrivePlacesDrawerPresentation
   }
   const [drawer,setDrawer] = useState<DrawerView | null>(null)
+  // A resize return is a short-lived trusted Parent UI intent. It never
+  // authorizes media, crosses the isolated Child, or reuses the old Cell
+  // selector. Both Hosts can use the same Parent DOM/Owner check.
+  const committedDrawer = useRef<DrawerView | null>(null)
+  const pendingResizeDrawer = useRef<{
+    owner:string; key:string; hint:XDrivePlacesDrawerReturn
+  } | null>(null)
   const closeDrawer = () => {
     drawerFetch.current?.abort()
     drawerFetch.current = null
@@ -180,6 +188,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     const approved=acceptedScope.current
     if (!approved || approved.key !== filterRef.current.key ||
         !hasAcceptedCell(selection)) return
+    pendingResizeDrawer.current=null
     const preview=previewPort.current
     if (!preview || !loadThumbnail) {
       opened.current(selection, approved.scope)
@@ -223,6 +232,8 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   const activeDrawer = drawer && phase === 'ready' &&
     acceptedScope.current?.key === drawer.key && hasAcceptedCell(drawer.selection)
     ? drawer : null
+  // Never capture a speculative React render as the previous visible sheet.
+  useLayoutEffect(() => { committedDrawer.current=activeDrawer },[activeDrawer])
   const openDrawerAll = () => {
     const state=activeDrawer,approved=acceptedScope.current
     if (!state || state.phase!=='ready' || !approved ||
@@ -267,6 +278,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   useLayoutEffect(() => {
     if(lastFilterKey.current===currentFilterKey)return
     lastFilterKey.current=currentFilterKey
+    pendingResizeDrawer.current=null
     refreshFilteredCells.current?.()
   },[currentFilterKey])
 
@@ -279,6 +291,13 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     let activeQuery: AbortController | null = null
     let refresh: ReturnType<typeof setInterval> | null = null
     let failed = false
+    let lastCanvasSize: {width:number;height:number} | null = null
+    const canvasSize = () => {
+      const width = Math.round(node.clientWidth)
+      const height = Math.round(node.clientHeight)
+      return width>=120 && height>=120 && width<=4096 && height<=4096
+        ? {width,height} : null
+    }
     // Freeze the Owner-local camera return hint for this iframe lifetime.
     let returnCamera = xDriveValidBaiduNativeCameraSnapshot(initialCamera)
       ? { coordinate_space: 'bd09ll' as const,
@@ -322,6 +341,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     const failure = () => {
       if (lifetime.signal.aborted || failed) return
       failed = true
+      pendingResizeDrawer.current=null
       cancel()
       lifetime.abort()
       if (refresh !== null) clearInterval(refresh)
@@ -346,7 +366,38 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
           selectCellRef.current(selection)
         }
       },
-      onCancel:()=>{ cameraTouched=true; cancel() },
+      onCancel:()=>{
+        cameraTouched=true
+        const nextSize=canvasSize(), before=lastCanvasSize
+        const resized=Boolean(before && nextSize &&
+          (before.width!==nextSize.width || before.height!==nextSize.height))
+        if(resized && nextSize) {
+          lastCanvasSize=nextSize
+          const state=committedDrawer.current
+          const approved=acceptedScope.current
+          const photoScope=approved
+            ? xDriveCopyBaiduMapPhotoScope(approved.scope) : null
+          if(state?.phase==='ready' && photoScope && approved &&
+             approved.key===filterRef.current.key &&
+             state.key===approved.key && latestAcceptedViewport.current) {
+            const list=node.querySelector<HTMLElement>(
+              '[data-xdrive-places-photo-drawer-items]')
+            const bounded=(value:number)=>Number.isFinite(value)
+              ? Math.max(0,Math.min(10_000,Math.floor(value))) : 0
+            pendingResizeDrawer.current={owner:scope??'',key:approved.key,
+              hint:{selection:{...state.selection,
+                bounds:{...state.selection.bounds}},photoScope,
+                presentation:{expanded:state.expanded,
+                  scrollTop:bounded(list?.scrollTop??0),
+                  scrollLeft:bounded(list?.scrollLeft??0)}}}
+          }
+          // When several CSS resize frames precede one /cells response,
+          // preserve only the first valid intent. Native Hosts coalesce the
+          // repeated resize notifications; a gesture of unchanged size below
+          // still revokes this visual intent.
+        } else pendingResizeDrawer.current=null
+        cancel()
+      },
       onCamera:(camera:XDriveBaiduNativeCameraSnapshot) => { if(!lifetime.signal.aborted) cameraUpdate.current?.(camera) },
       onMapReady:() => {
         if(lifetime.signal.aborted)return
@@ -426,6 +477,22 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         if(approved.key!==filterRef.current.key || run!==generation)return false
         acceptedScope.current={key:approved.key,scope:verifiedScope}
         acceptedCells.current=cells.map(item=>item.selection)
+        lastCanvasSize=canvasSize()
+        // The old camera Cell cannot survive rotation. Only a new signed
+        // Owner /cells with SAME representative asset+node+revision and
+        // unchanged PhotoScope may restore the sheet, and even then it uses
+        // the fresh Cell for an independent Owner /cell-items read.
+        if (liveCamera && pendingResizeDrawer.current) {
+          const intent=pendingResizeDrawer.current
+          pendingResizeDrawer.current=null // one-shot, fail closed
+          if(intent.owner===(scope??'') && intent.key===approved.key) {
+            const matched=cells.find(item=>
+              xDrivePlacesDrawerMatchesResizedCell(
+                intent.hint,verifiedScope,item.selection))
+            if(matched) selectCellRef.current(
+              matched.selection,intent.hint.presentation)
+          }
+        }
         // A one-shot Viewer hint never grants media access. Restore only if
         // THIS freshly authenticated Owner /cells response contains precisely
         // the same scope, bounds, Cell identity, revision and photo count.
@@ -478,6 +545,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         }
         return true
       } catch {
+        if (run===generation) pendingResizeDrawer.current=null
         if(!request.signal.aborted && !lifetime.signal.aborted && run===generation &&
             approved.key===filterRef.current.key) {
           // A failed/invalid Owner Cells response has NO media authority.
@@ -532,6 +600,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     refresh=setInterval(() => { if(!lifetime.signal.aborted)void acquireTicket() },65_000)
     return () => {
       refreshFilteredCells.current=null
+      pendingResizeDrawer.current=null
       cancel()
       lifetime.abort()
       if(refresh!==null)clearInterval(refresh)
@@ -814,7 +883,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
             phase={activeDrawer.phase} expanded={activeDrawer.expanded}
             initialPresentation={activeDrawer.returnPresentation}
             loadThumbnail={loadThumbnail}
-            onClose={closeDrawer}
+            onClose={() => { pendingResizeDrawer.current=null;closeDrawer() }}
             onExpand={expanded => setDrawer(current => current
               ? {...current,expanded} : current)}
             onRetry={() => { closeDrawer();refreshFilteredCells.current?.() }}

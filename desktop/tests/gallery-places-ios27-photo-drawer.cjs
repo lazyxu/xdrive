@@ -255,3 +255,50 @@ test('Shared map, Gallery and photo drawer remain syntactically valid TSX',()=>{
     assert.deepEqual(errors.map(x=>ts.flattenDiagnosticMessageText(x.messageText,'\n')),[],name)
   }
 })
+
+test('responsive Drawer visual intent matches only a new Owner-approved representative',()=>{
+  const before=selection(3)
+  const hint={selection:before,photoScope:scope,
+    presentation:{expanded:true,scrollTop:41,scrollLeft:9}}
+  const resized={...before,cell_x:4,cell_y:1,photo_count:8,
+    bounds:{coordinate_space:'bd09ll',west:116,south:28,east:123,north:34}}
+  assert.equal(helper.xDrivePlacesDrawerMatchesFresh(hint,scope,resized),false,
+    'Viewer Back exact-camera matching remains strict')
+  assert.equal(helper.xDrivePlacesDrawerMatchesResizedCell(hint,scope,resized),true,
+    'responsive camera may re-bin signed Cells without changing their representative')
+  for(const bad of [
+    {...resized,node_id:42},
+    {...resized,asset_id:99},
+    {...resized,node_revision:8},
+    {...resized,photo_count:0},
+    {...resized,bounds:{...resized.bounds,coordinate_space:'wgs84'}},
+  ]) assert.equal(helper.xDrivePlacesDrawerMatchesResizedCell(hint,scope,bad),false)
+  assert.equal(helper.xDrivePlacesDrawerMatchesResizedCell(hint,
+    {filters:{sort_by:'captured',sort_dir:'desc',favorite:true},albumKey:''},
+    resized),false,'favorite scope may not be widened or silently switched')
+  assert.equal(helper.xDrivePlacesDrawerMatchesResizedCell(hint,
+    {filters:{sort_by:'captured',sort_dir:'desc'},albumKey:'manual:other'},
+    resized),false,'album membership must be unchanged')
+  assert.equal(helper.xDrivePlacesDrawerMatchesResizedCell(null,scope,resized),false)
+})
+
+test('responsive Drawer restore stays in one Parent and always reauthorizes both Cells and items',()=>{
+  const parent=read('ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx')
+  const helperSource=read('ui/shared/src/media-gallery-places-photo-drawer.ts')
+  assert.match(parent,/const pendingResizeDrawer = useRef/)
+  assert.match(parent,/const canvasSize = \(\) =>/)
+  assert.match(parent,/lastCanvasSize=canvasSize\(\)/)
+  assert.match(parent,/onCancel:\(\)=>\{[\s\S]*?const resized=Boolean/)
+  assert.match(parent,/xDrivePlacesDrawerMatchesResizedCell\(/)
+  assert.match(parent,/pendingResizeDrawer\.current=null \/\/ one-shot, fail closed/)
+  assert.match(parent,/intent\.owner===\(scope\?\?'\'\)/)
+  assert.match(parent,/intent\.key===approved\.key/)
+  assert.match(parent,/selectCellRef\.current\(\s*matched\.selection,intent\.hint\.presentation\)/)
+  assert.match(parent,/preview\(cell,XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT,0,/)
+  assert.match(parent,/xDrivePlacesDrawerValidRange\(cell,range\)/)
+  assert.match(parent,/node\.querySelector<HTMLElement>\(/)
+  assert.match(parent,/pendingResizeDrawer\.current=null[\s\S]*?refreshFilteredCells\.current\?\.\(\)/)
+  assert.match(helperSource,/A Cell \/cells photo_count counts authorised PhotoAssets/)
+  assert.doesNotMatch(parent,/localStorage|sessionStorage|postMessage\([\s\S]*?photoScope/,
+    'responsive UI intent never persists private media or opens new Child IPC')
+})
