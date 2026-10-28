@@ -6,6 +6,7 @@ import type {
   XDriveSynologyBackupLocalClient, XDriveSynologyOwnerFileNode,
 } from '../synology-backup-adapter'
 import { XDriveFileExplorer } from './FileExplorer'
+import type { XDriveFileExplorerUnavailableActions } from './FileExplorer'
 import { useXDriveFileExplorerOwnerFence } from './FileExplorerOwnerFence'
 import { XDriveFileQuickLookDialog } from './FileQuickLookDialog'
 import { xDriveFileSupportsTextPreview } from '../file-preview'
@@ -66,7 +67,8 @@ function itemForExplorer(node: XDriveSynologyOwnerFileNode): XDriveFileExplorerI
  */
 export function XDriveSynologyOwnerFilesPage({
   client,
-}: { client: XDriveSynologyBackupLocalClient }) {
+  unavailableActions,
+}: { client: XDriveSynologyBackupLocalClient; unavailableActions?: XDriveFileExplorerUnavailableActions }) {
   const [crumbs, setCrumbs] = useState<XDriveFileExplorerCrumb[]>([])
   const [items, setItems] = useState<XDriveSynologyOwnerFileNode[]>([])
   const [sort, setSort] = useState<XDriveFileExplorerSort>({ key: 'name', direction: 'asc' })
@@ -507,7 +509,8 @@ export function XDriveSynologyOwnerFilesPage({
               crumbs={crumbs}
               loading={loading}
               emptyReadState={currentScopeVerified ? 'ready' : error ? 'error' : 'unverified'}
-              searchEnabled={false}
+              searchEnabled
+              unavailableActions={unavailableActions}
               groupingEnabled={false}
               externallySorted
               forceVirtualization
