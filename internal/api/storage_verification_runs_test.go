@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"gorm.io/gorm"
 )
 
 func storageVerificationHistoryRequest(t *testing.T, s *Server, rawQuery string) (int, storageVerificationHistoryPage, string) {
@@ -31,7 +32,9 @@ func TestStorageVerificationHistoryRejectsUnboundedAndNoncanonicalCursors(t *tes
 	if status, _, _ := storageVerificationHistoryRequest(t, server, ""); status != http.StatusServiceUnavailable {
 		t.Fatalf("missing DB was not unavailable: %d", status)
 	}
-	server.DB = newSystemMaintenanceTaskTestDB(t)
+	// Invalid input is rejected before touching the database. Run this
+	// guard even when integration PostgreSQL credentials are absent.
+	server.DB = &gorm.DB{}
 	for _, raw := range []string{
 		"?limit=0", "?limit=51", "?limit=01", "?limit=-1",
 		"?limit=1&limit=2", "?cursor=0", "?cursor=01", "?cursor=-3",
@@ -66,7 +69,7 @@ func TestStorageVerificationHistoryKeysetAndSafeProjection(t *testing.T) {
 	_ = makeRun(meta.SystemMaintenanceKindStorageOptimization, meta.SystemMaintenanceStatusSuccess, "unrelated")
 	deepA := makeRun(meta.SystemMaintenanceKindStorageVerify, meta.SystemMaintenanceStatusSuccess, "deepA")
 	_ = makeRun(meta.SystemMaintenanceKindStorageVerify, meta.SystemMaintenanceStatusRunning, "active")
-	fastB := makeRun(meta.SystemMaintenanceKindStorageVerifyFast, meta.SystemMaintenanceStatusIssues, "fastB")
+	fastB := makeRun("storage_verify_fast", meta.SystemMaintenanceStatusIssues, "fastB")
 	deepC := makeRun(meta.SystemMaintenanceKindStorageVerify, meta.SystemMaintenanceStatusFailed, "deepC")
 	_ = makeRun(meta.SystemMaintenanceKindSourceVerify, meta.SystemMaintenanceStatusSuccess, "foreign")
 	status, first, body := storageVerificationHistoryRequest(t, server, "?limit=2")

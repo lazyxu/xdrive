@@ -61,7 +61,7 @@ func (s *Server) adminStorageVerificationRuns(c *gin.Context) {
 	}
 	allowedKinds := []string{
 		meta.SystemMaintenanceKindStorageVerify,
-		meta.SystemMaintenanceKindStorageVerifyFast,
+		"storage_verify_fast",
 	}
 	allowedStates := []string{
 		meta.SystemMaintenanceStatusSuccess,
@@ -93,7 +93,7 @@ func (s *Server) adminStorageVerificationRuns(c *gin.Context) {
 	}
 	for _, item := range records {
 		mode := "deep" // Existing storage_verify task is historically full SHA-256.
-		if item.Kind == meta.SystemMaintenanceKindStorageVerifyFast {
+		if item.Kind == "storage_verify_fast" {
 			mode = "fast"
 		}
 		page.Items = append(page.Items, storageVerificationHistoryItem{
