@@ -2189,7 +2189,15 @@ async function testMapKeyboardAppearance(browser,mode,scheme,port){
     // CSS assertion cannot prove the photos stay visible after a real resize.
     for (const [width,height] of [[375,812],[899,390],[900,390],
       [899,1200],[900,1200]]) {
+      const beforeCamera=await page.evaluate(()=>window.__mapProbe.queries.length)
       await page.setViewportSize({width,height})
+      // The old projected pin is revoked synchronously. Wait for a NEW
+      // signed Owner camera before checking physical screen geometry.
+      await page.waitForFunction(before=>window.__mapProbe.queries.length>before,
+        beforeCamera)
+      await page.getByText('当前地图可查看 9 张照片',{exact:true}).waitFor()
+      await page.locator('[data-xdrive-places-cluster-list] button').first()
+        .waitFor({state:'attached'})
       const bounds=await page.evaluate(()=>{
         const rect=selector=>{
           const element=document.querySelector(selector)
@@ -2198,26 +2206,42 @@ async function testMapKeyboardAppearance(browser,mode,scheme,port){
           return {left:box.left,right:box.right,top:box.top,
             bottom:box.bottom,width:box.width,height:box.height}
         }
+        const accessible=document.querySelector(
+          '[data-xdrive-places-cluster-list]')
         return {map:rect('[data-xdrive-places-cluster-overview]'),
           cover:rect('[data-xdrive-places-trusted-photo-cover]'),
           strip:rect('[data-xdrive-places-photo-collection-strip]'),
           count:document.querySelector('[data-xdrive-places-photo-count-badge]')?.textContent,
+          accessibleCount:accessible?.querySelectorAll('button').length||0,
+          accessibleLabel:accessible?.textContent||'',
           regionLabel:document.querySelector('[aria-label="定位照片聚集地图"]')?.getAttribute('role')}
       })
       const inside=(outer,inner)=>Boolean(outer&&inner&&
         inner.left>=outer.left-1&&inner.right<=outer.right+1&&
         inner.top>=outer.top-1&&inner.bottom<=outer.bottom+1)
+      const visibleCover=inside(bounds.map,bounds.cover)&&
+        bounds.cover.width>=44&&bounds.cover.height>=44&&bounds.count==='9'
+      // A noncompact 899/900x390 viewport has less than 226px of
+      // available map height. Its 72px photo cover + count badge must not
+      // overlap the lower dock. Here the CURRENT authorized Cell list,
+      // including the actual signed count, is the accessible fallback.
+      const truthfulFallback=bounds.map&&bounds.map.height<226&&
+        bounds.cover===null&&bounds.accessibleCount>=1&&
+        bounds.accessibleLabel.includes('9')
       record(mode+': '+scheme+' '+width+'x'+height+
         ' map and signed-photo cover remain within the usable viewport',
         bounds.map&&bounds.map.width>0&&bounds.map.height>=180&&
         bounds.map.bottom<=height-8&&bounds.map.right<=width+1&&
-        inside(bounds.map,bounds.cover)&&bounds.cover.width>=44&&
-        bounds.cover.height>=44&&bounds.count==='9')
+        (visibleCover||truthfulFallback))
       record(mode+': '+scheme+' '+width+'x'+height+
         ' shared photo strip stays inside map bounds',
         inside(bounds.map,bounds.strip)&&bounds.strip.width>=44)
     }
+    const beforeReturnCamera=await page.evaluate(()=>window.__mapProbe.queries.length)
     await page.setViewportSize({width:390,height:844})
+    await page.waitForFunction(before=>window.__mapProbe.queries.length>before,
+      beforeReturnCamera)
+    await cover.waitFor({state:'visible'})
     await cover.focus()
     const focused=await cover.evaluate(element=>document.activeElement===element)
     await cover.press('Enter')

@@ -179,3 +179,16 @@ test('camera resize requires fresh Owner Cell before reopening actual photo draw
   assert.doesNotMatch(driver,/await page\.setViewportSize\(\{width:844,height:390\}\)\s*const sheetGeometry/,
     'stale pre-rotation drawer must not be reused')
 })
+
+test('responsive keyboard appearance waits for new Owner camera and bounded map fallback',()=>{
+  const driver=read('desktop/scripts/gallery-places-dual-host-chromium.cjs')
+  assert.match(driver,/beforeCamera=await page\.evaluate/)
+  assert.match(driver,/await page\.waitForFunction\(before=>window\.__mapProbe\.queries\.length>before/)
+  assert.match(driver,/bounds\.map\.height<226/)
+  assert.match(driver,/bounds\.accessibleCount>=1/)
+  assert.match(driver,/bounds\.accessibleLabel\.includes\('9'\)/)
+  assert.match(driver,/visibleCover\|\|truthfulFallback/)
+  assert.match(driver,/beforeReturnCamera=await page\.evaluate/)
+  assert.match(driver,/await cover\.waitFor\(\{state:'visible'\}\)/)
+  assert.match(driver,/bounds\.cover\.width>=44&&bounds\.cover\.height>=44/)
+})
