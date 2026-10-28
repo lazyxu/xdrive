@@ -16,8 +16,8 @@ function extractOverviewListEffect() {
     if (ts.isCallExpression(node) &&
       ts.isIdentifier(node.expression) && node.expression.text === 'useEffect' &&
       node.arguments.length >= 2 &&
-      node.arguments[0].getText(file).includes('port.cloudFileRecent(6)') &&
-      node.arguments[0].getText(file).includes('port.cloudFileFavorites()')) {
+      node.arguments[0].getText(file).includes('port.cloudFileRecent(6, controller.signal)') &&
+      node.arguments[0].getText(file).includes('port.cloudFileFavorites(controller.signal)')) {
       callback = node.arguments[0].getText(file)
       const deps = node.arguments[1]
       dependencies = ts.isArrayLiteralExpression(deps)
