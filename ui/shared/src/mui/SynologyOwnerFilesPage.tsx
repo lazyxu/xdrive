@@ -420,8 +420,9 @@ export function XDriveSynologyOwnerFilesPage({
                     setNotice('目录 ID 无效，未执行任何 Owner 文件读取。')
                     return
                   }
+                  const folderID = item.id
                   setPreview(null)
-                  setCrumbs(current => [...current, { id: item.id as number, name: item.name }])
+                  setCrumbs(current => [...current, { id: folderID, name: item.name }])
                 } else {
                   openFilePreview(item)
                 }
