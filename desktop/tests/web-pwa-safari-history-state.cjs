@@ -159,5 +159,5 @@ test('all History.state reads go through the same guarded browser helper', () =>
   assert.equal((source.match(/window\.history\.state/g) || []).length, 1)
   assert.ok(source.includes('function xDriveReadableWebHistoryState()'))
   assert.ok(source.includes('const parentHash = (xDriveReadableWebHistoryState()'))
-  assert.doesNotMatch(source, /skipWaiting|localStorage|sessionStorage\.setItem\\(.*history/)
+  assert.doesNotMatch(source, /skipWaiting|localStorage|sessionStorage[.]setItem[(].*history/)
 })
