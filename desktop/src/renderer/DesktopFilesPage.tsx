@@ -1,10 +1,5 @@
-import { Box } from '@mui/material'
 import type { ComponentProps } from 'react'
-import {
-  XDriveShareDialog,
-  XDriveStatusAlert,
-  XDriveVersionHistoryDialog,
-} from '@xdrive/ui/mui'
+import { XDriveFilesWorkspacePage } from '@xdrive/ui/mui'
 import DesktopFileExplorer from './DesktopFileExplorer'
 import {
   desktopShareDialogAdapter,
@@ -45,27 +40,26 @@ export function DesktopFilesPage({
   onFileDialogFeedback: (message: string) => void
 }) {
   return (
-    <Box
-      component="section"
-      sx={{
-        flex: 1,
-        minHeight: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden',
-        bgcolor: 'background.paper',
-        '& > [data-xdrive-file-explorer]': {
-          flex: 1,
-          minHeight: 0,
-        },
+    <XDriveFilesWorkspacePage
+      overQuota={Boolean(quota?.over_quota)}
+      historyDialog={{
+        node: historyNode,
+        adapter: desktopVersionHistoryDialogAdapter,
+        onClose: onCloseHistory,
+        onError: onFileDialogError,
+        onFeedback: onFileDialogFeedback,
+        onRestored: onHistoryRestored,
+      }}
+      shareDialog={{
+        adapter: desktopShareDialogAdapter,
+        node: shareNode,
+        onClose: onCloseShare,
+        onError: onFileDialogError,
+        expiryMode: 'days',
+        listVariant: 'compact',
+        showCloseAction: true,
       }}
     >
-      {quota?.over_quota ? (
-        <XDriveStatusAlert tone="bad" sx={{ m: 1.5 }}>
-          存储空间已超出配额。请永久删除回收站内容，或联系管理员提高配额。
-        </XDriveStatusAlert>
-      ) : null}
-
       <DesktopFileExplorer
         key={explorer.navigationSessionStorageKey}
         {...explorer}
@@ -74,25 +68,6 @@ export function DesktopFilesPage({
         onCloseTrash={onCloseTrash}
         onTrashChanged={onTrashChanged}
       />
-
-      <XDriveVersionHistoryDialog
-        node={historyNode}
-        adapter={desktopVersionHistoryDialogAdapter}
-        onClose={onCloseHistory}
-        onError={onFileDialogError}
-        onFeedback={onFileDialogFeedback}
-        onRestored={onHistoryRestored}
-      />
-
-      <XDriveShareDialog
-        adapter={desktopShareDialogAdapter}
-        node={shareNode}
-        onClose={onCloseShare}
-        onError={onFileDialogError}
-        expiryMode="days"
-        listVariant="compact"
-        showCloseAction
-      />
-    </Box>
+    </XDriveFilesWorkspacePage>
   )
 }

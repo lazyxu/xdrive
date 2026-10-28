@@ -9,6 +9,7 @@ const localStorage = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui
 const filesPage = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'DesktopFilesPage.tsx'), 'utf8')
 
 test('Desktop removes dead storage and cloud subpanel CSS after MUI migrations', () => {
+  const sharedFilesWorkspace = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/FilesWorkspacePage.tsx'), 'utf8')
   for (const selector of [
     '.storage-panel {',
     '.cache-card {',
@@ -34,6 +35,6 @@ test('Desktop removes dead storage and cloud subpanel CSS after MUI migrations',
   assert.equal(styles.includes('.actions {'), false, 'unused global actions layout must not return')
   assert.ok(localStorage.includes('<XDriveMetricGrid>'), 'Local Storage should stay on shared MUI metrics')
   assert.ok(localStorage.includes("borderColor: 'divider'"), 'Local Storage tree should stay on MUI surface styling')
-  assert.ok(filesPage.includes('component="section"'), 'Desktop Files should preserve section semantics through MUI')
-  assert.ok(filesPage.includes("'& > [data-xdrive-file-explorer]'"), 'Desktop Files MUI host must keep the Explorer flex contract')
+  assert.ok(filesPage.includes('<XDriveFilesWorkspacePage') && sharedFilesWorkspace.includes('component="section"'), 'Desktop shared Files page must preserve section semantics through MUI')
+  assert.ok(sharedFilesWorkspace.includes("'& > [data-xdrive-file-explorer]'"), 'shared Files MUI host must keep the Explorer flex contract')
 })

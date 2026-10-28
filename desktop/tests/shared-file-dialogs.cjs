@@ -12,6 +12,7 @@ const webApp = read('web', 'src', 'App.tsx')
 const webAdapters = read('web', 'src', 'fileDialogAdapters.ts')
 const desktopApp = read('desktop', 'src', 'renderer', 'App.tsx')
 const desktopCloud = read('desktop', 'src', 'renderer', 'DesktopFilesPage.tsx')
+const sharedFilesWorkspace = read('ui', 'shared', 'src', 'mui', 'FilesWorkspacePage.tsx')
 const desktopAdapters = read('desktop', 'src', 'renderer', 'fileDialogAdapters.ts')
 const sharedAdapters = read('ui', 'shared', 'src', 'mui', 'FileDialogAdapters.ts')
 
@@ -71,7 +72,10 @@ test('Web renders Trash as FileExplorer workspace and keeps Version History shar
 test('Desktop renders Trash as FileExplorer workspace and keeps Version History shared', () => {
   assert.equal(desktopCloud.includes('<XDriveTrashDialog'), false, 'Desktop Trash must not fall back to a dialog')
   assert.ok(desktopCloud.includes('trashActive={trashOpen}'), 'Desktop must route Trash through FileExplorer workspace state')
-  assert.ok(desktopCloud.includes('<XDriveVersionHistoryDialog'), 'Desktop must render shared Version History dialog')
+  assert.ok(desktopCloud.includes('historyDialog={{') &&
+    desktopCloud.includes('adapter: desktopVersionHistoryDialogAdapter') &&
+    sharedFilesWorkspace.includes('<XDriveVersionHistoryDialog {...historyDialog} />'),
+    'Desktop must supply its authenticated Version History adapter to the canonical Files page')
   assert.equal(desktopApp.includes('setCloudTrash('), false, 'Desktop must not keep local Trash list state')
   assert.equal(desktopApp.includes('setCloudVersions('), false, 'Desktop must not keep local Version list state')
   for (const token of [

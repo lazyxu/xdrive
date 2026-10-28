@@ -542,7 +542,11 @@ function registerMutationSearchIntentCases() {
   const shared = loadSource('ui/shared/src/file-explorer-controller.ts')
 
   function adapterFunction(platform, name, dependencies) {
-    const file = path.join(repo, platform === 'Web' ? 'web/src/WebFileExplorer.tsx' : 'desktop/src/renderer/DesktopFileExplorer.tsx')
+    const file = path.join(repo, platform === 'Web'
+      ? 'web/src/WebFileExplorer.tsx'
+      : ['beginActionBusy','isActionBusyCurrent','finishActionBusy'].includes(name)
+        ? 'ui/shared/src/mui/FileExplorerOwnerActionLifecycle.ts'
+        : 'desktop/src/renderer/DesktopFileExplorer.tsx')
     const ast = ts.createSourceFile(file, fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
     let expression
     function visit(current) {

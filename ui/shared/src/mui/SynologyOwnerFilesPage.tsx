@@ -31,7 +31,7 @@ import type {
 } from './FileExplorer'
 import { XDriveActionButton } from './ActionButton'
 import { XDriveStatusAlert } from './StatusAlert'
-import { XDriveWorkspaceSurface } from './WorkspaceSurface'
+import { XDriveFilesWorkspacePage } from './FilesWorkspacePage'
 import {
   xDriveSynologyOwnerFilesScopeKey,
   xDriveSynologyOwnerFilesNearEnd,
@@ -333,11 +333,7 @@ export function XDriveSynologyOwnerFilesPage({
   }, [])
 
   return (
-    <XDriveWorkspaceSurface presentation="page" fillHeight title="云端文件"
-      subtitle="使用共用 FileExplorer 查看 Server Owner 文件，支持文本、受限图片/PDF 以及原生视频/音频 Range 播放。"
-      pageActions={<XDriveActionButton startIcon={<RefreshRoundedIcon />}
-        compact onClick={refreshAuthenticatedOwner}
-        disabled={loadingRoot || (crumbs.length > 0 && (loading || paging))}>刷新</XDriveActionButton>}>
+    <XDriveFilesWorkspacePage>
       <Stack spacing={1.5} sx={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}
         onScrollCapture={(event) => {
         // FileExplorer owns the virtualized scroll host. Scope this listener
@@ -349,13 +345,14 @@ export function XDriveSynologyOwnerFilesPage({
           host.scrollTop, host.clientHeight, host.scrollHeight,
         )) loadMore()
       }}>
-        <XDriveStatusAlert tone="neutral">
-          本页提供经 Server Owner 鉴权的文件列表、最多 1 MiB 的文本预览，以及最多 32 MiB 的
-          JPEG/PNG/WebP/GIF/PDF 查看和可见图片/视频的 Server 派生缩略图，支持 DSM 身份验证下的原生视频/音频 Range 播放。
-          支持单文件最多 32 MiB 完整 SHA-256 校验后下载。Live、批量或更大的下载、上传、移动、
-          删除和 NAS 物理路径仍未开放；当前分页不代表整个目录。
-        </XDriveStatusAlert>
-        {rootError ? <XDriveStatusAlert tone="bad">{rootError}</XDriveStatusAlert> : null}
+        {rootError ? (
+          <XDriveStatusAlert tone="bad" action={
+            <XDriveActionButton startIcon={<RefreshRoundedIcon />} compact
+              disabled={loadingRoot} onClick={refreshAuthenticatedOwner}>重试</XDriveActionButton>
+          }>
+            {rootError}
+          </XDriveStatusAlert>
+        ) : null}
         {loadingRoot ? <Box data-xdrive-nas-cloud-root-first-read aria-busy
           sx={{ minHeight: 180 }} /> : null}
         {!loadingRoot && crumbs.length > 0 ? (
@@ -473,6 +470,6 @@ export function XDriveSynologyOwnerFilesPage({
         loadPreviewURL={loadMediaPreview}
         onClose={() => setPreview(null)}
       />
-    </XDriveWorkspaceSurface>
+    </XDriveFilesWorkspacePage>
   )
 }
