@@ -22,3 +22,11 @@ func (c *agentController) CloudAdminServerBackupAction(ctx context.Context, inpu
 	}
 	return cli.AdminServerBackupAction(ctx, input)
 }
+
+func (c *agentController) CloudAdminServerBackupSnapshotPage(ctx context.Context, offset, limit int) (json.RawMessage, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return nil, err
+	}
+	return cli.AdminServerBackupSnapshotPage(ctx, offset, limit)
+}

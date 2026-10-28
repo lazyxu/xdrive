@@ -785,6 +785,8 @@ const agent = Object.freeze({
   cloudAdminStorage: (query: import('../main/agent_client.cjs').AgentAdminStorageRequest) =>
     ipcRenderer.invoke('agent:cloud-admin-storage', query),
   cloudAdminBackups: () => ipcRenderer.invoke('agent:cloud-admin-backups'),
+  cloudAdminBackupSnapshotPage: (query: { offset: number; limit: number }) =>
+    ipcRenderer.invoke('agent:cloud-admin-backup-snapshots', query),
   cloudAdminBackupAction: (input: import('../main/agent_client.cjs').AgentAdminServerBackupRequest) =>
     ipcRenderer.invoke('agent:cloud-admin-backup-action', input),
   cloudAdminAuditRange: (query: import('../main/agent_client.cjs').AgentAdminAuditRangeQuery, requestID?: string) =>
