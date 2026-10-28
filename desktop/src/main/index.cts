@@ -5751,7 +5751,8 @@ function registerIPCHandlers() {
     }
     return requireAgentClient().cloudChildren(parentID)
   }, false))
-  ipcMain.handle('agent:cloud-children-page', (_event, parentID: unknown, options: unknown) => runAgentAction<AgentCloudChildrenPage>(async () => {
+  ipcMain.handle('agent:cloud-children-page', (event, parentID: unknown, options: unknown, requestID: unknown = undefined) => runAgentAction<AgentCloudChildrenPage>(
+    () => viewportRequests.run(event.sender, requestID, async (signal) => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'cloud-files')
     if (typeof parentID !== 'number' || !Number.isSafeInteger(parentID) || parentID <= 0) {
@@ -5777,8 +5778,9 @@ function registerIPCHandlers() {
       order: order as 'asc' | 'desc',
       ...(name ? { name } : {}),
       ...(nameInsensitive ? { nameInsensitive } : {}),
-    })
-  }, false))
+    }, signal)
+    }), false,
+  ))
   const normalizeFileExplorerGrouping = (value: unknown): AgentFileExplorerGrouping => {
     if (value === undefined || value === null) {
       return { groupBy: 'none', foldersFirst: true }
@@ -7588,7 +7590,7 @@ function registerIPCHandlers() {
     )
   }, false))
   ipcMain.handle('agent:cloud-search-range', (
-    _event,
+    event,
     query: unknown,
     offset: unknown,
     limit: unknown,
@@ -7596,7 +7598,9 @@ function registerIPCHandlers() {
     order: unknown,
     filtersValue: unknown,
     groupingValue: unknown,
-  ) => runAgentAction<AgentCloudSearchRange>(async () => {
+    requestID: unknown = undefined,
+  ) => runAgentAction<AgentCloudSearchRange>(
+    () => viewportRequests.run(event.sender, requestID, async (signal) => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'cloud-files')
     const filters = normalizeCloudSearchFilters(filtersValue)
@@ -7629,8 +7633,10 @@ function registerIPCHandlers() {
       sortOrder,
       filters,
       grouping,
+      signal,
     )
-  }, false))
+    }), false,
+  ))
   ipcMain.handle('agent:cloud-quota', () => runAgentAction<AgentCloudQuota>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'cloud-files')
