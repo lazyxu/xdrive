@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded'
 import { Box, LinearProgress, useMediaQuery } from '@mui/material'
 import MobileFiles from './MobileFiles'
+import { xDriveWebFilesKeyboardProfile } from './webFilesKeyboardProfile'
 import { mobileFilesDecodeState } from './mobileFilesState'
 import {
   XDriveFileExplorer,
@@ -39,7 +40,6 @@ import type {
   XDriveTrashDialogAdapter,
 } from '@xdrive/ui/mui'
 import {
-  xDriveFileExplorerKeyboardProfileFromPlatform,
   xDriveFileExplorerCopyPath,
   xDriveFileExplorerPathLookupPageOptions,
   xDriveFileExplorerLoadChildDirectoryPage,
@@ -88,11 +88,7 @@ type WebSearchResult = XDriveCloudFilesSearchResult<Node>
 const FILE_VIEW_KEY = 'xdrive.files.view_mode'
 const FILE_DETAILS_LAYOUT_KEY = 'xdrive.files.details_layout'
 const FILE_VIEW_PREFERENCES_KEY = 'xdrive.files.view_preferences'
-const FILE_KEYBOARD_PROFILE = xDriveFileExplorerKeyboardProfileFromPlatform(
-  typeof navigator === 'undefined'
-    ? ''
-    : `${navigator.platform} ${navigator.userAgent}`,
-)
+const FILE_KEYBOARD_PROFILE = xDriveWebFilesKeyboardProfile()
 
 type Crumb = { id: number; name: string }
 
