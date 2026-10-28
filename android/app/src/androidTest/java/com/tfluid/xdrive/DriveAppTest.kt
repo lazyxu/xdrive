@@ -2102,12 +2102,18 @@ class DriveAppTest {
         compose.waitUntil(timeoutMillis = 10_000) { controller.state.value.error != null }
         compose.onNodeWithText("假期照片").assertIsDisplayed()
         compose.onNodeWithText("保留上次成功读取的目录。").assertIsDisplayed()
-        compose.onNodeWithText("重试").performClick()
+        // Search/title scroll away. Retry must also remain available at the
+        // failed page edge instead of requiring a full return to list top.
+        compose.onNodeWithTag("files").performScrollToIndex(2)
+        compose.onNodeWithTag("files-page-tail-retry")
+            .assertIsDisplayed().performClick()
         compose.waitUntil(timeoutMillis = 10_000) {
             controller.state.value.offset == 100 && !controller.state.value.loading
         }
-        compose.onNodeWithText("第二页.txt").assertExists()
-        compose.onNodeWithText("假期照片").assertExists()
+        compose.runOnIdle {
+            org.junit.Assert.assertTrue(controller.state.value.items.any { it.id == 2L })
+            org.junit.Assert.assertTrue(controller.state.value.items.any { it.id == 4L })
+        }
     }
 
     @Test fun longPressOnFolderOpensActionsWithoutEnteringIt() {
