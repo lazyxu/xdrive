@@ -1774,6 +1774,7 @@ function FileManager({
 
   const maintenanceBackupPort = useMemo(() => ({
     read: () => api.adminServerBackups(),
+    readSnapshotIndexPage: query => api.adminServerBackupSnapshotPage(query),
     submit: (request: import('../../ui/shared/src/server-backup-admin').XDriveServerBackupRequest) =>
       api.adminServerBackupAction(request),
   }), [api])
