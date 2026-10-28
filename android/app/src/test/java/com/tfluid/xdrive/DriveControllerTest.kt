@@ -4326,6 +4326,108 @@ class DriveControllerTest {
         c.close()
     }
 
+    @Test fun drilldownKeepsExactSignedOwnerBoundsAndReturnsWithoutParentRefetch() = runTest {
+        val worldCell = OwnerBd09Cell(7, 5, 3, 61, 990, 1, 35.505, 139.706)
+        val nested = OwnerBd09Cell(0, 4, 3, 61, 990, 1, 35.505, 139.706)
+        val childBounds = requireNotNull(
+            bd09CellSubBounds(OwnerBd09Bounds.WORLD, worldCell))
+        val api = object : Service() {
+            val queriedBounds = mutableListOf<OwnerBd09Bounds>()
+            val wallBounds = mutableListOf<OwnerBd09Bounds>()
+            override suspend fun placesMapOverview(
+                accessToken: String, bounds: OwnerMapBounds, detail: Boolean,
+            ) = OwnerMapOverview(emptyList(), 0, true)
+            override suspend fun baiduNativeMapCells(
+                accessToken: String, bounds: OwnerBd09Bounds,
+            ): OwnerBd09MapCells {
+                assertEquals("access", accessToken)
+                queriedBounds += bounds
+                return when (bounds) {
+                    OwnerBd09Bounds.WORLD -> OwnerBd09MapCells(listOf(worldCell), 3)
+                    childBounds -> OwnerBd09MapCells(listOf(nested), 3)
+                    else -> throw AssertionError("Unexpected unsigned BD09 viewport $bounds")
+                }
+            }
+            override suspend fun galleryBd09CellPage(
+                accessToken: String, bounds: OwnerBd09Bounds,
+                cell: OwnerBd09Cell, offset: Int, sortBy: String, sortDir: String,
+            ): GalleryPage {
+                assertEquals("access", accessToken)
+                wallBounds += bounds
+                assertEquals(nested, cell)
+                assertEquals("captured", sortBy)
+                assertEquals("desc", sortDir)
+                return GalleryPage(listOf(latestGallery), 1, 0)
+            }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        val originalRows = c.state.value.galleryItems
+        val originalOffset = c.state.value.galleryOffset
+        c.openGalleryMapOverview(); runCurrent()
+        c.openGalleryVerifiedBd09Cells(); runCurrent()
+        assertEquals(listOf(OwnerBd09Bounds.WORLD), api.queriedBounds)
+        c.drillDownGalleryBd09Cell(worldCell); runCurrent()
+        assertEquals(childBounds, c.state.value.galleryBd09Bounds)
+        assertEquals(1, c.state.value.galleryBd09History.size)
+        assertEquals(listOf(OwnerBd09Bounds.WORLD, childBounds), api.queriedBounds)
+        assertEquals(listOf(nested), c.state.value.galleryBd09Cells?.cells)
+        c.openGalleryBd09Cell(nested); runCurrent()
+        assertEquals(listOf(childBounds), api.wallBounds)
+        c.openGalleryViewer(api.latestGallery); runCurrent()
+        c.back(); runCurrent()
+        assertNull(c.state.value.galleryViewer)
+        c.back(); runCurrent()
+        assertNull(c.state.value.galleryMapCellSelected)
+        assertEquals(childBounds, c.state.value.galleryBd09Bounds)
+        c.back(); runCurrent()
+        assertEquals(OwnerBd09Bounds.WORLD, c.state.value.galleryBd09Bounds)
+        assertTrue(c.state.value.galleryBd09History.isEmpty())
+        assertEquals(listOf(worldCell), c.state.value.galleryBd09Cells?.cells)
+        assertEquals(2, api.queriedBounds.size) // parent restored from memory
+        c.back(); runCurrent()
+        assertFalse(c.state.value.galleryMapOpen)
+        assertEquals(originalRows, c.state.value.galleryItems)
+        assertEquals(originalOffset, c.state.value.galleryOffset)
+        assertEquals(2, api.queriedBounds.size)
+        c.close()
+    }
+
+    @Test fun delayedChildBd09ReplyCannotPaintOldOwnerParentAfterBack() = runTest {
+        val worldCell = OwnerBd09Cell(7, 5, 3, 61, 990, 1, 35.505, 139.706)
+        val child = requireNotNull(bd09CellSubBounds(OwnerBd09Bounds.WORLD, worldCell))
+        val pending = CompletableDeferred<OwnerBd09MapCells>()
+        val api = object : Service() {
+            override suspend fun placesMapOverview(
+                accessToken: String, bounds: OwnerMapBounds, detail: Boolean,
+            ) = OwnerMapOverview(emptyList(), 0, true)
+            override suspend fun baiduNativeMapCells(
+                accessToken: String, bounds: OwnerBd09Bounds,
+            ): OwnerBd09MapCells = if (bounds == child)
+                withContext(NonCancellable) { pending.await() }
+            else OwnerBd09MapCells(listOf(worldCell), 3)
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.openGalleryMapOverview(); runCurrent()
+        c.openGalleryVerifiedBd09Cells(); runCurrent()
+        c.drillDownGalleryBd09Cell(worldCell); runCurrent()
+        assertEquals(child, c.state.value.galleryBd09Bounds)
+        assertTrue(c.state.value.discardableReadInFlight)
+        c.galleryBd09BackLevel(); runCurrent()
+        assertEquals(OwnerBd09Bounds.WORLD, c.state.value.galleryBd09Bounds)
+        assertEquals(listOf(worldCell), c.state.value.galleryBd09Cells?.cells)
+        pending.complete(OwnerBd09MapCells(emptyList(), 0)); runCurrent()
+        assertEquals(listOf(worldCell), c.state.value.galleryBd09Cells?.cells)
+        assertNull(c.state.value.error)
+        c.showGalleryGpsOverview(); runCurrent()
+        assertEquals(OwnerBd09Bounds.WORLD, c.state.value.galleryBd09Bounds)
+        assertTrue(c.state.value.galleryBd09History.isEmpty())
+        c.close()
+    }
+
     @Test fun bd09CellAllGalleryAndViewerPagesStayOwnerScopedAndReturnExactOriginal() = runTest {
         val cell = OwnerBd09Cell(7, 5, 3, 61, 990, 1, 35.505, 139.706)
         val other = GalleryAsset(DriveNode(991L, 1, "other.jpg", "file",
