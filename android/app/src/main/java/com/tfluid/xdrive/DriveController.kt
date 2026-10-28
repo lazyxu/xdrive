@@ -1756,6 +1756,9 @@ class DriveController(
             galleryOffset = 0, galleryTotal = 0, galleryTimelineSets = null,
             galleryJumpIndex = null, galleryJumpEpoch = previous.galleryJumpEpoch + 1,
             galleryPageIntent = "", gallerySelected = null, galleryViewer = null)
+        // A successful membership mutation invalidates collection totals. Returning
+        // from that album must re-read them; otherwise the overview spins forever.
+        if (!state.value.galleryAlbumsLoaded) readGalleryAlbums()
     }
 
     /** Current Owner's bounded, loaded Gallery selection; not a query-wide promise. */
