@@ -96,6 +96,12 @@ func (c *Client) AdminStorage(ctx context.Context, input AdminStorageRequest) (j
 	return out, nil
 }
 
+// ValidVerificationHistoryCursor applies the same canonical bounded keyset
+// cursor contract for Server-facing Client calls and Desktop Agent IPC.
+func ValidVerificationHistoryCursor(value string) bool {
+	return validVerificationHistoryCursor(value)
+}
+
 func validVerificationHistoryCursor(value string) bool {
 	if value == "" {
 		return true
