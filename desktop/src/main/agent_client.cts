@@ -3629,8 +3629,11 @@ export class AgentIPCClient {
     return this.request<AgentSource[]>('GET', '/v1/sources')
   }
 
-  deviceBackups() {
-    return this.request<AgentDeviceBackupOverview>('GET', '/v1/device-backups')
+  deviceBackups(signal?: AbortSignal) {
+    // Only the owner-redacted overview GET is disposable; backup execution
+    // and configuration writes retain their independent durable lifecycle.
+    return this.request<AgentDeviceBackupOverview>('GET', '/v1/device-backups',
+      undefined, 10_000, signal)
   }
 
   // The authenticated Go Agent alone verifies this owner-scoped read cursor.
