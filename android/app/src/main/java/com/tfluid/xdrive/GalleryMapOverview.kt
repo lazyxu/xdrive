@@ -2,6 +2,7 @@ package com.tfluid.xdrive
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -73,7 +74,7 @@ internal fun ColumnScope.GalleryMapOverview(
                 else "重新读取 GPS 概览") }
         }
         state.galleryBd09Requested -> when {
-            !state.loading && bd09Cells != null -> GalleryVerifiedBd09Cells(bd09Cells)
+            !state.loading && bd09Cells != null -> GalleryVerifiedBd09Cells(bd09Cells, controller)
             else -> Box(Modifier.weight(1f).fillMaxWidth()
                 .testTag("gallery-map-bd09-loading"), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
@@ -144,7 +145,9 @@ private fun ColumnScope.GalleryGpsSamples(overview: OwnerMapOverview) {
  * A real Baidu basemap/cluster SDK must replace this explicitly labeled
  * visualization when correctly configured and validated. */
 @Composable
-private fun ColumnScope.GalleryVerifiedBd09Cells(result: OwnerBd09MapCells) {
+private fun ColumnScope.GalleryVerifiedBd09Cells(
+    result: OwnerBd09MapCells, controller: DriveController,
+) {
     LazyColumn(
         modifier = Modifier.fillMaxWidth().weight(1f)
             .testTag("gallery-map-bd09-cells"),
@@ -169,7 +172,8 @@ private fun ColumnScope.GalleryVerifiedBd09Cells(result: OwnerBd09MapCells) {
             Surface(color = MaterialTheme.colorScheme.surfaceContainerLow,
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth()
-                    .testTag("gallery-map-bd09-cell-${cell.cellX}-${cell.cellY}")) {
+                    .testTag("gallery-map-bd09-cell-${cell.cellX}-${cell.cellY}")
+                    .clickable { controller.openGalleryBd09Cell(cell) }) {
                 Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Row(Modifier.fillMaxWidth(),
