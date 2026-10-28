@@ -2121,6 +2121,39 @@ class DriveAppTest {
         compose.runOnIdle { org.junit.Assert.assertNull(controller.state.value.selected) }
     }
 
+    @Test fun filesScrollAwayChromePreservesOwnerViewportAndSelectionAccess() {
+        manyFiles = true
+        startAndLogin()
+        // The iOS PWA search/title live in the scroll host, not a fixed
+        // second header that steals 150dp from large directories.
+        compose.onNodeWithTag("files-global-search-input").assertIsDisplayed()
+        compose.onNodeWithTag("files").performScrollToIndex(70)
+        compose.onNodeWithTag("files-item-170").assertIsDisplayed()
+        compose.onNodeWithTag("files-global-search-input").assertDoesNotExist()
+
+        // Selecting a deep item remains accessible through the fixed More
+        // menu even when the large title and search have scrolled offscreen.
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("files-select-from-menu").performClick()
+        compose.onNodeWithTag("files-item-170").assertIsDisplayed().performClick()
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(setOf(170L),
+                controller.state.value.browseSelectedIds)
+        }
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("files-select-from-menu").performClick()
+        compose.runOnIdle {
+            org.junit.Assert.assertFalse(controller.state.value.browseSelectionMode)
+        }
+
+        // Reusing one Owner Range does not re-run a query just to reveal Search.
+        compose.onNodeWithTag("files").performScrollToIndex(0)
+        compose.onNodeWithTag("files-global-search-input").assertIsDisplayed()
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(100, controller.state.value.items.size)
+        }
+    }
+
     @Test fun listGridSwitchRetainsVisibleItemAnchor() {
         manyFiles = true
         startAndLogin()
