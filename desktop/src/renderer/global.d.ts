@@ -920,7 +920,7 @@ declare global {
           Promise<DesktopResult<import('../../../ui/shared/src/server-backup-admin').XDriveServerBackupOperation>>
         cloudAdminAuditRange: (query: import('../../../ui/shared/src').XDriveAdminAuditRangeQuery, requestID?: string) =>
           Promise<DesktopResult<import('../../../ui/shared/src').AuditEventRange>>
-        cloudAdminUsers: () => Promise<DesktopResult<import('../../../ui/shared/src').AdminUser[]>>
+        cloudAdminUsers: (requestID?: string) => Promise<DesktopResult<import('../../../ui/shared/src').AdminUser[]>>
         cloudAdminCreateUser: (input: import('../../../ui/shared/src').XDriveAdminCreateUserInput) =>
           Promise<DesktopResult<import('../../../ui/shared/src').AdminUser>>
         cloudAdminUpdateUser: (id: number, input: import('../../../ui/shared/src').XDriveAdminUpdateUserInput) =>

@@ -2040,8 +2040,9 @@ export default function App({
   }), [status?.server, status?.username])
 
   const adminUsersPort = useMemo<XDriveAdminUsersPort>(() => ({
-    adminUsers: async () => {
-      const result = await window.xdriveDesktop.agent.cloudAdminUsers()
+    adminUsers: async (signal?: AbortSignal) => {
+      const result = await xDriveDesktopViewportRequest(signal, requestID =>
+        window.xdriveDesktop.agent.cloudAdminUsers(requestID))
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
