@@ -101,3 +101,16 @@ test('diagnostic UI reports unreadable response separately from network offline'
   assert.ok(ui.includes("serverResult?.state === 'browser-restricted'"))
   assert.doesNotMatch(source, /Authorization|localStorage|sessionStorage|skipWaiting|window\.location\.reload/)
 })
+
+
+test('UI catches denied AbortController construction and previous-request cancellation', () => {
+  const ui = fs.readFileSync(path.join(root, 'web/src/PwaUpdateSection.tsx'), 'utf8')
+  assert.match(ui, /try \{ controller = new AbortController\(\) \}/)
+  assert.match(ui, /try \{ serverRequestRef\.current\?\.abort\(\) \}/)
+  assert.match(ui, /serverRequestRef\.current = null/)
+  assert.match(ui, /catch \{[\s\S]*?setServerResult\(\{ state: 'browser-restricted' \}\)/)
+  assert.ok(ui.includes('if (serverRequestRef.current !== controller) return'),
+    'obsolete requests must not overwrite a newer diagnostic')
+  assert.ok(ui.includes('setServerChecking(false)'),
+    'failed admission must not strand the busy indicator')
+});

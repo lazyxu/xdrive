@@ -23,18 +23,47 @@ export default function XDrivePwaUpdateSection() {
   useEffect(() => () => {
     const owned = serverRequestRef.current
     serverRequestRef.current = null
-    owned?.abort()
+    try { owned?.abort() }
+    catch { /* Optional browser cancellation must not break the dialog cleanup. */ }
   }, [])
   const checkServer = () => {
-    serverRequestRef.current?.abort()
-    const controller = new AbortController()
+    // A denied previous abort may leave a noncooperative request pending.
+    // Clear its identity before attempting a new explicit user probe.
+    try { serverRequestRef.current?.abort() }
+    catch { /* Old results remain fenced by the owning controller identity. */ }
+    serverRequestRef.current = null
+    let controller: AbortController
+    try { controller = new AbortController() }
+    catch {
+      setServerChecking(false)
+      setServerResult({ state: 'browser-restricted' })
+      return
+    }
+    let signal: AbortSignal
+    try { signal = controller.signal }
+    catch {
+      setServerChecking(false)
+      setServerResult({ state: 'browser-restricted' })
+      return
+    }
     serverRequestRef.current = controller
     setServerChecking(true)
     setServerResult(null)
-    void xDriveProbePwaServer({ signal: controller.signal }).then(result => {
-      if (serverRequestRef.current === controller && !controller.signal.aborted) {
-        setServerResult(result)
+    void xDriveProbePwaServer({ signal }).then(result => {
+      if (serverRequestRef.current !== controller) return
+      try {
+        if (signal.aborted) return
+      } catch {
+        // No permission to read the cancellation state is not evidence
+        // of a verified Server response.
+        setServerResult({ state: 'browser-restricted' })
+        return
       }
+      setServerResult(result)
+    }, () => {
+      // Defensive boundary: the probe normally resolves all failures.
+      if (serverRequestRef.current === controller)
+        setServerResult({ state: 'browser-restricted' })
     }).finally(() => {
       if (serverRequestRef.current === controller) {
         serverRequestRef.current = null
@@ -48,7 +77,7 @@ export default function XDrivePwaUpdateSection() {
         : serverResult?.state === 'access-blocked' ? '服务器或反向代理拒绝了匿名就绪检测，请检查部署配置。'
           : serverResult?.state === 'timed-out' ? '服务器连接检测超时，请检查网络与自建服务状态。'
             : serverResult?.state === 'network-unavailable' ? '无法访问服务器，请检查 DNS、TLS、网络或代理。'
-              : serverResult?.state === 'browser-restricted' ? '浏览器拒绝监听检测取消信号；未发送服务器请求，请检查浏览器权限后重试。'
+              : serverResult?.state === 'browser-restricted' ? '浏览器限制了就绪检测或取消监听；若取消监听不可用，则未发送服务器请求。请检查浏览器权限后重试。'
               : serverResult?.state === 'response-unreadable' ? '已收到服务器响应，但浏览器拒绝读取 HTTP 状态或响应头；无法确认就绪，请检查浏览器限制。'
               : serverResult?.state === 'unexpected-response' ? '服务器返回非预期状态（HTTP ' + serverResult.httpStatus + '）。'
                 : null
