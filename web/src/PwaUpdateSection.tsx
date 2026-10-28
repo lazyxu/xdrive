@@ -48,6 +48,7 @@ export default function XDrivePwaUpdateSection() {
         : serverResult?.state === 'access-blocked' ? '服务器或反向代理拒绝了匿名就绪检测，请检查部署配置。'
           : serverResult?.state === 'timed-out' ? '服务器连接检测超时，请检查网络与自建服务状态。'
             : serverResult?.state === 'network-unavailable' ? '无法访问服务器，请检查 DNS、TLS、网络或代理。'
+              : serverResult?.state === 'browser-restricted' ? '浏览器拒绝监听检测取消信号；未发送服务器请求，请检查浏览器权限后重试。'
               : serverResult?.state === 'unexpected-response' ? '服务器返回非预期状态（HTTP ' + serverResult.httpStatus + '）。'
                 : null
   return (
