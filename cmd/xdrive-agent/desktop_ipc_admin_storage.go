@@ -36,7 +36,7 @@ func validDesktopAdminStorageRequest(input client.AdminStorageRequest) bool {
 		return input.Limit >= 1 && input.Limit <= 50 &&
 			input.Offset == 0 && input.Days == 0 && input.RunID == 0 &&
 			!input.Fresh && input.Kind == "" &&
-			validVerificationHistoryCursor(input.Cursor)
+			client.ValidVerificationHistoryCursor(input.Cursor)
 	case "legacy", "unreferenced", "staging", "cleanup-runs":
 		return input.Limit > 0
 	case "cleanup-failures":
