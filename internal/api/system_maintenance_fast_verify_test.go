@@ -16,15 +16,15 @@ func TestStorageFastVerifyMaintenanceHasIndependentRealTaskAndScope(t *testing.T
 	scheduler, ctx := newSystemMaintenanceTaskScheduler(t)
 	runner := &immediateSystemMaintenanceStorageVerifyRunner{
 		report: maintenance.VerifyReport{
-			Mode: maintenance.VerifyModeFast,
+			Mode:            maintenance.VerifyModeFast,
 			ReferencedFiles: 3, ReferencedVersions: 1, BlobFiles: 2,
 		},
 	}
 	server := &Server{
-		DB: db,
-		BackgroundScheduler: scheduler,
+		DB:                             db,
+		BackgroundScheduler:            scheduler,
 		systemMaintenanceStorageVerify: runner,
-		systemMaintenanceHeartbeat: 20 * time.Millisecond,
+		systemMaintenanceHeartbeat:     20 * time.Millisecond,
 	}
 	run, err := server.requestSystemMaintenanceRun(
 		ctx, meta.SystemMaintenanceKindStorageVerifyFast, background.InitiatorAdmin, 99,
