@@ -219,6 +219,34 @@ Returned byte counts are logical bytes, not guaranteed filesystem-block
 savings. Corrupt/missing CAS, unexpected files, incomplete .partial
 generations, suspicious symlinks or lock contention fail closed.
 
+## Selected v2 snapshot deletion — internal helper foundation
+
+The **internal** `xdrive-backup-repo delete-snapshot --repo PATH --snapshot
+xdrive-backup-YYYYMMDDTHHMMSSZ --yes` path (under development, not exposed
+through the Administrator UI or Host manager yet) selects exactly one committed
+v2 generation. It does **not** translate selection into a keep-last retention
+policy; older and newer generations may both be protected.
+
+This path shares the existing manual prune transaction code. It requires the
+same exclusive `.backup.lock`, validates the entire repository and referenced
+and orphan CAS by SHA-256 before any rename or unlink, independently validates
+the remaining legacy archives, and retains at least one usable committed
+v2 recovery point. It then moves **only** the selected generation into the
+durable `.prune-retired` journal, recalculates references from all surviving
+generations under the same lock, and reclaims only unreferenced repository CAS.
+A corrupt/partial/unknown snapshot, unknown path, missing lock, symlinked
+repository, or last-recovery-point deletion is rejected without a mutation.
+
+A crash after a generation is retired but before the journal is fully consumed
+can require another **explicit** manual prune to finish retiring its content.
+The selected generation must not be automatically replayed or guessed from
+a stale UI selection; report this outcome conservatively.
+
+**Scope:** no automatic v2 GC, no scheduling, no new browser-supplied Host
+command/path, no production storage deletion. Admin/Host integration, end-to-end
+protected confirmation and real recovery acceptance are **not** part of this
+internal helper milestone and require later separately verified changes.
+
 ## Administrator Web / Desktop shared interface (Host-owned Server backups)
 
 The administrator's **备份与系统维护 → 服务器备份与恢复** section

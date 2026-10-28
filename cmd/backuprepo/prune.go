@@ -328,14 +328,33 @@ func validatePruneRetainedArchives(repo string, names []string) error {
 	return nil
 }
 
+// pruneSelectedSnapshot retires exactly one committed v2 generation while
+// preserving every other generation. It shares the complete manual prune
+// transaction, exclusive lock, checksum preflight, CAS reference recount and
+// crash-safe retirement journal; it never removes a live /data object.
+func pruneSelectedSnapshot(repo, snapshot string) (pruneReport, error) {
+	return pruneRepositoryWithSelection(repo, 0, snapshot)
+}
+
 func pruneRepository(repo string, keepLast int) (pruneReport, error) {
+	return pruneRepositoryWithSelection(repo, keepLast, "")
+}
+
+func pruneRepositoryWithSelection(repo string, keepLast int, selected string) (pruneReport, error) {
 	out := pruneReport{
 		Mode: "manual_confirmed", KeepLast: keepLast,
 		RetiredSnapshots: []string{}, Verification: "exclusive_lock_and_full_cas_sha256",
 		Automatic: false,
 	}
-	if keepLast < 1 {
-		return out, errors.New("manual prune requires keep-last >= 1")
+	if selected == "" {
+		if keepLast < 1 {
+			return out, errors.New("manual prune requires keep-last >= 1")
+		}
+	} else {
+		if keepLast != 0 || !canonicalPruneSnapshotName(selected) {
+			return out, errors.New("manual selected prune requires an exact committed v2 snapshot name")
+		}
+		out.Mode = "manual_selected"
 	}
 	// The helper itself, not just the host wrapper, owns the flock. Even a
 	// directly invoked binary must coordinate with v2 writers and readers.
@@ -352,9 +371,39 @@ func pruneRepository(repo string, keepLast int) (pruneReport, error) {
 	out.RecoveredTransactions = len(pending)
 	// Preflight BEFORE any rename or unlink. This hashes each unique CAS
 	// object once, in addition to verifying all committed snapshot metadata.
-	plan, err := planRetentionWithMode(repo, keepLast, "deep")
+	// First verify EVERY committed index and every repository CAS object under
+	// the same exclusive lock, irrespective of which generation was selected.
+	// A keep-last=1 deep plan is only a full-repository preflight for selected
+	// deletion; its oldest-first drop set must NEVER be reused as the target.
+	planKeepLast := keepLast
+	if selected != "" {
+		planKeepLast = 1
+	}
+	plan, err := planRetentionWithMode(repo, planKeepLast, "deep")
 	if err != nil {
 		return out, err
+	}
+	if selected != "" {
+		keep := make([]string, 0, len(plan.KeepSnapshots)+len(plan.DropCandidates))
+		found := false
+		for _, name := range append(plan.DropCandidates, plan.KeepSnapshots...) {
+			if name == selected {
+				found = true
+				continue
+			}
+			keep = append(keep, name)
+		}
+		if !found {
+			return out, errors.New("selected v2 generation is not a committed snapshot in this repository")
+		}
+		if len(keep) == 0 {
+			return out, errors.New("cannot delete the last committed v2 recovery point")
+		}
+		plan.KeepSnapshots = keep
+		plan.DropCandidates = []string{selected}
+		// Compatibility field now reports the actual number retained, not a
+		// keep-last policy: no retention policy is changed by this operation.
+		out.KeepLast = len(keep)
 	}
 	// A valid pruning attempt always retains at least one committed restore
 	// point. An empty active snapshot set plus a retirement journal could be
