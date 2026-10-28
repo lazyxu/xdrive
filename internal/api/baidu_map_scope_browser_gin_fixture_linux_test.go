@@ -634,6 +634,22 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 			}
 			w.WriteHeader(http.StatusNoContent)
 			return
+		case "source-revision-stale":
+			// An actual current Owner Node revision changes, while its older
+			// MediaMetadata and derived BD09 Position remain at revision 1.
+			// The production current-source SQL must hide that old map member
+			// without a new Consent or provider-conversion permission gate.
+			update = db.Model(&meta.Node{}).
+				Where("id = ? AND owner_id = ? AND revision = ?",
+					familyCandidateAssets[0].PrimaryNodeID, owner.ID, 1).
+				Update("revision", 2)
+		case "source-revision-restore":
+			// Fixture-only teardown: restore original version. Rebuilding a
+			// real replaced file still requires normal media reindex in product.
+			update = db.Model(&meta.Node{}).
+				Where("id = ? AND owner_id = ? AND revision IN ?",
+					familyCandidateAssets[0].PrimaryNodeID, owner.ID, []uint64{1, 2}).
+				Update("revision", 1)
 		case "session-revoked":
 			update = db.Model(&meta.User{}).Where("id = ?", owner.ID).
 				Update("session_version", 2)
