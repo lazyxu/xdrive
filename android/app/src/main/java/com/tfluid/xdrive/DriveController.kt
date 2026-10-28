@@ -965,6 +965,9 @@ class DriveController(
                 complete = true
                 finishNativeTransfer(transferId, NativeTransferStatus.COMPLETED, written)
                 verifiedTransferRecovery(recovery, ticket)
+                // Keystore cleanup is non-cancellable after a true ACK; Owner
+                // navigation may still have superseded this UI during IO.
+                checkCurrent(ticket)
                 mutableState.value = state.value.copy(
                     fileDownloadBytes = written, fileDownloadActive = false,
                     fileDownloadSaved = true, error = null)
@@ -1041,6 +1044,8 @@ class DriveController(
             // Browse reconciliation can fail without making the upload uncertain.
             finishNativeTransfer(transferId, NativeTransferStatus.COMPLETED, size)
             verifiedTransferRecovery(recovery, ticket)
+            // Never commit old Owner UI after durable cleanup yields back.
+            checkCurrent(ticket)
             mutableState.value = state.value.copy(
                 fileUploadActive = false, fileUploadCommitted = true,
                 fileUploadBytes = size)
