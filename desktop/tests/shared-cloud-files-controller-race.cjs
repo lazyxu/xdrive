@@ -207,6 +207,154 @@ test('changing onError identity cannot reinitialize Cloud Files back to My Files
 })
 
 
+// Exercise the real Web app route callback instead of assuming that a root
+// reinitialization is harmless. A transport-only auth renewal must never emit
+// a new root directory into its URL: ?dir=8 must remain the active route.
+function actualWebDirectoryRouteCallback(route, launchWebApp) {
+  const filename = path.join(repo, 'web', 'src', 'App.tsx')
+  const source = fs.readFileSync(filename, 'utf8')
+  const tree = ts.createSourceFile(filename, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  let callback = null
+  const visit = node => {
+    if (ts.isJsxAttribute(node) && node.name.text === 'onDirectoryChange' &&
+        node.initializer && ts.isJsxExpression(node.initializer) &&
+        node.initializer.expression && ts.isArrowFunction(node.initializer.expression)) {
+      callback = node.initializer.expression.getText(tree)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(tree)
+  assert.ok(callback, 'must test the shipped Web App directory-to-URL callback')
+  const js = ts.transpileModule('const callback = ' + callback + ';', {
+    compilerOptions: { module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
+    fileName: filename,
+  }).outputText
+  return new Function('route', 'launchWebApp', js + '\nreturn callback')(route, launchWebApp)
+}
+
+test('a minutes-later Cookie/JWT refresh rebinds the Web port but NEVER rewrites ?dir=8 to root 1', async () => {
+  const runtime = createHookRuntime()
+  const useController = loadCloudFilesController(runtime.react)
+  const sort = { key: 'name', direction: 'asc' }
+  const grouping = { groupBy: 'none', foldersFirst: true }
+  const calls = []
+  const route = { app: 'files', params: { dir: 8 } }
+  const replaced = []
+  const onDirectoryChange = actualWebDirectoryRouteCallback(route, (next, options) => {
+    replaced.push({ next, options })
+    route.params = next.params
+  })
+  const portFor = (generation) => ({
+    getRoot: async () => {
+      calls.push([generation, 'root'])
+      return { id: 1, name: 'Owner root' }
+    },
+    getRange: async (parentID, offset, limit, incomingSort, includeCount, incomingGrouping) => {
+      calls.push([generation, 'range', parentID, incomingSort.key, incomingGrouping.groupBy])
+      return {
+        items: [{ id: parentID * 10, name: generation + '.txt' }],
+        parent_id: parentID, total_count: 1, total_count_included: true,
+        offset, limit, groups: [],
+      }
+    },
+    getQuota: async () => ({
+      quota_bytes: 100, used_bytes: 10, available_bytes: 90, reserved_bytes: 0,
+    }),
+  })
+  let port = portFor('initial-owner-session')
+  const render = () => runtime.render(() => useController({
+    port, enabled: true, lifecycleKey: 'same-server:same-owner',
+    defaultSort: sort, quotaRefreshIntervalMs: 0, changePollIntervalMs: 0,
+    onError: error => { throw error },
+  }))
+
+  render()
+  await flushAsync()
+  let current = render()
+  assert.equal(current.current?.id, 1)
+  // Deep link finishes one verified first-page GET; its URL is authoritative.
+  assert.equal(await current.loadDirectory(8, [
+    { id: 1, name: 'Owner root' }, { id: 8, name: 'Target folder' },
+  ], sort, grouping), true)
+  current = render()
+  assert.equal(current.current?.id, 8)
+  onDirectoryChange(current.current.id)
+  assert.equal(route.params.dir, 8)
+  assert.deepEqual(replaced, [])
+
+  // Same Owner, new short-lived Access token and new XDriveApi/port. This is
+  // the exact rebind triggered by auth refresh, not a user navigation intent.
+  port = portFor('rotated-cookie-session')
+  render()
+  await flushAsync()
+  current = render()
+  if (current.current) onDirectoryChange(current.current.id)
+  assert.equal(current.current?.id, 8, 'renewed API must retain the accepted folder')
+  assert.deepEqual(current.crumbs.map(crumb => crumb.id), [1, 8])
+  assert.equal(current.items[0]?.name, 'rotated-cookie-session.txt',
+    'same Owner directory is revalidated through the NEW authorized transport')
+  assert.equal(route.params.dir, 8)
+  assert.deepEqual(replaced, [], 'there must be zero spurious root URL replacements')
+  assert.deepEqual(calls.filter(call => call[1] === 'root'), [
+    ['initial-owner-session', 'root'],
+  ])
+  assert.deepEqual(calls.filter(call => call[0] === 'rotated-cookie-session'), [
+    ['rotated-cookie-session', 'range', 8, 'name', 'none'],
+  ])
+
+  // Explicit user action still navigates to root and updates the URL once.
+  assert.equal(await current.loadDirectory(1, [{ id: 1, name: 'Owner root' }],
+    sort, grouping), true)
+  current = render()
+  onDirectoryChange(current.current.id)
+  assert.equal(route.params.dir, 1)
+  assert.equal(replaced.length, 1)
+  assert.deepEqual(replaced[0].options, { replace: true })
+})
+
+test('failed refresh of the current Owner folder cannot trigger a fallback root URL', async () => {
+  const runtime = createHookRuntime()
+  const useController = loadCloudFilesController(runtime.react)
+  const sort = { key: 'name', direction: 'asc' }
+  const errors = []
+  let rootLoads = 0
+  let activePort = {
+    getRoot: async () => { rootLoads++; return { id: 1 } },
+    getRange: async (id, offset, limit) => ({
+      items: [{ id: id * 10, name: 'existing.txt' }],
+      total_count: 1, total_count_included: true, offset, limit, groups: [],
+    }),
+    getQuota: async () => ({ quota_bytes: 100, used_bytes: 10,
+      available_bytes: 90, reserved_bytes: 0 }),
+  }
+  const render = () => runtime.render(() => useController({
+    port: activePort, enabled: true, lifecycleKey: 'server:owner-a',
+    defaultSort: sort, quotaRefreshIntervalMs: 0, changePollIntervalMs: 0,
+    onError: error => errors.push(error.message),
+  }))
+  render()
+  await flushAsync()
+  let current = render()
+  await current.loadDirectory(8, [{ id: 1 }, { id: 8 }], sort)
+  current = render()
+  assert.equal(current.current.id, 8)
+  activePort = {
+    ...activePort,
+    getRoot: async () => { rootLoads++; return { id: 1 } },
+    getRange: async id => { throw new Error('Synthetic temporary denied Range for ' + id) },
+  }
+  render()
+  await flushAsync()
+  current = render()
+  assert.equal(current.current?.id, 8)
+  assert.equal(current.items[0]?.name, 'existing.txt',
+    'do not replace a validated listing with a fictitious root on read failure')
+  assert.equal(rootLoads, 1, 'never silently navigate to My Files on transient re-auth read error')
+  assert.deepEqual(errors, ['Synthetic temporary denied Range for 8'])
+})
+
+
 test('disabling Cloud Files invalidates a pending quota refresh completion', async () => {
   const runtime = createHookRuntime()
   const useController = loadCloudFilesController(runtime.react)
