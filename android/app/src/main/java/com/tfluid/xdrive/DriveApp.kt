@@ -402,6 +402,20 @@ internal fun AccountMenu(state: DriveState, controller: DriveController, checkUp
                     !state.galleryMetadataWriteAttempted &&
                     !state.galleryAlbumCreateAttempted && !state.galleryAlbumEditAttempted,
                 onClick = { expanded = false; controller.openFilesApp() })
+            // PWA keeps file selection reachable after its large title and
+            // search scroll offscreen. Never strand Selection in a lazy header.
+            if (state.screen == Screen.FILES &&
+                state.filesSection == FilesSection.BROWSE) DropdownMenuItem(
+                text = { Text(if (state.browseSelectionMode) "完成选择" else "选择文件") },
+                enabled = !state.loading && state.loaded &&
+                    !state.browseBatchWriteAttempted && state.destinationKind == null &&
+                    !state.hasActiveNativeTransfer(),
+                modifier = Modifier.testTag("files-select-from-menu"),
+                onClick = {
+                    expanded = false
+                    controller.setBrowseSelectionMode(!state.browseSelectionMode)
+                },
+            )
             if (fileView != null) {
                 if (onUpload != null) DropdownMenuItem(
                     text = { Text("上传文件") },
