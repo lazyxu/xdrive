@@ -172,6 +172,10 @@ test('camera resize requires fresh Owner Cell before reopening actual photo draw
   assert.match(driver,/sheetGeometry\.bottom<=sheetGeometry\.mapBottom-8/)
   assert.match(driver,/sheetGeometry\.bottom<=sheetGeometry\.screen-8/)
   assert.match(driver,/window\.__mapProbe\.queries\.length>before/)
+  assert.match(driver,/const openFreshCameraCell=async\(\)=>/)
+  assert.match(driver,/data-xdrive-places-cluster-list/)
+  assert.match(driver,/await openFreshCameraCell\(\)/)
+  assert.match(driver,/await list\.locator\('button'\)\.first\(\)\.click\(\)/)
   assert.doesNotMatch(driver,/await page\.setViewportSize\(\{width:844,height:390\}\)\s*const sheetGeometry/,
     'stale pre-rotation drawer must not be reused')
 })
