@@ -24,7 +24,10 @@ function browser({ denied = null, supported = true } = {}) {
       if (denied === 'channel') throw new Error('SecurityError: BroadcastChannel constructor denied')
       this.name = name; this.closed = false
     }
-    addEventListener(name, fn) { registered.push([name, fn]) }
+    addEventListener(name, fn) {
+      if (denied === 'channel-listener') throw new Error('SecurityError: Channel listener denied')
+      registered.push([name, fn])
+    }
     postMessage(message) { outbound.push(message) }
     close() { this.closed = true }
   }
@@ -38,8 +41,14 @@ function browser({ denied = null, supported = true } = {}) {
   const events = []
   const win = {
     isSecureContext: true,
-    addEventListener(name) { events.push(name) },
-    setInterval() {},
+    addEventListener(name) {
+      if (denied === name || denied === 'window-events')
+        throw new Error('SecurityError: Window event denied: ' + name)
+      events.push(name)
+    },
+    setInterval() {
+      if (denied === 'interval') throw new Error('SecurityError: timer denied')
+    },
   }
   if (denied === 'secure-context') {
     Object.defineProperty(win, 'isSecureContext', {
@@ -48,7 +57,10 @@ function browser({ denied = null, supported = true } = {}) {
   }
   const env = {
     exports, window: win,
-    document: { addEventListener(name) { events.push(name) } },
+    document: { addEventListener(name) {
+      if (denied === name) throw new Error('SecurityError: Document event denied: ' + name)
+      events.push(name)
+    } },
     crypto,
     require(name) {
       assert.equal(name, './pwaWorkloadSafety')
@@ -116,4 +128,27 @@ test('PWA Safari denied secure-context getter cannot break pre-React peer startu
   assert.equal(app.snapshot().knownPeerBusy, false)
   assert.equal(app.outbound.length, 0)
   assert.deepEqual(app.events, [])
+})
+
+for (const denied of ['pageshow', 'pagehide', 'visibilitychange', 'interval', 'window-events']) {
+  test('PWA restricted WebKit ' + denied + ' hint denial cannot prevent healthy peer status', () => {
+    const app = browser({ denied })
+    assert.doesNotThrow(app.start)
+    assert.equal(app.snapshot().available, true, 'working channel remains observable')
+    assert.equal(app.registered.length, 1, 'one message listener remains active')
+    assert.equal(app.outbound.length, 2, 'initial hello + anonymized status still sent')
+    const expected = ['pageshow', 'pagehide', 'visibilitychange'].filter(name =>
+      name !== denied && !(denied === 'window-events' && name !== 'visibilitychange'))
+    assert.deepEqual(app.events, expected)
+    assert.doesNotMatch(JSON.stringify(app.outbound), /cookie|token|Authorization|node_id|file_path/)
+  })
+}
+
+test('PWA denied BroadcastChannel message listener closes partial channel without false peer coverage', () => {
+  const app = browser({ denied: 'channel-listener' })
+  assert.doesNotThrow(app.start)
+  assert.equal(app.snapshot().available, false)
+  assert.equal(app.snapshot().recentlyObservedPeers, 0)
+  assert.deepEqual(app.events, [])
+  assert.equal(app.outbound.length, 0)
 })
