@@ -8,6 +8,10 @@ on:
       - 'ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx'
       - 'ui/shared/src/mui/MediaGalleryPlacesPhotoDrawer.tsx'
       - 'desktop/tests/gallery-places-photo-paging.cjs'
+      - 'ui/shared/src/media-gallery-places-photo-drawer.ts'
+      - 'ui/shared/src/mui/MediaGallery.tsx'
+      - 'desktop/scripts/gallery-places-dual-host-chromium.*'
+      - 'desktop/tests/gallery-places-ios27-photo-drawer.cjs'
   push:
     branches: [master]
     paths:
@@ -16,6 +20,10 @@ on:
       - 'ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx'
       - 'ui/shared/src/mui/MediaGalleryPlacesPhotoDrawer.tsx'
       - 'desktop/tests/gallery-places-photo-paging.cjs'
+      - 'ui/shared/src/media-gallery-places-photo-drawer.ts'
+      - 'ui/shared/src/mui/MediaGallery.tsx'
+      - 'desktop/scripts/gallery-places-dual-host-chromium.*'
+      - 'desktop/tests/gallery-places-ios27-photo-drawer.cjs'
   workflow_dispatch:
 
 permissions:
