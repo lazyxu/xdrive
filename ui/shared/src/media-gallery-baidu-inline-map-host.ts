@@ -105,6 +105,10 @@ export function xDriveMountBaiduInlineMap<T>(
   let cells: readonly XDriveTrustedIsolatedMapCell<T>[] = []
   let coveredSelections = new Set<T>()
   let pendingViewport: ReturnType<typeof setTimeout> | null = null
+  let observedSize: {width:number;height:number} | null = null
+  let sizeObserver: ResizeObserver | null = null
+  let windowResizeFallback = false
+  let resizeRevoked = false
   let starting: Promise<boolean> | null = null
 
   const clearLabels = () => {
@@ -217,6 +221,43 @@ export function xDriveMountBaiduInlineMap<T>(
     }, 500)
   }
   const stopViewport = () => { if (alive && ready) invalidate() }
+  // A responsive container can change without Baidu firing move/zoom events
+  // (orientation, 899/900 breakpoint or a Desktop sidebar resize). Old
+  // pointToPixel results belong to the prior CSS viewport and MUST NOT stay
+  // attached to current Owner photo buttons. Reuse the exact same bounded,
+  // debounced authenticated Camera /cells flow as a native map gesture.
+  const refreshChangedSize = () => {
+    if (!alive || !ready || !map) return
+    const width = Math.round(canvas.clientWidth)
+    const height = Math.round(canvas.clientHeight)
+    if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) ||
+        width < 120 || height < 120 || width > 4096 || height > 4096) return
+    if (!observedSize) { observedSize = {width,height}; return }
+    if (observedSize.width === width && observedSize.height === height) return
+    observedSize = {width,height}
+    // Only one invalidation for a rapid resize sequence; the final size
+    // still determines the single debounced authoritative camera Range.
+    if (!resizeRevoked) { invalidate(); resizeRevoked = true }
+    scheduleViewport()
+  }
+  const observeCanvasSize = () => {
+    refreshChangedSize() // Seed first dimensions; never cancel on observe().
+    const Observer = (browser as Window & {ResizeObserver?: typeof ResizeObserver}).ResizeObserver
+    if (typeof Observer === 'function') {
+      try {
+        sizeObserver = new Observer(refreshChangedSize)
+        sizeObserver.observe(canvas)
+        return
+      } catch {
+        sizeObserver?.disconnect()
+        sizeObserver = null
+      }
+    }
+    if (typeof browser.addEventListener === 'function') {
+      browser.addEventListener('resize',refreshChangedSize)
+      windowResizeFallback = true
+    }
+  }
   const listeners: Array<{event:EventName; callback:()=>void}> = [
     {event:'movestart',callback:stopViewport},
     {event:'zoomstart',callback:stopViewport},
@@ -229,6 +270,12 @@ export function xDriveMountBaiduInlineMap<T>(
     lifetime.abort()
     generation++
     clearTimer()
+    sizeObserver?.disconnect()
+    sizeObserver = null
+    if (windowResizeFallback) {
+      browser.removeEventListener('resize',refreshChangedSize)
+      windowResizeFallback = false
+    }
     clearLabels()
     clearProjection()
     cells = []
@@ -307,6 +354,7 @@ export function xDriveMountBaiduInlineMap<T>(
           if (!renderCells()) return false
           options.onMapReady?.()
           scheduleViewport()
+          observeCanvasSize()
           return true
         } catch { return false }
       })()
@@ -329,6 +377,7 @@ export function xDriveMountBaiduInlineMap<T>(
       generation++
       cells = [...next]
       coveredSelections.clear()
+      resizeRevoked = false
       return renderCells()
     },
     setPhotoCoverSelections(selections) {
