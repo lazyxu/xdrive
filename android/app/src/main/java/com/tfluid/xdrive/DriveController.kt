@@ -294,7 +294,11 @@ class DriveController(
     private suspend fun beginTransferRecovery(
         kind: NativeTransferKind, generationTicket: Long,
     ): RecoveryCheckpoint? {
-        val bridge = sessionPersistence?.transferRecovery() ?: return null
+        val bridge = try {
+            sessionPersistence?.transferRecovery()
+        } catch (_: Exception) {
+            throw NativeTransferCheckpointFailure()
+        } ?: return null
         val owner = state.value
         if (session == null || owner.server.isBlank() || owner.username.isBlank())
             throw NativeTransferCheckpointFailure()
@@ -336,7 +340,12 @@ class DriveController(
     /** Read only current authenticated Owner notices, never cross-account
      * metadata. A slow/corrupt store must not block page rendering. */
     fun refreshTransferRecoveryNotices() {
-        val bridge = sessionPersistence?.transferRecovery() ?: return
+        val bridge = try {
+            sessionPersistence?.transferRecovery()
+        } catch (_: Exception) {
+            mutableState.value = state.value.copy(transferRecoveryIssue = true)
+            return
+        } ?: return
         val snapshot = state.value
         if (session == null || snapshot.username.isBlank() ||
             snapshot.screen !in setOf(Screen.FILES, Screen.GALLERY, Screen.TRASH)) return
@@ -366,7 +375,12 @@ class DriveController(
         if (snapshot.interruptedNativeTransfers.none { it.id == id } ||
             snapshot.transferRecoveryClearingId != null ||
             snapshot.hasActiveNativeTransfer() || session == null) return
-        val bridge = sessionPersistence?.transferRecovery() ?: return
+        val bridge = try {
+            sessionPersistence?.transferRecovery()
+        } catch (_: Exception) {
+            mutableState.value = snapshot.copy(transferRecoveryIssue = true)
+            return
+        } ?: return
         val ticket = generation
         mutableState.value = snapshot.copy(transferRecoveryClearingId = id)
         scope.launch {
