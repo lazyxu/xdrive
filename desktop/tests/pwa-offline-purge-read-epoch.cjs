@@ -9,7 +9,7 @@ const filename = path.resolve(__dirname, '../../web/src/pwaOfflineDirectory.ts')
 const source = fs.readFileSync(filename, 'utf8')
 const compiled = ts.transpileModule(source, {
   fileName: filename, reportDiagnostics: true,
-  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, removeComments: true },
 })
 assert.deepEqual((compiled.diagnostics || [])
   .filter(x => x.category === ts.DiagnosticCategory.Error)
@@ -180,5 +180,7 @@ test('unrevoked opted-in history remains available but never revalidated as live
 
 test('read fences do not persist or cache private media bytes', () => {
   assert.equal((source.match(/const readEpoch = offlinePurgeEpoch/g) || []).length, 3)
-  assert.doesNotMatch(source, /caches\.open\s*\(|CacheStorage|localStorage\.setItem/)
+  // Check transpiled executable code: the source's security-policy comment
+  // mentions CacheStorage, but no runtime path may access it or localStorage.
+  assert.doesNotMatch(compiled.outputText, /caches\.open\s*\(|CacheStorage|localStorage\.setItem/)
 })
