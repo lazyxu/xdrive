@@ -45,9 +45,13 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     val gallerySaveable = rememberSaveableStateHolder()
     val filesSaveable = rememberSaveableStateHolder()
     val filesStateKey = "files:${state.server}:${state.username}"
-    // Keep scroll/selection viewport during the scoped Files -> Gallery Viewer.
-    // Destroy saveable state on Owner change or leaving Files for normal Gallery.
-    if (state.screen == Screen.FILES || state.viewerReturnToFiles) {
+    // Keep only the UI viewport through Files -> Gallery/Trash -> Files for
+    // the *same authenticated session*. The Controller retains the verified
+    // directory rows; discarding this holder on ordinary app switching instead
+    // resets the Lazy list/grid to item zero. Logout, server/Owner change and
+    // forced reauthentication still dispose it (including stale folder IDs).
+    if (state.screen == Screen.FILES || state.screen == Screen.GALLERY ||
+        state.screen == Screen.TRASH || state.viewerReturnToFiles) {
         DisposableEffect(filesStateKey) {
             onDispose { filesSaveable.removeState(filesStateKey) }
         }
