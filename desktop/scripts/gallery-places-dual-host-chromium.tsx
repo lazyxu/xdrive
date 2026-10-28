@@ -35,6 +35,10 @@ const videoPosterMode = new URLSearchParams(location.search).get('map_h264') ===
 // 72px target. Only the largest verified React photo cover should paint.
 const mixedMarkerMap = !genuineGin &&
   new URLSearchParams(location.search).get('mixed_markers') === '1'
+// Independent 28-photo cluster: the shared Gallery Dialog must load all
+// 28 through the bounded 48-item Owner Range rather than previewing 12.
+const albumDialog28 = !genuineGin &&
+  new URLSearchParams(location.search).get('album_dialog_28') === '1'
 const realHEICMode = genuineGin &&
   new URLSearchParams(location.search).get('map_real_heic') === '1'
 const realLIVPMode = genuineGin &&
@@ -106,7 +110,7 @@ const pageFor = (bounds:Bounds, favorite:boolean) => {
   const x = Math.min(7,Math.max(0,Math.floor(offset/(width/8))))
   const y = Math.min(7,Math.max(0,Math.floor((locationPoint.latitude-bounds.south)/
     ((bounds.north-bounds.south)/8))))
-  const count = favorite ? 3 : 9
+  const count = albumDialog28 ? 28 : favorite ? 3 : 9
   const first={cell_x:x,cell_y:y,photo_count:count,asset_id:33,node_id:75,
     node_revision:2,latitude:locationPoint.latitude,longitude:locationPoint.longitude,
     ...(videoPosterMode?{media_kind:'video' as const}:{})}

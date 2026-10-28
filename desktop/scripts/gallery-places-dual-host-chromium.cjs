@@ -59,6 +59,7 @@ const sdkStub='('+function sdkFactory(){
   class BaiduMap {
     constructor(canvas){this.canvas=canvas;this.center=new Point(119.975,30.135)
       this.zoom=12;this.overlays=[];this.maxOverlays=0;this.listeners=new Map()
+      this.panOffset={x:0,y:0}
       // Public, synthetic SDK state only; never Owner tokens, GPS or URLs.
       ;(window.__xdriveSyntheticMapInstances ||= []).push(this)}
     centerAndZoom(point,zoom){this.center=point;this.zoom=zoom}
@@ -81,8 +82,8 @@ const sdkStub='('+function sdkFactory(){
       // landscape tests accidentally accept stale pre-resize projections.
       const width=Math.round(this.canvas?.clientWidth||0)
       const height=Math.round(this.canvas?.clientHeight||0)
-      return {x:width>=120?Math.round(width/2):180,
-        y:height>=120?Math.round(height/2):180}
+      return {x:(width>=120?Math.round(width/2):180)+this.panOffset.x,
+        y:(height>=120?Math.round(height/2):180)+this.panOffset.y}
     }
     destroy(){this.overlays=[];this.listeners.clear()}
   }
