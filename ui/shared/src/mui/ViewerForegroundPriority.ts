@@ -32,6 +32,19 @@ export function xDriveCurrentForegroundPage(): string | null {
   return foregroundPage
 }
 
+/** Whether this renderer's visible content is waiting for a newer, accepted
+ * first Range. This is only a local presentation state: it carries no Owner,
+ * media identity, path, token or permission to cancel durable work.
+ */
+export function xDriveForegroundContentTransitionPending(
+  pageKinds: string | readonly string[],
+): boolean {
+  const page = foregroundPage
+  const kinds = typeof pageKinds === 'string' ? [pageKinds] : pageKinds
+  return Boolean(page && kinds.some(kind => kind && page.endsWith(':' + kind)) &&
+    contentTransitionPending(page))
+}
+
 /** An accepted page transition: old transient reads yield before new paint.
  * This never sends a signal to Server, Agent, durable jobs or another tab.
  */
