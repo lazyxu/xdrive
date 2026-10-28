@@ -134,13 +134,16 @@ test('Desktop availability is Windows-only and preserves shared sparse collectio
 })
 
 test('Desktop maps CfAPI state to shared Explorer semantics and management actions', () => {
-  for (const label of [
-    '已同步',
-    '待同步',
-    '始终保留在此设备上',
-    '释放空间',
-  ]) {
-    assert.ok(desktopExplorer.includes(label), 'Desktop availability action/status missing: ' + label)
+  // The pure state labels moved into shared UI; Desktop still delegates to
+  // that exact helper and retains its native keep/release Agent actions.
+  for (const label of ['已同步', '待同步', '正在同步']) {
+    assert.ok(sharedHydration.includes(label),
+      'shared device availability status label missing: ' + label)
+  }
+  assert.ok(desktopExplorer.includes('xDriveFileExplorerDeviceStatusLabel(state, syncing)'),
+    'Desktop must use the exact shared status projection')
+  for (const label of ['始终保留在此设备上', '释放空间']) {
+    assert.ok(desktopExplorer.includes(label), 'Desktop availability action missing: ' + label)
   }
   for (const label of [
     '正在同步',
