@@ -94,27 +94,43 @@ test('disabled native-like Host actions use the same menu and shortcut boundary'
 
 test('Host denies even custom menu actions that supply apparently live callbacks', () => {
   const unavailableActions = {
+    rename: 'DSM Owner cannot rename',
     delete: 'DSM Owner cannot delete',
+    cut: 'DSM Owner cannot cut',
+    copy: 'DSM Owner cannot copy',
+    moveTo: 'DSM Owner cannot move',
+    copyTo: 'DSM Owner cannot copy to another folder',
     paste: 'DSM Owner cannot paste',
+    createFolder: 'DSM Owner cannot create folders',
+    uploadFiles: 'DSM Owner cannot upload files',
+    uploadFolder: 'DSM Owner cannot upload folders',
     manageTags: 'DSM Owner cannot edit tags',
   }
   const reason = actualCallback('hostUnavailableMenuReason', { unavailableActions })
   const protect = actualCallback('protectHostMenuItems', {
     hostUnavailableMenuReason: reason,
   })
+  const deniedIDs = [
+    'rename', 'delete', 'delete-selected', 'cut', 'copy', 'move-to', 'copy-to',
+    'paste', 'tags', 'new-folder', 'create-folder', 'upload', 'upload-folder',
+  ]
+  const readIDs = ['open', 'download', 'properties']
   const calls = []
-  const supplied = ['delete', 'paste', 'tags', 'open'].map(id => ({
+  const supplied = [...deniedIDs, ...readIDs].map(id => ({
     id, label: id, onSelect: () => calls.push(id),
   }))
   const guarded = protect(supplied)
-  for (const action of guarded.slice(0, 3)) {
-    assert.equal(action.disabled, true)
-    assert.ok(action.disabledReason, 'disabled menu must explain its current Host restriction')
+  for (const [index, action] of guarded.entries()) {
+    if (index < deniedIDs.length) {
+      assert.equal(action.disabled, true, action.id + ' must be Host-denied')
+      assert.ok(action.disabledReason, 'disabled menu must explain its current Host restriction')
+    } else {
+      assert.equal(action.disabled, undefined, action.id + ' remains read-only')
+    }
     action.onSelect()
   }
-  assert.deepEqual(calls, [], 'a custom caller cannot bypass explicit denied Host mutations')
-  guarded[3].onSelect()
-  assert.deepEqual(calls, ['open'], 'authenticated read/open remains available')
+  assert.deepEqual(calls, readIDs,
+    'custom callbacks cannot bypass denied writes, while authenticated reads remain available')
   assert.ok(source.includes('protectHostMenuItems([...backgroundMenuItems])'),
     'background menu must use the same Host deny boundary')
   assert.ok(source.includes('...protectHostMenuItems((getItemMenuItems?.(inspectorItem)'),
