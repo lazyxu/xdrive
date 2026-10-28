@@ -2439,10 +2439,6 @@ export function XDriveMediaGalleryPage({
       xDriveClearPlacesDrawerViewerReturn(preferenceScope)
     }
     xDriveClearBaiduViewportViewerReturn(preferenceScope)
-    nativeCellOpenAbort.current?.abort()
-    const controller = new AbortController()
-    nativeCellOpenAbort.current = controller
-    const request = ++requestID.current
     const approved=xDriveCopyBaiduMapPhotoScope(
       returning?.photoScope ?? fromMap ?? mapPhotoScopeRef.current)
     if(!approved || (!returning && fromMap &&
@@ -2453,6 +2449,12 @@ export function XDriveMediaGalleryPage({
       dir:approved.filters.sort_dir ?? 'desc',
     }
     if(sort.by!==approved.filters.sort_by || sort.dir!==approved.filters.sort_dir)return
+    // Only an admitted, validated Owner scope may preempt a previous Range.
+    firstContentRangeAbort.current?.abort()
+    nativeCellOpenAbort.current?.abort()
+    const controller = new AbortController()
+    nativeCellOpenAbort.current = controller
+    const request = ++requestID.current
     if(returning) {
       mapPhotoScopeRef.current=approved
       setBaiduPhotoScopeOwner({owner:preferenceScope,value:approved})
@@ -2605,10 +2607,6 @@ export function XDriveMediaGalleryPage({
       xDriveClearBaiduViewportViewerReturn(preferenceScope)
       xDriveClearPlacesDrawerViewerReturn(preferenceScope)
     }
-    nativeCellOpenAbort.current?.abort()
-    const controller = new AbortController()
-    nativeCellOpenAbort.current = controller
-    const request = ++requestID.current
     const bounds={...raw}
     const approved=xDriveCopyBaiduMapPhotoScope(
       returning?.photoScope ?? fromMap ?? mapPhotoScopeRef.current)
@@ -2620,6 +2618,12 @@ export function XDriveMediaGalleryPage({
       dir:approved.filters.sort_dir ?? 'desc',
     }
     if(sort.by!==approved.filters.sort_by || sort.dir!==approved.filters.sort_dir)return
+    // Only an admitted, validated Owner scope may preempt a previous Range.
+    firstContentRangeAbort.current?.abort()
+    nativeCellOpenAbort.current?.abort()
+    const controller = new AbortController()
+    nativeCellOpenAbort.current = controller
+    const request = ++requestID.current
     if(returning) {
       mapPhotoScopeRef.current=approved
       setBaiduPhotoScopeOwner({owner:preferenceScope,value:approved})
