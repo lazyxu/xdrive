@@ -959,10 +959,14 @@ class DriveController(
             gallerySelected = if (current.screen == Screen.GALLERY) null else current.gallerySelected,
             fileDownloadBytes = 0, fileDownloadTotal = owned.size)
         request(isFileDownload = true) { ticket ->
-            val recovery = beginTransferRecovery(NativeTransferKind.DOWNLOAD, ticket)
-            val transferId = beginNativeTransfer(NativeTransferKind.DOWNLOAD, owned.name, owned.size)
             var complete = false
             try {
+                // Android ACTION_CREATE_DOCUMENT has already reserved a
+                // destination URI before we start here. Failure to persist
+                // the encrypted checkpoint must still discard that empty
+                // document, even though network and byte I/O never started.
+                val recovery = beginTransferRecovery(NativeTransferKind.DOWNLOAD, ticket)
+                val transferId = beginNativeTransfer(NativeTransferKind.DOWNLOAD, owned.name, owned.size)
                 val written = authenticatedMutation(ticket) { token ->
                     service.downloadFile(token, owned, openOutput) { bytes ->
                         if (ticket == generation) {
