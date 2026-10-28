@@ -1,3 +1,23 @@
+/** Keep the administrator's history terms distinct from recovery evidence.
+ * A DB-only restore must never be labeled as a complete restore. */
+export const xDriveServerBackupActionLabel = (action: string): string => {
+  const labels: Record<string, string> = {
+    create: '创建服务器备份',
+    verify: '校验单个备份',
+    verify_all: '批量校验备份',
+    preview_delete: '预览删除影响',
+    plan: '查看保留计划',
+    restore: '恢复数据库和文件',
+    restore_database_only: '仅恢复数据库（保留文件）',
+    drill: '隔离恢复演练',
+    delete: '删除 v1 备份',
+    delete_selected: '删除指定 v2 备份',
+    prune: '手动清理旧代',
+    policy: '修改定时备份策略',
+  }
+  return labels[action] || '未知备份操作'
+}
+
 /** Administrator-only Host-owned Server backup repository view.
  * Distinct from owning-device Push backups and online Storage CAS checks. */
 export type XDriveServerBackupSnapshot = {
