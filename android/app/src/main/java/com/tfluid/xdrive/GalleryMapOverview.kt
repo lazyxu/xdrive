@@ -42,8 +42,8 @@ internal fun ColumnScope.GalleryMapOverview(
             ) { Text("返回图库") }
         }
         Text(if (state.galleryBd09Requested)
-            "BD-09LL 数据来自当前 Owner 的已验证 8×8 网格；这里不是百度地图底图，地点照片联动仍需原生 SDK。"
-            else "仅显示当前账户的真实 WGS84 GPS 代表点；百度地图底图和地点照片联动尚未接入。",
+            "BD-09LL 网格来自当前 Owner 的真实数据；点击网格进入照片墙和 Viewer。这里尚非百度原生底图，地图相机仍待 SDK。"
+            else "显示当前账户真实 WGS84 GPS 概览；可切换已验证的 BD-09 网格查看照片。百度原生底图尚未接入。",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.testTag("gallery-map-unavailable-basemap"))
