@@ -885,32 +885,32 @@ export default function App({
 
   const backgroundTaskPort = useMemo(() => backgroundTasksSupported ? ({
     loadActiveSummary: backgroundTaskSummarySupported
-      ? async () => {
-          const result = await window.xdriveDesktop.agent.cloudBackgroundTaskActiveSummary()
+      ? async (signal?: AbortSignal) => {
+          const result = await xDriveDesktopViewportRequest(signal, requestID =>
+            window.xdriveDesktop.agent.cloudBackgroundTaskActiveSummary(requestID))
           if (!result.ok) throw new Error(result.error.message)
           return result.data
         }
       : undefined,
-    loadMinePage: async (limit: number, cursor?: string) => {
-      const result = await window.xdriveDesktop.agent.cloudBackgroundTaskPage(
-        false,
-        limit,
-        cursor ?? '',
-      )
+    loadMinePage: async (limit: number, cursor?: string, signal?: AbortSignal) => {
+      const result = await xDriveDesktopViewportRequest(signal, requestID =>
+        window.xdriveDesktop.agent.cloudBackgroundTaskPage(
+          false, limit, cursor ?? '', requestID,
+        ))
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     loadGlobalPage: status?.role === 'admin'
-      ? async (limit: number, cursor?: string) => {
-          const result = await window.xdriveDesktop.agent.cloudBackgroundTaskPage(
-            true,
-            limit,
-            cursor ?? '',
-          )
+      ? async (limit: number, cursor?: string, signal?: AbortSignal) => {
+          const result = await xDriveDesktopViewportRequest(signal, requestID =>
+            window.xdriveDesktop.agent.cloudBackgroundTaskPage(
+              true, limit, cursor ?? '', requestID,
+            ))
           if (!result.ok) throw new Error(result.error.message)
           return result.data
         }
       : undefined,
+    // Durable Server task Cancel/Retry/etc does NOT own a viewport signal.
     control: async (id: string, action: string, global: boolean) => {
       const result = await window.xdriveDesktop.agent.cloudBackgroundTaskControl(
         id,
