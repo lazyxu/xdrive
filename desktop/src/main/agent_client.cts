@@ -2652,8 +2652,8 @@ export class AgentIPCClient {
     return this.request<AgentStorageTreeNode>('GET', '/v1/storage-tree', undefined, 45_000, signal)
   }
 
-  cacheStats() {
-    return this.request<AgentCacheStats>('GET', '/v1/cache')
+  cacheStats(signal?: AbortSignal) {
+    return this.request<AgentCacheStats>('GET', '/v1/cache', undefined, 10_000, signal)
   }
 
   localDiskSpace() {
