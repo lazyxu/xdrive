@@ -1,0 +1,36 @@
+name: PWA P1M Strict Diagnostic Evidence Contract
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'desktop/scripts/pwa-p1-mixed-100k-abba-summary.cjs'
+      - 'desktop/tests/pwa-p1-mixed-100k-abba-contract.cjs'
+      - '.github/workflows/pwa-p1m-diagnostic-evidence-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  diagnostic-evidence-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout exact tested source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test strict Owner Viewer evidence and privacy gates
+        run: |
+          set -euo pipefail
+          node --check desktop/scripts/pwa-p1-mixed-100k-abba-summary.cjs
+          node --check desktop/tests/pwa-p1-mixed-100k-abba-contract.cjs
+          node --test desktop/tests/pwa-p1-mixed-100k-abba-contract.cjs
