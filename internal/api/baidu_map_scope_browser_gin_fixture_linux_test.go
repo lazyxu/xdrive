@@ -595,6 +595,36 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 			update = db.Model(&meta.PhotoCollection{}).
 				Where("owner_id = ? AND external_key = ?", owner.ID, "manual:Family").
 				Update("state", meta.PhotoCollectionStateMissing)
+		case "album-hard-delete":
+			// Unlike the missing-state case, remove the real Album row and its
+			// actual members in a transaction AFTER the one-use ticket exists.
+			// This route is never registered by production Server.Router().
+			err := db.Transaction(func(tx *gorm.DB) error {
+				var album meta.PhotoCollection
+				if err := tx.Where("owner_id = ? AND external_key = ?",
+					owner.ID, "manual:Family").Take(&album).Error; err != nil {
+					return err
+				}
+				if err := tx.Where("collection_id = ?", album.ID).
+					Delete(&meta.PhotoCollectionAsset{}).Error; err != nil {
+					return err
+				}
+				removed := tx.Where("id = ? AND owner_id = ?", album.ID, owner.ID).
+					Delete(&meta.PhotoCollection{})
+				if removed.Error != nil {
+					return removed.Error
+				}
+				if removed.RowsAffected != 1 {
+					return fmt.Errorf("test Album row was not deleted")
+				}
+				return nil
+			})
+			if err != nil {
+				http.Error(w, "unavailable", http.StatusServiceUnavailable)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
 		case "session-revoked":
 			update = db.Model(&meta.User{}).Where("id = ?", owner.ID).
 				Update("session_version", 2)
@@ -603,11 +633,34 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 				Update("epoch", 4)
 		case "restore":
 			err := db.Transaction(func(tx *gorm.DB) error {
-				if err := tx.Model(&meta.PhotoCollection{}).
+				album := tx.Model(&meta.PhotoCollection{}).
 					Where("owner_id = ? AND external_key = ?", owner.ID, "manual:Family").
 					Updates(map[string]any{"revision": uint64(7),
-						"state": meta.PhotoCollectionStateActive}).Error; err != nil {
-					return err
+						"state": meta.PhotoCollectionStateActive})
+				if album.Error != nil {
+					return album.Error
+				}
+				if album.RowsAffected == 0 {
+					// Restore the identical initial Album identity and its
+					// three original members between independent Host tests.
+					// Always retire pending nonces below: re-creation cannot
+					// resurrect an old authorized handoff.
+					if err := tx.Create(&meta.PhotoCollection{
+						ID: family.ID, OwnerID: owner.ID, ExternalKey: "manual:Family",
+						Kind: meta.PhotoCollectionKindManual, Name: "Family",
+						State: meta.PhotoCollectionStateActive, Revision: 7,
+					}).Error; err != nil {
+						return err
+					}
+					for position, index := range []int{0, 1, 3} {
+						if err := tx.Create(&meta.PhotoCollectionAsset{
+							CollectionID: family.ID,
+							AssetID: familyCandidateAssets[index].ID,
+							Position: int64(position),
+						}).Error; err != nil {
+							return err
+						}
+					}
 				}
 				if err := tx.Model(&meta.User{}).Where("id = ?", owner.ID).
 					Update("session_version", uint64(1)).Error; err != nil {
