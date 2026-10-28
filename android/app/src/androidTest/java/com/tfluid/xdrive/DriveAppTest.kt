@@ -1275,6 +1275,32 @@ class DriveAppTest {
         compose.runOnIdle { org.junit.Assert.assertEquals(2, galleryThumbnailReads) }
     }
 
+    @Test fun filesListViewportSurvivesSameOwnerGalleryRoundTrip() {
+        manyFiles = true
+        startAndLogin()
+        // The 100 real fixture rows use the same lazy-list viewport as Files.
+        // Target id 170 is offscreen at launch; no fake row is injected.
+        compose.onNodeWithTag("files").performScrollToIndex(70)
+        compose.onNodeWithTag("files-item-170").assertIsDisplayed()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.GALLERY &&
+                controller.state.value.galleryLoaded
+        }
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-files").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.FILES &&
+                runCatching {
+                    compose.onNodeWithTag("files-item-170").assertIsDisplayed()
+                }.isSuccess
+        }
+        // Returning to the Files app must not flash or settle at its first row.
+        compose.onNodeWithTag("files-item-170").assertIsDisplayed()
+        compose.onNodeWithTag("files-item-2").assertDoesNotExist()
+    }
+
     @Test fun nativeGalleryOpensRealOwnerPhotoWallAndReturnsToFiles() {
         startAndLogin()
         compose.onNodeWithContentDescription("账户菜单").performClick()
