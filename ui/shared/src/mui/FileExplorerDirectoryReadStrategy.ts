@@ -84,7 +84,7 @@ function verifyCursorPage<TNode extends { id: number }>(
   }
   const cursor = page.next_cursor
   if (cursor !== undefined && (typeof cursor !== 'string' || cursor.length > 1024 ||
-      /[\\x00-\\x1f\\x7f]/.test(cursor))) {
+      /[\x00-\x1f\x7f]/.test(cursor))) {
     throw new Error('Invalid Files Host cursor token')
   }
   if (page.has_more && (!cursor || cursor === requestedCursor)) {
@@ -116,7 +116,7 @@ export async function xDriveFileExplorerReadDirectoryPage<
     if (!Number.isSafeInteger(request.parentID) || request.parentID <= 0 ||
         !Number.isSafeInteger(request.limit) || request.limit < 1 || request.limit > 1000 ||
         typeof request.cursor !== 'string' || request.cursor.length > 1024 ||
-        /[\\x00-\\x1f\\x7f]/.test(request.cursor)) {
+        /[\x00-\x1f\x7f]/.test(request.cursor)) {
       throw new Error('Invalid Files Host cursor request')
     }
     const page = await port.readPage(

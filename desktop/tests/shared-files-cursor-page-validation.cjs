@@ -48,7 +48,7 @@ test('invalid requests are rejected without invoking either Host transport', asy
     request('', 0), request('', -1), request('', 1001), request('', 1.5),
     request('', 200, 0), request('', 200, -1),
     request('', 200, Number.MAX_SAFE_INTEGER + 1),
-    request('x\\ny'), request('x\\ry'), request(String.fromCharCode(0)),
+    request('x\ny'), request('x\ry'), request(String.fromCharCode(0)),
     request('x'.repeat(1025)),
   ]) {
     await assert.rejects(read(port, r), /Invalid Files Host cursor request/)
@@ -69,7 +69,7 @@ test('malformed and unbounded cursor pages cannot be rendered', async () => {
     { ...valid, items: [null] },
     { ...valid, next_cursor: '' },
     { ...valid, next_cursor: 'current' },
-    { ...valid, next_cursor: 'x\\ny' },
+    { ...valid, next_cursor: 'x\ny' },
     { ...valid, next_cursor: 'x'.repeat(1025) },
   ]) {
     await assert.rejects(read({
