@@ -449,8 +449,12 @@ async function testIOSPhotoMapCompactChrome(browser,mode,scheme,port){
           return {x:b.x,y:b.y,width:b.width,height:b.height,
             top:b.top,bottom:b.bottom,left:b.left,right:b.right}
         }
+        // A closed <details> can give hidden advanced-menu buttons positive
+        // getBoundingClientRect() dimensions in real Chromium. Only controls
+        // that are actually painted/hit-testable count as 44px touch targets.
         const hits=Array.from(toolbar?.querySelectorAll('summary,button')||[])
-          .map(el=>bounds(el)).filter(b=>b&&b.height>0)
+          .filter(el=>el.checkVisibility())
+          .map(el=>bounds(el)).filter(b=>b&&b.width>0&&b.height>0)
         const badge=document.querySelector('[data-xdrive-places-photo-count-badge]')
         return {map:bounds(map),toolbar:bounds(toolbar),dock:bounds(dock),
           dockButtons:photoButtons.map(bounds),hits,

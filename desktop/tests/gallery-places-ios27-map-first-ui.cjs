@@ -134,3 +134,11 @@ test('immersive Places uses its own shared controls instead of duplicate Gallery
   assert.match(gallery, /data-xdrive-places-mobile-switch/)
   assert.match(gallery, /onCloseMap=\{onBack && onSectionChange/)
 })
+
+test('real Chromium layout measures only painted map controls but still enforces 44px', () => {
+  const driver=read('desktop/scripts/gallery-places-dual-host-chromium.cjs')
+  assert.match(driver,/\.filter\(el=>el\.checkVisibility\(\)\)/)
+  assert.match(driver,/actual\.hits\.every\(b=>b\.width>=44&&b\.height>=44\)/)
+  assert.match(driver,/actual\.dock\.height<=76/)
+  assert.match(driver,/actual\.pinButtons\.every\(b=>b\.width>=44&&b\.height>=44\)/)
+})
