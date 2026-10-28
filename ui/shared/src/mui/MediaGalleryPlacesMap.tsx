@@ -326,7 +326,9 @@ export function XDriveMediaGalleryPlacesMap({
           '& > *':{pointerEvents:'auto'}}}>
         <Box sx={{minWidth:0,...(compact ? {
           height:44,px:1.75,display:'flex',alignItems:'center',borderRadius:'999px',
-          bgcolor:'background.paper',boxShadow:'0 2px 12px rgba(15,23,42,.16)',
+          bgcolor:theme=>theme.palette.mode==='dark'
+            ? 'rgba(28,28,30,.86)' : 'rgba(255,255,255,.86)',
+          boxShadow:'0 2px 12px rgba(15,23,42,.16)',
           backdropFilter:'blur(18px)',WebkitBackdropFilter:'blur(18px)',
         }: {})}}>
           <Stack direction="row" alignItems="center" spacing={0.75}>
@@ -375,7 +377,8 @@ export function XDriveMediaGalleryPlacesMap({
                 minWidth:compact ? 44 : {xs:44,sm:60},minHeight:44,
                 px:compact ? 1.25 : {xs:0.75,sm:1.25},
                 borderRadius:compact ? '999px' : 2,
-                bgcolor:compact ? 'background.paper' :
+                bgcolor:compact ? (theme => theme.palette.mode==='dark'
+                  ? 'rgba(28,28,30,.86)' : 'rgba(255,255,255,.86)') :
                   hasMapActiveFilters ? 'action.selected' : 'action.hover',
                 boxShadow:compact ? '0 2px 12px rgba(15,23,42,.16)' : 'none',
                 backdropFilter:compact ? 'blur(18px)' : undefined,
@@ -486,7 +489,8 @@ export function XDriveMediaGalleryPlacesMap({
               minWidth:compact ? 44 : {xs:44,sm:60},minHeight:44,
               px:compact ? 1.25 : {xs:0.75,sm:1.25},
               borderRadius:compact ? '999px' : 2,
-              bgcolor:compact ? 'background.paper' : 'action.hover',
+              bgcolor:compact ? (theme => theme.palette.mode==='dark'
+                  ? 'rgba(28,28,30,.86)' : 'rgba(255,255,255,.86)') : 'action.hover',
               boxShadow:compact ? '0 2px 12px rgba(15,23,42,.16)' : 'none',
               backdropFilter:compact ? 'blur(18px)' : undefined,
               WebkitBackdropFilter:compact ? 'blur(18px)' : undefined,
@@ -583,7 +587,8 @@ export function XDriveMediaGalleryPlacesMap({
             <IconButton size="small" data-xdrive-places-map-close
               aria-label="关闭地图" onClick={onCloseMap}
               sx={{minWidth:44,minHeight:44,
-                bgcolor:compact ? 'background.paper' : 'action.hover',
+                bgcolor:compact ? (theme => theme.palette.mode==='dark'
+                  ? 'rgba(28,28,30,.86)' : 'rgba(255,255,255,.86)') : 'action.hover',
                 borderRadius:compact ? '999px' : 2,
                 boxShadow:compact ? '0 2px 12px rgba(15,23,42,.16)' : 'none',
                 backdropFilter:compact ? 'blur(18px)' : undefined,
@@ -596,11 +601,17 @@ export function XDriveMediaGalleryPlacesMap({
       </Stack>
       {modeWarning ? <Typography data-xdrive-map-mode-scope-warning
         role="alert" variant="caption" color="text.secondary"
-        sx={{display:'block',px:1.5,pb:1}}>
+        sx={{display:'block',px:1.5,pb:1,
+          ...(compact ? {position:'absolute',top:60,left:8,right:8,zIndex:14,
+            py:1,borderRadius:2,bgcolor:'background.paper',boxShadow:2} : {})}}>
         {modeWarning}
       </Typography> : null}
       {nativeEnabled && !mapReady ? (
-        <Typography variant="caption" role="status" color="text.secondary" sx={{ px: 1.5, pb: 1 }}>
+        <Typography variant="caption" role="status" color="text.secondary"
+          sx={{px:1.5,pb:1,...(compact ? {
+            position:'absolute',top:64,left:8,right:8,zIndex:10,
+            py:0.75,borderRadius:2,bgcolor:'background.paper',boxShadow:1,
+          } : {})}}>
           正在初始化百度动态地图…
         </Typography>
       ) : null}
