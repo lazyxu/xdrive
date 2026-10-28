@@ -27,6 +27,7 @@ import com.tfluid.xdrive.core.DriveNode
 
 /** A root Files selection consumes Android Back before the Activity can exit. */
 internal fun shouldHandleFilesBack(state: DriveState, editOpen: Boolean, batchConfirmOpen: Boolean): Boolean =
+    state.hasActiveNativeTransfer() ||
     state.destinationKind != null || batchConfirmOpen || editOpen || state.selected != null ||
         state.filesPdfViewer != null || state.filesAudioViewer != null ||
         (state.screen == Screen.FILES &&

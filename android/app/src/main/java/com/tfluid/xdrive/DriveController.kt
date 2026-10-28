@@ -143,6 +143,12 @@ internal fun DriveState.canNavigateFiles(): Boolean =
         !hasActiveNativeTransfer() &&
         destinationKind == null && !browseBatchWriteAttempted
 
+/** A lost batch DELETE ACK is resolved by a fresh GET, never by replaying DELETE. */
+internal fun DriveState.canReconcileBatchBrowse(): Boolean =
+    screen == Screen.FILES && filesSection == FilesSection.BROWSE &&
+        browseBatchWriteAttempted && !loading && !hasActiveNativeTransfer() &&
+        destinationKind == null
+
 private fun DriveState.withoutGallerySelection(): DriveState = copy(
     gallerySelectionMode = false, gallerySelectedItems = emptyList(),
     galleryMetadataWriteAttempted = false,
@@ -1489,7 +1495,8 @@ class DriveController(
 
     fun closeTrash() {
         val current = state.value
-        if (current.screen != Screen.TRASH) return
+        if (current.screen != Screen.TRASH || current.trashRestoreAttempted ||
+            current.hasActiveNativeTransfer()) return
         invalidate()
         mutableState.value = current.copy(screen = Screen.FILES, loading = false,
             error = null, trashItems = emptyList(), trashTotal = 0,
@@ -2810,6 +2817,9 @@ class DriveController(
 
     fun back() {
         val current = state.value
+        // Until native transfers are durable, user navigation cannot discard
+        // an in-flight SAF document. The explicit cancel control remains available.
+        if (current.hasActiveNativeTransfer()) return
         if (current.screen == Screen.TRASH) {
             closeTrash()
             return
@@ -2845,18 +2855,26 @@ class DriveController(
         else if (current.selected != null) dismissDetails()
         else if (current.filesSection == FilesSection.SEARCH) changeFilesSection(current.searchReturnSection)
         else if (current.filesSection != FilesSection.BROWSE) changeFilesSection(FilesSection.BROWSE)
-        else if (current.path.size > 1) load(current.path.dropLast(1), 0)
+        else if (current.path.size > 1 && current.canNavigateFiles())
+            load(current.path.dropLast(1), 0)
     }
     // Refresh from first Server-authoritative browse page, or restart the
     // bounded current Recent/Favorites/Search query; never mix stale cursors.
     fun refresh() {
-        if (!state.value.canNavigateFiles()) return
-        if (state.value.filesSection == FilesSection.BROWSE) load(state.value.path, 0)
+        val current = state.value
+        if (!current.canNavigateFiles() && !current.canReconcileBatchBrowse()) return
+        // Read the full authoritative first page after a lost write ACK.
+        if (current.filesSection == FilesSection.BROWSE) load(current.path, 0)
         else loadCollection()
     }
     fun retry() {
-        if (!state.value.canNavigateFiles()) return
-        if (state.value.filesSection == FilesSection.BROWSE) {
+        val current = state.value
+        if (current.canReconcileBatchBrowse()) {
+            load(current.path, 0) // GET-only; never replay the uncertain batch DELETE.
+            return
+        }
+        if (!current.canNavigateFiles()) return
+        if (current.filesSection == FilesSection.BROWSE) {
             if (retryPrepend) loadPrevious(retryFailed = true)
             else load(retryPath ?: state.value.path, retryOffset, retryAppend)
         }

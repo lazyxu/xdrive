@@ -43,3 +43,21 @@ while Android still has only foreground single-file transfer, not a claim
 that background resume is implemented. The same guard drives Compose enabled
 state and Controller entry points; real Owner writes/uncertain ACK remain
 protected. Two JVM tests cover an active Gallery export and album Back.
+
+## Exact-HEAD CI fix: reliable SAF and uncertain batch recovery
+
+The previous native CI exposed four legacy test assumptions. Foreground
+SAF bytes are not discardable GETs: navigation and Gallery refresh/date
+jump defer while the stream remains active, and only an explicit Cancel
+discards the incomplete output. Tests now assert that the Owner source,
+partial-byte count, and request count remain unchanged until either the
+user cancels or the transport finishes. Android system Back is captured
+at Files root while SAF transfer is running, avoiding an implicit Activity
+exit with a volatile document stream.
+
+A failed atomic batch trash may already be committed. Normal navigation
+stays frozen, but `refresh()` and `retry()` may always execute an
+authenticated **first-page GET** to reconcile the uncertain result.
+A second DELETE is forbidden; a failed reconciliation GET retains the
+write-fenced state until a successful read. Additional JVM tests verify
+the complete failure/retry/recovery sequence.

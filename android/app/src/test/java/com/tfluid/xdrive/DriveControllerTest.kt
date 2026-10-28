@@ -2426,7 +2426,7 @@ class DriveControllerTest {
         assertNull(c.state.value.fileExportOrigin)
     }
 
-    @Test fun galleryExportCancelAndRefreshRemovePartialSafDocumentAndNoOldOwnerState() = runTest {
+@Test fun galleryExportRefreshRequiresExplicitCancelAndNeverLeaksStaleSafBytes() = runTest {
         val api = Service().apply { downloadGate = CompletableDeferred() }
         val c = controller(this, api)
         c.login("owner", "password"); runCurrent()
@@ -2437,14 +2437,26 @@ class DriveControllerTest {
         var discarded = 0
         c.saveFileExport({ ByteArrayOutputStream() }, { discarded++ }); runCurrent()
         assertTrue(c.state.value.fileDownloadActive)
+        assertEquals(3L, c.state.value.fileDownloadBytes)
+        val before = api.galleryRequests.size
         c.refreshGallery(); runCurrent()
-        assertEquals(1, discarded)
+        assertEquals(0, discarded) // A page refresh must not interrupt the document.
+        assertTrue(c.state.value.fileDownloadActive)
         assertEquals(1, api.downloadReads)
+        assertEquals(before, api.galleryRequests.size)
+        assertEquals(3L, c.state.value.fileDownloadBytes)
+        c.cancelFileDownload(); runCurrent()
+        assertEquals(1, discarded) // Explicit cancel destroys the partial SAF document.
         assertFalse(c.state.value.fileDownloadActive)
         assertFalse(c.state.value.fileDownloadSaved)
+        assertEquals(0L, c.state.value.fileDownloadBytes)
+        c.refreshGallery(); runCurrent()
+        assertEquals(before + 1, api.galleryRequests.size)
         assertTrue(c.state.value.galleryLoaded)
         assertNull(c.state.value.fileExportPending)
         assertNull(c.state.value.fileExportOrigin)
+        assertEquals(1, api.downloadReads) // No upload/download write replay.
+        c.close()
     }
 
     @Test fun gallerySearchAndKindScopeRetireDelayedSafPickerBeforeAnyDownload() = runTest {
@@ -2485,7 +2497,7 @@ class DriveControllerTest {
         c.close()
     }
 
-    @Test fun galleryIndexedJumpCancelsActiveSafDownloadAndDiscardsPartialOutput() = runTest {
+@Test fun galleryIndexedJumpDefersWhileSafDownloadThenUsesExactOwnerIndex() = runTest {
         val api = Service().apply {
             provideGalleryTimeline = true
             downloadGate = CompletableDeferred()
@@ -2500,19 +2512,27 @@ class DriveControllerTest {
         var discarded = 0
         c.saveFileExport({ ByteArrayOutputStream() }, { discarded++ }); runCurrent()
         assertTrue(c.state.value.fileDownloadActive)
+        val before = api.galleryRequests.size
 
-        // A real Server-indexed jump retires the prior media/SAF Owner work.
+        // An indexed GET must not supersede an active foreground SAF write.
         c.jumpGalleryToGroup("year", "2026"); runCurrent()
         assertEquals(1, api.downloadReads)
-        assertEquals(1, discarded)
+        assertEquals(0, discarded)
+        assertNull(c.state.value.galleryJumpIndex)
+        assertEquals(before, api.galleryRequests.size)
+        assertTrue(c.state.value.fileDownloadActive)
+        assertEquals(3L, c.state.value.fileDownloadBytes)
+
+        api.downloadGate?.complete(Unit); runCurrent()
+        assertTrue(c.state.value.fileDownloadSaved)
+        assertFalse(c.state.value.fileDownloadActive)
+        c.jumpGalleryToGroup("year", "2026"); runCurrent()
         assertEquals(60, c.state.value.galleryJumpIndex)
         assertTrue(c.state.value.galleryLoaded)
-        assertFalse(c.state.value.fileDownloadActive)
         assertFalse(c.state.value.fileDownloadSaved)
-        assertEquals(0L, c.state.value.fileDownloadBytes)
-        assertNull(c.state.value.fileExportPending)
-        assertNull(c.state.value.fileExportOrigin)
-        assertNull(c.state.value.fileDownloadError)
+        assertEquals(before + 1, api.galleryRequests.size)
+        assertEquals(1, api.downloadReads)
+        assertEquals(0, discarded)
         assertNull(c.state.value.error)
         c.close()
     }
@@ -2556,7 +2576,7 @@ class DriveControllerTest {
         assertEquals(1, discarded)
     }
 
-    @Test fun changingFolderCancelsInFlightExportAndClearsDownloadChrome() = runTest {
+@Test fun changingFolderWaitsForSafDownloadAndExplicitCancelCleansPartialFile() = runTest {
         val api = Service().apply { downloadGate = CompletableDeferred() }
         val c = controller(this, api)
         c.login("owner", "password"); runCurrent()
@@ -2566,15 +2586,26 @@ class DriveControllerTest {
         c.saveFileExport({ output }, { discarded++ }); runCurrent()
         assertTrue(c.state.value.fileDownloadActive)
         assertEquals(3L, c.state.value.fileDownloadBytes)
-        c.open(folder); runCurrent() // New Owner navigation cancels the pending file transfer.
-        assertEquals(1, api.downloadReads)
+        val beforeCalls = api.calls.size
+        assertTrue(shouldHandleFilesBack(c.state.value, false, false))
+        c.open(folder); runCurrent()
+        c.back(); runCurrent()
+        assertEquals(beforeCalls, api.calls.size)
+        assertEquals(root.id, c.state.value.path.last().id)
+        assertTrue(c.state.value.fileDownloadActive)
+        assertEquals(0, discarded)
+        assertEquals(3L, c.state.value.fileDownloadBytes)
+        c.cancelFileDownload(); runCurrent()
         assertEquals(1, discarded)
-        assertEquals(2L, c.state.value.path.last().id)
         assertFalse(c.state.value.fileDownloadActive)
         assertFalse(c.state.value.fileDownloadSaved)
         assertEquals(0L, c.state.value.fileDownloadBytes)
-        assertEquals(null, c.state.value.fileExportPending)
+        assertNull(c.state.value.fileExportPending)
         assertTrue(output.size() < 5)
+        c.open(folder); runCurrent()
+        assertEquals(folder.id, c.state.value.path.last().id)
+        assertEquals(1, api.downloadReads)
+        c.close()
     }
 
     @Test fun refreshingInvalidatesUnreturnedSafPickerWithoutDownloading() = runTest {
@@ -3813,6 +3844,36 @@ class DriveControllerTest {
         c.back(); runCurrent()
         assertNull(c.state.value.gallerySelectedAlbum)
         assertEquals(GalleryPrimaryTab.COLLECTIONS, c.state.value.galleryPrimaryTab)
+        c.close()
+    }
+
+    @Test fun uncertainBatchWriteOnlyAllowsReadOnlyRefreshOrRetryBeforeNewNavigation() = runTest {
+        val api = Service()
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.setBrowseSelectionMode(true)
+        c.toggleBrowseSelection(file)
+        api.mutationFailure = ApiException(503, "lost batch ACK")
+        c.trashSelectedBrowseNodes(); runCurrent()
+        assertEquals(1, api.mutationCalls.size)
+        assertTrue(c.state.value.canReconcileBatchBrowse())
+        assertFalse(c.state.value.canNavigateFiles())
+        c.openGallery()
+        c.open(folder)
+        c.changeFilesSection(FilesSection.RECENT)
+        assertEquals(Screen.FILES, c.state.value.screen)
+        assertEquals(listOf(root), c.state.value.path)
+        assertEquals(FilesSection.BROWSE, c.state.value.filesSection)
+        api.failure = ApiException(503, "first reconciliation GET fails")
+        c.retry(); runCurrent()
+        assertEquals(1, api.mutationCalls.size)
+        assertTrue(c.state.value.canReconcileBatchBrowse())
+        assertFalse(c.state.value.loaded)
+        c.refresh(); runCurrent()
+        assertTrue(c.state.value.loaded)
+        assertFalse(c.state.value.browseBatchWriteAttempted)
+        assertFalse(c.state.value.canReconcileBatchBrowse())
+        assertEquals(1, api.mutationCalls.size)
         c.close()
     }
 }
