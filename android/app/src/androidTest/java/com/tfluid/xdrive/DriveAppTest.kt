@@ -536,7 +536,7 @@ class DriveAppTest {
                 else if (manyFiles && parentId == 1L) listOf(DriveNode(2, 1, "假期照片", "dir")) +
                     (1..99).map { index -> if (index == 49)
                         DriveNode(200, 1, "第二相册", "dir")
-                        else DriveNode(100L + index, 1, "item-$index.txt", "file", 128) }
+                        else DriveNode(100L + index, 1, "item-$index.txt", "file", 128, revision = 1) }
                 else if (parentId == 1L) mutableRootRows.toList() +
                     (if (batchTransferFixture) listOf(batchSecondFile) else emptyList()) +
                     (if (filesAudioFixture) listOf(filesAudioNode) else emptyList()) +
@@ -2141,6 +2141,14 @@ class DriveAppTest {
         // menu even when the large title and search have scrolled offscreen.
         compose.onNodeWithContentDescription("账户菜单").performClick()
         compose.onNodeWithTag("files-select-from-menu").performClick()
+        // The fixture must have the genuine revision required by Controller's
+        // Owner/version gate; the previous revision=0 row was correctly
+        // refused and exposed a broken test precondition, not a write failure.
+        compose.runOnIdle {
+            org.junit.Assert.assertTrue(controller.state.value.browseSelectionMode)
+            org.junit.Assert.assertEquals(1L,
+                controller.state.value.items.single { it.id == 170L }.revision)
+        }
         compose.onNodeWithTag("files-item-170").assertIsDisplayed().performClick()
         compose.runOnIdle {
             org.junit.Assert.assertEquals(setOf(170L),
