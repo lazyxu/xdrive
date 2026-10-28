@@ -2969,8 +2969,8 @@ try:
                             "--repository-dir", repo, "--keep-last", "1", "--mode", "deep"],
                             stdin=subprocess.DEVNULL, stdout=output, stderr=sys.stderr,
                             timeout=1800, check=False)
-                    output.seek(0)
-                    raw = output.read(131073)
+                        output.seek(0)
+                        raw = output.read(131073)
                     def unique_fields(pairs):
                         values = {}
                         for key, value in pairs:
