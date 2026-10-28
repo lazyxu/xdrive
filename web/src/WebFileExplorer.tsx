@@ -287,6 +287,7 @@ export default function WebFileExplorer({
     refresh,
     beginNavigationIntent,
     isNavigationIntentCurrent,
+    navigationReadSignalForIntent,
     navigateTo,
     navigateToCrumb,
     goBack,
@@ -406,6 +407,12 @@ export default function WebFileExplorer({
     // Abort the actual in-flight Node GET when the route/Owner changes; do
     // not merely discard its eventual React result after up to 256 lookups.
     const ancestorLookup = new AbortController()
+    // A new Files intent can win before this effect rerenders; retire its
+    // previous Node GET immediately, not only during eventual React cleanup.
+    const navigationSignal = navigationReadSignalForIntent(navigationIntentID)
+    const abortForNewNavigation = () => ancestorLookup.abort()
+    if (!navigationSignal || navigationSignal.aborted) ancestorLookup.abort()
+    else navigationSignal.addEventListener('abort', abortForNewNavigation, { once: true })
     void (async () => {
       const chain: Crumb[] | null = await xDriveResolveRoutedDirectoryAncestors(
         initialDirectoryID,
@@ -425,6 +432,7 @@ export default function WebFileExplorer({
     })
     return () => {
       active = false
+      navigationSignal?.removeEventListener('abort', abortForNewNavigation)
       ancestorLookup.abort()
       // A never-dispatched lookup cancelled by StrictMode must replay.
       // Keep already-dispatched tickets until the requested URL/session
@@ -439,6 +447,7 @@ export default function WebFileExplorer({
     current?.id,
     initialDirectoryID,
     isNavigationIntentCurrent,
+    navigationReadSignalForIntent,
     navigateTo,
     navigationSessionStorageKey,
     onError,
@@ -1294,31 +1303,35 @@ export default function WebFileExplorer({
     const routeGuard = savedResumeRouteGuardRef.current
     try {
       const navigationIntentID = beginNavigationIntent()
-      const chain: Crumb[] = []
-      let nodeID = directoryID
-      for (let depth = 0; depth < 256; depth += 1) {
-        const node = await api.node(nodeID)
-        if (node.type !== 'dir') throw new Error('目标不是文件夹。')
-        chain.push({ id: node.id, name: node.name })
-        if (!node.parent_id) break
-        nodeID = node.parent_id
-      }
-      if (!chain.length || !isNavigationIntentCurrent(navigationIntentID)) return false
-      chain.reverse()
+      const navigationSignal = navigationReadSignalForIntent(navigationIntentID)
+      if (!navigationSignal) return false
+      // Saved resume and external ?dir= use one Owner-authorized ancestor
+      // resolver. The successor's intent aborts the actual previous Node GET.
+      const chain: Crumb[] | null = await xDriveResolveRoutedDirectoryAncestors(
+        directoryID,
+        (id, signal) => api.node(id, signal),
+        navigationSignal,
+        () => savedResumeRouteGuardRef.current === routeGuard &&
+          isNavigationIntentCurrent(navigationIntentID),
+      )
+      if (!chain?.length || navigationSignal.aborted ||
+          !isNavigationIntentCurrent(navigationIntentID)) return false
       let accepted = false
       await navigateTo(chain, true, navigationIntentID, currentAccepted => {
         accepted = currentAccepted
       })
-      // Unlike void Promise completion, this proves the original workspace
-      // accepted its own counted first page, not a failed/superseded lookup.
-      return accepted && isNavigationIntentCurrent(navigationIntentID)
+      // A valid Node is NOT authorization to display a folder: only the
+      // current Owner's first accepted counted Range is the receipt.
+      return accepted && !navigationSignal.aborted &&
+        isNavigationIntentCurrent(navigationIntentID)
     } finally {
       // A completed/denied/superseded saved resume can no longer make the
       // bootstrap root provisional. Do not alter a newer account's guard.
       if (savedResumeRouteGuardRef.current === routeGuard &&
           routeGuard.folderID === directoryID) routeGuard.pending = false
     }
-  }, [api, beginNavigationIntent, isNavigationIntentCurrent, navigateTo])
+  }, [api, beginNavigationIntent, isNavigationIntentCurrent,
+    navigationReadSignalForIntent, navigateTo])
 
   const requestReveal = (parentID: number, nodeID: number) => {
     revealSequenceRef.current += 1

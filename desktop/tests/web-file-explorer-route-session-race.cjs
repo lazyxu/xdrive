@@ -18,6 +18,15 @@ new Function('exports', 'module', resolverJS)(resolverModule.exports, resolverMo
 const xDriveResolveRoutedDirectoryAncestors =
   resolverModule.exports.xDriveResolveRoutedDirectoryAncestors
 
+const scopedReadFile = path.join(repo, 'ui/shared/src/mui/FileExplorerDisposableNavigationReads.ts')
+const scopedReadJS = ts.transpileModule(fs.readFileSync(scopedReadFile, 'utf8'), {
+  fileName: scopedReadFile,
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText
+const readScopeExports = { exports: {} }
+new Function('exports', 'module', scopedReadJS)(readScopeExports.exports, readScopeExports)
+const createReadScope = readScopeExports.exports.xDriveCreateFileExplorerDisposableNavigationReads
+
 function extractRouteDirectoryEffect() {
   const filename = path.join(repo, 'web', 'src', 'WebFileExplorer.tsx')
   const source = fs.readFileSync(filename, 'utf8')
@@ -80,11 +89,13 @@ test('Web route-directory same numeric id must be resolved again after account l
   const routedDirectoryRef = { current: null }
   const internalDirectoryRouteRef = { current: null }
   let navigationGeneration = 0
+  const readScope = createReadScope()
   const nodeCalls = []
   const navigations = []
   const errors = []
 
   const beginNavigationIntent = () => {
+    readScope.cancel()
     navigationGeneration += 1
     return navigationGeneration
   }
@@ -111,6 +122,7 @@ test('Web route-directory same numeric id must be resolved again after account l
     },
     beginNavigationIntent,
     isNavigationIntentCurrent,
+    navigationReadSignalForIntent: id => isNavigationIntentCurrent(id) ? readScope.signalFor(id) : null,
     xDriveResolveRoutedDirectoryAncestors,
     navigateTo: async (crumbs, _record = true, requestID) => {
       const effectiveRequestID = requestID ?? beginNavigationIntent()

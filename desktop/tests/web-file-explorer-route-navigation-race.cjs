@@ -18,6 +18,15 @@ new Function('exports', 'module', resolverJS)(resolverModule.exports, resolverMo
 const xDriveResolveRoutedDirectoryAncestors =
   resolverModule.exports.xDriveResolveRoutedDirectoryAncestors
 
+const scopedReadFile = path.join(repo, 'ui/shared/src/mui/FileExplorerDisposableNavigationReads.ts')
+const scopedReadJS = ts.transpileModule(fs.readFileSync(scopedReadFile, 'utf8'), {
+  fileName: scopedReadFile,
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText
+const readScopeExports = { exports: {} }
+new Function('exports', 'module', scopedReadJS)(readScopeExports.exports, readScopeExports)
+const createReadScope = readScopeExports.exports.xDriveCreateFileExplorerDisposableNavigationReads
+
 function extractRouteDirectoryEffect() {
   const filename = path.join(repo, 'web', 'src', 'WebFileExplorer.tsx')
   const source = fs.readFileSync(filename, 'utf8')
@@ -90,15 +99,20 @@ function routeHarness() {
   const pending = deferred()
   let nodeSignal
   let navigationGeneration = 0
+  const readScope = createReadScope()
   const navigations = []
   const errors = []
 
   const beginNavigationIntent = () => {
+    readScope.cancel()
     navigationGeneration += 1
     return navigationGeneration
   }
   const isNavigationIntentCurrent = (requestID) => (
     requestID === navigationGeneration
+  )
+  const navigationReadSignalForIntent = id => (
+    isNavigationIntentCurrent(id) ? readScope.signalFor(id) : null
   )
   const navigateTo = async (crumbs, _record = true, requestID) => {
     const effectiveRequestID = requestID ?? beginNavigationIntent()
@@ -119,6 +133,7 @@ function routeHarness() {
     navigateTo,
     beginNavigationIntent,
     isNavigationIntentCurrent,
+    navigationReadSignalForIntent,
     xDriveResolveRoutedDirectoryAncestors,
     onError: (error) => errors.push(
       error instanceof Error ? error.message : String(error),
@@ -192,6 +207,7 @@ test('acknowledged old child URL cannot undo committed Files Back; new external 
   const internalDirectoryRouteRef = { current: { directoryID: 2, lifecycleKey: 'files:account-a' } }
   const nodeCalls = [], navigations = []
   let generation = 0
+  const extraReadScope = createReadScope()
   const execute = (initialDirectoryID, currentID, lifecycleKey) => compileEffect(filename, callback, {
     initialDirectoryID, current: { id: currentID }, navigationSessionStorageKey: lifecycleKey,
     routedDirectoryRef, internalDirectoryRouteRef,
@@ -199,8 +215,9 @@ test('acknowledged old child URL cannot undo committed Files Back; new external 
       nodeCalls.push({ id, lifecycleKey })
       return { id, parent_id: null, name: String(id), type: 'dir' }
     } },
-    beginNavigationIntent: () => ++generation,
+    beginNavigationIntent: () => { extraReadScope.cancel(); return ++generation },
     isNavigationIntentCurrent: id => generation === id,
+    navigationReadSignalForIntent: id => generation === id ? extraReadScope.signalFor(id) : null,
     navigateTo: async crumbs => { navigations.push(crumbs.at(-1).id); return true },
     xDriveResolveRoutedDirectoryAncestors,
     onError: error => { throw error },
