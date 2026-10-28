@@ -1141,7 +1141,10 @@ async function testMode(browser,mode,port){
       'grid-template-columns:minmax(92px,1fr)!important;'+
       'grid-auto-rows:minmax(140px,auto)!important;'+
       'overflow-y:scroll!important}'})
-    await page.locator('[data-xdrive-places-photo-drawer-expand]').click()
+    // The Gallery modal opens expanded by default. The old compact sheet
+    // needed one expand click; that click now COLLAPSES the new modal and
+    // conceals its scrolling grid. Assert the actual signed Parent state
+    // without toggling it, and retain the real scroll/Viewer-return checks.
     record(mode+': genuine React photo drawer opens expanded',
       await page.locator('[data-xdrive-places-photo-drawer-expand][aria-label="收起照片抽屉"]').count()===1 &&
       await page.locator('[data-xdrive-places-photo-drawer-handle][aria-expanded="true"]').count()===1)
