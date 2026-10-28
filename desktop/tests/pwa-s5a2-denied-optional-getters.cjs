@@ -19,6 +19,9 @@ function fixture({ swGetterThrows = false, standaloneGetterThrows = false,
   heightGetterThrows = false } = {}) {
   const win = {
     location: { origin: 'https://drive.private.test', protocol: 'https:' },
+    // S5 evidence observes the *current* browser secure-context property, not
+    // the earlier installation snapshot. Model a genuinely secure fixture.
+    isSecureContext: true,
     crypto: webcrypto, innerWidth: 390, innerHeight: 844,
   }
   if (protocolGetterThrows) Object.defineProperty(win.location, 'protocol', {
