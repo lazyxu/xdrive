@@ -204,7 +204,7 @@ export function XDriveServerBackupManagementPanel({
     const next = confirmation.action
     // Confirmation may outlive a Host inventory refresh or a UI filter/selection
     // change. Never submit a different or no-longer-restorable generation.
-    if (next.snapshot_id && (!selected || next.snapshot_id !== selected.id ||
+    if ('snapshot_id' in next && next.snapshot_id && (!selected || next.snapshot_id !== selected.id ||
       (next.action === 'restore' && !selectedRestorable) ||
       (next.action === 'drill' && (selected.format !== 'v2' || !selectedRestorable)) ||
       ((next.action === 'delete' || next.action === 'delete_selected') &&
