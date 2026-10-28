@@ -111,7 +111,10 @@ test('Web and Desktop use the same navigation pane and paged directory loader', 
   assert.ok(web.includes('loadPage: (id, options) => api.listPageAbortable(id, options, signal)'), 'Web tree forwards the original AbortSignal to the bounded paged children GET')
   assert.ok(desktop.includes('hostPort.browse.cloudChildrenPage(id, options, requestID)'), 'Desktop tree must use sender-scoped read-only IPC cancellation')
   assert.ok(desktop.includes('loadDirectoryPage={loadTreeDirectoryPage}'), 'Desktop tree must pass the shared paged loader into the pane')
-  assert.ok(desktop.includes('hostPort.browse.cloudChildrenPage(id, options)'), 'Desktop tree must use the existing paged Agent adapter')
+  assert.ok(desktop.includes('hostPort.requestViewport(signal, requestID =>'),
+    'Desktop tree uses the existing sender-scoped cancellable viewport bridge')
+  assert.equal(desktop.includes('hostPort.browse.cloudChildrenPage(id, options)'), false,
+    'Desktop must not keep the obsolete uncancelable two-argument tree GET')
 })
 
 
