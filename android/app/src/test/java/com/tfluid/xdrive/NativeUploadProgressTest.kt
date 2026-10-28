@@ -35,4 +35,31 @@ class NativeUploadProgressTest {
         assertTrue(nativeUploadAwaitingFinalReceipt(true,
             Long.MAX_VALUE, Long.MAX_VALUE))
     }
+
+    @Test fun savedBytesAreNotProofThatSafOutputClosedSuccessfully() {
+        assertEquals(0.5f, nativePendingDownloadProgress(1024L, 2048L)!!,
+            0.00001f)
+        assertTrue(nativePendingDownloadProgress(2048L, 2048L)!! < 1f)
+        assertTrue(nativeDownloadAwaitingFinalReceipt(true, 2048L, 2048L))
+        assertFalse(nativeDownloadAwaitingFinalReceipt(false, 2048L, 2048L))
+    }
+
+    @Test fun emptyDownloadAndVeryLargeValuesNeverFakeHundredPercent() {
+        assertNull(nativePendingDownloadProgress(0L, 0L))
+        assertFalse(nativeDownloadAwaitingFinalReceipt(true, 0L, 0L))
+        val almostComplete = nativePendingDownloadProgress(
+            Long.MAX_VALUE - 1L, Long.MAX_VALUE)!!
+        assertTrue(almostComplete < 1f)
+        assertFalse(nativeDownloadAwaitingFinalReceipt(true,
+            Long.MAX_VALUE - 1L, Long.MAX_VALUE))
+        assertTrue(nativeDownloadAwaitingFinalReceipt(true,
+            Long.MAX_VALUE, Long.MAX_VALUE))
+    }
+
+    @Test fun badDownloadCountersCannotInventCompletedBytes() {
+        assertEquals(0f, nativePendingDownloadProgress(-10L, 100L)!!, 0f)
+        assertEquals(.999f, nativePendingDownloadProgress(101L, 100L)!!, 0f)
+        assertFalse(nativeDownloadAwaitingFinalReceipt(true, 99L, 100L))
+        assertNull(nativePendingDownloadProgress(100L, -1L))
+    }
 }
