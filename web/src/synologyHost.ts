@@ -5,6 +5,7 @@ import {
   createXDriveSynologyBrowserStorageSource,
 } from '@xdrive/ui/mui'
 import type { XDriveWorkspaceHostAdapter } from '@xdrive/ui/mui'
+import { createXDriveSynologyOwnerGallerySource } from '../../ui/shared/src/mui/SynologyOwnerGallerySource'
 
 /**
  * DSM-only authenticated transport adapter for the shared xDrive application.
@@ -36,6 +37,12 @@ export function createXDriveSynologyHost(): XDriveWorkspaceHostAdapter {
           copyTo: 'DSM Owner 文件目前没有经过授权的复制到接口。',
           manageTags: 'DSM Owner 文件目前没有经过授权的标签修改接口。',
         },
+      },
+      // Both Owner Files and Gallery reuse the same authenticated DSM CGI
+      // client. Do not regress the current explicit read-only Files port.
+      galleryPage: {
+        source: createXDriveSynologyOwnerGallerySource(local),
+        pageSize: 100,
       },
       deviceBackups: createXDriveSynologyOwnerBackupSource(local),
       cloudStorage: createXDriveSynologyCloudStorageDataSource(local),
