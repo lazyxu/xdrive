@@ -5,7 +5,8 @@ import UIKit
 // This is a local-only, on-demand PhotoKit inventory. No bytes, identifiers,
 // coordinates, or private metadata are persisted or sent to xDrive Server.
 private struct LocalPhotoPreview: Identifiable {
-    let id: Int
+    // Transient PhotoKit identity only, never serialized or sent to Server.
+    let id: String
     let kind: String
     let capturedAt: Date?
     let isLive: Bool
@@ -71,7 +72,7 @@ private final class LocalPhotoInventoryModel: ObservableObject {
                     let asset = assets.object(at: position)
                     guard asset.mediaType == .image || asset.mediaType == .video else { continue }
                     recent.append(LocalPhotoPreview(
-                        id: position,
+                        id: asset.localIdentifier,
                         kind: asset.mediaType == .video ? "视频" : "照片",
                         capturedAt: asset.creationDate,
                         isLive: asset.mediaType == .image && asset.mediaSubtypes.contains(.photoLive)
@@ -94,6 +95,9 @@ private final class LocalPhotoInventoryModel: ObservableObject {
 struct LocalPhotoInventoryScreen: View {
     @StateObject private var model = LocalPhotoInventoryModel()
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var inspectedAssetID: String?
+    @State private var inspectedResourceMessage: String?
 
     var body: some View {
         NavigationStack {
@@ -132,6 +136,20 @@ struct LocalPhotoInventoryScreen: View {
                                     Spacer()
                                 }
                                 .padding(.vertical, 3)
+                                Button("检查此项的原始资源组成") {
+                                    let evidence = XDrivePhotoKitResourceInspector.inspect(localIdentifier: item.id)
+                                    inspectedAssetID = item.id
+                                    inspectedResourceMessage = evidence?.summary
+                                        ?? "当前授权范围内已无法访问该项目，请重新检查相册权限。"
+                                }
+                                .font(.footnote)
+                                .buttonStyle(.borderless)
+                                if inspectedAssetID == item.id, let message = inspectedResourceMessage {
+                                    Text(message)
+                                        .font(.footnote)
+                                        .foregroundStyle(.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
                                 Divider()
                             }
                         }
@@ -146,6 +164,8 @@ struct LocalPhotoInventoryScreen: View {
                         .buttonStyle(.borderedProminent)
                     } else if model.hasAccess {
                         Button("重新检查") {
+                            inspectedAssetID = nil
+                            inspectedResourceMessage = nil
                             Task { await model.inspect(askPermission: false) }
                         }
                         .buttonStyle(.bordered)
@@ -157,7 +177,7 @@ struct LocalPhotoInventoryScreen: View {
                         }
                     }
 
-                    Text("当前只读取已授权项目的数量、类型和最近日期。不获取原图或 Live 动态资源，不读取 GPS，不上传数据，也不会启动备份或后台同步。真正同步须独立实现账户绑定、增量游标、资源配对、UploadSession 和断点恢复。")
+                    Text("当前只读取已授权项目的数量、类型、最近日期；单项检查仅枚举 PhotoKit 声明的原始资源及 Live 动静配对情况。这不证明 iCloud 原件可下载，也不读取照片字节或 GPS、不上传数据、不执行同步。真正同步仍需账户绑定、增量游标、资源内容读取、UploadSession 和断点恢复。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -174,6 +194,19 @@ struct LocalPhotoInventoryScreen: View {
             }
         }
         .task { await model.inspect(askPermission: false) }
+        .onChange(of: scenePhase) { phase in
+            if phase == .active {
+                inspectedAssetID = nil
+                inspectedResourceMessage = nil
+                Task { await model.inspect(askPermission: false) }
+            }
+        }
+        .onChange(of: model.authorization) { status in
+            if status != .authorized && status != .limited {
+                inspectedAssetID = nil
+                inspectedResourceMessage = nil
+            }
+        }
     }
 
     private func countCard(_ title: String, count: Int) -> some View {
