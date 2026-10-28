@@ -64,6 +64,9 @@ func TestBackupAdminRejectsUnboundedActionsAndUntrustedPaths(t *testing.T) {
 	for _, body := range []string{
 		`{"action":"restore","snapshot_id":"v2-default:../../etc/shadow","confirmation":"RESTORE v2-default:../../etc/shadow"}`,
 		`{"action":"restore","snapshot_id":"` + testBackupID + `","confirmation":"RESTORE different"}`,
+		`{"action":"drill","snapshot_id":"` + testBackupID + `","confirmation":"DRILL different"}`,
+		`{"action":"drill","snapshot_id":"v1:xdrive-backup-20261026T030000Z","confirmation":"DRILL v1:xdrive-backup-20261026T030000Z"}`,
+		`{"action":"drill","snapshot_id":"` + testBackupID + `","confirmation":"DRILL ` + testBackupID + `","max_mib":8192}`,
 		`{"action":"delete","snapshot_id":"` + testBackupID + `","confirmation":"DELETE ` + testBackupID + `"}`,
 		`{"action":"prune","keep_last":0,"confirmation":"PRUNE 0"}`,
 		`{"action":"prune","keep_last":2,"confirmation":"PRUNE 3"}`,
@@ -240,6 +243,7 @@ func TestBackupAdminAcceptsOnlyExplicitNonMutatingAndDestructiveContracts(t *tes
 		{Action: "verify", SnapshotID: testBackupID, Mode: "deep"},
 		{Action: "plan", KeepLast: 3, Mode: "fast"},
 		{Action: "restore", SnapshotID: testBackupID, Confirmation: "RESTORE " + testBackupID},
+		{Action: "drill", SnapshotID: testBackupID, Confirmation: "DRILL " + testBackupID},
 		{Action: "delete", SnapshotID: "v1:xdrive-backup-20261026T030000Z", Confirmation: "DELETE v1:xdrive-backup-20261026T030000Z"},
 		{Action: "prune", KeepLast: 2, Confirmation: "PRUNE 2"},
 		{Action: "policy", Format: "v1", RetentionDays: 7, Revision: testPolicyRevision},

@@ -112,6 +112,7 @@ type backupAdminHistoryEntry struct {
 	backupAdminStatus
 	Mode         string                          `json:"mode,omitempty"`
 	Verification *backupAdminVerificationReceipt `json:"verification,omitempty"`
+	Drill        *backupAdminDrillReceipt        `json:"drill,omitempty"`
 }
 
 type backupAdminHistory struct {
@@ -131,7 +132,7 @@ func validBackupAdminHistory(events []backupAdminHistoryEntry) bool {
 			(e.SnapshotID != "" && !backupAdminSnapshotID.MatchString(e.SnapshotID)) {
 			return false
 		}
-		if !validBackupVerificationReceipt(e) {
+		if !validBackupVerificationReceipt(e) || !validBackupDrillReceipt(e) {
 			return false
 		}
 		switch e.Action {
@@ -143,8 +144,9 @@ func validBackupAdminHistory(events []backupAdminHistoryEntry) bool {
 			if e.SnapshotID != "" || (e.Mode != "fast" && e.Mode != "deep") {
 				return false
 			}
-		case "restore", "delete":
-			if e.SnapshotID == "" || e.Mode != "" {
+		case "restore", "delete", "drill":
+			if e.SnapshotID == "" || e.Mode != "" ||
+				(e.Action == "drill" && !strings.HasPrefix(e.SnapshotID, "v2-")) {
 				return false
 			}
 		case "create", "prune", "policy":
@@ -312,6 +314,13 @@ func validateBackupAdminRequest(request backupAdminRequest) error {
 			request.RetentionDays != 0 || request.Revision != "" {
 			return errors.New("invalid verification parameters")
 		}
+	case "drill":
+		if !strings.HasPrefix(request.SnapshotID, "v2-") ||
+			request.Confirmation != "DRILL "+request.SnapshotID ||
+			request.Format != "" || request.Mode != "" || request.KeepLast != 0 ||
+			request.RetentionDays != 0 || request.Revision != "" {
+			return errors.New("isolated drill requires exact committed v2 confirmation")
+		}
 	case "plan":
 		if request.KeepLast < 1 || request.KeepLast > 1000 ||
 			(request.Mode != "fast" && request.Mode != "deep") ||
@@ -390,7 +399,7 @@ func (s *Server) adminSubmitBackupManagement(c *gin.Context) {
 		for _, snap := range page.Inventory.Snapshots {
 			if snap.ID == request.SnapshotID &&
 				(request.Action == "verify" || snap.State == "complete") {
-				if request.Action == "restore" && !snap.FileDataIncluded {
+				if (request.Action == "restore" || request.Action == "drill") && !snap.FileDataIncluded {
 					c.JSON(http.StatusConflict, gin.H{"error": "backup_snapshot_database_only"})
 					return
 				}

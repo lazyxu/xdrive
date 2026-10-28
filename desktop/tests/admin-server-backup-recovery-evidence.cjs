@@ -34,6 +34,7 @@ test('only genuine matching Host history is attributed to the selected snapshot'
   assert.equal(view.snapshotKind, 'complete_candidate')
   assert.equal(view.lastVerify, failed)
   assert.equal(view.lastRestore, restored)
+  assert.equal(view.lastDrill, null)
   assert.equal(view.hostIsolatedDrill, 'not_verified')
   assert.equal(view.ciDrillForDeployedHost, 'not_attested')
 })
@@ -57,6 +58,28 @@ test('a successful verify or production restore never asserts isolated recoverab
   const parent = fs.readFileSync(path.join(root,
     'ui/shared/src/mui/ServerBackupManagementPanel.tsx'), 'utf8')
   assert.ok(parent.includes('XDriveBackupRecoveryEvidencePanel page={page} snapshotID={snapshotID}'))
+  assert.match(parent, /data-xdrive-admin-backup-drill-receipt/)
+  assert.match(parent, /隔离演练所选 v2 备份/)
+})
+
+test('isolation history remains snapshot-specific and never becomes production acceptance', () => {
+  const id = 'v2-default:xdrive-backup-20261027T120000Z'
+  const event = receipt('drill', id, 'success', '2026-10-28T00:10:00Z')
+  event.drill = {
+    protocol: 'xdrive-host-isolated-drill-v1', state: 'success',
+    environment: 'host_ephemeral_offline_tmpfs',
+    snapshot: 'xdrive-backup-20261027T120000Z',
+    files_restored: true, postgresql_restored: true, production_verified: false,
+    max_mib: 1024, failure_category: '',
+  }
+  const result = select(page([snapshot(id)], [event]), id)
+  assert.equal(result.lastDrill, event)
+  assert.equal(result.hostIsolatedDrill, 'not_verified')
+  assert.equal(select(page([snapshot('other')], [event]), 'other').lastDrill, null)
+  const ui = fs.readFileSync(path.join(root,
+    'ui/shared/src/mui/BackupRecoveryEvidencePanel.tsx'), 'utf8')
+  assert.match(ui, /drillLabel\(evidence.lastDrill\)/)
+  assert.match(ui, /不是生产破坏性恢复验收/)
 })
 
 test('database-only, inconsistent, incomplete and missing snapshots do not become full backups', () => {

@@ -15,13 +15,14 @@ export type XDriveBackupRecoveryEvidence = {
   snapshotName: string | null
   lastVerify: XDriveServerBackupHistoryEntry | null
   lastRestore: XDriveServerBackupHistoryEntry | null
+  lastDrill: XDriveServerBackupHistoryEntry | null
   hostIsolatedDrill: 'not_verified'
   ciDrillForDeployedHost: 'not_attested'
 }
 
 function latestForSnapshot(
   history: XDriveServerBackupPage['history'],
-  action: 'verify' | 'restore',
+  action: 'verify' | 'restore' | 'drill',
   snapshotID: string,
 ): XDriveServerBackupHistoryEntry | null {
   let latest: XDriveServerBackupHistoryEntry | null = null
@@ -55,6 +56,7 @@ export function selectServerBackupRecoveryEvidence(
     snapshotName: snapshot?.name || null,
     lastVerify: snapshot ? latestForSnapshot(page.history, 'verify', snapshot.id) : null,
     lastRestore: snapshot ? latestForSnapshot(page.history, 'restore', snapshot.id) : null,
+    lastDrill: snapshot ? latestForSnapshot(page.history, 'drill', snapshot.id) : null,
     hostIsolatedDrill: 'not_verified',
     ciDrillForDeployedHost: 'not_attested',
   }

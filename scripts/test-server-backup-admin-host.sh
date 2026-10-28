@@ -16,6 +16,16 @@ cat > "$XD_CONFIG_DIR/bin/xdrive-server" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >> "$XD_BACKUP_ADMIN_TEST_LOG"
+if [[ "$1" == backup && "$2" == drill ]]; then
+  name="$(basename -- "${3:-}")"
+  now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  if [[ "${XD_BACKUP_ADMIN_TEST_DRILL_BAD:-}" == bad ]]; then
+    printf '{"protocol":"fake","state":"success"}\n'
+    exit 0
+  fi
+  printf '{"protocol":"xdrive-host-isolated-drill-v1","state":"success","environment":"host_ephemeral_offline_tmpfs","snapshot":"%s","started_at":"%s","finished_at":"%s","files_restored":true,"postgresql_restored":true,"production_verified":false,"max_mib":1024,"failure_category":""}\n' "$name" "$now" "$now"
+  exit 0
+fi
 if [[ "$1" == backup && "$2" == verify && "${3:-}" == --json ]]; then
   if [[ "${4:-}" == "${XD_BACKUP_ADMIN_TEST_BAD_VERIFY:-/unreachable}" ]]; then
     printf '{"protocol":"xdrive-host-backup-verify-v1","state":"failed","format":"v2","scope":"backup_snapshot_and_referenced_cas","cas_objects_checked":1,"cas_bytes_hashed":11,"failure_category":"object_sha256_mismatch"}\n'
@@ -443,4 +453,37 @@ assert "verification" not in e,e
 PY
 [[ -L "$proof_file" && "$(readlink "$proof_file")" == /etc/passwd ]]
 
-echo 'Admin Server Backup host bridge: CRUD, history, live progress and safety tests passed'
+# The fixed, non-destructive Host drill is the ONLY additional remote test.
+# No browser can supply raw Host path, Docker flags or RAM limit.
+write_request drill "v2-default:$v2" "" "" "" "DRILL v2-default:$v2"
+backup_admin_process_request "$dir"
+grep -Fq "backup drill $XD_CONFIG_DIR/backups/incremental/snapshots/$v2 --max-mib 1024" "$XD_BACKUP_ADMIN_TEST_LOG"
+grep -Fq '"state":"success"' "$dir/backup-admin-status.json"
+python3 - "$dir/backup-admin-history.json" <<'PY'
+import json,sys
+e=json.load(open(sys.argv[1],encoding="utf-8"))["operations"][0]
+assert e["action"]=="drill" and e["state"]=="success",e
+d=e["drill"]
+assert d["protocol"]=="xdrive-host-isolated-drill-v1",d
+assert d["files_restored"] and d["postgresql_restored"],d
+assert d["production_verified"] is False and d["max_mib"]==1024,d
+PY
+# Forged success from the CLI can never create a successful history receipt.
+export XD_BACKUP_ADMIN_TEST_DRILL_BAD=bad
+write_request drill "v2-default:$v2" "" "" "" "DRILL v2-default:$v2"
+backup_admin_process_request "$dir"
+grep -Fq '"state":"failed"' "$dir/backup-admin-status.json"
+python3 - "$dir/backup-admin-history.json" <<'PY'
+import json,sys
+e=json.load(open(sys.argv[1],encoding="utf-8"))["operations"][0]
+assert e["action"]=="drill" and e["state"]=="failed" and "drill" not in e,e
+PY
+unset XD_BACKUP_ADMIN_TEST_DRILL_BAD
+# A v1 target fails before invoking the isolated drill even with a typed word.
+cp "$XD_BACKUP_ADMIN_TEST_LOG" "$TMP/before-invalid-drill"
+write_request drill "v1:$v1" "" "" "" "DRILL v1:$v1"
+backup_admin_process_request "$dir"
+cmp "$TMP/before-invalid-drill" "$XD_BACKUP_ADMIN_TEST_LOG"
+grep -Fq '"state":"failed"' "$dir/backup-admin-status.json"
+
+echo 'Admin Server Backup host bridge: CRUD, history, isolated drill and safety tests passed'
