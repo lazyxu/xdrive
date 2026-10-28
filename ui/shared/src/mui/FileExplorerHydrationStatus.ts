@@ -35,6 +35,15 @@ export function xDriveFileExplorerDeviceHydrationPathKey(value?: string): string
   } else if (normalized.startsWith('//?/')) {
     normalized = normalized.slice(4)
   }
+  // UNC and POSIX roots are distinct identities. The original Desktop
+  // implementation collapsed "//NAS/share" into "/nas/share", which could
+  // attach a hydration transfer to an unrelated local path.
+  if (normalized.startsWith('//')) {
+    return '//' + normalized.slice(2).replace(/\/+/g, '/')
+      .replace(/\/$/, '').toLowerCase()
+  }
+  if (/^[A-Za-z]:\/$/.test(normalized)) return normalized.toLowerCase()
+  if (normalized === '/') return '/'
   return normalized.replace(/\/+/g, '/').replace(/\/$/, '').toLowerCase()
 }
 

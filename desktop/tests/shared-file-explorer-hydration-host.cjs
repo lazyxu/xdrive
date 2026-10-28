@@ -31,6 +31,11 @@ test('Windows native, extended path and UNC aliases normalize identically', () =
   assert.equal(key('C:\\Users\\Owner\\album.jpg'), key('\\\\?\\C:\\Users\\Owner\\album.jpg'))
   assert.equal(key('\\\\?\\UNC\\NAS\\Share\\PHOTO.JPG'),
     key('\\\\NAS\\Share\\photo.jpg'))
+  assert.equal(key('\\\\NAS\\Share\\photo.jpg'), '//nas/share/photo.jpg')
+  assert.notEqual(key('\\\\NAS\\Share\\photo.jpg'),
+    key('/nas/share/photo.jpg'), 'network and local paths cannot share hydration state')
+  assert.equal(key('C:\\'), 'c:/', 'Windows drive root cannot collapse to drive-relative C:')
+  assert.equal(key('/'), '/')
   assert.equal(key('   C:\\Owner\\Folder\\  '), 'c:/owner/folder')
   assert.equal(key(''), '')
 })
