@@ -519,7 +519,7 @@ declare global {
         getTransfers: () => Promise<AgentTransfers>
         getStorageTree: () => Promise<DesktopResult<AgentStorageTreeNode>>
         getCache: () => Promise<DesktopResult<AgentCacheStats>>
-        getLocalDiskSpace: () => Promise<DesktopResult<AgentLocalDiskSpace>>
+        getLocalDiskSpace: (requestID?: string) => Promise<DesktopResult<AgentLocalDiskSpace>>
         releaseCache: () => Promise<DesktopResult<AgentCacheReleaseResult>>
         getMediaItem: (nodeID: number, requestID: string) => Promise<DesktopResult<AgentMediaItem>>
         cancelMediaItem: (requestID: string) => Promise<DesktopResult<{ cancelled: boolean }>>
@@ -887,10 +887,10 @@ declare global {
         cloudUpdateFileSavedSearch: (id: number, input: AgentFileSavedSearchInput) => Promise<DesktopResult<AgentFileSavedSearch>>
         cloudDeleteFileSavedSearch: (id: number) => Promise<DesktopResult<{ ok: boolean }>>
         cloudReorderFileSavedSearches: (ids: number[]) => Promise<DesktopResult<{ ok: boolean }>>
-        cloudFileFavorites: () => Promise<DesktopResult<AgentCloudFavoriteItem[]>>
+        cloudFileFavorites: (requestID?: string) => Promise<DesktopResult<AgentCloudFavoriteItem[]>>
         cloudFavoriteFile: (nodeID: number) => Promise<DesktopResult<AgentCloudFavoriteItem>>
         cloudUnfavoriteFile: (nodeID: number) => Promise<DesktopResult<{ ok: boolean }>>
-        cloudFileRecent: (limit?: number) => Promise<DesktopResult<AgentCloudRecentItem[]>>
+        cloudFileRecent: (limit?: number, requestID?: string) => Promise<DesktopResult<AgentCloudRecentItem[]>>
         cloudTouchFileRecent: (nodeID: number) => Promise<DesktopResult<AgentCloudRecentItem>>
         cloudClearFileRecent: () => Promise<DesktopResult<{ ok: boolean }>>
         cloudCreateDirectory: (parentID: number, name: string) => Promise<DesktopResult<AgentCloudNode>>
