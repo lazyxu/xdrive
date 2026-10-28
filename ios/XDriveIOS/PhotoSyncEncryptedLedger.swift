@@ -333,7 +333,11 @@ actor XDrivePhotoSyncLedger {
             throw XDrivePhotoSyncLedgerError.keychainUnavailable(status)
         }
         var bytes = [UInt8](repeating: 0, count: 32)
-        guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
+        let randomStatus = bytes.withUnsafeMutableBytes { buffer -> OSStatus in
+            guard let address = buffer.baseAddress else { return errSecParam }
+            return SecRandomCopyBytes(kSecRandomDefault, buffer.count, address)
+        }
+        guard randomStatus == errSecSuccess else {
             throw XDrivePhotoSyncLedgerError.keyGenerationFailed
         }
         let fresh = Data(bytes)
