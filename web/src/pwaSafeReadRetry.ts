@@ -46,13 +46,51 @@ function foreground(signal?: AbortSignal | null): boolean {
     return false
   }
 }
-function delayBeforeRetry(delayMs: number, signal?: AbortSignal | null): Promise<void> {
+/** Never launch a second GET unless its AbortSignal can be observed.
+ * Arm cancellation BEFORE releasing the original retryable HTTP body. If a
+ * restricted WebKit host denies listener registration, preserve that response
+ * unchanged (or preserve the first TypeError on a network failure). */
+function delayBeforeRetry(
+  delayMs: number, signal?: AbortSignal | null, onArmed?: () => void,
+): Promise<boolean> {
   if (signal?.aborted) return Promise.reject(abortedError())
-  return new Promise<void>((resolve, reject) => {
-    const cleanup = () => { clearTimeout(timer); signal?.removeEventListener('abort', onAbort) }
-    const onAbort = () => { cleanup(); reject(abortedError()) }
-    const timer = setTimeout(() => { cleanup(); resolve() }, delayMs)
-    signal?.addEventListener('abort', onAbort, { once: true })
+  return new Promise<boolean>((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout> | null = null
+    let settled = false
+    const cleanup = () => {
+      if (timer !== null) clearTimeout(timer)
+      try { signal?.removeEventListener('abort', onAbort) }
+      catch { /* Optional listener cleanup cannot crash delayed callbacks. */ }
+    }
+    const onAbort = () => {
+      if (settled) return
+      settled = true
+      cleanup()
+      reject(abortedError())
+    }
+    try { signal?.addEventListener('abort', onAbort, { once: true }) }
+    catch {
+      // No cancellation observation: do NOT schedule a timer, discard the
+      // already-received response or issue a speculative second Owner GET.
+      cleanup()
+      settled = true
+      resolve(false)
+      return
+    }
+    if (settled) return
+    if (signal?.aborted) { onAbort(); return }
+    try { onArmed?.() }
+    catch (error) {
+      if (!settled) { settled = true; cleanup(); reject(error) }
+      return
+    }
+    if (settled) return
+    timer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      cleanup()
+      resolve(true)
+    }, delayMs)
     if (signal?.aborted) onAbort()
   })
 }
@@ -67,7 +105,7 @@ export async function xDriveFetchPwaSafeRead(
     first = await send(url, init)
   } catch (error) {
     if (!eligible || !(error instanceof TypeError) || !foreground(init.signal)) throw error
-    await delayBeforeRetry(300, init.signal)
+    if (!await delayBeforeRetry(300, init.signal)) throw error
     if (!foreground(init.signal)) throw abortedError()
     // The second network attempt is final, including if it fails.
     return send(url, init)
@@ -75,15 +113,16 @@ export async function xDriveFetchPwaSafeRead(
   if (!eligible || !foreground(init.signal)) return first
   const waitMs = retryDelay(first)
   if (waitMs === null) return first
-  // The first retryable error response is no longer needed. Release its body
-  // before waiting, otherwise a slow 429/503 proxy may continue streaming
-  // abandoned bytes while the next authenticated Owner GET is queued.
-  // Never wait for or depend on optional cancellation to settle the retry.
-  try {
-    const cancellation = first.body?.cancel()
-    if (cancellation) void cancellation.catch(() => {})
-  } catch { /* Best-effort cleanup of an abandoned read-only response. */ }
-  await delayBeforeRetry(waitMs, init.signal)
+  // Once the abort listener is armed, release the abandoned 429/503 body
+  // before waiting. A denied listener leaves the original response readable.
+  // Never wait for or depend on best-effort body cancellation to settle.
+  const armed = await delayBeforeRetry(waitMs, init.signal, () => {
+    try {
+      const cancellation = first.body?.cancel()
+      if (cancellation) void cancellation.catch(() => {})
+    } catch { /* Best-effort cleanup of an abandoned read-only response. */ }
+  })
+  if (!armed) return first
   if (!foreground(init.signal)) throw abortedError()
   return send(url, init)
 }
