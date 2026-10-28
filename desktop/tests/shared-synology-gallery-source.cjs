@@ -41,7 +41,8 @@ new Function('module', 'exports', 'require', 'URL', 'Blob', transpiled.outputTex
         const image = await client.ownerFileThumbnail(item.id, item.revision, signal)
         if (signal?.aborted) throw Error('thumbnail aborted')
         onProgress?.(image.data.length, image.data.length,
-          image.alphaState === 'masked' ? 'data:image/png;base64,' + image.alphaMask : null)
+          image.alphaState === 'masked' ? 'data:image/png;base64,' + image.alphaMask
+            : image.alphaState === 'opaque' ? '' : null)
         return fakeURL.createObjectURL(new Blob([image.data], { type: image.contentType }))
       },
     }
@@ -139,8 +140,8 @@ test('thumbnail requires previously authenticated Node/revision and preserves ca
   const progress = []
   assert.equal(await source.loadThumbnail(1, signal.signal, 7,
     (...values) => progress.push(values)), 'blob:owner:1')
-  assert.deepEqual(progress, [[0, undefined, null], [4, 4, null]],
-    'Gallery must retain the shared indeterminate-to-verified thumbnail progress')
+  assert.deepEqual(progress, [[0, undefined, null], [4, 4, '']],
+    'Gallery must retain shared progress and the verified opaque alpha state')
   assert.deepEqual(calls.filter(x => x[0] === 'thumbnail').map(x => x.slice(1, 3)), [[1, 7]])
   signal.abort()
   assert.equal(await source.loadThumbnail(1, signal.signal, 7), null)
@@ -188,7 +189,11 @@ test('superseded Owner thumbnail and original must not publish an old revision a
   resolveOriginal('blob:verified-old-owner')
   assert.equal(await pendingThumbnail, null)
   assert.equal(await pendingOriginal, null)
-  assert.deepEqual(calls.filter(x => x[0] === 'revoke').map(x => x[1]),
-    ['blob:verified-old-owner'])
+  const revoked = calls.filter(x => x[0] === 'revoke').map(x => x[1])
+  assert.equal(revoked.length, 2, 'both superseded image URLs must be revoked')
+  assert.ok(revoked.some(url => /^blob:owner:\d+$/.test(url)),
+    'the stale Owner thumbnail must be revoked')
+  assert.ok(revoked.includes('blob:verified-old-owner'),
+    'the stale original preview must be revoked')
   deferredPreview = null
 })
