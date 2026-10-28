@@ -2378,6 +2378,40 @@ class DriveAppTest {
         }
     }
 
+    @Test fun galleryMoreOpensRealWgs84SummaryAndBackRestoresOriginalGallery() {
+        galleryGpsOverviewFixture = true
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryLoaded && !controller.state.value.loading
+        }
+        compose.onNodeWithTag("gallery-item-40").assertExists()
+        compose.onNodeWithTag("gallery-view-options").performClick()
+        compose.onNodeWithTag("gallery-show-map").performScrollTo().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryMapOpen &&
+                controller.state.value.galleryMapLoaded &&
+                !controller.state.value.loading
+        }
+        compose.onNodeWithTag("gallery-map-count").assertExists()
+        compose.onNodeWithTag("gallery-map-aggregation-label").assertExists()
+        compose.onNodeWithTag("gallery-map-wgs84-distribution").assertExists()
+        compose.onNodeWithTag("gallery-map-unavailable-basemap").assertExists()
+        compose.onNodeWithTag(
+            "gallery-map-sample-map-region:q:-180:-90:180:90:0:0").assertExists()
+        compose.runOnIdle { org.junit.Assert.assertEquals(1, gpsOverviewReads) }
+        compose.onNodeWithTag("gallery-map-close").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.GALLERY &&
+                !controller.state.value.galleryMapOpen
+        }
+        compose.onNodeWithTag("gallery-wall").assertExists()
+        compose.onNodeWithTag("gallery-item-40").assertExists()
+        compose.runOnIdle { org.junit.Assert.assertEquals(1, gpsOverviewReads) }
+    }
+
+
     @Test fun nativeMapReadsRealBd09CellsAndReturnsToUnchangedGpsOverview() {
         galleryGpsOverviewFixture = true
         galleryBd09Fixture = true
@@ -2421,39 +2455,5 @@ class DriveAppTest {
             org.junit.Assert.assertNull(controller.state.value.galleryBd09Cells)
         }
     }
-
-    @Test fun galleryMoreOpensRealWgs84SummaryAndBackRestoresOriginalGallery() {
-        galleryGpsOverviewFixture = true
-        startAndLogin()
-        compose.onNodeWithContentDescription("账户菜单").performClick()
-        compose.onNodeWithTag("switch-to-gallery").performClick()
-        compose.waitUntil(timeoutMillis = 10_000) {
-            controller.state.value.galleryLoaded && !controller.state.value.loading
-        }
-        compose.onNodeWithTag("gallery-item-40").assertExists()
-        compose.onNodeWithTag("gallery-view-options").performClick()
-        compose.onNodeWithTag("gallery-show-map").performScrollTo().performClick()
-        compose.waitUntil(timeoutMillis = 10_000) {
-            controller.state.value.galleryMapOpen &&
-                controller.state.value.galleryMapLoaded &&
-                !controller.state.value.loading
-        }
-        compose.onNodeWithTag("gallery-map-count").assertExists()
-        compose.onNodeWithTag("gallery-map-aggregation-label").assertExists()
-        compose.onNodeWithTag("gallery-map-wgs84-distribution").assertExists()
-        compose.onNodeWithTag("gallery-map-unavailable-basemap").assertExists()
-        compose.onNodeWithTag(
-            "gallery-map-sample-map-region:q:-180:-90:180:90:0:0").assertExists()
-        compose.runOnIdle { org.junit.Assert.assertEquals(1, gpsOverviewReads) }
-        compose.onNodeWithTag("gallery-map-close").performClick()
-        compose.waitUntil(timeoutMillis = 10_000) {
-            controller.state.value.screen == Screen.GALLERY &&
-                !controller.state.value.galleryMapOpen
-        }
-        compose.onNodeWithTag("gallery-wall").assertExists()
-        compose.onNodeWithTag("gallery-item-40").assertExists()
-        compose.runOnIdle { org.junit.Assert.assertEquals(1, gpsOverviewReads) }
-    }
-
 
 }
