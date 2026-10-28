@@ -146,3 +146,15 @@ test('real Chromium layout measures only painted map controls but still enforces
   assert.doesNotMatch(driver,/actual\.pins\.length>0/)
   assert.match(driver,/actual\.pinButtons\.every\(b=>b\.width>=44&&b\.height>=44\)/)
 })
+
+test('compact map rotation uses fresh owner camera before evaluating photo pins',()=>{
+  const source=read('desktop/scripts/gallery-places-dual-host-chromium.cjs')
+  assert.match(source,/beforeResizeQueries=await page\.evaluate/)
+  assert.match(source,/window\.__mapProbe\.queries\.length>before/)
+  assert.match(source,/await page\.waitForFunction\(before=>/)
+  assert.match(source,/pointToPixel\(\)\{[\s\S]*?this\.canvas\?\.clientWidth/)
+  assert.match(source,/await page\.locator\('\[data-xdrive-places-trusted-photo-cover\]'\)/)
+  // Do not accept an old fixed-pixel test marker which can conceal a stale
+  // projected 390px camera after viewport rotation.
+  assert.doesNotMatch(source,/pointToPixel\(\)\{return \{x:180,y:180\}\}/)
+})
