@@ -100,6 +100,10 @@ class OwnerBd09MapCellsTest {
             OwnerBd09Bounds(-180.0, -91.0, 180.0, 90.0),
             OwnerBd09Bounds(Double.NaN, -90.0, 180.0, 90.0),
             OwnerBd09Bounds(-180.0, -90.0, 180.0, Double.POSITIVE_INFINITY),
+            // Go's finiteBaiduCellDimension rejects <=1e-10 in either axis.
+            OwnerBd09Bounds(0.0, 0.0, 1e-12, 1.0),
+            OwnerBd09Bounds(0.0, 0.0, 1.0, 1e-12),
+            OwnerBd09Bounds(179.9, 0.0, -180.099999999999, 1.0),
         )
         MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
             invalid.forEach {
