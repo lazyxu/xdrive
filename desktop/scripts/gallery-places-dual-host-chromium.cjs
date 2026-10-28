@@ -34,6 +34,7 @@ const summary={sourceCommit:process.env.XD_PR_HEAD || null,
   realGin:false,realBaiduProvider:false,physicalDevice:false,
   fullGalleryPageModes:[],fullGalleryDirectPhotoModes:[],mobileDrawerModes:[],
   favoriteMapCloseModes:[],fullDocumentHandoffModes:[],
+  fullDocumentComboModes:[],
   realHEICMapCoverModes:[],realLIVPMapCoverModes:[],
   checks:[],passed:false,errors:[]}
 const record=(name,ok)=>{summary.checks.push({name,passed:!!ok});assert(ok,name)}
@@ -242,8 +243,19 @@ async function testActualGinIssueRedeem(page,mode){
 }
 
 
-async function testFullDocumentMapHandoff(browser,from,port){
+async function testFullDocumentMapHandoff(browser,from,port,combined=false){
   const target=from==='inline'?'isolated':'prototype'
+  const label=from+(combined?':Family-date-kind-sort':'')
+  const expectedCount=combined?2:3
+  const checkScope=query=>{
+    if(!combined)return query.favorite===true&&query.albumKey===''
+    const filters=query.filters
+    return query.favorite===true&&query.albumKey==='manual:Family'&&
+      filters?.sort_by==='added'&&filters?.sort_dir==='asc'&&
+      filters?.favorite===true&&filters?.asset_kind==='image'&&
+      filters?.captured_from==='2026-10-19'&&
+      filters?.captured_to==='2026-10-22'&&filters?.time_zone==='Asia/Tokyo'
+  }
   const context=await browser.newContext({
     viewport:{width:390,height:844},locale:'zh-CN',
     ignoreHTTPSErrors:true,serviceWorkers:'block'})
@@ -259,21 +271,24 @@ async function testFullDocumentMapHandoff(browser,from,port){
   try{
     const fromQuery=from==='isolated'?'&places_map_mode=isolated':''
     await page.goto('https://'+galleryHost+':'+port+
-      '/?handoff_doc=1'+fromQuery,{waitUntil:'domcontentloaded'})
+      '/?handoff_doc=1'+(combined?'&handoff_combo=1':'')+fromQuery,
+      {waitUntil:'domcontentloaded'})
     // This is the actual XDriveMediaGalleryPlacesMap Parent, not the old
     // minimal TestApp fixture. Its authoritative ready signal is the rendered
     // trusted Owner Count, not TestApp's private __mapProbe.ready boolean.
-    await page.getByText('当前地图可查看 3 张照片',{exact:true}).waitFor()
-    record(from+': original Owner Favorites map is mounted before document handoff',
-      (await page.evaluate(()=>window.__mapProbe.queries))
-        .every(q=>q.favorite===true&&q.albumKey===''))
+    await page.getByText('当前地图可查看 '+expectedCount+' 张照片',
+      {exact:true}).waitFor()
+    const original=await page.evaluate(()=>window.__mapProbe.queries)
+    record(label+': original restricted Owner map before document handoff',
+      original.length>0&&original.every(checkScope))
     await page.locator('[data-xdrive-places-map-more-menu] > summary').click()
     await page.locator('[data-xdrive-map-mode-'+target+']').click()
     await page.waitForURL(url=>url.searchParams.get('places_map_scope_required')==='1'&&
       (target==='prototype'?!url.searchParams.has('places_map_mode'):
         url.searchParams.get('places_map_mode')==='isolated'))
     await page.waitForFunction(()=>window.__mapProbe?.handoff?.state==='ready')
-    await page.getByText('当前地图可查看 3 张照片',{exact:true}).waitFor()
+    await page.getByText('当前地图可查看 '+expectedCount+' 张照片',
+      {exact:true}).waitFor()
     const accepted=await page.evaluate(()=>({
       url:location.href,
       ownerQueries:window.__mapProbe.queries,
@@ -285,20 +300,22 @@ async function testFullDocumentMapHandoff(browser,from,port){
     // any third-party SDK pixel projection. A valid Owner /cells Count may
     // render before asynchronously projected pins; neither should mask an
     // authentication or filter regression behind a composite assertion.
-    record(from+'→'+target+': one Gin/PostgreSQL Owner handoff consumed',
+    record(label+'→'+target+': one Gin/PostgreSQL Owner handoff consumed',
       accepted.handoff.consumes===1&&accepted.handoff.state==='ready')
-    record(from+'→'+target+': Favorites-only Owner Cells survived full document',
+    record(label+'→'+target+': precise restricted Owner Cells survived full document',
       accepted.ownerQueries.length>0&&
-      accepted.ownerQueries.every(q=>q.favorite===true&&q.albumKey==='')&&
-      accepted.count?.includes('3 张照片'))
+      accepted.ownerQueries.every(checkScope)&&
+      accepted.count?.includes(expectedCount+' 张照片'))
     await page.locator('[data-xdrive-places-trusted-photo-cover]')
       .first().waitFor({state:'visible'})
-    record(from+'→'+target+': restored Owner photo cover actually rendered',
+    record(label+'→'+target+': restored Owner photo cover actually rendered',
       await page.locator('[data-xdrive-places-trusted-photo-cover]').count()>0)
-    record(from+'→'+target+': opaque one-use token is scrubbed before SDK load',
+    record(label+'→'+target+': opaque one-use token hides Owner filters',
       accepted.url.includes('places_map_scope_required=1')&&
       !accepted.url.includes('places_map_handoff=')&&
-      !accepted.url.includes('manual:')&&!accepted.url.includes('favorite=true'))
+      !accepted.url.includes('manual:')&&!accepted.url.includes('favorite=true')&&
+      !accepted.url.includes('asset_kind')&&!accepted.url.includes('captured_from')&&
+      !accepted.url.includes('time_zone'))
     await page.reload({waitUntil:'domcontentloaded'})
     await page.locator('[data-xdrive-map-handoff-denied="1"]').waitFor()
     const denied=await page.evaluate(()=>({
@@ -307,10 +324,11 @@ async function testFullDocumentMapHandoff(browser,from,port){
       map:document.querySelectorAll('[data-xdrive-gallery-places-map]').length,
       token:location.href.includes('places_map_handoff='),
     }))
-    record(from+'→'+target+': full reload cannot replay or broaden restricted Owner map',
+    record(label+'→'+target+': full reload cannot replay or broaden restricted Owner map',
       denied.state==='denied'&&denied.queries===0&&denied.map===0&&
       !denied.token&&errors.length===0)
-    summary.fullDocumentHandoffModes.push(from)
+    if(combined)summary.fullDocumentComboModes.push(from)
+    else summary.fullDocumentHandoffModes.push(from)
   }finally{await context.close()}
 }
 
@@ -2014,6 +2032,10 @@ async function main(){
       await testFullDocumentMapHandoff(browser,'isolated',port)
       record('both SDK Hosts perform real one-use Gin scope handoff across full document',
         summary.fullDocumentHandoffModes.join(',')==='inline,isolated')
+      await testFullDocumentMapHandoff(browser,'inline',port,true)
+      await testFullDocumentMapHandoff(browser,'isolated',port,true)
+      record('both Hosts preserve real Family Album, Favorite, Date, Kind, Sort after full reload',
+        summary.fullDocumentComboModes.join(',')==='inline,isolated')
       await testRealHEICOwnerMapCover(browser,'inline',port)
       await testRealHEICOwnerMapCover(browser,'isolated',port)
       record('both SDK Hosts decoded signed real HEIC-derived JPEG photo pins',

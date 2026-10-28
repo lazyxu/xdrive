@@ -185,6 +185,27 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 	// has an overlapping BD09 location which must never enter this scope.
 	seedP04BrowserOwnerPhotoCells(t, db, owner.ID, "owner", 9, 3, casKey, checksum, int64(pngData.Len()))
 	seedP04BrowserOwnerPhotoCells(t, db, foreign.ID, "foreign", 1, 0, casKey, checksum, int64(pngData.Len()))
+	// Keep the existing 9 total/3 favorites fixture unchanged. A real manual
+	// Family album contains 2 favorites plus a non-favorite: the combined
+	// Album+Favorites map is exactly 2 and cannot silently widen to 3 or 9.
+	var family meta.PhotoCollection
+	if err := db.Where("owner_id = ? AND external_key = ?", owner.ID, "manual:Family").
+		Take(&family).Error; err != nil {
+		t.Fatal(err)
+	}
+	var familyCandidateAssets []meta.PhotoAsset
+	if err := db.Where("owner_id = ?", owner.ID).Order("id ASC").
+		Find(&familyCandidateAssets).Error; err != nil || len(familyCandidateAssets) != 9 {
+		t.Fatal("missing original 9 real Owner assets for scoped Family fixture")
+	}
+	for ordinal, assetIndex := range []int{0, 1, 3} {
+		if err := db.Create(&meta.PhotoCollectionAsset{
+			CollectionID: family.ID, AssetID: familyCandidateAssets[assetIndex].ID,
+			Position: int64(ordinal),
+		}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
 	// Dedicated test-only HEIC Owner: the original 9+1 asset map and every
 	// pre-existing Viewer/Count assertion remain source-exact unchanged.
 	// The real HEVC-coded sample is decoded by the existing media package,
