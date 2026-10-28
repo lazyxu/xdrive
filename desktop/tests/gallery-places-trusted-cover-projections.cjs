@@ -245,3 +245,19 @@ test('both SDK Hosts receive the same current React layout exclusions',()=>{
   assert.match(driver,/testMapOverlayPinOcclusion/)
   assert.doesNotMatch(parent,/data-xdrive-places-photo-collection-strip/)
 })
+
+test('nearby 142 and 28 Owner photo clusters both paint when their cards do not overlap',()=>{
+  // Regression from actual Baidu map screenshot: prior 104x92 conservative
+  // collision exclusion silently removed the valid 28-photo thumbnail,
+  // leaving only a native-looking numeric fallback. Both true signed
+  // representatives must be independently paintable at this spacing.
+  const nearby=[
+    {count:142,x:950,y:100,id:'large'},
+    {count:28,x:1049,y:190,id:'28-photo'},
+    {count:10,x:1020,y:160,id:'genuinely-overlapping'},
+  ]
+  const selected=xDriveSelectVisibleMapPhotoCovers(nearby,1280,760,false,[])
+  assert.deepEqual(selected.map(x=>x.id),['large','28-photo'])
+  assert.deepEqual(nearby.map(x=>x.count),[142,28,10],
+    'decluttering must never alter signed Owner count, only visual pins')
+})
