@@ -99,6 +99,9 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   mapPhotoScope: XDriveBaiduMapPhotoScope
 }) {
   const mount = useRef<HTMLDivElement | null>(null)
+  const mapFrameRef = useRef<{
+    setPhotoCoverSelections(selections: readonly MediaBaiduNativeCellSelection[]): boolean
+  } | null>(null)
   const failureCallback = useRef(onFailure)
   failureCallback.current = onFailure
   const opened = useRef(onOpenCell)
@@ -385,6 +388,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         ...commonMapOptions,childOrigin,
       })
     if (!frame) { failure(); return }
+    mapFrameRef.current = frame
 
     const queryCells = async (bounds: Bounds, liveCamera = false): Promise<boolean> => {
       if (lifetime.signal.aborted) return false
@@ -531,6 +535,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
       cancel()
       lifetime.abort()
       if(refresh!==null)clearInterval(refresh)
+      if (mapFrameRef.current === frame) mapFrameRef.current = null
       frame.dispose()
       onReady(false)
     }
@@ -552,6 +557,14 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   // key as private media authority. A pan/revoke clears both inputs.
   const photoStrip = scopeIsCurrent && acceptedViewport && phase === 'ready'
     ? xDriveCurrentMapPhotoCollections(trustedSummary, projected, accessible.map(cell => cell.selection)) : []
+  // Two SDK Hosts receive only the current visible React cover selections.
+  // Numeric native labels are suppressed for these displayed buttons only.
+  // Each other signed Cell keeps its native label and the full accessible list.
+  useLayoutEffect(() => {
+    mapFrameRef.current?.setPhotoCoverSelections?.(
+      coverPins.map(pin => pin.selection))
+  },[projected,accessible,acceptedViewport,currentFilterKey,phase,
+    summary,edgeToEdge,loadThumbnail])
   // Only the authenticated Owner Cells DTO supplies representative media kind.
   // Both SDK Hosts still get anonymous map geometry, count and ephemeral key;
   // private media bytes, URLs and kind remain in this trusted React Parent.

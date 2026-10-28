@@ -155,3 +155,25 @@ test('100k media keeps <=24 verified photo covers; all 64 native Cells stay inde
   assert.match(surface,/xDriveMountBaiduInlineMap/)
   assert.match(surface,/xDriveMountBaiduIsolatedFrame/)
 })
+
+test('photo overlay has one shared presentation lease for inline and isolated native labels', () => {
+  const parent=fs.readFileSync(path.join(root,
+    'ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx'),'utf8')
+  const inline=fs.readFileSync(path.join(root,
+    'ui/shared/src/media-gallery-baidu-inline-map-host.ts'),'utf8')
+  const frame=fs.readFileSync(path.join(root,
+    'ui/shared/src/media-gallery-baidu-isolated-frame-host.ts'),'utf8')
+  const child=fs.readFileSync(path.join(root,
+    'deploy/baidu-isolated-child/child.js'),'utf8')
+  assert.match(parent,/mapFrameRef\.current\?\.setPhotoCoverSelections\?\.\(/)
+  assert.match(parent,/coverPins\.map\(pin => pin\.selection\)/)
+  assert.match(parent,/xDriveVerifiedMapPhotoProjections\(/)
+  assert.match(inline,/coveredSelections\.has\(cell\.selection\)/)
+  assert.match(inline,/return renderCells\(false\)/)
+  assert.match(frame,/xDriveCreateBaiduIsolatedPhotoCoversMessage\(/)
+  assert.match(child,/coveredKeys\.has\(cell\.key\)/)
+  assert.match(child,/renderCells\(false\)/)
+  assert.doesNotMatch(child,/\\.node_id\\b|\\.asset_id\\b|photo_url|loadThumbnail|Authorization:/,
+    'no private photo transport may enter the isolated SDK Host')
+  assert.equal(XDRIVE_PLACES_MAP_COVER_MAX,24)
+})

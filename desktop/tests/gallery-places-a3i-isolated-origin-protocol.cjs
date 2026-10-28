@@ -24,6 +24,8 @@ const {
   xDriveParseBaiduIsolatedChildEvent,
   xDriveCreateBaiduIsolatedCellsMessage,
   xDriveCreateBaiduIsolatedCameraMessage,
+  xDriveCreateBaiduIsolatedPhotoCoversMessage,
+  XDRIVE_BAIDU_ISOLATED_MAX_PHOTO_COVERS,
   XDRIVE_BAIDU_ISOLATED_MAX_CELLS,
 } = m.exports
 
@@ -204,4 +206,28 @@ test('projected screen positions are bounded anonymous data, not Owner photo per
     input('cell-projections',{width:640,height:480,
       points:Array.from({length:65},(_,i)=>({key:i.toString(16).padStart(32,'0'),x:1,y:1}))}),
     boundary()),null)
+})
+
+test('isolated native-label suppression carries only bounded current random keys', () => {
+  const a='a'.repeat(32), b='b'.repeat(32), stale='c'.repeat(32)
+  const message=xDriveCreateBaiduIsolatedPhotoCoversMessage(boundary(),[a],[a,b])
+  assert.deepEqual(message,{
+    version:1,generation:7,nonce,kind:'photo-covers',keys:[a]})
+  assert.deepEqual(xDriveCreateBaiduIsolatedPhotoCoversMessage(boundary(),[],[a,b])?.keys,[])
+  assert.equal(XDRIVE_BAIDU_ISOLATED_MAX_PHOTO_COVERS,24)
+  const invalid=[
+    [[stale],[a,b]],[[a,a],[a,b]],[[a,'node-42'],[a,b]],
+    [[a],[a,a]],[[a],[a,'node-42']],
+    [Array.from({length:25},(_,i)=>i.toString(16).padStart(32,'0')),
+      Array.from({length:25},(_,i)=>i.toString(16).padStart(32,'0'))],
+    [[{key:a,node_id:13}],[a,b]],[[a],[]],
+  ]
+  for (const [keys,active] of invalid) {
+    assert.equal(xDriveCreateBaiduIsolatedPhotoCoversMessage(boundary(),keys,active),
+      null,'stale, duplicated, excessive or private keys cannot hide SDK Labels')
+  }
+  assert.equal(xDriveCreateBaiduIsolatedPhotoCoversMessage(
+    {...boundary(),nonce:'invalid'},[a],[a]),null)
+  assert.deepEqual(Object.keys(message).sort(),
+    ['generation','keys','kind','nonce','version'])
 })

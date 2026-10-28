@@ -312,3 +312,52 @@ test('trusted Owner photo-cover projections never release media IDs to independe
   assert.equal(projected.at(-1).cells.length,0,'revoked keys never reactivate')
   frame.dispose()
 })
+
+test('current trusted React photo covers suppress ONLY matching anonymous Child labels', () => {
+  const f=fixture()
+  const frame=xDriveMountBaiduIsolatedFrame(f.options)
+  assert.ok(frame)
+  const first={node_id:42,node_revision:5,jwt:'private',photo_url:'/owner/secret'}
+  const second={node_id:43,node_revision:6,jwt:'another-private'}
+  assert.equal(frame.setPhotoCoverSelections([first]),false,'no coverage before map-ready')
+  f.childListeners.get('load')()
+  f.emit('ready')
+  assert.equal(frame.replaceAuthorizedCells([
+    {latitude:35,longitude:139,count:12,selection:first},
+    {latitude:34,longitude:138,count:5,selection:second},
+  ]),true)
+  const accepted=f.seen.at(-1).payload
+  assert.equal(accepted.kind,'cells')
+  assert.equal(frame.setPhotoCoverSelections([first]),false,'no photo suppression before SDK map-ready')
+  f.emit('map-ready')
+  assert.equal(frame.setPhotoCoverSelections([first]),true)
+  const hidden=f.seen.at(-1).payload
+  assert.equal(hidden.kind,'photo-covers')
+  assert.deepEqual(hidden.keys,[accepted.cells[0].key])
+  assert.deepEqual(Object.keys(hidden).sort(),['generation','keys','kind','nonce','version'])
+  for(const secret of ['jwt','node_id','photo_url','private','/owner/']) {
+    assert.equal(JSON.stringify(hidden).includes(secret),false)
+  }
+  const before=f.seen.length
+  assert.equal(frame.setPhotoCoverSelections([{...first}]),false,
+    'same-looking unapproved Owner selection must not acquire suppression')
+  assert.equal(frame.setPhotoCoverSelections([first,first]),false)
+  assert.equal(f.seen.length,before)
+  assert.equal(frame.setPhotoCoverSelections([]),true)
+  assert.deepEqual(f.seen.at(-1).payload.keys,[],
+    'removing the React cover restores the native numeric fallback')
+  assert.equal(frame.replaceAuthorizedCells([
+    {latitude:37,longitude:140,count:9,selection:second},
+  ]),true)
+  assert.equal(frame.setPhotoCoverSelections([first]),false)
+  assert.equal(frame.setPhotoCoverSelections([second]),true)
+  const newKeys=f.seen.at(-1).payload.keys
+  assert.equal(newKeys.length,1)
+  assert.notEqual(newKeys[0],accepted.cells[0].key,
+    'fresh /cells receipt rotates anonymous labels')
+  f.emit('cancel')
+  assert.equal(frame.setPhotoCoverSelections([second]),false,
+    'revoked SDK Child cannot hide any old Owner Cell')
+  frame.dispose()
+  assert.equal(frame.setPhotoCoverSelections([]),false)
+})
