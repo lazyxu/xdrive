@@ -6,6 +6,7 @@ import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.io.OutputStream
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
@@ -22,6 +23,7 @@ class DriveTransferRecoveryIntegrationTest {
         val events = mutableListOf<String>()
         var failBegin = false
         var failClear = false
+        var finishGate: CompletableDeferred<Unit>? = null
         var index = 0
         val entries = mutableListOf<NativeInterruptedTransfer>()
         override suspend fun begin(
@@ -42,6 +44,7 @@ class DriveTransferRecoveryIntegrationTest {
         ): Boolean {
             assertEquals("https://drive.example/", server)
             assertEquals("owner", username)
+            finishGate?.await()
             events += "verified"
             if (failClear) return false
             return entries.removeAll { it.id == id }
@@ -213,6 +216,36 @@ class DriveTransferRecoveryIntegrationTest {
         c.refreshTransferRecoveryNotices()
         runCurrent()
         assertEquals(1, c.state.value.interruptedNativeTransfers.size)
+        c.close()
+    }
+
+    @Test fun verifiedCleanupCannotResurrectAnOldOwnerAfterLogout() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val recovery = Recovery().apply { finishGate = gate }
+        val service = Service(recovery.events)
+        val c = DriveController(this, { service }, sessionPersistence = Vault(recovery))
+        c.connectAndLogin("https://drive.example", false, "", "owner", "pw", true)
+        runCurrent()
+        assertTrue(c.prepareFileUpload())
+        c.acceptFileUpload("new.txt", 3L) {
+            ByteArrayInputStream("abc".toByteArray())
+        }
+        runCurrent()
+        // The original Server ACK is already verified, but the old
+        // non-cancellable local Keystore cleanup is still waiting.
+        assertEquals(1, service.uploadCalls)
+        assertEquals(1, recovery.entries.size)
+        c.logout()
+        runCurrent()
+        assertEquals(Screen.LOGIN, c.state.value.screen)
+        assertEquals("", c.state.value.username)
+        gate.complete(Unit)
+        runCurrent()
+        assertTrue(recovery.entries.isEmpty()) // safe exact-Owner cleanup
+        assertEquals(Screen.LOGIN, c.state.value.screen)
+        assertFalse(c.state.value.fileUploadCommitted)
+        assertTrue(c.state.value.items.isEmpty())
+        assertTrue(c.state.value.nativeTransfers.isEmpty())
         c.close()
     }
 }
