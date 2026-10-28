@@ -53,6 +53,30 @@ else
   fi
   trap 'rmdir "$lock_dir" 2>/dev/null || true' EXIT INT TERM
 fi
+# A successful process exit alone is not enough to authorize deletion of
+# old recovery points. The writer publishes a final directory only after
+# checksumming its files. Independently verify that precise committed v1
+# generation before applying the legacy time-based retention rule.
+verify_scheduled_v1_recovery_point() {
+  local snapshot="$1" name required
+  [[ "$snapshot" == "$BACKUP_DIR"/xdrive-backup-* ]] || return 1
+  name="${snapshot#"$BACKUP_DIR"/}"
+  [[ "$name" =~ ^xdrive-backup-[0-9]{8}T[0-9]{6}Z$ ]] || return 1
+  [[ -d "$snapshot" && ! -L "$snapshot" ]] || return 1
+  for required in database.dump verify.json manifest.json blobs.tar SHA256SUMS.txt; do
+    [[ -f "$snapshot/$required" && ! -L "$snapshot/$required" ]] || return 1
+  done
+  grep -Eq '"format_version"[[:space:]]*:[[:space:]]*1([,}[:space:]])' "$snapshot/manifest.json" || return 1
+  grep -Eq '"consistency_verified"[[:space:]]*:[[:space:]]*true([,}[:space:]])' "$snapshot/manifest.json" || return 1
+  grep -Eq '"file_data_included"[[:space:]]*:[[:space:]]*true([,}[:space:]])' "$snapshot/manifest.json" || return 1
+  # Require the exact expected file list, not merely sha256sum -c: the latter
+  # also accepts incomplete manifests and checks only named members.
+  (
+    cd "$snapshot" || exit 1
+    cmp -s SHA256SUMS.txt <(sha256sum database.dump verify.json manifest.json blobs.tar)
+  )
+}
+
 if [[ "$schedule_format" == "v2" ]]; then
   # Manual reference-aware GC exists as a separate administrator command.
   # Scheduled v2 backup must NEVER invoke it: no snapshot pruning or CAS
@@ -70,13 +94,24 @@ else
   [[ "$retention_days" =~ ^[0-9]+$ ]] || { echo "XD_BACKUP_RETENTION_DAYS must be an integer" >&2; exit 1; }
 
   backup_dir="$BACKUP_DIR"
+  # Capture the writer's final, explicitly committed path without parsing
+  # progress text or guessing that a backup appeared by directory mtime.
+  receipt_file="$(mktemp "$STATE_DIR/.scheduled-v1-receipt.XXXXXXXX")"
+  trap 'rm -f -- "$receipt_file"; if [[ -n "${lock_dir:-}" ]]; then rmdir "$lock_dir" 2>/dev/null || true; fi' EXIT
   if [[ -x "$BIN_DIR/xdrive-server" ]]; then
-    XD_CONFIG_DIR="$XDRIVE_HOME" "$BIN_DIR/xdrive-server" backup --output-dir "$backup_dir"
+    XD_CONFIG_DIR="$XDRIVE_HOME" "$BIN_DIR/xdrive-server" backup --output-dir "$backup_dir" | tee "$receipt_file"
   else
-    "$BIN_DIR/server-backup.sh" --config-dir "$XDRIVE_HOME" --output-dir "$backup_dir"
+    "$BIN_DIR/server-backup.sh" --config-dir "$XDRIVE_HOME" --output-dir "$backup_dir" | tee "$receipt_file"
   fi
 
   if (( retention_days > 0 )); then
+    new_snapshot="$(tail -n 1 "$receipt_file")"
+    if ! verify_scheduled_v1_recovery_point "$new_snapshot"; then
+      echo "scheduled v1 retention refused: newly committed full backup is missing, unsafe or not checksum-verified; old recovery points preserved" >&2
+      exit 1
+    fi
+    # Only the v1 snapshot root is touched. v2 shared CAS and orphan objects
+    # are never candidates for this legacy retention operation.
     find "$backup_dir" -mindepth 1 -maxdepth 1 -type d -name 'xdrive-backup-*' -mtime "+$retention_days" -print -exec rm -rf -- {} +
   fi
 fi
