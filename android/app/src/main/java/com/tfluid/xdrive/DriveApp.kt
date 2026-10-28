@@ -64,6 +64,17 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     // leaving Gallery. The same user can log out/in against changed photo rows.
     val galleryStateKey = "gallery:${state.server}:${state.username}"
     val galleryAlbumsStateKey = "gallery-albums:${state.server}:${state.username}"
+    val galleryMapCellStateKey = state.galleryMapCellSelected?.let { cell ->
+        "gallery-map-cell:${state.server}:${state.username}:" +
+            "${cell.cellX}:${cell.cellY}:${cell.nodeId}:${cell.nodeRevision}"
+    }
+    // A Viewer temporarily unmounts the cell wall, but not its return
+    // anchor. Cell exit or Owner switch removes UI-only saveable state.
+    if (galleryMapCellStateKey != null) {
+        DisposableEffect(galleryMapCellStateKey) {
+            onDispose { gallerySaveable.removeState(galleryMapCellStateKey) }
+        }
+    }
     if (state.screen == Screen.GALLERY) {
         DisposableEffect(galleryStateKey) {
             onDispose {
@@ -114,6 +125,7 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                             // The visible GPS overview returns to the Gallery
                             // wall, not the Files app. Match Android Back and
                             // the iOS PWA navigation's accessible destination.
+                            state.galleryMapCellSelected != null -> "返回地图"
                             state.galleryMapOpen -> "返回图库"
                             state.gallerySelectedAlbum != null -> "返回精选集"
                             state.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS -> "返回图库"
@@ -202,9 +214,13 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                 }
                 Screen.GALLERY -> {
                     val photo = state.galleryViewer
-                    if (state.galleryMapOpen) {
-                        GalleryMapOverview(state, controller)
-                    } else if (photo != null) {
+                    if (state.galleryMapCellSelected != null && photo == null) {
+                        if (galleryMapCellStateKey != null)
+                            gallerySaveable.SaveableStateProvider(galleryMapCellStateKey) {
+                                GalleryMapCellWall(state, controller, galleryThumbnails)
+                            }
+                    } else if (photo != null && (!state.galleryMapOpen ||
+                        state.galleryMapCellSelected != null)) {
                         Box(Modifier.fillMaxSize()) {
                             key(photo.node.id, photo.node.revision) {
                                 if (photo.mediaKind == "video")
@@ -219,6 +235,8 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                                 }
                             }
                         }
+                    } else if (state.galleryMapOpen) {
+                        GalleryMapOverview(state, controller)
                     } else if (state.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS &&
                         state.gallerySelectedAlbum == null) {
                         gallerySaveable.SaveableStateProvider(galleryAlbumsStateKey) {
