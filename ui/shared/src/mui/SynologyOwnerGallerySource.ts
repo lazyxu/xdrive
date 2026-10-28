@@ -62,11 +62,15 @@ export function createXDriveSynologyOwnerGallerySource(
         !Number.isSafeInteger(n.revision) || n.revision <= 0 ||
         !Number.isSafeInteger(n.size) || n.size < 0 ||
         !n.name) continue
-      // A revised or renamed Node invalidates its previously borrowed preview.
+      // A repeated authorized page with the same Node/revision must retain
+      // the identity object so it cannot invalidate an in-flight thumbnail.
+      const previous = previews.get(n.id)
+      const identity = previous && previous.revision === n.revision &&
+        previous.size === n.size && previous.name === n.name
+        ? previous
+        : { id: n.id, revision: n.revision, size: n.size, name: n.name }
       previews.delete(n.id)
-      previews.set(n.id, {
-        id: n.id, revision: n.revision, size: n.size, name: n.name,
-      })
+      previews.set(n.id, identity)
       while (previews.size > OWNER_GALLERY_PREVIEW_CACHE) {
         const oldest = previews.keys().next().value
         if (typeof oldest !== 'number') break
