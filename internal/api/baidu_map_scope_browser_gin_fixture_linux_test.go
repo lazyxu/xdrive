@@ -100,7 +100,7 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 		&meta.BaiduJSAPIMapEpoch{}, &meta.PhotoCollection{},
 		&meta.BaiduMapScopeHandoff{},
 		&meta.Node{}, &meta.File{}, &meta.FileVersion{},
-		&meta.ContentBlob{}, &meta.MediaMetadata{},
+		&meta.ContentBlob{}, &meta.MediaMetadata{}, &meta.MediaDerivedResource{},
 		&meta.MediaGroup{}, &meta.MediaGroupItem{},
 		&meta.PhotoAsset{}, &meta.PhotoEditRecipe{},
 		&meta.PhotoResource{}, &meta.PhotoMetadata{},
