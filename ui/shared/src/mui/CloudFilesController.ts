@@ -278,12 +278,17 @@ export function useXDriveCloudFilesController<
     // changing the Files route. Yield the old disposable thumbnails before
     // the new first-page request enters its HTTP/IPC transport.
     const previous = virtualTargetRef.current
+    // A -> B (still pending) -> A is a real navigation even though the
+    // accepted first page is already A. The pending B may ignore abort:
+    // supersede its content lease now so returning to A cannot stay paused.
+    const supersededParentID = directoryInFlightParentIDRef.current
     const contentChanged = previous !== null && (
       previous.parentID !== id ||
       previous.sort.key !== effectiveSort.key ||
       previous.sort.direction !== effectiveSort.direction ||
       xDriveFileExplorerGroupingSignature(previous.grouping) !==
-        xDriveFileExplorerGroupingSignature(effectiveGrouping)
+        xDriveFileExplorerGroupingSignature(effectiveGrouping) ||
+      (supersededParentID !== null && supersededParentID !== id)
     )
     // An offscreen controller cannot pause Gallery/Viewer; a rejected
     // directory Range automatically resumes the still-committed old folder.
