@@ -32,3 +32,14 @@ internal fun <T : Any> createPreparedMediaResource(
         null
     }
 }
+
+/** App STOP cancels private Live motion, and a held pointer that survived
+ * backgrounding cannot silently re-open the Owner stream on resume.
+ * The user must lift and press again to start new live playback. */
+internal fun liveMotionMayStart(
+    held: Boolean,
+    stillReady: Boolean,
+    lifecycleStarted: Boolean,
+    freshPressRequired: Boolean,
+): Boolean =
+    held && stillReady && lifecycleStarted && !freshPressRequired
