@@ -111,6 +111,10 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                     }) {
                         Icon(painterResource(R.drawable.xd_arrow_back), when {
                             state.screen == Screen.TRASH -> "返回文件"
+                            // The visible GPS overview returns to the Gallery
+                            // wall, not the Files app. Match Android Back and
+                            // the iOS PWA navigation's accessible destination.
+                            state.galleryMapOpen -> "返回图库"
                             state.gallerySelectedAlbum != null -> "返回精选集"
                             state.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS -> "返回图库"
                             else -> "返回文件"
