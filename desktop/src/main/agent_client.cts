@@ -4614,8 +4614,8 @@ export class AgentIPCClient {
     )
   }
 
-  cloudQuota() {
-    return this.request<AgentCloudQuota>('GET', '/v1/cloud/quota')
+  cloudQuota(signal?: AbortSignal) {
+    return this.request<AgentCloudQuota>('GET', '/v1/cloud/quota', undefined, 10_000, signal)
   }
 
   serverUpdate() {
@@ -4630,8 +4630,8 @@ export class AgentIPCClient {
     }, 45_000)
   }
 
-  cloudStorageStats() {
-    return this.request<AgentCloudStorageStats>('GET', '/v1/cloud/storage-stats')
+  cloudStorageStats(signal?: AbortSignal) {
+    return this.request<AgentCloudStorageStats>('GET', '/v1/cloud/storage-stats', undefined, 10_000, signal)
   }
 
   cloudCleanupStorageCache(kind: AgentStorageCacheCleanupKind) {

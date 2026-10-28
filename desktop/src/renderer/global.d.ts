@@ -1063,10 +1063,10 @@ declare global {
           grouping?: XDriveFileExplorerGrouping,
           requestID?: string,
         ) => Promise<DesktopResult<AgentCloudSearchRange>>
-        cloudQuota: () => Promise<DesktopResult<AgentCloudQuota>>
+        cloudQuota: (requestID?: string) => Promise<DesktopResult<AgentCloudQuota>>
         getServerUpdate: () => Promise<DesktopResult<AgentServerUpdateState>>
         startServerUpdate: (source: 'github' | 'gitlab', channel: 'stable' | 'master', backupFileData: boolean) => Promise<DesktopResult<AgentServerUpdateState>>
-        cloudStorageStats: () => Promise<DesktopResult<AgentCloudStorageStats>>
+        cloudStorageStats: (requestID?: string) => Promise<DesktopResult<AgentCloudStorageStats>>
         cloudCleanupStorageCache: (kind: AgentStorageCacheCleanupKind) => Promise<DesktopResult<AgentStorageCacheCleanup>>
         cloudTrash: () => Promise<DesktopResult<AgentCloudNode[]>>
         cloudTrashRange: (

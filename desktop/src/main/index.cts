@@ -7648,11 +7648,12 @@ function registerIPCHandlers() {
     )
     }), false,
   ))
-  ipcMain.handle('agent:cloud-quota', () => runAgentAction<AgentCloudQuota>(async () => {
-    const hello = await requireAgentLifecycle().ensureRunning()
-    requireAgentCapability(hello, 'cloud-files')
-    return requireAgentClient().cloudQuota()
-  }, false))
+  ipcMain.handle('agent:cloud-quota', (event, requestID: unknown = undefined) =>
+    runAgentAction<AgentCloudQuota>(() => viewportRequests.run(event.sender, requestID, async signal => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'cloud-files')
+      return requireAgentClient().cloudQuota(signal)
+    }), false))
   ipcMain.handle('agent:get-server-update', () => runAgentAction<AgentServerUpdateState>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'server-update')
@@ -7668,11 +7669,12 @@ function registerIPCHandlers() {
     }
     return requireAgentClient().startServerUpdate(sourceValue, channelValue, backupFileDataValue === true)
   }, false))
-  ipcMain.handle('agent:cloud-storage-stats', () => runAgentAction<AgentCloudStorageStats>(async () => {
-    const hello = await requireAgentLifecycle().ensureRunning()
-    requireAgentCapability(hello, 'storage-intelligence')
-    return requireAgentClient().cloudStorageStats()
-  }, false))
+  ipcMain.handle('agent:cloud-storage-stats', (event, requestID: unknown = undefined) =>
+    runAgentAction<AgentCloudStorageStats>(() => viewportRequests.run(event.sender, requestID, async signal => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'storage-intelligence')
+      return requireAgentClient().cloudStorageStats(signal)
+    }), false))
   ipcMain.handle('agent:cloud-storage-cache-cleanup', (_event, kind: AgentStorageCacheCleanupKind) => runAgentAction<AgentStorageCacheCleanup>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'storage-cache-cleanup')

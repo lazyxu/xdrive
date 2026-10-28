@@ -960,11 +960,11 @@ const agent = Object.freeze({
     grouping,
     requestID,
   ),
-  cloudQuota: () => ipcRenderer.invoke('agent:cloud-quota'),
+  cloudQuota: (requestID?: string) => ipcRenderer.invoke('agent:cloud-quota', requestID),
   getServerUpdate: () => ipcRenderer.invoke('agent:get-server-update'),
   startServerUpdate: (source: 'github' | 'gitlab', channel: 'stable' | 'master', backupFileData: boolean) =>
     ipcRenderer.invoke('agent:start-server-update', source, channel, backupFileData),
-  cloudStorageStats: () => ipcRenderer.invoke('agent:cloud-storage-stats'),
+  cloudStorageStats: (requestID?: string) => ipcRenderer.invoke('agent:cloud-storage-stats', requestID),
   cloudCleanupStorageCache: (kind: 'media_thumbnail' | 'analysis_preview' | 'upload_staging' | 'storage_temp' | 'all') =>
     ipcRenderer.invoke('agent:cloud-storage-cache-cleanup', kind),
   cloudTrash: () => ipcRenderer.invoke('agent:cloud-trash'),
