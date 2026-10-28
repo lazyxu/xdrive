@@ -61,7 +61,7 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
   }
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="md"
-      aria-label="此地点的照片" data-xdrive-places-album-dialog
+      aria-labelledby="xdrive-places-album-title" data-xdrive-places-album-dialog
       // This is the SAME shared Owner Gallery UI for both map SDK Hosts.
       // MUI Dialog owns focus trap, Escape, backdrop and scroll lock.
       PaperProps={{sx:{width:{xs:'calc(100% - max(8px, env(safe-area-inset-left)) - max(8px, env(safe-area-inset-right)))',sm:'min(880px, calc(100vw - 40px))'},
@@ -130,7 +130,7 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
         </Box>
         <Stack direction="row" spacing={1} alignItems="center" sx={{px:1.25,pb:0.5}}>
           <Box sx={{flex:1,minWidth:0}}>
-            <Typography variant="body2" fontWeight={750}>此地点的照片</Typography>
+            <Typography id="xdrive-places-album-title" variant="body2" fontWeight={750}>此地点的照片</Typography>
             <Typography variant="caption" color="text.secondary">
               {phase==='ready'
                 ? `${total.toLocaleString('zh-CN')} 张照片和视频`
