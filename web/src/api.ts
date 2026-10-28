@@ -2764,8 +2764,10 @@ export class XDriveApi {
     return this.request<ExternalSource[]>('/api/v1/sources')
   }
 
-  sourceOverview() {
-    return this.request<ExternalSourceOverview[]>('/api/v1/sources/overview')
+  sourceOverview(signal?: AbortSignal) {
+    // Only this read-only, Owner-scoped overview GET is disposable. Source
+    // trigger/cancel/configuration mutations never share navigation signals.
+    return this.request<ExternalSourceOverview[]>('/api/v1/sources/overview', { signal })
   }
 
   createSource(input: CreateExternalSourceInput) {
