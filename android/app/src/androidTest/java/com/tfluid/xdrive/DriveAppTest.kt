@@ -2545,6 +2545,7 @@ class DriveAppTest {
                 !controller.state.value.loading
         }
         compose.onNodeWithTag("gallery-map-back-one-level").assertExists()
+        compose.onNodeWithContentDescription("返回上一级聚合").assertExists()
         compose.onNodeWithTag("gallery-map-bd09-distribution").assertExists()
         compose.onNodeWithTag("gallery-map-bd09-cell-0-4")
             .performScrollTo().performClick()
@@ -2568,6 +2569,7 @@ class DriveAppTest {
                 controller.state.value.galleryBd09Cells != null
         }
         compose.onNodeWithTag("gallery-map-back-one-level").performClick()
+        compose.onNodeWithContentDescription("返回图库").assertExists()
         compose.onNodeWithTag("gallery-map-bd09-cell-7-5").assertExists()
         compose.runOnIdle {
             org.junit.Assert.assertEquals(OwnerBd09Bounds.WORLD,
