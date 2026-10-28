@@ -1,8 +1,6 @@
 package api
 
-import (
-	"testing"
-)
+import "testing"
 
 func TestBackupAdminRepositoryCountMustMatchHostTotal(t *testing.T) {
 	server, dir := readyBackupAdminTestServer(t)
@@ -18,10 +16,10 @@ func TestBackupAdminRepositoryCountMustMatchHostTotal(t *testing.T) {
 		{ID: "v2-configured", SnapshotCount: 0},
 	}
 	tests := []struct {
-		name string
+		name   string
 		counts *[]backupAdminRepositoryCount
-		total *int
-		ok bool
+		total  *int
+		ok     bool
 	}{
 		{"legacy Host without breakdown", nil, nil, true},
 		{"valid counts", &valid, &total, true},
@@ -47,7 +45,11 @@ func TestBackupAdminRepositoryCountMustMatchHostTotal(t *testing.T) {
 			inv := original
 			inv.Repositories = tc.counts
 			inv.TotalSnapshots = tc.total
-			if tc.total != nil { inv.Truncated = &truncated } else { inv.Truncated = nil }
+			if tc.total != nil {
+				inv.Truncated = &truncated
+			} else {
+				inv.Truncated = nil
+			}
 			writeBackupTestJSON(t, dir, "backup-admin-inventory.json", inv)
 			page := server.backupAdminState()
 			if page.Supported != tc.ok {
