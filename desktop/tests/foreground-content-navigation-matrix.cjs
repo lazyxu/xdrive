@@ -73,38 +73,40 @@ test('same-type directory and album content changes cancel pending thumbnails be
   ]) {
     bus.xDriveEnterForegroundPage(null)
     bus.xDriveEnterForegroundPage(page)
-    const pending = deferred()
+    const oldGate = deferred()
+    const newGate = deferred()
     const revoked = []
-    let signal
-    const scheduler = newScheduler((_id, scopedSignal) => {
-      signal = scopedSignal
-      return pending.promise
+    const signals = new Map()
+    const scheduler = newScheduler((id, scopedSignal) => {
+      signals.set(id, scopedSignal)
+      return id === 10 ? oldGate.promise : newGate.promise
     }, { revokeURL: url => revoked.push(url) })
     try {
       const old = scheduler.load(10, 1, 1)
       await tick()
-      assert.equal(signal.aborted, false)
+      assert.equal(signals.get(10).aborted, false)
       const finish = bus.xDriveBeginForegroundContentTransition(kind)
       assert.equal(bus.xDriveCurrentForegroundPage(), page,
         'new folder or album must NOT masquerade as a different app route')
       assert.equal(await old, null, 'old thumbnail resolves as cancelled')
-      assert.equal(signal.aborted, true, 'old transport receives AbortSignal')
+      assert.equal(signals.get(10).aborted, true, 'old transport receives AbortSignal')
       assert.equal(await scheduler.load(11, 1, 1), null,
         'old mounted content cannot silently requeue during pending first Range')
       finish()
       finish()
       const incoming = scheduler.load(12, 1, 1)
       await tick()
-      assert.equal(signal.aborted, false, 'new accepted content resumes')
-      pending.resolve('blob:late-aborted')
-      // Same loader Promise is intentionally not a real Fetch; release its
-      // old response and the new one so the scheduler can settle.
-      await incoming
+      assert.equal(signals.get(12).aborted, false, 'new accepted content resumes')
+      oldGate.resolve('blob:late-aborted')
       await tick()
       assert.ok(revoked.includes('blob:late-aborted'),
         'canceled old response is never installed in a visible thumbnail')
+      newGate.resolve('blob:incoming')
+      assert.equal(await incoming, 'blob:incoming')
+      assert.ok(!revoked.includes('blob:incoming'), 'current image must remain usable')
     } finally {
-      pending.resolve(null)
+      oldGate.resolve(null)
+      newGate.resolve(null)
       scheduler.dispose()
       bus.xDriveEnterForegroundPage(null)
     }
