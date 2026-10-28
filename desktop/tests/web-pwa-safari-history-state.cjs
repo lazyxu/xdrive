@@ -131,9 +131,10 @@ test('unknown browser history refuses unsaved-route navigation rather than accep
 
 test('denied Viewer history metadata uses an explicit route fallback, not an unproved Back', () => {
   withBrowser({ denied: true, initialHash: '#/app/media-viewer' },
-    ({ api, location, routes, backCount }) => {
+    snapshot => {
+      const { api, location, routes } = snapshot
       api.closeViewer({ app: 'overview', params: {} })
-      assert.equal(backCount, 0)
+      assert.equal(snapshot.backCount, 0)
       assert.equal(location.hash, '#/app/overview')
       assert.equal(routes.at(-1).app, 'overview')
     })
@@ -146,11 +147,12 @@ test('readable genuine History.state retains Viewer Back and parent route behavi
       xdriveWebApp: true, xdriveHistoryIndex: 3,
       appReturn: '#/app/files', viewerReturn: true,
     },
-  }, ({ api, backCount, location }) => {
+  }, snapshot => {
+    const { api, location } = snapshot
     assert.equal(api.route.app, 'media-viewer')
     assert.equal(api.canExitApp, true)
     api.closeViewer({ app: 'overview', params: {} })
-    assert.equal(backCount, 1)
+    assert.equal(snapshot.backCount, 1)
     assert.equal(location.hash, '#/app/media-viewer')
   })
 })
