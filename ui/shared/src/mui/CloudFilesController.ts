@@ -582,19 +582,25 @@ export function useXDriveCloudFilesController<
       return
     }
 
-    if (preserveStateOnDisable) {
-      const preservedCrumbs = crumbsRef.current
-      const target = preservedCrumbs.at(-1)
-      if (target) {
-        void loadDirectory(
-          target.id,
-          preservedCrumbs,
-          virtualTargetRef.current?.sort ?? defaultSort,
-          virtualTargetRef.current?.grouping ?? XDRIVE_FILE_EXPLORER_DEFAULT_GROUPING,
-        )
-        return
-      }
+    // A new transport object does not mean a new Owner. In Web, Access-token
+    // and HttpOnly Cookie refresh both rebind XDriveApi/port after a few minutes.
+    // The old fallback silently reloads root here, then WebFileExplorer mirrors
+    // that accepted root to #/app/files?dir=1 over an explicit ?dir=8 route.
+    // Only a counted, already-accepted directory in THIS lifecycle can resume;
+    // the lifecycleChanged/disabled branches above still clear foreign Owners.
+    const preservedCrumbs = crumbsRef.current
+    const target = preservedCrumbs.at(-1)
+    const acceptedTarget = virtualTargetRef.current
+    if (target && acceptedTarget?.parentID === target.id) {
+      void loadDirectory(
+        target.id,
+        preservedCrumbs,
+        acceptedTarget.sort,
+        acceptedTarget.grouping,
+      )
+      return
     }
+    // No authorized directory has committed yet: bootstrap root as before.
     void loadInitial()
   }, [
     defaultSort,
