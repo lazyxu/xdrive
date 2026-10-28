@@ -65,7 +65,7 @@ test('isolated Child projects bounded cells; only trusted Parent loads photo cov
   const child=read('deploy/baidu-isolated-child/child.js')
   const parent=read('ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx')
   assert.match(child,/map\.pointToPixel\(new sdk\.Point\(cell\.longitude,cell\.latitude\)\)/)
-  assert.match(child,/send\('cell-projections'/)
+  assert.match(child,/send\(gesture \? 'gesture-projections' : 'cell-projections'/)
   // The bottom map photo strip is deliberately deleted. The remaining
   // Parent-only photo covers still require current signed Owner Cells and
   // SDK pixel projections from the current accepted camera.
@@ -76,7 +76,8 @@ test('isolated Child projects bounded cells; only trusted Parent loads photo cov
   assert.doesNotMatch(parent,/xDriveCurrentMapPhotoCollections|data-xdrive-places-photo-collection-strip/)
   assert.match(parent,/XDriveMediaGalleryCoverThumbnail/)
   assert.match(parent,/data-xdrive-places-trusted-photo-cover-pins/)
-  assert.match(parent,/onClick=\{\(\) => openVerifiedCell\(pin\.selection\)\}/)
+  assert.match(parent,/onClick=\{currentCoverActive[\s\S]*?\(\) => openVerifiedCell\(pin\.selection\) : undefined\}/)
+  assert.match(parent,/disabled=\{!currentCoverActive\}/)
   assert.match(parent,/acceptedScope\.current/)
   assert.match(parent,/filterRef\.current\.key/)
   assert.match(parent,/pointerEvents:'none'/)
