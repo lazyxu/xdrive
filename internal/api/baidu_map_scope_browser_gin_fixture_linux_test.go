@@ -562,6 +562,83 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{"token": token})
 	})
+	// ONLY the opt-in loopback P0-17 fixture exposes these bounded state
+	// transitions. Real Server.Router has no such endpoint. It lets mounted
+	// Chromium prove a pending Owner map ticket is denied when Album or
+	// Session authority changes between issue and cross-document consume.
+	mux.HandleFunc("/__fixture/map-handoff-invalidate", func(w http.ResponseWriter, request *http.Request) {
+		host, _, err := net.SplitHostPort(request.RemoteAddr)
+		ip := net.ParseIP(host)
+		w.Header().Set("Cache-Control", "no-store")
+		if request.Method != http.MethodPost || err != nil || ip == nil ||
+			!ip.IsLoopback() || request.URL.RawQuery != "" ||
+			request.Header.Get("Origin") != origin ||
+			request.Header.Get("Authorization") != "Bearer "+ownerToken {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		var input struct {
+			Action string `json:"action"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, request.Body, 128)).
+			Decode(&input); err != nil {
+			http.Error(w, "invalid", http.StatusBadRequest)
+			return
+		}
+		var update *gorm.DB
+		switch input.Action {
+		case "album-revision":
+			update = db.Model(&meta.PhotoCollection{}).
+				Where("owner_id = ? AND external_key = ?", owner.ID, "manual:Family").
+				Update("revision", 8)
+		case "album-missing":
+			update = db.Model(&meta.PhotoCollection{}).
+				Where("owner_id = ? AND external_key = ?", owner.ID, "manual:Family").
+				Update("state", meta.PhotoCollectionStateMissing)
+		case "session-revoked":
+			update = db.Model(&meta.User{}).Where("id = ?", owner.ID).
+				Update("session_version", 2)
+		case "map-epoch-revoked":
+			update = db.Model(&meta.BaiduJSAPIMapEpoch{}).Where("owner_id = ?", owner.ID).
+				Update("epoch", 4)
+		case "restore":
+			err := db.Transaction(func(tx *gorm.DB) error {
+				if err := tx.Model(&meta.PhotoCollection{}).
+					Where("owner_id = ? AND external_key = ?", owner.ID, "manual:Family").
+					Updates(map[string]any{"revision": uint64(7),
+						"state": meta.PhotoCollectionStateActive}).Error; err != nil {
+					return err
+				}
+				if err := tx.Model(&meta.User{}).Where("id = ?", owner.ID).
+					Update("session_version", uint64(1)).Error; err != nil {
+					return err
+				}
+				if err := tx.Model(&meta.BaiduJSAPIMapEpoch{}).
+					Where("owner_id = ?", owner.ID).
+					Update("epoch", uint64(3)).Error; err != nil {
+					return err
+				}
+				// Test-only reset must retire all previously issued one-use
+				// nonces so restoring synthetic state never renews a ticket.
+				return tx.Where("owner_id = ?", owner.ID).
+					Delete(&meta.BaiduMapScopeHandoff{}).Error
+			})
+			if err != nil {
+				http.Error(w, "unavailable", http.StatusServiceUnavailable)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		default:
+			http.Error(w, "invalid", http.StatusBadRequest)
+			return
+		}
+		if update.Error != nil || update.RowsAffected != 1 {
+			http.Error(w, "unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
 	httpServer := httptest.NewServer(mux)
 	defer httpServer.Close()
 	// No bearer, AK or database information enters this readiness file.

@@ -33,7 +33,9 @@ const realHEICMode = genuineGin &&
   new URLSearchParams(location.search).get('map_real_heic') === '1'
 const realLIVPMode = genuineGin &&
   new URLSearchParams(location.search).get('map_real_livp') === '1'
-const realImageOwnerAccount = realHEICMode?'heic':realLIVPMode?'livp':''
+const realImageOwnerAccount = realHEICMode?'heic':realLIVPMode?'livp':
+  genuineGin&&new URLSearchParams(location.search).get('handoff_foreign')==='1'
+    ? 'foreign' : ''
 // The genuine Web bootstrap must inspect and scrub the opaque one-use URL
 // before a React map, SDK loader or private Owner Cell can mount.
 const fullDocumentHandoff = genuineGin &&
