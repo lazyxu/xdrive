@@ -157,8 +157,9 @@ test('shared FileExplorer owns responsive rename and extension-aware selection',
     'if (renaming && !compactViewport)',
     '<XDriveFileNameDialogView',
     "id: 'rename'",
-    'onSelect: () => beginRename(item)',
+    'onSelect: () => { if (onRenameItem && !unavailableActions?.rename) beginRename(item) }',
   ]) assert.ok(explorer.includes(token), 'shared inline rename missing: ' + token)
+  assert.ok(explorer.includes('disabled: renameDisabled || renameSubmitting || !onRenameItem || Boolean(unavailableActions?.rename)'), 'Host-unavailable rename stays visible but cannot dispatch')
   assert.ok(actions.includes('onRename?: () => void'), 'standard item menu must permit shared inline rename ownership')
 })
 

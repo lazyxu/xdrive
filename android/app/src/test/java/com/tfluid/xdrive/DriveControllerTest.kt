@@ -4074,4 +4074,120 @@ class DriveControllerTest {
         assertEquals(listOf(root), c.state.value.path)
         c.close()
     }
+
+    @Test fun browseSortCommitsOnlyAfterRealOwnerFirstRangeAndRetainsOldOnError() = runTest {
+        val target = FileBrowseArrangement("size", "desc", false)
+        val next = FileBrowseArrangement("type", "asc", true)
+        val actual = listOf(file, folder)
+        val api = object : Service() {
+            var failNextSort = false
+            val sorted = mutableListOf<Pair<Int, FileBrowseArrangement>>()
+            override suspend fun childrenArranged(
+                accessToken: String, parentId: Long, offset: Int,
+                arrangement: FileBrowseArrangement,
+            ): NodeRange {
+                if (arrangement == FileBrowseArrangement())
+                    return children(accessToken, parentId, offset)
+                assertEquals("access", accessToken)
+                sorted += offset to arrangement
+                if (failNextSort) {
+                    failNextSort = false
+                    throw ApiException(503, "GET failed")
+                }
+                return NodeRange(if (offset == 0) actual else emptyList(), 2, offset)
+            }
+        }
+        api.listing = { _, offset ->
+            NodeRange(if (offset == 0) listOf(folder, file) else emptyList(), 2, offset)
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        val beforeRows = c.state.value.items
+        c.changeFilesArrangement(target); runCurrent()
+        assertEquals(listOf(0 to target), api.sorted)
+        assertEquals(target, c.state.value.filesArrangement)
+        assertEquals(actual, c.state.value.items)
+        assertEquals(0, c.state.value.browseWindowStart)
+        assertEquals(2L, c.state.value.totalCount)
+
+        api.failNextSort = true
+        c.changeFilesArrangement(next); runCurrent()
+        assertEquals(target, c.state.value.filesArrangement)
+        assertEquals(actual, c.state.value.items) // No fake next ordering after failed GET.
+        assertNotNull(c.state.value.error)
+        assertFalse(c.state.value.loading)
+        assertEquals(0, c.state.value.offset)
+        c.retry(); runCurrent() // Only the existing arrangement's read is retried.
+        assertEquals(target, c.state.value.filesArrangement)
+        assertEquals(listOf(0 to target, 0 to next, 0 to target), api.sorted)
+        assertEquals(actual, c.state.value.items)
+        c.changeFilesArrangement(FileBrowseArrangement()); runCurrent()
+        assertEquals(FileBrowseArrangement(), c.state.value.filesArrangement)
+        assertEquals(beforeRows, c.state.value.items)
+        c.close()
+    }
+
+    @Test fun sortedShowInFolderUsesIdenticalOwnerPositionAndBoundedPage() = runTest {
+        val layout = FileBrowseArrangement("updated", "desc", false)
+        val calls = mutableListOf<Pair<Int, FileBrowseArrangement>>()
+        val api = object : Service() {
+            override suspend fun childrenArranged(
+                accessToken: String, parentId: Long, offset: Int,
+                arrangement: FileBrowseArrangement,
+            ): NodeRange {
+                assertEquals("access", accessToken)
+                if (arrangement == FileBrowseArrangement())
+                    return children(accessToken, parentId, offset)
+                calls += offset to arrangement
+                if (offset == 0) return NodeRange(listOf(folder, file), 2, 0)
+                assertEquals(100, offset)
+                val rows = (100..199).map { absolute ->
+                    if (absolute == 155) file else
+                        DriveNode(1000L + absolute, 1, "other-$absolute.txt",
+                            "file", size = 11, revision = 1)
+                }
+                return NodeRange(rows, 201, 100)
+            }
+            override suspend fun childPositionArranged(
+                accessToken: String, parentId: Long, nodeId: Long,
+                arrangement: FileBrowseArrangement,
+            ): DirectoryItemPosition {
+                assertEquals(layout, arrangement)
+                assertEquals(1L, parentId)
+                assertEquals(file.id, nodeId)
+                return DirectoryItemPosition(nodeId, file.revision, 155)
+            }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.changeFilesArrangement(layout); runCurrent()
+        c.changeFilesSection(FilesSection.FAVORITES); runCurrent()
+        c.locateCollectionItem(api.favoriteFile); runCurrent()
+        assertEquals(FilesSection.BROWSE, c.state.value.filesSection)
+        assertEquals(layout, c.state.value.filesArrangement)
+        assertEquals(file.id, c.state.value.focusedBrowseNodeId)
+        assertEquals(55, c.state.value.focusedBrowseIndex)
+        assertEquals(100, c.state.value.browseWindowStart)
+        assertEquals(listOf(0 to layout, 100 to layout), calls)
+        c.close()
+    }
+
+    @Test fun browserArrangementCannotInterruptOwnerWriteOrSelection() = runTest {
+        val api = Service()
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.setBrowseSelectionMode(true)
+        val old = c.state.value.items
+        c.changeFilesArrangement(FileBrowseArrangement("size", "desc", false))
+        assertEquals(FileBrowseArrangement(), c.state.value.filesArrangement)
+        assertEquals(old, c.state.value.items)
+        c.setBrowseSelectionMode(false)
+        assertTrue(c.prepareFileUpload())
+        c.acceptFileUpload("upload.txt", 3, { ByteArrayInputStream("abc".toByteArray()) })
+        // Real completion already changes browse, never assumes an uploaded file's sort.
+        runCurrent()
+        assertEquals(FileBrowseArrangement(), c.state.value.filesArrangement)
+        assertNull(c.state.value.error)
+        c.close()
+    }
 }

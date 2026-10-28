@@ -242,19 +242,43 @@ test('refresh and unmount revoke stale actions even when new Owner rows reuse id
   assert.equal(app.requests.length, 0)
 })
 
-test('folder and sort changes cancel old transport and clear the old Viewer', async () => {
+test('folder and sort changes cancel obsolete reads and Viewer but preserve a user download', async () => {
   for (const transition of [state => state.setCrumbs([{ id: 9, name: 'Other' }]),
     state => state.setSort({ key: 'name', direction: 'desc' })]) {
     const app = await mount()
     const item = app.state.displayedItems[0]
     app.state.downloadSelectedFiles([item]); await app.flush()
     const request = app.requests[0]
+    app.state.openFilePreview(item); await app.flush()
+    assert.equal(app.state.previewItem?.id, item.id)
     transition(app.state); await app.flush()
-    assert.equal(request.signal.aborted, true)
+    assert.equal(request.signal.aborted, false,
+      'same verified Owner folder/sort navigation must not cancel an explicit download')
+    assert.equal(app.state.previewItem, null,
+      'old folder Viewer must not remain visible in the new directory scope')
     request.resolve(); await app.flush()
-    assert.equal(app.state.readyDownload, null)
+    assert.equal(app.state.readyDownload?.filename, item.name,
+      'verified same-Owner download must remain available for the real Save click')
     assert.equal(app.state.download, null)
+    assert.equal(app.revoked.includes(app.state.readyDownload.url), false)
+    app.unmount()
   }
+})
+
+test('explicit Owner root revalidation still aborts a pending download after navigation', async () => {
+  const app = await mount()
+  const item = app.state.displayedItems[0]
+  app.state.downloadSelectedFiles([item]); await app.flush()
+  const request = app.requests[0]
+  app.state.setSort({ key: 'name', direction: 'desc' }); await app.flush()
+  assert.equal(request.signal.aborted, false)
+  app.state.refreshAuthenticatedOwner(); await app.flush()
+  assert.equal(request.signal.aborted, true,
+    'root/session replacement must cancel Owner-scoped pending download')
+  request.resolve(); await app.flush()
+  assert.equal(app.state.readyDownload, null,
+    'late obsolete verified bytes cannot become a cross-session Save link')
+  app.unmount()
 })
 
 test('replacing the Agent client never presents prior Owner rows as verified in the first render', async () => {

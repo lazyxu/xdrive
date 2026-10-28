@@ -80,15 +80,26 @@ export async function collectXDrivePwaS5DeviceEvidence(
     publicScript = false
   }
   const mode = snapshot.displayMode
-  const protocol = typeof window !== 'undefined' ? window.location.protocol : ''
+  // Optional WebKit location getters may reject a manual evidence request.
+  // Unknown transport must never be promoted to proven HTTPS or certificate trust.
+  let protocol = ''
+  try {
+    protocol = typeof window !== 'undefined' ? window.location.protocol : ''
+  } catch { /* Do not export a guessed protocol or the raw URL. */ }
   let standalone: boolean | null = null
   try {
     const observed = typeof navigator === 'undefined' ? undefined :
       (navigator as Navigator & { standalone?: boolean }).standalone
     if (typeof observed === 'boolean') standalone = observed
   } catch { /* An unavailable install hint is not proof of installation. */ }
-  const width = typeof window === 'undefined' ? 0 : window.innerWidth
-  const height = typeof window === 'undefined' ? 0 : window.innerHeight
+  // A denied viewport dimension is unavailable, not a 390px iPhone.
+  // Read independently so one blocked getter does not lose the other dimension.
+  let width = 0
+  let height = 0
+  try { if (typeof window !== 'undefined') width = window.innerWidth }
+  catch { /* Unknown viewport width; preserve zero in the report. */ }
+  try { if (typeof window !== 'undefined') height = window.innerHeight }
+  catch { /* Unknown viewport height; preserve zero in the report. */ }
   const report: XDrivePwaDeviceEvidence = {
     schema: 'xdrive-pwa-s5a2-browser-observation-v1',
     case_id: 'S5-02',

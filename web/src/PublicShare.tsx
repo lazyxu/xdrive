@@ -222,9 +222,13 @@ export default function PublicShareView({ token }: { token: string }) {
     if (!share || share.type !== 'dir' || !canBrowse) return
     // Abort superseded request-scoped JPEG GETs at user navigation time.
     // Do not abort user-owned original/ZIP downloads or an in-place refresh.
-    if (!refresh && folder && (
+    const contentChanged = !refresh && folder !== null && (
       folder.cursor !== cursor || folder.path.at(-1)?.id !== path.at(-1)?.id
-    )) {
+    )
+    if (contentChanged) {
+      // Cursor/crumb/child folder navigation is a same-page content switch.
+      // The current share's read-only thumbnails are disposable, while ZIP
+      // preparation and explicit downloads remain independent durable work.
       for (const request of activeThumbnailRequests.current) request.abort()
     }
     pendingPage.current?.abort()
@@ -249,6 +253,9 @@ export default function PublicShareView({ token }: { token: string }) {
       })
     } catch (err) {
       if (pendingPage.current !== controller || controller.signal.aborted) return
+      // The old server-accepted folder stays mounted if the new folder fails.
+      // Its cancelled visible JPEGs need a fresh loader/cache epoch to retry.
+      if (contentChanged) setThumbnailVisibilityEpoch(epoch => epoch + 1)
       setFolderError(err instanceof ApiError && err.status === 401
         ? '分享密码错误。'
         : err instanceof ApiError && err.status === 410

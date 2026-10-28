@@ -1,4 +1,4 @@
-import { xDriveViewerForegroundActive, xDriveObserveViewerForeground } from './ViewerForegroundPriority'
+import { xDriveViewerForegroundActive, xDriveObserveViewerForeground, xDriveBeginForegroundContentTransition, xDriveForegroundContentTransitionPending } from './ViewerForegroundPriority'
 import { xDriveMediaGallerySelectionScopeKey } from '../media-gallery-selection-scope'
 import { xDrivePrototypeTrustedSingleton, xDrivePrototypeCanonicalPlaceID, xDrivePrototypeSingletonScopeValid } from '../media-gallery-baidu-prototype-singleton'
 import {
@@ -531,8 +531,10 @@ function mediaGalleryQuerySignature(query: MediaGalleryQuery) {
   )
 }
 
-function mediaGalleryCollectionKey(target: MediaGalleryCollectionTarget | null) {
+function mediaGalleryContentKey(target: MediaGalleryCollectionTarget | null) {
   if (!target) return 'media-gallery:idle'
+  // Excluding requestID distinguishes an actual Album/filtered Range/Map
+  // change from a background refresh of this same accepted collection.
   return [
     'media-gallery',
     target.kind,
@@ -540,8 +542,12 @@ function mediaGalleryCollectionKey(target: MediaGalleryCollectionTarget | null) 
     target.baiduCell ? JSON.stringify(target.baiduCell) : '',
     target.baiduViewport ? JSON.stringify(target.baiduViewport) : '',
     mediaGalleryQuerySignature(target.query),
-    target.requestID,
   ].join(':')
+}
+
+function mediaGalleryCollectionKey(target: MediaGalleryCollectionTarget | null) {
+  if (!target) return 'media-gallery:idle'
+  return mediaGalleryContentKey(target) + ':' + target.requestID
 }
 
 function mediaGalleryTarget(
@@ -928,6 +934,11 @@ export function XDriveMediaGalleryPage({
   const [smartDialogError, setSmartDialogError] = useState('')
   const [shareItem, setShareItem] = useState<MediaItem | null>(null)
   const requestID = useRef(0)
+  // One cancellable first Range for the accepted Gallery content target.
+  // Sorting, Album, Cell and Viewport navigation supersede this disposable
+  // read without touching downloads, uploads or persistent indexer tasks.
+  const firstContentRangeAbort = useRef<AbortController | null>(null)
+  const pendingFirstContentKeyRef = useRef<string | null>(null)
   const nativeCellOpenAbort = useRef<AbortController | null>(null)
   const changeBaiduMapPhotoScope=useCallback((input:XDriveBaiduMapPhotoScope)=>{
     const next=xDriveCopyBaiduMapPhotoScope(input)
@@ -942,6 +953,9 @@ export function XDriveMediaGalleryPage({
     setBaiduPhotoScopeOwner({owner:preferenceScope,value:next})
   },[preferenceScope])
   useEffect(() => () => {
+    firstContentRangeAbort.current?.abort()
+    firstContentRangeAbort.current = null
+    pendingFirstContentKeyRef.current = null
     nativeCellOpenAbort.current?.abort()
     nativeCellOpenAbort.current = null
   }, [source, preferenceScope])
@@ -987,42 +1001,43 @@ export function XDriveMediaGalleryPage({
         if (!source.listTrashItemRange) {
           throw new Error('当前客户端不支持图库回收站')
         }
-        return source.listTrashItemRange(limit, offset)
+        return source.listTrashItemRange(limit, offset, signal)
       case 'person':
         if (!target.id || !source.listPersonItemRange) {
           throw new Error('当前客户端不支持人物图库范围加载')
         }
-        return source.listPersonItemRange(target.id, limit, offset, target.query)
+        return source.listPersonItemRange(target.id, limit, offset, target.query, signal)
       case 'memory':
         if (!target.id || !source.listMemoryItemRange) {
           throw new Error('当前客户端不支持回忆范围加载')
         }
         return source.listMemoryItemRange(
           target.id, limit, offset, target.query.time_zone ?? mediaTimeZoneRef.current,
+          signal,
         )
       case 'duplicate-review':
         if (!target.id || !source.listDuplicateItemRange) {
           throw new Error('当前客户端不支持重复项审查范围加载')
         }
-        return source.listDuplicateItemRange(target.id, limit, offset)
+        return source.listDuplicateItemRange(target.id, limit, offset, signal)
       case 'burst-review':
         if (!target.id || !source.listBurstReviewItemRange) {
           throw new Error('当前客户端不支持连拍审查范围加载')
         }
-        return source.listBurstReviewItemRange(target.id, limit, offset)
+        return source.listBurstReviewItemRange(target.id, limit, offset, signal)
       case 'pet':
         if (!target.id || !source.listPetItemRange) {
           throw new Error('当前客户端不支持宠物集合范围加载')
         }
-        return source.listPetItemRange(target.id, limit, offset)
+        return source.listPetItemRange(target.id, limit, offset, signal)
       case 'suggested-person':
         if (!target.id || !source.listSuggestedPersonItemRange) {
           throw new Error('当前客户端不支持人物建议范围加载')
         }
-        return source.listSuggestedPersonItemRange(target.id, limit, offset, target.query)
+        return source.listSuggestedPersonItemRange(target.id, limit, offset, target.query, signal)
       case 'album':
         if (!target.id) throw new Error('相册 ID 缺失')
-        return source.listAlbumItemRange(target.id, limit, offset, rangedQuery)
+        return source.listAlbumItemRange(target.id, limit, offset, rangedQuery, signal)
       default:
         return source.listItemRange(limit, offset, rangedQuery, signal)
     }
@@ -1151,6 +1166,9 @@ export function XDriveMediaGalleryPage({
     timeZoneOverride?: string,
   ) => {
     const request = ++requestID.current
+    firstContentRangeAbort.current?.abort()
+    const firstRangeController = new AbortController()
+    firstContentRangeAbort.current = firstRangeController
     nativeCellOpenAbort.current?.abort()
     // A selected Mobile Album is only an intent until its first authorized
     // counted Server range succeeds; keep the previous committed page visible.
@@ -1212,6 +1230,26 @@ export function XDriveMediaGalleryPage({
           suggestedPerson,
           person,
         )
+    const previousContent = collectionTargetRef.current
+    const nextContentKey = mediaGalleryContentKey(target)
+    // A -> B (pending) -> A must regain the old accepted wall even when B's
+    // underlying adapter ignores abort. A matching accepted target alone is
+    // not enough to distinguish this return from an ordinary refresh.
+    const pendingContentKey = pendingFirstContentKeyRef.current
+    const needsContentPreemption = (
+      previousContent !== null && (
+        mediaGalleryContentKey(previousContent) !== nextContentKey ||
+        (pendingContentKey !== null && pendingContentKey !== nextContentKey)
+      )
+    ) || xDriveForegroundContentTransitionPending(['gallery', 'map'])
+    // If a previous Memories/Cleanup index is still pending, it may have
+    // cleared collectionTargetRef to null without settling its transport.
+    // The incoming photo Range must supersede that lease, even on return to
+    // the exact same album; otherwise the old index can hold thumbnails paused.
+    pendingFirstContentKeyRef.current = nextContentKey
+    const finishContentTransition = needsContentPreemption
+      ? xDriveBeginForegroundContentTransition(['gallery', 'map'])
+      : () => undefined
     const commitTarget = () => {
       collectionTargetRef.current = target
       setCollectionTarget(target)
@@ -1233,7 +1271,8 @@ export function XDriveMediaGalleryPage({
         target.query.sort_dir === 'asc' &&
         !target.query.search?.trim()
       const rangePromise = loadTargetRange(
-        target, 0, pageSize, undefined, firstAtLatest ? 'latest' : undefined,
+        target, 0, pageSize, firstRangeController.signal,
+        firstAtLatest ? 'latest' : undefined,
       )
       if (target.kind === 'all' && !target.query.folder_id) {
         // Returning from a place photo wall preserves the current bounded
@@ -1274,7 +1313,7 @@ export function XDriveMediaGalleryPage({
 
         const range = await rangePromise
         if (
-          request !== requestID.current ||
+          firstRangeController.signal.aborted || request !== requestID.current ||
           (!stagedNavigation && collectionTargetRef.current?.requestID !== request)
         ) return
         if (stagedNavigation) commitTarget()
@@ -1303,7 +1342,7 @@ export function XDriveMediaGalleryPage({
 
         void facetsPromise.then((result) => {
           if (
-            request !== requestID.current ||
+            firstRangeController.signal.aborted || request !== requestID.current ||
             (!stagedNavigation && collectionTargetRef.current?.requestID !== request)
           ) return
           if (result.error) {
@@ -1336,7 +1375,7 @@ export function XDriveMediaGalleryPage({
 
       const range = await rangePromise
       if (
-        request !== requestID.current ||
+        firstRangeController.signal.aborted || request !== requestID.current ||
         (!stagedNavigation && collectionTargetRef.current?.requestID !== request)
       ) return
       if (stagedNavigation) commitTarget()
@@ -1370,7 +1409,7 @@ export function XDriveMediaGalleryPage({
       onCommitted?.()
     } catch (loadError) {
       if (
-        request !== requestID.current ||
+        firstRangeController.signal.aborted || request !== requestID.current ||
         (!stagedNavigation && collectionTargetRef.current?.requestID !== request)
       ) return
       const message = xDriveMediaGalleryErrorMessage(loadError)
@@ -1378,6 +1417,11 @@ export function XDriveMediaGalleryPage({
       setCollectionError(message)
       onError?.(loadError)
     } finally {
+      finishContentTransition()
+      if (firstContentRangeAbort.current === firstRangeController) {
+        firstContentRangeAbort.current = null
+        pendingFirstContentKeyRef.current = null
+      }
       if (request === requestID.current) setLoading(false)
     }
   }, [
@@ -1402,6 +1446,11 @@ export function XDriveMediaGalleryPage({
       return
     }
     const request = ++requestID.current
+    firstContentRangeAbort.current?.abort()
+    const finishContentTransition = collectionTargetRef.current ||
+      xDriveForegroundContentTransitionPending(['gallery', 'map'])
+      ? xDriveBeginForegroundContentTransition(['gallery', 'map'])
+      : () => undefined
     const commitIndex = () => {
       collectionTargetRef.current = null
       setCollectionTarget(null)
@@ -1437,6 +1486,7 @@ export function XDriveMediaGalleryPage({
           ? current : { owner: preferenceScope, dataSource: source, state: 'error' })
       reportError(loadError)
     } finally {
+      finishContentTransition()
       if (request === requestID.current) setLoading(false)
     }
   }, [preferenceScope, reportError, source, virtualCollection.reset])
@@ -1562,6 +1612,11 @@ export function XDriveMediaGalleryPage({
       return
     }
     const request = ++requestID.current
+    firstContentRangeAbort.current?.abort()
+    const finishContentTransition = collectionTargetRef.current ||
+      xDriveForegroundContentTransitionPending(['gallery', 'map'])
+      ? xDriveBeginForegroundContentTransition(['gallery', 'map'])
+      : () => undefined
     cleanupMoreInFlightRef.current = false
     setCleanupMoreLoading(null)
     collectionTargetRef.current = null
@@ -1588,6 +1643,7 @@ export function XDriveMediaGalleryPage({
           ? current : { owner: preferenceScope, dataSource: source, state: 'error' })
       reportError(loadError)
     } finally {
+      finishContentTransition()
       if (request === requestID.current) setLoading(false)
     }
   }, [preferenceScope, reportError, source, virtualCollection.reset])
@@ -1833,6 +1889,8 @@ export function XDriveMediaGalleryPage({
       return
     }
     const request = ++requestID.current
+    firstContentRangeAbort.current?.abort()
+    const finishContentTransition = xDriveBeginForegroundContentTransition(['gallery', 'map'])
     setLoading(true)
     setError('')
     try {
@@ -1871,6 +1929,7 @@ export function XDriveMediaGalleryPage({
       if (request !== requestID.current) return
       reportError(loadError)
     } finally {
+      finishContentTransition()
       if (request === requestID.current) setLoading(false)
     }
   }, [onSectionRouteChange, preferenceScope, reportError, source, virtualCollection.reset])
@@ -2413,10 +2472,6 @@ export function XDriveMediaGalleryPage({
       xDriveClearPlacesDrawerViewerReturn(preferenceScope)
     }
     xDriveClearBaiduViewportViewerReturn(preferenceScope)
-    nativeCellOpenAbort.current?.abort()
-    const controller = new AbortController()
-    nativeCellOpenAbort.current = controller
-    const request = ++requestID.current
     const approved=xDriveCopyBaiduMapPhotoScope(
       returning?.photoScope ?? fromMap ?? mapPhotoScopeRef.current)
     if(!approved || (!returning && fromMap &&
@@ -2427,6 +2482,12 @@ export function XDriveMediaGalleryPage({
       dir:approved.filters.sort_dir ?? 'desc',
     }
     if(sort.by!==approved.filters.sort_by || sort.dir!==approved.filters.sort_dir)return
+    // Only an admitted, validated Owner scope may preempt a previous Range.
+    firstContentRangeAbort.current?.abort()
+    nativeCellOpenAbort.current?.abort()
+    const controller = new AbortController()
+    nativeCellOpenAbort.current = controller
+    const request = ++requestID.current
     if(returning) {
       mapPhotoScopeRef.current=approved
       setBaiduPhotoScopeOwner({owner:preferenceScope,value:approved})
@@ -2442,6 +2503,10 @@ export function XDriveMediaGalleryPage({
       kind:'baidu-cell',id:approved.albumKey || undefined,
       baiduCell:cell,query:cellQuery,requestID:request,
     }
+    // The map's new Cell/Viewport photo wall is a new authorized content
+    // scope; release the old disposable covers before its first Range GET.
+    // Keep the prior map visible until the Owner-scoped response commits.
+    const finishContentTransition = xDriveBeginForegroundContentTransition(['gallery', 'map'])
     void source.listBaiduNativeCellItems(
       cell, pageSize, 0, {
         by:sort.by,dir:sort.dir,filters:approved.filters,
@@ -2552,6 +2617,7 @@ export function XDriveMediaGalleryPage({
         setError('该区域照片列表暂不可用，请刷新地图后重试')
       }
     }).finally(() => {
+      finishContentTransition()
       if (nativeCellOpenAbort.current === controller) nativeCellOpenAbort.current = null
     })
   }, [onOpenViewer, pageSize, places, placesPageOffset, placesTotalCount, preferenceScope, query, section, source,
@@ -2574,10 +2640,6 @@ export function XDriveMediaGalleryPage({
       xDriveClearBaiduViewportViewerReturn(preferenceScope)
       xDriveClearPlacesDrawerViewerReturn(preferenceScope)
     }
-    nativeCellOpenAbort.current?.abort()
-    const controller = new AbortController()
-    nativeCellOpenAbort.current = controller
-    const request = ++requestID.current
     const bounds={...raw}
     const approved=xDriveCopyBaiduMapPhotoScope(
       returning?.photoScope ?? fromMap ?? mapPhotoScopeRef.current)
@@ -2589,6 +2651,12 @@ export function XDriveMediaGalleryPage({
       dir:approved.filters.sort_dir ?? 'desc',
     }
     if(sort.by!==approved.filters.sort_by || sort.dir!==approved.filters.sort_dir)return
+    // Only an admitted, validated Owner scope may preempt a previous Range.
+    firstContentRangeAbort.current?.abort()
+    nativeCellOpenAbort.current?.abort()
+    const controller = new AbortController()
+    nativeCellOpenAbort.current = controller
+    const request = ++requestID.current
     if(returning) {
       mapPhotoScopeRef.current=approved
       setBaiduPhotoScopeOwner({owner:preferenceScope,value:approved})
@@ -2604,6 +2672,10 @@ export function XDriveMediaGalleryPage({
       kind:'baidu-viewport',id:approved.albumKey || undefined,
       baiduViewport:bounds,query:rangeQuery,requestID:request,
     }
+    // The map's new Cell/Viewport photo wall is a new authorized content
+    // scope; release the old disposable covers before its first Range GET.
+    // Keep the prior map visible until the Owner-scoped response commits.
+    const finishContentTransition = xDriveBeginForegroundContentTransition(['gallery', 'map'])
     void source.listBaiduNativeViewportItems(bounds, pageSize, 0, firstQuery,
       controller.signal,approved.albumKey).then(range => {
       if (controller.signal.aborted || request !== requestID.current) return
@@ -2661,6 +2733,7 @@ export function XDriveMediaGalleryPage({
         setError('当前地图的照片列表暂不可用，请更新地图后重试')
       }
     }).finally(() => {
+      finishContentTransition()
       if (nativeCellOpenAbort.current === controller) nativeCellOpenAbort.current = null
     })
   }, [pageSize, places, placesPageOffset, placesTotalCount,

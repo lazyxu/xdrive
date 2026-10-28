@@ -2019,4 +2019,77 @@ class XDriveApiTest {
         }
     }
 
+
+    @Test fun ownerFilesSortAndPositionUseExactGoOrderingWithNoLocalReorder() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            for (arrangement in listOf(
+                FileBrowseArrangement("updated", "desc", false),
+                FileBrowseArrangement("type", "asc", true),
+                FileBrowseArrangement("size", "desc", false),
+                FileBrowseArrangement("name", "desc", true),
+            )) {
+                val page = """{"items":[{"id":70,"parent_id":1,"name":"A.jpg","type":"file",
+                    "size":33,"revision":3}],"total_count":1,"total_count_included":true,
+                    "offset":0,"limit":100,"sort":"${arrangement.sort}",
+                    "order":"${arrangement.order}"}"""
+                server.enqueue(MockResponse().setBody(page))
+                val rows = api.childrenArranged("owner-secret", 1, 0, arrangement)
+                assertEquals(70L, rows.items.single().id)
+                val request = server.takeRequest()
+                val query = request.requestUrl!!
+                assertEquals("GET", request.method)
+                assertEquals("/api/v1/nodes/1/children", query.encodedPath)
+                assertEquals(arrangement.sort, query.queryParameter("sort"))
+                assertEquals(arrangement.order, query.queryParameter("order"))
+                assertEquals("none", query.queryParameter("group"))
+                assertEquals(arrangement.foldersFirst.toString(), query.queryParameter("folders_first"))
+                assertEquals("true", query.queryParameter("include_count"))
+                assertEquals("Bearer owner-secret", request.getHeader("Authorization"))
+                assertFalse(request.path!!.contains("owner-secret"))
+
+                server.enqueue(MockResponse().setBody("""{"node_id":70,"revision":3,
+                    "index":145,"sort":"${arrangement.sort}",
+                    "order":"${arrangement.order}","group":"none",
+                    "folders_first":${arrangement.foldersFirst}}"""))
+                val position = api.childPositionArranged("owner-secret", 1, 70, arrangement)
+                assertEquals(145, position.index)
+                val find = server.takeRequest().requestUrl!!
+                assertEquals("/api/v1/nodes/1/children/position", find.encodedPath)
+                assertEquals(arrangement.sort, find.queryParameter("sort"))
+                assertEquals(arrangement.order, find.queryParameter("order"))
+                assertEquals(arrangement.foldersFirst.toString(), find.queryParameter("folders_first"))
+            }
+        } }
+    }
+
+    @Test fun nonDefaultOwnerArrangementRejectsWrongServerOrderAndPosition() = runBlocking {
+        val wanted = FileBrowseArrangement("size", "desc", false)
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            for (ack in listOf(
+                """{"items":[],"total_count":0,"total_count_included":true,
+                    "offset":0,"limit":100,"sort":"name","order":"desc"}""",
+                """{"items":[],"total_count":0,"total_count_included":true,
+                    "offset":0,"limit":100,"sort":"size","order":"asc"}""",
+                """{"items":[],"total_count":0,"total_count_included":true,
+                    "offset":0,"limit":100}""",
+            )) {
+                server.enqueue(MockResponse().setBody(ack))
+                assertEquals(ApiFailureReason.INVALID_RESPONSE,
+                    failure { api.childrenArranged("owner-secret", 1, 0, wanted) }.reason)
+                server.takeRequest()
+            }
+            server.enqueue(MockResponse().setBody("""{"node_id":70,"revision":3,
+                "index":10,"sort":"size","order":"desc","group":"none",
+                "folders_first":true}"""))
+            assertEquals(ApiFailureReason.INVALID_RESPONSE,
+                failure { api.childPositionArranged("owner-secret", 1, 70, wanted) }.reason)
+            server.takeRequest()
+        } }
+        for (invalid in listOf("bad", "updated_at", "", "name;DROP")) {
+            try { FileBrowseArrangement(sort = invalid); fail("Accepted sort: $invalid") }
+            catch (_: IllegalArgumentException) {}
+        }
+        try { FileBrowseArrangement(order = "sideways"); fail("Accepted invalid direction") }
+        catch (_: IllegalArgumentException) {}
+    }
 }

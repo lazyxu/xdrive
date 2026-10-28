@@ -62,6 +62,18 @@ data class DriveNode(
     val isDirectory: Boolean get() = type == "dir"
 }
 
+/** Exact Go Owner children/position ordering; grouping remains none in this increment. */
+data class FileBrowseArrangement(
+    val sort: String = "name",
+    val order: String = "asc",
+    val foldersFirst: Boolean = true,
+) {
+    init {
+        require(sort in setOf("name", "updated", "type", "size")) { "Invalid Files sort" }
+        require(order in setOf("asc", "desc")) { "Invalid Files order" }
+    }
+}
+
 data class NodeRange(val items: List<DriveNode>, val totalCount: Long, val offset: Int, val limit: Int = 100)
 
 /** Only top-level deleted roots are recoverable; their descendants move with them. */
@@ -214,6 +226,17 @@ interface XDriveService {
     suspend fun changePassword(accessToken: String, currentPassword: String, newPassword: String): AuthSession
     suspend fun root(accessToken: String): DriveNode
     suspend fun children(accessToken: String, parentId: Long, offset: Int): NodeRange
+    /** Keep old fixtures default-only; never pretend unsupported sort succeeded. */
+    suspend fun childrenArranged(
+        accessToken: String, parentId: Long, offset: Int, arrangement: FileBrowseArrangement,
+    ): NodeRange = if (arrangement == FileBrowseArrangement())
+        children(accessToken, parentId, offset)
+    else throw ApiException(501, "Owner Files arrangement unsupported")
+    suspend fun childPositionArranged(
+        accessToken: String, parentId: Long, nodeId: Long, arrangement: FileBrowseArrangement,
+    ): DirectoryItemPosition = if (arrangement == FileBrowseArrangement())
+        childPosition(accessToken, parentId, nodeId)
+    else throw ApiException(501, "Owner Files position for arrangement unsupported")
     suspend fun textFilePreview(accessToken: String, node: DriveNode): FileTextPreview =
         throw ApiException(501, "Native Owner text preview unavailable")
     suspend fun nodeLocation(accessToken: String, nodeId: Long): OwnedNodeLocation =
@@ -379,10 +402,23 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         if (!it.isDirectory || it.parentId != null) invalidPayload()
     }
 
-    override suspend fun children(accessToken: String, parentId: Long, offset: Int): NodeRange {
+    override suspend fun children(accessToken: String, parentId: Long, offset: Int): NodeRange =
+        childrenArranged(accessToken, parentId, offset, FileBrowseArrangement())
+
+    override suspend fun childrenArranged(
+        accessToken: String, parentId: Long, offset: Int, arrangement: FileBrowseArrangement,
+    ): NodeRange {
         require(parentId > 0 && offset >= 0) { "Invalid directory range" }
-        val query = mapOf("offset" to "$offset", "limit" to "100", "sort" to "name", "order" to "asc", "group" to "none", "folders_first" to "true", "include_count" to "true")
+        val query = mapOf("offset" to "$offset", "limit" to "100",
+            "sort" to arrangement.sort, "order" to arrangement.order,
+            "group" to "none", "folders_first" to arrangement.foldersFirst.toString(),
+            "include_count" to "true")
         val result = request("nodes/$parentId/children", accessToken, query = query)
+        // Do not silently show a different Server ordering as if sort succeeded.
+        if ((result["sort"] != null || arrangement.sort != "name") &&
+            result.string("sort") != arrangement.sort) invalidPayload()
+        if ((result["order"] != null || arrangement.order != "asc") &&
+            result.string("order") != arrangement.order) invalidPayload()
         val count = result.long("total_count")
         val returnedOffset = result.long("offset")
         val limit = result.long("limit")
@@ -431,19 +467,26 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
     /** Server computes the target ordinal without sending thousands of rows. */
     override suspend fun childPosition(
         accessToken: String, parentId: Long, nodeId: Long,
+    ): DirectoryItemPosition =
+        childPositionArranged(accessToken, parentId, nodeId, FileBrowseArrangement())
+
+    override suspend fun childPositionArranged(
+        accessToken: String, parentId: Long, nodeId: Long, arrangement: FileBrowseArrangement,
     ): DirectoryItemPosition {
         require(parentId > 0 && nodeId > 0 && validToken(accessToken))
         val result = request("nodes/$parentId/children/position", accessToken, query = mapOf(
-            "node_id" to nodeId.toString(), "sort" to "name", "order" to "asc",
-            "group" to "none", "folders_first" to "true",
+            "node_id" to nodeId.toString(), "sort" to arrangement.sort,
+            "order" to arrangement.order, "group" to "none",
+            "folders_first" to arrangement.foldersFirst.toString(),
         ))
         val index = result.long("index")
         val revision = result.long("revision")
         if (result.long("node_id") != nodeId || revision <= 0 ||
             index < 0 || index > Int.MAX_VALUE ||
-            result.string("sort") != "name" || result.string("order") != "asc" ||
+            result.string("sort") != arrangement.sort ||
+            result.string("order") != arrangement.order ||
             result.string("group") != "none" ||
-            result["folders_first"] != JsonPrimitive(true)) invalidPayload()
+            result["folders_first"] != JsonPrimitive(arrangement.foldersFirst)) invalidPayload()
         return DirectoryItemPosition(nodeId, revision, index.toInt())
     }
 

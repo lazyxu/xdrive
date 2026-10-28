@@ -11,6 +11,14 @@ const { act } = Renderer
 const root = path.resolve(__dirname, '../..')
 const read = name => fs.readFileSync(path.join(root, name), 'utf8')
 const originalGallery = read('ui/shared/src/mui/MediaGallery.tsx')
+// Test the real content-transition coordinator, not an inert cancellation stub.
+const prioritySource = read('ui/shared/src/mui/ViewerForegroundPriority.ts')
+const priorityJS = ts.transpileModule(prioritySource, {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText
+const foregroundPriority = { exports: {} }
+new Function('exports', 'module', priorityJS)(foregroundPriority.exports, foregroundPriority)
+
 const ast = ts.createSourceFile('MediaGallery.tsx', originalGallery, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
 
 function declaration(name) {
@@ -75,6 +83,11 @@ function owner(mobile) {
     mapGalleryEntryReturnRef: { current: null },
     // A3h Cell isolation: no Cell request is active in this legacy fixture.
     nativeCellOpenAbort: { current: null },
+    firstContentRangeAbort: { current: null },
+    xDriveBeginForegroundContentTransition:
+      foregroundPriority.exports.xDriveBeginForegroundContentTransition,
+    xDriveForegroundContentTransitionPending:
+      foregroundPriority.exports.xDriveForegroundContentTransitionPending,
     xDriveClearBaiduCellViewerReturn: scope => { assert.equal(scope, 'p100') },
     xDriveClearPlacesDrawerViewerReturn: scope => { assert.equal(scope, 'p100') },
     useCallback: fn => fn,
