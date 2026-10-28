@@ -71,6 +71,17 @@ class ScopeTests(unittest.TestCase):
             total, scoped, errors = lint_workflows(root)
             self.assertEqual((total, scoped, errors), (1, 1, []))
 
+    def test_new_native_ios_workflow_is_feature_scoped(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "ios-unsigned-ipa.yml").write_text(
+                "on:\n  pull_request:\\n    branches: [master]\\n    paths:\\n"
+                "      - 'ios/**'\\n"
+                "      - '.github/workflows/ios-unsigned-ipa.yml'\\n"
+            )
+            total, scoped, errors = lint_workflows(root)
+            self.assertEqual((total, scoped, errors), (1, 1, []))
+
     def test_inline_comment_on_key_retains_pr_scope(self):
         code = (
             "on:  # event configuration\n"

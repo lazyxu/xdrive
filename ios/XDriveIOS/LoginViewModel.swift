@@ -44,11 +44,15 @@ final class LoginViewModel: ObservableObject {
             signedInName = result.username
             signedInServer = origin.host
             // A refresh may rotate the credential. Never keep the old token.
-            try KeychainSessionStore.save(StoredCredential(
-                server: origin.absoluteString,
-                username: result.username,
-                refreshToken: result.refresh_token
-            ))
+            do {
+                try KeychainSessionStore.save(StoredCredential(
+                    server: origin.absoluteString,
+                    username: result.username,
+                    refreshToken: result.refresh_token
+                ))
+            } catch {
+                noticeMessage = "登录已恢复，但无法保存新的保持登录凭据。"
+            }
         } catch {
             if let failure = error as? AuthFailure, case .rejected = failure {
                 KeychainSessionStore.clear()
