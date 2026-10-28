@@ -2624,9 +2624,20 @@ export default function MobileFiles(props: Props) {
     } else persist({ view: next })
   }
 
+  // Mobile stays mounted across directory and virtual-search navigation.
+  // Changing the accepted content scope retires only its old thumbnail
+  // cache/requests; Owner lifecycle and durable file operations stay intact.
+  const thumbnailContentScope = [
+    props.lifecycleKey,
+    props.trashActive ? 'trash' : props.searchActive
+      ? 'search:' + (props.searchSummary?.query ?? '')
+      : 'directory:' + String(directoryID ?? 0),
+    props.virtualCollection?.interactionKey ?? '',
+  ].join('\n')
+
   return (
     <XDriveFileExplorerThumbnailProvider
-      lifecycleKey={props.lifecycleKey}
+      lifecycleKey={thumbnailContentScope}
       loadThumbnail={props.loadThumbnail}
       suspended={props.suspendBackgroundThumbnails}
     >

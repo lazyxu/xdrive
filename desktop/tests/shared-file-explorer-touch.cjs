@@ -91,7 +91,7 @@ test('compact viewports collapse search and keep low-frequency commands discover
     'compactViewport && !touchSearchOpen',
     'setTouchSearchOpen(true)',
     "aria-label={searchUnavailableReason ? '搜索不可用：' + searchUnavailableReason : compactViewport ? '关闭搜索框' : '搜索'}",
-    'compactViewport && onPaste',
+    'compactViewport && (onPaste || unavailableActions?.paste)',
     'compactViewport && onRefresh',
     '(compactViewport || commandBarOverflowLevel >= 2) && (onCreateFolder || unavailableActions?.createFolder)',
     '(compactViewport || commandBarOverflowLevel >= 1) && (onUploadFolder || unavailableActions?.uploadFolder)',

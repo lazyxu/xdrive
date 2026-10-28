@@ -6,6 +6,19 @@ const ts = require('typescript')
 
 const repo = path.join(__dirname, '..', '..')
 
+// Reuse the real renderer-local coordinator: same-route content transitions
+// must be observable in these mounted shared Cloud Files controller races.
+const foregroundPriority = (() => {
+  const filename = path.join(repo, 'ui/shared/src/mui/ViewerForegroundPriority.ts')
+  const compiled = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
+    fileName: filename,
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText
+  const module = { exports: {} }
+  new Function('exports', 'module', compiled)(module.exports, module)
+  return module.exports
+})()
+
 function sameDeps(left, right) {
   if (!left || !right || left.length !== right.length) return false
   return left.every((value, index) => Object.is(value, right[index]))
@@ -130,6 +143,7 @@ function loadCloudFilesController(react) {
     if (request === './VirtualCollectionController') {
       return { useXDriveVirtualCollection: useVirtualCollection }
     }
+    if (request === './ViewerForegroundPriority') return foregroundPriority
     return require(request)
   }
   new Function('exports', 'module', 'require', output)(mod.exports, mod, localRequire)
@@ -1265,4 +1279,216 @@ test('U01-B account replacement aborts an in-flight initial counted GET without 
   assert.equal(controller.items[0]?.name, '新账号内容.txt')
   assert.deepEqual(errors, [])
   assert.equal(captures.filter(x => x.account === 'B').length, 1)
+})
+
+test('same-route folder A → B → C cancels B, resumes after C and preserves C on rejected D', async () => {
+  foregroundPriority.xDriveEnterForegroundPage(null)
+  foregroundPriority.xDriveEnterForegroundPage('web:files')
+  const events = []
+  const unsubscribe = foregroundPriority.xDriveObserveViewerForeground(value => events.push(value))
+  const runtime = createHookRuntime()
+  const useController = loadCloudFilesController(runtime.react)
+  const sort = { key: 'name', direction: 'asc' }
+  const blockedB = deferredFirstPage()
+  const blockedD = deferredFirstPage()
+  const requests = []
+  const port = {
+    getRoot: async () => ({ id: 1 }),
+    getQuota: async () => ({ quota_bytes: 100, used_bytes: 10 }),
+    getRange: (id, offset, limit, requestedSort, includeCount, grouping, signal) => {
+      requests.push({ id, signal })
+      if (id === 1) return Promise.resolve(u01Range(10, '原目录.txt', offset, limit))
+      if (id === 2) return blockedB.promise // deliberately ignores AbortSignal
+      if (id === 3) return Promise.resolve(u01Range(30, '新目录.txt', offset, limit))
+      if (id === 4) return blockedD.promise
+      throw new Error('unexpected directory ' + id)
+    },
+  }
+  const render = () => runtime.render(() => useController({
+    port, enabled: true, lifecycleKey: 'owner-a',
+    defaultSort: sort, quotaRefreshIntervalMs: 0, changePollIntervalMs: 0,
+    onError: () => {},
+  }))
+  try {
+    render()
+    await flushAsync()
+    let controller = render()
+    assert.equal(controller.current?.id, 1)
+    assert.equal(events.at(-1), false)
+    const b = controller.loadDirectory(2, [
+      { id: 1, name: '根目录' }, { id: 2, name: 'B' },
+    ], sort)
+    assert.equal(events.at(-1), true, 'B admitted: old disposable thumbnails yield')
+    const staleRequest = requests.find(row => row.id === 2)
+    assert.equal(staleRequest?.signal.aborted, false)
+    const c = controller.loadDirectory(3, [
+      { id: 1, name: '根目录' }, { id: 3, name: 'C' },
+    ], sort)
+    assert.equal(staleRequest.signal.aborted, true, 'C starts by aborting old B first Range')
+    assert.equal(await c, true)
+    assert.equal(events.at(-1), false, 'C commit restores thumbnail admission')
+    controller = render()
+    assert.equal(controller.current?.id, 3)
+    assert.equal(controller.items[0]?.name, '新目录.txt')
+
+    blockedB.resolve(u01Range(20, '迟到的B.txt'))
+    assert.equal(await b, false)
+    assert.equal(events.at(-1), false, 'stale B finally may not re-pause C')
+    controller = render()
+    assert.equal(controller.current?.id, 3)
+    assert.equal(controller.items[0]?.name, '新目录.txt')
+
+    const d = controller.loadDirectory(4, [
+      { id: 1, name: '根目录' }, { id: 4, name: 'D' },
+    ], sort)
+    assert.equal(events.at(-1), true)
+    blockedD.reject(new Error('denied'))
+    assert.equal(await d, false)
+    assert.equal(events.at(-1), false, 'D rejection must resume accepted C')
+    controller = render()
+    assert.equal(controller.current?.id, 3)
+    assert.equal(controller.items[0]?.name, '新目录.txt')
+    assert.equal(foregroundPriority.xDriveCurrentForegroundPage(), 'web:files')
+  } finally {
+    blockedB.resolve(null)
+    blockedD.resolve(null)
+    unsubscribe()
+    foregroundPriority.xDriveEnterForegroundPage(null)
+  }
+})
+
+
+test('folder A -> pending B -> A restores A while aborted B never settles', async () => {
+  foregroundPriority.xDriveEnterForegroundPage(null)
+  foregroundPriority.xDriveEnterForegroundPage('web:files')
+  const states = []
+  const unsubscribe = foregroundPriority.xDriveObserveViewerForeground(value => states.push(value))
+  const runtime = createHookRuntime()
+  const useController = loadCloudFilesController(runtime.react)
+  const sort = { key: 'name', direction: 'asc' }
+  const stalledB = deferredFirstPage()
+  const requests = []
+  const port = {
+    getRoot: async () => ({ id: 1, name: 'root' }),
+    getQuota: async () => ({ quota_bytes: 100, used_bytes: 10 }),
+    getRange: (id, offset, limit, requestedSort, includeCount, grouping, signal) => {
+      requests.push({ id, signal })
+      if (id === 1) return Promise.resolve(u01Range(10, '原目录A.txt', offset, limit))
+      if (id === 2) return stalledB.promise // cancellation deliberately ignored
+      throw new Error('unexpected directory ' + id)
+    },
+  }
+  const render = () => runtime.render(() => useController({
+    port, enabled: true, lifecycleKey: 'owner-A',
+    defaultSort: sort, quotaRefreshIntervalMs: 0, changePollIntervalMs: 0,
+    onError: () => {},
+  }))
+  try {
+    render()
+    await flushAsync()
+    let files = render()
+    assert.equal(files.current?.id, 1)
+    const b = files.loadDirectory(2, [
+      { id: 1, name: 'root' }, { id: 2, name: 'pending B' },
+    ], sort)
+    assert.equal(states.at(-1), true)
+    const bRequest = requests.find(x => x.id === 2)
+    assert.equal(bRequest?.signal.aborted, false)
+    const backA = files.loadDirectory(1, [{ id: 1, name: 'root' }], sort)
+    assert.equal(bRequest.signal.aborted, true, 'back to A cancels pending B immediately')
+    assert.equal(await backA, true)
+    assert.equal(states.at(-1), false,
+      'return to already-accepted A must not wait for B to settle')
+    files = render()
+    assert.equal(files.current?.id, 1)
+    assert.equal(files.items[0]?.name, '原目录A.txt')
+
+    // Stale aborted B completes *after* A resumed; it may not overwrite A,
+    // enter an error state, or restore a foreign page.
+    stalledB.resolve(u01Range(20, '迟到的目录B.txt'))
+    assert.equal(await b, false)
+    files = render()
+    assert.equal(files.current?.id, 1)
+    assert.equal(files.items[0]?.name, '原目录A.txt')
+    assert.equal(states.at(-1), false)
+  } finally {
+    stalledB.resolve(null)
+    unsubscribe()
+    foregroundPriority.xDriveEnterForegroundPage(null)
+  }
+})
+
+test('same-folder sort or grouping revert supersedes an unresolved range', async () => {
+  for (const variant of ['sort', 'grouping']) {
+    foregroundPriority.xDriveEnterForegroundPage(null)
+    foregroundPriority.xDriveEnterForegroundPage('web:files')
+    const paused = []
+    const stop = foregroundPriority.xDriveObserveViewerForeground(active => paused.push(active))
+    const runtime = createHookRuntime()
+    const useController = loadCloudFilesController(runtime.react)
+    const normalSort = { key: 'name', direction: 'asc' }
+    const reverseSort = { key: 'name', direction: 'desc' }
+    const normalGrouping = { groupBy: 'none', foldersFirst: true }
+    const grouped = { groupBy: 'type', foldersFirst: true }
+    const stuck = deferredFirstPage()
+    const requests = []
+    const port = {
+      getRoot: async () => ({ id: 1, name: 'root' }),
+      getQuota: async () => ({ quota_bytes: 100, used_bytes: 10 }),
+      getRange: (id, offset, limit, sort, includeCount, grouping, signal) => {
+        requests.push({ id, sort, grouping, signal })
+        const isSuperseded = variant === 'sort'
+          ? sort.direction === 'desc'
+          : grouping.groupBy === 'type'
+        if (isSuperseded) return stuck.promise // deliberately ignores abort
+        return Promise.resolve(u01Range(10, 'accepted-original.txt', offset, limit))
+      },
+    }
+    const render = () => runtime.render(() => useController({
+      port, enabled: true, lifecycleKey: 'same-folder-owner',
+      defaultSort: normalSort, quotaRefreshIntervalMs: 0,
+      changePollIntervalMs: 0, onError: () => {},
+    }))
+    try {
+      render()
+      await flushAsync()
+      let files = render()
+      assert.equal(files.current?.id, 1)
+      assert.equal(paused.at(-1), false)
+      // Ordinary refresh of the already accepted same folder is not preemptive.
+      assert.equal(await files.loadDirectory(1, [{ id: 1, name: 'root' }],
+        normalSort, normalGrouping), true)
+      assert.equal(paused.at(-1), false)
+      files = render()
+      const obsolete = files.loadDirectory(1, [{ id: 1, name: 'root' }],
+        variant === 'sort' ? reverseSort : normalSort,
+        variant === 'grouping' ? grouped : normalGrouping)
+      assert.equal(paused.at(-1), true, variant + ' change pauses only old thumbnails')
+      const supersededRequest = requests.at(-1)
+      assert.equal(supersededRequest.signal.aborted, false)
+      // Same parent ID and same content signature as last accepted: the
+      // unresolved intermediate sort/grouping still must be superseded.
+      const returning = files.loadDirectory(1, [{ id: 1, name: 'root' }],
+        normalSort, normalGrouping)
+      assert.equal(supersededRequest.signal.aborted, true,
+        variant + ' stale first Range gets AbortSignal immediately')
+      assert.equal(await returning, true)
+      assert.equal(paused.at(-1), false,
+        variant + ' return resumes without waiting for uncooperative obsolete range')
+      files = render()
+      assert.equal(files.current?.id, 1)
+      assert.equal(files.items[0]?.name, 'accepted-original.txt')
+      assert.equal(foregroundPriority.xDriveForegroundContentTransitionPending('files'), false)
+      stuck.resolve(u01Range(20, 'obsolete-late-result.txt'))
+      assert.equal(await obsolete, false)
+      files = render()
+      assert.equal(files.items[0]?.name, 'accepted-original.txt')
+      assert.equal(paused.at(-1), false,
+        variant + ' late aborted completion cannot re-pause or overwrite current content')
+    } finally {
+      stuck.resolve(null)
+      stop()
+      foregroundPriority.xDriveEnterForegroundPage(null)
+    }
+  }
 })

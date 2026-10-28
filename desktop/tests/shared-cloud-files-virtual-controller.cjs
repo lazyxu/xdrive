@@ -98,6 +98,13 @@ function loadTypeScriptModule(relativePath, react, extraModules = {}) {
   const localRequire = (request) => {
     if (request === 'react') return react
     if (Object.prototype.hasOwnProperty.call(extraModules, request)) return extraModules[request]
+    // Execute the actual renderer-local disposable-read priority module.
+    // CloudFilesController now imports it; never replace it with a no-op.
+    if (request === './ViewerForegroundPriority') {
+      return loadTypeScriptModule(
+        ['ui', 'shared', 'src', 'mui', 'ViewerForegroundPriority.ts'], null,
+      )
+    }
     return require(request)
   }
   new Function('exports', 'module', 'require', output)(mod.exports, mod, localRequire)
