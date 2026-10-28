@@ -40,14 +40,16 @@ export type XDriveTaskCenterOperationActions = {
 export type XDriveBackgroundTaskScope = 'mine' | 'global'
 
 export type XDriveBackgroundTaskPort = {
-  loadActiveSummary?: () => Promise<XDriveBackgroundTaskActiveSummary>
+  loadActiveSummary?: (signal?: AbortSignal) => Promise<XDriveBackgroundTaskActiveSummary>
   loadMinePage: (
     limit: number,
     cursor?: string,
+    signal?: AbortSignal,
   ) => Promise<XDriveBackgroundTaskPage>
   loadGlobalPage?: (
     limit: number,
     cursor?: string,
+    signal?: AbortSignal,
   ) => Promise<XDriveBackgroundTaskPage>
   control?: (
     taskID: string,
@@ -123,6 +125,9 @@ function useXDriveBackgroundTaskActiveSummary({
   }>({ port, enabled, lifecycleKey })
   const summarySourceRef = useRef({ port, enabled, lifecycleKey })
   const summaryRequestRef = useRef(0)
+  // Only read-only summary HTTP work is disposable. Server jobs and control
+  // commands do not share these controllers.
+  const summaryAbortRef = useRef<AbortController | null>(null)
   if (
     summarySourceRef.current.port !== port ||
     summarySourceRef.current.enabled !== enabled ||
@@ -138,20 +143,29 @@ function useXDriveBackgroundTaskActiveSummary({
 
   const refresh = useCallback(async () => {
     const source = summarySourceRef.current
+    summaryAbortRef.current?.abort()
     const request = ++summaryRequestRef.current
+    if (!enabled || !port?.loadActiveSummary) {
+      summaryAbortRef.current = null
+      if (summarySourceRef.current === source && summaryRequestRef.current === request) {
+        setSummaryState({ port, enabled, lifecycleKey })
+      }
+      return
+    }
+    const controller = new AbortController()
+    summaryAbortRef.current = controller
     const valid = () => (
+      !controller.signal.aborted &&
       summarySourceRef.current === source &&
       summaryRequestRef.current === request
     )
-    if (!enabled || !port?.loadActiveSummary) {
-      if (valid()) setSummaryState({ port, enabled, lifecycleKey })
-      return
-    }
     try {
-      const value = await port.loadActiveSummary()
+      const value = await port.loadActiveSummary(controller.signal)
       if (valid()) setSummaryState({ port, enabled, lifecycleKey, value })
     } catch {
       if (valid()) setSummaryState({ port, enabled, lifecycleKey })
+    } finally {
+      if (summaryAbortRef.current === controller) summaryAbortRef.current = null
     }
   }, [enabled, lifecycleKey, port])
 
@@ -169,6 +183,8 @@ function useXDriveBackgroundTaskActiveSummary({
     const timer = window.setInterval(() => { void refresh() }, pollIntervalMs)
     return () => {
       window.clearInterval(timer)
+      summaryAbortRef.current?.abort()
+      summaryAbortRef.current = null
       summaryRequestRef.current += 1
     }
   }, [enabled, pollIntervalMs, port, refresh])
@@ -238,6 +254,8 @@ function useXDriveBackgroundTasks({
   })
   const listRefreshRequestRef = useRef(0)
   const listMoreRequestRef = useRef(0)
+  const listRefreshAbortRef = useRef<AbortController | null>(null)
+  const listMoreAbortRef = useRef<AbortController | null>(null)
   if (
     listSourceRef.current.port !== port ||
     listSourceRef.current.enabled !== enabled ||
@@ -254,11 +272,17 @@ function useXDriveBackgroundTasks({
 
   const refresh = useCallback(async () => {
     if (!port || !enabled || !visible) return
+    // A new page refresh supersedes both a previous first page and its old
+    // paginated cursor. Only GET readers opt into this cancellation.
+    listRefreshAbortRef.current?.abort()
+    listMoreAbortRef.current?.abort()
+    const controller = new AbortController()
+    listRefreshAbortRef.current = controller
     const source = listSourceRef.current
     const request = ++listRefreshRequestRef.current
-    // A fresh first page invalidates any older cursor continuation.
     listMoreRequestRef.current += 1
     const valid = () => (
+      !controller.signal.aborted &&
       listSourceRef.current === source &&
       listRefreshRequestRef.current === request
     )
@@ -275,7 +299,7 @@ function useXDriveBackgroundTasks({
     }
     try {
       const page = xDriveNormalizeBackgroundTaskPage(
-        await load(XDRIVE_BACKGROUND_TASK_HISTORY_PAGE_LIMIT),
+        await load(XDRIVE_BACKGROUND_TASK_HISTORY_PAGE_LIMIT, undefined, controller.signal),
       )
       if (!valid()) return
       const update = (
@@ -303,6 +327,7 @@ function useXDriveBackgroundTasks({
         onErrorRef.current?.(error)
       }
     } finally {
+      if (listRefreshAbortRef.current === controller) listRefreshAbortRef.current = null
       if (valid()) {
         if (global) setGlobalLoading(false)
         else setMineLoading(false)
@@ -319,10 +344,14 @@ function useXDriveBackgroundTasks({
 
     const loadingMore = global ? globalLoadingMore : mineLoadingMore
     if (loadingMore) return
+    listMoreAbortRef.current?.abort()
+    const controller = new AbortController()
+    listMoreAbortRef.current = controller
     const source = listSourceRef.current
     const request = ++listMoreRequestRef.current
     const originalRefresh = listRefreshRequestRef.current
     const valid = () => (
+      !controller.signal.aborted &&
       listSourceRef.current === source &&
       listMoreRequestRef.current === request &&
       listRefreshRequestRef.current === originalRefresh
@@ -335,6 +364,7 @@ function useXDriveBackgroundTasks({
         await load(
           XDRIVE_BACKGROUND_TASK_HISTORY_PAGE_LIMIT,
           visibleState.nextCursor,
+          controller.signal,
         ),
       )
       if (!valid()) return
@@ -354,6 +384,7 @@ function useXDriveBackgroundTasks({
     } catch (error) {
       if (valid()) onErrorRef.current?.(error)
     } finally {
+      if (listMoreAbortRef.current === controller) listMoreAbortRef.current = null
       if (valid()) {
         if (global) setGlobalLoadingMore(false)
         else setMineLoadingMore(false)
@@ -379,6 +410,15 @@ function useXDriveBackgroundTasks({
     setGlobalLoadingMore(false)
     setListOwner({ port, enabled, lifecycleKey })
   }, [enabled, lifecycleKey, port])
+
+  useEffect(() => () => {
+    // Route exit, Owner/scope change and unmount may abandon only disposable
+    // read transports. Durable task control remains unaffected.
+    listRefreshAbortRef.current?.abort()
+    listMoreAbortRef.current?.abort()
+    listRefreshAbortRef.current = null
+    listMoreAbortRef.current = null
+  }, [port, enabled, visible, lifecycleKey, effectiveScope])
 
   useEffect(() => {
     if (!enabled || !port) return
