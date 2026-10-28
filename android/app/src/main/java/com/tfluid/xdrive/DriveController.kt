@@ -85,6 +85,11 @@ data class DriveState(
     val fileUploadTotal: Long = 0,
     /** Last 20 verified SAF transfers, held only for the active login session. */
     val nativeTransfers: List<NativeTransferEntry> = emptyList(),
+    /** Current authenticated Owner only. No private filename/URI is persisted. */
+    val interruptedNativeTransfers: List<NativeInterruptedTransfer> = emptyList(),
+    /** Includes unreadable Keystore journal and failed verified-ACK cleanup. */
+    val transferRecoveryIssue: Boolean = false,
+    val transferRecoveryClearingId: String? = null,
     val trashItems: List<TrashEntry> = emptyList(),
     val trashTotal: Long = 0,
     val trashLoaded: Boolean = false,
@@ -276,6 +281,96 @@ class DriveController(
         val current = state.value
         mutableState.value = current.copy(nativeTransfers =
             current.nativeTransfers.filter { it.status == NativeTransferStatus.RUNNING })
+    }
+
+    /** One immutable Owner-specific local checkpoint. Its ID never travels
+     * in an xDrive HTTP request. All persistent writes are delegated to the
+     * Android IO-bound encrypted journal before opening SAF or UploadSession. */
+    private data class RecoveryCheckpoint(
+        val bridge: DriveTransferRecoveryBridge,
+        val server: String, val username: String, val id: String,
+    )
+
+    private suspend fun beginTransferRecovery(
+        kind: NativeTransferKind, generationTicket: Long,
+    ): RecoveryCheckpoint? {
+        val bridge = sessionPersistence?.transferRecovery() ?: return null
+        val owner = state.value
+        if (session == null || owner.server.isBlank() || owner.username.isBlank())
+            throw NativeTransferCheckpointFailure()
+        val id = try {
+            bridge.begin(owner.server, owner.username, kind)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // A corrupt/filled/unwritable journal blocks new IO; no HTTP call.
+            throw NativeTransferCheckpointFailure()
+        }
+        checkCurrent(generationTicket)
+        return id?.let { RecoveryCheckpoint(bridge, owner.server, owner.username, it) }
+    }
+
+    /** Remote/SAF completion has ALREADY been verified by the original API.
+     * A failed local journal cleanup must not invert that real outcome, but
+     * leaves a visible warning and the conservative durable marker intact. */
+    private suspend fun verifiedTransferRecovery(checkpoint: RecoveryCheckpoint?) {
+        if (checkpoint == null) return
+        val removed = try {
+            checkpoint.bridge.acknowledgeVerified(
+                checkpoint.server, checkpoint.username, checkpoint.id)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) { false }
+        if (!removed) {
+            mutableState.value = state.value.copy(transferRecoveryIssue = true)
+        }
+    }
+
+    /** Read only current authenticated Owner notices, never cross-account
+     * metadata. A slow/corrupt store must not block page rendering. */
+    fun refreshTransferRecoveryNotices() {
+        val bridge = sessionPersistence?.transferRecovery() ?: return
+        val snapshot = state.value
+        if (session == null || snapshot.username.isBlank() ||
+            snapshot.screen !in setOf(Screen.FILES, Screen.GALLERY, Screen.TRASH)) return
+        val ticket = generation
+        scope.launch {
+            val result = runCatching { bridge.pending(snapshot.server, snapshot.username) }
+            val current = state.value
+            if (ticket != generation || current.server != snapshot.server ||
+                current.username != snapshot.username || session == null) return@launch
+            mutableState.value = current.copy(
+                interruptedNativeTransfers = result.getOrDefault(emptyList()),
+                transferRecoveryIssue = result.isFailure || current.transferRecoveryIssue,
+            )
+        }
+    }
+
+    /** This is a user decision after independent inspection, never an auto
+     * retry or a fabricated Server ACK. Android journal verifies the Owner. */
+    fun acknowledgeVerifiedInterruptedTransfer(id: String) {
+        val snapshot = state.value
+        if (snapshot.interruptedNativeTransfers.none { it.id == id } ||
+            snapshot.transferRecoveryClearingId != null ||
+            snapshot.hasActiveNativeTransfer() || session == null) return
+        val bridge = sessionPersistence?.transferRecovery() ?: return
+        val ticket = generation
+        mutableState.value = snapshot.copy(transferRecoveryClearingId = id)
+        scope.launch {
+            val removed = runCatching {
+                bridge.acknowledgeVerified(snapshot.server, snapshot.username, id)
+            }.getOrDefault(false)
+            val current = state.value
+            if (ticket != generation || current.server != snapshot.server ||
+                current.username != snapshot.username || session == null) return@launch
+            mutableState.value = current.copy(
+                interruptedNativeTransfers = if (removed)
+                    current.interruptedNativeTransfers.filterNot { it.id == id }
+                    else current.interruptedNativeTransfers,
+                transferRecoveryClearingId = null,
+                transferRecoveryIssue = current.transferRecoveryIssue || !removed,
+            )
+        }
     }
 
     fun savedRoute(input: String, allowHttp: Boolean = false): ConnectionRoute = try {
