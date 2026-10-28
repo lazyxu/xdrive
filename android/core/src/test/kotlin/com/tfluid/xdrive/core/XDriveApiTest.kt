@@ -585,6 +585,78 @@ class XDriveApiTest {
 
 
 
+    @Test fun manualAlbumRenameFencesRevisionAndValidatesServerAck() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            val album = GalleryAlbum("manual:trip/2026?x=y", "manual", "旅途", 2, 3, 0)
+            val ack = """{"id":"manual:trip/2026?x=y","kind":"manual","name":"新名称",
+                "revision":4,"item_count":2,"album_folder_id":0}"""
+            server.enqueue(MockResponse().setBody(ack))
+            val renamed = api.renameGalleryManualAlbum("owner-secret", album, " 新名称 ")
+            assertEquals(album.id, renamed.id)
+            assertEquals("新名称", renamed.name)
+            assertEquals(4L, renamed.revision)
+            val req = server.takeRequest()
+            assertEquals("PATCH", req.method)
+            assertEquals("Bearer owner-secret", req.getHeader("Authorization"))
+            assertEquals("\"3\"", req.getHeader("If-Match"))
+            assertTrue(req.path!!.startsWith("/api/v1/media/albums/manual:"))
+            assertTrue(req.path!!.contains("%2F"))
+            assertTrue(req.path!!.contains("%3F"))
+            assertTrue(req.path!!.contains("%3D"))
+            assertEquals("新名称", body(req)["name"]?.jsonPrimitive?.content)
+
+            server.enqueue(MockResponse().setBody(
+                ack.replace("\"revision\":4", "\"revision\":3")))
+            assertEquals(ApiFailureReason.INVALID_RESPONSE, failure {
+                api.renameGalleryManualAlbum("owner-secret", album, "新名称")
+            }.reason)
+            server.takeRequest()
+            server.enqueue(MockResponse().setResponseCode(409).setBody(
+                """{"error":"revision conflict"}"""))
+            assertEquals(409, failure {
+                api.renameGalleryManualAlbum("owner-secret", album, "新名称")
+            }.statusCode)
+            server.takeRequest()
+            assertEquals(3, server.requestCount)
+            try {
+                api.renameGalleryManualAlbum("owner-secret", album.copy(kind = "smart"), "新名称")
+                fail("Smart album rename accepted")
+            } catch (_: IllegalArgumentException) {}
+            try {
+                api.renameGalleryManualAlbum("owner-secret", album, album.name)
+                fail("Unchanged name accepted")
+            } catch (_: IllegalArgumentException) {}
+            assertEquals(3, server.requestCount)
+        } }
+    }
+
+    @Test fun manualAlbumDeleteFencesRevisionAndCannotDeleteSmartCollections() = runBlocking {
+        MockWebServer().use { server -> XDriveApi(address(server)).use { api ->
+            val album = GalleryAlbum("manual:trip/2026", "manual", "旅途", 2, 5, 0)
+            server.enqueue(MockResponse().setResponseCode(204))
+            api.deleteGalleryManualAlbum("owner-secret", album)
+            val req = server.takeRequest()
+            assertEquals("DELETE", req.method)
+            assertEquals("\"5\"", req.getHeader("If-Match"))
+            assertEquals("Bearer owner-secret", req.getHeader("Authorization"))
+            assertTrue(req.path!!.contains("manual:trip%2F2026"))
+            assertEquals(0L, req.body.size)
+
+            server.enqueue(MockResponse().setResponseCode(409).setBody(
+                """{"error":"revision conflict"}"""))
+            assertEquals(409, failure {
+                api.deleteGalleryManualAlbum("owner-secret", album)
+            }.statusCode)
+            server.takeRequest()
+            assertEquals(2, server.requestCount)
+            try {
+                api.deleteGalleryManualAlbum("owner-secret", album.copy(kind = "smart"))
+                fail("Non-manual album deletion accepted")
+            } catch (_: IllegalArgumentException) {}
+            assertEquals(2, server.requestCount)
+        } }
+    }
+
     @Test fun manualAlbumCreateOneOwnerPostValidatesAcknowledgement() = runBlocking {
         assertEquals("暑假 📷", normalizeGalleryManualAlbumName("  暑假 📷  "))
         assertNull(normalizeGalleryManualAlbumName(" "))

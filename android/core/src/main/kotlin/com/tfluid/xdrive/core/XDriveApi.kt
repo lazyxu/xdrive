@@ -283,6 +283,14 @@ interface XDriveService {
     /** One Owner-authenticated manual collection creation; no retry or second writer. */
     suspend fun createGalleryManualAlbum(accessToken: String, name: String): GalleryAlbum =
         throw ApiException(501, "Manual album creation unavailable")
+    /** Version-fenced manual album edit; does not copy or mutate media bytes. */
+    suspend fun renameGalleryManualAlbum(
+        accessToken: String, album: GalleryAlbum, name: String,
+    ): GalleryAlbum = throw ApiException(501, "Manual album rename unavailable")
+    /** Delete collection membership only. Explicit caller confirmation required. */
+    suspend fun deleteGalleryManualAlbum(
+        accessToken: String, album: GalleryAlbum,
+    ) { throw ApiException(501, "Manual album deletion unavailable") }
     /** Optional: the cover Node is resolved by the same Owner Server, never
      * read from Android's local media library or guessed from album members. */
     suspend fun galleryAlbumCover(accessToken: String, album: GalleryAlbum): GalleryAlbumCover? =
@@ -956,6 +964,43 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
             result.itemCount != 0L || result.albumFolderId != 0L ||
             result.coverNodeId != null) invalidPayload()
         return result
+    }
+
+    private fun requireEditableManualAlbum(token: String, album: GalleryAlbum) {
+        require(validToken(token) && validGalleryAlbumId(album.id) &&
+            album.id.startsWith("manual:") && album.kind == "manual" &&
+            album.revision > 0 && album.revision < Long.MAX_VALUE) {
+            "Invalid Owner manual album identity or revision"
+        }
+    }
+
+    /** One conditional PATCH, pinned to the real Owner and album revision.
+     * A malformed/missing ACK never triggers an implicit replay. */
+    override suspend fun renameGalleryManualAlbum(
+        accessToken: String, album: GalleryAlbum, name: String,
+    ): GalleryAlbum {
+        requireEditableManualAlbum(accessToken, album)
+        val normalized = normalizeGalleryManualAlbumName(name)
+            ?: throw IllegalArgumentException("Invalid manual album name")
+        require(normalized != album.name) { "Album name is unchanged" }
+        val saved = galleryAlbumDTO(request("media/albums", accessToken,
+            values = mapOf("name" to normalized), method = "PATCH",
+            ifMatch = album.revision, pathTailSegments = listOf(album.id)))
+        if (saved.id != album.id || saved.kind != "manual" ||
+            saved.name != normalized || saved.revision != album.revision + 1 ||
+            saved.albumFolderId != album.albumFolderId) invalidPayload()
+        return saved
+    }
+
+    /** One version-fenced DELETE of a manual PhotoCollection; Go preserves the
+     * original Owner media Nodes/CAS and removes only the collection relation. */
+    override suspend fun deleteGalleryManualAlbum(
+        accessToken: String, album: GalleryAlbum,
+    ) {
+        requireEditableManualAlbum(accessToken, album)
+        request("media/albums", accessToken, emptyResponse = true,
+            method = "DELETE", ifMatch = album.revision,
+            pathTailSegments = listOf(album.id))
     }
 
     /** Resolve only the real Server-provided cover_node_id. The album list
