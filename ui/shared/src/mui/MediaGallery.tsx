@@ -938,6 +938,7 @@ export function XDriveMediaGalleryPage({
   // Sorting, Album, Cell and Viewport navigation supersede this disposable
   // read without touching downloads, uploads or persistent indexer tasks.
   const firstContentRangeAbort = useRef<AbortController | null>(null)
+  const pendingFirstContentKeyRef = useRef<string | null>(null)
   const nativeCellOpenAbort = useRef<AbortController | null>(null)
   const changeBaiduMapPhotoScope=useCallback((input:XDriveBaiduMapPhotoScope)=>{
     const next=xDriveCopyBaiduMapPhotoScope(input)
@@ -954,6 +955,7 @@ export function XDriveMediaGalleryPage({
   useEffect(() => () => {
     firstContentRangeAbort.current?.abort()
     firstContentRangeAbort.current = null
+    pendingFirstContentKeyRef.current = null
     nativeCellOpenAbort.current?.abort()
     nativeCellOpenAbort.current = null
   }, [source, preferenceScope])
@@ -1229,8 +1231,17 @@ export function XDriveMediaGalleryPage({
           person,
         )
     const previousContent = collectionTargetRef.current
-    const finishContentTransition = previousContent &&
-      mediaGalleryContentKey(previousContent) !== mediaGalleryContentKey(target)
+    const nextContentKey = mediaGalleryContentKey(target)
+    // A -> B (pending) -> A must regain the old accepted wall even when B's
+    // underlying adapter ignores abort. A matching accepted target alone is
+    // not enough to distinguish this return from an ordinary refresh.
+    const pendingContentKey = pendingFirstContentKeyRef.current
+    const needsContentPreemption = previousContent !== null && (
+      mediaGalleryContentKey(previousContent) !== nextContentKey ||
+      (pendingContentKey !== null && pendingContentKey !== nextContentKey)
+    )
+    pendingFirstContentKeyRef.current = nextContentKey
+    const finishContentTransition = needsContentPreemption
       ? xDriveBeginForegroundContentTransition(['gallery', 'map'])
       : () => undefined
     const commitTarget = () => {
@@ -1403,6 +1414,7 @@ export function XDriveMediaGalleryPage({
       finishContentTransition()
       if (firstContentRangeAbort.current === firstRangeController) {
         firstContentRangeAbort.current = null
+        pendingFirstContentKeyRef.current = null
       }
       if (request === requestID.current) setLoading(false)
     }
