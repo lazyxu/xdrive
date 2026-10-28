@@ -6,17 +6,27 @@ import java.util.UUID
 /** Deliberately contains NO file name, source URI, token, byte count, remote
  * session ID or resumption promise. The encrypted journal only records that
  * the previous foreground operation may have had external side effects. */
-internal data class TransferRecoveryOwner(val server: String, val username: String) {
+internal class TransferRecoveryOwner(origin: String, val username: String) {
+    // OkHttp canonical origins always end in '/', even when entered without
+    // it. Normalize exactly as XDriveApi does so old markers cannot split
+    // one Owner into slash/no-slash variants after cold startup.
+    val server: String = ServerAddress.parse(origin).url
+
     init {
-        require(server.startsWith("https://") &&
-            ServerAddress.parse(server).url == server) {
-            "Only one canonical verified HTTPS Server may own a durable marker"
+        require(server.startsWith("https://")) {
+            "Only a verified HTTPS Server may own a durable transfer marker"
         }
         require(username.isNotBlank() && username == username.trim() &&
             username.length <= 256 && username.none { it.isISOControl() }) {
             "Invalid transfer Owner"
         }
     }
+
+    override fun equals(other: Any?): Boolean =
+        other is TransferRecoveryOwner &&
+            server == other.server && username == other.username
+
+    override fun hashCode(): Int = 31 * server.hashCode() + username.hashCode()
 
     override fun toString(): String = "TransferRecoveryOwner([redacted])"
 }
