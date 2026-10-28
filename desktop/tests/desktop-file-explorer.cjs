@@ -122,7 +122,9 @@ test('Desktop Cloud Storage stays current-account scoped and excludes global CAS
 
 test('Desktop Cloud Storage adapter owns cloud quota and account file-distribution refresh', () => {
   assert.ok(app.includes('createXDriveCloudStorageDataSource({'), 'Desktop is missing the shared Cloud Storage data-source factory')
-  assert.ok(app.includes("getQuota: () => window.xdriveDesktop.agent.cloudQuota()"), 'Cloud Storage port should retrieve cloud quota')
+  assert.match(app,
+    /getQuota: \(signal\?: AbortSignal\) => xDriveDesktopViewportRequest\(signal,[\s\S]*?cloudQuota\(requestID\)/,
+    'Cloud Storage quota must use sender-scoped Agent GET cancellation')
   assert.ok(app.includes('getStats: storageStatsSupported'), 'Cloud Storage port should capability-gate account file distribution')
   assert.ok(app.includes('onQuota: applyCloudQuota'), 'Cloud Storage factory should update shared Cloud Files quota state')
 })
