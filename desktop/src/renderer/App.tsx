@@ -1081,12 +1081,20 @@ export default function App({
       : '当前 xdrive-agent 不支持账号文件大小分布，请更新客户端核心组件。',
   }), [applyCloudQuota, storageStatsSupported])
   const localStorageSource = useMemo<XDriveLocalStorageDataSource>(() => ({
-    load: async () => {
+    load: async (signal?: AbortSignal) => {
+      // The Electron browser-cache query has no transport abort API; the two
+      // read-only Agent GETs do. All three results are scoped to one visible
+      // Local Storage snapshot; no cache purge or folder-policy action shares
+      // these request cancellation IDs.
+      signal?.throwIfAborted()
       const [browserResult, treeResult, cacheResult] = await Promise.all([
         window.xdriveDesktop.getBrowserCache(),
-        window.xdriveDesktop.agent.getStorageTree(),
-        window.xdriveDesktop.agent.getCache(),
+        xDriveDesktopViewportRequest(signal,
+          requestID => window.xdriveDesktop.agent.getStorageTree(requestID)),
+        xDriveDesktopViewportRequest(signal,
+          requestID => window.xdriveDesktop.agent.getCache(requestID)),
       ])
+      signal?.throwIfAborted()
       if (!browserResult.ok) throw new Error(browserResult.error.message)
       const desktopReason = !cacheResult.ok
         ? cacheResult.error.message
