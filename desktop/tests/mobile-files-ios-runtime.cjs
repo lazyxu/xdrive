@@ -5202,7 +5202,8 @@ test('P107: original Web restore reports the actual accepted owner GET; permanen
   const web = fs.readFileSync(path.join(root, 'web/src/WebFileExplorer.tsx'), 'utf8')
   const agents = fs.readFileSync(path.join(root, 'docs/history/AGENTS-2026-10-27-before-consolidation.md'), 'utf8')
   assert.ok(web.includes('await navigateTo(chain, true, navigationIntentID, currentAccepted => {'))
-  assert.ok(web.includes('return accepted && isNavigationIntentCurrent(navigationIntentID)'))
+  assert.match(web, /return accepted && !navigationSignal\.aborted &&\s*isNavigationIntentCurrent\(navigationIntentID\)/,
+    'saved folder requires both the accepted first counted Range and the current non-aborted Owner intent')
   assert.ok(web.includes('const initialSavedMobileFolderID = useMemo'))
   assert.ok(web.includes('current.id === bootstrapRootID'))
   assert.ok(web.includes('savedGuard.pending &&'))

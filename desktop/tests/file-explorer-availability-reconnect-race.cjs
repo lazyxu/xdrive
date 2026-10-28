@@ -120,6 +120,13 @@ function loadTypeScriptModule(relativePath, react, extraModules = {}) {
     if (Object.prototype.hasOwnProperty.call(extraModules, request)) {
       return extraModules[request]
     }
+    // Exercise the real latest-wins cancellation scope, including its
+    // account/StrictMode lifetime, instead of a no-op test double.
+    if (request === './FileExplorerDisposableNavigationReads') {
+      return loadTypeScriptModule(
+        ['ui', 'shared', 'src', 'mui', 'FileExplorerDisposableNavigationReads.ts'], null,
+      )
+    }
     // Execute the actual renderer-local disposable-read priority module.
     // CloudFilesController now imports it; never replace it with a no-op.
     if (request === './ViewerForegroundPriority') {

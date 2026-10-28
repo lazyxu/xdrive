@@ -1346,8 +1346,10 @@ export default function WebFileExplorer({
     } finally {
       // A completed/denied/superseded saved resume can no longer make the
       // bootstrap root provisional. Do not alter a newer account's guard.
-      if (savedResumeRouteGuardRef.current === routeGuard &&
-          routeGuard.folderID === directoryID) routeGuard.pending = false
+      // Release the captured OLD Owner guard even when a newer Owner has
+      // replaced the ref with the same numeric Node ID. Never mutate the
+      // newer guard: it has its own object identity and pending receipt.
+      if (routeGuard.folderID === directoryID) routeGuard.pending = false
     }
   }, [api, beginNavigationIntent, isNavigationIntentCurrent,
     navigationReadSignalForIntent, navigateTo])
