@@ -140,11 +140,13 @@ export function createXDriveSynologyOwnerGallerySource(
       // Never request a thumbnail using a guessed revision or a new Owner ID.
       if (!known || !ownerRevision || ownerRevision !== known.revision) return null
       const thumbnail = await client.ownerFileThumbnail(nodeID, ownerRevision, signal)
-      if (signal?.aborted) return null
+      // Owner/session, Node revision, source navigation or directory refresh
+      // can supersede an in-flight read without the old Agent resolving.
+      if (signal?.aborted || previews.get(nodeID) !== known) return null
       const bytes = new Uint8Array(thumbnail.data.length)
       bytes.set(thumbnail.data)
       const url = URL.createObjectURL(new Blob([bytes.buffer], { type: thumbnail.contentType }))
-      if (signal?.aborted) {
+      if (signal?.aborted || previews.get(nodeID) !== known) {
         URL.revokeObjectURL(url)
         return null
       }
@@ -159,10 +161,15 @@ export function createXDriveSynologyOwnerGallerySource(
       // Video/Live Photo and larger originals require a separate verified
       // stream capability; never synthesize a giant Blob or fake URL.
       if (identity.size <= 0 || identity.size > 32 * (1 << 20)) return null
-      return xDriveSynologyLoadBoundedMediaPreview(client, {
+      const url = await xDriveSynologyLoadBoundedMediaPreview(client, {
         id: identity.id, name: identity.name, size: identity.size,
         revision: identity.revision, kind: 'file',
       } as Parameters<typeof xDriveSynologyLoadBoundedMediaPreview>[1], signal, onProgress)
+      if (signal?.aborted || previews.get(nodeID) !== identity) {
+        if (url.startsWith('blob:')) URL.revokeObjectURL(url)
+        return null
+      }
+      return url
     },
   }
 }

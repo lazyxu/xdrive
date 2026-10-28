@@ -17,7 +17,7 @@ const transpiled = ts.transpileModule(src, {
 const errors = (transpiled.diagnostics || []).filter(d => d.category === ts.DiagnosticCategory.Error)
 assert.deepEqual(errors.map(d => ts.flattenDiagnosticMessageText(d.messageText, '\n')), [])
 const calls = []
-let thumbnailRevision = 7
+let deferredPreview = null
 const previews = []
 const fakeURL = {
   createObjectURL: blob => { previews.push(blob); return 'blob:owner:' + previews.length },
@@ -29,9 +29,8 @@ new Function('module', 'exports', 'require', 'URL', 'Blob', transpiled.outputTex
   name => {
     if (name === '../synology-media-preview') return {
       xDriveSynologyLoadBoundedMediaPreview: async (_client, item) => {
-        assert.equal(item.revision, 7)
         assert.equal(item.size, 120)
-        return 'blob:verified-original'
+        return deferredPreview ?? 'blob:verified-original'
       },
     }
     throw new Error('unexpected import into Gallery Owner-only source: ' + name)
@@ -146,4 +145,34 @@ test('abort, invalid window and non-Owner writes do not contact an Agent', async
     'permanentlyDeleteTrashItems', 'saveVideoPoster', 'submitSelectionFavoriteJob']) {
     assert.equal(Object.hasOwn(source, mutation), false, mutation + ' cannot be fabricated')
   }
+})
+
+test('superseded Owner thumbnail and original must not publish an old revision after a new Range', async () => {
+  calls.length = 0
+  let recordRevision = 7
+  let resolveThumbnail
+  const api = fakeClient()
+  api.ownerGalleryItemsRange = async (_kind, limit, offset) => ({
+    items: offset ? [] : [record(1, recordRevision)],
+    total_count: 1, offset, limit,
+  })
+  api.ownerFileThumbnail = async () => new Promise(resolve => {
+    resolveThumbnail = resolve
+  })
+  const source = create(api)
+  await source.listItemRange(1, 0)
+  const pendingThumbnail = source.loadThumbnail(1, undefined, 7)
+  let resolveOriginal
+  deferredPreview = new Promise(resolve => { resolveOriginal = resolve })
+  const pendingOriginal = source.loadPreviewURL(1, 'image', undefined, '1.jpg', 7)
+  recordRevision = 8
+  await source.listItemRange(1, 0)
+  resolveThumbnail({ data: new Uint8Array([137, 80, 78, 71]),
+    contentType: 'image/png' })
+  resolveOriginal('blob:verified-old-owner')
+  assert.equal(await pendingThumbnail, null)
+  assert.equal(await pendingOriginal, null)
+  assert.deepEqual(calls.filter(x => x[0] === 'revoke').map(x => x[1]),
+    ['blob:verified-old-owner'])
+  deferredPreview = null
 })
