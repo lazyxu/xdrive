@@ -267,7 +267,7 @@ test('shared Task Center owns scheduler operational metadata presentation', () =
 
 test('Task Center badge includes owner background activity through shared summary', () => {
   for (const token of [
-    'loadActiveSummary?: () => Promise<XDriveBackgroundTaskActiveSummary>',
+    'loadActiveSummary?: (signal?: AbortSignal) => Promise<XDriveBackgroundTaskActiveSummary>',
     'useXDriveBackgroundTaskActiveSummary',
     'xDriveBackgroundTaskSummaryPollIntervalMs',
     'summaryFileOperationCount',
