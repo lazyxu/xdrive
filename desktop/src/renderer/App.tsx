@@ -2109,8 +2109,11 @@ export default function App({
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
-    load: async () => {
-      const result = await window.xdriveDesktop.agent.cloudAdminServices()
+    load: async (signal?: AbortSignal) => {
+      // Only disposable status inventory reads opt into this sender-scoped
+      // cancel path; Admin mutations and post-save checks remain independent.
+      const result = await xDriveDesktopViewportRequest(signal,
+        requestID => window.xdriveDesktop.agent.cloudAdminServices(requestID))
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },

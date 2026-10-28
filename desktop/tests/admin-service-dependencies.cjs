@@ -32,7 +32,8 @@ test('Desktop services uses authenticated Agent IPC, never a renderer bearer or 
   assert.ok(desktop.includes("status?.role === 'admin'"))
   assert.ok(desktop.includes("adminServicesPage: status?.role === 'admin'") &&
     sharedOutlet.includes("<XDriveServiceDependenciesPage {...services.adminServicesPage} />"))
-  assert.ok(desktop.includes('cloudAdminServices()'))
+  assert.ok(desktop.includes('cloudAdminServices(requestID)') && desktop.includes('xDriveDesktopViewportRequest(signal'),
+    'Desktop inventory must carry only the disposable GET through sender-scoped Agent IPC')
   assert.ok(preload.includes("ipcRenderer.invoke('agent:cloud-admin-services')"))
   assert.ok(bridge.includes('"GET /v1/cloud/admin-services"'))
   assert.ok(bridge.includes('CloudAdminServices(r.Context())'))

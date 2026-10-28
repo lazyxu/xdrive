@@ -6822,11 +6822,13 @@ function registerIPCHandlers() {
       ...(input.clear_ak ? { clear_ak: true } : {}),
     })
   }, false))
-  ipcMain.handle('agent:cloud-admin-services', () => runAgentAction<AgentServiceDependenciesSnapshot>(async () => {
-    const hello = await requireAgentLifecycle().ensureRunning()
-    requireAgentCapability(hello, 'admin-services')
-    return requireAgentClient().cloudAdminServices()
-  }, false))
+  ipcMain.handle('agent:cloud-admin-services', (event, requestID: unknown = undefined) =>
+    runAgentAction<AgentServiceDependenciesSnapshot>(
+      () => viewportRequests.run(event.sender, requestID, async signal => {
+        const hello = await requireAgentLifecycle().ensureRunning()
+        requireAgentCapability(hello, 'admin-services')
+        return requireAgentClient().cloudAdminServices(signal)
+      }), false))
 
   const adminStorageOperations = new Set([
     'stats', 'health', 'history', 'legacy', 'unreferenced', 'staging',

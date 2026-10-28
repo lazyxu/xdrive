@@ -912,7 +912,7 @@ declare global {
           items: AgentCloudBatchNodeRef[],
         ) => Promise<DesktopResult<XDriveFileExplorerMediaDetails[]>>
         cloudCreateFileOperation: (type: 'copy' | 'move' | 'delete', items: AgentCloudBatchNodeRef[], parentID?: number) => Promise<DesktopResult<AgentCloudFileOperation>>
-        cloudAdminServices: () => Promise<DesktopResult<XDriveServiceDependenciesSnapshot>>
+        cloudAdminServices: (requestID?: string) => Promise<DesktopResult<XDriveServiceDependenciesSnapshot>>
         cloudAdminStorage: <T>(query: import('../../../ui/shared/src').XDriveAdminStorageRequest) =>
           Promise<DesktopResult<T>>
         cloudAdminBackups: () => Promise<DesktopResult<import('../../../ui/shared/src/server-backup-admin').XDriveServerBackupPage>>
