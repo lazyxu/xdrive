@@ -19,15 +19,18 @@ import androidx.compose.ui.unit.dp
 /** A cell's 60-item Server range must never be prefetched just because a
  * freshly rendered short grid has its footer on screen. Require real scrolling
  * toward the edge, and one edge-entry ticket for each visible page. */
+internal fun mapCellHasNextPage(startOffset: Int, visibleItems: Int, totalCount: Long): Boolean =
+    startOffset >= 0 && visibleItems > 0 && totalCount > 0L &&
+        startOffset.toLong() + visibleItems.toLong() < totalCount &&
+        startOffset.toLong() + visibleItems.toLong() <= Int.MAX_VALUE
+
 internal fun shouldPrefetchMapCellPage(
     loaded: Boolean, loading: Boolean, error: Boolean,
     startOffset: Int, visibleItems: Int, totalCount: Long,
     lastVisibleIndex: Int, userScrolled: Boolean, edgeArmed: Boolean,
 ): Boolean =
     loaded && !loading && !error && userScrolled && edgeArmed &&
-        startOffset >= 0 && visibleItems > 0 && totalCount > 0L &&
-        startOffset.toLong() + visibleItems.toLong() < totalCount &&
-        startOffset.toLong() + visibleItems.toLong() <= Int.MAX_VALUE &&
+        mapCellHasNextPage(startOffset, visibleItems, totalCount) &&
         lastVisibleIndex >= (visibleItems - 4).coerceAtLeast(0)
 
 internal fun mapCellEdgeWasLeft(visibleItems: Int, lastVisibleIndex: Int): Boolean =
@@ -119,22 +122,23 @@ internal fun ColumnScope.GalleryMapCellWall(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-        if (state.galleryItems.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
-            Text("此网格中没有可显示的照片或视频。", Modifier.padding(20.dp))
-        }
-        items(state.galleryItems, key = { it.node.id }) { item ->
-            GalleryTile(item, controller, bitmaps, containTiles = false,
-                selectionMode = false, isSelected = false, allowSelection = false)
-        }
-        if (state.galleryOffset.toLong() + state.galleryItems.size < state.galleryTotal &&
-            state.error == null) item(key = "more", span = { GridItemSpan(maxLineSpan) }) {
-            TextButton(onClick = controller::galleryLoadNewer,
-                enabled = !state.loading,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                    .testTag("gallery-map-cell-more")) {
-                Text(if (state.loading) "正在加载" else "加载更多网格照片")
+            if (state.galleryItems.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
+                Text("此网格中没有可显示的照片或视频。", Modifier.padding(20.dp))
             }
-        }
+            items(state.galleryItems, key = { it.node.id }) { item ->
+                GalleryTile(item, controller, bitmaps, containTiles = false,
+                    selectionMode = false, isSelected = false, allowSelection = false)
+            }
+            if (mapCellHasNextPage(
+                    state.galleryOffset, state.galleryItems.size, state.galleryTotal
+                ) && state.error == null) item(key = "more", span = { GridItemSpan(maxLineSpan) }) {
+                TextButton(onClick = controller::galleryLoadNewer,
+                    enabled = !state.loading,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                        .testTag("gallery-map-cell-more")) {
+                    Text(if (state.loading) "正在加载" else "加载更多网格照片")
+                }
+            }
         }
     }
 }
