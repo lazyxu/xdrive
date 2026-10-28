@@ -1,7 +1,8 @@
 /** Read-only, no-credentials server readiness probe. Never used as auth or a mutation guard. */
 export type XDrivePwaServerReachability =
   | 'ready' | 'server-unavailable' | 'rate-limited' | 'access-blocked'
-  | 'network-unavailable' | 'timed-out' | 'cancelled' | 'unexpected-response'
+  | 'network-unavailable' | 'timed-out' | 'cancelled' | 'browser-restricted'
+  | 'unexpected-response'
 export interface XDrivePwaReadinessResult {
   state: XDrivePwaServerReachability
   httpStatus?: number
@@ -9,21 +10,64 @@ export interface XDrivePwaReadinessResult {
 export async function xDriveProbePwaServer(
   options: { signal?: AbortSignal; timeoutMs?: number; request?: typeof fetch } = {},
 ): Promise<XDrivePwaReadinessResult> {
-  if (options.signal?.aborted) return { state: 'cancelled' }
+  // Optional WebKit AbortSignal getters/listeners can throw. A readiness
+  // request must not run if the caller's cancellation cannot be observed:
+  // this is an advisory, anonymous probe, never a license to skip auth.
+  const caller = options.signal
+  if (caller) {
+    try {
+      if (caller.aborted) return { state: 'cancelled' }
+    } catch {
+      return { state: 'browser-restricted' }
+    }
+  }
+
   const controller = new AbortController()
   let timedOut = false
+  let callerCancelled = false
+  let finished = false
+  let listenerAttached = false
   const timeoutMs = Math.min(10000, Math.max(1000, options.timeoutMs ?? 6000))
-  // A WebKit/proxy shim can ignore AbortSignal and leave fetch() or json()
-  // pending. Race both stages against the same cancellation/deadline signal
-  // instead of depending on the transport promise to reject after abort.
-  let rejectAborted!: (reason: Error) => void
-  const aborted = new Promise<never>((_resolve, reject) => { rejectAborted = reject })
+
+  // An uncooperative WebKit/proxy shim may never settle fetch() or json()
+  // after AbortSignal. Resolve this sentinel (never an unhandled rejection)
+  // so the same interruption bounds both the headers and body phases.
+  let interrupt!: () => void
+  const interrupted = new Promise<null>(resolve => { interrupt = () => resolve(null) })
   const abortRequest = () => {
-    controller.abort()
-    rejectAborted(new Error('PWA readiness probe aborted'))
+    if (finished) return
+    try { controller.abort() } catch { /* Logical cancellation still wins. */ }
+    interrupt()
   }
-  const abortFromCaller = () => abortRequest()
-  options.signal?.addEventListener('abort', abortFromCaller, { once: true })
+  const abortFromCaller = () => {
+    callerCancelled = true
+    abortRequest()
+  }
+  const detach = () => {
+    if (!caller || !listenerAttached) return
+    listenerAttached = false
+    try { caller.removeEventListener('abort', abortFromCaller) }
+    catch { /* A denied cleanup cannot discard the settled result. */ }
+  }
+
+  if (caller) {
+    try {
+      caller.addEventListener('abort', abortFromCaller, { once: true })
+      listenerAttached = true
+      // Close the check -> subscribe race without sending any premature GET.
+      if (caller.aborted) abortFromCaller()
+    } catch {
+      finished = true
+      detach()
+      return { state: 'browser-restricted' }
+    }
+  }
+  if (callerCancelled) {
+    finished = true
+    detach()
+    return { state: 'cancelled' }
+  }
+
   const timer = setTimeout(() => { timedOut = true; abortRequest() }, timeoutMs)
   try {
     const response = await Promise.race([
@@ -31,26 +75,24 @@ export async function xDriveProbePwaServer(
         method: 'GET', mode: 'same-origin', credentials: 'omit', cache: 'no-store',
         redirect: 'error', signal: controller.signal,
       }),
-      aborted,
+      interrupted,
     ])
-    if (options.signal?.aborted) return { state: 'cancelled' }
+    if (callerCancelled) return { state: 'cancelled' }
     if (timedOut) return { state: 'timed-out' }
+    if (response === null) return { state: 'network-unavailable' }
     if (response.status === 200) {
-      // Caddy SPA fallback and reverse-proxy login pages can return 200 HTML.
+      // A Caddy SPA fallback or proxy login page is not a ready Server.
       const type = response.headers.get('Content-Type') || ''
       if (!/^application\/json\b/i.test(type)) return { state: 'unexpected-response', httpStatus: 200 }
       try {
-        const body = (await Promise.race([response.json(), aborted])) as { ok?: unknown }
-        // fetch() resolves when headers arrive, not when its JSON body is read.
-        // A cancellation or deadline during body consumption must not look
-        // like malformed HTTP 200 (or a late successful readiness result).
-        if (options.signal?.aborted) return { state: 'cancelled' }
+        const body = await Promise.race([response.json(), interrupted]) as { ok?: unknown } | null
+        if (callerCancelled) return { state: 'cancelled' }
         if (timedOut) return { state: 'timed-out' }
         if (body?.ok === true) return { state: 'ready', httpStatus: 200 }
       } catch {
-        if (options.signal?.aborted) return { state: 'cancelled' }
+        if (callerCancelled) return { state: 'cancelled' }
         if (timedOut) return { state: 'timed-out' }
-        // An actually malformed JSON body remains an unexpected response.
+        // Actually malformed JSON remains unexpected, not a ready Server.
       }
       return { state: 'unexpected-response', httpStatus: 200 }
     }
@@ -59,11 +101,12 @@ export async function xDriveProbePwaServer(
     if (response.status === 401 || response.status === 403) return { state: 'access-blocked', httpStatus: response.status }
     return { state: 'unexpected-response', httpStatus: response.status }
   } catch {
-    if (options.signal?.aborted) return { state: 'cancelled' }
+    if (callerCancelled) return { state: 'cancelled' }
     if (timedOut) return { state: 'timed-out' }
     return { state: 'network-unavailable' }
   } finally {
+    finished = true
     clearTimeout(timer)
-    options.signal?.removeEventListener('abort', abortFromCaller)
+    detach()
   }
 }
