@@ -49,20 +49,20 @@ func (c *placesBD09PlanCapture) Trace(
 // The PostgreSQL server supplies this raw plan only in memory. No SQL,
 // bound Owner/node/photo IDs, filter strings or raw EXPLAIN JSON are saved.
 type placesBD09ExplainNode struct {
-	NodeType          string                    `json:"Node Type"`
-	RelationName      string                    `json:"Relation Name"`
-	IndexName         string                    `json:"Index Name"`
-	JoinType          string                    `json:"Join Type"`
-	ActualRows        float64                   `json:"Actual Rows"`
-	ActualLoops       float64                   `json:"Actual Loops"`
-	ActualTotalTimeMS float64                   `json:"Actual Total Time"`
-	SharedHitBlocks   int64                     `json:"Shared Hit Blocks"`
-	SharedReadBlocks  int64                     `json:"Shared Read Blocks"`
-	TempReadBlocks    int64                     `json:"Temp Read Blocks"`
-	TempWrittenBlocks int64                     `json:"Temp Written Blocks"`
-	SortMethod        string                    `json:"Sort Method"`
-	SortSpaceUsed     int64                     `json:"Sort Space Used"`
-	Plans             []placesBD09ExplainNode   `json:"Plans"`
+	NodeType          string                  `json:"Node Type"`
+	RelationName      string                  `json:"Relation Name"`
+	IndexName         string                  `json:"Index Name"`
+	JoinType          string                  `json:"Join Type"`
+	ActualRows        float64                 `json:"Actual Rows"`
+	ActualLoops       float64                 `json:"Actual Loops"`
+	ActualTotalTimeMS float64                 `json:"Actual Total Time"`
+	SharedHitBlocks   int64                   `json:"Shared Hit Blocks"`
+	SharedReadBlocks  int64                   `json:"Shared Read Blocks"`
+	TempReadBlocks    int64                   `json:"Temp Read Blocks"`
+	TempWrittenBlocks int64                   `json:"Temp Written Blocks"`
+	SortMethod        string                  `json:"Sort Method"`
+	SortSpaceUsed     int64                   `json:"Sort Space Used"`
+	Plans             []placesBD09ExplainNode `json:"Plans"`
 }
 
 type placesBD09ExplainRoot struct {
@@ -111,13 +111,13 @@ func placesBD09RedactedPlanNodes(
 }
 
 type placesBD09ExplainEvidence struct {
-	Sequence        int                              `json:"sequence"`
-	HasCount        bool                             `json:"has_count"`
-	HasOrderBy      bool                             `json:"has_order_by"`
-	HasLimit        bool                             `json:"has_limit"`
-	PlanningTimeMS  float64                          `json:"planning_time_ms"`
-	ExecutionTimeMS float64                          `json:"execution_time_ms"`
-	Nodes           []placesBD09ExplainEvidenceNode  `json:"nodes"`
+	Sequence        int                             `json:"sequence"`
+	HasCount        bool                            `json:"has_count"`
+	HasOrderBy      bool                            `json:"has_order_by"`
+	HasLimit        bool                            `json:"has_limit"`
+	PlanningTimeMS  float64                         `json:"planning_time_ms"`
+	ExecutionTimeMS float64                         `json:"execution_time_ms"`
+	Nodes           []placesBD09ExplainEvidenceNode `json:"nodes"`
 }
 
 func placesBD09ExplainProductionSelect(
