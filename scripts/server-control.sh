@@ -2557,13 +2557,13 @@ backup_admin_history_append() {
     "$snapshot" "$mode" "$started" "$finished" "$error_code" "$proof_path" <<'PY'
 import json, os, re, stat, sys, tempfile
 path,state,action,rid,snapshot,mode,started,finished,code,proof_path=sys.argv[1:]
-if state not in ("success","failed") or action not in ("create","verify","verify_all","preview_delete","drill","plan","restore","delete","delete_selected","prune","policy"):
+if state not in ("success","failed") or action not in ("create","verify","verify_all","preview_delete","drill","plan","restore","restore_database_only","delete","delete_selected","prune","policy"):
     sys.exit(2)
 if not re.fullmatch(r"[0-9a-f]{24}",rid) or not re.fullmatch(r"[a-z_]{0,60}",code):
     sys.exit(2)
 if snapshot and not re.fullmatch(r"(v1|v2-default|v2-configured):xdrive-backup-[0-9]{8}T[0-9]{6}Z",snapshot):
     sys.exit(2)
-if (action in ("verify","preview_delete","drill","restore","delete","delete_selected")) != bool(snapshot):
+if (action in ("verify","preview_delete","drill","restore","restore_database_only","delete","delete_selected")) != bool(snapshot):
     sys.exit(2)
 if (action in ("verify","preview_delete","verify_all","plan")) != (mode in ("fast","deep")):
     sys.exit(2)
@@ -2584,6 +2584,7 @@ if os.path.lexists(path):
     old=data.get("operations")
     if not isinstance(old,list) or len(old)>30: sys.exit(2)
 if action in ("drill","preview_delete","delete_selected") and not snapshot.startswith(("v2-default:","v2-configured:")): sys.exit(2)
+if action=="restore_database_only" and not snapshot.startswith("v1:"): sys.exit(2)
 entry=dict(protocol="xdrive-backup-admin-v1",request_id=rid,action=action,
     snapshot_id=snapshot,mode=mode,state=state,started_at=started,
     finished_at=finished,error_code=code)
@@ -3278,6 +3279,21 @@ backup_admin_execute() {
       fi
       XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup verify "$target" || return
       XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" restore "$target" --yes ;;
+    restore_database_only)
+      # Never translate this into the full-file restore path. Only a committed
+      # v1 snapshot explicitly declaring DB-only is eligible. The normal
+      # restore wrapper creates the pre-restore safety backup by default.
+      [[ "$snapshot" == v1:* && "$confirm" == "DATABASE ONLY RESTORE $snapshot" &&
+         -z "$fmt" && -z "$mode" && ( -z "$keep" || "$keep" == 0 ) &&
+         ( -z "$days" || "$days" == 0 ) && -z "$revision" ]] || return 2
+      target="$(backup_admin_snapshot_directory "$snapshot")" || return 2
+      backup_admin_snapshot_complete "$target" v1 || return 2
+      [[ -f "$target/manifest.json" && ! -L "$target/manifest.json" ]] || return 2
+      grep -Eq '"format_version"[[:space:]]*:[[:space:]]*1([,}[:space:]])' "$target/manifest.json" || return 2
+      grep -Eq '"file_data_included"[[:space:]]*:[[:space:]]*false([,}[:space:]])' "$target/manifest.json" || return 2
+      XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup verify "$target" || return
+      # --no-safety-backup is intentionally never available to the UI.
+      XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" restore "$target" --yes --database-only ;;
     delete_selected)
       [[ "$snapshot" == v2-* && "$confirm" == "DELETE $snapshot" &&
          "$preview_id" =~ ^[0-9a-f]{24}$ && -z "$fmt" && -z "$mode" &&
