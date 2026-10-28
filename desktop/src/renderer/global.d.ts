@@ -518,7 +518,7 @@ declare global {
         getState: () => Promise<AgentConnectionState>
         getTransfers: () => Promise<AgentTransfers>
         getStorageTree: (requestID?: string) => Promise<DesktopResult<AgentStorageTreeNode>>
-        getCache: () => Promise<DesktopResult<AgentCacheStats>>
+        getCache: (requestID?: string) => Promise<DesktopResult<AgentCacheStats>>
         getLocalDiskSpace: () => Promise<DesktopResult<AgentLocalDiskSpace>>
         releaseCache: () => Promise<DesktopResult<AgentCacheReleaseResult>>
         getMediaItem: (nodeID: number, requestID: string) => Promise<DesktopResult<AgentMediaItem>>
