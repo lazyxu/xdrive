@@ -689,13 +689,15 @@ class DriveAppTest {
         }
         compose.onNodeWithTag("gallery-select-mode").performClick()
         compose.onNodeWithTag("gallery-item-40").performClick()
-        compose.onNodeWithTag("gallery-selection-add-album").assertIsEnabled().performClick()
+        compose.onNodeWithTag("gallery-selection-more").assertIsEnabled().performClick()
+        compose.onNodeWithTag("gallery-selection-add-album").assertIsDisplayed().performClick()
         compose.waitUntil(timeoutMillis = 10_000) {
             controller.state.value.galleryAlbumsLoaded && !controller.state.value.loading
         }
         compose.onNodeWithTag("gallery-album-picker").assertExists()
         compose.onNodeWithTag("gallery-add-album-manual:fixture")
             .assertIsEnabled().performClick()
+        compose.onNodeWithTag("gallery-album-confirm").assertIsEnabled().performClick()
         compose.waitUntil(timeoutMillis = 10_000) {
             !controller.state.value.gallerySelectionMode && !controller.state.value.loading
         }
@@ -715,7 +717,8 @@ class DriveAppTest {
         }
         compose.onNodeWithTag("gallery-select-mode").performClick()
         compose.onNodeWithTag("gallery-item-40").performClick()
-        compose.onNodeWithTag("gallery-selection-tags").assertIsEnabled().performClick()
+        compose.onNodeWithTag("gallery-selection-more").assertIsEnabled().performClick()
+        compose.onNodeWithTag("gallery-selection-tags").assertIsDisplayed().performClick()
         compose.onNodeWithTag("gallery-tags-dialog").assertExists()
         compose.onNodeWithTag("gallery-tags-input").performTextInput("旅行, Family")
         compose.onNodeWithTag("gallery-tags-confirm").assertIsEnabled().performClick()

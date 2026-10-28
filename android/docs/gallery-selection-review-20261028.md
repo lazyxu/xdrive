@@ -24,3 +24,12 @@ JVM tests cover actual selected-name search, remove and clear (with zero favorit
 - 目标选定后复用唯一 Owner-authenticated 客户端，带真实 If-Match 相册 revision，POST /api/v1/media/albums/{albumID}/items 和精确 node_ids。opaque ID 必须编码成单一 path segment。Go 验证 Owner、PhotoAsset、相册类型及版本；只写成员关系，不复制媒体字节。
 - 返回必须核对完整相册 ID、类型、名称、版本和成员数，损坏/缺失 ACK 或 409 均冻结这批选中项，禁止自动重试 POST。只有只读图库 GET 可以解除冻结。成功会清空选择并使原相册列表过期，下次访问精选集重新读成员数。
 - 新增 Core MockWebServer、Controller JVM 及 API35 Compose 回归；准确 HEAD CI 未通过之前仅为 Draft 候选。真机和 iOS 像素验收按既定规则为「跳过（未验收）」，不宣称已通过。
+
+
+## Compact iOS PWA selection-chrome parity
+
+The canonical `ui/shared/src/mui/MediaGallerySelectionToolbar.tsx` places **收藏** on the compact action row and exposes **加入相册** / **标签** under a real **更多** menu. Android now follows that same two-row layout instead of introducing a third always-visible row. Its Gallery photo wall retains 144dp selection clearance and a bounded 48dp touch target.
+
+The canonical mobile manual-album picker is a **bottom drawer**, not an immediate-write action list. Native Compose now shows a searchable filtered list of real, revisioned manual albums, explicit row selection, `取消` / `添加到相册` confirmation, and an owner-selection-change fence. Selecting a row does not issue POST. The existing controller single-attempt, If-Match, no-replay write gate remains authoritative. The only exposed menu actions are genuinely implemented; bulk download/delete/movies are deliberately absent.
+
+The Compose test performs more-menu selection and explicit album confirmation; JVM checks that smart/imported albums are not offered by the manual picker. Exact-head CI and physical Android/iOS screenshot validation remain pending/unverified.

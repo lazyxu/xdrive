@@ -12,9 +12,9 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class DriveControllerTest {
-    @Test fun gallerySelectionDockNeverCoversLastPhotoAfterAlbumAction() {
-        assertEquals(200f, galleryDockClearance(true, false).value, 0f)
-        assertEquals(200f, galleryDockClearance(true, true).value, 0f)
+    @Test fun galleryCompactSelectionKeepsPwaTwoRowDockClearance() {
+        assertEquals(144f, galleryDockClearance(true, false).value, 0f)
+        assertEquals(144f, galleryDockClearance(true, true).value, 0f)
         assertEquals(144f, galleryDockClearance(false, true).value, 0f)
         assertEquals(88f, galleryDockClearance(false, false).value, 0f)
     }
@@ -375,6 +375,18 @@ class DriveControllerTest {
         c.close()
     }
 
+
+    @Test fun galleryCompactManualAlbumPickerListsOnlyVerifiedManualSearchResults() {
+        val manual = GalleryAlbum("manual:trip", "manual", "旅行 2026", 2, 3, 0)
+        val smart = GalleryAlbum("smart:trip", "smart", "旅行汇总", 5, 1, 0)
+        val imported = GalleryAlbum("source:trip", "imported", "旅行 2025", 2, 1, 0)
+        assertEquals(listOf(manual),
+            galleryManualAlbumChoices(listOf(smart, imported, manual), "旅行"))
+        assertEquals(listOf(manual),
+            galleryManualAlbumChoices(listOf(smart, imported, manual), "  2026  "))
+        assertTrue(galleryManualAlbumChoices(listOf(smart, imported, manual), "no-match").isEmpty())
+        assertTrue(galleryManualAlbumChoices(listOf(smart, imported), "").isEmpty())
+    }
 
     @Test fun manualAlbumSelectionRequiresFreshGetAndClearsOnVerifiedWrite() = runTest {
         val album = GalleryAlbum("manual:trip", "manual", "Trip", 0, 2, 0)

@@ -48,11 +48,10 @@ internal fun galleryVisibleColumns(widthDp: Float, preference: Int): Int {
     return (baseline + preference.coerceIn(2, 10) - 3).coerceIn(2, 10)
 }
 
-/** Reserve real space beneath the selection controls so the last photo row
- * remains scrollable after adding Favorite, Tags and manual-album actions.
- * This is layout-only; it never changes Owner media paging or request priority. */
+/** The compact iOS PWA selection toolbar retains two rows; actions that do
+ * not fit move into More. Keep the original 144dp clearance, not a third row. */
 internal fun galleryDockClearance(selection: Boolean, showTimeDock: Boolean): Dp =
-    if (selection) 200.dp else if (showTimeDock) 144.dp else 88.dp
+    if (selection || showTimeDock) 144.dp else 88.dp
 
 internal fun galleryTimelineGroupLabel(group: GalleryTimelineGroup): String = when {
     group.key == "unknown" -> "未记录日期"
