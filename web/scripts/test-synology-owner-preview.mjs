@@ -75,12 +75,19 @@ async function mount() {
     },
     useLayoutEffect(effect, deps) { hooks.useEffect(effect, deps) },
   }
+  // Evaluate the real shared Owner fence with this harness's deterministic
+  // React hooks. No test-only bypass of the Owner/session checks.
+  const ownerFence = loadPlainModule(
+    'ui/shared/src/mui/FileExplorerOwnerFence.ts',
+    ['useXDriveFileExplorerOwnerFence'],
+    hooks,
+  )
   const client = {
     async ownerFilesRoot() { return { id: 1, name: 'Owner' } },
     async ownerFilesPage() { return { items: rows, has_more: false } },
   }
   let currentClient = client
-  const bindings = { ...hooks, ...classification, ...media, ...stream, ...scope,
+  const bindings = { ...hooks, ...ownerFence, ...classification, ...media, ...stream, ...scope,
     XDRIVE_SYNOLOGY_OWNER_DOWNLOAD_MAX_BYTES: 32 << 20,
     xDriveFileSupportsThumbnail: () => false,
     xDriveSynologyLoadOwnerThumbnail: () => { throw Error('Controller must not preload media') },

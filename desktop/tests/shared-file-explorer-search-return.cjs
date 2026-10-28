@@ -625,6 +625,7 @@ function registerMutationSearchIntentCases() {
         }
         if (platform === 'Desktop') {
           dependencies.hostPort = { write: dependencies.window.xdriveDesktop.agent }
+          dependencies.isCurrentFilesOwner = () => true
           dependencies.beginActionBusy = adapterFunction(platform, 'beginActionBusy', dependencies)
           dependencies.isActionBusyCurrent = adapterFunction(platform, 'isActionBusyCurrent', dependencies)
           dependencies.finishActionBusy = adapterFunction(platform, 'finishActionBusy', dependencies)

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Box, Stack, Typography } from '@mui/material'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
@@ -6,6 +6,7 @@ import type {
   XDriveSynologyBackupLocalClient, XDriveSynologyOwnerFileNode,
 } from '../synology-backup-adapter'
 import { XDriveFileExplorer } from './FileExplorer'
+import { useXDriveFileExplorerOwnerFence } from './FileExplorerOwnerFence'
 import { XDriveFileQuickLookDialog } from './FileQuickLookDialog'
 import { xDriveFileSupportsTextPreview } from '../file-preview'
 import { xDriveFileSupportsThumbnail } from './FileExplorerItemPresentation'
@@ -104,19 +105,9 @@ export function XDriveSynologyOwnerFilesPage({
   const currentScopeKey = xDriveSynologyOwnerFilesScopeKey(crumbs, sort.key, sort.direction)
   const currentScopeVerified = verified && verifiedScopeKey === currentScopeKey &&
     verifiedOwnerRef.current?.client === client && verifiedOwnerRef.current.rootRevision === rootRevision
-  const ownerRef = useRef({ client, rootRevision, scopeKey: currentScopeKey })
-  if (ownerRef.current.client !== client || ownerRef.current.rootRevision !== rootRevision ||
-      ownerRef.current.scopeKey !== currentScopeKey) {
-    ownerRef.current = { client, rootRevision, scopeKey: currentScopeKey }
-  }
-  const owner = ownerRef.current
-  const mountedOwnerRef = useRef<typeof owner | null>(owner)
-  useLayoutEffect(() => {
-    mountedOwnerRef.current = owner
-    return () => { if (mountedOwnerRef.current === owner) mountedOwnerRef.current = null }
-  }, [owner])
-  const isCurrentOwner = useCallback(() =>
-    ownerRef.current === owner && mountedOwnerRef.current === owner, [owner])
+  // Authenticated DSM CGI and Desktop Files share one Owner lifecycle fence.
+  const { isCurrent: isCurrentOwner, invalidate: invalidateOwner } =
+    useXDriveFileExplorerOwnerFence(client, currentScopeKey, rootRevision)
   const displayedItems = useMemo(
     () => currentScopeVerified ? items.map(itemForExplorer) : [],
     [items, currentScopeVerified],
@@ -391,7 +382,7 @@ export function XDriveSynologyOwnerFilesPage({
   // background tab or pressing Refresh starts with a newly authenticated root,
   // rather than retaining breadcrumbs or file names from a previous Owner.
   const refreshAuthenticatedOwner = useCallback(() => {
-    mountedOwnerRef.current = null
+    invalidateOwner()
     verifiedOwnerRef.current = null
     // Do not carry an in-progress Owner download into another login/session.
     downloadAbort.current?.abort()
@@ -420,7 +411,7 @@ export function XDriveSynologyOwnerFilesPage({
     setLoading(true)
     setLoadingRoot(true)
     setRootRevision(epoch => epoch + 1)
-  }, [])
+  }, [invalidateOwner])
 
   // Folder, sort, account/root revision, client or page unmount may invalidate
   // an Owner-scoped download. Cancel the private Agent range requests.
