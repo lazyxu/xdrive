@@ -51,6 +51,8 @@ data class DriveState(
     val filesSection: FilesSection = FilesSection.BROWSE,
     /** Current login's full Owner range order, never reorder a sparse client page. */
     val filesArrangement: FileBrowseArrangement = FileBrowseArrangement(),
+    /** Genuine Owner group index for the directory's full logical range. */
+    val filesGroups: List<FileBrowseGroupIndex> = emptyList(),
     val collectionItems: List<DriveCollectionItem> = emptyList(),
     val collectionLoaded: Boolean = false,
     val searchQuery: String = "",
@@ -91,6 +93,9 @@ data class DriveState(
     /** Mutation ACK valid, but Owner list GET may fail. Never repeat the write. */
     val galleryAlbumEditCommittedNeedsRefresh: Boolean = false,
     val gallerySelectedAlbum: GalleryAlbum? = null,
+    val galleryMapOpen: Boolean = false,
+    val galleryMapLoaded: Boolean = false,
+    val galleryMapOverview: OwnerMapOverview? = null,
     val galleryItems: List<GalleryAsset> = emptyList(),
     val galleryOffset: Int = 0,
     val galleryTotal: Long = 0,
@@ -1417,6 +1422,20 @@ class DriveController(
                 service.childrenArranged(it, location.parentId, pageStart, arrangement)
             }
             checkCurrent(ticket)
+            // The position response is O(1). For a grouped jump into a deep
+            // 100k directory, fetch only the first bounded page to obtain Go's
+            // full group-index metadata, never enumerate preceding siblings.
+            val groups = if (arrangement.group != "none" && pageStart > 0) {
+                val first = authenticated(service, ticket) {
+                    service.childrenArranged(it, location.parentId, 0, arrangement)
+                }
+                checkCurrent(ticket)
+                if (first.offset != 0 || first.totalCount != page.totalCount ||
+                    (first.totalCount > 0L && first.groups.isEmpty()))
+                    throw ApiException(0, "Owner directory group index changed",
+                        ApiFailureReason.INVALID_RESPONSE)
+                first.groups
+            } else page.groups
             val localIndex = position.index - pageStart
             if (page.offset != pageStart || page.totalCount <= position.index.toLong() ||
                 localIndex !in page.items.indices)
@@ -1443,6 +1462,7 @@ class DriveController(
                 filesSection = FilesSection.BROWSE, path = path,
                 items = page.items, offset = pageStart, browseWindowStart = pageStart,
                 totalCount = page.totalCount, loaded = true,
+                filesGroups = groups,
                 focusedBrowseNodeId = exactNode.id, focusedBrowseIndex = localIndex,
                 focusedBrowseEpoch = latest.focusedBrowseEpoch + 1,
                 selected = null, error = null,
@@ -1599,6 +1619,7 @@ class DriveController(
             galleryPrimaryTab = GalleryPrimaryTab.LIBRARY,
             galleryAlbums = emptyList(), galleryAlbumsLoaded = false,
             gallerySelectedAlbum = null,
+            galleryMapOpen = false, galleryMapLoaded = false, galleryMapOverview = null,
             galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
             galleryLoaded = false, gallerySearchQuery = "", galleryMediaKind = "",
             gallerySortBy = "captured", gallerySortDir = "asc",
@@ -1608,6 +1629,63 @@ class DriveController(
         loadGallery(initialLatest = true)
     }
 
+    /** iOS PWA More → 显示地图: native Owner GPS *summary*, not a Baidu
+     * basemap. The 64 real WGS84 sample points are kept in memory only. */
+    fun openGalleryMapOverview() {
+        val current = state.value
+        if (current.screen != Screen.GALLERY || current.galleryMapOpen ||
+            current.galleryPrimaryTab != GalleryPrimaryTab.LIBRARY ||
+            current.gallerySelectedAlbum != null || current.galleryViewer != null ||
+            current.gallerySelectionMode || current.gallerySelected != null ||
+            current.hasActiveNativeTransfer() || current.galleryMetadataWriteAttempted ||
+            current.galleryAlbumCreateAttempted || current.galleryAlbumEditAttempted ||
+            session == null || api == null) return
+        invalidate() // The old Photo Range is a disposable GET.
+        mutableState.value = current.withoutGallerySelection().copy(
+            galleryMapOpen = true, galleryMapLoaded = false, galleryMapOverview = null,
+            loading = false, error = null, gallerySelected = null, galleryViewer = null)
+        loadGalleryMapOverview()
+    }
+
+    fun retryGalleryMapOverview() {
+        val current = state.value
+        if (current.screen != Screen.GALLERY || !current.galleryMapOpen ||
+            current.loading || current.hasActiveNativeTransfer() ||
+            current.galleryMetadataWriteAttempted) return
+        loadGalleryMapOverview()
+    }
+
+    private fun loadGalleryMapOverview() {
+        val service = api ?: return
+        if (session == null || state.value.screen != Screen.GALLERY ||
+            !state.value.galleryMapOpen) return
+        request(discardableRead = true) { ticket ->
+            val overview = authenticated(service, ticket) { token ->
+                service.placesMapOverview(token, OwnerMapBounds.WORLD, false)
+            }
+            checkCurrent(ticket)
+            val latest = state.value
+            if (latest.screen != Screen.GALLERY || !latest.galleryMapOpen)
+                throw CancellationException()
+            mutableState.value = latest.copy(
+                galleryMapLoaded = true, galleryMapOverview = overview, error = null)
+        }
+    }
+
+    fun closeGalleryMapOverview() {
+        val current = state.value
+        if (current.screen != Screen.GALLERY || !current.galleryMapOpen ||
+            current.hasActiveNativeTransfer()) return
+        invalidate()
+        mutableState.value = current.copy(galleryMapOpen = false,
+            galleryMapLoaded = false, galleryMapOverview = null,
+            loading = false, discardableReadInFlight = false,
+            error = null)
+        // If the first Gallery GET was replaced by Map, re-read it on return.
+        // Otherwise retain the exact authenticated photo Range and scroll anchor.
+        if (!state.value.galleryLoaded) loadGallery(initialLatest = true)
+    }
+
     fun openFilesApp() {
         val current = state.value
         if (current.screen != Screen.GALLERY || current.hasActiveNativeTransfer() ||
@@ -1615,13 +1693,15 @@ class DriveController(
             current.galleryAlbumCreateAttempted || current.galleryAlbumEditAttempted) return
         invalidate() // Cancels the outstanding Gallery Range and item thumbnails.
         mutableState.value = current.withoutGallerySelection().copy(
-            screen = Screen.FILES, loading = false, error = null,
+            screen = Screen.FILES, loading = false,
+            discardableReadInFlight = false, error = null,
             fileExportPending = null, fileExportOrigin = null,
             fileDownloadActive = false, fileDownloadSaved = false,
             fileDownloadError = null, fileDownloadBytes = 0, fileDownloadTotal = 0,
             galleryPrimaryTab = GalleryPrimaryTab.LIBRARY,
             galleryAlbums = emptyList(), galleryAlbumsLoaded = false,
             gallerySelectedAlbum = null,
+            galleryMapOpen = false, galleryMapLoaded = false, galleryMapOverview = null,
             galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
             galleryLoaded = false, gallerySearchQuery = "", galleryMediaKind = "",
             gallerySortBy = "captured", gallerySortDir = "asc",
@@ -2899,6 +2979,7 @@ class DriveController(
         }
         if (current.screen == Screen.GALLERY) {
             when {
+                current.galleryMapOpen -> closeGalleryMapOverview()
                 current.gallerySelectionMode -> {
                     if (current.galleryMetadataWriteAttempted) {
                         if (!current.loading) refreshGallery() // GET-only reconciliation
@@ -2991,6 +3072,7 @@ class DriveController(
                 throw ApiException(0, "Previous directory range changed", ApiFailureReason.INVALID_RESPONSE)
             mutableState.value = latest.copy(
                 items = page.items + latest.items, browseWindowStart = offset,
+                filesGroups = if (offset == 0) page.groups else latest.filesGroups,
                 focusedBrowseIndex = latest.focusedBrowseIndex + page.items.size,
                 error = null,
             )
@@ -3023,6 +3105,8 @@ class DriveController(
                 latest.path != path || latest.filesArrangement != current.filesArrangement)
                 throw CancellationException()
             if (page.offset != 0 || page.totalCount < 0 ||
+                (target.group != "none" && page.totalCount > 0L &&
+                    page.groups.isEmpty()) ||
                 page.items.size.toLong() != minOf(100L, page.totalCount) ||
                 page.items.map { it.id }.toSet().size != page.items.size ||
                 page.items.any { it.parentId != path.last().id })
@@ -3031,6 +3115,7 @@ class DriveController(
             mutableState.value = latest.copy(
                 filesArrangement = target, items = page.items, loaded = true,
                 offset = 0, browseWindowStart = 0, totalCount = page.totalCount,
+                filesGroups = page.groups,
                 focusedBrowseNodeId = null, focusedBrowseIndex = 0,
                 focusedBrowseEpoch = latest.focusedBrowseEpoch + 1,
                 browseSelectionMode = false, browseSelectedIds = emptySet(),
@@ -3071,15 +3156,29 @@ class DriveController(
         val previous = state.value
         if (append && (!previous.loaded || previous.path != resolved || page.offset != offset))
             throw ApiException(0, "Directory page changed", ApiFailureReason.INVALID_RESPONSE)
+        if (append && arrangement.group != "none" && previous.filesGroups.isNotEmpty() &&
+            (previous.totalCount != page.totalCount ||
+                page.items.any { incoming -> previous.items.any { it.id == incoming.id } }))
+            throw ApiException(0, "Grouped Owner directory changed during pagination",
+                ApiFailureReason.INVALID_RESPONSE)
         // Do not spin through thousands of speculative empty/duplicate pages
         // when a stale count disagrees with the actual Server range.
         if (page.items.isEmpty() && page.totalCount > offset)
             throw ApiException(0, "Empty range with remaining count", ApiFailureReason.INVALID_RESPONSE)
+        if (arrangement.group != "none" && offset == 0 &&
+            page.totalCount > 0L && page.groups.isEmpty())
+            throw ApiException(0, "Owner Files group index missing",
+                ApiFailureReason.INVALID_RESPONSE)
         val rows = if (append) (previous.items + page.items).distinctBy { it.id } else page.items
         if (append && rows.size == previous.items.size && offset + 100L < page.totalCount)
             throw ApiException(0, "Repeated range without progress", ApiFailureReason.INVALID_RESPONSE)
         mutableState.value = previous.copy(
             path = resolved, items = rows, offset = page.offset, totalCount = page.totalCount,
+            filesGroups = if (arrangement.group == "none") emptyList()
+                else if (page.offset == 0) page.groups
+                else if (previous.path == resolved &&
+                    previous.filesArrangement == arrangement) previous.filesGroups
+                else emptyList(),
             loaded = true, selected = null, error = null,
             browseWindowStart = if (append) previous.browseWindowStart else page.offset,
             focusedBrowseNodeId = if (append) previous.focusedBrowseNodeId else null,

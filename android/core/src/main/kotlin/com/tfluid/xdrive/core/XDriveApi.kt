@@ -67,14 +67,36 @@ data class FileBrowseArrangement(
     val sort: String = "name",
     val order: String = "asc",
     val foldersFirst: Boolean = true,
+    val group: String = "none",
 ) {
     init {
         require(sort in setOf("name", "updated", "type", "size")) { "Invalid Files sort" }
         require(order in setOf("asc", "desc")) { "Invalid Files order" }
+        require(group in setOf("none", "type", "modified", "size")) { "Invalid Files grouping" }
     }
 }
 
-data class NodeRange(val items: List<DriveNode>, val totalCount: Long, val offset: Int, val limit: Int = 100)
+/** Server-indexed group spans, never client-grouped sparse directory rows. */
+data class FileBrowseGroupIndex(
+    val key: String, val itemCount: Long, val startIndex: Long,
+)
+
+internal fun validFilesGroupKey(group: String, key: String): Boolean {
+    if (key.isEmpty() || key.toByteArray(Charsets.UTF_8).size > 256) return false
+    return when (group) {
+        "type" -> key == "folder" || key == "other" ||
+            (key.startsWith("ext:") && key.length > 4)
+        "modified" -> key == "unknown" ||
+            Regex("""month:\d{4}-(0[1-9]|1[0-2])""").matches(key)
+        "size" -> key in setOf("folder", "empty", "tiny", "small", "medium", "large")
+        else -> false
+    }
+}
+
+data class NodeRange(
+    val items: List<DriveNode>, val totalCount: Long, val offset: Int,
+    val limit: Int = 100, val groups: List<FileBrowseGroupIndex> = emptyList(),
+)
 
 /** Only top-level deleted roots are recoverable; their descendants move with them. */
 data class TrashEntry(val node: DriveNode, val deletedAt: String)
@@ -131,6 +153,45 @@ data class OwnerMapSample(
 data class OwnerMapOverview(
     val samples: List<OwnerMapSample>, val totalPhotoCount: Long,
     val aggregated: Boolean,
+)
+
+/** BD09 map camera coordinates are intentionally a *different* type than
+ * original PhotoMetadata WGS84. No client-side transformation is authorized. */
+data class OwnerBd09Bounds(
+    val west: Double, val south: Double, val east: Double, val north: Double,
+) {
+    fun valid(): Boolean {
+        if (!listOf(west, south, east, north).all { it.isFinite() } ||
+            west !in -180.0..180.0 || east !in -180.0..180.0 ||
+            south < -90.0 || north > 90.0 || south >= north ||
+            west == east || (west == 180.0 && east == -180.0)) return false
+        // Keep parity with Go baiduPhotoMapCellSteps: the 8x8 SQL grid
+        // rejects numerically unstable tiny viewports before running a query.
+        // A wrapped antimeridian span uses the positive [0, 360] width.
+        val width = (east - west).let { if (it < 0.0) it + 360.0 else it }
+        val height = north - south
+        return width > 1e-10 && width <= 360.0 &&
+            height > 1e-10 && height <= 360.0
+    }
+    fun contains(lat: Double, lon: Double): Boolean =
+        valid() && lat.isFinite() && lon.isFinite() &&
+            lat >= south && lat <= north &&
+            (if (west < east) lon >= west && lon <= east
+             else lon >= west || lon <= east)
+    companion object {
+        val WORLD = OwnerBd09Bounds(-180.0, -90.0, 180.0, 90.0)
+    }
+}
+
+data class OwnerBd09Cell(
+    val cellX: Int, val cellY: Int, val photoCount: Long,
+    val assetId: Long, val nodeId: Long, val nodeRevision: Long,
+    val latitude: Double, val longitude: Double,
+)
+
+/** The trusted 8×8 Owner-projected spatial summary, never a WGS84 guess. */
+data class OwnerBd09MapCells(
+    val cells: List<OwnerBd09Cell>, val totalPhotoCount: Long,
 )
 
 /** Go /media/items?range=true: canonical Owner photo wall, not a Files filter.
@@ -332,6 +393,11 @@ interface XDriveService {
     /** Validate a current Files node against its authenticated Owner media DTO. */
     suspend fun filesMediaItem(accessToken: String, node: DriveNode): GalleryAsset =
         throw ApiException(501, "Native Files media detail unavailable")
+    /** BD09-only 8×8 Owner Map/Cells, gated by signed Server release. */
+    suspend fun baiduNativeMapCells(
+        accessToken: String, bounds: OwnerBd09Bounds,
+    ): OwnerBd09MapCells =
+        throw ApiException(501, "Native Owner BD09 map cells unavailable")
     /** Bounded 64-point Owner map overview, only read-only GPS metadata. */
     suspend fun placesMapOverview(
         accessToken: String, bounds: OwnerMapBounds, detail: Boolean = false,
@@ -451,7 +517,8 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         require(parentId > 0 && offset >= 0) { "Invalid directory range" }
         val query = mapOf("offset" to "$offset", "limit" to "100",
             "sort" to arrangement.sort, "order" to arrangement.order,
-            "group" to "none", "folders_first" to arrangement.foldersFirst.toString(),
+            "group" to arrangement.group,
+            "folders_first" to arrangement.foldersFirst.toString(),
             "include_count" to "true")
         val result = request("nodes/$parentId/children", accessToken, query = query)
         // Do not silently show a different Server ordering as if sort succeeded.
@@ -471,7 +538,36 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         }
         if (items.size.toLong() != minOf(100L, maxOf(0L, count - offset.toLong())) ||
             items.map { it.id }.toSet().size != items.size || items.any { it.parentId != parentId }) invalidPayload()
-        return NodeRange(items, count, offset)
+
+        val rawGroups = result["groups"]
+        val groups = if (arrangement.group != "none" && offset == 0) {
+            // Go omits an empty group's optional JSON field (omitempty).
+            val entries = when (rawGroups) {
+                null, JsonNull -> if (count == 0L) JsonArray(emptyList()) else invalidPayload()
+                is JsonArray -> rawGroups
+                else -> invalidPayload()
+            }
+            if (entries.size > 25_000 || entries.size.toLong() > count) invalidPayload()
+            val keys = HashSet<String>()
+            var next = 0L
+            entries.map { raw ->
+                val group = raw as? JsonObject ?: invalidPayload()
+                val key = group.string("key")
+                val start = group.long("start_index")
+                val size = group.long("item_count")
+                if (!validFilesGroupKey(arrangement.group, key) ||
+                    !keys.add(key) || start != next || size <= 0 || size > count - next)
+                    invalidPayload()
+                next += size
+                FileBrowseGroupIndex(key, size, start)
+            }.also { if (next != count) invalidPayload() }
+        } else {
+            if (rawGroups != null && rawGroups != JsonNull &&
+                (rawGroups !is JsonArray || rawGroups.isNotEmpty()))
+                invalidPayload()
+            emptyList()
+        }
+        return NodeRange(items, count, offset, groups = groups)
     }
 
     /** Use the already-configured Owner-authenticated OkHttp request pipeline. */
@@ -516,7 +612,7 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         require(parentId > 0 && nodeId > 0 && validToken(accessToken))
         val result = request("nodes/$parentId/children/position", accessToken, query = mapOf(
             "node_id" to nodeId.toString(), "sort" to arrangement.sort,
-            "order" to arrangement.order, "group" to "none",
+            "order" to arrangement.order, "group" to arrangement.group,
             "folders_first" to arrangement.foldersFirst.toString(),
         ))
         val index = result.long("index")
@@ -525,7 +621,7 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
             index < 0 || index > Int.MAX_VALUE ||
             result.string("sort") != arrangement.sort ||
             result.string("order") != arrangement.order ||
-            result.string("group") != "none" ||
+            result.string("group") != arrangement.group ||
             result["folders_first"] != JsonPrimitive(arrangement.foldersFirst)) invalidPayload()
         return DirectoryItemPosition(nodeId, revision, index.toInt())
     }
@@ -1130,6 +1226,67 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
 
     /** Same Owner Bearer/Origin and bounded JSON transport as Files, with the
      * Server's exact iOS Gallery chronological tail and sparse Range contract. */
+    /** Only the existing signed-release-fenced Owner Map/Cells API can
+     * attest that coordinates are official persisted BD09LL. Never apply an
+     * inferred WGS84 conversion or send an SDK/browser key in this request. */
+    override suspend fun baiduNativeMapCells(
+        accessToken: String, bounds: OwnerBd09Bounds,
+    ): OwnerBd09MapCells {
+        require(bounds.valid() && validToken(accessToken)) { "Invalid BD09 viewport" }
+        val result = request("media/places/baidu-jsapi/cells", accessToken, query = mapOf(
+            "west" to bounds.west.toString(), "south" to bounds.south.toString(),
+            "east" to bounds.east.toString(), "north" to bounds.north.toString(),
+        ))
+        if (result.string("coordinate_space") != "bd09ll" ||
+            result.string("index_scope") != "owner_gps_auto_index" ||
+            result.long("grid_columns") != 8L || result.long("grid_rows") != 8L)
+            invalidPayload()
+        val total = result.long("total_count")
+        if (total < 0L) invalidPayload()
+        val raw = result["cells"] as? JsonArray ?: invalidPayload()
+        if (raw.size > 64) invalidPayload()
+        val buckets = HashSet<Pair<Int, Int>>()
+        val assetIds = HashSet<Long>()
+        val nodeIds = HashSet<Long>()
+        var sum = 0L
+        fun JsonObject.bd09Coordinate(field: String, min: Double, max: Double): Double {
+            val value = this[field] as? JsonPrimitive ?: invalidPayload()
+            if (value.isString) invalidPayload()
+            val coordinate = value.doubleOrNull ?: invalidPayload()
+            if (!coordinate.isFinite() || coordinate < min || coordinate > max)
+                invalidPayload()
+            return coordinate
+        }
+        val cells = raw.map { element ->
+            val cell = element as? JsonObject ?: invalidPayload()
+            // The endpoint's historical 8 fields do not export original GPS,
+            // photo bytes, unverified media-kind or arbitrary derived metadata.
+            if (cell.keys != setOf("cell_x", "cell_y", "photo_count", "asset_id",
+                    "node_id", "node_revision", "latitude", "longitude"))
+                invalidPayload()
+            val cx = cell.long("cell_x")
+            val cy = cell.long("cell_y")
+            val count = cell.long("photo_count")
+            val assetId = cell.long("asset_id")
+            val nodeId = cell.long("node_id")
+            val revision = cell.long("node_revision")
+            val latitude = cell.bd09Coordinate("latitude", -90.0, 90.0)
+            val longitude = cell.bd09Coordinate("longitude", -180.0, 180.0)
+            if (cx !in 0L..7L || cy !in 0L..7L ||
+                !buckets.add(cx.toInt() to cy.toInt()) ||
+                assetId <= 0 || nodeId <= 0 || revision <= 0 ||
+                !assetIds.add(assetId) || !nodeIds.add(nodeId) ||
+                !bounds.contains(latitude, longitude) ||
+                count <= 0 || sum > total - count)
+                invalidPayload()
+            sum += count
+            OwnerBd09Cell(cx.toInt(), cy.toInt(), count, assetId,
+                nodeId, revision, latitude, longitude)
+        }
+        if (sum != total || (total == 0L) != cells.isEmpty()) invalidPayload()
+        return OwnerBd09MapCells(cells, total)
+    }
+
     override suspend fun placesMapOverview(
         accessToken: String, bounds: OwnerMapBounds, detail: Boolean,
     ): OwnerMapOverview {

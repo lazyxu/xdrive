@@ -17,7 +17,8 @@ import type { XDriveBaiduCellRangeSort } from '../media-gallery-baidu-jsapi4-cel
 import { xDriveBaiduCellReturnMatchesFreshSelection } from '../media-gallery-baidu-cell-return-session'
 import {
   XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT, xDrivePlacesDrawerValidRange,
-  xDrivePlacesDrawerMatchesFresh, xDriveTakePlacesDrawerViewerReturn,
+  xDrivePlacesDrawerMatchesFresh, xDrivePlacesDrawerMatchesResizedCell,
+  xDriveTakePlacesDrawerViewerReturn,
 } from '../media-gallery-places-photo-drawer'
 import type {
   XDrivePlacesDrawerReturn, XDrivePlacesDrawerPresentation,
@@ -25,9 +26,9 @@ import type {
 import { XDriveMediaGalleryPlacesPhotoDrawer } from './MediaGalleryPlacesPhotoDrawer'
 import { xDriveValidBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
 import {
-  xDriveCurrentMapPhotoCollections, xDriveVerifiedMapPhotoProjections,
+  xDriveVerifiedMapPhotoProjections,
   xDriveSelectVisibleMapPhotoCovers,
-} from '../media-gallery-places-map-strip'
+} from '../media-gallery-places-map-pins'
 import {
   xDriveBaiduMapPhotoScopeKey, xDriveCopyBaiduMapPhotoScope,
 } from '../media-gallery-baidu-map-photo-scope'
@@ -167,6 +168,13 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     returnPresentation?: XDrivePlacesDrawerPresentation
   }
   const [drawer,setDrawer] = useState<DrawerView | null>(null)
+  // A resize return is a short-lived trusted Parent UI intent. It never
+  // authorizes media, crosses the isolated Child, or reuses the old Cell
+  // selector. Both Hosts can use the same Parent DOM/Owner check.
+  const committedDrawer = useRef<DrawerView | null>(null)
+  const pendingResizeDrawer = useRef<{
+    owner:string; key:string; hint:XDrivePlacesDrawerReturn
+  } | null>(null)
   const closeDrawer = () => {
     drawerFetch.current?.abort()
     drawerFetch.current = null
@@ -180,6 +188,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     const approved=acceptedScope.current
     if (!approved || approved.key !== filterRef.current.key ||
         !hasAcceptedCell(selection)) return
+    pendingResizeDrawer.current=null
     const preview=previewPort.current
     if (!preview || !loadThumbnail) {
       opened.current(selection, approved.scope)
@@ -223,6 +232,8 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   const activeDrawer = drawer && phase === 'ready' &&
     acceptedScope.current?.key === drawer.key && hasAcceptedCell(drawer.selection)
     ? drawer : null
+  // Never capture a speculative React render as the previous visible sheet.
+  useLayoutEffect(() => { committedDrawer.current=activeDrawer },[activeDrawer])
   const openDrawerAll = () => {
     const state=activeDrawer,approved=acceptedScope.current
     if (!state || state.phase!=='ready' || !approved ||
@@ -267,6 +278,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   useLayoutEffect(() => {
     if(lastFilterKey.current===currentFilterKey)return
     lastFilterKey.current=currentFilterKey
+    pendingResizeDrawer.current=null
     refreshFilteredCells.current?.()
   },[currentFilterKey])
 
@@ -279,6 +291,13 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     let activeQuery: AbortController | null = null
     let refresh: ReturnType<typeof setInterval> | null = null
     let failed = false
+    let lastCanvasSize: {width:number;height:number} | null = null
+    const canvasSize = () => {
+      const width = Math.round(node.clientWidth)
+      const height = Math.round(node.clientHeight)
+      return width>=120 && height>=120 && width<=4096 && height<=4096
+        ? {width,height} : null
+    }
     // Freeze the Owner-local camera return hint for this iframe lifetime.
     let returnCamera = xDriveValidBaiduNativeCameraSnapshot(initialCamera)
       ? { coordinate_space: 'bd09ll' as const,
@@ -322,6 +341,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     const failure = () => {
       if (lifetime.signal.aborted || failed) return
       failed = true
+      pendingResizeDrawer.current=null
       cancel()
       lifetime.abort()
       if (refresh !== null) clearInterval(refresh)
@@ -346,7 +366,38 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
           selectCellRef.current(selection)
         }
       },
-      onCancel:()=>{ cameraTouched=true; cancel() },
+      onCancel:()=>{
+        cameraTouched=true
+        const nextSize=canvasSize(), before=lastCanvasSize
+        const resized=Boolean(before && nextSize &&
+          (before.width!==nextSize.width || before.height!==nextSize.height))
+        if(resized && nextSize) {
+          lastCanvasSize=nextSize
+          const state=committedDrawer.current
+          const approved=acceptedScope.current
+          const photoScope=approved
+            ? xDriveCopyBaiduMapPhotoScope(approved.scope) : null
+          if(state?.phase==='ready' && photoScope && approved &&
+             approved.key===filterRef.current.key &&
+             state.key===approved.key && latestAcceptedViewport.current) {
+            const list=node.parentElement?.querySelector<HTMLElement>(
+              '[data-xdrive-places-photo-drawer-items]')
+            const bounded=(value:number)=>Number.isFinite(value)
+              ? Math.max(0,Math.min(10_000,Math.floor(value))) : 0
+            pendingResizeDrawer.current={owner:scope??'',key:approved.key,
+              hint:{selection:{...state.selection,
+                bounds:{...state.selection.bounds}},photoScope,
+                presentation:{expanded:state.expanded,
+                  scrollTop:bounded(list?.scrollTop??0),
+                  scrollLeft:bounded(list?.scrollLeft??0)}}}
+          }
+          // When several CSS resize frames precede one /cells response,
+          // preserve only the first valid intent. Native Hosts coalesce the
+          // repeated resize notifications; a gesture of unchanged size below
+          // still revokes this visual intent.
+        } else pendingResizeDrawer.current=null
+        cancel()
+      },
       onCamera:(camera:XDriveBaiduNativeCameraSnapshot) => { if(!lifetime.signal.aborted) cameraUpdate.current?.(camera) },
       onMapReady:() => {
         if(lifetime.signal.aborted)return
@@ -426,6 +477,22 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         if(approved.key!==filterRef.current.key || run!==generation)return false
         acceptedScope.current={key:approved.key,scope:verifiedScope}
         acceptedCells.current=cells.map(item=>item.selection)
+        lastCanvasSize=canvasSize()
+        // The old camera Cell cannot survive rotation. Only a new signed
+        // Owner /cells with SAME representative asset+node+revision and
+        // unchanged PhotoScope may restore the sheet, and even then it uses
+        // the fresh Cell for an independent Owner /cell-items read.
+        if (liveCamera && pendingResizeDrawer.current) {
+          const intent=pendingResizeDrawer.current
+          pendingResizeDrawer.current=null // one-shot, fail closed
+          if(intent.owner===(scope??'') && intent.key===approved.key) {
+            const matched=cells.find(item=>
+              xDrivePlacesDrawerMatchesResizedCell(
+                intent.hint,verifiedScope,item.selection))
+            if(matched) selectCellRef.current(
+              matched.selection,intent.hint.presentation)
+          }
+        }
         // A one-shot Viewer hint never grants media access. Restore only if
         // THIS freshly authenticated Owner /cells response contains precisely
         // the same scope, bounds, Cell identity, revision and photo count.
@@ -478,6 +545,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         }
         return true
       } catch {
+        if (run===generation) pendingResizeDrawer.current=null
         if(!request.signal.aborted && !lifetime.signal.aborted && run===generation &&
             approved.key===filterRef.current.key) {
           // A failed/invalid Owner Cells response has NO media authority.
@@ -532,6 +600,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     refresh=setInterval(() => { if(!lifetime.signal.aborted)void acquireTicket() },65_000)
     return () => {
       refreshFilteredCells.current=null
+      pendingResizeDrawer.current=null
       cancel()
       lifetime.abort()
       if(refresh!==null)clearInterval(refresh)
@@ -543,7 +612,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
 
   // Both Inline and isolated HTTPS Child share the exact same verified
   // Owner projections and photo-first collision/edge/overlay rules. Do not
-  // show a clipped or photo-dock-covered button just because an SDK point
+  // show a clipped or map-controls-covered button just because an SDK point
   // remains visible at the map border. All Cells remain in the accessible list.
   const coverPins = scopeIsCurrent && acceptedViewport &&
       projected?.width && projected.height && loadThumbnail && phase === 'ready'
@@ -551,12 +620,8 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         xDriveVerifiedMapPhotoProjections(
           trustedSummary, projected, accessible.map(cell => cell.selection))
           .filter(candidate => hasAcceptedCell(candidate.selection)),
-        projected.width, projected.height, edgeToEdge, true)
+        projected.width, projected.height, edgeToEdge)
     : []
-  // Only use a CURRENT Parent-owned /cells snapshot, never a Child-generated
-  // key as private media authority. A pan/revoke clears both inputs.
-  const photoStrip = scopeIsCurrent && acceptedViewport && phase === 'ready'
-    ? xDriveCurrentMapPhotoCollections(trustedSummary, projected, accessible.map(cell => cell.selection)) : []
   // Two SDK Hosts receive only the current visible React cover selections.
   // Numeric native labels are suppressed for these displayed buttons only.
   // Each other signed Cell keeps its native label and the full accessible list.
@@ -672,84 +737,12 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
             ))}
           </Box>
         ) : null}
-        {!activeDrawer && loadThumbnail && photoStrip.length > 0 ? (
-          <Box data-xdrive-places-photo-collection-strip
-            aria-label="地图照片区域封面"
-            sx={{position:'absolute',
-              left:{xs:'max(8px, env(safe-area-inset-left))',sm:16},
-              right:{xs:'max(8px, env(safe-area-inset-right))',sm:16},
-              bottom:{xs:'max(10px, env(safe-area-inset-bottom))',sm:16},
-              zIndex:5,pointerEvents:'none'}}>
-            <Box data-xdrive-places-map-photo-strip-shell
-              sx={{pointerEvents:'auto',p:edgeToEdge ? 0.4 : 0.8,
-              px:edgeToEdge ? 0.6 : 1,
-              borderRadius:edgeToEdge ? 3.5 : 2,
-              bgcolor:edgeToEdge
-                ? (theme => theme.palette.mode==='dark'
-                  ? 'rgba(28,28,30,.86)' : 'rgba(255,255,255,.86)')
-                : 'background.paper',
-              boxShadow:'0 2px 12px rgba(15,23,42,.18)',
-              border:'1px solid',borderColor:'divider',
-              maxWidth:{xs:'100%',sm:720},
-              mx:'auto',backdropFilter:'blur(18px)',
-              WebkitBackdropFilter:'blur(18px)'}}>
-              <Typography variant="caption" sx={{display:edgeToEdge ? 'none' : 'block',
-                mb:0.5,fontWeight:700}}>
-                照片地点 · 当前区域 {trustedSummary?.total_count.toLocaleString('zh-CN')} 张
-              </Typography>
-              <Box component="nav" aria-label="浏览地图当前聚合区域照片"
-                sx={{display:'flex',gap:edgeToEdge ? 0.5 : 0.75,
-                  overflowX:'auto',overflowY:'hidden',pb:edgeToEdge ? 0 : 0.25,
-                  touchAction:'pan-x',scrollbarWidth:edgeToEdge ? 'none' : 'thin',
-                  '&::-webkit-scrollbar':edgeToEdge ? {display:'none'} : undefined}}>
-                {photoStrip.map(pin => (
-                  <Button key={pin.selection.cell_x+':'+pin.selection.cell_y}
-                    data-xdrive-places-collection-thumb={pin.selection.node_id}
-                    aria-label={'查看区域 '+
-                      (pin.selection.cell_y*8+pin.selection.cell_x+1)+
-                      ' 的 '+pin.count.toLocaleString('zh-CN')+' 张照片'}
-                    onClick={() => openVerifiedCell(pin.selection)}
-                    sx={{position:'relative',display:'block',
-                      flex:edgeToEdge ? '0 0 54px' : '0 0 76px',
-                      width:edgeToEdge ? 54 : 76,minWidth:edgeToEdge ? 54 : 76,
-                      height:edgeToEdge ? 54 : 78,p:edgeToEdge ? 0.25 : 0.5,
-                      borderRadius:edgeToEdge ? 2 : 1.5,
-                      border:'1px solid',borderColor:'divider',
-                      bgcolor:'action.hover',textTransform:'none',
-                      '&:focus-visible':{outline:'3px solid',
-                        outlineColor:'primary.main',outlineOffset:2}}}>
-                    <Box sx={{width:'100%',height:edgeToEdge ? 46 : 52,
-                      borderRadius:edgeToEdge ? 1.5 : 1,
-                      overflow:'hidden',bgcolor:'background.default'}}>
-                      {ownerCover(pin.selection,
-                        '区域 '+(pin.selection.cell_y*8+pin.selection.cell_x+1)+'代表照片',
-                        <PhotoLibraryOutlinedIcon fontSize="small"/> )}
-                    </Box>
-                    <Typography variant="caption" component="span"
-                      sx={{fontSize:10,fontWeight:700,display:'block',
-                        lineHeight:'16px',
-                        ...(edgeToEdge ? {position:'absolute',right:2,bottom:2,
-                          px:0.5,borderRadius:'999px',bgcolor:'primary.main',
-                          color:'primary.contrastText',
-                          boxShadow:'0 1px 3px rgba(0,0,0,.2)'} : {})}}>
-                      {pin.count.toLocaleString('zh-CN')} 张
-                    </Typography>
-                  </Button>
-                ))}
-              </Box>
-            </Box>
-          </Box>
-        ) : null}
       {!activeDrawer && trustedSummary ? (
         <Box data-xdrive-places-map-photo-summary
           sx={{position:'absolute',
             left:{xs:'max(10px, env(safe-area-inset-left))',sm:16},
             right:{xs:'max(10px, env(safe-area-inset-right))',sm:16},
-            bottom:photoStrip.length>0
-              ? (edgeToEdge
-                ? 'calc(82px + env(safe-area-inset-bottom, 0px))'
-                : {xs:'calc(135px + env(safe-area-inset-bottom, 0px))',sm:145})
-              : {xs:'max(12px, env(safe-area-inset-bottom))',sm:16},
+            bottom:{xs:'max(12px, env(safe-area-inset-bottom))',sm:16},
             zIndex:5,display:'flex',alignItems:'center',justifyContent:'space-between',
             gap:1,flexWrap:'wrap',pointerEvents:'none'}}>
           <Typography variant="caption" color="text.primary"
@@ -814,7 +807,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
             phase={activeDrawer.phase} expanded={activeDrawer.expanded}
             initialPresentation={activeDrawer.returnPresentation}
             loadThumbnail={loadThumbnail}
-            onClose={closeDrawer}
+            onClose={() => { pendingResizeDrawer.current=null;closeDrawer() }}
             onExpand={expanded => setDrawer(current => current
               ? {...current,expanded} : current)}
             onRetry={() => { closeDrawer();refreshFilteredCells.current?.() }}

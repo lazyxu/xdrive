@@ -45,9 +45,13 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     val gallerySaveable = rememberSaveableStateHolder()
     val filesSaveable = rememberSaveableStateHolder()
     val filesStateKey = "files:${state.server}:${state.username}"
-    // Keep scroll/selection viewport during the scoped Files -> Gallery Viewer.
-    // Destroy saveable state on Owner change or leaving Files for normal Gallery.
-    if (state.screen == Screen.FILES || state.viewerReturnToFiles) {
+    // Keep only the UI viewport through Files -> Gallery/Trash -> Files for
+    // the *same authenticated session*. The Controller retains the verified
+    // directory rows; discarding this holder on ordinary app switching instead
+    // resets the Lazy list/grid to item zero. Logout, server/Owner change and
+    // forced reauthentication still dispose it (including stale folder IDs).
+    if (state.screen == Screen.FILES || state.screen == Screen.GALLERY ||
+        state.screen == Screen.TRASH || state.viewerReturnToFiles) {
         DisposableEffect(filesStateKey) {
             onDispose { filesSaveable.removeState(filesStateKey) }
         }
@@ -107,6 +111,10 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                     }) {
                         Icon(painterResource(R.drawable.xd_arrow_back), when {
                             state.screen == Screen.TRASH -> "返回文件"
+                            // The visible GPS overview returns to the Gallery
+                            // wall, not the Files app. Match Android Back and
+                            // the iOS PWA navigation's accessible destination.
+                            state.galleryMapOpen -> "返回图库"
                             state.gallerySelectedAlbum != null -> "返回精选集"
                             state.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS -> "返回图库"
                             else -> "返回文件"
@@ -123,6 +131,7 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                     }
                     val title = if (state.screen == Screen.TRASH) "回收站"
                         else if (state.screen == Screen.GALLERY) when {
+                            state.galleryMapOpen -> "地点"
                             state.gallerySelectedAlbum != null -> state.gallerySelectedAlbum?.name ?: "相册"
                             state.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS -> "精选集"
                             else -> "照片"
@@ -193,7 +202,9 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                 }
                 Screen.GALLERY -> {
                     val photo = state.galleryViewer
-                    if (photo != null) {
+                    if (state.galleryMapOpen) {
+                        GalleryMapOverview(state, controller)
+                    } else if (photo != null) {
                         Box(Modifier.fillMaxSize()) {
                             key(photo.node.id, photo.node.revision) {
                                 if (photo.mediaKind == "video")
@@ -376,7 +387,8 @@ internal fun AccountMenu(state: DriveState, controller: DriveController, checkUp
                     onClick = {
                         expanded = false
                         if (state.screen == Screen.GALLERY) {
-                            if (state.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS &&
+                            if (state.galleryMapOpen) controller.retryGalleryMapOverview()
+                            else if (state.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS &&
                                 state.gallerySelectedAlbum == null)
                                 controller.refreshGalleryAlbums()
                             else controller.refreshGallery()
@@ -415,7 +427,7 @@ internal fun AccountMenu(state: DriveState, controller: DriveController, checkUp
                     enabled = !state.loading && state.loaded,
                     modifier = Modifier.testTag("files-create-folder-action"),
                     onClick = { expanded = false; onCreateFolder() })
-                DropdownMenuItem(text = { Text("排序") },
+                DropdownMenuItem(text = { Text("排序与分组") },
                     enabled = state.canNavigateFiles() && state.loaded &&
                         !state.browseSelectionMode && state.error == null,
                     modifier = Modifier.testTag("files-arrangement-open"),
@@ -446,10 +458,11 @@ internal fun AccountMenu(state: DriveState, controller: DriveController, checkUp
         AlertDialog(
             onDismissRequest = { arrangeOpen = false },
             modifier = Modifier.testTag("files-arrangement-dialog"),
-            title = { Text("排序") },
+            title = { Text("排序与分组") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("按服务器全目录排序，不只重排已加载文件。",
+                Column(Modifier.heightIn(max = 368.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("按服务器全目录排序与分组，不只处理已加载文件。",
                         style = MaterialTheme.typography.bodySmall)
                     for ((sort, label) in listOf("name" to "名称",
                         "updated" to "修改日期", "type" to "类型", "size" to "大小")) {
@@ -468,6 +481,21 @@ internal fun AccountMenu(state: DriveState, controller: DriveController, checkUp
                         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                             .testTag("files-arrange-direction"),
                     ) { Text("方向：" + if (arrangeDraft.order == "asc") "升序" else "降序") }
+                    HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                    Text("分组", style = MaterialTheme.typography.titleSmall)
+                    for ((group, label) in listOf("none" to "不分组",
+                        "type" to "按类型分组", "modified" to "按修改日期分组",
+                        "size" to "按大小分组")) {
+                        TextButton(
+                            onClick = { arrangeDraft = arrangeDraft.copy(group = group) },
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                                .testTag("files-arrange-group-$group"),
+                        ) {
+                            Text(label, modifier = Modifier.weight(1f),
+                                textAlign = TextAlign.Start)
+                            if (arrangeDraft.group == group) Text("✓")
+                        }
+                    }
                     TextButton(
                         onClick = { arrangeDraft = arrangeDraft.copy(
                             foldersFirst = !arrangeDraft.foldersFirst) },

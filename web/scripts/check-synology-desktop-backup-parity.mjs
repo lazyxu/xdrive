@@ -21,6 +21,7 @@ const nasHome = read('ui/shared/src/mui/SynologyHomeOverview.tsx')
 const desktopShell = read('desktop/src/renderer/App.tsx')
 const appShell = read('ui/shared/src/mui/XDriveApp.tsx')
 const appPageOutlet = read('ui/shared/src/mui/XDriveAppPageOutlet.tsx')
+const appRouteContent = read('ui/shared/src/mui/XDriveAppRouteContent.tsx')
 const hostContract = read('ui/shared/src/mui/WorkspaceHostAdapter.ts')
 const routeRegistry = read('ui/shared/src/mui/WorkspaceRoute.ts')
 const sidebar = read('ui/shared/src/mui/WorkspaceSidebar.tsx')
@@ -179,15 +180,20 @@ if (!verifiedOwnerDownload.includes('xDriveSynologyFetchVerifiedDownload') ||
 }
 // DSM and Desktop must both mount the canonical full application frame.
 if (!dsmEntry.includes('<XDriveApp') || !desktopShell.includes('<XDriveApp') ||
-    !dsmEntry.includes('<XDriveWorkspaceContent') ||
-    !desktopShell.includes('<XDriveWorkspaceContent') ||
+    !dsmEntry.includes('<XDriveAppRouteContent') ||
+    !desktopShell.includes('<XDriveAppRouteContent') ||
+    !appRouteContent.includes('<XDriveWorkspaceContent') ||
+    !appRouteContent.includes('presentation={presentation}') ||
     !appShell.includes('<XDriveWorkspaceShell') ||
     !appShell.includes('<XDriveWorkspaceSidebar') ||
     !appShell.includes('selected={view}') ||
     !appShell.includes('onSelect={onNavigate}') ||
     !appShell.includes('xDriveWorkspaceNavigationAllowed(destination, host.adminRoleVerified === true)') ||
     !appPageOutlet.includes('host.adminRoleVerified !== true') ||
-    !dsmEntry.includes('<XDriveAppPageOutlet view={selected} host={host}') ||
+    !appRouteContent.includes('<XDriveAppPageOutlet') ||
+    !appRouteContent.includes('host={host}') ||
+    !appRouteContent.includes('view={view}') ||
+    !muiExports.includes("export * from './XDriveAppRouteContent'") ||
     !routeRegistry.includes('XDRIVE_APP_WORKSPACE_ROUTES') ||
     !routeRegistry.includes('xDriveWorkspaceRouteRequiresAdmin') ||
     !muiExports.includes("export * from './XDriveApp'")) {
@@ -195,7 +201,7 @@ if (!dsmEntry.includes('<XDriveApp') || !desktopShell.includes('<XDriveApp') ||
 }
 // Migrated Desktop pages must be mounted through exactly the same common
 // UI outlet as DSM, with Desktop retaining ownership of real Agent operations.
-if (!desktopShell.includes('xDriveIsSharedHostPageRoute(view)') ||
+if (!appRouteContent.includes('xDriveIsSharedHostPageRoute(view)') ||
     !desktopShell.includes('host={workspaceHost}') ||
     !desktopShell.includes('galleryPage: {') ||
     !desktopShell.includes('deviceBackupPage: {') ||
@@ -224,7 +230,7 @@ if (dsmEntry.includes('coreKeys=') ||
     !hostContract.includes('readonly cloudStorage?: XDriveCloudStorageDataSource') ||
     !appPageOutlet.includes('if (!page)') ||
     !appPageOutlet.includes('此宿主尚未接通当前功能') ||
-    /window\.xdriveDesktop|ipcRenderer/.test(appShell + appPageOutlet)) {
+    /window\.xdriveDesktop|ipcRenderer/.test(appShell + appRouteContent + appPageOutlet)) {
   throw new Error('DSM full route registry or Host capability boundary is broken')
 }
 if (dsmEntry.includes('coreKeys=') ||

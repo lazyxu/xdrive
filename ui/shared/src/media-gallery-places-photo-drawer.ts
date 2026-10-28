@@ -155,3 +155,26 @@ export function xDrivePlacesDrawerMatchesFresh(
       xDriveBaiduMapPhotoScopeKey(currentScope) &&
     xDriveBaiduCellReturnMatchesFreshSelection(hint.selection, fresh))
 }
+
+/**
+ * Rotation can change the signed viewport's eight-by-eight Cell geometry:
+ * its bounds/index/count need NOT be identical. Restore only the SAME
+ * representative PhotoAsset, Node and revision in a NEW authenticated
+ * Owner /cells page with the identical album/filter scope.
+ *
+ * This predicate is a visual-intent match ONLY, never a media grant.
+ * The caller still must use the fresh Cell selector for a new signed
+ * /cell-items Range, whose count and Node revisions are checked separately.
+ */
+export function xDrivePlacesDrawerMatchesResizedCell(
+  hint: XDrivePlacesDrawerReturn,
+  currentScope: XDriveBaiduMapPhotoScope,
+  fresh: MediaBaiduNativeCellSelection,
+): boolean {
+  if (!hint || !validSelection(hint.selection) || !validSelection(fresh) ||
+      xDriveBaiduMapPhotoScopeKey(hint.photoScope) !==
+        xDriveBaiduMapPhotoScopeKey(currentScope)) return false
+  return hint.selection.node_id === fresh.node_id &&
+    hint.selection.asset_id === fresh.asset_id &&
+    hint.selection.node_revision === fresh.node_revision
+}

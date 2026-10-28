@@ -37,7 +37,7 @@ func run(args []string) error {
 
 func runWithReportWriter(args []string, reportOutput io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("usage: xdrive-backup-repo estimate|capture|verify|restore|retention-plan|prune|delete-snapshot [flags]")
+		return errors.New("usage: xdrive-backup-repo estimate|capture|verify|restore|retention-plan|prune|delete-snapshot|preview-delete-snapshot [flags]")
 	}
 	cmd := args[0]
 	f := flag.NewFlagSet(cmd, flag.ContinueOnError)
@@ -85,7 +85,8 @@ func runWithReportWriter(args []string, reportOutput io.Writer) error {
 			jsonPassed = true
 		}
 	})
-	if cmd != "retention-plan" && cmd != "prune" && cmd != "delete-snapshot" && (keepLastPassed || modePassed || yesPassed) {
+	if cmd != "retention-plan" && cmd != "prune" && cmd != "delete-snapshot" &&
+		cmd != "preview-delete-snapshot" && (keepLastPassed || modePassed || yesPassed) {
 		return errors.New("--keep-last, --mode and --yes require the matching retention/prune subcommand")
 	}
 	if cmd == "retention-plan" && yesPassed {
@@ -96,6 +97,9 @@ func runWithReportWriter(args []string, reportOutput io.Writer) error {
 	}
 	if cmd == "delete-snapshot" && (keepLastPassed || modePassed || !*confirmed) {
 		return errors.New("delete-snapshot requires an exact --snapshot NAME and --yes, without --keep-last or --mode")
+	}
+	if cmd == "preview-delete-snapshot" && (keepLastPassed || yesPassed) {
+		return errors.New("preview-delete-snapshot is read-only and accepts only --repo, --snapshot and --mode")
 	}
 	if cmd != "verify" && jsonPassed {
 		return errors.New("--json is available only for verify")
@@ -144,6 +148,15 @@ func runWithReportWriter(args []string, reportOutput io.Writer) error {
 			return err
 		}
 		return writePruneReport(result)
+	case "preview-delete-snapshot":
+		if *source != "" || *target != "" || *ownerUID != -1 || *ownerGID != -1 {
+			return errors.New("preview-delete-snapshot accepts only --repo, --snapshot and --mode")
+		}
+		result, err := planSelectedPrune(root, *snapshot, *casMode)
+		if err != nil {
+			return err
+		}
+		return writeSelectedPrunePlan(reportOutput, result)
 	case "capture":
 		if *source == "" || *target != "" {
 			return errors.New("capture requires --source only")

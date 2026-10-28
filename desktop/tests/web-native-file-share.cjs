@@ -86,8 +86,9 @@ test('Mobile Files requires capability detection and invokes OS share directly i
   const adapter = fs.readFileSync(path.join(root, 'web/src/WebFileExplorer.tsx'), 'utf8')
   assert.match(adapter, /onPrepareNativeShareFile=\{\(entry, signal\) => api\.prepareNativeShareFile\(Number\(entry\.id\), signal\)\}/)
   assert.match(mobile, /onPrepareNativeShareFile\?: \(entry: Pick<XDriveFileExplorerItem, 'id' \| 'name' \| 'kind'>/)
-  assert.match(mobile, /typeof navigator\.share === 'function'/)
-  assert.match(mobile, /typeof navigator\.canShare === 'function'/)
+  assert.match(mobile, /xDriveCanUseNativeShare\('file'\)/)
+  assert.match(mobile, /import \{ xDriveCanUseNativeShare \} from/)
+
   assert.match(mobile, /nativeShareControllerRef\.current\?\.abort\(\)/)
   assert.match(mobile, /data-mobile-files-native-share-entry="directory"/)
   assert.match(mobile, /data-mobile-files-native-share-entry="collection"/)

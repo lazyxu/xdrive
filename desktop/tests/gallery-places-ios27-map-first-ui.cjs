@@ -71,7 +71,7 @@ test('trusted photo covers wait for real Owner camera and reject stale SDK proje
   assert.match(source,/const coverPins = scopeIsCurrent && acceptedViewport &&\s*projected\?\.width/)
   assert.match(source,/xDriveSelectVisibleMapPhotoCovers\(/)
   assert.match(source,/\.filter\(candidate => hasAcceptedCell\(candidate\.selection\)\)/)
-  assert.match(source,/photoStrip = scopeIsCurrent && acceptedViewport && phase === 'ready'/)
+  assert.doesNotMatch(source,/photoStrip|xDriveCurrentMapPhotoCollections/)
   assert.match(source,/if\(!lifetime\.signal\.aborted && latestAcceptedViewport\.current &&/)
   assert.match(source,/xDrivePlacesDrawerValidRange\(cell,range\)/)
 })
@@ -79,7 +79,7 @@ test('trusted photo covers wait for real Owner camera and reject stale SDK proje
 test('shared iOS photo map pins show only verified blue counts above singleton photos', () => {
   const source = read(photoMap)
   const start = source.indexOf('data-xdrive-places-trusted-photo-cover-pins')
-  const end = source.indexOf('{!activeDrawer && loadThumbnail && photoStrip.length', start)
+  const end = source.indexOf('{!activeDrawer && trustedSummary ? (', start)
   assert.ok(start >= 0 && end > start)
   const pins = source.slice(start, end)
   assert.ok(pins.includes('aria-label={`查看该区域 ${pin.count} 张照片`}'))
@@ -111,8 +111,10 @@ test('photo thumbnails, real Owner camera count and wall action remain on map', 
   assert.match(source, /data-xdrive-places-ios-map-canvas/)
   assert.match(source, /max\(460px, calc\(100dvh - 124px\)\)/)
   assert.match(source, /max\(192px, calc\(100dvh - 124px\)\)/)
-  assert.match(source, /data-xdrive-places-map-photo-strip-shell/)
-  assert.match(source, /edgeToEdge \? '0 0 54px' : '0 0 76px'/)
+  assert.doesNotMatch(source, /data-xdrive-places-map-photo-strip-shell/)
+  assert.match(source, /data-xdrive-places-map-photo-summary/)
+  assert.match(source, /width:\{xs:64,sm:72\}/)
+  assert.doesNotMatch(source, /edgeToEdge \? '0 0 54px' : '0 0 76px'/)
   assert.match(source, /data-xdrive-places-trusted-photo-cover-pins/)
   assert.match(source, /ownerCover\(pin\.selection/)
   assert.match(source, /revision=\{selection\.node_revision\}/)
@@ -140,7 +142,7 @@ test('real Chromium layout measures only painted map controls but still enforces
   const driver=read('desktop/scripts/gallery-places-dual-host-chromium.cjs')
   assert.match(driver,/\.filter\(el=>el\.checkVisibility\(\)\)/)
   assert.match(driver,/actual\.hits\.every\(b=>b\.width>=44&&b\.height>=44\)/)
-  assert.match(driver,/actual\.dock\.height<=76/)
+  assert.match(driver,/actual\.footer\.bottom<=actual\.map\.bottom/)
   assert.match(driver,/actual\.pins>0/)
   assert.match(driver,/actual\.pinButtons\.length===actual\.pins/)
   assert.doesNotMatch(driver,/actual\.pins\.length>0/)
@@ -159,25 +161,28 @@ test('compact map rotation uses fresh owner camera before evaluating photo pins'
   assert.doesNotMatch(source,/pointToPixel\(\)\{return \{x:180,y:180\}\}/)
 })
 
-test('camera resize requires fresh Owner Cell before reopening actual photo drawer',()=>{
+test('camera resize revokes old Cell and auto-restores drawer after fresh Owner Cells and items',()=>{
   const driver=read('desktop/scripts/gallery-places-dual-host-chromium.cjs')
-  for(const fragment of [
+  for(const text of [
     "rotation revokes prior camera-scoped photo drawer",
+    "rotation automatically restores only fresh signed Owner Cell items",
     "portrait resize revokes short-landscape Cell scope",
+    "portrait automatically restores current Owner drawer",
     "beforeLandscape=await page.evaluate",
     "beforePortrait=await page.evaluate",
     "expanded drawer fits inside 844x390 map and safe area",
-  ]) assert.ok(driver.includes(fragment),fragment)
+  ]) assert.ok(driver.includes(text),text)
+  assert.match(driver,/probe\.oldDrawer=document\.querySelector/)
+  assert.match(driver,/oldDetached:probe\.oldDrawer\?\.isConnected===false/)
+  assert.match(driver,/window\.__mapProbe\.queries\.length>before\.queries/)
+  assert.match(driver,/window\.__mapProbe\.photoPreviewRanges\.length>before\.previews/)
+  assert.match(driver,/landscapeFresh\.itemTotal===3&&landscapeFresh\.items===3/)
+  assert.match(driver,/portraitFresh\.previewCount===3&&portraitFresh\.newItems===3/)
   assert.match(driver,/sheetGeometry\.top>=sheetGeometry\.mapTop\+8/)
   assert.match(driver,/sheetGeometry\.bottom<=sheetGeometry\.mapBottom-8/)
   assert.match(driver,/sheetGeometry\.bottom<=sheetGeometry\.screen-8/)
-  assert.match(driver,/window\.__mapProbe\.queries\.length>before/)
-  assert.match(driver,/const openFreshCameraCell=async\(\)=>/)
-  assert.match(driver,/data-xdrive-places-cluster-list/)
-  assert.match(driver,/await openFreshCameraCell\(\)/)
-  assert.match(driver,/await list\.locator\('button'\)\.first\(\)\.click\(\)/)
-  assert.doesNotMatch(driver,/await page\.setViewportSize\(\{width:844,height:390\}\)\s*const sheetGeometry/,
-    'stale pre-rotation drawer must not be reused')
+  assert.doesNotMatch(driver,/await openFreshCameraCell\(\)/,
+    'automatic restoration must use new Owner Cell without a second user click')
 })
 
 test('responsive keyboard appearance waits for new Owner camera and bounded map fallback',()=>{

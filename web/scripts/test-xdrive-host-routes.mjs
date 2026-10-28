@@ -52,6 +52,7 @@ for (const bogus of ['', '__proto__', 'gallery/../admin-users', 'admin-typo']) {
 
 const sharedApp = read('ui/shared/src/mui/XDriveApp.tsx')
 const sharedOutlet = read('ui/shared/src/mui/XDriveAppPageOutlet.tsx')
+const sharedRouteContent = read('ui/shared/src/mui/XDriveAppRouteContent.tsx')
 const hostContract = read('ui/shared/src/mui/WorkspaceHostAdapter.ts')
 const overview = read('ui/shared/src/mui/OverviewPage.tsx')
 const desktopPort = read('desktop/src/renderer/desktopOverviewAdapter.ts')
@@ -67,8 +68,11 @@ assert.ok(sharedOutlet.includes('host.adminRoleVerified !== true'),
   'shared outlet must reject unverified administrative session')
 assert.ok(sharedOutlet.includes('if (!page)'),
   'unimplemented DSM host operations must fail as unavailable, not silently succeed')
-assert.ok(dsm.includes('<XDriveAppPageOutlet view={selected} host={host}'),
-  'DSM must use shared route dispatch')
+assert.ok(dsm.includes('<XDriveAppRouteContent') &&
+  sharedRouteContent.includes('<XDriveAppPageOutlet') &&
+  sharedRouteContent.includes('view={view}') &&
+  sharedRouteContent.includes('host={host}'),
+  'DSM must reach the shared outlet through the canonical route content frame')
 assert.ok(!dsm.includes('pages: {') && !dsm.includes('<XDriveHomePage') &&
   !dsm.includes('<XDriveDeviceBackupPage'),
   'DSM provides domain ports and no independent page JSX')
@@ -94,9 +98,11 @@ for (const key of [
   assert.equal(routes.xDriveIsSharedHostPageRoute(key), true,
     'Desktop common outlet must dispatch: ' + key)
 }
-assert.ok(desktop.includes('xDriveIsSharedHostPageRoute(view)') &&
-  desktop.includes('<XDriveAppPageOutlet view={view} host={workspaceHost} />'),
-  'Desktop must mount the same page outlet as DSM for migrated routes')
+assert.ok(desktop.includes('<XDriveAppRouteContent host={workspaceHost} view={view}>') &&
+  sharedRouteContent.includes('xDriveIsSharedHostPageRoute(view)') &&
+  sharedRouteContent.includes('<XDriveAppPageOutlet') &&
+  !desktop.includes('<XDriveAppPageOutlet'),
+  'Desktop must reach the same shared outlet through the common route content frame')
 assert.ok(desktop.includes('galleryPage: {') &&
   desktop.includes('taskCenterPage: {') &&
   desktop.includes('deviceBackupPage: {') &&
@@ -136,6 +142,6 @@ assert.ok(overview.includes('port.cloudFileRecent(6)') &&
   !overview.includes('window.xdriveDesktop') &&
   desktopPort.includes('window.xdriveDesktop.agent'),
   'Owner reads must stay in a host-neutral controller with native IPC in Desktop adapter')
-assert.ok(!/window\.xdriveDesktop|ipcRenderer/.test(dsm + sharedApp + sharedOutlet),
+assert.ok(!/window\.xdriveDesktop|ipcRenderer/.test(dsm + sharedApp + sharedRouteContent + sharedOutlet),
   'DSM/static common application must not invoke Electron IPC')
 console.log('Unified Desktop/DSM routes, admin boundary and host-shell invariants verified')

@@ -25,8 +25,11 @@ test('both map SDK Hosts reuse the original Gallery video Poster with Owner-only
   assert.match(parent,/<XDriveMediaAsyncVideoPoster/)
   assert.match(parent,/<XDriveMediaGalleryCoverThumbnail/)
   assert.match(parent,/saveVideoPoster=\{saveVideoPoster\}/)
-  assert.equal((parent.match(/ownerCover\(pin\.selection/g)||[]).length,2,
-    'map pin and bottom collection strip must use identical Owner media routing')
+  assert.equal((parent.match(/ownerCover\(pin\.selection/g)||[]).length,1,
+    'only the current signed photo pin requests Owner media bytes after fixed strip removal')
+  assert.doesNotMatch(parent,
+    /data-xdrive-places-photo-collection-strip|data-xdrive-places-collection-thumb|xDriveCurrentMapPhotoCollections/,
+    'no retired strip may request an extra thumbnail or video poster')
   assert.match(parent,/xDriveMountBaiduInlineMap/)
   assert.match(parent,/xDriveMountBaiduIsolatedFrame/)
   assert.match(map,/loadPreviewURL=\{loadPhotoCoverPreviewURL\}/)

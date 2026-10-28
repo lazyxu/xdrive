@@ -254,6 +254,56 @@ can require another **explicit** manual prune to finish retiring its content.
 The selected generation must not be automatically replayed or guessed from
 a stale UI selection; report this outcome conservatively.
 
+### Selected generation read-only preview (internal helper)
+
+The separate internal helper supports:
+
+```bash
+xdrive-backup-repo preview-delete-snapshot \
+  --repo "/absolute/local/backup-repo" \
+  --snapshot xdrive-backup-YYYYMMDDTHHMMSSZ --mode fast
+# Deep: hashes every repository CAS object, including unreferenced objects.
+xdrive-backup-repo preview-delete-snapshot \
+  --repo "/absolute/local/backup-repo" \
+  --snapshot xdrive-backup-YYYYMMDDTHHMMSSZ --mode deep
+```
+
+The Host Manager now also exposes a strictly bounded **operator-only**
+read-only wrapper, without passing an arbitrary Docker flag or Host command:
+
+```bash
+xdrive-server backup preview-delete-snapshot \
+  --snapshot xdrive-backup-YYYYMMDDTHHMMSSZ --mode fast
+# Optional deep full CAS SHA-256 audit and trusted local repository selection:
+xdrive-server backup preview-delete-snapshot \
+  --snapshot xdrive-backup-YYYYMMDDTHHMMSSZ --mode deep \
+  --repository-dir "/absolute/local/backup-repo"
+```
+
+It resolves the same trusted local repository as the selected-delete Host
+command, refuses symlinks and live `/data` overlap, and invokes the bundled
+helper with `--network none`, a strictly **read-only** backup bind mount and
+no `--yes`. Deep preview holds a shared lock on the existing writer lock
+inode for its full read. The actual delete separately owns its exclusive
+lock and rechecks every byte. There remains **no authenticated Admin UI
+entry or browser-provided Host directory**.
+
+This is a fixed, **read-only** candidate calculation. The report explicitly
+names the selected generation, the number of remaining recoverable generations,
+snapshot-specific logical bytes, unique selected CAS objects, shared CAS
+objects, exclusive candidate CAS bytes, orphan CAS bytes, combined potential
+logical reclaim and actually hashed content. No raw CAS digests, Host paths,
+private logs or passwords are emitted. A malformed, symlinked, partially
+committed or unknown generation, an unsafe survivor archive, a pending prune
+journal, or attempting to remove the last recovery point refuses the preview.
+
+The fast mode validates committed snapshot checksums and repository CAS
+presence/size; deep additionally hashes every repository CAS object. Neither
+mode measures real allocated filesystem blocks or authorizes deletion. The
+subsequent exclusive prune **always** repeats a deep check. This internal
+helper is intentionally not yet wired to a web UI, scheduled job or remote
+Host-admin action; those require independent source-bound confirmation.
+
 **Host guard:** both manual prune modes reuse identical checks against
 the configured live file source and the Server container's actual /data mount,
 require an existing regular backup repository lock, and run the exact Server
@@ -284,14 +334,28 @@ separate from owning-device Push backups and from online CAS storage checks.
   Immutable snapshot objects are never edited. The original schedule is
   retained; changing to v2 does not enable scheduled pruning.
 - **Delete**: separate explicitly confirmed v1 snapshot deletion with a
-  restricted file allowlist; v2 deletion is only the existing
+  restricted file allowlist; v2 currently permits only the existing
   `backup prune --keep-last N --yes` and revalidates shared CAS references.
+  A selected v2 read-only impact preview is being added, **not** a new
+  browser deletion action. The Host-only selected deletion remains an
+  independently validated follow-up; never treat preview as permission to delete.
 - **Verify / restore**: checksum validation and optional full v2 CAS hashing.
   Restoration requires typing the exact snapshot identity and uses the
   original Host command with mandatory pre-restore safety backup.
   Legacy database-only snapshots are listed and remain verifiable but are
   **not** offered as a full database-and-file restore; use the explicit
   local `--database-only` recovery procedure instead.
+
+For a selected complete v2 generation, the shared administrator page can
+request an exact Host-resolved `preview_delete` operation with `fast` or `deep`.
+Host Control runs the read-only `preview-delete-snapshot` command and persists
+only a bounded, strict, source-owned receipt for the selected snapshot and
+request ID. The UI only presents the current matching successful receipt:
+selected metadata bytes, exclusive/shared CAS counts, orphan CAS and a
+logical reclaim estimate. It is **not** a destructive operation or evidence
+of actual free disk blocks. Changing the snapshot, audit mode, Host or
+operation invalidates the UI's preview. No `delete_selected` Admin action
+exists until the independent Host path, safety review and tests complete.
 
 The API itself has neither a Docker socket nor arbitrary Host file access.
 Commands are chosen from a fixed allowlist, executed only by the existing

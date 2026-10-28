@@ -78,7 +78,7 @@ test('shared Share dialog uses compact full-screen presentation and compact list
 
 test('created share link exposes native Web Share only when supported on compact touch', () => {
   for (const token of [
-    "typeof navigator.share === 'function'",
+    "xDriveCanUseNativeShare('link')",
     "await navigator.share({",
     'title: `xDrive 分享 — ${node.name}`',
     'url: createdLink',

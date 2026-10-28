@@ -72,6 +72,8 @@ function compileLoadChildren(callbackSource) {
       loadDirectoryPageGenerationRef,
       lifecycleKeyRef,
     ) => {
+      // Source-extracted callback must use the real per-parent request owner.
+      const treeControllersRef = { current: new Map() }
       const loadChildren = ${callbackSource}
       return loadChildren
     }
