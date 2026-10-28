@@ -12,7 +12,7 @@ const logicSource = read('web/src/pwaInstall.ts')
 function harness({ userAgent = 'Chrome Android', mode = 'browser', secure = true, sw = true,
   protocol = 'https:', hostname = 'drive.example', fetchReply,
   matchMediaFailure = null, navigatorStandalone = false, navigatorStandaloneFailure = false,
-  installEventFailure = null } = {}) {
+  installEventFailure = null, locationFailure = null } = {}) {
   const events = new Map()
   const mediaEvents = new Map()
   const queries = []
@@ -42,6 +42,15 @@ function harness({ userAgent = 'Chrome Android', mode = 'browser', secure = true
   if (matchMediaFailure === 'getter') {
     Object.defineProperty(win, 'matchMedia', {
       get() { throw new Error('display-mode API getter denied') },
+    })
+  }
+  if (locationFailure === 'location') {
+    Object.defineProperty(win, 'location', {
+      get() { throw new Error('restricted Safari window.location getter') },
+    })
+  } else if (locationFailure === 'protocol' || locationFailure === 'hostname') {
+    Object.defineProperty(win.location, locationFailure, {
+      get() { throw new Error('restricted Safari location.' + locationFailure) },
     })
   }
   const nav = { userAgent, platform: userAgent.includes('Mac') ? 'MacIntel' : 'Linux',
@@ -521,4 +530,30 @@ test('S2B8: user closing diagnostics returns even when five HEADs ignore cancell
   assert.ok(h.queries.every(([, options]) =>
     options.method === 'HEAD' && options.credentials === 'omit' &&
     options.mode === 'same-origin' && options.redirect === 'error'))
+})
+
+test('S2 Safari: denied location/transport getters fail closed without breaking public install diagnostics', async () => {
+  for (const denied of ['location', 'protocol', 'hostname']) {
+    const h = harness({ userAgent: 'iPhone Safari', locationFailure: denied })
+    h.mod.startXDrivePwaInstallObservation()
+    const checks = await h.mod.checkXDrivePwaAssets()
+    assert.deepEqual(checks.map(x => x.id), [
+      'context', 'transport', 'manifest', 'worker', 'offline', 'icon192', 'icon512',
+    ])
+    assert.equal(checks[0].state, 'pass', 'a separate secure-context observation remains intact')
+    assert.equal(checks[1].state, 'fail', 'denied URL getters cannot imply verified HTTPS')
+    assert.match(checks[1].detail, /拒绝读取.*无法确认 HTTPS/)
+    assert.deepEqual(checks.slice(2).map(x => x.state), ['pass', 'pass', 'pass', 'pass', 'pass'],
+      'ordinary public same-origin HEAD diagnostics still work without reading a URL')
+    assert.deepEqual(h.queries.map(([url]) => url), [
+      '/site.webmanifest', '/sw.js', '/offline.html', '/pwa-192.png', '/pwa-512.png',
+    ])
+    for (const [, options] of h.queries) {
+      assert.equal(options.credentials, 'omit')
+      assert.equal(options.mode, 'same-origin')
+      assert.equal(options.redirect, 'error')
+      assert.equal(options.method, 'HEAD')
+    }
+    assert.doesNotMatch(JSON.stringify(checks), /restricted Safari|SecurityError|drive\.example/)
+  }
 })

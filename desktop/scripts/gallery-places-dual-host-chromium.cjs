@@ -32,9 +32,10 @@ const temp=fs.mkdtempSync(path.join(os.tmpdir(),'xdrive-places-dual-'))
 const summary={sourceCommit:process.env.XD_PR_HEAD || null,
   realChromium:true,realReactParent:true,realChildSource:true,
   realGin:false,realBaiduProvider:false,physicalDevice:false,
+  ownerScopeInvalidationModes:[],
   fullGalleryPageModes:[],fullGalleryDirectPhotoModes:[],mobileDrawerModes:[],
   favoriteMapCloseModes:[],fullDocumentHandoffModes:[],
-  fullDocumentComboModes:[],
+  fullDocumentComboModes:[],fullDocumentNegativeFilterModes:[],
   realHEICMapCoverModes:[],realLIVPMapCoverModes:[],
   checks:[],passed:false,errors:[]}
 const record=(name,ok)=>{summary.checks.push({name,passed:!!ok});assert(ok,name)}
@@ -316,6 +317,71 @@ async function testFullDocumentMapHandoff(browser,from,port,combined=false){
       !accepted.url.includes('manual:')&&!accepted.url.includes('favorite=true')&&
       !accepted.url.includes('asset_kind')&&!accepted.url.includes('captured_from')&&
       !accepted.url.includes('time_zone'))
+    if(combined){
+      // The original combo scenario proves exact preservation, but its nine
+      // sampled photos all have the same image kind and October 20 capture
+      // date. Exercise the SHIPPED shared filter controls on the restored
+      // Owner map, so a backend that ignores date or kind now fails visibly.
+      const menu=page.locator('[data-xdrive-places-map-filter-menu]')
+      const openFilters=async()=>{
+        if(!(await menu.evaluate(element=>element.open)))
+          await menu.locator('summary').click()
+      }
+      const filteredEmpty='当前筛选条件下暂无定位照片；可调整筛选或手动刷新。'
+      const currentMap=()=>page.evaluate(()=>({
+        queries:window.__mapProbe.queries,
+        covers:document.querySelectorAll(
+          '[data-xdrive-places-trusted-photo-cover]').length,
+        empty:document.querySelector(
+          '[data-xdrive-places-map-photo-summary]')?.textContent,
+      }))
+      await openFilters()
+      await page.locator('[data-xdrive-places-map-photo-filters] input[type="date"]')
+        .first().fill('2026-10-21')
+      await page.getByText(filteredEmpty,{exact:true}).waitFor()
+      const excludedDate=await currentMap()
+      record(label+'→'+target+': real Owner date filter excludes October 20 photos',
+        excludedDate.queries.at(-1)?.count===0&&excludedDate.covers===0&&
+        excludedDate.queries.at(-1)?.albumKey==='manual:Family'&&
+        excludedDate.queries.at(-1)?.filters?.favorite===true&&
+        excludedDate.queries.at(-1)?.filters?.asset_kind==='image'&&
+        excludedDate.queries.at(-1)?.filters?.captured_from==='2026-10-21'&&
+        excludedDate.queries.at(-1)?.filters?.captured_to==='2026-10-22')
+      await openFilters()
+      await page.locator('[data-xdrive-places-map-photo-filters] input[type="date"]')
+        .first().fill('2026-10-19')
+      await page.getByText('当前地图可查看 2 张照片',{exact:true}).waitFor()
+      await page.locator('[data-xdrive-places-trusted-photo-cover]')
+        .first().waitFor({state:'visible'})
+      const recoveredDate=await currentMap()
+      record(label+'→'+target+': date restore recovers exact Family Favorite intersection',
+        recoveredDate.queries.at(-1)?.count===2&&
+        recoveredDate.queries.at(-1)?.filters?.captured_from==='2026-10-19'&&
+        recoveredDate.covers>0)
+      await openFilters()
+      await page.getByRole('combobox',{name:'照片类型'}).click()
+      await page.getByRole('option',{name:'视频',exact:true}).click()
+      await page.getByText(filteredEmpty,{exact:true}).waitFor()
+      const excludedKind=await currentMap()
+      record(label+'→'+target+': real Owner media-kind filter excludes image-only Album',
+        excludedKind.queries.at(-1)?.count===0&&excludedKind.covers===0&&
+        excludedKind.queries.at(-1)?.albumKey==='manual:Family'&&
+        excludedKind.queries.at(-1)?.filters?.favorite===true&&
+        excludedKind.queries.at(-1)?.filters?.asset_kind==='video'&&
+        excludedKind.queries.at(-1)?.filters?.captured_from==='2026-10-19')
+      await openFilters()
+      await page.getByRole('combobox',{name:'照片类型'}).click()
+      await page.getByRole('option',{name:'照片',exact:true}).click()
+      await page.getByText('当前地图可查看 2 张照片',{exact:true}).waitFor()
+      await page.locator('[data-xdrive-places-trusted-photo-cover]')
+        .first().waitFor({state:'visible'})
+      const recoveredKind=await currentMap()
+      record(label+'→'+target+': kind restore recovers Owner pins with no scope expansion',
+        recoveredKind.queries.at(-1)?.count===2&&recoveredKind.covers>0&&
+        recoveredKind.queries.every(q=>q.albumKey==='manual:Family'&&
+          q.favorite===true)&&errors.length===0)
+      summary.fullDocumentNegativeFilterModes.push(from)
+    }
     await page.reload({waitUntil:'domcontentloaded'})
     await page.locator('[data-xdrive-map-handoff-denied="1"]').waitFor()
     const denied=await page.evaluate(()=>({
@@ -332,6 +398,119 @@ async function testFullDocumentMapHandoff(browser,from,port,combined=false){
   }finally{await context.close()}
 }
 
+
+/** Real loopback Gin + PostgreSQL pending ticket, then a test-only bounded
+ * Album/Owner state change before full-document mode handoff consumption.
+ * The authentic Web startup scrubber must deny SDK, Viewer and all Cells;
+ * no origin, bearer, nonce or Album value is logged or persisted in fixtures. */
+async function testInvalidatedOwnerHandoff(browser,from,port,scenario){
+  const target=from==='inline'?'isolated':'prototype'
+  assert(['foreign-owner','album-revision','album-missing',
+    'session-revoked','map-epoch-revoked'].includes(scenario))
+  const context=await browser.newContext({
+    viewport:{width:390,height:844},locale:'zh-CN',
+    ignoreHTTPSErrors:true,serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(30000)
+  const runtimeErrors=[]
+  page.on('pageerror',error=>runtimeErrors.push(error.name))
+  await page.route('https://api.map.baidu.com/api?**',route=>{
+    assert.equal(new URL(route.request().url()).searchParams.get('ak'),
+      'TEST_ONLY_BROWSER_AK')
+    return route.fulfill({status:200,contentType:'text/javascript',body:sdkStub})
+  })
+  const actionPath='/__fixture/map-handoff-invalidate'
+  const restore=async()=>{
+    try{
+      return await page.evaluate(async path=>{
+        const owner=await fetch('/__fixture/map-owner',{cache:'no-store'})
+          .then(r=>r.json())
+        const response=await fetch(path,{method:'POST',cache:'no-store',
+          headers:{Authorization:'Bearer '+owner.token,
+            'Content-Type':'application/json'},
+          body:JSON.stringify({action:'restore'})})
+        return response.status
+      },actionPath)
+    }catch{return 0}
+  }
+  try{
+    const initial='https://'+galleryHost+':'+port+'/?handoff_doc=1'+
+      (from==='isolated'?'&places_map_mode=isolated':'')
+    await page.goto(initial,{waitUntil:'domcontentloaded'})
+    await page.getByText('当前地图可查看 3 张照片',{exact:true}).waitFor()
+    const prepared=await page.evaluate(async args=>{
+      const owner=await fetch('/__fixture/map-owner',{cache:'no-store'})
+        .then(r=>r.json())
+      const path='/api/v1/media/places/baidu-jsapi/scope-handoff'
+      const issued=await fetch(path,{method:'POST',cache:'no-store',
+        headers:{Authorization:'Bearer '+owner.token,
+          'Content-Type':'application/json'},
+        body:JSON.stringify({target_mode:args.target,
+          scope:{albumKey:'manual:Family',
+            filters:{sort_by:'captured',sort_dir:'desc',favorite:true}}})})
+      if(!issued.ok)return {issued:issued.status,changed:0,ticket:''}
+      const receipt=await issued.json()
+      if(!/^[a-f0-9]{64}$/.test(receipt?.ticket||''))
+        return {issued:issued.status,changed:0,ticket:''}
+      let changed=204
+      if(args.scenario!=='foreign-owner'){
+        const response=await fetch(args.actionPath,{method:'POST',
+          cache:'no-store',
+          headers:{Authorization:'Bearer '+owner.token,
+            'Content-Type':'application/json'},
+          body:JSON.stringify({action:args.scenario})})
+        changed=response.status
+      }
+      return {issued:issued.status,changed,ticket:receipt.ticket}
+    },{scenario,target,actionPath})
+    record(from+'→'+target+': test Owner issued one-use ticket before '+scenario,
+      prepared.issued===200&&prepared.changed===204&&
+      /^[a-f0-9]{64}$/.test(prepared.ticket))
+    // A real full document replace, not a synthetic consume response.
+    await page.evaluate(({ticket,target,foreign})=>{
+      const next=new URL(location.href)
+      if(target==='isolated')next.searchParams.set('places_map_mode','isolated')
+      else next.searchParams.delete('places_map_mode')
+      next.searchParams.set('places_map_scope_required','1')
+      next.searchParams.set('places_map_handoff',ticket)
+      if(foreign)next.searchParams.set('handoff_foreign','1')
+      location.replace(next.href)
+    },{ticket:prepared.ticket,target,foreign:scenario==='foreign-owner'})
+    await page.locator('[data-xdrive-map-handoff-denied="1"]').waitFor()
+    const state=await page.evaluate(()=>{
+      const p=window.__mapProbe
+      return {state:p.handoff.state,consumes:p.handoff.consumes,
+        ownerQueries:p.queries.length,
+        maps:document.querySelectorAll('[data-xdrive-gallery-places-map]').length,
+        covers:document.querySelectorAll('[data-xdrive-places-trusted-photo-cover]').length,
+        child:document.querySelectorAll('[data-xdrive-baidu-isolated-frame]').length,
+        query:location.search,
+      }
+    })
+    record(from+'→'+target+': '+scenario+' denies cross-document Owner map before SDK',
+      state.state==='denied'&&state.consumes===0&&
+      state.ownerQueries===0&&state.maps===0&&state.covers===0&&
+      state.child===0&&!state.query.includes('places_map_handoff=')&&
+      !state.query.includes('manual:Family')&&runtimeErrors.length===0)
+    await page.reload({waitUntil:'domcontentloaded'})
+    await page.locator('[data-xdrive-map-handoff-denied="1"]').waitFor()
+    const reload=await page.evaluate(()=>({
+      queries:window.__mapProbe.queries.length,
+      maps:document.querySelectorAll('[data-xdrive-gallery-places-map]').length,
+      state:window.__mapProbe.handoff.state,
+    }))
+    record(from+'→'+target+': '+scenario+' reload cannot widen Owner PhotoScope',
+      reload.state==='denied'&&reload.queries===0&&reload.maps===0)
+    summary.ownerScopeInvalidationModes.push(from+':'+scenario)
+  }finally{
+    if(scenario!=='foreign-owner'){
+      const restored=await restore()
+      record(from+': test-only Owner/Album state restored after '+scenario,
+        restored===204)
+    }
+    await context.close()
+  }
+}
 async function testMode(browser,mode,port){
   const context=await browser.newContext({
     viewport:{width:960,height:760},locale:'zh-CN',ignoreHTTPSErrors:true,
@@ -1916,6 +2095,7 @@ async function main(){
     }
     if(gallery&&ginURL&&
       (pathname==='/__fixture/map-owner' ||
+        pathname==='/__fixture/map-handoff-invalidate' ||
         pathname.startsWith('/api/v1/media/places/baidu-jsapi/') ||
         pathname==='/api/v1/media/items' ||
         pathname.startsWith('/api/v1/media/items/') ||
@@ -2036,6 +2216,15 @@ async function main(){
       await testFullDocumentMapHandoff(browser,'isolated',port,true)
       record('both Hosts preserve real Family Album, Favorite, Date, Kind, Sort after full reload',
         summary.fullDocumentComboModes.join(',')==='inline,isolated')
+      record('both Hosts exclude real date/kind and recover only scoped Owner covers',
+        summary.fullDocumentNegativeFilterModes.join(',')==='inline,isolated')
+      for(const scenario of ['album-revision','album-missing',
+        'session-revoked','map-epoch-revoked','foreign-owner']){
+        await testInvalidatedOwnerHandoff(browser,'inline',port,scenario)
+        await testInvalidatedOwnerHandoff(browser,'isolated',port,scenario)
+      }
+      record('two SDK Hosts deny pending Owner tickets on Album/Session/Owner invalidation',
+        summary.ownerScopeInvalidationModes.length===10)
       await testRealHEICOwnerMapCover(browser,'inline',port)
       await testRealHEICOwnerMapCover(browser,'isolated',port)
       record('both SDK Hosts decoded signed real HEIC-derived JPEG photo pins',

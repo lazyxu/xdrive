@@ -162,11 +162,22 @@ export async function checkXDrivePwaAssets(
       : '当前连接不是安全上下文。请先配置浏览器信任的 HTTPS。',
   })
   // Loopback HTTP is a secure browser context, but not a deployed HTTPS origin.
-  // Do not misrepresent local testing as a trusted mobile device certificate.
-  const origin = typeof window === 'undefined' ? undefined : window.location
-  const https = origin?.protocol === 'https:'
-  const localHTTP = origin?.protocol === 'http:' &&
-    /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(origin.hostname)
+  // Restricted Safari/WebKit may deny the location object or either property
+  // getter. A denial is unknown transport, never a verified HTTPS origin.
+  let protocol: string | null = null
+  let hostname: string | null = null
+  try {
+    if (typeof window !== 'undefined') {
+      protocol = window.location.protocol
+      hostname = window.location.hostname
+    }
+  } catch {
+    protocol = null
+    hostname = null
+  }
+  const https = protocol === 'https:' && typeof hostname === 'string'
+  const localHTTP = protocol === 'http:' && typeof hostname === 'string' &&
+    /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(hostname)
   checks.push({
     id: 'transport', label: '实际访问协议',
     state: https && secure ? 'pass' : localHTTP && secure ? 'warn' : 'fail',
@@ -174,7 +185,9 @@ export async function checkXDrivePwaAssets(
       ? '当前页面使用 HTTPS。公网 DNS、证书链和更新生效仍需在实际设备与部署环境检查。'
       : localHTTP && secure
         ? '当前仅是本机 HTTP 安全上下文，不等于移动设备可访问的可信 HTTPS。'
-        : '当前页面未使用可信的 HTTPS 安全连接；请检查域名、证书和代理配置。',
+        : protocol === null
+          ? '浏览器拒绝读取访问协议或主机名，无法确认 HTTPS；请检查浏览器权限和部署环境。'
+          : '当前页面未使用可信的 HTTPS 安全连接；请检查域名、证书和代理配置。',
   })
 
   const assets = [

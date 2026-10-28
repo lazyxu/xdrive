@@ -26,6 +26,11 @@ export type XDriveServerBackupRetention = {
   retained_objects: number
   drop_only_objects: number
   unreferenced_objects: number
+  /** Older Host releases omit these. Treat missing or unsafe JS numbers as unavailable. */
+  committed_snapshots?: number
+  drop_snapshot_bytes?: number
+  drop_only_object_bytes?: number
+  unreferenced_bytes?: number
   potential_logical_bytes: number
   hashed_objects: number
   hashed_bytes: number
