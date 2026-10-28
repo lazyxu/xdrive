@@ -140,8 +140,12 @@ for (const contract of [
 assert.match(page, /const readyDownload = verifiedDownload\?\.client === client &&\s*verifiedDownload\.rootRevision === rootRevision/)
 assert.match(page, /interactionLifecycleKey=\{rootRevision \+ ':' \+ currentScopeKey\}/,
   'folder/sort changes still retire obsolete disposable thumbnails')
-assert.match(page, /pendingPage\.current\?\.abort\(\)/,
-  'directory page requests are separately cancelable')
+const cursorController = fs.readFileSync(
+  path.join(repo, 'ui/shared/src/mui/FileExplorerCursorDirectoryController.ts'), 'utf8')
+assert.match(page, /useXDriveFileExplorerCursorDirectory\(/,
+  'DSM page uses the one Owner-scoped shared cursor reader')
+assert.match(cursorController, /pendingPage\.current\?\.abort\(\)/,
+  'directory page requests remain separately cancelable by the shared Controller')
 const ownerDownloadEffect = page.split('// An explicit verified Owner download continues')[1]
   ?.split('  const navigateUp =')[0]
 assert.ok(ownerDownloadEffect, 'download lifecycle guard must remain explicit')
