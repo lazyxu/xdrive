@@ -2042,8 +2042,99 @@ class DriveController(
         )
     }
 
+    /** A single selected, server-loaded member can leave the current manual
+     * album. This never calls Node Trash or deletes original media bytes. */
+    fun removeGallerySelectedAlbumMember(item: GalleryAsset) {
+        val current = state.value
+        val album = current.gallerySelectedAlbum ?: return
+        if (current.screen != Screen.GALLERY ||
+            current.galleryPrimaryTab != GalleryPrimaryTab.COLLECTIONS ||
+            album.kind != "manual" || album.revision <= 0 ||
+            album.itemCount <= 0 || !current.galleryLoaded ||
+            current.loading || current.error != null || !current.gallerySelectionMode ||
+            current.gallerySelectedItems != listOf(item) ||
+            current.galleryItems.none { it == item } ||
+            item.node.revision <= 0 || item.node.type != "file" ||
+            item.mediaKind !in setOf("image", "video") ||
+            current.galleryMetadataWriteAttempted ||
+            current.galleryAlbumCreateAttempted ||
+            current.galleryAlbumEditAttempted ||
+            session == null) return
+        val service = api ?: return
+        mutableState.value = current.copy(galleryMetadataWriteAttempted = true)
+        request { ticket ->
+            val saved = authenticatedMutation(ticket) { token ->
+                service.galleryRemoveFromManualAlbum(token, album, item)
+            }
+            checkCurrent(ticket)
+            val latest = state.value
+            if (saved.id != album.id || saved.kind != "manual" ||
+                saved.revision != album.revision + 1 ||
+                saved.itemCount != album.itemCount - 1 ||
+                latest.screen != Screen.GALLERY ||
+                latest.gallerySelectedAlbum != album ||
+                latest.gallerySelectedItems != listOf(item) ||
+                latest.galleryItems.none { it == item })
+                throw ApiException(0, "Owner member removal ACK mismatch",
+                    ApiFailureReason.INVALID_RESPONSE)
+            // Only a verified ACK retires the selection gate. Never render a
+            // locally filtered wall as if it were a Server-confirmed range.
+            mutableState.value = latest.withoutGallerySelection().copy(
+                gallerySelectedAlbum = saved,
+                galleryAlbums = emptyList(), galleryAlbumsLoaded = false,
+                galleryItems = emptyList(), galleryLoaded = false,
+                galleryOffset = 0, galleryTotal = 0,
+                galleryTimelineSets = null, galleryJumpIndex = null,
+                galleryJumpEpoch = latest.galleryJumpEpoch + 1,
+                galleryPageIntent = "", loading = false, error = null)
+            loadGallery(initialLatest = true)
+        }
+    }
+
+    /** A failed album-scoped selection write may have committed. Its next
+     * operation must be GET album list THEN member Range, with no write replay.
+     * This also retires an obsolete album revision before another edit. */
+    private fun reconcileUncertainManualAlbumSelection() {
+        val previous = state.value
+        val selectedAlbum = previous.gallerySelectedAlbum ?: return
+        val service = api ?: return
+        if (previous.screen != Screen.GALLERY ||
+            previous.galleryPrimaryTab != GalleryPrimaryTab.COLLECTIONS ||
+            !previous.galleryMetadataWriteAttempted ||
+            previous.loading || session == null) return
+        request { ticket ->
+            val albums = authenticated(service, ticket) { service.galleryAlbums(it) }
+            checkCurrent(ticket)
+            val album = albums.singleOrNull { it.id == selectedAlbum.id &&
+                it.kind == selectedAlbum.kind } ?: throw ApiException(
+                0, "Manual album unavailable after Owner reconciliation",
+                ApiFailureReason.INVALID_RESPONSE)
+            val page = fetchGalleryPage(service, ticket, 0, true,
+                previous.gallerySearchQuery, previous.galleryMediaKind, album.id)
+            checkCurrent(ticket)
+            val latest = state.value
+            if (latest.screen != Screen.GALLERY ||
+                latest.gallerySelectedAlbum?.id != selectedAlbum.id ||
+                !latest.galleryMetadataWriteAttempted)
+                throw CancellationException()
+            mutableState.value = latest.withoutGallerySelection().copy(
+                gallerySelectedAlbum = album,
+                galleryAlbums = albums, galleryAlbumsLoaded = true,
+                galleryItems = page.items, galleryOffset = page.offset,
+                galleryTotal = page.totalCount, galleryLoaded = true,
+                galleryTimelineSets = page.timeline, galleryJumpIndex = null,
+                galleryJumpEpoch = latest.galleryJumpEpoch + 1,
+                galleryPageIntent = "", error = null)
+        }
+    }
+
     fun refreshGallery() {
         if (state.value.galleryMetadataWriteAttempted && state.value.loading) return
+        if (state.value.galleryMetadataWriteAttempted &&
+            state.value.gallerySelectedAlbum != null) {
+            reconcileUncertainManualAlbumSelection()
+            return
+        }
         if (state.value.screen != Screen.GALLERY ||
             (state.value.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS &&
                 state.value.gallerySelectedAlbum == null)) return

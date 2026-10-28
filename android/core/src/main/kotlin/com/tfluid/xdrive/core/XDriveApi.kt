@@ -322,6 +322,10 @@ interface XDriveService {
     suspend fun galleryAddToManualAlbum(
         accessToken: String, album: GalleryAlbum, items: List<GalleryAsset>,
     ): GalleryAlbum = throw ApiException(501, "Gallery album write unavailable")
+    /** One verified Owner member of a manual PhotoCollection; no file deletion. */
+    suspend fun galleryRemoveFromManualAlbum(
+        accessToken: String, album: GalleryAlbum, item: GalleryAsset,
+    ): GalleryAlbum = throw ApiException(501, "Manual album member removal unavailable")
     suspend fun galleryThumbnail(accessToken: String, nodeId: Long, revision: Long): ByteArray =
         throw ApiException(501, "Gallery thumbnail unavailable")
     /** Read-only audio: same Range/ETag/Bearer transport as native video,
@@ -1223,6 +1227,33 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
             count !in album.itemCount..(album.itemCount + items.size) ||
             folder != album.albumFolderId) invalidPayload()
         return GalleryAlbum(id, kind, name, count, revision, folder, cover)
+    }
+
+    /** Single Server DELETE of collection membership, not the original media.
+     * A missing or stale ACK is never a reason to replay the mutation. */
+    override suspend fun galleryRemoveFromManualAlbum(
+        accessToken: String, album: GalleryAlbum, item: GalleryAsset,
+    ): GalleryAlbum {
+        require(validToken(accessToken) && validGalleryAlbumId(album.id) &&
+            album.id.startsWith("manual:") && album.kind == "manual" &&
+            album.revision > 0 && album.revision < Long.MAX_VALUE &&
+            album.itemCount > 0 &&
+            item.node.id > 0 && item.node.revision > 0 &&
+            item.node.type == "file" && item.mediaKind in setOf("image", "video")) {
+            "Invalid Owner album member"
+        }
+        val saved = galleryAlbumDTO(request(
+            "media/albums", accessToken, method = "DELETE",
+            ifMatch = album.revision,
+            pathTailSegments = listOf(album.id, "items", item.node.id.toString()),
+        ))
+        // The selected item must have been a real loaded member. Go returns the
+        // old revision on no-op: never report a verified removal in that case.
+        if (saved.id != album.id || saved.kind != "manual" ||
+            saved.name != album.name || saved.albumFolderId != album.albumFolderId ||
+            saved.itemCount != album.itemCount - 1 ||
+            saved.revision != album.revision + 1) invalidPayload()
+        return saved
     }
 
     /** Authoritative 100k-safe index metadata; never generate time groups
