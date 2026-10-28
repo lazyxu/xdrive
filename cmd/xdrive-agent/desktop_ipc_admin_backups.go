@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/lazyxu/xdrive/internal/client"
@@ -14,6 +16,12 @@ import (
 type desktopIPCAdminServerBackupsController interface {
 	CloudAdminServerBackups(context.Context) (json.RawMessage, error)
 	CloudAdminServerBackupAction(context.Context, client.AdminServerBackupRequest) (json.RawMessage, error)
+}
+
+// Kept separate from the legacy Controller interface so existing Agent test
+// fakes and older Host adapters remain compatible with read-only listing.
+type desktopIPCAdminBackupSnapshotPageController interface {
+	CloudAdminServerBackupSnapshotPage(context.Context, int, int) (json.RawMessage, error)
 }
 
 var desktopBackupSnapshotID = regexp.MustCompile("^(v1|v2-default|v2-configured):xdrive-backup-[0-9]{8}T[0-9]{6}Z$")
@@ -121,4 +129,52 @@ func (h *desktopIPCHandler) cloudAdminServerBackupAction(w http.ResponseWriter, 
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeDesktopIPCJSON(w, http.StatusAccepted, out)
+}
+
+// This must reject unknown/repeated inputs before calling Server. No Host
+// paths, restore flags or arbitrary commands may be forwarded by the Agent.
+func boundedAdminBackupSnapshotPageQuery(values url.Values) (int, int, bool) {
+	if len(values) != 2 || len(values["offset"]) != 1 || len(values["limit"]) != 1 {
+		return 0, 0, false
+	}
+	for _, raw := range []string{values.Get("offset"), values.Get("limit")} {
+		if raw == "" || len(raw) > 4 {
+			return 0, 0, false
+		}
+		for _, ch := range raw {
+			if ch < '0' || ch > '9' {
+				return 0, 0, false
+			}
+		}
+	}
+	offset, e1 := strconv.Atoi(values.Get("offset"))
+	limit, e2 := strconv.Atoi(values.Get("limit"))
+	if e1 != nil || e2 != nil || offset < 0 || offset > 1000 || limit < 1 || limit > 100 {
+		return 0, 0, false
+	}
+	return offset, limit, true
+}
+
+func (h *desktopIPCHandler) cloudAdminBackupSnapshotPage(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.adminBackupProvider(w)
+	if !ok {
+		return
+	}
+	pager, ok := provider.(desktopIPCAdminBackupSnapshotPageController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_backup_page_unavailable", "Update xDrive Agent to inspect older backups")
+		return
+	}
+	offset, limit, valid := boundedAdminBackupSnapshotPageQuery(r.URL.Query())
+	if !valid {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_backup_page", "invalid bounded backup snapshot page")
+		return
+	}
+	out, err := pager.CloudAdminServerBackupSnapshotPage(r.Context(), offset, limit)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeDesktopIPCJSON(w, http.StatusOK, out)
 }

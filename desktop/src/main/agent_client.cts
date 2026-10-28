@@ -4383,6 +4383,10 @@ export class AgentIPCClient {
   cloudAdminServerBackups() {
     return this.request<unknown>('GET', '/v1/cloud/admin-backups')
   }
+  cloudAdminServerBackupSnapshotPage(query: { offset: number; limit: number }) {
+    return this.request<unknown>('GET',
+      `/v1/cloud/admin-backups/snapshots?offset=${query.offset}&limit=${query.limit}`)
+  }
   cloudAdminServerBackupAction(input: AgentAdminServerBackupRequest) {
     return this.request<unknown>('POST', '/v1/cloud/admin-backups/actions', input, 30_000)
   }
