@@ -57,6 +57,8 @@ class DriveAppTest {
     private var gpsOverviewReads = 0
     private var galleryBd09Fixture = false
     private var bd09MapReads = 0
+    private var bd09CellFixture = false
+    private var bd09CellReads = 0
     private var galleryAutoPagingFixture = false
     private var galleryManyPhotos = false
     private var galleryTimelineFixture = false
@@ -153,6 +155,19 @@ class DriveAppTest {
             return OwnerBd09MapCells(listOf(
                 OwnerBd09Cell(7, 5, 3, 61, 40, 1, 35.505, 139.706),
             ), 3)
+        }
+        override suspend fun galleryBd09CellPage(
+            accessToken: String, bounds: OwnerBd09Bounds,
+            cell: OwnerBd09Cell, offset: Int,
+            sortBy: String, sortDir: String,
+        ): GalleryPage {
+            check(accessToken == "fixture" && galleryBd09Fixture &&
+                bd09CellFixture && bounds == OwnerBd09Bounds.WORLD &&
+                cell.cellX == 7 && cell.cellY == 5 && cell.nodeId == 40L &&
+                cell.nodeRevision == 1L && offset == 0 &&
+                sortBy == "captured" && sortDir == "desc")
+            bd09CellReads++
+            return GalleryPage(listOf(galleryFixture), 1, 0)
         }
         override suspend fun galleryAlbums(accessToken: String): List<GalleryAlbum> {
             check(accessToken == "fixture")
@@ -2493,6 +2508,61 @@ class DriveAppTest {
         compose.runOnIdle { org.junit.Assert.assertEquals(1, gpsOverviewReads) }
     }
 
+
+    @Test fun nativeBd09CellOpensSameGalleryViewerAndReturnsThroughMap() {
+        galleryGpsOverviewFixture = true
+        galleryBd09Fixture = true
+        bd09CellFixture = true
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryLoaded && !controller.state.value.loading
+        }
+        val original = controller.state.value.galleryItems
+        compose.onNodeWithTag("gallery-view-options").performClick()
+        compose.onNodeWithTag("gallery-show-map").performScrollTo().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryMapLoaded && !controller.state.value.loading
+        }
+        compose.onNodeWithTag("gallery-map-open-bd09").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryBd09Cells != null && !controller.state.value.loading
+        }
+        compose.onNodeWithTag("gallery-map-bd09-cell-7-5")
+            .performScrollTo().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryMapCellSelected != null &&
+                controller.state.value.galleryLoaded && !controller.state.value.loading
+        }
+        compose.onNodeWithTag("gallery-map-cell-wall").assertExists()
+        compose.onNodeWithTag("gallery-item-40", useUnmergedTree = true).performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryViewer?.node?.id == 40L
+        }
+        compose.onNodeWithTag("gallery-photo-viewer").assertExists()
+        compose.onNodeWithTag("gallery-photo-close").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryViewer == null &&
+                controller.state.value.galleryMapCellSelected != null
+        }
+        compose.onNodeWithTag("gallery-map-cell-wall").assertExists()
+        compose.onNodeWithTag("gallery-map-cell-back").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryMapCellSelected == null &&
+                controller.state.value.galleryBd09Cells != null
+        }
+        compose.onNodeWithTag("gallery-map-bd09-cell-7-5").assertExists()
+        compose.onNodeWithTag("gallery-map-close").performClick()
+        compose.onNodeWithTag("gallery-wall").assertExists()
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(original, controller.state.value.galleryItems)
+            org.junit.Assert.assertEquals(1, gpsOverviewReads)
+            org.junit.Assert.assertEquals(1, bd09MapReads)
+            org.junit.Assert.assertEquals(1, bd09CellReads)
+            org.junit.Assert.assertNull(controller.state.value.galleryMapReturn)
+        }
+    }
 
     @Test fun nativeMapReadsRealBd09CellsAndReturnsToUnchangedGpsOverview() {
         galleryGpsOverviewFixture = true

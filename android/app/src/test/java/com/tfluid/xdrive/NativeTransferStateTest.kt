@@ -81,4 +81,53 @@ class NativeTransferStateTest {
         assertEquals("已上传",
             nativeTransferStatusLabel(empty.finish(NativeTransferStatus.COMPLETED, 200, 0)))
     }
+
+    @Test fun allBytesWithoutUploadFinalizeAckNeverBecomeACompletedTransfer() {
+        val pending = NativeTransferEntry(
+            id = 9, kind = NativeTransferKind.UPLOAD, fileName = "video.mp4",
+            totalBytes = 4_096L, startedAtMillis = 1_000L,
+        ).withConfirmedBytes(4_096L, 2_000L)
+        assertEquals(NativeTransferStatus.RUNNING, pending.status)
+        assertTrue(pending.awaitingCompletionAck())
+        assertEquals(99, pending.confirmedPercent())
+        assertTrue(pending.progressFraction()!! < 1f)
+        assertNull(pending.remainingMillis()) // finalization, not remaining bytes
+
+        val noAck = pending.finish(NativeTransferStatus.UNCONFIRMED, 2_100L)
+        assertFalse(noAck.awaitingCompletionAck())
+        assertEquals(99, noAck.confirmedPercent())
+        assertTrue(noAck.progressFraction()!! < 1f)
+        assertEquals("结果未确认", nativeTransferStatusLabel(noAck))
+
+        val completed = pending.finish(NativeTransferStatus.COMPLETED, 2_100L, 4_096L)
+        assertFalse(completed.awaitingCompletionAck())
+        assertEquals(100, completed.confirmedPercent())
+        assertEquals(1f, completed.progressFraction()!!, .0001f)
+        assertEquals("已上传", nativeTransferStatusLabel(completed))
+    }
+
+    @Test fun veryLargeFilesCannotRoundNonterminalProgressUpToOneHundred() {
+        val almostAll = NativeTransferEntry(
+            id = 10, kind = NativeTransferKind.DOWNLOAD, fileName = "large.bin",
+            totalBytes = Long.MAX_VALUE, startedAtMillis = 5_000L,
+        ).withConfirmedBytes(Long.MAX_VALUE - 1, 8_000L)
+        assertEquals(99, almostAll.confirmedPercent())
+        assertTrue(almostAll.progressFraction()!! < 1f)
+        assertFalse(almostAll.awaitingCompletionAck())
+        assertEquals(100, almostAll.finish(
+            NativeTransferStatus.COMPLETED, 9_000L, Long.MAX_VALUE,
+        ).confirmedPercent())
+    }
+
+    @Test fun emptyFileRemainsIndeterminateUntilRealCompletion() {
+        val zero = NativeTransferEntry(
+            11, NativeTransferKind.UPLOAD, "empty", 0L, startedAtMillis = 1L,
+        )
+        assertNull(zero.confirmedPercent())
+        assertNull(zero.progressFraction())
+        assertFalse(zero.awaitingCompletionAck())
+        val complete = zero.finish(NativeTransferStatus.COMPLETED, 3L, 0L)
+        assertEquals(100, complete.confirmedPercent())
+        assertNull(complete.progressFraction()) // no denominator for an indicator
+    }
 }

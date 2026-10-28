@@ -111,6 +111,17 @@ function loadNavigationHook(react) {
         },
       }
     }
+    if (request === './FileExplorerDisposableNavigationReads') {
+      const filename = path.join(repo, 'ui', 'shared', 'src', 'mui',
+        'FileExplorerDisposableNavigationReads.ts')
+      const compiled = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
+        fileName: filename,
+        compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+      }).outputText
+      const module = { exports: {} }
+      new Function('exports', 'module', compiled)(module.exports, module)
+      return module.exports
+    }
     return require(request)
   }
   new Function('exports', 'module', 'require', output)(mod.exports, mod, localRequire)

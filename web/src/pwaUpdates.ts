@@ -172,10 +172,16 @@ export function startXDrivePwaUpdateObservation(): void {
     return
   }
   publish(makeSnapshot('idle'))
-  if (typeof BroadcastChannel !== 'undefined') {
+  // A restricted WebKit realm can deny even the optional global getter.
+  // Continue real Service Worker observation without cross-window hints.
+  let Channel: typeof BroadcastChannel | null = null
+  try {
+    if (typeof BroadcastChannel !== 'undefined') Channel = BroadcastChannel
+  } catch { /* no optional cross-window hint is authoritative */ }
+  if (Channel) {
     let opened: BroadcastChannel | null = null
     try {
-      opened = new BroadcastChannel('xdrive-pwa-public-updates')
+      opened = new Channel('xdrive-pwa-public-updates')
       opened.addEventListener('message', (event: MessageEvent) => {
         if (event.data?.kind !== 'xdrive-public-update-ready' || snapshot?.phase === 'waiting') return
         // Other windows can only suggest checking. Never claim THIS registration is waiting.

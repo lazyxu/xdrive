@@ -10,11 +10,15 @@ final class LoginViewModel: ObservableObject {
     @Published private(set) var isLoading = false
     @Published private(set) var signedInName: String?
     @Published private(set) var signedInServer: String?
+    @Published private(set) var verifiedOwner: XDriveNativeOwnerRoot?
+    @Published private(set) var ownerVerificationMessage: String?
     @Published private(set) var errorMessage: String?
     @Published private(set) var noticeMessage: String?
 
     private var didRestore = false
     private var activeSession: (origin: URL, refreshToken: String)?
+    // Never persist or expose this short-lived Bearer to WKWebView.
+    private var activeAccessToken: String?
 
     init() {
         if let saved = KeychainSessionStore.load() {
@@ -41,6 +45,9 @@ final class LoginViewModel: ObservableObject {
                 return
             }
             activeSession = (origin, result.refresh_token)
+            activeAccessToken = [result.access_token, result.token].compactMap { $0 }.first { !$0.isEmpty }
+            verifiedOwner = nil
+            ownerVerificationMessage = nil
             signedInName = result.username
             signedInServer = origin.host
             // A refresh may rotate the credential. Never keep the old token.
@@ -68,6 +75,9 @@ final class LoginViewModel: ObservableObject {
         guard !isLoading else { return }
         errorMessage = nil
         noticeMessage = nil
+        verifiedOwner = nil
+        ownerVerificationMessage = nil
+        activeAccessToken = nil
         let account = username.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !account.isEmpty, !password.isEmpty else {
             errorMessage = "请填写用户名和密码。"
@@ -90,6 +100,9 @@ final class LoginViewModel: ObservableObject {
                 return
             }
             activeSession = (origin, result.refresh_token)
+            activeAccessToken = [result.access_token, result.token].compactMap { $0 }.first { !$0.isEmpty }
+            verifiedOwner = nil
+            ownerVerificationMessage = nil
             signedInName = result.username
             signedInServer = origin.host
             server = origin.absoluteString
@@ -116,11 +129,46 @@ final class LoginViewModel: ObservableObject {
         }
     }
 
+    /// Explicit read-only Owner verification. A successful native login alone
+    /// does NOT authorize a Device/Root backup or establish a sync checkpoint.
+    func verifyOwnerRoot() async {
+        guard !isLoading else { return }
+        verifiedOwner = nil
+        ownerVerificationMessage = nil
+        guard let current = activeSession,
+              let accessToken = activeAccessToken, !accessToken.isEmpty,
+              let ownerName = signedInName else {
+            ownerVerificationMessage = "当前没有有效的原生登录会话。"
+            return
+        }
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            let found = try await XDriveNativeOwnerRootVerifier(
+                origin: current.origin,
+                accessToken: accessToken,
+                expectedUsername: ownerName
+            ).verify()
+            guard activeSession?.origin == current.origin,
+                  activeSession?.refreshToken == current.refreshToken,
+                  signedInName == ownerName else {
+                ownerVerificationMessage = "会话在验证过程中发生变化，已丢弃旧结果。"
+                return
+            }
+            verifiedOwner = found
+        } catch {
+            ownerVerificationMessage = "Owner/根目录验证失败：请检查连接、服务端身份及会话状态。不会启动照片备份。"
+        }
+    }
+
     func logout() async {
         guard !isLoading else { return }
         let old = activeSession
         KeychainSessionStore.clear()
         activeSession = nil
+        activeAccessToken = nil
+        verifiedOwner = nil
+        ownerVerificationMessage = nil
         signedInName = nil
         signedInServer = nil
         errorMessage = nil

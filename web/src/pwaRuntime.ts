@@ -25,7 +25,12 @@ export function registerXDrivePwa(): void {
       // register() itself. The regular online Web app remains fully usable.
     }
   }
-  // Do not compete with the first interactive Files/Gallery paint.
-  if (document.readyState === 'complete') register()
-  else window.addEventListener('load', register, { once: true })
+  // Do not compete with the first interactive Files/Gallery paint. Restricted
+  // WebKit may deny document.readyState or this optional load listener. In
+  // either case, keep regular Web usable; do not register early without a
+  // trustworthy load signal or try to force-activate an existing worker.
+  try {
+    if (document.readyState === 'complete') register()
+    else window.addEventListener('load', register, { once: true })
+  } catch { /* optional SW registration must not block normal Web startup */ }
 }

@@ -23,8 +23,16 @@ export type XDriveWorkspaceHostServices = {
   /** Transitional Owner-scoped bridge until file/task domain ports converge. */
   readonly overviewPage?: XDriveOverviewPageProps
   readonly localBackupClient?: XDriveSynologyBackupLocalClient
-  /** Host-declared missing Files operations: shared UI displays them disabled. */
-  readonly filesUnavailableActions?: XDriveFileExplorerUnavailableActions
+  /**
+   * Explicit read-only Owner Files domain port. This transitional client
+   * remains authenticated and Owner-scoped in the Host; the shared route
+   * does not infer Files access from platform or backup CGI presence.
+   * Missing mutations are advertised as disabled, never implemented as stubs.
+   */
+  readonly ownerFilesPage?: {
+    readonly client: XDriveSynologyBackupLocalClient
+    readonly unavailableActions?: XDriveFileExplorerUnavailableActions
+  }
   readonly deviceBackups?: XDriveDeviceBackupDataSource
   readonly cloudStorage?: XDriveCloudStorageDataSource
   readonly localStorage?: XDriveLocalStorageDataSource

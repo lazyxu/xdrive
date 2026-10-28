@@ -82,8 +82,9 @@ test('S3D2C: browser exit warning now covers unsaved settings and editor dialog,
     'const hasBlockingUnloadWork = hasPendingUpload || systemDependenciesDraftDirty || hasBlockingMediaEditor',
   ))
   assert.ok(app.includes('if (!hasBlockingUnloadWork) return'))
-  assert.ok(app.includes("window.addEventListener('beforeunload', xDriveWarnBeforeLeavingUpload)"))
-  assert.ok(app.includes("window.removeEventListener('beforeunload', xDriveWarnBeforeLeavingUpload)"))
+  assert.ok(app.includes('return xDriveObservePwaBeforeUnload(window)'))
+  assert.ok(transferSafety.includes("host.addEventListener('beforeunload', xDriveWarnBeforeLeavingUpload)"))
+  assert.ok(transferSafety.includes("host.removeEventListener('beforeunload', xDriveWarnBeforeLeavingUpload)"))
   assert.ok(transferSafety.includes('event.preventDefault()'))
   assert.ok(transferSafety.includes("event.returnValue = ''"))
   assert.doesNotMatch(transferSafety, /cancelTransfer|fetch\s*\(|skipWaiting|api\/v1/)

@@ -4326,6 +4326,148 @@ class DriveControllerTest {
         c.close()
     }
 
+    @Test fun bd09CellAllGalleryAndViewerPagesStayOwnerScopedAndReturnExactOriginal() = runTest {
+        val cell = OwnerBd09Cell(7, 5, 3, 61, 990, 1, 35.505, 139.706)
+        val other = GalleryAsset(DriveNode(991L, 1, "other.jpg", "file",
+            size = 10, revision = 1), "image", hasThumbnail = true)
+        val api = object : Service() {
+            val cellOffsets = mutableListOf<Int>()
+            override suspend fun placesMapOverview(
+                accessToken: String, bounds: OwnerMapBounds, detail: Boolean,
+            ) = OwnerMapOverview(emptyList(), 0, true)
+            override suspend fun baiduNativeMapCells(
+                accessToken: String, bounds: OwnerBd09Bounds,
+            ) = OwnerBd09MapCells(listOf(cell), 3)
+            override suspend fun galleryBd09CellPage(
+                accessToken: String, bounds: OwnerBd09Bounds,
+                selected: OwnerBd09Cell, offset: Int,
+                sortBy: String, sortDir: String,
+            ): GalleryPage {
+                assertEquals("access", accessToken)
+                assertEquals(OwnerBd09Bounds.WORLD, bounds)
+                assertEquals(cell, selected)
+                assertEquals("captured", sortBy)
+                assertEquals("desc", sortDir)
+                cellOffsets += offset
+                return if (offset == 0) GalleryPage(listOf(latestGallery), 2, 0)
+                    else GalleryPage(listOf(other), 2, offset)
+            }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        val original = c.state.value.galleryItems
+        val originalOffset = c.state.value.galleryOffset
+        val originalSort = c.state.value.gallerySortDir
+        val ordinaryReads = api.galleryRequests.size
+        c.openGalleryMapOverview(); runCurrent()
+        c.openGalleryVerifiedBd09Cells(); runCurrent()
+        c.openGalleryBd09Cell(cell); runCurrent()
+        assertEquals(listOf(0), api.cellOffsets)
+        assertEquals(listOf(api.latestGallery), c.state.value.galleryItems)
+        assertEquals(2L, c.state.value.galleryTotal)
+        assertEquals(ordinaryReads, api.galleryRequests.size)
+        assertNotNull(c.state.value.galleryMapReturn)
+        c.galleryLoadNewer(); runCurrent()
+        assertEquals(listOf(0, 1), api.cellOffsets)
+        assertEquals(listOf(api.latestGallery, other), c.state.value.galleryItems)
+        assertEquals(ordinaryReads, api.galleryRequests.size)
+        c.openGalleryViewer(api.latestGallery)
+        assertEquals(api.latestGallery, c.state.value.galleryViewer)
+        c.back(); runCurrent() // Viewer -> exact map-scoped wall.
+        assertNull(c.state.value.galleryViewer)
+        assertEquals(cell, c.state.value.galleryMapCellSelected)
+        c.back(); runCurrent() // Scoped wall -> same signed BD09 grid.
+        assertNull(c.state.value.galleryMapCellSelected)
+        assertNull(c.state.value.galleryMapReturn)
+        assertTrue(c.state.value.galleryBd09Requested)
+        assertEquals(original, c.state.value.galleryItems)
+        assertEquals(originalOffset, c.state.value.galleryOffset)
+        assertEquals(originalSort, c.state.value.gallerySortDir)
+        assertEquals(ordinaryReads, api.galleryRequests.size)
+        c.back(); runCurrent() // Original Gallery, no extra Owner Range.
+        assertFalse(c.state.value.galleryMapOpen)
+        assertEquals(original, c.state.value.galleryItems)
+        assertEquals(ordinaryReads, api.galleryRequests.size)
+        c.close()
+    }
+
+    @Test fun staleBd09Cell409NeverFallsBackToUnscopedPhotoWall() = runTest {
+        val cell = OwnerBd09Cell(1, 3, 5, 71, 990, 1, 35.0, 139.0)
+        val api = object : Service() {
+            var cellReads = 0
+            override suspend fun placesMapOverview(
+                accessToken: String, bounds: OwnerMapBounds, detail: Boolean,
+            ) = OwnerMapOverview(emptyList(), 0, true)
+            override suspend fun baiduNativeMapCells(
+                accessToken: String, bounds: OwnerBd09Bounds,
+            ) = OwnerBd09MapCells(listOf(cell), 5)
+            override suspend fun galleryBd09CellPage(
+                accessToken: String, bounds: OwnerBd09Bounds,
+                selected: OwnerBd09Cell, offset: Int,
+                sortBy: String, sortDir: String,
+            ): GalleryPage {
+                cellReads++
+                throw ApiException(409, "map cell changed")
+            }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        val original = c.state.value.galleryItems
+        val ordinaryReads = api.galleryRequests.size
+        c.openGalleryMapOverview(); runCurrent()
+        c.openGalleryVerifiedBd09Cells(); runCurrent()
+        c.openGalleryBd09Cell(cell); runCurrent()
+        assertEquals(1, api.cellReads)
+        assertEquals(cell, c.state.value.galleryMapCellSelected)
+        assertFalse(c.state.value.galleryLoaded)
+        assertTrue(c.state.value.galleryItems.isEmpty())
+        assertNotNull(c.state.value.error)
+        assertEquals(ordinaryReads, api.galleryRequests.size)
+        c.closeGalleryBd09Cell(); runCurrent()
+        assertEquals(original, c.state.value.galleryItems)
+        assertNull(c.state.value.galleryMapReturn)
+        c.logout(); runCurrent()
+        assertNull(c.state.value.galleryMapCellSelected)
+        assertNull(c.state.value.galleryMapReturn)
+        c.close()
+    }
+
+    @Test fun slowNoncooperativeBd09CellGetCannotRepaintAfterBack() = runTest {
+        val cell = OwnerBd09Cell(1, 3, 5, 71, 990, 1, 35.0, 139.0)
+        val pending = CompletableDeferred<GalleryPage>()
+        val api = object : Service() {
+            override suspend fun placesMapOverview(
+                accessToken: String, bounds: OwnerMapBounds, detail: Boolean,
+            ) = OwnerMapOverview(emptyList(), 0, true)
+            override suspend fun baiduNativeMapCells(
+                accessToken: String, bounds: OwnerBd09Bounds,
+            ) = OwnerBd09MapCells(listOf(cell), 5)
+            override suspend fun galleryBd09CellPage(
+                accessToken: String, bounds: OwnerBd09Bounds,
+                selected: OwnerBd09Cell, offset: Int,
+                sortBy: String, sortDir: String,
+            ): GalleryPage = withContext(NonCancellable) { pending.await() }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        val original = c.state.value.galleryItems
+        c.openGalleryMapOverview(); runCurrent()
+        c.openGalleryVerifiedBd09Cells(); runCurrent()
+        c.openGalleryBd09Cell(cell); runCurrent()
+        assertTrue(c.state.value.loading)
+        assertTrue(c.state.value.discardableReadInFlight)
+        c.closeGalleryBd09Cell(); runCurrent()
+        assertNull(c.state.value.galleryMapCellSelected)
+        pending.complete(GalleryPage(listOf(api.latestGallery), 1, 0)); runCurrent()
+        assertEquals(original, c.state.value.galleryItems)
+        assertNull(c.state.value.galleryMapReturn)
+        assertTrue(c.state.value.galleryMapOpen)
+        c.close()
+    }
+
     @Test fun bd09CellsUseSignedOwnerApiAndReturnToOriginalGpsWithoutRefetch() = runTest {
         val overview = OwnerMapOverview(listOf(
             OwnerMapSample("gps-a", "真实 GPS", 35.5, 139.7, 35.5, 139.7,

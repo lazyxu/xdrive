@@ -38,14 +38,16 @@ test('device refresh keeps accepted same-account cards without exposing foreign 
 })
 
 test('only the existing owner-redacted shared device API is used on Web and Desktop', () => {
-  assert.ok(view.includes('void source.list().then((result)'))
+  assert.ok(view.includes('void source.list(controller.signal).then((result)'))
   assert.ok(view.includes('source.foldersPage(deviceID, 100, cursor)'))
   assert.ok(view.includes('source.runs(id, pageSize, (page - 1) * pageSize)'))
   assert.ok(web.includes('<XDriveDeviceBackupPage'))
   const frame = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/XDriveAppRouteContent.tsx'), 'utf8')
+  const sharedApp = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/XDriveApp.tsx'), 'utf8')
   const outlet = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/XDriveAppPageOutlet.tsx'), 'utf8')
   assert.ok(desktop.includes('deviceBackupPage: {') &&
-    desktop.includes('<XDriveAppRouteContent host={workspaceHost} view={view}>') &&
+    desktop.includes('<XDriveApp') && !desktop.includes('<XDriveAppRouteContent') &&
+    sharedApp.includes('<XDriveAppRouteContent') &&
     frame.includes('xDriveIsSharedHostPageRoute(view)') &&
     frame.includes('<XDriveAppPageOutlet') &&
     outlet.includes('<XDriveDeviceBackupPage key={revision} {...services.deviceBackupPage} />'),

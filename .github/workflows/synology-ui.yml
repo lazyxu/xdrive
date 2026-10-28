@@ -82,6 +82,15 @@ on:
       - 'ui/shared/src/mui/WorkspaceContent.tsx'
       - 'ui/shared/src/mui/WorkspaceCompactNavigation.tsx'
       - 'ui/shared/src/mui/SidebarNav.tsx'
+      - 'internal/client/owner_gallery_projection.go'
+      - 'internal/client/owner_gallery_projection_test.go'
+      - 'internal/localbackupipc/owner_gallery.go'
+      - 'internal/localbackupipc/owner_gallery_test.go'
+      - 'cmd/xdrive-agent/cloud_owner_gallery.go'
+      - 'cmd/xdrive-agent/cloud_owner_gallery_test.go'
+      - 'ui/shared/src/mui/SynologyOwnerGallerySource.ts'
+      - 'desktop/tests/shared-synology-gallery-source.cjs'
+      - 'web/scripts/test-synology-owner-gallery.mjs'
       - 'ui/shared/src/synology-backup-adapter.ts'
       - 'web/scripts/test-synology-request-cancel.mjs'
       - 'ui/shared/src/mui/index.tsx'
@@ -178,6 +187,15 @@ on:
       - 'ui/shared/src/mui/WorkspaceContent.tsx'
       - 'ui/shared/src/mui/WorkspaceCompactNavigation.tsx'
       - 'ui/shared/src/mui/SidebarNav.tsx'
+      - 'internal/client/owner_gallery_projection.go'
+      - 'internal/client/owner_gallery_projection_test.go'
+      - 'internal/localbackupipc/owner_gallery.go'
+      - 'internal/localbackupipc/owner_gallery_test.go'
+      - 'cmd/xdrive-agent/cloud_owner_gallery.go'
+      - 'cmd/xdrive-agent/cloud_owner_gallery_test.go'
+      - 'ui/shared/src/mui/SynologyOwnerGallerySource.ts'
+      - 'desktop/tests/shared-synology-gallery-source.cjs'
+      - 'web/scripts/test-synology-owner-gallery.mjs'
       - 'ui/shared/src/synology-backup-adapter.ts'
       - 'web/scripts/test-synology-request-cancel.mjs'
       - 'web/synology.html'
@@ -222,9 +240,9 @@ jobs:
         run: |
           test -z "$(gofmt -l internal/synologyui cmd/xd/backup_synology_ui.go)"
           go test -count=1 ./internal/synologyui
-          go test -count=1 ./internal/localbackupipc -run 'Test(Remote|OwnerQuota|OwnerFile|OwnerTextPreview|OwnerMediaRange|OwnerThumbnail)'
-          go test -count=1 ./internal/client -run 'Test(DownloadVerifiedRange|OwnerThumbnail|MediaOwnerThumbnail)'
-          go test -count=1 ./cmd/xdrive-agent -run 'TestBackupOnly(CloudQuota|CloudFileRead|OwnerMediaRange|OwnerThumbnail)'
+          go test -count=1 ./internal/localbackupipc -run 'Test(Remote|OwnerQuota|OwnerFile|OwnerTextPreview|OwnerMediaRange|OwnerThumbnail|OwnerGallery)'
+          go test -count=1 ./internal/client -run 'Test(DownloadVerifiedRange|OwnerThumbnail|MediaOwnerThumbnail|OwnerGallery)'
+          go test -count=1 ./cmd/xdrive-agent -run 'Test(BackupOnly(CloudQuota|CloudFileRead|OwnerMediaRange|OwnerThumbnail)|OwnerGallery)'
           go test -count=1 ./cmd/xd -run 'TestBackup'
       - name: Check Desktop and DSM shared backup presentation contracts
         run: node web/scripts/check-synology-desktop-backup-parity.mjs
@@ -236,6 +254,7 @@ jobs:
           node web/scripts/test-synology-request-cancel.mjs
           node web/scripts/test-synology-owner-read.mjs
           node web/scripts/test-synology-owner-quota.mjs
+          node web/scripts/test-synology-owner-gallery.mjs
           node web/scripts/test-synology-owner-files.mjs
           node web/scripts/test-synology-media-preview.mjs
           node web/scripts/test-synology-owner-download.mjs

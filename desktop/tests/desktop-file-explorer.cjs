@@ -12,6 +12,7 @@ const cloudStoragePage = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'sr
 const workspaceContent = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'WorkspaceContent.tsx'), 'utf8')
 const workspaceRoute = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'WorkspaceRoute.ts'), 'utf8')
 const explorer = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx'), 'utf8')
+const desktopCloudPort = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'desktopCloudFilesHostPort.ts'), 'utf8')
 const projection = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerProjection.ts'), 'utf8')
 const navigation = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerNavigation.ts'), 'utf8')
 const workspaceController = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerWorkspaceController.ts'), 'utf8')
@@ -70,7 +71,7 @@ test('Desktop FileExplorer provides system-style navigation, search, and persist
   assert.ok(controller.includes("replace(/\\\\/g, '/')"), 'shared path controller should accept Windows separators')
   assert.equal(explorer.includes('xDriveFileExplorerSubmitPath({'), false, 'Desktop Explorer should delegate typed-path submission to the shared workspace controller')
   assert.ok(explorer.includes('hostPort.browse.cloudRoot()'), 'Desktop typed-path submission should keep Agent root loading local')
-  assert.ok(explorer.includes('findChildDirectory: async (parentID, name) =>'), 'Desktop typed-path traversal should use exact child lookup')
+  assert.ok(explorer.includes('findChildDirectory: async (parentID, name, signal?: AbortSignal) =>'), 'Desktop typed-path traversal should use exact child lookup')
   assert.ok(explorer.includes('xDriveFileExplorerPathLookupPageOptions(name)'), 'Desktop typed-path traversal should request one indexed child')
   assert.ok(explorer.includes('hostPort.browse.cloudChildrenPage('), 'Desktop typed-path lookup must stay on the paged Agent bridge')
   assert.equal(explorer.includes('hostPort.browse.cloudChildren(parentID)'), false, 'Desktop typed-path traversal must not load all children')
@@ -122,7 +123,9 @@ test('Desktop Cloud Storage stays current-account scoped and excludes global CAS
 
 test('Desktop Cloud Storage adapter owns cloud quota and account file-distribution refresh', () => {
   assert.ok(app.includes('createXDriveCloudStorageDataSource({'), 'Desktop is missing the shared Cloud Storage data-source factory')
-  assert.ok(app.includes("getQuota: () => window.xdriveDesktop.agent.cloudQuota()"), 'Cloud Storage port should retrieve cloud quota')
+  assert.match(app,
+    /getQuota: \(signal\?: AbortSignal\) => xDriveDesktopViewportRequest\(signal,[\s\S]*?cloudQuota\(requestID\)/,
+    'Cloud Storage quota must use sender-scoped Agent GET cancellation')
   assert.ok(app.includes('getStats: storageStatsSupported'), 'Cloud Storage port should capability-gate account file distribution')
   assert.ok(app.includes('onQuota: applyCloudQuota'), 'Cloud Storage factory should update shared Cloud Files quota state')
 })
@@ -132,8 +135,9 @@ test('Desktop Files cloud lifecycle uses the shared controller without storage i
   const end = app.indexOf('const loadCloudFileOperations', start)
   assert.ok(start >= 0 && end > start, 'Desktop cloud-files controller boundaries are missing')
   const body = app.slice(start, end)
-  assert.ok(body.includes('cloudRoot()'), 'Desktop Cloud Files port should load the cloud root')
-  assert.ok(body.includes('cloudQuota()'), 'Desktop Cloud Files port should load quota for sidebar/over-quota status')
+  assert.ok(body.includes('createDesktopCloudFilesHostPort('), 'Desktop Cloud Files must use the real Host read port')
+  assert.ok(desktopCloudPort.includes('agent().cloudRoot()'), 'Desktop Host must load the genuine cloud root')
+  assert.ok(desktopCloudPort.includes('agent().cloudQuota()'), 'Desktop Host must load the current account quota')
   assert.ok(body.includes('useXDriveCloudFilesController'), 'Desktop Files must delegate lifecycle to the shared controller')
   assert.equal(body.includes('cloudStorageStats()'), false, 'Cloud Files lifecycle must not fetch storage intelligence')
 })
@@ -141,8 +145,10 @@ test('Desktop Files cloud lifecycle uses the shared controller without storage i
 
 test('Desktop Files uses shared workspace content for full-bleed Explorer layout', () => {
   const routeContent = fs.readFileSync(path.join(repoRoot, 'ui/shared/src/mui/XDriveAppRouteContent.tsx'), 'utf8')
-  assert.ok(app.includes('<XDriveAppRouteContent host={workspaceHost} view={view}>'),
-    'Desktop must mount the common route/content frame')
+  const sharedApp = fs.readFileSync(path.join(repoRoot, 'ui/shared/src/mui/XDriveApp.tsx'), 'utf8')
+  assert.ok(app.includes('<XDriveApp') && sharedApp.includes('<XDriveAppRouteContent') &&
+    !app.includes('<XDriveAppRouteContent'),
+    'Desktop must mount the one route/content frame inside the canonical shared application')
   assert.ok(routeContent.includes('<XDriveWorkspaceContent') &&
     routeContent.includes('presentation={presentation}') &&
     routeContent.includes('xDriveWorkspacePresentation(view)'),
@@ -265,7 +271,7 @@ test('Desktop FileExplorer uses shared range-backed directory sorting', () => {
   assert.ok(app.includes('XDRIVE_FILE_EXPLORER_DEFAULT_SORT'), 'Desktop cloud controller must use the shared default sort')
   assert.ok(controller.includes('XDRIVE_FILE_EXPLORER_PAGE_SIZE = 200'), 'Desktop page-size contract must remain in the shared controller')
   assert.ok(app.includes('useXDriveCloudFilesController<AgentCloudNode, AgentCloudQuota, XDriveFileExplorerSort>'), 'Desktop directory lifecycle must use the shared Cloud Files controller')
-  assert.ok(app.includes('cloudChildrenRange('), 'Desktop Cloud Files port must expose the range transport')
+  assert.ok(desktopCloudPort.includes('agent().cloudChildrenRange('), 'Desktop Host must expose the cancellable range transport')
   assert.ok(app.includes('virtualDirectory: cloudVirtualDirectory'), 'Desktop must pass sparse directory state into the Explorer adapter')
   assert.equal(app.includes('xDriveFileExplorerPageRequestOptions('), false, 'Desktop App must not construct directory page requests locally')
   assert.equal(app.includes('xDriveFileExplorerCanLoadMore('), false, 'Desktop App must not own directory pagination eligibility')

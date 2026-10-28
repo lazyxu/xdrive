@@ -35,10 +35,13 @@ export function XDriveAppRouteContent({
   children?: ReactNode
 }) {
   const presentation = xDriveWorkspacePresentation(view)
-  // Only Desktop's existing Files controller remains outside the outlet.
-  // Never use this exception to create another Host-specific page registry.
+  // Only the existing Desktop Files child is transitional. Any Host without
+  // that legacy controller uses the shared outlet, where a missing authorized
+  // Owner Files port produces an explicit unavailable state (not a blank page).
+  // No platform-specific Files route or second page registry is needed.
+  const hasLegacyFilesContent = view === 'files' && children != null && children !== false
   const usesSharedOutlet = xDriveIsSharedHostPageRoute(view) ||
-    (view === 'files' && host.platform === 'synology')
+    (view === 'files' && !hasLegacyFilesContent)
 
   return (
     <XDriveWorkspaceContent
@@ -49,6 +52,12 @@ export function XDriveAppRouteContent({
       {children}
       {usesSharedOutlet ? (
         <XDriveAppPageOutlet
+          // A React page instance belongs to one Host, route, role and refresh.
+          // In particular, Mine/Global Tasks reuse a component type but must
+          // never retain each other's async state; same-route DSM refresh must
+          // remount and dispose old page reads before the successor loads.
+          // Only this disposable UI subtree remounts: Agent/Server jobs persist.
+          key={`${host.platform}:${view}:${host.adminRoleVerified === true ? 'admin' : 'user'}:${revision}`}
           host={host}
           view={view}
           revision={revision}

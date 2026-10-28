@@ -2,6 +2,7 @@ package com.tfluid.xdrive
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -41,8 +42,8 @@ internal fun ColumnScope.GalleryMapOverview(
             ) { Text("返回图库") }
         }
         Text(if (state.galleryBd09Requested)
-            "BD-09LL 数据来自当前 Owner 的已验证 8×8 网格；这里不是百度地图底图，地点照片联动仍需原生 SDK。"
-            else "仅显示当前账户的真实 WGS84 GPS 代表点；百度地图底图和地点照片联动尚未接入。",
+            "BD-09LL 网格来自当前 Owner 的真实数据；点击网格进入照片墙和 Viewer。这里尚非百度原生底图，地图相机仍待 SDK。"
+            else "显示当前账户真实 WGS84 GPS 概览；可切换已验证的 BD-09 网格查看照片。百度原生底图尚未接入。",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.testTag("gallery-map-unavailable-basemap"))
@@ -73,7 +74,7 @@ internal fun ColumnScope.GalleryMapOverview(
                 else "重新读取 GPS 概览") }
         }
         state.galleryBd09Requested -> when {
-            !state.loading && bd09Cells != null -> GalleryVerifiedBd09Cells(bd09Cells)
+            !state.loading && bd09Cells != null -> GalleryVerifiedBd09Cells(bd09Cells, controller)
             else -> Box(Modifier.weight(1f).fillMaxWidth()
                 .testTag("gallery-map-bd09-loading"), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
@@ -144,7 +145,9 @@ private fun ColumnScope.GalleryGpsSamples(overview: OwnerMapOverview) {
  * A real Baidu basemap/cluster SDK must replace this explicitly labeled
  * visualization when correctly configured and validated. */
 @Composable
-private fun ColumnScope.GalleryVerifiedBd09Cells(result: OwnerBd09MapCells) {
+private fun ColumnScope.GalleryVerifiedBd09Cells(
+    result: OwnerBd09MapCells, controller: DriveController,
+) {
     LazyColumn(
         modifier = Modifier.fillMaxWidth().weight(1f)
             .testTag("gallery-map-bd09-cells"),
@@ -169,7 +172,8 @@ private fun ColumnScope.GalleryVerifiedBd09Cells(result: OwnerBd09MapCells) {
             Surface(color = MaterialTheme.colorScheme.surfaceContainerLow,
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth()
-                    .testTag("gallery-map-bd09-cell-${cell.cellX}-${cell.cellY}")) {
+                    .testTag("gallery-map-bd09-cell-${cell.cellX}-${cell.cellY}")
+                    .clickable { controller.openGalleryBd09Cell(cell) }) {
                 Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Row(Modifier.fillMaxWidth(),

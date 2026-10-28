@@ -31,11 +31,11 @@ test('shared FileExplorer controller owns typed-path parsing and traversal rules
     'limit: 1',
     "sort: 'name' as const",
     "order: 'asc' as const",
-    'findChildDirectory(parentID, part)',
+    'findChildDirectory(parentID, part, signal)',
     "next.type !== 'dir' || next.name !== part",
     '找不到文件夹：',
     'xDriveFileExplorerSubmitPath',
-    'const root = await loadRoot()',
+    'const root = await loadRoot(signal)',
     "currentCrumbs[0]?.name || '我的文件'",
     'await navigate(nextCrumbs)',
   ]) {
@@ -52,10 +52,10 @@ test('shared FileExplorer controller owns typed-path parsing and traversal rules
     assert.equal(source.includes('xDriveResolveFileExplorerPath({'), false, `${label} must not orchestrate typed-path traversal locally`)
     assert.equal(source.includes("const rootName = crumbs[0]?.name || '我的文件'"), false, `${label} must not duplicate root-name fallback`)
   }
-  assert.ok(web.includes('loadRoot: () => api.root()'), 'Web must keep REST root loading local')
-  assert.ok(web.includes('findChildDirectory: async (parentID, name) =>'), 'Web must keep indexed REST child lookup local')
+  assert.ok(web.includes('loadRoot: (signal?: AbortSignal) => api.root(signal)'), 'Web must keep REST root loading local')
+  assert.ok(web.includes('findChildDirectory: async (parentID, name, signal?: AbortSignal) =>'), 'Web must keep indexed REST child lookup local')
   assert.ok(desktop.includes('hostPort.browse.cloudRoot()'), 'Desktop must keep Agent root loading local')
-  assert.ok(desktop.includes('findChildDirectory: async (parentID, name) =>'), 'Desktop must keep indexed Agent child lookup local')
+  assert.ok(desktop.includes('findChildDirectory: async (parentID, name, signal?: AbortSignal) =>'), 'Desktop must keep indexed Agent child lookup local')
 })
 
 test('shared FileExplorer controller owns search normalization and validation decisions', () => {
@@ -163,7 +163,7 @@ test('Web and Desktop delegate typed-path submission while keeping transport ada
     assert.equal(source.includes("parts[0] === rootName"), false, `${label} must not duplicate root-prefix handling`)
     assert.equal(source.includes('找不到文件夹：'), false, `${label} must not duplicate missing-folder semantics`)
   }
-  assert.ok(web.includes('loadRoot: () => api.root()'), 'Web must keep REST root loading local')
+  assert.ok(web.includes('loadRoot: (signal?: AbortSignal) => api.root(signal)'), 'Web must keep REST root loading local')
   assert.ok(web.includes('xDriveFileExplorerPathLookupPageOptions(name)'), 'Web typed-path traversal must use one exact-name page lookup')
   assert.ok(desktop.includes('hostPort.browse.cloudRoot()'), 'Desktop must keep Agent root loading local')
   assert.ok(desktop.includes('xDriveFileExplorerPathLookupPageOptions(name)'), 'Desktop typed-path traversal must use one exact-name page lookup')
