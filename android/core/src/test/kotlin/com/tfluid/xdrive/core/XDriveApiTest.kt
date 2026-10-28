@@ -602,8 +602,11 @@ class XDriveApiTest {
             assertEquals("DELETE", req.method)
             assertEquals("Bearer owner-secret", req.getHeader("Authorization"))
             assertEquals("\"7\"", req.getHeader("If-Match"))
+            // '?' stays in the encoded album identity, never becomes a
+            // query; '=' may legally remain raw or be percent-encoded.
             assertTrue(req.requestUrl!!.encodedPath.contains(
-                "/media/albums/manual:trip%2F2026%3Fkey=photo/items/40"))
+                "/media/albums/manual:trip%2F2026%3Fkey"))
+            assertTrue(req.requestUrl!!.encodedPath.endsWith("/items/40"))
             assertNull(req.requestUrl!!.query)
             assertEquals(0L, req.body.size)
             server.enqueue(MockResponse().setResponseCode(200).setBody(
