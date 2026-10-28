@@ -37,7 +37,7 @@ test('Cloud Storage adopts only current Owner quota, even after a non-cooperativ
   const newestQuota = { quota_bytes: 999, physical_used_bytes: 14 }
   const accepted = []
   const durables = ['upload','download','backup','sync'].map(() => new AbortController())
-  let called = 0
+  let called = 0, statsCalled = 0
   const signals = []
   const source = createXDriveCloudStorageDataSource({
     getQuota: signal => {
@@ -46,7 +46,7 @@ test('Cloud Storage adopts only current Owner quota, even after a non-cooperativ
     },
     getStats: signal => {
       signals.push(signal)
-      return called === 1 ? oldStats.promise : Promise.resolve({ scope: 'self' })
+      return ++statsCalled === 1 ? oldStats.promise : Promise.resolve({ scope: 'self' })
     },
   }, { onQuota: quota => accepted.push(quota), tolerateStatsError: true })
   const first = new AbortController(), second = new AbortController()
