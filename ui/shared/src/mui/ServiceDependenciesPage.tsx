@@ -66,7 +66,7 @@ import { XDriveCaddyPreflightPanel, type XDriveCaddyPreflightPort } from './Cadd
 import { XDriveCaddyDetailV1 } from './CaddyDetailV1'
 
 export type XDriveServiceDependenciesPort = XDrivePostgresPoolPort & XDriveMediaWorkerPort & XDrivePhotoHostPort & XDriveCaddyHTTPSPort & XDriveCaddyAliDNSPort & XDriveCaddyPreflightPort & {
-  load: () => Promise<XDriveServiceDependenciesSnapshot>
+  load: (signal?: AbortSignal) => Promise<XDriveServiceDependenciesSnapshot>
   loadSourceWorkerConfig?: () => Promise<import('../service-dependencies').XDriveSourceWorkerConfig>
   saveSourceWorkerConfig?: (input: import('../service-dependencies').XDriveSourceWorkerUpdate) => Promise<import('../service-dependencies').XDriveSourceWorkerConfig>
   loadSourceWorkerRevisions?: () => Promise<import('../service-dependencies').XDriveSourceWorkerRevisionPage>
@@ -970,6 +970,9 @@ export function XDriveServiceDependenciesPage({
 
   useEffect(() => {
     let active = true
+    // Only this replaceable inventory GET is owned by the page lifecycle;
+    // config saves, rollbacks, Caddy deploy and their follow-up reads persist.
+    const controller = new AbortController()
     const sourceChanged = snapshotSourceRef.current !== source
     snapshotSourceRef.current = source
     if (sourceChanged) {
@@ -985,18 +988,18 @@ export function XDriveServiceDependenciesPage({
       setRefreshing(true)
     }
     setError('')
-    void source.load().then((next) => {
-      if (!active) return
+    void source.load(controller.signal).then((next) => {
+      if (!active || controller.signal.aborted) return
       cachedSnapshotRef.current = next
       setSnapshot(next)
     }).catch((err: unknown) => {
-      if (active) setError(xDriveCoreDependencyErrorMessage(err, 'system', 'refresh'))
+      if (active && !controller.signal.aborted) setError(xDriveCoreDependencyErrorMessage(err, 'system', 'refresh'))
     }).finally(() => {
-      if (!active) return
+      if (!active || controller.signal.aborted) return
       setLoading(false)
       setRefreshing(false)
     })
-    return () => { active = false }
+    return () => { active = false; controller.abort() }
   }, [source, refreshID])
 
   const revealBaiduAK = async () => {
