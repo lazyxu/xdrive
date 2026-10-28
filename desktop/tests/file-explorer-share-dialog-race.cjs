@@ -102,6 +102,9 @@ function loadShareDialog(react) {
     if (request === '@mui/material') {
       return { Box: 'Box', Dialog: 'Dialog', LinearProgress: 'LinearProgress' }
     }
+    if (request === './NativeShareCapability') {
+      return { xDriveCanUseNativeShare: () => false }
+    }
     if (request === './ActionButton') return { XDriveActionButton: 'XDriveActionButton' }
     if (request === './DialogActions') return { XDriveDialogActions: 'XDriveDialogActions' }
     if (request === './DialogContent') return { XDriveDialogContent: 'XDriveDialogContent' }
