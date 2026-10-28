@@ -1428,6 +1428,10 @@ export function XDriveMediaGalleryPage({
       return
     }
     const request = ++requestID.current
+    firstContentRangeAbort.current?.abort()
+    const finishContentTransition = collectionTargetRef.current
+      ? xDriveBeginForegroundContentTransition(['gallery', 'map'])
+      : () => undefined
     const commitIndex = () => {
       collectionTargetRef.current = null
       setCollectionTarget(null)
@@ -1463,6 +1467,7 @@ export function XDriveMediaGalleryPage({
           ? current : { owner: preferenceScope, dataSource: source, state: 'error' })
       reportError(loadError)
     } finally {
+      finishContentTransition()
       if (request === requestID.current) setLoading(false)
     }
   }, [preferenceScope, reportError, source, virtualCollection.reset])
@@ -1588,6 +1593,10 @@ export function XDriveMediaGalleryPage({
       return
     }
     const request = ++requestID.current
+    firstContentRangeAbort.current?.abort()
+    const finishContentTransition = collectionTargetRef.current
+      ? xDriveBeginForegroundContentTransition(['gallery', 'map'])
+      : () => undefined
     cleanupMoreInFlightRef.current = false
     setCleanupMoreLoading(null)
     collectionTargetRef.current = null
@@ -1614,6 +1623,7 @@ export function XDriveMediaGalleryPage({
           ? current : { owner: preferenceScope, dataSource: source, state: 'error' })
       reportError(loadError)
     } finally {
+      finishContentTransition()
       if (request === requestID.current) setLoading(false)
     }
   }, [preferenceScope, reportError, source, virtualCollection.reset])
@@ -1859,6 +1869,8 @@ export function XDriveMediaGalleryPage({
       return
     }
     const request = ++requestID.current
+    firstContentRangeAbort.current?.abort()
+    const finishContentTransition = xDriveBeginForegroundContentTransition(['gallery', 'map'])
     setLoading(true)
     setError('')
     try {
@@ -1897,6 +1909,7 @@ export function XDriveMediaGalleryPage({
       if (request !== requestID.current) return
       reportError(loadError)
     } finally {
+      finishContentTransition()
       if (request === requestID.current) setLoading(false)
     }
   }, [onSectionRouteChange, preferenceScope, reportError, source, virtualCollection.reset])
