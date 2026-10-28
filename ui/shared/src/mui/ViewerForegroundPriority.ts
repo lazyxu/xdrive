@@ -13,9 +13,36 @@ const owners = new Map<object, number>()
 type DisposableObserver = { notify: XDriveViewerForegroundObserver; page: string | null }
 const observers = new Set<DisposableObserver>()
 let foregroundPage: string | null = null
+// A content switch within one route (e.g. Files folder A -> B or Album A ->
+// B) also yields disposable reads. The old mounted page must be allowed to
+// resume if the new first-page Range fails. Tokens are renderer-local; never
+// persist paths, Owner IDs, coordinates, or credentials.
+let pageGeneration = 0
+// One latest-wins content admission per page, not an accumulating counter.
+// A superseded loader might never settle despite AbortSignal: its stale
+// finally MUST NOT keep the latest accepted folder or album paused.
+const contentTransitions = new Map<string, { token: object; generation: number }>()
+
+function contentTransitionPending(page: string | null): boolean {
+  return Boolean(page &&
+    contentTransitions.get(page)?.generation === pageGeneration)
+}
 
 export function xDriveCurrentForegroundPage(): string | null {
   return foregroundPage
+}
+
+/** Whether this renderer's visible content is waiting for a newer, accepted
+ * first Range. This is only a local presentation state: it carries no Owner,
+ * media identity, path, token or permission to cancel durable work.
+ */
+export function xDriveForegroundContentTransitionPending(
+  pageKinds: string | readonly string[],
+): boolean {
+  const page = foregroundPage
+  const kinds = typeof pageKinds === 'string' ? [pageKinds] : pageKinds
+  return Boolean(page && kinds.some(kind => kind && page.endsWith(':' + kind)) &&
+    contentTransitionPending(page))
 }
 
 /** An accepted page transition: old transient reads yield before new paint.
@@ -26,6 +53,10 @@ export function xDriveEnterForegroundPage(page: string | null): void {
   if (foregroundPage === next) return
   const firstPage = foregroundPage === null && next !== null
   foregroundPage = next
+  pageGeneration += 1
+  // A finished/rejected old content transaction cannot resume or suspend a
+  // later route even when Back eventually returns to the same page name.
+  contentTransitions.clear()
   for (const entry of [...observers]) {
     // Initial React layout effects may subscribe child providers before the
     // root announces its first route. Attach them to that first real page.
@@ -36,8 +67,47 @@ export function xDriveEnterForegroundPage(page: string | null): void {
 
 function notifyDisposablePause(entry: DisposableObserver) {
   const obsoletePage = entry.page !== null && entry.page !== foregroundPage
-  try { entry.notify(xDriveViewerForegroundActive() || obsoletePage) }
+  try {
+    entry.notify(xDriveViewerForegroundActive() || obsoletePage ||
+      (entry.page === foregroundPage && contentTransitionPending(entry.page)))
+  }
   catch { /* readers cannot block new page route commits */ }
+}
+
+/**
+ * A new *content* scope within an existing page may be pending even though
+ * the route ID has not changed. Yield only disposable reads of that page
+ * until its new first authoritative Range commits or fails.
+ *
+ * Call only after the navigation is admitted (not from a dirty-form guard),
+ * and ALWAYS release in finally. Rapid content navigations use latest-wins
+ * ownership, so even a hung old transport cannot keep the successor paused.
+ * Allowed page kinds are explicit so an offscreen Files poll cannot pause
+ * the user's visible Gallery/Viewer.
+ */
+export function xDriveBeginForegroundContentTransition(
+  pageKinds: string | readonly string[],
+): () => void {
+  const page = foregroundPage
+  const kinds = typeof pageKinds === 'string' ? [pageKinds] : pageKinds
+  if (!page || !kinds.some(kind => kind && page.endsWith(':' + kind))) {
+    return () => undefined
+  }
+  const token = {}
+  const generation = pageGeneration
+  contentTransitions.set(page, { token, generation })
+  publishViewerForeground(true)
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    const owned = contentTransitions.get(page)
+    if (!owned || owned.token !== token) return
+    contentTransitions.delete(page)
+    if (page === foregroundPage && generation === pageGeneration) {
+      publishViewerForeground(false)
+    }
+  }
 }
 
 export function xDriveViewerForegroundActive(): boolean {
