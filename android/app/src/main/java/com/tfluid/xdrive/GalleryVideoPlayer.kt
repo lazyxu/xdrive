@@ -115,16 +115,25 @@ internal fun GalleryVideoPlayer(
     }
     var failed by remember(video.node.id, video.node.revision) { mutableStateOf(false) }
     val player = remember(context, source) {
-        if (source == null) null else ExoPlayer.Builder(context).build().apply {
-            val dataSource = OkHttpDataSource.Factory(source.client)
-            val media = ProgressiveMediaSource.Factory(dataSource)
-                .createMediaSource(MediaItem.fromUri(source.url))
-            setMediaSource(media)
-            prepare()
-            playWhenReady = true
-        }
+        if (source == null) null else createPreparedMediaResource(
+            build = { ExoPlayer.Builder(context).build() },
+            prepare = { owned ->
+                val dataSource = OkHttpDataSource.Factory(source.client)
+                val media = ProgressiveMediaSource.Factory(dataSource)
+                    .createMediaSource(MediaItem.fromUri(source.url))
+                owned.setMediaSource(media)
+                owned.prepare()
+                owned.playWhenReady = true
+            },
+            release = { it.release() },
+        )
     }
     DisposableEffect(player, source) {
+        // If Android rejected media setup, the helper already released the
+        // partially constructed player. Close this verified Owner stream now,
+        // rather than keeping an unusable transport lease until Viewer exit.
+        if (source != null && player == null)
+            controller.closeGalleryVideoPlayback(source)
         val listener = object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
                 failed = true // Do not display raw URL, host, credentials or body.
@@ -145,7 +154,7 @@ internal fun GalleryVideoPlayer(
         onDispose {
             player?.removeListener(listener)
             player?.release()
-            if (source != null) controller.closeGalleryVideoPlayback(source)
+            if (source != null && player != null) controller.closeGalleryVideoPlayback(source)
         }
     }
     val canGoOlder = controller.galleryViewerCanShift(-1)
