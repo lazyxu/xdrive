@@ -23,6 +23,7 @@ import {
 import type {
   XDrivePlacesDrawerReturn, XDrivePlacesDrawerPresentation,
 } from '../media-gallery-places-photo-drawer'
+import { xDriveAppendPlacesDrawerPage } from '../media-gallery-places-photo-paging'
 import { XDriveMediaGalleryPlacesPhotoDrawer } from './MediaGalleryPlacesPhotoDrawer'
 import { xDriveValidBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
 import {
@@ -187,6 +188,8 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     items: MediaItem[]
     total: number
     expanded: boolean
+    loadingMore: boolean
+    pageError: boolean
     returnPresentation?: XDrivePlacesDrawerPresentation
   }
   const [drawer,setDrawer] = useState<DrawerView | null>(null)
@@ -225,7 +228,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     const key=approved.key
     setDrawer({selection:cell,key,phase:'loading',items:[],
       total:cell.photo_count,expanded:presentation?.expanded ?? true,
-      returnPresentation:presentation})
+      loadingMore:false,pageError:false,returnPresentation:presentation})
     void preview(cell,XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT,0,{
       by:scopeCopy.filters.sort_by ?? 'captured',
       dir:scopeCopy.filters.sort_dir ?? 'desc',
@@ -262,6 +265,51 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         approved.key!==filterRef.current.key) return
     opened.current(state.selection,approved.scope)
     closeDrawer()
+  }
+  const loadDrawerMore = () => {
+    const state=activeDrawer, approved=acceptedScope.current
+    if (!state || state.phase!=='ready' || state.loadingMore ||
+        state.items.length>=state.total || drawerFetch.current ||
+        !approved || approved.key!==filterRef.current.key ||
+        !hasAcceptedCell(state.selection)) return
+    const preview=previewPort.current
+    const pageScope=xDriveCopyBaiduMapPhotoScope(approved.scope)
+    if (!preview || !pageScope) return
+    const selection={...state.selection,bounds:{...state.selection.bounds}}
+    const key=approved.key
+    const offset=state.items.length
+    const controller=new AbortController()
+    drawerFetch.current=controller
+    setDrawer(current => current && current.key===key &&
+      xDriveBaiduCellReturnMatchesFreshSelection(current.selection,selection)
+      ? {...current,loadingMore:true,pageError:false} : current)
+    void preview(selection,XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT,offset,{
+      by:pageScope.filters.sort_by ?? 'captured',
+      dir:pageScope.filters.sort_dir ?? 'desc',
+      filters:pageScope.filters,albumKey:pageScope.albumKey,
+    },controller.signal).then(range => {
+      if (controller.signal.aborted || drawerFetch.current!==controller ||
+          acceptedScope.current?.key !== key ||
+          filterRef.current.key!==key || !hasAcceptedCell(selection)) return
+      setDrawer(current => {
+        if (!current || current.key!==key || current.phase!=='ready' ||
+            current.items.length!==offset ||
+            !xDriveBaiduCellReturnMatchesFreshSelection(current.selection,selection))
+          return current
+        const merged=xDriveAppendPlacesDrawerPage(selection,current.items,current.total,range)
+        return {...current,loadingMore:false,pageError:!merged,
+          items:merged ?? current.items}
+      })
+    }).catch(() => {
+      if (controller.signal.aborted || drawerFetch.current!==controller ||
+          acceptedScope.current?.key !== key || filterRef.current.key!==key ||
+          !hasAcceptedCell(selection)) return
+      setDrawer(current => current && current.key===key &&
+        xDriveBaiduCellReturnMatchesFreshSelection(current.selection,selection)
+        ? {...current,loadingMore:false,pageError:true} : current)
+    }).finally(() => {
+      if(drawerFetch.current===controller)drawerFetch.current=null
+    })
   }
   const openDrawerPhoto = (item: MediaItem,
     presentation: XDrivePlacesDrawerPresentation) => {
@@ -962,6 +1010,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
           <XDriveMediaGalleryPlacesPhotoDrawer
             items={activeDrawer.items} total={activeDrawer.total}
             phase={activeDrawer.phase} expanded={activeDrawer.expanded}
+            loadingMore={activeDrawer.loadingMore} pageError={activeDrawer.pageError}
             initialPresentation={activeDrawer.returnPresentation}
             loadThumbnail={loadThumbnail}
             onClose={() => { pendingResizeDrawer.current=null;closeDrawer() }}
@@ -969,6 +1018,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
               ? {...current,expanded} : current)}
             onRetry={() => { closeDrawer();refreshFilteredCells.current?.() }}
             onOpenAll={openDrawerAll} onOpenPhoto={openDrawerPhoto}
+            onLoadMore={loadDrawerMore}
             onOpenNearby={acceptedViewport && activeDrawer.phase==='ready' &&
               openViewport.current && trustedSummary && trustedSummary.total_count>0
               ? openVerifiedCameraNearby : undefined}

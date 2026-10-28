@@ -1,0 +1,46 @@
+name: Places Owner Cell Album Bounded Paging
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/places-cell-album-paging.yml'
+      - 'ui/shared/src/media-gallery-places-photo-paging.ts'
+      - 'ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx'
+      - 'ui/shared/src/mui/MediaGalleryPlacesPhotoDrawer.tsx'
+      - 'desktop/tests/gallery-places-photo-paging.cjs'
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/places-cell-album-paging.yml'
+      - 'ui/shared/src/media-gallery-places-photo-paging.ts'
+      - 'ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx'
+      - 'ui/shared/src/mui/MediaGalleryPlacesPhotoDrawer.tsx'
+      - 'desktop/tests/gallery-places-photo-paging.cjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: places-cell-album-paging-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  owner-cell-pages:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Desktop shared TypeScript and MUI dependencies
+        working-directory: desktop
+        run: npm install --no-audit --no-fund
+      - name: Execute source-backed 142 photo/Live grouping/page refusal cases
+        run: node --test desktop/tests/gallery-places-photo-paging.cjs desktop/tests/gallery-places-ios27-photo-drawer.cjs
+      - name: Typecheck shared Parent for Desktop and DSM
+        working-directory: desktop
+        run: npm run typecheck

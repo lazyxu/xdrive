@@ -11,17 +11,20 @@ import { XDriveMediaGalleryCoverThumbnail } from './MediaGalleryCoverThumbnail'
 
 /** Trusted Parent-only photo sheet; no Baidu SDK data or media URLs cross the Child. */
 export function XDriveMediaGalleryPlacesPhotoDrawer({
-  items, total, phase, expanded, loadThumbnail, onExpand,
-  onClose, onRetry, onOpenPhoto, onOpenAll, onOpenNearby, initialPresentation,
+  items, total, phase, expanded, loadingMore, pageError, loadThumbnail, onExpand,
+  onClose, onRetry, onLoadMore, onOpenPhoto, onOpenAll, onOpenNearby, initialPresentation,
 }: {
   items: MediaItem[]
   total: number
   phase: 'loading' | 'ready' | 'error'
   expanded: boolean
+  loadingMore: boolean
+  pageError: boolean
   loadThumbnail: MediaThumbnailLoader
   onExpand: (expanded: boolean) => void
   onClose: () => void
   onRetry: () => void
+  onLoadMore: () => void
   onOpenPhoto: (item: MediaItem, presentation: XDrivePlacesDrawerPresentation) => void
   onOpenAll: () => void
   /** Same signed Owner camera viewport as the map's original camera wall. */
@@ -170,6 +173,11 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
       ) : (
         <>
           <Box ref={listRef} data-xdrive-places-photo-drawer-items
+            onScroll={event => {
+              const list=event.currentTarget
+              if (expanded && !loadingMore && !pageError && items.length < total &&
+                  list.scrollHeight-list.scrollTop-list.clientHeight < 180) onLoadMore()
+            }}
             sx={{px:1.25,py:0.75,overflowX:expanded?'hidden':'auto',
               overflowY:expanded?'auto':'hidden',minHeight:0,minWidth:0,
               flex:expanded?'1 1 auto':'0 1 auto',
@@ -264,10 +272,18 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
             spacing={1} sx={{px:1.25,pb:1,pt:0.25,flexShrink:0,flexWrap:'wrap',rowGap:0.25}}>
             <Typography variant="caption" color="text.secondary">
               {items.length < total
-                ? `预览前 ${items.length.toLocaleString('zh-CN')} 张`
+                ? `已显示 ${items.length.toLocaleString('zh-CN')} / ${total.toLocaleString('zh-CN')} 张`
                 : '此地点全部照片'}
             </Typography>
             <Stack direction="row" alignItems="center" spacing={0.25}>
+              {items.length < total ? (
+                <Button data-xdrive-places-photo-drawer-load-more
+                  variant="outlined" onClick={onLoadMore} disabled={loadingMore}
+                  aria-label="继续加载此地点的照片"
+                  sx={{minHeight:44,textTransform:'none'}}>
+                  {loadingMore ? '正在加载…' : '加载更多'}
+                </Button>
+              ) : null}
               {onOpenNearby ? (
                 <Button data-xdrive-places-photo-drawer-nearby
                   variant="text" onClick={onOpenNearby}
@@ -283,6 +299,13 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
               </Button>
             </Stack>
           </Stack>
+          {pageError && items.length < total ? (
+            <Typography variant="caption" role="alert"
+              data-xdrive-places-photo-drawer-page-error
+              sx={{px:1.25,pb:1,color:'error.main'}}>
+              后续照片读取失败，请重试。已验证的照片仍可查看。
+            </Typography>
+          ) : null}
         </>
       )}
     </Box>
