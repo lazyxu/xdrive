@@ -119,7 +119,7 @@ import PwaOfflineDirectoryBrowser from './PwaOfflineDirectoryBrowser'
 import { xDrivePwaCaptureAlbumSummaries, xDrivePwaCaptureVisitedDirectory, xDrivePwaClearOfflineMetadata, xDrivePwaOfflineScopeKey, xDrivePwaReadOfflineDirectories, xDrivePwaObserveOfflinePurge } from './pwaOfflineDirectory'
 import type { XDrivePwaOfflineOwner } from './pwaOfflineDirectory'
 import XDriveManualConnectionDialog from './ManualConnectionDialog'
-import { xDriveHasPendingBrowserDownload, xDriveHasPendingBrowserUpload, xDriveWarnBeforeLeavingUpload } from './pwaTransferSafety'
+import { xDriveHasPendingBrowserDownload, xDriveHasPendingBrowserUpload, xDriveObservePwaBeforeUnload } from './pwaTransferSafety'
 import { xDriveClearPwaWindowActivity, xDriveReportPwaWindowActivity } from './pwaWorkloadSafety'
 import { xDriveCanResumeBrowserUpload, xDrivePwaResumeFileError } from './pwaUploadResume'
 import { webTransferStore } from './transfers'
@@ -1585,8 +1585,7 @@ function FileManager({
   const hasBlockingUnloadWork = hasPendingUpload || systemDependenciesDraftDirty || hasBlockingMediaEditor
   useEffect(() => {
     if (!hasBlockingUnloadWork) return
-    window.addEventListener('beforeunload', xDriveWarnBeforeLeavingUpload)
-    return () => window.removeEventListener('beforeunload', xDriveWarnBeforeLeavingUpload)
+    return xDriveObservePwaBeforeUnload(window)
   }, [hasBlockingUnloadWork])
 
   // S3D2A: observe only this mounted Web/Mobile Web FileManager. Do not
