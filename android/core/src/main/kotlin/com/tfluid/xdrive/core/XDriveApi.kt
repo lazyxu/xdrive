@@ -148,6 +148,23 @@ internal fun validGalleryAlbumId(id: String): Boolean =
             id.startsWith(prefix) && id.length > prefix.length
         }
 
+/** Parse the same comma-separated native tag draft as the PWA, with the Go
+ * limits (1..32 tags, <=64 Unicode scalars/tag, no controls). Server remains
+ * the authority for Unicode normalisation, identity and metadata ownership. */
+fun parseGalleryTagInput(input: String): List<String>? {
+    val raw = input.split(',', '，').map { it.trim().replace(Regex("\\s+"), " ") }
+        .filter { it.isNotEmpty() }
+    if (raw.isEmpty() || raw.size > 32) return null
+    val unique = linkedMapOf<String, String>()
+    for (tag in raw) {
+        if (tag.codePointCount(0, tag.length) > 64 ||
+            tag.any { it.isISOControl() }) return null
+        unique.putIfAbsent(tag.lowercase(Locale.ROOT), tag)
+    }
+    return unique.values.sortedWith(compareBy<String> { it.lowercase(Locale.ROOT) }
+        .thenBy { it })
+}
+
 /** Match the Server's Windows-compatible filename subset before sending a
  * mutating request. Server validation remains authoritative. */
 fun validDriveNodeName(name: String): Boolean {
@@ -264,6 +281,9 @@ interface XDriveService {
     suspend fun galleryFavoriteBatch(accessToken: String, items: List<GalleryAsset>,
         favorite: Boolean): Int =
         throw ApiException(501, "Gallery batch favorite unavailable")
+    suspend fun galleryTagsBatch(accessToken: String, items: List<GalleryAsset>,
+        tags: List<String>): Int =
+        throw ApiException(501, "Gallery batch tags unavailable")
     suspend fun galleryThumbnail(accessToken: String, nodeId: Long, revision: Long): ByteArray =
         throw ApiException(501, "Gallery thumbnail unavailable")
     /** Read-only audio: same Range/ETag/Bearer transport as native video,
@@ -1038,6 +1058,34 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         val updated = answer.long("updated")
         if (updated != items.size.toLong() ||
             answer["favorite"] != JsonPrimitive(favorite)) invalidPayload()
+        return items.size
+    }
+
+    /** One irreversible network attempt even though adding labels is benign.
+     * Keep any uncertain POST ACK frozen until a read-only Owner refresh. */
+    override suspend fun galleryTagsBatch(
+        accessToken: String, items: List<GalleryAsset>, tags: List<String>,
+    ): Int {
+        require(validToken(accessToken) && items.size in 1..200 &&
+            items.map { it.node.id }.toSet().size == items.size &&
+            items.all { it.node.id > 0 && it.node.revision > 0 &&
+                it.node.type == "file" && it.mediaKind in setOf("image", "video") }) {
+            "Invalid Owner media selection"
+        }
+        val normalized = parseGalleryTagInput(tags.joinToString(","))
+            ?: throw IllegalArgumentException("Invalid tags")
+        val payload = JsonObject(mapOf(
+            "node_ids" to JsonArray(items.map { JsonPrimitive(it.node.id) }),
+            "tags" to JsonArray(normalized.map { JsonPrimitive(it) }),
+        ))
+        val answer = request("media/batch/tags", accessToken, bodyObject = payload)
+        if (answer.long("updated") != items.size.toLong()) invalidPayload()
+        val returned = answer["tags"] as? JsonArray ?: invalidPayload()
+        val labels = returned.map {
+            (it as? JsonPrimitive)?.takeIf { value -> value.isString }?.content
+                ?: invalidPayload()
+        }
+        if (labels != normalized) invalidPayload()
         return items.size
     }
 

@@ -97,7 +97,7 @@ data class DriveState(
     val gallerySelectionMode: Boolean = false,
     val gallerySelectedItems: List<GalleryAsset> = emptyList(),
     /** Uncertain metadata ACK must be followed by GET, not another PATCH. */
-    val galleryFavoriteWriteAttempted: Boolean = false,
+    val galleryMetadataWriteAttempted: Boolean = false,
     /** A boundary lookup is independent of the current photo/Media3/Live stream. */
     val galleryViewerPageDirection: Int = 0,
     val galleryViewerPageBusy: Boolean = false,
@@ -126,7 +126,7 @@ data class DriveState(
 
 private fun DriveState.withoutGallerySelection(): DriveState = copy(
     gallerySelectionMode = false, gallerySelectedItems = emptyList(),
-    galleryFavoriteWriteAttempted = false,
+    galleryMetadataWriteAttempted = false,
 )
 
 private fun DriveState.withoutDestination(): DriveState = copy(
@@ -1577,7 +1577,7 @@ class DriveController(
 
     fun openFilesApp() {
         val current = state.value
-        if (current.screen != Screen.GALLERY || current.galleryFavoriteWriteAttempted) return
+        if (current.screen != Screen.GALLERY || current.galleryMetadataWriteAttempted) return
         invalidate() // Cancels the outstanding Gallery Range and item thumbnails.
         mutableState.value = current.withoutGallerySelection().copy(
             screen = Screen.FILES, loading = false, error = null,
@@ -1604,7 +1604,7 @@ class DriveController(
             previous.galleryViewer != null || previous.fileUploadActive ||
             previous.fileDownloadActive ||
             previous.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS ||
-            previous.galleryFavoriteWriteAttempted) return
+            previous.galleryMetadataWriteAttempted) return
         invalidate()
         mutableState.value = previous.withoutGallerySelection().copy(
             galleryPrimaryTab = GalleryPrimaryTab.COLLECTIONS,
@@ -1661,7 +1661,7 @@ class DriveController(
         val previous = state.value
         if (previous.screen != Screen.GALLERY || session == null ||
             previous.galleryViewer != null || previous.fileUploadActive ||
-            previous.fileDownloadActive || previous.galleryFavoriteWriteAttempted ||
+            previous.fileDownloadActive || previous.galleryMetadataWriteAttempted ||
             (previous.galleryPrimaryTab == GalleryPrimaryTab.LIBRARY &&
                 previous.gallerySelectedAlbum == null)) return
         invalidate()
@@ -1710,7 +1710,7 @@ class DriveController(
             previous.loading || previous.galleryViewer != null ||
             previous.galleryPrimaryTab != GalleryPrimaryTab.COLLECTIONS ||
             previous.gallerySelectedAlbum != null || !previous.galleryAlbumsLoaded ||
-            previous.galleryFavoriteWriteAttempted ||
+            previous.galleryMetadataWriteAttempted ||
             previous.galleryAlbums.none { it == album }) return
         invalidate()
         mutableState.value = previous.withoutGallerySelection().copy(gallerySelectedAlbum = album,
@@ -1727,7 +1727,7 @@ class DriveController(
         if (previous.screen != Screen.GALLERY ||
             previous.galleryPrimaryTab != GalleryPrimaryTab.COLLECTIONS ||
             previous.gallerySelectedAlbum == null || previous.galleryViewer != null ||
-            previous.galleryFavoriteWriteAttempted) return
+            previous.galleryMetadataWriteAttempted) return
         invalidate()
         mutableState.value = previous.withoutGallerySelection().copy(gallerySelectedAlbum = null,
             loading = false, error = null, galleryItems = emptyList(), galleryLoaded = false,
@@ -1742,7 +1742,7 @@ class DriveController(
         if (current.screen != Screen.GALLERY || !current.galleryLoaded ||
             current.galleryViewer != null || current.viewerReturnToFiles ||
             current.gallerySelected != null || current.loading ||
-            current.galleryFavoriteWriteAttempted || session == null) return
+            current.galleryMetadataWriteAttempted || session == null) return
         mutableState.value = current.copy(gallerySelectionMode = enabled,
             gallerySelectedItems = emptyList(),
             error = if (current.error == "一次最多选择 200 项。") null else current.error)
@@ -1752,7 +1752,7 @@ class DriveController(
         val current = state.value
         if (!current.gallerySelectionMode || !current.galleryLoaded ||
             current.screen != Screen.GALLERY || current.loading ||
-            current.galleryFavoriteWriteAttempted || current.galleryViewer != null ||
+            current.galleryMetadataWriteAttempted || current.galleryViewer != null ||
             session == null || item.node.revision <= 0 ||
             item.mediaKind !in setOf("image", "video") ||
             current.galleryItems.none { it == item }) return
@@ -1767,13 +1767,16 @@ class DriveController(
         } else mutableState.value = current.copy(gallerySelectedItems = selected + item)
     }
 
-    /** One non-replayed PATCH over frozen authenticated Node identities.
-     * Lost/invalid response freezes actions until a fresh Owner GET. */
-    fun favoriteGallerySelected(favorite: Boolean) {
+    /** Shared, bounded Owner media metadata operation for favorite/tags.
+     * Never replay a physical write on token refresh, failure, or missing ACK. */
+    private fun submitGalleryMetadata(
+        mutation: suspend (XDriveService, String, List<GalleryAsset>) -> Int,
+        patch: (GalleryAsset, Set<Long>) -> GalleryAsset,
+    ) {
         val current = state.value
         if (!current.gallerySelectionMode || current.screen != Screen.GALLERY ||
             !current.galleryLoaded || current.loading || current.error != null ||
-            current.galleryViewer != null || current.galleryFavoriteWriteAttempted ||
+            current.galleryViewer != null || current.galleryMetadataWriteAttempted ||
             current.gallerySelectedItems.size !in 1..200 || session == null) return
         val selected = current.gallerySelectedItems.toList()
         val ids = selected.map { it.node.id }.toSet()
@@ -1781,10 +1784,10 @@ class DriveController(
                 item.node.revision <= 0 || current.galleryItems.none { it == item }
             }) return
         val service = api ?: return
-        mutableState.value = current.copy(galleryFavoriteWriteAttempted = true)
+        mutableState.value = current.copy(galleryMetadataWriteAttempted = true)
         request { ticket ->
             val acknowledged = authenticatedMutation(ticket) { token ->
-                service.galleryFavoriteBatch(token, selected, favorite)
+                mutation(service, token, selected)
             }
             checkCurrent(ticket)
             val latest = state.value
@@ -1792,19 +1795,39 @@ class DriveController(
                 latest.screen != Screen.GALLERY || !latest.gallerySelectionMode ||
                 latest.gallerySelectedItems != selected ||
                 selected.any { row -> latest.galleryItems.none { it == row } })
-                throw ApiException(0, "Gallery favorite ACK mismatch",
+                throw ApiException(0, "Gallery metadata ACK mismatch",
                     ApiFailureReason.INVALID_RESPONSE)
             mutableState.value = latest.copy(
-                galleryItems = latest.galleryItems.map { item ->
-                    if (item.node.id in ids) item.copy(favorite = favorite) else item
-                },
+                galleryItems = latest.galleryItems.map { item -> patch(item, ids) },
                 gallerySelectionMode = false, gallerySelectedItems = emptyList(),
-                galleryFavoriteWriteAttempted = false, error = null)
+                galleryMetadataWriteAttempted = false, error = null)
         }
     }
 
+    fun favoriteGallerySelected(favorite: Boolean) = submitGalleryMetadata(
+        mutation = { service, token, selected ->
+            service.galleryFavoriteBatch(token, selected, favorite)
+        },
+        patch = { item, ids ->
+            if (item.node.id in ids) item.copy(favorite = favorite) else item
+        },
+    )
+
+    /** The same frozen selection and fail-closed single-attempt contract as
+     * favorite, using the Go/PWA metadata tag operation and no file writer. */
+    fun tagGallerySelected(tags: List<String>) {
+        val canonical = parseGalleryTagInput(tags.joinToString(",")) ?: return
+        if (canonical != tags) return
+        submitGalleryMetadata(
+            mutation = { service, token, selected ->
+                service.galleryTagsBatch(token, selected, canonical)
+            },
+            patch = { item, _ -> item }, // tags are re-read on next Owner GET
+        )
+    }
+
     fun refreshGallery() {
-        if (state.value.galleryFavoriteWriteAttempted && state.value.loading) return
+        if (state.value.galleryMetadataWriteAttempted && state.value.loading) return
         if (state.value.screen != Screen.GALLERY ||
             (state.value.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS &&
                 state.value.gallerySelectedAlbum == null)) return
@@ -1828,7 +1851,7 @@ class DriveController(
             (current.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS &&
                 current.gallerySelectedAlbum == null) ||
             current.galleryViewer != null || current.gallerySelected != null ||
-            current.gallerySelectionMode || current.galleryFavoriteWriteAttempted ||
+            current.gallerySelectionMode || current.galleryMetadataWriteAttempted ||
             session == null || api == null ||
             (current.gallerySortBy == by && current.gallerySortDir == dir)) return
         invalidate() // Cancel old Owner pages, thumbnails and pending SAF picker.
@@ -1847,7 +1870,7 @@ class DriveController(
     /** A new Owner-wide query replaces the entire Gallery Range intent. */
     fun searchGallery(input: String) {
         val current = state.value
-        if (current.gallerySelectionMode || current.galleryFavoriteWriteAttempted) return
+        if (current.gallerySelectionMode || current.galleryMetadataWriteAttempted) return
         if (current.screen != Screen.GALLERY ||
             current.galleryPrimaryTab != GalleryPrimaryTab.LIBRARY ||
             current.gallerySelectedAlbum != null || session == null || api == null) return
@@ -1871,7 +1894,7 @@ class DriveController(
     fun filterGalleryKind(kind: String) {
         if (kind != "" && kind != "image" && kind != "video") return
         val current = state.value
-        if (current.gallerySelectionMode || current.galleryFavoriteWriteAttempted) return
+        if (current.gallerySelectionMode || current.galleryMetadataWriteAttempted) return
         if (current.screen != Screen.GALLERY ||
             current.galleryPrimaryTab != GalleryPrimaryTab.LIBRARY ||
             current.gallerySelectedAlbum != null || session == null || api == null ||
@@ -1892,7 +1915,7 @@ class DriveController(
     /** Retry only the failed Owner GET; failed jumps retain their exact index. */
     fun retryGallery() {
         val current = state.value
-        if (current.galleryFavoriteWriteAttempted && !current.loading) {
+        if (current.galleryMetadataWriteAttempted && !current.loading) {
             refreshGallery() // Re-read only; never replay the mutation.
             return
         }
@@ -1954,7 +1977,7 @@ class DriveController(
     /** Jump ONLY by a Server-indexed Owner time group. */
     fun jumpGalleryToGroup(scale: String, key: String) {
         val current = state.value
-        if (current.gallerySelectionMode || current.galleryFavoriteWriteAttempted) return
+        if (current.gallerySelectionMode || current.galleryMetadataWriteAttempted) return
         if (current.screen != Screen.GALLERY || !current.galleryLoaded ||
             current.gallerySearchQuery.isNotEmpty() ||
             current.gallerySortBy != "captured" || current.gallerySortDir != "asc" ||
@@ -2468,7 +2491,7 @@ class DriveController(
         if (current.screen == Screen.GALLERY) {
             when {
                 current.gallerySelectionMode -> {
-                    if (current.galleryFavoriteWriteAttempted) {
+                    if (current.galleryMetadataWriteAttempted) {
                         if (!current.loading) refreshGallery() // GET-only reconciliation
                     } else setGallerySelectionMode(false)
                 }
@@ -2726,9 +2749,9 @@ class DriveController(
                     } else if (state.value.trashRestoreAttempted) {
                         mutableState.value = state.value.copy(trashLoaded = false,
                             error = "恢复结果未确认，请刷新回收站核对，勿重复提交。")
-                    } else if (state.value.galleryFavoriteWriteAttempted) {
+                    } else if (state.value.galleryMetadataWriteAttempted) {
                         mutableState.value = state.value.copy(
-                            error = "收藏结果未确认，请刷新图库核对后再操作；切勿重复提交。")
+                            error = "图库批量操作结果未确认，请刷新核对后再操作；切勿重复提交。")
                     } else if (state.value.browseBatchWriteAttempted) {
                         // The Server may have committed an atomic batch before
                         // its ACK was lost. Do not leave the stale selection
