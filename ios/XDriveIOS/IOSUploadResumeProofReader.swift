@@ -84,6 +84,7 @@ struct XDriveIOSUploadResumeProofReader {
         }
         guard operation.destinationParentID > 0,
               operation.byteSize >= 0,
+              operation.byteSize <= 4_294_967_296,
               operation.sha256.count == 64,
               operation.sha256.utf8.allSatisfy({
                   ($0 >= 48 && $0 <= 57) || ($0 >= 97 && $0 <= 102)
@@ -160,6 +161,8 @@ struct XDriveIOSUploadResumeProofReader {
         default: throw XDriveIOSUploadReconcileError.serverRejected(http.statusCode)
         }
 
+        let expectedChunks = Int(operation.byteSize / (8 * 1_048_576)) +
+            (operation.byteSize % (8 * 1_048_576) == 0 ? 0 : 1)
         guard bytes.count <= 2_097_152,
               let snapshot = try? JSONDecoder().decode(
                 XDriveIOSUploadReconcileSession.self, from: bytes
@@ -175,9 +178,7 @@ struct XDriveIOSUploadResumeProofReader {
               snapshot.resume_key == operation.resumeKey,
               snapshot.size == operation.byteSize,
               snapshot.chunk_size == 8 * 1_048_576,
-              snapshot.chunk_count == Int(
-                (operation.byteSize + 8 * 1_048_576 - 1) / (8 * 1_048_576)
-              ),
+              snapshot.chunk_count == expectedChunks,
               snapshot.sha256 == operation.sha256,
               (snapshot.status == "active" || snapshot.status == "finalized")
         else { throw XDriveIOSUploadReconcileError.invalidResponse }
@@ -186,8 +187,12 @@ struct XDriveIOSUploadResumeProofReader {
         for part in snapshot.received_chunks {
             guard part.index >= 0, part.index < snapshot.chunk_count,
                   seen.insert(part.index).inserted,
-                  part.size > 0, part.size <= 8 * 1_048_576,
-                  part.sha256.count == 64 else {
+                  part.size == min(Int64(8 * 1_048_576),
+                      operation.byteSize - Int64(part.index) * Int64(8 * 1_048_576)),
+                  part.sha256.utf8.count == 64,
+                  part.sha256.utf8.allSatisfy({
+                      ($0 >= 48 && $0 <= 57) || ($0 >= 97 && $0 <= 102)
+                  }) else {
                 throw XDriveIOSUploadReconcileError.invalidResponse
             }
         }
