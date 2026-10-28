@@ -68,7 +68,8 @@ assert.ok(sharedOutlet.includes('host.adminRoleVerified !== true'),
   'shared outlet must reject unverified administrative session')
 assert.ok(sharedOutlet.includes('if (!page)'),
   'unimplemented DSM host operations must fail as unavailable, not silently succeed')
-assert.ok(dsm.includes('<XDriveAppRouteContent') &&
+assert.ok(sharedApp.includes('<XDriveAppRouteContent') &&
+  !dsm.includes('<XDriveAppRouteContent') &&
   sharedRouteContent.includes('<XDriveAppPageOutlet') &&
   sharedRouteContent.includes('view={view}') &&
   sharedRouteContent.includes('host={host}'),
@@ -98,7 +99,8 @@ for (const key of [
   assert.equal(routes.xDriveIsSharedHostPageRoute(key), true,
     'Desktop common outlet must dispatch: ' + key)
 }
-assert.ok(desktop.includes('<XDriveAppRouteContent host={workspaceHost} view={view}>') &&
+assert.ok(!desktop.includes('<XDriveAppRouteContent') &&
+  sharedApp.includes('<XDriveAppRouteContent') &&
   sharedRouteContent.includes('xDriveIsSharedHostPageRoute(view)') &&
   sharedRouteContent.includes('<XDriveAppPageOutlet') &&
   !desktop.includes('<XDriveAppPageOutlet'),

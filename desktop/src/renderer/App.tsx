@@ -53,7 +53,6 @@ import {
   xDrivePasswordChangeValidationError,
   XDriveConfirmDialog,
   createXDriveCloudStorageDataSource,
-  XDriveAppRouteContent,
   xDriveWorkspaceStorageSummary,
   XDriveSettingsDialog,
   XDriveFeedbackSnackbar,
@@ -3096,9 +3095,88 @@ export default function App({
         }
         setView(destination as View)
       }}
+      overlays={<>
+        <XDriveSettingsDialog
+          open={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          subtitle="外观、客户端更新、同步生命周期与本地缓存"
+          maxWidth="lg"
+          appearance={appearance}
+          appearanceDisabled={busy === 'appearance'}
+          onAppearanceChange={(next) => void changeAppearance(next)}
+          buildInfoSectionID="desktop-build-info"
+          buildInfo={[
+            { title: 'Desktop 构建信息', info },
+            { title: 'Server 构建信息', info: status?.server_build },
+          ]}
+        >
+          <DesktopSettingsContent
+            desktopPreferences={desktopPreferences}
+            busy={busy}
+            onRestartAgent={() => { void restartAgent() }}
+            onStartAtLoginChange={(enabled) => { void changeStartAtLogin(enabled) }}
+            onCloseToTrayChange={(enabled) => { void changeCloseToTray(enabled) }}
+            updateSupported={updateSupported}
+            clientUpdate={clientUpdate}
+            updateOperationBusy={updateOperationBusy}
+            updateCancelling={updateCancelling}
+            updateCancelSupported={updateCancelSupported}
+            updateProgress={updateProgress}
+            currentVersion={status?.version}
+            onUpdateSourceChange={(source) => { void changeUpdateSource(source) }}
+            onUpdateModeChange={(mode) => { void changeUpdateMode(mode) }}
+            onCheckUpdate={() => { void checkClientUpdate() }}
+            onDownloadUpdate={() => { void downloadClientUpdate() }}
+            onInstallUpdate={() => { void installClientUpdate() }}
+            onCancelUpdate={() => { void cancelClientUpdate() }}
+            settings={settings}
+            mountPath={mountPath}
+            cacheLimit={cacheLimit}
+            platform={info?.platform}
+            storagePoliciesSupported={storagePoliciesSupported}
+            onMountPathChange={setMountPath}
+            onCacheLimitChange={setCacheLimit}
+            onChooseMountPath={() => { void chooseDirectory(mountPath, setMountPath) }}
+            onSaveSettings={saveSettings}
+            onOpenStorage={() => {
+              setSettingsOpen(false)
+              setView('local-storage')
+            }}
+          />
+        </XDriveSettingsDialog>
+
+      <XDriveConfirmDialog
+        open={pendingSystemDependenciesExit !== null}
+        title="离开未保存的系统依赖配置？"
+        description="离开系统依赖将放弃当前未保存的修改；已提交的宿主机或后台任务不会被取消。"
+        confirmLabel="放弃修改并离开"
+        onCancel={() => setPendingSystemDependenciesExit(null)}
+        onConfirm={() => {
+          const next = pendingSystemDependenciesExit
+          if (!next) return
+          systemDependenciesDraftRef.current = false
+          setSystemDependenciesDraftDirty(false)
+          setPendingSystemDependenciesExit(null)
+          xDriveEnterForegroundPage('desktop:' + next)
+          setViewActual(next)
+        }}
+      />
+
+      <XDriveConfirmDialog
+        open={!!confirmDialog}
+        maxWidth="xs"
+        title={confirmDialog?.title ?? '确认操作'}
+        description={confirmDialog?.message ?? ''}
+        confirmLabel={confirmDialog?.confirmLabel ?? '确认'}
+        confirmIntent={confirmDialog?.tone === 'error' ? 'danger' : confirmDialog?.tone === 'warning' ? 'warning' : 'primary'}
+        onCancel={() => setConfirmDialog(null)}
+        onConfirm={() => void confirmPendingAction()}
+      />
+
+      </>}
     >
 
-      <XDriveAppRouteContent host={workspaceHost} view={view}>
+
         {(status?.last_error || status?.paused || status?.has_conflict) ? (
           <Stack
             spacing={1}
@@ -3260,103 +3338,6 @@ export default function App({
             onFileDialogFeedback={(message) => setNotice(message)}
           />
         )}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        
-
-        
-
-      </XDriveAppRouteContent>
-
-        <XDriveSettingsDialog
-          open={settingsOpen}
-          onClose={() => setSettingsOpen(false)}
-          subtitle="外观、客户端更新、同步生命周期与本地缓存"
-          maxWidth="lg"
-          appearance={appearance}
-          appearanceDisabled={busy === 'appearance'}
-          onAppearanceChange={(next) => void changeAppearance(next)}
-          buildInfoSectionID="desktop-build-info"
-          buildInfo={[
-            { title: 'Desktop 构建信息', info },
-            { title: 'Server 构建信息', info: status?.server_build },
-          ]}
-        >
-          <DesktopSettingsContent
-            desktopPreferences={desktopPreferences}
-            busy={busy}
-            onRestartAgent={() => { void restartAgent() }}
-            onStartAtLoginChange={(enabled) => { void changeStartAtLogin(enabled) }}
-            onCloseToTrayChange={(enabled) => { void changeCloseToTray(enabled) }}
-            updateSupported={updateSupported}
-            clientUpdate={clientUpdate}
-            updateOperationBusy={updateOperationBusy}
-            updateCancelling={updateCancelling}
-            updateCancelSupported={updateCancelSupported}
-            updateProgress={updateProgress}
-            currentVersion={status?.version}
-            onUpdateSourceChange={(source) => { void changeUpdateSource(source) }}
-            onUpdateModeChange={(mode) => { void changeUpdateMode(mode) }}
-            onCheckUpdate={() => { void checkClientUpdate() }}
-            onDownloadUpdate={() => { void downloadClientUpdate() }}
-            onInstallUpdate={() => { void installClientUpdate() }}
-            onCancelUpdate={() => { void cancelClientUpdate() }}
-            settings={settings}
-            mountPath={mountPath}
-            cacheLimit={cacheLimit}
-            platform={info?.platform}
-            storagePoliciesSupported={storagePoliciesSupported}
-            onMountPathChange={setMountPath}
-            onCacheLimitChange={setCacheLimit}
-            onChooseMountPath={() => { void chooseDirectory(mountPath, setMountPath) }}
-            onSaveSettings={saveSettings}
-            onOpenStorage={() => {
-              setSettingsOpen(false)
-              setView('local-storage')
-            }}
-          />
-        </XDriveSettingsDialog>
-
-      <XDriveConfirmDialog
-        open={pendingSystemDependenciesExit !== null}
-        title="离开未保存的系统依赖配置？"
-        description="离开系统依赖将放弃当前未保存的修改；已提交的宿主机或后台任务不会被取消。"
-        confirmLabel="放弃修改并离开"
-        onCancel={() => setPendingSystemDependenciesExit(null)}
-        onConfirm={() => {
-          const next = pendingSystemDependenciesExit
-          if (!next) return
-          systemDependenciesDraftRef.current = false
-          setSystemDependenciesDraftDirty(false)
-          setPendingSystemDependenciesExit(null)
-          xDriveEnterForegroundPage('desktop:' + next)
-          setViewActual(next)
-        }}
-      />
-
-      <XDriveConfirmDialog
-        open={!!confirmDialog}
-        maxWidth="xs"
-        title={confirmDialog?.title ?? '确认操作'}
-        description={confirmDialog?.message ?? ''}
-        confirmLabel={confirmDialog?.confirmLabel ?? '确认'}
-        confirmIntent={confirmDialog?.tone === 'error' ? 'danger' : confirmDialog?.tone === 'warning' ? 'warning' : 'primary'}
-        onCancel={() => setConfirmDialog(null)}
-        onConfirm={() => void confirmPendingAction()}
-      />
-
     </XDriveApp>,
     desktopTitlebarActions,
   )

@@ -180,8 +180,9 @@ if (!verifiedOwnerDownload.includes('xDriveSynologyFetchVerifiedDownload') ||
 }
 // DSM and Desktop must both mount the canonical full application frame.
 if (!dsmEntry.includes('<XDriveApp') || !desktopShell.includes('<XDriveApp') ||
-    !dsmEntry.includes('<XDriveAppRouteContent') ||
-    !desktopShell.includes('<XDriveAppRouteContent') ||
+    !appShell.includes('<XDriveAppRouteContent') ||
+    dsmEntry.includes('<XDriveAppRouteContent') ||
+    desktopShell.includes('<XDriveAppRouteContent') ||
     !appRouteContent.includes('<XDriveWorkspaceContent') ||
     !appRouteContent.includes('presentation={presentation}') ||
     !appShell.includes('<XDriveWorkspaceShell') ||

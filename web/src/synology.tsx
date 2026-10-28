@@ -4,7 +4,7 @@ import ReactDOM from 'react-dom/client'
 import { Typography, useTheme } from '@mui/material'
 import {
   XDriveAppearanceThemeProvider,
-  XDriveApp, XDriveAppRouteContent, XDriveSettingsDialog,
+  XDriveApp, XDriveSettingsDialog,
   xDriveWorkspaceHostSections,
   xDriveIsWorkspaceAppRoute,
   xDriveWorkspaceNavigationAllowed,
@@ -91,23 +91,22 @@ function SynologyWorkspace({ appearance, onAppearanceChange }: {
         if (!xDriveIsWorkspaceAppRoute(key)) return
         navigate(key)
       }}
-    >
-      <XDriveAppRouteContent
-        host={host} view={selected} revision={pageRevision}
-        onNavigate={navigate} pageSx={{ p: { xs: 2, md: '34px 40px 48px' } }}
-      />
-      <XDriveSettingsDialog
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        appearance={appearance}
-        onAppearanceChange={onAppearanceChange}
-        subtitle="NAS 端与 Desktop 共用设置对话框；当前仅提供真实可用的外观控制。"
-      >
-        <Typography variant="body2" color="text.secondary">
-          外观只在当前窗口生效，重新打开时跟随系统。套件、账号及备份配置请使用现有 DSM 或 xDrive 管理入口。
-        </Typography>
-      </XDriveSettingsDialog>
-    </XDriveApp>
+      revision={pageRevision}
+      pageSx={{ p: { xs: 2, md: '34px 40px 48px' } }}
+      overlays={
+        <XDriveSettingsDialog
+          open={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          appearance={appearance}
+          onAppearanceChange={onAppearanceChange}
+          subtitle="NAS 端与 Desktop 共用设置对话框；当前仅提供真实可用的外观控制。"
+        >
+          <Typography variant="body2" color="text.secondary">
+            外观只在当前窗口生效，重新打开时跟随系统。套件、账号及备份配置请使用现有 DSM 或 xDrive 管理入口。
+          </Typography>
+        </XDriveSettingsDialog>
+      }
+    />
   )
 }
 
