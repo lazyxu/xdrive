@@ -171,7 +171,7 @@ test('Recent crosses Server, Go client, Agent and Electron bridges', () => {
 
   for (const token of [
     'AgentCloudRecentItem',
-    'cloudFileRecent(limit = 16)',
+    'cloudFileRecent(limit = 16, signal?: AbortSignal)',
     'cloudTouchFileRecent(nodeID: number)',
     'cloudClearFileRecent()',
   ]) assert.ok(agentClient.includes(token), 'Electron Agent client Recent bridge missing: ' + token)
