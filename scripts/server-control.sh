@@ -2573,16 +2573,16 @@ if not (re.fullmatch(r"20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z"
 old=[]
 if os.path.lexists(path):
     st=os.lstat(path)
-    if not stat.S_ISREG(st.st_mode) or st.st_size>32768:
+    if not stat.S_ISREG(st.st_mode) or st.st_size>262144:
         sys.exit(2)
     fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW)
-    with os.fdopen(fd,"rb") as f: raw=f.read(32769)
-    if len(raw)>32768: sys.exit(2)
+    with os.fdopen(fd,"rb") as f: raw=f.read(262145)
+    if len(raw)>262144: sys.exit(2)
     data=json.loads(raw)
     if not isinstance(data,dict) or data.get("protocol")!="xdrive-backup-admin-history-v1":
         sys.exit(2)
     old=data.get("operations")
-    if not isinstance(old,list) or len(old)>30: sys.exit(2)
+    if not isinstance(old,list) or len(old)>100: sys.exit(2)
 if action in ("drill","preview_delete","delete_selected") and not snapshot.startswith(("v2-default:","v2-configured:")): sys.exit(2)
 if action=="restore_database_only" and not snapshot.startswith("v1:"): sys.exit(2)
 entry=dict(protocol="xdrive-backup-admin-v1",request_id=rid,action=action,
@@ -2716,9 +2716,9 @@ if action=="delete_selected" and state=="success":
     except (OSError,ValueError,KeyError,TypeError,UnicodeError):
         sys.exit(2)
 events=[entry]+[x for x in old if isinstance(x,dict) and x.get("request_id")!=rid]
-raw=(json.dumps(dict(protocol="xdrive-backup-admin-history-v1",operations=events[:30]),
+raw=(json.dumps(dict(protocol="xdrive-backup-admin-history-v1",operations=events[:100]),
                 ensure_ascii=False,separators=(",",":"))+"\n").encode()
-if len(raw)>32768: sys.exit(2)
+if len(raw)>262144: sys.exit(2)
 fd,tmp=tempfile.mkstemp(prefix=".backup-admin-history.",dir=os.path.dirname(path))
 try:
     with os.fdopen(fd,"wb") as f:
