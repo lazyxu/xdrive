@@ -18,7 +18,10 @@ assert.deepEqual((compiled.diagnostics || [])
   .map(d => ts.flattenDiagnosticMessageText(d.messageText, '\n')), [])
 const fixture = {exports:{}}
 new Function('module', 'exports', compiled.outputText)(fixture, fixture.exports)
-const {xDriveVerifiedMapPhotoProjections, xDriveCurrentMapPhotoCollections} = fixture.exports
+const {
+  xDriveVerifiedMapPhotoProjections, xDriveCurrentMapPhotoCollections,
+  xDriveSelectVisibleMapPhotoCovers, XDRIVE_PLACES_MAP_COVER_MAX,
+} = fixture.exports
 
 const bounds = () => ({coordinate_space:'bd09ll',west:118,south:30,east:122,north:33})
 const cell = () => ({cell_x:3,cell_y:4,asset_id:23,node_id:45,node_revision:7,photo_count:2})
@@ -89,6 +92,66 @@ test('inline and isolated hosts consume the exact same trusted cover projections
   assert.match(surface,/xDriveVerifiedMapPhotoProjections\(\s*trustedSummary, projected, accessible\.map\(cell => cell\.selection\)\)/)
   assert.match(surface,/xDriveCurrentMapPhotoCollections\(trustedSummary, projected,/)
   assert.doesNotMatch(surface,/\[\.\.\.projected\.cells\]\.sort/)
+  assert.match(surface,/xDriveMountBaiduInlineMap/)
+  assert.match(surface,/xDriveMountBaiduIsolatedFrame/)
+})
+
+
+test('photo-first map clips neither badge nor dock and suppresses diagonal overlap', () => {
+  const pins=[
+    {count:100,x:210,y:150,id:'largest'},
+    {count:90,x:280,y:218,id:'diagonal-collision'},
+    {count:80,x:360,y:151,id:'separate'},
+    {count:70,x:40,y:100,id:'clipped-left'},
+    {count:60,x:862,y:200,id:'clipped-right'},
+    {count:50,x:600,y:750,id:'under-photo-dock'},
+    {count:40,x:600,y:620,id:'unobscured'},
+  ]
+  const selected=xDriveSelectVisibleMapPhotoCovers(pins,900,800,false,true)
+  assert.deepEqual(selected.map(pin=>pin.id),['largest','separate','unobscured'])
+  assert.deepEqual(pins.map(pin=>pin.count),[100,90,80,70,60,50,40],
+    'display selection never mutates original signed projection or count')
+  assert.deepEqual(xDriveSelectVisibleMapPhotoCovers(pins,900,800,false,false)
+    .map(pin=>pin.id),['largest','separate','under-photo-dock','unobscured'])
+})
+
+test('mobile photo pins respect compact count-badge, safe edge and landscape dock', () => {
+  const pins=[
+    {count:90,x:120,y:120,id:'selected'},
+    {count:80,x:200,y:195,id:'overlapping'},
+    {count:70,x:325,y:300,id:'right-clipped'},
+    {count:60,x:205,y:210,id:'separate'},
+    {count:50,x:200,y:755,id:'behind-dock'},
+  ]
+  assert.deepEqual(xDriveSelectVisibleMapPhotoCovers(pins,390,844,true,true)
+    .map(pin=>pin.id),['selected','separate'])
+  assert.deepEqual(xDriveSelectVisibleMapPhotoCovers([
+    {count:10,x:250,y:310,id:'under-landscape-dock'},
+    {count:8,x:250,y:170,id:'visible-landscape'},
+  ],900,390,true,true).map(pin=>pin.id),['visible-landscape'])
+  assert.deepEqual(xDriveSelectVisibleMapPhotoCovers([
+    {count:12,x:46,y:160,id:'wide-compact-cut-border'},
+    {count:11,x:120,y:160,id:'wide-compact-valid'},
+  ],900,390,true,true).map(pin=>pin.id),['wide-compact-valid'],
+  'wide compact tablet still renders the 72px sm card, not a 64px xs card')
+  assert.deepEqual(xDriveSelectVisibleMapPhotoCovers(pins,Infinity,844,true,true),[])
+  assert.deepEqual(xDriveSelectVisibleMapPhotoCovers(pins,390,0,true,true),[])
+})
+
+test('100k media keeps <=24 verified photo covers; all 64 native Cells stay independently accessible', () => {
+  const pins=Array.from({length:64},(_,i)=>({
+    count:64-i,x:110+(i%8)*110,y:110+Math.floor(i/8)*108,
+  }))
+  const output=xDriveSelectVisibleMapPhotoCovers(pins,1000,1000,false,true)
+  assert.equal(XDRIVE_PLACES_MAP_COVER_MAX,24)
+  assert.equal(output.length,24)
+  assert.equal(pins.length,64)
+  assert.equal(new Set(output.map(p=>p.count)).size,24)
+  const surface=fs.readFileSync(path.join(root,
+    'ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx'),'utf8')
+  assert.match(surface,/xDriveSelectVisibleMapPhotoCovers\(/)
+  assert.match(surface,/xDriveVerifiedMapPhotoProjections\(/)
+  assert.match(surface,/data-xdrive-places-cluster-list/)
   assert.match(surface,/xDriveMountBaiduInlineMap/)
   assert.match(surface,/xDriveMountBaiduIsolatedFrame/)
 })

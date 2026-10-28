@@ -65,8 +65,9 @@ test('compact map title visibly discloses SDK isolation boundary in both modes',
 
 test('trusted photo covers wait for real Owner camera and reject stale SDK projections', () => {
   const source=read(photoMap)
-  assert.match(source,/scopeIsCurrent && acceptedViewport && projected\?\.width/)
-  assert.match(source,/if \(!hasAcceptedCell\(candidate\.selection\)\) continue/)
+  assert.match(source,/const coverPins = scopeIsCurrent && acceptedViewport &&\s*projected\?\.width/)
+  assert.match(source,/xDriveSelectVisibleMapPhotoCovers\(/)
+  assert.match(source,/\.filter\(candidate => hasAcceptedCell\(candidate\.selection\)\)/)
   assert.match(source,/photoStrip = scopeIsCurrent && acceptedViewport && phase === 'ready'/)
   assert.match(source,/if\(!lifetime\.signal\.aborted && latestAcceptedViewport\.current &&/)
   assert.match(source,/xDrivePlacesDrawerValidRange\(cell,range\)/)
