@@ -2265,9 +2265,15 @@ class DriveAppTest {
         compose.onNodeWithContentDescription("账户菜单").performClick()
         compose.onNodeWithTag("files-arrangement-open").assertIsDisplayed().performClick()
         compose.onNodeWithTag("files-arrangement-dialog").assertExists()
-        compose.onNodeWithTag("files-arrange-sort-size").performClick()
-        compose.onNodeWithTag("files-arrange-direction").performClick()
-        compose.onNodeWithTag("files-arrange-folders-first").performClick()
+        // Four group choices make the dialog taller than a 390dp viewport.
+        // Scroll each control into the clipped sheet before tapping it;
+        // an off-screen tap otherwise reaches the wrong surface.
+        compose.onNodeWithTag("files-arrange-sort-size")
+            .performScrollTo().assertIsDisplayed().performClick()
+        compose.onNodeWithTag("files-arrange-direction")
+            .performScrollTo().assertIsDisplayed().performClick()
+        compose.onNodeWithTag("files-arrange-folders-first")
+            .performScrollTo().assertIsDisplayed().performClick()
         compose.onNodeWithTag("files-arrange-apply").assertIsEnabled().performClick()
         compose.waitUntil(timeoutMillis = 10_000) {
             !controller.state.value.loading &&
