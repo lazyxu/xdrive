@@ -409,6 +409,44 @@ class DriveControllerTest {
         c.close()
     }
 
+    @Test fun returnFromEditedManualAlbumReloadsInvalidatedCollectionOverview() = runTest {
+        val album = GalleryAlbum("manual:trip", "manual", "Trip", 1, 2, 0)
+        val api = object : Service() {
+            var listReads = 0
+            override suspend fun galleryAlbums(accessToken: String): List<GalleryAlbum> {
+                listReads++
+                return listOf(album)
+            }
+            override suspend fun galleryAlbumPage(
+                accessToken: String, albumId: String, offset: Int, initialLatest: Boolean,
+            ): GalleryPage {
+                assertEquals(album.id, albumId)
+                return GalleryPage(listOf(latestGallery), 1, 0)
+            }
+            override suspend fun galleryAddToManualAlbum(
+                accessToken: String, target: GalleryAlbum, items: List<GalleryAsset>,
+            ) = album.copy(revision = 3, itemCount = 1)
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.openGalleryCollections(); runCurrent()
+        assertEquals(1, api.listReads)
+        c.openGalleryAlbum(album); runCurrent()
+        assertTrue(c.state.value.galleryLoaded)
+        c.setGallerySelectionMode(true)
+        c.toggleGallerySelection(c.state.value.galleryItems.single())
+        c.loadGalleryAlbumsForSelection(); runCurrent()
+        assertEquals(2, api.listReads)
+        c.addGallerySelectedToAlbum(album); runCurrent()
+        assertFalse(c.state.value.galleryAlbumsLoaded)
+        c.closeGalleryAlbum(); runCurrent()
+        assertNull(c.state.value.gallerySelectedAlbum)
+        assertTrue(c.state.value.galleryAlbumsLoaded)
+        assertEquals(3, api.listReads)
+        c.close()
+    }
+
     @Test fun manualAlbumUncertainAckNeverReplaysAndRefreshesGetOnly() = runTest {
         val album = GalleryAlbum("manual:trip", "manual", "Trip", 0, 2, 0)
         val api = object : Service() {
