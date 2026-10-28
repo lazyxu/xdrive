@@ -46,6 +46,41 @@ type backupAdminRepositoryCount struct {
 	SnapshotCount int    `json:"snapshot_count"`
 }
 
+type backupAdminScheduleStatus struct {
+	Protocol   string `json:"protocol"`
+	Source     string `json:"source"`
+	State      string `json:"state"`
+	Expression string `json:"expression"`
+}
+
+func validBackupAdminScheduleStatus(status *backupAdminScheduleStatus) bool {
+	if status == nil {
+		return true // Older Host Control versions did not publish this field.
+	}
+	if status.Protocol != "xdrive-host-backup-schedule-v1" ||
+		status.Source != "installer_crontab" || len(status.Expression) > 80 {
+		return false
+	}
+	switch status.State {
+	case "registered", "not_detected", "mismatch", "not_configured", "unknown":
+	default:
+		return false
+	}
+	if status.State == "registered" && status.Expression == "" {
+		return false
+	}
+	if status.State == "not_configured" && status.Expression != "" {
+		return false
+	}
+	if status.Expression == "" {
+		return true
+	}
+	// Display only normalized, bounded cron schedule syntax, never command
+	// text or an arbitrary Host file path.
+	const cron = `^([0-9*/,-]+[[:space:]]+){4}[0-9*/,-]+$|^@(hourly|daily|weekly|monthly|yearly)$`
+	return regexp.MustCompile(cron).MatchString(status.Expression)
+}
+
 type backupAdminInventory struct {
 	Protocol       string                        `json:"protocol"`
 	GeneratedAt    string                        `json:"generated_at"`
@@ -54,6 +89,7 @@ type backupAdminInventory struct {
 	TotalSnapshots *int                          `json:"total_snapshots,omitempty"`
 	Truncated      *bool                         `json:"truncated,omitempty"`
 	Repositories   *[]backupAdminRepositoryCount `json:"repositories,omitempty"`
+	Schedule       *backupAdminScheduleStatus    `json:"schedule,omitempty"`
 }
 
 type backupAdminStatus struct {
@@ -274,6 +310,10 @@ func (s *Server) backupAdminState() backupAdminPage {
 			page.Message = "备份仓库统计与总数不一致。"
 			return page
 		}
+	}
+	if !validBackupAdminScheduleStatus(inventory.Schedule) {
+		page.Message = "备份定时任务的宿主机状态证据不符合协议。"
+		return page
 	}
 	seen := make(map[string]bool, len(inventory.Snapshots))
 	for _, item := range inventory.Snapshots {
