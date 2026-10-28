@@ -71,8 +71,13 @@ export function XDriveAppPageOutlet({
         if (services.remotePullPage) page = <XDriveSourceManager {...services.remotePullPage} />
         break
       case 'files':
-        if (local) page = <XDriveSynologyOwnerFilesPage key={revision} client={local}
-          unavailableActions={services.filesUnavailableActions} />
+        // Only an explicit authenticated Owner Files port admits this page.
+        // A generic local backup client never implies Files read permission.
+        if (services.ownerFilesPage) page = (
+          <XDriveSynologyOwnerFilesPage key={revision}
+            client={services.ownerFilesPage.client}
+            unavailableActions={services.ownerFilesPage.unavailableActions} />
+        )
         break
       case 'device-backup':
         if (services.deviceBackupPage) {

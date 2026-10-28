@@ -59,7 +59,17 @@ function render(host, view) {
 const client = { authenticatedDSMClient: true }
 const reasons = view => '真实 Host 接口不可用：' + view
 const desktop = { platform: 'desktop', services: { localBackupClient: client }, unavailableMessage: reasons }
-const synology = { platform: 'synology', services: { localBackupClient: client }, unavailableMessage: reasons }
+const synology = {
+  platform: 'synology',
+  services: {
+    localBackupClient: client,
+    ownerFilesPage: {
+      client,
+      unavailableActions: { uploadFiles: 'DSM read-only Owner Files' },
+    },
+  },
+  unavailableMessage: reasons,
+}
 
 test('Desktop must not mount any DSM-only fallback despite receiving a backup client', () => {
   for (const view of ['overview', 'files', 'device-backup', 'transfers', 'diagnostics']) {
@@ -69,7 +79,7 @@ test('Desktop must not mount any DSM-only fallback despite receiving a backup cl
   }
 })
 
-test('DSM retains authorized read-only fallbacks through its real local client', () => {
+test('DSM retains authorized fallbacks and explicitly declared Owner Files read port', () => {
   for (const [view, expected] of [
     ['overview', 'XDriveHomePage'],
     ['files', 'XDriveSynologyOwnerFilesPage'],
@@ -79,7 +89,10 @@ test('DSM retains authorized read-only fallbacks through its real local client',
   ]) {
     const page = render(synology, view)
     assert.equal(page.type, expected, view)
-    if (view === 'files') assert.strictEqual(page.props.client, client)
+    if (view === 'files') {
+      assert.strictEqual(page.props.client, client)
+      assert.equal(page.props.unavailableActions.uploadFiles, 'DSM read-only Owner Files')
+    }
   }
 })
 
@@ -109,4 +122,17 @@ test('DSM is not granted an unsupported Gallery/Admin page or Server role by CGI
   const unknown = render(synology, 'unknown-do-not-route')
   assert.equal(unknown.type, 'XDriveStatePanel')
   assert.equal(unknown.props.message, '未知的 xDrive 页面。')
+})
+
+test('neither Host silently infers Owner Files permission from backup CGI presence', () => {
+  const backupOnlyDSM = {
+    ...synology,
+    services: { localBackupClient: client },
+  }
+  for (const host of [desktop, backupOnlyDSM]) {
+    const page = render(host, 'files')
+    assert.equal(page.type, 'XDriveStatePanel')
+    assert.equal(page.props.message, reasons('files'))
+  }
+  assert.equal(render(synology, 'files').type, 'XDriveSynologyOwnerFilesPage')
 })

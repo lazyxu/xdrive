@@ -138,3 +138,17 @@ test('Host service identity and durable task functions are untouched by route re
   assert.equal(durableInvocations, 0, 'page remount must not start or cancel Agent jobs')
   renderer.act(() => app.unmount())
 })
+
+test('Files without a legacy controller uses the shared outlet on either Host', () => {
+  events.length = 0
+  let app
+  renderer.act(() => { app = renderer.create(ui(desktopOwner, 'files')) })
+  assert.deepEqual(events, ['mount:desktop:files:0'])
+  renderer.act(() => { app.update(ui(dsm, 'files')) })
+  assert.deepEqual(events, [
+    'mount:desktop:files:0',
+    'unmount:desktop:files:0',
+    'mount:synology:files:0',
+  ])
+  renderer.act(() => app.unmount())
+})
