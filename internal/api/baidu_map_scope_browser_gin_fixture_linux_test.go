@@ -595,6 +595,45 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 			update = db.Model(&meta.PhotoCollection{}).
 				Where("owner_id = ? AND external_key = ?", owner.ID, "manual:Family").
 				Update("state", meta.PhotoCollectionStateMissing)
+		case "album-deleted":
+			// Physically DELETE the actual Album row and its three membership
+			// edges. Marking it "missing" is tested independently and is not
+			// evidence that the old one-use ticket rejects a deleted Album.
+			err := db.Transaction(func(tx *gorm.DB) error {
+				members := tx.Where("collection_id = ?", family.ID).
+					Delete(&meta.PhotoCollectionAsset{})
+				if members.Error != nil {
+					return members.Error
+				}
+				if members.RowsAffected != 3 {
+					return fmt.Errorf("expected three deleted Album memberships")
+				}
+				removed := tx.Where(
+					"id = ? AND owner_id = ? AND external_key = ?",
+					family.ID, owner.ID, "manual:Family",
+				).Delete(&meta.PhotoCollection{})
+				if removed.Error != nil {
+					return removed.Error
+				}
+				if removed.RowsAffected != 1 {
+					return fmt.Errorf("original Album was not deleted")
+				}
+				var remaining int64
+				if err := tx.Model(&meta.PhotoCollection{}).
+					Where("id = ?", family.ID).Count(&remaining).Error; err != nil {
+					return err
+				}
+				if remaining != 0 {
+					return fmt.Errorf("deleted Album still exists")
+				}
+				return nil
+			})
+			if err != nil {
+				http.Error(w, "unavailable", http.StatusServiceUnavailable)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
 		case "session-revoked":
 			update = db.Model(&meta.User{}).Where("id = ?", owner.ID).
 				Update("session_version", 2)
@@ -603,11 +642,33 @@ func TestPlacesP04MountedBrowserRealGinFixture(t *testing.T) {
 				Update("epoch", 4)
 		case "restore":
 			err := db.Transaction(func(tx *gorm.DB) error {
-				if err := tx.Model(&meta.PhotoCollection{}).
+				reset := tx.Model(&meta.PhotoCollection{}).
 					Where("owner_id = ? AND external_key = ?", owner.ID, "manual:Family").
 					Updates(map[string]any{"revision": uint64(7),
-						"state": meta.PhotoCollectionStateActive}).Error; err != nil {
-					return err
+						"state": meta.PhotoCollectionStateActive})
+				if reset.Error != nil {
+					return reset.Error
+				}
+				if reset.RowsAffected == 0 {
+					// Recreate only the original synthetic fixture after a true
+					// deletion. An unrelated Album ID must never be substituted.
+					rebuilt := meta.PhotoCollection{
+						ID: family.ID, OwnerID: owner.ID, ExternalKey: "manual:Family",
+						Kind: meta.PhotoCollectionKindManual, Name: "Family",
+						State: meta.PhotoCollectionStateActive, Revision: 7,
+					}
+					if err := tx.Create(&rebuilt).Error; err != nil {
+						return err
+					}
+					for ordinal, assetIndex := range []int{0, 1, 3} {
+						if err := tx.Create(&meta.PhotoCollectionAsset{
+							CollectionID: family.ID,
+							AssetID: familyCandidateAssets[assetIndex].ID,
+							Position: int64(ordinal),
+						}).Error; err != nil {
+							return err
+						}
+					}
 				}
 				if err := tx.Model(&meta.User{}).Where("id = ?", owner.ID).
 					Update("session_version", uint64(1)).Error; err != nil {
