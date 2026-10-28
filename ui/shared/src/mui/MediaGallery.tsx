@@ -1307,7 +1307,7 @@ export function XDriveMediaGalleryPage({
 
         const range = await rangePromise
         if (
-          request !== requestID.current ||
+          firstRangeController.signal.aborted || request !== requestID.current ||
           (!stagedNavigation && collectionTargetRef.current?.requestID !== request)
         ) return
         if (stagedNavigation) commitTarget()
@@ -1336,7 +1336,7 @@ export function XDriveMediaGalleryPage({
 
         void facetsPromise.then((result) => {
           if (
-            request !== requestID.current ||
+            firstRangeController.signal.aborted || request !== requestID.current ||
             (!stagedNavigation && collectionTargetRef.current?.requestID !== request)
           ) return
           if (result.error) {
@@ -1369,7 +1369,7 @@ export function XDriveMediaGalleryPage({
 
       const range = await rangePromise
       if (
-        request !== requestID.current ||
+        firstRangeController.signal.aborted || request !== requestID.current ||
         (!stagedNavigation && collectionTargetRef.current?.requestID !== request)
       ) return
       if (stagedNavigation) commitTarget()
@@ -1403,7 +1403,7 @@ export function XDriveMediaGalleryPage({
       onCommitted?.()
     } catch (loadError) {
       if (
-        request !== requestID.current ||
+        firstRangeController.signal.aborted || request !== requestID.current ||
         (!stagedNavigation && collectionTargetRef.current?.requestID !== request)
       ) return
       const message = xDriveMediaGalleryErrorMessage(loadError)
