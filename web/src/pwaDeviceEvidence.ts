@@ -65,6 +65,11 @@ export async function collectXDrivePwaS5DeviceEvidence(
   let sw: ServiceWorkerContainer | undefined
   try { sw = typeof navigator === 'undefined' ? undefined : navigator.serviceWorker }
   catch { sw = undefined }
+  // Snapshot capability hints may predate a WebKit permission change. Manual
+  // evidence must reflect the getter that is readable at capture time.
+  let secureContextObserved = false
+  try { secureContextObserved = typeof window !== 'undefined' && window.isSecureContext === true }
+  catch { /* Denied security evidence is unknown, never true. */ }
   let controller: ServiceWorker | null = null
   try { controller = sw?.controller ?? null }
   catch { controller = null }
@@ -110,8 +115,8 @@ export async function collectXDrivePwaS5DeviceEvidence(
     display_mode_observed: mode,
     navigator_standalone_observed: typeof standalone === 'boolean' ? standalone : null,
     transport_observed: protocol === 'https:' ? 'https' : protocol === 'http:' ? 'http' : 'other',
-    secure_context_observed: snapshot.secureContext,
-    service_worker_api_supported: snapshot.serviceWorkerSupported,
+    secure_context_observed: secureContextObserved,
+    service_worker_api_supported: Boolean(sw),
     service_worker_controller_observed: Boolean(controller),
     service_worker_matches_public_script: publicScript,
     viewport_css_px: {
