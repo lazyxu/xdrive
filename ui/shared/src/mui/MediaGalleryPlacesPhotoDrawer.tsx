@@ -44,22 +44,36 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
   } | null>(null)
   const touchActivated = useRef<{nodeID:number; at:number} | null>(null)
   const listRef = useRef<HTMLDivElement | null>(null)
-  const appliedReturn = useRef(false)
-  // Restore only after the *fresh* Owner Range has produced real grid cells.
-  // Never store photos, GPS or Scroll DOM in a global viewer-return session.
+  const appliedReturn = useRef<HTMLDivElement | null>(null)
+  // Restore only after the *fresh* Owner Cell Range has produced real tiles.
+  // The MUI Dialog is portaled and its scroll box can settle *after* React's
+  // first layout effect. Retry for two bounded animation frames, only while
+  // this exact mounted Owner dialog is current; never reuse old media bytes.
   useLayoutEffect(() => {
-    if (phase !== 'ready') { appliedReturn.current = false; return }
+    if (phase !== 'ready') { appliedReturn.current = null; return }
     const node = listRef.current
-    if (!node || appliedReturn.current) return
-    // Wait until the SAME fresh Owner Cell has reauthorized the previously
-    // displayed prefix. Applying a 142-photo scroll to a 48-photo grid would
-    // silently clamp it and lose the Viewer return anchor.
+    if (!node || appliedReturn.current === node) return
     const target=Math.min(initialPresentation?.loadedCount ?? 0,total)
     if (items.length < target && !pageError) return
-    appliedReturn.current = true
-    if (initialPresentation) {
-      node.scrollTop = initialPresentation.scrollTop
-      node.scrollLeft = initialPresentation.scrollLeft
+    if (!initialPresentation) { appliedReturn.current=node; return }
+    const view=node.ownerDocument.defaultView
+    const apply = () => {
+      if (listRef.current !== node || !node.isConnected) return
+      node.scrollTop=initialPresentation.scrollTop
+      node.scrollLeft=initialPresentation.scrollLeft
+    }
+    apply()
+    let second: number | undefined
+    const first=view?.requestAnimationFrame(() => {
+      apply()
+      second=view.requestAnimationFrame(() => {
+        apply()
+        if (listRef.current === node) appliedReturn.current=node
+      })
+    })
+    return () => {
+      if (first !== undefined) view?.cancelAnimationFrame(first)
+      if (second !== undefined) view?.cancelAnimationFrame(second)
     }
   }, [phase, expanded, initialPresentation, items.length, total, pageError])
   useEffect(() => {

@@ -1196,10 +1196,21 @@ async function testMode(browser,mode,port){
     record(mode+': Viewer Back restores only freshly matched Cell drawer and expansion',
       await page.locator('[data-xdrive-places-photo-drawer-expand][aria-label="收起照片抽屉"]').count()===1 &&
       await page.locator('[data-xdrive-places-photo-drawer-handle][aria-expanded="true"]').count()===1)
-    const restoredScroll=await page.locator('[data-xdrive-places-photo-drawer-items]')
-      .evaluate(element=>element.scrollTop)
+    // A visible tile alone does not prove the portaled modal has finished
+    // its bounded post-layout scroll restoration. Wait for the actual scroll
+    // offset, not merely for the authorized /cell-items response.
+    const didRestore=await page.waitForFunction(expected=>{
+      const node=document.querySelector('[data-xdrive-places-photo-drawer-items]')
+      return node && node.scrollTop>0 && Math.abs(node.scrollTop-expected)<=2
+    },viewer.scrollTop,{timeout:5000}).then(()=>true).catch(()=>false)
+    const restoredGeometry=await page.locator('[data-xdrive-places-photo-drawer-items]')
+      .evaluate(element=>({scrollTop:element.scrollTop,scrollHeight:element.scrollHeight,
+        clientHeight:element.clientHeight}))
+    if (!didRestore)console.error('places-viewer-return-scroll-bounds',
+      JSON.stringify({mode,expected:viewer.scrollTop,...restoredGeometry}))
     record(mode+': real scroll position survives Viewer Back and fresh Range',
-      restoredScroll>0&&Math.abs(restoredScroll-viewer.scrollTop)<=2)
+      didRestore && restoredGeometry.scrollTop>0 &&
+      Math.abs(restoredGeometry.scrollTop-viewer.scrollTop)<=2)
     const returned=await page.evaluate(()=>window.__mapProbe.photoPreviewRanges)
     record(mode+': Viewer Back refreshes bounded signed Owner range, never stale media',
       returned.length>=3&&returned.every(v=>v.total===3&&v.items===3&&
@@ -1801,11 +1812,13 @@ async function testMobilePhotoDrawer(browser,mode,port){
       clickState.touchTrace
         .some(event=>event.type==='pointerup'&&event.onTile&&
           event.pointerType==='touch'&&!event.defaultPrevented) &&
-      clickState.touchTrace
-        .some(event=>event.type==='touchend'&&event.onTile&&
-          !event.defaultPrevented) &&
+      // A short pointerup is sufficient to open the signed Viewer. React
+      // unmounts the tile synchronously; a later native touchend/compat click
+      // may be retargeted away from the now-detached tile. Require genuine
+      // unprevented pointerup + no cancelled gesture + exactly one Owner read.
       !clickState.touchTrace.some(event=>
-        event.type==='pointercancel'&&event.onTile)
+        (event.type==='pointercancel'||event.type==='touchcancel')&&
+        event.onTile)
     record(mode+': real mobile touch uses genuine uncancelled tile pointer '+
       JSON.stringify(clickState.touchTrace),nativeTouch)
     // Chrome/Safari can suppress the follow-on compatibility click after a
@@ -2568,10 +2581,16 @@ async function testAdjacent142And28PhotoCovers(browser,mode,port){
     await dialog.waitFor({state:'visible'})
     await page.waitForFunction(()=>document.querySelectorAll(
       '[data-xdrive-places-photo-drawer-item]').length===142)
+    const didRestore=await page.waitForFunction(expected=>{
+      const node=document.querySelector('[data-xdrive-places-photo-drawer-items]')
+      return node && Math.abs(node.scrollTop-expected)<6
+    },scrollBefore,{timeout:5000}).then(()=>true).catch(()=>false)
     const restored=await page.locator(
       '[data-xdrive-places-photo-drawer-items]').evaluate(el=>el.scrollTop)
+    if(!didRestore)console.error('places-142-viewer-return-scroll',
+      JSON.stringify({mode,expected:scrollBefore,actual:restored}))
     record(mode+': Viewer Back reauthorizes 142 items before restoring scroll anchor',
-      Math.abs(restored-scrollBefore)<6&&errors.length===0)
+      didRestore&&Math.abs(restored-scrollBefore)<6&&errors.length===0)
     await page.keyboard.press('Escape')
     await dialog.waitFor({state:'hidden'})
   }finally{await context.close()}
