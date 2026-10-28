@@ -55,7 +55,7 @@ export type AgentAdminStorageRequest = {
   kind?: 'media_thumbnail' | 'video_poster' | 'analysis_preview' | 'upload_staging' | 'storage_temp' | 'all'
 }
 export type AgentAdminServerBackupRequest = {
-  action: 'create' | 'verify' | 'drill' | 'plan' | 'restore' | 'delete' | 'prune' | 'policy'
+  action: 'create' | 'verify' | 'verify_all' | 'drill' | 'plan' | 'restore' | 'delete' | 'prune' | 'policy'
   snapshot_id?: string
   format?: 'v1' | 'v2'
   mode?: 'fast' | 'deep'
@@ -2830,7 +2830,7 @@ export class AgentIPCClient {
     )
   }
 
-  mediaTrash(limit = 200, offset = 0) {
+  mediaTrash(limit = 200, offset = 0, signal?: AbortSignal) {
     const query = new URLSearchParams({
       limit: String(limit),
       offset: String(offset),
@@ -2838,6 +2838,9 @@ export class AgentIPCClient {
     return this.request<AgentMediaItemRange>(
       'GET',
       `/v1/media/trash?${query.toString()}`,
+      undefined,
+      10_000,
+      signal,
     )
   }
 
@@ -3078,6 +3081,7 @@ export class AgentIPCClient {
     limit = 200,
     offset = 0,
     timeZone = 'UTC',
+    signal?: AbortSignal,
   ) {
     const query = new URLSearchParams({
       time_zone: timeZone,
@@ -3088,6 +3092,9 @@ export class AgentIPCClient {
     return this.request<AgentMediaItemRange>(
       'GET',
       `/v1/media/memory-items?${query.toString()}`,
+      undefined,
+      10_000,
+      signal,
     )
   }
 
@@ -3103,6 +3110,7 @@ export class AgentIPCClient {
     duplicateID: string,
     limit = 200,
     offset = 0,
+    signal?: AbortSignal,
   ) {
     const query = new URLSearchParams({
       duplicate_id: duplicateID,
@@ -3112,6 +3120,9 @@ export class AgentIPCClient {
     return this.request<AgentMediaItemRange>(
       'GET',
       `/v1/media/duplicate-items?${query.toString()}`,
+      undefined,
+      10_000,
+      signal,
     )
   }
 
@@ -3127,6 +3138,7 @@ export class AgentIPCClient {
     burstID: string,
     limit = 200,
     offset = 0,
+    signal?: AbortSignal,
   ) {
     const query = new URLSearchParams({
       burst_id: burstID,
@@ -3136,6 +3148,9 @@ export class AgentIPCClient {
     return this.request<AgentMediaItemRange>(
       'GET',
       `/v1/media/burst-items?${query.toString()}`,
+      undefined,
+      10_000,
+      signal,
     )
   }
 
@@ -3147,6 +3162,7 @@ export class AgentIPCClient {
     petKind: string,
     limit = 200,
     offset = 0,
+    signal?: AbortSignal,
   ) {
     const query = new URLSearchParams({
       pet_kind: petKind,
@@ -3156,6 +3172,9 @@ export class AgentIPCClient {
     return this.request<AgentMediaItemRange>(
       'GET',
       `/v1/media/pet-items?${query.toString()}`,
+      undefined,
+      10_000,
+      signal,
     )
   }
 
@@ -3259,6 +3278,7 @@ export class AgentIPCClient {
     limit = 200,
     offset = 0,
     filters: AgentMediaQuery = {},
+    signal?: AbortSignal,
   ) {
     const query = new URLSearchParams({
       range: 'true',
@@ -3270,6 +3290,9 @@ export class AgentIPCClient {
     return this.request<AgentMediaItemRange>(
       'GET',
       `/v1/media/people/suggestion-items?${query.toString()}`,
+      undefined,
+      10_000,
+      signal,
     )
   }
 
@@ -3332,6 +3355,7 @@ export class AgentIPCClient {
     limit = 200,
     offset = 0,
     filters: AgentMediaQuery = {},
+    signal?: AbortSignal,
   ) {
     const query = new URLSearchParams({
       range: 'true',
@@ -3343,6 +3367,9 @@ export class AgentIPCClient {
     return this.request<AgentMediaItemRange>(
       'GET',
       `/v1/media/people/identity-items?${query.toString()}`,
+      undefined,
+      10_000,
+      signal,
     )
   }
 
@@ -3472,6 +3499,7 @@ export class AgentIPCClient {
     limit = 200,
     offset = 0,
     filters: AgentMediaQuery = {},
+    signal?: AbortSignal,
   ) {
     const query = new URLSearchParams({
       range: 'true',
@@ -3483,6 +3511,9 @@ export class AgentIPCClient {
     return this.request<AgentMediaItemRange>(
       'GET',
       `/v1/media/albums/items?${query.toString()}`,
+      undefined,
+      10_000,
+      signal,
     )
   }
 

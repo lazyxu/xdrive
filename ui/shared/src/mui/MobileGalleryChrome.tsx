@@ -52,6 +52,9 @@ export interface XDriveMobileGalleryChromeProps {
   canReturnToPosition?: boolean
   onReturnToPosition?: () => void
   onRefresh?: () => void
+  /** Places has its own floating map controls; hide duplicate Gallery chrome.
+   * The 52px global app header remains mounted and unchanged. */
+  mapImmersive?: boolean
   /** Uses the existing Gallery Places controller, never a mobile-only map API. */
   onShowMap?: () => void
   // Only real shared Gallery actions may expose More on Collections overview.
@@ -70,7 +73,8 @@ export function XDriveMobileGalleryChrome({
   onTimeZoneChange, aspectMode, onAspectModeChange, density, densityMin,
   densityMax, densityStep, onDensityChange, foldDuplicates,
   onFoldDuplicatesChange, jumpGroups, onJumpGroup, onJumpDay,
-  canReturnToPosition, onReturnToPosition, onRefresh, onShowMap, showOverviewActions, extraActions,
+  canReturnToPosition, onReturnToPosition, onRefresh, onShowMap,
+  mapImmersive = false, showOverviewActions, extraActions,
 }: XDriveMobileGalleryChromeProps) {
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchFocus, setSearchFocus] = useState(false)
@@ -91,6 +95,15 @@ export function XDriveMobileGalleryChrome({
   const panelViewport = useXDriveMobilePanelViewport(searchOpen || moreOpen)
   const collectionsOverview = primaryTab === 'collections' && !showCollection && !canGoBack
   const canShowMore = !collectionsOverview || Boolean(showOverviewActions)
+  useEffect(() => {
+    if (!mapImmersive) return
+    // The shared map provides filter/More and its own Back/Close, so a
+    // previous Gallery menu cannot cover the map during a section change.
+    setSearchOpen(false)
+    setMoreOpen(false)
+    setSortAnchor(null)
+    setViewOptionsOpen(false)
+  }, [mapImmersive])
 
   // Wide Web requests Server facet options when its advanced filter opens.
   // Mobile uses the very same owning Page callback once per sheet opening.
@@ -155,6 +168,7 @@ export function XDriveMobileGalleryChrome({
 
   return (
     <>
+      {!mapImmersive ? (
       <Stack data-xdrive-mobile-gallery-actions direction="row" alignItems="center"
         justifyContent="space-between" spacing={0.25}
         sx={{
@@ -205,7 +219,7 @@ export function XDriveMobileGalleryChrome({
           ) : null}
         </Stack>
       </Stack>
-
+      ) : null}
 
       <Menu anchorEl={sortAnchor} open={Boolean(sortAnchor)}
         onClose={closeSortMenu}
@@ -263,7 +277,7 @@ export function XDriveMobileGalleryChrome({
         ))}
       </Menu>
 
-      {!selectionMode && primaryTab === 'library' && showCollection && showTimeScale ? (
+      {!mapImmersive && !selectionMode && primaryTab === 'library' && showCollection && showTimeScale ? (
         <Stack data-xdrive-mobile-gallery-time-scale
           direction="row" role="group" aria-label="图库时间尺度"
           justifyContent="center" spacing={0.5}
@@ -297,7 +311,7 @@ export function XDriveMobileGalleryChrome({
         </Stack>
       ) : null}
 
-      {!selectionMode ? (
+      {!mapImmersive && !selectionMode ? (
         <Stack data-xdrive-mobile-gallery-bottom direction="row"
           alignItems="center" justifyContent="space-between" spacing={0.75}
           sx={{

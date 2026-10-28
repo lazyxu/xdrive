@@ -98,7 +98,7 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
             FilesCollection(state, controller, pageColor, rowColor,
                 thumbnailCache, thumbnailFailures)
         }
-        FilesSectionsBar(state.filesSection, controller::changeFilesSection)
+        FilesSectionsBar(state, controller::changeFilesSection)
         return
     }
 
@@ -186,7 +186,7 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
             )
             TextButton(
                 onClick = { controller.submitGlobalSearch(globalSearchText) },
-                enabled = !state.loading &&
+                enabled = state.canNavigateFiles() &&
                     globalSearchText.trim().codePointCount(0, globalSearchText.trim().length) >= 2,
                 modifier = Modifier.heightIn(min = 48.dp).testTag("files-global-search-submit"),
             ) { Text("搜索") }
@@ -335,7 +335,7 @@ internal fun ColumnScope.Files(state: DriveState, controller: DriveController, v
     }
     }
     if (state.browseSelectionMode) FilesSelectionActions(state, controller, onBatchTrash)
-    else FilesSectionsBar(state.filesSection, controller::changeFilesSection)
+    else FilesSectionsBar(state, controller::changeFilesSection)
 }
 
 @Composable
@@ -419,7 +419,7 @@ private fun ColumnScope.FilesCollection(state: DriveState, controller: DriveCont
                     singleLine = true, label = { Text("搜索全部文件") },
                 )
                 TextButton(onClick = { controller.submitGlobalSearch(searchDraft) },
-                    enabled = !state.loading &&
+                    enabled = state.canNavigateFiles() &&
                         searchDraft.trim().codePointCount(0, searchDraft.trim().length) >= 2,
                     modifier = Modifier.heightIn(min = 48.dp).testTag("files-search-results-submit")) {
                     Text("搜索")
@@ -487,7 +487,8 @@ private fun ColumnScope.FilesCollection(state: DriveState, controller: DriveCont
 }
 
 @Composable
-private fun ColumnScope.FilesSectionsBar(section: FilesSection, select: (FilesSection) -> Unit) {
+private fun ColumnScope.FilesSectionsBar(state: DriveState, select: (FilesSection) -> Unit) {
+    val section = state.filesSection
     Surface(Modifier.fillMaxWidth().navigationBarsPadding()
         .padding(horizontal = 12.dp, vertical = 6.dp),
         shape = androidx.compose.foundation.shape.RoundedCornerShape(50.dp),
@@ -496,7 +497,7 @@ private fun ColumnScope.FilesSectionsBar(section: FilesSection, select: (FilesSe
             verticalAlignment = Alignment.CenterVertically) {
             listOf(FilesSection.RECENT to "最近", FilesSection.FAVORITES to "收藏",
                 FilesSection.BROWSE to "浏览").forEach { (value, label) ->
-                TextButton(onClick = { select(value) },
+                TextButton(onClick = { select(value) }, enabled = state.canNavigateFiles(),
                     modifier = Modifier.weight(1f).heightIn(min = 52.dp)
                         .testTag("files-section-${value.name.lowercase()}"),
                     shape = androidx.compose.foundation.shape.RoundedCornerShape(50.dp),

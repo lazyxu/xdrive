@@ -7831,6 +7831,7 @@ export function XDriveMediaGallery({
     >
       {compactGallery ? (
         <XDriveMobileGalleryChrome
+          mapImmersive={showPlacesIndex && placesPanels.map}
           primaryTab={mobileCollectionsOverview || section !== 'library' ? 'collections' : 'library'}
           onPrimaryTabChange={(tab) => {
             // Capture before replacing the Library with the much shorter
@@ -8534,10 +8535,16 @@ export function XDriveMediaGallery({
         <Stack spacing={compactGallery ? 1 : 0.75} data-xdrive-places-index>
           {compactGallery ? (
             <Stack direction="row" alignItems="center" justifyContent="space-between"
-              spacing={1} data-xdrive-places-mobile-switch sx={{ px: 1, py: 0.25 }}>
+              spacing={1} data-xdrive-places-mobile-switch
+              sx={{px:1,py:0.25,minHeight:44,
+                bgcolor:'background.paper',
+                '& .MuiButton-contained':{boxShadow:'0 1px 6px rgba(15,23,42,.15)'}}}>
               <Typography variant="subtitle1" fontWeight={700}>地点</Typography>
               <Stack direction="row" alignItems="center" spacing={0.25}
-                role="group" aria-label="地点查看方式">
+                role="group" aria-label="地点查看方式"
+                sx={{p:0.4,borderRadius:'999px',bgcolor:'action.hover',
+                  '& .MuiButton-root':{borderRadius:'999px',minHeight:38,
+                    minWidth:58,px:1.25}}}>
                 <Button size="small" aria-pressed={placesMobileMode === 'map'}
                   variant={placesMobileMode === 'map' ? 'contained' : 'text'}
                   onClick={() => setPlacesMobileMode('map')} sx={{ minHeight: 44 }}>

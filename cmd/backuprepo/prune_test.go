@@ -377,3 +377,177 @@ func TestManualPruneRejectsInvalidRetainedTarWithMatchingChecksums(t *testing.T)
 		}
 	}
 }
+
+func TestSelectedV2PruneOnlyRetiresRequestedMiddleGeneration(t *testing.T) {
+	root := t.TempDir()
+	src, repo := filepath.Join(root, "source"), filepath.Join(root, "repo")
+	if err := os.MkdirAll(src, 0700); err != nil {
+		t.Fatal(err)
+	}
+	old := testCAS(t, src, "first generation retained object")
+	first := retentionFixtureSnapshot(t, repo, src, "xdrive-backup-20261023T000000Z")
+	middleOnly := testCAS(t, src, "middle generation exclusive object")
+	shared := testCAS(t, src, "middle and newest shared object")
+	middle := retentionFixtureSnapshot(t, repo, src, "xdrive-backup-20261024T000000Z")
+	if err := os.Remove(filepath.Join(src, filepath.FromSlash(casRoot), middleOnly[:2], middleOnly)); err != nil {
+		t.Fatal(err)
+	}
+	newestOnly := testCAS(t, src, "newest generation unique object")
+	newest := retentionFixtureSnapshot(t, repo, src, "xdrive-backup-20261025T000000Z")
+	testPruneLock(t, repo)
+
+	result, err := pruneSelectedSnapshot(repo, filepath.Base(middle))
+	if err != nil {
+		t.Fatalf("selected prune rejected safe middle snapshot: %v", err)
+	}
+	if result.Mode != "manual_selected" || result.Automatic ||
+		result.KeepLast != 2 || result.Verification != "exclusive_lock_and_full_cas_sha256" ||
+		len(result.RetiredSnapshots) != 1 || result.RetiredSnapshots[0] != filepath.Base(middle) ||
+		result.DeletedCASObjects != 1 {
+		t.Fatalf("unexpected selected prune report: %+v", result)
+	}
+	if _, err := os.Lstat(middle); !os.IsNotExist(err) {
+		t.Fatalf("selected generation still present: %v", err)
+	}
+	if _, err := os.Lstat(objectPath(repo, middleOnly)); !os.IsNotExist(err) {
+		t.Fatalf("exclusive middle CAS should have been reclaimed: %v", err)
+	}
+	for _, path := range []string{objectPath(repo, old), objectPath(repo, shared),
+		objectPath(repo, newestOnly), first, newest} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("retained data missing after selected prune: %v", err)
+		}
+	}
+	for _, snapshot := range []string{first, newest} {
+		if _, err := verify(repo, snapshot, true); err != nil {
+			t.Fatalf("retained generation no longer verifiable: %v", err)
+		}
+	}
+	if again, err := pruneSelectedSnapshot(repo, filepath.Base(middle)); err == nil {
+		t.Fatalf("unknown/retired generation unexpectedly accepted: %+v", again)
+	}
+	for _, snapshot := range []string{first, newest} {
+		if _, err := os.Stat(snapshot); err != nil {
+			t.Fatalf("rejected repeat deleted another snapshot: %v", err)
+		}
+	}
+}
+
+func TestSelectedV2PruneAllowsNewestButNeverTheLastRecoveryPoint(t *testing.T) {
+	for _, target := range []string{"newest", "last"} {
+		t.Run(target, func(t *testing.T) {
+			root := t.TempDir()
+			src, repo := filepath.Join(root, "source"), filepath.Join(root, "repo")
+			if err := os.MkdirAll(src, 0700); err != nil {
+				t.Fatal(err)
+			}
+			hash := testCAS(t, src, "kept generation content")
+			first := retentionFixtureSnapshot(t, repo, src, "xdrive-backup-20261023T000000Z")
+			var latest string
+			if target == "newest" {
+				testCAS(t, src, "newest generation content")
+				latest = retentionFixtureSnapshot(t, repo, src, "xdrive-backup-20261024T000000Z")
+			}
+			testPruneLock(t, repo)
+			name := filepath.Base(first)
+			if latest != "" {
+				name = filepath.Base(latest)
+			}
+			out, err := pruneSelectedSnapshot(repo, name)
+			if target == "last" {
+				if err == nil {
+					t.Fatalf("last recovery point was deleted: %+v", out)
+				}
+				if _, err := os.Stat(first); err != nil {
+					t.Fatalf("last recovery snapshot disappeared: %v", err)
+				}
+			} else {
+				if err != nil || len(out.RetiredSnapshots) != 1 || out.RetiredSnapshots[0] != name {
+					t.Fatalf("newest generation cannot be explicitly retired: %+v %v", out, err)
+				}
+				if _, err := os.Stat(first); err != nil {
+					t.Fatalf("older valid restore point missing: %v", err)
+				}
+				if _, err := verify(repo, first, true); err != nil {
+					t.Fatalf("retained older restore point corrupted: %v", err)
+				}
+			}
+			if _, err := os.Stat(objectPath(repo, hash)); err != nil {
+				t.Fatalf("protected CAS object removed: %v", err)
+			}
+		})
+	}
+}
+
+func TestSelectedV2PruneRejectsUnsafeOrCorruptRepositoriesBeforeMutation(t *testing.T) {
+	for _, bad := range []string{"unknown", "traversal", "partial", "same-size-cas", "unsafe-symlink", "bad-legacy"} {
+		t.Run(bad, func(t *testing.T) {
+			root := t.TempDir()
+			src, repo := filepath.Join(root, "source"), filepath.Join(root, "repo")
+			if err := os.MkdirAll(src, 0700); err != nil {
+				t.Fatal(err)
+			}
+			hash := testCAS(t, src, "selected deletion source content")
+			first := retentionFixtureSnapshot(t, repo, src, "xdrive-backup-20261023T000000Z")
+			second := retentionFixtureSnapshot(t, repo, src, "xdrive-backup-20261024T000000Z")
+			testPruneLock(t, repo)
+			target := filepath.Base(first)
+			switch bad {
+			case "unknown":
+				target = "xdrive-backup-20261025T000000Z"
+			case "traversal":
+				target = "../../etc/shadow"
+			case "partial":
+				snapshotPath(t, repo, "xdrive-backup-20261025T000000Z.partial")
+			case "same-size-cas":
+				writeTestFile(t, objectPath(repo, hash), []byte(strings.Repeat("x", len("selected deletion source content"))))
+			case "unsafe-symlink":
+				if err := os.Symlink(second, filepath.Join(repo, "snapshots", "xdrive-backup-20261025T000000Z")); err != nil {
+					t.Fatal(err)
+				}
+			case "bad-legacy":
+				writeTestFile(t, filepath.Join(second, "legacy.tar"), []byte("not an archive"))
+			}
+			if out, err := pruneSelectedSnapshot(repo, target); err == nil {
+				t.Fatalf("unsafe selected deletion unexpectedly succeeded: %+v", out)
+			}
+			for _, path := range []string{first, second, objectPath(repo, hash)} {
+				if _, err := os.Lstat(path); err != nil {
+					t.Fatalf("rejected action modified committed data: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestSelectedV2PruneCLIRequiresExactConfirmationAndNoOtherFlags(t *testing.T) {
+	root := t.TempDir()
+	src, repo := filepath.Join(root, "source"), filepath.Join(root, "repo")
+	if err := os.MkdirAll(src, 0700); err != nil {
+		t.Fatal(err)
+	}
+	testCAS(t, src, "protected content")
+	first := retentionFixtureSnapshot(t, repo, src, "xdrive-backup-20261023T000000Z")
+	second := retentionFixtureSnapshot(t, repo, src, "xdrive-backup-20261024T000000Z")
+	testPruneLock(t, repo)
+	prefix := []string{"delete-snapshot", "--repo", repo, "--snapshot", filepath.Base(first)}
+	for _, extra := range [][]string{
+		nil,
+		{"--keep-last", "1", "--yes"},
+		{"--mode", "fast", "--yes"},
+		{"--target", root, "--yes"},
+		{"--source", src, "--yes"},
+		{"--json", "--yes"},
+	} {
+		args := append(append([]string{}, prefix...), extra...)
+		if err := runWithReportWriter(args, os.Stdout); err == nil {
+			t.Fatalf("unsafe selected deletion arguments accepted: %v", args)
+		}
+		if _, err := os.Stat(first); err != nil {
+			t.Fatalf("rejected CLI call removed selected snapshot: %v", err)
+		}
+		if _, err := os.Stat(second); err != nil {
+			t.Fatalf("rejected CLI call removed protected snapshot: %v", err)
+		}
+	}
+}

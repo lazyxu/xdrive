@@ -82,12 +82,17 @@ async function mount() {
     ['useXDriveFileExplorerOwnerFence'],
     hooks,
   )
+  const cursorDirectory = loadPlainModule(
+    'ui/shared/src/mui/FileExplorerCursorDirectoryController.ts',
+    ['useXDriveFileExplorerCursorDirectory'],
+    { ...hooks, ...ownerFence, AbortController },
+  )
   const client = {
     async ownerFilesRoot() { return { id: 1, name: 'Owner' } },
     async ownerFilesPage() { return { items: rows, has_more: false } },
   }
   let currentClient = client
-  const bindings = { ...hooks, ...ownerFence, ...classification, ...media, ...stream, ...scope,
+  const bindings = { ...hooks, ...ownerFence, ...cursorDirectory, ...classification, ...media, ...stream, ...scope,
     XDRIVE_SYNOLOGY_OWNER_DOWNLOAD_MAX_BYTES: 32 << 20,
     xDriveFileSupportsThumbnail: () => false,
     xDriveSynologyLoadOwnerThumbnail: () => { throw Error('Controller must not preload media') },

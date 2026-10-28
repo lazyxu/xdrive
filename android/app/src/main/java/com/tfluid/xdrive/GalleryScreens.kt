@@ -126,13 +126,15 @@ internal fun ColumnScope.Gallery(
         if (!state.gallerySelectionMode && state.gallerySelectedAlbum == null &&
             state.gallerySearchQuery.isNotEmpty()) {
             TextButton(onClick = { controller.searchGallery("") },
+                enabled = !state.hasActiveNativeTransfer(),
                 modifier = Modifier.heightIn(min = 48.dp)
                     .testTag("gallery-search-clear")) { Text("清除") }
         }
         if (state.gallerySelectedAlbum == null) {
             TextButton(
                 onClick = { kindMenuOpen = true },
-                enabled = !state.gallerySelectionMode && !state.galleryMetadataWriteAttempted,
+                enabled = !state.gallerySelectionMode && !state.galleryMetadataWriteAttempted &&
+                    !state.hasActiveNativeTransfer(),
                 modifier = Modifier.heightIn(min = 48.dp)
                     .testTag("gallery-kind-filter")
                     .semantics {
@@ -147,7 +149,8 @@ internal fun ColumnScope.Gallery(
         Box {
             IconButton(
                 onClick = { displayMenuOpen = true },
-                enabled = !state.gallerySelectionMode && !state.galleryMetadataWriteAttempted,
+                enabled = !state.gallerySelectionMode && !state.galleryMetadataWriteAttempted &&
+                    !state.hasActiveNativeTransfer(),
                 modifier = Modifier.size(48.dp)
                     .semantics {
                         stateDescription = "缩略图密度 ${preferredColumns} 档，" +
@@ -446,6 +449,7 @@ internal fun ColumnScope.Gallery(
                                 }
                                 TextButton(
                                     onClick = controller::openGalleryCollections,
+                                    enabled = !state.hasActiveNativeTransfer(),
                                     contentPadding = PaddingValues(horizontal = 5.dp),
                                     modifier = Modifier.weight(1f).heightIn(min = 44.dp)
                                         .testTag("gallery-open-collections"),
@@ -457,6 +461,7 @@ internal fun ColumnScope.Gallery(
                                 searchDraft = state.gallerySearchQuery
                                 searchOpen = true
                             },
+                            enabled = !state.hasActiveNativeTransfer(),
                             contentPadding = PaddingValues(horizontal = 8.dp),
                             modifier = Modifier.heightIn(min = 50.dp).widthIn(min = 50.dp)
                                 .testTag("gallery-search-button"),
@@ -550,7 +555,8 @@ internal fun ColumnScope.Gallery(
                 Button(onClick = {
                     searchOpen = false
                     controller.searchGallery(searchDraft)
-                }, modifier = Modifier.heightIn(min = 48.dp).testTag("gallery-search-apply")) {
+                }, enabled = !state.hasActiveNativeTransfer(),
+                    modifier = Modifier.heightIn(min = 48.dp).testTag("gallery-search-apply")) {
                     Text("搜索")
                 }
             }

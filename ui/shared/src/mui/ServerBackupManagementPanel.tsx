@@ -329,6 +329,13 @@ export function XDriveServerBackupManagementPanel({
               onClick={() => { if (selected) void submit({
                 action: 'verify', snapshot_id: selected.id, mode: verifyMode,
               }) }}>验证所选备份</XDriveActionButton>
+            <XDriveActionButton disabled={disabled}
+              onClick={() => ask({
+                title: '确认批量验证全部服务器备份？',
+                description: '宿主机扫描所有已配置的本地 v1/v2 仓库，不受清单最多显示 100 代的限制。最多 1000 代，超限或不安全的快照条目会明确失败。逐代执行真实 SHA-256 校验；deep 还会逐仓库检查孤儿 CAS。可能产生大量磁盘读取，但不会修改生产数据，也不是实际恢复演练。浏览器关闭不会取消宿主机任务。',
+                expected: 'VERIFY ALL',
+                action: { action: 'verify_all', mode: verifyMode },
+              })}>批量验证全部本地备份</XDriveActionButton>
             <XDriveActionButton disabled={disabled || !selectedRestorable || selected?.format !== 'v2'}
               onClick={() => { if (selected) ask({
                 title: '确认执行离线隔离恢复演练？',
@@ -353,6 +360,49 @@ export function XDriveServerBackupManagementPanel({
           </Stack>
         </Stack>
       </Paper>
+
+      {page?.bulk_verification ? (
+        <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}
+          data-xdrive-admin-backup-bulk-verification>
+          <Stack spacing={1}>
+            <Typography variant="subtitle1" fontWeight={600}>最近一次批量备份校验（历史）</Typography>
+            <Alert severity={page.bulk_verification.state === 'success' ? 'info' : 'warning'}>
+              {page.bulk_verification.state === 'success' ? '该次批量校验已完成' : '该次批量校验未全部通过'}；
+              模式 {page.bulk_verification.mode}；发现 {page.bulk_verification.total_snapshots} 代，
+              已核验 {page.bulk_verification.checked_snapshots} 代，
+              通过 {page.bulk_verification.passed_snapshots} 代，
+              失败 {page.bulk_verification.failed_snapshots} 代，
+              未核验 {page.bulk_verification.unverified_snapshots} 代。
+              {page.bulk_verification.mode === 'deep' ? (
+                <> 额外完整仓库审计 {page.bulk_verification.deep_repositories_checked} 个，
+                失败 {page.bulk_verification.deep_repositories_failed} 个。</>
+              ) : null}
+            </Alert>
+            <Typography variant="caption" color="text.secondary">
+              完成时间：{page.bulk_verification.finished_at ?
+                new Date(page.bulk_verification.finished_at).toLocaleString() : '未知'}；
+              请求号：{page.bulk_verification.request_id}。
+              这是历史只读校验，不代表快照此刻仍完整，也不等于 PostgreSQL 与文件恢复演练通过。
+              当前后台任务进度请以上方宿主机状态为准。
+            </Typography>
+            {page.bulk_verification.failure_category ? (
+              <Typography color="error" variant="body2">
+                批量扫描失败分类：{page.bulk_verification.failure_category}
+              </Typography>
+            ) : null}
+            {page.bulk_verification.failure_sample.map(item => (
+              <Typography variant="body2" key={item.snapshot_id} sx={{ overflowWrap: 'anywhere' }}>
+                {item.snapshot_id} · {item.category}
+              </Typography>
+            ))}
+            {page.bulk_verification.failure_sample_truncated ? (
+              <Typography variant="caption" color="text.secondary">
+                仅显示前 20 个失败快照；统计数仍包含全部失败项。
+              </Typography>
+            ) : null}
+          </Stack>
+        </Paper>
+      ) : null}
 
       {page?.supported
         ? <XDriveBackupRecoveryEvidencePanel page={page} snapshotID={snapshotID} />

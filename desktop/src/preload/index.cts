@@ -203,8 +203,8 @@ const agent = Object.freeze({
   getMediaSyncFolders: () => ipcRenderer.invoke('agent:get-media-sync-folders'),
   getMediaSyncFolder: (sourceID: number, folderID: number) =>
     ipcRenderer.invoke('agent:get-media-sync-folder', sourceID, folderID),
-  getMediaTrash: (limit = 200, offset = 0) =>
-    ipcRenderer.invoke('agent:get-media-trash', limit, offset),
+  getMediaTrash: (limit = 200, offset = 0, requestID?: string) =>
+    ipcRenderer.invoke('agent:get-media-trash', limit, offset, requestID),
   getMediaAlbums: () => ipcRenderer.invoke('agent:get-media-albums'),
   getMediaAlbumFolders: () => ipcRenderer.invoke('agent:get-media-album-folders'),
   createMediaAlbumFolder: (name: string, parentID: number) =>
@@ -247,19 +247,19 @@ const agent = Object.freeze({
     bounds, limit, offset, filters, requestID),
   getMediaMemories: (anchorDate = '', limit = 24, timeZone = 'UTC') =>
     ipcRenderer.invoke('agent:get-media-memories', anchorDate, limit, timeZone),
-  getMediaMemoryItemRange: (memoryID: string, limit = 200, offset = 0, timeZone = 'UTC') =>
-    ipcRenderer.invoke('agent:get-media-memory-item-range', memoryID, limit, offset, timeZone),
+  getMediaMemoryItemRange: (memoryID: string, limit = 200, offset = 0, timeZone = 'UTC', requestID?: string) =>
+    ipcRenderer.invoke('agent:get-media-memory-item-range', memoryID, limit, offset, timeZone, requestID),
   getMediaDuplicateGroups: (limit = 24, offset = 0) =>
     ipcRenderer.invoke('agent:get-media-duplicate-groups', limit, offset),
-  getMediaDuplicateItemRange: (duplicateID: string, limit = 200, offset = 0) =>
-    ipcRenderer.invoke('agent:get-media-duplicate-item-range', duplicateID, limit, offset),
+  getMediaDuplicateItemRange: (duplicateID: string, limit = 200, offset = 0, requestID?: string) =>
+    ipcRenderer.invoke('agent:get-media-duplicate-item-range', duplicateID, limit, offset, requestID),
   getMediaBurstReviews: (limit = 24, offset = 0) =>
     ipcRenderer.invoke('agent:get-media-burst-reviews', limit, offset),
-  getMediaBurstReviewItemRange: (burstID: string, limit = 200, offset = 0) =>
-    ipcRenderer.invoke('agent:get-media-burst-item-range', burstID, limit, offset),
+  getMediaBurstReviewItemRange: (burstID: string, limit = 200, offset = 0, requestID?: string) =>
+    ipcRenderer.invoke('agent:get-media-burst-item-range', burstID, limit, offset, requestID),
   getMediaPets: () => ipcRenderer.invoke('agent:get-media-pets'),
-  getMediaPetItemRange: (petKind: string, limit = 200, offset = 0) =>
-    ipcRenderer.invoke('agent:get-media-pet-item-range', petKind, limit, offset),
+  getMediaPetItemRange: (petKind: string, limit = 200, offset = 0, requestID?: string) =>
+    ipcRenderer.invoke('agent:get-media-pet-item-range', petKind, limit, offset, requestID),
   getMediaSuggestedPeople: (limit = 24) =>
     ipcRenderer.invoke('agent:get-media-suggested-people', limit),
   getMediaSuggestedPeopleWithReview: (includeReviewed = false, limit = 24) =>
@@ -317,12 +317,14 @@ const agent = Object.freeze({
     person_identity?: string
     place?: string
   } = {},
+    requestID?: string,
   ) => ipcRenderer.invoke(
     'agent:get-media-suggested-person-item-range',
     personID,
     limit,
     offset,
     query,
+    requestID,
   ),
   getMediaPeople: (includeHidden = false, limit = 100, offset = 0) =>
     ipcRenderer.invoke('agent:get-media-people', includeHidden, limit, offset),
@@ -369,7 +371,8 @@ const agent = Object.freeze({
     person_identity?: string
     place?: string
   } = {},
-  ) => ipcRenderer.invoke('agent:get-media-person-item-range', personID, limit, offset, query),
+    requestID?: string,
+  ) => ipcRenderer.invoke('agent:get-media-person-item-range', personID, limit, offset, query, requestID),
   reviewMediaSuggestedPerson: (
     suggestionID: string,
     state: 'pending' | 'dismissed',
@@ -499,7 +502,8 @@ const agent = Object.freeze({
     person_identity?: string
     place?: string
   } = {},
-  ) => ipcRenderer.invoke('agent:get-media-album-item-range', albumID, limit, offset, query),
+    requestID?: string,
+  ) => ipcRenderer.invoke('agent:get-media-album-item-range', albumID, limit, offset, query, requestID),
   setMediaFavorite: (nodeID: number, favorite: boolean) => ipcRenderer.invoke('agent:set-media-favorite', nodeID, favorite),
   setMediaFavoriteBatch: (nodeIDs: number[], favorite: boolean) => ipcRenderer.invoke('agent:set-media-favorite-batch', nodeIDs, favorite),
   addMediaTagsBatch: (nodeIDs: number[], tags: string[]) => ipcRenderer.invoke('agent:add-media-tags-batch', nodeIDs, tags),

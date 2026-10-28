@@ -151,6 +151,11 @@ async function mountHarness() {
       folderDownloadSupported: false,
       getSelectionActionDisabledReason: dependencies.getSelectionActionDisabledReason,
     }
+    // Use the actual shared Host capability policy. Desktop intentionally has
+    // no declared unavailable mutations in this mounted feedback-order test.
+    explorerDependencies.hostSelectionUnavailable = explorerSource.evaluate(
+      'hostSelectionUnavailable', { unavailableActions: undefined },
+    )
     explorerDependencies.selectionActionDisabledReason = explorerSource.evaluate('selectionActionDisabledReason', explorerDependencies)
     const runSelectionAction = explorerSource.evaluate('runSelectionAction', explorerDependencies)
     current = {
