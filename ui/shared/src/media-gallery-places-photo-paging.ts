@@ -31,9 +31,9 @@ export function xDriveAppendPlacesDrawerPage(
   const validNode = (item: MediaItem): boolean => {
     const id = item?.node?.id
     const revision = item?.node?.revision
-    if (!Number.isSafeInteger(id) || id <= 0 ||
-        !Number.isSafeInteger(revision) || revision <= 0 ||
-        seen.has(id)) return false
+    if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0 ||
+        typeof revision !== 'number' || !Number.isSafeInteger(revision) ||
+        revision <= 0 || seen.has(id)) return false
     seen.add(id)
     return true
   }
