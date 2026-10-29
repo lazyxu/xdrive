@@ -238,10 +238,24 @@ for(const kind of ['inline','isolated']){
     assert.equal(kind==='inline'?state.invalidations:state.sent.length,1)
     assert.equal(host.status().viewportAfterMouseRelease,true)
     assert.equal(state.timers.length,0)
-    // A repeated event from the same physical pointer may not cancel twice.
+    // The SDK may omit 'moving' for the entire drag. Reproject every
+    // subsequent REAL pointer move without repeating Owner invalidation.
+    const firstProjection=state.projected
+    assert.ok(firstProjection>0,'first drag must request inert projection')
     host.onMapPointerMove({...start,clientX:140,clientY:230})
+    host.onMapPointerMove({...start,clientX:160,clientY:245})
     assert.equal(kind==='inline'?state.invalidations:state.sent.length,1)
+    assert.ok(state.projected>=firstProjection+2,
+      'every later pointer move must drive existing frame-coalesced projection')
+    assert.equal(host.status().origins.length,1,
+      'bounded pointer origin is retained through the real drag')
     host.onMousePointerUp({isTrusted:true,pointerId:start.pointerId})
+    assert.deepEqual(host.status().origins,[],
+      'pointer origin is cleared on real release')
+    const projectedAtRelease=state.projected
+    host.onMapPointerMove({...start,clientX:190,clientY:265})
+    assert.equal(state.projected,projectedAtRelease,
+      'late or synthetic motion after release cannot redraw a stale photo')
     assert.equal(state.timers.length,1)
     state.timers[0]()
     assert.equal(state.viewports,1)
@@ -279,6 +293,11 @@ for(const kind of ['inline','isolated']){
     host.onMousePointerDown(first)
     host.onMousePointerDown(second)
     host.onMapPointerMove({...second,clientX:130,clientY:98})
+    assert.equal(kind==='inline'?state.invalidations:state.sent.length,1)
+    const touchProjection=state.projected
+    host.onMapPointerMove({...second,clientX:145,clientY:111})
+    assert.ok(state.projected>touchProjection,
+      'a second finger continues the same inert photo re-projection')
     assert.equal(kind==='inline'?state.invalidations:state.sent.length,1)
     host.onMousePointerUp({pointerId:22,isTrusted:true})
     assert.equal(state.timers.length,0,'first released finger never settles camera')

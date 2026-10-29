@@ -248,7 +248,7 @@
          heldTouchPointers.has(event.pointerId)) &&
         pointerOrigins.size<12 &&
         Number.isFinite(event.clientX) && Number.isFinite(event.clientY))
-      pointerOrigins.set(event.pointerId,{x:event.clientX,y:event.clientY})
+      pointerOrigins.set(event.pointerId,{x:event.clientX,y:event.clientY,moved:false})
   }
   const onMapPointerMove = event => {
     if (disposed || !active || !map || !event.isTrusted) return
@@ -258,12 +258,18 @@
         !(heldMousePointer===event.pointerId ||
           heldTouchPointers.has(event.pointerId))) return
     if (Math.hypot(event.clientX-origin.x,event.clientY-origin.y)<12) return
-    pointerOrigins.delete(event.pointerId)
-    // A real map drag without a provider movestart still revokes all current
-    // ephemeral Cell keys immediately. Its old pixels remain VISUAL ONLY
-    // and the existing last-contact release schedules the fresh Owner Range.
-    if (allowedKeys.size>0 || gestureCells.length===0) stopViewport()
-    else viewportAfterMouseRelease=true
+    // Retain the local pointer origin through the genuine release. Without
+    // this, missing SDK 'moving' events freeze the prior inert photo frame.
+    if (!origin.moved) {
+      origin.moved=true
+      // The existing stopViewport revokes all ephemeral allowed Cell keys.
+      // Do not repeat it for every native pointer movement.
+      if (allowedKeys.size>0 || gestureCells.length===0) stopViewport()
+      else viewportAfterMouseRelease=true
+    }
+    // Frame-coalesced, geometry-only visual; no Owner, Node, URL or JWT data
+    // crosses the HTTPS Child boundary, and no extra signed camera query.
+    projectGesture()
   }
   const releaseHeldMouse = pointerID => {
     const mouseMatches=heldMousePointer!==null &&
