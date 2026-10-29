@@ -2660,7 +2660,15 @@ backup_admin_inventory() {
       else
         backup_admin_snapshot_complete "$snap" v2 "$local_manifest" || state=incomplete
       fi
-      if [[ "$state" == complete && "$consistent" == false ]]; then state=inconsistent; fi
+      if [[ "$state" == complete ]]; then
+        # Unknown consistency is not a verified recovery candidate. The Host
+        # can still inspect it, but must not offer a destructive restore.
+        case "$consistent" in
+          true) ;;
+          false) state=inconsistent ;;
+          *) state=incomplete ;;
+        esac
+      fi
       bytes="$(du -sb -- "$snap" 2>/dev/null | cut -f1 || true)"
       [[ "$bytes" =~ ^[0-9]+$ ]] || bytes=0
       file_data=true
