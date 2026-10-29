@@ -16,9 +16,9 @@ const compiled = ts.transpileModule(source, {
 assert.deepEqual((compiled.diagnostics || [])
   .filter(d => d.category === ts.DiagnosticCategory.Error)
   .map(d => ts.flattenDiagnosticMessageText(d.messageText, '\n')), [])
-const exports = {}
-new Function('exports', compiled.outputText)(exports)
-const admissionChanged = exports.xDriveCompactNavigationAdmissionChanged
+const moduleExports = {}
+new Function('exports', compiled.outputText)(moduleExports)
+const admissionChanged = moduleExports.xDriveCompactNavigationAdmissionChanged
 
 test('initial controlled More drawer has no false route/disabled transition', () => {
   const initial = { selected: 'gallery', disabled: false }
