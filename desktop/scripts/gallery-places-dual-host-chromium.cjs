@@ -2574,6 +2574,16 @@ async function testPhotoCoverWhileMouseHeld(browser,mode,port){
     // Chromium pointerdown must reach the SDK canvas (or isolated iframe).
     const x=Math.round(canvas.x+canvas.width*.22)
     const y=Math.round(canvas.y+canvas.height*.42)
+    // Observe real browser pointer IDs INSIDE the actual Host, even when
+    // the isolated SDK runs in its own unrelated HTTPS Origin.
+    await sdkFrame.evaluate(()=>{
+      const sdk=window.__xdriveSyntheticMapInstances?.at(-1)
+      if(!sdk)throw Error('mounted SDK missing before mouse down')
+      sdk.canvas.addEventListener('pointerdown',event=>{
+        if(event.isTrusted&&event.pointerType==='mouse')
+          window.__xdriveHeldMapPointerID=event.pointerId
+      },{capture:true,once:true})
+    })
     await page.mouse.move(x,y)
     await page.mouse.down()
     try {
@@ -2587,6 +2597,21 @@ async function testPhotoCoverWhileMouseHeld(browser,mode,port){
         // Real Baidu builds may send moveend while mouse is still held;
         // this must NOT start a new Owner query and erase the old covers.
         sdk.listeners.get('moveend')?.()
+        const id=window.__xdriveHeldMapPointerID
+        if(!Number.isSafeInteger(id))throw Error('real mouse pointer ID missing')
+        // A malicious or buggy provider can forge these DOM events with
+        // the EXACT real pointer ID while Chromium's button is still held.
+        // They must NOT act like physical release/cancel/blur.
+        for(const type of ['pointerup','pointercancel']){
+          const forged=new PointerEvent(type,{
+            pointerId:id,pointerType:'mouse',isPrimary:true,
+            bubbles:true})
+          if(forged.isTrusted)throw Error('synthetic event unexpectedly trusted')
+          window.dispatchEvent(forged)
+        }
+        const forgedBlur=new Event('blur')
+        if(forgedBlur.isTrusted)throw Error('synthetic blur unexpectedly trusted')
+        window.dispatchEvent(forgedBlur)
       })
       const inert=page.locator('[data-xdrive-places-gesture-photo-cover]').first()
       await inert.waitFor({state:'visible'})
@@ -2604,6 +2629,9 @@ async function testPhotoCoverWhileMouseHeld(browser,mode,port){
         previews:window.__mapProbe.photoPreviewRanges.length,
       }))
       const moved=await inert.boundingBox()
+      record(mode+': forged release/cancel/blur cannot end held photo pan',
+        Boolean(moved)&&held.pins>0&&held.queries===old.queries&&
+        held.previews===old.previews)
       record(mode+': mouse held beyond 500ms keeps visible inert photo markers',
         Boolean(moved)&&held.pins>0&&held.current===0&&held.disabled===true&&
         held.ariaHidden==='true'&&held.queries===old.queries&&
