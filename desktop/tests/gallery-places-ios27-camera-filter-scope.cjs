@@ -149,7 +149,7 @@ test('iOS map filter changes invalidate old SDK pins before the next paint in bo
   const queryEnd = surface.indexOf('    refreshFilteredCells.current=', queryStart)
   assert.ok(queryStart >= 0 && queryEnd > queryStart)
   const query = surface.slice(queryStart, queryEnd)
-  assert.ok(query.indexOf('      cancel()') < query.indexOf('await listOwnerCells('))
+  assert.ok(query.indexOf('      cancel(Boolean(keepVisual))') < query.indexOf('await listOwnerCells('))
   assert.ok(query.indexOf('frame.replaceAuthorizedCells([])') <
     query.indexOf('await listOwnerCells('))
   assert.match(query, /approved\.key!==filterRef\.current\.key/)

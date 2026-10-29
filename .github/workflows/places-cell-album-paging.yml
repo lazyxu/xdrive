@@ -1,0 +1,98 @@
+name: Places Owner Cell Album Bounded Paging
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/places-cell-album-paging.yml'
+      - 'ui/shared/src/media-gallery-places-photo-paging.ts'
+      - 'ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx'
+      - 'ui/shared/src/mui/MediaGalleryPlacesPhotoDrawer.tsx'
+      - 'desktop/tests/gallery-places-photo-paging.cjs'
+      - 'ui/shared/src/media-gallery-places-photo-drawer.ts'
+      - 'ui/shared/src/mui/MediaGallery.tsx'
+      - 'desktop/scripts/gallery-places-dual-host-chromium.*'
+      - 'desktop/tests/gallery-places-ios27-photo-drawer.cjs'
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/places-cell-album-paging.yml'
+      - 'ui/shared/src/media-gallery-places-photo-paging.ts'
+      - 'ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx'
+      - 'ui/shared/src/mui/MediaGalleryPlacesPhotoDrawer.tsx'
+      - 'desktop/tests/gallery-places-photo-paging.cjs'
+      - 'ui/shared/src/media-gallery-places-photo-drawer.ts'
+      - 'ui/shared/src/mui/MediaGallery.tsx'
+      - 'desktop/scripts/gallery-places-dual-host-chromium.*'
+      - 'desktop/tests/gallery-places-ios27-photo-drawer.cjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: places-cell-album-paging-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  owner-cell-pages:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Desktop shared TypeScript and MUI dependencies
+        working-directory: desktop
+        run: npm install --no-audit --no-fund
+      - name: Execute source-backed 142 photo/Live grouping/page refusal cases
+        run: node --test desktop/tests/gallery-places-photo-paging.cjs desktop/tests/gallery-places-ios27-photo-drawer.cjs
+      - name: Typecheck shared Parent for Desktop and DSM
+        working-directory: desktop
+        run: npm run typecheck
+
+  mounted-shared-dual-host-paging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install actual shared React and controlled Chromium dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm --prefix desktop install --no-audit --no-fund
+          mkdir -p "$RUNNER_TEMP/places-album-paging-chromium"
+          npm install --prefix "$RUNNER_TEMP/places-album-paging-chromium" --no-save --no-package-lock --ignore-scripts playwright-core@1.56.1
+          echo "XDRIVE_PLAYWRIGHT_MODULE=$RUNNER_TEMP/places-album-paging-chromium/node_modules/playwright-core" >> "$GITHUB_ENV"
+          if command -v google-chrome-stable >/dev/null; then
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v google-chrome-stable)" >> "$GITHUB_ENV"
+          elif command -v google-chrome >/dev/null; then
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          else
+            echo "XDRIVE_BROWSER_EXECUTABLE=$(command -v chromium)" >> "$GITHUB_ENV"
+          fi
+      - name: Mounted 28 and 142 Cell paging in actual inline and separate HTTPS Child React Hosts
+        shell: bash
+        env:
+          XDRIVE_PLACES_DUAL_HOST_RESULT_DIR: ${{ github.workspace }}/desktop/places-paging-dual-host-results
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          node --check desktop/scripts/gallery-places-dual-host-chromium.cjs
+          export XD_PR_HEAD="$(git rev-parse HEAD)"
+          node desktop/scripts/gallery-places-dual-host-chromium.cjs
+          node -e "const s=require('./desktop/places-paging-dual-host-results/summary.json');if(!s.passed||!s.realChromium||!s.realReactParent||s.realGin||s.realBaiduProvider||s.checks.some(c=>!c.passed)||s.errors.length)process.exit(1)"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: places-album-paging-dual-host-chromium-sanitized
+          path: desktop/places-paging-dual-host-results/summary.json
+          if-no-files-found: warn
+          retention-days: 14

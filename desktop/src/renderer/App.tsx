@@ -2103,6 +2103,9 @@ export default function App({
     adminStorageHistory: (days = 30) => adminStorageRequest({
       operation: 'history', days: days as 30 | 90 | 180,
     }),
+    adminStorageVerificationRuns: (limit = 20, cursor = '') => adminStorageRequest({
+      operation: 'verification-runs', limit, cursor,
+    }),
     adminStorageLegacyObjects: (limit = 20, cursor = '') => adminStorageRequest({
       operation: 'legacy', limit, cursor,
     }),

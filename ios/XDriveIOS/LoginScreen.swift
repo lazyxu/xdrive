@@ -7,6 +7,7 @@ struct LoginScreen: View {
     @StateObject private var model = LoginViewModel()
     @State private var passwordVisible = false
     @State private var showPhotoInventory = false
+    @State private var showPhotoBackup = false
     @State private var showDocumentPicker = false
     @State private var manualUploadTask: Task<Void, Never>?
     @Environment(\.colorScheme) private var colorScheme
@@ -32,6 +33,9 @@ struct LoginScreen: View {
             )
         }
         .task { await model.restore() }
+        .sheet(isPresented: $showPhotoBackup) {
+            XDriveIOSPhotoBackupMVPScreen(model: model)
+        }
         .sheet(isPresented: $showPhotoInventory) {
             if model.verifiedOwner != nil {
                 LocalPhotoInventoryScreen(onUploadStillPhoto: { identifier, allowCloud in
@@ -55,6 +59,7 @@ struct LoginScreen: View {
                 }
             }
         }
+        .interactiveDismissDisabled(model.manualUploadBusy)
         .onDisappear {
             manualUploadTask?.cancel()
             manualUploadTask = nil
@@ -206,7 +211,7 @@ struct LoginScreen: View {
                     .font(.footnote)
                     .foregroundColor(colors.secondary)
             }
-            Text("文件、图库与 Viewer 请使用共用 PWA 页面。本页仅提供原生单文件上传诊断，不是自动相册备份。")
+            Text("文件、图库与 Viewer 继续使用共用 PWA。本页额外提供用户明确启动的前台相册原件备份；不会自动后台运行。")
                 .font(.footnote)
                 .foregroundColor(colors.secondary)
             Button {
@@ -229,7 +234,7 @@ struct LoginScreen: View {
                     Text("Owner #\(owner.ownerID) · Root #\(owner.rootNodeID)")
                         .font(.footnote)
                         .foregroundColor(colors.secondary)
-                    Text("当前仅完成只读身份验证；尚未注册 Device/同步文件夹，也未启动备份。")
+                    Text("当前已验证 Owner 文件权限。前台相册备份可写入云端文件，但尚不代表 Device SourceRun 或 Live Photo 成对提交。")
                         .font(.footnote)
                         .foregroundColor(colors.secondary)
                 }
@@ -239,6 +244,17 @@ struct LoginScreen: View {
                 Text(failure)
                     .font(.footnote)
                     .foregroundColor(colors.error)
+            }
+            if model.verifiedOwner != nil {
+                Button {
+                    showPhotoBackup = true
+                } label: {
+                    Label("备份 iOS 相册原件（前台 MVP）", systemImage: "icloud.and.arrow.up")
+                        .frame(maxWidth: .infinity, minHeight: 48)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(model.isLoading || model.manualUploadBusy)
+                .accessibilityIdentifier("native-photo-backup-open")
             }
             if model.verifiedOwner != nil {
                 Button {
@@ -254,7 +270,7 @@ struct LoginScreen: View {
                 .disabled(model.isLoading || model.manualUploadBusy)
                 .accessibilityIdentifier("native-manual-upload")
             }
-            if model.manualUploadBusy {
+            if model.manualUploadBusy && !model.photoBackupBusy {
                 ProgressView("原生上传处理中…")
                     .font(.footnote)
                 Button("取消本机上传请求") { manualUploadTask?.cancel() }

@@ -565,6 +565,7 @@ func (s *Server) Router() *gin.Engine {
 	admin.GET("/storage", s.adminStorageStats)
 	admin.GET("/storage/health", s.adminStorageHealth)
 	admin.GET("/storage/history", s.adminStorageHistory)
+	admin.GET("/storage/verification-runs", s.adminStorageVerificationRuns)
 	admin.GET("/storage/optimization-advice", s.adminStorageOptimizationAdvice)
 	admin.GET("/storage/legacy", s.adminStorageLegacyObjects)
 	admin.GET("/storage/unreferenced-blobs", s.adminStorageUnreferencedBlobs)

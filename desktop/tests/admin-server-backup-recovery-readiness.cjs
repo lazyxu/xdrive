@@ -12,6 +12,7 @@ const js = ts.transpileModule(read('ui/shared/src/server-backup-recovery-readine
 const exported = {}
 new Function('exports', js)(exported)
 const assess = exported.assessServerBackupRecoveryReadiness
+const trustedDrill = exported.isTrustedServerBackupIsolatedDrill
 
 const id = 'v2-default:xdrive-backup-20261028T030000Z'
 const snapshot = { id, name:'xdrive-backup-20261028T030000Z',
@@ -23,10 +24,12 @@ const proof = {
 }
 const verify = { action:'verify', state:'success', verification:proof }
 const drill = {
-  action:'drill', state:'success', drill: {
+  action:'drill', snapshot_id:id, state:'success', drill: {
+    protocol:'xdrive-host-isolated-drill-v1',
     state:'success', environment:'host_ephemeral_offline_tmpfs',
     snapshot:snapshot.name, files_restored:true, postgresql_restored:true,
-    production_verified:false,
+    production_verified:false, max_mib:1024, failure_category:'',
+    started_at:'2026-10-28T03:00:00Z', finished_at:'2026-10-28T03:02:00Z',
   },
 }
 const evidence = (v=verify,d=drill) => ({
@@ -74,4 +77,32 @@ test('shared UI presents conservative evidence without adding a destructive shor
   assert.match(ui,/data-xdrive-admin-backup-recovery-readiness/)
   assert.match(ui,/历史/)
   assert.doesNotMatch(ui,/action: 'restore'/)
+})
+
+test('isolated recovery success requires exact snapshot, environment and evidence identity', () => {
+  assert.equal(trustedDrill(drill, snapshot), true)
+  const invalid = [
+    {...drill, snapshot_id:'v2-default:xdrive-backup-20261028T040000Z'},
+    {...drill, action:'restore'},
+    {...drill, drill:{...drill.drill, snapshot:'another-generation'}},
+    {...drill, drill:{...drill.drill, protocol:'unrecognized'}},
+    {...drill, drill:{...drill.drill, environment:'production'}},
+    {...drill, drill:{...drill.drill, files_restored:false}},
+    {...drill, drill:{...drill.drill, postgresql_restored:false}},
+    {...drill, drill:{...drill.drill, production_verified:true}},
+    {...drill, drill:{...drill.drill, failure_category:'runtime_unavailable'}},
+    {...drill, drill:{...drill.drill, max_mib:1025}},
+    {...drill, drill:{...drill.drill, started_at:'invalid'}},
+    {...drill, drill:{...drill.drill, finished_at:'2026-10-28T02:00:00Z'}},
+  ]
+  for (const receipt of invalid) {
+    assert.equal(trustedDrill(receipt, snapshot), false)
+    assert.equal(assess(page(snapshot), evidence(verify, receipt), id).state, 'drill_missing')
+  }
+  assert.equal(trustedDrill(drill, {...snapshot, format:'v1'}), false)
+  assert.equal(trustedDrill(drill, {...snapshot, file_data_included:false}), false)
+  assert.equal(trustedDrill(null, snapshot), false)
+  const ui = fs.readFileSync(path.join(root, 'ui/shared/src/mui/BackupRecoveryEvidencePanel.tsx'), 'utf8')
+  assert.match(ui, /isTrustedServerBackupIsolatedDrill\(event, snapshot\)/)
+  assert.match(ui, /drillLabel\(evidence\.lastDrill, selectedSnapshot\)/)
 })

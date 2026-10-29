@@ -214,12 +214,12 @@ test('isolated native-label suppression carries only bounded current random keys
   assert.deepEqual(message,{
     version:1,generation:7,nonce,kind:'photo-covers',keys:[a]})
   assert.deepEqual(xDriveCreateBaiduIsolatedPhotoCoversMessage(boundary(),[],[a,b])?.keys,[])
-  assert.equal(XDRIVE_BAIDU_ISOLATED_MAX_PHOTO_COVERS,24)
+  assert.equal(XDRIVE_BAIDU_ISOLATED_MAX_PHOTO_COVERS,64)
   const invalid=[
     [[stale],[a,b]],[[a,a],[a,b]],[[a,'node-42'],[a,b]],
     [[a],[a,a]],[[a],[a,'node-42']],
-    [Array.from({length:25},(_,i)=>i.toString(16).padStart(32,'0')),
-      Array.from({length:25},(_,i)=>i.toString(16).padStart(32,'0'))],
+    [Array.from({length:65},(_,i)=>i.toString(16).padStart(32,'0')),
+      Array.from({length:65},(_,i)=>i.toString(16).padStart(32,'0'))],
     [[{key:a,node_id:13}],[a,b]],[[a],[]],
   ]
   for (const [keys,active] of invalid) {
@@ -230,4 +230,20 @@ test('isolated native-label suppression carries only bounded current random keys
     {...boundary(),nonce:'invalid'},[a],[a]),null)
   assert.deepEqual(Object.keys(message).sort(),
     ['generation','keys','kind','nonce','version'])
+})
+
+test('isolated gesture projection is bounded visual-only data, never private authority',()=>{
+  const key='a'.repeat(32)
+  const msg=input('gesture-projections',{width:640,height:480,
+    points:[{key,x:180,y:160}]})
+  assert.deepEqual(xDriveParseBaiduIsolatedChildEvent(msg,boundary()),msg.data)
+  for (const bad of [
+    input('gesture-projections',{width:640,height:480,points:[{key,x:-1,y:10}]}),
+    input('gesture-projections',{width:640,height:480,
+      points:[{key,x:8,y:9,photo_url:'/media/private'}]}),
+    input('gesture-projections',{width:640,height:480,
+      points:[{key,x:12,y:13,node_id:42}]}),
+  ]) assert.equal(xDriveParseBaiduIsolatedChildEvent(bad,boundary()),null)
+  assert.equal(xDriveParseBaiduIsolatedChildEvent({
+    ...msg,origin:'https://attacker.example'},boundary()),null)
 })
