@@ -12,7 +12,9 @@ export type XDriveOwnerSelectableItem = Readonly<{
   name: string
   kind?: string
   type?: string
-  revision?: number
+  // FileExplorer rows can contain a string revision; keep the untrusted shape
+  // representable so the runtime matcher can reject it, not type-cast it away.
+  revision?: string | number
   size?: number
 }>
 
