@@ -55,7 +55,9 @@ test('Desktop legacy view-mode/layout preferences retain their unchanged schema'
     assert.ok(dsm.includes('XDRIVE_HOST_FILES_PREFERENCES.' + name),
       'DSM must use the same UI preference schema: ' + name)
   }
-  assert.match(navigation, /xDriveReadFileExplorerStoredViewMode\(storageKey\)/)
+  assert.match(navigation, /function loadStoredViewMode\(storageKey/)
+  // Desktop's existing tabbed navigation stays backed by its original denial-
+  // safe loader. DSM reads the same schema via the shared single-page hook.
   assert.match(dsm, /viewMode=\{viewMode\}/)
   assert.match(dsm, /onViewModeChange=\{onViewModeChange\}/)
   assert.match(dsm, /detailsPreferencesKey=\{XDRIVE_HOST_FILES_PREFERENCES\.detailsLayout\}/)
