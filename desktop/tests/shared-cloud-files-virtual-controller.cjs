@@ -133,6 +133,10 @@ function loadController(react) {
     ['ui', 'shared', 'src', 'mui', 'FileExplorerDirectoryReadStrategy.ts'],
     null,
   )
+  const countedFirstPage = loadTypeScriptModule(
+    ['ui', 'shared', 'src', 'mui', 'CloudFilesFirstPageAdmission.ts'],
+    null,
+  )
   return loadTypeScriptModule(
     ['ui', 'shared', 'src', 'mui', 'CloudFilesController.ts'],
     react,
