@@ -159,8 +159,6 @@ const XDriveMediaGalleryPage = lazy(() =>
     .then(module => ({ default: module.XDriveMediaGalleryPage })))
 const WebFileViewerApps = lazy(() =>
   import('./WebFileViewerApps').then(module => ({ default: module.WebFileViewerApps })))
-const AdminUsersPanel = lazy(() => import('./AdminUsers'))
-const AdminAuditPanel = lazy(() => import('./AdminAudit'))
 const StorageStatsPanel = lazy(() => import('./StorageStatsPanel'))
 
 // Mounts only after the parent Suspense has resolved the actual lazy
@@ -2292,6 +2290,7 @@ function FileManager({
   // Browser page props are composed only after the real task controller and
   // current Owner scope are available. This is a single Host adapter, not a
   // second React root or separate background task queue.
+  const focusedAdminUserID = route.app === 'admin-users' ? route.params.user : undefined
   const deviceBackupSourceID = route.app === 'device-backup' ? route.params.source : undefined
   const remotePullSourceID = route.app === 'remote-pull' ? route.params.source : undefined
   const isRemotePullRoute = route.app === 'remote-pull'
@@ -2301,6 +2300,15 @@ function FileManager({
   const browserWorkspaceHost = useMemo(
     () => createXDriveBrowserWorkspaceHost({
       adminRoleVerified: serverAdminVerified,
+      // Admin pages are supplied only for the exact currently authenticated
+      // Server administrator; sharing JSX does not grant privileged API calls.
+      adminUsers: serverAdminVerified && profile ? {
+        api,
+        currentUserID: profile.id,
+        focusUserID: focusedAdminUserID,
+        onChanged: () => { void refreshQuota() },
+      } : undefined,
+      adminAudit: serverAdminVerified ? { api } : undefined,
       taskCenter: {
         ...taskCenter.pageProps,
         globalTasksEnabled: serverAdminVerified,
@@ -2339,7 +2347,8 @@ function FileManager({
       deviceBackupSourceID, sourceManagerAdapter, remotePullSourceID,
       isRemotePullRoute, current?.id, current?.name, remotePullTargetPath,
       handleError, launchWebApp, serverAdminVerified, taskCenter.pageProps,
-      mediaSelectionJobPort, filesOperationFocus, taskCenterFocus, setAppView],
+      mediaSelectionJobPort, filesOperationFocus, taskCenterFocus, setAppView,
+      api, profile?.id, focusedAdminUserID, refreshQuota],
   )
 
 
@@ -2713,15 +2722,8 @@ function FileManager({
           // First two real Browser Host-backed routes in the shared page
           // outlet; never admit Browser Files/admin/native DSM capabilities.
           <XDriveAppPageOutlet host={browserWorkspaceHost} view={appView} />
-        ) : appView === 'admin-users' && profile?.role === 'admin' ? (
-          <AdminUsersPanel
-            api={api}
-            currentUserID={profile.id}
-            focusUserID={route.app === 'admin-users' ? route.params.user : undefined}
-            onChanged={() => { void refreshQuota() }}
-          />
-        ) : appView === 'admin-audit' && profile?.role === 'admin' ? (
-          <AdminAuditPanel api={api} />
+        ) : (appView === 'admin-users' || appView === 'admin-audit') && serverAdminVerified ? (
+          <XDriveAppPageOutlet host={browserWorkspaceHost} view={appView} />
         ) : appView === 'admin-services' && profile?.role === 'admin' ? (
           <XDriveServiceDependenciesPage
             source={serviceDependenciesPort}

@@ -249,6 +249,18 @@ requireText(app, [
   'backgroundFocusTaskID: taskCenterFocus?.taskID',
   "setAppView(scope === 'global' ? 'global-tasks' : 'transfers')",
 ], 'Web shared TaskCenter route composition')
+requireText(browserHost, [
+  'ports.adminRoleVerified === true && ports.adminUsers',
+  'ports.adminRoleVerified === true && ports.adminAudit',
+  'adminUsersPage: ports.adminUsers',
+  'adminAuditPage: ports.adminAudit',
+], 'Browser verified Server administrator services')
+requireText(app, [
+  'focusedAdminUserID',
+  'adminUsers: serverAdminVerified && profile ?',
+  'adminAudit: serverAdminVerified ? { api } : undefined',
+  "(appView === 'admin-users' || appView === 'admin-audit') && serverAdminVerified",
+], 'Web admin users/audit shared page outlet')
 
 requireText(sources, [
   'XDriveWorkspaceSurface',
