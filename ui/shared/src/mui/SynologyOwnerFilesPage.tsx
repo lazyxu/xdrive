@@ -33,6 +33,10 @@ import type {
 import { XDriveActionButton } from './ActionButton'
 import { XDriveStatusAlert } from './StatusAlert'
 import { XDriveFilesWorkspacePage } from './FilesWorkspacePage'
+import {
+  XDRIVE_HOST_FILES_PREFERENCES,
+  useXDriveFileExplorerPersistedViewMode,
+} from './FileExplorerViewPreference'
 import { useXDriveFileExplorerOwnerQuota } from './FileExplorerOwnerQuota'
 import {
   xDriveSynologyOwnerFilesScopeKey,
@@ -72,6 +76,11 @@ export function XDriveSynologyOwnerFilesPage({
   client,
   unavailableActions,
 }: { client: XDriveSynologyBackupLocalClient; unavailableActions?: XDriveFileExplorerUnavailableActions }) {
+  // Same List/Grid/column preference semantics as Desktop. Only UI appearance
+  // is stored at this DSM browser origin; no Owner data or Agent permission.
+  const { viewMode, onViewModeChange } = useXDriveFileExplorerPersistedViewMode(
+    XDRIVE_HOST_FILES_PREFERENCES.viewMode,
+  )
   // One Host-neutral, scoped cursor Controller owns root and directory reads.
   // The DSM adapter supplies only its real authenticated Owner CGI methods.
   const ownerReadPort = useMemo<XDriveFileExplorerCursorPort<
@@ -392,6 +401,10 @@ export function XDriveSynologyOwnerFilesPage({
             ) : null}
             <XDriveFileExplorer
               presentation="workspace"
+              viewMode={viewMode}
+              onViewModeChange={onViewModeChange}
+              detailsPreferencesKey={XDRIVE_HOST_FILES_PREFERENCES.detailsLayout}
+              viewPreferencesKey={XDRIVE_HOST_FILES_PREFERENCES.viewPreferences}
               interactionLifecycleKey={rootRevision + ':' + currentScopeKey}
               suspendBackgroundThumbnails={previewItem !== null}
               items={displayedItems}
