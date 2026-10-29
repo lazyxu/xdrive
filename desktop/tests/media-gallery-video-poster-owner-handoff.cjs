@@ -49,9 +49,12 @@ const fallback = React.createElement('span', {'data-fallback': true}, 'No cached
 const pic = tree => tree.root.findAllByType('img')[0]
 const progress = tree => tree.root.findAllByType('progress').length
 const flush = async () => { await Promise.resolve(); await new Promise(r => setImmediate(r)) }
+const noPreview = async () => null
 const fixture = (loadThumbnail, extra = {}) => React.createElement(Poster, {
   nodeID: 881, revision: 7, alt:'same-node.mp4',
-  loadThumbnail, loadPreviewURL: async () => null,
+  // Keep *every* other Host callback unchanged across the switch. Only
+  // loadThumbnail is a distinct authenticated source A -> B.
+  loadThumbnail, loadPreviewURL: noPreview,
   fallback, ...extra,
 })
 const mount = node => create(node,{createNodeMock: element => element.type === 'div' ? {} : null})
