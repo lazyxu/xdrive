@@ -92,7 +92,7 @@ def reject_constant(_):
     raise ValueError("nonstandard JSON number")
 
 try:
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     fd = os.open(sys.argv[1], flags)
     with os.fdopen(fd, "rb") as stream:
         info = os.fstat(stream.fileno())
