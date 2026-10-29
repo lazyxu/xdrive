@@ -49,7 +49,10 @@ test('all 11 dependency routes and global analysis policy share one responsive d
   assert.match(synology, /<XDriveApp\b/)
   assert.doesNotMatch(desktop + synology, /<XDriveAppRouteContent\b/)
   assert.match(sharedApp, /<XDriveAppRouteContent[\s\S]*?host=\{host\}[\s\S]*?view=\{view\}/)
-  assert.match(routeContent, /xDriveIsSharedHostPageRoute\(view\)/)
+  // Shared Host route admission now lives in the single page outlet, while
+  // the route-content frame remains layout-only (including for Files).
+  assert.match(routeContent, /<XDriveWorkspaceRouteSurface/)
+  assert.match(outlet, /if \(!xDriveIsWorkspaceAppRoute\(view\)\)/)
   assert.match(routeContent, /<XDriveAppPageOutlet[\s\S]*host=\{host\}[\s\S]*view=\{view\}/)
   assert.match(outlet, /xDriveWorkspaceRouteRequiresAdmin\(view\) && host\.adminRoleVerified !== true/)
   assert.match(outlet, /case 'admin-services':/)
