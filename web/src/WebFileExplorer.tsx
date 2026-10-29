@@ -56,6 +56,7 @@ import {
   xDriveFileExplorerSearchFiltersSignature,
   xDriveFileExplorerSearchFilterLabels,
   xDriveFileExplorerProjectSearchSources,
+  xDriveFileExplorerReadNodeID,
   xDriveFileExplorerSelectionRequest,
   xDriveFileNeedsBrowserCompatibleImagePreview,
 } from '../../ui/shared/src'
@@ -981,9 +982,10 @@ export default function WebFileExplorer({
   }
 
   const loadTextPreview = useCallback(async (item: XDriveFileExplorerItem, signal?: AbortSignal) => {
-    if (item.kind !== 'file' || signal?.aborted) return null
+    const nodeID = xDriveFileExplorerReadNodeID(item, !signal?.aborted)
+    if (nodeID === null) return null
     try {
-      return await api.fileTextPreview(Number(item.id), signal)
+      return await api.fileTextPreview(nodeID, signal)
     } catch {
       return null
     }
@@ -1054,7 +1056,10 @@ export default function WebFileExplorer({
   const loadMediaItem = useCallback((
     item: XDriveFileExplorerItem,
     signal: AbortSignal,
-  ) => api.mediaItem(Number(item.id), signal), [api])
+  ) => {
+    const nodeID = xDriveFileExplorerReadNodeID(item, !signal.aborted)
+    return nodeID === null ? Promise.resolve(null) : api.mediaItem(nodeID, signal)
+  }, [api])
 
   const loadNodeLocation = useCallback((
     nodeID: number,
