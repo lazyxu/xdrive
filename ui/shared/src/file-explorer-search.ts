@@ -37,6 +37,17 @@ export type XDriveFileExplorerSearchSourceOption = {
   name: string
 }
 
+/**
+ * Project only the current Owner-visible Source label and ID. Web and
+ * Desktop get these through different authenticated Host transports; no
+ * credentials, native Source Roots or provider secrets enter search UI.
+ */
+export function xDriveFileExplorerProjectSearchSources<T extends Readonly<{ id: number; name: string }>>(
+  sources: readonly T[],
+): XDriveFileExplorerSearchSourceOption[] {
+  return sources.map((source) => ({ id: source.id, name: source.name }))
+}
+
 export type XDriveFileExplorerSearchTagOption = {
   id: number
   name: string
