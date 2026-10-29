@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Box, Button, CircularProgress, Dialog, IconButton, Stack, Typography } from '@mui/material'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import ExpandLessRoundedIcon from '@mui/icons-material/ExpandLessRounded'
@@ -45,10 +45,13 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
   const touchActivated = useRef<{nodeID:number; at:number} | null>(null)
   const listRef = useRef<HTMLDivElement | null>(null)
   const appliedReturn = useRef<HTMLDivElement | null>(null)
-  // Restore only after the *fresh* Owner Cell Range has produced real tiles.
-  // The MUI Dialog is portaled and its scroll box can settle *after* React's
-  // first layout effect. Retry for two bounded animation frames, only while
-  // this exact mounted Owner dialog is current; never reuse old media bytes.
+  // MUI Dialog's focus trap and Enter transition can reset the scroll position
+  // after the first two animation frames. Use the real transition completion
+  // as an additional gate, without weakening the fresh Owner Cell page gate.
+  const [portalEntered, setPortalEntered] = useState(false)
+  // Restore only when this trusted Parent Dialog actually finished entering
+  // and a NEW authenticated Owner Cell Range has populated its grid. Never
+  // replay old image bytes, reset the camera, or borrow SDK Child state.
   useLayoutEffect(() => {
     if (phase !== 'ready') { appliedReturn.current = null; return }
     const node = listRef.current
@@ -56,6 +59,11 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
     const target=Math.min(initialPresentation?.loadedCount ?? 0,total)
     if (items.length < target && !pageError) return
     if (!initialPresentation) { appliedReturn.current=node; return }
+    // The prior attempt restored during Dialog's focus/Enter lifecycle; MUI
+    // subsequently focused the first tile and scrolled the gallery to top.
+    // This one-shot post-enter check wins that race without disabling the
+    // Dialog's keyboard focus trap or its accessible default focus.
+    if (!portalEntered) return
     const view=node.ownerDocument.defaultView
     const apply = () => {
       if (listRef.current !== node || !node.isConnected) return
@@ -80,7 +88,7 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
       if (first !== undefined) view?.cancelAnimationFrame(first)
       if (second !== undefined) view?.cancelAnimationFrame(second)
     }
-  }, [phase, expanded, initialPresentation, items.length, total, pageError])
+  }, [phase, expanded, initialPresentation, items.length, total, pageError, portalEntered])
   useEffect(() => {
     if (phase !== 'ready' || !initialPresentation || loadingMore || pageError ||
         items.length>=total ||
@@ -98,6 +106,7 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
   }
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="md" disableScrollLock
+      TransitionProps={{onEntered: () => setPortalEntered(true)}}
       // Avoid a body scrollbar-width resize remounting/invalidation of the
       // underlying active map while this photo modal opens.
       aria-labelledby="xdrive-places-album-title" data-xdrive-places-album-dialog

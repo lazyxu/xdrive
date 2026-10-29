@@ -1208,7 +1208,10 @@ async function testMode(browser,mode,port){
         clientHeight:element.clientHeight}))
     if (!didRestore)console.error('places-viewer-return-scroll-bounds',
       JSON.stringify({mode,expected:viewer.scrollTop,...restoredGeometry}))
-    record(mode+': real scroll position survives Viewer Back and fresh Range',
+    record(mode+': real scroll position survives Viewer Back and fresh Range'+
+      ' (restored='+restoredGeometry.scrollTop+',target='+viewer.scrollTop+
+      ',scrollHeight='+restoredGeometry.scrollHeight+
+      ',clientHeight='+restoredGeometry.clientHeight+')',
       didRestore && restoredGeometry.scrollTop>0 &&
       Math.abs(restoredGeometry.scrollTop-viewer.scrollTop)<=2)
     const returned=await page.evaluate(()=>window.__mapProbe.photoPreviewRanges)
