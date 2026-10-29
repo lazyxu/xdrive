@@ -155,6 +155,16 @@ function loadCloudFilesController(react) {
       return moduleRef.exports
     }
     if (request === './ViewerForegroundPriority') return foregroundPriority
+    if (request === './CloudFilesFirstPageAdmission') {
+      const admissionPath = path.join(repo, 'ui/shared/src/mui/CloudFilesFirstPageAdmission.ts')
+      const compiled = ts.transpileModule(fs.readFileSync(admissionPath, 'utf8'), {
+        fileName: admissionPath,
+        compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+      }).outputText
+      const unit = { exports: {} }
+      new Function('exports', 'module', compiled)(unit.exports, unit)
+      return unit.exports
+    }
     return require(request)
   }
   new Function('exports', 'module', 'require', output)(mod.exports, mod, localRequire)
