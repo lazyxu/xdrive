@@ -468,7 +468,7 @@ export function XDriveLivePhotoSurface({
   }, [failed])
 
   const beginHold = useCallback(() => {
-    if (!stillReady) return
+    if (!stillReady || (typeof document !== 'undefined' && document.visibilityState === 'hidden')) return
     // Keyboard's explicit hold remains accessible while zoomed. Show the
     // unzoomed still before starting its native unzoomed video overlay.
     if (interactiveImage && viewportRef.current.scale > 1.01) {
@@ -573,6 +573,49 @@ export function XDriveLivePhotoSurface({
     lastTapRef.current = null
     endHold()
   }, [clearHoldTimer, endHold, gestureSession])
+  // A hidden iOS PWA/desktop tab may never dispatch pointerup, keyup or blur.
+  // Retire the exact current signed motion lease rather than leaving a video
+  // Range or unfinished motion ticket alive across background suspension.
+  const retireBackgroundMotion = useCallback(() => {
+    if (gestureSessionRef.current !== gestureSession) return
+    clearHoldTimer()
+    touchGestureRef.current = null
+    zoomPointersRef.current.clear()
+    pinchRef.current = null
+    panRef.current = null
+    lastTapRef.current = null
+    holdActiveRef.current = false
+    stopPlayback()
+    cancelPendingMotion()
+    loadGenerationRef.current += 1
+    motionLoadAttemptRef.current += 1
+    loadStartedRef.current = false
+    retryableMotionLoadRef.current = false
+    const retired = motionSourceRef.current
+    motionSourceRef.current = null
+    motionURLRef.current = ''
+    xDriveAbortHTMLMediaElement(videoRef.current)
+    if (retired) disposeLivePhotoMotion(retired)
+    setMotionURL('')
+    setLoadProgress(null)
+    setMotionBytes({ loadedBytes: 0 })
+    setBufferProgress({ bufferedSeconds: 0 })
+  }, [cancelPendingMotion, clearHoldTimer, gestureSession, stopPlayback])
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') retireBackgroundMotion()
+    }
+    const onPageHide = () => retireBackgroundMotion()
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    if (typeof window !== 'undefined') window.addEventListener('pagehide', onPageHide)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      if (typeof window !== 'undefined') window.removeEventListener('pagehide', onPageHide)
+    }
+  }, [retireBackgroundMotion])
+
   const handleLostCapture = useCallback((event: PointerEvent<HTMLDivElement>) => {
     if (gestureSessionRef.current !== gestureSession) return
     // A normal pointerup loses capture too; keep the completed first tap so
@@ -583,6 +626,9 @@ export function XDriveLivePhotoSurface({
 
   const handlePointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
     if (gestureSessionRef.current !== gestureSession) return
+    // Never accept queued touches on an already-hidden document: a deferred
+    // hold timer could otherwise fire after returning to the foreground.
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
     if (interactiveImage && stillReadyRef.current && event.pointerType === 'touch') {
       zoomPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
       if (zoomPointersRef.current.size >= 2) {

@@ -64,13 +64,66 @@ if [[ ! "$storage_uid" =~ ^[0-9]+$ || ! "$storage_gid" =~ ^[0-9]+$ ]]; then
   exit 1
 fi
 
-BACKUP_VERSION=1
-if grep -Eq '"format_version"[[:space:]]*:[[:space:]]*2' "$BACKUP_DIR/manifest.json"; then
-  BACKUP_VERSION=2
-elif ! grep -Eq '"format_version"[[:space:]]*:[[:space:]]*1' "$BACKUP_DIR/manifest.json"; then
-  echo "unsupported backup format" >&2
+# The archive checksum authenticates bytes, not the interpretation of JSON:
+# grep can select a version from duplicate keys or quoted, non-JSON content.
+# Verify one bounded, regular, non-symlink manifest before choosing the v1/v2
+# lock and recovery path. Keep this preflight read-only and before Docker.
+command -v python3 >/dev/null 2>&1 || {
+  echo "restore: Python 3 is required for manifest preflight." >&2
   exit 1
-fi
+}
+BACKUP_VERSION="$(python3 - "$BACKUP_DIR/manifest.json" "$DATABASE_ONLY" <<'PY'
+import json
+import os
+import stat
+import sys
+
+MAX_MANIFEST_BYTES = 65536
+
+def reject_duplicate_keys(pairs):
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError("duplicate JSON key")
+        value[key] = item
+    return value
+
+def reject_constant(_):
+    raise ValueError("nonstandard JSON number")
+
+try:
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    fd = os.open(sys.argv[1], flags)
+    with os.fdopen(fd, "rb") as stream:
+        info = os.fstat(stream.fileno())
+        if not stat.S_ISREG(info.st_mode) or not 0 < info.st_size <= MAX_MANIFEST_BYTES:
+            raise ValueError("unsafe manifest inode or size")
+        raw = stream.read(MAX_MANIFEST_BYTES + 1)
+    if len(raw) > MAX_MANIFEST_BYTES:
+        raise ValueError("manifest exceeds size limit")
+    manifest = json.loads(raw.decode("utf-8"),
+                          object_pairs_hook=reject_duplicate_keys,
+                          parse_constant=reject_constant)
+    if type(manifest) is not dict or type(manifest.get("format_version")) is not int:
+        raise ValueError("missing or invalid format_version")
+    version = manifest["format_version"]
+    if version not in (1, 2):
+        raise ValueError("unsupported backup format")
+    for name in ("file_data_included", "consistency_verified"):
+        if name in manifest and type(manifest[name]) is not bool:
+            raise ValueError("invalid manifest boolean")
+    if sys.argv[2] not in ("0", "1"):
+        raise ValueError("invalid restore mode")
+    if sys.argv[2] == "0" and manifest.get("file_data_included") is False:
+        raise ValueError("database-only snapshot cannot be fully restored")
+    if sys.argv[2] == "1" and version == 2:
+        raise ValueError("v2 database-only restore is unsupported")
+    print(version)
+except (OSError, ValueError, UnicodeError, TypeError):
+    print("restore: invalid or unsafe backup manifest; production data was not changed.", file=sys.stderr)
+    sys.exit(1)
+PY
+)" || exit 1
 # Hold a SHARED lease on the same .backup.lock used by v2 snapshot capture.
 # A future reference-aware prune must acquire its EXCLUSIVE lease first.
 # Hold the lease from checksum preflight through the final physical restore:

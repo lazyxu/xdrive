@@ -85,8 +85,9 @@ write_checksums() {
 }
 assert_fail_closed() {
   local label="$1" message="$2"
+  shift 2
   rm -f -- "$XD_RESTORE_TEST_DOCKER_SENTINEL"
-  if bash "$RESTORE" "$BACKUP_DIR" --config-dir "$XD_CONFIG_DIR" --yes --no-safety-backup >"$TMP/$label.log" 2>&1; then
+  if bash "$RESTORE" "$BACKUP_DIR" --config-dir "$XD_CONFIG_DIR" --yes --no-safety-backup "$@" >"$TMP/$label.log" 2>&1; then
     echo "unsafe v1 restore preflight accepted $label" >&2
     exit 1
   fi
@@ -119,6 +120,46 @@ for scenario in parent_traversal absolute symlink duplicate ancestor descendant_
   write_checksums
   assert_fail_closed "$scenario" 'unsafe v1 tar archive entry'
 done
+
+# A correct checksum cannot make an ambiguous or syntactically invalid
+# Manifest safe. These must fail before any Docker call, not simply fail
+# later when selecting v1/v2 archives or opening the recovery database.
+write_archive valid
+assert_bad_manifest() {
+  local label="$1" contents="$2"
+  printf '%s\n' "$contents" > "$BACKUP_DIR/manifest.json"
+  write_checksums
+  assert_fail_closed "$label" 'invalid or unsafe backup manifest'
+}
+assert_bad_manifest manifest_missing_version '{"file_data_included":true}'
+assert_bad_manifest manifest_version_string '{"format_version":"1","file_data_included":true}'
+assert_bad_manifest manifest_version_boolean '{"format_version":true,"file_data_included":true}'
+assert_bad_manifest manifest_version_unknown '{"format_version":3,"file_data_included":true}'
+assert_bad_manifest manifest_duplicate_version '{"format_version":1,"format_version":2,"file_data_included":true}'
+assert_bad_manifest manifest_duplicate_nested '{"format_version":1,"database":{"file":"a","file":"b"}}'
+assert_bad_manifest manifest_trailing_garbage '{"format_version":1} {"other":true}'
+assert_bad_manifest manifest_nonstandard_number '{"format_version":1,"other":NaN}'
+assert_bad_manifest manifest_invalid_boolean '{"format_version":1,"file_data_included":"true"}'
+assert_bad_manifest manifest_full_from_db_only '{"format_version":1,"file_data_included":false}'
+python3 - "$BACKUP_DIR/manifest.json" <<'PY'
+import json, sys
+with open(sys.argv[1], 'w', encoding='utf-8') as out:
+    json.dump({'format_version': 1, 'padding': 'a' * 65536}, out)
+PY
+write_checksums
+assert_fail_closed manifest_too_large 'invalid or unsafe backup manifest'
+
+# Do not follow symlinks or wait on a FIFO masquerading as the Manifest.
+printf '{"format_version":1,"consistency_verified":true,"file_data_included":true}\n' > "$BACKUP_DIR/manifest.json"
+mv "$BACKUP_DIR/manifest.json" "$BACKUP_DIR/manifest.original"
+ln -s "$BACKUP_DIR/manifest.original" "$BACKUP_DIR/manifest.json"
+assert_fail_closed manifest_symlink 'invalid or unsafe backup manifest'
+rm -- "$BACKUP_DIR/manifest.json"
+mkfifo "$BACKUP_DIR/manifest.json"
+assert_fail_closed manifest_fifo 'invalid or unsafe backup manifest'
+rm -- "$BACKUP_DIR/manifest.json"
+mv "$BACKUP_DIR/manifest.original" "$BACKUP_DIR/manifest.json"
+write_checksums
 
 # GNU sha256sum -c accepts partial lists; v1 restore must not.
 write_archive valid
@@ -166,4 +207,32 @@ fi
   exit 1
 }
 
-echo 'v1 restore checksum, tar entry and database-only fail-closed preflights passed'
+# A valid v2 Manifest must select the locked repository path and pass
+# the same read-only PostgreSQL TOC preflight. Our Docker shim then fails
+# safely at the CAS helper instead of touching any real service/database.
+BACKUP_DIR="$TMP/v2-repository/snapshots/xdrive-backup-20261029T010000Z"
+mkdir -p "$BACKUP_DIR"
+: > "$TMP/v2-repository/.backup.lock"
+printf 'PGDMPdatabase fixture\n' > "$BACKUP_DIR/database.dump"
+printf '{"checks":[],"ok":true}\n' > "$BACKUP_DIR/verify.json"
+printf '{"format_version":2,"consistency_verified":true,"file_data_included":true}\n' > "$BACKUP_DIR/manifest.json"
+: > "$BACKUP_DIR/objects.index"
+: > "$BACKUP_DIR/legacy.tar"
+(cd "$BACKUP_DIR"; sha256sum database.dump verify.json manifest.json objects.index legacy.tar > SHA256SUMS.txt)
+rm -f -- "$XD_RESTORE_TEST_DOCKER_SENTINEL"
+if bash "$RESTORE" "$BACKUP_DIR" --config-dir "$XD_CONFIG_DIR" --yes --no-safety-backup >"$TMP/valid-v2.log" 2>&1; then
+  echo 'fake Docker unexpectedly allowed v2 recovery' >&2; exit 1
+fi
+[[ -s "$XD_RESTORE_TEST_DOCKER_SENTINEL" ]] &&
+  grep -Fq 'read-only pg_restore list' "$XD_RESTORE_TEST_DOCKER_SENTINEL" || {
+  echo 'valid v2 manifest was rejected before PostgreSQL archive inspection' >&2
+  cat "$TMP/valid-v2.log" >&2
+  exit 1
+}
+# Reject an incompatible v2 database-only restore, even if checksums are valid.
+assert_fail_closed manifest_v2_db_only 'invalid or unsafe backup manifest' --database-only
+printf '{"format_version":2,"format_version":1,"file_data_included":true}\n' > "$BACKUP_DIR/manifest.json"
+(cd "$BACKUP_DIR"; sha256sum database.dump verify.json manifest.json objects.index legacy.tar > SHA256SUMS.txt)
+assert_fail_closed manifest_v2_duplicate_version 'invalid or unsafe backup manifest'
+
+echo 'v1/v2 restore manifest, checksum, tar and database-only fail-closed preflights passed'

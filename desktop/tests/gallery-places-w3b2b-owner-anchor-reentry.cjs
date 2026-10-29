@@ -96,13 +96,15 @@ test('W3b2b source reauthorizes signed Cell and Node before priming the wall', (
   const original = gallery.slice(openAt, endAt)
   assert.match(original, /returning\?\.anchorNodeID/)
   assert.match(original, /anchorNodeID: returning\.anchorNodeID/)
-  assert.match(original, /source\.listBaiduNativeCellItems\(/)
+  assert.match(original, /const listCellItems=source\.listBaiduNativeCellItems/)
+  assert.match(original, /if \(!listCellItems \|\| pageSize < 1 \|\| pageSize > 100\) return/)
+  assert.match(original, /void listCellItems\(\s*cell, pageSize, 0/)
   assert.match(original, /range\.anchor_index! < 0/)
   assert.match(original, /range\.anchor_index! >= range\.total_count/)
   assert.match(original, /setSortAnchorRestoration\(returning\?\.anchorNodeID/)
   assert.ok(original.indexOf('if (range.offset !== 0') < original.indexOf('if (returning?.anchorNodeID'))
   assert.ok(original.indexOf('if (returning?.anchorNodeID') < original.indexOf('setCollectionTarget(target)'))
-  assert.ok(original.indexOf('source.listBaiduNativeCellItems(') <
+  assert.ok(original.indexOf('void listCellItems(') <
     original.indexOf('virtualCollection.primePage('))
   assert.match(gallery, /xDriveMarkBaiduCellViewerReturn\(preferenceScope, item\.node\.id, activeIndex\)/)
   assert.match(gallery, /const previous = source\.listBaiduNativeCellItems\s*\?\s*xDriveTakeBaiduCellViewerReturn\(preferenceScope\) : undefined/)

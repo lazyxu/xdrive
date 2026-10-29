@@ -79,6 +79,8 @@ export function createWebMediaGalleryDataSource(api: XDriveApi, options?: {
       api.mediaBaiduNativeViewportItems(bounds, limit, offset, query, signal, albumKey),
     listBaiduNativeCellItems: (selection, limit, offset, sort, signal) =>
       api.mediaBaiduNativeCellItems(selection, limit, offset, sort, signal),
+    getBaiduNativePhotoFocus: (nodeID, revision, signal) =>
+      api.mediaBaiduNativePhotoFocus(nodeID, revision, signal),
     getBaiduMapCoverage: signal => api.mediaBaiduMapCoverage(signal),
     getBaiduMapCoverageReasons: signal => api.mediaBaiduMapCoverageReasons(signal),
     getBaiduJSAPI4Status: signal => api.mediaBaiduJSAPI4Status(signal),

@@ -41,15 +41,20 @@ function harness({badResponse=false,aborted=false}={}){
   const latestAcceptedViewport={current:null}
   // Failed/aborted Owner Cells must discard any one-shot rotation visual hint.
   const pendingResizeDrawer={current:{owner:'fixture-owner-a',key:'owner:family',hint:{}}}
+  const gesturePresentationRef={current:null}
+  const canceledVisual=[],clearedVisual=[]
   const failed=[],summaries=[],published=[],accessible=[]
   const controller=new AbortController()
   const deps={
-    lifetime:{signal:controller.signal},cancel:()=>{},
+    lifetime:{signal:controller.signal},
+    cancel:keepVisual=>{canceledVisual.push(keepVisual)},
+    gesturePresentationRef,
+    clearGesturePresentation:()=>{clearedVisual.push(true)},
     lastViewport:{current:null},frame:{replaceAuthorizedCells:pins=>{
       published.push([...pins]);return true}},
     filterRef:{current:{key:'owner:family',snapshot:{
       filters:{sort_by:'captured',sort_dir:'desc'},albumKey:'manual:family'}}},
-    generation:0,
+    generation:0,activeQuery:null,
     listOwnerCells:async()=>{
       if(aborted)controller.abort()
       if(badResponse)return {cells:[{node_id:-1}]}
@@ -70,7 +75,7 @@ function harness({badResponse=false,aborted=false}={}){
   const names=Object.keys(deps)
   const query=new Function(...names,compiledQuery+'; return queryCells;')(...names.map(n=>deps[n]))
   return {run:()=>query(b,true),ref:failedCellsScopeRef,failed,summaries,published,
-    accessible,bounds:b,pendingResizeDrawer}
+    accessible,bounds:b,pendingResizeDrawer,canceledVisual,clearedVisual}
 }
 
 test('rejected current Owner /cells cannot keep stale pins or silently show zero photos',async()=>{
@@ -80,6 +85,8 @@ test('rejected current Owner /cells cannot keep stale pins or silently show zero
   assert.deepEqual(f.failed,[{owner:'fixture-owner-a',key:'owner:family'}])
   assert.deepEqual(f.summaries,[null])
   assert.deepEqual(f.published,[[],[]])
+  assert.deepEqual(f.canceledVisual,[false], 'failed Owner read invalidates old query work')
+  assert.deepEqual(f.clearedVisual,[true], 'failed Owner read clears gesture presentation')
   assert.equal(f.pendingResizeDrawer.current,null,
     'failed Owner Cells must discard stale rotation intent')
 })
@@ -90,6 +97,8 @@ test('invalid signed cells page takes the same fail-closed retry path',async()=>
   assert.deepEqual(f.ref.current,{owner:'fixture-owner-a',key:'owner:family'})
   assert.deepEqual(f.failed,[{owner:'fixture-owner-a',key:'owner:family'}])
   assert.deepEqual(f.published,[[],[]])
+  assert.deepEqual(f.canceledVisual,[false], 'failed Owner read invalidates old query work')
+  assert.deepEqual(f.clearedVisual,[true], 'failed Owner read clears gesture presentation')
   assert.equal(f.pendingResizeDrawer.current,null,
     'invalid Owner Cells must discard stale rotation intent')
 })
@@ -100,6 +109,8 @@ test('aborted request never grants a retry scope or reports an error',async()=>{
   assert.equal(f.ref.current,null)
   assert.deepEqual(f.failed,[])
   assert.deepEqual(f.published,[[]])
+  assert.deepEqual(f.canceledVisual,[false], 'aborted query cancels old generation')
+  assert.deepEqual(f.clearedVisual,[], 'abort never publishes a new Owner error')
   assert.equal(f.pendingResizeDrawer.current,null,
     'aborted Owner Cells must discard stale rotation intent')
 })

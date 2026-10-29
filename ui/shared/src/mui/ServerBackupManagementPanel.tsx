@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, LinearProgress,
-  MenuItem, Paper, Stack, Table, TableBody, TableCell, TableContainer,
+  MenuItem, Paper, Stack, Table, TableBody, TableCell, TableContainer, TablePagination,
   TableHead, TableRow, TextField, Typography,
 } from '@mui/material'
 import type {
   XDriveServerBackupPage, XDriveServerBackupPort, XDriveServerBackupRequest,
   XDriveServerBackupSnapshot, XDriveServerBackupHistoryEntry,
 } from '../server-backup-admin'
+import { xDriveServerBackupActionLabel } from '../server-backup-admin'
 import { latestServerBackupVerification, serverBackupReceiptDurationSeconds,
   serverBackupReceiptExplanation, summarizeServerBackupIntegrity } from '../server-backup-integrity'
 import { canPruneServerBackup, type XDriveServerBackupPrunePreview } from '../server-backup-prune-preview'
@@ -78,6 +79,9 @@ export function XDriveServerBackupManagementPanel({
   } | null>(null)
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null)
   const [historyDetail, setHistoryDetail] = useState<XDriveServerBackupHistoryEntry | null>(null)
+  const [historyPage, setHistoryPage] = useState(0)
+  const [historyQuery, setHistoryQuery] = useState('')
+  const [historyOutcome, setHistoryOutcome] = useState<'all' | 'success' | 'failed'>('all')
   const [confirmText, setConfirmText] = useState('')
   const [prunePreview, setPrunePreview] = useState<XDriveServerBackupPrunePreview | null>(null)
   const [selectedPreviewRequestID, setSelectedPreviewRequestID] = useState('')
@@ -115,6 +119,9 @@ export function XDriveServerBackupManagementPanel({
         setPolicyDraft(null)
         setConfirmation(null)
         setHistoryDetail(null)
+        setHistoryPage(0)
+        setHistoryQuery('')
+        setHistoryOutcome('all')
         setPrunePreview(null)
         setSelectedPreviewRequestID('')
         setError(e instanceof Error ? e.message : '无法更新备份状态；以宿主机记录为准。')
@@ -163,6 +170,8 @@ export function XDriveServerBackupManagementPanel({
   const integrity = page ? summarizeServerBackupIntegrity(page) : null
   const selectedComplete = selected?.state === 'complete'
   const selectedRestorable = selectedComplete && selected?.file_data_included !== false
+  const selectedDatabaseOnly = selectedComplete && selected?.format === 'v1' &&
+    selected?.file_data_included === false
   const keep = Number(keepLast)
   const keepValid = Number.isInteger(keep) && keep >= 1 && keep <= 1000
   const canPrune = canPruneServerBackup(page, keep, verifyMode, prunePreview)
@@ -183,6 +192,18 @@ export function XDriveServerBackupManagementPanel({
   const policyDays = Number(policyDraft?.days)
   const policyValid = Number.isInteger(policyDays) && policyDays >= 0 && policyDays <= 3650 &&
     !(policyDraft?.format === 'v1' && Boolean(page?.inventory.policy.repository))
+  const filteredHistory = (page?.history || []).filter(item => {
+    if (historyOutcome !== 'all' && item.state !== historyOutcome) return false
+    const query = historyQuery.trim().toLocaleLowerCase()
+    if (!query) return true
+    return [item.action, item.snapshot_id, item.request_id, item.error_code]
+      .some(value => (value || '').toLocaleLowerCase().includes(query))
+  })
+  const historyPageSize = 20
+  const visibleHistoryPage = Math.min(historyPage,
+    Math.max(0, Math.ceil(filteredHistory.length / historyPageSize) - 1))
+  const visibleHistory = filteredHistory.slice(
+    visibleHistoryPage * historyPageSize, (visibleHistoryPage + 1) * historyPageSize)
   const disabled = !supported || busy
 
   const submit = async (request: XDriveServerBackupRequest) => {
@@ -226,6 +247,7 @@ export function XDriveServerBackupManagementPanel({
     // change. Never submit a different or no-longer-restorable generation.
     if ('snapshot_id' in next && next.snapshot_id && (!selected || next.snapshot_id !== selected.id ||
       (next.action === 'restore' && !selectedRestorable) ||
+      (next.action === 'restore_database_only' && !selectedDatabaseOnly) ||
       (next.action === 'drill' && (selected.format !== 'v2' || !selectedRestorable)) ||
       ((next.action === 'delete' || next.action === 'delete_selected') &&
         !selectedComplete))) {
@@ -348,7 +370,7 @@ export function XDriveServerBackupManagementPanel({
                   不完整 {integrity.incomplete} 代；源数据不一致 {integrity.inconsistent} 代。
                 </Typography>
                 <Typography variant="body2">
-                  在最近最多 30 条宿主机操作记录中，各快照的最新校验结果：
+                  在最近最多 100 条宿主机操作记录中，各快照的最新校验结果：
                   历史通过 {integrity.historicalPassed} 代，历史失败
                   {integrity.historicalFailed} 代，未见近期校验记录
                   {integrity.withoutRecentReceipt} 代。
@@ -488,6 +510,18 @@ export function XDriveServerBackupManagementPanel({
                 expected: 'RESTORE ' + selected.id,
                 action: { action: 'restore', snapshot_id: selected.id, confirmation: 'RESTORE ' + selected.id },
               }) }}>恢复所选备份</XDriveActionButton>
+            <XDriveActionButton intent="warning"
+              disabled={disabled || !selectedDatabaseOnly}
+              onClick={() => { if (selectedDatabaseOnly && selected) ask({
+                title: '确认仅恢复数据库（保留现有文件）？',
+                description: '仅适用于明确标记为仅数据库的 v1 备份。宿主机将先创建恢复前安全备份、验证所选数据库归档并停用服务，随后替换 PostgreSQL 数据库；现有文件数据不删除、不从此快照还原。数据库与当前文件可能产生引用不一致，恢复后必须执行数据完整性验证，且可能需要人工修复。该操作会覆盖当前数据库修改并中断所有登录。',
+                expected: 'DATABASE ONLY RESTORE ' + selected.id,
+                action: {
+                  action: 'restore_database_only',
+                  snapshot_id: selected.id,
+                  confirmation: 'DATABASE ONLY RESTORE ' + selected.id,
+                },
+              }) }}>仅恢复 v1 数据库（保留文件）</XDriveActionButton>
             <XDriveActionButton intent="danger" disabled={disabled || !selectedComplete || selected?.format !== 'v1'}
               onClick={() => { if (selected) ask({
                 title: '确认删除旧版 v1 快照？',
@@ -730,8 +764,27 @@ export function XDriveServerBackupManagementPanel({
         <Stack spacing={1.5}>
           <Typography variant="subtitle1" fontWeight={600}>宿主机备份操作与校验历史</Typography>
           <Typography variant="body2" color="text.secondary">
-            最多保留 30 条真实执行结果。历史验证通过不代表当前仍完整；每次恢复前都重新校验。
+            最多保留最近 100 条宿主机真实执行结果，支持筛选和分页。历史验证通过不代表当前仍完整；每次恢复前都重新校验。
           </Typography>
+          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap
+            data-xdrive-admin-backup-history-filters>
+            <TextField size="small" label="搜索动作、快照、请求号或失败代码"
+              value={historyQuery} sx={{ minWidth: 260, flexGrow: 1 }}
+              onChange={e => { setHistoryQuery(e.target.value); setHistoryPage(0) }} />
+            <TextField select size="small" label="结果" sx={{ minWidth: 125 }}
+              value={historyOutcome}
+              onChange={e => {
+                setHistoryOutcome(e.target.value as 'all' | 'success' | 'failed')
+                setHistoryPage(0)
+              }}>
+              <MenuItem value="all">全部</MenuItem>
+              <MenuItem value="success">成功</MenuItem>
+              <MenuItem value="failed">失败</MenuItem>
+            </TextField>
+            <Typography variant="caption" color="text.secondary">
+              筛选结果 {filteredHistory.length} 条
+            </Typography>
+          </Stack>
           <TableContainer sx={{ maxHeight: 320 }}>
             <Table size="small" stickyHeader aria-label="服务器备份操作历史">
               <TableHead>
@@ -741,10 +794,10 @@ export function XDriveServerBackupManagementPanel({
                 </TableRow>
               </TableHead>
               <TableBody>
-                {(page?.history || []).map(item => (
+                {visibleHistory.map(item => (
                   <TableRow key={item.request_id}>
                     <TableCell>{item.finished_at ? new Date(item.finished_at).toLocaleString() : '—'}</TableCell>
-                    <TableCell>{item.action}</TableCell>
+                    <TableCell>{xDriveServerBackupActionLabel(item.action || '')}</TableCell>
                     <TableCell sx={{ overflowWrap: 'anywhere' }}>{item.snapshot_id || '—'}</TableCell>
                     <TableCell>{item.state === 'success' ? '成功' : '失败'}{item.error_code ? ' · ' + item.error_code : ''}</TableCell>
                     <TableCell>{item.mode || '—'}</TableCell>
@@ -757,10 +810,16 @@ export function XDriveServerBackupManagementPanel({
                     </TableCell>
                   </TableRow>
                 ))}
-                {!page?.history?.length ? <TableRow><TableCell colSpan={8}>暂无历史操作记录。</TableCell></TableRow> : null}
+                {!filteredHistory.length ? <TableRow><TableCell colSpan={8}>没有符合条件的历史操作记录。</TableCell></TableRow> : null}
               </TableBody>
             </Table>
           </TableContainer>
+          <TablePagination component="div" count={filteredHistory.length}
+            page={visibleHistoryPage} rowsPerPage={historyPageSize} rowsPerPageOptions={[historyPageSize]}
+            onPageChange={(_, nextPage) => setHistoryPage(nextPage)}
+            labelRowsPerPage="每页" labelDisplayedRows={({ from, to, count }) =>
+              `${from}–${to} / ${count}`} />
+
         </Stack>
       </Paper>
       <Dialog open={Boolean(historyDetail)} onClose={() => setHistoryDetail(null)}
@@ -770,7 +829,7 @@ export function XDriveServerBackupManagementPanel({
         <DialogContent>
           {historyDetail ? (
             <Stack spacing={1.5} sx={{ pt: 1 }}>
-              <Typography variant="body2">动作：{historyDetail.action} ·
+              <Typography variant="body2">动作：{xDriveServerBackupActionLabel(historyDetail.action || '')} ·
                 {historyDetail.state === 'success' ? '已完成' : '失败'}</Typography>
               <Typography variant="body2">快照：{historyDetail.snapshot_id || '—'}</Typography>
               <Typography variant="body2">校验模式：{historyDetail.mode || '不适用'}</Typography>
@@ -790,6 +849,13 @@ export function XDriveServerBackupManagementPanel({
               <Alert severity={historyDetail.state === 'failed' ? 'warning' : 'info'}>
                 {serverBackupReceiptExplanation(historyDetail)}
               </Alert>
+              {historyDetail.action === 'restore_database_only' ? (
+                <Alert severity="warning" data-xdrive-admin-database-only-history-scope>
+                  该历史操作仅恢复 PostgreSQL 数据库，原有文件数据被保留。
+                  即使宿主机记录成功，也不代表数据库与当前文件完全一致，
+                  更不能视为数据库和文件的完整恢复演练。请重新执行存储完整性校验。
+                </Alert>
+              ) : null}
               <XDriveBackupVerificationReceipt entry={historyDetail} />
               {historyDetail.action === 'delete_selected' ? (
                 <Alert severity={historyDetail.state === 'success' && historyDetail.selected_delete

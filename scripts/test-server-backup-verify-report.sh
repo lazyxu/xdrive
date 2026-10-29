@@ -68,6 +68,62 @@ grep -Fq 'v1 snapshot contains symlink database.dump' "$TMP/v1-symlink.log"
 rm "$v1/database.dump"
 mv "$v1/database.original" "$v1/database.dump"
 
+# Verification must classify only canonical top-level JSON values. Grep/sed
+# previously accepted a nested file_data_included=false as database-only
+# even if the real manifest required file content, or selected duplicate keys.
+assert_bad_v1_manifest() {
+  local label="$1" raw="$2"
+  printf '%s\n' "$raw" > "$v1/manifest.json"
+  (cd "$v1"; sha256sum database.dump verify.json manifest.json > SHA256SUMS.txt)
+  if bash "$MANAGER" backup verify "$v1" >"$TMP/$label-plain.log" 2>&1; then
+    echo "Host verifier accepted invalid manifest $label" >&2; exit 1
+  fi
+  grep -Fq 'invalid or unsafe backup manifest' "$TMP/$label-plain.log"
+  if bash "$MANAGER" backup verify --json "$v1" >"$TMP/$label.json" 2>"$TMP/$label-json.log"; then
+    echo "Host JSON verifier accepted invalid manifest $label" >&2; exit 1
+  fi
+  python3 - "$TMP/$label.json" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1], encoding='utf-8'))
+assert data["state"] == "failed" and data["format"] == "unknown", data
+assert data["cas_objects_checked"] == 0 and data["cas_bytes_hashed"] == 0, data
+PY
+}
+assert_bad_v1_manifest invalid_duplicate_version '{"format_version":1,"format_version":2,"file_data_included":false}'
+assert_bad_v1_manifest invalid_nested_duplicate '{"format_version":1,"meta":{"x":1,"x":2},"file_data_included":false}'
+assert_bad_v1_manifest invalid_boolean_version '{"format_version":true,"file_data_included":false}'
+assert_bad_v1_manifest invalid_boolean_metadata '{"format_version":1,"file_data_included":"false"}'
+assert_bad_v1_manifest invalid_trailing_json '{"format_version":1} {"file_data_included":false}'
+python3 - "$v1/manifest.json" <<'PY'
+import json, sys
+with open(sys.argv[1], 'w', encoding='utf-8') as out:
+    json.dump({'format_version': 1, 'padding': 'x' * 65536}, out)
+PY
+(cd "$v1"; sha256sum database.dump verify.json manifest.json > SHA256SUMS.txt)
+if bash "$MANAGER" backup verify "$v1" >"$TMP/v1-large-manifest.log" 2>&1; then
+  echo 'Host verifier accepted oversized manifest' >&2; exit 1
+fi
+grep -Fq 'invalid or unsafe backup manifest' "$TMP/v1-large-manifest.log"
+
+# The real top-level file_data_included=true requires blobs.tar even if a
+# nested field says false. The inverse is a valid database-only snapshot.
+printf '{"format_version":1,"file_data_included":true,"meta":{"file_data_included":false}}\n' > "$v1/manifest.json"
+(cd "$v1"; sha256sum database.dump verify.json manifest.json > SHA256SUMS.txt)
+if bash "$MANAGER" backup verify --json "$v1" >"$TMP/v1-nested-false.json" 2>"$TMP/v1-nested-false.log"; then
+  echo 'nested metadata hid missing v1 blob archive' >&2; exit 1
+fi
+grep -Fq 'backup is missing blobs.tar' "$TMP/v1-nested-false.log"
+printf '{"format_version":1,"file_data_included":false,"meta":{"file_data_included":true}}\n' > "$v1/manifest.json"
+(cd "$v1"; sha256sum database.dump verify.json manifest.json > SHA256SUMS.txt)
+bash "$MANAGER" backup verify --json "$v1" > "$TMP/v1-nested-true.json"
+python3 - "$TMP/v1-nested-true.json" <<'PY'
+import json,sys
+data=json.load(open(sys.argv[1],encoding='utf-8'))
+assert data["state"] == "success" and data["format"] == "v1",data
+PY
+printf '{"format_version":1,"file_data_included":false,"consistency_verified":true}\n' > "$v1/manifest.json"
+(cd "$v1"; sha256sum database.dump verify.json manifest.json > SHA256SUMS.txt)
+
 # A correct SHA-256 does not make a v1 tar safe to extract. Verify headers
 # without reading file payload into memory or touching any real storage.
 v1full="$XD_CONFIG_DIR/backups/snapshots/xdrive-backup-20261026T005959Z"
@@ -199,4 +255,17 @@ fi
 if bash "$MANAGER" backup verify --json "$v2" unexpected > "$TMP/extra.json" 2>/dev/null; then
   echo 'extra verify args accepted' >&2; exit 1
 fi
-echo 'Host JSON backup verify: checksum, CAS stats, failure and privacy passed'
+# Reject conflicting v2/v1 versions even when the checksum file was
+# recomputed to match. A failed JSON receipt must not claim CAS inspection.
+printf '{"format_version":2,"format_version":1,"file_data_included":true}\n' > "$v2/manifest.json"
+(cd "$v2"; sha256sum database.dump verify.json manifest.json objects.index legacy.tar > SHA256SUMS.txt)
+if bash "$MANAGER" backup verify --json "$v2" > "$TMP/v2-ambiguous.json" 2>"$TMP/v2-ambiguous.log"; then
+  echo 'ambiguous v2 backup manifest was verified' >&2; exit 1
+fi
+python3 - "$TMP/v2-ambiguous.json" <<'PY'
+import json,sys
+data=json.load(open(sys.argv[1],encoding='utf-8'))
+assert data["state"] == "failed" and data["format"] == "unknown",data
+assert data["cas_objects_checked"] == 0 and data["cas_bytes_hashed"] == 0,data
+PY
+echo 'Host JSON backup verify: strict manifest, checksum, CAS stats, failure and privacy passed'

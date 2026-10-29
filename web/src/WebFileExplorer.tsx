@@ -55,6 +55,10 @@ import {
   xDriveFileExplorerSearchFiltersActive,
   xDriveFileExplorerSearchFiltersSignature,
   xDriveFileExplorerSearchFilterLabels,
+  xDriveFileExplorerProjectSearchSources,
+  xDriveFileExplorerReadNodeID,
+  xDriveFileExplorerPreviewRequest,
+  xDriveFileExplorerSelectionRequest,
   xDriveFileNeedsBrowserCompatibleImagePreview,
 } from '../../ui/shared/src'
 import type {
@@ -230,7 +234,7 @@ export default function WebFileExplorer({
     setTagDialogMode(null)
   }, [navigationSessionStorageKey])
   const loadSourceOptions = useCallback(async (): Promise<XDriveFileExplorerSearchSourceOption[]> =>
-    (await api.sources()).map((source) => ({ id: source.id, name: source.name })),
+    xDriveFileExplorerProjectSearchSources(await api.sources()),
   [api])
   const { options: searchSourceOptions } = useXDriveFileExplorerOwnerSourceOptions({
     host: api,
@@ -967,9 +971,9 @@ export default function WebFileExplorer({
     action: XDriveFileExplorerSelectionAction,
     selected: readonly XDriveFileExplorerItem[],
   ) => {
-    const reason = getSelectionActionDisabledReason(action, selected, new Set(selected.map((item) => Number(item.id))).size)
-    if (reason) onError(new Error(reason))
-    return !reason
+    const ticket = xDriveFileExplorerSelectionRequest(action, selected, getSelectionActionDisabledReason)
+    if (ticket.reason) onError(new Error(ticket.reason))
+    return ticket.allowed
   }
   const copyItems = (selected: XDriveFileExplorerItem[]) => {
     if (allowSelectionAction('copy', selected)) copyWorkspaceItems(selected)
@@ -979,9 +983,10 @@ export default function WebFileExplorer({
   }
 
   const loadTextPreview = useCallback(async (item: XDriveFileExplorerItem, signal?: AbortSignal) => {
-    if (item.kind !== 'file' || signal?.aborted) return null
+    const nodeID = xDriveFileExplorerReadNodeID(item, !signal?.aborted)
+    if (nodeID === null) return null
     try {
-      return await api.fileTextPreview(Number(item.id), signal)
+      return await api.fileTextPreview(nodeID, signal)
     } catch {
       return null
     }
@@ -1052,7 +1057,10 @@ export default function WebFileExplorer({
   const loadMediaItem = useCallback((
     item: XDriveFileExplorerItem,
     signal: AbortSignal,
-  ) => api.mediaItem(Number(item.id), signal), [api])
+  ) => {
+    const nodeID = xDriveFileExplorerReadNodeID(item, !signal.aborted)
+    return nodeID === null ? Promise.resolve(null) : api.mediaItem(nodeID, signal)
+  }, [api])
 
   const loadNodeLocation = useCallback((
     nodeID: number,
@@ -1065,16 +1073,16 @@ export default function WebFileExplorer({
     signal?: AbortSignal,
     onProgress?: XDriveByteProgressHandler,
   ) => {
-    if (item.kind !== 'file') return null
+    const plan = xDriveFileExplorerPreviewRequest(item, kind, !signal?.aborted)
+    if (!plan) return null
     try {
-      if (kind === 'live_photo') {
-        return await api.mediaLivePhotoStillURL(Number(item.id), signal)
+      if (plan.mode === 'live-still') {
+        return await api.mediaLivePhotoStillURL(plan.nodeID, signal)
       }
-      if (kind === 'image' && xDriveFileNeedsBrowserCompatibleImagePreview(item.name)) {
-        return await api.mediaAnalysisPreviewURL(Number(item.id), signal, Number(item.revision), onProgress)
+      if (plan.mode === 'analysis-image') {
+        return await api.mediaAnalysisPreviewURL(plan.nodeID, signal, Number(item.revision), onProgress)
       }
-      if (!['pdf', 'video', 'audio', 'image'].includes(kind)) return null
-      return await api.filePreviewURL(Number(item.id), signal)
+      return await api.filePreviewURL(plan.nodeID, signal)
     } catch {
       return null
     }

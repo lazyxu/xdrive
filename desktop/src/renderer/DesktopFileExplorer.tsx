@@ -19,7 +19,11 @@ import {
   xDriveFileExplorerDownloadPlan,
   xDriveFileExplorerEnsureUploadDirectory,
   xDriveFileExplorerResolveSelectionNodes,
+  xDriveFileExplorerProjectSearchSources,
+  xDriveFileExplorerSelectionRequest,
   xDriveFileExplorerSelectionAdmissionReason,
+  xDriveFileExplorerReadNodeID,
+  xDriveFileExplorerPreviewRequest,
   xDriveFileExplorerResolveFolderUploadTargets,
   xDriveFileExplorerPropertiesRefs,
   xDriveFileExplorerAvailabilityError,
@@ -320,7 +324,7 @@ export default function DesktopFileExplorer({
   const loadSourceOptions = useCallback(async (): Promise<XDriveFileExplorerSearchSourceOption[]> => {
     const result = await hostPort.browse.getSources()
     if (!result.ok) throw new Error('当前 Agent 无法读取文件搜索来源。')
-    return result.data.map((source) => ({ id: source.id, name: source.name }))
+    return xDriveFileExplorerProjectSearchSources(result.data)
   }, [hostPort])
   const { options: searchSourceOptions } = useXDriveFileExplorerOwnerSourceOptions({
     host: hostPort,
@@ -897,9 +901,9 @@ export default function DesktopFileExplorer({
     action: XDriveFileExplorerSelectionAction,
     selected: readonly XDriveFileExplorerItem[],
   ) => {
-    const reason = getSelectionActionDisabledReason(action, selected, new Set(selected.map((item) => Number(item.id))).size)
-    if (reason) onError(reason)
-    return !reason
+    const ticket = xDriveFileExplorerSelectionRequest(action, selected, getSelectionActionDisabledReason)
+    if (ticket.reason) onError(ticket.reason)
+    return ticket.allowed
   }
   const copyItems = (selected: XDriveFileExplorerItem[]) => {
     if (allowSelectionAction('copy', selected)) copyWorkspaceItems(selected)
@@ -909,12 +913,13 @@ export default function DesktopFileExplorer({
   }
 
   const loadTextPreview = useCallback(async (item: XDriveFileExplorerItem, signal?: AbortSignal) => {
-    if (!textPreviewSupported || item.kind !== 'file' || signal?.aborted) return null
+    const nodeID = xDriveFileExplorerReadNodeID(item, textPreviewSupported && !signal?.aborted)
+    if (nodeID === null) return null
     // Reuse the sender-scoped viewport cancel protocol. Abort promptly on
     // Inspector/Quick Look close, navigation or Owner session replacement.
     const result = await hostPort.requestViewport(
       signal,
-      (requestID) => hostPort.media.cloudTextPreview(Number(item.id), requestID),
+      (requestID) => hostPort.media.cloudTextPreview(nodeID, requestID),
     )
     return result.ok ? result.data : null
   }, [textPreviewSupported])
@@ -966,7 +971,8 @@ export default function DesktopFileExplorer({
     item: XDriveFileExplorerItem,
     signal: AbortSignal,
   ) => {
-    if (!mediaPropertiesSupported || item.kind !== 'file') return null
+    const nodeID = xDriveFileExplorerReadNodeID(item, mediaPropertiesSupported && !signal.aborted)
+    if (nodeID === null) return null
     const requestID = nextDesktopFilePropertiesRequestID()
     const cancel = () => {
       void hostPort.media.cancelMediaItem(requestID)
@@ -974,7 +980,7 @@ export default function DesktopFileExplorer({
     if (signal.aborted) return null
     signal.addEventListener('abort', cancel, { once: true })
     try {
-      const result = await hostPort.media.getMediaItem(Number(item.id), requestID)
+      const result = await hostPort.media.getMediaItem(nodeID, requestID)
       if (signal.aborted) return null
       if (!result.ok) throw new Error(result.error.message)
       return result.data
@@ -999,12 +1005,13 @@ export default function DesktopFileExplorer({
     signal?: AbortSignal,
     onProgress?: XDriveByteProgressHandler,
   ) => {
-    if (!previewStreamSupported || item.kind !== 'file') return null
-    if (kind === 'image' && xDriveFileNeedsBrowserCompatibleImagePreview(item.name)) {
+    const plan = xDriveFileExplorerPreviewRequest(item, kind, previewStreamSupported && !signal?.aborted)
+    if (!plan) return null
+    if (plan.mode === 'analysis-image') {
       try {
         const result = await hostPort.requestViewport(
           signal,
-          (requestID) => hostPort.media.getMediaAnalysisPreview(Number(item.id), requestID, onProgress),
+          (requestID) => hostPort.media.getMediaAnalysisPreview(plan.nodeID, requestID, onProgress),
         )
         if (!result.ok || signal?.aborted) return null
         return URL.createObjectURL(new Blob(
@@ -1022,20 +1029,19 @@ export default function DesktopFileExplorer({
           (url) => agent.releaseCloudFilePreviewURL(url))
       }
     }
-    if (kind === 'live_photo') {
+    if (plan.mode === 'live-still') {
       const result = await hostPort.requestViewport(
         signal,
-        (requestID) => agent.getMediaLivePhotoStill(Number(item.id), requestID),
+        (requestID) => agent.getMediaLivePhotoStill(plan.nodeID, requestID),
         discardLate,
       )
       return result.ok
         ? hostPort.leasePreviewURL(result.data, signal, (url) => agent.releaseCloudFilePreviewURL(url))
         : null
     }
-    if (!['pdf', 'video', 'audio', 'image'].includes(kind)) return null
     const result = await hostPort.requestViewport(
       signal,
-      (requestID) => agent.cloudFilePreviewURL(Number(item.id), requestID),
+      (requestID) => agent.cloudFilePreviewURL(plan.nodeID, requestID),
       discardLate,
     )
     return result.ok

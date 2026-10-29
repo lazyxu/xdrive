@@ -50,6 +50,18 @@ export type XDriveSynologyOwnerStreamMIME =
   | 'video/mp4' | 'video/webm'
   | 'audio/mpeg' | 'audio/mp4' | 'audio/ogg' | 'audio/wav' | 'audio/flac'
 
+/** One *bounded*, fully verified motion byte resource; never a signed
+ * Server URL or general-purpose DSM media proxy. */
+export type XDriveSynologyOwnerLiveMotion = {
+  nodeID: number
+  revision: number
+  mimeType: 'video/mp4' | 'video/quicktime'
+  size: number
+  sha256: string
+  data: Uint8Array
+}
+export const XDRIVE_SYNOLOGY_OWNER_LIVE_MOTION_MAX_BYTES = 4 << 20
+
 export type XDriveSynologyOwnerFileSort = XDriveSynologyOwnerFilePageResponse['sort']
 export type XDriveSynologyOwnerFileOrder = XDriveSynologyOwnerFilePageResponse['order']
 
@@ -227,6 +239,10 @@ export interface XDriveSynologyBackupLocalClient extends XDriveLocalBackupCommon
     albumID?: string, signal?: AbortSignal,
   ): Promise<MediaItemRange>
   ownerGalleryAlbums(signal?: AbortSignal): Promise<MediaAlbum[]>
+  /** Exact current Owner Live Photo only; 4 MiB bounded video bytes. */
+  ownerLivePhotoMotion(
+    nodeID: number, revision: number, signal?: AbortSignal,
+  ): Promise<XDriveSynologyOwnerLiveMotion>
   /** Strict bounded JSON text read, not arbitrary binary or signed content URL. */
   ownerFileTextPreview(nodeID: number, signal?: AbortSignal): Promise<XDriveFileTextPreview>
   /** Current revision must be re-verified by the Owner Server; no Agent cached
@@ -271,7 +287,7 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
       'device-backups', 'device-backup-runs',
       'device-backup-page', 'device-backup-folders', 'cloud-quota',
       'cloud-root', 'cloud-children', 'cloud-text-preview', 'cloud-media-range', 'cloud-thumbnail',
-       'cloud-gallery-items', 'cloud-gallery-albums'].includes(operation)) {
+       'cloud-gallery-items', 'cloud-gallery-albums', 'cloud-live-motion'].includes(operation)) {
       throw new Error('Unsupported DSM backup operation')
     }
     // DSM custom CGI is one executable URL. Extra /v1/ PATH_INFO suffixes
@@ -364,6 +380,44 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
     },
     ownerGalleryAlbums: async (signal) => validateOwnerGalleryAlbums(
       await request<unknown>('/v1/cloud-gallery-albums', 'GET', undefined, signal)),
+    ownerLivePhotoMotion: async (nodeID, revision, signal) => {
+      if (![nodeID, revision].every(value => Number.isSafeInteger(value) && value > 0)) {
+        throw new Error('Invalid Owner Live Photo identity')
+      }
+      const raw = await request<unknown>(
+        '/v1/cloud-live-motion?node_id=' + nodeID + '&revision=' + revision,
+        'GET', undefined, signal)
+      if (signal?.aborted || !raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        throw new Error('Owner Live Photo is no longer available')
+      }
+      const data = raw as Record<string, unknown>
+      if (Object.keys(data).length !== 6 ||
+        Object.keys(data).some(key =>
+          !['node_id', 'revision', 'mime_type', 'size', 'sha256', 'data'].includes(key)) ||
+        data.node_id !== nodeID || data.revision !== revision ||
+        (data.mime_type !== 'video/mp4' && data.mime_type !== 'video/quicktime') ||
+        !Number.isSafeInteger(data.size) || (data.size as number) < 12 ||
+        (data.size as number) > XDRIVE_SYNOLOGY_OWNER_LIVE_MOTION_MAX_BYTES ||
+        typeof data.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(data.sha256) ||
+        typeof data.data !== 'string' ||
+        data.data.length > Math.ceil(XDRIVE_SYNOLOGY_OWNER_LIVE_MOTION_MAX_BYTES / 3) * 4 ||
+        !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(data.data)) {
+        throw new Error('Invalid Owner Live Photo projection')
+      }
+      const binary = atob(data.data)
+      if (binary.length !== data.size || binary.length < 12 ||
+        binary.slice(4, 8) !== 'ftyp') {
+        throw new Error('Owner Live Photo motion signature or size changed')
+      }
+      const bytes = new Uint8Array(binary.length)
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+      if (signal?.aborted) throw new Error('Owner Live Photo cancelled')
+      return {
+        nodeID, revision,
+        mimeType: data.mime_type as XDriveSynologyOwnerLiveMotion['mimeType'],
+        size: bytes.length, sha256: data.sha256, data: bytes,
+      }
+    },
     ownerFilesRoot: async (signal) =>
       xDriveValidateSynologyOwnerFileRoot(
         await request<unknown>('/v1/cloud-root', 'GET', undefined, signal)),

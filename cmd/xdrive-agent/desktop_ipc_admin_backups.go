@@ -59,6 +59,11 @@ func validDesktopAdminServerBackupRequest(in client.AdminServerBackupRequest) bo
 	case "restore":
 		return in.SnapshotID != "" && in.Confirmation == "RESTORE "+in.SnapshotID &&
 			in.Format == "" && in.Mode == "" && in.KeepLast == 0 && in.RetentionDays == 0 && in.Revision == ""
+	case "restore_database_only":
+		return strings.HasPrefix(in.SnapshotID, "v1:") &&
+			in.Confirmation == "DATABASE ONLY RESTORE "+in.SnapshotID &&
+			in.Format == "" && in.Mode == "" && in.KeepLast == 0 &&
+			in.RetentionDays == 0 && in.Revision == ""
 	case "delete_selected":
 		return strings.HasPrefix(in.SnapshotID, "v2-") &&
 			in.Confirmation == "DELETE "+in.SnapshotID && len(in.PreviewRequestID) == 24 &&

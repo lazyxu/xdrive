@@ -56,7 +56,7 @@ export type AgentAdminStorageRequest = {
   kind?: 'media_thumbnail' | 'video_poster' | 'analysis_preview' | 'upload_staging' | 'storage_temp' | 'all'
 }
 export type AgentAdminServerBackupRequest = {
-  action: 'create' | 'verify' | 'verify_all' | 'preview_delete' | 'drill' | 'plan' | 'restore' | 'delete' | 'delete_selected' | 'prune' | 'policy'
+  action: 'create' | 'verify' | 'verify_all' | 'preview_delete' | 'drill' | 'plan' | 'restore' | 'restore_database_only' | 'delete' | 'delete_selected' | 'prune' | 'policy'
   snapshot_id?: string
   format?: 'v1' | 'v2'
   mode?: 'fast' | 'deep'
