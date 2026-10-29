@@ -236,13 +236,11 @@ export function XDrivePublicShareUnifiedDirectoryExplorer({
         </DialogTitle>
         <DialogContent dividers sx={{ p: 1, minHeight: 320 }}
           data-xdrive-public-share-preview-quality={previewMode || undefined}>
+          {/* Cached video posters are presentation-only JPEGs; keep the
+              original Node/revision and filename for every Share operation. */}
           {previewEntry && previewMode && (
             <XDriveFilePreviewSurface
               key={previewEntry.id + ':' + (previewEntry.revision ?? 0) + ':' + previewMode}
-              // Cached video posters are presentation-only JPEG images. The
-              // real filename stays in the dialog header and every Share
-              // request keeps the original exact Node/revision/Share identity.
-              // Never tell the Preview Engine that a poster is video bytes.
               target={{ id: previewEntry.id,
                 name: previewMode === 'cached-video-poster' ? '安全缓存视频封面.jpg' : previewEntry.name,
                 kind: 'file', size: previewEntry.size, revision: previewEntry.revision }}
