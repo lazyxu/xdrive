@@ -12,7 +12,7 @@ on:
       - 'android/app/build.gradle.kts'
       - 'android/app/src/baidu/**'
       - 'android/app/src/noBaidu/**'
-      - 'android/app/src/main/**'
+      - 'android/app/src/main/AndroidManifest.xml'
   workflow_dispatch:
 
 permissions:
@@ -20,7 +20,7 @@ permissions:
 
 concurrency:
   group: xdrive-android-baidu-optin-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   compile-optional-sdk:
