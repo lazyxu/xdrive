@@ -393,6 +393,30 @@ assert_invalid_inventory_manifest nested_false '{"format_version":1,"file_data_i
 assert_invalid_inventory_manifest duplicate_file_data '{"format_version":1,"file_data_included":false,"file_data_included":true,"consistency_verified":true}' incomplete true
 assert_invalid_inventory_manifest inconsistent_nested_true '{"format_version":1,"file_data_included":false,"consistency_verified":false,"note":{"consistency_verified":true}}' inconsistent false
 assert_invalid_inventory_manifest wrong_version '{"format_version":2,"file_data_included":false,"consistency_verified":true}' incomplete true
+# Invalid inode types and overlarge JSON must fail immediately, including
+# FIFOs: a backup-administration read may never wait for an external writer.
+manifest_guard="$TMP/admin-manifest-guard"
+printf '{"format_version":1,"file_data_included":false,"consistency_verified":true}\n' > "$manifest_guard"
+rm -f -- "$db_only_manifest"
+ln -s "$manifest_guard" "$db_only_manifest"
+if backup_admin_manifest_info "$db_only_manifest" >/dev/null; then
+  echo 'symlinked Host backup Manifest accepted' >&2; exit 1
+fi
+rm "$db_only_manifest"
+mkfifo "$db_only_manifest"
+if backup_admin_manifest_info "$db_only_manifest" >/dev/null; then
+  echo 'FIFO Host backup Manifest accepted' >&2; exit 1
+fi
+rm "$db_only_manifest"
+python3 - "$db_only_manifest" <<'PY'
+import json,sys
+with open(sys.argv[1], 'w', encoding='utf-8') as out:
+    json.dump({"format_version":1, "file_data_included":False,
+               "consistency_verified":True, "padding":"x"*65536}, out)
+PY
+if backup_admin_manifest_info "$db_only_manifest" >/dev/null; then
+  echo 'oversized Host backup Manifest accepted' >&2; exit 1
+fi
 cp "$TMP/db-only-valid-manifest" "$db_only_manifest"
 backup_admin_inventory "$dir"
 python3 - "$dir/backup-admin-inventory.json" <<'PY'
