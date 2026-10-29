@@ -26,7 +26,7 @@ test('Public Share original preview remains scoped to existing four signed safe 
   for (const name of ['photo.JPG', 'image.jpeg', 'image.PNG', 'image.webp','image.gif'])
     assert.equal(mode(entry(name),granted),'original',name)
   assert.equal(mode(entry('photo.jpg',{revision:undefined,thumbnail_candidate:false}),granted),'original')
-  for (const name of ['index.html', 'clip.mp4', 'clip.mov', 'clip.webm', 'index.pdf', 'download.zip', 'x.svg'])
+  for (const name of ['index.html', 'index.pdf', 'download.zip', 'x.svg'])
     assert.equal(mode(entry(name),granted),null,name)
 })
 
@@ -44,12 +44,29 @@ test('cached Share-derived stills never become full-resolution or Live-motion ti
   assert.equal(mode(entry('photo.heic'),{...granted,hasOriginal:false}),'cached-still')
 })
 
+test('Share cached video posters are bounded readonly JPEG stills, never playable media', () => {
+  for (const filename of ['clip.mp4', 'clip.MOV', 'clip.m4v', 'clip.mkv', 'clip.webm']) {
+    assert.equal(mode(entry(filename), granted), 'cached-video-poster', filename)
+    assert.equal(mode(entry(filename, { thumbnail_candidate: false }), granted), null)
+    assert.equal(mode(entry(filename, { revision: 0 }), granted), null)
+    assert.equal(mode(entry(filename, { type: 'dir' }), granted), null)
+    assert.equal(mode(entry(filename), { ...granted, hasThumbnail: false }), null)
+    assert.equal(mode(entry(filename), { ...granted, canPreview: false }), null)
+  }
+  for (const filename of ['clip.avi', 'clip.mpeg', 'script.html', 'index.pdf', 'clip.svg'])
+    assert.equal(mode(entry(filename), granted), null, filename)
+})
+
 test('shared FilePreviewSurface renders derived still only from Share thumbnail', () => {
   const bridge=fs.readFileSync(path.join(root,'ui/shared/src/mui/PublicShareUnifiedDirectoryExplorer.tsx'),'utf8')
   const web=fs.readFileSync(path.join(root,'web/src/PublicShare.tsx'),'utf8')
   const api=fs.readFileSync(path.join(root,'web/src/api.ts'),'utf8')
   assert.match(bridge, /xDrivePublicShareViewerStillMode\(entry/)
   assert.match(bridge, /previewMode === 'cached-still'/)
+  assert.match(bridge, /previewMode === 'cached-video-poster'/)
+  assert.match(bridge, /仅缓存视频封面（不能播放）/)
+  assert.match(bridge, /安全缓存视频封面\.jpg/)
+  assert.match(bridge, /previewMode === 'cached-video-poster'[\s\S]*?loadThumbnail\(previewEntry, signal\)/)
   assert.match(bridge, /loadThumbnail\(previewEntry, signal\)/)
   assert.match(bridge, /loadImagePreview\(previewEntry, signal\)/)
   assert.match(bridge, /shareImagePreviewPattern\.test\(entry\.name\)/)
