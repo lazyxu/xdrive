@@ -10,6 +10,7 @@ const controller = read('ui', 'shared', 'src', 'file-explorer-controller.ts')
 const cloudController = read('ui', 'shared', 'src', 'mui', 'CloudFilesController.ts')
 const web = read('web', 'src', 'App.tsx')
 const desktop = read('desktop', 'src', 'renderer', 'App.tsx')
+const desktopReadPort = read('desktop', 'src', 'renderer', 'desktopCloudFilesHostPort.ts')
 
 test('FileExplorer main directory removes legacy cursor-append state after range activation', () => {
   assert.ok(controller.includes('XDRIVE_FILE_EXPLORER_PAGE_SIZE = 200'), 'shared range page size must remain')
@@ -50,7 +51,9 @@ test('Web and Desktop delegate directory range rules while keeping transport ada
   assert.equal(cloudController.includes('directoryItemIDsRef'), false, 'directory browsing must not retain a whole-directory ID cache')
 
   assert.ok(web.includes('getRange: (parentID, offset, limit, sort, includeCount, grouping, signal) => api.listRange('), 'Web must keep REST range transport local behind the shared port')
-  assert.ok(desktop.includes('cloudChildrenRange('), 'Desktop must keep Agent range transport local behind the shared port')
+  assert.ok(desktop.includes('createDesktopCloudFilesHostPort(') &&
+    desktopReadPort.includes('agent().cloudChildrenRange('),
+    'Desktop must keep the cancellable Agent range transport in the native Host adapter')
   assert.equal(web.includes('loadMoreDirectory'), false, 'Web App must not retain directory load-more compatibility')
   assert.equal(desktop.includes('loadMoreCloudDirectory'), false, 'Desktop App must not retain directory load-more compatibility')
 })
