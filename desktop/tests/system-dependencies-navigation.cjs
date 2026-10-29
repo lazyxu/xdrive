@@ -361,10 +361,11 @@ test('Web, Mobile Web, Desktop and shared editor all use the pre-unmount guard',
   assert.ok(web.includes('onBack={exitWebApp}'), 'Mobile Web back must be guarded')
   assert.ok(web.includes("if (pending.kind === 'exit') exitApp()"))
   assert.ok(web.includes('else launchWebAppRuntime(pending.next, pending.options)'))
-  assert.ok(desktop.includes('const [view, setViewActual]'))
+  assert.ok(desktop.includes('useXDriveWorkspaceNavigationState({'))
   assert.ok(desktop.includes('xDriveSystemDependenciesNeedsExitConfirmation('))
   assert.ok(desktop.includes('onUnsavedChange: setSystemDependenciesDraftDirty'))
-  assert.ok(desktop.includes('setViewActual(next)'))
+  assert.ok(desktop.includes('navigateWorkspace(next)'))
+  assert.ok(desktop.includes('revision={pageRevision}'))
   for (const content of [web, desktop]) {
     assert.ok(content.includes('open={pendingSystemDependenciesExit !== null}'))
     assert.ok(content.includes('放弃修改并离开'))
