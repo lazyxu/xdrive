@@ -19,6 +19,7 @@ export function createXDriveSynologyHost(): XDriveWorkspaceHostAdapter {
     platform: 'synology',
     services: {
       localBackupClient: local,
+      ownerBackupReadFallback: true,
       // Only the verified same-origin DSM CGI methods are enabled. The shared
       // Desktop Files command bar remains visible; no fake NAS upload/write.
       ownerFilesPage: {
