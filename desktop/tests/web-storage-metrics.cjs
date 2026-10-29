@@ -175,8 +175,8 @@ test('global storage delegates durable maintenance to the global Task Center', (
     "storageVerifyMode === 'fast'",
     "? 'storage_verify_fast' : 'storage_verify'",
     "runStorageMaintenance('storage_repair')",
-    'legacy 对象到 CAS',
-    'CAS 物理删除仍由 Janitor 负责',
+    '迁移仍被引用的 legacy 对象',
+    '物理删除仍由 Janitor 负责',
   ]) assert.ok(storageStats.includes(token), 'storage maintenance handoff missing: ' + token)
   assert.match(storageStats, /useState<'fast' \| 'deep'>\('fast'\)/,
     'storage verification must be fast by default')
