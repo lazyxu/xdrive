@@ -27,6 +27,8 @@ export function createXDriveBrowserWorkspaceHost(ports: {
   adminRoleVerified?: boolean
   /** Existing Owner-scoped Web task/operation controller props. */
   taskCenter?: NonNullable<XDriveWorkspaceHostServices['taskCenterPage']>
+  adminUsers?: NonNullable<XDriveWorkspaceHostServices['adminUsersPage']>
+  adminAudit?: NonNullable<XDriveWorkspaceHostServices['adminAuditPage']>
 }): XDriveWorkspaceHostAdapter {
   return {
     platform: 'web',
@@ -55,6 +57,12 @@ export function createXDriveBrowserWorkspaceHost(ports: {
         // polling, operation receipts and cancellation. This is JSX routing,
         // NOT a new job queue or an implicit cross-Owner task capability.
         taskCenterPage: ports.taskCenter,
+      } : {}),
+      ...(ports.adminRoleVerified === true && ports.adminUsers ? {
+        adminUsersPage: ports.adminUsers,
+      } : {}),
+      ...(ports.adminRoleVerified === true && ports.adminAudit ? {
+        adminAuditPage: ports.adminAudit,
       } : {}),
     },
   }

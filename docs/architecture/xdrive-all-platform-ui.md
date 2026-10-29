@@ -128,6 +128,22 @@ all control POSTs and background read paths. Other Server admin pages have
 not been migrated and remain on the current Browser controller; missing
 Host ports are never fabricated.
 
+### Verified Browser administrator page ports
+
+The Browser Host can now route its already-shared **Users** and **Audit**
+MUI pages through the canonical `XDriveAppPageOutlet`, using the same
+authenticated `XDriveApi` data/operation port and current User-ID/Hash
+focus as before. Its adapter does not even expose these service props unless
+the caller presents the current Server-verified administrator status; the
+outlet independently rejects any admin route without that role. Existing
+Server-side per-request authorization, revocation and Owner/session checks
+remain authoritative. Route visibility alone never conveys rights.
+
+The historical Web AdminUsers/AdminAudit re-export files are retained for
+compatibility; the old Web-local lazy route selection is retired. Other
+administrator controllers (dependencies, maintenance, global storage) and
+the full Files/Gallery/Overview controller still require staged migration.
+
 ## Ownership layers
 
 1. **Product contracts:** API schemas, Owner/Root semantics, page/navigation IDs, media and upload receipt identity, UI tokens/gesture/accessibility contracts. React and native UI must agree.
