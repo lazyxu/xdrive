@@ -97,6 +97,8 @@ test('W3b2b source reauthorizes signed Cell and Node before priming the wall', (
   assert.match(original, /returning\?\.anchorNodeID/)
   assert.match(original, /anchorNodeID: returning\.anchorNodeID/)
   assert.match(original, /const listCellItems=source\.listBaiduNativeCellItems/)
+  assert.match(original, /if \(!listCellItems \|\| pageSize < 1 \|\| pageSize > 100\) return/)
+  assert.match(original, /void listCellItems\(\s*cell, pageSize, 0/)
   assert.match(original, /range\.anchor_index! < 0/)
   assert.match(original, /range\.anchor_index! >= range\.total_count/)
   assert.match(original, /setSortAnchorRestoration\(returning\?\.anchorNodeID/)
