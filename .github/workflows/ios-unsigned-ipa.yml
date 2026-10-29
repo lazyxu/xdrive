@@ -42,6 +42,15 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-window-check"
           "$RUNNER_TEMP/xdrive-ios-window-check"
 
+      - name: Verify bounded iOS still/video original policy
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/PhotoBackupMediaPolicy.swift \
+            ios/tests/PhotoOriginalMediaPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-media-policy-check"
+          "$RUNNER_TEMP/xdrive-ios-media-policy-check"
+
       - name: Prepare native brand and home screen icon
         run: bash ios/scripts/prepare-assets.sh
 
