@@ -117,6 +117,11 @@ function verifyRangePage<TNode extends { id: number }>(
       page.items.length > page.limit ||
       !Number.isSafeInteger(page.total_count) || page.total_count < 0 ||
       (page.total_count_included !== undefined && typeof page.total_count_included !== 'boolean') ||
+      // A counted page with actual rows cannot assert fewer total entries
+      // than the end of its returned window. Empty out-of-range windows are
+      // legitimate, and legacy count-less sparse reads stay compatible.
+      (page.total_count_included === true && page.items.length > 0 &&
+        page.total_count < request.offset + page.items.length) ||
       (page.sort !== undefined && page.sort !== request.sort.key) ||
       (page.order !== undefined && page.order !== request.sort.direction)) {
     throw new Error('Invalid Files Host counted Range page')
@@ -183,7 +188,10 @@ export async function xDriveFileExplorerReadDirectoryPage<
     // Opaque cursor reads still require a strictly positive parent Node ID.
     if (!Number.isSafeInteger(request.parentID) || request.parentID < 0 ||
         !Number.isSafeInteger(request.offset) || request.offset < 0 ||
-        !Number.isSafeInteger(request.limit) || request.limit <= 0) {
+        !Number.isSafeInteger(request.limit) || request.limit <= 0 ||
+        // A huge pair of individually safe integers can still overflow the
+        // exact positional end. Do not send a rounded ordinal to the Host.
+        !Number.isSafeInteger(request.offset + request.limit)) {
       throw new Error('Invalid Files Host counted Range request')
     }
     assertActiveFilesRead(request.signal)
