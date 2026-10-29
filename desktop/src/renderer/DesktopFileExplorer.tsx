@@ -23,6 +23,7 @@ import {
   xDriveFileExplorerSelectionRequest,
   xDriveFileExplorerSelectionAdmissionReason,
   xDriveFileExplorerReadNodeID,
+  xDriveFileExplorerThumbnailRequest,
   xDriveFileExplorerPreviewRequest,
   xDriveFileExplorerResolveFolderUploadTargets,
   xDriveFileExplorerPropertiesRefs,
@@ -1050,7 +1051,8 @@ export default function DesktopFileExplorer({
   }, [previewStreamSupported])
 
   const loadThumbnail = useCallback(async (item: XDriveFileExplorerItem, signal?: AbortSignal, onProgress?: XDriveByteProgressHandler, onStage?: (stage: XDriveMediaLoadStage) => void) => {
-    if (item.kind !== 'file' || signal?.aborted) return null
+    const request = xDriveFileExplorerThumbnailRequest(item, !signal?.aborted)
+    if (!request) return null
     const lifecycleGeneration = actionGenerationRef.current
     const isCurrentLifecycle = () => (
       lifecycleGeneration === actionGenerationRef.current && !signal?.aborted
@@ -1058,7 +1060,7 @@ export default function DesktopFileExplorer({
 
     const result = await hostPort.requestViewport(
       signal,
-      (requestID) => hostPort.media.getMediaThumbnail(Number(item.id), requestID, Number(item.revision), onProgress),
+      (requestID) => hostPort.media.getMediaThumbnail(request.nodeID, requestID, request.revision, onProgress),
     )
     if (!isCurrentLifecycle()) return null
     if (result.ok) {
@@ -1072,7 +1074,7 @@ export default function DesktopFileExplorer({
     const agent = hostPort.media
     const preview = await hostPort.requestViewport(
       signal,
-      (requestID) => agent.cloudFilePreviewURL(Number(item.id), requestID),
+      (requestID) => agent.cloudFilePreviewURL(request.nodeID, requestID),
       (late) => {
         if (late.ok) hostPort.releaseDiscardedPreviewURL(late.data,
           (url) => agent.releaseCloudFilePreviewURL(url))
@@ -1084,12 +1086,12 @@ export default function DesktopFileExplorer({
       onStage?.('poster_capture')
       const poster = await xDriveCaptureVideoPosterBlob(preview.data, 0, 0, 0, 512, signal)
       if (!poster || !isCurrentLifecycle()) return null
-      const revision = Number(item.revision)
-      if (Number.isSafeInteger(revision) && revision > 0) {
+      const revision = request.revision
+      if (revision !== undefined) {
         try {
           const posterBytes = await poster.arrayBuffer()
           if (!isCurrentLifecycle()) return null
-          await agent.putMediaVideoPoster(Number(item.id), revision, posterBytes)
+          await agent.putMediaVideoPoster(request.nodeID, revision, posterBytes)
           if (!isCurrentLifecycle()) return null
         } catch {
           // Preserve the local poster when the shared Server cache is unavailable.

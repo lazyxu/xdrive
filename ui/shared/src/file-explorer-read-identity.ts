@@ -20,3 +20,22 @@ export function xDriveFileExplorerReadNodeID(
   const nodeID = Number(item.id)
   return Number.isSafeInteger(nodeID) && nodeID > 0 ? nodeID : null
 }
+
+/**
+ * One current read request for the same FileExplorer thumbnails in Web/PWA
+ * and Desktop. Revision may be absent for legacy/cover projections: omit it
+ * so the real Server can revalidate ETag, but never send NaN or an unsafe
+ * revision into native IPC, cache identity or optional poster backfill.
+ * The Host still owns the current Owner, cancellation and authorization.
+ */
+export function xDriveFileExplorerThumbnailRequest(
+  item: XDriveFileExplorerReadonlyItem & Readonly<{ revision?: string | number }>,
+  allowed = true,
+): Readonly<{ nodeID: number; revision?: number }> | null {
+  const nodeID = xDriveFileExplorerReadNodeID(item, allowed)
+  if (nodeID === null) return null
+  const revision = Number(item.revision)
+  return Number.isSafeInteger(revision) && revision > 0
+    ? { nodeID, revision }
+    : { nodeID }
+}
