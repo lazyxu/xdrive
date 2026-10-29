@@ -131,6 +131,19 @@ function verifyRangePage<TNode extends { id: number }>(
 }
 
 /**
+ * An AbortSignal is a real disposable read boundary, not merely advisory to a
+ * transport implementation. Reject before invoking any authenticated Host
+ * endpoint and again after the await: an Agent/CGI that ignores cancellation
+ * must not promote its late bytes to a current Files Controller.
+ */
+function assertActiveFilesRead(signal: AbortSignal): void {
+  if (!signal.aborted) return
+  const cancelled = new Error('Files Host read was cancelled')
+  cancelled.name = 'AbortError'
+  throw cancelled
+}
+
+/**
  * Preserve the actual Host response and AbortSignal. Range results are counted
  * for sparse 100k virtual loading; cursor results retain an opaque next_cursor,
  * never a fictitious total or positional offset. A mismatched mode is rejected
@@ -157,9 +170,11 @@ export async function xDriveFileExplorerReadDirectoryPage<
         /[\x00-\x1f\x7f]/.test(request.cursor)) {
       throw new Error('Invalid Files Host cursor request')
     }
+    assertActiveFilesRead(request.signal)
     const page = await port.readPage(
       request.parentID, request.limit, request.sort, request.cursor, request.signal,
     )
+    assertActiveFilesRead(request.signal)
     verifyCursorPage(page, request.limit, request.cursor)
     return { mode: 'cursor', page }
   }
@@ -171,10 +186,12 @@ export async function xDriveFileExplorerReadDirectoryPage<
         !Number.isSafeInteger(request.limit) || request.limit <= 0) {
       throw new Error('Invalid Files Host counted Range request')
     }
+    assertActiveFilesRead(request.signal)
     const page = await port.readRange(
       request.parentID, request.offset, request.limit, request.sort,
       request.includeCount, request.grouping, request.signal,
     )
+    assertActiveFilesRead(request.signal)
     verifyRangePage(page, request)
     return { mode: 'range', page }
   }
