@@ -7,6 +7,7 @@ import type {
 } from '../synology-backup-adapter'
 import { XDriveFileExplorer } from './FileExplorer'
 import { xDriveFindVerifiedOwnerSelection } from './FileExplorerVerifiedOwnerSelection'
+import { xDriveFileExplorerReadOnlyViewerSelection } from './FileExplorerReadOnlyViewerSelection'
 import type { XDriveFileExplorerUnavailableActions } from './FileExplorer'
 import { useXDriveFileExplorerCursorDirectory } from './FileExplorerCursorDirectoryController'
 import type { XDriveFileExplorerCursorPort } from './FileExplorerCursorDirectoryController'
@@ -122,24 +123,27 @@ export function XDriveSynologyOwnerFilesPage({
     () => currentScopeVerified ? items.map(itemForExplorer) : [],
     [items, currentScopeVerified],
   )
-  const previewItems = useMemo(() => {
-    const candidates = displayedItems.filter(supportsOwnerPreview)
-    if (!preview?.sessionIDs) return candidates
-    const byID = new Map(candidates.map(item => [item.id, item]))
-    return preview.sessionIDs.flatMap(id => {
-      const item = byID.get(id)
-      return item ? [item] : []
-    })
-  }, [displayedItems, preview?.sessionIDs])
-  const previewIndex = currentScopeVerified && preview?.scopeKey === currentScopeKey &&
-    preview.rootRevision === rootRevision && preview.client === client
-    ? previewItems.findIndex(item => item.id === preview.item.id &&
-      item.revision === preview.item.revision && item.name === preview.item.name &&
-      item.size === preview.item.size)
-    : -1
-  const previewItem = previewIndex >= 0 ? previewItems[previewIndex] : null
-  const previewPositionLabel = previewItem
-    ? `${previewIndex + 1} / ${previewItems.length} ${preview?.sessionIDs ? '已选择' : '已加载'}` : ''
+  // Use the exact same Owner-fenced readonly Viewer selection lifecycle
+  // as any other Host supplying authorized Files rows and media evidence.
+  const viewerSelection = useMemo(() => xDriveFileExplorerReadOnlyViewerSelection({
+    items: displayedItems,
+    isPreviewable: supportsOwnerPreview,
+    preview: preview ? {
+      host: preview.client,
+      scopeKey: preview.scopeKey,
+      rootRevision: preview.rootRevision,
+      item: preview.item,
+      sessionIDs: preview.sessionIDs,
+    } : null,
+    host: client,
+    scopeKey: currentScopeKey,
+    rootRevision,
+    verified: currentScopeVerified,
+  }), [displayedItems, preview, client, currentScopeKey, rootRevision, currentScopeVerified])
+  const previewItems = viewerSelection.items
+  const previewIndex = viewerSelection.index
+  const previewItem = viewerSelection.item
+  const previewPositionLabel = viewerSelection.positionLabel
   // A verified explicit download is not a disposable directory read. Keep
   // its proven Blob/save action across same-Owner folder and sort changes.
   // Never offer it after an account/client or root-session replacement.
