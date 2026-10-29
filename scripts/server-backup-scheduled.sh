@@ -78,7 +78,7 @@ verify_scheduled_v1_recovery_point() {
   command -v python3 >/dev/null 2>&1 || return 1
   # Only a new, consistent, full v1 archive with safe extractable members
   # may authorize retention deletion. Hash correctness alone is insufficient.
-  python3 - "$snapshot/manifest.json" "$snapshot/blobs.tar" <<'PY'
+  python3 - "$snapshot/manifest.json" "$snapshot/blobs.tar" <<'PY' || return 1
 import json, os, stat, sys, tarfile
 
 manifest_path, tar_path = sys.argv[1:]
