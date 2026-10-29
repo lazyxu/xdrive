@@ -52,9 +52,12 @@ const empty = () => ({ current: [], history: [], nextCursor: '', loadedMore: fal
 
 function fixture() {
   const summaryRequestRef = { current: 0 }
+  const summaryAbortRef = { current: null }
   const summarySourceRef = { current: null }
   const listRefreshRequestRef = { current: 0 }
   const listMoreRequestRef = { current: 0 }
+  const listRefreshAbortRef = { current: null }
+  const listMoreAbortRef = { current: null }
   const listSourceRef = { current: null }
   const onErrorRef = { current: undefined }
   const events = []
@@ -71,8 +74,9 @@ function fixture() {
     XDRIVE_BACKGROUND_TASK_HISTORY_PAGE_LIMIT: 50,
     mergeBackgroundTaskHistory: (fresh, prior) => [...fresh, ...prior],
     appendBackgroundTaskHistory: (prior, next) => [...prior, ...next],
-    summaryRequestRef, summarySourceRef,
-    listRefreshRequestRef, listMoreRequestRef, listSourceRef, onErrorRef,
+    summaryRequestRef, summarySourceRef, summaryAbortRef,
+    listRefreshRequestRef, listMoreRequestRef, listRefreshAbortRef,
+    listMoreAbortRef, listSourceRef, onErrorRef,
     setSummary: (value) => { summary = value },
     setSummaryState: (value) => { summary = value.value },
     setMine: (value) => { mine = typeof value === 'function' ? value(mine) : value },

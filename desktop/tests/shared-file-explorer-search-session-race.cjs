@@ -99,6 +99,13 @@ function loadTypeScript(relativePath, react, modules = {}) {
   const localRequire = (request) => {
     if (request === 'react') return react
     if (Object.prototype.hasOwnProperty.call(modules, request)) return modules[request]
+    if (request === './ViewerForegroundPriority') {
+      // Keep the real foreground observer; Search/Owner tests must not pass
+      // because the new content-transition module was silently mocked out.
+      return loadTypeScript(
+        ['ui', 'shared', 'src', 'mui', 'ViewerForegroundPriority.ts'], null,
+      )
+    }
     return require(request)
   }
   new Function('exports', 'module', 'require', output)(mod.exports, mod, localRequire)

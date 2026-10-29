@@ -353,7 +353,10 @@ test('09H: StrictMode cleanup releases only its own deep-link navigation request
   assert.ok(web.includes('routedDirectoryRef.current.lifecycleKey !== lifecycleKey'))
   assert.ok(web.includes('if (!initialDirectoryID) return'))
   assert.ok(!web.includes('if (!initialDirectoryID || current?.id === initialDirectoryID) return'))
-  assert.ok(web.includes('if (!active || !isNavigationIntentCurrent(navigationIntentID)) return'))
+  assert.match(web, /if \(!chain \|\| !active \|\| ancestorLookup\.signal\.aborted \|\|\s*!isNavigationIntentCurrent\(navigationIntentID\)\) return/,
+    'stale or aborted ancestor lookup cannot commit its old directory')
+  assert.ok(web.includes('ancestorLookup.abort()'),
+    'StrictMode cleanup aborts the abandoned authenticated Node GET')
   assert.ok(runner.includes('await root.waitFor()'))
   assert.ok(runner.includes('await folder.waitFor()'))
   assert.ok(runner.includes('nested-directory range loaded by the shared Server adapter'))

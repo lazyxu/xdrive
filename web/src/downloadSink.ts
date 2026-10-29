@@ -100,7 +100,10 @@ export async function xDriveOpenWebDownloadSink(
   if (typeof picker !== 'function') return { kind: 'blob' }
 
   try {
-    const handle = await picker({ suggestedName: filename })
+    // Preserve Window as the native File System Access receiver. Some WebKit
+    // adapters reject detached host methods with an Illegal invocation.
+    // Keep the picker synchronous under the original user gesture.
+    const handle = await picker.call(globalThis, { suggestedName: filename })
     return {
       kind: 'file-system',
       writable: await handle.createWritable(),

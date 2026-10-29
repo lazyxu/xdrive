@@ -8,6 +8,7 @@ import type {
 } from '@xdrive/ui/mui/perf'
 import App from './App'
 import { registerXDrivePwa } from './pwaRuntime'
+import { xDriveWebStartupSearchParams } from './webStartupSearchParams'
 import { xDriveBrowserStorageRead, xDriveBrowserStorageWrite } from './browserSafeStorage'
 import { startXDrivePwaInstallObservation } from './pwaInstall'
 import { startXDrivePwaUpdateObservation } from './pwaUpdates'
@@ -34,7 +35,7 @@ function Root() {
 }
 
 const root = ReactDOM.createRoot(document.getElementById('root')!)
-const perfSearch = new URLSearchParams(window.location.search)
+const perfSearch = xDriveWebStartupSearchParams()
 const realGalleryFoldPerf = import.meta.env.VITE_XDRIVE_GALLERY_REAL_FOLD_PERF === '1'
   && perfSearch.get('xdriveGalleryRealFold') === '1'
 const realGalleryColdPerf = import.meta.env.VITE_XDRIVE_GALLERY_REAL_COLD_PERF === '1'

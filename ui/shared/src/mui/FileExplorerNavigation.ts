@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { xDriveCreateFileExplorerDisposableNavigationReads } from './FileExplorerDisposableNavigationReads'
 import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT } from '../file-explorer-controller'
 import {
   XDRIVE_FILE_EXPLORER_DEFAULT_GROUPING,
@@ -419,6 +420,10 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     targetTabID: initialNavigationStateRef.current.activeTabID,
     sourceTabID: undefined as string | undefined,
   })
+  // Opt-in only: uploads, downloads and background jobs never receive this signal.
+  const disposableNavigationReads = useMemo(
+    xDriveCreateFileExplorerDisposableNavigationReads, [],
+  )
   const [navigationState, setNavigationState] = useState<XDriveFileExplorerNavigationState<TCrumb>>(
     () => cloneNavigationState(initialNavigationStateRef.current!),
   )
@@ -473,6 +478,7 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     initialNavigationSourceRef.current = source
     initialSessionRestorePendingRef.current = source === 'session' && !skipInitialSessionRestore
     nextTabIDRef.current = nextNavigationTabID(nextState.tabs)
+    disposableNavigationReads.cancel() // Owner/session rotation, including identical numeric IDs
     navigationRequestRef.current = {
       id: navigationRequestRef.current.id + 1,
       targetTabID: nextState.activeTabID,
@@ -637,6 +643,7 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     targetTabID = activeTabID,
     sourceTabID?: string,
   ) => {
+    disposableNavigationReads.cancel() // release obsolete metadata HTTP GETs at intent
     const request = {
       id: navigationRequestRef.current.id + 1,
       targetTabID,
@@ -654,6 +661,9 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
 
   const isNavigationIntentCurrent = (requestID: number) => (
     isNavigationCurrent(requestID)
+  )
+  const navigationReadSignalForIntent = (requestID: number): AbortSignal | null => (
+    isNavigationCurrent(requestID) ? disposableNavigationReads.signalFor(requestID) : null
   )
 
   const updateActiveTab = (
@@ -679,6 +689,7 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
       maxTabs,
     )
     return () => {
+      disposableNavigationReads.cancel() // unmount / StrictMode effect cleanup
       navigationRequestRef.current = {
         ...navigationRequestRef.current,
         id: navigationRequestRef.current.id + 1,
@@ -1201,6 +1212,7 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     refresh,
     beginNavigationIntent,
     isNavigationIntentCurrent,
+    navigationReadSignalForIntent,
     navigateTo,
     navigateToCrumb,
     goBack,

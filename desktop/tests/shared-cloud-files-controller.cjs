@@ -13,6 +13,7 @@ const sharedMuiIndex = read('ui', 'shared', 'src', 'mui', 'index.tsx')
 const webApi = read('web', 'src', 'api.ts')
 const webApp = read('web', 'src', 'App.tsx')
 const desktopApp = read('desktop', 'src', 'renderer', 'App.tsx')
+const desktopCloudPort = read('desktop', 'src', 'renderer', 'desktopCloudFilesHostPort.ts')
 const desktopTypes = read('desktop', 'src', 'renderer', 'global.d.ts')
 const desktopMain = read('desktop', 'src', 'main', 'index.cts')
 const desktopPreload = read('desktop', 'src', 'preload', 'index.cts')
@@ -133,10 +134,7 @@ test('Web delegates cloud read state and lifecycle to the shared controller', ()
 test('Desktop delegates cloud read state and lifecycle to the shared controller', () => {
   for (const token of [
     'useXDriveCloudFilesController<AgentCloudNode, AgentCloudQuota, XDriveFileExplorerSort>',
-    'XDriveCloudFilesPort<AgentCloudNode, AgentCloudQuota, XDriveFileExplorerSort>',
-    'getRoot: async () =>',
-    'cloudChildrenPage(parentID, options)',
-    'getQuota: async () =>',
+    'createDesktopCloudFilesHostPort(',
     'quota: cloudQuota',
     'items: cloudItems',
     'crumbs: cloudCrumbs',
@@ -152,6 +150,14 @@ test('Desktop delegates cloud read state and lifecycle to the shared controller'
     assert.ok(desktopApp.includes(token), `Desktop cloud controller wiring missing: ${token}`)
   }
 
+  for (const token of [
+    'XDriveCloudFilesPort<AgentCloudNode, AgentCloudQuota, XDriveFileExplorerSort>',
+    'getRoot: async () =>',
+    'cloudChildrenPage(parentID, options)',
+    'getQuota: async () =>',
+  ]) {
+    assert.ok(desktopCloudPort.includes(token), `Desktop Host read port missing: ${token}`)
+  }
   for (const token of [
     'useState<AgentCloudNode[]>([])',
     'const [cloudCrumbs, setCloudCrumbs] = useState<AgentCloudCrumb[]>([])',
@@ -207,10 +213,10 @@ test('Cloud Files exposes dedicated range transport for VirtualCollection', () =
   assert.ok(webApi.includes('nodeChanges(after = 0, limit = 200)'), 'Web API must expose durable node-change transport')
   assert.ok(webApp.includes('getRange: (parentID, offset, limit, sort, includeCount, grouping, signal) => api.listRange('), 'Web shared port must wire count reuse and grouping')
   assert.ok(webApp.includes('getChanges: (after, limit) => api.nodeChanges(after, limit)'), 'Web shared port must wire the node-change feed')
-  assert.ok(desktopApp.includes('getRange: async (parentID, offset, limit, sort, includeCount, grouping, signal) =>'), 'Desktop shared port must wire count reuse and grouping')
-  assert.ok(desktopApp.includes('cloudChildrenRange('), 'Desktop renderer must use the dedicated Agent range action')
+  assert.ok(desktopCloudPort.includes('getRange: async (parentID, offset, limit, sort, includeCount, grouping, signal) =>'), 'Desktop Host must preserve count reuse and grouping')
+  assert.ok(desktopCloudPort.includes('cloudChildrenRange('), 'Desktop Host must use the dedicated Agent range action')
   assert.ok(desktopApp.includes("capabilities.includes('cloud-change-feed')"), 'Desktop must capability-gate the change feed')
-  assert.ok(desktopApp.includes('cloudChanges(after, limit)'), 'Desktop shared port must use Agent change transport')
+  assert.ok(desktopCloudPort.includes('cloudChanges(after, limit)'), 'Desktop Host must use Agent change transport')
   assert.ok(desktopTypes.includes('cloudChanges: ('), 'Desktop renderer bridge must expose node changes')
   assert.ok(desktopPreload.includes("'agent:cloud-changes'"), 'Desktop preload must expose node-change IPC')
   assert.ok(desktopMain.includes("ipcMain.handle('agent:cloud-changes'"), 'Electron main must validate node-change IPC')

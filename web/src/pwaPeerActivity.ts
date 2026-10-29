@@ -36,7 +36,9 @@ let started = false
 let channel: BroadcastChannel | null = null
 let sender: string | null = null
 let sequence = 0
-let overflow = false
+// Capacity overflow is an unknown-peer hint, not a permanent SW update veto.
+// Keep its lifetime bounded like ordinary peer observations.
+let overflowObservedAt: number | null = null
 const peers = new Map<string, PeerRecord>()
 const subscribers = new Set<() => void>()
 
@@ -52,6 +54,10 @@ function pruneExpired(now: number) {
     const age = now - item.receivedAt
     if (age > peerExpiryMS || age < -peerExpiryMS) peers.delete(id)
   }
+  if (overflowObservedAt !== null) {
+    const age = now - overflowObservedAt
+    if (age > peerExpiryMS || age < -peerExpiryMS) overflowObservedAt = null
+  }
 }
 function publish(now = Date.now()) {
   pruneExpired(now)
@@ -59,7 +65,7 @@ function publish(now = Date.now()) {
   const next: XDrivePwaPeerActivitySnapshot = {
     available: Boolean(channel),
     knownPeerBusy: records.some(p => p.observed && p.busy),
-    knownPeerUnknown: overflow || records.some(p => !p.observed),
+    knownPeerUnknown: overflowObservedAt !== null || records.some(p => !p.observed),
     recentlyObservedPeers: records.length,
   }
   if (Object.keys(next).every(key =>
@@ -101,17 +107,20 @@ function acceptMessage(data: unknown) {
       (message.busy && !message.observed)) return
   const existing = peers.get(message.sender)
   if (existing && (message.sequence ?? 0) <= existing.sequence) return
-  pruneExpired(Date.now())
+  const now = Date.now()
+  pruneExpired(now)
   if (!existing && peers.size >= maxPeerRecords) {
-    overflow = true
-    publish()
+    // The 33rd distinct sender is not tracked. Conservatively report an
+    // unknown peer until one bounded observation lifetime after its last hit.
+    overflowObservedAt = now
+    publish(now)
     return
   }
   peers.set(message.sender, {
-    sequence: message.sequence!, receivedAt: Date.now(),
+    sequence: message.sequence!, receivedAt: now,
     busy: message.busy, observed: message.observed,
   })
-  publish()
+  publish(now)
 }
 
 /** Only the ordinary Web/Mobile Web entry starts this. No auth or API calls. */

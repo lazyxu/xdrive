@@ -16,6 +16,15 @@ enum class FilesSection { RECENT, BROWSE, FAVORITES, SEARCH }
 enum class FilesTransferKind { COPY, MOVE }
 enum class GalleryPrimaryTab { LIBRARY, COLLECTIONS }
 
+/** In-memory return anchor for the original Owner Gallery, never persisted. */
+data class GalleryMapReturnState(
+    val items: List<GalleryAsset>, val offset: Int, val total: Long,
+    val loaded: Boolean, val search: String, val kind: String,
+    val sortBy: String, val sortDir: String,
+    val timeline: GalleryTimelineSets?, val jumpIndex: Int?,
+    val jumpEpoch: Long, val pageIntent: String,
+)
+
 data class DriveState(
     val screen: Screen = Screen.CONNECT,
     val server: String = "",
@@ -76,6 +85,11 @@ data class DriveState(
     val fileUploadTotal: Long = 0,
     /** Last 20 verified SAF transfers, held only for the active login session. */
     val nativeTransfers: List<NativeTransferEntry> = emptyList(),
+    /** Current authenticated Owner only. No private filename/URI is persisted. */
+    val interruptedNativeTransfers: List<NativeInterruptedTransfer> = emptyList(),
+    /** Includes unreadable Keystore journal and failed verified-ACK cleanup. */
+    val transferRecoveryIssue: Boolean = false,
+    val transferRecoveryClearingId: String? = null,
     val trashItems: List<TrashEntry> = emptyList(),
     val trashTotal: Long = 0,
     val trashLoaded: Boolean = false,
@@ -99,6 +113,12 @@ data class DriveState(
     /** Explicitly requested verified BD09LL Owner cells; never raw WGS84. */
     val galleryBd09Requested: Boolean = false,
     val galleryBd09Cells: OwnerBd09MapCells? = null,
+    val galleryBd09Bounds: OwnerBd09Bounds = OwnerBd09Bounds.WORLD,
+    /** Max 6 prior signed grid summaries, cleared with Owner session. */
+    val galleryBd09History: List<Bd09GridLevel> = emptyList(),
+    /** Exact signed cell currently scoping the existing Gallery and Viewer. */
+    val galleryMapCellSelected: OwnerBd09Cell? = null,
+    val galleryMapReturn: GalleryMapReturnState? = null,
     val galleryItems: List<GalleryAsset> = emptyList(),
     val galleryOffset: Int = 0,
     val galleryTotal: Long = 0,
@@ -266,6 +286,127 @@ class DriveController(
             current.nativeTransfers.filter { it.status == NativeTransferStatus.RUNNING })
     }
 
+    /** One immutable Owner-specific local checkpoint. Its ID never travels
+     * in an xDrive HTTP request. All persistent writes are delegated to the
+     * Android IO-bound encrypted journal before opening SAF or UploadSession. */
+    private data class RecoveryCheckpoint(
+        val bridge: DriveTransferRecoveryBridge,
+        val server: String, val username: String, val id: String,
+    )
+
+    private suspend fun beginTransferRecovery(
+        kind: NativeTransferKind, generationTicket: Long,
+    ): RecoveryCheckpoint? {
+        val bridge = try {
+            sessionPersistence?.transferRecovery()
+        } catch (_: Exception) {
+            throw NativeTransferCheckpointFailure()
+        } ?: return null
+        val owner = state.value
+        if (session == null || owner.server.isBlank() || owner.username.isBlank())
+            throw NativeTransferCheckpointFailure()
+        val id = try {
+            bridge.begin(owner.server, owner.username, kind)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // A corrupt/filled/unwritable journal blocks new IO; no HTTP call.
+            throw NativeTransferCheckpointFailure()
+        }
+        checkCurrent(generationTicket)
+        return id?.let { RecoveryCheckpoint(bridge, owner.server, owner.username, it) }
+    }
+
+    /** Remote/SAF completion has ALREADY been verified by the original API.
+     * A failed local journal cleanup must not invert that real outcome, but
+     * leaves a visible warning and the conservative durable marker intact. */
+    private suspend fun verifiedTransferRecovery(
+        checkpoint: RecoveryCheckpoint?, generationTicket: Long,
+    ) {
+        if (checkpoint == null) return
+        // Final Server/SAF ACK already happened: persist the matching
+        // cleanup even if the Activity is closing, without reviving old UI.
+        // Any cleanup failure leaves the conservative encrypted marker.
+        val removed = withContext(NonCancellable) {
+            try {
+                checkpoint.bridge.acknowledgeVerified(
+                    checkpoint.server, checkpoint.username, checkpoint.id)
+            } catch (_: Exception) { false }
+        }
+        if (!removed && generationTicket == generation &&
+            state.value.server == checkpoint.server &&
+            state.value.username == checkpoint.username) {
+            mutableState.value = state.value.copy(transferRecoveryIssue = true)
+        }
+    }
+
+    /** Read only current authenticated Owner notices, never cross-account
+     * metadata. A slow/corrupt store must not block page rendering. */
+    fun refreshTransferRecoveryNotices() {
+        val bridge = try {
+            sessionPersistence?.transferRecovery()
+        } catch (_: Exception) {
+            mutableState.value = state.value.copy(transferRecoveryIssue = true)
+            return
+        } ?: return
+        val snapshot = state.value
+        if (session == null || snapshot.username.isBlank() ||
+            snapshot.screen !in setOf(Screen.FILES, Screen.GALLERY, Screen.TRASH)) return
+        val ticket = generation
+        scope.launch {
+            val result = try {
+                Result.success(bridge.pending(snapshot.server, snapshot.username))
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                Result.failure(failure)
+            }
+            val current = state.value
+            if (ticket != generation || current.server != snapshot.server ||
+                current.username != snapshot.username || session == null) return@launch
+            mutableState.value = current.copy(
+                interruptedNativeTransfers = result.getOrDefault(emptyList()),
+                transferRecoveryIssue = result.isFailure,
+            )
+        }
+    }
+
+    /** This is a user decision after independent inspection, never an auto
+     * retry or a fabricated Server ACK. Android journal verifies the Owner. */
+    fun acknowledgeVerifiedInterruptedTransfer(id: String) {
+        val snapshot = state.value
+        if (snapshot.interruptedNativeTransfers.none { it.id == id } ||
+            snapshot.transferRecoveryClearingId != null ||
+            snapshot.hasActiveNativeTransfer() || session == null) return
+        val bridge = try {
+            sessionPersistence?.transferRecovery()
+        } catch (_: Exception) {
+            mutableState.value = snapshot.copy(transferRecoveryIssue = true)
+            return
+        } ?: return
+        val ticket = generation
+        mutableState.value = snapshot.copy(transferRecoveryClearingId = id)
+        scope.launch {
+            val removed = try {
+                bridge.acknowledgeVerified(snapshot.server, snapshot.username, id)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) { false }
+            val current = state.value
+            if (ticket != generation || current.server != snapshot.server ||
+                current.username != snapshot.username || session == null) return@launch
+            mutableState.value = current.copy(
+                interruptedNativeTransfers = if (removed)
+                    current.interruptedNativeTransfers.filterNot { it.id == id }
+                    else current.interruptedNativeTransfers,
+                transferRecoveryClearingId = null,
+                transferRecoveryIssue = !removed ||
+                    (current.transferRecoveryIssue &&
+                        current.interruptedNativeTransfers.size > 1),
+            )
+        }
+    }
+
     fun savedRoute(input: String, allowHttp: Boolean = false): ConnectionRoute = try {
         loadRoute(ServerAddress.parse(input, allowHttp).url)
     } catch (_: IllegalArgumentException) { ConnectionRoute() }
@@ -350,6 +491,7 @@ class DriveController(
                 // A valid refreshed session survives a later transient directory read error.
                 // Let request() report it without turning a network outage into logout.
                 if (!restored.mustChangePassword) {
+                    refreshTransferRecoveryNotices()
                     try { loadWithin(restoredApi, emptyList(), 0, ticket) }
                     catch (failure: Exception) {
                         if (failure is ApiException && failure.statusCode == 401) throw failure
@@ -421,7 +563,10 @@ class DriveController(
                 )
                 persistRefreshSession()
                 if (oldApi !== candidate) (oldApi as? Closeable)?.close()
-                if (!result.mustChangePassword) loadWithin(candidate, emptyList(), 0, ticket)
+                if (!result.mustChangePassword) {
+                    refreshTransferRecoveryNotices()
+                    loadWithin(candidate, emptyList(), 0, ticket)
+                }
             } finally {
                 if (api !== candidate) (candidate as? Closeable)?.close()
             }
@@ -454,7 +599,10 @@ class DriveController(
                 username = result.username,
             )
             persistRefreshSession()
-            if (!result.mustChangePassword) loadWithin(service, emptyList(), 0, it)
+            if (!result.mustChangePassword) {
+                refreshTransferRecoveryNotices()
+                loadWithin(service, emptyList(), 0, it)
+            }
         }
     }
 
@@ -473,7 +621,10 @@ class DriveController(
             session = result
             persistRefreshSession()
             mutableState.value = state.value.copy(screen = if (result.mustChangePassword) Screen.PASSWORD else Screen.FILES)
-            if (!result.mustChangePassword) loadWithin(service, emptyList(), 0, ticket)
+            if (!result.mustChangePassword) {
+                refreshTransferRecoveryNotices()
+                loadWithin(service, emptyList(), 0, ticket)
+            }
         }
     }
 
@@ -811,9 +962,14 @@ class DriveController(
             gallerySelected = if (current.screen == Screen.GALLERY) null else current.gallerySelected,
             fileDownloadBytes = 0, fileDownloadTotal = owned.size)
         request(isFileDownload = true) { ticket ->
-            val transferId = beginNativeTransfer(NativeTransferKind.DOWNLOAD, owned.name, owned.size)
             var complete = false
             try {
+                // Android ACTION_CREATE_DOCUMENT has already reserved a
+                // destination URI before we start here. Failure to persist
+                // the encrypted checkpoint must still discard that empty
+                // document, even though network and byte I/O never started.
+                val recovery = beginTransferRecovery(NativeTransferKind.DOWNLOAD, ticket)
+                val transferId = beginNativeTransfer(NativeTransferKind.DOWNLOAD, owned.name, owned.size)
                 val written = authenticatedMutation(ticket) { token ->
                     service.downloadFile(token, owned, openOutput) { bytes ->
                         if (ticket == generation) {
@@ -825,6 +981,10 @@ class DriveController(
                 checkCurrent(ticket)
                 complete = true
                 finishNativeTransfer(transferId, NativeTransferStatus.COMPLETED, written)
+                verifiedTransferRecovery(recovery, ticket)
+                // Keystore cleanup is non-cancellable after a true ACK; Owner
+                // navigation may still have superseded this UI during IO.
+                checkCurrent(ticket)
                 mutableState.value = state.value.copy(
                     fileDownloadBytes = written, fileDownloadActive = false,
                     fileDownloadSaved = true, error = null)
@@ -886,6 +1046,7 @@ class DriveController(
             fileUploadActive = true, fileUploadCommitted = false,
             fileUploadBytes = 0, fileUploadTotal = size)
         request(isFileUpload = true) { ticket ->
+            val recovery = beginTransferRecovery(NativeTransferKind.UPLOAD, ticket)
             val transferId = beginNativeTransfer(NativeTransferKind.UPLOAD, name, size)
             val result = authenticatedMutation(ticket) { token ->
                 service.uploadFile(token, destination, name, size, openInput) { confirmed ->
@@ -899,6 +1060,9 @@ class DriveController(
             // Server finalize returned an exact successful Node ACK; later
             // Browse reconciliation can fail without making the upload uncertain.
             finishNativeTransfer(transferId, NativeTransferStatus.COMPLETED, size)
+            verifiedTransferRecovery(recovery, ticket)
+            // Never commit old Owner UI after durable cleanup yields back.
+            checkCurrent(ticket)
             mutableState.value = state.value.copy(
                 fileUploadActive = false, fileUploadCommitted = true,
                 fileUploadBytes = size)
@@ -1624,6 +1788,9 @@ class DriveController(
             gallerySelectedAlbum = null,
             galleryMapOpen = false, galleryMapLoaded = false, galleryMapOverview = null,
             galleryBd09Requested = false, galleryBd09Cells = null,
+            galleryBd09Bounds = OwnerBd09Bounds.WORLD,
+            galleryBd09History = emptyList(),
+            galleryMapCellSelected = null, galleryMapReturn = null,
             galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
             galleryLoaded = false, gallerySearchQuery = "", galleryMediaKind = "",
             gallerySortBy = "captured", gallerySortDir = "asc",
@@ -1648,6 +1815,9 @@ class DriveController(
         mutableState.value = current.withoutGallerySelection().copy(
             galleryMapOpen = true, galleryMapLoaded = false, galleryMapOverview = null,
             galleryBd09Requested = false, galleryBd09Cells = null,
+            galleryBd09Bounds = OwnerBd09Bounds.WORLD,
+            galleryBd09History = emptyList(),
+            galleryMapCellSelected = null, galleryMapReturn = null,
             loading = false, error = null, gallerySelected = null, galleryViewer = null)
         loadGalleryMapOverview()
     }
@@ -1657,8 +1827,11 @@ class DriveController(
         if (current.screen != Screen.GALLERY || !current.galleryMapOpen ||
             current.loading || current.hasActiveNativeTransfer() ||
             current.galleryMetadataWriteAttempted) return
-        if (current.galleryBd09Requested) loadGalleryBd09MapCells()
-        else loadGalleryMapOverview()
+        when {
+            current.galleryMapCellSelected != null -> retryGalleryBd09Cell()
+            current.galleryBd09Requested -> loadGalleryBd09MapCells()
+            else -> loadGalleryMapOverview()
+        }
     }
 
     /** A real Server-signed 8x8 BD09 index, requested only after the
@@ -1681,26 +1854,163 @@ class DriveController(
     fun showGalleryGpsOverview() {
         val current = state.value
         if (current.screen != Screen.GALLERY || !current.galleryMapOpen ||
-            !current.galleryBd09Requested || current.hasActiveNativeTransfer()) return
+            !current.galleryBd09Requested || current.galleryMapCellSelected != null ||
+            current.hasActiveNativeTransfer()) return
         invalidate()
         mutableState.value = current.copy(
             galleryBd09Requested = false, galleryBd09Cells = null,
+            galleryBd09Bounds = OwnerBd09Bounds.WORLD,
+            galleryBd09History = emptyList(),
             loading = false, discardableReadInFlight = false, error = null)
         if (!state.value.galleryMapLoaded) loadGalleryMapOverview()
     }
 
-    private fun loadGalleryBd09MapCells() {
+    /** Progressive genuine BD09 Owner clusters: derive one verified cell
+     * subrect, abort obsolete GET, and query Go's original /cells. */
+    fun drillDownGalleryBd09Cell(cell: OwnerBd09Cell) {
+        val current = state.value
+        if (current.screen != Screen.GALLERY || !current.galleryMapOpen ||
+            !current.galleryBd09Requested || current.galleryBd09Cells == null ||
+            current.galleryMapCellSelected != null || current.galleryViewer != null ||
+            current.loading || current.error != null || session == null || api == null ||
+            current.hasActiveNativeTransfer() ||
+            current.galleryBd09History.size >= MAX_BD09_DRILL_LEVELS ||
+            current.galleryBd09Cells.cells.none { it == cell }) return
+        val next = bd09CellSubBounds(current.galleryBd09Bounds, cell) ?: return
+        val previous = Bd09GridLevel(current.galleryBd09Bounds, current.galleryBd09Cells)
+        invalidate()
+        mutableState.value = current.copy(
+            galleryBd09Bounds = next,
+            galleryBd09History = current.galleryBd09History + previous,
+            galleryBd09Cells = null, loading = false,
+            discardableReadInFlight = false, error = null)
+        loadGalleryBd09MapCells()
+    }
+
+    /** Exact parent snapshot survives failed child. Back never widens to all
+     * photos or repeats a previous Owner query. */
+    fun galleryBd09BackLevel() {
+        val current = state.value
+        if (current.screen != Screen.GALLERY || !current.galleryMapOpen ||
+            !current.galleryBd09Requested || current.galleryMapCellSelected != null ||
+            current.hasActiveNativeTransfer() || current.galleryBd09History.isEmpty()) return
+        val previous = current.galleryBd09History.last()
+        invalidate()
+        mutableState.value = current.copy(
+            galleryBd09Bounds = previous.bounds,
+            galleryBd09Cells = previous.cells,
+            galleryBd09History = current.galleryBd09History.dropLast(1),
+            loading = false, discardableReadInFlight = false, error = null)
+    }
+
+    /** Only the actual current Owner/signed 8x8 cell can open a scoped wall.
+     * Snapshot UI state before changing the canonical Gallery Range source. */
+    fun openGalleryBd09Cell(cell: OwnerBd09Cell) {
+        val current = state.value
+        if (current.screen != Screen.GALLERY || !current.galleryMapOpen ||
+            !current.galleryBd09Requested || current.galleryBd09Cells == null ||
+            current.galleryMapCellSelected != null || current.loading ||
+            current.error != null || current.galleryViewer != null ||
+            current.hasActiveNativeTransfer() || current.galleryMetadataWriteAttempted ||
+            session == null || api == null ||
+            current.galleryBd09Cells.cells.none { it == cell }) return
+        val saved = GalleryMapReturnState(current.galleryItems,
+            current.galleryOffset, current.galleryTotal, current.galleryLoaded,
+            current.gallerySearchQuery, current.galleryMediaKind,
+            current.gallerySortBy, current.gallerySortDir,
+            current.galleryTimelineSets, current.galleryJumpIndex,
+            current.galleryJumpEpoch, current.galleryPageIntent)
+        invalidate() // Prior disposable map GET only; no active SAF task.
+        mutableState.value = current.withoutGallerySelection().copy(
+            galleryMapCellSelected = cell, galleryMapReturn = saved,
+            galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
+            galleryLoaded = false, gallerySearchQuery = "", galleryMediaKind = "",
+            gallerySortBy = "captured", gallerySortDir = "desc",
+            galleryTimelineSets = null, galleryJumpIndex = null,
+            galleryJumpEpoch = current.galleryJumpEpoch + 1,
+            galleryPageIntent = "map-cell", galleryViewer = null,
+            gallerySelected = null, error = null, loading = false,
+            discardableReadInFlight = false)
+        loadGalleryBd09Cell()
+    }
+
+    /** The 409 stale-cell case remains an error and NEVER falls back to
+     * an unscoped Gallery GET. Manual retry only reads this exact cell. */
+    fun retryGalleryBd09Cell() {
+        val current = state.value
+        if (current.screen != Screen.GALLERY || !current.galleryMapOpen ||
+            current.galleryMapCellSelected == null || current.galleryMapReturn == null ||
+            current.galleryViewer != null || current.loading ||
+            current.hasActiveNativeTransfer()) return
+        mutableState.value = current.copy(galleryItems = emptyList(),
+            galleryOffset = 0, galleryTotal = 0, galleryLoaded = false,
+            galleryPageIntent = "map-cell", error = null)
+        loadGalleryBd09Cell()
+    }
+
+    private fun loadGalleryBd09Cell() {
+        val current = state.value
+        val cell = current.galleryMapCellSelected ?: return
         val service = api ?: return
-        if (session == null || state.value.screen != Screen.GALLERY ||
-            !state.value.galleryMapOpen || !state.value.galleryBd09Requested) return
+        if (session == null || current.screen != Screen.GALLERY ||
+            !current.galleryMapOpen || !current.galleryBd09Requested ||
+            current.galleryMapReturn == null || current.loading) return
         request(discardableRead = true) { ticket ->
-            val cells = authenticated(service, ticket) { token ->
-                service.baiduNativeMapCells(token, OwnerBd09Bounds.WORLD)
+            val page = authenticated(service, ticket) { token ->
+                service.galleryBd09CellPage(token, current.galleryBd09Bounds, cell,
+                    0, "captured", "desc")
             }
             checkCurrent(ticket)
             val latest = state.value
             if (latest.screen != Screen.GALLERY || !latest.galleryMapOpen ||
-                !latest.galleryBd09Requested) throw CancellationException()
+                latest.galleryMapCellSelected != cell ||
+                latest.galleryMapReturn == null) throw CancellationException()
+            mutableState.value = latest.copy(
+                galleryItems = page.items, galleryOffset = page.offset,
+                galleryTotal = page.totalCount, galleryLoaded = true,
+                galleryPageIntent = "", error = null)
+        }
+    }
+
+    /** Preserve original Owner Gallery rows/filters exactly. Viewer must
+     * first close itself before the cell returns to the original map. */
+    fun closeGalleryBd09Cell() {
+        val current = state.value
+        val saved = current.galleryMapReturn ?: return
+        if (current.screen != Screen.GALLERY || !current.galleryMapOpen ||
+            current.galleryMapCellSelected == null ||
+            current.galleryViewer != null || current.hasActiveNativeTransfer()) return
+        invalidate()
+        cancelGalleryViewerPage()
+        closeActiveVideoPlayback()
+        galleryViewerEpoch++
+        mutableState.value = current.copy(
+            galleryMapCellSelected = null, galleryMapReturn = null,
+            galleryItems = saved.items, galleryOffset = saved.offset,
+            galleryTotal = saved.total, galleryLoaded = saved.loaded,
+            gallerySearchQuery = saved.search, galleryMediaKind = saved.kind,
+            gallerySortBy = saved.sortBy, gallerySortDir = saved.sortDir,
+            galleryTimelineSets = saved.timeline, galleryJumpIndex = saved.jumpIndex,
+            galleryJumpEpoch = saved.jumpEpoch, galleryPageIntent = saved.pageIntent,
+            galleryViewer = null, gallerySelected = null,
+            loading = false, discardableReadInFlight = false, error = null)
+    }
+
+    private fun loadGalleryBd09MapCells() {
+        val service = api ?: return
+        val bounds = state.value.galleryBd09Bounds
+        if (session == null || state.value.screen != Screen.GALLERY ||
+            !state.value.galleryMapOpen || !state.value.galleryBd09Requested ||
+            state.value.galleryMapCellSelected != null || !bounds.valid()) return
+        request(discardableRead = true) { ticket ->
+            val cells = authenticated(service, ticket) { token ->
+                service.baiduNativeMapCells(token, bounds)
+            }
+            checkCurrent(ticket)
+            val latest = state.value
+            if (latest.screen != Screen.GALLERY || !latest.galleryMapOpen ||
+                !latest.galleryBd09Requested || latest.galleryBd09Bounds != bounds)
+                throw CancellationException()
             mutableState.value = latest.copy(galleryBd09Cells = cells, error = null)
         }
     }
@@ -1726,10 +2036,20 @@ class DriveController(
         val current = state.value
         if (current.screen != Screen.GALLERY || !current.galleryMapOpen ||
             current.hasActiveNativeTransfer()) return
+        // A direct map exit must never carry scoped Gallery rows back into
+        // the ordinary photo wall, even when a cell read was cancelled.
+        if (current.galleryMapCellSelected != null) {
+            closeGalleryBd09Cell()
+            if (state.value.galleryMapCellSelected != null) return
+        }
+        val latest = state.value
         invalidate()
-        mutableState.value = current.copy(galleryMapOpen = false,
+        mutableState.value = latest.copy(galleryMapOpen = false,
             galleryMapLoaded = false, galleryMapOverview = null,
             galleryBd09Requested = false, galleryBd09Cells = null,
+            galleryBd09Bounds = OwnerBd09Bounds.WORLD,
+            galleryBd09History = emptyList(),
+            galleryMapCellSelected = null, galleryMapReturn = null,
             loading = false, discardableReadInFlight = false,
             error = null)
         // If the first Gallery GET was replaced by Map, re-read it on return.
@@ -1754,6 +2074,9 @@ class DriveController(
             gallerySelectedAlbum = null,
             galleryMapOpen = false, galleryMapLoaded = false, galleryMapOverview = null,
             galleryBd09Requested = false, galleryBd09Cells = null,
+            galleryBd09Bounds = OwnerBd09Bounds.WORLD,
+            galleryBd09History = emptyList(),
+            galleryMapCellSelected = null, galleryMapReturn = null,
             galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
             galleryLoaded = false, gallerySearchQuery = "", galleryMediaKind = "",
             gallerySortBy = "captured", gallerySortDir = "asc",
@@ -2567,6 +2890,12 @@ class DriveController(
         val sortBy = state.value.gallerySortBy
         val sortDir = state.value.gallerySortDir
         when {
+            // Viewer boundary, forward paging and ordinary Gallery all reuse
+            // this one decoder; a BD09 cell must NEVER query /media/items.
+            state.value.galleryMapCellSelected != null ->
+                service.galleryBd09CellPage(it, state.value.galleryBd09Bounds,
+                    requireNotNull(state.value.galleryMapCellSelected),
+                    offset, sortBy, sortDir)
             sortBy != "captured" || sortDir != "asc" ->
                 service.gallerySortedPage(it, offset, initialLatest, search, kind, albumId,
                     sortBy, sortDir)
@@ -3031,6 +3360,11 @@ class DriveController(
         }
         if (current.screen == Screen.GALLERY) {
             when {
+                current.galleryMapCellSelected != null &&
+                    current.galleryViewer != null -> dismissGalleryViewer()
+                current.galleryMapCellSelected != null -> closeGalleryBd09Cell()
+                current.galleryMapOpen && current.galleryBd09History.isNotEmpty() ->
+                    galleryBd09BackLevel()
                 current.galleryMapOpen -> closeGalleryMapOverview()
                 current.gallerySelectionMode -> {
                     if (current.galleryMetadataWriteAttempted) {
@@ -3346,6 +3680,18 @@ class DriveController(
                             route = state.value.route,
                             error = "登录已失效，请重新登录。",
                         )
+                    } else if (failure is NativeTransferCheckpointFailure) {
+                        // No file bytes or UploadSession has been opened.
+                        // Distinguish a blocked encrypted recovery journal from
+                        // a possibly committed operation with a lost final ACK.
+                        val message = "加密传输检查点不可用，尚未开始传输。请在传输中心核对旧记录或设备安全存储。"
+                        mutableState.value = state.value.copy(
+                            fileDownloadActive = false, fileUploadActive = false,
+                            fileDownloadSaved = false, fileUploadCommitted = false,
+                            fileUploadPickerParent = null,
+                            transferRecoveryIssue = true,
+                            fileDownloadError = if (isFileDownload) message else null,
+                            error = if (isFileUpload) message else null)
                     } else if (isFileDownload) {
                         // Gallery/Files export errors are not Gallery Range errors:
                         // do not offer a misleading "retry older photos" action.

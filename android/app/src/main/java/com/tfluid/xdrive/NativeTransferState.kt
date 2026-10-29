@@ -69,9 +69,30 @@ data class NativeTransferEntry(
         return value.toLong().coerceAtLeast(0L)
     }
 
-    fun progressFraction(): Float? =
-        if (totalBytes <= 0) null else
-            (transferredBytes.toDouble() / totalBytes).toFloat().coerceIn(0f, 1f)
+    /**
+     * Confirmed chunk/SAF bytes are not proof of a durable final ACK. Even
+     * when all bytes arrived, an in-flight or uncertain transfer may not be
+     * called 100% complete. Use an upper bound below 1.0 until COMPLETED.
+     */
+    fun progressFraction(): Float? = when {
+        totalBytes <= 0L -> null
+        status == NativeTransferStatus.COMPLETED -> 1f
+        else -> (transferredBytes.toDouble() / totalBytes.toDouble())
+            .toFloat().coerceIn(0f, 0.999f)
+    }
+
+    /** Integer display percentage, never a rounded false 100% before ACK. */
+    fun confirmedPercent(): Int? = when {
+        status == NativeTransferStatus.COMPLETED -> 100
+        totalBytes <= 0L -> null
+        else -> (100.0 * transferredBytes.toDouble() / totalBytes.toDouble())
+            .toInt().coerceIn(0, 99)
+    }
+
+    /** All declared bytes are accounted for; finalization may still fail. */
+    fun awaitingCompletionAck(): Boolean =
+        status == NativeTransferStatus.RUNNING && totalBytes > 0L &&
+            transferredBytes >= totalBytes
 }
 
 internal const val MAX_SESSION_TRANSFERS = 20

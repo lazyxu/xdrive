@@ -27,6 +27,12 @@ import kotlinx.coroutines.delay
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
+
+/** Only foreground Activity states may start an Owner audio stream.
+ * A source resolved after ON_STOP must never begin playback in background. */
+internal fun filesAudioMayAutoPlay(lifecycleState: Lifecycle.State): Boolean =
+    lifecycleState.isAtLeast(Lifecycle.State.STARTED)
 
 /** Files-only read-only audio. Media3 reuses the same pinned Owner Range/ETag
  * transport as the Gallery video Viewer. No downloaded audio file or token is
@@ -53,8 +59,15 @@ internal fun NativeFilesAudioViewer(node: DriveNode, controller: DriveController
         }
     }
     val activeSource = source // Capture exact source for Dispose, even after retry/logout.
-    val player = remember(context, activeSource) {
-        activeSource?.let { owned -> createFilesAudioPlayer(context, owned) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val player = remember(context, activeSource, lifecycleOwner) {
+        // The Android provider or Owner ticket may resolve only after
+        // Activity STOP. Never bootstrap ExoPlayer in background autoplay.
+        activeSource?.let { owned ->
+            createFilesAudioPlayer(context, owned,
+                allowAutoplay = filesAudioMayAutoPlay(
+                    lifecycleOwner.lifecycle.currentState))
+        }
     }
     // A verified Owner stream can exist even when Media3 initialization fails
     // (decoder/device resource unavailable). Never show inert play controls.
@@ -65,12 +78,15 @@ internal fun NativeFilesAudioViewer(node: DriveNode, controller: DriveController
     var bufferedMs by remember(node.id, node.revision) { mutableLongStateOf(0L) }
     var seeking by remember(node.id, node.revision) { mutableStateOf(false) }
     var seekProgress by remember(node.id, node.revision) { mutableFloatStateOf(0f) }
-    val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(player, activeSource, lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_STOP) player?.pause()
         }
         lifecycleOwner.lifecycle.addObserver(observer)
+        // Cover a STOP that happened before this effect was installed.
+        // The playback source may have been delivered asynchronously.
+        if (!filesAudioMayAutoPlay(lifecycleOwner.lifecycle.currentState))
+            player?.pause()
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(value: Boolean) { isPlaying = value }
             override fun onPlayerError(error: PlaybackException) { failed = true }
@@ -86,12 +102,17 @@ internal fun NativeFilesAudioViewer(node: DriveNode, controller: DriveController
             activeSource?.let { controller.closeGalleryVideoPlayback(it) }
         }
     }
-    LaunchedEffect(player) {
-        while (player != null) {
-            positionMs = player.currentPosition.coerceAtLeast(0L)
-            bufferedMs = player.bufferedPosition.coerceAtLeast(0L)
-            durationMs = player.duration.takeIf { it > 0 } ?: 0L
-            delay(250)
+    LaunchedEffect(player, lifecycleOwner) {
+        // Pause the frequent UI position poll while the app is backgrounded.
+        // A STOP already paused playback; START only restores the controls,
+        // never an old playWhenReady flag.
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (player != null) {
+                positionMs = player.currentPosition.coerceAtLeast(0L)
+                bufferedMs = player.bufferedPosition.coerceAtLeast(0L)
+                durationMs = player.duration.takeIf { it > 0 } ?: 0L
+                delay(250)
+            }
         }
     }
     Column(
@@ -144,7 +165,11 @@ internal fun NativeFilesAudioViewer(node: DriveNode, controller: DriveController
                     Text(if (playable) audioTime(durationMs) else "--:--", color = Color.White)
                 }
                 Spacer(Modifier.height(12.dp))
-                Button(onClick = { if (isPlaying) player?.pause() else player?.play() },
+                Button(onClick = {
+                    if (isPlaying) player?.pause()
+                    else if (filesAudioMayAutoPlay(lifecycleOwner.lifecycle.currentState))
+                        player?.play()
+                },
                     enabled = player != null, modifier = Modifier.heightIn(min = 48.dp)
                         .testTag("files-audio-play-pause")) {
                     Text(if (isPlaying) "暂停" else "播放")
@@ -172,7 +197,9 @@ private fun audioTime(valueMs: Long): String {
  * Release that partial allocation; the matching Owner HTTP session is released
  * by the DisposableEffect bound to this exact source. */
 @OptIn(UnstableApi::class)
-private fun createFilesAudioPlayer(context: Context, owned: OwnerVideoPlayback): ExoPlayer? {
+private fun createFilesAudioPlayer(
+    context: Context, owned: OwnerVideoPlayback, allowAutoplay: Boolean,
+): ExoPlayer? {
     var candidate: ExoPlayer? = null
     return try {
         val player = ExoPlayer.Builder(context).build()
@@ -182,10 +209,13 @@ private fun createFilesAudioPlayer(context: Context, owned: OwnerVideoPlayback):
             .createMediaSource(MediaItem.fromUri(owned.url))
         player.setMediaSource(media)
         player.prepare()
-        player.playWhenReady = true
+        player.playWhenReady = allowAutoplay
         player
     } catch (_: Exception) {
-        candidate?.release()
+        // Some vendor decoders also throw on cleanup after a failed prepare.
+        // A second cleanup error must not escape into Compose or leak an
+        // Owner-specific URL/transport cause into the visible UI.
+        try { candidate?.release() } catch (_: Exception) { }
         null
     }
 }

@@ -308,6 +308,16 @@ internal fun ColumnScope.GalleryCollections(
     }
 }
 
+/** Explicit per-album accessibility names. Identical generic “更多操作” or
+ * “重试封面” labels are unsafe when TalkBack navigates many Owner albums.
+ * These are UI labels only; they confer no extra media or mutation authority. */
+internal fun galleryAlbumOpenActionLabel(album: GalleryAlbum): String =
+    "打开相册：${album.name}"
+internal fun galleryAlbumRetryActionLabel(album: GalleryAlbum): String =
+    "重试相册封面：${album.name}"
+internal fun galleryAlbumMoreActionLabel(album: GalleryAlbum): String =
+    "更多操作：${album.name}"
+
 /** Owner-authenticated 144dp Collection card. Manual albums expose only
  * genuine Server actions; a failed cover keeps its own retry. */
 @OptIn(ExperimentalFoundationApi::class)
@@ -362,7 +372,9 @@ private fun GalleryAlbumCard(
             .combinedClickable(
                 enabled = !busy,
                 onClick = { controller.openGalleryAlbum(album) },
-                onLongClickLabel = if (failed) "重试相册封面" else null,
+                onClickLabel = galleryAlbumOpenActionLabel(album),
+                onLongClickLabel = if (failed)
+                    galleryAlbumRetryActionLabel(album) else null,
                 onLongClick = if (failed) ({ retry++ }) else null,
             )
             .testTag("gallery-album-item-${album.id}"),
@@ -423,7 +435,7 @@ private fun GalleryAlbumCard(
                             .testTag("gallery-manual-more-${album.id}"),
                     ) {
                         Icon(painterResource(R.drawable.xd_more_vert),
-                            contentDescription = "手动相册更多操作")
+                            contentDescription = galleryAlbumMoreActionLabel(album))
                     }
                     DropdownMenu(expanded = actionsOpen,
                         onDismissRequest = { actionsOpen = false }) {
