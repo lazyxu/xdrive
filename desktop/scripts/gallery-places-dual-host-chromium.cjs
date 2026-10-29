@@ -2423,6 +2423,81 @@ async function testPhotoCoverDuringMapPan(browser,mode,port){
 
 // P0 regression: clicking the blue count on a 28-photo marker opens an
 // actual focus-trapped Gallery-style grid modal, not the old 12-photo strip.
+// Mounted regression for the production shared Parent on BOTH SDK Hosts.
+// The synthetic Owner /cell-items first page fails ONCE, then the exact same
+// current signed Cell succeeds without a map SDK remount or all-library query.
+async function testPhotoDrawerSameCellRetry(browser,mode,port){
+  const context=await browser.newContext({
+    viewport:{width:960,height:760},locale:'zh-CN',
+    ignoreHTTPSErrors:true,serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(30000)
+  const errors=[]
+  page.on('pageerror',error=>errors.push(error.message))
+  await page.route('https://api.map.baidu.com/api?**',route=>{
+    assert.equal(new URL(route.request().url()).searchParams.get('ak'),
+      'TEST_ONLY_BROWSER_AK')
+    return route.fulfill({status:200,contentType:'text/javascript',body:sdkStub})
+  })
+  try{
+    await page.goto('https://'+galleryHost+':'+port+
+      '/?mode='+mode+'&drawer_retry=1',{waitUntil:'domcontentloaded'})
+    await page.getByText('当前地图可查看 9 张照片',{exact:true}).waitFor()
+    const cover=page.locator('[data-xdrive-places-trusted-photo-cover]').first()
+    await cover.waitFor({state:'visible'})
+    const sdkBefore=mode==='inline' ? inlineSDKLoads : childSDKLoads
+    await page.evaluate(()=>{
+      window.__retryMapElement=document.querySelector(
+        '[data-xdrive-places-cluster-overview]')
+    })
+    await cover.click()
+    const dialog=page.locator('[data-xdrive-places-album-dialog]')
+    const retry=dialog.locator('[data-xdrive-places-photo-drawer-retry]')
+    await retry.waitFor({state:'visible'})
+    const rejected=await page.evaluate(()=>({
+      failures:window.__mapProbe.photoPreviewFailures,
+      successes:window.__mapProbe.photoPreviewRanges.length,
+      oldMap:window.__retryMapElement?.isConnected,
+      fullReload:!document.querySelector('[data-xdrive-places-cluster-overview]'),
+    }))
+    record(mode+': first Owner Cell photo read failure preserves modal and map',
+      rejected.failures.length===1&&rejected.failures[0].offset===0&&
+      rejected.successes===0&&rejected.oldMap&&!rejected.fullReload)
+    const refresh=dialog.locator('[data-xdrive-places-photo-drawer-refresh-map]')
+    record(mode+': failed photo dialog offers separate retry and map refresh',
+      await refresh.isVisible()&&await retry.isVisible())
+    await retry.click()
+    await dialog.locator('[data-xdrive-places-photo-drawer-item]').first()
+      .waitFor({state:'visible'})
+    const restored=await page.evaluate(()=>({
+      failures:window.__mapProbe.photoPreviewFailures.length,
+      ranges:window.__mapProbe.photoPreviewRanges,
+      count:document.querySelectorAll(
+        '[data-xdrive-places-photo-drawer-item]').length,
+      sameMap:window.__retryMapElement===
+        document.querySelector('[data-xdrive-places-cluster-overview]'),
+      currentCovers:document.querySelectorAll(
+        '[data-xdrive-places-trusted-photo-cover]').length,
+      photoOpens:window.__mapProbe.photoOpens.length,
+      retryVisible:Boolean(document.querySelector(
+        '[data-xdrive-places-photo-drawer-retry]')),
+    }))
+    record(mode+': retry rereads same signed 9-photo Owner Cell, not full Gallery',
+      restored.failures===1&&restored.ranges.length===1&&
+      restored.ranges[0].limit===48&&restored.ranges[0].offset===0&&
+      restored.ranges[0].total===9&&restored.count===9&&
+      restored.photoOpens===0&&!restored.retryVisible)
+    record(mode+': recovered Owner photo dialog keeps current shared map SDK',
+      restored.sameMap&&restored.currentCovers>0&&
+      (mode==='inline' ? inlineSDKLoads : childSDKLoads)===sdkBefore&&
+      errors.length===0)
+    await dialog.locator('[data-xdrive-places-photo-drawer-close]').click()
+    await dialog.waitFor({state:'hidden'})
+    record(mode+': closing recovered dialog leaves current Owner map available',
+      await cover.isVisible())
+  } finally {await context.close()}
+}
+
 async function testPhotoCellAlbumDialog28(browser,mode,port){
   const context=await browser.newContext({
     viewport:{width:390,height:844},locale:'zh-CN',
@@ -3202,6 +3277,8 @@ async function main(){
       await testPhotoCoverDuringMapPan(browser,'isolated',port)
       await testPhotoCellAlbumDialog28(browser,'inline',port)
       await testPhotoCellAlbumDialog28(browser,'isolated',port)
+      await testPhotoDrawerSameCellRetry(browser,'inline',port)
+      await testPhotoDrawerSameCellRetry(browser,'isolated',port)
       await testAdjacent142And28PhotoCovers(browser,'inline',port)
       await testAdjacent142And28PhotoCovers(browser,'isolated',port)
       await testMapOverlayPinOcclusion(browser,'inline',port)
