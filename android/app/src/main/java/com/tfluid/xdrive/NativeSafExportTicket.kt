@@ -52,3 +52,22 @@ internal fun validNativeSafExportPicker(state: DriveState): Boolean {
         else -> false
     }
 }
+
+/** One old OS result may arrive after a new Owner or a different export
+ * intent is visible. Only the exact original state can be cancelled/saved.
+ * A stale callback must NEVER clear a subsequent Owner's pending export. */
+internal enum class NativeSafExportCallbackDecision {
+    IGNORE_STALE, CANCEL_CURRENT, SAVE_CURRENT,
+}
+
+internal fun nativeSafExportCallbackDecision(
+    ticket: NativeSafExportTicket?,
+    liveState: DriveState,
+    validContentUri: Boolean,
+): NativeSafExportCallbackDecision = when {
+    ticket == null || !ticket.isCurrent(liveState) ->
+        NativeSafExportCallbackDecision.IGNORE_STALE
+    !validContentUri ->
+        NativeSafExportCallbackDecision.CANCEL_CURRENT
+    else -> NativeSafExportCallbackDecision.SAVE_CURRENT
+}
