@@ -13,7 +13,7 @@ import { XDriveMediaGalleryCoverThumbnail } from './MediaGalleryCoverThumbnail'
 /** Trusted Parent-only photo sheet; no Baidu SDK data or media URLs cross the Child. */
 export function XDriveMediaGalleryPlacesPhotoDrawer({
   items, total, phase, expanded, loadingMore, pageError, loadThumbnail, onExpand,
-  onClose, onRetry, onLoadMore, onOpenPhoto, onOpenAll, onOpenNearby, initialPresentation,
+  onClose, onRetry, onRefreshMap, onLoadMore, onOpenPhoto, onOpenAll, onOpenNearby, initialPresentation,
 }: {
   items: MediaItem[]
   total: number
@@ -25,6 +25,7 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
   onExpand: (expanded: boolean) => void
   onClose: () => void
   onRetry: () => void
+  onRefreshMap: () => void
   onLoadMore: () => void
   onOpenPhoto: (item: MediaItem, presentation: XDrivePlacesDrawerPresentation) => void
   onOpenAll: () => void
@@ -208,10 +209,16 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
         <Stack role="alert" direction="row" alignItems="center" spacing={1}
           sx={{px:2,py:2,flexWrap:'wrap'}}>
           <Typography variant="body2" color="text.secondary">
-            该地点照片已变化，请重新验证。
+            该地点照片读取失败或范围已变化。可重试当前地点；如照片数量已变化，请刷新地图。
           </Typography>
           <Button size="small" variant="outlined" onClick={onRetry}
-            data-xdrive-places-photo-drawer-retry>刷新地图</Button>
+            sx={{minHeight:44}} data-xdrive-places-photo-drawer-retry>
+            重试此地点照片
+          </Button>
+          <Button size="small" variant="text" onClick={onRefreshMap}
+            sx={{minHeight:44}} data-xdrive-places-photo-drawer-refresh-map>
+            刷新地图
+          </Button>
         </Stack>
       ) : (
         <>
