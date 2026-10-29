@@ -7,6 +7,7 @@ const repo = path.join(__dirname, '..', '..')
 const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 
 const preview = read('ui', 'shared', 'src', 'file-preview.ts')
+const previewRequest = read('ui', 'shared', 'src', 'file-explorer-preview-request.ts')
 const explorer = read('ui', 'shared', 'src', 'mui', 'FileExplorer.tsx')
 const previewSurface = read('ui', 'shared', 'src', 'mui', 'FilePreviewSurface.tsx')
 const previewImage = read('ui', 'shared', 'src', 'mui', 'FilePreviewImage.tsx')
@@ -148,11 +149,20 @@ test('generic preview transport is allowlisted, ticketed, range-capable, with PD
   }
 
   assert.ok(webApi.includes('filePreviewURL(nodeID: number, signal?: AbortSignal)'), 'Web preview ticket adapter is missing')
-  assert.ok(webExplorer.includes("['pdf', 'video', 'audio', 'image'].includes(kind)"), 'Web should enable PDF, Video, Audio, and Image through the generic preview URL')
+  assert.ok(webExplorer.includes('xDriveFileExplorerPreviewRequest(item, kind'), 'Web must select the common Owner preview route')
+  assert.ok(previewRequest.includes("kind === 'image' || kind === 'video' || kind === 'audio' || kind === 'pdf'"),
+    'shared preview request must preserve PDF, Video, Audio and Image generic routing')
+  assert.ok(previewRequest.includes("if (kind === 'live_photo') return { mode: 'live-still', nodeID }"),
+    'Live Photo must use its authorized still, never the raw ZIP')
+  assert.ok(previewRequest.includes('xDriveFileNeedsBrowserCompatibleImagePreview(item.name)'),
+    'HEIC/HEIF/RAW must retain the shared browser-compatible derivative')
   assert.ok(webExplorer.includes('loadPreviewURL={loadPreviewURL}'), 'Web Explorer must pass the preview URL loader')
 
-  assert.ok(desktopExplorer.includes("['pdf', 'video', 'audio', 'image'].includes(kind)"), 'Desktop should enable PDF, Video, Audio, and Image through the generic preview URL')
-  assert.ok(desktopExplorer.includes('cloudFilePreviewURL(Number(item.id), requestID)'), 'Desktop Explorer request-scoped preview URL adapter is missing')
+  assert.ok(desktopExplorer.includes('xDriveFileExplorerPreviewRequest(item, kind'), 'Desktop must use the same Owner preview route')
+  assert.ok(desktopExplorer.includes('cloudFilePreviewURL(plan.nodeID, requestID)'), 'Desktop request-scoped preview Host adapter is missing')
+  assert.ok(desktopExplorer.includes('hostPort.leasePreviewURL('), 'Desktop must retain the native URL lease')
+  assert.ok(desktopExplorer.includes('hostPort.releaseDiscardedPreviewURL('),
+    'Desktop must release late/cancelled private preview tickets')
   assert.ok(desktopExplorer.includes('loadPreviewURL={previewStreamSupported ? loadPreviewURL : undefined}'), 'Desktop preview URL must be capability gated')
   assert.ok(desktopApp.includes("capabilities.includes('file-preview-stream')"), 'Desktop preview stream capability gate is missing')
   assert.ok(preload.includes('cloudFilePreviewURL'), 'Desktop preload preview URL bridge is missing')
