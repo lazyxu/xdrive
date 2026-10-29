@@ -132,9 +132,11 @@ private class PdfLease(
 /** DisposableEffect always closes this holder even if a new Compose session
  * has not yet been drawn after the IO result was handed off. */
 private class PdfHolder : Closeable {
-    var current: PdfLease? = null
+    @Volatile var current: PdfLease? = null
         private set
-    fun replace(next: PdfLease?) {
+    // Android lifecycle cancellation closes on IO; Compose dispose may
+    // simultaneously close on Main. Exactly one call owns the prior lease.
+    @Synchronized fun replace(next: PdfLease?) {
         val prior = current
         current = next
         if (prior !== next) prior?.close()
