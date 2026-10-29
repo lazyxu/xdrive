@@ -29,6 +29,12 @@ func (s *Server) adminStorageVerificationRunDetail(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_storage_verification_run_id"})
 		return
 	}
+	// PostgreSQL maintenance IDs are signed BIGINT; do not bind uint64
+	// values beyond that range and misreport a SQL overflow as a task failure.
+	if id > (1<<63 - 1) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "storage_verification_run_not_found"})
+		return
+	}
 	if s == nil || s.DB == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "storage_verification_detail_unavailable"})
 		return
