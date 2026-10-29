@@ -89,7 +89,7 @@ func (s *Server) adminStorageVerificationRuns(c *gin.Context) {
 	}
 	page := storageVerificationHistoryPage{
 		Protocol: storageVerificationHistoryProtocol,
-		Items: make([]storageVerificationHistoryItem, 0, len(records)),
+		Items:    make([]storageVerificationHistoryItem, 0, len(records)),
 	}
 	for _, item := range records {
 		mode := "deep" // Existing storage_verify task is historically full SHA-256.
@@ -97,10 +97,10 @@ func (s *Server) adminStorageVerificationRuns(c *gin.Context) {
 			mode = "fast"
 		}
 		page.Items = append(page.Items, storageVerificationHistoryItem{
-			RunID: strconv.FormatUint(item.ID, 10),
-			Mode: mode,
-			State: item.Status,
-			StartedAt: item.StartedAt,
+			RunID:      strconv.FormatUint(item.ID, 10),
+			Mode:       mode,
+			State:      item.Status,
+			StartedAt:  item.StartedAt,
 			FinishedAt: *item.FinishedAt,
 		})
 	}
