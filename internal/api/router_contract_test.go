@@ -242,6 +242,7 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		{method: "PUT", path: "/api/v1/files/:id/content", suite: "files"},
 		{method: "POST", path: "/api/v1/uploads/preflight", suite: "chunk-upload"},
 		{method: "POST", path: "/api/v1/uploads/preflight/batch", suite: "chunk-upload"},
+		{method: "POST", path: "/api/v1/uploads/resume-lookup", suite: "chunk-upload"},
 		{method: "POST", path: "/api/v1/uploads", suite: "chunk-upload"},
 		{method: "GET", path: "/api/v1/uploads/:id", suite: "chunk-upload"},
 		{method: "PUT", path: "/api/v1/uploads/:id/chunks/:index", suite: "chunk-upload"},
