@@ -44,7 +44,7 @@ fi
 # Even freshly recomputed SHA256SUMS.txt cannot authorize a Host Docker
 # drill when a nested, duplicated or mistyped Manifest spoofs v2/full status.
 assert_invalid_drill_manifest() {
-  local label="$1" raw="$2" row
+  local label="$1" raw="$2" expected="$3" row
   printf '%s\n' "$raw" > "$snapshot/manifest.json"
   (cd "$snapshot"; sha256sum database.dump verify.json manifest.json objects.index legacy.tar > SHA256SUMS.txt)
   if bash "$manager" backup drill "$snapshot" --max-mib 256 > "$TMP/unsafe-$label.json" 2>/dev/null; then
@@ -58,19 +58,19 @@ assert result['files_restored'] is False and result['postgresql_restored'] is Fa
 assert result['production_verified'] is False,result
 PY
   row="$(bash "$manager" backup list | grep -F -- "$snapshot" || true)"
-  [[ "$row" == *invalid-manifest* ]] || {
+  [[ "$row" == *"$expected"* ]] || {
     echo "ambiguous Manifest was listed as a usable backup: $label" >&2; exit 1
   }
   [[ ! -e "$XD_DRILL_TEST_SENTINEL" ]] || {
     echo "invalid Manifest invoked Docker: $label" >&2; exit 1
   }
 }
-assert_invalid_drill_manifest nested_version '{"format_version":1,"nested":{"format_version":2},"file_data_included":true,"consistency_verified":true}'
-assert_invalid_drill_manifest nested_file_data '{"format_version":2,"file_data_included":false,"nested":{"file_data_included":true},"consistency_verified":true}'
-assert_invalid_drill_manifest nested_consistency '{"format_version":2,"file_data_included":true,"consistency_verified":false,"nested":{"consistency_verified":true}}'
-assert_invalid_drill_manifest duplicate_version '{"format_version":2,"format_version":1,"file_data_included":true,"consistency_verified":true}'
-assert_invalid_drill_manifest duplicate_nested '{"format_version":2,"file_data_included":true,"consistency_verified":true,"extra":{"x":1,"x":2}}'
-assert_invalid_drill_manifest string_boolean '{"format_version":2,"file_data_included":"true","consistency_verified":true}'
+assert_invalid_drill_manifest nested_version '{"format_version":1,"nested":{"format_version":2},"file_data_included":true,"consistency_verified":true}' incomplete
+assert_invalid_drill_manifest nested_file_data '{"format_version":2,"file_data_included":false,"nested":{"file_data_included":true},"consistency_verified":true}' invalid-manifest
+assert_invalid_drill_manifest nested_consistency '{"format_version":2,"file_data_included":true,"consistency_verified":false,"nested":{"consistency_verified":true}}' inconsistent
+assert_invalid_drill_manifest duplicate_version '{"format_version":2,"format_version":1,"file_data_included":true,"consistency_verified":true}' invalid-manifest
+assert_invalid_drill_manifest duplicate_nested '{"format_version":2,"file_data_included":true,"consistency_verified":true,"extra":{"x":1,"x":2}}' invalid-manifest
+assert_invalid_drill_manifest string_boolean '{"format_version":2,"file_data_included":"true","consistency_verified":true}' invalid-manifest
 printf '{"format_version":2,"consistency_verified":true,"file_data_included":true}\n' > "$snapshot/manifest.json"
 (cd "$snapshot"; sha256sum database.dump verify.json manifest.json objects.index legacy.tar > SHA256SUMS.txt)
 good_row="$(bash "$manager" backup list | grep -F -- "$snapshot" || true)"
