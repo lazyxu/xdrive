@@ -1,0 +1,67 @@
+name: Compact only unstarted superseded master CI
+
+# Trusted master code only. No workflow_run/pull_request_target write-token execution.
+# No per-master-push fanout: this runs once when changed and periodically.
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/compact-unstarted-master-ci.yml'
+      - 'scripts/ci/compact-unstarted-master-ci.cjs'
+      - 'scripts/ci/compact-unstarted-master-ci.test.cjs'
+  schedule:
+    - cron: '13,43 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Inspect candidates without cancelling any run'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: xdrive-compact-unstarted-master-ci
+  cancel-in-progress: false
+
+jobs:
+  compact:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout trusted master script only
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          persist-credentials: false
+          sparse-checkout: |
+            scripts/ci/compact-unstarted-master-ci.cjs
+            scripts/ci/compact-unstarted-master-ci.test.cjs
+          sparse-checkout-cone-mode: false
+      - name: Validate conservative compaction guards
+        run: |
+          node --check scripts/ci/compact-unstarted-master-ci.cjs
+          node --test scripts/ci/compact-unstarted-master-ci.test.cjs
+      - name: Cancel only exact unstarted and superseded master CI
+        uses: actions/github-script@v7
+        env:
+          COMPACTION_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+        with:
+          script: |
+            const {compactUnstartedMasterCI} =
+              require('./scripts/ci/compact-unstarted-master-ci.cjs')
+            const outcome = await compactUnstartedMasterCI({
+              github, context, core,
+              dryRun: String(process.env.COMPACTION_DRY_RUN) === 'true',
+              maxCancels: 60, preserveNewest: 3,
+            })
+            core.summary.addHeading('Safe master CI queue compaction')
+              .addRaw('Master ' + outcome.head + '\n\n')
+              .addRaw('Queued scanned: ' + outcome.observed +
+                '; verified unstarted: ' + outcome.eligible +
+                '; cancellation requests: ' + outcome.requested +
+                '; dry-run: ' + outcome.dryRun + '\n')
+            await core.summary.write()
