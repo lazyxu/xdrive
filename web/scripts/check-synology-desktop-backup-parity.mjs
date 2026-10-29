@@ -134,6 +134,8 @@ if (!verifiedOwnerDownload.includes('xDriveSynologyFetchVerifiedDownload') ||
     // search route, Host must provide the true disabled reason instead.
     !synologyFiles.includes('searchEnabled') ||
     !synologyFiles.includes('unavailableActions={unavailableActions}') ||
+    // The authenticated DSM Owner Files port is explicit; unavailable actions
+    // belong to that port, not to a parallel Host-specific Files registry.
     !dsmHost.includes('ownerFilesPage: {') ||
     !dsmHost.includes('client: local,') ||
     !dsmHost.includes('unavailableActions: {') ||
@@ -141,6 +143,7 @@ if (!verifiedOwnerDownload.includes('xDriveSynologyFetchVerifiedDownload') ||
     !synologyFiles.includes('forceVirtualization') ||
     !synologyFiles.includes('onOpenItem={item =>') ||
     !appPageOutlet.includes('if (services.ownerFilesPage) page = (') ||
+    !appPageOutlet.includes('<XDriveSynologyOwnerFilesPage key={revision}') ||
     !appPageOutlet.includes('client={services.ownerFilesPage.client}') ||
     !appPageOutlet.includes('unavailableActions={services.ownerFilesPage.unavailableActions}') ||
     !ownerQuotaIPC.includes('cloud-quota-read') ||
