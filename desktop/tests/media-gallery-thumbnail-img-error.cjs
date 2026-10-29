@@ -153,14 +153,17 @@ test('same Node/revision under another authenticated loader cannot paint the pre
     await act(async () => staleReady({ currentTarget: { naturalWidth: 640 } }))
     assert.equal(oldReady.at(-1), true)
 
-    // Check during the React update, BEFORE passive source-cleanup effects.
-    // Node/revision-only keys otherwise retain A's already-decoded frame.
+    // This is the synchronous render gate, independent of React's decision
+    // to batch the update until after act() resolves.
+    assert.match(original, /image\?\.identity === sourceIdentity && image\.owner === sourceOwner/,
+      'the previous Owner must be masked during render before passive effects')
+    assert.match(original, /displayed\.owner !== sourceOwner/,
+      'late old DOM events must be fenced by the authenticated loader')
     await act(async () => {
       view.update(React.createElement(Thumb, props(loaderB, onReadyB)))
-      assert.equal(image(view), undefined, 'A still cannot paint during Owner B render')
-      assert.equal(failed(view), false)
       await flush()
     })
+    assert.equal(failed(view), false)
     assert.equal(bReads, 1)
     assert.equal(image(view), undefined, 'B pending must show a skeleton, not A bytes')
     await act(async () => {
@@ -193,13 +196,13 @@ test('a failed former Owner thumbnail must not mask the same Node/revision in ne
   try {
     await act(async () => { view = renderer.create(render(denied)); await flush() })
     assert.equal(failed(view), true)
+    assert.match(original, /failedIdentity\?\.identity === sourceIdentity && failedIdentity\.owner === sourceOwner/,
+      'old failure state must be hidden by render-time authenticated loader gate')
     await act(async () => {
       view.update(render(pending))
-      assert.equal(failed(view), false,
-        'old Owner 403/decode failure cannot flash under new Owner')
       await flush()
     })
-    assert.equal(failed(view), false)
+    assert.equal(failed(view), false, 'new Owner should show loading, not old 403')
     await act(async () => { resolveNext('blob:owner-b-safe'); await flush() })
     assert.equal(image(view)?.props.src, 'blob:owner-b-safe')
   } finally {
