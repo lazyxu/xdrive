@@ -22,7 +22,7 @@ function makeHost(kind){
     ? snippet(source,'  const scheduleViewport = () => {',
       '  // A responsive container')
     : snippet(source,'  const scheduleViewport = () => {',
-      '  // A resize (including a mobile rotation')
+      '  const refreshChangedSize = () => {')
   const compiled=isInline
     ? ts.transpileModule(part,{fileName:inlinePath,reportDiagnostics:true,
       compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}})
