@@ -134,6 +134,7 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                 "photoKit": true, "foregroundStillBackup": true,
                 "scanWindows": true,
                 "receiptReview": true,
+                "foregroundAutoSchedule": true,
                 "maxScannedAssets": XDriveIOSForegroundPhotoBackupMVP.maxScannedAssets,
                 "maxNewOriginalsPerRun": XDriveIOSForegroundPhotoBackupMVP.maxNewOriginalsPerRun
             ])
@@ -260,6 +261,131 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                     self.sendError(id, "原件备份停止：请检查 Owner 授权、网络和加密账本；未确认的文件不计成功。")
                 }
             }
+        case "photos.auto.status":
+            guard let source = parseOwner(body) else {
+                sendError(id, "自动备份需要当前有效的共享 Web 登录。")
+                return
+            }
+            do {
+                let owner = try await verifiedOwner(source)
+                sendResult(id, autoStatusObject(
+                    XDriveIOSPhotoAutoScheduleStore.shared.status(owner: owner)
+                ))
+            } catch {
+                sendError(id, "无法确认自动备份对应的当前服务器和 Owner。")
+            }
+        case "photos.auto.configure":
+            guard let source = parseOwner(body),
+                  let params = body["params"] as? [String: Any],
+                  let enabled = params["enabled"] as? Bool else {
+                sendError(id, "自动备份设置参数无效。")
+                return
+            }
+            do {
+                let owner = try await verifiedOwner(source)
+                try Task.checkCancellation()
+                guard let currentURL = webView?.url,
+                      sameOrigin(currentURL) else {
+                    sendError(id, "当前网页已切换，自动备份授权已拒绝。")
+                    return
+                }
+                let store = XDriveIOSPhotoAutoScheduleStore.shared
+                if !enabled {
+                    store.disable(owner: owner)
+                    cancelActive()
+                    sendResult(id, autoStatusObject(nil))
+                    return
+                }
+                guard activeBackup == nil, activeReview == nil,
+                      let minutes = params["intervalMinutes"] as? Int,
+                      let allowCloud = params["allowICloudOriginals"] as? Bool,
+                      XDriveIOSPhotoAutoSchedulePolicy.accepts(minutes: minutes),
+                      [.authorized, .limited].contains(
+                        PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                      ) else {
+                    sendError(id, "请先授权照片、停止当前任务并选择合法备份间隔。")
+                    return
+                }
+                let confirmed = await confirmAutoSchedule(
+                    owner: owner, minutes: minutes, allowCloud: allowCloud
+                )
+                try Task.checkCancellation()
+                guard confirmed else {
+                    sendError(id, "未开启自动增量备份。")
+                    return
+                }
+                let state = try store.configure(
+                    owner: owner, minutes: minutes, allowICloud: allowCloud
+                )
+                sendResult(id, autoStatusObject(state))
+            } catch {
+                sendError(id, "自动备份授权或保存失败；不会在未验证的账户上运行。")
+            }
+        case "photos.auto.tick":
+            guard let source = parseOwner(body) else {
+                sendError(id, "前台自动备份需要有效的当前用户。")
+                return
+            }
+            guard activeBackup == nil && activeReview == nil else {
+                sendResult(id, ["ran": false, "reason": "busy"])
+                return
+            }
+            do {
+                let owner = try await verifiedOwner(source)
+                try Task.checkCancellation()
+                guard let currentURL = webView?.url,
+                      sameOrigin(currentURL),
+                      UIApplication.shared.applicationState == .active,
+                      [.authorized, .limited].contains(
+                        PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                      ) else {
+                    sendResult(id, ["ran": false, "reason": "notForegroundOrAuthorized"])
+                    return
+                }
+                let store = XDriveIOSPhotoAutoScheduleStore.shared
+                guard let state = try store.reserveDue(owner: owner),
+                      let start = XDrivePhotoBackupScanWindow.offset(
+                        for: state.windowIndex
+                      ) else {
+                    sendResult(id, ["ran": false, "reason": "notDue"])
+                    return
+                }
+                activeBackupID = id
+                activeBackup = Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    defer {
+                        self.activeBackup = nil
+                        self.activeBackupID = nil
+                    }
+                    do {
+                        let report = try await XDriveIOSForegroundPhotoBackupMVP(
+                            owner: owner, accessToken: source.accessToken
+                        ).run(
+                            allowICloudOriginals: state.allowICloudOriginals,
+                            startOffset: start
+                        ) { [weak self] report in
+                            self?.sendProgress(id, report)
+                        }
+                        try Task.checkCancellation()
+                        let next = try store.recordResult(
+                            owner: owner, progress: report
+                        )
+                        var answer: [String: Any] = [
+                            "ran": true, "uploaded": report.uploaded,
+                            "verifiedAlready": report.verifiedAlready,
+                            "needsReview": report.needsReview
+                        ]
+                        answer["schedule"] = self.autoStatusObject(next)
+                        self.sendResult(id, answer)
+                    } catch is CancellationError {
+                        self.sendError(id, "前台自动备份中断；未完成收据继续保留。")
+                    } catch {
+                        self.sendError(id, "自动备份发生未确认的原件/网络错误，需在共享设置中复核。")
+                    }
+                }
+            } catch {
+                sendError(id, "自动备份需要重新核验当前 Owner/Root；未启动上传。")
+            }
         case "photos.reconcile.status":
             guard let source = parseOwner(body) else {
                 sendError(id, "当前账户凭证无效，无法读取受保护的备份账本。")
@@ -367,6 +493,50 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
             sendResult(id, ["cancelRequested": true])
         default:
             sendError(id, "当前 iOS Host Adapter 不支持该操作。")
+        }
+    }
+
+    private func autoStatusObject(
+        _ state: XDriveIOSPhotoAutoScheduleStore.State?
+    ) -> [String: Any] {
+        [
+            "enabled": state?.enabled ?? false,
+            "pausedForReview": state?.pausedForReview ?? false,
+            "intervalMinutes": state?.intervalMinutes ?? 60,
+            "allowICloudOriginals": state?.allowICloudOriginals ?? false,
+            "windowIndex": state?.windowIndex ?? 0,
+            "nextDueAt": (state?.nextDueAt.timeIntervalSince1970 ?? 0) > 0 &&
+                (state?.nextDueAt.timeIntervalSince1970 ?? 0) < 4_102_444_800
+                ? Int64(((state?.nextDueAt.timeIntervalSince1970 ?? 0) * 1000)
+                    .rounded(.towardZero)) : 0
+        ]
+    }
+
+    @MainActor
+    private func confirmAutoSchedule(
+        owner: XDriveNativeOwnerRoot, minutes: Int,
+        allowCloud: Bool
+    ) async -> Bool {
+        await withCheckedContinuation { continuation in
+            guard let presenter = webView?.window?.rootViewController,
+                  presenter.presentedViewController == nil, consent == nil else {
+                continuation.resume(returning: false)
+                return
+            }
+            consent = continuation
+            let alert = UIAlertController(
+                title: "开启前台自动增量备份？",
+                message: "仅当 xDrive App 已打开、共享用户已登录且页面处于前台时，每约 \(minutes) 分钟尝试检查当前授权照片。自动依次扫描分段，每轮最多新增 20 个原件，目标是 \(owner.username) @ \(owner.origin.host ?? "xDrive")。\n离开 App 或锁屏不会保证持续运行。\n\(allowCloud ? "允许按需下载 iCloud 原件。" : "不会下载 iCloud 原件。")",
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "取消", style: .cancel) { [weak self] _ in
+                self?.finishConsent(false)
+            })
+            alert.addAction(UIAlertAction(title: "启用", style: .default) { [weak self] _ in
+                self?.finishConsent(true)
+            })
+            consentAlert = alert
+            presenter.present(alert, animated: true)
         }
     }
 

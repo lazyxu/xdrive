@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Alert, Box, Button, Checkbox, FormControlLabel, LinearProgress, Stack, TextField, Typography } from '@mui/material'
+import { Alert, Box, Button, Checkbox, FormControlLabel, LinearProgress, MenuItem, Stack, TextField, Typography } from '@mui/material'
 
 /** Capabilities are supplied by the iOS WKWebView host, never simulated by Web. */
 export interface XDriveIOSPhotoBackupSession {
@@ -43,10 +43,28 @@ export interface XDriveIOSReceiptReviewProgress {
   stage: string
 }
 
+export interface XDriveIOSPhotoAutoStatus {
+  enabled: boolean
+  pausedForReview: boolean
+  intervalMinutes: number
+  allowICloudOriginals: boolean
+  windowIndex: number
+  nextDueAt: number // Unix milliseconds; zero when not scheduled
+}
+export interface XDriveIOSPhotoAutoTickResult {
+  ran: boolean
+  reason?: string
+  uploaded?: number
+  verifiedAlready?: number
+  needsReview?: number
+  schedule?: XDriveIOSPhotoAutoStatus
+}
+
 export interface XDriveIOSPhotoBackupHost {
   /** Negotiated with the real native host; false for older installed IPA. */
   scanWindowsSupported?: boolean
   receiptReviewSupported?: boolean
+  foregroundAutoSupported?: boolean
   capabilities(): Promise<boolean>
   status(session: XDriveIOSPhotoBackupSession): Promise<XDriveIOSPhotoStatus>
   requestAccess(session: XDriveIOSPhotoBackupSession): Promise<XDriveIOSPhotoStatus>
@@ -61,6 +79,12 @@ export interface XDriveIOSPhotoBackupHost {
     session: XDriveIOSPhotoBackupSession,
     onProgress: (progress: XDriveIOSReceiptReviewProgress) => void,
   ): Promise<XDriveIOSReceiptReviewProgress>
+  autoStatus(session: XDriveIOSPhotoBackupSession): Promise<XDriveIOSPhotoAutoStatus>
+  configureAuto(
+    session: XDriveIOSPhotoBackupSession,
+    enabled: boolean, intervalMinutes: number, allowICloudOriginals: boolean,
+  ): Promise<XDriveIOSPhotoAutoStatus>
+  autoTick(session: XDriveIOSPhotoBackupSession): Promise<XDriveIOSPhotoAutoTickResult>
   cancel(): Promise<void>
   switchServer(): Promise<void>
 }
@@ -86,6 +110,9 @@ export function XDriveIOSPhotoBackupSettings({
   const [reviewStatus, setReviewStatus] = useState<XDriveIOSReceiptReviewStatus | null>(null)
   const [reviewReport, setReviewReport] = useState<XDriveIOSReceiptReviewProgress | null>(null)
   const [reviewing, setReviewing] = useState(false)
+  const [autoStatus, setAutoStatus] = useState<XDriveIOSPhotoAutoStatus | null>(null)
+  const [autoInterval, setAutoInterval] = useState(60)
+  const [autoConsentBusy, setAutoConsentBusy] = useState(false)
   const activeRun = useRef(false)
 
   // Changing authenticated Owner or closing Settings cancels the current
@@ -99,6 +126,7 @@ export function XDriveIOSPhotoBackupSettings({
     setProgress(null)
     setReviewStatus(null)
     setReviewReport(null)
+    setAutoStatus(null)
     if (session) {
       void host.capabilities().then(async supported => {
         if (!mounted || !supported) return
@@ -108,6 +136,13 @@ export function XDriveIOSPhotoBackupSettings({
         if (host.receiptReviewSupported) {
           const pending = await host.reviewStatus(session)
           if (mounted) setReviewStatus(pending)
+        }
+        if (host.foregroundAutoSupported) {
+          const auto = await host.autoStatus(session)
+          if (mounted) {
+            setAutoStatus(auto)
+            setAutoInterval(auto.intervalMinutes)
+          }
         }
       }).catch(() => {
         if (mounted) {
@@ -182,6 +217,21 @@ export function XDriveIOSPhotoBackupSettings({
       setRunning(false)
       setBusy(false)
       setCancelRequested(false)
+    }
+  }
+
+  const configureAuto = async (enabled: boolean) => {
+    if (!host.foregroundAutoSupported || busy || running || reviewing ||
+        autoConsentBusy) return
+    setAutoConsentBusy(true)
+    setError('')
+    try {
+      const result = await host.configureAuto(session, enabled, autoInterval, allowCloud)
+      setAutoStatus(result)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '无法保存前台自动备份授权。')
+    } finally {
+      setAutoConsentBusy(false)
     }
   }
 
@@ -297,6 +347,46 @@ export function XDriveIOSPhotoBackupSettings({
               {' · '}原件不可用 {progress.unavailable}
               {' · '}待核对 {progress.needsReview}
             </Typography>
+          </Stack>
+        ) : null}
+        {host.foregroundAutoSupported ? (
+          <Stack spacing={1.2} data-xdrive-ios-foreground-auto-backup>
+            <Typography variant="body2" fontWeight={700}>前台自动定时增量备份</Typography>
+            <Typography variant="caption" color="text.secondary">
+              仅当 iPhone App 保持打开、共享登录有效且页面处于前台时，
+              按选择的间隔自动检查一个相册分段。每轮最多新增 20 项，
+              逐段轮转并通过已确认的 Server 收据跳过重复原件。
+              系统锁屏、退出 App 或关闭网页不会保证后台执行。
+            </Typography>
+            <TextField select label="检查间隔" size="small" value={autoInterval}
+              onChange={event => setAutoInterval(Number(event.target.value))}
+              disabled={autoConsentBusy || busy || running || reviewing}
+              data-xdrive-ios-auto-interval>
+              <MenuItem value={15}>每 15 分钟</MenuItem>
+              <MenuItem value={60}>每 1 小时</MenuItem>
+              <MenuItem value={360}>每 6 小时</MenuItem>
+              <MenuItem value={1440}>每天</MenuItem>
+            </TextField>
+            {autoStatus?.pausedForReview ? (
+              <Alert severity="warning">
+                上轮收据不确定，已暂停自动任务；请先核对历史收据再重新授权。
+              </Alert>
+            ) : null}
+            {autoStatus?.enabled ? (
+              <Typography variant="caption">
+                已启用：当前扫描第 {autoStatus.windowIndex + 1} 段。
+                {autoStatus.nextDueAt > 0 ? ' 下次最早尝试时间：' +
+                  new Date(autoStatus.nextDueAt).toLocaleString() : ''}
+              </Typography>
+            ) : null}
+            <Button variant={autoStatus?.enabled ? 'outlined' : 'contained'}
+              disabled={autoConsentBusy || busy || running || reviewing ||
+                (!autoStatus?.enabled && !permitted)}
+              onClick={() => { void configureAuto(!autoStatus?.enabled) }}
+              data-xdrive-ios-auto-toggle>
+              {autoConsentBusy ? '正在确认…' :
+                autoStatus?.enabled ? '关闭前台自动备份' : '启用前台自动备份'}
+            </Button>
           </Stack>
         ) : null}
         {host.receiptReviewSupported ? (

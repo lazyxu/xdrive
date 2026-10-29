@@ -42,6 +42,15 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-window-check"
           "$RUNNER_TEMP/xdrive-ios-window-check"
 
+      - name: Verify foreground automatic schedule and bounded cursor
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/PhotoAutoSchedulePolicy.swift \
+            ios/tests/PhotoAutoSchedulePolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-auto-policy-check"
+          "$RUNNER_TEMP/xdrive-ios-auto-policy-check"
+
       - name: Prepare native brand and home screen icon
         run: bash ios/scripts/prepare-assets.sh
 
