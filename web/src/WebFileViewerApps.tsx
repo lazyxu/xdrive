@@ -73,6 +73,14 @@ import {
   xDriveWebViewerMediaFile,
 } from './webViewerContext'
 import { useViewerNode } from './useWebViewerNode'
+import { xDriveReadWebAppBrowseSession } from './webAppRuntime'
+import { xDriveRoutedViewerMapEntry } from './routedViewerMapEntry'
+import { xDriveResolveBaiduOwnerPhotoFocusCamera } from '../../ui/shared/src/media-gallery-baidu-photo-focus-camera'
+import { xDriveBaiduMapPhotoScopeKey } from '../../ui/shared/src/media-gallery-baidu-map-photo-scope'
+import { xDriveOwnerPhotoFocusSignalActive } from '../../ui/shared/src/media-gallery-baidu-photo-focus'
+import {
+  xDrivePlacesMapModeFromHref, xDrivePlacesMapScopeHandoffURL,
+} from '../../ui/shared/src/media-gallery-places-map-mode'
 import { xDriveContainViewerTabFocus } from './viewerFocusScope'
 import { xDriveWebTextSelection } from './webTextViewer'
 import { xDriveMediaItemSupportsBasicEditing } from '../../ui/shared/src/media-edit'
@@ -1012,6 +1020,7 @@ function WebMediaViewerApp({
   route,
   api,
   gallerySource,
+  ownerScope,
   onBorrowGalleryThumbnail,
   shareDialogAdapter,
   onNavigate,
@@ -1025,6 +1034,7 @@ function WebMediaViewerApp({
   route: Extract<XDriveWebAppRoute, { app: 'media-viewer' }>
   api: XDriveApi
   gallerySource: MediaGalleryDataSource
+  ownerScope?: string
   onBorrowGalleryThumbnail?: XDriveRoutedGalleryThumbnailBorrower
   shareDialogAdapter: XDriveShareDialogAdapter
   onNavigate: (nodeID: number) => void
@@ -1083,22 +1093,37 @@ function WebMediaViewerApp({
     revision: viewer.node?.revision,
     context: route.params.context,
     api,
-    gallerySource, session: 0,
+    gallerySource, ownerScope, session: 0,
   })
   if (modalOwnerRef.current.nodeID !== route.params.node ||
       modalOwnerRef.current.revision !== viewer.node?.revision ||
       modalOwnerRef.current.context !== route.params.context ||
       modalOwnerRef.current.api !== api ||
-      modalOwnerRef.current.gallerySource !== gallerySource) {
+      modalOwnerRef.current.gallerySource !== gallerySource ||
+      modalOwnerRef.current.ownerScope !== ownerScope) {
     modalOwnerRef.current = {
       nodeID: route.params.node,
       revision: viewer.node?.revision,
       context: route.params.context,
       api,
-      gallerySource, session: modalOwnerRef.current.session + 1,
+      gallerySource, ownerScope,
+      session: modalOwnerRef.current.session + 1,
     }
   }
   const modalOwner = modalOwnerRef.current
+  // A routed Viewer without a still-live accepted Gallery context cannot
+  // infer album, favorite, date, Cell or viewport membership from its URL.
+  // Never redirect such a Viewer to an unfiltered #gallery/places screen.
+  const mapEntryScope = route.params.context && ownerScope
+    ? xDriveRoutedViewerMapEntry(
+      xDriveReadWebAppBrowseSession(route.params.context))
+    : null
+  const mapFocusAbort = useRef<AbortController | null>(null)
+  useEffect(() => () => {
+    mapFocusAbort.current?.abort()
+    mapFocusAbort.current = null
+  }, [modalOwner])
+
   // Browsing an adjacent item continues a slideshow, but a new account,
   // Gallery source or collection scope cannot inherit a prior Owner's play state.
   const slideshowScopeRef = useRef({
@@ -1132,6 +1157,73 @@ function WebMediaViewerApp({
     if (modalOwnerRef.current !== modalOwner) return
     setVisibleModalOwner(modalOwner)
     setLocationOpen(true)
+  }
+
+  const openRoutedPhotoMap = (picked?: { nodeID: number; revision: number }) => {
+    if (!mapEntryScope || !ownerScope || !route.params.context ||
+        modalOwnerRef.current !== modalOwner ||
+        !mediaItem || !viewer.node ||
+        viewer.node.id !== mediaItem.node.id ||
+        viewer.node.revision !== mediaItem.node.revision ||
+        viewer.node.id !== route.params.node) return
+    const selected = { nodeID: mediaItem.node.id, revision: mediaItem.node.revision }
+    // Recent shared Viewers pass this selection directly; older callers may
+    // provide no arguments. In both cases, only the live Node/revision wins.
+    if (picked && (picked.nodeID !== selected.nodeID ||
+        picked.revision !== selected.revision)) return
+    mapFocusAbort.current?.abort()
+    const controller = new AbortController()
+    mapFocusAbort.current = controller
+    const contextID = route.params.context
+    const sourceScope = mapEntryScope
+    const originalKey = xDriveBaiduMapPhotoScopeKey(sourceScope)
+    const active = () => {
+      if (modalOwnerRef.current !== modalOwner ||
+          !xDriveOwnerPhotoFocusSignalActive(controller.signal)) return null
+      const current = xDriveRoutedViewerMapEntry(
+        xDriveReadWebAppBrowseSession(contextID))
+      return current && xDriveBaiduMapPhotoScopeKey(current) === originalKey
+        ? { ownerScope, photoScope: current, focusIntent: selected } : null
+    }
+    void (async () => {
+      const focus = await xDriveResolveBaiduOwnerPhotoFocusCamera(
+        selected,
+        { ownerScope, photoScope: sourceScope, focusIntent: selected },
+        (id, revision, signal) =>
+          api.mediaBaiduNativePhotoFocus(id, revision, signal),
+        active, controller.signal)
+      if (focus.kind === 'stale') return
+      if (focus.kind !== 'ready')
+        throw new Error(focus.kind === 'unavailable'
+          ? '当前照片位置尚未完成 BD-09 索引，暂不能精确定位。'
+          : '当前照片位置或图库范围无效，请返回图库重新进入。')
+      const mode = xDrivePlacesMapModeFromHref(window.location.href)
+      // The existing Server handoff is one-use, bound to the current signed
+      // Owner/session/map release. It carries the ORIGINAL filtered scope and
+      // a validated derived camera; the Child never receives this photo.
+      const ticket = await api.mediaBaiduMapScopeHandoffIssue(
+        sourceScope, mode, controller.signal, focus.camera)
+      if (!active()) return
+      const href = xDrivePlacesMapScopeHandoffURL(
+        window.location.href, mode, ticket)
+      if (!href) throw new Error('受限相册地图交接不可用，请重新打开照片。')
+      const destination = new URL(href)
+      if (destination.origin !== window.location.origin)
+        throw new Error('地图交接必须使用当前 HTTPS 站点。')
+      destination.hash = xDriveWebAppHash({
+        app: 'gallery', params: { section: 'places' },
+      })
+      if (!active()) return
+      // Full-document handoff uses existing fail-closed ticket scrubbing,
+      // Server reauthentication and NEW /cells on the mounted trusted Parent.
+      window.location.assign(destination.href)
+    })().catch(error => {
+      if (mapFocusAbort.current === controller && active())
+        onError(error)
+    }).finally(() => {
+      if (mapFocusAbort.current === controller)
+        mapFocusAbort.current = null
+    })
   }
 
   // Same-tick duplicate operations and old-route callbacks cannot claim the
@@ -1557,10 +1649,8 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
         <XDriveMediaGalleryViewerLocationDialog
           open
           item={mediaItem}
-          onOpenDynamicMap={() => {
-            setLocationOpen(false)
-            window.location.hash = xDriveWebAppHash({ app: 'gallery', params: { section: 'places' } })
-          }}
+          onOpenDynamicMap={mapEntryScope && ownerScope
+            ? openRoutedPhotoMap : undefined}
           onClose={() => setLocationOpen(false)}
         />
       ) : null}
@@ -2087,6 +2177,7 @@ export function WebFileViewerApps({
   route,
   api,
   gallerySource,
+  ownerScope,
   onBorrowGalleryThumbnail,
   shareDialogAdapter,
   onReplaceRoute,
@@ -2100,6 +2191,7 @@ export function WebFileViewerApps({
   route: XDriveWebAppRoute
   api: XDriveApi
   gallerySource: MediaGalleryDataSource
+  ownerScope?: string
   onBorrowGalleryThumbnail?: XDriveRoutedGalleryThumbnailBorrower
   shareDialogAdapter: XDriveShareDialogAdapter
   onReplaceRoute: (route: XDriveWebAppRoute) => void
@@ -2132,6 +2224,7 @@ export function WebFileViewerApps({
         route={route}
         api={api}
         gallerySource={gallerySource}
+        ownerScope={ownerScope}
         onBorrowGalleryThumbnail={onBorrowGalleryThumbnail}
         shareDialogAdapter={shareDialogAdapter}
         onNavigate={(nodeID) => onReplaceRoute({

@@ -21,7 +21,8 @@ test('W2b2 keeps trusted BD09 cell as distinct Gallery and Viewer range', () => 
 })
 test('W2b2 atomically commits a real Owner first page before showing photo wall', () => {
   assert.match(gallery, /const openBaiduNativeCell = useCallback/)
-  assert.match(gallery, /source\.listBaiduNativeCellItems\(\s*cell, pageSize, 0/)
+  assert.match(gallery, /const listCellItems=source\.listBaiduNativeCellItems/)
+  assert.match(gallery, /void listCellItems\(\s*cell, pageSize, 0/)
   assert.match(gallery, /if \(controller\.signal\.aborted \|\| request !== requestID\.current\) return/)
   assert.match(gallery, /setCollectionTarget\(target\)/)
   assert.match(gallery, /virtualCollection\.primePage\(\{/)

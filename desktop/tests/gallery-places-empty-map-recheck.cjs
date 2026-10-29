@@ -120,7 +120,9 @@ test('manual refresh and empty-map interval never widen Owner scope or call the 
   assert.doesNotMatch(refresh,/listOwnerCellItems|xDriveMount|bootstrapMapSession/)
   const query=source.slice(source.indexOf('    const queryCells = async'),
     source.indexOf('    refreshFilteredCells.current='))
-  assert.match(query,/cancel\(\)/)
+  assert.match(query,/cancel\(Boolean\(keepVisual\)\)/)
+  assert.match(query,/gesturePresentationRef\.current\?\.owner/)
+  assert.match(query,/frame\.replaceAuthorizedCells\(\[\]\)/)
   assert.match(query,/frame\.replaceAuthorizedCells\(\[\]\)/)
   assert.match(query,/await listOwnerCells\(bounds,request\.signal,/)
   assert.match(query,/approved\.key!==filterRef\.current\.key/)
