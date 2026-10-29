@@ -160,6 +160,10 @@ export default function App({
   activeViewRef.current = view
   systemDependenciesDraftRef.current = systemDependenciesDraftDirty
 
+  // Electron tray/menu IPC listeners remain mounted for this App lifetime.
+  // Keep their callback stable while always consulting the latest Server role.
+  const navigateWorkspaceRef = useRef(navigateWorkspace)
+  navigateWorkspaceRef.current = navigateWorkspace
   const setView = useCallback((next: View) => {
     // Re-entering an unchanged editor must never dispose unsaved draft state.
     if (next === activeViewRef.current && next === 'admin-services' &&
@@ -170,8 +174,8 @@ export default function App({
       setPendingSystemDependenciesExit(next)
       return false
     }
-    return navigateWorkspace(next)
-  }, [navigateWorkspace])
+    return navigateWorkspaceRef.current(next)
+  }, [])
 
   const [systemDependenciesNavigationResetKey, setSystemDependenciesNavigationResetKey] = useState(0)
   const [baiduDiagnosticLocation, setBaiduDiagnosticLocation] = useState<

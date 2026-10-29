@@ -17,6 +17,7 @@ test('Desktop and DSM both use canonical state and shared route revision', () =>
   assert.match(desktop, /platform: 'desktop'/)
   assert.match(desktop, /adminRoleVerified: agent\.connected && agent\.status\?\.role === 'admin'/)
   assert.match(desktop, /revision=\{pageRevision\}/)
+  assert.match(desktop, /navigateWorkspaceRef\.current = navigateWorkspace/)
   assert.match(dsm, /revision=\{pageRevision\}/)
   assert.match(app, /<XDriveAppRouteContent/)
   assert.doesNotMatch(desktop, /setViewActual|xDriveEnterForegroundPage\(/,
@@ -30,7 +31,7 @@ test('unsaved admin dependencies cannot be discarded by reentering the same rout
   assert.match(guard, /systemDependenciesDraftRef\.current\) return false/)
   assert.match(guard, /xDriveSystemDependenciesNeedsExitConfirmation\(/)
   assert.ok(guard.indexOf("next === activeViewRef.current") <
-    guard.indexOf('return navigateWorkspace(next)'))
+    guard.indexOf('return navigateWorkspaceRef.current(next)'))
   const click = desktop.slice(desktop.indexOf('onNavigate={(destination) => {'),
     desktop.indexOf('      overlays={'))
   assert.match(click, /const accepted = setView\(destination as View\)/)
@@ -48,4 +49,17 @@ test('confirmed exit travels through shared role-admitted navigation; durable wo
   assert.match(controller, /xDriveNextWorkspaceNavigationState\(old, destination, adminRoleVerified\)/)
   assert.match(controller, /if \(next\.selected !== old\.selected\)/)
   assert.match(controller, /pageRevision: previous\.pageRevision/)
+})
+
+test('once-mounted native tray navigation never holds a stale admin-role closure', () => {
+  const bridge = desktop.slice(desktop.indexOf('const navigateWorkspaceRef = useRef('),
+    desktop.indexOf('  const [systemDependenciesNavigationResetKey'))
+  assert.match(bridge, /navigateWorkspaceRef\.current = navigateWorkspace/)
+  assert.match(bridge, /return navigateWorkspaceRef\.current\(next\)/)
+  assert.match(bridge, /\}, \[\]\)/)
+  const subscription = desktop.slice(desktop.indexOf('const unsubscribeNavigate ='),
+    desktop.indexOf('  }, [])', desktop.indexOf('const unsubscribeNavigate =')))
+  assert.match(subscription, /window\.xdriveDesktop\.onNavigate\(/)
+  assert.match(subscription, /setView\(target\)/)
+  assert.match(subscription, /unsubscribeNavigate\(\)/)
 })
