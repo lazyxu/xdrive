@@ -1,7 +1,7 @@
 import { Paper, Stack, Table, TableBody, TableCell, TableRow, Typography } from '@mui/material'
-import type { XDriveServerBackupPage } from '../server-backup-admin'
+import type { XDriveServerBackupPage, XDriveServerBackupSnapshot } from '../server-backup-admin'
 import { selectServerBackupRecoveryEvidence } from '../server-backup-recovery-evidence'
-import { assessServerBackupRecoveryReadiness } from '../server-backup-recovery-readiness'
+import { assessServerBackupRecoveryReadiness, isTrustedServerBackupIsolatedDrill } from '../server-backup-recovery-readiness'
 
 const snapshotStatus: Record<string, string> = {
   none: '未选择已发现的快照',
@@ -11,12 +11,14 @@ const snapshotStatus: Record<string, string> = {
   inconsistent: '源数据不一致：不能作为可靠恢复点',
 }
 
-function drillLabel(event: import('../server-backup-admin').XDriveServerBackupHistoryEntry | null): string {
+function drillLabel(
+  event: import('../server-backup-admin').XDriveServerBackupHistoryEntry | null,
+  snapshot: XDriveServerBackupSnapshot | undefined,
+): string {
   if (!event) return '跳过（未验收）— 当前宿主机没有独立、可信的演练成功凭据'
   const time = event.finished_at ? new Date(event.finished_at).toLocaleString() : '时间未知'
   const proof = event.drill
-  if (event.state === 'success' && proof?.state === 'success' &&
-      proof.files_restored && proof.postgresql_restored && !proof.production_verified) {
+  if (isTrustedServerBackupIsolatedDrill(event, snapshot)) {
     return '本机隔离演练成功（历史） · 文件与 PostgreSQL 已在离线 RAM 沙箱实际恢复 · ' +
       time + ' · 不是生产破坏性恢复验收，不能证明此刻仍可恢复'
   }
@@ -50,6 +52,7 @@ export function XDriveBackupRecoveryEvidencePanel({ page, snapshotID }: {
 }) {
   const evidence = selectServerBackupRecoveryEvidence(page, snapshotID)
   const readiness = assessServerBackupRecoveryReadiness(page, evidence, snapshotID)
+  const selectedSnapshot = page.inventory.snapshots.find(item => item.id === snapshotID)
   return (
     <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}
       data-xdrive-admin-backup-recovery-evidence>
@@ -81,7 +84,7 @@ export function XDriveBackupRecoveryEvidencePanel({ page, snapshotID }: {
             </TableRow>
             <TableRow>
               <TableCell>本机隔离恢复演练</TableCell>
-              <TableCell>{drillLabel(evidence.lastDrill)}</TableCell>
+              <TableCell>{drillLabel(evidence.lastDrill, selectedSnapshot)}</TableCell>
             </TableRow>
             <TableRow>
               <TableCell>隔离 CI 恢复演练</TableCell>

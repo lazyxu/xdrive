@@ -1,4 +1,6 @@
-import type { XDriveServerBackupPage } from './server-backup-admin'
+import type {
+  XDriveServerBackupHistoryEntry, XDriveServerBackupPage, XDriveServerBackupSnapshot,
+} from './server-backup-admin'
 import type { XDriveBackupRecoveryEvidence } from './server-backup-recovery-evidence'
 
 export type XDriveBackupRecoveryReadiness = {
@@ -6,6 +8,32 @@ export type XDriveBackupRecoveryReadiness = {
     'v1_historical_only' | 'drill_failed' | 'drill_missing' | 'v2_historical_only'
   label: string
   action: string
+}
+
+/** One strictly bound Host-isolated v2 restore receipt for both the recovery
+ * advice and the evidence table. This is historical proof only, never
+ * authorization to restore or proof of current data integrity. */
+export function isTrustedServerBackupIsolatedDrill(
+  event: XDriveServerBackupHistoryEntry | null,
+  snapshot: XDriveServerBackupSnapshot | undefined,
+): boolean {
+  const proof = event?.drill
+  if (!event || !snapshot || !proof) return false
+  const started = Date.parse(proof.started_at)
+  const finished = Date.parse(proof.finished_at)
+  return snapshot.format === 'v2' &&
+    snapshot.state === 'complete' && snapshot.file_data_included === true &&
+    event.action === 'drill' && event.snapshot_id === snapshot.id &&
+    event.state === 'success' &&
+    proof.protocol === 'xdrive-host-isolated-drill-v1' &&
+    proof.state === 'success' &&
+    proof.environment === 'host_ephemeral_offline_tmpfs' &&
+    proof.snapshot === snapshot.name &&
+    proof.files_restored === true && proof.postgresql_restored === true &&
+    proof.production_verified === false &&
+    Number.isInteger(proof.max_mib) && proof.max_mib > 0 && proof.max_mib <= 1024 &&
+    proof.failure_category === '' &&
+    Number.isFinite(started) && Number.isFinite(finished) && finished >= started
 }
 
 /** Conservative, historical-only preparation advice. This never authorizes
@@ -66,12 +94,7 @@ export function assessServerBackupRecoveryReadiness(
       action: '先查看真实 Host 演练失败分类并修复，再重新执行文件与 PostgreSQL 的离线恢复演练。',
     }
   }
-  const drillProof = drill?.drill
-  if (!drill || drill.state !== 'success' || !drillProof ||
-      drillProof.state !== 'success' || drillProof.production_verified ||
-      !drillProof.files_restored || !drillProof.postgresql_restored ||
-      drillProof.environment !== 'host_ephemeral_offline_tmpfs' ||
-      drillProof.snapshot !== snapshot.name) {
+  if (!isTrustedServerBackupIsolatedDrill(drill, snapshot)) {
     return {
       state: 'drill_missing',
       label: '存在历史校验，但缺少可信的 v2 离线恢复演练成功凭据',
