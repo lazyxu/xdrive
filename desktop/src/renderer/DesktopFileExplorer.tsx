@@ -24,6 +24,7 @@ import {
   xDriveFileExplorerPropertiesRefs,
   xDriveFileExplorerAvailabilityError,
   xDriveFileExplorerAvailabilityFromSnapshot,
+  xDriveReadFileExplorerHostAvailability,
   xDriveFileExplorerPersistedSearchFilters,
   xDriveFileExplorerOrganizationSearchState,
   xDriveFileExplorerSavedSearchRuleLabels,
@@ -85,7 +86,6 @@ import type {
 const DESKTOP_FILE_VIEW_KEY = 'xdrive.desktop.files.view_mode'
 const DESKTOP_FILE_DETAILS_LAYOUT_KEY = 'xdrive.desktop.files.details_layout'
 const DESKTOP_FILE_VIEW_PREFERENCES_KEY = 'xdrive.desktop.files.view_preferences'
-const desktopFileAvailabilityBatchLimit = 2048
 
 const desktopSearchAvailabilityOptions: readonly XDriveFileExplorerSearchAvailabilityOption[] = [
   { value: 'local', label: '本地可用' },
@@ -1258,50 +1258,31 @@ export default function DesktopFileExplorer({
       return
     }
 
-    const paths = [...new Set(requests.map((item) => item.path))]
     let cancelled = false
-    // A failed probe must not leave the last device's previously accepted
-    // CfAPI snapshot displayed as if this request had verified it. Retain
-    // the file list and all navigation; only invalidate availability badges.
+    const isCurrent = () => !cancelled && requestID === availabilityRequestRef.current
+    // A failed Host probe invalidates only device availability badges, never
+    // authenticated Files navigation or user-owned upload/download/backup jobs.
     const rejectProbe = (code?: string) => {
-      if (cancelled || requestID !== availabilityRequestRef.current) return
+      if (!isCurrent()) return
       setAvailabilityByID(new Map())
       setAvailabilityReadFailure(desktopFileAvailabilityProbeMessage(code))
     }
     setAvailabilityReadFailure(null)
-    void (async () => {
-      try {
-        const items: AgentFileAvailabilityBatchItem[] = []
-        for (let offset = 0; offset < paths.length; offset += desktopFileAvailabilityBatchLimit) {
-          const batchPaths = paths.slice(offset, offset + desktopFileAvailabilityBatchLimit)
-          const result = await hostPort.browse.getFileAvailabilityBatch(batchPaths)
-          if (cancelled || requestID !== availabilityRequestRef.current) return
-          if (!result.ok) {
-            rejectProbe(result.error.code)
-            return
-          }
-          items.push(...result.data.items)
-        }
-        const byPath = new Map(items.map((item) => [item.path, item] as const))
-        const next = new Map<number, DesktopFileAvailabilityEntry>()
-        for (const request of requests) {
-          const resolved = byPath.get(request.path)
-          if (resolved?.availability) {
-            next.set(request.nodeID, { path: request.path, state: resolved.availability })
-          } else if (resolved?.error) {
-            next.set(request.nodeID, { path: request.path, error: resolved.error })
-          }
-        }
-        if (!cancelled && requestID === availabilityRequestRef.current) {
-          setAvailabilityByID(next)
-          setAvailabilityReadFailure(null)
-        }
-      } catch {
-        // Electron IPC itself can reject during an Agent restart. The
-        // lifecycle/request fence prevents old-session error projection.
-        rejectProbe()
+    // One Host-neutral, bounded read lifecycle shared with other possible
+    // device Hosts. Desktop alone supplies its real authorized Agent method.
+    void xDriveReadFileExplorerHostAvailability<AgentFileAvailability>({
+      requests,
+      readBatch: paths => hostPort.browse.getFileAvailabilityBatch(paths),
+      isCurrent,
+    }).then(outcome => {
+      if (!isCurrent() || !outcome) return
+      if (outcome.kind === 'error') {
+        rejectProbe(outcome.code)
+        return
       }
-    })()
+      setAvailabilityByID(outcome.byID)
+      setAvailabilityReadFailure(null)
+    }).catch(() => rejectProbe())
 
     return () => {
       cancelled = true
