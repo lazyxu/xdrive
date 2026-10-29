@@ -39,7 +39,6 @@ struct XDriveWebAppHome: View {
     @State private var inputError: String?
     @State private var pageError: String?
     @State private var downloadNotice: String?
-    @State private var nativeLoginVisible = false
     @State private var confirmLeave = false
 
     init() {
@@ -67,11 +66,6 @@ struct XDriveWebAppHome: View {
                             confirmLeave = true
                         } label: {
                             Label("更换服务器", systemImage: "server.rack")
-                        }
-                        Button {
-                            nativeLoginVisible = true
-                        } label: {
-                            Label("原生相册备份与账户工具（独立会话）", systemImage: "photo.on.rectangle.angled")
                         }
                     } label: {
                         Image(systemName: "ellipsis.circle.fill")
@@ -124,9 +118,6 @@ struct XDriveWebAppHome: View {
             } else {
                 connectionForm
             }
-        }
-        .sheet(isPresented: $nativeLoginVisible) {
-            LoginScreen()
         }
         .confirmationDialog(
             "切换服务器会终止当前网页内未完成的上传或下载。",
@@ -191,7 +182,6 @@ struct XDriveWebAppHome: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Button("打开原生相册工具与登录") { nativeLoginVisible = true }
                     .buttonStyle(.bordered)
             }
             .frame(maxWidth: 430, alignment: .leading)
@@ -217,6 +207,12 @@ private struct XDriveOriginLockedWebView: UIViewRepresentable {
         // Persistent Web PWA cookie/storage lifecycle; no native bearer token.
         configuration.websiteDataStore = .default()
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
+        // The native iOS Host Adapter only accepts authenticated messages from
+        // this trusted HTTPS main frame. No standalone SwiftUI backup page.
+        configuration.userContentController.add(
+            context.coordinator.photoHost,
+            name: XDriveIOSPhotoHostBridge.messageName
+        )
         let view = WKWebView(frame: .zero, configuration: configuration)
         view.navigationDelegate = context.coordinator
         view.uiDelegate = context.coordinator
@@ -232,6 +228,9 @@ private struct XDriveOriginLockedWebView: UIViewRepresentable {
 
     static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
         coordinator.stopDownloads()
+        uiView.configuration.userContentController.removeScriptMessageHandler(
+            forName: XDriveIOSPhotoHostBridge.messageName
+        )
         uiView.stopLoading()
         uiView.navigationDelegate = nil
         uiView.uiDelegate = nil
@@ -241,11 +240,13 @@ private struct XDriveOriginLockedWebView: UIViewRepresentable {
         private let origin: URL
         private let onPageError: (String?) -> Void
         private let downloads: XDriveWebDownloadCoordinator
+        let photoHost: XDriveIOSPhotoHostBridge
 
         init(origin: URL, onPageError: @escaping (String?) -> Void,
              onDownloadNotice: @escaping (String?) -> Void) {
             self.origin = origin
             self.onPageError = onPageError
+            self.photoHost = XDriveIOSPhotoHostBridge(origin: origin)
             self.downloads = XDriveWebDownloadCoordinator(
                 origin: origin, onNotice: onDownloadNotice
             )
@@ -253,10 +254,21 @@ private struct XDriveOriginLockedWebView: UIViewRepresentable {
 
         func attach(webView: WKWebView) {
             downloads.presentingWebView = webView
+            photoHost.webView = webView
         }
 
         func stopDownloads() {
             downloads.stopPendingDownloads()
+            photoHost.cancelActive()
+            photoHost.webView = nil
+        }
+
+        func webView(_ webView: WKWebView,
+                     didStartProvisionalNavigation navigation: WKNavigation!) {
+            // A full navigation is not an authenticated continuation of the
+            // old PWA Owner's PhotoKit backup. Same-document hash routes do not
+            // trigger this hook; the shared Settings unmount cancels instead.
+            photoHost.cancelActive()
         }
 
         private func sameOrigin(_ target: URL) -> Bool {

@@ -50,6 +50,7 @@ import {
   XDriveServiceDependenciesPage,
   XDriveSystemMaintenancePage,
   XDriveSettingsDialog,
+  XDriveIOSPhotoBackupSettings,
   XDriveFeedbackSnackbar,
   XDriveShareDialog,
   XDriveSourceManager,
@@ -88,6 +89,8 @@ import type {
 } from '@xdrive/ui/mui'
 import { xDriveCaptureGalleryViewerFocus, xDriveRestoreGalleryViewerFocus } from './galleryViewerReturnFocus'
 import { ApiError, XDriveApi, sessionFromAuth } from './api'
+import { xDriveCreateIOSPhotoBackupHost } from './iosPhotoHostAdapter'
+import type { XDriveIOSPhotoBackupHost, XDriveIOSPhotoBackupSession } from '../../ui/shared/src/mui/IOSPhotoBackupSettings'
 import type { AuthResult, AuthSession, BuildInfo } from './api'
 import type {
   MeResult,
@@ -261,6 +264,8 @@ function WebAccountMenu({
   onLogout,
   offlineOwner,
   onOfflineConsentChange,
+  iosPhotoHost,
+  iosPhotoSession,
 }: {
   username: string
   serverBuild: BuildInfo | null
@@ -270,6 +275,8 @@ function WebAccountMenu({
   onLogout: () => void
   offlineOwner?: XDrivePwaOfflineOwner | null
   onOfflineConsentChange?: (enabled: boolean) => void
+  iosPhotoHost?: XDriveIOSPhotoBackupHost | null
+  iosPhotoSession?: XDriveIOSPhotoBackupSession | null
 }) {
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -325,6 +332,9 @@ function WebAccountMenu({
         buildInfo={[{ title: 'Server 构建信息', info: serverBuild }]}
       >
         {offlineOwner ? <PwaOfflineDirectorySection owner={offlineOwner} onConsentChange={onOfflineConsentChange} /> : null}
+        {iosPhotoHost && iosPhotoSession ? (
+          <XDriveIOSPhotoBackupSettings host={iosPhotoHost} session={iosPhotoSession} />
+        ) : null}
       </XDriveSettingsDialog>
       <XDriveManualConnectionDialog open={connectionOpen && !disabled}
         onClose={() => setConnectionOpen(false)} />
@@ -891,6 +901,7 @@ function FileManager({
   onLogout: () => void
 }) {
   const compactWorkspace = useMediaQuery('(max-width:899.95px)')
+  const iosPhotoHost = useMemo(() => xDriveCreateIOSPhotoBackupHost(), [])
   const [profile, setProfile] = useState<MeResult | null>(null)
   const [profileReadFailed, setProfileReadFailed] = useState(false)
   const [webMapScopeHandoff,setWebMapScopeHandoff] = useState<XDriveMapScopeHandoffState>(
@@ -2283,6 +2294,12 @@ function FileManager({
       disabled={viewerActive || (compactWorkspace && !compactNavigationOpen)}
       offlineOwner={offlineOwner}
       onOfflineConsentChange={setOfflineConsent}
+      iosPhotoHost={iosPhotoHost}
+      iosPhotoSession={profile && profile.username === username &&
+        !profile.must_change_password && Number.isSafeInteger(profile.id) &&
+        profile.id > 0 && api.session.accessToken
+          ? { username, ownerID: profile.id, accessToken: api.session.accessToken }
+          : null}
       username={username}
       serverBuild={serverBuild}
       appearance={appearance}
