@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Alert, Box, Button, Checkbox, FormControlLabel, LinearProgress, Stack, Typography } from '@mui/material'
+import { Alert, Box, Button, Checkbox, FormControlLabel, LinearProgress, Stack, TextField, Typography } from '@mui/material'
 
 /** Capabilities are supplied by the iOS WKWebView host, never simulated by Web. */
 export interface XDriveIOSPhotoBackupSession {
@@ -15,6 +15,8 @@ export interface XDriveIOSPhotoStatus {
 }
 export interface XDriveIOSPhotoBackupProgress {
   totalVisible: number
+  /** Absent on older IPA builds that only scan the first 256 items. */
+  startOffset?: number
   scanned: number
   uploaded: number
   verifiedAlready: number
@@ -27,6 +29,8 @@ export interface XDriveIOSPhotoBackupProgress {
   stage: string
 }
 export interface XDriveIOSPhotoBackupHost {
+  /** Negotiated with the real native host; false for older installed IPA. */
+  scanWindowsSupported?: boolean
   capabilities(): Promise<boolean>
   status(session: XDriveIOSPhotoBackupSession): Promise<XDriveIOSPhotoStatus>
   requestAccess(session: XDriveIOSPhotoBackupSession): Promise<XDriveIOSPhotoStatus>
@@ -34,8 +38,10 @@ export interface XDriveIOSPhotoBackupHost {
     session: XDriveIOSPhotoBackupSession,
     allowICloudOriginals: boolean,
     onProgress: (progress: XDriveIOSPhotoBackupProgress) => void,
+    windowIndex?: number,
   ): Promise<XDriveIOSPhotoBackupProgress>
   cancel(): Promise<void>
+  switchServer(): Promise<void>
 }
 
 /** Shared React/MUI Settings surface, not an independent SwiftUI Photos page.
@@ -53,6 +59,8 @@ export function XDriveIOSPhotoBackupSettings({
   const [running, setRunning] = useState(false)
   const [cancelRequested, setCancelRequested] = useState(false)
   const [allowCloud, setAllowCloud] = useState(false)
+  // This is a transient 1-based selection, NOT a persisted PhotoKit identity.
+  const [windowIndexText, setWindowIndexText] = useState('1')
   const [progress, setProgress] = useState<XDriveIOSPhotoBackupProgress | null>(null)
   const activeRun = useRef(false)
 
@@ -63,6 +71,7 @@ export function XDriveIOSPhotoBackupSettings({
     setAvailable(false)
     setStatus(null)
     setError('')
+    setWindowIndexText('1')
     setProgress(null)
     if (session) {
       void host.capabilities().then(async supported => {
@@ -86,9 +95,20 @@ export function XDriveIOSPhotoBackupSettings({
 
   if (!session || !available) return null
   const permitted = status?.authorization === 'authorized' || status?.authorization === 'limited'
-  const loaded = Math.min(progress?.scanned ?? 0,
-    Math.max(1, Math.min(progress?.totalVisible ?? 256, 256)))
-  const total = Math.max(1, Math.min(progress?.totalVisible ?? 256, 256))
+  const scanWindows = host.scanWindowsSupported === true
+  const visibleCount = Math.max(0, status?.totalVisible ?? 0)
+  const windowCount = Math.max(1, Math.ceil(visibleCount / 256))
+  const windowNumber = Number(windowIndexText)
+  const validWindow = /^[1-9]\d*$/.test(windowIndexText) &&
+    Number.isSafeInteger(windowNumber) && windowNumber <= windowCount
+  // A starting progress event has no fresh count yet. Never reset the selected
+  // older segment to the newest segment while the snapshot is being acquired.
+  const progressCount = progress?.stage === '检查当前授权相册…' && progress.totalVisible === 0
+    ? visibleCount : progress?.totalVisible ?? visibleCount
+  const progressOffset = progress?.startOffset ?? 0
+  const windowCapacity = Math.max(0, Math.min(256, progressCount - progressOffset))
+  const total = Math.max(1, windowCapacity)
+  const loaded = Math.min(progress?.scanned ?? 0, total)
 
   const requestAccess = async () => {
     if (busy || running) return
@@ -102,7 +122,7 @@ export function XDriveIOSPhotoBackupSettings({
   }
 
   const start = async () => {
-    if (!permitted || busy || running) return
+    if (!permitted || busy || running || (scanWindows && !validWindow)) return
     setBusy(true)
     setRunning(true)
     activeRun.current = true
@@ -110,8 +130,14 @@ export function XDriveIOSPhotoBackupSettings({
     setProgress(null)
     setError('')
     try {
-      const report = await host.start(session, allowCloud, setProgress)
+      const report = await host.start(
+        session, allowCloud, setProgress,
+        scanWindows ? windowNumber - 1 : 0,
+      )
       setProgress(report)
+      // The authoritative PhotoKit count can shrink between selected windows.
+      // Do not silently send an out-of-range selection back to window one.
+      setStatus(current => current ? { ...current, totalVisible: report.totalVisible } : current)
       if (report.stoppedForReview || report.needsReview > 0) {
         setError('存在服务端提交结果待核对的文件；已停止新增上传，不会盲目重试。')
       }
@@ -139,7 +165,8 @@ export function XDriveIOSPhotoBackupSettings({
       <Stack spacing={1.5}>
         <Typography variant="body2" color="text.secondary">
           使用当前 xDrive 登录账户，将 iPhone 已授权的普通照片原件备份到云端文件。
-          首版每轮最多扫描最近 256 项、新增 20 张。Live Photo 和视频尚未纳入完整备份。
+          每轮只扫描选定分段最多 256 项，新增最多 20 张普通照片。
+          选择较早的分段可检查更多已授权项目；Live Photo 和视频仍未完成原件备份。
         </Typography>
         {status ? (
           <Typography variant="body2" data-xdrive-ios-photos-permission>
@@ -158,6 +185,43 @@ export function XDriveIOSPhotoBackupSettings({
         {status && !permitted && status.authorization !== 'notDetermined' ? (
           <Alert severity="info">请在 iOS「设置 → xDrive → 照片」中允许访问。不会自动请求或扩大权限。</Alert>
         ) : null}
+        {permitted && scanWindows ? (
+          <Stack spacing={1} data-xdrive-ios-photos-window>
+            <Typography variant="body2" fontWeight={600}>相册扫描分段</Typography>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Button variant="outlined" disabled={busy || !Number.isSafeInteger(windowNumber) || windowNumber <= 1}
+                onClick={() => setWindowIndexText(String(windowNumber - 1))}>
+                上一段
+              </Button>
+              <TextField
+                size="small" type="number" label="第几段"
+                value={windowIndexText}
+                onChange={event => setWindowIndexText(event.target.value)}
+                error={!validWindow}
+                slotProps={{ htmlInput: { min: 1, max: windowCount, step: 1, inputMode: 'numeric' } }}
+                sx={{ width: 110 }}
+                disabled={busy}
+                data-xdrive-ios-photos-window-index
+              />
+              <Button variant="outlined" disabled={busy || !validWindow || windowNumber >= windowCount}
+                onClick={() => setWindowIndexText(String(windowNumber + 1))}>
+                下一段
+              </Button>
+            </Stack>
+            <Typography variant="caption" color="text.secondary">
+              当前授权相册共 {windowCount} 段（每段最多 256 项）。
+              {visibleCount === 0 ? '当前没有可扫描的授权照片。' : validWindow ? '当前选择第 ' + windowNumber + ' 段，索引 ' +
+                ((windowNumber - 1) * 256 + 1) + '–' + Math.min(windowNumber * 256, visibleCount) + '。'
+                : '请输入当前范围内的正整数段号。'}
+              授权或照片顺序发生变化时，分段位置可能移动；分段完成不等于整机照片全部备份。
+            </Typography>
+          </Stack>
+        ) : null}
+        {permitted && !scanWindows ? (
+          <Typography variant="caption" color="text.secondary">
+            当前安装的 iOS IPA 尚不支持选择更早的扫描分段，本轮仅检查最新 256 项。
+          </Typography>
+        ) : null}
         {permitted ? (
           <FormControlLabel
             control={<Checkbox checked={allowCloud} disabled={busy}
@@ -172,7 +236,7 @@ export function XDriveIOSPhotoBackupSettings({
               value={Math.min(100, (loaded / total) * 100)}
               aria-label="本轮 iPhone 相册扫描进度" />
             <Typography variant="caption" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-              已扫描 {progress.scanned} / {Math.min(progress.totalVisible, 256)}
+              从第 {progressOffset + 1} 项起：已扫描 {progress.scanned} / {windowCapacity}
               {' · '}新增 {progress.uploaded}
               {' · '}已核验跳过 {progress.verifiedAlready}
               {' · '}Live 未支持 {progress.liveNotSupported}
@@ -188,7 +252,8 @@ export function XDriveIOSPhotoBackupSettings({
             {cancelRequested ? '正在取消…' : '取消本轮照片备份'}
           </Button>
         ) : (
-          <Button variant="contained" disabled={busy} onClick={() => { void start() }}
+          <Button variant="contained" disabled={busy || (scanWindows && !validWindow)}
+            onClick={() => { void start() }}
             data-xdrive-ios-photos-start>
             开始本轮照片备份
           </Button>
@@ -197,6 +262,15 @@ export function XDriveIOSPhotoBackupSettings({
           上传须由用户点击并在 iOS 系统提示中再次确认。只使用当前服务器验证的 Owner/root；
           不镜像删除、不自动后台运行，收到不确定 ACK 时保留账本等待核对。
         </Typography>
+        <Button variant="outlined" disabled={busy || running}
+          data-xdrive-ios-settings-switch-server
+          onClick={() => {
+            void host.switchServer().catch(caught => {
+              setError(caught instanceof Error ? caught.message : '无法打开服务器切换确认。')
+            })
+          }}>
+          更换 iPhone App 服务器
+        </Button>
       </Stack>
     </Box>
   )

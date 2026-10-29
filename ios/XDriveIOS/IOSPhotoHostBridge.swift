@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 import Photos
 import UIKit
 import WebKit
@@ -13,14 +14,16 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
 
     weak var webView: WKWebView?
     private let origin: URL
+    private let onRequestServerChange: () -> Void
     private var activeBackup: Task<Void, Never>?
     private var activeBackupID: String?
     private var consent: CheckedContinuation<Bool, Never>?
     private weak var consentAlert: UIAlertController?
     private var backgroundObserver: NSObjectProtocol?
 
-    init(origin: URL) {
+    init(origin: URL, onRequestServerChange: @escaping () -> Void) {
         self.origin = origin
+        self.onRequestServerChange = onRequestServerChange
         super.init()
         backgroundObserver = NotificationCenter.default.addObserver(
             forName: UIApplication.didEnterBackgroundNotification,
@@ -126,9 +129,25 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
             sendResult(id, [
                 "protocolVersion": 1, "platform": "ios",
                 "photoKit": true, "foregroundStillBackup": true,
+                "scanWindows": true,
                 "maxScannedAssets": XDriveIOSForegroundPhotoBackupMVP.maxScannedAssets,
                 "maxNewOriginalsPerRun": XDriveIOSForegroundPhotoBackupMVP.maxNewOriginalsPerRun
             ])
+        case "host.server.change":
+            // Unlike Photos operations this action is available on the
+            // *shared PWA login screen*, so it cannot demand an Owner token.
+            // Still require the exact origin-locked main frame, and show an
+            // explicit native confirmation before stopping that WebView.
+            guard activeBackup == nil else {
+                sendError(id, "相册备份正在运行，请先完成或取消，再切换服务器。")
+                return
+            }
+            guard let currentURL = webView?.url, sameOrigin(currentURL) else {
+                sendError(id, "当前页面来源无法验证，拒绝切换服务器。")
+                return
+            }
+            sendResult(id, ["confirmationRequested": true])
+            onRequestServerChange()
         case "photos.status", "photos.requestAccess":
             guard let source = parseOwner(body) else {
                 sendError(id, "当前 PWA 会话信息无效，请重新登录。")
@@ -166,6 +185,32 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                 sendError(id, "缺少经过验证的当前账户或备份选项。")
                 return
             }
+            // Old Web clients omit windowIndex and retain the first-window
+            // behavior. New shared Settings only offers window selection after
+            // capabilities.scanWindows is reported true by this native host.
+            // Reject fractional, Boolean, negative and overflowing indices.
+            let requestedWindow: NSNumber
+            if let value = params["windowIndex"] {
+                guard let number = value as? NSNumber,
+                      CFGetTypeID(number) != CFBooleanGetTypeID() else {
+                    sendError(id, "相册分段编号无效，未启动备份。")
+                    return
+                }
+                requestedWindow = number
+            } else {
+                requestedWindow = NSNumber(value: 0)
+            }
+            let value = requestedWindow.doubleValue
+            guard value.isFinite, value >= 0,
+                  value <= min(Double(Int.max / XDrivePhotoBackupScanWindow.maxItems),
+                               9_007_199_254_740_991),
+                  value.rounded(.towardZero) == value,
+                  let startOffset = XDrivePhotoBackupScanWindow.offset(
+                    for: requestedWindow.intValue
+                  ) else {
+                sendError(id, "相册分段超出可支持范围，未开始备份。")
+                return
+            }
             let access = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             guard access == .authorized || access == .limited else {
                 sendError(id, "尚未授权访问系统照片，未开始备份。")
@@ -186,8 +231,9 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                         self.sendError(id, "网页已切换，原生备份已停止。")
                         return
                     }
-                    let accepted = await self.confirmBackup(owner: owner,
-                                                            allowCloud: allowCloud)
+                    let accepted = await self.confirmBackup(
+                        owner: owner, allowCloud: allowCloud, startOffset: startOffset
+                    )
                     try Task.checkCancellation()
                     guard accepted else {
                         self.sendError(id, "用户取消了照片备份，没有启动上传。")
@@ -195,7 +241,7 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                     }
                     let report = try await XDriveIOSForegroundPhotoBackupMVP(
                         owner: owner, accessToken: source.accessToken
-                    ).run(allowICloudOriginals: allowCloud) { [weak self] progress in
+                    ).run(allowICloudOriginals: allowCloud, startOffset: startOffset) { [weak self] progress in
                         self?.sendProgress(id, progress)
                     }
                     try Task.checkCancellation()
@@ -242,6 +288,7 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
     private func progressObject(_ progress: XDriveIOSPhotoBackupProgress) -> [String: Any] {
         [
             "totalVisible": progress.totalVisible,
+            "startOffset": progress.startOffset,
             "scanned": progress.scanned,
             "uploaded": progress.uploaded,
             "verifiedAlready": progress.verifiedAlready,
@@ -257,7 +304,7 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
 
     @MainActor
     private func confirmBackup(owner: XDriveNativeOwnerRoot,
-                               allowCloud: Bool) async -> Bool {
+                               allowCloud: Bool, startOffset: Int) async -> Bool {
         await withCheckedContinuation { continuation in
             guard let presenter = webView?.window?.rootViewController,
                   presenter.presentedViewController == nil,
@@ -268,7 +315,7 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
             consent = continuation
             let alert = UIAlertController(
                 title: "开始 iPhone 相册备份？",
-                message: "将当前已授权的普通照片原件上传到 \(owner.origin.host ?? "xDrive") 的 \(owner.username) 云端文件，每轮最多新增 20 张。Live Photo 和视频不会标记完成。\n\(allowCloud ? "允许下载 iCloud 原件。" : "不下载 iCloud 原件。")",
+                message: "将当前已授权相册第 \(startOffset + 1) 项起、最多 256 项中的普通照片原件上传到 \(owner.origin.host ?? "xDrive") 的 \(owner.username) 云端文件，每轮最多新增 20 张。Live Photo 和视频不会标记完成。\n\(allowCloud ? "允许下载 iCloud 原件。" : "不下载 iCloud 原件。")",
                 preferredStyle: .alert
             )
             alert.addAction(UIAlertAction(title: "取消", style: .cancel) { [weak self] _ in

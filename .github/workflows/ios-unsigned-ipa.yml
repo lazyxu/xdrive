@@ -32,6 +32,16 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
 
+      # Pure Foundation contract test is quick and independent of signing.
+      - name: Verify bounded iOS PhotoKit scan-window math
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/PhotoBackupScanWindow.swift \
+            ios/tests/PhotoBackupScanWindowChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-window-check"
+          "$RUNNER_TEMP/xdrive-ios-window-check"
+
       - name: Prepare native brand and home screen icon
         run: bash ios/scripts/prepare-assets.sh
 

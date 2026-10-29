@@ -770,6 +770,9 @@ function AuthView({
   const [passwordError, setPasswordError] = useState('')
   const [installOpen, setInstallOpen] = useState(false)
   const [connectionOpen, setConnectionOpen] = useState(false)
+  // Native host switching is accessible from the *same* shared login UI,
+  // even before an Owner exists. Never create a second SwiftUI login page.
+  const iosNativeHost = useMemo(() => xDriveCreateIOSPhotoBackupHost(), [])
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -864,6 +867,16 @@ function AuthView({
           onClick={() => setConnectionOpen(true)}>
           手动切换公网 / 局域网入口
         </Button>
+        {iosNativeHost ? (
+          <Button data-xdrive-ios-native-switch-server variant="text" sx={{ minHeight: 44 }}
+            onClick={() => {
+              void iosNativeHost.switchServer().catch(caught => {
+                setError(caught instanceof Error ? caught.message : '无法请求切换 iOS 服务器。')
+              })
+            }}>
+            更换 iPhone App 服务器
+          </Button>
+        ) : null}
         <Button data-xdrive-pwa-login-entry variant="text" sx={{ minHeight: 44 }}
           onClick={() => setInstallOpen(true)}>
           安装 xDrive 到主屏幕 / 桌面

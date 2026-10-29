@@ -29,6 +29,7 @@ export function xDriveCreateIOSPhotoBackupHost(): XDriveIOSPhotoBackupHost | nul
 
 class IOSPhotoBackupHost implements XDriveIOSPhotoBackupHost {
   private readonly handler: NativeMessageHandler
+  scanWindowsSupported = false
 
   constructor(handler: NativeMessageHandler) {
     this.handler = handler
@@ -82,11 +83,14 @@ class IOSPhotoBackupHost implements XDriveIOSPhotoBackupHost {
 
   async capabilities(): Promise<boolean> {
     const value = await this.request<{
-      protocolVersion: number; platform: string; photoKit: boolean; foregroundStillBackup: boolean
+      protocolVersion: number; platform: string; photoKit: boolean
+      foregroundStillBackup: boolean; scanWindows?: boolean
     }>('capabilities')
-    return value?.protocolVersion === 1 &&
+    const supported = value?.protocolVersion === 1 &&
       value.platform === 'ios' && value.photoKit === true &&
       value.foregroundStillBackup === true
+    this.scanWindowsSupported = supported && value.scanWindows === true
+    return supported
   }
 
   status(session: XDriveIOSPhotoBackupSession): Promise<XDriveIOSPhotoStatus> {
@@ -101,16 +105,29 @@ class IOSPhotoBackupHost implements XDriveIOSPhotoBackupHost {
     session: XDriveIOSPhotoBackupSession,
     allowICloudOriginals: boolean,
     onProgress: (progress: XDriveIOSPhotoBackupProgress) => void,
+    windowIndex = 0,
   ): Promise<XDriveIOSPhotoBackupProgress> {
+    if (!Number.isSafeInteger(windowIndex) || windowIndex < 0) {
+      return Promise.reject(new Error('相册分段编号无效。'))
+    }
+    if (!this.scanWindowsSupported && windowIndex !== 0) {
+      return Promise.reject(new Error('当前安装的 iOS App 暂不支持分段备份，请更新 IPA。'))
+    }
     return this.request<XDriveIOSPhotoBackupProgress>(
       'photos.backup.start',
-      { ...session, allowICloudOriginals },
+      { ...session, allowICloudOriginals,
+        ...(this.scanWindowsSupported ? { windowIndex } : {}) },
       onProgress,
     )
   }
 
   async cancel(): Promise<void> {
     await this.request<{ cancelRequested: boolean }>('photos.backup.cancel')
+  }
+
+  async switchServer(): Promise<void> {
+    const reply = await this.request<{ confirmationRequested: boolean }>('host.server.change')
+    if (!reply?.confirmationRequested) throw new Error('iOS 尚未确认服务器切换操作。')
   }
 }
 

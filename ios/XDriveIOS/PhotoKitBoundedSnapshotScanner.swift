@@ -24,6 +24,7 @@ enum XDrivePhotoKitScanFailure: Error {
     case notAuthorized
     case notStarted
     case snapshotChanged
+    case invalidOffset
 }
 
 /// PhotoKit change notifications are not guaranteed to arrive on the main
@@ -70,8 +71,11 @@ actor XDrivePhotoKitBoundedSnapshotScanner {
 
     /// Explicit user-triggered initial scan; no permission prompt. If iOS
     /// Limited access is granted, the result is only the authorized subset.
-    func start() throws -> Int {
+    func start(atOffset requestedOffset: Int = 0) throws -> Int {
         reset()
+        guard requestedOffset >= 0 else {
+            throw XDrivePhotoKitScanFailure.invalidOffset
+        }
         let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
         guard status == .authorized || status == .limited else {
             throw XDrivePhotoKitScanFailure.notAuthorized
@@ -92,7 +96,9 @@ actor XDrivePhotoKitBoundedSnapshotScanner {
         result = snapshot
         authorization = status
         changeVersion = beginVersion
-        nextOffset = 0
+        // Select a bounded window without materializing or persisting skipped IDs.
+        // Past-the-end windows are empty, not silently redirected to the first.
+        nextOffset = min(requestedOffset, snapshot.count)
         return snapshot.count
     }
 
