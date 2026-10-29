@@ -704,10 +704,11 @@ test('Manual login response after an Owner epoch change cannot remount old priva
     { compilerOptions }).outputText
 
   async function simulate(stale) {
-    const writes = [], notices = [], owners = [], events = [], persisted = []
+    const writes = [], notices = [], owners = [], events = [], persisted = [], passwordGates = []
     const authEpochRef = { current: 9 }
     const parentVars = {
       authEpochRef, setAuthNotice: value => notices.push(value),
+      setLoginPasswordChangeRequired: value => passwordGates.push(value),
       COOKIE_LOGOUT_PENDING_KEY: 'pending', COOKIE_LOGOUT_OWNER_KEY: 'owner',
       xDriveBrowserStorageRemove: key => writes.push(['remove', key]),
       persistSession: (session, preference) => persisted.push({ session, preference }),
@@ -737,15 +738,17 @@ test('Manual login response after an Owner epoch change cannot remount old priva
     if (stale) authEpochRef.current++ // peer logout / account switch arrived
     completeLogin({ username: 'owner', access_token: 'old-access', browser_session: true })
     await pending
-    return { writes, notices, owners, events, persisted, epoch: authEpochRef.current }
+    return { writes, notices, owners, events, persisted, passwordGates, epoch: authEpochRef.current }
   }
   const stale = await simulate(true)
   assert.deepEqual(stale.persisted, [], 'late login must never persist revoked Owner')
   assert.deepEqual(stale.owners, [], 'late login must not remount private Owner')
   assert.deepEqual(stale.writes, [], 'late login must not remove a newer tombstone')
   assert.deepEqual(stale.events, [], 'late login must not broadcast a resurrected Owner')
+  assert.deepEqual(stale.passwordGates, [], 'late login must not set any previous Owner password gate')
   const valid = await simulate(false)
   assert.equal(valid.persisted.length, 1, 'current login can still mount its Owner')
   assert.deepEqual(valid.owners, ['owner'])
   assert.deepEqual(valid.events, [['login','owner']])
+  assert.deepEqual(valid.passwordGates, [false], 'current login must use Server password gate only')
 })
