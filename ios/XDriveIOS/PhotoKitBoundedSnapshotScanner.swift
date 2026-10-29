@@ -48,7 +48,7 @@ private final class XDrivePhotoKitScanChangeObserver: NSObject, PHPhotoLibraryCh
 }
 
 /// Bounded, read-only first-pass scan. The PHFetchResult is PhotoKit's lazy
-/// snapshot, not a 100k-entry Swift Array. Only one <=64-item page is returned
+/// snapshot, not a 100k-entry Swift Array. Only one <=64-slot page is returned
 /// at a time; no byte fetch, upload, GPS read or background scan is scheduled.
 ///
 /// A PHChange or Full/Limited authorization change invalidates the cursor
@@ -118,13 +118,20 @@ actor XDrivePhotoKitBoundedSnapshotScanner {
             for index in offset..<end {
                 try Task.checkCancellation()
                 let asset = snapshot.object(at: index)
-                guard asset.mediaType == .image || asset.mediaType == .video else {
-                    continue
+                // Preserve one candidate per PHFetchResult slot. Dropping
+                // an unsupported kind here would advance PhotoKit's offset
+                // without advancing the runner's scanned count, allowing the
+                // selected 256-slot window to spill into the next one.
+                let kind: String
+                switch asset.mediaType {
+                case .image: kind = "image"
+                case .video: kind = "video"
+                default: kind = "unsupported"
                 }
                 rows.append(XDrivePhotoKitScanCandidate(
                     id: asset.localIdentifier,
-                    kind: asset.mediaType == .video ? "video" : "image",
-                    isLive: asset.mediaType == .image &&
+                    kind: kind,
+                    isLive: kind == "image" &&
                         asset.mediaSubtypes.contains(.photoLive),
                     capturedAt: asset.creationDate,
                     modifiedAt: asset.modificationDate

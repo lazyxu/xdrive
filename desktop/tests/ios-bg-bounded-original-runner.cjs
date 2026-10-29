@@ -94,3 +94,15 @@ test('offline local BG stop is stop-only, preserves remote revoke evidence and i
   assert.match(shared,/data-xdrive-ios-bg-emergency-stop/)
   assert.match(shared,/remoteRevokePending/)
 })
+
+test('PhotoKit 256-slot window counts unsupported assets instead of silently skipping their offsets',()=>{
+  const scanner=read('PhotoKitBoundedSnapshotScanner.swift')
+  const runner=read('ForegroundPhotoBackupMVP.swift')
+  const scannedSlots=scanner.split('for index in offset..<end {')[1]?.split('rows.append(XDrivePhotoKitScanCandidate(')[0]
+  assert.ok(scannedSlots, 'missing bounded PhotoKit page loop')
+  assert.doesNotMatch(scannedSlots,/\\bcontinue\\b/, 'no asset can disappear from the page before scanned accounting')
+  assert.match(scannedSlots,/default: kind = "unsupported"/)
+  assert.match(scanner,/nextOffset: end/)
+  assert.match(runner,/report.scanned \\+= 1/)
+  assert.match(runner,/windowCapacity = XDrivePhotoBackupScanWindow.capacity/)
+})
