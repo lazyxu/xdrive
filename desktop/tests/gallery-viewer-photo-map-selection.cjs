@@ -36,8 +36,10 @@ test('Viewer Photo Info forwards only two currently selected identity fields',()
 test('Viewer Photo Info rejects stale, missing, malformed and unsafe Node identities',()=>{
   for(const bad of [0,-1,-10.1,1.2,NaN,Infinity,-Infinity,
     Number.MAX_SAFE_INTEGER+1,'42',undefined,null,{}]){
-    assert.equal(select(photo(bad,7)),null)
-    assert.equal(select(photo(42,bad)),null)
+    // Explicitly assign the raw malformed value. Passing undefined through
+    // photo(id=42, revision=7) would silently replace it with the default.
+    assert.equal(select({...photo(),node:{...photo().node,id:bad}}),null)
+    assert.equal(select({...photo(),node:{...photo().node,revision:bad}}),null)
   }
   for(const bad of [undefined,null,{}, {node:{}}, {node:null}]){
     assert.equal(select(bad),null)
