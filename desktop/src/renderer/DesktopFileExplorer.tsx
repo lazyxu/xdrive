@@ -890,11 +890,11 @@ export default function DesktopFileExplorer({
   const allowSelectionAction = (
     action: XDriveFileExplorerSelectionAction,
     selected: readonly XDriveFileExplorerItem[],
-  ) => {
-    const ticket = xDriveFileExplorerSelectionRequest(action, selected, getSelectionActionDisabledReason)
-    if (ticket.reason) onError(ticket.reason)
-    return ticket.allowed
-  }
+  ) => xDriveFileExplorerSelectionRequest(
+    action, selected, getSelectionActionDisabledReason,
+    // Keep the Desktop/Agent-specific error text and native download gates.
+    onError,
+  ).allowed
   const copyItems = (selected: XDriveFileExplorerItem[]) => {
     if (allowSelectionAction('copy', selected)) copyWorkspaceItems(selected)
   }
