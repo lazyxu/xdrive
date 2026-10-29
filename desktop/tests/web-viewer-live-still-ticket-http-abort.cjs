@@ -105,7 +105,7 @@ test('Web Gallery, routed Viewer and FileExplorer all forward their active Owner
     ['web/src/mediaGalleryAdapter.ts',
       /\?\s*api\.mediaLivePhotoStillURL\(nodeID,\s*signal\)/],
     ['web/src/WebFileExplorer.tsx',
-      /return await api\.mediaLivePhotoStillURL\(Number\(item\.id\),\s*signal\)/],
+      /return await api\.mediaLivePhotoStillURL\(plan\.nodeID,\s*signal\)/],
     ['web/src/WebFileViewerApps.tsx',
       /\?\s*api\.mediaLivePhotoStillURL\(viewer\.node!\.id,\s*signal\)/],
   ]

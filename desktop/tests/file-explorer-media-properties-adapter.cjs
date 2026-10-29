@@ -6,6 +6,16 @@ const { createRequire } = require('node:module')
 const repo = path.resolve(process.env.XDRIVE_FILE_EXPLORER_SOURCE_ROOT || path.join(__dirname, '../..'))
 const dependencies = createRequire(path.join(repo, 'desktop/package.json'))
 const ts = dependencies('typescript')
+// Evaluate the REAL Host-neutral read admission imported by both loaders.
+const identityFile = path.join(repo, 'ui/shared/src/file-explorer-read-identity.ts')
+const identityJS = ts.transpileModule(fs.readFileSync(identityFile, 'utf8'), {
+  fileName: identityFile,
+  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+}).outputText
+const identity = {}
+new Function('exports', identityJS)(identity)
+const { xDriveFileExplorerReadNodeID } = identity
+assert.equal(typeof xDriveFileExplorerReadNodeID, 'function')
 
 function actualAdapter(platform, bindings) {
   const file = path.join(repo, platform === 'Web' ? 'web/src/WebFileExplorer.tsx' : 'desktop/src/renderer/DesktopFileExplorer.tsx')
@@ -20,7 +30,7 @@ function actualAdapter(platform, bindings) {
   }
   walk(ast)
   assert.ok(initializer && exposed, `${platform} real canonical media callback and renderer prop`)
-  const all = { useCallback: callback => callback, mediaPropertiesSupported: true, trashActive: false, nextDesktopFilePropertiesRequestID: (() => { let id = 0; return () => `actual-adapter-${++id}` })(), ...bindings }
+  const all = { xDriveFileExplorerReadNodeID, useCallback: callback => callback, mediaPropertiesSupported: true, trashActive: false, nextDesktopFilePropertiesRequestID: (() => { let id = 0; return () => `actual-adapter-${++id}` })(), ...bindings }
   // The real Desktop loader now consumes the owning typed media Host port.
   if (platform === 'Desktop') all.hostPort = { media: bindings.window?.xdriveDesktop?.agent ?? {} }
   const code = ts.transpileModule(`const loadMediaItem = ${initializer}; return { loadMediaItem, exposed: ${exposed} };`, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS }, fileName: file }).outputText
@@ -63,7 +73,7 @@ test('actual Web loader forwards the selected numeric ID and the same scoped Abo
   const media = { node: { id: 101, revision: 7 } }
   const adapter = actualAdapter('Web', { api: { mediaItem: (id, signal) => { calls.push({ id, signal }); return Promise.resolve(media) } } })
   const controller = new AbortController()
-  assert.equal(await adapter.exposed({ id: '101', revision: 7 }, controller.signal), media)
+  assert.equal(await adapter.exposed({ id: '101', revision: 7, kind: 'file' }, controller.signal), media)
   assert.equal(calls[0].id, 101)
   assert.equal(calls[0].signal, controller.signal)
 })

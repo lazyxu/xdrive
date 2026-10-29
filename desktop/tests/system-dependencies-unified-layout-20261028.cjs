@@ -30,7 +30,11 @@ test('all 11 dependency routes and global analysis policy share one responsive d
   assert.match(text.page, /selectedPage === 'photo-auto'/)
   // All the paths used by real Web, Electron Desktop and DSM remain the
   // existing single React/MUI component tree: never fork platform UI.
-  assert.match(read('web/src/App.tsx'), /XDriveServiceDependenciesPage/)
+  const web = read('web/src/App.tsx')
+  const browserHost = read('web/src/browserWorkspaceHost.ts')
+  assert.match(web, /adminServices: serverAdminVerified \? \{/)
+  assert.match(web, /adminRoleVerified: serverAdminVerified/)
+  assert.match(browserHost, /adminServicesPage: ports\.adminServices/)
   // Desktop and DSM route through the same Host outlet; the page itself
   // remains the sole shared XDriveServiceDependenciesPage implementation.
   // Do not require each Host App to import its page directly.
@@ -45,7 +49,10 @@ test('all 11 dependency routes and global analysis policy share one responsive d
   assert.match(synology, /<XDriveApp\b/)
   assert.doesNotMatch(desktop + synology, /<XDriveAppRouteContent\b/)
   assert.match(sharedApp, /<XDriveAppRouteContent[\s\S]*?host=\{host\}[\s\S]*?view=\{view\}/)
-  assert.match(routeContent, /xDriveIsSharedHostPageRoute\(view\)/)
+  // The canonical frame is layout-only; route validation and Server-admin
+  // admission occur in the shared outlet, including the Files path.
+  assert.match(routeContent, /<XDriveWorkspaceRouteSurface/)
+  assert.match(outlet, /if \(!xDriveIsWorkspaceAppRoute\(view\)\)/)
   assert.match(routeContent, /<XDriveAppPageOutlet[\s\S]*host=\{host\}[\s\S]*view=\{view\}/)
   assert.match(outlet, /xDriveWorkspaceRouteRequiresAdmin\(view\) && host\.adminRoleVerified !== true/)
   assert.match(outlet, /case 'admin-services':/)

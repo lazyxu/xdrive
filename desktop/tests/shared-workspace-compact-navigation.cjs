@@ -140,7 +140,11 @@ function productionWebSections(profile) {
   const source = fs.readFileSync(filename, 'utf8')
   const sourceFile = ts.createSourceFile(filename, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
   let initializer
-  const dependencies = { profile }
+  // Execute the actual shared Host sections factory used by Web routing.
+  const { xDriveWorkspaceHostSections } = createLoader()(
+    'ui/shared/src/mui/WorkspaceHostSections.tsx',
+  )
+  const dependencies = { profile, xDriveWorkspaceHostSections }
   const visit = (node) => {
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)
       && node.name.text === 'webSidebarSections') initializer = node.initializer

@@ -98,4 +98,17 @@ test('terminal empty page and nonempty continued pages are valid; Range read is 
     includeCount: true, grouping, signal: new AbortController().signal,
   })
   assert.strictEqual(range.page, indexed, 'Desktop indexed 100k range semantics stay unchanged')
+  // The signed indexed root (0) is valid, but negative/unsafe directory IDs
+  // cannot reach the Host range port.
+  let invoked = 0
+  for (const invalidParentID of [-1, -10, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+    await assert.rejects(read({
+      mode: 'range', readRange: async () => { invoked++; return indexed },
+    }, {
+      mode: 'range', parentID: invalidParentID, offset: 50, limit: 200,
+      sort: { key: 'name', direction: 'asc' },
+      includeCount: true, grouping, signal: new AbortController().signal,
+    }), /Invalid Files Host counted Range request/)
+  }
+  assert.equal(invoked, 0, 'invalid Range parent cannot reach Host transport')
 })

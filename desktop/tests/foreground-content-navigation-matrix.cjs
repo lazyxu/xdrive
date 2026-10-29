@@ -12,6 +12,10 @@ const transpile = (file) => ts.transpileModule(source(file), {
 function load(file, requireFn = require) {
   const mod = { exports: {} }
   const scopedRequire = name => {
+    // A second ViewerForegroundPriority module instance would disconnect the
+    // scheduler from the observer bus and strand cancellable thumbnail loads.
+    if (file === 'ui/shared/src/mui/MediaGalleryThumbnailScheduler.ts' &&
+        name === './ViewerForegroundPriority') return requireFn(name)
     // The source-level route registry imports shared TypeScript directly.
     // Follow those imports instead of asking Node to load uncompiled .ts.
     if (name.startsWith('.')) {
@@ -240,6 +244,7 @@ test('all same-type content entry points are wired to disposable-only preemption
   const publicShare = source('web/src/PublicShare.tsx')
   const webRuntime = source('web/src/webAppRuntime.ts')
   const desktopApp = source('desktop/src/renderer/App.tsx')
+  const sharedApp = source('ui/shared/src/mui/XDriveApp.tsx')
   const synology = source('web/src/synology.tsx')
   const hostNavigation = source('ui/shared/src/mui/WorkspaceNavigationState.ts')
   assert.match(files, /previous\.parentID !== id/, 'folder A -> B')
@@ -287,7 +292,8 @@ test('all same-type content entry points are wired to disposable-only preemption
   assert.match(publicShare, /await shareFileAdapter\.list\(path\.at\(-1\)\?\.id \?\? 0, cursor, controller\.signal\)/,
     'Share first page and cursor reads are cancelable independently of downloads')
   assert.match(webRuntime, /guardBrowserNavigation/, 'unaccepted dirty draft must not preempt')
-  assert.match(desktopApp, /xDriveEnterForegroundPage\('desktop:' \+ next\)/)
+  assert.match(desktopApp, /<XDriveApp\b/)
+  assert.match(sharedApp, /xDriveEnterForegroundPage\(`\$\{host\.platform\}:\$\{view\}`\)/)
   assert.match(synology, /useXDriveWorkspaceNavigationState\(\{/,
     'DSM must consume the one shared Host-neutral navigation controller')
   assert.ok(hostNavigation.includes('xDriveEnterForegroundPage(`${platform}:${next.selected}`)'),

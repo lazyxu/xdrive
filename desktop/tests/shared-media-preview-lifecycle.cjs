@@ -117,6 +117,10 @@ test('native Viewer video pauses on hidden and never auto-resumes or pauses a ne
 test('native video pagehide is wired without changing audio, PDF or transformed media', () => {
   const source = fs.readFileSync(
     path.join(__dirname, '../../ui/shared/src/mui/FilePreviewSurface.tsx'), 'utf8')
+  // A native video element (not styled Box) must forward its actual media
+  // ref to both React and the browser for pause and signed Range teardown.
+  assert.match(source, /<video\s+[\s\S]*?ref=\{videoStreamElementRef\}/)
+  assert.doesNotMatch(source, /component="video"/)
   assert.match(source, /window\.addEventListener\('pagehide', pauseNativeVideoIfCurrent\)/)
   assert.match(source, /window\.removeEventListener\('pagehide', pauseNativeVideoIfCurrent\)/)
   assert.match(source, /previewKind !== 'video' \|\| hasTransformedVideo/)
@@ -873,10 +877,14 @@ test('native video original stream switches Owner loader even with identical Nod
   const calls = []
   const streams = []
   const target = { id: 9781, revision: 4, name: 'same-id.mp4', kind: 'file' }
-  const loaderA = async (_target, kind, signal) => {
+  // Commit the pending initial page before resolving its signed ticket.
+  // That guarantees React test-renderer attaches the native video ref to
+  // createNodeMock rather than batching the host mount into the same act.
+  let resolveA
+  const loaderA = (_target, kind, signal) => new Promise(resolve => {
     calls.push({ owner: 'A', kind, signal })
-    return 'blob:owner-a-video'
-  }
+    resolveA = resolve
+  })
   let resolveB
   const loaderB = (_target, kind, signal) => new Promise(resolve => {
     calls.push({ owner: 'B', kind, signal })
@@ -901,10 +909,14 @@ test('native video original stream switches Owner loader even with identical Nod
           return stream
         },
       })
-      await Promise.resolve()
     })
     assert.equal(calls.length, 1)
+    await act(async () => {
+      resolveA('blob:owner-a-video')
+      await Promise.resolve()
+    })
     assert.equal(view.root.findByType('video').props.src, 'blob:owner-a-video')
+    assert.equal(streams.length, 1, 'the real native video ref must be committed')
     const oldReady = view.root.findByType('video').props.onLoadedData
     await act(async () => oldReady())
     assert.equal(root(view, 'video').props['aria-busy'], undefined)

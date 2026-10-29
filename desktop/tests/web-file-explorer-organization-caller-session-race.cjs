@@ -6,8 +6,8 @@ const ts = require('typescript')
 
 const repo = path.join(__dirname, '..', '..')
 
-function sourceFile() {
-  const filename = path.join(repo, 'web', 'src', 'WebFileExplorer.tsx')
+function sourceFile(relative = 'web/src/WebFileExplorer.tsx') {
+  const filename = path.join(repo, relative)
   const source = fs.readFileSync(filename, 'utf8')
   return {
     filename,
@@ -42,7 +42,9 @@ function extractJsxAttributeHandler(attributeName) {
 }
 
 function extractSavedSearchSubmit(rename) {
-  const { filename, file } = sourceFile()
+  // The real saved-search submission moved into the shared Web/Desktop dialog.
+  // Execute that handler, including its post-await Owner lifecycle guard.
+  const { filename, file } = sourceFile('ui/shared/src/mui/FileExplorerSavedSearchDialogs.tsx')
   let initializer = null
   const visit = (node) => {
     if (
@@ -118,15 +120,11 @@ test('Web FileExplorer saved-search create completion cannot cross account lifec
   const feedback = []
 
   const handler = compileExpression(filename, 'handler', initializer, {
-    organization: {
-      createSavedSearch: async () => pending.promise,
-    },
-    organizationLifecycleKeyRef,
-    organizationSearchScopeKeyRef,
-    searchState: { query: 'kind:image' },
-    persistedSearchFilters: { tagID: 5 },
-    searchFilters: { availability: null },
-    setActiveSavedSearchID: (id) => activeIDs.push(id),
+    createSavedSearch: async () => pending.promise,
+    lifecycleKeyRef: organizationLifecycleKeyRef,
+    currentQuery: 'kind:image',
+    persistedFilters: { tagID: 5 },
+    availabilityFilterActive: false,
     onFeedback: (tone, message) => feedback.push({ tone, message }),
   })
 
@@ -194,16 +192,14 @@ test('Web FileExplorer saved-search rename completion cannot cross account lifec
   const feedback = []
 
   const handler = compileExpression(filename, 'handler', initializer, {
-    renameSavedSearch: {
+    renameSearch: {
       id: 53,
       name: 'Before',
       query: 'kind:image',
       filters: { tagID: 5 },
     },
-    organization: {
-      updateSavedSearch: async () => pending.promise,
-    },
-    organizationLifecycleKeyRef,
+    updateSavedSearch: async () => pending.promise,
+    lifecycleKeyRef: organizationLifecycleKeyRef,
     onFeedback: (tone, message) => feedback.push({ tone, message }),
   })
 

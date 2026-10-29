@@ -10,6 +10,7 @@ const uiIndex = read('ui', 'shared', 'src', 'mui', 'index.tsx')
 const desktop = read('desktop', 'src', 'renderer', 'App.tsx')
 const outlet = read('ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx')
 const sections = read('ui', 'shared', 'src', 'mui', 'WorkspaceHostSections.tsx')
+const routeTitles = read('ui', 'shared', 'src', 'mui', 'WorkspaceRouteTitles.ts')
 const webApp = read('web', 'src', 'App.tsx')
 const port = read('ui', 'shared', 'src', 'admin-management.ts')
 const main = read('desktop', 'src', 'main', 'index.cts')
@@ -25,7 +26,9 @@ test('Web and Desktop use the same full-write shared MUI administrator user page
   assert.ok(web.includes("export { XDriveAdminUsersPage as default } from '@xdrive/ui/mui'"))
   assert.ok(uiIndex.includes("export { default as XDriveAdminUsersPage } from './AdminUsersPage'"))
   assert.ok(desktop.includes('adminUsersPage:') && outlet.includes('<XDriveAdminUsersPage'))
-  assert.ok(webApp.includes('<AdminUsersPanel'))
+  assert.ok(webApp.includes('adminUsers: serverAdminVerified && profile ?') &&
+    webApp.includes('<XDriveAppPageOutlet host={browserWorkspaceHost} view={appView} />'),
+    'Web admin Users must use the verified Host portal and common outlet')
   assert.ok(ui.includes('data-xdrive-admin-users-responsive'))
   for (const method of ['adminUsers', 'adminCreateUser', 'adminUpdateUser', 'adminResetPassword',
     'adminRevokeSessions', 'adminDeleteUser']) {
@@ -41,7 +44,9 @@ test('Web and Desktop use the same full-write shared MUI administrator user page
 test('Desktop administrator route and Agent capability gate are not Server authorization', () => {
   assert.ok(desktop.includes("adminUsersPage: status?.role === 'admin'") && outlet.includes("case 'admin-users':"))
   assert.ok(desktop.includes("capabilities.includes('admin-users')"))
-  assert.ok(sections.includes("key: 'admin-users', label: '用户管理'"))
+  assert.ok(sections.includes("key: 'admin-users', label: xDriveWorkspaceRouteTitle('admin-users')") &&
+    routeTitles.includes("'admin-users': '用户管理'"),
+    'admin Users must preserve the canonical Chinese title')
   assert.ok(desktop.includes("view === 'global-tasks' || view === 'admin-users'"))
   assert.ok(agent.includes('"admin-users"'))
   assert.ok(handler.includes('snapshot.Role != "admin"'))

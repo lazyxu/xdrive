@@ -12,6 +12,7 @@ const webApi = read('web', 'src', 'api.ts')
 const webApp = read('web', 'src', 'App.tsx')
 const desktopExplorer = read('desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx')
 const desktopApp = read('desktop', 'src', 'renderer', 'App.tsx')
+const hostCapabilities = read('ui', 'shared', 'src', 'mui', 'FileExplorerHostCapabilities.ts')
 const agentCloud = read('cmd', 'xdrive-agent', 'cloud_files.go')
 const agentController = read('cmd', 'xdrive-agent', 'controller.go')
 const agentIPC = read('cmd', 'xdrive-agent', 'desktop_ipc.go')
@@ -187,7 +188,10 @@ test('Desktop folder upload uses Agent transfer lifecycle instead of duplicate r
   ]) {
     assert.ok(desktopExplorer.includes(token), 'Desktop folder group adapter missing: ' + token)
   }
-  assert.ok(desktopApp.includes("capabilities.includes('transfer-lifecycle')"), 'Desktop must capability-gate hierarchical upload')
+  assert.ok(desktopApp.includes('xDriveFileExplorerHostCapabilities(agent.hello?.capabilities)') &&
+    desktopApp.includes('transferLifecycleSupported: filesHostCapabilities.transferLifecycleSupported') &&
+    hostCapabilities.includes("transferLifecycleSupported: has('transfer-lifecycle')"),
+    'Desktop must gate hierarchical transfer lifecycle by the actual Agent handshake')
 })
 
 
@@ -225,8 +229,9 @@ test('Desktop and Agent batch transfer child registration avoid per-child setup 
     'Desktop must chunk oversized child sets instead of exceeding the Agent IPC body limit',
   )
   assert.ok(
-    desktopApp.includes("capabilities.includes('transfer-lifecycle-child-batch')"),
-    'Desktop batch child registration must be capability-gated for old Agents',
+    desktopApp.includes('transferLifecycleBatchSupported: filesHostCapabilities.transferLifecycleBatchSupported') &&
+      hostCapabilities.includes("transferLifecycleBatchSupported: has('transfer-lifecycle-child-batch')"),
+    'Desktop must gate batch child registration by the actual Agent handshake',
   )
   assert.ok(
     agentCloud.includes('c.transfers.StartChildrenByID(group.ID(), childSpecs)'),

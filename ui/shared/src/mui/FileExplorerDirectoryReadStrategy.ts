@@ -164,7 +164,9 @@ export async function xDriveFileExplorerReadDirectoryPage<
     return { mode: 'cursor', page }
   }
   if (port.mode === 'range' && request.mode === 'range') {
-    if (!Number.isSafeInteger(request.parentID) || request.parentID <= 0 ||
+    // Indexed Range uses 0 as the verified Owner root sentinel.
+    // Opaque cursor reads still require a strictly positive parent Node ID.
+    if (!Number.isSafeInteger(request.parentID) || request.parentID < 0 ||
         !Number.isSafeInteger(request.offset) || request.offset < 0 ||
         !Number.isSafeInteger(request.limit) || request.limit <= 0) {
       throw new Error('Invalid Files Host counted Range request')

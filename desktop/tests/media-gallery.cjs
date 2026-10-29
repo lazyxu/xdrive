@@ -67,6 +67,10 @@ const sharedModels = read('ui', 'shared', 'src', 'models.ts')
 const sharedSidebar = read('ui', 'shared', 'src', 'mui', 'SidebarNav.tsx')
 const sharedWorkspaceNavigation = read('ui', 'shared', 'src', 'mui', 'WorkspaceNavigation.tsx')
 const sharedRoute = read('ui', 'shared', 'src', 'mui', 'WorkspaceRoute.ts')
+const sharedRouteTitles = read('ui', 'shared', 'src', 'mui', 'WorkspaceRouteTitles.ts')
+const webApps = read('web', 'src', 'webApps.ts')
+const webAppRuntime = read('web', 'src', 'webAppRuntime.ts')
+const browserHost = read('web', 'src', 'browserWorkspaceHost.ts')
 const webApp = read('web', 'src', 'App.tsx')
 const webAPI = read('web', 'src', 'api.ts')
 const webAdapter = read('web', 'src', 'mediaGalleryAdapter.ts')
@@ -1337,35 +1341,53 @@ test('Desktop navigation exposes Gallery as a first-class view', () => {
   assert.ok(sharedGallery.includes('title="图库"'), 'shared Gallery page must own its workspace title')
   assert.ok(desktopApp.includes('<XDriveApp') && sharedApp.includes('<XDriveWorkspaceSidebar'), 'Desktop must route Gallery through the common app/sidebar')
   assert.ok(desktopApp.includes('view={view}') && sharedApp.includes('selected={view}'), 'Desktop must select Gallery through the shared app route')
-  assert.match(sharedWorkspaceNavigation, /key: 'gallery',\s*label: '图库'/, 'shared core navigation model must expose Gallery with its label')
+  assert.match(sharedWorkspaceNavigation, /key: 'gallery',\s*label: xDriveWorkspaceRouteTitle\('gallery'\)/,
+    'shared navigation must use the canonical Gallery title')
+  assert.ok(sharedRouteTitles.includes("gallery: '图库'"), 'Chinese Gallery title must remain canonical')
   assert.ok(sharedSidebar.includes('xDriveCoreWorkspaceDestinations({ transferBadge, showLocalStorage })'), 'shared sidebar must consume the canonical core navigation model')
   assert.ok(sharedSidebar.includes('selected={selected === destination.key}'), 'shared core navigation must select Gallery by its destination key')
   assert.ok(sharedSidebar.includes('primary={destination.label}'), 'shared sidebar must render the Gallery label from its destination')
 })
 
 test('Web exposes Home, files, Gallery, two independent Push/Pull apps, Local Storage, and Cloud Storage as first-class workspace views', () => {
-  assert.ok(webApp.includes('type AppView = XDriveWorkspaceViewKey<'), 'Web workspace view type must include Local Storage')
-  assert.ok(webApp.includes('useXDriveWebAppRuntime('), 'Web workspace selection must come from the Web App Runtime')
-  assert.ok(webApp.includes("?? 'overview'"), 'Home should remain the fallback initial Web workspace')
-  assert.ok(webApp.includes("key: 'overview'") && webApp.includes("label: '主页'"), 'Web must expose Home before the shared core')
-  for (const view of ['files', 'gallery', 'device-backup', 'remote-pull', 'local-storage', 'cloud-storage']) {
-    assert.ok(sharedRoute.includes(`'${view}'`), `shared workspace route missing first-class workspace: ${view}`)
+  assert.ok(webApp.includes('useXDriveWebAppRuntime('))
+  assert.ok(webAppRuntime.includes("return xDriveParseWebAppHash(window.location.hash) ?? { app: 'overview', params: {} }"),
+    'Home must remain the default authenticated route')
+  assert.ok(webApps.includes("overview: { id: 'overview', title: xDriveWorkspaceRouteTitle('overview')") &&
+    sharedRouteTitles.includes("overview: '主页'"))
+  for (const [view, label] of [
+    ['files', '文件'], ['gallery', '图库'], ['device-backup', '设备备份'],
+    ['remote-pull', '远程拉取'], ['local-storage', '本地存储'],
+    ['cloud-storage', '云端存储'],
+  ]) {
+    assert.ok(sharedRoute.includes(`'${view}'`), 'missing core route: ' + view)
+    assert.ok(webApps.includes(`xDriveWorkspaceRouteTitle('${view}')`), 'missing Web route title: ' + view)
+    assert.ok(sharedRouteTitles.includes(`'${view}': '${label}'`) ||
+      sharedRouteTitles.includes(`${view}: '${label}'`),
+      'missing canonical Chinese route title: ' + view)
+    assert.ok(sharedWorkspaceNavigation.includes(`xDriveWorkspaceRouteTitle('${view}')`),
+      'shared sidebar must own route label: ' + view)
   }
-  assert.ok(webApp.includes('<XDriveWorkspaceSidebar'), 'Web must expose first-class workspaces through the shared workspace sidebar')
-  assert.ok(webApp.includes('selected={appView}'), 'Web must pass its active workspace to shared core navigation')
-  assert.ok(sharedSidebar.includes('xDriveCoreWorkspaceDestinations({ transferBadge, showLocalStorage })'), 'shared sidebar must consume the canonical core navigation model')
-  assert.ok(sharedSidebar.includes('primary={destination.label}'), 'shared sidebar must render each label from its core destination')
-  for (const label of ['文件', '图库', '设备备份', '远程拉取', '本地存储', '云端存储']) {
-    assert.ok(sharedWorkspaceNavigation.includes(`label: '${label}'`), `shared core navigation model missing label: ${label}`)
-  }
-  assert.match(webApp, /<XDriveSourceManager[\s\S]*defaultTargetNodeID=/)
-  assert.equal(fs.existsSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx')), false, 'Web must not keep a pass-through Source manager wrapper')
-  assert.ok(webApp.includes('<XDriveLocalStoragePage source={localStorageSource} />'), 'Web must render shared Local Storage')
-  assert.ok(webApp.includes('<XDriveCloudStoragePage source={cloudStorageSource} />'), 'Web cloud storage must use the shared workspace')
+  assert.ok(webApp.includes('<XDriveWorkspaceSidebar') && webApp.includes('selected={appView}'))
+  assert.ok(sharedSidebar.includes('xDriveCoreWorkspaceDestinations({ transferBadge, showLocalStorage })') &&
+    sharedSidebar.includes('primary={destination.label}'))
+  assert.ok(webApp.includes('remotePull: {') && webApp.includes('adapter: sourceManagerAdapter') &&
+    browserHost.includes("directionFilter: 'pull' as const") &&
+    sharedHostOutlet.includes('<XDriveSourceManager {...services.remotePullPage} />'),
+    'Remote Pull must be Owner-authorized and Pull-only')
+  assert.ok(webApp.includes('deviceBackup: {') &&
+    browserHost.includes('deviceBackupPage: {') &&
+    sharedHostOutlet.includes('<XDriveDeviceBackupPage'),
+    'Device Backup must have an independent Owner-scoped route')
+  assert.ok(webApp.includes('localStorage:') && webApp.includes('cloudStorage:') &&
+    sharedHostOutlet.includes('<XDriveLocalStoragePage') &&
+    sharedHostOutlet.includes('<XDriveCloudStoragePage'),
+    'both Storage routes must use the common Host outlet')
+  assert.equal(fs.existsSync(path.join(repo, 'web', 'src', 'ExternalSources.tsx')), false)
   assert.equal(webApp.includes('setSourcesOpen'), false)
   assert.equal(webApp.includes("setStorageStatsScope('self')"), false)
-  assert.ok(webApp.includes('<WebFileExplorer'), 'Web files workspace should use the shared Explorer adapter')
-  assert.equal((webApp.match(/<Paper className="file-card"/g) || []).length, 0, 'legacy Web file-card must not return')
+  assert.ok(webApp.includes('<WebFileExplorer'), 'Web Files must still use the shared Explorer')
+  assert.equal((webApp.match(/<Paper className="file-card"/g) || []).length, 0)
 })
 
 
