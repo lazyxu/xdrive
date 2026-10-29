@@ -2698,13 +2698,13 @@ backup_admin_history_append() {
     "$snapshot" "$mode" "$started" "$finished" "$error_code" "$proof_path" <<'PY'
 import json, os, re, stat, sys, tempfile
 path,state,action,rid,snapshot,mode,started,finished,code,proof_path=sys.argv[1:]
-if state not in ("success","failed") or action not in ("create","verify","verify_all","preview_delete","drill","plan","restore","delete","delete_selected","prune","policy"):
+if state not in ("success","failed") or action not in ("create","verify","verify_all","preview_delete","drill","plan","restore","restore_database_only","delete","delete_selected","prune","policy"):
     sys.exit(2)
 if not re.fullmatch(r"[0-9a-f]{24}",rid) or not re.fullmatch(r"[a-z_]{0,60}",code):
     sys.exit(2)
 if snapshot and not re.fullmatch(r"(v1|v2-default|v2-configured):xdrive-backup-[0-9]{8}T[0-9]{6}Z",snapshot):
     sys.exit(2)
-if (action in ("verify","preview_delete","drill","restore","delete","delete_selected")) != bool(snapshot):
+if (action in ("verify","preview_delete","drill","restore","restore_database_only","delete","delete_selected")) != bool(snapshot):
     sys.exit(2)
 if (action in ("verify","preview_delete","verify_all","plan")) != (mode in ("fast","deep")):
     sys.exit(2)
@@ -2714,17 +2714,18 @@ if not (re.fullmatch(r"20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z"
 old=[]
 if os.path.lexists(path):
     st=os.lstat(path)
-    if not stat.S_ISREG(st.st_mode) or st.st_size>32768:
+    if not stat.S_ISREG(st.st_mode) or st.st_size>262144:
         sys.exit(2)
     fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW)
-    with os.fdopen(fd,"rb") as f: raw=f.read(32769)
-    if len(raw)>32768: sys.exit(2)
+    with os.fdopen(fd,"rb") as f: raw=f.read(262145)
+    if len(raw)>262144: sys.exit(2)
     data=json.loads(raw)
     if not isinstance(data,dict) or data.get("protocol")!="xdrive-backup-admin-history-v1":
         sys.exit(2)
     old=data.get("operations")
-    if not isinstance(old,list) or len(old)>30: sys.exit(2)
+    if not isinstance(old,list) or len(old)>100: sys.exit(2)
 if action in ("drill","preview_delete","delete_selected") and not snapshot.startswith(("v2-default:","v2-configured:")): sys.exit(2)
+if action=="restore_database_only" and not snapshot.startswith("v1:"): sys.exit(2)
 entry=dict(protocol="xdrive-backup-admin-v1",request_id=rid,action=action,
     snapshot_id=snapshot,mode=mode,state=state,started_at=started,
     finished_at=finished,error_code=code)
@@ -2856,9 +2857,9 @@ if action=="delete_selected" and state=="success":
     except (OSError,ValueError,KeyError,TypeError,UnicodeError):
         sys.exit(2)
 events=[entry]+[x for x in old if isinstance(x,dict) and x.get("request_id")!=rid]
-raw=(json.dumps(dict(protocol="xdrive-backup-admin-history-v1",operations=events[:30]),
+raw=(json.dumps(dict(protocol="xdrive-backup-admin-history-v1",operations=events[:100]),
                 ensure_ascii=False,separators=(",",":"))+"\n").encode()
-if len(raw)>32768: sys.exit(2)
+if len(raw)>262144: sys.exit(2)
 fd,tmp=tempfile.mkstemp(prefix=".backup-admin-history.",dir=os.path.dirname(path))
 try:
     with os.fdopen(fd,"wb") as f:
@@ -3247,7 +3248,7 @@ def load(path, max_bytes):
     return json.loads(raw.decode("utf-8"), object_pairs_hook=unique_pairs)
 try:
     p = load(preview_path, 4096)
-    h = load(history_path, 32768)
+    h = load(history_path, 262144)
     if not isinstance(p, dict) or set(p) != {
         "protocol","request_id","snapshot_id","mode","report"}:
         raise ValueError("unsafe preview envelope")
@@ -3285,7 +3286,7 @@ try:
                 report["exclusive_cas_bytes"] + report["unreferenced_bytes"]):
         raise ValueError("unsafe preview totals")
     events = h.get("operations") if isinstance(h, dict) and h.get("protocol") == "xdrive-backup-admin-history-v1" else None
-    if not isinstance(events, list) or not 1 <= len(events) <= 30:
+    if not isinstance(events, list) or not 1 <= len(events) <= 100:
         raise ValueError("missing host audit receipt")
     last = events[0]
     if not isinstance(last,dict) or (last.get("action"),last.get("state"),
@@ -3385,6 +3386,41 @@ backup_admin_create_verified() {
   printf 'Verified newly created %s snapshot: %s\n' "$fmt" "$created"
 }
 
+# An exact v1 database-only identity must have an unambiguous, regular,
+# bounded JSON manifest. Grepping a JSON fragment can accept duplicate keys,
+# inconsistent declarations, or a symlink-swapped file.
+backup_admin_valid_database_only_manifest() {
+  local manifest="$1"
+  command -v python3 >/dev/null 2>&1 || return 2
+  python3 - "$manifest" <<'PY'
+import json,os,stat,sys
+
+def unique(pairs):
+    result={}
+    for key,value in pairs:
+        if key in result: raise ValueError("duplicate manifest field")
+        result[key]=value
+    return result
+
+try:
+    fd=os.open(sys.argv[1],os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+    with os.fdopen(fd,"rb") as f:
+        st=os.fstat(f.fileno())
+        if not stat.S_ISREG(st.st_mode) or not 0<st.st_size<=16384:
+            raise ValueError("unsafe manifest inode")
+        data=json.load(f,object_pairs_hook=unique)
+    if not isinstance(data,dict):
+        raise ValueError("invalid manifest")
+    if (type(data.get("format_version")) is not int or
+        data["format_version"]!=1 or
+        data.get("file_data_included") is not False or
+        data.get("consistency_verified") is not True):
+        raise ValueError("not a consistent database-only v1 snapshot")
+except (OSError,ValueError,TypeError,UnicodeError,KeyError):
+    sys.exit(1)
+PY
+}
+
 backup_admin_execute() {
   local action="$1" snapshot="$2" fmt="$3" mode="$4" keep="$5" days="$6" revision="$7" confirm="$8" preview_id="${9:-}"
   local target install_guard="$STATE_DIR/install.lock"
@@ -3456,6 +3492,20 @@ backup_admin_execute() {
       fi
       XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup verify "$target" || return
       XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" restore "$target" --yes ;;
+    restore_database_only)
+      # Never translate this into the full-file restore path. Only a committed
+      # v1 snapshot explicitly declaring DB-only is eligible. The normal
+      # restore wrapper creates the pre-restore safety backup by default.
+      [[ "$snapshot" == v1:* && "$confirm" == "DATABASE ONLY RESTORE $snapshot" &&
+         -z "$fmt" && -z "$mode" && ( -z "$keep" || "$keep" == 0 ) &&
+         ( -z "$days" || "$days" == 0 ) && -z "$revision" ]] || return 2
+      target="$(backup_admin_snapshot_directory "$snapshot")" || return 2
+      backup_admin_snapshot_complete "$target" v1 || return 2
+      [[ -f "$target/manifest.json" && ! -L "$target/manifest.json" ]] || return 2
+      backup_admin_valid_database_only_manifest "$target/manifest.json" || return 2
+      XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup verify "$target" || return
+      # --no-safety-backup is intentionally never available to the UI.
+      XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" restore "$target" --yes --database-only ;;
     delete_selected)
       [[ "$snapshot" == v2-* && "$confirm" == "DELETE $snapshot" &&
          "$preview_id" =~ ^[0-9a-f]{24}$ && -z "$fmt" && -z "$mode" &&
