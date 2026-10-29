@@ -1085,6 +1085,8 @@ jobs:
           bash -n scripts/test-server-backup-retention-plan-host.sh
           bash scripts/test-server-backup-retention-plan-host.sh
           bash -n scripts/server-restore.sh
+          bash -n scripts/test-server-v1-restore-preflight.sh
+          bash scripts/test-server-v1-restore-preflight.sh
           bash -n scripts/server-verify.sh
           bash -n scripts/test-server-verify.sh
           bash scripts/test-server-verify.sh
