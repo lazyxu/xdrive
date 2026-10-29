@@ -32,6 +32,7 @@ import { XDriveStatePanel } from './StatePanel'
 import { XDriveStatusAlert } from './StatusAlert'
 import { XDriveStorageDistributionChart } from './StorageDistributionChart'
 import { XDriveStorageOptimizationAdvisor } from './StorageOptimizationAdvisor'
+import { XDriveStorageVerificationHistoryPanel } from './StorageVerificationHistoryPanel'
 import { XDriveStorageInventorySection } from './StorageInventorySection'
 import { XDriveTableSurface } from './TableSurface'
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
@@ -644,6 +645,10 @@ export default function StorageStatsPanel({
                     存储修复会先校验并迁移仍被引用的 legacy 对象到 CAS，再修复 CAS 元数据；CAS 物理删除仍由 Janitor 负责。每日存储快照和 Janitor 的运行状态也在全局 Task Center 中查看。
                   </Typography>
                 </Stack>
+              )}
+
+              {scope === 'global' && (
+                <XDriveStorageVerificationHistoryPanel api={api} />
               )}
 
               {scope === 'global' &&
