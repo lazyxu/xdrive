@@ -25,6 +25,29 @@ export type XDriveFileExplorerCursorPort<
 }
 
 /**
+ * Fail closed before publishing a Host-provided root into shared Files state.
+ * This is shape admission, NOT permission to access an Owner or local Root:
+ * DSM CGI and the owning Agent must authorize every actual request.
+ * Preserve the authentic Host object; never coerce a string ID or invent a
+ * fallback root on malformed/expired session responses.
+ */
+export function xDriveFileExplorerAdmitOwnerRoot(
+  value: unknown,
+): { id: number; name: string } {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Invalid authenticated Owner Files root')
+  }
+  const root = value as { id?: unknown; name?: unknown }
+  if (typeof root.id !== 'number' || !Number.isSafeInteger(root.id) ||
+      root.id <= 0 || typeof root.name !== 'string' ||
+      root.name.trim().length === 0 || root.name.length > 512 ||
+      /[\x00-\x1f\x7f]/.test(root.name)) {
+    throw new Error('Invalid authenticated Owner Files root')
+  }
+  return value as { id: number; name: string }
+}
+
+/**
  * Root, first page, incremental pagination and sort/folder scope share a single
  * Owner/generation fence. A stale completed request never publishes rows.
  * Every new authenticated root is fetched through the Host port.
@@ -86,8 +109,9 @@ export function useXDriveFileExplorerCursorDirectory<
       if (!active || controller.signal.aborted ||
           ownerIdentityRef.current.host !== host ||
           ownerIdentityRef.current.revision !== rootRevision) return
+      const verifiedRoot = xDriveFileExplorerAdmitOwnerRoot(root)
       rootOwnerRef.current = { host, revision: rootRevision }
-      setCrumbs([{ id: root.id, name: root.name }])
+      setCrumbs([{ id: verifiedRoot.id, name: verifiedRoot.name }])
     }).catch(() => {
       if (active && !controller.signal.aborted &&
           ownerIdentityRef.current.host === host &&

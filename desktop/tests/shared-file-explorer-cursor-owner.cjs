@@ -22,7 +22,7 @@ function loadHook(file, replacements = {}) {
 }
 const fence = loadHook('ui/shared/src/mui/FileExplorerOwnerFence.ts')
 const readStrategy = loadHook('ui/shared/src/mui/FileExplorerDirectoryReadStrategy.ts')
-const { useXDriveFileExplorerCursorDirectory } = loadHook(
+const { useXDriveFileExplorerCursorDirectory, xDriveFileExplorerAdmitOwnerRoot } = loadHook(
   'ui/shared/src/mui/FileExplorerCursorDirectoryController.ts',
   { './FileExplorerOwnerFence': fence, './FileExplorerDirectoryReadStrategy': readStrategy },
 )
@@ -31,12 +31,12 @@ const tick = async () => {
   await Promise.resolve()
 }
 const node = (id, name, parent = 10) => ({ id, name, parent_id: parent, type: 'file', size: 1 })
-async function mount() {
+async function mount(rootValue = { id: 10, name: 'Owner' }, expectedPages = 1) {
   const host = {}, requests = [], roots = []
   const port = {
     readRoot(signal) {
       roots.push(signal)
-      return Promise.resolve({ id: 10, name: 'Owner' })
+      return Promise.resolve(typeof rootValue === 'function' ? rootValue() : rootValue)
     },
     readPage(parent, limit, sort, cursor, signal) {
       return new Promise((resolve, reject) => requests.push({
@@ -63,7 +63,8 @@ async function mount() {
     })
   }
   await render()
-  assert.equal(requests.length, 1, 'verified Owner root must trigger exactly one first-page read')
+  assert.equal(requests.length, expectedPages,
+    'only a verified Owner root can trigger its first-page cursor read')
   return {
     host, port, requests, roots, get state() { return state }, render,
     async resolve(index, value) {
@@ -124,5 +125,41 @@ test('refresh and Host replacement revoke the old scope and abort the pending re
   await app.render(nextHost, nextPort)
   assert.equal(oldOwner(), false)
   assert.equal(app.state.currentScopeVerified, false)
+  await app.unmount()
+})
+
+test('authenticated Owner root admission preserves valid Host identity and rejects malformed roots', () => {
+  const root = { id: 7, name: '我的文件', revision: 12 }
+  assert.strictEqual(xDriveFileExplorerAdmitOwnerRoot(root), root,
+    'the shared UI must never fabricate a different Owner root object')
+  for (const invalid of [
+    null, undefined, [], '', 2,
+    {}, { id: 0, name: 'Owner' }, { id: -1, name: 'Owner' },
+    { id: '7', name: 'Owner' }, { id: 1.5, name: 'Owner' },
+    { id: Number.MAX_SAFE_INTEGER + 1, name: 'Owner' },
+    { id: 7, name: '' }, { id: 7, name: '   ' },
+    { id: 7, name: 7 }, { id: 7, name: 'a\nb' },
+    { id: 7, name: 'a'.repeat(513) },
+  ]) {
+    assert.throws(() => xDriveFileExplorerAdmitOwnerRoot(invalid),
+      /Invalid authenticated Owner Files root/, JSON.stringify(invalid))
+  }
+})
+
+test('malformed Owner root never invokes a cursor read or publishes stale files', async () => {
+  let currentRoot = { id: 0, name: 'unverified root' }
+  const app = await mount(() => currentRoot, 0)
+  assert.equal(app.requests.length, 0)
+  assert.deepEqual(app.state.crumbs, [])
+  assert.deepEqual(app.state.items, [])
+  assert.equal(app.state.currentScopeVerified, false)
+  assert.match(app.state.rootError, /无法通过 Agent 当前 xDrive Server 账号/)
+  currentRoot = { id: 10, name: 'Owner' }
+  await app.call(state => state.refreshAuthenticatedRoot())
+  assert.equal(app.requests.length, 1, 'reverification must use the real Host root first')
+  assert.equal(app.requests[0].parent, 10)
+  await app.resolve(0, { items: [node(5, 'authorized')], has_more: false })
+  assert.equal(app.state.currentScopeVerified, true)
+  assert.deepEqual(app.state.items.map(item => item.name), ['authorized'])
   await app.unmount()
 })
