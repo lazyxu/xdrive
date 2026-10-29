@@ -33,7 +33,15 @@ struct LoginScreen: View {
         }
         .task { await model.restore() }
         .sheet(isPresented: $showPhotoInventory) {
-            LocalPhotoInventoryScreen()
+            if model.verifiedOwner != nil {
+                LocalPhotoInventoryScreen(onUploadStillPhoto: { identifier, allowCloud in
+                    await model.uploadSelectedStillPhoto(
+                        identifier, allowICloudOriginal: allowCloud
+                    )
+                })
+            } else {
+                LocalPhotoInventoryScreen()
+            }
         }
         .fileImporter(
             isPresented: $showDocumentPicker,
@@ -263,7 +271,10 @@ struct LoginScreen: View {
             Button {
                 showPhotoInventory = true
             } label: {
-                Label("检查系统相册（不上传）", systemImage: "photo.on.rectangle.angled")
+                Label(model.verifiedOwner != nil
+                    ? "系统相册识别与单张照片手动上传"
+                    : "检查系统相册（不上传）",
+                      systemImage: "photo.on.rectangle.angled")
                     .frame(maxWidth: .infinity, minHeight: 48)
                     .foregroundColor(colors.primary)
                     .background(RoundedRectangle(cornerRadius: 12)

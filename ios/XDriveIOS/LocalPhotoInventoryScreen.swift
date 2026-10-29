@@ -93,6 +93,14 @@ private final class LocalPhotoInventoryModel: ObservableObject {
 /// Native-only diagnostic for local Photos access. This does NOT mean local
 /// photos are paired with Server PhotoAsset or backed up to CAS.
 struct LocalPhotoInventoryScreen: View {
+    /// Passed only after verifying the native Owner; a plain photo-check
+    /// dialog has no upload capability and never accesses authentication.
+    let onUploadStillPhoto: ((String, Bool) async -> String)?
+
+    init(onUploadStillPhoto: ((String, Bool) async -> String)? = nil) {
+        self.onUploadStillPhoto = onUploadStillPhoto
+    }
+
     @StateObject private var model = LocalPhotoInventoryModel()
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
@@ -102,6 +110,10 @@ struct LocalPhotoInventoryScreen: View {
     @State private var albumLoading = false
     @State private var albumError: String?
     @State private var albumTask: Task<Void, Never>?
+    @State private var allowICloudOriginal = false
+    @State private var uploadingPhotoID: String?
+    @State private var photoUploadTask: Task<Void, Never>?
+    @State private var photoUploadMessage: String?
 
     var body: some View {
         NavigationStack {
@@ -113,6 +125,23 @@ struct LocalPhotoInventoryScreen: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+
+                    if onUploadStillPhoto != nil && model.hasAccess {
+                        Toggle("允许本次手动上传从 iCloud 下载原件", isOn: $allowICloudOriginal)
+                            .disabled(uploadingPhotoID != nil)
+                            .font(.subheadline)
+                        Text("默认关闭。只有明确点击下面单张普通照片的上传按钮，才会读取它的原件并连接云端；Live Photo、视频和后台自动同步暂不可用。")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if let photoUploadMessage {
+                        Text(photoUploadMessage)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("manual-photo-upload-result")
+                    }
 
                     if let inventory = model.inventory {
                         HStack(spacing: 14) {
@@ -153,6 +182,22 @@ struct LocalPhotoInventoryScreen: View {
                                         .font(.footnote)
                                         .foregroundStyle(.secondary)
                                         .fixedSize(horizontal: false, vertical: true)
+                                }
+                                if item.kind == "照片" && !item.isLive && onUploadStillPhoto != nil {
+                                    Button("手动保存这张普通照片到云端") {
+                                        startPhotoUpload(item.id)
+                                    }
+                                    .font(.footnote)
+                                    .buttonStyle(.bordered)
+                                    .disabled(uploadingPhotoID != nil || model.loading)
+                                    .accessibilityIdentifier("native-photo-upload-still")
+                                }
+                                if uploadingPhotoID == item.id {
+                                    ProgressView("读取原件并等待 Server 上传确认…")
+                                        .font(.footnote)
+                                    Button("取消本机请求") { photoUploadTask?.cancel() }
+                                        .font(.footnote)
+                                        .buttonStyle(.bordered)
                                 }
                                 Divider()
                             }
@@ -246,7 +291,7 @@ struct LocalPhotoInventoryScreen: View {
                         }
                     }
 
-                    Text("当前只读取已授权项目的数量、类型、最近日期和用户主动选择检查的相册目录；单项检查仅枚举 PhotoKit 声明的原始资源及 Live 动静配对情况。不读取照片字节或 GPS、不上传数据、不执行同步。真正备份仍需 Device/Root 绑定、持久队列、UploadSession 和完整收据。")
+                    Text("系统相册默认仅做本机元数据检查，不读取 GPS 或发送 PhotoKit 标识。仅在验证原生 Owner 后主动点击普通照片上传按钮，才会读取该张原件并通过现有 UploadSession 保存云端文件；这不代表自动相册同步、Device/Root 备份或 Live Photo 成对提交。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -264,6 +309,10 @@ struct LocalPhotoInventoryScreen: View {
         }
         .task { await model.inspect(askPermission: false) }
         .onChange(of: scenePhase) { phase in
+            if phase != .active {
+                photoUploadTask?.cancel()
+                return
+            }
             if phase == .active {
                 inspectedAssetID = nil
                 inspectedResourceMessage = nil
@@ -274,13 +323,34 @@ struct LocalPhotoInventoryScreen: View {
             }
         }
         .onChange(of: model.authorization) { _ in
+            photoUploadTask?.cancel()
+            photoUploadMessage = nil
             inspectedAssetID = nil
             inspectedResourceMessage = nil
             albumTask?.cancel()
             albumPage = nil
             albumError = nil
         }
-        .onDisappear { albumTask?.cancel() }
+        .onDisappear {
+            albumTask?.cancel()
+            photoUploadTask?.cancel()
+        }
+    }
+
+    private func startPhotoUpload(_ localIdentifier: String) {
+        guard let onUploadStillPhoto, uploadingPhotoID == nil,
+              model.hasAccess else { return }
+        uploadingPhotoID = localIdentifier
+        photoUploadMessage = nil
+        let mayDownloadICloud = allowICloudOriginal
+        photoUploadTask = Task { @MainActor in
+            let result = await onUploadStillPhoto(localIdentifier, mayDownloadICloud)
+            photoUploadMessage = Task.isCancelled
+                ? "本机已取消。若最后 ACK 丢失，请先核实云端再操作。"
+                : result
+            uploadingPhotoID = nil
+            photoUploadTask = nil
+        }
     }
 
     private func loadAlbumPage(_ offset: Int) {
