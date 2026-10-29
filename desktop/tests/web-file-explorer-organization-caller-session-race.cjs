@@ -192,7 +192,7 @@ test('Web FileExplorer saved-search rename completion cannot cross account lifec
   const feedback = []
 
   const handler = compileExpression(filename, 'handler', initializer, {
-    renameSavedSearch: {
+    renameSearch: {
       id: 53,
       name: 'Before',
       query: 'kind:image',

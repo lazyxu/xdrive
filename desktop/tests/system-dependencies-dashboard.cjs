@@ -95,7 +95,14 @@ test('single shared responsive page has tinted cards, count-filters and four sep
   assert.match(page, /xl: 'repeat\(4, minmax\(0,1fr\)\)'/)
   assert.match(nav, /XDRIVE_SYSTEM_DEPENDENCY_IDS/)
   assert.match(cap, /'photo-face'/)
-  assert.ok(web.includes('XDriveServiceDependenciesPage'))
+  // Web binds a current Server-verified administrator to the shared Host
+  // outlet; no direct component import or secondary admin page is permitted.
+  const browserHost = read('web/src/browserWorkspaceHost.ts')
+  const outlet = read('ui/shared/src/mui/XDriveAppPageOutlet.tsx')
+  assert.ok(web.includes('adminServices: serverAdminVerified ? {') &&
+    web.includes('adminRoleVerified: serverAdminVerified') &&
+    browserHost.includes('adminServicesPage: ports.adminServices') &&
+    outlet.includes('<XDriveServiceDependenciesPage {...services.adminServicesPage} />'))
   assert.ok(desktop.includes('adminServicesPage:') && read('ui/shared/src/mui/XDriveAppPageOutlet.tsx').includes('<XDriveServiceDependenciesPage'))
   for (const forbidden of ['docker.sock', 'localStorage.setItem', 'adminStopHost',
     'adminRestartHost', 'window.fetch(']) assert.ok(!page.includes(forbidden))

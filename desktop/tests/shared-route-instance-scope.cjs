@@ -109,13 +109,28 @@ test('Desktop Files stays a transitional Host controller; DSM Files uses shared 
   events.length = 0
   const oldFiles = React.createElement('desktop-files', null, 'real native controller')
   let app
-  renderer.act(() => { app = renderer.create(ui(desktopOwner, 'files', 0, oldFiles)) })
-  assert.deepEqual(events, [])
-  assert.equal(app.root.findAllByType('desktop-files').length, 1)
+  const desktopFiles = { ...desktopOwner, services: {
+    filesControllerContent: oldFiles,
+  } }
+  renderer.act(() => { app = renderer.create(ui(desktopFiles, 'files', 0)) })
+  // Both Hosts mount the same page outlet. Desktop's real controller is an
+  // explicit host service within that outlet, never a route-content child.
+  const outletSource = fs.readFileSync(
+    path.join(__dirname, '../../ui/shared/src/mui/XDriveAppPageOutlet.tsx'), 'utf8')
+  assert.match(outletSource,
+    /if \(services\.filesControllerContent\) page = services\.filesControllerContent/)
+  assert.deepEqual(events, ['mount:desktop:files:0'])
+  assert.equal(app.root.findAllByType('page').length, 1)
   renderer.act(() => { app.update(ui(dsm, 'files', 0)) })
-  assert.deepEqual(events, ['mount:synology:files:0'])
+  assert.deepEqual(events, [
+    'mount:desktop:files:0',
+    'unmount:desktop:files:0',
+    'mount:synology:files:0',
+  ])
   renderer.act(() => { app.update(ui(dsm, 'files', 1)) })
   assert.deepEqual(events, [
+    'mount:desktop:files:0',
+    'unmount:desktop:files:0',
     'mount:synology:files:0',
     'unmount:synology:files:0',
     'mount:synology:files:1',

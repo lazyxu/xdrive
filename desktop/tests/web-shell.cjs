@@ -20,6 +20,9 @@ const sharedWorkspace = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src
 const sharedWorkspaceShell = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'WorkspaceShell.tsx'), 'utf8')
 const sharedWorkspaceContent = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'WorkspaceContent.tsx'), 'utf8')
 const sharedWorkspaceRoute = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'WorkspaceRoute.ts'), 'utf8')
+const sharedRouteSurface = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'WorkspaceRouteSurface.tsx'), 'utf8')
+const sharedHostSections = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'WorkspaceHostSections.tsx'), 'utf8')
+const browserHost = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'browserWorkspaceHost.ts'), 'utf8')
 const sharedAccount = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'AccountChrome.tsx'), 'utf8')
 const sharedBrand = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'BrandLockup.tsx'), 'utf8')
 const sharedGallery = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'MediaGallery.tsx'), 'utf8')
@@ -67,25 +70,37 @@ test('wide Web keeps compact chrome while mobile owns the full-screen title and 
   }
 
   assert.ok(webApp.includes('<XDriveWorkspaceSidebar'), 'Web must use the shared complete sidebar renderer')
-  assert.ok(webApp.includes("const webSidebarSections: XDriveSidebarSectionModel[] = ["), 'Web sidebar must use the shared section model')
-  assert.ok(webApp.includes("...(profile?.role === 'admin'"), 'admin sidebar model must remain role-gated')
-  assert.ok(webApp.includes("label: '管理'"), 'missing admin section label')
-  assert.ok(webApp.includes("ariaLabel: '管理员功能'"), 'missing admin navigation landmark')
-  for (const label of ['用户管理', '审计日志', '全局存储']) {
-    assert.ok(webApp.includes(`label: '${label}'`), `missing admin sidebar destination: ${label}`)
+  assert.ok(webApp.includes('const webSidebarSections = xDriveWorkspaceHostSections({') &&
+    webApp.includes("adminRoleVerified: profile?.role === 'admin'") &&
+    webApp.includes('includeUtilityRoutes: false'),
+    'Web sidebar must consume the shared section model with Server admin gating')
+  assert.ok(sharedHostSections.includes("...(adminRoleVerified ? [") &&
+    sharedHostSections.includes("label: '管理'") &&
+    sharedHostSections.includes("ariaLabel: '管理员功能'"),
+    'the shared model must own administrator navigation')
+  for (const key of ['admin-users', 'admin-audit', 'admin-storage']) {
+    assert.ok(sharedHostSections.includes(`key: '${key}'`),
+      `missing shared admin destination: ${key}`)
   }
-  assert.ok(webApp.includes('ManageAccountsRoundedIcon'), 'missing User Management icon')
-  assert.ok(webApp.includes('AssessmentRoundedIcon'), 'missing Audit icon')
+  assert.ok(sharedHostSections.includes('ManageAccountsRoundedIcon'), 'missing User Management icon')
+  assert.ok(sharedHostSections.includes('AssessmentRoundedIcon'), 'missing Audit icon')
 })
 test('Web workspaces share page presentation while Files avoids a duplicate internal page header', () => {
   assert.equal(webApp.includes('<XDriveWorkspaceSurface presentation="page" title="文件">'), false, 'Files must not render a duplicate page header')
   assert.equal(webApp.includes("height: { xs: 560, md: '100%' }"), false, 'Files must use the available workspace height on narrow screens')
   assert.ok(webApp.includes('<XDriveMediaGalleryPage'), 'Gallery should mount the shared page directly')
   assert.ok(sharedGallery.includes('<XDriveWorkspaceSurface presentation="page" title="图库" showPageHeader={false}>'), 'shared Gallery page must own workspace page chrome without duplicating its title')
-  assert.ok(webApp.includes('<XDriveSourceManager'), 'Sync Folders should mount the shared manager directly')
-  assert.ok(webApp.includes('<XDriveLocalStoragePage source={localStorageSource} />'), 'Local Storage should render through the shared page')
+  assert.ok(webApp.includes('remotePull: {') &&
+    browserHost.includes("directionFilter: 'pull' as const") &&
+    sharedHostOutlet.includes('<XDriveSourceManager {...services.remotePullPage} />'),
+    'Remote Pull must use the authorized Browser Host and shared manager')
+  assert.ok(webApp.includes('localStorage: localStorageSource') &&
+    sharedHostOutlet.includes('<XDriveLocalStoragePage'),
+    'Local Storage must render through the shared Host outlet')
   assert.ok(sharedLocalStorage.includes('title="浏览器存储"'), 'shared Local Storage should expose browser storage on Web')
-  assert.ok(webApp.includes('<XDriveCloudStoragePage source={cloudStorageSource} />'), 'Cloud Storage should render through the shared page')
+  assert.ok(webApp.includes('cloudStorage: cloudStorageSource') &&
+    sharedHostOutlet.includes('<XDriveCloudStoragePage'),
+    'Cloud Storage must render through the shared Host outlet')
 })
 
 test('Web admin workspaces are first-class pages while action dialogs stay local', () => {
@@ -93,9 +108,16 @@ test('Web admin workspaces are first-class pages while action dialogs stay local
   assert.equal(webApp.includes('auditOpen'), false, 'legacy Audit modal state should be removed')
   assert.equal(webApp.includes('storageStatsScope'), false, 'legacy Global Storage modal state should be removed')
 
-  assert.ok(webApp.includes("<AdminUsersPanel\n            api={api}\n            currentUserID={profile.id}"), 'User Management should render as a page')
-  assert.ok(webApp.includes("<AdminAuditPanel api={api} />"), 'Audit should render as a page')
-  assert.ok(webApp.includes("<StorageStatsPanel\n            api={api}\n            scope=\"global\""), 'Global Storage should render as a page')
+  assert.ok(webApp.includes('adminUsers: serverAdminVerified && profile ? {') &&
+    webApp.includes('adminAudit: serverAdminVerified ? {') &&
+    webApp.includes('adminStorage: serverAdminVerified ? {') &&
+    browserHost.includes('adminUsersPage: ports.adminUsers') &&
+    browserHost.includes('adminAuditPage: ports.adminAudit') &&
+    browserHost.includes('adminStoragePage: ports.adminStorage') &&
+    sharedHostOutlet.includes('<XDriveAdminUsersPage {...services.adminUsersPage} />') &&
+    sharedHostOutlet.includes('<XDriveAdminAuditPage {...services.adminAuditPage} />') &&
+    sharedHostOutlet.includes('<XDriveGlobalStorageStatsPage {...services.adminStoragePage} />'),
+    'verified Web administrator pages must mount through the shared Host outlet')
 
   for (const [name, source, title] of [
     ['User Management', adminUsers, '用户管理'],
@@ -187,7 +209,10 @@ test('Web and Desktop shell composition lives in shared MUI', () => {
   assert.ok(sharedStorageSummary.includes('XDriveSidebarStorageSummary'), 'shared sidebar storage summary is missing')
   assert.ok(sharedCloudStorage.includes('export function XDriveCloudStoragePage'), 'shared cloud storage workspace is missing')
   assert.ok(sharedCloudStorage.includes('title="云端存储"'), 'shared cloud storage workspace title is missing')
-  assert.ok(webApp.includes('<XDriveCloudStoragePage source={cloudStorageSource} />'), 'Web must render shared cloud storage')
+  assert.ok(webApp.includes('cloudStorage: cloudStorageSource') &&
+    browserHost.includes('cloudStorage: ports.cloudStorage') &&
+    sharedHostOutlet.includes('<XDriveCloudStoragePage'),
+    'Web must render shared cloud storage via authorized Browser Host')
   assert.ok(desktopApp.includes('cloudStorage: cloudStorageSource') &&
     sharedHostOutlet.includes('<XDriveCloudStoragePage'),
     'Desktop must route real Cloud Storage through the common outlet')
@@ -197,7 +222,10 @@ test('Web and Desktop shell composition lives in shared MUI', () => {
   assert.ok(desktopApp.includes('localStorage: localStorageSource') &&
     sharedHostOutlet.includes('<XDriveLocalStoragePage'),
     'Desktop must route real Local Storage through the common outlet')
-  assert.ok(webApp.includes('<XDriveLocalStoragePage source={localStorageSource} />'), 'Web must render shared local storage')
+  assert.ok(webApp.includes('localStorage: localStorageSource') &&
+    browserHost.includes('localStorage: ports.localStorage') &&
+    sharedHostOutlet.includes('<XDriveLocalStoragePage'),
+    'Web must render shared local storage via authorized Browser Host')
 
   assert.ok(sharedWorkspace.includes('XDriveWorkspaceSurface'), 'shared workspace surface is missing')
   assert.ok(sharedWorkspaceShell.includes('XDriveWorkspaceShell'), 'shared workspace shell is missing')
@@ -312,13 +340,16 @@ test('shared workspace content owns page spacing and Files full-bleed behavior',
   }
   assert.equal(webStyles.includes('.content-wrap'), false, 'Web must not retain local workspace-content layout CSS')
   assert.ok(sharedWorkspaceRoute.includes('export function xDriveWorkspacePresentation'), 'shared route model must own workspace presentation')
-  assert.ok(webApp.includes('presentation={xDriveWorkspacePresentation(appView)}'), 'Web workspace must use shared route presentation')
+  assert.ok(webApp.includes('<XDriveWorkspaceRouteSurface') &&
+    webApp.includes('view={appView}') &&
+    sharedRouteSurface.includes('presentation={xDriveWorkspacePresentation(view)}'),
+    'Web workspace must use shared route presentation')
   const routeFrame = fs.readFileSync(path.join(repoRoot, 'ui/shared/src/mui/XDriveAppRouteContent.tsx'), 'utf8')
   assert.ok(desktopApp.includes('<XDriveApp') &&
     !desktopApp.includes('<XDriveAppRouteContent') &&
     sharedApp.includes('<XDriveAppRouteContent') &&
-    routeFrame.includes('const presentation = xDriveWorkspacePresentation(view)') &&
-    routeFrame.includes('presentation={presentation}'),
+    routeFrame.includes('<XDriveWorkspaceRouteSurface') &&
+    sharedRouteSurface.includes('presentation={xDriveWorkspacePresentation(view)}'),
     'Desktop must use shared route presentation through the canonical route frame')
   assert.equal(webApp.includes('<XDriveWorkspaceSurface presentation="page" title="文件">'), false, 'Files must not regain generic page chrome')
 })

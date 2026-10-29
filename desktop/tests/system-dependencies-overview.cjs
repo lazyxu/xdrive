@@ -103,7 +103,14 @@ test('shared overview follows fixed service navigation with compact cards and no
   assert.ok(page.includes('service.health_state'))
   assert.equal((page.match(/\{dependencyNote\}/g) || []).length, 1)
   assert.ok(page.includes('data-xdrive-system-dependencies-safety-note'))
-  assert.ok(web.includes('XDriveServiceDependenciesPage'))
+  // Web binds a current Server-verified administrator to the shared Host
+  // outlet; no direct component import or secondary admin page is permitted.
+  const browserHost = read('web/src/browserWorkspaceHost.ts')
+  const outlet = read('ui/shared/src/mui/XDriveAppPageOutlet.tsx')
+  assert.ok(web.includes('adminServices: serverAdminVerified ? {') &&
+    web.includes('adminRoleVerified: serverAdminVerified') &&
+    browserHost.includes('adminServicesPage: ports.adminServices') &&
+    outlet.includes('<XDriveServiceDependenciesPage {...services.adminServicesPage} />'))
   assert.ok(desktop.includes('adminServicesPage:') && read('ui/shared/src/mui/XDriveAppPageOutlet.tsx').includes('<XDriveServiceDependenciesPage'))
   for (const forbidden of ['docker.sock', 'localStorage.setItem']) {
     assert.equal(page.includes(forbidden), false)
