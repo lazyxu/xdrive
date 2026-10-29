@@ -24,10 +24,11 @@ type OwnerGalleryPreviewIdentity = {
   revision: number
   name: string
   size: number
+  livePhoto: boolean
 }
 type OwnerGalleryReadPort = Pick<XDriveSynologyBackupLocalClient,
   'ownerGalleryItemsRange' | 'ownerGalleryAlbums' | 'ownerFileThumbnail' |
-  'ownerFileMediaRange' | 'ownerFileMediaStreamURL'>
+  'ownerFileMediaRange' | 'ownerFileMediaStreamURL' | 'ownerLivePhotoMotion'>
 
 /**
  * Current Owner CGI supports captured-descending original Gallery/Album Range.
@@ -70,10 +71,12 @@ export function createXDriveSynologyOwnerGallerySource(
       // A repeated authorized page with the same Node/revision must retain
       // the identity object so it cannot invalidate an in-flight thumbnail.
       const previous = previews.get(n.id)
+      const livePhoto = Boolean(item.live_photo || item.asset_kind === 'live_photo')
       const identity = previous && previous.revision === n.revision &&
-        previous.size === n.size && previous.name === n.name
+        previous.size === n.size && previous.name === n.name &&
+        previous.livePhoto === livePhoto
         ? previous
-        : { id: n.id, revision: n.revision, size: n.size, name: n.name }
+        : { id: n.id, revision: n.revision, size: n.size, name: n.name, livePhoto }
       previews.delete(n.id)
       previews.set(n.id, identity)
       while (previews.size > OWNER_GALLERY_PREVIEW_CACHE) {
@@ -165,6 +168,35 @@ export function createXDriveSynologyOwnerGallerySource(
         if (signal?.aborted || previews.get(nodeID) !== known) return null
         throw error
       }
+    },
+    loadLivePhotoMotion: async (nodeID, onProgress, signal) => {
+      if (signal?.aborted || !Number.isSafeInteger(nodeID) || nodeID < 1) return null
+      const identity = previews.get(nodeID)
+      if (!identity?.livePhoto) return null
+      // The Server's verified Live Photo endpoint, not the .livp archive or
+      // an unrelated MOV Node, supplies exactly this Owner/revision's motion.
+      // DSM only transports it; the SAME shared LivePhotoSurface owns hold,
+      // release, seek, frame and abort lifecycle on every Host.
+      const motion = await client.ownerLivePhotoMotion(nodeID, identity.revision, signal)
+      if (signal?.aborted || previews.get(nodeID) !== identity ||
+        motion.nodeID !== nodeID || motion.revision !== identity.revision ||
+        motion.size !== motion.data.length || !globalThis.crypto?.subtle) return null
+      const ownedBuffer = new ArrayBuffer(motion.data.length)
+      const owned = new Uint8Array(ownedBuffer)
+      owned.set(motion.data)
+      const digest = new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', owned))
+      const actual = Array.from(digest, byte => byte.toString(16).padStart(2, '0')).join('')
+      if (signal?.aborted || previews.get(nodeID) !== identity ||
+        actual !== motion.sha256) return null
+      const url = URL.createObjectURL(new Blob([ownedBuffer], { type: motion.mimeType }))
+      if (signal?.aborted || previews.get(nodeID) !== identity) {
+        URL.revokeObjectURL(url)
+        return null
+      }
+      onProgress?.(motion.size, motion.size, null)
+      // Shared LivePhotoSurface disposes this Blob lease on Viewer close,
+      // Owner switch and explicit hold release; there is no DSM player.
+      return url
     },
     loadPreviewURL: async (nodeID, kind, signal, _fileName, revision, onProgress) => {
       if ((kind !== 'image' && kind !== 'video') || signal?.aborted) return null
