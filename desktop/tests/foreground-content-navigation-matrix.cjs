@@ -12,6 +12,10 @@ const transpile = (file) => ts.transpileModule(source(file), {
 function load(file, requireFn = require) {
   const mod = { exports: {} }
   const scopedRequire = name => {
+    // A second ViewerForegroundPriority module instance would disconnect the
+    // scheduler from the observer bus and strand cancellable thumbnail loads.
+    if (file === 'ui/shared/src/mui/MediaGalleryThumbnailScheduler.ts' &&
+        name === './ViewerForegroundPriority') return requireFn(name)
     // The source-level route registry imports shared TypeScript directly.
     // Follow those imports instead of asking Node to load uncompiled .ts.
     if (name.startsWith('.')) {

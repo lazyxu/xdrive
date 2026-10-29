@@ -9,6 +9,7 @@ const desktopVirtualSettings = fs.readFileSync(path.join(root, 'src', 'renderer'
 const sharedXDriveApp = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'XDriveApp.tsx'), 'utf8')
 const sharedHostOutlet = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx'), 'utf8')
 const sharedHostSections = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'WorkspaceHostSections.tsx'), 'utf8')
+const sharedRouteTitles = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'WorkspaceRouteTitles.ts'), 'utf8')
 const sharedSourceManager = [
   fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8'),
   fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceManagerDialogs.tsx'), 'utf8'),
@@ -48,6 +49,7 @@ const desktopHostFrame = fs.readFileSync(path.join(root, 'src', 'renderer', 'Des
 const renderer = [
   rendererApp,
   sharedHostSections,
+  sharedRouteTitles,
   sharedSourceManager,
   sharedSettingsDialog,
   sharedCloudStoragePage,
