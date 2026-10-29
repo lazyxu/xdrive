@@ -148,14 +148,14 @@ func (s *Server) adminBackupSnapshotPage(c *gin.Context) {
 		nextOffset = &next
 	}
 	c.JSON(http.StatusOK, backupAdminSnapshotPageResponse{
-		Protocol: "xdrive-backup-snapshot-page-v1",
-		Scope: "unverified_identity_only",
-		TotalSnapshots: index.TotalSnapshots,
+		Protocol:         "xdrive-backup-snapshot-page-v1",
+		Scope:            "unverified_identity_only",
+		TotalSnapshots:   index.TotalSnapshots,
 		IndexedSnapshots: index.IndexedSnapshots,
-		Truncated: index.Truncated,
-		Offset: offset,
-		Limit: limit,
-		NextOffset: nextOffset,
-		SnapshotIDs: ids,
+		Truncated:        index.Truncated,
+		Offset:           offset,
+		Limit:            limit,
+		NextOffset:       nextOffset,
+		SnapshotIDs:      ids,
 	})
 }
