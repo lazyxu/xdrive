@@ -77,7 +77,8 @@ A later explicit owner decision supersedes older instructions.
 - The configured enabled Baidu Server AK permits attempts at official GPS→BD-09 conversion; only a real verified provider reply establishes coordinates. Report retry/pending/error honestly.
 - One Owner-bound photo Map/Cells/Scope/Viewer backend is shared between same-page and isolated SDK hosts, Web/PWA/Desktop. Browser AK is separate from Server AK.
 - Preserve Owner/Node ACL, revision, Origin/CSP/CSRF, isolated child resources, quota, secret protection and provider errors. Removing manual gates never waives technical security.
-- GPS editing, sharing/export stripping, trip membership and 100k map coverage are separate unfinished work; do not mislabel them completed.
+- GPS editing, PDF editing and other media/file editing features are out of scope by the owner's decision; do not reopen GPS override, batch editing, editor undo/restore or PDF editing tasks.
+- Share/export GPS privacy, trip membership and 100k map coverage remain separate unfinished work; do not mislabel them completed.
 
 ## Engineering and tests
 - Preserve fail-closed authorization, Cookie/session revocation, credential isolation, SQL/CAS integrity, native device ACL and safe upgrade behavior.
