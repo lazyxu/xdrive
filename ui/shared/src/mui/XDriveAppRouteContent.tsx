@@ -2,18 +2,15 @@ import type { ReactNode } from 'react'
 import type { SxProps, Theme } from '@mui/material/styles'
 import { XDriveWorkspaceRouteSurface } from './WorkspaceRouteSurface'
 import { XDriveAppPageOutlet } from './XDriveAppPageOutlet'
-import {
-  xDriveIsSharedHostPageRoute,
-  type XDriveWorkspaceAppRoute,
-} from './WorkspaceRoute'
+import type { XDriveWorkspaceAppRoute } from './WorkspaceRoute'
 import type { XDriveWorkspaceHostAdapter } from './WorkspaceHostAdapter'
 
 /**
  * The canonical route/content frame for Desktop and authenticated DSM.
  *
- * Migrated pages use one shared outlet; Desktop Files is the remaining
- * transitional Host controller (which already renders shared FileExplorer).
- * DSM Files uses its real, authenticated Owner cursor read port.
+ * Every page, including Files, is dispatched by one shared outlet. The
+ * Desktop Files controller remains a transitional, explicitly supplied Host
+ * element inside that outlet; DSM Files uses an authenticated Owner cursor.
  *
  * The Files route must use the same edge-to-edge layout on both Hosts.
  * Ordinary page padding must never leak into the virtualized Files viewport.
@@ -33,21 +30,15 @@ export function XDriveAppRouteContent({
   pageSx?: SxProps<Theme>
   children?: ReactNode
 }) {
-  // Only the existing Desktop Files child is transitional. Any Host without
-  // that legacy controller uses the shared outlet, where a missing authorized
-  // Owner Files port produces an explicit unavailable state (not a blank page).
-  // No platform-specific Files route or second page registry is needed.
-  const hasLegacyFilesContent = view === 'files' && children != null && children !== false
-  const usesSharedOutlet = xDriveIsSharedHostPageRoute(view) ||
-    (view === 'files' && !hasLegacyFilesContent)
-
+  // Children are host-wide alerts (not page replacements). A single outlet
+  // owns Files routing and page instance disposal on both Desktop and DSM.
   return (
     <XDriveWorkspaceRouteSurface
       view={view}
       sx={view === 'files' ? undefined : pageSx}
     >
       {children}
-      {usesSharedOutlet ? (
+      {(
         <XDriveAppPageOutlet
           // A React page instance belongs to one Host, route, role and refresh.
           // In particular, Mine/Global Tasks reuse a component type but must
@@ -60,7 +51,7 @@ export function XDriveAppRouteContent({
           revision={revision}
           onNavigate={onNavigate}
         />
-      ) : null}
+      )}
     </XDriveWorkspaceRouteSurface>
   )
 }
