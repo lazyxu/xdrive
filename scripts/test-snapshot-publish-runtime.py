@@ -164,3 +164,99 @@ assert state["exists"] and state["tag"] == NEW
 assert "create" in state["events"] and "metadata" in state["events"]
 assert "patch" not in state["events"], "Initial Snapshot creates its own tag"
 print("snapshot publication E2E mock: existing/new, upload failure, digest mismatch, stale source and moved tag passed")
+
+
+# GHCR source regression: execute the *actual* image-push shell without a
+# registry, with deterministic concurrent Docker stubs. Failed pushes cannot
+# become a green Snapshot; worker must start only after other pushes finish.
+push_marker = "      - name: Push exact CI-produced images in parallel\\n"
+assert workflow.count(push_marker) == 1
+push_body = workflow.split(push_marker, 1)[1].split("        run: |\\n", 1)[1]
+push_body = push_body.split("\\n  server-deploy:", 1)[0]
+push_script = textwrap.dedent(push_body)
+MOCK_DOCKER = r'''#!/bin/sh
+set -eu
+printf '%s\\n' "$*" >> "$TEST_DOCKER_DIR/events.log"
+[ "$1" = tag ] && exit 0
+[ "$1" = push ] || exit 32
+case "$2" in
+  *xdrive-media-worker:*) image=xdrive-media-worker; limit=${TEST_FAIL_WORKER:-0} ;;
+  *xdrive-server:*) image=xdrive-server; limit=${TEST_FAIL_SERVER:-0} ;;
+  *xdrive-caddy:*) image=xdrive-caddy; limit=${TEST_FAIL_OTHER:-0} ;;
+  *xdrive-photo-face:*) image=xdrive-photo-face; limit=${TEST_FAIL_OTHER:-0} ;;
+  *) exit 33 ;;
+esac
+printf 'start:%s\\n' "$image" >> "$TEST_DOCKER_DIR/events.log"
+[ "$image" = xdrive-media-worker ] || /bin/sleep 0.02
+file="$TEST_DOCKER_DIR/$image.count"
+count=0
+if [ -f "$file" ]; then read -r count < "$file"; fi
+count=$((count + 1))
+printf '%s\\n' "$count" > "$file"
+if [ "$count" -le "$limit" ]; then
+  printf 'error:%s\\n' "$image" >> "$TEST_DOCKER_DIR/events.log"
+  exit 1
+fi
+printf 'done:%s\\n' "$image" >> "$TEST_DOCKER_DIR/events.log"
+'''
+
+def run_ghcr_case(worker_fail=0, server_fail=0):
+    with tempfile.TemporaryDirectory(prefix="xdrive-ghcr-push-") as tmp:
+        p = Path(tmp)
+        bin_dir = p / "bin"
+        bin_dir.mkdir()
+        docker = bin_dir / "docker"
+        docker.write_text(MOCK_DOCKER)
+        docker.chmod(0o755)
+        sleep = bin_dir / "sleep"
+        sleep.write_text("#!/bin/sh\\nexit 0\\n")
+        sleep.chmod(0o755)
+        env = {
+            **os.environ,
+            "GITHUB_SHA": "a" * 40,
+            "GITHUB_REF_TYPE": "branch",
+            "GITHUB_REF_NAME": "master",
+            "GITHUB_REPOSITORY_OWNER": "lazyxu",
+            "TEST_DOCKER_DIR": str(p),
+            "TEST_FAIL_WORKER": str(worker_fail),
+            "TEST_FAIL_SERVER": str(server_fail),
+            "PATH": str(bin_dir) + os.pathsep + os.environ["PATH"],
+        }
+        run = subprocess.run(
+            ["bash", "-e", "-u", "-o", "pipefail", "-c", push_script],
+            env=env, capture_output=True, text=True, timeout=30,
+        )
+        return run, (p / "events.log").read_text().splitlines()
+
+good, events = run_ghcr_case()
+assert good.returncode == 0, good.stderr
+assert len([event for event in events if event.startswith("tag ")]) == 4
+assert len([event for event in events if event.startswith("push ")]) == 4
+assert events.index("start:xdrive-media-worker") > max(
+    events.index("done:" + image)
+    for image in ("xdrive-server", "xdrive-caddy", "xdrive-photo-face")
+), events
+assert "sha-" + "a" * 12 in "\\n".join(events)
+for image in ("xdrive-server", "xdrive-caddy", "xdrive-photo-face", "xdrive-media-worker"):
+    assert events.count("done:" + image) == 1, events
+
+recover, events = run_ghcr_case(worker_fail=2)
+assert recover.returncode == 0, recover.stderr
+assert events.count("start:xdrive-media-worker") == 3
+assert events.count("done:xdrive-media-worker") == 1
+assert all(events.count("start:" + name) == 1 for name in
+           ("xdrive-server", "xdrive-caddy", "xdrive-photo-face"))
+
+bad, events = run_ghcr_case(worker_fail=5)
+assert bad.returncode != 0
+assert events.count("start:xdrive-media-worker") == 5
+assert events.count("done:xdrive-media-worker") == 0
+assert "failed to push xdrive-media-worker" in bad.stderr
+
+recover, events = run_ghcr_case(server_fail=2)
+assert recover.returncode == 0, recover.stderr
+assert events.count("start:xdrive-server") == 3
+assert events.count("done:xdrive-server") == 1
+assert events.index("start:xdrive-media-worker") > events.index("done:xdrive-caddy")
+
+print("GHCR push mock: worker order, 4x bounded retries, exact immutable tags and fail closed passed")
