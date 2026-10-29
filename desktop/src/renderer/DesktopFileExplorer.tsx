@@ -66,6 +66,7 @@ import {
   xDriveFileExplorerDeviceHydrationProgress,
   xDriveFileExplorerUploadGroupLabel,
   XDriveUploadConflictDialog,
+  XDRIVE_HOST_FILES_PREFERENCES,
   xDriveCaptureVideoPosterBlob,
   xDriveFileKind,
 } from '@xdrive/ui/mui'
