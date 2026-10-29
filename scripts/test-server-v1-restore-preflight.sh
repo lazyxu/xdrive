@@ -141,6 +141,9 @@ assert_bad_manifest manifest_trailing_garbage '{"format_version":1} {"other":tru
 assert_bad_manifest manifest_nonstandard_number '{"format_version":1,"other":NaN}'
 assert_bad_manifest manifest_invalid_boolean '{"format_version":1,"file_data_included":"true"}'
 assert_bad_manifest manifest_full_from_db_only '{"format_version":1,"file_data_included":false}'
+assert_bad_manifest manifest_v1_inconsistent '{"format_version":1,"file_data_included":true,"consistency_verified":false}'
+assert_bad_manifest manifest_v1_inconsistent_nested '{"format_version":1,"file_data_included":true,"consistency_verified":false,"meta":{"consistency_verified":true}}'
+assert_bad_manifest manifest_v1_inconsistent_missing_files '{"format_version":1,"file_data_included":false,"consistency_verified":false}'
 python3 - "$BACKUP_DIR/manifest.json" <<'PY'
 import json, sys
 with open(sys.argv[1], 'w', encoding='utf-8') as out:
@@ -148,6 +151,20 @@ with open(sys.argv[1], 'w', encoding='utf-8') as out:
 PY
 write_checksums
 assert_fail_closed manifest_too_large 'invalid or unsafe backup manifest'
+
+# Older v1 captures may predate the optional consistency field. Preserve
+# access to that historical archive; never equate unknown with verified.
+printf '{"format_version":1,"file_data_included":true}\n' > "$BACKUP_DIR/manifest.json"
+write_checksums
+rm -f -- "$XD_RESTORE_TEST_DOCKER_SENTINEL"
+if bash "$RESTORE" "$BACKUP_DIR" --config-dir "$XD_CONFIG_DIR" --yes --no-safety-backup >"$TMP/legacy-v1-unknown-consistency.log" 2>&1; then
+  echo 'fake Docker unexpectedly allowed a physical restore' >&2; exit 1
+fi
+[[ -s "$XD_RESTORE_TEST_DOCKER_SENTINEL" ]] || {
+  echo 'historical v1 missing-consistency fixture was blocked before read-only PostgreSQL preflight' >&2
+  cat "$TMP/legacy-v1-unknown-consistency.log" >&2
+  exit 1
+}
 
 # Do not follow symlinks or wait on a FIFO masquerading as the Manifest.
 printf '{"format_version":1,"consistency_verified":true,"file_data_included":true}\n' > "$BACKUP_DIR/manifest.json"
@@ -231,6 +248,17 @@ fi
 }
 # Reject an incompatible v2 database-only restore, even if checksums are valid.
 assert_fail_closed manifest_v2_db_only 'invalid or unsafe backup manifest' --database-only
+# No v2 capture without an explicit true source-consistency proof is eligible,
+# even if the entire snapshot checksum list was freshly recomputed.
+assert_bad_v2_consistency() {
+  local label="$1" manifest="$2"
+  printf '%s\n' "$manifest" > "$BACKUP_DIR/manifest.json"
+  (cd "$BACKUP_DIR"; sha256sum database.dump verify.json manifest.json objects.index legacy.tar > SHA256SUMS.txt)
+  assert_fail_closed "$label" 'invalid or unsafe backup manifest'
+}
+assert_bad_v2_consistency v2_consistency_false '{"format_version":2,"consistency_verified":false,"file_data_included":true}'
+assert_bad_v2_consistency v2_nested_consistency_false '{"format_version":2,"consistency_verified":false,"file_data_included":true,"metadata":{"consistency_verified":true}}'
+assert_bad_v2_consistency v2_consistency_missing '{"format_version":2,"file_data_included":true}'
 printf '{"format_version":2,"format_version":1,"file_data_included":true}\n' > "$BACKUP_DIR/manifest.json"
 (cd "$BACKUP_DIR"; sha256sum database.dump verify.json manifest.json objects.index legacy.tar > SHA256SUMS.txt)
 assert_fail_closed manifest_v2_duplicate_version 'invalid or unsafe backup manifest'
