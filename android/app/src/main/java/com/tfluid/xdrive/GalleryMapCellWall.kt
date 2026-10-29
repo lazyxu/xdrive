@@ -27,9 +27,12 @@ internal fun mapCellHasNextPage(startOffset: Int, visibleItems: Int, totalCount:
 internal fun shouldPrefetchMapCellPage(
     loaded: Boolean, loading: Boolean, error: Boolean,
     startOffset: Int, visibleItems: Int, totalCount: Long,
-    lastVisibleIndex: Int, userScrolled: Boolean, edgeArmed: Boolean,
+    lastVisibleIndex: Int, activelyScrolling: Boolean, edgeArmed: Boolean,
 ): Boolean =
-    loaded && !loading && !error && userScrolled && edgeArmed &&
+    // A prior scroll is NOT authority to prefetch on later asynchronous
+    // layout, Viewer return, image decode or page append. It must be moving
+    // at the instant the edge is entered.
+    loaded && !loading && !error && activelyScrolling && edgeArmed &&
         mapCellHasNextPage(startOffset, visibleItems, totalCount) &&
         lastVisibleIndex >= (visibleItems - 4).coerceAtLeast(0)
 
@@ -50,7 +53,6 @@ internal fun ColumnScope.GalleryMapCellWall(
         cell.cellX.toString(), cell.cellY.toString(),
         cell.nodeId.toString(), cell.nodeRevision.toString())
     var edgeArmed by remember(cellIdentity) { mutableStateOf(true) }
-    var userScrolled by remember(cellIdentity) { mutableStateOf(false) }
     // Keep Owner paging in the existing Controller, never pre-load the entire
     // cell or run speculative GETs on initial layout / Viewer return.
     LaunchedEffect(cellIdentity, state.galleryLoaded, state.galleryItems.size,
@@ -59,8 +61,10 @@ internal fun ColumnScope.GalleryMapCellWall(
             gridState.isScrollInProgress to
                 (gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1)
         }.collect { (scrolling, last) ->
-            if (scrolling) userScrolled = true
-            if (mapCellEdgeWasLeft(state.galleryItems.size, last))
+            // The new Owner page's footer/row layout may change indices even
+            // while the finger is stationary. Only an actual ongoing scroll
+            // can re-arm the edge; a stale "scrolled once" flag cannot.
+            if (scrolling && mapCellEdgeWasLeft(state.galleryItems.size, last))
                 edgeArmed = true
             if (shouldPrefetchMapCellPage(
                     loaded = state.galleryLoaded, loading = state.loading,
@@ -68,7 +72,7 @@ internal fun ColumnScope.GalleryMapCellWall(
                     startOffset = state.galleryOffset,
                     visibleItems = state.galleryItems.size,
                     totalCount = state.galleryTotal, lastVisibleIndex = last,
-                    userScrolled = userScrolled, edgeArmed = edgeArmed)) {
+                    activelyScrolling = scrolling, edgeArmed = edgeArmed)) {
                 edgeArmed = false
                 controller.galleryLoadNewer()
             }
