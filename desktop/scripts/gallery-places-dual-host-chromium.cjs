@@ -77,6 +77,13 @@ const sdkStub='('+function sdkFactory(){
     getBounds(){return {getSouthWest:()=>new Point(100,20),
       getNorthEast:()=>new Point(125,40)}}
     pointToPixel(point){
+      // Only an explicitly armed test simulates a transient SDK projection
+      // glitch during a pan. Real SDK behavior is otherwise unchanged.
+      if(this.invalidPixelFrames>0){
+        this.invalidPixelFrames--
+        this.pixelErrors=(this.pixelErrors||0)+1
+        return {x:NaN,y:NaN}
+      }
       // The screenshot repro uses two exact synthetic BD09 representatives.
       // Keep their actual pixels separated by 99x90: old oversized
       // collision pruning hid 28 but these 72px photo cards do NOT overlap.
@@ -2421,6 +2428,114 @@ async function testPhotoCoverDuringMapPan(browser,mode,port){
   }finally{await context.close()}
 }
 
+// A real mounted map can have an occasional undecodable pointToPixel frame
+// while panning. This is NOT evidence all Owner photos left the camera.
+// Keep the previous inert visual on a completely invalid frame, then accept
+// a valid new frame; a valid finite OFFSCREEN projection must still clear it.
+async function testTransientBadPixelProjection(browser,mode,port){
+  const context=await browser.newContext({
+    viewport:{width:960,height:760},locale:'zh-CN',
+    ignoreHTTPSErrors:true,serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(30000)
+  const errors=[]
+  page.on('pageerror',error=>errors.push(error.message))
+  await page.route('https://api.map.baidu.com/api?**',route=>{
+    assert.equal(new URL(route.request().url()).searchParams.get('ak'),
+      'TEST_ONLY_BROWSER_AK')
+    return route.fulfill({status:200,contentType:'text/javascript',body:sdkStub})
+  })
+  try{
+    await page.goto('https://'+galleryHost+':'+port+'/?mode='+mode,
+      {waitUntil:'domcontentloaded'})
+    await page.getByText('当前地图可查看 9 张照片',{exact:true}).waitFor()
+    const cover=page.locator('[data-xdrive-places-trusted-photo-cover]').first()
+    await cover.waitFor({state:'visible'})
+    const old=await page.evaluate(()=>({
+      queries:window.__mapProbe.queries.length,
+      previews:window.__mapProbe.photoPreviewRanges.length,
+    }))
+    const sdkFrame=mode==='inline' ? page
+      : page.frames().find(frame=>frame.url().includes(childHost))
+    assert(sdkFrame,'real mounted SDK map required')
+    await sdkFrame.evaluate(()=>{
+      const sdk=window.__xdriveSyntheticMapInstances?.at(-1)
+      if(!sdk)throw Error('SDK map not mounted')
+      sdk.panOffset={x:32,y:18}
+      sdk.listeners.get('movestart')?.()
+      sdk.listeners.get('moving')?.()
+    })
+    const moving=page.locator('[data-xdrive-places-gesture-photo-cover]').first()
+    await moving.waitFor({state:'visible'})
+    const before=await moving.boundingBox()
+    assert(before)
+    await sdkFrame.evaluate(()=>{
+      const sdk=window.__xdriveSyntheticMapInstances?.at(-1)
+      sdk.invalidPixelFrames=1
+      sdk.listeners.get('moving')?.()
+    })
+    await page.waitForFunction(()=>{
+      const frame=window.__xdriveSyntheticMapInstances?.at(-1)
+      return frame ? frame.pixelErrors===1 : true
+    }).catch(()=>{}) // isolated SDK has a separate Origin; check below there.
+    // Wait two animation frames. The injected NaN frame MUST NOT publish
+    // an empty gesture-projections message or discard the old photos.
+    await page.waitForTimeout(100)
+    const errorsSeen=await sdkFrame.evaluate(()=>
+      window.__xdriveSyntheticMapInstances?.at(-1)?.pixelErrors||0)
+    const still=await moving.boundingBox()
+    const state=await page.evaluate(()=>({
+      old:document.querySelectorAll(
+        '[data-xdrive-places-gesture-photo-cover]').length,
+      current:document.querySelectorAll(
+        '[data-xdrive-places-trusted-photo-cover]').length,
+      ariaHidden:document.querySelector(
+        '[data-xdrive-places-gesture-photo-cover]')?.getAttribute('aria-hidden'),
+      disabled:document.querySelector(
+        '[data-xdrive-places-gesture-photo-cover]')?.disabled,
+      queries:window.__mapProbe.queries.length,
+      previews:window.__mapProbe.photoPreviewRanges.length,
+    }))
+    record(mode+': transient NaN SDK pixel does not clear inert old photo',
+      errorsSeen===1&&Boolean(still)&&
+      Math.abs(still.x-before.x)<3&&Math.abs(still.y-before.y)<3&&
+      state.old>0&&state.current===0&&state.ariaHidden==='true'&&
+      state.disabled===true&&state.queries===old.queries&&
+      state.previews===old.previews&&errors.length===0)
+    await sdkFrame.evaluate(()=>{
+      const sdk=window.__xdriveSyntheticMapInstances?.at(-1)
+      sdk.panOffset={x:77,y:39}
+      sdk.listeners.get('moving')?.()
+    })
+    await page.waitForFunction(origin=>{
+      const marker=document.querySelector('[data-xdrive-places-gesture-photo-cover]')
+      if(!marker)return false
+      const rect=marker.getBoundingClientRect()
+      return Math.abs(rect.x-origin.x-45)<3&&Math.abs(rect.y-origin.y-21)<3
+    },before)
+    record(mode+': fresh decodable pixel resumes same authorized photo visuals',
+      await moving.isVisible())
+    await sdkFrame.evaluate(()=>{
+      const sdk=window.__xdriveSyntheticMapInstances?.at(-1)
+      sdk.panOffset={x:1700,y:0}
+      sdk.listeners.get('moving')?.()
+    })
+    await moving.waitFor({state:'hidden'})
+    record(mode+': true finite offscreen projection is not artificially retained',
+      await moving.count()===0)
+    await sdkFrame.evaluate(()=>{
+      const sdk=window.__xdriveSyntheticMapInstances?.at(-1)
+      sdk.panOffset={x:0,y:0}
+      sdk.listeners.get('moving')?.()
+      sdk.listeners.get('moveend')?.()
+    })
+    await cover.waitFor({state:'visible'})
+    await moving.waitFor({state:'hidden'})
+    record(mode+': pan after pixel glitch reauthorizes current Owner camera',
+      errors.length===0)
+  } finally {await context.close()}
+}
+
 // Real primary mouse-down is held across a premature SDK moveend. The visual
 // photo layer must NOT disappear after the normal 500ms camera debounce;
 // only mouseup permits the next signed Owner /cells request. The SDK stub is
@@ -3368,6 +3483,8 @@ async function main(){
       await testPhotoMarkerPresentation(browser,'isolated',port)
       await testPhotoCoverDuringMapPan(browser,'inline',port)
       await testPhotoCoverDuringMapPan(browser,'isolated',port)
+      await testTransientBadPixelProjection(browser,'inline',port)
+      await testTransientBadPixelProjection(browser,'isolated',port)
       await testPhotoCoverWhileMouseHeld(browser,'inline',port)
       await testPhotoCoverWhileMouseHeld(browser,'isolated',port)
       await testPhotoCellAlbumDialog28(browser,'inline',port)
