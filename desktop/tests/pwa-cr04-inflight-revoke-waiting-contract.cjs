@@ -28,7 +28,9 @@ test('CR04 same native session uses production P1 peer purge and real waiting SW
   'summary.realGoFolderRevokedInFlight=true',
   "await peer.locator('[data-xdrive-mobile-app-navigation-trigger]').click()",
   'summary.thirdColdNoResurrection=true'])assert(browser.includes(token),token)
- for(const token of ['validationController.current?.abort()','xDrivePwaObserveOfflinePurge(reset)',
+ for(const token of ['const old = validationController.current',
+  'validationController.current = null', 'try { old?.abort() }',
+  'xDrivePwaObserveOfflinePurge(reset)',
   'current !== sequence.current','await api.listRange(selected.id, 0, 1'])
   assert(ui.includes(token),token)
  assert(store.includes('offlinePurgeEpoch += 1'))
