@@ -34,8 +34,12 @@ export function xDriveRoutedViewerMapEntry(
   // (Album/filter only); dropping its BD09 geometry would widen the original
   // authorized Viewer range. Leave those to the original map return flow.
   if (target.kind !== 'all' && target.kind !== 'album') return null
-  if ((target.kind === 'all' && target.id) ||
-      (target.kind === 'album' && !target.id))
+  // This context can be reconstructed from the browser's sessionStorage,
+  // which is not a trusted TypeScript value. A malformed album ID must never
+  // throw in the routed Viewer (or turn a corrupted 'all' ID into Library).
+  if ((target.kind === 'all' && target.id !== undefined && target.id !== '') ||
+      (target.kind === 'album' &&
+        (typeof target.id !== 'string' || target.id.length === 0)))
     return null
   const albumKey = target.id ?? ''
   const by = target.query.sort_by ?? 'captured'
