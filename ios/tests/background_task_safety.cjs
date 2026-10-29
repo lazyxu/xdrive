@@ -57,3 +57,25 @@ test('offline emergency stop revokes every local automatic schedule without requ
   assert.match(ui, /data-xdrive-ios-auto-stop-all-local/)
   assert.match(login, /data-xdrive-ios-emergency-stop-autobackup/)
 })
+
+
+test('a late Owner/root verification never starts PhotoKit after BG expiry or logout', () => {
+  const background = read('ios/XDriveIOS/BackgroundPhotosTask.swift')
+  const original = read('ios/XDriveIOS/ForegroundPhotoBackupMVP.swift')
+  const bgVerifier = background.indexOf('current = try await XDriveNativeOwnerRootVerifier(')
+  const bgVerified = background.indexOf(').verify()', bgVerifier)
+  const bgCancel = background.indexOf('try Task.checkCancellation()', bgVerified)
+  const bgGate = background.indexOf('XDriveIOSPhotoRunGate.shared.acquire()', bgVerified)
+  const bgDue = background.indexOf('.reserveDue(owner: current)', bgVerified)
+  assert.ok(bgVerifier >= 0 && bgVerified > bgVerifier)
+  assert.ok(bgCancel > bgVerified && bgCancel < bgGate && bgCancel < bgDue,
+    'canceled BGTask must be rejected before the run gate and due-state mutation')
+  const sourceVerifier = original.indexOf('let latest = try await XDriveNativeOwnerRootVerifier(')
+  const sourceVerified = original.indexOf(').verify()', sourceVerifier)
+  const sourceCancel = original.indexOf('try Task.checkCancellation()', sourceVerified)
+  const snapshot = original.indexOf('let scanner = XDrivePhotoKitBoundedSnapshotScanner()', sourceVerified)
+  const photoRead = original.indexOf('await scanner.start(atOffset:', sourceVerified)
+  assert.ok(sourceVerifier >= 0 && sourceVerified > sourceVerifier)
+  assert.ok(sourceCancel > sourceVerified && sourceCancel < snapshot && sourceCancel < photoRead,
+    'every caller of shared original upload must reject cancellation before PhotoKit reads')
+})

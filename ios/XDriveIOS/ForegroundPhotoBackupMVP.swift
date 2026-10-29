@@ -57,6 +57,10 @@ struct XDriveIOSForegroundPhotoBackupMVP {
               latest.instanceID == owner.instanceID else {
             throw XDriveIOSPhotoBackupMVPError.identityNotVerified
         }
+        // An expired BGTask, navigation or Owner switch may cancel the job
+        // while the HTTPS verifier is awaiting the Server. Check again
+        // before even starting a potentially expensive PhotoKit snapshot.
+        try Task.checkCancellation()
 
         let scanner = XDrivePhotoKitBoundedSnapshotScanner()
         var report = XDriveIOSPhotoBackupProgress()

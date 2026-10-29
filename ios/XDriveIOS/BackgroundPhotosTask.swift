@@ -176,6 +176,11 @@ final class XDriveIOSBackgroundPhotos {
                     self.authorization = nil
                     return
                 }
+                // Logout, local emergency OFF or BGTask expiry can happen
+                // while the async HTTPS Owner/root probe is in flight.
+                // Never advance the persisted due cursor or read PhotoKit
+                // after the already canceled task receives a late success.
+                try Task.checkCancellation()
                 guard current.origin == authorization.owner.origin,
                       current.instanceID == authorization.owner.instanceID,
                       current.ownerID == authorization.owner.ownerID,
