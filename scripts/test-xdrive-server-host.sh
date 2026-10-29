@@ -280,7 +280,12 @@ printf 'name: xdrive\nservices: {}\n' > "$TMP/home/config/docker-compose.yml"
 SNAPSHOT="$TMP/home/backups/snapshots/xdrive-backup-20260928T120000Z"
 mkdir -p "$SNAPSHOT"
 printf 'db-dump\n' > "$SNAPSHOT/database.dump"
-printf 'blob-tar\n' > "$SNAPSHOT/blobs.tar"
+# The v1 Host verifier now audits tar headers, not just SHA-256 checksums.
+# Build a genuine archive so this positive fixture represents a restorable
+# file-data snapshot; keep corrupted-archive tests in their separate cases.
+printf 'host-manager fixture blob\n' > "$TMP/fixture-blob"
+tar -cf "$SNAPSHOT/blobs.tar" -C "$TMP" fixture-blob
+tar -tf "$SNAPSHOT/blobs.tar" | grep -Fxq fixture-blob
 printf '{"ok":true}\n' > "$SNAPSHOT/verify.json"
 cat > "$SNAPSHOT/manifest.json" <<'EOF'
 {
