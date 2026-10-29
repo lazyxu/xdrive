@@ -36,6 +36,8 @@ import {
   xDriveFileExplorerSearchFiltersSignature,
   xDriveFileExplorerSearchFilterLabels,
   xDriveFileNeedsBrowserCompatibleImagePreview,
+  XDRIVE_NATIVE_FILE_AVAILABILITY_OPTIONS,
+  xDriveFileExplorerThrowUploadFailure,
 } from '@xdrive/shared'
 import {
   XDriveFileExplorer,
@@ -85,7 +87,6 @@ import type {
 import type {
   XDriveFileExplorerGrouping,
   XDriveFileExplorerDownloadResult,
-  XDriveFileExplorerSearchAvailabilityOption,
   XDriveFileExplorerSearchSourceOption,
   XDriveFileExplorerMediaDetailsRef,
 } from '@xdrive/shared'
@@ -94,15 +95,6 @@ import type {
 const DESKTOP_FILE_VIEW_KEY = XDRIVE_HOST_FILES_PREFERENCES.viewMode
 const DESKTOP_FILE_DETAILS_LAYOUT_KEY = XDRIVE_HOST_FILES_PREFERENCES.detailsLayout
 const DESKTOP_FILE_VIEW_PREFERENCES_KEY = XDRIVE_HOST_FILES_PREFERENCES.viewPreferences
-
-const desktopSearchAvailabilityOptions: readonly XDriveFileExplorerSearchAvailabilityOption[] = [
-  { value: 'local', label: '本地可用' },
-  { value: 'always-local', label: '始终保留在此设备上' },
-  { value: 'online-only', label: '仅联机' },
-  { value: 'cloud', label: '云端' },
-  { value: 'mixed', label: '混合' },
-  { value: 'syncing', label: '正在同步' },
-]
 
 let desktopFilePropertiesRequestSequence = 0
 
@@ -150,12 +142,6 @@ function desktopFileAvailabilityPathKey(value?: string) {
 }
 function desktopActiveHydrationProgress(transfers: readonly AgentTransfer[]) {
   return xDriveFileExplorerDeviceHydrationProgress(transfers)
-}
-
-function throwDesktopUploadError(error: { code?: string; message: string }): never {
-  const failure = new Error(error.message)
-  if (error.code === 'transfer_cancelled') failure.name = 'AbortError'
-  throw failure
 }
 
 export default function DesktopFileExplorer({
@@ -695,7 +681,7 @@ export default function DesktopFileExplorer({
       const result = await hostPort.write.cloudUploadPreflight(
         parentID, file.name, transferGroupUploadCancelSupported ? groupID : undefined,
       )
-      if (!result.ok) throwDesktopUploadError(result.error)
+      if (!result.ok) xDriveFileExplorerThrowUploadFailure(result.error)
       return result.data
     },
     preflightBatch: async (targets, _signal, groupID) => {
@@ -703,7 +689,7 @@ export default function DesktopFileExplorer({
         targets.map((target) => ({ parent_id: target.parentID, name: target.file.name })),
         transferGroupUploadCancelSupported ? groupID : undefined,
       )
-      if (!result.ok) throwDesktopUploadError(result.error)
+      if (!result.ok) xDriveFileExplorerThrowUploadFailure(result.error)
       return result.data
     },
     upload: async (parentID, file, conflictPolicy, _onProgress, transferID) => {
@@ -713,7 +699,7 @@ export default function DesktopFileExplorer({
         conflictPolicy,
         transferID,
       )
-      if (!result.ok) throwDesktopUploadError(result.error)
+      if (!result.ok) xDriveFileExplorerThrowUploadFailure(result.error)
       return result.data
     },
     transferLifecycle: transferLifecycleSupported ? {
@@ -2103,7 +2089,7 @@ const desktopTransferLifecycleChildBatchSize = 1000
           conditions: xDriveFileExplorerSearchFilterLabels(searchFilters, {
             sourceOptions: searchSourceOptions,
             tagOptions: fileTagsSupported ? organization.tagOptions : [],
-            availabilityOptions: fileAvailabilitySupported ? desktopSearchAvailabilityOptions : [],
+            availabilityOptions: fileAvailabilitySupported ? XDRIVE_NATIVE_FILE_AVAILABILITY_OPTIONS : [],
           }),
           resultCount: searchReady ? searchVirtualCollection?.itemCount ?? 0 : null,
           loading: searchLoading,
@@ -2275,7 +2261,7 @@ const desktopTransferLifecycleChildBatchSize = 1000
             filters={searchFilters}
             sourceOptions={searchSourceOptions}
             tagOptions={fileTagsSupported ? organization.tagOptions : []}
-            availabilityOptions={fileAvailabilitySupported ? desktopSearchAvailabilityOptions : []}
+            availabilityOptions={fileAvailabilitySupported ? XDRIVE_NATIVE_FILE_AVAILABILITY_OPTIONS : []}
             canSaveSearch={savedSearchesSupported && canSaveSmartFolder}
             onSaveSearch={savedSearchesSupported ? () => setSaveSearchOpen(true) : undefined}
             onChange={changeSearchFilters}
