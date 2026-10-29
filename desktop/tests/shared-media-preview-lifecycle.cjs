@@ -827,6 +827,101 @@ test('Video poster appears during pending ticket and remains behind failure/retr
   }
 })
 
+
+test('native video poster switches Owner loader for the same exact Node revision without reloading stream', async () => {
+  const oldRevoke = URL.revokeObjectURL
+  const revoked = []
+  URL.revokeObjectURL = value => revoked.push(value)
+  const thumbnailReads = []
+  const sourceReads = []
+  const preview = async (_node, kind, signal) => {
+    sourceReads.push({ kind, signal })
+    return 'https://example.invalid/video-current.mp4'
+  }
+  const a = async (_node, signal) => {
+    thumbnailReads.push({ owner: 'A', signal })
+    return 'blob:owner-a-poster'
+  }
+  const b = (_node, signal) => new Promise(resolve => {
+    thumbnailReads.push({ owner: 'B', signal, resolve })
+  })
+  const target = { id: 9017, revision: 7, name: 'shared-id.mp4', kind: 'file' }
+  const props = loadImagePreview => React.createElement(XDriveFilePreviewSurface, {
+    target, loadPreviewURL: preview, loadImagePreview,
+  })
+  let renderer
+  try {
+    await act(async () => { renderer = create(props(a)); await Promise.resolve() })
+    assert.equal(thumbnailReads.length, 1)
+    assert.equal(renderer.root.findByType('video').props.poster, 'blob:owner-a-poster')
+    assert.equal(sourceReads.length, 1)
+    await act(async () => { renderer.update(props(b)); await Promise.resolve() })
+    assert.equal(thumbnailReads.length, 2,
+      'new authenticated thumbnail loader must re-acquire even with same Node and revision')
+    assert.equal(thumbnailReads[0].signal.aborted, true,
+      'old poster task must abort even when Node and revision are unchanged')
+    assert.equal(renderer.root.findByType('video').props.poster, undefined,
+      'pending new Owner cannot render the previous poster pixels')
+    assert.equal(renderer.root.findByType('video').props.src,
+      'https://example.invalid/video-current.mp4',
+      'changing only thumbnail source does not restart the unchanged video stream')
+    assert.deepEqual(revoked, ['blob:owner-a-poster'])
+    await act(async () => {
+      thumbnailReads[1].resolve('blob:owner-b-poster')
+      await Promise.resolve()
+    })
+    assert.equal(renderer.root.findByType('video').props.poster, 'blob:owner-b-poster')
+    assert.equal(sourceReads.length, 1, 'poster handoff did not fetch a second original')
+    await act(async () => { renderer.unmount(); renderer = null })
+    assert.deepEqual(revoked, ['blob:owner-a-poster', 'blob:owner-b-poster'],
+      'owner-local Blob is retired when replaced or Viewer closed')
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    URL.revokeObjectURL = oldRevoke
+  }
+})
+
+test('late borrowed video poster from former Owner never displaces the new Owner', async () => {
+  let resolveOld
+  const freed = { old: 0, current: 0 }
+  const reads = []
+  const loaderA = (_node, signal) => new Promise(resolve => {
+    resolveOld = resolve
+    reads.push({ owner: 'A', signal })
+  })
+  const loaderB = async (_node, signal) => {
+    reads.push({ owner: 'B', signal })
+    return { url: 'blob:owner-b-borrowed', release: () => { freed.current++ } }
+  }
+  const preview = async () => 'https://example.invalid/unchanged-original'
+  const target = { id: 9024, revision: 4, name: 'borrowed.mp4', kind: 'file' }
+  const props = loadImagePreview => React.createElement(XDriveFilePreviewSurface, {
+    target, loadPreviewURL: preview, loadImagePreview,
+  })
+  let renderer
+  try {
+    await act(async () => { renderer = create(props(loaderA)); await Promise.resolve() })
+    assert.equal(reads.length, 1)
+    await act(async () => { renderer.update(props(loaderB)); await Promise.resolve() })
+    assert.equal(reads[0].signal.aborted, true)
+    assert.equal(reads.length, 2)
+    assert.equal(renderer.root.findByType('video').props.poster, 'blob:owner-b-borrowed')
+    await act(async () => {
+      resolveOld({ url: 'blob:owner-a-borrowed', release: () => { freed.old++ } })
+      await Promise.resolve()
+    })
+    assert.deepEqual(freed, { old: 1, current: 0 },
+      'old cancelled borrowed reference was returned to its original cache')
+    assert.equal(renderer.root.findByType('video').props.poster, 'blob:owner-b-borrowed',
+      'late former Owner must not replace the current poster')
+    await act(async () => { renderer.unmount(); renderer = null })
+    assert.deepEqual(freed, { old: 1, current: 1 },
+      'new current borrowed lease was released at Viewer Close')
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+  }
+})
+
 test('Old video thumbnail result is cancelled and revoked after Viewer source replacement', async () => {
   let renderer
   const requests = []
