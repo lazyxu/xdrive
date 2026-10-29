@@ -51,6 +51,24 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-auto-policy-check"
           "$RUNNER_TEMP/xdrive-ios-auto-policy-check"
 
+      - name: Verify original still/video media limits
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/PhotoBackupMediaPolicy.swift \
+            ios/tests/PhotoOriginalMediaPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-original-media-check"
+          "$RUNNER_TEMP/xdrive-ios-original-media-check"
+
+      - name: Verify lossless Live still/motion ZIP and manifest
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/LiveOriginalArchive.swift \
+            ios/tests/LiveOriginalArchiveChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-live-original-check"
+          "$RUNNER_TEMP/xdrive-ios-live-original-check"
+
       - name: Prepare native brand and home screen icon
         run: bash ios/scripts/prepare-assets.sh
 

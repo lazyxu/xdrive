@@ -135,6 +135,8 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                 "scanWindows": true,
                 "receiptReview": true,
                 "foregroundAutoSchedule": true,
+                "originalVideo": true,
+                "liveOriginalBundle": true,
                 "maxScannedAssets": XDriveIOSForegroundPhotoBackupMVP.maxScannedAssets,
                 "maxNewOriginalsPerRun": XDriveIOSForegroundPhotoBackupMVP.maxNewOriginalsPerRun
             ])
@@ -373,6 +375,8 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                         var answer: [String: Any] = [
                             "ran": true, "uploaded": report.uploaded,
                             "verifiedAlready": report.verifiedAlready,
+                            "videoUploaded": report.videoUploaded,
+                            "liveBundleUploaded": report.liveBundleUploaded,
                             "needsReview": report.needsReview
                         ]
                         answer["schedule"] = self.autoStatusObject(next)
@@ -579,6 +583,10 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
             "scanned": progress.scanned,
             "uploaded": progress.uploaded,
             "verifiedAlready": progress.verifiedAlready,
+            "videoUploaded": progress.videoUploaded,
+            "videoVerifiedAlready": progress.videoVerifiedAlready,
+            "liveBundleUploaded": progress.liveBundleUploaded,
+            "liveBundleVerifiedAlready": progress.liveBundleVerifiedAlready,
             "liveNotSupported": progress.liveNotSupported,
             "videosNotSupported": progress.videosNotSupported,
             "unavailable": progress.unavailable,
@@ -602,7 +610,7 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
             consent = continuation
             let alert = UIAlertController(
                 title: "开始 iPhone 相册备份？",
-                message: "将当前已授权相册第 \(startOffset + 1) 项起、最多 256 项中的普通照片原件上传到 \(owner.origin.host ?? "xDrive") 的 \(owner.username) 云端文件，每轮最多新增 20 张。Live Photo 和视频不会标记完成。\n\(allowCloud ? "允许下载 iCloud 原件。" : "不下载 iCloud 原件。")",
+                message: "将当前已授权相册第 \(startOffset + 1) 项起、最多 256 项中的照片和视频原件上传到 \(owner.origin.host ?? "xDrive") 的 \(owner.username) 云端文件，每轮最多新增 20 项。Live Photo 两份原件以一份可恢复 ZIP 归档；尚不能在图库直接播放。\n\(allowCloud ? "允许下载 iCloud 原件。" : "不下载 iCloud 原件。")",
                 preferredStyle: .alert
             )
             alert.addAction(UIAlertAction(title: "取消", style: .cancel) { [weak self] _ in

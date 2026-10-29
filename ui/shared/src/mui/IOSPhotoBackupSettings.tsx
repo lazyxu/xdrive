@@ -20,6 +20,10 @@ export interface XDriveIOSPhotoBackupProgress {
   scanned: number
   uploaded: number
   verifiedAlready: number
+  videoUploaded?: number
+  videoVerifiedAlready?: number
+  liveBundleUploaded?: number
+  liveBundleVerifiedAlready?: number
   liveNotSupported: number
   videosNotSupported: number
   unavailable: number
@@ -65,6 +69,8 @@ export interface XDriveIOSPhotoBackupHost {
   scanWindowsSupported?: boolean
   receiptReviewSupported?: boolean
   foregroundAutoSupported?: boolean
+  originalVideoSupported?: boolean
+  liveOriginalBundleSupported?: boolean
   capabilities(): Promise<boolean>
   status(session: XDriveIOSPhotoBackupSession): Promise<XDriveIOSPhotoStatus>
   requestAccess(session: XDriveIOSPhotoBackupSession): Promise<XDriveIOSPhotoStatus>
@@ -268,9 +274,19 @@ export function XDriveIOSPhotoBackupSettings({
       <Stack spacing={1.5}>
         <Typography variant="body2" color="text.secondary">
           使用当前 xDrive 登录账户，将 iPhone 已授权的普通照片原件备份到云端文件。
-          每轮只扫描选定分段最多 256 项，新增最多 20 张普通照片。
-          选择较早的分段可检查更多已授权项目；Live Photo 和视频仍未完成原件备份。
+          每轮只扫描选定分段最多 256 项、最多新增 20 个原件。
+          普通照片和视频使用完整原件；Live Photo 的静态图与动态视频作为一个无损 ZIP 归档，
+          两份原件都通过服务端收据验证后才算完成。
         </Typography>
+        {!host.originalVideoSupported || !host.liveOriginalBundleSupported ? (
+          <Alert severity="info">
+            当前安装的 iOS IPA 尚未支持全部视频/Live 原件备份，请更新 IPA 后以原生能力状态为准。
+          </Alert>
+        ) : (
+          <Typography variant="caption" color="text.secondary">
+            Live ZIP 可完整恢复两份原件，但不是图库中可直接播放的 Live Photo 配对媒体。
+          </Typography>
+        )}
         {status ? (
           <Typography variant="body2" data-xdrive-ios-photos-permission>
             系统相册权限：{status.authorization === 'authorized' ? '全部照片'
@@ -342,8 +358,11 @@ export function XDriveIOSPhotoBackupSettings({
               从第 {progressOffset + 1} 项起：已扫描 {progress.scanned} / {windowCapacity}
               {' · '}新增 {progress.uploaded}
               {' · '}已核验跳过 {progress.verifiedAlready}
-              {' · '}Live 未支持 {progress.liveNotSupported}
-              {' · '}视频未支持 {progress.videosNotSupported}
+              {' · '}视频新增 {progress.videoUploaded ?? 0}
+              {' · '}视频核验 {progress.videoVerifiedAlready ?? 0}
+              {' · '}Live ZIP 新增 {progress.liveBundleUploaded ?? 0}
+              {' · '}Live ZIP 核验 {progress.liveBundleVerifiedAlready ?? 0}
+              {' · '}未支持资源 {progress.liveNotSupported + progress.videosNotSupported}
               {' · '}原件不可用 {progress.unavailable}
               {' · '}待核对 {progress.needsReview}
             </Typography>

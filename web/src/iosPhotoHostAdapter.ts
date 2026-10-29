@@ -36,6 +36,8 @@ class IOSPhotoBackupHost implements XDriveIOSPhotoBackupHost {
   scanWindowsSupported = false
   receiptReviewSupported = false
   foregroundAutoSupported = false
+  originalVideoSupported = false
+  liveOriginalBundleSupported = false
 
   constructor(handler: NativeMessageHandler) {
     this.handler = handler
@@ -94,6 +96,7 @@ class IOSPhotoBackupHost implements XDriveIOSPhotoBackupHost {
       protocolVersion: number; platform: string; photoKit: boolean
       foregroundStillBackup: boolean; scanWindows?: boolean
       receiptReview?: boolean; foregroundAutoSchedule?: boolean
+      originalVideo?: boolean; liveOriginalBundle?: boolean
     }>('capabilities')
     const supported = value?.protocolVersion === 1 &&
       value.platform === 'ios' && value.photoKit === true &&
@@ -101,6 +104,8 @@ class IOSPhotoBackupHost implements XDriveIOSPhotoBackupHost {
     this.scanWindowsSupported = supported && value.scanWindows === true
     this.receiptReviewSupported = supported && value.receiptReview === true
     this.foregroundAutoSupported = supported && value.foregroundAutoSchedule === true
+    this.originalVideoSupported = supported && value.originalVideo === true
+    this.liveOriginalBundleSupported = supported && value.liveOriginalBundle === true
     return supported
   }
 

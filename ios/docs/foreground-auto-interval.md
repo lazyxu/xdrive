@@ -56,11 +56,12 @@ renewal, durable upload session across app relaunch and OS scheduling require
 separate implementation and physical acceptance. Apple BGProcessingTask
 earliestBeginDate does not promise an exact wake-up time.
 
-Video and Live original files are implemented in independent Draft PRs #3139
-and #3142. This automatic scheduling PR uses the existing current #3123
-foreground runner while those resource PRs are integrated; do not label it a
-complete photo+video+Live automatic backup release until all accepted code and
-receipts share one tested HEAD.
+This consolidated follow-up contains the original-video path from #3139,
+the complete-still+motion one-Node Live ZIP path from #3142, the read-only
+receipt review from #3135, and this authorized foreground schedule.
+The single merged source still needs **exact-HEAD native IPA and Web CI**.
+It must not be described as verified until that evidence exists. A Live ZIP
+preserves both originals, not immediate Gallery Live playback.
 
 ## Verification
 
