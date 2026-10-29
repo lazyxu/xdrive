@@ -393,6 +393,8 @@ assert_invalid_inventory_manifest nested_false '{"format_version":1,"file_data_i
 assert_invalid_inventory_manifest duplicate_file_data '{"format_version":1,"file_data_included":false,"file_data_included":true,"consistency_verified":true}' incomplete true
 assert_invalid_inventory_manifest inconsistent_nested_true '{"format_version":1,"file_data_included":false,"consistency_verified":false,"note":{"consistency_verified":true}}' inconsistent false
 assert_invalid_inventory_manifest wrong_version '{"format_version":2,"file_data_included":false,"consistency_verified":true}' incomplete true
+assert_invalid_inventory_manifest missing_consistency '{"format_version":1,"file_data_included":false}' incomplete false
+assert_invalid_inventory_manifest boolean_string '{"format_version":1,"file_data_included":"false","consistency_verified":true}' incomplete true
 # Invalid inode types and overlarge JSON must fail immediately, including
 # FIFOs: a backup-administration read may never wait for an external writer.
 manifest_guard="$TMP/admin-manifest-guard"
