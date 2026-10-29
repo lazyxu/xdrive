@@ -152,16 +152,28 @@ export function xDriveMountBaiduInlineMap<T>(
     if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) ||
         width < 1 || height < 1 || width > 4096 || height > 4096) return
     const projected: Array<{selection:T;count:number;x:number;y:number}> = []
+    let validPixels = 0
     for (const cell of gesture ? gestureCells : cells) {
       try {
         const position = map.pointToPixel(new sdk.Point(cell.longitude,cell.latitude))
         const x = Math.round(position.x)
         const y = Math.round(position.y)
-        if (!Number.isSafeInteger(x) || !Number.isSafeInteger(y) ||
-            x < 0 || y < 0 || x > width || y > height) continue
+        if (!Number.isSafeInteger(x) || !Number.isSafeInteger(y)) continue
+        // Finite pixels outside the viewport are a REAL offscreen result,
+        // not a projection failure. Only an entirely undecodable moving frame
+        // may retain the last visual, never a deliberately offscreen marker.
+        validPixels++
+        if (x < 0 || y < 0 || x > width || y > height) continue
         projected.push({selection:cell.selection,count:cell.count,x,y})
       } catch { /* Optional SDK projection is not media authority. */ }
     }
+    // During some SDK animation frames pointToPixel briefly returns NaN or
+    // throws for EVERY old Cell. Publishing [] here would erase all the
+    // previously signed, already-inert photo covers before mouseup. The last
+    // visual can remain until a decodable frame or fresh /cells arrives.
+    // Never reuse it as clickable Owner authority or suppress normal zero
+    // projections outside gesture mode.
+    if (gesture && gestureCells.length>0 && validPixels===0) return
     if (gesture)options.onGestureProjectedCells?.({width,height,cells:projected})
     else options.onProjectedCells?.({width,height,cells:projected})
   }
