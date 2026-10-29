@@ -31,7 +31,8 @@ Gallery Caddy upgrade.
 To use the isolated alternative:
 
 1. Keep the Child on an independently controlled HTTPS **site** that passes
-   `node deploy/baidu-isolated-child/validate-site.mjs` and has a correctly
+   `node deploy/baidu-isolated-child/validate-site.mjs "$gallery_https_origin" "$child_https_origin"`
+   (two trusted, distinct HTTPS site origins) and has a correctly
    scoped Host-only Gallery session. Follow `Caddyfile.example`; never import
    that host config into the Gallery site or expose `/api/*`.
 2. From the **same published exact-SHA Caddy image** as the Server/Gallery,
