@@ -57,6 +57,7 @@ import {
   xDriveFileExplorerSearchFilterLabels,
   xDriveFileExplorerProjectSearchSources,
   xDriveFileExplorerReadNodeID,
+  xDriveFileExplorerPreviewRequest,
   xDriveFileExplorerSelectionRequest,
   xDriveFileNeedsBrowserCompatibleImagePreview,
 } from '../../ui/shared/src'
@@ -1072,16 +1073,16 @@ export default function WebFileExplorer({
     signal?: AbortSignal,
     onProgress?: XDriveByteProgressHandler,
   ) => {
-    if (item.kind !== 'file') return null
+    const plan = xDriveFileExplorerPreviewRequest(item, kind, !signal?.aborted)
+    if (!plan) return null
     try {
-      if (kind === 'live_photo') {
-        return await api.mediaLivePhotoStillURL(Number(item.id), signal)
+      if (plan.mode === 'live-still') {
+        return await api.mediaLivePhotoStillURL(plan.nodeID, signal)
       }
-      if (kind === 'image' && xDriveFileNeedsBrowserCompatibleImagePreview(item.name)) {
-        return await api.mediaAnalysisPreviewURL(Number(item.id), signal, Number(item.revision), onProgress)
+      if (plan.mode === 'analysis-image') {
+        return await api.mediaAnalysisPreviewURL(plan.nodeID, signal, Number(item.revision), onProgress)
       }
-      if (!['pdf', 'video', 'audio', 'image'].includes(kind)) return null
-      return await api.filePreviewURL(Number(item.id), signal)
+      return await api.filePreviewURL(plan.nodeID, signal)
     } catch {
       return null
     }

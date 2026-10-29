@@ -23,6 +23,7 @@ import {
   xDriveFileExplorerSelectionRequest,
   xDriveFileExplorerSelectionAdmissionReason,
   xDriveFileExplorerReadNodeID,
+  xDriveFileExplorerPreviewRequest,
   xDriveFileExplorerResolveFolderUploadTargets,
   xDriveFileExplorerPropertiesRefs,
   xDriveFileExplorerAvailabilityError,
@@ -1004,12 +1005,13 @@ export default function DesktopFileExplorer({
     signal?: AbortSignal,
     onProgress?: XDriveByteProgressHandler,
   ) => {
-    if (!previewStreamSupported || item.kind !== 'file') return null
-    if (kind === 'image' && xDriveFileNeedsBrowserCompatibleImagePreview(item.name)) {
+    const plan = xDriveFileExplorerPreviewRequest(item, kind, previewStreamSupported && !signal?.aborted)
+    if (!plan) return null
+    if (plan.mode === 'analysis-image') {
       try {
         const result = await hostPort.requestViewport(
           signal,
-          (requestID) => hostPort.media.getMediaAnalysisPreview(Number(item.id), requestID, onProgress),
+          (requestID) => hostPort.media.getMediaAnalysisPreview(plan.nodeID, requestID, onProgress),
         )
         if (!result.ok || signal?.aborted) return null
         return URL.createObjectURL(new Blob(
@@ -1027,20 +1029,19 @@ export default function DesktopFileExplorer({
           (url) => agent.releaseCloudFilePreviewURL(url))
       }
     }
-    if (kind === 'live_photo') {
+    if (plan.mode === 'live-still') {
       const result = await hostPort.requestViewport(
         signal,
-        (requestID) => agent.getMediaLivePhotoStill(Number(item.id), requestID),
+        (requestID) => agent.getMediaLivePhotoStill(plan.nodeID, requestID),
         discardLate,
       )
       return result.ok
         ? hostPort.leasePreviewURL(result.data, signal, (url) => agent.releaseCloudFilePreviewURL(url))
         : null
     }
-    if (!['pdf', 'video', 'audio', 'image'].includes(kind)) return null
     const result = await hostPort.requestViewport(
       signal,
-      (requestID) => agent.cloudFilePreviewURL(Number(item.id), requestID),
+      (requestID) => agent.cloudFilePreviewURL(plan.nodeID, requestID),
       discardLate,
     )
     return result.ok
