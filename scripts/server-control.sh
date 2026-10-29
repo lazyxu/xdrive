@@ -2409,16 +2409,52 @@ backup_admin_snapshot_complete() {
 
 backup_admin_inventory() {
   local dir="$1" tmp comma="" scope root snap name state bytes file_data created
+  local snapshot_index inventory_total inventory_truncated
   local default_repo backup_admin_format backup_admin_days backup_admin_repo backup_admin_revision
   backup_admin_policy_values || return 1
   default_repo="$XDRIVE_HOME/backups/incremental"
   if [[ -d "$default_repo" ]]; then
     default_repo="$(cd "$default_repo" && pwd -P)" || return 1
   fi
-  tmp="$(mktemp "$dir/.backup-admin-inventory.XXXXXX")" || return 1
+  # Only metadata for the newest 100 is materialized; disclose how many
+  # additional canonical generations exist without opening a browser path.
+  snapshot_index="$(mktemp "$dir/.backup-admin-inventory-index.XXXXXX")" || return 1
+  if ! (
+      for scope in v1 v2-default v2-configured; do
+        case "$scope" in
+          v1) root="$XDRIVE_HOME/backups/snapshots" ;;
+          v2-default) root="$XDRIVE_HOME/backups/incremental/snapshots" ;;
+          v2-configured)
+            [[ "$backup_admin_format" == v2 && -n "$backup_admin_repo" &&
+               "$backup_admin_repo" != "$default_repo" ]] || continue
+            root="$backup_admin_repo/snapshots" ;;
+        esac
+        [[ -d "$root" && ! -L "$root" ]] || continue
+        for snap in "$root"/xdrive-backup-*; do
+          [[ -d "$snap" && ! -L "$snap" ]] || continue
+          name="$(basename "$snap")"
+          [[ "$name" =~ ^xdrive-backup-[0-9]{8}T[0-9]{6}Z$ ]] || continue
+          printf '%s\t%s\n' "$name" "$scope"
+        done
+      done | LC_ALL=C sort -r > "$snapshot_index"
+  ); then
+    rm -f -- "$snapshot_index"
+    return 1
+  fi
+  inventory_total="$(wc -l < "$snapshot_index")"
+  if [[ ! "$inventory_total" =~ ^[0-9]+$ ]] || (( inventory_total > 1000000 )); then
+    rm -f -- "$snapshot_index"
+    return 1
+  fi
+  inventory_truncated=false
+  if (( inventory_total > 100 )); then inventory_truncated=true; fi
+  tmp="$(mktemp "$dir/.backup-admin-inventory.XXXXXX")" || {
+    rm -f -- "$snapshot_index"
+    return 1
+  }
   {
-    printf '{"protocol":"%s","generated_at":"%s","policy":{"schedule_format":"%s","retention_days":%s,"repository":"%s","revision":"%s"},"snapshots":[' \
-      "$backup_admin_protocol" "$(now_utc)" "$backup_admin_format" "$backup_admin_days" "$(json_escape "$backup_admin_repo")" "$backup_admin_revision"
+    printf '{"protocol":"%s","generated_at":"%s","policy":{"schedule_format":"%s","retention_days":%s,"repository":"%s","revision":"%s"},"total_snapshots":%s,"truncated":%s,"snapshots":[' \
+      "$backup_admin_protocol" "$(now_utc)" "$backup_admin_format" "$backup_admin_days" "$(json_escape "$backup_admin_repo")" "$backup_admin_revision" "$inventory_total" "$inventory_truncated"
 
     # Show the latest 100 generations across all configured repositories,
     # not the oldest 100 from the alphabetically first (legacy v1) root.
@@ -2457,27 +2493,10 @@ backup_admin_inventory() {
         "$([[ "$scope" == v1 ]] && printf v1 || printf v2)" \
         "$created" "$state" "$bytes" "$file_data"
       comma=","
-    done < <(
-      for scope in v1 v2-default v2-configured; do
-        case "$scope" in
-          v1) root="$XDRIVE_HOME/backups/snapshots" ;;
-          v2-default) root="$XDRIVE_HOME/backups/incremental/snapshots" ;;
-          v2-configured)
-            [[ "$backup_admin_format" == v2 && -n "$backup_admin_repo" &&
-               "$backup_admin_repo" != "$default_repo" ]] || continue
-            root="$backup_admin_repo/snapshots" ;;
-        esac
-        [[ -d "$root" && ! -L "$root" ]] || continue
-        for snap in "$root"/xdrive-backup-*; do
-          [[ -d "$snap" && ! -L "$snap" ]] || continue
-          name="$(basename "$snap")"
-          [[ "$name" =~ ^xdrive-backup-[0-9]{8}T[0-9]{6}Z$ ]] || continue
-          printf '%s\t%s\n' "$name" "$scope"
-        done
-      done | LC_ALL=C sort -r | sed -n '1,100p'
-    )
+    done < <(sed -n '1,100p' "$snapshot_index")
     printf ']}\n'
-  } > "$tmp" || { rm -f "$tmp"; return 1; }
+  } > "$tmp" || { rm -f -- "$tmp" "$snapshot_index"; return 1; }
+  rm -f -- "$snapshot_index"
   chmod 0660 "$tmp" && mv -f "$tmp" "$dir/backup-admin-inventory.json"
 }
 

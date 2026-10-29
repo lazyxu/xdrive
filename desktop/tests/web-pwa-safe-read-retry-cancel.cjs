@@ -145,3 +145,105 @@ test('WebKit refusing abort-listener removal never crashes an otherwise successf
   assert.equal(attempts, 2)
   assert.equal(original.cancelled(), 1, 'the first body remains released for healthy retriers')
 })
+
+test('Safari denies AbortSignal.aborted before admission: no private GET is sent', async () => {
+  const path = '/api/v1/nodes/42/children?range=true'
+  let count = 0
+  for (const signal of [
+    { get aborted() { throw Error('WebKit SecurityError: denied AbortSignal') } },
+    { aborted: undefined },
+    { aborted: 'not-boolean' },
+  ]) {
+    await assert.rejects(browser()(path, path, { signal }, async () => {
+      count++
+      return new Response(null, { status: 200 })
+    }), { name: 'AbortError' })
+  }
+  assert.equal(count, 0)
+})
+
+test('denied AbortSignal getter after received HTTP 429 or 503 preserves original bytes', async () => {
+  const path = '/api/v1/nodes/42/children?range=true'
+  for (const status of [429, 503]) {
+    let reads = 0, attempts = 0, cancelled = 0
+    const signal = {
+      get aborted() {
+        if (++reads > 1) throw Error('WebKit denied status after GET')
+        return false
+      },
+    }
+    const first = new Response(new ReadableStream({
+      start(c) { c.enqueue(new Uint8Array([1, 2, 3])); c.close() },
+      cancel() { cancelled++ },
+    }), { status, headers: { 'Retry-After': '0' } })
+    const returned = await browser()(path, path, { signal }, async () => {
+      attempts++
+      return first
+    })
+    assert.strictEqual(returned, first)
+    assert.equal(attempts, 1, 'no unobserved second authenticated GET')
+    assert.equal(cancelled, 0, 'do not discard the received HTTP error body')
+    assert.deepEqual([...new Uint8Array(await returned.arrayBuffer())], [1, 2, 3])
+  }
+})
+
+test('post-subscription AbortSignal denial preserves 503, with no timer or body discard', async () => {
+  const path = '/api/v1/nodes/42/children?range=true'
+  let reads = 0, attempts = 0, removed = 0, timers = 0, cancelled = 0
+  const signal = {
+    get aborted() {
+      // Original admission, foreground, before listener, then after listener.
+      if (++reads === 4) throw Error('WebKit denied post-listener state')
+      return false
+    },
+    addEventListener() {},
+    removeEventListener() { removed++ },
+  }
+  const first = new Response(new ReadableStream({
+    start(c) { c.enqueue(new Uint8Array([4, 5])); c.close() },
+    cancel() { cancelled++ },
+  }), { status: 503, headers: { 'Retry-After': '0' } })
+  const read = browser('visible', {
+    setTimeout(...args) { timers++; return setTimeout(...args) },
+  })
+  const returned = await read(path, path, { signal }, async () => {
+    attempts++
+    return first
+  })
+  assert.strictEqual(returned, first)
+  assert.equal(attempts, 1)
+  assert.equal(removed, 1)
+  assert.equal(timers, 0)
+  assert.equal(cancelled, 0)
+  assert.deepEqual([...new Uint8Array(await returned.arrayBuffer())], [4, 5])
+})
+
+test('status denial after first fetch failure retains the original TypeError', async () => {
+  const path = '/api/v1/nodes/42/children?range=true'
+  let reads = 0, attempts = 0
+  const signal = {
+    get aborted() {
+      if (++reads === 1) return false
+      throw Error('WebKit denied status after first failure')
+    },
+  }
+  const first = new TypeError('original network failure')
+  await assert.rejects(browser()(path, path, { signal }, async () => {
+    attempts++
+    throw first
+  }), error => error === first)
+  assert.equal(attempts, 1)
+})
+
+test('healthy AbortSignal still preserves one bounded safe 503 retry', async () => {
+  const path = '/api/v1/nodes/42/children?range=true'
+  let attempts = 0
+  const ac = new AbortController()
+  const result = await browser()(path, path, { signal: ac.signal }, async () => {
+    attempts++
+    return new Response(null, { status: attempts === 1 ? 503 : 200,
+      headers: { 'Retry-After': '0' } })
+  })
+  assert.equal(result.status, 200)
+  assert.equal(attempts, 2)
+})
