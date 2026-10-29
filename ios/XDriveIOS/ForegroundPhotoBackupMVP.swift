@@ -32,7 +32,7 @@ struct XDriveIOSForegroundPhotoBackupMVP {
 
     /// One deliberate foreground click; bounded work for a usable first
     /// milestone. Never silently claim the remainder of an album is backed up.
-    static let maxScannedAssets = 256
+    static let maxScannedAssets = XDrivePhotoBackupScanWindow.maxItems
     static let maxNewOriginalsPerRun = 20
 
     func run(allowICloudOriginals: Bool, startOffset: Int = 0,
@@ -62,8 +62,9 @@ struct XDriveIOSForegroundPhotoBackupMVP {
         do {
             report.totalVisible = try await scanner.start(atOffset: startOffset)
             report.isLimited = await currentLimitedAuthorization()
-            let windowCapacity = min(Self.maxScannedAssets,
-                                     max(0, report.totalVisible - startOffset))
+            let windowCapacity = XDrivePhotoBackupScanWindow.capacity(
+                visibleTotal: report.totalVisible, offset: startOffset
+            )
             await onProgress(report)
 
             scanning: while report.scanned < windowCapacity &&

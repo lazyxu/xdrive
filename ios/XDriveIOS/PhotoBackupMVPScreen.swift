@@ -14,11 +14,10 @@ struct XDriveIOSPhotoBackupMVPScreen: View {
     @State private var selectedWindow = 0
     @State private var lastKnownVisibleCount = 0
 
-    private var windowSize: Int { XDriveIOSForegroundPhotoBackupMVP.maxScannedAssets }
+    private var windowSize: Int { XDrivePhotoBackupScanWindow.maxItems }
 
     private var knownWindowCount: Int {
-        guard lastKnownVisibleCount > 0 else { return 1 }
-        return 1 + (lastKnownVisibleCount - 1) / windowSize
+        XDrivePhotoBackupScanWindow.count(visibleTotal: lastKnownVisibleCount)
     }
 
     private var hasPhotoPermission: Bool {
@@ -81,8 +80,9 @@ struct XDriveIOSPhotoBackupMVPScreen: View {
                     if let progress = model.photoBackupProgress {
                         VStack(alignment: .leading, spacing: 12) {
                             Text(progress.stage).font(.subheadline.weight(.medium))
-                            let windowCapacity = min(windowSize,
-                                                     max(0, progress.totalVisible - progress.startOffset))
+                            let windowCapacity = XDrivePhotoBackupScanWindow.capacity(
+                                visibleTotal: progress.totalVisible, offset: progress.startOffset
+                            )
                             let total = max(1, windowCapacity)
                             ProgressView(
                                 value: Double(min(progress.scanned, total)),
@@ -126,11 +126,14 @@ struct XDriveIOSPhotoBackupMVPScreen: View {
                             .accessibilityIdentifier("native-photo-backup-cancel")
                     } else {
                         Button {
+                            guard let offset = XDrivePhotoBackupScanWindow.offset(
+                                for: selectedWindow
+                            ) else { return }
                             runTask?.cancel()
                             runTask = Task {
                                 await model.runForegroundPhotoBackup(
                                     allowICloudOriginals: allowICloudOriginals,
-                                    startOffset: selectedWindow * windowSize
+                                    startOffset: offset
                                 )
                                 runTask = nil
                             }
@@ -181,7 +184,8 @@ struct XDriveIOSPhotoBackupMVPScreen: View {
         .onChange(of: model.photoBackupProgress?.totalVisible ?? 0) { count in
             if count > 0 {
                 lastKnownVisibleCount = count
-                selectedWindow = min(selectedWindow, (count - 1) / windowSize)
+                selectedWindow = min(selectedWindow,
+                                     XDrivePhotoBackupScanWindow.count(visibleTotal: count) - 1)
             }
         }
         .onChange(of: model.photoBackupBusy) { busy in
