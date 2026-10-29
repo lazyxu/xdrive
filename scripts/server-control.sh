@@ -2973,6 +2973,7 @@ backup_admin_write_policy() {
 
 backup_admin_delete_v1() {
   local id="$1" target file name root remaining=0 retired fmt candidate_root
+  local file_info file_version file_data file_consistent
   local backup_admin_format backup_admin_days backup_admin_repo backup_admin_revision
   local -a recovery_roots
   [[ "$id" == v1:xdrive-backup-* ]] || return 1
@@ -2996,12 +2997,16 @@ backup_admin_delete_v1() {
       [[ -d "$file" && "$file" != "$target" && ! -L "$file" ]] || continue
       fmt=v1
       [[ "$candidate_root" == "$root" ]] || fmt=v2
-      if [[ "$fmt" == v1 ]] &&
-         grep -Eq '"file_data_included"[[:space:]]*:[[:space:]]*false' "$file/manifest.json" 2>/dev/null; then
-        continue
-      fi
-      # Filenames or metadata alone do not prove another recovery point.
-      if backup_admin_snapshot_complete "$file" "$fmt" &&
+      # A checksum-valid but database-only or source-inconsistent generation
+      # is NOT a replacement full restore point. Do not trust nested or
+      # duplicate JSON keys to establish remaining recovery capacity.
+      file_info="$(backup_admin_manifest_info "$file/manifest.json" 2>/dev/null || true)"
+      [[ -n "$file_info" ]] || continue
+      IFS=$'\t' read -r file_version file_data file_consistent <<< "$file_info"
+      [[ "$file_data" == true && "$file_consistent" == true ]] || continue
+      # Filenames, metadata, or a matching SHA manifest alone are insufficient:
+      # a surviving candidate must still pass actual Manager verification.
+      if backup_admin_snapshot_complete "$file" "$fmt" "$file_info" &&
          XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup verify "$file" >/dev/null 2>&1; then
         remaining=$((remaining + 1))
       fi
