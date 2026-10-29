@@ -117,7 +117,7 @@ export function XDriveAppPageOutlet({
       case 'cloud-storage':
         if (services.cloudStorage) page = (
           <XDriveCloudStoragePage key={revision} source={services.cloudStorage}
-            clearOnRefresh={host.platform === 'synology'} />
+            clearOnRefresh={services.cloudStorageRefresh?.clearOnRefresh === true} />
         )
         break
       case 'local-storage':
