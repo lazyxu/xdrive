@@ -25,8 +25,8 @@ func TestBackupAdminScheduleStatusStrictShape(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			status := &backupAdminScheduleStatus{
 				Protocol: "xdrive-host-backup-schedule-v1",
-				Source: "installer_crontab",
-				State: tc.state, Expression: tc.expr,
+				Source:   "installer_crontab",
+				State:    tc.state, Expression: tc.expr,
 			}
 			if got := validBackupAdminScheduleStatus(status); got != tc.valid {
 				t.Fatalf("valid=%v, expected=%v", got, tc.valid)
