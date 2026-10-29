@@ -26,7 +26,8 @@ test('first device overview reserves stable quiet space before genuine response'
 
 test('device refresh keeps accepted same-account cards without exposing foreign account data', () => {
   assert.ok(view.includes('overview: prev.source === source ? prev.overview : null'))
-  assert.ok(view.includes('if (active) setSnapshot((prev) => prev.source === source'))
+  assert.ok(view.includes('if (active && !controller.signal.aborted) setSnapshot((prev) => prev.source === source'),
+    'refresh cannot publish a stale Owner snapshot after read cancellation')
   assert.ok(view.includes('? { ...prev, loading: false, failed: true }'))
   assert.ok(view.includes('设备备份刷新失败；已保留上次成功读取的设备信息'))
   assert.ok(view.includes('disabled={loading}'))
@@ -38,14 +39,16 @@ test('device refresh keeps accepted same-account cards without exposing foreign 
 })
 
 test('only the existing owner-redacted shared device API is used on Web and Desktop', () => {
-  assert.ok(view.includes('void source.list().then((result)'))
+  assert.ok(view.includes('void source.list(controller.signal).then((result)'))
   assert.ok(view.includes('source.foldersPage(deviceID, 100, cursor)'))
   assert.ok(view.includes('source.runs(id, pageSize, (page - 1) * pageSize)'))
   assert.ok(web.includes('<XDriveDeviceBackupPage'))
   const frame = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/XDriveAppRouteContent.tsx'), 'utf8')
+  const sharedApp = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/XDriveApp.tsx'), 'utf8')
   const outlet = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/XDriveAppPageOutlet.tsx'), 'utf8')
   assert.ok(desktop.includes('deviceBackupPage: {') &&
-    desktop.includes('<XDriveAppRouteContent host={workspaceHost} view={view}>') &&
+    desktop.includes('<XDriveApp') && !desktop.includes('<XDriveAppRouteContent') &&
+    sharedApp.includes('<XDriveAppRouteContent') &&
     frame.includes('xDriveIsSharedHostPageRoute(view)') &&
     frame.includes('<XDriveAppPageOutlet') &&
     outlet.includes('<XDriveDeviceBackupPage key={revision} {...services.deviceBackupPage} />'),

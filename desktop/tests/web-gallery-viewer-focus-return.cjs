@@ -96,3 +96,34 @@ test('focus return is integrated only into the existing authenticated Gallery sc
     app.indexOf('const contextID = xDriveCreateWebAppBrowseSession', app.indexOf('onOpenViewer={(item, context) => {')))
   assert.doesNotMatch(open, /fetch\(|api\.mediaItem|api\.node\(/)
 })
+
+test('Safari denied focus({preventScroll}) cannot break Gallery Viewer Back or claim a focus restore', () => {
+  const tile = makeTile(811, 7)
+  const host = makeHost([tile])
+  const saved = capture(host, 811, 7, tile)
+  tile.focus = () => { throw Error('SecurityError: preventScroll not supported') }
+  assert.equal(restore(host, saved, body), false)
+  assert.deepEqual(tile.calls, [], 'do not retry unbounded focus that would scroll the Gallery')
+})
+
+test('Safari denied virtual tile lookup and capture ancestry fail closed', () => {
+  const tile = makeTile(812, 8)
+  const host = makeHost([tile])
+  assert.equal(capture(host, 812, 8, {
+    closest() { throw Error('SecurityError: closest denied') },
+  }), null)
+  const saved = capture(host, 812, 8, tile)
+  tile.isConnected = false
+  host.querySelector = () => { throw Error('SecurityError: querySelector denied') }
+  assert.equal(restore(host, saved, body), false)
+})
+
+test('Viewer focus return cannot accept a tile with inaccessible or recycled Owner metadata', () => {
+  const tile = makeTile(813, 9)
+  const host = makeHost([tile])
+  Object.defineProperty(tile, 'dataset', {
+    get() { throw Error('SecurityError: tile metadata denied') },
+  })
+  assert.equal(capture(host, 813, 9, tile), null)
+  assert.equal(restore(host, { nodeID: 813, index: 9, tile }, body), false)
+})

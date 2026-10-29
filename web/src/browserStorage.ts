@@ -68,9 +68,20 @@ export async function clearWebBrowserCache(): Promise<XDriveBrowserStorageClearR
   const before = await browserStorageEstimate()
   const names = await cacheStorage.keys()
   let clearedEntries = 0
+  let deleteFailed = false
+  let firstError: unknown
   for (const name of names) {
-    if (await cacheStorage.delete(name)) clearedEntries += 1
+    try {
+      if (await cacheStorage.delete(name)) clearedEntries += 1
+    } catch (error) {
+      // A denied single container must not prevent the remaining public
+      // site caches from being cleared on this explicit user action.
+      // Never claim complete success after any failed deletion.
+      if (!deleteFailed) firstError = error
+      deleteFailed = true
+    }
   }
+  if (deleteFailed) throw firstError
   const after = await browserStorageEstimate()
   const releasedBytes = before?.usage !== undefined && after?.usage !== undefined
     ? Math.max(0, before.usage - after.usage)

@@ -43,7 +43,8 @@ function compileFilesPage() {
 
 test('both real Hosts use the exact same Files workspace surface, without native IPC in JSX', () => {
   assert.match(desktop, /<XDriveFilesWorkspacePage/)
-  assert.match(synology, /<XDriveFilesWorkspacePage>/)
+  assert.match(synology, /<XDriveFilesWorkspacePage overQuota=\{verifiedOverQuota === true\}>/)
+  assert.match(synology, /useXDriveFileExplorerOwnerQuota\(client, rootRevision\)/)
   assert.match(desktop, /<DesktopFileExplorer/)
   assert.match(synology, /<XDriveFileExplorer/)
   assert.match(synology, /client\.ownerFilesRoot\(/)

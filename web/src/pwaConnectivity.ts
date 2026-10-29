@@ -2,7 +2,7 @@
 export type XDrivePwaServerReachability =
   | 'ready' | 'server-unavailable' | 'rate-limited' | 'access-blocked'
   | 'network-unavailable' | 'timed-out' | 'cancelled' | 'browser-restricted'
-  | 'unexpected-response'
+  | 'unexpected-response' | 'response-unreadable'
 export interface XDrivePwaReadinessResult {
   state: XDrivePwaServerReachability
   httpStatus?: number
@@ -22,12 +22,17 @@ export async function xDriveProbePwaServer(
     }
   }
 
-  const controller = new AbortController()
+  // A restricted WebKit context can deny even the AbortController constructor.
+  // Without bounded cancellation, do not send an anonymous readiness request.
+  let controller: AbortController
+  try { controller = new AbortController() }
+  catch { return { state: 'browser-restricted' } }
   let timedOut = false
   let callerCancelled = false
   let finished = false
   let listenerAttached = false
-  const timeoutMs = Math.min(10000, Math.max(1000, options.timeoutMs ?? 6000))
+  const timeoutMs = typeof options.timeoutMs === 'number' && Number.isFinite(options.timeoutMs)
+    ? Math.min(10000, Math.max(1000, options.timeoutMs)) : 6000
 
   // An uncooperative WebKit/proxy shim may never settle fetch() or json()
   // after AbortSignal. Resolve this sentinel (never an unhandled rejection)
@@ -80,9 +85,25 @@ export async function xDriveProbePwaServer(
     if (callerCancelled) return { state: 'cancelled' }
     if (timedOut) return { state: 'timed-out' }
     if (response === null) return { state: 'network-unavailable' }
-    if (response.status === 200) {
+    // An already received HTTP response is not a network outage. A denied
+    // optional status/header getter must not hide a real 200, 429 or 503 as
+    // "offline", nor promote an unreadable response into a healthy Server.
+    let status: number
+    try { status = response.status }
+    catch { return { state: 'response-unreadable' } }
+    if (!Number.isInteger(status) || status < 100 || status > 599)
+      return { state: 'response-unreadable' }
+    if (status === 200) {
       // A Caddy SPA fallback or proxy login page is not a ready Server.
-      const type = response.headers.get('Content-Type') || ''
+      let type = ''
+      try {
+        const observed = response.headers.get('Content-Type')
+        if (observed !== null && typeof observed !== 'string')
+          return { state: 'response-unreadable', httpStatus: 200 }
+        type = observed ?? ''
+      } catch {
+        return { state: 'response-unreadable', httpStatus: 200 }
+      }
       if (!/^application\/json\b/i.test(type)) return { state: 'unexpected-response', httpStatus: 200 }
       try {
         const body = await Promise.race([response.json(), interrupted]) as { ok?: unknown } | null
@@ -96,10 +117,10 @@ export async function xDriveProbePwaServer(
       }
       return { state: 'unexpected-response', httpStatus: 200 }
     }
-    if (response.status === 503) return { state: 'server-unavailable', httpStatus: 503 }
-    if (response.status === 429) return { state: 'rate-limited', httpStatus: 429 }
-    if (response.status === 401 || response.status === 403) return { state: 'access-blocked', httpStatus: response.status }
-    return { state: 'unexpected-response', httpStatus: response.status }
+    if (status === 503) return { state: 'server-unavailable', httpStatus: 503 }
+    if (status === 429) return { state: 'rate-limited', httpStatus: 429 }
+    if (status === 401 || status === 403) return { state: 'access-blocked', httpStatus: status }
+    return { state: 'unexpected-response', httpStatus: status }
   } catch {
     if (callerCancelled) return { state: 'cancelled' }
     if (timedOut) return { state: 'timed-out' }

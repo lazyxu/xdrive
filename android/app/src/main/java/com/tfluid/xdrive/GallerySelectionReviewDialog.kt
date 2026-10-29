@@ -9,6 +9,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -39,6 +41,12 @@ internal fun GallerySelectionReviewDialog(
     val matching = remember(selected, query) { gallerySelectedReviewFilter(selected, query) }
     val pageCount = ((matching.size + reviewPageSize - 1) / reviewPageSize).coerceAtLeast(1)
     val effectivePage = page.coerceIn(0, pageCount - 1)
+    // When a selected item is removed from the last page, commit the newly
+    // clamped page. Otherwise adding another item immediately afterwards can
+    // unexpectedly jump back to the previously removed page.
+    LaunchedEffect(pageCount) {
+        if (page >= pageCount) page = pageCount - 1
+    }
     val visible = matching.drop(effectivePage * reviewPageSize).take(reviewPageSize)
 
     Dialog(
@@ -100,6 +108,10 @@ internal fun GallerySelectionReviewDialog(
                                     onClick = { controller.removeGallerySelected(item.node.id) },
                                     enabled = !busy,
                                     modifier = Modifier.heightIn(min = 48.dp)
+                                        .semantics {
+                                            contentDescription =
+                                                "移除已选文件：${item.node.name}"
+                                        }
                                         .testTag("gallery-selection-remove-${item.node.id}"),
                                 ) { Text("移除") }
                             }
@@ -113,14 +125,20 @@ internal fun GallerySelectionReviewDialog(
                     verticalAlignment = Alignment.CenterVertically) {
                     TextButton(onClick = { page = (effectivePage - 1).coerceAtLeast(0) },
                         enabled = effectivePage > 0 && !busy,
-                        modifier = Modifier.testTag("gallery-review-prev")
-                            .heightIn(min = 48.dp)) { Text("上一页") }
+                        modifier = Modifier.heightIn(min = 48.dp)
+                            .semantics {
+                                contentDescription =
+                                    "上一页，当前第 ${effectivePage + 1} 页，共 ${pageCount} 页"
+                            }.testTag("gallery-review-prev")) { Text("上一页") }
                     Text("${effectivePage + 1} / $pageCount",
                         style = MaterialTheme.typography.bodyMedium)
                     TextButton(onClick = { page = (effectivePage + 1).coerceAtMost(pageCount - 1) },
                         enabled = effectivePage < pageCount - 1 && !busy,
-                        modifier = Modifier.testTag("gallery-review-next")
-                            .heightIn(min = 48.dp)) { Text("下一页") }
+                        modifier = Modifier.heightIn(min = 48.dp)
+                            .semantics {
+                                contentDescription =
+                                    "下一页，当前第 ${effectivePage + 1} 页，共 ${pageCount} 页"
+                            }.testTag("gallery-review-next")) { Text("下一页") }
                 }
                 HorizontalDivider()
                 Row(Modifier.fillMaxWidth().navigationBarsPadding()

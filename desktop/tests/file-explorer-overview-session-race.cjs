@@ -16,8 +16,8 @@ function extractOverviewListEffect() {
     if (ts.isCallExpression(node) &&
       ts.isIdentifier(node.expression) && node.expression.text === 'useEffect' &&
       node.arguments.length >= 2 &&
-      node.arguments[0].getText(file).includes('port.cloudFileRecent(6)') &&
-      node.arguments[0].getText(file).includes('port.cloudFileFavorites()')) {
+      node.arguments[0].getText(file).includes('port.cloudFileRecent(6, controller.signal)') &&
+      node.arguments[0].getText(file).includes('port.cloudFileFavorites(controller.signal)')) {
       callback = node.arguments[0].getText(file)
       const deps = node.arguments[1]
       dependencies = ts.isArrayLiteralExpression(deps)
@@ -71,15 +71,18 @@ test('common Overview ignores a superseded A Owner response after switching to B
   const aRecent = deferred(), aFavorites = deferred()
   const bRecent = deferred(), bFavorites = deferred()
   const receivedRecent = [], receivedFavorites = []
+  const signalsA = [], signalsB = []
   let owner = 'A'
   let bRecentCalls = 0, bFavoriteCalls = 0
   const port = {
-    cloudFileRecent: () => {
+    cloudFileRecent: (_limit, signal) => {
+      ;(owner === 'A' ? signalsA : signalsB).push(signal)
       if (owner === 'A') return aRecent.promise
       bRecentCalls += 1
       return bRecent.promise
     },
-    cloudFileFavorites: () => {
+    cloudFileFavorites: signal => {
+      ;(owner === 'A' ? signalsA : signalsB).push(signal)
       if (owner === 'A') return aFavorites.promise
       bFavoriteCalls += 1
       return bFavorites.promise
@@ -96,8 +99,14 @@ test('common Overview ignores a superseded A Owner response after switching to B
   await flush()
   owner = 'B'
   cleanupA()
+  assert.equal(signalsA.length, 2)
+  assert.ok(signalsA.every(signal => signal?.aborted === true),
+    'departing Owner A must physically abort both disposable GET transports')
   const cleanupB = compileEffect(effect, { ...env, overviewLifecycleKey: 'server:B' })()
   await flush()
+  assert.equal(signalsB.length, 2)
+  assert.ok(signalsB.every(signal => signal?.aborted === false),
+    'new Owner B must not inherit the prior Owner abort')
   bRecent.resolve([row('B', false)])
   bFavorites.resolve([row('B', true)])
   await flush()
