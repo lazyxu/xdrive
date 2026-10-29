@@ -2391,20 +2391,78 @@ backup_admin_snapshot_directory() {
   printf '%s\n' "$root/$name"
 }
 
+# Shared, strict Host Manifest classification. This is the same trust model
+# as the Server verifier: bounded regular JSON inode, no symlink/FIFO, unique
+# keys at every depth, exact version/boolean types and fail-closed errors.
+# Output is strictly: version<TAB>file_data_included<TAB>consistency_verified.
+backup_admin_manifest_info() {
+  command -v python3 >/dev/null 2>&1 || return 1
+  python3 - "$1" <<'PY'
+import json, os, stat, sys
+
+def unique(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate JSON key")
+        result[key] = value
+    return result
+
+try:
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    fd = os.open(sys.argv[1], flags)
+    with os.fdopen(fd, "rb") as stream:
+        st = os.fstat(stream.fileno())
+        if not stat.S_ISREG(st.st_mode) or not 0 < st.st_size <= 65536:
+            raise ValueError("unsafe manifest inode or size")
+        raw = stream.read(65537)
+    if len(raw) > 65536:
+        raise ValueError("manifest too large")
+    manifest = json.loads(raw.decode("utf-8"), object_pairs_hook=unique,
+                          parse_constant=lambda _: (_ for _ in ()).throw(ValueError("invalid constant")))
+    if type(manifest) is not dict or type(manifest.get("format_version")) is not int:
+        raise ValueError("invalid manifest version")
+    version = manifest["format_version"]
+    if version not in (1, 2):
+        raise ValueError("unsupported manifest version")
+    for key in ("file_data_included", "consistency_verified"):
+        if key in manifest and type(manifest[key]) is not bool:
+            raise ValueError("invalid manifest boolean")
+    included = manifest.get("file_data_included", True)
+    consistent = manifest.get("consistency_verified", None)
+    print("%s\t%s\t%s" % (
+        version, str(included).lower(),
+        str(consistent).lower() if consistent is not None else "unknown"))
+except (OSError, ValueError, UnicodeError, TypeError):
+    sys.exit(1)
+PY
+}
+
 backup_admin_snapshot_complete() {
-  local snapshot="$1" format="$2" f
+  local snapshot="$1" format="$2" manifest_info="${3:-}" version included consistent f
   [[ -d "$snapshot" && ! -L "$snapshot" ]] || return 1
   for f in database.dump verify.json manifest.json SHA256SUMS.txt; do
     [[ -f "$snapshot/$f" && ! -L "$snapshot/$f" ]] || return 1
   done
-  if [[ "$format" == v1 ]]; then
-    [[ -f "$snapshot/blobs.tar" && ! -L "$snapshot/blobs.tar" ]] ||
-      grep -Eq '"file_data_included"[[:space:]]*:[[:space:]]*false' "$snapshot/manifest.json" || return 1
-  else
-    for f in objects.index legacy.tar; do
-      [[ -f "$snapshot/$f" && ! -L "$snapshot/$f" ]] || return 1
-    done
+  if [[ -z "$manifest_info" ]]; then
+    manifest_info="$(backup_admin_manifest_info "$snapshot/manifest.json")" || return 1
   fi
+  IFS=$'\t' read -r version included consistent <<< "$manifest_info"
+  case "$format" in
+    v1)
+      [[ "$version" == 1 ]] || return 1
+      if [[ "$included" != false ]]; then
+        [[ -f "$snapshot/blobs.tar" && ! -L "$snapshot/blobs.tar" ]] || return 1
+      fi
+      ;;
+    v2)
+      [[ "$version" == 2 && "$included" == true ]] || return 1
+      for f in objects.index legacy.tar; do
+        [[ -f "$snapshot/$f" && ! -L "$snapshot/$f" ]] || return 1
+      done
+      ;;
+    *) return 1 ;;
+  esac
 }
 
 # Inspect only the installer's exact managed crontab signature. Never
