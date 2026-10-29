@@ -3245,6 +3245,35 @@ class DriveController(
         }
     }
 
+    /** The current renderer-only Viewer revision is not a media authorization.
+     * A stale filmstrip tile can never act after A -> B -> A, logout, or swipe. */
+    fun galleryViewerFilmstripEpoch(): Long = galleryViewerEpoch
+
+    /** Tap a *previously loaded* Owner Gallery member, never initiate an
+     * unscoped lookup or cross an unloaded range. Reuse the same resource
+     * retirement and epoch fence as native photo/video swipe navigation. */
+    fun selectGalleryViewerFilmstripItem(
+        target: GalleryAsset, expectedCurrent: GalleryAsset, expectedEpoch: Long,
+    ): Boolean {
+        val current = state.value
+        val validSession = current.screen == Screen.GALLERY &&
+            current.galleryLoaded && !current.viewerReturnToFiles &&
+            !current.loading && !current.gallerySelectionMode &&
+            current.gallerySelected == null && !current.galleryViewerPageBusy &&
+            session != null && api != null && expectedEpoch == galleryViewerEpoch &&
+            target.node.type == "file" && target.node.id > 0 &&
+            target.node.revision > 0 &&
+            target.mediaKind in setOf("image", "video")
+        if (!galleryViewerFilmstripSelectionAllowed(
+                current.galleryViewer, expectedCurrent, target, current.galleryItems,
+                validSession)) return false
+        cancelGalleryViewerPage()
+        closeActiveVideoPlayback()
+        galleryViewerEpoch++
+        mutableState.value = state.value.copy(galleryViewer = target, gallerySelected = null)
+        return true
+    }
+
     /** Loaded neighbors switch synchronously; missing range neighbors fetch
      * exactly one verified page with a visible error/retry state. */
     fun shiftGalleryViewer(direction: Int) {
