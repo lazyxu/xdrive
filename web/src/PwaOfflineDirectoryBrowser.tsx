@@ -54,12 +54,20 @@ export default function PwaOfflineDirectoryBrowser({
   >('unverified')
   const sequence = useRef(0)
   const validationController = useRef<AbortController | null>(null)
+  const abortValidation = () => {
+    const old = validationController.current
+    validationController.current = null
+    // A denied native abort must not let stale Owner history remain visible
+    // during logout, peer purge, offline transition or component unmount.
+    try { old?.abort() }
+    catch { /* generation fencing still invalidates this request */ }
+  }
 
   useEffect(() => {
     let active = true
     const reset = () => {
       sequence.current += 1
-      validationController.current?.abort()
+      abortValidation()
       setOwner(null)
       setSaved(null)
       setAlbumSaved(null)
@@ -96,7 +104,7 @@ export default function PwaOfflineDirectoryBrowser({
     const markOffline = () => {
       setOnline(false)
       sequence.current += 1
-      validationController.current?.abort()
+      abortValidation()
       setVerification('unverified')
     }
     // These browser connection hints are optional. Restricted Safari hosts
@@ -107,7 +115,7 @@ export default function PwaOfflineDirectoryBrowser({
     return () => {
       active = false
       sequence.current += 1
-      validationController.current?.abort()
+      abortValidation()
       stop()
       try { window.removeEventListener('online', markOnline) } catch { /* optional */ }
       try { window.removeEventListener('offline', markOffline) } catch { /* optional */ }
@@ -119,14 +127,32 @@ export default function PwaOfflineDirectoryBrowser({
   const verifySelected = useCallback(async () => {
     if (!online || !owner || !selected || !hasSession) return
     const current = ++sequence.current
-    validationController.current?.abort()
-    const controller = new AbortController()
+    abortValidation()
+    let controller: AbortController
+    try {
+      controller = new AbortController()
+      if (controller.signal.aborted !== false) {
+        throw new Error('Validation cancellation cannot be observed')
+      }
+    } catch {
+      // Unknown cancellation status cannot justify even the first /me GET.
+      setVerification('unavailable')
+      return
+    }
     validationController.current = controller
+    const acceptVerifiedResponse = () => {
+      if (current !== sequence.current) return false
+      try {
+        if (controller.signal.aborted === false) return true
+      } catch { /* Do not claim authorization from inaccessible signal state. */ }
+      setVerification('unavailable')
+      return false
+    }
     setVerification('checking')
     try {
       // /me must be fresh, authenticated and bound to the durable Server UUID.
       const me = await api.me(controller.signal)
-      if (current !== sequence.current) return
+      if (!acceptVerifiedResponse()) return
       if (!xDrivePwaVerifiedIdentityMatches(owner, me)) {
         try {
           await xDrivePwaClearOfflineMetadata()
@@ -152,7 +178,7 @@ export default function PwaOfflineDirectoryBrowser({
       // A bounded one-row Go Range enforces current Owner/ACL without loading
       // 100k media rows, thumbnails, files, or a FileExplorer instance.
       const node = await api.node(selected.id, controller.signal)
-      if (current !== sequence.current) return
+      if (!acceptVerifiedResponse()) return
       if (node.type !== 'dir') {
         try {
           await xDrivePwaClearOfflineMetadata()
@@ -175,9 +201,9 @@ export default function PwaOfflineDirectoryBrowser({
         return
       }
       await api.listRange(selected.id, 0, 1, 'name', 'asc', false, undefined, controller.signal)
-      if (current === sequence.current) setVerification('authorized')
+      if (acceptVerifiedResponse()) setVerification('authorized')
     } catch (error) {
-      if (current !== sequence.current || controller.signal.aborted) return
+      if (!acceptVerifiedResponse()) return
       if (error instanceof ApiError && (error.status === 401 ||
           error.status === 403 || error.status === 404)) {
         try {
@@ -211,12 +237,12 @@ export default function PwaOfflineDirectoryBrowser({
   useEffect(() => {
     setVerification('unverified')
     if (online && owner && selected && hasSession) void verifySelected()
-    return () => { sequence.current += 1; validationController.current?.abort() }
+    return () => { sequence.current += 1; abortValidation() }
   }, [verifySelected, online, owner?.instanceID, owner?.userID, selected?.id, hasSession])
 
   const choose = (directory: XDrivePwaOfflineDirectory) => {
     sequence.current += 1
-    validationController.current?.abort()
+    abortValidation()
     setSelectedID(directory.id)
     setVerification('unverified')
   }

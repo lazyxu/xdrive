@@ -14,11 +14,18 @@ PWA_SOURCE = frozenset({
     "web/src/pwaConnectivity.ts",
     "web/src/pwaInstall.ts",
     "web/src/PwaInstallDialog.tsx",
+    # These two files publish anonymous, advisory UI hints only. They never
+    # authorize SW activation, persistence, network calls or Owner access.
+    "web/src/pwaPeerActivity.ts",
+    "web/src/pwaWorkloadSafety.ts",
 })
 PWA_TESTS = frozenset({
     "desktop/tests/web-pwa-connectivity.cjs",
     "desktop/tests/web-pwa-install.cjs",
     "desktop/tests/pwa-install-dialog-race.cjs",
+    "desktop/tests/pwa-update-peer.cjs",
+    "desktop/tests/pwa-peer-denied-capability-getters.cjs",
+    "desktop/tests/pwa-update-workload.cjs",
 })
 
 
