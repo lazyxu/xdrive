@@ -118,7 +118,7 @@ export function xDriveMountBaiduInlineMap<T>(
   const heldTouchPointers = new Set<number>()
   // Bounded local CSS coordinates detect real map drags even when a provider
   // build omits movestart entirely; never store Owner IDs or GPS here.
-  const pointerOrigins = new Map<number,{x:number;y:number}>()
+  const pointerOrigins = new Map<number,{x:number;y:number;moved:boolean}>()
   let viewportAfterMouseRelease = false
   let observedSize: {width:number;height:number} | null = null
   let sizeObserver: ResizeObserver | null = null
@@ -299,7 +299,7 @@ export function xDriveMountBaiduInlineMap<T>(
          heldTouchPointers.has(event.pointerId)) &&
         pointerOrigins.size < 12 &&
         Number.isFinite(event.clientX) && Number.isFinite(event.clientY))
-      pointerOrigins.set(event.pointerId,{x:event.clientX,y:event.clientY})
+      pointerOrigins.set(event.pointerId,{x:event.clientX,y:event.clientY,moved:false})
   }
   const onMapPointerMove = (event: PointerEvent) => {
     if (!alive || !ready || !event.isTrusted) return
@@ -309,12 +309,19 @@ export function xDriveMountBaiduInlineMap<T>(
         !(heldMousePointer === event.pointerId ||
           heldTouchPointers.has(event.pointerId))) return
     if (Math.hypot(event.clientX-origin.x,event.clientY-origin.y) < 12) return
-    pointerOrigins.delete(event.pointerId)
-    // The camera really moved, but this SDK omitted movestart. Run the
-    // EXISTING revocation + inert-photo projection once, before SDK moveend,
-    // so stale Owner thumbnails cannot remain clickable during this drag.
-    if (cells.length>0 || gestureCells.length===0) stopViewport()
-    else viewportAfterMouseRelease = true
+    // Keep the bounded pointer origin until a genuine release. Removing it
+    // after the first threshold crossing leaves a moving SDK with no further
+    // photo reprojection if this provider does not dispatch 'moving'.
+    if (!origin.moved) {
+      origin.moved = true
+      // Revoke current Cell click authority only once. If the SDK already
+      // cancelled it, preserve the same inert visual instead of cancelling twice.
+      if (cells.length>0 || gestureCells.length===0) stopViewport()
+      else viewportAfterMouseRelease = true
+    }
+    // Use the existing one-frame, <=64-Cell SDK projection scheduler on each
+    // real pointer motion. No new Owner /cells read occurs until release.
+    projectGesture()
   }
   const releaseHeldMouse = (pointerID?: number) => {
     const mouseMatches = heldMousePointer !== null &&
