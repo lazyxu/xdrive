@@ -110,6 +110,7 @@ struct LocalPhotoInventoryScreen: View {
     @State private var albumLoading = false
     @State private var albumError: String?
     @State private var albumTask: Task<Void, Never>?
+    @State private var showingBoundedScan = false
     @State private var allowICloudOriginal = false
     @State private var uploadingPhotoID: String?
     @State private var photoUploadTask: Task<Void, Never>?
@@ -205,6 +206,18 @@ struct LocalPhotoInventoryScreen: View {
                     }
 
                     if model.hasAccess {
+                        Divider()
+                        Button {
+                            showingBoundedScan = true
+                        } label: {
+                            Label("预览全库有界扫描（每批最多 64 项）", systemImage: "list.bullet.rectangle")
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(model.loading || uploadingPhotoID != nil)
+                        .accessibilityIdentifier("native-photokit-scan-preview")
+                        Text("只读取当前授权可访问的候选元数据；不下载原件、不上传，也不保存 PhotoKit 游标。")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                         Divider()
                         Text("系统相册目录")
                             .font(.headline)
@@ -307,9 +320,13 @@ struct LocalPhotoInventoryScreen: View {
                 }
             }
         }
+        .sheet(isPresented: $showingBoundedScan) {
+            XDrivePhotoKitScanPreviewScreen()
+        }
         .task { await model.inspect(askPermission: false) }
         .onChange(of: scenePhase) { phase in
             if phase != .active {
+                showingBoundedScan = false
                 photoUploadTask?.cancel()
                 return
             }
@@ -323,6 +340,7 @@ struct LocalPhotoInventoryScreen: View {
             }
         }
         .onChange(of: model.authorization) { _ in
+            showingBoundedScan = false
             photoUploadTask?.cancel()
             photoUploadMessage = nil
             inspectedAssetID = nil
@@ -332,6 +350,7 @@ struct LocalPhotoInventoryScreen: View {
             albumError = nil
         }
         .onDisappear {
+            showingBoundedScan = false
             albumTask?.cancel()
             photoUploadTask?.cancel()
         }
