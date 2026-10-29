@@ -196,7 +196,7 @@ test('global storage delegates durable maintenance to the global Task Center', (
     "setAppView('global-tasks')",
     "api.controlBackgroundTask(\`system-maintenance:\${kind}\`, 'run', true)",
     'onOpenTaskCenter: openGlobalTaskCenter',
-    'onRunStorageMaintenance={runStorageMaintenance}',
+    'onRunStorageMaintenance: runStorageMaintenance',
   ]) assert.ok(webApp.includes(token), 'Web Task Center handoff missing: ' + token)
 })
 
