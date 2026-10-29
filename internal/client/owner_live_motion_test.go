@@ -108,7 +108,7 @@ func TestOwnerLiveMotionFailsClosed(t *testing.T) {
 			}
 		})
 	}
-	.Run("wrong revision", func(t *testing.T) {
+	t.Run("wrong revision", func(t *testing.T) {
 		f := liveFixture()
 		if _, err := ReadVerifiedOwnerLiveMotion(context.Background(), f, 42, 8); err == nil {
 			t.Fatal("revision mismatch")
