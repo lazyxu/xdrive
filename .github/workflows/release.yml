@@ -130,9 +130,17 @@ jobs:
           locals=(xdrive/server:test xdrive/caddy:test xdrive/photo-face:test xdrive/media-worker:test)
           pids=()
 
+          # Tag all four validated, exact CI-built images before publishing.
           for i in "${!names[@]}"; do
             remote="ghcr.io/$GITHUB_REPOSITORY_OWNER/${names[$i]}:$remote_tag"
             docker tag "${locals[$i]}" "$remote"
+          done
+
+          # GHCR may reject the larger media-worker manifest with 'unknown blob'
+          # while other shared-layer uploads are still in flight. Publish the
+          # first three in parallel, then wait before pushing media-worker.
+          for i in 0 1 2; do
+            remote="ghcr.io/$GITHUB_REPOSITORY_OWNER/${names[$i]}:$remote_tag"
             docker push "$remote" &
             pids+=("$!")
           done
@@ -144,18 +152,22 @@ jobs:
             fi
           done
 
-          # GHCR sometimes reports "unknown blob" for a parallel manifest
-          # publish while other images in this exact batch succeed. Retry
-          # ONLY failed images, serially and with bounded backoff, preserving
-          # the original CI-built local image and immutable SHA tag.
-          # Persistent registry errors still fail the release gate.
+          # The media-worker push must not compete with the first three.
+          worker_i=3
+          worker_remote="ghcr.io/$GITHUB_REPOSITORY_OWNER/${names[$worker_i]}:$remote_tag"
+          if ! docker push "$worker_remote"; then
+            failed+=("$worker_i")
+          fi
+
+          # Serial fallback retains exact CI-built bytes and immutable tags.
+          # Persistent registry errors still fail publication; no rebuild.
           status=0
           for i in "${failed[@]}"; do
             remote="ghcr.io/$GITHUB_REPOSITORY_OWNER/${names[$i]}:$remote_tag"
             pushed=0
-            for retry in 1 2; do
-              echo "[xDrive] Retrying exact GHCR image ${names[$i]} ($retry/2)" >&2
-              sleep "$((retry * 4))"
+            for retry in 1 2 3 4; do
+              echo "[xDrive] Retrying exact GHCR image ${names[$i]} ($retry/4)" >&2
+              sleep "$((retry * 6))"
               if docker push "$remote"; then
                 pushed=1
                 break
