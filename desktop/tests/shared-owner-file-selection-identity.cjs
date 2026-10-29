@@ -32,6 +32,7 @@ test('deny stale identity, unsafe numbers, conflicting kind and untrusted types'
   const changes = [
     { id: '42' }, { id: 0 }, { id: Number.MAX_SAFE_INTEGER + 1 },
     { revision: 6 }, { revision: 0 }, { revision: 2.5 },
+    { revision: '7' }, { revision: 'not-a-number' },
     { size: 2000 }, { size: -1 }, { size: Number.MAX_SAFE_INTEGER + 1 },
     { name: 'other.jpg' }, { name: '' }, { name: 'x'.repeat(513) },
     { kind: 'dir' }, { kind: 'file', type: 'dir' }, { kind: 'virtual' },
@@ -42,6 +43,8 @@ test('deny stale identity, unsafe numbers, conflicting kind and untrusted types'
   }
   assert.equal(find(selected, [{ ...canonical, id: 43 }]), null, 'another Owner/parent selection')
   assert.equal(find(selected, [{ ...canonical, revision: 8 }]), null, 'replaced Node revision')
+  assert.equal(find(selected, [{ ...canonical, revision: '7' }]), null,
+    'a string-encoded Server revision is not a current authoritative number')
   assert.equal(find(selected, [{ ...canonical, name: 'renamed.jpg' }]), null, 'renamed Node')
   assert.equal(find(selected, [{ ...canonical, type: 'dir' }]), null, 'type mismatch')
   assert.equal(find(selected, [{ ...canonical, type: 'file', kind: 'dir' }]), null, 'conflicting DTO kinds')
