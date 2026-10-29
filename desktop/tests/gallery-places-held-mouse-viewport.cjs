@@ -57,12 +57,12 @@ function makeHost(kind){
   const names=Object.keys(env)
   // Execute the real host functions, not a reimplementation of their gate.
   const declarations=isInline
-    ? 'let heldMousePointer=null,viewportAfterMouseRelease=false,pendingViewport=null;\n'
-    : 'let heldMousePointer=null,viewportAfterMouseRelease=false,viewportTimer=null;\n'
+    ? 'let heldMousePointer=null,heldTouchPointers=new Set(),viewportAfterMouseRelease=false,pendingViewport=null;\n'
+    : 'let heldMousePointer=null,heldTouchPointers=new Set(),viewportAfterMouseRelease=false,viewportTimer=null;\n'
   const body=declarations+compiled.outputText+'\nreturn {'+
     ' onMousePointerDown,releaseHeldMouse,onMousePointerUp,'+
     ' scheduleViewport,stopViewport,'+
-    ' status:()=>({heldMousePointer,viewportAfterMouseRelease})};'
+    ' status:()=>({heldMousePointer,touches:[...heldTouchPointers],viewportAfterMouseRelease})};'
   const host=new Function(...names,body)(...names.map(k=>env[k]))
   if(!isInline)host.onMouseWindowBlur=undefined
   return {host,state}
@@ -109,7 +109,7 @@ for(const kind of ['inline','isolated']){
       {...primaryMouse,isTrusted:false},
       {...primaryMouse,button:2},
       {...primaryMouse,isPrimary:false},
-      {...primaryMouse,pointerType:'touch'},
+      {...primaryMouse,pointerType:'other'},
     ]) host.onMousePointerDown(bad)
     assert.equal(host.status().heldMousePointer,null)
     host.stopViewport()
@@ -119,6 +119,69 @@ for(const kind of ['inline','isolated']){
     assert.equal(state.viewports,1)
   })
 }
+for(const kind of ['inline','isolated']){
+  test(kind+': two real touch contacts defer signed /cells until the LAST release',()=>{
+    const {host,state}=makeHost(kind)
+    const primary={isTrusted:true,isPrimary:true,
+      pointerType:'touch',button:0,pointerId:21}
+    const secondary={...primary,isPrimary:false,pointerId:22}
+    host.onMousePointerDown(primary)
+    host.onMousePointerDown(secondary)
+    assert.deepEqual(host.status().touches,[21,22])
+    host.stopViewport()
+    host.scheduleViewport() // native moveend can precede touchend
+    assert.equal(state.timers.length,0)
+    assert.equal(state.viewports,0)
+    host.onMousePointerUp({pointerId:21}) // one finger lifts mid-pinch
+    assert.deepEqual(host.status().touches,[22])
+    assert.equal(state.timers.length,0)
+    host.onMousePointerUp({pointerId:99}) // unrelated contact is ignored
+    assert.deepEqual(host.status().touches,[22])
+    host.onMousePointerUp({pointerId:22}) // final finger lifts
+    assert.deepEqual(host.status().touches,[])
+    assert.equal(state.timers.length,1)
+    state.timers[0]()
+    assert.equal(state.viewports,1)
+  })
+  test(kind+': cancelled pen and lost window focus release a held viewport',()=>{
+    const {host,state}=makeHost(kind)
+    const pen={isTrusted:true,isPrimary:true,pointerType:'pen',
+      button:0,pointerId:41}
+    host.onMousePointerDown(pen)
+    host.stopViewport()
+    host.scheduleViewport()
+    assert.equal(state.viewports,0)
+    host.onMousePointerUp({pointerId:41}) // pointercancel event path
+    assert.equal(state.timers.length,1)
+    state.timers[0]()
+    assert.equal(state.viewports,1)
+
+    const second=makeHost(kind)
+    second.host.onMousePointerDown({...pen,pointerId:42})
+    second.host.stopViewport()
+    second.host.scheduleViewport()
+    second.host.releaseHeldMouse() // blur: every held contact is cleared
+    assert.deepEqual(second.host.status().touches,[])
+    assert.equal(second.state.timers.length,1)
+    second.state.timers[0]()
+    assert.equal(second.state.viewports,1)
+  })
+  test(kind+': synthetic touch/pen cannot hold a trusted Owner camera',()=>{
+    const {host,state}=makeHost(kind)
+    for(const bad of [
+      {isTrusted:false,isPrimary:true,pointerType:'touch',button:0,pointerId:4},
+      {isTrusted:false,isPrimary:true,pointerType:'pen',button:0,pointerId:5},
+      {isTrusted:true,isPrimary:true,pointerType:'touch',button:2,pointerId:6},
+    ])host.onMousePointerDown(bad)
+    assert.deepEqual(host.status().touches,[])
+    host.stopViewport()
+    host.scheduleViewport()
+    assert.equal(state.timers.length,1)
+    state.timers[0]()
+    assert.equal(state.viewports,1)
+  })
+}
+
 test('two Host lifecycles clean up pointer listeners and preserve protocol isolation',()=>{
   assert.match(inline,/canvas\.addEventListener\('pointerdown', onMousePointerDown, true\)/)
   assert.match(inline,/canvas\.removeEventListener\('pointerdown', onMousePointerDown, true\)/)
