@@ -46,7 +46,7 @@ export function XDriveAppRouteContent({
   return (
     <XDriveWorkspaceContent
       presentation={presentation}
-      responsive={host.platform === 'synology'}
+      responsive
       sx={presentation === 'files' ? undefined : pageSx}
     >
       {children}
