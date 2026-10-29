@@ -38,8 +38,7 @@ export function XDriveAppRouteContent({
       sx={view === 'files' ? undefined : pageSx}
     >
       {children}
-      {(
-        <XDriveAppPageOutlet
+      <XDriveAppPageOutlet
           // A React page instance belongs to one Host, route, role and refresh.
           // In particular, Mine/Global Tasks reuse a component type but must
           // never retain each other's async state; same-route DSM refresh must
@@ -51,7 +50,6 @@ export function XDriveAppRouteContent({
           revision={revision}
           onNavigate={onNavigate}
         />
-      )}
     </XDriveWorkspaceRouteSurface>
   )
 }
