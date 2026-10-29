@@ -152,6 +152,17 @@ function loadWorkspaceHook(react) {
         },
       }
     }
+    if (request === './ViewerForegroundPriority') {
+      const filename = path.join(repo, 'ui', 'shared', 'src', 'mui',
+        'ViewerForegroundPriority.ts')
+      const compiled = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
+        fileName: filename,
+        compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+      }).outputText
+      const module = { exports: {} }
+      new Function('exports', 'module', compiled)(module.exports, module)
+      return module.exports
+    }
     throw new Error('unexpected module: ' + request)
   }
 

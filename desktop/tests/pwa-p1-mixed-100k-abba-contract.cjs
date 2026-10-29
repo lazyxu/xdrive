@@ -305,3 +305,121 @@ test('P1M scoped Range instrumentation only applies after frozen source proof',(
   assert.match(flow,/XD_PWA_P1_VIEWER_VIDEO_RANGE_CANCEL: '1'/)
   assert.doesNotMatch(flow,/sed -i .*threshold|160000.*200000/)
 })
+
+
+test('diagnostic allArmsComplete is identical to the strict paired Owner/Viewer gate', () => {
+  const invalid = [
+    ['summary Live mode disabled', (home) => {
+      const file = path.join(home, 'summary.json')
+      const data = JSON.parse(fs.readFileSync(file, 'utf8'))
+      data.p1LiveHoldMode = false
+      fs.writeFileSync(file, JSON.stringify(data))
+    }],
+    ['old JPEG view returned to wrong grid', (home) => {
+      const file = path.join(home, 'sample-2.json')
+      const data = JSON.parse(fs.readFileSync(file, 'utf8'))
+      data.p1ViewerBack.returned.sameGrid = false
+      fs.writeFileSync(file, JSON.stringify(data))
+    }],
+    ['H264 passed flag with no advancing frame', (home) => {
+      const file = path.join(home, 'sample-2.json')
+      const data = JSON.parse(fs.readFileSync(file, 'utf8'))
+      data.p1H264Frames.presentedFrameDelta = 0
+      fs.writeFileSync(file, JSON.stringify(data))
+    }],
+    ['Live motion did not pause on release', (home) => {
+      const file = path.join(home, 'sample-1.json')
+      const data = JSON.parse(fs.readFileSync(file, 'utf8'))
+      data.p1LiveMotion.pausedOnRelease = false
+      fs.writeFileSync(file, JSON.stringify(data))
+    }],
+    ['signed Range remained active after 160ms', (home) => {
+      const file = path.join(home, 'sample-3.json')
+      const data = JSON.parse(fs.readFileSync(file, 'utf8'))
+      data.p1ViewerRangeAbort.stillActiveAt160Ms = 1
+      fs.writeFileSync(file, JSON.stringify(data))
+    }],
+    ['gallery context cancellation missing', (home) => {
+      const file = path.join(home, 'sample-1.json')
+      const data = JSON.parse(fs.readFileSync(file, 'utf8'))
+      data.go.contextDone = 0
+      fs.writeFileSync(file, JSON.stringify(data))
+    }],
+    ['renderer RSS budget exceeded', (home) => {
+      const file = path.join(home, 'sample-2.json')
+      const data = JSON.parse(fs.readFileSync(file, 'utf8'))
+      data.resources.renderer.peakGrowthBytes = 129 * 1048576
+      fs.writeFileSync(file, JSON.stringify(data))
+    }],
+    ['forged sample number', (home) => {
+      const file = path.join(home, 'sample-2.json')
+      const data = JSON.parse(fs.readFileSync(file, 'utf8'))
+      data.sample = 20
+      fs.writeFileSync(file, JSON.stringify(data))
+    }],
+    ['negative/invalid CPU measurement', (home) => {
+      const file = path.join(home, 'sample-3.json')
+      const data = JSON.parse(fs.readFileSync(file, 'utf8'))
+      data.resources.go.cpuDeltaMs = -1
+      fs.writeFileSync(file, JSON.stringify(data))
+    }],
+  ]
+  for (const [label, poison] of invalid) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pwa-p1m-strict-'))
+    try {
+      const arms = ['a1','b1','b2','a2'].map(name => makeArm(dir,name,3000))
+      for (const item of arms) fs.writeFileSync(path.join(item,'exit-code.txt'),'0\n')
+      poison(arms[2])
+      const diagnostic = path.join(dir,'diagnostic.json')
+      execFileSync(process.execPath,[script,'--diagnostic',...arms,diagnostic],{
+        env:{...process.env,XD_PR_HEAD:'e'.repeat(40)},encoding:'utf8',
+      })
+      const report = JSON.parse(fs.readFileSync(diagnostic,'utf8'))
+      assert.equal(report.allArmsComplete,false,label)
+      assert.deepEqual(report.failedArms,['b2'],label)
+      assert.equal(report.arms[2].complete,false,label)
+      assert.equal(report.arms[3].complete,true,
+        'a2 remains valid even when b2 fails: '+label)
+      assert.equal(report.causalConclusion,'NOT_ESTABLISHED')
+      assert.equal(report.materialGainEstablished,false)
+      const paired=path.join(dir,'paired.json')
+      const strict=spawnSync(process.execPath,[script,...arms,paired],{
+        env:{...process.env,XD_PR_HEAD:'e'.repeat(40)},encoding:'utf8',
+      })
+      assert.notEqual(strict.status,0,'strict paired gate must also fail: '+label)
+      assert.equal(fs.existsSync(paired),false)
+    } finally {
+      fs.rmSync(dir,{recursive:true,force:true})
+    }
+  }
+})
+
+test('diagnostic refuses symlink or oversized native exit code without exporting raw private data', () => {
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'pwa-p1m-exit-scope-'))
+  try {
+    const arms=['a1','b1','b2','a2'].map(name=>makeArm(dir,name,3000))
+    for(const arm of arms) fs.writeFileSync(path.join(arm,'exit-code.txt'),'0\n')
+    const exit=path.join(arms[1],'exit-code.txt')
+    const secrets=path.join(dir,'private-owner-token.txt')
+    fs.writeFileSync(secrets,'PRIVATE_OWNER_SECRET_SHOULD_NOT_APPEAR')
+    fs.rmSync(exit)
+    fs.symlinkSync(secrets,exit)
+    const badOut=path.join(dir,'symlink-diagnostic.json')
+    const bad=spawnSync(process.execPath,[script,'--diagnostic',...arms,badOut],{
+      env:{...process.env,XD_PR_HEAD:'f'.repeat(40)},encoding:'utf8',
+    })
+    assert.notEqual(bad.status,0,'symlinked exit code must fail closed')
+    assert.equal(fs.existsSync(badOut),false)
+    assert.doesNotMatch(bad.stderr,/PRIVATE_OWNER_SECRET_SHOULD_NOT_APPEAR/)
+    fs.rmSync(exit)
+    fs.writeFileSync(exit,'0'.repeat(128))
+    const hugeOut=path.join(dir,'oversized-diagnostic.json')
+    const huge=spawnSync(process.execPath,[script,'--diagnostic',...arms,hugeOut],{
+      env:{...process.env,XD_PR_HEAD:'f'.repeat(40)},encoding:'utf8',
+    })
+    assert.notEqual(huge.status,0)
+    assert.equal(fs.existsSync(hugeOut),false)
+  } finally {
+    fs.rmSync(dir,{recursive:true,force:true})
+  }
+})

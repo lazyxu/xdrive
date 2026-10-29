@@ -51,8 +51,10 @@ test('Web exposes Home as a first-class workspace and keeps platform adapters lo
   assert.ok(webApp.includes("label: '主页'"))
   assert.ok(webApp.includes("appView === 'overview'"))
   assert.ok(webApp.includes('<WebOverviewPage'))
-  assert.ok(webHome.includes('api.fileRecent(6)'))
-  assert.ok(webHome.includes('api.fileFavorites()'))
+  assert.ok(webHome.includes('api.fileRecent(6, read.signal)'),
+    'Home reads must use the current disposable Recent transport scope')
+  assert.ok(webHome.includes('api.fileFavorites(read.signal)'),
+    'Home Favorites GET must share the same scoped signal')
   assert.ok(webHome.includes('api.mediaThumbnail(id, requestSignal)'))
   assert.ok(webHome.includes('onOpenDirectory(entry.node.id, entry.crumbs)'))
   assert.ok(webHome.includes('entry.crumbs.slice(0, -1)'))
@@ -63,12 +65,15 @@ test('Web exposes Home as a first-class workspace and keeps platform adapters lo
 })
 
 test('Desktop-only local disk and availability remain outside the shared Home contract', () => {
-  assert.ok(desktopPort.includes('getLocalDiskSpace()'))
-  assert.ok(desktopPort.includes('getFileAvailabilityBatch(paths)'))
+  assert.ok(desktopPort.includes('getLocalDiskSpace(signal)'),
+    'Desktop local-disk read must keep the page-owned AbortSignal')
+  assert.ok(desktopPort.includes('getFileAvailabilityBatch(paths, signal)'),
+    'Desktop availability batch must keep the same page-owned AbortSignal')
   assert.ok(desktopHome.includes('xDriveFileExplorerAvailabilityFromSnapshot'))
   assert.equal(webHome.includes('getLocalDiskSpace'), false)
   assert.equal(webHome.includes('getFileAvailabilityBatch'), false)
-  assert.ok(desktopHome.includes('port.getFileAvailabilityBatch(paths)'))
+  assert.ok(desktopHome.includes('port.getFileAvailabilityBatch(paths, controller.signal)'),
+    'shared Home availability reads must be released on Owner/page change')
   assert.equal(desktopHome.includes('window.xdriveDesktop'), false)
 })
 

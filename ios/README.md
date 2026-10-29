@@ -1,6 +1,6 @@
-# xDrive iOS — native login preview
+# xDrive iOS — native login and local PhotoKit inventory preview
 
-First testable iOS shell (SwiftUI, iOS 16+), intentionally limited to the **native login screen**.
+First testable iOS shell (SwiftUI, iOS 16+). Authentication works; the only additional native capability is an explicitly requested, local-only PhotoKit metadata inventory. Files, Gallery, Viewer and synchronization remain absent.
 Visual reference: Android `AuthScreens.kt` and `SharedVisuals.kt`; uses the canonical
 `assets/icon/web/pwa-512.png` brand and Android auth colors.
 
@@ -22,8 +22,40 @@ Visual reference: Android `AuthScreens.kt` and `SharedVisuals.kt`; uses the cano
 - If the server requires a mandatory password change, use the existing Web/PWA
   page first. This preview cannot change passwords.
 
+## Native Photos permission and metadata inventory
+
+After native login, tap **检查系统相册（不上传）**, then **允许检查系统相册**.
+PhotoKit requests `readWrite` access only after this second explicit tap. A
+`limited` grant is respected: totals refer only to the subset made visible by
+iOS. Reopen the panel to refresh counts; changing authorization uses iOS Settings.
+
+The native panel shows PhotoKit's lazy photo/video counts and at most 30 recent
+authorized metadata items (type, date and Live Photo flag). Each visible item now
+has an explicit **检查此项的原始资源组成** action: this re-resolves its currently
+authorized transient PhotoKit identity, enumerates only PHAssetResource metadata
+and distinguishes still, video and Live paired-video resources. A missing Live
+component is reported as incomplete, never backed up as a finished Live Photo.
+Full-resolution resource existence does not prove iCloud bytes are locally
+available; this does not start an iCloud download or upload. No localIdentifier
+or resource filename is saved into credentials, persisted state or Server.
+ It neither loads
+original bytes nor accesses GPS, caches local identifiers, stores personal
+assets or writes anything to Server. This is **local recognition**, not an
+upload, a complete Live Photo pair validator, or a background sync engine.
+There is no PhotoKit authorization prompt at app launch or native login.
+
+**Required for true native MVP**: securely mount the PWA's real Files/Gallery
+routes in a single UI (with an intentional browser/native session handoff);
+bind the PhotoKit device and selected Owner; implement explicit upload consent,
+bounded PhotoResource bytes/Live pair streams, the existing
+UploadSession/chunk/finalize protocol, durable per-asset ledger and
+reconciliation after uncertain ACK; handle iCloud originals, albums,
+delete/mirror policy, permissions changes, app restarts and background
+constraints. Never equate a successful count with a successful backup.
+
 Not yet implemented: Android's separate optional LAN IP routing, HTTP opt-in,
-Files, Gallery, Viewer, transfers, background sync and real iOS device acceptance.
+Files, Gallery, Viewer, transfers, actual Photos backup, background sync
+and real iOS device acceptance.
 If using a LAN IP as the primary server URL, its HTTPS certificate must actually
 validate for that IP; preferably use your trusted server hostname with local DNS.
 No certificate-warning bypass or fake LAN failover is implemented.

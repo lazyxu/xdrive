@@ -1,0 +1,121 @@
+name: Places BD09 Owner 95k Camera SQL EXPLAIN PostgreSQL17
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - internal/api/media_places_bd09_query_plan_linux_test.go
+      - .github/workflows/places-bd09-owner-95k-explain.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: places-bd09-owner95k-explain-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  owner-95k-camera-explain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=512m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_PLACES_100K_DISPOSABLE_CI: '1'
+      XD_PLACES_BD09_EXPLAIN_OUTPUT: ${{ github.workspace }}/artifacts/places-bd09-owner-95k-explain.json
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Exact source and gofmt gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD | tee places-explain-source-sha.txt
+          echo "XD_PLACES_BD09_HEAD=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          fi
+          # Assignment inherits gofmt's nonzero parse failure under -e;
+          # the old test -z "$(gofmt ...)" swallowed a syntax error.
+          unformatted="$(gofmt -l internal/api/media_places_bd09_query_plan_linux_test.go)"
+          if [[ -n "$unformatted" ]]; then
+            gofmt -d internal/api/media_places_bd09_query_plan_linux_test.go
+            exit 1
+          fi
+      - name: Seed original source-exact disposable 100k PostgreSQL17 Owner fixture
+        shell: bash
+        env:
+          XD_PLACES_BD09_PG100K: '1'
+          XD_PLACES_BD09_ACTION: seed
+        run: |
+          set -euo pipefail
+          go test -count=1 -run '^TestPlacesBD09Owner100kPostgresBaseline$' -v -timeout=35m ./internal/api 2>&1 | tee places-explain-seed.log
+      - name: Capture actual 95k Camera Count and ordered Page EXPLAIN ANALYZE BUFFERS
+        shell: bash
+        env:
+          XD_PLACES_BD09_QUERY_EXPLAIN: '1'
+        run: |
+          set -euo pipefail
+          go test -count=1 -run '^TestPlacesBD09Owner95kCameraExplain$' -v -timeout=20m ./internal/api 2>&1 | tee places-explain-probe.log
+      - name: Validate sanitized source-exact query plans without SQL or Owner IDs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report=Path('artifacts/places-bd09-owner-95k-explain.json')
+          assert report.is_file() and 300 < report.stat().st_size < 200000
+          data=json.loads(report.read_text())
+          assert data['ci_git_head']==Path('places-explain-source-sha.txt').read_text().strip()
+          assert data['workload']=='owner100k_two_cities_95k_camera_gallery_range'
+          assert data['owner_assets']==100000 and data['camera_count']==95000
+          assert data['page_items']==48 and data['provider_conversion_verified'] is False
+          assert data['derived_bd09']=='deterministic_synthetic_offsets'
+          assert data['production_range_ms']>0
+          plans=data['plans']
+          assert 2 <= len(plans) <= 8
+          assert any(x['has_count'] for x in plans)
+          assert any(x['has_order_by'] and x['has_limit'] for x in plans)
+          for x in plans:
+              assert x['execution_time_ms']>0 and x['planning_time_ms']>=0
+              assert x['nodes'] and len(x['nodes'])<=128
+              assert all(row['node_type'] and row['depth']>=0 for row in x['nodes'])
+          contents=report.read_text().lower()
+          for forbidden in ['raw_sql','sql_text','parameters','owner_id','node_id',
+                            'authorization','cookie','password','gps','jwt','where_clause']:
+              assert '"'+forbidden+'"' not in contents, forbidden
+          print('Real PostgreSQL17 source query plans verified; only structural SQL evidence stored')
+          PY
+      - name: Keep only redacted SQL plan and exact-source test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: places-bd09-owner-95k-explain-${{ github.run_id }}
+          path: |
+            artifacts/places-bd09-owner-95k-explain.json
+            places-explain-source-sha.txt
+            places-explain-seed.log
+            places-explain-probe.log
+          if-no-files-found: warn
+          retention-days: 14

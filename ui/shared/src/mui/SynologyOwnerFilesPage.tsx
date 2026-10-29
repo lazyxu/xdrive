@@ -32,6 +32,7 @@ import type {
 import { XDriveActionButton } from './ActionButton'
 import { XDriveStatusAlert } from './StatusAlert'
 import { XDriveFilesWorkspacePage } from './FilesWorkspacePage'
+import { useXDriveFileExplorerOwnerQuota } from './FileExplorerOwnerQuota'
 import {
   xDriveSynologyOwnerFilesScopeKey,
   xDriveSynologyOwnerFilesNearEnd,
@@ -91,6 +92,9 @@ export function XDriveSynologyOwnerFilesPage({
     scopeKeyFor: xDriveSynologyOwnerFilesScopeKey,
     limit: pageSize,
   })
+  // The identical shared Files quota banner is enabled only after a
+  // Server Owner-authorized read. No DSM volume estimate is substituted.
+  const verifiedOverQuota = useXDriveFileExplorerOwnerQuota(client, rootRevision)
   const [notice, setNotice] = useState('')
   const [preview, setPreview] = useState<{
     scopeKey: string; rootRevision: number; client: XDriveSynologyBackupLocalClient
@@ -333,7 +337,7 @@ export function XDriveSynologyOwnerFilesPage({
   }, [])
 
   return (
-    <XDriveFilesWorkspacePage>
+    <XDriveFilesWorkspacePage overQuota={verifiedOverQuota === true}>
       <Stack spacing={1.5} sx={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}
         onScrollCapture={(event) => {
         // FileExplorer owns the virtualized scroll host. Scope this listener

@@ -62,7 +62,7 @@ export interface XDriveDeviceBackupFolderPage {
 export interface XDriveDeviceBackupDataSource {
   // Optional Desktop-only verified installation identity. No Root authority.
   verifiedLocalDevice?(): Promise<string | null>
-  list(): Promise<XDriveDeviceBackupOverview>
+  list(signal?: AbortSignal): Promise<XDriveDeviceBackupOverview>
   // Optional read-only keyset extension, shared by Web/Mobile Web/Desktop.
   // The presenter will use it in the follow-up UI phase.
   listPage?(limit: number, afterDeviceID: string): Promise<XDriveDeviceBackupOverview>

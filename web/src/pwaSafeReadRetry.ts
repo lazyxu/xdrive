@@ -21,7 +21,15 @@ export function xDrivePwaRetryableRead(path: string, init: RequestInit): boolean
 
 function retryDelay(response: Response): number | null {
   if (response.status !== 429 && response.status !== 503) return null
-  const header = response.headers.get('Retry-After')?.trim()
+  // Safari or a restricted fetch adapter may deny optional response
+  // headers even when the actual HTTP 429/503 body is still readable.
+  // Never discard the received response or issue an unverified extra GET.
+  let header: string | null = null
+  try {
+    const observed = response.headers.get('Retry-After')
+    if (observed !== null && typeof observed !== 'string') return null
+    header = observed?.trim() ?? null
+  } catch { return null }
   if (!header) return response.status === 429 ? 500 : 300
   // Respect Retry-After, including RFC HTTP-date. Never convert a long server
   // cooldown into an early retry; return the response for the UI instead.
@@ -35,8 +43,19 @@ function retryDelay(response: Response): number | null {
 
 function abortedError(): DOMException { return new DOMException('Request cancelled', 'AbortError') }
 
+/** Denied or unknown AbortSignal state is not permission for another Owner GET.
+ * A request without a signal retains the existing bounded retry contract. */
+function retryAbortState(signal?: AbortSignal | null): boolean | null {
+  if (!signal) return false
+  try {
+    const observed = signal.aborted // Observe the getter exactly once.
+    return typeof observed === 'boolean' ? observed : null
+  }
+  catch { return null }
+}
+
 function foreground(signal?: AbortSignal | null): boolean {
-  if (signal?.aborted) return false
+  if (retryAbortState(signal) !== false) return false
   try {
     return typeof document === 'undefined' || document.visibilityState !== 'hidden'
   } catch {
@@ -53,7 +72,9 @@ function foreground(signal?: AbortSignal | null): boolean {
 function delayBeforeRetry(
   delayMs: number, signal?: AbortSignal | null, onArmed?: () => void,
 ): Promise<boolean> {
-  if (signal?.aborted) return Promise.reject(abortedError())
+  const before = retryAbortState(signal)
+  if (before === true) return Promise.reject(abortedError())
+  if (before === null) return Promise.resolve(false)
   return new Promise<boolean>((resolve, reject) => {
     let timer: ReturnType<typeof setTimeout> | null = null
     let settled = false
@@ -78,7 +99,15 @@ function delayBeforeRetry(
       return
     }
     if (settled) return
-    if (signal?.aborted) { onAbort(); return }
+    const afterSubscription = retryAbortState(signal)
+    if (afterSubscription === true) { onAbort(); return }
+    if (afterSubscription === null) {
+      // Keep the first HTTP 429/503 body: it has not been abandoned yet.
+      settled = true
+      cleanup()
+      resolve(false)
+      return
+    }
     try { onArmed?.() }
     catch (error) {
       if (!settled) { settled = true; cleanup(); reject(error) }
@@ -91,14 +120,15 @@ function delayBeforeRetry(
       cleanup()
       resolve(true)
     }, delayMs)
-    if (signal?.aborted) onAbort()
+    if (retryAbortState(signal) !== false) onAbort()
   })
 }
 
 export async function xDriveFetchPwaSafeRead(
   url: string, path: string, init: RequestInit, send: typeof fetch = fetch,
 ): Promise<Response> {
-  if (init.signal?.aborted) throw abortedError()
+  // Unknown or denied cancellation state cannot authorize even the first GET.
+  if (retryAbortState(init.signal) !== false) throw abortedError()
   const eligible = xDrivePwaRetryableRead(path, init)
   let first: Response
   try {

@@ -119,7 +119,7 @@ import PwaOfflineDirectoryBrowser from './PwaOfflineDirectoryBrowser'
 import { xDrivePwaCaptureAlbumSummaries, xDrivePwaCaptureVisitedDirectory, xDrivePwaClearOfflineMetadata, xDrivePwaOfflineScopeKey, xDrivePwaReadOfflineDirectories, xDrivePwaObserveOfflinePurge } from './pwaOfflineDirectory'
 import type { XDrivePwaOfflineOwner } from './pwaOfflineDirectory'
 import XDriveManualConnectionDialog from './ManualConnectionDialog'
-import { xDriveHasPendingBrowserDownload, xDriveHasPendingBrowserUpload, xDriveWarnBeforeLeavingUpload } from './pwaTransferSafety'
+import { xDriveHasPendingBrowserDownload, xDriveHasPendingBrowserUpload, xDriveObservePwaBeforeUnload } from './pwaTransferSafety'
 import { xDriveClearPwaWindowActivity, xDriveReportPwaWindowActivity } from './pwaWorkloadSafety'
 import { xDriveCanResumeBrowserUpload, xDrivePwaResumeFileError } from './pwaUploadResume'
 import { webTransferStore } from './transfers'
@@ -1400,7 +1400,7 @@ function FileManager({
   useEffect(() => () => galleryThumbnailBridge.leave(), [galleryThumbnailBridge])
   const sourceManagerAdapter = useMemo(() => createXDriveSourceManagerAdapter(api), [api])
   const deviceBackupSource = useMemo(() => ({
-    list: () => api.deviceBackups(),
+    list: (signal?: AbortSignal) => api.deviceBackups(signal),
     listPage: (limit: number, afterDeviceID: string) => api.deviceBackupsPage(limit, afterDeviceID),
     foldersPage: (deviceID: string, limit: number, afterSourceID: number) => api.deviceBackupFoldersPage(deviceID, limit, afterSourceID),
     runs: (sourceID: number, limit: number, offset: number) => api.deviceBackupRunSummaries(sourceID, limit, offset),
@@ -1537,8 +1537,8 @@ function FileManager({
 
 
   const cloudStorageSource = useMemo(() => createXDriveCloudStorageDataSource({
-    getQuota: () => api.quota(),
-    getStats: () => api.storageStats(),
+    getQuota: signal => api.quota(signal),
+    getStats: signal => api.storageStats(signal),
   }, {
     onQuota: applyQuota,
     tolerateStatsError: true,
@@ -1585,8 +1585,7 @@ function FileManager({
   const hasBlockingUnloadWork = hasPendingUpload || systemDependenciesDraftDirty || hasBlockingMediaEditor
   useEffect(() => {
     if (!hasBlockingUnloadWork) return
-    window.addEventListener('beforeunload', xDriveWarnBeforeLeavingUpload)
-    return () => window.removeEventListener('beforeunload', xDriveWarnBeforeLeavingUpload)
+    return xDriveObservePwaBeforeUnload(window)
   }, [hasBlockingUnloadWork])
 
   // S3D2A: observe only this mounted Web/Mobile Web FileManager. Do not
@@ -1675,13 +1674,14 @@ function FileManager({
   })
 
   const backgroundTaskPort = useMemo(() => ({
-    loadActiveSummary: () => api.backgroundTaskActiveSummary(),
-    loadMinePage: (limit: number, cursor?: string) =>
-      api.backgroundTaskPage(limit, cursor),
+    loadActiveSummary: (signal?: AbortSignal) => api.backgroundTaskActiveSummary(signal),
+    loadMinePage: (limit: number, cursor?: string, signal?: AbortSignal) =>
+      api.backgroundTaskPage(limit, cursor, signal),
     loadGlobalPage: profile?.role === 'admin'
-      ? (limit: number, cursor?: string) =>
-          api.adminBackgroundTaskPage(limit, cursor)
+      ? (limit: number, cursor?: string, signal?: AbortSignal) =>
+          api.adminBackgroundTaskPage(limit, cursor, signal)
       : undefined,
+    // Never use navigation/foreground AbortSignal for durable task control POST.
     control: (id: string, action: string, global: boolean) =>
       api.controlBackgroundTask(id, action, global),
   }), [api, profile?.role])
@@ -1786,7 +1786,7 @@ function FileManager({
 
   const serviceDependenciesPort = useMemo(() => ({
     operationScope: profile?.id ? `web:${window.location.origin}:${profile.id}` : '',
-    load: () => api.adminServices(),
+    load: (signal?: AbortSignal) => api.adminServices(signal),
     loadCaddyHTTPSConfig: () => api.adminCaddyHTTPSConfig(),
     saveCaddyHTTPSConfig: (input: import('../../ui/shared/src').XDriveCaddyHTTPSUpdate) =>
       api.adminSaveCaddyHTTPS(input),

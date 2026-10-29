@@ -42,10 +42,12 @@ type backupAdminPolicy struct {
 }
 
 type backupAdminInventory struct {
-	Protocol    string                `json:"protocol"`
-	GeneratedAt string                `json:"generated_at"`
-	Policy      backupAdminPolicy     `json:"policy"`
-	Snapshots   []backupAdminSnapshot `json:"snapshots"`
+	Protocol       string                `json:"protocol"`
+	GeneratedAt    string                `json:"generated_at"`
+	Policy         backupAdminPolicy     `json:"policy"`
+	Snapshots      []backupAdminSnapshot `json:"snapshots"`
+	TotalSnapshots *int                  `json:"total_snapshots,omitempty"`
+	Truncated      *bool                 `json:"truncated,omitempty"`
 }
 
 type backupAdminStatus struct {
@@ -233,6 +235,17 @@ func (s *Server) backupAdminState() backupAdminPage {
 		strings.Trim(inventory.Policy.Revision, "0123456789abcdef") != "" {
 		page.Message = "备份清单已过期或结构不符合协议。"
 		return page
+	}
+	// Older Host controllers may omit both fields. New Host evidence must be
+	// bounded and internally consistent; neither count authorizes deletion.
+	if inventory.TotalSnapshots != nil || inventory.Truncated != nil {
+		if inventory.TotalSnapshots == nil || inventory.Truncated == nil ||
+			*inventory.TotalSnapshots < len(inventory.Snapshots) ||
+			*inventory.TotalSnapshots > 1_000_000 ||
+			*inventory.Truncated != (*inventory.TotalSnapshots > len(inventory.Snapshots)) {
+			page.Message = "备份清单总数或截断状态不一致。"
+			return page
+		}
 	}
 	seen := make(map[string]bool, len(inventory.Snapshots))
 	for _, item := range inventory.Snapshots {

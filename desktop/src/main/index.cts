@@ -2866,11 +2866,12 @@ function registerIPCHandlers() {
     requireAgentCapability(hello, 'cache-management')
     return requireAgentClient().cacheStats()
   }, false))
-  ipcMain.handle('agent:get-local-disk-space', () => runAgentAction<AgentLocalDiskSpace>(async () => {
-    const hello = await requireAgentLifecycle().ensureRunning()
-    requireAgentCapability(hello, 'local-disk-space')
-    return requireAgentClient().localDiskSpace()
-  }, false))
+  ipcMain.handle('agent:get-local-disk-space', (event, requestID: unknown = undefined) =>
+    runAgentAction<AgentLocalDiskSpace>(() => viewportRequests.run(event.sender, requestID, async signal => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'local-disk-space')
+      return requireAgentClient().localDiskSpace(signal)
+    }), false))
   ipcMain.handle('agent:release-cache', () => runAgentAction<AgentCacheReleaseResult>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'cache-management')
@@ -3330,11 +3331,14 @@ function registerIPCHandlers() {
       }
       return requireAgentClient().removeLocalBoundBackup(sourceID, revision)
     }, false))
-  ipcMain.handle('agent:get-device-backups', () => runAgentAction<AgentDeviceBackupOverview>(async () => {
-    const hello = await requireAgentLifecycle().ensureRunning()
-    requireAgentCapability(hello, 'device-backup-read')
-    return requireAgentClient().deviceBackups()
-  }, false))
+  ipcMain.handle('agent:get-device-backups', (event, requestID: unknown = undefined) =>
+    runAgentAction<AgentDeviceBackupOverview>(
+      () => viewportRequests.run(event.sender, requestID, async signal => {
+        const hello = await requireAgentLifecycle().ensureRunning()
+        requireAgentCapability(hello, 'device-backup-read')
+        if (signal?.aborted) throw new AgentIPCError('aborted', 0, 'Device Backup overview request cancelled.')
+        return requireAgentClient().deviceBackups(signal)
+      }), false))
   // Safe owner-scoped device list pagination, no local Root or mutation.
   ipcMain.handle('agent:get-device-backups-page', (_event, limit: unknown, afterDeviceID: unknown) => runAgentAction<AgentDeviceBackupOverview>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
@@ -5738,11 +5742,13 @@ function registerIPCHandlers() {
     return requireAgentClient().triggerSource(sourceID)
   }, false))
 
-  ipcMain.handle('agent:cloud-root', () => runAgentAction<AgentCloudNode>(async () => {
-    const hello = await requireAgentLifecycle().ensureRunning()
-    requireAgentCapability(hello, 'cloud-files')
-    return requireAgentClient().cloudRoot()
-  }, false))
+  ipcMain.handle('agent:cloud-root', (event, requestID: unknown = undefined) =>
+    runAgentAction<AgentCloudNode>(
+      () => viewportRequests.run(event.sender, requestID, async (signal) => {
+        const hello = await requireAgentLifecycle().ensureRunning()
+        requireAgentCapability(hello, 'cloud-files')
+        return requireAgentClient().cloudRoot(signal)
+      }), false))
   ipcMain.handle('agent:cloud-children', (_event, parentID: unknown) => runAgentAction<AgentCloudNode[]>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'cloud-files')
@@ -6023,11 +6029,12 @@ function registerIPCHandlers() {
     return requireAgentClient().cloudReorderFileSavedSearches(ids as number[])
   }, false))
 
-  ipcMain.handle('agent:cloud-favorites', () => runAgentAction<AgentCloudFavoriteItem[]>(async () => {
-    const hello = await requireAgentLifecycle().ensureRunning()
-    requireAgentCapability(hello, 'file-favorites')
-    return requireAgentClient().cloudFileFavorites()
-  }, false))
+  ipcMain.handle('agent:cloud-favorites', (event, requestID: unknown = undefined) =>
+    runAgentAction<AgentCloudFavoriteItem[]>(() => viewportRequests.run(event.sender, requestID, async signal => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'file-favorites')
+      return requireAgentClient().cloudFileFavorites(signal)
+    }), false))
   ipcMain.handle('agent:cloud-favorite', (_event, nodeID: unknown) => runAgentAction<AgentCloudFavoriteItem>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'file-favorites')
@@ -6044,15 +6051,16 @@ function registerIPCHandlers() {
     }
     return requireAgentClient().cloudUnfavoriteFile(nodeID)
   }, false))
-  ipcMain.handle('agent:cloud-recent', (_event, limit: unknown) => runAgentAction<AgentCloudRecentItem[]>(async () => {
-    const hello = await requireAgentLifecycle().ensureRunning()
-    requireAgentCapability(hello, 'file-recent')
-    const value = limit === undefined ? 16 : limit
-    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1 || value > 50) {
-      throw new AgentIPCError('invalid_input', 0, 'Recent item limit must be between 1 and 50.')
-    }
-    return requireAgentClient().cloudFileRecent(value)
-  }, false))
+  ipcMain.handle('agent:cloud-recent', (event, limit: unknown, requestID: unknown = undefined) =>
+    runAgentAction<AgentCloudRecentItem[]>(() => viewportRequests.run(event.sender, requestID, async signal => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'file-recent')
+      const value = limit === undefined ? 16 : limit
+      if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1 || value > 50) {
+        throw new AgentIPCError('invalid_input', 0, 'Recent item limit must be between 1 and 50.')
+      }
+      return requireAgentClient().cloudFileRecent(value, signal)
+    }), false))
   ipcMain.handle('agent:cloud-recent-touch', (_event, nodeID: unknown) => runAgentAction<AgentCloudRecentItem>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'file-recent')
@@ -6820,11 +6828,13 @@ function registerIPCHandlers() {
       ...(input.clear_ak ? { clear_ak: true } : {}),
     })
   }, false))
-  ipcMain.handle('agent:cloud-admin-services', () => runAgentAction<AgentServiceDependenciesSnapshot>(async () => {
-    const hello = await requireAgentLifecycle().ensureRunning()
-    requireAgentCapability(hello, 'admin-services')
-    return requireAgentClient().cloudAdminServices()
-  }, false))
+  ipcMain.handle('agent:cloud-admin-services', (event, requestID: unknown = undefined) =>
+    runAgentAction<AgentServiceDependenciesSnapshot>(
+      () => viewportRequests.run(event.sender, requestID, async signal => {
+        const hello = await requireAgentLifecycle().ensureRunning()
+        requireAgentCapability(hello, 'admin-services')
+        return requireAgentClient().cloudAdminServices(signal)
+      }), false))
 
   const adminStorageOperations = new Set([
     'stats', 'health', 'history', 'legacy', 'unreferenced', 'staging',
@@ -6946,8 +6956,14 @@ function registerIPCHandlers() {
     }
     return id
   }
-  ipcMain.handle('agent:cloud-admin-users', () => runAgentAction<AgentAdminUser[]>(async () =>
-    (await requireDesktopAdminUsers()).cloudAdminUsers(), false))
+  ipcMain.handle('agent:cloud-admin-users', (event, requestID: unknown = undefined) =>
+    runAgentAction<AgentAdminUser[]>(() =>
+      viewportRequests.run(event.sender, requestID, async signal => {
+        // Existing administrator role/capability gate remains authoritative.
+        const admin = await requireDesktopAdminUsers()
+        if (signal?.aborted) throw new AgentIPCError('aborted', 0, 'Admin Users list request cancelled.')
+        return admin.cloudAdminUsers(signal)
+      }), false))
   ipcMain.handle('agent:cloud-admin-users-create', (_event, input: unknown) =>
     runAgentAction<AgentAdminUser>(async () => {
       if (!input || typeof input !== 'object' || Array.isArray(input)) {
@@ -6993,32 +7009,37 @@ function registerIPCHandlers() {
   ipcMain.handle('agent:cloud-admin-users-delete', (_event, id: unknown) =>
     runAgentAction<{ ok: boolean }>(async () =>
       (await requireDesktopAdminUsers()).cloudAdminDeleteUser(checkedAdminUserID(id)), false))
+  // These two authenticated GETs are disposable *readers*. They use the
+  // existing sender-scoped viewport registry; no task control or durable
+  // operation is ever registered here.
   ipcMain.handle(
     'agent:cloud-background-task-summary',
-    () => runAgentAction<AgentBackgroundTaskActiveSummary>(async () => {
-      const hello = await requireAgentLifecycle().ensureRunning()
-      requireAgentCapability(hello, 'background-task-summary')
-      return requireAgentClient().cloudBackgroundTaskActiveSummary()
-    }, false),
+    (event, requestID: unknown = undefined) =>
+      runAgentAction<AgentBackgroundTaskActiveSummary>(
+        () => viewportRequests.run(event.sender, requestID, async signal => {
+          const hello = await requireAgentLifecycle().ensureRunning()
+          requireAgentCapability(hello, 'background-task-summary')
+          return requireAgentClient().cloudBackgroundTaskActiveSummary(signal)
+        }), false),
   )
   ipcMain.handle('agent:cloud-background-task-page', (
-    _event,
+    event,
     global: unknown,
     limit: unknown,
     cursor: unknown,
-  ) => runAgentAction<AgentBackgroundTaskPage>(async () => {
-    const hello = await requireAgentLifecycle().ensureRunning()
-    requireAgentCapability(hello, 'background-tasks')
-    const parsedLimit = typeof limit === 'number' && Number.isSafeInteger(limit)
-      ? Math.min(200, Math.max(1, limit))
-      : 50
-    const parsedCursor = typeof cursor === 'string' ? cursor.trim() : ''
-    return requireAgentClient().cloudBackgroundTaskPage(
-      global === true,
-      parsedLimit,
-      parsedCursor,
-    )
-  }, false))
+    requestID: unknown = undefined,
+  ) => runAgentAction<AgentBackgroundTaskPage>(
+    () => viewportRequests.run(event.sender, requestID, async signal => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'background-tasks')
+      const parsedLimit = typeof limit === 'number' && Number.isSafeInteger(limit)
+        ? Math.min(200, Math.max(1, limit))
+        : 50
+      const parsedCursor = typeof cursor === 'string' ? cursor.trim() : ''
+      return requireAgentClient().cloudBackgroundTaskPage(
+        global === true, parsedLimit, parsedCursor, signal,
+      )
+    }), false))
   ipcMain.handle('agent:cloud-background-tasks', (_event, global: unknown, limit: unknown) => runAgentAction<AgentBackgroundTask[]>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'background-tasks')
@@ -7644,11 +7665,12 @@ function registerIPCHandlers() {
     )
     }), false,
   ))
-  ipcMain.handle('agent:cloud-quota', () => runAgentAction<AgentCloudQuota>(async () => {
-    const hello = await requireAgentLifecycle().ensureRunning()
-    requireAgentCapability(hello, 'cloud-files')
-    return requireAgentClient().cloudQuota()
-  }, false))
+  ipcMain.handle('agent:cloud-quota', (event, requestID: unknown = undefined) =>
+    runAgentAction<AgentCloudQuota>(() => viewportRequests.run(event.sender, requestID, async signal => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'cloud-files')
+      return requireAgentClient().cloudQuota(signal)
+    }), false))
   ipcMain.handle('agent:get-server-update', () => runAgentAction<AgentServerUpdateState>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'server-update')
@@ -7664,11 +7686,12 @@ function registerIPCHandlers() {
     }
     return requireAgentClient().startServerUpdate(sourceValue, channelValue, backupFileDataValue === true)
   }, false))
-  ipcMain.handle('agent:cloud-storage-stats', () => runAgentAction<AgentCloudStorageStats>(async () => {
-    const hello = await requireAgentLifecycle().ensureRunning()
-    requireAgentCapability(hello, 'storage-intelligence')
-    return requireAgentClient().cloudStorageStats()
-  }, false))
+  ipcMain.handle('agent:cloud-storage-stats', (event, requestID: unknown = undefined) =>
+    runAgentAction<AgentCloudStorageStats>(() => viewportRequests.run(event.sender, requestID, async signal => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'storage-intelligence')
+      return requireAgentClient().cloudStorageStats(signal)
+    }), false))
   ipcMain.handle('agent:cloud-storage-cache-cleanup', (_event, kind: AgentStorageCacheCleanupKind) => runAgentAction<AgentStorageCacheCleanup>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'storage-cache-cleanup')
@@ -8026,7 +8049,7 @@ function registerIPCHandlers() {
     }
     return runAgentAction<AgentFileAvailability>(() => requireAgentClient().fileAvailability(path), false)
   })
-  ipcMain.handle('agent:get-file-availability-batch', (_event, value: unknown) => {
+  ipcMain.handle('agent:get-file-availability-batch', (event, value: unknown, requestID: unknown = undefined) => {
     if (!Array.isArray(value) || value.length === 0 || value.length > 2048) {
       return { ok: false, error: { code: 'invalid_input', message: '1 to 2048 file paths are required.' } }
     }
@@ -8036,14 +8059,15 @@ function registerIPCHandlers() {
     if (paths.length === 0) {
       return { ok: false, error: { code: 'invalid_input', message: 'At least one file path is required.' } }
     }
-    return runAgentAction<AgentFileAvailabilityBatch>(() => {
-      const hello = agentState.connected ? agentState.hello : undefined
-      if (!hello) {
-        throw new AgentIPCError('agent_unavailable', 0, 'xdrive-agent is not connected.')
-      }
-      requireAgentCapability(hello, 'file-availability-batch')
-      return requireAgentClient().fileAvailabilityBatch(paths)
-    }, false)
+    return runAgentAction<AgentFileAvailabilityBatch>(() =>
+      viewportRequests.run(event.sender, requestID, async signal => {
+        const hello = agentState.connected ? agentState.hello : undefined
+        if (!hello) {
+          throw new AgentIPCError('agent_unavailable', 0, 'xdrive-agent is not connected.')
+        }
+        requireAgentCapability(hello, 'file-availability-batch')
+        return requireAgentClient().fileAvailabilityBatch(paths, signal)
+      }), false)
   })
   ipcMain.handle('agent:set-file-availability', (_event, path: unknown, action: unknown) => {
     if (

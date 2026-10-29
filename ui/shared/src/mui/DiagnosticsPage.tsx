@@ -214,6 +214,78 @@ function diagnosticCategory(name: string) {
   return '客户端与更新'
 }
 
+/**
+ * A partial Host diagnostic is never proof that the whole app is healthy.
+ * DSM may verify only its own Session and local backup Agent; untouched Server,
+ * storage, sync, updates and other capabilities must not receive a green badge.
+ * Kept pure so the exact production presentation has executable regression tests.
+ */
+export function xDriveDiagnosticsSummaryPresentation(
+  checkedCount: number,
+  infoCount: number,
+  warnCount: number,
+  failCount: number,
+  limitedScope: boolean,
+): {
+  tone: 'good' | 'neutral' | 'warning' | 'bad'
+  label: string
+  title: string
+  text: string
+  emptyIssuesMessage: string
+} {
+  const emptyIssuesMessage = limitedScope
+    ? checkedCount === 0
+      ? '本次没有完成任何检查，不能确认系统状态。'
+      : '本次已检查的接口未发现需要处理的问题；其他系统能力未检测。'
+    : '未发现需要处理的问题。'
+  if (failCount > 0) {
+    return {
+      tone: 'bad', label: '异常',
+      title: limitedScope ? '已检查接口发现需要处理的问题' : '发现需要处理的问题',
+      text: `发现 ${failCount} 项异常${warnCount > 0 ? `，${warnCount} 项需要注意` : ''}${infoCount > 0 ? `，另有 ${infoCount} 项提示` : ''}。`,
+      emptyIssuesMessage,
+    }
+  }
+  if (warnCount > 0) {
+    return {
+      tone: 'warning', label: '需注意',
+      title: limitedScope ? '已检查接口需要注意' : '系统总体正常',
+      text: `未发现故障，有 ${warnCount} 项需要注意${infoCount > 0 ? `，另有 ${infoCount} 项提示` : ''}。`,
+      emptyIssuesMessage,
+    }
+  }
+  // An empty result is NOT proof of health, even if the caller did not
+  // provide a limited scope label. Informational-only checks are not passes.
+  if (checkedCount === 0) {
+    return {
+      tone: 'neutral', label: '未检查', title: '未完成健康检查',
+      text: '本次没有完成任何检查；不能将未检查的能力视为正常。',
+      emptyIssuesMessage: '本次没有完成任何检查，不能确认系统状态。',
+    }
+  }
+  if (limitedScope || infoCount >= checkedCount) {
+    const passCount = Math.max(0, checkedCount - infoCount)
+    return {
+      tone: 'neutral',
+      label: limitedScope ? '已检查' : '仅提示',
+      title: limitedScope ? '已检查可用接口' : '只收到提示类检查',
+      text: limitedScope
+        ? infoCount > 0
+          ? `已执行 ${checkedCount} 项检查，其中 ${passCount} 项正常、${infoCount} 项提示；其他系统能力未检测。`
+          : `当前支持的 ${checkedCount} 项检查正常；其他系统能力未检测。`
+        : '本次结果只有提示类检查，没有确认通过的项目；不能断言系统正常。',
+      emptyIssuesMessage,
+    }
+  }
+  return {
+    tone: 'good', label: '正常', title: '系统状态正常',
+    text: infoCount > 0
+      ? `未发现需要处理的问题，有 ${infoCount} 项提示。`
+      : '未发现需要处理的问题。',
+    emptyIssuesMessage,
+  }
+}
+
 export function XDriveDiagnosticsPage({
   diagnostics,
   busy,
@@ -312,26 +384,9 @@ export function XDriveDiagnosticsPage({
     ;(groups[category] ||= []).push(check)
     return groups
   }, {})
-  const summaryTone = failCount > 0 ? 'bad' : warnCount > 0 ? 'warning' : 'good'
-  const summaryLabel = failCount > 0 ? '异常' : warnCount > 0 ? '需注意' : '正常'
-  const summaryTitle = failCount > 0
-    ? '发现需要处理的问题'
-    : warnCount > 0
-      ? '系统总体正常'
-      : '系统状态正常'
-  const summaryText = failCount > 0
-    ? `发现 ${failCount} 项异常${warnCount > 0 ? `，${warnCount} 项需要注意` : ''}${infoCount > 0 ? `，另有 ${infoCount} 项提示` : ''}。建议优先处理异常项。`
-    : warnCount > 0
-      ? `未发现故障，有 ${warnCount} 项需要注意${infoCount > 0 ? `，另有 ${infoCount} 项提示` : ''}。`
-      : infoCount > 0
-        ? `未发现需要处理的问题，有 ${infoCount} 项提示。`
-        : '未发现需要处理的问题。'
-
-  const scopedAllClear = Boolean(scopeNotice) && failCount === 0 && warnCount === 0
-  const effectiveSummaryTitle = scopedAllClear ? '已检查可用接口' : summaryTitle
-  const effectiveSummaryText = scopedAllClear
-    ? `当前支持的 ${presentedChecks.length} 项检查正常；其他系统能力未检测。`
-    : summaryText
+  const summary = xDriveDiagnosticsSummaryPresentation(
+    presentedChecks.length, infoCount, warnCount, failCount, Boolean(scopeNotice),
+  )
 
   const issueAction = (check: AgentDiagnosticCheck) => {
     switch (check.name) {
@@ -387,10 +442,10 @@ export function XDriveDiagnosticsPage({
         <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
           <Stack spacing={1}>
             <Stack direction="row" spacing={1.25} alignItems="center" flexWrap="wrap" useFlexGap>
-              <XDriveStatusBadge tone={summaryTone} label={summaryLabel} />
-              <Typography variant="h6" fontWeight={700}>{effectiveSummaryTitle}</Typography>
+              <XDriveStatusBadge tone={summary.tone} label={summary.label} />
+              <Typography variant="h6" fontWeight={700}>{summary.title}</Typography>
             </Stack>
-            <Typography variant="body2" color="text.secondary">{effectiveSummaryText}</Typography>
+            <Typography variant="body2" color="text.secondary">{summary.text}</Typography>
             <Typography variant="caption" color="text.secondary">
               上次检查：{new Date(diagnostics.generated_at).toLocaleString()}
             </Typography>
@@ -450,7 +505,7 @@ export function XDriveDiagnosticsPage({
             })}
           </Stack>
         ) : (
-          <XDriveStatePanel message="未发现需要处理的问题。" />
+          <XDriveStatePanel message={summary.emptyIssuesMessage} />
         )}
 
         <Accordion

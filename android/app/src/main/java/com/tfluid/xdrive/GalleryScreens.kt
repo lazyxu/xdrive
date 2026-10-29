@@ -589,12 +589,13 @@ internal fun decodeGalleryThumbnail(bytes: ByteArray): ImageBitmap? {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun GalleryTile(
+internal fun GalleryTile(
     item: GalleryAsset, controller: DriveController,
     cache: LruCache<String, ImageBitmap>,
     containTiles: Boolean,
     selectionMode: Boolean,
     isSelected: Boolean,
+    allowSelection: Boolean = true,
 ) {
     val key = "${item.node.id}:${item.node.revision}"
     // A new Owner Range/revision or thumbnail-availability change invalidates
@@ -645,10 +646,11 @@ private fun GalleryTile(
                     controller.openGalleryViewer(item)
                 else controller.showGalleryInfo(item)
             },
-            onLongClickLabel = if (failed) "重试缩略图" else if (!selectionMode) "选择照片" else null,
+            onLongClickLabel = if (failed) "重试缩略图"
+                else if (!selectionMode && allowSelection) "选择照片" else null,
             onLongClick = when {
                 failed -> ({ retryAttempt++ })
-                !selectionMode -> ({
+                !selectionMode && allowSelection -> ({
                     controller.setGallerySelectionMode(true)
                     controller.toggleGallerySelection(item)
                 })

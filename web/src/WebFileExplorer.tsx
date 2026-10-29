@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded'
 import { Box, LinearProgress, useMediaQuery } from '@mui/material'
 import MobileFiles from './MobileFiles'
+import { xDriveWebFilesKeyboardProfile } from './webFilesKeyboardProfile'
 import { mobileFilesDecodeState } from './mobileFilesState'
 import {
   XDriveFileExplorer,
@@ -23,6 +24,7 @@ import {
   useXDriveFileExplorerFavorites,
   useXDriveFileExplorerRecent,
   useXDriveFileExplorerOperationController,
+  useXDriveFileExplorerOwnerSourceOptions,
   useXDriveFileExplorerExternalDropController,
   xDriveCaptureVideoPosterBlob,
   xDriveFileKind,
@@ -38,7 +40,6 @@ import type {
   XDriveTrashDialogAdapter,
 } from '@xdrive/ui/mui'
 import {
-  xDriveFileExplorerKeyboardProfileFromPlatform,
   xDriveFileExplorerCopyPath,
   xDriveFileExplorerPathLookupPageOptions,
   xDriveFileExplorerLoadChildDirectoryPage,
@@ -72,6 +73,7 @@ import type { XDriveApi } from './api'
 import { xDriveResolveFileExplorerCapabilities } from '../../ui/shared/src/file-explorer-capabilities'
 import type { XDriveFileExplorerDataAdapter } from '../../ui/shared/src/file-explorer-capabilities'
 import { xDriveFileExplorerVerifiedChildReanchor, xDriveFileExplorerVerifiedChildReveal } from '../../ui/shared/src/mui/FileExplorerReanchor'
+import { xDriveResolveRoutedDirectoryAncestors } from './routedDirectoryAncestors'
 
 /** The existing Files Search input in either responsive presentation. */
 function xDriveWebFilesSearchInput(target: Element | null): target is HTMLInputElement {
@@ -86,11 +88,7 @@ type WebSearchResult = XDriveCloudFilesSearchResult<Node>
 const FILE_VIEW_KEY = 'xdrive.files.view_mode'
 const FILE_DETAILS_LAYOUT_KEY = 'xdrive.files.details_layout'
 const FILE_VIEW_PREFERENCES_KEY = 'xdrive.files.view_preferences'
-const FILE_KEYBOARD_PROFILE = xDriveFileExplorerKeyboardProfileFromPlatform(
-  typeof navigator === 'undefined'
-    ? ''
-    : `${navigator.platform} ${navigator.userAgent}`,
-)
+const FILE_KEYBOARD_PROFILE = xDriveWebFilesKeyboardProfile()
 
 type Crumb = { id: number; name: string }
 
@@ -231,19 +229,15 @@ export default function WebFileExplorer({
     setTagDialogItems([])
     setTagDialogMode(null)
   }, [navigationSessionStorageKey])
-  const [searchSourceOptions, setSearchSourceOptions] = useState<XDriveFileExplorerSearchSourceOption[]>([])
-  useEffect(() => {
-    let active = true
-    setSearchSourceOptions([])
-    void api.sources().then((sources) => {
-      if (active) setSearchSourceOptions(sources.map((source) => ({ id: source.id, name: source.name })))
-    }).catch((error) => {
-      if (active) onError(error)
-    })
-    return () => {
-      active = false
-    }
-  }, [api, navigationSessionStorageKey, onError])
+  const loadSourceOptions = useCallback(async (): Promise<XDriveFileExplorerSearchSourceOption[]> =>
+    (await api.sources()).map((source) => ({ id: source.id, name: source.name })),
+  [api])
+  const { options: searchSourceOptions } = useXDriveFileExplorerOwnerSourceOptions({
+    host: api,
+    ownerKey: navigationSessionStorageKey ?? '',
+    read: loadSourceOptions,
+    onError,
+  })
 
   const recent = useXDriveFileExplorerRecent<Node>({
     lifecycleKey: navigationSessionStorageKey ?? '',
@@ -286,6 +280,7 @@ export default function WebFileExplorer({
     refresh,
     beginNavigationIntent,
     isNavigationIntentCurrent,
+    navigationReadSignalForIntent,
     navigateTo,
     navigateToCrumb,
     goBack,
@@ -344,11 +339,12 @@ export default function WebFileExplorer({
         groups: page.groups,
       }
     },
-    loadRoot: () => api.root(),
-    findChildDirectory: async (parentID, name) => {
-      const page = await api.listPage(
+    loadRoot: (signal?: AbortSignal) => api.root(signal),
+    findChildDirectory: async (parentID, name, signal?: AbortSignal) => {
+      const page = await api.listPageAbortable(
         parentID,
         xDriveFileExplorerPathLookupPageOptions(name),
+        signal,
       )
       return page.items[0] ?? null
     },
@@ -401,27 +397,55 @@ export default function WebFileExplorer({
     }
     routedDirectoryRef.current = routedRequest
     let active = true
-    void (async () => {
-      const chain: Crumb[] = []
-      let cursor = initialDirectoryID
-      for (let depth = 0; depth < 256; depth += 1) {
-        const node = await api.node(cursor)
-        if (node.type !== 'dir') throw new Error('目标不是文件夹。')
-        chain.push({ id: node.id, name: node.name })
-        if (!node.parent_id) break
-        cursor = node.parent_id
+    // Each external ?dir= ancestor walk is a disposable series of GETs.
+    // Abort the actual in-flight Node GET when the route/Owner changes; do
+    // not merely discard its eventual React result after up to 256 lookups.
+    const ancestorLookup = new AbortController()
+    // A new Files intent can win before this effect rerenders; retire its
+    // previous Node GET immediately, not only during eventual React cleanup.
+    const abortForNewNavigation = () => ancestorLookup.abort()
+    let navigationSignal: AbortSignal | null = null
+    let navigationListenerAttached = false
+    try {
+      navigationSignal = navigationReadSignalForIntent(navigationIntentID)
+      if (!navigationSignal || navigationSignal.aborted) ancestorLookup.abort()
+      else {
+        navigationSignal.addEventListener('abort', abortForNewNavigation, { once: true })
+        navigationListenerAttached = true
+        // The successor might cancel during listener admission. Never start
+        // the first private GET with an already-obsolete navigation identity.
+        if (navigationSignal.aborted) ancestorLookup.abort()
       }
-      if (!active || !isNavigationIntentCurrent(navigationIntentID)) return
-      chain.reverse()
+    } catch {
+      // Restricted Safari/WebKit may deny optional AbortSignal listeners.
+      // Without guaranteed immediate preemption, fail closed before private
+      // Node GETs rather than let an obsolete request consume a connection.
+      ancestorLookup.abort()
+    }
+    void (async () => {
+      const chain: Crumb[] | null = await xDriveResolveRoutedDirectoryAncestors(
+        initialDirectoryID,
+        (id, signal) => api.node(id, signal),
+        ancestorLookup.signal,
+        () => active && isNavigationIntentCurrent(navigationIntentID),
+      )
+      if (!chain || !active || ancestorLookup.signal.aborted ||
+          !isNavigationIntentCurrent(navigationIntentID)) return
       // Retain the resolved route's ticket when current?.id changes. User
       // navigation invalidates the old intent and must win over the old URL.
       routedRequest.dispatched = true
       await navigateTo(chain, true, navigationIntentID)
     })().catch((error) => {
-      if (active && isNavigationIntentCurrent(navigationIntentID)) onError(error)
+      if (active && !ancestorLookup.signal.aborted &&
+          isNavigationIntentCurrent(navigationIntentID)) onError(error)
     })
     return () => {
       active = false
+      if (navigationListenerAttached) {
+        try { navigationSignal?.removeEventListener('abort', abortForNewNavigation) }
+        catch { /* optional Safari listener cleanup cannot crash Files unmount */ }
+      }
+      ancestorLookup.abort()
       // A never-dispatched lookup cancelled by StrictMode must replay.
       // Keep already-dispatched tickets until the requested URL/session
       // actually changes, not merely until current directory rerenders.
@@ -435,6 +459,7 @@ export default function WebFileExplorer({
     current?.id,
     initialDirectoryID,
     isNavigationIntentCurrent,
+    navigationReadSignalForIntent,
     navigateTo,
     navigationSessionStorageKey,
     onError,
@@ -1292,31 +1317,37 @@ export default function WebFileExplorer({
     const routeGuard = savedResumeRouteGuardRef.current
     try {
       const navigationIntentID = beginNavigationIntent()
-      const chain: Crumb[] = []
-      let nodeID = directoryID
-      for (let depth = 0; depth < 256; depth += 1) {
-        const node = await api.node(nodeID)
-        if (node.type !== 'dir') throw new Error('目标不是文件夹。')
-        chain.push({ id: node.id, name: node.name })
-        if (!node.parent_id) break
-        nodeID = node.parent_id
-      }
-      if (!chain.length || !isNavigationIntentCurrent(navigationIntentID)) return false
-      chain.reverse()
+      const navigationSignal = navigationReadSignalForIntent(navigationIntentID)
+      if (!navigationSignal) return false
+      // Saved resume and external ?dir= use one Owner-authorized ancestor
+      // resolver. The successor's intent aborts the actual previous Node GET.
+      const chain: Crumb[] | null = await xDriveResolveRoutedDirectoryAncestors(
+        directoryID,
+        (id, signal) => api.node(id, signal),
+        navigationSignal,
+        () => savedResumeRouteGuardRef.current === routeGuard &&
+          isNavigationIntentCurrent(navigationIntentID),
+      )
+      if (!chain?.length || navigationSignal.aborted ||
+          !isNavigationIntentCurrent(navigationIntentID)) return false
       let accepted = false
       await navigateTo(chain, true, navigationIntentID, currentAccepted => {
         accepted = currentAccepted
       })
-      // Unlike void Promise completion, this proves the original workspace
-      // accepted its own counted first page, not a failed/superseded lookup.
-      return accepted && isNavigationIntentCurrent(navigationIntentID)
+      // A valid Node is NOT authorization to display a folder: only the
+      // current Owner's first accepted counted Range is the receipt.
+      return accepted && !navigationSignal.aborted &&
+        isNavigationIntentCurrent(navigationIntentID)
     } finally {
       // A completed/denied/superseded saved resume can no longer make the
       // bootstrap root provisional. Do not alter a newer account's guard.
-      if (savedResumeRouteGuardRef.current === routeGuard &&
-          routeGuard.folderID === directoryID) routeGuard.pending = false
+      // Release the captured OLD Owner guard even when a newer Owner has
+      // replaced the ref with the same numeric Node ID. Never mutate the
+      // newer guard: it has its own object identity and pending receipt.
+      if (routeGuard.folderID === directoryID) routeGuard.pending = false
     }
-  }, [api, beginNavigationIntent, isNavigationIntentCurrent, navigateTo])
+  }, [api, beginNavigationIntent, isNavigationIntentCurrent,
+    navigationReadSignalForIntent, navigateTo])
 
   const requestReveal = (parentID: number, nodeID: number) => {
     revealSequenceRef.current += 1

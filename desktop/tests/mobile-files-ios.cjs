@@ -594,7 +594,8 @@ test('F-PARITY-05: Mobile typed folder path delegates only to the shared Web sub
   assert.match(mobileSource, /props\.onPathSubmit\(target\)/)
   assert.match(controller, /const submitPath = async \(rawPath: string\)/)
   assert.match(controller, /await xDriveFileExplorerSubmitPath\(\{/)
-  assert.match(controller, /if \(navigation\.isNavigationIntentCurrent\(navigationIntentID\)\) onError\(error\)/)
+  assert.match(controller, /if \(!signal\.aborted && navigation\.isNavigationIntentCurrent\(navigationIntentID\)\) onError\(error\)/,
+    'old or cancelled path errors must not leak into a newer directory')
   assert.doesNotMatch(mobileSource, /xDriveResolveFileExplorerPath|api\.findChildDirectory/)
 })
 
@@ -613,7 +614,9 @@ test('P95 typed path must wait for current shared navigation first-page receipt'
   const controller = read('ui/shared/src/mui/FileExplorerWorkspaceController.ts')
   const adapter = read('web/src/WebFileExplorer.tsx')
   for (const s of ['onAccepted?: (accepted: boolean) => void','onAccepted?.(false)','onAccepted?.(true)','if (committed === false || !isNavigationCurrent(requestID))']) assert.ok(navigation.includes(s),s)
-  for (const s of ['let accepted = false','(committed) => { accepted = committed }','return accepted && navigation.isNavigationIntentCurrent(navigationIntentID)','return false']) assert.ok(controller.includes(s),s)
+  for (const s of ['let accepted = false','(committed) => { accepted = committed }','return accepted && !signal.aborted &&','return false']) assert.ok(controller.includes(s),s)
+  assert.match(controller, /return accepted && !signal\.aborted &&\s*navigation\.isNavigationIntentCurrent\(navigationIntentID\)/,
+    'the accepted Range receipt must belong to the current non-aborted path intent')
   assert.match(adapter, /onPathSubmit=\{trashActive \? undefined : \(path\) => submitPath\(path\)\}/)
   for (const s of ['const [acceptedPathIntent, setAcceptedPathIntent] = useState(0)','acceptedPathIntent === pendingPath.intent','if (accepted === true) setAcceptedPathIntent(intent)','else if (accepted === false) pendingPathOriginRef.current = null']) assert.ok(mobileSource.includes(s),s)
   // Row navigation needs previousRangeKey; typed paths must use the real Owner receipt.

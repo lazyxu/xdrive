@@ -23,10 +23,10 @@ test('admin users stays quiet until authoritative first read, never advertises f
 
 test('real reads start without visual delay; stale account and request results cannot paint', () => {
   assert.ok(view.includes('const epoch = ++readEpochRef.current'))
-  assert.ok(view.includes('const nextUsers = await api.adminUsers()'))
-  assert.ok(view.includes('if (readEpochRef.current === epoch) setUsersSnapshot({ source: api, items: nextUsers })'))
+  assert.ok(view.includes('const nextUsers = await api.adminUsers(controller.signal)'))
+  assert.ok(view.includes('if (valid()) setUsersSnapshot({ source: api, items: nextUsers })'))
   assert.ok(view.includes('const users = usersSnapshot?.source === api ? usersSnapshot.items : []'))
-  assert.ok(view.includes('return () => { readEpochRef.current += 1 }'))
+  assert.ok(view.includes('readAbortRef.current?.abort()') && view.includes('readEpochRef.current += 1'))
   assert.ok(view.includes('window.setTimeout(() => setVisibleReadEpoch(readEpoch), 300)'))
   assert.ok(view.includes('window.clearTimeout(timer)'))
   assert.ok(view.includes('readComplete && users.length > 0 &&'))
