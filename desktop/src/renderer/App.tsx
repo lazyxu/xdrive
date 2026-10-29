@@ -52,6 +52,7 @@ import {
   XDriveSettingsDialog,
   XDriveFeedbackSnackbar,
   XDriveFileExplorerActionFeedback,
+  xDriveFileExplorerHostCapabilities,
   XDriveTransferPopover,
   XDriveApp,
   xDriveWorkspaceHostSections,
@@ -2611,6 +2612,9 @@ export default function App({
     )
   }
 
+  // Only a real Agent handshake can activate native Files capabilities.
+  // The shared policy has no Electron IPC or DSM permission of its own.
+  const filesHostCapabilities = xDriveFileExplorerHostCapabilities(agent.hello?.capabilities)
   // UI-owned JSX for migrated routes is composed by the shared XDriveAppRouteContent.
   // Only authenticated domain data and real Desktop operations are injected.
   const workspaceHost: XDriveWorkspaceHostAdapter = {
@@ -2665,19 +2669,16 @@ export default function App({
                 if (latestRedoableCloudFileOperation) void fileOperationActions.redoOperation(latestRedoableCloudFileOperation.id)
               },
               onQuotaChanged: refreshCloudQuota,
-              uploadConflictSupported: Boolean(
-                agent.hello?.capabilities.includes('upload-conflict-preflight') &&
-                agent.hello?.capabilities.includes('upload-conflict-policy')
-              ),
-              archiveDownloadSupported: agent.hello?.capabilities.includes('archive-download') ?? false,
-              folderTreeDownloadSupported: agent.hello?.capabilities.includes('folder-download-tree') ?? false,
-              textPreviewSupported: agent.hello?.capabilities.includes('file-text-preview') ?? false,
-              previewStreamSupported: agent.hello?.capabilities.includes('file-preview-stream') ?? false,
+              uploadConflictSupported: filesHostCapabilities.uploadConflictSupported,
+              archiveDownloadSupported: filesHostCapabilities.archiveDownloadSupported,
+              folderTreeDownloadSupported: filesHostCapabilities.folderTreeDownloadSupported,
+              textPreviewSupported: filesHostCapabilities.textPreviewSupported,
+              previewStreamSupported: filesHostCapabilities.previewStreamSupported,
               propertiesStatsSupported: filePropertiesStatsSupported,
               mediaDetailsSupported: fileMediaDetailsSupported,
-              mediaPropertiesSupported: agent.hello?.capabilities.includes('media-item-properties') ?? false,
-              nodeLocationSupported: agent.hello?.capabilities.includes('node-location') ?? false,
-              childPositionSupported: agent.hello?.capabilities.includes('cloud-child-position') ?? false,
+              mediaPropertiesSupported: filesHostCapabilities.mediaPropertiesSupported,
+              nodeLocationSupported: filesHostCapabilities.nodeLocationSupported,
+              childPositionSupported: filesHostCapabilities.childPositionSupported,
               fileAvailabilitySupported,
               openWithSupported: fileOpenWithSupported,
               quickAccessSupported: fileQuickAccessSupported,
@@ -2685,9 +2686,9 @@ export default function App({
               savedSearchesSupported: fileSavedSearchesSupported,
               favoritesSupported: fileFavoritesSupported,
               recentSupported: fileRecentSupported,
-              transferLifecycleSupported: agent.hello?.capabilities.includes('transfer-lifecycle') ?? false,
-              transferLifecycleBatchSupported: agent.hello?.capabilities.includes('transfer-lifecycle-child-batch') ?? false,
-              transferGroupUploadCancelSupported: agent.hello?.capabilities.includes('transfer-upload-group-cancel') ?? false,
+              transferLifecycleSupported: filesHostCapabilities.transferLifecycleSupported,
+              transferLifecycleBatchSupported: filesHostCapabilities.transferLifecycleBatchSupported,
+              transferGroupUploadCancelSupported: filesHostCapabilities.transferGroupUploadCancelSupported,
               viewerDownloadReceipt: mediaGallerySource.viewerDownloadReceipt,
               transfers: transfers.transfers,
               actionIntent: cloudFileActionIntent,
@@ -2753,11 +2754,8 @@ export default function App({
         recentSupported: fileRecentSupported,
         favoritesSupported: fileFavoritesSupported,
         fileAvailabilitySupported: fileAvailabilitySupported,
-        localDiskSpaceSupported: agent.hello?.capabilities.includes('local-disk-space') ?? false,
-        folderUploadSupported: Boolean(
-              agent.hello?.capabilities.includes('upload-conflict-preflight') &&
-              agent.hello?.capabilities.includes('upload-conflict-policy')
-            ),
+        localDiskSpaceSupported: filesHostCapabilities.localDiskSpaceSupported,
+        folderUploadSupported: filesHostCapabilities.uploadConflictSupported,
         openFolderLoading: busy === 'folder',
         onOpenFolder: () => {
               void run('folder', () => window.xdriveDesktop.agent.openFolder())
