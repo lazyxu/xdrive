@@ -200,16 +200,21 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
             let pendingApproval = activeGrantTask
             cancelActive()
             if let pendingApproval { await pendingApproval.value }
+            // Stop ALL local foreground schedules, not merely the active
+            // Owner's system background grant. Never infer this from JS.
+            let stoppedForeground = XDriveIOSPhotoAutoScheduleStore.shared
+                .disableAllOnThisDevice()
             do {
                 let pendingRemoteRevoke =
                     try await XDriveIOSPhotoBackgroundGrantManager.shared
                         .emergencyStopLocally()
                 sendResult(id, [
                     "localStopped": true,
+                    "foregroundSchedulesStopped": stoppedForeground,
                     "remoteRevokePending": pendingRemoteRevoke
                 ])
             } catch {
-                sendError(id, "已请求取消后台任务，但无法确认本机 Keychain 已清除。请解锁后重试。")
+                sendError(id, "本机前台自动计划已停用，但后台 Keychain 清除尚未证实；请解锁后重试。")
             }
         case "photos.background.grant.status":
             guard let source = parseOwner(body) else {

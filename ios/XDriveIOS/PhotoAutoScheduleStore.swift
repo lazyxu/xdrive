@@ -64,6 +64,27 @@ final class XDriveIOSPhotoAutoScheduleStore {
         UserDefaults.standard.removeObject(forKey: key(for: owner))
     }
 
+    /// Emergency STOP-only operation for every local Owner scope. This
+    /// does not require the Server, enumerate PhotoKit or touch any CAS bytes.
+    /// Only this app's exact SHA-256 auto-schedule keys can be deleted;
+    /// unrelated defaults and encrypted upload receipts remain untouched.
+    func disableAllOnThisDevice() -> Int {
+        let prefix = "xdrive.ios.photos.auto.v1."
+        let keys = UserDefaults.standard.dictionaryRepresentation().keys.filter {
+            key in
+            guard key.hasPrefix(prefix) else { return false }
+            let suffix = key.dropFirst(prefix.count)
+            return suffix.utf8.count == 64 &&
+                suffix.utf8.allSatisfy {
+                    ($0 >= 48 && $0 <= 57) || ($0 >= 97 && $0 <= 102)
+                }
+        }
+        for key in keys {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+        return keys.count
+    }
+
     /// Persist the next due time BEFORE any possible network write. A
     /// process crash cannot spin a hot retry loop, and the encrypted
     /// original journal is still responsible for deduplication.

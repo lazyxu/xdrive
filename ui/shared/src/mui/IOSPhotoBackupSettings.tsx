@@ -108,6 +108,7 @@ export interface XDriveIOSPhotoBackupHost {
     Promise<XDriveIOSPhotoBackgroundGrantStatus>
   emergencyStopBackground?(): Promise<{
     localStopped: boolean; remoteRevokePending: boolean
+    foregroundSchedulesStopped?: number
   }>
   cancel(): Promise<void>
   switchServer(): Promise<void>
@@ -313,9 +314,22 @@ export function XDriveIOSPhotoBackupSettings({
         revokePending: true, serverVerified: false, expiresAt: 0,
         backgroundUploadReady: false,
       } : null)
-      setBGStopNotice(result.remoteRevokePending
-        ? '本机后台备份已停止；请联网后再次点击撤销服务器授权。'
-        : '已取消本机后台任务；没有活跃的本机后台授权。')
+      // Older IPA versions may not report an all-Owner foreground stop.
+      // Never claim that a missing field means these plans were disabled.
+      const count = result.foregroundSchedulesStopped
+      const hasCount = typeof count === 'number' &&
+        Number.isSafeInteger(count) && count >= 0
+      if (hasCount) {
+        setAutoStatus(current => current ? {
+          ...current, enabled: false, pausedForReview: false, nextDueAt: 0,
+        } : current)
+      }
+      const local = hasCount
+        ? '本机已停用 ' + count + ' 个前台自动计划；'
+        : '本机前台自动计划停用状态未确认；'
+      setBGStopNotice(local + (result.remoteRevokePending
+        ? '后台任务已停止，联网后仍需撤销服务器授权。'
+        : '后台任务已取消。'))
     } catch (caught) {
       setBGGrant(null)
       setBGGrantError(caught instanceof Error
@@ -546,7 +560,7 @@ export function XDriveIOSPhotoBackupSettings({
                 disabled={bgGrantBusy}
                 data-xdrive-ios-bg-emergency-stop
                 onClick={() => { void emergencyStopBG() }}>
-                无网络时也可紧急停止本机后台备份
+                无网络时也可紧急停止本机所有自动备份
               </Button>
             ) : null}
           </Stack>

@@ -93,7 +93,7 @@ struct XDriveWebAppHome: View {
                                 .multilineTextAlignment(.center)
                             Button("更换服务器地址") { confirmLeave = true }
                                 .buttonStyle(.borderedProminent)
-                            Button("紧急停止本机后台相册备份", role: .destructive) {
+                            Button("紧急停止本机相册自动备份", role: .destructive) {
                                 emergencyStopBackgroundLocally()
                             }
                             .disabled(emergencyStopBusy)
@@ -133,15 +133,19 @@ struct XDriveWebAppHome: View {
         guard !emergencyStopBusy else { return }
         emergencyStopBusy = true
         Task { @MainActor in
+            // First revoke every Owner's local *foreground* auto schedule.
+            // Even a failed locked Keychain cannot resurrect those plans.
+            let stoppedForeground = XDriveIOSPhotoAutoScheduleStore.shared
+                .disableAllOnThisDevice()
             do {
                 let pendingRemote = try await XDriveIOSPhotoBackgroundGrantManager
                     .shared.emergencyStopLocally()
                 emergencyStopNotice = pendingRemote
-                    ? "本机后台任务与凭据已停止；联网登录后仍需撤销服务器授权。"
-                    : "已取消本机后台任务；未找到活跃的本机后台凭据。"
+                    ? "已停用本机 \(stoppedForeground) 个前台计划并停止后台任务；联网登录后仍需撤销服务器授权。"
+                    : "已停用本机 \(stoppedForeground) 个前台计划，并取消后台任务。"
             } catch {
                 emergencyStopNotice =
-                    "已请求取消后台任务，但 Keychain 清除尚未证实；请解锁后重试。"
+                    "已停用本机 \(stoppedForeground) 个前台计划；后台 Keychain 清除尚未证实，请解锁后重试。"
             }
             emergencyStopBusy = false
         }
@@ -197,7 +201,7 @@ struct XDriveWebAppHome: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .buttonStyle(.bordered)
-                Button("紧急停止本机后台相册备份", role: .destructive) {
+                Button("紧急停止本机相册自动备份", role: .destructive) {
                     emergencyStopBackgroundLocally()
                 }
                 .disabled(emergencyStopBusy)
