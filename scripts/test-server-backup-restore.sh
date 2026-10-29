@@ -316,11 +316,39 @@ before_db_only_file="$(docker run --rm -v "$FILES_DIR:/data:ro" --entrypoint cat
 [[ "$before_db_only_file" == "$content" ]] || {
   echo "v1 database-only restore fixture lost source file" >&2; exit 1
 }
-bash "$ROOT/scripts/server-restore.sh" "$metadata_backup_dir" \
-  --config-dir "$XDRIVE_HOME" --yes --database-only > "$TMP/db-only-restore.log" 2>&1 || {
-  echo "v1 database-only restore did not complete; see private CI log" >&2
+# Keep the private restore transcript out of public CI output. A prior
+# database-only Docker drill failed with only a generic message, making it
+# impossible to distinguish preflight, safety backup and destructive stages.
+if bash "$ROOT/scripts/server-restore.sh" "$metadata_backup_dir" \
+    --config-dir "$XDRIVE_HOME" --yes --database-only \
+    > "$TMP/db-only-restore.log" 2>&1; then
+  :
+else
+  restore_rc=$?
+  restore_category=unknown
+  if grep -Fq 'backup directory not found:' "$TMP/db-only-restore.log"; then
+    restore_category=snapshot_unavailable
+  elif grep -Fq 'checksum manifest mismatch' "$TMP/db-only-restore.log"; then
+    restore_category=snapshot_checksum
+  elif grep -Eq 'unsupported backup format|unsafe v1 tar|snapshot contains symlink' "$TMP/db-only-restore.log"; then
+    restore_category=snapshot_format
+  elif grep -Fq 'PostgreSQL custom dump preflight failed' "$TMP/db-only-restore.log"; then
+    restore_category=pg_toc_preflight
+  elif grep -Fq 'Creating pre-restore safety backup...' "$TMP/db-only-restore.log" &&
+       ! grep -Fq 'Repairing restored storage ownership...' "$TMP/db-only-restore.log"; then
+    restore_category=pre_restore_safety_or_database
+  elif grep -Fq 'Repairing restored storage ownership...' "$TMP/db-only-restore.log" &&
+       ! grep -Fq 'Verifying restored metadata and blobs...' "$TMP/db-only-restore.log"; then
+    restore_category=storage_prepare
+  elif grep -Fq 'Verifying restored metadata and blobs...' "$TMP/db-only-restore.log"; then
+    restore_category=post_restore_storage_verify
+  elif grep -Eq 'PostgreSQL did not become ready|xDrive API did not become ready' "$TMP/db-only-restore.log"; then
+    restore_category=service_readiness
+  fi
+  printf 'v1 database-only restore failed: category=%s rc=%d (private log withheld)\\n' \
+    "$restore_category" "$restore_rc" >&2
   exit 1
-}
+fi
 wait_server
 assert_runtime_services
 db_only_probe_gone="$(compose exec -T postgres psql -U xdrive -d xdrive -qAtc \
