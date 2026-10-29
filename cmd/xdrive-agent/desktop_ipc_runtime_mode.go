@@ -37,6 +37,7 @@ func desktopIPCCapabilitiesForRuntime(backupOnly bool) []string {
 			capability == "cloud-media-range-read",
 			capability == "cloud-thumbnail-read",
 			capability == "cloud-owner-gallery-read",
+			capability == "cloud-owner-live-motion-read",
 			capability == "device-backup-local-device",
 			capability == "local-folder-root-grants",
 			strings.HasPrefix(capability, "device-backup-local-"):
@@ -76,6 +77,7 @@ var backupOnlyAllowedIPCRoutes = map[string]struct{}{
 	"GET /v1/cloud/thumbnail":                                   {},
 	"GET /v1/cloud/owner-gallery-items":                         {},
 	"GET /v1/cloud/owner-gallery-albums":                        {},
+	"GET /v1/cloud/owner-live-motion":                          {},
 	"GET /v1/device-backups":                                    {},
 	"GET /v1/device-backups/folders":                            {},
 	"GET /v1/device-backups/local-common-batch":                 {},

@@ -61,6 +61,12 @@ type OwnerMediaRangeReader interface {
 }
 
 // Separate thumbnail-only capability, never an arbitrary image proxy.
+// Optional read-only Live Photo motion projection; DSM still uses the
+// canonical Web/Desktop LivePhotoSurface and never receives an Agent token.
+type OwnerLiveMotionReader interface {
+	OwnerLiveMotion(context.Context, uint64, uint64) (localbackupipc.OwnerLiveMotion, error)
+}
+
 type OwnerThumbnailReader interface {
 	OwnerFileThumbnail(context.Context, uint64, uint64) (localbackupipc.OwnerThumbnail, error)
 }
@@ -393,7 +399,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		sendJSON(w, map[string]any{"dsm_user": username, "csrf_token": csrf(key, username, r.Header.Get("Cookie"), r.Host, interval)})
 		return
 	}
-	if r.URL.Path != "/v1/sources" && r.URL.Path != "/v1/status" && r.URL.Path != "/v1/history" && r.URL.Path != "/v1/run" && r.URL.Path != "/v1/control" && r.URL.Path != "/v1/schedule" && r.URL.Path != "/v1/device-backups" && r.URL.Path != "/v1/device-backup-runs" && r.URL.Path != "/v1/device-backup-page" && r.URL.Path != "/v1/device-backup-folders" && r.URL.Path != "/v1/cloud-quota" && r.URL.Path != "/v1/cloud-root" && r.URL.Path != "/v1/cloud-children" && r.URL.Path != "/v1/cloud-text-preview" && r.URL.Path != "/v1/cloud-media-range" && r.URL.Path != "/v1/cloud-media-stream" && r.URL.Path != "/v1/cloud-thumbnail" && r.URL.Path != "/v1/cloud-gallery-items" && r.URL.Path != "/v1/cloud-gallery-albums" {
+	if r.URL.Path != "/v1/sources" && r.URL.Path != "/v1/status" && r.URL.Path != "/v1/history" && r.URL.Path != "/v1/run" && r.URL.Path != "/v1/control" && r.URL.Path != "/v1/schedule" && r.URL.Path != "/v1/device-backups" && r.URL.Path != "/v1/device-backup-runs" && r.URL.Path != "/v1/device-backup-page" && r.URL.Path != "/v1/device-backup-folders" && r.URL.Path != "/v1/cloud-quota" && r.URL.Path != "/v1/cloud-root" && r.URL.Path != "/v1/cloud-children" && r.URL.Path != "/v1/cloud-text-preview" && r.URL.Path != "/v1/cloud-media-range" && r.URL.Path != "/v1/cloud-media-stream" && r.URL.Path != "/v1/cloud-thumbnail" && r.URL.Path != "/v1/cloud-gallery-items" && r.URL.Path != "/v1/cloud-gallery-albums" && r.URL.Path != "/v1/cloud-live-motion" {
 		http.NotFound(w, r)
 		return
 	}
@@ -419,6 +425,12 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	agent, err := g.Connect(ctx) // Same-user protected discovery; never spawn a new Agent.
 	if err != nil {
 		http.Error(w, "owning Agent unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	// Live Photo Motion is a separate, exact-revision, bounded Owner request
+	// using the same DSM session and same-user Agent as the shared Gallery.
+	if r.URL.Path == "/v1/cloud-live-motion" {
+		serveOwnerLiveMotion(w, r, agent)
 		return
 	}
 	// Same verified DSM user and same-user Agent for the read-only Gallery.
