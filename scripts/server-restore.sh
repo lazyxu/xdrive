@@ -116,6 +116,8 @@ try:
         raise ValueError("invalid restore mode")
     if sys.argv[2] == "0" and manifest.get("file_data_included") is False:
         raise ValueError("database-only snapshot cannot be fully restored")
+    if sys.argv[2] == "1" and version == 2:
+        raise ValueError("v2 database-only restore is unsupported")
     print(version)
 except (OSError, ValueError, UnicodeError, TypeError):
     print("restore: invalid or unsafe backup manifest; production data was not changed.", file=sys.stderr)
