@@ -31,7 +31,11 @@ function unstartedJob(job, runId) {
   if (job.status === 'queued') {
     // A job already assigned to a runner is not safe to cancel, even if
     // GitHub has not yet updated the enclosing workflow status.
-    if (job.runner_name || job.started_at) return false
+    if (job.runner_name || (job.runner_id != null && job.runner_id !== 0)) return false
+    // GitHub populates started_at with created_at even for a job that has
+    // never been allocated a runner (runner_id: 0, runner_name: '').
+    // Different timestamps cannot prove it was never started; preserve it.
+    if (job.started_at && job.started_at !== job.created_at) return false
     if (Array.isArray(job.steps) &&
         job.steps.some(step => step.status === 'in_progress' ||
                                step.status === 'completed')) return false

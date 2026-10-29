@@ -70,6 +70,12 @@ test('only exact first-attempt queued master CI is eligible', () => {
 
 test('completed substantive jobs, runner assignment, and any executing step protect the run', () => {
   assert.equal(unstartedJob(queued(1), 1), true)
+  // Exact GitHub REST payload of an unassigned master pr-scope job.
+  assert.equal(unstartedJob({
+    ...queued(1, 'pr-scope'), runner_id: 0, runner_name: '',
+    created_at: '2026-10-29T09:34:00Z',
+    started_at: '2026-10-29T09:34:00Z', steps: [],
+  }, 1), true)
   assert.equal(unstartedJob({...queued(1), status: 'completed', conclusion: 'skipped'}, 1), true)
   assert.equal(unstartedJob({...queued(1, 'pr-scope'), status: 'completed', conclusion: 'success'}, 1), true)
   for (const unsafe of [
@@ -77,7 +83,9 @@ test('completed substantive jobs, runner assignment, and any executing step prot
     {...queued(1), status: 'completed', conclusion: 'failure'},
     {...queued(1), status: 'in_progress'},
     {...queued(1), runner_name: 'hosted-runner'},
+    {...queued(1), runner_id: 12345},
     {...queued(1), started_at: '2026-10-29T08:00:00Z'},
+    {...queued(1), created_at: '2026-10-29T07:59:00Z', started_at: '2026-10-29T08:00:00Z'},
     {...queued(1), steps: [{status: 'completed'}]},
     {...queued(1), run_id: 2},
   ]) assert.equal(unstartedJob(unsafe, 1), false)
