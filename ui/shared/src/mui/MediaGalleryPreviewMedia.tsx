@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   Image as ImageIcon,
@@ -25,10 +25,7 @@ type MediaVideoPosterSaver = (nodeID: number, revision: number, poster: Blob, si
 export const XDriveBackgroundMediaThumbnailSuspended = createContext(false)
 
 function revokeIfBlob(url: string) {
-  if (url.startsWith('blob:')) URL.revokeObjectURL(url)
-}
-
-export function XDriveMediaAsyncThumbnail({
+  if (url.startsWith('blob:')) URL.revokeObjectURLexport function XDriveMediaAsyncThumbnail({
   nodeID,
   revision,
   alt,
@@ -49,13 +46,18 @@ export function XDriveMediaAsyncThumbnail({
 }) {
   const suspended = useContext(XDriveBackgroundMediaThumbnailSuspended)
   const sourceIdentity = [nodeID ?? 0, revision ?? 0].join(':')
-  const [image, setImage] = useState<{ identity: string; url: string } | null>(null)
-  const [failedIdentity, setFailedIdentity] = useState('')
-  // Reused tiles must not show the previous Node revision's source or failure.
-  const src = image?.identity === sourceIdentity ? image.url : ''
-  const failed = failedIdentity === sourceIdentity
-  const presentedImageRef = useRef<{ identity: string; url: string } | null>(null)
-  presentedImageRef.current = !failed && src ? { identity: sourceIdentity, url: src } : null
+  // Node ID + revision alone do not identify the authorized Owner when a
+  // shared Viewer tile is rebound to a different authenticated Host loader.
+  // This gate takes effect during render, before passive cleanup can run.
+  const sourceOwner = useMemo(() => ({}), [loadThumbnail])
+  const [image, setImage] = useState<{ identity: string; owner: object; url: string } | null>(null)
+  const [failedIdentity, setFailedIdentity] = useState<{ identity: string; owner: object } | null>(null)
+  // Former Owner stills/failures must never paint under an identical Node ID
+  // and revision while a new Owner's independent thumbnail is pending.
+  const src = image?.identity === sourceIdentity && image.owner === sourceOwner ? image.url : ''
+  const failed = failedIdentity?.identity === sourceIdentity && failedIdentity.owner === sourceOwner
+  const presentedImageRef = useRef<{ identity: string; owner: object; url: string } | null>(null)
+  presentedImageRef.current = !failed && src ? { identity: sourceIdentity, owner: sourceOwner, url: src } : null
   useEffect(() => () => { presentedImageRef.current = null }, [])
   const [progress, setProgress] = useState<{ loadedBytes: number; totalBytes?: number; alphaMask?: string | null }>({ loadedBytes: 0, alphaMask: null })
 
@@ -66,7 +68,7 @@ export function XDriveMediaAsyncThumbnail({
     let active = true
     let resolved = ''
     setImage(null)
-    setFailedIdentity('')
+    setFailedIdentity(null)
     setProgress({ loadedBytes: 0, alphaMask: null })
     onImageReadyChange?.(false)
     if (!nodeID) return () => undefined
@@ -77,15 +79,15 @@ export function XDriveMediaAsyncThumbnail({
     })
       .then((value) => {
         if (!value) {
-          if (active) setFailedIdentity(sourceIdentity)
+          if (active) setFailedIdentity({ identity: sourceIdentity, owner: sourceOwner })
           return
         }
         resolved = value
-        if (active) setImage({ identity: sourceIdentity, url: value })
+        if (active) setImage({ identity: sourceIdentity, owner: sourceOwner, url: value })
         else if (revokeOnDispose) revokeIfBlob(value)
       })
       .catch(() => {
-        if (active) setFailedIdentity(sourceIdentity)
+        if (active) setFailedIdentity({ identity: sourceIdentity, owner: sourceOwner })
       })
 
     return () => {
@@ -93,7 +95,7 @@ export function XDriveMediaAsyncThumbnail({
       controller.abort()
       if (resolved && revokeOnDispose) revokeIfBlob(resolved)
     }
-  }, [loadThumbnail, nodeID, revision, revokeOnDispose, onImageReadyChange, sourceIdentity, suspended])
+  }, [loadThumbnail, nodeID, revision, revokeOnDispose, onImageReadyChange, sourceIdentity, sourceOwner, suspended])
 
   if (!nodeID || failed) return <>{fallback}</>
   if (!src) {
@@ -116,12 +118,12 @@ export function XDriveMediaAsyncThumbnail({
       // Gallery fallback without retrying or fetching full original bytes.
       onLoad={(event) => {
         const displayed = presentedImageRef.current
-        if (!displayed || displayed.identity !== sourceIdentity || displayed.url !== src) return
+        if (!displayed || displayed.identity !== sourceIdentity || displayed.owner !== sourceOwner || displayed.url !== src) return
         if (event.currentTarget.naturalWidth > 0) onImageReadyChange?.(true)
       }}
       onError={() => {
         const displayed = presentedImageRef.current
-        if (!displayed || displayed.identity !== sourceIdentity || displayed.url !== src) return
+        if (!displayed || displayed.identity !== sourceIdentity || displayed.owner !== sourceOwner || displayed.url !== src) return
         // A late decode error from a recycled Node/revision/URL cannot
         // replace the new still or invalidate a newer cached derivative.
         presentedImageRef.current = null
@@ -129,10 +131,13 @@ export function XDriveMediaAsyncThumbnail({
         // Never retry here or load original bytes. A later visible mount
         // may request the current derivative through the existing adapter.
         onImageDecodeError?.(src)
-        setFailedIdentity(sourceIdentity)
+        setFailedIdentity({ identity: sourceIdentity, owner: sourceOwner })
       }}
       sx={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }}
     />
+  )
+}
+/>
   )
 }
 
