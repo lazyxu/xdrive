@@ -19,6 +19,8 @@ import {
   xDriveFileExplorerDownloadPlan,
   xDriveFileExplorerEnsureUploadDirectory,
   xDriveFileExplorerResolveSelectionNodes,
+  xDriveFileExplorerProjectSearchSources,
+  xDriveFileExplorerSelectionRequest,
   xDriveFileExplorerSelectionAdmissionReason,
   xDriveFileExplorerResolveFolderUploadTargets,
   xDriveFileExplorerPropertiesRefs,
@@ -320,7 +322,7 @@ export default function DesktopFileExplorer({
   const loadSourceOptions = useCallback(async (): Promise<XDriveFileExplorerSearchSourceOption[]> => {
     const result = await hostPort.browse.getSources()
     if (!result.ok) throw new Error('当前 Agent 无法读取文件搜索来源。')
-    return result.data.map((source) => ({ id: source.id, name: source.name }))
+    return xDriveFileExplorerProjectSearchSources(result.data)
   }, [hostPort])
   const { options: searchSourceOptions } = useXDriveFileExplorerOwnerSourceOptions({
     host: hostPort,
@@ -897,9 +899,9 @@ export default function DesktopFileExplorer({
     action: XDriveFileExplorerSelectionAction,
     selected: readonly XDriveFileExplorerItem[],
   ) => {
-    const reason = getSelectionActionDisabledReason(action, selected, new Set(selected.map((item) => Number(item.id))).size)
-    if (reason) onError(reason)
-    return !reason
+    const ticket = xDriveFileExplorerSelectionRequest(action, selected, getSelectionActionDisabledReason)
+    if (ticket.reason) onError(ticket.reason)
+    return ticket.allowed
   }
   const copyItems = (selected: XDriveFileExplorerItem[]) => {
     if (allowSelectionAction('copy', selected)) copyWorkspaceItems(selected)

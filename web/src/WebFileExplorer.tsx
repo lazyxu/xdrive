@@ -55,6 +55,8 @@ import {
   xDriveFileExplorerSearchFiltersActive,
   xDriveFileExplorerSearchFiltersSignature,
   xDriveFileExplorerSearchFilterLabels,
+  xDriveFileExplorerProjectSearchSources,
+  xDriveFileExplorerSelectionRequest,
   xDriveFileNeedsBrowserCompatibleImagePreview,
 } from '../../ui/shared/src'
 import type {
@@ -230,7 +232,7 @@ export default function WebFileExplorer({
     setTagDialogMode(null)
   }, [navigationSessionStorageKey])
   const loadSourceOptions = useCallback(async (): Promise<XDriveFileExplorerSearchSourceOption[]> =>
-    (await api.sources()).map((source) => ({ id: source.id, name: source.name })),
+    xDriveFileExplorerProjectSearchSources(await api.sources()),
   [api])
   const { options: searchSourceOptions } = useXDriveFileExplorerOwnerSourceOptions({
     host: api,
@@ -967,9 +969,9 @@ export default function WebFileExplorer({
     action: XDriveFileExplorerSelectionAction,
     selected: readonly XDriveFileExplorerItem[],
   ) => {
-    const reason = getSelectionActionDisabledReason(action, selected, new Set(selected.map((item) => Number(item.id))).size)
-    if (reason) onError(new Error(reason))
-    return !reason
+    const ticket = xDriveFileExplorerSelectionRequest(action, selected, getSelectionActionDisabledReason)
+    if (ticket.reason) onError(new Error(ticket.reason))
+    return ticket.allowed
   }
   const copyItems = (selected: XDriveFileExplorerItem[]) => {
     if (allowSelectionAction('copy', selected)) copyWorkspaceItems(selected)

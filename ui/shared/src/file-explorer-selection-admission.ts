@@ -46,3 +46,26 @@ export function xDriveFileExplorerSelectionAdmissionReason<
     selected, selectedCount, nodeByID, maxItems, requireRevision: mutation,
   })
 }
+
+/**
+ * One selected-row admission ticket for Browser Wide/Compact and Desktop.
+ * Count *distinct logical node IDs*, not materialized/virtual rows. The
+ * existing shared reason callback decides stale Owner/version/limit rejection;
+ * the Host still supplies stronger native capability and Server authority.
+ */
+export function xDriveFileExplorerSelectionRequest<
+  TItem extends XDriveFileExplorerSelectionItem,
+  TAction extends string,
+>(
+  action: TAction,
+  selected: readonly TItem[],
+  getReason: (
+    action: TAction,
+    selected: readonly TItem[],
+    count: number,
+  ) => string | null,
+): { allowed: boolean; reason: string | null; selectedCount: number } {
+  const selectedCount = new Set(selected.map((item) => Number(item.id))).size
+  const reason = getReason(action, selected, selectedCount)
+  return { allowed: !reason, reason, selectedCount }
+}
