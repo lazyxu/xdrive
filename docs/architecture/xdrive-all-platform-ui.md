@@ -95,6 +95,22 @@ This is an incremental two-page outlet migration, not a second Browser
 React root, full `XDriveApp` integration, an authorized DSM write
 channel or an Android native parity assertion.
 
+### Browser device backups and remote Pull through the shared outlet
+
+Web/PWA's authenticated Device Backup (Owner device and folder/run history) and
+Remote Pull (the existing Server-managed Pull SourceManager) now render through
+the **same `XDriveAppPageOutlet`** as Desktop and DSM. The Browser adapter
+exposes exactly these already working Server ports in addition to Local/Cloud
+Storage; it supplies no local Device/Root control, native Agent IPC, DSM CGI or
+new write protocol. Server API authorization still decides which Pull actions
+are allowed. The legacy `sync-folders` hash still resolves its original
+Source direction before dispatch, without flashing an incorrect page.
+
+The Browser keeps its own URL/Hash, unsaved-settings confirmation, PWA offline
+runtime and Viewer return lifecycle. Browser admin pages and its foreground
+transfer controller remain Host-owned until their stateful data ports converge;
+this is not complete Web-to-`XDriveApp` migration.
+
 ## Ownership layers
 
 1. **Product contracts:** API schemas, Owner/Root semantics, page/navigation IDs, media and upload receipt identity, UI tokens/gesture/accessibility contracts. React and native UI must agree.
