@@ -73,7 +73,7 @@ private class NativeBaiduLease(val view: MapView) {
     init {
         view.showZoomControls(false)
         val baidu = view.map
-        baidu.isMyLocationEnabled = false // No device GPS or location permission.
+        baidu.setMyLocationEnabled(false) // No device GPS or location permission.
         baidu.setOnMarkerClickListener(BaiduMap.OnMarkerClickListener { marker ->
             val signedCell = bindings[marker] ?: return@OnMarkerClickListener false
             onSelect(signedCell)
@@ -107,7 +107,8 @@ private class NativeBaiduLease(val view: MapView) {
         // Compose render; users may freely pan/zoom existing signed points.
         if (changedBounds && pins.isNotEmpty()) {
             val first = pins.first()
-            if (pins.size == 1) {
+            val uniquePlaces = pins.map { it.latitude to it.longitude }.toSet()
+            if (uniquePlaces.size == 1) {
                 baidu.setMapStatus(MapStatusUpdateFactory.newLatLngZoom(
                     LatLng(first.latitude, first.longitude), 10f))
             } else {
@@ -236,6 +237,8 @@ internal fun NativeBaiduMapPanel(
             onDispose {
                 lifecycle.lifecycle.removeObserver(observer)
                 host.close()
+                if (!preferences.getBoolean(SDK_PRIVACY_VERSION, false))
+                    BaiduMapStartup.revoke(context)
             }
         }
     }
@@ -265,8 +268,7 @@ internal fun NativeBaiduMapPanel(
                     // Only a genuine explicit revocation changes the provider
                     // consent flag. Navigating away leaves one-time choice.
                     preferences.edit().putBoolean(SDK_PRIVACY_VERSION, false).apply()
-                    agreed = false
-                    BaiduMapStartup.revoke(context)
+                    agreed = false // onDispose closes MapView before SDK revoke.
                 },
                 modifier = Modifier.testTag("native-baidu-disable"),
             ) { Text("停用第三方底图") }
