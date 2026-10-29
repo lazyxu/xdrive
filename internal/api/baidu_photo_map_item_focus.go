@@ -86,8 +86,8 @@ func queryBaiduPhotoFocus(
 	}
 	return baiduPhotoFocusDTO{
 		CoordinateSpace: meta.BaiduPhotoMapSpaceBD09LL,
-		IndexScope: baiduNativeMapIndexScope,
-		NodeID: nodeID, NodeRevision: revision,
+		IndexScope:      baiduNativeMapIndexScope,
+		NodeID:          nodeID, NodeRevision: revision,
 		Latitude: rows[0].Latitude, Longitude: rows[0].Longitude,
 	}, true, nil
 }

@@ -170,7 +170,7 @@ func TestBaiduPhotoFocusRealPG17OwnerGPSRevision(t *testing.T) {
 			NodeRevision: node.Revision, MediaUpdatedAt: media.UpdatedAt,
 			SourceLatitude: originalLat, SourceLongitude: originalLon,
 			Latitude: 30.14, Longitude: 119.98,
-			CoordinateSpace: meta.BaiduPhotoMapSpaceBD09LL,
+			CoordinateSpace:   meta.BaiduPhotoMapSpaceBD09LL,
 			ProjectionVersion: meta.BaiduPhotoMapProjectionGeoconvV2,
 		}
 		if err := db.Create(&derived).Error; err != nil {
