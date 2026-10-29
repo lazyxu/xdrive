@@ -109,6 +109,11 @@ export function xDriveMountBaiduInlineMap<T>(
   let gestureFrame: number | null = null
   let coveredSelections = new Set<T>()
   let pendingViewport: ReturnType<typeof setTimeout> | null = null
+  // A real mouse-down pan may produce an early SDK moveend before pointerup.
+  // Never issue the next Owner /cells while the same primary mouse is held.
+  // Gesture-only photo pixels remain inert; Owner scope changes still clear them.
+  let heldMousePointer: number | null = null
+  let viewportAfterMouseRelease = false
   let observedSize: {width:number;height:number} | null = null
   let sizeObserver: ResizeObserver | null = null
   let windowResizeFallback = false
@@ -244,12 +249,50 @@ export function xDriveMountBaiduInlineMap<T>(
   const scheduleViewport = () => {
     projectGesture()
     clearTimer()
+    if (heldMousePointer !== null) {
+      viewportAfterMouseRelease = true
+      return
+    }
     pendingViewport = setTimeout(() => {
       pendingViewport = null
+      // The SDK may have scheduled before pointerdown: never settle a
+      // previous viewport while the user is still physically dragging.
+      if (heldMousePointer !== null) {
+        viewportAfterMouseRelease = true
+        return
+      }
       emitViewport()
     }, 500)
   }
-  const stopViewport = () => { if (alive && ready) invalidate() }
+  const stopViewport = () => {
+    if (!alive || !ready) return
+    if (heldMousePointer !== null) viewportAfterMouseRelease = true
+    invalidate()
+  }
+  const onMousePointerDown = (event: PointerEvent) => {
+    if (alive && ready && event.isTrusted && event.isPrimary &&
+        event.pointerType === 'mouse' && event.button === 0)
+      heldMousePointer = event.pointerId
+  }
+  const releaseHeldMouse = (pointerID?: number) => {
+    if (heldMousePointer === null ||
+        (pointerID !== undefined && pointerID !== heldMousePointer)) return
+    heldMousePointer = null
+    if (!viewportAfterMouseRelease) return
+    viewportAfterMouseRelease = false
+    if (alive && ready) scheduleViewport()
+  }
+  const onMousePointerUp = (event: PointerEvent) => {
+    releaseHeldMouse(event.pointerId)
+  }
+  // The SDK canvas is the input surface in inline mode; use capture so
+  // third-party handler stopPropagation cannot hide a genuine pointerdown.
+  // A release outside the canvas or window blur also settles the Owner Range.
+  canvas.addEventListener('pointerdown', onMousePointerDown, true)
+  browser.addEventListener('pointerup', onMousePointerUp, true)
+  browser.addEventListener('pointercancel', onMousePointerUp, true)
+  const onMouseWindowBlur = () => releaseHeldMouse()
+  browser.addEventListener('blur', onMouseWindowBlur)
   // A responsive container can change without Baidu firing move/zoom events
   // (orientation, 899/900 breakpoint or a Desktop sidebar resize). Old
   // pointToPixel results belong to the prior CSS viewport and MUST NOT stay
@@ -301,6 +344,12 @@ export function xDriveMountBaiduInlineMap<T>(
     lifetime.abort()
     generation++
     clearTimer()
+    heldMousePointer = null
+    viewportAfterMouseRelease = false
+    canvas.removeEventListener('pointerdown', onMousePointerDown, true)
+    browser.removeEventListener('pointerup', onMousePointerUp, true)
+    browser.removeEventListener('pointercancel', onMousePointerUp, true)
+    browser.removeEventListener('blur', onMouseWindowBlur)
     clearGesture()
     sizeObserver?.disconnect()
     sizeObserver = null
