@@ -72,9 +72,12 @@ export function XDriveAppPageOutlet({
         if (services.remotePullPage) page = <XDriveSourceManager {...services.remotePullPage} />
         break
       case 'files':
-        // Only an explicit authenticated Owner Files port admits this page.
-        // A generic local backup client never implies Files read permission.
-        if (services.ownerFilesPage) page = (
+        // One route for both Hosts. Desktop's existing stateful native
+        // controller is an explicitly supplied *transitional* element;
+        // DSM remains on authenticated Owner Files read data with its exact
+        // disabled actions. No generic local backup client can unlock Files.
+        if (services.filesControllerContent) page = services.filesControllerContent
+        else if (services.ownerFilesPage) page = (
           <XDriveSynologyOwnerFilesPage key={revision}
             client={services.ownerFilesPage.client}
             unavailableActions={services.ownerFilesPage.unavailableActions} />
