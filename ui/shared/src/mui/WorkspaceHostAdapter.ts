@@ -42,6 +42,8 @@ export type XDriveWorkspaceHostServices = {
   }
   readonly deviceBackups?: XDriveDeviceBackupDataSource
   readonly cloudStorage?: XDriveCloudStorageDataSource
+  /** Host-owned refresh policy, never inferred from a platform name. */
+  readonly cloudStorageRefresh?: { readonly clearOnRefresh?: boolean }
   readonly localStorage?: XDriveLocalStorageDataSource
   /** Desktop and DSM use the same page JSX: only verified page props differ. */
   readonly galleryPage?: XDriveMediaGalleryPageProps
