@@ -57,7 +57,8 @@ test('media request is lazy, cancellable and rejects stale Node/revision respons
 
 test('Web and Desktop fetch the canonical single MediaItem without traversing the media wall', () => {
   assert.match(webApi, /mediaItem\(nodeID: number, signal\?: AbortSignal\)/)
-  assert.match(webExplorer, /api\.mediaItem\(Number\(item\.id\), signal\)/)
+  assert.match(webExplorer, /xDriveFileExplorerReadNodeID\(item, !signal\.aborted\)/)
+  assert.match(webExplorer, /nodeID === null \? Promise\.resolve\(null\) : api\.mediaItem\(nodeID, signal\)/)
   assert.match(webExplorer, /loadMediaItem=\{trashActive \? undefined : loadMediaItem\}/)
   assert.match(desktop, /getMediaItem\(Number\(item\.id\), requestID\)/)
   assert.match(desktop, /loadMediaItem=\{!trashActive && mediaPropertiesSupported \? loadMediaItem : undefined\}/)
@@ -94,6 +95,8 @@ test('media presentation uses the canonical field builder and resource membershi
 test('old Desktop Agents fall back to ordinary properties without requesting an unsupported route', () => {
   const desktopApp = read('desktop', 'src', 'renderer', 'App.tsx')
   assert.match(agentGo, /"media-item-properties"/)
-  assert.match(desktopApp, /capabilities\.includes\('media-item-properties'\)/)
+  const hostCaps = read('ui', 'shared', 'src', 'mui', 'FileExplorerHostCapabilities.ts')
+  assert.match(desktopApp, /xDriveFileExplorerHostCapabilities\(agent\.hello\?\.capabilities\)/)
+  assert.match(hostCaps, /mediaPropertiesSupported: has\('media-item-properties'\)/)
   assert.match(main, /requireAgentCapability\(hello, 'media-item-properties'\)/)
 })

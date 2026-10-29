@@ -37,7 +37,7 @@ const app = loadProduction('ui/shared/src/mui/XDriveApp.tsx', {
   'react': { useLayoutEffect() {} },
   'react/jsx-runtime': jsxRuntime,
   './ViewerForegroundPriority': { xDriveEnterForegroundPage() {} },
-  './WorkspaceShell': { XDriveWorkspaceShell: 'WorkspaceShell' },
+  './WorkspaceShell': { XDriveWorkspaceFrame: 'WorkspaceFrame' },
   './WorkspaceSidebar': { XDriveWorkspaceSidebar: 'WorkspaceSidebar' },
   './XDriveAppRouteContent': { XDriveAppRouteContent: 'RouteContent' },
   './WorkspaceRoute': { xDriveWorkspaceNavigationAllowed() { return true } },
@@ -72,9 +72,12 @@ test('Desktop and DSM render the same responsive shell, sidebar and default page
   const desktop = renderApp('desktop')
   const dsm = renderApp('synology')
   for (const tree of [desktop, dsm]) {
-    assert.equal(tree.type, 'WorkspaceShell')
-    assert.equal(tree.props.responsive, true, 'mobile breakpoint cannot depend on Host identity')
-    assert.equal(child(tree, 'WorkspaceSidebar').props.responsive, true)
+    assert.equal(tree.type, 'WorkspaceFrame')
+    assert.match(fs.readFileSync(path.join(root, 'ui/shared/src/mui/WorkspaceShell.tsx'), 'utf8'),
+      /<XDriveWorkspaceShell responsive className=\{className\} sx=\{sx\}>/,
+      'the canonical frame must stay responsive on every Host')
+    assert.equal(tree.props.sidebar.type, 'WorkspaceSidebar')
+    assert.equal(tree.props.sidebar.props.responsive, true)
     const route = child(tree, 'RouteContent')
     assert.deepEqual(route.props.pageSx, { p: { xs: 2, md: '34px 40px 48px' } })
     assert.equal(route.props.host.platform, tree === desktop ? 'desktop' : 'synology')

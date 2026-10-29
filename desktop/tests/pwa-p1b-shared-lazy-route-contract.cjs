@@ -4,15 +4,22 @@ const fs=require('node:fs'),path=require('node:path')
 const root=path.resolve(__dirname,'../..')
 const read=p=>fs.readFileSync(path.join(root,p),'utf8')
 const app=read('web/src/App.tsx'),runtime=read('web/src/webAppRuntime.ts')
+const outlet=read('ui/shared/src/mui/XDriveAppPageOutlet.tsx')
+const browserHost=read('web/src/browserWorkspaceHost.ts')
 const viewer=read('web/src/WebFileViewerApps.tsx')
 const helper=read('web/src/webViewerRoute.ts')
 test('P1-B Files/Gallery/Viewer are shared lazy presentation, no new backends',()=>{
  for(const str of ["lazy(() => import('./WebFileExplorer'))",
   "import('@xdrive/ui/mui/gallery-page')",
-  "import('./WebFileViewerApps')","import('./AdminUsers')","import('./AdminAudit')",
-  "import('./StorageStatsPanel')","<XDriveFileExplorerActionFeedback",
+  "import('./WebFileViewerApps')","<XDriveFileExplorerActionFeedback",
   "<XDriveMediaGalleryPage","<WebFileViewerApps"])
   assert(app.includes(str),str)
+ assert(app.includes('<XDriveAppPageOutlet host={browserWorkspaceHost} view={appView} />'))
+ for(const key of ['adminUsersPage','adminAuditPage','adminStoragePage'])
+  assert(outlet.includes('services.'+key), 'missing admin shared outlet: '+key)
+ for(const key of ['adminUsers','adminAudit','adminStorage'])
+  assert(browserHost.includes('ports.adminRoleVerified === true && ports.'+key),
+    'Browser admin page missing Server-verified Host capability: '+key)
  assert(!app.includes("import WebFileExplorer from './WebFileExplorer'"))
  assert(!app.includes("import { WebFileViewerApps, xDriveWebOpenRouteForNode } from './WebFileViewerApps'"))
  assert(!app.includes("  XDriveMediaGalleryPage,"))

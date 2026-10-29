@@ -73,7 +73,7 @@ test('actual Web loader forwards the selected numeric ID and the same scoped Abo
   const media = { node: { id: 101, revision: 7 } }
   const adapter = actualAdapter('Web', { api: { mediaItem: (id, signal) => { calls.push({ id, signal }); return Promise.resolve(media) } } })
   const controller = new AbortController()
-  assert.equal(await adapter.exposed({ id: '101', revision: 7 }, controller.signal), media)
+  assert.equal(await adapter.exposed({ id: '101', revision: 7, kind: 'file' }, controller.signal), media)
   assert.equal(calls[0].id, 101)
   assert.equal(calls[0].signal, controller.signal)
 })

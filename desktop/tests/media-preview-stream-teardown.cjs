@@ -43,7 +43,7 @@ test('Web/Mobile/Desktop ordinary video, audio and transformed video reuse one c
     'ref={videoStreamElementRef}','ref={audioStreamElementRef}',
     'useLayoutEffect(() => {',
     'return () => xDriveAbortHTMLMediaElement(media)',
-    '[sourceIdentity, previewKind, previewURL, loading, failed, hasTransformedVideo]',
+    '[sourceIdentity, previewKind, previewURL, loading, failed, hasTransformedVideo, videoPreviewOwner]',
   ])assert.ok(ordinary.includes(marker),'ordinary shared Viewer cancel missing: '+marker)
   for(const marker of [
     "import { xDriveAbortHTMLMediaElement } from './mediaPreviewStreamTeardown'",

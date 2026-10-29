@@ -254,7 +254,9 @@ test('P0-L2 Web/Mobile/desktop share unchanged thin transport and Gallery virtua
   assert.match(thumb, /onError=\{\(\) => \{/)
   assert.match(thumb, /key=\{\[sourceIdentity, src\]\.join\('\|'\)\}/)
   assert.match(thumb, /onImageReadyChange\?\.\(false\)/)
-  assert.match(thumb, /setFailedIdentity\(sourceIdentity\)/)
+  assert.match(thumb, /setFailedIdentity\(\{ identity: sourceIdentity, owner: sourceOwner \}\)/)
+  assert.match(thumb, /displayed\.owner !== sourceOwner/,
+    'late image errors cannot cross authenticated thumbnail loaders')
   assert.match(thumb, /onLoad=\{\(event\) => \{/)
   assert.match(thumb, /event\.currentTarget\.naturalWidth > 0/)
 })
