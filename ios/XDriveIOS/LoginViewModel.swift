@@ -224,6 +224,52 @@ final class LoginViewModel: ObservableObject {
         }
     }
 
+    /// User-selected regular still photo only; no automatic sync or Live
+    /// Photo half-pair fallback. The native/PWA sessions remain independent.
+    func uploadSelectedStillPhoto(_ localIdentifier: String,
+                                  allowICloudOriginal: Bool) async -> String {
+        guard !isLoading && !manualUploadBusy,
+              let owner = verifiedOwner,
+              let session = activeSession,
+              let token = activeAccessToken, !token.isEmpty,
+              owner.origin == session.origin,
+              owner.username == signedInName else {
+            return "请先在原生登录页验证当前 Owner 与云端根目录。"
+        }
+        manualUploadBusy = true
+        manualUploadMessage = "正在检查选中的系统照片和原件权限…"
+        defer { manualUploadBusy = false }
+        let message: String
+        do {
+            let receipt = try await XDriveIOSManualPhotoOriginalUpload(
+                owner: owner, accessToken: token
+            ).upload(
+                localIdentifier: localIdentifier,
+                allowICloudOriginal: allowICloudOriginal
+            )
+            message = "Server 已确认保存照片原始文件：\\(receipt.nodeName)，Node #\\(receipt.nodeID)。这不是自动相册同步或完整 PhotoAsset 备份。"
+        } catch is CancellationError {
+            message = "请求已取消；如果服务器已提交但 ACK 丢失，仍可能存在文件，请先核实云端后再重试。"
+        } catch XDriveIOSManualPhotoUploadFailure.livePairNotSupported {
+            message = "Live Photo 需要静态图与配对视频一起持久提交；当前手动功能拒绝只备份静态图。"
+        } catch XDriveIOSManualPhotoUploadFailure.videoNotSupported {
+            message = "此入口只支持单张普通照片，视频请使用现有文件上传功能。"
+        } catch XDrivePhotoKitExportFailure.resourceTooLarge {
+            message = "所选照片原件超过 128 MiB，未开始上传。"
+        } catch XDrivePhotoKitExportFailure.notAuthorized {
+            message = "iOS 照片授权已撤销或不再可用，未上传。"
+        } catch XDrivePhotoKitExportFailure.assetNotVisible {
+            message = "所选照片已不在当前 iOS 授权范围内，未上传。"
+        } catch XDriveIOSManualPhotoUploadFailure.ownerChanged {
+            message = "服务器实例或账户根目录已变化，已停止照片上传。"
+        } catch {
+            // No server-reported completed ACK => never show "backup succeeded".
+            message = "无法确认照片是否已提交。可能是 iCloud 原件不可用、文件冲突或网络 ACK 丢失；请先核对云端，不要直接重复上传。"
+        }
+        manualUploadMessage = message
+        return message
+    }
+
     func logout() async {
         guard !isLoading && !manualUploadBusy else { return }
         let old = activeSession
