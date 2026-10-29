@@ -149,8 +149,8 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     [target?.kind, target?.mimeType, target?.name],
   )
   // The original video stream has its own authorized loader, independent of
-  // the already Owner-fenced cached poster. Only VIDEO participates: existing
-  // PDF/audio/text and image loader lifecycles are unchanged.
+  // the already Owner-fenced cached poster. Text and audio Owner reads are
+  // fenced independently below; PDF and decoded image paths are unchanged.
   const textPreviewOwner = previewKind === 'text' ? loadTextPreview : undefined
   const audioPreviewOwner = previewKind === 'audio' ? loadPreviewURL : undefined
   const currentAudioPreviewOwnerRef = useRef(audioPreviewOwner)
