@@ -12,12 +12,13 @@ struct XDriveIOSPhotoBackupMVPScreen: View {
     @State private var authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @State private var runTask: Task<Void, Never>?
     @State private var selectedWindow = 0
+    @State private var lastKnownVisibleCount = 0
 
     private var windowSize: Int { XDriveIOSForegroundPhotoBackupMVP.maxScannedAssets }
 
     private var knownWindowCount: Int {
-        guard let count = model.photoBackupProgress?.totalVisible, count > 0 else { return 1 }
-        return 1 + (count - 1) / windowSize
+        guard lastKnownVisibleCount > 0 else { return 1 }
+        return 1 + (lastKnownVisibleCount - 1) / windowSize
     }
 
     private var hasPhotoPermission: Bool {
@@ -170,10 +171,27 @@ struct XDriveIOSPhotoBackupMVPScreen: View {
                 authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             }
         }
-        .onChange(of: knownWindowCount) { updatedCount in
-            selectedWindow = min(selectedWindow, max(0, updatedCount - 1))
+        // The foreground runner emits a zero-count "starting" progress
+        // before PhotoKit returns a fresh snapshot. Keep the last observed
+        // count in the view so this transient event cannot reset the user's
+        // selected older window during a new run.
+        .onAppear {
+            lastKnownVisibleCount = max(0, model.photoBackupProgress?.totalVisible ?? 0)
+        }
+        .onChange(of: model.photoBackupProgress?.totalVisible ?? 0) { count in
+            if count > 0 {
+                lastKnownVisibleCount = count
+                selectedWindow = min(selectedWindow, (count - 1) / windowSize)
+            }
+        }
+        .onChange(of: model.photoBackupBusy) { busy in
+            if !busy && model.photoBackupProgress?.totalVisible == 0 {
+                lastKnownVisibleCount = 0
+                selectedWindow = 0
+            }
         }
         .onChange(of: authorization) { _ in
+            lastKnownVisibleCount = 0
             selectedWindow = 0
         }
         .onDisappear { runTask?.cancel() }
