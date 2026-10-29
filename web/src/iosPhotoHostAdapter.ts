@@ -112,6 +112,11 @@ class IOSPhotoBackupHost implements XDriveIOSPhotoBackupHost {
   async cancel(): Promise<void> {
     await this.request<{ cancelRequested: boolean }>('photos.backup.cancel')
   }
+
+  async switchServer(): Promise<void> {
+    const reply = await this.request<{ confirmationRequested: boolean }>('host.server.change')
+    if (!reply?.confirmationRequested) throw new Error('iOS 尚未确认服务器切换操作。')
+  }
 }
 
 // These types are a public/shared Host contract. No iOS-native code is

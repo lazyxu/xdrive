@@ -36,6 +36,7 @@ export interface XDriveIOSPhotoBackupHost {
     onProgress: (progress: XDriveIOSPhotoBackupProgress) => void,
   ): Promise<XDriveIOSPhotoBackupProgress>
   cancel(): Promise<void>
+  switchServer(): Promise<void>
 }
 
 /** Shared React/MUI Settings surface, not an independent SwiftUI Photos page.
@@ -197,6 +198,15 @@ export function XDriveIOSPhotoBackupSettings({
           上传须由用户点击并在 iOS 系统提示中再次确认。只使用当前服务器验证的 Owner/root；
           不镜像删除、不自动后台运行，收到不确定 ACK 时保留账本等待核对。
         </Typography>
+        <Button variant="outlined" disabled={busy || running}
+          data-xdrive-ios-settings-switch-server
+          onClick={() => {
+            void host.switchServer().catch(caught => {
+              setError(caught instanceof Error ? caught.message : '无法打开服务器切换确认。')
+            })
+          }}>
+          更换 iPhone App 服务器
+        </Button>
       </Stack>
     </Box>
   )

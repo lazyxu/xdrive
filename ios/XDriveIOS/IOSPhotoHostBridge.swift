@@ -13,14 +13,16 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
 
     weak var webView: WKWebView?
     private let origin: URL
+    private let onRequestServerChange: () -> Void
     private var activeBackup: Task<Void, Never>?
     private var activeBackupID: String?
     private var consent: CheckedContinuation<Bool, Never>?
     private weak var consentAlert: UIAlertController?
     private var backgroundObserver: NSObjectProtocol?
 
-    init(origin: URL) {
+    init(origin: URL, onRequestServerChange: @escaping () -> Void) {
         self.origin = origin
+        self.onRequestServerChange = onRequestServerChange
         super.init()
         backgroundObserver = NotificationCenter.default.addObserver(
             forName: UIApplication.didEnterBackgroundNotification,
@@ -129,6 +131,21 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                 "maxScannedAssets": XDriveIOSForegroundPhotoBackupMVP.maxScannedAssets,
                 "maxNewOriginalsPerRun": XDriveIOSForegroundPhotoBackupMVP.maxNewOriginalsPerRun
             ])
+        case "host.server.change":
+            // Unlike Photos operations this action is available on the
+            // *shared PWA login screen*, so it cannot demand an Owner token.
+            // Still require the exact origin-locked main frame, and show an
+            // explicit native confirmation before stopping that WebView.
+            guard activeBackup == nil else {
+                sendError(id, "相册备份正在运行，请先完成或取消，再切换服务器。")
+                return
+            }
+            guard let currentURL = webView?.url, sameOrigin(currentURL) else {
+                sendError(id, "当前页面来源无法验证，拒绝切换服务器。")
+                return
+            }
+            sendResult(id, ["confirmationRequested": true])
+            onRequestServerChange()
         case "photos.status", "photos.requestAccess":
             guard let source = parseOwner(body) else {
                 sendError(id, "当前 PWA 会话信息无效，请重新登录。")
