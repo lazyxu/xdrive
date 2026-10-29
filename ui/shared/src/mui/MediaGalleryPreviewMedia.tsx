@@ -25,7 +25,10 @@ type MediaVideoPosterSaver = (nodeID: number, revision: number, poster: Blob, si
 export const XDriveBackgroundMediaThumbnailSuspended = createContext(false)
 
 function revokeIfBlob(url: string) {
-  if (url.startsWith('blob:')) URL.revokeObjectURLexport function XDriveMediaAsyncThumbnail({
+  if (url.startsWith('blob:')) URL.revokeObjectURL(url)
+}
+
+export function XDriveMediaAsyncThumbnail({
   nodeID,
   revision,
   alt,
@@ -135,9 +138,6 @@ function revokeIfBlob(url: string) {
       }}
       sx={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }}
     />
-  )
-}
-/>
   )
 }
 
