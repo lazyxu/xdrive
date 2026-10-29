@@ -247,19 +247,31 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                             }
                     } else if (photo != null && (!state.galleryMapOpen ||
                         state.galleryMapCellSelected != null)) {
-                        Box(Modifier.fillMaxSize()) {
-                            key(photo.node.id, photo.node.revision) {
-                                if (photo.mediaKind == "video")
-                                    GalleryVideoPlayer(photo, controller, galleryThumbnails)
-                                else GalleryPhotoViewer(photo, controller, galleryThumbnails)
-                            }
-                            if (state.galleryViewerPageBusy ||
-                                state.galleryViewerPageError != null) {
-                                Box(Modifier.align(androidx.compose.ui.Alignment.TopCenter)
-                                    .padding(top = 60.dp)) {
-                                    GalleryViewerPageNotice(state, controller)
+                        // Viewer-only filmstrip: never add a fixed strip to the
+                        // map itself. Reserve space *outside* the Media3 player
+                        // so the native seek/play controls remain unobscured.
+                        Column(Modifier.fillMaxSize()) {
+                            Box(Modifier.weight(1f).fillMaxWidth()) {
+                                key(photo.node.id, photo.node.revision) {
+                                    if (photo.mediaKind == "video")
+                                        GalleryVideoPlayer(photo, controller, galleryThumbnails)
+                                    else GalleryPhotoViewer(photo, controller, galleryThumbnails)
+                                }
+                                if (state.galleryViewerPageBusy ||
+                                    state.galleryViewerPageError != null) {
+                                    Box(Modifier.align(androidx.compose.ui.Alignment.TopCenter)
+                                        .padding(top = 60.dp)) {
+                                        GalleryViewerPageNotice(state, controller)
+                                    }
                                 }
                             }
+                            GalleryViewerFilmstrip(
+                                active = photo,
+                                loaded = state.galleryItems,
+                                busy = state.galleryViewerPageBusy || state.loading,
+                                thumbnails = galleryThumbnails,
+                                controller = controller,
+                            )
                         }
                     } else if (state.galleryMapOpen) {
                         GalleryMapOverview(state, controller,
