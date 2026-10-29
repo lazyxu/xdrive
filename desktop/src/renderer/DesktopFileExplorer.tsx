@@ -90,9 +90,10 @@ import type {
   XDriveFileExplorerMediaDetailsRef,
 } from '@xdrive/shared'
 
-const DESKTOP_FILE_VIEW_KEY = 'xdrive.desktop.files.view_mode'
-const DESKTOP_FILE_DETAILS_LAYOUT_KEY = 'xdrive.desktop.files.details_layout'
-const DESKTOP_FILE_VIEW_PREFERENCES_KEY = 'xdrive.desktop.files.view_preferences'
+// Preserve Desktop's persisted preferences across the shared Host migration.
+const DESKTOP_FILE_VIEW_KEY = XDRIVE_HOST_FILES_PREFERENCES.viewMode
+const DESKTOP_FILE_DETAILS_LAYOUT_KEY = XDRIVE_HOST_FILES_PREFERENCES.detailsLayout
+const DESKTOP_FILE_VIEW_PREFERENCES_KEY = XDRIVE_HOST_FILES_PREFERENCES.viewPreferences
 
 const desktopSearchAvailabilityOptions: readonly XDriveFileExplorerSearchAvailabilityOption[] = [
   { value: 'local', label: '本地可用' },
