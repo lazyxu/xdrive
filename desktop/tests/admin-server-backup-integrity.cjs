@@ -111,3 +111,24 @@ test('elapsed seconds and categories use only structured Host receipts', () => {
   assert.match(receiptComponent, /不代表已完成 PostgreSQL 与文件恢复演练/)
   assert.match(component, /retention.hashed_objects/)
 })
+
+test('older generations show historical receipts without implying current recovery', () => {
+  const { serverBackupHistoricalVerificationLabel } = exported
+  const id = 'v2-default:xdrive-backup-20261001T000000Z'
+  const older = verify(id, 'success', '2026-10-26T10:00:00Z')
+  const newer = { ...verify(id, 'failed', '2026-10-27T12:00:00Z'), mode: 'deep' }
+  assert.equal(serverBackupHistoricalVerificationLabel([], id), '未见历史校验')
+  assert.equal(serverBackupHistoricalVerificationLabel([older], 'v1:other'), '未见历史校验')
+  assert.match(serverBackupHistoricalVerificationLabel([newer, older], id), /^历史失败 · deep · /)
+  assert.match(serverBackupHistoricalVerificationLabel([older, newer], id), /^历史失败 · deep · /)
+  assert.match(serverBackupHistoricalVerificationLabel([older], id), /^历史通过 · fast · /)
+  const noTime = { ...newer, finished_at: '' }
+  assert.equal(serverBackupHistoricalVerificationLabel([noTime], id), '历史失败 · deep · 时间未知')
+  const pager = fs.readFileSync(path.join(root, 'ui/shared/src/mui/BackupSnapshotIndexPager.tsx'), 'utf8')
+  const parent = fs.readFileSync(path.join(root, 'ui/shared/src/mui/ServerBackupManagementPanel.tsx'), 'utf8')
+  assert.match(pager, /data-xdrive-admin-older-verification-history/)
+  assert.match(pager, /serverBackupHistoricalVerificationLabel\(history, id\)/)
+  assert.match(parent, /history=\{page\.history\}/)
+  // Even after showing a historic success, the old pager cannot restore/delete.
+  assert.doesNotMatch(pager, /onRestoreOlder|onDeleteOlder|onDrillOlder/)
+})
