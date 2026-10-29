@@ -1543,6 +1543,19 @@ jobs:
           # grep -q closes its input early; under pipefail that can fail a successful docker command with SIGPIPE.
           docker run --rm xdrive/caddy:test caddy list-modules | grep -Fx 'dns.providers.alidns' >/dev/null
           docker run --rm xdrive/caddy:test test -f /srv/index.html
+          # The optional independent HTTPS Child is shipped at this EXACT
+          # commit, but must never be served by the default Gallery Origin.
+          # Compare image bytes with checked-out source, not just existence.
+          for asset in index.html child.js child.css; do
+            expected="$(sha256sum "deploy/baidu-isolated-child/$asset" | cut -d' ' -f1)"
+            actual="$(docker run --rm xdrive/caddy:test sha256sum "/usr/share/xdrive-baidu-isolated-child/$asset" | cut -d' ' -f1)"
+            [[ "$actual" == "$expected" ]] || {
+              echo "::error title=Isolated Child artifact::Caddy contains stale or missing $asset" >&2
+              exit 1
+            }
+          done
+          docker run --rm xdrive/caddy:test /bin/sh -ec \
+            'test ! -e /srv/xdrive-baidu-isolated-child/child.js && test ! -e /srv/_xdrive_baidu_isolated/child.js'
           docker run --rm xdrive/caddy:test caddy validate --config /etc/caddy/Caddyfile.http --adapter caddyfile
           docker run --rm xdrive/caddy:test caddy validate --config /etc/caddy/Caddyfile.rescue --adapter caddyfile
           # Validate rescue under actual no-capabilities sandbox. Official Caddy's
