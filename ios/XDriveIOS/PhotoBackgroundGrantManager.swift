@@ -148,6 +148,16 @@ actor XDriveIOSPhotoBackgroundGrantManager {
         // If this fails, the Owner can still revoke the grant by its ID in
         // the Server Devices/Grants UI without relying on this device.
         try save(credential, owner: owner)
+        // Caller has already displayed the explicit native consent.
+        // A separate background-only Keychain copy is scoped to this
+        // Owner/Device/Root and readable after first unlock while locked.
+        // It is NEVER a generic Web token or Desktop SourceRun credential.
+        try await XDriveIOSApprovedPhotoBGVault.shared.install(
+            owner: owner, device: proof,
+            grantID: credential.grantID, grantSecret: credential.rawSecret,
+            expiresAt: credential.expiresAt
+        )
+        try XDriveIOSBackgroundPhotoTask.scheduleApprovedProbe(afterMinutes: 360)
         return try localStatus(owner: owner)
     }
 
@@ -251,6 +261,22 @@ actor XDriveIOSPhotoBackgroundGrantManager {
             result, owner: owner, deviceID: device.deviceID
         )
         try save(next, owner: owner)
+        // A successful Server rotation immediately invalidates the prior
+        // grant. Refresh an existing approved BG vault atomically, otherwise
+        // a locked phone would keep trying an already-revoked secret.
+        if let approved = try await XDriveIOSApprovedPhotoBGVault.shared.current(),
+           approved.ownerID == owner.ownerID &&
+           approved.rootNodeID == owner.rootNodeID &&
+           approved.instanceID == owner.instanceID {
+            try await XDriveIOSApprovedPhotoBGVault.shared.install(
+                owner: owner, device: device,
+                grantID: next.grantID, grantSecret: next.rawSecret,
+                expiresAt: next.expiresAt, intervalMinutes: approved.intervalMinutes
+            )
+            try XDriveIOSBackgroundPhotoTask.scheduleApprovedProbe(
+                afterMinutes: approved.intervalMinutes
+            )
+        }
         return try localStatus(owner: owner)
     }
 
@@ -267,6 +293,11 @@ actor XDriveIOSPhotoBackgroundGrantManager {
         grant.revokePending = true
         try save(grant, owner: owner)
         XDriveIOSBackgroundPhotoTask.revokePendingRequests()
+        // Locked-screen credential is a separate Keychain record; it must
+        // be deleted before remote revoke so any suspended worker fails.
+        try await XDriveIOSApprovedPhotoBGVault.shared.cancelLocally(
+            owner: owner
+        )
         try await verifyOwner(owner, accessToken: accessToken)
         guard let id = UUID(uuidString: grant.grantID) else {
             throw XDriveIOSPhotoBackgroundGrantError.corruptKeychain

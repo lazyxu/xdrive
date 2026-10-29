@@ -51,6 +51,15 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-native-grant-check"
           "$RUNNER_TEMP/xdrive-ios-native-grant-check"
 
+      - name: Verify approved iOS BG credential interval and lifetime
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/BGApprovalPolicy.swift \
+            ios/tests/BGApprovalPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-bg-approval-check"
+          "$RUNNER_TEMP/xdrive-ios-bg-approval-check"
+
       - name: Prepare native brand and home screen icon
         run: bash ios/scripts/prepare-assets.sh
 

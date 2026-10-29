@@ -28,9 +28,20 @@ export interface XDriveIOSPhotoBackupProgress {
   stoppedForReview: boolean
   stage: string
 }
+export interface XDriveIOSPhotoBackgroundGrantStatus {
+  enrolled: boolean
+  enabled: boolean
+  storedButUnverified: boolean
+  revokePending: boolean
+  serverVerified: boolean
+  expiresAt: number // Unix milliseconds, zero when absent
+  backgroundUploadReady: boolean
+}
+
 export interface XDriveIOSPhotoBackupHost {
   /** Negotiated with the real native host; false for older installed IPA. */
   scanWindowsSupported?: boolean
+  nativeBackgroundGrantSupported?: boolean
   capabilities(): Promise<boolean>
   status(session: XDriveIOSPhotoBackupSession): Promise<XDriveIOSPhotoStatus>
   requestAccess(session: XDriveIOSPhotoBackupSession): Promise<XDriveIOSPhotoStatus>
@@ -40,6 +51,12 @@ export interface XDriveIOSPhotoBackupHost {
     onProgress: (progress: XDriveIOSPhotoBackupProgress) => void,
     windowIndex?: number,
   ): Promise<XDriveIOSPhotoBackupProgress>
+  /** Only a true native iOS Host may expose an Owner-scoped grant status.
+   * No long-lived secret may ever cross this interface into JavaScript. */
+  backgroundGrantStatus?(session: XDriveIOSPhotoBackupSession):
+    Promise<XDriveIOSPhotoBackgroundGrantStatus>
+  configureBackgroundGrant?(session: XDriveIOSPhotoBackupSession, enabled: boolean):
+    Promise<XDriveIOSPhotoBackgroundGrantStatus>
   cancel(): Promise<void>
   switchServer(): Promise<void>
 }
@@ -62,6 +79,9 @@ export function XDriveIOSPhotoBackupSettings({
   // This is a transient 1-based selection, NOT a persisted PhotoKit identity.
   const [windowIndexText, setWindowIndexText] = useState('1')
   const [progress, setProgress] = useState<XDriveIOSPhotoBackupProgress | null>(null)
+  const [bgGrant, setBGGrant] = useState<XDriveIOSPhotoBackgroundGrantStatus | null>(null)
+  const [bgGrantBusy, setBGGrantBusy] = useState(false)
+  const [bgGrantError, setBGGrantError] = useState('')
   const activeRun = useRef(false)
 
   // Changing authenticated Owner or closing Settings cancels the current
@@ -73,12 +93,25 @@ export function XDriveIOSPhotoBackupSettings({
     setError('')
     setWindowIndexText('1')
     setProgress(null)
+    setBGGrant(null)
+    setBGGrantError('')
     if (session) {
       void host.capabilities().then(async supported => {
         if (!mounted || !supported) return
         setAvailable(true)
         const current = await host.status(session)
         if (mounted) setStatus(current)
+        // This probes a real scoped native/Server grant only. A regular
+        // PWA/Desktop/DSM must not show or emulate background credentials.
+        if (host.nativeBackgroundGrantSupported && host.backgroundGrantStatus) {
+          try {
+            const result = await host.backgroundGrantStatus(session)
+            if (mounted) setBGGrant(result)
+          } catch {
+            if (mounted) setBGGrantError(
+              '后台受限授权无法验证；不会据此启动自动上传。')
+          }
+        }
       }).catch(() => {
         if (mounted) {
           setAvailable(true)
@@ -148,6 +181,29 @@ export function XDriveIOSPhotoBackupSettings({
       setRunning(false)
       setBusy(false)
       setCancelRequested(false)
+    }
+  }
+
+  const configureBGGrant = async (enabled: boolean) => {
+    if (busy || running || bgGrantBusy ||
+        !host.nativeBackgroundGrantSupported ||
+        !host.configureBackgroundGrant || (enabled && !permitted)) return
+    setBGGrantBusy(true)
+    setBGGrantError('')
+    try {
+      const result = await host.configureBackgroundGrant(session, enabled)
+      setBGGrant(result)
+    } catch (caught) {
+      setBGGrantError(caught instanceof Error
+        ? caught.message : '后台授权状态无法安全更新。')
+      // A network error after local revocation must never make a disabled
+      // grant appear newly active based on old UI state.
+      if (host.backgroundGrantStatus) {
+        try { setBGGrant(await host.backgroundGrantStatus(session)) }
+        catch { setBGGrant(null) }
+      }
+    } finally {
+      setBGGrantBusy(false)
     }
   }
 
@@ -246,13 +302,59 @@ export function XDriveIOSPhotoBackupSettings({
             </Typography>
           </Stack>
         ) : null}
+        {host.nativeBackgroundGrantSupported && host.configureBackgroundGrant ? (
+          <Stack spacing={1} data-xdrive-ios-bg-grant>
+            <Typography variant="body2" fontWeight={700}>
+              iPhone 系统后台备份授权
+            </Typography>
+            <Alert severity="info">
+              当前阶段仅允许指定 iPhone 在锁屏后安全验证可撤销的
+              Owner/Root 后台授权，并未实现后台原件自动上传。
+              需要额外的受保护上传任务和重启恢复验证才能启用无人值守备份。
+            </Alert>
+            {bgGrant?.revokePending ? (
+              <Typography variant="caption" color="warning.main">
+                本机已停用；服务器撤销仍待网络确认。
+              </Typography>
+            ) : bgGrant?.serverVerified && bgGrant.enabled ? (
+              <Typography variant="caption" color="text.secondary">
+                已核实的受限授权；有效期至{' '}
+                {bgGrant.expiresAt > 0
+                  ? new Date(bgGrant.expiresAt).toLocaleString() : '未知'}。
+              </Typography>
+            ) : bgGrant?.storedButUnverified ? (
+              <Typography variant="caption" color="warning.main">
+                本机保存过授权，但当前服务器尚未核实；不会当作有效备份凭据。
+              </Typography>
+            ) : (
+              <Typography variant="caption" color="text.secondary">
+                尚未启用经过服务器验证的原生后台授权。
+              </Typography>
+            )}
+            {bgGrantError ? (
+              <Alert severity="warning" data-xdrive-ios-bg-grant-error>
+                {bgGrantError}
+              </Alert>
+            ) : null}
+            <Button variant="outlined"
+              disabled={busy || running || bgGrantBusy ||
+                (!bgGrant?.enrolled && !permitted)}
+              onClick={() => { void configureBGGrant(!bgGrant?.enrolled) }}
+              data-xdrive-ios-bg-grant-toggle>
+              {bgGrantBusy ? '正在执行原生确认…'
+                : bgGrant?.revokePending ? '重试撤销服务器后台授权'
+                : bgGrant?.enrolled ? '停止并撤销后台授权'
+                : '授权此设备进行后台备份准备'}
+            </Button>
+          </Stack>
+        ) : null}
         {error ? <Alert severity="warning" data-xdrive-ios-photos-error>{error}</Alert> : null}
         {permitted && (running ? (
           <Button variant="outlined" disabled={cancelRequested} onClick={() => { void cancel() }}>
             {cancelRequested ? '正在取消…' : '取消本轮照片备份'}
           </Button>
         ) : (
-          <Button variant="contained" disabled={busy || (scanWindows && !validWindow)}
+          <Button variant="contained" disabled={busy || bgGrantBusy || (scanWindows && !validWindow)}
             onClick={() => { void start() }}
             data-xdrive-ios-photos-start>
             开始本轮照片备份
@@ -262,7 +364,7 @@ export function XDriveIOSPhotoBackupSettings({
           上传须由用户点击并在 iOS 系统提示中再次确认。只使用当前服务器验证的 Owner/root；
           不镜像删除、不自动后台运行，收到不确定 ACK 时保留账本等待核对。
         </Typography>
-        <Button variant="outlined" disabled={busy || running}
+        <Button variant="outlined" disabled={busy || running || bgGrantBusy}
           data-xdrive-ios-settings-switch-server
           onClick={() => {
             void host.switchServer().catch(caught => {

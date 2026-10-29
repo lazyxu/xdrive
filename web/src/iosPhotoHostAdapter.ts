@@ -2,6 +2,7 @@ import type {
   XDriveIOSPhotoBackupHost,
   XDriveIOSPhotoBackupProgress,
   XDriveIOSPhotoBackupSession,
+  XDriveIOSPhotoBackgroundGrantStatus,
   XDriveIOSPhotoPermission,
   XDriveIOSPhotoStatus,
 } from '../../ui/shared/src/mui/IOSPhotoBackupSettings'
@@ -30,6 +31,7 @@ export function xDriveCreateIOSPhotoBackupHost(): XDriveIOSPhotoBackupHost | nul
 class IOSPhotoBackupHost implements XDriveIOSPhotoBackupHost {
   private readonly handler: NativeMessageHandler
   scanWindowsSupported = false
+  nativeBackgroundGrantSupported = false
 
   constructor(handler: NativeMessageHandler) {
     this.handler = handler
@@ -85,11 +87,14 @@ class IOSPhotoBackupHost implements XDriveIOSPhotoBackupHost {
     const value = await this.request<{
       protocolVersion: number; platform: string; photoKit: boolean
       foregroundStillBackup: boolean; scanWindows?: boolean
+      nativeBackgroundGrant?: boolean
     }>('capabilities')
     const supported = value?.protocolVersion === 1 &&
       value.platform === 'ios' && value.photoKit === true &&
       value.foregroundStillBackup === true
     this.scanWindowsSupported = supported && value.scanWindows === true
+    this.nativeBackgroundGrantSupported =
+      supported && value.nativeBackgroundGrant === true
     return supported
   }
 
@@ -118,6 +123,32 @@ class IOSPhotoBackupHost implements XDriveIOSPhotoBackupHost {
       { ...session, allowICloudOriginals,
         ...(this.scanWindowsSupported ? { windowIndex } : {}) },
       onProgress,
+    )
+  }
+
+  backgroundGrantStatus(
+    session: XDriveIOSPhotoBackupSession,
+  ): Promise<XDriveIOSPhotoBackgroundGrantStatus> {
+    if (!this.nativeBackgroundGrantSupported) {
+      return Promise.reject(new Error('当前 iOS IPA 尚未提供原生后台授权管理。'))
+    }
+    return this.request<XDriveIOSPhotoBackgroundGrantStatus>(
+      'photos.background.grant.status', { ...session },
+    )
+  }
+
+  configureBackgroundGrant(
+    session: XDriveIOSPhotoBackupSession,
+    enabled: boolean,
+  ): Promise<XDriveIOSPhotoBackgroundGrantStatus> {
+    if (!this.nativeBackgroundGrantSupported) {
+      return Promise.reject(new Error('当前 iOS IPA 尚未提供原生后台授权管理。'))
+    }
+    // The actual consent dialog, device registration, Keychain and server
+    // proof all run natively. JS only receives redacted status.
+    return this.request<XDriveIOSPhotoBackgroundGrantStatus>(
+      'photos.background.grant.configure',
+      { ...session, enabled },
     )
   }
 

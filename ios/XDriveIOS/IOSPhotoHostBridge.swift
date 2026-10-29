@@ -17,6 +17,7 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
     private let onRequestServerChange: () -> Void
     private var activeBackup: Task<Void, Never>?
     private var activeBackupID: String?
+    private var activeGrantTask: Task<Void, Never>?
     private var consent: CheckedContinuation<Bool, Never>?
     private weak var consentAlert: UIAlertController?
     private var backgroundObserver: NSObjectProtocol?
@@ -130,6 +131,10 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                 "protocolVersion": 1, "platform": "ios",
                 "photoKit": true, "foregroundStillBackup": true,
                 "scanWindows": true,
+                "nativeBackgroundGrant": true,
+                // This advertises only secure native consent + Keychain
+                // provisioning; actual locked-screen file uploads remain off.
+                "nativeBackgroundUpload": false,
                 "maxScannedAssets": XDriveIOSForegroundPhotoBackupMVP.maxScannedAssets,
                 "maxNewOriginalsPerRun": XDriveIOSForegroundPhotoBackupMVP.maxNewOriginalsPerRun
             ])
@@ -138,8 +143,8 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
             // *shared PWA login screen*, so it cannot demand an Owner token.
             // Still require the exact origin-locked main frame, and show an
             // explicit native confirmation before stopping that WebView.
-            guard activeBackup == nil else {
-                sendError(id, "相册备份正在运行，请先完成或取消，再切换服务器。")
+            guard activeBackup == nil && activeGrantTask == nil else {
+                sendError(id, "照片备份或后台授权正在处理，请先结束后切换服务器。")
                 return
             }
             guard let currentURL = webView?.url, sameOrigin(currentURL) else {
@@ -174,8 +179,98 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
             } catch {
                 sendError(id, "无法核实当前服务器与 Owner，未读取系统相册。")
             }
+        case "photos.background.grant.status":
+            guard let source = parseOwner(body) else {
+                sendError(id, "后台授权状态需要当前登录的 Owner。")
+                return
+            }
+            do {
+                let owner = try await verifiedOwner(source)
+                let manager = XDriveIOSPhotoBackgroundGrantManager.shared
+                let local = try await manager.localStatus(owner: owner)
+                if local.enabled {
+                    do {
+                        let server = try await manager.verifyRemote(
+                            owner: owner, accessToken: source.accessToken
+                        )
+                        sendResult(id, backgroundGrantStatusObject(
+                            server, serverVerified: true
+                        ))
+                    } catch {
+                        // A network failure, revoked credential or old Server
+                        // cannot be represented as active upload permission.
+                        sendResult(id, backgroundGrantStatusObject(
+                            local, serverVerified: false
+                        ))
+                    }
+                } else {
+                    sendResult(id, backgroundGrantStatusObject(
+                        local, serverVerified: false
+                    ))
+                }
+            } catch {
+                sendError(id, "当前 Owner/Root 或本机后台凭据无法验证。")
+            }
+        case "photos.background.grant.configure":
+            guard activeBackup == nil && activeGrantTask == nil,
+                  let source = parseOwner(body),
+                  let params = body["params"] as? [String: Any],
+                  let enabled = params["enabled"] as? Bool else {
+                sendError(id, "后台授权配置无效或已有前台任务正在运行。")
+                return
+            }
+            activeGrantTask = Task { @MainActor [weak self] in
+                guard let self else { return }
+                defer { self.activeGrantTask = nil }
+                do {
+                    let owner = try await self.verifiedOwner(source)
+                    try Task.checkCancellation()
+                    guard let currentURL = self.webView?.url,
+                          self.sameOrigin(currentURL) else {
+                        self.sendError(id, "当前网页已切换，拒绝修改后台授权。")
+                        return
+                    }
+                    let manager = XDriveIOSPhotoBackgroundGrantManager.shared
+                    if enabled {
+                        let access = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                        guard access == .authorized || access == .limited else {
+                            self.sendError(id, "请先授予 iPhone 相册访问权限。")
+                            return
+                        }
+                        let accepted = await self.confirmBackgroundGrant(owner: owner)
+                        try Task.checkCancellation()
+                        guard accepted else {
+                            self.sendError(id, "未创建后台备份授权。")
+                            return
+                        }
+                        _ = try await manager.enableAfterNativeConfirmation(
+                            owner: owner, accessToken: source.accessToken
+                        )
+                        let verified = try await manager.verifyRemote(
+                            owner: owner, accessToken: source.accessToken
+                        )
+                        try Task.checkCancellation()
+                        self.sendResult(id, self.backgroundGrantStatusObject(
+                            verified, serverVerified: true
+                        ))
+                    } else {
+                        let stopped = try await manager.disable(
+                            owner: owner, accessToken: source.accessToken
+                        )
+                        self.sendResult(id, self.backgroundGrantStatusObject(
+                            stopped, serverVerified: false
+                        ))
+                    }
+                } catch is CancellationError {
+                    self.sendError(id, "后台授权操作已取消，未假定成功。")
+                } catch {
+                    self.sendError(id, enabled
+                        ? "无法安全签发或验证后台凭据；请检查设备注册、Owner、服务器和 Keychain。"
+                        : "本机后台任务已请求停止；若服务器断线，请恢复后再次撤销远端授权。")
+                }
+            }
         case "photos.backup.start":
-            guard activeBackup == nil else {
+            guard activeBackup == nil && activeGrantTask == nil else {
                 sendError(id, "已有一轮照片备份正在运行。")
                 return
             }
@@ -264,6 +359,51 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
         }
     }
 
+    private func backgroundGrantStatusObject(
+        _ result: XDriveIOSPhotoBackgroundGrantStatus,
+        serverVerified: Bool
+    ) -> [String: Any] {
+        let expiry = result.expiresAt?.timeIntervalSince1970 ?? 0
+        return [
+            "enrolled": result.enrolled,
+            "enabled": result.enabled && serverVerified,
+            "storedButUnverified": result.enabled && !serverVerified,
+            "revokePending": result.revokePending,
+            "serverVerified": serverVerified,
+            "expiresAt": expiry > 0 && expiry < 4_102_444_800
+                ? Int64((expiry * 1000).rounded(.towardZero)) : 0,
+            "backgroundUploadReady": false
+        ]
+    }
+
+    @MainActor
+    private func confirmBackgroundGrant(
+        owner: XDriveNativeOwnerRoot
+    ) async -> Bool {
+        await withCheckedContinuation { continuation in
+            guard let presenter = webView?.window?.rootViewController,
+                  presenter.presentedViewController == nil,
+                  consent == nil else {
+                continuation.resume(returning: false)
+                return
+            }
+            consent = continuation
+            let alert = UIAlertController(
+                title: "允许这台 iPhone 的受限后台备份授权？",
+                message: "当前账户：\(owner.username)\n服务器：\(owner.origin.host ?? "xDrive")\n只允许此设备向当前账户 Root 上传照片、视频和完整 Live 原件。授权有效期最多 14 天、可以随时撤销。\n为兼容锁屏，独立的受限 Device/Grant 证明将以此设备专用、首次解锁后可用的 Keychain 方式保存。\n目前只会在后台核实授权，不会自动上传照片；完整无人值守备份仍在实现中。",
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "取消", style: .cancel) { [weak self] _ in
+                self?.finishConsent(false)
+            })
+            alert.addAction(UIAlertAction(title: "同意授权", style: .default) { [weak self] _ in
+                self?.finishConsent(true)
+            })
+            consentAlert = alert
+            presenter.present(alert, animated: true)
+        }
+    }
+
     @MainActor
     private func photoStatus() -> [String: Any] {
         let authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
@@ -342,6 +482,7 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
     /// from the shared React Cancel control. No detached backup task survives.
     func cancelActive() {
         activeBackup?.cancel()
+        activeGrantTask?.cancel()
         if consent != nil {
             // Both WebKit and UIApplication lifecycle callbacks run on main.
             Task { @MainActor [weak self] in self?.finishConsent(false) }
