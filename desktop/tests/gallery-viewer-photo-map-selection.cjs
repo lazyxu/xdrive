@@ -67,5 +67,7 @@ test('Original Gallery controls the map scope; this identity does not grant a Ce
   assert.match(gallery,/showMapFromCurrentGallery/)
   assert.match(gallery,/xDriveGalleryMapEntryScope\(/)
   assert.match(gallery,/mapGalleryEntryReturnRef\.current/)
-  assert.doesNotMatch(fs.readFileSync(file,'utf8'),/localStorage|sessionStorage|wgs84|api\.map\.baidu\.com/i)
+  // Comments may describe the forbidden original-GPS contract. Assert that
+  // the identity helper cannot make any network/storage or provider call.
+  assert.doesNotMatch(fs.readFileSync(file,'utf8'),/localStorage|sessionStorage|fetch\(|api\.map\.baidu\.com/i)
 })
