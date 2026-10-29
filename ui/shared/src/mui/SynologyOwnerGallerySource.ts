@@ -1,7 +1,7 @@
 import type { MediaGalleryDataSource } from './MediaGallery'
 import type { MediaGalleryQuery, MediaItem, MediaItemRange } from '../models'
 import type { XDriveSynologyBackupLocalClient } from '../synology-backup-adapter'
-import { xDriveSynologyLoadBoundedMediaPreview } from '../synology-media-preview'
+import { xDriveSynologyLoadBoundedMediaPreview, xDriveSynologyPreviewMIME } from '../synology-media-preview'
 import { xDriveSynologyLoadOwnerThumbnail } from '../synology-owner-thumbnail'
 import {
   xDriveSynologyLoadNativeMediaStream, xDriveSynologyPlaybackMIME,
@@ -185,9 +185,11 @@ export function createXDriveSynologyOwnerGallerySource(
         } as Parameters<typeof xDriveSynologyLoadNativeMediaStream>[1], signal)
         return signal?.aborted || previews.get(nodeID) !== identity ? null : url
       }
-      // Image originals remain SHA-verified and bounded to 32 MiB. Live Photo
-      // motion and other unsupported codecs still fail closed.
-      if (identity.size <= 0 || identity.size > 32 * (1 << 20)) return null
+      // A claimed image cannot reinterpret a video or PDF as a still Blob.
+      // Image originals remain SHA-verified and bounded to 32 MiB.
+      const imageMIME = xDriveSynologyPreviewMIME(identity.name)
+      if (!imageMIME || !imageMIME.startsWith('image/') ||
+        identity.size <= 0 || identity.size > 32 * (1 << 20)) return null
       const url = await xDriveSynologyLoadBoundedMediaPreview(client, {
         id: identity.id, name: identity.name, size: identity.size,
         revision: identity.revision, kind: 'file',

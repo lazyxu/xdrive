@@ -27,6 +27,8 @@ function compiledGallery() {
   new Function('module', 'exports', 'require', compile(gallery, galleryFile))(
     mod, mod.exports, name => {
       if (name === '../synology-media-preview') return {
+        xDriveSynologyPreviewMIME: filename =>
+          /\.(jpg|jpeg|png|webp|gif)$/i.test(filename) ? 'image/jpeg' : null,
         xDriveSynologyLoadBoundedMediaPreview: async () => {
           throw Error('test did not authorize an Owner original preview')
         },

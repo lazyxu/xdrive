@@ -29,6 +29,8 @@ new Function('module', 'exports', 'require', 'URL', 'Blob', transpiled.outputTex
   moduleRef, moduleRef.exports,
   name => {
     if (name === '../synology-media-preview') return {
+      xDriveSynologyPreviewMIME: filename =>
+        /\.(jpg|jpeg|png|webp|gif)$/i.test(filename) ? 'image/jpeg' : null,
       xDriveSynologyLoadBoundedMediaPreview: async (_client, item) => {
         assert.equal(item.size, 120)
         return deferredPreview ?? 'blob:verified-original'
@@ -36,8 +38,8 @@ new Function('module', 'exports', 'require', 'URL', 'Blob', transpiled.outputTex
     }
     if (name === '../synology-media-stream') return {
       xDriveSynologyPlaybackMIME: filename =>
-        /\\.(mp4|m4v)$/i.test(filename) ? 'video/mp4'
-          : /\\.webm$/i.test(filename) ? 'video/webm' : null,
+        /\.(mp4|m4v)$/i.test(filename) ? 'video/mp4'
+          : /\.webm$/i.test(filename) ? 'video/webm' : null,
       xDriveSynologyLoadNativeMediaStream: async (client, item, signal) => {
         calls.push(['stream', item.id, item.revision, item.size, item.name, signal])
         assert.equal(typeof client.ownerFileMediaStreamURL, 'function')
