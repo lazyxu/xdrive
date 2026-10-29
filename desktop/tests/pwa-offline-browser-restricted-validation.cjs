@@ -77,9 +77,9 @@ function harness({ constructorDenied = false, abortThrows = false, lateSignalDen
   const components = {}
   for (const name of ['Alert', 'Box', 'Button', 'Divider', 'Stack', 'Typography']) {
     components[name] = props => {
-      const { children, ...hostProps } = props
-      // React elements in a forwarded `children` prop retain Fiber owner cycles;
-      // host-test JSON must render them as children, not serialize internals.
+      // startIcon is a React element with a Fiber owner, not a JSON host prop.
+      // Ignore this decorative icon but keep actual rendered text and controls.
+      const { children, startIcon, ...hostProps } = props
       return React.createElement('test-' + name, hostProps, children)
     }
   }
