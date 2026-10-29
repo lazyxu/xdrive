@@ -125,7 +125,7 @@ struct XDrivePhotoKitScanPreviewScreen: View {
     }
 
     private func nextPage() {
-        guard let scanner, let latest, !latest.finished, !busy else { return }
+        guard let scanner, let currentPage = latest, !currentPage.finished, !busy else { return }
         let token = generation
         busy = true
         scanTask = Task { @MainActor in
