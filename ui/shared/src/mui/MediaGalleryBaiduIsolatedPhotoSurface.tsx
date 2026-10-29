@@ -808,6 +808,13 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
           .filter(candidate => hasAcceptedCell(candidate.selection)),
         projected.width, projected.height, edgeToEdge, overlayRects)
     : []
+  // Collision/edge/toolbar decluttering can hide an otherwise current, signed
+  // Owner Cell's photo cover. The Cell itself is still accessible and must
+  // never be confused with missing media or a revoked Owner permission.
+  // This disclosure belongs to the ONE React Parent shared by both SDK Hosts.
+  const unpaintedCellCount = scopeIsCurrent && trustedSummary && acceptedViewport &&
+      phase === 'ready'
+    ? Math.max(0, accessible.length - coverPins.length) : 0
   // During a move, the last signed layer is projected by the SDK as a
   // VISUAL-ONLY overlay. It cannot open a Cell and is discarded on new
   // Owner evidence, filter/Owner revision or any map failure. Never treat
@@ -1053,8 +1060,15 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         <Box component="details" data-xdrive-places-cluster-list>
           <Box component="summary" sx={{cursor:'pointer',typography:'caption',
             color:'text.secondary',minHeight:44,display:'flex',alignItems:'center',
+            flexWrap:'wrap',gap:0.5,
             '&:focus-visible':{outline:'2px solid',outlineColor:'primary.main'}}}>
             聚集点列表（{accessible.length}）
+            {unpaintedCellCount > 0 ? (
+              <Box component="span" data-xdrive-places-unpainted-cell-count
+                sx={{fontWeight:500}}>
+                · {unpaintedCellCount} 个聚集点未显示照片封面，可从这里查看
+              </Box>
+            ) : null}
           </Box>
         <Box component="nav" aria-label="当前地图聚合区域"
           sx={{display:'flex',flexWrap:'wrap',gap:0.5,mt:0.5}}>
