@@ -69,7 +69,7 @@ export function XDriveServerBackupManagementPanel({
   const [submitting, setSubmitting] = useState(false)
   const [snapshotID, setSnapshotID] = useState('')
   const [snapshotFilter, setSnapshotFilter] = useState<XDriveServerBackupSnapshotFilter>({
-    query: '', format: 'all', status: 'all', order: 'newest',
+    query: '', format: 'all', repository: 'all', status: 'all', order: 'newest',
   })
   const [createFormat, setCreateFormat] = useState<'v1' | 'v2'>('v2')
   const [verifyMode, setVerifyMode] = useState<'fast' | 'deep'>('fast')
@@ -348,7 +348,11 @@ export function XDriveServerBackupManagementPanel({
         </Stack>
       </Paper>
 
-      {page?.supported ? <XDriveBackupRepositoryInventory inventory={page.inventory} /> : null}
+      {page?.supported ? (
+        <XDriveBackupRepositoryInventory
+          inventory={page.inventory}
+          onSelectRepository={repository => changeSnapshotFilter({ repository })} />
+      ) : null}
       {page?.supported &&
         typeof page.inventory.total_snapshots === 'number' &&
         page.inventory.total_snapshots > 100 && port.readSnapshotIndexPage ? (
@@ -415,6 +419,16 @@ export function XDriveServerBackupManagementPanel({
               <MenuItem value="v1">v1</MenuItem>
               <MenuItem value="v2">v2</MenuItem>
             </TextField>
+            <TextField select size="small" label="仓库" value={snapshotFilter.repository}
+              sx={{ minWidth: 175 }}
+              onChange={event => changeSnapshotFilter({
+                repository: event.target.value as XDriveServerBackupSnapshotFilter['repository'],
+              })}>
+              <MenuItem value="all">全部本地仓库</MenuItem>
+              <MenuItem value="v1">传统 v1 仓库</MenuItem>
+              <MenuItem value="v2-default">默认 v2 仓库</MenuItem>
+              <MenuItem value="v2-configured">自定义 v2 仓库</MenuItem>
+            </TextField>
             <TextField select size="small" label="结构状态" value={snapshotFilter.status}
               sx={{ minWidth: 145 }}
               onChange={event => changeSnapshotFilter({
@@ -435,7 +449,7 @@ export function XDriveServerBackupManagementPanel({
               <MenuItem value="oldest">最早优先</MenuItem>
             </TextField>
             <Button size="small" variant="outlined" onClick={() => changeSnapshotFilter({
-              query: '', format: 'all', status: 'all', order: 'newest',
+              query: '', format: 'all', repository: 'all', status: 'all', order: 'newest',
             })}>清除筛选</Button>
           </Stack>
           <Typography variant="caption" color="text.secondary" data-xdrive-admin-backup-filter-count>

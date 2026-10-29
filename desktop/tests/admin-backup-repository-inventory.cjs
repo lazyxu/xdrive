@@ -18,7 +18,8 @@ test('Host counts three known sources using its same bounded snapshot identity i
 test('shared Web/Desktop administrator page only shows read-only counts, not Host directory edits',()=>{
  const panel=read('ui/shared/src/mui/ServerBackupManagementPanel.tsx')
  const summary=read('ui/shared/src/mui/BackupRepositoryInventory.tsx')
- assert.match(panel,/XDriveBackupRepositoryInventory inventory=\{page.inventory\}/)
+ assert.match(panel,/XDriveBackupRepositoryInventory[\s\S]{0,140}inventory=\{page.inventory\}/)
+ assert.match(panel,/onSelectRepository=\{repository => changeSnapshotFilter\(\{ repository \}\)\}/)
  assert.match(summary,/data-xdrive-admin-backup-repository-inventory/)
  assert.match(summary,/备份仓库只读发现统计/)
  assert.match(summary,/不代表每一代可恢复/)
