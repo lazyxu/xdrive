@@ -59,5 +59,8 @@ export function xDriveStartIOSForegroundAutoScheduler(
     // The Owner-backed FileManager has unmounted or switched accounts.
     // A stale in-flight native foreground backup must not survive that.
     void host.cancel().catch(() => {})
+    // Clear the RAM-only short-lived bearer on sign-out, account change,
+    // or unmount. The user's local interval preference remains opt-in.
+    void host.disarmBackground().catch(() => {})
   }
 }

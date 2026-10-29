@@ -188,6 +188,15 @@ class IOSPhotoBackupHost implements XDriveIOSPhotoBackupHost {
     )
   }
 
+  async disarmBackground(): Promise<void> {
+    if (!this.foregroundAutoSupported) return
+    await this.request<{ disarmed: boolean }>('photos.auto.disarm')
+  }
+
+  async disableAllAutoLocally(): Promise<{ disabledSchedules: number }> {
+    return this.request<{ disabledSchedules: number }>('photos.auto.disableAllLocal')
+  }
+
   async cancel(): Promise<void> {
     await this.request<{ cancelRequested: boolean }>('photos.backup.cancel')
   }

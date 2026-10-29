@@ -878,6 +878,19 @@ function AuthView({
             更换 iPhone App 服务器
           </Button>
         ) : null}
+        {iosNativeHost ? (
+          <Button data-xdrive-ios-emergency-stop-autobackup
+            variant="text" color="error" sx={{ minHeight: 44 }}
+            onClick={() => {
+              void iosNativeHost.disableAllAutoLocally().then(() => {
+                setError('已在此 iPhone 停止全部自动相册备份，即使服务器不可用。')
+              }).catch(() => {
+                setError('本机关闭自动备份失败，请检查 App 状态。')
+              })
+            }}>
+            离线关闭此 iPhone 所有自动相册备份
+          </Button>
+        ) : null}
         <Button data-xdrive-pwa-login-entry variant="text" sx={{ minHeight: 44 }}
           onClick={() => setInstallOpen(true)}>
           安装 xDrive 到主屏幕 / 桌面

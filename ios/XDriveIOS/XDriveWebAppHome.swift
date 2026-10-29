@@ -248,6 +248,7 @@ private struct XDriveOriginLockedWebView: UIViewRepresentable {
         func stopDownloads() {
             downloads.stopPendingDownloads()
             photoHost.cancelActive()
+            Task { @MainActor in XDriveIOSBackgroundPhotos.shared.disarm() }
             photoHost.webView = nil
         }
 
@@ -257,6 +258,7 @@ private struct XDriveOriginLockedWebView: UIViewRepresentable {
             // old PWA Owner's PhotoKit backup. Same-document hash routes do not
             // trigger this hook; the shared Settings unmount cancels instead.
             photoHost.cancelActive()
+            Task { @MainActor in XDriveIOSBackgroundPhotos.shared.disarm() }
         }
 
         private func sameOrigin(_ target: URL) -> Bool {

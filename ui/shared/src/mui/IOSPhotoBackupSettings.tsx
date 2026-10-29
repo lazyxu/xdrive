@@ -92,6 +92,8 @@ export interface XDriveIOSPhotoBackupHost {
   ): Promise<XDriveIOSPhotoAutoStatus>
   autoTick(session: XDriveIOSPhotoBackupSession): Promise<XDriveIOSPhotoAutoTickResult>
   cancel(): Promise<void>
+  disarmBackground(): Promise<void>
+  disableAllAutoLocally(): Promise<{ disabledSchedules: number }>
   switchServer(): Promise<void>
 }
 
@@ -398,6 +400,18 @@ export function XDriveIOSPhotoBackupSettings({
                   new Date(autoStatus.nextDueAt).toLocaleString() : ''}
               </Typography>
             ) : null}
+            <Button variant="text" color="error"
+              onClick={() => {
+                // Local emergency stop works even when Server /me is offline.
+                // It intentionally disables all Owner schedules on this device.
+                void host.disableAllAutoLocally().then(() => {
+                  setAutoStatus(null)
+                  setError('已在本机关闭全部账户的自动相册备份，无需联网。')
+                }).catch(() => setError('本机关闭自动备份失败，请检查 iOS App 状态。'))
+              }}
+              data-xdrive-ios-auto-stop-all-local>
+              离线紧急关闭此 iPhone 所有自动备份
+            </Button>
             <Button variant={autoStatus?.enabled ? 'outlined' : 'contained'}
               disabled={autoConsentBusy || busy || running || reviewing ||
                 (!autoStatus?.enabled && !permitted)}

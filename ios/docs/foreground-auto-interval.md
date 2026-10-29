@@ -28,12 +28,21 @@ is separately visible and off unless explicitly enabled.
   identity, root and PhotoKit Full/Limited authorization for every privileged
   request. The user opt-in is authorized by the system native confirmation,
   not a writable localStorage flag.
-- A real visible WKWebView with an authenticated Owner periodically checks
-  the due time. It first refreshes/authenticates the Owner through existing
-  `/api/v1/me` Web API; only the current in-memory access token goes Web ->
-  native. Swift reauthorizes it and only runs a due, permitted foreground
-  scan. On logout/Owner change/hidden page/host teardown/background, cancel
-  and never resubmit an uncertain upload.
+- A visible WKWebView with an authenticated Owner periodically checks
+  the due time using the existing `/api/v1/me` bearer; only the current
+  in-memory access token flows Web -> native. Swift reauthorizes and only
+  runs a due, permitted foreground scan.
+- The native shell additionally registers a BGProcessingTask at launch and
+  submits a single system request after prior explicit opt-in. The same
+  original-file runner and encrypted journal can execute while the app
+  remains resident and its *RAM-only short-lived* bearer is still valid.
+  The system can decline or delay the request. Expiration cancels the task,
+  and unknown ACKs retain uncertainty. A cold launch without a new verified
+  bearer **never** automatically enrolls a device, reads private Photos or
+  uses a stored browser cookie/refresh token.
+- On logout, Owner change, WebView teardown or explicit offline emergency
+  OFF, the RAM-only bearer is discarded. The user can locally disable all
+  schedules even without Server connectivity.
 - The next due time is durably reserved **before** possible bytes are sent.
   Each run checks at most one 256-item authorized PhotoKit window, processes
   max 20 new originals and advances to the next segment only if it reached
@@ -46,15 +55,19 @@ is separately visible and off unless explicitly enabled.
 
 ## Important limits
 
-**Automatic means while the iOS App is foreground, visible and authenticated.**
-The first tick can run after enabling; subsequent eligible ticks are driven
-by a visible WebView every minute with native interval gating. The app closed,
-iPhone locked, suspended Safari WKWebView, no current authenticated Server
-session or missing trusted HTTPS CA **do not have a working automatic upload
-guarantee**. Native BGProcessingTask + constrained Device grant/credential
-renewal, durable upload session across app relaunch and OS scheduling require
-separate implementation and physical acceptance. Apple BGProcessingTask
-earliestBeginDate does not promise an exact wake-up time.
+**Automatic is guaranteed only as a best-effort attempt in a visible,
+authenticated foreground App.** A registered iOS BGProcessingTask may also
+continue a *system-initiated* background interval while the same app process
+retains an unexpired, recently verified in-memory bearer, but neither the
+wake-up time nor success is guaranteed. A force-quit, a cold iOS relaunch,
+expired token, PhotoKit Complete file protection while locked, or an
+untrusted HTTPS certificate stops the task. Reliable unattended operation
+across process termination still needs a *separate, explicit, revocable,
+Owner/Root-limited background authorization issued by Server* and matching
+Keychain/access refresh; never reuse a full Web refresh token or treat the
+identity-only iOS Device Token as upload permission. No background
+URLSession replacement is deployed: iOS background sessions can follow
+redirects and would break the present no-redirect credential invariant.
 
 This consolidated follow-up contains the original-video path from #3139,
 the complete-still+motion one-Node Live ZIP path from #3142, the read-only

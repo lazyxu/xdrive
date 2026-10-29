@@ -22,12 +22,13 @@ final class XDriveIOSPhotoAutoScheduleStore {
         var nextDueAt: Date
         var lastCompletedAt: Date?
     }
+    private static let prefix = "xdrive.ios.photos.auto.v1."
+
     private func key(for owner: XDriveNativeOwnerRoot) -> String {
         let scope = owner.origin.absoluteString + "\n" + owner.instanceID +
             "\n" + String(owner.ownerID) + "\n" + String(owner.rootNodeID)
         let hash = SHA256.hash(data: Data(scope.utf8))
-        return "xdrive.ios.photos.auto.v1." +
-            hash.map { String(format: "%02x", $0) }.joined()
+        return Self.prefix + hash.map { String(format: "%02x", $0) }.joined()
     }
     func status(owner: XDriveNativeOwnerRoot) -> State? {
         guard let bytes = UserDefaults.standard.data(forKey: key(for: owner)),
@@ -62,6 +63,18 @@ final class XDriveIOSPhotoAutoScheduleStore {
     func disable(owner: XDriveNativeOwnerRoot) {
         // Disable immediately, without requiring a network roundtrip.
         UserDefaults.standard.removeObject(forKey: key(for: owner))
+    }
+
+    /// Emergency local stop is intentionally available when the Server is
+    /// offline or Web access is expired. The exact HTTPS main-frame bridge
+    /// is still required; no remote call or unverified Owner guess is used.
+    /// This affects all xDrive auto-photo schedules on this one iPhone only.
+    @discardableResult
+    func disableAllOnThisDevice() -> Int {
+        let keys = UserDefaults.standard.dictionaryRepresentation().keys
+            .filter { $0.hasPrefix(Self.prefix) }
+        for key in keys { UserDefaults.standard.removeObject(forKey: key) }
+        return keys.count
     }
 
     /// Persist the next due time BEFORE any possible network write. A

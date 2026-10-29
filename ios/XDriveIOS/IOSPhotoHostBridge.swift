@@ -223,12 +223,20 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                 sendError(id, "尚未授权访问系统照片，未开始备份。")
                 return
             }
+            guard XDriveIOSPhotoRunGate.shared.acquire() else {
+                sendError(id, "已有原生照片/视频任务在运行，请完成或取消后重试。")
+                return
+            }
             activeBackupID = id
             activeBackup = Task { @MainActor [weak self] in
-                guard let self else { return }
+                guard let self else {
+                    XDriveIOSPhotoRunGate.shared.release()
+                    return
+                }
                 defer {
                     self.activeBackup = nil
                     self.activeBackupID = nil
+                    XDriveIOSPhotoRunGate.shared.release()
                 }
                 do {
                     let owner = try await self.verifiedOwner(source)
@@ -270,9 +278,13 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
             }
             do {
                 let owner = try await verifiedOwner(source)
-                sendResult(id, autoStatusObject(
-                    XDriveIOSPhotoAutoScheduleStore.shared.status(owner: owner)
-                ))
+                let stored = XDriveIOSPhotoAutoScheduleStore.shared.status(owner: owner)
+                if stored?.enabled == true {
+                    XDriveIOSBackgroundPhotos.shared.arm(
+                        owner: owner, accessToken: source.accessToken
+                    )
+                }
+                sendResult(id, autoStatusObject(stored))
             } catch {
                 sendError(id, "无法确认自动备份对应的当前服务器和 Owner。")
             }
@@ -294,6 +306,7 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                 let store = XDriveIOSPhotoAutoScheduleStore.shared
                 if !enabled {
                     store.disable(owner: owner)
+                    XDriveIOSBackgroundPhotos.shared.disarm()
                     cancelActive()
                     sendResult(id, autoStatusObject(nil))
                     return
@@ -319,10 +332,25 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                 let state = try store.configure(
                     owner: owner, minutes: minutes, allowICloud: allowCloud
                 )
+                XDriveIOSBackgroundPhotos.shared.arm(
+                    owner: owner, accessToken: source.accessToken
+                )
                 sendResult(id, autoStatusObject(state))
             } catch {
                 sendError(id, "自动备份授权或保存失败；不会在未验证的账户上运行。")
             }
+        case "photos.auto.disableAllLocal":
+            // Explicit emergency OFF is allowed without a live Server token:
+            // cancel this device's pending jobs, never widen an upload right.
+            let removed = XDriveIOSPhotoAutoScheduleStore.shared.disableAllOnThisDevice()
+            XDriveIOSBackgroundPhotos.shared.disarm()
+            cancelActive()
+            sendResult(id, ["disabledSchedules": removed])
+        case "photos.auto.disarm":
+            // Logout/unmount revokes only this process's RAM-only BG bearer;
+            // Owner-scoped saved preferences remain unchanged.
+            XDriveIOSBackgroundPhotos.shared.disarm()
+            sendResult(id, ["disarmed": true])
         case "photos.auto.tick":
             guard let source = parseOwner(body) else {
                 sendError(id, "前台自动备份需要有效的当前用户。")
@@ -332,6 +360,7 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                 sendResult(id, ["ran": false, "reason": "busy"])
                 return
             }
+            var ownsAutoRunGate = false
             do {
                 let owner = try await verifiedOwner(source)
                 try Task.checkCancellation()
@@ -344,20 +373,34 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                     sendResult(id, ["ran": false, "reason": "notForegroundOrAuthorized"])
                     return
                 }
+                XDriveIOSBackgroundPhotos.shared.arm(
+                    owner: owner, accessToken: source.accessToken
+                )
+                guard XDriveIOSPhotoRunGate.shared.acquire() else {
+                    sendResult(id, ["ran": false, "reason": "nativeRunBusy"])
+                    return
+                }
+                ownsAutoRunGate = true
                 let store = XDriveIOSPhotoAutoScheduleStore.shared
                 guard let state = try store.reserveDue(owner: owner),
                       let start = XDrivePhotoBackupScanWindow.offset(
                         for: state.windowIndex
                       ) else {
+                    XDriveIOSPhotoRunGate.shared.release()
                     sendResult(id, ["ran": false, "reason": "notDue"])
                     return
                 }
                 activeBackupID = id
+                ownsAutoRunGate = false // transferred to the spawned Task
                 activeBackup = Task { @MainActor [weak self] in
-                    guard let self else { return }
+                    guard let self else {
+                        XDriveIOSPhotoRunGate.shared.release()
+                        return
+                    }
                     defer {
                         self.activeBackup = nil
                         self.activeBackupID = nil
+                        XDriveIOSPhotoRunGate.shared.release()
                     }
                     do {
                         let report = try await XDriveIOSForegroundPhotoBackupMVP(
@@ -388,6 +431,10 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                     }
                 }
             } catch {
+                // reserveDue() may have failed before we handed the run gate
+                // to an active task. Releasing an unacquired gate is unsafe:
+                // only the guarded reserve path owns it.
+                if ownsAutoRunGate { XDriveIOSPhotoRunGate.shared.release() }
                 sendError(id, "自动备份需要重新核验当前 Owner/Root；未启动上传。")
             }
         case "photos.reconcile.status":
@@ -418,12 +465,20 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                 sendError(id, "已有备份/核对正在运行，或当前账户会话无效。")
                 return
             }
+            guard XDriveIOSPhotoRunGate.shared.acquire() else {
+                sendError(id, "另一原生备份/核对任务正在执行。")
+                return
+            }
             activeReviewID = id
             activeReview = Task { @MainActor [weak self] in
-                guard let self else { return }
+                guard let self else {
+                    XDriveIOSPhotoRunGate.shared.release()
+                    return
+                }
                 defer {
                     self.activeReview = nil
                     self.activeReviewID = nil
+                    XDriveIOSPhotoRunGate.shared.release()
                 }
                 do {
                     let owner = try await self.verifiedOwner(source)

@@ -21,8 +21,12 @@ targets:
         UILaunchScreen: {}
         LSRequiresIPhoneOS: true
         NSLocalNetworkUsageDescription: 用于连接你局域网内的 xDrive 服务器。
-        NSPhotoLibraryUsageDescription: 仅在你授权并主动点击查看或备份时读取已授权的照片及原件；点击备份后会将所选原件上传至你的 xDrive 云端，不会在后台自动上传。
+        NSPhotoLibraryUsageDescription: 仅在明确授权后读取你允许访问的照片与原件，并在你启用自动增量备份后尝试系统允许的后台任务；上传前仍验证当前账户和服务器，随时可关闭。
         PHPhotoLibraryPreventAutomaticLimitedAccessAlert: true
+        UIBackgroundModes:
+          - processing
+        BGTaskSchedulerPermittedIdentifiers:
+          - com.lazyxu.xdrive.ios.photos.incremental
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.lazyxu.xdrive.ios

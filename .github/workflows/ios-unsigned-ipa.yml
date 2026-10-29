@@ -69,6 +69,9 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-live-original-check"
           "$RUNNER_TEMP/xdrive-ios-live-original-check"
 
+      - name: Verify iOS BGTask registration, identity and emergency-off contracts
+        run: node --test ios/tests/background_task_safety.cjs
+
       - name: Prepare native brand and home screen icon
         run: bash ios/scripts/prepare-assets.sh
 

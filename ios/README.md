@@ -43,10 +43,14 @@ The ZIP preserves the originals but is **not** yet a playable Gallery Live
 resource or an automatic restore into Apple Photos. The user may explicitly
 enable a 15-minute/1-hour/6-hour/daily *foreground-only* automatic interval
 while the authenticated App remains open, with Owner/root re-verification
-and encrypted journal incremental deduplication. iOS background task
-execution after lock or app suspension, accurate time guarantees, 100k
-sharded full-library ledger and privileged Device SourceRun are **not
-implemented**. PhotoKit offsets can shift on edits and are not durable IDs.
+and encrypted journal incremental deduplication. An opt-in BGProcessingTask
+request is registered to *attempt* background work only while the iOS process
+still holds a verified, short-lived RAM-only Web access token. A fresh cold
+launch, expired token, force-quit, or a locked inaccessible PhotoKit original
+must stop without upload. Persistent unattended background authorization,
+accurate time guarantees, a 100k sharded full-library ledger and privileged
+Device SourceRun are **not implemented**. PhotoKit offsets can shift on edits
+and are not durable IDs.
 
 Canceled/backgrounded/stale-Owner work is stopped conservatively. A lost
 create/finalize acknowledgment remains **needs reconciliation**; it never
