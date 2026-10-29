@@ -232,15 +232,22 @@ export function XDrivePublicShareUnifiedDirectoryExplorer({
         <DialogTitle id="xdrive-public-share-preview-title">
           {previewEntry?.name || '预览'} · 只读
           {previewMode === 'cached-still' ? ' · 仅缓存缩略图（非原图；实况不含动态）' : ''}
+          {previewMode === 'cached-video-poster' ? ' · 仅缓存视频封面（不能播放）' : ''}
         </DialogTitle>
         <DialogContent dividers sx={{ p: 1, minHeight: 320 }}
           data-xdrive-public-share-preview-quality={previewMode || undefined}>
           {previewEntry && previewMode && (
             <XDriveFilePreviewSurface
               key={previewEntry.id + ':' + (previewEntry.revision ?? 0) + ':' + previewMode}
-              target={{ id: previewEntry.id, name: previewEntry.name, kind: 'file',
-                size: previewEntry.size, revision: previewEntry.revision }}
-              loadImagePreview={(_item, signal) => previewMode === 'cached-still'
+              // Cached video posters are presentation-only JPEG images. The
+              // real filename stays in the dialog header and every Share
+              // request keeps the original exact Node/revision/Share identity.
+              // Never tell the Preview Engine that a poster is video bytes.
+              target={{ id: previewEntry.id,
+                name: previewMode === 'cached-video-poster' ? '安全缓存视频封面.jpg' : previewEntry.name,
+                kind: 'file', size: previewEntry.size, revision: previewEntry.revision }}
+              loadImagePreview={(_item, signal) => previewMode === 'cached-still' ||
+                previewMode === 'cached-video-poster'
                 ? (loadThumbnail ? loadThumbnail(previewEntry, signal) : Promise.resolve(null))
                 : (loadImagePreview ? loadImagePreview(previewEntry, signal) : Promise.resolve(null))}
               imageFit="contain" interactiveImage minHeight={300}

@@ -9,8 +9,11 @@ import type { PublicShareChild } from './models'
  */
 const originalShareStill = /\.(?:jpe?g|png|webp|gif)$/i
 const cachedShareStill = /\.(?:bmp|heic|heif|avif|tiff?|livp)$/i
+// Safe video preview is a still poster only. It consumes the existing
+// Share-scoped cached JPEG thumbnail, NEVER playable video or a media ticket.
+const cachedShareVideoPoster = /\.(?:mp4|mov|m4v|mkv|webm)$/i
 
-export type XDrivePublicShareViewerStillMode = 'original' | 'cached-still' | null
+export type XDrivePublicShareViewerStillMode = 'original' | 'cached-still' | 'cached-video-poster' | null
 
 export function xDrivePublicShareViewerStillMode(
   entry: Pick<PublicShareChild, 'type' | 'name' | 'revision' | 'thumbnail_candidate'>,
@@ -18,10 +21,10 @@ export function xDrivePublicShareViewerStillMode(
 ): XDrivePublicShareViewerStillMode {
   if (!capability.canPreview || entry.type !== 'file') return null
   if (capability.hasOriginal && originalShareStill.test(entry.name)) return 'original'
-  if (capability.hasThumbnail && cachedShareStill.test(entry.name) &&
-      entry.thumbnail_candidate === true &&
+  if (capability.hasThumbnail && entry.thumbnail_candidate === true &&
       Number.isSafeInteger(entry.revision) && (entry.revision ?? 0) > 0) {
-    return 'cached-still'
+    if (cachedShareStill.test(entry.name)) return 'cached-still'
+    if (cachedShareVideoPoster.test(entry.name)) return 'cached-video-poster'
   }
   return null
 }
