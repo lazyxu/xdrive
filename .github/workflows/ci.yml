@@ -186,7 +186,7 @@ jobs:
         working-directory: desktop
         run: |
           npm run build:main
-          node --test --test-concurrency=2 --test-shard=${{ matrix.shard }}/3 tests/*.cjs
+          node --test --test-force-exit --test-concurrency=2 --test-shard=${{ matrix.shard }}/3 tests/*.cjs
 
   desktop-linux:
     needs: pr-scope

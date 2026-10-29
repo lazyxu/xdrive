@@ -51,7 +51,7 @@ test('P78 evergreen AGENTS policy forbids every new navigation-only intermediate
   // glob. Both build and test every original mounted source under Node 22.
   if (!ci.includes('npm run test:main')) {
     mustContain(ci, ['shard: [1, 2, 3]', 'npm run build:main',
-      'node --test --test-concurrency=2 --test-shard=${{ matrix.shard }}/3 tests/*.cjs'],
+      'node --test --test-force-exit --test-concurrency=2 --test-shard=${{ matrix.shard }}/3 tests/*.cjs'],
     'sharded Desktop CI must exercise all source-backed test files')
   }
   assert.ok(desktop.includes('node --test tests/*.cjs'),
