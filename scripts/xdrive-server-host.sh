@@ -879,6 +879,51 @@ backup_list_cmd() {
   echo "Note: incremental SIZE excludes shared CAS objects; use backup verify PATH for hash validation."
 }
 
+# Validate exact version, top-level booleans, regular inode and bounded JSON.
+# Do not trust grep matches inside duplicate or nested manifest fields.
+backup_verified_manifest_info() {
+  command -v python3 >/dev/null 2>&1 || return 1
+  python3 - "$1" <<'PY'
+import json, os, stat, sys
+
+def unique_keys(pairs):
+    out = {}
+    for key, value in pairs:
+        if key in out: raise ValueError('duplicate JSON key')
+        out[key] = value
+    return out
+
+def reject_constant(_):
+    raise ValueError('invalid JSON constant')
+
+try:
+    flags = os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0)
+    fd = os.open(sys.argv[1], flags)
+    with os.fdopen(fd, 'rb') as src:
+        st = os.fstat(src.fileno())
+        if not stat.S_ISREG(st.st_mode) or not 0 < st.st_size <= 65536:
+            raise ValueError('unsafe manifest inode or size')
+        data = src.read(65537)
+    if len(data) > 65536: raise ValueError('oversized manifest')
+    obj = json.loads(data.decode('utf-8'), object_pairs_hook=unique_keys,
+                     parse_constant=reject_constant)
+    if type(obj) is not dict or type(obj.get('format_version')) is not int:
+        raise ValueError('invalid manifest version')
+    version = obj['format_version']
+    if version not in (1, 2): raise ValueError('unsupported format')
+    for key in ('file_data_included', 'consistency_verified'):
+        if key in obj and type(obj[key]) is not bool:
+            raise ValueError('invalid boolean')
+    included = obj.get('file_data_included', True)
+    consistent = obj.get('consistency_verified', None)
+    print('%s\t%s\t%s' % (version, str(included).lower(),
+                           str(consistent).lower() if consistent is not None else 'unknown'))
+except (OSError, ValueError, UnicodeError, TypeError):
+    print('xdrive-server: invalid or unsafe backup manifest', file=sys.stderr)
+    sys.exit(1)
+PY
+}
+
 # JSON uses the SAME snapshot and referenced-CAS hash pass, not a second read.
 backup_verify_json_cmd() {
   [[ $# -le 1 ]] || { echo "usage: xdrive-server backup verify --json [BACKUP_DIR]" >&2; return 2; }
@@ -886,9 +931,13 @@ backup_verify_json_cmd() {
   local target="${1:-}" format=unknown cas_file log_file status=0 encode_status=0
   [[ -n "$target" ]] || target="$(latest_snapshot_backup || true)"
   if [[ -n "$target" && -f "$target/manifest.json" && ! -L "$target/manifest.json" ]]; then
-    if grep -Eq '"format_version"[[:space:]]*:[[:space:]]*2' "$target/manifest.json"; then format=v2
-    elif grep -Eq '"format_version"[[:space:]]*:[[:space:]]*1' "$target/manifest.json"; then format=v1
-    fi
+    local manifest_info manifest_version
+    manifest_info="$(backup_verified_manifest_info "$target/manifest.json" 2>/dev/null || true)"
+    IFS=$'\t' read -r manifest_version _ _ <<< "$manifest_info"
+    case "$manifest_version" in
+      1) format=v1 ;;
+      2) format=v2 ;;
+    esac
   fi
   cas_file="$(mktemp "${TMPDIR:-/tmp}/xdrive-verify-cas.XXXXXXXX")" || return 1
   log_file="$(mktemp "${TMPDIR:-/tmp}/xdrive-verify-log.XXXXXXXX")" || {
@@ -1071,13 +1120,12 @@ backup_verify_cmd() {
     echo "xdrive-server: backup is missing manifest.json: $dir" >&2
     return 1
   }
-  local backup_version=1 repository_dir server_image
-  if grep -Eq '"format_version"[[:space:]]*:[[:space:]]*2' "$dir/manifest.json"; then
-    backup_version=2
-  elif ! grep -Eq '"format_version"[[:space:]]*:[[:space:]]*1' "$dir/manifest.json"; then
-    echo "xdrive-server: unsupported backup format: $dir" >&2
+  local backup_version repository_dir server_image manifest_info
+  if ! manifest_info="$(backup_verified_manifest_info "$dir/manifest.json")"; then
+    echo "xdrive-server: backup manifest validation failed: $dir" >&2
     return 1
   fi
+  IFS=$'\t' read -r backup_version file_data consistent <<< "$manifest_info"
   # Keep a shared lease through the entire v2 hash verification and, when
   # invoked via 'backup sources', through the following pg_restore read.
   # This coordinates with the existing exclusive snapshot publication lock
@@ -1103,7 +1151,6 @@ backup_verify_cmd() {
       return 75
     }
   fi
-  file_data="$(backup_manifest_bool "$dir/manifest.json" file_data_included true)"
   required_files=(database.dump verify.json manifest.json SHA256SUMS.txt)
   if [[ "$backup_version" == "2" ]]; then
     required_files+=(objects.index legacy.tar)
@@ -1180,7 +1227,6 @@ backup_verify_cmd() {
   created="$(backup_manifest_value "$dir/manifest.json" created_at_utc)"
   channel="$(backup_manifest_value "$dir/manifest.json" release_channel)"
   commit="$(backup_manifest_value "$dir/manifest.json" release_commit)"
-  consistent="$(sed -nE 's/.*"consistency_verified"[[:space:]]*:[[:space:]]*(true|false).*/\1/p' "$dir/manifest.json" | head -n1 || true)"
   echo "Backup verified: $dir"
   [[ -n "$created" ]] && echo "  created: $created"
   [[ -n "$channel" ]] && echo "  release: $channel${commit:+ / ${commit:0:12}}"
