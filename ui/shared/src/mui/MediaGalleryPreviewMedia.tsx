@@ -269,12 +269,19 @@ export function XDriveMediaAsyncVideoPoster({
   const suspended = useContext(XDriveBackgroundMediaThumbnailSuspended)
   const [visible, setVisible] = useState(false)
   const posterIdentity = `${nodeID}:${revision}`
-  const currentPosterIdentityRef = useRef(posterIdentity)
-  currentPosterIdentityRef.current = posterIdentity
-  const [poster, setPoster] = useState<{ identity: string; url: string } | null>(null)
-  const [failedIdentity, setFailedIdentity] = useState('')
-  const src = poster?.identity === posterIdentity ? poster.url : ''
-  const failed = failedIdentity === posterIdentity
+  // The same Node/revision may belong to another authorized Gallery source.
+  // Render-time identity must retire former Owner pixels before passive
+  // cleanup cancels the old task; keep the existing video-poster pipeline.
+  const posterOwner = useMemo(() => ({}), [
+    loadPreviewURL, loadThumbnail, saveVideoPoster,
+    rotationDegrees, sourceWidth, sourceHeight,
+  ])
+  const currentPosterIdentityRef = useRef({ identity: posterIdentity, owner: posterOwner })
+  currentPosterIdentityRef.current = { identity: posterIdentity, owner: posterOwner }
+  const [poster, setPoster] = useState<{ identity: string; owner: object; url: string } | null>(null)
+  const [failedIdentity, setFailedIdentity] = useState<{ identity: string; owner: object } | null>(null)
+  const src = poster?.identity === posterIdentity && poster.owner === posterOwner ? poster.url : ''
+  const failed = failedIdentity?.identity === posterIdentity && failedIdentity.owner === posterOwner
   const [posterStage, setPosterStage] = useState<XDriveMediaLoadStage>('poster_lookup')
   const [posterProgress, setPosterProgress] = useState<{ loadedBytes: number; totalBytes?: number; alphaMask?: string | null }>({ loadedBytes: 0, alphaMask: null })
 
@@ -303,7 +310,7 @@ export function XDriveMediaAsyncVideoPoster({
     let active = true
     let resolved = ''
     setPoster(null)
-    setFailedIdentity('')
+    setFailedIdentity(null)
     setPosterStage('poster_lookup')
     setPosterProgress({ loadedBytes: 0, alphaMask: null })
     if (!visible) return () => { active = false }
@@ -326,15 +333,15 @@ export function XDriveMediaAsyncVideoPoster({
     void scheduled.promise
       .then((value) => {
         if (!value) {
-          if (active) setFailedIdentity(posterIdentity)
+          if (active) setFailedIdentity({ identity: posterIdentity, owner: posterOwner })
           return
         }
         resolved = value
-        if (active) setPoster({ identity: posterIdentity, url: value })
+        if (active) setPoster({ identity: posterIdentity, owner: posterOwner, url: value })
         else revokeIfBlob(value)
       })
       .catch(() => {
-        if (active) setFailedIdentity(posterIdentity)
+        if (active) setFailedIdentity({ identity: posterIdentity, owner: posterOwner })
       })
 
     return () => {
@@ -348,6 +355,7 @@ export function XDriveMediaAsyncVideoPoster({
     saveVideoPoster,
     revision,
     posterIdentity,
+    posterOwner,
     nodeID,
     rotationDegrees,
     sourceHeight,
@@ -365,8 +373,9 @@ export function XDriveMediaAsyncVideoPoster({
           alt={alt}
           onError={() => {
             // Late failure from a replaced video poster cannot hide the new one.
-            if (currentPosterIdentityRef.current === posterIdentity) {
-              setFailedIdentity(posterIdentity)
+            if (currentPosterIdentityRef.current.identity === posterIdentity &&
+                currentPosterIdentityRef.current.owner === posterOwner) {
+              setFailedIdentity({ identity: posterIdentity, owner: posterOwner })
             }
           }}
           sx={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }}
