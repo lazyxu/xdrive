@@ -24,7 +24,8 @@ const valid = {
 
 test('valid 100k first Range is admitted unchanged without copying Owner data', () => {
   assert.strictEqual(admit(valid), valid)
-  assert.strictEqual(admit({ ...valid, total_count_included: undefined }), undefined)
+  const legacy = { ...valid, total_count_included: undefined }
+  assert.strictEqual(admit(legacy), legacy)
 })
 
 test('unverified count, mismatched first ordinal or impossible totals fail closed', () => {
@@ -53,7 +54,8 @@ test('verified empty folder is supported; reported positive count cannot mask ze
     ...valid, items: [], total_count: 0, total_count_included: true,
   }
   assert.strictEqual(admit(empty), empty)
-  assert.strictEqual(admit({ ...empty, total_count_included: undefined }), undefined)
+  const legacy = { ...empty, total_count_included: undefined }
+  assert.strictEqual(admit(legacy), legacy)
 })
 
 test('read-only first page validation runs before sparse activation or new rows', () => {
