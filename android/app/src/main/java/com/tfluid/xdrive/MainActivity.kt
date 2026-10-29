@@ -160,26 +160,31 @@ class MainActivity : ComponentActivity() {
         val ticket = pendingExportPicker
         pendingExportPicker = null
         // The OS result itself does not carry the original Owner or Node.
-        // Even A->B->A re-login / folder round-trip must fail closed.
-        if (ticket == null || !ticket.isCurrent(controller.state.value)) {
-            discardStaleExportDestination(uri)
-            if (ticket != null) controller.cancelFileExport()
-        } else if (uri == null || uri.scheme != ContentResolver.SCHEME_CONTENT ||
-            uri.authority.isNullOrBlank()) {
-            discardStaleExportDestination(uri)
-            controller.cancelFileExport()
-        } else {
-            controller.saveFileExport(
-                openOutput = {
-                    contentResolver.openOutputStream(uri, "wt")
-                        ?: throw IOException("Unable to open chosen document")
-                },
-                discardOutput = {
-                    // Already authorized single destination only. A failed
-                    // final output or checksum must not leave a partial file.
-                    discardStaleExportDestination(uri)
-                },
-            )
+        // Even A->B->A re-login / folder round-trip must fail closed. Most
+        // importantly, a stale callback must NOT cancel a later Owner's
+        // unrelated pending export, which may exist in the same Controller.
+        val validUri = uri?.scheme == ContentResolver.SCHEME_CONTENT &&
+            !uri.authority.isNullOrBlank()
+        when (nativeSafExportCallbackDecision(
+            ticket, controller.state.value, validUri)) {
+            NativeSafExportCallbackDecision.IGNORE_STALE ->
+                discardStaleExportDestination(uri)
+            NativeSafExportCallbackDecision.CANCEL_CURRENT -> {
+                discardStaleExportDestination(uri)
+                controller.cancelFileExport()
+            }
+            NativeSafExportCallbackDecision.SAVE_CURRENT ->
+                controller.saveFileExport(
+                    openOutput = {
+                        contentResolver.openOutputStream(requireNotNull(uri), "wt")
+                            ?: throw IOException("Unable to open chosen document")
+                    },
+                    discardOutput = {
+                        // Already authorized single destination only. A failed
+                        // final output or checksum must not leave a partial file.
+                        discardStaleExportDestination(uri)
+                    },
+                )
         }
     }
     private val uploadSource = registerForActivityResult(
