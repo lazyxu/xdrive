@@ -41,8 +41,7 @@ func TestStorageVerificationHistoryRejectsUnboundedAndNoncanonicalCursors(t *tes
 		"?cursor=18446744073709551616", "?cursor=../private",
 		"?cursor=1&cursor=2", "?path=/root/secret", "?limit=1&unexpected=1",
 	} {
-		if status, _, body := storageVerificationHistoryRequest(t, server, raw);
-			status != http.StatusBadRequest {
+		if status, _, body := storageVerificationHistoryRequest(t, server, raw); status != http.StatusBadRequest {
 			t.Fatalf("invalid query %q accepted: %d %s", raw, status, body)
 		}
 	}
