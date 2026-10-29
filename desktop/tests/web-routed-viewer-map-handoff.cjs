@@ -57,6 +57,31 @@ test('a routed Viewer inherits the exact approved Album/favorite map scope',()=>
   })
 })
 
+test('corrupted sessionStorage album IDs fail closed, never throwing or widening to Library',()=>{
+  // Session data can be old, truncated or malformed despite a TS caller.
+  // A bogus album ID must never crash the routed Viewer or produce an
+  // unrestricted map handoff after the original album is lost.
+  const invalid=[null,false,0,42,{},[],{value:'manual:Family'},'unknown:Family',' manual:Family ']
+  for(const id of invalid){
+    const album=context({kind:'album',id,query:current.query})
+    assert.doesNotThrow(()=>mapEntry(album),'album ID '+JSON.stringify(id))
+    assert.equal(mapEntry(album),null,'corrupt album ID must deny the map')
+  }
+  for(const id of [null,false,0,42,{},[],'manual:Family']){
+    const library=context({...all,id})
+    assert.doesNotThrow(()=>mapEntry(library),'all ID '+JSON.stringify(id))
+    assert.equal(mapEntry(library),null,'unexpected ID must never become all-library')
+  }
+  assert.deepEqual(mapEntry(context({...all,id:''})),{
+    albumKey:'',filters:{sort_by:'captured',sort_dir:'desc'},
+  },'the canonical empty legacy all ID remains usable')
+  for(const id of ['manual:Family','smart:Annual','folder:2026','source:Camera']){
+    const scoped=mapEntry(context({...current,id}))
+    assert.equal(scoped?.albumKey,id,'valid Owner album scope must remain precise')
+    assert.equal(scoped?.filters.favorite,true)
+  }
+})
+
 test('signed Cell/Viewport context cannot widen to its whole Album or Library',()=>{
   // An Owner-signed Cell selects only nine photos out of an album. A normal
   // Album map handoff would drop that spatial constraint, so deny it.
