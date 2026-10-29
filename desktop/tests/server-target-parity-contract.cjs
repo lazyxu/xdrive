@@ -19,7 +19,9 @@ test('server-address UI exists on Desktop, Android and iOS, DSM stays authentica
   assert.match(ios, /Button\("更换服务器地址"\)/)
   assert.match(synology, /XDriveSettingsDialog/)
   assert.match(host, /new URL\('backup\.cgi', window\.location\.href\)/)
-  assert.doesNotMatch(host, /fetch\s*\(|xdriveDesktop|ipcRenderer|localStorage/)
+  // A typed `localStorage:` Host port is legitimate; reject actual
+  // browser storage access, native IPC, or an unscoped fetch instead.
+  assert.doesNotMatch(host, /fetch\s*\(|xdriveDesktop|ipcRenderer|(?:window\.|globalThis\.)?localStorage\s*(?:\.|\[)\s*(?:getItem|setItem|removeItem|clear)/)
 })
 test('current DSM CGI cannot turn a text field into an arbitrary Server credential proxy', () => {
   const adapter = read('ui/shared/src/synology-backup-adapter.ts')
