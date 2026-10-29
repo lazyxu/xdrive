@@ -247,7 +247,7 @@ final class LoginViewModel: ObservableObject {
                 localIdentifier: localIdentifier,
                 allowICloudOriginal: allowICloudOriginal
             )
-            message = "Server 已确认保存照片原始文件：\\(receipt.nodeName)，Node #\\(receipt.nodeID)。这不是自动相册同步或完整 PhotoAsset 备份。"
+            message = "Server 已确认保存照片原始文件：\(receipt.nodeName)，Node #\(receipt.nodeID)。这不是自动相册同步或完整 PhotoAsset 备份。"
         } catch is CancellationError {
             message = "请求已取消；如果服务器已提交但 ACK 丢失，仍可能存在文件，请先核实云端后再重试。"
         } catch XDriveIOSManualPhotoUploadFailure.livePairNotSupported {
