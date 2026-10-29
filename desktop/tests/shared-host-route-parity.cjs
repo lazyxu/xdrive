@@ -173,6 +173,6 @@ test('Host-owned cloud storage refresh policy is independent of the platform str
     assert.equal(render(enabled, 'cloud-storage').props.clearOnRefresh, true)
   }
   const source = read('ui/shared/src/mui/XDriveAppPageOutlet.tsx')
-  assert.doesNotMatch(source, /host\\.platform\\s*===\\s*['"]synology['"]/,
+  assert.doesNotMatch(source, /host\.platform\s*===\s*['"]synology['"]/,
     'shared page selection and refresh behavior must follow real Host ports')
 })
