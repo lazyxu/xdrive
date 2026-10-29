@@ -47,6 +47,7 @@ export function createXDriveSynologyHost(): XDriveWorkspaceHostAdapter {
       },
       deviceBackups: createXDriveSynologyOwnerBackupSource(local),
       cloudStorage: createXDriveSynologyCloudStorageDataSource(local),
+      cloudStorageRefresh: { clearOnRefresh: true },
       localStorage: createXDriveSynologyBrowserStorageSource(),
       diagnosticsSource: {
         read: signal => local.diagnostics(signal),
