@@ -31,8 +31,13 @@ test('the exact optional Child files are packaged OUTSIDE Gallery /srv',()=>{
 
 test('the actual Caddy image build must match all shipped Child source bytes',()=>{
   const start=workflow.indexOf('  caddy-image:')
-  const end=workflow.indexOf('\n  ',start+3)
-  const build=workflow.slice(start,end>start?end:undefined)
+  assert.ok(start>=0)
+  // Only a new two-space GitHub job heading ends this block. Four-space
+  // nested keys (needs:, steps:, etc.) must not truncate the real build.
+  const tail=workflow.slice(start+'  caddy-image:'.length)
+  const next=tail.search(/\n  [a-z0-9-]+:\s*(?:\n|$)/)
+  const build=workflow.slice(start,next<0?undefined:
+    start+'  caddy-image:'.length+next)
   assert.ok(build.includes('docker build --build-arg'))
   assert.match(build,/for asset in index\.html child\.js child\.css; do/)
   assert.match(build,/sha256sum "deploy\/baidu-isolated-child\/\$asset"/)
