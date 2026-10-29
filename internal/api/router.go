@@ -154,6 +154,17 @@ func (s *Server) Router() *gin.Engine {
 		s.requireIOSPhotoBackgroundGrant(), s.proveIOSPhotoBackgroundGrant)
 	v1.POST("/ios/photos/background-grants/rotate",
 		s.requireIOSPhotoBackgroundGrant(), s.rotateIOSPhotoBackgroundGrant)
+	// Dedicated capability routes. Never make the raw iOS photo grant a
+	// generic /uploads or /nodes JWT. Existing Go CAS handlers are reused
+	// only AFTER exact grant/Device/Owner/Root + per-session admission.
+	iosPhotoBackground := v1.Group("/ios/photos/background")
+	iosPhotoBackground.Use(s.requireIOSPhotoBackgroundGrant())
+	iosPhotoBackground.POST("/uploads", s.iosBackgroundCreateUpload)
+	iosPhotoBackground.GET("/uploads/:id", s.iosBackgroundGetUpload)
+	iosPhotoBackground.PUT("/uploads/:id/chunks/:index", s.iosBackgroundPutChunk)
+	iosPhotoBackground.POST("/uploads/:id/finalize", s.iosBackgroundFinalizeUpload)
+	iosPhotoBackground.POST("/uploads/resume-lookup", s.iosBackgroundResumeLookup)
+	iosPhotoBackground.GET("/receipts/nodes/:id", s.iosBackgroundReceipt)
 	v1.GET("/public/share", s.publicShareMetadata)
 	v1.POST("/public/share/children", s.publicFolderShareChildren)
 	v1.POST("/public/share/download", s.publicShareDownload)
