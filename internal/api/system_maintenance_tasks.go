@@ -758,6 +758,11 @@ func (s *Server) executeSystemMaintenanceTask(
 		if err != nil {
 			return "", "", err
 		}
+		// Persist only bounded, category-level evidence. Never persist
+		// storage keys, node IDs, raw content digests or private Host paths.
+		if err := s.persistStorageVerifyEvidence(ctx, run.ID, mode, report); err != nil {
+			return "", "", err
+		}
 		issues := len(report.Missing) +
 			len(report.SizeMismatches) +
 			len(report.DuplicateRefs) +

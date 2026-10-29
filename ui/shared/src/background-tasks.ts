@@ -70,6 +70,25 @@ export function xDriveNormalizeBackgroundTaskPage(
   }
 }
 
+/** Privacy-safe, bounded historical online data integrity results (never raw keys). */
+export type XDriveStorageIntegrityEvidence = {
+  protocol: 'xdrive-storage-integrity-evidence-v1'
+  mode: 'fast' | 'deep'
+  referenced_files: number
+  referenced_versions: number
+  physical_objects: number
+  unique_reference_keys: number
+  hashed_objects: number
+  hashed_bytes: number
+  missing_objects: number
+  size_mismatches: number
+  duplicate_references: number
+  reference_drifts: number
+  orphan_objects: number
+  hash_mismatches: number
+  issue_count: number
+}
+
 export type XDriveBackgroundTask = {
   id: string
   kind: string
@@ -86,6 +105,7 @@ export type XDriveBackgroundTask = {
   source_name?: string
   source_kind?: string
   progress: XDriveBackgroundTaskProgress
+  storage_integrity?: XDriveStorageIntegrityEvidence
   active_count?: number
   queued_count?: number
   running_count?: number
