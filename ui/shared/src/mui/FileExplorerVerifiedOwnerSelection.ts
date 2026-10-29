@@ -12,7 +12,10 @@ export type XDriveOwnerSelectableItem = Readonly<{
   name: string
   kind?: string
   type?: string
-  revision?: number
+  // The shared FileExplorer projection permits string revisions. Accept its
+  // declared input type but ALWAYS reject nonnumeric revisions at runtime;
+  // never coerce strings into privileged Owner identities.
+  revision?: string | number
   size?: number
 }>
 
