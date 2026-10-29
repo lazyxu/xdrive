@@ -25,6 +25,12 @@ export type XDriveWorkspaceHostServices = {
   readonly overviewPage?: XDriveOverviewPageProps
   readonly localBackupClient?: XDriveSynologyBackupLocalClient
   /**
+   * An explicit opt-in to backup-only Owner read surfaces (Home, Tasks and
+   * Backup). A Host gaining a local backup transport does NOT implicitly
+   * replace its full application controllers with the NAS read fallback.
+   */
+  readonly ownerBackupReadFallback?: true
+  /**
    * Explicit read-only Owner Files domain port. This transitional client
    * remains authenticated and Owner-scoped in the Host; the shared route
    * does not infer Files access from platform or backup CGI presence.
