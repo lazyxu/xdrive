@@ -32,7 +32,7 @@ struct XDrivePhotoSyncScope: Codable, Equatable {
 }
 
 enum XDrivePhotoSyncResourceRole: String, Codable {
-    case still, motion, video
+    case still, motion, video, liveBundle
 }
 
 /// No state denotes success until a Server-confirmed physical file receipt

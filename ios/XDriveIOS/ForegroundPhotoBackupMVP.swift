@@ -13,6 +13,8 @@ struct XDriveIOSPhotoBackupProgress: Equatable {
     var verifiedAlready = 0
     var videoUploaded = 0
     var videoVerifiedAlready = 0
+    var liveBundleUploaded = 0
+    var liveBundleVerifiedAlready = 0
     var liveNotSupported = 0
     var videosNotSupported = 0
     var unavailable = 0
@@ -82,34 +84,35 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                         break scanning
                     }
                     report.scanned += 1
-                    if candidate.isLive {
-                        report.liveNotSupported += 1
-                        report.stage = "Live Photo 尚未支持成对备份，已安全跳过"
-                        await onProgress(report)
-                        continue
-                    }
-                    guard XDriveIOSOriginalBackupMediaPolicy.eligible(
-                        kind: candidate.kind, isLive: candidate.isLive
-                    ) else {
+                    // Live uses one atomic ZIP Node containing both originals.
+                    // Never run it through the still-only resource path.
+                    guard candidate.isLive && candidate.kind == "image" ||
+                        XDriveIOSOriginalBackupMediaPolicy.eligible(
+                            kind: candidate.kind, isLive: candidate.isLive
+                        ) else {
                         report.videosNotSupported += 1
                         report.stage = "无法识别的媒体类型，已跳过"
                         await onProgress(report)
                         continue
                     }
                     let isVideo = candidate.kind == "video"
-                    report.stage = "正在核对并备份已授权的照片/视频原件（\(report.scanned)/\(windowCapacity)）…"
+                    let isLive = candidate.isLive
+                    report.stage = "正在核对并备份已授权的照片/视频/Live 原件（\(report.scanned)/\(windowCapacity)）…"
                     await onProgress(report)
                     do {
                         let outcome = try await uploadOrVerifyOriginal(
-                            candidate.id, isVideo: isVideo, allowICloud: allowICloudOriginals
+                            candidate.id, isVideo: isVideo, isLive: isLive,
+                            allowICloud: allowICloudOriginals
                         )
                         switch outcome {
                         case .uploaded:
                             report.uploaded += 1
                             if isVideo { report.videoUploaded += 1 }
+                            if isLive { report.liveBundleUploaded += 1 }
                         case .alreadyConfirmed:
                             report.verifiedAlready += 1
                             if isVideo { report.videoVerifiedAlready += 1 }
+                            if isLive { report.liveBundleVerifiedAlready += 1 }
                         case .requiresReview:
                             report.needsReview += 1
                             report.stoppedForReview = true
@@ -137,7 +140,7 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                     report.stage = "选定分段没有已授权照片，请选择前一段或重新检查授权"
                 } else {
                     report.stage = report.scanned >= windowCapacity
-                        ? "当前分段已检查：照片及视频原件已单独核验；Live 成对提交尚未支持"
+                        ? "当前分段已检查：照片/视频已验证，Live 为双原件 ZIP 单节点归档"
                         : "本轮上传上限已达到，可继续检查该段其他照片与视频"
                 }
             }
@@ -155,7 +158,8 @@ struct XDriveIOSForegroundPhotoBackupMVP {
     }
 
     private func uploadOrVerifyOriginal(
-        _ localIdentifier: String, isVideo: Bool, allowICloud: Bool
+        _ localIdentifier: String, isVideo: Bool, isLive: Bool,
+        allowICloud: Bool
     ) async throws -> StillOutcome {
         // This stable Keychain namespace is used ONLY for user-initiated
         // Owner Files. It is not a registered Server Device and never grants
@@ -168,9 +172,10 @@ struct XDriveIOSForegroundPhotoBackupMVP {
             allowICloudDownload: allowICloud,
             // Larger uncompressed originals are handled as bounded 8-MiB
             // UploadSession chunks. Disk staging is still one resource at a time.
-            maximumBytesPerResource: isVideo
-                ? XDriveIOSOriginalBackupMediaPolicy.videoLimit
-                : XDriveIOSOriginalBackupMediaPolicy.stillLimit
+            maximumBytesPerResource: isLive
+                ? XDriveIOSLiveOriginalArchive.maximumPartBytes
+                : isVideo ? XDriveIOSOriginalBackupMediaPolicy.videoLimit
+                  : XDriveIOSOriginalBackupMediaPolicy.stillLimit
         )
         defer { staged.delete() }
         try Task.checkCancellation()
@@ -181,16 +186,32 @@ struct XDriveIOSForegroundPhotoBackupMVP {
             accessToken: accessToken, ledger: journal
         )
         let prepared: XDrivePhotoSyncOperation
-        if isVideo {
+        let uploadFile: URL
+        if isLive {
+            let pair = try await preparer.prepareLiveBundle(
+                localIdentifier: localIdentifier,
+                staged: staged, destinationTag: binding.tag
+            )
+            prepared = pair.operation
+            uploadFile = pair.fileURL
+        } else if isVideo {
             prepared = try await preparer.prepareVideo(
                 localIdentifier: localIdentifier,
                 staged: staged, destinationTag: binding.tag
             )
+            guard let file = staged.resources.first?.fileURL else {
+                throw XDriveIOSPhotoBackupMVPError.unavailableSource
+            }
+            uploadFile = file
         } else {
             prepared = try await preparer.prepareStill(
                 localIdentifier: localIdentifier,
                 staged: staged, destinationTag: binding.tag
             )
+            guard let file = staged.resources.first?.fileURL else {
+                throw XDriveIOSPhotoBackupMVPError.unavailableSource
+            }
+            uploadFile = file
         }
         try Task.checkCancellation()
 
@@ -227,14 +248,11 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                 return .requiresReview
             }
         case .prepared:
-            guard let original = staged.resources.first else {
-                throw XDriveIOSPhotoBackupMVPError.unavailableSource
-            }
             do {
                 _ = try await XDriveIOSJournaledOriginalUpload(
                     owner: owner, scope: binding.scope,
                     accessToken: accessToken, ledger: journal
-                ).uploadPrepared(prepared, from: original.fileURL)
+                ).uploadPrepared(prepared, from: uploadFile)
                 return .uploaded
             } catch is CancellationError {
                 throw CancellationError()
