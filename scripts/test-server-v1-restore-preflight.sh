@@ -85,8 +85,9 @@ write_checksums() {
 }
 assert_fail_closed() {
   local label="$1" message="$2"
+  shift 2
   rm -f -- "$XD_RESTORE_TEST_DOCKER_SENTINEL"
-  if bash "$RESTORE" "$BACKUP_DIR" --config-dir "$XD_CONFIG_DIR" --yes --no-safety-backup >"$TMP/$label.log" 2>&1; then
+  if bash "$RESTORE" "$BACKUP_DIR" --config-dir "$XD_CONFIG_DIR" --yes --no-safety-backup "$@" >"$TMP/$label.log" 2>&1; then
     echo "unsafe v1 restore preflight accepted $label" >&2
     exit 1
   fi
@@ -228,6 +229,8 @@ fi
   cat "$TMP/valid-v2.log" >&2
   exit 1
 }
+# Reject an incompatible v2 database-only restore, even if checksums are valid.
+assert_fail_closed manifest_v2_db_only 'invalid or unsafe backup manifest' --database-only
 printf '{"format_version":2,"format_version":1,"file_data_included":true}\n' > "$BACKUP_DIR/manifest.json"
 (cd "$BACKUP_DIR"; sha256sum database.dump verify.json manifest.json objects.index legacy.tar > SHA256SUMS.txt)
 assert_fail_closed manifest_v2_duplicate_version 'invalid or unsafe backup manifest'
