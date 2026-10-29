@@ -5,6 +5,7 @@ const path = require('node:path')
 
 const root = path.join(__dirname, '..')
 const rendererApp = fs.readFileSync(path.join(root, 'src', 'renderer', 'App.tsx'), 'utf8')
+const desktopVirtualSettings = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopVirtualDriveSettings.tsx'), 'utf8')
 const sharedXDriveApp = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'XDriveApp.tsx'), 'utf8')
 const sharedHostOutlet = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx'), 'utf8')
 const sharedHostSections = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'WorkspaceHostSections.tsx'), 'utf8')
@@ -298,7 +299,7 @@ test('desktop gates CfAPI-only storage controls by platform', () => {
   assert.ok(renderer.includes("const storagePoliciesSupported = info?.platform === 'win32'"), 'missing Windows storage capability gate')
   assert.ok(renderer.includes('当前平台不提供 Windows CfAPI'), 'missing Linux FUSE storage explanation')
   assert.ok(renderer.includes('按需访问'), 'missing local-storage on-demand access state')
-  assert.ok(renderer.includes("storagePoliciesSupported ? '管理本地存储' : '查看本地存储'"), 'missing platform-aware local-storage action')
+  assert.ok(desktopVirtualSettings.includes("storagePoliciesSupported ? '管理本地存储' : '查看本地存储'"), 'missing platform-aware local-storage action in the shared settings child')
 })
 
 test('desktop external sources expose safe source deletion', () => {

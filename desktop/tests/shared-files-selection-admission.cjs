@@ -53,7 +53,7 @@ test('tags and downloads retain distinct limits; read-only actions do not inheri
   assert.equal(admit('open', { nodeByID:new Map([[7,{id:7}]]) }), null)
 })
 test('missing or incorrect loaded Owner metadata never becomes authorized', () => {
-  assert.match(admit('copy',{ selectedCount:0 }), /请选择项目/)
+  assert.match(admit('copy',{ selectedCount:0 }), /请先选择项目/)
   assert.match(admit('copy',{ nodeByID:new Map() }), /尚未完整加载/)
   assert.match(admit('copy',{ selected:[{id:8}] }), /尚未完整加载/)
   assert.match(admit('copy',{ selected:[{id:'bad'}] }), /尚未完整加载/)
@@ -68,6 +68,6 @@ test('Web Wide/Compact use one policy; native Desktop extended limits remain Hos
   assert.doesNotMatch(web, /const mutation = \['copy', 'cut', 'delete'/)
   assert.match(desktop, /archiveDownloadSupported/)
   assert.match(desktop, /folderTreeDownloadSupported/)
-  assert.match(desktop, /xDriveFileExplorerSelectionActionDisabledReason\(/)
+  assert.match(desktop, /xDriveFileExplorerSelectionAdmissionReason\(/)
   assert.doesNotMatch(code(sources.policy), /window\.|ipcRenderer|fetch\s*\(/)
 })
