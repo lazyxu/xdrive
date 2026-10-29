@@ -27,8 +27,10 @@ test('Desktop Push uses only bounded read projection end to end', () => {
   assert.match(main, /requireAgentCapability\(hello, 'device-backup-read'\)/)
   assert.match(main, /Number\.isSafeInteger\(requestedLimit\)/)
   assert.match(main, /Number\.isSafeInteger\(requestedOffset\)/)
-  assert.match(preload, /getDeviceBackups: \(\) => ipcRenderer\.invoke\('agent:get-device-backups'\)/)
-  assert.match(agent, /deviceBackups\(\) \{/)
+  assert.match(preload, /getDeviceBackups: \(requestID\?: string\) => ipcRenderer\.invoke\('agent:get-device-backups', requestID\)/,
+    'authenticated redacted backup overview must accept only an optional disposable read ID')
+  assert.match(agent, /deviceBackups\(signal\?: AbortSignal\) \{/,
+    'Agent must forward the optional cancellation signal for the read-only overview')
   assert.match(renderer, /deviceBackupPage:\s*\{[\s\S]*?source:\s*deviceBackupSource/)
   assert.match(renderer, /status\?\.server, status\?\.username, status\?\.auth_status/)
 })

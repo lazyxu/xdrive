@@ -107,6 +107,10 @@ test('administrator maintenance requires explicit confirmation before posting a 
     XDriveStatusAlert: 'StatusAlert',
     XDriveServerUpdateCard: 'ServerUpdateCard',
     XDriveConfirmDialog: 'ConfirmDialog',
+    // The unsupported-backup branch is now always visible and still has no
+    // privileged Host action. Execute the original page with its real slots.
+    XDriveSectionHeader: 'SectionHeader',
+    XDriveActionButton: 'ActionButton',
     Stack: 'Stack',
   }
   const mod = {exports: {}}

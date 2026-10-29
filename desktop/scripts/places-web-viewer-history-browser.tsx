@@ -58,13 +58,19 @@ const gallerySource = {
   },
 } as unknown as MediaGalleryDataSource
 
-function Viewer({nodeID,contextID,onClose,onNavigate}: {
+function Viewer({nodeID,contextID,onClose,onNavigate,onSwitchViewport}: {
   nodeID:number;contextID?:string;onClose:()=>void;onNavigate:(id:number)=>void
+  onSwitchViewport:()=>void
 }) {
   const viewer=useViewerNode({api,gallerySource,nodeID,contextID,
     predicate:xDriveWebViewerMediaFile,wantsMedia:true,onNavigate})
   return <main data-testid="viewer">
     <button type="button" onClick={onClose}>返回地图</button>
+    <button type="button" data-testid="viewer-next"
+      onClick={()=>viewer.goNext()}
+      disabled={!viewer.next}>查看同 Cell 下一张照片</button>
+    <button type="button" onClick={()=>onNavigate(103)}>尝试打开非成员照片</button>
+    <button type="button" onClick={onSwitchViewport}>切换 Viewport 作用域</button>
     <output data-testid="viewer-status">
       {viewer.loading?'loading':viewer.error?'error':viewer.node?'authorized':'empty'}
     </output>
@@ -86,7 +92,12 @@ function App(){
     nodeID={route.params.node} contextID={route.params.context}
     onClose={()=>runtime.closeViewer({app:'gallery',params:{section:'places'}})}
     onNavigate={id=>runtime.launch({app:'media-viewer',params:{node:id,
-      context:route.params.context}},{replace:true})}/>
+      context:route.params.context}},{replace:true})}
+    onSwitchViewport={()=>{
+      const context=xDriveCreateWebAppBrowseSession(snapshot('baidu-viewport'))
+      runtime.launch({app:'media-viewer',params:{node:101,context}},
+        {replace:true})
+    }}/>
   return <main data-testid="gallery">
     <button onClick={()=>openScope('baidu-cell')}>打开 Cell 地图照片</button>
     <button onClick={()=>openScope('baidu-viewport')}>打开 Viewport 地图照片</button>

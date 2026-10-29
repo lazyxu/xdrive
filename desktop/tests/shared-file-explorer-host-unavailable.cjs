@@ -9,7 +9,8 @@ const read = file => fs.readFileSync(path.join(repo, file), 'utf8')
 const explorer = read('ui/shared/src/mui/FileExplorer.tsx')
 const dsm = read('ui/shared/src/mui/SynologyOwnerFilesPage.tsx')
 const outlet = read('ui/shared/src/mui/XDriveAppPageOutlet.tsx')
-const host = read('web/src/synology.tsx')
+const host = read('web/src/synologyHost.ts')
+const dsmEntry = read('web/src/synology.tsx')
 const contract = read('ui/shared/src/mui/WorkspaceHostAdapter.ts')
 
 function submitSearchFromActualExplorer({ value, unavailable, calls }) {
@@ -65,8 +66,14 @@ test('shared Files toolbar exposes unavailable operations in both layouts with r
 })
 
 test('one Host-owned capability declaration feeds shared Outlet and canonical Files, not DSM-only JSX', () => {
-  assert.ok(contract.includes('readonly filesUnavailableActions?: XDriveFileExplorerUnavailableActions'))
-  assert.ok(outlet.includes('unavailableActions={services.filesUnavailableActions}'))
+  assert.ok(dsmEntry.includes('const host = createXDriveSynologyHost()'))
+  assert.equal(dsmEntry.includes('filesUnavailableActions:'), false,
+    'only the authenticated DSM adapter may declare unavailable actions')
+  assert.ok(contract.includes('readonly ownerFilesPage?: {'))
+  assert.ok(contract.includes('readonly unavailableActions?: XDriveFileExplorerUnavailableActions'))
+  assert.ok(host.includes('ownerFilesPage: {') && host.includes('client: local,'))
+  assert.ok(outlet.includes('client={services.ownerFilesPage.client}'))
+  assert.ok(outlet.includes('unavailableActions={services.ownerFilesPage.unavailableActions}'))
   assert.ok(dsm.includes('unavailableActions={unavailableActions}'))
   assert.ok(dsm.includes('searchEnabled'))
   assert.equal(dsm.includes('searchEnabled={false}'), false)

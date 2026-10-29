@@ -127,3 +127,65 @@ test('actual Gallery/App/routed Viewer handoff uses only a transient cache borro
   assert.doesNotMatch(source, /sessionStorage\.|localStorage\.|indexedDB\.|window\./,
     'the bridge must never expose or persist private media URLs/bytes')
 })
+
+test('routed Viewer uses authorized fallback when an optional Gallery scheduler borrow throws', () => {
+  const bridge = new XDriveRoutedGalleryThumbnailBridge()
+  bridge.register(() => { throw Error('SecurityError: stale WebKit Blob lease') })
+  bridge.activate('active-owner-gallery')
+  assert.doesNotThrow(() => bridge.borrow('active-owner-gallery', 22, 4))
+  assert.equal(bridge.borrow('active-owner-gallery', 22, 4), null)
+  const unregister = bridge.register(() => ({ url: 'blob:recovered', release() {} }))
+  assert.equal(bridge.borrow('active-owner-gallery', 22, 4)?.url, 'blob:recovered')
+  unregister()
+})
+
+test('routed Viewer rejects non-Blob or malformed leases without publishing a foreign URL', () => {
+  for (const value of ['', 'https://other.example/private.jpg', 'data:image/png;base64,AA', 17]) {
+    const bridge = new XDriveRoutedGalleryThumbnailBridge()
+    let releases = 0
+    bridge.register(() => ({ url: value, release() { releases++ } }))
+    bridge.activate('owner-gallery')
+    assert.equal(bridge.borrow('owner-gallery', 19, 2), null)
+    assert.equal(releases, 1, 'invalid lease must release exactly once')
+  }
+  const bridge = new XDriveRoutedGalleryThumbnailBridge()
+  bridge.register(() => ({ url: 'blob:no-release', release: null }))
+  bridge.activate('owner-gallery')
+  assert.equal(bridge.borrow('owner-gallery', 19, 2), null)
+})
+
+test('Gallery synchronous route exit cannot return a stale borrowed Blob to Viewer', () => {
+  const bridge = new XDriveRoutedGalleryThumbnailBridge()
+  let releases = 0
+  bridge.register(() => {
+    bridge.leave()
+    return { url: 'blob:revoked-session', release() { releases++ } }
+  })
+  bridge.activate('old-gallery')
+  assert.equal(bridge.borrow('old-gallery', 20, 3), null)
+  assert.equal(releases, 1)
+  assert.equal(bridge.borrow('old-gallery', 20, 3), null)
+})
+
+test('new Gallery registration owns the bridge even when old borrower switches it mid-call', () => {
+  const bridge = new XDriveRoutedGalleryThumbnailBridge()
+  let oldReleases = 0
+  bridge.register(() => {
+    bridge.register(() => ({ url: 'blob:new-owner-mounted', release() {} }))
+    return { url: 'blob:old-unmounted', release() { oldReleases++ } }
+  })
+  bridge.activate('route-owner')
+  assert.equal(bridge.borrow('route-owner', 21, 5), null,
+    'an old synchronous borrower may not publish after replacement')
+  assert.equal(oldReleases, 1)
+  assert.equal(bridge.borrow('route-owner', 21, 5)?.url, 'blob:new-owner-mounted')
+})
+
+test('a lease-release exception does not mask the original Owner-authenticated fallback', () => {
+  const bridge = new XDriveRoutedGalleryThumbnailBridge()
+  bridge.register(() => ({ url: 'https://invalid.example/opaque',
+    release() { throw Error('Safari ObjectURL release rejected') } }))
+  bridge.activate('owner-route')
+  assert.doesNotThrow(() => bridge.borrow('owner-route', 1, 1))
+  assert.equal(bridge.borrow('owner-route', 1, 1), null)
+})

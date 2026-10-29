@@ -20,6 +20,21 @@ function safeJSON(folder, name) {
     'missing, link or oversized benchmark artifact')
   return JSON.parse(fs.readFileSync(file,'utf8'))
 }
+// Exit status is still untrusted artifact input; never follow a symlink into
+// a checkout, credential, or full private trace. Bound text before reading.
+function safeExitCode(folder) {
+  const base=fs.realpathSync(folder)
+  const file=path.resolve(base,'exit-code.txt')
+  assert(file.startsWith(base+path.sep),'unsafe exit-code path')
+  const stat=fs.lstatSync(file)
+  assert(stat.isFile()&&!stat.isSymbolicLink()&&stat.size>0&&stat.size<=8,
+    'missing, linked or oversized exit code')
+  const raw=fs.readFileSync(file,'utf8').trim()
+  assert(/^[0-9]{1,3}$/.test(raw),'invalid native arm exit code')
+  const code=Number(raw)
+  assert(Number.isSafeInteger(code)&&code>=0&&code<=255,'invalid native exit status')
+  return code
+}
 function finite(v,k) {
   assert(Number.isFinite(v)&&v>=0,'invalid metric '+k)
   return v
@@ -128,9 +143,7 @@ function diagnostic() {
   const dirs=process.argv.slice(3,7)
   const labels=['a1','b1','b2','a2']
   const arms=dirs.map((dir,i)=>{
-    const exitText=fs.readFileSync(path.join(dir,'exit-code.txt'),'utf8').trim()
-    assert(/^\d+$/.test(exitText),'native arm exit code missing')
-    const exitCode=Number(exitText)
+    const exitCode=safeExitCode(dir)
     const summaryPath=path.join(dir,'summary.json')
     const summary=fs.existsSync(summaryPath)?safeJSON(dir,'summary.json'):null
     const samples=[]
@@ -197,12 +210,18 @@ function diagnostic() {
       }
     }
     const sampleCount=samples.length
-    const complete=exitCode===0&&sampleCount===3&&summary?.passed===true&&
-      summary.sampleCount===3&&samples.every(row=>
-        row.logicalAssets===100000&&row.metadataNodes===115000&&
-        row.validJPEG&&row.validH264&&row.validLive&&row.validSignedRange&&
-        row.signedRangeGoCancelMs!==null&&row.signedRangeGoCancelMs<=160&&
-        row.emittedBytesAfterCancel===0)
+    // The diagnostic can NEVER advertise an accepted arm based on a weaker
+    // subset of the real paired gate. Reuse arm() itself, including exact
+    // sample IDs, authenticated Owner/Viewer/Back receipts, Go Context.Done,
+    // zero wasted bytes, restored anchors, CPU/RSS and all numeric budgets.
+    // A failed arm is retained (including B2) with only sanitized evidence.
+    let complete=false
+    if (exitCode===0 && sampleCount===3) {
+      try {
+        arm(dir,labels[i],i===0||i===3?'A':'B')
+        complete=true
+      } catch { /* Keep this arm as failed; never log private raw evidence. */ }
+    }
     return {label:labels[i],release:i===0||i===3?'A':'B',
       sourceCommit:i===0||i===3?BEFORE:AFTER,exitCode,
       completedSampleCount:sampleCount,complete,failed:!complete,

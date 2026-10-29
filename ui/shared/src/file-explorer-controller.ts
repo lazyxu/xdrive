@@ -39,18 +39,25 @@ export async function xDriveResolveFileExplorerPath<
   rootID,
   rootName,
   findChildDirectory,
+  signal,
 }: {
   rawPath: string
   rootID: number
   rootName: string
-  findChildDirectory: (parentID: number, name: string) => Promise<TNode | null | undefined>
+  findChildDirectory: (parentID: number, name: string, signal?: AbortSignal) => Promise<TNode | null | undefined>
+  signal?: AbortSignal
 }): Promise<XDriveFileExplorerPathCrumb[]> {
   const parts = xDriveFileExplorerPathParts(rawPath, rootName)
   let parentID = rootID
   const crumbs: XDriveFileExplorerPathCrumb[] = [{ id: rootID, name: rootName }]
+  signal?.throwIfAborted()
 
   for (const part of parts) {
-    const next = await findChildDirectory(parentID, part)
+    // Before each disposable read and after any transport that ignores abort:
+    // a stale path may never fetch a second child or commit its breadcrumbs.
+    signal?.throwIfAborted()
+    const next = await findChildDirectory(parentID, part, signal)
+    signal?.throwIfAborted()
     if (!next || next.type !== 'dir' || next.name !== part) {
       throw new Error(`找不到文件夹：${part}`)
     }
@@ -58,6 +65,7 @@ export async function xDriveResolveFileExplorerPath<
     crumbs.push({ id: next.id, name: next.name })
   }
 
+  signal?.throwIfAborted()
   return crumbs
 }
 
@@ -92,21 +100,27 @@ export async function xDriveFileExplorerSubmitPath<
   loadRoot,
   findChildDirectory,
   navigate,
+  signal,
 }: {
   rawPath: string
   currentCrumbs: readonly XDriveFileExplorerPathCrumb[]
-  loadRoot: () => Promise<XDriveFileExplorerPathRoot>
-  findChildDirectory: (parentID: number, name: string) => Promise<TNode | null | undefined>
+  loadRoot: (signal?: AbortSignal) => Promise<XDriveFileExplorerPathRoot>
+  findChildDirectory: (parentID: number, name: string, signal?: AbortSignal) => Promise<TNode | null | undefined>
   navigate: (crumbs: XDriveFileExplorerPathCrumb[]) => Promise<void>
+  signal?: AbortSignal
 }) {
-  const root = await loadRoot()
+  signal?.throwIfAborted()
+  const root = await loadRoot(signal)
+  signal?.throwIfAborted()
   const rootName = currentCrumbs[0]?.name || '我的文件'
   const nextCrumbs = await xDriveResolveFileExplorerPath({
     rawPath,
     rootID: root.id,
     rootName,
     findChildDirectory,
+    signal,
   })
+  signal?.throwIfAborted()
   await navigate(nextCrumbs)
   return nextCrumbs
 }

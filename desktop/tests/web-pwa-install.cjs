@@ -176,7 +176,9 @@ test('S2: UI entries exist before and after login, lazy-load the dialog and pres
   assert.ok(dialog.includes('data-xdrive-pwa-prompt'))
   assert.ok(dialog.includes('data-xdrive-pwa-check'))
   assert.ok(dialog.includes('requestXDrivePwaInstall()'))
-  assert.ok(dialog.includes('checkXDrivePwaAssets({ signal: controller.signal })'))
+  assert.ok(dialog.includes('checkXDrivePwaAssets({ signal })'))
+  assert.ok(dialog.includes('signal = controller.signal'))
+  assert.ok(dialog.includes("typeof signal.aborted !== 'boolean'"))
   assert.ok(dialog.includes('离线页和安装图标发起无凭据 HEAD 请求'))
   assert.ok(dialog.includes('区分实际 HTTPS 与本机 HTTP 安全上下文'))
   assert.ok(main.includes('startXDrivePwaInstallObservation()'))
@@ -362,8 +364,10 @@ test('S2B8: closing a diagnosis cancels all outstanding fetches without private 
   assert.deepEqual(h.queries.map(([url]) => url),
     ['/site.webmanifest', '/sw.js', '/offline.html', '/pwa-192.png', '/pwa-512.png'])
   const dialog = read('web/src/PwaInstallDialog.tsx')
-  for (const term of ['inspectionRef.current?.abort()', 'checkXDrivePwaAssets({ signal: controller.signal })',
-    '!controller.signal.aborted', 'inspectionRef.current = null']) {
+  for (const term of ['const owned = inspectionRef.current', 'inspectionRef.current = null',
+    'try { owned?.abort() }', 'stopInspection()',
+    'checkXDrivePwaAssets({ signal })', 'if (!signal.aborted) setChecks(result)',
+    'id === inspectionGeneration.current']) {
     assert(dialog.includes(term), 'missing component cancellation: ' + term)
   }
 })

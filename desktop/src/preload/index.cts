@@ -87,9 +87,9 @@ function cleanupMediaLivePhotoProgress(url: string) {
 const agent = Object.freeze({
   getState: () => ipcRenderer.invoke('agent:get-state'),
   getTransfers: () => ipcRenderer.invoke('agent:get-transfers'),
-  getStorageTree: () => ipcRenderer.invoke('agent:get-storage-tree'),
-  getCache: () => ipcRenderer.invoke('agent:get-cache'),
-  getLocalDiskSpace: () => ipcRenderer.invoke('agent:get-local-disk-space'),
+  getStorageTree: (requestID?: string) => ipcRenderer.invoke('agent:get-storage-tree', requestID),
+  getCache: (requestID?: string) => ipcRenderer.invoke('agent:get-cache', requestID),
+  getLocalDiskSpace: (requestID?: string) => ipcRenderer.invoke('agent:get-local-disk-space', requestID),
   releaseCache: () => ipcRenderer.invoke('agent:release-cache'),
   getMediaItem: (nodeID: number, requestID: string) =>
     ipcRenderer.invoke('agent:get-media-item', nodeID, requestID),
@@ -594,7 +594,7 @@ const agent = Object.freeze({
     return ipcRenderer.invoke('agent:release-media-live-photo-motion', url)
   },
   getSources: () => ipcRenderer.invoke('agent:get-sources'),
-  getDeviceBackups: () => ipcRenderer.invoke('agent:get-device-backups'),
+  getDeviceBackups: (requestID?: string) => ipcRenderer.invoke('agent:get-device-backups', requestID),
   getDeviceBackupsPage: (limit = 100, afterDeviceID = '') =>
     ipcRenderer.invoke('agent:get-device-backups-page', limit, afterDeviceID),
   getDeviceBackupFoldersPage: (deviceID: string, limit = 100, afterSourceID = 0) =>
@@ -704,7 +704,7 @@ const agent = Object.freeze({
   }) => ipcRenderer.invoke('agent:update-source', sourceID, revision, input),
   deleteSource: (sourceID: number, revision: number) => ipcRenderer.invoke('agent:delete-source', sourceID, revision),
   triggerSource: (sourceID: number) => ipcRenderer.invoke('agent:trigger-source', sourceID),
-  cloudRoot: () => ipcRenderer.invoke('agent:cloud-root'),
+  cloudRoot: (requestID?: string) => ipcRenderer.invoke('agent:cloud-root', requestID),
   cloudChildren: (parentID: number) => ipcRenderer.invoke('agent:cloud-children', parentID),
   cloudChildrenPage: (
     parentID: number,
@@ -758,10 +758,10 @@ const agent = Object.freeze({
   cloudUpdateFileSavedSearch: (id: number, input: Record<string, unknown>) => ipcRenderer.invoke('agent:cloud-saved-search-update', id, input),
   cloudDeleteFileSavedSearch: (id: number) => ipcRenderer.invoke('agent:cloud-saved-search-delete', id),
   cloudReorderFileSavedSearches: (ids: number[]) => ipcRenderer.invoke('agent:cloud-saved-search-reorder', ids),
-  cloudFileFavorites: () => ipcRenderer.invoke('agent:cloud-favorites'),
+  cloudFileFavorites: (requestID?: string) => ipcRenderer.invoke('agent:cloud-favorites', requestID),
   cloudFavoriteFile: (nodeID: number) => ipcRenderer.invoke('agent:cloud-favorite', nodeID),
   cloudUnfavoriteFile: (nodeID: number) => ipcRenderer.invoke('agent:cloud-unfavorite', nodeID),
-  cloudFileRecent: (limit = 16) => ipcRenderer.invoke('agent:cloud-recent', limit),
+  cloudFileRecent: (limit = 16, requestID?: string) => ipcRenderer.invoke('agent:cloud-recent', limit, requestID),
   cloudTouchFileRecent: (nodeID: number) => ipcRenderer.invoke('agent:cloud-recent-touch', nodeID),
   cloudClearFileRecent: () => ipcRenderer.invoke('agent:cloud-recent-clear'),
   cloudCreateDirectory: (parentID: number, name: string) => ipcRenderer.invoke('agent:cloud-create-directory', parentID, name),
@@ -781,7 +781,7 @@ const agent = Object.freeze({
   cloudFileMediaDetails: (items: Array<{ id: number; revision: number }>) =>
     ipcRenderer.invoke('agent:cloud-file-media-details', items),
   cloudCreateFileOperation: (type: 'copy' | 'move' | 'delete', items: Array<{ id: number; revision: number }>, parentID?: number) => ipcRenderer.invoke('agent:cloud-file-operation-create', type, items, parentID),
-  cloudAdminServices: () => ipcRenderer.invoke('agent:cloud-admin-services'),
+  cloudAdminServices: (requestID?: string) => ipcRenderer.invoke('agent:cloud-admin-services', requestID),
   cloudAdminStorage: (query: import('../main/agent_client.cjs').AgentAdminStorageRequest) =>
     ipcRenderer.invoke('agent:cloud-admin-storage', query),
   cloudAdminBackups: () => ipcRenderer.invoke('agent:cloud-admin-backups'),
@@ -791,7 +791,7 @@ const agent = Object.freeze({
     ipcRenderer.invoke('agent:cloud-admin-backup-action', input),
   cloudAdminAuditRange: (query: import('../main/agent_client.cjs').AgentAdminAuditRangeQuery, requestID?: string) =>
     ipcRenderer.invoke('agent:cloud-admin-audit-range', query, requestID),
-  cloudAdminUsers: () => ipcRenderer.invoke('agent:cloud-admin-users'),
+  cloudAdminUsers: (requestID?: string) => ipcRenderer.invoke('agent:cloud-admin-users', requestID),
   cloudAdminCreateUser: (input: import('../main/agent_client.cjs').AgentAdminCreateUserInput) =>
     ipcRenderer.invoke('agent:cloud-admin-users-create', input),
   cloudAdminUpdateUser: (id: number, input: import('../main/agent_client.cjs').AgentAdminUpdateUserInput) =>
@@ -886,10 +886,10 @@ const agent = Object.freeze({
   }) => ipcRenderer.invoke('agent:cloud-set-admin-baidu-jsapi', input),
   cloudSetAdminBaiduMapConfig: (input: { enabled: boolean; revision: number; ak?: string; clear_ak?: boolean }) =>
     ipcRenderer.invoke('agent:cloud-set-admin-baidu-map', input),
-  cloudBackgroundTaskActiveSummary: () =>
-    ipcRenderer.invoke('agent:cloud-background-task-summary'),
-  cloudBackgroundTaskPage: (global = false, limit = 50, cursor = '') =>
-    ipcRenderer.invoke('agent:cloud-background-task-page', global, limit, cursor),
+  cloudBackgroundTaskActiveSummary: (requestID?: string) =>
+    ipcRenderer.invoke('agent:cloud-background-task-summary', requestID),
+  cloudBackgroundTaskPage: (global = false, limit = 50, cursor = '', requestID?: string) =>
+    ipcRenderer.invoke('agent:cloud-background-task-page', global, limit, cursor, requestID),
   cloudBackgroundTasks: (global = false, limit = 100) => ipcRenderer.invoke('agent:cloud-background-tasks', global, limit),
   cloudBackgroundTaskControl: (id: string, action: string, global = false) =>
     ipcRenderer.invoke('agent:cloud-background-task-control', id, action, global),
@@ -962,11 +962,11 @@ const agent = Object.freeze({
     grouping,
     requestID,
   ),
-  cloudQuota: () => ipcRenderer.invoke('agent:cloud-quota'),
+  cloudQuota: (requestID?: string) => ipcRenderer.invoke('agent:cloud-quota', requestID),
   getServerUpdate: () => ipcRenderer.invoke('agent:get-server-update'),
   startServerUpdate: (source: 'github' | 'gitlab', channel: 'stable' | 'master', backupFileData: boolean) =>
     ipcRenderer.invoke('agent:start-server-update', source, channel, backupFileData),
-  cloudStorageStats: () => ipcRenderer.invoke('agent:cloud-storage-stats'),
+  cloudStorageStats: (requestID?: string) => ipcRenderer.invoke('agent:cloud-storage-stats', requestID),
   cloudCleanupStorageCache: (kind: 'media_thumbnail' | 'analysis_preview' | 'upload_staging' | 'storage_temp' | 'all') =>
     ipcRenderer.invoke('agent:cloud-storage-cache-cleanup', kind),
   cloudTrash: () => ipcRenderer.invoke('agent:cloud-trash'),
@@ -1018,7 +1018,7 @@ const agent = Object.freeze({
   cancelUpdate: () => ipcRenderer.invoke('agent:cancel-update'),
   setSyncRule: (path: string, mode: 'exclude' | 'always-local' | 'default') => ipcRenderer.invoke('agent:set-sync-rule', path, mode),
   getFileAvailability: (path: string) => ipcRenderer.invoke('agent:get-file-availability', path),
-  getFileAvailabilityBatch: (paths: string[]) => ipcRenderer.invoke('agent:get-file-availability-batch', paths),
+  getFileAvailabilityBatch: (paths: string[], requestID?: string) => ipcRenderer.invoke('agent:get-file-availability-batch', paths, requestID),
   setFileAvailability: (path: string, action: 'keep' | 'release' | 'online' | 'sync') =>
     ipcRenderer.invoke('agent:set-file-availability', path, action),
   getConflicts: () => ipcRenderer.invoke('agent:get-conflicts'),

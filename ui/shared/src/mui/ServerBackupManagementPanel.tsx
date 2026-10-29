@@ -12,6 +12,7 @@ import { latestServerBackupVerification, serverBackupReceiptDurationSeconds,
   serverBackupReceiptExplanation, summarizeServerBackupIntegrity } from '../server-backup-integrity'
 import { canPruneServerBackup, type XDriveServerBackupPrunePreview } from '../server-backup-prune-preview'
 import { backupRetentionCapacity } from '../server-backup-capacity'
+import { filterServerBackupSnapshots, type XDriveServerBackupSnapshotFilter } from '../server-backup-snapshot-query'
 import { XDriveActionButton } from './ActionButton'
 import { XDriveBackupVerificationReceipt } from './BackupVerificationReceipt'
 import { XDriveBackupRecoveryEvidencePanel } from './BackupRecoveryEvidencePanel'
@@ -66,6 +67,9 @@ export function XDriveServerBackupManagementPanel({
   const [notice, setNotice] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [snapshotID, setSnapshotID] = useState('')
+  const [snapshotFilter, setSnapshotFilter] = useState<XDriveServerBackupSnapshotFilter>({
+    query: '', format: 'all', status: 'all', order: 'newest',
+  })
   const [createFormat, setCreateFormat] = useState<'v1' | 'v2'>('v2')
   const [verifyMode, setVerifyMode] = useState<'fast' | 'deep'>('fast')
   const [keepLast, setKeepLast] = useState('7')
@@ -87,6 +91,13 @@ export function XDriveServerBackupManagementPanel({
       if (generation !== sessionGeneration.current || read !== latestRead.current) return
       setLoaded({ port, page: result })
       setError('')
+      // Even a successfully decoded response must revoke open destructive
+      // confirmations when the Host stops supplying current, trusted inventory.
+      if (!result.supported) {
+        setConfirmation(null)
+        setPrunePreview(null)
+        setSelectedPreviewRequestID('')
+      }
       setPolicyDraft(old => old?.revision === result.inventory.policy.revision ? old : {
         format: result.inventory.policy.schedule_format,
         days: String(result.inventory.policy.retention_days),
@@ -97,6 +108,15 @@ export function XDriveServerBackupManagementPanel({
           ? current : result.inventory.snapshots[0]?.id || '')
     } catch (e) {
       if (generation === sessionGeneration.current && read === latestRead.current) {
+        // A failed Host read is not permission to keep using a previously
+        // supported snapshot, policy revision or one-time deep-delete receipt.
+        // Retain no stale action surface until a fresh authenticated read.
+        setLoaded(null)
+        setPolicyDraft(null)
+        setConfirmation(null)
+        setHistoryDetail(null)
+        setPrunePreview(null)
+        setSelectedPreviewRequestID('')
         setError(e instanceof Error ? e.message : '无法更新备份状态；以宿主机记录为准。')
       }
     }
@@ -126,7 +146,20 @@ export function XDriveServerBackupManagementPanel({
 
   const busy = submitting || workStates.has(page?.operation.state || '')
   const supported = Boolean(page?.supported)
-  const selected = page?.inventory.snapshots.find(item => item.id === snapshotID)
+  // Host inventory is currently capped at 100; this is not repository-wide search.
+  const visibleSnapshots = filterServerBackupSnapshots(page?.inventory.snapshots || [], snapshotFilter)
+  // Never offer Restore/Delete for a selection hidden by a new filter.
+  const selected = visibleSnapshots.find(item => item.id === snapshotID)
+  const changeSnapshotFilter = (patch: Partial<XDriveServerBackupSnapshotFilter>) => {
+    setSnapshotFilter(previous => ({ ...previous, ...patch }))
+    setConfirmation(null)
+    setSelectedPreviewRequestID('')
+  }
+  const selectSnapshot = (id: string) => {
+    if (id !== snapshotID) setSelectedPreviewRequestID('')
+    setSnapshotID(id)
+    setConfirmation(null)
+  }
   const integrity = page ? summarizeServerBackupIntegrity(page) : null
   const selectedComplete = selected?.state === 'complete'
   const selectedRestorable = selectedComplete && selected?.file_data_included !== false
@@ -137,7 +170,7 @@ export function XDriveServerBackupManagementPanel({
   const selectedPreview = page?.selected_preview
   // The preview is informational only. It is never permission to delete a
   // snapshot; the Host must independently audit CAS under an exclusive lock.
-  const selectedPreviewReady = Boolean(selectedPreview && selectedPreviewRequestID &&
+  const selectedPreviewReady = Boolean(selected && selectedPreview && selectedPreviewRequestID &&
     selectedPreview.request_id === selectedPreviewRequestID &&
     selectedPreview.snapshot_id === snapshotID && selectedPreview.mode === verifyMode &&
     page?.operation.action === 'preview_delete' &&
@@ -189,6 +222,22 @@ export function XDriveServerBackupManagementPanel({
   const confirm = () => {
     if (!confirmation || confirmText !== confirmation.expected || disabled) return
     const next = confirmation.action
+    // Confirmation may outlive a Host inventory refresh or a UI filter/selection
+    // change. Never submit a different or no-longer-restorable generation.
+    if ('snapshot_id' in next && next.snapshot_id && (!selected || next.snapshot_id !== selected.id ||
+      (next.action === 'restore' && !selectedRestorable) ||
+      (next.action === 'drill' && (selected.format !== 'v2' || !selectedRestorable)) ||
+      ((next.action === 'delete' || next.action === 'delete_selected') &&
+        !selectedComplete))) {
+      setError('所选备份已变化或不再满足操作条件；请重新选择并确认。')
+      setConfirmation(null)
+      return
+    }
+    if (next.action === 'prune' && !canPrune) {
+      setError('清理预览已失效；必须重新执行与保留数量匹配的只读预览。')
+      setConfirmation(null)
+      return
+    }
     if (next.action === "delete_selected" && (!selectedDeletionReady ||
       !selectedPreview || next.preview_request_id !== selectedPreview.request_id ||
       next.snapshot_id !== snapshotID)) {
@@ -214,7 +263,8 @@ export function XDriveServerBackupManagementPanel({
         }
       />
       {error ? <Alert severity="error" role="alert">{error}</Alert> : null}
-      {!page ? <Alert severity="info">正在读取宿主机备份状态…</Alert> : null}
+      {!page && !error ? <Alert severity="info">正在读取宿主机备份状态…</Alert> : null}
+      {!page && error ? <Alert severity="warning">无法取得当前宿主机可信清单；备份、恢复及删除操作已禁用，刷新成功前不允许使用旧快照或预览回执。</Alert> : null}
       {page && !page.supported
         ? <Alert severity="warning">备份控制不可用：{page.message || '请检查宿主机控制进程和部署版本。'}。不会执行任何删除或恢复。</Alert>
         : null}
@@ -320,6 +370,47 @@ export function XDriveServerBackupManagementPanel({
               </Stack>
             </Alert>
           ) : null}
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center"
+            data-xdrive-admin-backup-snapshot-filters>
+            <TextField size="small" label="搜索已列出的备份" value={snapshotFilter.query}
+              onChange={event => changeSnapshotFilter({ query: event.target.value })}
+              inputProps={{ maxLength: 120 }} sx={{ minWidth: 195, flex: '1 1 195px' }} />
+            <TextField select size="small" label="格式" value={snapshotFilter.format}
+              sx={{ minWidth: 115 }}
+              onChange={event => changeSnapshotFilter({
+                format: event.target.value as XDriveServerBackupSnapshotFilter['format'],
+              })}>
+              <MenuItem value="all">全部格式</MenuItem>
+              <MenuItem value="v1">v1</MenuItem>
+              <MenuItem value="v2">v2</MenuItem>
+            </TextField>
+            <TextField select size="small" label="结构状态" value={snapshotFilter.status}
+              sx={{ minWidth: 145 }}
+              onChange={event => changeSnapshotFilter({
+                status: event.target.value as XDriveServerBackupSnapshotFilter['status'],
+              })}>
+              <MenuItem value="all">全部状态</MenuItem>
+              <MenuItem value="recoverable">完整恢复候选</MenuItem>
+              <MenuItem value="database_only">仅数据库</MenuItem>
+              <MenuItem value="incomplete">不完整</MenuItem>
+              <MenuItem value="inconsistent">源数据不一致</MenuItem>
+            </TextField>
+            <TextField select size="small" label="时间排序" value={snapshotFilter.order}
+              sx={{ minWidth: 135 }}
+              onChange={event => changeSnapshotFilter({
+                order: event.target.value as XDriveServerBackupSnapshotFilter['order'],
+              })}>
+              <MenuItem value="newest">最新优先</MenuItem>
+              <MenuItem value="oldest">最早优先</MenuItem>
+            </TextField>
+            <Button size="small" variant="outlined" onClick={() => changeSnapshotFilter({
+              query: '', format: 'all', status: 'all', order: 'newest',
+            })}>清除筛选</Button>
+          </Stack>
+          <Typography variant="caption" color="text.secondary" data-xdrive-admin-backup-filter-count>
+            当前显示 {visibleSnapshots.length} / {page?.inventory.snapshots.length || 0} 代已发现的备份。
+            筛选只作用于宿主机提供的最新最多 100 代清单，未列出的旧快照不在搜索范围内。
+          </Typography>
           <TableContainer sx={{ maxHeight: 320 }}>
             <Table size="small" stickyHeader aria-label="服务器备份清单">
               <TableHead>
@@ -331,12 +422,13 @@ export function XDriveServerBackupManagementPanel({
                 </TableRow>
               </TableHead>
               <TableBody>
-                {(page?.inventory.snapshots || []).map(item => (
+                {visibleSnapshots.map(item => (
                   <TableRow key={item.id} selected={snapshotID === item.id}
-                    hover onClick={() => setSnapshotID(item.id)} sx={{ cursor: 'pointer' }}>
+                    hover onClick={() => selectSnapshot(item.id)}
+                    sx={{ cursor: 'pointer' }}>
                     <TableCell>
                       <input type="radio" name="admin-backup-selected" checked={snapshotID === item.id}
-                        onChange={() => setSnapshotID(item.id)}
+                        onChange={() => selectSnapshot(item.id)}
                         aria-label={'选择备份 ' + item.name} />
                     </TableCell>
                     <TableCell sx={{ overflowWrap: 'anywhere' }}>{item.name}</TableCell>
@@ -347,8 +439,12 @@ export function XDriveServerBackupManagementPanel({
                     <TableCell align="right">{displayBytes(item.bytes)}</TableCell>
                   </TableRow>
                 ))}
-                {!page?.inventory.snapshots.length ? (
-                  <TableRow><TableCell colSpan={7}>尚无已发现的服务器快照。</TableCell></TableRow>
+                {!visibleSnapshots.length ? (
+                  <TableRow><TableCell colSpan={7}>
+                    {page?.inventory.snapshots.length
+                      ? '已列出的备份中没有匹配筛选条件的快照。'
+                      : '尚无已发现的服务器快照。'}
+                  </TableCell></TableRow>
                 ) : null}
               </TableBody>
             </Table>
@@ -492,7 +588,7 @@ export function XDriveServerBackupManagementPanel({
       ) : null}
 
       {page?.supported
-        ? <XDriveBackupRecoveryEvidencePanel page={page} snapshotID={snapshotID} />
+        ? <XDriveBackupRecoveryEvidencePanel page={page} snapshotID={selected?.id || ''} />
         : null}
 
       <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>

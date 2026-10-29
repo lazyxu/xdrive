@@ -108,13 +108,27 @@ test('macOS Option+Command+V resolves to Finder-style move paste', () => {
 })
 
 test('Web detects browser platform while Desktop uses the authoritative desktop platform', () => {
+  // The Web module may be evaluated before any Files React render. Keep
+  // optional WebKit Navigator getters out of that module entirely; the
+  // guarded helper owns the existing shared keyboard profile selection.
+  for (const token of [
+    "import { xDriveWebFilesKeyboardProfile } from './webFilesKeyboardProfile'",
+    'const FILE_KEYBOARD_PROFILE = xDriveWebFilesKeyboardProfile()',
+    'keyboardProfile={FILE_KEYBOARD_PROFILE}',
+  ]) assert.ok(web.includes(token), 'Web keyboard adapter missing: ' + token)
+  assert.equal(/navigator\.(?:platform|userAgent)/.test(web), false,
+    'Web module must not evaluate optional Navigator getters during import')
+  const webKeyboard = read('web', 'src', 'webFilesKeyboardProfile.ts')
   for (const token of [
     'xDriveFileExplorerKeyboardProfileFromPlatform',
-    'FILE_KEYBOARD_PROFILE',
+    'typeof navigator',
     'navigator.platform',
     'navigator.userAgent',
-    'keyboardProfile={FILE_KEYBOARD_PROFILE}',
-  ]) assert.ok(web.includes(token), 'Web keyboard profile adapter missing: ' + token)
+    "typeof observed === 'string'",
+    'catch',
+  ]) assert.ok(webKeyboard.includes(token), 'guarded Web keyboard helper missing: ' + token)
+  assert.ok(webKeyboard.includes('return xDriveFileExplorerKeyboardProfileFromPlatform('),
+    'Web still needs the authoritative shared keyboard resolver')
 
   for (const token of [
     'keyboardProfile?: XDriveFileExplorerKeyboardProfile',

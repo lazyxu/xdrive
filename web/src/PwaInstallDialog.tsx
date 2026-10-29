@@ -15,6 +15,7 @@ export default function XDrivePwaInstallDialog({ open, onClose }: { open: boolea
   const compact = useMediaQuery('(max-width:599.95px)')
   const state = useSyncExternalStore(subscribeXDrivePwaInstall, xDrivePwaInstallSnapshot)
   const [checks, setChecks] = useState<XDrivePwaAssetCheck[] | null>(null)
+  const [checkError, setCheckError] = useState('')
   const [checking, setChecking] = useState(false)
   const [feedback, setFeedback] = useState<XDrivePwaPromptOutcome | null>(null)
   const [deviceEvidence, setDeviceEvidence] = useState<string | null>(null)
@@ -26,11 +27,16 @@ export default function XDrivePwaInstallDialog({ open, onClose }: { open: boolea
   const dialogGeneration = useRef(0)
   const inspectionGeneration = useRef(0)
   const inspectionRef = useRef<AbortController | null>(null)
+  const stopInspection = () => {
+    const owned = inspectionRef.current
+    inspectionRef.current = null
+    try { owned?.abort() }
+    catch { /* A denied WebKit AbortController must not break dialog close. */ }
+  }
   useEffect(() => () => {
     dialogGeneration.current += 1
     inspectionGeneration.current += 1
-    inspectionRef.current?.abort()
-    inspectionRef.current = null
+    stopInspection()
   }, [])
   useEffect(() => {
     if (!open) {
@@ -38,12 +44,12 @@ export default function XDrivePwaInstallDialog({ open, onClose }: { open: boolea
       // evidence on screen when the next account/session reopens it.
       dialogGeneration.current += 1
       inspectionGeneration.current += 1
-      inspectionRef.current?.abort()
-      inspectionRef.current = null
+      stopInspection()
       // The dialog can stay mounted across account/session switches. Only
       // show the result of an inspection or install click in this opening.
       setChecking(false)
       setChecks(null)
+      setCheckError('')
       setFeedback(null)
       setDeviceEvidence(null)
       setDeviceEvidencePending(false)
@@ -52,13 +58,34 @@ export default function XDrivePwaInstallDialog({ open, onClose }: { open: boolea
   }, [open])
   const inspect = () => {
     const id = ++inspectionGeneration.current
-    inspectionRef.current?.abort()
-    const controller = new AbortController()
+    stopInspection()
+    setChecks(null)
+    setCheckError('')
+    let controller: AbortController
+    let signal: AbortSignal
+    try {
+      controller = new AbortController()
+      signal = controller.signal
+      // If the cancellation status cannot be observed, a HEAD inspection
+      // cannot safely claim this opening's network results as current.
+      if (typeof signal.aborted !== 'boolean') throw new Error('AbortSignal unavailable')
+    } catch {
+      setChecking(false)
+      setCheckError('浏览器无法提供可验证的取消控制；未开始公开资源检测。')
+      return
+    }
     inspectionRef.current = controller
     setChecking(true)
-    setChecks(null)
-    void checkXDrivePwaAssets({ signal: controller.signal }).then(result => {
-      if (id === inspectionGeneration.current && !controller.signal.aborted) setChecks(result)
+    void checkXDrivePwaAssets({ signal }).then(result => {
+      if (id !== inspectionGeneration.current) return
+      try {
+        if (!signal.aborted) setChecks(result)
+      } catch {
+        setCheckError('浏览器无法读取检测取消状态；本次结果未被采纳。')
+      }
+    }).catch(() => {
+      if (id === inspectionGeneration.current)
+        setCheckError('本次公开资源检测失败，未将其标记为正常。')
     }).finally(() => {
       if (inspectionRef.current === controller) inspectionRef.current = null
       if (id === inspectionGeneration.current) setChecking(false)
@@ -158,6 +185,11 @@ export default function XDrivePwaInstallDialog({ open, onClose }: { open: boolea
             <Button data-xdrive-pwa-check variant="outlined" disabled={checking} sx={{ minHeight: 44 }} onClick={inspect}>
               {checking ? '检测中…' : '检查安装环境'}
             </Button>
+            {checkError ? (
+              <Alert severity="warning" role="status" data-xdrive-pwa-check-error sx={{ mt: 1 }}>
+                {checkError}
+              </Alert>
+            ) : null}
             {checks ? (
               <Stack spacing={1} sx={{ mt: 1.5 }} role="status" aria-live="polite">
                 {checks.map(item => (

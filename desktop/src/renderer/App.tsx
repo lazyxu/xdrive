@@ -25,14 +25,10 @@ import {
 } from '@mui/material'
 import BuildRoundedIcon from '@mui/icons-material/BuildRounded'
 import DnsRoundedIcon from '@mui/icons-material/DnsRounded'
-import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
-import CropSquareRoundedIcon from '@mui/icons-material/CropSquareRounded'
-import FilterNoneRoundedIcon from '@mui/icons-material/FilterNoneRounded'
 import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import PauseRoundedIcon from '@mui/icons-material/PauseRounded'
 import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded'
-import RemoveRoundedIcon from '@mui/icons-material/RemoveRounded'
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded'
 import SyncRoundedIcon from '@mui/icons-material/SyncRounded'
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
@@ -53,7 +49,6 @@ import {
   xDrivePasswordChangeValidationError,
   XDriveConfirmDialog,
   createXDriveCloudStorageDataSource,
-  XDriveAppRouteContent,
   xDriveWorkspaceStorageSummary,
   XDriveSettingsDialog,
   XDriveFeedbackSnackbar,
@@ -89,7 +84,10 @@ import {
 } from '@xdrive/shared'
 import type { XDriveFileExplorerDownloadResult, XDriveDeviceBackupDataSource, XDriveAdminUsersPort, XDriveAdminAuditPort, XDriveAdminStoragePort, XDriveAdminStorageRequest } from '@xdrive/shared'
 import { DesktopFilesPage } from './DesktopFilesPage'
+import { DesktopHostFrame } from './DesktopHostFrame'
+import { desktopWindowHostAdapter } from './desktopWindowHostAdapter'
 import { createDesktopFileExplorerHostPort } from './DesktopFileExplorerHostPort'
+import { createDesktopCloudFilesHostPort } from './desktopCloudFilesHostPort'
 import type { DesktopFileExplorerAction, DesktopFileExplorerActionIntent } from './DesktopFileExplorer'
 import { desktopOverviewPort } from './desktopOverviewAdapter'
 import { createDesktopMediaGalleryDataSource } from './mediaGalleryAdapter'
@@ -98,7 +96,6 @@ import { DesktopSettingsContent } from './DesktopSettingsContent'
 import { createDesktopSourceManagerAdapter, desktopSourceTargetBrowser } from './sourceManagerAdapter'
 import type {
   XDriveAppearance,
-  XDriveCloudFilesPort,
 } from '@xdrive/shared'
 
 type View = XDriveWorkspaceAppRoute
@@ -116,55 +113,6 @@ function platformLabel(platform: string) {
   if (platform === 'linux') return 'Linux'
   if (platform === 'darwin') return 'macOS'
   return platform || '未知'
-}
-
-function DesktopFrame({
-  children,
-  maximized,
-  titlebarActions,
-}: {
-  children: ReactNode
-  maximized: boolean
-  titlebarActions?: ReactNode
-}) {
-  return (
-    <div className="desktop-frame">
-      <header className="desktop-titlebar">
-        <XDriveBrandLockup iconSrc={xDriveBrandIcon} variant="titlebar" className="desktop-titlebar-brand" />
-        <div className="desktop-titlebar-actions">{titlebarActions}</div>
-        <div className="desktop-window-controls">
-          <IconButton
-            className="desktop-window-control"
-            aria-label="最小化"
-            title="最小化"
-            disableRipple
-            onClick={() => window.xdriveDesktop.minimizeWindow()}
-          >
-            <RemoveRoundedIcon fontSize="small" />
-          </IconButton>
-          <IconButton
-            className="desktop-window-control"
-            aria-label={maximized ? '还原' : '最大化'}
-            title={maximized ? '还原' : '最大化'}
-            disableRipple
-            onClick={() => window.xdriveDesktop.toggleMaximizeWindow()}
-          >
-            {maximized ? <FilterNoneRoundedIcon fontSize="small" /> : <CropSquareRoundedIcon fontSize="small" />}
-          </IconButton>
-          <IconButton
-            className="desktop-window-control desktop-window-close"
-            aria-label="关闭"
-            title="关闭"
-            disableRipple
-            onClick={() => window.xdriveDesktop.closeWindow()}
-          >
-            <CloseRoundedIcon fontSize="small" />
-          </IconButton>
-        </div>
-      </header>
-      <div className="desktop-body">{children}</div>
-    </div>
-  )
 }
 
 function cacheGiB(bytes: number) {
@@ -408,8 +356,9 @@ export default function App({
           return result.data.device_id || null
         },
       } : {}),
-      list: async () => {
-        const result = await window.xdriveDesktop.agent.getDeviceBackups()
+      list: async (signal?: AbortSignal) => {
+        const result = await xDriveDesktopViewportRequest(signal, requestID =>
+          window.xdriveDesktop.agent.getDeviceBackups(requestID))
         if (!result.ok) throw new Error(result.error.message)
         return result.data
       },
@@ -735,44 +684,12 @@ export default function App({
       return result.data
     },
   }), [status?.server, status?.username])
-  const cloudFilesPort = useMemo<XDriveCloudFilesPort<AgentCloudNode, AgentCloudQuota, XDriveFileExplorerSort>>(() => ({
-    getRoot: async () => {
-      const result = await window.xdriveDesktop.agent.cloudRoot()
-      if (!result.ok) throw new Error(result.error.message)
-      return result.data
-    },
-    getPage: async (parentID, options) => {
-      const result = await window.xdriveDesktop.agent.cloudChildrenPage(parentID, options)
-      if (!result.ok) throw new Error(result.error.message)
-      return result.data
-    },
-    getRange: async (parentID, offset, limit, sort, includeCount, grouping, signal) => {
-      const result = await xDriveDesktopViewportRequest(signal, (requestID) => window.xdriveDesktop.agent.cloudChildrenRange(
-        parentID,
-        offset,
-        limit,
-        sort.key,
-        sort.direction,
-        includeCount,
-        grouping,
-        requestID,
-      ))
-      if (!result.ok) throw new Error(result.error.message)
-      return result.data
-    },
-    getChanges: cloudChangeFeedSupported
-      ? async (after, limit) => {
-          const result = await window.xdriveDesktop.agent.cloudChanges(after, limit)
-          if (!result.ok) throw new Error(result.error.message)
-          return result.data
-        }
-      : undefined,
-    getQuota: async () => {
-      const result = await window.xdriveDesktop.agent.cloudQuota()
-      if (!result.ok) throw new Error(result.error.message)
-      return result.data
-    },
-  }), [cloudChangeFeedSupported])
+  const cloudFilesPort = useMemo(
+    () => createDesktopCloudFilesHostPort(
+      () => window.xdriveDesktop.agent, cloudChangeFeedSupported,
+    ),
+    [cloudChangeFeedSupported],
+  )
   const handleCloudFilesError = useCallback((cloudError: unknown) => {
     setError(cloudError instanceof Error ? cloudError.message : String(cloudError))
   }, [])
@@ -973,32 +890,32 @@ export default function App({
 
   const backgroundTaskPort = useMemo(() => backgroundTasksSupported ? ({
     loadActiveSummary: backgroundTaskSummarySupported
-      ? async () => {
-          const result = await window.xdriveDesktop.agent.cloudBackgroundTaskActiveSummary()
+      ? async (signal?: AbortSignal) => {
+          const result = await xDriveDesktopViewportRequest(signal, requestID =>
+            window.xdriveDesktop.agent.cloudBackgroundTaskActiveSummary(requestID))
           if (!result.ok) throw new Error(result.error.message)
           return result.data
         }
       : undefined,
-    loadMinePage: async (limit: number, cursor?: string) => {
-      const result = await window.xdriveDesktop.agent.cloudBackgroundTaskPage(
-        false,
-        limit,
-        cursor ?? '',
-      )
+    loadMinePage: async (limit: number, cursor?: string, signal?: AbortSignal) => {
+      const result = await xDriveDesktopViewportRequest(signal, requestID =>
+        window.xdriveDesktop.agent.cloudBackgroundTaskPage(
+          false, limit, cursor ?? '', requestID,
+        ))
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     loadGlobalPage: status?.role === 'admin'
-      ? async (limit: number, cursor?: string) => {
-          const result = await window.xdriveDesktop.agent.cloudBackgroundTaskPage(
-            true,
-            limit,
-            cursor ?? '',
-          )
+      ? async (limit: number, cursor?: string, signal?: AbortSignal) => {
+          const result = await xDriveDesktopViewportRequest(signal, requestID =>
+            window.xdriveDesktop.agent.cloudBackgroundTaskPage(
+              true, limit, cursor ?? '', requestID,
+            ))
           if (!result.ok) throw new Error(result.error.message)
           return result.data
         }
       : undefined,
+    // Durable Server task Cancel/Retry/etc does NOT own a viewport signal.
     control: async (id: string, action: string, global: boolean) => {
       const result = await window.xdriveDesktop.agent.cloudBackgroundTaskControl(
         id,
@@ -1075,9 +992,11 @@ export default function App({
   const storageStatsSupported = agent.hello?.capabilities.includes('storage-intelligence') ?? false
   const storagePoliciesSupported = info?.platform === 'win32'
   const cloudStorageSource = useMemo(() => createXDriveCloudStorageDataSource({
-    getQuota: () => window.xdriveDesktop.agent.cloudQuota(),
+    getQuota: (signal?: AbortSignal) => xDriveDesktopViewportRequest(signal,
+      requestID => window.xdriveDesktop.agent.cloudQuota(requestID)),
     getStats: storageStatsSupported
-      ? () => window.xdriveDesktop.agent.cloudStorageStats()
+      ? (signal?: AbortSignal) => xDriveDesktopViewportRequest(signal,
+        requestID => window.xdriveDesktop.agent.cloudStorageStats(requestID))
       : undefined,
   }, {
     onQuota: applyCloudQuota,
@@ -1086,12 +1005,18 @@ export default function App({
       : '当前 xdrive-agent 不支持账号文件大小分布，请更新客户端核心组件。',
   }), [applyCloudQuota, storageStatsSupported])
   const localStorageSource = useMemo<XDriveLocalStorageDataSource>(() => ({
-    load: async () => {
+    load: async (signal?: AbortSignal) => {
+      // Browser cache does not expose cancellation; Agent storage/cache GETs do.
+      // This scope never cancels persistent cache releases or policy changes.
+      signal?.throwIfAborted()
       const [browserResult, treeResult, cacheResult] = await Promise.all([
         window.xdriveDesktop.getBrowserCache(),
-        window.xdriveDesktop.agent.getStorageTree(),
-        window.xdriveDesktop.agent.getCache(),
+        xDriveDesktopViewportRequest(signal,
+          requestID => window.xdriveDesktop.agent.getStorageTree(requestID)),
+        xDriveDesktopViewportRequest(signal,
+          requestID => window.xdriveDesktop.agent.getCache(requestID)),
       ])
+      signal?.throwIfAborted()
       if (!browserResult.ok) throw new Error(browserResult.error.message)
       const desktopReason = !cacheResult.ok
         ? cacheResult.error.message
@@ -1832,7 +1757,7 @@ export default function App({
   }
 
   const renderDesktopFrame = (content: ReactNode, titlebarActions?: ReactNode) => (
-    <DesktopFrame maximized={windowMaximized} titlebarActions={titlebarActions}>
+    <DesktopHostFrame maximized={windowMaximized} titlebarActions={titlebarActions} windowHost={desktopWindowHostAdapter}>
       {content}
       <XDriveFeedbackSnackbar
         open={Boolean(error || notice) && (configured || !agent.connected)}
@@ -1844,7 +1769,7 @@ export default function App({
         dismissible
         alertSx={{ width: '100%', maxWidth: 520, alignItems: 'flex-start', boxShadow: 3 }}
       />
-    </DesktopFrame>
+    </DesktopHostFrame>
   )
 
   const adminServicesPort = useMemo(() => ({
@@ -2115,16 +2040,20 @@ export default function App({
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
-    load: async () => {
-      const result = await window.xdriveDesktop.agent.cloudAdminServices()
+    load: async (signal?: AbortSignal) => {
+      // Only disposable status inventory reads opt into this sender-scoped
+      // cancel path; Admin mutations and post-save checks remain independent.
+      const result = await xDriveDesktopViewportRequest(signal,
+        requestID => window.xdriveDesktop.agent.cloudAdminServices(requestID))
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
   }), [status?.server, status?.username])
 
   const adminUsersPort = useMemo<XDriveAdminUsersPort>(() => ({
-    adminUsers: async () => {
-      const result = await window.xdriveDesktop.agent.cloudAdminUsers()
+    adminUsers: async (signal?: AbortSignal) => {
+      const result = await xDriveDesktopViewportRequest(signal, requestID =>
+        window.xdriveDesktop.agent.cloudAdminUsers(requestID))
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
@@ -3101,9 +3030,88 @@ export default function App({
         }
         setView(destination as View)
       }}
+      overlays={<>
+        <XDriveSettingsDialog
+          open={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          subtitle="外观、客户端更新、同步生命周期与本地缓存"
+          maxWidth="lg"
+          appearance={appearance}
+          appearanceDisabled={busy === 'appearance'}
+          onAppearanceChange={(next) => void changeAppearance(next)}
+          buildInfoSectionID="desktop-build-info"
+          buildInfo={[
+            { title: 'Desktop 构建信息', info },
+            { title: 'Server 构建信息', info: status?.server_build },
+          ]}
+        >
+          <DesktopSettingsContent
+            desktopPreferences={desktopPreferences}
+            busy={busy}
+            onRestartAgent={() => { void restartAgent() }}
+            onStartAtLoginChange={(enabled) => { void changeStartAtLogin(enabled) }}
+            onCloseToTrayChange={(enabled) => { void changeCloseToTray(enabled) }}
+            updateSupported={updateSupported}
+            clientUpdate={clientUpdate}
+            updateOperationBusy={updateOperationBusy}
+            updateCancelling={updateCancelling}
+            updateCancelSupported={updateCancelSupported}
+            updateProgress={updateProgress}
+            currentVersion={status?.version}
+            onUpdateSourceChange={(source) => { void changeUpdateSource(source) }}
+            onUpdateModeChange={(mode) => { void changeUpdateMode(mode) }}
+            onCheckUpdate={() => { void checkClientUpdate() }}
+            onDownloadUpdate={() => { void downloadClientUpdate() }}
+            onInstallUpdate={() => { void installClientUpdate() }}
+            onCancelUpdate={() => { void cancelClientUpdate() }}
+            settings={settings}
+            mountPath={mountPath}
+            cacheLimit={cacheLimit}
+            platform={info?.platform}
+            storagePoliciesSupported={storagePoliciesSupported}
+            onMountPathChange={setMountPath}
+            onCacheLimitChange={setCacheLimit}
+            onChooseMountPath={() => { void chooseDirectory(mountPath, setMountPath) }}
+            onSaveSettings={saveSettings}
+            onOpenStorage={() => {
+              setSettingsOpen(false)
+              setView('local-storage')
+            }}
+          />
+        </XDriveSettingsDialog>
+
+      <XDriveConfirmDialog
+        open={pendingSystemDependenciesExit !== null}
+        title="离开未保存的系统依赖配置？"
+        description="离开系统依赖将放弃当前未保存的修改；已提交的宿主机或后台任务不会被取消。"
+        confirmLabel="放弃修改并离开"
+        onCancel={() => setPendingSystemDependenciesExit(null)}
+        onConfirm={() => {
+          const next = pendingSystemDependenciesExit
+          if (!next) return
+          systemDependenciesDraftRef.current = false
+          setSystemDependenciesDraftDirty(false)
+          setPendingSystemDependenciesExit(null)
+          xDriveEnterForegroundPage('desktop:' + next)
+          setViewActual(next)
+        }}
+      />
+
+      <XDriveConfirmDialog
+        open={!!confirmDialog}
+        maxWidth="xs"
+        title={confirmDialog?.title ?? '确认操作'}
+        description={confirmDialog?.message ?? ''}
+        confirmLabel={confirmDialog?.confirmLabel ?? '确认'}
+        confirmIntent={confirmDialog?.tone === 'error' ? 'danger' : confirmDialog?.tone === 'warning' ? 'warning' : 'primary'}
+        onCancel={() => setConfirmDialog(null)}
+        onConfirm={() => void confirmPendingAction()}
+      />
+
+      </>}
     >
 
-      <XDriveAppRouteContent host={workspaceHost} view={view}>
+
         {(status?.last_error || status?.paused || status?.has_conflict) ? (
           <Stack
             spacing={1}
@@ -3265,103 +3273,6 @@ export default function App({
             onFileDialogFeedback={(message) => setNotice(message)}
           />
         )}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        
-
-        
-
-      </XDriveAppRouteContent>
-
-        <XDriveSettingsDialog
-          open={settingsOpen}
-          onClose={() => setSettingsOpen(false)}
-          subtitle="外观、客户端更新、同步生命周期与本地缓存"
-          maxWidth="lg"
-          appearance={appearance}
-          appearanceDisabled={busy === 'appearance'}
-          onAppearanceChange={(next) => void changeAppearance(next)}
-          buildInfoSectionID="desktop-build-info"
-          buildInfo={[
-            { title: 'Desktop 构建信息', info },
-            { title: 'Server 构建信息', info: status?.server_build },
-          ]}
-        >
-          <DesktopSettingsContent
-            desktopPreferences={desktopPreferences}
-            busy={busy}
-            onRestartAgent={() => { void restartAgent() }}
-            onStartAtLoginChange={(enabled) => { void changeStartAtLogin(enabled) }}
-            onCloseToTrayChange={(enabled) => { void changeCloseToTray(enabled) }}
-            updateSupported={updateSupported}
-            clientUpdate={clientUpdate}
-            updateOperationBusy={updateOperationBusy}
-            updateCancelling={updateCancelling}
-            updateCancelSupported={updateCancelSupported}
-            updateProgress={updateProgress}
-            currentVersion={status?.version}
-            onUpdateSourceChange={(source) => { void changeUpdateSource(source) }}
-            onUpdateModeChange={(mode) => { void changeUpdateMode(mode) }}
-            onCheckUpdate={() => { void checkClientUpdate() }}
-            onDownloadUpdate={() => { void downloadClientUpdate() }}
-            onInstallUpdate={() => { void installClientUpdate() }}
-            onCancelUpdate={() => { void cancelClientUpdate() }}
-            settings={settings}
-            mountPath={mountPath}
-            cacheLimit={cacheLimit}
-            platform={info?.platform}
-            storagePoliciesSupported={storagePoliciesSupported}
-            onMountPathChange={setMountPath}
-            onCacheLimitChange={setCacheLimit}
-            onChooseMountPath={() => { void chooseDirectory(mountPath, setMountPath) }}
-            onSaveSettings={saveSettings}
-            onOpenStorage={() => {
-              setSettingsOpen(false)
-              setView('local-storage')
-            }}
-          />
-        </XDriveSettingsDialog>
-
-      <XDriveConfirmDialog
-        open={pendingSystemDependenciesExit !== null}
-        title="离开未保存的系统依赖配置？"
-        description="离开系统依赖将放弃当前未保存的修改；已提交的宿主机或后台任务不会被取消。"
-        confirmLabel="放弃修改并离开"
-        onCancel={() => setPendingSystemDependenciesExit(null)}
-        onConfirm={() => {
-          const next = pendingSystemDependenciesExit
-          if (!next) return
-          systemDependenciesDraftRef.current = false
-          setSystemDependenciesDraftDirty(false)
-          setPendingSystemDependenciesExit(null)
-          xDriveEnterForegroundPage('desktop:' + next)
-          setViewActual(next)
-        }}
-      />
-
-      <XDriveConfirmDialog
-        open={!!confirmDialog}
-        maxWidth="xs"
-        title={confirmDialog?.title ?? '确认操作'}
-        description={confirmDialog?.message ?? ''}
-        confirmLabel={confirmDialog?.confirmLabel ?? '确认'}
-        confirmIntent={confirmDialog?.tone === 'error' ? 'danger' : confirmDialog?.tone === 'warning' ? 'warning' : 'primary'}
-        onCancel={() => setConfirmDialog(null)}
-        onConfirm={() => void confirmPendingAction()}
-      />
-
     </XDriveApp>,
     desktopTitlebarActions,
   )

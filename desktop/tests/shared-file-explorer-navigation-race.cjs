@@ -131,6 +131,13 @@ function loadNavigationHook(react) {
         },
       }
     }
+    // The navigation hook owns a real disposable read scope. Run its actual
+    // module so the test still exercises navigation/Owner isolation.
+    if (request === './FileExplorerDisposableNavigationReads') {
+      return loadTypeScriptModule(
+        ['ui', 'shared', 'src', 'mui', 'FileExplorerDisposableNavigationReads.ts'], null,
+      )
+    }
     return require(request)
   }
   const execute = new Function('exports', 'module', 'require', output)

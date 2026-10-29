@@ -1,4 +1,5 @@
 import { useMemo, useRef } from 'react'
+import { xDriveBeginForegroundContentTransition } from './ViewerForegroundPriority'
 import type { Node } from '../models'
 import {
   xDriveFileExplorerSearchFilterCount,
@@ -100,8 +101,8 @@ export function useXDriveFileExplorerWorkspace<
     grouping: XDriveFileExplorerGrouping,
   ) => Promise<boolean | void>
   loadSearchRange: XDriveFileExplorerSearchLoader<TSearch>
-  loadRoot: () => Promise<{ id: number }>
-  findChildDirectory: (parentID: number, name: string) => Promise<TNode | null | undefined>
+  loadRoot: (signal?: AbortSignal) => Promise<{ id: number }>
+  findChildDirectory: (parentID: number, name: string, signal?: AbortSignal) => Promise<TNode | null | undefined>
   searchCrumbsForResult?: (
     result: TSearch,
   ) => readonly XDriveFileExplorerWorkspaceCrumb[] | undefined
@@ -365,6 +366,12 @@ export function useXDriveFileExplorerWorkspace<
 
   const submitPath = async (rawPath: string) => {
     const navigationIntentID = navigation.beginNavigationIntent()
+    const signal = navigation.navigationReadSignalForIntent(navigationIntentID)
+    if (!signal) return false
+    // Yield only old mounted disposable thumbnails while root/ancestors resolve.
+    // A failed path restores them; a newer first Range owns its own latest-wins
+    // content lease. Never suspend a new page or any persistent task.
+    const finishContentPreemption = xDriveBeginForegroundContentTransition('files')
     let accepted = false
     try {
       await xDriveFileExplorerSubmitPath({
@@ -372,15 +379,20 @@ export function useXDriveFileExplorerWorkspace<
         currentCrumbs: crumbs,
         loadRoot,
         findChildDirectory,
+        signal,
         navigate: async (nextCrumbs) => {
           await navigation.navigateTo(nextCrumbs, true, navigationIntentID,
             (committed) => { accepted = committed })
         },
       })
-      return accepted && navigation.isNavigationIntentCurrent(navigationIntentID)
+      return accepted && !signal.aborted &&
+        navigation.isNavigationIntentCurrent(navigationIntentID)
     } catch (error) {
-      if (navigation.isNavigationIntentCurrent(navigationIntentID)) onError(error)
+      // Stale or cancelled metadata is neither a failed write nor a visible error.
+      if (!signal.aborted && navigation.isNavigationIntentCurrent(navigationIntentID)) onError(error)
       return false
+    } finally {
+      finishContentPreemption()
     }
   }
 
