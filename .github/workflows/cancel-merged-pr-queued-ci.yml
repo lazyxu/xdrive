@@ -37,6 +37,8 @@ jobs:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
           sparse-checkout: |
+            .github/workflows/cancel-merged-pr-queued-ci.yml
+            .github/workflows/cleanup-merged-branches.yml
             scripts/ci/cancel-merged-pr-queued-ci.cjs
             scripts/ci/cancel-merged-pr-queued-ci.test.cjs
             scripts/ci/cancel-merged-pr-workflow-contract.test.cjs
