@@ -16,7 +16,7 @@ function snippet(source,start,end){
   assert.ok(a>=0&&b>a,'real SDK host lifecycle not found')
   return source.slice(a,b)
 }
-function makeHost(kind){
+function makeHost(kind,{empty=false,alreadyGesturing=false}={}){
   const isInline=kind==='inline',source=isInline?inline:child
   const part=isInline
     ? snippet(source,'  const scheduleViewport = () => {',
@@ -50,19 +50,21 @@ function makeHost(kind){
     },
     canvas,browser:browserWindow,window:browserWindow,
     alive:true,ready:true,disposed:false,active:true,map:{},
-    allowedKeys:new Set(['signed-cell']),coveredKeys:new Set(),
-    cells:[{key:'signed-cell'}],gestureCells:[],
+    allowedKeys:new Set(empty||alreadyGesturing?[]:['signed-cell']),
+    coveredKeys:new Set(),
+    cells:empty||alreadyGesturing?[]:[{key:'signed-cell'}],
+    gestureCells:alreadyGesturing?[{key:'signed-cell'}]:[],
     clearLabels:()=>{},send:kind=>{state.sent.push(kind)},
   }
   const names=Object.keys(env)
   // Execute the real host functions, not a reimplementation of their gate.
   const declarations=isInline
-    ? 'let heldMousePointer=null,heldTouchPointers=new Set(),viewportAfterMouseRelease=false,pendingViewport=null;\n'
-    : 'let heldMousePointer=null,heldTouchPointers=new Set(),viewportAfterMouseRelease=false,viewportTimer=null;\n'
+    ? 'let heldMousePointer=null,heldTouchPointers=new Set(),pointerOrigins=new Map(),viewportAfterMouseRelease=false,pendingViewport=null;\n'
+    : 'let heldMousePointer=null,heldTouchPointers=new Set(),pointerOrigins=new Map(),viewportAfterMouseRelease=false,viewportTimer=null;\n'
   const body=declarations+compiled.outputText+'\nreturn {'+
-    ' onMousePointerDown,releaseHeldMouse,onMousePointerUp,onMouseWindowBlur,'+
+    ' onMousePointerDown,onMapPointerMove,releaseHeldMouse,onMousePointerUp,onMouseWindowBlur,'+
     ' scheduleViewport,stopViewport,'+
-    ' status:()=>({heldMousePointer,touches:[...heldTouchPointers],viewportAfterMouseRelease})};'
+    ' status:()=>({heldMousePointer,touches:[...heldTouchPointers],origins:[...pointerOrigins],viewportAfterMouseRelease})};'
   const host=new Function(...names,body)(...names.map(k=>env[k]))
   // The actual native blur handler is exported in both Host test harnesses.
   return {host,state}
@@ -222,12 +224,91 @@ for(const kind of ['inline','isolated']){
   })
 }
 
+for(const kind of ['inline','isolated']){
+  test(kind+': real drag with missing SDK movestart/moveend still revokes old photos and refreshes on release',()=>{
+    const {host,state}=makeHost(kind)
+    const start={...primaryMouse,clientX:100,clientY:200}
+    host.onMousePointerDown(start)
+    const noCancel=()=>kind==='inline'
+      ? state.invalidations===0 : state.sent.length===0
+    host.onMapPointerMove({...start,clientX:108,clientY:205})
+    host.onMapPointerMove({...start,isTrusted:false,clientX:400,clientY:400})
+    assert.ok(noCancel(),'a short press or forged move must not invalidate')
+    host.onMapPointerMove({...start,clientX:120,clientY:210})
+    assert.equal(kind==='inline'?state.invalidations:state.sent.length,1)
+    assert.equal(host.status().viewportAfterMouseRelease,true)
+    assert.equal(state.timers.length,0)
+    // A repeated event from the same physical pointer may not cancel twice.
+    host.onMapPointerMove({...start,clientX:140,clientY:230})
+    assert.equal(kind==='inline'?state.invalidations:state.sent.length,1)
+    host.onMousePointerUp({isTrusted:true,pointerId:start.pointerId})
+    assert.equal(state.timers.length,1)
+    state.timers[0]()
+    assert.equal(state.viewports,1)
+  })
+  test(kind+': missing SDK start must requery even when previous camera had ZERO photos',()=>{
+    const {host,state}=makeHost(kind,{empty:true})
+    const pen={isTrusted:true,isPrimary:true,
+      pointerType:'pen',button:0,pointerId:9,clientX:25,clientY:30}
+    host.onMousePointerDown(pen)
+    host.onMapPointerMove({...pen,clientX:48,clientY:48})
+    assert.equal(kind==='inline'?state.invalidations:state.sent.length,1)
+    assert.equal(host.status().viewportAfterMouseRelease,true)
+    host.onMousePointerUp({pointerId:9,isTrusted:true})
+    assert.equal(state.timers.length,1)
+    state.timers[0]()
+    assert.equal(state.viewports,1)
+  })
+  test(kind+': an already-invalidated SDK gesture never double-cancels',()=>{
+    const {host,state}=makeHost(kind,{alreadyGesturing:true})
+    const start={...primaryMouse,clientX:120,clientY:130}
+    host.onMousePointerDown(start)
+    host.onMapPointerMove({...start,clientX:142,clientY:147})
+    assert.equal(kind==='inline'?state.invalidations:state.sent.length,0)
+    assert.equal(host.status().viewportAfterMouseRelease,true)
+    host.onMousePointerUp({pointerId:start.pointerId,isTrusted:true})
+    assert.equal(state.timers.length,1)
+    state.timers[0]()
+    assert.equal(state.viewports,1)
+  })
+  test(kind+': genuine two-finger movement can start pan without SDK events',()=>{
+    const {host,state}=makeHost(kind)
+    const first={isTrusted:true,isPrimary:true,
+      pointerType:'touch',button:0,pointerId:21,clientX:70,clientY:90}
+    const second={...first,isPrimary:false,pointerId:22,clientX:110,clientY:90}
+    host.onMousePointerDown(first)
+    host.onMousePointerDown(second)
+    host.onMapPointerMove({...second,clientX:130,clientY:98})
+    assert.equal(kind==='inline'?state.invalidations:state.sent.length,1)
+    host.onMousePointerUp({pointerId:22,isTrusted:true})
+    assert.equal(state.timers.length,0,'first released finger never settles camera')
+    host.onMousePointerUp({pointerId:21,isTrusted:true})
+    assert.equal(state.timers.length,1)
+    state.timers[0]()
+    assert.equal(state.viewports,1)
+  })
+  test(kind+': a tap under movement threshold does not cause a needless Owner query',()=>{
+    const {host,state}=makeHost(kind)
+    const press={...primaryMouse,clientX:100,clientY:100}
+    host.onMousePointerDown(press)
+    host.onMapPointerMove({...press,clientX:107,clientY:107})
+    host.onMousePointerUp({pointerId:press.pointerId,isTrusted:true})
+    assert.equal(kind==='inline'?state.invalidations:state.sent.length,0)
+    assert.equal(state.timers.length,0)
+    assert.equal(state.viewports,0)
+  })
+}
+
 test('two Host lifecycles clean up pointer listeners and preserve protocol isolation',()=>{
   assert.match(inline,/canvas\.addEventListener\('pointerdown', onMousePointerDown, true\)/)
   assert.match(inline,/canvas\.removeEventListener\('pointerdown', onMousePointerDown, true\)/)
   assert.match(inline,/browser\.removeEventListener\('blur', onMouseWindowBlur\)/)
   assert.match(child,/bindMousePointer\(\)/)
   assert.match(child,/releaseMousePointer\(\)/)
+  assert.match(inline,/pointerOrigins\.clear\(\)/)
+  assert.match(child,/pointerOrigins\.clear\(\)/)
+  assert.match(inline,/browser\.removeEventListener\('pointermove', onMapPointerMove, true\)/)
+  assert.match(child,/window\.removeEventListener\('pointermove',onMapPointerMove,true\)/)
   assert.match(child,/canvas\?\.removeEventListener\('pointerdown',onMousePointerDown,true\)/)
   assert.doesNotMatch(child,/\.node_id\b|\.asset_id\b|photo_url|Authorization:/)
   assert.match(browser,/async function testPhotoCoverWhileMouseHeld\(/)
