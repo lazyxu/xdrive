@@ -49,7 +49,11 @@ test('Shared Desktop device grouping is scoped and remains strictly read-only', 
   assert.ok(page.includes('overview.devices.some((device) => device.id === verifiedLocalDeviceID)'))
   assert.ok(app.includes('getDeviceBackupLocalDevice()'))
   assert.ok(app.includes('status?.server, status?.username, status?.auth_status'))
-  assert.ok(web.includes('source={deviceBackupSource}'))
+  const browserHost = read('web', 'src', 'browserWorkspaceHost.ts')
+  const outlet = read('ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx')
+  assert.ok(web.includes('deviceBackup: { source: deviceBackupSource, initialSourceID: deviceBackupSourceID }'))
+  assert.ok(browserHost.includes('source: ports.deviceBackup.source'))
+  assert.ok(outlet.includes('<XDriveDeviceBackupPage key={revision} {...services.deviceBackupPage} />'))
   assert.equal(web.includes('getDeviceBackupLocalDevice'), false)
   for (const action of ['triggerSource', 'cancelSourceRun', 'updateSource', 'deleteSource', 'revokeClientDevice']) {
     assert.equal(page.includes(action), false, 'device grouping must not add mutation control ' + action)
