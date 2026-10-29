@@ -2474,10 +2474,10 @@ async function testTransientBadPixelProjection(browser,mode,port){
       sdk.invalidPixelFrames=1
       sdk.listeners.get('moving')?.()
     })
-    await page.waitForFunction(()=>{
-      const frame=window.__xdriveSyntheticMapInstances?.at(-1)
-      return frame ? frame.pixelErrors===1 : true
-    }).catch(()=>{}) // isolated SDK has a separate Origin; check below there.
+    // Observe the actual SDK in its own document, including the separate
+    // HTTPS Child: never swallow a missing/fault-not-executed assertion.
+    await sdkFrame.waitForFunction(()=>
+      window.__xdriveSyntheticMapInstances?.at(-1)?.pixelErrors===1)
     // Wait two animation frames. The injected NaN frame MUST NOT publish
     // an empty gesture-projections message or discard the old photos.
     await page.waitForTimeout(100)
