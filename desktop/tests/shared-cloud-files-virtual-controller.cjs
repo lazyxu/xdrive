@@ -143,6 +143,7 @@ function loadController(react) {
     {
       './VirtualCollectionController': virtual,
       './FileExplorerDirectoryReadStrategy': readStrategy,
+      './CloudFilesFirstPageAdmission': countedFirstPage,
       '../file-explorer-controller': fileExplorer,
       '../file-explorer-grouping': grouping,
       '../cloud-files': {
