@@ -66,6 +66,12 @@ let savedSyntheticPoster: Blob | null = null
 // An opt-in synthetic failure during a *post-ready* restricted Owner query.
 // The next identical retry must recover without remounting either SDK Host.
 const testCellsFailure = new URLSearchParams(location.search).get('cells_failure') === '1'
+// This negative fixture ONLY affects the synthetic trusted Owner Range. Both
+// SDK Hosts receive the same first-page failure; no private bytes or SDK
+// callbacks are involved in the replay.
+const testDrawerRetry = !genuineGin &&
+  new URLSearchParams(location.search).get('drawer_retry') === '1'
+let failDrawerRangeOnce = testDrawerRetry
 let failFavoriteCellsOnce = false
 let ownerAccess: Promise<string> | undefined
 const ownerToken = () => ownerAccess ??= fetch('/__fixture/map-owner'+
@@ -97,7 +103,8 @@ const probe = ((window as any).__mapProbe = {
   viewerSourceItem:null as any, viewerOpened:0, viewerClosed:0,
   galleryPageReads:[] as any[], galleryPageErrors:[] as string[],
   galleryPageDirectOpens:[] as any[], galleryPageDirectClosed:0,
-  photoPreviewRanges:[] as any[], photoOpens:[] as any[],
+  photoPreviewRanges:[] as any[], photoPreviewFailures:[] as any[],
+  photoOpens:[] as any[],
   bd09Completions:0,failedOwnerCellsReads:[] as any[],
   h264:{misses:0,warm:0,previewURLs:0,puts:0,putBytes:0},
   heic:{reads:0,bytes:0,mime:'',nodeID:0},
@@ -183,6 +190,14 @@ const listOwnerCells=async(bounds:Bounds,signal:AbortSignal,filters:any,albumKey
 const listOwnerCellItems=async(selection:any,limit:number,offset:number,
   sort:any,signal:AbortSignal)=>{
   if(signal.aborted)throw Error('cancelled')
+  // One genuine first-page promise rejection exercises the shared Parent's
+  // error Dialog. A retry must call this SAME signed Owner Cell Range again
+  // (not widen to an unscoped Gallery or remount either SDK Host).
+  if(testDrawerRetry && failDrawerRangeOnce && offset===0){
+    failDrawerRangeOnce=false
+    probe.photoPreviewFailures.push({limit,offset})
+    throw Error('test-only transient trusted Owner Cell photo read')
+  }
   let range:any
   if(genuineGin){
     const params=geometry(selection.bounds)
