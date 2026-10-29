@@ -55,4 +55,25 @@ class GalleryMapCellPagingTest {
         assertTrue(prefetch(count = 2, total = 20, last = 2, scrolled = true))
         assertFalse(mapCellEdgeWasLeft(2, 0))
     }
+
+    @Test fun previouslyScrolledButIdleGridNeverLoadsNextOwnerPage() {
+        // Previous code retained a sticky "userScrolled=true" after the
+        // fling ended. An async image/layout update could then trigger GET.
+        assertFalse(prefetch(count = 60, total = 180L, last = 59,
+            scrolled = false, armed = true))
+        assertFalse(prefetch(count = 120, total = 180L, last = 118,
+            scrolled = false, armed = true))
+        // A real active movement at the current edge still loads one page.
+        assertTrue(prefetch(count = 120, total = 180L, last = 118,
+            scrolled = true, armed = true))
+    }
+
+    @Test fun layoutReflowAloneCannotRearmConsumedEdge() {
+        assertFalse(mapCellCanRearm(120, 33, activelyScrolling = false))
+        assertFalse(mapCellCanRearm(120, -1, activelyScrolling = false))
+        assertFalse(mapCellCanRearm(120, 118, activelyScrolling = true))
+        assertTrue(mapCellCanRearm(120, 33, activelyScrolling = true))
+        // Initial short list cannot invent a meaningful "left the edge".
+        assertFalse(mapCellCanRearm(2, 0, activelyScrolling = true))
+    }
 }
