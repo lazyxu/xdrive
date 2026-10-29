@@ -107,7 +107,7 @@ import { XDriveRoutedGalleryThumbnailBridge } from './routedGalleryThumbnailBrid
 import { xDriveTakeMapScopeHandoffFromURL, xDriveAbandonMapScopeRequired, xDriveRestoreMapReferrerAfterScrub } from './mapScopeHandoff'
 import type { XDriveMapScopeHandoffState } from './mapScopeHandoff'
 import { createWebShareDialogAdapter, createWebTrashDialogAdapter, createWebVersionHistoryDialogAdapter } from './fileDialogAdapters'
-import { createXDriveBrowserWorkspaceHost } from './browserWorkspaceHost'
+import { createXDriveBrowserWorkspaceHost, xDriveBrowserFilesRouteHost } from './browserWorkspaceHost'
 import { clearWebBrowserCache, createWebBrowserStorageSnapshot } from './browserStorage'
 import { xDriveBrowserStorageRead, xDriveBrowserStorageWrite, xDriveBrowserStorageRemove } from './browserSafeStorage'
 import PwaOfflineDirectorySection from './PwaOfflineDirectorySection'
@@ -2532,9 +2532,10 @@ function FileManager({
             onOpenTransfers={() => setTransferPopoverOpen(true)}
           />
         ) : appView === 'files' ? (
-          <Box
-           
-            sx={{
+          <XDriveAppPageOutlet
+            host={xDriveBrowserFilesRouteHost(browserWorkspaceHost, (
+              <Box
+                sx={{
               height: '100%',
               minHeight: 0,
               display: 'flex',
@@ -2612,7 +2613,10 @@ function FileManager({
                 }}
                 onError={handleError}
               />
-          </Box>
+              </Box>
+            ))}
+            view={appView}
+          />
         ) : appView === 'gallery' ? (
           <>
           <input

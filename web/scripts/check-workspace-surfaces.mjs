@@ -19,6 +19,7 @@ const fileExplorerNavigationPane = readRepo('ui/shared/src/mui/FileExplorerNavig
 const desktopFileExplorer = readRepo('desktop/src/renderer/DesktopFileExplorer.tsx')
 const desktopStyles = readRepo('desktop/src/renderer/styles.css')
 const app = read('src/App.tsx')
+const browserFilesHost = read('src/browserWorkspaceHost.ts')
 const browserHost = read('src/browserWorkspaceHost.ts')
 const webFileExplorer = read('src/WebFileExplorer.tsx')
 const styles = read('src/styles.css')
@@ -164,6 +165,17 @@ requireText(fileExplorerNavigationPane, [
 if (webFileExplorer.includes('XDriveFileExplorerTrashCommandButton') || desktopFileExplorer.includes('XDriveFileExplorerTrashCommandButton')) {
   throw new Error('Trash must be a FileExplorer navigation workspace, not a command-bar dialog action')
 }
+
+requireText(browserFilesHost, [
+  'export function xDriveBrowserFilesRouteHost',
+  "browserHost.platform !== 'web'",
+  'filesControllerContent: filesContent',
+], 'Web scoped Files controller in shared route outlet')
+requireText(app, [
+  'xDriveBrowserFilesRouteHost(browserWorkspaceHost, (',
+  '<WebFileExplorer',
+  'view={appView}',
+], 'Web Files transitional controller route')
 
 requireText(app, [
   'XDriveWorkspaceFrame',
