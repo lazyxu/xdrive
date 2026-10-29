@@ -151,3 +151,37 @@ test('S4B: API uses the original metadata and re-hashes actual bytes before resu
   assert.ok(popover.includes('重新选择原文件'))
   assert.ok(docs.includes('PWA-S4B'))
 })
+
+test('S4B Safari: unreadable reselected File metadata fails closed before HTTP', () => {
+  const valid = { name: 'original.mov', size: 8 * 1024 * 1024 + 3,
+    lastModified: 1700000000000 }
+  for (const property of ['name', 'size', 'lastModified']) {
+    let calls = 0
+    const file = { ...valid }
+    Object.defineProperty(file, property, { get() {
+      calls++
+      throw Error('SecurityError: iOS document provider metadata denied')
+    } })
+    assert.doesNotThrow(() => reason(candidate(), file, now))
+    assert.match(reason(candidate(), file, now), /无法读取|未发送任何上传请求/,
+      'denied ' + property + ' must never admit an upload')
+    assert.ok(calls <= 2, 'each call reads the relevant getter no more than once')
+  }
+})
+
+test('S4B Safari: malformed File metadata cannot masquerade as the original upload', () => {
+  const valid = { name: 'original.mov', size: 8 * 1024 * 1024 + 3,
+    lastModified: 1700000000000 }
+  for (const file of [
+    { ...valid, name: null },
+    { ...valid, name: '' },
+    { ...valid, size: NaN },
+    { ...valid, size: Infinity },
+    { ...valid, size: -1 },
+    { ...valid, lastModified: undefined },
+    { ...valid, lastModified: Infinity },
+    { ...valid, lastModified: -1 },
+  ]) assert.match(reason(candidate(), file, now), /无效|未发送任何上传请求/)
+  assert.equal(reason(candidate(), valid, now), null,
+    'a real matching File remains resumable with the existing manifest verification')
+})

@@ -233,7 +233,8 @@ internal fun NativeFilesPdfViewer(
                         (pan.y + drag.y).coerceIn(-dy, dy))
                 }
             }
-            if (shown != null && lease != null) {
+            val decodedDoc = lease
+            if (shown != null && decodedDoc != null) {
                 Image(
                     bitmap = shown, contentDescription = "PDF 第 ${pageIndex + 1} 页",
                     contentScale = ContentScale.Fit,
@@ -249,6 +250,17 @@ internal fun NativeFilesPdfViewer(
                                 pan = Offset.Zero
                             })
                         }
+                        .nativePdfZoomAccessibility(
+                            pageIndex = pageIndex,
+                            pageCount = decodedDoc.pageCount,
+                            zoom = zoom,
+                            onZoomTo = { newZoom ->
+                                zoom = newZoom
+                                // A switch/TalkBack zoom jump must never strand
+                                // an invisible PDF page offscreen from old pan.
+                                pan = Offset.Zero
+                            },
+                        )
                         .testTag("files-pdf-page-ready"),
                 )
             } else if (error == null) {

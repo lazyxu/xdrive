@@ -438,7 +438,11 @@ export function XDriveServerBackupManagementPanel({
             </Table>
           </TableContainer>
           <Typography variant="caption" color="text.secondary">
-            最多显示最新 100 个已发现快照；v2 本代大小不包括共享 CAS 对象。选择不完整或仅含数据库的快照不会允许完整恢复。
+            {typeof page?.inventory.total_snapshots === 'number' && typeof page?.inventory.truncated === 'boolean'
+              ? `宿主机发现 ${page.inventory.total_snapshots} 代备份，当前显示最近 ${page.inventory.snapshots.length} 代。${page.inventory.truncated
+                ? ' 其余较旧备份不在本页清单中，不能通过本页执行单代操作；批量验证仍按独立上限检查全部仓库。' : ''}`
+              : '当前宿主机尚未报告备份总数；最多显示最近 100 代。'}
+            {' '}v2 本代大小不包括共享 CAS 对象。选择不完整或仅含数据库的快照不会允许完整恢复。
           </Typography>
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
             <TextField select size="small" label="校验级别" value={verifyMode}

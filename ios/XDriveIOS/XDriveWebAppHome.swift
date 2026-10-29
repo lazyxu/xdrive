@@ -9,6 +9,7 @@ struct XDriveWebAppHome: View {
     @State private var openedOrigin: URL?
     @State private var inputError: String?
     @State private var pageError: String?
+    @State private var downloadNotice: String?
     @State private var nativeLoginVisible = false
     @State private var confirmLeave = false
 
@@ -22,7 +23,11 @@ struct XDriveWebAppHome: View {
         Group {
             if let origin = openedOrigin {
                 ZStack(alignment: .trailing) {
-                    XDriveOriginLockedWebView(origin: origin, onPageError: { pageError = $0 })
+                    XDriveOriginLockedWebView(
+                        origin: origin,
+                        onPageError: { pageError = $0 },
+                        onDownloadNotice: { downloadNotice = $0 }
+                    )
                         .ignoresSafeArea(.container, edges: .bottom)
                         .id(origin.absoluteString)
 
@@ -48,6 +53,28 @@ struct XDriveWebAppHome: View {
                     }
                     .accessibilityLabel("iOS 原生连接菜单")
                     .padding(.trailing, 5)
+
+                    if let downloadNotice {
+                        VStack {
+                            Spacer()
+                            HStack(spacing: 12) {
+                                Text(downloadNotice)
+                                    .font(.footnote)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Button {
+                                    self.downloadNotice = nil
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                }
+                                .accessibilityLabel("关闭下载提示")
+                            }
+                            .padding(12)
+                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                            .padding(.horizontal, 12)
+                            .padding(.bottom, 24)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
 
                     if let pageError {
                         VStack(spacing: 10) {
@@ -79,6 +106,7 @@ struct XDriveWebAppHome: View {
         ) {
             Button("确认切换服务器", role: .destructive) {
                 pageError = nil
+                downloadNotice = nil
                 openedOrigin = nil
             }
             Button("取消", role: .cancel) {}
@@ -119,6 +147,7 @@ struct XDriveWebAppHome: View {
                         UserDefaults.standard.set(serverText, forKey: "xdrive.ios.server")
                         inputError = nil
                         pageError = nil
+                        downloadNotice = nil
                         openedOrigin = origin
                     } catch {
                         inputError = AuthFailure.message(for: error)
@@ -147,9 +176,11 @@ struct XDriveWebAppHome: View {
 private struct XDriveOriginLockedWebView: UIViewRepresentable {
     let origin: URL
     let onPageError: (String?) -> Void
+    let onDownloadNotice: (String?) -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(origin: origin, onPageError: onPageError)
+        Coordinator(origin: origin, onPageError: onPageError,
+                    onDownloadNotice: onDownloadNotice)
     }
 
     func makeUIView(context: Context) -> WKWebView {
@@ -160,6 +191,7 @@ private struct XDriveOriginLockedWebView: UIViewRepresentable {
         let view = WKWebView(frame: .zero, configuration: configuration)
         view.navigationDelegate = context.coordinator
         view.uiDelegate = context.coordinator
+        context.coordinator.attach(webView: view)
         view.allowsBackForwardNavigationGestures = true
         view.isOpaque = false
         view.backgroundColor = UIColor.systemBackground
@@ -169,13 +201,33 @@ private struct XDriveOriginLockedWebView: UIViewRepresentable {
 
     func updateUIView(_ webView: WKWebView, context: Context) {}
 
+    static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
+        coordinator.stopDownloads()
+        uiView.stopLoading()
+        uiView.navigationDelegate = nil
+        uiView.uiDelegate = nil
+    }
+
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
         private let origin: URL
         private let onPageError: (String?) -> Void
+        private let downloads: XDriveWebDownloadCoordinator
 
-        init(origin: URL, onPageError: @escaping (String?) -> Void) {
+        init(origin: URL, onPageError: @escaping (String?) -> Void,
+             onDownloadNotice: @escaping (String?) -> Void) {
             self.origin = origin
             self.onPageError = onPageError
+            self.downloads = XDriveWebDownloadCoordinator(
+                origin: origin, onNotice: onDownloadNotice
+            )
+        }
+
+        func attach(webView: WKWebView) {
+            downloads.presentingWebView = webView
+        }
+
+        func stopDownloads() {
+            downloads.stopPendingDownloads()
         }
 
         private func sameOrigin(_ target: URL) -> Bool {
@@ -204,6 +256,12 @@ private struct XDriveOriginLockedWebView: UIViewRepresentable {
                 decisionHandler(.cancel)
                 return
             }
+            // PWA `<a download>` and same-origin Blob URLs are downloads,
+            // never main-frame navigation or cross-origin credential hops.
+            if action.shouldPerformDownload {
+                decisionHandler(downloads.accepts(url) ? .download : .cancel)
+                return
+            }
             if action.targetFrame?.isMainFrame == false {
                 // Isolated HTTPS map Child and ordinary same-origin subframes
                 // are supported; never allow insecure HTTP subframe navigation.
@@ -226,6 +284,30 @@ private struct XDriveOriginLockedWebView: UIViewRepresentable {
                 return
             }
             decisionHandler(.allow)
+        }
+
+        func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse,
+                     decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+            guard response.isForMainFrame else {
+                // Preserve the existing HTTPS isolated-map subframe behavior.
+                decisionHandler(.allow)
+                return
+            }
+            guard let url = response.response.url, downloads.accepts(url) else {
+                decisionHandler(.cancel)
+                return
+            }
+            decisionHandler(response.canShowMIMEType ? .allow : .download)
+        }
+
+        func webView(_ webView: WKWebView, navigationAction: WKNavigationAction,
+                     didBecome download: WKDownload) {
+            downloads.attach(download)
+        }
+
+        func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse,
+                     didBecome download: WKDownload) {
+            downloads.attach(download)
         }
 
         func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
