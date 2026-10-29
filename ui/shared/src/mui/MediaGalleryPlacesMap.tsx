@@ -395,7 +395,9 @@ export function XDriveMediaGalleryPlacesMap({
                   width:{xs:'auto',sm:480},maxWidth:'calc(100% - 24px)',
                   maxHeight:'min(70dvh,640px)',overflowY:'auto',
                   p:1.25,borderRadius:2}}>
-      <Box data-xdrive-places-map-photo-filters sx={{ px: compact ? 1 : 1.5, pb: 1 }}>
+      <Box data-xdrive-places-map-photo-filters sx={{px:compact ? 1 : 1.5,pb:1,
+        // Real touch inputs, not just their MUI parent boxes, must be 44px.
+        '& .MuiInputBase-root':{minHeight:44},'& .MuiButton-root':{minHeight:44}}}>
           <Stack direction="row" flexWrap="wrap" gap={1} sx={{ alignItems:'center' }}>
             <TextField select size="small" label="照片类型" value={mapPhotoScope.filters.asset_kind ?? 'all'}
               disabled={!mapReady || !nativeEnabled}
@@ -510,7 +512,7 @@ export function XDriveMediaGalleryPlacesMap({
               </Typography>
       {!desktopOnly ? (
         <Stack data-xdrive-places-map-mode direction="row" spacing={1}
-          sx={{ px: 1.5, py: 1, flexWrap: 'wrap' }}>
+          sx={{px:1.5,py:1,flexWrap:'wrap','& .MuiButton-root':{minHeight:44}}}>
           <Button size="small" data-xdrive-map-mode-prototype
             disabled={modeSwitching}
             variant={mapMode === 'prototype' ? 'contained' : 'outlined'}
@@ -532,9 +534,14 @@ export function XDriveMediaGalleryPlacesMap({
       ) : null}
 
       <Box component="details" data-xdrive-places-map-options sx={{ px: 1.5, pb: 1 }}>
-        <Box component="summary" sx={{ cursor: 'pointer', color: 'text.secondary',
-          typography: 'caption', minHeight: 28 }}>地点筛选与更多操作</Box>
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ py: 1 }}>
+        <Box component="summary" sx={{cursor:'pointer',color:'text.secondary',
+          typography:'caption',minHeight:44,display:'flex',alignItems:'center',
+          '&:focus-visible':{outline:'2px solid',outlineColor:'primary.main'}}}>
+          地点筛选与更多操作
+        </Box>
+        <Stack direction={{xs:'column',sm:'row'}} spacing={1}
+          sx={{py:1,'& .MuiInputBase-root':{minHeight:44},
+            '& .MuiButton-root':{minHeight:44}}}>
           <Autocomplete size="small" options={places} disabled={placeListScoped} getOptionLabel={p => p.name}
             isOptionEqualToValue={(a, b) => a.id === b.id} value={selectedPlace ?? null}
             onChange={(_event, p) => {
@@ -664,7 +671,8 @@ export function XDriveMediaGalleryPlacesMap({
           ) : childFailed ? (
             <Typography variant="body2" color="text.secondary">动态地图 SDK 会话加载失败。</Typography>
           ) : null}
-          <Stack direction="row" spacing={1} sx={{ mt: 1 }} flexWrap="wrap">
+          <Stack direction="row" spacing={1}
+            sx={{mt:1,'& .MuiButton-root':{minHeight:44}}} flexWrap="wrap">
             {hasMapPorts ? <Button variant="outlined" size="small"
               onClick={() => setRetry(n => n + 1)}>重试动态地图</Button> : null}
             {onOpenDiagnostics ? <Button size="small" variant="text" onClick={onOpenDiagnostics}
