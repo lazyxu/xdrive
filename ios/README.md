@@ -1,94 +1,101 @@
-# xDrive iOS — shared PWA Files/Gallery and explicit native Photos backup
+# xDrive iOS — one shared UI, native capabilities through Host Adapter
 
-SwiftUI shell (iOS 16+) mounts the canonical server-hosted PWA Files, Gallery, Map and Viewer in a persistent origin-locked WKWebView. The separate native login offers Owner-verified Files upload, authorized PhotoKit local inspection and explicitly requested single-still original upload. Foreground incremental photo backup is introduced in its own reviewed PR, not an automatic background process.
-Visual reference: Android `AuthScreens.kt` and `SharedVisuals.kt`; uses the canonical
-`assets/icon/web/pwa-512.png` brand and Android auth colors.
+The iOS app uses **one canonical xDrive React/MUI application**. The native
+SwiftUI shell exists only to select a trusted HTTPS server, host a persistent
+same-origin `WKWebView`, handle platform-level connection failures and connect
+approved iPhone capabilities. Files, Gallery, Map, Viewer, account Login,
+Settings and iPhone Photos backup are all rendered by **the same PWA UI**.
 
-## What works in this increment
+Do not create or revive separate SwiftUI Login, Files, Gallery, Viewer, Settings
+or Photos pages. The old native Login/Photos diagnostic screens were retired
+after the shared-ui adapter PR; retained native service code is not a second UI.
 
-- Native light/dark compact login card: server, username, password reveal, default-on
-  keep-login switch, loading and real error messages.
-- Real HTTPS `POST /api/v1/auth/login`, `/auth/refresh` and `/auth/logout`.
-  The server URL must be an HTTPS origin without paths, credentials or query.
-- iOS local-network usage description is embedded for direct LAN connections;
-  approve local network access when prompted on the iPhone.
-- Platform trust evaluation is **never** bypassed; login requests do not follow
-  redirects and credentials are never sent to another host or over HTTP.
-- Only the refresh token is saved to device-only, unlocked Keychain when keep-login
-  is on; never save passwords or access tokens. Refresh on app launch; rotate tokens.
-  A rejected refresh clears the saved credential, while a transient outage does not.
-- A successful native login shows the real account and server plus a logout button.
-  Files/Gallery/Viewer are supplied by the **shared PWA session**, not cloned into SwiftUI or unlocked by the native login token.
-- If the server requires a mandatory password change, use the existing Web/PWA
-  page first. This preview cannot change passwords.
+## iPhone Photos backup
 
-## Native Photos permission and metadata inventory
+The shared xDrive **账户 → 设置 → iPhone 系统相册备份** section appears only
+when the real iOS WKWebView Host Adapter is available and the PWA has a current
+Server-authenticated Owner. The regular browser/PWA/Desktop/DSM UI does not
+pretend to provide iOS PhotoKit.
 
-After native login, verify the current Owner and open **系统相册识别与单张照片手动上传**; the permission prompt appears only after tapping **允许检查系统相册**.
-PhotoKit requests `readWrite` access only after this second explicit tap. A
-`limited` grant is respected: totals refer only to the subset made visible by
-iOS. Reopen the panel to refresh counts; changing authorization uses iOS Settings.
+1. Sign in once through the **shared PWA login** in the iOS app.
+2. Open the existing account Settings; iOS native Photos status is verified
+   against the current PWA account's short-lived access token.
+3. Explicitly grant Full or Limited Photos permission if requested. The count
+   refers only to the authorized subset.
+4. Optionally allow iCloud original downloads (off by default).
+5. Tap **开始本轮照片备份** and confirm the destination Owner/server in
+   the iOS system prompt. Only then does PhotoKit export original bytes.
+6. The native host re-verifies Server installation + Owner/root and reuses the
+   existing encrypted intent journal and Go UploadSession/CAS/Node receipt
+   implementation. Results and bounded real progress return to shared Settings.
 
-The native panel shows PhotoKit's lazy photo/video counts and at most 30 recent
-authorized metadata items (type, date and Live Photo flag). Each visible item now
-has an explicit **检查此项的原始资源组成** action: this re-resolves its currently
-authorized transient PhotoKit identity, enumerates only PHAssetResource metadata
-and distinguishes still, video and Live paired-video resources. A missing Live
-component is reported as incomplete, never backed up as a finished Live Photo.
-Full-resolution resource existence does not prove iCloud bytes are locally
-available; this does not start an iCloud download or upload. No localIdentifier
-or resource filename is saved into credentials, persisted state or Server.
- Ordinary local inventory inspection does not load original bytes, GPS or upload data. However, **explicit single-still manual upload and user-triggered foreground backup are different actions**: they read authorized original bytes and write the actual file through authenticated Server UploadSession after a separate user click. Live Photo paired completion, background sync and all-library coverage are not inferred from a single file receipt.
-There is no PhotoKit authorization prompt at app launch or native login.
+MVP: one explicit foreground pass checks at most 256 authorized media items
+and uploads at most 20 ordinary still originals, subject to actual successful
+Server receipts. Live Photos, original videos, automatic background sync,
+permanent full-library traversal and privileged Device SourceRun are **not yet
+implemented**. They must not be presented as successful backup.
 
-**Required for true native MVP**: securely mount the PWA's real Files/Gallery
-routes in a single UI (with an intentional browser/native session handoff);
-bind the PhotoKit device and selected Owner; implement explicit upload consent,
-bounded PhotoResource bytes/Live pair streams, the existing
-UploadSession/chunk/finalize protocol, durable per-asset ledger and
-reconciliation after uncertain ACK; handle iCloud originals, albums,
-delete/mirror policy, permissions changes, app restarts and background
-constraints. Never equate a successful count with a successful backup.
+Canceled/backgrounded/stale-Owner work is stopped conservatively. A lost
+create/finalize acknowledgment remains **needs reconciliation**; it never
+licenses a blind duplicate upload. No mirror deletion or thumbnail-for-original
+substitution. Preserve the existing upload/ledger logic instead of creating a
+second uploader.
 
-Not yet implemented as native equivalents: Android's optional LAN IP routing or HTTP opt-in. PWA Files, Gallery and Viewer run through the WebKit host. Native background photo sync, Live original pair completion and real iOS device acceptance remain outstanding. The first foreground ordinary-still backup flow is limited to explicitly authorized Owner Files writes, not a privileged Device SourceRun.
-If using a LAN IP as the primary server URL, its HTTPS certificate must actually
-validate for that IP; preferably use your trusted server hostname with local DNS.
-No certificate-warning bypass or fake LAN failover is implemented.
+## Security and session boundaries
 
-## CI: build a SideStore-ready unsigned IPA
+The native host bridge accepts only messages from the pinned, system-trusted
+HTTPS *main frame*. Each private operation verifies the current Owner identity
+and root with authenticated Server calls; the page cannot self-declare Owner
+privileges. Only a short-lived **in-memory PWA access token is passed one way,
+Web → native**, during a user-requested operation. Swift uses an ephemeral
+URLSession, ordinary TLS and redirect rejection. No native Keychain refresh
+credential, cookie, raw PhotoKit identifier, GPS, original filename or byte
+content is sent back to JavaScript. A sign-out, Owner change, WebView navigation,
+Settings closure or app background cancels active foreground work.
 
-`.github/workflows/ios-unsigned-ipa.yml` runs for iOS-only PRs, relevant
-master pushes and manual dispatches after this workflow lands on master.
+The PWA-selected server uses `xdrive.ios.web.origin`; the legacy
+`xdrive.ios.server` key is migrated once for upgrades and is no longer an
+independent visible native Login entry. Only system-trusted HTTPS domain or IP
+certificates are supported; do not bypass certificate errors.
 
-1. macOS GitHub Actions prepares the canonical xDrive icon using `sips`.
-2. XcodeGen generates `ios/xDriveIOS.xcodeproj`; Xcode builds with code signing
-   **disabled**; the output is packaged as `Payload/xDriveIOS.app` in an IPA.
-3. Download the `xDrive-iOS-unsigned-<SHA>` workflow Artifact (a ZIP).
-4. Unzip the Artifact in Files on iPhone and import the inner
-   `xDrive-unsigned.ipa` into SideStore. This IPA is **not** already signed.
-5. SideStore signs with your *own* free Apple Account and installs it.
-   Enable Wi-Fi and LocalDevVPN to install/refresh. Refresh SideStore and
-   xDrive before their free-signing 7-day expirations.
+The remaining minimal SwiftUI *server connection chooser* and host connection
+recovery are bootstrap surfaces, not a separate authenticated xDrive UI.
+Moving their actions into shared Settings is subsequent host-adapter work.
 
-Official SideStore first-time setup (requires a computer and an initial cable):
-https://docs.sidestore.io/docs/installation/install
+See [shared-ios-host-adapter.md](docs/shared-ios-host-adapter.md) for protocol,
+security expectations, exact CI, and physical acceptance matrix.
+
+## GitHub Actions: unsigned IPA for SideStore
+
+`.github/workflows/ios-unsigned-ipa.yml` builds on macOS for iOS-scoped PRs,
+relevant master pushes and explicit workflow dispatch. It prepares icon assets,
+generates an Xcode project with XcodeGen, builds for iPhoneOS with signing
+disabled, then packages `Payload/xDriveIOS.app` into
+`xDrive-unsigned.ipa` along with SHA-256.
+
+Download `xDrive-iOS-unsigned-<commit SHA>` from that successful workflow's
+Artifacts. The artifact ZIP contains an **unsigned** IPA, not an installed,
+already signed app. Import the inner IPA into SideStore and sign with your own
+Apple Account according to SideStore's supported setup/refresh process.
+Do not upload an Apple ID password, provisioning private key, device pairing
+file or personal mobile certificate to CI.
+
+SideStore setup: https://docs.sidestore.io/docs/installation/install
 SideStore prerequisites: https://docs.sidestore.io/docs/installation/prerequisites
 
-The first build is an Actions Artifact, **not** a published Release, an installed
-app or a physically tested iPhone build. No Apple ID/password, provisioning
-certificate or device pairing file is ever uploaded to GitHub Actions.
-A user testing it on a real device is still **跳过（未验收）**.
-
-## Local macOS build
+### Local macOS build
 
 ```sh
 brew install xcodegen
 bash ios/scripts/prepare-assets.sh
 (cd ios && xcodegen generate --spec project.yml)
-xcodebuild -project ios/xDriveIOS.xcodeproj -scheme xDriveIOS \
+xcodebuild -project ios/xDriveIOS.xcodeproj -scheme XDriveIOS \
   -configuration Release -sdk iphoneos \
   -destination 'generic/platform=iOS' \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
 ```
 
-Generated project, images and Info.plist are intentionally ignored by Git.
+Build success is distinct from signability, installation and real iPhone
+operation. SideStore, Live Photos, partial PhotoKit grants, iCloud, lost-ACK
+and real device backup tests remain **跳过（未验收）** until performed; this
+does not waive actual repo CI, authentication, or CAS security gates.
