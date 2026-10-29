@@ -24,6 +24,42 @@ class PRScopeTest(unittest.TestCase):
             "desktop/tests/pwa-install-dialog-race.cjs",
         ]))
 
+    def test_pwa_advisory_observers_have_narrow_fast_scope(self):
+        # These PRs touch only nonauthoritative PWA UI activity hints.
+        self.assertEqual("pwa", classify_paths([
+            "web/src/pwaPeerActivity.ts",
+            "desktop/tests/pwa-update-peer.cjs",
+        ]))
+        self.assertEqual("pwa", classify_paths([
+            "web/src/pwaWorkloadSafety.ts",
+            "desktop/tests/pwa-update-workload.cjs",
+            "desktop/tests/pwa-peer-denied-capability-getters.cjs",
+        ]))
+        self.assertEqual("pwa", classify_paths([
+            "web/src/pwaPeerActivity.ts",
+            "web/src/pwaWorkloadSafety.ts",
+        ]))
+
+    def test_pwa_sensitive_or_cross_host_changes_require_full_ci(self):
+        for paths in [
+            ["web/src/pwaPeerActivity.ts", "web/src/App.tsx"],
+            ["web/src/pwaPeerActivity.ts", "web/src/pwaOfflineDirectory.ts"],
+            ["web/src/pwaWorkloadSafety.ts", "web/src/pwaTransferSafety.ts"],
+            ["web/src/pwaPeerActivity.ts", "web/src/pwaDeviceEvidence.ts"],
+            ["web/src/pwaPeerActivity.ts", "web/src/pwaSafeReadRetry.ts"],
+            ["web/src/pwaPeerActivity.ts", "web/src/downloadSink.ts"],
+            ["web/src/pwaPeerActivity.ts", "web/src/transferTransport.ts"],
+            ["web/src/pwaPeerActivity.ts", "web/src/mediaBinaryProgress.ts"],
+            ["web/src/pwaPeerActivity.ts", "assets/icon/web/sw.js"],
+            ["desktop/tests/pwa-update-peer.cjs"],
+            ["desktop/tests/pwa-update-workload.cjs"],
+            ["desktop/tests/pwa-update-peer.cjs", ".github/workflows/ci.yml"],
+            ["web/src/pwaWorkloadSafety.ts", "internal/auth/session.go"],
+            ["web/src/pwaPeerActivity.ts", "ui/shared/src/mui/XDriveApp.tsx"],
+        ]:
+            with self.subTest(paths=paths):
+                self.assertEqual("full", classify_paths(paths))
+
     def test_unknown_and_cross_domain_fail_closed(self):
         for paths in [
             [], ["desktop/tests/pwa-install-dialog-race.cjs"],

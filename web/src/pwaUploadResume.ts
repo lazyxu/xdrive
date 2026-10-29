@@ -37,8 +37,24 @@ export function xDrivePwaResumeFileError(
     return '原上传任务已过期或不支持直接续传。请在目标文件夹重新上传。'
   }
   if (!file) return '未选择文件。'
-  if (file.name !== task.file_name || file.size !== task.bytes_total ||
-      file.lastModified !== task.resume_file_last_modified) {
+  // A restored iOS document-provider File may have metadata getters that
+  // reject after the picker closes. Read once, before hashing or any HTTP.
+  let name: string
+  let size: number
+  let lastModified: number
+  try {
+    name = file.name
+    size = file.size
+    lastModified = file.lastModified
+  } catch {
+    return '浏览器无法读取所选文件信息；未发送任何上传请求。'
+  }
+  if (!name || !Number.isSafeInteger(size) || size < 0 ||
+      !Number.isSafeInteger(lastModified) || lastModified < 0) {
+    return '所选文件的名称、大小或修改时间无效；未发送任何上传请求。'
+  }
+  if (name !== task.file_name || size !== task.bytes_total ||
+      lastModified !== task.resume_file_last_modified) {
     return '所选文件与原任务的名称、大小或修改时间不一致；未发送任何上传请求。'
   }
   return null
