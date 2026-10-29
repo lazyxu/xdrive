@@ -16,6 +16,9 @@ Restore is destructive. By default xDrive first creates a pre-restore safety
 backup of the current state, then stops the API and pull worker, verifies
 SHA-256 checksums, recreates the PostgreSQL database, replaces file-data, runs
 an offline consistency verification, and only then reopens the services.
+Any snapshot explicitly marked consistency_verified=false is rejected before
+Docker; v2 requires consistency_verified=true. Historical v1 snapshots with
+this field absent remain readable, but have no affirmative consistency proof.
 EOF
 }
 
@@ -112,6 +115,14 @@ try:
     for name in ("file_data_included", "consistency_verified"):
         if name in manifest and type(manifest[name]) is not bool:
             raise ValueError("invalid manifest boolean")
+    # A valid checksum cannot turn a source-inconsistent capture into a
+    # trustworthy restore point. v2 always records a positive consistency
+    # proof; legacy v1 without this optional field remains readable, but an
+    # explicitly false flag must fail closed in BOTH restore modes.
+    if manifest.get("consistency_verified") is False:
+        raise ValueError("backup source consistency was not verified")
+    if version == 2 and manifest.get("consistency_verified") is not True:
+        raise ValueError("v2 restore requires verified capture consistency")
     if sys.argv[2] not in ("0", "1"):
         raise ValueError("invalid restore mode")
     if sys.argv[2] == "0" and manifest.get("file_data_included") is False:
