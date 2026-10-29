@@ -45,6 +45,7 @@ import {
   XDriveFileExplorerDestinationDialog,
   XDriveFileTagDialog,
   XDriveFileNameDialog,
+  XDriveFileExplorerSavedSearchDialogs,
   XDriveFileExplorerTrashDeleteDialog,
   useXDriveFileExplorerTrash,
   xDriveFileExplorerBackgroundMenuItems,
@@ -2502,43 +2503,19 @@ const desktopTransferLifecycleChildBatchSize = 1000
           setTagDialogMode(null)
         }}
       />
-      <XDriveFileNameDialog
-        open={saveSearchOpen}
-        mode="saved-search"
-        onClose={() => setSaveSearchOpen(false)}
+      <XDriveFileExplorerSavedSearchDialogs
+        saveOpen={saveSearchOpen}
+        renameSearch={renameSavedSearch}
+        lifecycleKeyRef={organizationLifecycleKeyRef}
+        currentQuery={searchState.query}
+        persistedFilters={persistedSearchFilters}
+        availabilityFilterActive={Boolean(searchFilters.availability)}
+        createSavedSearch={organization.createSavedSearch}
+        updateSavedSearch={organization.updateSavedSearch}
+        onCloseSave={() => setSaveSearchOpen(false)}
+        onCloseRename={() => setRenameSavedSearch(null)}
+        onFeedback={onFeedback}
         onError={(error) => onError(error instanceof Error ? error.message : String(error))}
-        onSubmit={async (name) => {
-          const lifecycleKey = organizationLifecycleKeyRef.current
-          await organization.createSavedSearch({
-            name,
-            query: searchState.query,
-            filters: persistedSearchFilters,
-          })
-          if (organizationLifecycleKeyRef.current !== lifecycleKey) return
-          if (searchFilters.availability) {
-            onFeedback('warning', '智能文件夹已保存；设备可用性筛选不会跨设备保存。')
-          } else {
-            onFeedback('good', '智能文件夹已保存。')
-          }
-        }}
-      />
-      <XDriveFileNameDialog
-        open={Boolean(renameSavedSearch)}
-        mode="saved-search"
-        initialValue={renameSavedSearch?.name ?? ''}
-        onClose={() => setRenameSavedSearch(null)}
-        onError={(error) => onError(error instanceof Error ? error.message : String(error))}
-        onSubmit={async (name) => {
-          if (!renameSavedSearch) return
-          const lifecycleKey = organizationLifecycleKeyRef.current
-          await organization.updateSavedSearch(renameSavedSearch.id, {
-            name,
-            query: renameSavedSearch.query,
-            filters: renameSavedSearch.filters,
-          })
-          if (organizationLifecycleKeyRef.current !== lifecycleKey) return
-          onFeedback('good', '智能文件夹已重命名。')
-        }}
       />
       <XDriveFileExplorerTrashDeleteDialog
         target={trash.deleteTarget}
