@@ -401,6 +401,10 @@ export function XDriveSynologyOwnerFilesPage({
             ) : null}
             <XDriveFileExplorer
               presentation="workspace"
+              viewMode={viewMode}
+              onViewModeChange={onViewModeChange}
+              detailsPreferencesKey={XDRIVE_HOST_FILES_PREFERENCES.detailsLayout}
+              viewPreferencesKey={XDRIVE_HOST_FILES_PREFERENCES.viewPreferences}
               interactionLifecycleKey={rootRevision + ':' + currentScopeKey}
               suspendBackgroundThumbnails={previewItem !== null}
               items={displayedItems}
