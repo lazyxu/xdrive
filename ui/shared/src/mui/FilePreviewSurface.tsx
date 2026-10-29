@@ -615,6 +615,35 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     return () => xDriveAbortHTMLMediaElement(media)
   }, [sourceIdentity, previewKind, previewURL, loading, failed, hasTransformedVideo])
 
+  // A mobile PWA may stop delivering pointer/keyboard events on tab hide or
+  // App suspension. Ordinary *video* should never continue playing unseen.
+  // Pause the current native player only: do not revoke its Owner-signed URL,
+  // change the user's seek position, or auto-resume on foreground. The
+  // existing layout cleanup still owns Range teardown on Viewer Close/switch.
+  // Audio and transformed/edited video are deliberately out of this change.
+  useEffect(() => {
+    if (previewKind !== 'video' || hasTransformedVideo ||
+        !previewURL || loading || failed || typeof document === 'undefined') return
+    const video = videoStreamElementRef.current
+    if (!video) return
+    const pauseNativeVideoIfCurrent = () => {
+      if (videoStreamElementRef.current !== video ||
+          currentSourceIdentityRef.current !== sourceIdentity) return
+      try { video.pause() } catch { /* Already detached or suspended by the OS. */ }
+    }
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') pauseNativeVideoIfCurrent()
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    if (typeof window !== 'undefined') window.addEventListener('pagehide', pauseNativeVideoIfCurrent)
+    // Initial render can itself occur in a hidden document.
+    onVisibilityChange()
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      if (typeof window !== 'undefined') window.removeEventListener('pagehide', pauseNativeVideoIfCurrent)
+    }
+  }, [sourceIdentity, previewKind, previewURL, loading, failed, hasTransformedVideo])
+
   // A terminal native media error unmounts the player, but the signed Blob
   // otherwise stays owned until Retry or Close. The layout cleanup above
   // first detaches the old native HTTP Range. Retire only this failed
