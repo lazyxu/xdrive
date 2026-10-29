@@ -1,4 +1,5 @@
 import Foundation
+import Photos
 
 /// Real foreground Owner Files backup of authorized ordinary iOS stills.
 /// Each source is SHA-256 checked against a sealed intent and finalized
@@ -58,8 +59,7 @@ struct XDriveIOSForegroundPhotoBackupMVP {
 
         do {
             report.totalVisible = try await scanner.start()
-            report.isLimited = report.totalVisible > 0 &&
-                (await currentLimitedAuthorization())
+            report.isLimited = await currentLimitedAuthorization()
             await onProgress(report)
 
             scanning: while report.scanned < Self.maxScannedAssets &&
