@@ -60,11 +60,11 @@ function makeHost(kind){
     ? 'let heldMousePointer=null,heldTouchPointers=new Set(),viewportAfterMouseRelease=false,pendingViewport=null;\n'
     : 'let heldMousePointer=null,heldTouchPointers=new Set(),viewportAfterMouseRelease=false,viewportTimer=null;\n'
   const body=declarations+compiled.outputText+'\nreturn {'+
-    ' onMousePointerDown,releaseHeldMouse,onMousePointerUp,'+
+    ' onMousePointerDown,releaseHeldMouse,onMousePointerUp,onMouseWindowBlur,'+
     ' scheduleViewport,stopViewport,'+
     ' status:()=>({heldMousePointer,touches:[...heldTouchPointers],viewportAfterMouseRelease})};'
   const host=new Function(...names,body)(...names.map(k=>env[k]))
-  if(!isInline)host.onMouseWindowBlur=undefined
+  // The actual native blur handler is exported in both Host test harnesses.
   return {host,state}
 }
 const primaryMouse={isTrusted:true,isPrimary:true,pointerType:'mouse',button:0,pointerId:7}
@@ -82,9 +82,9 @@ for(const kind of ['inline','isolated']){
     if(kind==='inline') assert.equal(state.invalidations,1)
     else assert.deepEqual(state.sent,['cancel'])
     // Wrong pointer's release may never steal the active gesture.
-    host.onMousePointerUp({pointerId:99})
+    host.onMousePointerUp({pointerId:99,isTrusted:true})
     assert.equal(state.timers.length,0)
-    host.onMousePointerUp({pointerId:7})
+    host.onMousePointerUp({pointerId:7,isTrusted:true})
     assert.equal(host.status().heldMousePointer,null)
     assert.equal(state.timers.length,1)
     state.timers[0]()
@@ -132,12 +132,12 @@ for(const kind of ['inline','isolated']){
     host.scheduleViewport() // native moveend can precede touchend
     assert.equal(state.timers.length,0)
     assert.equal(state.viewports,0)
-    host.onMousePointerUp({pointerId:21}) // one finger lifts mid-pinch
+    host.onMousePointerUp({pointerId:21,isTrusted:true}) // one finger lifts mid-pinch
     assert.deepEqual(host.status().touches,[22])
     assert.equal(state.timers.length,0)
-    host.onMousePointerUp({pointerId:99}) // unrelated contact is ignored
+    host.onMousePointerUp({pointerId:99,isTrusted:true}) // unrelated contact is ignored
     assert.deepEqual(host.status().touches,[22])
-    host.onMousePointerUp({pointerId:22}) // final finger lifts
+    host.onMousePointerUp({pointerId:22,isTrusted:true}) // final finger lifts
     assert.deepEqual(host.status().touches,[])
     assert.equal(state.timers.length,1)
     state.timers[0]()
@@ -151,7 +151,7 @@ for(const kind of ['inline','isolated']){
     host.stopViewport()
     host.scheduleViewport()
     assert.equal(state.viewports,0)
-    host.onMousePointerUp({pointerId:41}) // pointercancel event path
+    host.onMousePointerUp({pointerId:41,isTrusted:true}) // pointercancel event path
     assert.equal(state.timers.length,1)
     state.timers[0]()
     assert.equal(state.viewports,1)
@@ -179,6 +179,46 @@ for(const kind of ['inline','isolated']){
     assert.equal(state.timers.length,1)
     state.timers[0]()
     assert.equal(state.viewports,1)
+  })
+}
+
+for(const kind of ['inline','isolated']){
+  test(kind+': forged pointerup, cancel and blur cannot end a held signed-camera gesture',()=>{
+    const {host,state}=makeHost(kind)
+    host.onMousePointerDown(primaryMouse)
+    host.stopViewport()
+    host.scheduleViewport()
+    assert.equal(host.status().heldMousePointer,7)
+    assert.equal(state.timers.length,0)
+
+    // Third-party scripts may dispatch an event with the REAL pointer ID.
+    // isTrusted is false for such synthetic release/cancel events.
+    host.onMousePointerUp({pointerId:7,isTrusted:false,pointerType:'mouse'})
+    host.onMousePointerUp({pointerId:7,isTrusted:undefined})
+    host.onMouseWindowBlur({isTrusted:false})
+    assert.equal(host.status().heldMousePointer,7)
+    assert.equal(state.timers.length,0)
+    assert.equal(state.viewports,0)
+
+    // Native browser release is still handled and debounced exactly once.
+    host.onMousePointerUp({pointerId:7,isTrusted:true,pointerType:'mouse'})
+    assert.equal(state.timers.length,1)
+    state.timers[0]()
+    assert.equal(state.viewports,1)
+
+    const touch=makeHost(kind)
+    touch.host.onMousePointerDown({isTrusted:true,isPrimary:true,
+      pointerType:'touch',button:0,pointerId:21})
+    touch.host.stopViewport()
+    touch.host.scheduleViewport()
+    touch.host.onMousePointerUp({pointerId:21,isTrusted:false})
+    assert.deepEqual(touch.host.status().touches,[21])
+    assert.equal(touch.state.timers.length,0)
+    touch.host.onMouseWindowBlur({isTrusted:true})
+    assert.deepEqual(touch.host.status().touches,[])
+    assert.equal(touch.state.timers.length,1)
+    touch.state.timers[0]()
+    assert.equal(touch.state.viewports,1)
   })
 }
 
