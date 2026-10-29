@@ -17,6 +17,9 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
     private let onRequestServerChange: () -> Void
     private var activeBackup: Task<Void, Never>?
     private var activeBackupID: String?
+    private var activeReview: Task<Void, Never>?
+    private var activeReviewID: String?
+    private static let maxReceiptReviewPerRun = 20
     private var consent: CheckedContinuation<Bool, Never>?
     private weak var consentAlert: UIAlertController?
     private var backgroundObserver: NSObjectProtocol?
@@ -130,6 +133,10 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                 "protocolVersion": 1, "platform": "ios",
                 "photoKit": true, "foregroundStillBackup": true,
                 "scanWindows": true,
+                "receiptReview": true,
+                "foregroundAutoSchedule": true,
+                "originalVideo": true,
+                "liveOriginalBundle": true,
                 "maxScannedAssets": XDriveIOSForegroundPhotoBackupMVP.maxScannedAssets,
                 "maxNewOriginalsPerRun": XDriveIOSForegroundPhotoBackupMVP.maxNewOriginalsPerRun
             ])
@@ -138,8 +145,8 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
             // *shared PWA login screen*, so it cannot demand an Owner token.
             // Still require the exact origin-locked main frame, and show an
             // explicit native confirmation before stopping that WebView.
-            guard activeBackup == nil else {
-                sendError(id, "相册备份正在运行，请先完成或取消，再切换服务器。")
+            guard activeBackup == nil && activeReview == nil else {
+                sendError(id, "相册备份或收据核对正在运行，请先完成或取消，再切换服务器。")
                 return
             }
             guard let currentURL = webView?.url, sameOrigin(currentURL) else {
@@ -175,7 +182,7 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                 sendError(id, "无法核实当前服务器与 Owner，未读取系统相册。")
             }
         case "photos.backup.start":
-            guard activeBackup == nil else {
+            guard activeBackup == nil && activeReview == nil else {
                 sendError(id, "已有一轮照片备份正在运行。")
                 return
             }
@@ -256,11 +263,295 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                     self.sendError(id, "原件备份停止：请检查 Owner 授权、网络和加密账本；未确认的文件不计成功。")
                 }
             }
+        case "photos.auto.status":
+            guard let source = parseOwner(body) else {
+                sendError(id, "自动备份需要当前有效的共享 Web 登录。")
+                return
+            }
+            do {
+                let owner = try await verifiedOwner(source)
+                sendResult(id, autoStatusObject(
+                    XDriveIOSPhotoAutoScheduleStore.shared.status(owner: owner)
+                ))
+            } catch {
+                sendError(id, "无法确认自动备份对应的当前服务器和 Owner。")
+            }
+        case "photos.auto.configure":
+            guard let source = parseOwner(body),
+                  let params = body["params"] as? [String: Any],
+                  let enabled = params["enabled"] as? Bool else {
+                sendError(id, "自动备份设置参数无效。")
+                return
+            }
+            do {
+                let owner = try await verifiedOwner(source)
+                try Task.checkCancellation()
+                guard let currentURL = webView?.url,
+                      sameOrigin(currentURL) else {
+                    sendError(id, "当前网页已切换，自动备份授权已拒绝。")
+                    return
+                }
+                let store = XDriveIOSPhotoAutoScheduleStore.shared
+                if !enabled {
+                    store.disable(owner: owner)
+                    cancelActive()
+                    sendResult(id, autoStatusObject(nil))
+                    return
+                }
+                guard activeBackup == nil, activeReview == nil,
+                      let minutes = params["intervalMinutes"] as? Int,
+                      let allowCloud = params["allowICloudOriginals"] as? Bool,
+                      XDriveIOSPhotoAutoSchedulePolicy.accepts(minutes: minutes),
+                      [.authorized, .limited].contains(
+                        PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                      ) else {
+                    sendError(id, "请先授权照片、停止当前任务并选择合法备份间隔。")
+                    return
+                }
+                let confirmed = await confirmAutoSchedule(
+                    owner: owner, minutes: minutes, allowCloud: allowCloud
+                )
+                try Task.checkCancellation()
+                guard confirmed else {
+                    sendError(id, "未开启自动增量备份。")
+                    return
+                }
+                let state = try store.configure(
+                    owner: owner, minutes: minutes, allowICloud: allowCloud
+                )
+                sendResult(id, autoStatusObject(state))
+            } catch {
+                sendError(id, "自动备份授权或保存失败；不会在未验证的账户上运行。")
+            }
+        case "photos.auto.tick":
+            guard let source = parseOwner(body) else {
+                sendError(id, "前台自动备份需要有效的当前用户。")
+                return
+            }
+            guard activeBackup == nil && activeReview == nil else {
+                sendResult(id, ["ran": false, "reason": "busy"])
+                return
+            }
+            do {
+                let owner = try await verifiedOwner(source)
+                try Task.checkCancellation()
+                guard let currentURL = webView?.url,
+                      sameOrigin(currentURL),
+                      UIApplication.shared.applicationState == .active,
+                      [.authorized, .limited].contains(
+                        PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                      ) else {
+                    sendResult(id, ["ran": false, "reason": "notForegroundOrAuthorized"])
+                    return
+                }
+                let store = XDriveIOSPhotoAutoScheduleStore.shared
+                guard let state = try store.reserveDue(owner: owner),
+                      let start = XDrivePhotoBackupScanWindow.offset(
+                        for: state.windowIndex
+                      ) else {
+                    sendResult(id, ["ran": false, "reason": "notDue"])
+                    return
+                }
+                activeBackupID = id
+                activeBackup = Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    defer {
+                        self.activeBackup = nil
+                        self.activeBackupID = nil
+                    }
+                    do {
+                        let report = try await XDriveIOSForegroundPhotoBackupMVP(
+                            owner: owner, accessToken: source.accessToken
+                        ).run(
+                            allowICloudOriginals: state.allowICloudOriginals,
+                            startOffset: start
+                        ) { [weak self] report in
+                            self?.sendProgress(id, report)
+                        }
+                        try Task.checkCancellation()
+                        let next = try store.recordResult(
+                            owner: owner, progress: report
+                        )
+                        var answer: [String: Any] = [
+                            "ran": true, "uploaded": report.uploaded,
+                            "verifiedAlready": report.verifiedAlready,
+                            "videoUploaded": report.videoUploaded,
+                            "liveBundleUploaded": report.liveBundleUploaded,
+                            "needsReview": report.needsReview
+                        ]
+                        answer["schedule"] = self.autoStatusObject(next)
+                        self.sendResult(id, answer)
+                    } catch is CancellationError {
+                        self.sendError(id, "前台自动备份中断；未完成收据继续保留。")
+                    } catch {
+                        self.sendError(id, "自动备份发生未确认的原件/网络错误，需在共享设置中复核。")
+                    }
+                }
+            } catch {
+                sendError(id, "自动备份需要重新核验当前 Owner/Root；未启动上传。")
+            }
+        case "photos.reconcile.status":
+            guard let source = parseOwner(body) else {
+                sendError(id, "当前账户凭证无效，无法读取受保护的备份账本。")
+                return
+            }
+            do {
+                let owner = try await verifiedOwner(source)
+                try Task.checkCancellation()
+                let scope = try await XDriveIOSForegroundBackupIdentity.shared
+                    .existingLocalScope(owner: owner)
+                guard let scope else {
+                    sendResult(id, ["pending": 0, "maxPerRun": Self.maxReceiptReviewPerRun])
+                    return
+                }
+                let records = try await XDrivePhotoSyncLedger.shared.operations(scope: scope)
+                sendResult(id, [
+                    "pending": records.filter { self.needsReceiptReview($0) }.count,
+                    "maxPerRun": Self.maxReceiptReviewPerRun
+                ])
+            } catch {
+                sendError(id, "未能核实 Owner 或读取加密账本；未推断任何备份成功。")
+            }
+        case "photos.reconcile.start":
+            guard activeBackup == nil && activeReview == nil,
+                  let source = parseOwner(body) else {
+                sendError(id, "已有备份/核对正在运行，或当前账户会话无效。")
+                return
+            }
+            activeReviewID = id
+            activeReview = Task { @MainActor [weak self] in
+                guard let self else { return }
+                defer {
+                    self.activeReview = nil
+                    self.activeReviewID = nil
+                }
+                do {
+                    let owner = try await self.verifiedOwner(source)
+                    try Task.checkCancellation()
+                    guard let currentURL = self.webView?.url,
+                          self.sameOrigin(currentURL) else {
+                        self.sendError(id, "网页已切换，收据核对已终止。")
+                        return
+                    }
+                    let scope = try await XDriveIOSForegroundBackupIdentity.shared
+                        .existingLocalScope(owner: owner)
+                    guard let scope else {
+                        self.sendResult(id, [
+                            "pending": 0, "checked": 0, "confirmed": 0,
+                            "activeUnverified": 0, "missing": 0, "expired": 0,
+                            "ambiguous": 0, "stage": "本机没有待核对的旧照片收据"
+                        ])
+                        return
+                    }
+                    let ledger = XDrivePhotoSyncLedger.shared
+                    let records = try await ledger.operations(scope: scope)
+                    let uncertain = records.filter { self.needsReceiptReview($0) }
+                    let batch = Array(uncertain.prefix(Self.maxReceiptReviewPerRun))
+                    var progress: [String: Any] = [
+                        "pending": uncertain.count,
+                        "checked": 0,
+                        "confirmed": 0,
+                        "activeUnverified": 0,
+                        "missing": 0,
+                        "expired": 0,
+                        "ambiguous": 0,
+                        "stage": "正在只读核对已存在的 Server 上传会话…"
+                    ]
+                    self.sendReviewProgress(id, progress)
+                    for record in batch {
+                        try Task.checkCancellation()
+                        let result = try await XDriveIOSPhotoBackupUncertainReceiptRecovery(
+                            owner: owner, scope: scope,
+                            accessToken: source.accessToken, ledger: ledger
+                        ).reconcile(operationID: record.id)
+                        try Task.checkCancellation()
+                        progress["checked"] = (progress["checked"] as? Int ?? 0) + 1
+                        switch result {
+                        case .confirmed:
+                            progress["confirmed"] = (progress["confirmed"] as? Int ?? 0) + 1
+                        case .activeButUnverified:
+                            progress["activeUnverified"] = (progress["activeUnverified"] as? Int ?? 0) + 1
+                        case .noSessionEvidence:
+                            progress["missing"] = (progress["missing"] as? Int ?? 0) + 1
+                        case .expiredSession:
+                            progress["expired"] = (progress["expired"] as? Int ?? 0) + 1
+                        case .ambiguousSession:
+                            progress["ambiguous"] = (progress["ambiguous"] as? Int ?? 0) + 1
+                        }
+                        progress["stage"] = "已核对 \(progress["checked"] as? Int ?? 0)/\(batch.count) 项"
+                        self.sendReviewProgress(id, progress)
+                    }
+                    let latest = try await ledger.operations(scope: scope)
+                    try Task.checkCancellation()
+                    progress["pending"] = latest.filter { self.needsReceiptReview($0) }.count
+                    progress["stage"] = "本轮只读核对已结束；未证实的收据继续保留"
+                    self.sendResult(id, progress)
+                } catch is CancellationError {
+                    self.sendError(id, "核对已取消；未知结果仍保留，不会自动创建新上传。")
+                } catch {
+                    self.sendError(id, "核对遇到无法验证的 Server/Owner/账本状态，已停止，保留原收据待复核。")
+                }
+            }
         case "photos.backup.cancel":
             cancelActive()
             sendResult(id, ["cancelRequested": true])
         default:
             sendError(id, "当前 iOS Host Adapter 不支持该操作。")
+        }
+    }
+
+    private func autoStatusObject(
+        _ state: XDriveIOSPhotoAutoScheduleStore.State?
+    ) -> [String: Any] {
+        [
+            "enabled": state?.enabled ?? false,
+            "pausedForReview": state?.pausedForReview ?? false,
+            "intervalMinutes": state?.intervalMinutes ?? 60,
+            "allowICloudOriginals": state?.allowICloudOriginals ?? false,
+            "windowIndex": state?.windowIndex ?? 0,
+            "nextDueAt": (state?.nextDueAt.timeIntervalSince1970 ?? 0) > 0 &&
+                (state?.nextDueAt.timeIntervalSince1970 ?? 0) < 4_102_444_800
+                ? Int64(((state?.nextDueAt.timeIntervalSince1970 ?? 0) * 1000)
+                    .rounded(.towardZero)) : 0
+        ]
+    }
+
+    @MainActor
+    private func confirmAutoSchedule(
+        owner: XDriveNativeOwnerRoot, minutes: Int,
+        allowCloud: Bool
+    ) async -> Bool {
+        await withCheckedContinuation { continuation in
+            guard let presenter = webView?.window?.rootViewController,
+                  presenter.presentedViewController == nil, consent == nil else {
+                continuation.resume(returning: false)
+                return
+            }
+            consent = continuation
+            let alert = UIAlertController(
+                title: "开启前台自动增量备份？",
+                message: "仅当 xDrive App 已打开、共享用户已登录且页面处于前台时，每约 \(minutes) 分钟尝试检查当前授权照片。自动依次扫描分段，每轮最多新增 20 个原件，目标是 \(owner.username) @ \(owner.origin.host ?? "xDrive")。\n离开 App 或锁屏不会保证持续运行。\n\(allowCloud ? "允许按需下载 iCloud 原件。" : "不会下载 iCloud 原件。")",
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "取消", style: .cancel) { [weak self] _ in
+                self?.finishConsent(false)
+            })
+            alert.addAction(UIAlertAction(title: "启用", style: .default) { [weak self] _ in
+                self?.finishConsent(true)
+            })
+            consentAlert = alert
+            presenter.present(alert, animated: true)
+        }
+    }
+
+    /// Never return an Owner's raw PhotoKit identifiers, destination names,
+    /// local HMAC resume keys, original SHA or unverified Node IDs to Web.
+    private func needsReceiptReview(_ operation: XDrivePhotoSyncOperation) -> Bool {
+        switch operation.state {
+        case .creating, .uploading, .finalizing, .needsReconciliation:
+            return true
+        case .prepared, .confirmed:
+            return false
         }
     }
 
@@ -292,6 +583,10 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
             "scanned": progress.scanned,
             "uploaded": progress.uploaded,
             "verifiedAlready": progress.verifiedAlready,
+            "videoUploaded": progress.videoUploaded,
+            "videoVerifiedAlready": progress.videoVerifiedAlready,
+            "liveBundleUploaded": progress.liveBundleUploaded,
+            "liveBundleVerifiedAlready": progress.liveBundleVerifiedAlready,
             "liveNotSupported": progress.liveNotSupported,
             "videosNotSupported": progress.videosNotSupported,
             "unavailable": progress.unavailable,
@@ -315,7 +610,7 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
             consent = continuation
             let alert = UIAlertController(
                 title: "开始 iPhone 相册备份？",
-                message: "将当前已授权相册第 \(startOffset + 1) 项起、最多 256 项中的普通照片原件上传到 \(owner.origin.host ?? "xDrive") 的 \(owner.username) 云端文件，每轮最多新增 20 张。Live Photo 和视频不会标记完成。\n\(allowCloud ? "允许下载 iCloud 原件。" : "不下载 iCloud 原件。")",
+                message: "将当前已授权相册第 \(startOffset + 1) 项起、最多 256 项中的照片和视频原件上传到 \(owner.origin.host ?? "xDrive") 的 \(owner.username) 云端文件，每轮最多新增 20 项。Live Photo 两份原件以一份可恢复 ZIP 归档；尚不能在图库直接播放。\n\(allowCloud ? "允许下载 iCloud 原件。" : "不下载 iCloud 原件。")",
                 preferredStyle: .alert
             )
             alert.addAction(UIAlertAction(title: "取消", style: .cancel) { [weak self] _ in
@@ -342,10 +637,18 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
     /// from the shared React Cancel control. No detached backup task survives.
     func cancelActive() {
         activeBackup?.cancel()
+        activeReview?.cancel()
         if consent != nil {
             // Both WebKit and UIApplication lifecycle callbacks run on main.
             Task { @MainActor [weak self] in self?.finishConsent(false) }
         }
+    }
+
+    @MainActor
+    private func sendReviewProgress(_ id: String, _ report: [String: Any]) {
+        guard activeReviewID == id else { return }
+        dispatch(name: "xdrive-ios-host-progress",
+                 payload: ["id": id, "data": report])
     }
 
     @MainActor

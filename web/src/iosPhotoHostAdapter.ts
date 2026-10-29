@@ -2,6 +2,10 @@ import type {
   XDriveIOSPhotoBackupHost,
   XDriveIOSPhotoBackupProgress,
   XDriveIOSPhotoBackupSession,
+  XDriveIOSReceiptReviewProgress,
+  XDriveIOSReceiptReviewStatus,
+  XDriveIOSPhotoAutoStatus,
+  XDriveIOSPhotoAutoTickResult,
   XDriveIOSPhotoPermission,
   XDriveIOSPhotoStatus,
 } from '../../ui/shared/src/mui/IOSPhotoBackupSettings'
@@ -16,7 +20,7 @@ type NativeResponse = {
   data?: unknown
   error?: string
 }
-type NativeProgress = { id?: string; data?: XDriveIOSPhotoBackupProgress }
+type NativeProgress<P> = { id?: string; data?: P }
 
 /** Only iOS WKWebView installs the named native message handler.
  * Normal Web/PWA/DSM/Desktop have no adapter and no Photos controls. */
@@ -30,15 +34,19 @@ export function xDriveCreateIOSPhotoBackupHost(): XDriveIOSPhotoBackupHost | nul
 class IOSPhotoBackupHost implements XDriveIOSPhotoBackupHost {
   private readonly handler: NativeMessageHandler
   scanWindowsSupported = false
+  receiptReviewSupported = false
+  foregroundAutoSupported = false
+  originalVideoSupported = false
+  liveOriginalBundleSupported = false
 
   constructor(handler: NativeMessageHandler) {
     this.handler = handler
   }
 
-  private request<T>(
+  private request<T, P = XDriveIOSPhotoBackupProgress>(
     method: string,
     params: Record<string, unknown> = {},
-    onProgress?: (progress: XDriveIOSPhotoBackupProgress) => void,
+    onProgress?: (progress: P) => void,
   ): Promise<T> {
     if (!window.crypto?.randomUUID) {
       return Promise.reject(new Error('当前安全环境无法建立原生操作请求。'))
@@ -59,14 +67,16 @@ class IOSPhotoBackupHost implements XDriveIOSPhotoBackupHost {
         else reject(new Error(typeof detail.error === 'string' ? detail.error : '原生操作未完成。'))
       }
       const progress = (event: Event) => {
-        const detail = (event as CustomEvent<NativeProgress>).detail
+        const detail = (event as CustomEvent<NativeProgress<P>>).detail
         if (detail?.id === id && detail.data) onProgress?.(detail.data)
       }
       window.addEventListener('xdrive-ios-host-response', response)
       window.addEventListener('xdrive-ios-host-progress', progress)
       // An actual foreground backup has no synthetic success deadline:
       // user cancel, backgrounding or Server reconciliation owns its end.
-      if (method !== 'photos.backup.start') {
+      if (method !== 'photos.backup.start' &&
+          method !== 'photos.reconcile.start' &&
+          method !== 'photos.auto.tick') {
         timer = window.setTimeout(() => {
           cleanup()
           reject(new Error('原生操作未在规定时间内响应。'))
@@ -85,11 +95,17 @@ class IOSPhotoBackupHost implements XDriveIOSPhotoBackupHost {
     const value = await this.request<{
       protocolVersion: number; platform: string; photoKit: boolean
       foregroundStillBackup: boolean; scanWindows?: boolean
+      receiptReview?: boolean; foregroundAutoSchedule?: boolean
+      originalVideo?: boolean; liveOriginalBundle?: boolean
     }>('capabilities')
     const supported = value?.protocolVersion === 1 &&
       value.platform === 'ios' && value.photoKit === true &&
       value.foregroundStillBackup === true
     this.scanWindowsSupported = supported && value.scanWindows === true
+    this.receiptReviewSupported = supported && value.receiptReview === true
+    this.foregroundAutoSupported = supported && value.foregroundAutoSchedule === true
+    this.originalVideoSupported = supported && value.originalVideo === true
+    this.liveOriginalBundleSupported = supported && value.liveOriginalBundle === true
     return supported
   }
 
@@ -118,6 +134,57 @@ class IOSPhotoBackupHost implements XDriveIOSPhotoBackupHost {
       { ...session, allowICloudOriginals,
         ...(this.scanWindowsSupported ? { windowIndex } : {}) },
       onProgress,
+    )
+  }
+
+  reviewStatus(session: XDriveIOSPhotoBackupSession): Promise<XDriveIOSReceiptReviewStatus> {
+    if (!this.receiptReviewSupported) {
+      return Promise.reject(new Error('当前安装的 iOS IPA 不支持本地收据核对。'))
+    }
+    return this.request<XDriveIOSReceiptReviewStatus>(
+      'photos.reconcile.status', { ...session },
+    )
+  }
+
+  reviewPending(
+    session: XDriveIOSPhotoBackupSession,
+    onProgress: (progress: XDriveIOSReceiptReviewProgress) => void,
+  ): Promise<XDriveIOSReceiptReviewProgress> {
+    if (!this.receiptReviewSupported) {
+      return Promise.reject(new Error('当前安装的 iOS IPA 不支持本地收据核对。'))
+    }
+    return this.request<XDriveIOSReceiptReviewProgress, XDriveIOSReceiptReviewProgress>(
+      'photos.reconcile.start', { ...session }, onProgress,
+    )
+  }
+
+  autoStatus(session: XDriveIOSPhotoBackupSession): Promise<XDriveIOSPhotoAutoStatus> {
+    if (!this.foregroundAutoSupported)
+      return Promise.reject(new Error('当前 IPA 不支持前台自动增量备份。'))
+    return this.request<XDriveIOSPhotoAutoStatus>('photos.auto.status', { ...session })
+  }
+
+  async configureAuto(
+    session: XDriveIOSPhotoBackupSession,
+    enabled: boolean, intervalMinutes: number, allowICloudOriginals: boolean,
+  ): Promise<XDriveIOSPhotoAutoStatus> {
+    if (!this.foregroundAutoSupported)
+      throw new Error('当前 IPA 不支持前台自动增量备份。')
+    const status = await this.request<XDriveIOSPhotoAutoStatus>(
+      'photos.auto.configure',
+      { ...session, enabled, intervalMinutes, allowICloudOriginals }
+    )
+    // The native host has explicitly confirmed and stored the same Owner's
+    // preference. Wake only the foreground scheduler, not a background task.
+    window.dispatchEvent(new Event('xdrive-ios-auto-config-changed'))
+    return status
+  }
+
+  autoTick(session: XDriveIOSPhotoBackupSession): Promise<XDriveIOSPhotoAutoTickResult> {
+    if (!this.foregroundAutoSupported)
+      return Promise.resolve({ ran: false, reason: 'unsupported' })
+    return this.request<XDriveIOSPhotoAutoTickResult>(
+      'photos.auto.tick', { ...session }
     )
   }
 

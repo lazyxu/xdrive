@@ -33,13 +33,20 @@ pretend to provide iOS PhotoKit.
    existing encrypted intent journal and Go UploadSession/CAS/Node receipt
    implementation. Results and bounded real progress return to shared Settings.
 
-MVP: a user can select one bounded window of at most 256 authorized media
-items (64 metadata entries per lazy PhotoKit page); each explicit foreground
-pass uploads at most 20 ordinary still originals, subject to actual successful
-Server receipts. Window offsets can shift when the Photos library changes,
-and are not durable backed-up identities. Live Photos, original videos, automatic background sync,
-permanent full-library traversal and privileged Device SourceRun are **not yet
-implemented**. They must not be presented as successful backup.
+MVP in the consolidated follow-up: each pass scans one bounded window of
+at most 256 currently authorized media (64 metadata entries per lazy page),
+and uploads at most 20 **original items** through a single existing Owner
+UploadSession/CAS/verified Node receipt path. Ordinary stills and original
+videos are single-resource uploads; Live Photos require both PhotoKit
+original resources packaged together into one full-SHA verified ZIP Node.
+The ZIP preserves the originals but is **not** yet a playable Gallery Live
+resource or an automatic restore into Apple Photos. The user may explicitly
+enable a 15-minute/1-hour/6-hour/daily *foreground-only* automatic interval
+while the authenticated App remains open, with Owner/root re-verification
+and encrypted journal incremental deduplication. iOS background task
+execution after lock or app suspension, accurate time guarantees, 100k
+sharded full-library ledger and privileged Device SourceRun are **not
+implemented**. PhotoKit offsets can shift on edits and are not durable IDs.
 
 Canceled/backgrounded/stale-Owner work is stopped conservatively. A lost
 create/finalize acknowledgment remains **needs reconciliation**; it never

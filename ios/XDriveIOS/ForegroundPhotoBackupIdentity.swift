@@ -18,15 +18,47 @@ actor XDriveIOSForegroundBackupIdentity {
     private let account = "local-journal-profile"
     private var cachedKey: Data?
 
-    func localScopeAndTag(owner: XDriveNativeOwnerRoot,
-                          localIdentifier: String) throws
-        -> (scope: XDrivePhotoSyncScope, tag: String) {
-        guard !localIdentifier.isEmpty, localIdentifier.utf8.count <= 4096,
-              owner.ownerID > 0, owner.rootNodeID > 0,
+    /// Reconstruct only the same stable sealed Owner Files ledger scope.
+    /// The caller must independently authenticate this Owner/root on Server.
+    /// This never reads PhotoKit, creates a Device or uploads any bytes.
+    func localScope(owner: XDriveNativeOwnerRoot) throws -> XDrivePhotoSyncScope {
+        guard owner.ownerID > 0, owner.rootNodeID > 0,
               !owner.instanceID.isEmpty else {
             throw XDriveIOSForegroundBackupIdentityError.invalidKey
         }
-        let key = try installationKey()
+        return try makeScope(owner: owner, key: installationKey())
+    }
+
+    /// Read-only existing-credential lookup for uncertain receipt reviews.
+    /// Never create a new Keychain secret simply to display zero pending.
+    func existingLocalScope(owner: XDriveNativeOwnerRoot) throws -> XDrivePhotoSyncScope? {
+        guard owner.ownerID > 0, owner.rootNodeID > 0,
+              !owner.instanceID.isEmpty else {
+            throw XDriveIOSForegroundBackupIdentityError.invalidKey
+        }
+        if let cachedKey { return try makeScope(owner: owner, key: cachedKey) }
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecReturnData as String: true
+        ]
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        if status == errSecItemNotFound { return nil }
+        guard status == errSecSuccess else {
+            throw XDriveIOSForegroundBackupIdentityError.keychain(status)
+        }
+        guard let data = item as? Data, data.count == 32 else {
+            throw XDriveIOSForegroundBackupIdentityError.invalidKey
+        }
+        cachedKey = data
+        return try makeScope(owner: owner, key: data)
+    }
+
+    private func makeScope(owner: XDriveNativeOwnerRoot, key: Data)
+        throws -> XDrivePhotoSyncScope {
         let deviceBytes = SHA256.hash(data: Data("ios-owner-photos-files-id-v1".utf8) + key)
         let id = hex(deviceBytes)
         let localUUID = String(id.prefix(8)) + "-" +
@@ -34,11 +66,21 @@ actor XDriveIOSForegroundBackupIdentity {
             String(id.dropFirst(12).prefix(4)) + "-" +
             String(id.dropFirst(16).prefix(4)) + "-" +
             String(id.dropFirst(20).prefix(12))
-        let scope = try XDrivePhotoSyncScope(
+        return try XDrivePhotoSyncScope(
             origin: owner.origin, serverInstanceID: owner.instanceID,
             ownerID: owner.ownerID, rootNodeID: owner.rootNodeID,
             deviceID: localUUID
         )
+    }
+
+    func localScopeAndTag(owner: XDriveNativeOwnerRoot,
+                          localIdentifier: String) throws
+        -> (scope: XDrivePhotoSyncScope, tag: String) {
+        guard !localIdentifier.isEmpty, localIdentifier.utf8.count <= 4096 else {
+            throw XDriveIOSForegroundBackupIdentityError.invalidKey
+        }
+        let scope = try localScope(owner: owner)
+        let key = try installationKey()
         // A keyed, non-reversible asset tag avoids collisions between
         // IMG_0001.HEIC photos from different camera years and Owners.
         // It is never sent as a device credential or PhotoKit ID.

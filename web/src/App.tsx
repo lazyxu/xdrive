@@ -85,6 +85,7 @@ import type {
 import { xDriveCaptureGalleryViewerFocus, xDriveRestoreGalleryViewerFocus } from './galleryViewerReturnFocus'
 import { ApiError, XDriveApi, sessionFromAuth } from './api'
 import { xDriveCreateIOSPhotoBackupHost } from './iosPhotoHostAdapter'
+import { xDriveStartIOSForegroundAutoScheduler } from './iosForegroundAutoScheduler'
 import type { XDriveIOSPhotoBackupHost, XDriveIOSPhotoBackupSession } from '../../ui/shared/src/mui/IOSPhotoBackupSettings'
 import type { AuthResult, AuthSession, BuildInfo } from './api'
 import type {
@@ -915,6 +916,30 @@ function FileManager({
   const iosPhotoHost = useMemo(() => xDriveCreateIOSPhotoBackupHost(), [])
   const [profile, setProfile] = useState<MeResult | null>(null)
   const [profileReadFailed, setProfileReadFailed] = useState(false)
+  // Keep a stable Owner-scoped scheduler across short-lived bearer rotation.
+  // The latest real API is always read at the moment of a visible auto tick.
+  // AuthSession is an explicitly supplied, mutable authenticated prop.
+  // XDriveApi.session is private; never bypass its encapsulation or invent a
+  // token from the browser Cookie. A fresh Owner read precedes every tick.
+  const iosAutoRef = useRef({ api, profile, username, authSession })
+  iosAutoRef.current = { api, profile, username, authSession }
+  useEffect(() => {
+    if (!iosPhotoHost || !profile?.id || profile.username !== username ||
+        profile.must_change_password) return
+    return xDriveStartIOSForegroundAutoScheduler(iosPhotoHost, async () => {
+      const captured = iosAutoRef.current
+      if (!captured.profile || captured.profile.id !== profile.id ||
+          captured.username !== username) return null
+      const current = await captured.api.me()
+      const latest = iosAutoRef.current
+      if (latest.api !== captured.api || latest.profile?.id !== profile.id ||
+          current.id !== profile.id || current.username !== username ||
+          current.must_change_password || !latest.authSession.accessToken) return null
+      return { ownerID: current.id, username,
+        accessToken: latest.authSession.accessToken }
+    })
+  }, [iosPhotoHost, profile?.id, profile?.username,
+      profile?.must_change_password, username])
   const [webMapScopeHandoff,setWebMapScopeHandoff] = useState<XDriveMapScopeHandoffState>(
     () => window.xdriveSecureMapBridge ? {state:'none'} : initialWebMapScopeHandoff)
   // The promise is reused through StrictMode effect replay; never redeem the
@@ -2754,6 +2779,8 @@ function FileManager({
           route={route}
           api={api}
           gallerySource={gallerySource}
+          // Route Viewer photo-to-map identity must retain the verified
+          // current Server Owner even when iOS foreground backup is enabled.
           ownerScope={profile?.id ? `web:${profile.id}` : undefined}
           onBorrowGalleryThumbnail={galleryThumbnailBridge.borrow}
           shareDialogAdapter={shareDialogAdapter}
