@@ -17,11 +17,20 @@ export function xDriveStartIOSForegroundAutoScheduler(
   }
   let active = true
   let inFlight = false
+  let negotiated = false
   const poll = () => {
-    if (!active || inFlight || document.visibilityState !== 'visible' ||
-        !host.foregroundAutoSupported) return
+    if (!active || inFlight || document.visibilityState !== 'visible') return
     inFlight = true
     void (async () => {
+      // A fresh WebView creates a fresh host adapter; capability state is
+      // not available until negotiated. Do this automatically so a saved
+      // opt-in resumes on the next authenticated foreground app launch.
+      if (!negotiated) {
+        const supported = await host.capabilities()
+        if (!active || !supported) return
+        negotiated = true
+      }
+      if (!host.foregroundAutoSupported) return
       const session = await readFreshOwner()
       if (!active || !session || document.visibilityState !== 'visible') return
       // Native verified consent + per-Owner stored schedule is the only
@@ -38,11 +47,15 @@ export function xDriveStartIOSForegroundAutoScheduler(
   }
   const interval = window.setInterval(poll, 60_000)
   document.addEventListener('visibilitychange', onVisibility)
+  // Native configuration succeeds only after explicit user confirmation.
+  // Make the first opted-in scan eligible without needing a route change.
+  window.addEventListener('xdrive-ios-auto-config-changed', poll)
   poll()
   return () => {
     active = false
     window.clearInterval(interval)
     document.removeEventListener('visibilitychange', onVisibility)
+    window.removeEventListener('xdrive-ios-auto-config-changed', poll)
     // The Owner-backed FileManager has unmounted or switched accounts.
     // A stale in-flight native foreground backup must not survive that.
     void host.cancel().catch(() => {})

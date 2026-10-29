@@ -164,14 +164,20 @@ class IOSPhotoBackupHost implements XDriveIOSPhotoBackupHost {
     return this.request<XDriveIOSPhotoAutoStatus>('photos.auto.status', { ...session })
   }
 
-  configureAuto(
+  async configureAuto(
     session: XDriveIOSPhotoBackupSession,
     enabled: boolean, intervalMinutes: number, allowICloudOriginals: boolean,
   ): Promise<XDriveIOSPhotoAutoStatus> {
     if (!this.foregroundAutoSupported)
-      return Promise.reject(new Error('当前 IPA 不支持前台自动增量备份。'))
-    return this.request<XDriveIOSPhotoAutoStatus>('photos.auto.configure',
-      { ...session, enabled, intervalMinutes, allowICloudOriginals })
+      throw new Error('当前 IPA 不支持前台自动增量备份。')
+    const status = await this.request<XDriveIOSPhotoAutoStatus>(
+      'photos.auto.configure',
+      { ...session, enabled, intervalMinutes, allowICloudOriginals }
+    )
+    // The native host has explicitly confirmed and stored the same Owner's
+    // preference. Wake only the foreground scheduler, not a background task.
+    window.dispatchEvent(new Event('xdrive-ios-auto-config-changed'))
+    return status
   }
 
   autoTick(session: XDriveIOSPhotoBackupSession): Promise<XDriveIOSPhotoAutoTickResult> {
