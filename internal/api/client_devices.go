@@ -54,8 +54,10 @@ func validDeviceDisplayName(name string) bool {
 	return true
 }
 
+// iOS is an identity-only device platform. It is deliberately NOT a native
+// local_folder Agent or an executor for Desktop Source/Root privileges.
 func validClientPlatform(platform string) bool {
-	return platform == "windows" || platform == "linux" || platform == "darwin"
+	return platform == "windows" || platform == "linux" || platform == "darwin" || platform == "ios"
 }
 
 func deviceCredentialDigest(raw string) string {
@@ -63,12 +65,23 @@ func deviceCredentialDigest(raw string) string {
 	return hex.EncodeToString(digest[:])
 }
 
-func clientDeviceCredentialMatches(device meta.ClientDevice, raw string) bool {
+// clientDeviceIdentityCredentialMatches is for the narrow read-only
+// /devices/self identity proof and presence heartbeat. Both are Owner-bound;
+// neither endpoint binds a Root, mutates a Source or executes a Runner.
+func clientDeviceIdentityCredentialMatches(device meta.ClientDevice, raw string) bool {
 	if device.RevokedAt != nil || len(raw) < 32 || len(raw) > 256 {
 		return false
 	}
 	actual := deviceCredentialDigest(raw)
 	return subtle.ConstantTimeCompare([]byte(device.CredentialHash), []byte(actual)) == 1
+}
+
+// Existing Source/Root/Agent code uses this strictly stronger gate. An iOS
+// credential must NEVER be accepted as a Desktop Agent credential, including
+// on Source creation, local root binding, worker execution or draft deletion.
+// Keep this separate from identity-only /devices/self and heartbeat.
+func clientDeviceCredentialMatches(device meta.ClientDevice, raw string) bool {
+	return device.Platform != "ios" && clientDeviceIdentityCredentialMatches(device, raw)
 }
 
 func (s *Server) registerClientDevice(c *gin.Context) {
@@ -133,7 +146,7 @@ func (s *Server) verifyCurrentClientDevice(c *gin.Context) {
 		}
 		return
 	}
-	if !clientDeviceCredentialMatches(device, c.GetHeader("X-XDrive-Device-Token")) {
+	if !clientDeviceIdentityCredentialMatches(device, c.GetHeader("X-XDrive-Device-Token")) {
 		fail(c, http.StatusForbidden, "local device credential invalid or revoked")
 		return
 	}
