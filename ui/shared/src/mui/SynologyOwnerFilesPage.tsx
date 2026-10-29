@@ -76,6 +76,11 @@ export function XDriveSynologyOwnerFilesPage({
   client,
   unavailableActions,
 }: { client: XDriveSynologyBackupLocalClient; unavailableActions?: XDriveFileExplorerUnavailableActions }) {
+  // Same List/Grid/column preference semantics as Desktop. Only UI appearance
+  // is stored at this DSM browser origin; no Owner data or Agent permission.
+  const { viewMode, onViewModeChange } = useXDriveFileExplorerPersistedViewMode(
+    XDRIVE_HOST_FILES_PREFERENCES.viewMode,
+  )
   // One Host-neutral, scoped cursor Controller owns root and directory reads.
   // The DSM adapter supplies only its real authenticated Owner CGI methods.
   const ownerReadPort = useMemo<XDriveFileExplorerCursorPort<
