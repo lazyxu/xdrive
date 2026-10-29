@@ -290,7 +290,16 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"npm run lint",
 		"npm run build",
 	} {
-		if !strings.Contains(githubText, command) {
+		githubCommandPresent := strings.Contains(githubText, command)
+		// GitHub may split exactly the same original Desktop test-file glob
+		// into three Node 22 shards to bound runner time and memory. GitLab
+		// continues to run the canonical unsharded npm test command.
+		if command == "npm run test:main" && !githubCommandPresent {
+			githubCommandPresent = strings.Contains(githubText, "shard: [1, 2, 3]") &&
+				strings.Contains(githubText, "npm run build:main") &&
+				strings.Contains(githubText, "node --test --test-concurrency=2 --test-shard=${{ matrix.shard }}/3 tests/*.cjs")
+		}
+		if !githubCommandPresent {
 			t.Errorf("GitHub CI is missing parity command %q", command)
 		}
 		if !strings.Contains(gitlabContractText, command) {

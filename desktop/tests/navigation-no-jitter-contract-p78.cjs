@@ -45,8 +45,15 @@ test('P78 evergreen AGENTS policy forbids every new navigation-only intermediate
   ], 'platform acceptance and first-frame evidence')
   const ci = read('.github/workflows/ci.yml')
   const desktop = read('desktop/package.json')
-  mustContain(ci, ['desktop-tests:', 'npm run test:main', 'final-gate:', 'go-linux-api:'],
-    'source-exact CI must run source and original mounted tests')
+  mustContain(ci, ['desktop-tests:', 'final-gate:', 'go-linux-api:'],
+    'source-exact CI must retain the Desktop test job and release gates')
+  // The three disjoint file shards are equivalent to the original test:main
+  // glob. Both build and test every original mounted source under Node 22.
+  if (!ci.includes('npm run test:main')) {
+    mustContain(ci, ['shard: [1, 2, 3]', 'npm run build:main',
+      'node --test --test-concurrency=2 --test-shard=${{ matrix.shard }}/3 tests/*.cjs'],
+    'sharded Desktop CI must exercise all source-backed test files')
+  }
   assert.ok(desktop.includes('node --test tests/*.cjs'),
     'new original-source regression must be included by the actual desktop-tests command')
 })
