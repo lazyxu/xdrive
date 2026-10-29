@@ -228,7 +228,7 @@ func (s *Server) proveIOSPhotoBackgroundGrant(c *gin.Context) {
 		"device_id": g.DeviceID, "root_node_id": g.RootNodeID,
 		"server_instance_id": g.ServerInstance, "expires_at": g.ExpiresAt,
 		"upload_authorized": true, // ONLY the exact Owner-root iOS upload aliases
-		"upload_path_base": "/api/v1/ios/photos/background"
+		"upload_path_base": "/api/v1/ios/photos/background",
 	})
 }
 
