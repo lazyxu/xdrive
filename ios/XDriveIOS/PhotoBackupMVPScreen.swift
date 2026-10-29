@@ -31,7 +31,7 @@ struct XDriveIOSPhotoBackupMVPScreen: View {
                 VStack(alignment: .leading, spacing: 18) {
                     Label("iOS 相册备份到云端文件", systemImage: "icloud.and.arrow.up")
                         .font(.title3.weight(.semibold))
-                    Text("首个前台最小可用版本：每轮扫描最近最多 256 个已授权项目，每次最多新增 20 张普通照片。再次运行会通过原始 SHA-256、加密账本与当前 Server 文件回读，核验并跳过已备份的照片。")
+                    Text("前台最小可用版本：每轮扫描选定分段最多 256 个已授权项目，每次最多新增 20 张普通照片。可切换到更早的分段；再次运行会通过原始 SHA-256、加密账本与当前 Server 文件回读，核验并跳过已备份的照片。")
                         .font(.subheadline)
                         .fixedSize(horizontal: false, vertical: true)
 
