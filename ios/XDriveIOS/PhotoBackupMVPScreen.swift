@@ -11,6 +11,14 @@ struct XDriveIOSPhotoBackupMVPScreen: View {
     @State private var allowICloudOriginals = false
     @State private var authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @State private var runTask: Task<Void, Never>?
+    @State private var selectedWindow = 0
+
+    private var windowSize: Int { XDriveIOSForegroundPhotoBackupMVP.maxScannedAssets }
+
+    private var knownWindowCount: Int {
+        guard let count = model.photoBackupProgress?.totalVisible, count > 0 else { return 1 }
+        return 1 + (count - 1) / windowSize
+    }
 
     private var hasPhotoPermission: Bool {
         authorization == .authorized || authorization == .limited
@@ -49,6 +57,18 @@ struct XDriveIOSPhotoBackupMVPScreen: View {
                         }
                     }
 
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text("相册扫描分段").font(.subheadline.weight(.semibold))
+                        Stepper("第 \(selectedWindow + 1) / \(knownWindowCount) 段",
+                                value: $selectedWindow,
+                                in: 0...max(0, knownWindowCount - 1))
+                            .disabled(model.photoBackupBusy || knownWindowCount <= 1)
+                            .accessibilityIdentifier("native-photo-backup-window")
+                        Text("当前选择第 \(selectedWindow * windowSize + 1)–\((selectedWindow + 1) * windowSize) 项（按拍摄时间倒序）。首次扫描读取当前授权总数后可选择其他分段；每次只处理选定的最多 256 项。")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     Toggle("允许从 iCloud 下载当前照片原件", isOn: $allowICloudOriginals)
                         .disabled(model.photoBackupBusy)
                     Text("默认关闭。iCloud 原件缺失的照片会被记录为未完成，不会使用低清预览代替。原件仅暂存在本机受保护目录，上传后立即清理。")
@@ -60,14 +80,15 @@ struct XDriveIOSPhotoBackupMVPScreen: View {
                     if let progress = model.photoBackupProgress {
                         VStack(alignment: .leading, spacing: 12) {
                             Text(progress.stage).font(.subheadline.weight(.medium))
-                            let total = max(1, min(progress.totalVisible,
-                                                   XDriveIOSForegroundPhotoBackupMVP.maxScannedAssets))
+                            let windowCapacity = min(windowSize,
+                                                     max(0, progress.totalVisible - progress.startOffset))
+                            let total = max(1, windowCapacity)
                             ProgressView(
                                 value: Double(min(progress.scanned, total)),
                                 total: Double(total)
                             )
                                 .accessibilityIdentifier("native-photo-backup-progress")
-                            Text("已扫描 \(progress.scanned) / \(min(progress.totalVisible, XDriveIOSForegroundPhotoBackupMVP.maxScannedAssets))")
+                            Text("第 \(progress.startOffset + 1) 项起：已扫描 \(progress.scanned) / \(windowCapacity)")
                                 .font(.footnote)
                                 .monospacedDigit()
 
@@ -107,7 +128,8 @@ struct XDriveIOSPhotoBackupMVPScreen: View {
                             runTask?.cancel()
                             runTask = Task {
                                 await model.runForegroundPhotoBackup(
-                                    allowICloudOriginals: allowICloudOriginals
+                                    allowICloudOriginals: allowICloudOriginals,
+                                    startOffset: selectedWindow * windowSize
                                 )
                                 runTask = nil
                             }
@@ -147,6 +169,12 @@ struct XDriveIOSPhotoBackupMVPScreen: View {
             } else {
                 authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             }
+        }
+        .onChange(of: knownWindowCount) { updatedCount in
+            selectedWindow = min(selectedWindow, max(0, updatedCount - 1))
+        }
+        .onChange(of: authorization) { _ in
+            selectedWindow = 0
         }
         .onDisappear { runTask?.cancel() }
     }

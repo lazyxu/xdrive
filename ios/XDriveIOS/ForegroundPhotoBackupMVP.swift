@@ -6,6 +6,7 @@ import Photos
 /// Go UploadSession/Owner Node. Never call this from a background scanner.
 struct XDriveIOSPhotoBackupProgress: Equatable {
     var totalVisible = 0
+    var startOffset = 0
     var scanned = 0
     var uploaded = 0
     var verifiedAlready = 0
@@ -34,10 +35,10 @@ struct XDriveIOSForegroundPhotoBackupMVP {
     static let maxScannedAssets = 256
     static let maxNewOriginalsPerRun = 20
 
-    func run(allowICloudOriginals: Bool,
+    func run(allowICloudOriginals: Bool, startOffset: Int = 0,
              onProgress: @MainActor @escaping (XDriveIOSPhotoBackupProgress) -> Void)
         async throws -> XDriveIOSPhotoBackupProgress {
-        guard !accessToken.isEmpty, owner.ownerID > 0,
+        guard startOffset >= 0, !accessToken.isEmpty, owner.ownerID > 0,
               owner.rootNodeID > 0, !owner.instanceID.isEmpty else {
             throw XDriveIOSPhotoBackupMVPError.identityNotVerified
         }
@@ -54,22 +55,25 @@ struct XDriveIOSForegroundPhotoBackupMVP {
 
         let scanner = XDrivePhotoKitBoundedSnapshotScanner()
         var report = XDriveIOSPhotoBackupProgress()
+        report.startOffset = startOffset
         report.stage = "检查当前授权相册…"
         await onProgress(report)
 
         do {
-            report.totalVisible = try await scanner.start()
+            report.totalVisible = try await scanner.start(atOffset: startOffset)
             report.isLimited = await currentLimitedAuthorization()
+            let windowCapacity = min(Self.maxScannedAssets,
+                                     max(0, report.totalVisible - startOffset))
             await onProgress(report)
 
-            scanning: while report.scanned < Self.maxScannedAssets &&
+            scanning: while report.scanned < windowCapacity &&
                     !report.stoppedForReview &&
                     report.uploaded < Self.maxNewOriginalsPerRun {
                 try Task.checkCancellation()
                 let page = try await scanner.nextPage()
                 for candidate in page.items {
                     try Task.checkCancellation()
-                    if report.scanned >= Self.maxScannedAssets ||
+                    if report.scanned >= windowCapacity ||
                        report.uploaded >= Self.maxNewOriginalsPerRun {
                         break scanning
                     }
@@ -86,7 +90,7 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                         await onProgress(report)
                         continue
                     }
-                    report.stage = "正在备份已授权的普通照片（\(report.scanned)/\(min(report.totalVisible, Self.maxScannedAssets))）…"
+                    report.stage = "正在备份已授权的普通照片（\(report.scanned)/\(windowCapacity)）…"
                     await onProgress(report)
                     do {
                         let outcome = try await uploadOrVerifyStill(
@@ -120,9 +124,13 @@ struct XDriveIOSForegroundPhotoBackupMVP {
 
             try Task.checkCancellation()
             if !report.stoppedForReview {
-                report.stage = report.scanned >= min(report.totalVisible, Self.maxScannedAssets)
-                    ? "本轮检查完成：仅列出的普通照片经过验证，未包含 Live/视频"
-                    : "本轮新增备份上限已达到，可再次点击继续增量备份"
+                if windowCapacity == 0 {
+                    report.stage = "选定分段没有已授权照片，请选择前一段或重新检查授权"
+                } else {
+                    report.stage = report.scanned >= windowCapacity
+                        ? "当前分段检查完成：仅普通照片原件可确认，未包含 Live/视频"
+                        : "本轮新增上限已达到，可继续检查该段剩余照片"
+                }
             }
             await scanner.reset()
             await onProgress(report)

@@ -276,8 +276,8 @@ final class LoginViewModel: ObservableObject {
     /// The first user-visible, bounded iOS Photos cloud Files backup.
     /// Explicit tap only; never starts on login, Photos permission grant,
     /// background notification or ordinary PWA navigation.
-    func runForegroundPhotoBackup(allowICloudOriginals: Bool) async {
-        guard !isLoading && !manualUploadBusy && !photoBackupBusy,
+    func runForegroundPhotoBackup(allowICloudOriginals: Bool, startOffset: Int) async {
+        guard startOffset >= 0, !isLoading && !manualUploadBusy && !photoBackupBusy,
               let owner = verifiedOwner,
               let session = activeSession,
               let token = activeAccessToken, !token.isEmpty,
@@ -288,7 +288,12 @@ final class LoginViewModel: ObservableObject {
         }
         manualUploadBusy = true
         photoBackupBusy = true
-        photoBackupProgress = XDriveIOSPhotoBackupProgress()
+        // Keep only the previous count to avoid resetting a selected window
+        // while a fresh PhotoKit scan starts; do not retain media identities.
+        photoBackupProgress = XDriveIOSPhotoBackupProgress(
+            totalVisible: photoBackupProgress?.totalVisible ?? 0,
+            startOffset: startOffset
+        )
         photoBackupMessage = nil
         defer {
             photoBackupBusy = false
@@ -297,7 +302,8 @@ final class LoginViewModel: ObservableObject {
         do {
             let summary = try await XDriveIOSForegroundPhotoBackupMVP(
                 owner: owner, accessToken: token
-            ).run(allowICloudOriginals: allowICloudOriginals) { [weak self] latest in
+            ).run(allowICloudOriginals: allowICloudOriginals,
+                  startOffset: startOffset) { [weak self] latest in
                 self?.photoBackupProgress = latest
             }
             if summary.stoppedForReview || summary.needsReview > 0 {
@@ -309,6 +315,8 @@ final class LoginViewModel: ObservableObject {
             photoBackupMessage = "本轮已取消。已确认的文件仍在云端；中断中的操作可能需要 Server 回读，不会自动重复上传。"
         } catch XDrivePhotoKitScanFailure.notAuthorized {
             photoBackupMessage = "当前未取得完整或受限相册访问权限，请在 iOS 系统授权后再尝试。"
+        } catch XDrivePhotoKitScanFailure.invalidOffset {
+            photoBackupMessage = "扫描起点无效，请重新选择分段。"
         } catch XDrivePhotoKitScanFailure.snapshotChanged {
             photoBackupMessage = "相册内容或授权发生变化，本次扫描已终止；请重新检查。"
         } catch {
