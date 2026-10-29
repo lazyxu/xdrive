@@ -18,10 +18,14 @@ export function xDriveWorkspaceHostSections({
   adminRoleVerified = false,
   conflictCount,
   diagnosticsAriaLabel = 'xDrive 辅助功能',
+  includeUtilityRoutes = true,
 }: {
   adminRoleVerified?: boolean
   conflictCount?: number
   diagnosticsAriaLabel?: string
+  /** False for Web/PWA: Settings lives in its account menu, while these
+   * Host-only utility pages have not been migrated to the browser. */
+  includeUtilityRoutes?: boolean
 } = {}): XDriveSidebarSectionModel[] {
   return [
     {
@@ -29,21 +33,20 @@ export function xDriveWorkspaceHostSections({
       placement: 'before-core',
       items: [{ key: 'overview', label: '主页', icon: <DashboardRoundedIcon fontSize="small" /> }],
     },
-    {
+    ...(includeUtilityRoutes ? [{
       key: 'conflicts',
-      placement: 'after-core',
+      placement: 'after-core' as const,
       items: [{
         key: 'conflicts', label: '冲突',
         icon: <WarningAmberRoundedIcon fontSize="small" />,
         badge: conflictCount,
       }],
-    },
-    {
+    }, {
       key: 'diagnostics',
       ariaLabel: diagnosticsAriaLabel,
-      placement: 'after-core',
+      placement: 'after-core' as const,
       items: [xDriveDiagnosticsSidebarDestination()],
-    },
+    }] : []),
     ...(adminRoleVerified ? [{
       key: 'admin',
       label: '管理',
@@ -58,10 +61,10 @@ export function xDriveWorkspaceHostSections({
         { key: 'admin-maintenance', label: '备份与系统维护', icon: <BuildRoundedIcon fontSize="small" /> },
       ],
     }] : []),
-    {
+    ...(includeUtilityRoutes ? [{
       key: 'settings',
-      placement: 'bottom',
+      placement: 'bottom' as const,
       items: [xDriveSettingsSidebarDestination()],
-    },
+    }] : []),
   ]
 }

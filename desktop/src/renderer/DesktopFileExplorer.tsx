@@ -23,6 +23,7 @@ import {
   xDriveFileExplorerSelectionRequest,
   xDriveFileExplorerSelectionAdmissionReason,
   xDriveFileExplorerReadNodeID,
+  xDriveFileExplorerThumbnailRequest,
   xDriveFileExplorerPreviewRequest,
   xDriveFileExplorerResolveFolderUploadTargets,
   xDriveFileExplorerPropertiesRefs,
@@ -44,6 +45,7 @@ import {
   XDriveFileExplorerDestinationDialog,
   XDriveFileTagDialog,
   XDriveFileNameDialog,
+  XDriveFileExplorerSavedSearchDialogs,
   XDriveFileExplorerTrashDeleteDialog,
   useXDriveFileExplorerTrash,
   xDriveFileExplorerBackgroundMenuItems,
@@ -1050,7 +1052,8 @@ export default function DesktopFileExplorer({
   }, [previewStreamSupported])
 
   const loadThumbnail = useCallback(async (item: XDriveFileExplorerItem, signal?: AbortSignal, onProgress?: XDriveByteProgressHandler, onStage?: (stage: XDriveMediaLoadStage) => void) => {
-    if (item.kind !== 'file' || signal?.aborted) return null
+    const request = xDriveFileExplorerThumbnailRequest(item, !signal?.aborted)
+    if (!request) return null
     const lifecycleGeneration = actionGenerationRef.current
     const isCurrentLifecycle = () => (
       lifecycleGeneration === actionGenerationRef.current && !signal?.aborted
@@ -1058,7 +1061,7 @@ export default function DesktopFileExplorer({
 
     const result = await hostPort.requestViewport(
       signal,
-      (requestID) => hostPort.media.getMediaThumbnail(Number(item.id), requestID, Number(item.revision), onProgress),
+      (requestID) => hostPort.media.getMediaThumbnail(request.nodeID, requestID, request.revision, onProgress),
     )
     if (!isCurrentLifecycle()) return null
     if (result.ok) {
@@ -1072,7 +1075,7 @@ export default function DesktopFileExplorer({
     const agent = hostPort.media
     const preview = await hostPort.requestViewport(
       signal,
-      (requestID) => agent.cloudFilePreviewURL(Number(item.id), requestID),
+      (requestID) => agent.cloudFilePreviewURL(request.nodeID, requestID),
       (late) => {
         if (late.ok) hostPort.releaseDiscardedPreviewURL(late.data,
           (url) => agent.releaseCloudFilePreviewURL(url))
@@ -1084,12 +1087,12 @@ export default function DesktopFileExplorer({
       onStage?.('poster_capture')
       const poster = await xDriveCaptureVideoPosterBlob(preview.data, 0, 0, 0, 512, signal)
       if (!poster || !isCurrentLifecycle()) return null
-      const revision = Number(item.revision)
-      if (Number.isSafeInteger(revision) && revision > 0) {
+      const revision = request.revision
+      if (revision !== undefined) {
         try {
           const posterBytes = await poster.arrayBuffer()
           if (!isCurrentLifecycle()) return null
-          await agent.putMediaVideoPoster(Number(item.id), revision, posterBytes)
+          await agent.putMediaVideoPoster(request.nodeID, revision, posterBytes)
           if (!isCurrentLifecycle()) return null
         } catch {
           // Preserve the local poster when the shared Server cache is unavailable.
@@ -2500,43 +2503,19 @@ const desktopTransferLifecycleChildBatchSize = 1000
           setTagDialogMode(null)
         }}
       />
-      <XDriveFileNameDialog
-        open={saveSearchOpen}
-        mode="saved-search"
-        onClose={() => setSaveSearchOpen(false)}
+      <XDriveFileExplorerSavedSearchDialogs
+        saveOpen={saveSearchOpen}
+        renameSearch={renameSavedSearch}
+        lifecycleKeyRef={organizationLifecycleKeyRef}
+        currentQuery={searchState.query}
+        persistedFilters={persistedSearchFilters}
+        availabilityFilterActive={Boolean(searchFilters.availability)}
+        createSavedSearch={organization.createSavedSearch}
+        updateSavedSearch={organization.updateSavedSearch}
+        onCloseSave={() => setSaveSearchOpen(false)}
+        onCloseRename={() => setRenameSavedSearch(null)}
+        onFeedback={onFeedback}
         onError={(error) => onError(error instanceof Error ? error.message : String(error))}
-        onSubmit={async (name) => {
-          const lifecycleKey = organizationLifecycleKeyRef.current
-          await organization.createSavedSearch({
-            name,
-            query: searchState.query,
-            filters: persistedSearchFilters,
-          })
-          if (organizationLifecycleKeyRef.current !== lifecycleKey) return
-          if (searchFilters.availability) {
-            onFeedback('warning', '智能文件夹已保存；设备可用性筛选不会跨设备保存。')
-          } else {
-            onFeedback('good', '智能文件夹已保存。')
-          }
-        }}
-      />
-      <XDriveFileNameDialog
-        open={Boolean(renameSavedSearch)}
-        mode="saved-search"
-        initialValue={renameSavedSearch?.name ?? ''}
-        onClose={() => setRenameSavedSearch(null)}
-        onError={(error) => onError(error instanceof Error ? error.message : String(error))}
-        onSubmit={async (name) => {
-          if (!renameSavedSearch) return
-          const lifecycleKey = organizationLifecycleKeyRef.current
-          await organization.updateSavedSearch(renameSavedSearch.id, {
-            name,
-            query: renameSavedSearch.query,
-            filters: renameSavedSearch.filters,
-          })
-          if (organizationLifecycleKeyRef.current !== lifecycleKey) return
-          onFeedback('good', '智能文件夹已重命名。')
-        }}
       />
       <XDriveFileExplorerTrashDeleteDialog
         target={trash.deleteTarget}

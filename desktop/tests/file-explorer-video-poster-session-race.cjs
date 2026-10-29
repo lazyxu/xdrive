@@ -6,6 +6,21 @@ const ts = require('typescript')
 
 const repo = path.join(__dirname, '..', '..')
 
+// Use the actual production thumbnail admission after the shared
+// Web/Desktop extraction. A stale account regression must not replace the
+// Owner/Revision policy with a test-only permissive stub.
+const admissionSource = fs.readFileSync(
+  path.join(repo, 'ui/shared/src/file-explorer-read-identity.ts'), 'utf8')
+const admissionJS = ts.transpileModule(admissionSource, {
+  fileName: 'file-explorer-read-identity.ts',
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText
+const admissionModule = { exports: {} }
+new Function('module', 'exports', admissionJS)(admissionModule, admissionModule.exports)
+const xDriveFileExplorerThumbnailRequest =
+  admissionModule.exports.xDriveFileExplorerThumbnailRequest
+assert.equal(typeof xDriveFileExplorerThumbnailRequest, 'function')
+
 function extractLoadThumbnail() {
   const filename = path.join(repo, 'desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx')
   const source = fs.readFileSync(filename, 'utf8')
@@ -115,6 +130,7 @@ test('Desktop FileExplorer stale video poster decode cannot backfill the new acc
   const actionGenerationRef = { current: 1 }
   const loadThumbnail = compileCallback(filename, callback, {
     hostPort: { media: agentA, requestViewport: (_signal, invoke) => invoke() },
+    xDriveFileExplorerThumbnailRequest,
     Blob: class Blob {},
     URL: {
       createObjectURL: () => 'blob:poster-' + (++objectURLCount),

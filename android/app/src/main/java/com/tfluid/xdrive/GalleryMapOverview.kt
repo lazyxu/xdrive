@@ -45,8 +45,10 @@ internal fun ColumnScope.GalleryMapOverview(
             ) { Text("返回图库") }
         }
         Text(if (state.galleryBd09Requested)
-            "BD-09LL 网格来自当前 Owner 的真实数据；点击网格进入照片墙和 Viewer。这里尚非百度原生底图，地图相机仍待 SDK。"
-            else "显示当前账户真实 WGS84 GPS 概览；可切换已验证的 BD-09 网格查看照片。百度原生底图尚未接入。",
+            if (nativeBaiduMapSdkCompiled())
+                "当前 Owner 的 BD-09LL 网格已验证。可选百度原生底图与聚合点，点击数量标记进入当前网格照片墙和 Viewer；地图相机新范围请求尚待下一阶段。"
+            else "BD-09LL 网格来自当前 Owner 的真实数据；点击网格进入照片墙和 Viewer。当前 APK 未配置 Android 专用百度 AK，继续提供可信的非底图网格。"
+            else "显示当前账户真实 WGS84 GPS 概览；可切换已验证的 BD-09 网格查看照片。百度 Android 底图仅在配置有效的专用 AK 后提供。",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.testTag("gallery-map-unavailable-basemap"))
@@ -175,7 +177,15 @@ private fun ColumnScope.GalleryVerifiedBd09Cells(
                     "${result.cells.size} 个真实 BD-09 代表点（最多 64 格）",
                     modifier = Modifier.testTag("gallery-map-bd09-count"),
                     style = MaterialTheme.typography.bodyMedium)
-                VerifiedBd09Grid(result, bounds)
+                NativeBaiduMapPanel(
+                    bounds = bounds,
+                    result = result,
+                    onOpenCell = controller::openGalleryBd09Cell,
+                ) {
+                    // Default no-SDK APK, declined consent and failed SDK
+                    // initialization all retain the genuine signed grid.
+                    VerifiedBd09Grid(result, bounds)
+                }
             }
         }
         if (result.cells.isEmpty()) item(key = "empty") {

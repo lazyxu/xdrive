@@ -3,6 +3,7 @@ import type { XDriveServerBackupSnapshot } from './server-backup-admin'
 export type XDriveServerBackupSnapshotFilter = {
   query: string
   format: 'all' | 'v1' | 'v2'
+  repository: 'all' | 'v1' | 'v2-default' | 'v2-configured'
   status: 'all' | 'recoverable' | 'database_only' | 'incomplete' | 'inconsistent'
   order: 'newest' | 'oldest'
 }
@@ -17,6 +18,9 @@ export function filterServerBackupSnapshots(
     if (query && !item.name.toLocaleLowerCase().includes(query) &&
       !item.id.toLocaleLowerCase().includes(query)) return false
     if (filter.format !== 'all' && item.format !== filter.format) return false
+    // Only the fixed Host namespace in the canonical snapshot ID is a
+    // repository selector. Browser input never becomes a filesystem path.
+    if (filter.repository !== 'all' && !item.id.startsWith(filter.repository + ':')) return false
     switch (filter.status) {
       case 'recoverable': return item.state === 'complete' && item.file_data_included
       case 'database_only': return item.state === 'complete' && !item.file_data_included

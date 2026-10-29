@@ -9,9 +9,11 @@ import (
 	"image/jpeg"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	mediapkg "github.com/lazyxu/xdrive/internal/media"
@@ -234,4 +236,87 @@ func testRealHEICLivePhotoThumbnail(t *testing.T, db *gorm.DB, server *Server, r
 			t.Fatalf("thumbnail repair unexpectedly wrote %d derived-range records", rows)
 		}
 	})
+
+	t.Run("real standalone HEIC Owner Viewer analysis preview is signed, decoded, and revision fenced", func(t *testing.T) {
+		// Real HEVC-coded .HEIC original, not a JPEG masquerading as HEIC or
+		// a synthetic LIVP. Exercise the existing browser-compatible Owner
+		// JPEG preview ticket independently of the .livp still/motion path.
+		raw := uploadTestFile(t, router, token, parentID, "owner-hevc-512.HEIC", string(still))
+		var current meta.Node
+		if err := db.Preload("File").First(&current, raw.ID).Error; err != nil ||
+			current.File == nil || current.Revision == 0 {
+			t.Fatalf("real HEIC Owner Node missing: node=%+v err=%v", current, err)
+		}
+		var owner meta.User
+		if err := db.First(&owner, current.OwnerID).Error; err != nil ||
+			owner.ID == 0 || owner.SessionVersion == 0 {
+			t.Fatalf("real HEIC current Owner absent: owner=%+v err=%v", owner, err)
+		}
+		analysisPath := fmt.Sprintf("/api/v1/media/items/%d/analysis-preview?revision=%d",
+			current.ID, current.Revision)
+		analysis := request(t, router, http.MethodGet, analysisPath, token, nil, http.StatusOK)
+		if mime := analysis.Header().Get("Content-Type"); mime != "image/jpeg" {
+			t.Fatalf("HEIC Viewer must use browser-compatible JPEG, got %q", mime)
+		}
+		cfg, err := jpeg.DecodeConfig(bytes.NewReader(analysis.Body.Bytes()))
+		if err != nil || cfg.Width != 512 || cfg.Height != 512 {
+			t.Fatalf("actual HEVC HEIC Viewer JPEG not decoded: %+v, err=%v", cfg, err)
+		}
+		etag := analysis.Header().Get("ETag")
+		if etag == "" || analysis.Header().Get("X-Content-Type-Options") != "nosniff" {
+			t.Fatal("Owner HEIC Viewer derivative missing source identity or MIME guard")
+		}
+		// Original CAS bytes must remain bitwise identical after thumbnail/
+		// analysis derivation: only transient Viewer JPEG bytes may be shown.
+		file, err := server.Store.Open(context.Background(), current.File.StorageKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		originalHEIC, readErr := io.ReadAll(file)
+		closeErr := file.Close()
+		if readErr != nil || closeErr != nil || !bytes.Equal(originalHEIC, still) {
+			t.Fatalf("read-only HEIC Viewer changed original CAS: read=%v close=%v", readErr, closeErr)
+		}
+		ticket, _, err := server.Auth.IssuePreviewStream(
+			owner.ID, owner.SessionVersion, current.ID, current.Revision,
+			mediaAnalysisPreviewTicketKind, time.Minute)
+		if err != nil {
+			t.Fatal(err)
+		}
+		signedPath := fmt.Sprintf("/api/v1/media-analysis-preview/%d?ticket=%s",
+			current.ID, url.QueryEscape(ticket))
+		signed := request(t, router, http.MethodGet, signedPath, "", nil, http.StatusOK)
+		if !bytes.Equal(signed.Body.Bytes(), analysis.Body.Bytes()) ||
+			signed.Header().Get("Content-Type") != "image/jpeg" ||
+			signed.Header().Get("Cache-Control") != "private, no-store" ||
+			signed.Header().Get("ETag") != etag {
+			t.Fatal("Owner-signed real HEIC Viewer bytes/MIME/ETag changed")
+		}
+		partial := requestWithHeaders(t, router, http.MethodGet, signedPath,
+			"", nil, http.StatusPartialContent, map[string]string{"Range": "bytes=0-31"})
+		if !bytes.Equal(partial.Body.Bytes(), analysis.Body.Bytes()[:32]) ||
+			partial.Header().Get("Content-Range") != fmt.Sprintf(
+				"bytes 0-31/%d", analysis.Body.Len()) {
+			t.Fatal("real HEIC Viewer signed Range did not return current derived JPEG")
+		}
+		foreignToken := createTestUser(t, db, router,
+			"heic-viewer-foreign-owner", "test-only-foreign-password")
+		request(t, router, http.MethodGet, analysisPath,
+			foreignToken, nil, http.StatusNotFound)
+		request(t, router, http.MethodGet, fmt.Sprintf(
+			"/api/v1/media-analysis-preview/%d?ticket=%s",
+			current.ID+1, url.QueryEscape(ticket)), "", nil, http.StatusUnauthorized)
+		request(t, router, http.MethodGet,
+			fmt.Sprintf("/api/v1/media/items/%d/analysis-preview?revision=%d",
+				current.ID, current.Revision+1), token, nil, http.StatusConflict)
+
+		// A legitimate original revision replacement invalidates the old
+		// signed Viewer ticket, not just the next ordinary Owner API read.
+		if err := db.Model(&meta.Node{}).Where("id = ? AND owner_id = ?",
+			current.ID, owner.ID).Update("revision", gorm.Expr("revision + 1")).Error; err != nil {
+			t.Fatal(err)
+		}
+		request(t, router, http.MethodGet, signedPath, "", nil, http.StatusGone)
+	})
+
 }

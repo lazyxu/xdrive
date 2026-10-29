@@ -5,19 +5,26 @@ import {
 } from '@mui/material'
 import type {
   XDriveServerBackupSnapshotIndexPage, XDriveServerBackupSnapshotIndexQuery,
+  XDriveServerBackupPage,
 } from '../server-backup-admin'
+import { serverBackupHistoricalVerificationLabel } from '../server-backup-integrity'
 
 const pageSize = 50
 const firstOlderOffset = 100
 const validIdentity = /^(v1|v2-default|v2-configured):xdrive-backup-[0-9]{8}T[0-9]{6}Z$/
 
-/** Older Host identities are not verified backups and are intentionally not
- * selectable for restore, deletion or other destructive actions. */
+/** Older identities are not proof of a restorable generation. A bounded
+ * verification-only action is allowed after fresh Server/Host index fencing;
+ * restore, deletion and drill must remain unavailable here. */
 export function XDriveBackupSnapshotIndexPager({
-  readPage, policyRevision,
+  readPage, policyRevision, history, verifyMode, actionsDisabled, onVerifyOlderSnapshot,
 }: {
   readPage: (query: XDriveServerBackupSnapshotIndexQuery) => Promise<XDriveServerBackupSnapshotIndexPage>
   policyRevision: string
+  history: XDriveServerBackupPage['history']
+  verifyMode: 'fast' | 'deep'
+  actionsDisabled: boolean
+  onVerifyOlderSnapshot: (snapshotID: string) => void
 }) {
   const generation = useRef(0)
   const [result, setResult] = useState<XDriveServerBackupSnapshotIndexPage | null>(null)
@@ -75,7 +82,8 @@ export function XDriveBackupSnapshotIndexPager({
         <Typography variant="subtitle1" fontWeight={600}>较早备份快照 · 只读索引</Typography>
         <Typography variant="body2" color="text.secondary">
           这里显示最新 100 代之后的规范快照编号，不表示文件完整、通过 SHA-256 校验或可恢复。
-          旧代不能从此列表直接恢复或删除，需后续由宿主机重新验证。
+          旧代仅能请求只读完整性校验；不能从此列表直接恢复或删除，也不能执行演练。
+          校验时 Server 会重新核对当前 Host 索引，Host 再次核对真实快照；历史结果不代表当前可恢复。
         </Typography>
         {!result ? (
           <Button variant="outlined" disabled={loading}
@@ -92,17 +100,29 @@ export function XDriveBackupSnapshotIndexPager({
             <TableContainer sx={{ maxHeight: 300 }}>
               <Table size="small" stickyHeader aria-label="较早备份快照只读列表">
                 <TableHead>
-                  <TableRow><TableCell>序号</TableCell><TableCell>宿主机规范快照编号</TableCell></TableRow>
+                  <TableRow><TableCell>序号</TableCell><TableCell>宿主机规范快照编号</TableCell><TableCell>最近验证（历史）</TableCell><TableCell>只读校验</TableCell></TableRow>
                 </TableHead>
                 <TableBody>
                   {result.snapshot_ids.map((id, i) => (
                     <TableRow key={id}>
                       <TableCell>{result.offset + i + 1}</TableCell>
                       <TableCell sx={{ overflowWrap: 'anywhere' }}>{id}</TableCell>
+                      <TableCell data-xdrive-admin-older-verification-history>
+                        {serverBackupHistoricalVerificationLabel(history, id)}
+                      </TableCell>
+                      <TableCell>
+                        <Button size="small" variant="outlined"
+                          disabled={loading || actionsDisabled}
+                          aria-label={`验证较早备份 ${id}`}
+                          data-xdrive-admin-older-backup-verify
+                          onClick={() => onVerifyOlderSnapshot(id)}>
+                          验证（{verifyMode}）
+                        </Button>
+                      </TableCell>
                     </TableRow>
                   ))}
                   {!result.snapshot_ids.length ? (
-                    <TableRow><TableCell colSpan={2}>此索引范围没有其他快照。</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={4}>此索引范围没有其他快照。</TableCell></TableRow>
                   ) : null}
                 </TableBody>
               </Table>

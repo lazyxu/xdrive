@@ -87,6 +87,33 @@ func validBackupSnapshotIndex(index backupAdminSnapshotIndex, inventory backupAd
 	return len(inventory.Snapshots) <= len(index.SnapshotIDs)
 }
 
+// backupAdminOlderSnapshotInCurrentIndex authorizes only a read-only VERIFY
+// request for a Host-discovered older identity. The newest-100 inventory
+// remains the *only* source for restore, drill and deletion admission.
+// Index entries carry no integrity/restore proof: the Host must re-resolve
+// the allowlisted namespace and perform real verification under its lock.
+func backupAdminOlderSnapshotInCurrentIndex(dir string, inventory backupAdminInventory, id string) bool {
+	if !backupAdminSnapshotID.MatchString(id) ||
+		inventory.TotalSnapshots == nil || *inventory.TotalSnapshots <= 100 ||
+		len(inventory.Snapshots) != 100 {
+		return false
+	}
+	var index backupAdminSnapshotIndex
+	if err := readSafeBackupAdminJSON(dir, "backup-admin-snapshot-index.json", 128<<10, &index); err != nil ||
+		!validBackupSnapshotIndex(index, inventory) {
+		return false
+	}
+	// The first 100 are covered by the richer, current Host inventory. Only
+	// indices 100..999 can use this opt-in path; a truncated index does not
+	// authorize any older identity that it did not actually enumerate.
+	for i := 100; i < len(index.SnapshotIDs); i++ {
+		if index.SnapshotIDs[i] == id {
+			return true
+		}
+	}
+	return false
+}
+
 func adminBackupPageNumber(raw string, fallback, max int) (int, bool) {
 	if raw == "" {
 		return fallback, true

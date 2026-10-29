@@ -334,9 +334,25 @@ separate from owning-device Push backups and from online CAS storage checks.
   v2 retention previews. The Host counts all canonical generations while
   publishing full metadata only for the newest 100. The administrator sees
   the exact bounded count and whether older generations are omitted from
-  this view; older backups cannot be selected for individual actions until
-  paginated inventory is implemented. Batch verification has its independent
-  1000-generation safety bound. No browser-supplied Host path is accepted.
+  this view. A separate read-only pager exposes Host-indexed identities
+  #101–#1000; these can request individual fast/deep **verification only**.
+  The Server validates the fresh Host index against the current inventory
+  and policy revision, and the Host independently resolves and verifies the
+  actual snapshot under its own operation locks. Older identities **never**
+  grant restore, deletion or isolated drill authority; those still require
+  a current fully described snapshot in the newest-100 inventory. The index
+  can be truncated at 1000, so undiscovered generations stay unavailable.
+  Batch verification has an independent 1000-generation safety bound.
+  No browser-supplied Host path is accepted.
+- **Repository exploration**: the authenticated Host reports separate canonical
+  counts for traditional v1, default v2 and configured v2. The administrator
+  can filter its currently listed newest-100 snapshots by these fixed Host
+  namespace IDs, also combining the filter with format/status/date/search.
+  The displayed count still represents the whole Host repository; filtering
+  the bounded table does not imply that older snapshots are missing.
+  Selecting a repository revokes any in-progress destructive UI confirmation
+  or selected-v2 deep-preview receipt. This never edits a configured Host
+  path, changes a repository, or unlocks older-generation restore/delete.
 - **Update**: revision-fenced v1/v2 scheduled format and v1 retention days.
   Immutable snapshot objects are never edited. The original schedule is
   retained; changing to v2 does not enable scheduled pruning.

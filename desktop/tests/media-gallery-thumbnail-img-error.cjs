@@ -14,7 +14,7 @@ const start = original.indexOf('export function XDriveMediaAsyncThumbnail(')
 const end = original.indexOf('\nconst mediaPosterConcurrency', start)
 assert.ok(start >= 0 && end > start, 'the shared production thumbnail component must exist')
 const source = [
-  "import { useEffect, useRef, useState, useContext, createContext } from 'react'",
+  "import { useEffect, useMemo, useRef, useState, useContext, createContext } from 'react'",
   "import { Box, Skeleton, XDriveMediaLoadingProgress } from './fixture'",
   'const XDriveBackgroundMediaThumbnailSuspended = createContext(false)',
   'type MediaThumbnailLoader = any; type ReactNode = any',
@@ -122,6 +122,92 @@ test('P0-L2 changed Node revision recovers from an image error without stale fal
   assert.equal(image(view)?.props.src, 'https://images.invalid/revision-2')
   assert.deepEqual(requests, [1, 2], 'only source revision change restarts acquisition')
   await act(async () => { view.unmount() })
+})
+
+test('same Node/revision under another authenticated loader cannot paint the previous Owner still', async () => {
+  const oldReady = []
+  const newReady = []
+  const loaderA = async () => 'blob:owner-a-original'
+  let resolveB
+  let bReads = 0
+  const loaderB = () => {
+    bReads++
+    return new Promise(resolve => { resolveB = resolve })
+  }
+  const onReadyA = value => oldReady.push(value)
+  const onReadyB = value => newReady.push(value)
+  const props = (loader, onReady) => ({
+    nodeID: 422, revision: 9, alt: 'same-node.jpg',
+    loadThumbnail: loader, fallback, onImageReadyChange: onReady,
+    revokeOnDispose: false,
+  })
+  let view
+  try {
+    await act(async () => {
+      view = renderer.create(React.createElement(Thumb, props(loaderA, onReadyA)))
+      await flush()
+    })
+    assert.equal(image(view)?.props.src, 'blob:owner-a-original')
+    const staleReady = image(view).props.onLoad
+    const staleError = image(view).props.onError
+    await act(async () => staleReady({ currentTarget: { naturalWidth: 640 } }))
+    assert.equal(oldReady.at(-1), true)
+
+    // This is the synchronous render gate, independent of React's decision
+    // to batch the update until after act() resolves.
+    assert.match(original, /image\?\.identity === sourceIdentity && image\.owner === sourceOwner/,
+      'the previous Owner must be masked during render before passive effects')
+    assert.match(original, /displayed\.owner !== sourceOwner/,
+      'late old DOM events must be fenced by the authenticated loader')
+    await act(async () => {
+      view.update(React.createElement(Thumb, props(loaderB, onReadyB)))
+      await flush()
+    })
+    assert.equal(failed(view), false)
+    assert.equal(bReads, 1)
+    assert.equal(image(view), undefined, 'B pending must show a skeleton, not A bytes')
+    await act(async () => {
+      staleReady({ currentTarget: { naturalWidth: 640 } })
+      staleError()
+    })
+    assert.equal(image(view), undefined)
+    assert.equal(newReady.includes(true), false, 'old DOM callbacks cannot certify new Owner')
+    await act(async () => {
+      resolveB('blob:owner-b-original')
+      await flush()
+    })
+    assert.equal(image(view)?.props.src, 'blob:owner-b-original')
+    await act(async () => image(view).props.onLoad({ currentTarget: { naturalWidth: 800 } }))
+    assert.equal(newReady.at(-1), true)
+  } finally {
+    if (view) await act(async () => view.unmount())
+  }
+})
+
+test('a failed former Owner thumbnail must not mask the same Node/revision in new scope', async () => {
+  const denied = async () => { throw Error('Old Owner media revoked') }
+  let resolveNext
+  const pending = () => new Promise(resolve => { resolveNext = resolve })
+  const render = loader => React.createElement(Thumb, {
+    nodeID: 500, revision: 1, alt: 'overlap.jpg',
+    loadThumbnail: loader, fallback, revokeOnDispose: false,
+  })
+  let view
+  try {
+    await act(async () => { view = renderer.create(render(denied)); await flush() })
+    assert.equal(failed(view), true)
+    assert.match(original, /failedIdentity\?\.identity === sourceIdentity && failedIdentity\.owner === sourceOwner/,
+      'old failure state must be hidden by render-time authenticated loader gate')
+    await act(async () => {
+      view.update(render(pending))
+      await flush()
+    })
+    assert.equal(failed(view), false, 'new Owner should show loading, not old 403')
+    await act(async () => { resolveNext('blob:owner-b-safe'); await flush() })
+    assert.equal(image(view)?.props.src, 'blob:owner-b-safe')
+  } finally {
+    if (view) await act(async () => view.unmount())
+  }
 })
 
 test('P0-L2 missing support/loader failure still fall back and never introduce new HTTP requests', async () => {

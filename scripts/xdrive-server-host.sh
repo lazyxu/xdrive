@@ -836,7 +836,7 @@ latest_snapshot_backup() {
 
 backup_list_cmd() {
   [[ $# -eq 0 ]] || { echo "usage: xdrive-server backup list" >&2; return 2; }
-  local root dir name size created channel commit consistent file_data status found=0 required version
+  local root dir name size created channel commit consistent file_data status found=0 required version manifest_info
   backup_snapshot_roots || return
   printf '%-30s %-20s %-9s %-10s %-14s %-16s %s\n' "BACKUP" "CREATED_UTC" "SIZE" "CHANNEL" "COMMIT" "STATUS" "PATH"
   for root in "${BACKUP_SNAPSHOT_ROOTS[@]}"; do
@@ -850,23 +850,39 @@ backup_list_cmd() {
       created="$(backup_manifest_value "$dir/manifest.json" created_at_utc)"
       channel="$(backup_manifest_value "$dir/manifest.json" release_channel)"
       commit="$(backup_manifest_value "$dir/manifest.json" release_commit)"
-      consistent="$(sed -nE 's/.*"consistency_verified"[[:space:]]*:[[:space:]]*(true|false).*/\1/p' "$dir/manifest.json" 2>/dev/null | head -n1 || true)"
-      file_data="$(backup_manifest_bool "$dir/manifest.json" file_data_included true)"
-      status="complete"
-      for required in database.dump verify.json manifest.json SHA256SUMS.txt; do
-        [[ -f "$dir/$required" ]] || { status="incomplete"; break; }
-      done
-      if grep -Eq '"format_version"[[:space:]]*:[[:space:]]*2' "$dir/manifest.json" 2>/dev/null; then
-        for required in objects.index legacy.tar; do
-          [[ -f "$dir/$required" ]] || status="incomplete"
-        done
-        [[ "$status" != "complete" ]] || status="cas-incremental"
-      elif [[ "$status" == "complete" && "$file_data" != "false" && ! -f "$dir/blobs.tar" ]]; then
-        status="incomplete"
-      elif [[ "$status" == "complete" && "$file_data" == "false" ]]; then
-        status="database-only"
+      # The listing is informational, but cannot label an ambiguous Manifest
+      # as a complete snapshot. Reuse the strict, bounded, nofollow JSON reader.
+      manifest_info="$(backup_verified_manifest_info "$dir/manifest.json" 2>/dev/null || true)"
+      version="" file_data="" consistent=""
+      if [[ -n "$manifest_info" ]]; then
+        IFS=$'\t' read -r version file_data consistent <<< "$manifest_info"
       fi
-      [[ "$status" != "complete" || "$consistent" != "false" ]] || status="inconsistent"
+      status="invalid-manifest"
+      if [[ "$version" == 1 || "$version" == 2 ]]; then
+        status="complete"
+        for required in database.dump verify.json manifest.json SHA256SUMS.txt; do
+          [[ -f "$dir/$required" && ! -L "$dir/$required" ]] || { status="incomplete"; break; }
+        done
+        if [[ "$version" == 2 ]]; then
+          for required in objects.index legacy.tar; do
+            [[ -f "$dir/$required" && ! -L "$dir/$required" ]] || status="incomplete"
+          done
+          if [[ "$status" == complete ]]; then
+            if [[ "$file_data" == true ]]; then status="cas-incremental"
+            else status="invalid-manifest"; fi
+          fi
+        elif [[ "$status" == complete ]]; then
+          if [[ "$file_data" == false ]]; then
+            status="database-only"
+          elif [[ ! -f "$dir/blobs.tar" || -L "$dir/blobs.tar" ]]; then
+            status="incomplete"
+          fi
+        fi
+        if [[ "$consistent" == false && "$status" != incomplete &&
+              "$status" != invalid-manifest ]]; then
+          status="inconsistent"
+        fi
+      fi
       [[ -n "$created" ]] || created="-"
       [[ -n "$size" ]] || size="-"
       [[ -n "$channel" ]] || channel="-"
@@ -1614,9 +1630,10 @@ backup_isolated_drill_worker() {
   exec 7< "$lock" || return 4
   flock -s -n 7 || return 75
   [[ -f "$real/manifest.json" && ! -L "$real/manifest.json" ]] || return 4
-  grep -Eq '"format_version"[[:space:]]*:[[:space:]]*2' "$real/manifest.json" || return 4
-  grep -Eq '"consistency_verified"[[:space:]]*:[[:space:]]*true' "$real/manifest.json" || return 4
-  grep -Eq '"file_data_included"[[:space:]]*:[[:space:]]*true' "$real/manifest.json" || return 4
+  # No Docker admission from grep matches in duplicate or nested JSON.
+  local manifest_info
+  manifest_info="$(backup_verified_manifest_info "$real/manifest.json")" || return 4
+  [[ "$manifest_info" == $'2\ttrue\ttrue' ]] || return 4
   for file in database.dump verify.json manifest.json objects.index legacy.tar SHA256SUMS.txt; do
     [[ -f "$real/$file" && ! -L "$real/$file" ]] || return 4
   done

@@ -13,6 +13,7 @@ import {
   XDriveFileExplorerDestinationDialog,
   XDriveFileTagDialog,
   XDriveFileNameDialog,
+  XDriveFileExplorerSavedSearchDialogs,
   XDriveFileExplorerTrashDeleteDialog,
   useXDriveFileExplorerTrash,
   xDriveFileExplorerBackgroundMenuItems,
@@ -57,6 +58,7 @@ import {
   xDriveFileExplorerSearchFilterLabels,
   xDriveFileExplorerProjectSearchSources,
   xDriveFileExplorerReadNodeID,
+  xDriveFileExplorerThumbnailRequest,
   xDriveFileExplorerPreviewRequest,
   xDriveFileExplorerSelectionRequest,
   xDriveFileNeedsBrowserCompatibleImagePreview,
@@ -993,9 +995,10 @@ export default function WebFileExplorer({
   }, [api])
 
   const loadThumbnail = useCallback(async (item: XDriveFileExplorerItem, signal?: AbortSignal, onProgress?: XDriveByteProgressHandler, onStage?: (stage: XDriveMediaLoadStage) => void) => {
-    if (item.kind !== 'file' || signal?.aborted) return null
+    const request = xDriveFileExplorerThumbnailRequest(item, !signal?.aborted)
+    if (!request) return null
     try {
-      const blob = await api.mediaThumbnail(Number(item.id), signal, Number(item.revision), onProgress)
+      const blob = await api.mediaThumbnail(request.nodeID, signal, request.revision, onProgress)
       if (signal?.aborted) return null
       return URL.createObjectURL(blob)
     } catch {
@@ -1004,15 +1007,15 @@ export default function WebFileExplorer({
     }
 
     try {
-      const source = await api.filePreviewURL(Number(item.id), signal)
+      const source = await api.filePreviewURL(request.nodeID, signal)
       if (signal?.aborted) return null
       onStage?.('poster_capture')
       const poster = await xDriveCaptureVideoPosterBlob(source, 0, 0, 0, 512, signal)
       if (!poster || signal?.aborted) return null
-      const revision = Number(item.revision)
-      if (Number.isSafeInteger(revision) && revision > 0) {
+      const revision = request.revision
+      if (revision !== undefined) {
         try {
-          await api.mediaVideoPoster(Number(item.id), revision, poster, signal)
+          await api.mediaVideoPoster(request.nodeID, revision, poster, signal)
         } catch {
           // Backfill failure does not discard the already decoded local poster.
         }
@@ -2044,43 +2047,19 @@ export default function WebFileExplorer({
           setTagDialogMode(null)
         }}
       />
-      <XDriveFileNameDialog
-        open={saveSearchOpen}
-        mode="saved-search"
-        onClose={() => setSaveSearchOpen(false)}
+      <XDriveFileExplorerSavedSearchDialogs
+        saveOpen={saveSearchOpen}
+        renameSearch={renameSavedSearch}
+        lifecycleKeyRef={organizationLifecycleKeyRef}
+        currentQuery={searchState.query}
+        persistedFilters={persistedSearchFilters}
+        availabilityFilterActive={Boolean(searchFilters.availability)}
+        createSavedSearch={organization.createSavedSearch}
+        updateSavedSearch={organization.updateSavedSearch}
+        onCloseSave={() => setSaveSearchOpen(false)}
+        onCloseRename={() => setRenameSavedSearch(null)}
+        onFeedback={onFeedback}
         onError={onError}
-        onSubmit={async (name) => {
-          const lifecycleKey = organizationLifecycleKeyRef.current
-          await organization.createSavedSearch({
-            name,
-            query: searchState.query,
-            filters: persistedSearchFilters,
-          })
-          if (organizationLifecycleKeyRef.current !== lifecycleKey) return
-          if (searchFilters.availability) {
-            onFeedback('warning', '智能文件夹已保存；设备可用性筛选不会跨设备保存。')
-          } else {
-            onFeedback('good', '智能文件夹已保存。')
-          }
-        }}
-      />
-      <XDriveFileNameDialog
-        open={Boolean(renameSavedSearch)}
-        mode="saved-search"
-        initialValue={renameSavedSearch?.name ?? ''}
-        onClose={() => setRenameSavedSearch(null)}
-        onError={onError}
-        onSubmit={async (name) => {
-          if (!renameSavedSearch) return
-          const lifecycleKey = organizationLifecycleKeyRef.current
-          await organization.updateSavedSearch(renameSavedSearch.id, {
-            name,
-            query: renameSavedSearch.query,
-            filters: renameSavedSearch.filters,
-          })
-          if (organizationLifecycleKeyRef.current !== lifecycleKey) return
-          onFeedback('good', '智能文件夹已重命名。')
-        }}
       />
       <XDriveFileExplorerTrashDeleteDialog
         target={trash.deleteTarget}

@@ -164,6 +164,48 @@ test('completed successful child job preserves queued workflow even in dry-run',
   }
 })
 
+test('published Snapshot may retire old queued master CI after read-only pr-scope success', async()=>{
+  const t=fixture({jobsById:{1:[
+    {id:10,run_id:1,name:'pr-scope',status:'completed',conclusion:'success'},
+    {id:11,run_id:1,name:'server-image',status:'queued',conclusion:null},
+    {id:12,run_id:1,name:'final-gate',status:'queued',conclusion:null},
+  ]}})
+  const r=await pruneQueuedMasterCI(t)
+  assert.equal(r.eligible,1)
+  assert.equal(r.cancelled,1)
+  assert.deepEqual(t.calls.cancel,[1])
+})
+
+test('successful substantive build or policy test cannot masquerade as pr-scope', async()=>{
+  for(const name of ['server-image','policy-contract','publish-master','final-gate']){
+    const t=fixture({jobsById:{1:[
+      {id:10,run_id:1,name:'pr-scope',status:'completed',conclusion:'success'},
+      {id:11,run_id:1,name,status:'completed',conclusion:'success'},
+      {id:12,run_id:1,name:'server-backup',status:'queued',conclusion:null},
+    ]}})
+    const r=await pruneQueuedMasterCI(t)
+    assert.equal(r.cancelled,0,name)
+    assert.deepEqual(t.calls.cancel,[],name)
+    assert.equal(r.audit[0].action,'preserved-started-or-unknown-jobs',name)
+  }
+})
+
+test('failed or cancelled pr-scope and in-progress publisher preserve master CI', async()=>{
+  for(const [name,status,conclusion] of [
+    ['pr-scope','completed','failure'],
+    ['pr-scope','completed','cancelled'],
+    ['publish-master','in_progress',null],
+  ]){
+    const t=fixture({jobsById:{1:[
+      {id:10,run_id:1,name,status,conclusion},
+      {id:11,run_id:1,name:'server-image',status:'queued',conclusion:null},
+    ]}})
+    const r=await pruneQueuedMasterCI(t)
+    assert.equal(r.cancelled,0)
+    assert.deepEqual(t.calls.cancel,[])
+  }
+})
+
 test('queued and skipped-only jobs remain eligible for bounded pruning', async()=>{
   const t=fixture({jobsById:{1:[
     {id:10,run_id:1,status:'queued',conclusion:null},

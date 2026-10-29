@@ -109,6 +109,14 @@ export function xDriveMountBaiduInlineMap<T>(
   let gestureFrame: number | null = null
   let coveredSelections = new Set<T>()
   let pendingViewport: ReturnType<typeof setTimeout> | null = null
+  // A real mouse-down pan may produce an early SDK moveend before pointerup.
+  // Never issue the next Owner /cells while the same primary mouse is held.
+  // Gesture-only photo pixels remain inert; Owner scope changes still clear them.
+  let heldMousePointer: number | null = null
+  // Track secondary fingers independently; a pinch must remain inert until
+  // the LAST trusted touch/pen contact has released. No IDs leave this Host.
+  const heldTouchPointers = new Set<number>()
+  let viewportAfterMouseRelease = false
   let observedSize: {width:number;height:number} | null = null
   let sizeObserver: ResizeObserver | null = null
   let windowResizeFallback = false
@@ -147,16 +155,28 @@ export function xDriveMountBaiduInlineMap<T>(
     if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) ||
         width < 1 || height < 1 || width > 4096 || height > 4096) return
     const projected: Array<{selection:T;count:number;x:number;y:number}> = []
+    let validPixels = 0
     for (const cell of gesture ? gestureCells : cells) {
       try {
         const position = map.pointToPixel(new sdk.Point(cell.longitude,cell.latitude))
         const x = Math.round(position.x)
         const y = Math.round(position.y)
-        if (!Number.isSafeInteger(x) || !Number.isSafeInteger(y) ||
-            x < 0 || y < 0 || x > width || y > height) continue
+        if (!Number.isSafeInteger(x) || !Number.isSafeInteger(y)) continue
+        // Finite pixels outside the viewport are a REAL offscreen result,
+        // not a projection failure. Only an entirely undecodable moving frame
+        // may retain the last visual, never a deliberately offscreen marker.
+        validPixels++
+        if (x < 0 || y < 0 || x > width || y > height) continue
         projected.push({selection:cell.selection,count:cell.count,x,y})
       } catch { /* Optional SDK projection is not media authority. */ }
     }
+    // During some SDK animation frames pointToPixel briefly returns NaN or
+    // throws for EVERY old Cell. Publishing [] here would erase all the
+    // previously signed, already-inert photo covers before mouseup. The last
+    // visual can remain until a decodable frame or fresh /cells arrives.
+    // Never reuse it as clickable Owner authority or suppress normal zero
+    // projections outside gesture mode.
+    if (gesture && gestureCells.length>0 && validPixels===0) return
     if (gesture)options.onGestureProjectedCells?.({width,height,cells:projected})
     else options.onProjectedCells?.({width,height,cells:projected})
   }
@@ -244,12 +264,60 @@ export function xDriveMountBaiduInlineMap<T>(
   const scheduleViewport = () => {
     projectGesture()
     clearTimer()
+    if (heldMousePointer !== null || heldTouchPointers.size > 0) {
+      viewportAfterMouseRelease = true
+      return
+    }
     pendingViewport = setTimeout(() => {
       pendingViewport = null
+      // The SDK may have scheduled before pointerdown: never settle a
+      // previous viewport while the user is still physically dragging.
+      if (heldMousePointer !== null || heldTouchPointers.size > 0) {
+        viewportAfterMouseRelease = true
+        return
+      }
       emitViewport()
     }, 500)
   }
-  const stopViewport = () => { if (alive && ready) invalidate() }
+  const stopViewport = () => {
+    if (!alive || !ready) return
+    if (heldMousePointer !== null || heldTouchPointers.size > 0)
+      viewportAfterMouseRelease = true
+    invalidate()
+  }
+  const onMousePointerDown = (event: PointerEvent) => {
+    if (!alive || !ready || !event.isTrusted || event.button !== 0) return
+    if (event.pointerType === 'mouse' && event.isPrimary)
+      heldMousePointer = event.pointerId
+    else if (event.pointerType === 'touch' || event.pointerType === 'pen')
+      heldTouchPointers.add(event.pointerId)
+  }
+  const releaseHeldMouse = (pointerID?: number) => {
+    const mouseMatches = heldMousePointer !== null &&
+      (pointerID === undefined || pointerID === heldMousePointer)
+    const touchMatches = pointerID === undefined
+      ? heldTouchPointers.size > 0 : heldTouchPointers.delete(pointerID)
+    if (!mouseMatches && !touchMatches) return
+    if (mouseMatches) heldMousePointer = null
+    if (pointerID === undefined) heldTouchPointers.clear()
+    // A second finger still touching the map has not completed the SDK pan
+    // or pinch. Do not issue a new signed Owner Camera Range yet.
+    if (heldMousePointer !== null || heldTouchPointers.size > 0) return
+    if (!viewportAfterMouseRelease) return
+    viewportAfterMouseRelease = false
+    if (alive && ready) scheduleViewport()
+  }
+  const onMousePointerUp = (event: PointerEvent) => {
+    releaseHeldMouse(event.pointerId)
+  }
+  // The SDK canvas is the input surface in inline mode; use capture so
+  // third-party handler stopPropagation cannot hide a genuine pointerdown.
+  // A release outside the canvas or window blur also settles the Owner Range.
+  canvas.addEventListener('pointerdown', onMousePointerDown, true)
+  browser.addEventListener('pointerup', onMousePointerUp, true)
+  browser.addEventListener('pointercancel', onMousePointerUp, true)
+  const onMouseWindowBlur = () => releaseHeldMouse()
+  browser.addEventListener('blur', onMouseWindowBlur)
   // A responsive container can change without Baidu firing move/zoom events
   // (orientation, 899/900 breakpoint or a Desktop sidebar resize). Old
   // pointToPixel results belong to the prior CSS viewport and MUST NOT stay
@@ -301,6 +369,13 @@ export function xDriveMountBaiduInlineMap<T>(
     lifetime.abort()
     generation++
     clearTimer()
+    heldMousePointer = null
+    heldTouchPointers.clear()
+    viewportAfterMouseRelease = false
+    canvas.removeEventListener('pointerdown', onMousePointerDown, true)
+    browser.removeEventListener('pointerup', onMousePointerUp, true)
+    browser.removeEventListener('pointercancel', onMousePointerUp, true)
+    browser.removeEventListener('blur', onMouseWindowBlur)
     clearGesture()
     sizeObserver?.disconnect()
     sizeObserver = null

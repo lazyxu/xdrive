@@ -169,3 +169,100 @@ func TestBackupSnapshotPageRejectsStaleForgedAndSymlinkedIndex(t *testing.T) {
 		})
 	}
 }
+
+func TestBackupAdminOlderIndexVerifyOnly(t *testing.T) {
+	server, dir, index := backupSnapshotPageFixture(t, 105)
+	older := index.SnapshotIDs[104]
+	verification := fmt.Sprintf(`{"action":"verify","snapshot_id":%q,"mode":"fast"}`, older)
+	code, body := runBackupAdminAction(t, server, verification)
+	if code != http.StatusAccepted {
+		t.Fatalf("older read-only verification rejected: %d %s", code, body)
+	}
+	var request backupAdminRequest
+	if err := readSafeBackupAdminJSON(dir, "backup-admin-request.json", 2048, &request); err != nil {
+		t.Fatal(err)
+	}
+	if request.Action != "verify" || request.SnapshotID != older ||
+		request.Mode != "fast" || request.RequestID == "" {
+		t.Fatalf("untrusted older verification request: %+v", request)
+	}
+	if err := os.Remove(filepath.Join(dir, "backup-admin-request.json")); err != nil {
+		t.Fatal(err)
+	}
+	for _, action := range []struct{ action, confirmation string }{
+		{"restore", "RESTORE " + older},
+		{"delete", "DELETE " + older},
+		{"restore_database_only", "DATABASE ONLY RESTORE " + older},
+	} {
+		body := fmt.Sprintf(`{"action":%q,"snapshot_id":%q,"confirmation":%q}`,
+			action.action, older, action.confirmation)
+		if code, _ := runBackupAdminAction(t, server, body); code != http.StatusConflict {
+			t.Fatalf("older identity authorized destructive %s: %d", action.action, code)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "backup-admin-request.json")); !os.IsNotExist(err) {
+		t.Fatalf("rejected older destructive action enqueued: %v", err)
+	}
+}
+
+func TestBackupAdminOlderIndexVerificationFailsClosed(t *testing.T) {
+	for _, scenario := range []string{
+		"missing", "stale", "revision", "wrong_newest", "duplicate",
+		"unindexed", "symlink",
+	} {
+		t.Run(scenario, func(t *testing.T) {
+			server, dir, index := backupSnapshotPageFixture(t, 105)
+			id := index.SnapshotIDs[100]
+			switch scenario {
+			case "missing":
+				if err := os.Remove(filepath.Join(dir, "backup-admin-snapshot-index.json")); err != nil {
+					t.Fatal(err)
+				}
+			case "stale":
+				index.GeneratedAt = time.Now().UTC().Add(-10 * time.Minute).Format(time.RFC3339)
+			case "revision":
+				index.PolicyRevision = fmt.Sprintf("%064d", 1)
+			case "wrong_newest":
+				index.SnapshotIDs[0] = "v2-default:xdrive-backup-20261231T000000Z"
+			case "duplicate":
+				index.SnapshotIDs[101] = index.SnapshotIDs[100]
+			case "unindexed":
+				id = "v1:xdrive-backup-20200101T000000Z"
+			case "symlink":
+				target := filepath.Join(dir, "not-host-index.json")
+				writeBackupTestJSON(t, dir, "not-host-index.json", index)
+				if err := os.Remove(filepath.Join(dir, "backup-admin-snapshot-index.json")); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(target, filepath.Join(dir, "backup-admin-snapshot-index.json")); err != nil {
+					t.Skipf("symlink unavailable: %v", err)
+				}
+			}
+			if scenario != "missing" && scenario != "symlink" {
+				writeBackupTestJSON(t, dir, "backup-admin-snapshot-index.json", index)
+			}
+			body := fmt.Sprintf(`{"action":"verify","snapshot_id":%q,"mode":"deep"}`, id)
+			if code, _ := runBackupAdminAction(t, server, body); code != http.StatusConflict {
+				t.Fatalf("%s allowed untrusted older verify: %d", scenario, code)
+			}
+			if _, err := os.Stat(filepath.Join(dir, "backup-admin-request.json")); !os.IsNotExist(err) {
+				t.Fatalf("%s wrote Host queue: %v", scenario, err)
+			}
+		})
+	}
+	server, dir, index := backupSnapshotPageFixture(t, 1005)
+	id := index.SnapshotIDs[999]
+	if code, body := runBackupAdminAction(t, server,
+		fmt.Sprintf(`{"action":"verify","snapshot_id":%q,"mode":"deep"}`, id)); code != http.StatusAccepted {
+		t.Fatalf("indexed entry 1000 incorrectly rejected: %d %s", code, body)
+	}
+	if err := os.Remove(filepath.Join(dir, "backup-admin-request.json")); err != nil {
+		t.Fatal(err)
+	}
+	// A truncated Host index contains no proof of entry #1001.
+	id = "v1:xdrive-backup-20240101T000000Z"
+	if code, _ := runBackupAdminAction(t, server,
+		fmt.Sprintf(`{"action":"verify","snapshot_id":%q,"mode":"fast"}`, id)); code != http.StatusConflict {
+		t.Fatalf("unindexed older entry was authorized: %d", code)
+	}
+}

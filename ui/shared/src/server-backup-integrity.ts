@@ -97,6 +97,19 @@ export function latestServerBackupVerification(
   return latest
 }
 
+/** A historical verification receipt is never proof that an older snapshot
+ * is currently complete or restorable. The Host owns action/status/timestamps. */
+export function serverBackupHistoricalVerificationLabel(
+  history: XDriveServerBackupPage['history'], snapshotID: string,
+): string {
+  const latest = latestServerBackupVerification(history, snapshotID)
+  if (!latest) return '未见历史校验'
+  const outcome = latest.state === 'success' ? '历史通过' : '历史失败'
+  const mode = latest.mode === 'deep' ? 'deep' : latest.mode === 'fast' ? 'fast' : '级别未知'
+  const date = latest.finished_at ? new Date(latest.finished_at).toLocaleString() : '时间未知'
+  return outcome + ' · ' + mode + ' · ' + date
+}
+
 /** Duration is computed only from the two authentic Host timestamps. */
 export function serverBackupReceiptDurationSeconds(
   entry: XDriveServerBackupHistoryEntry,

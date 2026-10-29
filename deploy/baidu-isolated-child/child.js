@@ -55,6 +55,11 @@
   let script = null, pending = false, disposed = false, sessionFailed = false, labelBindings = []
   let initialOverviewPending = true
   let viewportTimer = null, gestureFrame = null
+  // The Child observes ONLY genuine local mouse pointer lifecycle; no
+  // Owner/Photo scope or mouse coordinates enter the Parent protocol.
+  let heldMousePointer = null, viewportAfterMouseRelease = false
+  // No private data or pointer identifiers cross this isolated Origin.
+  const heldTouchPointers = new Set()
   let observedSize = null, sizeObserver = null, windowResizeFallback = false
   let resizeRevoked = false
   const send = (kind, fields = {}) => {
@@ -93,16 +98,25 @@
     if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) ||
         width < 1 || height < 1 || width > 4096 || height > 4096) return
     const points = []
+    let validPixels = 0
     for (const cell of gesture ? gestureCells : cells) {
       if (!gesture && !allowedKeys.has(cell.key)) continue
       try {
         const position = map.pointToPixel(new sdk.Point(cell.longitude,cell.latitude))
         const x = Math.round(position.x), y = Math.round(position.y)
-        if (!Number.isSafeInteger(x) || !Number.isSafeInteger(y) ||
-            x < 0 || x > width || y < 0 || y > height) continue
+        if (!Number.isSafeInteger(x) || !Number.isSafeInteger(y)) continue
+        // An offscreen finite pixel is valid evidence that the marker left
+        // the map. Do not mistake that for a transient SDK decode failure.
+        validPixels++
+        if (x < 0 || x > width || y < 0 || y > height) continue
         points.push({key:cell.key,x,y})
       } catch { /* old SDK: numerical cluster labels remain */ }
     }
+    // During a held-mouse pan the provider can temporarily return NaN or
+    // throw for every old position. Keep the last already-inert Parent photo
+    // projection rather than sending an empty gesture frame. Child grants
+    // remain revoked; no private Owner identity or media crosses this Origin.
+    if (gesture && gestureCells.length>0 && validPixels===0) return
     send(gesture ? 'gesture-projections' : 'cell-projections',
       {width,height,points})
   }
@@ -187,12 +201,25 @@
   const scheduleViewport = () => {
     projectGesture()
     if (viewportTimer !== null) clearTimeout(viewportTimer)
+    viewportTimer = null
+    // Some JSAPI versions emit moveend before the physical left button lifts.
+    // Keep the old signed photo pixels as inert projections until pointerup.
+    if (heldMousePointer !== null || heldTouchPointers.size > 0) {
+      viewportAfterMouseRelease = true
+      return
+    }
     viewportTimer = setTimeout(() => {
       viewportTimer = null
+      if (heldMousePointer !== null || heldTouchPointers.size > 0) {
+        viewportAfterMouseRelease = true
+        return
+      }
       if (!disposed && active) emitViewport()
     }, 500)
   }
   const stopViewport = () => {
+    if (heldMousePointer !== null || heldTouchPointers.size > 0)
+      viewportAfterMouseRelease = true
     if (viewportTimer !== null) clearTimeout(viewportTimer)
     viewportTimer = null
     if (allowedKeys.size>0)gestureCells=cells.map(cell=>({...cell}))
@@ -206,6 +233,47 @@
   // invalidates earlier camera pixels and their Owner Cell keys just like
   // a real SDK gesture. Never keep photo covers attached to old CSS pixels.
   // The parent still owns the ONLY authorized /cells query after debounce.
+  const onMousePointerDown = event => {
+    if (disposed || !active || !map || !event.isTrusted || event.button!==0)
+      return
+    if (event.pointerType==='mouse' && event.isPrimary)
+      heldMousePointer=event.pointerId
+    else if (event.pointerType==='touch' || event.pointerType==='pen')
+      heldTouchPointers.add(event.pointerId)
+  }
+  const releaseHeldMouse = pointerID => {
+    const mouseMatches=heldMousePointer!==null &&
+      (pointerID===undefined || pointerID===heldMousePointer)
+    const touchMatches=pointerID===undefined
+      ? heldTouchPointers.size>0 : heldTouchPointers.delete(pointerID)
+    if (!mouseMatches && !touchMatches) return
+    if (mouseMatches) heldMousePointer=null
+    if (pointerID===undefined) heldTouchPointers.clear()
+    // Multitouch pinch isn't settled until its final current contact lifts.
+    if (heldMousePointer!==null || heldTouchPointers.size>0) return
+    if (!viewportAfterMouseRelease) return
+    viewportAfterMouseRelease=false
+    if (!disposed && active && map) scheduleViewport()
+  }
+  const onMousePointerUp = event => releaseHeldMouse(event.pointerId)
+  const onMouseWindowBlur = () => releaseHeldMouse()
+  const bindMousePointer = () => {
+    // Cross-Origin SDK input stays entirely in the isolated Child.
+    // Capture phase survives a provider's stopPropagation on its map DOM.
+    canvas?.addEventListener('pointerdown',onMousePointerDown,true)
+    window.addEventListener('pointerup',onMousePointerUp,true)
+    window.addEventListener('pointercancel',onMousePointerUp,true)
+    window.addEventListener('blur',onMouseWindowBlur)
+  }
+  const releaseMousePointer = () => {
+    heldMousePointer=null
+    heldTouchPointers.clear()
+    viewportAfterMouseRelease=false
+    canvas?.removeEventListener('pointerdown',onMousePointerDown,true)
+    window.removeEventListener('pointerup',onMousePointerUp,true)
+    window.removeEventListener('pointercancel',onMousePointerUp,true)
+    window.removeEventListener('blur',onMouseWindowBlur)
+  }
   const refreshChangedSize = () => {
     if (!active || disposed || !map || !canvas) return
     const width = Math.round(canvas.clientWidth)
@@ -262,6 +330,7 @@
     map.addEventListener('zooming', projectGesture)
     map.addEventListener('moveend', scheduleViewport)
     map.addEventListener('zoomend', scheduleViewport)
+    bindMousePointer()
     renderCells()
     if (status) status.textContent = '百度地图'
     send('map-ready')
@@ -329,6 +398,7 @@
         allowedKeys.clear()
         coveredKeys.clear()
         clearGesture()
+        releaseMousePointer()
         cells=[]
         try {map?.destroy?.()} catch {}
         map=null
@@ -405,6 +475,7 @@
   }
   const dispose=()=>{
     clearGesture()
+    releaseMousePointer()
     releaseCanvasSize()
     if (viewportTimer !== null) clearTimeout(viewportTimer)
     viewportTimer = null

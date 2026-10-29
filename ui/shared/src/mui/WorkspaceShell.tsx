@@ -45,3 +45,35 @@ export function XDriveWorkspaceShell({
     </Box>
   )
 }
+
+/**
+ * Canonical responsive workspace frame for Electron, authenticated DSM and
+ * Web/PWA (also rendered by the iOS WKWebView Host). Hosts provide authenticated
+ * navigation and page content, but not a second frame implementation. The
+ * invisible browser resume input is a leading slot so it keeps its existing DOM
+ * order and user-gesture handling. Viewer/PWA runtime stay outside this frame.
+ */
+export function XDriveWorkspaceFrame({
+  sidebar,
+  leading,
+  children,
+  overlays,
+  className,
+  sx,
+}: {
+  sidebar: ReactNode
+  leading?: ReactNode
+  children: ReactNode
+  overlays?: ReactNode
+  className?: string
+  sx?: SxProps<Theme>
+}) {
+  return (
+    <XDriveWorkspaceShell responsive className={className} sx={sx}>
+      {leading}
+      {sidebar}
+      {children}
+      {overlays}
+    </XDriveWorkspaceShell>
+  )
+}
