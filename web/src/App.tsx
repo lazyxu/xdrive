@@ -2823,6 +2823,9 @@ function FileManager({
           route={route}
           api={api}
           gallerySource={gallerySource}
+          // Route Viewer photo-to-map identity must retain the verified
+          // current Server Owner even when iOS foreground backup is enabled.
+          ownerScope={profile?.id ? `web:${profile.id}` : undefined}
           onBorrowGalleryThumbnail={galleryThumbnailBridge.borrow}
           shareDialogAdapter={shareDialogAdapter}
           onReplaceRoute={(next) => launchWebApp(next, { replace: true, viewerReturn: true })}
