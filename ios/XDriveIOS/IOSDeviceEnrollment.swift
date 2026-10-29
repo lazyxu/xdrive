@@ -85,6 +85,16 @@ private final class XDriveIOSIdentityRejectRedirects: NSObject, URLSessionTaskDe
     }
 }
 
+/// This proof is usable ONLY inside Swift native grant requests; never
+/// Codable, never returned by the WKWebView Host Adapter, never logged.
+struct XDriveIOSBackgroundDeviceProof: CustomStringConvertible {
+    let deviceID: String
+    let secret: String
+    var description: String {
+        "XDriveIOSBackgroundDeviceProof(device: \(deviceID), secret: [redacted])"
+    }
+}
+
 /// First native iOS Device identity bridge. The user must explicitly initiate
 /// enroll(); a startup/Photos scan MUST NOT silently create devices.
 actor XDriveIOSDeviceEnrollment {
@@ -112,6 +122,44 @@ actor XDriveIOSDeviceEnrollment {
         try await verifyRemote(owner: owner, accessToken: accessToken,
                                credential: credential)
         return credential.identity
+    }
+
+    /// Native-only proof for a separately revocable Photo background grant.
+    /// The identity token alone never authorizes UploadSession/SourceRun.
+    /// verifyExisting probes current Server Owner and Device before exposing
+    /// this short-lived Swift value; no raw secret enters JavaScript.
+    func backgroundPhotoDeviceProof(
+        owner: XDriveNativeOwnerRoot, accessToken: String
+    ) async throws -> XDriveIOSBackgroundDeviceProof? {
+        guard let verified = try await verifyExisting(
+            owner: owner, accessToken: accessToken
+        ) else { return nil }
+        let key = try scopedKey(owner)
+        guard let credential = try keychainLoad(account: key),
+              credential.matches(owner),
+              credential.deviceID == verified.deviceID else {
+            throw XDriveIOSDeviceEnrollmentError.inconsistentDevice
+        }
+        return XDriveIOSBackgroundDeviceProof(
+            deviceID: credential.deviceID, secret: credential.deviceToken
+        )
+    }
+
+    /// Native BGTask-only local lookup. This is NOT an authorization:
+    /// the Server must independently verify BOTH this Device proof and the
+    /// separately revocable Owner/Root grant on every request. It does not
+    /// reach into WKWebView, read cookies or register another iPhone.
+    func backgroundPhotoDeviceProofWithoutWeb(
+        owner: XDriveNativeOwnerRoot
+    ) throws -> XDriveIOSBackgroundDeviceProof? {
+        let key = try scopedKey(owner)
+        guard let credential = try keychainLoad(account: key) else { return nil }
+        guard credential.matches(owner) else {
+            throw XDriveIOSDeviceEnrollmentError.inconsistentDevice
+        }
+        return XDriveIOSBackgroundDeviceProof(
+            deviceID: credential.deviceID, secret: credential.deviceToken
+        )
     }
 
     /// One explicit registration. If its POST ACK is lost, the caller MUST
