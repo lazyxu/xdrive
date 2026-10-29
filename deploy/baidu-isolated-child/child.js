@@ -55,6 +55,9 @@
   let script = null, pending = false, disposed = false, sessionFailed = false, labelBindings = []
   let initialOverviewPending = true
   let viewportTimer = null, gestureFrame = null
+  // The Child observes ONLY genuine local mouse pointer lifecycle; no
+  // Owner/Photo scope or mouse coordinates enter the Parent protocol.
+  let heldMousePointer = null, viewportAfterMouseRelease = false
   let observedSize = null, sizeObserver = null, windowResizeFallback = false
   let resizeRevoked = false
   const send = (kind, fields = {}) => {
@@ -187,12 +190,24 @@
   const scheduleViewport = () => {
     projectGesture()
     if (viewportTimer !== null) clearTimeout(viewportTimer)
+    viewportTimer = null
+    // Some JSAPI versions emit moveend before the physical left button lifts.
+    // Keep the old signed photo pixels as inert projections until pointerup.
+    if (heldMousePointer !== null) {
+      viewportAfterMouseRelease = true
+      return
+    }
     viewportTimer = setTimeout(() => {
       viewportTimer = null
+      if (heldMousePointer !== null) {
+        viewportAfterMouseRelease = true
+        return
+      }
       if (!disposed && active) emitViewport()
     }, 500)
   }
   const stopViewport = () => {
+    if (heldMousePointer !== null) viewportAfterMouseRelease = true
     if (viewportTimer !== null) clearTimeout(viewportTimer)
     viewportTimer = null
     if (allowedKeys.size>0)gestureCells=cells.map(cell=>({...cell}))
@@ -206,6 +221,37 @@
   // invalidates earlier camera pixels and their Owner Cell keys just like
   // a real SDK gesture. Never keep photo covers attached to old CSS pixels.
   // The parent still owns the ONLY authorized /cells query after debounce.
+  const onMousePointerDown = event => {
+    if (!disposed && active && map && event.isTrusted && event.isPrimary &&
+        event.pointerType === 'mouse' && event.button === 0)
+      heldMousePointer = event.pointerId
+  }
+  const releaseHeldMouse = pointerID => {
+    if (heldMousePointer === null ||
+        (pointerID !== undefined && pointerID !== heldMousePointer)) return
+    heldMousePointer = null
+    if (!viewportAfterMouseRelease) return
+    viewportAfterMouseRelease = false
+    if (!disposed && active && map) scheduleViewport()
+  }
+  const onMousePointerUp = event => releaseHeldMouse(event.pointerId)
+  const onMouseWindowBlur = () => releaseHeldMouse()
+  const bindMousePointer = () => {
+    // Cross-Origin SDK input stays entirely in the isolated Child.
+    // Capture phase survives a provider's stopPropagation on its map DOM.
+    canvas?.addEventListener('pointerdown',onMousePointerDown,true)
+    window.addEventListener('pointerup',onMousePointerUp,true)
+    window.addEventListener('pointercancel',onMousePointerUp,true)
+    window.addEventListener('blur',onMouseWindowBlur)
+  }
+  const releaseMousePointer = () => {
+    heldMousePointer=null
+    viewportAfterMouseRelease=false
+    canvas?.removeEventListener('pointerdown',onMousePointerDown,true)
+    window.removeEventListener('pointerup',onMousePointerUp,true)
+    window.removeEventListener('pointercancel',onMousePointerUp,true)
+    window.removeEventListener('blur',onMouseWindowBlur)
+  }
   const refreshChangedSize = () => {
     if (!active || disposed || !map || !canvas) return
     const width = Math.round(canvas.clientWidth)
@@ -262,6 +308,7 @@
     map.addEventListener('zooming', projectGesture)
     map.addEventListener('moveend', scheduleViewport)
     map.addEventListener('zoomend', scheduleViewport)
+    bindMousePointer()
     renderCells()
     if (status) status.textContent = '百度地图'
     send('map-ready')
@@ -329,6 +376,7 @@
         allowedKeys.clear()
         coveredKeys.clear()
         clearGesture()
+        releaseMousePointer()
         cells=[]
         try {map?.destroy?.()} catch {}
         map=null
@@ -405,6 +453,7 @@
   }
   const dispose=()=>{
     clearGesture()
+    releaseMousePointer()
     releaseCanvasSize()
     if (viewportTimer !== null) clearTimeout(viewportTimer)
     viewportTimer = null
