@@ -1,8 +1,8 @@
 'use strict'
 
-// Compacts ONLY unstarted, superseded push CI on master. A queued workflow
-// status by itself is never enough: a completed test/build or started publisher
-// makes the whole run ineligible, even if its workflow remains "queued".
+// Prune only obsolete master CI after inspecting every job. Either ALL jobs
+// are unstarted, or a failed stale pending workflow has already completed
+// every test, build, and publisher. Never stop an active publisher.
 const SHA = /^[0-9a-f]{40}$/
 const CI_PATH = '.github/workflows/ci.yml'
 
@@ -22,6 +22,27 @@ function eligibleRun(run, masterSHA, currentRunId) {
     SHA.test(run.head_sha) &&
     run.head_sha !== masterSHA &&
     Number.isFinite(Date.parse(run.created_at))
+}
+
+// Some failed master workflows remain pending after all jobs finish. Retire
+// only proven terminal failures, NEVER pending runs with unfinished publishers.
+function terminalFailedPendingRun(run, masterSHA, currentRunId) {
+  return run?.status === 'pending' &&
+    eligibleRun({...run, status: 'queued'}, masterSHA, currentRunId) &&
+    Date.now() - Date.parse(run.created_at) > 20 * 60 * 1000
+}
+
+function terminalFailedJobInventory(jobs, runId) {
+  if (!Array.isArray(jobs) || jobs.length < 5) return false
+  const terminal = new Set(['success', 'failure', 'cancelled', 'skipped'])
+  if (!jobs.every(job => job?.run_id === runId &&
+      job.status === 'completed' && terminal.has(job.conclusion) &&
+      !job.steps?.some(step => step.status === 'queued' || step.status === 'in_progress'))) return false
+  if (!jobs.some(job => job.conclusion === 'failure')) return false
+  const publishers = new Set(jobs.filter(job =>
+    job.name.startsWith('publish-master /')).map(job => job.name))
+  return ['publish-master / server-images', 'publish-master / server-deploy',
+    'publish-master / verify-client-artifacts'].every(name => publishers.has(name))
 }
 
 // Exact job inventory must prove absolutely no substantive work started.
@@ -66,21 +87,23 @@ async function compactUnstartedMasterCI({
   assert(SHA.test(head), 'master head unavailable')
 
   const snapshots = []
-  for (let page = 1; page <= 2; page++) {
-    const response = await github.rest.actions.listWorkflowRuns({
-      owner, repo, workflow_id: 'ci.yml', branch: 'master',
-      status: 'queued', page, per_page: 100,
-    })
-    const rows = response?.data?.workflow_runs
-    assert(Array.isArray(rows), 'unavailable workflow inventory')
-    snapshots.push(...rows)
-    if (rows.length < 100) break
+  for (const status of ['queued', 'pending']) {
+    for (let page = 1; page <= 2; page++) {
+      const response = await github.rest.actions.listWorkflowRuns({
+        owner, repo, workflow_id: 'ci.yml', branch: 'master',
+        status, page, per_page: 100,
+      })
+      const rows = response?.data?.workflow_runs
+      assert(Array.isArray(rows), 'unavailable workflow inventory for ' + status)
+      snapshots.push(...rows)
+      if (rows.length < 100) break
+    }
   }
 
-  // Preserve the current master AND the latest queued predecessors, even
-  // if they have not started. Older entries may be pruned only with proof.
-  const candidates = snapshots
-    .filter(run => eligibleRun(run, head, context.runId))
+  // Preserve current master and the newest predecessors regardless of status.
+  const selector = run => eligibleRun(run, head, context.runId) ||
+    terminalFailedPendingRun(run, head, context.runId)
+  const candidates = snapshots.filter(selector)
     .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
   const keep = new Set(candidates.slice(0, preserveNewest).map(run => run.id))
   let eligible = 0
@@ -88,8 +111,12 @@ async function compactUnstartedMasterCI({
   const audit = []
   const ancestryCache = new Map()
 
-  // Oldest first: free obsolete queued slots before considering new ones.
-  for (const run of candidates.slice().reverse()) {
+  // First free unstarted CI slots; only then retire fully finished failures.
+  const cancelOrder = [
+    ...candidates.filter(run => run.status === 'queued').reverse(),
+    ...candidates.filter(run => run.status === 'pending').reverse(),
+  ]
+  for (const run of cancelOrder) {
     if (eligible >= maxCancels) break
     if (keep.has(run.id)) continue
     let ancestor = ancestryCache.get(run.head_sha)
@@ -112,7 +139,7 @@ async function compactUnstartedMasterCI({
     const current = (await github.rest.actions.getWorkflowRun({
       owner, repo, run_id: run.id,
     })).data
-    if (!eligibleRun(current, head, context.runId) ||
+    if (!selector(current) || current.status !== run.status ||
         current.head_sha !== run.head_sha ||
         current.path !== run.path) {
       audit.push({id: run.id, decision: 'preserved-run-moved'})
@@ -123,10 +150,13 @@ async function compactUnstartedMasterCI({
       owner, repo, run_id: run.id, per_page: 100,
     })).data
     const jobs = inventory?.jobs
+    const proven = run.status === 'queued'
+      ? jobs?.every(job => unstartedJob(job, run.id))
+      : terminalFailedJobInventory(jobs, run.id)
     if (!Number.isSafeInteger(inventory?.total_count) ||
         inventory.total_count < 1 || inventory.total_count > 100 ||
         !Array.isArray(jobs) || jobs.length !== inventory.total_count ||
-        !jobs.every(job => unstartedJob(job, run.id))) {
+        !proven) {
       audit.push({id: run.id, decision: 'preserved-started-or-unknown'})
       continue
     }
@@ -136,7 +166,7 @@ async function compactUnstartedMasterCI({
     const immediate = (await github.rest.actions.getWorkflowRun({
       owner, repo, run_id: run.id,
     })).data
-    if (!eligibleRun(immediate, head, context.runId) ||
+    if (!selector(immediate) || immediate.status !== run.status ||
         immediate.head_sha !== run.head_sha) {
       audit.push({id: run.id, decision: 'preserved-race'})
       continue
@@ -157,11 +187,12 @@ async function compactUnstartedMasterCI({
     }
   }
 
-  core.info('master=' + head + ', queued=' + snapshots.length +
+  core.info('master=' + head + ', scanned=' + snapshots.length +
     ', verified-unstarted=' + eligible + ', requested=' + requested +
     ', dry_run=' + dryRun)
   for (const item of audit) core.info(item.decision + ' CI #' + item.id)
   return {head, observed: snapshots.length, eligible, requested, audit, dryRun}
 }
 
-module.exports = {eligibleRun, unstartedJob, compactUnstartedMasterCI}
+module.exports = {eligibleRun, terminalFailedPendingRun, terminalFailedJobInventory,
+  unstartedJob, compactUnstartedMasterCI}
