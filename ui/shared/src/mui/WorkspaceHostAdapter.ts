@@ -2,7 +2,7 @@ import type { XDriveSynologyBackupLocalClient } from '../synology-backup-adapter
 import type { XDriveDeviceBackupDataSource } from '../device-backups'
 import type { XDriveCloudStorageDataSource } from './CloudStoragePage'
 import type { XDriveLocalStorageDataSource } from './LocalStoragePage'
-import type { ComponentProps } from 'react'
+import type { ComponentProps, ReactNode } from 'react'
 import type { XDriveMediaGalleryPageProps } from './MediaGallery'
 import type { XDriveSourceManagerProps } from './SourceManager'
 import type { XDriveTaskCenterPageProps } from './TaskCenterPage'
