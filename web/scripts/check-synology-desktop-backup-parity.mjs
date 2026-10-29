@@ -21,6 +21,8 @@ const sharedHome = read('ui/shared/src/mui/HomePage.tsx')
 const nasHome = read('ui/shared/src/mui/SynologyHomeOverview.tsx')
 const desktopShell = read('desktop/src/renderer/App.tsx')
 const appShell = read('ui/shared/src/mui/XDriveApp.tsx')
+const workspaceFrame = read('ui/shared/src/mui/WorkspaceShell.tsx')
+const workspaceRouteSurface = read('ui/shared/src/mui/WorkspaceRouteSurface.tsx')
 const appPageOutlet = read('ui/shared/src/mui/XDriveAppPageOutlet.tsx')
 const appRouteContent = read('ui/shared/src/mui/XDriveAppRouteContent.tsx')
 const hostContract = read('ui/shared/src/mui/WorkspaceHostAdapter.ts')
@@ -189,14 +191,26 @@ if (!verifiedOwnerDownload.includes('xDriveSynologyFetchVerifiedDownload') ||
     /window\.xdriveDesktop|ipcRenderer|localStorage|sessionStorage/.test(nas)) {
   throw new Error('DSM attempted an independent/Desktop-privileged backup frontend')
 }
-// DSM and Desktop must both mount the canonical full application frame.
+// DSM and Desktop mount one canonical XDriveApp. Its current route surface
+// delegates to the shared content presentation (including edge-to-edge Files),
+// and XDriveWorkspaceFrame composes the one responsive shell and overlays.
+// Verify the real cross-component chain, not the pre-extraction JSX location.
 if (!dsmEntry.includes('<XDriveApp') || !desktopShell.includes('<XDriveApp') ||
     !appShell.includes('<XDriveAppRouteContent') ||
     dsmEntry.includes('<XDriveAppRouteContent') ||
     desktopShell.includes('<XDriveAppRouteContent') ||
-    !appRouteContent.includes('<XDriveWorkspaceContent') ||
-    !appRouteContent.includes('presentation={presentation}') ||
-    !appShell.includes('<XDriveWorkspaceShell') ||
+    !appRouteContent.includes('<XDriveWorkspaceRouteSurface') ||
+    !appRouteContent.includes("sx={view === 'files' ? undefined : pageSx}") ||
+    !workspaceRouteSurface.includes('<XDriveWorkspaceContent') ||
+    !workspaceRouteSurface.includes('presentation={xDriveWorkspacePresentation(view)}') ||
+    !workspaceRouteSurface.includes('responsive') ||
+    !workspaceFrame.includes('export function XDriveWorkspaceFrame') ||
+    !workspaceFrame.includes('<XDriveWorkspaceShell responsive') ||
+    !workspaceFrame.includes('{sidebar}') ||
+    !workspaceFrame.includes('{children}') ||
+    !workspaceFrame.includes('{overlays}') ||
+    !appShell.includes('<XDriveWorkspaceFrame') ||
+    !appShell.includes('overlays={overlays}') ||
     !appShell.includes('<XDriveWorkspaceSidebar') ||
     !appShell.includes('selected={view}') ||
     !appShell.includes('onSelect={onNavigate}') ||
