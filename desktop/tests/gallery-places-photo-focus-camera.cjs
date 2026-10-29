@@ -36,6 +36,7 @@ const { xDriveValidBaiduNativeCameraSnapshot } = load(
 const selection = {nodeID:42,revision:7}
 const account = {
   ownerScope:'fixture-owner-A',
+  focusIntent:selection,
   photoScope:{albumKey:'manual:Family',
     filters:{sort_by:'captured',sort_dir:'desc',favorite:true}},
 }
@@ -76,6 +77,9 @@ test('no request is started under invalid selected identity or scope',async()=>{
   for(const state of [
     {...account,ownerScope:''},
     {...account,ownerScope:'a'.repeat(1025)},
+    {...account,focusIntent:{nodeID:43,revision:7}},
+    {...account,focusIntent:{nodeID:42,revision:0}},
+    {...account,focusIntent:null},
     {...account,photoScope:{albumKey:'',filters:{sort_by:'fake'}}},
     {...account,photoScope:{albumKey:'',filters:{unknown_flag:true}}},
     {...account,photoScope:{albumKey:'not-a-real-album',filters:{}}},
@@ -95,6 +99,28 @@ test('Owner / album / favorite membership changes prevent stale BD09 camera',asy
     albumKey:'manual:Family',filters:{sort_by:'captured',sort_dir:'desc'}}}
   assert.equal((await go(selection,account,async()=>focus,()=>changed)).kind,'stale')
   assert.equal((await go(selection,account,async()=>focus,()=>{throw Error('torn down')})).kind,'stale')
+})
+
+test('same Owner and album new-photo Viewer preempts an in-flight old focus',async()=>{
+  let resolveOld
+  const pending = new Promise(resolve=>{resolveOld=resolve})
+  let active=account
+  let launched=0
+  const old=go(selection,account,async()=>{
+    launched++
+    return pending
+  },()=>active)
+  active={...account,focusIntent:{nodeID:43,revision:7}}
+  resolveOld({...focus})
+  assert.deepEqual(await old,{kind:'stale'})
+  assert.equal(launched,1)
+
+  // Even a revision change on the same Node invalidates the old result.
+  const staleRevision={...account,focusIntent:{nodeID:42,revision:8}}
+  assert.equal((await go(selection,account,async()=>focus,
+    ()=>staleRevision)).kind,'stale')
+  assert.equal((await go(selection,account,async()=>focus,
+    ()=>({...account,focusIntent:null}))).kind,'stale')
 })
 
 test('live cancellation during and before read rejects results without fallback',async()=>{

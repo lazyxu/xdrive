@@ -21,6 +21,8 @@ export type XDrivePhotoFocusIdentity = Readonly<{
 export type XDrivePhotoFocusOwnerState = Readonly<{
   ownerScope: string
   photoScope: XDriveBaiduMapPhotoScope
+  /** Active Parent navigation intent, not a persistent media permission. */
+  focusIntent: XDrivePhotoFocusIdentity
 }>
 export type XDrivePhotoFocusRead = (
   nodeID: number, revision: number, signal: AbortSignal,
@@ -33,6 +35,21 @@ export type XDrivePhotoFocusCameraResult =
 const invalidScopeKey = 'invalid-bd09-map-scope'
 const focusZoom = 16
 
+function validPhotoIdentity(identity: unknown): identity is XDrivePhotoFocusIdentity {
+  if (!identity || typeof identity !== 'object' || Array.isArray(identity)) return false
+  const node = identity as Partial<XDrivePhotoFocusIdentity>
+  return typeof node.nodeID === 'number' && Number.isSafeInteger(node.nodeID) &&
+    node.nodeID > 0 && typeof node.revision === 'number' &&
+    Number.isSafeInteger(node.revision) && node.revision > 0
+}
+
+function samePhotoIdentity(
+  a: XDrivePhotoFocusIdentity, b: XDrivePhotoFocusIdentity,
+): boolean {
+  return validPhotoIdentity(a) && validPhotoIdentity(b) &&
+    a.nodeID === b.nodeID && a.revision === b.revision
+}
+
 function currentOwnerScope(
   captured: XDrivePhotoFocusOwnerState, capturedKey: string,
   readCurrent: () => XDrivePhotoFocusOwnerState | null,
@@ -40,7 +57,8 @@ function currentOwnerScope(
   try {
     const active = readCurrent()
     return active?.ownerScope === captured.ownerScope &&
-      xDriveBaiduMapPhotoScopeKey(active.photoScope) === capturedKey
+      xDriveBaiduMapPhotoScopeKey(active.photoScope) === capturedKey &&
+      samePhotoIdentity(active.focusIntent, captured.focusIntent)
   } catch {
     // Safari storage, stale authenticated Host ports, and torn-down React
     // sessions must NEVER silently revert to a global or prior Owner map.
@@ -54,8 +72,9 @@ function currentOwnerScope(
  *
  * Call only after the original Gallery has admitted its precise Owner/album
  * filter scope. Require a live, caller-owned AbortSignal. Check the same Owner
- * and exact reviewed Gallery scope both BEFORE and AFTER awaiting the Server;
- * a logout, same-route change, or a new photo Viewer cannot apply stale focus.
+ * and exact reviewed Gallery scope AND current photo-focus intent both BEFORE
+ * and AFTER awaiting the Server; a logout or a same-route new Viewer must
+ * invalidate the old result even if the caller forgot to abort its request.
  *
  * The UI must still re-fetch signed /cells for the resulting camera and
  * reauthorize /cell-items before displaying a photo. No original WGS84,
@@ -69,9 +88,8 @@ export async function xDriveResolveBaiduOwnerPhotoFocusCamera(
   signal: AbortSignal,
   previousCamera?: XDriveBaiduNativeCameraSnapshot | null,
 ): Promise<XDrivePhotoFocusCameraResult> {
-  if (!selection || !Number.isSafeInteger(selection.nodeID) ||
-      selection.nodeID < 1 || !Number.isSafeInteger(selection.revision) ||
-      selection.revision < 1 || !owner ||
+  if (!validPhotoIdentity(selection) || !owner ||
+      !samePhotoIdentity(owner.focusIntent, selection) ||
       typeof owner.ownerScope !== 'string' ||
       !owner.ownerScope || owner.ownerScope.length > 1024 ||
       typeof read !== 'function' || typeof readCurrent !== 'function')
