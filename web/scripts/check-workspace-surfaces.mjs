@@ -197,7 +197,7 @@ for (const token of [
 }
 requireText(browserHost, [
   "platform: 'web'",
-  'adminRoleVerified: false',
+  'adminRoleVerified: ports.adminRoleVerified === true',
   'cloudStorage: ports.cloudStorage',
   'localStorage: ports.localStorage',
 ], 'Web bounded shared page outlet Host')
