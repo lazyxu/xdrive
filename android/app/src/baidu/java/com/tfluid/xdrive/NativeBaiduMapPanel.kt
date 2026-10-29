@@ -186,7 +186,7 @@ internal fun NativeBaiduMapPanel(
 
     if (!agreed) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("可使用百度原生地图查看当前账户已验证的 BD-09 聚合点。百度地图 SDK 是独立第三方服务，可能处理设备和网络信息；不上传照片、令牌或文件名。首次使用前请阅读并同意 SDK 隐私政策。",
+            Text("原生底图由北京百度网讯科技有限公司提供的百度地图 Android SDK（8.2.0）呈现。启用后，SDK 可能处理设备标识、系统及网络信息，并显示最多 64 个当前账户已验证的 BD-09 聚合代表坐标。xDrive 不向 SDK 提供照片、文件名或登录令牌；也不申请手机定位权限。请先阅读其隐私政策，再自主决定是否启用。",
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.testTag("native-baidu-privacy-description"))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -200,7 +200,7 @@ internal fun NativeBaiduMapPanel(
                 }
                 TextButton(onClick = {
                     uriHandler.openUri(
-                        "https://lbsyun.baidu.com/docs/android?title=androidsdk/guide/create-project/attention")
+                        "https://lbs.baidu.com/docs/pcsa?title=compliance/openprivacy")
                 }, modifier = Modifier.testTag("native-baidu-privacy-link")) {
                     Text("隐私说明")
                 }
