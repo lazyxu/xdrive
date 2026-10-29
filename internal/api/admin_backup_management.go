@@ -566,6 +566,13 @@ func (s *Server) adminSubmitBackupManagement(c *gin.Context) {
 				break
 			}
 		}
+		if !found && request.Action == "verify" {
+			// Explicitly read-only exception: older Host-indexed snapshots may
+			// be verified but never restored, drilled or deleted via this path.
+			// Reject stale, forged, truncated-out or cross-policy indices. The
+			// Host independently resolves the identity and verifies the bytes.
+			found = backupAdminOlderSnapshotInCurrentIndex(s.HostControlDir, page.Inventory, request.SnapshotID)
+		}
 		if !found {
 			c.JSON(http.StatusConflict, gin.H{"error": "backup_snapshot_not_current"})
 			return
