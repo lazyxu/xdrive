@@ -43,10 +43,14 @@ The ZIP preserves the originals but is **not** yet a playable Gallery Live
 resource or an automatic restore into Apple Photos. The user may explicitly
 enable a 15-minute/1-hour/6-hour/daily *foreground-only* automatic interval
 while the authenticated App remains open, with Owner/root re-verification
-and encrypted journal incremental deduplication. iOS background task
-execution after lock or app suspension, accurate time guarantees, 100k
-sharded full-library ledger and privileged Device SourceRun are **not
-implemented**. PhotoKit offsets can shift on edits and are not durable IDs.
+and encrypted journal incremental deduplication. The draft iOS scoped
+background integration additionally offers a revocable native Owner/Device/
+Root grant and a one-original BGProcessingTask attempt while protected data
+is available. Lock-screen work, force-quit wakeup, precise OS scheduling,
+100k sharded full-library ledger and privileged Device SourceRun are **not
+implemented or validated**. If Server login/PWA fails, the native connection
+recovery screen can cancel this device's BG request and Keychain vault without
+network access; this leaves remote grant revocation explicitly pending. PhotoKit offsets can shift on edits and are not durable IDs.
 
 Canceled/backgrounded/stale-Owner work is stopped conservatively. A lost
 create/finalize acknowledgment remains **needs reconciliation**; it never

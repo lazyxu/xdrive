@@ -7,14 +7,30 @@ import Foundation
 struct XDriveIOSJournaledOriginalUpload {
     let owner: XDriveNativeOwnerRoot
     let scope: XDrivePhotoSyncScope
-    let accessToken: String
+    let authorization: XDriveIOSOriginalOwnerAuthorization
     let ledger: XDrivePhotoSyncLedger
+
+    init(owner: XDriveNativeOwnerRoot, scope: XDrivePhotoSyncScope,
+         accessToken: String, ledger: XDrivePhotoSyncLedger) {
+        self.owner = owner
+        self.scope = scope
+        self.authorization = .webBearer(accessToken)
+        self.ledger = ledger
+    }
+
+    init(owner: XDriveNativeOwnerRoot, scope: XDrivePhotoSyncScope,
+         approvedBackgroundGrant: XDriveIOSApprovedPhotoBGCredential,
+         ledger: XDrivePhotoSyncLedger) {
+        self.owner = owner
+        self.scope = scope
+        self.authorization = .background(approvedBackgroundGrant)
+        self.ledger = ledger
+    }
 
     func uploadPrepared(_ requested: XDrivePhotoSyncOperation, from stagedURL: URL)
         async throws -> XDriveNativeUploadReceipt {
         let canonicalOrigin = try ServerAddress.parse(owner.origin.absoluteString)
-        guard !accessToken.isEmpty,
-              owner.origin == canonicalOrigin,
+        guard owner.origin == canonicalOrigin,
               scope.origin == canonicalOrigin.absoluteString,
               scope.serverInstanceID == owner.instanceID,
               scope.ownerID == owner.ownerID,
@@ -28,22 +44,14 @@ struct XDriveIOSJournaledOriginalUpload {
 
         // A recently changed auth user, root or installation must never
         // inherit a previously prepared device photo resource.
-        let fresh = try await XDriveNativeOwnerRootVerifier(
-            origin: owner.origin, accessToken: accessToken,
-            expectedUsername: owner.username
-        ).verify()
-        guard fresh.origin == owner.origin,
-              fresh.instanceID == owner.instanceID,
-              fresh.ownerID == owner.ownerID,
-              fresh.rootNodeID == owner.rootNodeID else {
-            throw XDrivePhotoSyncLedgerError.identityMismatch
-        }
+        try await authorization.verify(owner: owner)
         try Task.checkCancellation()
 
         // Always reload the sealed ledger, not a stale caller-supplied object.
         // A crashed/uncertain creating or finalizing record is never replayed.
-        let stored = try await ledger.operations(scope: scope)
-        guard let current = stored.first(where: { $0.id == requested.id }),
+        guard let current = try await ledger.operation(
+                  scope: scope, id: requested.id
+              ),
               current.id == requested.id,
               current.assetFingerprint == requested.assetFingerprint,
               current.role == requested.role,
@@ -58,9 +66,7 @@ struct XDriveIOSJournaledOriginalUpload {
             throw XDrivePhotoSyncLedgerError.invalidTransition
         }
 
-        let transport = try XDriveNativeUploadSessionTransport(
-            origin: canonicalOrigin, accessToken: accessToken
-        )
+        let transport = try authorization.transport(origin: canonicalOrigin)
         let operationID = current.id
         let hooks = XDriveNativeUploadCheckpointHooks(
             beforeCreate: {
@@ -90,10 +96,8 @@ struct XDriveIOSJournaledOriginalUpload {
             // agree on parent, name, byte size, full SHA and exact revision.
             // Any GET/auth mismatch remains uncertain in the encrypted
             // ledger, never a fabricated "backed up" checkpoint.
-            try await XDriveIOSNodeReceiptReadbackVerifier(
-                owner: owner, accessToken: accessToken
-            ).verify(
-                receipt, parentID: current.destinationParentID,
+            try await authorization.verifyNodeReceipt(
+                receipt, owner: owner, parentID: current.destinationParentID,
                 expectedName: current.destinationName
             )
             try Task.checkCancellation()
@@ -115,9 +119,9 @@ struct XDriveIOSJournaledOriginalUpload {
             // A failed original size/hash check before creating is read-only,
             // so preserve the prepared intent. If any mutation might have
             // begun, retain uncertainty and require Owner read-only recovery.
-            if let snapshot = try? await ledger.operations(scope: scope),
-               let last = snapshot.first(where: { $0.id == operationID }),
-               last.state != .prepared, last.state != .confirmed {
+            if let last = try? await ledger.operation(
+                   scope: scope, id: operationID
+               ), last.state != .prepared, last.state != .confirmed {
                 _ = try? await ledger.markUnknown(scope: scope, id: operationID)
             }
             throw error

@@ -73,21 +73,50 @@ private final class NativePhotoDenyRedirects: NSObject, URLSessionTaskDelegate {
     }
 }
 
-/// One explicit local file -> existing xDrive Go UploadSession protocol.
-/// No second uploader, PhotoAsset writer, mirrored deletion, silent retry, or
-/// background claims. Files must already be exported into an app-owned local
-/// staging URL; PhotoKit and Owner/Device authorization are separate layers.
+/// Two strictly isolated *authentication envelopes* for the SAME reliable
+/// Swift file/chunk/Finalize/ACK state machine. The background grant cannot
+/// authenticate to generic /api/v1/uploads or other User APIs.
+private enum XDriveNativeUploadAuthorization {
+    case foregroundBearer(String)
+    case scopedIOSBackground(XDriveIOSApprovedPhotoBGCredential)
+}
+
+/// One native staged file -> existing Go UploadSession / CAS protocol.
+/// There is still only one hash/chunk/finalize engine and one journal-hook
+/// contract; background scope uses dedicated Owner-Root-Go aliases.
 final class XDriveNativeUploadSessionTransport {
     private static let chunkBytes = 8 * 1_048_576
     private let origin: URL
-    private let accessToken: String
+    private let authorization: XDriveNativeUploadAuthorization
     private let session: URLSession
 
-    init(origin: URL, accessToken: String) throws {
+    convenience init(origin: URL, accessToken: String) throws {
+        guard !accessToken.isEmpty else {
+            throw XDriveNativeUploadError.unauthorizedOrRejected(401)
+        }
+        try self.init(origin: origin, authorization: .foregroundBearer(accessToken))
+    }
+
+    /// A dedicated, explicitly user-approved native grant from the isolated
+    /// after-first-unlock Keychain. This is NOT a general JWT bearer.
+    /// Caller must obtain it from the current Server-proven BG vault, never
+    /// accept a hand-built WebView JSON credential.
+    convenience init(origin: URL,
+                     approvedBackgroundGrant: XDriveIOSApprovedPhotoBGCredential)
+        throws {
+        guard let owner = try? approvedBackgroundGrant.ownerScope(),
+              approvedBackgroundGrant.matches(owner),
+              owner.origin == origin else {
+            throw XDriveNativeUploadError.unauthorizedOrRejected(403)
+        }
+        try self.init(origin: origin,
+                      authorization: .scopedIOSBackground(approvedBackgroundGrant))
+    }
+
+    private init(origin: URL, authorization: XDriveNativeUploadAuthorization) throws {
         let verifiedOrigin = try ServerAddress.parse(origin.absoluteString)
-        guard !accessToken.isEmpty else { throw XDriveNativeUploadError.unauthorizedOrRejected(401) }
         self.origin = verifiedOrigin
-        self.accessToken = accessToken
+        self.authorization = authorization
         let config = URLSessionConfiguration.ephemeral
         config.httpShouldSetCookies = false
         config.httpCookieAcceptPolicy = .never
@@ -106,7 +135,12 @@ final class XDriveNativeUploadSessionTransport {
     /// resource identity before calling this method.
     func uploadOnce(from stagedFileURL: URL, name: String, parentID: UInt64) async throws
         -> XDriveNativeUploadReceipt {
-        try await uploadInternally(from: stagedFileURL, name: name, parentID: parentID,
+        guard case .foregroundBearer = authorization else {
+            // A background grant cannot perform a generic one-off manual
+            // upload, overwrite or choose a non-journaled iosmanual_ key.
+            throw XDriveNativeUploadError.unauthorizedOrRejected(403)
+        }
+        return try await uploadInternally(from: stagedFileURL, name: name, parentID: parentID,
                                    resumeKey: "iosmanual_" + UUID().uuidString.lowercased(),
                                    expectedSize: nil, expectedSHA256: nil, hooks: nil)
     }
@@ -127,6 +161,14 @@ final class XDriveNativeUploadSessionTransport {
                   ($0 >= 48 && $0 <= 57) || ($0 >= 97 && $0 <= 102)
               }) else {
             throw XDriveNativeUploadError.invalidLocalFile
+        }
+        if case .scopedIOSBackground(let credential) = authorization {
+            guard parentID == credential.rootNodeID,
+                  XDriveIOSBackgroundOriginalNamePolicy.valid(name),
+                  expectedSize > 0,
+                  expectedSize <= 1_073_741_824 + 1_048_576 else {
+                throw XDriveNativeUploadError.unauthorizedOrRejected(403)
+            }
         }
         return try await uploadInternally(from: stagedFileURL, name: name, parentID: parentID,
                                           resumeKey: resumeKey, expectedSize: expectedSize,
@@ -306,17 +348,58 @@ final class XDriveNativeUploadSessionTransport {
     private func send<T: Decodable>(_ type: T.Type, method: String, path: String,
                                     body: Data? = nil, contentType: String? = nil,
                                     chunkSHA: String? = nil) async throws -> T {
-        guard path.hasPrefix("/api/v1/uploads"),
-              var components = URLComponents(url: origin, resolvingAgainstBaseURL: false) else {
+        let targetPath: String
+        switch authorization {
+        case .foregroundBearer:
+            guard path == "/api/v1/uploads" ||
+                  path.hasPrefix("/api/v1/uploads/") else {
+                throw XDriveNativeUploadError.invalidServerResponse
+            }
+            targetPath = path
+        case .scopedIOSBackground(let approved):
+            // Device-side offline stop must fence EVERY subsequent POST/PUT
+            // and ACK read, even if this writer captured an older credential.
+            // Server also rechecks revocation/Owner/Root on every request.
+            guard let local = try? await XDriveIOSApprovedPhotoBGVault.shared.current(),
+                  local.grantID == approved.grantID,
+                  local.deviceID == approved.deviceID,
+                  local.ownerID == approved.ownerID,
+                  local.rootNodeID == approved.rootNodeID,
+                  local.instanceID == approved.instanceID,
+                  local.expiresAt > Date(),
+                  let translated =
+                    XDriveIOSBackgroundUploadRoutePolicy.translatedPath(path) else {
+                throw XDriveNativeUploadError.unauthorizedOrRejected(403)
+            }
+            targetPath = translated
+        }
+        guard var components = URLComponents(
+            url: origin, resolvingAgainstBaseURL: false
+        ) else {
             throw XDriveNativeUploadError.invalidServerResponse
         }
-        components.path = path
+        components.path = targetPath
+        components.query = nil
+        components.fragment = nil
         guard let url = components.url else { throw XDriveNativeUploadError.invalidServerResponse }
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.httpShouldHandleCookies = false
         request.timeoutInterval = method == "POST" && path.hasSuffix("/finalize") ? 600 : 60
-        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        switch authorization {
+        case .foregroundBearer(let token):
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        case .scopedIOSBackground(let credential):
+            // Never attach these long-lived secrets to a background
+            // URLSession: its system redirect callbacks differ. The existing
+            // EPHEMERAL session has an unconditional redirect-denying
+            // URLSessionTaskDelegate. A suspended file-task needs
+            // per-chunk short-lived one-use tickets in a later PR.
+            request.setValue(credential.deviceID, forHTTPHeaderField: "X-XDrive-Device-ID")
+            request.setValue(credential.deviceToken, forHTTPHeaderField: "X-XDrive-Device-Token")
+            request.setValue(credential.grantSecret,
+                             forHTTPHeaderField: "X-XDrive-IOS-Photo-Grant")
+        }
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         if let contentType { request.setValue(contentType, forHTTPHeaderField: "Content-Type") }
         if let chunkSHA { request.setValue(chunkSHA, forHTTPHeaderField: "X-Chunk-SHA256") }

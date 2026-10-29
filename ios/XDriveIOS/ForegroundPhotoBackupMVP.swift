@@ -1,5 +1,6 @@
 import Foundation
 import Photos
+import UIKit
 
 /// Real Owner Files original backup of stills and videos; Live pairs require
 /// a separate authoritative dual-resource pairing receipt before completion.
@@ -33,7 +34,18 @@ enum XDriveIOSPhotoBackupMVPError: Error {
 
 struct XDriveIOSForegroundPhotoBackupMVP {
     let owner: XDriveNativeOwnerRoot
-    let accessToken: String
+    private let authorization: XDriveIOSOriginalOwnerAuthorization
+
+    init(owner: XDriveNativeOwnerRoot, accessToken: String) {
+        self.owner = owner
+        self.authorization = .webBearer(accessToken)
+    }
+
+    init(owner: XDriveNativeOwnerRoot,
+         approvedBackgroundGrant: XDriveIOSApprovedPhotoBGCredential) {
+        self.owner = owner
+        self.authorization = .background(approvedBackgroundGrant)
+    }
 
     /// One deliberate foreground click; bounded work for a usable first
     /// milestone. Never silently claim the remainder of an album is backed up.
@@ -41,22 +53,25 @@ struct XDriveIOSForegroundPhotoBackupMVP {
     static let maxNewOriginalsPerRun = 20
 
     func run(allowICloudOriginals: Bool, startOffset: Int = 0,
+             maximumNewOriginals: Int = Self.maxNewOriginalsPerRun,
              onProgress: @MainActor @escaping (XDriveIOSPhotoBackupProgress) -> Void)
         async throws -> XDriveIOSPhotoBackupProgress {
-        guard startOffset >= 0, !accessToken.isEmpty, owner.ownerID > 0,
-              owner.rootNodeID > 0, !owner.instanceID.isEmpty else {
+        guard startOffset >= 0, maximumNewOriginals > 0,
+              maximumNewOriginals <= Self.maxNewOriginalsPerRun,
+              owner.ownerID > 0, owner.rootNodeID > 0,
+              !owner.instanceID.isEmpty else {
             throw XDriveIOSPhotoBackupMVPError.identityNotVerified
         }
-        let latest = try await XDriveNativeOwnerRootVerifier(
-            origin: owner.origin, accessToken: accessToken,
-            expectedUsername: owner.username
-        ).verify()
-        guard latest.origin == owner.origin,
-              latest.ownerID == owner.ownerID,
-              latest.rootNodeID == owner.rootNodeID,
-              latest.instanceID == owner.instanceID else {
-            throw XDriveIOSPhotoBackupMVPError.identityNotVerified
+        // BGTasks may be admitted after suspension. Legacy journal keys and
+        // original staging files are WhenUnlocked/FileProtection.complete.
+        // Do NOT lower file/key protection or read PHAssets while locked.
+        if case .background = authorization {
+            guard UIApplication.shared.isProtectedDataAvailable else {
+                throw XDriveIOSPhotoBackupMVPError.unavailableSource
+            }
         }
+        try await authorization.verify(owner: owner)
+        try Task.checkCancellation()
 
         let scanner = XDrivePhotoKitBoundedSnapshotScanner()
         var report = XDriveIOSPhotoBackupProgress()
@@ -74,13 +89,13 @@ struct XDriveIOSForegroundPhotoBackupMVP {
 
             scanning: while report.scanned < windowCapacity &&
                     !report.stoppedForReview &&
-                    report.uploaded < Self.maxNewOriginalsPerRun {
+                    report.uploaded < maximumNewOriginals {
                 try Task.checkCancellation()
                 let page = try await scanner.nextPage()
                 for candidate in page.items {
                     try Task.checkCancellation()
                     if report.scanned >= windowCapacity ||
-                       report.uploaded >= Self.maxNewOriginalsPerRun {
+                       report.uploaded >= maximumNewOriginals {
                         break scanning
                     }
                     report.scanned += 1
@@ -164,6 +179,8 @@ struct XDriveIOSForegroundPhotoBackupMVP {
         // This stable Keychain namespace is used ONLY for user-initiated
         // Owner Files. It is not a registered Server Device and never grants
         // desktop local_folder/PhotoAsset Source execution.
+        try await authorization.verify(owner: owner)
+        try Task.checkCancellation()
         let binding = try await XDriveIOSForegroundBackupIdentity.shared
             .localScopeAndTag(owner: owner, localIdentifier: localIdentifier)
         try Task.checkCancellation()
@@ -181,10 +198,19 @@ struct XDriveIOSForegroundPhotoBackupMVP {
         try Task.checkCancellation()
 
         let journal = XDrivePhotoSyncLedger.shared
-        let preparer = XDriveIOSPhotoKitStagedIntentPreparer(
-            owner: owner, scope: binding.scope,
-            accessToken: accessToken, ledger: journal
-        )
+        let preparer: XDriveIOSPhotoKitStagedIntentPreparer
+        switch authorization {
+        case .webBearer(let token):
+            preparer = XDriveIOSPhotoKitStagedIntentPreparer(
+                owner: owner, scope: binding.scope,
+                accessToken: token, ledger: journal
+            )
+        case .background(let approved):
+            preparer = XDriveIOSPhotoKitStagedIntentPreparer(
+                owner: owner, scope: binding.scope,
+                approvedBackgroundGrant: approved, ledger: journal
+            )
+        }
         let prepared: XDrivePhotoSyncOperation
         let uploadFile: URL
         if isLive {
@@ -225,9 +251,7 @@ struct XDriveIOSForegroundPhotoBackupMVP {
             // Never skip a photo based only on an old local confirmation.
             // The actual current Owner Node must still have the same digest.
             do {
-                try await XDriveIOSNodeReceiptReadbackVerifier(
-                    owner: owner, accessToken: accessToken
-                ).verify(
+                try await authorization.verifyNodeReceipt(
                     XDriveNativeUploadReceipt(
                         nodeID: nodeID,
                         nodeName: prepared.destinationName,
@@ -236,7 +260,7 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                         bytes: prepared.byteSize,
                         sessionID: sessionID
                     ),
-                    parentID: prepared.destinationParentID,
+                    owner: owner, parentID: prepared.destinationParentID,
                     expectedName: prepared.destinationName
                 )
                 return .alreadyConfirmed
@@ -249,17 +273,27 @@ struct XDriveIOSForegroundPhotoBackupMVP {
             }
         case .prepared:
             do {
-                _ = try await XDriveIOSJournaledOriginalUpload(
-                    owner: owner, scope: binding.scope,
-                    accessToken: accessToken, ledger: journal
-                ).uploadPrepared(prepared, from: uploadFile)
+                let writer: XDriveIOSJournaledOriginalUpload
+                switch authorization {
+                case .webBearer(let token):
+                    writer = XDriveIOSJournaledOriginalUpload(
+                        owner: owner, scope: binding.scope,
+                        accessToken: token, ledger: journal
+                    )
+                case .background(let approved):
+                    writer = XDriveIOSJournaledOriginalUpload(
+                        owner: owner, scope: binding.scope,
+                        approvedBackgroundGrant: approved, ledger: journal
+                    )
+                }
+                _ = try await writer.uploadPrepared(prepared, from: uploadFile)
                 return .uploaded
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
-                let after = try? await journal.operations(scope: binding.scope)
-                if let current = after?.first(where: { $0.id == prepared.id }),
-                   current.state != .prepared {
+                if let current = try? await journal.operation(
+                    scope: binding.scope, id: prepared.id
+                ), current.state != .prepared {
                     return .requiresReview
                 }
                 throw error

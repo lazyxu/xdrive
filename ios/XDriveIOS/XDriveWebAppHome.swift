@@ -40,6 +40,8 @@ struct XDriveWebAppHome: View {
     @State private var pageError: String?
     @State private var downloadNotice: String?
     @State private var confirmLeave = false
+    @State private var emergencyStopBusy = false
+    @State private var emergencyStopNotice: String?
 
     init() {
         let saved = XDriveIOSWebOriginPreference.load()
@@ -91,6 +93,15 @@ struct XDriveWebAppHome: View {
                                 .multilineTextAlignment(.center)
                             Button("更换服务器地址") { confirmLeave = true }
                                 .buttonStyle(.borderedProminent)
+                            Button("紧急停止本机后台相册备份", role: .destructive) {
+                                emergencyStopBackgroundLocally()
+                            }
+                            .disabled(emergencyStopBusy)
+                            .accessibilityIdentifier("offline-ios-photo-emergency-stop")
+                            if let emergencyStopNotice {
+                                Text(emergencyStopNotice).font(.caption)
+                                    .multilineTextAlignment(.center)
+                            }
                         }
                         .padding(20)
                         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
@@ -113,6 +124,26 @@ struct XDriveWebAppHome: View {
                 openedOrigin = nil
             }
             Button("取消", role: .cancel) {}
+        }
+    }
+
+    /// Bootstrap emergency action stays usable even if the PWA cannot load.
+    /// It never creates a second native account or Photos settings page.
+    private func emergencyStopBackgroundLocally() {
+        guard !emergencyStopBusy else { return }
+        emergencyStopBusy = true
+        Task { @MainActor in
+            do {
+                let pendingRemote = try await XDriveIOSPhotoBackgroundGrantManager
+                    .shared.emergencyStopLocally()
+                emergencyStopNotice = pendingRemote
+                    ? "本机后台任务与凭据已停止；联网登录后仍需撤销服务器授权。"
+                    : "已取消本机后台任务；未找到活跃的本机后台凭据。"
+            } catch {
+                emergencyStopNotice =
+                    "已请求取消后台任务，但 Keychain 清除尚未证实；请解锁后重试。"
+            }
+            emergencyStopBusy = false
         }
     }
 
@@ -166,6 +197,16 @@ struct XDriveWebAppHome: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .buttonStyle(.bordered)
+                Button("紧急停止本机后台相册备份", role: .destructive) {
+                    emergencyStopBackgroundLocally()
+                }
+                .disabled(emergencyStopBusy)
+                .accessibilityIdentifier("offline-ios-photo-emergency-stop")
+                if let emergencyStopNotice {
+                    Text(emergencyStopNotice)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
             }
             .frame(maxWidth: 430, alignment: .leading)
             .padding(24)
