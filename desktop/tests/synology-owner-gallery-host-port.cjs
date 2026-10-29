@@ -31,6 +31,12 @@ function compiledGallery() {
           throw Error('test did not authorize an Owner original preview')
         },
       }
+      if (name === '../synology-media-stream') return {
+        xDriveSynologyPlaybackMIME: () => null,
+        xDriveSynologyLoadNativeMediaStream: async () => {
+          throw Error('Owner video streaming not authorized in this fixture')
+        },
+      }
       if (name === '../synology-owner-thumbnail') return {
         xDriveSynologyLoadOwnerThumbnail: async (local, item, signal) => {
           const thumb = await local.ownerFileThumbnail(item.id, item.revision, signal)

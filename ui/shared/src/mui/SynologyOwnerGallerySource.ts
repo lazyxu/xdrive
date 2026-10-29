@@ -3,6 +3,9 @@ import type { MediaGalleryQuery, MediaItem, MediaItemRange } from '../models'
 import type { XDriveSynologyBackupLocalClient } from '../synology-backup-adapter'
 import { xDriveSynologyLoadBoundedMediaPreview } from '../synology-media-preview'
 import { xDriveSynologyLoadOwnerThumbnail } from '../synology-owner-thumbnail'
+import {
+  xDriveSynologyLoadNativeMediaStream, xDriveSynologyPlaybackMIME,
+} from '../synology-media-stream'
 
 /**
  * Host-neutral page source for the existing MediaGallery JSX. DSM only supplies
@@ -23,7 +26,8 @@ type OwnerGalleryPreviewIdentity = {
   size: number
 }
 type OwnerGalleryReadPort = Pick<XDriveSynologyBackupLocalClient,
-  'ownerGalleryItemsRange' | 'ownerGalleryAlbums' | 'ownerFileThumbnail' | 'ownerFileMediaRange'>
+  'ownerGalleryItemsRange' | 'ownerGalleryAlbums' | 'ownerFileThumbnail' |
+  'ownerFileMediaRange' | 'ownerFileMediaStreamURL'>
 
 /**
  * Current Owner CGI supports captured-descending original Gallery/Album Range.
@@ -163,12 +167,26 @@ export function createXDriveSynologyOwnerGallerySource(
       }
     },
     loadPreviewURL: async (nodeID, kind, signal, _fileName, revision, onProgress) => {
-      if (kind !== 'image' || signal?.aborted) return null
+      if ((kind !== 'image' && kind !== 'video') || signal?.aborted) return null
       const identity = previews.get(nodeID)
       if (!identity || (revision && revision !== identity.revision)) return null
-      // The existing Owner original-Range verifier has a 32 MiB SHA-256 cap.
-      // Video/Live Photo and larger originals require a separate verified
-      // stream capability; never synthesize a giant Blob or fake URL.
+      // Gallery reuses the SAME Owner-scoped native Range player as DSM Files
+      // Quick Look. The initial authenticated bytes are checked for media
+      // magic, Node/revision/length/SHA and a fixed browser-playable MIME.
+      // The media element subsequently requests only the existing same-origin
+      // DSM CGI route, which authorizes Owner/Agent on every Range. No Blob,
+      // remote URL, Owner JWT or separate privileged media API is created.
+      if (kind === 'video') {
+        const mime = xDriveSynologyPlaybackMIME(identity.name)
+        if (!mime || !mime.startsWith('video/')) return null
+        const url = await xDriveSynologyLoadNativeMediaStream(client, {
+          id: identity.id, name: identity.name, size: identity.size,
+          revision: identity.revision, kind: 'file',
+        } as Parameters<typeof xDriveSynologyLoadNativeMediaStream>[1], signal)
+        return signal?.aborted || previews.get(nodeID) !== identity ? null : url
+      }
+      // Image originals remain SHA-verified and bounded to 32 MiB. Live Photo
+      // motion and other unsupported codecs still fail closed.
       if (identity.size <= 0 || identity.size > 32 * (1 << 20)) return null
       const url = await xDriveSynologyLoadBoundedMediaPreview(client, {
         id: identity.id, name: identity.name, size: identity.size,
