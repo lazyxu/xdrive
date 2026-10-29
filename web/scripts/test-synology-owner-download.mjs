@@ -119,7 +119,13 @@ const page = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/SynologyOwnerFil
 for (const contract of [
   'onDownloadItems={downloadSelectedFiles}',
   'getSelectionActionDisabledReason={(action, selected, count)',
-  'item.size > XDRIVE_SYNOLOGY_OWNER_DOWNLOAD_MAX_BYTES',
+  'xDriveFileExplorerReadOnlyDownloadReason({',
+  'rows: itemsRef.current',
+  'ownerCurrent: isCurrentOwner()',
+  'scopeVerified: currentScopeVerified',
+  'downloadActive: downloadAbort.current !== null',
+  'maxBytes: XDRIVE_SYNOLOGY_OWNER_DOWNLOAD_MAX_BYTES',
+  'if (disabledReason)',
   'xDriveSynologyFetchVerifiedDownload(client, item, controller.signal,',
   'download={readyDownload.filename}',
   'href={readyDownload.url}',
@@ -129,9 +135,67 @@ for (const contract of [
   'setDownload({ name: item.name, loaded',
   'window.setTimeout(() => {',
   'downloadAbort.current?.abort()',
-  'const current = xDriveFindVerifiedOwnerSelection(item, itemsRef.current)',
-  "if (!current || current.type !== 'file')",
 ]) assert.ok(page.includes(contract), 'missing secure DSM download boundary: ' + contract)
+
+// Production DSM moved its size and Owner-row gates into the shared read-only
+// admission model. Execute that real model: a source-string assertion on the
+// former inlined size check would fail without testing the security boundary.
+const readOnlyModelDir = path.join(repo, 'ui/shared/src/mui')
+const compileReadOnlyModel = (fileName, deps = {}) => {
+  const output = ts.transpileModule(fs.readFileSync(fileName, 'utf8'), {
+    fileName, reportDiagnostics: true,
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  })
+  assert.equal((output.diagnostics || []).filter(
+    d => d.category === ts.DiagnosticCategory.Error).length, 0)
+  const exports = {}, module = { exports }
+  vm.runInNewContext(output.outputText, {
+    exports, module,
+    require: name => {
+      assert.ok(Object.prototype.hasOwnProperty.call(deps, name), 'unexpected read-only import: ' + name)
+      return deps[name]
+    },
+  }, { filename: fileName, timeout: 1000 })
+  return module.exports
+}
+const ownerSelection = compileReadOnlyModel(
+  path.join(readOnlyModelDir, 'FileExplorerVerifiedOwnerSelection.ts'))
+const admissionPath = path.join(readOnlyModelDir, 'FileExplorerReadOnlyDownloadAdmission.ts')
+const readOnlyAdmission = compileReadOnlyModel(admissionPath, {
+  './FileExplorerVerifiedOwnerSelection': ownerSelection,
+}).xDriveFileExplorerReadOnlyDownloadReason
+const authenticRow = {
+  id: file.id, revision: file.revision, name: file.name, type: 'file', size: file.size,
+}
+const allow = {
+  selected: [file], rows: [authenticRow], ownerCurrent: true,
+  scopeVerified: true, downloadActive: false,
+  maxBytes: XDRIVE_SYNOLOGY_OWNER_DOWNLOAD_MAX_BYTES, sizeLimitLabel: '32 MiB',
+}
+assert.equal(readOnlyAdmission(allow), null, 'current verified Owner file remains downloadable')
+for (const [caseName, fields] of [
+  ['Owner changed', { ownerCurrent: false }],
+  ['scope unverified', { scopeVerified: false }],
+  ['download already active', { downloadActive: true }],
+  ['wrong selection count', { count: 2 }],
+  ['zero bytes', { selected: [{ ...file, size: 0 }] }],
+  ['over 32 MiB', { selected: [{ ...file, size: XDRIVE_SYNOLOGY_OWNER_DOWNLOAD_MAX_BYTES + 1 }] }],
+  ['unsafe byte size', { selected: [{ ...file, size: Number.MAX_SAFE_INTEGER + 1 }] }],
+  ['forged revision', { selected: [{ ...file, revision: file.revision + 1 }] }],
+  ['forged Node', { selected: [{ ...file, id: file.id + 1 }] }],
+  ['changed Owner row', { rows: [{ ...authenticRow, name: 'other-owner.txt' }] }],
+  ['directory masquerading as file', { rows: [{ ...authenticRow, type: 'dir' }] }],
+]) {
+  assert.notEqual(readOnlyAdmission({ ...allow, ...fields }), null, caseName + ' must fail closed')
+}
+const admissionSource = fs.readFileSync(admissionPath, 'utf8')
+for (const guard of [
+  '!Number.isSafeInteger(item.size)', 'item.size > maxBytes',
+  'xDriveFindVerifiedOwnerSelection(item, rows)',
+  "if (!current || current.type !== 'file')",
+]) {
+  assert.ok(admissionSource.includes(guard), 'missing shared Owner download guard: ' + guard)
+}
 
 // Renderer contract: a user-initiated Owner download is not a disposable
 // thumbnail/first-page read. Folder/sort must not abort its controller;
