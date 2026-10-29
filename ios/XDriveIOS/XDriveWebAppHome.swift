@@ -132,6 +132,15 @@ struct XDriveWebAppHome: View {
     private func emergencyStopBackgroundLocally() {
         guard !emergencyStopBusy else { return }
         emergencyStopBusy = true
+        // The native recovery overlay can coexist with an in-flight
+        // foreground UploadSession while its WebView is still mounted.
+        // Retire the failed WebView first: Coordinator.stopDownloads()
+        // also cancels the exact native foreground backup task.
+        if pageError != nil {
+            openedOrigin = nil
+            pageError = nil
+            downloadNotice = nil
+        }
         Task { @MainActor in
             // First revoke every Owner's local *foreground* auto schedule.
             // Even a failed locked Keychain cannot resurrect those plans.

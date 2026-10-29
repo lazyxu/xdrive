@@ -29,6 +29,9 @@ test('native bootstrap and trusted bridge stop all local schedules before BG cre
     home.indexOf('private var connectionForm:'))
   assert.match(home, /offline-ios-photo-emergency-stop/)
   assert.match(bootstrap, /disableAllOnThisDevice\(\)/)
+  assert.match(bootstrap, /if pageError != nil/)
+  assert.match(bootstrap, /openedOrigin = nil/)
+  assert.match(home, /func stopDownloads\(\) \{[\s\S]*?photoHost\.cancelActive\(\)/)
   assert.ok(bootstrap.indexOf('disableAllOnThisDevice()') <
     bootstrap.indexOf('emergencyStopLocally()'))
   const native = bridge.slice(bridge.indexOf('case "photos.background.emergencyStop":'),
