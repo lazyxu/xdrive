@@ -39,9 +39,16 @@ if [[ "$1" == backup && ( "$#" -eq 1 || "${2:-}" == --incremental ) ]]; then
   fi
   if [[ "${XD_BACKUP_ADMIN_TEST_CREATE_EMPTY:-}" == yes ]]; then exit 0; fi
   mkdir -p "$root/$name"
-  for f in database.dump verify.json manifest.json SHA256SUMS.txt; do
+  for f in database.dump verify.json SHA256SUMS.txt; do
     printf 'fixture\n' > "$root/$name/$f"
   done
+  # The mock creator must publish the same explicit, typed Manifest metadata
+  # as the real v1/v2 writer. Otherwise strict Host inventory preflight
+  # correctly rejects the old plain-text "fixture" and breaks create tests.
+  manifest_version=1
+  [[ "$fmt" != v2 ]] || manifest_version=2
+  printf '{"format_version":%s,"file_data_included":true,"consistency_verified":true}\n' \
+    "$manifest_version" > "$root/$name/manifest.json"
   if [[ "$fmt" == v2 ]]; then
     touch "$root/$name/legacy.tar"
     if [[ "${XD_BACKUP_ADMIN_TEST_CREATE_INCOMPLETE:-}" != yes ]]; then
