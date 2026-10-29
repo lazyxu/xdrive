@@ -255,8 +255,15 @@
     viewportAfterMouseRelease=false
     if (!disposed && active && map) scheduleViewport()
   }
-  const onMousePointerUp = event => releaseHeldMouse(event.pointerId)
-  const onMouseWindowBlur = () => releaseHeldMouse()
+  const onMousePointerUp = event => {
+    // The untrusted SDK must not end an actual drag using a forged
+    // pointerup/pointercancel with a matching ID.
+    if (!event.isTrusted) return
+    releaseHeldMouse(event.pointerId)
+  }
+  const onMouseWindowBlur = event => {
+    if (event.isTrusted) releaseHeldMouse()
+  }
   const bindMousePointer = () => {
     // Cross-Origin SDK input stays entirely in the isolated Child.
     // Capture phase survives a provider's stopPropagation on its map DOM.

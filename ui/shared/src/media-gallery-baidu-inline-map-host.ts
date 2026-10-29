@@ -308,6 +308,10 @@ export function xDriveMountBaiduInlineMap<T>(
     if (alive && ready) scheduleViewport()
   }
   const onMousePointerUp = (event: PointerEvent) => {
+    // SDK scripts can dispatch synthetic pointerup/pointercancel with the
+    // same numeric ID while the physical contact is still held. Only a real
+    // browser release can settle a signed Owner Camera request.
+    if (!event.isTrusted) return
     releaseHeldMouse(event.pointerId)
   }
   // The SDK canvas is the input surface in inline mode; use capture so
@@ -316,7 +320,10 @@ export function xDriveMountBaiduInlineMap<T>(
   canvas.addEventListener('pointerdown', onMousePointerDown, true)
   browser.addEventListener('pointerup', onMousePointerUp, true)
   browser.addEventListener('pointercancel', onMousePointerUp, true)
-  const onMouseWindowBlur = () => releaseHeldMouse()
+  const onMouseWindowBlur = (event: FocusEvent) => {
+    // A fabricated blur event must not end a still-held pointer gesture.
+    if (event.isTrusted) releaseHeldMouse()
+  }
   browser.addEventListener('blur', onMouseWindowBlur)
   // A responsive container can change without Baidu firing move/zoom events
   // (orientation, 899/900 breakpoint or a Desktop sidebar resize). Old
