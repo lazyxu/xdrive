@@ -67,6 +67,8 @@ const synology = {
   platform: 'synology',
   services: {
     localBackupClient: client,
+    // A CGI client alone must not grant Owner read fallback to a Host.
+    ownerBackupReadFallback: true,
     diagnosticsSource,
     ownerFilesPage: {
       client,

@@ -64,7 +64,7 @@ test('packaged independent Child remains unconfigured until a trusted Origin is 
   assert.match(docs,/validate-site\.mjs/)
   assert.match(child,/let heldMousePointer = null, viewportAfterMouseRelease = false/)
   assert.match(child,/if \(heldMousePointer !== null \|\| heldTouchPointers\.size > 0\)/)
-  assert.match(child,/releaseHeldMouse\(pointerID\)/)
+  assert.match(child,/releaseHeldMouse\(event\.pointerId\)/)
   assert.match(child,/if \(!event\.isTrusted\) return/)
   assert.match(child,/heldTouchPointers\.size>0/)
   assert.match(child,/releaseMousePointer\(\)/)

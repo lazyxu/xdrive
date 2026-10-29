@@ -38,6 +38,7 @@ function WorkspaceContent({ children }) {
 const mockModules = {
   'react/jsx-runtime': require('react/jsx-runtime'),
   './WorkspaceContent': { XDriveWorkspaceContent: WorkspaceContent },
+  './WorkspaceRouteSurface': { XDriveWorkspaceRouteSurface: WorkspaceContent },
   './XDriveAppPageOutlet': { XDriveAppPageOutlet: PageOutlet },
   './WorkspaceRoute': {
     xDriveIsSharedHostPageRoute: value => value !== 'files',

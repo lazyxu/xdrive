@@ -256,7 +256,8 @@ test('desktop sidebar uses the shared complete sidebar renderer with Desktop-onl
     sharedRouteTitles.includes("conflicts: '冲突'"))
   assert.ok(rendererApp.includes("diagnosticsAriaLabel: '桌面版辅助功能'"))
   assert.ok(sharedHostSections.includes('xDriveDiagnosticsSidebarDestination()') &&
-    sharedWorkspaceNavigation.includes("label: '诊断'"))
+    sharedWorkspaceNavigation.includes("xDriveWorkspaceRouteTitle('diagnostics')") &&
+    sharedRouteTitles.includes("diagnostics: '诊断'"))
   assert.ok(rendererApp.includes('conflictCount: status?.conflict_count') &&
     sharedHostSections.includes('badge: conflictCount'))
   assert.ok(rendererApp.includes("if (destination === 'settings')") &&

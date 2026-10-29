@@ -186,11 +186,15 @@ test('FileExplorer LIVP preview reuses the shared Live Photo surface on Web and 
   ]) assert.ok(preview.includes(token), 'shared LIVP preview missing: ' + token)
 
   assert.ok(
-    /api\.mediaLivePhotoStillURL\(Number\(item\.id\),\s*signal\)/.test(web),
+    /api\.mediaLivePhotoStillURL\(plan\.nodeID,\s*signal\)/.test(web) &&
+    web.includes("plan.mode === 'live-still'") &&
+    web.includes('xDriveFileExplorerPreviewRequest(item, kind'),
     'Web FileExplorer must use the signed LIVP still preview before thumbnail fallback',
   )
   assert.ok(
-    desktop.includes('getMediaLivePhotoStill(Number(item.id), requestID)') && desktop.includes('hostPort.releaseDiscardedPreviewURL(late.data'),
+    desktop.includes('agent.getMediaLivePhotoStill(plan.nodeID, requestID)') &&
+    desktop.includes("plan.mode === 'live-still'") &&
+    desktop.includes('hostPort.releaseDiscardedPreviewURL(late.data'),
     'Desktop FileExplorer must use the protected LIVP still preview before thumbnail fallback',
   )
   assert.ok(
