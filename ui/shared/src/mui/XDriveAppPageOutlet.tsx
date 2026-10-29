@@ -45,10 +45,11 @@ export function XDriveAppPageOutlet({
     return <XDriveStatePanel message="此页面需要经过 xDrive Server 确认的管理员身份。" />
   }
   const services = host.services
-  // The backup-only CGI read client is a DSM capability, not a generic Host
-  // fallback. A Desktop Host acquiring a backup client later must never
-  // silently mount NAS Owner pages instead of its native file controllers.
-  const local = host.platform === 'synology' ? services?.localBackupClient : undefined
+  // Only an explicit Host capability admits backup-only Owner read surfaces.
+  // A Desktop Host gaining a local Agent port must not silently replace its
+  // native controllers with an unrelated NAS fallback.
+  const local = services?.ownerBackupReadFallback === true
+    ? services.localBackupClient : undefined
   const navigate = (destination: XDriveWorkspaceAppRoute) =>
     onNavigate ? () => onNavigate(destination) : undefined
   let page: ReactNode | null = null
