@@ -28,9 +28,25 @@ export interface XDriveIOSPhotoBackupProgress {
   stoppedForReview: boolean
   stage: string
 }
+export interface XDriveIOSReceiptReviewStatus {
+  pending: number
+  maxPerRun: number
+}
+export interface XDriveIOSReceiptReviewProgress {
+  pending: number
+  checked: number
+  confirmed: number
+  activeUnverified: number
+  missing: number
+  expired: number
+  ambiguous: number
+  stage: string
+}
+
 export interface XDriveIOSPhotoBackupHost {
   /** Negotiated with the real native host; false for older installed IPA. */
   scanWindowsSupported?: boolean
+  receiptReviewSupported?: boolean
   capabilities(): Promise<boolean>
   status(session: XDriveIOSPhotoBackupSession): Promise<XDriveIOSPhotoStatus>
   requestAccess(session: XDriveIOSPhotoBackupSession): Promise<XDriveIOSPhotoStatus>
@@ -40,6 +56,11 @@ export interface XDriveIOSPhotoBackupHost {
     onProgress: (progress: XDriveIOSPhotoBackupProgress) => void,
     windowIndex?: number,
   ): Promise<XDriveIOSPhotoBackupProgress>
+  reviewStatus(session: XDriveIOSPhotoBackupSession): Promise<XDriveIOSReceiptReviewStatus>
+  reviewPending(
+    session: XDriveIOSPhotoBackupSession,
+    onProgress: (progress: XDriveIOSReceiptReviewProgress) => void,
+  ): Promise<XDriveIOSReceiptReviewProgress>
   cancel(): Promise<void>
   switchServer(): Promise<void>
 }
@@ -62,6 +83,9 @@ export function XDriveIOSPhotoBackupSettings({
   // This is a transient 1-based selection, NOT a persisted PhotoKit identity.
   const [windowIndexText, setWindowIndexText] = useState('1')
   const [progress, setProgress] = useState<XDriveIOSPhotoBackupProgress | null>(null)
+  const [reviewStatus, setReviewStatus] = useState<XDriveIOSReceiptReviewStatus | null>(null)
+  const [reviewReport, setReviewReport] = useState<XDriveIOSReceiptReviewProgress | null>(null)
+  const [reviewing, setReviewing] = useState(false)
   const activeRun = useRef(false)
 
   // Changing authenticated Owner or closing Settings cancels the current
@@ -73,12 +97,18 @@ export function XDriveIOSPhotoBackupSettings({
     setError('')
     setWindowIndexText('1')
     setProgress(null)
+    setReviewStatus(null)
+    setReviewReport(null)
     if (session) {
       void host.capabilities().then(async supported => {
         if (!mounted || !supported) return
         setAvailable(true)
         const current = await host.status(session)
         if (mounted) setStatus(current)
+        if (host.receiptReviewSupported) {
+          const pending = await host.reviewStatus(session)
+          if (mounted) setReviewStatus(pending)
+        }
       }).catch(() => {
         if (mounted) {
           setAvailable(true)
@@ -111,7 +141,7 @@ export function XDriveIOSPhotoBackupSettings({
   const loaded = Math.min(progress?.scanned ?? 0, total)
 
   const requestAccess = async () => {
-    if (busy || running) return
+    if (busy || running || reviewing) return
     setBusy(true)
     setError('')
     try {
@@ -122,7 +152,7 @@ export function XDriveIOSPhotoBackupSettings({
   }
 
   const start = async () => {
-    if (!permitted || busy || running || (scanWindows && !validWindow)) return
+    if (!permitted || busy || running || reviewing || (scanWindows && !validWindow)) return
     setBusy(true)
     setRunning(true)
     activeRun.current = true
@@ -138,6 +168,10 @@ export function XDriveIOSPhotoBackupSettings({
       // The authoritative PhotoKit count can shrink between selected windows.
       // Do not silently send an out-of-range selection back to window one.
       setStatus(current => current ? { ...current, totalVisible: report.totalVisible } : current)
+      if (host.receiptReviewSupported) {
+        try { setReviewStatus(await host.reviewStatus(session)) }
+        catch { /* A failed optional ledger count must not hide genuine upload receipt. */ }
+      }
       if (report.stoppedForReview || report.needsReview > 0) {
         setError('存在服务端提交结果待核对的文件；已停止新增上传，不会盲目重试。')
       }
@@ -155,6 +189,25 @@ export function XDriveIOSPhotoBackupSettings({
     setCancelRequested(true)
     try { await host.cancel() }
     catch { setError('取消请求未获得确认；请在服务器核对未完成的上传。') }
+  }
+
+  const reviewReceipts = async () => {
+    if (!host.receiptReviewSupported || !reviewStatus?.pending ||
+        busy || running || reviewing) return
+    setReviewing(true)
+    activeRun.current = true
+    setError('')
+    setReviewReport(null)
+    try {
+      const report = await host.reviewPending(session, setReviewReport)
+      setReviewReport(report)
+      setReviewStatus(await host.reviewStatus(session))
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '无法确认当前 Owner 的历史上传收据。')
+    } finally {
+      activeRun.current = false
+      setReviewing(false)
+    }
   }
 
   return (
@@ -246,13 +299,53 @@ export function XDriveIOSPhotoBackupSettings({
             </Typography>
           </Stack>
         ) : null}
+        {host.receiptReviewSupported ? (
+          <Stack spacing={1} data-xdrive-ios-receipt-review>
+            <Typography variant="body2" fontWeight={700}>历史上传收据核对</Typography>
+            <Typography variant="body2">
+              {reviewStatus ? '当前有 ' + reviewStatus.pending + ' 条不确定记录待核对。'
+                : '正在读取此账户受保护的本地备份账本…'}
+            </Typography>
+            {reviewReport ? (
+              <Typography variant="caption" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                {reviewReport.stage}
+                {' · '}本轮检查 {reviewReport.checked}
+                {' · '}真实确认 {reviewReport.confirmed}
+                {' · '}活动会话未证实 {reviewReport.activeUnverified}
+                {' · '}未找到证据 {reviewReport.missing}
+                {' · '}已过期 {reviewReport.expired}
+                {' · '}多重匹配 {reviewReport.ambiguous}
+              </Typography>
+            ) : null}
+            {reviewing ? (
+              <Button variant="outlined" onClick={() => {
+                void host.cancel().catch(() => {
+                  setError('取消核对未得到确认，请检查当前连接。')
+                })
+              }}>
+                取消本轮核对
+              </Button>
+            ) : (
+              <Button variant="outlined"
+                disabled={busy || running || !reviewStatus || reviewStatus.pending === 0}
+                onClick={() => { void reviewReceipts() }}
+                data-xdrive-ios-receipt-review-start>
+                只读核对历史收据（每轮最多 20 条）
+              </Button>
+            )}
+            <Typography variant="caption" color="text.secondary">
+              此操作只查询当前 Owner 已存在的 UploadSession，并核验真正保存的文件；
+              不会自动补传、重新创建会话、删除或覆盖照片。未获得双重确认的记录仍保持未知。
+            </Typography>
+          </Stack>
+        ) : null}
         {error ? <Alert severity="warning" data-xdrive-ios-photos-error>{error}</Alert> : null}
         {permitted && (running ? (
           <Button variant="outlined" disabled={cancelRequested} onClick={() => { void cancel() }}>
             {cancelRequested ? '正在取消…' : '取消本轮照片备份'}
           </Button>
         ) : (
-          <Button variant="contained" disabled={busy || (scanWindows && !validWindow)}
+          <Button variant="contained" disabled={busy || reviewing || (scanWindows && !validWindow)}
             onClick={() => { void start() }}
             data-xdrive-ios-photos-start>
             开始本轮照片备份
@@ -262,7 +355,7 @@ export function XDriveIOSPhotoBackupSettings({
           上传须由用户点击并在 iOS 系统提示中再次确认。只使用当前服务器验证的 Owner/root；
           不镜像删除、不自动后台运行，收到不确定 ACK 时保留账本等待核对。
         </Typography>
-        <Button variant="outlined" disabled={busy || running}
+        <Button variant="outlined" disabled={busy || running || reviewing}
           data-xdrive-ios-settings-switch-server
           onClick={() => {
             void host.switchServer().catch(caught => {

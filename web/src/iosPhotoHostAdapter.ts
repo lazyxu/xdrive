@@ -2,6 +2,8 @@ import type {
   XDriveIOSPhotoBackupHost,
   XDriveIOSPhotoBackupProgress,
   XDriveIOSPhotoBackupSession,
+  XDriveIOSReceiptReviewProgress,
+  XDriveIOSReceiptReviewStatus,
   XDriveIOSPhotoPermission,
   XDriveIOSPhotoStatus,
 } from '../../ui/shared/src/mui/IOSPhotoBackupSettings'
@@ -16,7 +18,7 @@ type NativeResponse = {
   data?: unknown
   error?: string
 }
-type NativeProgress = { id?: string; data?: XDriveIOSPhotoBackupProgress }
+type NativeProgress<P> = { id?: string; data?: P }
 
 /** Only iOS WKWebView installs the named native message handler.
  * Normal Web/PWA/DSM/Desktop have no adapter and no Photos controls. */
@@ -30,15 +32,16 @@ export function xDriveCreateIOSPhotoBackupHost(): XDriveIOSPhotoBackupHost | nul
 class IOSPhotoBackupHost implements XDriveIOSPhotoBackupHost {
   private readonly handler: NativeMessageHandler
   scanWindowsSupported = false
+  receiptReviewSupported = false
 
   constructor(handler: NativeMessageHandler) {
     this.handler = handler
   }
 
-  private request<T>(
+  private request<T, P = XDriveIOSPhotoBackupProgress>(
     method: string,
     params: Record<string, unknown> = {},
-    onProgress?: (progress: XDriveIOSPhotoBackupProgress) => void,
+    onProgress?: (progress: P) => void,
   ): Promise<T> {
     if (!window.crypto?.randomUUID) {
       return Promise.reject(new Error('当前安全环境无法建立原生操作请求。'))
@@ -59,14 +62,14 @@ class IOSPhotoBackupHost implements XDriveIOSPhotoBackupHost {
         else reject(new Error(typeof detail.error === 'string' ? detail.error : '原生操作未完成。'))
       }
       const progress = (event: Event) => {
-        const detail = (event as CustomEvent<NativeProgress>).detail
+        const detail = (event as CustomEvent<NativeProgress<P>>).detail
         if (detail?.id === id && detail.data) onProgress?.(detail.data)
       }
       window.addEventListener('xdrive-ios-host-response', response)
       window.addEventListener('xdrive-ios-host-progress', progress)
       // An actual foreground backup has no synthetic success deadline:
       // user cancel, backgrounding or Server reconciliation owns its end.
-      if (method !== 'photos.backup.start') {
+      if (method !== 'photos.backup.start' && method !== 'photos.reconcile.start') {
         timer = window.setTimeout(() => {
           cleanup()
           reject(new Error('原生操作未在规定时间内响应。'))
@@ -84,12 +87,13 @@ class IOSPhotoBackupHost implements XDriveIOSPhotoBackupHost {
   async capabilities(): Promise<boolean> {
     const value = await this.request<{
       protocolVersion: number; platform: string; photoKit: boolean
-      foregroundStillBackup: boolean; scanWindows?: boolean
+      foregroundStillBackup: boolean; scanWindows?: boolean; receiptReview?: boolean
     }>('capabilities')
     const supported = value?.protocolVersion === 1 &&
       value.platform === 'ios' && value.photoKit === true &&
       value.foregroundStillBackup === true
     this.scanWindowsSupported = supported && value.scanWindows === true
+    this.receiptReviewSupported = supported && value.receiptReview === true
     return supported
   }
 
@@ -118,6 +122,27 @@ class IOSPhotoBackupHost implements XDriveIOSPhotoBackupHost {
       { ...session, allowICloudOriginals,
         ...(this.scanWindowsSupported ? { windowIndex } : {}) },
       onProgress,
+    )
+  }
+
+  reviewStatus(session: XDriveIOSPhotoBackupSession): Promise<XDriveIOSReceiptReviewStatus> {
+    if (!this.receiptReviewSupported) {
+      return Promise.reject(new Error('当前安装的 iOS IPA 不支持本地收据核对。'))
+    }
+    return this.request<XDriveIOSReceiptReviewStatus>(
+      'photos.reconcile.status', { ...session },
+    )
+  }
+
+  reviewPending(
+    session: XDriveIOSPhotoBackupSession,
+    onProgress: (progress: XDriveIOSReceiptReviewProgress) => void,
+  ): Promise<XDriveIOSReceiptReviewProgress> {
+    if (!this.receiptReviewSupported) {
+      return Promise.reject(new Error('当前安装的 iOS IPA 不支持本地收据核对。'))
+    }
+    return this.request<XDriveIOSReceiptReviewProgress, XDriveIOSReceiptReviewProgress>(
+      'photos.reconcile.start', { ...session }, onProgress,
     )
   }
 

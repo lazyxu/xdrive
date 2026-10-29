@@ -17,6 +17,9 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
     private let onRequestServerChange: () -> Void
     private var activeBackup: Task<Void, Never>?
     private var activeBackupID: String?
+    private var activeReview: Task<Void, Never>?
+    private var activeReviewID: String?
+    private static let maxReceiptReviewPerRun = 20
     private var consent: CheckedContinuation<Bool, Never>?
     private weak var consentAlert: UIAlertController?
     private var backgroundObserver: NSObjectProtocol?
@@ -130,6 +133,7 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                 "protocolVersion": 1, "platform": "ios",
                 "photoKit": true, "foregroundStillBackup": true,
                 "scanWindows": true,
+                "receiptReview": true,
                 "maxScannedAssets": XDriveIOSForegroundPhotoBackupMVP.maxScannedAssets,
                 "maxNewOriginalsPerRun": XDriveIOSForegroundPhotoBackupMVP.maxNewOriginalsPerRun
             ])
@@ -138,8 +142,8 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
             // *shared PWA login screen*, so it cannot demand an Owner token.
             // Still require the exact origin-locked main frame, and show an
             // explicit native confirmation before stopping that WebView.
-            guard activeBackup == nil else {
-                sendError(id, "相册备份正在运行，请先完成或取消，再切换服务器。")
+            guard activeBackup == nil && activeReview == nil else {
+                sendError(id, "相册备份或收据核对正在运行，请先完成或取消，再切换服务器。")
                 return
             }
             guard let currentURL = webView?.url, sameOrigin(currentURL) else {
@@ -175,7 +179,7 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                 sendError(id, "无法核实当前服务器与 Owner，未读取系统相册。")
             }
         case "photos.backup.start":
-            guard activeBackup == nil else {
+            guard activeBackup == nil && activeReview == nil else {
                 sendError(id, "已有一轮照片备份正在运行。")
                 return
             }
@@ -256,11 +260,124 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                     self.sendError(id, "原件备份停止：请检查 Owner 授权、网络和加密账本；未确认的文件不计成功。")
                 }
             }
+        case "photos.reconcile.status":
+            guard let source = parseOwner(body) else {
+                sendError(id, "当前账户凭证无效，无法读取受保护的备份账本。")
+                return
+            }
+            do {
+                let owner = try await verifiedOwner(source)
+                try Task.checkCancellation()
+                let scope = try await XDriveIOSForegroundBackupIdentity.shared
+                    .existingLocalScope(owner: owner)
+                guard let scope else {
+                    sendResult(id, ["pending": 0, "maxPerRun": Self.maxReceiptReviewPerRun])
+                    return
+                }
+                let records = try await XDrivePhotoSyncLedger.shared.operations(scope: scope)
+                sendResult(id, [
+                    "pending": records.filter { self.needsReceiptReview($0) }.count,
+                    "maxPerRun": Self.maxReceiptReviewPerRun
+                ])
+            } catch {
+                sendError(id, "未能核实 Owner 或读取加密账本；未推断任何备份成功。")
+            }
+        case "photos.reconcile.start":
+            guard activeBackup == nil && activeReview == nil,
+                  let source = parseOwner(body) else {
+                sendError(id, "已有备份/核对正在运行，或当前账户会话无效。")
+                return
+            }
+            activeReviewID = id
+            activeReview = Task { @MainActor [weak self] in
+                guard let self else { return }
+                defer {
+                    self.activeReview = nil
+                    self.activeReviewID = nil
+                }
+                do {
+                    let owner = try await self.verifiedOwner(source)
+                    try Task.checkCancellation()
+                    guard let currentURL = self.webView?.url,
+                          self.sameOrigin(currentURL) else {
+                        self.sendError(id, "网页已切换，收据核对已终止。")
+                        return
+                    }
+                    let scope = try await XDriveIOSForegroundBackupIdentity.shared
+                        .existingLocalScope(owner: owner)
+                    guard let scope else {
+                        self.sendResult(id, [
+                            "pending": 0, "checked": 0, "confirmed": 0,
+                            "activeUnverified": 0, "missing": 0, "expired": 0,
+                            "ambiguous": 0, "stage": "本机没有待核对的旧照片收据"
+                        ])
+                        return
+                    }
+                    let ledger = XDrivePhotoSyncLedger.shared
+                    let records = try await ledger.operations(scope: scope)
+                    let uncertain = records.filter { self.needsReceiptReview($0) }
+                    let batch = Array(uncertain.prefix(Self.maxReceiptReviewPerRun))
+                    var progress: [String: Any] = [
+                        "pending": uncertain.count,
+                        "checked": 0,
+                        "confirmed": 0,
+                        "activeUnverified": 0,
+                        "missing": 0,
+                        "expired": 0,
+                        "ambiguous": 0,
+                        "stage": "正在只读核对已存在的 Server 上传会话…"
+                    ]
+                    self.sendReviewProgress(id, progress)
+                    for record in batch {
+                        try Task.checkCancellation()
+                        let result = try await XDriveIOSPhotoBackupUncertainReceiptRecovery(
+                            owner: owner, scope: scope,
+                            accessToken: source.accessToken, ledger: ledger
+                        ).reconcile(operationID: record.id)
+                        try Task.checkCancellation()
+                        progress["checked"] = (progress["checked"] as? Int ?? 0) + 1
+                        switch result {
+                        case .confirmed:
+                            progress["confirmed"] = (progress["confirmed"] as? Int ?? 0) + 1
+                        case .activeButUnverified:
+                            progress["activeUnverified"] = (progress["activeUnverified"] as? Int ?? 0) + 1
+                        case .noSessionEvidence:
+                            progress["missing"] = (progress["missing"] as? Int ?? 0) + 1
+                        case .expiredSession:
+                            progress["expired"] = (progress["expired"] as? Int ?? 0) + 1
+                        case .ambiguousSession:
+                            progress["ambiguous"] = (progress["ambiguous"] as? Int ?? 0) + 1
+                        }
+                        progress["stage"] = "已核对 \(progress["checked"] as? Int ?? 0)/\(batch.count) 项"
+                        self.sendReviewProgress(id, progress)
+                    }
+                    let latest = try await ledger.operations(scope: scope)
+                    try Task.checkCancellation()
+                    progress["pending"] = latest.filter { self.needsReceiptReview($0) }.count
+                    progress["stage"] = "本轮只读核对已结束；未证实的收据继续保留"
+                    self.sendResult(id, progress)
+                } catch is CancellationError {
+                    self.sendError(id, "核对已取消；未知结果仍保留，不会自动创建新上传。")
+                } catch {
+                    self.sendError(id, "核对遇到无法验证的 Server/Owner/账本状态，已停止，保留原收据待复核。")
+                }
+            }
         case "photos.backup.cancel":
             cancelActive()
             sendResult(id, ["cancelRequested": true])
         default:
             sendError(id, "当前 iOS Host Adapter 不支持该操作。")
+        }
+    }
+
+    /// Never return an Owner's raw PhotoKit identifiers, destination names,
+    /// local HMAC resume keys, original SHA or unverified Node IDs to Web.
+    private func needsReceiptReview(_ operation: XDrivePhotoSyncOperation) -> Bool {
+        switch operation.state {
+        case .creating, .uploading, .finalizing, .needsReconciliation:
+            return true
+        case .prepared, .confirmed:
+            return false
         }
     }
 
@@ -342,10 +459,18 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
     /// from the shared React Cancel control. No detached backup task survives.
     func cancelActive() {
         activeBackup?.cancel()
+        activeReview?.cancel()
         if consent != nil {
             // Both WebKit and UIApplication lifecycle callbacks run on main.
             Task { @MainActor [weak self] in self?.finishConsent(false) }
         }
+    }
+
+    @MainActor
+    private func sendReviewProgress(_ id: String, _ report: [String: Any]) {
+        guard activeReviewID == id else { return }
+        dispatch(name: "xdrive-ios-host-progress",
+                 payload: ["id": id, "data": report])
     }
 
     @MainActor
