@@ -164,10 +164,16 @@ export async function xDriveFileExplorerReadDirectoryPage<
     return { mode: 'cursor', page }
   }
   if (port.mode === 'range' && request.mode === 'range') {
+    if (!Number.isSafeInteger(request.parentID) || request.parentID <= 0 ||
+        !Number.isSafeInteger(request.offset) || request.offset < 0 ||
+        !Number.isSafeInteger(request.limit) || request.limit <= 0) {
+      throw new Error('Invalid Files Host counted Range request')
+    }
     const page = await port.readRange(
       request.parentID, request.offset, request.limit, request.sort,
       request.includeCount, request.grouping, request.signal,
     )
+    verifyRangePage(page, request)
     return { mode: 'range', page }
   }
   throw new Error('Unsupported Files read strategy')
