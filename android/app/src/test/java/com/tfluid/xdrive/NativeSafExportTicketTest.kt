@@ -109,4 +109,33 @@ class NativeSafExportTicketTest {
             state.copy(fileExportPending = photo.copy(id = -1L),
                 items = listOf(photo.copy(id = -1L)))))
     }
+
+    @Test fun staleOSResultDoesNotCancelAnotherOwnersNewPendingDownload() {
+        val old = files()
+        val ticket = requireNotNull(NativeSafExportTicket.capture(old))
+        val newOwner = old.copy(
+            username = "new-owner",
+            fileExportPending = photo.copy(id = 44L, revision = 2L),
+            items = listOf(photo.copy(id = 44L, revision = 2L)))
+        assertEquals(NativeSafExportCallbackDecision.IGNORE_STALE,
+            nativeSafExportCallbackDecision(ticket, newOwner, validContentUri = true))
+        assertEquals(NativeSafExportCallbackDecision.IGNORE_STALE,
+            nativeSafExportCallbackDecision(ticket, newOwner, validContentUri = false))
+        // A missing launch ticket after Activity recreation is never
+        // authority to cancel a newly opened document intent.
+        assertEquals(NativeSafExportCallbackDecision.IGNORE_STALE,
+            nativeSafExportCallbackDecision(null, newOwner, validContentUri = true))
+    }
+
+    @Test fun onlyExactLivePickerMayCancelOrSaveItsOwnDocument() {
+        val original = gallery()
+        val ticket = requireNotNull(NativeSafExportTicket.capture(original))
+        assertEquals(NativeSafExportCallbackDecision.CANCEL_CURRENT,
+            nativeSafExportCallbackDecision(ticket, original, validContentUri = false))
+        assertEquals(NativeSafExportCallbackDecision.SAVE_CURRENT,
+            nativeSafExportCallbackDecision(ticket, original, validContentUri = true))
+        assertEquals(NativeSafExportCallbackDecision.IGNORE_STALE,
+            nativeSafExportCallbackDecision(ticket, original.copy(),
+                validContentUri = false))
+    }
 }
