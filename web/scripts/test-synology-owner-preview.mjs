@@ -43,6 +43,13 @@ const stream = loadPlainModule('ui/shared/src/synology-media-stream.ts', ['xDriv
 const scope = loadPlainModule('ui/shared/src/synology-owner-files-scope.ts',
   ['xDriveSynologyOwnerFilesScopeKey', 'xDriveSynologyOwnerFilesNearEnd'])
 
+// The actual Owner-identity guard is part of the mounted controller, not a
+// synthetic test bypass: stale/forged rows must be rejected by the same code.
+const ownerIdentity = loadPlainModule(
+  'ui/shared/src/mui/FileExplorerVerifiedOwnerSelection.ts',
+  ['xDriveFindVerifiedOwnerSelection'],
+)
+
 const node = (id, name, size, type = 'file') => ({ id, name, size, type,
   revision: 7, parent_id: 1, created_at: '', updated_at: '' })
 const rows = [node(2, 'a.txt', 1), node(3, 'folder', 0, 'dir'),
@@ -105,7 +112,7 @@ async function mount() {
     async ownerQuota() { return { over_quota: false } },
   }
   let currentClient = client
-  const bindings = { ...hooks, ...ownerFence, ...cursorDirectory, ...quota,
+  const bindings = { ...hooks, ...ownerFence, ...cursorDirectory, ...quota, ...ownerIdentity,
     ...classification, ...media, ...stream, ...scope,
     XDRIVE_SYNOLOGY_OWNER_DOWNLOAD_MAX_BYTES: 32 << 20,
     xDriveFileSupportsThumbnail: () => false,
