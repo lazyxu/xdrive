@@ -2629,6 +2629,103 @@ async function testPhotoCoverWhileMouseHeld(browser,mode,port){
   } finally {await context.close()}
 }
 
+// Real Chromium touch input, not an injected synthetic PointerEvent. iOS
+// style touch/pinch can receive an early SDK moveend before the finger lifts;
+// only the last released contact may trigger the next signed Owner /cells.
+async function testPhotoCoverWhileTouchHeld(browser,mode,port){
+  const context=await browser.newContext({
+    viewport:{width:390,height:844},deviceScaleFactor:3,
+    isMobile:true,hasTouch:true,locale:'zh-CN',ignoreHTTPSErrors:true,
+    serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(30000)
+  const errors=[]
+  page.on('pageerror',error=>errors.push(error.message))
+  await page.route('https://api.map.baidu.com/api?**',route=>{
+    assert.equal(new URL(route.request().url()).searchParams.get('ak'),
+      'TEST_ONLY_BROWSER_AK')
+    return route.fulfill({status:200,contentType:'text/javascript',body:sdkStub})
+  })
+  let cdp=null
+  let down=false
+  try{
+    await page.goto('https://'+galleryHost+':'+port+'/?mode='+mode,
+      {waitUntil:'domcontentloaded'})
+    await page.getByText('当前地图可查看 9 张照片',{exact:true}).waitFor()
+    const cover=page.locator('[data-xdrive-places-trusted-photo-cover]').first()
+    await cover.waitFor({state:'visible'})
+    const mapRect=await page.locator('[data-xdrive-places-cluster-overview]').boundingBox()
+    assert(mapRect&&mapRect.width>=360&&mapRect.height>=460)
+    const sdkFrame=mode==='inline' ? page
+      : page.frames().find(f=>f.url().includes(childHost))
+    assert(sdkFrame,'a real mounted SDK Host is required')
+    const before=await page.evaluate(()=>({
+      queries:window.__mapProbe.queries.length,
+      previews:window.__mapProbe.photoPreviewRanges.length,
+    }))
+    const sdkBefore=mode==='inline'?inlineSDKLoads:childSDKLoads
+    // The real Baidu SDK installs a touch-action policy itself. Synthetic
+    // JSAPI must mirror that to prevent Chromium page scrolling from
+    // cancelling an otherwise correctly captured map touch.
+    await sdkFrame.evaluate(()=>{
+      const sdk=window.__xdriveSyntheticMapInstances?.at(-1)
+      if(!sdk)throw Error('synthetic SDK missing')
+      sdk.canvas.style.touchAction='none'
+    })
+    const x=Math.round(mapRect.x+mapRect.width*.22)
+    const y=Math.round(mapRect.y+mapRect.height*.42)
+    cdp=await context.newCDPSession(page)
+    await cdp.send('Input.dispatchTouchEvent',{
+      type:'touchStart',touchPoints:[{x,y}]})
+    down=true
+    await cdp.send('Input.dispatchTouchEvent',{
+      type:'touchMove',touchPoints:[{x:x+36,y:y+21}]})
+    await sdkFrame.evaluate(()=>{
+      const sdk=window.__xdriveSyntheticMapInstances?.at(-1)
+      sdk.panOffset={x:36,y:21}
+      sdk.listeners.get('movestart')?.()
+      sdk.listeners.get('moving')?.()
+      sdk.listeners.get('moveend')?.() // premature, finger remains down
+    })
+    const marker=page.locator('[data-xdrive-places-gesture-photo-cover]').first()
+    await marker.waitFor({state:'visible'})
+    await page.waitForTimeout(700) // intentionally beyond 500ms debounce
+    const held=await page.evaluate(()=>({
+      inert:document.querySelectorAll('[data-xdrive-places-gesture-photo-cover]').length,
+      active:document.querySelectorAll('[data-xdrive-places-trusted-photo-cover]').length,
+      disabled:document.querySelector('[data-xdrive-places-gesture-photo-cover]')?.disabled,
+      hidden:document.querySelector('[data-xdrive-places-gesture-photo-cover]')?.getAttribute('aria-hidden'),
+      queries:window.__mapProbe.queries.length,
+      previews:window.__mapProbe.photoPreviewRanges.length,
+    }))
+    record(mode+': real mobile touch holds visual photos through premature moveend',
+      held.inert>0&&held.active===0&&held.disabled===true&&
+      held.hidden==='true'&&held.queries===before.queries&&
+      held.previews===before.previews&&errors.length===0)
+    await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]})
+    down=false
+    await cover.waitFor({state:'visible'})
+    await marker.waitFor({state:'hidden'})
+    const after=await page.evaluate(()=>({
+      queries:window.__mapProbe.queries.length,
+      count:window.__mapProbe.queries.at(-1)?.count,
+      previews:window.__mapProbe.photoPreviewRanges.length,
+    }))
+    record(mode+': final touch release refreshes current Owner photo camera once',
+      after.queries>before.queries&&after.count===9&&
+      after.previews===before.previews&&
+      (mode==='inline'?inlineSDKLoads:childSDKLoads)===sdkBefore&&
+      errors.length===0)
+  }finally{
+    if(cdp){
+      if(down)try{await cdp.send('Input.dispatchTouchEvent',{
+        type:'touchCancel',touchPoints:[]})}catch{}
+      await cdp.detach()
+    }
+    await context.close()
+  }
+}
+
 // P0 regression: clicking the blue count on a 28-photo marker opens an
 // actual focus-trapped Gallery-style grid modal, not the old 12-photo strip.
 // Mounted regression for the production shared Parent on BOTH SDK Hosts.
@@ -3487,6 +3584,8 @@ async function main(){
       await testTransientBadPixelProjection(browser,'isolated',port)
       await testPhotoCoverWhileMouseHeld(browser,'inline',port)
       await testPhotoCoverWhileMouseHeld(browser,'isolated',port)
+      await testPhotoCoverWhileTouchHeld(browser,'inline',port)
+      await testPhotoCoverWhileTouchHeld(browser,'isolated',port)
       await testPhotoCellAlbumDialog28(browser,'inline',port)
       await testPhotoCellAlbumDialog28(browser,'isolated',port)
       await testPhotoDrawerSameCellRetry(browser,'inline',port)
