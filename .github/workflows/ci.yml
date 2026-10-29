@@ -166,6 +166,13 @@ jobs:
   desktop-tests:
     needs: pr-scope
     if: needs.pr-scope.outputs.scope == 'full' || needs.pr-scope.outputs.scope == 'pwa'
+    # This source-backed suite has thousands of IPC, MUI, and Host tests.
+    # Three disjoint file shards keep runner memory bounded and prevent one
+    # interrupted machine from abandoning the entire test corpus.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -177,7 +184,9 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Test desktop main IPC client
         working-directory: desktop
-        run: npm run test:main
+        run: |
+          npm run build:main
+          node --test --test-concurrency=2 --test-shard=${{ matrix.shard }}/3 tests/*.cjs
 
   desktop-linux:
     needs: pr-scope
