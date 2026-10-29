@@ -291,7 +291,7 @@ struct LocalPhotoInventoryScreen: View {
                         }
                     }
 
-                    Text("当前只读取已授权项目的数量、类型、最近日期和用户主动选择检查的相册目录；单项检查仅枚举 PhotoKit 声明的原始资源及 Live 动静配对情况。不读取照片字节或 GPS、不上传数据、不执行同步。真正备份仍需 Device/Root 绑定、持久队列、UploadSession 和完整收据。")
+                    Text("系统相册默认仅做本机元数据检查，不读取 GPS 或发送 PhotoKit 标识。仅在验证原生 Owner 后主动点击普通照片上传按钮，才会读取该张原件并通过现有 UploadSession 保存云端文件；这不代表自动相册同步、Device/Root 备份或 Live Photo 成对提交。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
