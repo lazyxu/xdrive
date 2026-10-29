@@ -163,6 +163,11 @@ func (s *Server) adminBackupSnapshotPage(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "backup_snapshot_index_unavailable"})
 		return
 	}
+	// Preserve v1's strict 1000-entry page limit without rejecting valid v2 offsets.
+	if index.Protocol == "xdrive-backup-snapshot-index-v1" && offset > 1000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_backup_snapshot_page"})
+		return
+	}
 	if index.Truncated && offset >= index.IndexedSnapshots {
 		c.JSON(http.StatusConflict, gin.H{"error": "backup_snapshot_index_truncated"})
 		return

@@ -125,7 +125,6 @@ func TestBackupSnapshotPageBoundedIndexReportsTruncation(t *testing.T) {
 	}
 }
 
-
 func TestBackupSnapshotPageV2IndexesTenThousandAndPreservesOlderVerifyOnly(t *testing.T) {
 	const total = 10005
 	server, dir, index := backupSnapshotPageFixture(t, total)
@@ -143,7 +142,7 @@ func TestBackupSnapshotPageV2IndexesTenThousandAndPreservesOlderVerifyOnly(t *te
 		query string
 		count int
 		first int
-		next bool
+		next  bool
 	}{
 		{"?offset=9950&limit=100", 50, 9950, false},
 		{"?offset=1001&limit=50", 50, 1001, true},
