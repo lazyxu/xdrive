@@ -368,6 +368,51 @@ if backup_admin_valid_database_only_manifest "$db_only_manifest"; then
 fi
 cp "$TMP/db-only-valid-manifest" "$db_only_manifest"
 
+# The Host's periodic administrator inventory must use exact top-level
+# Manifest fields, not grep hits within nested/duplicate JSON. This is also
+# the Host's final fence before any full restore request.
+assert_invalid_inventory_manifest() {
+  local label="$1" raw="$2" expected_state="$3" expected_data="$4"
+  printf '%s\n' "$raw" > "$db_only_manifest"
+  backup_admin_inventory "$dir"
+  python3 - "$dir/backup-admin-inventory.json" "$expected_state" "$expected_data" <<'PY'
+import json,sys
+doc=json.load(open(sys.argv[1],encoding='utf-8'))
+snapshot=next(x for x in doc['snapshots'] if
+              x['id']=='v1:xdrive-backup-20261025T010000Z')
+assert snapshot['state']==sys.argv[2],snapshot
+assert snapshot['file_data_included'] is (sys.argv[3]=='true'),snapshot
+PY
+  cp "$XD_BACKUP_ADMIN_TEST_LOG" "$TMP/pre-$label-restore"
+  write_request restore "v1:$db_only" "" "" "" "RESTORE v1:$db_only"
+  backup_admin_process_request "$dir"
+  cmp "$TMP/pre-$label-restore" "$XD_BACKUP_ADMIN_TEST_LOG"
+  grep -Fq '"state":"failed"' "$dir/backup-admin-status.json"
+}
+assert_invalid_inventory_manifest nested_false '{"format_version":1,"file_data_included":true,"note":{"file_data_included":false},"consistency_verified":true}' incomplete true
+assert_invalid_inventory_manifest duplicate_file_data '{"format_version":1,"file_data_included":false,"file_data_included":true,"consistency_verified":true}' incomplete true
+assert_invalid_inventory_manifest inconsistent_nested_true '{"format_version":1,"file_data_included":false,"consistency_verified":false,"note":{"consistency_verified":true}}' inconsistent false
+assert_invalid_inventory_manifest wrong_version '{"format_version":2,"file_data_included":false,"consistency_verified":true}' incomplete true
+cp "$TMP/db-only-valid-manifest" "$db_only_manifest"
+backup_admin_inventory "$dir"
+python3 - "$dir/backup-admin-inventory.json" <<'PY'
+import json,sys
+entries=json.load(open(sys.argv[1],encoding='utf-8'))['snapshots']
+entry=next(x for x in entries if x['id']=='v1:xdrive-backup-20261025T010000Z')
+assert entry['state']=='complete' and entry['file_data_included'] is False,entry
+PY
+
+# A structurally complete v1 archive with consistency_verified=false is not
+# an authorized full restore even when another nested object says true.
+full_v1_manifest="$XD_CONFIG_DIR/backups/snapshots/$v1/manifest.json"
+cp "$full_v1_manifest" "$TMP/v1-original-manifest"
+printf '{"format_version":1,"file_data_included":true,"consistency_verified":false,"note":{"consistency_verified":true}}\n' > "$full_v1_manifest"
+cp "$XD_BACKUP_ADMIN_TEST_LOG" "$TMP/before-inconsistent-full-restore"
+write_request restore "v1:$v1" "" "" "" "RESTORE v1:$v1"
+backup_admin_process_request "$dir"
+cmp "$TMP/before-inconsistent-full-restore" "$XD_BACKUP_ADMIN_TEST_LOG"
+grep -Fq '"state":"failed"' "$dir/backup-admin-status.json"
+cp "$TMP/v1-original-manifest" "$full_v1_manifest"
 
 write_request restore "v2-default:$v2" "" "" "" "RESTORE v2-default:$v2"
 backup_admin_process_request "$dir"
@@ -483,6 +528,21 @@ PY
   if backup_admin_delete_v1 "v1:$old"; then
     echo "ERROR: last recovery point deleted despite invalid custom v2" >&2
     exit 1
+  fi
+  [[ -d "$XDRIVE_HOME/backups/snapshots/$old" ]]
+  unset XD_BACKUP_ADMIN_TEST_BAD_VERIFY
+  # The mocked verifier would succeed, but an inconsistent / ambiguous
+  # surviving v2 source must never authorize deletion of the last full v1.
+  printf '{"format_version":2,"file_data_included":true,"consistency_verified":false,"note":{"consistency_verified":true}}\n' > "$custom_root/snapshots/$newer/manifest.json"
+  cp "$XD_BACKUP_ADMIN_TEST_LOG" "$TMP/before-inconsistent-custom"
+  if backup_admin_delete_v1 "v1:$old"; then
+    echo "ERROR: inconsistent v2 was counted as last trusted recovery" >&2; exit 1
+  fi
+  cmp "$TMP/before-inconsistent-custom" "$XD_BACKUP_ADMIN_TEST_LOG"
+  [[ -d "$XDRIVE_HOME/backups/snapshots/$old" ]]
+  printf '{"format_version":2,"file_data_included":true,"consistency_verified":true,"note":{"k":1,"k":2}}\n' > "$custom_root/snapshots/$newer/manifest.json"
+  if backup_admin_delete_v1 "v1:$old"; then
+    echo "ERROR: ambiguous v2 was counted as surviving full recovery" >&2; exit 1
   fi
   [[ -d "$XDRIVE_HOME/backups/snapshots/$old" ]]
 )
