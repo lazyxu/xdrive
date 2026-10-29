@@ -163,3 +163,47 @@ test('malformed Owner root never invokes a cursor read or publishes stale files'
   assert.deepEqual(app.state.items.map(item => item.name), ['authorized'])
   await app.unmount()
 })
+
+
+test('a non-adjacent cursor cycle keeps verified rows and never promotes the replay', async () => {
+  const app = await mount()
+  await app.resolve(0, { items: [node(21, 'first')], has_more: true, next_cursor: 'A' })
+  await app.call(s => s.loadMore())
+  assert.equal(app.requests[1].cursor, 'A')
+  await app.resolve(1, { items: [node(22, 'second')], has_more: true, next_cursor: 'B' })
+  await app.call(s => s.loadMore())
+  assert.equal(app.requests[2].cursor, 'B')
+  // The next token differs from the immediately requested cursor, but it
+  // replays a token previously issued for this same directory.
+  await app.resolve(2, { items: [node(23, 'unverified')], has_more: true, next_cursor: 'A' })
+  assert.deepEqual(app.state.items.map(item => item.id), [21, 22])
+  assert.equal(app.state.currentScopeVerified, true, 'previously proven rows remain visible')
+  assert.equal(app.state.nextCursor, 'B', 'replayed cursor must never advance the page')
+  assert.match(app.state.error, /重复分页游标/)
+  // A retry may recover when the real Host returns a valid next page.
+  await app.call(s => s.loadMore())
+  assert.equal(app.requests[3].cursor, 'B')
+  await app.resolve(3, { items: [node(23, 'recovered')], has_more: false })
+  assert.deepEqual(app.state.items.map(item => item.id), [21, 22, 23])
+  assert.equal(app.state.hasMore, false)
+  await app.unmount()
+})
+
+test('same signed cursor token is valid again in a different verified directory', async () => {
+  const app = await mount()
+  await app.resolve(0, { items: [node(31, 'old')], has_more: true, next_cursor: 'A' })
+  await app.call(s => s.setCrumbs([{ id: 10, name: 'Owner' }, { id: 99, name: 'Other' }]))
+  const index = app.requests.findIndex(r => r.parent === 99 && r.cursor === '')
+  assert.ok(index >= 1)
+  await app.resolve(index, {
+    items: [node(41, 'new-folder', 99)], has_more: true, next_cursor: 'A',
+  })
+  assert.equal(app.state.currentScopeVerified, true)
+  assert.equal(app.state.error, '')
+  await app.call(s => s.loadMore())
+  const next = app.requests.findIndex((r, i) => i > index && r.parent === 99 && r.cursor === 'A')
+  assert.ok(next > index)
+  await app.resolve(next, { items: [node(42, 'next', 99)], has_more: false })
+  assert.deepEqual(app.state.items.map(item => item.id), [41, 42])
+  await app.unmount()
+})

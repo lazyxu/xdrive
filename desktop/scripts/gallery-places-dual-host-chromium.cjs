@@ -3159,9 +3159,17 @@ async function testPhotoMarkerPresentation(browser,mode,port){
     record(mode+': one verified photo layer removes competing SDK labels',
       presentation.pins===1&&presentation.cellCount===2&&
       presentation.count===14&&presentation.strip===0&&errors.length===0)
+    // The shared floating 44px action must reveal the ONE approved list of
+    // otherwise decluttered Cells; no second SDK label or broader query.
+    const reveal=page.locator('[data-xdrive-places-reveal-hidden-cells]')
+    await reveal.waitFor({state:'visible'})
+    const revealLabel=await reveal.textContent()
+    await reveal.click()
     const cells=page.locator('[data-xdrive-places-cluster-list]')
-    if(await cells.getAttribute('open')===null)
-      await cells.locator('summary').click()
+    const focused=await cells.evaluate(el=>el.open===true &&
+      el.querySelector('summary')===document.activeElement)
+    record(mode+': hidden signed map Cell has a direct accessible reveal',
+      revealLabel?.includes('1 个地点') && focused && errors.length===0)
     await cells.locator('button').nth(1).click()
     await page.locator('[data-xdrive-places-photo-drawer-items] button')
       .first().waitFor({state:'visible'})

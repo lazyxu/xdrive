@@ -261,3 +261,40 @@ test('nearby 142 and 28 Owner photo clusters both paint when their cards do not 
   assert.deepEqual(nearby.map(x=>x.count),[142,28,10],
     'decluttering must never alter signed Owner count, only visual pins')
 })
+
+test('signed Owner clusters occluded by iOS chrome or overlap remain discoverable in both maps', () => {
+  // This is presentation-only: suppressing a photo cover must never change
+  // the authenticated Cell count or open an unscoped all-library Range.
+  const pins=[
+    {count:9,x:120,y:120,id:'cover'},
+    {count:7,x:170,y:160,id:'occluded'},
+    {count:5,x:265,y:170,id:'separate'},
+  ]
+  const painted=xDriveSelectVisibleMapPhotoCovers(pins,390,844,true)
+  assert.deepEqual(painted.map(pin=>pin.id),['cover','separate'])
+  assert.equal(pins.length-painted.length,1)
+  assert.equal(pins.reduce((count,pin)=>count+pin.count,0),21)
+
+  const shared=fs.readFileSync(path.join(root,
+    'ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx'),'utf8')
+  assert.match(shared,/const unpaintedCellCount = scopeIsCurrent && trustedSummary && acceptedViewport &&/)
+  assert.match(shared,/Math\.max\(0, accessible\.length - coverPins\.length\)/)
+  assert.match(shared,/data-xdrive-places-cluster-list/)
+  assert.match(shared,/\{unpaintedCellCount > 0 \? \(/)
+  assert.match(shared,/data-xdrive-places-unpainted-cell-count/)
+  assert.match(shared,/未显示照片封面，可从这里查看/)
+  assert.match(shared,/data-xdrive-places-reveal-hidden-cells/)
+  assert.match(shared,/const clusterListRef = useRef<HTMLDetailsElement/)
+  assert.match(shared,/data-xdrive-places-cluster-list ref=\{clusterListRef\}/)
+  assert.match(shared,/list\.open=true/)
+  assert.match(shared,/list\.scrollIntoView\(\{block:'nearest'\}\)/)
+  assert.match(shared,/list\.querySelector<HTMLElement>\('summary'\)\?\.focus/)
+  const browser=fs.readFileSync(path.join(root,
+    'desktop/scripts/gallery-places-dual-host-chromium.cjs'),'utf8')
+  assert.match(browser,/record\(mode\+': hidden signed map Cell has a direct accessible reveal'/)
+  assert.match(browser,/revealLabel\?\.includes\('1 个地点'\)/)
+  assert.match(browser,/el\.querySelector\('summary'\)===document\.activeElement/)
+  assert.match(shared,/xDriveMountBaiduInlineMap/)
+  assert.match(shared,/xDriveMountBaiduIsolatedFrame/)
+  assert.doesNotMatch(shared,/data-xdrive-places-photo-collection-strip/)
+})

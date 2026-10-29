@@ -2523,7 +2523,7 @@ try:
         ids=[]
         last=None
         for i,line in enumerate(stream):
-            if i>=1000:
+            if i>=10000:
                 break
             name,sep,scope=line.rstrip("\n").partition("\t")
             if sep!="\t" or not valid_name.fullmatch(name) or scope not in scopes:
@@ -2533,16 +2533,16 @@ try:
                 raise ValueError("unsorted or duplicate snapshot identity")
             last=key
             ids.append(scope+":"+name)
-    if len(ids)!=min(total,1000):
+    if len(ids)!=min(total,10000):
         raise ValueError("snapshot index cardinality mismatch")
     # Counts are from the same Host scan used for Admin newest-100 inventory.
-    report=dict(protocol="xdrive-backup-snapshot-index-v1",
+    report=dict(protocol="xdrive-backup-snapshot-index-v2",
                 generated_at=datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                 policy_revision=revision,total_snapshots=total,
                 indexed_snapshots=len(ids),truncated=total>len(ids),
                 snapshot_ids=ids)
     raw=(json.dumps(report,separators=(",",":"),ensure_ascii=True)+"\n").encode()
-    if len(raw)>131072:
+    if len(raw)>1048576:
         raise ValueError("indexed snapshot page exceeds hard size cap")
     with open(target,"wb") as out:
         out.write(raw)
