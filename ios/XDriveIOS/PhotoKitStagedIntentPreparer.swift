@@ -63,16 +63,23 @@ struct XDriveIOSPhotoKitStagedIntentPreparer {
               current.username == owner.username else {
             throw XDriveIOSPhotoIntentPreparationError.unverifiedOwnerOrDeviceScope
         }
-        try assertStillVisible(localIdentifier, expectedName: original.originalFilename)
-
+        let originalStamp = try currentStillStamp(
+            localIdentifier, expectedName: original.originalFilename
+        )
         let fullHash = try hashStagedFile(
             original.fileURL, claimedSize: original.byteCount
         )
         try Task.checkCancellation()
 
-        // The Photos permission and resource manifest must still allow this
-        // exact single original after reading the whole staged byte stream.
-        try assertStillVisible(localIdentifier, expectedName: original.originalFilename)
+        // PhotoKit's permission and basic source revision evidence must
+        // remain stable while reading the staged bytes. A real SourceRun
+        // must still reverify asset identity immediately before a write.
+        let latestStamp = try currentStillStamp(
+            localIdentifier, expectedName: original.originalFilename
+        )
+        guard latestStamp == originalStamp else {
+            throw XDriveIOSPhotoIntentPreparationError.resourceChangedDuringHash
+        }
 
         // Persist the existing transient PhotoKit localIdentifier only as
         // HMAC opaque fingerprint; the raw value stays out of the journal.
@@ -88,15 +95,36 @@ struct XDriveIOSPhotoKitStagedIntentPreparer {
         )
     }
 
-    private func assertStillVisible(_ identifier: String,
-                                    expectedName: String) throws {
-        guard let evidence = XDrivePhotoKitResourceInspector.inspect(
-            localIdentifier: identifier
-        ), evidence.originalResourceManifestComplete,
+    private struct PhotoKitStillStamp: Equatable {
+        let modifiedAt: Date?
+        let createdAt: Date?
+        let width: Int
+        let height: Int
+    }
+
+    private func currentStillStamp(_ identifier: String,
+                                   expectedName: String) throws -> PhotoKitStillStamp {
+        let access = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        guard access == .authorized || access == .limited,
+              let asset = PHAsset.fetchAssets(
+                withLocalIdentifiers: [identifier], options: nil
+              ).firstObject,
+              asset.mediaType == .image,
+              !asset.mediaSubtypes.contains(.photoLive),
+              let evidence = XDrivePhotoKitResourceInspector.inspect(
+                localIdentifier: identifier
+              ),
+              evidence.originalResourceManifestComplete,
               !evidence.isVideo, !evidence.isLive,
               evidence.stillFilename == expectedName else {
             throw XDriveIOSPhotoIntentPreparationError.resourceChangedDuringHash
         }
+        return PhotoKitStillStamp(
+            modifiedAt: asset.modificationDate,
+            createdAt: asset.creationDate,
+            width: asset.pixelWidth,
+            height: asset.pixelHeight
+        )
     }
 
     private func hashStagedFile(_ url: URL, claimedSize: Int64) throws -> String {
@@ -122,9 +150,10 @@ struct XDriveIOSPhotoKitStagedIntentPreparer {
             }
             hash.update(data: data)
         }
+        let finalAttributes = try fm.attributesOfItem(atPath: url.path)
         guard readBytes == claimedSize,
-              let finalSize = (try? fm.attributesOfItem(atPath: url.path)[.size])
-                    as? NSNumber,
+              (finalAttributes[.type] as? FileAttributeType) == .typeRegular,
+              let finalSize = finalAttributes[.size] as? NSNumber,
               finalSize.int64Value == claimedSize else {
             throw XDriveIOSPhotoIntentPreparationError.invalidStagedOriginal
         }
@@ -136,8 +165,16 @@ struct XDriveIOSPhotoKitStagedIntentPreparer {
               name.utf8.count <= 255,
               !name.hasSuffix(" "), !name.hasSuffix(".") else { return false }
         let bad = Set<UInt32>([34, 42, 47, 58, 60, 62, 63, 92, 124])
-        return !name.unicodeScalars.contains {
+        guard !name.unicodeScalars.contains(where: {
             $0.value < 32 || bad.contains($0.value)
-        }
+        }) else { return false }
+        let stem = (name.components(separatedBy: ".").first ?? "").uppercased()
+        let reserved = Set([
+            "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3",
+            "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+            "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6",
+            "LPT7", "LPT8", "LPT9"
+        ])
+        return !reserved.contains(stem)
     }
 }
