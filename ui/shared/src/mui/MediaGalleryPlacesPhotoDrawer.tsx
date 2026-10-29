@@ -226,6 +226,11 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
               flex:expanded?'1 1 auto':'0 1 auto',
               display:expanded?'grid':'flex',gap:1,
               gridTemplateColumns:expanded?'repeat(auto-fill, minmax(108px, 1fr))':undefined,
+              // Grid's implicit auto tracks can collapse under the bounded
+              // MUI Dialog's flex height: 142 real tiles then fit into only
+              // ~460px and the grid has NO vertical overflow. A real minimum
+              // tile track restores scrolling without changing Owner paging.
+              gridAutoRows:expanded?'minmax(132px, max-content)':undefined,
               overscrollBehavior:'contain',touchAction:'auto'}}>
             {items.map(item => (
               <Box key={item.node.id} component="button" type="button"
