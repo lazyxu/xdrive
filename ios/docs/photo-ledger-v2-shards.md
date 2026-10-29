@@ -32,6 +32,10 @@ Node SHA+revision receipts.
 - A per-original upload or uncertain-ACK check reads the bounded V1 file
   and its selected authenticated V2 shard; it never loads all 4096 shards
   into memory on each transfer.
+- A separate Foundation-only Swift batch accumulator is executed against
+  100k synthetic metadata rows and verifies exact count plus a 20-item
+  retention cap (also zero-retention count-only mode). This test compiled
+  and passed locally under Swift 5; the combined IPA still needs CI.
 - The explicit Owner receipt-review UI now performs a bounded-memory
   `pendingReceiptSnapshot`: it counts uncertain operations across all
   currently authorized V1/V2 shards, holds at most 20 records for one

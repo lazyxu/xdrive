@@ -293,21 +293,22 @@ actor XDrivePhotoSyncLedger {
         let legacy = try read(scope: scope, key: key).operations
         let legacyIDs = Set(legacy.map(\.id))
         let legacyFingerprints = Set(legacy.map(\.assetFingerprint))
-        var pending = 0
-        var batch: [XDrivePhotoSyncOperation] = []
-        batch.reserveCapacity(limit)
+        var accumulator = XDrivePhotoPendingBatchAccumulator<XDrivePhotoSyncOperation>(
+            limit: limit
+        )
 
-        func consider(_ item: XDrivePhotoSyncOperation) {
+        func isUncertain(_ item: XDrivePhotoSyncOperation) -> Bool {
             switch item.state {
             case .creating, .uploading, .finalizing, .needsReconciliation:
-                pending += 1
-                if batch.count < limit { batch.append(item) }
+                return true
             case .prepared, .confirmed:
-                break
+                return false
             }
         }
 
-        for item in legacy { consider(item) }
+        for item in legacy {
+            accumulator.consider(item, isPending: isUncertain(item))
+        }
         for prefix in try availableShardPrefixes(scope: scope) {
             try Task.checkCancellation()
             let shard = try readShard(scope: scope, key: key, prefix: prefix)
@@ -316,11 +317,11 @@ actor XDrivePhotoSyncLedger {
                       !legacyFingerprints.contains(item.assetFingerprint) else {
                     throw XDrivePhotoSyncLedgerError.identityMismatch
                 }
-                consider(item)
+                accumulator.consider(item, isPending: isUncertain(item))
             }
         }
         try Task.checkCancellation()
-        return (pending: pending, batch: batch)
+        return (pending: accumulator.pending, batch: accumulator.batch)
     }
 
     /// Read one authenticated operation without decrypting every V2 shard.

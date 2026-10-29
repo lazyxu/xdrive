@@ -51,6 +51,15 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-shard-policy-check"
           "$RUNNER_TEMP/xdrive-ios-shard-policy-check"
 
+      - name: Verify bounded iOS receipt batch on 100k metadata
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/PhotoPendingBatchAccumulator.swift \
+            ios/tests/PhotoPendingBatchAccumulatorChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-receipt-batch-check"
+          "$RUNNER_TEMP/xdrive-ios-receipt-batch-check"
+
       - name: Verify foreground automatic schedule and bounded cursor
         run: |
           set -euo pipefail
