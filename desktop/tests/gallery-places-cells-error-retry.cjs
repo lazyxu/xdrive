@@ -50,6 +50,9 @@ function harness({badResponse=false,aborted=false}={}){
     filterRef:{current:{key:'owner:family',snapshot:{
       filters:{sort_by:'captured',sort_dir:'desc'},albumKey:'manual:family'}}},
     generation:0,
+    activeQuery:null,
+    gesturePresentationRef:{current:null},
+    clearGesturePresentation:()=>{},
     listOwnerCells:async()=>{
       if(aborted)controller.abort()
       if(badResponse)return {cells:[{node_id:-1}]}

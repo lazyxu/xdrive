@@ -2788,6 +2788,7 @@ function FileManager({
           route={route}
           api={api}
           gallerySource={gallerySource}
+          ownerScope={profile?.id ? `web:${profile.id}` : undefined}
           onBorrowGalleryThumbnail={galleryThumbnailBridge.borrow}
           shareDialogAdapter={shareDialogAdapter}
           onReplaceRoute={(next) => launchWebApp(next, { replace: true, viewerReturn: true })}

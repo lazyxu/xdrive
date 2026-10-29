@@ -263,7 +263,7 @@ async function mount(app, name, capturedAt = '2026-10-09T00:12:34Z') {
   return renderer
 }
 
-test('P0-Places-A2 real routed Viewer opens one shared GPS map on narrow and wide Web', async () => {
+test('P0-Places-A2 direct Viewer shows GPS info but refuses unscoped map on narrow and wide Web', async () => {
   for (const width of [390, 900]) {
     compactTouch = width < 900
     viewportWidth = width
@@ -299,7 +299,8 @@ test('P0-Places-A2 real routed Viewer opens one shared GPS map on narrow and wid
       assert.equal(dialogs()[0].props.open, true)
       assert.equal(dialogs()[0].props.item.metadata.latitude, 39.91234)
       assert.equal(dialogs()[0].props.item.metadata.longitude, 116.41234)
-      assert.equal(typeof dialogs()[0].props.onOpenDynamicMap, 'function')
+      assert.equal(typeof dialogs()[0].props.onOpenDynamicMap, 'undefined',
+        'a direct Viewer without authenticated Gallery context cannot grant map access')
       assert.equal(dialogs()[0].props.getBaiduMapProvider, undefined)
       assert.equal(dialogs()[0].props.loadBaiduStaticMap, undefined)
       const viewerSource = fs.readFileSync(path.join(repo, 'web/src/WebFileViewerApps.tsx'), 'utf8')
