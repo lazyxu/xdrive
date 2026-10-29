@@ -3,6 +3,18 @@ plugins {
     kotlin("android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+
+// Android SDK keys are a separate platform app type, bound by Android
+// package/signing SHA-1. A Web browser AK MUST NOT be reused here. The
+// ordinary unsigned/debug master build never downloads or initializes the
+// third-party map SDK unless explicitly configured for this variant.
+val baiduAndroidMapAk = providers.gradleProperty("xdriveBaiduAndroidMapAk")
+    .orNull?.trim().orEmpty()
+require(baiduAndroidMapAk.isEmpty() ||
+    baiduAndroidMapAk.matches(Regex("[A-Za-z0-9_-]{8,128}"))) {
+    "xdriveBaiduAndroidMapAk must be a Baidu Android-app AK"
+}
+val nativeBaiduMapEnabled = baiduAndroidMapAk.isNotEmpty()
 val copyXDriveBrand by tasks.registering(Copy::class) {
     from(rootProject.file("../assets/icon/web/pwa-512.png"))
     into(layout.buildDirectory.dir("generated/xdriveBrand/res/drawable-nodpi"))
@@ -18,6 +30,7 @@ android {
         versionCode = providers.gradleProperty("androidVersionCode").map { it.toInt().also { code -> require(code in 1..2100000000) } }.getOrElse(4)
         versionName = providers.gradleProperty("androidVersionName").getOrElse("0.1.3")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        manifestPlaceholders["xdriveBaiduAndroidMapAk"] = baiduAndroidMapAk
     }
     buildFeatures { compose = true }
     compileOptions {
@@ -42,10 +55,19 @@ android {
     } }
     lint { abortOnError = true }
     sourceSets.getByName("main").res.srcDir(layout.buildDirectory.dir("generated/xdriveBrand/res"))
+    // Exactly one native map provider is compiled per APK, never two hosts.
+    // The default Android CI remains fully offline from Baidu SDK artifacts.
+    sourceSets.getByName("main").java.srcDir(if (nativeBaiduMapEnabled)
+        "src/baidu/java" else "src/noBaidu/java")
 }
 tasks.named("preBuild").configure { dependsOn(copyXDriveBrand) }
 dependencies {
     implementation(project(":core"))
+    if (nativeBaiduMapEnabled) {
+        // Official Baidu Android *map-only* Maven SDK. No location/search/
+        // navigation SDK or broad storage/location permission is requested.
+        implementation("com.baidu.lbsyun:BaiduMapSDK_Map:8.2.0")
+    }
     implementation(platform("androidx.compose:compose-bom:2025.04.01"))
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.compose.material3:material3")
