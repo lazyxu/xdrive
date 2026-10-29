@@ -11,6 +11,10 @@ final class XDriveIOSPhotoAutoScheduleStore {
     static let shared = XDriveIOSPhotoAutoScheduleStore()
     private init() {}
 
+    /// Bump on any offline global stop, invalidating UIKit confirmations
+    /// that started before the stop but may finish afterward.
+    private(set) var localStopGeneration: UInt64 = 0
+
     /// Contains no token, PhotoKit ID, filename, location or device grant.
     /// Scope identity is reverified against the Server on EVERY auto tick.
     struct State: Codable {
@@ -69,6 +73,7 @@ final class XDriveIOSPhotoAutoScheduleStore {
     /// Only this app's exact SHA-256 auto-schedule keys can be deleted;
     /// unrelated defaults and encrypted upload receipts remain untouched.
     func disableAllOnThisDevice() -> Int {
+        localStopGeneration &+= 1
         let prefix = "xdrive.ios.photos.auto.v1."
         let keys = UserDefaults.standard.dictionaryRepresentation().keys.filter {
             key in

@@ -423,6 +423,7 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                     return
                 }
                 let store = XDriveIOSPhotoAutoScheduleStore.shared
+                let stopGeneration = store.localStopGeneration
                 if !enabled {
                     store.disable(owner: owner)
                     cancelActive()
@@ -445,6 +446,10 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                 try Task.checkCancellation()
                 guard confirmed else {
                     sendError(id, "未开启自动增量备份。")
+                    return
+                }
+                guard store.localStopGeneration == stopGeneration else {
+                    sendError(id, "本机已紧急停止自动备份；此前的授权确认不能重新启用计划。")
                     return
                 }
                 let state = try store.configure(

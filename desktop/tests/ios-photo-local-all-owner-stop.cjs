@@ -18,6 +18,8 @@ test('offline emergency stop deletes only exact per-Owner foreground schedule ke
   assert.match(stop, /UserDefaults\.standard\.removeObject\(forKey: key\)/)
   assert.doesNotMatch(stop, /clearLocalRecords|FileManager|PhotoKit|accessToken|URLSession|Keychain/)
   assert.match(source, /func configure\(owner: XDriveNativeOwnerRoot/)
+  assert.match(source, /localStopGeneration &\+= 1/)
+  assert.match(source, /private\(set\) var localStopGeneration: UInt64 = 0/)
 })
 
 test('native bootstrap and trusted bridge stop all local schedules before BG credential', () => {
@@ -38,6 +40,13 @@ test('native bootstrap and trusted bridge stop all local schedules before BG cre
     native.indexOf('emergencyStopLocally()'))
   assert.doesNotMatch(native, /parseOwner\(|accessToken|authorization: Bearer/)
   assert.match(bridge, /trustedMainFrame\(message\)/)
+  assert.match(bridge, /let stopGeneration = store\.localStopGeneration/)
+  assert.match(bridge, /guard store\.localStopGeneration == stopGeneration/)
+  const consent = bridge.indexOf('let confirmed = await confirmAutoSchedule(')
+  const fence = bridge.indexOf('guard store.localStopGeneration == stopGeneration')
+  const configure = bridge.indexOf('let state = try store.configure(')
+  assert.ok(consent >= 0 && consent < fence && fence < configure,
+    'late UIKit consent cannot re-enable auto upload after emergency stop')
 })
 
 test('shared PWA receives only a redacted local count and never assumes older IPA stopped schedules', () => {
