@@ -231,15 +231,22 @@ test('Web and Desktop shell composition lives in shared MUI', () => {
   assert.ok(sharedWorkspaceShell.includes('XDriveWorkspaceShell'), 'shared workspace shell is missing')
   assert.ok(sharedWorkspaceShell.includes('XDRIVE_SIDEBAR_WIDTH'), 'shared workspace shell should own sidebar width')
   assert.ok(sharedWorkspaceContent.includes('export function XDriveWorkspaceContent'), 'shared workspace content is missing')
-  assert.ok(webApp.includes('<XDriveWorkspaceShell'), 'Web should consume the shared workspace shell')
-  assert.ok(desktopApp.includes('<XDriveApp') && sharedApp.includes('<XDriveWorkspaceShell'), 'Desktop must consume the shared app shell')
-  assert.ok((webApp.match(/<XDriveWorkspaceContent\b/g) || []).length >= 2, 'Web should use shared workspace content for authenticated shells')
+  assert.ok(webApp.includes('<XDriveWorkspaceFrame') &&
+    sharedWorkspaceShell.includes('<XDriveWorkspaceShell responsive'),
+    'Web should use the canonical responsive workspace frame')
+  assert.ok(desktopApp.includes('<XDriveApp') &&
+    sharedApp.includes('<XDriveWorkspaceFrame'),
+    'Desktop must consume the canonical responsive app shell')
+  assert.ok(webApp.includes('<XDriveWorkspaceContent') &&
+    webApp.includes('<XDriveWorkspaceRouteSurface') &&
+    sharedRouteSurface.includes('<XDriveWorkspaceContent'),
+    'Web must use shared workspace content for auth and routed pages')
   const routeContent = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'XDriveAppRouteContent.tsx'), 'utf8')
   assert.ok(desktopApp.includes('<XDriveApp') &&
     !desktopApp.includes('<XDriveAppRouteContent') &&
     sharedApp.includes('<XDriveAppRouteContent') &&
-    routeContent.includes('<XDriveWorkspaceContent') &&
-    routeContent.includes('presentation={presentation}'),
+    routeContent.includes('<XDriveWorkspaceRouteSurface') &&
+    sharedRouteSurface.includes('presentation={xDriveWorkspacePresentation(view)}'),
     'Desktop must use the shared workspace content through the canonical route frame')
   assert.ok(sharedAccount.includes('XDriveAccountAvatarButton'), 'shared account avatar trigger is missing')
   assert.ok(sharedBrand.includes('XDriveBrandLockup'), 'shared brand lockup is missing')

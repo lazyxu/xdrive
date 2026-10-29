@@ -1060,9 +1060,8 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
               onError={markMediaFailed}
             />
           ) : (
-            <Box
+            <video
               key={`${target?.id}:${target?.revision ?? ''}:${previewURL}`}
-              component="video"
               ref={videoStreamElementRef}
               src={previewURL}
               poster={mediaReady ? undefined : activeVideoPosterURL || undefined}
@@ -1079,7 +1078,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
               onSeeking={markMediaSeeking}
               onSeeked={markMediaSeeked}
               onError={markMediaFailed}
-              sx={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', bgcolor: 'black' }}
+              style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', backgroundColor: 'black' }}
             />
           )}
           {mediaLoadingOverlay}
