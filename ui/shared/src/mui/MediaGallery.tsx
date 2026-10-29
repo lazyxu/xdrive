@@ -3958,74 +3958,6 @@ export function XDriveMediaGalleryPage({
   const livePhotoMapContextRef = useRef(photoMapNow)
   livePhotoMapContextRef.current = photoMapNow
 
-  const showMapFromCurrentGallery = () => {
-    // A draft or failing Gallery Range is not current authorized membership.
-    // Never base the map's Count on a filter still awaiting Server acceptance.
-    const accepted = collectionTargetRef.current
-    // Viewer → Map from an already signed BD-09 Cell/Camera wall is a return,
-    // not a new all-library map entry. Cancel its reader and reveal the existing
-    // Parent map so that /cells independently revalidates Owner/GPS/source.
-    // Desktop file: cannot mount an SDK here; retain its HTTPS-only boundary.
-    if (!onOpenSecureDesktopMap &&
-        (accepted?.kind === 'baidu-cell' || accepted?.kind === 'baidu-viewport')) {
-      setError('')
-      leaveBaiduCellWall()
-      return true
-    }
-    if (loading || collectionError || !accepted ||
-        (currentAlbum
-          ? accepted.kind !== 'album' || accepted.id !== currentAlbum.id
-          : accepted.kind !== 'all')) {
-      setError('当前照片集合尚未完成加载或集合身份已变化；未打开全图库地图。')
-      return false
-    }
-    const entry = xDriveGalleryMapEntryScope({
-      section,
-      album: currentAlbum,
-      query: currentAlbum?.kind === 'smart' ? (currentAlbum.query ?? query) : query,
-      sort: gallerySortRef.current,
-      timeZone: mediaTimeZoneRef.current,
-      activeMediaType,
-      hasUnsupportedContext: Boolean(
-        foldDuplicates || currentFolderView || currentSuggestedPerson ||
-        currentPerson || currentPet || currentMemory || currentCleanupReview),
-    })
-    if (!entry.ok) {
-      setError('当前照片集合包含地图尚不支持的筛选条件；未切换到全图库。')
-      return false
-    }
-    // Desktop remains on its original Gallery while only an independently
-    // authenticated HTTPS Parent may claim the selected Owner photo scope.
-    if (onOpenSecureDesktopMap) {
-      setError('')
-      onOpenSecureDesktopMap(entry.scope)
-      return true
-    }
-    setError('')
-    {
-      const seen = mapGalleryVisibleAnchorRef.current
-      const identity = accepted.id ?? ''
-      const signature = mediaGalleryQuerySignature({
-        ...accepted.query, anchor_node_id: undefined, initial_position: undefined,
-      })
-      const anchorNodeID = seen?.owner === preferenceScope &&
-        seen.section === section && seen.kind === accepted.kind &&
-        seen.id === identity && seen.querySignature === signature
-          ? seen.nodeID : 0
-      mapGalleryEntryReturnRef.current = {
-        owner: preferenceScope, dataSource: source, section,
-        album: currentAlbum ? {...currentAlbum} : null,
-        query: {...query}, activeMediaType, anchorNodeID,
-        createdAt: Date.now(),
-      }
-    }
-    changeBaiduMapPhotoScope(entry.scope)
-    setMobileCollectionsOverview(false)
-    selectSection('places')
-    return true
-  }
-
-
   /** One precise Photo Info -> Parent map focus, on top of the existing
    * admitted Gallery membership. This does NOT authorize a media range.
    * Successful native Camera is followed by the original shared map entry,
@@ -4108,6 +4040,75 @@ export function XDriveMediaGalleryPage({
         galleryPhotoFocusAbort.current = null
     }
   }
+
+
+  const showMapFromCurrentGallery = () => {
+    // A draft or failing Gallery Range is not current authorized membership.
+    // Never base the map's Count on a filter still awaiting Server acceptance.
+    const accepted = collectionTargetRef.current
+    // Viewer → Map from an already signed BD-09 Cell/Camera wall is a return,
+    // not a new all-library map entry. Cancel its reader and reveal the existing
+    // Parent map so that /cells independently revalidates Owner/GPS/source.
+    // Desktop file: cannot mount an SDK here; retain its HTTPS-only boundary.
+    if (!onOpenSecureDesktopMap &&
+        (accepted?.kind === 'baidu-cell' || accepted?.kind === 'baidu-viewport')) {
+      setError('')
+      leaveBaiduCellWall()
+      return true
+    }
+    if (loading || collectionError || !accepted ||
+        (currentAlbum
+          ? accepted.kind !== 'album' || accepted.id !== currentAlbum.id
+          : accepted.kind !== 'all')) {
+      setError('当前照片集合尚未完成加载或集合身份已变化；未打开全图库地图。')
+      return false
+    }
+    const entry = xDriveGalleryMapEntryScope({
+      section,
+      album: currentAlbum,
+      query: currentAlbum?.kind === 'smart' ? (currentAlbum.query ?? query) : query,
+      sort: gallerySortRef.current,
+      timeZone: mediaTimeZoneRef.current,
+      activeMediaType,
+      hasUnsupportedContext: Boolean(
+        foldDuplicates || currentFolderView || currentSuggestedPerson ||
+        currentPerson || currentPet || currentMemory || currentCleanupReview),
+    })
+    if (!entry.ok) {
+      setError('当前照片集合包含地图尚不支持的筛选条件；未切换到全图库。')
+      return false
+    }
+    // Desktop remains on its original Gallery while only an independently
+    // authenticated HTTPS Parent may claim the selected Owner photo scope.
+    if (onOpenSecureDesktopMap) {
+      setError('')
+      onOpenSecureDesktopMap(entry.scope)
+      return true
+    }
+    setError('')
+    {
+      const seen = mapGalleryVisibleAnchorRef.current
+      const identity = accepted.id ?? ''
+      const signature = mediaGalleryQuerySignature({
+        ...accepted.query, anchor_node_id: undefined, initial_position: undefined,
+      })
+      const anchorNodeID = seen?.owner === preferenceScope &&
+        seen.section === section && seen.kind === accepted.kind &&
+        seen.id === identity && seen.querySignature === signature
+          ? seen.nodeID : 0
+      mapGalleryEntryReturnRef.current = {
+        owner: preferenceScope, dataSource: source, section,
+        album: currentAlbum ? {...currentAlbum} : null,
+        query: {...query}, activeMediaType, anchorNodeID,
+        createdAt: Date.now(),
+      }
+    }
+    changeBaiduMapPhotoScope(entry.scope)
+    setMobileCollectionsOverview(false)
+    selectSection('places')
+    return true
+  }
+
 
   const appliedScopeLabel = currentFolderView
     ? '同步文件夹：' + currentFolderView.source.source_name +
