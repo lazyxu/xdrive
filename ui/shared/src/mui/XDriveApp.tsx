@@ -2,7 +2,7 @@ import { useLayoutEffect } from 'react'
 import type { ComponentProps, ReactNode } from 'react'
 import { xDriveEnterForegroundPage } from './ViewerForegroundPriority'
 import type { SxProps, Theme } from '@mui/material/styles'
-import { XDriveWorkspaceShell } from './WorkspaceShell'
+import { XDriveWorkspaceFrame } from './WorkspaceShell'
 import { XDriveWorkspaceSidebar } from './WorkspaceSidebar'
 import { XDriveAppRouteContent } from './XDriveAppRouteContent'
 import { xDriveWorkspaceNavigationAllowed, type XDriveWorkspaceAppRoute } from './WorkspaceRoute'
@@ -59,13 +59,18 @@ export function XDriveApp({
     onRequestedNavigate(destination)
   }
   return (
-    <XDriveWorkspaceShell responsive sx={shellSx}>
-      <XDriveWorkspaceSidebar
-        {...sidebar}
-        selected={view}
-        responsive
-        onSelect={onNavigate}
-      />
+    <XDriveWorkspaceFrame
+      sx={shellSx}
+      sidebar={
+        <XDriveWorkspaceSidebar
+          {...sidebar}
+          selected={view}
+          responsive
+          onSelect={onNavigate}
+        />
+      }
+      overlays={overlays}
+    >
       <XDriveAppRouteContent
         host={host}
         view={view}
@@ -75,7 +80,6 @@ export function XDriveApp({
       >
         {children}
       </XDriveAppRouteContent>
-      {overlays}
-    </XDriveWorkspaceShell>
+    </XDriveWorkspaceFrame>
   )
 }

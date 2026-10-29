@@ -72,10 +72,11 @@ import {
   XDriveFileNameDialog,
   XDriveFileExplorerActionFeedback,
   XDriveVersionHistoryDialog,
-  XDriveWorkspaceShell,
+  XDriveWorkspaceFrame,
   XDriveWorkspaceContent,
   XDriveMobileAppHeader,
   xDriveWorkspacePresentation,
+  xDriveWorkspaceNavigationAllowed,
   xDriveWorkspaceStorageSummary,
   XDriveStatusAlert,
 } from '@xdrive/ui/mui'
@@ -2387,20 +2388,21 @@ function FileManager({
         </Toolbar>
       </AppBar>
 
-      <XDriveWorkspaceShell
-        responsive
+      <XDriveWorkspaceFrame
         className="web-workspace-shell"
         sx={{ flex: 1, minHeight: 0 }}
-      >
-        <input
+        leading={
+          <input
           hidden
           data-xdrive-pwa-upload-resume-picker
           type="file"
           aria-label="重新选择需要续传的原文件"
           ref={resumeUploadPickerRef}
           onChange={(event) => { void resumeSelectedUpload(event) }}
-        />
-        <XDriveWorkspaceSidebar
+          />
+        }
+        sidebar={
+          <XDriveWorkspaceSidebar
           ariaLabel="网页端功能区"
           navAriaLabel="网页端功能区导航"
           responsive
@@ -2416,14 +2418,18 @@ function FileManager({
           storageSummary={xDriveWorkspaceStorageSummary(quota)}
           onSelect={(destination, event) => {
             const next = xDriveWebAppRouteForWorkspaceKey(destination)
-            if (!next) return
+            if (!next || !xDriveWorkspaceNavigationAllowed(
+              destination, profile?.role === 'admin',
+            )) return
             if (event.ctrlKey || event.metaKey) {
               launchWebApp(next, { newTab: true })
               return
             }
             setAppView(destination as AppView)
           }}
-        />
+          />
+        }
+      >
 
         <Box data-xdrive-mobile-app-frame sx={{ minWidth: 0, minHeight: 0, height: '100%', flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {compactWorkspace ? (
@@ -2790,7 +2796,7 @@ function FileManager({
         <XDriveCommittedWorkspaceRoute view={appView} onReady={markLoadedWorkspaceApp} />
         </Suspense>
         </Box>
-      </XDriveWorkspaceShell>
+      </XDriveWorkspaceFrame>
       </Box>
 
       {xDriveWebAppViewer(route.app) ? (

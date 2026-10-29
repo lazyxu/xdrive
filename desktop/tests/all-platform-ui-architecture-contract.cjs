@@ -16,7 +16,7 @@ test('Electron Desktop and authenticated DSM mount one canonical React workspace
 
   assert.match(desktop, /<XDriveApp\b/, 'Desktop must mount the real shared application')
   assert.match(dsm, /<XDriveApp\b/, 'DSM must mount the same shared application')
-  assert.match(app, /<XDriveWorkspaceShell\b/)
+  assert.match(app, /<XDriveWorkspaceFrame\b/)
   assert.match(app, /<XDriveWorkspaceSidebar\b/)
   assert.match(app, /<XDriveAppRouteContent\b/)
   assert.match(outlet, /switch \(view\)/)
@@ -33,7 +33,7 @@ test('Web/PWA use the same workspace primitives and canonical route vocabulary',
   // Forward-compatible: when Web eventually migrates to XDriveApp, replace
   // its transitional local shell rather than nesting two application frames.
   const directApp = /<XDriveApp\b/.test(web)
-  const sharedShell = /<XDriveWorkspaceShell\b/.test(web) &&
+  const sharedShell = /<XDriveWorkspaceFrame\b/.test(web) &&
     /<XDriveWorkspaceSidebar\b/.test(web)
   assert.ok(directApp || sharedShell,
     'Web must use the common application or shared MUI workspace components')
@@ -41,6 +41,27 @@ test('Web/PWA use the same workspace primitives and canonical route vocabulary',
   assert.match(main, /registerXDrivePwa\(\)/)
   assert.match(bridge, /xDriveIsWorkspaceAppRoute/)
   assert.match(bridge, /global-tasks/)
+})
+
+
+test('all browser Hosts use one responsive workspace frame and keep browser-only lifecycle', () => {
+  const frame = read('ui/shared/src/mui/WorkspaceShell.tsx')
+  const app = read('ui/shared/src/mui/XDriveApp.tsx')
+  const web = read('web/src/App.tsx')
+  const dsm = read('web/src/synology.tsx')
+
+  assert.match(frame, /export function XDriveWorkspaceFrame/)
+  assert.match(frame, /<XDriveWorkspaceShell responsive/)
+  assert.match(frame, /\{leading\}[\s\S]*\{sidebar\}[\s\S]*\{children\}[\s\S]*\{overlays\}/)
+  assert.match(app, /<XDriveWorkspaceFrame\b/)
+  assert.match(web, /<XDriveWorkspaceFrame\b/)
+  assert.doesNotMatch(app, /<XDriveWorkspaceShell\b/, 'Desktop/DSM must not nest a second shell')
+  assert.doesNotMatch(web, /<XDriveWorkspaceShell\b/, 'Web must not nest a second shell')
+  assert.match(dsm, /<XDriveApp\b/)
+  assert.match(web, /data-xdrive-pwa-upload-resume-picker/)
+  assert.match(web, /xDriveWorkspaceNavigationAllowed\(/)
+  assert.match(web, /xDriveWebAppRouteForWorkspaceKey\(destination\)/)
+  assert.match(web, /xDriveWebAppViewer\(route\.app\)/)
 })
 
 test('unsupported DSM operations remain explicit, with no fabricated permissions', () => {

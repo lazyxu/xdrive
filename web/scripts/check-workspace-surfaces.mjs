@@ -54,6 +54,7 @@ requireText(workspace, [
 
 requireText(workspaceShell, [
   'export function XDriveWorkspaceShell',
+  'export function XDriveWorkspaceFrame',
   'XDRIVE_SIDEBAR_WIDTH',
   'XDRIVE_SIDEBAR_COMPACT_WIDTH',
   "'@media (max-width: 960px)'",
@@ -164,7 +165,7 @@ if (webFileExplorer.includes('XDriveFileExplorerTrashCommandButton') || desktopF
 }
 
 requireText(app, [
-  'XDriveWorkspaceShell',
+  'XDriveWorkspaceFrame',
   'XDriveWorkspaceSidebar',
   'XDriveWorkspaceContent',
   'className="web-workspace-shell"',
