@@ -47,8 +47,6 @@ import {
   XDriveIOSPhotoBackupSettings,
   XDriveFeedbackSnackbar,
   XDriveShareDialog,
-  XDriveSourceManager,
-  XDriveDeviceBackupPage,
   createXDriveSourceManagerAdapter,
   XDriveStatePanel,
   XDriveTaskCenterPage,
@@ -1596,12 +1594,33 @@ function FileManager({
     },
     clearBrowserCache: clearWebBrowserCache,
   }), [])
+  const deviceBackupSourceID = route.app === 'device-backup' ? route.params.source : undefined
+  const remotePullSourceID = route.app === 'remote-pull' ? route.params.source : undefined
+  const isRemotePullRoute = route.app === 'remote-pull'
+  const remotePullTargetPath = crumbs.slice(1).map((crumb) => crumb.name).join('/')
   const browserWorkspaceHost = useMemo(
     () => createXDriveBrowserWorkspaceHost({
       cloudStorage: cloudStorageSource,
       localStorage: localStorageSource,
+      deviceBackup: { source: deviceBackupSource, initialSourceID: deviceBackupSourceID },
+      remotePull: {
+        adapter: sourceManagerAdapter,
+        initialSourceID: remotePullSourceID,
+        defaultTargetNodeID: current?.id,
+        defaultTargetLabel: current?.name ?? '我的文件',
+        defaultTargetPath: remotePullTargetPath,
+        onError: handleError,
+        onSelectedSourceChange: (sourceID) => {
+          if (isRemotePullRoute && remotePullSourceID !== sourceID) {
+            launchWebApp({ app: 'remote-pull', params: { source: sourceID } }, { replace: true })
+          }
+        },
+      },
     }),
-    [cloudStorageSource, localStorageSource],
+    [cloudStorageSource, localStorageSource, deviceBackupSource,
+      deviceBackupSourceID, sourceManagerAdapter, remotePullSourceID,
+      isRemotePullRoute, current?.id, current?.name, remotePullTargetPath,
+      handleError, launchWebApp],
   )
 
   useEffect(() => {
@@ -2650,10 +2669,7 @@ function FileManager({
           />}
           </>
         ) : appView === 'device-backup' ? (
-          <XDriveDeviceBackupPage
-            source={deviceBackupSource}
-            initialSourceID={route.app === 'device-backup' ? route.params.source : undefined}
-          />
+          <XDriveAppPageOutlet host={browserWorkspaceHost} view={appView} />
         ) : appView === 'remote-pull' ? (
           route.app === 'sync-folders' ? (
             <Box data-xdrive-legacy-source-quiet-redirect
@@ -2665,20 +2681,7 @@ function FileManager({
               ) : null}
             </Box>
           ) : (
-            <XDriveSourceManager
-              directionFilter="pull"
-              adapter={sourceManagerAdapter}
-              initialSourceID={route.app === 'remote-pull' ? route.params.source : undefined}
-              onSelectedSourceChange={(sourceID) => {
-                if (route.app === 'remote-pull' && route.params.source !== sourceID) {
-                  launchWebApp({ app: 'remote-pull', params: { source: sourceID } }, { replace: true })
-                }
-              }}
-              defaultTargetNodeID={current?.id}
-              defaultTargetLabel={current?.name ?? '我的文件'}
-              defaultTargetPath={crumbs.slice(1).map((crumb) => crumb.name).join('/')}
-              onError={handleError}
-            />
+            <XDriveAppPageOutlet host={browserWorkspaceHost} view={appView} />
           )
         ) : appView === 'transfers' || appView === 'global-tasks' ? (
           <XDriveTaskCenterPage

@@ -225,10 +225,17 @@ if (/\.cloud-explorer-panel > \[data-xdrive-file-explorer\]\s*\{[^}]*\b(border|b
 }
 
 requireText(app, [
-  '<XDriveSourceManager',
-  'adapter={sourceManagerAdapter}',
   'createXDriveSourceManagerAdapter(api)',
-], 'Web Source manager mount')
+  'adapter: sourceManagerAdapter',
+  'onSelectedSourceChange: (sourceID) => {',
+  'isRemotePullRoute && remotePullSourceID !== sourceID',
+  "<XDriveAppPageOutlet host={browserWorkspaceHost} view={appView} />",
+], 'Web Browser Host pull source manager mount')
+requireText(browserHost, [
+  "remotePullPage: { ...ports.remotePull, directionFilter: 'pull' as const }",
+  'deviceBackupPage: {',
+  'source: ports.deviceBackup.source',
+], 'Browser Owner-scoped backup/pull ports')
 
 requireText(sources, [
   'XDriveWorkspaceSurface',
@@ -241,11 +248,12 @@ requireText(sources, [
 
 requireText(app, [
   "appView === 'device-backup'",
-  '<XDriveDeviceBackupPage',
   "appView === 'remote-pull'",
-  '<XDriveSourceManager',
-  'directionFilter="pull"',
-], 'Separate first-level Device Backup and Remote Pull apps')
+  "route.app === 'sync-folders'",
+  "data-xdrive-legacy-source-quiet-redirect",
+  "deviceBackup: { source: deviceBackupSource, initialSourceID: deviceBackupSourceID }",
+  "remotePull: {",
+], 'Separate first-level authenticated Device Backup and Remote Pull apps')
 if (app.includes("appView === 'sources'")) {
   throw new Error('Legacy mixed Push/Pull workspace must not remain a first-level app')
 }
