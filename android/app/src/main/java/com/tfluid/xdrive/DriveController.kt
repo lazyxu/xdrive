@@ -108,6 +108,9 @@ data class DriveState(
     /** Explicitly requested verified BD09LL Owner cells; never raw WGS84. */
     val galleryBd09Requested: Boolean = false,
     val galleryBd09Cells: OwnerBd09MapCells? = null,
+    val galleryBd09Bounds: OwnerBd09Bounds = OwnerBd09Bounds.WORLD,
+    /** Max 6 prior signed grid summaries, cleared with Owner session. */
+    val galleryBd09History: List<Bd09GridLevel> = emptyList(),
     /** Exact signed cell currently scoping the existing Gallery and Viewer. */
     val galleryMapCellSelected: OwnerBd09Cell? = null,
     val galleryMapReturn: GalleryMapReturnState? = null,
@@ -1636,6 +1639,8 @@ class DriveController(
             gallerySelectedAlbum = null,
             galleryMapOpen = false, galleryMapLoaded = false, galleryMapOverview = null,
             galleryBd09Requested = false, galleryBd09Cells = null,
+            galleryBd09Bounds = OwnerBd09Bounds.WORLD,
+            galleryBd09History = emptyList(),
             galleryMapCellSelected = null, galleryMapReturn = null,
             galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
             galleryLoaded = false, gallerySearchQuery = "", galleryMediaKind = "",
@@ -1661,6 +1666,8 @@ class DriveController(
         mutableState.value = current.withoutGallerySelection().copy(
             galleryMapOpen = true, galleryMapLoaded = false, galleryMapOverview = null,
             galleryBd09Requested = false, galleryBd09Cells = null,
+            galleryBd09Bounds = OwnerBd09Bounds.WORLD,
+            galleryBd09History = emptyList(),
             galleryMapCellSelected = null, galleryMapReturn = null,
             loading = false, error = null, gallerySelected = null, galleryViewer = null)
         loadGalleryMapOverview()
@@ -1703,8 +1710,48 @@ class DriveController(
         invalidate()
         mutableState.value = current.copy(
             galleryBd09Requested = false, galleryBd09Cells = null,
+            galleryBd09Bounds = OwnerBd09Bounds.WORLD,
+            galleryBd09History = emptyList(),
             loading = false, discardableReadInFlight = false, error = null)
         if (!state.value.galleryMapLoaded) loadGalleryMapOverview()
+    }
+
+    /** Progressive genuine BD09 Owner clusters: derive one verified cell
+     * subrect, abort obsolete GET, and query Go's original /cells. */
+    fun drillDownGalleryBd09Cell(cell: OwnerBd09Cell) {
+        val current = state.value
+        if (current.screen != Screen.GALLERY || !current.galleryMapOpen ||
+            !current.galleryBd09Requested || current.galleryBd09Cells == null ||
+            current.galleryMapCellSelected != null || current.galleryViewer != null ||
+            current.loading || current.error != null || session == null || api == null ||
+            current.hasActiveNativeTransfer() ||
+            current.galleryBd09History.size >= MAX_BD09_DRILL_LEVELS ||
+            current.galleryBd09Cells.cells.none { it == cell }) return
+        val next = bd09CellSubBounds(current.galleryBd09Bounds, cell) ?: return
+        val previous = Bd09GridLevel(current.galleryBd09Bounds, current.galleryBd09Cells)
+        invalidate()
+        mutableState.value = current.copy(
+            galleryBd09Bounds = next,
+            galleryBd09History = current.galleryBd09History + previous,
+            galleryBd09Cells = null, loading = false,
+            discardableReadInFlight = false, error = null)
+        loadGalleryBd09MapCells()
+    }
+
+    /** Exact parent snapshot survives failed child. Back never widens to all
+     * photos or repeats a previous Owner query. */
+    fun galleryBd09BackLevel() {
+        val current = state.value
+        if (current.screen != Screen.GALLERY || !current.galleryMapOpen ||
+            !current.galleryBd09Requested || current.galleryMapCellSelected != null ||
+            current.hasActiveNativeTransfer() || current.galleryBd09History.isEmpty()) return
+        val previous = current.galleryBd09History.last()
+        invalidate()
+        mutableState.value = current.copy(
+            galleryBd09Bounds = previous.bounds,
+            galleryBd09Cells = previous.cells,
+            galleryBd09History = current.galleryBd09History.dropLast(1),
+            loading = false, discardableReadInFlight = false, error = null)
     }
 
     /** Only the actual current Owner/signed 8x8 cell can open a scoped wall.
@@ -1761,7 +1808,7 @@ class DriveController(
             current.galleryMapReturn == null || current.loading) return
         request(discardableRead = true) { ticket ->
             val page = authenticated(service, ticket) { token ->
-                service.galleryBd09CellPage(token, OwnerBd09Bounds.WORLD, cell,
+                service.galleryBd09CellPage(token, current.galleryBd09Bounds, cell,
                     0, "captured", "desc")
             }
             checkCurrent(ticket)
@@ -1802,16 +1849,19 @@ class DriveController(
 
     private fun loadGalleryBd09MapCells() {
         val service = api ?: return
+        val bounds = state.value.galleryBd09Bounds
         if (session == null || state.value.screen != Screen.GALLERY ||
-            !state.value.galleryMapOpen || !state.value.galleryBd09Requested) return
+            !state.value.galleryMapOpen || !state.value.galleryBd09Requested ||
+            state.value.galleryMapCellSelected != null || !bounds.valid()) return
         request(discardableRead = true) { ticket ->
             val cells = authenticated(service, ticket) { token ->
-                service.baiduNativeMapCells(token, OwnerBd09Bounds.WORLD)
+                service.baiduNativeMapCells(token, bounds)
             }
             checkCurrent(ticket)
             val latest = state.value
             if (latest.screen != Screen.GALLERY || !latest.galleryMapOpen ||
-                !latest.galleryBd09Requested) throw CancellationException()
+                !latest.galleryBd09Requested || latest.galleryBd09Bounds != bounds)
+                throw CancellationException()
             mutableState.value = latest.copy(galleryBd09Cells = cells, error = null)
         }
     }
@@ -1848,6 +1898,8 @@ class DriveController(
         mutableState.value = latest.copy(galleryMapOpen = false,
             galleryMapLoaded = false, galleryMapOverview = null,
             galleryBd09Requested = false, galleryBd09Cells = null,
+            galleryBd09Bounds = OwnerBd09Bounds.WORLD,
+            galleryBd09History = emptyList(),
             galleryMapCellSelected = null, galleryMapReturn = null,
             loading = false, discardableReadInFlight = false,
             error = null)
@@ -1873,6 +1925,8 @@ class DriveController(
             gallerySelectedAlbum = null,
             galleryMapOpen = false, galleryMapLoaded = false, galleryMapOverview = null,
             galleryBd09Requested = false, galleryBd09Cells = null,
+            galleryBd09Bounds = OwnerBd09Bounds.WORLD,
+            galleryBd09History = emptyList(),
             galleryMapCellSelected = null, galleryMapReturn = null,
             galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
             galleryLoaded = false, gallerySearchQuery = "", galleryMediaKind = "",
@@ -2690,7 +2744,7 @@ class DriveController(
             // Viewer boundary, forward paging and ordinary Gallery all reuse
             // this one decoder; a BD09 cell must NEVER query /media/items.
             state.value.galleryMapCellSelected != null ->
-                service.galleryBd09CellPage(it, OwnerBd09Bounds.WORLD,
+                service.galleryBd09CellPage(it, state.value.galleryBd09Bounds,
                     requireNotNull(state.value.galleryMapCellSelected),
                     offset, sortBy, sortDir)
             sortBy != "captured" || sortDir != "asc" ->
@@ -3160,6 +3214,8 @@ class DriveController(
                 current.galleryMapCellSelected != null &&
                     current.galleryViewer != null -> dismissGalleryViewer()
                 current.galleryMapCellSelected != null -> closeGalleryBd09Cell()
+                current.galleryMapOpen && current.galleryBd09History.isNotEmpty() ->
+                    galleryBd09BackLevel()
                 current.galleryMapOpen -> closeGalleryMapOverview()
                 current.gallerySelectionMode -> {
                     if (current.galleryMetadataWriteAttempted) {
