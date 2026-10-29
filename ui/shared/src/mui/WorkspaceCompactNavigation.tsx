@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import type { MouseEvent, ReactNode } from 'react'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
@@ -19,6 +19,7 @@ import type { XDriveSidebarAppearance } from './SidebarNav'
 import { XDriveSidebarStorageSummary } from './SidebarStorageSummary'
 import type { XDriveSidebarDestinationModel, XDriveSidebarSectionModel } from './WorkspaceNavigation'
 import type { XDriveWorkspaceSidebarStorageSummary } from './WorkspaceSidebar'
+import { xDriveCompactNavigationAdmissionChanged } from './WorkspaceCompactNavigationAdmission'
 
 export function XDriveWorkspaceCompactNavigation({
   primary,
@@ -67,8 +68,16 @@ export function XDriveWorkspaceCompactNavigation({
     : moreSections
   const hasMore = moreSections.length > 0
 
+  // Opening a controlled drawer must not be interpreted as a route change.
+  // In particular, first mount and a new onOpenChange callback identity are
+  // NOT reasons to close the current More/fullscreen navigation overlay.
+  const lastAdmission = useRef({ selected, disabled })
   useEffect(() => {
-    setMoreOpen(false)
+    const previous = lastAdmission.current
+    const next = { selected, disabled }
+    const changed = xDriveCompactNavigationAdmissionChanged(previous, next)
+    lastAdmission.current = next
+    if (changed) setMoreOpen(false)
   }, [selected, disabled, setMoreOpen])
 
   const selectDestination = (key: string, event: MouseEvent<HTMLElement>) => {

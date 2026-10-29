@@ -528,3 +528,28 @@ func TestIsCASLifecycleLockFileStrictShape(t *testing.T) {
 		}
 	}
 }
+
+func TestVerifyOptionsNeverCreatesMissingStorageRoot(t *testing.T) {
+	parent := t.TempDir()
+	missing := filepath.Join(parent, "missing-storage-root")
+	// This pointer is intentionally not backed by a live DB: a missing root
+	// must fail before any database access or filesystem mutation.
+	db := &gorm.DB{}
+	for _, mode := range []VerifyMode{VerifyModeFast, VerifyModeDeep} {
+		_, err := VerifyWithOptions(context.Background(), db, missing, VerifyOptions{Mode: mode})
+		if err == nil || !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("%s unexpectedly accepted missing root: %v", mode, err)
+		}
+		if _, statErr := os.Lstat(missing); !errors.Is(statErr, os.ErrNotExist) {
+			t.Fatalf("%s created a missing storage directory: %v", mode, statErr)
+		}
+	}
+	file := filepath.Join(parent, "not-a-directory")
+	if err := os.WriteFile(file, []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := VerifyWithOptions(context.Background(), db, file, VerifyOptions{Mode: VerifyModeFast})
+	if err == nil || !strings.Contains(err.Error(), "not a directory") {
+		t.Fatalf("non-directory storage root accepted: %v", err)
+	}
+}

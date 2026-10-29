@@ -4,6 +4,7 @@ import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
 import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack, TextField, Typography } from '@mui/material'
 import type { PublicShareChild } from '../models'
+import { xDrivePublicShareViewerStillMode } from '../public-share-viewer-preview'
 import { xDriveResolveFileExplorerCapabilities } from '../file-explorer-capabilities'
 import { XDriveFileExplorer } from './FileExplorer'
 import type { XDriveFileExplorerItem, XDriveFileExplorerMenuItem } from './FileExplorer'
@@ -33,7 +34,8 @@ export function XDrivePublicShareUnifiedDirectoryExplorer({
   const currentFolderID = path.at(-1)?.id ?? rootID
   const caps = xDriveResolveFileExplorerCapabilities('share', {
     list: canBrowse ?? canDownload,
-    preview: (canPreview ?? canBrowse ?? canDownload) && Boolean(loadImagePreview),
+    preview: (canPreview ?? canBrowse ?? canDownload) &&
+      Boolean(loadImagePreview || loadThumbnail),
     download: canDownload && Boolean(onDownloadItem),
     downloadZip: (canDownloadZip ?? canDownload) && Boolean(onDownloadFolder),
     search: false, write: false, delete: false,
@@ -83,10 +85,12 @@ export function XDrivePublicShareUnifiedDirectoryExplorer({
     [byID],
   )
   const eligiblePreview = useCallback(
-    (entry: PublicShareChild) => (
-      caps.preview && entry.type === 'file' && shareImagePreviewPattern.test(entry.name)
-    ),
-    [caps.preview],
+    (entry: PublicShareChild) => xDrivePublicShareViewerStillMode(entry, {
+      canPreview: caps.preview,
+      hasOriginal: Boolean(loadImagePreview),
+      hasThumbnail: Boolean(loadThumbnail),
+    }) !== null,
+    [caps.preview, loadImagePreview, loadThumbnail],
   )
   const startDownload = (item: XDriveFileExplorerItem) => {
     const entry = entryFor(item)
@@ -140,13 +144,22 @@ export function XDrivePublicShareUnifiedDirectoryExplorer({
     }
     : undefined, [caps.preview, loadThumbnail, entryFor])
   const previewURLLoader = useMemo(() => caps.preview && loadImagePreview
-    ? (item: XDriveFileExplorerItem, kind: 'image' | 'video' | 'audio' | 'pdf' | 'live_photo') => {
+    ? (item: XDriveFileExplorerItem, kind: 'image' | 'video' | 'audio' | 'pdf' | 'live_photo', signal?: AbortSignal) => {
       const entry = entryFor(item)
-      return entry && kind === 'image' && eligiblePreview(entry)
-        ? Promise.resolve(loadImagePreview(entry)).then(value => value ?? null)
+      // The original signed Share endpoint intentionally supports only four
+      // safe raster formats. Derivative-only stills NEVER contact this API.
+      return entry && entry.revision === item.revision &&
+        kind === 'image' && shareImagePreviewPattern.test(entry.name) &&
+        eligiblePreview(entry)
+        ? Promise.resolve(loadImagePreview(entry, signal)).then(value => value ?? null)
         : Promise.resolve(null)
     }
     : undefined, [caps.preview, loadImagePreview, entryFor, eligiblePreview])
+  const previewMode = previewEntry ? xDrivePublicShareViewerStillMode(previewEntry, {
+    canPreview: caps.preview,
+    hasOriginal: Boolean(loadImagePreview),
+    hasThumbnail: Boolean(loadThumbnail),
+  }) : null
   const coreCrumbs = useMemo(() => [...path], [path])
   const lastCrumbIndex = path.length - 1
   return (
@@ -214,18 +227,22 @@ export function XDrivePublicShareUnifiedDirectoryExplorer({
             ' · 排序仅影响当前页'}
         />
       )}
-      <Dialog open={previewEntry !== null && caps.preview} onClose={() => setPreviewEntry(null)}
+      <Dialog open={previewEntry !== null && previewMode !== null} onClose={() => setPreviewEntry(null)}
         aria-labelledby="xdrive-public-share-preview-title" maxWidth="lg" fullWidth>
         <DialogTitle id="xdrive-public-share-preview-title">
           {previewEntry?.name || '预览'} · 只读
+          {previewMode === 'cached-still' ? ' · 仅缓存缩略图（非原图；实况不含动态）' : ''}
         </DialogTitle>
-        <DialogContent dividers sx={{ p: 1, minHeight: 320 }}>
-          {previewEntry && (
+        <DialogContent dividers sx={{ p: 1, minHeight: 320 }}
+          data-xdrive-public-share-preview-quality={previewMode || undefined}>
+          {previewEntry && previewMode && (
             <XDriveFilePreviewSurface
-              target={{ id: previewEntry.id, name: previewEntry.name, kind: 'file', size: previewEntry.size }}
-              loadImagePreview={(_item, signal) => loadImagePreview
-                ? loadImagePreview(previewEntry, signal)
-                : Promise.resolve(null)}
+              key={previewEntry.id + ':' + (previewEntry.revision ?? 0) + ':' + previewMode}
+              target={{ id: previewEntry.id, name: previewEntry.name, kind: 'file',
+                size: previewEntry.size, revision: previewEntry.revision }}
+              loadImagePreview={(_item, signal) => previewMode === 'cached-still'
+                ? (loadThumbnail ? loadThumbnail(previewEntry, signal) : Promise.resolve(null))
+                : (loadImagePreview ? loadImagePreview(previewEntry, signal) : Promise.resolve(null))}
               imageFit="contain" interactiveImage minHeight={300}
               maxHeight="min(74dvh, 840px)"
               fallback={<Typography color="text.secondary">当前媒体不能安全预览。</Typography>}

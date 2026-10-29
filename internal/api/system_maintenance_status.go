@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/lazyxu/xdrive/internal/background"
+	"github.com/lazyxu/xdrive/internal/maintenance"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/sourceaccount"
 )
@@ -357,22 +358,38 @@ func (s *Server) backgroundSystemMaintenanceTasks(
 				progress.CurrentItem = run.Summary
 			}
 		}
+		var storageIntegrity *storageVerifyEvidence
+		if (run.Kind == meta.SystemMaintenanceKindStorageVerify ||
+			run.Kind == meta.SystemMaintenanceKindStorageVerifyFast) &&
+			(run.Status == meta.SystemMaintenanceStatusSuccess ||
+				run.Status == meta.SystemMaintenanceStatusIssues) {
+			if record := parseStorageVerifyEvidence(run.ReportJSON); record != nil {
+				expectedMode := string(maintenance.VerifyModeDeep)
+				if run.Kind == meta.SystemMaintenanceKindStorageVerifyFast {
+					expectedMode = string(maintenance.VerifyModeFast)
+				}
+				if record.Mode == expectedMode {
+					storageIntegrity = record
+				}
+			}
+		}
 		out = append(out, backgroundTaskDTO{
-			ID:             systemMaintenanceTaskCenterID(run.Kind),
-			Kind:           "system.maintenance." + run.Kind,
-			Domain:         "system_maintenance",
-			Scope:          string(background.ScopeSystem),
-			State:          state,
-			Trigger:        trigger,
-			Initiator:      initiator,
-			Priority:       &priority,
-			Resource:       string(background.ResourceMaintenanceIO),
-			Progress:       progress,
-			ControlActions: systemMaintenanceControlActions(run.Kind, run.Status),
-			StartedAt:      startedAt,
-			UpdatedAt:      run.UpdatedAt,
-			FinishedAt:     run.FinishedAt,
-			Error:          errorText,
+			ID:               systemMaintenanceTaskCenterID(run.Kind),
+			Kind:             "system.maintenance." + run.Kind,
+			Domain:           "system_maintenance",
+			Scope:            string(background.ScopeSystem),
+			State:            state,
+			Trigger:          trigger,
+			Initiator:        initiator,
+			Priority:         &priority,
+			Resource:         string(background.ResourceMaintenanceIO),
+			Progress:         progress,
+			StorageIntegrity: storageIntegrity,
+			ControlActions:   systemMaintenanceControlActions(run.Kind, run.Status),
+			StartedAt:        startedAt,
+			UpdatedAt:        run.UpdatedAt,
+			FinishedAt:       run.FinishedAt,
+			Error:            errorText,
 		})
 	}
 	for _, kind := range systemMaintenanceInteractiveKinds() {

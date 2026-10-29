@@ -16,7 +16,13 @@ assert.deepEqual((compiled.diagnostics || [])
   .filter(d => d.category === ts.DiagnosticCategory.Error)
   .map(d => ts.flattenDiagnosticMessageText(d.messageText, '\n')), [])
 
-const local = { authorizedOwnerClient: true }
+const local = {
+  authorizedOwnerClient: true,
+  diagnostics: signal => {
+    assert.ok(signal instanceof AbortSignal)
+    return Promise.resolve({ checks: [], summary: { pass: 0, warn: 0, fail: 0 } })
+  },
+}
 const gallery = { readOnlyOwnerGallery: true }
 const seen = []
 const mod = { exports: {} }
@@ -50,6 +56,9 @@ test('one real authenticated DSM client powers both Files and shared Gallery', (
   assert.strictEqual(host.services.ownerFilesPage.client, local)
   assert.strictEqual(host.services.galleryPage.source, gallery)
   assert.equal(host.services.galleryPage.pageSize, 100)
+  assert.equal(typeof host.services.diagnosticsSource.read, 'function')
+  assert.match(host.services.diagnosticsSource.scopeNotice, /未检测/)
+  assert.match(host.services.diagnosticsSource.failureMessage, /未完成诊断/)
   assert.deepEqual(seen, ['https://nas.example/webman/3rdparty/xdrivenas/backup.cgi'])
   assert.equal(host.adminRoleVerified, undefined,
     'DSM login alone never authorizes Server administrator pages')
@@ -67,4 +76,13 @@ test('Gallery cannot silently re-enable missing Owner Files write operations', (
     'obsolete top-level Files fallback is forbidden')
   assert.doesNotMatch(source, /window\.xdriveDesktop|ipcRenderer|fetch\s*\(/)
   assert.doesNotMatch(source, /<XDriveMediaGalleryPage|<XDriveSynologyOwnerFilesPage/)
+})
+
+test('Diagnostics stays a real, cancellable scoped Host read without native JSX', async () => {
+  const host = create()
+  const controller = new AbortController()
+  const result = await host.services.diagnosticsSource.read(controller.signal)
+  assert.deepEqual(result.checks, [])
+  assert.equal(result.summary.pass, 0)
+  assert.doesNotMatch(source, /XDriveSynologyDiagnosticsPanel|XDriveDiagnosticsHostController|window\.xdriveDesktop/)
 })

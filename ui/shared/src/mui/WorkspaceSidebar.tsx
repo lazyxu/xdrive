@@ -52,11 +52,13 @@ function SidebarDestinationItem({
   destination,
   selected,
   appearance,
+  disabled = false,
   onSelect,
 }: {
   destination: XDriveSidebarDestinationModel
   selected?: string
   appearance: XDriveSidebarAppearance
+  disabled?: boolean
   onSelect: (key: string, event: MouseEvent<HTMLElement>) => void
 }) {
   return (
@@ -67,7 +69,8 @@ function SidebarDestinationItem({
       secondary={destination.secondary}
       badge={destination.badge}
       appearance={appearance}
-      onClick={(event) => onSelect(destination.key, event)}
+      disabled={disabled}
+      onClick={(event) => { if (!disabled) onSelect(destination.key, event) }}
     />
   )
 }
@@ -78,6 +81,7 @@ function SidebarSectionBlock({
   appearance,
   responsive,
   pinnedBottom = false,
+  disabled = false,
   fallbackAriaLabel,
   onSelect,
 }: {
@@ -86,6 +90,7 @@ function SidebarSectionBlock({
   appearance: XDriveSidebarAppearance
   responsive: boolean
   pinnedBottom?: boolean
+  disabled?: boolean
   fallbackAriaLabel: string
   onSelect: (key: string, event: MouseEvent<HTMLElement>) => void
 }) {
@@ -103,6 +108,7 @@ function SidebarSectionBlock({
             destination={destination}
             selected={selected}
             appearance={appearance}
+            disabled={disabled}
             onSelect={onSelect}
           />
         ))}
@@ -196,6 +202,7 @@ export function XDriveWorkspaceSidebar({
           selected={selected}
           appearance={appearance}
           responsive={responsive}
+          disabled={disabled}
           fallbackAriaLabel={navAriaLabel}
           onSelect={onSelect}
         />
@@ -208,6 +215,7 @@ export function XDriveWorkspaceSidebar({
             destination={destination}
             selected={selected}
             appearance={appearance}
+            disabled={disabled}
             onSelect={onSelect}
           />
         ))}
@@ -217,7 +225,8 @@ export function XDriveWorkspaceSidebar({
           appearance={appearance}
           showLocalStorage={showLocalStorage}
           coreKeys={coreKeys}
-          onSelect={(key, event) => onSelect(key, event)}
+          disabled={disabled}
+          onSelect={(key, event) => { if (!disabled) onSelect(key, event) }}
         />
         {afterCoreInlineItems.map((destination) => (
           <SidebarDestinationItem
@@ -225,6 +234,7 @@ export function XDriveWorkspaceSidebar({
             destination={destination}
             selected={selected}
             appearance={appearance}
+            disabled={disabled}
             onSelect={onSelect}
           />
         ))}
@@ -237,6 +247,7 @@ export function XDriveWorkspaceSidebar({
           selected={selected}
           appearance={appearance}
           responsive={responsive}
+          disabled={disabled}
           fallbackAriaLabel={navAriaLabel}
           onSelect={onSelect}
         />
@@ -250,6 +261,7 @@ export function XDriveWorkspaceSidebar({
           appearance={appearance}
           responsive={responsive}
           pinnedBottom={index === 0}
+          disabled={disabled}
           fallbackAriaLabel={navAriaLabel}
           onSelect={onSelect}
         />

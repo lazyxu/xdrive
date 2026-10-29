@@ -209,6 +209,13 @@ export function XDriveLocalStoragePage({ source }: { source: XDriveLocalStorageD
   const activeRead = useRef<AbortController | null>(null)
   const readGeneration = useRef(0)
   const mounted = useRef(false)
+  // A completed native/Browser mutation belongs to the Host that initiated
+  // it. The operation itself is durable, but an old Host must not repaint the
+  // successor's receipts or start a stale refresh under its former Owner.
+  const activeHostSource = useRef(source)
+  activeHostSource.current = source
+  const isCurrentHostAction = (ownedSource: XDriveLocalStorageDataSource) =>
+    mounted.current && activeHostSource.current === ownedSource
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [action, setAction] = useState('')
@@ -259,6 +266,15 @@ export function XDriveLocalStoragePage({ source }: { source: XDriveLocalStorageD
     }
   }, [load])
 
+  // Changing Owner/server/Host retires only old UI receipts; an already
+  // accepted cache or policy operation remains owned by its real backend.
+  useEffect(() => {
+    setPendingAction(null)
+    setAction('')
+    setError('')
+    setNotice('')
+  }, [source])
+
   const browser = snapshot?.browserStorage
   const desktop = snapshot?.desktopStorage
   const cache = desktop?.cacheStats
@@ -274,12 +290,14 @@ export function XDriveLocalStoragePage({ source }: { source: XDriveLocalStorageD
 
   const clearBrowserCache = async () => {
     if (!source.clearBrowserCache) return
+    const operationSource = source
     setPendingAction(null)
     setAction('browser-cache')
     setError('')
     setNotice('')
     try {
       const result = await source.clearBrowserCache()
+      if (!isCurrentHostAction(operationSource)) return
       const released = Math.max(0, result.released_bytes || 0)
       const entries = Math.max(0, result.cleared_entries || 0)
       setNotice(released > 0
@@ -289,20 +307,23 @@ export function XDriveLocalStoragePage({ source }: { source: XDriveLocalStorageD
           : '当前没有可清理的浏览器缓存。')
       await load()
     } catch (clearError) {
-      setError(clearError instanceof Error ? clearError.message : '清理浏览器缓存失败')
+      if (isCurrentHostAction(operationSource))
+        setError(clearError instanceof Error ? clearError.message : '清理浏览器缓存失败')
     } finally {
-      setAction('')
+      if (isCurrentHostAction(operationSource)) setAction('')
     }
   }
 
   const releaseDesktopCache = async () => {
     if (!source.releaseDesktopCache) return
+    const operationSource = source
     setPendingAction(null)
     setAction('desktop-cache')
     setError('')
     setNotice('')
     try {
       const result = await source.releaseDesktopCache()
+      if (!isCurrentHostAction(operationSource)) return
       const failed = result.failed_files > 0
         ? ' · ' + result.failed_files.toLocaleString() + ' 个文件无法释放'
         : ''
@@ -312,25 +333,29 @@ export function XDriveLocalStoragePage({ source }: { source: XDriveLocalStorageD
         : '当前没有可释放的 Desktop 缓存。')
       await load()
     } catch (releaseError) {
-      setError(releaseError instanceof Error ? releaseError.message : '释放 Desktop 缓存失败')
+      if (isCurrentHostAction(operationSource))
+        setError(releaseError instanceof Error ? releaseError.message : '释放 Desktop 缓存失败')
     } finally {
-      setAction('')
+      if (isCurrentHostAction(operationSource)) setAction('')
     }
   }
 
   const setFolderMode = async (path: string, mode: XDriveLocalStorageMode) => {
     if (!source.setFolderMode) return
+    const operationSource = source
     setAction('mode:' + path)
     setError('')
     setNotice('')
     try {
       await source.setFolderMode(path, mode)
+      if (!isCurrentHostAction(operationSource)) return
       setNotice('文件夹本地存储策略已更新。')
       await load()
     } catch (modeError) {
-      setError(modeError instanceof Error ? modeError.message : '更新文件夹本地存储策略失败')
+      if (isCurrentHostAction(operationSource))
+        setError(modeError instanceof Error ? modeError.message : '更新文件夹本地存储策略失败')
     } finally {
-      setAction('')
+      if (isCurrentHostAction(operationSource)) setAction('')
     }
   }
 

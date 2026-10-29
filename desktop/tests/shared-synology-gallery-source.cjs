@@ -18,6 +18,7 @@ const errors = (transpiled.diagnostics || []).filter(d => d.category === ts.Diag
 assert.deepEqual(errors.map(d => ts.flattenDiagnosticMessageText(d.messageText, '\n')), [])
 const calls = []
 let deferredPreview = null
+let deferredNative = null
 const previews = []
 const fakeURL = {
   createObjectURL: blob => { previews.push(blob); return 'blob:owner:' + previews.length },
@@ -28,9 +29,21 @@ new Function('module', 'exports', 'require', 'URL', 'Blob', transpiled.outputTex
   moduleRef, moduleRef.exports,
   name => {
     if (name === '../synology-media-preview') return {
+      xDriveSynologyPreviewMIME: filename =>
+        /\.(jpg|jpeg|png|webp|gif)$/i.test(filename) ? 'image/jpeg' : null,
       xDriveSynologyLoadBoundedMediaPreview: async (_client, item) => {
         assert.equal(item.size, 120)
         return deferredPreview ?? 'blob:verified-original'
+      },
+    }
+    if (name === '../synology-media-stream') return {
+      xDriveSynologyPlaybackMIME: filename =>
+        /\.(mp4|m4v)$/i.test(filename) ? 'video/mp4'
+          : /\.webm$/i.test(filename) ? 'video/webm' : null,
+      xDriveSynologyLoadNativeMediaStream: async (client, item, signal) => {
+        calls.push(['stream', item.id, item.revision, item.size, item.name, signal])
+        assert.equal(typeof client.ownerFileMediaStreamURL, 'function')
+        return deferredNative ?? 'https://nas.example/webman/3rdparty/xdrivenas/backup.cgi?op=cloud-media-stream'
       },
     }
     if (name === '../synology-owner-thumbnail') return {
@@ -70,6 +83,8 @@ function fakeClient(rows = [record(1), record(2), record(3)]) {
         contentType: 'image/png', alphaState: 'opaque', alphaMask: '' }
     },
     ownerFileMediaRange: async () => { throw Error('not used by thumbnail') },
+    ownerFileMediaStreamURL: () =>
+      'https://nas.example/webman/3rdparty/xdrivenas/backup.cgi?op=cloud-media-stream',
   }
 }
 
@@ -148,6 +163,64 @@ test('thumbnail requires previously authenticated Node/revision and preserves ca
   assert.equal(await source.loadPreviewURL(1, 'image', undefined, '1.jpg', 7), 'blob:verified-original')
   assert.equal(await source.loadPreviewURL(1, 'video'), null)
   assert.equal(await source.loadPreviewURL(1, 'image', undefined, '', 8), null)
+})
+
+test('DSM Gallery video reuses verified same-origin media stream, never an image Blob', async () => {
+  calls.length = 0
+  const movie = { ...record(9),
+    node: { ...record(9).node, name: 'clip.mp4', size: 9123 },
+    metadata: { media_kind: 'video', index_state: 'ready', has_thumbnail: true },
+  }
+  const other = record(10)
+  const source = create(fakeClient([movie, other]))
+  assert.equal(await source.loadPreviewURL(9, 'video', undefined, 'clip.mp4', 7), null,
+    'no stream before verified Owner range')
+  await source.listItemRange(2, 0)
+  assert.equal(await source.loadPreviewURL(9, 'image', undefined, 'clip.mp4', 7), null,
+    'a video must never be reinterpreted as an image Blob')
+  const url = await source.loadPreviewURL(9, 'video', undefined, 'untrusted.jpg', 7)
+  assert.ok(url.startsWith('https://nas.example/'))
+  assert.deepEqual(calls.filter(row => row[0] === 'stream').map(row => row.slice(1, 5)),
+    [[9, 7, 9123, 'clip.mp4']],
+    'trusted Owner row not caller filename selects native streaming')
+  assert.equal(await source.loadPreviewURL(9, 'video', undefined, 'clip.mp4', 8), null)
+  const cancelled = new AbortController(); cancelled.abort()
+  assert.equal(await source.loadPreviewURL(9, 'video', cancelled.signal, 'clip.mp4', 7), null)
+  assert.equal(await source.loadPreviewURL(10, 'video', undefined, '10.jpg', 7), null)
+  assert.equal(calls.filter(row => row[0] === 'stream').length, 1)
+})
+
+test('late DSM Gallery video stream is discarded after new Owner revision or abort', async () => {
+  calls.length = 0
+  let liveRevision = 7
+  const video = revision => ({ ...record(55, revision),
+    node: { ...record(55, revision).node, name: 'movie.webm', size: 1024 },
+    metadata: { media_kind: 'video', index_state: 'ready', has_thumbnail: true },
+  })
+  const api = fakeClient()
+  api.ownerGalleryItemsRange = async (_kind, limit, offset) => ({
+    items: offset ? [] : [video(liveRevision)], total_count: 1, offset, limit,
+  })
+  const source = create(api)
+  await source.listItemRange(1, 0)
+  let resolveStale
+  deferredNative = new Promise(resolve => { resolveStale = resolve })
+  try {
+    const stale = source.loadPreviewURL(55, 'video', undefined, 'movie.webm', 7)
+    liveRevision = 8
+    await source.listItemRange(1, 0)
+    resolveStale('https://nas.example/old-stream')
+    assert.equal(await stale, null, 'old revision native URL must not reach Viewer')
+    const signal = new AbortController()
+    let resolveAborted
+    deferredNative = new Promise(resolve => { resolveAborted = resolve })
+    const pending = source.loadPreviewURL(55, 'video', signal.signal, 'movie.webm', 8)
+    signal.abort()
+    resolveAborted('https://nas.example/cancelled-stream')
+    assert.equal(await pending, null, 'cancelled media URL must not reach Viewer')
+  } finally {
+    deferredNative = null
+  }
 })
 
 test('abort, invalid window and non-Owner writes do not contact an Agent', async () => {

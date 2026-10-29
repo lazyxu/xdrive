@@ -1,0 +1,26 @@
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+
+const read = name => fs.readFileSync(path.resolve(__dirname, '../..', name), 'utf8')
+
+test('Backup scheduling UI reports only bounded, authenticated installer-crontab status', () => {
+  const host = read('scripts/server-control.sh')
+  const api = read('internal/api/admin_backup_management.go')
+  const transport = read('ui/shared/src/server-backup-admin.ts')
+  const component = read('ui/shared/src/mui/BackupScheduleRegistration.tsx')
+  const panel = read('ui/shared/src/mui/ServerBackupManagementPanel.tsx')
+
+  assert.match(host, /backup_admin_schedule_status\(\)/)
+  assert.match(host, /crontab -l/)
+  assert.match(host, /grep -Fxc -- "\$expected"/)
+  assert.match(host, /installer_crontab/)
+  assert.match(api, /validBackupAdminScheduleStatus/)
+  assert.match(api, /xdrive-host-backup-schedule-v1/)
+  assert.match(transport, /schedule\?:/)
+  assert.match(panel, /XDriveBackupScheduleRegistration/)
+  assert.match(component, /data-xdrive-admin-backup-schedule-evidence/)
+  assert.match(component, /不识别 systemd、DSM 或其他外部调度器/)
+  assert.doesNotMatch(component, /exec\(|shell|raw_command|command_path/)
+})

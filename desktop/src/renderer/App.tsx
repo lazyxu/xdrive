@@ -1,8 +1,7 @@
 import { xDriveClearBaiduMapDiagnostic } from '../../../ui/shared/src/media-gallery-baidu-diagnostics'
 import { xDriveClearBaiduConversionSession } from '../../../ui/shared/src/media-gallery-baidu-jsapi4-markers'
 import type { XDriveBaiduMapAdminUpdate, XDriveGeoNamesUpdate, XDriveGeoNamesRollbackInput, XDrivePhotoAutoUpdate, XDrivePhotoAutoRollbackInput, XDriveSourceWorkerUpdate, XDriveSourceWorkerRollbackInput } from '@xdrive/shared'
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { xDriveEnterForegroundPage } from '../../../ui/shared/src/mui/ViewerForegroundPriority'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { xDriveDesktopViewportRequest } from './abortableViewportRequest'
 import type { FormEvent, ReactNode } from 'react'
 import {
@@ -64,6 +63,7 @@ import {
   useXDriveFileOperationLifecycle,
   useXDriveFileOperationActions,
   useXDriveTaskCenterController,
+  useXDriveWorkspaceNavigationState,
 } from '@xdrive/ui/mui'
 import type {
   XDriveFileExplorerNavigationState,
@@ -145,10 +145,13 @@ export default function App({
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [windowMaximized, setWindowMaximized] = useState(false)
   const [agent, setAgent] = useState<AgentConnectionState>({ connected: false })
-  const [view, setViewActual] = useState<View>('overview')
-  // A new accepted page wins while old disposable File/Gallery reads yield.
-  // The current Host route remains authoritative across Desktop/DSM.
-  useLayoutEffect(() => { xDriveEnterForegroundPage('desktop:' + view) }, [view])
+  // Desktop and DSM share one route state, latest-intent fencing, Server-admin
+  // admission, and disposable page refresh. Only Desktop owns the native shell.
+  const { selected: view, pageRevision, navigate: navigateWorkspace } =
+    useXDriveWorkspaceNavigationState({
+      platform: 'desktop',
+      adminRoleVerified: agent.connected && agent.status?.role === 'admin',
+    })
   const [systemDependenciesDraftDirty, setSystemDependenciesDraftDirty] = useState(false)
   const [pendingSystemDependenciesExit, setPendingSystemDependenciesExit] = useState<View | null>(null)
   const activeViewRef = useRef<View>(view)
@@ -157,15 +160,21 @@ export default function App({
   activeViewRef.current = view
   systemDependenciesDraftRef.current = systemDependenciesDraftDirty
 
+  // Electron tray/menu IPC listeners remain mounted for this App lifetime.
+  // Keep their callback stable while always consulting the latest Server role.
+  const navigateWorkspaceRef = useRef(navigateWorkspace)
+  navigateWorkspaceRef.current = navigateWorkspace
   const setView = useCallback((next: View) => {
+    // Re-entering an unchanged editor must never dispose unsaved draft state.
+    if (next === activeViewRef.current && next === 'admin-services' &&
+        systemDependenciesDraftRef.current) return false
     if (systemDependenciesAdminRef.current && xDriveSystemDependenciesNeedsExitConfirmation(
       activeViewRef.current, next, systemDependenciesDraftRef.current,
     )) {
       setPendingSystemDependenciesExit(next)
-      return
+      return false
     }
-    xDriveEnterForegroundPage('desktop:' + next)
-    setViewActual(next)
+    return navigateWorkspaceRef.current(next)
   }, [])
 
   const [systemDependenciesNavigationResetKey, setSystemDependenciesNavigationResetKey] = useState(0)
@@ -670,6 +679,11 @@ export default function App({
   const maintenanceBackupPort = useMemo<import('../../../ui/shared/src/server-backup-admin').XDriveServerBackupPort>(() => ({
     read: async () => {
       const result = await window.xdriveDesktop.agent.cloudAdminBackups()
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    readSnapshotIndexPage: async query => {
+      const result = await window.xdriveDesktop.agent.cloudAdminBackupSnapshotPage(query)
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
@@ -2098,6 +2112,9 @@ export default function App({
     adminStorageHistory: (days = 30) => adminStorageRequest({
       operation: 'history', days: days as 30 | 90 | 180,
     }),
+    adminStorageVerificationRuns: (limit = 20, cursor = '') => adminStorageRequest({
+      operation: 'verification-runs', limit, cursor,
+    }),
     adminStorageLegacyObjects: (limit = 20, cursor = '') => adminStorageRequest({
       operation: 'legacy', limit, cursor,
     }),
@@ -3009,6 +3026,7 @@ export default function App({
     <XDriveApp
       host={workspaceHost}
       view={view}
+      revision={pageRevision}
       sidebar={{
         ariaLabel: '桌面版侧边栏',
         navAriaLabel: '桌面版功能区',
@@ -3020,10 +3038,10 @@ export default function App({
       }}
       onNavigate={(destination) => {
         if (destination === 'settings') { setSettingsOpen(true); return }
-        if (destination === 'admin-services') {
+        const accepted = setView(destination as View)
+        if (accepted && destination === 'admin-services') {
           setSystemDependenciesNavigationResetKey((value) => value + 1)
         }
-        setView(destination as View)
       }}
       overlays={<>
         <XDriveSettingsDialog
@@ -3087,8 +3105,7 @@ export default function App({
           systemDependenciesDraftRef.current = false
           setSystemDependenciesDraftDirty(false)
           setPendingSystemDependenciesExit(null)
-          xDriveEnterForegroundPage('desktop:' + next)
-          setViewActual(next)
+          navigateWorkspace(next)
         }}
       />
 

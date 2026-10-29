@@ -70,6 +70,25 @@ export function xDriveNormalizeBackgroundTaskPage(
   }
 }
 
+/** Privacy-safe, bounded historical online data integrity results (never raw keys). */
+export type XDriveStorageIntegrityEvidence = {
+  protocol: 'xdrive-storage-integrity-evidence-v1'
+  mode: 'fast' | 'deep'
+  referenced_files: number
+  referenced_versions: number
+  physical_objects: number
+  unique_reference_keys: number
+  hashed_objects: number
+  hashed_bytes: number
+  missing_objects: number
+  size_mismatches: number
+  duplicate_references: number
+  reference_drifts: number
+  orphan_objects: number
+  hash_mismatches: number
+  issue_count: number
+}
+
 export type XDriveBackgroundTask = {
   id: string
   kind: string
@@ -86,6 +105,7 @@ export type XDriveBackgroundTask = {
   source_name?: string
   source_kind?: string
   progress: XDriveBackgroundTaskProgress
+  storage_integrity?: XDriveStorageIntegrityEvidence
   active_count?: number
   queued_count?: number
   running_count?: number
@@ -142,7 +162,8 @@ export function xDriveBackgroundTaskKindLabel(kind: string) {
     case 'system.maintenance.source_repair': return '同步文件夹一致性修复'
     case 'system.maintenance.media_verify': return '媒体完整性校验'
     case 'system.maintenance.media_repair': return '媒体完整性修复'
-    case 'system.maintenance.storage_verify': return '存储完整性校验'
+    case 'system.maintenance.storage_verify': return '存储 SHA-256 深度校验'
+    case 'system.maintenance.storage_verify_fast': return '存储快速完整性校验'
     case 'system.maintenance.storage_repair': return 'CAS 元数据修复'
     case 'system.maintenance.storage_optimization': return 'CAS 压缩与 Pack 只读评估'
     case 'file_operation.copy': return '文件操作 · 复制'

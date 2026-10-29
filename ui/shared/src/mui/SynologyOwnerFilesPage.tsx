@@ -6,6 +6,7 @@ import type {
   XDriveSynologyBackupLocalClient, XDriveSynologyOwnerFileNode,
 } from '../synology-backup-adapter'
 import { XDriveFileExplorer } from './FileExplorer'
+import { xDriveFindVerifiedOwnerSelection } from './FileExplorerVerifiedOwnerSelection'
 import type { XDriveFileExplorerUnavailableActions } from './FileExplorer'
 import { useXDriveFileExplorerCursorDirectory } from './FileExplorerCursorDirectoryController'
 import type { XDriveFileExplorerCursorPort } from './FileExplorerCursorDirectoryController'
@@ -160,10 +161,8 @@ export function XDriveSynologyOwnerFilesPage({
         item.size > XDRIVE_SYNOLOGY_OWNER_DOWNLOAD_MAX_BYTES) {
       return '仅支持大小为 1 B～32 MiB 的单个原始文件下载'
     }
-    if (!itemsRef.current.some(node =>
-      node.type === 'file' && node.id === item.id &&
-      node.revision === item.revision && node.name === item.name &&
-      node.size === item.size)) {
+    const current = xDriveFindVerifiedOwnerSelection(item, itemsRef.current)
+    if (!current || current.type !== 'file') {
       return '该文件不属于当前已核实的 Server Owner 目录'
     }
     return null
@@ -237,9 +236,10 @@ export function XDriveSynologyOwnerFilesPage({
 
   const openFilePreview = useCallback((item: XDriveFileExplorerItem, sessionIDs?: (string | number)[]) => {
     if (!isCurrentOwner() || !currentScopeVerified) return
-    const current = displayedItems.find(candidate => candidate.id === item.id &&
-      candidate.revision === item.revision && candidate.name === item.name && candidate.size === item.size)
-    if (!current || !supportsOwnerPreview(current)) {
+    // A stale rendered item cannot claim a new Owner/current cursor page.
+    const current = xDriveFindVerifiedOwnerSelection(item, displayedItems)
+    const authenticatedRow = xDriveFindVerifiedOwnerSelection(item, itemsRef.current)
+    if (!current || !authenticatedRow || !supportsOwnerPreview(current)) {
       setNotice('该文件类型或大小暂不支持 DSM Viewer；请通过 Desktop/Web 打开。')
       return
     }
@@ -421,17 +421,17 @@ export function XDriveSynologyOwnerFilesPage({
                 return action === 'download' ? getDownloadDisabledReason(selected, count) : null
               }}
               onOpenItem={item => {
-                if (item.kind === 'dir') {
-                  // The Host cursor port accepts only validated numeric Node
-                  // IDs. FileExplorer's generic ID also allows strings from
-                  // other sources; those must never become Owner CGI parents.
-                  if (typeof item.id !== 'number' || !Number.isSafeInteger(item.id) || item.id <= 0) {
-                    setNotice('目录 ID 无效，未执行任何 Owner 文件读取。')
-                    return
-                  }
-                  const folderID = item.id
+                if (!isCurrentOwner() || !currentScopeVerified) return
+                // Select only a canonical item still present in the CURRENT
+                // authenticated cursor page, never a stale or forged list row.
+                const verified = xDriveFindVerifiedOwnerSelection(item, itemsRef.current)
+                if (!verified) {
+                  setNotice('所选项目已发生变化，请刷新当前 Owner 目录。')
+                  return
+                }
+                if (verified.type === 'dir') {
                   setPreview(null)
-                  setCrumbs(current => [...current, { id: folderID, name: item.name }])
+                  setCrumbs(current => [...current, { id: verified.id, name: verified.name }])
                 } else {
                   openFilePreview(item)
                 }

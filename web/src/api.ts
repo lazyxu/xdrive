@@ -10,6 +10,7 @@ import {
 } from '../../ui/shared/src/media-gallery-baidu-jsapi4-cell-range'
 import type { XDriveBaiduCellRangeSort } from '../../ui/shared/src/media-gallery-baidu-jsapi4-cell-range'
 import type { XDriveDeviceBackupOverview, XDriveDeviceBackupRunPage, XDriveDeviceBackupFolderPage } from '../../ui/shared/src'
+import type { XDriveStorageVerificationRunPage } from '../../ui/shared/src/admin-management'
 import type { XDriveBaiduMapAdminConfig, XDriveBaiduMapAdminUpdate, XDriveBaiduMapAKReveal } from '../../ui/shared/src'
 import type { XDriveServiceDependenciesSnapshot, XDriveSourceWorkerConfig, XDriveSourceWorkerUpdate, XDriveSourceWorkerRevisionPage, XDriveSourceWorkerRollbackInput, XDriveGeoNamesConfig, XDriveGeoNamesReloadResult, XDriveGeoNamesUpdate, XDriveGeoNamesRevisionPage, XDriveGeoNamesRollbackInput, XDrivePhotoAutoConfig, XDrivePhotoAutoUpdate, XDrivePhotoAutoRevisionPage, XDrivePhotoAutoRollbackInput } from '../../ui/shared/src'
 import type {
@@ -1319,6 +1320,13 @@ export class XDriveApi {
     )
   }
 
+  adminServerBackupSnapshotPage(query: import('../../ui/shared/src/server-backup-admin').XDriveServerBackupSnapshotIndexQuery) {
+    return this.request<import('../../ui/shared/src/server-backup-admin').XDriveServerBackupSnapshotIndexPage>(
+      `/api/v1/admin/backups/snapshots?offset=${query.offset}&limit=${query.limit}`,
+      { cache: 'no-store' },
+    )
+  }
+
   adminServerBackupAction(input: import('../../ui/shared/src/server-backup-admin').XDriveServerBackupRequest) {
     return this.request<import('../../ui/shared/src/server-backup-admin').XDriveServerBackupOperation>(
       '/api/v1/admin/backups/actions', {
@@ -1344,6 +1352,13 @@ export class XDriveApi {
 
   adminStorageHistory(days = 30) {
     return this.request<StorageHistory>(`/api/v1/admin/storage/history?days=${days}`)
+  }
+
+  adminStorageVerificationRuns(limit = 20, cursor = '') {
+    const params = new URLSearchParams({ limit: String(Math.min(50, Math.max(1, Math.trunc(limit)))) })
+    if (cursor) params.set('cursor', cursor)
+    return this.request<XDriveStorageVerificationRunPage>(
+      `/api/v1/admin/storage/verification-runs?${params.toString()}`)
   }
 
   adminStorageOptimizationAdvice() {

@@ -48,6 +48,7 @@ import type { XDriveSourceTargetBrowser } from './SourceManager'
 import { XDriveStatePanel } from './StatePanel'
 import { XDriveStatusAlert } from './StatusAlert'
 import { xDriveDeviceBackupVisibleFolders, xDriveDeviceBackupContainsVisibleSource } from '../device-backup-visible-folders'
+import { xDriveLocalBackupFeatureAccess } from '../device-backup-local-feature-access'
 import { validateXDriveDeviceBackupFolderPage } from '../device-backup-folder-page-validation'
 import { validateXDriveDeviceBackupDevicePage, validateXDriveDeviceBackupInitialOverview } from '../device-backup-device-page-validation'
 import { validateXDriveDeviceBackupRunPage } from '../device-backup-run-page-validation'
@@ -550,6 +551,31 @@ function XDriveDeviceBackupServerPage({
                     : '此设备没有已绑定的同步文件夹。'}
                 </Typography>
               ) : visibleFolders(device).map((folder) => {
+                // Page observation never authorizes native local mutations.
+                // Only a current verified Agent device matched to this
+                // unrevoked Server device may expose real owning-domain ports.
+                const currentLocalDevice = verifiedLocalDeviceID === device.id && !device.revoked &&
+                  Boolean(verifiedLocalDeviceID)
+                const localActions = xDriveLocalBackupFeatureAccess({
+                  currentLocalDevice,
+                  backupMode: folder.sync_mode === 'backup',
+                  supported: {
+                    run: Boolean(localCommonBatch),
+                    schedule: Boolean(localSchedule),
+                    rename: Boolean(localSettings),
+                    target: Boolean(localTarget && targetBrowser),
+                    mode: Boolean(localMode),
+                    rules: Boolean(localRules),
+                    preview: Boolean(localPreview),
+                    snapshot: Boolean(localSnapshot),
+                    firstFile: Boolean(localFirstFile),
+                    delta: Boolean(localDelta),
+                    evidence: Boolean(localEvidence),
+                    evidenceSummary: Boolean(localEvidenceSummary),
+                    evidencePreflight: Boolean(localEvidencePreflight),
+                    remove: Boolean(localRemove),
+                  },
+                })
                 const history = histories[folder.source_id]
                 return (
                   <XDriveDeviceBackupFolderAccordion
@@ -562,79 +588,78 @@ function XDriveDeviceBackupServerPage({
                     }}
                   >
                     <XDriveDeviceBackupLocalPrimaryActions
-                      onRun={localCommonBatch && folder.sync_mode === 'backup' &&
-                        verifiedLocalDeviceID === device.id && !device.revoked
+                      onRun={localActions.run
                         ? () => setCommonBatchTarget({ source, id: folder.source_id }) : undefined}
-                      onSchedule={localSchedule && verifiedLocalDeviceID === device.id && !device.revoked
+                      onSchedule={localActions.schedule
                         ? () => setScheduleTarget({ source, id: folder.source_id }) : undefined}
                     />
-                        {localSettings && verifiedLocalDeviceID === device.id && !device.revoked ? (
+                        {localActions.rename ? (
                           <Button size="small" variant="outlined"
                             onClick={() => setRenameTarget({ source, id: folder.source_id })}>
                             重命名本机同步文件夹
                           </Button>
                         ) : null}
-                        {localTarget && targetBrowser && verifiedLocalDeviceID === device.id && !device.revoked ? (
+                        {localActions.target ? (
                           <Button size="small" variant="outlined"
                             onClick={() => setTargetChange({ source, id: folder.source_id })}>
                             修改本机云端目标
                           </Button>
                         ) : null}
-                        {localMode && verifiedLocalDeviceID === device.id && !device.revoked ? (
+                        {localActions.mode ? (
                           <Button size="small" variant="outlined"
                             onClick={() => setModeChange({ source, id: folder.source_id })}>
                             修改备份策略
                           </Button>
                         ) : null}
-                        {localRules && verifiedLocalDeviceID === device.id && !device.revoked ? (
+                        {localActions.rules ? (
                           <Button size="small" variant="outlined"
                             onClick={() => setRulesTarget({ source, id: folder.source_id })}>
                             编辑本机忽略规则
                           </Button>
                         ) : null}
-                        {localPreview && verifiedLocalDeviceID === device.id && !device.revoked ? (
+                        {localActions.preview ? (
                           <Button size="small" variant="outlined"
                             onClick={() => setPreviewTarget({ source, id: folder.source_id })}>
                             预览本机文件扫描（不上传）
                           </Button>
                         ) : null}
-                        {localSnapshot && verifiedLocalDeviceID === device.id && !device.revoked ? (
+                        {localActions.snapshot ? (
                           <Button size="small" variant="outlined"
                             onClick={() => setSnapshotTarget({ source, id: folder.source_id })}>
                             保存本机扫描清单（不上传）
                           </Button>
                         ) : null}
-                        {localFirstFile && !localCommonBatch && folder.sync_mode === 'backup' && verifiedLocalDeviceID === device.id && !device.revoked ? (
+                        {localActions.firstFile ? (
                           <Button size="small" variant="contained"
                             onClick={() => setFirstFileTarget({ source, id: folder.source_id })}>
                             开始真实备份（首文件试运行）
                           </Button>
                         ) : null}
-                        {localDelta && verifiedLocalDeviceID === device.id && !device.revoked ? (
+                        {localActions.delta ? (
                           <Button size="small" variant="outlined"
                             onClick={() => setDeltaTarget({ source, id: folder.source_id })}>
                             比较两代本机清单（只读）
                           </Button>
                         ) : null}
-                        {localEvidence && verifiedLocalDeviceID === device.id && !device.revoked ? (
+                        {localActions.evidence ? (
                           <Button size="small" variant="outlined"
                             onClick={() => setEvidenceTarget({ source, id: folder.source_id })}>
                             暂存本机重命名候选（不上传）
                           </Button>
                         ) : null}
-                        {localEvidenceSummary && verifiedLocalDeviceID === device.id && !device.revoked ? (
+                        {localActions.evidenceSummary ? (
                           <Button size="small" variant="outlined"
                             onClick={() => setEvidenceSummaryTarget({ source, id: folder.source_id })}>
                             查看本机已暂存候选（只读）
                           </Button>
                         ) : null}
-                        {localEvidencePreflight && verifiedLocalDeviceID === device.id && !device.revoked ? (
+                        {localActions.evidencePreflight ? (
                           <Button size="small" variant="outlined"
                             onClick={() => setEvidencePreflightTarget({ source, id: folder.source_id })}>
                             本机内容一致性预检（不上传）
                           </Button>
                         ) : null}
-                        {localRemove && verifiedLocalDeviceID === device.id && !device.revoked ? (
+                        {localActions.remove ? (
                           <Button size="small" variant="outlined" color="error"
                             onClick={() => setRemoveTarget({ source, id: folder.source_id })}>
                             移除本机备份配置

@@ -78,7 +78,7 @@ test('isolation history remains snapshot-specific and never becomes production a
   assert.equal(select(page([snapshot('other')], [event]), 'other').lastDrill, null)
   const ui = fs.readFileSync(path.join(root,
     'ui/shared/src/mui/BackupRecoveryEvidencePanel.tsx'), 'utf8')
-  assert.match(ui, /drillLabel\(evidence.lastDrill\)/)
+  assert.match(ui, /drillLabel\(evidence\.lastDrill, selectedSnapshot\)/)
   assert.match(ui, /不是生产破坏性恢复验收/)
 })
 

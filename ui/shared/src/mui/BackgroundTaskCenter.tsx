@@ -29,6 +29,7 @@ import {
   type XDriveBackgroundTaskControlAction,
 } from '..'
 import { XDriveActionButton } from './ActionButton'
+import { XDriveStorageIntegrityReceipt } from './StorageIntegrityReceipt'
 import { XDriveStatePanel } from './StatePanel'
 import { XDriveStatusAlert } from './StatusAlert'
 import { XDriveStatusBadge } from './StatusBadge'
@@ -291,6 +292,9 @@ function BackgroundTaskItem({
           </Typography>
         </Stack>
         <BackgroundTaskOperationalMetadata task={task} />
+        {task.storage_integrity ? (
+          <XDriveStorageIntegrityReceipt report={task.storage_integrity} />
+        ) : null}
         {task.error ? <XDriveStatusAlert tone="bad">{task.error}</XDriveStatusAlert> : null}
       </Stack>
     </XDriveTaskCardSurface>
@@ -500,7 +504,14 @@ export function XDriveBackgroundTaskTable({
                 {task.priority === undefined ? '—' : `P${task.priority}`}
               </TableCell>
               <TableCell>{xDriveBackgroundTaskResourceLabel(task.resource)}</TableCell>
-              <TableCell>{xDriveBackgroundTaskProgressLabel(task)}</TableCell>
+              <TableCell>
+                <Stack spacing={0.5}>
+                  <Typography variant="body2">{xDriveBackgroundTaskProgressLabel(task)}</Typography>
+                  {task.storage_integrity ? (
+                    <XDriveStorageIntegrityReceipt report={task.storage_integrity} />
+                  ) : null}
+                </Stack>
+              </TableCell>
               <TableCell>{xDriveBackgroundTaskTriggerLabel(task.trigger)}</TableCell>
               <TableCell>
                 <BackgroundTaskOperationalMetadata task={task} table />

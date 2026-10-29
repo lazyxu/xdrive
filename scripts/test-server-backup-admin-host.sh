@@ -20,6 +20,39 @@ cat > "$XD_CONFIG_DIR/bin/xdrive-server" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >> "$XD_BACKUP_ADMIN_TEST_LOG"
+if [[ "$1" == backup && ( "$#" -eq 1 || "${2:-}" == --incremental ) ]]; then
+  name="${XD_BACKUP_ADMIN_TEST_CREATE_NAME:-xdrive-backup-20261029T070000Z}"
+  if [[ "${2:-}" == --incremental ]]; then
+    root="$XD_CONFIG_DIR/backups/incremental/snapshots"
+    fmt=v2
+  else
+    root="$XD_CONFIG_DIR/backups/snapshots"
+    fmt=v1
+  fi
+  if [[ "${XD_BACKUP_ADMIN_TEST_CREATE_NOOP:-}" == yes ]]; then
+    printf '%s\n' "$root/$name"
+    exit 0
+  fi
+  if [[ -n "${XD_BACKUP_ADMIN_TEST_CREATE_FORGED:-}" ]]; then
+    printf '%s\n' "$XD_BACKUP_ADMIN_TEST_CREATE_FORGED"
+    exit 0
+  fi
+  if [[ "${XD_BACKUP_ADMIN_TEST_CREATE_EMPTY:-}" == yes ]]; then exit 0; fi
+  mkdir -p "$root/$name"
+  for f in database.dump verify.json manifest.json SHA256SUMS.txt; do
+    printf 'fixture\n' > "$root/$name/$f"
+  done
+  if [[ "$fmt" == v2 ]]; then
+    touch "$root/$name/legacy.tar"
+    if [[ "${XD_BACKUP_ADMIN_TEST_CREATE_INCOMPLETE:-}" != yes ]]; then
+      touch "$root/$name/objects.index"
+    fi
+  else
+    touch "$root/$name/blobs.tar"
+  fi
+  printf '%s\n' "$root/$name"
+  exit 0
+fi
 if [[ "$1" == backup && "$2" == delete-snapshot ]]; then
   shift 2
   selected=""
@@ -145,6 +178,11 @@ assert d["protocol"]=="xdrive-backup-admin-v1"
 assert d["policy"]["schedule_format"]=="v2"
 assert len(d["policy"]["revision"])==64
 assert d["total_snapshots"]==2 and d["truncated"] is False
+assert d["repositories"]==[
+    {"id":"v1","snapshot_count":1},
+    {"id":"v2-default","snapshot_count":1},
+    {"id":"v2-configured","snapshot_count":0},
+],d
 assert sorted(x["id"] for x in d["snapshots"])==[
     "v1:xdrive-backup-20261026T010000Z",
     "v2-default:xdrive-backup-20261027T030000Z",
@@ -780,8 +818,48 @@ import json,sys
 d=json.load(open(sys.argv[1],encoding="utf-8"))
 assert d["total_snapshots"]==int(sys.argv[2])+105,d
 assert d["truncated"] is True and len(d["snapshots"])==100,d
+assert d["repositories"][0]["snapshot_count"]>=105,d
+assert sum(x["snapshot_count"] for x in d["repositories"])==d["total_snapshots"],d
 assert len({r["id"] for r in d["snapshots"]})==100
 PY
+# The read-only Host index must include older generations beyond the UI's
+# newest 100, without exposing Host paths or implying recovery readiness.
+python3 - "$dir/backup-admin-inventory.json" "$dir/backup-admin-snapshot-index.json" <<'PY'
+import json,sys
+inventory=json.load(open(sys.argv[1],encoding="utf-8"))
+index=json.load(open(sys.argv[2],encoding="utf-8"))
+assert index["protocol"]=="xdrive-backup-snapshot-index-v1",index
+assert index["policy_revision"]==inventory["policy"]["revision"],index
+assert index["total_snapshots"]==inventory["total_snapshots"],index
+assert index["indexed_snapshots"]==len(index["snapshot_ids"]),index
+assert index["truncated"] is False,index
+assert len(index["snapshot_ids"])>100,index
+assert index["snapshot_ids"][:100]==[s["id"] for s in inventory["snapshots"]],index
+assert all(x.startswith(("v1:","v2-default:","v2-configured:")) and "/" not in x
+           for x in index["snapshot_ids"]),index
+assert len(set(index["snapshot_ids"]))==len(index["snapshot_ids"]),index
+PY
+# >1000 snapshots: keep accurate total, clearly disclose the index cap.
+for (( n=0; n<900; n++ )); do
+  printf -v extra 'xdrive-backup-20240202T%02d%02d00Z' "$((n / 60))" "$((n % 60))"
+  mkdir "$XD_CONFIG_DIR/backups/snapshots/$extra"
+done
+backup_admin_inventory "$dir"
+python3 - "$dir/backup-admin-inventory.json" "$dir/backup-admin-snapshot-index.json" "$base_total" <<'PY'
+import json,sys
+inventory=json.load(open(sys.argv[1],encoding="utf-8"))
+index=json.load(open(sys.argv[2],encoding="utf-8"))
+assert index["total_snapshots"]==int(sys.argv[3])+105+900,index
+assert index["indexed_snapshots"]==len(index["snapshot_ids"])==1000,index
+assert index["truncated"] is True,index
+assert inventory["total_snapshots"]==index["total_snapshots"],inventory
+assert index["snapshot_ids"][:100]==[s["id"] for s in inventory["snapshots"]],index
+assert len(set(index["snapshot_ids"]))==1000,index
+PY
+for (( n=0; n<900; n++ )); do
+  printf -v extra 'xdrive-backup-20240202T%02d%02d00Z' "$((n / 60))" "$((n % 60))"
+  rmdir "$XD_CONFIG_DIR/backups/snapshots/$extra"
+done
 for (( n=0; n<105; n++ )); do
   printf -v older 'xdrive-backup-20250101T%02d%02d00Z' "$((n / 60))" "$((n % 60))"
   rmdir "$XD_CONFIG_DIR/backups/snapshots/$older"
@@ -794,5 +872,103 @@ baseline=int(sys.argv[2])
 assert d["total_snapshots"]==baseline,d
 assert d["truncated"] is (baseline>100),d
 assert len(d["snapshots"])==min(baseline,100),d
+PY
+# Admin CREATE must prove a new generation exists and passes independent verify.
+export XD_BACKUP_ADMIN_TEST_CREATE_NAME=xdrive-backup-20261029T070000Z
+write_request create "" v2 "" "" ""
+backup_admin_process_request "$dir"
+grep -Fq '"state":"success"' "$dir/backup-admin-status.json"
+grep -Fq "backup verify $XD_CONFIG_DIR/backups/incremental/snapshots/$XD_BACKUP_ADMIN_TEST_CREATE_NAME" "$XD_BACKUP_ADMIN_TEST_LOG"
+
+# False-success replays of a pre-existing generation cannot count as CREATE.
+export XD_BACKUP_ADMIN_TEST_CREATE_NOOP=yes
+write_request create "" v2 "" "" ""
+backup_admin_process_request "$dir"
+grep -Fq '"error_code":"create_unverified"' "$dir/backup-admin-status.json"
+unset XD_BACKUP_ADMIN_TEST_CREATE_NOOP
+
+# A forged path, missing acknowledgement, or incomplete new generation fails.
+export XD_BACKUP_ADMIN_TEST_CREATE_NAME=xdrive-backup-20261029T070100Z
+export XD_BACKUP_ADMIN_TEST_CREATE_FORGED="$TMP/not-a-backup"
+write_request create "" v2 "" "" ""
+backup_admin_process_request "$dir"
+grep -Fq '"error_code":"create_unverified"' "$dir/backup-admin-status.json"
+unset XD_BACKUP_ADMIN_TEST_CREATE_FORGED
+export XD_BACKUP_ADMIN_TEST_CREATE_EMPTY=yes
+write_request create "" v2 "" "" ""
+backup_admin_process_request "$dir"
+grep -Fq '"error_code":"create_unverified"' "$dir/backup-admin-status.json"
+unset XD_BACKUP_ADMIN_TEST_CREATE_EMPTY
+export XD_BACKUP_ADMIN_TEST_CREATE_INCOMPLETE=yes
+write_request create "" v2 "" "" ""
+backup_admin_process_request "$dir"
+grep -Fq '"error_code":"create_unverified"' "$dir/backup-admin-status.json"
+unset XD_BACKUP_ADMIN_TEST_CREATE_INCOMPLETE
+
+# Keep any produced but unverified snapshot for manual inspection, no auto retry.
+export XD_BACKUP_ADMIN_TEST_CREATE_NAME=xdrive-backup-20261029T070200Z
+export XD_BACKUP_ADMIN_TEST_BAD_VERIFY="$XD_CONFIG_DIR/backups/incremental/snapshots/$XD_BACKUP_ADMIN_TEST_CREATE_NAME"
+write_request create "" v2 "" "" ""
+backup_admin_process_request "$dir"
+grep -Fq '"error_code":"create_unverified"' "$dir/backup-admin-status.json"
+[[ -d "$XD_BACKUP_ADMIN_TEST_BAD_VERIFY" ]]
+unset XD_BACKUP_ADMIN_TEST_BAD_VERIFY
+
+# Legacy and CAS generations must satisfy the same Host post-create proof.
+export XD_BACKUP_ADMIN_TEST_CREATE_NAME=xdrive-backup-20261029T070300Z
+write_request create "" v1 "" "" ""
+backup_admin_process_request "$dir"
+grep -Fq '"state":"success"' "$dir/backup-admin-status.json"
+grep -Fq "backup verify $XD_CONFIG_DIR/backups/snapshots/$XD_BACKUP_ADMIN_TEST_CREATE_NAME" "$XD_BACKUP_ADMIN_TEST_LOG"
+unset XD_BACKUP_ADMIN_TEST_CREATE_NAME
+
+# The displayed schedule is an attestation of an exact xDrive installer
+# crontab entry, never proof that future backups will succeed.
+mkdir -p "$TMP/cron-bin"
+export XD_BACKUP_ADMIN_TEST_CRONTAB="$TMP/mock-crontab"
+cat > "$TMP/cron-bin/crontab" <<'CRON'
+#!/usr/bin/env bash
+[[ "${1:-}" == -l ]] || exit 2
+[[ "${XD_BACKUP_ADMIN_TEST_CRON_FAIL:-}" != yes ]] || exit 75
+cat -- "$XD_BACKUP_ADMIN_TEST_CRONTAB"
+CRON
+chmod 700 "$TMP/cron-bin/crontab"
+export PATH="$TMP/cron-bin:$PATH"
+printf 'XD_BACKUP_SCHEDULE=0 3 * * *\n' >> "$XD_CONFIG_DIR/config/.env"
+printf '0 3 * * * XD_CONFIG_DIR=%q %q >> %q 2>&1 # xdrive-managed-backup\n' \
+  "$XDRIVE_HOME" "$BIN_DIR/server-backup-scheduled.sh" "$LOG_DIR/backup.log" > "$XD_BACKUP_ADMIN_TEST_CRONTAB"
+backup_admin_schedule_status > "$TMP/schedule-registered.json"
+backup_admin_inventory "$dir"
+python3 - "$TMP/schedule-registered.json" "$dir/backup-admin-inventory.json" <<'PY'
+import json,sys
+status=json.load(open(sys.argv[1],encoding="utf-8"))
+inventory=json.load(open(sys.argv[2],encoding="utf-8"))
+assert status==inventory["schedule"], (status,inventory["schedule"])
+assert status==dict(protocol="xdrive-host-backup-schedule-v1",source="installer_crontab",
+                    state="registered",expression="0 3 * * *"),status
+assert "XD_CONFIG_DIR" not in json.dumps(status),status
+PY
+printf '0 4 * * * XD_CONFIG_DIR=%q %q >> %q 2>&1 # xdrive-managed-backup\n' \
+  "$XDRIVE_HOME" "$BIN_DIR/server-backup-scheduled.sh" "$LOG_DIR/backup.log" > "$XD_BACKUP_ADMIN_TEST_CRONTAB"
+backup_admin_schedule_status > "$TMP/schedule-stale.json"
+python3 - "$TMP/schedule-stale.json" <<'PY'
+import json,sys
+x=json.load(open(sys.argv[1],encoding="utf-8"))
+assert x["state"]=="mismatch" and x["expression"]=="0 3 * * *",x
+PY
+XD_BACKUP_ADMIN_TEST_CRON_FAIL=yes backup_admin_schedule_status > "$TMP/schedule-unavailable.json"
+python3 - "$TMP/schedule-unavailable.json" <<'PY'
+import json,sys
+x=json.load(open(sys.argv[1],encoding="utf-8"))
+assert x["state"]=="unknown",x
+PY
+grep -v '^XD_BACKUP_SCHEDULE=' "$XD_CONFIG_DIR/config/.env" > "$TMP/env-without-schedule"
+mv "$TMP/env-without-schedule" "$XD_CONFIG_DIR/config/.env"
+: > "$XD_BACKUP_ADMIN_TEST_CRONTAB"
+backup_admin_schedule_status > "$TMP/schedule-unconfigured.json"
+python3 - "$TMP/schedule-unconfigured.json" <<'PY'
+import json,sys
+x=json.load(open(sys.argv[1],encoding="utf-8"))
+assert x["state"]=="not_configured" and x["expression"]=="",x
 PY
 echo 'Admin Server Backup host bridge: CRUD, batch verify, selected-v2 delete and inventory truncation tests passed'

@@ -267,7 +267,10 @@ test('Viewer->Map keeps preview open on rejection and never widens to an unscope
   assert.doesNotMatch(handler,/onSectionChange\?\.\('places'\)/)
   const location=fs.readFileSync(path.join(root,
     'ui/shared/src/mui/MediaGalleryViewerLocationDialog.tsx'),'utf8')
-  assert.match(location,/disabled=\{!onOpenDynamicMap\}/)
+  // Viewer Info also rejects a missing/stale JS-safe current Node+revision.
+  // This is a stricter gate, not a relaxation of the original Owner scope.
+  assert.match(location,/disabled=\{!onOpenDynamicMap \|\| !selection\}/)
+  assert.match(location,/if \(!validGPS \|\| !selection \|\| !onOpenDynamicMap\) return/)
   assert.match(location,/当前照片集合暂不能安全映射到地图/)
   assert.match(location,/role="status"/)
 })

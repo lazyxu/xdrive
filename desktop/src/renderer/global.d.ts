@@ -916,6 +916,8 @@ declare global {
         cloudAdminStorage: <T>(query: import('../../../ui/shared/src').XDriveAdminStorageRequest) =>
           Promise<DesktopResult<T>>
         cloudAdminBackups: () => Promise<DesktopResult<import('../../../ui/shared/src/server-backup-admin').XDriveServerBackupPage>>
+        cloudAdminBackupSnapshotPage: (query: import('../../../ui/shared/src/server-backup-admin').XDriveServerBackupSnapshotIndexQuery) =>
+          Promise<DesktopResult<import('../../../ui/shared/src/server-backup-admin').XDriveServerBackupSnapshotIndexPage>>
         cloudAdminBackupAction: (input: import('../../../ui/shared/src/server-backup-admin').XDriveServerBackupRequest) =>
           Promise<DesktopResult<import('../../../ui/shared/src/server-backup-admin').XDriveServerBackupOperation>>
         cloudAdminAuditRange: (query: import('../../../ui/shared/src').XDriveAdminAuditRangeQuery, requestID?: string) =>

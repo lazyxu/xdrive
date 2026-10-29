@@ -209,6 +209,25 @@ PY
   fi
 fi
 
+# Independently parse the PostgreSQL custom archive TOC in an offline,
+# read-only, non-networked container before the safety backup or any destructive
+# database/file operation. SHA-256 integrity alone cannot prove pg_restore can
+# even open the archive. This checks format/readability, not a full DB recovery.
+command -v timeout >/dev/null 2>&1 || {
+  echo "restore: timeout is required for PostgreSQL archive preflight." >&2
+  exit 1
+}
+if ! timeout --signal=TERM --kill-after=10s 120s \
+  docker run --rm -i --pull never --network none --read-only \
+    --cap-drop ALL --security-opt no-new-privileges \
+    --pids-limit 64 --cpus 2 --memory 256m --memory-swap 256m \
+    --user 70:70 --entrypoint pg_restore \
+    postgres:17-alpine --list \
+    < "$BACKUP_DIR/database.dump" > /dev/null; then
+  echo "restore: PostgreSQL custom dump preflight failed; production data was not replaced." >&2
+  exit 1
+fi
+
 if [[ "$ASSUME_YES" != "1" ]]; then
   if [[ ! -r /dev/tty || ! -w /dev/tty ]]; then
     echo "restore requires --yes in a non-interactive shell" >&2

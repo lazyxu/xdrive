@@ -2407,11 +2407,111 @@ backup_admin_snapshot_complete() {
   fi
 }
 
+# Inspect only the installer's exact managed crontab signature. Never
+# publish cron commands, Host paths or arbitrary operator scheduler entries.
+# Unknown does not mean disabled: NAS/DSM or systemd schedulers are external.
+backup_admin_schedule_status() {
+  local configured raw expected state=unknown expression="" managed_count=0
+  configured="$(env_value XD_BACKUP_SCHEDULE)"
+  if [[ -n "$configured" && ${#configured} -le 80 ]] &&
+     { [[ "$configured" =~ ^([0-9*/,-]+[[:space:]]+){4}[0-9*/,-]+$ ]] ||
+       [[ "$configured" =~ ^@(hourly|daily|weekly|monthly|yearly)$ ]]; }; then
+    expression="$configured"
+  fi
+  if command -v crontab >/dev/null 2>&1 &&
+     raw="$(crontab -l 2>/dev/null)"; then
+    managed_count="$(grep -c '# xdrive-managed-backup$' <<< "$raw" || true)"
+    [[ "$managed_count" =~ ^[0-9]+$ ]] || managed_count=0
+    if [[ -z "$configured" && "$managed_count" == 0 ]]; then
+      state=not_configured
+    elif [[ -n "$expression" ]]; then
+      expected="$(printf '%s XD_CONFIG_DIR=%q %q >> %q 2>&1 # xdrive-managed-backup' \
+        "$expression" "$XDRIVE_HOME" "$BIN_DIR/server-backup-scheduled.sh" "$LOG_DIR/backup.log")"
+      if [[ "$(grep -Fxc -- "$expected" <<< "$raw" || true)" == 1 &&
+            "$managed_count" == 1 ]]; then
+        state=registered
+      elif (( managed_count > 0 )); then
+        state=mismatch
+      else
+        state=not_detected
+      fi
+    elif (( managed_count > 0 )); then
+      state=mismatch
+    fi
+  fi
+  printf '{"protocol":"xdrive-host-backup-schedule-v1","source":"installer_crontab","state":"%s","expression":"%s"}\n' \
+    "$state" "$(json_escape "$expression")"
+}
+
+# Publish only bounded, canonical snapshot identities for future authenticated
+# read-only Server pagination. Never publish absolute Host paths or claim that
+# an indexed generation is complete, SHA-verified or restorable.
+backup_admin_snapshot_index() {
+  local dir="$1" source="$2" total="$3" revision="$4" temp
+  [[ "$total" =~ ^[0-9]{1,7}$ && "$revision" =~ ^[0-9a-f]{64}$ ]] || return 1
+  (( total <= 1000000 )) || return 1
+  temp="$(mktemp "$dir/.backup-admin-snapshot-page.XXXXXXXX")" || return 1
+  if ! python3 - "$source" "$total" "$revision" "$temp" <<'PY'
+import datetime,json,os,re,stat,sys
+source,total,revision,target=sys.argv[1],int(sys.argv[2]),sys.argv[3],sys.argv[4]
+valid_name=re.compile(r"xdrive-backup-[0-9]{8}T[0-9]{6}Z\Z")
+scopes={"v1","v2-default","v2-configured"}
+try:
+    fd=os.open(source,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+    with os.fdopen(fd,"r",encoding="utf-8") as stream:
+        st=os.fstat(stream.fileno())
+        if not stat.S_ISREG(st.st_mode) or st.st_size>64000000:
+            raise ValueError("snapshot index inode is unsafe")
+        ids=[]
+        last=None
+        for i,line in enumerate(stream):
+            if i>=1000:
+                break
+            name,sep,scope=line.rstrip("\n").partition("\t")
+            if sep!="\t" or not valid_name.fullmatch(name) or scope not in scopes:
+                raise ValueError("noncanonical snapshot identity")
+            key=(name,scope)
+            if last is not None and not (last>key):
+                raise ValueError("unsorted or duplicate snapshot identity")
+            last=key
+            ids.append(scope+":"+name)
+    if len(ids)!=min(total,1000):
+        raise ValueError("snapshot index cardinality mismatch")
+    # Counts are from the same Host scan used for Admin newest-100 inventory.
+    report=dict(protocol="xdrive-backup-snapshot-index-v1",
+                generated_at=datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                policy_revision=revision,total_snapshots=total,
+                indexed_snapshots=len(ids),truncated=total>len(ids),
+                snapshot_ids=ids)
+    raw=(json.dumps(report,separators=(",",":"),ensure_ascii=True)+"\n").encode()
+    if len(raw)>131072:
+        raise ValueError("indexed snapshot page exceeds hard size cap")
+    with open(target,"wb") as out:
+        out.write(raw)
+        out.flush()
+        os.fsync(out.fileno())
+except (OSError,UnicodeError,ValueError):
+    sys.exit(1)
+PY
+  then
+    rm -f -- "$temp"
+    return 1
+  fi
+  chmod 0660 "$temp" &&
+    mv -f -- "$temp" "$dir/backup-admin-snapshot-index.json" || {
+      rm -f -- "$temp"
+      return 1
+    }
+}
+
 backup_admin_inventory() {
   local dir="$1" tmp comma="" scope root snap name state bytes file_data created
   local snapshot_index inventory_total inventory_truncated
+  local repository_v1_count repository_default_count repository_configured_count
+  local backup_admin_schedule_json
   local default_repo backup_admin_format backup_admin_days backup_admin_repo backup_admin_revision
   backup_admin_policy_values || return 1
+  backup_admin_schedule_json="$(backup_admin_schedule_status)" || return 1
   default_repo="$XDRIVE_HOME/backups/incremental"
   if [[ -d "$default_repo" ]]; then
     default_repo="$(cd "$default_repo" && pwd -P)" || return 1
@@ -2446,6 +2546,23 @@ backup_admin_inventory() {
     rm -f -- "$snapshot_index"
     return 1
   fi
+  # Count the exact same canonical Host-observed identity index used by the
+  # newest-100 inventory; do not infer total repository health or open CAS.
+  read -r repository_v1_count repository_default_count repository_configured_count < <(
+    awk -F '\t' '
+      $2=="v1" {v1++}
+      $2=="v2-default" {def++}
+      $2=="v2-configured" {custom++}
+      END {printf "%d %d %d\n", v1+0, def+0, custom+0}
+    ' "$snapshot_index"
+  )
+  if [[ ! "$repository_v1_count" =~ ^[0-9]+$ ||
+        ! "$repository_default_count" =~ ^[0-9]+$ ||
+        ! "$repository_configured_count" =~ ^[0-9]+$ ]] ||
+     (( repository_v1_count + repository_default_count + repository_configured_count != inventory_total )); then
+    rm -f -- "$snapshot_index"
+    return 1
+  fi
   inventory_truncated=false
   if (( inventory_total > 100 )); then inventory_truncated=true; fi
   tmp="$(mktemp "$dir/.backup-admin-inventory.XXXXXX")" || {
@@ -2453,8 +2570,9 @@ backup_admin_inventory() {
     return 1
   }
   {
-    printf '{"protocol":"%s","generated_at":"%s","policy":{"schedule_format":"%s","retention_days":%s,"repository":"%s","revision":"%s"},"total_snapshots":%s,"truncated":%s,"snapshots":[' \
-      "$backup_admin_protocol" "$(now_utc)" "$backup_admin_format" "$backup_admin_days" "$(json_escape "$backup_admin_repo")" "$backup_admin_revision" "$inventory_total" "$inventory_truncated"
+    printf '{"protocol":"%s","generated_at":"%s","policy":{"schedule_format":"%s","retention_days":%s,"repository":"%s","revision":"%s"},"total_snapshots":%s,"truncated":%s,"repositories":[{"id":"v1","snapshot_count":%s},{"id":"v2-default","snapshot_count":%s},{"id":"v2-configured","snapshot_count":%s}],"schedule":%s,"snapshots":[' \
+      "$backup_admin_protocol" "$(now_utc)" "$backup_admin_format" "$backup_admin_days" "$(json_escape "$backup_admin_repo")" "$backup_admin_revision" "$inventory_total" "$inventory_truncated" \
+      "$repository_v1_count" "$repository_default_count" "$repository_configured_count" "$backup_admin_schedule_json"
 
     # Show the latest 100 generations across all configured repositories,
     # not the oldest 100 from the alphabetically first (legacy v1) root.
@@ -2496,6 +2614,10 @@ backup_admin_inventory() {
     done < <(sed -n '1,100p' "$snapshot_index")
     printf ']}\n'
   } > "$tmp" || { rm -f -- "$tmp" "$snapshot_index"; return 1; }
+  if ! backup_admin_snapshot_index "$dir" "$snapshot_index" "$inventory_total" "$backup_admin_revision"; then
+    rm -f -- "$snapshot_index" "$tmp"
+    return 1
+  fi
   rm -f -- "$snapshot_index"
   chmod 0660 "$tmp" && mv -f "$tmp" "$dir/backup-admin-inventory.json"
 }
@@ -3218,6 +3340,51 @@ except (OSError,ValueError,KeyError,TypeError,UnicodeError):
 PY
 }
 
+# A successful Manager exit is insufficient: require a new canonical generation
+# and independently verify it before acknowledging an Admin CREATE as success.
+backup_admin_create_verified() {
+  local fmt="$1" root="" created="" name="" candidate=""
+  local backup_admin_format backup_admin_days backup_admin_repo backup_admin_revision
+  local -A previous=()
+  case "$fmt" in
+    v1) root="$XDRIVE_HOME/backups/snapshots" ;;
+    v2)
+      backup_admin_policy_values || return 2
+      if [[ "$backup_admin_format" == v2 && -n "$backup_admin_repo" ]]; then
+        root="$backup_admin_repo/snapshots"
+      else
+        root="$XDRIVE_HOME/backups/incremental/snapshots"
+      fi ;;
+    *) return 2 ;;
+  esac
+  if [[ -e "$root" || -L "$root" ]]; then
+    [[ -d "$root" && ! -L "$root" ]] || return 78
+    for candidate in "$root"/xdrive-backup-*; do
+      [[ -e "$candidate" || -L "$candidate" ]] || continue
+      previous["$(basename -- "$candidate")"]=1
+    done
+  fi
+  if [[ "$fmt" == v1 ]]; then
+    created="$(XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup)" || return
+  elif [[ "$backup_admin_format" == v2 && -n "$backup_admin_repo" ]]; then
+    created="$(XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup --incremental --repository-dir "$backup_admin_repo")" || return
+  else
+    created="$(XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup --incremental)" || return
+  fi
+  # Never trust an output-provided path outside the Host-selected repository.
+  [[ -d "$root" && ! -L "$root" ]] || return 78
+  root="$(cd "$root" && pwd -P)" || return 78
+  name="$(basename -- "$created")"
+  [[ "$name" =~ ^xdrive-backup-[0-9]{8}T[0-9]{6}Z$ ]] || return 78
+  [[ "$created" == "$root/$name" ]] || return 78
+  [[ -z "${previous[$name]:-}" ]] || return 78
+  [[ -d "$created" && ! -L "$created" ]] || return 78
+  backup_admin_snapshot_complete "$created" "$fmt" || return 78
+  # Do not delete or retry an unverified generation automatically.
+  XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup verify "$created" >/dev/null || return 78
+  printf 'Verified newly created %s snapshot: %s\n' "$fmt" "$created"
+}
+
 backup_admin_execute() {
   local action="$1" snapshot="$2" fmt="$3" mode="$4" keep="$5" days="$6" revision="$7" confirm="$8" preview_id="${9:-}"
   local target install_guard="$STATE_DIR/install.lock"
@@ -3233,15 +3400,7 @@ backup_admin_execute() {
   case "$action" in
     create)
       [[ -z "$snapshot" && -z "$confirm" && ( "$fmt" == v1 || "$fmt" == v2 ) ]] || return 2
-      if [[ "$fmt" == v2 ]]; then
-        local backup_admin_format backup_admin_days backup_admin_repo backup_admin_revision
-        backup_admin_policy_values || return 2
-        if [[ "$backup_admin_format" == v2 && -n "$backup_admin_repo" ]]; then
-          XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup --incremental --repository-dir "$backup_admin_repo"
-        else
-          XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup --incremental
-        fi
-      else XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup; fi ;;
+      backup_admin_create_verified "$fmt" ;;
     verify_all)
       [[ -z "$snapshot" && -z "$fmt" && -z "$confirm" && ( -z "$keep" || "$keep" == 0 ) && -z "$revision" ]] || return 2
       [[ "$mode" == fast || "$mode" == deep ]] || return 2
@@ -3555,6 +3714,9 @@ backup_admin_process_request() {
     local failure_message="操作失败；请查看宿主机私有日志。"
     if [[ "$result" == 75 ]]; then
       history_error=lock_busy
+    elif [[ "$action" == create && "$result" == 78 ]]; then
+      history_error=create_unverified
+      failure_message="新快照未获得可信校验成功凭据；可能已创建，请刷新清单并手动验证，勿直接重试。"
     elif [[ "$action" == delete_selected && "$result" == 76 ]]; then
       history_error=deep_preview_missing_or_stale
       failure_message="深度预览缺失、过期或不匹配，请重新执行 deep 只读预览。"

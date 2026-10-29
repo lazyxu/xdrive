@@ -57,6 +57,7 @@ func systemMaintenanceInteractiveKinds() []string {
 		meta.SystemMaintenanceKindMediaVerify,
 		meta.SystemMaintenanceKindMediaRepair,
 		meta.SystemMaintenanceKindStorageVerify,
+		meta.SystemMaintenanceKindStorageVerifyFast,
 		meta.SystemMaintenanceKindStorageRepair,
 		meta.SystemMaintenanceKindStorageOptimization,
 	}
@@ -70,6 +71,7 @@ func systemMaintenanceInteractiveKind(kind string) bool {
 		meta.SystemMaintenanceKindMediaVerify,
 		meta.SystemMaintenanceKindMediaRepair,
 		meta.SystemMaintenanceKindStorageVerify,
+		meta.SystemMaintenanceKindStorageVerifyFast,
 		meta.SystemMaintenanceKindStorageRepair,
 		meta.SystemMaintenanceKindStorageOptimization:
 		return true
@@ -90,7 +92,7 @@ func systemMaintenancePhase(kind string) string {
 		return meta.SystemMaintenancePhaseMediaVerify
 	case meta.SystemMaintenanceKindMediaRepair:
 		return meta.SystemMaintenancePhaseMediaRepair
-	case meta.SystemMaintenanceKindStorageVerify:
+	case meta.SystemMaintenanceKindStorageVerify, meta.SystemMaintenanceKindStorageVerifyFast:
 		return meta.SystemMaintenancePhaseStorageVerify
 	case meta.SystemMaintenanceKindStorageRepair:
 		return meta.SystemMaintenancePhaseStorageRepair
@@ -118,6 +120,7 @@ func systemMaintenanceLeaderKey(kind string) string {
 		meta.SystemMaintenanceKindMediaRepair:
 		return maintenanceLeaderMediaIntegrity
 	case meta.SystemMaintenanceKindStorageVerify,
+		meta.SystemMaintenanceKindStorageVerifyFast,
 		meta.SystemMaintenanceKindStorageRepair,
 		meta.SystemMaintenanceKindStorageOptimization:
 		// Full verification and deterministic CAS metadata repair must not race
@@ -746,9 +749,18 @@ func (s *Server) executeSystemMaintenanceTask(
 			state = meta.SystemMaintenanceStatusIssues
 		}
 		return summary, state, nil
-	case meta.SystemMaintenanceKindStorageVerify:
-		report, err := s.verifyStorageForSystemMaintenance(ctx)
+	case meta.SystemMaintenanceKindStorageVerify, meta.SystemMaintenanceKindStorageVerifyFast:
+		mode := maintenance.VerifyModeDeep
+		if run.Kind == meta.SystemMaintenanceKindStorageVerifyFast {
+			mode = maintenance.VerifyModeFast
+		}
+		report, err := s.verifyStorageForSystemMaintenanceMode(ctx, mode)
 		if err != nil {
+			return "", "", err
+		}
+		// Persist only bounded, category-level evidence. Never persist
+		// storage keys, node IDs, raw content digests or private Host paths.
+		if err := s.persistStorageVerifyEvidence(ctx, run.ID, mode, report); err != nil {
 			return "", "", err
 		}
 		issues := len(report.Missing) +
@@ -758,7 +770,8 @@ func (s *Server) executeSystemMaintenanceTask(
 			len(report.Orphans) +
 			len(report.HashMismatches)
 		summary := fmt.Sprintf(
-			"%d 个文件引用 · %d 个版本引用 · %d 个物理对象 · 发现 %d 个一致性问题",
+			"校验模式 %s · 完整 SHA-256 %d 个对象 / %d bytes · %d 个文件引用 · %d 个版本引用 · %d 个物理对象 · 发现 %d 个一致性问题",
+			mode, report.HashedFiles, report.HashedBytes,
 			report.ReferencedFiles,
 			report.ReferencedVersions,
 			report.BlobFiles,
@@ -855,14 +868,33 @@ func (s *Server) repairMediaForSystemMaintenance(
 func (s *Server) verifyStorageForSystemMaintenance(
 	ctx context.Context,
 ) (maintenance.VerifyReport, error) {
+	// Preserve the existing storage_verify task's deep hashing contract.
+	return s.verifyStorageForSystemMaintenanceMode(ctx, maintenance.VerifyModeDeep)
+}
+
+func (s *Server) verifyStorageForSystemMaintenanceMode(
+	ctx context.Context, mode maintenance.VerifyMode,
+) (maintenance.VerifyReport, error) {
+	if mode != maintenance.VerifyModeFast && mode != maintenance.VerifyModeDeep {
+		return maintenance.VerifyReport{}, errors.New("unsupported storage verification mode")
+	}
 	if s.systemMaintenanceStorageVerify != nil {
-		return s.systemMaintenanceStorageVerify.VerifyStorage(ctx)
+		report, err := s.systemMaintenanceStorageVerify.VerifyStorage(ctx)
+		if err != nil {
+			return report, err
+		}
+		// An injected runner must not mislabel unspecified or deep results as
+		// fast. Production uses the mode-aware filesystem verifier.
+		if mode == maintenance.VerifyModeFast && report.Mode != maintenance.VerifyModeFast {
+			return maintenance.VerifyReport{}, errors.New("storage verifier did not attest fast mode")
+		}
+		return report, nil
 	}
 	root, err := s.systemMaintenanceFilesystemRoot()
 	if err != nil {
 		return maintenance.VerifyReport{}, err
 	}
-	return maintenance.VerifyWithContext(ctx, s.DB, root)
+	return maintenance.VerifyWithOptions(ctx, s.DB, root, maintenance.VerifyOptions{Mode: mode})
 }
 
 func (s *Server) repairStorageForSystemMaintenance(
