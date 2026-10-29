@@ -2564,6 +2564,7 @@ PY
 
 backup_admin_inventory() {
   local dir="$1" tmp comma="" scope root snap name state bytes file_data created
+  local local_manifest version included consistent
   local snapshot_index inventory_total inventory_truncated
   local repository_v1_count repository_default_count repository_configured_count
   local backup_admin_schedule_json
@@ -2646,21 +2647,24 @@ backup_admin_inventory() {
       esac
       snap="$root/$name"
       [[ -d "$snap" && ! -L "$snap" ]] || continue
+      # The newest-100 table is refreshed periodically. A cached text grep
+      # cannot distinguish a top-level boolean from nested/duplicate JSON.
+      local_manifest="$(backup_admin_manifest_info "$snap/manifest.json" 2>/dev/null || true)"
+      version="" included="" consistent=""
+      if [[ -n "$local_manifest" ]]; then
+        IFS=$'\t' read -r version included consistent <<< "$local_manifest"
+      fi
       state=complete
       if [[ "$scope" == v1 ]]; then
-        backup_admin_snapshot_complete "$snap" v1 || state=incomplete
+        backup_admin_snapshot_complete "$snap" v1 "$local_manifest" || state=incomplete
       else
-        backup_admin_snapshot_complete "$snap" v2 || state=incomplete
+        backup_admin_snapshot_complete "$snap" v2 "$local_manifest" || state=incomplete
       fi
-      if [[ "$state" == complete ]] &&
-         grep -Eq '"consistency_verified"[[:space:]]*:[[:space:]]*false' "$snap/manifest.json" 2>/dev/null; then
-        state=inconsistent
-      fi
+      if [[ "$state" == complete && "$consistent" == false ]]; then state=inconsistent; fi
       bytes="$(du -sb -- "$snap" 2>/dev/null | cut -f1 || true)"
       [[ "$bytes" =~ ^[0-9]+$ ]] || bytes=0
       file_data=true
-      if [[ "$scope" == v1 ]] &&
-         grep -Eq '"file_data_included"[[:space:]]*:[[:space:]]*false' "$snap/manifest.json" 2>/dev/null; then
+      if [[ "$scope" == v1 && "$version" == 1 && "$included" == false ]]; then
         file_data=false
       fi
       created="$(printf '%s' "$name" | sed -nE 's/^xdrive-backup-([0-9]{4})([0-9]{2})([0-9]{2})T([0-9]{2})([0-9]{2})([0-9]{2})Z$/\1-\2-\3T\4:\5:\6Z/p')"
