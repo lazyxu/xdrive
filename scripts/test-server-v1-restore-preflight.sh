@@ -212,6 +212,10 @@ write_checksums
 
 # Legacy database-only snapshots retain a separately authorized recovery path.
 rm "$BACKUP_DIR/blobs.tar"
+# A DB-only CLI restore cannot bypass a known inconsistent capture either.
+printf '{"format_version":1,"consistency_verified":false,"file_data_included":false}\n' > "$BACKUP_DIR/manifest.json"
+(cd "$BACKUP_DIR"; sha256sum database.dump verify.json manifest.json > SHA256SUMS.txt)
+assert_fail_closed v1_db_only_inconsistent 'invalid or unsafe backup manifest' --database-only
 printf '{"format_version":1,"consistency_verified":true,"file_data_included":false}\n' > "$BACKUP_DIR/manifest.json"
 (cd "$BACKUP_DIR"; sha256sum database.dump verify.json manifest.json > SHA256SUMS.txt)
 rm -f -- "$XD_RESTORE_TEST_DOCKER_SENTINEL"
