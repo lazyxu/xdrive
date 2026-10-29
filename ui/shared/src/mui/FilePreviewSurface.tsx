@@ -173,7 +173,14 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   const [mediaReady, setMediaReady] = useState(false)
   const [mediaBuffering, setMediaBuffering] = useState(false)
   const [bufferProgress, setBufferProgress] = useState<{ bufferedSeconds: number; bufferedStartSeconds?: number; durationSeconds?: number }>({ bufferedSeconds: 0 })
-  const [videoPoster, setVideoPoster] = useState<{ identity: string; url: string } | null>(null)
+  // A Node/revision alone cannot identify the authorized poster source:
+  // another Owner can reuse those numbers. Gate pixels synchronously during
+  // render, before passive cleanup of the previous poster completes.
+  const [videoPoster, setVideoPoster] = useState<{
+    identity: string
+    loader: XDriveFilePreviewImageLoader<T>
+    url: string
+  } | null>(null)
   const videoPosterLoaderRef = useRef(loadImagePreview)
   videoPosterLoaderRef.current = loadImagePreview
   const hasVideoPosterLoader = Boolean(loadImagePreview)
@@ -224,7 +231,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
         borrowedPoster = null
         return
       }
-      setVideoPoster({ identity, url })
+      setVideoPoster({ identity, loader, url })
     }).catch(() => {
       // Poster absence must never stop an otherwise valid video from playing.
     })
@@ -236,7 +243,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
       borrowedPoster = null
       acquiredURL = ''
     }
-  }, [sourceIdentity, previewKind, hasVideoPosterLoader])
+  }, [sourceIdentity, previewKind, hasVideoPosterLoader, loadImagePreview])
   if (retryOwnerRef.current.sourceIdentity !== sourceIdentity) {
     retryOwnerRef.current = { sourceIdentity }
   }
@@ -749,7 +756,8 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   // Native poster keeps playback controls interactive. Before the video URL
   // exists (or if it fails), show the exact same poster behind the status UI.
   // Do not expose a stale revision or late Owner's URL for a render.
-  const activeVideoPosterURL = videoPoster?.identity === sourceIdentity ? videoPoster.url : ''
+  const activeVideoPosterURL = videoPoster?.identity === sourceIdentity &&
+    videoPoster.loader === loadImagePreview ? videoPoster.url : ''
   const videoPlaceholder = (overlay: ReactNode) => {
     if (previewKind !== 'video' || !activeVideoPosterURL) return overlay
     return (
