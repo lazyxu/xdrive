@@ -141,3 +141,38 @@ test('shared route dispatcher cannot reach native IPC or the DSM CGI', () => {
   assert.doesNotMatch(source, /window\.xdriveDesktop|ipcRenderer|backup\.cgi|fetch\s*\(/)
   assert.doesNotMatch(read('ui/shared/src/mui/WorkspaceRoute.ts'), /window\.xdriveDesktop/)
 })
+
+test('backup-only Owner read surfaces require explicit Host opt-in, never a platform label', () => {
+  const client = { ownerFilesRoot: async () => ({ id: 1, name: 'Owner' }) }
+  // Merely acquiring a local Agent read client is insufficient on Desktop OR DSM.
+  for (const platform of ['desktop', 'synology']) {
+    const absent = { platform, adminRoleVerified: false,
+      services: { localBackupClient: client } }
+    for (const view of ['overview', 'device-backup', 'transfers', 'files']) {
+      assert.equal(render(absent, view).type, 'XDriveStatePanel',
+        platform + '/' + view + ' must not infer NAS Owner capability')
+    }
+    const enabled = { ...absent, services: {
+      ...absent.services, ownerBackupReadFallback: true,
+    } }
+    assert.equal(render(enabled, 'overview').type, 'XDriveHomePage')
+    assert.equal(render(enabled, 'device-backup').type, 'XDriveDeviceBackupPage')
+    assert.equal(render(enabled, 'transfers').type, 'XDriveTaskCenterPage')
+    assert.equal(render(enabled, 'files').type, 'XDriveStatePanel',
+      'backup-only read capability must never grant Owner Files privileges')
+  }
+})
+
+test('Host-owned cloud storage refresh policy is independent of the platform string', () => {
+  for (const platform of ['desktop', 'synology']) {
+    const base = { platform, services: { cloudStorage: { load() {} } } }
+    assert.equal(render(base, 'cloud-storage').props.clearOnRefresh, false)
+    const enabled = { ...base, services: {
+      ...base.services, cloudStorageRefresh: { clearOnRefresh: true },
+    } }
+    assert.equal(render(enabled, 'cloud-storage').props.clearOnRefresh, true)
+  }
+  const source = read('ui/shared/src/mui/XDriveAppPageOutlet.tsx')
+  assert.doesNotMatch(source, /host\.platform\s*===\s*['"]synology['"]/,
+    'shared page selection and refresh behavior must follow real Host ports')
+})

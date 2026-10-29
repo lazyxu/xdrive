@@ -25,6 +25,12 @@ export type XDriveWorkspaceHostServices = {
   readonly overviewPage?: XDriveOverviewPageProps
   readonly localBackupClient?: XDriveSynologyBackupLocalClient
   /**
+   * An explicit opt-in to backup-only Owner read surfaces (Home, Tasks and
+   * Backup). A Host gaining a local backup transport does NOT implicitly
+   * replace its full application controllers with the NAS read fallback.
+   */
+  readonly ownerBackupReadFallback?: true
+  /**
    * Explicit read-only Owner Files domain port. This transitional client
    * remains authenticated and Owner-scoped in the Host; the shared route
    * does not infer Files access from platform or backup CGI presence.
@@ -36,6 +42,8 @@ export type XDriveWorkspaceHostServices = {
   }
   readonly deviceBackups?: XDriveDeviceBackupDataSource
   readonly cloudStorage?: XDriveCloudStorageDataSource
+  /** Host-owned refresh policy, never inferred from a platform name. */
+  readonly cloudStorageRefresh?: { readonly clearOnRefresh?: boolean }
   readonly localStorage?: XDriveLocalStorageDataSource
   /** Desktop and DSM use the same page JSX: only verified page props differ. */
   readonly galleryPage?: XDriveMediaGalleryPageProps

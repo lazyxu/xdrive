@@ -158,7 +158,9 @@ if (!verifiedOwnerDownload.includes('xDriveSynologyFetchVerifiedDownload') ||
     !nasAdapter.includes("'/v1/cloud-quota'") ||
     !nasAdapter.includes('createXDriveSynologyCloudStorageDataSource') ||
     !appPageOutlet.includes('<XDriveCloudStoragePage key={revision} source={services.cloudStorage}') ||
-    !appPageOutlet.includes("clearOnRefresh={host.platform === 'synology'}") ||
+    !appPageOutlet.includes("clearOnRefresh={services.cloudStorageRefresh?.clearOnRefresh === true}") ||
+    !dsmHost.includes('ownerBackupReadFallback: true') ||
+    !dsmHost.includes('cloudStorageRefresh: { clearOnRefresh: true }') ||
     !appPageOutlet.includes('clearOnRefresh') ||
     !agentRead.includes('device-backup-read') ||
     !agentRead.includes('"/v1/device-backups"') ||

@@ -166,3 +166,28 @@ platform-owned feature matrix is documented in
 Desktop local-folder Push backup and Windows CfAPI/Linux FUSE virtual-drive
 mapping are **separate** native features; convergence of shared React page
 logic must not retire either Agent-backed capability.
+
+
+## Host-neutral read-surface admission (2026-10-29 follow-on)
+
+The shared `XDriveAppPageOutlet` now selects the NAS/backup-only Owner read
+fallback from an **explicit Host service capability**, not the literal
+`desktop`/`synology` platform string. Supplying a backup client alone
+never replaces Desktop's full Overview, Files, Tasks or backup pages.
+The DSM Host intentionally opts into `ownerBackupReadFallback: true`, while
+its cloud-storage refresh policy is supplied through
+`cloudStorageRefresh.clearOnRefresh`. No Server role or filesystem access is
+inferred from either UI flag. The existing per-request Owner/Root/CGI checks
+remain authoritative.
+
+Both the counted Desktop/Web Range reader and the DSM cursor reader cross
+the same `FileExplorerDirectoryReadStrategy` boundary. Counted responses
+now reject invalid positional ranges, repeated/invalid node IDs and mismatched
+sort echoes before they can be published; cursor pagination continues to
+require its genuine opaque token and never fabricates a count. Valid responses
+and AbortSignals are forwarded without synthesis.
+
+**Not yet migrated:** Desktop's full `DesktopFileExplorer` stateful controller
+and its remaining legacy `XDriveApp` Files-child mount. This incremental
+boundary change is not a claim of completed DSM writes, complete Files parity,
+or physical DSM verification (which remains **跳过（未验收）**).

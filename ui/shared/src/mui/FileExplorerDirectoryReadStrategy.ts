@@ -99,6 +99,38 @@ function verifyCursorPage<TNode extends { id: number }>(
 }
 
 /**
+ * The shared Desktop/Web counted Range contract must not accept shifted,
+ * duplicated or over-long pages. Even if a Host transport resolves after a
+ * sort/Owner transition, never publish mismatched positional rows as verified.
+ * The owning Server/Agent must still perform authorization per read.
+ *
+ * Older controller tests omit optional echo fields; when a Host supplies sort
+ * or order, those echoes MUST agree with the requested ordering.
+ */
+function verifyRangePage<TNode extends { id: number }>(
+  page: XDriveCloudFilesRange<TNode>,
+  request: Extract<XDriveFileExplorerDirectoryReadRequest<XDriveFileExplorerDirectoryReadSort>, { mode: 'range' }>,
+): void {
+  if (!page || !Array.isArray(page.items) ||
+      !Number.isSafeInteger(page.offset) || page.offset !== request.offset ||
+      !Number.isSafeInteger(page.limit) || page.limit <= 0 || page.limit > request.limit ||
+      page.items.length > page.limit ||
+      !Number.isSafeInteger(page.total_count) || page.total_count < 0 ||
+      (page.total_count_included !== undefined && typeof page.total_count_included !== 'boolean') ||
+      (page.sort !== undefined && page.sort !== request.sort.key) ||
+      (page.order !== undefined && page.order !== request.sort.direction)) {
+    throw new Error('Invalid Files Host counted Range page')
+  }
+  const seen = new Set<number>()
+  for (const item of page.items) {
+    if (!item || !Number.isSafeInteger(item.id) || item.id <= 0 || seen.has(item.id)) {
+      throw new Error('Invalid or duplicate Files Host Range node')
+    }
+    seen.add(item.id)
+  }
+}
+
+/**
  * Preserve the actual Host response and AbortSignal. Range results are counted
  * for sparse 100k virtual loading; cursor results retain an opaque next_cursor,
  * never a fictitious total or positional offset. A mismatched mode is rejected
@@ -132,10 +164,16 @@ export async function xDriveFileExplorerReadDirectoryPage<
     return { mode: 'cursor', page }
   }
   if (port.mode === 'range' && request.mode === 'range') {
+    if (!Number.isSafeInteger(request.parentID) || request.parentID <= 0 ||
+        !Number.isSafeInteger(request.offset) || request.offset < 0 ||
+        !Number.isSafeInteger(request.limit) || request.limit <= 0) {
+      throw new Error('Invalid Files Host counted Range request')
+    }
     const page = await port.readRange(
       request.parentID, request.offset, request.limit, request.sort,
       request.includeCount, request.grouping, request.signal,
     )
+    verifyRangePage(page, request)
     return { mode: 'range', page }
   }
   throw new Error('Unsupported Files read strategy')
