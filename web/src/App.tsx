@@ -936,8 +936,10 @@ function FileManager({
   const [profileReadFailed, setProfileReadFailed] = useState(false)
   // Keep a stable Owner-scoped scheduler across short-lived bearer rotation.
   // The latest real API is always read at the moment of a visible auto tick.
-  const iosAutoRef = useRef({ api, profile, username })
-  iosAutoRef.current = { api, profile, username }
+  // Use the current authenticated prop, not private XDriveApi.session.
+  // Native revalidates the Owner/root before any PhotoKit work.
+  const iosAutoRef = useRef({ api, profile, username, authSession })
+  iosAutoRef.current = { api, profile, username, authSession }
   useEffect(() => {
     if (!iosPhotoHost || !profile?.id || profile.username !== username ||
         profile.must_change_password) return
@@ -949,9 +951,9 @@ function FileManager({
       const latest = iosAutoRef.current
       if (latest.api !== captured.api || latest.profile?.id !== profile.id ||
           current.id !== profile.id || current.username !== username ||
-          current.must_change_password || !captured.api.session.accessToken) return null
+          current.must_change_password || !latest.authSession.accessToken) return null
       return { ownerID: current.id, username,
-        accessToken: captured.api.session.accessToken }
+        accessToken: latest.authSession.accessToken }
     })
   }, [iosPhotoHost, profile?.id, profile?.username,
       profile?.must_change_password, username])
@@ -2836,6 +2838,8 @@ function FileManager({
           route={route}
           api={api}
           gallerySource={gallerySource}
+          // Preserve the accepted Server Owner when navigating Viewer → map.
+          ownerScope={profile?.id ? `web:${profile.id}` : undefined}
           onBorrowGalleryThumbnail={galleryThumbnailBridge.borrow}
           shareDialogAdapter={shareDialogAdapter}
           onReplaceRoute={(next) => launchWebApp(next, { replace: true, viewerReturn: true })}
