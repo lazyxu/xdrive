@@ -244,6 +244,21 @@ async function main() {
       ignoreHTTPSErrors: true, serviceWorkers: 'block', locale: 'zh-CN',
     })
     const passwordPage = await passwordContext.newPage()
+    // Diagnose this real Gin UI transition without ever recording JWTs,
+    // cookies, credentials, response bodies, private paths or user content.
+    // This does NOT turn a failed forced-password flow into a passing test.
+    const passwordLoginTrace = []
+    const passwordPageErrors = []
+    passwordPage.on('response', response => {
+      const pathname = new URL(response.url()).pathname
+      if (pathname !== '/api/v1/me' &&
+          pathname !== browserLogin && pathname !== browserRefresh) return
+      if (passwordLoginTrace.length >= 12) return
+      passwordLoginTrace.push({ route: pathname, status: response.status() })
+    })
+    passwordPage.on('pageerror', error => {
+      if (passwordPageErrors.length < 5) passwordPageErrors.push(error.name)
+    })
     passwordPage.setDefaultTimeout(30000)
     await passwordPage.goto(origin + '/#/app/files', { waitUntil: 'domcontentloaded' })
     await passwordPage.locator('#web-login-username').waitFor()
@@ -257,8 +272,22 @@ async function main() {
     assert.equal(firstPasswordSession.refresh_token || '', '')
     const oldAccess = firstPasswordSession.access_token
     assert(typeof oldAccess === 'string' && oldAccess.length > 16)
-    await passwordPage.getByRole('heading',
-      { name: '修改临时密码', exact: true }).waitFor()
+    try {
+      await passwordPage.getByRole('heading',
+        { name: '修改临时密码', exact: true }).waitFor()
+    } catch (error) {
+      // Persist only redacted state/HTTP status evidence; never dump DOM,
+      // access token, Cookie, HTTP response body or submitted password.
+      summary.forcedPasswordDiagnostics = {
+        authRoutes: passwordLoginTrace,
+        pageErrorTypes: passwordPageErrors,
+        loginFormPresent: (await passwordPage.locator('#web-login-username').count()) > 0,
+        changeFormPresent: (await passwordPage.locator('#xdrive-current-password').count()) > 0,
+        filesWorkspacePresent: (await passwordPage.locator('[data-xdrive-files-workspace]').count()) > 0,
+        locationIsFiles: new URL(passwordPage.url()).hash === '#/app/files',
+      }
+      throw error
+    }
     const passwordCookieBefore = await refreshCookie(passwordContext)
     assert(passwordCookieBefore?.httpOnly && passwordCookieBefore.secure)
     summary.forcedPasswordForm = true
