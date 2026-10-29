@@ -71,6 +71,7 @@ import {
   XDriveWorkspaceContent,
   XDriveMobileAppHeader,
   xDriveWorkspacePresentation,
+  xDriveWorkspaceRouteTitle,
   xDriveWorkspaceNavigationAllowed,
   xDriveWorkspaceStorageSummary,
   XDriveStatusAlert,
@@ -2305,12 +2306,6 @@ function FileManager({
       {accountAction}
     </Stack>
   )
-  const mobileAppTitles: Record<string, string> = {
-    overview: '主页', files: '文件', gallery: '图库', 'device-backup': '设备备份', 'remote-pull': '远程拉取',
-    transfers: '任务', 'global-tasks': '全局后台任务', 'local-storage': '本地存储',
-    'cloud-storage': '云端存储', 'admin-users': '用户管理',
-    'admin-audit': '审计日志', 'admin-storage': '全局存储', 'admin-services': '系统依赖', 'admin-maintenance': '备份与系统维护',
-  }
 
   return (
     <Box
@@ -2406,7 +2401,7 @@ function FileManager({
         <Box data-xdrive-mobile-app-frame sx={{ minWidth: 0, minHeight: 0, height: '100%', flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {compactWorkspace ? (
             <XDriveMobileAppHeader
-              title={mobileAppTitles[appView] ?? 'xDrive'}
+              title={xDriveWorkspaceRouteTitle(appView)}
               canGoBack={canExitApp}
               disabled={viewerActive}
               onBack={exitWebApp}
