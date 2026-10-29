@@ -317,7 +317,7 @@ before_db_only_file="$(docker run --rm -v "$FILES_DIR:/data:ro" --entrypoint cat
   echo "v1 database-only restore fixture lost source file" >&2; exit 1
 }
 bash "$ROOT/scripts/server-restore.sh" "$metadata_backup_dir" \
-  --config-dir "$XDRIVE_HOME" --yes > "$TMP/db-only-restore.log" 2>&1 || {
+  --config-dir "$XDRIVE_HOME" --yes --database-only > "$TMP/db-only-restore.log" 2>&1 || {
   echo "v1 database-only restore did not complete; see private CI log" >&2
   exit 1
 }

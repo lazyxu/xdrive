@@ -236,6 +236,50 @@ exec 9>&-
 exec 8>>"$XD_CONFIG_DIR/state/install.lock"
 flock -n 8
 cp "$XD_BACKUP_ADMIN_TEST_LOG" "$TMP/before-install-lock"
+write_request restore "v2-default:$v2" "" "" "" "RESTORE v2-default:$v2"
+backup_admin_process_request "$dir"
+grep -Fq '"state":"failed"' "$dir/backup-admin-status.json"
+cmp "$TMP/before-install-lock" "$XD_BACKUP_ADMIN_TEST_LOG"
+flock -u 8
+exec 8>&-
+
+# Restart recovery must never replay even a freshly queued delete.
+cp "$XD_BACKUP_ADMIN_TEST_LOG" "$TMP/before-restart"
+write_request delete "v1:$v1" "" "" "" "DELETE v1:$v1"
+backup_admin_recover_interrupted "$dir"
+[[ ! -e "$dir/backup-admin-request.json" ]]
+grep -Fq '"error_code":"interrupted"' "$dir/backup-admin-status.json"
+cmp "$TMP/before-restart" "$XD_BACKUP_ADMIN_TEST_LOG"
+[[ -d "$XD_CONFIG_DIR/backups/snapshots/$v1" ]]
+
+write_request plan "" "" fast 2 ""
+backup_admin_process_request "$dir"
+grep -Fq "backup retention-plan --keep-last 2 --mode fast" "$XD_BACKUP_ADMIN_TEST_LOG"
+python3 - "$dir/backup-admin-retention-report.json" <<'PY'
+import json,sys
+result=json.load(open(sys.argv[1],encoding="utf-8"))
+assert result["delete_enabled"] is False
+assert result["mode"]=="read_only"
+PY
+
+# A database-only v1 archive must never masquerade as a full restore.
+db_only="xdrive-backup-20261025T010000Z"
+fixture "$XD_CONFIG_DIR/backups/snapshots" v1 "$db_only"
+rm "$XD_CONFIG_DIR/backups/snapshots/$db_only/blobs.tar"
+printf '{"format_version":1,"file_data_included":false,"consistency_verified":true}\n' > "$XD_CONFIG_DIR/backups/snapshots/$db_only/manifest.json"
+backup_admin_inventory "$dir"
+python3 - "$dir/backup-admin-inventory.json" <<'PY'
+import json,sys
+snapshots=json.load(open(sys.argv[1],encoding="utf-8"))["snapshots"]
+entry=next(x for x in snapshots if x["id"]=="v1:xdrive-backup-20261025T010000Z")
+assert entry["state"]=="complete" and entry["file_data_included"] is False
+PY
+cp "$XD_BACKUP_ADMIN_TEST_LOG" "$TMP/before-db-only"
+write_request restore "v1:$db_only" "" "" "" "RESTORE v1:$db_only"
+backup_admin_process_request "$dir"
+cmp "$TMP/before-db-only" "$XD_BACKUP_ADMIN_TEST_LOG"
+grep -Fq '"state":"failed"' "$dir/backup-admin-status.json"
+
 # DB-only recovery is intentionally a different privileged action from a
 # full restore. It must preserve file data and keep safety backup enabled.
 write_request restore_database_only "v1:$db_only" "" "" "" "DATABASE ONLY RESTORE v1:$db_only"
@@ -285,49 +329,6 @@ if backup_admin_valid_database_only_manifest "$db_only_manifest"; then
 fi
 cp "$TMP/db-only-valid-manifest" "$db_only_manifest"
 
-write_request restore "v2-default:$v2" "" "" "" "RESTORE v2-default:$v2"
-backup_admin_process_request "$dir"
-grep -Fq '"state":"failed"' "$dir/backup-admin-status.json"
-cmp "$TMP/before-install-lock" "$XD_BACKUP_ADMIN_TEST_LOG"
-flock -u 8
-exec 8>&-
-
-# Restart recovery must never replay even a freshly queued delete.
-cp "$XD_BACKUP_ADMIN_TEST_LOG" "$TMP/before-restart"
-write_request delete "v1:$v1" "" "" "" "DELETE v1:$v1"
-backup_admin_recover_interrupted "$dir"
-[[ ! -e "$dir/backup-admin-request.json" ]]
-grep -Fq '"error_code":"interrupted"' "$dir/backup-admin-status.json"
-cmp "$TMP/before-restart" "$XD_BACKUP_ADMIN_TEST_LOG"
-[[ -d "$XD_CONFIG_DIR/backups/snapshots/$v1" ]]
-
-write_request plan "" "" fast 2 ""
-backup_admin_process_request "$dir"
-grep -Fq "backup retention-plan --keep-last 2 --mode fast" "$XD_BACKUP_ADMIN_TEST_LOG"
-python3 - "$dir/backup-admin-retention-report.json" <<'PY'
-import json,sys
-result=json.load(open(sys.argv[1],encoding="utf-8"))
-assert result["delete_enabled"] is False
-assert result["mode"]=="read_only"
-PY
-
-# A database-only v1 archive must never masquerade as a full restore.
-db_only="xdrive-backup-20261025T010000Z"
-fixture "$XD_CONFIG_DIR/backups/snapshots" v1 "$db_only"
-rm "$XD_CONFIG_DIR/backups/snapshots/$db_only/blobs.tar"
-printf '{"format_version":1,"file_data_included":false,"consistency_verified":true}\n' > "$XD_CONFIG_DIR/backups/snapshots/$db_only/manifest.json"
-backup_admin_inventory "$dir"
-python3 - "$dir/backup-admin-inventory.json" <<'PY'
-import json,sys
-snapshots=json.load(open(sys.argv[1],encoding="utf-8"))["snapshots"]
-entry=next(x for x in snapshots if x["id"]=="v1:xdrive-backup-20261025T010000Z")
-assert entry["state"]=="complete" and entry["file_data_included"] is False
-PY
-cp "$XD_BACKUP_ADMIN_TEST_LOG" "$TMP/before-db-only"
-write_request restore "v1:$db_only" "" "" "" "RESTORE v1:$db_only"
-backup_admin_process_request "$dir"
-cmp "$TMP/before-db-only" "$XD_BACKUP_ADMIN_TEST_LOG"
-grep -Fq '"state":"failed"' "$dir/backup-admin-status.json"
 
 write_request restore "v2-default:$v2" "" "" "" "RESTORE v2-default:$v2"
 backup_admin_process_request "$dir"
