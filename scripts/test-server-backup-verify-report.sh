@@ -68,6 +68,80 @@ grep -Fq 'v1 snapshot contains symlink database.dump' "$TMP/v1-symlink.log"
 rm "$v1/database.dump"
 mv "$v1/database.original" "$v1/database.dump"
 
+# A correct SHA-256 does not make a v1 tar safe to extract. Verify headers
+# without reading file payload into memory or touching any real storage.
+v1full="$XD_CONFIG_DIR/backups/snapshots/xdrive-backup-20261026T005959Z"
+mkdir -p "$v1full"
+printf 'database' > "$v1full/database.dump"
+printf '{}' > "$v1full/verify.json"
+printf '{"format_version":1,"file_data_included":true,"consistency_verified":true}\n' > "$v1full/manifest.json"
+write_v1_tar() {
+  python3 - "$v1full/blobs.tar" "$1" <<'PY'
+import io,sys,tarfile
+path,scenario=sys.argv[1:3]
+def member(archive,name,kind="file",link=""):
+    m=tarfile.TarInfo(name)
+    if kind=="file":
+        m.size=4
+        archive.addfile(m,io.BytesIO(b"data"))
+    else:
+        m.type={"dir":tarfile.DIRTYPE,"hard":tarfile.LNKTYPE,
+                "link":tarfile.SYMTYPE,"fifo":tarfile.FIFOTYPE}[kind]
+        m.linkname=link
+        archive.addfile(m)
+with tarfile.open(path,"w") as archive:
+    if scenario=="valid":
+        member(archive,"./sample")
+        member(archive,"./folder/","dir")
+        member(archive,"./folder/item")
+        member(archive,"./sample-hardlink","hard","./sample")
+    elif scenario=="traversal":
+        member(archive,"../escape")
+    elif scenario=="absolute":
+        member(archive,"/tmp/escape")
+    elif scenario=="duplicate":
+        member(archive,"./dup")
+        member(archive,"././dup")
+    elif scenario=="symlink":
+        member(archive,"./link","link","../../outside")
+    elif scenario=="hardlink":
+        member(archive,"./outside","hard","../escape")
+    elif scenario=="file_ancestor":
+        member(archive,"./dir")
+        member(archive,"./dir/item")
+    elif scenario=="descendant_first":
+        member(archive,"./dir/item")
+        member(archive,"./dir")
+    elif scenario=="fifo":
+        member(archive,"./socket","fifo")
+    else:
+        raise SystemExit("unknown test scenario")
+PY
+  (cd "$v1full"; sha256sum database.dump verify.json manifest.json blobs.tar > SHA256SUMS.txt)
+}
+write_v1_tar valid
+bash "$MANAGER" backup verify --json "$v1full" > "$TMP/v1-full-safe.json"
+python3 - "$TMP/v1-full-safe.json" <<'PY'
+import json,sys
+d=json.load(open(sys.argv[1],encoding="utf-8"))
+assert d["format"]=="v1" and d["state"]=="success" and d["cas_objects_checked"]==0,d
+PY
+for scenario in traversal absolute duplicate symlink hardlink file_ancestor descendant_first fifo; do
+  write_v1_tar "$scenario"
+  if bash "$MANAGER" backup verify --json "$v1full" > "$TMP/v1-unsafe-$scenario.json" \
+      2>"$TMP/v1-unsafe-$scenario.log"; then
+    echo "v1 verifier accepted SHA-valid unsafe tar $scenario" >&2; exit 1
+  fi
+  grep -Fq 'v1 archive structure failed safety verification' "$TMP/v1-unsafe-$scenario.log"
+  python3 - "$TMP/v1-unsafe-$scenario.json" <<'PY'
+import json,sys
+d=json.load(open(sys.argv[1],encoding="utf-8"))
+assert d["format"]=="v1" and d["state"]=="failed" and \
+       d["failure_category"]=="snapshot_verification_failed",d
+assert "snapshot/" not in str(d) and "blobs.tar" not in str(d),d
+PY
+done
+
 v2root="$XD_CONFIG_DIR/backups/incremental"
 v2="$v2root/snapshots/xdrive-backup-20261027T020000Z"
 mkdir -p "$v2" "$v2root/objects/sha256"

@@ -972,6 +972,73 @@ PY
   return "$status"
 }
 
+# A valid v1 SHA256SUMS manifest proves bytes were not altered, but not
+# that GNU tar can safely extract the archive to /data. Check only archive
+# headers with the Python standard library. No production path is mounted,
+# created, or written by this check.
+backup_verify_v1_archive_headers() {
+  local archive="$1"
+  command -v python3 >/dev/null 2>&1 || {
+    echo "xdrive-server: Python 3 is required for v1 archive safety verification." >&2
+    return 1
+  }
+  python3 - "$archive" <<'PY'
+import sys, tarfile
+
+seen = {}
+ancestors = set()
+regular = set()
+
+def canonical(name):
+    if not name or name.startswith("/") or "\\" in name or "\x00" in name:
+        raise ValueError("absolute or malformed archive path")
+    raw = name.split("/")
+    if ".." in raw:
+        raise ValueError("parent directory traversal")
+    return "/".join(part for part in raw if part and part != ".")
+
+try:
+    with tarfile.open(sys.argv[1], mode="r:") as archive:
+        for member in archive:
+            name = canonical(member.name)
+            if not name:
+                if not member.isdir():
+                    raise ValueError("unsafe root archive entry")
+                continue
+            if name in seen:
+                raise ValueError("duplicate normalized archive path")
+            if member.isdir():
+                kind = "directory"
+            elif member.isreg():
+                kind = "file"
+            elif member.islnk():
+                # Hardlinks must point only at a previously seen regular file.
+                target = canonical(member.linkname)
+                if not target or target not in regular:
+                    raise ValueError("external or forward archive hardlink")
+                kind = "file"
+            else:
+                # Symlinks, devices, FIFOs and unknown tar extensions are not
+                # safe as source material for a destructive data restore.
+                raise ValueError("unsafe archive member type")
+            parts = name.split("/")
+            for i in range(1, len(parts)):
+                parent = "/".join(parts[:i])
+                if seen.get(parent) == "file":
+                    raise ValueError("file/descendant archive conflict")
+                ancestors.add(parent)
+            if kind == "file" and name in ancestors:
+                raise ValueError("file replaces earlier directory ancestor")
+            seen[name] = kind
+            if kind == "file":
+                regular.add(name)
+except (OSError, EOFError, ValueError, tarfile.TarError) as exc:
+    print("xdrive-server: v1 archive structure failed safety verification (" +
+          type(exc).__name__ + ")", file=sys.stderr)
+    sys.exit(1)
+PY
+}
+
 backup_verify_cmd() {
   if [[ "${1:-}" == "--json" ]]; then
     shift
@@ -1077,6 +1144,9 @@ backup_verify_cmd() {
       cd "$dir" || exit 1
       cmp -s SHA256SUMS.txt <(sha256sum "${v1_checksum_files[@]}")
     ) || { echo "xdrive-server: v1 checksum manifest mismatch: $dir" >&2; return 1; }
+    if [[ "$file_data" != "false" ]]; then
+      backup_verify_v1_archive_headers "$dir/blobs.tar" || return 1
+    fi
   fi
   if [[ "$backup_version" == "2" ]]; then
     [[ "$(basename "$(dirname "$dir")")" == "snapshots" ]] || {
