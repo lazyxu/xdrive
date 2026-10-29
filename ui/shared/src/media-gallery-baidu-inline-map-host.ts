@@ -116,6 +116,9 @@ export function xDriveMountBaiduInlineMap<T>(
   // Track secondary fingers independently; a pinch must remain inert until
   // the LAST trusted touch/pen contact has released. No IDs leave this Host.
   const heldTouchPointers = new Set<number>()
+  // Bounded local CSS coordinates detect real map drags even when a provider
+  // build omits movestart entirely; never store Owner IDs or GPS here.
+  const pointerOrigins = new Map<number,{x:number;y:number}>()
   let viewportAfterMouseRelease = false
   let observedSize: {width:number;height:number} | null = null
   let sizeObserver: ResizeObserver | null = null
@@ -289,8 +292,28 @@ export function xDriveMountBaiduInlineMap<T>(
     if (!alive || !ready || !event.isTrusted || event.button !== 0) return
     if (event.pointerType === 'mouse' && event.isPrimary)
       heldMousePointer = event.pointerId
-    else if (event.pointerType === 'touch' || event.pointerType === 'pen')
+    else if ((event.pointerType === 'touch' || event.pointerType === 'pen') &&
+             heldTouchPointers.size < 12)
       heldTouchPointers.add(event.pointerId)
+    if ((heldMousePointer === event.pointerId ||
+         heldTouchPointers.has(event.pointerId)) &&
+        pointerOrigins.size < 12 &&
+        Number.isFinite(event.clientX) && Number.isFinite(event.clientY))
+      pointerOrigins.set(event.pointerId,{x:event.clientX,y:event.clientY})
+  }
+  const onMapPointerMove = (event: PointerEvent) => {
+    if (!alive || !ready || !event.isTrusted) return
+    const origin=pointerOrigins.get(event.pointerId)
+    if (!origin || !Number.isFinite(event.clientX) ||
+        !Number.isFinite(event.clientY) ||
+        !(heldMousePointer === event.pointerId ||
+          heldTouchPointers.has(event.pointerId))) return
+    if (Math.hypot(event.clientX-origin.x,event.clientY-origin.y) < 12) return
+    pointerOrigins.delete(event.pointerId)
+    // The camera really moved, but this SDK omitted movestart. Run the
+    // EXISTING revocation + inert-photo projection once, before SDK moveend,
+    // so stale Owner thumbnails cannot remain clickable during this drag.
+    if (cells.length>0) stopViewport()
   }
   const releaseHeldMouse = (pointerID?: number) => {
     const mouseMatches = heldMousePointer !== null &&
@@ -298,6 +321,8 @@ export function xDriveMountBaiduInlineMap<T>(
     const touchMatches = pointerID === undefined
       ? heldTouchPointers.size > 0 : heldTouchPointers.delete(pointerID)
     if (!mouseMatches && !touchMatches) return
+    if (pointerID === undefined) pointerOrigins.clear()
+    else pointerOrigins.delete(pointerID)
     if (mouseMatches) heldMousePointer = null
     if (pointerID === undefined) heldTouchPointers.clear()
     // A second finger still touching the map has not completed the SDK pan
@@ -320,6 +345,7 @@ export function xDriveMountBaiduInlineMap<T>(
   canvas.addEventListener('pointerdown', onMousePointerDown, true)
   browser.addEventListener('pointerup', onMousePointerUp, true)
   browser.addEventListener('pointercancel', onMousePointerUp, true)
+  browser.addEventListener('pointermove', onMapPointerMove, true)
   const onMouseWindowBlur = (event: FocusEvent) => {
     // A fabricated blur event must not end a still-held pointer gesture.
     if (event.isTrusted) releaseHeldMouse()
@@ -378,10 +404,12 @@ export function xDriveMountBaiduInlineMap<T>(
     clearTimer()
     heldMousePointer = null
     heldTouchPointers.clear()
+    pointerOrigins.clear()
     viewportAfterMouseRelease = false
     canvas.removeEventListener('pointerdown', onMousePointerDown, true)
     browser.removeEventListener('pointerup', onMousePointerUp, true)
     browser.removeEventListener('pointercancel', onMousePointerUp, true)
+    browser.removeEventListener('pointermove', onMapPointerMove, true)
     browser.removeEventListener('blur', onMouseWindowBlur)
     clearGesture()
     sizeObserver?.disconnect()
