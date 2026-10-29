@@ -40,6 +40,11 @@ internal fun mapCellEdgeWasLeft(visibleItems: Int, lastVisibleIndex: Int): Boole
     visibleItems > 0 && lastVisibleIndex >= 0 &&
         lastVisibleIndex < (visibleItems - 6).coerceAtLeast(0)
 
+/** A changed layout after a page append is not proof of new user motion. */
+internal fun mapCellCanRearm(
+    visibleItems: Int, lastVisibleIndex: Int, activelyScrolling: Boolean,
+): Boolean = activelyScrolling && mapCellEdgeWasLeft(visibleItems, lastVisibleIndex)
+
 /** One genuine Owner Gallery Range limited to a signed BD09 map cell.
  * Tiles and Viewer are the shared native Gallery implementations. */
 @Composable
@@ -64,7 +69,7 @@ internal fun ColumnScope.GalleryMapCellWall(
             // The new Owner page's footer/row layout may change indices even
             // while the finger is stationary. Only an actual ongoing scroll
             // can re-arm the edge; a stale "scrolled once" flag cannot.
-            if (scrolling && mapCellEdgeWasLeft(state.galleryItems.size, last))
+            if (mapCellCanRearm(state.galleryItems.size, last, scrolling))
                 edgeArmed = true
             if (shouldPrefetchMapCellPage(
                     loaded = state.galleryLoaded, loading = state.loading,
