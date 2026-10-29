@@ -14,6 +14,9 @@ final class LoginViewModel: ObservableObject {
     @Published private(set) var ownerVerificationMessage: String?
     @Published private(set) var manualUploadMessage: String?
     @Published private(set) var manualUploadBusy = false
+    @Published private(set) var photoBackupBusy = false
+    @Published private(set) var photoBackupProgress: XDriveIOSPhotoBackupProgress?
+    @Published private(set) var photoBackupMessage: String?
     @Published private(set) var errorMessage: String?
     @Published private(set) var noticeMessage: String?
 
@@ -270,6 +273,49 @@ final class LoginViewModel: ObservableObject {
         return message
     }
 
+    /// The first user-visible, bounded iOS Photos cloud Files backup.
+    /// Explicit tap only; never starts on login, Photos permission grant,
+    /// background notification or ordinary PWA navigation.
+    func runForegroundPhotoBackup(allowICloudOriginals: Bool) async {
+        guard !isLoading && !manualUploadBusy && !photoBackupBusy,
+              let owner = verifiedOwner,
+              let session = activeSession,
+              let token = activeAccessToken, !token.isEmpty,
+              session.origin == owner.origin,
+              signedInName == owner.username else {
+            photoBackupMessage = "请先登录并验证当前 Owner 根目录。"
+            return
+        }
+        manualUploadBusy = true
+        photoBackupBusy = true
+        photoBackupProgress = XDriveIOSPhotoBackupProgress()
+        photoBackupMessage = nil
+        defer {
+            photoBackupBusy = false
+            manualUploadBusy = false
+        }
+        do {
+            let summary = try await XDriveIOSForegroundPhotoBackupMVP(
+                owner: owner, accessToken: token
+            ).run(allowICloudOriginals: allowICloudOriginals) { [weak self] latest in
+                self?.photoBackupProgress = latest
+            }
+            if summary.stoppedForReview || summary.needsReview > 0 {
+                photoBackupMessage = "有文件的 Server 提交状态尚不明确。已暂停本轮新增备份，请核实后再继续，不能把未知结果计为成功。"
+            } else {
+                photoBackupMessage = "本轮已完成：新上传 \(summary.uploaded)，核验后跳过 \(summary.verifiedAlready)。Live Photo、视频和授权外项目未标记备份完成。"
+            }
+        } catch is CancellationError {
+            photoBackupMessage = "本轮已取消。已确认的文件仍在云端；中断中的操作可能需要 Server 回读，不会自动重复上传。"
+        } catch XDrivePhotoKitScanFailure.notAuthorized {
+            photoBackupMessage = "当前未取得完整或受限相册访问权限，请在 iOS 系统授权后再尝试。"
+        } catch XDrivePhotoKitScanFailure.snapshotChanged {
+            photoBackupMessage = "相册内容或授权发生变化，本次扫描已终止；请重新检查。"
+        } catch {
+            photoBackupMessage = "本轮备份停止：请检查原生 Owner 会话、相册授权和受保护的本地账本。未获得 Server 收据的文件不能标记完成。"
+        }
+    }
+
     func logout() async {
         guard !isLoading && !manualUploadBusy else { return }
         let old = activeSession
@@ -279,6 +325,8 @@ final class LoginViewModel: ObservableObject {
         verifiedOwner = nil
         ownerVerificationMessage = nil
         manualUploadMessage = nil
+        photoBackupProgress = nil
+        photoBackupMessage = nil
         signedInName = nil
         signedInServer = nil
         errorMessage = nil
