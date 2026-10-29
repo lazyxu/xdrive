@@ -131,6 +131,96 @@ const pointer = {
 const press = tree => surface(tree).props.onPointerDown(pointer)
 const release = tree => surface(tree).props.onPointerUp(pointer)
 
+test('hidden Viewer immediately cancels motion, retires late tickets, and pagehide releases the player', async () => {
+  const priorDocument = global.document
+  const priorWindow = global.window
+  const listeners = new Map()
+  const pageListeners = new Map()
+  const add = (map, name, callback) => {
+    if (!map.has(name)) map.set(name, new Set())
+    map.get(name).add(callback)
+  }
+  const remove = (map, name, callback) => map.get(name)?.delete(callback)
+  const dispatch = (map, name) => {
+    for (const callback of [...(map.get(name) ?? [])]) callback({ type: name })
+  }
+  let visibility = 'visible'
+  global.document = {
+    get visibilityState() { return visibility },
+    addEventListener: (name, callback) => add(listeners, name, callback),
+    removeEventListener: (name, callback) => remove(listeners, name, callback),
+  }
+  global.window = {
+    addEventListener: (name, callback) => add(pageListeners, name, callback),
+    removeEventListener: (name, callback) => remove(pageListeners, name, callback),
+  }
+  const pending = deferred()
+  const signals = []
+  const player = makePlayer(async () => {})
+  let created = 0
+  let disposed = 0
+  let tree
+  const loadMotion = (_progress, signal) => {
+    created++
+    signals.push(signal)
+    if (created === 1) return pending.promise
+    return Promise.resolve({
+      url: 'https://example.invalid/new-live.mov',
+      dispose: () => { disposed++ },
+    })
+  }
+  try {
+    await act(async () => {
+      tree = mount(player, loadMotion, 'background:1')
+      await flush()
+    })
+    await act(async () => { press(tree); await flush() })
+    assert.equal(created, 1)
+    assert.equal(signals[0].aborted, false)
+    await act(async () => {
+      visibility = 'hidden'
+      dispatch(listeners, 'visibilitychange')
+      await flush()
+    })
+    assert.equal(signals[0].aborted, true, 'hidden tab must abort the current signed ticket')
+    assert.equal(surface(tree).props['aria-pressed'], false)
+    assert.equal(surface(tree).props['aria-busy'], false)
+    await act(async () => {
+      pending.resolve({
+        url: 'https://example.invalid/late-live.mov',
+        dispose: () => { disposed++ },
+      })
+      await flush()
+    })
+    assert.equal(disposed, 1, 'a late ticket must be disposed after background cancellation')
+    assert.equal(video(tree), undefined, 'hidden tab cannot render obsolete motion')
+    await act(async () => { press(tree); await flush() })
+    assert.equal(created, 1, 'queued pointer input must not acquire motion while hidden')
+    await act(async () => {
+      visibility = 'visible'
+      dispatch(listeners, 'visibilitychange')
+      await flush()
+    })
+    assert.equal(created, 1, 'foreground restore must not autoplay or prefetch motion')
+    await act(async () => { press(tree); await flush() })
+    assert.equal(created, 2, 'a new visible explicit hold may acquire motion again')
+    assert.ok(video(tree), 'new hold may play the valid current motion')
+    await act(async () => { dispatch(pageListeners, 'pagehide'); await flush() })
+    assert.equal(disposed, 2, 'pagehide must retire the active motion lease once')
+    assert.ok(player.removedSource >= 1, 'pagehide must detach signed video Range')
+    assert.equal(video(tree), undefined)
+    await act(async () => { tree.unmount(); tree = null })
+    assert.equal(listeners.get('visibilitychange')?.size ?? 0, 0)
+    assert.equal(pageListeners.get('pagehide')?.size ?? 0, 0)
+  } finally {
+    if (tree) await act(async () => tree.unmount())
+    if (priorDocument === undefined) delete global.document
+    else global.document = priorDocument
+    if (priorWindow === undefined) delete global.window
+    else global.window = priorWindow
+  }
+})
+
 test('P0-L6 pending video.play retains still; release abort is not a permanent Live failure', async () => {
   const firstPlay = deferred()
   let playCalls = 0
