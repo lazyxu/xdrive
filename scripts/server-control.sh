@@ -3452,40 +3452,15 @@ backup_admin_create_verified() {
 # bounded JSON manifest. Grepping a JSON fragment can accept duplicate keys,
 # inconsistent declarations, or a symlink-swapped file.
 backup_admin_valid_database_only_manifest() {
-  local manifest="$1"
-  command -v python3 >/dev/null 2>&1 || return 2
-  python3 - "$manifest" <<'PY'
-import json,os,stat,sys
-
-def unique(pairs):
-    result={}
-    for key,value in pairs:
-        if key in result: raise ValueError("duplicate manifest field")
-        result[key]=value
-    return result
-
-try:
-    fd=os.open(sys.argv[1],os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
-    with os.fdopen(fd,"rb") as f:
-        st=os.fstat(f.fileno())
-        if not stat.S_ISREG(st.st_mode) or not 0<st.st_size<=16384:
-            raise ValueError("unsafe manifest inode")
-        data=json.load(f,object_pairs_hook=unique)
-    if not isinstance(data,dict):
-        raise ValueError("invalid manifest")
-    if (type(data.get("format_version")) is not int or
-        data["format_version"]!=1 or
-        data.get("file_data_included") is not False or
-        data.get("consistency_verified") is not True):
-        raise ValueError("not a consistent database-only v1 snapshot")
-except (OSError,ValueError,TypeError,UnicodeError,KeyError):
-    sys.exit(1)
-PY
+  local info
+  info="$(backup_admin_manifest_info "$1")" || return 2
+  [[ "$info" == $'1\tfalse\ttrue' ]] || return 2
 }
 
 backup_admin_execute() {
   local action="$1" snapshot="$2" fmt="$3" mode="$4" keep="$5" days="$6" revision="$7" confirm="$8" preview_id="${9:-}"
   local target install_guard="$STATE_DIR/install.lock"
+  local manifest_info version included consistent target_format
   # A standalone Host installer may be upgrading the Server outside this
   # controller's process. Never overlap its transactional install.lock with
   # backup/restore/GC. Policy changes already own the same lock internally.
@@ -3545,13 +3520,15 @@ backup_admin_execute() {
     restore)
       [[ "$confirm" == "RESTORE $snapshot" ]] || return 2
       target="$(backup_admin_snapshot_directory "$snapshot")" || return 2
-      # Database-only legacy snapshots require a separately selected recovery
-      # mode. Never let a full restore attempt clear live file storage when
-      # the selected generation did not actually include any file data.
-      if [[ "$snapshot" == v1:* ]] &&
-         grep -Eq '"file_data_included"[[:space:]]*:[[:space:]]*false' "$target/manifest.json"; then
-        return 2
-      fi
+      # Revalidate exact top-level v1/v2 + full file data + consistent source
+      # immediately under the Host's existing operation/schedule/install locks.
+      # Nested false/true fields can never authorize a destructive restore.
+      manifest_info="$(backup_admin_manifest_info "$target/manifest.json")" || return 2
+      IFS=$'\t' read -r version included consistent <<< "$manifest_info"
+      [[ "$included" == true && "$consistent" == true ]] || return 2
+      target_format=v2
+      [[ "$snapshot" != v1:* ]] || target_format=v1
+      backup_admin_snapshot_complete "$target" "$target_format" "$manifest_info" || return 2
       XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" backup verify "$target" || return
       XD_CONFIG_DIR="$XDRIVE_HOME" "$MANAGER" restore "$target" --yes ;;
     restore_database_only)
