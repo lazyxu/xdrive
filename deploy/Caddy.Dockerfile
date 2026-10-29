@@ -42,6 +42,14 @@ COPY deploy/Caddyfile.http /etc/caddy/Caddyfile.http
 COPY deploy/Caddyfile.rescue /etc/caddy/Caddyfile.rescue
 COPY deploy/Caddyfile.common /etc/caddy/Caddyfile.common
 COPY web/dist/ /srv/
+# Version-lock the OPTIONAL independent HTTPS map Child to this Caddy image.
+# Keep its unrendered templates OUTSIDE /srv: the Gallery SPA Caddyfile must
+# never serve these files on the main Origin, and no Child Host is auto-enabled.
+# The separately operated Child still needs an approved unrelated HTTPS Origin,
+# explicit CSP/Session config and a trusted Gallery Origin substitution.
+COPY deploy/baidu-isolated-child/index.html /usr/share/xdrive-baidu-isolated-child/index.html
+COPY deploy/baidu-isolated-child/child.js /usr/share/xdrive-baidu-isolated-child/child.js
+COPY deploy/baidu-isolated-child/child.css /usr/share/xdrive-baidu-isolated-child/child.css
 # Main Caddy overlays /srv/assets; rescue keeps the image-baked copy.
 COPY web/dist/assets/ /usr/share/xdrive-current-assets/
 COPY deploy/pwa-archive-assets.sh /usr/local/bin/xdrive-pwa-archive-assets
