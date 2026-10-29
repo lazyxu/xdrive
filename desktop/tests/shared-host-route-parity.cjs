@@ -57,6 +57,9 @@ function render(host, view) {
 // Intentionally supply genuine-domain-shaped ports, not a localBackupClient
 // fallback. Both Hosts get exactly the SAME port objects for each shared page.
 const services = {
+  // The existing Desktop controller is transitional. The shared outlet
+  // admits its element only on the Files route; DSM has a separate Owner port.
+  filesControllerContent: element('XDriveFilesWorkspacePage'),
   overviewPage: { port: {} },
   galleryPage: { source: {} },
   remotePullPage: { source: {} },
@@ -73,6 +76,7 @@ const services = {
   adminServicesPage: { source: {} },
 }
 const expected = {
+  files: 'XDriveFilesWorkspacePage',
   overview: 'XDriveOverviewPage',
   gallery: 'XDriveMediaGalleryPage',
   'device-backup': 'XDriveDeviceBackupPage',
@@ -94,11 +98,11 @@ const host = platform => ({
   unavailableMessage: view => platform + ': unsupported ' + view,
 })
 
-test('the canonical registry covers every non-Files route exactly once', () => {
+test('the canonical registry covers every route, including Files, exactly once', () => {
   assert.equal(new Set(route.XDRIVE_APP_WORKSPACE_ROUTES).size,
     route.XDRIVE_APP_WORKSPACE_ROUTES.length)
   assert.deepEqual([...route.XDRIVE_SHARED_HOST_PAGE_ROUTES].sort(),
-    route.XDRIVE_APP_WORKSPACE_ROUTES.filter(view => view !== 'files').sort())
+    [...route.XDRIVE_APP_WORKSPACE_ROUTES].sort())
   assert.deepEqual(Object.keys(expected).sort(), [...route.XDRIVE_SHARED_HOST_PAGE_ROUTES].sort())
 })
 
@@ -175,4 +179,30 @@ test('Host-owned cloud storage refresh policy is independent of the platform str
   const source = read('ui/shared/src/mui/XDriveAppPageOutlet.tsx')
   assert.doesNotMatch(source, /host\.platform\s*===\s*['"]synology['"]/,
     'shared page selection and refresh behavior must follow real Host ports')
+})
+
+test('Desktop full Files and DSM Owner-only Files share one routable outlet without permission synthesis', () => {
+  const desktop = render(host('desktop'), 'files')
+  assert.equal(desktop.type, 'XDriveFilesWorkspacePage')
+  const synology = render({
+    platform: 'synology', adminRoleVerified: false,
+    services: {
+      ownerFilesPage: {
+        client: { ownerFilesRoot() {}, ownerFilesPage() {} },
+        unavailableActions: { uploadFiles: 'Owner read only' },
+      },
+    },
+  }, 'files')
+  assert.equal(synology.type, 'XDriveSynologyOwnerFilesPage')
+  assert.equal(synology.props.unavailableActions.uploadFiles, 'Owner read only')
+  assert.equal(render({
+    platform: 'synology', services: { localBackupClient: {} },
+  }, 'files').type, 'XDriveStatePanel',
+  'backup-only Agent client cannot silently grant Files read/write rights')
+  const frame = read('ui/shared/src/mui/XDriveAppRouteContent.tsx')
+  const app = read('desktop/src/renderer/App.tsx')
+  assert.doesNotMatch(frame, /hasLegacyFilesContent|usesSharedOutlet/)
+  assert.match(app, /filesControllerContent: view === 'files'/)
+  assert.doesNotMatch(app, /\{view === 'files' && \(\s*<DesktopFilesPage/,
+    'Desktop must not mount a second Files page outside the canonical outlet')
 })
