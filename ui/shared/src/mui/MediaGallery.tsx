@@ -31,6 +31,9 @@ import {
 } from '../media-gallery-baidu-map-photo-scope'
 import type { XDriveBaiduMapPhotoScope } from '../media-gallery-baidu-map-photo-scope'
 import { xDriveGalleryMapEntryScope } from '../media-gallery-baidu-map-entry'
+import { xDriveResolveBaiduOwnerPhotoFocusCamera } from '../media-gallery-baidu-photo-focus-camera'
+import type { XDrivePhotoFocusOwnerState } from '../media-gallery-baidu-photo-focus-camera'
+import type { XDriveViewerPhotoMapSelection } from '../media-gallery-viewer-photo-map-selection'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { XDriveFolderIcon } from './FolderIcon'
 import type { KeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, TouchEvent as ReactTouchEvent, ReactNode } from 'react'
@@ -336,6 +339,10 @@ export interface MediaGalleryDataSource {
     sort: import('../media-gallery-baidu-jsapi4-cell-range').XDriveBaiduCellRangeSort,
     signal: AbortSignal,
   ) => Promise<MediaItemRange>
+  /** Same-origin signed Owner original-photo -> derived BD09 hint.
+   * The Parent must independently authorize current /cells before any cover. */
+  getBaiduNativePhotoFocus?: (nodeID: number, revision: number, signal: AbortSignal) =>
+    Promise<import('../media-gallery-baidu-photo-focus').XDriveBaiduOwnerPhotoFocus>
   getBaiduMapCoverage?: (signal: AbortSignal) => Promise<import('../models').MediaBaiduMapCoverage>
   getBaiduMapCoverageReasons?: (signal: AbortSignal) => Promise<import('../models').MediaBaiduMapCoverageReasons>
   getBaiduJSAPI4Status?: (signal?: AbortSignal) => Promise<{
@@ -940,11 +947,13 @@ export function XDriveMediaGalleryPage({
   const firstContentRangeAbort = useRef<AbortController | null>(null)
   const pendingFirstContentKeyRef = useRef<string | null>(null)
   const nativeCellOpenAbort = useRef<AbortController | null>(null)
+  const galleryPhotoFocusAbort = useRef<AbortController | null>(null)
   const changeBaiduMapPhotoScope=useCallback((input:XDriveBaiduMapPhotoScope)=>{
     const next=xDriveCopyBaiduMapPhotoScope(input)
     if (!next || xDriveBaiduMapPhotoScopeKey(next)===
         xDriveBaiduMapPhotoScopeKey(mapPhotoScopeRef.current))return
     nativeCellOpenAbort.current?.abort()
+    galleryPhotoFocusAbort.current?.abort()
     requestID.current+=1
     xDriveClearBaiduCellReturn(preferenceScope)
     xDriveClearBaiduViewportReturn(preferenceScope)
@@ -958,6 +967,8 @@ export function XDriveMediaGalleryPage({
     pendingFirstContentKeyRef.current = null
     nativeCellOpenAbort.current?.abort()
     nativeCellOpenAbort.current = null
+    galleryPhotoFocusAbort.current?.abort()
+    galleryPhotoFocusAbort.current = null
   }, [source, preferenceScope])
   const placesExpandedRef = useRef(false)
   const collectionTargetRef = useRef<MediaGalleryCollectionTarget | null>(null)
@@ -3928,6 +3939,25 @@ export function XDriveMediaGalleryPage({
 
   // P0-10: carry only precisely representable Owner Gallery membership
   // into the signed map. Never broaden a smart/album/search/folder subset.
+  // The Page owns the current accepted collection and authenticated Host.
+  // A Viewer focus must not outlive a new album, filter, sort, Owner or source.
+  // Refs are updated on every render; the async focus reader checks these
+  // LIVE values instead of a stale render closure after its Server await.
+  const photoMapNow = {
+    owner: preferenceScope, dataSource: source,
+    target: collectionTargetRef.current, section,
+    albumID: currentAlbum?.id ?? '',
+    querySignature: mediaGalleryQuerySignature(query),
+    sortBy: gallerySortRef.current.by, sortDir: gallerySortRef.current.dir,
+    timeZone: mediaTimeZoneRef.current, activeMediaType,
+    loading, failed: Boolean(collectionError),
+    unsupported: Boolean(foldDuplicates || currentFolderView ||
+      currentSuggestedPerson || currentPerson || currentPet ||
+      currentMemory || currentCleanupReview),
+  }
+  const livePhotoMapContextRef = useRef(photoMapNow)
+  livePhotoMapContextRef.current = photoMapNow
+
   const showMapFromCurrentGallery = () => {
     // A draft or failing Gallery Range is not current authorized membership.
     // Never base the map's Count on a filter still awaiting Server acceptance.
@@ -3995,6 +4025,90 @@ export function XDriveMediaGalleryPage({
     return true
   }
 
+
+  /** One precise Photo Info -> Parent map focus, on top of the existing
+   * admitted Gallery membership. This does NOT authorize a media range.
+   * Successful native Camera is followed by the original shared map entry,
+   * which independently requests signed /cells on the new camera. */
+  const showPhotoMapFromCurrentGallery = async (
+    selection: XDriveViewerPhotoMapSelection,
+    isStillSelected: () => boolean,
+  ): Promise<boolean> => {
+    const reject = (message: string) => {
+      setError(message)
+      onError?.(new Error(message))
+      return false
+    }
+    const currentSelection = () => {
+      try { return isStillSelected() === true } catch { return false }
+    }
+    if (!currentSelection() ||
+        !selection || !Number.isSafeInteger(selection.nodeID) || selection.nodeID <= 0 ||
+        !Number.isSafeInteger(selection.revision) || selection.revision <= 0)
+      return false
+    const readFocus = source.getBaiduNativePhotoFocus
+    if (!readFocus || onOpenSecureDesktopMap)
+      return reject('当前宿主不支持精确的单照片地图定位。')
+    const accepted = collectionTargetRef.current
+    if (loading || collectionError || !accepted ||
+        (currentAlbum
+          ? accepted.kind !== 'album' || accepted.id !== currentAlbum.id
+          : accepted.kind !== 'all'))
+      return reject('当前照片集合尚未获得有效的 Owner 范围，无法精确定位。')
+    const entry = xDriveGalleryMapEntryScope({
+      section, album: currentAlbum,
+      query: currentAlbum?.kind === 'smart' ? (currentAlbum.query ?? query) : query,
+      sort: gallerySortRef.current, timeZone: mediaTimeZoneRef.current,
+      activeMediaType,
+      hasUnsupportedContext: Boolean(
+        foldDuplicates || currentFolderView || currentSuggestedPerson ||
+        currentPerson || currentPet || currentMemory || currentCleanupReview),
+    })
+    if (!entry.ok)
+      return reject('当前照片集合的筛选条件不受地图支持，未扩大到全图库。')
+    galleryPhotoFocusAbort.current?.abort()
+    const controller = new AbortController()
+    galleryPhotoFocusAbort.current = controller
+    const captured = livePhotoMapContextRef.current
+    const approved = entry.scope
+    const intent = { nodeID: selection.nodeID, revision: selection.revision }
+    const live = (): XDrivePhotoFocusOwnerState | null => {
+      const now = livePhotoMapContextRef.current
+      if (galleryPhotoFocusAbort.current !== controller ||
+          controller.signal.aborted || !currentSelection() ||
+          now.owner !== captured.owner || now.dataSource !== captured.dataSource ||
+          now.target !== captured.target ||
+          collectionTargetRef.current !== captured.target ||
+          now.section !== captured.section || now.albumID !== captured.albumID ||
+          now.querySignature !== captured.querySignature ||
+          now.sortBy !== captured.sortBy || now.sortDir !== captured.sortDir ||
+          now.timeZone !== captured.timeZone ||
+          now.activeMediaType !== captured.activeMediaType ||
+          now.loading || now.failed || now.unsupported) return null
+      return {ownerScope: preferenceScope, photoScope: approved,
+        focusIntent: intent}
+    }
+    try {
+      const focus = await xDriveResolveBaiduOwnerPhotoFocusCamera(
+        intent, { ownerScope: preferenceScope, photoScope: approved,
+          focusIntent: intent }, readFocus, live, controller.signal,
+        baiduNativeCameraSnapshot)
+      if (!live()) return false
+      if (focus.kind !== 'ready')
+        return reject(focus.kind === 'unavailable'
+          ? '当前照片的 BD-09 位置尚未完成索引，请稍后重试。'
+          : '当前照片位置无效或已经变化，未进入地图。')
+      // This original admission still checks the current Owner Range.
+      // No new map route or SDK is created, nor does a Cell subset widen.
+      if (!showMapFromCurrentGallery()) return false
+      rememberBaiduNativeCamera(focus.camera)
+      return true
+    } finally {
+      if (galleryPhotoFocusAbort.current === controller)
+        galleryPhotoFocusAbort.current = null
+    }
+  }
+
   const appliedScopeLabel = currentFolderView
     ? '同步文件夹：' + currentFolderView.source.source_name +
       ' · ' + currentFolderView.current.path +
@@ -4021,6 +4135,8 @@ export function XDriveMediaGalleryPage({
         onMobileCollectionsOverviewChange={setMobileCollectionsOverview}
         onOpenMobileFilters={() => { void requestFacets() }}
         onShowMap={showMapFromCurrentGallery}
+        onShowPhotoMap={source.getBaiduNativePhotoFocus && !onOpenSecureDesktopMap
+          ? showPhotoMapFromCurrentGallery : undefined}
         // Back/Close must route through leaveCollection even for an expired
         // map entry; only that path can fail closed instead of opening Library.
         canReturnToMapEntry={Boolean(section === 'places' &&
@@ -4750,6 +4866,10 @@ export interface XDriveMediaGalleryProps {
   onRemoveFromAlbum?: (album: MediaAlbum, item: MediaItem) => Promise<MediaAlbum>
   onSectionChange?: (section: MediaGallerySection) => void
   onShowMap?: () => boolean
+  /** Signed single-photo focus for current Owner Gallery. Other Hosts may
+   * omit it; map Cell return continues through the original callback. */
+  onShowPhotoMap?: (selection:XDriveViewerPhotoMapSelection,
+    isStillSelected:()=>boolean)=>Promise<boolean>
   canReturnToMapEntry?: boolean
   onOpenMediaType?: (assetKind: string) => void
   onOpenAlbum?: (album: MediaAlbum) => void
@@ -6470,6 +6590,7 @@ export function XDriveMediaGallery({
   onRemoveFromAlbum,
   onSectionChange,
   onShowMap,
+  onShowPhotoMap,
   canReturnToMapEntry = false,
   onOpenMediaType,
   onOpenAlbum,
@@ -7255,6 +7376,14 @@ export function XDriveMediaGallery({
     previewIndex,
     virtualCollection?.loadedItems,
   ])
+
+  const selectedPhotoMapRef = useRef<{
+    owner: string; scope: string; nodeID: number; revision: number
+  } | null>(null)
+  selectedPhotoMapRef.current = previewItem ? {
+    owner: preferenceScope, scope: selectionScopeKey,
+    nodeID: previewItem.node.id, revision: previewItem.node.revision,
+  } : null
 
   const closeMediaPreview = useCallback(() => {
     setSelected(null)
@@ -9561,9 +9690,26 @@ export function XDriveMediaGallery({
       <XDriveMediaGalleryViewer
         item={previewItem}
         onOpenDynamicMap={onShowMap && (showGalleryMapEntry || nativeCellWall)
-          ? () => {
-              // Reject unsupported/stale Owner ranges before closing the
-              // original Viewer. Never fall back to an unscoped Places tab.
+          ? selection => {
+              if (onShowPhotoMap && showGalleryMapEntry) {
+                const owner = preferenceScope
+                const scope = selectionScopeKey
+                const stillSelected = () => {
+                  const now = selectedPhotoMapRef.current
+                  return now?.owner === owner && now.scope === scope &&
+                    now.nodeID === selection.nodeID &&
+                    now.revision === selection.revision
+                }
+                if (!stillSelected()) return
+                void onShowPhotoMap(selection, stillSelected).then(opened => {
+                  if (!opened || !stillSelected()) return
+                  closeMediaPreview()
+                  setPlacesMobileMode('map')
+                }).catch(() => undefined)
+                return
+              }
+              // A signed Cell/Viewport Viewer returns to the original map,
+              // NEVER to an unrelated unfiltered Parent gallery.
               if (!onShowMap()) return
               closeMediaPreview()
               setPlacesMobileMode('map')
