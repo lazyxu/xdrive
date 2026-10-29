@@ -106,6 +106,23 @@ async function mount() {
     ['useXDriveFileExplorerOwnerQuota'],
     hooks,
   )
+  // Mount the actual shared read-only models introduced by Files/Viewer
+  // consolidation. Missing controller bindings must never turn all 11
+  // Owner/Viewer tests into identical ReferenceErrors.
+  const viewPreferences = loadPlainModule(
+    'ui/shared/src/mui/FileExplorerViewPreference.ts',
+    ['XDRIVE_HOST_FILES_PREFERENCES', 'useXDriveFileExplorerPersistedViewMode'],
+    hooks,
+  )
+  const viewerSelection = loadPlainModule(
+    'ui/shared/src/mui/FileExplorerReadOnlyViewerSelection.ts',
+    ['xDriveFileExplorerReadOnlyViewerSelection'],
+  )
+  const readOnlyDownload = loadPlainModule(
+    'ui/shared/src/mui/FileExplorerReadOnlyDownloadAdmission.ts',
+    ['xDriveFileExplorerReadOnlyDownloadReason'],
+    ownerIdentity,
+  )
   const client = {
     async ownerFilesRoot() { return { id: 1, name: 'Owner' } },
     async ownerFilesPage() { return { items: rows, has_more: false } },
@@ -113,6 +130,7 @@ async function mount() {
   }
   let currentClient = client
   const bindings = { ...hooks, ...ownerFence, ...cursorDirectory, ...quota, ...ownerIdentity,
+    ...viewPreferences, ...viewerSelection, ...readOnlyDownload,
     ...classification, ...media, ...stream, ...scope,
     XDRIVE_SYNOLOGY_OWNER_DOWNLOAD_MAX_BYTES: 32 << 20,
     xDriveFileSupportsThumbnail: () => false,
