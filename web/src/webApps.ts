@@ -1,4 +1,9 @@
 import type { XDriveWebAppID, XDriveWebAppPresentation, XDriveWebAppRoute } from '../../ui/shared/src'
+import {
+  xDriveWorkspaceKeyFromWebApp,
+  xDriveWebAppForWorkspaceRoute,
+  xDriveWebRouteForWorkspaceRoute,
+} from '../../ui/shared/src/web-workspace-route'
 
 export type XDriveWebAppDescriptor = {
   id: XDriveWebAppID
@@ -32,20 +37,13 @@ export const XDRIVE_WEB_APPS: Record<XDriveWebAppID, XDriveWebAppDescriptor> = {
 }
 
 export function xDriveWebAppWorkspaceKey(app: XDriveWebAppID, params?: XDriveWebAppRoute['params']) {
-  if (app === 'sync-folders') return 'remote-pull' // legacy route resolved by persisted direction
-  if (app === 'tasks' && params && 'scope' in params && params.scope === 'global') return 'global-tasks'
-  return XDRIVE_WEB_APPS[app].workspaceKey
+  return xDriveWorkspaceKeyFromWebApp(app, params)
 }
 
 export function xDriveWebAppForWorkspaceKey(key: string): XDriveWebAppID | null {
-  if (key === 'global-tasks') return 'tasks'
-  const app = Object.values(XDRIVE_WEB_APPS).find((entry) => entry.workspaceKey === key)
-  return app?.id ?? null
+  return xDriveWebAppForWorkspaceRoute(key)
 }
 
 export function xDriveWebAppRouteForWorkspaceKey(key: string): XDriveWebAppRoute | null {
-  if (key === 'global-tasks') return { app: 'tasks', params: { scope: 'global' } }
-  if (key === 'transfers') return { app: 'tasks', params: { scope: 'mine' } }
-  const app = xDriveWebAppForWorkspaceKey(key)
-  return app ? { app, params: {} } as XDriveWebAppRoute : null
+  return xDriveWebRouteForWorkspaceRoute(key)
 }
