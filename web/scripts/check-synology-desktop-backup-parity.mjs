@@ -134,11 +134,15 @@ if (!verifiedOwnerDownload.includes('xDriveSynologyFetchVerifiedDownload') ||
     // search route, Host must provide the true disabled reason instead.
     !synologyFiles.includes('searchEnabled') ||
     !synologyFiles.includes('unavailableActions={unavailableActions}') ||
-    !dsmHost.includes('filesUnavailableActions: {') ||
+    !dsmHost.includes('ownerFilesPage: {') ||
+    !dsmHost.includes('client: local,') ||
+    !dsmHost.includes('unavailableActions: {') ||
     !sharedFileExplorer.includes('searchUnavailableReason') ||
     !synologyFiles.includes('forceVirtualization') ||
     !synologyFiles.includes('onOpenItem={item =>') ||
-    !appPageOutlet.includes('<XDriveSynologyOwnerFilesPage key={revision} client={local}') ||
+    !appPageOutlet.includes('if (services.ownerFilesPage) page = (') ||
+    !appPageOutlet.includes('client={services.ownerFilesPage.client}') ||
+    !appPageOutlet.includes('unavailableActions={services.ownerFilesPage.unavailableActions}') ||
     !ownerQuotaIPC.includes('cloud-quota-read') ||
     !ownerQuotaIPC.includes('"/v1/cloud/quota"') ||
     !backupOnly.includes('"GET /v1/cloud/quota"') ||
