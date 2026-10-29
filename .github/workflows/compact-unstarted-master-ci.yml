@@ -10,7 +10,7 @@ on:
       - 'scripts/ci/compact-unstarted-master-ci.cjs'
       - 'scripts/ci/compact-unstarted-master-ci.test.cjs'
   schedule:
-    - cron: '13,43 * * * *'
+    - cron: '7,17,27,37,47,57 * * * *'
   workflow_dispatch:
     inputs:
       dry_run:
@@ -23,8 +23,10 @@ permissions:
   actions: write
 
 concurrency:
+  # Replace obsolete cleanup executions: their stale selector cannot help the
+  # latest master queue. This concurrency is scoped ONLY to the cleanup job.
   group: xdrive-compact-unstarted-master-ci
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   compact:
