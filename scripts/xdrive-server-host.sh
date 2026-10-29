@@ -836,7 +836,7 @@ latest_snapshot_backup() {
 
 backup_list_cmd() {
   [[ $# -eq 0 ]] || { echo "usage: xdrive-server backup list" >&2; return 2; }
-  local root dir name size created channel commit consistent file_data status found=0 required version
+  local root dir name size created channel commit consistent file_data status found=0 required version manifest_info
   backup_snapshot_roots || return
   printf '%-30s %-20s %-9s %-10s %-14s %-16s %s\n' "BACKUP" "CREATED_UTC" "SIZE" "CHANNEL" "COMMIT" "STATUS" "PATH"
   for root in "${BACKUP_SNAPSHOT_ROOTS[@]}"; do
@@ -850,23 +850,40 @@ backup_list_cmd() {
       created="$(backup_manifest_value "$dir/manifest.json" created_at_utc)"
       channel="$(backup_manifest_value "$dir/manifest.json" release_channel)"
       commit="$(backup_manifest_value "$dir/manifest.json" release_commit)"
-      consistent="$(sed -nE 's/.*"consistency_verified"[[:space:]]*:[[:space:]]*(true|false).*/\1/p' "$dir/manifest.json" 2>/dev/null | head -n1 || true)"
-      file_data="$(backup_manifest_bool "$dir/manifest.json" file_data_included true)"
-      status="complete"
-      for required in database.dump verify.json manifest.json SHA256SUMS.txt; do
-        [[ -f "$dir/$required" ]] || { status="incomplete"; break; }
-      done
-      if grep -Eq '"format_version"[[:space:]]*:[[:space:]]*2' "$dir/manifest.json" 2>/dev/null; then
-        for required in objects.index legacy.tar; do
-          [[ -f "$dir/$required" ]] || status="incomplete"
-        done
-        [[ "$status" != "complete" ]] || status="cas-incremental"
-      elif [[ "$status" == "complete" && "$file_data" != "false" && ! -f "$dir/blobs.tar" ]]; then
-        status="incomplete"
-      elif [[ "$status" == "complete" && "$file_data" == "false" ]]; then
-        status="database-only"
+      # The list is informational, but must never label a malformed, duplicate
+      # or nested-key Manifest as a complete recovery point. Reuse the same
+      # bounded, no-follow JSON classifier used by backup verify.
+      manifest_info="$(backup_verified_manifest_info "$dir/manifest.json" 2>/dev/null || true)"
+      version="" file_data="" consistent=""
+      if [[ -n "$manifest_info" ]]; then
+        IFS=$'\t' read -r version file_data consistent <<< "$manifest_info"
       fi
-      [[ "$status" != "complete" || "$consistent" != "false" ]] || status="inconsistent"
+      status="invalid-manifest"
+      if [[ "$version" == 1 || "$version" == 2 ]]; then
+        status="complete"
+        for required in database.dump verify.json manifest.json SHA256SUMS.txt; do
+          [[ -f "$dir/$required" && ! -L "$dir/$required" ]] || { status="incomplete"; break; }
+        done
+        if [[ "$version" == 2 ]]; then
+          for required in objects.index legacy.tar; do
+            [[ -f "$dir/$required" && ! -L "$dir/$required" ]] || status="incomplete"
+          done
+          if [[ "$status" == complete ]]; then
+            if [[ "$file_data" == true ]]; then status="cas-incremental"
+            else status="invalid-manifest"; fi
+          fi
+        elif [[ "$status" == complete ]]; then
+          if [[ "$file_data" == false ]]; then
+            status="database-only"
+          elif [[ ! -f "$dir/blobs.tar" || -L "$dir/blobs.tar" ]]; then
+            status="incomplete"
+          fi
+        fi
+        if [[ "$consistent" == false && "$status" != incomplete &&
+              "$status" != invalid-manifest ]]; then
+          status="inconsistent"
+        fi
+      fi
       [[ -n "$created" ]] || created="-"
       [[ -n "$size" ]] || size="-"
       [[ -n "$channel" ]] || channel="-"
@@ -1614,9 +1631,625 @@ backup_isolated_drill_worker() {
   exec 7< "$lock" || return 4
   flock -s -n 7 || return 75
   [[ -f "$real/manifest.json" && ! -L "$real/manifest.json" ]] || return 4
-  grep -Eq '"format_version"[[:space:]]*:[[:space:]]*2' "$real/manifest.json" || return 4
-  grep -Eq '"consistency_verified"[[:space:]]*:[[:space:]]*true' "$real/manifest.json" || return 4
-  grep -Eq '"file_data_included"[[:space:]]*:[[:space:]]*true' "$real/manifest.json" || return 4
+  # Never authorize a Docker sandbox from grep matches inside nested/duplicate
+  # JSON. Require one bounded, regular, exact v2 complete/full declaration.
+  local manifest_info
+  manifest_info="$(backup_verified_manifest_info "$real/manifest.json")" || return 4
+  [[ "$manifest_info" ==   for file in database.dump verify.json manifest.json objects.index legacy.tar SHA256SUMS.txt; do
+    [[ -f "$real/$file" && ! -L "$real/$file" ]] || return 4
+  done
+  # Refuse huge, invalid or unbounded input before invoking any Docker process.
+  if python3 - "$real" "$cap" <<'PY'
+import os,re,stat,sys
+root,cap=sys.argv[1],int(sys.argv[2])
+try:
+    def size(name):
+        st=os.lstat(os.path.join(root,name))
+        if not stat.S_ISREG(st.st_mode): raise ValueError("nonregular")
+        return st.st_size
+    total=size("legacy.tar")
+    if total>cap or size("database.dump")>cap: sys.exit(5)
+    fd=os.open(os.path.join(root,"objects.index"),os.O_RDONLY|os.O_NOFOLLOW)
+    with os.fdopen(fd,"rb") as f:
+        st=os.fstat(f.fileno())
+        if not stat.S_ISREG(st.st_mode) or st.st_size>64*1024*1024: raise ValueError("unsafe index")
+        for row in f:
+            fields=row.rstrip(b"\n").split(b"\t")
+            if len(fields)!=2 or not re.fullmatch(rb"[0-9a-f]{64}",fields[0]) or \
+               not re.fullmatch(rb"(0|[1-9][0-9]{0,18})",fields[1]):
+                raise ValueError("invalid index row")
+            total+=int(fields[1])
+            if total>cap: sys.exit(5)
+except (OSError,ValueError):
+    sys.exit(4)
+PY
+  then :; else return $?; fi
+  (
+    cd "$real" || exit 1
+    cmp -s SHA256SUMS.txt <(sha256sum database.dump verify.json manifest.json objects.index legacy.tar)
+  ) || return 4
+  cid="$(compose ps -aq server 2>/dev/null | head -n1 || true)"
+  image=""
+  if [[ -n "$cid" ]]; then
+    image="$(docker inspect "$cid" --format '{{.Config.Image}}' </dev/null 2>/dev/null || true)"
+  fi
+  [[ -n "$image" ]] || image="$(env_value XD_SERVER_IMAGE)"
+  [[ -n "$image" ]] || return 6
+  docker image inspect "$image" >/dev/null 2>&1 || return 6
+  docker image inspect postgres:17-alpine >/dev/null 2>&1 || return 6
+  user_uid="$(id -u)" || return 6
+  user_gid="$(id -g)" || return 6
+  [[ "$user_uid" =~ ^[0-9]+$ && "$user_gid" =~ ^[0-9]+$ ]] || return 6
+  token="$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')" || return 6
+  [[ "$token" =~ ^[0-9a-f]{16}$ ]] || return 6
+  cas_name="xd-drill-cas-$token"
+  db_name="xd-drill-pg-$token"
+  # The distroless xDrive helper sees only the immutable repository and /data
+  # tmpfs. Its restore command hashes CAS before copying it to memory.
+  if ! (
+    trap 'docker rm -f "$cas_name" >/dev/null 2>&1 || true' EXIT INT TERM
+    timeout --signal=TERM --kill-after=10s 900s \
+      docker run --pull never --rm --name "$cas_name" --network none \
+      --read-only --cap-drop ALL --security-opt no-new-privileges \
+      --pids-limit 64 --cpus 2 --memory "$((limit+256))m" \
+      --memory-swap "$((limit+256))m" --user "$user_uid:$user_gid" \
+      --tmpfs "/data:rw,nosuid,nodev,noexec,size=${limit}m,uid=$user_uid,gid=$user_gid,mode=0700" \
+      --mount "type=bind,src=$repo,dst=/repo,readonly" \
+      --entrypoint /usr/local/bin/xdrive-backup-repo "$image" \
+      restore --repo /repo --snapshot "$snapshot" --target /data </dev/null
+  ) >&2; then return 7; fi
+  # PostgreSQL receives ONLY pg_dump custom-format bytes on stdin. No host
+  # mounts, live socket/network, or persistent database storage are available.
+  pgcode="$(cat <<'SH'
+set -eu
+export PGDATA=/sandbox/db HOME=/sandbox TMPDIR=/sandbox/tmp
+mkdir -p "$PGDATA" /sandbox/socket "$TMPDIR"
+chmod 700 "$PGDATA" /sandbox/socket
+initdb -D "$PGDATA" -A trust -U xdrive --no-instructions >/dev/null
+pg_ctl -D "$PGDATA" -o "-c listen_addresses='' -c unix_socket_directories=/sandbox/socket -c shared_buffers=16MB -c max_connections=10 -c fsync=off" -w start >/dev/null
+trap 'pg_ctl -D "$PGDATA" -m immediate stop >/dev/null 2>&1 || true' EXIT
+createdb -h /sandbox/socket -U xdrive xdrive
+pg_restore -Fc --exit-on-error --no-owner --no-privileges -h /sandbox/socket -U xdrive -d xdrive >/dev/null
+for relation in xd_nodes xd_files xd_users; do
+  psql -qAt -h /sandbox/socket -U xdrive -d xdrive -v ON_ERROR_STOP=1 \
+    -c "SELECT count(*) FROM public.$relation" >/dev/null
+done
+SH
+)" || return 8
+  if ! (
+    trap 'docker rm -f "$db_name" >/dev/null 2>&1 || true' EXIT INT TERM
+    timeout --signal=TERM --kill-after=10s 900s \
+      docker run --pull never --rm -i --name "$db_name" --network none \
+      --read-only --cap-drop ALL --security-opt no-new-privileges \
+      --pids-limit 128 --cpus 2 --memory "$((limit+256))m" \
+      --memory-swap "$((limit+256))m" --user 70:70 \
+      --tmpfs "/sandbox:rw,nosuid,nodev,size=${limit}m,uid=70,gid=70,mode=0700" \
+      --tmpfs "/var/lib/postgresql/data:rw,nosuid,nodev,noexec,size=16m,uid=70,gid=70,mode=0700" \
+      --shm-size 32m --entrypoint /bin/sh postgres:17-alpine \
+      -ec "$pgcode" < "$real/database.dump"
+  ) >&2; then return 8; fi
+}
+
+backup_isolated_drill_cmd() {
+  [[ $# -eq 1 || $# -eq 3 ]] || {
+    echo "usage: xdrive-server backup drill ABSOLUTE_V2_SNAPSHOT [--max-mib 256..8192]" >&2
+    return 2
+  }
+  local source="$1" limit=1024 result=0 state=failed category="" exe
+  local name started finished files=false database=false
+  if [[ $# -eq 3 ]]; then
+    [[ "$2" == --max-mib && "$3" =~ ^[1-9][0-9]{2,3}$ ]] || return 2
+    limit="$3"
+  fi
+  (( limit >= 256 && limit <= 8192 )) || return 2
+  name="$(basename -- "$source")"
+  [[ "$name" =~ ^xdrive-backup-[0-9]{8}T[0-9]{6}Z$ ]] || name="unavailable"
+  for exe in docker python3 timeout sha256sum readlink flock; do
+    command -v "$exe" >/dev/null 2>&1 || return 2
+  done
+  started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  if backup_isolated_drill_worker "$source" "$limit"; then state=success
+  else result=$?; fi
+  case "$result" in
+    0) category="" ; files=true; database=true ;;
+    3) category=unsafe_snapshot ;;
+    4) category=invalid_snapshot_checksum ;;
+    5) category=sandbox_quota_exceeded ;;
+    6) category=runtime_unavailable ;;
+    7) category=file_restore_failed ;;
+    8) category=postgresql_restore_failed; files=true ;;
+    75) category=repository_busy ;;
+    *) category=drill_failed ;;
+  esac
+  finished="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  printf '{"protocol":"xdrive-host-isolated-drill-v1","state":"%s","environment":"host_ephemeral_offline_tmpfs","snapshot":"%s","started_at":"%s","finished_at":"%s","files_restored":%s,"postgresql_restored":%s,"production_verified":false,"max_mib":%s,"failure_category":"%s"}\n' \
+    "$state" "$name" "$started" "$finished" "$files" "$database" "$limit" "$category"
+  return "$result"
+}
+
+backup_cmd() {
+  local subcommand="${1:-}"
+  case "$subcommand" in
+    list)
+      shift
+      backup_list_cmd "$@"
+      ;;
+    verify)
+      shift
+      backup_verify_cmd "$@"
+      ;;
+    drill)
+      shift
+      backup_isolated_drill_cmd "$@"
+      ;;
+    retention-plan)
+      shift
+      backup_retention_plan_cmd "$@"
+      ;;
+    prune)
+      shift
+      backup_prune_cmd "$@"
+      ;;
+    delete-snapshot)
+      shift
+      backup_delete_snapshot_cmd "$@"
+      ;;
+    preview-delete-snapshot)
+      shift
+      backup_preview_delete_snapshot_cmd "$@"
+      ;;
+    sources)
+      shift
+      backup_sources_cmd "$@"
+      ;;
+    create)
+      shift
+      backup_create_cmd "$@"
+      ;;
+    *)
+      backup_create_cmd "$@"
+      ;;
+  esac
+}
+
+restore_cmd() {
+  local script="$BIN_DIR/server-restore.sh" status
+  [[ -x "$script" ]] || {
+    echo "xdrive-server: restore tool is not installed at $script" >&2
+    return 1
+  }
+  if XD_CONFIG_DIR="$XDRIVE_HOME" "$script" "$@"; then status=0; else status=$?; fi
+  if [[ "$status" -eq 0 ]]; then
+    record_system_audit system.restore success
+  else
+    record_system_audit system.restore failure
+  fi
+  return "$status"
+}
+
+migrate_user_cmd() {
+  local script="$BIN_DIR/server-migrate-user.sh"
+  [[ -x "$script" ]] || {
+    echo "xdrive-server: migration tool is not installed at $script" >&2
+    return 1
+  }
+  if [[ "${EUID:-$(id -u)}" -ne 0 && "${XD_MIGRATE_TEST_ALLOW_NONROOT:-0}" != "1" ]]; then
+    echo "xdrive-server: migrate-user must be started by root." >&2
+    return 1
+  fi
+  XD_SOURCE_CONFIG_DIR="$XDRIVE_HOME" exec "$script" "$@"
+}
+
+verify_cmd() {
+  local script="$BIN_DIR/server-verify.sh" status repair=0 dry_run=0 arg
+  [[ -x "$script" ]] || {
+    echo "xdrive-server: verify tool is not installed at $script" >&2
+    return 1
+  }
+  for arg in "$@"; do
+    [[ "$arg" == "--repair" ]] && repair=1
+    [[ "$arg" == "--dry-run" ]] && dry_run=1
+  done
+  if XD_CONFIG_DIR="$XDRIVE_HOME" "$script" "$@"; then status=0; else status=$?; fi
+  if [[ "$repair" == "1" && "$dry_run" != "1" ]]; then
+    if [[ "$status" -eq 0 ]]; then
+      record_system_audit system.storage_repair success
+    else
+      record_system_audit system.storage_repair failure
+    fi
+  fi
+  return "$status"
+}
+
+source_cmd() {
+  local subcommand="${1:-}"
+  case "$subcommand" in
+    verify)
+      shift
+      compose exec -T server xdrive-server source verify "$@"
+      ;;
+    *)
+      echo "usage: xdrive-server source verify [--json]" >&2
+      return 2
+      ;;
+  esac
+}
+
+media_cmd() {
+  local subcommand="${1:-}"
+  case "$subcommand" in
+    status)
+      shift
+      compose exec -T server xdrive-server media status "$@"
+      ;;
+    verify)
+      shift
+      compose exec -T server xdrive-server media verify "$@"
+      ;;
+    repair)
+      shift
+      local dry_run=0 status arg
+      for arg in "$@"; do
+        [[ "$arg" == "--dry-run" ]] && dry_run=1
+      done
+      if compose exec -T server xdrive-server media repair "$@"; then status=0; else status=$?; fi
+      if [[ "$dry_run" != "1" ]]; then
+        if [[ "$status" -eq 0 ]]; then
+          record_system_audit system.media_repair success
+        else
+          record_system_audit system.media_repair failure
+        fi
+      fi
+      return "$status"
+      ;;
+    *)
+      echo "usage: xdrive-server media <status|verify|repair> [options]" >&2
+      return 2
+      ;;
+  esac
+}
+
+remove_backup_schedule() {
+  command -v crontab >/dev/null 2>&1 || return 0
+  local current tmp
+  current="$(crontab -l 2>/dev/null || true)"
+  [[ -n "$current" ]] || return 0
+  tmp="$(mktemp "${TMPDIR:-/tmp}/xdrive-crontab.XXXXXX")"
+  printf '%s\n' "$current" | grep -v '# xdrive-managed-backup$' > "$tmp" || true
+  crontab "$tmp"
+  rm -f "$tmp"
+}
+
+legacy_volume_candidates() {
+  [[ -f "$LEGACY_VOLUMES_RECORD" ]] || return 0
+  awk -F= '
+    $1 ~ /^(files|postgres|caddy_data|caddy_config)$/ && length($2) > 0 {
+      print $2
+    }
+  ' "$LEGACY_VOLUMES_RECORD" | awk 'NF && !seen[$0]++'
+}
+
+cleanup_legacy_volumes_cmd() {
+  local confirm=0 arg volume attached remaining=0
+  for arg in "$@"; do
+    case "$arg" in
+      --yes) confirm=1 ;;
+      *) echo "usage: xdrive-server cleanup legacy-volumes [--yes]" >&2; return 2 ;;
+    esac
+  done
+
+  mapfile -t volumes < <(legacy_volume_candidates)
+  if [[ "${#volumes[@]}" -eq 0 ]]; then
+    echo "No retained legacy xDrive volumes are recorded."
+    rm -f "$LEGACY_VOLUMES_RECORD"
+    return 0
+  fi
+
+  echo "Retained legacy Docker volumes:"
+  printf '  %s\n' "${volumes[@]}"
+  if [[ "$confirm" != "1" ]]; then
+    echo "No changes made. Rerun with --yes after confirming the bind-mounted deployment and backups are healthy."
+    return 2
+  fi
+
+  for volume in "${volumes[@]}"; do
+    if ! docker volume inspect "$volume" </dev/null >/dev/null 2>&1; then
+      echo "[xDrive] legacy volume already absent: $volume"
+      continue
+    fi
+    attached="$(docker ps -aq --filter "volume=$volume" </dev/null 2>/dev/null || true)"
+    if [[ -n "$attached" ]]; then
+      echo "xdrive-server: refusing to remove legacy volume $volume because container(s) still reference it: $attached" >&2
+      remaining=1
+      continue
+    fi
+    echo "[xDrive] removing retained legacy volume: $volume"
+    if ! docker volume rm "$volume" </dev/null; then
+      remaining=1
+    fi
+  done
+
+  for volume in "${volumes[@]}"; do
+    if docker volume inspect "$volume" </dev/null >/dev/null 2>&1; then
+      remaining=1
+    fi
+  done
+  if [[ "$remaining" == "0" ]]; then
+    rm -f "$LEGACY_VOLUMES_RECORD"
+    echo "Legacy xDrive volumes cleaned up."
+    if [[ -f "$STATE_DIR/runtime-uninstalled" ]]; then
+      local purge_all=0
+      grep -q '^purge_all=1$' "$STATE_DIR/runtime-uninstalled" && purge_all=1
+      rm -f "$STATE_DIR/runtime-uninstalled"
+      rm -f "$BIN_DIR/xdrive-server"
+      rmdir "$BIN_DIR" "$STATE_DIR" 2>/dev/null || true
+      remove_user_command_path
+      if [[ "$purge_all" == "1" ]]; then
+        rm -f "$ENV_PATH"
+        rmdir "$CONFIG_DIR" "$DATA_DIR/caddy" "$DATA_DIR" "$BACKUP_DIR" "$LOG_DIR" "$XDRIVE_HOME" 2>/dev/null || true
+        echo "xDrive fully uninstalled after legacy-volume cleanup."
+      else
+        echo "Retained cleanup manager removed."
+      fi
+    fi
+    return 0
+  fi
+  echo "xdrive-server: one or more retained legacy volumes remain; the record was kept at $LEGACY_VOLUMES_RECORD" >&2
+  return 1
+}
+
+cleanup_cmd() {
+  local target="${1:-}"
+  [[ -n "$target" ]] || {
+    echo "usage: xdrive-server cleanup legacy-volumes [--yes]" >&2
+    return 2
+  }
+  shift || true
+  case "$target" in
+    legacy-volumes) cleanup_legacy_volumes_cmd "$@" ;;
+    *) echo "xdrive-server: unknown cleanup target: $target" >&2; return 2 ;;
+  esac
+}
+
+canonical_path() {
+  local path="$1"
+  if command -v readlink >/dev/null 2>&1; then
+    readlink -m "$path" 2>/dev/null && return 0
+  fi
+  printf '%s\n' "$path"
+}
+
+validate_purge_path() {
+  local label="$1" path="$2" resolved home_resolved
+  [[ -n "$path" && "$path" == /* ]] || {
+    echo "xdrive-server: refusing to purge $label because its path is not absolute: $path" >&2
+    return 1
+  }
+  resolved="$(canonical_path "$path")"
+  home_resolved="$(canonical_path "$XDRIVE_HOME")"
+  case "$resolved" in
+    /|/home|/root|/usr|/etc|/var|/var/lib|/opt|"$HOME"|"$home_resolved"|"$CONFIG_DIR"|"$BACKUP_DIR"|"$BIN_DIR"|"$LOG_DIR"|"$STATE_DIR")
+      echo "xdrive-server: refusing dangerous purge path for $label: $resolved" >&2
+      return 1
+      ;;
+  esac
+}
+
+purge_container_owned_dir() {
+  local label="$1" path="$2" helper_image
+  [[ -e "$path" ]] || return 0
+  validate_purge_path "$label" "$path"
+  helper_image="$(env_value XD_POSTGRES_IMAGE)"
+  [[ -n "$helper_image" ]] || helper_image="postgres:17-alpine"
+  echo "[xDrive] purging $label: $path"
+  docker run --rm --entrypoint sh \
+    -v "$path:/xdrive-purge" \
+    "$helper_image" \
+    -ec 'find /xdrive-purge -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +' </dev/null
+  rmdir "$path" 2>/dev/null || true
+}
+
+uninstall_cmd() {
+  local purge_data=0 purge_backups=0 confirm=0 arg
+  local files_dir postgres_dir caddy_data_dir caddy_config_dir
+  for arg in "$@"; do
+    case "$arg" in
+      --purge-data) purge_data=1 ;;
+      --purge-backups) purge_backups=1 ;;
+      --yes) confirm=1 ;;
+      *) echo "usage: xdrive-server uninstall [--purge-data] [--purge-backups] --yes" >&2; return 2 ;;
+    esac
+  done
+  if [[ "$confirm" != "1" ]]; then
+    echo "xdrive-server: uninstall requires --yes. Data and backups are preserved unless their purge flags are also supplied." >&2
+    return 2
+  fi
+
+  files_dir="$(env_value XD_FILES_DATA_DIR)"
+  postgres_dir="$(env_value XD_POSTGRES_DATA_DIR)"
+  caddy_data_dir="$(env_value XD_CADDY_DATA_DIR)"
+  caddy_config_dir="$(env_value XD_CADDY_CONFIG_DIR)"
+  [[ -n "$files_dir" ]] || files_dir="$DATA_DIR/files"
+  [[ -n "$postgres_dir" ]] || postgres_dir="$DATA_DIR/postgres"
+  [[ -n "$caddy_data_dir" ]] || caddy_data_dir="$DATA_DIR/caddy/data"
+  [[ -n "$caddy_config_dir" ]] || caddy_config_dir="$DATA_DIR/caddy/config"
+
+  if [[ "$purge_data" == "1" ]]; then
+    validate_purge_path "file data" "$files_dir"
+    validate_purge_path "PostgreSQL data" "$postgres_dir"
+    validate_purge_path "Caddy data" "$caddy_data_dir"
+    validate_purge_path "Caddy config" "$caddy_config_dir"
+  fi
+
+  if [[ -x "$BIN_DIR/server-control.sh" ]]; then
+    XD_CONFIG_DIR="$XDRIVE_HOME" "$BIN_DIR/server-control.sh" stop || true
+    XD_CONFIG_DIR="$XDRIVE_HOME" "$BIN_DIR/server-control.sh" remove-schedule || true
+  fi
+
+  if [[ -f "$ENV_PATH" && -f "$COMPOSE_PATH" ]]; then
+    echo "[xDrive] stopping and removing xDrive containers and network..."
+    compose down --remove-orphans
+  else
+    echo "[xDrive] no active Compose deployment found; cleaning host control files only."
+  fi
+
+  remove_backup_schedule
+
+  if [[ "$purge_data" == "1" ]]; then
+    purge_container_owned_dir "file data" "$files_dir"
+    purge_container_owned_dir "PostgreSQL data" "$postgres_dir"
+    purge_container_owned_dir "Caddy data" "$caddy_data_dir"
+    purge_container_owned_dir "Caddy config" "$caddy_config_dir"
+    rmdir "$DATA_DIR/caddy" "$DATA_DIR" 2>/dev/null || true
+  fi
+  if [[ "$purge_backups" == "1" ]]; then
+    echo "[xDrive] purging backups: $BACKUP_DIR"
+    rm -rf "$BACKUP_DIR"
+  fi
+
+  rm -f "$CONFIG_DIR/docker-compose.yml" "$CONFIG_DIR/Caddyfile"
+  rm -rf "$LOG_DIR"
+
+  if [[ -f "$LEGACY_VOLUMES_RECORD" ]]; then
+    local retained_tmp manager_tmp purge_all=0
+    [[ "$purge_data" == "1" && "$purge_backups" == "1" ]] && purge_all=1
+    retained_tmp="$(mktemp "${TMPDIR:-/tmp}/xdrive-legacy-volumes.XXXXXX")"
+    manager_tmp="$(mktemp "${TMPDIR:-/tmp}/xdrive-manager.XXXXXX")"
+    cp "$LEGACY_VOLUMES_RECORD" "$retained_tmp"
+    cp "$BIN_DIR/xdrive-server" "$manager_tmp"
+    rm -rf "$STATE_DIR" "$BIN_DIR"
+    mkdir -p "$STATE_DIR" "$BIN_DIR"
+    chmod 700 "$STATE_DIR" "$BIN_DIR"
+    mv "$retained_tmp" "$LEGACY_VOLUMES_RECORD"
+    mv "$manager_tmp" "$BIN_DIR/xdrive-server"
+    chmod 600 "$LEGACY_VOLUMES_RECORD"
+    chmod 700 "$BIN_DIR/xdrive-server"
+    printf 'purge_all=%s\n' "$purge_all" > "$STATE_DIR/runtime-uninstalled"
+    chmod 600 "$STATE_DIR/runtime-uninstalled"
+    echo "[xDrive] retained legacy-volume record: $LEGACY_VOLUMES_RECORD"
+    echo "[xDrive] cleanup-only manager retained at $BIN_DIR/xdrive-server"
+    echo "[xDrive] run '$BIN_DIR/xdrive-server cleanup legacy-volumes --yes' when you are ready to remove the old volumes."
+  else
+    rm -rf "$STATE_DIR" "$BIN_DIR"
+    remove_user_command_path
+  fi
+
+  if [[ "$purge_data" == "1" && "$purge_backups" == "1" && ! -f "$LEGACY_VOLUMES_RECORD" ]]; then
+    rm -f "$ENV_PATH"
+    rmdir "$CONFIG_DIR" "$DATA_DIR/caddy" "$DATA_DIR" "$BACKUP_DIR" "$LOG_DIR" "$XDRIVE_HOME" 2>/dev/null || true
+    echo "xDrive fully uninstalled; runtime, data, backups, and retained configuration were removed."
+    return 0
+  fi
+
+  echo "xDrive runtime uninstalled."
+  [[ -f "$ENV_PATH" ]] && echo "Retained configuration/secrets: $ENV_PATH"
+  [[ "$purge_data" != "1" ]] && echo "Retained data: $files_dir, $postgres_dir, $caddy_data_dir, $caddy_config_dir"
+  [[ "$purge_backups" != "1" ]] && echo "Retained backups: $BACKUP_DIR"
+}
+
+admin_cmd() {
+  [[ -f "$ENV_PATH" && -f "$COMPOSE_PATH" ]] || {
+    echo "xdrive-server: no xDrive deployment found in $CONFIG_DIR" >&2
+    return 1
+  }
+
+  local subcommand="${1:-}"
+  [[ -n "$subcommand" ]] || {
+    echo "usage: xdrive-server admin <list|reset-password|enable|disable>" >&2
+    return 2
+  }
+  shift || true
+
+  case "$subcommand" in
+    list)
+      compose exec -T server xdrive-server admin list "$@"
+      ;;
+    enable|disable)
+      compose exec -T server xdrive-server admin "$subcommand" "$@"
+      ;;
+    reset-password)
+      local password_stdin=0 arg password confirm
+      for arg in "$@"; do
+        case "$arg" in
+          --password-stdin)
+            password_stdin=1
+            ;;
+          --password|--password=*)
+            echo "xdrive-server: --password is not supported; use the interactive prompt or --password-stdin." >&2
+            return 2
+            ;;
+        esac
+      done
+
+      if [[ "$password_stdin" == "1" ]]; then
+        compose_with_stdin exec -T server xdrive-server admin reset-password "$@"
+        return
+      fi
+
+      if [[ ! -r /dev/tty || ! -w /dev/tty ]]; then
+        echo "xdrive-server: no interactive terminal; pass --password-stdin and provide the password on stdin." >&2
+        return 2
+      fi
+      read -r -s -p "New password: " password </dev/tty
+      printf '\n' >/dev/tty
+      read -r -s -p "Confirm password: " confirm </dev/tty
+      printf '\n' >/dev/tty
+      if [[ -z "$password" ]]; then
+        echo "xdrive-server: password is empty." >&2
+        return 2
+      fi
+      if [[ "$password" != "$confirm" ]]; then
+        echo "xdrive-server: passwords do not match." >&2
+        return 2
+      fi
+      printf '%s\n' "$password" |
+        compose_with_stdin exec -T server xdrive-server admin reset-password "$@" --password-stdin
+      unset password confirm
+      ;;
+    *)
+      echo "usage: xdrive-server admin <list|reset-password|enable|disable>" >&2
+      return 2
+      ;;
+  esac
+}
+
+version_cmd() {
+  local channel commit image
+  if ! compose exec -T server xdrive-server version 2>/dev/null; then
+    channel="$(env_value XD_RELEASE_CHANNEL)"
+    commit="$(env_value XD_RELEASE_COMMIT)"
+    printf 'server version: unavailable\n'
+    printf 'channel: %s\n' "${channel:-unknown}"
+    [[ -n "$commit" ]] && printf 'commit: %s\n' "$commit"
+  fi
+  image="$(env_value XD_SERVER_IMAGE)"
+  [[ -n "$image" ]] && printf 'server image: %s\n' "$image"
+}
+
+cmd="${1:-}"
+[[ -n "$cmd" ]] || { usage >&2; exit 2; }
+shift || true
+
+case "$cmd" in
+  update) update_cmd "$@" ;;
+  control) control_cmd "$@" ;;
+  doctor) doctor_cmd "$@" ;;
+  lan-ca) lan_ca_cmd "$@" ;;
+  status) status_cmd "$@" ;;
+  backup) backup_cmd "$@" ;;
+  restore) restore_cmd "$@" ;;
+  verify) verify_cmd "$@" ;;
+  source) source_cmd "$@" ;;
+  media) media_cmd "$@" ;;
+  migrate-user) migrate_user_cmd "$@" ;;
+  cleanup) cleanup_cmd "$@" ;;
+  uninstall) uninstall_cmd "$@" ;;
+  admin) admin_cmd "$@" ;;
+  version) version_cmd ;;
+  -h|--help|help) usage ;;
+  *) echo "xdrive-server: unknown command: $cmd" >&2; usage >&2; exit 2 ;;
+esac
+2\ttrue\ttrue' ]] || return 4
   for file in database.dump verify.json manifest.json objects.index legacy.tar SHA256SUMS.txt; do
     [[ -f "$real/$file" && ! -L "$real/$file" ]] || return 4
   done
