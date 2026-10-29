@@ -9,12 +9,13 @@ The new **iPhone 系统相册备份** section is rendered inside the existing
 present and the PWA has a current Server-verified Owner.
 
 The previous SwiftUI `LoginScreen`, `PhotoBackupMVPScreen`,
-`LocalPhotoInventoryScreen` etc. are **unmounted legacy implementation**
-during this transition; new iOS functionality must not add or revive those
-pages. Their PhotoKit/Go UploadSession/ledger core can be reused independently.
-The small SwiftUI initial HTTPS server picker and connection failure recovery
-are host bootstrapping, not a second authenticated product UI. The temporary
-host-level server-change control remains until it can be moved into shared UI.
+`LocalPhotoInventoryScreen` and old standalone native-login Keychain
+store have been removed in the consolidated follow-up. Their reusable
+PhotoKit/Go UploadSession/ledger core remains the one real backup path.
+The small initial HTTPS server picker and connection error recovery
+are host bootstrapping, not a second authenticated product UI.
+Changing servers is initiated from the canonical React Login/Settings,
+not an additional floating native menu.
 
 ## Architecture
 
@@ -40,6 +41,7 @@ Only the **HTTPS main frame** of the pinned WebView origin may send
 | `photos.requestAccess` | Yes | Prompt Photos authorization on **user click** |
 | `photos.backup.start` | Yes | Native UIKit explicit confirmation, then bounded foreground originals |
 | `photos.backup.cancel` | No | Cancel the current foreground task only |
+| `host.server.change` | No | Exact-origin shared UI action; host asks before switching servers |
 
 Messages must carry a UUID request id, version 1, exact method and bounded
 input. Responses and progress are delivered through matching-id CustomEvents.
@@ -61,9 +63,10 @@ retain the sealed intent as uncertain and report that status.
 
 - Permission can be Full or Limited. The visible count is the authorized
   subset, not the iPhone's full photo library.
-- A click scans at most 256 recent authorized candidates and uploads at most
-  20 ordinary still originals. Repeated runs can verify known originals,
-  but do **not** claim permanent all-library coverage.
+- A click scans only the chosen 256-entry window (64 candidates/page)
+  and uploads at most 20 ordinary still originals. Repeat scans recheck
+  known Node/SHA receipts; PhotoKit offsets are transient and do **not**
+  prove permanent all-library coverage.
 - iCloud originals are downloaded only after a separate explicit opt-in
   (off by default). No thumbnail substitution.
 - Live Photo still+motion pairing, original video backup, background sync,

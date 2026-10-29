@@ -54,28 +54,11 @@ struct XDriveWebAppHome: View {
                     XDriveOriginLockedWebView(
                         origin: origin,
                         onPageError: { pageError = $0 },
-                        onDownloadNotice: { downloadNotice = $0 }
+                        onDownloadNotice: { downloadNotice = $0 },
+                        onRequestServerChange: { confirmLeave = true }
                     )
                         .ignoresSafeArea(.container, edges: .bottom)
                         .id(origin.absoluteString)
-
-                    // Temporary native control; move this to the shared App
-                    // settings once a verified native/Web session bridge exists.
-                    Menu {
-                        Button {
-                            confirmLeave = true
-                        } label: {
-                            Label("更换服务器", systemImage: "server.rack")
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis.circle.fill")
-                            .font(.system(size: 21, weight: .semibold))
-                            .foregroundStyle(.primary)
-                            .padding(7)
-                            .background(.regularMaterial, in: Circle())
-                    }
-                    .accessibilityLabel("iOS 原生连接菜单")
-                    .padding(.trailing, 5)
 
                     if let downloadNotice {
                         VStack {
@@ -196,10 +179,12 @@ private struct XDriveOriginLockedWebView: UIViewRepresentable {
     let origin: URL
     let onPageError: (String?) -> Void
     let onDownloadNotice: (String?) -> Void
+    let onRequestServerChange: () -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(origin: origin, onPageError: onPageError,
-                    onDownloadNotice: onDownloadNotice)
+                    onDownloadNotice: onDownloadNotice,
+                    onRequestServerChange: onRequestServerChange)
     }
 
     func makeUIView(context: Context) -> WKWebView {
@@ -243,10 +228,13 @@ private struct XDriveOriginLockedWebView: UIViewRepresentable {
         let photoHost: XDriveIOSPhotoHostBridge
 
         init(origin: URL, onPageError: @escaping (String?) -> Void,
-             onDownloadNotice: @escaping (String?) -> Void) {
+             onDownloadNotice: @escaping (String?) -> Void,
+             onRequestServerChange: @escaping () -> Void) {
             self.origin = origin
             self.onPageError = onPageError
-            self.photoHost = XDriveIOSPhotoHostBridge(origin: origin)
+            self.photoHost = XDriveIOSPhotoHostBridge(
+                origin: origin, onRequestServerChange: onRequestServerChange
+            )
             self.downloads = XDriveWebDownloadCoordinator(
                 origin: origin, onNotice: onDownloadNotice
             )
