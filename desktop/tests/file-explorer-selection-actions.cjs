@@ -13,10 +13,17 @@ function loadShared(name = 'file-explorer-controller') {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 }, fileName: filename,
   }).outputText
   const mod = { exports: {} }
-  new Function('exports', 'module', 'require', output)(mod.exports, mod, require)
+  // Execute the same compiled shared admission policy as Web and Desktop.
+  // The module imports the shared controller, not a test-local stub.
+  const localRequire = (specifier) =>
+    specifier === './file-explorer-controller'
+      ? loadShared('file-explorer-controller')
+      : require(specifier)
+  new Function('exports', 'module', 'require', output)(mod.exports, mod, localRequire)
   return mod.exports
 }
 const shared = loadShared()
+const sharedAdmission = loadShared('file-explorer-selection-admission')
 const node = (id) => ({ id, name: `item-${id}.txt`, type: 'file', parent_id: 1, revision: 3, size: 1 })
 const item = (id) => ({ id, name: `item-${id}.txt`, kind: 'file', revision: 3, size: 1 })
 
@@ -50,6 +57,7 @@ function adapterHarness(platform, nodes, options = {}) {
   const downloadResult = options.downloadResult ?? { canceled: false, downloaded: ['item-1.txt'], failures: [{ name: 'item-2.txt', message: 'disk full' }] }
   const dependencies = {
     ...shared,
+    ...sharedAdmission,
     useCallback: (callback) => callback,
     nodeByID: new Map(nodes.map((entry) => [entry.id, entry])),
     trashActive: false, fileOperationBusy: false, explorerActionBusy: false, uploadBusy: false,
