@@ -45,12 +45,12 @@ type NativeMap = {
   pointToPixel?(point: NativePoint): { x: number; y: number }
   addOverlay(label: NativeLabel): void
   removeOverlay(label: NativeLabel): void
-  addEventListener(event: 'movestart' | 'zoomstart' | 'moveend' | 'zoomend',
+  addEventListener(event: EventName,
     callback: () => void): void
-  removeEventListener(event: 'movestart' | 'zoomstart' | 'moveend' | 'zoomend',
+  removeEventListener(event: EventName,
     callback: () => void): void
 }
-type EventName = 'movestart' | 'zoomstart' | 'moveend' | 'zoomend'
+type EventName = 'movestart' | 'zoomstart' | 'moving' | 'zooming' | 'moveend' | 'zoomend'
 export type XDriveBaiduInlineMapOptions<T> =
   Omit<XDriveBaiduIsolatedFrameOptions<T>, 'childOrigin'> & {
     getPrototypeConfig(signal: AbortSignal): Promise<XDriveBaiduJSAPIPrototypeConfig>
@@ -69,7 +69,7 @@ export interface XDriveBaiduInlineMapHost<T> {
 }
 
 const maxCells = 64
-const maxPhotoCovers = 24
+const maxPhotoCovers = 64
 function validCell<T>(cell: XDriveTrustedIsolatedMapCell<T>): boolean {
   return Boolean(cell && cell.selection !== undefined &&
     Number.isFinite(cell.latitude) && Math.abs(cell.latitude) <= 85 &&
@@ -103,6 +103,10 @@ export function xDriveMountBaiduInlineMap<T>(
   let browserAK: string | null = null
   let labels: Array<{ label: NativeLabel; click: () => void }> = []
   let cells: readonly XDriveTrustedIsolatedMapCell<T>[] = []
+  // Only the geometry of a previously signed page can be reprojected while
+  // the SDK pans. No click or authorized current Cells use gestureCells.
+  let gestureCells: readonly XDriveTrustedIsolatedMapCell<T>[] = []
+  let gestureFrame: number | null = null
   let coveredSelections = new Set<T>()
   let pendingViewport: ReturnType<typeof setTimeout> | null = null
   let observedSize: {width:number;height:number} | null = null
@@ -129,19 +133,21 @@ export function xDriveMountBaiduInlineMap<T>(
     generation++
     clearTimer()
     clearLabels()
+    if (cells.length>0)gestureCells=cells
     cells = []
     coveredSelections.clear()
     clearProjection()
     options.onCancel?.()
+    projectGesture()
   }
-  const emitProjections = () => {
+  const emitProjections = (gesture=false) => {
     if (!alive || !ready || !map?.pointToPixel || !sdk) return
     const width = Math.round(canvas.clientWidth)
     const height = Math.round(canvas.clientHeight)
     if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) ||
         width < 1 || height < 1 || width > 4096 || height > 4096) return
     const projected: Array<{selection:T;count:number;x:number;y:number}> = []
-    for (const cell of cells) {
+    for (const cell of gesture ? gestureCells : cells) {
       try {
         const position = map.pointToPixel(new sdk.Point(cell.longitude,cell.latitude))
         const x = Math.round(position.x)
@@ -151,7 +157,25 @@ export function xDriveMountBaiduInlineMap<T>(
         projected.push({selection:cell.selection,count:cell.count,x,y})
       } catch { /* Optional SDK projection is not media authority. */ }
     }
-    options.onProjectedCells?.({width,height,cells:projected})
+    if (gesture)options.onGestureProjectedCells?.({width,height,cells:projected})
+    else options.onProjectedCells?.({width,height,cells:projected})
+  }
+  const projectGesture = () => {
+    if (!gestureCells.length || gestureFrame!==null || !alive) return
+    if (typeof browser.requestAnimationFrame !== 'function') {
+      emitProjections(true) // older test/browser Host, still bounded to 64
+      return
+    }
+    gestureFrame=browser.requestAnimationFrame(()=>{
+      gestureFrame=null
+      if (gestureCells.length)emitProjections(true)
+    })
+  }
+  const clearGesture = () => {
+    gestureCells=[]
+    if (gestureFrame!==null && typeof browser.cancelAnimationFrame==='function')
+      browser.cancelAnimationFrame(gestureFrame)
+    gestureFrame=null
   }
   const renderCells = (republishProjection = true): boolean => {
     clearLabels()
@@ -218,6 +242,7 @@ export function xDriveMountBaiduInlineMap<T>(
     } catch { /* Never echo third-party errors or arbitrary coordinates. */ }
   }
   const scheduleViewport = () => {
+    projectGesture()
     clearTimer()
     pendingViewport = setTimeout(() => {
       pendingViewport = null
@@ -265,6 +290,8 @@ export function xDriveMountBaiduInlineMap<T>(
   const listeners: Array<{event:EventName; callback:()=>void}> = [
     {event:'movestart',callback:stopViewport},
     {event:'zoomstart',callback:stopViewport},
+    {event:'moving',callback:projectGesture},
+    {event:'zooming',callback:projectGesture},
     {event:'moveend',callback:scheduleViewport},
     {event:'zoomend',callback:scheduleViewport},
   ]
@@ -274,6 +301,7 @@ export function xDriveMountBaiduInlineMap<T>(
     lifetime.abort()
     generation++
     clearTimer()
+    clearGesture()
     sizeObserver?.disconnect()
     sizeObserver = null
     if (windowResizeFallback) {
@@ -372,6 +400,7 @@ export function xDriveMountBaiduInlineMap<T>(
       if (!alive || !Array.isArray(next) || next.length > maxCells ||
           next.some(cell=>!validCell(cell))) {
         cells = []
+        clearGesture()
         coveredSelections.clear()
         generation++
         clearLabels()
@@ -380,6 +409,7 @@ export function xDriveMountBaiduInlineMap<T>(
       }
       generation++
       cells = [...next]
+      if (next.length>0)clearGesture()
       coveredSelections.clear()
       resizeRevoked = false
       return renderCells()

@@ -2462,7 +2462,8 @@ export function XDriveMediaGalleryPage({
     directPhoto?: { nodeID: number; revision: number;
       presentation: import('../media-gallery-places-photo-drawer').XDrivePlacesDrawerPresentation },
   ) => {
-    if (!source.listBaiduNativeCellItems || pageSize < 1 || pageSize > 100) return
+    const listCellItems=source.listBaiduNativeCellItems
+    if (!listCellItems || pageSize < 1 || pageSize > 100) return
     if (directPhoto && (returning || !onOpenViewer ||
       !Number.isSafeInteger(directPhoto.nodeID) || directPhoto.nodeID <= 0 ||
       !Number.isSafeInteger(directPhoto.revision) || directPhoto.revision <= 0)) return
@@ -2507,13 +2508,14 @@ export function XDriveMediaGalleryPage({
     // scope; release the old disposable covers before its first Range GET.
     // Keep the prior map visible until the Owner-scoped response commits.
     const finishContentTransition = xDriveBeginForegroundContentTransition(['gallery', 'map'])
-    void source.listBaiduNativeCellItems(
+    void listCellItems(
       cell, pageSize, 0, {
         by:sort.by,dir:sort.dir,filters:approved.filters,
         albumKey:approved.albumKey,
-        ...(returning?.anchorNodeID ? { anchorNodeID: returning.anchorNodeID } : {}),
+        ...(directPhoto ? { anchorNodeID:directPhoto.nodeID } :
+          returning?.anchorNodeID ? { anchorNodeID:returning.anchorNodeID } : {}),
       }, controller.signal,
-    ).then((range) => {
+    ).then(async (range) => {
       if (controller.signal.aborted || request !== requestID.current) return
       if (range.offset !== 0 || range.limit !== pageSize ||
           !Number.isSafeInteger(range.total_count) || range.total_count < 0 ||
@@ -2526,22 +2528,41 @@ export function XDriveMediaGalleryPage({
         setError('该区域照片已变化，请在地图中重新选择')
         return
       }
-      // A drawer thumbnail is not media authority. A second fresh Owner
-      // /cell-items Range must still contain the same Node and revision.
+      // The modal can display a later 48-item page. Never assume the
+      // clicked thumbnail belongs to page zero: ask the SAME authenticated
+      // Owner Cell for its indexed anchor, then read that exact bounded page.
+      // Both requests still validate Owner/album/filter/source/Cell revision.
       if (directPhoto) {
-        const index=range.items.findIndex(item =>
-          item.node.id===directPhoto.nodeID &&
-          item.node.revision===directPhoto.revision)
-        if (index < 0 || !xDrivePlacesCellAcceptsLogicalRangeCount(cell,range.total_count)) {
+        const index=range.anchor_index
+        if (typeof index !== 'number' || !Number.isSafeInteger(index) ||
+            index < 0 || index >= range.total_count ||
+            !xDrivePlacesCellAcceptsLogicalRangeCount(cell,range.total_count)) {
+          setError('该地点照片已变化，请重新选择')
+          return
+        }
+        const pageOffset=Math.floor(index/pageSize)*pageSize
+        const itemPage=pageOffset===0 ? range : await listCellItems(
+          cell,pageSize,pageOffset,{
+            by:sort.by,dir:sort.dir,filters:approved.filters,
+            albumKey:approved.albumKey,
+          },controller.signal)
+        if(controller.signal.aborted || request!==requestID.current) return
+        const itemIndex=index-pageOffset
+        if (itemPage.offset!==pageOffset || itemPage.limit!==pageSize ||
+            itemPage.total_count!==range.total_count ||
+            !Array.isArray(itemPage.items) ||
+            itemPage.items.length!==Math.min(pageSize,range.total_count-pageOffset) ||
+            itemPage.items[itemIndex]?.node.id!==directPhoto.nodeID ||
+            itemPage.items[itemIndex]?.node.revision!==directPhoto.revision) {
           setError('该地点照片已变化，请重新选择')
           return
         }
         xDriveClearBaiduCellReturn(preferenceScope)
         setBaiduCellOwner({scope:preferenceScope,selection:undefined})
-        // Preserve only bounded UI scroll/expansion; Owner /cells must reauthorize.
+        // Short-lived visual intent only; map return must reauthorize /cells.
         xDriveRememberPlacesDrawerViewerReturn(preferenceScope,cell,approved,
           Date.now(),directPhoto.presentation)
-        onOpenViewer!(range.items[index], {
+        onOpenViewer!(itemPage.items[itemIndex], {
           target:{kind:'baidu-cell',id:approved.albumKey || undefined,
             baiduCell:cell,query:cellQuery},
           activeIndex:index,totalCount:range.total_count,

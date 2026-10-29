@@ -40,9 +40,23 @@ export type XDriveAdminAuditPort = {
   adminAuditRange(query: XDriveAdminAuditRangeQuery, signal?: AbortSignal): Promise<AuditEventRange>
 }
 
+export type XDriveStorageVerificationRun = {
+  /** Decimal identity retained as a string to avoid JavaScript uint64 loss. */
+  run_id: string
+  mode: 'fast' | 'deep'
+  state: 'success' | 'issues' | 'failed' | 'partial' | 'cancelled'
+  started_at: string
+  finished_at: string
+}
+export type XDriveStorageVerificationRunPage = {
+  protocol: 'xdrive-storage-verification-history-v1'
+  items: XDriveStorageVerificationRun[]
+  next_cursor?: string
+}
+
 /** Global Storage operations are administrator-owned and Server-authorized. */
 export type XDriveAdminStorageOperation =
-  | 'stats' | 'health' | 'history' | 'legacy' | 'unreferenced' | 'staging'
+  | 'stats' | 'health' | 'history' | 'verification-runs' | 'legacy' | 'unreferenced' | 'staging'
   | 'cleanup-runs' | 'cleanup-failures' | 'cleanup-staging' | 'cleanup-cache'
   | 'optimization-advice'
 export type XDriveAdminStorageRequest = {
@@ -60,6 +74,7 @@ export type XDriveAdminStoragePort = {
   adminStorageStats(): Promise<StorageStats>
   adminStorageHealth(): Promise<StorageHealth>
   adminStorageHistory(days?: number): Promise<StorageHistory>
+  adminStorageVerificationRuns(limit?: number, cursor?: string): Promise<XDriveStorageVerificationRunPage>
   adminStorageOptimizationAdvice(): Promise<StorageOptimizationAdvice>
   adminStorageLegacyObjects(limit?: number, cursor?: string): Promise<StorageLegacyObjectPage>
   adminStorageUnreferencedBlobs(limit?: number, cursor?: string): Promise<StorageUnreferencedBlobPage>

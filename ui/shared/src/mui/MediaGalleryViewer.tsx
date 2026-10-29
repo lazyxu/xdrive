@@ -37,6 +37,7 @@ import {
 } from './MediaGalleryCreativeDialog'
 import { XDriveMediaGalleryEditDialog } from './MediaGalleryEditDialog'
 import { XDriveMediaGalleryViewerLocationDialog } from './MediaGalleryViewerLocationDialog'
+import type { XDriveViewerPhotoMapSelection } from '../media-gallery-viewer-photo-map-selection'
 import { XDriveMediaGalleryFilmstrip } from './MediaGalleryFilmstrip'
 import type { XDriveMediaGalleryFilmstripEntry } from './MediaGalleryFilmstrip'
 import { XDriveMediaViewerContent } from './MediaViewerContent'
@@ -108,7 +109,7 @@ export function XDriveMediaGalleryViewer({
   getBaiduMapIndexJob?: (nodeID: number) => Promise<MediaBaiduMapIndexJob>
   enqueueBaiduMapIndexJob?: (nodeID: number, input: MediaBaiduMapIndexJobInput) => Promise<MediaBaiduMapIndexJob>
   cancelBaiduMapIndexJob?: (nodeID: number, revision: number) => Promise<MediaBaiduMapIndexJob>
-  onOpenDynamicMap?: () => void
+  onOpenDynamicMap?: (selection: XDriveViewerPhotoMapSelection) => void
   onPrevious: () => void
   onNext: () => void
   onFilmstripSelect: (index: number) => void
@@ -652,8 +653,14 @@ export function XDriveMediaGalleryViewer({
       <XDriveMediaGalleryViewerLocationDialog
         open={locationOpen}
         item={item}
-        onOpenDynamicMap={onOpenDynamicMap ? () => {
-          if (isCurrentActionOwner()) onOpenDynamicMap()
+        onOpenDynamicMap={onOpenDynamicMap ? selection => {
+          // Reject stale filmstrip/Viewer sessions before handing the exact
+          // current Node identity to the Parent map callback.
+          if (isCurrentActionOwner() &&
+              item?.node.id === selection.nodeID &&
+              item?.node.revision === selection.revision) {
+            onOpenDynamicMap(selection)
+          }
         } : undefined}
         getBaiduMapConsent={getBaiduMapConsent}
         saveBaiduMapConsent={saveBaiduMapConsent}

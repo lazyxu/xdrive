@@ -6,7 +6,7 @@ import { XDriveMediaGalleryPage } from './MediaGallery'
 import { XDriveSourceManager } from './SourceManager'
 import { XDriveSynologyOwnerFilesPage } from './SynologyOwnerFilesPage'
 import { XDriveDeviceBackupPage } from './DeviceBackupPage'
-import { XDriveSynologyDiagnosticsPanel } from './SynologyDiagnosticsPanel'
+import { XDriveDiagnosticsHostController } from './DiagnosticsHostController'
 import { XDriveConflictsPage } from './ConflictsPage'
 import { XDriveDiagnosticsPage } from './DiagnosticsPage'
 import { XDriveTaskCenterPage } from './TaskCenterPage'
@@ -96,7 +96,9 @@ export function XDriveAppPageOutlet({
         if (services.diagnosticsPage) page = (
           <XDriveDiagnosticsPage {...services.diagnosticsPage} />
         )
-        else if (local) page = <XDriveSynologyDiagnosticsPanel key={revision} client={local} />
+        else if (services.diagnosticsSource) page = (
+          <XDriveDiagnosticsHostController key={revision} source={services.diagnosticsSource} />
+        )
         break
       case 'transfers':
       case 'global-tasks':

@@ -4,6 +4,8 @@ import type {
   MediaBaiduMapIndexJob, MediaBaiduMapIndexJobInput, MediaItem,
 } from '../models'
 import { XDriveDialogTitle } from './DialogTitle'
+import { xDriveViewerPhotoMapSelection } from '../media-gallery-viewer-photo-map-selection'
+import type { XDriveViewerPhotoMapSelection } from '../media-gallery-viewer-photo-map-selection'
 
 /**
  * Shared Web/Mobile/Desktop Viewer location surface.
@@ -16,7 +18,7 @@ export function XDriveMediaGalleryViewerLocationDialog({
 }: {
   open: boolean
   item: MediaItem | null
-  onOpenDynamicMap?: () => void
+  onOpenDynamicMap?: (selection: XDriveViewerPhotoMapSelection) => void
   /** @deprecated No per-photo map consent. */
   getBaiduMapConsent?: (nodeID: number) => Promise<MediaBaiduMapConsent>
   /** @deprecated No per-photo map consent. */
@@ -31,6 +33,9 @@ export function XDriveMediaGalleryViewerLocationDialog({
   cancelBaiduMapIndexJob?: (nodeID: number, revision: number) => Promise<MediaBaiduMapIndexJob>
   onClose: () => void
 }) {
+  // The trusted Viewer sends only the exact current Node and revision.
+  // Original WGS84/EXIF, signed URLs and any Owner credentials stay local.
+  const selection = xDriveViewerPhotoMapSelection(item)
   const latitude = item?.metadata.latitude
   const longitude = item?.metadata.longitude
   const validGPS = typeof latitude === 'number' && typeof longitude === 'number' &&
@@ -49,14 +54,20 @@ export function XDriveMediaGalleryViewerLocationDialog({
               这张照片具有有效 GPS，已自动具备照片地图索引资格，无需单独授权。
               如尚未完成 BD-09 位置派生，地图将在位置索引完成后显示该照片。
             </Typography>
-            <Button variant="outlined" disabled={!onOpenDynamicMap}
+            <Button variant="outlined" disabled={!onOpenDynamicMap || !selection}
               sx={{minHeight:44}}
-              onClick={() => { onClose(); onOpenDynamicMap?.() }}>
+              onClick={() => {
+                if (!validGPS || !selection || !onOpenDynamicMap) return
+                onClose()
+                onOpenDynamicMap(selection)
+              }}>
               打开照片地图
             </Button>
-            {!onOpenDynamicMap ? (
+            {!onOpenDynamicMap || !selection ? (
               <Typography variant="caption" color="text.secondary" role="status">
-                当前照片集合暂不能安全映射到地图，请从支持地图的图库或相册范围进入。
+                {!selection
+                  ? '当前照片的身份或修订版本无效，无法安全打开地图。'
+                  : '当前照片集合暂不能安全映射到地图，请从支持地图的图库或相册范围进入。'}
               </Typography>
             ) : null}
           </Stack>

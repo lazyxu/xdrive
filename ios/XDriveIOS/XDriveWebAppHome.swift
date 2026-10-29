@@ -2,6 +2,35 @@ import SwiftUI
 import WebKit
 import UIKit
 
+/// Persist the PWA's selected HTTPS origin independently from the native
+/// Keychain login's last-used server. Native login may intentionally target a
+/// different Owner/server; it must never silently retarget the shared Web UI
+/// at the next cold launch.
+private enum XDriveIOSWebOriginPreference {
+    private static let key = "xdrive.ios.web.origin"
+    private static let legacyNativeKey = "xdrive.ios.server"
+
+    static func load() -> String {
+        if let saved = UserDefaults.standard.string(forKey: key) {
+            // A malformed saved Web origin should show the connection form;
+            // never fall back to a different, native-login server.
+            return saved
+        }
+        // One-time migration for installs predating the split. An invalid
+        // legacy value is left visible for the user to correct, not trusted.
+        let legacy = UserDefaults.standard.string(forKey: legacyNativeKey) ?? ""
+        if let origin = try? ServerAddress.parse(legacy) {
+            UserDefaults.standard.set(origin.absoluteString, forKey: key)
+            return origin.absoluteString
+        }
+        return legacy
+    }
+
+    static func save(_ origin: URL) {
+        UserDefaults.standard.set(origin.absoluteString, forKey: key)
+    }
+}
+
 /// Opt-in Web/PWA shell. The Web's HttpOnly cookie session is separate from
 /// the native Keychain refresh token. No secret is injected into JS or URLs.
 struct XDriveWebAppHome: View {
@@ -14,7 +43,7 @@ struct XDriveWebAppHome: View {
     @State private var confirmLeave = false
 
     init() {
-        let saved = UserDefaults.standard.string(forKey: "xdrive.ios.server") ?? ""
+        let saved = XDriveIOSWebOriginPreference.load()
         _serverText = State(initialValue: saved)
         _openedOrigin = State(initialValue: try? ServerAddress.parse(saved))
     }
@@ -42,7 +71,7 @@ struct XDriveWebAppHome: View {
                         Button {
                             nativeLoginVisible = true
                         } label: {
-                            Label("原生登录诊断（独立会话）", systemImage: "person.crop.circle")
+                            Label("原生相册备份与账户工具（独立会话）", systemImage: "photo.on.rectangle.angled")
                         }
                     } label: {
                         Image(systemName: "ellipsis.circle.fill")
@@ -144,7 +173,7 @@ struct XDriveWebAppHome: View {
                     do {
                         let origin = try ServerAddress.parse(serverText)
                         serverText = origin.absoluteString
-                        UserDefaults.standard.set(serverText, forKey: "xdrive.ios.server")
+                        XDriveIOSWebOriginPreference.save(origin)
                         inputError = nil
                         pageError = nil
                         downloadNotice = nil
@@ -162,7 +191,7 @@ struct XDriveWebAppHome: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Button("打开原生登录诊断") { nativeLoginVisible = true }
+                Button("打开原生相册工具与登录") { nativeLoginVisible = true }
                     .buttonStyle(.bordered)
             }
             .frame(maxWidth: 430, alignment: .leading)

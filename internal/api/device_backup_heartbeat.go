@@ -61,7 +61,7 @@ func (s *Server) heartbeatClientDevice(c *gin.Context) {
 			Take(&device).Error; err != nil {
 			return err
 		}
-		if !clientDeviceCredentialMatches(device, token) {
+		if !clientDeviceIdentityCredentialMatches(device, token) {
 			return errDeviceHeartbeatUnauthorized
 		}
 		result := tx.Model(&meta.ClientDevice{}).

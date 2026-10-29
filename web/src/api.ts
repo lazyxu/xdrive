@@ -10,6 +10,7 @@ import {
 } from '../../ui/shared/src/media-gallery-baidu-jsapi4-cell-range'
 import type { XDriveBaiduCellRangeSort } from '../../ui/shared/src/media-gallery-baidu-jsapi4-cell-range'
 import type { XDriveDeviceBackupOverview, XDriveDeviceBackupRunPage, XDriveDeviceBackupFolderPage } from '../../ui/shared/src'
+import type { XDriveStorageVerificationRunPage } from '../../ui/shared/src/admin-management'
 import type { XDriveBaiduMapAdminConfig, XDriveBaiduMapAdminUpdate, XDriveBaiduMapAKReveal } from '../../ui/shared/src'
 import type { XDriveServiceDependenciesSnapshot, XDriveSourceWorkerConfig, XDriveSourceWorkerUpdate, XDriveSourceWorkerRevisionPage, XDriveSourceWorkerRollbackInput, XDriveGeoNamesConfig, XDriveGeoNamesReloadResult, XDriveGeoNamesUpdate, XDriveGeoNamesRevisionPage, XDriveGeoNamesRollbackInput, XDrivePhotoAutoConfig, XDrivePhotoAutoUpdate, XDrivePhotoAutoRevisionPage, XDrivePhotoAutoRollbackInput } from '../../ui/shared/src'
 import type {
@@ -1344,6 +1345,13 @@ export class XDriveApi {
 
   adminStorageHistory(days = 30) {
     return this.request<StorageHistory>(`/api/v1/admin/storage/history?days=${days}`)
+  }
+
+  adminStorageVerificationRuns(limit = 20, cursor = '') {
+    const params = new URLSearchParams({ limit: String(Math.min(50, Math.max(1, Math.trunc(limit)))) })
+    if (cursor) params.set('cursor', cursor)
+    return this.request<XDriveStorageVerificationRunPage>(
+      `/api/v1/admin/storage/verification-runs?${params.toString()}`)
   }
 
   adminStorageOptimizationAdvice() {

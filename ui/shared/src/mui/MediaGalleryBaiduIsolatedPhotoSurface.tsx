@@ -23,6 +23,7 @@ import {
 import type {
   XDrivePlacesDrawerReturn, XDrivePlacesDrawerPresentation,
 } from '../media-gallery-places-photo-drawer'
+import { xDriveAppendPlacesDrawerPage } from '../media-gallery-places-photo-paging'
 import { XDriveMediaGalleryPlacesPhotoDrawer } from './MediaGalleryPlacesPhotoDrawer'
 import { xDriveValidBaiduNativeCameraSnapshot } from '../media-gallery-baidu-native-camera-session'
 import {
@@ -159,6 +160,21 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   // Only the trusted Gallery Parent owns photo identity and Blob URLs.
   const [projected,setProjected] = useState<
     XDriveTrustedProjectedMapCells<MediaBaiduNativeCellSelection> | null>(null)
+  // The previous authenticated photo layer remains visible ONLY as an
+  // inert, bounded visual overlay during a same-Owner camera gesture.
+  // Fresh /cells and /cell-items are still required for every click.
+  type GesturePresentation = {
+    owner:string;key:string;summary:MediaBaiduNativeCellsPage
+    cells:Array<{label:string;selection:MediaBaiduNativeCellSelection}>
+    positions:XDriveTrustedProjectedMapCells<MediaBaiduNativeCellSelection>
+  }
+  const [gesturePresentation,setGesturePresentation] = useState<GesturePresentation|null>(null)
+  const gesturePresentationRef = useRef<GesturePresentation|null>(null)
+  const committedPresentation = useRef<GesturePresentation|null>(null)
+  const clearGesturePresentation = () => {
+    gesturePresentationRef.current=null
+    setGesturePresentation(null)
+  }
   // Cosmetic control geometry only. Never send it to the SDK, bind it to
   // media identity, or use it to authorize an Owner resource.
   const [overlayRects,setOverlayRects] =
@@ -172,6 +188,8 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     items: MediaItem[]
     total: number
     expanded: boolean
+    loadingMore: boolean
+    pageError: boolean
     returnPresentation?: XDrivePlacesDrawerPresentation
   }
   const [drawer,setDrawer] = useState<DrawerView | null>(null)
@@ -209,8 +227,8 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     const cell={...selection,bounds:{...selection.bounds}}
     const key=approved.key
     setDrawer({selection:cell,key,phase:'loading',items:[],
-      total:cell.photo_count,expanded:presentation?.expanded ?? false,
-      returnPresentation:presentation})
+      total:cell.photo_count,expanded:presentation?.expanded ?? true,
+      loadingMore:false,pageError:false,returnPresentation:presentation})
     void preview(cell,XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT,0,{
       by:scopeCopy.filters.sort_by ?? 'captured',
       dir:scopeCopy.filters.sort_dir ?? 'desc',
@@ -248,6 +266,51 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     opened.current(state.selection,approved.scope)
     closeDrawer()
   }
+  const loadDrawerMore = () => {
+    const state=activeDrawer, approved=acceptedScope.current
+    if (!state || state.phase!=='ready' || state.loadingMore ||
+        state.items.length>=state.total || drawerFetch.current ||
+        !approved || approved.key!==filterRef.current.key ||
+        !hasAcceptedCell(state.selection)) return
+    const preview=previewPort.current
+    const pageScope=xDriveCopyBaiduMapPhotoScope(approved.scope)
+    if (!preview || !pageScope) return
+    const selection={...state.selection,bounds:{...state.selection.bounds}}
+    const key=approved.key
+    const offset=state.items.length
+    const controller=new AbortController()
+    drawerFetch.current=controller
+    setDrawer(current => current && current.key===key &&
+      xDriveBaiduCellReturnMatchesFreshSelection(current.selection,selection)
+      ? {...current,loadingMore:true,pageError:false} : current)
+    void preview(selection,XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT,offset,{
+      by:pageScope.filters.sort_by ?? 'captured',
+      dir:pageScope.filters.sort_dir ?? 'desc',
+      filters:pageScope.filters,albumKey:pageScope.albumKey,
+    },controller.signal).then(range => {
+      if (controller.signal.aborted || drawerFetch.current!==controller ||
+          acceptedScope.current?.key !== key ||
+          filterRef.current.key!==key || !hasAcceptedCell(selection)) return
+      setDrawer(current => {
+        if (!current || current.key!==key || current.phase!=='ready' ||
+            current.items.length!==offset ||
+            !xDriveBaiduCellReturnMatchesFreshSelection(current.selection,selection))
+          return current
+        const merged=xDriveAppendPlacesDrawerPage(selection,current.items,current.total,range)
+        return {...current,loadingMore:false,pageError:!merged,
+          items:merged ?? current.items}
+      })
+    }).catch(() => {
+      if (controller.signal.aborted || drawerFetch.current!==controller ||
+          acceptedScope.current?.key !== key || filterRef.current.key!==key ||
+          !hasAcceptedCell(selection)) return
+      setDrawer(current => current && current.key===key &&
+        xDriveBaiduCellReturnMatchesFreshSelection(current.selection,selection)
+        ? {...current,loadingMore:false,pageError:true} : current)
+    }).finally(() => {
+      if(drawerFetch.current===controller)drawerFetch.current=null
+    })
+  }
   const openDrawerPhoto = (item: MediaItem,
     presentation: XDrivePlacesDrawerPresentation) => {
     const state=activeDrawer,approved=acceptedScope.current
@@ -256,11 +319,31 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         !state.items.some(source => source.node.id===item.node.id &&
           source.node.revision===item.node.revision)) return
     if (!photoOpener.current) { openDrawerAll();return }
+    // The Viewer opens through its own newly authorized Owner Cell Range.
+    // Dismiss this Gallery modal now: its focus trap/backdrop must never
+    // obscure the foreground Viewer, but the bounded presentation return
+    // intent has already been handed to the original Gallery callback.
     photoOpener.current(state.selection,approved.scope,item.node.id,item.node.revision,
       presentation)
+    closeDrawer()
   }
   const scopeIsCurrent = acceptedScope.current?.key === currentFilterKey
   const trustedSummary = scopeIsCurrent ? summary : null
+  // Commit only a real, current, fully signed Owner camera presentation.
+  // The old representative IDs stay in this trusted Parent; the isolated
+  // Child sees anonymous pixel positions and one-use map Cell keys only.
+  useLayoutEffect(()=>{
+    if (scopeIsCurrent && summary && acceptedViewport &&
+        projected?.width && projected.height && phase==='ready') {
+      committedPresentation.current={
+        owner:scope??'',key:currentFilterKey,summary,
+        cells:accessible,positions:projected,
+      }
+      // Fresh current camera pixels replace the inert gesture snapshot.
+      if (gesturePresentationRef.current)clearGesturePresentation()
+    }
+  },[scopeIsCurrent,summary,acceptedViewport,projected,accessible,
+    phase,currentFilterKey,scope])
   // An already-open map must notice GPS→BD-09 backfill without a user
   // gesture. Poll only the current authenticated EMPTY /cells snapshot,
   // at most once per 2 minutes while the Parent document is visible.
@@ -286,6 +369,8 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     if(lastFilterKey.current===currentFilterKey)return
     lastFilterKey.current=currentFilterKey
     pendingResizeDrawer.current=null
+    committedPresentation.current=null
+    clearGesturePresentation()
     refreshFilteredCells.current?.()
   },[currentFilterKey])
 
@@ -324,9 +409,11 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     latestAcceptedViewport.current = null
     setAccessible([])
     setProjected(null)
+    committedPresentation.current=null
+    clearGesturePresentation()
     onReady(false)
 
-    const cancel = () => {
+    const cancel = (keepGestureVisual = false) => {
       generation++
       // An SDK gesture invalidates the previous camera as well as its Cells.
       // A filter change during pan/zoom must not resurrect that old viewport.
@@ -343,6 +430,10 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
       setAcceptedViewport(null)
       latestAcceptedViewport.current = null
       setProjected(null)
+      if (!keepGestureVisual) {
+        committedPresentation.current=null
+        clearGesturePresentation()
+      }
       invalidated.current?.()
     }
     const failure = () => {
@@ -387,8 +478,8 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
           if(state?.phase==='ready' && photoScope && approved &&
              approved.key===filterRef.current.key &&
              state.key===approved.key && latestAcceptedViewport.current) {
-            const list=node.parentElement?.querySelector<HTMLElement>(
-              '[data-xdrive-places-photo-drawer-items]')
+            const list=node.ownerDocument.querySelector<HTMLElement>(
+              '[data-xdrive-places-album-dialog] [data-xdrive-places-photo-drawer-items]')
             const bounded=(value:number)=>Number.isFinite(value)
               ? Math.max(0,Math.min(10_000,Math.floor(value))) : 0
             pendingResizeDrawer.current={owner:scope??'',key:approved.key,
@@ -403,7 +494,17 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
           // repeated resize notifications; a gesture of unchanged size below
           // still revokes this visual intent.
         } else pendingResizeDrawer.current=null
-        cancel()
+        const previous=committedPresentation.current
+        const keepVisual=!resized && previous &&
+          previous.owner===(scope??'') && previous.key===filterRef.current.key
+        if (keepVisual) {
+          gesturePresentationRef.current=previous
+          setGesturePresentation(previous)
+        }
+        // Revoke ALL previous Cell click authority synchronously. Only
+        // non-interactive photo pixels remain, correctly repositioned by
+        // the two SDK Hosts' bounded gesture-only projections.
+        cancel(Boolean(keepVisual))
       },
       onCamera:(camera:XDriveBaiduNativeCameraSnapshot) => { if(!lifetime.signal.aborted) cameraUpdate.current?.(camera) },
       onMapReady:() => {
@@ -419,6 +520,15 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
       onMapFailure:failure,
       onProjectedCells:(positions:XDriveTrustedProjectedMapCells<MediaBaiduNativeCellSelection>) => {
         if (!lifetime.signal.aborted) setProjected(positions)
+      },
+      onGestureProjectedCells:(positions:XDriveTrustedProjectedMapCells<MediaBaiduNativeCellSelection>)=>{
+        const prior=gesturePresentationRef.current
+        if (lifetime.signal.aborted || !prior || prior.owner!==(scope??'') ||
+            prior.key!==filterRef.current.key || !positions.width ||
+            !positions.height || positions.cells.length>64) return
+        const moved={...prior,positions}
+        gesturePresentationRef.current=moved
+        setGesturePresentation(moved)
       },
       onViewport: (bounds:Bounds) => { void queryCells(bounds, true) },
       onReady:() => {
@@ -452,7 +562,9 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
       if (lifetime.signal.aborted) return false
       // Cancel the previous query and invalidate its Camera before recording
       // the newly requested bounds for possible same-camera filter refresh.
-      cancel()
+      const keepVisual=gesturePresentationRef.current?.owner===(scope??'') &&
+        gesturePresentationRef.current?.key===filterRef.current.key
+      cancel(Boolean(keepVisual))
       lastViewport.current={bounds:{...bounds},live:liveCamera}
       frame.replaceAuthorizedCells([])
       const approved=filterRef.current
@@ -565,6 +677,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
           latestAcceptedViewport.current = null
           setAcceptedViewport(null)
           setAccessible([])
+          clearGesturePresentation()
         }
         return false
       } finally {
@@ -684,6 +797,25 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
           .filter(candidate => hasAcceptedCell(candidate.selection)),
         projected.width, projected.height, edgeToEdge, overlayRects)
     : []
+  // During a move, the last signed layer is projected by the SDK as a
+  // VISUAL-ONLY overlay. It cannot open a Cell and is discarded on new
+  // Owner evidence, filter/Owner revision or any map failure. Never treat
+  // a previous camera receipt as a newly authorized Camera Range.
+  const gesturePins=gesturePresentation &&
+      gesturePresentation.owner===(scope??'') &&
+      gesturePresentation.key===currentFilterKey &&
+      gesturePresentation.positions.width>0 && gesturePresentation.positions.height>0
+    ? xDriveSelectVisibleMapPhotoCovers(
+        xDriveVerifiedMapPhotoProjections(gesturePresentation.summary,
+          gesturePresentation.positions,
+          gesturePresentation.cells.map(cell=>cell.selection)),
+        gesturePresentation.positions.width,gesturePresentation.positions.height,
+        edgeToEdge,overlayRects)
+    : []
+  const currentCoverActive=coverPins.length>0
+  const paintedCovers=currentCoverActive ? coverPins : gesturePins
+  const paintedProjection=currentCoverActive ? projected : gesturePresentation?.positions
+  const coverSummary=currentCoverActive ? trustedSummary : gesturePresentation?.summary
   // Two SDK Hosts receive only the current visible React cover selections.
   // While at least one verified Parent photo cover is visible, it owns the
   // complete marker presentation: no competing native numeric Labels appear.
@@ -701,7 +833,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   const ownerCover=(selection:MediaBaiduNativeCellSelection,
     alt:string,fallback:ReactNode):ReactNode=>{
     if(!loadThumbnail)return fallback
-    const representative=trustedSummary?.cells.find(cell=>
+    const representative=coverSummary?.cells.find(cell=>
       cell.cell_x===selection.cell_x && cell.cell_y===selection.cell_y &&
       cell.asset_id===selection.asset_id && cell.node_id===selection.node_id &&
       cell.node_revision===selection.node_revision &&
@@ -757,20 +889,28 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
           overflow:'hidden',backgroundColor:'background.default'}}>
         <Box ref={mount} sx={{position:'absolute',inset:0,
           '& iframe':{width:'100%',height:'100%',display:'block',border:0}}}/>
-        {coverPins.length > 0 && projected ? (
+        {paintedCovers.length > 0 && paintedProjection ? (
           <Box data-xdrive-places-trusted-photo-cover-pins
             sx={{position:'absolute',inset:0,pointerEvents:'none',zIndex:2}}>
-            {coverPins.map((pin) => (
+            {paintedCovers.map((pin) => (
               <Box key={pin.selection.node_id} component="button" type="button"
-                data-xdrive-places-trusted-photo-cover={pin.selection.node_id}
-                aria-label={`查看该区域 ${pin.count} 张照片`}
-                onClick={() => openVerifiedCell(pin.selection)}
+                disabled={!currentCoverActive}
+                data-xdrive-places-trusted-photo-cover={currentCoverActive
+                  ? pin.selection.node_id : undefined}
+                data-xdrive-places-gesture-photo-cover={!currentCoverActive
+                  ? pin.selection.node_id : undefined}
+                aria-label={currentCoverActive
+                  ? `查看该区域 ${pin.count} 张照片` : undefined}
+                onClick={currentCoverActive
+                  ? () => openVerifiedCell(pin.selection) : undefined}
                 sx={{position:'absolute',
-                  left:`${pin.x/projected.width*100}%`,
-                  top:`${pin.y/projected.height*100}%`,
+                  left:`${pin.x/paintedProjection.width*100}%`,
+                  top:`${pin.y/paintedProjection.height*100}%`,
                   transform:'translate(-50%,-50%)',width:{xs:64,sm:72},height:{xs:64,sm:72},p:0,
                   border:'3px solid white',borderRadius:2,overflow:'visible',
-                  cursor:'pointer',pointerEvents:'auto',
+                  cursor:currentCoverActive?'pointer':'default',
+                  pointerEvents:currentCoverActive?'auto':'none',
+                  '&:disabled':{opacity:1},
                   bgcolor:'background.paper',boxShadow:'0 3px 12px rgba(15,23,42,.28)',
                   isolation:'isolate',
                   '&:focus-visible':{outline:'3px solid',outlineColor:'primary.main',
@@ -870,6 +1010,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
           <XDriveMediaGalleryPlacesPhotoDrawer
             items={activeDrawer.items} total={activeDrawer.total}
             phase={activeDrawer.phase} expanded={activeDrawer.expanded}
+            loadingMore={activeDrawer.loadingMore} pageError={activeDrawer.pageError}
             initialPresentation={activeDrawer.returnPresentation}
             loadThumbnail={loadThumbnail}
             onClose={() => { pendingResizeDrawer.current=null;closeDrawer() }}
@@ -877,6 +1018,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
               ? {...current,expanded} : current)}
             onRetry={() => { closeDrawer();refreshFilteredCells.current?.() }}
             onOpenAll={openDrawerAll} onOpenPhoto={openDrawerPhoto}
+            onLoadMore={loadDrawerMore}
             onOpenNearby={acceptedViewport && activeDrawer.phase==='ready' &&
               openViewport.current && trustedSummary && trustedSummary.total_count>0
               ? openVerifiedCameraNearby : undefined}

@@ -5,7 +5,7 @@
   'use strict'
   const MAX_BYTES = 8192
   const MAX_CELLS = 64
-  const MAX_PHOTO_COVERS = 24
+  const MAX_PHOTO_COVERS = 64
   const status = document.getElementById('xdrive-isolated-map-status')
   const canvas = document.getElementById('xdrive-isolated-map-canvas')
   const validOrigin = value => {
@@ -51,10 +51,10 @@
     typeof data.nonce === 'string' && /^[a-f0-9]{32,64}$/.test(data.nonce) &&
     new TextEncoder().encode(JSON.stringify(data)).length <= MAX_BYTES
   let active = false, parentOrigin = '', generation = 0, nonce = ''
-  let cells = [], allowedKeys = new Set(), coveredKeys = new Set(), map = null, sdk = null
+  let cells = [], gestureCells = [], allowedKeys = new Set(), coveredKeys = new Set(), map = null, sdk = null
   let script = null, pending = false, disposed = false, sessionFailed = false, labelBindings = []
   let initialOverviewPending = true
-  let viewportTimer = null
+  let viewportTimer = null, gestureFrame = null
   let observedSize = null, sizeObserver = null, windowResizeFallback = false
   let resizeRevoked = false
   const send = (kind, fields = {}) => {
@@ -85,7 +85,7 @@
       }
     } catch { /* retain conservative global camera when SDK fitting fails */ }
   }
-  const emitCellProjections = () => {
+  const emitCellProjections = (gesture = false) => {
     if (!map || !sdk || !canvas || !active || disposed ||
         typeof map.pointToPixel !== 'function') return
     const width = Math.round(canvas.clientWidth)
@@ -93,8 +93,8 @@
     if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) ||
         width < 1 || height < 1 || width > 4096 || height > 4096) return
     const points = []
-    for (const cell of cells) {
-      if (!allowedKeys.has(cell.key)) continue
+    for (const cell of gesture ? gestureCells : cells) {
+      if (!gesture && !allowedKeys.has(cell.key)) continue
       try {
         const position = map.pointToPixel(new sdk.Point(cell.longitude,cell.latitude))
         const x = Math.round(position.x), y = Math.round(position.y)
@@ -103,7 +103,28 @@
         points.push({key:cell.key,x,y})
       } catch { /* old SDK: numerical cluster labels remain */ }
     }
-    send('cell-projections',{width,height,points})
+    send(gesture ? 'gesture-projections' : 'cell-projections',
+      {width,height,points})
+  }
+  // The SDK owns the actual camera translation/zoom in its own Origin.
+  // Project only the old bounded anonymous geometry while it moves;
+  // NEVER restore allowed keys, click listeners or expired Owner authority.
+  const projectGesture = () => {
+    if (!gestureCells.length || gestureFrame !== null || !active || disposed) return
+    if (typeof window.requestAnimationFrame !== 'function') {
+      emitCellProjections(true)
+      return
+    }
+    gestureFrame=window.requestAnimationFrame(()=>{
+      gestureFrame=null
+      if (gestureCells.length)emitCellProjections(true)
+    })
+  }
+  const clearGesture = () => {
+    gestureCells=[]
+    if (gestureFrame!==null && typeof window.cancelAnimationFrame==='function')
+      window.cancelAnimationFrame(gestureFrame)
+    gestureFrame=null
   }
   const renderCells = (republishProjection = true) => {
     clearLabels()
@@ -164,6 +185,7 @@
   // Coalesce SDK moveend + zoomend and repeated native settle events. The
   // Parent still cancels its current Owner query immediately at gesture START.
   const scheduleViewport = () => {
+    projectGesture()
     if (viewportTimer !== null) clearTimeout(viewportTimer)
     viewportTimer = setTimeout(() => {
       viewportTimer = null
@@ -173,10 +195,12 @@
   const stopViewport = () => {
     if (viewportTimer !== null) clearTimeout(viewportTimer)
     viewportTimer = null
+    if (allowedKeys.size>0)gestureCells=cells.map(cell=>({...cell}))
     allowedKeys.clear()
     coveredKeys.clear()
     clearLabels()
     send('cancel')
+    projectGesture()
   }
   // A resize (including a mobile rotation or container-width change)
   // invalidates earlier camera pixels and their Owner Cell keys just like
@@ -234,6 +258,8 @@
     fitInitialOverview()
     map.addEventListener('movestart', stopViewport)
     map.addEventListener('zoomstart', stopViewport)
+    map.addEventListener('moving', projectGesture)
+    map.addEventListener('zooming', projectGesture)
     map.addEventListener('moveend', scheduleViewport)
     map.addEventListener('zoomend', scheduleViewport)
     renderCells()
@@ -302,6 +328,7 @@
         clearLabels()
         allowedKeys.clear()
         coveredKeys.clear()
+        clearGesture()
         cells=[]
         try {map?.destroy?.()} catch {}
         map=null
@@ -330,6 +357,9 @@
       } else if(generation!==data.generation || nonce!==data.nonce) { dispose();return }
       cells=data.cells.map(cell=>({key:cell.key,latitude:cell.latitude,
         longitude:cell.longitude,count:cell.count}))
+      // An EMPTY replacement revokes current media permissions but leaves
+      // a cosmetic geometry-only pan projection until fresh /cells arrives.
+      if (data.cells.length>0)clearGesture()
       allowedKeys=next
       coveredKeys.clear()
       resizeRevoked=false
@@ -374,6 +404,7 @@
     }
   }
   const dispose=()=>{
+    clearGesture()
     releaseCanvasSize()
     if (viewportTimer !== null) clearTimeout(viewportTimer)
     viewportTimer = null

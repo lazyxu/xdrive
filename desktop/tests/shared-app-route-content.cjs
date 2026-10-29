@@ -38,12 +38,16 @@ test('Desktop and DSM mount one shared route content frame, not separate page ro
   assert.equal((content.match(/<XDriveWorkspaceContent\b/g) || []).length, 1)
 })
 
-test('both Hosts use Files viewport presentation without DSM page padding', () => {
+test('both Hosts use viewport-driven compact navigation and identical page spacing', () => {
+  assert.match(app, /<XDriveWorkspaceShell responsive sx=\{shellSx\}>/)
+  assert.match(app, /selected=\{view\}\s+responsive\s+onSelect=\{onNavigate\}/)
+  assert.match(app, /const XDRIVE_SHARED_PAGE_SX: SxProps<Theme> = \{ p: \{ xs: 2, md: '34px 40px 48px' \} \}/)
   assert.match(content, /const presentation = xDriveWorkspacePresentation\(view\)/)
-  assert.match(content, /presentation=\{presentation\}/)
-  assert.match(content, /responsive=\{host\.platform === 'synology'\}/)
+  assert.match(content, /presentation=\{presentation\}\s+responsive\b/)
   assert.match(content, /sx=\{presentation === 'files' \? undefined : pageSx\}/)
-  assert.match(synology, /pageSx=\{\{ p: \{ xs: 2, md: '34px 40px 48px' \} \}\}/)
+  assert.doesNotMatch(app, /const responsive = host\.platform/)
+  assert.doesNotMatch(content, /responsive=\{host\.platform/)
+  assert.doesNotMatch(synology, /pageSx=/)
   assert.doesNotMatch(synology, /presentation="page"/)
   assert.match(routes, /return view === 'files' \? 'files' : 'page'/)
 })

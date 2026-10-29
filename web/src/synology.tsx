@@ -46,7 +46,6 @@ function SynologyWorkspace({ appearance, onAppearanceChange }: {
         navigate(key)
       }}
       revision={pageRevision}
-      pageSx={{ p: { xs: 2, md: '34px 40px 48px' } }}
       overlays={
         <XDriveSettingsDialog
           open={settingsOpen}

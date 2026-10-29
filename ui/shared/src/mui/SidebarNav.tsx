@@ -135,6 +135,7 @@ export function XDriveCoreWorkspaceNavItems({
   appearance = 'light',
   showLocalStorage = false,
   coreKeys,
+  disabled = false,
   onSelect,
 }: {
   selected?: string
@@ -142,6 +143,7 @@ export function XDriveCoreWorkspaceNavItems({
   appearance?: XDriveSidebarAppearance
   showLocalStorage?: boolean
   coreKeys?: readonly XDriveCoreWorkspaceKey[]
+  disabled?: boolean
   onSelect: (key: XDriveCoreWorkspaceKey, event: MouseEvent<HTMLDivElement>) => void
 }) {
   return (
@@ -155,7 +157,8 @@ export function XDriveCoreWorkspaceNavItems({
           primary={destination.label}
           badge={destination.badge}
           appearance={appearance}
-          onClick={(event) => onSelect(destination.key, event)}
+          disabled={disabled}
+          onClick={(event) => { if (!disabled) onSelect(destination.key, event) }}
         />
       ))}
     </>
@@ -204,6 +207,7 @@ export function XDriveSidebarNavItem({
   secondary,
   badge,
   appearance = 'light',
+  disabled = false,
   className,
   onClick,
 }: {
@@ -213,6 +217,7 @@ export function XDriveSidebarNavItem({
   secondary?: ReactNode
   badge?: XDriveSidebarBadgeValue
   appearance?: XDriveSidebarAppearance
+  disabled?: boolean
   className?: string
   onClick?: (event: MouseEvent<HTMLDivElement>) => void
 }) {
@@ -222,8 +227,9 @@ export function XDriveSidebarNavItem({
     <ListItemButton
       className={className}
       selected={selected}
+      disabled={disabled}
       aria-current={selected ? 'page' : undefined}
-      onClick={onClick}
+      onClick={(event) => { if (!disabled) onClick?.(event) }}
       sx={{
         minHeight: 36,
         position: 'relative',
