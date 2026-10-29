@@ -47,9 +47,16 @@ that locked-screen automatic PhotoKit backup is running.
 - The Owner can revoke a lost iPhone grant from another client via the
   Server's authenticated revoke API. Device revocation and account session
   version changes are additional fail-closed fences.
-- Server grant expiry remains 14 days; native renewal is a separate
-  capability until a reviewed rotation/background-Runner workflow is
-  integrated.
+- Server grant expiry remains 14 days. Swift now provides a separate
+  **no-WebView** `verifyNativeBackgroundGrant` read-only Server proof and
+  `rotateNativeBackgroundGrant`: these use ONLY a previously stored grant
+  plus its independently protected iOS Device identity secret. A valid
+  grant is renewed through the Server's atomic rotation endpoint, then
+  stored before it can be used by a later task. Expired/revoked grants
+  cannot silently renew. Neither method creates an UploadSession.
+- `WhenUnlockedThisDeviceOnly` currently prevents reading both secrets
+  during a normal locked-screen BGTask. Such a task must fail closed; no
+  alternative global Web session/token is substituted.
 
 ## Important remaining blockers
 

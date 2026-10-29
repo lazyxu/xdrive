@@ -145,6 +145,23 @@ actor XDriveIOSDeviceEnrollment {
         )
     }
 
+    /// Native BGTask-only local lookup. This is NOT an authorization:
+    /// the Server must independently verify BOTH this Device proof and the
+    /// separately revocable Owner/Root grant on every request. It does not
+    /// reach into WKWebView, read cookies or register another iPhone.
+    func backgroundPhotoDeviceProofWithoutWeb(
+        owner: XDriveNativeOwnerRoot
+    ) throws -> XDriveIOSBackgroundDeviceProof? {
+        let key = try scopedKey(owner)
+        guard let credential = try keychainLoad(account: key) else { return nil }
+        guard credential.matches(owner) else {
+            throw XDriveIOSDeviceEnrollmentError.inconsistentDevice
+        }
+        return XDriveIOSBackgroundDeviceProof(
+            deviceID: credential.deviceID, secret: credential.deviceToken
+        )
+    }
+
     /// One explicit registration. If its POST ACK is lost, the caller MUST
     /// show "unknown" and seek user assistance, not automatically register
     /// a second device. The original response carries the only raw secret.

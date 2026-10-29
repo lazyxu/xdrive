@@ -186,6 +186,74 @@ actor XDriveIOSPhotoBackgroundGrantManager {
         return try localStatus(owner: owner)
     }
 
+    /// Run during a system-scheduled BGProcessingTask WITHOUT any PWA
+    /// access JWT. The local record is NOT an Owner proof: only the current
+    /// Server's protected grant proof endpoint may establish write scope.
+    /// No upload or Keychain accessibility migration happens here.
+    func verifyNativeBackgroundGrant(
+        owner: XDriveNativeOwnerRoot
+    ) async throws -> XDriveIOSPhotoBackgroundGrantStatus {
+        guard let grant = try read(owner: owner),
+              !grant.revokePending, grant.expiresAt > Date(),
+              let device = try await XDriveIOSDeviceEnrollment.shared
+                .backgroundPhotoDeviceProofWithoutWeb(owner: owner),
+              device.deviceID == grant.deviceID else {
+            throw XDriveIOSPhotoBackgroundGrantError.invalidOwner
+        }
+        let (bytes, status) = try await request(
+            owner: owner, method: "GET",
+            path: "/api/v1/ios/photos/background-grants/proof",
+            device: device, rawGrant: grant.rawSecret
+        )
+        guard status == 200, bytes.count <= 4096,
+              let proof = try? JSONDecoder().decode(
+                IOSPhotoGrantProof.self, from: bytes
+              ),
+              proof.grant_id == grant.grantID,
+              proof.owner_id == owner.ownerID,
+              proof.root_node_id == owner.rootNodeID,
+              proof.server_instance_id == owner.instanceID,
+              proof.device_id == grant.deviceID,
+              proof.upload_authorized,
+              let expiry = Self.parseDate(proof.expires_at),
+              expiry <= grant.expiresAt else {
+            throw XDriveIOSPhotoBackgroundGrantError.invalidGrantResponse
+        }
+        return try localStatus(owner: owner)
+    }
+
+    /// Renew while the same scoped grant AND the second native device secret
+    /// are still valid. This never mints a generic User access token.
+    /// Rotation is an all-or-nothing Server transaction; save the new secret
+    /// before counting the new grant as usable by future BG tasks.
+    func rotateNativeBackgroundGrant(
+        owner: XDriveNativeOwnerRoot
+    ) async throws -> XDriveIOSPhotoBackgroundGrantStatus {
+        _ = try await verifyNativeBackgroundGrant(owner: owner)
+        guard let old = try read(owner: owner),
+              let device = try await XDriveIOSDeviceEnrollment.shared
+                .backgroundPhotoDeviceProofWithoutWeb(owner: owner),
+              device.deviceID == old.deviceID else {
+            throw XDriveIOSPhotoBackgroundGrantError.invalidOwner
+        }
+        let (data, status) = try await request(
+            owner: owner, method: "POST",
+            path: "/api/v1/ios/photos/background-grants/rotate",
+            device: device, rawGrant: old.rawSecret
+        )
+        guard status == 201, data.count <= 4096,
+              let result = try? JSONDecoder().decode(
+                IOSPhotoGrantResponse.self, from: data
+              ) else {
+            throw XDriveIOSPhotoBackgroundGrantError.invalidGrantResponse
+        }
+        let next = try checkedResponse(
+            result, owner: owner, deviceID: device.deviceID
+        )
+        try save(next, owner: owner)
+        return try localStatus(owner: owner)
+    }
+
     /// Disable immediately in the local persisted state before contacting
     /// Server. On a network failure retain a *revocation-pending* record:
     /// the future background Runner must refuse it and UI can retry.
