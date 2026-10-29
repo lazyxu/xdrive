@@ -7,24 +7,11 @@ import type {
   XDriveServerBackupSnapshotIndexPage, XDriveServerBackupSnapshotIndexQuery,
   XDriveServerBackupPage,
 } from '../server-backup-admin'
-import { latestServerBackupVerification } from '../server-backup-integrity'
+import { serverBackupHistoricalVerificationLabel } from '../server-backup-integrity'
 
 const pageSize = 50
 const firstOlderOffset = 100
 const validIdentity = /^(v1|v2-default|v2-configured):xdrive-backup-[0-9]{8}T[0-9]{6}Z$/
-
-function olderHistoricalVerification(
-  history: XDriveServerBackupPage['history'], snapshotID: string,
-): string {
-  const last = latestServerBackupVerification(history, snapshotID)
-  if (!last) return '未见历史校验'
-  // Report a Host-authored historical receipt, never current integrity or
-  // recovery readiness. Follow the same receipt selection as the newest 100.
-  const outcome = last.state === 'success' ? '历史通过' : '历史失败'
-  const mode = last.mode === 'deep' ? 'deep' : last.mode === 'fast' ? 'fast' : '级别未知'
-  const when = last.finished_at ? new Date(last.finished_at).toLocaleString() : '时间未知'
-  return outcome + ' · ' + mode + ' · ' + when
-}
 
 /** Older identities are not proof of a restorable generation. A bounded
  * verification-only action is allowed after fresh Server/Host index fencing;
@@ -121,7 +108,7 @@ export function XDriveBackupSnapshotIndexPager({
                       <TableCell>{result.offset + i + 1}</TableCell>
                       <TableCell sx={{ overflowWrap: 'anywhere' }}>{id}</TableCell>
                       <TableCell data-xdrive-admin-older-verification-history>
-                        {olderHistoricalVerification(history, id)}
+                        {serverBackupHistoricalVerificationLabel(history, id)}
                       </TableCell>
                       <TableCell>
                         <Button size="small" variant="outlined"
