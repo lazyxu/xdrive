@@ -154,6 +154,41 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   const videoPreviewOwner = previewKind === 'video' ? loadPreviewURL : undefined
   const currentVideoPreviewOwnerRef = useRef(videoPreviewOwner)
   currentVideoPreviewOwnerRef.current = videoPreviewOwner
+  // The decoded still's authorized source is more than Node ID/revision.
+  // An Owner/Host callback replacement must remount its image layers during
+  // render, before passive cancellation can finish and old pixels can paint.
+  const imageSourceLeaseRef = useRef({
+    original: loadPreviewURL,
+    thumbnail: loadImagePreview,
+    motion: previewKind === 'live_photo' ? loadLivePhotoMotion : undefined,
+    generation: 0,
+  })
+  if (previewKind === 'image' || previewKind === 'live_photo') {
+    const previous = imageSourceLeaseRef.current
+    const motion = previewKind === 'live_photo' ? loadLivePhotoMotion : undefined
+    if (previous.original !== loadPreviewURL ||
+        previous.thumbnail !== loadImagePreview ||
+        previous.motion !== motion) {
+      // Preserve the existing role-admission optimization: adding only a
+      // previously missing thumbnail/original does not abort the other role.
+      // Replacing/removing an authorized loader always remounts both layers.
+      const addedThumbnail = previous.original === loadPreviewURL &&
+        previous.motion === motion &&
+        !previous.thumbnail && Boolean(loadImagePreview)
+      const addedOriginal = previous.thumbnail === loadImagePreview &&
+        previous.motion === motion &&
+        !previous.original && Boolean(loadPreviewURL)
+      imageSourceLeaseRef.current = {
+        original: loadPreviewURL,
+        thumbnail: loadImagePreview,
+        motion,
+        generation: previous.generation + (addedThumbnail || addedOriginal ? 0 : 1),
+      }
+    }
+  }
+  const decodedImageSourceKey = JSON.stringify([
+    target?.id, target?.revision, previewKind, imageSourceLeaseRef.current.generation,
+  ])
   const livePhotoMotionLoader = useMemo(() => {
     if (!target || !loadLivePhotoMotion) return undefined
     return (onProgress?: XDriveByteProgressHandler, signal?: AbortSignal) =>
@@ -796,7 +831,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     if (target && previewKind === 'live_photo') {
       return (
         <XDriveDecodedImagePreview
-          key={JSON.stringify([target.id, target.revision, previewKind])}
+          key={decodedImageSourceKey}
           target={target}
           kind="live_photo"
           loadPreviewURL={loadPreviewURL}
@@ -852,7 +887,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
           }}
         >
           <XDriveDecodedImagePreview
-            key={JSON.stringify([target.id, target.revision, previewKind])}
+            key={decodedImageSourceKey}
             target={target}
             kind="image"
             loadPreviewURL={loadPreviewURL}
