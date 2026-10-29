@@ -64,6 +64,22 @@ become fully migrated merely by importing shared MUI sidebar components.
 
 Web sidebar actions now also use `xDriveWorkspaceNavigationAllowed` with the Server-verified profile role; backend authorization remains mandatory. This is **frame convergence, not full Web-to-XDriveApp controller convergence**: `web/src/App.tsx` still owns URL/hash and Viewer return state, PWA offline and Owner-scoped transfer lifecycle. Extract those incrementally behind typed Host/data ports. Android stays native Compose with shared visual and behavior contracts.
 
+### Common route content frame
+
+`XDriveWorkspaceRouteSurface` now owns the canonical responsive
+`<main>` route presentation for Desktop/DSM's `XDriveAppRouteContent`
+and Web/PWA's current page controller. Files always retains edge-to-edge
+virtualized layout; ordinary pages retain responsive padding; the Web Gallery
+keeps its existing overflow-anchor override. This creates **no second page
+outlet** and does not turn the Web browser into an Electron/DSM Host.
+The Web-specific Hash navigation, Viewer focus/return, PWA service worker
+and Owner-scoped writes remain in the browser runtime.
+
+This step is route presentation convergence, not full Web controller or
+DSM native mutation parity. Continue extracting authenticated Host-neutral
+page props and lifecycle only when source/read cancellation and durable
+backup/task ownership remain correct.
+
 ## Ownership layers
 
 1. **Product contracts:** API schemas, Owner/Root semantics, page/navigation IDs, media and upload receipt identity, UI tokens/gesture/accessibility contracts. React and native UI must agree.

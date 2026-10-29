@@ -69,8 +69,8 @@ import {
   XDriveVersionHistoryDialog,
   XDriveWorkspaceFrame,
   XDriveWorkspaceContent,
+  XDriveWorkspaceRouteSurface,
   XDriveMobileAppHeader,
-  xDriveWorkspacePresentation,
   xDriveWorkspaceRouteTitle,
   useXDriveRetainedWorkspaceRoute,
   xDriveWorkspaceNavigationAllowed,
@@ -2406,9 +2406,8 @@ function FileManager({
           <Box data-xdrive-web-route-first-read aria-busy={true}
             sx={{ flex: 1, height: '100%', minHeight: 0, bgcolor: 'background.paper' }} />
         }>
-        <XDriveWorkspaceContent
-          responsive
-          presentation={xDriveWorkspacePresentation(appView)}
+        <XDriveWorkspaceRouteSurface
+          view={appView}
           // The Gallery's virtual grid owns its logical row/Node anchors.
           // Native scroll anchoring otherwise shifts main.scrollTop by one
           // tile row as the virtual window reflows through Viewer breakpoints.
@@ -2752,7 +2751,7 @@ function FileManager({
             ) : null}
           </Box>
         )}
-        </XDriveWorkspaceContent>
+        </XDriveWorkspaceRouteSurface>
         <XDriveCommittedWorkspaceRoute view={appView} onReady={markLoadedWorkspaceApp} />
         </Suspense>
         </Box>
