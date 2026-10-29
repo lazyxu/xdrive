@@ -33,6 +33,10 @@ import type {
 import { XDriveActionButton } from './ActionButton'
 import { XDriveStatusAlert } from './StatusAlert'
 import { XDriveFilesWorkspacePage } from './FilesWorkspacePage'
+import {
+  XDRIVE_HOST_FILES_PREFERENCES,
+  useXDriveFileExplorerPersistedViewMode,
+} from './FileExplorerViewPreference'
 import { useXDriveFileExplorerOwnerQuota } from './FileExplorerOwnerQuota'
 import {
   xDriveSynologyOwnerFilesScopeKey,
