@@ -65,6 +65,17 @@ class MainActivity : ComponentActivity() {
     // A SAF result is usable only by the exact picker that launched it, not
     // another session that happened to re-open the same visible folder.
     private var pendingUploadPicker: NativeSafUploadTicket? = null
+    private var pendingExportPicker: NativeSafExportTicket? = null
+
+    /** ACTION_CREATE_DOCUMENT can reserve a new empty document before an
+     * old Owner/Activity picker result is rejected. Delete only that returned
+     * content URI; never open bytes or touch a new Owner's pending export. */
+    private fun discardStaleExportDestination(uri: Uri?) {
+        if (uri?.scheme != ContentResolver.SCHEME_CONTENT ||
+            uri.authority.isNullOrBlank()) return
+        try { contentResolver.delete(uri, null, null) }
+        catch (_: Exception) { /* OS/provider may revoke the grant. */ }
+    }
 
     private fun dismissIncomingShare() {
         if (shareBusy) return
@@ -145,17 +156,36 @@ class MainActivity : ComponentActivity() {
     private val fileDestination = registerForActivityResult(
         NativeCreateDocument()
     ) { uri ->
-        if (uri == null) model.controller.cancelFileExport()
-        else model.controller.saveFileExport(
-            openOutput = {
-                contentResolver.openOutputStream(uri, "wt")
-                    ?: throw IOException("Unable to open chosen document")
-            },
-            discardOutput = {
-                try { contentResolver.delete(uri, null, null) }
-                catch (_: Exception) { /* Best effort; never hide the source error. */ }
-            },
-        )
+        val controller = model.controller
+        val ticket = pendingExportPicker
+        pendingExportPicker = null
+        // The OS result itself does not carry the original Owner or Node.
+        // Even A->B->A re-login / folder round-trip must fail closed. Most
+        // importantly, a stale callback must NOT cancel a later Owner's
+        // unrelated pending export, which may exist in the same Controller.
+        val validUri = uri?.scheme == ContentResolver.SCHEME_CONTENT &&
+            !uri.authority.isNullOrBlank()
+        when (nativeSafExportCallbackDecision(
+            ticket, controller.state.value, validUri)) {
+            NativeSafExportCallbackDecision.IGNORE_STALE ->
+                discardStaleExportDestination(uri)
+            NativeSafExportCallbackDecision.CANCEL_CURRENT -> {
+                discardStaleExportDestination(uri)
+                controller.cancelFileExport()
+            }
+            NativeSafExportCallbackDecision.SAVE_CURRENT ->
+                controller.saveFileExport(
+                    openOutput = {
+                        contentResolver.openOutputStream(requireNotNull(uri), "wt")
+                            ?: throw IOException("Unable to open chosen document")
+                    },
+                    discardOutput = {
+                        // Already authorized single destination only. A failed
+                        // final output or checksum must not leave a partial file.
+                        discardStaleExportDestination(uri)
+                    },
+                )
+        }
     }
     private val uploadSource = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -203,9 +233,15 @@ class MainActivity : ComponentActivity() {
         // OS recreation. Do not strand the Controller's picker flag or silently
         // accept a result whose original Owner session is no longer provable.
         // Existing active uploads/downloads are unaffected.
-        if (savedInstanceState != null &&
-            model.controller.state.value.fileUploadPickerParent != null)
-            model.controller.cancelFileUploadPicker()
+        if (savedInstanceState != null) {
+            if (model.controller.state.value.fileUploadPickerParent != null)
+                model.controller.cancelFileUploadPicker()
+            // ActivityResultRegistry may redeliver an old CreateDocument
+            // result after recreation, but our in-memory exact ticket is
+            // intentionally never restored; clear its old pending intent.
+            if (model.controller.state.value.fileExportPending != null)
+                model.controller.cancelFileExport()
+        }
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         enableEdgeToEdge()
         setContent {
@@ -222,11 +258,26 @@ class MainActivity : ComponentActivity() {
                         catch (_: SecurityException) { false }
                     }, initialFilesView = model.initialFilesView, saveFilesView = model::saveFilesView,
                         onDownload = { node ->
-                            if (model.controller.prepareFileExport(node)) {
-                                try {
-                                    fileDestination.launch(NativeExportDocument(node.name, exportMimeType(node.name)))
+                            // Never overlap two OS CreateDocument launches.
+                            // This prevents a late earlier picker ACK from
+                            // being mistaken for another Owner's new download.
+                            if (pendingExportPicker == null &&
+                                model.controller.prepareFileExport(node)) {
+                                val ticket = NativeSafExportTicket.capture(
+                                    model.controller.state.value)
+                                if (ticket == null) {
+                                    model.controller.cancelFileExport()
+                                } else {
+                                    try {
+                                        pendingExportPicker = ticket
+                                        fileDestination.launch(NativeExportDocument(
+                                            node.name, exportMimeType(node.name)))
+                                    } catch (_: Exception) {
+                                        pendingExportPicker = null
+                                        if (ticket.isCurrent(model.controller.state.value))
+                                            model.controller.cancelFileExport()
+                                    }
                                 }
-                                catch (_: Exception) { model.controller.cancelFileExport() }
                             }
                         },
                         onUpload = {
