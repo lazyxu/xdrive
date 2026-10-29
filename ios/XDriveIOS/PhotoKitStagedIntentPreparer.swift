@@ -20,8 +20,25 @@ struct XDriveIOSLivePreparedArchive {
 struct XDriveIOSPhotoKitStagedIntentPreparer {
     let owner: XDriveNativeOwnerRoot
     let scope: XDrivePhotoSyncScope
-    let accessToken: String
+    let authorization: XDriveIOSOriginalOwnerAuthorization
     let ledger: XDrivePhotoSyncLedger
+
+    init(owner: XDriveNativeOwnerRoot, scope: XDrivePhotoSyncScope,
+         accessToken: String, ledger: XDrivePhotoSyncLedger) {
+        self.owner = owner
+        self.scope = scope
+        self.authorization = .webBearer(accessToken)
+        self.ledger = ledger
+    }
+
+    init(owner: XDriveNativeOwnerRoot, scope: XDrivePhotoSyncScope,
+         approvedBackgroundGrant: XDriveIOSApprovedPhotoBGCredential,
+         ledger: XDrivePhotoSyncLedger) {
+        self.owner = owner
+        self.scope = scope
+        self.authorization = .background(approvedBackgroundGrant)
+        self.ledger = ledger
+    }
 
     func prepareStill(localIdentifier: String,
                       staged: XDriveStagedPhotoKitAsset,
@@ -54,7 +71,7 @@ struct XDriveIOSPhotoKitStagedIntentPreparer {
                            destinationTag: String) async throws
         -> XDriveIOSLivePreparedArchive {
         let origin = try ServerAddress.parse(owner.origin.absoluteString)
-        guard origin == owner.origin, !accessToken.isEmpty,
+        guard origin == owner.origin,
               owner.ownerID > 0, owner.rootNodeID > 0,
               scope.origin == owner.origin.absoluteString,
               scope.serverInstanceID == owner.instanceID,
@@ -74,16 +91,8 @@ struct XDriveIOSPhotoKitStagedIntentPreparer {
                 == staged.folderURL.standardizedFileURL else {
             throw XDriveIOSPhotoIntentPreparationError.originalNotEligible
         }
-        let latest = try await XDriveNativeOwnerRootVerifier(
-            origin: origin, accessToken: accessToken,
-            expectedUsername: owner.username
-        ).verify()
-        guard latest.origin == owner.origin,
-              latest.instanceID == owner.instanceID,
-              latest.ownerID == owner.ownerID,
-              latest.rootNodeID == owner.rootNodeID else {
-            throw XDriveIOSPhotoIntentPreparationError.unverifiedOwnerOrDeviceScope
-        }
+        try await authorization.verify(owner: owner)
+        try Task.checkCancellation()
         let before = try liveStamp(
             localIdentifier, stillFilename: still.originalFilename,
             motionFilename: motion.originalFilename
@@ -166,7 +175,7 @@ struct XDriveIOSPhotoKitStagedIntentPreparer {
         // A numeric Owner / stable Server instance is necessary but does not
         // prove that this iPhone owns an authorized PhotoKit Source. An
         // eventually callable Runner must separately establish that proof.
-        guard canonicalOrigin == owner.origin, !accessToken.isEmpty,
+        guard canonicalOrigin == owner.origin,
               owner.ownerID > 0, owner.rootNodeID > 0,
               scope.origin == canonicalOrigin.absoluteString,
               scope.serverInstanceID == owner.instanceID,
@@ -194,17 +203,8 @@ struct XDriveIOSPhotoKitStagedIntentPreparer {
         }
         try Task.checkCancellation()
 
-        let current = try await XDriveNativeOwnerRootVerifier(
-            origin: canonicalOrigin, accessToken: accessToken,
-            expectedUsername: owner.username
-        ).verify()
-        guard current.origin == owner.origin,
-              current.instanceID == owner.instanceID,
-              current.ownerID == owner.ownerID,
-              current.rootNodeID == owner.rootNodeID,
-              current.username == owner.username else {
-            throw XDriveIOSPhotoIntentPreparationError.unverifiedOwnerOrDeviceScope
-        }
+        try await authorization.verify(owner: owner)
+        try Task.checkCancellation()
         let originalStamp = try currentResourceStamp(
             localIdentifier, expectedName: original.originalFilename, role: role
         )
