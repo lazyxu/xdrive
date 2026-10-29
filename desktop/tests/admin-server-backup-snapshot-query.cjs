@@ -22,7 +22,7 @@ const snapshots = Object.freeze([
   make('d','v2','inconsistent',true,'2026-10-28T09:00:00Z'),
   make('e','v2','incomplete',true,'2026-10-29T09:00:00Z'),
 ])
-const options = { query: '', format: 'all', status: 'all', order: 'newest' }
+const options = { query: '', format: 'all', repository: 'all', status: 'all', order: 'newest' }
 const ids = x => x.map(y => y.id)
 
 test('scoped search and order never mutate the authenticated Host inventory', () => {
@@ -53,4 +53,38 @@ test('shared backup UI does not permit Restore/Delete of hidden previous selecti
   assert.match(ui, /selectedPreviewReady = Boolean\(selected && selectedPreview/)
   assert.match(ui, /setSelectedPreviewRequestID\(''\)/)
   assert.match(ui, /snapshotID=\{selected\?\.id \|\| ''\}/)
+})
+
+test('fixed Host repository namespace filters v1, default-v2 and configured-v2 without path inputs', () => {
+  const rows = Object.freeze([
+    make('v1:xdrive-backup-20261001T010101Z', 'v1', 'complete', true, '2026-10-01T01:01:01Z'),
+    make('v2-default:xdrive-backup-20261002T010101Z', 'v2', 'incomplete', true, '2026-10-02T01:01:01Z'),
+    make('v2-configured:xdrive-backup-20261003T010101Z', 'v2', 'complete', true, '2026-10-03T01:01:01Z'),
+    make('v2-default:xdrive-backup-20261004T010101Z', 'v2', 'complete', true, '2026-10-04T01:01:01Z'),
+  ])
+  const pick = repository => ids(query(rows, { ...options, repository }))
+  assert.deepEqual(pick('v1'), [rows[0].id])
+  assert.deepEqual(pick('v2-default'), [rows[3].id, rows[1].id])
+  assert.deepEqual(pick('v2-configured'), [rows[2].id])
+  assert.deepEqual(pick('all'), [rows[3].id, rows[2].id, rows[1].id, rows[0].id])
+  assert.deepEqual(ids(query(rows, {...options, repository:'v2-configured', format:'v1'})), [])
+  assert.deepEqual(ids(query(rows, {...options, repository:'v2-configured', status:'recoverable'})), [rows[2].id])
+  assert.deepEqual(ids(rows), rows.map(x => x.id)) // read-only, no in-place sort
+})
+
+test('repository selection shares filter fence and never grants hidden snapshot actions', () => {
+  const page = read('ui/shared/src/mui/ServerBackupManagementPanel.tsx')
+  const inventory = read('ui/shared/src/mui/BackupRepositoryInventory.tsx')
+  const selector = read('ui/shared/src/server-backup-snapshot-query.ts')
+  assert.match(page, /label="仓库" value=\{snapshotFilter\.repository\}/)
+  assert.match(page, /repository: event\.target\.value as XDriveServerBackupSnapshotFilter\['repository'\]/)
+  assert.match(page, /onSelectRepository=\{repository => changeSnapshotFilter\(\{ repository \}\)\}/)
+  assert.match(page, /const selected = visibleSnapshots\.find\(item => item\.id === snapshotID\)/)
+  assert.match(page, /const changeSnapshotFilter = \(patch:[\s\S]{0,260}setConfirmation\(null\)/)
+  assert.match(page, /setSelectedPreviewRequestID\(''\)/)
+  assert.match(inventory, /data-xdrive-admin-backup-repository-filter/)
+  assert.match(inventory, /onClick=\{\(\) => onSelectRepository\(item\.id\)\}/)
+  assert.match(inventory, /仅作用于最近最多 100 代/)
+  assert.match(selector, /item\.id\.startsWith\(filter\.repository \+ ':'\)/)
+  assert.doesNotMatch(inventory, /onDeleteRepository|onEditRepository|onRestoreRepository/)
 })
