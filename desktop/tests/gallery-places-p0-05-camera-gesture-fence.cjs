@@ -15,7 +15,7 @@ const section = (start, end) => {
 }
 
 test('Baidu native gesture cancel invalidates Owner Camera and current Cells together', () => {
-  const cancel = section('    const cancel = () => {', '    const failure = () => {')
+  const cancel = section('    const cancel = (keepGestureVisual = false) => {', '    const failure = () => {')
   assert.match(cancel, /generation\+\+/)
   assert.match(cancel, /lastViewport\.current = null/)
   assert.match(cancel, /activeQuery\?\.abort\(\)/)
@@ -28,7 +28,7 @@ test('Baidu native gesture cancel invalidates Owner Camera and current Cells tog
   assert.match(callback,/cameraTouched=true/)
   assert.match(callback,/const resized=Boolean/)
   assert.match(callback,/pendingResizeDrawer\.current=null/)
-  assert.match(callback,/\n\s*cancel\(\)\s*\n\s*\},/,
+  assert.match(callback,/cancel\(Boolean\(keepVisual\)\)/,
     'rotation and pan gestures both revoke prior Camera and signed Cells')
   assert.match(source,/let cameraTouched = Boolean\(returnCamera\)/)
   assert.match(host, /onViewport: \(bounds:Bounds\) => \{ void queryCells\(bounds, true\) \}/)
@@ -38,7 +38,7 @@ test('Baidu native gesture cancel invalidates Owner Camera and current Cells tog
 
 test('filter refresh cannot reauthorize the canceled Camera before a new request', () => {
   const query = section('    const queryCells = async', '    refreshFilteredCells.current=(skipPending=false)=>{')
-  const cancelAt = query.indexOf('      cancel()')
+  const cancelAt = query.indexOf('      cancel(Boolean(keepVisual))')
   const rememberAt = query.indexOf('      lastViewport.current={bounds:{...bounds},live:liveCamera}')
   const fetchAt = query.indexOf('await listOwnerCells(bounds,request.signal,')
   assert.ok(cancelAt >= 0 && cancelAt < rememberAt && rememberAt < fetchAt,
@@ -53,12 +53,16 @@ test('filter refresh cannot reauthorize the canceled Camera before a new request
 })
 
 test('canceled Camera cannot leave private cover, filmstrip or full-wall authority', () => {
-  const cancel = section('    const cancel = () => {', '    const failure = () => {')
+  const cancel = section('    const cancel = (keepGestureVisual = false) => {', '    const failure = () => {')
   for (const required of ['setSummary(null)', 'setProjected(null)',
     'latestAcceptedViewport.current = null', 'setAccessible([])']) {
     assert.ok(cancel.includes(required), required)
   }
   assert.match(source, /const trustedSummary = scopeIsCurrent \? summary : null/)
+  assert.match(source,/data-xdrive-places-gesture-photo-cover/)
+  assert.match(source,/disabled=\{!currentCoverActive\}/)
+  assert.match(source,/gesturePresentationRef\.current/)
+  assert.match(source,/setPhotoCoverSelections/)
   assert.match(source, /const approved=acceptedScope\.current/)
   assert.match(source, /approved\.key===filterRef\.current\.key/)
 })

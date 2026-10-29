@@ -7,7 +7,10 @@ import {
 import type { XDriveBaiduMapPhotoScope } from './media-gallery-baidu-map-photo-scope'
 
 /** An Owner-authenticated Cell Range, NOT the anonymous SDK labels, owns the drawer. */
-export const XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT = 12
+export const XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT = 48
+// A Viewer return may restore at most ten already-viewed pages. The browser
+// re-fetches each signed page; no stale media is retained across navigation.
+export const XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT = 480
 export const XDRIVE_PLACES_DRAWER_RETURN_TTL_MS = 10 * 60 * 1000
 const maxOwners = 8
 
@@ -15,6 +18,8 @@ export type XDrivePlacesDrawerPresentation = Readonly<{
   expanded: boolean
   scrollTop: number
   scrollLeft: number
+  /** Bounded visual page count, not an authorization receipt. */
+  loadedCount?: number
 }>
 
 export type XDrivePlacesDrawerReturn = Readonly<{
@@ -24,7 +29,7 @@ export type XDrivePlacesDrawerReturn = Readonly<{
 }>
 
 const defaultPresentation: XDrivePlacesDrawerPresentation =
-  { expanded: false, scrollTop: 0, scrollLeft: 0 }
+  { expanded: true, scrollTop: 0, scrollLeft: 0 }
 
 function safePresentation(value?: XDrivePlacesDrawerPresentation):
   XDrivePlacesDrawerPresentation | null {
@@ -32,8 +37,14 @@ function safePresentation(value?: XDrivePlacesDrawerPresentation):
   if (!value || typeof value.expanded !== 'boolean' ||
       ![value.scrollTop, value.scrollLeft].every(n =>
         Number.isSafeInteger(n) && n >= 0 && n <= 10_000)) return null
+  const loadedCount=value.loadedCount
+  if (loadedCount !== undefined &&
+      (typeof loadedCount !== 'number' || !Number.isSafeInteger(loadedCount) ||
+        loadedCount < 1 || loadedCount > XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT))
+    return null
   return { expanded: value.expanded, scrollTop: value.scrollTop,
-    scrollLeft: value.scrollLeft }
+    scrollLeft: value.scrollLeft,
+    ...(loadedCount===undefined?{}:{loadedCount}) }
 }
 
 const sessions = new Map<string, { snapshot: XDrivePlacesDrawerReturn; seen: number }>()
