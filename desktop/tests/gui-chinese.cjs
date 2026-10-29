@@ -9,6 +9,7 @@ const desktopVirtualSettings = fs.readFileSync(path.join(root, 'src', 'renderer'
 const sharedXDriveApp = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'XDriveApp.tsx'), 'utf8')
 const sharedHostOutlet = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx'), 'utf8')
 const sharedHostSections = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'WorkspaceHostSections.tsx'), 'utf8')
+const sharedRouteTitles = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'WorkspaceRouteTitles.ts'), 'utf8')
 const sharedSourceManager = [
   fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceManager.tsx'), 'utf8'),
   fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SourceManagerDialogs.tsx'), 'utf8'),
@@ -48,6 +49,7 @@ const desktopHostFrame = fs.readFileSync(path.join(root, 'src', 'renderer', 'Des
 const renderer = [
   rendererApp,
   sharedHostSections,
+  sharedRouteTitles,
   sharedSourceManager,
   sharedSettingsDialog,
   sharedCloudStoragePage,
@@ -247,12 +249,15 @@ test('desktop sidebar uses the shared complete sidebar renderer with Desktop-onl
     rendererApp.includes("adminRoleVerified: status?.role === 'admin'"),
     'Desktop uses the canonical Server-role-scoped Host navigation')
   assert.ok(sharedHostSections.includes("key: 'overview'") &&
-    sharedHostSections.includes("label: '主页'"))
+    sharedHostSections.includes("label: xDriveWorkspaceRouteTitle('overview')") &&
+    sharedRouteTitles.includes("overview: '主页'"))
   assert.ok(sharedHostSections.includes("key: 'conflicts'") &&
-    sharedHostSections.includes("label: '冲突'"))
+    sharedHostSections.includes("label: xDriveWorkspaceRouteTitle('conflicts')") &&
+    sharedRouteTitles.includes("conflicts: '冲突'"))
   assert.ok(rendererApp.includes("diagnosticsAriaLabel: '桌面版辅助功能'"))
   assert.ok(sharedHostSections.includes('xDriveDiagnosticsSidebarDestination()') &&
-    sharedWorkspaceNavigation.includes("label: '诊断'"))
+    sharedWorkspaceNavigation.includes("xDriveWorkspaceRouteTitle('diagnostics')") &&
+    sharedRouteTitles.includes("diagnostics: '诊断'"))
   assert.ok(rendererApp.includes('conflictCount: status?.conflict_count') &&
     sharedHostSections.includes('badge: conflictCount'))
   assert.ok(rendererApp.includes("if (destination === 'settings')") &&
@@ -289,7 +294,9 @@ test('desktop sidebar uses the shared complete sidebar renderer with Desktop-onl
   for (const token of ['<XDriveSidebarSurface', '<XDriveSidebarNavList', '<XDriveCoreWorkspaceNavItems', '<XDriveSidebarSection', '<XDriveSidebarStorageSummary']) {
     assert.equal(rendererApp.includes(token), false, `Desktop should not assemble sidebar primitive directly: ${token}`)
   }
-  assert.ok(rendererApp.includes('<XDriveApp') && sharedXDriveApp.includes('<XDriveWorkspaceShell'), 'Desktop should use the shared app frame owning the shared workspace shell')
+  assert.ok(rendererApp.includes('<XDriveApp') && sharedXDriveApp.includes('<XDriveWorkspaceFrame') &&
+    sharedWorkspaceShell.includes('<XDriveWorkspaceShell responsive'),
+    'Desktop should use the canonical shared frame owning the responsive workspace shell')
   assert.ok(sharedWorkspaceShell.includes('XDRIVE_SIDEBAR_WIDTH'), 'shared workspace shell should own the standard sidebar width token')
   assert.ok(sharedWorkspaceShell.includes('XDRIVE_SIDEBAR_COMPACT_WIDTH'), 'shared workspace shell should own the compact sidebar width token')
   assert.equal(styles.includes('.shell {'), false, 'Desktop should not keep a duplicate local workspace grid')

@@ -111,8 +111,14 @@ function buildInlineFixture(config = {}) {
     id=>{assert.ok(id in mocks,id);return mocks[id]},module,module.exports,setTimer,clearTimer)
   const cells=[]
   const clicks=[],cancels=[],viewports=[],cameras=[],projected=[]
+  const canvasEvents=new global.Map(),browserEvents=new global.Map()
   const canvas={
-    tagName:'DIV',style:{},clientWidth:640,clientHeight:480,remove() {this.removed=true},
+    tagName:'DIV',style:{},clientWidth:640,clientHeight:480,
+    addEventListener(name,handler){canvasEvents.set(name,handler)},
+    removeEventListener(name,handler){
+      if(canvasEvents.get(name)===handler)canvasEvents.delete(name)
+    },
+    remove() {this.removed=true},
   }
   const resizeObservers=[]
   class ResizeObserverFixture {
@@ -127,6 +133,10 @@ function buildInlineFixture(config = {}) {
   }
   const doc={
     defaultView:{location:{protocol:'https:'},
+      addEventListener(name,handler){browserEvents.set(name,handler)},
+      removeEventListener(name,handler){
+        if(browserEvents.get(name)===handler)browserEvents.delete(name)
+      },
       ...(config.withResizeObserver ? {ResizeObserver:ResizeObserverFixture} : {})},
     createElement(tag) {assert.equal(tag,'div');return canvas},
   }

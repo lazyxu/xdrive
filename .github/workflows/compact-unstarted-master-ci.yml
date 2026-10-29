@@ -23,10 +23,13 @@ permissions:
   actions: write
 
 concurrency:
-  # Replace obsolete cleanup executions: their stale selector cannot help the
-  # latest master queue. This concurrency is scoped ONLY to the cleanup job.
+  # GitHub's default single-pending slot replaces an older queued cleaner on
+  # every push/schedule event. Under a long Actions backlog this starves the
+  # only workflow capable of cancelling obsolete master CI.
+  # Serialize cleanups, but queue rather than discard waiting executions.
   group: xdrive-compact-unstarted-master-ci
-  cancel-in-progress: true
+  queue: max
+  cancel-in-progress: false
 
 jobs:
   compact:

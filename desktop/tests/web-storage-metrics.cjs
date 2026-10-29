@@ -55,7 +55,9 @@ test('Cloud storage is one shared Web/Desktop current-account workspace', () => 
   assert.equal(cloudStorage.includes('CAS 全局物理对象'), false)
   assert.equal(cloudStorage.includes('宿主机绝对路径'), false)
   assert.equal(cloudStorage.includes('cleanupCache'), false)
-  assert.ok(webApp.includes('<XDriveCloudStoragePage source={cloudStorageSource} />'))
+  assert.ok(webApp.includes('cloudStorage: cloudStorageSource') &&
+    webApp.includes('<XDriveAppPageOutlet host={browserWorkspaceHost} view={appView} />') &&
+    sharedOutlet.includes('<XDriveCloudStoragePage key={revision} source={services.cloudStorage}'))
   assert.ok(desktopApp.includes('cloudStorage: cloudStorageSource') && sharedOutlet.includes('<XDriveCloudStoragePage'))
   assert.ok(cloudStorageAdapter.includes('export function createXDriveCloudStorageDataSource'))
   assert.ok(cloudStorageAdapter.includes('resolveXDriveTransport'))
@@ -93,7 +95,8 @@ test('Local storage is one shared Web/Desktop page with platform-specific sectio
   assert.ok(localStorage.includes('title="Desktop 存储"'))
   assert.equal((localStorage.match(/<XDriveMetricGrid\b/g) || []).length, 2)
   assert.equal((localStorage.match(/<XDriveMetricCard\b/g) || []).length, 8)
-  assert.ok(webApp.includes('<XDriveLocalStoragePage source={localStorageSource} />'))
+  assert.ok(webApp.includes('localStorage: localStorageSource') &&
+    sharedOutlet.includes('<XDriveLocalStoragePage key={revision} source={services.localStorage} />'))
   assert.ok(desktopApp.includes('localStorage: localStorageSource') && sharedOutlet.includes('<XDriveLocalStoragePage'))
   assert.equal((desktopApp.match(/<XDriveMetricGrid\b/g) || []).length, 3, 'diagnostics must not add another metric grid')
   assert.equal((desktopApp.match(/<XDriveMetricCard\b/g) || []).length, 16, 'diagnostics must not add pass/warn/fail metric cards')
@@ -192,8 +195,8 @@ test('global storage delegates durable maintenance to the global Task Center', (
     "setAppView('global-tasks')",
     "setAppView('global-tasks')",
     "api.controlBackgroundTask(\`system-maintenance:\${kind}\`, 'run', true)",
-    'onOpenTaskCenter={openGlobalTaskCenter}',
-    'onRunStorageMaintenance={runStorageMaintenance}',
+    'onOpenTaskCenter: openGlobalTaskCenter',
+    'onRunStorageMaintenance: runStorageMaintenance',
   ]) assert.ok(webApp.includes(token), 'Web Task Center handoff missing: ' + token)
 })
 

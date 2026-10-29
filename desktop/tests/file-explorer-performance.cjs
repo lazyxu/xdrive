@@ -88,7 +88,9 @@ test('FileExplorer bounds and reuses viewport-proximate thumbnail work', () => {
   assert.ok(thumbnail.includes('fileThumbnailCacheSet(cache, cacheKey, value)'), 'loaded thumbnails should enter the bounded cache')
   assert.ok(thumbnail.includes('disposeFileThumbnailCache(cache)'), 'Explorer teardown must release cached blob URLs')
   assert.ok(thumbnail.includes("value?.startsWith('blob:')") && thumbnail.includes('URL.revokeObjectURL(value)'), 'cached Web blob thumbnails must be released on eviction/disposal')
-  assert.ok(web.includes('api.mediaThumbnail(Number(item.id), signal, Number(item.revision), onProgress)'), 'Web Explorer is not wired to the real media thumbnail API')
+  assert.ok(web.includes('xDriveFileExplorerThumbnailRequest(item, !signal?.aborted)') &&
+    web.includes('api.mediaThumbnail(request.nodeID, signal, request.revision, onProgress)'),
+    'Web Explorer must admit current thumbnail IDs/revisions before Server transport')
   assert.ok(web.includes('URL.createObjectURL(blob)'), 'Web Explorer should avoid base64 inflation for thumbnail blobs')
   const desktopThumbnailStart = desktop.indexOf('const loadThumbnail = useCallback')
   const desktopThumbnailEnd = desktop.indexOf('const loadLivePhotoMotion = useCallback', desktopThumbnailStart)
@@ -96,7 +98,9 @@ test('FileExplorer bounds and reuses viewport-proximate thumbnail work', () => {
     desktopThumbnailStart,
     desktopThumbnailEnd > desktopThumbnailStart ? desktopThumbnailEnd : undefined,
   )
-  assert.ok(desktopThumbnailLoader.includes('getMediaThumbnail(Number(item.id), requestID, Number(item.revision), onProgress)'), 'Desktop Explorer is not wired to the Agent thumbnail API')
+  assert.ok(desktopThumbnailLoader.includes('xDriveFileExplorerThumbnailRequest(item, !signal?.aborted)') &&
+    desktopThumbnailLoader.includes('getMediaThumbnail(request.nodeID, requestID, request.revision, onProgress)'),
+    'Desktop Explorer must admit valid thumbnail IDs/revisions before Agent IPC')
   assert.ok(desktopThumbnailLoader.includes('new Blob([result.data.data], { type: contentType })'), 'Desktop thumbnail binary Blob mapping is missing')
   assert.ok(desktopThumbnailLoader.includes('URL.createObjectURL(blob)'), 'Desktop thumbnail should expose binary data through a Blob URL')
   assert.equal(

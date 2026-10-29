@@ -129,6 +129,30 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+      - name: Acquire complete emulator image with bounded retries
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The emulator action otherwise downloads this package only once.
+          # On a transient truncated SDK ZIP it exits before running any UI
+          # tests. Preserve the real emulator gate; do not mark it skipped.
+          image='system-images;android-35;google_apis;x86_64'
+          image_dir="${ANDROID_SDK_ROOT}/system-images/android-35/google_apis/x86_64"
+          for attempt in 1 2 3; do
+            echo "Installing Android emulator image (attempt ${attempt}/3)"
+            if sdkmanager --install "$image" --channel=0 &&
+                test -s "$image_dir/source.properties" &&
+                test -s "$image_dir/system.img"; then
+              echo "Verified complete Android emulator system image"
+              exit 0
+            fi
+            if (( attempt < 3 )); then
+              echo "::warning title=Android SDK retry::System image missing/incomplete; retrying"
+              sleep $((attempt * 15))
+            fi
+          done
+          echo "::error title=Android emulator image unavailable::Failed to verify system image after 3 attempts"
+          exit 1
       - name: Native Compose UI fixture tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -166,6 +190,13 @@ jobs:
   desktop-tests:
     needs: pr-scope
     if: needs.pr-scope.outputs.scope == 'full' || needs.pr-scope.outputs.scope == 'pwa'
+    # This source-backed suite has thousands of IPC, MUI, and Host tests.
+    # Three disjoint file shards keep runner memory bounded and prevent one
+    # interrupted machine from abandoning the entire test corpus.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -177,7 +208,11 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Test desktop main IPC client
         working-directory: desktop
-        run: npm run test:main
+        run: |
+          # Preserve the canonical source-backed entrypoint and its Go/AGENTS
+          # parity contract; Node accepts the shard selector through NODE_OPTIONS.
+          # Each of the three jobs executes disjoint test files.
+          NODE_OPTIONS="--test-shard=${{ matrix.shard }}/3" npm run test:main
 
   desktop-linux:
     needs: pr-scope
@@ -2444,7 +2479,9 @@ jobs:
           retention-days: 7
 
   final-gate:
-    if: always()
+    # Aggregate failed checks, but do not revive a cancelled workflow.
+    # GitHub re-evaluates job conditions when a run is cancelled.
+    if: ${{ !cancelled() }}
     needs:
       - pr-scope
       - policy-contract

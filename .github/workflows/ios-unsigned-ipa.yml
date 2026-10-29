@@ -42,6 +42,15 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-window-check"
           "$RUNNER_TEMP/xdrive-ios-window-check"
 
+      - name: Verify V2 PhotoKit journal shard routing
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/PhotoLedgerShardPolicy.swift \
+            ios/tests/PhotoLedgerShardPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-shard-policy-check"
+          "$RUNNER_TEMP/xdrive-ios-shard-policy-check"
+
       - name: Verify foreground automatic schedule and bounded cursor
         run: |
           set -euo pipefail

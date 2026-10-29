@@ -171,6 +171,10 @@ test('P66: shared Browser/Desktop Source manager preserves same Source adapter a
   assert.equal(view.includes('showDelayedLoading'),false)
   assert.ok(manager.includes('<XDriveSourceManagerListPage'))
   assert.ok(manager.includes('adapter.sourceOverview(controller.signal)'))
-  assert.ok(web.includes('<XDriveSourceManager'))
+  assert.ok(web.includes('remotePull: {') &&
+    web.includes('adapter: sourceManagerAdapter') &&
+    read('web/src/browserWorkspaceHost.ts').includes('remotePullPage: { ...ports.remotePull') &&
+    read('ui/shared/src/mui/XDriveAppPageOutlet.tsx').includes('<XDriveSourceManager'),
+    'Web must retain authenticated Remote Pull through the shared SourceManager')
   assert.ok(desktop.includes('remotePullPage:') && read('ui/shared/src/mui/XDriveAppPageOutlet.tsx').includes('<XDriveSourceManager'))
 })

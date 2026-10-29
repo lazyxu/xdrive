@@ -9,6 +9,7 @@ const web = read('web', 'src', 'AdminAudit.tsx')
 const desktop = read('desktop', 'src', 'renderer', 'App.tsx')
 const outlet = read('ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx')
 const sections = read('ui', 'shared', 'src', 'mui', 'WorkspaceHostSections.tsx')
+const routeTitles = read('ui', 'shared', 'src', 'mui', 'WorkspaceRouteTitles.ts')
 const main = read('desktop', 'src', 'main', 'index.cts')
 const preload = read('desktop', 'src', 'preload', 'index.cts')
 const globals = read('desktop', 'src', 'renderer', 'global.d.ts')
@@ -30,7 +31,9 @@ test('Web and Desktop use the identical snapshot-bound virtualized audit page', 
 })
 
 test('Desktop audit path is admin-only, bounded and cancellable to Go', () => {
-  assert.ok(sections.includes("key: 'admin-audit', label: '审计日志'"))
+  assert.ok(sections.includes("key: 'admin-audit', label: xDriveWorkspaceRouteTitle('admin-audit')") &&
+    routeTitles.includes("'admin-audit': '审计日志'"),
+    'Desktop audit must use the canonical administrator title')
   assert.ok(desktop.includes("adminAuditPage: status?.role === 'admin'") && outlet.includes("case 'admin-audit':"))
   assert.ok(desktop.includes("capabilities.includes('admin-audit')"))
   assert.ok(desktop.includes('xDriveDesktopViewportRequest(signal'))

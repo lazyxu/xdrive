@@ -18,11 +18,18 @@ test('all valid Web/Mobile Web apps still mount shared pages with unchanged rout
   for(const t of ['appView === \'files\'','appView === \'gallery\'',
     'appView === \'device-backup\'','appView === \'remote-pull\'',
     'appView === \'local-storage\'','appView === \'cloud-storage\'',
-    "appView === 'admin-users' && profile?.role === 'admin'",
-    "appView === 'admin-audit' && profile?.role === 'admin'",
-    "appView === 'admin-storage' && profile?.role === 'admin'"]){
+    "appView === 'admin-users'", "appView === 'admin-audit'",
+    "appView === 'admin-storage'"]){
     assert.ok(web.includes(t), 'existing route still exists: '+t)
   }
+  // Admin routes share one verified Host role gate: the old duplicated
+  // per-page role literals were replaced, never removed as authorization.
+  assert.ok(web.includes("profile?.role === 'admin'"))
+  assert.ok(web.includes('adminRoleVerified: serverAdminVerified'))
+  const browserHost = fs.readFileSync(path.join(root,'web/src/browserWorkspaceHost.ts'),'utf8')
+  const outlet = fs.readFileSync(path.join(root,'ui/shared/src/mui/XDriveAppPageOutlet.tsx'),'utf8')
+  assert.ok(browserHost.includes('adminServicesPage: ports.adminServices'))
+  assert.ok(outlet.includes('xDriveWorkspaceRouteRequiresAdmin(view) && host.adminRoleVerified !== true'))
   assert.ok(web.includes('data-xdrive-mobile-app-frame'))
   assert.ok(web.includes('<XDriveMobileAppHeader'))
   assert.ok(routes.includes("presentation: 'workspace'"))

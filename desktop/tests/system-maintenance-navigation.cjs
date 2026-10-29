@@ -19,20 +19,26 @@ test('administrator System Maintenance is typed and routed on Web/Desktop', () =
   assert.ok(model.includes("case 'admin-maintenance':"))
   assert.ok(registry.includes("'admin-maintenance': { id: 'admin-maintenance'"))
   assert.ok(registry.includes("workspaceKey: 'admin-maintenance', sidebar: true, admin: true"))
-  assert.ok(web.includes("appView === 'admin-maintenance' && profile?.role === 'admin'"))
-  assert.ok(web.includes("appView.startsWith('admin-')"))
+  const outlet = read('ui/shared/src/mui/XDriveAppPageOutlet.tsx')
+  assert.ok(web.includes("appView === 'admin-maintenance'") &&
+    web.includes('adminMaintenance: serverAdminVerified ? {') &&
+    web.includes('adminRoleVerified: serverAdminVerified') &&
+    outlet.includes("case 'admin-maintenance':") &&
+    outlet.includes('<XDriveSystemMaintenancePage {...services.adminMaintenancePage} />'),
+    'the Web administrator uses a verified shared Host route')
   assert.ok(desktop.includes("adminMaintenancePage: status?.role === 'admin'") && read('ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx').includes("case 'admin-maintenance':"))
   assert.ok(desktop.includes("view === 'global-tasks' || view === 'admin-users' || view === 'admin-audit' || view === 'admin-storage' || view === 'admin-services' || view === 'admin-maintenance'"))
 })
 
 test('only admin group exposes System Maintenance in Web/Desktop including Mobile Web', () => {
   const sections = read('ui', 'shared', 'src', 'mui', 'WorkspaceHostSections.tsx')
-  const webStart = web.indexOf('const webSidebarSections: XDriveSidebarSectionModel[]')
-  const webEnd = web.indexOf(String.fromCharCode(10) + '  ]', webStart)
-  assert.ok(webStart >= 0 && webEnd > webStart)
-  const webNav = web.slice(webStart, webEnd)
-  assert.ok(webNav.includes("profile?.role === 'admin'"))
-  assert.equal((webNav.match(/key: 'admin-maintenance'/g) || []).length, 1)
+  // The sole sidebar section factory is shared between Web, Desktop and DSM.
+  // Web passes only its Server-confirmed administrator bit and disables native
+  // utility routes; it must never create an independent admin menu.
+  assert.ok(web.includes('const webSidebarSections = xDriveWorkspaceHostSections({'))
+  assert.ok(web.includes("adminRoleVerified: profile?.role === 'admin'"))
+  assert.ok(web.includes('includeUtilityRoutes: false'))
+  assert.equal((sections.match(/key: 'admin-maintenance'/g) || []).length, 1)
   assert.ok(sections.includes('...(adminRoleVerified ? ['))
   assert.ok(desktop.includes("adminRoleVerified: status?.role === 'admin'"))
   assert.equal((sections.match(/key: 'admin-maintenance'/g) || []).length, 1)

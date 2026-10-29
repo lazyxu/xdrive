@@ -14,6 +14,7 @@ const preload = read('desktop', 'src', 'preload', 'index.cts')
 const types = read('desktop', 'src', 'renderer', 'global.d.ts')
 const explorer = read('desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx')
 const app = read('desktop', 'src', 'renderer', 'App.tsx')
+const hostCapabilities = read('ui', 'shared', 'src', 'mui', 'FileExplorerHostCapabilities.ts')
 
 test('Desktop folder download uses one group with one child per leaf file', () => {
   for (const token of [
@@ -137,5 +138,8 @@ test('single folder prefers tree download while single-file and multi-selection 
   assert.ok(folderBranch >= 0 && archiveBranch > folderBranch, 'single-folder tree download must run before archive fallback')
   assert.ok(explorer.includes('await downloadNode(archivePlan.file)'), 'single-file Save As compatibility was removed')
   assert.ok(explorer.includes('hostPort.write.cloudDownloadArchive(archivePlan.ids)'), 'multi-selection archive fallback was removed')
-  assert.ok(app.includes("capabilities.includes('folder-download-tree')"), 'Desktop App must pass folder tree capability')
+  assert.ok(app.includes('xDriveFileExplorerHostCapabilities(agent.hello?.capabilities)') &&
+    app.includes('folderTreeDownloadSupported: filesHostCapabilities.folderTreeDownloadSupported') &&
+    hostCapabilities.includes("folderTreeDownloadSupported: has('folder-download-tree')"),
+    'only an authenticated Agent capability enables native folder tree download')
 })

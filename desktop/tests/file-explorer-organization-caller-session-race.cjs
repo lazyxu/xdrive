@@ -7,7 +7,10 @@ const ts = require('typescript')
 const repo = path.join(__dirname, '..', '..')
 
 function extractCreateSavedSearchSubmit() {
-  const filename = path.join(repo, 'desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx')
+  const filename = path.join(repo, 'ui', 'shared', 'src', 'mui', 'FileExplorerSavedSearchDialogs.tsx')
+  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx'), 'utf8')
+  assert.match(desktop, /<XDriveFileExplorerSavedSearchDialogs\b/,
+    'Desktop must mount the real Owner-fenced shared dialog controller')
   const source = fs.readFileSync(filename, 'utf8')
   const sourceFile = ts.createSourceFile(
     filename,
@@ -96,15 +99,13 @@ test('Desktop FileExplorer saved-search completion cannot cross account lifecycl
     'onSubmit',
     initializer,
     {
-      organization: {
-        createSavedSearch: async () => pending.promise,
-      },
-      organizationLifecycleKeyRef,
-      organizationSearchScopeKeyRef,
-      searchState: { query: 'kind:image' },
-      persistedSearchFilters: { tagID: 3 },
+      createSavedSearch: async () => pending.promise,
+      lifecycleKeyRef: organizationLifecycleKeyRef,
+      currentQuery: 'kind:image',
+      persistedFilters: { tagID: 3 },
+      availabilityFilterActive: false,
+      // Only the owning Host may activate a newly saved search.
       setActiveSavedSearchID: (id) => activeIDs.push(id),
-      searchFilters: { availability: null },
       onFeedback: (tone, message) => feedback.push({ tone, message }),
     },
   )

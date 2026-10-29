@@ -291,9 +291,9 @@ struct XDriveIOSForegroundPhotoBackupMVP {
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
-                let after = try? await journal.operations(scope: binding.scope)
-                if let current = after?.first(where: { $0.id == prepared.id }),
-                   current.state != .prepared {
+                if let current = try? await journal.operation(
+                    scope: binding.scope, id: prepared.id
+                ), current.state != .prepared {
                     return .requiresReview
                 }
                 throw error

@@ -130,5 +130,8 @@ test('denied persistence cannot unmount FileExplorer or elevate an Owner action'
   assert.match(dsm, /unavailableActions=\{unavailableActions\}/)
   assert.match(dsm, /currentScopeVerified/)
   assert.match(dsm, /isCurrentOwner/)
-  assert.doesNotMatch(read(name), /fetch\s*\(|window\.xdriveDesktop|ipcRenderer|credentials|OwnerRoot/)
+  // This appearance-only module documents that it does not store credentials;
+  // test executable source, not a prohibited word in its security comment.
+  const implementation = read(name).replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, '')
+  assert.doesNotMatch(implementation, /fetch\s*\(|window\.xdriveDesktop|ipcRenderer|credentials|OwnerRoot/)
 })

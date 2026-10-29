@@ -49,8 +49,9 @@ struct XDriveIOSJournaledOriginalUpload {
 
         // Always reload the sealed ledger, not a stale caller-supplied object.
         // A crashed/uncertain creating or finalizing record is never replayed.
-        let stored = try await ledger.operations(scope: scope)
-        guard let current = stored.first(where: { $0.id == requested.id }),
+        guard let current = try await ledger.operation(
+                  scope: scope, id: requested.id
+              ),
               current.id == requested.id,
               current.assetFingerprint == requested.assetFingerprint,
               current.role == requested.role,
@@ -118,9 +119,9 @@ struct XDriveIOSJournaledOriginalUpload {
             // A failed original size/hash check before creating is read-only,
             // so preserve the prepared intent. If any mutation might have
             // begun, retain uncertainty and require Owner read-only recovery.
-            if let snapshot = try? await ledger.operations(scope: scope),
-               let last = snapshot.first(where: { $0.id == operationID }),
-               last.state != .prepared, last.state != .confirmed {
+            if let last = try? await ledger.operation(
+                   scope: scope, id: operationID
+               ), last.state != .prepared, last.state != .confirmed {
                 _ = try? await ledger.markUnknown(scope: scope, id: operationID)
             }
             throw error

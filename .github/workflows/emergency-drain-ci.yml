@@ -1,0 +1,58 @@
+name: Emergency prune superseded CI backlog
+
+# One-shot emergency only: trusted master file change, or manual dispatch.
+# Does not subscribe to PR code, tags, scheduled releases, or run completions.
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/emergency-drain-ci.yml'
+      - 'scripts/ci/emergency-drain-ci.cjs'
+      - 'scripts/ci/emergency-drain-ci.test.cjs'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Audit matching runs without cancelling'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: xdrive-emergency-ci-drain
+  queue: max
+  cancel-in-progress: false
+
+jobs:
+  drain:
+    if: github.repository == 'lazyxu/xdrive' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Test exact emergency cancellation policy
+        run: |
+          node --check scripts/ci/emergency-drain-ci.cjs
+          node --test scripts/ci/emergency-drain-ci.test.cjs
+      - name: Cancel obsolete PR and older master Actions runs
+        uses: actions/github-script@v7
+        env:
+          EMERGENCY_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+        with:
+          script: |
+            const {drain} = require('./scripts/ci/emergency-drain-ci.cjs')
+            const result = await drain({
+              github, context, core,
+              dryRun: String(process.env.EMERGENCY_DRY_RUN) === 'true',
+              maxCancels: 400,
+            })
+            core.summary.addHeading('Emergency CI backlog drain')
+              .addRaw('Preserved current master: ' + result.head + '\n\n')
+              .addRaw('Observed: ' + result.observed + '; candidates: ' + result.candidates +
+                '; cancel requests: ' + result.requested + '; dry run: ' + result.dryRun + '\n')
+            await core.summary.write()
