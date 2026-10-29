@@ -7,14 +7,8 @@ import { xDriveClearBaiduConversionSession } from '../../ui/shared/src/media-gal
 import type { XDriveBaiduMapAdminUpdate, XDriveGeoNamesUpdate, XDriveGeoNamesRollbackInput, XDrivePhotoAutoUpdate, XDrivePhotoAutoRollbackInput, XDriveSourceWorkerUpdate, XDriveSourceWorkerRollbackInput } from '../../ui/shared/src'
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
-import AssessmentRoundedIcon from '@mui/icons-material/AssessmentRounded'
-import AdminPanelSettingsOutlinedIcon from '@mui/icons-material/AdminPanelSettingsOutlined'
-import DashboardRoundedIcon from '@mui/icons-material/DashboardRounded'
-import ManageAccountsRoundedIcon from '@mui/icons-material/ManageAccountsRounded'
 import InstallDesktopRoundedIcon from '@mui/icons-material/InstallDesktopRounded'
-import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
 import DnsRoundedIcon from '@mui/icons-material/DnsRounded'
-import BuildRoundedIcon from '@mui/icons-material/BuildRounded'
 import {
   AppBar,
   Box,
@@ -47,6 +41,7 @@ import {
   createXDriveCloudStorageDataSource,
   XDriveLocalStoragePage,
   XDriveWorkspaceSidebar,
+  xDriveWorkspaceHostSections,
   XDriveServiceDependenciesPage,
   XDriveSystemMaintenancePage,
   XDriveSettingsDialog,
@@ -83,7 +78,6 @@ import {
 import type {
   XDriveFileExplorerExternalDropPayload,
   XDriveFileExplorerSort,
-  XDriveSidebarSectionModel,
   XDriveWorkspaceViewKey,
   XDriveLocalStorageDataSource,
   MediaGallerySection,
@@ -2174,59 +2168,12 @@ function FileManager({
     launchWebApp(next, { newTab: true })
   }
 
-  const webSidebarSections: XDriveSidebarSectionModel[] = [
-    {
-      key: 'overview',
-      placement: 'before-core',
-      items: [
-        {
-          key: 'overview',
-          label: '主页',
-          icon: <DashboardRoundedIcon fontSize="small" />,
-        },
-      ],
-    },
-    ...(profile?.role === 'admin'
-      ? [{
-          key: 'admin',
-          label: '管理',
-          ariaLabel: '管理员功能',
-          placement: 'after-core' as const,
-          items: [
-            {
-              key: 'admin-users',
-              label: '用户管理',
-              icon: <ManageAccountsRoundedIcon fontSize="small" />,
-            },
-            {
-              key: 'global-tasks',
-              label: '全局后台任务',
-              icon: <AdminPanelSettingsOutlinedIcon fontSize="small" />,
-            },
-            {
-              key: 'admin-audit',
-              label: '审计日志',
-              icon: <AssessmentRoundedIcon fontSize="small" />,
-            },
-            {
-              key: 'admin-storage',
-              label: '全局存储',
-              icon: <StorageRoundedIcon fontSize="small" />,
-            },
-            {
-              key: 'admin-services',
-              label: '系统依赖',
-              icon: <DnsRoundedIcon fontSize="small" />,
-            },
-            {
-              key: 'admin-maintenance',
-              label: '备份与系统维护',
-              icon: <BuildRoundedIcon fontSize="small" />,
-            },
-          ],
-        }]
-      : []),
-  ]
+  // Shared with Desktop/DSM: browser-only settings stay in the account menu.
+  // Do not advertise utility routes before the Browser Host implements them.
+  const webSidebarSections = xDriveWorkspaceHostSections({
+    adminRoleVerified: profile?.role === 'admin',
+    includeUtilityRoutes: false,
+  })
 
   const chooseUploadForResume = (id: string) => {
     if (resumingUpload || fileUploads.busy || viewerActive) return
