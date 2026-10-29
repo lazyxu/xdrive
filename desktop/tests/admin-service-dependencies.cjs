@@ -12,6 +12,9 @@ const registry = read('web', 'src', 'webApps.ts')
 const desktop = read('desktop', 'src', 'renderer', 'App.tsx')
 const page = read('ui', 'shared', 'src', 'mui', 'ServiceDependenciesPage.tsx')
 const sharedOutlet = read('ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx')
+const browserHost = read('web', 'src', 'browserWorkspaceHost.ts')
+const sharedHostSections = read('ui', 'shared', 'src', 'mui', 'WorkspaceHostSections.tsx')
+const sharedRouteTitles = read('ui', 'shared', 'src', 'mui', 'WorkspaceRouteTitles.ts')
 const baiduDetail = read('ui', 'shared', 'src', 'mui', 'BaiduServerAPIDetail.tsx')
 const api = read('internal', 'api', 'router.go')
 const backend = read('internal', 'api', 'admin_service_dependencies.go')
@@ -21,9 +24,17 @@ const preload = read('desktop', 'src', 'preload', 'index.cts')
 test('Admin services is a Web workspace app behind the existing admin role', () => {
   assert.ok(routes.includes("'admin-services'"), 'Web hash routing must recognize admin services')
   assert.ok(registry.includes("'admin-services': { id: 'admin-services'"))
-  assert.ok(app.includes("key: 'admin-services'"))
-  assert.ok(app.includes("appView === 'admin-services' && profile?.role === 'admin'"))
-  assert.ok(app.includes("appView.startsWith('admin-')"), 'demoted admins should leave admin pages')
+  assert.ok(sharedHostSections.includes("key: 'admin-services'") &&
+    sharedRouteTitles.includes("'admin-services': '系统依赖'"),
+    'administrator destination must use the canonical shared route')
+  assert.ok(app.includes('adminServices: serverAdminVerified ? {') &&
+    app.includes("appView === 'admin-services' || appView === 'admin-maintenance' ||") &&
+    app.includes('adminRoleVerified: serverAdminVerified') &&
+    browserHost.includes('adminServicesPage: ports.adminServices') &&
+    sharedOutlet.includes('<XDriveServiceDependenciesPage {...services.adminServicesPage} />'),
+    'demoted users must not mount the administrator-only Services page')
+  assert.ok(sharedOutlet.includes('host.adminRoleVerified !== true'),
+    'the common Host outlet must reject stale administrator role admission')
   assert.ok(api.includes('admin.Use(s.requireAdmin())'))
   assert.ok(api.includes('admin.GET("/services", s.adminServiceDependencies)'))
 })

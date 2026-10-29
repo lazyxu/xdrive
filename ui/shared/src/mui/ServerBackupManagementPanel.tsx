@@ -9,7 +9,7 @@ import type {
   XDriveServerBackupSnapshot, XDriveServerBackupHistoryEntry,
 } from '../server-backup-admin'
 import { xDriveServerBackupActionLabel } from '../server-backup-admin'
-import { latestServerBackupVerification, serverBackupReceiptDurationSeconds,
+import { serverBackupHistoricalVerificationLabel, serverBackupReceiptDurationSeconds,
   serverBackupReceiptExplanation, summarizeServerBackupIntegrity } from '../server-backup-integrity'
 import { canPruneServerBackup, type XDriveServerBackupPrunePreview } from '../server-backup-prune-preview'
 import { backupRetentionCapacity } from '../server-backup-capacity'
@@ -47,10 +47,7 @@ function snapshotStatus(item: XDriveServerBackupSnapshot): string {
 
 
 function historicalVerification(history: XDriveServerBackupPage['history'], snapshotID: string) {
-  const latest = latestServerBackupVerification(history, snapshotID)
-  if (!latest) return '未校验'
-  return (latest.state === 'success' ? '通过' : '失败') + ' · ' + (latest.mode || 'fast') +
-    ' · ' + (latest.finished_at ? new Date(latest.finished_at).toLocaleString() : '—') + '（历史）'
+  return serverBackupHistoricalVerificationLabel(history, snapshotID)
 }
 
 export function XDriveServerBackupManagementPanel({
@@ -385,7 +382,7 @@ export function XDriveServerBackupManagementPanel({
                 <Typography variant="body2">
                   在最近最多 100 条宿主机操作记录中，各快照的最新校验结果：
                   历史通过 {integrity.historicalPassed} 代，历史失败
-                  {integrity.historicalFailed} 代，未见近期校验记录
+                  {integrity.historicalFailed} 代，无可信校验凭据
                   {integrity.withoutRecentReceipt} 代。
                 </Typography>
                 <Typography variant="caption" color="text.secondary">

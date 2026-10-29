@@ -17,6 +17,9 @@ const localMocks = {
   './StatePanel': { XDriveStatePanel: 'StatePanel' },
   './StatusAlert': { XDriveStatusAlert: 'StatusAlert' },
   './StatusBadge': { XDriveStatusBadge: 'StatusBadge' },
+  // The quiet first-read fixture does not display an integrity task, but it
+  // must resolve the real task component's newly extracted receipt boundary.
+  './StorageIntegrityReceipt': { XDriveStorageIntegrityReceipt: 'StorageIntegrityReceipt' },
   './TaskPresentation': { XDriveTaskCardSurface: 'TaskCard' },
   './TableSurface': { XDriveTableSurface: 'TableSurface' },
   './TransferSpeedDisplay': {

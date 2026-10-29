@@ -304,7 +304,8 @@ test('P0-Places-A2 direct Viewer shows GPS info but refuses unscoped map on narr
       assert.equal(dialogs()[0].props.getBaiduMapProvider, undefined)
       assert.equal(dialogs()[0].props.loadBaiduStaticMap, undefined)
       const viewerSource = fs.readFileSync(path.join(repo, 'web/src/WebFileViewerApps.tsx'), 'utf8')
-      assert.match(viewerSource, /xDriveWebAppHash\(\{ app: 'gallery', params: \{ section: 'places' \} \}\)/)
+      assert.match(viewerSource,
+    /destination\.hash = xDriveWebAppHash\(\{\s*app: 'gallery', params: \{ section: 'places' \},?\s*\}\)/)
       await act(async () => dialogs()[0].props.onClose())
       assert.equal(dialogs().length, 0, 'close releases the owned map component')
     } finally {

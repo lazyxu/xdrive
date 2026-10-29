@@ -118,10 +118,10 @@ function appFocusOwner(platform) {
         }
       }
     }
-    if (platform === 'Desktop' && ts.isPropertyAssignment(entry) &&
+    if (ts.isPropertyAssignment(entry) &&
       ['operationFocusID', 'operationFocusRequestID'].includes(entry.name.getText(ast))) {
-      // After shared-Host migration the real page properties are fields of
-      // workspaceHost.services.taskCenterPage, not Desktop-specific JSX.
+      // Both Web and Desktop use typed shared Host taskCenter properties.
+      // Evaluate the actual current Owner's focus ID, not obsolete JSX.
       focusProps.set(entry.name.getText(ast), entry.initializer.getText(ast))
     }
     ts.forEachChild(entry, visit)

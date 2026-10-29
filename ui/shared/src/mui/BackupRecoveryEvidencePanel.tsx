@@ -1,5 +1,6 @@
 import { Paper, Stack, Table, TableBody, TableCell, TableRow, Typography } from '@mui/material'
-import type { XDriveServerBackupPage, XDriveServerBackupSnapshot } from '../server-backup-admin'
+import type { XDriveServerBackupPage, XDriveServerBackupSnapshot, XDriveServerBackupHistoryEntry } from '../server-backup-admin'
+import { classifyServerBackupVerificationEvidence } from '../server-backup-integrity'
 import { selectServerBackupRecoveryEvidence } from '../server-backup-recovery-evidence'
 import { assessServerBackupRecoveryReadiness, isTrustedServerBackupIsolatedDrill } from '../server-backup-recovery-readiness'
 
@@ -29,19 +30,17 @@ function drillLabel(
   return '缺少可信的本机隔离演练凭据；不能标记成功'
 }
 
-function receiptLabel(event: {
-  state: string
-  finished_at?: string
-  mode?: string
-} | null, kind: 'verify' | 'restore'): string {
-  if (!event) return '最近最多 30 条宿主机记录中无对应操作证据'
-  const outcome = event.state === 'success' ? '宿主机记录成功' : '宿主机记录失败'
+function receiptLabel(event: XDriveServerBackupHistoryEntry | null, kind: 'verify' | 'restore'): string {
+  if (!event) return '最近最多 100 条宿主机记录中无对应操作证据'
   const time = event.finished_at ? new Date(event.finished_at).toLocaleString() : '时间未知'
   if (kind === 'verify') {
-    return outcome + ' · ' + (event.mode || '模式未知') + ' · ' + time +
+    const evidence = classifyServerBackupVerificationEvidence(event)
+    const result = evidence === 'passed' ? '宿主机结构化校验通过' :
+      evidence === 'failed' ? '宿主机校验失败' : '宿主机历史操作缺少可信结构化校验凭据'
+    return result + ' · ' + (event.mode || '模式未知') + ' · ' + time +
       '（历史校验，不证明快照现在仍完整）'
   }
-  return outcome + ' · ' + time +
+  return (event.state === 'success' ? '宿主机记录成功' : '宿主机记录失败') + ' · ' + time +
     '（历史实际恢复操作，不是隔离演练，也不等于当前可恢复性验收）'
 }
 

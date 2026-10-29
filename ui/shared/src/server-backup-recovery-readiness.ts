@@ -70,8 +70,13 @@ export function assessServerBackupRecoveryReadiness(
     }
   }
   if (!verify || verify.state !== 'success' || !proof ||
+      proof.protocol !== 'xdrive-host-backup-verify-v1' ||
       proof.state !== 'success' || proof.format !== snapshot.format ||
-      proof.scope !== 'backup_snapshot_and_referenced_cas') {
+      proof.scope !== 'backup_snapshot_and_referenced_cas' ||
+      (proof.failure_category !== undefined && proof.failure_category !== '') ||
+      !Number.isSafeInteger(proof.cas_objects_checked) || proof.cas_objects_checked < 0 ||
+      !Number.isSafeInteger(proof.cas_bytes_hashed) || proof.cas_bytes_hashed < 0 ||
+      (snapshot.format === 'v1' && (proof.cas_objects_checked !== 0 || proof.cas_bytes_hashed !== 0))) {
     return {
       state: 'verify_unattested',
       label: '尚无可信的结构化备份完整性校验成功凭据',

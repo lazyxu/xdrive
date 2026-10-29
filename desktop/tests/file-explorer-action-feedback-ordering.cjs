@@ -63,6 +63,7 @@ function source(relative) {
 }
 
 const shared = loadShared('file-explorer-controller')
+const sharedAdmission = loadShared('file-explorer-selection-admission')
 const { useXDriveFileOperationLifecycle } = loadShared('mui/FileOperationLifecycle')
 const { useXDriveFileExplorerDeleteController } = loadShared('mui/FileExplorerDeleteController')
 const { useXDriveFileExplorerOwnerActionLifecycle } = loadShared('mui/FileExplorerOwnerActionLifecycle')
@@ -131,7 +132,7 @@ async function mountHarness() {
     // identity; no hand-written state/always-true Owner stubs.
     const busy = useXDriveFileExplorerOwnerActionLifecycle(agent, 'server-a\naccount-a')
     const dependencies = {
-      ...shared, ...busy, useCallback: React.useCallback,
+      ...shared, ...sharedAdmission, ...busy, useCallback: React.useCallback,
       nodeByID: new Map([[node.id, node]]), trashActive: false,
       fileOperationBusy: false, uploadBusy: false, fileTagsSupported: true,
       archiveDownloadSupported: false, folderTreeDownloadSupported: false,

@@ -90,7 +90,7 @@ func TestOwnerLiveMotionFailsClosed(t *testing.T) {
 	// A current authenticated Node by itself is insufficient: only an
 	// actual image Live Photo can expose its embedded or paired motion.
 	for _, tc := range []struct {
-		name string
+		name   string
 		change func(*ownerLiveSourceFixture)
 	}{
 		{"wrong Owner-visible node", func(f *ownerLiveSourceFixture) { f.item.Node.ID = 43 }},

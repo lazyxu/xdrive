@@ -77,7 +77,10 @@ function extractReplaceSavedSearchHandler() {
 }
 
 function extractCreateSavedSearchSubmit() {
-  const filename = path.join(repo, 'desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx')
+  const filename = path.join(repo, 'ui', 'shared', 'src', 'mui', 'FileExplorerSavedSearchDialogs.tsx')
+  const desktop = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx'), 'utf8')
+  assert.match(desktop, /<XDriveFileExplorerSavedSearchDialogs\b/,
+    'Desktop must mount the real Owner-fenced shared dialog controller')
   const source = fs.readFileSync(filename, 'utf8')
   const sourceFile = ts.createSourceFile(
     filename,
@@ -245,14 +248,11 @@ test('Desktop FileExplorer create-saved-search completion does not activate stal
     'handler',
     initializer,
     {
-      organization: {
-        createSavedSearch: async () => pending.promise,
-      },
-      organizationLifecycleKeyRef,
-      organizationSearchScopeKeyRef,
-      searchState: { query: 'kind:image' },
-      persistedSearchFilters: { tagID: 5 },
-      searchFilters: { availability: null },
+      createSavedSearch: async () => pending.promise,
+      lifecycleKeyRef: organizationLifecycleKeyRef,
+      currentQuery: 'kind:image',
+      persistedFilters: { tagID: 5 },
+      availabilityFilterActive: false,
       setActiveSavedSearchID: (id) => activeIDs.push(id),
       onFeedback: (tone, message) => feedback.push({ tone, message }),
     },

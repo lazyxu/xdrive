@@ -11,12 +11,16 @@ const dto = read('ui', 'shared', 'src', 'device-backups.ts')
 const api = read('web', 'src', 'api.ts')
 const web = read('web', 'src', 'App.tsx')
 const desktop = read('desktop', 'src', 'renderer', 'App.tsx')
+const browserHost = read('web', 'src', 'browserWorkspaceHost.ts')
+const sharedOutlet = read('ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx')
 
 test('Device Backup reads only owner-scoped redacted APIs', () => {
   assert.ok(api.includes("this.request<XDriveDeviceBackupOverview>('/api/v1/device-backups', { signal })"),
     'authenticated Owner overview GET must forward the optional disposable signal')
   assert.ok(api.includes('this.request<XDriveDeviceBackupRunPage>(`/api/v1/device-backups/${sourceID}/runs?'))
-  assert.ok(web.includes('source={deviceBackupSource}'))
+  assert.ok(web.includes('deviceBackup: { source: deviceBackupSource, initialSourceID: deviceBackupSourceID }'))
+  assert.ok(browserHost.includes('source: ports.deviceBackup.source'))
+  assert.ok(sharedOutlet.includes('<XDriveDeviceBackupPage key={revision} {...services.deviceBackupPage} />'))
   assert.ok(web.includes("route.app === 'device-backup' ? route.params.source : undefined"))
   assert.equal(view.includes('sourceOverview('), false)
   assert.equal(view.includes('sourceItems('), false)
@@ -55,6 +59,7 @@ test('Push backup presenter has only B-scope read models, no cross-device mutati
 test('B-scope display is independent of Pull SourceManager routing', () => {
   assert.ok(web.includes("appView === 'device-backup'"))
   assert.ok(web.includes("appView === 'remote-pull'"))
-  assert.ok(web.includes('directionFilter="pull"'))
+  assert.ok(browserHost.includes("remotePullPage: { ...ports.remotePull, directionFilter: 'pull' as const }"))
+  assert.ok(sharedOutlet.includes('<XDriveSourceManager {...services.remotePullPage} />'))
   assert.equal(view.includes('XDriveSourceManager'), false)
 })

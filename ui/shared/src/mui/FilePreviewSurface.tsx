@@ -608,7 +608,13 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
       })
       .then(async (value) => {
         if (!value) {
-          if (active) setFailed(true)
+          if (active && !controller.signal.aborted &&
+              previewGenerationRef.current === generation) {
+            // A failed signed video request still belongs to this exact
+            // Owner loader. Otherwise the stale-owner loading mask hides Retry.
+            if (previewKind === 'video') setVideoURLSourceOwner(() => loaders.url)
+            setFailed(true)
+          }
           return
         }
         if (!active || controller.signal.aborted ||
@@ -630,7 +636,11 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
         assignPreviewURL(value)
       })
       .catch(() => {
-        if (active && previewGenerationRef.current === generation) setFailed(true)
+        if (active && !controller.signal.aborted &&
+            previewGenerationRef.current === generation) {
+          if (previewKind === 'video') setVideoURLSourceOwner(() => loaders.url)
+          setFailed(true)
+        }
       })
       .finally(() => {
         if (active && previewGenerationRef.current === generation) setLoading(false)
@@ -683,8 +693,12 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
         !previewURL || loading || failed || typeof document === 'undefined') return
     const video = videoStreamElementRef.current
     if (!video) return
+    let listenerActive = true
     const pauseNativeVideoIfCurrent = () => {
-      if (videoStreamElementRef.current !== video ||
+      // The captured player belongs to this exact Owner lease. A cleared
+      // renderer ref cannot suppress hide-pausing that still-active player.
+      if (!listenerActive ||
+          (videoStreamElementRef.current && videoStreamElementRef.current !== video) ||
           currentSourceIdentityRef.current !== sourceIdentity ||
           currentVideoPreviewOwnerRef.current !== videoPreviewOwner) return
       try { video.pause() } catch { /* Already detached or suspended by the OS. */ }
@@ -697,6 +711,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     // Initial render can itself occur in a hidden document.
     onVisibilityChange()
     return () => {
+      listenerActive = false
       document.removeEventListener('visibilitychange', onVisibilityChange)
       if (typeof window !== 'undefined') window.removeEventListener('pagehide', pauseNativeVideoIfCurrent)
     }
@@ -1045,9 +1060,8 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
               onError={markMediaFailed}
             />
           ) : (
-            <Box
+            <video
               key={`${target?.id}:${target?.revision ?? ''}:${previewURL}`}
-              component="video"
               ref={videoStreamElementRef}
               src={previewURL}
               poster={mediaReady ? undefined : activeVideoPosterURL || undefined}
@@ -1064,7 +1078,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
               onSeeking={markMediaSeeking}
               onSeeked={markMediaSeeked}
               onError={markMediaFailed}
-              sx={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', bgcolor: 'black' }}
+              style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', backgroundColor: 'black' }}
             />
           )}
           {mediaLoadingOverlay}

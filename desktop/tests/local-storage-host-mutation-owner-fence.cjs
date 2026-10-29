@@ -91,15 +91,20 @@ for (const operation of ['browser', 'desktop', 'policy']) {
     try {
       await act(async () => { view = Renderer.create(React.createElement(Page, { source: sourceA })) })
       assert.equal(used(view), '100 B')
-      await act(async () => {
-        if (operation === 'policy') click(view, '不同步')
-        else {
+      if (operation === 'policy') {
+        await act(async () => { click(view, '不同步') })
+      } else {
+        // React batches pending confirmation state until the action event
+        // completes. Check the *committed* dialog before invoking the real
+        // mutation; an unconfirmed click must never start a destructive op.
+        await act(async () => {
           click(view, operation === 'browser' ? '清理浏览器缓存' : '释放可回收 Desktop 缓存')
-          const dialog = find(view, 'confirm-dialog')[0]
-          assert.ok(dialog.props.open)
-          dialog.props.onConfirm()
-        }
-      })
+        })
+        assert.equal(calls, 0, 'confirmation must precede the Host mutation')
+        const dialog = find(view, 'confirm-dialog')[0]
+        assert.ok(dialog?.props.open, 'current Host confirmation must be visible')
+        await act(async () => { dialog.props.onConfirm() })
+      }
       assert.equal(calls, 1)
       await act(async () => { view.update(React.createElement(Page, { source: sourceB })) })
       assert.equal(used(view), '200 B')

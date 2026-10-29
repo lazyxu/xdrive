@@ -373,7 +373,10 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ "$SAFETY_BACKUP" == "1" ]]; then
   echo "Creating pre-restore safety backup..."
-  "$SCRIPT_DIR/server-backup.sh"     --config-dir "$XDRIVE_HOME"     --output-dir "$XDRIVE_HOME/backups/pre-restore"     --allow-inconsistent
+  bash "$SCRIPT_DIR/server-backup.sh" \
+    --config-dir "$XDRIVE_HOME" \
+    --output-dir "$XDRIVE_HOME/backups/pre-restore" \
+    --allow-inconsistent
 fi
 
 server_was_running=0

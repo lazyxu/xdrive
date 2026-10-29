@@ -34,9 +34,17 @@ function mountChild() {
       this.getZoom=()=>3
     }
   }
-  const status={textContent:'',clientWidth:640,clientHeight:480}
+  const canvasEvents=new Map()
+  const status={textContent:'',clientWidth:640,clientHeight:480,
+    addEventListener(name,handler){canvasEvents.set(name,handler)},
+    removeEventListener(name,handler){
+      if(canvasEvents.get(name)===handler)canvasEvents.delete(name)
+    }}
   const env={window:{location:{origin:'https://map-isolated.example.org'},parent,
-      BMap:fakeSDK,addEventListener(name,handler){events.set(name,handler)}},
+      BMap:fakeSDK,addEventListener(name,handler){events.set(name,handler)},
+      removeEventListener(name,handler){
+        if(events.get(name)===handler)events.delete(name)
+      }},
     document:{getElementById(){return status},
       querySelector(){return {content:'https://gallery.example.net'}},
       createElement(){return {remove(){},set src(value){this._src=value}}},

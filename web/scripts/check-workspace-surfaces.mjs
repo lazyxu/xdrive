@@ -197,7 +197,7 @@ for (const token of [
 }
 requireText(browserHost, [
   "platform: 'web'",
-  'adminRoleVerified: false',
+  'adminRoleVerified: ports.adminRoleVerified === true',
   'cloudStorage: ports.cloudStorage',
   'localStorage: ports.localStorage',
 ], 'Web bounded shared page outlet Host')
@@ -259,7 +259,8 @@ requireText(app, [
   'focusedAdminUserID',
   'adminUsers: serverAdminVerified && profile ?',
   'adminAudit: serverAdminVerified ? { api } : undefined',
-  "(appView === 'admin-users' || appView === 'admin-audit') && serverAdminVerified",
+  "appView === 'admin-users' || appView === 'admin-audit' ||",
+  "appView === 'admin-storage') && serverAdminVerified",
 ], 'Web admin users/audit shared page outlet')
 requireText(browserHost, [
   'ports.adminRoleVerified === true && ports.adminServices',

@@ -120,7 +120,6 @@ test('counted Range requests and replies fail closed before shared Files publica
   }
   const port = { mode: 'range', readRange: async () => { calls++; return page } }
   for (const delta of [
-    { parentID: 0 },
     { parentID: -3 },
     { offset: -1 },
     { offset: 1.5 },
@@ -134,6 +133,11 @@ test('counted Range requests and replies fail closed before shared Files publica
   const valid = await readPage(port, request)
   assert.strictEqual(valid.page, page, 'a validated Host response must keep its object identity')
   assert.equal(calls, 1)
+  // Indexed Range has a signed Owner root sentinel at zero. It is not a
+  // cursor parent and must remain eligible without widening authorization.
+  const rootResponse = await readPage(port, { ...request, parentID: 0 })
+  assert.strictEqual(rootResponse.page, page)
+  assert.equal(calls, 2)
   for (const altered of [
     { offset: 99 }, // wrong directory window, never publish under request offset
     { limit: 3 },  // Host must not silently widen a requested range
