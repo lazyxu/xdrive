@@ -1545,9 +1545,14 @@ function FileManager({
     statsUnavailableMessage: '当前服务端未提供账号文件大小分布。',
   }), [api, applyQuota])
   const localStorageSource = useMemo<XDriveLocalStorageDataSource>(() => ({
-    load: async () => ({
-      browserStorage: await createWebBrowserStorageSnapshot(),
-    }),
+    // Safari storage.estimate()/CacheStorage do not expose an AbortSignal.
+    // Fence their late response but never cancel a deliberate cache purge.
+    load: async (signal?: AbortSignal) => {
+      signal?.throwIfAborted()
+      const browserStorage = await createWebBrowserStorageSnapshot()
+      signal?.throwIfAborted()
+      return { browserStorage }
+    },
     clearBrowserCache: clearWebBrowserCache,
   }), [])
 
