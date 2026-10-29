@@ -332,9 +332,13 @@ test('a thumbnail loader supplied later for the same identity shows the first fr
   let originalCalls = 0
   let thumbnailCalls = 0
   let renderer
+  // A newly admitted thumbnail must not alter the ORIGINAL Owner loader.
+  // Changing the original callback identity would be a genuine Owner
+  // handoff and correctly restart/abort its signed original request.
+  const loadPreviewURL = () => { originalCalls += 1; return original.promise }
   const props = (loadImagePreview) => ({
     target: { ...target },
-    loadPreviewURL: () => { originalCalls += 1; return original.promise },
+    loadPreviewURL,
     loadImagePreview,
   })
   try {
