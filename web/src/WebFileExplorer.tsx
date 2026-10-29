@@ -57,6 +57,7 @@ import {
   xDriveFileExplorerSearchFilterLabels,
   xDriveFileExplorerProjectSearchSources,
   xDriveFileExplorerReadNodeID,
+  xDriveFileExplorerThumbnailRequest,
   xDriveFileExplorerPreviewRequest,
   xDriveFileExplorerSelectionRequest,
   xDriveFileNeedsBrowserCompatibleImagePreview,
@@ -993,9 +994,10 @@ export default function WebFileExplorer({
   }, [api])
 
   const loadThumbnail = useCallback(async (item: XDriveFileExplorerItem, signal?: AbortSignal, onProgress?: XDriveByteProgressHandler, onStage?: (stage: XDriveMediaLoadStage) => void) => {
-    if (item.kind !== 'file' || signal?.aborted) return null
+    const request = xDriveFileExplorerThumbnailRequest(item, !signal?.aborted)
+    if (!request) return null
     try {
-      const blob = await api.mediaThumbnail(Number(item.id), signal, Number(item.revision), onProgress)
+      const blob = await api.mediaThumbnail(request.nodeID, signal, request.revision, onProgress)
       if (signal?.aborted) return null
       return URL.createObjectURL(blob)
     } catch {
@@ -1004,15 +1006,15 @@ export default function WebFileExplorer({
     }
 
     try {
-      const source = await api.filePreviewURL(Number(item.id), signal)
+      const source = await api.filePreviewURL(request.nodeID, signal)
       if (signal?.aborted) return null
       onStage?.('poster_capture')
       const poster = await xDriveCaptureVideoPosterBlob(source, 0, 0, 0, 512, signal)
       if (!poster || signal?.aborted) return null
-      const revision = Number(item.revision)
-      if (Number.isSafeInteger(revision) && revision > 0) {
+      const revision = request.revision
+      if (revision !== undefined) {
         try {
-          await api.mediaVideoPoster(Number(item.id), revision, poster, signal)
+          await api.mediaVideoPoster(request.nodeID, revision, poster, signal)
         } catch {
           // Backfill failure does not discard the already decoded local poster.
         }
