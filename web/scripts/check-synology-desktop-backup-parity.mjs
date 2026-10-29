@@ -213,7 +213,8 @@ if (!dsmEntry.includes('<XDriveApp') || !desktopShell.includes('<XDriveApp') ||
 }
 // Migrated Desktop pages must be mounted through exactly the same common
 // UI outlet as DSM, with Desktop retaining ownership of real Agent operations.
-if (!appRouteContent.includes('xDriveIsSharedHostPageRoute(view)') ||
+if (appRouteContent.includes('hasLegacyFilesContent') ||
+    !appPageOutlet.includes('if (services.filesControllerContent)') ||
     !desktopShell.includes('host={workspaceHost}') ||
     !desktopShell.includes('galleryPage: {') ||
     !desktopShell.includes('deviceBackupPage: {') ||
@@ -222,7 +223,8 @@ if (!appRouteContent.includes('xDriveIsSharedHostPageRoute(view)') ||
     !appPageOutlet.includes('<XDriveMediaGalleryPage {...services.galleryPage} />') ||
     !appPageOutlet.includes('<XDriveSourceManager {...services.remotePullPage} />') ||
     !appPageOutlet.includes('<XDriveTaskCenterPage') ||
-    !routeRegistry.includes('XDRIVE_SHARED_HOST_PAGE_ROUTES = XDRIVE_APP_WORKSPACE_ROUTES.filter(') ||
+    !routeRegistry.includes('XDRIVE_SHARED_HOST_PAGE_ROUTES = XDRIVE_APP_WORKSPACE_ROUTES') ||
+    !desktopShell.includes("filesControllerContent: view === 'files' ? (") ||
     !desktopShell.includes("adminUsersPage: status?.role === 'admin'") ||
     !desktopShell.includes("adminAuditPage: status?.role === 'admin'") ||
     !desktopShell.includes("adminStoragePage: status?.role === 'admin'") ||
