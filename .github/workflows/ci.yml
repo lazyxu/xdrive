@@ -185,8 +185,10 @@ jobs:
       - name: Test desktop main IPC client
         working-directory: desktop
         run: |
-          npm run build:main
-          node --test --test-concurrency=2 --test-shard=${{ matrix.shard }}/3 tests/*.cjs
+          # Preserve the canonical source-backed entrypoint and its Go/AGENTS
+          # parity contract; Node accepts the shard selector through NODE_OPTIONS.
+          # Each of the three jobs executes disjoint test files.
+          NODE_OPTIONS="--test-shard=${{ matrix.shard }}/3" npm run test:main
 
   desktop-linux:
     needs: pr-scope

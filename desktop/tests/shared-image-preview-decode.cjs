@@ -165,11 +165,17 @@ test('thumbnail failure cannot hide a valid original, and two failures keep the 
 test('equivalent parent rerenders preserve the displayed element and do not reacquire either source', async () => {
   let renderer
   const calls = []
-  const props = () => ({
-    target: { ...target },
-    loadPreviewURL: async () => { calls.push('original'); return 'https://example.invalid/original.jpg' },
-    loadImagePreview: async () => { calls.push('thumbnail'); return 'https://example.invalid/thumbnail.jpg' },
-  })
+  // Equivalent rerenders must retain the SAME admitted Owner loader identity.
+  // Changing the callbacks is an Owner handoff and must remount both layers.
+  const loadPreviewURL = async () => {
+    calls.push('original')
+    return 'https://example.invalid/original.jpg'
+  }
+  const loadImagePreview = async () => {
+    calls.push('thumbnail')
+    return 'https://example.invalid/thumbnail.jpg'
+  }
+  const props = () => ({ target: { ...target }, loadPreviewURL, loadImagePreview })
   try {
     await act(async () => { renderer = create(React.createElement(XDriveFilePreviewSurface, props())) })
     await loadImage(renderer, 'https://example.invalid/original.jpg')
