@@ -134,6 +134,13 @@ function loadTypeScriptModule(relativePath, react, extraModules = {}) {
         ['ui', 'shared', 'src', 'mui', 'ViewerForegroundPriority.ts'], null,
       )
     }
+    // The controller now invokes this real fail-closed first-page admission.
+    // Do not replace it with an unconditional success mock.
+    if (request === './CloudFilesFirstPageAdmission') {
+      return loadTypeScriptModule(
+        ['ui', 'shared', 'src', 'mui', 'CloudFilesFirstPageAdmission.ts'], null,
+      )
+    }
     return require(request)
   }
   new Function('exports', 'module', 'require', output)(mod.exports, mod, localRequire)

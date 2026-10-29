@@ -1559,7 +1559,9 @@ test('U01 an uncounted or contradictory next folder first Range never commits un
       'unverified first rows must not overwrite old Owner rows')
     assert.deepEqual(controller.crumbs.map(crumb => crumb.id), [1],
       'unverified first page must not change breadcrumbs')
-    assert.match(failures.at(-1), /Unverified Files first counted Range/)
+    // Both the first-page gate and the Host counted-Range guard may reject
+    // contradictory metadata before the Owner cursor is committed.
+    assert.match(failures.at(-1), /Unverified Files first counted Range|Invalid Files Host counted Range page/)
   }
   next = { total_count: 1, total_count_included: true }
   assert.equal(await controller.loadDirectory(2, [
