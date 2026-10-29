@@ -37,11 +37,11 @@ type OwnerGalleryMetadata struct {
 }
 
 type OwnerGalleryItem struct {
-	Node       OwnerGalleryNode     `json:"node"`
-	Metadata   OwnerGalleryMetadata `json:"metadata"`
-	AssetKind  string               `json:"asset_kind,omitempty"`
-	Favorite   bool                 `json:"favorite"`
-	LivePhoto  bool                 `json:"live_photo,omitempty"`
+	Node      OwnerGalleryNode     `json:"node"`
+	Metadata  OwnerGalleryMetadata `json:"metadata"`
+	AssetKind string               `json:"asset_kind,omitempty"`
+	Favorite  bool                 `json:"favorite"`
+	LivePhoto bool                 `json:"live_photo,omitempty"`
 }
 
 type OwnerGalleryPage struct {
@@ -159,7 +159,7 @@ func ProjectOwnerGalleryPage(page MediaItemRange, limit, offset int) (OwnerGalle
 		return OwnerGalleryPage{}, errors.New("invalid Owner gallery range")
 	}
 	out := OwnerGalleryPage{
-		Items: make([]OwnerGalleryItem, 0, len(page.Items)),
+		Items:      make([]OwnerGalleryItem, 0, len(page.Items)),
 		TotalCount: page.TotalCount, Offset: offset, Limit: limit,
 	}
 	seen := make(map[uint64]bool, len(page.Items))
@@ -179,9 +179,9 @@ func ProjectOwnerGalleryPage(page MediaItemRange, limit, offset int) (OwnerGalle
 			Metadata: OwnerGalleryMetadata{
 				MediaKind: item.Metadata.MediaKind, MIMEType: item.Metadata.MIMEType,
 				Width: item.Metadata.Width, Height: item.Metadata.Height,
-				DurationMS: item.Metadata.DurationMS,
-				CapturedAt: item.Metadata.CapturedAt,
-				IndexState: item.Metadata.IndexState,
+				DurationMS:   item.Metadata.DurationMS,
+				CapturedAt:   item.Metadata.CapturedAt,
+				IndexState:   item.Metadata.IndexState,
 				HasThumbnail: item.Metadata.HasThumbnail,
 			},
 			AssetKind: item.AssetKind, Favorite: item.Favorite,
