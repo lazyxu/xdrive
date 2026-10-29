@@ -9711,7 +9711,13 @@ export function XDriveMediaGallery({
                 }
                 if (!stillSelected()) return
                 void onShowPhotoMap(selection, stillSelected).then(opened => {
-                  if (!opened || !stillSelected()) return
+                  // The successful original Owner map entry can itself change
+                  // collectionKey/section. That expected transition must not
+                  // strand the same Viewer above the newly focused map.
+                  const now = selectedPhotoMapRef.current
+                  if (!opened || now?.owner !== owner ||
+                      now.nodeID !== selection.nodeID ||
+                      now.revision !== selection.revision) return
                   closeMediaPreview()
                   setPlacesMobileMode('map')
                 }).catch(() => undefined)
