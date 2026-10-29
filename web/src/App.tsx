@@ -923,8 +923,11 @@ function FileManager({
   const [profileReadFailed, setProfileReadFailed] = useState(false)
   // Keep a stable Owner-scoped scheduler across short-lived bearer rotation.
   // The latest real API is always read at the moment of a visible auto tick.
-  const iosAutoRef = useRef({ api, profile, username })
-  iosAutoRef.current = { api, profile, username }
+  // AuthSession is an explicitly supplied, mutable authenticated prop.
+  // XDriveApi.session is private; never bypass its encapsulation or invent a
+  // token from the browser Cookie. A fresh Owner read precedes every tick.
+  const iosAutoRef = useRef({ api, profile, username, authSession })
+  iosAutoRef.current = { api, profile, username, authSession }
   useEffect(() => {
     if (!iosPhotoHost || !profile?.id || profile.username !== username ||
         profile.must_change_password) return
@@ -936,9 +939,9 @@ function FileManager({
       const latest = iosAutoRef.current
       if (latest.api !== captured.api || latest.profile?.id !== profile.id ||
           current.id !== profile.id || current.username !== username ||
-          current.must_change_password || !captured.api.session.accessToken) return null
+          current.must_change_password || !latest.authSession.accessToken) return null
       return { ownerID: current.id, username,
-        accessToken: captured.api.session.accessToken }
+        accessToken: latest.authSession.accessToken }
     })
   }, [iosPhotoHost, profile?.id, profile?.username,
       profile?.must_change_password, username])
