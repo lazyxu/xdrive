@@ -45,6 +45,35 @@ function terminalFailedJobInventory(jobs, runId) {
     'publish-master / verify-client-artifacts'].every(name => publishers.has(name))
 }
 
+// An old, already FAILED CI may also be waiting only for a release bundle
+// that GitHub has not assigned to any runner. The user explicitly permits
+// retiring superseded CI: preserve completed artifacts, but do not require
+// running the stale bundle or obsolete queued tests. All actual in-flight
+// work is a hard veto; the latest master stays protected.
+function terminalFailedPendingBundleInventory(jobs, runId) {
+  if (!Array.isArray(jobs) || jobs.length < 5) return false
+  const terminal = new Set(['success', 'failure', 'cancelled', 'skipped'])
+  const unassigned = job =>
+    !job.runner_name && (job.runner_id == null || job.runner_id === 0) &&
+    (!job.started_at || job.started_at === job.created_at) &&
+    Array.isArray(job.steps) && job.steps.length === 0
+  if (!jobs.every(job => job?.run_id === runId && (
+      (job.status === 'completed' && terminal.has(job.conclusion) &&
+        !job.steps?.some(step => step.status === 'in_progress')) ||
+      (job.status === 'queued' && job.conclusion == null && unassigned(job)) ||
+      (job.name === 'publish-master / bundle' && job.status === 'pending' &&
+        job.conclusion == null && unassigned(job))
+    ))) return false
+  if (!jobs.some(job => job.status === 'completed' && job.conclusion === 'failure')) return false
+  const bundle = jobs.filter(job => job.name === 'publish-master / bundle')
+  if (bundle.length !== 1 || bundle[0].status !== 'pending' ||
+      !unassigned(bundle[0])) return false
+  return ['publish-master / server-images', 'publish-master / server-deploy',
+    'publish-master / verify-client-artifacts'].every(name =>
+      jobs.some(job => job.name === name && job.status === 'completed' &&
+        job.conclusion === 'success'))
+}
+
 // Exact job inventory must prove absolutely no substantive work started.
 // A successful pr-scope is read-only classification, not a build/test artifact.
 function unstartedJob(job, runId) {
@@ -152,7 +181,8 @@ async function compactUnstartedMasterCI({
     const jobs = inventory?.jobs
     const proven = run.status === 'queued'
       ? jobs?.every(job => unstartedJob(job, run.id))
-      : terminalFailedJobInventory(jobs, run.id)
+      : (terminalFailedJobInventory(jobs, run.id) ||
+         terminalFailedPendingBundleInventory(jobs, run.id))
     if (!Number.isSafeInteger(inventory?.total_count) ||
         inventory.total_count < 1 || inventory.total_count > 100 ||
         !Array.isArray(jobs) || jobs.length !== inventory.total_count ||
@@ -170,6 +200,21 @@ async function compactUnstartedMasterCI({
         immediate.head_sha !== run.head_sha) {
       audit.push({id: run.id, decision: 'preserved-race'})
       continue
+    }
+
+    // One final job snapshot prevents cancelling a publisher that was
+    // assigned a runner between the first proof and the workflow recheck.
+    if (run.status === 'pending') {
+      const final = (await github.rest.actions.listJobsForWorkflowRun({
+        owner, repo, run_id: run.id, per_page: 100,
+      })).data
+      if (!Array.isArray(final?.jobs) || final.total_count !== inventory.total_count ||
+          final.jobs.length !== inventory.total_count ||
+          !(terminalFailedJobInventory(final.jobs, run.id) ||
+            terminalFailedPendingBundleInventory(final.jobs, run.id))) {
+        audit.push({id: run.id, decision: 'preserved-publisher-started'})
+        continue
+      }
     }
 
     eligible++
@@ -195,4 +240,4 @@ async function compactUnstartedMasterCI({
 }
 
 module.exports = {eligibleRun, terminalFailedPendingRun, terminalFailedJobInventory,
-  unstartedJob, compactUnstartedMasterCI}
+  terminalFailedPendingBundleInventory, unstartedJob, compactUnstartedMasterCI}

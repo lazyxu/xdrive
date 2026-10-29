@@ -3,7 +3,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const {
   eligibleRun, terminalFailedPendingRun, terminalFailedJobInventory,
-  unstartedJob, compactUnstartedMasterCI,
+  terminalFailedPendingBundleInventory, unstartedJob, compactUnstartedMasterCI,
 } = require('./compact-unstarted-master-ci.cjs')
 
 const a = 'a'.repeat(40)
@@ -158,6 +158,52 @@ test('only a stale failed, fully published pending master run can be retired', a
     completed.map(job => job.name === 'desktop-tests'
       ? {...job, run_id: 2} : job),
   ]) {
+    const other = mock({runs: rows, jobs: {1: unsafe}})
+    await compactUnstartedMasterCI({...other})
+    assert.deepEqual(other.calls.cancels, [])
+  }
+})
+
+test('failed pending CI retires only an unassigned stale bundle; protects publisher work', async () => {
+  const past = run(1, a, {status: 'pending', created_at: '2026-10-29T06:00:00Z'})
+  const rows = [past, run(2), run(3), run(4)]
+  const completed = (name, conclusion = 'success') => ({
+    run_id: 1, name, status: 'completed', conclusion, steps: [],
+  })
+  const bundle = {
+    run_id: 1, name: 'publish-master / bundle', status: 'pending',
+    conclusion: null, runner_id: null, runner_name: null, steps: [],
+    created_at: '2026-10-29T09:00:00Z', started_at: '2026-10-29T09:00:00Z',
+  }
+  const obsolete = {
+    run_id: 1, name: 'test-windows-upgrade-artifact',
+    status: 'queued', conclusion: null, runner_id: 0, runner_name: '',
+    created_at: '2026-10-29T09:00:00Z', started_at: '2026-10-29T09:00:00Z',
+    steps: [],
+  }
+  const jobs = [
+    completed('pr-scope'), completed('desktop-tests', 'failure'),
+    completed('publish-master / server-images'),
+    completed('publish-master / server-deploy'),
+    completed('publish-master / verify-client-artifacts'),
+    bundle, obsolete,
+  ]
+  assert.equal(terminalFailedPendingBundleInventory(jobs, 1), true)
+  const h = mock({runs: rows, jobs: {1: jobs}})
+  const result = await compactUnstartedMasterCI({...h})
+  assert.deepEqual(h.calls.cancels, [1])
+  assert.equal(result.requested, 1)
+  for (const unsafe of [
+    jobs.map(j => j === bundle ? {...j, runner_id: 321} : j),
+    jobs.map(j => j === bundle ? {...j, started_at: '2026-10-29T09:00:05Z'} : j),
+    jobs.map(j => j === obsolete ? {...j, status: 'in_progress'} : j),
+    jobs.map(j => j === obsolete ? {...j, runner_name: 'GitHub Actions 1'} : j),
+    jobs.map(j => j.name === 'publish-master / server-deploy'
+      ? {...j, status: 'queued', conclusion: null} : j),
+    jobs.map(j => j.name === 'desktop-tests'
+      ? {...j, conclusion: 'success'} : j),
+  ]) {
+    assert.equal(terminalFailedPendingBundleInventory(unsafe, 1), false)
     const other = mock({runs: rows, jobs: {1: unsafe}})
     await compactUnstartedMasterCI({...other})
     assert.deepEqual(other.calls.cancels, [])
