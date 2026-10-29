@@ -2674,6 +2674,30 @@ async function testPhotoCoverWhileMouseHeld(browser,mode,port){
       await page.mouse.move(x+95,y+50,{steps:5})
       const omitted=page.locator('[data-xdrive-places-gesture-photo-cover]').first()
       await omitted.waitFor({state:'visible'})
+      const originalInert=await omitted.boundingBox()
+      assert(originalInert,'old Owner photo must remain as inert gesture cover')
+      // Move the genuine SDK camera AGAIN while it emits no 'moving' event.
+      // Further physical pointermove must reproject the SAME authorized old
+      // photo instead of freezing it at the first drag frame.
+      await sdkFrame.evaluate(()=>{
+        const sdk=window.__xdriveSyntheticMapInstances?.at(-1)
+        sdk.panOffset={x:146,y:72}
+        // Deliberately do NOT emit movestart/moving/moveend.
+      })
+      await page.mouse.move(x+154,y+80,{steps:4})
+      await page.waitForFunction(origin=>{
+        const node=document.querySelector(
+          '[data-xdrive-places-gesture-photo-cover]')
+        if(!node)return false
+        const moved=node.getBoundingClientRect()
+        return Math.abs(moved.x-origin.x-60)<3 &&
+          Math.abs(moved.y-origin.y-30)<3
+      },originalInert)
+      const movedInert=await omitted.boundingBox()
+      record(mode+': continuing physical drag reprojects inert photos without SDK moving',
+        Boolean(movedInert)&&
+        Math.abs(movedInert.x-originalInert.x-60)<3&&
+        Math.abs(movedInert.y-originalInert.y-30)<3)
       await page.waitForTimeout(650)
       const during=await page.evaluate(()=>({
         old:document.querySelectorAll(
