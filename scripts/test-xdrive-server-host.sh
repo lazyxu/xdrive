@@ -293,7 +293,7 @@ cat > "$SNAPSHOT/manifest.json" <<'EOF'
 EOF
 (
   cd "$SNAPSHOT"
-  sha256sum database.dump blobs.tar verify.json manifest.json > SHA256SUMS.txt
+  sha256sum database.dump verify.json manifest.json blobs.tar > SHA256SUMS.txt
 )
 
 METADATA_SNAPSHOT="$TMP/home/backups/snapshots/xdrive-backup-20260928T100000Z"
