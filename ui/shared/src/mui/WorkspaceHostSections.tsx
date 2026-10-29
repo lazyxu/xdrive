@@ -11,6 +11,7 @@ import {
   xDriveSettingsSidebarDestination,
 } from './WorkspaceNavigation'
 import type { XDriveSidebarSectionModel } from './WorkspaceNavigation'
+import { xDriveWorkspaceRouteTitle } from './WorkspaceRouteTitles'
 
 /** Shared Desktop / DSM navigation. Only the authenticated xDrive Server
  * admin role may reveal admin entries; it grants no backend authorization. */
@@ -31,13 +32,13 @@ export function xDriveWorkspaceHostSections({
     {
       key: 'overview',
       placement: 'before-core',
-      items: [{ key: 'overview', label: '主页', icon: <DashboardRoundedIcon fontSize="small" /> }],
+      items: [{ key: 'overview', label: xDriveWorkspaceRouteTitle('overview'), icon: <DashboardRoundedIcon fontSize="small" /> }],
     },
     ...(includeUtilityRoutes ? [{
       key: 'conflicts',
       placement: 'after-core' as const,
       items: [{
-        key: 'conflicts', label: '冲突',
+        key: 'conflicts', label: xDriveWorkspaceRouteTitle('conflicts'),
         icon: <WarningAmberRoundedIcon fontSize="small" />,
         badge: conflictCount,
       }],
@@ -53,12 +54,12 @@ export function xDriveWorkspaceHostSections({
       ariaLabel: '管理员功能',
       placement: 'after-core' as const,
       items: [
-        { key: 'admin-users', label: '用户管理', icon: <ManageAccountsRoundedIcon fontSize="small" /> },
-        { key: 'global-tasks', label: '全局后台任务', icon: <AdminPanelSettingsOutlinedIcon fontSize="small" /> },
-        { key: 'admin-audit', label: '审计日志', icon: <AssessmentRoundedIcon fontSize="small" /> },
-        { key: 'admin-storage', label: '全局存储', icon: <StorageRoundedIcon fontSize="small" /> },
-        { key: 'admin-services', label: '系统依赖', icon: <DnsRoundedIcon fontSize="small" /> },
-        { key: 'admin-maintenance', label: '备份与系统维护', icon: <BuildRoundedIcon fontSize="small" /> },
+        { key: 'admin-users', label: xDriveWorkspaceRouteTitle('admin-users'), icon: <ManageAccountsRoundedIcon fontSize="small" /> },
+        { key: 'global-tasks', label: xDriveWorkspaceRouteTitle('global-tasks'), icon: <AdminPanelSettingsOutlinedIcon fontSize="small" /> },
+        { key: 'admin-audit', label: xDriveWorkspaceRouteTitle('admin-audit'), icon: <AssessmentRoundedIcon fontSize="small" /> },
+        { key: 'admin-storage', label: xDriveWorkspaceRouteTitle('admin-storage'), icon: <StorageRoundedIcon fontSize="small" /> },
+        { key: 'admin-services', label: xDriveWorkspaceRouteTitle('admin-services'), icon: <DnsRoundedIcon fontSize="small" /> },
+        { key: 'admin-maintenance', label: xDriveWorkspaceRouteTitle('admin-maintenance'), icon: <BuildRoundedIcon fontSize="small" /> },
       ],
     }] : []),
     ...(includeUtilityRoutes ? [{

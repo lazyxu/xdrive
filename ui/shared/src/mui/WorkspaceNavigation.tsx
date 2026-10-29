@@ -10,6 +10,7 @@ import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
 import AssignmentOutlinedIcon from '@mui/icons-material/AssignmentOutlined'
 import type { XDriveSidebarBadgeValue } from './SidebarNav'
 import type { XDriveCoreWorkspaceKey } from './WorkspaceRoute'
+import { xDriveWorkspaceRouteTitle } from './WorkspaceRouteTitles'
 
 export type XDriveSidebarDestinationModel = {
   key: string
@@ -21,7 +22,7 @@ export type XDriveSidebarDestinationModel = {
 }
 
 export function xDriveDiagnosticsSidebarDestination(): XDriveSidebarDestinationModel {
-  return { key: 'diagnostics', label: '诊断', icon: <BuildRoundedIcon fontSize="small" /> }
+  return { key: 'diagnostics', label: xDriveWorkspaceRouteTitle('diagnostics'), icon: <BuildRoundedIcon fontSize="small" /> }
 }
 
 // The same settings entry may open the canonical shared SettingsDialog.
@@ -47,21 +48,21 @@ export function xDriveCoreWorkspaceDestinations({
   showLocalStorage?: boolean
 } = {}): (XDriveSidebarDestinationModel & { key: XDriveCoreWorkspaceKey })[] {
   return [
-    { key: 'files', label: '文件', icon: <CloudOutlinedIcon fontSize="small" /> },
-    { key: 'gallery', label: '图库', icon: <PhotoLibraryRoundedIcon fontSize="small" /> },
-    { key: 'device-backup', label: '设备备份', icon: <BackupRoundedIcon fontSize="small" /> },
-    { key: 'remote-pull', label: '远程拉取', icon: <CloudDownloadRoundedIcon fontSize="small" /> },
+    { key: 'files', label: xDriveWorkspaceRouteTitle('files'), icon: <CloudOutlinedIcon fontSize="small" /> },
+    { key: 'gallery', label: xDriveWorkspaceRouteTitle('gallery'), icon: <PhotoLibraryRoundedIcon fontSize="small" /> },
+    { key: 'device-backup', label: xDriveWorkspaceRouteTitle('device-backup'), icon: <BackupRoundedIcon fontSize="small" /> },
+    { key: 'remote-pull', label: xDriveWorkspaceRouteTitle('remote-pull'), icon: <CloudDownloadRoundedIcon fontSize="small" /> },
     {
       key: 'transfers',
-      label: '任务',
-      compactLabel: '任务',
+      label: xDriveWorkspaceRouteTitle('transfers'),
+      compactLabel: xDriveWorkspaceRouteTitle('transfers'),
       icon: <AssignmentOutlinedIcon fontSize="small" />,
       badge: transferBadge,
     },
     ...(showLocalStorage
-      ? [{ key: 'local-storage' as const, label: '本地存储', icon: <StorageRoundedIcon fontSize="small" /> }]
+      ? [{ key: 'local-storage' as const, label: xDriveWorkspaceRouteTitle('local-storage'), icon: <StorageRoundedIcon fontSize="small" /> }]
       : []),
-    { key: 'cloud-storage', label: '云端存储', icon: <CloudRoundedIcon fontSize="small" /> },
+    { key: 'cloud-storage', label: xDriveWorkspaceRouteTitle('cloud-storage'), icon: <CloudRoundedIcon fontSize="small" /> },
   ]
 }
 
