@@ -381,6 +381,7 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		{method: "GET", path: "/api/v1/admin/background-tasks/page", suite: "background-tasks"},
 		{method: "POST", path: "/api/v1/admin/background-tasks/control", suite: "background-tasks"},
 		{method: "GET", path: "/api/v1/admin/backups", suite: "admin-backup"},
+		{method: "GET", path: "/api/v1/admin/backups/snapshots", suite: "admin-backup"},
 		{method: "POST", path: "/api/v1/admin/backups/actions", suite: "admin-backup"},
 		{method: "GET", path: "/api/v1/admin/storage", suite: "storage-intelligence"},
 		{method: "GET", path: "/api/v1/admin/storage/optimization-advice", suite: "storage-intelligence"},
