@@ -2,11 +2,21 @@
 
 // A published, verified Snapshot can supersede only older queued master CI.
 // Never cancel an in-progress run, an unpublished source, or a PR/tag/manual run.
+// The single pr-scope classifier is safe to have completed: it performs only
+// read-only CI scope detection, not build, test, packaging or publication.
 const SHA = /^[a-f0-9]{40}$/
 const OLD_RELEASE = /^Rolling development snapshot from master at `([a-f0-9]{40})`\./
 
 function invariant(condition, explanation) {
   if (!condition) throw new Error('Snapshot CI queue prune refused: ' + explanation)
+}
+
+function isUnstartedOrClassifierOnlyJob(job, runId) {
+  if (job.run_id !== runId) return false
+  if (job.status === 'queued') return true
+  if (job.status !== 'completed') return false
+  return job.conclusion === 'skipped' ||
+    (job.name === 'pr-scope' && job.conclusion === 'success')
 }
 
 async function pruneQueuedMasterCI({github, context, core, dryRun = false, maxCancels = 25}) {
@@ -115,7 +125,9 @@ async function pruneQueuedMasterCI({github, context, core, dryRun = false, maxCa
 
     // The WORKFLOW status alone does not prove that any job is unstarted.
     // Inspect every child job: a partial/unknown inventory fails closed.
-    // Only never-executed queued jobs and conditionally skipped jobs qualify.
+    // Only queued jobs, conditionally skipped jobs and the completed read-only
+    // pr-scope classifier qualify. Substantive test/build/publish successes,
+    // failures, cancellations or in-progress jobs always preserve the run.
     let jobSnapshot
     try {
       jobSnapshot = (await github.rest.actions.listJobsForWorkflowRun({
@@ -131,9 +143,7 @@ async function pruneQueuedMasterCI({github, context, core, dryRun = false, maxCa
     if (!Number.isSafeInteger(jobSnapshot?.total_count) ||
       jobSnapshot.total_count < 1 || jobSnapshot.total_count > 100 ||
       !Array.isArray(jobs) || jobs.length !== jobSnapshot.total_count ||
-      !jobs.every(job => job.run_id === run.id &&
-        (job.status === 'queued' ||
-         (job.status === 'completed' && job.conclusion === 'skipped')))) {
+      !jobs.every(job => isUnstartedOrClassifierOnlyJob(job, run.id))) {
       entry.action = 'preserved-started-or-unknown-jobs'
       audit.push(entry)
       continue
