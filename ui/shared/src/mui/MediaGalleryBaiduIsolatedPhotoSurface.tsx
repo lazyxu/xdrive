@@ -259,6 +259,17 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     ? drawer : null
   // Never capture a speculative React render as the previous visible sheet.
   useLayoutEffect(() => { committedDrawer.current=activeDrawer },[activeDrawer])
+  // A failed first page is not a reason to lose the selected location.
+  // Re-read exactly the same currently accepted Owner Cell through the
+  // original signed /cell-items port. The source's current revision, scope and
+  // ACL are checked anew; no previous page or media bytes are trusted.
+  const retryDrawer = () => {
+    const state=activeDrawer
+    if (!state || state.phase!=='error' ||
+        acceptedScope.current?.key!==filterRef.current.key ||
+        !hasAcceptedCell(state.selection)) return
+    selectCellRef.current(state.selection,state.returnPresentation)
+  }
   const openDrawerAll = () => {
     const state=activeDrawer,approved=acceptedScope.current
     if (!state || state.phase!=='ready' || !approved ||
@@ -1021,7 +1032,8 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
             onClose={() => { pendingResizeDrawer.current=null;closeDrawer() }}
             onExpand={expanded => setDrawer(current => current
               ? {...current,expanded} : current)}
-            onRetry={() => { closeDrawer();refreshFilteredCells.current?.() }}
+            onRetry={retryDrawer}
+            onRefreshMap={() => { closeDrawer();refreshFilteredCells.current?.() }}
             onOpenAll={openDrawerAll} onOpenPhoto={openDrawerPhoto}
             onLoadMore={loadDrawerMore}
             onOpenNearby={acceptedViewport && activeDrawer.phase==='ready' &&
