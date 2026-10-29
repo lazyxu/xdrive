@@ -206,9 +206,22 @@ export async function checkXDrivePwaAssets(
   let interrupt!: () => void
   const interrupted = new Promise<null>(resolve => { interrupt = () => resolve(null) })
   let active = true
+  let cancelRequested = false
+  let internalSignalDenied = false
+  // Browser shims may refuse even the optional AbortSignal state getter.
+  // An unknown state cannot authorize a new HEAD request.
+  const aborted = () => {
+    if (cancelRequested) return true
+    try { return controller.signal.aborted }
+    catch { internalSignalDenied = true; return true }
+  }
   const abortFromCaller = () => {
-    if (!active) return
-    controller.abort()
+    if (!active || cancelRequested) return
+    cancelRequested = true
+    // Logical cancellation must release the common deadline even when an
+    // uncooperative WebKit AbortController throws instead of aborting fetch.
+    try { controller.abort() }
+    catch { /* The interruption sentinel is independently authoritative. */ }
     interrupt()
   }
   let callerCancelObservationDenied = false
@@ -240,7 +253,7 @@ export async function checkXDrivePwaAssets(
   try {
     const assetChecks = await Promise.all(assets.map(async (asset): Promise<XDrivePwaAssetCheck> => {
       try {
-        if (controller.signal.aborted) throw new Error('cancelled')
+        if (aborted()) throw new Error('cancelled')
         const response = await Promise.race([
           fetch(asset.path, {
             method: 'HEAD', credentials: 'omit', cache: 'no-store',
@@ -271,7 +284,8 @@ export async function checkXDrivePwaAssets(
           id: asset.id, label: asset.label, state: 'fail',
           detail: callerCancelObservationDenied ? '浏览器无法监听取消信号；未发送资源请求。'
             : timedOut ? '公开资源检测超时（最多 6 秒）；请检查反向代理与网络。'
-            : controller.signal.aborted ? '资源检测已取消。'
+            : internalSignalDenied ? '浏览器无法读取取消状态；未发送未经确认的资源请求。'
+            : aborted() ? '资源检测已取消。'
               : '同源资源请求失败。请检查网络、HTTPS、代理及文件部署。',
         }
       }

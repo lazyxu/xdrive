@@ -1000,12 +1000,18 @@ export default function App({
       : '当前 xdrive-agent 不支持账号文件大小分布，请更新客户端核心组件。',
   }), [applyCloudQuota, storageStatsSupported])
   const localStorageSource = useMemo<XDriveLocalStorageDataSource>(() => ({
-    load: async () => {
+    load: async (signal?: AbortSignal) => {
+      // Browser cache does not expose cancellation; Agent storage/cache GETs do.
+      // This scope never cancels persistent cache releases or policy changes.
+      signal?.throwIfAborted()
       const [browserResult, treeResult, cacheResult] = await Promise.all([
         window.xdriveDesktop.getBrowserCache(),
-        window.xdriveDesktop.agent.getStorageTree(),
-        window.xdriveDesktop.agent.getCache(),
+        xDriveDesktopViewportRequest(signal,
+          requestID => window.xdriveDesktop.agent.getStorageTree(requestID)),
+        xDriveDesktopViewportRequest(signal,
+          requestID => window.xdriveDesktop.agent.getCache(requestID)),
       ])
+      signal?.throwIfAborted()
       if (!browserResult.ok) throw new Error(browserResult.error.message)
       const desktopReason = !cacheResult.ok
         ? cacheResult.error.message

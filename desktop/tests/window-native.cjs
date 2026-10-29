@@ -6,6 +6,8 @@ const path = require('node:path')
 const root = path.join(__dirname, '..')
 const main = fs.readFileSync(path.join(root, 'src', 'main', 'index.cts'), 'utf8')
 const renderer = fs.readFileSync(path.join(root, 'src', 'renderer', 'App.tsx'), 'utf8') + fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopSettingsContent.tsx'), 'utf8')
+const hostFrame = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopHostFrame.tsx'), 'utf8')
+const windowHost = fs.readFileSync(path.join(root, 'src', 'renderer', 'desktopWindowHostAdapter.ts'), 'utf8')
 
 test('desktop remembers window state and exposes configurable close behavior', () => {
   assert.ok(main.includes('getNormalBounds()'), 'missing normal window-bounds persistence')
@@ -25,6 +27,11 @@ test('desktop uses one custom frameless titlebar with native window actions', ()
   assert.ok(main.includes("ipcMain.on('desktop:window-toggle-maximize'"), 'missing custom maximize/restore IPC')
   assert.ok(main.includes("ipcMain.on('desktop:window-close'"), 'missing custom close IPC')
   assert.ok(main.includes("mainWindow?.close()"), 'custom close must route through the existing close-to-tray behavior')
-  assert.ok(renderer.includes('desktop-titlebar'), 'renderer must provide the custom titlebar')
-  assert.ok(renderer.includes('desktop-window-close'), 'renderer must provide a close control')
+  assert.ok(renderer.includes('<DesktopHostFrame'), 'Desktop must mount its native Host-only frame')
+  assert.ok(hostFrame.includes('desktop-titlebar'), 'native Host frame must provide the titlebar')
+  assert.ok(hostFrame.includes('desktop-window-close'), 'native Host frame must provide the close control')
+  for (const action of ['minimizeWindow()', 'toggleMaximizeWindow()', 'closeWindow()']) {
+    assert.ok(windowHost.includes('window.xdriveDesktop.' + action),
+      'native window actions must be implemented by the typed Electron Host adapter: ' + action)
+  }
 })

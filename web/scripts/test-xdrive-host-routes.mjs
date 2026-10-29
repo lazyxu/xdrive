@@ -147,8 +147,8 @@ assert.equal(desktop.includes('<DesktopDiagnosticsPage'), false)
 assert.ok(desktop.includes('overviewPage: {') && sharedOutlet.includes('<XDriveOverviewPage') &&
   hostContract.includes('readonly overviewPage?: XDriveOverviewPageProps'),
   'Desktop must use one lazily-mounted Overview Host port and shared page')
-assert.ok(overview.includes('port.cloudFileRecent(6)') &&
-  overview.includes('port.cloudFileFavorites()') &&
+assert.ok(overview.includes('port.cloudFileRecent(6, controller.signal)') &&
+  overview.includes('port.cloudFileFavorites(controller.signal)') &&
   !overview.includes('window.xdriveDesktop') &&
   desktopPort.includes('window.xdriveDesktop.agent'),
   'Owner reads must stay in a host-neutral controller with native IPC in Desktop adapter')

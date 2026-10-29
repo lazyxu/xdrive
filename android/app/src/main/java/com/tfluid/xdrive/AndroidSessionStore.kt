@@ -22,6 +22,10 @@ interface DriveSessionPersistence {
     fun load(): SavedDriveSession?
     fun save(server: String, session: AuthSession)
     fun clear()
+
+    /** Native Android also owns a distinct, encrypted transfer uncertainty
+     * journal. Other test/host persistence implementations may omit it. */
+    fun transferRecovery(): DriveTransferRecoveryBridge? = null
 }
 
 /**
@@ -31,6 +35,10 @@ interface DriveSessionPersistence {
  */
 internal class AndroidSessionStore(context: Context) : DriveSessionPersistence {
     private val prefs = context.getSharedPreferences("auth-session", Context.MODE_PRIVATE)
+    private val recoveryBridge by lazy {
+        AndroidDriveTransferRecoveryBridge(context.applicationContext)
+    }
+    override fun transferRecovery(): DriveTransferRecoveryBridge = recoveryBridge
 
     private fun key(): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }

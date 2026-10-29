@@ -1,0 +1,67 @@
+name: Places Owner Exact Photo BD09 Focus PostgreSQL17
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'internal/api/baidu_photo_map_item_focus.go'
+      - 'internal/api/baidu_photo_map_item_focus_test.go'
+      - 'internal/api/router.go'
+      - '.github/workflows/places-owner-photo-focus-pg17.yml'
+  push:
+    branches: [master]
+    paths:
+      - 'internal/api/baidu_photo_map_item_focus.go'
+      - 'internal/api/baidu_photo_map_item_focus_test.go'
+      - 'internal/api/router.go'
+      - '.github/workflows/places-owner-photo-focus-pg17.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: places-owner-photo-focus-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  owner-photo-focus:
+    runs-on: ubuntu-latest
+    timeout-minutes: 13
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_PLACES_100K_DISPOSABLE_CI: '1'
+      XD_PLACES_PHOTO_FOCUS_PG17: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Exact source and gofmt
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          test -z "$(gofmt -l internal/api/baidu_photo_map_item_focus.go internal/api/baidu_photo_map_item_focus_test.go)"
+      - name: Real Owner/Source BD09 item camera query with PG17 and fail-closed HTTP
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test ./internal/api -run '^TestBaiduPhotoFocus' -count=1 -timeout=9m -v

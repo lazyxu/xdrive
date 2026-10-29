@@ -8,7 +8,7 @@ import (
 func TestOwnerGalleryAgentSelectorsFailClosedBeforeController(t *testing.T) {
 	for _, valid := range []struct {
 		query, kind, album string
-		limit, offset int
+		limit, offset      int
 	}{
 		{"kind=all&limit=100&offset=0", "all", "", 100, 0},
 		{"kind=image&limit=1&offset=45&album_id=manual:abc", "image", "manual:abc", 1, 45},
