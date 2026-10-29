@@ -79,7 +79,7 @@ export function XDriveBackupSnapshotIndexPager({
         <Typography variant="subtitle1" fontWeight={600}>较早备份快照 · 只读索引</Typography>
         <Typography variant="body2" color="text.secondary">
           这里显示最新 100 代之后的规范快照编号，不表示文件完整、通过 SHA-256 校验或可恢复。
-          旧代仅能请求只读完整性校验，不能从此列表恢复、删除或执行演练。
+          旧代仅能请求只读完整性校验；不能从此列表直接恢复或删除，也不能执行演练。
           校验时 Server 会重新核对当前 Host 索引，Host 再次核对真实快照；历史结果不代表当前可恢复。
         </Typography>
         {!result ? (
