@@ -144,6 +144,7 @@ d=json.load(open(sys.argv[1],encoding="utf-8"))
 assert d["protocol"]=="xdrive-backup-admin-v1"
 assert d["policy"]["schedule_format"]=="v2"
 assert len(d["policy"]["revision"])==64
+assert d["total_snapshots"]==2 and d["truncated"] is False
 assert sorted(x["id"] for x in d["snapshots"])==[
     "v1:xdrive-backup-20261026T010000Z",
     "v2-default:xdrive-backup-20261027T030000Z",
@@ -762,4 +763,36 @@ assert d["deleted_cas_objects"]==1 and d["deleted_cas_logical_bytes"]==12,d
 assert d["deleted_snapshot_files"]==6 and d["deleted_snapshot_file_bytes"]==30,d
 PY
 
-echo 'Admin Server Backup host bridge: CRUD, batch verify, selected-v2 delete and safety tests passed'
+# Scan-only fixture: >100 canonical generations must not be silently hidden.
+backup_admin_inventory "$dir"
+base_total="$(python3 - "$dir/backup-admin-inventory.json" <<'PY'
+import json,sys
+print(json.load(open(sys.argv[1],encoding="utf-8"))["total_snapshots"])
+PY
+)"
+for (( n=0; n<105; n++ )); do
+  printf -v older 'xdrive-backup-20250101T%02d%02d00Z' "$((n / 60))" "$((n % 60))"
+  mkdir "$XD_CONFIG_DIR/backups/snapshots/$older"
+done
+backup_admin_inventory "$dir"
+python3 - "$dir/backup-admin-inventory.json" "$base_total" <<'PY'
+import json,sys
+d=json.load(open(sys.argv[1],encoding="utf-8"))
+assert d["total_snapshots"]==int(sys.argv[2])+105,d
+assert d["truncated"] is True and len(d["snapshots"])==100,d
+assert len({r["id"] for r in d["snapshots"]})==100
+PY
+for (( n=0; n<105; n++ )); do
+  printf -v older 'xdrive-backup-20250101T%02d%02d00Z' "$((n / 60))" "$((n % 60))"
+  rmdir "$XD_CONFIG_DIR/backups/snapshots/$older"
+done
+backup_admin_inventory "$dir"
+python3 - "$dir/backup-admin-inventory.json" "$base_total" <<'PY'
+import json,sys
+d=json.load(open(sys.argv[1],encoding="utf-8"))
+baseline=int(sys.argv[2])
+assert d["total_snapshots"]==baseline,d
+assert d["truncated"] is (baseline>100),d
+assert len(d["snapshots"])==min(baseline,100),d
+PY
+echo 'Admin Server Backup host bridge: CRUD, batch verify, selected-v2 delete and inventory truncation tests passed'

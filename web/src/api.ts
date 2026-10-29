@@ -1,6 +1,11 @@
 import { xDriveBaiduNativeCellsFilterParams, xDriveBaiduNativeViewportRangeParams, xDriveValidBaiduNativeViewportRangePage } from '../../ui/shared/src/media-gallery-baidu-jsapi4-viewport-range'
 import { xDriveValidBaiduNativeCellsPage } from '../../ui/shared/src/media-gallery-baidu-jsapi4-cells'
 import {
+  xDriveBaiduOwnerPhotoFocusParams,
+  xDriveOwnerPhotoFocusSignalActive,
+  xDriveValidBaiduOwnerPhotoFocus,
+} from '../../ui/shared/src/media-gallery-baidu-photo-focus'
+import {
   xDriveBaiduNativeCellRangeParams, xDriveValidBaiduNativeCellRangePage,
 } from '../../ui/shared/src/media-gallery-baidu-jsapi4-cell-range'
 import type { XDriveBaiduCellRangeSort } from '../../ui/shared/src/media-gallery-baidu-jsapi4-cell-range'
@@ -1970,6 +1975,29 @@ export class XDriveApi {
         throw new Error('Invalid BD09 native viewport response')
       }
       return page
+    })
+  }
+
+  /**
+   * A specific, currently authorized Photo Info Node -> derived BD-09 camera
+   * hint for the trusted Parent. It is NOT a Gallery/Viewer authorization:
+   * callers must still independently revalidate the current signed /cells.
+   * Neither source WGS84 nor any token/AK reaches the SDK Child or a URL.
+   */
+  mediaBaiduNativePhotoFocus(
+    nodeID: number, revision: number, signal: AbortSignal,
+  ) {
+    const q = xDriveBaiduOwnerPhotoFocusParams(nodeID, revision)
+    if (!q || !xDriveOwnerPhotoFocusSignalActive(signal))
+      return Promise.reject(new Error('Invalid or cancelled Owner photo focus'))
+    return this.request<unknown>(
+      '/api/v1/media/places/baidu-jsapi/photo-focus?' + q.toString(),
+      { signal, cache: 'no-store' },
+    ).then(value => {
+      if (!xDriveOwnerPhotoFocusSignalActive(signal) ||
+          !xDriveValidBaiduOwnerPhotoFocus(value, nodeID, revision))
+        throw new Error('Invalid or cancelled Owner BD09 photo focus')
+      return value
     })
   }
 

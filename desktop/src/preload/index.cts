@@ -87,8 +87,8 @@ function cleanupMediaLivePhotoProgress(url: string) {
 const agent = Object.freeze({
   getState: () => ipcRenderer.invoke('agent:get-state'),
   getTransfers: () => ipcRenderer.invoke('agent:get-transfers'),
-  getStorageTree: () => ipcRenderer.invoke('agent:get-storage-tree'),
-  getCache: () => ipcRenderer.invoke('agent:get-cache'),
+  getStorageTree: (requestID?: string) => ipcRenderer.invoke('agent:get-storage-tree', requestID),
+  getCache: (requestID?: string) => ipcRenderer.invoke('agent:get-cache', requestID),
   getLocalDiskSpace: (requestID?: string) => ipcRenderer.invoke('agent:get-local-disk-space', requestID),
   releaseCache: () => ipcRenderer.invoke('agent:release-cache'),
   getMediaItem: (nodeID: number, requestID: string) =>

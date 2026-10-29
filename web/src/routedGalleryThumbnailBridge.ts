@@ -48,9 +48,27 @@ export class XDriveRoutedGalleryThumbnailBridge {
   }
 
   borrow: XDriveRoutedGalleryThumbnailBorrower = (contextID, nodeID, revision) => {
-    if (!this.accepts(contextID) || !this.mounted ||
+    const registered = this.mounted
+    if (!this.accepts(contextID) || !registered ||
         !Number.isSafeInteger(nodeID) || nodeID <= 0 ||
         !Number.isSafeInteger(revision) || revision <= 0) return null
-    return this.mounted.borrower(nodeID, revision)
+
+    // A Gallery scheduler may be disposed during a route/Owner change. This
+    // optional warm-cache fast path must not break the Viewer: null preserves
+    // its ordinary authenticated, revocable thumbnail transport.
+    let lease: XDriveRoutedGalleryThumbnailLease | null
+    try { lease = registered.borrower(nodeID, revision) }
+    catch { return null }
+    if (!lease) return null
+    try {
+      // Check again after the borrowed callback: it can synchronously revoke
+      // this route or replace the mounted Gallery. Never publish its old Blob.
+      if (this.mounted === registered && this.accepts(contextID) &&
+          typeof lease.url === 'string' && lease.url.startsWith('blob:') &&
+          typeof lease.release === 'function') return lease
+    } catch { /* A malformed optional lease is not a media authorization. */ }
+    try { if (typeof lease.release === 'function') lease.release() }
+    catch { /* Best-effort release cannot suppress authorized network fallback. */ }
+    return null
   }
 }

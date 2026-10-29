@@ -2856,16 +2856,18 @@ function registerIPCHandlers() {
 
   ipcMain.handle('agent:get-state', () => agentState)
   ipcMain.handle('agent:get-transfers', () => agentTransfers)
-  ipcMain.handle('agent:get-storage-tree', () => runAgentAction<AgentStorageTreeNode>(async () => {
-    const hello = await requireAgentLifecycle().ensureRunning()
-    requireAgentCapability(hello, 'storage-tree')
-    return requireAgentClient().storageTree()
-  }, false))
-  ipcMain.handle('agent:get-cache', () => runAgentAction<AgentCacheStats>(async () => {
-    const hello = await requireAgentLifecycle().ensureRunning()
-    requireAgentCapability(hello, 'cache-management')
-    return requireAgentClient().cacheStats()
-  }, false))
+  ipcMain.handle('agent:get-storage-tree', (event, requestID: unknown = undefined) =>
+    runAgentAction<AgentStorageTreeNode>(() => viewportRequests.run(event.sender, requestID, async signal => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'storage-tree')
+      return requireAgentClient().storageTree(signal)
+    }), false))
+  ipcMain.handle('agent:get-cache', (event, requestID: unknown = undefined) =>
+    runAgentAction<AgentCacheStats>(() => viewportRequests.run(event.sender, requestID, async signal => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'cache-management')
+      return requireAgentClient().cacheStats(signal)
+    }), false))
   ipcMain.handle('agent:get-local-disk-space', (event, requestID: unknown = undefined) =>
     runAgentAction<AgentLocalDiskSpace>(() => viewportRequests.run(event.sender, requestID, async signal => {
       const hello = await requireAgentLifecycle().ensureRunning()

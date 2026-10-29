@@ -313,6 +313,8 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/media/places/baidu-jsapi/coverage-reasons", s.listBaiduPhotoMapCoverageReasons)
 	// A3c13: signed-release gated exact BD09 Owner opt-in viewport, not WGS84.
 	authed.GET("/media/places/baidu-jsapi/viewport", s.listBaiduNativeMapViewport)
+	// Photo Info -> one exact Owner/current derived BD09 camera hint, not WGS84.
+	authed.GET("/media/places/baidu-jsapi/photo-focus", s.getBaiduNativeMapPhotoFocus)
 	// A3c19: exact Owner BD09 8x8 aggregate, never 100k raw photo coordinates.
 	authed.GET("/media/places/baidu-jsapi/cells", s.listBaiduNativeMapCells)
 	// A3h-W1: map-cell-scoped version/consent-fenced authenticated sparse Gallery Range.

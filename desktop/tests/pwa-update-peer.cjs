@@ -179,3 +179,49 @@ test('S3D2B Safari: denied optional peer channels never crash pre-React startup'
     'a failing previous tab must not disable independent healthy PWA sessions')
   assert.equal(f.traffic.every(message => !('token' in message) && !('path' in message)), true)
 })
+
+test('S3D2B: an over-capacity peer hint expires with the same bounded lifetime as peers', () => {
+  const f = fixture()
+  const a = f.createWindow()
+  a.start()
+  for (let i = 0; i < 33; i++) {
+    f.inject({
+      kind: 'status', sender: 'aaaaaaaa-0000-4000-8000-' + String(i + 1).padStart(12, '0'),
+      sequence: 1, observed: true, busy: false,
+    })
+  }
+  assert.equal(a.current().recentlyObservedPeers, 32, 'a remote flood cannot grow the peer map')
+  assert.equal(a.current().knownPeerBusy, false)
+  assert.equal(a.current().knownPeerUnknown, true, 'the untracked 33rd peer is conservatively unknown')
+  f.tick(45001)
+  a.tick()
+  assert.equal(a.current().recentlyObservedPeers, 0)
+  assert.equal(a.current().knownPeerUnknown, false,
+    'expired unknown-peer hints must not persist until the PWA is reloaded')
+  assert.equal(a.current().available, true, 'normal channel observation remains live')
+})
+
+test('S3D2B: repeated over-capacity status extends the unknown window, but not forever', () => {
+  const f = fixture()
+  const a = f.createWindow()
+  a.start()
+  for (let i = 0; i < 33; i++) {
+    f.inject({
+      kind: 'status', sender: 'bbbbbbbb-0000-4000-8000-' + String(i + 1).padStart(12, '0'),
+      sequence: 1, observed: true, busy: false,
+    })
+  }
+  f.tick(30000)
+  f.inject({
+    kind: 'status', sender: 'bbbbbbbb-0000-4000-8000-000000000099',
+    sequence: 1, observed: false, busy: false,
+  })
+  f.tick(16000)
+  a.tick()
+  assert.equal(a.current().recentlyObservedPeers, 0, 'the original 32 peer entries have expired')
+  assert.equal(a.current().knownPeerUnknown, true,
+    'a more recent untracked peer remains unknown until its own TTL')
+  f.tick(30000)
+  a.tick()
+  assert.equal(a.current().knownPeerUnknown, false)
+})
