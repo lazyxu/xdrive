@@ -52,7 +52,9 @@ test('the original no-photo Show Map entry and signed Cell return remain intact'
   assert.match(gallery,/if \(!onShowMap\(\)\) return/)
   assert.match(gallery,/onShowMap=\{showMapFromCurrentGallery\}/)
   assert.match(gallery,/onShowPhotoMap=\{source\.getBaiduNativePhotoFocus/)
-  assert.match(gallery,/onShowPhotoMap && showGalleryMapEntry/)
+  // Guard the positive branch by checking its explicit fail-closed inverse;
+  // both missing capability and non-Gallery Cell entries retain the old path.
+  assert.match(gallery,/if \(!onShowPhotoMap \|\| !showGalleryMapEntry\)/)
   assert.match(gallery,/const stillSelected = \(\) => \{/)
   assert.match(gallery,/now\.nodeID === selection\.nodeID/)
   assert.match(gallery,/now\.revision === selection\.revision/)
