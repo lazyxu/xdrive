@@ -3107,7 +3107,7 @@ def load(path, max_bytes):
     return json.loads(raw.decode("utf-8"), object_pairs_hook=unique_pairs)
 try:
     p = load(preview_path, 4096)
-    h = load(history_path, 32768)
+    h = load(history_path, 262144)
     if not isinstance(p, dict) or set(p) != {
         "protocol","request_id","snapshot_id","mode","report"}:
         raise ValueError("unsafe preview envelope")
@@ -3145,7 +3145,7 @@ try:
                 report["exclusive_cas_bytes"] + report["unreferenced_bytes"]):
         raise ValueError("unsafe preview totals")
     events = h.get("operations") if isinstance(h, dict) and h.get("protocol") == "xdrive-backup-admin-history-v1" else None
-    if not isinstance(events, list) or not 1 <= len(events) <= 30:
+    if not isinstance(events, list) or not 1 <= len(events) <= 100:
         raise ValueError("missing host audit receipt")
     last = events[0]
     if not isinstance(last,dict) or (last.get("action"),last.get("state"),
