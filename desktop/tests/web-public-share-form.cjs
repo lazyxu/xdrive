@@ -106,6 +106,11 @@ function loadPublicShare(api) {
       }
       if (name === './ActionButton') return load('ui/shared/src/mui/ActionButton.tsx')
       if (name === '../format') return load('ui/shared/src/format.ts')
+      // Load the actual Share-scoped still/poster policy, not a mock that
+      // could inadvertently grant Owner media access to public recipients.
+      if (name === '../public-share-viewer-preview') {
+        return load('ui/shared/src/public-share-viewer-preview.ts')
+      }
       if (name === '../file-explorer-capabilities' ||
           name === '../../ui/shared/src/file-explorer-capabilities') {
         return load('ui/shared/src/file-explorer-capabilities.ts')
