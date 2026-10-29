@@ -49,7 +49,6 @@ import {
   XDriveShareDialog,
   createXDriveSourceManagerAdapter,
   XDriveStatePanel,
-  XDriveTaskCenterPage,
   XDriveTransferPopover,
   XDriveUploadConflictDialog,
   useXDriveFileExplorerUploadController,
@@ -1594,35 +1593,6 @@ function FileManager({
     },
     clearBrowserCache: clearWebBrowserCache,
   }), [])
-  const deviceBackupSourceID = route.app === 'device-backup' ? route.params.source : undefined
-  const remotePullSourceID = route.app === 'remote-pull' ? route.params.source : undefined
-  const isRemotePullRoute = route.app === 'remote-pull'
-  const remotePullTargetPath = crumbs.slice(1).map((crumb) => crumb.name).join('/')
-  const browserWorkspaceHost = useMemo(
-    () => createXDriveBrowserWorkspaceHost({
-      cloudStorage: cloudStorageSource,
-      localStorage: localStorageSource,
-      deviceBackup: { source: deviceBackupSource, initialSourceID: deviceBackupSourceID },
-      remotePull: {
-        adapter: sourceManagerAdapter,
-        initialSourceID: remotePullSourceID,
-        defaultTargetNodeID: current?.id,
-        defaultTargetLabel: current?.name ?? '我的文件',
-        defaultTargetPath: remotePullTargetPath,
-        onError: handleError,
-        onSelectedSourceChange: (sourceID) => {
-          if (isRemotePullRoute && remotePullSourceID !== sourceID) {
-            launchWebApp({ app: 'remote-pull', params: { source: sourceID } }, { replace: true })
-          }
-        },
-      },
-    }),
-    [cloudStorageSource, localStorageSource, deviceBackupSource,
-      deviceBackupSourceID, sourceManagerAdapter, remotePullSourceID,
-      isRemotePullRoute, current?.id, current?.name, remotePullTargetPath,
-      handleError, launchWebApp],
-  )
-
   useEffect(() => {
     let active = true
     const refreshProfile = () => {
@@ -2319,6 +2289,60 @@ function FileManager({
       onLogout={onLogout}
     />
   )
+  // Browser page props are composed only after the real task controller and
+  // current Owner scope are available. This is a single Host adapter, not a
+  // second React root or separate background task queue.
+  const deviceBackupSourceID = route.app === 'device-backup' ? route.params.source : undefined
+  const remotePullSourceID = route.app === 'remote-pull' ? route.params.source : undefined
+  const isRemotePullRoute = route.app === 'remote-pull'
+  const remotePullTargetPath = crumbs.slice(1).map((crumb) => crumb.name).join('/')
+  const serverAdminVerified = profile?.username === username &&
+    profile?.role === 'admin' && profile?.must_change_password !== true
+  const browserWorkspaceHost = useMemo(
+    () => createXDriveBrowserWorkspaceHost({
+      adminRoleVerified: serverAdminVerified,
+      taskCenter: {
+        ...taskCenter.pageProps,
+        globalTasksEnabled: serverAdminVerified,
+        globalTasksAvailable: Boolean(taskCenter.pageProps.globalTasksEnabled),
+        // Changing task scope must update the Browser Hash while the owning
+        // controller keeps durable Server tasks and Owner-signed receipts.
+        onBackgroundScopeChange: (scope) => {
+          taskCenter.pageProps.onBackgroundScopeChange?.(scope)
+          setTaskCenterFocus(null)
+          setAppView(scope === 'global' ? 'global-tasks' : 'transfers')
+        },
+        mediaSelectionJobPort,
+        operationFocusID: filesOperationFocus?.operationID,
+        operationFocusRequestID: filesOperationFocus?.requestID,
+        backgroundFocusTaskID: taskCenterFocus?.taskID,
+        backgroundFocusRequestID: taskCenterFocus?.requestID,
+      },
+      cloudStorage: cloudStorageSource,
+      localStorage: localStorageSource,
+      deviceBackup: { source: deviceBackupSource, initialSourceID: deviceBackupSourceID },
+      remotePull: {
+        adapter: sourceManagerAdapter,
+        initialSourceID: remotePullSourceID,
+        defaultTargetNodeID: current?.id,
+        defaultTargetLabel: current?.name ?? '我的文件',
+        defaultTargetPath: remotePullTargetPath,
+        onError: handleError,
+        onSelectedSourceChange: (sourceID) => {
+          if (isRemotePullRoute && remotePullSourceID !== sourceID) {
+            launchWebApp({ app: 'remote-pull', params: { source: sourceID } }, { replace: true })
+          }
+        },
+      },
+    }),
+    [cloudStorageSource, localStorageSource, deviceBackupSource,
+      deviceBackupSourceID, sourceManagerAdapter, remotePullSourceID,
+      isRemotePullRoute, current?.id, current?.name, remotePullTargetPath,
+      handleError, launchWebApp, serverAdminVerified, taskCenter.pageProps,
+      mediaSelectionJobPort, filesOperationFocus, taskCenterFocus, setAppView],
+  )
+
+
   const workspaceActions = (
     <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={{ xs: 0.5, sm: 1 }}>
       {transferAction}
@@ -2684,22 +2708,7 @@ function FileManager({
             <XDriveAppPageOutlet host={browserWorkspaceHost} view={appView} />
           )
         ) : appView === 'transfers' || appView === 'global-tasks' ? (
-          <XDriveTaskCenterPage
-            {...taskCenter.pageProps}
-            globalTasksEnabled={profile?.role === 'admin'}
-            globalTasksAvailable={Boolean(taskCenter.pageProps.globalTasksEnabled)}
-            backgroundScope={appView === 'global-tasks' ? 'global' : 'mine'}
-            onBackgroundScopeChange={(scope) => {
-              taskCenter.pageProps.onBackgroundScopeChange?.(scope)
-              setTaskCenterFocus(null)
-              setAppView(scope === 'global' ? 'global-tasks' : 'transfers')
-            }}
-            mediaSelectionJobPort={appView === 'transfers' ? mediaSelectionJobPort : undefined}
-            operationFocusID={filesOperationFocus?.operationID}
-            operationFocusRequestID={filesOperationFocus?.requestID}
-            backgroundFocusTaskID={taskCenterFocus?.taskID}
-            backgroundFocusRequestID={taskCenterFocus?.requestID}
-          />
+          <XDriveAppPageOutlet host={browserWorkspaceHost} view={appView} />
         ) : appView === 'local-storage' || appView === 'cloud-storage' ? (
           // First two real Browser Host-backed routes in the shared page
           // outlet; never admit Browser Files/admin/native DSM capabilities.

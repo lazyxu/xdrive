@@ -236,6 +236,19 @@ requireText(browserHost, [
   'deviceBackupPage: {',
   'source: ports.deviceBackup.source',
 ], 'Browser Owner-scoped backup/pull ports')
+requireText(browserHost, [
+  'adminRoleVerified: ports.adminRoleVerified === true',
+  'taskCenterPage: ports.taskCenter',
+], 'Browser verified Server task center port')
+requireText(app, [
+  'taskCenter: {',
+  '...taskCenter.pageProps',
+  'globalTasksEnabled: serverAdminVerified',
+  'mediaSelectionJobPort,',
+  'operationFocusID: filesOperationFocus?.operationID',
+  'backgroundFocusTaskID: taskCenterFocus?.taskID',
+  "setAppView(scope === 'global' ? 'global-tasks' : 'transfers')",
+], 'Web shared TaskCenter route composition')
 
 requireText(sources, [
   'XDriveWorkspaceSurface',

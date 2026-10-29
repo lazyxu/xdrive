@@ -23,12 +23,17 @@ export function createXDriveBrowserWorkspaceHost(ports: {
   localStorage: XDriveLocalStorageDataSource
   deviceBackup?: DeviceBackupPagePorts
   remotePull?: RemotePullPagePorts
+  /** Accepted only from the current authenticated Server /me profile. */
+  adminRoleVerified?: boolean
+  /** Existing Owner-scoped Web task/operation controller props. */
+  taskCenter?: NonNullable<XDriveWorkspaceHostServices['taskCenterPage']>
 }): XDriveWorkspaceHostAdapter {
   return {
     platform: 'web',
-    // The Browser controls admin navigation separately with its verified
-    // /me profile; these four ordinary routes never require an admin grant.
-    adminRoleVerified: false,
+    // This UI gate is derived exclusively from the current authenticated
+    // Server /me response, never a platform label or a native IPC claim.
+    // Backend authorization remains mandatory on every task request.
+    adminRoleVerified: ports.adminRoleVerified === true,
     services: {
       cloudStorage: ports.cloudStorage,
       localStorage: ports.localStorage,
@@ -44,6 +49,12 @@ export function createXDriveBrowserWorkspaceHost(ports: {
         // Pull operations are existing Owner-authorized Server API calls,
         // never a new NAS/Agent RPC. Do not permit a Push-only UI here.
         remotePullPage: { ...ports.remotePull, directionFilter: 'pull' as const },
+      } : {}),
+      ...(ports.taskCenter ? {
+        // The existing Web TaskCenter controller owns transfers, background
+        // polling, operation receipts and cancellation. This is JSX routing,
+        // NOT a new job queue or an implicit cross-Owner task capability.
+        taskCenterPage: ports.taskCenter,
       } : {}),
     },
   }
