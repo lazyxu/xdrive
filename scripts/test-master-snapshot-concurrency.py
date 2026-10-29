@@ -32,6 +32,18 @@ assert re.search(
 ), "Only superseded PR runs may be cancelled; master publication must survive"
 assert "github.ref" not in section, "reference-based master groups cancel older pending snapshots"
 
+final_gate = re.search(
+    r"(?ms)^  final-gate:\n(.*?)(?=^  [a-zA-Z0-9_-]+:\s*$|\Z)",
+    jobs,
+)
+assert final_gate is not None, "final-gate job missing"
+assert "    if: ${{ !cancelled() }}" in final_gate.group(1), (
+    "final-gate must aggregate failures, but cancel when the workflow is cancelled"
+)
+assert "    if: always()" not in final_gate.group(1), (
+    "always() leaves cancelled CI with a queued final-gate"
+)
+
 publish_master = re.search(
     r"(?ms)^  publish-master:\s*\n(.*?)(?=^  [a-zA-Z0-9_-]+:\s*$|\Z)",
     jobs,
