@@ -16,6 +16,9 @@ Restore is destructive. By default xDrive first creates a pre-restore safety
 backup of the current state, then stops the API and pull worker, verifies
 SHA-256 checksums, recreates the PostgreSQL database, replaces file-data, runs
 an offline consistency verification, and only then reopens the services.
+Any snapshot explicitly marked consistency_verified=false is rejected before
+Docker; v2 requires consistency_verified=true. Historical v1 snapshots with
+this field absent remain readable, but have no affirmative consistency proof.
 EOF
 }
 
