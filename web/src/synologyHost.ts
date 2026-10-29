@@ -47,6 +47,11 @@ export function createXDriveSynologyHost(): XDriveWorkspaceHostAdapter {
       deviceBackups: createXDriveSynologyOwnerBackupSource(local),
       cloudStorage: createXDriveSynologyCloudStorageDataSource(local),
       localStorage: createXDriveSynologyBrowserStorageSource(),
+      diagnosticsSource: {
+        read: signal => local.diagnostics(signal),
+        scopeNotice: 'NAS 仅检测 DSM 登录授权和本机备份 Agent 读取；Server、磁盘、更新、传输等未检测。',
+        failureMessage: '当前 DSM 授权或本机备份 Agent 接口不可访问；未完成诊断。',
+      },
     },
     unavailableMessage: () =>
       '此功能采用与 Desktop 相同的页面；DSM 对应的认证 Host API 尚未接通，不能执行操作。',

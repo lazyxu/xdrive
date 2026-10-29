@@ -48,6 +48,9 @@ export interface XDriveBaiduIsolatedFrameOptions<T> {
   /** Gallery-only callback: anonymous keys are rebound to fresh authorized
    * Owner selections, without giving the Child thumbnails or Node IDs. */
   onProjectedCells?: (projected: XDriveTrustedProjectedMapCells<T>) => void
+  /** Visual-only projections of the PREVIOUS signed photo layer while the
+   * camera moves. Never grant selection/click/Owner Range authority. */
+  onGestureProjectedCells?: (projected: XDriveTrustedProjectedMapCells<T>) => void
 }
 
 export interface XDriveBaiduIsolatedFrameHost<T> {
@@ -149,6 +152,11 @@ export function xDriveMountBaiduIsolatedFrame<T>(
   let boundary: XDriveBaiduIsolationBoundary | null = null
   let published: XDriveBaiduParentCellsMessage | null = null
   let ownerSelection = new Map<string, T>()
+  // Retained only as a bounded VISUAL key→selection map across a gesture.
+  // A cancellation clears ownerSelection immediately, so neither click
+  // nor media authorization ever consults this presentation-only cache.
+  let gestureSelection = new Map<string, T>()
+  let gestureCounts = new Map<string, number>()
   // The Child (including provider JS) is untrusted: coalesce map camera bursts
   // before they can create unbounded authenticated Owner /cells requests.
   let pendingViewport: XDriveBaiduIsolatedBounds | null = null
@@ -170,6 +178,8 @@ export function xDriveMountBaiduIsolatedFrame<T>(
     boundary = null
     published = null
     ownerSelection.clear()
+    gestureSelection.clear()
+    gestureCounts.clear()
     browser.removeEventListener('message', onMessage)
     iframe.removeEventListener('load', onLoad)
     iframe.remove()
@@ -194,6 +204,8 @@ export function xDriveMountBaiduIsolatedFrame<T>(
     clearProjected()
     published = xDriveCreateBaiduIsolatedCellsMessage(boundary, [])
     ownerSelection.clear()
+    gestureSelection.clear()
+    gestureCounts.clear()
     if (!published) { detach(); return }
     post(published) // bounded session nonce bootstrap, ZERO Owner data
   }
@@ -224,6 +236,19 @@ export function xDriveMountBaiduIsolatedFrame<T>(
           count:counts.get(point.key)!,x:point.x,y:point.y})
       }
       options.onProjectedCells?.({width:event.width,height:event.height,cells})
+    } else if (event.kind === 'gesture-projections') {
+      if (!ready || !mapReady || gestureSelection.size===0) return
+      // Untrusted Child coordinates cannot reactivate any revoked Cell.
+      // Only the PREVIOUS exact opaque keys from a signed /cells receipt
+      // may locate an inert image during gesture. Do not call onActivateCell.
+      const cells: Array<{selection:T;count:number;x:number;y:number}> = []
+      for (const point of event.points) {
+        const selection=gestureSelection.get(point.key)
+        const count=gestureCounts.get(point.key)
+        if (selection===undefined || count===undefined) return
+        cells.push({selection,count,x:point.x,y:point.y})
+      }
+      options.onGestureProjectedCells?.({width:event.width,height:event.height,cells})
     } else if (event.kind === 'viewport') {
       if (ready && mapReady) {
         pendingViewport = event.bounds
@@ -245,6 +270,10 @@ export function xDriveMountBaiduIsolatedFrame<T>(
       options.onActivateCell(ownerSelection.get(event.key)!)
     } else if (event.kind === 'cancel') {
       clearPendingViewport()
+      if (ownerSelection.size && published) {
+        gestureSelection=new Map(ownerSelection)
+        gestureCounts=new Map(published.cells.map(cell=>[cell.key,cell.count]))
+      }
       clearProjected()
       ownerSelection.clear()
       // Cancellation remains synchronous, even while viewport reads debounce.
@@ -309,6 +338,10 @@ export function xDriveMountBaiduIsolatedFrame<T>(
           return false
         }
         clearProjected()
+        if (cells.length>0) {
+          gestureSelection.clear()
+          gestureCounts.clear()
+        }
         ownerSelection = next
         published = message
         if (ready) post(message)

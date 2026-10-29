@@ -87,8 +87,8 @@ function cleanupMediaLivePhotoProgress(url: string) {
 const agent = Object.freeze({
   getState: () => ipcRenderer.invoke('agent:get-state'),
   getTransfers: () => ipcRenderer.invoke('agent:get-transfers'),
-  getStorageTree: () => ipcRenderer.invoke('agent:get-storage-tree'),
-  getCache: () => ipcRenderer.invoke('agent:get-cache'),
+  getStorageTree: (requestID?: string) => ipcRenderer.invoke('agent:get-storage-tree', requestID),
+  getCache: (requestID?: string) => ipcRenderer.invoke('agent:get-cache', requestID),
   getLocalDiskSpace: (requestID?: string) => ipcRenderer.invoke('agent:get-local-disk-space', requestID),
   releaseCache: () => ipcRenderer.invoke('agent:release-cache'),
   getMediaItem: (nodeID: number, requestID: string) =>
@@ -785,6 +785,8 @@ const agent = Object.freeze({
   cloudAdminStorage: (query: import('../main/agent_client.cjs').AgentAdminStorageRequest) =>
     ipcRenderer.invoke('agent:cloud-admin-storage', query),
   cloudAdminBackups: () => ipcRenderer.invoke('agent:cloud-admin-backups'),
+  cloudAdminBackupSnapshotPage: (query: { offset: number; limit: number }) =>
+    ipcRenderer.invoke('agent:cloud-admin-backup-snapshots', query),
   cloudAdminBackupAction: (input: import('../main/agent_client.cjs').AgentAdminServerBackupRequest) =>
     ipcRenderer.invoke('agent:cloud-admin-backup-action', input),
   cloudAdminAuditRange: (query: import('../main/agent_client.cjs').AgentAdminAuditRangeQuery, requestID?: string) =>

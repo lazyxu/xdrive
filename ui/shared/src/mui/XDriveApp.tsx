@@ -8,6 +8,10 @@ import { XDriveAppRouteContent } from './XDriveAppRouteContent'
 import { xDriveWorkspaceNavigationAllowed, type XDriveWorkspaceAppRoute } from './WorkspaceRoute'
 import type { XDriveWorkspaceHostAdapter } from './WorkspaceHostAdapter'
 
+// All Hosts use the same viewport breakpoints and default content padding.
+// Native titlebar and DSM session handling stay outside this shared layout.
+const XDRIVE_SHARED_PAGE_SX: SxProps<Theme> = { p: { xs: 2, md: '34px 40px 48px' } }
+
 export type XDriveAppSidebarProps = Omit<
   ComponentProps<typeof XDriveWorkspaceSidebar>, 'selected' | 'onSelect' | 'responsive'
 >
@@ -25,7 +29,7 @@ export function XDriveApp({
   onNavigate: onRequestedNavigate,
   sidebar,
   shellSx,
-  pageSx,
+  pageSx = XDRIVE_SHARED_PAGE_SX,
   revision = 0,
   overlays,
   children,
@@ -42,7 +46,7 @@ export function XDriveApp({
   /** Transitional Desktop Files controller; shared outlet owns all other pages. */
   children?: ReactNode
 }) {
-  const responsive = host.platform === 'synology'
+  // Responsive navigation is determined by MUI viewport width, never by Host identity.
   // The canonical Host renderer owns one page scope for every admitted route.
   // Desktop's earlier intent notification is idempotent; DSM shares this UI.
   useLayoutEffect(() => {
@@ -55,11 +59,11 @@ export function XDriveApp({
     onRequestedNavigate(destination)
   }
   return (
-    <XDriveWorkspaceShell responsive={responsive} sx={shellSx}>
+    <XDriveWorkspaceShell responsive sx={shellSx}>
       <XDriveWorkspaceSidebar
         {...sidebar}
         selected={view}
-        responsive={responsive}
+        responsive
         onSelect={onNavigate}
       />
       <XDriveAppRouteContent

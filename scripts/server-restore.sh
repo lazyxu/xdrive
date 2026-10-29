@@ -110,6 +110,10 @@ for required in "${required_files[@]}"; do
     echo "restore: v2 snapshot contains symlink $required" >&2
     exit 1
   fi
+  if [[ "$BACKUP_VERSION" == "1" && -L "$BACKUP_DIR/$required" ]]; then
+    echo "restore: v1 snapshot contains symlink $required" >&2
+    exit 1
+  fi
 done
 if [[ "$BACKUP_VERSION" == "2" ]]; then
   # sha256sum -c accepts an incomplete checksum list. Require exactly the
@@ -120,10 +124,108 @@ if [[ "$BACKUP_VERSION" == "2" ]]; then
     cmp -s SHA256SUMS.txt <(sha256sum database.dump verify.json manifest.json objects.index legacy.tar)
   ) || { echo "restore: v2 checksum manifest mismatch (missing/extra entry or corrupt file)" >&2; exit 1; }
 else
+  # Old v1 restore used sha256sum -c, which accepts omitted members. Compare
+  # the complete canonical archive list in writer order before any stop/backup.
+  v1_checksum_files=(database.dump verify.json manifest.json)
+  if [[ -L "$BACKUP_DIR/blobs.tar" ]]; then
+    echo "restore: v1 snapshot contains symlink blobs.tar" >&2
+    exit 1
+  fi
+  if [[ -f "$BACKUP_DIR/blobs.tar" ]]; then
+    v1_checksum_files+=(blobs.tar)
+  fi
   (
     cd "$BACKUP_DIR"
-    sha256sum -c SHA256SUMS.txt
-  )
+    cmp -s SHA256SUMS.txt <(sha256sum "${v1_checksum_files[@]}")
+  ) || { echo "restore: v1 checksum manifest mismatch (missing/extra entry or corrupt file)" >&2; exit 1; }
+
+  if [[ "$DATABASE_ONLY" != "1" ]]; then
+    # GNU tar extraction replaces /data after the database is dropped. Reject
+    # path traversal, symlinks/special inodes, ambiguous duplicates, ancestor
+    # collisions, and hardlinks outside the archive before stopping services.
+    command -v python3 >/dev/null 2>&1 || {
+      echo "restore: Python 3 is required for v1 archive safety preflight." >&2
+      exit 1
+    }
+    python3 - "$BACKUP_DIR/blobs.tar" <<'PY'
+import sys
+import tarfile
+
+archive_path = sys.argv[1]
+seen = {}
+ancestors = set()
+regular = set()
+
+def canonical(name):
+    if not name or name.startswith("/") or "\\" in name or "\x00" in name:
+        raise ValueError("absolute or malformed name")
+    parts = name.split("/")
+    if any(part == ".." for part in parts):
+        raise ValueError("parent traversal")
+    parts = [part for part in parts if part and part != "."]
+    return "/".join(parts)
+
+try:
+    # Random-access header iteration skips regular file payloads; do not read
+    # a possibly multi-terabyte tar stream a second time merely to list names.
+    with tarfile.open(archive_path, mode="r:") as archive:
+        for member in archive:
+            name = canonical(member.name)
+            if not name:
+                if not member.isdir():
+                    raise ValueError("unsafe archive root")
+                continue
+            if name in seen:
+                raise ValueError("duplicate path or alias")
+            if member.isdir():
+                kind = "dir"
+            elif member.isreg():
+                kind = "file"
+            elif member.islnk():
+                # GNU tar stores safe hardlink targets as archive-relative
+                # names. Accept only a previously inspected regular member.
+                target = canonical(member.linkname)
+                if not target or target not in regular:
+                    raise ValueError("unsafe hardlink target")
+                kind = "file"
+            else:
+                # Includes symlink, device, FIFO and unsupported member types.
+                raise ValueError("unsafe archive member type")
+            parts = name.split("/")
+            for index in range(1, len(parts)):
+                parent = "/".join(parts[:index])
+                if seen.get(parent) == "file":
+                    raise ValueError("file ancestor collision")
+                ancestors.add(parent)
+            if kind == "file" and name in ancestors:
+                raise ValueError("file replaces earlier directory ancestor")
+            seen[name] = kind
+            if kind == "file":
+                regular.add(name)
+except (OSError, EOFError, tarfile.TarError, ValueError) as exc:
+    print("restore: unsafe v1 tar archive entry: " + type(exc).__name__, file=sys.stderr)
+    sys.exit(1)
+PY
+  fi
+fi
+
+# Independently parse the PostgreSQL custom archive TOC in an offline,
+# read-only, non-networked container before the safety backup or any destructive
+# database/file operation. SHA-256 integrity alone cannot prove pg_restore can
+# even open the archive. This checks format/readability, not a full DB recovery.
+command -v timeout >/dev/null 2>&1 || {
+  echo "restore: timeout is required for PostgreSQL archive preflight." >&2
+  exit 1
+}
+if ! timeout --signal=TERM --kill-after=10s 120s \
+  docker run --rm -i --pull never --network none --read-only \
+    --cap-drop ALL --security-opt no-new-privileges \
+    --pids-limit 64 --cpus 2 --memory 256m --memory-swap 256m \
+    --user 70:70 --entrypoint pg_restore \
+    postgres:17-alpine --list \
+    < "$BACKUP_DIR/database.dump" > /dev/null; then
+  echo "restore: PostgreSQL custom dump preflight failed; production data was not replaced." >&2
+  exit 1
 fi
 
 if [[ "$ASSUME_YES" != "1" ]]; then

@@ -17,6 +17,9 @@ import { filterServerBackupSnapshots, type XDriveServerBackupSnapshotFilter } fr
 import { XDriveActionButton } from './ActionButton'
 import { XDriveBackupVerificationReceipt } from './BackupVerificationReceipt'
 import { XDriveBackupRecoveryEvidencePanel } from './BackupRecoveryEvidencePanel'
+import { XDriveBackupRepositoryInventory } from './BackupRepositoryInventory'
+import { XDriveBackupSnapshotIndexPager } from './BackupSnapshotIndexPager'
+import { XDriveBackupScheduleRegistration } from './BackupScheduleRegistration'
 import { XDriveSectionHeader } from './SectionHeader'
 
 type Confirmation = {
@@ -345,6 +348,15 @@ export function XDriveServerBackupManagementPanel({
         </Stack>
       </Paper>
 
+      {page?.supported ? <XDriveBackupRepositoryInventory inventory={page.inventory} /> : null}
+      {page?.supported &&
+        typeof page.inventory.total_snapshots === 'number' &&
+        page.inventory.total_snapshots > 100 && port.readSnapshotIndexPage ? (
+          <XDriveBackupSnapshotIndexPager
+            readPage={port.readSnapshotIndexPage}
+            policyRevision={page.inventory.policy.revision} />
+        ) : null}
+
       <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
         <Stack spacing={1.5}>
           <Typography variant="subtitle1" fontWeight={600}>备份清单与验证</Typography>
@@ -460,7 +472,11 @@ export function XDriveServerBackupManagementPanel({
             </Table>
           </TableContainer>
           <Typography variant="caption" color="text.secondary">
-            最多显示最新 100 个已发现快照；v2 本代大小不包括共享 CAS 对象。选择不完整或仅含数据库的快照不会允许完整恢复。
+            {typeof page?.inventory.total_snapshots === 'number' && typeof page?.inventory.truncated === 'boolean'
+              ? `宿主机发现 ${page.inventory.total_snapshots} 代备份，当前显示最近 ${page.inventory.snapshots.length} 代。${page.inventory.truncated
+                ? ' 其余较旧备份不在本页清单中，不能通过本页执行单代操作；批量验证仍按独立上限检查全部仓库。' : ''}`
+              : '当前宿主机尚未报告备份总数；最多显示最近 100 代。'}
+            {' '}v2 本代大小不包括共享 CAS 对象。选择不完整或仅含数据库的快照不会允许完整恢复。
           </Typography>
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
             <TextField select size="small" label="校验级别" value={verifyMode}
@@ -741,6 +757,8 @@ export function XDriveServerBackupManagementPanel({
           ) : null}
         </Stack>
       </Paper>
+
+      {page?.supported ? <XDriveBackupScheduleRegistration inventory={page.inventory} /> : null}
 
       <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }} data-xdrive-admin-backup-history>
         <Stack spacing={1.5}>

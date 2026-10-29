@@ -135,15 +135,15 @@ test('mobile photo pins respect compact count-badge, safe edge and landscape con
   assert.deepEqual(xDriveSelectVisibleMapPhotoCovers(pins,390,0,true),[])
 })
 
-test('100k media keeps <=24 verified photo covers; all 64 native Cells stay independently accessible', () => {
+test('all 64 current Owner cells may have bounded photo covers when geometry permits', () => {
   const pins=Array.from({length:64},(_,i)=>({
     count:64-i,x:110+(i%8)*110,y:110+Math.floor(i/8)*108,
   }))
   const output=xDriveSelectVisibleMapPhotoCovers(pins,1000,1000,false)
-  assert.equal(XDRIVE_PLACES_MAP_COVER_MAX,24)
-  assert.equal(output.length,24)
+  assert.equal(XDRIVE_PLACES_MAP_COVER_MAX,64)
+  assert.equal(output.length,64)
   assert.equal(pins.length,64)
-  assert.equal(new Set(output.map(p=>p.count)).size,24)
+  assert.equal(new Set(output.map(p=>p.count)).size,64)
   const surface=fs.readFileSync(path.join(root,
     'ui/shared/src/mui/MediaGalleryBaiduIsolatedPhotoSurface.tsx'),'utf8')
   assert.match(surface,/xDriveSelectVisibleMapPhotoCovers\(/)
@@ -175,7 +175,7 @@ test('photo overlay has one shared presentation lease for inline and isolated na
   assert.match(child,/renderCells\(false\)/)
   assert.doesNotMatch(child,/\\.node_id\\b|\\.asset_id\\b|photo_url|loadThumbnail|Authorization:/,
     'no private photo transport may enter the isolated SDK Host')
-  assert.equal(XDRIVE_PLACES_MAP_COVER_MAX,24)
+  assert.equal(XDRIVE_PLACES_MAP_COVER_MAX,64)
 })
 
 test('map screenshot no longer owns a fixed photo thumbnail strip', () => {
@@ -244,4 +244,20 @@ test('both SDK Hosts receive the same current React layout exclusions',()=>{
   assert.match(parent,/mapFrameRef\.current\?\.setPhotoCoverSelections\?\.\(/)
   assert.match(driver,/testMapOverlayPinOcclusion/)
   assert.doesNotMatch(parent,/data-xdrive-places-photo-collection-strip/)
+})
+
+test('nearby 142 and 28 Owner photo clusters both paint when their cards do not overlap',()=>{
+  // Regression from actual Baidu map screenshot: prior 104x92 conservative
+  // collision exclusion silently removed the valid 28-photo thumbnail,
+  // leaving only a native-looking numeric fallback. Both true signed
+  // representatives must be independently paintable at this spacing.
+  const nearby=[
+    {count:142,x:950,y:100,id:'large'},
+    {count:28,x:1049,y:190,id:'28-photo'},
+    {count:10,x:1020,y:160,id:'genuinely-overlapping'},
+  ]
+  const selected=xDriveSelectVisibleMapPhotoCovers(nearby,1280,760,false,[])
+  assert.deepEqual(selected.map(x=>x.id),['large','28-photo'])
+  assert.deepEqual(nearby.map(x=>x.count),[142,28,10],
+    'decluttering must never alter signed Owner count, only visual pins')
 })

@@ -33,9 +33,9 @@ test('source overview must not claim no sources before its first authorized read
 test('source refresh preserves confirmed rows and publishes failures without fake emptiness', () => {
   const manager = read('SourceManager.tsx')
   const list = read('SourceManagerListPage.tsx')
-  assert.ok(manager.includes('if (!silent) setLoadError(false)'),
+  assert.ok(manager.includes('if (visibleRead) setLoadError(false)'),
     'clear error only once the next overview succeeds')
-  assert.ok(manager.includes('if (!silent) setLoadError(true)'),
+  assert.ok(manager.includes('if (visibleRead) setLoadError(true)'),
     'failed fetch must publish an explicit failure')
   assert.ok(manager.includes('setSelected((current) => current'),
     'authorized selected source remains while next overview loads')

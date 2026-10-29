@@ -37,6 +37,17 @@ func (c *Client) AdminStorage(ctx context.Context, input AdminStorageRequest) (j
 	case "history":
 		endpoint = "/api/v1/admin/storage/history"
 		params.Set("days", strconv.Itoa(input.Days))
+	case "verification-runs":
+		if input.Limit < 1 || input.Limit > 50 || input.Days != 0 ||
+			input.Offset != 0 || input.RunID != 0 || input.Fresh ||
+			input.Kind != "" || !validVerificationHistoryCursor(input.Cursor) {
+			return nil, errors.New("invalid bounded storage verification history request")
+		}
+		endpoint = "/api/v1/admin/storage/verification-runs"
+		params.Set("limit", strconv.Itoa(input.Limit))
+		if input.Cursor != "" {
+			params.Set("cursor", input.Cursor)
+		}
 	case "legacy":
 		endpoint = "/api/v1/admin/storage/legacy"
 		params.Set("limit", strconv.Itoa(input.Limit))
@@ -83,4 +94,26 @@ func (c *Client) AdminStorage(ctx context.Context, input AdminStorageRequest) (j
 		return nil, err
 	}
 	return out, nil
+}
+
+// ValidVerificationHistoryCursor applies the same canonical bounded keyset
+// cursor contract for Server-facing Client calls and Desktop Agent IPC.
+func ValidVerificationHistoryCursor(value string) bool {
+	return validVerificationHistoryCursor(value)
+}
+
+func validVerificationHistoryCursor(value string) bool {
+	if value == "" {
+		return true
+	}
+	if len(value) > 20 || value[0] < '1' || value[0] > '9' {
+		return false
+	}
+	for _, char := range value {
+		if char < '0' || char > '9' {
+			return false
+		}
+	}
+	n, err := strconv.ParseUint(value, 10, 64)
+	return err == nil && n > 0 && strconv.FormatUint(n, 10) == value
 }

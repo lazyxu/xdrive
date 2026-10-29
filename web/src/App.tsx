@@ -50,6 +50,7 @@ import {
   XDriveServiceDependenciesPage,
   XDriveSystemMaintenancePage,
   XDriveSettingsDialog,
+  XDriveIOSPhotoBackupSettings,
   XDriveFeedbackSnackbar,
   XDriveShareDialog,
   XDriveSourceManager,
@@ -88,6 +89,8 @@ import type {
 } from '@xdrive/ui/mui'
 import { xDriveCaptureGalleryViewerFocus, xDriveRestoreGalleryViewerFocus } from './galleryViewerReturnFocus'
 import { ApiError, XDriveApi, sessionFromAuth } from './api'
+import { xDriveCreateIOSPhotoBackupHost } from './iosPhotoHostAdapter'
+import type { XDriveIOSPhotoBackupHost, XDriveIOSPhotoBackupSession } from '../../ui/shared/src/mui/IOSPhotoBackupSettings'
 import type { AuthResult, AuthSession, BuildInfo } from './api'
 import type {
   MeResult,
@@ -261,6 +264,8 @@ function WebAccountMenu({
   onLogout,
   offlineOwner,
   onOfflineConsentChange,
+  iosPhotoHost,
+  iosPhotoSession,
 }: {
   username: string
   serverBuild: BuildInfo | null
@@ -270,6 +275,8 @@ function WebAccountMenu({
   onLogout: () => void
   offlineOwner?: XDrivePwaOfflineOwner | null
   onOfflineConsentChange?: (enabled: boolean) => void
+  iosPhotoHost?: XDriveIOSPhotoBackupHost | null
+  iosPhotoSession?: XDriveIOSPhotoBackupSession | null
 }) {
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -325,6 +332,9 @@ function WebAccountMenu({
         buildInfo={[{ title: 'Server 构建信息', info: serverBuild }]}
       >
         {offlineOwner ? <PwaOfflineDirectorySection owner={offlineOwner} onConsentChange={onOfflineConsentChange} /> : null}
+        {iosPhotoHost && iosPhotoSession ? (
+          <XDriveIOSPhotoBackupSettings host={iosPhotoHost} session={iosPhotoSession} />
+        ) : null}
       </XDriveSettingsDialog>
       <XDriveManualConnectionDialog open={connectionOpen && !disabled}
         onClose={() => setConnectionOpen(false)} />
@@ -722,6 +732,7 @@ function App({
   return (
     <FileManager
       api={api}
+      authSession={session}
       username={username}
       serverBuild={serverBuild}
       appearance={appearance}
@@ -875,6 +886,7 @@ function AuthView({
 
 function FileManager({
   api,
+  authSession,
   username,
   serverBuild,
   appearance,
@@ -883,6 +895,7 @@ function FileManager({
   onLogout,
 }: {
   api: XDriveApi
+  authSession: AuthSession
   username: string
   serverBuild: BuildInfo | null
   appearance: XDriveAppearance
@@ -891,6 +904,7 @@ function FileManager({
   onLogout: () => void
 }) {
   const compactWorkspace = useMediaQuery('(max-width:899.95px)')
+  const iosPhotoHost = useMemo(() => xDriveCreateIOSPhotoBackupHost(), [])
   const [profile, setProfile] = useState<MeResult | null>(null)
   const [profileReadFailed, setProfileReadFailed] = useState(false)
   const [webMapScopeHandoff,setWebMapScopeHandoff] = useState<XDriveMapScopeHandoffState>(
@@ -1545,9 +1559,14 @@ function FileManager({
     statsUnavailableMessage: '当前服务端未提供账号文件大小分布。',
   }), [api, applyQuota])
   const localStorageSource = useMemo<XDriveLocalStorageDataSource>(() => ({
-    load: async () => ({
-      browserStorage: await createWebBrowserStorageSnapshot(),
-    }),
+    // Safari storage.estimate()/CacheStorage do not expose an AbortSignal.
+    // Fence their late response but never cancel a deliberate cache purge.
+    load: async (signal?: AbortSignal) => {
+      signal?.throwIfAborted()
+      const browserStorage = await createWebBrowserStorageSnapshot()
+      signal?.throwIfAborted()
+      return { browserStorage }
+    },
     clearBrowserCache: clearWebBrowserCache,
   }), [])
 
@@ -1748,7 +1767,7 @@ function FileManager({
   }, [setAppView])
 
   const runStorageMaintenance = useCallback(async (
-    kind: 'storage_verify' | 'storage_repair' | 'storage_optimization',
+    kind: 'storage_verify_fast' | 'storage_verify' | 'storage_repair' | 'storage_optimization',
   ) => {
     const result = await api.controlBackgroundTask(`system-maintenance:${kind}`, 'run', true)
     const taskID = (result.result_task_id || result.task_id || '').trim()
@@ -1774,6 +1793,8 @@ function FileManager({
 
   const maintenanceBackupPort = useMemo(() => ({
     read: () => api.adminServerBackups(),
+    readSnapshotIndexPage: (query: import('../../ui/shared/src/server-backup-admin').XDriveServerBackupSnapshotIndexQuery) =>
+      api.adminServerBackupSnapshotPage(query),
     submit: (request: import('../../ui/shared/src/server-backup-admin').XDriveServerBackupRequest) =>
       api.adminServerBackupAction(request),
   }), [api])
@@ -2278,6 +2299,13 @@ function FileManager({
       disabled={viewerActive || (compactWorkspace && !compactNavigationOpen)}
       offlineOwner={offlineOwner}
       onOfflineConsentChange={setOfflineConsent}
+      iosPhotoHost={iosPhotoHost}
+      iosPhotoSession={profile && profile.username === username &&
+        !profile.must_change_password && Number.isSafeInteger(profile.id) &&
+        profile.id > 0 && authSession.accessToken &&
+        (!authSession.browserSession || authSession.username === username)
+          ? { username, ownerID: profile.id, accessToken: authSession.accessToken }
+          : null}
       username={username}
       serverBuild={serverBuild}
       appearance={appearance}

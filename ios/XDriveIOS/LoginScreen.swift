@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Matches the Android native auth card: same brand, compact centered surface,
 /// server / username / password inputs, reveal action, keep-login and errors.
@@ -6,6 +7,9 @@ struct LoginScreen: View {
     @StateObject private var model = LoginViewModel()
     @State private var passwordVisible = false
     @State private var showPhotoInventory = false
+    @State private var showPhotoBackup = false
+    @State private var showDocumentPicker = false
+    @State private var manualUploadTask: Task<Void, Never>?
     @Environment(\.colorScheme) private var colorScheme
 
     private var colors: XDrivePalette { XDrivePalette(dark: colorScheme == .dark) }
@@ -29,8 +33,36 @@ struct LoginScreen: View {
             )
         }
         .task { await model.restore() }
+        .sheet(isPresented: $showPhotoBackup) {
+            XDriveIOSPhotoBackupMVPScreen(model: model)
+        }
         .sheet(isPresented: $showPhotoInventory) {
-            LocalPhotoInventoryScreen()
+            if model.verifiedOwner != nil {
+                LocalPhotoInventoryScreen(onUploadStillPhoto: { identifier, allowCloud in
+                    await model.uploadSelectedStillPhoto(
+                        identifier, allowICloudOriginal: allowCloud
+                    )
+                })
+            } else {
+                LocalPhotoInventoryScreen()
+            }
+        }
+        .fileImporter(
+            isPresented: $showDocumentPicker,
+            allowedContentTypes: [.item],
+            allowsMultipleSelection: false
+        ) { result in
+            if case .success(let urls) = result, let file = urls.first {
+                manualUploadTask?.cancel()
+                manualUploadTask = Task {
+                    await model.uploadManualDocument(file)
+                }
+            }
+        }
+        .interactiveDismissDisabled(model.manualUploadBusy)
+        .onDisappear {
+            manualUploadTask?.cancel()
+            manualUploadTask = nil
         }
     }
 
@@ -179,7 +211,7 @@ struct LoginScreen: View {
                     .font(.footnote)
                     .foregroundColor(colors.secondary)
             }
-            Text("原生文件、图库、Viewer 和后台同步尚未接入。系统相册检查仅在本机执行。")
+            Text("文件、图库与 Viewer 继续使用共用 PWA。本页额外提供用户明确启动的前台相册原件备份；不会自动后台运行。")
                 .font(.footnote)
                 .foregroundColor(colors.secondary)
             Button {
@@ -192,7 +224,7 @@ struct LoginScreen: View {
                         .stroke(colors.primary, lineWidth: 1))
             }
             .buttonStyle(.plain)
-            .disabled(model.isLoading)
+            .disabled(model.isLoading || model.manualUploadBusy)
             .accessibilityIdentifier("native-owner-root-verify")
             if let owner = model.verifiedOwner {
                 VStack(alignment: .leading, spacing: 5) {
@@ -202,7 +234,7 @@ struct LoginScreen: View {
                     Text("Owner #\(owner.ownerID) · Root #\(owner.rootNodeID)")
                         .font(.footnote)
                         .foregroundColor(colors.secondary)
-                    Text("当前仅完成只读身份验证；尚未注册 Device/同步文件夹，也未启动备份。")
+                    Text("当前已验证 Owner 文件权限。前台相册备份可写入云端文件，但尚不代表 Device SourceRun 或 Live Photo 成对提交。")
                         .font(.footnote)
                         .foregroundColor(colors.secondary)
                 }
@@ -213,17 +245,59 @@ struct LoginScreen: View {
                     .font(.footnote)
                     .foregroundColor(colors.error)
             }
+            if model.verifiedOwner != nil {
+                Button {
+                    showPhotoBackup = true
+                } label: {
+                    Label("备份 iOS 相册原件（前台 MVP）", systemImage: "icloud.and.arrow.up")
+                        .frame(maxWidth: .infinity, minHeight: 48)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(model.isLoading || model.manualUploadBusy)
+                .accessibilityIdentifier("native-photo-backup-open")
+            }
+            if model.verifiedOwner != nil {
+                Button {
+                    showDocumentPicker = true
+                } label: {
+                    Label("手动上传单个文件（不超过 128 MiB）", systemImage: "square.and.arrow.up")
+                        .frame(maxWidth: .infinity, minHeight: 48)
+                        .foregroundColor(colors.primary)
+                        .background(RoundedRectangle(cornerRadius: 12)
+                            .stroke(colors.primary, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .disabled(model.isLoading || model.manualUploadBusy)
+                .accessibilityIdentifier("native-manual-upload")
+            }
+            if model.manualUploadBusy && !model.photoBackupBusy {
+                ProgressView("原生上传处理中…")
+                    .font(.footnote)
+                Button("取消本机上传请求") { manualUploadTask?.cancel() }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("native-manual-upload-cancel")
+            }
+            if let uploadMessage = model.manualUploadMessage {
+                Text(uploadMessage)
+                    .font(.footnote)
+                    .foregroundColor(colors.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("native-manual-upload-result")
+            }
             Button {
                 showPhotoInventory = true
             } label: {
-                Label("检查系统相册（不上传）", systemImage: "photo.on.rectangle.angled")
+                Label(model.verifiedOwner != nil
+                    ? "系统相册识别与单张照片手动上传"
+                    : "检查系统相册（不上传）",
+                      systemImage: "photo.on.rectangle.angled")
                     .frame(maxWidth: .infinity, minHeight: 48)
                     .foregroundColor(colors.primary)
                     .background(RoundedRectangle(cornerRadius: 12)
                         .stroke(colors.primary, lineWidth: 1))
             }
             .buttonStyle(.plain)
-            .disabled(model.isLoading)
+            .disabled(model.isLoading || model.manualUploadBusy)
             .accessibilityIdentifier("local-photo-inventory")
             if let notice = model.noticeMessage {
                 Text(notice).font(.footnote).foregroundColor(colors.error)
@@ -238,7 +312,7 @@ struct LoginScreen: View {
                         .stroke(colors.primary, lineWidth: 1))
             }
             .buttonStyle(.plain)
-            .disabled(model.isLoading)
+            .disabled(model.isLoading || model.manualUploadBusy)
         }
     }
 

@@ -180,6 +180,45 @@ actor XDrivePhotoSyncLedger {
         }
     }
 
+    /// Attach an existing Server session UUID observed through a separate,
+    /// authenticated and exact-Owner read-only reconciliation. The caller
+    /// MUST verify the entire Server response first; this ledger cannot
+    /// confer Server authority from a locally supplied UUID.
+    ///
+    /// This operation deliberately NEVER changes needsReconciliation into
+    /// uploading/finalizing/confirmed. A restart must not silently resume a
+    /// potentially committed write. Exact Session and Node readback is still
+    /// necessary before any successful receipt can be recorded.
+    func recordObservedSession(scope: XDrivePhotoSyncScope, id: String,
+                               observedSessionID: String, parentID: UInt64,
+                               name: String, byteSize: Int64,
+                               fullSHA256: String, observedStatus: String)
+        throws -> XDrivePhotoSyncOperation {
+        guard UUID(uuidString: observedSessionID) != nil,
+              observedStatus == "active" || observedStatus == "finalized",
+              parentID > 0, byteSize >= 0,
+              validSHA256(fullSHA256),
+              fullSHA256 == fullSHA256.lowercased() else {
+            throw XDrivePhotoSyncLedgerError.invalidTransition
+        }
+        return try change(scope: scope, id: id) { entry in
+            guard entry.state == .needsReconciliation,
+                  entry.sessionID == nil || entry.sessionID == observedSessionID,
+                  entry.destinationParentID == parentID,
+                  entry.destinationName == name,
+                  entry.byteSize == byteSize,
+                  entry.sha256 == fullSHA256,
+                  entry.verifiedNodeID == nil,
+                  entry.verifiedNodeRevision == nil else {
+                throw XDrivePhotoSyncLedgerError.invalidTransition
+            }
+            entry.sessionID = observedSessionID
+            // Uncertainty remains even if Server reports "finalized".
+            // Only a validated Owner Node receipt may confirm this resource.
+            entry.state = .needsReconciliation
+        }
+    }
+
     /// Only after the current Owner's GET/Finalize has *verified* the
     /// expected session, complete Node and full-file SHA-256 receipt.
     func confirmReceipt(scope: XDrivePhotoSyncScope, id: String,

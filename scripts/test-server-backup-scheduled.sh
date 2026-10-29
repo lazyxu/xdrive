@@ -8,6 +8,19 @@ trap 'rm -rf "$TMP"' EXIT
 
 export XD_CONFIG_DIR="$TMP/home"
 export XD_SCHEDULE_TEST_LOG="$TMP/argv.log"
+export XD_SCHEDULE_DOCKER_CALLS="$TMP/pg-archive-inspections.log"
+mkdir -p "$TMP/mock-bin"
+cat > "$TMP/mock-bin/docker" <<'DOCKER'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "${1:-}" == run && " $* " == *" --entrypoint pg_restore "* &&
+   " $* " == *" --network none "* && " $* " == *" --read-only "* &&
+   " $* " == *" --pull never "* ]] || exit 70
+printf 'read-only TOC inspection\n' >> "$XD_SCHEDULE_DOCKER_CALLS"
+[[ "$(head -c 5)" == PGDMP ]] || exit 71
+DOCKER
+chmod 700 "$TMP/mock-bin/docker"
+export PATH="$TMP/mock-bin:$PATH"
 mkdir -p "$XD_CONFIG_DIR/config" "$XD_CONFIG_DIR/bin" "$XD_CONFIG_DIR/backups/snapshots"
 env_file="$XD_CONFIG_DIR/config/.env"
 script="$ROOT/scripts/server-backup-scheduled.sh"
@@ -16,11 +29,77 @@ cat > "$XD_CONFIG_DIR/bin/xdrive-server" <<'MOCK'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$@" > "$XD_SCHEDULE_TEST_LOG"
+if [[ "${1:-}" == backup && "${2:-}" == --output-dir ]]; then
+  case "${XD_SCHEDULE_MOCK_MODE:-good}" in
+    no_snapshot) exit 0 ;;
+    wrong_path) printf '%s\n' "$XD_CONFIG_DIR/backups/incremental/snapshots/xdrive-backup-20990101T000000Z"; exit 0 ;;
+    old_path)
+      for existing in "$XD_CONFIG_DIR"/backups/snapshots/xdrive-backup-*; do
+        if [[ -f "$existing/SHA256SUMS.txt" ]]; then
+          printf '%s\n' "$existing"
+          exit 0
+        fi
+      done
+      exit 1 ;;
+
+  esac
+  snap="$XD_CONFIG_DIR/backups/snapshots/xdrive-backup-$(date -u +%Y%m%dT%H%M%SZ)"
+  case "${XD_SCHEDULE_MOCK_MODE:-good}" in
+    tampered) snap="$XD_CONFIG_DIR/backups/snapshots/xdrive-backup-20990101T001000Z" ;;
+    database_only) snap="$XD_CONFIG_DIR/backups/snapshots/xdrive-backup-20990101T002000Z" ;;
+    traversal) snap="$XD_CONFIG_DIR/backups/snapshots/xdrive-backup-20990101T003000Z" ;;
+    symlink_member) snap="$XD_CONFIG_DIR/backups/snapshots/xdrive-backup-20990101T004000Z" ;;
+    unsafe_hardlink) snap="$XD_CONFIG_DIR/backups/snapshots/xdrive-backup-20990101T005000Z" ;;
+    duplicate_manifest) snap="$XD_CONFIG_DIR/backups/snapshots/xdrive-backup-20990101T006000Z" ;;
+    invalid_pg_dump) snap="$XD_CONFIG_DIR/backups/snapshots/xdrive-backup-20990101T007000Z" ;;
+  esac
+  mkdir -p "$snap"
+  printf 'PGDMPtest fixture\n' > "$snap/database.dump"
+  printf 'verify receipt\n' > "$snap/verify.json"
+  # Produce a real v1 tar, rather than arbitrary mock bytes, so the
+  # pre-retention test exercises actual archive-header semantics.
+  python3 - "$snap/blobs.tar" "${XD_SCHEDULE_MOCK_MODE:-good}" <<'PY'
+import io,sys,tarfile
+path,mode=sys.argv[1:3]
+with tarfile.open(path,"w") as archive:
+    item=tarfile.TarInfo("./ordinary.txt")
+    item.size=4
+    archive.addfile(item,io.BytesIO(b"data"))
+    if mode=="traversal":
+        item=tarfile.TarInfo("../escape")
+        item.size=4
+        archive.addfile(item,io.BytesIO(b"data"))
+    elif mode=="symlink_member":
+        item=tarfile.TarInfo("./unsafe-link")
+        item.type=tarfile.SYMTYPE
+        item.linkname="../../outside"
+        archive.addfile(item)
+    elif mode=="unsafe_hardlink":
+        item=tarfile.TarInfo("./unsafe-hardlink")
+        item.type=tarfile.LNKTYPE
+        item.linkname="../outside"
+        archive.addfile(item)
+PY
+  printf '{"format_version":1,"consistency_verified":true,"file_data_included":true}\n' > "$snap/manifest.json"
+  (cd "$snap"; sha256sum database.dump verify.json manifest.json blobs.tar > SHA256SUMS.txt)
+  case "${XD_SCHEDULE_MOCK_MODE:-good}" in
+    tampered) printf 'tamper\n' >> "$snap/blobs.tar" ;;
+    database_only) printf '{"format_version":1,"consistency_verified":true,"file_data_included":false}\n' > "$snap/manifest.json" ;;
+    duplicate_manifest)
+      printf '{"format_version":1,"consistency_verified":true,"file_data_included":true,"file_data_included":false}\n' > "$snap/manifest.json"
+      (cd "$snap"; sha256sum database.dump verify.json manifest.json blobs.tar > SHA256SUMS.txt) ;;
+    invalid_pg_dump)
+      printf 'not a PostgreSQL archive\n' > "$snap/database.dump"
+      (cd "$snap"; sha256sum database.dump verify.json manifest.json blobs.tar > SHA256SUMS.txt) ;;
+  esac
+  printf '%s\n' "$snap"
+fi
 MOCK
 chmod 700 "$XD_CONFIG_DIR/bin/xdrive-server"
 
 invoke() {
   : > "$XD_SCHEDULE_TEST_LOG"
+  : > "$XD_SCHEDULE_DOCKER_CALLS"
   bash "$script"
 }
 expect_args() {
@@ -62,8 +141,34 @@ printf 'preserve existing lock bytes\n' > "$schedule_lock"
 invoke
 [[ "$(cat "$schedule_lock")" == 'preserve existing lock bytes' ]]
 expect_args backup --output-dir
+[[ -s "$XD_SCHEDULE_DOCKER_CALLS" ]] || {
+  echo "valid v1 recovery point was not checked for PostgreSQL TOC readability" >&2; exit 1
+}
 [[ ! -d "$old_v1" ]]
 [[ "$(sed -n '3p' "$XD_SCHEDULE_TEST_LOG")" == "$XD_CONFIG_DIR/backups/snapshots" ]]
+
+# Backup command returning success with no committed snapshot must not erase
+# a previous recovery point even if the retention age has elapsed.
+old_failed="$XD_CONFIG_DIR/backups/snapshots/xdrive-backup-19980101T000000Z"
+mkdir "$old_failed"
+touch -d '20 days ago' "$old_failed"
+for scenario in no_snapshot wrong_path old_path tampered database_only traversal symlink_member unsafe_hardlink duplicate_manifest invalid_pg_dump; do
+  if XD_SCHEDULE_MOCK_MODE="$scenario" invoke >"$TMP/fail-$scenario.log" 2>&1; then
+    echo "scheduled v1 retention accepted $scenario without a verified full snapshot" >&2; exit 1
+  fi
+  grep -Fq 'old recovery points preserved' "$TMP/fail-$scenario.log"
+  if [[ "$scenario" == invalid_pg_dump ]]; then
+    [[ -s "$XD_SCHEDULE_DOCKER_CALLS" ]] || {
+      echo "invalid PostgreSQL dump was not inspected by the readonly preflight" >&2; exit 1
+    }
+  else
+    [[ ! -s "$XD_SCHEDULE_DOCKER_CALLS" ]] || {
+      echo "invalid pre-TOC snapshot reached Docker inspection" >&2; exit 1
+    }
+  fi
+  [[ -d "$old_failed" ]] || { echo "old recovery point deleted during $scenario" >&2; exit 1; }
+done
+rmdir "$old_failed"
 
 # Opt-in v2 uses the existing host command, not a second runner/queue; it must
 # NOT delete even old v1 snapshots or v2 repo snapshots and shared objects.

@@ -4,7 +4,7 @@ import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
 import { XDriveFolderIcon } from './FolderIcon'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import { Box, Chip, IconButton, Stack, Typography } from '@mui/material'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { formatBytes } from '../format'
 import { XDriveActionButton } from './ActionButton'
 import { XDriveConfirmDialog } from './ConfirmDialog'
@@ -77,7 +77,7 @@ export type XDriveLocalStorageSnapshot = {
 }
 
 export type XDriveLocalStorageDataSource = {
-  load: () => Promise<XDriveLocalStorageSnapshot>
+  load: (signal?: AbortSignal) => Promise<XDriveLocalStorageSnapshot>
   clearBrowserCache?: () => Promise<XDriveBrowserStorageClearResult>
   releaseDesktopCache?: () => Promise<XDriveDesktopStorageReleaseResult>
   setFolderMode?: (path: string, mode: XDriveLocalStorageMode) => Promise<void>
@@ -199,7 +199,23 @@ function LocalFolderRow({
 }
 
 export function XDriveLocalStoragePage({ source }: { source: XDriveLocalStorageDataSource }) {
-  const [snapshot, setSnapshot] = useState<XDriveLocalStorageSnapshot | null>(null)
+  // A previous Server/Owner must never paint local Agent/browser status under
+  // a new Host source while the next authorized read is still pending.
+  const [snapshotReceipt, setSnapshotReceipt] = useState<{
+    owner: XDriveLocalStorageDataSource
+    value: XDriveLocalStorageSnapshot
+  } | null>(null)
+  const snapshot = snapshotReceipt?.owner === source ? snapshotReceipt.value : null
+  const activeRead = useRef<AbortController | null>(null)
+  const readGeneration = useRef(0)
+  const mounted = useRef(false)
+  // A completed native/Browser mutation belongs to the Host that initiated
+  // it. The operation itself is durable, but an old Host must not repaint the
+  // successor's receipts or start a stale refresh under its former Owner.
+  const activeHostSource = useRef(source)
+  activeHostSource.current = source
+  const isCurrentHostAction = (ownedSource: XDriveLocalStorageDataSource) =>
+    mounted.current && activeHostSource.current === ownedSource
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [action, setAction] = useState('')
@@ -208,11 +224,22 @@ export function XDriveLocalStoragePage({ source }: { source: XDriveLocalStorageD
   const [notice, setNotice] = useState('')
 
   const load = useCallback(async () => {
+    // This method is also called after completed cache/policy operations.
+    // Those durable operations may finish after route exit; do not launch a
+    // new read or write UI state for an already-unmounted workspace.
+    if (!mounted.current) return
+    activeRead.current?.abort()
+    const controller = new AbortController()
+    activeRead.current = controller
+    const requestID = ++readGeneration.current
+    const isCurrent = () => mounted.current && !controller.signal.aborted &&
+      requestID === readGeneration.current
     setLoading(true)
     setError('')
     try {
-      const next = await source.load()
-      setSnapshot(next)
+      const next = await source.load(controller.signal)
+      if (!isCurrent()) return
+      setSnapshotReceipt({ owner: source, value: next })
       const tree = next.desktopStorage?.storageTree
       if (tree) {
         setExpanded((current) => current.size > 0
@@ -220,13 +247,33 @@ export function XDriveLocalStoragePage({ source }: { source: XDriveLocalStorageD
           : new Set((tree.children || []).map((child) => child.path)))
       }
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : '加载本地存储信息失败')
+      if (isCurrent()) setError(loadError instanceof Error ? loadError.message : '加载本地存储信息失败')
     } finally {
-      setLoading(false)
+      const current = isCurrent()
+      if (activeRead.current === controller) activeRead.current = null
+      if (current) setLoading(false)
     }
   }, [source])
 
-  useEffect(() => { void load() }, [load])
+  useEffect(() => {
+    mounted.current = true
+    void load()
+    return () => {
+      mounted.current = false
+      activeRead.current?.abort()
+      activeRead.current = null
+      readGeneration.current += 1
+    }
+  }, [load])
+
+  // Changing Owner/server/Host retires only old UI receipts; an already
+  // accepted cache or policy operation remains owned by its real backend.
+  useEffect(() => {
+    setPendingAction(null)
+    setAction('')
+    setError('')
+    setNotice('')
+  }, [source])
 
   const browser = snapshot?.browserStorage
   const desktop = snapshot?.desktopStorage
@@ -243,12 +290,14 @@ export function XDriveLocalStoragePage({ source }: { source: XDriveLocalStorageD
 
   const clearBrowserCache = async () => {
     if (!source.clearBrowserCache) return
+    const operationSource = source
     setPendingAction(null)
     setAction('browser-cache')
     setError('')
     setNotice('')
     try {
       const result = await source.clearBrowserCache()
+      if (!isCurrentHostAction(operationSource)) return
       const released = Math.max(0, result.released_bytes || 0)
       const entries = Math.max(0, result.cleared_entries || 0)
       setNotice(released > 0
@@ -258,20 +307,23 @@ export function XDriveLocalStoragePage({ source }: { source: XDriveLocalStorageD
           : '当前没有可清理的浏览器缓存。')
       await load()
     } catch (clearError) {
-      setError(clearError instanceof Error ? clearError.message : '清理浏览器缓存失败')
+      if (isCurrentHostAction(operationSource))
+        setError(clearError instanceof Error ? clearError.message : '清理浏览器缓存失败')
     } finally {
-      setAction('')
+      if (isCurrentHostAction(operationSource)) setAction('')
     }
   }
 
   const releaseDesktopCache = async () => {
     if (!source.releaseDesktopCache) return
+    const operationSource = source
     setPendingAction(null)
     setAction('desktop-cache')
     setError('')
     setNotice('')
     try {
       const result = await source.releaseDesktopCache()
+      if (!isCurrentHostAction(operationSource)) return
       const failed = result.failed_files > 0
         ? ' · ' + result.failed_files.toLocaleString() + ' 个文件无法释放'
         : ''
@@ -281,25 +333,29 @@ export function XDriveLocalStoragePage({ source }: { source: XDriveLocalStorageD
         : '当前没有可释放的 Desktop 缓存。')
       await load()
     } catch (releaseError) {
-      setError(releaseError instanceof Error ? releaseError.message : '释放 Desktop 缓存失败')
+      if (isCurrentHostAction(operationSource))
+        setError(releaseError instanceof Error ? releaseError.message : '释放 Desktop 缓存失败')
     } finally {
-      setAction('')
+      if (isCurrentHostAction(operationSource)) setAction('')
     }
   }
 
   const setFolderMode = async (path: string, mode: XDriveLocalStorageMode) => {
     if (!source.setFolderMode) return
+    const operationSource = source
     setAction('mode:' + path)
     setError('')
     setNotice('')
     try {
       await source.setFolderMode(path, mode)
+      if (!isCurrentHostAction(operationSource)) return
       setNotice('文件夹本地存储策略已更新。')
       await load()
     } catch (modeError) {
-      setError(modeError instanceof Error ? modeError.message : '更新文件夹本地存储策略失败')
+      if (isCurrentHostAction(operationSource))
+        setError(modeError instanceof Error ? modeError.message : '更新文件夹本地存储策略失败')
     } finally {
-      setAction('')
+      if (isCurrentHostAction(operationSource)) setAction('')
     }
   }
 

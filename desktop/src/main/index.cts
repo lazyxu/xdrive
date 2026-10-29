@@ -2856,16 +2856,18 @@ function registerIPCHandlers() {
 
   ipcMain.handle('agent:get-state', () => agentState)
   ipcMain.handle('agent:get-transfers', () => agentTransfers)
-  ipcMain.handle('agent:get-storage-tree', () => runAgentAction<AgentStorageTreeNode>(async () => {
-    const hello = await requireAgentLifecycle().ensureRunning()
-    requireAgentCapability(hello, 'storage-tree')
-    return requireAgentClient().storageTree()
-  }, false))
-  ipcMain.handle('agent:get-cache', () => runAgentAction<AgentCacheStats>(async () => {
-    const hello = await requireAgentLifecycle().ensureRunning()
-    requireAgentCapability(hello, 'cache-management')
-    return requireAgentClient().cacheStats()
-  }, false))
+  ipcMain.handle('agent:get-storage-tree', (event, requestID: unknown = undefined) =>
+    runAgentAction<AgentStorageTreeNode>(() => viewportRequests.run(event.sender, requestID, async signal => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'storage-tree')
+      return requireAgentClient().storageTree(signal)
+    }), false))
+  ipcMain.handle('agent:get-cache', (event, requestID: unknown = undefined) =>
+    runAgentAction<AgentCacheStats>(() => viewportRequests.run(event.sender, requestID, async signal => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'cache-management')
+      return requireAgentClient().cacheStats(signal)
+    }), false))
   ipcMain.handle('agent:get-local-disk-space', (event, requestID: unknown = undefined) =>
     runAgentAction<AgentLocalDiskSpace>(() => viewportRequests.run(event.sender, requestID, async signal => {
       const hello = await requireAgentLifecycle().ensureRunning()
@@ -6837,7 +6839,7 @@ function registerIPCHandlers() {
       }), false))
 
   const adminStorageOperations = new Set([
-    'stats', 'health', 'history', 'legacy', 'unreferenced', 'staging',
+    'stats', 'health', 'history', 'verification-runs', 'legacy', 'unreferenced', 'staging',
     'cleanup-runs', 'cleanup-failures', 'cleanup-staging', 'cleanup-cache', 'optimization-advice',
   ])
   ipcMain.handle('agent:cloud-admin-storage', (_event, input: unknown) => runAgentAction<unknown>(async () => {
@@ -6853,6 +6855,11 @@ function registerIPCHandlers() {
       (p.offset !== undefined && (!Number.isSafeInteger(p.offset) || p.offset < 0)) ||
       (p.cursor !== undefined && (typeof p.cursor !== 'string' || p.cursor.length > 2048)) ||
       (p.days !== undefined && ![30, 90, 180].includes(p.days)) ||
+      (p.operation === 'verification-runs' &&
+        (!Number.isSafeInteger(p.limit) || (p.limit as number) < 1 || (p.limit as number) > 50 ||
+        (p.cursor !== undefined && !/^[1-9][0-9]{0,19}$/.test(p.cursor)) ||
+        p.days !== undefined || p.offset !== undefined || p.run_id !== undefined ||
+        p.fresh !== undefined || p.kind !== undefined)) ||
       (p.run_id !== undefined && (!Number.isSafeInteger(p.run_id) || p.run_id <= 0)) ||
       (p.fresh !== undefined && typeof p.fresh !== 'boolean') ||
       (p.operation === 'cleanup-failures' && !p.run_id) ||
@@ -6918,6 +6925,23 @@ function registerIPCHandlers() {
   }
   ipcMain.handle('agent:cloud-admin-backups', () => runAgentAction<unknown>(async () =>
     (await requireDesktopAdminBackups()).cloudAdminServerBackups(), false))
+  ipcMain.handle('agent:cloud-admin-backup-snapshots', (_event, input: unknown) =>
+    runAgentAction<unknown>(async () => {
+      if (!input || typeof input !== 'object' || Array.isArray(input)) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid read-only backup snapshot page.')
+      }
+      const query = input as Record<string, unknown>
+      if (Object.keys(query).length !== 2 ||
+        !Number.isSafeInteger(query.offset) || (query.offset as number) < 0 ||
+        (query.offset as number) > 1000 ||
+        !Number.isSafeInteger(query.limit) || (query.limit as number) < 1 ||
+        (query.limit as number) > 100) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid bounded backup snapshot page.')
+      }
+      return (await requireDesktopAdminBackups()).cloudAdminServerBackupSnapshotPage({
+        offset: query.offset as number, limit: query.limit as number,
+      })
+    }, false))
   ipcMain.handle('agent:cloud-admin-backup-action', (_event, input: unknown) =>
     runAgentAction<unknown>(async () => {
       if (!validDesktopServerBackupAction(input)) {

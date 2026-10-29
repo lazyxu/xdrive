@@ -43,6 +43,7 @@ const sharedDiagnosticsPage = fs.readFileSync(path.join(root, '..', 'ui', 'share
 const desktopFilesPage = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopFilesPage.tsx'), 'utf8')
 const sharedFilesWorkspace = fs.readFileSync(path.join(root, '..', 'ui/shared/src/mui/FilesWorkspacePage.tsx'), 'utf8')
 const desktopSettingsContent = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopSettingsContent.tsx'), 'utf8')
+const desktopHostFrame = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopHostFrame.tsx'), 'utf8')
 const renderer = [
   rendererApp,
   sharedHostSections,
@@ -68,6 +69,7 @@ const renderer = [
   desktopFilesPage,
   sharedFilesWorkspace,
   desktopSettingsContent,
+  desktopHostFrame,
 ].join('\n')
 const synologyGuide = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'SynologyDsmGuideDialog.tsx'), 'utf8')
 const dialogTitle = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'DialogTitle.tsx'), 'utf8')
@@ -186,8 +188,11 @@ test('desktop auth uses the shared centered MUI auth surface', () => {
 })
 
 test('desktop custom titlebar owns the application identity and global controls', () => {
-  assert.ok(renderer.includes("import xDriveBrandIcon from '../../../assets/icon/master/xdrive-icon-master.svg'"), 'missing shared desktop brand icon import')
-  assert.equal((renderer.match(/iconSrc=\{xDriveBrandIcon\}/g) || []).length, 2, 'desktop should reuse the master icon in the titlebar and login identity')
+  assert.ok(rendererApp.includes("import xDriveBrandIcon from '../../../assets/icon/master/xdrive-icon-master.svg'"), 'missing shared login identity SVG')
+  assert.ok(desktopHostFrame.includes("import xDriveBrandIcon from '../../../assets/icon/master/xdrive-icon-master.svg'"), 'Desktop titlebar must use the same master SVG')
+  assert.equal((rendererApp.match(/iconSrc=\{xDriveBrandIcon\}/g) || []).length +
+    (desktopHostFrame.match(/iconSrc=\{xDriveBrandIcon\}/g) || []).length, 2,
+    'Desktop native Host frame and login must share the exact master SVG')
   assert.ok(renderer.includes('XDriveBrandLockup'), 'missing shared brand lockup')
   assert.ok(renderer.includes('variant="titlebar"'), 'desktop should use the shared titlebar brand variant')
   assert.ok(renderer.includes('variant="compact"'), 'login should visually connect to the shared xDrive identity')

@@ -702,7 +702,7 @@ func TestStorageVerifyMaintenanceWaitsForJanitorLease(t *testing.T) {
 	db := newSystemMaintenanceTaskTestDB(t)
 	scheduler, ctx := newSystemMaintenanceTaskScheduler(t)
 	runner := &immediateSystemMaintenanceStorageVerifyRunner{
-		report: maintenance.VerifyReport{},
+		report: maintenance.VerifyReport{Mode: maintenance.VerifyModeDeep},
 	}
 	server := &Server{
 		DB:                             db,
@@ -753,6 +753,7 @@ func TestStorageVerifyMaintenanceUsesDurableContractAndReportsFindings(t *testin
 	scheduler, ctx := newSystemMaintenanceTaskScheduler(t)
 	runner := &immediateSystemMaintenanceStorageVerifyRunner{
 		report: maintenance.VerifyReport{
+			Mode:               maintenance.VerifyModeDeep,
 			ReferencedFiles:    10,
 			ReferencedVersions: 4,
 			BlobFiles:          9,
@@ -929,6 +930,7 @@ func TestSourceVerifyMaintenanceRejectsNonAdminIntent(t *testing.T) {
 		meta.SystemMaintenanceKindMediaVerify,
 		meta.SystemMaintenanceKindMediaRepair,
 		meta.SystemMaintenanceKindStorageVerify,
+		meta.SystemMaintenanceKindStorageVerifyFast,
 		meta.SystemMaintenanceKindStorageRepair,
 	} {
 		_, err := server.requestSystemMaintenanceRun(

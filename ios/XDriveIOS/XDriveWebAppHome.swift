@@ -2,6 +2,35 @@ import SwiftUI
 import WebKit
 import UIKit
 
+/// Persist the PWA's selected HTTPS origin independently from the native
+/// Keychain login's last-used server. Native login may intentionally target a
+/// different Owner/server; it must never silently retarget the shared Web UI
+/// at the next cold launch.
+private enum XDriveIOSWebOriginPreference {
+    private static let key = "xdrive.ios.web.origin"
+    private static let legacyNativeKey = "xdrive.ios.server"
+
+    static func load() -> String {
+        if let saved = UserDefaults.standard.string(forKey: key) {
+            // A malformed saved Web origin should show the connection form;
+            // never fall back to a different, native-login server.
+            return saved
+        }
+        // One-time migration for installs predating the split. An invalid
+        // legacy value is left visible for the user to correct, not trusted.
+        let legacy = UserDefaults.standard.string(forKey: legacyNativeKey) ?? ""
+        if let origin = try? ServerAddress.parse(legacy) {
+            UserDefaults.standard.set(origin.absoluteString, forKey: key)
+            return origin.absoluteString
+        }
+        return legacy
+    }
+
+    static func save(_ origin: URL) {
+        UserDefaults.standard.set(origin.absoluteString, forKey: key)
+    }
+}
+
 /// Opt-in Web/PWA shell. The Web's HttpOnly cookie session is separate from
 /// the native Keychain refresh token. No secret is injected into JS or URLs.
 struct XDriveWebAppHome: View {
@@ -9,11 +38,11 @@ struct XDriveWebAppHome: View {
     @State private var openedOrigin: URL?
     @State private var inputError: String?
     @State private var pageError: String?
-    @State private var nativeLoginVisible = false
+    @State private var downloadNotice: String?
     @State private var confirmLeave = false
 
     init() {
-        let saved = UserDefaults.standard.string(forKey: "xdrive.ios.server") ?? ""
+        let saved = XDriveIOSWebOriginPreference.load()
         _serverText = State(initialValue: saved)
         _openedOrigin = State(initialValue: try? ServerAddress.parse(saved))
     }
@@ -22,7 +51,11 @@ struct XDriveWebAppHome: View {
         Group {
             if let origin = openedOrigin {
                 ZStack(alignment: .trailing) {
-                    XDriveOriginLockedWebView(origin: origin, onPageError: { pageError = $0 })
+                    XDriveOriginLockedWebView(
+                        origin: origin,
+                        onPageError: { pageError = $0 },
+                        onDownloadNotice: { downloadNotice = $0 }
+                    )
                         .ignoresSafeArea(.container, edges: .bottom)
                         .id(origin.absoluteString)
 
@@ -34,11 +67,6 @@ struct XDriveWebAppHome: View {
                         } label: {
                             Label("更换服务器", systemImage: "server.rack")
                         }
-                        Button {
-                            nativeLoginVisible = true
-                        } label: {
-                            Label("原生登录诊断（独立会话）", systemImage: "person.crop.circle")
-                        }
                     } label: {
                         Image(systemName: "ellipsis.circle.fill")
                             .font(.system(size: 21, weight: .semibold))
@@ -48,6 +76,28 @@ struct XDriveWebAppHome: View {
                     }
                     .accessibilityLabel("iOS 原生连接菜单")
                     .padding(.trailing, 5)
+
+                    if let downloadNotice {
+                        VStack {
+                            Spacer()
+                            HStack(spacing: 12) {
+                                Text(downloadNotice)
+                                    .font(.footnote)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Button {
+                                    self.downloadNotice = nil
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                }
+                                .accessibilityLabel("关闭下载提示")
+                            }
+                            .padding(12)
+                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                            .padding(.horizontal, 12)
+                            .padding(.bottom, 24)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
 
                     if let pageError {
                         VStack(spacing: 10) {
@@ -69,9 +119,6 @@ struct XDriveWebAppHome: View {
                 connectionForm
             }
         }
-        .sheet(isPresented: $nativeLoginVisible) {
-            LoginScreen()
-        }
         .confirmationDialog(
             "切换服务器会终止当前网页内未完成的上传或下载。",
             isPresented: $confirmLeave,
@@ -79,6 +126,7 @@ struct XDriveWebAppHome: View {
         ) {
             Button("确认切换服务器", role: .destructive) {
                 pageError = nil
+                downloadNotice = nil
                 openedOrigin = nil
             }
             Button("取消", role: .cancel) {}
@@ -116,9 +164,10 @@ struct XDriveWebAppHome: View {
                     do {
                         let origin = try ServerAddress.parse(serverText)
                         serverText = origin.absoluteString
-                        UserDefaults.standard.set(serverText, forKey: "xdrive.ios.server")
+                        XDriveIOSWebOriginPreference.save(origin)
                         inputError = nil
                         pageError = nil
+                        downloadNotice = nil
                         openedOrigin = origin
                     } catch {
                         inputError = AuthFailure.message(for: error)
@@ -133,7 +182,6 @@ struct XDriveWebAppHome: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Button("打开原生登录诊断") { nativeLoginVisible = true }
                     .buttonStyle(.bordered)
             }
             .frame(maxWidth: 430, alignment: .leading)
@@ -147,9 +195,11 @@ struct XDriveWebAppHome: View {
 private struct XDriveOriginLockedWebView: UIViewRepresentable {
     let origin: URL
     let onPageError: (String?) -> Void
+    let onDownloadNotice: (String?) -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(origin: origin, onPageError: onPageError)
+        Coordinator(origin: origin, onPageError: onPageError,
+                    onDownloadNotice: onDownloadNotice)
     }
 
     func makeUIView(context: Context) -> WKWebView {
@@ -157,9 +207,16 @@ private struct XDriveOriginLockedWebView: UIViewRepresentable {
         // Persistent Web PWA cookie/storage lifecycle; no native bearer token.
         configuration.websiteDataStore = .default()
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
+        // The native iOS Host Adapter only accepts authenticated messages from
+        // this trusted HTTPS main frame. No standalone SwiftUI backup page.
+        configuration.userContentController.add(
+            context.coordinator.photoHost,
+            name: XDriveIOSPhotoHostBridge.messageName
+        )
         let view = WKWebView(frame: .zero, configuration: configuration)
         view.navigationDelegate = context.coordinator
         view.uiDelegate = context.coordinator
+        context.coordinator.attach(webView: view)
         view.allowsBackForwardNavigationGestures = true
         view.isOpaque = false
         view.backgroundColor = UIColor.systemBackground
@@ -169,13 +226,49 @@ private struct XDriveOriginLockedWebView: UIViewRepresentable {
 
     func updateUIView(_ webView: WKWebView, context: Context) {}
 
+    static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
+        coordinator.stopDownloads()
+        uiView.configuration.userContentController.removeScriptMessageHandler(
+            forName: XDriveIOSPhotoHostBridge.messageName
+        )
+        uiView.stopLoading()
+        uiView.navigationDelegate = nil
+        uiView.uiDelegate = nil
+    }
+
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
         private let origin: URL
         private let onPageError: (String?) -> Void
+        private let downloads: XDriveWebDownloadCoordinator
+        let photoHost: XDriveIOSPhotoHostBridge
 
-        init(origin: URL, onPageError: @escaping (String?) -> Void) {
+        init(origin: URL, onPageError: @escaping (String?) -> Void,
+             onDownloadNotice: @escaping (String?) -> Void) {
             self.origin = origin
             self.onPageError = onPageError
+            self.photoHost = XDriveIOSPhotoHostBridge(origin: origin)
+            self.downloads = XDriveWebDownloadCoordinator(
+                origin: origin, onNotice: onDownloadNotice
+            )
+        }
+
+        func attach(webView: WKWebView) {
+            downloads.presentingWebView = webView
+            photoHost.webView = webView
+        }
+
+        func stopDownloads() {
+            downloads.stopPendingDownloads()
+            photoHost.cancelActive()
+            photoHost.webView = nil
+        }
+
+        func webView(_ webView: WKWebView,
+                     didStartProvisionalNavigation navigation: WKNavigation!) {
+            // A full navigation is not an authenticated continuation of the
+            // old PWA Owner's PhotoKit backup. Same-document hash routes do not
+            // trigger this hook; the shared Settings unmount cancels instead.
+            photoHost.cancelActive()
         }
 
         private func sameOrigin(_ target: URL) -> Bool {
@@ -204,6 +297,12 @@ private struct XDriveOriginLockedWebView: UIViewRepresentable {
                 decisionHandler(.cancel)
                 return
             }
+            // PWA `<a download>` and same-origin Blob URLs are downloads,
+            // never main-frame navigation or cross-origin credential hops.
+            if action.shouldPerformDownload {
+                decisionHandler(downloads.accepts(url) ? .download : .cancel)
+                return
+            }
             if action.targetFrame?.isMainFrame == false {
                 // Isolated HTTPS map Child and ordinary same-origin subframes
                 // are supported; never allow insecure HTTP subframe navigation.
@@ -226,6 +325,30 @@ private struct XDriveOriginLockedWebView: UIViewRepresentable {
                 return
             }
             decisionHandler(.allow)
+        }
+
+        func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse,
+                     decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+            guard response.isForMainFrame else {
+                // Preserve the existing HTTPS isolated-map subframe behavior.
+                decisionHandler(.allow)
+                return
+            }
+            guard let url = response.response.url, downloads.accepts(url) else {
+                decisionHandler(.cancel)
+                return
+            }
+            decisionHandler(response.canShowMIMEType ? .allow : .download)
+        }
+
+        func webView(_ webView: WKWebView, navigationAction: WKNavigationAction,
+                     didBecome download: WKDownload) {
+            downloads.attach(download)
+        }
+
+        func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse,
+                     didBecome download: WKDownload) {
+            downloads.attach(download)
         }
 
         func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,

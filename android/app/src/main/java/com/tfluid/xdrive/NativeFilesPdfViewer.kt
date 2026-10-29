@@ -23,6 +23,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -34,6 +37,9 @@ import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
@@ -111,8 +117,12 @@ private class PdfLease(
                 }
                 return PdfLease(file, descriptor, renderer)
             } catch (failure: Throwable) {
-                descriptor.close()
-                file.delete()
+                // A broken PDF or OEM PdfRenderer may also throw while its
+                // descriptor is closed. Preserve the original failure and
+                // always remove the Owner's private temporary file.
+                try { descriptor.close() }
+                catch (closeFailure: Throwable) { failure.addSuppressed(closeFailure) }
+                finally { file.delete() }
                 throw failure
             }
         }
@@ -122,15 +132,23 @@ private class PdfLease(
 /** DisposableEffect always closes this holder even if a new Compose session
  * has not yet been drawn after the IO result was handed off. */
 private class PdfHolder : Closeable {
-    var current: PdfLease? = null
+    @Volatile var current: PdfLease? = null
         private set
-    fun replace(next: PdfLease?) {
+    // Android lifecycle cancellation closes on IO; Compose dispose may
+    // simultaneously close on Main. Exactly one call owns the prior lease.
+    @Synchronized fun replace(next: PdfLease?) {
         val prior = current
         current = next
         if (prior !== next) prior?.close()
     }
     override fun close() { replace(null) }
 }
+
+/** A PDF preview is an explicitly disposable foreground read, not a
+ * durable download/backup. STARTED includes the visible foreground Activity;
+ * CREATED/STOPPED/DESTROYED must not begin or continue private media work. */
+internal fun nativePdfForegroundPermitted(state: Lifecycle.State): Boolean =
+    state.isAtLeast(Lifecycle.State.STARTED)
 
 /** A complete native Files PDF Viewer with bounded verified stream, lazy
  * single-page render, zoom/pan, previous/next, and original Files return. */
@@ -141,6 +159,7 @@ internal fun NativeFilesPdfViewer(
     receivedBytes: Long,
 ) {
     val context = LocalContext.current.applicationContext
+    val lifecycleOwner = LocalLifecycleOwner.current
     val holder = remember(node.id, node.revision) { PdfHolder() }
     var lease by remember(node.id, node.revision) { mutableStateOf<PdfLease?>(null) }
     var retry by remember(node.id, node.revision) { mutableIntStateOf(0) }
@@ -154,55 +173,95 @@ internal fun NativeFilesPdfViewer(
     DisposableEffect(holder) {
         onDispose { holder.close() }
     }
-    LaunchedEffect(controller, node.id, node.revision, retry) {
-        var temporary: File? = null
-        var created: PdfLease? = null
-        error = null
-        lease = null
-        bitmap = null
-        holder.replace(null)
-        try {
-            temporary = withContext(Dispatchers.IO) { PdfTemporary.newFile(context) }
-            val output = temporary
-            controller.downloadFilesPdf(node) { FileOutputStream(requireNotNull(output)) }
-            created = withContext(Dispatchers.IO) { PdfLease.open(requireNotNull(temporary)) }
-            if (controller.state.value.filesPdfViewer != node)
-                throw CancellationException()
-            holder.replace(created)
-            lease = created
-            created = null
-            temporary = null
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            error = if (node.size > 64L * 1024 * 1024)
-                "PDF 超过 64 MiB 的原生预览上限，请使用保存到设备。"
-            else "无法预览此 PDF，可能是网络、文件版本、损坏或密码保护导致。"
-        } finally {
-            withContext(NonCancellable + Dispatchers.IO) {
-                created?.close()
-                temporary?.delete()
+    // The native Viewer is a disposable GET/renderer. When Activity STOPs,
+    // repeatOnLifecycle cancels the Owner download and releases the private
+    // temp file. START starts one fresh *verified* read; no old Owner URI,
+    // token or PdfRenderer lease is kept alive in the background.
+    LaunchedEffect(controller, node.id, node.revision, retry, lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            if (!nativePdfForegroundPermitted(
+                    lifecycleOwner.lifecycle.currentState)) return@repeatOnLifecycle
+            var temporary: File? = null
+            var created: PdfLease? = null
+            error = null
+            lease = null
+            bitmap = null
+            holder.replace(null)
+            try {
+                // NonCancellable is limited to allocation/cleanup of local
+                // ownership resources. The authenticated network download
+                // below remains fully cancellable at Activity STOP.
+                temporary = withContext(NonCancellable + Dispatchers.IO) {
+                    PdfTemporary.newFile(context)
+                }
+                currentCoroutineContext().ensureActive()
+                val output = temporary
+                controller.downloadFilesPdf(node) {
+                    FileOutputStream(requireNotNull(output))
+                }
+                currentCoroutineContext().ensureActive()
+                created = withContext(NonCancellable + Dispatchers.IO) {
+                    PdfLease.open(requireNotNull(temporary))
+                }
+                currentCoroutineContext().ensureActive()
+                if (controller.state.value.filesPdfViewer != node)
+                    throw CancellationException()
+                holder.replace(created)
+                lease = created
+                created = null
+                temporary = null
+                // Keep this lifecycle child alive to own the verified
+                // renderer, and guarantee close on STOP/Owner change/retry.
+                awaitCancellation()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                error = if (node.size > 64L * 1024 * 1024)
+                    "PDF 超过 64 MiB 的原生预览上限，请使用保存到设备。"
+                else "无法预览此 PDF，可能是网络、文件版本、损坏或密码保护导致。"
+            } finally {
+                // Remove this exact bitmap/lease before a new foreground
+                // session can load a different version of the same file.
+                lease = null
+                bitmap = null
+                drawing = false
+                withContext(NonCancellable + Dispatchers.IO) {
+                    try { created?.close() }
+                    finally {
+                        try { temporary?.delete() }
+                        finally {
+                            // The PdfLease serializes close vs. page render.
+                            // A vendor close error must not suppress cleanup.
+                            runCatching { holder.close() }
+                        }
+                    }
+                }
             }
         }
     }
-    LaunchedEffect(lease, pageIndex) {
-        val doc = lease ?: return@LaunchedEffect
-        if (pageIndex !in 0 until doc.pageCount) return@LaunchedEffect
-        bitmap = null
-        drawing = true
-        error = null
-        zoom = 1f
-        pan = Offset.Zero
-        try {
-            val image = withContext(Dispatchers.IO) { doc.render(pageIndex) }
-            if (holder.current === doc &&
-                controller.state.value.filesPdfViewer == node) bitmap = image
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            if (holder.current === doc) error = "PDF 第 ${pageIndex + 1} 页无法渲染。"
-        } finally {
-            drawing = false
+    LaunchedEffect(lease, pageIndex, lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            if (!nativePdfForegroundPermitted(
+                    lifecycleOwner.lifecycle.currentState)) return@repeatOnLifecycle
+            val doc = lease ?: return@repeatOnLifecycle
+            if (pageIndex !in 0 until doc.pageCount) return@repeatOnLifecycle
+            bitmap = null
+            drawing = true
+            error = null
+            zoom = 1f
+            pan = Offset.Zero
+            try {
+                val image = withContext(Dispatchers.IO) { doc.render(pageIndex) }
+                if (holder.current === doc &&
+                    controller.state.value.filesPdfViewer == node) bitmap = image
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                if (holder.current === doc)
+                    error = "PDF 第 ${pageIndex + 1} 页无法渲染。"
+            } finally {
+                drawing = false
+            }
         }
     }
 
@@ -233,7 +292,8 @@ internal fun NativeFilesPdfViewer(
                         (pan.y + drag.y).coerceIn(-dy, dy))
                 }
             }
-            if (shown != null && lease != null) {
+            val decodedDoc = lease
+            if (shown != null && decodedDoc != null) {
                 Image(
                     bitmap = shown, contentDescription = "PDF 第 ${pageIndex + 1} 页",
                     contentScale = ContentScale.Fit,
@@ -249,6 +309,17 @@ internal fun NativeFilesPdfViewer(
                                 pan = Offset.Zero
                             })
                         }
+                        .nativePdfZoomAccessibility(
+                            pageIndex = pageIndex,
+                            pageCount = decodedDoc.pageCount,
+                            zoom = zoom,
+                            onZoomTo = { newZoom ->
+                                zoom = newZoom
+                                // A switch/TalkBack zoom jump must never strand
+                                // an invisible PDF page offscreen from old pan.
+                                pan = Offset.Zero
+                            },
+                        )
                         .testTag("files-pdf-page-ready"),
                 )
             } else if (error == null) {

@@ -31,6 +31,7 @@ const diag = read('ui/shared/src/mui/DiagnosticsPage.tsx')
 const muiExports = read('ui/shared/src/mui/index.tsx')
 const deskDiag = read('desktop/src/renderer/DesktopDiagnosticsPage.tsx')
 const nasDiag = read('ui/shared/src/mui/SynologyDiagnosticsPanel.tsx')
+const hostDiag = read('ui/shared/src/mui/DiagnosticsHostController.tsx')
 const nasAdapter = read('ui/shared/src/synology-backup-adapter.ts')
 const browserStorage = read('ui/shared/src/synology-browser-storage.ts')
 const ownerQuotaIPC = read('internal/localbackupipc/owner_quota.go')
@@ -134,11 +135,18 @@ if (!verifiedOwnerDownload.includes('xDriveSynologyFetchVerifiedDownload') ||
     // search route, Host must provide the true disabled reason instead.
     !synologyFiles.includes('searchEnabled') ||
     !synologyFiles.includes('unavailableActions={unavailableActions}') ||
-    !dsmHost.includes('filesUnavailableActions: {') ||
+    // The authenticated DSM Owner Files port is explicit; unavailable actions
+    // belong to that port, not to a parallel Host-specific Files registry.
+    !dsmHost.includes('ownerFilesPage: {') ||
+    !dsmHost.includes('client: local,') ||
+    !dsmHost.includes('unavailableActions: {') ||
     !sharedFileExplorer.includes('searchUnavailableReason') ||
     !synologyFiles.includes('forceVirtualization') ||
     !synologyFiles.includes('onOpenItem={item =>') ||
-    !appPageOutlet.includes('<XDriveSynologyOwnerFilesPage key={revision} client={local}') ||
+    !appPageOutlet.includes('if (services.ownerFilesPage) page = (') ||
+    !appPageOutlet.includes('<XDriveSynologyOwnerFilesPage key={revision}') ||
+    !appPageOutlet.includes('client={services.ownerFilesPage.client}') ||
+    !appPageOutlet.includes('unavailableActions={services.ownerFilesPage.unavailableActions}') ||
     !ownerQuotaIPC.includes('cloud-quota-read') ||
     !ownerQuotaIPC.includes('"/v1/cloud/quota"') ||
     !backupOnly.includes('"GET /v1/cloud/quota"') ||
@@ -302,8 +310,11 @@ if (!desktop.includes('function XDriveDeviceBackupServerPage') ||
     !dsmEntry.includes('appearance={appearance}') ||
     !hostSections.includes('xDriveSettingsSidebarDestination()') ||
     !deskDiag.includes('XDriveDiagnosticsPage as DesktopDiagnosticsPage') ||
-    !nasDiag.includes('<XDriveDiagnosticsPage') ||
-    !appPageOutlet.includes('<XDriveSynologyDiagnosticsPanel') ||
+    !nasDiag.includes('<XDriveDiagnosticsHostController') ||
+    !hostDiag.includes('<XDriveDiagnosticsPage') ||
+    !appPageOutlet.includes('<XDriveDiagnosticsHostController') ||
+    !dsmHost.includes('diagnosticsSource: {') ||
+    !dsmHost.includes('read: signal => local.diagnostics(signal)') ||
     dsmEntry.includes('coreKeys=') ||
     !nav.includes('xDriveDiagnosticsSidebarDestination') ||
     !diag.includes('scopeNotice') ||
@@ -314,7 +325,8 @@ if (!desktop.includes('function XDriveDeviceBackupServerPage') ||
     !taskSection.includes("document.visibilityState === 'visible'") ||
     !nasHome.includes('client.list(abort.signal)') ||
     !nas.includes('client.history(id, abort.signal)') ||
-    !nasDiag.includes('client.diagnostics(abort.signal)') ||
+    !nasDiag.includes('client.diagnostics(signal)') ||
+    !hostDiag.includes('source.read(abort.signal)') ||
     !nasAdapter.includes("'/v1/bootstrap'") ||
     nasDiag.includes('window.xdriveDesktop')) {
   throw new Error('DSM diagnostics must share the Desktop page with authenticated and scoped checks')

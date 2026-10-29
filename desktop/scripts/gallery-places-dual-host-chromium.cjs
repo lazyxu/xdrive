@@ -59,6 +59,7 @@ const sdkStub='('+function sdkFactory(){
   class BaiduMap {
     constructor(canvas){this.canvas=canvas;this.center=new Point(119.975,30.135)
       this.zoom=12;this.overlays=[];this.maxOverlays=0;this.listeners=new Map()
+      this.panOffset={x:0,y:0}
       // Public, synthetic SDK state only; never Owner tokens, GPS or URLs.
       ;(window.__xdriveSyntheticMapInstances ||= []).push(this)}
     centerAndZoom(point,zoom){this.center=point;this.zoom=zoom}
@@ -75,14 +76,25 @@ const sdkStub='('+function sdkFactory(){
     getZoom(){return this.zoom}
     getBounds(){return {getSouthWest:()=>new Point(100,20),
       getNorthEast:()=>new Point(125,40)}}
-    pointToPixel(){
-      // The synthetic representative is deliberately centered in the
-      // CURRENT CSS map canvas. A fixed old 180px point would make short
-      // landscape tests accidentally accept stale pre-resize projections.
+    pointToPixel(point){
+      // The screenshot repro uses two exact synthetic BD09 representatives.
+      // Keep their actual pixels separated by 99x90: old oversized
+      // collision pruning hid 28 but these 72px photo cards do NOT overlap.
       const width=Math.round(this.canvas?.clientWidth||0)
       const height=Math.round(this.canvas?.clientHeight||0)
-      return {x:width>=120?Math.round(width/2):180,
-        y:height>=120?Math.round(height/2):180}
+      if(width>=800&&height>=480&&point &&
+         ((Math.abs(point.lng-117.1875)<0.00001&&
+           Math.abs(point.lat-36.25)<0.00001)||
+          (Math.abs(point.lng-120.3125)<0.00001&&
+           Math.abs(point.lat-33.75)<0.00001))) {
+        const first=Math.abs(point.lng-117.1875)<0.00001
+        return {x:Math.round(width*.64)+(first?0:99)+this.panOffset.x,
+          y:Math.round(height*.31)+(first?0:90)+this.panOffset.y}
+      }
+      // All other synthetic representatives stay centered in the CURRENT
+      // CSS canvas; short landscape and gesture tests are unchanged.
+      return {x:(width>=120?Math.round(width/2):180)+this.panOffset.x,
+        y:(height>=120?Math.round(height/2):180)+this.panOffset.y}
     }
     destroy(){this.overlays=[];this.listeners.clear()}
   }
@@ -887,10 +899,18 @@ async function testMode(browser,mode,port){
     await mapCover.click()
     await page.locator('[data-xdrive-places-photo-drawer-items] button').first().waitFor()
     const handle=page.locator('[data-xdrive-places-photo-drawer-handle]')
+    // Gallery modal opens expanded by default, unlike retired small sheet.
+    record(mode+': signed Owner Gallery dialog opens expanded by default',
+      await handle.getAttribute('aria-expanded')==='true')
+    await handle.click()
+    await page.waitForFunction(()=>document.querySelector(
+      '[data-xdrive-places-photo-drawer-handle]')?.getAttribute('aria-expanded')==='false')
+    record(mode+': Gallery dialog handle collapses on first pointer click',
+      await handle.getAttribute('aria-expanded')==='false')
     await handle.click()
     await page.waitForFunction(()=>document.querySelector(
       '[data-xdrive-places-photo-drawer-handle]')?.getAttribute('aria-expanded')==='true')
-    record(mode+': semantic shared photo sheet handle opens by pointer click',
+    record(mode+': Gallery dialog handle expands again by pointer click',
       await handle.getAttribute('aria-expanded')==='true')
     // A rotation changes the SDK camera's 8x8 Cell authority. The old
     // React drawer MUST be detached first. After a NEW signed Owner /cells
@@ -936,19 +956,29 @@ async function testMode(browser,mode,port){
     const sheetGeometry=await page.evaluate(()=>{
       const map=document.querySelector('[data-xdrive-places-cluster-overview]')
       const sheet=document.querySelector('[data-xdrive-places-photo-drawer]')
-      if(!map||!sheet)return null
-      const area=map.getBoundingClientRect(),dialog=sheet.getBoundingClientRect()
-      return {mapTop:area.top,mapBottom:area.bottom,top:dialog.top,
-        bottom:dialog.bottom,height:dialog.height,screen:innerHeight}
+      const modal=document.querySelector('[data-xdrive-places-album-dialog] [role="dialog"]') ||
+        document.querySelector('[role="dialog"][aria-labelledby="xdrive-places-album-title"]')
+      if(!map||!sheet||!modal)return null
+      const b=modal.getBoundingClientRect()
+      const content=sheet.getBoundingClientRect()
+      return {top:b.top,bottom:b.bottom,left:b.left,right:b.right,
+        height:b.height,contentHeight:content.height,
+        screen:innerHeight,screenWidth:innerWidth,
+        withinModal:modal.contains(sheet)}
     })
+    // The new Gallery modal is PORTALED over the viewport, not anchored
+    // inside the map's own old bottom sheet. Verify safe-area bounds and
+    // actual nested signed Owner photos instead of retired map offsets.
     const drawerFits=sheetGeometry!==null&&sheetGeometry.height>=80&&
-      sheetGeometry.top>=sheetGeometry.mapTop+8&&
-      sheetGeometry.bottom<=sheetGeometry.mapBottom-8&&
-      sheetGeometry.bottom<=sheetGeometry.screen-8
-    if(!drawerFits) console.error('places-drawer-landscape-geometry',JSON.stringify({
+      sheetGeometry.withinModal&&sheetGeometry.contentHeight>50&&
+      sheetGeometry.top>=0&&sheetGeometry.left>=0&&
+      sheetGeometry.right<=sheetGeometry.screenWidth+1&&
+      sheetGeometry.bottom<=sheetGeometry.screen+1
+    if(!drawerFits) console.error('places-album-landscape-geometry',JSON.stringify({
       mode,viewport:'844x390',geometry:sheetGeometry,
     }))
-    record(mode+': expanded drawer fits inside 844x390 map and safe area',drawerFits)
+    record(mode+': expanded Gallery modal fits 844x390 screen and safe area',
+      drawerFits)
     // Reversing to portrait requires ANOTHER signed /cells + /cell-items.
     // Old landscape DOM and its revoked selection are not reused.
     const beforePortrait=await page.evaluate(()=>{
@@ -1111,7 +1141,10 @@ async function testMode(browser,mode,port){
       'grid-template-columns:minmax(92px,1fr)!important;'+
       'grid-auto-rows:minmax(140px,auto)!important;'+
       'overflow-y:scroll!important}'})
-    await page.locator('[data-xdrive-places-photo-drawer-expand]').click()
+    // The Gallery modal opens expanded by default. The old compact sheet
+    // needed one expand click; that click now COLLAPSES the new modal and
+    // conceals its scrolling grid. Assert the actual signed Parent state
+    // without toggling it, and retain the real scroll/Viewer-return checks.
     record(mode+': genuine React photo drawer opens expanded',
       await page.locator('[data-xdrive-places-photo-drawer-expand][aria-label="收起照片抽屉"]').count()===1 &&
       await page.locator('[data-xdrive-places-photo-drawer-handle][aria-expanded="true"]').count()===1)
@@ -1163,10 +1196,24 @@ async function testMode(browser,mode,port){
     record(mode+': Viewer Back restores only freshly matched Cell drawer and expansion',
       await page.locator('[data-xdrive-places-photo-drawer-expand][aria-label="收起照片抽屉"]').count()===1 &&
       await page.locator('[data-xdrive-places-photo-drawer-handle][aria-expanded="true"]').count()===1)
-    const restoredScroll=await page.locator('[data-xdrive-places-photo-drawer-items]')
-      .evaluate(element=>element.scrollTop)
-    record(mode+': real scroll position survives Viewer Back and fresh Range',
-      restoredScroll>0&&Math.abs(restoredScroll-viewer.scrollTop)<=2)
+    // A visible tile alone does not prove the portaled modal has finished
+    // its bounded post-layout scroll restoration. Wait for the actual scroll
+    // offset, not merely for the authorized /cell-items response.
+    const didRestore=await page.waitForFunction(expected=>{
+      const node=document.querySelector('[data-xdrive-places-photo-drawer-items]')
+      return node && node.scrollTop>0 && Math.abs(node.scrollTop-expected)<=2
+    },viewer.scrollTop,{timeout:5000}).then(()=>true).catch(()=>false)
+    const restoredGeometry=await page.locator('[data-xdrive-places-photo-drawer-items]')
+      .evaluate(element=>({scrollTop:element.scrollTop,scrollHeight:element.scrollHeight,
+        clientHeight:element.clientHeight}))
+    if (!didRestore)console.error('places-viewer-return-scroll-bounds',
+      JSON.stringify({mode,expected:viewer.scrollTop,...restoredGeometry}))
+    record(mode+': real scroll position survives Viewer Back and fresh Range'+
+      ' (restored='+restoredGeometry.scrollTop+',target='+viewer.scrollTop+
+      ',scrollHeight='+restoredGeometry.scrollHeight+
+      ',clientHeight='+restoredGeometry.clientHeight+')',
+      didRestore && restoredGeometry.scrollTop>0 &&
+      Math.abs(restoredGeometry.scrollTop-viewer.scrollTop)<=2)
     const returned=await page.evaluate(()=>window.__mapProbe.photoPreviewRanges)
     record(mode+': Viewer Back refreshes bounded signed Owner range, never stale media',
       returned.length>=3&&returned.every(v=>v.total===3&&v.items===3&&
@@ -1636,13 +1683,17 @@ async function testMobilePhotoDrawer(browser,mode,port){
       geometry.viewport===390&&geometry.left>=0&&
       geometry.right<=geometry.viewport+1&&geometry.mapWidth<=geometry.viewport+1&&
       geometry.mapHeight>=520)
-    await swipeMobileDrawerGrip(page,'up')
+    await page.getByRole('dialog',{name:'此地点的照片'}).waitFor({state:'visible'})
     await drawer.locator('[data-xdrive-places-photo-drawer-expand][aria-label="收起照片抽屉"]').waitFor({state:'visible'})
-    record(mode+': real upward touch expands trusted photo drawer',
-      await drawer.locator('[data-xdrive-places-photo-drawer-expand][aria-label="收起照片抽屉"]').count()===1)
+    record(mode+': Gallery photo modal opens expanded without a 12-thumbnail strip',
+      await drawer.locator('[data-xdrive-places-photo-drawer-item]').count()===3)
     await swipeMobileDrawerGrip(page,'down')
     await drawer.locator('[data-xdrive-places-photo-drawer-expand][aria-label="展开照片抽屉"]').waitFor({state:'visible'})
-    record(mode+': real downward touch collapses without dismissing Owner photos',
+    record(mode+': real downward touch collapses without dismissing Owner album',
+      await drawer.locator('[data-xdrive-places-photo-drawer-item]').count()===3)
+    await swipeMobileDrawerGrip(page,'up')
+    await drawer.locator('[data-xdrive-places-photo-drawer-expand][aria-label="收起照片抽屉"]').waitFor({state:'visible'})
+    record(mode+': real upward touch restores full trusted Gallery grid',
       await drawer.locator('[data-xdrive-places-photo-drawer-item]').count()===3)
     const before=await page.evaluate(()=>window.__mapProbe.galleryPageReads.filter(
       r=>r.kind==='cell').length)
@@ -1764,11 +1815,13 @@ async function testMobilePhotoDrawer(browser,mode,port){
       clickState.touchTrace
         .some(event=>event.type==='pointerup'&&event.onTile&&
           event.pointerType==='touch'&&!event.defaultPrevented) &&
-      clickState.touchTrace
-        .some(event=>event.type==='touchend'&&event.onTile&&
-          !event.defaultPrevented) &&
+      // A short pointerup is sufficient to open the signed Viewer. React
+      // unmounts the tile synchronously; a later native touchend/compat click
+      // may be retargeted away from the now-detached tile. Require genuine
+      // unprevented pointerup + no cancelled gesture + exactly one Owner read.
       !clickState.touchTrace.some(event=>
-        event.type==='pointercancel'&&event.onTile)
+        (event.type==='pointercancel'||event.type==='touchcancel')&&
+        event.onTile)
     record(mode+': real mobile touch uses genuine uncancelled tile pointer '+
       JSON.stringify(clickState.touchTrace),nativeTouch)
     // Chrome/Safari can suppress the follow-on compatibility click after a
@@ -2273,6 +2326,308 @@ async function testOwnerCellsFailureRetry(browser,mode,port){
     record(mode+': recovered favorites cover opens only the authorized 3-photo drawer',
       drawerCount===3&&errors.length===0)
   } finally {await context.close()}
+}
+
+// P0 regression: real mounted React photo markers used to disappear on
+// movestart because all previously signed Cells were synchronously revoked.
+// Keep the PREVIOUS cover visible and SDK-reprojected, but visually inert;
+// only fresh signed Owner /cells may restore clickability after moveend.
+async function testPhotoCoverDuringMapPan(browser,mode,port){
+  const context=await browser.newContext({
+    viewport:{width:960,height:760},locale:'zh-CN',
+    ignoreHTTPSErrors:true,serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(30000)
+  const errors=[]
+  page.on('pageerror',error=>errors.push(error.message))
+  await page.route('https://api.map.baidu.com/api?**',route=>{
+    assert.equal(new URL(route.request().url()).searchParams.get('ak'),
+      'TEST_ONLY_BROWSER_AK')
+    return route.fulfill({status:200,contentType:'text/javascript',body:sdkStub})
+  })
+  try{
+    await page.goto('https://'+galleryHost+':'+port+'/?mode='+mode,
+      {waitUntil:'domcontentloaded'})
+    await page.getByText('当前地图可查看 9 张照片',{exact:true}).waitFor()
+    await page.waitForFunction(()=>window.__mapProbe?.queries.some(q=>
+      q.count===9 && q.bounds.west===100 && q.bounds.south===20 &&
+      q.bounds.east===125 && q.bounds.north===40))
+    const cover=page.locator('[data-xdrive-places-trusted-photo-cover]').first()
+    await cover.waitFor({state:'visible'})
+    const before=await cover.boundingBox()
+    assert(before,'current Owner cover must be displayed before SDK gesture')
+    const sdkFrame=mode==='inline'
+      ? page : page.frames().find(f=>f.url().includes(childHost))
+    assert(sdkFrame,'a real JSAPI Host map frame is required')
+    const old=await page.evaluate(()=>({
+      reads:window.__mapProbe.queries.length,
+      previews:window.__mapProbe.photoPreviewRanges.length,
+    }))
+    await sdkFrame.evaluate(()=>{
+      const sdk=window.__xdriveSyntheticMapInstances?.at(-1)
+      if(!sdk)throw Error('no real synthetic SDK mounted')
+      sdk.panOffset={x:88,y:33}
+      sdk.listeners.get('movestart')?.()
+      sdk.listeners.get('moving')?.()
+    })
+    const moving=page.locator('[data-xdrive-places-gesture-photo-cover]').first()
+    await moving.waitFor({state:'visible'})
+    await page.waitForFunction(origin=>{
+      const cover=document.querySelector('[data-xdrive-places-gesture-photo-cover]')
+      if(!cover)return false
+      const b=cover.getBoundingClientRect()
+      return Number.isFinite(b.left)&&Number.isFinite(b.top) &&
+        Math.abs(b.left-origin.x-88)<3 && Math.abs(b.top-origin.y-33)<3
+    },before)
+    const after=await moving.boundingBox()
+    const state=await page.evaluate(()=>({
+      moving:document.querySelectorAll('[data-xdrive-places-gesture-photo-cover]').length,
+      clickable:document.querySelectorAll('[data-xdrive-places-trusted-photo-cover]').length,
+      disabled:document.querySelector('[data-xdrive-places-gesture-photo-cover]')?.disabled,
+      previews:window.__mapProbe.photoPreviewRanges.length,
+      queries:window.__mapProbe.queries.length,
+    }))
+    record(mode+': SDK pan keeps photo cover visible at newly projected BD09 pixel',
+      after&&state.moving>0&&state.clickable===0&&state.disabled===true&&
+      Math.abs(after.x-before.x-88)<3&&Math.abs(after.y-before.y-33)<3&&
+      state.previews===old.previews&&state.queries===old.reads&&errors.length===0)
+    // The old visual button is disabled. Even a programmatic event must not
+    // invoke a stale Owner /cell-items; the current API authority is gone.
+    await moving.evaluate(el=>el.click())
+    const denied=await page.evaluate(()=>({
+      reads:window.__mapProbe.queries.length,
+      previews:window.__mapProbe.photoPreviewRanges.length,
+    }))
+    record(mode+': old camera photo remains inert and cannot reopen stale Cell',
+      denied.previews===old.previews&&denied.reads===old.reads)
+    await sdkFrame.evaluate(()=>{
+      const sdk=window.__xdriveSyntheticMapInstances?.at(-1)
+      sdk.listeners.get('moveend')?.()
+    })
+    await cover.waitFor({state:'visible'})
+    await moving.waitFor({state:'hidden'})
+    const fresh=await page.evaluate(()=>({
+      count:window.__mapProbe.queries.at(-1)?.count,
+      reads:window.__mapProbe.queries.length,
+    }))
+    record(mode+': fresh Owner /cells replaces inert layer after pan debounce',
+      fresh.count===9&&fresh.reads>old.reads&&errors.length===0)
+    await cover.click()
+    await page.locator('[data-xdrive-places-photo-drawer-item]')
+      .first().waitFor({state:'visible'})
+    const preview=await page.evaluate(()=>window.__mapProbe.photoPreviewRanges.at(-1))
+    record(mode+': photo click after pan opens newly verified Owner album',
+      preview?.total===9&&preview?.items===9&&errors.length===0)
+  }finally{await context.close()}
+}
+
+// P0 regression: clicking the blue count on a 28-photo marker opens an
+// actual focus-trapped Gallery-style grid modal, not the old 12-photo strip.
+async function testPhotoCellAlbumDialog28(browser,mode,port){
+  const context=await browser.newContext({
+    viewport:{width:390,height:844},locale:'zh-CN',
+    ignoreHTTPSErrors:true,serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(30000)
+  const errors=[]
+  page.on('pageerror',error=>errors.push(error.message))
+  await page.route('https://api.map.baidu.com/api?**',route=>
+    route.fulfill({status:200,contentType:'text/javascript',body:sdkStub}))
+  try{
+    await page.goto('https://'+galleryHost+':'+port+
+      '/?mode='+mode+'&album_dialog_28=1',{waitUntil:'domcontentloaded'})
+    await page.getByText('当前地图可查看 28 张照片',{exact:true}).waitFor()
+    await page.locator('[data-xdrive-places-trusted-photo-cover]').first().click()
+    const dialog=page.getByRole('dialog',{name:'此地点的照片'})
+    await dialog.waitFor({state:'visible'})
+    await page.waitForFunction(()=>document.querySelectorAll(
+      '[data-xdrive-places-photo-drawer-item]').length===28)
+    const state=await page.evaluate(()=>{
+      const region=document.querySelector('[data-xdrive-places-photo-drawer]')
+      const list=document.querySelector('[data-xdrive-places-photo-drawer-items]')
+      const dialog=document.querySelector('[role="dialog"]')
+      const rect=dialog?.getBoundingClientRect()
+      return {role:dialog?.getAttribute('role'),tiles:list?.children.length,
+        grid:list?getComputedStyle(list).display:'',
+        width:rect?.width,left:rect?.left,right:rect?.right,
+        inside:rect?.left>=0&&rect?.right<=innerWidth+1,
+        total:region?.textContent||'',
+        preview:window.__mapProbe.photoPreviewRanges.at(-1),
+        strip:document.querySelectorAll(
+          '[data-xdrive-places-photo-collection-strip]').length,
+      }
+    })
+    record(mode+': 28 photos open full Gallery grid modal with signed Range',
+      state.role==='dialog'&&state.tiles===28&&state.grid==='grid'&&
+      state.inside&&state.total.includes('28 张照片和视频')&&
+      state.preview?.total===28&&state.preview?.items===28&&
+      state.preview?.limit===48&&state.strip===0&&errors.length===0)
+    await page.keyboard.press('Escape')
+    await dialog.waitFor({state:'hidden'})
+    record(mode+': Escape closes map photo album without unmounting map',
+      await page.locator('[data-xdrive-places-cluster-overview]').count()===1)
+  }finally{await context.close()}
+}
+
+// Screenshot regression: 142 and 28 nearby Owner Cells must BOTH show
+// real photo covers (not an unexplained white numeric-only SDK label).
+// The two 72px cards are separated by 99x90 pixels and do not overlap.
+async function testAdjacent142And28PhotoCovers(browser,mode,port){
+  const context=await browser.newContext({
+    viewport:{width:960,height:760},locale:'zh-CN',
+    ignoreHTTPSErrors:true,serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(30000)
+  const errors=[]
+  page.on('pageerror',e=>errors.push(e.message))
+  await page.route('https://api.map.baidu.com/api?**',route=>{
+    assert.equal(new URL(route.request().url()).searchParams.get('ak'),
+      'TEST_ONLY_BROWSER_AK')
+    return route.fulfill({status:200,contentType:'text/javascript',body:sdkStub})
+  })
+  try{
+    await page.goto('https://'+galleryHost+':'+port+
+      '/?mode='+mode+'&adjacent_photo_142_28=1',
+      {waitUntil:'domcontentloaded'})
+    await page.getByText('当前地图可查看 170 张照片',{exact:true})
+      .waitFor({state:'visible'})
+    const big=page.getByRole('button',{name:'查看该区域 142 张照片'})
+    const small=page.getByRole('button',{name:'查看该区域 28 张照片'})
+    await big.waitFor({state:'visible'})
+    await small.waitFor({state:'visible'})
+    const geometry=await page.evaluate(()=>{
+      const a=document.querySelector('[aria-label="查看该区域 142 张照片"]')
+      const b=document.querySelector('[aria-label="查看该区域 28 张照片"]')
+      const x=a?.getBoundingClientRect(), y=b?.getBoundingClientRect()
+      return {total:window.__mapProbe.queries.at(-1)?.count,
+        photos:document.querySelectorAll(
+          '[data-xdrive-places-trusted-photo-cover]').length,
+        spacingX:x&&y?Math.round(y.x-x.x):0,
+        spacingY:x&&y?Math.round(y.y-x.y):0,
+        count:document.querySelector('[data-xdrive-places-map-photo-summary]')?.textContent,
+        strip:document.querySelectorAll(
+          '[data-xdrive-places-photo-collection-strip]').length}
+    })
+    const sdkFrame=mode==='inline'
+      ? page : page.frames().find(frame=>frame.url().includes(childHost))
+    assert(sdkFrame,'both map SDK Hosts must be mounted')
+    await sdkFrame.waitForFunction(()=>{
+      const map=window.__xdriveSyntheticMapInstances?.at(-1)
+      return Boolean(map&&map.overlays.length===0)
+    })
+    record(mode+': nearby 142+28 current Owner photos both render, no native mixed labels',
+      geometry.total===170&&geometry.photos===2&&
+      geometry.spacingX>=98&&geometry.spacingX<=100&&
+      geometry.spacingY>=89&&geometry.spacingY<=91&&
+      geometry.count?.includes('170 张照片')&&geometry.strip===0&&
+      errors.length===0)
+    await small.click()
+    const dialog=page.getByRole('dialog',{name:'此地点的照片'})
+    await dialog.waitFor({state:'visible'})
+    await page.waitForFunction(()=>document.querySelectorAll(
+      '[data-xdrive-places-photo-drawer-item]').length===28)
+    const authorized=await page.evaluate(()=>
+      window.__mapProbe.photoPreviewRanges.at(-1))
+    record(mode+': screenshot 28-cell opens exact signed 28-item Gallery dialog',
+      authorized?.total===28&&authorized?.items===28&&
+      authorized?.limit===48&&errors.length===0)
+    await page.keyboard.press('Escape')
+    await dialog.waitFor({state:'hidden'})
+    // Continue into the OTHER signed 142-photo Cell. Its initial 48 cards
+    // must retain Owner authority while bounded user-driven next pages append.
+    await big.click()
+    await dialog.waitFor({state:'visible'})
+    await page.waitForFunction(()=>document.querySelectorAll(
+      '[data-xdrive-places-photo-drawer-item]').length===48)
+    const loadMore=page.locator('[data-xdrive-places-photo-drawer-load-more]')
+    await loadMore.click()
+    await page.waitForFunction(()=>document.querySelectorAll(
+      '[data-xdrive-places-photo-drawer-item]').length===96)
+    await loadMore.click()
+    await page.waitForFunction(()=>document.querySelectorAll(
+      '[data-xdrive-places-photo-drawer-item]').length===142)
+    const paged=await page.evaluate(()=>{
+      const verified=window.__mapProbe.photoPreviewRanges.filter(p=>p.total===142)
+      const tiles=Array.from(document.querySelectorAll(
+        '[data-xdrive-places-photo-drawer-item]'))
+      return {verified,tiles:tiles.length,
+        unique:new Set(tiles.map(t=>t.getAttribute(
+          'data-xdrive-places-photo-drawer-item'))).size,
+        more:document.querySelectorAll(
+          '[data-xdrive-places-photo-drawer-load-more]').length,
+        error:document.querySelectorAll(
+          '[data-xdrive-places-photo-drawer-page-error]').length,
+        fixedStrip:document.querySelectorAll(
+          '[data-xdrive-places-photo-collection-strip]').length}
+    })
+    record(mode+': 142-photo Owner Cell advances exact 48/48/46 bounded pages',
+      paged.verified.length===3 &&
+      paged.verified.every((p,i)=>p.limit===48&&p.offset===i*48&&
+        p.items===[48,48,46][i]) && errors.length===0)
+    record(mode+': full 142-photo dialog never mixes Cell tiles or old bottom strip',
+      paged.tiles===142&&paged.unique===142&&paged.more===0&&
+      paged.error===0&&paged.fixedStrip===0&&errors.length===0)
+    // The 142nd thumbnail must actually open the Owner-authenticated Viewer.
+    // Re-entering this Cell cannot rely on the first 48-item page.
+    // All 142 authorized items are present. Observe the ACTUAL modal
+    // layout before touching it: a collapsed horizontal strip, zero-height
+    // parent or clipped non-scrollable grid must not masquerade as a valid
+    // iOS-style full photo album. This also exposes the precise cause of the
+    // prior opaque 10s waitForFunction timeout in sanitized Actions logs.
+    const scrollGeometry=await page.locator(
+      '[data-xdrive-places-photo-drawer-items]').evaluate(el=>{
+        const region=el.closest('[data-xdrive-places-photo-drawer]')
+        const style=getComputedStyle(el)
+        const parent=el.parentElement
+        return {expanded:document.querySelector(
+          '[data-xdrive-places-photo-drawer-handle]')?.getAttribute('aria-expanded'),
+          display:style.display,overflowY:style.overflowY,
+          gridColumns:style.gridTemplateColumns.split(' ').length,
+          tileCount:el.querySelectorAll('[data-xdrive-places-photo-drawer-item]').length,
+          scrollHeight:el.scrollHeight,clientHeight:el.clientHeight,
+          scrollWidth:el.scrollWidth,clientWidth:el.clientWidth,
+          regionHeight:Math.round(region?.getBoundingClientRect().height||0),
+          parentHeight:Math.round(parent?.getBoundingClientRect().height||0)}
+      })
+    const vertical=scrollGeometry.expanded==='true' &&
+      scrollGeometry.display==='grid' &&
+      scrollGeometry.overflowY==='auto' &&
+      scrollGeometry.scrollHeight>scrollGeometry.clientHeight+40
+    record(mode+': 142-photo Gallery modal has real expanded vertical overflow '+
+      JSON.stringify(scrollGeometry),vertical)
+    const scrollBefore=await page.locator(
+      '[data-xdrive-places-photo-drawer-items]').evaluate(el=>{
+        el.scrollTop=el.scrollHeight
+        return el.scrollTop
+      })
+    await page.locator('[data-xdrive-places-photo-drawer-item]').last().click()
+    await page.locator('#fixture-viewer').waitFor({state:'visible'})
+    const opened=await page.evaluate(()=>window.__mapProbe.photoOpens.at(-1))
+    record(mode+': item 142 opens Viewer only after Owner anchor and page 96 recheck'+
+      ' (scrollable='+String(scrollBefore>0)+
+      ',valid='+String(opened?.valid===true)+
+      ',anchor141='+String(opened?.anchorIndex===141)+
+      ',loaded142='+String(opened?.loadedCount===142)+
+      ',browserErrors='+errors.length+')',
+      scrollBefore>0&&opened?.valid===true&&opened?.anchorIndex===141&&
+      opened?.loadedCount===142&&errors.length===0)
+    await page.locator('#fixture-viewer-back').click()
+    await dialog.waitFor({state:'visible'})
+    await page.waitForFunction(()=>document.querySelectorAll(
+      '[data-xdrive-places-photo-drawer-item]').length===142)
+    const didRestore=await page.waitForFunction(expected=>{
+      const node=document.querySelector('[data-xdrive-places-photo-drawer-items]')
+      return node && Math.abs(node.scrollTop-expected)<6
+    },scrollBefore,{timeout:5000}).then(()=>true).catch(()=>false)
+    const restored=await page.locator(
+      '[data-xdrive-places-photo-drawer-items]').evaluate(el=>el.scrollTop)
+    if(!didRestore)console.error('places-142-viewer-return-scroll',
+      JSON.stringify({mode,expected:scrollBefore,actual:restored}))
+    record(mode+': Viewer Back reauthorizes 142 items before restoring scroll anchor',
+      didRestore&&Math.abs(restored-scrollBefore)<6&&errors.length===0)
+    await page.keyboard.press('Escape')
+    await dialog.waitFor({state:'hidden'})
+  }finally{await context.close()}
 }
 
 // Real Chromium multi-Cell presentation proof. Two signed Owner Cells share
@@ -2843,6 +3198,12 @@ async function main(){
     if(!ginURL){
       await testPhotoMarkerPresentation(browser,'inline',port)
       await testPhotoMarkerPresentation(browser,'isolated',port)
+      await testPhotoCoverDuringMapPan(browser,'inline',port)
+      await testPhotoCoverDuringMapPan(browser,'isolated',port)
+      await testPhotoCellAlbumDialog28(browser,'inline',port)
+      await testPhotoCellAlbumDialog28(browser,'isolated',port)
+      await testAdjacent142And28PhotoCovers(browser,'inline',port)
+      await testAdjacent142And28PhotoCovers(browser,'isolated',port)
       await testMapOverlayPinOcclusion(browser,'inline',port)
       await testMapOverlayPinOcclusion(browser,'isolated',port)
       await testDelayedBD09Map(browser,'inline',port)

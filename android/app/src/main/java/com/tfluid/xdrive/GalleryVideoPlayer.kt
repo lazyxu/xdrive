@@ -20,6 +20,9 @@ import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -115,16 +118,34 @@ internal fun GalleryVideoPlayer(
     }
     var failed by remember(video.node.id, video.node.revision) { mutableStateOf(false) }
     val player = remember(context, source) {
-        if (source == null) null else ExoPlayer.Builder(context).build().apply {
-            val dataSource = OkHttpDataSource.Factory(source.client)
-            val media = ProgressiveMediaSource.Factory(dataSource)
-                .createMediaSource(MediaItem.fromUri(source.url))
-            setMediaSource(media)
-            prepare()
-            playWhenReady = true
-        }
+        if (source == null) null else createPreparedMediaResource(
+            build = { ExoPlayer.Builder(context).build() },
+            prepare = { owned ->
+                val dataSource = OkHttpDataSource.Factory(source.client)
+                val media = ProgressiveMediaSource.Factory(dataSource)
+                    .createMediaSource(MediaItem.fromUri(source.url))
+                owned.setMediaSource(media)
+                owned.prepare()
+                owned.playWhenReady = true
+            },
+            release = { it.release() },
+        )
     }
-    DisposableEffect(player, source) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(player, source, lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) player?.pause()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        // No autoplay while Android is already stopped, even if an async
+        // Owner lease resolves after Activity lifecycle moves offscreen.
+        if (!lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED))
+            player?.pause()
+        // If Android rejected media setup, the helper already released the
+        // partially constructed player. Close this verified Owner stream now,
+        // rather than keeping an unusable transport lease until Viewer exit.
+        if (source != null && player == null)
+            controller.closeGalleryVideoPlayback(source)
         val listener = object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
                 failed = true // Do not display raw URL, host, credentials or body.
@@ -143,9 +164,10 @@ internal fun GalleryVideoPlayer(
         }
         player?.addListener(listener)
         onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
             player?.removeListener(listener)
             player?.release()
-            if (source != null) controller.closeGalleryVideoPlayback(source)
+            if (source != null && player != null) controller.closeGalleryVideoPlayback(source)
         }
     }
     val canGoOlder = controller.galleryViewerCanShift(-1)

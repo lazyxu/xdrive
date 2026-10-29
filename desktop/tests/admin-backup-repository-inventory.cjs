@@ -1,0 +1,26 @@
+const test=require('node:test')
+const assert=require('node:assert/strict')
+const fs=require('node:fs')
+const path=require('node:path')
+const root=path.resolve(__dirname,'../..')
+const read=p=>fs.readFileSync(path.join(root,p),'utf8')
+
+test('Host counts three known sources using its same bounded snapshot identity index',()=>{
+ const host=read('scripts/server-control.sh')
+ assert.match(host,/repository_v1_count repository_default_count repository_configured_count/)
+ assert.match(host,/awk -F '\\t'/)
+ assert.match(host,/repository_v1_count \+ repository_default_count \+ repository_configured_count != inventory_total/)
+ assert.match(host,/"repositories":\[\{"id":"v1"/)
+ assert.match(read('internal/api/admin_backup_management.go'),/total != \*inventory.TotalSnapshots/)
+ assert.match(read('scripts/test-server-backup-admin-host.sh'),/sum\(x\["snapshot_count"\]/)
+})
+
+test('shared Web/Desktop administrator page only shows read-only counts, not Host directory edits',()=>{
+ const panel=read('ui/shared/src/mui/ServerBackupManagementPanel.tsx')
+ const summary=read('ui/shared/src/mui/BackupRepositoryInventory.tsx')
+ assert.match(panel,/XDriveBackupRepositoryInventory inventory=\{page.inventory\}/)
+ assert.match(summary,/data-xdrive-admin-backup-repository-inventory/)
+ assert.match(summary,/备份仓库只读发现统计/)
+ assert.match(summary,/不代表每一代可恢复/)
+ assert.doesNotMatch(summary,/action: 'delete'|action: 'restore'|input type="file"|rm -rf/)
+})

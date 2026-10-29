@@ -41,11 +41,55 @@ type backupAdminPolicy struct {
 	Revision       string `json:"revision"`
 }
 
+type backupAdminRepositoryCount struct {
+	ID            string `json:"id"`
+	SnapshotCount int    `json:"snapshot_count"`
+}
+
+type backupAdminScheduleStatus struct {
+	Protocol   string `json:"protocol"`
+	Source     string `json:"source"`
+	State      string `json:"state"`
+	Expression string `json:"expression"`
+}
+
+func validBackupAdminScheduleStatus(status *backupAdminScheduleStatus) bool {
+	if status == nil {
+		return true // Older Host Control versions did not publish this field.
+	}
+	if status.Protocol != "xdrive-host-backup-schedule-v1" ||
+		status.Source != "installer_crontab" || len(status.Expression) > 80 {
+		return false
+	}
+	switch status.State {
+	case "registered", "not_detected", "mismatch", "not_configured", "unknown":
+	default:
+		return false
+	}
+	if status.State == "registered" && status.Expression == "" {
+		return false
+	}
+	if status.State == "not_configured" && status.Expression != "" {
+		return false
+	}
+	if status.Expression == "" {
+		return true
+	}
+	// Display only normalized, bounded cron schedule syntax, never command
+	// text or an arbitrary Host file path.
+	const cron = `^([0-9*/,-]+[[:space:]]+){4}[0-9*/,-]+$|^@(hourly|daily|weekly|monthly|yearly)$`
+	return regexp.MustCompile(cron).MatchString(status.Expression)
+}
+
 type backupAdminInventory struct {
-	Protocol    string                `json:"protocol"`
-	GeneratedAt string                `json:"generated_at"`
-	Policy      backupAdminPolicy     `json:"policy"`
-	Snapshots   []backupAdminSnapshot `json:"snapshots"`
+	Protocol       string                        `json:"protocol"`
+	GeneratedAt    string                        `json:"generated_at"`
+	Policy         backupAdminPolicy             `json:"policy"`
+	Snapshots      []backupAdminSnapshot         `json:"snapshots"`
+	TotalSnapshots *int                          `json:"total_snapshots,omitempty"`
+	Truncated      *bool                         `json:"truncated,omitempty"`
+	Repositories   *[]backupAdminRepositoryCount `json:"repositories,omitempty"`
+	Schedule       *backupAdminScheduleStatus    `json:"schedule,omitempty"`
 }
 
 type backupAdminStatus struct {
@@ -233,6 +277,43 @@ func (s *Server) backupAdminState() backupAdminPage {
 		len(inventory.Policy.Revision) != 64 ||
 		strings.Trim(inventory.Policy.Revision, "0123456789abcdef") != "" {
 		page.Message = "备份清单已过期或结构不符合协议。"
+		return page
+	}
+	// Older Host controllers may omit both fields. New Host evidence must be
+	// bounded and internally consistent; neither count authorizes deletion.
+	if inventory.TotalSnapshots != nil || inventory.Truncated != nil {
+		if inventory.TotalSnapshots == nil || inventory.Truncated == nil ||
+			*inventory.TotalSnapshots < len(inventory.Snapshots) ||
+			*inventory.TotalSnapshots > 1_000_000 ||
+			*inventory.Truncated != (*inventory.TotalSnapshots > len(inventory.Snapshots)) {
+			page.Message = "备份清单总数或截断状态不一致。"
+			return page
+		}
+	}
+	// Older Host Managers omit this optional read-only breakdown. A new
+	// report must agree exactly with the independently verified total count.
+	if inventory.Repositories != nil {
+		expected := []string{"v1", "v2-default", "v2-configured"}
+		if inventory.TotalSnapshots == nil || len(*inventory.Repositories) != len(expected) {
+			page.Message = "备份仓库统计结构不可信。"
+			return page
+		}
+		total := 0
+		for i, item := range *inventory.Repositories {
+			if item.ID != expected[i] || item.SnapshotCount < 0 ||
+				item.SnapshotCount > 1_000_000 {
+				page.Message = "备份仓库统计包含无效来源或数量。"
+				return page
+			}
+			total += item.SnapshotCount
+		}
+		if total != *inventory.TotalSnapshots {
+			page.Message = "备份仓库统计与总数不一致。"
+			return page
+		}
+	}
+	if !validBackupAdminScheduleStatus(inventory.Schedule) {
+		page.Message = "备份定时任务的宿主机状态证据不符合协议。"
 		return page
 	}
 	seen := make(map[string]bool, len(inventory.Snapshots))

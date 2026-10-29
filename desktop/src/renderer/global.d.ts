@@ -517,8 +517,8 @@ declare global {
       agent: {
         getState: () => Promise<AgentConnectionState>
         getTransfers: () => Promise<AgentTransfers>
-        getStorageTree: () => Promise<DesktopResult<AgentStorageTreeNode>>
-        getCache: () => Promise<DesktopResult<AgentCacheStats>>
+        getStorageTree: (requestID?: string) => Promise<DesktopResult<AgentStorageTreeNode>>
+        getCache: (requestID?: string) => Promise<DesktopResult<AgentCacheStats>>
         getLocalDiskSpace: (requestID?: string) => Promise<DesktopResult<AgentLocalDiskSpace>>
         releaseCache: () => Promise<DesktopResult<AgentCacheReleaseResult>>
         getMediaItem: (nodeID: number, requestID: string) => Promise<DesktopResult<AgentMediaItem>>
@@ -916,6 +916,8 @@ declare global {
         cloudAdminStorage: <T>(query: import('../../../ui/shared/src').XDriveAdminStorageRequest) =>
           Promise<DesktopResult<T>>
         cloudAdminBackups: () => Promise<DesktopResult<import('../../../ui/shared/src/server-backup-admin').XDriveServerBackupPage>>
+        cloudAdminBackupSnapshotPage: (query: import('../../../ui/shared/src/server-backup-admin').XDriveServerBackupSnapshotIndexQuery) =>
+          Promise<DesktopResult<import('../../../ui/shared/src/server-backup-admin').XDriveServerBackupSnapshotIndexPage>>
         cloudAdminBackupAction: (input: import('../../../ui/shared/src/server-backup-admin').XDriveServerBackupRequest) =>
           Promise<DesktopResult<import('../../../ui/shared/src/server-backup-admin').XDriveServerBackupOperation>>
         cloudAdminAuditRange: (query: import('../../../ui/shared/src').XDriveAdminAuditRangeQuery, requestID?: string) =>

@@ -129,8 +129,8 @@ for (const contract of [
   'setDownload({ name: item.name, loaded',
   'window.setTimeout(() => {',
   'downloadAbort.current?.abort()',
-  "itemsRef.current.some(node =>",
-  "node.revision === item.revision && node.name === item.name",
+  'const current = xDriveFindVerifiedOwnerSelection(item, itemsRef.current)',
+  "if (!current || current.type !== 'file')",
 ]) assert.ok(page.includes(contract), 'missing secure DSM download boundary: ' + contract)
 
 // Renderer contract: a user-initiated Owner download is not a disposable

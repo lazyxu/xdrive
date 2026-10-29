@@ -93,11 +93,28 @@ private final class LocalPhotoInventoryModel: ObservableObject {
 /// Native-only diagnostic for local Photos access. This does NOT mean local
 /// photos are paired with Server PhotoAsset or backed up to CAS.
 struct LocalPhotoInventoryScreen: View {
+    /// Passed only after verifying the native Owner; a plain photo-check
+    /// dialog has no upload capability and never accesses authentication.
+    let onUploadStillPhoto: ((String, Bool) async -> String)?
+
+    init(onUploadStillPhoto: ((String, Bool) async -> String)? = nil) {
+        self.onUploadStillPhoto = onUploadStillPhoto
+    }
+
     @StateObject private var model = LocalPhotoInventoryModel()
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @State private var inspectedAssetID: String?
     @State private var inspectedResourceMessage: String?
+    @State private var albumPage: XDriveLocalPhotoAlbumPage?
+    @State private var albumLoading = false
+    @State private var albumError: String?
+    @State private var albumTask: Task<Void, Never>?
+    @State private var showingBoundedScan = false
+    @State private var allowICloudOriginal = false
+    @State private var uploadingPhotoID: String?
+    @State private var photoUploadTask: Task<Void, Never>?
+    @State private var photoUploadMessage: String?
 
     var body: some View {
         NavigationStack {
@@ -109,6 +126,23 @@ struct LocalPhotoInventoryScreen: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+
+                    if onUploadStillPhoto != nil && model.hasAccess {
+                        Toggle("允许本次手动上传从 iCloud 下载原件", isOn: $allowICloudOriginal)
+                            .disabled(uploadingPhotoID != nil)
+                            .font(.subheadline)
+                        Text("默认关闭。只有明确点击下面单张普通照片的上传按钮，才会读取它的原件并连接云端；Live Photo、视频和后台自动同步暂不可用。")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if let photoUploadMessage {
+                        Text(photoUploadMessage)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("manual-photo-upload-result")
+                    }
 
                     if let inventory = model.inventory {
                         HStack(spacing: 14) {
@@ -150,8 +184,98 @@ struct LocalPhotoInventoryScreen: View {
                                         .foregroundStyle(.secondary)
                                         .fixedSize(horizontal: false, vertical: true)
                                 }
+                                if item.kind == "照片" && !item.isLive && onUploadStillPhoto != nil {
+                                    Button("手动保存这张普通照片到云端") {
+                                        startPhotoUpload(item.id)
+                                    }
+                                    .font(.footnote)
+                                    .buttonStyle(.bordered)
+                                    .disabled(uploadingPhotoID != nil || model.loading)
+                                    .accessibilityIdentifier("native-photo-upload-still")
+                                }
+                                if uploadingPhotoID == item.id {
+                                    ProgressView("读取原件并等待 Server 上传确认…")
+                                        .font(.footnote)
+                                    Button("取消本机请求") { photoUploadTask?.cancel() }
+                                        .font(.footnote)
+                                        .buttonStyle(.bordered)
+                                }
                                 Divider()
                             }
+                        }
+                    }
+
+                    if model.hasAccess {
+                        Divider()
+                        Button {
+                            showingBoundedScan = true
+                        } label: {
+                            Label("预览全库有界扫描（每批最多 64 项）", systemImage: "list.bullet.rectangle")
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(model.loading || uploadingPhotoID != nil)
+                        .accessibilityIdentifier("native-photokit-scan-preview")
+                        Text("只读取当前授权可访问的候选元数据；不下载原件、不上传，也不保存 PhotoKit 游标。")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                        Divider()
+                        Text("系统相册目录")
+                            .font(.headline)
+                        Text("仅枚举当前授权可访问的相册。不同相册的照片可能重复，目录成员数不等于唯一照片数。")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if let page = albumPage {
+                            Text(page.total == 0
+                                ? "当前没有可访问的相册目录。"
+                                : "相册 \(page.offset + 1)–\(page.offset + page.items.count) / \(page.total)"
+                            )
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            if page.limitedAuthorization {
+                                Label("仅统计 iOS 已授权子集", systemImage: "lock.shield")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                            ForEach(page.items) { album in
+                                HStack(spacing: 10) {
+                                    Image(systemName: "rectangle.stack")
+                                        .foregroundStyle(.secondary)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(album.name)
+                                        Text(album.kind)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    Text(album.accessibleAssetCount.formatted())
+                                        .foregroundStyle(.secondary)
+                                        .monospacedDigit()
+                                }
+                                Divider()
+                            }
+                            HStack {
+                                Button("上一页") { loadAlbumPage(page.offset - XDriveLocalPhotoAlbumPager.pageSize) }
+                                    .disabled(!page.hasPrevious || albumLoading)
+                                Spacer()
+                                Button("下一页") { loadAlbumPage(page.offset + page.items.count) }
+                                    .disabled(!page.hasNext || albumLoading)
+                            }
+                            .buttonStyle(.bordered)
+                        } else if !albumLoading {
+                            Button("检查本机相册目录") { loadAlbumPage(0) }
+                                .buttonStyle(.bordered)
+                        }
+                        if albumLoading {
+                            ProgressView("正在读取最多 32 个相册目录…")
+                        }
+                        if let albumError {
+                            Text(albumError)
+                                .font(.footnote)
+                                .foregroundStyle(.red)
+                            Button("重新读取相册目录") { loadAlbumPage(0) }
+                                .buttonStyle(.bordered)
+                                .disabled(albumLoading)
                         }
                     }
 
@@ -166,6 +290,9 @@ struct LocalPhotoInventoryScreen: View {
                         Button("重新检查") {
                             inspectedAssetID = nil
                             inspectedResourceMessage = nil
+                            albumTask?.cancel()
+                            albumPage = nil
+                            albumError = nil
                             Task { await model.inspect(askPermission: false) }
                         }
                         .buttonStyle(.bordered)
@@ -177,7 +304,7 @@ struct LocalPhotoInventoryScreen: View {
                         }
                     }
 
-                    Text("当前只读取已授权项目的数量、类型、最近日期；单项检查仅枚举 PhotoKit 声明的原始资源及 Live 动静配对情况。这不证明 iCloud 原件可下载，也不读取照片字节或 GPS、不上传数据、不执行同步。真正同步仍需账户绑定、增量游标、资源内容读取、UploadSession 和断点恢复。")
+                    Text("系统相册默认仅做本机元数据检查，不读取 GPS 或发送 PhotoKit 标识。仅在验证原生 Owner 后主动点击普通照片上传按钮，才会读取该张原件并通过现有 UploadSession 保存云端文件；这不代表自动相册同步、Device/Root 备份或 Live Photo 成对提交。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -193,18 +320,75 @@ struct LocalPhotoInventoryScreen: View {
                 }
             }
         }
+        .sheet(isPresented: $showingBoundedScan) {
+            XDrivePhotoKitScanPreviewScreen()
+        }
         .task { await model.inspect(askPermission: false) }
         .onChange(of: scenePhase) { phase in
+            if phase != .active {
+                showingBoundedScan = false
+                photoUploadTask?.cancel()
+                return
+            }
             if phase == .active {
                 inspectedAssetID = nil
                 inspectedResourceMessage = nil
+                albumTask?.cancel()
+                albumPage = nil
+                albumError = nil
                 Task { await model.inspect(askPermission: false) }
             }
         }
-        .onChange(of: model.authorization) { status in
-            if status != .authorized && status != .limited {
-                inspectedAssetID = nil
-                inspectedResourceMessage = nil
+        .onChange(of: model.authorization) { _ in
+            showingBoundedScan = false
+            photoUploadTask?.cancel()
+            photoUploadMessage = nil
+            inspectedAssetID = nil
+            inspectedResourceMessage = nil
+            albumTask?.cancel()
+            albumPage = nil
+            albumError = nil
+        }
+        .onDisappear {
+            showingBoundedScan = false
+            albumTask?.cancel()
+            photoUploadTask?.cancel()
+        }
+    }
+
+    private func startPhotoUpload(_ localIdentifier: String) {
+        guard let onUploadStillPhoto, uploadingPhotoID == nil,
+              model.hasAccess else { return }
+        uploadingPhotoID = localIdentifier
+        photoUploadMessage = nil
+        let mayDownloadICloud = allowICloudOriginal
+        photoUploadTask = Task { @MainActor in
+            let result = await onUploadStillPhoto(localIdentifier, mayDownloadICloud)
+            photoUploadMessage = Task.isCancelled
+                ? "本机已取消。若最后 ACK 丢失，请先核实云端再操作。"
+                : result
+            uploadingPhotoID = nil
+            photoUploadTask = nil
+        }
+    }
+
+    private func loadAlbumPage(_ offset: Int) {
+        guard !albumLoading else { return }
+        albumTask?.cancel()
+        albumLoading = true
+        albumError = nil
+        albumTask = Task { @MainActor in
+            defer { albumLoading = false }
+            do {
+                let page = try await XDriveLocalPhotoAlbumPager.readPage(offset: offset)
+                try Task.checkCancellation()
+                guard model.hasAccess else { return }
+                albumPage = page
+            } catch is CancellationError {
+                // Leaving this screen or revoking Photos access discards rows.
+            } catch {
+                albumPage = nil
+                albumError = "无法读取当前授权范围内的相册目录，请检查权限后重试。"
             }
         }
     }
