@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import android.util.LruCache
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -23,6 +24,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.util.Locale
+import com.tfluid.xdrive.core.OwnerBd09Bounds
 import com.tfluid.xdrive.core.DriveNode
 import com.tfluid.xdrive.core.FileBrowseArrangement
 
@@ -60,6 +62,18 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     // Screen/Owner/session changes discard all cached private bitmaps.
     val galleryThumbnails = remember(state.server, state.username,
         state.screen == Screen.GALLERY) { LruCache<String, ImageBitmap>(48) }
+    // Memory-only scroll anchors, limited to the current BD09 parent chain.
+    // The map wall/Viewer temporarily unmounts MapOverview: retaining these
+    // LazyListState values in the app host restores exact parent scroll after
+    // the same verified cell returns, without persisting private GPS bounds.
+    val bd09Scroll = remember(state.server, state.username, state.galleryMapOpen) {
+        mutableMapOf<OwnerBd09Bounds, LazyListState>()
+    }
+    if (state.galleryMapOpen) {
+        val liveBounds = state.galleryBd09History.map { it.bounds }.toSet() +
+            state.galleryBd09Bounds
+        bd09Scroll.keys.retainAll(liveBounds) // bounded to six parent levels
+    }
     // Preserve UI-only scroll state across Viewer -> Gallery, never across
     // leaving Gallery. The same user can log out/in against changed photo rows.
     val galleryStateKey = "gallery:${state.server}:${state.username}"
@@ -126,6 +140,8 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                             // wall, not the Files app. Match Android Back and
                             // the iOS PWA navigation's accessible destination.
                             state.galleryMapCellSelected != null -> "返回地图"
+                            state.galleryMapOpen && state.galleryBd09History.isNotEmpty() ->
+                                "返回上一级聚合"
                             state.galleryMapOpen -> "返回图库"
                             state.gallerySelectedAlbum != null -> "返回精选集"
                             state.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS -> "返回图库"
@@ -178,10 +194,20 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                         textAlign = TextAlign.Center)
                 }
                 TextButton(
-                    onClick = { transferCenterOpen = true },
+                    onClick = {
+                        transferCenterOpen = true
+                        controller.refreshTransferRecoveryNotices()
+                    },
                     modifier = Modifier.heightIn(min = 48.dp)
                         .testTag("native-transfer-open"),
-                ) { Text("传输") }
+                ) {
+                    Text(when {
+                        state.transferRecoveryIssue -> "传输·需核对"
+                        state.interruptedNativeTransfers.isNotEmpty() ->
+                            "传输·${state.interruptedNativeTransfers.size}"
+                        else -> "传输"
+                    })
+                }
                 AccountMenu(state, controller, updates?.let { it::show },
                     fileView = if (state.screen == Screen.FILES &&
                         state.filesSection == FilesSection.BROWSE) filesView else null,
@@ -236,7 +262,10 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                             }
                         }
                     } else if (state.galleryMapOpen) {
-                        GalleryMapOverview(state, controller)
+                        GalleryMapOverview(state, controller,
+                            bd09Scroll.getOrPut(state.galleryBd09Bounds) {
+                                LazyListState()
+                            })
                     } else if (state.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS &&
                         state.gallerySelectedAlbum == null) {
                         gallerySaveable.SaveableStateProvider(galleryAlbumsStateKey) {

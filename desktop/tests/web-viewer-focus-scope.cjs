@@ -100,3 +100,37 @@ test('explicit negative Tab indexes are excluded even from native audio/video an
   assert.equal(containTab(root, items[1], false), true)
   assert.deepEqual(history, [1, 1])
 })
+
+test('Safari Viewer excludes inaccessible filmstrip controls without crashing Tab', () => {
+  const { items, root, history } = frame(3)
+  items[0].getClientRects = () => { throw Error('SecurityError: layout denied') }
+  assert.doesNotThrow(() => containTab(root, items[2], false))
+  assert.equal(containTab(root, items[2], false), true)
+  assert.deepEqual(history, [1, 1], 'first proven tabbable item remains the wrap target')
+})
+
+test('Safari Viewer falls back to its own dialog root when style inspection is denied', () => {
+  const { root, history } = frame()
+  const previous = global.window
+  global.window = { getComputedStyle() { throw Error('SecurityError: style denied') } }
+  try {
+    assert.equal(containTab(root, root, false), true)
+    assert.deepEqual(history, ['root'])
+  } finally { if (previous === undefined) delete global.window; else global.window = previous }
+})
+
+test('Viewer never reports successful Tab containment if focus itself is denied', () => {
+  const { root, items } = frame()
+  items[0].focus = () => { throw Error('SecurityError: native focus denied') }
+  assert.doesNotThrow(() => containTab(root, items[2], false))
+  assert.equal(containTab(root, items[2], false), false)
+  root.querySelectorAll = () => { throw Error('SecurityError: query denied') }
+  root.focus = () => { throw Error('SecurityError: root focus denied') }
+  assert.equal(containTab(root, root, false), false)
+})
+
+test('Viewer does not steal portal focus on a denied containment check', () => {
+  const { root } = frame()
+  root.contains = () => { throw Error('SecurityError: DOM ancestry denied') }
+  assert.equal(containTab(root, { foreign: true }, false), false)
+})

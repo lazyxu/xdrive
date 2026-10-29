@@ -4,6 +4,7 @@ import { xDriveEnterForegroundPage } from './ViewerForegroundPriority'
 import type { SxProps, Theme } from '@mui/material/styles'
 import { XDriveWorkspaceShell } from './WorkspaceShell'
 import { XDriveWorkspaceSidebar } from './WorkspaceSidebar'
+import { XDriveAppRouteContent } from './XDriveAppRouteContent'
 import { xDriveWorkspaceNavigationAllowed, type XDriveWorkspaceAppRoute } from './WorkspaceRoute'
 import type { XDriveWorkspaceHostAdapter } from './WorkspaceHostAdapter'
 
@@ -15,8 +16,8 @@ export type XDriveAppSidebarProps = Omit<
  * Canonical desktop/DSM application frame. Both hosts mount this component,
  * and provide only platform-specific data and native integrations.
  *
- * Children deliberately include the shared content and modal overlays while
- * Desktop's existing controller is being extracted in a later migration.
+ * The application owns route composition and the page outlet. Host controllers
+ * provide authenticated data, optional legacy Files content and modal overlays.
  */
 export function XDriveApp({
   host,
@@ -24,6 +25,9 @@ export function XDriveApp({
   onNavigate: onRequestedNavigate,
   sidebar,
   shellSx,
+  pageSx,
+  revision = 0,
+  overlays,
   children,
 }: {
   host: XDriveWorkspaceHostAdapter
@@ -31,7 +35,12 @@ export function XDriveApp({
   onNavigate: (view: string) => void
   sidebar: XDriveAppSidebarProps
   shellSx?: SxProps<Theme>
-  children: ReactNode
+  pageSx?: SxProps<Theme>
+  revision?: number
+  /** Dialogs outside the scrollable page; never a Host-owned page registry. */
+  overlays?: ReactNode
+  /** Transitional Desktop Files controller; shared outlet owns all other pages. */
+  children?: ReactNode
 }) {
   const responsive = host.platform === 'synology'
   // The canonical Host renderer owns one page scope for every admitted route.
@@ -53,7 +62,16 @@ export function XDriveApp({
         responsive={responsive}
         onSelect={onNavigate}
       />
-      {children}
+      <XDriveAppRouteContent
+        host={host}
+        view={view}
+        revision={revision}
+        onNavigate={onNavigate}
+        pageSx={pageSx}
+      >
+        {children}
+      </XDriveAppRouteContent>
+      {overlays}
     </XDriveWorkspaceShell>
   )
 }

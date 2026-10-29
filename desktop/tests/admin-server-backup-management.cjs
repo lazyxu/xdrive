@@ -59,6 +59,9 @@ test('Shared administrator page provides create/read/update/delete/verify/restor
   assert.match(host, /backup_admin_persist_selected_preview/)
   assert.match(host, /backup preview-delete-snapshot/)
   assert.match(panel, /action: 'delete_selected'/)
+  assert.match(panel, /inventory.total_snapshots/)
+  assert.match(read('scripts\/server-control.sh'), /"total_snapshots":%s,"truncated":%s/)
+  assert.match(read('internal\/api\/admin_backup_management.go'), /TotalSnapshots/)
   assert.match(panel, /selectedDeletionReady/)
   assert.match(host, /backup_admin_valid_selected_deletion_preview/)
   assert.match(host, /backup delete-snapshot/)
@@ -113,4 +116,28 @@ test('Admin backup progress uses the existing Host byte source with unknown tota
   assert.match(panel, /data-xdrive-admin-backup-progress/)
   assert.match(panel, /尚无可靠的字节总量/)
   assert.match(read('internal/api/admin_backup_management.go'), /BytesDone/)
+})
+
+test('Host read failures revoke stale backup actions and destructive confirmation receipts', () => {
+  const reload = panel.slice(panel.indexOf('const reload = useCallback('),
+    panel.indexOf('}, [port])'))
+  assert.match(reload, /if \(!result\.supported\) \{[\s\S]*?setConfirmation\(null\)/)
+  assert.match(reload, /catch \(e\) \{[\s\S]*?setLoaded\(null\)/)
+  assert.match(reload, /setPolicyDraft\(null\)/)
+  assert.match(reload, /setPrunePreview\(null\)/)
+  assert.match(reload, /setSelectedPreviewRequestID\(''\)/)
+  assert.match(panel, /!page && !error \?/)
+  assert.match(panel, /!page && error \?/)
+  assert.match(panel, /备份、恢复及删除操作已禁用/)
+})
+
+test('confirmation re-checks current snapshot and current prune preview after refresh', () => {
+  const confirmSource = panel.slice(panel.indexOf('const confirm = () => {'),
+    panel.indexOf('  return (\n    <Stack', panel.indexOf('const confirm = () => {')))
+  assert.match(confirmSource, /next\.snapshot_id !== selected\.id/)
+  assert.match(confirmSource, /next\.action === 'restore' && !selectedRestorable/)
+  assert.match(confirmSource, /next\.action === 'drill'/)
+  assert.match(confirmSource, /next\.action === 'prune' && !canPrune/)
+  assert.match(confirmSource, /setConfirmation\(null\)/)
+  assert.match(confirmSource, /清理预览已失效/)
 })

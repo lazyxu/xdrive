@@ -29,12 +29,15 @@ test('application icon has one SVG source of truth and platform wiring', () => {
   assert.ok(builder.includes('icon: ../assets/icon/windows/app.ico'), 'Windows Desktop executable must use the generated multi-size app.ico')
 
   const desktopRenderer = text('desktop/src/renderer/App.tsx')
-  assert.ok(
-    desktopRenderer.includes("import xDriveBrandIcon from '../../../assets/icon/master/xdrive-icon-master.svg'"),
-    'Desktop brand lockups must import the approved master SVG directly',
-  )
-  const desktopBrandUses = desktopRenderer.match(/iconSrc=\{xDriveBrandIcon\}/g) || []
-  assert.equal(desktopBrandUses.length, 2, 'Desktop titlebar and login identity must both reuse the same master SVG')
+  const desktopHostFrame = text('desktop/src/renderer/DesktopHostFrame.tsx')
+  for (const [label, code] of [['login', desktopRenderer], ['titlebar', desktopHostFrame]]) {
+    assert.ok(code.includes("import xDriveBrandIcon from '../../../assets/icon/master/xdrive-icon-master.svg'"),
+      'Desktop ' + label + ' must import the exact master SVG')
+  }
+  const desktopBrandUses = (desktopRenderer.match(/iconSrc=\{xDriveBrandIcon\}/g) || []).length +
+    (desktopHostFrame.match(/iconSrc=\{xDriveBrandIcon\}/g) || []).length
+  assert.equal(desktopBrandUses, 2,
+    'Desktop titlebar Host frame and login must both reuse the same master SVG')
 
   const web = text('web/index.html')
   assert.ok(web.includes('href="/favicon.svg"'), 'Web must expose the generated SVG favicon')

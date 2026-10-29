@@ -89,7 +89,9 @@ function home(view) { return view.root.findByType('canonical-home').props }
 
 test('Overview shares a real Home without Electron IPC or a second route renderer', () => {
   assert.doesNotMatch(source, /window\.xdriveDesktop|ipcRenderer/)
-  assert.match(desktopPort, /window\.xdriveDesktop\.agent\.cloudFileRecent\(limit\)/)
+  assert.match(desktopPort, /xDriveDesktopViewportRequest\(signal,/)
+  assert.match(desktopPort, /window\.xdriveDesktop\.agent\.cloudFileRecent\(limit, requestID\)/,
+    'Desktop shared Home must use request-owned cancellable Recent GET')
   assert.match(desktopPort, /xDriveResolveMediaVideoPoster\(/)
   assert.match(source, /recentSnapshot\?\.scope === overviewLifecycleKey/)
   assert.match(source, /favoriteSnapshot\?\.scope === overviewLifecycleKey/)

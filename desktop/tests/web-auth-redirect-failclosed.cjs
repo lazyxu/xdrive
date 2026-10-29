@@ -46,7 +46,9 @@ test('Web sign-out settles locally even if remote logout is rejected by redirect
 })
 
 test('Web/Mobile/PWA password change also blocks redirects of old and new passwords', () => {
-  const change = section('  async changePassword(currentPassword: string, newPassword: string)', '  adminUsers()')
+  // Match the method boundary independently of optional GET parameters.
+  // Redirect security assertions below remain unchanged.
+  const change = section('  async changePassword(currentPassword: string, newPassword: string)', '  adminUsers(')
   assert.match(change, /redirect:\s*'error'/)
   assert.match(change, /current_password: currentPassword, new_password: newPassword/)
 })

@@ -268,7 +268,7 @@ jobs:
           node --check desktop/scripts/places-web-viewer-history-browser.cjs
           export XD_PR_HEAD="$(git rev-parse HEAD)"
           node desktop/scripts/places-web-viewer-history-browser.cjs
-          node -e "const s=require('./desktop/places-web-viewer-history-results/summary.json'); if(!s.passed || s.head!==process.env.XD_PR_HEAD || !s.realChromium || !s.realWebHistoryHook || !s.realWebViewerHook || s.realGin || s.realBaiduProvider || s.checks.length!==11 || s.checks.some(x=>!x.passed) || s.errors.length)process.exit(1)"
+          node -e "const s=require('./desktop/places-web-viewer-history-results/summary.json'); if(!s.passed || s.head!==process.env.XD_PR_HEAD || !s.realChromium || !s.realWebHistoryHook || !s.realWebViewerHook || s.realGin || s.realBaiduProvider || s.checks.length!==16 || s.checks.some(x=>!x.passed) || s.errors.length)process.exit(1)"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

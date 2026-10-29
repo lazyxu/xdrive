@@ -4,7 +4,7 @@ import SwiftUI
 struct XDriveIOSApp: App {
     var body: some Scene {
         WindowGroup {
-            LoginScreen()
+            XDriveWebAppHome()
         }
     }
 }
