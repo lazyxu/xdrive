@@ -148,6 +148,12 @@ func (s *Server) Router() *gin.Engine {
 	v1.POST("/auth/browser/login", s.login)
 	v1.POST("/auth/browser/refresh", s.refresh)
 	v1.POST("/auth/browser/logout", s.logout)
+	// Revocable native iOS Photo grant proof is NOT a general bearer session.
+	// Only these dedicated routes accept the grant+Device credential pair.
+	v1.GET("/ios/photos/background-grants/proof",
+		s.requireIOSPhotoBackgroundGrant(), s.proveIOSPhotoBackgroundGrant)
+	v1.POST("/ios/photos/background-grants/rotate",
+		s.requireIOSPhotoBackgroundGrant(), s.rotateIOSPhotoBackgroundGrant)
 	v1.GET("/public/share", s.publicShareMetadata)
 	v1.POST("/public/share/children", s.publicFolderShareChildren)
 	v1.POST("/public/share/download", s.publicShareDownload)
@@ -395,6 +401,11 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/devices/self/heartbeat", s.heartbeatClientDevice)
 	authed.POST("/devices", s.registerClientDevice)
 	authed.POST("/devices/:id/revoke", s.revokeClientDevice)
+	// Explicit current-Owner issuance/list/revoke, never reachable by an
+	// identity-only iOS device token or an already-issued background grant.
+	authed.POST("/ios/photos/background-grants", s.createIOSPhotoBackgroundGrant)
+	authed.GET("/ios/photos/background-grants", s.listIOSPhotoBackgroundGrants)
+	authed.POST("/ios/photos/background-grants/:id/revoke", s.revokeIOSPhotoBackgroundGrant)
 	authed.GET("/sources", s.listSources)
 	authed.GET("/sources/overview", s.listSourceOverview)
 	authed.POST("/sources", s.createSource)
