@@ -13,7 +13,12 @@ const caddy = read('deploy/baidu-isolated-child/Caddyfile.example')
 function childFixture(parentOrigin='https://gallery.example.net',childOrigin='https://map-isolated.example.org',sdkEnabled=false,options={}) {
   const events = new Map(), sent=[], moves=[], nativeEvents=new Map(), redeems=[], labels=[]
   const parent={postMessage(message,targetOrigin){sent.push({message,targetOrigin})}}
+  const canvasEvents=new Map()
   const messageTarget={textContent:'',
+    addEventListener(name,listener){canvasEvents.set(name,listener)},
+    removeEventListener(name,listener){
+      if(canvasEvents.get(name)===listener)canvasEvents.delete(name)
+    },
     ...(options.resizeFixture ? {clientWidth:640,clientHeight:480} : {})}
   const scripts=[], resizeObservers=[]
   class ResizeObserverFixture {
@@ -47,7 +52,8 @@ function childFixture(parentOrigin='https://gallery.example.net',childOrigin='ht
   const env={window:{location:{origin:childOrigin},parent,
     ...(sdkEnabled?{BMap:fakeSDK}:{}),
     ...(options.resizeFixture ? {ResizeObserver:ResizeObserverFixture} : {}),
-    addEventListener(type,cb){events.set(type,cb)}},
+    addEventListener(type,cb){events.set(type,cb)},
+    removeEventListener(type,cb){if(events.get(type)===cb)events.delete(type)}},
     ...(sdkEnabled?{
       fetch:async()=>{
         redeems.push(true)

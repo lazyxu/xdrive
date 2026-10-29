@@ -79,7 +79,7 @@ test('Web Wide/Compact and Desktop are identical for mutable Owner selection lim
     assert.equal(native(action, choose, 201), web(action, choose, 201), action)
     assert.match(native(action, [{ id: 77 }], 1), /尚未完整加载/, action)
   }
-  assert.match(native('copy', [{ id: 17 }], 1), /^null$/) // replaced below by strict null
+  assert.equal(native('copy', [{ id: 17 }], 1), null, 'valid mutable selection remains authorized')
 })
 
 test('missing revisions and sparse virtual selection cannot authorize mutations', () => {

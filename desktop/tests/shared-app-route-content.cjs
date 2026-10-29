@@ -14,6 +14,8 @@ const desktop = read('desktop/src/renderer/App.tsx')
 const synology = read('web/src/synology.tsx')
 const synologyHost = read('web/src/synologyHost.ts')
 const index = read('ui/shared/src/mui/index.tsx')
+const frame = read('ui/shared/src/mui/WorkspaceShell.tsx')
+const routeSurface = read('ui/shared/src/mui/WorkspaceRouteSurface.tsx')
 
 test('Desktop and DSM mount one shared route content frame, not separate page routers', () => {
   for (const host of [desktop, synology]) {
@@ -25,8 +27,9 @@ test('Desktop and DSM mount one shared route content frame, not separate page ro
   }
   assert.equal((app.match(/<XDriveAppRouteContent\b/g) || []).length, 1)
   assert.match(app, /onNavigate=\{onNavigate\}/)
-  assert.match(app, /\{overlays\}/)
-  assert.ok(app.indexOf('<XDriveAppRouteContent') < app.indexOf('{overlays}'),
+  assert.match(app, /<XDriveWorkspaceFrame\b/)
+  assert.match(app, /overlays=\{overlays\}/)
+  assert.match(frame, /\{children\}\s*\{overlays\}/,
     'dialog overlays must stay outside the page scroll region')
   assert.match(synology, /const host = createXDriveSynologyHost\(\)/)
   assert.doesNotMatch(synology, /filesUnavailableActions:|backup\.cgi/)
@@ -35,16 +38,19 @@ test('Desktop and DSM mount one shared route content frame, not separate page ro
   assert.doesNotMatch(synologyHost, /window\.xdriveDesktop|ipcRenderer|<XDriveApp|<XDriveAppRouteContent/)
   assert.match(index, /export \* from '\.\/XDriveAppRouteContent'/)
   assert.equal((content.match(/<XDriveAppPageOutlet\b/g) || []).length, 1)
-  assert.equal((content.match(/<XDriveWorkspaceContent\b/g) || []).length, 1)
+  assert.equal((content.match(/<XDriveWorkspaceRouteSurface\b/g) || []).length, 1)
+  assert.equal((routeSurface.match(/<XDriveWorkspaceContent\b/g) || []).length, 1,
+    'one responsive presentation surface owns the scroll region')
 })
 
 test('both Hosts use viewport-driven compact navigation and identical page spacing', () => {
-  assert.match(app, /<XDriveWorkspaceShell responsive sx=\{shellSx\}>/)
+  assert.match(app, /<XDriveWorkspaceFrame\b/)
+  assert.match(frame, /<XDriveWorkspaceShell responsive className=\{className\} sx=\{sx\}>/)
   assert.match(app, /selected=\{view\}\s+responsive\s+onSelect=\{onNavigate\}/)
   assert.match(app, /const XDRIVE_SHARED_PAGE_SX: SxProps<Theme> = \{ p: \{ xs: 2, md: '34px 40px 48px' \} \}/)
-  assert.match(content, /const presentation = xDriveWorkspacePresentation\(view\)/)
-  assert.match(content, /presentation=\{presentation\}\s+responsive\b/)
-  assert.match(content, /sx=\{presentation === 'files' \? undefined : pageSx\}/)
+  assert.match(routeSurface, /presentation=\{xDriveWorkspacePresentation\(view\)\}/)
+  assert.match(routeSurface, /<XDriveWorkspaceContent\s+responsive/)
+  assert.match(content, /sx=\{view === 'files' \? undefined : pageSx\}/)
   assert.doesNotMatch(app, /const responsive = host\.platform/)
   assert.doesNotMatch(content, /responsive=\{host\.platform/)
   assert.doesNotMatch(synology, /pageSx=/)
@@ -53,9 +59,11 @@ test('both Hosts use viewport-driven compact navigation and identical page spaci
 })
 
 test('migrated routes use shared outlet, while legacy Desktop Files retains its controller', () => {
-  assert.match(content, /xDriveIsSharedHostPageRoute\(view\)/)
-  assert.match(content, /view === 'files' && !hasLegacyFilesContent/)
-  assert.match(content, /children != null && children !== false/)
+  assert.match(routes, /XDRIVE_SHARED_HOST_PAGE_ROUTES = XDRIVE_APP_WORKSPACE_ROUTES/)
+  assert.match(content, /<XDriveAppPageOutlet\b/)
+  assert.match(content, /sx=\{view === 'files' \? undefined : pageSx\}/)
+  assert.match(content, /\{children\}/)
+  assert.match(outlet, /if \(services\.filesControllerContent\) page = services\.filesControllerContent/)
   assert.doesNotMatch(content, /view === 'files' && host\.platform/)
   assert.match(app, /onNavigate=\{onNavigate\}/)
   assert.match(synology, /onNavigate=\{\(key\) => \{/)
@@ -67,7 +75,7 @@ test('migrated routes use shared outlet, while legacy Desktop Files retains its 
   assert.match(app, /<XDriveAppRouteContent/)
   assert.match(app, /revision=\{revision\}/)
   assert.match(app, /pageSx=\{pageSx\}/)
-  assert.match(routes, /XDRIVE_APP_WORKSPACE_ROUTES\.filter\(/)
+  assert.match(routes, /return sharedHostPages\.has\(view\)/)
   assert.doesNotMatch(routes, /XDRIVE_SHARED_HOST_PAGE_ROUTES = \[/)
   assert.match(outlet, /xDriveWorkspaceRouteRequiresAdmin\(view\) && host\.adminRoleVerified !== true/)
   assert.match(outlet, /<XDriveSynologyOwnerFilesPage\b/)

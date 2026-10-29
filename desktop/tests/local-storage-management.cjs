@@ -23,7 +23,11 @@ test('Web and Desktop share one local storage workspace', () => {
   assert.ok(shared.includes('清理浏览器缓存'))
   assert.ok(shared.includes('释放可回收 Desktop 缓存'))
   assert.ok(shared.includes('不会清除 Cookie、登录状态、token、主题或布局偏好'))
-  assert.ok(web.includes('<XDriveLocalStoragePage source={localStorageSource} />'))
+  const browserHost = read('web', 'src', 'browserWorkspaceHost.ts')
+  const outlet = read('ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx')
+  assert.ok(web.includes('localStorage: localStorageSource'))
+  assert.ok(browserHost.includes('localStorage: ports.localStorage'))
+  assert.ok(outlet.includes('<XDriveLocalStoragePage key={revision} source={services.localStorage} />'))
   assert.ok(desktop.includes('localStorage: localStorageSource') && read('ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx').includes('<XDriveLocalStoragePage'))
 })
 

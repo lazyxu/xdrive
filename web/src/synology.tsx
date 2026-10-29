@@ -22,7 +22,9 @@ function SynologyWorkspace({ appearance, onAppearanceChange }: {
   // Server-admin gate and disposable foreground priority for every Host.
   // DSM contributes only authenticated domain ports, never page-specific JSX.
   const { selected, pageRevision, navigate } = useXDriveWorkspaceNavigationState({
-    platform: host.platform,
+    // This entry is DSM-only; the Host adapter's public platform union is
+    // deliberately broader and cannot be passed to the navigation hook.
+    platform: 'synology',
     adminRoleVerified: host.adminRoleVerified === true,
   })
 

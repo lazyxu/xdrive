@@ -217,7 +217,7 @@ test('Desktop availability Search is an Agent range filter, never renderer filte
     assert.ok(sharedSearchFilters.includes(token), 'shared availability filter surface missing: ' + token)
   }
   assert.ok(
-    desktopExplorer.includes('availabilityOptions={fileAvailabilitySupported ? desktopSearchAvailabilityOptions : []}'),
+    desktopExplorer.includes('availabilityOptions={fileAvailabilitySupported ? XDRIVE_NATIVE_FILE_AVAILABILITY_OPTIONS : []}'),
     'Desktop must expose availability only when the local capability is authoritative',
   )
   assert.equal(

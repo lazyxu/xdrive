@@ -24,6 +24,7 @@ const columnView = read('ui', 'shared', 'src', 'mui', 'FileExplorerColumnView.ts
 const explorer = read('ui', 'shared', 'src', 'mui', 'FileExplorer.tsx')
 const navigation = read('ui', 'shared', 'src', 'mui', 'FileExplorerNavigation.ts')
 const pane = read('ui', 'shared', 'src', 'mui', 'FileExplorerNavigationPane.tsx')
+const savedSearchDialogs = read('ui', 'shared', 'src', 'mui', 'FileExplorerSavedSearchDialogs.tsx')
 const quickController = read('ui', 'shared', 'src', 'mui', 'FileExplorerQuickAccessController.ts')
 const webAPI = read('web', 'src', 'api.ts')
 const web = read('web', 'src', 'WebFileExplorer.tsx')
@@ -120,8 +121,11 @@ test('Smart Folder is a persisted server-side Search contract with full sidebar 
     'onReorderSavedSearches',
   ]) assert.ok(pane.includes(token), 'Smart Folder sidebar behavior missing: ' + token)
 
+  assert.ok(savedSearchDialogs.includes('mode="saved-search"'),
+    'the actual shared saved-search controller must use the common name dialog')
   for (const source of [web, desktop]) {
-    assert.ok(source.includes('mode="saved-search"'), 'both clients must use the shared Smart Folder name dialog')
+    assert.ok(source.includes('<XDriveFileExplorerSavedSearchDialogs'),
+      'both clients must mount the shared Smart Folder name dialog controller')
     assert.ok(source.includes('organization.createSavedSearch'), 'both clients must create Smart Folders through the shared controller')
     assert.ok(source.includes('organization.updateSavedSearch'), 'both clients must rename/update Smart Folders')
     assert.ok(source.includes('void applySearch(savedSearch.query, savedSearch.filters)'), 'both clients must execute Smart Folders through shared Search')

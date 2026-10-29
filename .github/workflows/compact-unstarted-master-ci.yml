@@ -10,7 +10,7 @@ on:
       - 'scripts/ci/compact-unstarted-master-ci.cjs'
       - 'scripts/ci/compact-unstarted-master-ci.test.cjs'
   schedule:
-    - cron: '13,43 * * * *'
+    - cron: '7,17,27,37,47,57 * * * *'
   workflow_dispatch:
     inputs:
       dry_run:
@@ -23,7 +23,12 @@ permissions:
   actions: write
 
 concurrency:
+  # GitHub's default single-pending slot replaces an older queued cleaner on
+  # every push/schedule event. Under a long Actions backlog this starves the
+  # only workflow capable of cancelling obsolete master CI.
+  # Serialize cleanups, but queue rather than discard waiting executions.
   group: xdrive-compact-unstarted-master-ci
+  queue: max
   cancel-in-progress: false
 
 jobs:

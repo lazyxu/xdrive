@@ -4,7 +4,9 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const repo = path.join(__dirname, '..', '..')
-const page = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'DesktopSettingsContent.tsx'), 'utf8')
+const page = [
+  'DesktopSettingsContent.tsx', 'DesktopVirtualDriveSettings.tsx',
+].map(file => fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', file), 'utf8')).join('\n')
 const styles = fs.readFileSync(path.join(repo, 'desktop', 'src', 'renderer', 'styles.css'), 'utf8')
 
 test('Desktop settings form uses MUI fields and layout instead of legacy form CSS', () => {

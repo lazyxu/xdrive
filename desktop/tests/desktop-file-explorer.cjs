@@ -11,6 +11,9 @@ const localStoragePage = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'sr
 const cloudStoragePage = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'CloudStoragePage.tsx'), 'utf8')
 const workspaceContent = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'WorkspaceContent.tsx'), 'utf8')
 const workspaceRoute = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'WorkspaceRoute.ts'), 'utf8')
+const routeSurface = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'WorkspaceRouteSurface.tsx'), 'utf8')
+const hostCapabilities = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerHostCapabilities.ts'), 'utf8')
+const sharedViewPreference = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerViewPreference.ts'), 'utf8')
 const explorer = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx'), 'utf8')
 const desktopCloudPort = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'desktopCloudFilesHostPort.ts'), 'utf8')
 const projection = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerProjection.ts'), 'utf8')
@@ -149,9 +152,9 @@ test('Desktop Files uses shared workspace content for full-bleed Explorer layout
   assert.ok(app.includes('<XDriveApp') && sharedApp.includes('<XDriveAppRouteContent') &&
     !app.includes('<XDriveAppRouteContent'),
     'Desktop must mount the one route/content frame inside the canonical shared application')
-  assert.ok(routeContent.includes('<XDriveWorkspaceContent') &&
-    routeContent.includes('presentation={presentation}') &&
-    routeContent.includes('xDriveWorkspacePresentation(view)'),
+  assert.ok(routeContent.includes('<XDriveWorkspaceRouteSurface') &&
+    routeSurface.includes('<XDriveWorkspaceContent') &&
+    routeSurface.includes('presentation={xDriveWorkspacePresentation(view)}'),
     'the shared frame must select full-bleed Files presentation through the route model')
   assert.ok(workspaceRoute.includes("return view === 'files' ? 'files' : 'page'"), 'shared route model must own full-bleed Files presentation')
   assert.equal(app.includes('<XDrivePageHeader'), false, 'Desktop App should not own duplicate generic page chrome')
@@ -231,7 +234,9 @@ test('Desktop FileExplorer supports shared internal drag operations and local ex
 })
 
 test('Desktop uses a dedicated persistent FileExplorer details-column layout', () => {
-  assert.ok(explorer.includes("const DESKTOP_FILE_DETAILS_LAYOUT_KEY = 'xdrive.desktop.files.details_layout'"), 'Desktop details layout storage key is missing')
+  assert.ok(sharedViewPreference.includes("detailsLayout: 'xdrive.desktop.files.details_layout'") &&
+    explorer.includes('const DESKTOP_FILE_DETAILS_LAYOUT_KEY = XDRIVE_HOST_FILES_PREFERENCES.detailsLayout'),
+    'Desktop details layout key must preserve the shared preference contract')
   assert.ok(explorer.includes('detailsPreferencesKey={DESKTOP_FILE_DETAILS_LAYOUT_KEY}'), 'Desktop details layout key is not passed to shared FileExplorer')
 })
 
@@ -317,8 +322,10 @@ test('Desktop upload conflicts use the shared upload controller with capability-
   assert.ok(uploadController.includes('xDriveUploadBatchSummary(result)'), 'shared upload controller must own upload summaries')
   assert.equal(explorer.includes('useXDriveUploadConflictResolver()'), false, 'Desktop must not own conflict-resolver lifecycle')
   assert.equal(explorer.includes("let conflictPolicy: XDriveUploadConflictPolicy = 'fail'"), false, 'Desktop must not own per-file conflict state')
-  assert.ok(app.includes("capabilities.includes('upload-conflict-policy')"), 'Desktop must gate policy-aware uploads by Agent capability')
-  assert.ok(app.includes("capabilities.includes('upload-conflict-preflight')"), 'Desktop must gate conflict preflight by Agent capability')
+  assert.ok(app.includes('xDriveFileExplorerHostCapabilities(agent.hello?.capabilities)') &&
+    app.includes('uploadConflictSupported: filesHostCapabilities.uploadConflictSupported') &&
+    hostCapabilities.includes("uploadConflictSupported: has('upload-conflict-preflight', 'upload-conflict-policy')"),
+    'Desktop must require both real Agent handshake grants for conflict-aware uploads')
 })
 
 

@@ -19,6 +19,7 @@ const desktopPreload = read('desktop', 'src', 'preload', 'index.cts')
 const sharedMuiIndex = read('ui', 'shared', 'src', 'mui', 'index.tsx')
 const web = read('web', 'src', 'App.tsx')
 const desktop = read('desktop', 'src', 'renderer', 'App.tsx')
+const pageOutlet = read('ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx')
 
 test('shared Task Center controller owns summary, history and page-action presentation', () => {
   for (const token of [
@@ -64,12 +65,15 @@ test('Web delegates Task Center view-model composition to shared', () => {
     'operations: fileOperations',
     'operationActions: fileOperationActions',
     'transferBadge={taskCenter.badge}',
-    '<XDriveTaskCenterPage',
-    '{...taskCenter.pageProps}',
+    'taskCenter: {',
+    '...taskCenter.pageProps,',
   ]) {
     assert.ok(web.includes(token), `Web Task Center wiring missing: ${token}`)
   }
 
+  assert.ok(pageOutlet.includes('<XDriveTaskCenterPage') &&
+    pageOutlet.includes('{...services.taskCenterPage}'),
+    'shared TaskCenter outlet must render the exact Host page props')
   for (const token of [
     "transfers.filter((item) => item.state === 'running' || item.state === 'retrying')",
     'fileOperations.filter((item) => xDriveFileOperationActive(item.status))',
@@ -356,7 +360,7 @@ test('Storage maintenance can focus the exact global Task Center row once', () =
     'result.result_task_id || result.task_id',
     'taskCenterFocusSequenceRef.current += 1',
     "setAppView('global-tasks')",
-    'backgroundFocusTaskID={taskCenterFocus?.taskID}',
-    'backgroundFocusRequestID={taskCenterFocus?.requestID}',
+    'backgroundFocusTaskID: taskCenterFocus?.taskID',
+    'backgroundFocusRequestID: taskCenterFocus?.requestID',
   ]) assert.ok(web.includes(token), 'Web maintenance focus handoff missing: ' + token)
 })

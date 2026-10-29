@@ -10,6 +10,7 @@ const explorer = read('ui', 'shared', 'src', 'mui', 'FileExplorer.tsx')
 const iconPresentation = read('ui', 'shared', 'src', 'mui', 'FileExplorerItemPresentation.tsx')
 const web = read('web', 'src', 'WebFileExplorer.tsx')
 const desktop = read('desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx')
+const hostPreferences = read('ui', 'shared', 'src', 'mui', 'FileExplorerViewPreference.ts')
 
 test('shared FileExplorer owns persisted view-density and grid-size preferences', () => {
   for (const token of [
@@ -81,7 +82,9 @@ test('Grid Ctrl-wheel scaling is shared, clamped and discoverable', () => {
 test('Web and Desktop persist the same shared view-preference contract', () => {
   assert.ok(web.includes("FILE_VIEW_PREFERENCES_KEY = 'xdrive.files.view_preferences'"), 'Web view preference key missing')
   assert.ok(web.includes('viewPreferencesKey={FILE_VIEW_PREFERENCES_KEY}'), 'Web must pass the shared view preference key')
-  assert.ok(desktop.includes("DESKTOP_FILE_VIEW_PREFERENCES_KEY = 'xdrive.desktop.files.view_preferences'"), 'Desktop view preference key missing')
+  assert.ok(hostPreferences.includes("viewPreferences: 'xdrive.desktop.files.view_preferences'") &&
+    desktop.includes('DESKTOP_FILE_VIEW_PREFERENCES_KEY = XDRIVE_HOST_FILES_PREFERENCES.viewPreferences'),
+    'Desktop uses the canonical shared Host view-preference storage key')
   assert.ok(desktop.includes('viewPreferencesKey={DESKTOP_FILE_VIEW_PREFERENCES_KEY}'), 'Desktop must pass the shared view preference key')
 })
 

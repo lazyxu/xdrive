@@ -12,6 +12,8 @@ const sharedController = read('ui', 'shared', 'src', 'mui', 'ServerUpdateControl
 const sharedSettings = read('ui', 'shared', 'src', 'mui', 'SettingsDialog.tsx')
 const maintenance = read('ui', 'shared', 'src', 'mui', 'SystemMaintenancePage.tsx')
 const web = read('web', 'src', 'App.tsx')
+const browserHost = read('web', 'src', 'browserWorkspaceHost.ts')
+const sharedOutlet = read('ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx')
 const webApi = read('web', 'src', 'api.ts')
 const desktop = read('desktop', 'src', 'renderer', 'App.tsx')
 const preload = read('desktop', 'src', 'preload', 'index.cts')
@@ -59,7 +61,11 @@ test('shared server update model owns the confirmation summary', () => {
     assert.ok(sharedModel.includes(token), `shared server update confirmation missing: ${token}`)
   }
   assert.ok(maintenance.includes('xDriveServerUpdateConfirmationDescription({'), 'shared administrator page must use shared formatter')
-  assert.ok(web.includes('unavailableLabel="Web/API"'), 'Web keeps the Web/API interruption context')
+  assert.ok(web.includes("unavailableLabel: 'Web/API'") &&
+    web.includes('adminMaintenance: serverAdminVerified ? {') &&
+    browserHost.includes('adminMaintenancePage: ports.adminMaintenance') &&
+    sharedOutlet.includes('<XDriveSystemMaintenancePage {...services.adminMaintenancePage} />'),
+    'Web preserves its Web/API context only for an authenticated Admin Host')
   assert.ok(desktop.includes('unavailableLabel: "服务端与 Desktop"'), 'Desktop keeps its interruption context')
   assert.equal(web.includes("来源：${serverUpdate.source === 'gitlab'"), false, 'Web must not duplicate update confirmation formatting')
   assert.equal(desktop.includes("来源：${serverUpdate.source === 'gitlab'"), false, 'Desktop must not duplicate update confirmation formatting')
@@ -67,7 +73,9 @@ test('shared server update model owns the confirmation summary', () => {
 
 test('Web and Desktop use the same server update card', () => {
   assert.equal((maintenance.match(/<XDriveServerUpdateCard\b/g) || []).length, 1)
-  assert.equal((web.match(/<XDriveSystemMaintenancePage\b/g) || []).length, 1)
+  assert.ok(web.includes('adminMaintenance: serverAdminVerified ? {') &&
+    sharedOutlet.includes('<XDriveSystemMaintenancePage {...services.adminMaintenancePage} />'),
+    'Web mounts the one shared Server Update page through the authenticated Host')
   assert.equal((desktop.match(/<XDriveSystemMaintenancePage\b/g) || []).length, 0)
   assert.ok(desktop.includes('adminMaintenancePage: status?.role ===') &&
     read('ui/shared/src/mui/XDriveAppPageOutlet.tsx').includes('<XDriveSystemMaintenancePage'),
@@ -104,7 +112,9 @@ test('shared Server Update controller owns polling, transport normalization and 
   }
 
   assert.ok(maintenance.includes('useXDriveServerUpdateController({'))
-  assert.ok(web.includes('<XDriveSystemMaintenancePage'), 'Web uses shared maintenance view')
+  assert.ok(web.includes('adminMaintenance: serverAdminVerified ? {') &&
+    sharedOutlet.includes('<XDriveSystemMaintenancePage {...services.adminMaintenancePage} />'),
+    'Web uses the shared maintenance view through Browser Host')
   assert.ok(desktop.includes('adminMaintenancePage:') &&
     read('ui/shared/src/mui/XDriveAppPageOutlet.tsx').includes('<XDriveSystemMaintenancePage'),
     'Desktop uses same shared maintenance view through Host port')

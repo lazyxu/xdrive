@@ -126,9 +126,18 @@ test('Text/Code Viewer is read-only textarea with common source/config allowlist
 test('optional deep-link arguments are consumed by their owning apps', () => {
   assert.ok(app.includes("initialDirectoryID={route.app === 'files' ? route.params.dir : undefined}"))
   assert.ok(app.includes("initialSection={webMapScopeOwnerReady ? 'places' : route.app === 'gallery'"))
-  assert.ok(app.includes("initialSourceID={route.app === 'remote-pull' ? route.params.source : undefined}"))
-  assert.ok(app.includes("focusUserID={route.app === 'admin-users' ? route.params.user : undefined}"))
-  assert.ok(app.includes("focusSection={route.app === 'admin-storage' ? route.params.section : undefined}"))
+  // The exact deep-link is now passed through Browser Host to the shared
+  // SourceManager outlet; it must never leak into Device Backup Push.
+  assert.ok(app.includes("const remotePullSourceID = route.app === 'remote-pull' ? route.params.source : undefined"))
+  assert.ok(app.includes('initialSourceID: remotePullSourceID'))
+  const browserHost = read('web', 'src', 'browserWorkspaceHost.ts')
+  const sharedOutlet = read('ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx')
+  assert.ok(browserHost.includes("directionFilter: 'pull' as const"))
+  assert.ok(sharedOutlet.includes('<XDriveSourceManager {...services.remotePullPage} />'))
+  assert.ok(app.includes("const focusedAdminUserID = route.app === 'admin-users' ? route.params.user : undefined"))
+  assert.ok(app.includes('focusUserID: focusedAdminUserID'))
+  assert.ok(app.includes("const focusedAdminStorageSection = route.app === 'admin-storage' ? route.params.section : undefined"))
+  assert.ok(app.includes('focusSection: focusedAdminStorageSection'))
   assert.ok(app.includes("route.app === 'admin-storage' && route.params.task"))
   assert.ok(app.includes("source.direction === 'push' ? 'device-backup' : 'remote-pull'"))
   assert.ok(sourceManager.includes('onSelectedSourceChange?.(row.source.id)'))

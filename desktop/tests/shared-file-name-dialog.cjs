@@ -11,6 +11,7 @@ const dialog = read('ui', 'shared', 'src', 'mui', 'FileNameDialog.tsx')
 const index = read('ui', 'shared', 'src', 'mui', 'index.tsx')
 const webApp = read('web', 'src', 'App.tsx')
 const desktopExplorer = read('desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx')
+const savedSearchDialogs = read('ui', 'shared', 'src', 'mui', 'FileExplorerSavedSearchDialogs.tsx')
 const moduleOutput = { exports: {} }
 const bundled = buildSync({
   entryPoints: [path.join(repoRoot, 'ui/shared/src/mui/FileNameDialog.tsx')],
@@ -73,9 +74,15 @@ test('Web keeps create-folder in FileNameDialog while shared FileExplorer owns r
 })
 
 test('Desktop uses shared name dialogs while FileExplorer owns responsive rename', () => {
-  assert.equal((desktopExplorer.match(/<XDriveFileNameDialog\b/g) || []).length, 3, 'Desktop should use shared dialogs for create-folder, Smart Folder create and Smart Folder rename')
+  assert.equal((desktopExplorer.match(/<XDriveFileNameDialog\b/g) || []).length, 1,
+    'Desktop keeps one native create-folder dialog')
+  assert.equal((savedSearchDialogs.match(/<XDriveFileNameDialog\b/g) || []).length, 2,
+    'both Web and Desktop use the shared saved-search create/rename controller')
+  assert.match(desktopExplorer, /<XDriveFileExplorerSavedSearchDialogs\b/)
+  assert.match(savedSearchDialogs, /initialValue=\{renameSearch\?\.name/)
   assert.ok(desktopExplorer.includes('onSubmit={createFolder}'), 'Desktop create-folder dialog must call createFolder')
-  assert.equal((desktopExplorer.match(/mode="saved-search"/g) || []).length, 2, 'Desktop Smart Folder create/rename must reuse the shared name dialog')
+  assert.equal((savedSearchDialogs.match(/mode="saved-search"/g) || []).length, 2,
+    'saved-search create/rename must share name validation and Owner lifecycle checks')
   assert.equal(desktopExplorer.includes('mode="rename"'), false, 'Desktop adapter must not duplicate FileExplorer rename state')
   assert.equal(desktopExplorer.includes('createError'), false, 'Desktop must not keep local create-folder validation state')
   assert.equal(desktopExplorer.includes('renameNode'), false, 'Desktop must not keep rename-dialog state')

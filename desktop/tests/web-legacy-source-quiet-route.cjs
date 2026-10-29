@@ -5,6 +5,7 @@ const path = require('node:path')
 const root = path.join(__dirname,'..','..')
 const app = fs.readFileSync(path.join(root,'web/src/App.tsx'),'utf8')
 const apps = fs.readFileSync(path.join(root,'web/src/webApps.ts'),'utf8')
+const sharedRoutes = fs.readFileSync(path.join(root,'ui/shared/src/web-workspace-route.ts'),'utf8')
 
 test('legacy Sync Folders redirect has no intermediate loading UI at any lookup duration', () => {
   assert.ok(app.includes('data-xdrive-legacy-source-quiet-redirect'))
@@ -38,5 +39,6 @@ test('successful legacy deep link still selects real Server-authorized Push or P
   assert.ok(app.includes("app: 'remote-pull', params: {}"))
   assert.ok(app.includes("setLegacyResolution({ api, sourceID, generation: legacyGeneration, failed: true })"))
   assert.ok(app.includes('该来源不存在或没有查看权限'))
-  assert.ok(apps.includes("if (app === 'sync-folders') return 'remote-pull'"))
+  assert.ok(apps.includes('xDriveWorkspaceKeyFromWebApp'))
+  assert.ok(sharedRoutes.includes("if (app === 'sync-folders') return 'remote-pull'"))
 })

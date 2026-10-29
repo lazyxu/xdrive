@@ -25,6 +25,14 @@ function load(relative, overrides = {}) {
     if (name === 'react') return hooks
     if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx, Fragment: 'fragment' }
     if (name.startsWith('@mui/icons-material/')) return { __esModule: true, default: name }
+    // Resolve the actual TypeScript workspace-route bridge instead of
+    // requiring an unbuilt .ts module from this source-level test runner.
+    if (name.startsWith('.')) {
+      const rel = path.posix.normalize(path.posix.join(path.posix.dirname(relative), name))
+      for (const ext of ['.ts', '.tsx']) {
+        if (fs.existsSync(path.join(repo, rel + ext))) return load(rel + ext)
+      }
+    }
     return require(name)
   }
   new Function('require', 'module', 'exports', result.outputText)(localRequire, module, module.exports)

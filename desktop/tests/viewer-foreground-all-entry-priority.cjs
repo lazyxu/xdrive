@@ -168,7 +168,7 @@ test('all routed and shared inline Viewer entry types share the foreground lease
   const publicShare=read('ui/shared/src/mui/PublicShareUnifiedDirectoryExplorer.tsx')
   assert.match(runtime,/xDriveEnterForegroundPage\('web:' \+ next\.app\)/)
   assert.match(runtime,/useLayoutEffect\(\(\) => \{\s*xDriveEnterForegroundPage\('web:' \+ route\.app\)/)
-  assert.match(desktopApp,/xDriveEnterForegroundPage\('desktop:' \+ next\)/)
+  assert.match(desktopApp,/<XDriveApp/, 'Desktop mounts the canonical preempting Host application')
   const sharedApp=read('ui/shared/src/mui/XDriveApp.tsx')
   const synologyApp=read('web/src/synology.tsx')
   const hostNavigation=read('ui/shared/src/mui/WorkspaceNavigationState.ts')
@@ -198,7 +198,8 @@ test('all routed and shared inline Viewer entry types share the foreground lease
     'shared controller preempts stale disposable reads before updating the selected route')
   assert.match(synologyApp,/onNavigate=\{\(key\) => \{/,
     'Sidebar stays behind canonical route admission')
-  assert.match(desktopApp,/xDriveEnterForegroundPage\('desktop:' \+ view\)/)
+  assert.ok(hostNavigation.includes('xDriveEnterForegroundPage(`${platform}:${next.selected}`)'),
+    'Desktop must use the canonical foreground navigation lease')
   assert.match(web,/xDriveEnterForegroundPage\('web:public-share'\)/)
   assert.match(web,/xDriveEnterForegroundPage\('web:offline'\)/)
   assert.match(web,/else if \(standaloneRouteRef\.current\)/)

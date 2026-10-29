@@ -9,6 +9,8 @@ const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 const factory = read('ui', 'shared', 'src', 'mui', 'SourceManagerAdapter.ts')
 const sharedMuiIndex = read('ui', 'shared', 'src', 'mui', 'index.tsx')
 const web = read('web', 'src', 'App.tsx')
+const browserHost = read('web', 'src', 'browserWorkspaceHost.ts')
+const sharedOutlet = read('ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx')
 const desktop = read('desktop', 'src', 'renderer', 'sourceManagerAdapter.ts')
 
 test('shared SourceManager adapter factory owns transport normalization and overview synthesis', () => {
@@ -35,7 +37,10 @@ test('shared SourceManager adapter factory owns transport normalization and over
 
 test('Web feeds XDriveApi directly through the shared SourceManager factory', () => {
   assert.ok(web.includes('createXDriveSourceManagerAdapter(api)'), 'Web must use the shared SourceManager factory')
-  assert.ok(web.includes('adapter={sourceManagerAdapter}'), 'Web must pass the normalized adapter to SourceManager')
+  assert.ok(web.includes('remotePull: {') && web.includes('adapter: sourceManagerAdapter') &&
+    browserHost.includes("remotePullPage: { ...ports.remotePull, directionFilter: 'pull' as const }") &&
+    sharedOutlet.includes('<XDriveSourceManager {...services.remotePullPage} />'),
+    'Web must pass the normalized adapter through its authenticated Host to SourceManager')
   assert.equal(web.includes('adapter={api}'), false, 'Web must not bypass the shared SourceManager factory')
 })
 

@@ -9,6 +9,7 @@ const web = read('web', 'src', 'StorageStatsPanel.tsx')
 const desktop = read('desktop', 'src', 'renderer', 'App.tsx')
 const outlet = read('ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx')
 const sections = read('ui', 'shared', 'src', 'mui', 'WorkspaceHostSections.tsx')
+const routeTitles = read('ui', 'shared', 'src', 'mui', 'WorkspaceRouteTitles.ts')
 const main = read('desktop', 'src', 'main', 'index.cts')
 const client = read('internal', 'client', 'admin_storage.go')
 const ipc = read('cmd', 'xdrive-agent', 'desktop_ipc_admin_storage.go')
@@ -18,7 +19,9 @@ const port = read('ui', 'shared', 'src', 'admin-management.ts')
 test('full Web and Desktop global storage shares the entire MUI page', () => {
   assert.ok(web.includes("export { XDriveGlobalStorageStatsPage as default } from '@xdrive/ui/mui'"))
   assert.ok(desktop.includes('adminStoragePage:') && outlet.includes('<XDriveGlobalStorageStatsPage'))
-  assert.ok(sections.includes("key: 'admin-storage', label: '全局存储'"))
+  assert.ok(sections.includes("key: 'admin-storage', label: xDriveWorkspaceRouteTitle('admin-storage')") &&
+    routeTitles.includes("'admin-storage': '全局存储'"),
+    'admin Storage must use the canonical shared title')
   assert.ok(desktop.includes("adminStoragePage: status?.role === 'admin'") && outlet.includes("case 'admin-storage':"))
   assert.ok(desktop.includes("capabilities.includes('admin-storage')"))
   for (const key of [

@@ -9,6 +9,7 @@ const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 const sharedNav = read('ui', 'shared', 'src', 'mui', 'SidebarNav.tsx')
 const sharedModel = read('ui', 'shared', 'src', 'mui', 'WorkspaceNavigation.tsx')
 const sharedRoute = read('ui', 'shared', 'src', 'mui', 'WorkspaceRoute.ts')
+const routeTitles = read('ui', 'shared', 'src', 'mui', 'WorkspaceRouteTitles.ts')
 const sharedSidebar = read('ui', 'shared', 'src', 'mui', 'WorkspaceSidebar.tsx')
 const web = read('web', 'src', 'App.tsx')
 const desktop = read('desktop', 'src', 'renderer', 'App.tsx')
@@ -23,27 +24,30 @@ test('shared core navigation owns common destinations and capability-gates local
   assert.ok(sharedModel.includes('showLocalStorage = false'), 'local storage remains an explicit client capability even though Web and Desktop both opt in')
   assert.ok(sharedNav.includes('xDriveCoreWorkspaceDestinations({ transferBadge, showLocalStorage }).map'), 'sidebar and compact navigation must derive core destinations from the same model')
   assert.ok(
-    sharedModel.includes("key: 'files', label: '文件', icon: <CloudOutlinedIcon fontSize=\"small\" />"),
+    sharedModel.includes("key: 'files', label: xDriveWorkspaceRouteTitle('files'), icon: <CloudOutlinedIcon fontSize=\"small\" />"),
     'Files should use a cloud icon rather than a local-folder glyph',
   )
   assert.ok(
-    sharedModel.includes("key: 'cloud-storage', label: '云端存储', icon: <CloudRoundedIcon fontSize=\"small\" />"),
+    sharedModel.includes("key: 'cloud-storage', label: xDriveWorkspaceRouteTitle('cloud-storage'), icon: <CloudRoundedIcon fontSize=\"small\" />"),
     'Cloud Storage should keep a distinct filled cloud glyph',
   )
   assert.equal(sharedModel.includes('FolderRoundedIcon'), false, 'shared core Files navigation must not look like a local folder')
-  const labels = [
-    "label: '文件'",
-    "label: '图库'",
-    "label: '设备备份'",
-    "label: '远程拉取'",
-    "label: '任务'",
-    "label: '本地存储'",
-    "label: '云端存储'",
+  // Labels are canonical in WorkspaceRouteTitles; the shared destination
+  // model controls ordering, icons and capability-gated availability.
+  const keys = [
+    ["key: 'files'", "files: '文件'"],
+    ["key: 'gallery'", "gallery: '图库'"],
+    ["key: 'device-backup'", "'device-backup': '设备备份'"],
+    ["key: 'remote-pull'", "'remote-pull': '远程拉取'"],
+    ["key: 'transfers'", "transfers: '任务'"],
+    ["key: 'local-storage' as const", "'local-storage': '本地存储'"],
+    ["key: 'cloud-storage'", "'cloud-storage': '云端存储'"],
   ]
   let cursor = -1
-  for (const label of labels) {
-    const next = sharedModel.indexOf(label)
-    assert.ok(next > cursor, `shared core navigation order missing or changed: ${label}`)
+  for (const [route, title] of keys) {
+    const next = sharedModel.indexOf(route)
+    assert.ok(next > cursor, `shared core navigation order missing or changed: ${route}`)
+    assert.ok(routeTitles.includes(title), `canonical Chinese route title missing: ${title}`)
     cursor = next
   }
   assert.ok(sharedModel.includes('...(showLocalStorage'), 'local storage destination must remain capability-gated')
@@ -130,7 +134,9 @@ test('Desktop and DSM derive extension routes from one shared Host sections fact
     ['admin-services', '系统依赖'], ['admin-maintenance', '备份与系统维护'],
   ]) {
     assert.ok(sharedHostSections.includes("key: '" + key + "'") &&
-      sharedHostSections.includes("label: '" + label + "'"), key)
+      sharedHostSections.includes("label: xDriveWorkspaceRouteTitle('" + key + "')") &&
+      routeTitles.includes((key === 'overview' || key === 'conflicts' ? key : "'" + key + "'") +
+        ": '" + label + "'"), key)
   }
   assert.ok(sharedHostSections.includes('badge: conflictCount'))
   assert.ok(sharedHostSections.includes('items: [xDriveDiagnosticsSidebarDestination()]'))
@@ -142,22 +148,29 @@ test('Desktop and DSM derive extension routes from one shared Host sections fact
   assert.equal(desktop.includes('trailingItems='), false)
 })
 
-test('Web Home and admin destinations use the same section model contract', () => {
-  assert.ok(web.includes("const webSidebarSections: XDriveSidebarSectionModel[] = ["))
-  assert.ok(web.includes("key: 'overview',\n      placement: 'before-core'"))
-  assert.ok(web.includes("label: '主页'"))
-  assert.ok(web.includes("...(profile?.role === 'admin'"), 'admin section must remain role-gated')
-  assert.ok(web.includes("ariaLabel: '管理员功能',\n          placement: 'after-core'"))
-  for (const label of ['用户管理', '审计日志', '全局存储', '系统依赖', '备份与系统维护']) {
-    assert.ok(web.includes(`label: '${label}'`), `missing Web admin destination: ${label}`)
+test('Web Home and admin destinations use the canonical Host sections and route titles', () => {
+  assert.ok(web.includes('const webSidebarSections = xDriveWorkspaceHostSections({'))
+  assert.ok(web.includes("adminRoleVerified: profile?.role === 'admin'"))
+  assert.ok(web.includes('includeUtilityRoutes: false'))
+  assert.ok(sharedHostSections.includes("key: 'overview'"))
+  assert.ok(sharedHostSections.includes("placement: 'before-core'"))
+  assert.ok(routeTitles.includes("overview: '主页'"))
+  assert.ok(sharedHostSections.includes("ariaLabel: '管理员功能'"))
+  for (const [key, label] of [
+    ['admin-users', '用户管理'], ['admin-audit', '审计日志'],
+    ['admin-storage', '全局存储'], ['admin-services', '系统依赖'],
+    ['admin-maintenance', '备份与系统维护'],
+  ]) {
+    assert.ok(sharedHostSections.includes("key: '" + key + "'"), key)
+    assert.ok(routeTitles.includes("'" + key + "': '" + label + "'"), key)
   }
 })
 
 test('Backup and maintenance navigation stays identical across Web/Desktop/DSM', () => {
-  assert.ok(web.includes("key: 'admin-maintenance'"))
-  assert.ok(web.includes("label: '备份与系统维护'"))
+  assert.ok(web.includes('xDriveWorkspaceHostSections({'))
+  assert.ok(routeTitles.includes("'admin-maintenance': '备份与系统维护'"))
   assert.ok(sharedHostSections.includes("key: 'admin-maintenance'"))
-  assert.ok(sharedHostSections.includes("label: '备份与系统维护'"))
+  assert.ok(sharedHostSections.includes("label: xDriveWorkspaceRouteTitle('admin-maintenance')"))
   assert.ok(desktop.includes('xDriveWorkspaceHostSections({'))
 })
 
@@ -165,12 +178,12 @@ test('Host-specific admin links only render after actual Server administrator ve
   assert.equal(sharedModel.includes("key: 'global-tasks'"), false)
   assert.equal(sharedNav.includes('showGlobalTasks'), false)
   assert.equal(sharedSidebar.includes('showGlobalTasks'), false)
-  const begin = web.indexOf('const webSidebarSections: XDriveSidebarSectionModel[]')
-  const end = web.indexOf(String.fromCharCode(10) + '  ]', begin)
+  const begin = web.indexOf('const webSidebarSections = xDriveWorkspaceHostSections({')
+  const end = web.indexOf(String.fromCharCode(10) + '  })', begin)
   assert.ok(begin >= 0 && end > begin)
   const webSections = web.slice(begin, end)
-  assert.ok(webSections.includes("profile?.role === 'admin'"))
-  assert.equal((webSections.match(/key: 'global-tasks'/g) || []).length, 1)
+  assert.ok(webSections.includes("adminRoleVerified: profile?.role === 'admin'"))
+  assert.ok(webSections.includes('includeUtilityRoutes: false'))
   const adminIndex = sharedHostSections.indexOf("key: 'admin'")
   const globalIndex = sharedHostSections.indexOf("key: 'global-tasks'", adminIndex)
   const diagIndex = sharedHostSections.indexOf("key: 'diagnostics'")
@@ -183,18 +196,22 @@ test('Host-specific admin links only render after actual Server administrator ve
 
 test('local storage is shared across Web and Desktop while platform adapters remain local', () => {
   assert.ok(desktop.includes("type View = XDriveWorkspaceAppRoute"), 'Desktop view type must extend the shared full workspace route model')
-  assert.ok(web.includes("type AppView = XDriveWorkspaceViewKey<"), 'Web view type must include the shared local-storage route')
+  assert.ok(sharedRoute.includes("'local-storage'"), 'Web view type must include the shared local-storage route')
   assert.ok(sharedRoute.includes("export type XDriveRemoteWorkspaceKey = Exclude<XDriveCoreWorkspaceKey, 'local-storage'>"), 'remote-only route type may remain available for non-local clients')
   assert.ok(desktop.includes('showLocalStorage'), 'Desktop must expose the shared local-storage destination')
   assert.ok(web.includes('showLocalStorage'), 'Web must expose the shared local-storage destination')
   assert.ok(desktop.includes('localStorage: localStorageSource') &&
     sharedHostOutlet.includes('<XDriveLocalStoragePage'),
     'Desktop Host must delegate real Local Storage data to common outlet')
-  assert.ok(web.includes('<XDriveLocalStoragePage source={localStorageSource} />'), 'Web must render shared Local Storage')
+  assert.ok(web.includes('localStorage: localStorageSource') &&
+    web.includes("<XDriveAppPageOutlet host={browserWorkspaceHost} view={appView} />"),
+    'Web Host must delegate real Local Storage to the common outlet')
   assert.ok(desktop.includes('cloudStorage: cloudStorageSource') &&
     sharedHostOutlet.includes('<XDriveCloudStoragePage'),
     'Desktop Host must delegate real Cloud Storage data to common outlet')
-  assert.ok(web.includes('<XDriveCloudStoragePage source={cloudStorageSource} />'), 'Web must render shared Cloud Storage')
+  assert.ok(web.includes('cloudStorage: cloudStorageSource') &&
+    web.includes("<XDriveAppPageOutlet host={browserWorkspaceHost} view={appView} />"),
+    'Web Host must delegate real Cloud Storage to the common outlet')
 })
 
 test('Desktop Files routing uses the shared files key directly', () => {

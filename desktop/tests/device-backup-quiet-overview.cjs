@@ -42,14 +42,16 @@ test('only the existing owner-redacted shared device API is used on Web and Desk
   assert.ok(view.includes('void source.list(controller.signal).then((result)'))
   assert.ok(view.includes('source.foldersPage(deviceID, 100, cursor)'))
   assert.ok(view.includes('source.runs(id, pageSize, (page - 1) * pageSize)'))
-  assert.ok(web.includes('<XDriveDeviceBackupPage'))
+  const browserHost = fs.readFileSync(path.join(repo, 'web/src/browserWorkspaceHost.ts'), 'utf8')
+  assert.ok(web.includes('deviceBackup: { source: deviceBackupSource, initialSourceID: deviceBackupSourceID }'))
+  assert.ok(browserHost.includes('source: ports.deviceBackup.source'))
   const frame = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/XDriveAppRouteContent.tsx'), 'utf8')
   const sharedApp = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/XDriveApp.tsx'), 'utf8')
   const outlet = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/XDriveAppPageOutlet.tsx'), 'utf8')
   assert.ok(desktop.includes('deviceBackupPage: {') &&
     desktop.includes('<XDriveApp') && !desktop.includes('<XDriveAppRouteContent') &&
     sharedApp.includes('<XDriveAppRouteContent') &&
-    frame.includes('xDriveIsSharedHostPageRoute(view)') &&
+    frame.includes('<XDriveWorkspaceRouteSurface') &&
     frame.includes('<XDriveAppPageOutlet') &&
     outlet.includes('<XDriveDeviceBackupPage key={revision} {...services.deviceBackupPage} />'),
     'Desktop must reach the owner-redacted shared DeviceBackup through one Host route frame')
