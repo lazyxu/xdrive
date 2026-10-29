@@ -22,6 +22,7 @@ import {
   xDriveFileExplorerProjectSearchSources,
   xDriveFileExplorerSelectionRequest,
   xDriveFileExplorerSelectionAdmissionReason,
+  xDriveFileExplorerReadNodeID,
   xDriveFileExplorerResolveFolderUploadTargets,
   xDriveFileExplorerPropertiesRefs,
   xDriveFileExplorerAvailabilityError,
@@ -911,12 +912,13 @@ export default function DesktopFileExplorer({
   }
 
   const loadTextPreview = useCallback(async (item: XDriveFileExplorerItem, signal?: AbortSignal) => {
-    if (!textPreviewSupported || item.kind !== 'file' || signal?.aborted) return null
+    const nodeID = xDriveFileExplorerReadNodeID(item, textPreviewSupported && !signal?.aborted)
+    if (nodeID === null) return null
     // Reuse the sender-scoped viewport cancel protocol. Abort promptly on
     // Inspector/Quick Look close, navigation or Owner session replacement.
     const result = await hostPort.requestViewport(
       signal,
-      (requestID) => hostPort.media.cloudTextPreview(Number(item.id), requestID),
+      (requestID) => hostPort.media.cloudTextPreview(nodeID, requestID),
     )
     return result.ok ? result.data : null
   }, [textPreviewSupported])
@@ -968,7 +970,8 @@ export default function DesktopFileExplorer({
     item: XDriveFileExplorerItem,
     signal: AbortSignal,
   ) => {
-    if (!mediaPropertiesSupported || item.kind !== 'file') return null
+    const nodeID = xDriveFileExplorerReadNodeID(item, mediaPropertiesSupported && !signal.aborted)
+    if (nodeID === null) return null
     const requestID = nextDesktopFilePropertiesRequestID()
     const cancel = () => {
       void hostPort.media.cancelMediaItem(requestID)
@@ -976,7 +979,7 @@ export default function DesktopFileExplorer({
     if (signal.aborted) return null
     signal.addEventListener('abort', cancel, { once: true })
     try {
-      const result = await hostPort.media.getMediaItem(Number(item.id), requestID)
+      const result = await hostPort.media.getMediaItem(nodeID, requestID)
       if (signal.aborted) return null
       if (!result.ok) throw new Error(result.error.message)
       return result.data
