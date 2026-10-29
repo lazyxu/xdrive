@@ -43,7 +43,7 @@ func TestIOSResumeKeyLookupIsOwnerExactReadOnlyAndNoDuplicateCreate(t *testing.T
 		ID: uuid.NewString(), OwnerID: owner.ID, ParentID: &parent,
 		Name: "one-photo.heic", RequestedName: "one-photo.heic",
 		ConflictPolicy: meta.UploadConflictPolicyFail,
-		TotalSize: size, ChunkSize: chunk, ChunkCount: 1,
+		TotalSize:      size, ChunkSize: chunk, ChunkCount: 1,
 		SHA256: sha, ResumeKey: key, Status: meta.UploadStatusActive,
 		ExpiresAt: expires,
 	}
