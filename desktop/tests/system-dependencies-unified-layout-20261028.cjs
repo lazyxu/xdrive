@@ -30,7 +30,8 @@ test('all 11 dependency routes and global analysis policy share one responsive d
   assert.match(text.page, /selectedPage === 'photo-auto'/)
   // All the paths used by real Web, Electron Desktop and DSM remain the
   // existing single React/MUI component tree: never fork platform UI.
-  assert.match(read('web/src/App.tsx'), /XDriveServiceDependenciesPage/)
+  assert.match(read('web/src/App.tsx'), /adminServices: serverAdminVerified \? \{/)
+  assert.match(read('web/src/browserWorkspaceHost.ts'), /adminServicesPage: ports\.adminServices/)
   // Desktop and DSM route through the same Host outlet; the page itself
   // remains the sole shared XDriveServiceDependenciesPage implementation.
   // Do not require each Host App to import its page directly.

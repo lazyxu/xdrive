@@ -83,13 +83,20 @@ test('Web and Desktop render the same shared navigation without replacing the Ap
   const registry = read('web/src/webApps.ts')
   const page = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')
   const agents = read('docs/history/AGENTS-2026-10-27-before-consolidation.md')
-  for (const source of [web, desktop, registry, page]) {
-    assert.ok(source.includes('系统依赖'))
-  }
+  const routeTitles = read('ui/shared/src/mui/WorkspaceRouteTitles.ts')
+  const browserHost = read('web/src/browserWorkspaceHost.ts')
+  const pageOutlet = read('ui/shared/src/mui/XDriveAppPageOutlet.tsx')
+  assert.ok(routeTitles.includes("'admin-services': '系统依赖'") &&
+    registry.includes("'admin-services'") && page.includes('系统依赖'))
+  assert.ok(web.includes('adminServices: serverAdminVerified ? {') &&
+    desktop.includes('adminServicesPage:') &&
+    browserHost.includes('adminServicesPage: ports.adminServices') &&
+    pageOutlet.includes('<XDriveServiceDependenciesPage {...services.adminServicesPage} />'))
   assert.equal(web.includes("label: '服务与依赖'"), false)
   assert.equal(desktop.includes("label: '服务与依赖'"), false)
-  assert.ok(web.includes("location={route.app === 'admin-services' ? route.params : undefined}"))
-  assert.ok(web.includes("onLocationChange={(next, options) => launchWebApp("))
+  assert.ok(web.includes("const adminServicesLocation = route.app === 'admin-services' ? route.params : undefined"))
+  assert.ok(web.includes('location: adminServicesLocation'))
+  assert.ok(web.includes('onLocationChange: (next, options) => launchWebApp('))
   assert.ok(desktop.includes('navigationResetKey: systemDependenciesNavigationResetKey'))
   assert.ok(page.includes('data-xdrive-system-dependencies-overview'))
   assert.ok(page.includes('data-xdrive-system-dependency-detail'))
@@ -357,7 +364,10 @@ test('Web, Mobile Web, Desktop and shared editor all use the pre-unmount guard',
   assert.ok(page.includes('onUnsavedChange?.(false)'))
   assert.ok(web.includes('launch: launchWebAppRuntime'))
   assert.ok(web.includes('xDriveSystemDependenciesNeedsExitConfirmation('))
-  assert.ok(web.includes('onUnsavedChange={setSystemDependenciesDraftDirty}'))
+  // Draft guard is passed as an authenticated Host page port, not retired JSX.
+  assert.ok(web.includes('adminServices: serverAdminVerified ? {') &&
+    web.includes('onUnsavedChange: setSystemDependenciesDraftDirty') &&
+    read('web/src/browserWorkspaceHost.ts').includes('adminServicesPage: ports.adminServices'))
   assert.ok(web.includes('onBack={exitWebApp}'), 'Mobile Web back must be guarded')
   assert.ok(web.includes("if (pending.kind === 'exit') exitApp()"))
   assert.ok(web.includes('else launchWebAppRuntime(pending.next, pending.options)'))

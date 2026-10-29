@@ -64,8 +64,15 @@ test('Web and Desktop share one optional capability table, never a fake online t
   assert.match(page, /navigateTo\(configTarget\)/)
   assert.match(page, /navigateTo\(verifyTarget\)/)
   assert.match(page, /不代表服务运行、已应用或全实例生效/)
-  assert.ok(web.includes('XDriveServiceDependenciesPage'))
-  assert.ok(desktop.includes('adminServicesPage:') && read('ui/shared/src/mui/XDriveAppPageOutlet.tsx').includes('<XDriveServiceDependenciesPage'))
+  // Web supplies the verified Server admin service port to the shared Host,
+  // and the one Host-neutral outlet mounts the actual dependency page.
+  const browserHost = read('web/src/browserWorkspaceHost.ts')
+  const outlet = read('ui/shared/src/mui/XDriveAppPageOutlet.tsx')
+  assert.ok(web.includes('adminServices: serverAdminVerified ? {') &&
+    web.includes('<XDriveAppPageOutlet host={browserWorkspaceHost} view={appView} />') &&
+    browserHost.includes('adminServicesPage: ports.adminServices') &&
+    outlet.includes('<XDriveServiceDependenciesPage {...services.adminServicesPage} />'))
+  assert.ok(desktop.includes('adminServicesPage:') && outlet.includes('<XDriveServiceDependenciesPage'))
   assert.ok(backend.includes('"controlled-restart"'))
   for (const forbidden of ['docker.sock', 'adminStopHost', 'adminRestartHost', 'localStorage.setItem']) {
     assert.equal(page.includes(forbidden), false)
