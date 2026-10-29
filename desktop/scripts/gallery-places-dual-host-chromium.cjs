@@ -2654,6 +2654,58 @@ async function testPhotoCoverWhileMouseHeld(browser,mode,port){
       restored.queries>old.queries&&restored.latest===9&&
       restored.previews===old.previews&&
       (mode==='inline'?inlineSDKLoads:childSDKLoads)>0&&errors.length===0)
+
+    // A provider build that omits BOTH movestart and moveend must not leave
+    // the old signed photo buttons active during a real drag or strand the
+    // camera on the old Owner range after mouseup. Do not inject SDK events.
+    const beforeOmitted=await page.evaluate(()=>({
+      queries:window.__mapProbe.queries.length,
+      previews:window.__mapProbe.photoPreviewRanges.length,
+    }))
+    await page.mouse.move(x+54,y+24)
+    await page.mouse.down()
+    try {
+      await sdkFrame.evaluate(()=>{
+        const sdk=window.__xdriveSyntheticMapInstances?.at(-1)
+        if(!sdk)throw Error('missing SDK instance')
+        sdk.panOffset={x:86,y:42}
+        // Intentionally NO sdk.listeners.get('movestart') or 'moveend'.
+      })
+      await page.mouse.move(x+95,y+50,{steps:5})
+      const omitted=page.locator('[data-xdrive-places-gesture-photo-cover]').first()
+      await omitted.waitFor({state:'visible'})
+      await page.waitForTimeout(650)
+      const during=await page.evaluate(()=>({
+        old:document.querySelectorAll(
+          '[data-xdrive-places-gesture-photo-cover]').length,
+        clickable:document.querySelectorAll(
+          '[data-xdrive-places-trusted-photo-cover]').length,
+        disabled:document.querySelector(
+          '[data-xdrive-places-gesture-photo-cover]')?.disabled,
+        hidden:document.querySelector(
+          '[data-xdrive-places-gesture-photo-cover]')?.getAttribute('aria-hidden'),
+        queries:window.__mapProbe.queries.length,
+        previews:window.__mapProbe.photoPreviewRanges.length,
+      }))
+      record(mode+': genuine pointer drag without SDK movestart revokes stale photo clicks',
+        during.old>0&&during.clickable===0&&during.disabled===true&&
+        during.hidden==='true'&&during.queries===beforeOmitted.queries&&
+        during.previews===beforeOmitted.previews&&errors.length===0)
+    } finally {
+      await page.mouse.up()
+    }
+    await cover.waitFor({state:'visible'})
+    await page.locator('[data-xdrive-places-gesture-photo-cover]')
+      .first().waitFor({state:'hidden'})
+    const afterOmitted=await page.evaluate(()=>({
+      queries:window.__mapProbe.queries.length,
+      latest:window.__mapProbe.queries.at(-1)?.count,
+      previews:window.__mapProbe.photoPreviewRanges.length,
+    }))
+    record(mode+': omitted SDK moveend still refreshes exact Owner camera on real release',
+      afterOmitted.queries===beforeOmitted.queries+1&&
+      afterOmitted.latest===9&&
+      afterOmitted.previews===beforeOmitted.previews&&errors.length===0)
   } finally {await context.close()}
 }
 
