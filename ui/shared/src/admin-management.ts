@@ -19,7 +19,7 @@ export type XDriveAdminUpdateUserInput = {
 }
 /** One full CRUD and identity-administration contract for Web and Desktop. */
 export type XDriveAdminUsersPort = {
-  adminUsers(): Promise<AdminUser[]>
+  adminUsers(signal?: AbortSignal): Promise<AdminUser[]>
   adminCreateUser(input: XDriveAdminCreateUserInput): Promise<AdminUser>
   adminUpdateUser(id: number, input: XDriveAdminUpdateUserInput): Promise<AdminUser>
   adminResetPassword(id: number, password: string, mustChangePassword?: boolean): Promise<void>

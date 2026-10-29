@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -18,6 +19,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.tfluid.xdrive.core.OwnerBd09Bounds
 import com.tfluid.xdrive.core.OwnerBd09MapCells
 import com.tfluid.xdrive.core.OwnerMapOverview
 import com.tfluid.xdrive.core.OwnerMapSample
@@ -28,6 +30,7 @@ import java.util.Locale
 @Composable
 internal fun ColumnScope.GalleryMapOverview(
     state: DriveState, controller: DriveController,
+    bd09Scroll: LazyListState,
 ) {
     val overview = state.galleryMapOverview
     val bd09Cells = state.galleryBd09Cells
@@ -53,7 +56,14 @@ internal fun ColumnScope.GalleryMapOverview(
             modifier = Modifier.heightIn(min = 48.dp)
                 .testTag("gallery-map-back-to-gps"),
         ) { Text("返回 GPS 概览") }
-        else if (state.galleryMapLoaded && overview != null) TextButton(
+        if (state.galleryBd09Requested && state.galleryBd09History.isNotEmpty()) TextButton(
+            onClick = controller::galleryBd09BackLevel,
+            enabled = !state.hasActiveNativeTransfer(),
+            modifier = Modifier.heightIn(min = 48.dp)
+                .testTag("gallery-map-back-one-level"),
+        ) { Text("返回上一级聚合") }
+        else if (!state.galleryBd09Requested && state.galleryMapLoaded &&
+            overview != null) TextButton(
             onClick = controller::openGalleryVerifiedBd09Cells,
             enabled = !state.loading && !state.hasActiveNativeTransfer(),
             modifier = Modifier.heightIn(min = 48.dp)
@@ -74,7 +84,9 @@ internal fun ColumnScope.GalleryMapOverview(
                 else "重新读取 GPS 概览") }
         }
         state.galleryBd09Requested -> when {
-            !state.loading && bd09Cells != null -> GalleryVerifiedBd09Cells(bd09Cells, controller)
+            !state.loading && bd09Cells != null ->
+                GalleryVerifiedBd09Cells(bd09Cells, state.galleryBd09Bounds,
+                    state.galleryBd09History.size, controller, bd09Scroll)
             else -> Box(Modifier.weight(1f).fillMaxWidth()
                 .testTag("gallery-map-bd09-loading"), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
@@ -146,9 +158,12 @@ private fun ColumnScope.GalleryGpsSamples(overview: OwnerMapOverview) {
  * visualization when correctly configured and validated. */
 @Composable
 private fun ColumnScope.GalleryVerifiedBd09Cells(
-    result: OwnerBd09MapCells, controller: DriveController,
+    result: OwnerBd09MapCells, bounds: OwnerBd09Bounds,
+    depth: Int, controller: DriveController,
+    listState: LazyListState,
 ) {
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxWidth().weight(1f)
             .testTag("gallery-map-bd09-cells"),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
@@ -156,11 +171,11 @@ private fun ColumnScope.GalleryVerifiedBd09Cells(
     ) {
         item(key = "summary") {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("当前 Owner 已验证 ${result.totalPhotoCount} 张定位照片 · " +
+                Text("第${depth + 1}级 · 当前 Owner 已验证 ${result.totalPhotoCount} 张定位照片 · " +
                     "${result.cells.size} 个真实 BD-09 代表点（最多 64 格）",
                     modifier = Modifier.testTag("gallery-map-bd09-count"),
                     style = MaterialTheme.typography.bodyMedium)
-                VerifiedBd09Grid(result)
+                VerifiedBd09Grid(result, bounds)
             }
         }
         if (result.cells.isEmpty()) item(key = "empty") {
@@ -184,6 +199,11 @@ private fun ColumnScope.GalleryVerifiedBd09Cells(
                         Text("${cell.photoCount} 张",
                             style = MaterialTheme.typography.labelMedium)
                     }
+                    if (depth < MAX_BD09_DRILL_LEVELS) TextButton(
+                        onClick = { controller.drillDownGalleryBd09Cell(cell) },
+                        modifier = Modifier.heightIn(min = 48.dp)
+                            .testTag("gallery-map-zoom-${cell.cellX}-${cell.cellY}"),
+                    ) { Text("放大此区域") }
                     Text("真实 BD-09 代表位置：${formatGps(cell.latitude)}, " +
                         formatGps(cell.longitude),
                         style = MaterialTheme.typography.bodySmall,
@@ -195,7 +215,9 @@ private fun ColumnScope.GalleryVerifiedBd09Cells(
 }
 
 @Composable
-private fun VerifiedBd09Grid(result: OwnerBd09MapCells) {
+private fun VerifiedBd09Grid(
+    result: OwnerBd09MapCells, bounds: OwnerBd09Bounds,
+) {
     val dot = MaterialTheme.colorScheme.primary
     val grid = MaterialTheme.colorScheme.outlineVariant
     val paper = MaterialTheme.colorScheme.surfaceContainer
@@ -215,8 +237,10 @@ private fun VerifiedBd09Grid(result: OwnerBd09MapCells) {
         }
         for (cell in result.cells) {
             // The actual server-certified sample is used, never cell center.
-            val x = ((cell.longitude + 180.0) / 360.0).toFloat() * w
-            val y = ((90.0 - cell.latitude) / 180.0).toFloat() * h
+            val local = bd09ViewportFraction(
+                bounds, cell.latitude, cell.longitude) ?: continue
+            val x = local.first * w
+            val y = local.second * h
             if (!x.isFinite() || !y.isFinite()) continue
             drawCircle(dot, radius = 4.5.dp.toPx(),
                 center = Offset(x.coerceIn(0f, w), y.coerceIn(0f, h)))

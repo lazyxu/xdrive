@@ -57,7 +57,7 @@ test('a successful verify or production restore never asserts isolated recoverab
   assert.match(ui, /CI 产物独立于当前部署/)
   const parent = fs.readFileSync(path.join(root,
     'ui/shared/src/mui/ServerBackupManagementPanel.tsx'), 'utf8')
-  assert.ok(parent.includes('XDriveBackupRecoveryEvidencePanel page={page} snapshotID={snapshotID}'))
+  assert.ok(parent.includes("XDriveBackupRecoveryEvidencePanel page={page} snapshotID={selected?.id || ''}"))
   assert.match(parent, /data-xdrive-admin-backup-drill-receipt/)
   assert.match(parent, /隔离演练所选 v2 备份/)
 })

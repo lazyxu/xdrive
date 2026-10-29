@@ -84,7 +84,10 @@ test('Web/Mobile Web/PWA login and account menu expose manual origin navigation 
     'window.opener', 'document.cookie']) {
     assert.equal(dialog.includes(forbidden), false, 'manual navigation never touches credentials or running transports: ' + forbidden)
   }
-  assert.match(app, /window\.addEventListener\('beforeunload', xDriveWarnBeforeLeavingUpload\)/)
+  assert.match(app, /return xDriveObservePwaBeforeUnload\(window\)/)
+  const unload = read('web/src/pwaTransferSafety.ts')
+  assert.match(unload, /host\.addEventListener\('beforeunload', xDriveWarnBeforeLeavingUpload\)/)
+  assert.match(unload, /host\.removeEventListener\('beforeunload', xDriveWarnBeforeLeavingUpload\)/)
   assert.match(app, /setTransferSessionKey\(username \?/)
 })
 

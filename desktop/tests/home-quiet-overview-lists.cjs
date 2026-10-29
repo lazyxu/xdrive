@@ -51,7 +51,9 @@ test('a failed read cannot claim a true empty list or discard last accepted item
 test('existing thumbnails and file navigation are preserved independently', () => {
   assert.ok(home.includes('<XDriveFileExplorerThumbnail'))
   assert.ok(web.includes('api.mediaThumbnail(id, requestSignal)'))
-  assert.ok(web.includes('api.fileRecent(6)'))
-  assert.ok(web.includes('api.fileFavorites()'))
+  assert.ok(web.includes('api.fileRecent(6, read.signal)'),
+    'Overview Recent GET must follow the disposable foreground scope')
+  assert.ok(web.includes('api.fileFavorites(read.signal)'),
+    'Overview Favorites GET must follow the same scoped cancellation')
   assert.ok(web.includes('onOpenDirectory(entry.node.id, entry.crumbs)'))
 })

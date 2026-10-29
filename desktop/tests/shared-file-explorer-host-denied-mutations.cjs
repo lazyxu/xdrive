@@ -76,12 +76,18 @@ test('real Desktop selection still dispatches the original complete selection', 
 })
 
 test('disabled native-like Host actions use the same menu and shortcut boundary', () => {
-  const dsm = fs.readFileSync(path.join(repo, 'web/src/synology.tsx'), 'utf8')
+  const dsm = fs.readFileSync(path.join(repo, 'web/src/synologyHost.ts'), 'utf8')
+  const dsmEntry = fs.readFileSync(path.join(repo, 'web/src/synology.tsx'), 'utf8')
   const outlet = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/XDriveAppPageOutlet.tsx'), 'utf8')
+  assert.ok(dsmEntry.includes('const host = createXDriveSynologyHost()') &&
+    !dsmEntry.includes('filesUnavailableActions:'),
+    'DSM entry must use the authenticated Host adapter instead of a page-local capability list')
   for (const key of ['copy','cut','paste','delete','rename','moveTo','copyTo','manageTags']) {
     assert.ok(dsm.includes(key + ": 'DSM"), key + ' must be declared only at authenticated DSM Host boundary')
   }
-  assert.ok(outlet.includes('unavailableActions={services.filesUnavailableActions}'))
+  assert.ok(dsm.includes('ownerFilesPage: {') && dsm.includes('client: local,'))
+  assert.ok(outlet.includes('client={services.ownerFilesPage.client}'))
+  assert.ok(outlet.includes('unavailableActions={services.ownerFilesPage.unavailableActions}'))
   assert.ok(source.includes("command === 'rename' && activeItem && onRenameItem && !renameDisabled && !unavailableActions?.rename"))
   assert.ok(source.includes('!unavailableActions?.paste'), 'shortcut Paste requires a real Host')
   assert.ok(source.includes('onPaste?.()'), 'normal Desktop Paste remains owned by its real callback')

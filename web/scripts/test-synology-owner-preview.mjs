@@ -91,12 +91,22 @@ async function mount() {
     ['useXDriveFileExplorerCursorDirectory'],
     { ...hooks, ...ownerFence, ...readStrategy, AbortController },
   )
+  // Test the *real* shared quota hook rather than omitting its dependency.
+  // A verified, within-quota Server Owner response must not disturb Viewer
+  // and download lifecycle tests or create artificial background jobs.
+  const quota = loadPlainModule(
+    'ui/shared/src/mui/FileExplorerOwnerQuota.ts',
+    ['useXDriveFileExplorerOwnerQuota'],
+    hooks,
+  )
   const client = {
     async ownerFilesRoot() { return { id: 1, name: 'Owner' } },
     async ownerFilesPage() { return { items: rows, has_more: false } },
+    async ownerQuota() { return { over_quota: false } },
   }
   let currentClient = client
-  const bindings = { ...hooks, ...ownerFence, ...cursorDirectory, ...classification, ...media, ...stream, ...scope,
+  const bindings = { ...hooks, ...ownerFence, ...cursorDirectory, ...quota,
+    ...classification, ...media, ...stream, ...scope,
     XDRIVE_SYNOLOGY_OWNER_DOWNLOAD_MAX_BYTES: 32 << 20,
     xDriveFileSupportsThumbnail: () => false,
     xDriveSynologyLoadOwnerThumbnail: () => { throw Error('Controller must not preload media') },

@@ -12,8 +12,8 @@ import type {
 } from './CloudStoragePage'
 
 export interface XDriveCloudStoragePort {
-  getQuota: () => Promise<XDriveTransportResult<QuotaUsage>>
-  getStats?: () => Promise<XDriveTransportResult<StorageStats | null>>
+  getQuota: (signal?: AbortSignal) => Promise<XDriveTransportResult<QuotaUsage>>
+  getStats?: (signal?: AbortSignal) => Promise<XDriveTransportResult<StorageStats | null>>
 }
 
 export type XDriveCloudStorageDataSourceOptions = {
@@ -31,30 +31,38 @@ export function createXDriveCloudStorageDataSource(
   }: XDriveCloudStorageDataSourceOptions = {},
 ): XDriveCloudStorageDataSource {
   return {
-    load: async (): Promise<XDriveCloudStorageSnapshot> => {
+    load: async (signal?: AbortSignal): Promise<XDriveCloudStorageSnapshot> => {
+      // Only disposable quota/statistics GETs use this page-owned signal.
+      // An aborted old Owner must never update the app-wide quota either.
+      signal?.throwIfAborted()
       const statsPromise = port.getStats
         ? tolerateStatsError
-          ? port.getStats().catch(() => null)
-          : port.getStats()
+          ? port.getStats(signal).catch(() => {
+            signal?.throwIfAborted()
+            return null
+          })
+          : port.getStats(signal)
         : Promise.resolve(null)
 
       const [quotaResult, statsResult] = await Promise.all([
-        port.getQuota(),
+        port.getQuota(signal),
         statsPromise,
       ])
-
+      signal?.throwIfAborted()
       const quota = await resolveXDriveTransport(Promise.resolve(quotaResult))
-      onQuota?.(quota)
+      signal?.throwIfAborted()
 
       let stats: StorageStats | null = null
       if (statsResult !== null) {
         try {
           stats = await resolveXDriveTransport(Promise.resolve(statsResult))
         } catch (error) {
+          signal?.throwIfAborted()
           if (!tolerateStatsError) throw error
         }
       }
-
+      signal?.throwIfAborted()
+      onQuota?.(quota)
       return {
         quota,
         stats,

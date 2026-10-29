@@ -14,6 +14,25 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tfluid.xdrive.core.TrashEntry
 
+/** Exact, bounded continuation of a loaded Owner Trash range. */
+internal fun trashHasNextPage(loadedCount: Int, totalCount: Long): Boolean =
+    loadedCount > 0 && totalCount > 0L && loadedCount.toLong() < totalCount &&
+        loadedCount <= Int.MAX_VALUE - 100
+
+/** Only a real scroll leaving the current end can re-arm the next edge. */
+internal fun trashEdgeLeft(loadedCount: Int, lastVisibleIndex: Int): Boolean =
+    loadedCount > 0 && lastVisibleIndex >= 0 &&
+        lastVisibleIndex < (loadedCount - 6).coerceAtLeast(0)
+
+internal fun shouldPrefetchTrashPage(
+    loaded: Boolean, loading: Boolean, error: Boolean,
+    loadedCount: Int, totalCount: Long, lastVisibleIndex: Int,
+    activelyScrolling: Boolean, edgeArmed: Boolean,
+): Boolean =
+    loaded && !loading && !error && activelyScrolling && edgeArmed &&
+        trashHasNextPage(loadedCount, totalCount) &&
+        lastVisibleIndex >= (loadedCount - 4).coerceAtLeast(0)
+
 /** Owner-scoped recovery; permanent deletion is deliberately absent. */
 @Composable
 internal fun ColumnScope.Trash(state: DriveState, controller: DriveController) {
@@ -22,10 +41,24 @@ internal fun ColumnScope.Trash(state: DriveState, controller: DriveController) {
     val lastVisible by remember {
         derivedStateOf { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
     }
-    LaunchedEffect(lastVisible, state.trashItems.size, state.trashTotal,
+    // Never load an entire Owner trash history just because the first short
+    // page's footer is visible or the LazyColumn is remeasuring. Each new
+    // automatic page needs a deliberate real scroll into its current edge.
+    var edgeArmed by remember(state.server, state.username) {
+        mutableStateOf(true)
+    }
+    val scrolling = listState.isScrollInProgress
+    LaunchedEffect(lastVisible, scrolling, state.trashItems.size, state.trashTotal,
         state.trashLoaded, state.loading, state.error) {
-        if (state.trashLoaded && state.error == null && !state.loading &&
-            lastVisible >= (state.trashItems.size - 4).coerceAtLeast(0)) controller.loadMoreTrash()
+        if (scrolling && trashEdgeLeft(state.trashItems.size, lastVisible))
+            edgeArmed = true
+        if (shouldPrefetchTrashPage(
+                state.trashLoaded, state.loading, state.error != null,
+                state.trashItems.size, state.trashTotal, lastVisible,
+                scrolling, edgeArmed)) {
+            edgeArmed = false
+            controller.loadMoreTrash()
+        }
     }
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically) {
@@ -75,6 +108,17 @@ internal fun ColumnScope.Trash(state: DriveState, controller: DriveController) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (state.loading) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
+        if (state.trashLoaded && state.error == null &&
+            trashHasNextPage(state.trashItems.size, state.trashTotal)) {
+            item(key = "trash-load-more") {
+                TextButton(
+                    onClick = controller::loadMoreTrash,
+                    enabled = !state.loading && !state.trashRestoreAttempted,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                        .testTag("trash-load-more"),
+                ) { Text("加载更多回收站项目") }
+            }
+        }
     }
     candidate?.let { entry ->
         AlertDialog(onDismissRequest = { candidate = null },

@@ -1,6 +1,7 @@
 import { Paper, Stack, Table, TableBody, TableCell, TableRow, Typography } from '@mui/material'
 import type { XDriveServerBackupPage } from '../server-backup-admin'
 import { selectServerBackupRecoveryEvidence } from '../server-backup-recovery-evidence'
+import { assessServerBackupRecoveryReadiness } from '../server-backup-recovery-readiness'
 
 const snapshotStatus: Record<string, string> = {
   none: '未选择已发现的快照',
@@ -48,6 +49,7 @@ export function XDriveBackupRecoveryEvidencePanel({ page, snapshotID }: {
   snapshotID: string
 }) {
   const evidence = selectServerBackupRecoveryEvidence(page, snapshotID)
+  const readiness = assessServerBackupRecoveryReadiness(page, evidence, snapshotID)
   return (
     <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}
       data-xdrive-admin-backup-recovery-evidence>
@@ -56,6 +58,12 @@ export function XDriveBackupRecoveryEvidencePanel({ page, snapshotID }: {
         <Typography variant="body2" color="text.secondary">
           以下结果只对应当前选中的快照。备份创建、完整性校验、实际恢复历史与独立隔离演练
           是不同证据，不能互相替代。
+        </Typography>
+        <Typography variant="subtitle2" data-xdrive-admin-backup-recovery-readiness>
+          恢复前检查建议：{readiness.label}
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          {readiness.action}
         </Typography>
         <Table size="small" aria-label="所选备份恢复证据分层">
           <TableBody>
