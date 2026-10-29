@@ -106,14 +106,26 @@ async function mount() {
     ['useXDriveFileExplorerOwnerQuota'],
     hooks,
   )
+  // Load the actual Host-neutral preference hook after its UI extraction.
+  // A per-mounted-page storage fake keeps appearance state separate without
+  // granting any Owner or Agent capability to the fixture.
+  const viewModeStorage = new Map()
+  const viewPreference = loadPlainModule(
+    'ui/shared/src/mui/FileExplorerViewPreference.ts',
+    ['XDRIVE_HOST_FILES_PREFERENCES', 'useXDriveFileExplorerPersistedViewMode'],
+    { ...hooks, window: { localStorage: {
+      getItem: key => viewModeStorage.get(key) ?? null,
+      setItem: (key, value) => viewModeStorage.set(key, value),
+    } } },
+  )
   const client = {
     async ownerFilesRoot() { return { id: 1, name: 'Owner' } },
     async ownerFilesPage() { return { items: rows, has_more: false } },
     async ownerQuota() { return { over_quota: false } },
   }
   let currentClient = client
-  const bindings = { ...hooks, ...ownerFence, ...cursorDirectory, ...quota, ...ownerIdentity,
-    ...classification, ...media, ...stream, ...scope,
+  const bindings = { ...hooks, ...ownerFence, ...cursorDirectory, ...quota, ...viewPreference,
+    ...ownerIdentity, ...classification, ...media, ...stream, ...scope,
     XDRIVE_SYNOLOGY_OWNER_DOWNLOAD_MAX_BYTES: 32 << 20,
     xDriveFileSupportsThumbnail: () => false,
     xDriveSynologyLoadOwnerThumbnail: () => { throw Error('Controller must not preload media') },
