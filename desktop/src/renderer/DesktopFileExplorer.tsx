@@ -30,6 +30,7 @@ import {
   xDriveFileExplorerAvailabilityError,
   xDriveFileExplorerAvailabilityFromSnapshot,
   xDriveReadFileExplorerHostAvailability,
+  xDriveFileExplorerAvailabilityRequests,
   xDriveFileExplorerPersistedSearchFilters,
   xDriveFileExplorerOrganizationSearchState,
   xDriveFileExplorerSavedSearchRuleLabels,
@@ -1205,29 +1206,16 @@ export default function DesktopFileExplorer({
     ) ? currentItems : items)
   }, [])
 
-  const availabilityRequests = useMemo(() => {
-    const byNodeID = new Map<number, string>()
-    for (const node of nodeByID.values()) {
-      const searchResult = searchByID.get(node.id)
-      const path = searchResult?.path ||
-        [...crumbs.slice(1).map((crumb) => crumb.name), node.name].join('/')
-      if (path) byNodeID.set(node.id, path)
-    }
-    for (const item of quickAccess.items) if (item.path) byNodeID.set(item.id, item.path)
-    for (const item of favorites.items) if (item.path) byNodeID.set(item.id, item.path)
-    for (const item of recent.items) if (item.path) byNodeID.set(item.id, item.path)
-    for (const item of navigationAvailabilityItems) {
-      if (item.path) byNodeID.set(Number(item.id), item.path)
-    }
-    // Reuse the existing Agent batch instead of probing each column row.
-    for (const item of columnAvailabilityItems) {
-      const nodeID = Number(item.id)
-      if (item.path && Number.isSafeInteger(nodeID) && nodeID > 0) {
-        byNodeID.set(nodeID, item.path)
-      }
-    }
-    return [...byNodeID].map(([nodeID, path]) => ({ nodeID, path }))
-  }, [
+  const availabilityRequests = useMemo(() => xDriveFileExplorerAvailabilityRequests({
+    nodes: nodeByID.values(),
+    searchByID,
+    crumbs,
+    quickAccess: quickAccess.items,
+    favorites: favorites.items,
+    recent: recent.items,
+    navigation: navigationAvailabilityItems,
+    columns: columnAvailabilityItems,
+  }), [
     crumbs,
     favorites.items,
     navigationAvailabilityItems,
