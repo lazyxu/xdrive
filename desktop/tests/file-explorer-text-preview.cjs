@@ -74,7 +74,11 @@ test('shared Preview Engine owns classification and renderer surface', () => {
     'data-xdrive-file-preview-kind',
     'component="pre"',
     '<XDriveDecodedImagePreview',
-    'component="video"',
+    // Native video needs its real element ref so Owner/Viewer exit aborts Range.
+    '<video',
+    'ref={videoStreamElementRef}',
+    'xDriveAbortHTMLMediaElement(media)',
+    '<XDriveTransformedVideoPreview',
     'component="audio"',
     'component="iframe"',
     '仅显示前 1 MiB',
