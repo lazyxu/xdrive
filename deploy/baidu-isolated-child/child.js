@@ -96,16 +96,25 @@
     if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) ||
         width < 1 || height < 1 || width > 4096 || height > 4096) return
     const points = []
+    let validPixels = 0
     for (const cell of gesture ? gestureCells : cells) {
       if (!gesture && !allowedKeys.has(cell.key)) continue
       try {
         const position = map.pointToPixel(new sdk.Point(cell.longitude,cell.latitude))
         const x = Math.round(position.x), y = Math.round(position.y)
-        if (!Number.isSafeInteger(x) || !Number.isSafeInteger(y) ||
-            x < 0 || x > width || y < 0 || y > height) continue
+        if (!Number.isSafeInteger(x) || !Number.isSafeInteger(y)) continue
+        // An offscreen finite pixel is valid evidence that the marker left
+        // the map. Do not mistake that for a transient SDK decode failure.
+        validPixels++
+        if (x < 0 || x > width || y < 0 || y > height) continue
         points.push({key:cell.key,x,y})
       } catch { /* old SDK: numerical cluster labels remain */ }
     }
+    // During a held-mouse pan the provider can temporarily return NaN or
+    // throw for every old position. Keep the last already-inert Parent photo
+    // projection rather than sending an empty gesture frame. Child grants
+    // remain revoked; no private Owner identity or media crosses this Origin.
+    if (gesture && gestureCells.length>0 && validPixels===0) return
     send(gesture ? 'gesture-projections' : 'cell-projections',
       {width,height,points})
   }
