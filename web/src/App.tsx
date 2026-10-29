@@ -345,6 +345,10 @@ function App({
   const [username, setUsername] = useState(() => xDriveBrowserStorageRead(USER_KEY) ?? '')
   const [serverBuild, setServerBuild] = useState<BuildInfo | null>(null)
   const [authNotice, setAuthNotice] = useState('')
+  // An authenticated login may require an immediate password change even
+  // before the first /me response finishes. This flag comes only from the
+  // Server's successful login result; cold-cookie restore still uses /me.
+  const [loginPasswordChangeRequired, setLoginPasswordChangeRequired] = useState(false)
   const [logoutInProgress, setLogoutInProgress] = useState(false)
   const [cookieBootPending, setCookieBootPending] = useState(() =>
     typeof window !== 'undefined' && window.location.protocol === 'https:' &&
@@ -467,6 +471,7 @@ function App({
     if (clearSharedStorage) xDriveBrowserStorageRemove(COOKIE_MODE_KEY)
     setSession({ accessToken: '', refreshToken: '', accessExpiresAt: 0 })
     setUsername('')
+    setLoginPasswordChangeRequired(false)
     setAuthNotice(storageCleared ? notice : [notice,
       '无法确认浏览器已清除本地登录记录；请在浏览器设置中清理本站点数据。',
     ].filter(Boolean).join(' '))
@@ -703,6 +708,7 @@ function App({
             xDriveBrowserStorageRemove(COOKIE_LOGOUT_OWNER_KEY)
           }
           persistSession(sessionFromAuth(result), rememberLogin)
+          setLoginPasswordChangeRequired(result.must_change_password === true)
           if (rememberLogin) xDriveBrowserStorageWrite(LAST_USERNAME_KEY, result.username)
           if (rememberLogin && !xDriveBrowserStorageWrite(USER_KEY, result.username)) {
             // Do not leave persisted tokens without their matching username.
@@ -725,6 +731,8 @@ function App({
       onAppearanceChange={onAppearanceChange}
       onAuthExpired={clearSession}
       onLogout={signOut}
+      loginPasswordChangeRequired={loginPasswordChangeRequired}
+      onPasswordChanged={() => setLoginPasswordChangeRequired(false)}
     />
   )
 }
@@ -892,6 +900,8 @@ function FileManager({
   onAppearanceChange,
   onAuthExpired,
   onLogout,
+  loginPasswordChangeRequired,
+  onPasswordChanged,
 }: {
   api: XDriveApi
   authSession: AuthSession
@@ -901,6 +911,8 @@ function FileManager({
   onAppearanceChange: (appearance: XDriveAppearance) => void
   onAuthExpired: (notice?: string) => void
   onLogout: () => void
+  loginPasswordChangeRequired: boolean
+  onPasswordChanged: () => void
 }) {
   const compactWorkspace = useMediaQuery('(max-width:899.95px)')
   const iosPhotoHost = useMemo(() => xDriveCreateIOSPhotoBackupHost(), [])
@@ -1910,7 +1922,7 @@ function FileManager({
     }
   }
 
-  if (profile?.must_change_password) {
+  if (profile?.must_change_password || loginPasswordChangeRequired) {
     const submitPassword = async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault()
       const validationError = xDrivePasswordChangeValidationError(passwordValues)
@@ -1920,10 +1932,17 @@ function FileManager({
       }
       try {
         await api.changePassword(passwordValues.current, passwordValues.next)
+        // Login-response gating can precede /me. Never spread a null profile
+        // into a fabricated authenticated Owner; read the real profile first.
+        const currentProfile = profile || await api.me()
+        if (currentProfile.username !== username) {
+          throw new Error('修改密码后无法核对当前登录账号，请重新登录。')
+        }
         setPasswordValues({ current: '', next: '', confirm: '' })
         setPasswordError('')
         setFeedback({ tone: 'good', message: '密码已修改' })
-        setProfile({ ...profile, must_change_password: false })
+        setProfile({ ...currentProfile, must_change_password: false })
+        onPasswordChanged()
       } catch (err) {
         handleError(err)
       }
