@@ -60,6 +60,9 @@
   let heldMousePointer = null, viewportAfterMouseRelease = false
   // No private data or pointer identifiers cross this isolated Origin.
   const heldTouchPointers = new Set()
+  // Local, bounded CSS pointer origins only; never forward input, Owner data
+  // or private media details to the Gallery Parent.
+  const pointerOrigins = new Map()
   let observedSize = null, sizeObserver = null, windowResizeFallback = false
   let resizeRevoked = false
   const send = (kind, fields = {}) => {
@@ -238,8 +241,28 @@
       return
     if (event.pointerType==='mouse' && event.isPrimary)
       heldMousePointer=event.pointerId
-    else if (event.pointerType==='touch' || event.pointerType==='pen')
+    else if ((event.pointerType==='touch' || event.pointerType==='pen') &&
+             heldTouchPointers.size<12)
       heldTouchPointers.add(event.pointerId)
+    if ((heldMousePointer===event.pointerId ||
+         heldTouchPointers.has(event.pointerId)) &&
+        pointerOrigins.size<12 &&
+        Number.isFinite(event.clientX) && Number.isFinite(event.clientY))
+      pointerOrigins.set(event.pointerId,{x:event.clientX,y:event.clientY})
+  }
+  const onMapPointerMove = event => {
+    if (disposed || !active || !map || !event.isTrusted) return
+    const origin=pointerOrigins.get(event.pointerId)
+    if (!origin || !Number.isFinite(event.clientX) ||
+        !Number.isFinite(event.clientY) ||
+        !(heldMousePointer===event.pointerId ||
+          heldTouchPointers.has(event.pointerId))) return
+    if (Math.hypot(event.clientX-origin.x,event.clientY-origin.y)<12) return
+    pointerOrigins.delete(event.pointerId)
+    // A real map drag without a provider movestart still revokes all current
+    // ephemeral Cell keys immediately. Its old pixels remain VISUAL ONLY
+    // and the existing last-contact release schedules the fresh Owner Range.
+    if (allowedKeys.size>0) stopViewport()
   }
   const releaseHeldMouse = pointerID => {
     const mouseMatches=heldMousePointer!==null &&
@@ -247,6 +270,8 @@
     const touchMatches=pointerID===undefined
       ? heldTouchPointers.size>0 : heldTouchPointers.delete(pointerID)
     if (!mouseMatches && !touchMatches) return
+    if (pointerID===undefined) pointerOrigins.clear()
+    else pointerOrigins.delete(pointerID)
     if (mouseMatches) heldMousePointer=null
     if (pointerID===undefined) heldTouchPointers.clear()
     // Multitouch pinch isn't settled until its final current contact lifts.
@@ -270,15 +295,18 @@
     canvas?.addEventListener('pointerdown',onMousePointerDown,true)
     window.addEventListener('pointerup',onMousePointerUp,true)
     window.addEventListener('pointercancel',onMousePointerUp,true)
+    window.addEventListener('pointermove',onMapPointerMove,true)
     window.addEventListener('blur',onMouseWindowBlur)
   }
   const releaseMousePointer = () => {
     heldMousePointer=null
     heldTouchPointers.clear()
+    pointerOrigins.clear()
     viewportAfterMouseRelease=false
     canvas?.removeEventListener('pointerdown',onMousePointerDown,true)
     window.removeEventListener('pointerup',onMousePointerUp,true)
     window.removeEventListener('pointercancel',onMousePointerUp,true)
+    window.removeEventListener('pointermove',onMapPointerMove,true)
     window.removeEventListener('blur',onMouseWindowBlur)
   }
   const refreshChangedSize = () => {
