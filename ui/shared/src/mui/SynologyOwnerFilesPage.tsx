@@ -7,6 +7,7 @@ import type {
 } from '../synology-backup-adapter'
 import { XDriveFileExplorer } from './FileExplorer'
 import { xDriveFindVerifiedOwnerSelection } from './FileExplorerVerifiedOwnerSelection'
+import { xDriveFileExplorerReadOnlyDownloadReason } from './FileExplorerReadOnlyDownloadAdmission'
 import { xDriveFileExplorerReadOnlyViewerSelection } from './FileExplorerReadOnlyViewerSelection'
 import type { XDriveFileExplorerUnavailableActions } from './FileExplorer'
 import { useXDriveFileExplorerCursorDirectory } from './FileExplorerCursorDirectoryController'
@@ -164,22 +165,16 @@ export function XDriveSynologyOwnerFilesPage({
   // Reject unsupported/stale requests before retiring an already verified save.
   const getDownloadDisabledReason = useCallback((
     selected: readonly XDriveFileExplorerItem[], count = selected.length,
-  ): string | null => {
-    if (!isCurrentOwner() || !currentScopeVerified) return '当前 Server Owner 目录尚未验证'
-    if (downloadAbort.current) return '已有正在执行的文件下载'
-    if (count !== 1 || selected.length !== 1) return '暂仅支持单个文件下载'
-    const item = selected[0]
-    if (item.kind !== 'file' || typeof item.size !== 'number' ||
-        !Number.isSafeInteger(item.size) || item.size < 1 ||
-        item.size > XDRIVE_SYNOLOGY_OWNER_DOWNLOAD_MAX_BYTES) {
-      return '仅支持大小为 1 B～32 MiB 的单个原始文件下载'
-    }
-    const current = xDriveFindVerifiedOwnerSelection(item, itemsRef.current)
-    if (!current || current.type !== 'file') {
-      return '该文件不属于当前已核实的 Server Owner 目录'
-    }
-    return null
-  }, [currentScopeVerified, isCurrentOwner])
+  ): string | null => xDriveFileExplorerReadOnlyDownloadReason({
+    selected,
+    count,
+    rows: itemsRef.current,
+    ownerCurrent: isCurrentOwner(),
+    scopeVerified: currentScopeVerified,
+    downloadActive: downloadAbort.current !== null,
+    maxBytes: XDRIVE_SYNOLOGY_OWNER_DOWNLOAD_MAX_BYTES,
+    sizeLimitLabel: '32 MiB',
+  }), [currentScopeVerified, isCurrentOwner])
   // Native OS/browser saving is initiated only AFTER complete Owner/revision
   // validation and whole-file SHA-256 proof. No unsafe Server URL or token
   // is ever exposed, and partial bytes never reach the browser download UI.
