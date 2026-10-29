@@ -6,26 +6,56 @@ xDrive is an Apache-2.0 open-source file service with a Docker-deployed server, 
 
 **Android master APK (development):** Every push to `master` builds a separately downloadable Debug APK. Open [Android Master APK Actions](https://github.com/lazyxu/xdrive/actions/workflows/android-master-apk.yml?query=branch%3Amaster), select the latest successful master run, then download its `xdrive-android-master-<commit SHA>` Artifact (GitHub login required). The ZIP includes the APK, SHA-256 checksum and source commit metadata. This is **not** a stable signed update or GitHub Release asset; see [Android build details](android/README.md).
 
-## MVP scope
+## All-platform UI architecture (全平台 UI 统一架构)
+
+**Architecture adopted; migration in progress, not a completed 1:1 release.** The
+[cross-platform UI architecture and capability matrix](docs/architecture/xdrive-all-platform-ui.md)
+is the canonical design, alongside [Desktop/DSM Host details](docs/architecture/xdrive-shared-app-host.md)
+and the repository [developer rules](AGENTS.md).
+
+| Platform | Actual master UI composition | Remaining distinction |
+| --- | --- | --- |
+| Browser Web / Mobile Web / PWA | React/MUI reusing shared Files, Gallery, Viewer, workspace surfaces and route vocabulary | `web/src/App.tsx` still owns a separate top-level controller; migrating it to `XDriveApp` is **not complete**. PWA offline/Owner/session behavior must remain native to the browser. |
+| Windows/Linux Desktop | Electron mounts `ui/shared/src/mui/XDriveApp.tsx` | Local-folder Push backup and Windows CfAPI/Linux FUSE cloud drive mapping are **different** authenticated Agent features. |
+| Synology DSM | Authenticated CGI Host mounts the **same** `XDriveApp` and page outlet as Desktop | Real read ports work; missing Owner/Agent mutations show explicit unavailable reasons, not simulated success. |
+| iOS IPA | SwiftUI/WKWebView Host displays the **same Web/PWA React UI**, with PhotoKit/Keychain behind a narrow native bridge | Native backup/background capability and physical permission checks need separate validation. Draft PR work is not in master. |
+| Android APK | **Native Kotlin/Jetpack Compose** using shared Server APIs and generated visual tokens | Visual/behavioral parity is a tested product-contract target, **not shared React JSX or proven pixel-perfect 1:1**. |
+
+**One product/Owner contract, not one rendering engine.** Shared routes, domain
+controllers, responsive design, Files/Gallery/Viewer interactions and security
+checks should converge. Only a genuinely authorized Host may provide native
+actions. Keep one owning Server/Agent UploadSession/CAS writer; do not conflate
+local backup Sources with CfAPI/FUSE virtual-drive mount paths.
+
+## Historical initial MVP scope
+
+The following table records the initial first-release plan, **not the current
+platform list or feature availability**. Use the matrix above for live entry
+points and platform-specific documentation for supported native capabilities.
+
 
 | Area | First release |
 | --- | --- |
 | Server | Go + Gin + GORM + PostgreSQL + JWT |
 | Storage | Local filesystem, whole-file objects |
-| Web | React + TypeScript + Ant Design |
+| Web | React + TypeScript + Ant Design (original plan; current UI is React/MUI) |
 | Linux | FUSE client (`go-fuse/v2`) |
 | Windows | Cloud Files API (CfAPI), Files On-Demand style placeholders |
 | Client delivery | Windows `.exe` installer; Linux `.deb` installer |
 | Multi-user | Administrator-provisioned accounts, roles, per-user isolation |
 
-Not in the MVP: content-defined chunking (CDC), small-file packs, thumbnails/transcoding, directory/upload sharing, MinIO, macOS, or mobile clients. Full-file content-addressed deduplication is supported for new writes.
+Excluded from the original MVP (historical; not a current unsupported-feature list): content-defined chunking (CDC), small-file packs, thumbnails/transcoding, directory/upload sharing, MinIO, macOS, or mobile clients. Full-file content-addressed deduplication is supported for new writes.
 
 ## Architecture
+
+This is a simplified **server/data-plane** diagram. For the real Web/PWA/iOS/
+Android/Desktop/DSM UI and Host Adapter design, use the
+[all-platform UI architecture](docs/architecture/xdrive-all-platform-ui.md).
 
 ```text
                             ┌──────────────────────┐
                             │      xDrive Web      │
-                            │ React + Ant Design   │
+                            │ React + MUI          │
                             └──────────┬───────────┘
                                        │ /api
                                        ▼
