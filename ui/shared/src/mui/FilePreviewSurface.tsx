@@ -151,6 +151,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   // The original video stream has its own authorized loader, independent of
   // the already Owner-fenced cached poster. Only VIDEO participates: existing
   // PDF/audio/text and image loader lifecycles are unchanged.
+  const textPreviewOwner = previewKind === 'text' ? loadTextPreview : undefined
   const videoPreviewOwner = previewKind === 'video' ? loadPreviewURL : undefined
   const currentVideoPreviewOwnerRef = useRef(videoPreviewOwner)
   currentVideoPreviewOwnerRef.current = videoPreviewOwner
@@ -203,12 +204,14 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     target?.size,
   ])
   const [textPreview, setTextPreview] = useState<XDriveFileTextPreview | null>(null)
+  const [textOwnerAtStart, setTextOwnerAtStart] = useState<XDriveFilePreviewTextLoader<T> | undefined>()
   const [previewRetryNonce, setPreviewRetryNonce] = useState(0)
   // A stale retry handler must not fetch media after Node/Owner replacement,
   // or re-submit a previous attempt once a newer one has started.
   const retryOwnerRef = useRef({
     sourceIdentity: JSON.stringify([target?.id, target?.revision, previewKind]),
     videoPreviewOwner,
+    textPreviewOwner,
   })
   const [previewURL, setPreviewURL] = useState('')
   const [videoURLSourceOwner, setVideoURLSourceOwner] = useState<XDriveFilePreviewURLLoader<T> | undefined>()
@@ -290,8 +293,9 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     }
   }, [sourceIdentity, previewKind, hasVideoPosterLoader, loadImagePreview])
   if (retryOwnerRef.current.sourceIdentity !== sourceIdentity ||
-      retryOwnerRef.current.videoPreviewOwner !== videoPreviewOwner) {
-    retryOwnerRef.current = { sourceIdentity, videoPreviewOwner }
+      retryOwnerRef.current.videoPreviewOwner !== videoPreviewOwner ||
+      retryOwnerRef.current.textPreviewOwner !== textPreviewOwner) {
+    retryOwnerRef.current = { sourceIdentity, videoPreviewOwner, textPreviewOwner }
   }
   const retryOwner = retryOwnerRef.current
   const retryNonceRef = useRef(previewRetryNonce)
@@ -552,6 +556,8 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     const currentTarget = previewTargetRef.current
     const loaders = previewLoadersRef.current
     setTextPreview(null)
+    // An updater returning the function stores this Owner loader without invoking it.
+    if (previewKind === 'text') setTextOwnerAtStart(() => loaders.text)
     assignPreviewURL('')
     setVideoURLSourceOwner(undefined)
     setLoading(false)
@@ -648,6 +654,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     previewTargetRevision,
     previewRetryNonce,
     videoPreviewOwner,
+    textPreviewOwner,
   ])
 
   const retryPreview = () => {
@@ -778,8 +785,9 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     !failed
   )
   const staleVideoStreamOwner = previewKind === 'video' && videoURLSourceOwner !== videoPreviewOwner
+  const staleTextOwner = previewKind === 'text' && textOwnerAtStart !== textPreviewOwner
   const presentationState: XDriveFilePreviewPresentationState = acquiredIdentityRef.current !== sourceIdentity ||
-    staleVideoStreamOwner
+    staleVideoStreamOwner || staleTextOwner
     ? 'loading'
     : failed || previewKind === 'none' ? 'failed'
       : loading || mediaPending ? 'loading'
@@ -966,7 +974,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     }
     // A target change can render before its effect clears the previous URL.
     // Never mount old video/audio/PDF bytes under a newer Node/revision.
-    if (loading || acquiredIdentityRef.current !== sourceIdentity || staleVideoStreamOwner) {
+    if (loading || acquiredIdentityRef.current !== sourceIdentity || staleVideoStreamOwner || staleTextOwner) {
       return videoPlaceholder(
         <Box sx={{ minHeight: 96, display: 'grid', placeItems: 'center' }}>
           <CircularProgress size={26} />
@@ -1118,7 +1126,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   return (
     <Box
       data-xdrive-file-preview-kind={previewKind}
-      aria-busy={loading || mediaPending || undefined}
+      aria-busy={loading || mediaPending || staleTextOwner || undefined}
       sx={{
         width: '100%',
         minWidth: 0,
