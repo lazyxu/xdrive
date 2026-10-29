@@ -1,10 +1,9 @@
 import type { ReactNode } from 'react'
 import type { SxProps, Theme } from '@mui/material/styles'
-import { XDriveWorkspaceContent } from './WorkspaceContent'
+import { XDriveWorkspaceRouteSurface } from './WorkspaceRouteSurface'
 import { XDriveAppPageOutlet } from './XDriveAppPageOutlet'
 import {
   xDriveIsSharedHostPageRoute,
-  xDriveWorkspacePresentation,
   type XDriveWorkspaceAppRoute,
 } from './WorkspaceRoute'
 import type { XDriveWorkspaceHostAdapter } from './WorkspaceHostAdapter'
@@ -34,7 +33,6 @@ export function XDriveAppRouteContent({
   pageSx?: SxProps<Theme>
   children?: ReactNode
 }) {
-  const presentation = xDriveWorkspacePresentation(view)
   // Only the existing Desktop Files child is transitional. Any Host without
   // that legacy controller uses the shared outlet, where a missing authorized
   // Owner Files port produces an explicit unavailable state (not a blank page).
@@ -44,10 +42,9 @@ export function XDriveAppRouteContent({
     (view === 'files' && !hasLegacyFilesContent)
 
   return (
-    <XDriveWorkspaceContent
-      presentation={presentation}
-      responsive
-      sx={presentation === 'files' ? undefined : pageSx}
+    <XDriveWorkspaceRouteSurface
+      view={view}
+      sx={view === 'files' ? undefined : pageSx}
     >
       {children}
       {usesSharedOutlet ? (
@@ -64,6 +61,6 @@ export function XDriveAppRouteContent({
           onNavigate={onNavigate}
         />
       ) : null}
-    </XDriveWorkspaceContent>
+    </XDriveWorkspaceRouteSurface>
   )
 }
