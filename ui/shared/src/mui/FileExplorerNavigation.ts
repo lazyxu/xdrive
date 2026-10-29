@@ -5,7 +5,6 @@ import {
   XDRIVE_FILE_EXPLORER_DEFAULT_GROUPING,
 } from '../file-explorer-grouping'
 import type { XDriveFileExplorerGrouping } from '../file-explorer-grouping'
-import { xDriveReadFileExplorerStoredViewMode } from './FileExplorerViewPreference'
 import type {
   XDriveFileExplorerCrumb,
   XDriveFileExplorerSort,
@@ -13,7 +12,15 @@ import type {
 } from './FileExplorer'
 
 function loadStoredViewMode(storageKey: string): XDriveFileExplorerViewMode {
-  return xDriveReadFileExplorerStoredViewMode(storageKey)
+  if (typeof window === 'undefined') return 'details'
+  try {
+    const stored = window.localStorage.getItem(storageKey)
+    return stored === 'grid' || stored === 'columns' ? stored : 'details'
+  } catch {
+    // Safari/private storage getters can be denied. Keep view-mode memory
+    // usable and default to Details instead of unmounting the whole workspace.
+    return 'details'
+  }
 }
 
 export type XDriveFileExplorerNavigationTab<TCrumb extends XDriveFileExplorerCrumb> = {
