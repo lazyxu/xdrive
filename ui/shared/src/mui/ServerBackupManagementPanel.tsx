@@ -354,7 +354,15 @@ export function XDriveServerBackupManagementPanel({
         page.inventory.total_snapshots > 100 && port.readSnapshotIndexPage ? (
           <XDriveBackupSnapshotIndexPager
             readPage={port.readSnapshotIndexPage}
-            policyRevision={page.inventory.policy.revision} />
+            policyRevision={page.inventory.policy.revision}
+            verifyMode={verifyMode}
+            actionsDisabled={disabled}
+            onVerifyOlderSnapshot={id => {
+              // The older index is identity-only. This callback intentionally
+              // submits only VERIFY; destructive actions still require the
+              // newest-100 Host inventory and its current confirmation gates.
+              void submit({ action: 'verify', snapshot_id: id, mode: verifyMode })
+            }} />
         ) : null}
 
       <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
