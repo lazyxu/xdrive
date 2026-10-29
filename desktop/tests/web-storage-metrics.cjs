@@ -22,6 +22,7 @@ const desktopApp = [
 ].join('\n')
 const webApp = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'App.tsx'), 'utf8')
 const sharedOutlet = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx'), 'utf8')
+const browserHost = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'browserWorkspaceHost.ts'), 'utf8')
 const desktopStyles = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 'styles.css'), 'utf8')
 
 test('Web global storage statistics use shared metric primitives', () => {
@@ -55,7 +56,10 @@ test('Cloud storage is one shared Web/Desktop current-account workspace', () => 
   assert.equal(cloudStorage.includes('CAS 全局物理对象'), false)
   assert.equal(cloudStorage.includes('宿主机绝对路径'), false)
   assert.equal(cloudStorage.includes('cleanupCache'), false)
-  assert.ok(webApp.includes('<XDriveCloudStoragePage source={cloudStorageSource} />'))
+  assert.ok(webApp.includes('cloudStorage: cloudStorageSource') &&
+    browserHost.includes('cloudStorage: ports.cloudStorage') &&
+    sharedOutlet.includes('<XDriveCloudStoragePage'),
+    'Web cloud storage must mount through the authenticated shared page outlet')
   assert.ok(desktopApp.includes('cloudStorage: cloudStorageSource') && sharedOutlet.includes('<XDriveCloudStoragePage'))
   assert.ok(cloudStorageAdapter.includes('export function createXDriveCloudStorageDataSource'))
   assert.ok(cloudStorageAdapter.includes('resolveXDriveTransport'))
@@ -93,7 +97,10 @@ test('Local storage is one shared Web/Desktop page with platform-specific sectio
   assert.ok(localStorage.includes('title="Desktop 存储"'))
   assert.equal((localStorage.match(/<XDriveMetricGrid\b/g) || []).length, 2)
   assert.equal((localStorage.match(/<XDriveMetricCard\b/g) || []).length, 8)
-  assert.ok(webApp.includes('<XDriveLocalStoragePage source={localStorageSource} />'))
+  assert.ok(webApp.includes('localStorage: localStorageSource') &&
+    browserHost.includes('localStorage: ports.localStorage') &&
+    sharedOutlet.includes('<XDriveLocalStoragePage'),
+    'Web local storage must mount through the authenticated shared page outlet')
   assert.ok(desktopApp.includes('localStorage: localStorageSource') && sharedOutlet.includes('<XDriveLocalStoragePage'))
   assert.equal((desktopApp.match(/<XDriveMetricGrid\b/g) || []).length, 3, 'diagnostics must not add another metric grid')
   assert.equal((desktopApp.match(/<XDriveMetricCard\b/g) || []).length, 16, 'diagnostics must not add pass/warn/fail metric cards')
@@ -192,9 +199,13 @@ test('global storage delegates durable maintenance to the global Task Center', (
     "setAppView('global-tasks')",
     "setAppView('global-tasks')",
     "api.controlBackgroundTask(\`system-maintenance:\${kind}\`, 'run', true)",
-    'onOpenTaskCenter={openGlobalTaskCenter}',
-    'onRunStorageMaintenance={runStorageMaintenance}',
+    'onOpenTaskCenter: openGlobalTaskCenter',
+    'onRunStorageMaintenance: runStorageMaintenance',
   ]) assert.ok(webApp.includes(token), 'Web Task Center handoff missing: ' + token)
+  assert.ok(webApp.includes('adminStorage: serverAdminVerified ? {') &&
+    browserHost.includes('adminStoragePage: ports.adminStorage') &&
+    sharedOutlet.includes('<XDriveGlobalStorageStatsPage'),
+    'administrator-only storage task actions must use the verified shared Host')
 })
 
 

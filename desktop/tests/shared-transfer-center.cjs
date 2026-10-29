@@ -109,7 +109,10 @@ test('Web and Desktop both render the shared task center workspace', () => {
     'Web must mount the shared task center via its authenticated Browser Host')
   assert.equal((desktop.match(/<XDriveTransferCenter\b/g) || []).length, 0, 'Desktop must not duplicate the transfer-center workspace')
   assert.equal((web.match(/<XDriveTransferCenter\b/g) || []).length, 0, 'Web must not duplicate the transfer-center workspace')
-  assert.match(workspaceNavigation, /key: 'transfers',\s*label: '任务'/, 'shared core navigation model must expose Tasks under its existing workspace key')
+  const routeTitles = read('ui', 'shared', 'src', 'mui', 'WorkspaceRouteTitles.ts')
+  assert.match(workspaceNavigation, /key: 'transfers',\s*label: xDriveWorkspaceRouteTitle\('transfers'\)/,
+    'shared core navigation must retain the canonical Tasks destination')
+  assert.ok(routeTitles.includes("transfers: '任务'"), 'shared route title must retain the Tasks label')
   assert.ok(sidebarNav.includes('xDriveCoreWorkspaceDestinations({ transferBadge, showLocalStorage })'), 'shared sidebar must consume the canonical core navigation model')
   assert.ok(sidebarNav.includes('primary={destination.label}'), 'shared sidebar must render the Transfers label from its destination')
   assert.ok(web.includes('<XDriveWorkspaceSidebar'), 'Web must consume the shared workspace sidebar')

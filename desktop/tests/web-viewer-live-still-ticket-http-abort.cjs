@@ -105,10 +105,13 @@ test('Web Gallery, routed Viewer and FileExplorer all forward their active Owner
     ['web/src/mediaGalleryAdapter.ts',
       /\?\s*api\.mediaLivePhotoStillURL\(nodeID,\s*signal\)/],
     ['web/src/WebFileExplorer.tsx',
-      /return await api\.mediaLivePhotoStillURL\(Number\(item\.id\),\s*signal\)/],
+      /return await api\.mediaLivePhotoStillURL\(plan\.nodeID,\s*signal\)/],
     ['web/src/WebFileViewerApps.tsx',
       /\?\s*api\.mediaLivePhotoStillURL\(viewer\.node!\.id,\s*signal\)/],
   ]
+  // FileExplorer's current authorized preview planner chooses the Owner Node.
+  // The same request's AbortSignal must reach the signed still ticket reader.
+  assert.match(read('web/src/WebFileExplorer.tsx'), /xDriveFileExplorerPreviewRequest\(item, kind/)
   for (const [file, check] of expected) {
     assert.match(read(file), check, file + ' must not drop the current abort signal')
   }
