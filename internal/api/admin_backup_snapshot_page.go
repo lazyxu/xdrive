@@ -34,19 +34,26 @@ type backupAdminSnapshotPageResponse struct {
 }
 
 func validBackupSnapshotIndex(index backupAdminSnapshotIndex, inventory backupAdminInventory) bool {
+	maxIndexed := 1000 // Legacy Host Controller v1 index cap.
+	switch index.Protocol {
+	case "xdrive-backup-snapshot-index-v1":
+	case "xdrive-backup-snapshot-index-v2":
+		maxIndexed = 10_000
+	default:
+		return false
+	}
 	if inventory.TotalSnapshots == nil ||
-		index.Protocol != "xdrive-backup-snapshot-index-v1" ||
 		index.PolicyRevision != inventory.Policy.Revision ||
 		index.TotalSnapshots != *inventory.TotalSnapshots ||
 		index.TotalSnapshots < 0 || index.TotalSnapshots > 1_000_000 ||
-		index.IndexedSnapshots < 0 || index.IndexedSnapshots > 1000 ||
+		index.IndexedSnapshots < 0 || index.IndexedSnapshots > maxIndexed ||
 		index.IndexedSnapshots != len(index.SnapshotIDs) ||
 		index.Truncated != (index.TotalSnapshots > index.IndexedSnapshots) {
 		return false
 	}
 	expected := index.TotalSnapshots
-	if expected > 1000 {
-		expected = 1000
+	if expected > maxIndexed {
+		expected = maxIndexed
 	}
 	if index.IndexedSnapshots != expected {
 		return false
@@ -99,12 +106,12 @@ func backupAdminOlderSnapshotInCurrentIndex(dir string, inventory backupAdminInv
 		return false
 	}
 	var index backupAdminSnapshotIndex
-	if err := readSafeBackupAdminJSON(dir, "backup-admin-snapshot-index.json", 128<<10, &index); err != nil ||
+	if err := readSafeBackupAdminJSON(dir, "backup-admin-snapshot-index.json", 1<<20, &index); err != nil ||
 		!validBackupSnapshotIndex(index, inventory) {
 		return false
 	}
 	// The first 100 are covered by the richer, current Host inventory. Only
-	// indices 100..999 can use this opt-in path; a truncated index does not
+	// indices 100..999 (legacy) or 100..9999 (v2) can use this opt-in path; a truncated index does not
 	// authorize any older identity that it did not actually enumerate.
 	for i := 100; i < len(index.SnapshotIDs); i++ {
 		if index.SnapshotIDs[i] == id {
@@ -118,7 +125,7 @@ func adminBackupPageNumber(raw string, fallback, max int) (int, bool) {
 	if raw == "" {
 		return fallback, true
 	}
-	if len(raw) > 4 {
+	if len(raw) > 5 {
 		return 0, false
 	}
 	for _, c := range raw {
@@ -139,7 +146,7 @@ func (s *Server) adminBackupSnapshotPage(c *gin.Context) {
 			return
 		}
 	}
-	offset, okOffset := adminBackupPageNumber(c.Query("offset"), 0, 1000)
+	offset, okOffset := adminBackupPageNumber(c.Query("offset"), 0, 10_000)
 	limit, okLimit := adminBackupPageNumber(c.Query("limit"), 50, 100)
 	if !okOffset || !okLimit || limit < 1 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_backup_snapshot_page"})
@@ -151,7 +158,7 @@ func (s *Server) adminBackupSnapshotPage(c *gin.Context) {
 		return
 	}
 	var index backupAdminSnapshotIndex
-	if err := readSafeBackupAdminJSON(s.HostControlDir, "backup-admin-snapshot-index.json", 128<<10, &index); err != nil ||
+	if err := readSafeBackupAdminJSON(s.HostControlDir, "backup-admin-snapshot-index.json", 1<<20, &index); err != nil ||
 		!validBackupSnapshotIndex(index, state.Inventory) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "backup_snapshot_index_unavailable"})
 		return

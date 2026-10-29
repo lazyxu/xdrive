@@ -125,6 +125,72 @@ func TestBackupSnapshotPageBoundedIndexReportsTruncation(t *testing.T) {
 	}
 }
 
+
+func TestBackupSnapshotPageV2IndexesTenThousandAndPreservesOlderVerifyOnly(t *testing.T) {
+	const total = 10005
+	server, dir, index := backupSnapshotPageFixture(t, total)
+	index.Protocol = "xdrive-backup-snapshot-index-v2"
+	index.IndexedSnapshots = 10000
+	index.Truncated = true
+	index.SnapshotIDs = make([]string, 0, index.IndexedSnapshots)
+	start := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	for i := total - 1; i >= total-index.IndexedSnapshots; i-- {
+		name := "xdrive-backup-" + start.Add(time.Duration(i)*time.Minute).Format("20060102T150405Z")
+		index.SnapshotIDs = append(index.SnapshotIDs, "v1:"+name)
+	}
+	writeBackupTestJSON(t, dir, "backup-admin-snapshot-index.json", index)
+	for _, test := range []struct {
+		query string
+		count int
+		first int
+		next bool
+	}{
+		{"?offset=9950&limit=100", 50, 9950, false},
+		{"?offset=1001&limit=50", 50, 1001, true},
+		{"?offset=10000&limit=50", -1, 0, false},
+	} {
+		status, page, _ := callBackupSnapshotPage(t, server, test.query)
+		if test.count == -1 {
+			if status != http.StatusConflict {
+				t.Fatalf("missing truncated boundary for %s: %d", test.query, status)
+			}
+			continue
+		}
+		if status != http.StatusOK || page.IndexedSnapshots != 10000 ||
+			page.TotalSnapshots != total || !page.Truncated ||
+			len(page.SnapshotIDs) != test.count ||
+			(page.NextOffset != nil) != test.next ||
+			page.SnapshotIDs[0] != index.SnapshotIDs[test.first] {
+			t.Fatalf("v2 page %s: status=%d page=%+v", test.query, status, page)
+		}
+	}
+	if status, _, _ := callBackupSnapshotPage(t, server, "?offset=10001&limit=50"); status != http.StatusBadRequest {
+		t.Fatalf("out-of-range offset accepted: %d", status)
+	}
+	older := index.SnapshotIDs[9999]
+	if code, body := runBackupAdminAction(t, server,
+		fmt.Sprintf(`{"action":"verify","snapshot_id":%q,"mode":"deep"}`, older)); code != http.StatusAccepted {
+		t.Fatalf("v2 index entry 10000 was not permitted for verify: %d %s", code, body)
+	}
+	if err := os.Remove(filepath.Join(dir, "backup-admin-request.json")); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := runBackupAdminAction(t, server,
+		fmt.Sprintf(`{"action":"restore","snapshot_id":%q,"confirmation":%q}`,
+			older, "RESTORE "+older)); code != http.StatusConflict {
+		t.Fatalf("old read-only v2 identity authorized destructive restore: %d", code)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "backup-admin-request.json")); !os.IsNotExist(err) {
+		t.Fatalf("rejected old restore enqueued a Host action: %v", err)
+	}
+	index.IndexedSnapshots = 10001
+	index.SnapshotIDs = append(index.SnapshotIDs, "v1:xdrive-backup-20240101T000000Z")
+	writeBackupTestJSON(t, dir, "backup-admin-snapshot-index.json", index)
+	if status, _, _ := callBackupSnapshotPage(t, server, "?offset=100&limit=50"); status != http.StatusServiceUnavailable {
+		t.Fatalf("unsafe oversized v2 index was accepted: %d", status)
+	}
+}
+
 func TestBackupSnapshotPageRejectsStaleForgedAndSymlinkedIndex(t *testing.T) {
 	for _, scenario := range []string{
 		"revision", "count", "wrong_newest", "duplicate", "unsorted",
