@@ -625,7 +625,8 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
           revokePreviewURL(value)
           return
         }
-        if (previewKind === 'video') setVideoURLSourceOwner(loaders.url)
+        // Store the loader as a value, not as a React functional state updater.
+        if (previewKind === 'video') setVideoURLSourceOwner(() => loaders.url)
         assignPreviewURL(value)
       })
       .catch(() => {

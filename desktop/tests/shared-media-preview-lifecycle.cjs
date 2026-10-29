@@ -828,6 +828,44 @@ test('Video poster appears during pending ticket and remains behind failure/retr
 })
 
 
+test('signed video loader stored in state is never accidentally invoked as a React updater', async () => {
+  const source = fs.readFileSync(
+    path.join(repo, 'ui/shared/src/mui/FilePreviewSurface.tsx'), 'utf8')
+  assert.match(source, /setVideoURLSourceOwner\(\(\) => loaders\.url\)/,
+    'React function-valued state must be wrapped in an updater returning the loader')
+
+  const calls = []
+  const target = { id: 12091, revision: 7, name: 'session.mp4', kind: 'file' }
+  const makeLoader = owner => async (...args) => {
+    calls.push({owner,args})
+    const [node,kind,signal] = args
+    assert.equal(node.id, 12091, 'do not call an Owner loader with previous React state')
+    assert.equal(kind, 'video')
+    assert.ok(signal instanceof AbortSignal)
+    return 'https://example.invalid/' + owner + '/signed-original.mp4'
+  }
+  const a = makeLoader('A')
+  const b = makeLoader('B')
+  const viewFor = loadPreviewURL => React.createElement(XDriveFilePreviewSurface, {
+    target, loadPreviewURL,
+  })
+  let view
+  try {
+    await act(async () => { view = create(viewFor(a)); await Promise.resolve() })
+    assert.equal(calls.length, 1, 'one authorized stream read; state setter must not invoke loader')
+    assert.equal(view.root.findByType('video').props.src,
+      'https://example.invalid/A/signed-original.mp4')
+    await act(async () => { view.update(viewFor(b)); await Promise.resolve() })
+    assert.equal(calls.length, 2,
+      'same Node/revision new Owner performs exactly one authorized B request')
+    assert.equal(calls[0].args[2].aborted, true)
+    assert.equal(view.root.findByType('video').props.src,
+      'https://example.invalid/B/signed-original.mp4')
+  } finally {
+    if (view) await act(async () => view.unmount())
+  }
+})
+
 test('native video original stream switches Owner loader even with identical Node and revision', async () => {
   const oldRevoke = URL.revokeObjectURL
   const revoked = []
