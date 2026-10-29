@@ -4,18 +4,45 @@ export function xDriveTransferAbortError() {
   return new DOMException('传输跟踪已结束。', 'AbortError')
 }
 
+/** Missing or denied AbortSignal state never grants permission to retry. */
+function xDriveTransferCancelled(signal?: AbortSignal): boolean {
+  if (!signal) return false
+  try { return signal.aborted !== false }
+  catch { return true }
+}
+
 export function xDriveWaitForTransferPoll(signal: AbortSignal, milliseconds = 500) {
   return new Promise<void>((resolve, reject) => {
-    if (signal.aborted) { reject(xDriveTransferAbortError()); return }
+    if (xDriveTransferCancelled(signal)) { reject(xDriveTransferAbortError()); return }
+    let timer: ReturnType<typeof setTimeout> | null = null
+    let attempted = false
+    let settled = false
+    const cleanup = () => {
+      if (timer !== null) { clearTimeout(timer); timer = null }
+      if (!attempted) return
+      attempted = false
+      try { signal.removeEventListener('abort', abort) }
+      catch { /* A denied optional cleanup must not hide the settled result. */ }
+    }
     const abort = () => {
-      clearTimeout(timer)
+      if (settled) return
+      settled = true
+      cleanup()
       reject(xDriveTransferAbortError())
     }
-    const timer = setTimeout(() => {
-      signal.removeEventListener('abort', abort)
-      resolve()
-    }, milliseconds)
-    signal.addEventListener('abort', abort, { once: true })
+    try {
+      attempted = true
+      signal.addEventListener('abort', abort, { once: true })
+      // Close the check/subscription race before scheduling any poll.
+      if (settled || xDriveTransferCancelled(signal)) { abort(); cleanup(); return }
+      timer = setTimeout(() => {
+        if (xDriveTransferCancelled(signal)) { abort(); return }
+        if (settled) return
+        settled = true
+        cleanup()
+        resolve()
+      }, milliseconds)
+    } catch { abort(); cleanup() }
   })
 }
 
@@ -31,16 +58,30 @@ export function xDriveUploadBytes(
   },
 ): Promise<Response> {
   return new Promise((resolve, reject) => {
-    if (input.signal?.aborted) { reject(xDriveTransferAbortError()); return }
+    if (xDriveTransferCancelled(input.signal)) { reject(xDriveTransferAbortError()); return }
     const xhr = new XMLHttpRequest()
     const progress = xDriveCreateWebDownloadProgressReporter(input.onProgress)
-    const abort = () => xhr.abort()
-    const cleanup = () => input.signal?.removeEventListener('abort', abort)
+    let listenerAttempted = false
+    let cancelled = false
+    const cleanup = () => {
+      if (!listenerAttempted) return
+      listenerAttempted = false
+      try { input.signal?.removeEventListener('abort', abort) }
+      catch { /* Optional listener cleanup must not strand the XHR Promise. */ }
+    }
+    const abort = () => {
+      if (cancelled) return
+      cancelled = true
+      try { xhr.abort() } catch { /* Logical cancellation remains authoritative. */ }
+      cleanup()
+      reject(xDriveTransferAbortError())
+    }
     xhr.open('PUT', url)
     for (const [name, value] of Object.entries(input.headers)) xhr.setRequestHeader(name, value)
     const bodySize = input.body instanceof Blob ? input.body.size : input.body.byteLength
     xhr.upload.onprogress = (event) => {
-      progress.progress(Math.min(bodySize, Math.max(0, event.loaded)))
+      try { progress.progress(Math.min(bodySize, Math.max(0, event.loaded))) }
+      catch { /* Telemetry cannot strand a real upload. */ }
     }
     // A progress observer may have been disposed while a browser-owned XHR
     // terminal event was still pending. Its exception must not strand the
@@ -49,7 +90,7 @@ export function xDriveUploadBytes(
     xhr.onload = () => {
       cleanup()
       flushProgress()
-      if (input.signal?.aborted) { reject(xDriveTransferAbortError()); return }
+      if (cancelled || xDriveTransferCancelled(input.signal)) { reject(xDriveTransferAbortError()); return }
       // A browser may deliver an anomalous onload without an HTTP status.
       // Response(status: 0) would throw inside an async event handler and leave
       // the upload pending forever instead of showing a retryable failure.
@@ -75,7 +116,22 @@ export function xDriveUploadBytes(
       cleanup()
       reject(xDriveTransferAbortError())
     }
-    input.signal?.addEventListener('abort', abort, { once: true })
+    try {
+      if (input.signal) {
+        listenerAttempted = true
+        input.signal.addEventListener('abort', abort, { once: true })
+        // The signal may cancel synchronously during listener admission.
+        if (cancelled || xDriveTransferCancelled(input.signal)) {
+          abort()
+          cleanup()
+          return
+        }
+      }
+    } catch {
+      cleanup()
+      reject(xDriveTransferAbortError())
+      return
+    }
     try {
       xhr.send(input.body)
     } catch (error) {
