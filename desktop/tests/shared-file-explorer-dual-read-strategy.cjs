@@ -102,3 +102,69 @@ test('Web/Desktop and DSM both call the same typed read strategy with no privile
   assert.equal(['fetch(', 'ipcRenderer', 'window.xdriveDesktop', 'Authorization', 'localStorage'].some(token => source.includes(token)), false,
     'the common reader must never own Server credentials or a transport')
 })
+
+test('counted Range requests and replies fail closed before shared Files publication', async () => {
+  const signal = new AbortController().signal
+  const grouping = { groupBy: 'none', foldersFirst: true }
+  const sort = { key: 'name', direction: 'asc' }
+  const request = {
+    mode: 'range', parentID: 10, offset: 100, limit: 2,
+    sort, includeCount: false, grouping, signal,
+  }
+  let calls = 0
+  const page = {
+    items: [{ id: 101, name: 'A' }],
+    offset: 100, limit: 2,
+    total_count: 0, total_count_included: false,
+    sort: 'name', order: 'asc',
+  }
+  const port = { mode: 'range', readRange: async () => { calls++; return page } }
+  for (const delta of [
+    { parentID: 0 },
+    { parentID: -3 },
+    { offset: -1 },
+    { offset: 1.5 },
+    { limit: 0 },
+    { limit: Number.MAX_SAFE_INTEGER + 1 },
+  ]) {
+    await assert.rejects(readPage(port, { ...request, ...delta }), /Invalid Files Host counted Range request/)
+  }
+  assert.equal(calls, 0, 'bad positional reads must never reach authenticated Host IO')
+
+  const valid = await readPage(port, request)
+  assert.strictEqual(valid.page, page, 'a validated Host response must keep its object identity')
+  assert.equal(calls, 1)
+  for (const altered of [
+    { offset: 99 }, // wrong directory window, never publish under request offset
+    { limit: 3 },  // Host must not silently widen a requested range
+    { items: [{ id: 101 }, { id: 102 }, { id: 103 }] },
+    { total_count: -1 },
+    { sort: 'updated' },
+    { order: 'desc' },
+    { items: [{ id: 101 }, { id: 101 }] },
+    { items: [{ id: -1 }] },
+    { total_count_included: 'false' },
+  ]) {
+    const malformed = { ...page, ...altered }
+    await assert.rejects(readPage({
+      mode: 'range', readRange: async () => malformed,
+    }, request), /Invalid (Files Host counted Range page|or duplicate Files Host Range node)/)
+  }
+})
+
+test('counted Range validation tolerates absent optional echo fields but never forges a cursor or count', async () => {
+  const request = {
+    mode: 'range', parentID: 1, offset: 999, limit: 30,
+    sort: { key: 'name', direction: 'asc' },
+    includeCount: false, grouping: { groupBy: 'none', foldersFirst: false },
+    signal: new AbortController().signal,
+  }
+  const page = {
+    items: [{ id: 1001 }], total_count: 0,
+    total_count_included: false, offset: 999, limit: 30,
+  }
+  const result = await readPage({ mode: 'range', readRange: async () => page }, request)
+  assert.strictEqual(result.page, page)
+  assert.equal(result.page.total_count_included, false)
+  assert.equal('next_cursor' in result.page, false)
+})
