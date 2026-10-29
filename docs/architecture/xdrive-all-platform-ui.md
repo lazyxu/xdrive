@@ -80,6 +80,21 @@ DSM native mutation parity. Continue extracting authenticated Host-neutral
 page props and lifecycle only when source/read cancellation and durable
 backup/task ownership remain correct.
 
+### First Browser data-port pages in the shared outlet
+
+The Web/PWA Host now supplies its genuine Owner-scoped Cloud Storage and
+origin-scoped Local Storage ports through a narrowly typed
+`createXDriveBrowserWorkspaceHost`, and the existing
+`XDriveAppPageOutlet` composes **those two pages** just as it does for
+Desktop/DSM. The Browser Host does not claim native Files or NAS backup
+capabilities; `adminRoleVerified` is intentionally false for this
+read-only presentation adapter. Web still owns its account/session,
+Hash/Viewer return, Service Worker and existing non-migrated controllers.
+
+This is an incremental two-page outlet migration, not a second Browser
+React root, full `XDriveApp` integration, an authorized DSM write
+channel or an Android native parity assertion.
+
 ## Ownership layers
 
 1. **Product contracts:** API schemas, Owner/Root semantics, page/navigation IDs, media and upload receipt identity, UI tokens/gesture/accessibility contracts. React and native UI must agree.

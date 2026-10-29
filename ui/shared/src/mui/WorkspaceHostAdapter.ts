@@ -62,7 +62,9 @@ export type XDriveWorkspaceHostServices = {
 }
 
 export type XDriveWorkspaceHostAdapter = {
-  readonly platform: 'desktop' | 'synology'
+  /** Web/PWA uses the same page outlet only for explicitly supplied
+   * authenticated Browser ports, never for a native Agent/DSM fallback. */
+  readonly platform: 'desktop' | 'synology' | 'web'
   readonly services?: XDriveWorkspaceHostServices
   /** Only true after xDrive Server verifies the current account's admin role. */
   readonly adminRoleVerified?: boolean

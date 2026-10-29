@@ -37,9 +37,8 @@ import {
   XDriveAuthSubmitRow,
   XDriveBrandLockup,
   XDriveConfirmDialog,
-  XDriveCloudStoragePage,
   createXDriveCloudStorageDataSource,
-  XDriveLocalStoragePage,
+  XDriveAppPageOutlet,
   XDriveWorkspaceSidebar,
   xDriveWorkspaceHostSections,
   XDriveServiceDependenciesPage,
@@ -113,6 +112,7 @@ import { XDriveRoutedGalleryThumbnailBridge } from './routedGalleryThumbnailBrid
 import { xDriveTakeMapScopeHandoffFromURL, xDriveAbandonMapScopeRequired, xDriveRestoreMapReferrerAfterScrub } from './mapScopeHandoff'
 import type { XDriveMapScopeHandoffState } from './mapScopeHandoff'
 import { createWebShareDialogAdapter, createWebTrashDialogAdapter, createWebVersionHistoryDialogAdapter } from './fileDialogAdapters'
+import { createXDriveBrowserWorkspaceHost } from './browserWorkspaceHost'
 import { clearWebBrowserCache, createWebBrowserStorageSnapshot } from './browserStorage'
 import { xDriveBrowserStorageRead, xDriveBrowserStorageWrite, xDriveBrowserStorageRemove } from './browserSafeStorage'
 import PwaOfflineDirectorySection from './PwaOfflineDirectorySection'
@@ -1596,6 +1596,13 @@ function FileManager({
     },
     clearBrowserCache: clearWebBrowserCache,
   }), [])
+  const browserWorkspaceHost = useMemo(
+    () => createXDriveBrowserWorkspaceHost({
+      cloudStorage: cloudStorageSource,
+      localStorage: localStorageSource,
+    }),
+    [cloudStorageSource, localStorageSource],
+  )
 
   useEffect(() => {
     let active = true
@@ -2690,10 +2697,10 @@ function FileManager({
             backgroundFocusTaskID={taskCenterFocus?.taskID}
             backgroundFocusRequestID={taskCenterFocus?.requestID}
           />
-        ) : appView === 'local-storage' ? (
-          <XDriveLocalStoragePage source={localStorageSource} />
-        ) : appView === 'cloud-storage' ? (
-          <XDriveCloudStoragePage source={cloudStorageSource} />
+        ) : appView === 'local-storage' || appView === 'cloud-storage' ? (
+          // First two real Browser Host-backed routes in the shared page
+          // outlet; never admit Browser Files/admin/native DSM capabilities.
+          <XDriveAppPageOutlet host={browserWorkspaceHost} view={appView} />
         ) : appView === 'admin-users' && profile?.role === 'admin' ? (
           <AdminUsersPanel
             api={api}

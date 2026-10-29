@@ -19,6 +19,7 @@ const fileExplorerNavigationPane = readRepo('ui/shared/src/mui/FileExplorerNavig
 const desktopFileExplorer = readRepo('desktop/src/renderer/DesktopFileExplorer.tsx')
 const desktopStyles = readRepo('desktop/src/renderer/styles.css')
 const app = read('src/App.tsx')
+const browserHost = read('src/browserWorkspaceHost.ts')
 const webFileExplorer = read('src/WebFileExplorer.tsx')
 const styles = read('src/styles.css')
 const sources = [
@@ -190,10 +191,17 @@ if (app.includes('<XDriveWorkspaceSurface presentation="page" title="文件">'))
 for (const token of [
   'showLocalStorage',
   "appView === 'local-storage'",
-  '<XDriveLocalStoragePage source={localStorageSource} />',
+  '<XDriveAppPageOutlet host={browserWorkspaceHost} view={appView} />',
 ]) {
   if (!app.includes(token)) throw new Error('Web must expose shared Local Storage: ' + token)
 }
+requireText(browserHost, [
+  "platform: 'web'",
+  'adminRoleVerified: false',
+  'cloudStorage: ports.cloudStorage',
+  'localStorage: ports.localStorage',
+], 'Web bounded shared page outlet Host')
+
 for (const primitive of ['<XDriveSidebarSurface', '<XDriveSidebarNavList', '<XDriveCoreWorkspaceNavItems', '<XDriveSidebarSection', '<XDriveSidebarStorageSummary']) {
   if (app.includes(primitive)) throw new Error(`Web must not assemble sidebar primitive directly: ${primitive}`)
 }
