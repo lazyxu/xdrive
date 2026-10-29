@@ -1116,6 +1116,127 @@ test('semantic Gallery Viewer forwards measured thumbnail bytes with the current
   }
 })
 
+
+test('same-ID original JPEG Viewer remounts on authorized Owner loader switch', async () => {
+  const oldRevoke = URL.revokeObjectURL
+  const revoked = []
+  URL.revokeObjectURL = url => revoked.push(url)
+  const calls = []
+  const target = { id: 9821, revision: 3, name: 'photo.jpg', kind: 'file' }
+  const loaderA = async (_node, kind, signal) => {
+    calls.push({ owner: 'A', kind, signal })
+    return 'blob:owner-a-image'
+  }
+  let resolveB
+  const loaderB = (_node, kind, signal) => new Promise(resolve => {
+    calls.push({ owner: 'B', kind, signal })
+    resolveB = resolve
+  })
+  const props = loadPreviewURL => React.createElement(XDriveFilePreviewSurface, {target,loadPreviewURL})
+  const decoded = { currentTarget: {
+    decode: () => Promise.resolve(), naturalWidth: 512, naturalHeight: 512,
+  } }
+  let view
+  try {
+    await act(async () => { view = create(props(loaderA)); await Promise.resolve() })
+    const oldImage = view.root.findByType('img')
+    assert.equal(oldImage.props.src, 'blob:owner-a-image')
+    assert.equal(calls.length, 1)
+    const staleReady = oldImage.props.onLoad
+    await act(async () => { staleReady(decoded); await new Promise(r => setImmediate(r)) })
+    assert.equal(view.root.findByType('img').props.style.visibility, 'visible')
+    await act(async () => { view.update(props(loaderB)); await Promise.resolve() })
+    assert.equal(calls.length, 2)
+    assert.equal(calls[0].signal.aborted, true)
+    assert.equal(view.root.findAllByType('img').length, 0,
+      'old authenticated original cannot paint during new same-node Owner pending state')
+    assert.deepEqual(revoked, ['blob:owner-a-image'])
+    await act(async () => { staleReady(decoded); await new Promise(r => setImmediate(r)) })
+    assert.equal(view.root.findAllByType('img').length, 0,
+      'stale decoded image event cannot certify or restore the new session')
+    await act(async () => { resolveB('blob:owner-b-image'); await Promise.resolve() })
+    const current = view.root.findByType('img')
+    assert.equal(current.props.src, 'blob:owner-b-image')
+    await act(async () => { current.props.onLoad(decoded); await new Promise(r => setImmediate(r)) })
+    assert.equal(view.root.findByType('img').props.style.visibility, 'visible')
+  } finally {
+    if (view) await act(async () => view.unmount())
+    URL.revokeObjectURL = oldRevoke
+  }
+  assert.deepEqual(revoked, ['blob:owner-a-image', 'blob:owner-b-image'],
+    'old and new original leases must each be released exactly once')
+})
+
+test('newly available thumbnail still does not restart the current original read', async () => {
+  const calls = []
+  let resolveOriginal
+  const target = { id: 9822, revision: 5, name: 'photo.jpg', kind: 'file' }
+  const original = (_node, _kind, signal) => new Promise(resolve => {
+    calls.push({role:'original',signal}); resolveOriginal = resolve
+  })
+  const thumbnail = async (_node, signal) => {
+    calls.push({role:'thumbnail',signal}); return 'blob:new-thumb'
+  }
+  const props = loadImagePreview => React.createElement(XDriveFilePreviewSurface, {
+    target, loadPreviewURL: original, loadImagePreview,
+  })
+  const oldRevoke = URL.revokeObjectURL
+  const revoked = []
+  URL.revokeObjectURL = url => revoked.push(url)
+  let view
+  try {
+    await act(async () => { view = create(props(undefined)); await Promise.resolve() })
+    assert.equal(calls.length, 1)
+    await act(async () => { view.update(props(thumbnail)); await Promise.resolve() })
+    assert.deepEqual(calls.map(c=>c.role), ['original','thumbnail'])
+    assert.equal(calls[0].signal.aborted, false,
+      'late thumbnail admission must not abort/refetch a pending authorized original')
+    assert.equal(view.root.findByType('img').props.src, 'blob:new-thumb')
+    await act(async () => { resolveOriginal('blob:original'); await Promise.resolve() })
+    assert.equal(calls.length, 2)
+    assert.equal(view.root.findAllByType('img').length, 2)
+  } finally {
+    if(view) await act(async () => view.unmount())
+    URL.revokeObjectURL = oldRevoke
+  }
+  assert.equal(revoked.filter(x=>x==='blob:new-thumb').length, 1)
+  assert.equal(revoked.filter(x=>x==='blob:original').length, 1)
+})
+
+test('former Owner borrowed thumbnail is released after same-node Viewer loader handoff', async () => {
+  const target = { id: 9823, revision: 7, name: 'photo.jpg', kind: 'file' }
+  const calls = [], released = {a:0,b:0}
+  let resolveOld
+  const a = (_node, signal) => new Promise(resolve => {
+    calls.push({owner:'A',signal}); resolveOld=resolve
+  })
+  const b = async (_node, signal) => {
+    calls.push({owner:'B',signal})
+    return {url:'blob:borrowed-b',release:()=>{released.b++}}
+  }
+  const props = loadImagePreview => React.createElement(XDriveFilePreviewSurface, {
+    target, loadImagePreview,
+  })
+  let view
+  try {
+    await act(async () => { view=create(props(a)); await Promise.resolve() })
+    await act(async () => { view.update(props(b)); await Promise.resolve() })
+    assert.equal(calls[0].signal.aborted, true)
+    assert.equal(calls.length,2)
+    assert.equal(view.root.findByType('img').props.src,'blob:borrowed-b')
+    await act(async () => {
+      resolveOld({url:'blob:borrowed-a',release:()=>{released.a++}})
+      await Promise.resolve()
+    })
+    assert.deepEqual(released,{a:1,b:0},
+      'aborted prior Owner borrowed thumbnail is returned to the correct cache')
+    assert.equal(view.root.findByType('img').props.src,'blob:borrowed-b')
+  } finally {
+    if(view) await act(async () => view.unmount())
+  }
+  assert.deepEqual(released,{a:1,b:1},'each borrowed lease released exactly once')
+})
+
 test('first-frame Viewer reports actual thumbnail transfer and fences old revision callbacks', async () => {
   const reads = []
   const thumbnail = (target, signal, onProgress) => new Promise(resolve =>
