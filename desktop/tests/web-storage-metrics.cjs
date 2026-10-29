@@ -172,11 +172,21 @@ test('global storage delegates durable maintenance to the global Task Center', (
     '运行存储完整性校验',
     '运行存储修复',
     '查看维护任务',
-    "runStorageMaintenance('storage_verify')",
+    "storageVerifyMode === 'fast'",
+    "? 'storage_verify_fast' : 'storage_verify'",
     "runStorageMaintenance('storage_repair')",
-    'legacy 对象到 CAS',
-    'CAS 物理删除仍由 Janitor 负责',
+    '迁移仍被引用的 legacy 对象',
+    '物理删除仍由 Janitor 负责',
   ]) assert.ok(storageStats.includes(token), 'storage maintenance handoff missing: ' + token)
+  assert.match(storageStats, /useState<'fast' \| 'deep'>\('fast'\)/,
+    'storage verification must be fast by default')
+  assert.match(storageStats, /value="fast">fast · 元数据与可读性/,
+    'fast storage verification option missing')
+  assert.match(storageStats, /value="deep">deep · SHA-256/,
+    'explicit deep storage verification option missing')
+  assert.match(storageStats, /title="确认执行在线 CAS 存储修复？"/,
+    'mutating CAS repair needs a shared typed confirmation')
+
 
   for (const token of [
     "setAppView('global-tasks')",

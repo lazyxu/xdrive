@@ -256,7 +256,13 @@ forbidText(files.publicShare, ['Secure file share', 'placeholder="Share password
 console.log('Web Chinese GUI checks passed')
 
 if ((files.users.match(/<XDriveConfirmDialog/g) || []).length !== 1) throw new Error('用户管理危险操作没有统一复用共享确认框')
-if ((files.storageStats.match(/<XDriveConfirmDialog/g) || []).length !== 1) throw new Error('存储清理确认没有统一复用共享确认框')
+// CAS repair is a second destructive action and must reuse the same shared
+// confirmation component as staging cleanup; count both, never bypass either.
+if ((files.storageStats.match(/<XDriveConfirmDialog/g) || []).length !== 2 ||
+    !files.storageStats.includes('title="确认执行在线 CAS 存储修复？"') ||
+    !files.storageStats.includes('title="清理可回收上传临时数据？"')) {
+  throw new Error('在线 CAS 修复与存储清理必须分别复用共享确认框')
+}
 
 
 const sharedTableSurfaceExpectations = [

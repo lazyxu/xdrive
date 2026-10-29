@@ -61,7 +61,7 @@ const STORAGE_OPERATION_LABELS: Record<NonNullable<StorageStats['performance']>[
 const STAGING_PAGE_SIZE = 20
 const STORAGE_DIAGNOSTIC_PAGE_SIZE = 20
 
-type StorageMaintenanceKind = 'storage_verify' | 'storage_repair' | 'storage_optimization'
+type StorageMaintenanceKind = 'storage_verify_fast' | 'storage_verify' | 'storage_repair' | 'storage_optimization'
 type StorageHistoryDays = 30 | 90 | 180
 
 function unreferencedBlobStatus(blob: StorageUnreferencedBlob) {
@@ -196,6 +196,13 @@ export default function StorageStatsPanel({
   const [unreferencedCursors, setUnreferencedCursors] = useState<string[]>([''])
   const [unreferencedLoading, setUnreferencedLoading] = useState(false)
   const [maintenanceLoading, setMaintenanceLoading] = useState<StorageMaintenanceKind | ''>('')
+  const [storageVerifyMode, setStorageVerifyMode] = useState<'fast' | 'deep'>('fast')
+  const [repairConfirmation, setRepairConfirmation] = useState<{
+    api: XDriveAdminStoragePort
+    scope: 'global'
+  } | null>(null)
+  const repairConfirmCurrent = repairConfirmation?.api === api &&
+    repairConfirmation.scope === scope && scope === 'global'
   const [loading, setLoading] = useState(true)
   const [loadGeneration, setLoadGeneration] = useState(0)
   const showDeferredLoading = useXDriveDeferredLoading(loading, loadGeneration)
@@ -219,6 +226,7 @@ export default function StorageStatsPanel({
       setStagingCursors([''])
       setStagingNotice('')
       setCleanupConfirmOpen(false)
+      setRepairConfirmation(null)
       setCleanupActionError('')
       setCleanupResultWarning('')
       setCleanupRuns([])
@@ -621,20 +629,32 @@ export default function StorageStatsPanel({
                   <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
                     {onRunStorageMaintenance ? (
                       <>
+                        <ToggleButtonGroup size="small" exclusive value={storageVerifyMode}
+                          aria-label="在线存储完整性校验模式" disabled={Boolean(maintenanceLoading)}
+                          onChange={(_, value: 'fast' | 'deep' | null) => {
+                            if (value) setStorageVerifyMode(value)
+                          }}>
+                          <ToggleButton value="fast">fast · 元数据与可读性</ToggleButton>
+                          <ToggleButton value="deep">deep · SHA-256</ToggleButton>
+                        </ToggleButtonGroup>
                         <XDriveActionButton
-                          loading={maintenanceLoading === 'storage_verify'}
+                          loading={maintenanceLoading === 'storage_verify_fast' ||
+                            maintenanceLoading === 'storage_verify'}
                           loadingLabel="正在提交…"
                           disabled={Boolean(maintenanceLoading)}
-                          onClick={() => { void runStorageMaintenance('storage_verify') }}
+                          onClick={() => {
+                            void runStorageMaintenance(storageVerifyMode === 'fast'
+                              ? 'storage_verify_fast' : 'storage_verify')
+                          }}
                         >
-                          运行存储完整性校验
+                          运行存储完整性校验（{storageVerifyMode}）
                         </XDriveActionButton>
                         <XDriveActionButton
                           intent="warning"
                           loading={maintenanceLoading === 'storage_repair'}
                           loadingLabel="正在提交…"
                           disabled={Boolean(maintenanceLoading)}
-                          onClick={() => { void runStorageMaintenance('storage_repair') }}
+                          onClick={() => { if (scope === 'global') setRepairConfirmation({ api, scope }) }}
                         >
                           运行存储修复
                         </XDriveActionButton>
@@ -642,7 +662,11 @@ export default function StorageStatsPanel({
                     ) : null}
                   </Stack>
                   <Typography variant="body2" color="text.secondary">
-                    存储修复会先校验并迁移仍被引用的 legacy 对象到 CAS，再修复 CAS 元数据；CAS 物理删除仍由 Janitor 负责。每日存储快照和 Janitor 的运行状态也在全局 Task Center 中查看。
+                    在线存储校验默认 fast：检查数据库引用、CAS 元数据、文件存在性、大小和可读性，不计算内容 SHA-256。
+                    显式选择 deep 才会对有完整 SHA-256 引用的文件重新读取内容并计算哈希，可能产生大量磁盘 I/O。
+                    两种模式都是只读检查，不能替代备份仓库校验及实际恢复演练。存储修复单独执行，
+                    会迁移仍被引用的 legacy 对象并修复 CAS 元数据；物理删除仍由 Janitor 负责。
+                    进度和历史在全局 Task Center 中查看。
                   </Typography>
                 </Stack>
               )}
@@ -1406,6 +1430,36 @@ export default function StorageStatsPanel({
           )}
       </XDriveWorkspaceSurface>
       </Box>
+
+      <XDriveConfirmDialog
+        open={Boolean(repairConfirmCurrent)}
+        title="确认执行在线 CAS 存储修复？"
+        description={(
+          <Stack spacing={1.5}>
+            <Typography variant="body2">
+              这是会修改生产数据的维护任务：迁移仍被引用的 legacy 对象，修复 CAS 元数据及引用状态。
+              它不是只读校验、备份恢复或损坏文件内容自动修复。
+            </Typography>
+            <Typography variant="body2">
+              建议先执行 fast 校验；若怀疑内容损坏，显式运行 deep SHA-256 校验并确认有独立可信备份。
+              实际修复由现有后台任务和 Janitor 排它锁保护，不能据此推断所有原始文件已经恢复。
+            </Typography>
+          </Stack>
+        )}
+        confirmLabel="确认执行修复"
+        confirmIntent="warning"
+        loading={maintenanceLoading === 'storage_repair'}
+        onCancel={() => setRepairConfirmation(null)}
+        onConfirm={() => {
+          // An obsolete Host/Owner or scope confirmation cannot submit.
+          if (!repairConfirmCurrent || !onRunStorageMaintenance) {
+            setRepairConfirmation(null)
+            return
+          }
+          setRepairConfirmation(null)
+          void runStorageMaintenance('storage_repair')
+        }}
+      />
 
       <XDriveConfirmDialog
         open={cleanupConfirmOpen}

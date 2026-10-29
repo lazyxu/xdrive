@@ -200,8 +200,14 @@ func VerifyWithOptions(
 	if err != nil {
 		return report, err
 	}
-	if err := os.MkdirAll(root, 0o750); err != nil {
-		return report, err
+	// Verification is strictly read-only. A missing storage root must never
+	// be created as an apparently empty, healthy filesystem.
+	rootInfo, err := os.Stat(root)
+	if err != nil {
+		return report, fmt.Errorf("verify existing storage root: %w", err)
+	}
+	if !rootInfo.IsDir() {
+		return report, fmt.Errorf("verify storage root is not a directory")
 	}
 
 	db = db.WithContext(ctx)
