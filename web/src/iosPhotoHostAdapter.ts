@@ -90,11 +90,11 @@ class IOSPhotoBackupHost implements XDriveIOSPhotoBackupHost {
   }
 
   status(session: XDriveIOSPhotoBackupSession): Promise<XDriveIOSPhotoStatus> {
-    return this.request<XDriveIOSPhotoStatus>('photos.status', session)
+    return this.request<XDriveIOSPhotoStatus>('photos.status', { ...session })
   }
 
   requestAccess(session: XDriveIOSPhotoBackupSession): Promise<XDriveIOSPhotoStatus> {
-    return this.request<XDriveIOSPhotoStatus>('photos.requestAccess', session)
+    return this.request<XDriveIOSPhotoStatus>('photos.requestAccess', { ...session })
   }
 
   start(

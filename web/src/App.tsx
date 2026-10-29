@@ -732,6 +732,7 @@ function App({
   return (
     <FileManager
       api={api}
+      authSession={session}
       username={username}
       serverBuild={serverBuild}
       appearance={appearance}
@@ -885,6 +886,7 @@ function AuthView({
 
 function FileManager({
   api,
+  authSession,
   username,
   serverBuild,
   appearance,
@@ -893,6 +895,7 @@ function FileManager({
   onLogout,
 }: {
   api: XDriveApi
+  authSession: AuthSession
   username: string
   serverBuild: BuildInfo | null
   appearance: XDriveAppearance
@@ -2297,8 +2300,9 @@ function FileManager({
       iosPhotoHost={iosPhotoHost}
       iosPhotoSession={profile && profile.username === username &&
         !profile.must_change_password && Number.isSafeInteger(profile.id) &&
-        profile.id > 0 && api.session.accessToken
-          ? { username, ownerID: profile.id, accessToken: api.session.accessToken }
+        profile.id > 0 && authSession.accessToken &&
+        (!authSession.browserSession || authSession.username === username)
+          ? { username, ownerID: profile.id, accessToken: authSession.accessToken }
           : null}
       username={username}
       serverBuild={serverBuild}
