@@ -3,6 +3,7 @@ import { formatBytes } from '../format'
 import { xDriveFileExplorerAvailabilityError, xDriveFileExplorerAvailabilityFromSnapshot } from '../file-explorer-availability'
 import { XDriveHomePage } from './HomePage'
 import { xDriveOverviewActivity } from './OverviewSharedModels'
+import { xDriveOverviewProjectFileItem } from './OverviewFileProjection'
 import type { XDriveHomeAlert, XDriveHomeListItem } from './HomePage'
 import type { XDriveFileExplorerItem } from './FileExplorer'
 import type { Node, QuotaUsage } from '../models'
@@ -239,17 +240,7 @@ export function XDriveOverviewPage({
     [port],
   )
 
-  const explorerItem = (
-    item: XDriveFileRecentItem<Node> | XDriveFileFavoriteItem<Node>,
-  ): XDriveFileExplorerItem => ({
-    id: item.node.id,
-    name: item.node.name,
-    kind: item.node.type === 'dir' ? 'dir' : 'file',
-    size: item.node.size,
-    revision: item.node.revision,
-    updatedAt: item.node.updated_at,
-    path: item.path.replace(/^\/+/, ''),
-  })
+  const explorerItem = xDriveOverviewProjectFileItem
 
   const availability = (item: XDriveFileExplorerItem) => {
     if (!fileAvailabilitySupported) return undefined

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { xDriveOverviewActivity } from '../../ui/shared/src/mui/OverviewSharedModels'
+import { xDriveOverviewProjectFileItem } from '../../ui/shared/src/mui/OverviewFileProjection'
 import type {
   Node,
   QuotaUsage,
@@ -165,17 +166,7 @@ export default function WebOverviewPage({
     })
   }, [api])
 
-  const project = (
-    entry: XDriveFileRecentItem<Node> | XDriveFileFavoriteItem<Node>,
-  ): XDriveFileExplorerItem => ({
-    id: entry.node.id,
-    name: entry.node.name,
-    kind: entry.node.type,
-    size: entry.node.size,
-    revision: entry.node.revision,
-    updatedAt: entry.node.updated_at,
-    path: entry.path.replace(/^\/+/, ''),
-  })
+  const project = xDriveOverviewProjectFileItem
 
   const openEntry = (
     entry: XDriveFileRecentItem<Node> | XDriveFileFavoriteItem<Node>,
