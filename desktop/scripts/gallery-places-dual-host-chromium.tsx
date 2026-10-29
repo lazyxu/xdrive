@@ -35,6 +35,14 @@ const videoPosterMode = new URLSearchParams(location.search).get('map_h264') ===
 // 72px target. Only the largest verified React photo cover should paint.
 const mixedMarkerMap = !genuineGin &&
   new URLSearchParams(location.search).get('mixed_markers') === '1'
+// Independent 28-photo cluster: the shared Gallery Dialog must load all
+// 28 through the bounded 48-item Owner Range rather than previewing 12.
+const albumDialog28 = !genuineGin &&
+  new URLSearchParams(location.search).get('album_dialog_28') === '1'
+// Screenshot-specific adjacent current Owner Cells: old 104x92px visual
+// exclusion erased the 28-photo cover beside an independent 142-photo cover.
+const adjacent142And28 = !genuineGin &&
+  new URLSearchParams(location.search).get('adjacent_photo_142_28') === '1'
 const realHEICMode = genuineGin &&
   new URLSearchParams(location.search).get('map_real_heic') === '1'
 const realLIVPMode = genuineGin &&
@@ -100,13 +108,26 @@ const probe = ((window as any).__mapProbe = {
 const locationPoint = { latitude:30.135, longitude:119.975 }
 const initialScope: Scope = {albumKey:'',filters:{sort_by:'captured',sort_dir:'desc'}}
 const pageFor = (bounds:Bounds, favorite:boolean) => {
+  if(adjacent142And28 && bounds.west===100 && bounds.east===125 &&
+     bounds.south===20 && bounds.north===40) {
+    return {coordinate_space:'bd09ll' as const,
+      index_scope:'owner_gps_auto_index' as const,
+      grid_columns:8,grid_rows:8,total_count:170,cells:[
+        {cell_x:5,cell_y:6,photo_count:142,asset_id:33,node_id:75,
+          node_revision:2,latitude:36.25,longitude:117.1875,
+          media_kind:'image' as const},
+        {cell_x:6,cell_y:5,photo_count:28,asset_id:134,node_id:175,
+          node_revision:2,latitude:33.75,longitude:120.3125,
+          media_kind:'image' as const},
+      ]}
+  }
   const width = bounds.east > bounds.west ? bounds.east-bounds.west : bounds.east+360-bounds.west
   const offset = locationPoint.longitude >= bounds.west ?
     locationPoint.longitude-bounds.west : locationPoint.longitude+360-bounds.west
   const x = Math.min(7,Math.max(0,Math.floor(offset/(width/8))))
   const y = Math.min(7,Math.max(0,Math.floor((locationPoint.latitude-bounds.south)/
     ((bounds.north-bounds.south)/8))))
-  const count = favorite ? 3 : 9
+  const count = albumDialog28 ? 28 : favorite ? 3 : 9
   const first={cell_x:x,cell_y:y,photo_count:count,asset_id:33,node_id:75,
     node_revision:2,latitude:locationPoint.latitude,longitude:locationPoint.longitude,
     ...(videoPosterMode?{media_kind:'video' as const}:{})}
@@ -173,10 +194,15 @@ const listOwnerCellItems=async(selection:any,limit:number,offset:number,
     }))params.set(key,String(value))
     if(sort.filters?.favorite===true)params.set('favorite','true')
     if(sort.albumKey)params.set('album',sort.albumKey)
+    if(sort.anchorNodeID)params.set('anchor_node_id',String(sort.anchorNodeID))
     range=await ownerRequest('cell-items',params,signal)
   }else{
     const count=selection.photo_count
-    range={offset,limit,total_count:count,items:Array.from(
+    range={offset,limit,total_count:count,
+      ...(sort.anchorNodeID && sort.anchorNodeID>=selection.node_id &&
+          sort.anchorNodeID<selection.node_id+count
+        ? {anchor_index:sort.anchorNodeID-selection.node_id} : {}),
+      items:Array.from(
       {length:Math.min(limit,Math.max(0,count-offset))},(_,i)=>{
         const id=selection.node_id+offset+i
         return {node:{id,revision:selection.node_revision,type:'file',
@@ -437,16 +463,27 @@ function TestApp(){
     try{
       // Test fixture's second Owner authorization; production Gallery also
       // performs its own revalidation before opening the real Viewer.
-      const range=await listOwnerCellItems(selection,48,0,{
-        by:approved.filters.sort_by,dir:approved.filters.sort_dir,
-        filters:approved.filters,albumKey:approved.albumKey,
-      },new AbortController().signal)
-      const valid=range.total_count===selection.photo_count &&
-        range.items.some((item:any)=>item.node?.id===nodeID &&
-          item.node?.revision===revision)
+      const sort={by:approved.filters.sort_by,dir:approved.filters.sort_dir,
+        filters:approved.filters,albumKey:approved.albumKey}
+      const signal=new AbortController().signal
+      const first=await listOwnerCellItems(selection,48,0,{
+        ...sort,anchorNodeID:nodeID,
+      },signal)
+      const index=first.anchor_index
+      const pageOffset=Number.isSafeInteger(index)&&index>=0
+        ? Math.floor(index/48)*48 : -1
+      const range=pageOffset<0 ? first : pageOffset===0 ? first :
+        await listOwnerCellItems(selection,48,pageOffset,sort,signal)
+      const selected=pageOffset<0 ? undefined : range.items[index-pageOffset]
+      const valid=Number.isSafeInteger(index)&&index>=0 &&
+        index<first.total_count && first.total_count>0 &&
+        first.total_count<=selection.photo_count &&
+        range.total_count===first.total_count && range.offset===Math.max(0,pageOffset) &&
+        selected?.node?.id===nodeID && selected?.node?.revision===revision
       if(valid)xDriveRememberPlacesDrawerViewerReturn(
         'synthetic-private-owner',selection,approved,Date.now(),presentation)
-      probe.photoOpens.push({valid,expanded:presentation.expanded,
+      probe.photoOpens.push({valid,nodeID,anchorIndex:index,
+        expanded:presentation.expanded,loadedCount:presentation.loadedCount,
         scrollTop:presentation.scrollTop,scrollLeft:presentation.scrollLeft})
       if(valid)setDrawerViewer(nodeID)
     }catch{probe.rangeError=true}

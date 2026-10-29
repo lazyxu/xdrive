@@ -54,6 +54,30 @@ build or release prerequisite. Historical completed/cancelled runs stay in
 GitHub's audit history. Do not rewrite PR heads simply to retrigger CI;
 check the unchanged source diff and existing passing evidence first.
 
+## Retire queued CI after a PR merges
+
+A merged pull request may still have an expensive `CI` run marked queued
+while late Windows/Linux artifact jobs are pending. The trusted
+`.github/workflows/cancel-merged-pr-queued-ci.yml` handles only
+`pull_request_target: closed` for a merged same-repository PR into `master`.
+It retrieves the current PR from GitHub, verifies the exact head SHA and
+branch, then rechecks each **still queued** `pull_request` `CI` run before
+requesting cancellation. It never cancels master pushes, running checks, other
+workflows, or an unmerged PR.
+
+Each cancellation workflow uses a concurrency key containing the **PR number**,
+so a different merged PR cannot displace the single pending cancellation slot.
+This is deliberately separate from the globally serialized, more expensive
+branch-prune scan. GitHub's group with `cancel-in-progress: false` still
+replaces an older pending run when more than one run queues in the same group.
+The branch-prune workflow therefore no longer has `actions: write`; the
+lightweight trusted cancellation workflow owns that minimal added permission,
+checks out only default-branch source with credential persistence disabled,
+and executes the exact-head selector unit tests.
+
+Cancellation is best-effort queue hygiene, **not** a green CI check or approval
+to bypass GitHub branch rules. An already-running PR test remains untouched.
+
 ## Verification
 
 ```sh

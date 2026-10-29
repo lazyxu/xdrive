@@ -111,7 +111,7 @@ test('manual refresh and empty-map interval never widen Owner scope or call the 
   assert.match(callback,/cameraTouched=true/)
   assert.match(callback,/const resized=Boolean/)
   assert.match(callback,/pendingResizeDrawer\.current=null/)
-  assert.match(callback,/\n\s*cancel\(\)\s*\n\s*\},/,
+  assert.match(callback,/cancel\(Boolean\(keepVisual\)\)/,
     'gesture and resize must unconditionally invalidate old Camera and Cells')
   assert.match(source,/const refocus = !liveCamera && initialWorldEmpty && !cameraTouched/)
   assert.match(source,/queueMicrotask\(\(\) => \{/)

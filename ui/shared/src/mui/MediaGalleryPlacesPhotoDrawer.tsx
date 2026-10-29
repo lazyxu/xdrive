@@ -1,27 +1,31 @@
-import { useLayoutEffect, useRef } from 'react'
-import { Box, Button, CircularProgress, IconButton, Stack, Typography } from '@mui/material'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Box, Button, CircularProgress, Dialog, IconButton, Stack, Typography } from '@mui/material'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import ExpandLessRoundedIcon from '@mui/icons-material/ExpandLessRounded'
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
 import PhotoLibraryOutlinedIcon from '@mui/icons-material/PhotoLibraryOutlined'
 import type { MediaItem } from '../models'
+import { XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT } from '../media-gallery-places-photo-drawer'
 import type { XDrivePlacesDrawerPresentation } from '../media-gallery-places-photo-drawer'
 import type { MediaThumbnailLoader } from './MediaGallery'
 import { XDriveMediaGalleryCoverThumbnail } from './MediaGalleryCoverThumbnail'
 
 /** Trusted Parent-only photo sheet; no Baidu SDK data or media URLs cross the Child. */
 export function XDriveMediaGalleryPlacesPhotoDrawer({
-  items, total, phase, expanded, loadThumbnail, onExpand,
-  onClose, onRetry, onOpenPhoto, onOpenAll, onOpenNearby, initialPresentation,
+  items, total, phase, expanded, loadingMore, pageError, loadThumbnail, onExpand,
+  onClose, onRetry, onLoadMore, onOpenPhoto, onOpenAll, onOpenNearby, initialPresentation,
 }: {
   items: MediaItem[]
   total: number
   phase: 'loading' | 'ready' | 'error'
   expanded: boolean
+  loadingMore: boolean
+  pageError: boolean
   loadThumbnail: MediaThumbnailLoader
   onExpand: (expanded: boolean) => void
   onClose: () => void
   onRetry: () => void
+  onLoadMore: () => void
   onOpenPhoto: (item: MediaItem, presentation: XDrivePlacesDrawerPresentation) => void
   onOpenAll: () => void
   /** Same signed Owner camera viewport as the map's original camera wall. */
@@ -40,43 +44,83 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
   } | null>(null)
   const touchActivated = useRef<{nodeID:number; at:number} | null>(null)
   const listRef = useRef<HTMLDivElement | null>(null)
-  const appliedReturn = useRef(false)
-  // Restore only after the *fresh* Owner Range has produced real grid cells.
-  // Never store photos, GPS or Scroll DOM in a global viewer-return session.
+  const appliedReturn = useRef<HTMLDivElement | null>(null)
+  // MUI Dialog's focus trap and Enter transition can reset the scroll position
+  // after the first two animation frames. Use the real transition completion
+  // as an additional gate, without weakening the fresh Owner Cell page gate.
+  const [portalEntered, setPortalEntered] = useState(false)
+  // Restore only when this trusted Parent Dialog actually finished entering
+  // and a NEW authenticated Owner Cell Range has populated its grid. Never
+  // replay old image bytes, reset the camera, or borrow SDK Child state.
   useLayoutEffect(() => {
-    if (phase !== 'ready') { appliedReturn.current = false; return }
+    if (phase !== 'ready') { appliedReturn.current = null; return }
     const node = listRef.current
-    if (!node || appliedReturn.current) return
-    appliedReturn.current = true
-    if (initialPresentation) {
+    if (!node || appliedReturn.current === node) return
+    const target=Math.min(initialPresentation?.loadedCount ?? 0,total)
+    if (items.length < target && !pageError) return
+    if (!initialPresentation) { appliedReturn.current=node; return }
+    // The prior attempt restored during Dialog's focus/Enter lifecycle; MUI
+    // subsequently focused the first tile and scrolled the gallery to top.
+    // This one-shot post-enter check wins that race without disabling the
+    // Dialog's keyboard focus trap or its accessible default focus.
+    if (!portalEntered) return
+    const view=node.ownerDocument.defaultView
+    const apply = () => {
+      if (listRef.current !== node || !node.isConnected) return
       node.scrollTop = initialPresentation.scrollTop
       node.scrollLeft = initialPresentation.scrollLeft
     }
-  }, [phase, expanded, initialPresentation])
+    apply()
+    let first: number | undefined
+    let second: number | undefined
+    if (view) {
+      first=view.requestAnimationFrame(() => {
+        apply()
+        second=view.requestAnimationFrame(() => {
+          apply()
+          if (listRef.current === node) appliedReturn.current=node
+        })
+      })
+    } else {
+      appliedReturn.current=node
+    }
+    return () => {
+      if (first !== undefined) view?.cancelAnimationFrame(first)
+      if (second !== undefined) view?.cancelAnimationFrame(second)
+    }
+  }, [phase, expanded, initialPresentation, items.length, total, pageError, portalEntered])
+  useEffect(() => {
+    if (phase !== 'ready' || !initialPresentation || loadingMore || pageError ||
+        items.length>=total ||
+        (initialPresentation.loadedCount ?? 0)<=items.length) return
+    // User previously visited these pages. Only restore their bounded count
+    // through NEW authenticated /cell-items, never reuse old media bytes.
+    onLoadMore()
+  }, [phase, initialPresentation, loadingMore, pageError, items.length, total, onLoadMore])
   const position = (): XDrivePlacesDrawerPresentation => {
     const bounded = (n: number) => Number.isFinite(n)
       ? Math.max(0, Math.min(10_000, Math.floor(n))) : 0
     return {expanded, scrollTop: bounded(listRef.current?.scrollTop ?? 0),
-      scrollLeft: bounded(listRef.current?.scrollLeft ?? 0)}
+      scrollLeft: bounded(listRef.current?.scrollLeft ?? 0),
+      loadedCount:Math.min(XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT,items.length)}
   }
   return (
+    <Dialog open onClose={onClose} fullWidth maxWidth="md" disableScrollLock
+      TransitionProps={{onEntered: () => setPortalEntered(true)}}
+      // Avoid a body scrollbar-width resize remounting/invalidation of the
+      // underlying active map while this photo modal opens.
+      aria-labelledby="xdrive-places-album-title" data-xdrive-places-album-dialog
+      // This is the SAME shared Owner Gallery UI for both map SDK Hosts.
+      // MUI Dialog owns focus trap, Escape, backdrop and scroll lock.
+      PaperProps={{sx:{width:{xs:'calc(100% - max(8px, env(safe-area-inset-left)) - max(8px, env(safe-area-inset-right)))',sm:'min(880px, calc(100vw - 40px))'},
+        maxWidth:880,maxHeight:'min(86dvh, 820px)',m:1,
+        borderRadius:{xs:2.5,sm:3},overflow:'hidden',
+        bgcolor:'background.paper',boxShadow:'0 16px 54px rgba(0,0,0,.34)'}}}>
     <Box component="section" role="region" aria-label="当前位置的照片"
       data-xdrive-places-photo-drawer
-      sx={{position:'absolute',
-        left:{xs:'max(8px, env(safe-area-inset-left))',sm:16},
-        right:{xs:'max(8px, env(safe-area-inset-right))',sm:'auto'},
-        bottom:{xs:'max(8px, env(safe-area-inset-bottom))',sm:16},
-        width:{xs:'auto',sm:'min(560px, calc(100% - 32px))'},
-        zIndex:8,pointerEvents:'auto',bgcolor:'background.paper',
-        border:'1px solid',borderColor:'divider',borderRadius:3,
-        boxShadow:'0 12px 42px rgba(15,23,42,.36)',overflow:'hidden',
-        height:expanded ? {xs:'min(75dvh,580px)',sm:'min(76dvh,640px)'} : 'auto',
-        // Landscape photo sheets must fit INSIDE the actual map viewport,
-        // not merely within the device viewport (which also has App chrome).
-        maxHeight:expanded
-          ? {xs:'min(75dvh,580px,calc(100% - 16px))',
-             sm:'min(76dvh,640px,calc(100% - 32px))'}
-          : 'min(250px, calc(100% - 16px))',
+      sx={{width:'100%',minWidth:0,pointerEvents:'auto',
+        height:expanded?'min(80dvh, 760px)':'auto',
+        maxHeight:'min(86dvh, 820px)',overflow:'hidden',
         display:'flex',flexDirection:'column'}}>
       <Box sx={{flexShrink:0}}>
         <Box component="button" type="button"
@@ -134,7 +178,7 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
         </Box>
         <Stack direction="row" spacing={1} alignItems="center" sx={{px:1.25,pb:0.5}}>
           <Box sx={{flex:1,minWidth:0}}>
-            <Typography variant="body2" fontWeight={750}>此地点的照片</Typography>
+            <Typography id="xdrive-places-album-title" variant="body2" fontWeight={750}>此地点的照片</Typography>
             <Typography variant="caption" color="text.secondary">
               {phase==='ready'
                 ? `${total.toLocaleString('zh-CN')} 张照片和视频`
@@ -172,11 +216,21 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
       ) : (
         <>
           <Box ref={listRef} data-xdrive-places-photo-drawer-items
+            onScroll={event => {
+              const list=event.currentTarget
+              if (expanded && !loadingMore && !pageError && items.length < total &&
+                  list.scrollHeight-list.scrollTop-list.clientHeight < 180) onLoadMore()
+            }}
             sx={{px:1.25,py:0.75,overflowX:expanded?'hidden':'auto',
               overflowY:expanded?'auto':'hidden',minHeight:0,minWidth:0,
               flex:expanded?'1 1 auto':'0 1 auto',
               display:expanded?'grid':'flex',gap:1,
-              gridTemplateColumns:expanded?'repeat(auto-fill, minmax(92px, 1fr))':undefined,
+              gridTemplateColumns:expanded?'repeat(auto-fill, minmax(108px, 1fr))':undefined,
+              // Grid's implicit auto tracks can collapse under the bounded
+              // MUI Dialog's flex height: 142 real tiles then fit into only
+              // ~460px and the grid has NO vertical overflow. A real minimum
+              // tile track restores scrolling without changing Owner paging.
+              gridAutoRows:expanded?'minmax(132px, max-content)':undefined,
               overscrollBehavior:'contain',touchAction:'auto'}}>
             {items.map(item => (
               <Box key={item.node.id} component="button" type="button"
@@ -266,10 +320,18 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
             spacing={1} sx={{px:1.25,pb:1,pt:0.25,flexShrink:0,flexWrap:'wrap',rowGap:0.25}}>
             <Typography variant="caption" color="text.secondary">
               {items.length < total
-                ? `预览前 ${items.length.toLocaleString('zh-CN')} 张`
+                ? `已显示 ${items.length.toLocaleString('zh-CN')} / ${total.toLocaleString('zh-CN')} 张`
                 : '此地点全部照片'}
             </Typography>
             <Stack direction="row" alignItems="center" spacing={0.25}>
+              {items.length < total ? (
+                <Button data-xdrive-places-photo-drawer-load-more
+                  variant="outlined" onClick={onLoadMore} disabled={loadingMore}
+                  aria-label="继续加载此地点的照片"
+                  sx={{minHeight:44,textTransform:'none'}}>
+                  {loadingMore ? '正在加载…' : '加载更多'}
+                </Button>
+              ) : null}
               {onOpenNearby ? (
                 <Button data-xdrive-places-photo-drawer-nearby
                   variant="text" onClick={onOpenNearby}
@@ -285,8 +347,16 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
               </Button>
             </Stack>
           </Stack>
+          {pageError && items.length < total ? (
+            <Typography variant="caption" role="alert"
+              data-xdrive-places-photo-drawer-page-error
+              sx={{px:1.25,pb:1,color:'error.main'}}>
+              后续照片读取失败，请重试。已验证的照片仍可查看。
+            </Typography>
+          ) : null}
         </>
       )}
     </Box>
+    </Dialog>
   )
 }

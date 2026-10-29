@@ -86,9 +86,20 @@ struct XDriveIOSJournaledOriginalUpload {
                 expectedSHA256: current.sha256, hooks: hooks
             )
             try Task.checkCancellation()
-            // Only the exact Server-reported full-file receipt may mark
-            // this one original resource confirmed. It is not proof of
-            // Live still/motion pairing or a durable PhotoAsset SourceRun.
+            // A finalized Session and a visible current-Owner Node must
+            // agree on parent, name, byte size, full SHA and exact revision.
+            // Any GET/auth mismatch remains uncertain in the encrypted
+            // ledger, never a fabricated "backed up" checkpoint.
+            try await XDriveIOSNodeReceiptReadbackVerifier(
+                owner: owner, accessToken: accessToken
+            ).verify(
+                receipt, parentID: current.destinationParentID,
+                expectedName: current.destinationName
+            )
+            try Task.checkCancellation()
+            // Only this verified single-resource file receipt can be marked
+            // confirmed. It is not proof of Live still/motion pairing or a
+            // durable PhotoAsset/SourceRun commit.
             _ = try await ledger.confirmReceipt(
                 scope: scope, id: operationID,
                 sessionID: receipt.sessionID,

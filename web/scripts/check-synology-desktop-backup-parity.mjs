@@ -137,6 +137,7 @@ if (!verifiedOwnerDownload.includes('xDriveSynologyFetchVerifiedDownload') ||
     // The authenticated DSM Owner Files port is explicit; unavailable actions
     // belong to that port, not to a parallel Host-specific Files registry.
     !dsmHost.includes('ownerFilesPage: {') ||
+    !dsmHost.includes('client: local,') ||
     !dsmHost.includes('unavailableActions: {') ||
     !sharedFileExplorer.includes('searchUnavailableReason') ||
     !synologyFiles.includes('forceVirtualization') ||

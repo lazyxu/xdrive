@@ -100,7 +100,7 @@ export function xDriveVerifiedMapPhotoProjections(
  * clipped map edge or behind the floating summary/actions are still available in
  * the full accessible Cell list and original Owner-signed photo wall.
  */
-export const XDRIVE_PLACES_MAP_COVER_MAX = 24
+export const XDRIVE_PLACES_MAP_COVER_MAX = 64
 
 /** Measured, trusted React control geometry in the Parent map canvas.
  * The SDK Child never supplies these positions or media authority. */
@@ -139,8 +139,13 @@ export function xDriveSelectVisibleMapPhotoCovers<T extends Readonly<{
     ? overlayRects : null
   const maxY = height - (measuredRects ? cardRadius + 12 : compact ? 92 : 96)
   // Exclude rectangular card + badge overlap, including diagonal neighbors.
-  const gapX = width < 600 ? 92 : 104
-  const gapY = width < 600 ? 82 : 92
+  // Actual 64/72px photo cards have smaller painted hit boxes than the
+  // former 92/104px overconservative exclusion. Keep genuinely intersecting
+  // cards apart, but do NOT hide adjacent photographs like the user's 142
+  // and 28 clusters (about 99px horizontal / 90px vertical separation).
+  // Measured map chrome remains an independent exclusion above.
+  const gapX = width < 600 ? 84 : 88
+  const gapY = width < 600 ? 78 : 80
   const visible: T[] = []
   // The existing Parent verifier already sorts by true signed photo count.
   // Never fabricate/aggregate counts or re-rank using SDK-provided labels.

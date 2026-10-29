@@ -1,0 +1,61 @@
+name: Cancel obsolete queued PR CI
+
+# Each merged PR receives its own lightweight cleanup run. The branch-prune
+# workflow has a single shared concurrency slot, so rapid merges can replace
+# pending runs before their CI-cancellation step ever executes.
+on:
+  pull_request_target:
+    types: [closed]
+    # GitHub filters PR branches by BASE; stacked/other targets must not
+    # create a skip-only cancellation run.
+    branches: [master]
+
+permissions:
+  contents: read
+  pull-requests: read
+  actions: write
+
+concurrency:
+  group: cancel-queued-merged-pr-${{ github.repository }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  cancel:
+    if: >-
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.base.ref == 'master' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # pull_request_target carries an Actions-write token. The checkout is
+      # always trusted DEFAULT BRANCH, never the PR HEAD. Do not execute
+      # PR-provided code, shell or workflow scripts.
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: |
+            .github/workflows/cancel-merged-pr-queued-ci.yml
+            .github/workflows/cleanup-merged-branches.yml
+            scripts/ci/cancel-merged-pr-queued-ci.cjs
+            scripts/ci/cancel-merged-pr-queued-ci.test.cjs
+            scripts/ci/cancel-merged-pr-workflow-contract.test.cjs
+          sparse-checkout-cone-mode: false
+
+      - name: Validate exact-HEAD queued run selector
+        run: |
+          node --check scripts/ci/cancel-merged-pr-queued-ci.cjs
+          node --test scripts/ci/cancel-merged-pr-queued-ci.test.cjs scripts/ci/cancel-merged-pr-workflow-contract.test.cjs
+
+      - name: Cancel only the merged PR exact-HEAD queued CI
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const {cancelMergedPRQueuedCI} =
+              require('./scripts/ci/cancel-merged-pr-queued-ci.cjs')
+            const outcome = await cancelMergedPRQueuedCI({github, context})
+            core.notice(outcome.reason + ': examined ' + outcome.examined +
+              ' exact-SHA workflow runs; requested cancellation of ' +
+              outcome.cancelled.length + ' obsolete queued CI runs')
