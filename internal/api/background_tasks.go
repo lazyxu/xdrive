@@ -30,34 +30,35 @@ type backgroundTaskProgressDTO struct {
 }
 
 type backgroundTaskDTO struct {
-	ID             string                    `json:"id"`
-	Kind           string                    `json:"kind"`
-	Domain         string                    `json:"domain"`
-	Scope          string                    `json:"scope"`
-	OwnerID        uint64                    `json:"owner_id,omitempty"`
-	OwnerUsername  string                    `json:"owner_username,omitempty"`
-	State          string                    `json:"state"`
-	Trigger        string                    `json:"trigger,omitempty"`
-	Initiator      string                    `json:"initiator,omitempty"`
-	Priority       *uint8                    `json:"priority,omitempty"`
-	Resource       string                    `json:"resource,omitempty"`
-	SourceID       uint64                    `json:"source_id,omitempty"`
-	SourceName     string                    `json:"source_name,omitempty"`
-	SourceKind     string                    `json:"source_kind,omitempty"`
-	Progress       backgroundTaskProgressDTO `json:"progress"`
-	ActiveCount    int                       `json:"active_count,omitempty"`
-	QueuedCount    int                       `json:"queued_count,omitempty"`
-	RunningCount   int                       `json:"running_count,omitempty"`
-	InstanceCount  int                       `json:"instance_count,omitempty"`
-	Attempt        int                       `json:"attempt,omitempty"`
-	RetryAt        *time.Time                `json:"retry_at,omitempty"`
-	TraceID        string                    `json:"trace_id,omitempty"`
-	ParentKey      string                    `json:"parent_key,omitempty"`
-	ControlActions []string                  `json:"control_actions,omitempty"`
-	StartedAt      *time.Time                `json:"started_at,omitempty"`
-	UpdatedAt      time.Time                 `json:"updated_at"`
-	FinishedAt     *time.Time                `json:"finished_at,omitempty"`
-	Error          string                    `json:"error,omitempty"`
+	ID               string                    `json:"id"`
+	Kind             string                    `json:"kind"`
+	Domain           string                    `json:"domain"`
+	Scope            string                    `json:"scope"`
+	OwnerID          uint64                    `json:"owner_id,omitempty"`
+	OwnerUsername    string                    `json:"owner_username,omitempty"`
+	State            string                    `json:"state"`
+	Trigger          string                    `json:"trigger,omitempty"`
+	Initiator        string                    `json:"initiator,omitempty"`
+	Priority         *uint8                    `json:"priority,omitempty"`
+	Resource         string                    `json:"resource,omitempty"`
+	SourceID         uint64                    `json:"source_id,omitempty"`
+	SourceName       string                    `json:"source_name,omitempty"`
+	SourceKind       string                    `json:"source_kind,omitempty"`
+	Progress         backgroundTaskProgressDTO `json:"progress"`
+	StorageIntegrity *storageVerifyEvidence    `json:"storage_integrity,omitempty"`
+	ActiveCount      int                       `json:"active_count,omitempty"`
+	QueuedCount      int                       `json:"queued_count,omitempty"`
+	RunningCount     int                       `json:"running_count,omitempty"`
+	InstanceCount    int                       `json:"instance_count,omitempty"`
+	Attempt          int                       `json:"attempt,omitempty"`
+	RetryAt          *time.Time                `json:"retry_at,omitempty"`
+	TraceID          string                    `json:"trace_id,omitempty"`
+	ParentKey        string                    `json:"parent_key,omitempty"`
+	ControlActions   []string                  `json:"control_actions,omitempty"`
+	StartedAt        *time.Time                `json:"started_at,omitempty"`
+	UpdatedAt        time.Time                 `json:"updated_at"`
+	FinishedAt       *time.Time                `json:"finished_at,omitempty"`
+	Error            string                    `json:"error,omitempty"`
 }
 
 func (s *Server) listBackgroundTasks(c *gin.Context) {
