@@ -148,6 +148,12 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     () => target ? xDriveClassifyFilePreview(target) : 'none',
     [target?.kind, target?.mimeType, target?.name],
   )
+  // The original video stream has its own authorized loader, independent of
+  // the already Owner-fenced cached poster. Only VIDEO participates: existing
+  // PDF/audio/text and image loader lifecycles are unchanged.
+  const videoPreviewOwner = previewKind === 'video' ? loadPreviewURL : undefined
+  const currentVideoPreviewOwnerRef = useRef(videoPreviewOwner)
+  currentVideoPreviewOwnerRef.current = videoPreviewOwner
   const livePhotoMotionLoader = useMemo(() => {
     if (!target || !loadLivePhotoMotion) return undefined
     return (onProgress?: XDriveByteProgressHandler, signal?: AbortSignal) =>
@@ -165,8 +171,12 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   const [previewRetryNonce, setPreviewRetryNonce] = useState(0)
   // A stale retry handler must not fetch media after Node/Owner replacement,
   // or re-submit a previous attempt once a newer one has started.
-  const retryOwnerRef = useRef({ sourceIdentity: JSON.stringify([target?.id, target?.revision, previewKind]) })
+  const retryOwnerRef = useRef({
+    sourceIdentity: JSON.stringify([target?.id, target?.revision, previewKind]),
+    videoPreviewOwner,
+  })
   const [previewURL, setPreviewURL] = useState('')
+  const [videoURLSourceOwner, setVideoURLSourceOwner] = useState<XDriveFilePreviewURLLoader<T> | undefined>()
   const [loading, setLoading] = useState(false)
   const [urlDownloadProgress, setURLDownloadProgress] = useState<{ loadedBytes: number; totalBytes?: number } | null>(null)
   const [failed, setFailed] = useState(false)
@@ -244,8 +254,9 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
       acquiredURL = ''
     }
   }, [sourceIdentity, previewKind, hasVideoPosterLoader, loadImagePreview])
-  if (retryOwnerRef.current.sourceIdentity !== sourceIdentity) {
-    retryOwnerRef.current = { sourceIdentity }
+  if (retryOwnerRef.current.sourceIdentity !== sourceIdentity ||
+      retryOwnerRef.current.videoPreviewOwner !== videoPreviewOwner) {
+    retryOwnerRef.current = { sourceIdentity, videoPreviewOwner }
   }
   const retryOwner = retryOwnerRef.current
   const retryNonceRef = useRef(previewRetryNonce)
@@ -507,6 +518,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     const loaders = previewLoadersRef.current
     setTextPreview(null)
     assignPreviewURL('')
+    setVideoURLSourceOwner(undefined)
     setLoading(false)
     setFailed(false)
     setMediaReady(false)
@@ -578,6 +590,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
           revokePreviewURL(value)
           return
         }
+        if (previewKind === 'video') setVideoURLSourceOwner(loaders.url)
         assignPreviewURL(value)
       })
       .catch(() => {
@@ -598,6 +611,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     previewTargetID,
     previewTargetRevision,
     previewRetryNonce,
+    videoPreviewOwner,
   ])
 
   const retryPreview = () => {
@@ -620,7 +634,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
       ? videoStreamElementRef.current : audioStreamElementRef.current
     if (!media) return
     return () => xDriveAbortHTMLMediaElement(media)
-  }, [sourceIdentity, previewKind, previewURL, loading, failed, hasTransformedVideo])
+  }, [sourceIdentity, previewKind, previewURL, loading, failed, hasTransformedVideo, videoPreviewOwner])
 
   // A mobile PWA may stop delivering pointer/keyboard events on tab hide or
   // App suspension. Ordinary *video* should never continue playing unseen.
@@ -635,7 +649,8 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     if (!video) return
     const pauseNativeVideoIfCurrent = () => {
       if (videoStreamElementRef.current !== video ||
-          currentSourceIdentityRef.current !== sourceIdentity) return
+          currentSourceIdentityRef.current !== sourceIdentity ||
+          currentVideoPreviewOwnerRef.current !== videoPreviewOwner) return
       try { video.pause() } catch { /* Already detached or suspended by the OS. */ }
     }
     const onVisibilityChange = () => {
@@ -649,7 +664,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
       document.removeEventListener('visibilitychange', onVisibilityChange)
       if (typeof window !== 'undefined') window.removeEventListener('pagehide', pauseNativeVideoIfCurrent)
     }
-  }, [sourceIdentity, previewKind, previewURL, loading, failed, hasTransformedVideo])
+  }, [sourceIdentity, previewKind, previewURL, loading, failed, hasTransformedVideo, videoPreviewOwner])
 
   // A terminal native media error unmounts the player, but the signed Blob
   // otherwise stays owned until Retry or Close. The layout cleanup above
@@ -667,8 +682,9 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   const isCurrentMedia = useCallback(() => (
     acquiredIdentityRef.current === sourceIdentity &&
     currentSourceIdentityRef.current === sourceIdentity &&
-    previewGenerationRef.current === mediaGeneration
-  ), [mediaGeneration, sourceIdentity])
+    previewGenerationRef.current === mediaGeneration &&
+    (previewKind !== 'video' || currentVideoPreviewOwnerRef.current === videoPreviewOwner)
+  ), [mediaGeneration, sourceIdentity, previewKind, videoPreviewOwner])
   const markMediaReady = useCallback(() => {
     if (!isCurrentMedia()) return
     setMediaReady(true)
@@ -725,7 +741,9 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     (!mediaReady || mediaBuffering) &&
     !failed
   )
-  const presentationState: XDriveFilePreviewPresentationState = acquiredIdentityRef.current !== sourceIdentity
+  const staleVideoStreamOwner = previewKind === 'video' && videoURLSourceOwner !== videoPreviewOwner
+  const presentationState: XDriveFilePreviewPresentationState = acquiredIdentityRef.current !== sourceIdentity ||
+    staleVideoStreamOwner
     ? 'loading'
     : failed || previewKind === 'none' ? 'failed'
       : loading || mediaPending ? 'loading'
@@ -912,7 +930,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     }
     // A target change can render before its effect clears the previous URL.
     // Never mount old video/audio/PDF bytes under a newer Node/revision.
-    if (loading || acquiredIdentityRef.current !== sourceIdentity) {
+    if (loading || acquiredIdentityRef.current !== sourceIdentity || staleVideoStreamOwner) {
       return videoPlaceholder(
         <Box sx={{ minHeight: 96, display: 'grid', placeItems: 'center' }}>
           <CircularProgress size={26} />

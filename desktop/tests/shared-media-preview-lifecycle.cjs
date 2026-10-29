@@ -828,6 +828,104 @@ test('Video poster appears during pending ticket and remains behind failure/retr
 })
 
 
+test('native video original stream switches Owner loader even with identical Node and revision', async () => {
+  const oldRevoke = URL.revokeObjectURL
+  const revoked = []
+  URL.revokeObjectURL = url => revoked.push(url)
+  const calls = []
+  const streams = []
+  const target = { id: 9781, revision: 4, name: 'same-id.mp4', kind: 'file' }
+  const loaderA = async (_target, kind, signal) => {
+    calls.push({ owner: 'A', kind, signal })
+    return 'blob:owner-a-video'
+  }
+  let resolveB
+  const loaderB = (_target, kind, signal) => new Promise(resolve => {
+    calls.push({ owner: 'B', kind, signal })
+    resolveB = resolve
+  })
+  const make = loader => React.createElement(XDriveFilePreviewSurface, {
+    target, loadPreviewURL: loader,
+  })
+  let view
+  try {
+    await act(async () => {
+      view = create(make(loaderA), {
+        createNodeMock: element => {
+          if (element.type !== 'video') return null
+          const stream = {
+            pauses: 0, detaches: 0, resets: 0,
+            pause() { this.pauses++ },
+            removeAttribute(key) { assert.equal(key, 'src'); this.detaches++ },
+            load() { this.resets++ },
+          }
+          streams.push(stream)
+          return stream
+        },
+      })
+      await Promise.resolve()
+    })
+    assert.equal(calls.length, 1)
+    assert.equal(view.root.findByType('video').props.src, 'blob:owner-a-video')
+    const oldReady = view.root.findByType('video').props.onLoadedData
+    await act(async () => oldReady())
+    assert.equal(root(view, 'video').props['aria-busy'], undefined)
+    await act(async () => { view.update(make(loaderB)); await Promise.resolve() })
+    assert.equal(calls.length, 2, 'current Owner loader must renew a same-node original')
+    assert.equal(calls[0].signal.aborted, true, 'superseded signed Range must abort')
+    assert.equal(view.root.findAllByType('video').length, 0,
+      'new Owner must not see the old signed video while new ticket is pending')
+    assert.ok(streams[0].detaches >= 1 && streams[0].resets >= 1,
+      'old native Range is synchronously detached at Owner handoff')
+    assert.ok(revoked.includes('blob:owner-a-video'),
+      'old Owner Blob URL must be retired before new video displays')
+    await act(async () => { resolveB('blob:owner-b-video'); await Promise.resolve() })
+    const videoB = view.root.findByType('video')
+    assert.equal(videoB.props.src, 'blob:owner-b-video')
+    await act(async () => oldReady())
+    assert.equal(root(view, 'video').props['aria-busy'], true,
+      'stale A media-ready callback must not certify B playable frame')
+    await act(async () => view.root.findByType('video').props.onLoadedData())
+    assert.equal(root(view, 'video').props['aria-busy'], undefined)
+  } finally {
+    if (view) await act(async () => view.unmount())
+    URL.revokeObjectURL = oldRevoke
+  }
+  assert.equal(revoked.filter(url => url === 'blob:owner-a-video').length, 1)
+  assert.equal(revoked.filter(url => url === 'blob:owner-b-video').length, 1)
+})
+
+test('stale retry from failed video Owner cannot renew the next Owner source', async () => {
+  const requests = []
+  const target = { id: 9791, revision: 1, name: 'same-id.mp4', kind: 'file' }
+  const loaderA = (_node, _kind, signal) => new Promise((resolve, reject) =>
+    requests.push({ owner: 'A', signal, resolve, reject }))
+  const loaderB = (_node, _kind, signal) => new Promise((resolve, reject) =>
+    requests.push({ owner: 'B', signal, resolve, reject }))
+  const make = loadPreviewURL => React.createElement(XDriveFilePreviewSurface, {
+    target, loadPreviewURL,
+  })
+  let view
+  try {
+    await act(async () => { view = create(make(loaderA)) })
+    await act(async () => { requests[0].reject(new Error('A unauthorized')); await Promise.resolve() })
+    const retry = view.root.findAll(x => x.type === 'button' && x.props['aria-label'] === '重试预览')
+    assert.equal(retry.length, 1)
+    const oldRetry = retry[0].props.onClick
+    await act(async () => { view.update(make(loaderB)); await Promise.resolve() })
+    assert.equal(requests.length, 2, 'one new Owner B request starts')
+    assert.equal(requests[0].signal.aborted, true, 'failed prior Owner request retires')
+    assert.equal(view.root.findAllByType('video').length, 0)
+    await act(async () => { oldRetry(); await Promise.resolve() })
+    assert.equal(requests.length, 2,
+      'stale old retry callback cannot reissue the former Owner request')
+    await act(async () => { requests[1].resolve('https://example.invalid/b-stream.mp4'); await Promise.resolve() })
+    assert.equal(view.root.findByType('video').props.src, 'https://example.invalid/b-stream.mp4')
+  } finally {
+    if (view) await act(async () => view.unmount())
+  }
+})
+
 test('native video poster switches Owner loader for the same exact Node revision without reloading stream', async () => {
   const oldRevoke = URL.revokeObjectURL
   const revoked = []
