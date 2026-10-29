@@ -113,6 +113,9 @@ export function xDriveMountBaiduInlineMap<T>(
   // Never issue the next Owner /cells while the same primary mouse is held.
   // Gesture-only photo pixels remain inert; Owner scope changes still clear them.
   let heldMousePointer: number | null = null
+  // Track secondary fingers independently; a pinch must remain inert until
+  // the LAST trusted touch/pen contact has released. No IDs leave this Host.
+  const heldTouchPointers = new Set<number>()
   let viewportAfterMouseRelease = false
   let observedSize: {width:number;height:number} | null = null
   let sizeObserver: ResizeObserver | null = null
@@ -261,7 +264,7 @@ export function xDriveMountBaiduInlineMap<T>(
   const scheduleViewport = () => {
     projectGesture()
     clearTimer()
-    if (heldMousePointer !== null) {
+    if (heldMousePointer !== null || heldTouchPointers.size > 0) {
       viewportAfterMouseRelease = true
       return
     }
@@ -269,7 +272,7 @@ export function xDriveMountBaiduInlineMap<T>(
       pendingViewport = null
       // The SDK may have scheduled before pointerdown: never settle a
       // previous viewport while the user is still physically dragging.
-      if (heldMousePointer !== null) {
+      if (heldMousePointer !== null || heldTouchPointers.size > 0) {
         viewportAfterMouseRelease = true
         return
       }
@@ -278,18 +281,28 @@ export function xDriveMountBaiduInlineMap<T>(
   }
   const stopViewport = () => {
     if (!alive || !ready) return
-    if (heldMousePointer !== null) viewportAfterMouseRelease = true
+    if (heldMousePointer !== null || heldTouchPointers.size > 0)
+      viewportAfterMouseRelease = true
     invalidate()
   }
   const onMousePointerDown = (event: PointerEvent) => {
-    if (alive && ready && event.isTrusted && event.isPrimary &&
-        event.pointerType === 'mouse' && event.button === 0)
+    if (!alive || !ready || !event.isTrusted || event.button !== 0) return
+    if (event.pointerType === 'mouse' && event.isPrimary)
       heldMousePointer = event.pointerId
+    else if (event.pointerType === 'touch' || event.pointerType === 'pen')
+      heldTouchPointers.add(event.pointerId)
   }
   const releaseHeldMouse = (pointerID?: number) => {
-    if (heldMousePointer === null ||
-        (pointerID !== undefined && pointerID !== heldMousePointer)) return
-    heldMousePointer = null
+    const mouseMatches = heldMousePointer !== null &&
+      (pointerID === undefined || pointerID === heldMousePointer)
+    const touchMatches = pointerID === undefined
+      ? heldTouchPointers.size > 0 : heldTouchPointers.delete(pointerID)
+    if (!mouseMatches && !touchMatches) return
+    if (mouseMatches) heldMousePointer = null
+    if (pointerID === undefined) heldTouchPointers.clear()
+    // A second finger still touching the map has not completed the SDK pan
+    // or pinch. Do not issue a new signed Owner Camera Range yet.
+    if (heldMousePointer !== null || heldTouchPointers.size > 0) return
     if (!viewportAfterMouseRelease) return
     viewportAfterMouseRelease = false
     if (alive && ready) scheduleViewport()
@@ -357,6 +370,7 @@ export function xDriveMountBaiduInlineMap<T>(
     generation++
     clearTimer()
     heldMousePointer = null
+    heldTouchPointers.clear()
     viewportAfterMouseRelease = false
     canvas.removeEventListener('pointerdown', onMousePointerDown, true)
     browser.removeEventListener('pointerup', onMousePointerUp, true)
