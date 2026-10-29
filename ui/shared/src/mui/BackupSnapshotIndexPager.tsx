@@ -5,7 +5,9 @@ import {
 } from '@mui/material'
 import type {
   XDriveServerBackupSnapshotIndexPage, XDriveServerBackupSnapshotIndexQuery,
+  XDriveServerBackupPage,
 } from '../server-backup-admin'
+import { serverBackupHistoricalVerificationLabel } from '../server-backup-integrity'
 
 const pageSize = 50
 const firstOlderOffset = 100
@@ -15,10 +17,11 @@ const validIdentity = /^(v1|v2-default|v2-configured):xdrive-backup-[0-9]{8}T[0-
  * verification-only action is allowed after fresh Server/Host index fencing;
  * restore, deletion and drill must remain unavailable here. */
 export function XDriveBackupSnapshotIndexPager({
-  readPage, policyRevision, verifyMode, actionsDisabled, onVerifyOlderSnapshot,
+  readPage, policyRevision, history, verifyMode, actionsDisabled, onVerifyOlderSnapshot,
 }: {
   readPage: (query: XDriveServerBackupSnapshotIndexQuery) => Promise<XDriveServerBackupSnapshotIndexPage>
   policyRevision: string
+  history: XDriveServerBackupPage['history']
   verifyMode: 'fast' | 'deep'
   actionsDisabled: boolean
   onVerifyOlderSnapshot: (snapshotID: string) => void
@@ -97,13 +100,16 @@ export function XDriveBackupSnapshotIndexPager({
             <TableContainer sx={{ maxHeight: 300 }}>
               <Table size="small" stickyHeader aria-label="较早备份快照只读列表">
                 <TableHead>
-                  <TableRow><TableCell>序号</TableCell><TableCell>宿主机规范快照编号</TableCell><TableCell>只读校验</TableCell></TableRow>
+                  <TableRow><TableCell>序号</TableCell><TableCell>宿主机规范快照编号</TableCell><TableCell>最近验证（历史）</TableCell><TableCell>只读校验</TableCell></TableRow>
                 </TableHead>
                 <TableBody>
                   {result.snapshot_ids.map((id, i) => (
                     <TableRow key={id}>
                       <TableCell>{result.offset + i + 1}</TableCell>
                       <TableCell sx={{ overflowWrap: 'anywhere' }}>{id}</TableCell>
+                      <TableCell data-xdrive-admin-older-verification-history>
+                        {serverBackupHistoricalVerificationLabel(history, id)}
+                      </TableCell>
                       <TableCell>
                         <Button size="small" variant="outlined"
                           disabled={loading || actionsDisabled}
@@ -116,7 +122,7 @@ export function XDriveBackupSnapshotIndexPager({
                     </TableRow>
                   ))}
                   {!result.snapshot_ids.length ? (
-                    <TableRow><TableCell colSpan={3}>此索引范围没有其他快照。</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={4}>此索引范围没有其他快照。</TableCell></TableRow>
                   ) : null}
                 </TableBody>
               </Table>

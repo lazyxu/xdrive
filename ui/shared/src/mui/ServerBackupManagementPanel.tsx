@@ -355,6 +355,7 @@ export function XDriveServerBackupManagementPanel({
           <XDriveBackupSnapshotIndexPager
             readPage={port.readSnapshotIndexPage}
             policyRevision={page.inventory.policy.revision}
+            history={page.history}
             verifyMode={verifyMode}
             actionsDisabled={disabled}
             onVerifyOlderSnapshot={id => {
