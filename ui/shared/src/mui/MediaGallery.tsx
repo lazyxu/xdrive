@@ -9692,7 +9692,15 @@ export function XDriveMediaGallery({
         item={previewItem}
         onOpenDynamicMap={onShowMap && (showGalleryMapEntry || nativeCellWall)
           ? selection => {
-              if (onShowPhotoMap && showGalleryMapEntry) {
+              // Signed Cell/Viewport return and Hosts without exact-focus
+              // support retain the original synchronous, Owner-scoped map.
+              if (!onShowPhotoMap || !showGalleryMapEntry) {
+                if (!onShowMap()) return
+                closeMediaPreview()
+                setPlacesMobileMode('map')
+                return
+              }
+              {
                 const owner = preferenceScope
                 const scope = selectionScopeKey
                 const stillSelected = () => {
@@ -9709,11 +9717,6 @@ export function XDriveMediaGallery({
                 }).catch(() => undefined)
                 return
               }
-              // A signed Cell/Viewport Viewer returns to the original map,
-              // NEVER to an unrelated unfiltered Parent gallery.
-              if (!onShowMap()) return
-              closeMediaPreview()
-              setPlacesMobileMode('map')
             }
           : undefined}
         positionLabel={previewIndex >= 0 ? `${previewIndex + 1} / ${logicalItemCount}` : undefined}
