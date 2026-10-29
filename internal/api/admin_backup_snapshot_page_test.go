@@ -46,7 +46,7 @@ func backupSnapshotPageFixture(t *testing.T, total int) (*Server, string, backup
 		limit = 1000
 	}
 	index := backupAdminSnapshotIndex{
-		Protocol: "xdrive-backup-snapshot-index-v1",
+		Protocol:    "xdrive-backup-snapshot-index-v1",
 		GeneratedAt: created, PolicyRevision: testPolicyRevision,
 		TotalSnapshots: total, IndexedSnapshots: limit, Truncated: total > limit,
 		SnapshotIDs: ids[:limit],
@@ -146,7 +146,7 @@ func TestBackupSnapshotPageRejectsStaleForgedAndSymlinkedIndex(t *testing.T) {
 			case "foreign_id":
 				index.SnapshotIDs[101] = "v1:../../etc"
 			case "stale":
-				index.GeneratedAt = time.Now().UTC().Add(-10*time.Minute).Format(time.RFC3339)
+				index.GeneratedAt = time.Now().UTC().Add(-10 * time.Minute).Format(time.RFC3339)
 			case "bad_protocol":
 				index.Protocol = "untrusted"
 			case "symlink":
