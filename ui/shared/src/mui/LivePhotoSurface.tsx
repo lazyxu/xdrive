@@ -626,6 +626,9 @@ export function XDriveLivePhotoSurface({
 
   const handlePointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
     if (gestureSessionRef.current !== gestureSession) return
+    // Never accept queued touches on an already-hidden document: a deferred
+    // hold timer could otherwise fire after returning to the foreground.
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
     if (interactiveImage && stillReadyRef.current && event.pointerType === 'touch') {
       zoomPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
       if (zoomPointersRef.current.size >= 2) {
