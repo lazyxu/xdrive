@@ -285,7 +285,9 @@ test('host rotates iframe challenge on reload, ignores ready replay, and bounds 
 test('trusted Owner photo-cover projections never release media IDs to independent Child', () => {
   const f=fixture()
   const projected=[]
+  const gesture=[]
   f.options.onProjectedCells=value=>projected.push(value)
+  f.options.onGestureProjectedCells=value=>gesture.push(value)
   const frame=xDriveMountBaiduIsolatedFrame(f.options)
   assert.ok(frame)
   f.childListeners.get('load')()
@@ -308,6 +310,10 @@ test('trusted Owner photo-cover projections never release media IDs to independe
   assert.equal(projected.length,before,'forged stale IDs or pixels may not publish covers')
   f.emit('cancel')
   assert.deepEqual(projected.at(-1),{width:0,height:0,cells:[]})
+  f.emit('gesture-projections',{width:640,height:480,points:[{key,x:180,y:230}]})
+  assert.deepEqual(gesture.at(-1),{width:640,height:480,
+    cells:[{selection,count:20,x:180,y:230}]},
+    'old signed selection survives solely for inert screen motion')
   f.emit('cell-projections',{width:640,height:480,points:[{key,x:150,y:210}]})
   assert.equal(projected.at(-1).cells.length,0,'revoked keys never reactivate')
   frame.dispose()
