@@ -21,7 +21,7 @@ export type XDriveAppSidebarProps = Omit<
  * and provide only platform-specific data and native integrations.
  *
  * The application owns route composition and the page outlet. Host controllers
- * provide authenticated data, optional legacy Files content and modal overlays.
+ * provide authenticated data, host-wide notices and modal overlays.
  */
 export function XDriveApp({
   host,
@@ -43,7 +43,7 @@ export function XDriveApp({
   revision?: number
   /** Dialogs outside the scrollable page; never a Host-owned page registry. */
   overlays?: ReactNode
-  /** Transitional Desktop Files controller; shared outlet owns all other pages. */
+  /** Host-wide notices only; every route, including Files, uses the outlet. */
   children?: ReactNode
 }) {
   // Responsive navigation is determined by MUI viewport width, never by Host identity.

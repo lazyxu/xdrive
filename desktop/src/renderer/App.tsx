@@ -2617,6 +2617,117 @@ export default function App({
     platform: 'desktop',
     adminRoleVerified: status?.role === 'admin',
     services: {
+      // Transitional native Files controller. It is mounted only from the
+      // single shared Files page outlet; other routes never instantiate it.
+      filesControllerContent: view === 'files' ? (
+          <DesktopFilesPage
+            quota={cloudQuota}
+            explorer={{
+              hostPort: fileExplorerHostPort,
+              items: cloudItems,
+              crumbs: cloudCrumbs,
+              virtualDirectory: cloudVirtualDirectory,
+              loading: cloudLoading,
+              onLoadDirectory: loadCloudDirectory,
+              onRefreshCurrentDirectoryIfIdle: refreshCloudCurrentDirectoryIfIdle,
+              navigationState: cloudFileExplorerNavigationState,
+              navigationSessionStorageKey: cloudFileActionLifecycleKey || undefined,
+              onNavigationStateChange: rememberCloudFileExplorerNavigationState,
+              revealTarget: cloudFileActionLifecycleKey && cloudRevealTarget?.requestID.startsWith(`desktop-external:${cloudFileActionLifecycleKey}:`)
+                ? cloudRevealTarget : null,
+              onOpenTrash: openCloudTrash,
+              onOpenHistory: openCloud历史版本,
+              onOpenShares: openCloudShares,
+              onDelete: removeCloudNode,
+              onDeleteMany: removeCloudNodes,
+              onOperationQueued: rememberFilesOperation,
+              onDownloadStart: beginFilesDownloadFeedback,
+              actionFeedback: (
+                <XDriveFileExplorerActionFeedback
+                  value={currentFilesActionFeedback?.downloadResult
+                    ? { kind: 'download', result: currentFilesActionFeedback.downloadResult }
+                    : filesFeedbackOperation ? { kind: 'operation', operation: filesFeedbackOperation } : null}
+                  onViewTask={openFilesOperationTask}
+                  onRetryTask={!filesFeedbackOperation || !cloudFileOperations.some(task => task.retry_of_id === filesFeedbackOperation.id)
+                    ? (id) => { void fileOperationActions.retryOperation(id) } : undefined}
+                  onUndoTask={fileOperationUndoSupported
+                    ? (id) => { void fileOperationActions.undoOperation(id) } : undefined}
+                  actionsBusy={fileOperationActions.busy}
+                  onDismiss={() => setFilesActionFeedback(null)}
+                />
+              ),
+              canUndo: fileOperationUndoSupported && Boolean(latestUndoableCloudFileOperation) && !fileOperationActions.busy,
+              onUndo: () => {
+                if (latestUndoableCloudFileOperation) void fileOperationActions.undoOperation(latestUndoableCloudFileOperation.id)
+              },
+              canRedo: fileOperationRedoSupported && Boolean(latestRedoableCloudFileOperation) && !fileOperationActions.busy,
+              onRedo: () => {
+                if (latestRedoableCloudFileOperation) void fileOperationActions.redoOperation(latestRedoableCloudFileOperation.id)
+              },
+              onQuotaChanged: refreshCloudQuota,
+              uploadConflictSupported: Boolean(
+                agent.hello?.capabilities.includes('upload-conflict-preflight') &&
+                agent.hello?.capabilities.includes('upload-conflict-policy')
+              ),
+              archiveDownloadSupported: agent.hello?.capabilities.includes('archive-download') ?? false,
+              folderTreeDownloadSupported: agent.hello?.capabilities.includes('folder-download-tree') ?? false,
+              textPreviewSupported: agent.hello?.capabilities.includes('file-text-preview') ?? false,
+              previewStreamSupported: agent.hello?.capabilities.includes('file-preview-stream') ?? false,
+              propertiesStatsSupported: filePropertiesStatsSupported,
+              mediaDetailsSupported: fileMediaDetailsSupported,
+              mediaPropertiesSupported: agent.hello?.capabilities.includes('media-item-properties') ?? false,
+              nodeLocationSupported: agent.hello?.capabilities.includes('node-location') ?? false,
+              childPositionSupported: agent.hello?.capabilities.includes('cloud-child-position') ?? false,
+              fileAvailabilitySupported,
+              openWithSupported: fileOpenWithSupported,
+              quickAccessSupported: fileQuickAccessSupported,
+              fileTagsSupported,
+              savedSearchesSupported: fileSavedSearchesSupported,
+              favoritesSupported: fileFavoritesSupported,
+              recentSupported: fileRecentSupported,
+              transferLifecycleSupported: agent.hello?.capabilities.includes('transfer-lifecycle') ?? false,
+              transferLifecycleBatchSupported: agent.hello?.capabilities.includes('transfer-lifecycle-child-batch') ?? false,
+              transferGroupUploadCancelSupported: agent.hello?.capabilities.includes('transfer-upload-group-cancel') ?? false,
+              viewerDownloadReceipt: mediaGallerySource.viewerDownloadReceipt,
+              transfers: transfers.transfers,
+              actionIntent: cloudFileActionIntent,
+              onActionIntentConsumed: (id) => {
+                setCloudFileActionIntent((current) => current?.id === id ? null : current)
+              },
+              keyboardProfile: fileExplorerKeyboardProfile,
+              onError: (message) => setError(message),
+              onFeedback: (_tone, message) => setNotice(message),
+            }}
+            trashOpen={cloudTrashOpen}
+            onCloseTrash={() => setCloudTrashOpen(false)}
+            onTrashChanged={async () => {
+              const expectedCurrentID = cloudCrumbs.at(-1)?.id
+              await refreshCloudQuota()
+              if (expectedCurrentID !== undefined) {
+                await refreshCloudCurrentDirectoryIfIdle(expectedCurrentID)
+              }
+            }}
+            historyNode={cloudHistoryNode}
+            onCloseHistory={() => {
+              setCloudHistoryNode(null)
+              setCloudHistoryCrumbs([])
+            }}
+            onHistoryRestored={async (restored) => {
+              const expectedCurrentID = cloudHistoryCrumbs.at(-1)?.id
+              setCloudHistoryNode(restored)
+              await refreshCloudQuota()
+              if (expectedCurrentID !== undefined) {
+                await refreshCloudCurrentDirectoryIfIdle(expectedCurrentID)
+              }
+            }}
+            shareNode={cloudShareNode}
+            onCloseShare={() => setCloudShareNode(null)}
+            onFileDialogError={(dialogError) => setError(
+              dialogError instanceof Error ? dialogError.message : String(dialogError),
+            )}
+            onFileDialogFeedback={(message) => setNotice(message)}
+          />
+      ) : undefined,
       overviewPage: {
         port: desktopOverviewPort,
         status: status,
@@ -3169,122 +3280,6 @@ export default function App({
           </Stack>
         ) : null}
 
-
-
-
-
-
-
-
-        {view === 'files' && (
-          <DesktopFilesPage
-            quota={cloudQuota}
-            explorer={{
-              hostPort: fileExplorerHostPort,
-              items: cloudItems,
-              crumbs: cloudCrumbs,
-              virtualDirectory: cloudVirtualDirectory,
-              loading: cloudLoading,
-              onLoadDirectory: loadCloudDirectory,
-              onRefreshCurrentDirectoryIfIdle: refreshCloudCurrentDirectoryIfIdle,
-              navigationState: cloudFileExplorerNavigationState,
-              navigationSessionStorageKey: cloudFileActionLifecycleKey || undefined,
-              onNavigationStateChange: rememberCloudFileExplorerNavigationState,
-              revealTarget: cloudFileActionLifecycleKey && cloudRevealTarget?.requestID.startsWith(`desktop-external:${cloudFileActionLifecycleKey}:`)
-                ? cloudRevealTarget : null,
-              onOpenTrash: openCloudTrash,
-              onOpenHistory: openCloud历史版本,
-              onOpenShares: openCloudShares,
-              onDelete: removeCloudNode,
-              onDeleteMany: removeCloudNodes,
-              onOperationQueued: rememberFilesOperation,
-              onDownloadStart: beginFilesDownloadFeedback,
-              actionFeedback: (
-                <XDriveFileExplorerActionFeedback
-                  value={currentFilesActionFeedback?.downloadResult
-                    ? { kind: 'download', result: currentFilesActionFeedback.downloadResult }
-                    : filesFeedbackOperation ? { kind: 'operation', operation: filesFeedbackOperation } : null}
-                  onViewTask={openFilesOperationTask}
-                  onRetryTask={!filesFeedbackOperation || !cloudFileOperations.some(task => task.retry_of_id === filesFeedbackOperation.id)
-                    ? (id) => { void fileOperationActions.retryOperation(id) } : undefined}
-                  onUndoTask={fileOperationUndoSupported
-                    ? (id) => { void fileOperationActions.undoOperation(id) } : undefined}
-                  actionsBusy={fileOperationActions.busy}
-                  onDismiss={() => setFilesActionFeedback(null)}
-                />
-              ),
-              canUndo: fileOperationUndoSupported && Boolean(latestUndoableCloudFileOperation) && !fileOperationActions.busy,
-              onUndo: () => {
-                if (latestUndoableCloudFileOperation) void fileOperationActions.undoOperation(latestUndoableCloudFileOperation.id)
-              },
-              canRedo: fileOperationRedoSupported && Boolean(latestRedoableCloudFileOperation) && !fileOperationActions.busy,
-              onRedo: () => {
-                if (latestRedoableCloudFileOperation) void fileOperationActions.redoOperation(latestRedoableCloudFileOperation.id)
-              },
-              onQuotaChanged: refreshCloudQuota,
-              uploadConflictSupported: Boolean(
-                agent.hello?.capabilities.includes('upload-conflict-preflight') &&
-                agent.hello?.capabilities.includes('upload-conflict-policy')
-              ),
-              archiveDownloadSupported: agent.hello?.capabilities.includes('archive-download') ?? false,
-              folderTreeDownloadSupported: agent.hello?.capabilities.includes('folder-download-tree') ?? false,
-              textPreviewSupported: agent.hello?.capabilities.includes('file-text-preview') ?? false,
-              previewStreamSupported: agent.hello?.capabilities.includes('file-preview-stream') ?? false,
-              propertiesStatsSupported: filePropertiesStatsSupported,
-              mediaDetailsSupported: fileMediaDetailsSupported,
-              mediaPropertiesSupported: agent.hello?.capabilities.includes('media-item-properties') ?? false,
-              nodeLocationSupported: agent.hello?.capabilities.includes('node-location') ?? false,
-              childPositionSupported: agent.hello?.capabilities.includes('cloud-child-position') ?? false,
-              fileAvailabilitySupported,
-              openWithSupported: fileOpenWithSupported,
-              quickAccessSupported: fileQuickAccessSupported,
-              fileTagsSupported,
-              savedSearchesSupported: fileSavedSearchesSupported,
-              favoritesSupported: fileFavoritesSupported,
-              recentSupported: fileRecentSupported,
-              transferLifecycleSupported: agent.hello?.capabilities.includes('transfer-lifecycle') ?? false,
-              transferLifecycleBatchSupported: agent.hello?.capabilities.includes('transfer-lifecycle-child-batch') ?? false,
-              transferGroupUploadCancelSupported: agent.hello?.capabilities.includes('transfer-upload-group-cancel') ?? false,
-              viewerDownloadReceipt: mediaGallerySource.viewerDownloadReceipt,
-              transfers: transfers.transfers,
-              actionIntent: cloudFileActionIntent,
-              onActionIntentConsumed: (id) => {
-                setCloudFileActionIntent((current) => current?.id === id ? null : current)
-              },
-              keyboardProfile: fileExplorerKeyboardProfile,
-              onError: (message) => setError(message),
-              onFeedback: (_tone, message) => setNotice(message),
-            }}
-            trashOpen={cloudTrashOpen}
-            onCloseTrash={() => setCloudTrashOpen(false)}
-            onTrashChanged={async () => {
-              const expectedCurrentID = cloudCrumbs.at(-1)?.id
-              await refreshCloudQuota()
-              if (expectedCurrentID !== undefined) {
-                await refreshCloudCurrentDirectoryIfIdle(expectedCurrentID)
-              }
-            }}
-            historyNode={cloudHistoryNode}
-            onCloseHistory={() => {
-              setCloudHistoryNode(null)
-              setCloudHistoryCrumbs([])
-            }}
-            onHistoryRestored={async (restored) => {
-              const expectedCurrentID = cloudHistoryCrumbs.at(-1)?.id
-              setCloudHistoryNode(restored)
-              await refreshCloudQuota()
-              if (expectedCurrentID !== undefined) {
-                await refreshCloudCurrentDirectoryIfIdle(expectedCurrentID)
-              }
-            }}
-            shareNode={cloudShareNode}
-            onCloseShare={() => setCloudShareNode(null)}
-            onFileDialogError={(dialogError) => setError(
-              dialogError instanceof Error ? dialogError.message : String(dialogError),
-            )}
-            onFileDialogFeedback={(message) => setNotice(message)}
-          />
-        )}
     </XDriveApp>,
     desktopTitlebarActions,
   )

@@ -2,7 +2,7 @@ import type { XDriveSynologyBackupLocalClient } from '../synology-backup-adapter
 import type { XDriveDeviceBackupDataSource } from '../device-backups'
 import type { XDriveCloudStorageDataSource } from './CloudStoragePage'
 import type { XDriveLocalStorageDataSource } from './LocalStoragePage'
-import type { ComponentProps } from 'react'
+import type { ComponentProps, ReactNode } from 'react'
 import type { XDriveMediaGalleryPageProps } from './MediaGallery'
 import type { XDriveSourceManagerProps } from './SourceManager'
 import type { XDriveTaskCenterPageProps } from './TaskCenterPage'
@@ -40,6 +40,14 @@ export type XDriveWorkspaceHostServices = {
     readonly client: XDriveSynologyBackupLocalClient
     readonly unavailableActions?: XDriveFileExplorerUnavailableActions
   }
+  /**
+   * Transitional full Desktop Files controller, mounted only by the shared
+   * Files route outlet. It is a live, authenticated native controller element,
+   * NOT an alternative route registry or an admission to DSM/Browser writes.
+   * Replace with host-neutral controller data/ports after extracting the
+   * remaining DesktopFileExplorer lifecycle from its Electron wrapper.
+   */
+  readonly filesControllerContent?: ReactNode
   readonly deviceBackups?: XDriveDeviceBackupDataSource
   readonly cloudStorage?: XDriveCloudStorageDataSource
   /** Host-owned refresh policy, never inferred from a platform name. */

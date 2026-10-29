@@ -191,3 +191,29 @@ and AbortSignals are forwarded without synthesis.
 and its remaining legacy `XDriveApp` Files-child mount. This incremental
 boundary change is not a claim of completed DSM writes, complete Files parity,
 or physical DSM verification (which remains **跳过（未验收）**).
+
+
+## Single Files route dispatch (2026-10-29)
+
+Desktop and DSM now enter Files through the SAME
+`XDriveAppRouteContent -> XDriveAppPageOutlet` path. The shared registry
+includes `files` and the old Files-specific `children` override is removed.
+Desktop's pre-existing status/conflict warnings remain Host-wide notices and
+continue to display before routed content. The shared page outlet owns the
+Files route remount/disposal lifecycle just like every other workspace page.
+
+**This is an intermediate routing milestone, NOT the final Host Adapter
+migration.** The Desktop Host still contributes its authenticated native
+`DesktopFilesPage/DesktopFileExplorer` controller as an explicitly named
+`filesControllerContent` transitional element. DSM supplies a separately
+authorized Owner-cursor port with honest unavailable write actions. No native
+IPC, generic Agent RPC, storage Owner rights or authentication is inferred
+from presence of either element. The remaining full Desktop Files stateful
+controller/transport split is a separate migration and should retire this
+temporary element once real Host-neutral controller ports are implemented.
+
+Source regressions assert that no Host can silently bypass the common route
+with a hidden Files child, that Desktop/DSM can render their current legitimate
+controllers under a single page outlet, and that a bare backup-only client
+cannot fabricate Files permission. Physical NAS validation remains
+**跳过（未验收）**, not CI or merge gating.

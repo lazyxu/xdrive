@@ -23,10 +23,10 @@ const expectedExtra = [
 ]
 const registered = [...routes.XDRIVE_APP_WORKSPACE_ROUTES]
 assert.equal(new Set(registered).size, registered.length, 'no duplicate navigation routes')
-assert.deepEqual(routes.XDRIVE_SHARED_HOST_PAGE_ROUTES, registered.filter(key => key !== 'files'),
-  'the shared route outlet must auto-inherit every canonical route except transitional Desktop Files')
-assert.equal(new Set(routes.XDRIVE_SHARED_HOST_PAGE_ROUTES).size, registered.length - 1,
-  'shared Host page registry cannot duplicate routes')
+assert.deepEqual(routes.XDRIVE_SHARED_HOST_PAGE_ROUTES, registered,
+  'the common outlet must dispatch every route including full Desktop/DSM Files')
+assert.equal(new Set(routes.XDRIVE_SHARED_HOST_PAGE_ROUTES).size, registered.length,
+  'shared Host page registry cannot duplicate or omit routes')
 for (const key of [...expectedCore, ...expectedExtra]) {
   assert.ok(routes.xDriveIsWorkspaceAppRoute(key), 'missing Desktop route: ' + key)
 }
@@ -109,7 +109,7 @@ for (const key of [
 }
 assert.ok(!desktop.includes('<XDriveAppRouteContent') &&
   sharedApp.includes('<XDriveAppRouteContent') &&
-  sharedRouteContent.includes('xDriveIsSharedHostPageRoute(view)') &&
+  !sharedRouteContent.includes('hasLegacyFilesContent') &&
   sharedRouteContent.includes('<XDriveAppPageOutlet') &&
   !desktop.includes('<XDriveAppPageOutlet'),
   'Desktop must reach the same shared outlet through the common route content frame')
