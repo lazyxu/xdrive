@@ -32,8 +32,9 @@ final class XDriveWebDownloadCoordinator: NSObject, WKDownloadDelegate {
         let outstanding = Array(active.values)
         active.removeAll()
         for item in outstanding {
-            item.download.cancel(nil)
-            try? FileManager.default.removeItem(at: item.directory)
+            item.download.cancel { _ in
+                try? FileManager.default.removeItem(at: item.directory)
+            }
         }
         presentingWebView = nil
     }
@@ -134,8 +135,9 @@ final class XDriveWebDownloadCoordinator: NSObject, WKDownloadDelegate {
                                        y: view.bounds.midY, width: 1, height: 1)
             popover.permittedArrowDirections = []
         }
-        picker.completionWithItemsHandler = { [onNotice] _, completed, _, _ in
-            try? FileManager.default.removeItem(at: item.directory)
+        picker.completionWithItemsHandler = { [onNotice = self.onNotice,
+                                                directory = item.directory] _, completed, _, _ in
+            try? FileManager.default.removeItem(at: directory)
             onNotice(completed
                 ? "已将下载文件交给 iOS 系统保存或分享。"
                 : "已关闭保存或分享窗口，临时下载文件已清理。")
@@ -161,8 +163,8 @@ final class XDriveWebDownloadCoordinator: NSObject, WKDownloadDelegate {
         let normalized = suggested.replacingOccurrences(of: "\\", with: "/")
         let name = (normalized as NSString).lastPathComponent
         let valid = String(name.unicodeScalars.filter { scalar in
-            scalar.value >= 32 &&
-            !CharacterSet(charactersIn: "<>:\\"/|?*").contains(scalar)
+            let code = scalar.value
+            return code >= 32 && ![34, 42, 47, 58, 60, 62, 63, 92, 124].contains(code)
         }.prefix(160))
         let trimmed = valid.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty || trimmed == "." || trimmed == ".." {
