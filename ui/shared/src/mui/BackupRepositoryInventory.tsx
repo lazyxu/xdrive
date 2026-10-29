@@ -1,5 +1,6 @@
-import { Paper, Stack, Table, TableBody, TableCell, TableRow, Typography } from '@mui/material'
+import { Button, Paper, Stack, Table, TableBody, TableCell, TableRow, Typography } from '@mui/material'
 import type { XDriveServerBackupPage } from '../server-backup-admin'
+import type { XDriveServerBackupSnapshotFilter } from '../server-backup-snapshot-query'
 
 const named: Record<string, string> = {
   v1: '传统 v1 完整备份',
@@ -9,8 +10,9 @@ const named: Record<string, string> = {
 
 /** Read-only Host namespace discovery; no direct path editing or dangerous
  * repository deletion is offered to Web/Desktop/DSM. */
-export function XDriveBackupRepositoryInventory({ inventory }: {
+export function XDriveBackupRepositoryInventory({ inventory, onSelectRepository }: {
   inventory: XDriveServerBackupPage['inventory']
+  onSelectRepository?: (repository: XDriveServerBackupSnapshotFilter['repository']) => void
 }) {
   const counts = inventory.repositories
   const expected = ['v1', 'v2-default', 'v2-configured']
@@ -33,6 +35,15 @@ export function XDriveBackupRepositoryInventory({ inventory }: {
                 <TableRow key={item.id}>
                   <TableCell>{named[item.id]}</TableCell>
                   <TableCell align="right">{item.snapshot_count.toLocaleString('zh-CN')} 代</TableCell>
+                  {onSelectRepository ? (
+                    <TableCell align="right">
+                      <Button size="small" disabled={item.snapshot_count === 0}
+                        data-xdrive-admin-backup-repository-filter
+                        onClick={() => onSelectRepository(item.id)}>
+                        筛选已列快照
+                      </Button>
+                    </TableCell>
+                  ) : null}
                 </TableRow>
               ))}
             </TableBody>
@@ -44,6 +55,7 @@ export function XDriveBackupRepositoryInventory({ inventory }: {
         )}
         <Typography variant="caption" color="text.secondary">
           仅统计宿主机在三个固定命名空间发现的规范快照目录，包含清单未展示的旧代；
+          “筛选已列快照”仅作用于最近最多 100 代的可信清单，不能推断该仓库中其余快照不存在；
           不代表每一代可恢复，也不代表仓库目录、权限或 CAS 内容完整。
           当前不支持在浏览器输入、创建、迁移或删除任意宿主机目录；自定义仓库修改仍由本地管理员控制。
         </Typography>
