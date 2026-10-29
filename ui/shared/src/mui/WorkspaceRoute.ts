@@ -63,13 +63,10 @@ export function xDriveWorkspaceNavigationAllowed(view: string, serverAdminVerifi
 }
 
 
-// Derive the shared outlet's routable pages from the ONE application registry.
-// The Desktop Files controller is the only temporary exception; DSM Files
-// already routes to its authenticated Owner read port through the common outlet.
-// New routes must not require a second Host-specific page registry edit.
-export const XDRIVE_SHARED_HOST_PAGE_ROUTES = XDRIVE_APP_WORKSPACE_ROUTES.filter(
-  (view) => view !== 'files',
-)
+// Every route, including Files, belongs to the ONE canonical outlet.
+// A Host's authorized controller/data capability affects only page contents,
+// not route admission or the route registry.
+export const XDRIVE_SHARED_HOST_PAGE_ROUTES = XDRIVE_APP_WORKSPACE_ROUTES
 const sharedHostPages = new Set<string>(XDRIVE_SHARED_HOST_PAGE_ROUTES)
 export function xDriveIsSharedHostPageRoute(view: string): boolean {
   return sharedHostPages.has(view)
