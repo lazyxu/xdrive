@@ -41,8 +41,6 @@ import {
   XDriveAppPageOutlet,
   XDriveWorkspaceSidebar,
   xDriveWorkspaceHostSections,
-  XDriveServiceDependenciesPage,
-  XDriveSystemMaintenancePage,
   XDriveSettingsDialog,
   XDriveIOSPhotoBackupSettings,
   XDriveFeedbackSnackbar,
@@ -159,7 +157,6 @@ const XDriveMediaGalleryPage = lazy(() =>
     .then(module => ({ default: module.XDriveMediaGalleryPage })))
 const WebFileViewerApps = lazy(() =>
   import('./WebFileViewerApps').then(module => ({ default: module.WebFileViewerApps })))
-const StorageStatsPanel = lazy(() => import('./StorageStatsPanel'))
 
 // Mounts only after the parent Suspense has resolved the actual lazy
 // Files/Gallery presentation. An earlier navigation intent is never proof.
@@ -2291,6 +2288,8 @@ function FileManager({
   // current Owner scope are available. This is a single Host adapter, not a
   // second React root or separate background task queue.
   const focusedAdminUserID = route.app === 'admin-users' ? route.params.user : undefined
+  const adminServicesLocation = route.app === 'admin-services' ? route.params : undefined
+  const focusedAdminStorageSection = route.app === 'admin-storage' ? route.params.section : undefined
   const deviceBackupSourceID = route.app === 'device-backup' ? route.params.source : undefined
   const remotePullSourceID = route.app === 'remote-pull' ? route.params.source : undefined
   const isRemotePullRoute = route.app === 'remote-pull'
@@ -2309,6 +2308,30 @@ function FileManager({
         onChanged: () => { void refreshQuota() },
       } : undefined,
       adminAudit: serverAdminVerified ? { api } : undefined,
+      adminServices: serverAdminVerified ? {
+        source: serviceDependenciesPort,
+        diagnosticScope: `web:${profile?.id ?? username}`,
+        onUnsavedChange: setSystemDependenciesDraftDirty,
+        location: adminServicesLocation,
+        onLocationChange: (next, options) => launchWebApp(
+          { app: 'admin-services', params: next },
+          { replace: options?.replace },
+        ),
+      } : undefined,
+      adminMaintenance: serverAdminVerified ? {
+        updatePort: maintenanceUpdatePort,
+        backupPort: maintenanceBackupPort,
+        onOpenStorage: () => setAppView('admin-storage'),
+        unavailableLabel: 'Web/API',
+        initialChannel: serverBuild?.channel === 'master' ? 'master' : 'stable',
+      } : undefined,
+      adminStorage: serverAdminVerified ? {
+        api,
+        scope: 'global' as const,
+        focusSection: focusedAdminStorageSection,
+        onOpenTaskCenter: openGlobalTaskCenter,
+        onRunStorageMaintenance: runStorageMaintenance,
+      } : undefined,
       taskCenter: {
         ...taskCenter.pageProps,
         globalTasksEnabled: serverAdminVerified,
@@ -2348,7 +2371,10 @@ function FileManager({
       isRemotePullRoute, current?.id, current?.name, remotePullTargetPath,
       handleError, launchWebApp, serverAdminVerified, taskCenter.pageProps,
       mediaSelectionJobPort, filesOperationFocus, taskCenterFocus, setAppView,
-      api, profile?.id, focusedAdminUserID, refreshQuota],
+      api, profile?.id, focusedAdminUserID, refreshQuota,
+      adminServicesLocation, focusedAdminStorageSection, serviceDependenciesPort,
+      maintenanceUpdatePort, maintenanceBackupPort, serverBuild?.channel,
+      openGlobalTaskCenter, runStorageMaintenance],
   )
 
 
@@ -2722,35 +2748,10 @@ function FileManager({
           // First two real Browser Host-backed routes in the shared page
           // outlet; never admit Browser Files/admin/native DSM capabilities.
           <XDriveAppPageOutlet host={browserWorkspaceHost} view={appView} />
-        ) : (appView === 'admin-users' || appView === 'admin-audit') && serverAdminVerified ? (
+        ) : (appView === 'admin-users' || appView === 'admin-audit' ||
+          appView === 'admin-services' || appView === 'admin-maintenance' ||
+          appView === 'admin-storage') && serverAdminVerified ? (
           <XDriveAppPageOutlet host={browserWorkspaceHost} view={appView} />
-        ) : appView === 'admin-services' && profile?.role === 'admin' ? (
-          <XDriveServiceDependenciesPage
-            source={serviceDependenciesPort}
-            diagnosticScope={`web:${profile?.id ?? username}`}
-            onUnsavedChange={setSystemDependenciesDraftDirty}
-            location={route.app === 'admin-services' ? route.params : undefined}
-            onLocationChange={(next, options) => launchWebApp(
-              { app: 'admin-services', params: next },
-              { replace: options?.replace },
-            )}
-          />
-        ) : appView === 'admin-maintenance' && profile?.role === 'admin' ? (
-          <XDriveSystemMaintenancePage
-            updatePort={maintenanceUpdatePort}
-            backupPort={maintenanceBackupPort}
-            onOpenStorage={() => setAppView('admin-storage')}
-            unavailableLabel="Web/API"
-            initialChannel={serverBuild?.channel === 'master' ? 'master' : 'stable'}
-          />
-        ) : appView === 'admin-storage' && profile?.role === 'admin' ? (
-          <StorageStatsPanel
-            api={api}
-            scope="global"
-            focusSection={route.app === 'admin-storage' ? route.params.section : undefined}
-            onOpenTaskCenter={openGlobalTaskCenter}
-            onRunStorageMaintenance={runStorageMaintenance}
-          />
         ) : (
           // An unresolved profile should have a quiet, height-stable frame.
           // An authenticated unsupported/denied route is an actual error, not

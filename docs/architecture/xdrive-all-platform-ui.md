@@ -144,6 +144,23 @@ compatibility; the old Web-local lazy route selection is retired. Other
 administrator controllers (dependencies, maintenance, global storage) and
 the full Files/Gallery/Overview controller still require staged migration.
 
+### Remaining Browser administrator route composition
+
+Browser **Services/Dependencies, Backup/System Maintenance, and Global
+Storage** now use the same `XDriveAppPageOutlet` and shared MUI pages as
+Desktop and DSM. The current authenticated Web API ports are forwarded
+unchanged, including unsaved Dependencies draft confirmation, Caddy/Service
+operation scope, deep-link location, maintenance backup/update API,
+storage-task focus and administrator-only actions. The Browser Host exposes
+these props only when the currently verified Server administrator role is
+present; the shared outlet has an additional independent role gate.
+
+This refactor changes **only the React page dispatcher**. It does not add
+Caddy deployment privileges, Server backup/restore authority, a new Agent
+transport or change the backend's Owner/role checks. The Web root still owns
+its authenticated session, route/Hash history, unsaved-form guard, PWA
+lifecycle, Viewer and the remaining Files/Gallery/Overview controllers.
+
 ## Ownership layers
 
 1. **Product contracts:** API schemas, Owner/Root semantics, page/navigation IDs, media and upload receipt identity, UI tokens/gesture/accessibility contracts. React and native UI must agree.

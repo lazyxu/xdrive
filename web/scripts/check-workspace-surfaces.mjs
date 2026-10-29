@@ -261,6 +261,21 @@ requireText(app, [
   'adminAudit: serverAdminVerified ? { api } : undefined',
   "(appView === 'admin-users' || appView === 'admin-audit') && serverAdminVerified",
 ], 'Web admin users/audit shared page outlet')
+requireText(browserHost, [
+  'ports.adminRoleVerified === true && ports.adminServices',
+  'ports.adminRoleVerified === true && ports.adminMaintenance',
+  'ports.adminRoleVerified === true && ports.adminStorage',
+], 'Browser verified Server infrastructure admin ports')
+requireText(app, [
+  'adminServices: serverAdminVerified ?',
+  'adminMaintenance: serverAdminVerified ?',
+  'adminStorage: serverAdminVerified ?',
+  'onUnsavedChange: setSystemDependenciesDraftDirty',
+  'location: adminServicesLocation',
+  'onOpenTaskCenter: openGlobalTaskCenter',
+  'onRunStorageMaintenance: runStorageMaintenance',
+  "appView === 'admin-services' || appView === 'admin-maintenance'",
+], 'Web shared Server infrastructure admin routes')
 
 requireText(sources, [
   'XDriveWorkspaceSurface',
