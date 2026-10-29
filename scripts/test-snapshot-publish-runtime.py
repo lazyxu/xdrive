@@ -169,14 +169,14 @@ print("snapshot publication E2E mock: existing/new, upload failure, digest misma
 # GHCR source regression: execute the *actual* image-push shell without a
 # registry, with deterministic concurrent Docker stubs. Failed pushes cannot
 # become a green Snapshot; worker must start only after other pushes finish.
-push_marker = "      - name: Push exact CI-produced images in parallel\\n"
+push_marker = "      - name: Push exact CI-produced images in parallel\n"
 assert workflow.count(push_marker) == 1
-push_body = workflow.split(push_marker, 1)[1].split("        run: |\\n", 1)[1]
-push_body = push_body.split("\\n  server-deploy:", 1)[0]
+push_body = workflow.split(push_marker, 1)[1].split("        run: |\n", 1)[1]
+push_body = push_body.split("\n  server-deploy:", 1)[0]
 push_script = textwrap.dedent(push_body)
 MOCK_DOCKER = r'''#!/bin/sh
 set -eu
-printf '%s\\n' "$*" >> "$TEST_DOCKER_DIR/events.log"
+printf '%s\n' "$*" >> "$TEST_DOCKER_DIR/events.log"
 [ "$1" = tag ] && exit 0
 [ "$1" = push ] || exit 32
 case "$2" in
@@ -186,18 +186,18 @@ case "$2" in
   *xdrive-photo-face:*) image=xdrive-photo-face; limit=${TEST_FAIL_OTHER:-0} ;;
   *) exit 33 ;;
 esac
-printf 'start:%s\\n' "$image" >> "$TEST_DOCKER_DIR/events.log"
+printf 'start:%s\n' "$image" >> "$TEST_DOCKER_DIR/events.log"
 [ "$image" = xdrive-media-worker ] || /bin/sleep 0.02
 file="$TEST_DOCKER_DIR/$image.count"
 count=0
 if [ -f "$file" ]; then read -r count < "$file"; fi
 count=$((count + 1))
-printf '%s\\n' "$count" > "$file"
+printf '%s\n' "$count" > "$file"
 if [ "$count" -le "$limit" ]; then
-  printf 'error:%s\\n' "$image" >> "$TEST_DOCKER_DIR/events.log"
+  printf 'error:%s\n' "$image" >> "$TEST_DOCKER_DIR/events.log"
   exit 1
 fi
-printf 'done:%s\\n' "$image" >> "$TEST_DOCKER_DIR/events.log"
+printf 'done:%s\n' "$image" >> "$TEST_DOCKER_DIR/events.log"
 '''
 
 def run_ghcr_case(worker_fail=0, server_fail=0):
@@ -209,7 +209,7 @@ def run_ghcr_case(worker_fail=0, server_fail=0):
         docker.write_text(MOCK_DOCKER)
         docker.chmod(0o755)
         sleep = bin_dir / "sleep"
-        sleep.write_text("#!/bin/sh\\nexit 0\\n")
+        sleep.write_text("#!/bin/sh\nexit 0\n")
         sleep.chmod(0o755)
         env = {
             **os.environ,
@@ -236,7 +236,7 @@ assert events.index("start:xdrive-media-worker") > max(
     events.index("done:" + image)
     for image in ("xdrive-server", "xdrive-caddy", "xdrive-photo-face")
 ), events
-assert "sha-" + "a" * 12 in "\\n".join(events)
+assert "sha-" + "a" * 12 in "\n".join(events)
 for image in ("xdrive-server", "xdrive-caddy", "xdrive-photo-face", "xdrive-media-worker"):
     assert events.count("done:" + image) == 1, events
 
