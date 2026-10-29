@@ -264,3 +264,25 @@ projection creates a new editing action, Owner permission, Agent method or
 generic CGI proxy. Full extraction of Desktop's remaining stateful Files
 controller is still required before removing the transitional
 `filesControllerContent`.
+
+
+## Current Files read-only controller extraction (2026-10-29)
+
+The existing queued Files/Viewer integration PR now includes two more
+Host-neutral, presentation-only modules consolidated *before CI starts*:
+
+- `FileExplorerDeviceReadPresentation` converts real Agent availability
+  snapshots and running hydration progress into shared Files status and
+  availability labels. Desktop retains its Owner-fenced batched Agent reads,
+  native keep/release actions, and truthful error behavior; this model owns no
+  filesystem permissions, timers, or durable transfers.
+- `FileExplorerReadOnlyDownloadAdmission` checks the current verified
+  DSM Owner directory, exact Node/revision/size/type, one-file limit, and
+  in-flight state before any existing authenticated original-file download.
+  DSM still verifies whole-file SHA-256 and requires an explicit user action
+  to save. The shared model does not mint a download token or a write method.
+
+**No PDF editor or other content-editing feature is being developed.**
+Existing read-only PDF/text/audio/video viewing remains intact. Retiring
+Desktop's temporary `filesControllerContent` still requires further
+state/controller extraction and real Host data-port convergence.
