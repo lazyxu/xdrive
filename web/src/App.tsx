@@ -1920,7 +1920,10 @@ function FileManager({
     }
   }
 
-  if (profile?.must_change_password || loginPasswordChangeRequired) {
+  // A required-password transition must NOT change the FileManager hook count.
+  // Build the same form as content, then return it only after all hooks run.
+  const forcedPasswordContent = (() => {
+    if (!(profile?.must_change_password || loginPasswordChangeRequired)) return null
     const submitPassword = async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault()
       const validationError = xDrivePasswordChangeValidationError(passwordValues)
@@ -2001,7 +2004,7 @@ function FileManager({
         />
       </Box>
     )
-  }
+  })()
 
   type WebUploadTarget = { parentID: number; file: File }
 
@@ -2393,6 +2396,8 @@ function FileManager({
       openGlobalTaskCenter, runStorageMaintenance],
   )
 
+
+  if (forcedPasswordContent) return forcedPasswordContent
 
   const workspaceActions = (
     <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={{ xs: 0.5, sm: 1 }}>
