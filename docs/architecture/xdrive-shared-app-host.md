@@ -157,3 +157,12 @@ overview fallback without inventing a full Server/Agent Home port.
 
 The remaining full Files page still requires host-neutral extraction of
 DesktopFileExplorer and Owner-authorized DSM mutation/preview actions.
+
+## All-platform architecture extension (2026-10-29)
+
+The full Web/Mobile Web/PWA/WKWebView IPA/Android Compose/Desktop/DSM UI and
+platform-owned feature matrix is documented in
+[all-platform UI architecture](./xdrive-all-platform-ui.md).
+Desktop local-folder Push backup and Windows CfAPI/Linux FUSE virtual-drive
+mapping are **separate** native features; convergence of shared React page
+logic must not retire either Agent-backed capability.

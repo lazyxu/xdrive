@@ -10,6 +10,7 @@ const sharedExplorer = read('ui', 'shared', 'src', 'mui', 'FileExplorer.tsx')
 const sharedItemVisual = read('ui', 'shared', 'src', 'mui', 'FileExplorerItemPresentation.tsx')
 const sharedFolderIcon = read('ui', 'shared', 'src', 'mui', 'FolderIcon.tsx')
 const sharedAvailability = read('ui', 'shared', 'src', 'file-explorer-availability.ts')
+const sharedHostAvailability = read('ui', 'shared', 'src', 'file-explorer-host-availability.ts')
 const sharedHydration = read('ui', 'shared', 'src', 'mui', 'FileExplorerHydrationStatus.ts')
 const navigationPane = read('ui', 'shared', 'src', 'mui', 'FileExplorerNavigationPane.tsx')
 const columnView = read('ui', 'shared', 'src', 'mui', 'FileExplorerColumnView.tsx')
@@ -102,7 +103,8 @@ test('Desktop batches local availability instead of issuing one request per row'
     'renderer batch availability type is missing',
   )
   assert.ok(
-    desktopExplorer.includes('getFileAvailabilityBatch(batchPaths)'),
+    desktopExplorer.includes('getFileAvailabilityBatch(paths)') &&
+    sharedHostAvailability.includes('paths.slice(offset, offset + XDRIVE_FILE_EXPLORER_HOST_AVAILABILITY_BATCH_LIMIT)'),
     'Desktop FileExplorer must batch currently loaded paths',
   )
   assert.equal(
@@ -188,7 +190,7 @@ test('Details status and availability columns reuse the existing Desktop availab
     'Desktop status/availability must reuse the already-batched availability map',
   )
   assert.equal(
-    (desktopExplorer.match(/getFileAvailabilityBatch\(batchPaths\)/g) || []).length,
+    (desktopExplorer.match(/getFileAvailabilityBatch\(paths\)/g) || []).length,
     1,
     'status and availability columns must not add a second availability batch request path',
   )
@@ -234,7 +236,7 @@ test('mixed folder availability is OS-derived without renderer recursion', () =>
   assert.ok(availabilityFunction.includes('mixed := isDir && placeholder && partiallyOnDisk && !syncing'), 'directory mixed state must be bounded')
   assert.equal(availabilityFunction.includes('WalkDir'), false, 'availability reads must not recursively walk directories')
   assert.ok(availabilitySearch.includes('state.Mixed || state.Mode == "mixed"'), 'availability Search must classify mixed state')
-  assert.ok(desktopExplorer.includes('desktopFileAvailabilityBatchLimit = 2048'), 'Desktop must respect the Agent batch limit')
+  assert.ok(sharedHostAvailability.includes('XDRIVE_FILE_EXPLORER_HOST_AVAILABILITY_BATCH_LIMIT = 2048'), 'Both Hosts must respect the Agent batch limit')
   assert.ok(agentIPC.includes('os.IsNotExist(err)'), 'missing local placeholders must not become error badges')
   assert.ok(agentIPC.includes('Mode:             "cloud"'), 'missing local placeholders must map to cloud availability')
   assert.ok(desktopExplorer.includes('quickAccess.items'), 'Quick Access availability must join the batch')

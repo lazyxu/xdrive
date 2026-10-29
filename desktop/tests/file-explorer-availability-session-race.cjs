@@ -26,8 +26,8 @@ function extractAvailabilityEffect() {
       ts.isIdentifier(node.expression) &&
       node.expression.text === 'useEffect' &&
       node.arguments.length >= 2 &&
-      node.arguments[0].getText(sourceFile).includes('hostPort.browse.getFileAvailabilityBatch(batchPaths)') &&
-      node.arguments[0].getText(sourceFile).includes('setAvailabilityByID(next)')
+      node.arguments[0].getText(sourceFile).includes('xDriveReadFileExplorerHostAvailability<AgentFileAvailability>') &&
+      node.arguments[0].getText(sourceFile).includes('setAvailabilityByID(outcome.byID)')
     ) {
       callback = node.arguments[0].getText(sourceFile)
       const deps = node.arguments[1]
@@ -133,11 +133,22 @@ test('Desktop FileExplorer availability response cannot cross account lifecycle 
   const setAvailabilityReadFailure = (message) => { probeMessages.push({ account, message }) }
   const desktopFileAvailabilityProbeMessage = (code) => 'Probe failure: ' + (code || 'unknown')
 
+  // Execute the actual production Host-neutral read implementation, not a
+  // replacement mock that could accidentally omit the Owner generation fence.
+  const helperPath = path.join(repo, 'ui/shared/src/file-explorer-host-availability.ts')
+  const helperSource = fs.readFileSync(helperPath, 'utf8')
+  const helperJS = ts.transpileModule(helperSource, {
+    fileName: helperPath,
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText
+  const helper = { exports: {} }
+  new Function('module', 'exports', helperJS)(helper, helper.exports)
+
   const compileForCurrentAccount = () => compileEffect(filename, callback, {
     availabilityRequestRef,
     fileAvailabilitySupported: true,
     availabilityRequests,
-    desktopFileAvailabilityBatchLimit: 2048,
+    xDriveReadFileExplorerHostAvailability: helper.exports.xDriveReadFileExplorerHostAvailability,
     hostPort: { browse: window.xdriveDesktop.agent },
     setAvailabilityByID,
     setAvailabilityReadFailure,

@@ -17,6 +17,7 @@ import type { XDriveDiagnosticsPage } from './DiagnosticsPage'
 import type { XDriveOverviewPageProps } from './OverviewPage'
 import type { XDriveFileExplorerUnavailableActions } from './FileExplorer'
 import type { XDriveWorkspaceAppRoute } from './WorkspaceRoute'
+import type { XDriveDiagnosticsReadSource } from './DiagnosticsHostController'
 
 /** Authenticated domain ports, not Host-owned JSX or a generic Agent proxy. */
 export type XDriveWorkspaceHostServices = {
@@ -48,6 +49,8 @@ export type XDriveWorkspaceHostServices = {
   readonly adminServicesPage?: ComponentProps<typeof XDriveServiceDependenciesPage>
   readonly conflictsPage?: XDriveConflictsPageProps
   readonly diagnosticsPage?: ComponentProps<typeof XDriveDiagnosticsPage>
+  /** Explicit scoped Host read, never implied by an unrelated CGI client. */
+  readonly diagnosticsSource?: XDriveDiagnosticsReadSource
 }
 
 export type XDriveWorkspaceHostAdapter = {

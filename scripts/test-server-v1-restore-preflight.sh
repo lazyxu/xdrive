@@ -14,12 +14,17 @@ RESTORE="$ROOT/scripts/server-restore.sh"
 export PATH="$TMP/bin:$PATH"
 cat > "$TMP/bin/docker" <<'MOCK'
 #!/usr/bin/env bash
+if [[ "${1:-}" == run && " $* " == *" --entrypoint pg_restore "* ]]; then
+  printf 'read-only pg_restore list\n' >> "$XD_RESTORE_TEST_DOCKER_SENTINEL"
+  head -c 5 | grep -q '^PGDMP' || exit 87
+  exit 0
+fi
 printf 'docker invoked\n' >> "$XD_RESTORE_TEST_DOCKER_SENTINEL"
 exit 77
 MOCK
 chmod 700 "$TMP/bin/docker"
 
-printf 'database fixture\n' > "$BACKUP_DIR/database.dump"
+printf 'PGDMPdatabase fixture\n' > "$BACKUP_DIR/database.dump"
 printf '{"checks":[],"ok":true}\n' > "$BACKUP_DIR/verify.json"
 printf '{"format_version":1,"consistency_verified":true,"file_data_included":true}\n' > "$BACKUP_DIR/manifest.json"
 
@@ -129,6 +134,23 @@ ln -s "$BACKUP_DIR/database.original" "$BACKUP_DIR/database.dump"
 assert_fail_closed symlinked_database 'v1 snapshot contains symlink database.dump'
 rm "$BACKUP_DIR/database.dump"
 mv "$BACKUP_DIR/database.original" "$BACKUP_DIR/database.dump"
+
+# A checksum-valid but unparseable PostgreSQL dump must fail the
+# pg_restore list phase before any Compose/service/database action.
+write_archive valid
+printf 'NOT-A-PG-DUMP\n' > "$BACKUP_DIR/database.dump"
+write_checksums
+rm -f -- "$XD_RESTORE_TEST_DOCKER_SENTINEL"
+if bash "$RESTORE" "$BACKUP_DIR" --config-dir "$XD_CONFIG_DIR" --yes --no-safety-backup >"$TMP/invalid-pgdump.log" 2>&1; then
+  echo "invalid PostgreSQL archive entered restore" >&2; exit 1
+fi
+grep -Fq 'PostgreSQL custom dump preflight failed' "$TMP/invalid-pgdump.log"
+[[ "$(cat "$XD_RESTORE_TEST_DOCKER_SENTINEL")" == 'read-only pg_restore list' ]] || {
+  echo "invalid PostgreSQL archive reached destructive Docker/Compose operations" >&2
+  exit 1
+}
+printf 'PGDMPdatabase fixture\n' > "$BACKUP_DIR/database.dump"
+write_checksums
 
 # Legacy database-only snapshots retain a separately authorized recovery path.
 rm "$BACKUP_DIR/blobs.tar"

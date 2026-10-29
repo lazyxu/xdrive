@@ -20,6 +20,39 @@ cat > "$XD_CONFIG_DIR/bin/xdrive-server" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >> "$XD_BACKUP_ADMIN_TEST_LOG"
+if [[ "$1" == backup && ( "$#" -eq 1 || "${2:-}" == --incremental ) ]]; then
+  name="${XD_BACKUP_ADMIN_TEST_CREATE_NAME:-xdrive-backup-20261029T070000Z}"
+  if [[ "${2:-}" == --incremental ]]; then
+    root="$XD_CONFIG_DIR/backups/incremental/snapshots"
+    fmt=v2
+  else
+    root="$XD_CONFIG_DIR/backups/snapshots"
+    fmt=v1
+  fi
+  if [[ "${XD_BACKUP_ADMIN_TEST_CREATE_NOOP:-}" == yes ]]; then
+    printf '%s\n' "$root/$name"
+    exit 0
+  fi
+  if [[ -n "${XD_BACKUP_ADMIN_TEST_CREATE_FORGED:-}" ]]; then
+    printf '%s\n' "$XD_BACKUP_ADMIN_TEST_CREATE_FORGED"
+    exit 0
+  fi
+  if [[ "${XD_BACKUP_ADMIN_TEST_CREATE_EMPTY:-}" == yes ]]; then exit 0; fi
+  mkdir -p "$root/$name"
+  for f in database.dump verify.json manifest.json SHA256SUMS.txt; do
+    printf 'fixture\n' > "$root/$name/$f"
+  done
+  if [[ "$fmt" == v2 ]]; then
+    touch "$root/$name/legacy.tar"
+    if [[ "${XD_BACKUP_ADMIN_TEST_CREATE_INCOMPLETE:-}" != yes ]]; then
+      touch "$root/$name/objects.index"
+    fi
+  else
+    touch "$root/$name/blobs.tar"
+  fi
+  printf '%s\n' "$root/$name"
+  exit 0
+fi
 if [[ "$1" == backup && "$2" == delete-snapshot ]]; then
   shift 2
   selected=""
@@ -840,6 +873,55 @@ assert d["total_snapshots"]==baseline,d
 assert d["truncated"] is (baseline>100),d
 assert len(d["snapshots"])==min(baseline,100),d
 PY
+# Admin CREATE must prove a new generation exists and passes independent verify.
+export XD_BACKUP_ADMIN_TEST_CREATE_NAME=xdrive-backup-20261029T070000Z
+write_request create "" v2 "" "" ""
+backup_admin_process_request "$dir"
+grep -Fq '"state":"success"' "$dir/backup-admin-status.json"
+grep -Fq "backup verify $XD_CONFIG_DIR/backups/incremental/snapshots/$XD_BACKUP_ADMIN_TEST_CREATE_NAME" "$XD_BACKUP_ADMIN_TEST_LOG"
+
+# False-success replays of a pre-existing generation cannot count as CREATE.
+export XD_BACKUP_ADMIN_TEST_CREATE_NOOP=yes
+write_request create "" v2 "" "" ""
+backup_admin_process_request "$dir"
+grep -Fq '"error_code":"create_unverified"' "$dir/backup-admin-status.json"
+unset XD_BACKUP_ADMIN_TEST_CREATE_NOOP
+
+# A forged path, missing acknowledgement, or incomplete new generation fails.
+export XD_BACKUP_ADMIN_TEST_CREATE_NAME=xdrive-backup-20261029T070100Z
+export XD_BACKUP_ADMIN_TEST_CREATE_FORGED="$TMP/not-a-backup"
+write_request create "" v2 "" "" ""
+backup_admin_process_request "$dir"
+grep -Fq '"error_code":"create_unverified"' "$dir/backup-admin-status.json"
+unset XD_BACKUP_ADMIN_TEST_CREATE_FORGED
+export XD_BACKUP_ADMIN_TEST_CREATE_EMPTY=yes
+write_request create "" v2 "" "" ""
+backup_admin_process_request "$dir"
+grep -Fq '"error_code":"create_unverified"' "$dir/backup-admin-status.json"
+unset XD_BACKUP_ADMIN_TEST_CREATE_EMPTY
+export XD_BACKUP_ADMIN_TEST_CREATE_INCOMPLETE=yes
+write_request create "" v2 "" "" ""
+backup_admin_process_request "$dir"
+grep -Fq '"error_code":"create_unverified"' "$dir/backup-admin-status.json"
+unset XD_BACKUP_ADMIN_TEST_CREATE_INCOMPLETE
+
+# Keep any produced but unverified snapshot for manual inspection, no auto retry.
+export XD_BACKUP_ADMIN_TEST_CREATE_NAME=xdrive-backup-20261029T070200Z
+export XD_BACKUP_ADMIN_TEST_BAD_VERIFY="$XD_CONFIG_DIR/backups/incremental/snapshots/$XD_BACKUP_ADMIN_TEST_CREATE_NAME"
+write_request create "" v2 "" "" ""
+backup_admin_process_request "$dir"
+grep -Fq '"error_code":"create_unverified"' "$dir/backup-admin-status.json"
+[[ -d "$XD_BACKUP_ADMIN_TEST_BAD_VERIFY" ]]
+unset XD_BACKUP_ADMIN_TEST_BAD_VERIFY
+
+# Legacy and CAS generations must satisfy the same Host post-create proof.
+export XD_BACKUP_ADMIN_TEST_CREATE_NAME=xdrive-backup-20261029T070300Z
+write_request create "" v1 "" "" ""
+backup_admin_process_request "$dir"
+grep -Fq '"state":"success"' "$dir/backup-admin-status.json"
+grep -Fq "backup verify $XD_CONFIG_DIR/backups/snapshots/$XD_BACKUP_ADMIN_TEST_CREATE_NAME" "$XD_BACKUP_ADMIN_TEST_LOG"
+unset XD_BACKUP_ADMIN_TEST_CREATE_NAME
+
 # The displayed schedule is an attestation of an exact xDrive installer
 # crontab entry, never proof that future backups will succeed.
 mkdir -p "$TMP/cron-bin"
