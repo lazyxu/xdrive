@@ -10,7 +10,8 @@ import {
 } from '../../ui/shared/src/media-gallery-baidu-jsapi4-cell-range'
 import type { XDriveBaiduCellRangeSort } from '../../ui/shared/src/media-gallery-baidu-jsapi4-cell-range'
 import type { XDriveDeviceBackupOverview, XDriveDeviceBackupRunPage, XDriveDeviceBackupFolderPage } from '../../ui/shared/src'
-import type { XDriveStorageVerificationRunPage } from '../../ui/shared/src/admin-management'
+import type { XDriveStorageVerificationRunPage, XDriveStorageVerificationRunDetail } from '../../ui/shared/src/admin-management'
+import { xDriveValidStorageVerificationRunID } from '../../ui/shared/src/storage-verification-history'
 import type { XDriveBaiduMapAdminConfig, XDriveBaiduMapAdminUpdate, XDriveBaiduMapAKReveal } from '../../ui/shared/src'
 import type { XDriveServiceDependenciesSnapshot, XDriveSourceWorkerConfig, XDriveSourceWorkerUpdate, XDriveSourceWorkerRevisionPage, XDriveSourceWorkerRollbackInput, XDriveGeoNamesConfig, XDriveGeoNamesReloadResult, XDriveGeoNamesUpdate, XDriveGeoNamesRevisionPage, XDriveGeoNamesRollbackInput, XDrivePhotoAutoConfig, XDrivePhotoAutoUpdate, XDrivePhotoAutoRevisionPage, XDrivePhotoAutoRollbackInput } from '../../ui/shared/src'
 import type {
@@ -1359,6 +1360,14 @@ export class XDriveApi {
     if (cursor) params.set('cursor', cursor)
     return this.request<XDriveStorageVerificationRunPage>(
       `/api/v1/admin/storage/verification-runs?${params.toString()}`)
+  }
+
+  adminStorageVerificationRunDetail(runID: string) {
+    if (!xDriveValidStorageVerificationRunID(runID)) {
+      return Promise.reject(new Error('Invalid storage verification run ID'))
+    }
+    return this.request<XDriveStorageVerificationRunDetail>(
+      `/api/v1/admin/storage/verification-runs/${runID}`)
   }
 
   adminStorageOptimizationAdvice() {

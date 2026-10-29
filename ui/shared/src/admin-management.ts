@@ -4,6 +4,7 @@ import type {
   StagingCleanupRun, StagingCleanupFailure, StorageCacheCleanupKind, StorageCacheCleanup,
   UploadStagingCleanup,
 } from './models'
+import type { XDriveStorageIntegrityEvidence } from './background-tasks'
 
 export type XDriveAdminCreateUserInput = {
   username: string
@@ -53,10 +54,16 @@ export type XDriveStorageVerificationRunPage = {
   items: XDriveStorageVerificationRun[]
   next_cursor?: string
 }
+/** Fixed read-only, privacy-safe detail of one terminal integrity check. */
+export type XDriveStorageVerificationRunDetail = {
+  protocol: 'xdrive-storage-verification-detail-v1'
+  run: XDriveStorageVerificationRun
+  evidence?: XDriveStorageIntegrityEvidence
+}
 
 /** Global Storage operations are administrator-owned and Server-authorized. */
 export type XDriveAdminStorageOperation =
-  | 'stats' | 'health' | 'history' | 'verification-runs' | 'legacy' | 'unreferenced' | 'staging'
+  | 'stats' | 'health' | 'history' | 'verification-runs' | 'verification-run-detail' | 'legacy' | 'unreferenced' | 'staging'
   | 'cleanup-runs' | 'cleanup-failures' | 'cleanup-staging' | 'cleanup-cache'
   | 'optimization-advice'
 export type XDriveAdminStorageRequest = {
@@ -64,6 +71,7 @@ export type XDriveAdminStorageRequest = {
   limit?: number
   offset?: number
   cursor?: string
+  verification_run_id?: string
   days?: 30 | 90 | 180
   run_id?: number
   fresh?: boolean
@@ -75,6 +83,8 @@ export type XDriveAdminStoragePort = {
   adminStorageHealth(): Promise<StorageHealth>
   adminStorageHistory(days?: number): Promise<StorageHistory>
   adminStorageVerificationRuns(limit?: number, cursor?: string): Promise<XDriveStorageVerificationRunPage>
+  /** Optional while older Agents/Server images still lack the detail endpoint. */
+  adminStorageVerificationRunDetail?(runID: string): Promise<XDriveStorageVerificationRunDetail>
   adminStorageOptimizationAdvice(): Promise<StorageOptimizationAdvice>
   adminStorageLegacyObjects(limit?: number, cursor?: string): Promise<StorageLegacyObjectPage>
   adminStorageUnreferencedBlobs(limit?: number, cursor?: string): Promise<StorageUnreferencedBlobPage>

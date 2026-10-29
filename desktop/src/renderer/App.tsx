@@ -2116,6 +2116,9 @@ export default function App({
     adminStorageVerificationRuns: (limit = 20, cursor = '') => adminStorageRequest({
       operation: 'verification-runs', limit, cursor,
     }),
+    adminStorageVerificationRunDetail: (runID: string) => adminStorageRequest({
+      operation: 'verification-run-detail', verification_run_id: runID,
+    }),
     adminStorageLegacyObjects: (limit = 20, cursor = '') => adminStorageRequest({
       operation: 'legacy', limit, cursor,
     }),
