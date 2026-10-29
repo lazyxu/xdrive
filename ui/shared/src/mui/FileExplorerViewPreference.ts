@@ -28,9 +28,9 @@ export function xDriveReadFileExplorerStoredViewMode(
 }
 
 /**
- * A small Host-neutral view-only controller. Desktop's tabbed Files navigation
- * uses the same stored-view parser; DSM uses this hook for its single current
- * Owner Files workspace. A preference is UI state, never an Owner capability.
+ * A small Host-neutral view-only controller. Desktop's tabbed navigation
+ * retains its compatible denial-safe loader and historical keys; DSM uses
+ * this single-page hook with the same values. Appearance is not permission.
  */
 export function useXDriveFileExplorerPersistedViewMode(storageKey: string) {
   const [snapshot, setSnapshot] = useState(() => ({
