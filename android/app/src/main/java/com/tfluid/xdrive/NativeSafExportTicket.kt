@@ -28,8 +28,9 @@ internal class NativeSafExportTicket private constructor(
 internal fun validNativeSafExportPicker(state: DriveState): Boolean {
     val node = state.fileExportPending ?: return false
     if (state.server.isBlank() || state.username.isBlank() ||
-        state.loading || node.isDirectory || node.revision <= 0L ||
-        node.size < 0L || state.fileDownloadActive || state.fileUploadActive ||
+        state.loading || node.id <= 0L || node.isDirectory ||
+        node.revision <= 0L || node.size < 0L ||
+        state.fileDownloadActive || state.fileUploadActive ||
         state.fileUploadPickerParent != null || state.destinationKind != null ||
         state.browseBatchWriteAttempted) return false
 
