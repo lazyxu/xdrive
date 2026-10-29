@@ -60,6 +60,15 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-receipt-batch-check"
           "$RUNNER_TEMP/xdrive-ios-receipt-batch-check"
 
+      - name: Verify persistent PhotoKit cursor generation policy
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/PhotoCursorEpochPolicy.swift \
+            ios/tests/PhotoCursorEpochPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-epoch-check"
+          "$RUNNER_TEMP/xdrive-ios-epoch-check"
+
       - name: Verify foreground automatic schedule and bounded cursor
         run: |
           set -euo pipefail
