@@ -47,7 +47,6 @@ import {
   xDriveFileExplorerPropertiesRefs,
   xDriveFileExplorerWebDownloadPlan,
   xDriveFileExplorerResolveSelectionNodes,
-  xDriveFileExplorerSelectionActionDisabledReason,
   xDriveFileExplorerWebDownloadFeedback,
   XDriveFileExplorerInlineRangeStore,
   xDriveFileExplorerPersistedSearchFilters,
@@ -70,6 +69,7 @@ import type {
   NodeLocation,
 } from '../../ui/shared/src'
 import type { XDriveApi } from './api'
+import { xDriveFileExplorerSelectionAdmissionReason } from '../../ui/shared/src/file-explorer-selection-admission'
 import { xDriveResolveFileExplorerCapabilities } from '../../ui/shared/src/file-explorer-capabilities'
 import type { XDriveFileExplorerDataAdapter } from '../../ui/shared/src/file-explorer-capabilities'
 import { xDriveFileExplorerVerifiedChildReanchor, xDriveFileExplorerVerifiedChildReveal } from '../../ui/shared/src/mui/FileExplorerReanchor'
@@ -960,16 +960,9 @@ export default function WebFileExplorer({
     action: XDriveFileExplorerSelectionAction,
     selected: readonly XDriveFileExplorerItem[],
     selectedCount: number,
-  ) => {
-    const mutation = ['copy', 'cut', 'delete', 'move-to', 'copy-to'].includes(action)
-    return xDriveFileExplorerSelectionActionDisabledReason({
-      selected,
-      selectedCount,
-      nodeByID,
-      maxItems: mutation ? 200 : action === 'manage-tags' ? 500 : action === 'download' ? 1000 : undefined,
-      requireRevision: mutation,
-    })
-  }
+  ) => xDriveFileExplorerSelectionAdmissionReason({
+    action, selected, selectedCount, nodeByID, downloadMaxItems: 1000,
+  })
   const allowSelectionAction = (
     action: XDriveFileExplorerSelectionAction,
     selected: readonly XDriveFileExplorerItem[],
