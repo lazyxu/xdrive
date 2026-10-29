@@ -3155,14 +3155,21 @@ async function testAdjacent142And28PhotoCovers(browser,mode,port){
           Math.max(0,list.scrollHeight-list.clientHeight)):0,
       }
     },beforeRotation)
-    record(mode+': 142-photo rotation reauthorizes all pages and scroll position',
-      restoredAfterRotate&&rotation.reauthorized&&rotation.oldDetached&&
+    const rotationPass=restoredAfterRotate&&rotation.reauthorized&&rotation.oldDetached&&
       rotation.total===170&&rotation.nodes.length===142&&
       new Set(rotation.nodes).size===142&&rotation.pages.length===3&&
       rotation.pages.every((p,i)=>p.offset===i*48&&p.limit===48&&
         p.items===[48,48,46][i])&&
       Math.abs(rotation.scrollTop-rotation.target)<6&&
-      rotation.target>0&&errors.length===0)
+      rotation.target>0&&errors.length===0
+    if(!rotationPass)console.error('places-142-rotation-diagnostic',JSON.stringify({
+      mode,restoredAfterRotate,reauthorized:rotation.reauthorized,
+      oldDetached:rotation.oldDetached,total:rotation.total,
+      nodes:rotation.nodes.length,uniqueNodes:new Set(rotation.nodes).size,
+      pages:rotation.pages,scrollTop:rotation.scrollTop,target:rotation.target,
+      errors:errors.length,
+    }))
+    record(mode+': 142-photo rotation reauthorizes all pages and scroll position',rotationPass)
     await page.keyboard.press('Escape')
     await dialog.waitFor({state:'hidden'})
   }finally{await context.close()}
