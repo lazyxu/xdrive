@@ -57,12 +57,17 @@ function render(host, view) {
   return result.type === 'Fragment' ? result.props.children : result
 }
 const client = { authenticatedDSMClient: true }
+const diagnosticsSource = {
+  read: () => Promise.resolve({ checks: [], summary: { pass: 0, warn: 0, fail: 0 } }),
+  scopeNotice: 'Only DSM-local checks', failureMessage: 'Read failed',
+}
 const reasons = view => '真实 Host 接口不可用：' + view
 const desktop = { platform: 'desktop', services: { localBackupClient: client }, unavailableMessage: reasons }
 const synology = {
   platform: 'synology',
   services: {
     localBackupClient: client,
+    diagnosticsSource,
     ownerFilesPage: {
       client,
       unavailableActions: { uploadFiles: 'DSM read-only Owner Files' },
@@ -85,13 +90,17 @@ test('DSM retains authorized fallbacks and explicitly declared Owner Files read 
     ['files', 'XDriveSynologyOwnerFilesPage'],
     ['device-backup', 'XDriveDeviceBackupPage'],
     ['transfers', 'XDriveTaskCenterPage'],
-    ['diagnostics', 'XDriveSynologyDiagnosticsPanel'],
+    ['diagnostics', 'XDriveDiagnosticsHostController'],
   ]) {
     const page = render(synology, view)
     assert.equal(page.type, expected, view)
     if (view === 'files') {
       assert.strictEqual(page.props.client, client)
       assert.equal(page.props.unavailableActions.uploadFiles, 'DSM read-only Owner Files')
+    }
+    if (view === 'diagnostics') {
+      assert.strictEqual(page.props.source, diagnosticsSource,
+        'scoped diagnostic permission must come from an explicit Host port')
     }
   }
 })
@@ -135,4 +144,11 @@ test('neither Host silently infers Owner Files permission from backup CGI presen
     assert.equal(page.props.message, reasons('files'))
   }
   assert.equal(render(synology, 'files').type, 'XDriveSynologyOwnerFilesPage')
+})
+
+test('DSM backup-only client alone cannot implicitly grant Diagnostics read access', () => {
+  const host = { ...synology, services: { localBackupClient: client } }
+  const page = render(host, 'diagnostics')
+  assert.equal(page.type, 'XDriveStatePanel')
+  assert.equal(page.props.message, reasons('diagnostics'))
 })
