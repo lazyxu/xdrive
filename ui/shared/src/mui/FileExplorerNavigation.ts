@@ -5,6 +5,7 @@ import {
   XDRIVE_FILE_EXPLORER_DEFAULT_GROUPING,
 } from '../file-explorer-grouping'
 import type { XDriveFileExplorerGrouping } from '../file-explorer-grouping'
+import { xDriveReadFileExplorerStoredViewMode } from './FileExplorerViewPreference'
 import type {
   XDriveFileExplorerCrumb,
   XDriveFileExplorerSort,
