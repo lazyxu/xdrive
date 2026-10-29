@@ -98,9 +98,12 @@ test('native Viewer video pauses on hidden and never auto-resumes or pauses a ne
     assert.equal(streams.length, 2)
     assert.ok(streams[0].detaches >= 1, 'replacing source must still cancel old signed Range')
     const nextPauses = streams[1].pauses
+    // Exercise the stale listener under actual hidden conditions, otherwise
+    // the event handler's visibility guard could mask an Owner-scope leak.
+    visibility = 'hidden'
     oldListener()
     assert.equal(streams[1].pauses, nextPauses, 'old Owner/Node handler cannot pause the newer video')
-    await act(async () => { visibility = 'hidden'; dispatch('visibilitychange') })
+    await act(async () => { dispatch('visibilitychange') })
     assert.equal(streams[1].pauses, nextPauses + 1)
   } finally {
     if (renderer) await act(async () => renderer.unmount())
