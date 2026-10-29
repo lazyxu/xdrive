@@ -64,7 +64,7 @@ func TestStorageVerifyEvidenceRejectsIncorrectModeAndForgedEnvelope(t *testing.T
 	if parseStorageVerifyEvidence(string(raw)) == nil {
 		t.Fatal("failed valid fast report")
 	}
-	if parseStorageVerifyEvidence(strings.TrimSuffix(string(raw), "}") + `,"storage_key":"/secret"}`) != nil {
+	if parseStorageVerifyEvidence(strings.TrimSuffix(string(raw), "}")+`,"storage_key":"/secret"}`) != nil {
 		t.Fatal("accepted extra private field")
 	}
 	if parseStorageVerifyEvidence(strings.Repeat("A", storageVerifyEvidenceMaxBytes+1)) != nil {
