@@ -19,7 +19,7 @@ import {
   xDriveFileExplorerDownloadPlan,
   xDriveFileExplorerEnsureUploadDirectory,
   xDriveFileExplorerResolveSelectionNodes,
-  xDriveFileExplorerSelectionActionDisabledReason,
+  xDriveFileExplorerSelectionAdmissionReason,
   xDriveFileExplorerResolveFolderUploadTargets,
   xDriveFileExplorerPropertiesRefs,
   xDriveFileExplorerAvailabilityError,
@@ -871,13 +871,11 @@ export default function DesktopFileExplorer({
     selected: readonly XDriveFileExplorerItem[],
     selectedCount: number,
   ) => {
-    const mutation = ['copy', 'cut', 'delete', 'move-to', 'copy-to'].includes(action)
-    const reason = xDriveFileExplorerSelectionActionDisabledReason({
-      selected,
-      selectedCount,
-      nodeByID,
-      maxItems: mutation ? 200 : action === 'manage-tags' ? 500 : undefined,
-      requireRevision: mutation,
+    // The same current-node/revision/virtual-selection admission protects Web
+    // Wide/Compact and Desktop. Desktop's native archive/folder rules remain
+    // additional, genuine Agent Host capabilities below this shared guard.
+    const reason = xDriveFileExplorerSelectionAdmissionReason({
+      action, selected, selectedCount, nodeByID,
     })
     if (reason) return reason
     if (action === 'manage-tags' && !fileTagsSupported) return '当前客户端不支持标签，请更新客户端核心组件。'
