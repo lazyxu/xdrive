@@ -6,6 +6,7 @@ const path = require('node:path')
 const root = path.resolve(__dirname,'../..')
 const read = p => fs.readFileSync(path.join(root,p),'utf8')
 const gallery = read('ui/shared/src/mui/MediaGallery.tsx')
+const adapter = read('ui/shared/src/mui/MediaGalleryAdapter.ts')
 const web = read('web/src/mediaGalleryAdapter.ts')
 const photo = read('ui/shared/src/media-gallery-baidu-photo-focus-camera.ts')
 
@@ -14,6 +15,10 @@ test('the only Gallery Web Host port uses the existing signed Owner photo API',(
   assert.match(web,/api\.mediaBaiduNativePhotoFocus\(nodeID, revision, signal\)/)
   assert.doesNotMatch(web,/getBaiduNativePhotoFocus:[^\n]*fetch\(/)
   assert.match(gallery,/getBaiduNativePhotoFocus\?:/)
+  assert.match(adapter,/getBaiduNativePhotoFocus\?:/)
+  assert.match(adapter,/getBaiduNativePhotoFocus: port\.getBaiduNativePhotoFocus/)
+  assert.match(adapter,/port\.getBaiduNativePhotoFocus!\(nodeID, revision, signal\)/)
+  assert.match(adapter,/resolveXDriveTransport\(/)
 })
 
 test('Gallery Photo Info checks accepted Owner membership before requesting BD09',()=>{

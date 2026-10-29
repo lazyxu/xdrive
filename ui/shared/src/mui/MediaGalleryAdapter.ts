@@ -178,6 +178,11 @@ export interface XDriveMediaGalleryPort {
     selection: MediaBaiduNativeCellSelection, limit: number, offset: number,
     sort: XDriveBaiduCellRangeSort, signal: AbortSignal,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaItemRange>>
+  /** Signed Owner source photo -> derived BD09, never SDK Child or raw EXIF. */
+  getBaiduNativePhotoFocus?: (
+    nodeID: number, revision: number, signal: AbortSignal,
+  ) => Promise<XDriveMediaGalleryTransportResult<
+    import('../media-gallery-baidu-photo-focus').XDriveBaiduOwnerPhotoFocus>>
   getBaiduMapCoverage?: (signal: AbortSignal) => Promise<
     XDriveMediaGalleryTransportResult<import('../models').MediaBaiduMapCoverage>>
   getBaiduMapCoverageReasons?: (signal: AbortSignal) => Promise<
@@ -633,6 +638,11 @@ export function createXDriveMediaGalleryDataSource(
     listBaiduNativeCellItems: port.listBaiduNativeCellItems
       ? (selection, limit, offset, sort, signal) => resolveXDriveTransport(
           port.listBaiduNativeCellItems!(selection, limit, offset, sort, signal),
+        )
+      : undefined,
+    getBaiduNativePhotoFocus: port.getBaiduNativePhotoFocus
+      ? (nodeID, revision, signal) => resolveXDriveTransport(
+          port.getBaiduNativePhotoFocus!(nodeID, revision, signal),
         )
       : undefined,
     getBaiduMapCoverage: port.getBaiduMapCoverage
