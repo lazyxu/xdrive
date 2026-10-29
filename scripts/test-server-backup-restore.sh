@@ -345,7 +345,7 @@ else
   elif grep -Eq 'PostgreSQL did not become ready|xDrive API did not become ready' "$TMP/db-only-restore.log"; then
     restore_category=service_readiness
   fi
-  printf 'v1 database-only restore failed: category=%s rc=%d (private log withheld)\\n' \
+  printf 'v1 database-only restore failed: category=%s rc=%d (private log withheld)\n' \
     "$restore_category" "$restore_rc" >&2
   exit 1
 fi
