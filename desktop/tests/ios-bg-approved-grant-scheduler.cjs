@@ -20,7 +20,9 @@ test('separate iOS background-only grant requires explicit consent and stays off
   assert.match(bridge, /"nativeBackgroundGrant": true/)
   assert.match(bridge, /"nativeBackgroundUpload": false/)
   assert.match(shared, /data-xdrive-ios-bg-grant-toggle/)
-  assert.match(shared, /后台原件自动上传/)
+  assert.match(shared, /iPhone 系统后台备份授权/)
+  assert.match(shared, /授权此设备进行系统后台原件备份/)
+  assert.match(shared, /data-xdrive-ios-bg-emergency-stop/)
   assert.match(web, /nativeBackgroundGrantSupported/)
   assert.doesNotMatch(web,
     /grant_secret|X-XDrive-Device-Token|X-XDrive-IOS-Photo-Grant|keychainService/)
@@ -46,11 +48,15 @@ test('locked-screen credentials cannot outlive Owner, server, scope or expiry', 
   assert.match(credential, /XDriveIOSApprovedPhotoBGVault\.shared\.cancelLocally/)
 })
 
-test('BGProcessingTask proof-only scheduler never invents upload progress', () => {
+test('BGProcessingTask runs one scoped original only after approved native proof', () => {
   assert.match(boot, /BGTaskScheduler\.shared\.register/)
   assert.match(boot, /BGProcessingTaskRequest\(identifier: identifier\)/)
   assert.match(boot, /requiresNetworkConnectivity = true/)
   assert.match(boot, /proveInBackground\(\)/)
+  assert.match(boot, /UIApplication\.shared\.isProtectedDataAvailable/)
+  assert.match(boot, /XDriveIOSForegroundPhotoBackupMVP\(/)
+  assert.match(boot, /approvedBackgroundGrant: approved/)
+  assert.match(boot, /maximumNewOriginals: 1/)
   assert.match(boot, /expirationHandler = \{ operation\.cancel\(\) \}/)
   assert.match(boot, /hasTrustedBackgroundExecutionGrant: Bool \{ false \}/)
   assert.doesNotMatch(boot,
