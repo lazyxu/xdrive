@@ -60,7 +60,7 @@ func TestIOSDeviceIdentityCannotClaimLocalSourceOrCrossOwner(t *testing.T) {
 	}
 
 	headers := map[string]string{
-		"X-XDrive-Device-ID": enrolled.Device.ID,
+		"X-XDrive-Device-ID":    enrolled.Device.ID,
 		"X-XDrive-Device-Token": enrolled.DeviceToken,
 	}
 	response := requestWithHeaders(t, router, http.MethodGet, "/api/v1/devices/self",
@@ -114,7 +114,7 @@ func TestIOSDeviceIdentityCannotClaimLocalSourceOrCrossOwner(t *testing.T) {
 func TestDesktopDeviceCredentialStillAuthorizesAgentIdentity(t *testing.T) {
 	token := "desktop-credential-value-at-least-32-characters"
 	device := meta.ClientDevice{
-		Platform: "windows",
+		Platform:       "windows",
 		CredentialHash: deviceCredentialDigest(token),
 	}
 	if !clientDeviceCredentialMatches(device, token) ||
