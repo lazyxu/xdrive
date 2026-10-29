@@ -111,6 +111,23 @@ runtime and Viewer return lifecycle. Browser admin pages and its foreground
 transfer controller remain Host-owned until their stateful data ports converge;
 this is not complete Web-to-`XDriveApp` migration.
 
+### Browser TaskCenter through the shared outlet
+
+Web/PWA now supplies its *existing* authenticated TaskCenter page props
+through the same Browser Host Adapter and canonical `XDriveAppPageOutlet`.
+This includes Mine transfers/operations, global background tasks for a
+**current, Server-verified administrator**, media-selection jobs and their
+existing Owner-scoped task focus and control callbacks. The shared outlet
+chooses the correct Mine/Global scope and drops the Mine-only media job port
+in the global view. The page route does not create or cancel durable jobs.
+
+The Browser Host's UI admin gate is true only when the current `/me`
+username matches the authenticated session, its Server role is admin and
+no mandatory password change remains. The Server remains authoritative for
+all control POSTs and background read paths. Other Server admin pages have
+not been migrated and remain on the current Browser controller; missing
+Host ports are never fabricated.
+
 ## Ownership layers
 
 1. **Product contracts:** API schemas, Owner/Root semantics, page/navigation IDs, media and upload receipt identity, UI tokens/gesture/accessibility contracts. React and native UI must agree.
