@@ -87,3 +87,12 @@ Actual iPhone in foreground, lock-screen/suspension behavior, PhotoKit
 permission changes, forced Server access-token revocation, iCloud and
 SideStore installation: **跳过（未验收）**. Exact-HEAD Xcode IPA, Web TS,
 server Owner ACL, CI Final Gate must pass before merge.
+
+## 单一 BGTask 注册入口
+
+该分支复用已合入 #3156 的唯一 `XDriveIOSBackgroundPhotoTask`
+注册类和 `com.lazyxu.xdrive.ios.photos.backup` 标识；不会另行注册
+`…photos.incremental`，也不会再创建第二套 SwiftUI/上传器。
+冷启动没有 RAM-only Owner 凭据时仅返回失败，绝不默许 PhotoKit 扫描。
+这是在 #3155 子分支（准确 HEAD 后续需重新跑 iPhoneOS IPA）
+收敛的契约，**不代表系统后台执行已通过真机验收**。

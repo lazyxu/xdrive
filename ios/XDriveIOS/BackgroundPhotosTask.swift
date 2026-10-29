@@ -7,26 +7,6 @@ import UIKit
 /// schedule. It never fabricates a native login or exports a Web cookie.
 /// IMPORTANT: until a revocable server-issued background credential exists,
 /// the bearer is RAM-only. A cold relaunch cannot upload unattended.
-enum XDriveIOSBackgroundPhotoTaskRegistration {
-    static let identifier = "com.lazyxu.xdrive.ios.photos.incremental"
-
-    static func registerAtLaunch() {
-        // Register before the application finishes launching, including an
-        // iOS-initiated background relaunch.
-        _ = BGTaskScheduler.shared.register(
-            forTaskWithIdentifier: identifier, using: nil
-        ) { task in
-            guard let processing = task as? BGProcessingTask else {
-                task.setTaskCompleted(success: false)
-                return
-            }
-            Task { @MainActor in
-                XDriveIOSBackgroundPhotos.shared.handle(processing)
-            }
-        }
-    }
-}
-
 /// One physical PhotoKit/UploadSession executor across WebView and BGTasks.
 /// This does not confer SourceRun authority or serialize other device apps.
 @MainActor
@@ -80,7 +60,7 @@ final class XDriveIOSBackgroundPhotos {
             // the previous scheduled/running native task.
             running?.cancel()
             BGTaskScheduler.shared.cancel(
-                taskRequestWithIdentifier: XDriveIOSBackgroundPhotoTaskRegistration.identifier
+                taskRequestWithIdentifier: XDriveIOSBackgroundPhotoTask.identifier
             )
             isScheduled = false
         }
@@ -94,7 +74,7 @@ final class XDriveIOSBackgroundPhotos {
         authorization = nil
         running?.cancel()
         BGTaskScheduler.shared.cancel(
-            taskRequestWithIdentifier: XDriveIOSBackgroundPhotoTaskRegistration.identifier
+            taskRequestWithIdentifier: XDriveIOSBackgroundPhotoTask.identifier
         )
         isScheduled = false
     }
@@ -112,7 +92,7 @@ final class XDriveIOSBackgroundPhotos {
         // A BGProcessingTaskRequest is only an OS scheduling *request*.
         // earliestBeginDate is not a promise of exact 15/60-minute execution.
         let request = BGProcessingTaskRequest(
-            identifier: XDriveIOSBackgroundPhotoTaskRegistration.identifier
+            identifier: XDriveIOSBackgroundPhotoTask.identifier
         )
         request.requiresNetworkConnectivity = true
         request.requiresExternalPower = false

@@ -7,7 +7,7 @@ struct XDriveIOSApp: App {
         // The shared PWA cookie, photo intent ledger and iPhone Device
         // enrollment are separate and remain untouched.
         XDriveIOSRetiredNativeLogin.purgeLegacyRefreshToken()
-        XDriveIOSBackgroundPhotoTaskRegistration.registerAtLaunch()
+        XDriveIOSBackgroundPhotoTask.registerAtLaunch()
     }
 
     var body: some Scene {
