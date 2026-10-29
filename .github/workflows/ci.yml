@@ -1541,6 +1541,27 @@ jobs:
           set -euo pipefail
           source scripts/ci/client-artifact-version.sh
           test -f web/dist/index.html
+          # Docker Hub intermittently returns 5xx for manifest HEAD requests.
+          # Retry only the immutable-version base-image pulls; never skip the
+          # exact Caddy/Web build or any of its runtime security checks.
+          caddy_version="$(sed -n 's/^ARG CADDY_VERSION=//p' deploy/Caddy.Dockerfile)"
+          [[ "$caddy_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "::error title=Caddy base image::Unrecognized Caddy version" >&2
+            exit 1
+          }
+          for image in "caddy:${caddy_version}-builder-alpine" "caddy:${caddy_version}-alpine"; do
+            for attempt in 1 2 3; do
+              if docker pull "$image"; then
+                break
+              fi
+              if [[ "$attempt" -eq 3 ]]; then
+                echo "::error title=Caddy base image::Failed to pull $image after 3 attempts" >&2
+                exit 1
+              fi
+              echo "::warning title=Caddy registry transient::Retrying $image (${attempt}/3)" >&2
+              sleep $((attempt * 8))
+            done
+          done
           docker build --build-arg "VERSION=$XDRIVE_RELEASE_VERSION" -f deploy/Caddy.Dockerfile -t xdrive/caddy:test .
           # grep -q closes its input early; under pipefail that can fail a successful docker command with SIGPIPE.
           docker run --rm xdrive/caddy:test caddy list-modules | grep -Fx 'dns.providers.alidns' >/dev/null
