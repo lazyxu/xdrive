@@ -673,6 +673,11 @@ export default function App({
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
+    readSnapshotIndexPage: async query => {
+      const result = await window.xdriveDesktop.agent.cloudAdminBackupSnapshotPage(query)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
     submit: async request => {
       const result = await window.xdriveDesktop.agent.cloudAdminBackupAction(request)
       if (!result.ok) throw new Error(result.error.message)

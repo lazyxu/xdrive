@@ -16,6 +16,9 @@ import { filterServerBackupSnapshots, type XDriveServerBackupSnapshotFilter } fr
 import { XDriveActionButton } from './ActionButton'
 import { XDriveBackupVerificationReceipt } from './BackupVerificationReceipt'
 import { XDriveBackupRecoveryEvidencePanel } from './BackupRecoveryEvidencePanel'
+import { XDriveBackupRepositoryInventory } from './BackupRepositoryInventory'
+import { XDriveBackupSnapshotIndexPager } from './BackupSnapshotIndexPager'
+import { XDriveBackupScheduleRegistration } from './BackupScheduleRegistration'
 import { XDriveSectionHeader } from './SectionHeader'
 
 type Confirmation = {
@@ -322,6 +325,15 @@ export function XDriveServerBackupManagementPanel({
           </Stack>
         </Stack>
       </Paper>
+
+      {page?.supported ? <XDriveBackupRepositoryInventory inventory={page.inventory} /> : null}
+      {page?.supported &&
+        typeof page.inventory.total_snapshots === 'number' &&
+        page.inventory.total_snapshots > 100 && port.readSnapshotIndexPage ? (
+          <XDriveBackupSnapshotIndexPager
+            readPage={port.readSnapshotIndexPage}
+            policyRevision={page.inventory.policy.revision} />
+        ) : null}
 
       <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
         <Stack spacing={1.5}>
@@ -711,6 +723,8 @@ export function XDriveServerBackupManagementPanel({
           ) : null}
         </Stack>
       </Paper>
+
+      {page?.supported ? <XDriveBackupScheduleRegistration inventory={page.inventory} /> : null}
 
       <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }} data-xdrive-admin-backup-history>
         <Stack spacing={1.5}>

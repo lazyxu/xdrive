@@ -1320,6 +1320,13 @@ export class XDriveApi {
     )
   }
 
+  adminServerBackupSnapshotPage(query: import('../../ui/shared/src/server-backup-admin').XDriveServerBackupSnapshotIndexQuery) {
+    return this.request<import('../../ui/shared/src/server-backup-admin').XDriveServerBackupSnapshotIndexPage>(
+      `/api/v1/admin/backups/snapshots?offset=${query.offset}&limit=${query.limit}`,
+      { cache: 'no-store' },
+    )
+  }
+
   adminServerBackupAction(input: import('../../ui/shared/src/server-backup-admin').XDriveServerBackupRequest) {
     return this.request<import('../../ui/shared/src/server-backup-admin').XDriveServerBackupOperation>(
       '/api/v1/admin/backups/actions', {

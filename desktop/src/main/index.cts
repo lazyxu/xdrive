@@ -6921,6 +6921,23 @@ function registerIPCHandlers() {
   }
   ipcMain.handle('agent:cloud-admin-backups', () => runAgentAction<unknown>(async () =>
     (await requireDesktopAdminBackups()).cloudAdminServerBackups(), false))
+  ipcMain.handle('agent:cloud-admin-backup-snapshots', (_event, input: unknown) =>
+    runAgentAction<unknown>(async () => {
+      if (!input || typeof input !== 'object' || Array.isArray(input)) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid read-only backup snapshot page.')
+      }
+      const query = input as Record<string, unknown>
+      if (Object.keys(query).length !== 2 ||
+        !Number.isSafeInteger(query.offset) || (query.offset as number) < 0 ||
+        (query.offset as number) > 1000 ||
+        !Number.isSafeInteger(query.limit) || (query.limit as number) < 1 ||
+        (query.limit as number) > 100) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid bounded backup snapshot page.')
+      }
+      return (await requireDesktopAdminBackups()).cloudAdminServerBackupSnapshotPage({
+        offset: query.offset as number, limit: query.limit as number,
+      })
+    }, false))
   ipcMain.handle('agent:cloud-admin-backup-action', (_event, input: unknown) =>
     runAgentAction<unknown>(async () => {
       if (!validDesktopServerBackupAction(input)) {
