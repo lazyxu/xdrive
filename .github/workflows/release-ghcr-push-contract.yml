@@ -1,0 +1,34 @@
+name: GHCR Snapshot push contract
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - '.github/workflows/release.yml'
+      - 'scripts/test-snapshot-publish-runtime.py'
+      - '.github/workflows/release-ghcr-push-contract.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  ghcr-exact-artifact-push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Execute GHCR Docker mock and snapshot security regressions
+        run: |
+          set -euo pipefail
+          python3 scripts/test-snapshot-publish-runtime.py
+          python3 scripts/test-snapshot-publish-guards.py
+          python3 scripts/test-snapshot-tag-preflight.py
+          python3 scripts/ci/check_workflow_pr_scope.py
+          python3 -m unittest discover -s scripts/ci -p 'test_workflow_pr_scope.py'
