@@ -152,6 +152,9 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   // the already Owner-fenced cached poster. Only VIDEO participates: existing
   // PDF/audio/text and image loader lifecycles are unchanged.
   const textPreviewOwner = previewKind === 'text' ? loadTextPreview : undefined
+  const audioPreviewOwner = previewKind === 'audio' ? loadPreviewURL : undefined
+  const currentAudioPreviewOwnerRef = useRef(audioPreviewOwner)
+  currentAudioPreviewOwnerRef.current = audioPreviewOwner
   const videoPreviewOwner = previewKind === 'video' ? loadPreviewURL : undefined
   const currentVideoPreviewOwnerRef = useRef(videoPreviewOwner)
   currentVideoPreviewOwnerRef.current = videoPreviewOwner
@@ -211,10 +214,12 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   const retryOwnerRef = useRef({
     sourceIdentity: JSON.stringify([target?.id, target?.revision, previewKind]),
     videoPreviewOwner,
+    audioPreviewOwner,
     textPreviewOwner,
   })
   const [previewURL, setPreviewURL] = useState('')
   const [videoURLSourceOwner, setVideoURLSourceOwner] = useState<XDriveFilePreviewURLLoader<T> | undefined>()
+  const [audioOwnerAtStart, setAudioOwnerAtStart] = useState<XDriveFilePreviewURLLoader<T> | undefined>()
   const [loading, setLoading] = useState(false)
   const [urlDownloadProgress, setURLDownloadProgress] = useState<{ loadedBytes: number; totalBytes?: number } | null>(null)
   const [failed, setFailed] = useState(false)
@@ -294,8 +299,9 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   }, [sourceIdentity, previewKind, hasVideoPosterLoader, loadImagePreview])
   if (retryOwnerRef.current.sourceIdentity !== sourceIdentity ||
       retryOwnerRef.current.videoPreviewOwner !== videoPreviewOwner ||
+      retryOwnerRef.current.audioPreviewOwner !== audioPreviewOwner ||
       retryOwnerRef.current.textPreviewOwner !== textPreviewOwner) {
-    retryOwnerRef.current = { sourceIdentity, videoPreviewOwner, textPreviewOwner }
+    retryOwnerRef.current = { sourceIdentity, videoPreviewOwner, audioPreviewOwner, textPreviewOwner }
   }
   const retryOwner = retryOwnerRef.current
   const retryNonceRef = useRef(previewRetryNonce)
@@ -560,6 +566,8 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     if (previewKind === 'text') setTextOwnerAtStart(() => loaders.text)
     assignPreviewURL('')
     setVideoURLSourceOwner(undefined)
+    // Store a function-valued Owner loader without invoking a React updater.
+    if (previewKind === 'audio') setAudioOwnerAtStart(() => loaders.url)
     setLoading(false)
     setFailed(false)
     setMediaReady(false)
@@ -654,6 +662,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     previewTargetRevision,
     previewRetryNonce,
     videoPreviewOwner,
+    audioPreviewOwner,
     textPreviewOwner,
   ])
 
@@ -677,7 +686,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
       ? videoStreamElementRef.current : audioStreamElementRef.current
     if (!media) return
     return () => xDriveAbortHTMLMediaElement(media)
-  }, [sourceIdentity, previewKind, previewURL, loading, failed, hasTransformedVideo, videoPreviewOwner])
+  }, [sourceIdentity, previewKind, previewURL, loading, failed, hasTransformedVideo, videoPreviewOwner, audioPreviewOwner])
 
   // A mobile PWA may stop delivering pointer/keyboard events on tab hide or
   // App suspension. Ordinary *video* should never continue playing unseen.
@@ -726,8 +735,9 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     acquiredIdentityRef.current === sourceIdentity &&
     currentSourceIdentityRef.current === sourceIdentity &&
     previewGenerationRef.current === mediaGeneration &&
-    (previewKind !== 'video' || currentVideoPreviewOwnerRef.current === videoPreviewOwner)
-  ), [mediaGeneration, sourceIdentity, previewKind, videoPreviewOwner])
+    (previewKind !== 'video' || currentVideoPreviewOwnerRef.current === videoPreviewOwner) &&
+    (previewKind !== 'audio' || currentAudioPreviewOwnerRef.current === audioPreviewOwner)
+  ), [mediaGeneration, sourceIdentity, previewKind, videoPreviewOwner, audioPreviewOwner])
   const markMediaReady = useCallback(() => {
     if (!isCurrentMedia()) return
     setMediaReady(true)
@@ -785,9 +795,10 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     !failed
   )
   const staleVideoStreamOwner = previewKind === 'video' && videoURLSourceOwner !== videoPreviewOwner
+  const staleAudioOwner = previewKind === 'audio' && audioOwnerAtStart !== audioPreviewOwner
   const staleTextOwner = previewKind === 'text' && textOwnerAtStart !== textPreviewOwner
   const presentationState: XDriveFilePreviewPresentationState = acquiredIdentityRef.current !== sourceIdentity ||
-    staleVideoStreamOwner || staleTextOwner
+    staleVideoStreamOwner || staleAudioOwner || staleTextOwner
     ? 'loading'
     : failed || previewKind === 'none' ? 'failed'
       : loading || mediaPending ? 'loading'
@@ -974,7 +985,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     }
     // A target change can render before its effect clears the previous URL.
     // Never mount old video/audio/PDF bytes under a newer Node/revision.
-    if (loading || acquiredIdentityRef.current !== sourceIdentity || staleVideoStreamOwner || staleTextOwner) {
+    if (loading || acquiredIdentityRef.current !== sourceIdentity || staleVideoStreamOwner || staleAudioOwner || staleTextOwner) {
       return videoPlaceholder(
         <Box sx={{ minHeight: 96, display: 'grid', placeItems: 'center' }}>
           <CircularProgress size={26} />
@@ -1126,7 +1137,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   return (
     <Box
       data-xdrive-file-preview-kind={previewKind}
-      aria-busy={loading || mediaPending || staleTextOwner || undefined}
+      aria-busy={loading || mediaPending || staleAudioOwner || staleTextOwner || undefined}
       sx={{
         width: '100%',
         minWidth: 0,
