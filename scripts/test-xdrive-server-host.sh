@@ -726,7 +726,7 @@ bash "$HOST" backup verify "$CORRUPT" >"$TMP/backup-corrupt.out" 2>"$TMP/backup-
 corrupt_status=$?
 set -e
 [[ "$corrupt_status" -ne 0 ]]
-grep -Eq 'FAILED|did NOT match' "$TMP/backup-corrupt.out" "$TMP/backup-corrupt.err"
+grep -Eq 'FAILED|did NOT match|v1 checksum manifest mismatch' "$TMP/backup-corrupt.out" "$TMP/backup-corrupt.err"
 
 TEST_STATE="$TMP/state" \
 PATH="$TMP/bin:/usr/bin:/bin" \
