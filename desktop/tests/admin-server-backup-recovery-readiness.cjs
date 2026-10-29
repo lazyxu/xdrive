@@ -19,6 +19,7 @@ const snapshot = { id, name:'xdrive-backup-20261028T030000Z',
   state:'complete', format:'v2', file_data_included:true }
 const page = s => ({ inventory:{snapshots:[s]} })
 const proof = {
+  protocol:'xdrive-host-backup-verify-v1',
   state:'success', format:'v2', scope:'backup_snapshot_and_referenced_cas',
   cas_objects_checked:10, cas_bytes_hashed:2048,
 }
@@ -65,8 +66,10 @@ test('v2 needs real file and PostgreSQL isolated recovery proof, not a synthetic
 })
 
 test('v1 historical verification is separate from v2 RAM recovery drill', () => {
-  const v1 = {...snapshot,format:'v1'}
-  const result=assess(page(v1),evidence({...verify,verification:{...proof,format:'v1'}},null),id)
+  const v1 = {...snapshot,id:'v1:xdrive-backup-20261028T030000Z',format:'v1'}
+  const result=assess(page(v1),evidence({...verify,verification:{
+    ...proof,format:'v1',cas_objects_checked:0,cas_bytes_hashed:0,
+  }},null),v1.id)
   assert.equal(result.state,'v1_historical_only')
   assert.match(result.action,/只支持 v2/)
 })
@@ -105,4 +108,19 @@ test('isolated recovery success requires exact snapshot, environment and evidenc
   const ui = fs.readFileSync(path.join(root, 'ui/shared/src/mui/BackupRecoveryEvidencePanel.tsx'), 'utf8')
   assert.match(ui, /isTrustedServerBackupIsolatedDrill\(event, snapshot\)/)
   assert.match(ui, /drillLabel\(evidence\.lastDrill, selectedSnapshot\)/)
+})
+
+
+test('recovery readiness rejects unverifiable format, protocol and hash counters', () => {
+  for (const invalid of [
+    { ...proof, protocol: 'legacy' },
+    { ...proof, scope: 'metadata_only' },
+    { ...proof, cas_objects_checked: -1 },
+    { ...proof, cas_bytes_hashed: Number.MAX_SAFE_INTEGER + 1 },
+    { ...proof, failure_category: 'object_sha256_mismatch' },
+  ]) {
+    assert.equal(assess(page(snapshot), evidence({ ...verify, verification: invalid }), id).state,
+      'verify_unattested')
+  }
+  assert.equal(assess(page(snapshot), evidence(verify, drill), id).state, 'v2_historical_only')
 })
