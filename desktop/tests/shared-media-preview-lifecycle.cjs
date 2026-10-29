@@ -43,6 +43,83 @@ function root(renderer, kind) {
   return renderer.root.findByProps({ 'data-xdrive-file-preview-kind': kind })
 }
 
+test('native Viewer video pauses on hidden and never auto-resumes or pauses a newer source', async () => {
+  const priorDocument = global.document
+  const listeners = new Map()
+  let visibility = 'visible'
+  global.document = {
+    get visibilityState() { return visibility },
+    addEventListener(name, callback) {
+      if (!listeners.has(name)) listeners.set(name, new Set())
+      listeners.get(name).add(callback)
+    },
+    removeEventListener(name, callback) {
+      listeners.get(name)?.delete(callback)
+    },
+  }
+  const dispatch = name => {
+    for (const callback of [...(listeners.get(name) || [])]) callback()
+  }
+  const streams = []
+  const render = revision => React.createElement(XDriveFilePreviewSurface, {
+    target: { id: 9723, revision, name: 'clip.mp4', kind: 'file' },
+    loadPreviewURL: async () => 'https://example.invalid/signed-' + revision + '.mp4',
+  })
+  let renderer
+  try {
+    await act(async () => {
+      renderer = create(render(1), {
+        createNodeMock: element => {
+          if (element.type !== 'video') return null
+          const stream = {
+            pauses: 0, detaches: 0,
+            pause() { this.pauses++ },
+            removeAttribute(name) { assert.equal(name, 'src'); this.detaches++ },
+            load() {},
+          }
+          streams.push(stream)
+          return stream
+        },
+      })
+    })
+    assert.equal(renderer.root.findByType('video').props.src,
+      'https://example.invalid/signed-1.mp4')
+    assert.equal(streams.length, 1)
+    assert.equal(listeners.get('visibilitychange')?.size ?? 0, 1)
+    const oldListener = [...listeners.get('visibilitychange')][0]
+    await act(async () => { visibility = 'hidden'; dispatch('visibilitychange') })
+    assert.equal(streams[0].pauses, 1, 'hidden tab must pause the real native video')
+    assert.equal(streams[0].detaches, 0, 'hiding is not Viewer Close or URL revocation')
+    assert.equal(renderer.root.findByType('video').props.src,
+      'https://example.invalid/signed-1.mp4')
+    await act(async () => { visibility = 'visible'; dispatch('visibilitychange') })
+    assert.equal(streams[0].pauses, 1, 'visible tab cannot auto-resume or restart playback')
+    await act(async () => renderer.update(render(2)))
+    assert.equal(streams.length, 2)
+    assert.ok(streams[0].detaches >= 1, 'replacing source must still cancel old signed Range')
+    const nextPauses = streams[1].pauses
+    oldListener()
+    assert.equal(streams[1].pauses, nextPauses, 'old Owner/Node handler cannot pause the newer video')
+    await act(async () => { visibility = 'hidden'; dispatch('visibilitychange') })
+    assert.equal(streams[1].pauses, nextPauses + 1)
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    assert.equal(listeners.get('visibilitychange')?.size ?? 0, 0,
+      'unmount must retire the document lifecycle listener')
+    if (priorDocument === undefined) delete global.document
+    else global.document = priorDocument
+  }
+})
+
+test('native video pagehide is wired without changing audio, PDF or transformed media', () => {
+  const source = fs.readFileSync(
+    path.join(__dirname, '../../ui/shared/src/mui/FilePreviewSurface.tsx'), 'utf8')
+  assert.match(source, /window\.addEventListener\('pagehide', pauseNativeVideoIfCurrent\)/)
+  assert.match(source, /window\.removeEventListener\('pagehide', pauseNativeVideoIfCurrent\)/)
+  assert.match(source, /previewKind !== 'video' \|\| hasTransformedVideo/)
+  assert.match(source, /try \{ video\.pause\(\) \} catch/)
+})
+
 test('video busy state follows first frame and later buffering', async () => {
   const renderer = await mountMedia('clip.mp4')
   try {
