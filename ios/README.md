@@ -1,6 +1,6 @@
-# xDrive iOS — native login and local PhotoKit inventory preview
+# xDrive iOS — shared PWA Files/Gallery and explicit native Photos backup
 
-First testable iOS shell (SwiftUI, iOS 16+). Authentication works; the only additional native capability is an explicitly requested, local-only PhotoKit metadata inventory. Files, Gallery, Viewer and synchronization remain absent.
+SwiftUI shell (iOS 16+) mounts the canonical server-hosted PWA Files, Gallery, Map and Viewer in a persistent origin-locked WKWebView. The separate native login offers Owner-verified Files upload, authorized PhotoKit local inspection and explicitly requested single-still original upload. Foreground incremental photo backup is introduced in its own reviewed PR, not an automatic background process.
 Visual reference: Android `AuthScreens.kt` and `SharedVisuals.kt`; uses the canonical
 `assets/icon/web/pwa-512.png` brand and Android auth colors.
 
@@ -17,14 +17,14 @@ Visual reference: Android `AuthScreens.kt` and `SharedVisuals.kt`; uses the cano
 - Only the refresh token is saved to device-only, unlocked Keychain when keep-login
   is on; never save passwords or access tokens. Refresh on app launch; rotate tokens.
   A rejected refresh clears the saved credential, while a transient outage does not.
-- A successful login shows the real account and server plus a logout button;
-  it does **not** pretend that Files or Gallery are implemented.
+- A successful native login shows the real account and server plus a logout button.
+  Files/Gallery/Viewer are supplied by the **shared PWA session**, not cloned into SwiftUI or unlocked by the native login token.
 - If the server requires a mandatory password change, use the existing Web/PWA
   page first. This preview cannot change passwords.
 
 ## Native Photos permission and metadata inventory
 
-After native login, tap **检查系统相册（不上传）**, then **允许检查系统相册**.
+After native login, verify the current Owner and open **系统相册识别与单张照片手动上传**; the permission prompt appears only after tapping **允许检查系统相册**.
 PhotoKit requests `readWrite` access only after this second explicit tap. A
 `limited` grant is respected: totals refer only to the subset made visible by
 iOS. Reopen the panel to refresh counts; changing authorization uses iOS Settings.
@@ -38,10 +38,7 @@ component is reported as incomplete, never backed up as a finished Live Photo.
 Full-resolution resource existence does not prove iCloud bytes are locally
 available; this does not start an iCloud download or upload. No localIdentifier
 or resource filename is saved into credentials, persisted state or Server.
- It neither loads
-original bytes nor accesses GPS, caches local identifiers, stores personal
-assets or writes anything to Server. This is **local recognition**, not an
-upload, a complete Live Photo pair validator, or a background sync engine.
+ Ordinary local inventory inspection does not load original bytes, GPS or upload data. However, **explicit single-still manual upload and user-triggered foreground backup are different actions**: they read authorized original bytes and write the actual file through authenticated Server UploadSession after a separate user click. Live Photo paired completion, background sync and all-library coverage are not inferred from a single file receipt.
 There is no PhotoKit authorization prompt at app launch or native login.
 
 **Required for true native MVP**: securely mount the PWA's real Files/Gallery
@@ -53,9 +50,7 @@ reconciliation after uncertain ACK; handle iCloud originals, albums,
 delete/mirror policy, permissions changes, app restarts and background
 constraints. Never equate a successful count with a successful backup.
 
-Not yet implemented: Android's separate optional LAN IP routing, HTTP opt-in,
-Files, Gallery, Viewer, transfers, actual Photos backup, background sync
-and real iOS device acceptance.
+Not yet implemented as native equivalents: Android's optional LAN IP routing or HTTP opt-in. PWA Files, Gallery and Viewer run through the WebKit host. Native background photo sync, Live original pair completion and real iOS device acceptance remain outstanding. The first foreground ordinary-still backup flow is limited to explicitly authorized Owner Files writes, not a privileged Device SourceRun.
 If using a LAN IP as the primary server URL, its HTTPS certificate must actually
 validate for that IP; preferably use your trusted server hostname with local DNS.
 No certificate-warning bypass or fake LAN failover is implemented.

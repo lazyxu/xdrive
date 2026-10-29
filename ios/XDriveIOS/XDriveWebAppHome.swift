@@ -42,7 +42,7 @@ struct XDriveWebAppHome: View {
                         Button {
                             nativeLoginVisible = true
                         } label: {
-                            Label("原生登录诊断（独立会话）", systemImage: "person.crop.circle")
+                            Label("原生相册备份与账户工具（独立会话）", systemImage: "photo.on.rectangle.angled")
                         }
                     } label: {
                         Image(systemName: "ellipsis.circle.fill")
@@ -162,7 +162,7 @@ struct XDriveWebAppHome: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Button("打开原生登录诊断") { nativeLoginVisible = true }
+                Button("打开原生相册工具与登录") { nativeLoginVisible = true }
                     .buttonStyle(.bordered)
             }
             .frame(maxWidth: 430, alignment: .leading)
