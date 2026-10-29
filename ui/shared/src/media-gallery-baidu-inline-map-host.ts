@@ -313,7 +313,8 @@ export function xDriveMountBaiduInlineMap<T>(
     // The camera really moved, but this SDK omitted movestart. Run the
     // EXISTING revocation + inert-photo projection once, before SDK moveend,
     // so stale Owner thumbnails cannot remain clickable during this drag.
-    if (cells.length>0) stopViewport()
+    if (cells.length>0 || gestureCells.length===0) stopViewport()
+    else viewportAfterMouseRelease = true
   }
   const releaseHeldMouse = (pointerID?: number) => {
     const mouseMatches = heldMousePointer !== null &&
