@@ -58,6 +58,8 @@
   // The Child observes ONLY genuine local mouse pointer lifecycle; no
   // Owner/Photo scope or mouse coordinates enter the Parent protocol.
   let heldMousePointer = null, viewportAfterMouseRelease = false
+  // No private data or pointer identifiers cross this isolated Origin.
+  const heldTouchPointers = new Set()
   let observedSize = null, sizeObserver = null, windowResizeFallback = false
   let resizeRevoked = false
   const send = (kind, fields = {}) => {
@@ -202,13 +204,13 @@
     viewportTimer = null
     // Some JSAPI versions emit moveend before the physical left button lifts.
     // Keep the old signed photo pixels as inert projections until pointerup.
-    if (heldMousePointer !== null) {
+    if (heldMousePointer !== null || heldTouchPointers.size > 0) {
       viewportAfterMouseRelease = true
       return
     }
     viewportTimer = setTimeout(() => {
       viewportTimer = null
-      if (heldMousePointer !== null) {
+      if (heldMousePointer !== null || heldTouchPointers.size > 0) {
         viewportAfterMouseRelease = true
         return
       }
@@ -216,7 +218,8 @@
     }, 500)
   }
   const stopViewport = () => {
-    if (heldMousePointer !== null) viewportAfterMouseRelease = true
+    if (heldMousePointer !== null || heldTouchPointers.size > 0)
+      viewportAfterMouseRelease = true
     if (viewportTimer !== null) clearTimeout(viewportTimer)
     viewportTimer = null
     if (allowedKeys.size>0)gestureCells=cells.map(cell=>({...cell}))
@@ -231,16 +234,25 @@
   // a real SDK gesture. Never keep photo covers attached to old CSS pixels.
   // The parent still owns the ONLY authorized /cells query after debounce.
   const onMousePointerDown = event => {
-    if (!disposed && active && map && event.isTrusted && event.isPrimary &&
-        event.pointerType === 'mouse' && event.button === 0)
-      heldMousePointer = event.pointerId
+    if (disposed || !active || !map || !event.isTrusted || event.button!==0)
+      return
+    if (event.pointerType==='mouse' && event.isPrimary)
+      heldMousePointer=event.pointerId
+    else if (event.pointerType==='touch' || event.pointerType==='pen')
+      heldTouchPointers.add(event.pointerId)
   }
   const releaseHeldMouse = pointerID => {
-    if (heldMousePointer === null ||
-        (pointerID !== undefined && pointerID !== heldMousePointer)) return
-    heldMousePointer = null
+    const mouseMatches=heldMousePointer!==null &&
+      (pointerID===undefined || pointerID===heldMousePointer)
+    const touchMatches=pointerID===undefined
+      ? heldTouchPointers.size>0 : heldTouchPointers.delete(pointerID)
+    if (!mouseMatches && !touchMatches) return
+    if (mouseMatches) heldMousePointer=null
+    if (pointerID===undefined) heldTouchPointers.clear()
+    // Multitouch pinch isn't settled until its final current contact lifts.
+    if (heldMousePointer!==null || heldTouchPointers.size>0) return
     if (!viewportAfterMouseRelease) return
-    viewportAfterMouseRelease = false
+    viewportAfterMouseRelease=false
     if (!disposed && active && map) scheduleViewport()
   }
   const onMousePointerUp = event => releaseHeldMouse(event.pointerId)
@@ -255,6 +267,7 @@
   }
   const releaseMousePointer = () => {
     heldMousePointer=null
+    heldTouchPointers.clear()
     viewportAfterMouseRelease=false
     canvas?.removeEventListener('pointerdown',onMousePointerDown,true)
     window.removeEventListener('pointerup',onMousePointerUp,true)
