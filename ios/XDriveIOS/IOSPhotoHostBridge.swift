@@ -540,9 +540,10 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                     sendResult(id, ["pending": 0, "maxPerRun": Self.maxReceiptReviewPerRun])
                     return
                 }
-                let records = try await XDrivePhotoSyncLedger.shared.operations(scope: scope)
+                let snapshot = try await XDrivePhotoSyncLedger.shared
+                    .pendingReceiptSnapshot(scope: scope, limit: 0)
                 sendResult(id, [
-                    "pending": records.filter { self.needsReceiptReview($0) }.count,
+                    "pending": snapshot.pending,
                     "maxPerRun": Self.maxReceiptReviewPerRun
                 ])
             } catch {
@@ -585,11 +586,12 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                         return
                     }
                     let ledger = XDrivePhotoSyncLedger.shared
-                    let records = try await ledger.operations(scope: scope)
-                    let uncertain = records.filter { self.needsReceiptReview($0) }
-                    let batch = Array(uncertain.prefix(Self.maxReceiptReviewPerRun))
+                    let snapshot = try await ledger.pendingReceiptSnapshot(
+                        scope: scope, limit: Self.maxReceiptReviewPerRun
+                    )
+                    let batch = snapshot.batch
                     var progress: [String: Any] = [
-                        "pending": uncertain.count,
+                        "pending": snapshot.pending,
                         "checked": 0,
                         "confirmed": 0,
                         "activeUnverified": 0,
@@ -622,9 +624,11 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                         progress["stage"] = "已核对 \(progress["checked"] as? Int ?? 0)/\(batch.count) 项"
                         self.sendReviewProgress(id, progress)
                     }
-                    let latest = try await ledger.operations(scope: scope)
+                    let latest = try await ledger.pendingReceiptSnapshot(
+                        scope: scope, limit: 0
+                    )
                     try Task.checkCancellation()
-                    progress["pending"] = latest.filter { self.needsReceiptReview($0) }.count
+                    progress["pending"] = latest.pending
                     progress["stage"] = "本轮只读核对已结束；未证实的收据继续保留"
                     self.sendResult(id, progress)
                 } catch is CancellationError {

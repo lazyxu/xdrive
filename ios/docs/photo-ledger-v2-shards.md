@@ -32,6 +32,13 @@ Node SHA+revision receipts.
 - A per-original upload or uncertain-ACK check reads the bounded V1 file
   and its selected authenticated V2 shard; it never loads all 4096 shards
   into memory on each transfer.
+- The explicit Owner receipt-review UI now performs a bounded-memory
+  `pendingReceiptSnapshot`: it counts uncertain operations across all
+  currently authorized V1/V2 shards, holds at most 20 records for one
+  review, rejects cross-version duplicate identities, and refuses
+  corrupt/tampered shards. Each proof lookup uses `operation(scope:id:)`
+  rather than decoding all 100k intents again. This bounds **memory**,
+  not the time needed to read every shard for an exact pending count.
 - A full read-only receipt inventory merges V1 and all present V2 files,
   rejects duplicate IDs/fingerprints, tampered or unreadable shards, wrong
   version/scope or changed authentication tags. It never substitutes empty

@@ -275,6 +275,54 @@ actor XDrivePhotoSyncLedger {
         return all
     }
 
+    /// Report the exact number of potentially committed / unverified
+    /// originals while retaining only a small review batch. Decrypt one
+    /// Owner-bound shard at a time; never materialize the entire 100k ledger.
+    ///
+    /// V1 can contain at most 1024 operations. A V2 item's authenticated
+    /// fingerprint and UUID *both* have the shard prefix, so two distinct
+    /// V2 shards cannot share either identity. Compare each V2 record with
+    /// V1's bounded set to reject duplicates across versions.
+    func pendingReceiptSnapshot(scope: XDrivePhotoSyncScope, limit: Int)
+        throws -> (pending: Int, batch: [XDrivePhotoSyncOperation]) {
+        guard limit >= 0, limit <= 20 else {
+            throw XDrivePhotoSyncLedgerError.invalidResource
+        }
+        try Task.checkCancellation()
+        let key = try encryptionKey()
+        let legacy = try read(scope: scope, key: key).operations
+        let legacyIDs = Set(legacy.map(\.id))
+        let legacyFingerprints = Set(legacy.map(\.assetFingerprint))
+        var pending = 0
+        var batch: [XDrivePhotoSyncOperation] = []
+        batch.reserveCapacity(limit)
+
+        func consider(_ item: XDrivePhotoSyncOperation) {
+            switch item.state {
+            case .creating, .uploading, .finalizing, .needsReconciliation:
+                pending += 1
+                if batch.count < limit { batch.append(item) }
+            case .prepared, .confirmed:
+                break
+            }
+        }
+
+        for item in legacy { consider(item) }
+        for prefix in try availableShardPrefixes(scope: scope) {
+            try Task.checkCancellation()
+            let shard = try readShard(scope: scope, key: key, prefix: prefix)
+            for item in shard.operations {
+                guard !legacyIDs.contains(item.id),
+                      !legacyFingerprints.contains(item.assetFingerprint) else {
+                    throw XDrivePhotoSyncLedgerError.identityMismatch
+                }
+                consider(item)
+            }
+        }
+        try Task.checkCancellation()
+        return (pending: pending, batch: batch)
+    }
+
     /// Read one authenticated operation without decrypting every V2 shard.
     /// Legacy V1 is checked first so its confirmed and uncertain operations
     /// remain authoritative. The UUID prefix is only a locator, never proof
