@@ -2648,12 +2648,12 @@ export class AgentIPCClient {
     return this.request<AgentSettings>('PUT', '/v1/settings/sync-rule', { path, mode })
   }
 
-  storageTree() {
-    return this.request<AgentStorageTreeNode>('GET', '/v1/storage-tree', undefined, 45_000)
+  storageTree(signal?: AbortSignal) {
+    return this.request<AgentStorageTreeNode>('GET', '/v1/storage-tree', undefined, 45_000, signal)
   }
 
-  cacheStats() {
-    return this.request<AgentCacheStats>('GET', '/v1/cache')
+  cacheStats(signal?: AbortSignal) {
+    return this.request<AgentCacheStats>('GET', '/v1/cache', undefined, 10_000, signal)
   }
 
   localDiskSpace(signal?: AbortSignal) {
@@ -4393,8 +4393,10 @@ export class AgentIPCClient {
   cloudAdminAuditRange(query: AgentAdminAuditRangeQuery, signal?: AbortSignal) {
     return this.request<AgentAdminAuditRange>('POST', '/v1/cloud/admin-audit/range', query, 20_000, signal)
   }
-  cloudAdminUsers() {
-    return this.request<AgentAdminUser[]>('GET', '/v1/cloud/admin-users')
+  cloudAdminUsers(signal?: AbortSignal) {
+    // Only this administrator listing GET may be discarded on navigation.
+    return this.request<AgentAdminUser[]>('GET', '/v1/cloud/admin-users',
+      undefined, 10_000, signal)
   }
   cloudAdminCreateUser(input: AgentAdminCreateUserInput) {
     return this.request<AgentAdminUser>('POST', '/v1/cloud/admin-users', input)
@@ -4413,14 +4415,15 @@ export class AgentIPCClient {
     return this.request<{ ok: boolean }>('DELETE', `/v1/cloud/admin-users/${id}`)
   }
 
-  cloudBackgroundTaskActiveSummary() {
+  cloudBackgroundTaskActiveSummary(signal?: AbortSignal) {
     return this.request<AgentBackgroundTaskActiveSummary>(
       'GET',
       '/v1/cloud/background-task-summary',
+      undefined, 10_000, signal,
     )
   }
 
-  cloudBackgroundTaskPage(global = false, limit = 50, cursor = '') {
+  cloudBackgroundTaskPage(global = false, limit = 50, cursor = '', signal?: AbortSignal) {
     const query = new URLSearchParams({
       limit: String(Math.min(200, Math.max(1, Math.trunc(limit)))),
       ...(global ? { global: 'true' } : {}),
@@ -4429,6 +4432,7 @@ export class AgentIPCClient {
     return this.request<AgentBackgroundTaskPage>(
       'GET',
       `/v1/cloud/background-task-page?${query.toString()}`,
+      undefined, 10_000, signal,
     )
   }
 

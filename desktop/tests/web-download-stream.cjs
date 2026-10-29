@@ -284,3 +284,37 @@ test('Web authenticated download wires one coalesced progress reporter across di
   assert.ok(method.includes('webTransferStore.complete(transferID, completed, total || completed)'))
 })
 
+test('Web/PWA save picker is invoked with its Window receiver, not as a detached host method', async () => {
+  const { xDriveOpenWebDownloadSink } = loadDownloadSink()
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'showSaveFilePicker')
+  const writable = {
+    async write() {}, async close() {}, async abort() {},
+  }
+  const handle = {
+    async createWritable() {
+      assert.equal(this, handle, 'createWritable retains the returned handle receiver')
+      return writable
+    },
+  }
+  let opens = 0
+  try {
+    Object.defineProperty(globalThis, 'showSaveFilePicker', {
+      configurable: true,
+      value: function (options) {
+        opens++
+        assert.equal(this, globalThis,
+          'native showSaveFilePicker must receive the global Window context')
+        assert.deepEqual(options, { suggestedName: 'signed-owner-export.zip' })
+        return Promise.resolve(handle)
+      },
+    })
+    const sink = await xDriveOpenWebDownloadSink('signed-owner-export.zip')
+    assert.equal(opens, 1, 'the user gesture opens exactly one picker')
+    assert.equal(sink.kind, 'file-system')
+    assert.equal(sink.writable, writable)
+    assert.equal(sink.settled, false)
+  } finally {
+    if (previous) Object.defineProperty(globalThis, 'showSaveFilePicker', previous)
+    else delete globalThis.showSaveFilePicker
+  }
+})

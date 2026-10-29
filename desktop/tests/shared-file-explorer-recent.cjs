@@ -189,7 +189,7 @@ test('Recent crosses Server, Go client, Agent and Electron bridges', () => {
   assert.ok(rendererTypes.includes('AgentCloudRecentItem'), 'renderer Recent type missing')
 
   for (const token of [
-    'fileRecent(limit = 16)',
+    'fileRecent(limit = 16, signal?: AbortSignal)',
     'touchFileRecent(nodeID: number)',
     'clearFileRecent()',
   ]) assert.ok(webApi.includes(token), 'Web Recent REST adapter missing: ' + token)

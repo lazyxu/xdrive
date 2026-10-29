@@ -51,8 +51,10 @@ test('Web exposes Home as a first-class workspace and keeps platform adapters lo
   assert.ok(webApp.includes("label: '主页'"))
   assert.ok(webApp.includes("appView === 'overview'"))
   assert.ok(webApp.includes('<WebOverviewPage'))
-  assert.ok(webHome.includes('api.fileRecent(6)'))
-  assert.ok(webHome.includes('api.fileFavorites()'))
+  assert.ok(webHome.includes('api.fileRecent(6, read.signal)'),
+    'Home reads must use the current disposable Recent transport scope')
+  assert.ok(webHome.includes('api.fileFavorites(read.signal)'),
+    'Home Favorites GET must share the same scoped signal')
   assert.ok(webHome.includes('api.mediaThumbnail(id, requestSignal)'))
   assert.ok(webHome.includes('onOpenDirectory(entry.node.id, entry.crumbs)'))
   assert.ok(webHome.includes('entry.crumbs.slice(0, -1)'))

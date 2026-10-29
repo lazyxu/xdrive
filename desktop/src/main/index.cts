@@ -2856,16 +2856,18 @@ function registerIPCHandlers() {
 
   ipcMain.handle('agent:get-state', () => agentState)
   ipcMain.handle('agent:get-transfers', () => agentTransfers)
-  ipcMain.handle('agent:get-storage-tree', () => runAgentAction<AgentStorageTreeNode>(async () => {
-    const hello = await requireAgentLifecycle().ensureRunning()
-    requireAgentCapability(hello, 'storage-tree')
-    return requireAgentClient().storageTree()
-  }, false))
-  ipcMain.handle('agent:get-cache', () => runAgentAction<AgentCacheStats>(async () => {
-    const hello = await requireAgentLifecycle().ensureRunning()
-    requireAgentCapability(hello, 'cache-management')
-    return requireAgentClient().cacheStats()
-  }, false))
+  ipcMain.handle('agent:get-storage-tree', (event, requestID: unknown = undefined) =>
+    runAgentAction<AgentStorageTreeNode>(() => viewportRequests.run(event.sender, requestID, async signal => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'storage-tree')
+      return requireAgentClient().storageTree(signal)
+    }), false))
+  ipcMain.handle('agent:get-cache', (event, requestID: unknown = undefined) =>
+    runAgentAction<AgentCacheStats>(() => viewportRequests.run(event.sender, requestID, async signal => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'cache-management')
+      return requireAgentClient().cacheStats(signal)
+    }), false))
   ipcMain.handle('agent:get-local-disk-space', (event, requestID: unknown = undefined) =>
     runAgentAction<AgentLocalDiskSpace>(() => viewportRequests.run(event.sender, requestID, async signal => {
       const hello = await requireAgentLifecycle().ensureRunning()
@@ -6956,8 +6958,14 @@ function registerIPCHandlers() {
     }
     return id
   }
-  ipcMain.handle('agent:cloud-admin-users', () => runAgentAction<AgentAdminUser[]>(async () =>
-    (await requireDesktopAdminUsers()).cloudAdminUsers(), false))
+  ipcMain.handle('agent:cloud-admin-users', (event, requestID: unknown = undefined) =>
+    runAgentAction<AgentAdminUser[]>(() =>
+      viewportRequests.run(event.sender, requestID, async signal => {
+        // Existing administrator role/capability gate remains authoritative.
+        const admin = await requireDesktopAdminUsers()
+        if (signal?.aborted) throw new AgentIPCError('aborted', 0, 'Admin Users list request cancelled.')
+        return admin.cloudAdminUsers(signal)
+      }), false))
   ipcMain.handle('agent:cloud-admin-users-create', (_event, input: unknown) =>
     runAgentAction<AgentAdminUser>(async () => {
       if (!input || typeof input !== 'object' || Array.isArray(input)) {
@@ -7003,32 +7011,37 @@ function registerIPCHandlers() {
   ipcMain.handle('agent:cloud-admin-users-delete', (_event, id: unknown) =>
     runAgentAction<{ ok: boolean }>(async () =>
       (await requireDesktopAdminUsers()).cloudAdminDeleteUser(checkedAdminUserID(id)), false))
+  // These two authenticated GETs are disposable *readers*. They use the
+  // existing sender-scoped viewport registry; no task control or durable
+  // operation is ever registered here.
   ipcMain.handle(
     'agent:cloud-background-task-summary',
-    () => runAgentAction<AgentBackgroundTaskActiveSummary>(async () => {
-      const hello = await requireAgentLifecycle().ensureRunning()
-      requireAgentCapability(hello, 'background-task-summary')
-      return requireAgentClient().cloudBackgroundTaskActiveSummary()
-    }, false),
+    (event, requestID: unknown = undefined) =>
+      runAgentAction<AgentBackgroundTaskActiveSummary>(
+        () => viewportRequests.run(event.sender, requestID, async signal => {
+          const hello = await requireAgentLifecycle().ensureRunning()
+          requireAgentCapability(hello, 'background-task-summary')
+          return requireAgentClient().cloudBackgroundTaskActiveSummary(signal)
+        }), false),
   )
   ipcMain.handle('agent:cloud-background-task-page', (
-    _event,
+    event,
     global: unknown,
     limit: unknown,
     cursor: unknown,
-  ) => runAgentAction<AgentBackgroundTaskPage>(async () => {
-    const hello = await requireAgentLifecycle().ensureRunning()
-    requireAgentCapability(hello, 'background-tasks')
-    const parsedLimit = typeof limit === 'number' && Number.isSafeInteger(limit)
-      ? Math.min(200, Math.max(1, limit))
-      : 50
-    const parsedCursor = typeof cursor === 'string' ? cursor.trim() : ''
-    return requireAgentClient().cloudBackgroundTaskPage(
-      global === true,
-      parsedLimit,
-      parsedCursor,
-    )
-  }, false))
+    requestID: unknown = undefined,
+  ) => runAgentAction<AgentBackgroundTaskPage>(
+    () => viewportRequests.run(event.sender, requestID, async signal => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'background-tasks')
+      const parsedLimit = typeof limit === 'number' && Number.isSafeInteger(limit)
+        ? Math.min(200, Math.max(1, limit))
+        : 50
+      const parsedCursor = typeof cursor === 'string' ? cursor.trim() : ''
+      return requireAgentClient().cloudBackgroundTaskPage(
+        global === true, parsedLimit, parsedCursor, signal,
+      )
+    }), false))
   ipcMain.handle('agent:cloud-background-tasks', (_event, global: unknown, limit: unknown) => runAgentAction<AgentBackgroundTask[]>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'background-tasks')

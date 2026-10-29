@@ -149,6 +149,8 @@ export type XDriveServerBackupPage = {
     generated_at: string
     policy: XDriveServerBackupPolicy
     snapshots: XDriveServerBackupSnapshot[]
+    total_snapshots?: number
+    truncated?: boolean
   }
   operation: XDriveServerBackupOperation
   retention?: XDriveServerBackupRetention

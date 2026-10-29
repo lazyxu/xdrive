@@ -1,6 +1,11 @@
 import { xDriveBaiduNativeCellsFilterParams, xDriveBaiduNativeViewportRangeParams, xDriveValidBaiduNativeViewportRangePage } from '../../ui/shared/src/media-gallery-baidu-jsapi4-viewport-range'
 import { xDriveValidBaiduNativeCellsPage } from '../../ui/shared/src/media-gallery-baidu-jsapi4-cells'
 import {
+  xDriveBaiduOwnerPhotoFocusParams,
+  xDriveOwnerPhotoFocusSignalActive,
+  xDriveValidBaiduOwnerPhotoFocus,
+} from '../../ui/shared/src/media-gallery-baidu-photo-focus'
+import {
   xDriveBaiduNativeCellRangeParams, xDriveValidBaiduNativeCellRangePage,
 } from '../../ui/shared/src/media-gallery-baidu-jsapi4-cell-range'
 import type { XDriveBaiduCellRangeSort } from '../../ui/shared/src/media-gallery-baidu-jsapi4-cell-range'
@@ -1973,6 +1978,29 @@ export class XDriveApi {
     })
   }
 
+  /**
+   * A specific, currently authorized Photo Info Node -> derived BD-09 camera
+   * hint for the trusted Parent. It is NOT a Gallery/Viewer authorization:
+   * callers must still independently revalidate the current signed /cells.
+   * Neither source WGS84 nor any token/AK reaches the SDK Child or a URL.
+   */
+  mediaBaiduNativePhotoFocus(
+    nodeID: number, revision: number, signal: AbortSignal,
+  ) {
+    const q = xDriveBaiduOwnerPhotoFocusParams(nodeID, revision)
+    if (!q || !xDriveOwnerPhotoFocusSignalActive(signal))
+      return Promise.reject(new Error('Invalid or cancelled Owner photo focus'))
+    return this.request<unknown>(
+      '/api/v1/media/places/baidu-jsapi/photo-focus?' + q.toString(),
+      { signal, cache: 'no-store' },
+    ).then(value => {
+      if (!xDriveOwnerPhotoFocusSignalActive(signal) ||
+          !xDriveValidBaiduOwnerPhotoFocus(value, nodeID, revision))
+        throw new Error('Invalid or cancelled Owner BD09 photo focus')
+      return value
+    })
+  }
+
   /** Signed runtime only: 8x8 bounded Owner BD09 aggregate, never Browser AK. */
   mediaBaiduNativeCells(
     bounds: MediaBaiduNativeViewportBounds,
@@ -3094,8 +3122,8 @@ export class XDriveApi {
     })
   }
 
-  fileFavorites() {
-    return this.request<XDriveFileFavoriteItem<Node>[]>('/api/v1/file-favorites')
+  fileFavorites(signal?: AbortSignal) {
+    return this.request<XDriveFileFavoriteItem<Node>[]>('/api/v1/file-favorites', { signal })
   }
 
   favoriteFile(nodeID: number) {
@@ -3110,8 +3138,8 @@ export class XDriveApi {
     })
   }
 
-  fileRecent(limit = 16) {
-    return this.request<XDriveFileRecentItem<Node>[]>(`/api/v1/file-recent?limit=${Math.min(50, Math.max(1, Math.trunc(limit)))}`)
+  fileRecent(limit = 16, signal?: AbortSignal) {
+    return this.request<XDriveFileRecentItem<Node>[]>(`/api/v1/file-recent?limit=${Math.min(50, Math.max(1, Math.trunc(limit)))}`, { signal })
   }
 
   touchFileRecent(nodeID: number) {
@@ -3552,9 +3580,10 @@ export class XDriveApi {
     })
   }
 
-  backgroundTaskActiveSummary() {
+  backgroundTaskActiveSummary(signal?: AbortSignal) {
     return this.request<XDriveBackgroundTaskActiveSummary>(
       '/api/v1/background-tasks/active-summary',
+      { signal },
     )
   }
 
@@ -3563,21 +3592,23 @@ export class XDriveApi {
     return this.request<XDriveBackgroundTask[]>(`/api/v1/background-tasks?limit=${bounded}`)
   }
 
-  backgroundTaskPage(limit = 50, cursor = '') {
+  backgroundTaskPage(limit = 50, cursor = '', signal?: AbortSignal) {
     const bounded = Math.min(200, Math.max(1, Math.trunc(limit)))
     const query = new URLSearchParams({ limit: String(bounded) })
     if (cursor.trim()) query.set('cursor', cursor.trim())
     return this.request<XDriveBackgroundTaskPage>(
       `/api/v1/background-tasks/page?${query.toString()}`,
+      { signal },
     )
   }
 
-  adminBackgroundTaskPage(limit = 50, cursor = '') {
+  adminBackgroundTaskPage(limit = 50, cursor = '', signal?: AbortSignal) {
     const bounded = Math.min(200, Math.max(1, Math.trunc(limit)))
     const query = new URLSearchParams({ limit: String(bounded) })
     if (cursor.trim()) query.set('cursor', cursor.trim())
     return this.request<XDriveBackgroundTaskPage>(
       `/api/v1/admin/background-tasks/page?${query.toString()}`,
+      { signal },
     )
   }
 

@@ -55,6 +55,15 @@ private struct NativeUploadStartDTO: Encodable {
     let conflict_policy = "fail"
 }
 
+/// Acknowledged session transitions must be durable BEFORE any upload write.
+/// The native encrypted journal supplies all three callbacks. Failure stops
+/// the transport; no retry or later checkpoint is silently attempted.
+struct XDriveNativeUploadCheckpointHooks {
+    let beforeCreate: () async throws -> Void
+    let sessionAccepted: (String) async throws -> Void
+    let beforeFinalize: () async throws -> Void
+}
+
 private final class NativePhotoDenyRedirects: NSObject, URLSessionTaskDelegate {
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse,
@@ -97,18 +106,59 @@ final class XDriveNativeUploadSessionTransport {
     /// resource identity before calling this method.
     func uploadOnce(from stagedFileURL: URL, name: String, parentID: UInt64) async throws
         -> XDriveNativeUploadReceipt {
+        try await uploadInternally(from: stagedFileURL, name: name, parentID: parentID,
+                                   resumeKey: "iosmanual_" + UUID().uuidString.lowercased(),
+                                   expectedSize: nil, expectedSHA256: nil, hooks: nil)
+    }
+
+    /// This is the ledger-backed path, not a public retry API. Only accept an
+    /// existing 256-bit HMAC resume key; the calling Owner runner MUST persist
+    /// each journal transition using the supplied durable callbacks.
+    func uploadPreparedOriginal(from stagedFileURL: URL, name: String, parentID: UInt64,
+                                resumeKey: String, expectedSize: Int64,
+                                expectedSHA256: String, hooks: XDriveNativeUploadCheckpointHooks)
+        async throws -> XDriveNativeUploadReceipt {
+        guard resumeKey.hasPrefix("ios_"), resumeKey.utf8.count == 68,
+              resumeKey.dropFirst(4).utf8.allSatisfy({
+                  ($0 >= 48 && $0 <= 57) || ($0 >= 97 && $0 <= 102)
+              }),
+              expectedSize >= 0, expectedSHA256.utf8.count == 64,
+              expectedSHA256.utf8.allSatisfy({
+                  ($0 >= 48 && $0 <= 57) || ($0 >= 97 && $0 <= 102)
+              }) else {
+            throw XDriveNativeUploadError.invalidLocalFile
+        }
+        return try await uploadInternally(from: stagedFileURL, name: name, parentID: parentID,
+                                          resumeKey: resumeKey, expectedSize: expectedSize,
+                                          expectedSHA256: expectedSHA256, hooks: hooks)
+    }
+
+    private func uploadInternally(from stagedFileURL: URL, name: String, parentID: UInt64,
+                                  resumeKey: String, expectedSize: Int64?,
+                                  expectedSHA256: String?, hooks: XDriveNativeUploadCheckpointHooks?)
+        async throws -> XDriveNativeUploadReceipt {
         guard stagedFileURL.isFileURL, parentID > 0, validName(name) else {
             throw XDriveNativeUploadError.invalidLocalFile
         }
         let fileSize = try localSize(stagedFileURL)
         let hashes = try fileHashes(stagedFileURL, expectedSize: fileSize)
-        let resumeKey = "iosmanual_" + UUID().uuidString.lowercased()
+        // All bytes are checked BEFORE the journal is advanced to creating.
+        // An outdated Photos export can never be submitted against a saved
+        // resource identity, even if its filename is unchanged.
+        if let expectedSize, expectedSize != fileSize {
+            throw XDriveNativeUploadError.invalidLocalFile
+        }
+        if let expectedSHA256, expectedSHA256 != hashes.full {
+            throw XDriveNativeUploadError.invalidLocalFile
+        }
         let initData = try JSONEncoder().encode(NativeUploadStartDTO(
             parent_id: parentID, name: name, size: fileSize,
             chunk_size: Int64(Self.chunkBytes), sha256: hashes.full,
             resume_key: resumeKey
         ))
 
+        try Task.checkCancellation()
+        if let hooks { try await hooks.beforeCreate() }
         try Task.checkCancellation()
         // Never retry a POST that may have created an UploadSession. A durable
         // ledger is required before supporting cross-process replay by key.
@@ -125,7 +175,13 @@ final class XDriveNativeUploadSessionTransport {
 
         try validate(created, parentID: parentID, name: name,
                      size: fileSize, fullHash: hashes.full, chunkHashes: hashes.parts)
+        // The Server-issued UUID is recorded BEFORE any PUT or finalize.
+        if let hooks { try await hooks.sessionAccepted(created.id) }
+        try Task.checkCancellation()
         if created.status == "finalized" {
+            // Instant CAS dedup may physically commit during POST /uploads.
+            // Still record finalizing before accepting the trusted receipt.
+            if let hooks { try await hooks.beforeFinalize() }
             return try verifiedReceipt(created, size: fileSize, hash: hashes.full, name: name)
         }
         guard created.status == "active" else {
@@ -173,6 +229,9 @@ final class XDriveNativeUploadSessionTransport {
         guard (try? localSize(stagedFileURL)) == fileSize else {
             throw XDriveNativeUploadError.invalidLocalFile
         }
+        // Persist the possibility of CAS physical commit before finalize POST.
+        if let hooks { try await hooks.beforeFinalize() }
+        try Task.checkCancellation()
         // Finalize's ACK might be lost after the CAS physical commit. A
         // failed/malformed response requires GET; no blind finalize replay.
         do {

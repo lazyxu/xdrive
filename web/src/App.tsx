@@ -1545,9 +1545,14 @@ function FileManager({
     statsUnavailableMessage: '当前服务端未提供账号文件大小分布。',
   }), [api, applyQuota])
   const localStorageSource = useMemo<XDriveLocalStorageDataSource>(() => ({
-    load: async () => ({
-      browserStorage: await createWebBrowserStorageSnapshot(),
-    }),
+    // Safari storage.estimate()/CacheStorage do not expose an AbortSignal.
+    // Fence their late response but never cancel a deliberate cache purge.
+    load: async (signal?: AbortSignal) => {
+      signal?.throwIfAborted()
+      const browserStorage = await createWebBrowserStorageSnapshot()
+      signal?.throwIfAborted()
+      return { browserStorage }
+    },
     clearBrowserCache: clearWebBrowserCache,
   }), [])
 
@@ -1674,13 +1679,14 @@ function FileManager({
   })
 
   const backgroundTaskPort = useMemo(() => ({
-    loadActiveSummary: () => api.backgroundTaskActiveSummary(),
-    loadMinePage: (limit: number, cursor?: string) =>
-      api.backgroundTaskPage(limit, cursor),
+    loadActiveSummary: (signal?: AbortSignal) => api.backgroundTaskActiveSummary(signal),
+    loadMinePage: (limit: number, cursor?: string, signal?: AbortSignal) =>
+      api.backgroundTaskPage(limit, cursor, signal),
     loadGlobalPage: profile?.role === 'admin'
-      ? (limit: number, cursor?: string) =>
-          api.adminBackgroundTaskPage(limit, cursor)
+      ? (limit: number, cursor?: string, signal?: AbortSignal) =>
+          api.adminBackgroundTaskPage(limit, cursor, signal)
       : undefined,
+    // Never use navigation/foreground AbortSignal for durable task control POST.
     control: (id: string, action: string, global: boolean) =>
       api.controlBackgroundTask(id, action, global),
   }), [api, profile?.role])

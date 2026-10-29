@@ -885,32 +885,32 @@ export default function App({
 
   const backgroundTaskPort = useMemo(() => backgroundTasksSupported ? ({
     loadActiveSummary: backgroundTaskSummarySupported
-      ? async () => {
-          const result = await window.xdriveDesktop.agent.cloudBackgroundTaskActiveSummary()
+      ? async (signal?: AbortSignal) => {
+          const result = await xDriveDesktopViewportRequest(signal, requestID =>
+            window.xdriveDesktop.agent.cloudBackgroundTaskActiveSummary(requestID))
           if (!result.ok) throw new Error(result.error.message)
           return result.data
         }
       : undefined,
-    loadMinePage: async (limit: number, cursor?: string) => {
-      const result = await window.xdriveDesktop.agent.cloudBackgroundTaskPage(
-        false,
-        limit,
-        cursor ?? '',
-      )
+    loadMinePage: async (limit: number, cursor?: string, signal?: AbortSignal) => {
+      const result = await xDriveDesktopViewportRequest(signal, requestID =>
+        window.xdriveDesktop.agent.cloudBackgroundTaskPage(
+          false, limit, cursor ?? '', requestID,
+        ))
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
     loadGlobalPage: status?.role === 'admin'
-      ? async (limit: number, cursor?: string) => {
-          const result = await window.xdriveDesktop.agent.cloudBackgroundTaskPage(
-            true,
-            limit,
-            cursor ?? '',
-          )
+      ? async (limit: number, cursor?: string, signal?: AbortSignal) => {
+          const result = await xDriveDesktopViewportRequest(signal, requestID =>
+            window.xdriveDesktop.agent.cloudBackgroundTaskPage(
+              true, limit, cursor ?? '', requestID,
+            ))
           if (!result.ok) throw new Error(result.error.message)
           return result.data
         }
       : undefined,
+    // Durable Server task Cancel/Retry/etc does NOT own a viewport signal.
     control: async (id: string, action: string, global: boolean) => {
       const result = await window.xdriveDesktop.agent.cloudBackgroundTaskControl(
         id,
@@ -1000,12 +1000,18 @@ export default function App({
       : '当前 xdrive-agent 不支持账号文件大小分布，请更新客户端核心组件。',
   }), [applyCloudQuota, storageStatsSupported])
   const localStorageSource = useMemo<XDriveLocalStorageDataSource>(() => ({
-    load: async () => {
+    load: async (signal?: AbortSignal) => {
+      // Browser cache does not expose cancellation; Agent storage/cache GETs do.
+      // This scope never cancels persistent cache releases or policy changes.
+      signal?.throwIfAborted()
       const [browserResult, treeResult, cacheResult] = await Promise.all([
         window.xdriveDesktop.getBrowserCache(),
-        window.xdriveDesktop.agent.getStorageTree(),
-        window.xdriveDesktop.agent.getCache(),
+        xDriveDesktopViewportRequest(signal,
+          requestID => window.xdriveDesktop.agent.getStorageTree(requestID)),
+        xDriveDesktopViewportRequest(signal,
+          requestID => window.xdriveDesktop.agent.getCache(requestID)),
       ])
+      signal?.throwIfAborted()
       if (!browserResult.ok) throw new Error(browserResult.error.message)
       const desktopReason = !cacheResult.ok
         ? cacheResult.error.message
@@ -2040,8 +2046,9 @@ export default function App({
   }), [status?.server, status?.username])
 
   const adminUsersPort = useMemo<XDriveAdminUsersPort>(() => ({
-    adminUsers: async () => {
-      const result = await window.xdriveDesktop.agent.cloudAdminUsers()
+    adminUsers: async (signal?: AbortSignal) => {
+      const result = await xDriveDesktopViewportRequest(signal, requestID =>
+        window.xdriveDesktop.agent.cloudAdminUsers(requestID))
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },

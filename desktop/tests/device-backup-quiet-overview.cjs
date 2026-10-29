@@ -26,7 +26,8 @@ test('first device overview reserves stable quiet space before genuine response'
 
 test('device refresh keeps accepted same-account cards without exposing foreign account data', () => {
   assert.ok(view.includes('overview: prev.source === source ? prev.overview : null'))
-  assert.ok(view.includes('if (active) setSnapshot((prev) => prev.source === source'))
+  assert.ok(view.includes('if (active && !controller.signal.aborted) setSnapshot((prev) => prev.source === source'),
+    'refresh cannot publish a stale Owner snapshot after read cancellation')
   assert.ok(view.includes('? { ...prev, loading: false, failed: true }'))
   assert.ok(view.includes('设备备份刷新失败；已保留上次成功读取的设备信息'))
   assert.ok(view.includes('disabled={loading}'))

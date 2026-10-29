@@ -230,6 +230,7 @@ test('all same-type content entry points are wired to disposable-only preemption
   const webRuntime = source('web/src/webAppRuntime.ts')
   const desktopApp = source('desktop/src/renderer/App.tsx')
   const synology = source('web/src/synology.tsx')
+  const hostNavigation = source('ui/shared/src/mui/WorkspaceNavigationState.ts')
   assert.match(files, /previous\.parentID !== id/, 'folder A -> B')
   assert.match(files, /previous\.sort\.key !== effectiveSort\.key/, 'file sort')
   assert.match(files, /xDriveFileExplorerGroupingSignature\(previous\.grouping\)/, 'grouping')
@@ -276,7 +277,12 @@ test('all same-type content entry points are wired to disposable-only preemption
     'Share first page and cursor reads are cancelable independently of downloads')
   assert.match(webRuntime, /guardBrowserNavigation/, 'unaccepted dirty draft must not preempt')
   assert.match(desktopApp, /xDriveEnterForegroundPage\('desktop:' \+ next\)/)
-  assert.match(synology, /xDriveEnterForegroundPage\('synology:' \+ next\)/)
+  assert.match(synology, /useXDriveWorkspaceNavigationState\(\{/,
+    'DSM must consume the one shared Host-neutral navigation controller')
+  assert.ok(hostNavigation.includes('xDriveEnterForegroundPage(`${platform}:${next.selected}`)'),
+    'shared navigation preempts only obsolete content when an admitted route changes')
+  assert.match(hostNavigation, /!xDriveWorkspaceNavigationAllowed\(destination, serverAdminVerified\)/,
+    'shared navigation must refuse unverified administrator routes')
   const coordinator = source('ui/shared/src/mui/ViewerForegroundPriority.ts')
   assert.doesNotMatch(coordinator,
     /cancelTransfer|cancelBackup|terminateWorker|abortAll|cancelUpload|cancelDownload/,

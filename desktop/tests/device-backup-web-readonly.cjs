@@ -13,7 +13,8 @@ const web = read('web', 'src', 'App.tsx')
 const desktop = read('desktop', 'src', 'renderer', 'App.tsx')
 
 test('Device Backup reads only owner-scoped redacted APIs', () => {
-  assert.ok(api.includes("this.request<XDriveDeviceBackupOverview>('/api/v1/device-backups')"))
+  assert.ok(api.includes("this.request<XDriveDeviceBackupOverview>('/api/v1/device-backups', { signal })"),
+    'authenticated Owner overview GET must forward the optional disposable signal')
   assert.ok(api.includes('this.request<XDriveDeviceBackupRunPage>(`/api/v1/device-backups/${sourceID}/runs?'))
   assert.ok(web.includes('source={deviceBackupSource}'))
   assert.ok(web.includes("route.app === 'device-backup' ? route.params.source : undefined"))

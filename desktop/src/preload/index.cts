@@ -87,8 +87,8 @@ function cleanupMediaLivePhotoProgress(url: string) {
 const agent = Object.freeze({
   getState: () => ipcRenderer.invoke('agent:get-state'),
   getTransfers: () => ipcRenderer.invoke('agent:get-transfers'),
-  getStorageTree: () => ipcRenderer.invoke('agent:get-storage-tree'),
-  getCache: () => ipcRenderer.invoke('agent:get-cache'),
+  getStorageTree: (requestID?: string) => ipcRenderer.invoke('agent:get-storage-tree', requestID),
+  getCache: (requestID?: string) => ipcRenderer.invoke('agent:get-cache', requestID),
   getLocalDiskSpace: (requestID?: string) => ipcRenderer.invoke('agent:get-local-disk-space', requestID),
   releaseCache: () => ipcRenderer.invoke('agent:release-cache'),
   getMediaItem: (nodeID: number, requestID: string) =>
@@ -789,7 +789,7 @@ const agent = Object.freeze({
     ipcRenderer.invoke('agent:cloud-admin-backup-action', input),
   cloudAdminAuditRange: (query: import('../main/agent_client.cjs').AgentAdminAuditRangeQuery, requestID?: string) =>
     ipcRenderer.invoke('agent:cloud-admin-audit-range', query, requestID),
-  cloudAdminUsers: () => ipcRenderer.invoke('agent:cloud-admin-users'),
+  cloudAdminUsers: (requestID?: string) => ipcRenderer.invoke('agent:cloud-admin-users', requestID),
   cloudAdminCreateUser: (input: import('../main/agent_client.cjs').AgentAdminCreateUserInput) =>
     ipcRenderer.invoke('agent:cloud-admin-users-create', input),
   cloudAdminUpdateUser: (id: number, input: import('../main/agent_client.cjs').AgentAdminUpdateUserInput) =>
@@ -884,10 +884,10 @@ const agent = Object.freeze({
   }) => ipcRenderer.invoke('agent:cloud-set-admin-baidu-jsapi', input),
   cloudSetAdminBaiduMapConfig: (input: { enabled: boolean; revision: number; ak?: string; clear_ak?: boolean }) =>
     ipcRenderer.invoke('agent:cloud-set-admin-baidu-map', input),
-  cloudBackgroundTaskActiveSummary: () =>
-    ipcRenderer.invoke('agent:cloud-background-task-summary'),
-  cloudBackgroundTaskPage: (global = false, limit = 50, cursor = '') =>
-    ipcRenderer.invoke('agent:cloud-background-task-page', global, limit, cursor),
+  cloudBackgroundTaskActiveSummary: (requestID?: string) =>
+    ipcRenderer.invoke('agent:cloud-background-task-summary', requestID),
+  cloudBackgroundTaskPage: (global = false, limit = 50, cursor = '', requestID?: string) =>
+    ipcRenderer.invoke('agent:cloud-background-task-page', global, limit, cursor, requestID),
   cloudBackgroundTasks: (global = false, limit = 100) => ipcRenderer.invoke('agent:cloud-background-tasks', global, limit),
   cloudBackgroundTaskControl: (id: string, action: string, global = false) =>
     ipcRenderer.invoke('agent:cloud-background-task-control', id, action, global),

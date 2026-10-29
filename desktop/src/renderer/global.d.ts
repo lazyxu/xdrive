@@ -517,8 +517,8 @@ declare global {
       agent: {
         getState: () => Promise<AgentConnectionState>
         getTransfers: () => Promise<AgentTransfers>
-        getStorageTree: () => Promise<DesktopResult<AgentStorageTreeNode>>
-        getCache: () => Promise<DesktopResult<AgentCacheStats>>
+        getStorageTree: (requestID?: string) => Promise<DesktopResult<AgentStorageTreeNode>>
+        getCache: (requestID?: string) => Promise<DesktopResult<AgentCacheStats>>
         getLocalDiskSpace: (requestID?: string) => Promise<DesktopResult<AgentLocalDiskSpace>>
         releaseCache: () => Promise<DesktopResult<AgentCacheReleaseResult>>
         getMediaItem: (nodeID: number, requestID: string) => Promise<DesktopResult<AgentMediaItem>>
@@ -920,7 +920,7 @@ declare global {
           Promise<DesktopResult<import('../../../ui/shared/src/server-backup-admin').XDriveServerBackupOperation>>
         cloudAdminAuditRange: (query: import('../../../ui/shared/src').XDriveAdminAuditRangeQuery, requestID?: string) =>
           Promise<DesktopResult<import('../../../ui/shared/src').AuditEventRange>>
-        cloudAdminUsers: () => Promise<DesktopResult<import('../../../ui/shared/src').AdminUser[]>>
+        cloudAdminUsers: (requestID?: string) => Promise<DesktopResult<import('../../../ui/shared/src').AdminUser[]>>
         cloudAdminCreateUser: (input: import('../../../ui/shared/src').XDriveAdminCreateUserInput) =>
           Promise<DesktopResult<import('../../../ui/shared/src').AdminUser>>
         cloudAdminUpdateUser: (id: number, input: import('../../../ui/shared/src').XDriveAdminUpdateUserInput) =>
@@ -1007,11 +1007,12 @@ declare global {
         cloudRollbackAdminGeoNames: (input: XDriveGeoNamesRollbackInput) => Promise<DesktopResult<XDriveGeoNamesConfig>>
         cloudRevealAdminBaiduMapAK: (revision: number) => Promise<DesktopResult<XDriveBaiduMapAKReveal>>
         cloudSetAdminBaiduMapConfig: (input: XDriveBaiduMapAdminUpdate) => Promise<DesktopResult<XDriveBaiduMapAdminConfig>>
-        cloudBackgroundTaskActiveSummary: () => Promise<DesktopResult<AgentBackgroundTaskActiveSummary>>
+        cloudBackgroundTaskActiveSummary: (requestID?: string) => Promise<DesktopResult<AgentBackgroundTaskActiveSummary>>
         cloudBackgroundTaskPage: (
           global?: boolean,
           limit?: number,
           cursor?: string,
+          requestID?: string,
         ) => Promise<DesktopResult<AgentBackgroundTaskPage>>
         cloudBackgroundTasks: (global?: boolean, limit?: number) => Promise<DesktopResult<AgentBackgroundTask[]>>
         cloudBackgroundTaskControl: (

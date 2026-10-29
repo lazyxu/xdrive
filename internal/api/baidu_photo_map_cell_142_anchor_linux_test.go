@@ -166,7 +166,11 @@ func TestPlacesOwnerCell142AnchorPagesPG17(t *testing.T) {
 		West: 100, South: 0, East: 108, North: 8,
 		CoordinateSpace: meta.BaiduPhotoMapSpaceBD09LL,
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	// This disposable 142+28 Owner fixture executes several separate
+	// fully sorted Range+Anchor SQL reads. A single 45s cumulative deadline
+	// expires on slower shared runners after the GPS revocation is proven,
+	// producing a false "stale anchor" result. Keep a finite 3m bound.
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 	summary, err := queryBaiduPhotoMapCells(ctx, db, owner.ID, bounds)
 	if err != nil || summary.TotalCount != photoCount+nearbyCount || len(summary.Items) != 2 {
