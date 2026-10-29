@@ -104,8 +104,8 @@ func validateAndroidWorkflow(workflow map[string]any) error {
 	}
 	gate := androidJob(workflow, "final-gate")
 	needs, _ := gate["needs"].([]any)
-	if !slices.Contains(needs, any("android-native")) || gate["if"] != "always()" || gate["continue-on-error"] != nil {
-		return fmt.Errorf("Final Gate must always require Android")
+	if !slices.Contains(needs, any("android-native")) || gate["if"] != "${{ !cancelled() }}" || gate["continue-on-error"] != nil {
+		return fmt.Errorf("Final Gate must require Android and cancel when the workflow is cancelled")
 	}
 	check := androidStep(gate, "name", "Require every applicable CI gate to succeed")
 	if check == nil {
@@ -164,6 +164,7 @@ func TestAndroidNativeCIRejectsWeakenedGates(t *testing.T) {
 		"legacy tools": func(w map[string]any) {
 			androidStep(androidJob(w, "android-native"), "uses", "android-actions/setup-android@v3")["with"].(map[string]any)["packages"] = "tools platform-tools"
 		},
+		"gate ignores cancellation": func(w map[string]any) { androidJob(w, "final-gate")["if"] = "always()" },
 		"gate accepts failure": func(w map[string]any) {
 			androidStep(androidJob(w, "final-gate"), "name", "Require every applicable CI gate to succeed")["run"] = "exit 0"
 		},
