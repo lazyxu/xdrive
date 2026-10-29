@@ -11,7 +11,18 @@ const transpile = (file) => ts.transpileModule(source(file), {
 }).outputText
 function load(file, requireFn = require) {
   const mod = { exports: {} }
-  new Function('exports', 'module', 'require', transpile(file))(mod.exports, mod, requireFn)
+  const scopedRequire = name => {
+    // The source-level route registry imports shared TypeScript directly.
+    // Follow those imports instead of asking Node to load uncompiled .ts.
+    if (name.startsWith('.')) {
+      const rel = path.posix.normalize(path.posix.join(path.posix.dirname(file), name))
+      for (const ext of ['.ts', '.tsx']) {
+        if (fs.existsSync(path.join(root, rel + ext))) return load(rel + ext, requireFn)
+      }
+    }
+    return requireFn(name)
+  }
+  new Function('exports', 'module', 'require', transpile(file))(mod.exports, mod, scopedRequire)
   return mod.exports
 }
 const bus = load('ui/shared/src/mui/ViewerForegroundPriority.ts')

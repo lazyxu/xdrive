@@ -8,6 +8,17 @@ const React = require('react')
 const Renderer = require('react-test-renderer')
 const { act } = Renderer
 const root = path.resolve(__dirname, '../..')
+const localFeatureAccessExports = (() => {
+  // Execute the actual host-neutral local action admission policy; only the
+  // MUI shell is stubbed by this mounted first-read test.
+  const filename = path.join(root, 'ui/shared/src/device-backup-local-feature-access.ts')
+  const js = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
+    fileName: filename, compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText
+  const exported = {}
+  new Function('exports', js)(exported)
+  return exported
+})()
 const deviceValidationExports = (() => {
   // Retain the original mounted page; exercise its actual redacted validator.
   const filename = path.join(root, 'ui/shared/src/device-backup-device-page-validation.ts')
@@ -44,6 +55,7 @@ function page(file, exportName) {
       xDriveDeviceBackupVisibleFolders: () => [],
       xDriveDeviceBackupContainsVisibleSource: () => false,
     }
+    if (name === '../device-backup-local-feature-access') return localFeatureAccessExports
     if (name === '../device-backup-folder-page-validation') return {
       validateXDriveDeviceBackupFolderPage: () => {},
     }
