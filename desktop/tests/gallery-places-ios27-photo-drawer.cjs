@@ -300,6 +300,7 @@ test('responsive Drawer restore stays in one Parent and always reauthorizes both
   assert.match(parent,/loadedCount:Math.min\(XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT,\s*state\.items\.length\)/)
   const sharedDrawer=read('ui/shared/src/mui/MediaGalleryPlacesPhotoDrawer.tsx')
   assert.match(sharedDrawer,/\(initialPresentation\.loadedCount \?\? 0\)<=items\.length/)
+  assert.match(sharedDrawer,/overflowAnchor:'none'/)
   assert.match(sharedDrawer,/onLoadMore\(\)/)
   const browser=read('desktop/scripts/gallery-places-dual-host-chromium.cjs')
   assert.match(browser,/142-photo rotation reauthorizes all pages and scroll position/)
