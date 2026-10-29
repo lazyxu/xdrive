@@ -13,7 +13,7 @@ physical-device acceptance result are different states.
 | Routes and Host contract | `ui/shared/src/mui/WorkspaceRoute.ts`, `WorkspaceNavigationState.ts`, `WorkspaceHostAdapter.ts` | Desktop/DSM share route vocabulary, same-route lifecycle and Server-verified administrator gating. A visible route alone never grants Owner/Agent permissions. |
 | Desktop React application | `desktop/src/renderer/App.tsx` mounts `ui/shared/src/mui/XDriveApp.tsx` | Shared sidebar and page outlet; the large Desktop Files controller and OS integrations still have Host-specific lifecycle and methods. |
 | Synology DSM React application | `web/src/synology.tsx` mounts that same `XDriveApp` through `web/src/synologyHost.ts` | Authenticated, explicitly scoped Owner Files read and Gallery/backup/diagnostics ports; many writes and advanced native actions remain unavailable. |
-| Browser Web / Mobile Web / PWA | `web/src/main.tsx` mounts `web/src/App.tsx`; it reuses shared `WorkspaceShell`, `WorkspaceSidebar`, Files, Gallery and Viewer | **Web still has its own top-level app controller; it does NOT yet mount `XDriveApp`.** Preserve hash deep links, Service Worker/offline, current Owner and viewer-return state when migrating. |
+| Browser Web / Mobile Web / PWA | `web/src/main.tsx` mounts `web/src/App.tsx`; it uses shared `XDriveWorkspaceFrame`, `WorkspaceSidebar`, Files, Gallery and Viewer | **Web still has its own top-level app controller; it does NOT yet mount `XDriveApp`.** Preserve hash deep links, Service Worker/offline, current Owner and viewer-return state when migrating. |
 | Browser route adaptation | `ui/shared/src/web-workspace-route.ts` maps Web route IDs to the canonical Workspace route registry | Page keys converge while Viewer/browser-only hashes and task scope remain independent and explicit. |
 | Files domain | Shared `file-explorer-controller.ts`, `file-explorer-selection-admission.ts`, `file-explorer-host-availability.ts`, `file-explorer-read-identity.ts`, `file-explorer-preview-request.ts` | Bounded read plans/selection/preview semantics share code; Web and Desktop full stateful controller components are still separate. |
 | iOS application | `ios/XDriveIOS/XDriveWebAppHome.swift` hosts the same Web/PWA UI in `WKWebView` with a dedicated PhotoKit bridge | No second native Login/Files/Gallery UI. Do not infer always-on background backup or full Live original recovery from the existence of a settings control or a draft PR. |
@@ -57,6 +57,12 @@ become fully migrated merely by importing shared MUI sidebar components.
 | Synology DSM | Shared React app + authenticated CGI/owning Agent | `web/src/synology.tsx`, `synologyHost.ts`, `XDriveApp` | Fill *real* Owner-authorized domain ports; missing native actions must stay unavailable |
 | Android APK | Kotlin/Jetpack Compose native (not a WebView) | `android/app/src/main/java/com/tfluid/xdrive/` | Native UI parity by generated tokens, behavior/API contracts and screenshot tests; independent native SDK bridges |
 | iOS native capabilities | SwiftUI/PhotoKit/Keychain | `ios/XDriveIOS/` | Owner-bound photos, incremental foreground backup and optional background work: real SDK implementation only |
+
+## Shared responsive frame landing (2026-10-29)
+
+`XDriveWorkspaceFrame` now owns **one responsive layout/composition order** for the Desktop/DSM `XDriveApp` and the existing Web/PWA app. Web contributes its original user-gesture upload-resume input through an invisible leading slot, the canonical sidebar, and its current page controller as content. The Viewer overlay, compact header, browser hashes, authentication and Service Worker remain in their owning Host. No additional React root or nested shell is introduced.
+
+Web sidebar actions now also use `xDriveWorkspaceNavigationAllowed` with the Server-verified profile role; backend authorization remains mandatory. This is **frame convergence, not full Web-to-XDriveApp controller convergence**: `web/src/App.tsx` still owns URL/hash and Viewer return state, PWA offline and Owner-scoped transfer lifecycle. Extract those incrementally behind typed Host/data ports. Android stays native Compose with shared visual and behavior contracts.
 
 ## Ownership layers
 

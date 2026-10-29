@@ -15,7 +15,7 @@ and the repository [developer rules](AGENTS.md).
 
 | Platform | Actual master UI composition | Remaining distinction |
 | --- | --- | --- |
-| Browser Web / Mobile Web / PWA | React/MUI reusing shared Files, Gallery, Viewer, workspace surfaces and route vocabulary | `web/src/App.tsx` still owns a separate top-level controller; migrating it to `XDriveApp` is **not complete**. PWA offline/Owner/session behavior must remain native to the browser. |
+| Browser Web / Mobile Web / PWA | React/MUI using shared `XDriveWorkspaceFrame`, Files, Gallery, Viewer, workspace surfaces and route vocabulary | `web/src/App.tsx` still owns a separate top-level controller; migrating it to `XDriveApp` is **not complete**. PWA offline/Owner/session behavior must remain native to the browser. |
 | Windows/Linux Desktop | Electron mounts `ui/shared/src/mui/XDriveApp.tsx` | Local-folder Push backup and Windows CfAPI/Linux FUSE cloud drive mapping are **different** authenticated Agent features. |
 | Synology DSM | Authenticated CGI Host mounts the **same** `XDriveApp` and page outlet as Desktop | Real read ports work; missing Owner/Agent mutations show explicit unavailable reasons, not simulated success. |
 | iOS IPA | SwiftUI/WKWebView Host displays the **same Web/PWA React UI**, with PhotoKit/Keychain behind a narrow native bridge | Native backup/background capability and physical permission checks need separate validation. Draft PR work is not in master. |
