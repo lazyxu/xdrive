@@ -87,7 +87,28 @@ func TestOwnerLiveMotionFailsClosed(t *testing.T) {
 			t.Fatal("motion read after missing Live grant")
 		}
 	})
-	t.Run("wrong revision", func(t *testing.T) {
+	// A current authenticated Node by itself is insufficient: only an
+	// actual image Live Photo can expose its embedded or paired motion.
+	for _, tc := range []struct {
+		name string
+		change func(*ownerLiveSourceFixture)
+	}{
+		{"wrong Owner-visible node", func(f *ownerLiveSourceFixture) { f.item.Node.ID = 43 }},
+		{"non-file", func(f *ownerLiveSourceFixture) { f.item.Node.Type = "dir" }},
+		{"video is not a Live still", func(f *ownerLiveSourceFixture) { f.item.Metadata.MediaKind = "video" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := liveFixture()
+			tc.change(f)
+			if _, err := ReadVerifiedOwnerLiveMotion(context.Background(), f, 42, 7); err == nil {
+				t.Fatal("invalid Owner Live Photo admitted")
+			}
+			if f.calls != 1 {
+				t.Fatalf("motion fetched before Owner identity admission: %d calls", f.calls)
+			}
+		})
+	}
+	.Run("wrong revision", func(t *testing.T) {
 		f := liveFixture()
 		if _, err := ReadVerifiedOwnerLiveMotion(context.Background(), f, 42, 8); err == nil {
 			t.Fatal("revision mismatch")
