@@ -174,7 +174,7 @@ func (s *Server) iosBackgroundPutChunk(c *gin.Context) {
 	// Existing handler enforces exact part index, SHA and current CAS capacity.
 	// Limit the actual HTTP stream to one 8-MiB chunk plus framing.
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body,
-		defaultUploadChunkSize + 4096)
+		defaultUploadChunkSize+4096)
 	s.putUploadChunk(c)
 }
 

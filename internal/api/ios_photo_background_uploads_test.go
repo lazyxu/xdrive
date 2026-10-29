@@ -42,34 +42,53 @@ func TestIOSBackgroundUploadCannotOverwriteOrEscapeRoot(t *testing.T) {
 	req := uploadInitRequest{
 		ParentID: &ownerRoot, Name: name,
 		ConflictPolicy: meta.UploadConflictPolicyFail,
-		Size: 65, ChunkSize: defaultUploadChunkSize,
+		Size:           65, ChunkSize: defaultUploadChunkSize,
 		SHA256: sha, ResumeKey: key,
 	}
 	admitted := func() bool { return iosBackgroundUploadInitValid(req, grant) }
-	if !admitted() { t.Fatal("exact Owner-root HMAC original should pass") }
+	if !admitted() {
+		t.Fatal("exact Owner-root HMAC original should pass")
+	}
 	pristine := req
 	check := func(reason string) {
 		t.Helper()
-		if admitted() { t.Fatalf("privileged %s upload admitted", reason) }
+		if admitted() {
+			t.Fatalf("privileged %s upload admitted", reason)
+		}
 		req = pristine
 	}
 	foreignRoot := uint64(92)
-	req.ParentID = &foreignRoot; check("foreign root")
-	req.ParentID = nil; check("missing root")
+	req.ParentID = &foreignRoot
+	check("foreign root")
+	req.ParentID = nil
+	check("missing root")
 	node := uint64(8)
-	req.NodeID = &node; check("overwrite existing node")
-	req.ConflictPolicy = meta.UploadConflictPolicyOverwrite; check("overwrite policy")
-	req.ConflictPolicy = meta.UploadConflictPolicySkip; check("skip policy")
-	req.Name = "plain-original.mov"; check("arbitrary name")
-	req.ResumeKey = "lp2_" + strings.Repeat("a", 64); check("privileged Push HMAC")
-	req.ResumeKey = "ios_" + strings.Repeat("z", 64); check("nonhex HMAC")
-	req.ExpectedRevision = 123; check("revision overwrite")
-	req.MD5 = strings.Repeat("a", 32); check("legacy MD5 fallback")
-	req.ChunkSize = 4 * 1_048_576; check("nonstandard chunk size")
-	req.Size = 0; check("zero bytes")
-	req.Size = iosBackgroundOriginalMaxBytes + 1; check("oversized media")
-	req.SHA256 = strings.Repeat("G", 64); check("invalid full SHA")
-	req.ChunkSHA256 = []string{strings.Repeat("c", 64)}; check("caller directed CAS reuse")
+	req.NodeID = &node
+	check("overwrite existing node")
+	req.ConflictPolicy = meta.UploadConflictPolicyOverwrite
+	check("overwrite policy")
+	req.ConflictPolicy = meta.UploadConflictPolicySkip
+	check("skip policy")
+	req.Name = "plain-original.mov"
+	check("arbitrary name")
+	req.ResumeKey = "lp2_" + strings.Repeat("a", 64)
+	check("privileged Push HMAC")
+	req.ResumeKey = "ios_" + strings.Repeat("z", 64)
+	check("nonhex HMAC")
+	req.ExpectedRevision = 123
+	check("revision overwrite")
+	req.MD5 = strings.Repeat("a", 32)
+	check("legacy MD5 fallback")
+	req.ChunkSize = 4 * 1_048_576
+	check("nonstandard chunk size")
+	req.Size = 0
+	check("zero bytes")
+	req.Size = iosBackgroundOriginalMaxBytes + 1
+	check("oversized media")
+	req.SHA256 = strings.Repeat("G", 64)
+	check("invalid full SHA")
+	req.ChunkSHA256 = []string{strings.Repeat("c", 64)}
+	check("caller directed CAS reuse")
 }
 
 func TestIOSBackgroundGrantIsNotUsedForGenericRoutes(t *testing.T) {
