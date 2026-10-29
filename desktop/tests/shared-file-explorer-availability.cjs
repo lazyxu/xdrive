@@ -78,7 +78,7 @@ test('Column View overlays canonical compact badges and joins the Desktop batch'
   for (const token of [
     'const [columnAvailabilityItems, setColumnAvailabilityItems]',
     'const availabilityRequests = useMemo(() => xDriveFileExplorerAvailabilityRequests({',
-    'columns: columnAvailabilityItems,'
+    'columns: columnAvailabilityItems,',
     'onColumnAvailabilityItemsChange={',
     'fileAvailabilitySupported ? handleColumnAvailabilityItemsChange : undefined',
   ]) assert.ok(desktopExplorer.includes(token), 'Desktop column batch missing: ' + token)
