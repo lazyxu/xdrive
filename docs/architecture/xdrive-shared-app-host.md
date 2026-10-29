@@ -217,3 +217,24 @@ with a hidden Files child, that Desktop/DSM can render their current legitimate
 controllers under a single page outlet, and that a bare backup-only client
 cannot fabricate Files permission. Physical NAS validation remains
 **跳过（未验收）**, not CI or merge gating.
+
+
+## Files Host capability snapshot (2026-10-29)
+
+The Desktop Host's native Files feature negotiation now flows through the
+typed pure `xDriveFileExplorerHostCapabilities(agent.hello?.capabilities)`
+snapshot in `ui/shared/src/mui/FileExplorerHostCapabilities.ts`.
+Absent, incomplete or unknown Agent handshake flags default to unavailable.
+In particular, folder uploads require **both** conflict preflight and policy.
+The same verified snapshot feeds Files and its related Overview upload/disk
+status; no second JSX copy performs Agent capability detection.
+
+This does not grant DSM any native methods. DSM's Owner-files CGI read path
+still advertises actual unsupported mutations, and Server/Agent permission
+checks remain necessary even if an advertised capability is present.
+
+This removes a real Host-specific policy branch from the large Desktop
+application controller, but **does not yet move its entire stateful
+DesktopFileExplorer controller to shared**. That remaining migration should
+replace the temporary `filesControllerContent` element with typed data and
+operation ports once the native lifecycle is actually extracted.
