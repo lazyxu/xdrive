@@ -262,7 +262,8 @@
     // A real map drag without a provider movestart still revokes all current
     // ephemeral Cell keys immediately. Its old pixels remain VISUAL ONLY
     // and the existing last-contact release schedules the fresh Owner Range.
-    if (allowedKeys.size>0) stopViewport()
+    if (allowedKeys.size>0 || gestureCells.length===0) stopViewport()
+    else viewportAfterMouseRelease=true
   }
   const releaseHeldMouse = pointerID => {
     const mouseMatches=heldMousePointer!==null &&
