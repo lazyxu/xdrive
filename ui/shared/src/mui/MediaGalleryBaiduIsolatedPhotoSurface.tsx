@@ -895,6 +895,10 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
             {paintedCovers.map((pin) => (
               <Box key={pin.selection.node_id} component="button" type="button"
                 disabled={!currentCoverActive}
+                // Stale gesture covers are visual-only, with no screen-reader
+                // announcement, focus stop or stale Owner Cell activation.
+                aria-hidden={!currentCoverActive}
+                tabIndex={currentCoverActive ? 0 : -1}
                 data-xdrive-places-trusted-photo-cover={currentCoverActive
                   ? pin.selection.node_id : undefined}
                 data-xdrive-places-gesture-photo-cover={!currentCoverActive
@@ -951,6 +955,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
             zIndex:5,display:'flex',alignItems:'center',justifyContent:'space-between',
             gap:1,flexWrap:'wrap',pointerEvents:'none'}}>
           <Typography variant="caption" color="text.primary"
+            role="status" aria-live="polite" aria-atomic="true"
             sx={{bgcolor:edgeToEdge
                 ? (theme => theme.palette.mode==='dark'
                   ? 'rgba(28,28,30,.86)' : 'rgba(255,255,255,.86)')
@@ -1035,13 +1040,15 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
       {scopeIsCurrent && accessible.length>0 ? (
         <Box component="details" data-xdrive-places-cluster-list>
           <Box component="summary" sx={{cursor:'pointer',typography:'caption',
-            color:'text.secondary',minHeight:36}}>
+            color:'text.secondary',minHeight:44,display:'flex',alignItems:'center',
+            '&:focus-visible':{outline:'2px solid',outlineColor:'primary.main'}}}>
             聚集点列表（{accessible.length}）
           </Box>
         <Box component="nav" aria-label="当前地图聚合区域"
           sx={{display:'flex',flexWrap:'wrap',gap:0.5,mt:0.5}}>
           {accessible.map((cell,index)=>(
             <Button key={index} size="small" variant="text"
+              aria-label={`查看${cell.label} 张照片`} sx={{minHeight:44}}
               onClick={()=>openVerifiedCell(cell.selection)} disabled={phase!=='ready'}>
               {cell.label}
             </Button>
