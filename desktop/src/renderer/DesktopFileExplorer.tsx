@@ -53,6 +53,10 @@ import {
   useXDriveFileExplorerExternalDropController,
   useXDriveFileExplorerUploadController,
   useXDriveFileExplorerOwnerActionLifecycle,
+  useXDriveFileExplorerOwnerSourceOptions,
+  xDriveFileExplorerDeviceStatusLabel,
+  xDriveFileExplorerDeviceHydrationPathKey,
+  xDriveFileExplorerDeviceHydrationProgress,
   xDriveFileExplorerUploadGroupLabel,
   XDriveUploadConflictDialog,
   xDriveCaptureVideoPosterBlob,
@@ -128,36 +132,16 @@ export type DesktopFileExplorerActionIntent = {
   lifecycleKey: string
 }
 
+// Desktop supplies the real same-user Agent snapshot; shared MUI owns the
+// progress/status projection. These thin bridges retain the existing lifecycle.
 function desktopFileStatusLabel(state: AgentFileAvailability, syncing = false) {
-  if (syncing || state.Syncing || state.Mode === 'syncing') return '正在同步'
-  if (state.InSync) return '已同步'
-  return '待同步'
+  return xDriveFileExplorerDeviceStatusLabel(state, syncing)
 }
-
 function desktopFileAvailabilityPathKey(value?: string) {
-  let normalized = (value ?? '').trim().replace(/\\/g, '/')
-  if (normalized.toLowerCase().startsWith('//?/unc/')) {
-    normalized = '//' + normalized.slice(8)
-  } else if (normalized.startsWith('//?/')) {
-    normalized = normalized.slice(4)
-  }
-  return normalized.replace(/\/+/g, '/').replace(/\/$/, '').toLowerCase()
+  return xDriveFileExplorerDeviceHydrationPathKey(value)
 }
-
 function desktopActiveHydrationProgress(transfers: readonly AgentTransfer[]) {
-  const byPath = new Map<string, number | null>()
-  for (const transfer of transfers) {
-    if (transfer.kind !== 'hydration' || transfer.state !== 'running') continue
-    const key = desktopFileAvailabilityPathKey(transfer.path)
-    if (!key || byPath.has(key)) continue
-    const total = Math.max(0, transfer.bytes_total)
-    const done = Math.max(0, transfer.bytes_done)
-    byPath.set(
-      key,
-      total > 0 ? Math.max(0, Math.min(100, (done / total) * 100)) : null,
-    )
-  }
-  return byPath
+  return xDriveFileExplorerDeviceHydrationProgress(transfers)
 }
 
 function throwDesktopUploadError(error: { code?: string; message: string }): never {
@@ -333,19 +317,16 @@ export default function DesktopFileExplorer({
     onFeedback: (message) => onFeedback('good', message),
     onChanged: onTrashChanged,
   })
-  const [searchSourceOptions, setSearchSourceOptions] = useState<XDriveFileExplorerSearchSourceOption[]>([])
-  useEffect(() => {
-    let active = true
-    setSearchSourceOptions([])
-    void hostPort.browse.getSources().then((result) => {
-      if (active && result.ok) {
-        setSearchSourceOptions(result.data.map((source) => ({ id: source.id, name: source.name })))
-      }
-    })
-    return () => {
-      active = false
-    }
-  }, [navigationSessionStorageKey])
+  const loadSourceOptions = useCallback(async (): Promise<XDriveFileExplorerSearchSourceOption[]> => {
+    const result = await hostPort.browse.getSources()
+    if (!result.ok) throw new Error('当前 Agent 无法读取文件搜索来源。')
+    return result.data.map((source) => ({ id: source.id, name: source.name }))
+  }, [hostPort])
+  const { options: searchSourceOptions } = useXDriveFileExplorerOwnerSourceOptions({
+    host: hostPort,
+    ownerKey: navigationSessionStorageKey ?? '',
+    read: loadSourceOptions,
+  })
   const [availabilityByID, setAvailabilityByID] = useState<Map<number, DesktopFileAvailabilityEntry>>(
     () => new Map(),
   )

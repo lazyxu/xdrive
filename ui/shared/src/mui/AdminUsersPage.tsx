@@ -137,6 +137,12 @@ export default function AdminUsersPanel({
   const [readEpoch, setReadEpoch] = useState(0)
   const [visibleReadEpoch, setVisibleReadEpoch] = useState<number | null>(null)
   const readEpochRef = useRef(0)
+  // Only the read-only administrator list GET is disposable. User create,
+  // update, revoke, reset, delete and ambiguous mutation receipts are not.
+  const readAbortRef = useRef<AbortController | null>(null)
+  const readMountedRef = useRef(false)
+  const currentApiRef = useRef(api)
+  currentApiRef.current = api
   const showNetworkFeedback = loading && readComplete && users.length > 0 &&
     pendingReadSource === api && visibleReadEpoch === readEpoch
   const [loadError, setLoadError] = useState('')
@@ -159,20 +165,33 @@ export default function AdminUsersPanel({
   const [actionError, setActionError] = useState<AdminActionError | null>(null)
 
   const load = async () => {
+    // A completed mutation may outlive its old route. Its receipt is still
+    // authoritative, but must not resurrect an unmounted GET after navigation.
+    if (!readMountedRef.current || currentApiRef.current !== api) return
+    readAbortRef.current?.abort()
+    const controller = new AbortController()
+    readAbortRef.current = controller
     const epoch = ++readEpochRef.current
+    const valid = () => (
+      !controller.signal.aborted &&
+      readMountedRef.current &&
+      currentApiRef.current === api &&
+      readEpochRef.current === epoch
+    )
     setReadEpoch(epoch)
     setPendingReadSource(api)
     setLoading(true)
     setLoadError('')
     try {
-      const nextUsers = await api.adminUsers()
-      if (readEpochRef.current === epoch) setUsersSnapshot({ source: api, items: nextUsers })
+      const nextUsers = await api.adminUsers(controller.signal)
+      if (valid()) setUsersSnapshot({ source: api, items: nextUsers })
     } catch (err) {
-      if (readEpochRef.current === epoch) {
+      if (valid()) {
         setLoadError(err instanceof Error ? err.message : '加载用户失败')
       }
     } finally {
-      if (readEpochRef.current === epoch) {
+      if (readAbortRef.current === controller) readAbortRef.current = null
+      if (valid()) {
         setCompletedSource(api)
         setLoading(false)
       }
@@ -180,8 +199,14 @@ export default function AdminUsersPanel({
   }
 
   useEffect(() => {
+    readMountedRef.current = true
     void load()
-    return () => { readEpochRef.current += 1 }
+    return () => {
+      readMountedRef.current = false
+      readAbortRef.current?.abort()
+      readAbortRef.current = null
+      readEpochRef.current += 1
+    }
     // api is stable for one authenticated session.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api])

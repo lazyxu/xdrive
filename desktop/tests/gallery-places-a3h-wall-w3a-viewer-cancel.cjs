@@ -59,7 +59,9 @@ test('W3a aborted Viewer cancels real Owner-cell transport and not generic Galle
   session.dispose()
   assert.equal(signals[0].aborted, true)
   await assert.rejects(first, /aborted/)
-  await assert.rejects(session.candidateAt(0), /已取消/)
+  await assert.rejects(session.candidateAt(0), (error) =>
+    error?.name === 'AbortError' && /Viewer read cancelled or unavailable/.test(error.message),
+    'a disposed Viewer must fail closed with AbortError rather than silently fall back to an unscoped read')
   // StrictMode effect replay resumes one memoized reader with a fresh signal.
   session.activate()
   const value = await session.candidateAt(0)

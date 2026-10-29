@@ -1,12 +1,14 @@
 import { Alert, Stack, Typography } from '@mui/material'
 import type { XDriveServerBackupHistoryEntry } from '../server-backup-admin'
 import { backupVerificationSummary } from '../server-backup-verification'
+import { backupVerificationGuidance } from '../server-backup-verification-guidance'
 
 /** Historical Host evidence; never claim a backup has been physically restored. */
 export function XDriveBackupVerificationReceipt({ entry }: {
   entry: XDriveServerBackupHistoryEntry
 }) {
   const summary = backupVerificationSummary(entry)
+  const guidance = backupVerificationGuidance(entry)
   if (!summary.available) {
     return <Alert severity="info" data-xdrive-admin-backup-verification-report>
       {summary.note}
@@ -29,6 +31,13 @@ export function XDriveBackupVerificationReceipt({ entry }: {
     {summary.category ? <Typography variant="body2" color="error">
       失败分类：{summary.category}
     </Typography> : null}
+    <Typography variant="body2" data-xdrive-admin-backup-verification-scope>
+      校验范围：{guidance.scope}
+    </Typography>
+    <Typography variant="body2" color={guidance.needsAttention ? 'error' : 'text.secondary'}
+      data-xdrive-admin-backup-verification-next-action>
+      {guidance.needsAttention ? '建议优先处理：' : '建议：'}{guidance.nextAction}
+    </Typography>
     <Typography variant="caption" color="text.secondary">{summary.note}</Typography>
   </Stack>
 }

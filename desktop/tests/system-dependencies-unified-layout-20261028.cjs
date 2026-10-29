@@ -37,11 +37,14 @@ test('all 11 dependency routes and global analysis policy share one responsive d
   const desktop = read('desktop/src/renderer/App.tsx')
   const synology = read('web/src/synology.tsx')
   const routeContent = read('ui/shared/src/mui/XDriveAppRouteContent.tsx')
+  const sharedApp = read('ui/shared/src/mui/XDriveApp.tsx')
   const outlet = read('ui/shared/src/mui/XDriveAppPageOutlet.tsx')
   // Both Hosts now mount the same route/content frame. Assert the actual
   // dispatch path instead of the removed Desktop-inline outlet syntax.
-  assert.match(desktop, /<XDriveAppRouteContent host=\{workspaceHost\} view=\{view\}>/)
-  assert.match(synology, /<XDriveAppRouteContent/)
+  assert.match(desktop, /<XDriveApp\b/)
+  assert.match(synology, /<XDriveApp\b/)
+  assert.doesNotMatch(desktop + synology, /<XDriveAppRouteContent\b/)
+  assert.match(sharedApp, /<XDriveAppRouteContent[\s\S]*?host=\{host\}[\s\S]*?view=\{view\}/)
   assert.match(routeContent, /xDriveIsSharedHostPageRoute\(view\)/)
   assert.match(routeContent, /<XDriveAppPageOutlet[\s\S]*host=\{host\}[\s\S]*view=\{view\}/)
   assert.match(outlet, /xDriveWorkspaceRouteRequiresAdmin\(view\) && host\.adminRoleVerified !== true/)

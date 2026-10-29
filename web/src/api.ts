@@ -1,6 +1,11 @@
 import { xDriveBaiduNativeCellsFilterParams, xDriveBaiduNativeViewportRangeParams, xDriveValidBaiduNativeViewportRangePage } from '../../ui/shared/src/media-gallery-baidu-jsapi4-viewport-range'
 import { xDriveValidBaiduNativeCellsPage } from '../../ui/shared/src/media-gallery-baidu-jsapi4-cells'
 import {
+  xDriveBaiduOwnerPhotoFocusParams,
+  xDriveOwnerPhotoFocusSignalActive,
+  xDriveValidBaiduOwnerPhotoFocus,
+} from '../../ui/shared/src/media-gallery-baidu-photo-focus'
+import {
   xDriveBaiduNativeCellRangeParams, xDriveValidBaiduNativeCellRangePage,
 } from '../../ui/shared/src/media-gallery-baidu-jsapi4-cell-range'
 import type { XDriveBaiduCellRangeSort } from '../../ui/shared/src/media-gallery-baidu-jsapi4-cell-range'
@@ -990,12 +995,12 @@ export class XDriveApi {
     return this.request<MeResult>('/api/v1/me', { signal })
   }
 
-  quota() {
-    return this.request<QuotaUsage>('/api/v1/me/quota')
+  quota(signal?: AbortSignal) {
+    return this.request<QuotaUsage>('/api/v1/me/quota', { signal })
   }
 
-  storageStats() {
-    return this.request<StorageStats>('/api/v1/me/storage')
+  storageStats(signal?: AbortSignal) {
+    return this.request<StorageStats>('/api/v1/me/storage', { signal })
   }
 
   adminStorageStats() {
@@ -1009,8 +1014,8 @@ export class XDriveApi {
     })
   }
 
-  adminServices() {
-    return this.request<XDriveServiceDependenciesSnapshot>('/api/v1/admin/services')
+  adminServices(signal?: AbortSignal) {
+    return this.request<XDriveServiceDependenciesSnapshot>('/api/v1/admin/services', { signal })
   }
 
   adminCaddyHTTPSConfig() {
@@ -1412,8 +1417,10 @@ export class XDriveApi {
     return result
   }
 
-  adminUsers() {
-    return this.request<AdminUser[]>('/api/v1/admin/users')
+  adminUsers(signal?: AbortSignal) {
+    // Only this disposable administrator list GET participates in renderer
+    // foreground preemption; mutation endpoints retain independent lifetimes.
+    return this.request<AdminUser[]>('/api/v1/admin/users', { signal })
   }
 
   adminAudit(params: {
@@ -1976,6 +1983,29 @@ export class XDriveApi {
         throw new Error('Invalid BD09 native viewport response')
       }
       return page
+    })
+  }
+
+  /**
+   * A specific, currently authorized Photo Info Node -> derived BD-09 camera
+   * hint for the trusted Parent. It is NOT a Gallery/Viewer authorization:
+   * callers must still independently revalidate the current signed /cells.
+   * Neither source WGS84 nor any token/AK reaches the SDK Child or a URL.
+   */
+  mediaBaiduNativePhotoFocus(
+    nodeID: number, revision: number, signal: AbortSignal,
+  ) {
+    const q = xDriveBaiduOwnerPhotoFocusParams(nodeID, revision)
+    if (!q || !xDriveOwnerPhotoFocusSignalActive(signal))
+      return Promise.reject(new Error('Invalid or cancelled Owner photo focus'))
+    return this.request<unknown>(
+      '/api/v1/media/places/baidu-jsapi/photo-focus?' + q.toString(),
+      { signal, cache: 'no-store' },
+    ).then(value => {
+      if (!xDriveOwnerPhotoFocusSignalActive(signal) ||
+          !xDriveValidBaiduOwnerPhotoFocus(value, nodeID, revision))
+        throw new Error('Invalid or cancelled Owner BD09 photo focus')
+      return value
     })
   }
 
@@ -2744,8 +2774,10 @@ export class XDriveApi {
     return `${API_BASE}${ticket.url}`
   }
 
-  deviceBackups() {
-    return this.request<XDriveDeviceBackupOverview>('/api/v1/device-backups')
+  deviceBackups(signal?: AbortSignal) {
+    // Read-only owner-redacted overview may be abandoned on navigation.
+    // Device backup execution and mutations use distinct requests.
+    return this.request<XDriveDeviceBackupOverview>('/api/v1/device-backups', { signal })
   }
 
   // Same redacted endpoint and keyset contract as Desktop's Go Client.
@@ -2772,8 +2804,10 @@ export class XDriveApi {
     return this.request<ExternalSource[]>('/api/v1/sources')
   }
 
-  sourceOverview() {
-    return this.request<ExternalSourceOverview[]>('/api/v1/sources/overview')
+  sourceOverview(signal?: AbortSignal) {
+    // Only this read-only, Owner-scoped overview GET is disposable. Source
+    // trigger/cancel/configuration mutations never share navigation signals.
+    return this.request<ExternalSourceOverview[]>('/api/v1/sources/overview', { signal })
   }
 
   createSource(input: CreateExternalSourceInput) {
@@ -3096,8 +3130,8 @@ export class XDriveApi {
     })
   }
 
-  fileFavorites() {
-    return this.request<XDriveFileFavoriteItem<Node>[]>('/api/v1/file-favorites')
+  fileFavorites(signal?: AbortSignal) {
+    return this.request<XDriveFileFavoriteItem<Node>[]>('/api/v1/file-favorites', { signal })
   }
 
   favoriteFile(nodeID: number) {
@@ -3112,8 +3146,8 @@ export class XDriveApi {
     })
   }
 
-  fileRecent(limit = 16) {
-    return this.request<XDriveFileRecentItem<Node>[]>(`/api/v1/file-recent?limit=${Math.min(50, Math.max(1, Math.trunc(limit)))}`)
+  fileRecent(limit = 16, signal?: AbortSignal) {
+    return this.request<XDriveFileRecentItem<Node>[]>(`/api/v1/file-recent?limit=${Math.min(50, Math.max(1, Math.trunc(limit)))}`, { signal })
   }
 
   touchFileRecent(nodeID: number) {
@@ -3554,9 +3588,10 @@ export class XDriveApi {
     })
   }
 
-  backgroundTaskActiveSummary() {
+  backgroundTaskActiveSummary(signal?: AbortSignal) {
     return this.request<XDriveBackgroundTaskActiveSummary>(
       '/api/v1/background-tasks/active-summary',
+      { signal },
     )
   }
 
@@ -3565,21 +3600,23 @@ export class XDriveApi {
     return this.request<XDriveBackgroundTask[]>(`/api/v1/background-tasks?limit=${bounded}`)
   }
 
-  backgroundTaskPage(limit = 50, cursor = '') {
+  backgroundTaskPage(limit = 50, cursor = '', signal?: AbortSignal) {
     const bounded = Math.min(200, Math.max(1, Math.trunc(limit)))
     const query = new URLSearchParams({ limit: String(bounded) })
     if (cursor.trim()) query.set('cursor', cursor.trim())
     return this.request<XDriveBackgroundTaskPage>(
       `/api/v1/background-tasks/page?${query.toString()}`,
+      { signal },
     )
   }
 
-  adminBackgroundTaskPage(limit = 50, cursor = '') {
+  adminBackgroundTaskPage(limit = 50, cursor = '', signal?: AbortSignal) {
     const bounded = Math.min(200, Math.max(1, Math.trunc(limit)))
     const query = new URLSearchParams({ limit: String(bounded) })
     if (cursor.trim()) query.set('cursor', cursor.trim())
     return this.request<XDriveBackgroundTaskPage>(
       `/api/v1/admin/background-tasks/page?${query.toString()}`,
+      { signal },
     )
   }
 

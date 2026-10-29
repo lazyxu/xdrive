@@ -163,3 +163,41 @@ test('S5-A2a TypeScript harness resolves installed Desktop or Web workspace depe
   assert.ok(source.includes("createRequire(path.join(root, 'desktop/package.json'))('typescript')"))
   assert.ok(source.includes("createRequire(path.join(root, 'web/package.json'))('typescript')"))
 })
+
+test('S5-A2a Safari manual evidence rechecks denied secure-context and service worker getters', async () => {
+  const h = fixture({ secure: true, sw: true, standalone: true })
+  Object.defineProperty(h.window, 'isSecureContext', {
+    configurable: true,
+    get() { throw Error('SecurityError: secure-context getter denied') },
+  })
+  Object.defineProperty(h.navigator, 'serviceWorker', {
+    configurable: true,
+    get() { throw Error('SecurityError: serviceWorker getter denied') },
+  })
+  const result = await h.mod.collectXDrivePwaS5DeviceEvidence()
+  assert.equal(result.secure_context_observed, false,
+    'cached install hints must not falsely claim current secure context')
+  assert.equal(result.service_worker_api_supported, false,
+    'a present but inaccessible browser API is not a verified supported capability')
+  assert.equal(result.service_worker_controller_observed, false)
+  assert.equal(result.service_worker_matches_public_script, false)
+  assert.equal(result.transport_observed, 'https',
+    'a visible HTTPS scheme is not an OS certificate trust proof')
+  assert.equal(result.trusted_os_certificate_verified, 'NOT_VERIFIED')
+  assert.equal(result.physical_device_acceptance, 'NOT_RUN')
+  assert.doesNotMatch(JSON.stringify(result), /SecurityError|serviceWorker getter denied/)
+})
+
+test('S5-A2a manual evidence does not reuse stale positive install hints after capability removal', async () => {
+  const h = fixture({ secure: true, sw: true })
+  // The shared installation snapshot is intentionally retained by the fixture.
+  // This explicit click must still fail closed when the actual browser changes.
+  h.window.isSecureContext = false
+  h.navigator.serviceWorker = undefined
+  const result = await h.mod.collectXDrivePwaS5DeviceEvidence()
+  assert.equal(result.secure_context_observed, false)
+  assert.equal(result.service_worker_api_supported, false)
+  assert.equal(result.service_worker_controller_observed, false)
+  assert.equal(result.service_worker_matches_public_script, false)
+  assert.equal(result.release_gate, 'NO_GO_PHYSICAL_INSTALL_NOT_RUN')
+})

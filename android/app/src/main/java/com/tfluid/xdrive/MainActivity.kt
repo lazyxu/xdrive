@@ -3,10 +3,22 @@ package com.tfluid.xdrive
 import android.app.Activity
 import android.app.Application
 import android.content.Context
+import android.content.ContentResolver
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
- import android.provider.OpenableColumns
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import android.widget.Toast
 import android.os.Bundle
 import java.io.IOException
 import androidx.activity.result.contract.ActivityResultContracts
@@ -45,6 +57,90 @@ internal class NativeCreateDocument : ActivityResultContract<NativeExportDocumen
 
 class MainActivity : ComponentActivity() {
     private val model by viewModels<DriveViewModel>()
+    // Transient Activity memory only: never saved to Bundle, prefs, URI grant
+    // history or an Owner-unscoped task queue. Cold restarts cannot auto-upload.
+    private var sharedFile by mutableStateOf<NativeIncomingShare?>(null)
+    private var shareBusy by mutableStateOf(false)
+    private var shareError by mutableStateOf<String?>(null)
+    // A SAF result is usable only by the exact picker that launched it, not
+    // another session that happened to re-open the same visible folder.
+    private var pendingUploadPicker: NativeSafUploadTicket? = null
+
+    private fun dismissIncomingShare() {
+        if (shareBusy) return
+        sharedFile = null
+        shareError = null
+    }
+
+    private fun receiveIncomingShare(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_SEND) return
+        if (shareBusy) return
+        val uri = nativeSingleShareCandidate(intent)
+        if (uri == null) {
+            Toast.makeText(this, "只支持有读取授权的单个共享文件。", Toast.LENGTH_LONG).show()
+            sharedFile = null
+            return
+        }
+        val state = model.controller.state.value
+        val owner = if (state.username.isNotBlank() && state.server.isNotBlank())
+            ShareOwnerIdentity(state.server, state.username) else null
+        sharedFile = NativeIncomingShare(uri, owner)
+        shareError = null
+    }
+
+    private fun confirmIncomingShare(target: NativeShareTarget) {
+        val share = sharedFile ?: return
+        val exactOwnerView = model.controller.state.value
+        if (shareBusy || share.sourceOwner != null &&
+            share.sourceOwner != target.identity ||
+            nativeShareTarget(exactOwnerView) != target) return
+        shareBusy = true
+        shareError = null
+        lifecycleScope.launch {
+            val metadata = withContext(Dispatchers.IO) {
+                queryNativeShareMetadata(applicationContext.contentResolver, share.uri)
+            }
+            if (sharedFile !== share) {
+                shareBusy = false
+                return@launch
+            }
+            // Recheck both actual Owner and the exact verified directory after
+            // asynchronous provider metadata. Never replay a stale Picker ACK.
+            val liveState = model.controller.state.value
+            val live = nativeShareTarget(liveState)
+            // A new DriveState object means Owner/path/authorization may have
+            // changed while an untrusted provider answered. Reject even an
+            // A -> B -> A login or folder hop with the same visible IDs.
+            if (liveState !== exactOwnerView || live != target ||
+                share.sourceOwner != null &&
+                share.sourceOwner != live.identity) {
+                shareBusy = false
+                sharedFile = null
+                return@launch
+            }
+            if (metadata == null) {
+                shareBusy = false
+                shareError = "共享来源没有提供有效文件名或准确大小。请在文件页使用上传。"
+                return@launch
+            }
+            val controller = model.controller
+            if (!controller.prepareFileUpload()) {
+                shareBusy = false
+                shareError = "当前目录不可上传，请结束其他操作后重试。"
+                return@launch
+            }
+            // Explicit single user confirmation accepted. The existing
+            // Controller will recheck Owner + parent before any UploadSession.
+            sharedFile = null
+            shareBusy = false
+            val resolver = applicationContext.contentResolver
+            controller.acceptFileUpload(metadata.name, metadata.byteSize) {
+                resolver.openInputStream(share.uri)
+                    ?: throw IOException("The shared source is unavailable")
+            }
+        }
+    }
+
     // SAF owns the destination; no broad storage permission or persistent URI grants.
     private val fileDestination = registerForActivityResult(
         NativeCreateDocument()
@@ -64,60 +160,125 @@ class MainActivity : ComponentActivity() {
     private val uploadSource = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
-        if (uri == null) model.controller.cancelFileUploadPicker()
-        else {
-            var filename = ""
-            var byteSize = -1L
-            try {
-                contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
-                    null, null, null)?.use { cursor ->
-                    if (cursor.moveToFirst()) {
-                        val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                        val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
-                        if (nameIndex >= 0 && !cursor.isNull(nameIndex))
-                            filename = cursor.getString(nameIndex).orEmpty()
-                        if (sizeIndex >= 0 && !cursor.isNull(sizeIndex))
-                            byteSize = cursor.getLong(sizeIndex)
+        val controller = model.controller
+        val ticket = pendingUploadPicker
+        pendingUploadPicker = null
+        // The OS may deliver a late chooser result after account/folder
+        // replacement. Do not clear the *new* Owner's picker or consume bytes.
+        if (ticket != null && ticket.isCurrent(controller.state.value)) {
+            if (uri == null || uri.scheme != ContentResolver.SCHEME_CONTENT ||
+                uri.authority.isNullOrBlank()) {
+                controller.cancelFileUploadPicker()
+            } else {
+                lifecycleScope.launch {
+                    // Content providers are untrusted IPC, potentially slow or
+                    // blocking. NEVER query their metadata on the main thread.
+                    // This shared helper reads only name/size; no file bytes.
+                    val metadata = withContext(Dispatchers.IO) {
+                        queryNativeShareMetadata(applicationContext.contentResolver, uri)
+                    }
+                    // Explicitly defend A→B→A Owner/folder replay while the
+                    // provider was responding; even identical path IDs are not
+                    // sufficient without the original immutable state object.
+                    if (!ticket.isCurrent(controller.state.value)) return@launch
+                    if (metadata == null) {
+                        // Existing Controller handles the safe failure message.
+                        // Invalid provider data must never start UploadSession.
+                        controller.acceptFileUpload("", -1L) {
+                            throw IOException("Invalid SAF source metadata")
+                        }
+                    } else {
+                        controller.acceptFileUpload(metadata.name, metadata.byteSize) {
+                            contentResolver.openInputStream(uri)
+                                ?: throw IOException("Selected file is unavailable")
+                        }
                     }
                 }
-            } catch (_: Exception) {
-                // Invalid SAF provider metadata is rejected by the Controller.
-            }
-            model.controller.acceptFileUpload(filename, byteSize) {
-                contentResolver.openInputStream(uri)
-                    ?: throw IOException("Selected file is unavailable")
             }
         }
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // This Activity cannot reconstruct a same-intent SAF ticket after an
+        // OS recreation. Do not strand the Controller's picker flag or silently
+        // accept a result whose original Owner session is no longer provable.
+        // Existing active uploads/downloads are unaffected.
+        if (savedInstanceState != null &&
+            model.controller.state.value.fileUploadPickerParent != null)
+            model.controller.cancelFileUploadPicker()
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         enableEdgeToEdge()
         setContent {
             XDriveTheme {
-                DriveApp(model.controller, model.updates, openUpdate = { url ->
-                    try {
-                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE))
-                        true
-                    } catch (_: ActivityNotFoundException) { false }
-                    catch (_: SecurityException) { false }
-                }, initialFilesView = model.initialFilesView, saveFilesView = model::saveFilesView,
-                    onDownload = { node ->
-                        if (model.controller.prepareFileExport(node)) {
-                            try {
-                                fileDestination.launch(NativeExportDocument(node.name, exportMimeType(node.name)))
+                val driveState by model.controller.state.collectAsStateWithLifecycle()
+                // The app remains interactive while login/navigation is
+                // required; the review dialog appears only for a real folder.
+                Box(Modifier.fillMaxSize()) {
+                    DriveApp(model.controller, model.updates, openUpdate = { url ->
+                        try {
+                            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE))
+                            true
+                        } catch (_: ActivityNotFoundException) { false }
+                        catch (_: SecurityException) { false }
+                    }, initialFilesView = model.initialFilesView, saveFilesView = model::saveFilesView,
+                        onDownload = { node ->
+                            if (model.controller.prepareFileExport(node)) {
+                                try {
+                                    fileDestination.launch(NativeExportDocument(node.name, exportMimeType(node.name)))
+                                }
+                                catch (_: Exception) { model.controller.cancelFileExport() }
                             }
-                            catch (_: Exception) { model.controller.cancelFileExport() }
+                        },
+                        onUpload = {
+                            if (pendingUploadPicker == null &&
+                                model.controller.prepareFileUpload()) {
+                                val ticket = NativeSafUploadTicket.capture(
+                                    model.controller.state.value)
+                                if (ticket == null) {
+                                    model.controller.cancelFileUploadPicker()
+                                } else {
+                                    try {
+                                        pendingUploadPicker = ticket
+                                        uploadSource.launch(arrayOf("*/*"))
+                                    } catch (_: Exception) {
+                                        pendingUploadPicker = null
+                                        if (ticket.isCurrent(model.controller.state.value))
+                                            model.controller.cancelFileUploadPicker()
+                                    }
+                                }
+                            }
+                        })
+                    val incoming = sharedFile
+                    if (incoming != null) {
+                        // A logout/server switch invalidates a bound source grant.
+                        androidx.compose.runtime.LaunchedEffect(
+                            driveState.screen, driveState.server, driveState.username,
+                        ) {
+                            if (incoming.sourceOwner != null &&
+                                (incoming.sourceOwner != ShareOwnerIdentity(
+                                    driveState.server, driveState.username) ||
+                                    driveState.screen == Screen.LOGIN ||
+                                    driveState.screen == Screen.CONNECT ||
+                                    driveState.screen == Screen.PASSWORD)) {
+                                sharedFile = null
+                                shareError = null
+                            }
                         }
-                    },
-                    onUpload = {
-                        if (model.controller.prepareFileUpload()) {
-                            try { uploadSource.launch(arrayOf("*/*")) }
-                            catch (_: Exception) { model.controller.cancelFileUploadPicker() }
-                        }
-                    })
+                        NativeShareReview(incoming, driveState, shareBusy, shareError,
+                            onDismiss = ::dismissIncomingShare,
+                            onConfirm = ::confirmIncomingShare)
+                    }
+                }
             }
         }
+        // Never replay an Intent on Activity recreation. OS grants and source
+        // metadata are intentionally not saved for process resurrection.
+        if (savedInstanceState == null) receiveIncomingShare(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        receiveIncomingShare(intent)
     }
 }
 

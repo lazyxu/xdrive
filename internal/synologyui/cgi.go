@@ -32,7 +32,7 @@ func CGIHandler(next http.Handler) http.Handler {
 			"device-backups", "device-backup-runs",
 			"device-backup-page", "device-backup-folders", "cloud-quota",
 			"cloud-root", "cloud-children", "cloud-text-preview", "cloud-media-range",
-			"cloud-media-stream", "cloud-thumbnail":
+			"cloud-media-stream", "cloud-thumbnail", "cloud-gallery-items", "cloud-gallery-albums":
 		default:
 			http.Error(w, "unknown CGI operation", http.StatusNotFound)
 			return

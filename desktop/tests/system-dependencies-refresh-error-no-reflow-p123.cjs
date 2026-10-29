@@ -41,7 +41,7 @@ test('P123: actual late Server refresh error is outside the spaced Dependencies 
     'late error must not be inserted between the permanent status line and the original cards')
   assert.ok(source.includes('cachedSnapshotRef.current = next'))
   assert.ok(source.includes('setRefreshing(true)'))
-  assert.ok(source.includes('source.load().then((next)'))
+  assert.ok(source.includes('source.load(controller.signal).then((next)'))
 })
 test('P123: failed cold read keeps the silent 180px geometry with the real source error',()=>{
   const cold=find('data-xdrive-system-dependencies-cold-slot')

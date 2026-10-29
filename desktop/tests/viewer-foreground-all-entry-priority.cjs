@@ -171,25 +171,31 @@ test('all routed and shared inline Viewer entry types share the foreground lease
   assert.match(desktopApp,/xDriveEnterForegroundPage\('desktop:' \+ next\)/)
   const sharedApp=read('ui/shared/src/mui/XDriveApp.tsx')
   const synologyApp=read('web/src/synology.tsx')
+  const hostNavigation=read('ui/shared/src/mui/WorkspaceNavigationState.ts')
+  const synologyHost=read('web/src/synologyHost.ts')
   assert.match(sharedApp,/useLayoutEffect\(\(\) => \{\s*xDriveEnterForegroundPage\(/)
   assert.match(sharedApp,/host\.platform.*view/)
   assert.match(synologyApp,/<XDriveApp/,
     'DSM uses the canonical Host application and must share the same page preemption')
   // DSM now uses the canonical Host service registry and the one shared
   // route-content frame, not DSM-local per-page JSX or onOpenBackup callbacks.
-  assert.match(synologyApp,/services:\s*\{/)
-  assert.match(synologyApp,/const navigate = \(next: XDriveWorkspaceAppRoute\) => \{/)
-  assert.match(synologyApp,/if \(!xDriveWorkspaceNavigationAllowed\(next, host\.adminRoleVerified === true\)\) return/,
-    'untrusted or denied destinations must not preempt')
-  assert.match(synologyApp,/xDriveEnterForegroundPage\('synology:' \+ next\)/)
+  assert.match(synologyHost,/services:\s*\{/)
+  assert.match(synologyApp,/const host = createXDriveSynologyHost\(\)/)
+  assert.match(synologyApp,/const \{ selected, pageRevision, navigate \} = useXDriveWorkspaceNavigationState\(\{/,
+    'DSM must use the shared Host-neutral route controller, not a private navigation implementation')
+  assert.match(hostNavigation,/!xDriveWorkspaceNavigationAllowed\(destination, serverAdminVerified\)/,
+    'shared route admission must reject unverified administrator destinations before preemption')
+  assert.ok(hostNavigation.includes('xDriveEnterForegroundPage(`${platform}:${next.selected}`)'),
+    'shared controller yields obsolete reads for the actual Host platform')
   const routeContent = read('ui/shared/src/mui/XDriveAppRouteContent.tsx')
-  assert.match(synologyApp,/<XDriveAppRouteContent[\s\S]*?onNavigate=\{navigate\}/,
-    'Home/Task and sidebar navigation must share the same Host route-content frame')
+  assert.match(sharedApp,/<XDriveAppRouteContent[\s\S]*?onNavigate=\{onNavigate\}/,
+    'Home/Task and sidebar navigation must share the one Host route-content frame')
+  assert.doesNotMatch(synologyApp,/<XDriveAppRouteContent/,
+    'DSM must not retain a private content wrapper')
   assert.match(routeContent,/<XDriveAppPageOutlet[\s\S]*?onNavigate=\{onNavigate\}/,
     'shared route-content frame must forward authenticated navigation into the same outlet')
-  assert.ok(synologyApp.indexOf("xDriveEnterForegroundPage('synology:' + next)") <
-    synologyApp.indexOf('setSelected(next)'),
-    'preempt old requests BEFORE mounting the authorized DSM destination')
+  assert.ok(hostNavigation.indexOf('xDriveEnterForegroundPage(`${platform}:${next.selected}`)') < hostNavigation.indexOf('setState(next)'),
+    'shared controller preempts stale disposable reads before updating the selected route')
   assert.match(synologyApp,/onNavigate=\{\(key\) => \{/,
     'Sidebar stays behind canonical route admission')
   assert.match(desktopApp,/xDriveEnterForegroundPage\('desktop:' \+ view\)/)

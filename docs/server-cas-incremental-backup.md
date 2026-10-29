@@ -331,8 +331,12 @@ separate from owning-device Push backups and from online CAS storage checks.
   configured scheduled repository if selected, otherwise the default.
 - **Read**: Host-listed committed snapshot identities and sizes, current
   schedule format, v1 retention days, operation status and bounded read-only
-  v2 retention previews. This initial UI lists up to 100 generations and
-  never accepts raw browser-supplied paths.
+  v2 retention previews. The Host counts all canonical generations while
+  publishing full metadata only for the newest 100. The administrator sees
+  the exact bounded count and whether older generations are omitted from
+  this view; older backups cannot be selected for individual actions until
+  paginated inventory is implemented. Batch verification has its independent
+  1000-generation safety bound. No browser-supplied Host path is accepted.
 - **Update**: revision-fenced v1/v2 scheduled format and v1 retention days.
   Immutable snapshot objects are never edited. The original schedule is
   retained; changing to v2 does not enable scheduled pruning.

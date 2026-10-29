@@ -2649,16 +2649,16 @@ export class AgentIPCClient {
     return this.request<AgentSettings>('PUT', '/v1/settings/sync-rule', { path, mode })
   }
 
-  storageTree() {
-    return this.request<AgentStorageTreeNode>('GET', '/v1/storage-tree', undefined, 45_000)
+  storageTree(signal?: AbortSignal) {
+    return this.request<AgentStorageTreeNode>('GET', '/v1/storage-tree', undefined, 45_000, signal)
   }
 
-  cacheStats() {
-    return this.request<AgentCacheStats>('GET', '/v1/cache')
+  cacheStats(signal?: AbortSignal) {
+    return this.request<AgentCacheStats>('GET', '/v1/cache', undefined, 10_000, signal)
   }
 
-  localDiskSpace() {
-    return this.request<AgentLocalDiskSpace>('GET', '/v1/local-disk-space')
+  localDiskSpace(signal?: AbortSignal) {
+    return this.request<AgentLocalDiskSpace>('GET', '/v1/local-disk-space', undefined, 10_000, signal)
   }
 
   releaseCache() {
@@ -3630,8 +3630,11 @@ export class AgentIPCClient {
     return this.request<AgentSource[]>('GET', '/v1/sources')
   }
 
-  deviceBackups() {
-    return this.request<AgentDeviceBackupOverview>('GET', '/v1/device-backups')
+  deviceBackups(signal?: AbortSignal) {
+    // Only the owner-redacted overview GET is disposable; backup execution
+    // and configuration writes retain their independent durable lifecycle.
+    return this.request<AgentDeviceBackupOverview>('GET', '/v1/device-backups',
+      undefined, 10_000, signal)
   }
 
   // The authenticated Go Agent alone verifies this owner-scoped read cursor.
@@ -4109,8 +4112,8 @@ export class AgentIPCClient {
     return this.request<{ ok: boolean }>('PUT', '/v1/cloud/saved-searches/order', { ids })
   }
 
-  cloudFileFavorites() {
-    return this.request<AgentCloudFavoriteItem[]>('GET', '/v1/cloud/favorites')
+  cloudFileFavorites(signal?: AbortSignal) {
+    return this.request<AgentCloudFavoriteItem[]>('GET', '/v1/cloud/favorites', undefined, 10_000, signal)
   }
 
   cloudFavoriteFile(nodeID: number) {
@@ -4121,9 +4124,9 @@ export class AgentIPCClient {
     return this.request<{ ok: boolean }>('POST', '/v1/cloud/favorites/unfavorite', { id: nodeID })
   }
 
-  cloudFileRecent(limit = 16) {
+  cloudFileRecent(limit = 16, signal?: AbortSignal) {
     const query = new URLSearchParams({ limit: String(Math.min(50, Math.max(1, Math.trunc(limit)))) })
-    return this.request<AgentCloudRecentItem[]>('GET', `/v1/cloud/recent?${query.toString()}`)
+    return this.request<AgentCloudRecentItem[]>('GET', `/v1/cloud/recent?${query.toString()}`, undefined, 10_000, signal)
   }
 
   cloudTouchFileRecent(nodeID: number) {
@@ -4376,8 +4379,8 @@ export class AgentIPCClient {
     return this.request<AgentAdminBaiduMapConfig>('PUT', '/v1/cloud/admin-baidu-map', input)
   }
 
-  cloudAdminServices() {
-    return this.request<AgentServiceDependenciesSnapshot>('GET', '/v1/cloud/admin-services')
+  cloudAdminServices(signal?: AbortSignal) {
+    return this.request<AgentServiceDependenciesSnapshot>('GET', '/v1/cloud/admin-services', undefined, 10_000, signal)
   }
   cloudAdminStorage(query: AgentAdminStorageRequest) {
     return this.request<unknown>('POST', '/v1/cloud/admin-storage', query, 120_000)
@@ -4391,8 +4394,10 @@ export class AgentIPCClient {
   cloudAdminAuditRange(query: AgentAdminAuditRangeQuery, signal?: AbortSignal) {
     return this.request<AgentAdminAuditRange>('POST', '/v1/cloud/admin-audit/range', query, 20_000, signal)
   }
-  cloudAdminUsers() {
-    return this.request<AgentAdminUser[]>('GET', '/v1/cloud/admin-users')
+  cloudAdminUsers(signal?: AbortSignal) {
+    // Only this administrator listing GET may be discarded on navigation.
+    return this.request<AgentAdminUser[]>('GET', '/v1/cloud/admin-users',
+      undefined, 10_000, signal)
   }
   cloudAdminCreateUser(input: AgentAdminCreateUserInput) {
     return this.request<AgentAdminUser>('POST', '/v1/cloud/admin-users', input)
@@ -4411,14 +4416,15 @@ export class AgentIPCClient {
     return this.request<{ ok: boolean }>('DELETE', `/v1/cloud/admin-users/${id}`)
   }
 
-  cloudBackgroundTaskActiveSummary() {
+  cloudBackgroundTaskActiveSummary(signal?: AbortSignal) {
     return this.request<AgentBackgroundTaskActiveSummary>(
       'GET',
       '/v1/cloud/background-task-summary',
+      undefined, 10_000, signal,
     )
   }
 
-  cloudBackgroundTaskPage(global = false, limit = 50, cursor = '') {
+  cloudBackgroundTaskPage(global = false, limit = 50, cursor = '', signal?: AbortSignal) {
     const query = new URLSearchParams({
       limit: String(Math.min(200, Math.max(1, Math.trunc(limit)))),
       ...(global ? { global: 'true' } : {}),
@@ -4427,6 +4433,7 @@ export class AgentIPCClient {
     return this.request<AgentBackgroundTaskPage>(
       'GET',
       `/v1/cloud/background-task-page?${query.toString()}`,
+      undefined, 10_000, signal,
     )
   }
 
@@ -4615,8 +4622,8 @@ export class AgentIPCClient {
     )
   }
 
-  cloudQuota() {
-    return this.request<AgentCloudQuota>('GET', '/v1/cloud/quota')
+  cloudQuota(signal?: AbortSignal) {
+    return this.request<AgentCloudQuota>('GET', '/v1/cloud/quota', undefined, 10_000, signal)
   }
 
   serverUpdate() {
@@ -4631,8 +4638,8 @@ export class AgentIPCClient {
     }, 45_000)
   }
 
-  cloudStorageStats() {
-    return this.request<AgentCloudStorageStats>('GET', '/v1/cloud/storage-stats')
+  cloudStorageStats(signal?: AbortSignal) {
+    return this.request<AgentCloudStorageStats>('GET', '/v1/cloud/storage-stats', undefined, 10_000, signal)
   }
 
   cloudCleanupStorageCache(kind: AgentStorageCacheCleanupKind) {
@@ -4709,12 +4716,15 @@ export class AgentIPCClient {
     return this.request<AgentFileAvailability>('GET', `/v1/file-availability?${query.toString()}`)
   }
 
-  fileAvailabilityBatch(paths: string[]) {
+  // A read-only batch query; unlike file-availability actions this POST does
+  // not change state and may be cancelled with the owning Overview view.
+  fileAvailabilityBatch(paths: string[], signal?: AbortSignal) {
     return this.request<AgentFileAvailabilityBatch>(
       'POST',
       '/v1/file-availability/batch',
       { paths },
       30_000,
+      signal,
     )
   }
 

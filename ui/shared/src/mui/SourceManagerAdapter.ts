@@ -34,8 +34,8 @@ export type XDriveSourceManagerTransportResult<T> =
 export interface XDriveSourceManagerPort {
   authorizeLocalFolder?: (sourceID: number) => Promise<XDriveSourceManagerTransportResult<{ cancelled: boolean; grant?: { root_id: string; path: string; status: string } }>>
   me?: () => Promise<XDriveSourceManagerTransportResult<{ username: string }>>
-  sourceOverview?: () => Promise<XDriveSourceManagerTransportResult<ExternalSourceOverview[]>>
-  sources?: () => Promise<XDriveSourceManagerTransportResult<ExternalSource[]>>
+  sourceOverview?: (signal?: AbortSignal) => Promise<XDriveSourceManagerTransportResult<ExternalSourceOverview[]>>
+  sources?: (signal?: AbortSignal) => Promise<XDriveSourceManagerTransportResult<ExternalSource[]>>
   sourceCredentialStatus?: (
     sourceID: number,
   ) => Promise<XDriveSourceManagerTransportResult<ExternalSourceCredentialStatus>>
@@ -132,12 +132,15 @@ export function resolveXDriveSourceManagerTransport<T>(
 
 async function synthesizedSourceOverview(
   port: XDriveSourceManagerPort,
+  signal?: AbortSignal,
 ): Promise<ExternalSourceOverview[]> {
+  signal?.throwIfAborted()
   if (!port.sources) {
     throw new Error('SourceManager port must provide sourceOverview() or sources().')
   }
-  const sources = await resolveXDriveSourceManagerTransport(port.sources())
-  return Promise.all(sources.map(async (source) => {
+  const sources = await resolveXDriveSourceManagerTransport(port.sources(signal))
+  signal?.throwIfAborted()
+  const overview = await Promise.all(sources.map(async (source) => {
     const [runs, credential] = await Promise.all([
       resolveOptionalXDriveTransport(port.sourceRuns(source.id, 1)),
       externalSourceConnectorProfile(source.kind, source.direction).credential &&
@@ -151,6 +154,11 @@ async function synthesizedSourceOverview(
       credential,
     }
   }))
+  // Legacy Desktop synthesizes an overview from bounded read-only Agent
+  // endpoints; it may not physically cancel every constituent GET yet.
+  // Never admit an aborted aggregate into the newly active SourceManager.
+  signal?.throwIfAborted()
+  return overview
 }
 
 export function createXDriveSourceManagerAdapter(
@@ -163,9 +171,9 @@ export function createXDriveSourceManagerAdapter(
       : port.me
         ? () => resolveXDriveSourceManagerTransport(port.me!())
         : undefined,
-    sourceOverview: () => port.sourceOverview
-      ? resolveXDriveSourceManagerTransport(port.sourceOverview())
-      : synthesizedSourceOverview(port),
+    sourceOverview: (signal) => port.sourceOverview
+      ? resolveXDriveSourceManagerTransport(port.sourceOverview(signal))
+      : synthesizedSourceOverview(port, signal),
     createSource: (input) => resolveXDriveSourceManagerTransport(port.createSource(input)),
     authorizeLocalFolder: port.authorizeLocalFolder
       ? (sourceID) => resolveXDriveSourceManagerTransport(port.authorizeLocalFolder!(sourceID))

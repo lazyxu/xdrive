@@ -517,9 +517,9 @@ declare global {
       agent: {
         getState: () => Promise<AgentConnectionState>
         getTransfers: () => Promise<AgentTransfers>
-        getStorageTree: () => Promise<DesktopResult<AgentStorageTreeNode>>
-        getCache: () => Promise<DesktopResult<AgentCacheStats>>
-        getLocalDiskSpace: () => Promise<DesktopResult<AgentLocalDiskSpace>>
+        getStorageTree: (requestID?: string) => Promise<DesktopResult<AgentStorageTreeNode>>
+        getCache: (requestID?: string) => Promise<DesktopResult<AgentCacheStats>>
+        getLocalDiskSpace: (requestID?: string) => Promise<DesktopResult<AgentLocalDiskSpace>>
         releaseCache: () => Promise<DesktopResult<AgentCacheReleaseResult>>
         getMediaItem: (nodeID: number, requestID: string) => Promise<DesktopResult<AgentMediaItem>>
         cancelMediaItem: (requestID: string) => Promise<DesktopResult<{ cancelled: boolean }>>
@@ -784,7 +784,7 @@ declare global {
           url: string,
         ) => Promise<DesktopResult<{ released: boolean }>>
         getSources: () => Promise<DesktopResult<AgentSource[]>>
-        getDeviceBackups: () => Promise<DesktopResult<XDriveDeviceBackupOverview>>
+        getDeviceBackups: (requestID?: string) => Promise<DesktopResult<XDriveDeviceBackupOverview>>
         getDeviceBackupsPage: (limit?: number, afterDeviceID?: string) => Promise<DesktopResult<XDriveDeviceBackupOverview>>
         getDeviceBackupFoldersPage: (deviceID: string, limit?: number, afterSourceID?: number) => Promise<DesktopResult<XDriveDeviceBackupFolderPage>>
         getDeviceBackupLocalDevice: () => Promise<DesktopResult<{ device_id: string }>>
@@ -887,10 +887,10 @@ declare global {
         cloudUpdateFileSavedSearch: (id: number, input: AgentFileSavedSearchInput) => Promise<DesktopResult<AgentFileSavedSearch>>
         cloudDeleteFileSavedSearch: (id: number) => Promise<DesktopResult<{ ok: boolean }>>
         cloudReorderFileSavedSearches: (ids: number[]) => Promise<DesktopResult<{ ok: boolean }>>
-        cloudFileFavorites: () => Promise<DesktopResult<AgentCloudFavoriteItem[]>>
+        cloudFileFavorites: (requestID?: string) => Promise<DesktopResult<AgentCloudFavoriteItem[]>>
         cloudFavoriteFile: (nodeID: number) => Promise<DesktopResult<AgentCloudFavoriteItem>>
         cloudUnfavoriteFile: (nodeID: number) => Promise<DesktopResult<{ ok: boolean }>>
-        cloudFileRecent: (limit?: number) => Promise<DesktopResult<AgentCloudRecentItem[]>>
+        cloudFileRecent: (limit?: number, requestID?: string) => Promise<DesktopResult<AgentCloudRecentItem[]>>
         cloudTouchFileRecent: (nodeID: number) => Promise<DesktopResult<AgentCloudRecentItem>>
         cloudClearFileRecent: () => Promise<DesktopResult<{ ok: boolean }>>
         cloudCreateDirectory: (parentID: number, name: string) => Promise<DesktopResult<AgentCloudNode>>
@@ -912,7 +912,7 @@ declare global {
           items: AgentCloudBatchNodeRef[],
         ) => Promise<DesktopResult<XDriveFileExplorerMediaDetails[]>>
         cloudCreateFileOperation: (type: 'copy' | 'move' | 'delete', items: AgentCloudBatchNodeRef[], parentID?: number) => Promise<DesktopResult<AgentCloudFileOperation>>
-        cloudAdminServices: () => Promise<DesktopResult<XDriveServiceDependenciesSnapshot>>
+        cloudAdminServices: (requestID?: string) => Promise<DesktopResult<XDriveServiceDependenciesSnapshot>>
         cloudAdminStorage: <T>(query: import('../../../ui/shared/src').XDriveAdminStorageRequest) =>
           Promise<DesktopResult<T>>
         cloudAdminBackups: () => Promise<DesktopResult<import('../../../ui/shared/src/server-backup-admin').XDriveServerBackupPage>>
@@ -920,7 +920,7 @@ declare global {
           Promise<DesktopResult<import('../../../ui/shared/src/server-backup-admin').XDriveServerBackupOperation>>
         cloudAdminAuditRange: (query: import('../../../ui/shared/src').XDriveAdminAuditRangeQuery, requestID?: string) =>
           Promise<DesktopResult<import('../../../ui/shared/src').AuditEventRange>>
-        cloudAdminUsers: () => Promise<DesktopResult<import('../../../ui/shared/src').AdminUser[]>>
+        cloudAdminUsers: (requestID?: string) => Promise<DesktopResult<import('../../../ui/shared/src').AdminUser[]>>
         cloudAdminCreateUser: (input: import('../../../ui/shared/src').XDriveAdminCreateUserInput) =>
           Promise<DesktopResult<import('../../../ui/shared/src').AdminUser>>
         cloudAdminUpdateUser: (id: number, input: import('../../../ui/shared/src').XDriveAdminUpdateUserInput) =>
@@ -1007,11 +1007,12 @@ declare global {
         cloudRollbackAdminGeoNames: (input: XDriveGeoNamesRollbackInput) => Promise<DesktopResult<XDriveGeoNamesConfig>>
         cloudRevealAdminBaiduMapAK: (revision: number) => Promise<DesktopResult<XDriveBaiduMapAKReveal>>
         cloudSetAdminBaiduMapConfig: (input: XDriveBaiduMapAdminUpdate) => Promise<DesktopResult<XDriveBaiduMapAdminConfig>>
-        cloudBackgroundTaskActiveSummary: () => Promise<DesktopResult<AgentBackgroundTaskActiveSummary>>
+        cloudBackgroundTaskActiveSummary: (requestID?: string) => Promise<DesktopResult<AgentBackgroundTaskActiveSummary>>
         cloudBackgroundTaskPage: (
           global?: boolean,
           limit?: number,
           cursor?: string,
+          requestID?: string,
         ) => Promise<DesktopResult<AgentBackgroundTaskPage>>
         cloudBackgroundTasks: (global?: boolean, limit?: number) => Promise<DesktopResult<AgentBackgroundTask[]>>
         cloudBackgroundTaskControl: (
@@ -1063,10 +1064,10 @@ declare global {
           grouping?: XDriveFileExplorerGrouping,
           requestID?: string,
         ) => Promise<DesktopResult<AgentCloudSearchRange>>
-        cloudQuota: () => Promise<DesktopResult<AgentCloudQuota>>
+        cloudQuota: (requestID?: string) => Promise<DesktopResult<AgentCloudQuota>>
         getServerUpdate: () => Promise<DesktopResult<AgentServerUpdateState>>
         startServerUpdate: (source: 'github' | 'gitlab', channel: 'stable' | 'master', backupFileData: boolean) => Promise<DesktopResult<AgentServerUpdateState>>
-        cloudStorageStats: () => Promise<DesktopResult<AgentCloudStorageStats>>
+        cloudStorageStats: (requestID?: string) => Promise<DesktopResult<AgentCloudStorageStats>>
         cloudCleanupStorageCache: (kind: AgentStorageCacheCleanupKind) => Promise<DesktopResult<AgentStorageCacheCleanup>>
         cloudTrash: () => Promise<DesktopResult<AgentCloudNode[]>>
         cloudTrashRange: (
@@ -1115,7 +1116,7 @@ declare global {
         cancelUpdate: () => Promise<DesktopResult<AgentUpdateState>>
         setSyncRule: (path: string, mode: 'exclude' | 'always-local' | 'default') => Promise<DesktopResult<AgentSettings>>
         getFileAvailability: (path: string) => Promise<DesktopResult<AgentFileAvailability>>
-        getFileAvailabilityBatch: (paths: string[]) => Promise<DesktopResult<AgentFileAvailabilityBatch>>
+        getFileAvailabilityBatch: (paths: string[], requestID?: string) => Promise<DesktopResult<AgentFileAvailabilityBatch>>
         setFileAvailability: (path: string, action: 'keep' | 'release' | 'online' | 'sync') => Promise<DesktopResult<AgentFileAvailability | { ok: boolean }>>
         getConflicts: () => Promise<DesktopResult<AgentConflict[]>>
         openConflict: (id: string, both?: boolean) => Promise<DesktopResult<{ ok: boolean }>>

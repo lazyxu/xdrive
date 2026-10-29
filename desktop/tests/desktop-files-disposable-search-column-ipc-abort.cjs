@@ -43,7 +43,7 @@ test('Desktop Files Search initial and virtual Ranges reach sender-scoped Agent 
   assert.match(handler, /normalizeCloudSearchFilters\(filtersValue\)/)
   assert.match(handler, /normalizeFileExplorerGrouping\(groupingValue\)/)
   assert.match(handler, /requireAgentClient\(\)\.cloudSearchRange\([\s\S]*?grouping,\s*signal,/)
-  const transport = section(agent, '  cloudSearchRange(', '  cloudQuota()')
+  const transport = section(agent, '  cloudSearchRange(', '  cloudQuota(')
   assert.match(transport, /signal\?: AbortSignal/)
   assert.match(transport, /filters\.availability \? 130_000 : 45_000,\s*signal,/,
     'availability-based slow search retains its timeout; only obsolete GET aborts')

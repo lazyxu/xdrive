@@ -23,6 +23,10 @@ const expectedExtra = [
 ]
 const registered = [...routes.XDRIVE_APP_WORKSPACE_ROUTES]
 assert.equal(new Set(registered).size, registered.length, 'no duplicate navigation routes')
+assert.deepEqual(routes.XDRIVE_SHARED_HOST_PAGE_ROUTES, registered.filter(key => key !== 'files'),
+  'the shared route outlet must auto-inherit every canonical route except transitional Desktop Files')
+assert.equal(new Set(routes.XDRIVE_SHARED_HOST_PAGE_ROUTES).size, registered.length - 1,
+  'shared Host page registry cannot duplicate routes')
 for (const key of [...expectedCore, ...expectedExtra]) {
   assert.ok(routes.xDriveIsWorkspaceAppRoute(key), 'missing Desktop route: ' + key)
 }
@@ -59,6 +63,7 @@ const desktopPort = read('desktop/src/renderer/desktopOverviewAdapter.ts')
 const hostSections = read('ui/shared/src/mui/WorkspaceHostSections.tsx')
 const desktop = read('desktop/src/renderer/App.tsx')
 const dsm = read('web/src/synology.tsx')
+const dsmHost = read('web/src/synologyHost.ts')
 assert.ok(desktop.includes('<XDriveApp') && dsm.includes('<XDriveApp'),
   'Desktop and DSM must mount the same complete app frame')
 assert.ok(sharedApp.includes('onSelect={onNavigate}') &&
@@ -68,7 +73,8 @@ assert.ok(sharedOutlet.includes('host.adminRoleVerified !== true'),
   'shared outlet must reject unverified administrative session')
 assert.ok(sharedOutlet.includes('if (!page)'),
   'unimplemented DSM host operations must fail as unavailable, not silently succeed')
-assert.ok(dsm.includes('<XDriveAppRouteContent') &&
+assert.ok(sharedApp.includes('<XDriveAppRouteContent') &&
+  !dsm.includes('<XDriveAppRouteContent') &&
   sharedRouteContent.includes('<XDriveAppPageOutlet') &&
   sharedRouteContent.includes('view={view}') &&
   sharedRouteContent.includes('host={host}'),
@@ -76,7 +82,10 @@ assert.ok(dsm.includes('<XDriveAppRouteContent') &&
 assert.ok(!dsm.includes('pages: {') && !dsm.includes('<XDriveHomePage') &&
   !dsm.includes('<XDriveDeviceBackupPage'),
   'DSM provides domain ports and no independent page JSX')
-assert.ok(dsm.includes('services: {') && hostContract.includes('XDriveWorkspaceHostServices') &&
+assert.ok(dsm.includes('const host = createXDriveSynologyHost()') &&
+  !dsm.includes('services: {') && dsmHost.includes('services: {') &&
+  dsmHost.includes('createXDriveSynologyBackupLocalClient(cgi.href)') &&
+  hostContract.includes('XDriveWorkspaceHostServices') &&
   sharedOutlet.includes('switch (view)') && sharedOutlet.includes('services.deviceBackups'),
   'shared page outlet composes pages using authenticated host data')
 assert.ok(dsm.includes('sections: xDriveWorkspaceHostSections({') &&
@@ -98,7 +107,8 @@ for (const key of [
   assert.equal(routes.xDriveIsSharedHostPageRoute(key), true,
     'Desktop common outlet must dispatch: ' + key)
 }
-assert.ok(desktop.includes('<XDriveAppRouteContent host={workspaceHost} view={view}>') &&
+assert.ok(!desktop.includes('<XDriveAppRouteContent') &&
+  sharedApp.includes('<XDriveAppRouteContent') &&
   sharedRouteContent.includes('xDriveIsSharedHostPageRoute(view)') &&
   sharedRouteContent.includes('<XDriveAppPageOutlet') &&
   !desktop.includes('<XDriveAppPageOutlet'),
@@ -137,11 +147,11 @@ assert.equal(desktop.includes('<DesktopDiagnosticsPage'), false)
 assert.ok(desktop.includes('overviewPage: {') && sharedOutlet.includes('<XDriveOverviewPage') &&
   hostContract.includes('readonly overviewPage?: XDriveOverviewPageProps'),
   'Desktop must use one lazily-mounted Overview Host port and shared page')
-assert.ok(overview.includes('port.cloudFileRecent(6)') &&
-  overview.includes('port.cloudFileFavorites()') &&
+assert.ok(overview.includes('port.cloudFileRecent(6, controller.signal)') &&
+  overview.includes('port.cloudFileFavorites(controller.signal)') &&
   !overview.includes('window.xdriveDesktop') &&
   desktopPort.includes('window.xdriveDesktop.agent'),
   'Owner reads must stay in a host-neutral controller with native IPC in Desktop adapter')
-assert.ok(!/window\.xdriveDesktop|ipcRenderer/.test(dsm + sharedApp + sharedRouteContent + sharedOutlet),
+assert.ok(!/window\.xdriveDesktop|ipcRenderer/.test(dsm + dsmHost + sharedApp + sharedRouteContent + sharedOutlet),
   'DSM/static common application must not invoke Electron IPC')
 console.log('Unified Desktop/DSM routes, admin boundary and host-shell invariants verified')
