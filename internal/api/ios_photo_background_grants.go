@@ -60,11 +60,11 @@ func iosPhotoGrantValid(g meta.IOSPhotoBackgroundGrant, device meta.ClientDevice
 
 func iosPhotoGrantDTO(grant meta.IOSPhotoBackgroundGrant) gin.H {
 	return gin.H{
-		"id": grant.ID,
-		"device_id": grant.DeviceID,
+		"id":           grant.ID,
+		"device_id":    grant.DeviceID,
 		"root_node_id": grant.RootNodeID,
-		"expires_at": grant.ExpiresAt,
-		"revoked": grant.RevokedAt != nil,
+		"expires_at":   grant.ExpiresAt,
+		"revoked":      grant.RevokedAt != nil,
 	}
 }
 
@@ -268,8 +268,12 @@ func (s *Server) rotateIOSPhotoBackgroundGrant(c *gin.Context) {
 			Where("id = ? AND owner_id = ? AND revoked_at IS NULL AND expires_at > ?",
 				previous.ID, previous.OwnerID, now).
 			Updates(map[string]any{"revoked_at": now, "updated_at": now})
-		if result.Error != nil { return result.Error }
-		if result.RowsAffected != 1 { return errIOSPhotoGrantDenied }
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return errIOSPhotoGrantDenied
+		}
 		return tx.Create(&next).Error
 	})
 	if err != nil {
@@ -312,9 +316,13 @@ func (s *Server) listIOSPhotoBackgroundGrants(c *gin.Context) {
 		return
 	}
 	more := len(items) > 100
-	if more { items = items[:100] }
+	if more {
+		items = items[:100]
+	}
 	out := make([]gin.H, 0, len(items))
-	for _, grant := range items { out = append(out, iosPhotoGrantDTO(grant)) }
+	for _, grant := range items {
+		out = append(out, iosPhotoGrantDTO(grant))
+	}
 	c.Header("Cache-Control", "private, no-store")
 	c.JSON(http.StatusOK, gin.H{"items": out, "has_more": more})
 }
