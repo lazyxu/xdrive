@@ -72,6 +72,7 @@ import {
   XDriveMobileAppHeader,
   xDriveWorkspacePresentation,
   xDriveWorkspaceRouteTitle,
+  useXDriveRetainedWorkspaceRoute,
   xDriveWorkspaceNavigationAllowed,
   xDriveWorkspaceStorageSummary,
   XDriveStatusAlert,
@@ -79,7 +80,7 @@ import {
 import type {
   XDriveFileExplorerExternalDropPayload,
   XDriveFileExplorerSort,
-  XDriveWorkspaceViewKey,
+  XDriveWorkspaceAppRoute as AppView,
   XDriveLocalStorageDataSource,
   MediaGallerySection,
 } from '@xdrive/ui/mui'
@@ -228,10 +229,6 @@ type ConfirmAction = {
   intent?: 'primary' | 'danger' | 'warning'
   run: () => Promise<void>
 }
-
-type AppView = XDriveWorkspaceViewKey<
-  'overview' | 'admin-users' | 'admin-audit' | 'admin-storage' | 'admin-services' | 'admin-maintenance'
->
 
 function initialSession(): AuthSession {
   if (xDriveBrowserStorageRead(REMEMBER_LOGIN_KEY) === 'false') {
@@ -1159,10 +1156,10 @@ function FileManager({
     exitApp()
   }, [exitApp])
   const workspaceRouteKey = xDriveWebAppWorkspaceKey(route.app, route.params)
-  const [lastWorkspaceView, setLastWorkspaceView] = useState<AppView>(
-    () => (workspaceRouteKey as AppView | undefined) ?? 'overview',
-  )
-  const appView = (workspaceRouteKey as AppView | undefined) ?? lastWorkspaceView
+  // Hash/Viewer transitions keep the most recently committed workspace alive.
+  // Browser routing stays in the owning Web runtime; the retained page identity
+  // now follows the same canonical Desktop/DSM route union.
+  const appView = useXDriveRetainedWorkspaceRoute(workspaceRouteKey)
   // <main> survives app switches. A previous page's scrollTop must not shift
   // the first frame of a different app. The Viewer is a sibling overlay and
   // keeps the same appView, so its dedicated Gallery anchor remains intact.
@@ -1453,10 +1450,6 @@ function FileManager({
     foldersPage: (deviceID: string, limit: number, afterSourceID: number) => api.deviceBackupFoldersPage(deviceID, limit, afterSourceID),
     runs: (sourceID: number, limit: number, offset: number) => api.deviceBackupRunSummaries(sourceID, limit, offset),
   }), [api])
-
-  useEffect(() => {
-    if (workspaceRouteKey) setLastWorkspaceView(workspaceRouteKey as AppView)
-  }, [workspaceRouteKey])
 
   const handleError = useCallback((err: unknown) => {
     if (err instanceof ApiError) {
@@ -1820,7 +1813,7 @@ function FileManager({
   }, [appView])
 
   useEffect(() => {
-    if (profile && profile.role !== 'admin' && (appView.startsWith('admin-') || appView === 'global-tasks')) {
+    if (profile && !xDriveWorkspaceNavigationAllowed(appView, profile.role === 'admin')) {
       setAppView('files')
     }
   }, [appView, profile])

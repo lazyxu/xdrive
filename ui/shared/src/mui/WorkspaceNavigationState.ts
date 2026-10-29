@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { xDriveEnterForegroundPage } from './ViewerForegroundPriority'
 import {
   xDriveIsWorkspaceAppRoute,
@@ -76,4 +76,28 @@ export function useXDriveWorkspaceNavigationState({
     pageRevision: state.pageRevision,
     navigate,
   }
+}
+
+/**
+ * Preserve the last *committed* workspace while an immersive Viewer/Preview
+ * owns the visible route. A Browser Host owns URL/hash/history itself; this
+ * hook only retains the shared workspace page identity and never forwards
+ * native operations, writes or aborts a durable task.
+ *
+ * Layout-effect synchronization prevents a quick workspace -> Viewer handoff
+ * from borrowing an older page's scroll and thumbnail context. No update is
+ * committed during a suspended/abandoned React render.
+ */
+export function useXDriveRetainedWorkspaceRoute(
+  current: XDriveWorkspaceAppRoute | undefined,
+  fallback: XDriveWorkspaceAppRoute = 'overview',
+): XDriveWorkspaceAppRoute {
+  const [retained, setRetained] = useState<XDriveWorkspaceAppRoute>(
+    () => current ?? fallback,
+  )
+  useLayoutEffect(() => {
+    if (!current) return
+    setRetained((previous) => previous === current ? previous : current)
+  }, [current])
+  return current ?? retained
 }
