@@ -97,13 +97,16 @@ export function XDriveMediaGalleryMapGPSCoverage({
   return <Box component="details" data-xdrive-map-gps-coverage
     sx={{mt:1,borderTop:1,borderColor:'divider',pt:0.75}}>
     <Box component="summary" sx={{cursor:'pointer',typography:'caption',
-      color:'text.secondary',minHeight:32}}>全图库 GPS 覆盖核对</Box>
+      color:'text.secondary',minHeight:44,display:'flex',alignItems:'center',
+      '&:focus-visible':{outline:'2px solid',outlineColor:'primary.main'}}}>
+      全图库 GPS 覆盖核对
+    </Box>
     <Stack spacing={0.75} sx={{mt:0.75}}>
       <Typography variant="caption" color="text.secondary">
         仅统计当前账户已索引完成的 PhotoAsset，不代表全部磁盘照片，不触发百度转换。
       </Typography>
       <Box><Button size="small" variant="outlined" disabled={current.phase==='loading'}
-        onClick={load} data-xdrive-map-gps-coverage-refresh>
+        sx={{minHeight:44}} onClick={load} data-xdrive-map-gps-coverage-refresh>
         {current.phase==='ready' ? '重新核对' : '核对 GPS 覆盖'}
       </Button></Box>
       {current.phase==='loading' ? <Stack direction="row" spacing={1} alignItems="center" role="status">
