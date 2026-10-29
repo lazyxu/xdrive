@@ -106,6 +106,9 @@ export interface XDriveIOSPhotoBackupHost {
     Promise<XDriveIOSPhotoBackgroundGrantStatus>
   configureBackgroundGrant?(session: XDriveIOSPhotoBackupSession, enabled: boolean):
     Promise<XDriveIOSPhotoBackgroundGrantStatus>
+  emergencyStopBackground?(): Promise<{
+    localStopped: boolean; remoteRevokePending: boolean
+  }>
   cancel(): Promise<void>
   switchServer(): Promise<void>
 }
@@ -137,6 +140,7 @@ export function XDriveIOSPhotoBackupSettings({
   const [bgGrant, setBGGrant] = useState<XDriveIOSPhotoBackgroundGrantStatus | null>(null)
   const [bgGrantBusy, setBGGrantBusy] = useState(false)
   const [bgGrantError, setBGGrantError] = useState('')
+  const [bgStopNotice, setBGStopNotice] = useState('')
   const activeRun = useRef(false)
 
   // Changing authenticated Owner or closing Settings cancels the current
@@ -153,6 +157,7 @@ export function XDriveIOSPhotoBackupSettings({
     setAutoStatus(null)
     setBGGrant(null)
     setBGGrantError('')
+    setBGStopNotice('')
     if (session) {
       void host.capabilities().then(async supported => {
         if (!mounted || !supported) return
@@ -287,6 +292,34 @@ export function XDriveIOSPhotoBackupSettings({
         try { setBGGrant(await host.backgroundGrantStatus(session)) }
         catch { setBGGrant(null) }
       }
+    } finally {
+      setBGGrantBusy(false)
+    }
+  }
+
+  const emergencyStopBG = async () => {
+    if (!host.nativeBackgroundGrantSupported ||
+        !host.emergencyStopBackground || bgGrantBusy) return
+    setBGGrantBusy(true)
+    setBGGrantError('')
+    setBGStopNotice('')
+    try {
+      const result = await host.emergencyStopBackground()
+      if (result.localStopped !== true) throw new Error('本机停止未得到确认。')
+      // This is a LOCAL result, not proof that the Server has revoked
+      // the grant. Preserve a visible retry path for remote revocation.
+      setBGGrant(result.remoteRevokePending ? {
+        enrolled: true, enabled: false, storedButUnverified: false,
+        revokePending: true, serverVerified: false, expiresAt: 0,
+        backgroundUploadReady: false,
+      } : null)
+      setBGStopNotice(result.remoteRevokePending
+        ? '本机后台备份已停止；请联网后再次点击撤销服务器授权。'
+        : '已取消本机后台任务；没有活跃的本机后台授权。')
+    } catch (caught) {
+      setBGGrant(null)
+      setBGGrantError(caught instanceof Error
+        ? caught.message : '无法证实本机后台凭据已清除，请解锁后重试。')
     } finally {
       setBGGrantBusy(false)
     }
@@ -488,6 +521,11 @@ export function XDriveIOSPhotoBackupSettings({
                 尚未启用经过服务器验证的原生后台授权。
               </Typography>
             )}
+            {bgStopNotice ? (
+              <Alert severity="info" data-xdrive-ios-bg-local-stop-status>
+                {bgStopNotice}
+              </Alert>
+            ) : null}
             {bgGrantError ? (
               <Alert severity="warning" data-xdrive-ios-bg-grant-error>
                 {bgGrantError}
@@ -503,6 +541,14 @@ export function XDriveIOSPhotoBackupSettings({
                 : bgGrant?.enrolled ? '停止并撤销后台授权'
                 : '授权此设备进行系统后台原件备份'}
             </Button>
+            {host.emergencyStopBackground ? (
+              <Button variant="outlined" color="warning"
+                disabled={bgGrantBusy}
+                data-xdrive-ios-bg-emergency-stop
+                onClick={() => { void emergencyStopBG() }}>
+                无网络时也可紧急停止本机后台备份
+              </Button>
+            ) : null}
           </Stack>
         ) : null}
         {host.receiptReviewSupported ? (

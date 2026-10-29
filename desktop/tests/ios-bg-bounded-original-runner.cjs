@@ -69,3 +69,28 @@ test('local revoke and OS expiration fence each subsequent chunk without credent
   assert.doesNotMatch(transport,/URLSessionConfiguration\.background/)
   assert.doesNotMatch(schedule,/accessToken|grantSecret|deviceToken|localIdentifier/)
 })
+
+test('offline local BG stop is stop-only, preserves remote revoke evidence and is available in shared UI and bootstrap',()=>{
+  const manager=read('PhotoBackgroundGrantManager.swift')
+  const bridge=read('IOSPhotoHostBridge.swift')
+  const native=fs.readFileSync(path.join(root,'ios/XDriveIOS/XDriveWebAppHome.swift'),'utf8')
+  const web=fs.readFileSync(path.join(root,'web/src/iosPhotoHostAdapter.ts'),'utf8')
+  const shared=fs.readFileSync(path.join(root,'ui/shared/src/mui/IOSPhotoBackupSettings.tsx'),'utf8')
+  const localStop=manager.match(/func emergencyStopLocally\(\) async throws -> Bool \{[\s\S]*?\n    \}/)?.[0]
+  assert.ok(localStop,'missing native offline stop method')
+  assert.ok(localStop.indexOf('revokePendingRequests()') <
+            localStop.indexOf('XDriveIOSApprovedPhotoBGVault.shared.current()'))
+  assert.ok(localStop.indexOf('.cancelLocally(owner: owner)') <
+            localStop.indexOf('try read(owner: owner)'))
+  assert.match(localStop,/pending.revokePending = true/)
+  assert.match(localStop,/try save\(pending, owner: owner\)/)
+  assert.doesNotMatch(localStop,/accessToken|Bearer |URLSession|\.request\(/)
+  assert.match(bridge,/case "photos\.background\.emergencyStop":/)
+  assert.match(bridge,/let pendingApproval = activeGrantTask[\s\S]*?await pendingApproval.value/)
+  assert.match(bridge,/!emergencyStopInProgress/)
+  assert.match(native,/offline-ios-photo-emergency-stop/)
+  assert.match(native,/\.shared.emergencyStopLocally\(\)/)
+  assert.match(web,/this.request\('photos\.background\.emergencyStop'\)/)
+  assert.match(shared,/data-xdrive-ios-bg-emergency-stop/)
+  assert.match(shared,/remoteRevokePending/)
+})

@@ -280,6 +280,44 @@ actor XDriveIOSPhotoBackgroundGrantManager {
         return try localStatus(owner: owner)
     }
 
+    /// Stop local system background work even when the Server or PWA login
+    /// cannot be reached. This never grants access to Photos or uploads and
+    /// does not claim that the remote grant has been revoked.
+    ///
+    /// A separate, after-first-unlock vault can be the only surviving copy
+    /// after a crash during approval. Preserve a pending remote-revocation
+    /// record for that exact grant before reporting local stop complete.
+    @discardableResult
+    func emergencyStopLocally() async throws -> Bool {
+        // Cancellation must precede any Keychain read, which might fail.
+        XDriveIOSBackgroundPhotoTask.revokePendingRequests()
+        guard let approved = try await XDriveIOSApprovedPhotoBGVault.shared.current()
+        else { return false }
+        let owner = try approved.ownerScope()
+        // Deleting the background-readable vault first prevents any future
+        // BGTask or per-chunk admission, even if the foreground Keychain
+        // record cannot be written while locked/corrupt.
+        try await XDriveIOSApprovedPhotoBGVault.shared.cancelLocally(owner: owner)
+        var pending: IOSPhotoNativeGrant
+        if let existing = try read(owner: owner) {
+            guard existing.grantID == approved.grantID else {
+                throw XDriveIOSPhotoBackgroundGrantError.corruptKeychain
+            }
+            pending = existing
+        } else {
+            pending = IOSPhotoNativeGrant(
+                origin: approved.origin, serverInstance: approved.instanceID,
+                ownerID: approved.ownerID, rootNodeID: approved.rootNodeID,
+                username: approved.username, deviceID: approved.deviceID,
+                grantID: approved.grantID, rawSecret: approved.grantSecret,
+                expiresAt: approved.expiresAt, revokePending: true
+            )
+        }
+        pending.revokePending = true
+        try save(pending, owner: owner)
+        return true
+    }
+
     /// Disable immediately in the local persisted state before contacting
     /// Server. On a network failure retain a *revocation-pending* record:
     /// the future background Runner must refuse it and UI can retry.

@@ -218,6 +218,16 @@ class IOSPhotoBackupHost implements XDriveIOSPhotoBackupHost {
     )
   }
 
+  emergencyStopBackground(): Promise<{
+    localStopped: boolean; remoteRevokePending: boolean
+  }> {
+    if (!this.nativeBackgroundGrantSupported)
+      return Promise.reject(new Error('当前 IPA 尚未提供原生后台安全停止能力。'))
+    // Stop-only: intentionally send NO login/Owner token or Keychain value.
+    // The host is restricted to a trusted HTTPS main-frame origin.
+    return this.request('photos.background.emergencyStop')
+  }
+
   async cancel(): Promise<void> {
     await this.request<{ cancelRequested: boolean }>('photos.backup.cancel')
   }

@@ -20,6 +20,7 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
     private var activeReview: Task<Void, Never>?
     private var activeReviewID: String?
     private var activeGrantTask: Task<Void, Never>?
+    private var emergencyStopInProgress = false
     private static let maxReceiptReviewPerRun = 20
     private var consent: CheckedContinuation<Bool, Never>?
     private weak var consentAlert: UIAlertController?
@@ -184,6 +185,32 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
             } catch {
                 sendError(id, "无法核实当前服务器与 Owner，未读取系统相册。")
             }
+        case "photos.background.emergencyStop":
+            // Local stop-only capability: a trusted HTTPS main frame can
+            // always cancel its own iPhone background grant without a
+            // currently reachable Server, Owner bearer or PWA cookie.
+            guard !emergencyStopInProgress else {
+                sendError(id, "本机后台停止操作正在执行。")
+                return
+            }
+            emergencyStopInProgress = true
+            defer { emergencyStopInProgress = false }
+            // A simultaneous enable MUST finish before we delete its vault,
+            // otherwise an in-flight approval could reinstall the grant.
+            let pendingApproval = activeGrantTask
+            cancelActive()
+            if let pendingApproval { await pendingApproval.value }
+            do {
+                let pendingRemoteRevoke =
+                    try await XDriveIOSPhotoBackgroundGrantManager.shared
+                        .emergencyStopLocally()
+                sendResult(id, [
+                    "localStopped": true,
+                    "remoteRevokePending": pendingRemoteRevoke
+                ])
+            } catch {
+                sendError(id, "已请求取消后台任务，但无法确认本机 Keychain 已清除。请解锁后重试。")
+            }
         case "photos.background.grant.status":
             guard let source = parseOwner(body) else {
                 sendError(id, "后台授权状态需要当前登录的 Owner。")
@@ -217,7 +244,8 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                 sendError(id, "当前 Owner/Root 或本机后台凭据无法验证。")
             }
         case "photos.background.grant.configure":
-            guard activeBackup == nil && activeGrantTask == nil,
+            guard activeBackup == nil && activeGrantTask == nil &&
+                  !emergencyStopInProgress,
                   let source = parseOwner(body),
                   let params = body["params"] as? [String: Any],
                   let enabled = params["enabled"] as? Bool else {
