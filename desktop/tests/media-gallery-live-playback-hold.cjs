@@ -221,6 +221,39 @@ test('hidden Viewer immediately cancels motion, retires late tickets, and pagehi
   }
 })
 
+test('hidden deferred pointer must not play motion after foreground resume', async () => {
+  const previousDocument = global.document
+  let visibility = 'hidden'
+  global.document = {
+    get visibilityState() { return visibility },
+    addEventListener() {},
+    removeEventListener() {},
+  }
+  let tree
+  let loads = 0
+  try {
+    await act(async () => {
+      tree = mount(makePlayer(async () => {}), async () => {
+        loads++
+        return 'https://example.invalid/hidden-touch.mov'
+      }, 'deferred:hidden:1', { deferTouchHold: true })
+      await flush()
+    })
+    await act(async () => { press(tree); await flush() })
+    visibility = 'visible'
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 310))
+      await flush()
+    })
+    assert.equal(loads, 0,
+      'hidden queued pointerdown must not become an automatic Live Photo hold on resume')
+  } finally {
+    if (tree) await act(async () => tree.unmount())
+    if (previousDocument === undefined) delete global.document
+    else global.document = previousDocument
+  }
+})
+
 test('P0-L6 pending video.play retains still; release abort is not a permanent Live failure', async () => {
   const firstPlay = deferred()
   let playCalls = 0
