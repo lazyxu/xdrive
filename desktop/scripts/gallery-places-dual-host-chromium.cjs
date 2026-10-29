@@ -2569,13 +2569,32 @@ async function testAdjacent142And28PhotoCovers(browser,mode,port){
       paged.error===0&&paged.fixedStrip===0&&errors.length===0)
     // The 142nd thumbnail must actually open the Owner-authenticated Viewer.
     // Re-entering this Cell cannot rely on the first 48-item page.
-    // The new 142nd tile is committed before browser layout completes.
-    // Require an actually scrollable trusted Owner grid before measuring
-    // its visual return anchor; never silently accept a zero-height layout.
-    await page.waitForFunction(()=>{
-      const grid=document.querySelector('[data-xdrive-places-photo-drawer-items]')
-      return grid && grid.scrollHeight>grid.clientHeight+40
-    },null,{timeout:10000})
+    // All 142 authorized items are present. Observe the ACTUAL modal
+    // layout before touching it: a collapsed horizontal strip, zero-height
+    // parent or clipped non-scrollable grid must not masquerade as a valid
+    // iOS-style full photo album. This also exposes the precise cause of the
+    // prior opaque 10s waitForFunction timeout in sanitized Actions logs.
+    const scrollGeometry=await page.locator(
+      '[data-xdrive-places-photo-drawer-items]').evaluate(el=>{
+        const region=el.closest('[data-xdrive-places-photo-drawer]')
+        const style=getComputedStyle(el)
+        const parent=el.parentElement
+        return {expanded:document.querySelector(
+          '[data-xdrive-places-photo-drawer-handle]')?.getAttribute('aria-expanded'),
+          display:style.display,overflowY:style.overflowY,
+          gridColumns:style.gridTemplateColumns.split(' ').length,
+          tileCount:el.querySelectorAll('[data-xdrive-places-photo-drawer-item]').length,
+          scrollHeight:el.scrollHeight,clientHeight:el.clientHeight,
+          scrollWidth:el.scrollWidth,clientWidth:el.clientWidth,
+          regionHeight:Math.round(region?.getBoundingClientRect().height||0),
+          parentHeight:Math.round(parent?.getBoundingClientRect().height||0)}
+      })
+    const vertical=scrollGeometry.expanded==='true' &&
+      scrollGeometry.display==='grid' &&
+      scrollGeometry.overflowY==='auto' &&
+      scrollGeometry.scrollHeight>scrollGeometry.clientHeight+40
+    record(mode+': 142-photo Gallery modal has real expanded vertical overflow '+
+      JSON.stringify(scrollGeometry),vertical)
     const scrollBefore=await page.locator(
       '[data-xdrive-places-photo-drawer-items]').evaluate(el=>{
         el.scrollTop=el.scrollHeight
