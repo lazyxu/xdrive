@@ -9,6 +9,7 @@ const source = fs.readFileSync(path.join(root, 'ui/shared/src/mui/VirtualCollect
 const web = fs.readFileSync(path.join(root, 'web/src/App.tsx'), 'utf8')
 const desktop = fs.readFileSync(path.join(root, 'desktop/src/renderer/App.tsx'), 'utf8')
 const sharedOutlet = fs.readFileSync(path.join(root, 'ui/shared/src/mui/XDriveAppPageOutlet.tsx'), 'utf8')
+const browserHost = fs.readFileSync(path.join(root, 'web/src/browserWorkspaceHost.ts'), 'utf8')
 
 test('cold audit first page has a fixed-height quiet slot and no immediate fake empty/spinner', () => {
   for (const token of [
@@ -75,7 +76,11 @@ test('filter buttons and update feedback never push a virtualized audit table do
   assert.ok(view.includes('data-xdrive-admin-audit-mobile-list'))
   assert.ok(view.includes('virtualCollection.loadedItems.get(index)'))
   assert.ok(view.includes('snapshot_max_id: snapshotMaxID'), 'range continuation stays snapshot-bound')
-  assert.ok(web.includes('<AdminAuditPanel api={api} />'))
+  assert.ok(web.includes('adminAudit: serverAdminVerified ? { api } : undefined') &&
+    web.includes('<XDriveAppPageOutlet host={browserWorkspaceHost} view={appView} />') &&
+    browserHost.includes('adminAuditPage: ports.adminAudit') &&
+    sharedOutlet.includes('<XDriveAdminAuditPage {...services.adminAuditPage} />'),
+    'Web Audit must pass through the authenticated Browser Host and common outlet')
   assert.ok(desktop.includes('adminAuditPage: status?.role ===') &&
     sharedOutlet.includes('<XDriveAdminAuditPage {...services.adminAuditPage} />'),
     'audit must use common page with Server-verified Desktop Host')

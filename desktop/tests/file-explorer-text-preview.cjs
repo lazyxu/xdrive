@@ -8,6 +8,8 @@ const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 
 const preview = read('ui', 'shared', 'src', 'file-preview.ts')
 const previewRequest = read('ui', 'shared', 'src', 'file-explorer-preview-request.ts')
+const readIdentity = read('ui', 'shared', 'src', 'file-explorer-read-identity.ts')
+const hostCapabilities = read('ui', 'shared', 'src', 'mui', 'FileExplorerHostCapabilities.ts')
 const explorer = read('ui', 'shared', 'src', 'mui', 'FileExplorer.tsx')
 const previewSurface = read('ui', 'shared', 'src', 'mui', 'FilePreviewSurface.tsx')
 const previewImage = read('ui', 'shared', 'src', 'mui', 'FilePreviewImage.tsx')
@@ -112,11 +114,19 @@ test('shared Inspector delegates preview rendering to FilePreviewSurface', () =>
 
 test('Web and Desktop load preview through authenticated platform adapters', () => {
   assert.ok(webApi.includes('fileTextPreview(id: number, signal?: AbortSignal)'), 'Web API text preview method must support cancellation')
-  assert.ok(webExplorer.includes('api.fileTextPreview(Number(item.id), signal)'), 'Web Explorer preview adapter must forward AbortSignal')
-  assert.ok(desktopExplorer.includes('hostPort.media.cloudTextPreview(Number(item.id), requestID)'), 'Desktop Explorer preview adapter must forward sender-scoped request id')
+  assert.ok(readIdentity.includes('export function xDriveFileExplorerReadNodeID(') &&
+    webExplorer.includes('xDriveFileExplorerReadNodeID(item, !signal?.aborted)') &&
+    webExplorer.includes('api.fileTextPreview(nodeID, signal)'),
+    'Web must validate each selected file ID and forward its scoped AbortSignal')
+  assert.ok(desktopExplorer.includes('xDriveFileExplorerReadNodeID(item, textPreviewSupported && !signal?.aborted)') &&
+    desktopExplorer.includes('hostPort.media.cloudTextPreview(nodeID, requestID)'),
+    'Desktop must validate current file ID and preserve sender-scoped IPC cancellation')
   assert.ok(desktopExplorer.includes('const result = await hostPort.requestViewport('), 'Desktop text preview must use shared request-scoped cancellation')
   assert.ok(desktopExplorer.includes('textPreviewSupported ? loadTextPreview : undefined'), 'Desktop preview must be capability gated')
-  assert.ok(desktopApp.includes("capabilities.includes('file-text-preview')"), 'Desktop App capability gate is missing')
+  assert.ok(desktopApp.includes('xDriveFileExplorerHostCapabilities(agent.hello?.capabilities)') &&
+    desktopApp.includes('textPreviewSupported: filesHostCapabilities.textPreviewSupported') &&
+    hostCapabilities.includes("textPreviewSupported: has('file-text-preview')"),
+    'Desktop text preview remains gated by an authenticated Agent handshake')
   for (const [label, source, tokens] of [
     ['preload', preload, ['cloudTextPreview', 'agent:cloud-text-preview']],
     ['Electron main', desktopMain, ['agent:cloud-text-preview', "file-text-preview"]],
@@ -164,7 +174,9 @@ test('generic preview transport is allowlisted, ticketed, range-capable, with PD
   assert.ok(desktopExplorer.includes('hostPort.releaseDiscardedPreviewURL('),
     'Desktop must release late/cancelled private preview tickets')
   assert.ok(desktopExplorer.includes('loadPreviewURL={previewStreamSupported ? loadPreviewURL : undefined}'), 'Desktop preview URL must be capability gated')
-  assert.ok(desktopApp.includes("capabilities.includes('file-preview-stream')"), 'Desktop preview stream capability gate is missing')
+  assert.ok(desktopApp.includes('previewStreamSupported: filesHostCapabilities.previewStreamSupported') &&
+    hostCapabilities.includes("previewStreamSupported: has('file-preview-stream')"),
+    'Desktop preview streaming remains gated by the authenticated Agent')
   assert.ok(preload.includes('cloudFilePreviewURL'), 'Desktop preload preview URL bridge is missing')
   assert.ok(desktopMain.includes('agent:cloud-file-preview-url'), 'Electron main preview URL bridge is missing')
   assert.ok(desktopMain.includes('agent:get-media-analysis-preview'), 'Desktop RAW derivative preview must use request-scoped IPC')
