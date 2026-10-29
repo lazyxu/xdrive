@@ -2569,6 +2569,13 @@ async function testAdjacent142And28PhotoCovers(browser,mode,port){
       paged.error===0&&paged.fixedStrip===0&&errors.length===0)
     // The 142nd thumbnail must actually open the Owner-authenticated Viewer.
     // Re-entering this Cell cannot rely on the first 48-item page.
+    // The new 142nd tile is committed before browser layout completes.
+    // Require an actually scrollable trusted Owner grid before measuring
+    // its visual return anchor; never silently accept a zero-height layout.
+    await page.waitForFunction(()=>{
+      const grid=document.querySelector('[data-xdrive-places-photo-drawer-items]')
+      return grid && grid.scrollHeight>grid.clientHeight+40
+    },null,{timeout:10000})
     const scrollBefore=await page.locator(
       '[data-xdrive-places-photo-drawer-items]').evaluate(el=>{
         el.scrollTop=el.scrollHeight
@@ -2577,7 +2584,12 @@ async function testAdjacent142And28PhotoCovers(browser,mode,port){
     await page.locator('[data-xdrive-places-photo-drawer-item]').last().click()
     await page.locator('#fixture-viewer').waitFor({state:'visible'})
     const opened=await page.evaluate(()=>window.__mapProbe.photoOpens.at(-1))
-    record(mode+': item 142 opens Viewer only after Owner anchor and page 96 recheck',
+    record(mode+': item 142 opens Viewer only after Owner anchor and page 96 recheck'+
+      ' (scrollable='+String(scrollBefore>0)+
+      ',valid='+String(opened?.valid===true)+
+      ',anchor141='+String(opened?.anchorIndex===141)+
+      ',loaded142='+String(opened?.loadedCount===142)+
+      ',browserErrors='+errors.length+')',
       scrollBefore>0&&opened?.valid===true&&opened?.anchorIndex===141&&
       opened?.loadedCount===142&&errors.length===0)
     await page.locator('#fixture-viewer-back').click()
