@@ -515,6 +515,26 @@ rm "$repo_root/.backup.lock"
 mv "$TMP/backup-lock-held" "$repo_root/.backup.lock"
 assert_runtime_services
 
+# A valid earlier v1 database-only restore already creates a safety backup.
+# Rejected v2 inputs must not create *another* backup or alter existing ones.
+# Compare one bounded directory inventory before and after each refusal.
+safety_before_restore=''
+if [[ -d "$XDRIVE_HOME/backups/pre-restore" ]]; then
+  safety_before_restore="$(find "$XDRIVE_HOME/backups/pre-restore" -mindepth 1 -maxdepth 2 \
+    -printf '%P %y %s\n' | LC_ALL=C sort)"
+fi
+assert_no_new_safety_backup() {
+  local current=''
+  if [[ -d "$XDRIVE_HOME/backups/pre-restore" ]]; then
+    current="$(find "$XDRIVE_HOME/backups/pre-restore" -mindepth 1 -maxdepth 2 \
+      -printf '%P %y %s\n' | LC_ALL=C sort)"
+  fi
+  [[ "$current" == "$safety_before_restore" ]] || {
+    echo "rejected restore changed pre-restore safety backup inventory" >&2
+    return 1
+  }
+}
+
 # v2's checksum list is itself untrusted: sha256sum -c would accept a
 # truncated list with objects.index omitted. Reject this without stopping
 # the healthy deployment or creating a default pre-restore safety backup.
@@ -528,10 +548,7 @@ if bash "$ROOT/scripts/server-restore.sh" "$incremental_backup_dir" \
 fi
 grep -Fq 'v2 checksum manifest mismatch' "$TMP/omitted-checksum-restore.log"
 cp "$checksum_original" "$incremental_backup_dir/SHA256SUMS.txt"
-[[ ! -e "$XDRIVE_HOME/backups/pre-restore" ]] || {
-  echo "invalid checksum list triggered a safety backup" >&2
-  exit 1
-}
+assert_no_new_safety_backup
 assert_runtime_services
 
 # A file alias with the same byte-perfect digest is still not an acceptable
@@ -546,10 +563,7 @@ fi
 grep -Fq 'v2 snapshot contains symlink database.dump' "$TMP/symlink-database-restore.log"
 rm "$incremental_backup_dir/database.dump"
 mv "$TMP/v2-database-held.dump" "$incremental_backup_dir/database.dump"
-[[ ! -e "$XDRIVE_HOME/backups/pre-restore" ]] || {
-  echo "symlinked snapshot entry triggered a safety backup" >&2
-  exit 1
-}
+assert_no_new_safety_backup
 assert_runtime_services
 
 # A missing or silently corrupted shared object must fail before a destructive
@@ -569,10 +583,7 @@ if bash "$ROOT/scripts/server-restore.sh" "$incremental_backup_dir" \
   exit 1
 fi
 grep -Fq "$cas_sha" "$TMP/missing-cas-restore.log"
-if [[ -e "$XDRIVE_HOME/backups/pre-restore" ]]; then
-  echo "invalid CAS unnecessarily triggered a safety backup before restore preflight" >&2
-  exit 1
-fi
+assert_no_new_safety_backup
 mv "$cas_repo_held" "$cas_repo_object"
 assert_runtime_services
 
