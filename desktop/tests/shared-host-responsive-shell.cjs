@@ -45,7 +45,7 @@ const app = loadProduction('ui/shared/src/mui/XDriveApp.tsx', {
 
 const routeContent = loadProduction('ui/shared/src/mui/XDriveAppRouteContent.tsx', {
   'react/jsx-runtime': jsxRuntime,
-  './WorkspaceContent': { XDriveWorkspaceContent: 'WorkspaceContent' },
+  './WorkspaceRouteSurface': { XDriveWorkspaceRouteSurface: 'RouteSurface' },
   './XDriveAppPageOutlet': { XDriveAppPageOutlet: 'PageOutlet' },
   './WorkspaceRoute': {
     xDriveIsSharedHostPageRoute: view => view !== 'files',
@@ -90,13 +90,12 @@ test('Host can override page padding while Files keeps its edge-to-edge viewport
   for (const platform of ['desktop', 'synology']) {
     const host = { platform }
     const overview = routeContent({ host, view: 'overview', pageSx: override })
-    assert.equal(overview.type, 'WorkspaceContent')
-    assert.equal(overview.props.presentation, 'page')
-    assert.equal(overview.props.responsive, true)
+    assert.equal(overview.type, 'RouteSurface')
+    assert.equal(overview.props.view, 'overview')
     assert.equal(overview.props.sx, override)
     const files = routeContent({ host, view: 'files', pageSx: override })
-    assert.equal(files.props.presentation, 'files')
-    assert.equal(files.props.responsive, true)
+    assert.equal(files.type, 'RouteSurface')
+    assert.equal(files.props.view, 'files')
     assert.equal(files.props.sx, undefined, 'Files must not inherit page padding')
     assert.equal(child(files, 'PageOutlet').props.view, 'files')
   }

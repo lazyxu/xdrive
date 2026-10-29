@@ -16,6 +16,8 @@ const deleteController = read('ui', 'shared', 'src', 'mui', 'FileExplorerDeleteC
 const sharedIndex = read('ui', 'shared', 'src', 'index.ts')
 const sharedMuiIndex = read('ui', 'shared', 'src', 'mui', 'index.tsx')
 const web = read('web', 'src', 'App.tsx')
+const browserHost = read('web', 'src', 'browserWorkspaceHost.ts')
+const sharedOutlet = read('ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx')
 const webApi = read('web', 'src', 'api.ts')
 const webExplorer = read('web', 'src', 'WebFileExplorer.tsx')
 const desktop = read('desktop', 'src', 'renderer', 'App.tsx')
@@ -102,7 +104,10 @@ test('Web and Desktop both render the shared file-operation center through Task 
   assert.equal((taskCenter.match(/<XDriveFileOperationCenter\b/g) || []).length, 1, 'shared Task Center must render one FileOperationCenter')
   assert.equal((taskCenter.match(/<XDriveTransferCenter\b/g) || []).length, 1, 'shared Task Center must retain local non-network task history')
   assert.ok(taskCenter.includes("title={scope === 'global' ? '全局后台任务' : '任务'}"), 'shared workspace should own the Task Center title')
-  assert.equal((web.match(/<XDriveTaskCenterPage\b/g) || []).length, 1, 'Web must render one shared Task Center')
+  assert.ok(web.includes('taskCenter:') &&
+    browserHost.includes('taskCenterPage: ports.taskCenter') &&
+    sharedOutlet.includes('<XDriveTaskCenterPage'),
+    'Web must mount the common Task Center via authenticated Browser Host')
   assert.equal((desktop.match(/<XDriveTaskCenterPage\b/g) || []).length, 0, 'Desktop must not render an independent Task Center')
   assert.ok(desktop.includes('taskCenterPage: {') && fs.readFileSync(path.join(repo, 'ui/shared/src/mui/XDriveAppPageOutlet.tsx'), 'utf8').includes('<XDriveTaskCenterPage'), 'Desktop binds one shared Task Center through authenticated Host')
   assert.equal((web.match(/<XDriveFileOperationCenter\b/g) || []).length, 0, 'Web must not duplicate FileOperationCenter composition')

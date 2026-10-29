@@ -12,6 +12,10 @@ const desktopHome = read('ui', 'shared', 'src', 'mui', 'OverviewPage.tsx')
 const desktopPort = read('desktop', 'src', 'renderer', 'desktopOverviewAdapter.ts')
 const webHome = read('web', 'src', 'WebOverviewPage.tsx')
 const webApp = read('web', 'src', 'App.tsx')
+const webAppRuntime = read('web', 'src', 'webAppRuntime.ts')
+const webApps = read('web', 'src', 'webApps.ts')
+const hostSections = read('ui', 'shared', 'src', 'mui', 'WorkspaceHostSections.tsx')
+const routeTitles = read('ui', 'shared', 'src', 'mui', 'WorkspaceRouteTitles.ts')
 
 test('Web and Desktop share one Home presentation surface', () => {
   assert.ok(home.includes('export function XDriveHomePage'))
@@ -46,9 +50,11 @@ test('shared Home owns content-first sections and shared thumbnails', () => {
 
 test('Web exposes Home as a first-class workspace and keeps platform adapters local', () => {
   assert.ok(webApp.includes('useXDriveWebAppRuntime('))
-  assert.ok(webApp.includes("?? 'overview'"))
-  assert.ok(webApp.includes("key: 'overview'"))
-  assert.ok(webApp.includes("label: '主页'"))
+  assert.ok(webAppRuntime.includes("return xDriveParseWebAppHash(window.location.hash) ?? { app: 'overview', params: {} }"),
+    'Web runtime must default to the canonical Home route')
+  assert.ok(webApps.includes("overview: { id: 'overview', title: xDriveWorkspaceRouteTitle('overview')") &&
+    hostSections.includes("key: 'overview'") && routeTitles.includes("overview: '主页'"),
+    'Home must appear in Host navigation with the canonical Chinese title')
   assert.ok(webApp.includes("appView === 'overview'"))
   assert.ok(webApp.includes('<WebOverviewPage'))
   assert.ok(webHome.includes('api.fileRecent(6, read.signal)'),
