@@ -1,0 +1,71 @@
+name: Android optional Baidu SDK compile + manifest audit
+
+# The normal master Android APK deliberately builds without Baidu libraries.
+# Run this separate check only for the stacked SDK feature, not for every push.
+on:
+  pull_request:
+    branches:
+      - feat/android-baidu-native-map-optin-20261029
+      - master
+    paths:
+      - '.github/workflows/android-baidu-optional-sdk-compile.yml'
+      - 'android/app/build.gradle.kts'
+      - 'android/app/src/baidu/**'
+      - 'android/app/src/noBaidu/**'
+      - 'android/app/src/main/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: xdrive-android-baidu-optin-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  compile-optional-sdk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout exact untrusted PR revision with read-only token
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Install Android SDK 35
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Compile actual optional MapView source and unit tests with nonfunctional CI AK
+        working-directory: android
+        env:
+          # Deliberately NOT a real credential and NOT a Google/Baidu platform AK.
+          # Kotlin compilation and manifest merging must not require a valid
+          # signing-bound native key. No real map tiles/network consent test.
+          XDRIVE_BAIDU_CI_FAKE_AK: xdrive_CI_Android_Map_Not_A_Valid_Key_20261029
+        run: |
+          set -euo pipefail
+          bash gradlew --no-daemon :app:assembleDebug :app:testDebugUnitTest \
+            "-PxdriveBaiduAndroidMapAk=${XDRIVE_BAIDU_CI_FAKE_AK}"
+      - name: Audit optional APK package, native map metadata and forbidden permissions
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=android/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$apk"
+          aapt="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$apk"
+          "$aapt" dump badging "$apk" | grep -Fq "package: name='com.tfluid.xdrive'"
+          "$aapt" dump xmltree "$apk" AndroidManifest.xml > /tmp/xdrive-baidu-merged-manifest.txt
+          grep -Fq 'com.baidu.lbsapi.API_KEY' /tmp/xdrive-baidu-merged-manifest.txt
+          "$aapt" dump permissions "$apk" > /tmp/xdrive-baidu-permissions.txt
+          if grep -E "android.permission.(ACCESS_FINE_LOCATION|ACCESS_COARSE_LOCATION|ACCESS_BACKGROUND_LOCATION|READ_PHONE_STATE|WRITE_EXTERNAL_STORAGE)" /tmp/xdrive-baidu-permissions.txt; then
+            echo 'Baidu opt-in APK unexpectedly requests location, phone or broad storage privileges' >&2
+            exit 1
+          fi
+          echo 'Optional Baidu SDK Kotlin compile, native AK placeholder and permission audit passed.'
