@@ -12,15 +12,7 @@ import type {
 } from './FileExplorer'
 
 function loadStoredViewMode(storageKey: string): XDriveFileExplorerViewMode {
-  if (typeof window === 'undefined') return 'details'
-  try {
-    const stored = window.localStorage.getItem(storageKey)
-    return stored === 'grid' || stored === 'columns' ? stored : 'details'
-  } catch {
-    // Safari/private storage getters can be denied. Keep view-mode memory
-    // usable and default to Details instead of unmounting the whole workspace.
-    return 'details'
-  }
+  return xDriveReadFileExplorerStoredViewMode(storageKey)
 }
 
 export type XDriveFileExplorerNavigationTab<TCrumb extends XDriveFileExplorerCrumb> = {
