@@ -75,6 +75,18 @@ type PendingBrowserNavigation = {
   phase: 'restoring' | 'waiting' | 'accept-after-restore' | 'cancel-after-restore' | 'accepting'
 }
 
+/** Safari may deny this optional getter during a cold PWA mount.
+ * Missing History metadata is not proof of a safe indexed traversal;
+ * never manufacture an appReturn, viewerReturn or cross-Owner authority. */
+function xDriveReadableWebHistoryState(): XDriveWebAppHistoryState | null {
+  try {
+    const value: unknown = window.history.state
+    return value && typeof value === 'object' ? value as XDriveWebAppHistoryState : null
+  } catch {
+    return null
+  }
+}
+
 function historyIndex(value: unknown): number | null {
   const index = (value as XDriveWebAppHistoryState | null)?.xdriveHistoryIndex
   return typeof index === 'number' && Number.isSafeInteger(index) && index >= 0 ? index : null
@@ -192,8 +204,8 @@ export function useXDriveWebAppRuntime(
     xDriveEnterForegroundPage('web:' + route.app)
   }, [route.app])
   const committedHashRef = useRef(window.location.hash)
-  const committedStateRef = useRef<XDriveWebAppHistoryState | null>(window.history.state)
-  const committedIndexRef = useRef(historyIndex(window.history.state) ?? 0)
+  const committedStateRef = useRef<XDriveWebAppHistoryState | null>(xDriveReadableWebHistoryState())
+  const committedIndexRef = useRef(historyIndex(xDriveReadableWebHistoryState()) ?? 0)
   const guardRef = useRef(guardBrowserNavigation)
   const blockedRef = useRef<PendingBrowserNavigation | null>(null)
   // Only a committed, resolved lazy workspace can use a synchronous route
@@ -205,13 +217,13 @@ export function useXDriveWebAppRuntime(
   guardRef.current = guardBrowserNavigation
 
   const commitBrowserRoute = useCallback((next: XDriveWebAppRoute) => {
-    const state = window.history.state
+    const state = xDriveReadableWebHistoryState()
     const nextIndex = historyIndex(state) ?? committedIndexRef.current + 1
     if (historyIndex(state) === null) {
       window.history.replaceState(indexedState(state, nextIndex), '', window.location.href)
     }
     committedIndexRef.current = nextIndex
-    committedStateRef.current = window.history.state
+    committedStateRef.current = xDriveReadableWebHistoryState()
     committedHashRef.current = window.location.hash
     xDriveEnterForegroundPage('web:' + next.app)
     routeRef.current = next
@@ -221,9 +233,9 @@ export function useXDriveWebAppRuntime(
 
   const commitProgrammaticRoute = useCallback((next: XDriveWebAppRoute) => {
     blockedRef.current = null
-    committedStateRef.current = window.history.state
+    committedStateRef.current = xDriveReadableWebHistoryState()
     committedHashRef.current = window.location.hash
-    committedIndexRef.current = historyIndex(window.history.state) ?? committedIndexRef.current
+    committedIndexRef.current = historyIndex(xDriveReadableWebHistoryState()) ?? committedIndexRef.current
     xDriveEnterForegroundPage('web:' + next.app)
     routeRef.current = next
     if (resolvedWorkspacesRef.current.has(next.app as 'files' | 'gallery')) setRoute(next)
@@ -236,16 +248,16 @@ export function useXDriveWebAppRuntime(
       routeRef.current = currentRoute()
       setRoute(routeRef.current)
     }
-    const initialIndex = historyIndex(window.history.state) ?? 0
-    window.history.replaceState(indexedState(window.history.state, initialIndex), '', window.location.href)
+    const initialIndex = historyIndex(xDriveReadableWebHistoryState()) ?? 0
+    window.history.replaceState(indexedState(xDriveReadableWebHistoryState(), initialIndex), '', window.location.href)
     committedIndexRef.current = initialIndex
-    committedStateRef.current = window.history.state
+    committedStateRef.current = xDriveReadableWebHistoryState()
     committedHashRef.current = window.location.hash
 
     const sync = () => {
       const next = currentRoute()
       const hash = window.location.hash
-      const state = window.history.state as XDriveWebAppHistoryState | null
+      const state = xDriveReadableWebHistoryState() as XDriveWebAppHistoryState | null
       const index = historyIndex(state)
       const pending = blockedRef.current
       if (pending) {
@@ -352,7 +364,7 @@ export function useXDriveWebAppRuntime(
       window.open(hash, '_blank')
       return
     }
-    const currentState = window.history.state as XDriveWebAppHistoryState | null
+    const currentState = xDriveReadableWebHistoryState() as XDriveWebAppHistoryState | null
     const from = routeRef.current
     const appReturn = options.replace
       ? currentState?.appReturn
@@ -373,7 +385,7 @@ export function useXDriveWebAppRuntime(
   }, [commitProgrammaticRoute])
 
   const closeViewer = useCallback((fallback: XDriveWebAppRoute) => {
-    const state = window.history.state as XDriveWebAppHistoryState | null
+    const state = xDriveReadableWebHistoryState() as XDriveWebAppHistoryState | null
     if (state?.viewerReturn) {
       window.history.back()
       return
@@ -383,13 +395,13 @@ export function useXDriveWebAppRuntime(
     commitProgrammaticRoute(fallback)
   }, [commitProgrammaticRoute])
 
-  const parentHash = (window.history.state as XDriveWebAppHistoryState | null)?.appReturn
+  const parentHash = (xDriveReadableWebHistoryState() as XDriveWebAppHistoryState | null)?.appReturn
   const parentRoute = parentHash ? xDriveParseWebAppHash(parentHash) : null
   const canExitApp = Boolean(parentRoute && parentRoute.app !== route.app) || route.app !== 'overview'
 
   const exitApp = useCallback(() => {
     const active = routeRef.current
-    const state = window.history.state as XDriveWebAppHistoryState | null
+    const state = xDriveReadableWebHistoryState() as XDriveWebAppHistoryState | null
     const parent = state?.appReturn ? xDriveParseWebAppHash(state.appReturn) : null
     if (parent && parent.app !== active.app) {
       window.history.back()

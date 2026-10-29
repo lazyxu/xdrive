@@ -179,7 +179,10 @@ const hostEntrySource = fs.readFileSync(path.join(repo, 'web/src/synology.tsx'),
 const hostOutletSource = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/XDriveAppPageOutlet.tsx'), 'utf8')
 assert.match(pageSource, /unavailableActions=\{unavailableActions\}/)
 assert.match(pageSource, /searchEnabled\s+unavailableActions=/)
-assert.match(hostEntrySource, /filesUnavailableActions:\s*\{/)
+const hostAdapterSource = fs.readFileSync(path.join(repo, 'web/src/synologyHost.ts'), 'utf8')
+assert.match(hostEntrySource, /const host = createXDriveSynologyHost\(\)/)
+assert.match(hostEntrySource, /<XDriveApp\s+host=\{host\}/)
+assert.match(hostAdapterSource, /filesUnavailableActions:\s*\{/)
 assert.match(hostOutletSource, /unavailableActions=\{services\.filesUnavailableActions\}/)
 assert.match(explorerSource, /searchUnavailableReason\s*\?\s*'搜索暂不可用'/)
 assert.ok(explorerSource.includes("if (command === 'new-folder' && onCreateFolder && !unavailableActions?.createFolder)"),

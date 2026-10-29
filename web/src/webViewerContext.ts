@@ -33,6 +33,16 @@ export const xDriveWebViewerMediaFile: XDriveWebViewerPredicate = (node) => {
   return kind === 'image' || kind === 'video' || kind === 'live_photo'
 }
 
+/** AbortSignal.throwIfAborted() is optional on older/restricted WebKit.
+ * Observe only the standard boolean state. An inaccessible/nonboolean state
+ * is NOT permission to publish an old Owner range or fall back to point reads. */
+function assertViewerSignalActive(signal: AbortSignal): void {
+  try {
+    if (signal.aborted === false) return
+  } catch { /* An unreadable signal must fail closed. */ }
+  throw new DOMException('Viewer read cancelled or unavailable', 'AbortError')
+}
+
 async function loadGalleryRange(
   source: MediaGalleryDataSource,
   target: XDriveWebAppGalleryTarget,
@@ -252,13 +262,13 @@ export function createXDriveWebViewerSession(
 
   const pageAt = (offset: number) => {
     if (!context || context.kind === 'selection') throw new Error('没有范围浏览上下文。')
-    if (rangeController.signal.aborted) throw new Error('查看器范围已取消。')
+    assertViewerSignalActive(rangeController.signal)
     // Freeze the signal before Promise.resolve().then(loader): a StrictMode
     // remount must never let an old queued load borrow a new Owner request.
     const signal = rangeController.signal
     return read(pages, offset, 3, async () => {
       const page = await loadRange(api, gallerySource, context, offset, pageSize, signal)
-      signal.throwIfAborted()
+      assertViewerSignalActive(signal)
       // Validate the signed opening population BEFORE caching or exposing any
       // candidate to filmstrip/neighbor controls, not just current() Viewer.
       if (privateMapRange && context.kind === 'gallery' &&
@@ -291,16 +301,17 @@ export function createXDriveWebViewerSession(
     // A prior operation must never borrow its replacement AbortController.
     const signal = rangeController.signal
     if (!context || !Number.isInteger(index) || index < 0) return null
+    assertViewerSignalActive(signal)
     if (context.kind === 'selection') {
       const id = context.nodeIDs[index]
       if (id === undefined) return null
       const node = await nodeAt(id, signal)
-      signal.throwIfAborted()
+      assertViewerSignalActive(signal)
       return { node, index, totalCount: context.nodeIDs.length }
     }
     const offset = Math.floor(index / pageSize) * pageSize
     const page = await pageAt(offset)
-    signal.throwIfAborted()
+    assertViewerSignalActive(signal)
     const item = page.items[index - offset]
     return item ? { ...item, mediaItem: item.mediaItem ? withAcknowledgedPatch(item.mediaItem) : undefined,
       index, totalCount: page.totalCount } : null
@@ -309,10 +320,11 @@ export function createXDriveWebViewerSession(
   async function neighbor(index: number, direction: -1 | 1, predicate: XDriveWebViewerPredicate) {
     const signal = rangeController.signal
     if (!context) return null
+    assertViewerSignalActive(signal)
     if (context.kind === 'selection') {
       for (let cursor = index + direction; cursor >= 0 && cursor < context.nodeIDs.length; cursor += direction) {
         const candidate = await candidateAt(cursor)
-        signal.throwIfAborted()
+        assertViewerSignalActive(signal)
         if (candidate && predicate(candidate.node)) return candidate
       }
       return null
@@ -321,7 +333,7 @@ export function createXDriveWebViewerSession(
     while (cursor >= 0) {
       const offset = Math.floor(cursor / pageSize) * pageSize
       const page = await pageAt(offset)
-      signal.throwIfAborted()
+      assertViewerSignalActive(signal)
       if (cursor >= page.totalCount) {
         if (direction > 0) return null
         cursor = page.totalCount - 1
@@ -343,13 +355,14 @@ export function createXDriveWebViewerSession(
 
   async function current(nodeID: number, index: number, wantsMedia = false, expectedNode?: Node) {
     const signal = rangeController.signal
+    assertViewerSignalActive(signal)
     const candidate = await candidateAt(index).catch((error) => {
       // A page failure may fall back to its Node, but a cancelled Owner session
       // must never issue new authorized point reads after leaving Viewer.
       if (signal.aborted || privateMapRange) throw error
       return null
     })
-    signal.throwIfAborted()
+    assertViewerSignalActive(signal)
     const usable = candidate?.node.id === nodeID && (!expectedNode || sameSource(candidate.node, expectedNode))
     // A private map Viewer must still describe the SAME bounded Owner Range
     // that opened it. A changed count is a stale selection even when the
@@ -372,7 +385,7 @@ export function createXDriveWebViewerSession(
     let mediaItem = wantsMedia && usable ? candidate.mediaItem : undefined
     if (wantsMedia && !mediaItem) mediaItem = await mediaAt(nodeID, signal)
     const node = usable ? candidate.node : mediaItem?.node ?? await nodeAt(nodeID, signal)
-    signal.throwIfAborted()
+    assertViewerSignalActive(signal)
     if (node.id !== nodeID || (expectedNode && !sameSource(node, expectedNode))) {
       invalidate(nodeID)
       throw new Error('文件版本已更改，请重新打开。')
@@ -382,7 +395,7 @@ export function createXDriveWebViewerSession(
       throw new Error('媒体信息与当前文件版本不一致，请重试。')
     }
     // A late completion must not publish OR cache data from a cancelled Owner read.
-    signal.throwIfAborted()
+    assertViewerSignalActive(signal)
     remember(nodes, nodeID, node)
     if (mediaItem) {
       mediaItem = withAcknowledgedPatch(mediaItem)

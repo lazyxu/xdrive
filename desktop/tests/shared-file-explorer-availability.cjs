@@ -10,6 +10,7 @@ const sharedExplorer = read('ui', 'shared', 'src', 'mui', 'FileExplorer.tsx')
 const sharedItemVisual = read('ui', 'shared', 'src', 'mui', 'FileExplorerItemPresentation.tsx')
 const sharedFolderIcon = read('ui', 'shared', 'src', 'mui', 'FolderIcon.tsx')
 const sharedAvailability = read('ui', 'shared', 'src', 'file-explorer-availability.ts')
+const sharedHydration = read('ui', 'shared', 'src', 'mui', 'FileExplorerHydrationStatus.ts')
 const navigationPane = read('ui', 'shared', 'src', 'mui', 'FileExplorerNavigationPane.tsx')
 const columnView = read('ui', 'shared', 'src', 'mui', 'FileExplorerColumnView.tsx')
 const mountState = read('internal', 'mount', 'state.go')
@@ -89,15 +90,15 @@ test('Desktop batches local availability instead of issuing one request per row'
     'Agent batch availability route is missing',
   )
   assert.ok(
-    agentClient.includes('fileAvailabilityBatch(paths: string[])'),
+    agentClient.includes('fileAvailabilityBatch(paths: string[], signal?: AbortSignal)'),
     'Electron Agent client batch method is missing',
   )
   assert.ok(
-    preload.includes("getFileAvailabilityBatch: (paths: string[])"),
+    preload.includes("getFileAvailabilityBatch: (paths: string[], requestID?: string)"),
     'preload batch availability bridge is missing',
   )
   assert.ok(
-    globalTypes.includes('getFileAvailabilityBatch: (paths: string[])'),
+    globalTypes.includes('getFileAvailabilityBatch: (paths: string[], requestID?: string)'),
     'renderer batch availability type is missing',
   )
   assert.ok(
@@ -133,13 +134,16 @@ test('Desktop availability is Windows-only and preserves shared sparse collectio
 })
 
 test('Desktop maps CfAPI state to shared Explorer semantics and management actions', () => {
-  for (const label of [
-    '已同步',
-    '待同步',
-    '始终保留在此设备上',
-    '释放空间',
-  ]) {
-    assert.ok(desktopExplorer.includes(label), 'Desktop availability action/status missing: ' + label)
+  // The pure state labels moved into shared UI; Desktop still delegates to
+  // that exact helper and retains its native keep/release Agent actions.
+  for (const label of ['已同步', '待同步', '正在同步']) {
+    assert.ok(sharedHydration.includes(label),
+      'shared device availability status label missing: ' + label)
+  }
+  assert.ok(desktopExplorer.includes('xDriveFileExplorerDeviceStatusLabel(state, syncing)'),
+    'Desktop must use the exact shared status projection')
+  for (const label of ['始终保留在此设备上', '释放空间']) {
+    assert.ok(desktopExplorer.includes(label), 'Desktop availability action missing: ' + label)
   }
   for (const label of [
     '正在同步',
@@ -251,7 +255,7 @@ test('Desktop overview reuses shared Home FileExplorer visuals and platform avai
   }
   for (const token of [
     'xDriveFileExplorerAvailabilityFromSnapshot',
-    'port.getFileAvailabilityBatch(paths)',
+    'port.getFileAvailabilityBatch(paths, controller.signal)',
     'availability: availability(projected)',
   ]) {
     assert.ok(desktopOverview.includes(token), 'Desktop overview availability adapter missing: ' + token)
@@ -267,15 +271,21 @@ test('Desktop overview reuses shared Home FileExplorer visuals and platform avai
 test('Desktop FileExplorer projects path-bound hydration transfer progress without extra polling', () => {
   for (const token of [
     'desktopActiveHydrationProgress',
-    "transfer.kind !== 'hydration'",
-    "transfer.state !== 'running'",
-    '(done / total) * 100',
     'hydrationProgressByPath.has(',
     'progress: hydrationProgress ?? undefined',
     'hadHydrationTransferRef.current',
     'hasUntrackedSyncing',
+    'xDriveFileExplorerDeviceHydrationProgress(transfers)',
   ]) {
-    assert.ok(desktopExplorer.includes(token), 'hydration progress projection missing: ' + token)
+    assert.ok(desktopExplorer.includes(token), 'Desktop hydration wiring missing: ' + token)
+  }
+  for (const token of [
+    "transfer.kind !== 'hydration'",
+    "transfer.state !== 'running'",
+    '(done / total) * 100',
+    'xDriveFileExplorerDeviceHydrationPathKey(transfer.path)',
+  ]) {
+    assert.ok(sharedHydration.includes(token), 'shared hydration model missing: ' + token)
   }
   assert.ok(
     desktopApp.includes('transfers: transfers.transfers'),

@@ -245,7 +245,7 @@ test('transient availability outage does not return Desktop FileExplorer to æˆ‘ç
     'availability probes must use the shared non-refresh Agent action path',
   )
   assert.ok(
-    availabilityHandler.includes('}, false)'),
+    availabilityHandler.includes('}), false)'),
     'availability probes must opt out of renderer-driven Agent state refresh',
   )
   assert.equal(

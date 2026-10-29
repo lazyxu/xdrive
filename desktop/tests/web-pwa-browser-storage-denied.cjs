@@ -100,3 +100,37 @@ test('PWA normal CacheStorage snapshot and user-triggered deletion retain byte e
   assert.deepEqual(result, { cleared_entries: 2, released_bytes: 1100 })
   assert.equal((await api.createWebBrowserStorageSnapshot()).cache_entries, 0)
 })
+
+test('PWA Safari cache clear attempts other entries after one deletion is denied, then reports failure', async () => {
+  const attempted = []
+  const failure = new Error('SecurityError: one cache container denied')
+  const api = harness({
+    cacheStorage: {
+      async keys() { return ['public-offline', 'restricted-cache', 'public-shell'] },
+      async delete(name) {
+        attempted.push(name)
+        if (name === 'restricted-cache') throw failure
+        return true
+      },
+    },
+    estimate: async () => ({ usage: 500, quota: 4000 }),
+  })
+  await assert.rejects(api.clearWebBrowserCache(), error => error === failure,
+    'a partially completed clear must not show a false success receipt')
+  assert.deepEqual(attempted, ['public-offline', 'restricted-cache', 'public-shell'],
+    'a single restricted cache must not prevent later public entries from clearing')
+})
+
+test('PWA Safari first cache deletion failure must not skip later caches', async () => {
+  const attempted = []
+  const api = harness({ cacheStorage: {
+    async keys() { return ['denied-first', 'remaining'] },
+    async delete(name) {
+      attempted.push(name)
+      if (name === 'denied-first') throw Error('one-time privacy denial')
+      return true
+    },
+  } })
+  await assert.rejects(api.clearWebBrowserCache(), /privacy denial/)
+  assert.deepEqual(attempted, ['denied-first', 'remaining'])
+})
