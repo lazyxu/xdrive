@@ -42,7 +42,20 @@ function extractJsxAttributeHandler(attributeName) {
 }
 
 function extractSavedSearchSubmit(rename) {
-  const { filename, file } = sourceFile()
+  // Web now mounts the same lifecycle-fenced saved-search dialog as Desktop.
+  // Extract its REAL submit handler, not the retired inline Web JSX.
+  const web = fs.readFileSync(path.join(repo, 'web/src/WebFileExplorer.tsx'), 'utf8')
+  for (const wire of [
+    '<XDriveFileExplorerSavedSearchDialogs',
+    'lifecycleKeyRef={organizationLifecycleKeyRef}',
+    'createSavedSearch={organization.createSavedSearch}',
+    'updateSavedSearch={organization.updateSavedSearch}',
+  ]) assert.ok(web.includes(wire), 'Web must retain shared saved-search wiring: ' + wire)
+  const filename = path.join(repo, 'ui/shared/src/mui/FileExplorerSavedSearchDialogs.tsx')
+  const file = ts.createSourceFile(
+    filename, fs.readFileSync(filename, 'utf8'),
+    ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX,
+  )
   let initializer = null
   const visit = (node) => {
     if (
@@ -113,20 +126,17 @@ test('Web FileExplorer saved-search create completion cannot cross account lifec
   const { filename, initializer } = extractSavedSearchSubmit(false)
   const pending = deferred()
   const organizationLifecycleKeyRef = { current: 'server-a:user-a' }
-  const organizationSearchScopeKeyRef = { current: 'scope-a' }
-  const activeIDs = []
   const feedback = []
-
+  // The shared create handler never activates a saved-search ID; the Host
+  // must not let account A's completed mutation affect account B.
+  const shared = fs.readFileSync(filename, 'utf8')
+  assert.equal(shared.includes('setActiveSavedSearchID'), false)
   const handler = compileExpression(filename, 'handler', initializer, {
-    organization: {
-      createSavedSearch: async () => pending.promise,
-    },
-    organizationLifecycleKeyRef,
-    organizationSearchScopeKeyRef,
-    searchState: { query: 'kind:image' },
-    persistedSearchFilters: { tagID: 5 },
-    searchFilters: { availability: null },
-    setActiveSavedSearchID: (id) => activeIDs.push(id),
+    createSavedSearch: async () => pending.promise,
+    lifecycleKeyRef: organizationLifecycleKeyRef,
+    currentQuery: 'kind:image',
+    persistedFilters: { tagID: 5 },
+    availabilityFilterActive: false,
     onFeedback: (tone, message) => feedback.push({ tone, message }),
   })
 
@@ -136,16 +146,8 @@ test('Web FileExplorer saved-search create completion cannot cross account lifec
   pending.resolve({ id: 51, name: 'A smart folder' })
   await mutation
 
-  assert.deepEqual(
-    activeIDs,
-    [],
-    'account-A saved-search completion must not activate an A id in account B',
-  )
-  assert.deepEqual(
-    feedback,
-    [],
-    'account-A saved-search completion must not publish feedback into account B',
-  )
+  assert.deepEqual(feedback, [],
+    'account-A saved-search completion must not publish feedback into account B')
 })
 
 test('Web FileExplorer saved-search replace completion cannot cross account lifecycle', async () => {
@@ -194,16 +196,11 @@ test('Web FileExplorer saved-search rename completion cannot cross account lifec
   const feedback = []
 
   const handler = compileExpression(filename, 'handler', initializer, {
-    renameSavedSearch: {
-      id: 53,
-      name: 'Before',
-      query: 'kind:image',
-      filters: { tagID: 5 },
+    renameSearch: {
+      id: 53, name: 'Before', query: 'kind:image', filters: { tagID: 5 },
     },
-    organization: {
-      updateSavedSearch: async () => pending.promise,
-    },
-    organizationLifecycleKeyRef,
+    updateSavedSearch: async () => pending.promise,
+    lifecycleKeyRef: organizationLifecycleKeyRef,
     onFeedback: (tone, message) => feedback.push({ tone, message }),
   })
 
