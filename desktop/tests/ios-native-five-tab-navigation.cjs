@@ -34,7 +34,7 @@ test('Gallery owns local, albums, cloud and map subroutes; media uses native ful
   assert.match(albums, /\.fullScreenCover\(item: \$selected, onDismiss: \{ restoreAfterViewer\(\) \}\)/);
   const cloud = read('ios/XDriveIOS/NativeCloudOriginalGallery.swift');
   assert.match(cloud, /\.fullScreenCover\(item: \$selected, onDismiss:/);
-  assert.match(cloud, /if selected == nil \{ model\.invalidate\(\) \}/);
+  assert.match(cloud, /if selected == nil \{\s*refreshAfterViewer = false\s*model\.invalidate\(\)/);
   assert.match(cloud, /\.onChange\(of: login.owner\)/);
   assert.match(local, /if selected != nil \{ suspendForViewer\(\) \}/);
   assert.match(albums, /if selected != nil \{ suspendForViewer\(\) \}/);
