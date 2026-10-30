@@ -151,6 +151,7 @@ jobs:
             desktop/tests/ios-native-auto-foreground-root-lifecycle.cjs \
             desktop/tests/ios-native-album-navigation.cjs \
             desktop/tests/ios-native-five-tab-navigation.cjs \
+            desktop/tests/ios-native-owner-scope-tab-reset.cjs \
             desktop/tests/ios-native-photo-zoom-viewer.cjs \
             desktop/tests/ios-native-photo-viewer-return.cjs
 

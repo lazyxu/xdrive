@@ -189,6 +189,13 @@ struct XDriveIOSNativePhotosDashboard: View {
             }
         }
         .onAppear { backup.refresh(owner: login.owner) }
+        .onChange(of: ownerScopeKey) { _ in
+            // The tab subtree's .id resets its views, but @State belongs to
+            // this parent. Clear dynamic recents, selected sources, launcher
+            // search and pending picker on *every* Owner/Root/Server change.
+            // Do not touch the app-root durable photo backup runner.
+            resetNavigation()
+        }
         .onChange(of: login.owner) { owner in
             if owner == nil {
                 resetNavigation()
