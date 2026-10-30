@@ -33,7 +33,7 @@ export function xDriveFileExplorerLocationAncestorCrumbs(
     if (!crumb || !Number.isSafeInteger(crumb.id) || crumb.id <= 0 ||
         typeof crumb.name !== 'string' ||
         crumb.name.trim().length === 0 || crumb.name.length > 512 ||
-        /[\\x00-\\x1f\\x7f]/.test(crumb.name) ||
+        /[\x00-\x1f\x7f]/.test(crumb.name) ||
         seen.has(crumb.id)) return null
     seen.add(crumb.id)
     if (crumb.id !== location.node_id) {
