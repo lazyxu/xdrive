@@ -18,10 +18,19 @@ type VerifiedOwnerQuota<TPort> = {
 
 export function useXDriveFileExplorerOwnerQuota<
   TPort extends XDriveFileExplorerOwnerQuotaPort,
->(port: TPort, revision: number): boolean | null {
+>(
+  port: TPort, revision: number, authenticatedRootCurrent: boolean,
+): boolean | null {
   const [state, setState] = useState<VerifiedOwnerQuota<TPort> | null>(null)
 
   useEffect(() => {
+    // Owner quota is not a bootstrap permission: do not query it until the
+    // current Host's authenticated Owner root has passed the real root read.
+    // After a Host/root replacement, hide previous quota synchronously.
+    if (!authenticatedRootCurrent) {
+      setState(null)
+      return
+    }
     const controller = new AbortController()
     let active = true
     setState(null)
@@ -42,10 +51,11 @@ export function useXDriveFileExplorerOwnerQuota<
       active = false
       controller.abort()
     }
-  }, [port, revision])
+  }, [port, revision, authenticatedRootCurrent])
 
-  // Fence changes during render, before passive cleanup, so no previous
-  // account or root revision may display a stale quota warning.
-  return state?.port === port && state.revision === revision
-    ? state.overQuota : null
+  // Fence during render, before passive effects clean up. A failed/missing
+  // authorized root cannot borrow an earlier Owner's verified quota badge.
+  return authenticatedRootCurrent &&
+    state?.port === port && state.revision === revision
+      ? state.overQuota : null
 }

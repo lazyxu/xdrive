@@ -6885,6 +6885,7 @@ function registerIPCHandlers() {
       delete_selected: ['action', 'snapshot_id', 'confirmation', 'preview_request_id'],
       prune: ['action', 'keep_last', 'confirmation'],
       policy: ['action', 'format', 'retention_days', 'revision'],
+      schedule: ['action', 'preset', 'revision', 'confirmation'],
     }
     const allowed = keys[String(value.action)]
     if (!allowed || Object.keys(value).some(key => !allowed.includes(key))) return false
@@ -6912,6 +6913,9 @@ function registerIPCHandlers() {
       case 'delete': return validID && (value.snapshot_id as string).startsWith('v1:') &&
         value.confirmation === 'DELETE ' + value.snapshot_id
       case 'prune': return validKeep && value.confirmation === 'PRUNE ' + value.keep_last
+      case 'schedule': return (value.preset === 'daily' || value.preset === 'weekly' ||
+        value.preset === 'disabled') && value.confirmation === 'SCHEDULE ' + value.preset &&
+        typeof value.revision === 'string' && /^[a-f0-9]{64}$/.test(value.revision)
       case 'policy': return validFormat && Number.isSafeInteger(value.retention_days) &&
         (value.retention_days as number) >= 0 && (value.retention_days as number) <= 3650 &&
         typeof value.revision === 'string' && /^[a-f0-9]{64}$/.test(value.revision)
