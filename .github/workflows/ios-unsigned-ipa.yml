@@ -139,6 +139,17 @@ jobs:
       - name: Verify actual bounded background original safety contract
         run: node --test desktop/tests/ios-bg-bounded-original-runner.cjs
 
+      - name: Verify Photos-first native navigation and Owner-scoped view contracts
+        run: |
+          set -euo pipefail
+          node --test \
+            desktop/tests/ios-native-owner-login-foundation.cjs \
+            desktop/tests/ios-native-photos-auto-view-mvp.cjs \
+            desktop/tests/ios-native-auto-foreground-root-lifecycle.cjs \
+            desktop/tests/ios-native-cloud-original-thumbnail-wall.cjs \
+            desktop/tests/ios-native-album-navigation.cjs \
+            desktop/tests/ios-native-five-tab-navigation.cjs
+
       - name: Prepare native brand and home screen icon
         run: bash ios/scripts/prepare-assets.sh
 
