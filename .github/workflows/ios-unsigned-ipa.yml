@@ -165,6 +165,9 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-navigation-route-check"
           node --test desktop/tests/ios-native-route-resume-wiring.cjs
 
+      - name: Verify native iPhone portrait-landscape five-slot bar
+        run: node --test desktop/tests/ios-native-compact-bottom-bar.cjs
+
       - name: Prepare native brand and home screen icon
         run: bash ios/scripts/prepare-assets.sh
 

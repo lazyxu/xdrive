@@ -101,6 +101,7 @@ struct XDriveIOSNativePhotosDashboard: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     @ObservedObject var backup: XDriveIOSNativePhotoBackupController
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @State private var tab: XDriveIOSNativeBottomTab = .gallery
     @State private var gallerySource: XDriveIOSNativeGallerySource = .local
     @State private var dynamicFeature: XDriveIOSNativeDynamicFeature?
@@ -173,6 +174,14 @@ struct XDriveIOSNativePhotosDashboard: View {
             .tabItem { Label("我的", systemImage: "person.crop.circle") }
             .tag(XDriveIOSNativeBottomTab.mine)
         }
+        // SwiftUI's TabView keeps native feature-local NavigationStacks, but
+        // the system tab strip is hidden in favor of an explicit 5-slot bar.
+        // This guarantees a compact horizontal label in iPhone landscape and
+        // gives the dynamic slot a real long-press/context-menu surface.
+        .toolbar(.hidden, for: .tabBar)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            nativeBottomBar
+        }
         .id(ownerScopeKey)
         .navigationBarBackButtonHidden(true)
         .sheet(isPresented: $showRecentPicker) {
@@ -223,6 +232,82 @@ struct XDriveIOSNativePhotosDashboard: View {
         .onChange(of: gallerySource) { _ in saveNavigationIfReady() }
         .onChange(of: dynamicFeature) { _ in saveNavigationIfReady() }
         .onChange(of: recentDynamic) { _ in saveNavigationIfReady() }
+    }
+
+    // L1 native bottom bar. The system safe-area inset remains managed by
+    // SwiftUI; 48/56pt here is visual height, not the home-indicator inset.
+    // Unlike a TabView tabItem, these buttons support an actual context menu.
+    private var nativeBottomBar: some View {
+        HStack(spacing: 0) {
+            navigationButton(.launcher, title: "全部", symbol: "square.grid.2x2")
+
+            navigationButton(
+                .dynamic,
+                title: dynamicFeature?.title ?? "最近",
+                symbol: dynamicFeature?.symbol ?? "clock.arrow.circlepath"
+            )
+            .contextMenu {
+                Button {
+                    showRecentPicker = true
+                } label: {
+                    Label("最近功能", systemImage: "clock.arrow.circlepath")
+                }
+                ForEach(recentDynamic) { feature in
+                    Button {
+                        openDynamic(feature)
+                    } label: {
+                        Label(
+                            feature.implemented ? feature.title : "\(feature.title)（未接入）",
+                            systemImage: feature.symbol
+                        )
+                    }
+                }
+            }
+            .accessibilityAction(named: Text("最近功能")) {
+                showRecentPicker = true
+            }
+
+            navigationButton(.gallery, title: "图库", symbol: "photo.on.rectangle")
+            navigationButton(.files, title: "文件", symbol: "folder")
+            navigationButton(.mine, title: "我的", symbol: "person.crop.circle")
+        }
+        .padding(.horizontal, 4)
+        .frame(height: verticalSizeClass == .compact ? 48 : 56)
+        .background(.regularMaterial)
+        .overlay(alignment: .top) { Divider() }
+        .accessibilityIdentifier("native-ios-five-slot-bar")
+    }
+
+    private func navigationButton(
+        _ destination: XDriveIOSNativeBottomTab, title: String, symbol: String
+    ) -> some View {
+        let selected = tab == destination
+        return Button {
+            tab = destination
+        } label: {
+            Group {
+                if verticalSizeClass == .compact {
+                    // iPhone landscape: label beside icon, not below it.
+                    HStack(spacing: 5) {
+                        Image(systemName: symbol).font(.body)
+                        Text(title).font(.caption).lineLimit(1)
+                    }
+                } else {
+                    VStack(spacing: 3) {
+                        Image(systemName: symbol).font(.body)
+                        Text(title).font(.caption2).lineLimit(1)
+                    }
+                }
+            }
+            .foregroundStyle(selected ? Color.accentColor : Color.secondary)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityIdentifier("native-ios-tab-\(destination.rawValue)")
     }
 
     private var gallery: some View {
