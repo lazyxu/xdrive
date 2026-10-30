@@ -43,6 +43,22 @@ internal fun shouldHandleFilesBack(state: DriveState, editOpen: Boolean, batchCo
             (state.browseSelectionMode || state.filesSection != FilesSection.BROWSE || state.path.size > 1))
 
 /**
+ * iOS-aligned Photos-first entry: only after this new authenticated session's
+ * real Owner Files root has loaded. Never interrupt a write/confirmation or
+ * override a user's explicit tab selection to jump back from Files.
+ */
+internal fun nativeGalleryFirstLandingAllowed(
+    pending: Boolean, navigation: NativeHomeNavigation, state: DriveState,
+): Boolean = pending && state.nativeUiSessionId > 0 &&
+    navigation.selected == NativeHomeTab.FILES &&
+    state.screen == Screen.FILES && state.loaded && state.path.isNotEmpty() &&
+    state.filesSection == FilesSection.BROWSE && !state.browseSelectionMode &&
+    state.selected == null && state.fileUploadPickerParent == null &&
+    state.fileExportPending == null &&
+    state.filesPdfViewer == null && state.filesAudioViewer == null &&
+    state.canNavigateFiles()
+
+/**
  * Actual one-original request requires current Gallery, exact login epoch,
  * full original grants, a single verified MediaStore selection and a safe name.
  * The Controller independently re-checks all of these before UploadSession.
@@ -128,6 +144,11 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     // A real authentication epoch, not a username, owns native navigation.
     var nativeNavigation by remember(state.nativeUiSessionId, nativeAuthenticated) {
         mutableStateOf(NativeHomeNavigation())
+    }
+    // Only the first fully verified Owner root of this login lands in Gallery.
+    // On reselecting Files, or on an incomplete/failed login, never hijack it.
+    var galleryFirstPending by remember(state.nativeUiSessionId, nativeAuthenticated) {
+        mutableStateOf(state.nativeUiSessionId > 0 && nativeAuthenticated)
     }
     var launcherSearch by remember(state.nativeUiSessionId) { mutableStateOf("") }
     var dynamicPickerOpen by remember(state.nativeUiSessionId, nativeAuthenticated) {
@@ -270,6 +291,7 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     }
     fun selectNativeTab(tab: NativeHomeTab) {
         if (!nativeAuthenticated || photoViewerOpen) return
+        galleryFirstPending = false // Explicit user choice always wins.
         when (tab) {
             NativeHomeTab.GALLERY -> when (state.screen) {
                 Screen.FILES -> if (state.canNavigateFiles()) {
@@ -297,6 +319,7 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
         }
     }
     fun openNativeShortcut(shortcut: NativeHomeShortcut) {
+        galleryFirstPending = false
         val previousGallerySource = nativeNavigation.gallerySource
         val next = nativeNavigation.open(shortcut)
         when (next.selected) {
@@ -329,6 +352,20 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                 transferCenterOpen = true
             }
             else -> nativeNavigation = next
+        }
+    }
+    LaunchedEffect(state.nativeUiSessionId, state.screen, state.loaded,
+        state.loading, state.path.map { it.id }, nativeNavigation.selected,
+        galleryFirstPending, state.fileUploadActive, state.fileDownloadActive) {
+        if (nativeGalleryFirstLandingAllowed(
+                galleryFirstPending, nativeNavigation, controller.state.value)) {
+            // Do not preempt the authenticated initial root GET: it must have
+            // completed to establish this new Owner's safe landing point.
+            galleryFirstPending = false
+            controller.openGallery()
+            if (controller.state.value.screen == Screen.GALLERY) {
+                nativeNavigation = nativeNavigation.select(NativeHomeTab.GALLERY)
+            }
         }
     }
     Scaffold(modifier = Modifier.imePadding(),
