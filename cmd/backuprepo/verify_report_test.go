@@ -162,6 +162,7 @@ func TestStructuredVerificationCLIJSONUsesNonzeroExitOnCorruption(t *testing.T) 
 		t.Fatal("CLI JSON exposed private storage details")
 	}
 }
+
 // The public v2 writer publishes these six exact files. A CAS-only verifier
 // must not report success for a malformed or checksum-tampered published
 // snapshot, nor may standalone restore erase an existing destination.
