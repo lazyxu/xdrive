@@ -86,9 +86,24 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
                 }
             }
             do {
-                let auth = try await login.verifiedAuthorization()
-                guard XDriveIOSNativePhotoOwnerScope.matches(auth.owner, expected)
-                else { throw XDriveIOSNativeMediaReadFailure.invalidScope }
+                // Reverify Owner/root before retaining any previous page. A
+                // revoked/expired native account cannot keep cached filenames.
+                let auth: (owner: XDriveNativeOwnerRoot, accessToken: String)
+                do {
+                    auth = try await login.verifiedAuthorization()
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch {
+                    guard self?.epoch == ticket else { return }
+                    self?.invalidate()
+                    self?.error = "当前账户身份验证失败，已隐藏旧云端照片；请重新登录或重试。"
+                    return
+                }
+                guard XDriveIOSNativePhotoOwnerScope.matches(auth.owner, expected) else {
+                    self?.invalidate()
+                    self?.error = "当前服务器或 Owner 已变化，旧图库已清除。"
+                    return
+                }
                 let reader = XDriveIOSNativeMediaGalleryReader(
                     owner: auth.owner, accessToken: auth.accessToken
                 )

@@ -62,6 +62,10 @@ test('new Cloud PhotoAsset Gallery is under the fixed Gallery tab; old originals
   assert.match(view, /model\.suspendForNavigation\(\)/)
   assert.match(view, /epoch = UUID\(\)/)
   assert.match(view, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expected\)/)
+  assert.match(view, /auth = try await login\.verifiedAuthorization\(\)/)
+  assert.match(view, /self\?\.invalidate\(\)\s+self\?\.error = "当前账户身份验证失败/)
+  assert.match(view, /当前服务器或 Owner 已变化，旧图库已清除/)
+
   assert.match(view, /pageScope\.map/)
   assert.match(view, /XDriveIOSNativePhotoOwnerScope\.matches\(expected, \$0\)/)
   assert.match(view, /pageAlbumID == albumID && pageSearch == query/)
