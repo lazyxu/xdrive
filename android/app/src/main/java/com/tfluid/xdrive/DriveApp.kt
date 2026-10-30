@@ -48,6 +48,9 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
         mutableStateOf(NativeHomeNavigation())
     }
     var launcherSearch by remember(state.nativeUiSessionId) { mutableStateOf("") }
+    var dynamicPickerOpen by remember(state.nativeUiSessionId, nativeAuthenticated) {
+        mutableStateOf(false)
+    }
     var localAlbumSelection by remember(state.nativeUiSessionId) {
         mutableStateOf<NativeLocalAlbum?>(null)
     }
@@ -214,8 +217,8 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                 if (mayEnter) {
                     nativeNavigation = next
                     if (shortcut == NativeHomeShortcut.GALLERY_MAP) {
-                        mapOriginSource = if (previousGallerySource == NativeGallerySource.MAP)
-                            NativeGallerySource.CLOUD else previousGallerySource
+                        mapOriginSource = nativeGalleryMapReturnSource(
+                            previousGallerySource, mapOriginSource)
                         pendingGalleryMap = true
                     }
                 }
@@ -246,7 +249,8 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
         bottomBar = {
             if (nativeAuthenticated && !photoViewerOpen &&
                 (nativeNavigation.selected != NativeHomeTab.GALLERY || !state.galleryMapOpen))
-                NativeHomeBottomBar(nativeNavigation, ::selectNativeTab)
+                NativeHomeBottomBar(nativeNavigation, ::selectNativeTab,
+                    onShowDynamicPicker = { dynamicPickerOpen = true })
         },
         topBar = {
         if (nativeOverlay) {
@@ -369,14 +373,17 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                     NativeHomeTab.ALL -> NativeHomeLauncher(
                         nativeNavigation, launcherSearch, { launcherSearch = it },
                         ::openNativeShortcut,
-                        { nativeNavigation = nativeNavigation.toggleFavorite(it) })
+                        { nativeNavigation = nativeNavigation.toggleFavorite(it) },
+                        onChooseDynamic = { dynamicPickerOpen = true })
                     NativeHomeTab.MINE -> NativeHomeMine(
                         state, controller::logout, controller::changeServer,
                         updates?.let { it::show })
-                    NativeHomeTab.DYNAMIC -> NativeHomeDynamic(nativeNavigation, state) {
-                        transferCenterOpen = true
-                        controller.refreshTransferRecoveryNotices()
-                    }
+                    NativeHomeTab.DYNAMIC -> NativeHomeDynamic(nativeNavigation, state,
+                        onOpenTransfers = {
+                            transferCenterOpen = true
+                            controller.refreshTransferRecoveryNotices()
+                        },
+                        onChooseDynamic = { dynamicPickerOpen = true })
                     else -> Unit
                 }
             } else when (state.screen) {
@@ -439,11 +446,13 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                             })
                     } else {
                         NativeGallerySourceSelector(nativeNavigation.gallerySource) { source ->
-                            nativeNavigation = nativeNavigation.copy(gallerySource = source)
+                            // Capture the originating local/cloud/album wall BEFORE changing chips.
                             if (source == NativeGallerySource.MAP) {
-                                mapOriginSource = nativeNavigation.gallerySource
+                                mapOriginSource = nativeGalleryMapReturnSource(
+                                    nativeNavigation.gallerySource, mapOriginSource)
                                 pendingGalleryMap = true
                             }
+                            nativeNavigation = nativeNavigation.copy(gallerySource = source)
                         }
                         when (nativeNavigation.gallerySource) {
                             NativeGallerySource.LOCAL -> Box(Modifier.weight(1f)) {
@@ -478,6 +487,38 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                 Screen.TRASH -> Trash(state, controller)
             }
         }
+    }
+    if (dynamicPickerOpen && nativeAuthenticated && !photoViewerOpen) {
+        AlertDialog(
+            onDismissRequest = { dynamicPickerOpen = false },
+            title = { Text("选择动态功能") },
+            text = {
+                Column {
+                    // Only implemented native features, scoped to the current Owner session.
+                    val choices = (nativeNavigation.recentDynamic +
+                        NativeDynamicFeature.entries).distinct()
+                    choices.forEach { feature ->
+                        TextButton(
+                            onClick = {
+                                nativeNavigation = nativeNavigation.openDynamic(feature)
+                                dynamicPickerOpen = false
+                                if (feature == NativeDynamicFeature.TRANSFERS)
+                                    controller.refreshTransferRecoveryNotices()
+                            },
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                                .testTag("native-dynamic-choice-${feature.name.lowercase()}"),
+                        ) { Text(feature.title) }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { dynamicPickerOpen = false },
+                    modifier = Modifier.testTag("native-dynamic-picker-close")) {
+                    Text("关闭")
+                }
+            },
+            modifier = Modifier.testTag("native-dynamic-picker"),
+        )
     }
     if (transferCenterOpen &&
         state.screen in listOf(Screen.FILES, Screen.GALLERY, Screen.TRASH)) {
