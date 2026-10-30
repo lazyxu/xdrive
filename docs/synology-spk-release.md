@@ -5,6 +5,19 @@ Nothing here introduces a second agent, Runner or CAS writer. The original
 `cmd/xd` and `cmd/xdrive-agent --backup-only` stay the only executables;
 `packaging/synology` only adapts them to DSM 7.
 
+## Publication gate: shared MUI is mandatory
+
+The standalone CLI-only Backup archives remain available. The **release SPK**
+must include the canonical shared React/MUI DSM launcher and authenticated
+same-origin CGI with the original ARMv7 xd and Agent. Both GitHub and GitLab
+now build the isolated `web/dist-synology` bundle, add it to the package and
+run `test-synology-spk-ui.py` before uploading the exact SPK. Release
+publishers use `verify-synology-spk-release.sh --require-mui` so a
+headless-only SPK cannot be silently published as the DSM GUI installer.
+
+This is a source-level publication contract, **not** evidence of passing CI,
+an installed SPK, real Server backups or physical DS218j acceptance.
+
 ## One source revision, one exact package
 
 - GitHub and GitLab `build-client-core` cross-compile from the original Go

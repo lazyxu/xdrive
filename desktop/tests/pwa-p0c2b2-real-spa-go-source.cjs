@@ -10,6 +10,7 @@ test('P0-C2b2 navigates the ACTUAL signed App Files↔Gallery on the SAME docume
   const runner = read('desktop/scripts/gallery-mobile-web-go-cancel-100k-main.cjs')
   const originalApp = read('web/src/App.tsx')
   const originalMain = read('web/src/main.tsx')
+  const actualFiveSlot = read('web/src/MobileFiveSlotNavigation.tsx')
   for (const marker of [
     "process.env.XD_PWA_P0C2_SPA_BEFORE === '1'",
     "assert(!(p0c2PageLeaveMode && p0c2SPAMode)",
@@ -21,17 +22,17 @@ test('P0-C2b2 navigates the ACTUAL signed App Files↔Gallery on the SAME docume
     "switchActualApp(win, '图库', 'gallery')",
     "prepareAppDestination(win, '文件')",
     "win.webContents.sendInputEvent",
-    "button[data-xdrive-mobile-app-navigation-trigger]",
-    "'[role=\"dialog\"] button,[role=\"dialog\"] [role=\"button\"]'",
+    "'[data-xdrive-mobile-five-slot] button'",
+    "data-xdrive-mobile-five-slot",
     "document.querySelectorAll(selector)",
     "if (candidates.length !== 1)",
     "REAL_P0C2_SPA_FILES_MOUNT_REJECTED",
     "P0C2_REAL_UI_ROUTE_REJECTED",
     "document.elementFromPoint(x, y)",
-    "await sleep(430)",
+    "const pos = await visibleButtonCenter(win, name)",
     "safeSPARouteState(win, target)",
-    "drawerDialogPresent:",
-    "sendActualPointer(win, opener)",
+    "fiveSlotPresent:",
+    "sendActualPointer(win, pos)",
     "win.webContents.focus()",
     "hasStoredSession:",
     "ownerResponse.status, 200",
@@ -55,12 +56,19 @@ test('P0-C2b2 navigates the ACTUAL signed App Files↔Gallery on the SAME docume
     'useXDriveWebAppRuntime',
     'XDriveMobileAppHeader',
     'XDriveWorkspaceSidebar',
-    'onCompactOpenChange={setCompactNavigationOpen}',
+    '<XDriveMobileFiveSlotNavigation',
+    'onSelect={selectMobileSlot}',
     "appView === 'files'",
     "appView === 'gallery'",
     'XDriveMediaGalleryPage',
     'WebFileExplorer',
   ]) assert(originalApp.includes(marker), 'not using original App route '+marker)
+  assert.match(actualFiveSlot, /data-xdrive-mobile-five-slot/,
+    'real click target must be rendered as persistent five-slot navigation')
+  assert.ok(actualFiveSlot.includes("onClick={() => onSelect('gallery')}"),
+    'real Gallery tab must handle the click')
+  assert.ok(actualFiveSlot.includes("onClick={() => onSelect('files')}"),
+    'real Files tab must handle the click')
   const fixture = read('internal/api/gallery_real_web_cold_performance_integration_test.go')
   for (const marker of [
     'p0c2SPAMode := os.Getenv("XD_PWA_P0C2_SPA_BEFORE") == "1"',

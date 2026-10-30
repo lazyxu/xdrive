@@ -13,6 +13,7 @@ import { XDriveWorkspaceSurface } from './WorkspaceSurface'
 import { XDriveStatePanel } from './StatePanel'
 import { XDriveSynologyBackupTargetBrowser } from './SynologyBackupTargetBrowser'
 import { XDriveStatusAlert } from './StatusAlert'
+import { XDriveSynologyNASShareInventory } from './SynologyNASShareInventory'
 
 type LocalHistory = {
   loading: boolean
@@ -160,6 +161,7 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
           </Stack>
         )}
       </Box>
+      <XDriveSynologyNASShareInventory client={client} />
       {showTargetBrowser ? (
         <XDriveSynologyBackupTargetBrowser key={refreshID} client={client} />
       ) : null}

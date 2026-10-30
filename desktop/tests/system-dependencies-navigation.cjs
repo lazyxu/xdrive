@@ -365,7 +365,16 @@ test('Web, Mobile Web, Desktop and shared editor all use the pre-unmount guard',
   assert.ok(web.includes('onUnsavedChange: setSystemDependenciesDraftDirty'))
   assert.ok(read('ui/shared/src/mui/XDriveAppPageOutlet.tsx')
     .includes('<XDriveServiceDependenciesPage {...services.adminServicesPage} />'))
-  assert.ok(web.includes('onBack={exitWebApp}'), 'Mobile Web back must be guarded')
+  assert.ok(web.includes('onBack={goBackWithinMobileFeature}'),
+    'Mobile Web back must stay inside the selected feature')
+  assert.ok(web.includes('else if (mobileParent) launchWebApp(mobileParent, { replace: true })'),
+    'feature-local back uses the same guarded Web route launcher')
+  assert.ok(web.includes('const mobileCanGoBack = Boolean(mobileFolderParent || mobileParent)'),
+    'feature-root back cannot exit into another tab')
+  assert.ok(web.includes('activeAppRef.current, next.app, systemDependenciesDraftRef.current'),
+    'a tab change still guards unsaved system dependencies')
+  assert.ok(web.includes("setPendingSystemDependenciesExit({ kind: 'route', next, options })"),
+    'an unsaved administrator editor must prompt before navigation')
   assert.ok(web.includes("if (pending.kind === 'exit') exitApp()"))
   assert.ok(web.includes('else launchWebAppRuntime(pending.next, pending.options)'))
   assert.ok(desktop.includes('useXDriveWorkspaceNavigationState({'))

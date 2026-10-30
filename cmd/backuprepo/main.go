@@ -438,8 +438,18 @@ func estimateIncrementalBytes(source, repo string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	if src == repo || strings.HasPrefix(repo, src+string(os.PathSeparator)) ||
-		strings.HasPrefix(src, repo+string(os.PathSeparator)) {
+	// The repository may not exist before the first incremental backup.
+	// Resolve the deepest existing parent and preserve the missing suffix so
+	// symlink aliases cannot bypass the source/repository overlap preflight.
+	realSource, err := filepath.EvalSymlinks(src)
+	if err != nil {
+		return 0, fmt.Errorf("resolve backup source: %w", err)
+	}
+	realRepo, err := resolveBackupPathAllowMissing(repo)
+	if err != nil {
+		return 0, fmt.Errorf("resolve backup repository: %w", err)
+	}
+	if pathIsWithin(realSource, realRepo) || pathIsWithin(realRepo, realSource) {
 		return 0, errors.New("repository and source cannot nest inside each other")
 	}
 	if st, err := os.Stat(src); err != nil || !st.IsDir() {
@@ -534,7 +544,22 @@ func captureWithOwner(source, repo, snapshot string, uid, gid int) error {
 	if err != nil {
 		return err
 	}
-	if src == repo || strings.HasPrefix(repo, src+string(os.PathSeparator)) || strings.HasPrefix(src, repo+string(os.PathSeparator)) {
+	repoAbs, err := filepath.Abs(repo)
+	if err != nil {
+		return err
+	}
+	// Host preflight already checks the real /data mount; independently guard
+	// the backup helper against parent-symlink aliases before writing an index
+	// or walking a tree that could contain its own repository.
+	realSource, err := filepath.EvalSymlinks(src)
+	if err != nil {
+		return fmt.Errorf("resolve backup source: %w", err)
+	}
+	realRepo, err := filepath.EvalSymlinks(repoAbs)
+	if err != nil {
+		return fmt.Errorf("resolve backup repository: %w", err)
+	}
+	if pathIsWithin(realSource, realRepo) || pathIsWithin(realRepo, realSource) {
 		return errors.New("repository and source cannot nest inside each other")
 	}
 	if st, err := os.Stat(src); err != nil || !st.IsDir() {
@@ -731,6 +756,35 @@ func walkLegacyArchive(snapshot string, visitor func(*tar.Header, *tar.Reader) e
 		}
 	}
 	return nil
+}
+
+// resolveBackupPathAllowMissing resolves symlinked parent components while
+// preserving absent trailing directories for first-generation space estimates.
+// Actual capture requires an existing repository and uses EvalSymlinks directly.
+func resolveBackupPathAllowMissing(path string) (string, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	existing := absolute
+	for {
+		resolved, err := filepath.EvalSymlinks(existing)
+		if err == nil {
+			suffix, err := filepath.Rel(existing, absolute)
+			if err != nil {
+				return "", err
+			}
+			return filepath.Join(resolved, suffix), nil
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+		parent := filepath.Dir(existing)
+		if parent == existing {
+			return "", err
+		}
+		existing = parent
+	}
 }
 
 // pathIsWithin checks complete path components, including equality and the

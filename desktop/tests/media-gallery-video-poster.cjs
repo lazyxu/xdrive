@@ -24,7 +24,7 @@ const output = ts.transpileModule(source, {
 const mod = { exports: {} }
 new Function('exports', 'module', 'require', output)(mod.exports, mod, require)
 
-const { xDriveMediaVideoPosterGeometry, xDriveResolveMediaVideoPoster } = mod.exports
+const { xDriveMediaVideoPosterGeometry, xDriveResolveMediaVideoPoster, xDriveCaptureVideoPosterBlob } = mod.exports
 
 test('video poster keeps browser-applied quarter-turn geometry', () => {
   const geometry = xDriveMediaVideoPosterGeometry(
@@ -92,6 +92,64 @@ test('video poster leaves ordinary landscape video unrotated and bounded', () =>
     drawHeight: 288,
     manualRotation: 0,
   })
+})
+
+
+test('video poster abort settles even when detached native media load throws', async () => {
+  const previousDocument = globalThis.document
+  const previousWindow = globalThis.window
+  const video = new EventTarget()
+  let loadCount = 0
+  let removed = 0
+  video.removeAttribute = (key) => { assert.equal(key, 'src'); removed++ }
+  video.load = () => {
+    loadCount++
+    if (loadCount === 2) throw new Error('native media already disposed')
+  }
+  globalThis.document = { createElement: (tag) => {
+    assert.equal(tag, 'video')
+    return video
+  } }
+  globalThis.window = { setTimeout, clearTimeout }
+  try {
+    const controller = new AbortController()
+    const capture = xDriveCaptureVideoPosterBlob(
+      'blob:viewer-obsolete-video', 0, 0, 0, 512, controller.signal,
+    )
+    assert.equal(loadCount, 1, 'one real original video decode was started')
+    controller.abort()
+    assert.equal(await capture, null, 'cancelled capture must settle without a stale poster')
+    assert.equal(removed, 1, 'native source is detached')
+    assert.equal(loadCount, 2, 'native stream was released once even if load throws')
+  } finally {
+    if (previousDocument === undefined) delete globalThis.document
+    else globalThis.document = previousDocument
+    if (previousWindow === undefined) delete globalThis.window
+    else globalThis.window = previousWindow
+  }
+})
+
+test('video poster startup synchronous native load error settles and clears its source', async () => {
+  const previousDocument = globalThis.document
+  const previousWindow = globalThis.window
+  const video = new EventTarget()
+  let loadCount = 0
+  let removed = 0
+  video.removeAttribute = () => { removed++ }
+  video.load = () => { loadCount++; throw new Error('unsupported or disposed codec') }
+  globalThis.document = { createElement: () => video }
+  globalThis.window = { setTimeout, clearTimeout }
+  try {
+    const result = await xDriveCaptureVideoPosterBlob('blob:unsupported-video')
+    assert.equal(result, null, 'unsupported codec remains a normal missing poster')
+    assert.equal(removed, 1, 'source is detached after startup failure')
+    assert.equal(loadCount, 2, 'attempted startup and safe teardown exactly once')
+  } finally {
+    if (previousDocument === undefined) delete globalThis.document
+    else globalThis.document = previousDocument
+    if (previousWindow === undefined) delete globalThis.window
+    else globalThis.window = previousWindow
+  }
 })
 
 test('Gallery video poster viewport cleanup cancels queued work', () => {

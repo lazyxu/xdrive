@@ -2,6 +2,14 @@
 
 > **2026-10-30 architecture:** Android and iOS App product UIs are entirely native. Android already uses native Compose (NOT WebView); keep current Auth/Files/Gallery/Viewer/SAF/Media3/API/transfer code and finish gaps. Web/PWA is only a design/behavior reference, not a code-runtime dependency. Previous "first increment" missing-feature notes below describe historical stages, not necessarily current master. See [mobile-native-migration.md](../docs/architecture/mobile-native-migration.md).
 
+> **Active Android navigation/Photos-first development branch:** Five fixed
+> destinations, local MediaStore photo/album browsing, native local viewers and
+> exact Owner-scoped Gallery Back are implemented in the development PR.
+> See [native-five-slot-mediastore-20261030.md](docs/native-five-slot-mediastore-20261030.md).
+> This does **not** mean released APK parity: native automatic backups,
+> Motion Photo playback, long-press dynamic picker and full cross-tab anchors
+> remain separate unverified work.
+
 Kotlin / Jetpack Compose, Android 10 (API 29) and later. This is a native
 client of the existing xDrive Go Server, not a WebView wrapper.
 

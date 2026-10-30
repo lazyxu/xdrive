@@ -48,6 +48,7 @@ function XDriveMediaGalleryFilmstripMedia({
   return (
     <Box sx={{ position: 'relative', width: '100%', height: '100%' }}>
       <XDriveMediaAsyncThumbnail
+        viewerOwned
         nodeID={item.metadata.has_thumbnail || item.metadata.media_kind === 'video' ? item.node.id : undefined}
         revision={item.node.revision}
         alt={item.node.name}

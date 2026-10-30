@@ -120,15 +120,12 @@ async function readStats(url) {
 }
 
 
-/** Native Chromium inputs invoke the existing production Mobile App Header and
- * Sidebar buttons. No window.location.hash assignment or synthetic router. */
+/** Actual signed Web Mobile navigation uses the visible five-slot bottom bar.
+ * Drive native Chromium pointer events, never synthetic URL/router changes. */
 async function visibleButtonCenter(win, label) {
   return win.webContents.executeJavaScript(`(() => {
     const label = ${JSON.stringify(label)}
-    const isOpener = label === '打开应用导航'
-    const selector = isOpener
-      ? 'button[data-xdrive-mobile-app-navigation-trigger]'
-      : '[role="dialog"] button,[role="dialog"] [role="button"]'
+    const selector = '[data-xdrive-mobile-five-slot] button'
     const candidates = [...document.querySelectorAll(selector)].filter(button => {
       const bounds = button.getBoundingClientRect()
       const style = getComputedStyle(button)
@@ -138,11 +135,11 @@ async function visibleButtonCenter(win, label) {
       const accessible = button.getAttribute('aria-label') || ''
       const text = (button.textContent || '').trim()
       if (accessible !== label && text !== label) return false
-      const x = bounds.left + bounds.width/2, y = bounds.top + bounds.height/2
+      const x = bounds.left + bounds.width / 2, y = bounds.top + bounds.height / 2
       const hit = document.elementFromPoint(x, y)
       return hit === button || button.contains(hit)
     })
-    if (candidates.length !== 1) return {error:'expected exactly one interactable '+label+' button; got '+candidates.length}
+    if (candidates.length !== 1) return {error:'expected one visible five-slot destination '+label+'; got '+candidates.length}
     const rect = candidates[0].getBoundingClientRect()
     return {x:Math.round(rect.x+rect.width/2),y:Math.round(rect.y+rect.height/2)}
   })()`, true)
@@ -157,23 +154,10 @@ function sendActualPointer(win, where) {
   win.webContents.sendInputEvent({type:'mouseUp',x:where.x,y:where.y,button:'left',clickCount:1})
 }
 async function prepareAppDestination(win, name) {
-  const opener = await until(async () => {
-    const pos = await visibleButtonCenter(win, '打开应用导航')
-    return pos.error ? null : pos
-  }, 25000, 'real 52px Mobile App Header navigation button')
-  sendActualPointer(win, opener)
-  await until(async () => win.webContents.executeJavaScript(`(() => {
-    const drawer = document.querySelector('[role="dialog"][aria-modal="true"]')
-    return !!drawer && !drawer.hasAttribute('inert') &&
-      drawer.getBoundingClientRect().height > 200
-  })()`, true), 12000, 'real fully opened App drawer')
-  // MUI sliding bottom Drawer is not clickable at its final coordinates until
-  // its enter transition has completed; never tap a moving/or obscured target.
-  await sleep(430)
   return until(async () => {
     const pos = await visibleButtonCenter(win, name)
     return pos.error ? null : pos
-  }, 12000, 'real unobscured Sidebar destination '+name)
+  }, 25000, 'unobscured genuine five-slot destination '+name)
 }
 async function safeSPARouteState(win, target) {
   return win.webContents.executeJavaScript(`(() => ({
@@ -181,7 +165,7 @@ async function safeSPARouteState(win, target) {
     matchingTarget:location.hash.startsWith('#/app/'+${JSON.stringify(target)}),
     stillInFiles:location.hash.startsWith('#/app/files'),
     stillInGallery:location.hash.startsWith('#/app/gallery'),
-    drawerDialogPresent:!!document.querySelector('[role="dialog"][aria-modal="true"]'),
+    fiveSlotPresent:!!document.querySelector('[data-xdrive-mobile-five-slot]'),
     mobileHeaderPresent:!!document.querySelector('[data-xdrive-mobile-app-header]'),
     galleryGridPresent:!!document.querySelector('[data-xdrive-media-gallery-virtual-grid]'),
     sameDocument:document.documentElement === window.__pwaC2SPADocument
@@ -969,24 +953,17 @@ async function p1MeasureRealCrossTabViewerLogout(win,base,sample) {
       return s.signed_range>=1&&s.partial_content>=1&&s.first_chunks>=1&&
         s.active>=1&&s.emitted_bytes>0?s:null
     },12000,'real signed 206 Range must be in flight during logout')
-    // Compact iOS-style 52px Header intentionally has no avatar:
-    // the REAL account action lives inside the bottom App navigation drawer.
-    // Open it using the genuine header control, not a synthetic DOM click,
-    // an injected menu or an offscreen account shortcut.
-    const navPoint=await until(async()=>{
-      const p=await visibleButtonCenter(auditor,'打开应用导航')
-      return p.error?null:p
-    },12000,'second window real mobile App navigation button')
-    sendActualPointer(auditor,navPoint)
+    // Navigate through the genuine five-slot My destination, which owns
+    // the existing account menu. The cross-window logout must remain a real
+    // visible native Chromium tap, never an injected click or direct hash.
+    const myPoint=await prepareAppDestination(auditor,'我的')
+    sendActualPointer(auditor,myPoint)
     await until(async()=>auditor.webContents.executeJavaScript(
-      '(()=>{const d=document.querySelector("[role=dialog][aria-modal=true]");'+
-      'return !!d&&!d.hasAttribute("inert")&&d.getBoundingClientRect().height>200})()',true),
-      12000,'second window mounted real account navigation drawer')
-    // As in prepareAppDestination, wait for the actual MUI Drawer slide.
-    // Final hit testing remains authoritative; no fake state transition.
-    await sleep(430)
+      `(() => location.hash.startsWith('#/app/overview?section=mine') &&
+        !!document.querySelector('[data-xdrive-mobile-mine-page]'))()`,true),
+      12000,'second window actual My tab with account menu')
     const avatar=await until(async()=>p1QVisibleAccountPoint(auditor,'avatar'),
-      10000,'second window real account avatar inside open App drawer')
+      10000,'second window real account avatar in My tab')
     sendActualPointer(auditor,avatar)
     const logout=await until(async()=>p1QVisibleAccountPoint(auditor,'logout'),
       10000,'second window actual Logout MenuItem')
@@ -1175,17 +1152,16 @@ async function sampleOnce(sample, ready) {
         peakRendererRSS = Math.max(peakRendererRSS, nativeProcessStats(rendererPID).rssBytes)
       } catch { /* end snapshot and cancellation assertions fail a dead process */ }
     }, 25)
-    // Open the genuine navigation Drawer before the 160ms cancellation mark:
-    // the frozen budget must measure the Files click -> Go Context.Done,
-    // not the time it takes to find/open a Sidebar destination.
+    // Locate the genuine five-slot Files destination before the 160ms mark.
+    // The frozen budget measures the real Files click -> Go Context.Done,
+    // not the time spent waiting for a visible, unobscured navigation target.
     const targetFiles = p0c2SPAMode ? await prepareAppDestination(win, '文件') : null
     if (p0c2SPAMode) {
-      // Opening the Drawer is intentionally OUTSIDE the frozen click deadline.
-      // Do not claim a Files-click abort if opening the Drawer already stopped
-      // the requests: every original Go stream must still be active now.
+      // Finding the bottom slot is OUTSIDE the frozen click deadline.
+      // It must not itself abort any signed Gallery request.
       const preClick = await readStats(fixture.config.url)
       assert.equal(preClick.active, streamCount,
-        'App menu prematurely aborted Gallery streams before route click')
+        'locating Files slot prematurely aborted Gallery streams before route click')
       assert.equal(preClick.context_done, started.context_done,
         'Go cancellation predated Files route click')
       assert.equal(preClick.emitted_bytes, started.emitted_bytes,

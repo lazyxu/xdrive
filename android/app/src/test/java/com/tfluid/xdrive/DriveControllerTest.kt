@@ -4815,5 +4815,25 @@ class DriveControllerTest {
         c.close()
     }
 
+    @Test fun nativeGalleryRootBackIsFeatureLocalAndLogoutResetsSessionEpoch() = runTest {
+        val api = Service()
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        val firstSessionId = c.state.value.nativeUiSessionId
+        assertTrue(firstSessionId > 0)
+        c.openGallery(); runCurrent()
+        assertEquals(Screen.GALLERY, c.state.value.screen)
+        c.back()
+        assertEquals(Screen.GALLERY, c.state.value.screen)
+        c.openFilesApp(); runCurrent()
+        assertEquals(Screen.FILES, c.state.value.screen)
+        c.logout(); runCurrent()
+        assertEquals(Screen.LOGIN, c.state.value.screen)
+        assertEquals(0L, c.state.value.nativeUiSessionId)
+        c.login("owner", "password"); runCurrent()
+        assertTrue(c.state.value.nativeUiSessionId > firstSessionId)
+        c.close()
+    }
+
 
 }

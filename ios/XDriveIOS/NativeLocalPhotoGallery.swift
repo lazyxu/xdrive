@@ -180,10 +180,41 @@ private struct XDriveIOSNativeLivePhotoView: UIViewRepresentable {
     }
 }
 
+/// A full-screen detail has its own observer: the presenting wall suspends
+/// PhotoKit scans while the Viewer is open. Revoke on any library mutation,
+/// not only when the source grid happens to refresh.
+private final class XDriveIOSNativePhotoDetailChangeMonitor: NSObject,
+    ObservableObject, PHPhotoLibraryChangeObserver {
+    @Published private(set) var generation = 0
+    private var listening = false
+
+    func start() {
+        guard !listening else { return }
+        PHPhotoLibrary.shared().register(self)
+        listening = true
+    }
+
+    func stop() {
+        guard listening else { return }
+        PHPhotoLibrary.shared().unregisterChangeObserver(self)
+        listening = false
+    }
+
+    func photoLibraryDidChange(_ change: PHChange) {
+        DispatchQueue.main.async { [weak self] in
+            self?.generation &+= 1
+        }
+    }
+
+    deinit { stop() }
+}
+
 struct XDriveIOSNativeLocalPhotoDetail: View {
     let candidate: XDrivePhotoKitScanCandidate
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var phase
     @StateObject private var model = XDriveIOSLocalPhotoDetailModel()
+    @StateObject private var changes = XDriveIOSNativePhotoDetailChangeMonitor()
 
     var body: some View {
         NavigationStack {
@@ -212,8 +243,37 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                 }
             }
         }
-        .task(id: candidate.id) { model.load(candidate) }
-        .onDisappear { model.cancel() }
+        .onAppear { changes.start() }
+        .task(id: candidate.id) {
+            // Never materialize PhotoKit pixels while the App is inactive.
+            if phase == .active { model.load(candidate) }
+        }
+        .onChange(of: changes.generation) { _ in
+            // Library mutation may revoke the selected media even when
+            // the visible PhotoKit permission level stays Full or Limited.
+            model.cancel()
+            dismiss()
+        }
+        .onChange(of: phase) { state in
+            if state != .active {
+                // Remove still/Live/video from the app-switcher snapshot and
+                // fence any asynchronous PhotoKit callbacks immediately.
+                model.cancel()
+            } else if [.authorized, .limited].contains(
+                PHPhotoLibrary.authorizationStatus(for: .readWrite)
+            ) {
+                // Re-check the exact selected ID in the currently allowed
+                // PhotoKit subset; never reuse an old image/pixel buffer.
+                model.load(candidate)
+            } else {
+                model.cancel()
+                dismiss()
+            }
+        }
+        .onDisappear {
+            changes.stop()
+            model.cancel()
+        }
     }
 }
 
@@ -253,8 +313,7 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
                 } else if let page {
                     Text("当前显示 \(page.startOffset + 1)–\(page.nextOffset) / \(page.totalAccessibleAssets)")
                         .font(.footnote).monospacedDigit()
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 3),
-                                             count: 3), spacing: 3) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 95, maximum: 150), spacing: 3)], spacing: 3) {
                         ForEach(page.items.filter { $0.kind != "unsupported" }) { candidate in
                             Button { selected = candidate } label: {
                                 XDriveIOSLocalPhotoTile(candidate: candidate)

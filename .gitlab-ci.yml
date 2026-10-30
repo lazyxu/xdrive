@@ -195,6 +195,31 @@ desktop-windows:
     paths:
       - desktop/release/win-unpacked/
 
+# The published DSM SPK must include the isolated common MUI bundle,
+# not just the CLI-only ARMv7 agent payload.
+build-synology-ui:
+  image: $XDRIVE_CI_NODE_IMAGE
+  stage: build
+  needs: []
+  tags:
+    - linux
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
+      interruptible: false
+    - when: on_success
+  script:
+    - |
+      set -euo pipefail
+      npm ci --prefix web --no-audit --no-fund
+      npm run build:synology --prefix web
+      node web/scripts/verify-synology-ui.mjs
+  artifacts:
+    name: "xdrive-synology-ui-$CI_COMMIT_SHORT_SHA"
+    expire_in: 2 days
+    when: on_success
+    paths:
+      - web/dist-synology/
+
 build-client-core:
   variables:
     GIT_DEPTH: "0"
@@ -207,7 +232,9 @@ build-client-core:
   image: $XDRIVE_CI_GO_IMAGE
   extends: .go-linux-cache
   stage: build
-  needs: []
+  needs:
+    - job: build-synology-ui
+      artifacts: true
   tags:
     - linux
   script:
@@ -227,11 +254,16 @@ build-client-core:
       bash scripts/ci/test-synology-release.sh
       source scripts/ci/synology-spk-version.sh
       source scripts/ci/build-metadata.sh
-      bash scripts/build-synology-spk.sh "$XDRIVE_SPK_VERSION" release/synology
+      bash scripts/build-synology-spk.sh "$XDRIVE_SPK_VERSION" release/synology-cli
       python3 scripts/ci/test-synology-spk.py \
+        "release/synology-cli/xdrivenas-armada38x-$XDRIVE_SPK_VERSION.spk" \
+        release/synology-cli/core "$XDRIVE_SPK_VERSION"
+      bash scripts/build-synology-spk.sh "$XDRIVE_SPK_VERSION" \
+        release/synology release/synology-cli/core web/dist-synology
+      python3 scripts/ci/test-synology-spk-ui.py \
         "release/synology/xdrivenas-armada38x-$XDRIVE_SPK_VERSION.spk" \
-        release/synology/core "$XDRIVE_SPK_VERSION"
-      bash scripts/ci/verify-synology-spk-release.sh release/synology
+        release/synology-cli/core "$XDRIVE_SPK_VERSION" web/dist-synology
+      bash scripts/ci/verify-synology-spk-release.sh release/synology --require-mui
   artifacts:
     name: "xdrive-client-core-$CI_COMMIT_SHORT_SHA"
     expire_in: 2 days

@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { Box, Button, Typography } from '@mui/material'
 import PhotoLibraryOutlinedIcon from '@mui/icons-material/PhotoLibraryOutlined'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
+import PlaceOutlinedIcon from '@mui/icons-material/PlaceOutlined'
 import { XDriveMediaGalleryCoverThumbnail } from './MediaGalleryCoverThumbnail'
 import { XDriveMediaAsyncVideoPoster } from './MediaGalleryPreviewMedia'
 import type { MediaThumbnailLoader } from './MediaGallery'
@@ -615,6 +616,16 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         if(approved.key!==filterRef.current.key || run!==generation)return false
         acceptedScope.current={key:approved.key,scope:verifiedScope}
         acceptedCells.current=cells.map(item=>item.selection)
+        // A fresh, Owner-signed EMPTY camera supersedes all visual remnants
+        // of the previous pan. Waiting for a new SDK projection here can
+        // strand inert photo covers above a truthful zero-photo summary,
+        // especially when the SDK emits no new pixel frame.
+        // Retain covers while dragging or waiting for a NONEMPTY camera;
+        // never let an old Cell survive the successful empty receipt.
+        if (page.total_count === 0 && cells.length === 0) {
+          committedPresentation.current=null
+          clearGesturePresentation()
+        }
         lastCanvasSize=canvasSize()
         // The old camera Cell cannot survive rotation. Only a new signed
         // Owner /cells with SAME representative asset+node+revision and
@@ -1037,8 +1048,11 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
           {acceptedViewport && unpaintedCellCount > 0 ? (
             <Button size="small" variant="outlined"
               data-xdrive-places-reveal-hidden-cells
-              sx={{minHeight:44,textTransform:'none',pointerEvents:'auto',
-                bgcolor:'background.paper',boxShadow:2}}
+              aria-label={`查看其他 ${unpaintedCellCount} 个地点`}
+              title={`查看其他 ${unpaintedCellCount} 个地点`}
+              sx={{minWidth:edgeToEdge ? 44 : undefined,minHeight:44,
+                p:edgeToEdge ? 0 : undefined,textTransform:'none',
+                pointerEvents:'auto',bgcolor:'background.paper',boxShadow:2}}
               onClick={() => {
                 // Only reveal existing Owner-signed Cell actions. This is a
                 // Parent-only UI navigation, not a new SDK or Owner read.
@@ -1048,16 +1062,28 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
                 list.scrollIntoView({block:'nearest'})
                 list.querySelector<HTMLElement>('summary')?.focus({preventScroll:true})
               }}>
-              查看其他 {unpaintedCellCount} 个地点
+              <PlaceOutlinedIcon aria-hidden="true" fontSize="small"
+                sx={{display:edgeToEdge ? 'block' : 'none'}}/>
+              <Box component="span"
+                sx={{display:edgeToEdge ? 'none' : 'inline'}}>
+                查看其他 {unpaintedCellCount} 个地点
+              </Box>
             </Button>
           ) : null}
           {acceptedViewport && phase === 'ready' && openViewport.current && trustedSummary.total_count > 0 ? (
             <Button size="small" variant="outlined"
               data-xdrive-places-full-camera-wall
-              sx={{minHeight:44,textTransform:'none',pointerEvents:'auto',
-                bgcolor:'background.paper',boxShadow:2}}
+              aria-label="查看此地图的全部照片" title="查看此地图的全部照片"
+              sx={{minWidth:edgeToEdge ? 44 : undefined,minHeight:44,
+                p:edgeToEdge ? 0 : undefined,textTransform:'none',
+                pointerEvents:'auto',bgcolor:'background.paper',boxShadow:2}}
               onClick={openVerifiedCameraNearby}>
-              查看此地图的全部照片
+              <PhotoLibraryOutlinedIcon aria-hidden="true" fontSize="small"
+                sx={{display:edgeToEdge ? 'block' : 'none'}}/>
+              <Box component="span"
+                sx={{display:edgeToEdge ? 'none' : 'inline'}}>
+                查看此地图的全部照片
+              </Box>
             </Button>
           ) : null}
         </Box>

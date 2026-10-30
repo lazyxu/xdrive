@@ -94,7 +94,7 @@ export type XDriveWebAppBrowseContext =
     }
 
 export interface XDriveWebAppLaunchMap {
-  overview: Record<string, never>
+  overview: { section?: 'mine' }
   files: { dir?: number; select?: number }
   gallery: { section?: XDriveWebGallerySection }
   'sync-folders': { source?: number }
@@ -218,6 +218,7 @@ export function xDriveParseWebAppHash(hash: string): XDriveWebAppRoute | null {
         },
       }
     case 'overview':
+      return { app, params: { section: query.get('section') === 'mine' ? 'mine' : undefined } }
     case 'local-storage':
     case 'cloud-storage':
     case 'admin-audit':

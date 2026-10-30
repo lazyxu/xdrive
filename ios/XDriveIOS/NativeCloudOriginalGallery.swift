@@ -236,10 +236,29 @@ struct XDriveIOSNativeCloudOriginalReader {
         )
         try Task.checkCancellation()
         try check(reply, size: bytes.count, maximum: 32 * 1_048_576)
-        guard let image = UIImage(data: bytes) else {
+        // Compressed data size is not a bound on decoded pixels: a small
+        // HEIC/JPEG can otherwise expand to an enormous UIImage on MainActor.
+        // Decode at most 4096px on a utility actor while keeping the signed
+        // preview ticket and verified Owner-scoped request unchanged.
+        let decoded = await Task.detached(priority: .utility) { () -> CGImage? in
+            guard !bytes.isEmpty,
+                  let source = CGImageSourceCreateWithData(
+                    bytes as CFData,
+                    [kCGImageSourceShouldCache: false] as CFDictionary
+                  ), CGImageSourceGetCount(source) > 0 else { return nil }
+            let options: [String: Any] = [
+                kCGImageSourceCreateThumbnailFromImageAlways as String: true,
+                kCGImageSourceCreateThumbnailWithTransform as String: true,
+                kCGImageSourceThumbnailMaxPixelSize as String: 4096,
+                kCGImageSourceShouldCacheImmediately as String: false
+            ]
+            return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+        }.value
+        try Task.checkCancellation()
+        guard let decoded else {
             throw XDriveIOSNativeCloudReadError.invalidResponse
         }
-        return (image, nil)
+        return (UIImage(cgImage: decoded), nil)
     }
 }
 
@@ -332,6 +351,8 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
     let node: XDriveIOSNativeCloudOriginal
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var phase
+    @State private var previewRequestID = UUID()
     @State private var still: UIImage?
     @State private var player: AVPlayer?
     @State private var error: String?
@@ -366,24 +387,43 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                 }
             }
         }
-        .task(id: node.id) {
-            guard !node.isLiveArchive, let before = login.owner else { return }
+        .task(id: previewRequestID) {
+            guard !node.isLiveArchive, phase == .active,
+                  let before = login.owner else { return }
             do {
                 let auth = try await login.verifiedAuthorization()
                 let media = try await XDriveIOSNativeCloudOriginalReader(
                     owner: auth.owner, accessToken: auth.accessToken
                 ).preview(node)
                 try Task.checkCancellation()
-                guard XDriveIOSNativePhotoOwnerScope.matches(auth.owner, before),
+                guard phase == .active,
+                      XDriveIOSNativePhotoOwnerScope.matches(auth.owner, before),
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, before)
                 else { return }
                 still = media.image
                 if let url = media.videoURL {
                     player = AVPlayer(url: url)
                 }
+            } catch is CancellationError {
+                // Scene/Owner/view navigation invalidated the earlier request.
             } catch {
+                guard phase == .active, !Task.isCancelled,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, before)
+                else { return }
                 self.error = "此文件的云端预览不可用，未读取其他账户的数据。"
             }
+        }
+        .onChange(of: phase) { state in
+            if state != .active {
+                // Never keep a signed video URL or rendered still alive while
+                // the app is inactive/backgrounded. The next foreground
+                // request must independently re-verify native Owner/root.
+                player?.pause()
+                player = nil
+                still = nil
+                error = nil
+            }
+            previewRequestID = UUID()
         }
         .onChange(of: login.owner) { _ in
             // Retire the former Owner's signed media URL immediately.
@@ -460,8 +500,10 @@ private struct XDriveIOSNativeCloudOriginalTile: View {
 /// at a time; non-backup files never masquerade as imported PhotoAssets.
 struct XDriveIOSNativeCloudOriginalGallery: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
+    let confirmedOriginalUpdate: XDriveIOSNativePhotoBackupController.ConfirmedOriginalUpdate?
     @StateObject private var model = XDriveIOSNativeCloudOriginalModel()
     @State private var selected: XDriveIOSNativeCloudOriginal?
+    @State private var refreshAfterViewer = false
 
     var body: some View {
         ScrollView {
@@ -471,7 +513,7 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
                 Text("已检查根目录 \(model.scanned) / \(model.total) 项")
                     .font(.footnote).monospacedDigit()
                 LazyVGrid(
-                    columns: Array(repeating: GridItem(.flexible(), spacing: 5), count: 3),
+                    columns: [GridItem(.adaptive(minimum: 95, maximum: 150), spacing: 5)],
                     spacing: 9
                 ) {
                     ForEach(model.nodes) { node in
@@ -506,11 +548,30 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
             }.padding()
         }
         .navigationTitle("云端备份原件")
-        .fullScreenCover(item: $selected) {
+        .fullScreenCover(item: $selected, onDismiss: {
+            // Never discard an actively playing signed preview. Re-read
+            // after the Viewer closes and only for the current Owner.
+            if refreshAfterViewer {
+                refreshAfterViewer = false
+                model.reload(login: login)
+            }
+        }) {
             XDriveIOSNativeCloudOriginalPreview(node: $0, login: login)
         }
         .task { model.reload(login: login) }
+        .onChange(of: confirmedOriginalUpdate) { update in
+            guard let update,
+                  XDriveIOSNativePhotoOwnerScope.matches(login.owner, update.owner)
+            else { return }
+            if selected != nil {
+                refreshAfterViewer = true
+            } else {
+                model.reload(login: login)
+            }
+        }
         .onChange(of: login.owner) { _ in
+            // Old Owner's pending refresh must never select the next Owner.
+            refreshAfterViewer = false
             selected = nil
             model.invalidate()
             if login.owner != nil {
@@ -521,7 +582,10 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
             // Presenting a full-screen Viewer may make the wall disappear.
             // Its selected identity must survive that presentation; Owner
             // changes independently clear selection and invalidate the model.
-            if selected == nil { model.invalidate() }
+            if selected == nil {
+                refreshAfterViewer = false
+                model.invalidate()
+            }
         }
     }
 }

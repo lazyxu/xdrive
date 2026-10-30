@@ -6,13 +6,14 @@ private enum XDriveIOSNativeBottomTab: String {
 }
 
 private enum XDriveIOSNativeGallerySource: String, CaseIterable, Identifiable {
-    case local, albums, cloud, map
+    case local, albums, cloud, originals, map
     var id: String { rawValue }
     var title: String {
         switch self {
         case .local: return "本机照片"
         case .albums: return "相册"
-        case .cloud: return "云端原件"
+        case .cloud: return "云端图库"
+        case .originals: return "备份原件"
         case .map: return "地图"
         }
     }
@@ -45,14 +46,15 @@ private enum XDriveIOSNativeDynamicFeature: String, CaseIterable, Identifiable {
 }
 
 private enum XDriveIOSNativeLauncherRoute: String, CaseIterable, Identifiable {
-    case local, albums, cloud, map, files
+    case local, albums, cloud, originals, map, files
     case backup, transfers, sync, storage, devices, diagnostics
     var id: String { rawValue }
     var title: String {
         switch self {
         case .local: return "本机照片"
         case .albums: return "相册"
-        case .cloud: return "云端原件"
+        case .cloud: return "云端图库"
+        case .originals: return "备份原件"
         case .map: return "地图"
         case .files: return "文件"
         case .backup: return "相册备份"
@@ -67,7 +69,8 @@ private enum XDriveIOSNativeLauncherRoute: String, CaseIterable, Identifiable {
         switch self {
         case .local: return "photo.on.rectangle"
         case .albums: return "rectangle.stack"
-        case .cloud: return "icloud"
+        case .cloud: return "photo.stack"
+        case .originals: return "icloud"
         case .map: return "map"
         case .files: return "folder"
         case .backup: return "icloud.and.arrow.up"
@@ -80,13 +83,13 @@ private enum XDriveIOSNativeLauncherRoute: String, CaseIterable, Identifiable {
     }
     var available: Bool {
         switch self {
-        case .local, .albums, .cloud, .backup: return true
+        case .local, .albums, .cloud, .originals, .backup: return true
         default: return false
         }
     }
     var category: String {
         switch self {
-        case .local, .albums, .cloud, .map, .files: return "内容浏览"
+        case .local, .albums, .cloud, .originals, .map, .files: return "内容浏览"
         case .backup, .devices, .sync: return "设备与备份"
         case .transfers, .storage, .diagnostics: return "任务与工具"
         }
@@ -199,14 +202,32 @@ struct XDriveIOSNativePhotosDashboard: View {
 
     private var gallery: some View {
         VStack(spacing: 0) {
-            Picker("图库来源", selection: $gallerySource) {
-                ForEach(XDriveIOSNativeGallerySource.allCases) { source in
-                    Text(source.title).tag(source)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(XDriveIOSNativeGallerySource.allCases) { source in
+                        Button {
+                            gallerySource = source
+                        } label: {
+                            Text(source.title)
+                                .font(.subheadline)
+                                .frame(minHeight: 44)
+                                .padding(.horizontal, 13)
+                                .foregroundStyle(
+                                    gallerySource == source ? Color.accentColor : Color.primary
+                                )
+                                .background(
+                                    gallerySource == source ?
+                                        Color.accentColor.opacity(0.14) :
+                                        Color(uiColor: .secondarySystemGroupedBackground),
+                                    in: Capsule()
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
+                .padding(.horizontal, 12)
             }
-            .pickerStyle(.segmented)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.vertical, 3)
             Group {
                 switch gallerySource {
                 case .local:
@@ -214,7 +235,12 @@ struct XDriveIOSNativePhotosDashboard: View {
                 case .albums:
                     XDriveIOSNativePhotoAlbumsScreen()
                 case .cloud:
-                    XDriveIOSNativeCloudOriginalGallery(login: login)
+                    XDriveIOSNativeServerMediaWall(login: login, album: nil)
+                case .originals:
+                    XDriveIOSNativeCloudOriginalGallery(
+                        login: login,
+                        confirmedOriginalUpdate: backup.confirmedOriginalUpdate
+                    )
                 case .map:
                     unavailable(
                         title: "图库地图尚在原生迁移",
@@ -387,6 +413,8 @@ struct XDriveIOSNativePhotosDashboard: View {
             openGallery(.albums)
         case .cloud:
             openGallery(.cloud)
+        case .originals:
+            openGallery(.originals)
         case .map:
             openGallery(.map)
         case .files:
