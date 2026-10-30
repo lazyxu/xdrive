@@ -31,6 +31,19 @@ discarded. These are local display errors, not backup receipts.
   the local page anchor. Existing Viewer-only thumbnail cancellation and
   Owner/session UI epoch fencing are unchanged.
 
+## iOS-aligned native Gallery landing
+
+After a new authenticated Android login/session restoration, wait until the
+actual Owner root directory GET has loaded before opening the native Gallery
+fixed tab. The earlier Files-first bootstrap remains available while Owner
+verification is incomplete; a failed root GET does not forge a Gallery session.
+
+One-shot landing is fenced to the current native UI session epoch, does not
+run during uploads/downloads, destination picking, file Viewer, edit mode or
+other file actions, and never overrides an explicit Launcher/Files/Dynamic tab
+choice. Once the user opens Files, their navigation remains Files until they
+choose another tab; no cross-tab Back and no WebView transition.
+
 ## Gates and limitations
 
 Pure JVM tests cover sort ties, page boundary continuity, invalid cursor keys,
