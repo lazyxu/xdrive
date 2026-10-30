@@ -69,7 +69,11 @@ test('cloud reader uses exact Owner Files root, bounded pages and same-origin pr
   assert.match(cloud, /ticket.url.hasPrefix\("\/api\/v1\/file-preview\/"\)/)
   assert.match(cloud, /final.host == origin.host/)
   assert.match(cloud, /owner: auth.owner, accessToken: auth.accessToken/)
-  assert.match(cloud, /Live 原件已保存为双资源 ZIP/)
+  assert.match(cloud, /func livePreview\(_ node:/)
+  assert.match(cloud, /node.isLiveArchive/)
+  assert.match(cloud, /endpoint\("\/api\/v1\/files\/\\\(node.id\)\/download-ticket"\)/)
+  assert.match(cloud, /XDriveIOSLivePreviewArchive.extract\(temporary\)/)
+  assert.match(cloud, /native-ios-cloud-live-motion-toggle/)
   assert.doesNotMatch(cloud, /WKWebView|document\.cookie|localStorage|bg-approved/)
 })
 
