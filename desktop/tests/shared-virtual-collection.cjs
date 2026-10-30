@@ -848,3 +848,40 @@ test('count-free final page and explicit Select All preserve exact request owner
   assert.equal(calls[1].signal, controller.signal)
   assert.equal(calls[2].signal, controller.signal)
 })
+
+
+test('an invalid primer cannot poison the 100k loaded-page key', async () => {
+  const runtime = createHookRuntime()
+  const useVirtualCollection = loadVirtualCollectionHook(runtime.react)
+  let loads = 0
+  const render = () => runtime.render(() => useVirtualCollection({
+    queryKey: 'owner:unverified-first',
+    loadRange: async range => {
+      loads += 1
+      return {
+        offset: range.offset, limit: range.limit, totalCount: 100000,
+        items: [{ id: 1 }, { id: 2 }],
+      }
+    },
+    onError: error => { throw error },
+    pageSize: 2, overscanPages: 0, retentionOverscanPages: 0,
+  }))
+  let collection = render()
+  for (const invalid of [
+    { offset: 0, limit: 2, totalCount: -1, items: [{ id: 0 }] },
+    { offset: 0, limit: 1, totalCount: 100000, items: [{ id: 1 }, { id: 2 }] },
+    { offset: Number.MAX_SAFE_INTEGER, limit: 2, totalCount: 100000, items: [] },
+  ]) {
+    assert.throws(() => collection.primePage(invalid), /invalid positional Range|unverified Range/)
+  }
+  collection = render()
+  assert.equal(collection.totalCount, null)
+  assert.equal(collection.loadedCount, 0)
+  await collection.ensureViewport(0, 1)
+  collection = render()
+  assert.equal(loads, 1,
+    'invalid primer cannot claim the correct Range key or prevent legitimate retry')
+  assert.equal(collection.totalCount, 100000)
+  assert.deepEqual(collection.itemAt(0), { id: 1 })
+  assert.deepEqual(collection.itemAt(1), { id: 2 })
+})
