@@ -737,6 +737,101 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                 }
             }, confirmButton = { TextButton(onClick = controller::dismissDetails, modifier = Modifier.heightIn(min = 48.dp)) { Text("关闭") } })
     }
+    val requestedOriginal = backupSelection
+    if (requestedOriginal != null && state.screen == Screen.GALLERY &&
+        nativeNavigation.gallerySource in setOf(
+            NativeGallerySource.LOCAL, NativeGallerySource.ALBUMS)) {
+        val current = controller.state.value
+        val resolved = verifiedBackupOriginal?.takeIf {
+            it.localId == requestedOriginal.id &&
+                it.isVideo == requestedOriginal.isVideo &&
+                it.uri == requestedOriginal.uri
+        }
+        val confirmedSession = current.nativeUiSessionId == state.nativeUiSessionId &&
+            current.server == state.server && current.username == state.username &&
+            backupSelection?.id == requestedOriginal.id
+        val currentGallery = current.screen == Screen.GALLERY
+        val inactiveWriter = current.loading || current.fileUploadActive ||
+            current.fileDownloadActive || current.hasActiveNativeTransfer()
+        val canConfirm = nativePhotoBackupCanConfirm(
+            confirmedSession, currentGallery, resolved != null,
+            hasNativeFullPhotoVideoReadGrant(androidContext), inactiveWriter,
+            backupDestinationName,
+        )
+        AlertDialog(
+            onDismissRequest = { backupSelection = null },
+            modifier = Modifier.testTag("native-local-backup-consent"),
+            title = { Text("确认备份当前本机原件") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("仅上传这一项到当前账户的根目录；保留原件，不覆盖重名文件。")
+                    Text("上传成功必须收到服务器的最终文件收据；结果不确定时不会自动重试。",
+                        style = MaterialTheme.typography.bodySmall)
+                    when {
+                        backupInspectError != null ->
+                            Text(backupInspectError.orEmpty(),
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.testTag("native-local-backup-error"))
+                        resolved == null ->
+                            CircularProgressIndicator(
+                                modifier = Modifier.testTag("native-local-backup-preflight"))
+                        else -> {
+                            Text("原件大小：" + formatSize(resolved.sizeBytes),
+                                style = MaterialTheme.typography.bodySmall)
+                            OutlinedTextField(
+                                value = backupDestinationName,
+                                onValueChange = {
+                                    if (it.length <= 255) backupDestinationName = it
+                                },
+                                label = { Text("保存到服务器的文件名") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                                    .testTag("native-local-backup-name"),
+                            )
+                            if (backupDestinationName.isBlank())
+                                Text("请输入文件名；若原始名称不可用，不会猜测文件名。",
+                                    style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = canConfirm,
+                    onClick = {
+                        val exact = resolved ?: return@TextButton
+                        val now = controller.state.value
+                        if (!nativePhotoBackupCanConfirm(
+                            now.nativeUiSessionId == state.nativeUiSessionId &&
+                                now.server == state.server &&
+                                now.username == state.username &&
+                                backupSelection?.id == requestedOriginal.id,
+                            now.screen == Screen.GALLERY &&
+                                nativeNavigation.gallerySource in setOf(
+                                    NativeGallerySource.LOCAL, NativeGallerySource.ALBUMS),
+                            exact.localId == requestedOriginal.id &&
+                                exact.uri == requestedOriginal.uri &&
+                                exact.isVideo == requestedOriginal.isVideo,
+                            hasNativeFullPhotoVideoReadGrant(androidContext),
+                            now.loading || now.fileUploadActive ||
+                                now.fileDownloadActive || now.hasActiveNativeTransfer(),
+                            backupDestinationName,
+                        )) return@TextButton
+                        controller.backupNativePhotoOriginalForeground(
+                            androidContext, exact, backupDestinationName)
+                        backupSelection = null
+                    },
+                    modifier = Modifier.testTag("native-local-backup-confirm"),
+                ) { Text("确认上传原件") }
+            },
+            dismissButton = {
+                TextButton(onClick = { backupSelection = null },
+                    modifier = Modifier.testTag("native-local-backup-cancel")) {
+                    Text("取消")
+                }
+            },
+        )
+    }
     if (updates != null) UpdateDialog(updates, openUpdate)
 }
 
@@ -923,101 +1018,7 @@ internal fun AccountMenu(state: DriveState, controller: DriveController, checkUp
         )
     }
 
-    val requestedOriginal = backupSelection
-    if (requestedOriginal != null && state.screen == Screen.GALLERY &&
-        nativeNavigation.gallerySource in setOf(
-            NativeGallerySource.LOCAL, NativeGallerySource.ALBUMS)) {
-        val current = controller.state.value
-        val resolved = verifiedBackupOriginal?.takeIf {
-            it.localId == requestedOriginal.id &&
-                it.isVideo == requestedOriginal.isVideo &&
-                it.uri == requestedOriginal.uri
-        }
-        val confirmedSession = current.nativeUiSessionId == state.nativeUiSessionId &&
-            current.server == state.server && current.username == state.username &&
-            backupSelection?.id == requestedOriginal.id
-        val currentGallery = current.screen == Screen.GALLERY
-        val inactiveWriter = current.loading || current.fileUploadActive ||
-            current.fileDownloadActive || current.hasActiveNativeTransfer()
-        val canConfirm = nativePhotoBackupCanConfirm(
-            confirmedSession, currentGallery, resolved != null,
-            hasNativeFullPhotoVideoReadGrant(androidContext), inactiveWriter,
-            backupDestinationName,
-        )
-        AlertDialog(
-            onDismissRequest = { backupSelection = null },
-            modifier = Modifier.testTag("native-local-backup-consent"),
-            title = { Text("确认备份当前本机原件") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("仅上传这一项到当前账户的根目录；保留原件，不覆盖重名文件。")
-                    Text("上传成功必须收到服务器的最终文件收据；结果不确定时不会自动重试。",
-                        style = MaterialTheme.typography.bodySmall)
-                    when {
-                        backupInspectError != null ->
-                            Text(backupInspectError.orEmpty(),
-                                color = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.testTag("native-local-backup-error"))
-                        resolved == null ->
-                            CircularProgressIndicator(
-                                modifier = Modifier.testTag("native-local-backup-preflight"))
-                        else -> {
-                            Text("原件大小：" + formatSize(resolved.sizeBytes),
-                                style = MaterialTheme.typography.bodySmall)
-                            OutlinedTextField(
-                                value = backupDestinationName,
-                                onValueChange = {
-                                    if (it.length <= 255) backupDestinationName = it
-                                },
-                                label = { Text("保存到服务器的文件名") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
-                                    .testTag("native-local-backup-name"),
-                            )
-                            if (backupDestinationName.isBlank())
-                                Text("请输入文件名；若原始名称不可用，不会猜测文件名。",
-                                    style = MaterialTheme.typography.bodySmall)
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    enabled = canConfirm,
-                    onClick = {
-                        val exact = resolved ?: return@TextButton
-                        val now = controller.state.value
-                        if (!nativePhotoBackupCanConfirm(
-                            now.nativeUiSessionId == state.nativeUiSessionId &&
-                                now.server == state.server &&
-                                now.username == state.username &&
-                                backupSelection?.id == requestedOriginal.id,
-                            now.screen == Screen.GALLERY &&
-                                nativeNavigation.gallerySource in setOf(
-                                    NativeGallerySource.LOCAL, NativeGallerySource.ALBUMS),
-                            exact.localId == requestedOriginal.id &&
-                                exact.uri == requestedOriginal.uri &&
-                                exact.isVideo == requestedOriginal.isVideo,
-                            hasNativeFullPhotoVideoReadGrant(androidContext),
-                            now.loading || now.fileUploadActive ||
-                                now.fileDownloadActive || now.hasActiveNativeTransfer(),
-                            backupDestinationName,
-                        )) return@TextButton
-                        controller.backupNativePhotoOriginalForeground(
-                            androidContext, exact, backupDestinationName)
-                        backupSelection = null
-                    },
-                    modifier = Modifier.testTag("native-local-backup-confirm"),
-                ) { Text("确认上传原件") }
-            },
-            dismissButton = {
-                TextButton(onClick = { backupSelection = null },
-                    modifier = Modifier.testTag("native-local-backup-cancel")) {
-                    Text("取消")
-                }
-            },
-        )
-    }
+
 }
 
 /** Viewer-only, non-blocking range feedback; stays above photo/video, not
