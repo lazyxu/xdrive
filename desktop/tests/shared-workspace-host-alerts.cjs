@@ -46,3 +46,65 @@ test('Shared Host notices never fabricate native actions', () => {
   assert.doesNotMatch(shared, /window\.|document\.|fetch\s*\(|\.setPaused\(|backup\.cgi/,
     'Host-neutral notices may not use Electron, DSM or Browser transport')
 })
+
+test('real Host notice presentation never creates an action without a Host callback', () => {
+  const ts = require('typescript')
+  const source = read('ui/shared/src/mui/WorkspaceHostAlerts.tsx')
+  const fileName = 'WorkspaceHostAlerts.tsx'
+  const compiled = ts.transpileModule(source, {
+    fileName, reportDiagnostics: true,
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2022,
+      jsx: ts.JsxEmit.ReactJSX,
+    },
+  })
+  assert.deepEqual((compiled.diagnostics || [])
+    .filter(item => item.category === ts.DiagnosticCategory.Error)
+    .map(item => ts.flattenDiagnosticMessageText(item.messageText, '\n')), [])
+  const jsx = (type, props, key) => ({ type, props: props || {}, key })
+  const dependencies = {
+    'react/jsx-runtime': { jsx, jsxs: jsx },
+    '@mui/material': { Button: 'Button', Stack: 'Stack' },
+    './StatusAlert': { XDriveStatusAlert: 'StatusAlert' },
+  }
+  const mod = { exports: {} }
+  new Function('module', 'exports', 'require', compiled.outputText)(
+    mod, mod.exports, name => {
+      assert.ok(Object.hasOwn(dependencies, name), 'unapproved notice dependency: ' + name)
+      return dependencies[name]
+    },
+  )
+  const render = mod.exports.XDriveWorkspaceHostAlerts
+  assert.equal(render({ view: 'files' }), null)
+  const bare = render({
+    view: 'files', lastError: 'real failure', paused: true,
+    hasConflicts: true, conflictCount: 4,
+  })
+  assert.equal(bare.type, 'Stack')
+  assert.equal(bare.props.sx.mx, 1.5, 'Files retains its edge-to-edge margin')
+  const notices = bare.props.children.filter(Boolean)
+  assert.deepEqual(notices.map(item => item.type),
+    ['StatusAlert', 'StatusAlert', 'StatusAlert'])
+  assert.deepEqual(notices.map(item => item.props.tone), ['bad', 'warning', 'warning'])
+  assert.ok(notices.every(item => item.props.action === undefined),
+    'a status alone must never grant resume/diagnostic/conflict operations')
+  let nativeCalls = 0
+  const diagnostics = () => { nativeCalls++ }
+  const resume = () => { nativeCalls++ }
+  const conflicts = () => { nativeCalls++ }
+  const active = render({
+    view: 'overview', lastError: 'real failure', paused: true,
+    hasConflicts: true, conflictCount: 4, resumeDisabled: true,
+    onOpenDiagnostics: diagnostics, onResumeSync: resume, onOpenConflicts: conflicts,
+  })
+  assert.equal(active.props.sx.mx, 0)
+  const buttons = active.props.children.filter(Boolean).map(item => item.props.action)
+  assert.deepEqual(buttons.map(item => item.type), ['Button', 'Button', 'Button'])
+  assert.strictEqual(buttons[0].props.onClick, diagnostics)
+  assert.strictEqual(buttons[1].props.onClick, resume)
+  assert.strictEqual(buttons[2].props.onClick, conflicts)
+  assert.equal(buttons[1].props.disabled, true,
+    'Desktop busy state still disables Resume')
+  assert.equal(nativeCalls, 0, 'rendering must never start a durable Agent operation')
+})
