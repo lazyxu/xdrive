@@ -82,5 +82,4 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          go test ./internal/api -run '^Test(PlacesOwnerCell142AnchorPagesPG17|BaiduCellRangeOriginalGalleryScopeAndRevocation|BaiduNativeWorldGridStableForMiddlePanAndAntimeridian)
- -count=1 -timeout=13m -v
+          go test -count=1 -run '^Test(PlacesOwnerCell142AnchorPagesPG17|BaiduCellRangeOriginalGalleryScopeAndRevocation|BaiduNativeWorldGridStableForMiddlePanAndAntimeridian)$' -timeout=13m -v ./internal/api
