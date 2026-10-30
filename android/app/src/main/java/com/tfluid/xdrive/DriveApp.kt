@@ -42,6 +42,15 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     onDownload: ((DriveNode) -> Unit)? = null,
     onUpload: (() -> Unit)? = null) {
     val state by controller.state.collectAsStateWithLifecycle()
+    val nativeAuthenticated = state.screen in setOf(Screen.FILES, Screen.GALLERY, Screen.TRASH)
+    // A real authentication epoch, not a username, owns native navigation.
+    var nativeNavigation by remember(state.nativeUiSessionId, nativeAuthenticated) {
+        mutableStateOf(NativeHomeNavigation())
+    }
+    var launcherSearch by remember(state.nativeUiSessionId) { mutableStateOf("") }
+    var pendingGalleryMap by remember(state.nativeUiSessionId) { mutableStateOf(false) }
+    var pendingGalleryTab by remember(state.nativeUiSessionId) { mutableStateOf(false) }
+    var pendingTrash by remember(state.nativeUiSessionId) { mutableStateOf(false) }
     // Retain only scroll UI state while the fullscreen Viewer replaces Gallery.
     // The Owner photo rows and thumbnails remain in the Controller/lifecycle.
     val gallerySaveable = rememberSaveableStateHolder()
@@ -105,12 +114,23 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
         state.screen, state.filesSection, state.path.map { it.id },
     ) { mutableStateOf(false) }
     val mobilePage = Color(if (LocalXDriveDarkTheme.current) SharedVisuals.darkMobilePage else SharedVisuals.lightMobilePage)
-    BackHandler(state.screen == Screen.GALLERY || state.screen == Screen.TRASH ||
+    val galleryHasLocalBack = state.screen == Screen.GALLERY && (
+        state.galleryMapCellSelected != null || state.galleryMapOpen ||
+        state.gallerySelectionMode || state.gallerySelected != null ||
+        state.galleryViewer != null || state.gallerySelectedAlbum != null ||
+        state.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS)
+    val showingCloudGallery = nativeNavigation.gallerySource == NativeGallerySource.CLOUD ||
+        state.galleryMapOpen || state.galleryViewer != null
+    BackHandler((galleryHasLocalBack && showingCloudGallery) || state.screen == Screen.TRASH ||
         shouldHandleFilesBack(state, filesEdit != null, batchTrashConfirm)) {
         if (state.destinationKind != null) controller.dismissDestination()
         else if (batchTrashConfirm) batchTrashConfirm = false
         else if (filesEdit != null) filesEdit = null
-        else controller.back()
+        else if (state.galleryMapOpen && state.galleryBd09History.isEmpty() &&
+            state.galleryMapCellSelected == null && state.galleryViewer == null) {
+            nativeNavigation = nativeNavigation.copy(gallerySource = NativeGallerySource.CLOUD)
+            controller.back()
+        } else controller.back()
     }
     // Never restore the previous Owner's transfer pane after a login change.
     var transferCenterOpen by remember(state.server, state.username) {
