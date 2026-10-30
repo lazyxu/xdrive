@@ -55,7 +55,8 @@ export function xDriveVerifiedMapPhotoProjections(
         ![bounds.west,bounds.south,bounds.east,bounds.north].every(Number.isFinite) ||
         selection.asset_id !== cell.asset_id || selection.node_id !== cell.node_id ||
         selection.node_revision !== cell.node_revision ||
-        selection.photo_count !== cell.photo_count) return []
+        selection.photo_count !== cell.photo_count ||
+        selection.grid_scheme !== page.grid_scheme) return []
     verified.set(key,selection)
   }
 
@@ -79,7 +80,8 @@ export function xDriveVerifiedMapPhotoProjections(
         selection.bounds?.north !== currentBounds.north ||
         selection.asset_id !== cell.asset_id || selection.node_id !== cell.node_id ||
         selection.node_revision !== cell.node_revision ||
-        selection.photo_count !== cell.photo_count || pin.count !== cell.photo_count) continue
+        selection.photo_count !== cell.photo_count || pin.count !== cell.photo_count ||
+        selection.grid_scheme !== original.grid_scheme) continue
     seen.add(key)
     // Never render a Child/SDK supplied count or selection, even when its
     // identity happens to match the Owner Cell. Use the trusted snapshot.

@@ -1127,6 +1127,8 @@ export interface MediaBaiduNativeViewportPage {
 export interface MediaBaiduNativeCellsPage {
   coordinate_space: 'bd09ll'
   index_scope: 'owner_gps_auto_index'
+  /** New Server opt-in: stable world-anchored cells; legacy response omits. */
+  grid_scheme?: 'world_stable_v1'
   grid_columns: 8
   grid_rows: 8
   total_count: number
@@ -1149,6 +1151,8 @@ export interface MediaBaiduNativeCellsPage {
  * Not a token: the Server revalidates Owner, source revisions and count. */
 export interface MediaBaiduNativeCellSelection {
   bounds: MediaBaiduNativeViewportBounds
+  /** Propagate the verified grid scheme to the Server Cell Range recheck. */
+  grid_scheme?: 'world_stable_v1'
   cell_x: number
   cell_y: number
   asset_id: number

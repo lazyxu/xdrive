@@ -24,6 +24,34 @@ type Namespace = {
 const safeInt = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v)
 const positive = (v: unknown): v is number => safeInt(v) && v > 0
 
+/** Fixed-world 8x8 Camera tile projection, shared by both SDK Hosts.
+ * Use actual BD09 coordinates and quantized 360/180-degree tiles anchored
+ * at -180/-90. SAME 26-halving cap and seven-step coverage as Server SQL.
+ * Unlike viewport-local grids, tile membership in the middle does not
+ * change merely because the user pans by a fraction of one tile. */
+export function xDriveWorldStableBaiduCellXY(
+  bounds: MediaBaiduNativeViewportBounds, longitude: number, latitude: number,
+): {x:number;y:number} | null {
+  if (!bounds || bounds.coordinate_space !== 'bd09ll' ||
+      ![bounds.west,bounds.south,bounds.east,bounds.north,longitude,latitude]
+        .every(Number.isFinite)) return null
+  const width=bounds.east>bounds.west
+    ? bounds.east-bounds.west : bounds.east+360-bounds.west
+  const height=bounds.north-bounds.south
+  if (width<=1e-10 || width>360 || height<=1e-10 || height>360) return null
+  const tile=(world:number,span:number)=>{
+    let step=world
+    for(let i=0;i<26 && step/2>=span/7;i++)step/=2
+    return step
+  }
+  const dx=tile(360,width),dy=tile(180,height)
+  const actualLon=bounds.west>bounds.east && longitude<bounds.west
+    ? longitude+360 : longitude
+  const x=Math.floor((actualLon+180)/dx)-Math.floor((bounds.west+180)/dx)
+  const y=Math.floor((latitude+90)/dy)-Math.floor((bounds.south+90)/dy)
+  return {x:Math.min(7,Math.max(0,x)),y:Math.min(7,Math.max(0,y))}
+}
+
 /** A3c20: never display Server-supplied cell counts without checking all 64
  * representative/quantity pairs and BD09 Owner response framing. All 100k
  * locations stay on the Server. This validator does NOT authorize resources. */
@@ -39,7 +67,10 @@ export function xDriveValidBaiduNativeCellsPage(
       (bounds.west === 180 && bounds.east === -180)) return false
   const p = value as Partial<MediaBaiduNativeCellsPage>
   const keys = ['coordinate_space','index_scope','grid_columns','grid_rows','total_count','cells']
-  if (Object.keys(p).length !== keys.length || Object.keys(p).some(k => !keys.includes(k)) ||
+  const stable=p.grid_scheme==='world_stable_v1'
+  if ((p.grid_scheme !== undefined && !stable) ||
+      Object.keys(p).length !== keys.length+(stable?1:0) ||
+      Object.keys(p).some(k => !keys.includes(k) && k!=='grid_scheme') ||
       p.coordinate_space !== 'bd09ll' || p.index_scope !== 'owner_gps_auto_index' ||
       p.grid_columns !== 8 || p.grid_rows !== 8 || !safeInt(p.total_count) ||
       p.total_count < 0 || !Array.isArray(p.cells) || p.cells.length > 64) return false
@@ -65,9 +96,12 @@ export function xDriveValidBaiduNativeCellsPage(
     if (offset < 0 || offset > width + 1e-9) return false
     // Recheck exact 8x8 placement of the genuine representative point:
     // a forged cell index must never misstate the position of a count bubble.
-    const gridX = Math.min(7, Math.max(0, Math.floor(offset / (width / 8))))
-    const gridY = Math.min(7, Math.max(0,
-      Math.floor((c.latitude - bounds.south) / ((bounds.north - bounds.south) / 8))))
+    const world=stable?xDriveWorldStableBaiduCellXY(bounds,c.longitude,c.latitude):null
+    const gridX=stable?world?.x:
+      Math.min(7,Math.max(0,Math.floor(offset/(width/8))))
+    const gridY=stable?world?.y:
+      Math.min(7,Math.max(0,
+        Math.floor((c.latitude-bounds.south)/((bounds.north-bounds.south)/8))))
     if (gridX !== c.cell_x || gridY !== c.cell_y) return false
     const bin = c.cell_x + ':' + c.cell_y
     if (used.has(bin) || assets.has(c.asset_id) || nodes.has(c.node_id) ||

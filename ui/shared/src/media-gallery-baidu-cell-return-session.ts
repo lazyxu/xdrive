@@ -53,7 +53,8 @@ function validReturn(snapshot: XDriveBaiduCellReturnSnapshot): boolean {
       !Number.isSafeInteger(cell.cell_x) || cell.cell_x < 0 || cell.cell_x > 7 ||
       !Number.isSafeInteger(cell.cell_y) || cell.cell_y < 0 || cell.cell_y > 7 ||
       !positiveID(cell.asset_id) || !positiveID(cell.node_id) ||
-      !positiveID(cell.node_revision) || !positiveID(cell.photo_count)) return false
+      !positiveID(cell.node_revision) || !positiveID(cell.photo_count) ||
+      (cell.grid_scheme !== undefined && cell.grid_scheme !== 'world_stable_v1')) return false
   return (snapshot.anchorNodeID === undefined || positiveID(snapshot.anchorNodeID)) &&
     (snapshot.anchorIndex === undefined ||
       (Number.isSafeInteger(snapshot.anchorIndex) &&
@@ -68,6 +69,7 @@ function clone(snapshot: XDriveBaiduCellReturnSnapshot): XDriveBaiduCellReturnSn
       cell_x: c.cell_x, cell_y: c.cell_y,
       asset_id: c.asset_id, node_id: c.node_id,
       node_revision: c.node_revision, photo_count: c.photo_count,
+      ...(c.grid_scheme ? {grid_scheme:c.grid_scheme} : {}),
       bounds: { coordinate_space: 'bd09ll', west: b.west, south: b.south,
         east: b.east, north: b.north },
     },
@@ -201,5 +203,6 @@ export function xDriveBaiduCellReturnMatchesFreshSelection(
     remembered.asset_id === fresh.asset_id &&
     remembered.node_id === fresh.node_id &&
     remembered.node_revision === fresh.node_revision &&
-    remembered.photo_count === fresh.photo_count)
+    remembered.photo_count === fresh.photo_count &&
+    remembered.grid_scheme === fresh.grid_scheme)
 }

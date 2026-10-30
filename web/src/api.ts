@@ -2041,6 +2041,9 @@ export class XDriveApi {
       '/api/v1/media/places/baidu-jsapi/cells?' + q.toString(),
       { signal, cache: 'no-store', headers: {
         'X-XDrive-Map-Cover-Kind': 'video-poster-v1',
+        // Older Servers ignore this opt-in header and reply with legacy
+        // viewport-local cells; upgraded Servers return world_stable_v1.
+        'X-XDrive-Map-Grid-Scheme': 'world_stable_v1',
       } },
     ).then(page => {
       if (signal.aborted || !xDriveValidBaiduNativeCellsPage(page, bounds))
@@ -2082,7 +2085,10 @@ export class XDriveApi {
       return Promise.reject(new Error('Invalid or cancelled BD09 cell selection'))
     return this.request<MediaItemRange>(
       `/api/v1/media/places/baidu-jsapi/cell-items?${query.toString()}`,
-      { signal, cache: 'no-store' },
+      { signal, cache: 'no-store',
+        ...(selection.grid_scheme === 'world_stable_v1'
+          ? {headers:{'X-XDrive-Map-Grid-Scheme':'world_stable_v1'}} : {}),
+      },
     ).then(page => {
       if (signal.aborted || !xDriveValidBaiduNativeCellRangePage(page, limit, offset))
         throw new Error('Invalid or cancelled BD09 cell Range')

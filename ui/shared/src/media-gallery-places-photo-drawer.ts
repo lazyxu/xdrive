@@ -57,6 +57,7 @@ function validSelection(selection: MediaBaiduNativeCellSelection): boolean {
     bounds.east >= -180 && bounds.east <= 180 &&
     bounds.south >= -90 && bounds.north <= 90 && bounds.south < bounds.north &&
     bounds.west !== bounds.east && !(bounds.west === 180 && bounds.east === -180) &&
+    (selection.grid_scheme === undefined || selection.grid_scheme === 'world_stable_v1') &&
     Number.isInteger(selection.cell_x) && selection.cell_x >= 0 && selection.cell_x < 8 &&
     Number.isInteger(selection.cell_y) && selection.cell_y >= 0 && selection.cell_y < 8 &&
     [selection.asset_id, selection.node_id, selection.node_revision, selection.photo_count]

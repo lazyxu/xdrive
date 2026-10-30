@@ -12,6 +12,38 @@ import (
 	"github.com/lazyxu/xdrive/internal/meta"
 )
 
+func TestBaiduNativeWorldGridStableForMiddlePanAndAntimeridian(t *testing.T) {
+	first := baiduPhotoMapBounds{
+		West: 100, South: 0, East: 108, North: 8,
+		CoordinateSpace: meta.BaiduPhotoMapSpaceBD09LL,
+	}
+	second := first
+	second.West, second.East = 100.6, 108.6
+	legacyA := int(math.Floor((103.5 - first.West) / ((first.East - first.West) / 8)))
+	legacyB := int(math.Floor((103.5 - second.West) / ((second.East - second.West) / 8)))
+	legacyC := int(math.Floor((103.7 - second.West) / ((second.East - second.West) / 8)))
+	if legacyA != 3 || legacyB != 2 || legacyC != 3 {
+		t.Fatal("regression fixture does not reproduce viewport-local grouping split")
+	}
+	ax, ay, err := baiduPhotoMapWorldCellIndex(first, 103.5, 1.5)
+	bx, by, err2 := baiduPhotoMapWorldCellIndex(first, 103.7, 1.5)
+	cx, cy, err3 := baiduPhotoMapWorldCellIndex(second, 103.5, 1.5)
+	dx, dy, err4 := baiduPhotoMapWorldCellIndex(second, 103.7, 1.5)
+	if err != nil || err2 != nil || err3 != nil || err4 != nil ||
+		ax != bx || ax != cx || ax != dx || ay != by || ay != cy || ay != dy {
+		t.Fatalf("middle Owner-photo group changed across same zoom pan: (%d,%d) (%d,%d) (%d,%d) (%d,%d)", ax, ay, bx, by, cx, cy, dx, dy)
+	}
+	wrap := baiduPhotoMapBounds{
+		West: 179.9, East: -179.9, South: -2, North: 3,
+		CoordinateSpace: meta.BaiduPhotoMapSpaceBD09LL,
+	}
+	e1, _, err1 := baiduPhotoMapWorldCellIndex(wrap, 179.95, 1)
+	e2, _, err2 := baiduPhotoMapWorldCellIndex(wrap, -179.95, 1)
+	if err1 != nil || err2 != nil || e1 < 0 || e1 > 7 || e2 < 0 || e2 > 7 {
+		t.Fatal("wrapped world tile escaped the bounded 8x8 protocol")
+	}
+}
+
 func TestBaiduNativeCellsParserRejectsUnreviewedGeometry(t *testing.T) {
 	good := "west=179.9&south=-2&east=-179.9&north=3"
 	b, err := parseBaiduNativeMapCells(good)

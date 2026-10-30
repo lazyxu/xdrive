@@ -19,6 +19,7 @@ type baiduNativeMapCellsDTO struct {
 	TotalCount      int64               `json:"total_count"`
 	GridColumns     int                 `json:"grid_columns"`
 	GridRows        int                 `json:"grid_rows"`
+	GridScheme      string              `json:"grid_scheme,omitempty"`
 }
 
 // A3c19: no limit, offset, zoom, user, coordinate tag or arbitrary geometry
@@ -140,8 +141,15 @@ func (s *Server) listBaiduNativeMapCells(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "map_cells_unavailable"})
 		return
 	}
-	page, err := queryBaiduPhotoMapCellsScoped(ctx, s.DB, prior.UserID,
-		bounds, gallery.Select("n.id"), options)
+	gridHeader := c.Request.Header.Values("X-XDrive-Map-Grid-Scheme")
+	if len(gridHeader) > 0 && (len(gridHeader) != 1 ||
+		gridHeader[0] != baiduPhotoMapWorldStableGrid) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_map_cell_grid"})
+		return
+	}
+	stable := len(gridHeader) == 1
+	page, err := queryBaiduPhotoMapCellsScopedGrid(ctx, s.DB, prior.UserID,
+		bounds, gallery.Select("n.id"), options, stable)
 	if err != nil || ctx.Err() != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "map_cells_unavailable"})
 		return
@@ -172,5 +180,6 @@ func (s *Server) listBaiduNativeMapCells(c *gin.Context) {
 		TotalCount:      page.TotalCount,
 		GridColumns:     page.GridColumns,
 		GridRows:        page.GridRows,
+		GridScheme:      page.GridScheme,
 	})
 }
