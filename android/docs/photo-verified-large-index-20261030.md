@@ -28,3 +28,14 @@ root revision stability, version change, unmatched resource, idempotence,
 MAY_HAVE_SENT denial and full-quota failure. No emulator result or 100k
 performance is claimed until exact-HEAD Android CI. No new writer, worker,
 screen, background grant or unsafe retry.
+
+### Owner-scoped Android identity enrollment transport
+- A separate, explicit \`NativePhotoDeviceEnrollment.register\` verifies live
+  Owner + Root before calling the existing Go \`POST /api/v1/devices\` with
+  \`platform=android\`. No Agent privilege or Source kind is requested.
+- The single-issuance token is validated against an exact Android device
+  receipt, redacted from logs, and NEVER auto-replayed on timeout/lost ACK.
+- This increment only provides the transport and owner proof. No device secret
+  persistence, unattended registration, auto-sync scheduling or UI claim.
+- JVM + MockWebServer tests cover exact POST, invalid device response, wrong
+  Owner/Root and logout occurring after the request.
