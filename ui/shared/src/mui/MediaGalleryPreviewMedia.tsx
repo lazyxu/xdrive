@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   Image as ImageIcon,
@@ -149,6 +149,7 @@ type MediaPosterQueueEntry = {
   resolve: (value: string | null) => void
   reject: (error: unknown) => void
   started: boolean
+  slotHeld: boolean
   cancelled: boolean
 }
 
@@ -160,11 +161,22 @@ type ScheduledMediaPoster = {
 let mediaPosterActive = 0
 const mediaPosterQueue: MediaPosterQueueEntry[] = []
 
+// A cancelled IPC/HTTP poster request can ignore AbortSignal indefinitely.
+// Retire its logical slot immediately, but admit the successor in a microtask
+// so sibling layout-effect cleanups first remove obsolete queued work.
+function releaseMediaPosterSlot(entry: MediaPosterQueueEntry) {
+  if (!entry.slotHeld) return
+  entry.slotHeld = false
+  mediaPosterActive = Math.max(0, mediaPosterActive - 1)
+  queueMicrotask(pumpMediaPosterQueue)
+}
+
 function pumpMediaPosterQueue() {
   while (mediaPosterActive < mediaPosterConcurrency && mediaPosterQueue.length > 0) {
     const entry = mediaPosterQueue.shift()!
     if (entry.cancelled) continue
     entry.started = true
+    entry.slotHeld = true
     mediaPosterActive += 1
     void entry.task(entry.controller.signal)
       .then((value) => {
@@ -176,10 +188,7 @@ function pumpMediaPosterQueue() {
       }, (error) => {
         if (!entry.cancelled) entry.reject(error)
       })
-      .finally(() => {
-        mediaPosterActive = Math.max(0, mediaPosterActive - 1)
-        pumpMediaPosterQueue()
-      })
+      .finally(() => { releaseMediaPosterSlot(entry) })
   }
 }
 
@@ -194,6 +203,7 @@ function scheduleMediaPoster(
       resolve,
       reject,
       started: false,
+      slotHeld: false,
       cancelled: false,
     }
     mediaPosterQueue.push(entry)
@@ -210,6 +220,7 @@ function scheduleMediaPoster(
         if (index >= 0) mediaPosterQueue.splice(index, 1)
       }
       entry.resolve(null)
+      releaseMediaPosterSlot(entry)
     },
   }
 }
@@ -303,7 +314,7 @@ export function XDriveMediaAsyncVideoPoster({
     return () => observer.disconnect()
   }, [nodeID])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     // Poster lookup, original video read and local capture all share the
     // existing cancelable task; none should compete with the active Viewer.
     if (suspended) return
