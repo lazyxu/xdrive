@@ -44,6 +44,18 @@ class NativeHomeNavigationTest {
             NativeHomeNavigation().labels)
     }
 
+    @Test fun galleryMapExitKeepsItsActualOriginInsteadOfTheMapChip() {
+        for (origin in listOf(NativeGallerySource.LOCAL,
+            NativeGallerySource.ALBUMS, NativeGallerySource.CLOUD)) {
+            assertEquals(origin, nativeGalleryMapReturnSource(origin))
+            assertEquals(origin, nativeGalleryMapReturnSource(
+                NativeGallerySource.MAP, origin))
+        }
+        assertEquals(NativeGallerySource.CLOUD,
+            nativeGalleryMapReturnSource(NativeGallerySource.MAP,
+                NativeGallerySource.MAP))
+    }
+
     @Test fun unauthorizedDynamicRouteFallsBackWithoutLeakingHistory() {
         val recent = NativeHomeNavigation().openDynamic(NativeDynamicFeature.TRANSFERS)
         val revoked = recent.restrictTo(emptySet())

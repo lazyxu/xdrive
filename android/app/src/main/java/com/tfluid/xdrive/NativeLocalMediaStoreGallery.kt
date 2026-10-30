@@ -8,12 +8,16 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.CancellationSignal
+import android.graphics.ImageDecoder
 import android.provider.MediaStore
 import android.util.Size
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -22,6 +26,13 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -40,6 +51,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 
 internal fun nativePhotoPermissions(): Array<String> = when {
     Build.VERSION.SDK_INT >= 34 -> arrayOf(
@@ -54,6 +66,16 @@ internal fun nativePhotoAccess(context: Context): Boolean =
     nativePhotoPermissions().any { permission ->
         context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
     }
+
+/** ImageDecoder reads the authorized original but never allocates an unbounded display bitmap. */
+internal fun nativeStillDecodeSize(width: Int, height: Int): Pair<Int, Int> {
+    require(width > 0 && height > 0)
+    val maxEdge = maxOf(width, height)
+    if (maxEdge <= 4096) return width to height
+    val factor = 4096.0 / maxEdge.toDouble()
+    return maxOf(1, (width * factor).roundToInt()) to
+        maxOf(1, (height * factor).roundToInt())
+}
 
 /**
  * Only a user action requests MediaStore permission. Android 14 Selected Photos
@@ -334,12 +356,79 @@ private fun NativeLocalMediaViewer(
                     modifier = Modifier.statusBarsPadding()
                         .testTag("native-local-viewer-back")) { Text("返回本机照片") }
                 if (asset.isVideo) NativeLocalVideoPlayer(asset)
-                else NativeLocalThumbnail(asset, 1800, Modifier.fillMaxWidth().weight(1f))
-                Text("本机只读预览；动态照片的嵌入运动片段暂不支持播放，也不会自动备份。",
+                else NativeLocalStillViewer(asset)
+                Text("本机原件只读预览（解码最长边不超过 4096 像素）；动态照片运动片段暂不支持播放，也不会自动备份。",
                     modifier = Modifier.navigationBarsPadding().padding(8.dp),
                     style = MaterialTheme.typography.bodySmall)
             }
         }
+    }
+}
+
+/**
+ * Original-resolution ContentResolver still decode, capped for GPU/heap safety.
+ * Viewer owns its bitmap. Source revocation, Owner switch and background
+ * unmount the dialog so no old picture survives the next authenticated page.
+ */
+@Composable
+private fun ColumnScope.NativeLocalStillViewer(asset: NativeLocalMedia) {
+    val resolver = LocalContext.current.contentResolver
+    // null result means "still decoding", not a misleading permission failure.
+    val preview by produceState<Result<ImageBitmap>?>(null, asset.uri) {
+        value = try {
+            Result.success(withContext(Dispatchers.IO) {
+                ImageDecoder.decodeBitmap(ImageDecoder.createSource(resolver, asset.uri)) {
+                    decoder, info, _ ->
+                    val (width, height) = nativeStillDecodeSize(
+                        info.size.width, info.size.height)
+                    if (width != info.size.width || height != info.size.height)
+                        decoder.setTargetSize(width, height)
+                    decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+                }.asImageBitmap()
+            })
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            Result.failure(failure) // Never fabricate a successful preview.
+        }
+    }
+    var scale by remember(asset.uri) { mutableFloatStateOf(1f) }
+    var translation by remember(asset.uri) { mutableStateOf(Offset.Zero) }
+    var viewport by remember(asset.uri) { mutableStateOf(IntSize.Zero) }
+    val gesture = rememberTransformableState { zoom, pan, _ ->
+        val nextScale = (scale * zoom).coerceIn(1f, 5f)
+        val maxX = viewport.width * (nextScale - 1f) / 2f
+        val maxY = viewport.height * (nextScale - 1f) / 2f
+        translation = if (nextScale <= 1f) Offset.Zero else Offset(
+            (translation.x + pan.x).coerceIn(-maxX, maxX),
+            (translation.y + pan.y).coerceIn(-maxY, maxY))
+        scale = nextScale
+    }
+    Box(
+        Modifier.fillMaxWidth().weight(1f).clipToBounds()
+            .onSizeChanged { viewport = it }
+            .pointerInput(asset.uri) {
+                detectTapGestures(onDoubleTap = {
+                    scale = if (scale > 1f) 1f else 2f
+                    translation = Offset.Zero
+                })
+            }
+            .transformable(gesture)
+            .testTag("native-local-still-zoom"),
+        contentAlignment = Alignment.Center,
+    ) {
+        val bitmap = preview?.getOrNull()
+        if (preview == null) CircularProgressIndicator()
+        else if (bitmap == null)
+            Text("本机原件无法读取；请确认照片权限或返回刷新。")
+        else Image(
+            bitmap = bitmap,
+            contentDescription = "本机照片原件",
+            modifier = Modifier.fillMaxSize().graphicsLayer(
+                scaleX = scale, scaleY = scale,
+                translationX = translation.x, translationY = translation.y),
+            contentScale = ContentScale.Fit,
+        )
     }
 }
 
