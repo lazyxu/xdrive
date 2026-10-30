@@ -208,9 +208,9 @@ struct XDriveIOSNativePhotosDashboard: View {
             // Owner's saved UI route even if switching A -> B -> A in one scene.
             routeRestoreScopeKey = nil
             navigationRouteStore.clear()
-            resetNavigation()
             if login.owner != nil { routeRestoreScopeKey = ownerScopeKey }
             // The app-root durable original/receipt runner is never touched.
+            resetNavigation()
         }
         .onChange(of: login.owner) { owner in
             if owner == nil {
