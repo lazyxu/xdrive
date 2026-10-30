@@ -54,10 +54,11 @@ func validDeviceDisplayName(name string) bool {
 	return true
 }
 
-// iOS is an identity-only device platform. It is deliberately NOT a native
-// local_folder Agent or an executor for Desktop Source/Root privileges.
+// iOS and Android installed Apps are identity-only device platforms.
+// Neither is a local_folder Agent or an executor for Desktop Source/Root.
 func validClientPlatform(platform string) bool {
-	return platform == "windows" || platform == "linux" || platform == "darwin" || platform == "ios"
+	return platform == "windows" || platform == "linux" || platform == "darwin" ||
+		platform == "ios" || platform == "android"
 }
 
 func deviceCredentialDigest(raw string) string {
@@ -76,12 +77,13 @@ func clientDeviceIdentityCredentialMatches(device meta.ClientDevice, raw string)
 	return subtle.ConstantTimeCompare([]byte(device.CredentialHash), []byte(actual)) == 1
 }
 
-// Existing Source/Root/Agent code uses this strictly stronger gate. An iOS
-// credential must NEVER be accepted as a Desktop Agent credential, including
-// on Source creation, local root binding, worker execution or draft deletion.
+// Existing Source/Root/Agent code uses this strictly stronger gate.
+// iOS/Android identity credentials must NEVER become Desktop Agent credentials,
+// including Source creation, local root binding and worker execution.
 // Keep this separate from identity-only /devices/self and heartbeat.
 func clientDeviceCredentialMatches(device meta.ClientDevice, raw string) bool {
-	return device.Platform != "ios" && clientDeviceIdentityCredentialMatches(device, raw)
+	return device.Platform != "ios" && device.Platform != "android" &&
+		clientDeviceIdentityCredentialMatches(device, raw)
 }
 
 func (s *Server) registerClientDevice(c *gin.Context) {

@@ -148,7 +148,6 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-gallery-retention-check"
           "$RUNNER_TEMP/xdrive-ios-gallery-retention-check"
 
-
       - name: Verify native Photos Owner, auto backup, cloud thumbnail and receipt contracts
         run: |
           set -euo pipefail
@@ -163,12 +162,12 @@ jobs:
             desktop/tests/ios-native-five-tab-navigation.cjs \
             desktop/tests/ios-native-photo-zoom-viewer.cjs \
             desktop/tests/ios-native-photo-viewer-return.cjs \
-            desktop/tests/ios-native-photoasset-gallery.cjs \
             desktop/tests/ios-native-cloud-still-bounded-preview.cjs \
             desktop/tests/ios-native-photo-auto-ack-enable-guard.cjs \
             desktop/tests/ios-native-photo-detail-permission-fence.cjs \
             desktop/tests/ios-native-photo-cloud-confirmed-refresh.cjs \
-            desktop/tests/ios-native-cloud-preview-scene-lifecycle.cjs
+            desktop/tests/ios-native-cloud-preview-scene-lifecycle.cjs \
+            desktop/tests/ios-native-photoasset-gallery.cjs
 
       - name: Verify native PhotoKit Viewer tile scroll return
         run: |
@@ -179,7 +178,6 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-viewer-return-tile"
           "$RUNNER_TEMP/xdrive-ios-viewer-return-tile"
           node --test desktop/tests/ios-native-photo-viewer-tile-scroll.cjs
-
 
       - name: Prepare native brand and home screen icon
         run: bash ios/scripts/prepare-assets.sh

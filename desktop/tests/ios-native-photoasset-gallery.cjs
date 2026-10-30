@@ -77,7 +77,7 @@ test('L3 photos reuse the tested UIKit zoom surface in local, originals and inde
 test('new Cloud PhotoAsset Gallery is under the fixed Gallery tab; old originals remain distinct', () => {
   assert.match(app, /case local, albums, cloud, originals, map/)
   assert.match(app, /XDriveIOSNativeServerMediaWall\(login: login, album: nil\)/)
-  assert.match(app, /XDriveIOSNativeCloudOriginalGallery\([\s\S]*?login: login,[\s\S]*?confirmedOriginalUpdate: backup\.confirmedOriginalUpdate/)
+  assert.match(app, /XDriveIOSNativeCloudOriginalGallery\(\s*login: login,\s*confirmedOriginalUpdate: backup\.confirmedOriginalUpdate\s*\)/)
   assert.match(app, /case \.originals:\s*openGallery\(\.originals\)/)
   assert.match(app, /case \.cloud:\s*openGallery\(\.cloud\)/)
   assert.match(view, /NavigationLink\s*\{\s*XDriveIOSNativeServerMediaAlbums\(login: login\)/)
@@ -125,7 +125,6 @@ test('new Cloud PhotoAsset Gallery is under the fixed Gallery tab; old originals
   assert.match(view, /offset: model\.failedOffset \?\? model\.page\?\.offset \?\? 0/)
 
 })
-
 
 test('canonical PhotoAsset Viewer retires signed media on scene/Owner changes', () => {
   const begin = view.indexOf('struct XDriveIOSNativeServerMediaPreview: View')

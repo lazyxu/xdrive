@@ -119,8 +119,10 @@ export function xDriveCaptureVideoPosterBlob(
       settled = true
       signal?.removeEventListener('abort', abort)
       window.clearTimeout(timer)
-      video.removeAttribute('src')
-      video.load()
+      // Native WebKit teardown can synchronously throw after a source is
+      // detached. Always settle this one-shot capture, even on Viewer abort.
+      try { video.removeAttribute('src') } catch { /* already detached */ }
+      try { video.load() } catch { /* media decoder already released */ }
       resolve(value)
     }
     const timer = window.setTimeout(() => finish(null), 15_000)
@@ -170,8 +172,14 @@ export function xDriveCaptureVideoPosterBlob(
       }
     }, { once: true })
     video.addEventListener('error', () => finish(null), { once: true })
-    video.src = source
-    video.load()
+    // A disposed browser media decoder may reject the initial load
+    // synchronously. Do not strand the abort listener or the 15s timeout.
+    try {
+      video.src = source
+      video.load()
+    } catch {
+      finish(null)
+    }
   })
 }
 
