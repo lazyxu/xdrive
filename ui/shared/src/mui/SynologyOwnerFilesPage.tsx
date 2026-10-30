@@ -95,7 +95,8 @@ export function XDriveSynologyOwnerFilesPage({
   const {
     crumbs, setCrumbs, items, itemsRef, sort, setSort,
     loadingRoot, rootError, loading, error, paging, hasMore,
-    rootRevision, currentScopeKey, currentScopeVerified, isCurrentOwner,
+    rootRevision, authenticatedRootCurrent,
+    currentScopeKey, currentScopeVerified, isCurrentOwner,
     loadMore, refreshAuthenticatedRoot,
   } = useXDriveFileExplorerCursorDirectory({
     host: client,
@@ -106,7 +107,9 @@ export function XDriveSynologyOwnerFilesPage({
   })
   // The identical shared Files quota banner is enabled only after a
   // Server Owner-authorized read. No DSM volume estimate is substituted.
-  const verifiedOverQuota = useXDriveFileExplorerOwnerQuota(client, rootRevision)
+  const verifiedOverQuota = useXDriveFileExplorerOwnerQuota(
+    client, rootRevision, authenticatedRootCurrent,
+  )
   const [notice, setNotice] = useState('')
   const [preview, setPreview] = useState<{
     scopeKey: string; rootRevision: number; client: XDriveSynologyBackupLocalClient
