@@ -280,7 +280,12 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - name: Native DSM session, owner ACL and CSRF negative contracts
         run: |
-          test -z "$(gofmt -l internal/synologyui cmd/xd/backup_synology_ui.go)"
+          unformatted="$(gofmt -l internal/synologyui internal/localbackupipc/server_login*.go cmd/xd/backup_synology_ui.go)"
+          if test -n "$unformatted"; then
+            echo "::error title=DSM Go formatting::Unformatted source files detected"
+            printf '%s\n' "$unformatted" >&2
+            exit 1
+          fi
           go test -count=1 ./internal/synologyui
           go test -count=1 ./internal/localbackupipc -run 'Test(Remote|OwnerQuota|OwnerFile|OwnerTextPreview|OwnerMediaRange|OwnerThumbnail|OwnerGallery|OwnerLiveMotion|ServerLogin)'
           go test -count=1 ./internal/client -run 'Test(DownloadVerifiedRange|OwnerThumbnail|MediaOwnerThumbnail|OwnerGallery|ReadVerifiedOwnerLiveMotion|OwnerLiveMotion)'
