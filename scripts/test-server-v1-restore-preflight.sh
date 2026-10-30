@@ -106,6 +106,38 @@ assert_fail_closed() {
 # the test's deliberately failing docker shim proves entry past the safety gate.
 write_archive valid
 write_checksums
+# The separate v1-only CLI readiness mode must end after the isolated
+# PostgreSQL TOC probe. No Compose stop/start, safety backup or restore.
+rm -f -- "$XD_RESTORE_TEST_DOCKER_SENTINEL"
+bash "$RESTORE" "$BACKUP_DIR" --config-dir "$XD_CONFIG_DIR" \
+  --preflight-only > "$TMP/readiness-valid.json"
+python3 - "$TMP/readiness-valid.json" <<'PY'
+import json,sys
+r=json.load(open(sys.argv[1],encoding="utf-8"))
+assert r==dict(protocol="xdrive-v1-restore-readiness-v1",
+              state="success",scope="manifest_sha256_tar_headers_pg_restore_toc",
+              format="v1",database_only=False,
+              full_restore_performed=False,production_modified=False),r
+PY
+[[ "$(cat "$XD_RESTORE_TEST_DOCKER_SENTINEL")" == 'read-only pg_restore list' ]] || {
+  echo 'v1 readiness performed an unexpected Docker operation' >&2; exit 1;
+}
+rm -f -- "$XD_RESTORE_TEST_DOCKER_SENTINEL"
+if bash "$RESTORE" "$BACKUP_DIR" --config-dir "$XD_CONFIG_DIR" --preflight-only \
+  --yes > "$TMP/readiness-destructive-option.log" 2>&1; then
+  echo 'read-only v1 readiness accepted --yes' >&2; exit 1
+fi
+[[ ! -e "$XD_RESTORE_TEST_DOCKER_SENTINEL" ]] || {
+  echo 'invalid readiness flags reached Docker' >&2; exit 1;
+}
+if bash "$RESTORE" "$BACKUP_DIR" --config-dir "$XD_CONFIG_DIR" \
+  --preflight-only --no-safety-backup > "$TMP/readiness-no-safety.log" 2>&1; then
+  echo 'read-only v1 readiness accepted destructive no-safety flag' >&2; exit 1
+fi
+[[ ! -e "$XD_RESTORE_TEST_DOCKER_SENTINEL" ]] || {
+  echo 'invalid readiness flags invoked Docker' >&2; exit 1;
+}
+
 if bash "$RESTORE" "$BACKUP_DIR" --config-dir "$XD_CONFIG_DIR" --yes --no-safety-backup >"$TMP/valid.log" 2>&1; then
   echo "fake Docker unexpectedly allowed real restore" >&2; exit 1
 fi
@@ -219,6 +251,21 @@ assert_fail_closed v1_db_only_inconsistent 'invalid or unsafe backup manifest' -
 printf '{"format_version":1,"consistency_verified":true,"file_data_included":false}\n' > "$BACKUP_DIR/manifest.json"
 (cd "$BACKUP_DIR"; sha256sum database.dump verify.json manifest.json > SHA256SUMS.txt)
 rm -f -- "$XD_RESTORE_TEST_DOCKER_SENTINEL"
+# DB-only readiness skips tar, but still validates the exact manifest and
+# checksum list plus a non-networked pg_restore --list. No DB replacement.
+rm -f -- "$XD_RESTORE_TEST_DOCKER_SENTINEL"
+bash "$RESTORE" "$BACKUP_DIR" --config-dir "$XD_CONFIG_DIR" \
+  --preflight-only --database-only > "$TMP/readiness-db-only.json"
+python3 - "$TMP/readiness-db-only.json" <<'PY'
+import json,sys
+r=json.load(open(sys.argv[1],encoding="utf-8"))
+assert r["protocol"]=="xdrive-v1-restore-readiness-v1" and r["state"]=="success",r
+assert r["database_only"] is True and r["scope"]=="manifest_sha256_pg_restore_toc",r
+assert r["full_restore_performed"] is False and r["production_modified"] is False,r
+PY
+[[ "$(cat "$XD_RESTORE_TEST_DOCKER_SENTINEL")" == 'read-only pg_restore list' ]] || {
+  echo 'database-only readiness attempted a production operation' >&2; exit 1
+}
 if bash "$RESTORE" "$BACKUP_DIR" --config-dir "$XD_CONFIG_DIR" --yes --no-safety-backup --database-only >"$TMP/db-only.log" 2>&1; then
   echo "fake Docker unexpectedly allowed database-only restore" >&2; exit 1
 fi
@@ -241,6 +288,16 @@ printf '{"format_version":2,"consistency_verified":true,"file_data_included":tru
 : > "$BACKUP_DIR/legacy.tar"
 (cd "$BACKUP_DIR"; sha256sum database.dump verify.json manifest.json objects.index legacy.tar > SHA256SUMS.txt)
 rm -f -- "$XD_RESTORE_TEST_DOCKER_SENTINEL"
+# v1-only readiness cannot accidentally produce a green v2 receipt.
+rm -f -- "$XD_RESTORE_TEST_DOCKER_SENTINEL"
+if bash "$RESTORE" "$BACKUP_DIR" --config-dir "$XD_CONFIG_DIR" \
+  --preflight-only > "$TMP/readiness-v2-rejected.log" 2>&1; then
+  echo 'v2 falsely accepted v1-only readiness' >&2; exit 1
+fi
+grep -Fq 'only available for v1 snapshots' "$TMP/readiness-v2-rejected.log"
+[[ ! -e "$XD_RESTORE_TEST_DOCKER_SENTINEL" ]] || {
+  echo 'v1-only readiness inspected a v2 archive with Docker' >&2; exit 1
+}
 if bash "$RESTORE" "$BACKUP_DIR" --config-dir "$XD_CONFIG_DIR" --yes --no-safety-backup >"$TMP/valid-v2.log" 2>&1; then
   echo 'fake Docker unexpectedly allowed v2 recovery' >&2; exit 1
 fi
