@@ -1,20 +1,28 @@
 import Combine
 import SwiftUI
 
-/// Native iOS owner root. The native foreground auto runner must survive
-/// leaving the Photos dashboard while the app and Owner session stay active.
+/// Native Owner-verified app root. A single controller owns the auto runner;
+/// the account card is shown ONLY while signed out, never behind a push route.
 struct XDriveIOSNativeOwnerLoginScreen: View {
     @StateObject private var model = XDriveIOSNativeOwnerLoginModel()
-    // Own a single native auto runner for the entire authenticated foreground
-    // scene, rather than recreating it on every gallery/dashboard navigation.
     @StateObject private var backup = XDriveIOSNativePhotoBackupController()
     @Environment(\.scenePhase) private var phase
     @State private var showPassword = false
     @State private var logoutWarning: String?
-    @State private var showingNativeWorkspace = false
+    @State private var signingOut = false
 
     var body: some View {
-        NavigationStack {
+        Group {
+            if model.owner != nil {
+                XDriveIOSNativePhotosDashboard(
+                    login: model, backup: backup,
+                    signingOut: signingOut, logoutWarning: logoutWarning,
+                    onSignOut: { expected in
+                        Task { await signOutSafely(expectedOwner: expected) }
+                    }
+                )
+            } else {
+                NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack(spacing: 12) {
@@ -31,13 +39,15 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
-                    Text(model.owner == nil ? "连接到你的个人云端" : "已验证的原生账户")
+                    Text("连接到你的个人云端")
                         .font(.title3.weight(.semibold))
 
-                    if let verified = model.owner {
-                        verifiedAccount(verified)
-                    } else {
-                        loginForm
+                    loginForm
+                    if let logoutWarning {
+                        Text(logoutWarning)
+                            .foregroundStyle(.orange)
+                            .font(.footnote)
+                            .accessibilityIdentifier("native-ios-logout-warning")
                     }
 
                     if let warning = model.errorMessage {
@@ -64,15 +74,12 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
             .background(Color(uiColor: .systemGroupedBackground))
             .navigationTitle("xDrive")
             .navigationBarTitleDisplayMode(.inline)
-            .navigationDestination(isPresented: $showingNativeWorkspace) {
-                XDriveIOSNativePhotosDashboard(login: model, backup: backup)
+                }
             }
         }
         .task {
+            // Restore must verify Server instance, Owner and cloud root first.
             await model.restore()
-            // Restoration must prove the original Server Owner and root.
-            // Only a verified native account enters the Photos-first workspace.
-            if model.owner != nil { showingNativeWorkspace = true }
             backup.refresh(owner: model.owner)
             if phase == .active { backup.tickIfDue(login: model) }
         }
@@ -85,12 +92,10 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
             else { backup.cancel() }
         }
         .onChange(of: model.owner) { _ in
-            // A late response from the previous Server/Owner may not keep
-            // uploading after native session changes or disappears.
             backup.cancel()
             backup.refresh(owner: model.owner)
+            if model.owner == nil { showPassword = false }
             if phase == .active { backup.tickIfDue(login: model) }
-            showingNativeWorkspace = model.owner != nil
         }
     }
 
@@ -156,39 +161,18 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
         .disabled(model.busy)
     }
 
-    private func verifiedAccount(_ verified: XDriveNativeOwnerRoot) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Label("当前服务器与 Owner 已验证", systemImage: "checkmark.shield.fill")
-            Text(verified.origin.host ?? "xDrive")
-            Text(verified.username)
-            Text("Owner #\(verified.ownerID) · Root #\(verified.rootNodeID)")
-                .font(.footnote.monospacedDigit())
-                .foregroundStyle(.secondary)
-            Text("本机相册、原件自动增量备份及云端已备份文件查看已提供原生入口。完整 Files 和云端 Live ZIP 动态播放仍在迁移。")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-            Button {
-                showingNativeWorkspace = true
-            } label: {
-                Label("打开原生相册与自动备份", systemImage: "photo.stack")
-                    .frame(maxWidth: .infinity, minHeight: 44)
-            }
-            .buttonStyle(.borderedProminent)
-            .accessibilityIdentifier("native-ios-photos-open")
-            if let logoutWarning {
-                Text(logoutWarning).foregroundStyle(.red).font(.footnote)
-            }
-            Button("退出原生账户", role: .destructive) {
-                Task { await signOutSafely() }
-            }
-            .buttonStyle(.bordered)
-            .accessibilityIdentifier("native-ios-login-signout")
-        }
-    }
+
     /// No new account may reuse a prior owner's pending foreground or
     /// BG grant. Fail closed if the global original writer is still active.
     @MainActor
-    private func signOutSafely() async {
+    private func signOutSafely(expectedOwner: XDriveNativeOwnerRoot) async {
+        guard !signingOut,
+              XDriveIOSNativePhotoOwnerScope.matches(model.owner, expectedOwner) else {
+            logoutWarning = "当前服务器或账号已变化；未退出另一账户。"
+            return
+        }
+        signingOut = true
+        defer { signingOut = false }
         logoutWarning = nil
         guard let gate = XDriveIOSOriginalRunGate.shared.acquire() else {
             logoutWarning = "已有原件操作正在结束，请先返回相册停止本轮后重试退出。"
@@ -200,6 +184,13 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
         do {
             let remotePending = try await XDriveIOSPhotoBackgroundGrantManager.shared
                 .emergencyStopLocally()
+            guard XDriveIOSNativePhotoOwnerScope.matches(model.owner, expectedOwner) else {
+                logoutWarning = "账户在安全退出过程中变化，未操作另一账户。"
+                return
+            }
+            // The direct native root has no intermediate account page.
+            // Explicit logout must retire saved Gallery navigation too.
+            XDriveIOSNativeNavigationRouteStore().clear()
             await model.signOut()
             if remotePending {
                 logoutWarning = "本机自动上传已停止；旧服务器的授权撤销待网络恢复后复核。"
