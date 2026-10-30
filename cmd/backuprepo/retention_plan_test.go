@@ -31,7 +31,7 @@ func retentionFixtureSnapshot(t *testing.T, repo, source, name string) string {
 	}
 	writeTestFile(t, filepath.Join(snap, "database.dump"), []byte("fixture pg_dump"))
 	writeTestFile(t, filepath.Join(snap, "verify.json"), []byte("{}"))
-	writeTestFile(t, filepath.Join(snap, "manifest.json"), []byte(`{"format_version":2}`))
+	writeTestFile(t, filepath.Join(snap, "manifest.json"), []byte(`{"format_version":2,"file_data_included":true,"consistency_verified":true}`))
 	retentionFixtureChecksum(t, snap)
 	return snap
 }
@@ -250,5 +250,47 @@ func TestRetentionPlanDeepAuditsOnceAndRejectsSameSizeCorruption(t *testing.T) {
 		if err := run(args); err == nil {
 			t.Fatalf("accepted invalid retention mode argument: %v", args)
 		}
+	}
+}
+
+func TestRetentionPlanRejectsUntrustedV2ManifestWithFreshChecksums(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		manifest string
+	}{
+		{"duplicate-version", `{"format_version":1,"format_version":2,"file_data_included":true,"consistency_verified":true}`},
+		{"duplicate-consistency", `{"format_version":2,"file_data_included":true,"consistency_verified":false,"consistency_verified":true}`},
+		{"nested-duplicate", `{"format_version":2,"file_data_included":true,"consistency_verified":true,"metadata":{"x":1,"x":2}}`},
+		{"not-source-consistent", `{"format_version":2,"file_data_included":true,"consistency_verified":false}`},
+		{"missing-consistency", `{"format_version":2,"file_data_included":true}`},
+		{"wrong-consistency-type", `{"format_version":2,"file_data_included":true,"consistency_verified":"true"}`},
+		{"database-only", `{"format_version":2,"file_data_included":false,"consistency_verified":true}`},
+		{"missing-file-data", `{"format_version":2,"consistency_verified":true}`},
+		{"wrong-version-type", `{"format_version":"2","file_data_included":true,"consistency_verified":true}`},
+		{"trailing-value", `{"format_version":2,"file_data_included":true,"consistency_verified":true} null`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			src, repo := filepath.Join(root, "source"), filepath.Join(root, "repo")
+			if err := os.MkdirAll(src, 0700); err != nil {
+				t.Fatal(err)
+			}
+			hash := testCAS(t, src, "must not become a false recovery point")
+			snap := retentionFixtureSnapshot(t, repo, src, "xdrive-backup-20261025T010000Z")
+			writeTestFile(t, filepath.Join(snap, "manifest.json"), []byte(tc.manifest))
+			// A corrected checksum proves only the bytes, not unambiguous
+			// source consistency or the existence of restorable files.
+			retentionFixtureChecksum(t, snap)
+			for _, mode := range []string{"fast", "deep"} {
+				if report, err := planRetentionWithMode(repo, 1, mode); err == nil {
+					t.Fatalf("unsafe v2 manifest passed %s plan: %+v", mode, report)
+				}
+			}
+			for _, path := range []string{snap, objectPath(repo, hash)} {
+				if _, err := os.Stat(path); err != nil {
+					t.Fatalf("read-only rejection changed recovery data: %s: %v", path, err)
+				}
+			}
+		})
 	}
 }
