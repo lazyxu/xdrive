@@ -38,10 +38,14 @@ test('active Viewer suspends background wall but starts its own fresh Filmstrip 
     wallSignal = signal
     return wallRequest.promise
   }, { concurrency: 1 })
+  const stale = wall.load(70, 0, 1)
+  await flush()
+  assert.equal(wallSignal.aborted, false)
   const releaseViewer = bus.xDriveAcquireViewerForeground({})
   let strip
   try {
-    // The page's old wall request is not usable by the Viewer while a modal is active.
+    assert.equal(await stale, null, 'opening Viewer cancels in-flight Gallery thumbnail work')
+    assert.equal(wallSignal.aborted, true)
     assert.equal(await wall.load(71, 0, 1), null)
     strip = new Scheduler(async (_id, signal) => {
       stripCalls += 1
