@@ -26,8 +26,11 @@ test('all Owner, Server instance and root changes reset parent navigation state'
   }
 });
 
-test('signed-out dismissal remains separate from route reset', () => {
-  assert.match(source, /\.onChange\(of: login\.owner\)\s*\{ owner in\s*if owner == nil\s*\{[\s\S]*?dismiss\(\)/);
+test('signed-out direct root invalidates old Owner routes without a push-card dismissal', () => {
+  assert.match(source, /\.onChange\(of: login\.owner\)\s*\{ owner in[\s\S]*?if owner == nil\s*\{[\s\S]*?navigationRouteStore\.clear\(\)[\s\S]*?resetNavigation\(\)/);
+  assert.doesNotMatch(source, /dismiss\(\)|返回服务器与账号管理/);
+  assert.match(source, /showSignOutConsent = false/);
+  assert.match(source, /signOutConsentOwner = nil/);
   assert.match(source, /XDriveIOSNativePhotoBackupScreen\(login: login, controller: backup\)/);
   assert.doesNotMatch(source, /WKWebView|document\.cookie/);
 });

@@ -9,6 +9,7 @@ const read = file => fs.readFileSync(path.join(root, file), 'utf8')
 const store = read('ios/XDriveIOS/NativeOwnerSessionStore.swift')
 const model = read('ios/XDriveIOS/NativeOwnerLoginModel.swift')
 const screen = read('ios/XDriveIOS/NativeOwnerLoginScreen.swift')
+const workspace = read('ios/XDriveIOS/NativePhotosDashboard.swift')
 
 test('native Login remains SwiftUI and mounts only after native Photos integration', () => {
   assert.match(screen, /struct XDriveIOSNativeOwnerLoginScreen: View/)
@@ -17,12 +18,14 @@ test('native Login remains SwiftUI and mounts only after native Photos integrati
   assert.match(screen, /native-ios-login-username/)
   assert.match(screen, /native-ios-login-password/)
   assert.match(screen, /native-ios-login-submit/)
-  assert.match(screen, /native-ios-login-signout/)
+  assert.match(workspace, /native-ios-login-signout/)
+  assert.match(screen, /XDriveIOSNativePhotoOwnerScope\.matches\(model\.owner, expectedOwner\)/)
+  assert.doesNotMatch(screen, /showingNativeWorkspace|verifiedAccount\(|已验证的原生账户/)
   assert.doesNotMatch(screen, /WebView|URLSession|fetch\(|window\.webkit/)
   const app = read('ios/XDriveIOS/XDriveIOSApp.swift')
   assert.match(app, /XDriveIOSNativeOwnerLoginScreen\(\)/, 'verified native Photos cutover')
   assert.doesNotMatch(app, /XDriveWebAppHome\(\)/)
-  assert.match(screen, /XDriveIOSNativePhotosDashboard\(login: model, backup: backup\)/)
+  assert.match(screen, /if model\.owner != nil \{[\s\S]*?XDriveIOSNativePhotosDashboard\(/)
 })
 
 test('new native Keychain namespace never reuses purged legacy refresh or background Device secrets', () => {
