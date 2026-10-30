@@ -64,7 +64,7 @@ test('authenticated DSM Host feeds the exact canonical Gallery JSX using a real 
     createXDriveSynologyBackupLocalClient: url => { calls.push(url); return local },
     createXDriveSynologyOwnerBackupSource: c => ({ client: c }),
     createXDriveSynologyCloudStorageDataSource: c => ({ client: c }),
-    createXDriveSynologyBrowserStorageSource: () => ({ browser: true }),
+    createXDriveSynologyNASStorageSource: c => ({ client: c, nasVerified: true }),
   }
   const mod = { exports: {} }
   new Function('module', 'exports', 'require', 'window', compile(host, hostFile))(
@@ -83,6 +83,8 @@ test('authenticated DSM Host feeds the exact canonical Gallery JSX using a real 
   assert.notEqual(actualHost.adminRoleVerified, true)
   assert.deepEqual(calls, ['https://nas.example/webman/3rdparty/xdrivenas/backup.cgi'])
   assert.equal(actualHost.services.galleryPage.pageSize, 100)
+  assert.strictEqual(actualHost.services.localStorage.client, local,
+    'NAS volume reads must use the same authenticated local Agent')
   const source = actualHost.services.galleryPage.source
   const result = await source.listItemRange(1, 0)
   assert.equal(result.total_count, 0)
