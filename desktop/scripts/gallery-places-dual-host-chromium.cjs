@@ -429,6 +429,93 @@ async function testFullDocumentMapHandoff(browser,from,port,combined=false){
 }
 
 
+// A real asynchronous Gin handoff ticket may arrive after the Parent route
+// changes but before the mounted Gallery React map unmounts. The existing
+// Owner/PhotoScope/Camera can still match: the ORIGINAL hash/query must also
+// match, or no full-document navigation may occur. Run against BOTH SDK hosts.
+async function testPendingMapHandoffRejectsChangedParentRoute(browser,from,port){
+  const target=from==='inline'?'isolated':'prototype'
+  const context=await browser.newContext({
+    viewport:{width:390,height:844},locale:'zh-CN',
+    ignoreHTTPSErrors:true,serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(30000)
+  const errors=[]
+  page.on('pageerror',error=>errors.push(error.message))
+  let releaseIssue=()=>{}
+  const issueGate=new Promise(resolve=>{releaseIssue=resolve})
+  let markIssued=()=>{}
+  const issueHeld=new Promise(resolve=>{markIssued=resolve})
+  let heldRequests=0
+  await page.route('https://api.map.baidu.com/api?**',route=>{
+    assert.equal(new URL(route.request().url()).searchParams.get('ak'),
+      'TEST_ONLY_BROWSER_AK')
+    return route.fulfill({status:200,contentType:'text/javascript',body:sdkStub})
+  })
+  await page.route('**/api/v1/media/places/baidu-jsapi/scope-handoff',
+    async route=>{
+      if(route.request().method()!=='POST')return route.continue()
+      heldRequests++
+      markIssued()
+      await issueGate
+      await route.continue()
+    })
+  try{
+    const fromQuery=from==='isolated'?'&places_map_mode=isolated':''
+    await page.goto('https://'+galleryHost+':'+port+
+      '/?handoff_doc=1'+fromQuery+'#/app/gallery?section=places',
+      {waitUntil:'domcontentloaded'})
+    await page.getByText('当前地图可查看 3 张照片',{exact:true}).waitFor()
+    const before=await page.evaluate(()=>({
+      reads:window.__mapProbe.queries.length,
+      issues:window.__mapProbe.handoff.issues,
+      consumes:window.__mapProbe.handoff.consumes,
+      href:location.href,
+    }))
+    await page.locator('[data-xdrive-places-map-more-menu] > summary').click()
+    await page.locator('[data-xdrive-map-mode-'+target+']').click()
+    await Promise.race([
+      issueHeld,
+      new Promise((_,reject)=>setTimeout(()=>
+        reject(Error('real Gin Owner map ticket request was never observed')),15000)),
+    ])
+    // Neither Owner nor camera changes: only the actual Parent browser route.
+    // replaceState intentionally avoids a React unmount or a second SDK load.
+    await page.evaluate(()=>{
+      const next=new URL(location.href)
+      next.hash='#/app/files'
+      next.searchParams.set('theme','dim')
+      history.replaceState(null,'',next.href)
+    })
+    releaseIssue() // let the real authenticated Gin ticket complete
+    await page.getByText(
+      '地图范围、位置或页面已变化，请重新选择地图模式。',
+      {exact:true}).waitFor()
+    const after=await page.evaluate(()=>({
+      url:location.href,hash:location.hash,
+      theme:new URL(location.href).searchParams.get('theme'),
+      reads:window.__mapProbe.queries.length,
+      issues:window.__mapProbe.handoff.issues,
+      consumes:window.__mapProbe.handoff.consumes,
+      map:document.querySelectorAll('[data-xdrive-gallery-places-map]').length,
+      count:document.querySelector('[data-xdrive-places-map-photo-summary]')?.textContent,
+      warning:document.querySelector('[data-xdrive-map-mode-scope-warning]')?.textContent,
+    }))
+    record(from+': pending map ticket cannot navigate after Parent hash/query change',
+      before.issues===0&&before.consumes===0&&heldRequests===1&&
+      after.issues===1&&after.consumes===0&&after.hash==='#/app/files'&&
+      after.theme==='dim'&&after.map===1&&after.reads===before.reads&&
+      after.count?.includes('3 张照片')&&
+      after.warning?.includes('页面已变化')&&
+      !after.url.includes('places_map_scope_required=1')&&
+      !after.url.includes('places_map_handoff=')&&
+      errors.length===0)
+  }finally{
+    releaseIssue()
+    await context.close()
+  }
+}
+
 /** Real loopback Gin + PostgreSQL pending ticket, then a test-only bounded
  * Album/Owner state change before full-document mode handoff consumption.
  * The authentic Web startup scrubber must deny SDK, Viewer and all Cells;
@@ -4139,6 +4226,8 @@ async function main(){
         summary.favoriteMapCloseModes.join(',')==='inline,isolated')
       await testFullDocumentMapHandoff(browser,'inline',port)
       await testFullDocumentMapHandoff(browser,'isolated',port)
+      await testPendingMapHandoffRejectsChangedParentRoute(browser,'inline',port)
+      await testPendingMapHandoffRejectsChangedParentRoute(browser,'isolated',port)
       record('both SDK Hosts perform real one-use Gin scope handoff across full document',
         summary.fullDocumentHandoffModes.join(',')==='inline,isolated')
       await testFullDocumentMapHandoff(browser,'inline',port,true)

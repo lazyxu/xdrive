@@ -11,9 +11,8 @@ import { XDriveDeviceBackupLocalCommonBatchDialog } from './DeviceBackupLocalCom
 import { XDriveDeviceBackupLocalScheduleDialog } from './DeviceBackupLocalScheduleDialog'
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
 import { XDriveStatePanel } from './StatePanel'
-import { XDriveSynologyBackupTargetBrowser } from './SynologyBackupTargetBrowser'
+import { XDriveSynologyBackupSourceSetup } from './SynologyBackupSourceSetup'
 import { XDriveStatusAlert } from './StatusAlert'
-import { XDriveSynologyNASShareInventory } from './SynologyNASShareInventory'
 
 type LocalHistory = {
   loading: boolean
@@ -36,7 +35,6 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
   const [scheduleID, setScheduleID] = useState<number | null>(null)
   const [notice, setNotice] = useState('')
   const [historyRevision, setHistoryRevision] = useState(0)
-  const [showTargetBrowser, setShowTargetBrowser] = useState(false)
   const [histories, setHistories] = useState<Record<number, LocalHistory>>({})
   const refresh = useCallback(() => { setRefreshID((n) => n + 1) }, [])
 
@@ -95,14 +93,8 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
       title="设备备份"
       subtitle="查看本机同步文件夹、进度与历史；所有操作只能在所属设备本机进行。"
       pageActions={
-        <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-          <Button size="small" variant="outlined"
-            onClick={() => setShowTargetBrowser(open => !open)}>
-            {showTargetBrowser ? '收起云端目标' : '查看云端目标'}
-          </Button>
-          <Button size="small" startIcon={<RefreshRoundedIcon />} disabled={loading}
-            onClick={refresh}>刷新</Button>
-        </Stack>
+        <Button size="small" startIcon={<RefreshRoundedIcon />} disabled={loading}
+          onClick={refresh}>刷新</Button>
       }
     >
       {error ? <XDriveStatusAlert tone="neutral">{error}</XDriveStatusAlert> : null}
@@ -117,7 +109,7 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
           }} />
         ) : error ? null : sources.length === 0 ? (
           <XDriveStatePanel variant="plain"
-            message="暂无已授权的本机同步文件夹。请先在 NAS 本地使用 xd backup init 配置。" />
+            message="暂无已授权的本机同步文件夹。可在下方确认创建 NAS 备份来源，或使用本机 xd backup init。" />
         ) : (
           <Stack spacing={2}>
             <Stack spacing={1}>
@@ -161,10 +153,7 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
           </Stack>
         )}
       </Box>
-      <XDriveSynologyNASShareInventory client={client} />
-      {showTargetBrowser ? (
-        <XDriveSynologyBackupTargetBrowser key={refreshID} client={client} />
-      ) : null}
+      <XDriveSynologyBackupSourceSetup client={client} onCreated={refresh} />
       {scheduleID !== null && (
         <XDriveDeviceBackupLocalScheduleDialog
           sourceID={scheduleID}
