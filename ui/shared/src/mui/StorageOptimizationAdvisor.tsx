@@ -160,7 +160,7 @@ export function XDriveStorageOptimizationAdvisor({
               <XDriveStatusAlert tone="warning">
                 旧版 Pack 报告混合了源文件实际分配量与 4 KiB Pack 模型；历史节省率与 Pack 建议不可比较，请重新运行只读评估。
               </XDriveStatusAlert>
-            )
+            )}
             <Typography variant="caption" color="text.secondary">
               已对内存 Pack 的 SHA、偏移及原字节读回进行测试；物理空间为 4 KiB 块模型，
               并非真实 Pack 落盘、冷读取、在线 GC 或网络速度测试。
