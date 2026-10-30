@@ -568,6 +568,115 @@ test('P1 FileExplorer Owner scope remounts in-place text Inspector and Quick Loo
 
 
 
+
+test('PDF iframe reauthorizes same Node/revision before old Owner pixels, readiness or Blob leak', async () => {
+  const target = { id: 79001, revision: 3, name: 'private.pdf', kind: 'file' }
+  const calls = [], revoked = [], originalRevoke = URL.revokeObjectURL
+  URL.revokeObjectURL = url => revoked.push(url)
+  const a = async (node, kind, signal) => {
+    calls.push({ owner: 'A', node, kind, signal })
+    return 'blob:pdf-owner-A'
+  }
+  let resolveB
+  const b = (node, kind, signal) => new Promise(resolve => {
+    calls.push({ owner: 'B', node, kind, signal })
+    resolveB = resolve
+  })
+  const props = loadPreviewURL => React.createElement(XDriveFilePreviewSurface, { target, loadPreviewURL })
+  let view
+  try {
+    await act(async () => { view = create(props(a)); await Promise.resolve() })
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0].kind, 'pdf')
+    const oldFrame = view.root.findByType('iframe')
+    assert.equal(oldFrame.props.src, 'blob:pdf-owner-A')
+    const oldOnLoad = oldFrame.props.onLoad
+    await act(async () => oldOnLoad())
+    assert.equal(root(view, 'pdf').props['aria-busy'], undefined)
+
+    await act(async () => { view.update(props(b)); await Promise.resolve() })
+    assert.equal(calls.length, 2, 'new Host must obtain a new signed PDF ticket')
+    assert.equal(calls[0].signal.aborted, true)
+    assert.equal(view.root.findAllByType('iframe').length, 0,
+      'old PDF iframe must unmount before the new authorization settles')
+    assert.equal(root(view, 'pdf').props['aria-busy'], true)
+    assert.ok(revoked.includes('blob:pdf-owner-A'), 'replaced Owner Blob must be retired')
+    await act(async () => oldOnLoad())
+    assert.equal(root(view, 'pdf').props['aria-busy'], true,
+      'old PDF onLoad cannot signal new Owner readiness')
+
+    await act(async () => { resolveB('blob:pdf-owner-B'); await Promise.resolve() })
+    const currentFrame = view.root.findByType('iframe')
+    assert.equal(currentFrame.props.src, 'blob:pdf-owner-B')
+    assert.equal(root(view, 'pdf').props['aria-busy'], true)
+    await act(async () => currentFrame.props.onLoad())
+    assert.equal(root(view, 'pdf').props['aria-busy'], undefined)
+  } finally {
+    if (view) await act(async () => view.unmount())
+    URL.revokeObjectURL = originalRevoke
+  }
+  assert.equal(revoked.filter(x => x === 'blob:pdf-owner-A').length, 1)
+  assert.equal(revoked.filter(x => x === 'blob:pdf-owner-B').length, 1)
+})
+
+test('old PDF Retry callback cannot renew ticket after same-ID Owner handoff', async () => {
+  const target = { id: 79002, revision: 1, name: 'old-report.pdf', kind: 'file' }
+  const calls = []
+  const load = owner => (node, kind, signal) =>
+    new Promise((resolve, reject) => calls.push({ owner, node, kind, signal, resolve, reject }))
+  const a = load('A'), b = load('B')
+  const props = loadPreviewURL => React.createElement(XDriveFilePreviewSurface, { target, loadPreviewURL })
+  let view
+  try {
+    await act(async () => { view = create(props(a)) })
+    await act(async () => { calls[0].reject(new Error('denied')); await Promise.resolve() })
+    const staleRetry = view.root.findAll(node => node.type === 'button' &&
+      node.props['aria-label'] === '重试预览')[0].props.onClick
+    await act(async () => { view.update(props(b)); await Promise.resolve() })
+    assert.equal(calls.length, 2)
+    assert.equal(calls[0].signal.aborted, true)
+    await act(async () => { staleRetry(); await Promise.resolve() })
+    assert.equal(calls.length, 2, 'a stale click must not request an Owner A ticket')
+    assert.equal(view.root.findAllByType('iframe').length, 0)
+    await act(async () => {
+      calls[1].resolve('https://example.invalid/owner-B.pdf')
+      await Promise.resolve()
+    })
+    assert.equal(view.root.findByType('iframe').props.src, 'https://example.invalid/owner-B.pdf')
+  } finally { if (view) await act(async () => view.unmount()) }
+})
+
+test('late PDF Owner A ticket is discarded after B already mounted same Node revision', async () => {
+  const target = { id: 79003, revision: 4, name: 'memo.pdf', kind: 'file' }
+  const originalRevoke = URL.revokeObjectURL, revoked = [], requests = []
+  URL.revokeObjectURL = url => revoked.push(url)
+  let resolveA
+  const a = (node, kind, signal) => new Promise(resolve => {
+    requests.push({ owner: 'A', node, kind, signal }); resolveA = resolve
+  })
+  const b = async (node, kind, signal) => {
+    requests.push({ owner: 'B', node, kind, signal })
+    return 'blob:pdf-B-current'
+  }
+  const props = loadPreviewURL => React.createElement(XDriveFilePreviewSurface, { target, loadPreviewURL })
+  let view
+  try {
+    await act(async () => { view = create(props(a)) })
+    assert.equal(requests.length, 1)
+    await act(async () => { view.update(props(b)); await Promise.resolve() })
+    assert.equal(requests.length, 2)
+    assert.equal(requests[0].signal.aborted, true)
+    assert.equal(view.root.findByType('iframe').props.src, 'blob:pdf-B-current')
+    await act(async () => { resolveA('blob:pdf-A-late'); await Promise.resolve() })
+    assert.equal(view.root.findByType('iframe').props.src, 'blob:pdf-B-current')
+    assert.ok(revoked.includes('blob:pdf-A-late'), 'obsolete private PDF Blob must be revoked')
+  } finally {
+    if (view) await act(async () => view.unmount())
+    URL.revokeObjectURL = originalRevoke
+  }
+  assert.ok(revoked.includes('blob:pdf-B-current'), 'closing Viewer releases current PDF Blob')
+})
+
 test('P1 PDF ticket failure supports an explicit single-flight retry on the same verified Node', async () => {
   const reads = []
   const target = { id: 1101, revision: 4, name: 'manual.pdf', kind: 'file' }
