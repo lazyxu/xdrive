@@ -3109,6 +3109,67 @@ async function testAdjacent142And28PhotoCovers(browser,mode,port){
       JSON.stringify({mode,expected:scrollBefore,actual:restored}))
     record(mode+': Viewer Back reauthorizes 142 items before restoring scroll anchor',
       didRestore&&Math.abs(restored-scrollBefore)<6&&errors.length===0)
+    // Regression: a 142-photo Owner Cell has three verified pages. Rotating
+    // iOS after scrolling must not retain the old signed Cell or silently
+    // discard pages 48..141. Reauthorize the resized Camera, refetch 48/48/46
+    // and restore the visual anchor only after those fresh pages exist.
+    const beforeRotation=await page.evaluate(()=>{
+      const p=window.__mapProbe
+      p.preRotationDrawer=document.querySelector('[data-xdrive-places-photo-drawer]')
+      const list=document.querySelector('[data-xdrive-places-photo-drawer-items]')
+      return {queries:p.queries.length,previews:p.photoPreviewRanges.length,
+        scrollTop:list?.scrollTop??0}
+    })
+    await page.setViewportSize({width:844,height:390})
+    const restoredAfterRotate=await page.waitForFunction(previous=>{
+      const p=window.__mapProbe
+      const drawer=document.querySelector('[data-xdrive-places-photo-drawer]')
+      const list=drawer?.querySelector('[data-xdrive-places-photo-drawer-items]')
+      const pages=p.photoPreviewRanges.slice(previous.previews)
+        .filter(x=>x.total===142)
+      if(p.queries.length<=previous.queries||!list||
+          list.querySelectorAll('[data-xdrive-places-photo-drawer-item]').length!==142||
+          pages.length<3)return false
+      const maxScroll=Math.max(0,list.scrollHeight-list.clientHeight)
+      const target=Math.min(previous.scrollTop,maxScroll)
+      return p.preRotationDrawer?.isConnected===false &&
+        p.preRotationDrawer!==drawer &&
+        Math.abs(list.scrollTop-target)<6
+    },beforeRotation,{timeout:12000}).then(()=>true).catch(()=>false)
+    const rotation=await page.evaluate(previous=>{
+      const p=window.__mapProbe
+      const drawer=document.querySelector('[data-xdrive-places-photo-drawer]')
+      const list=drawer?.querySelector('[data-xdrive-places-photo-drawer-items]')
+      const pages=p.photoPreviewRanges.slice(previous.previews)
+        .filter(x=>x.total===142)
+      return {
+        reauthorized:p.queries.length>previous.queries,
+        oldDetached:p.preRotationDrawer?.isConnected===false &&
+          p.preRotationDrawer!==drawer,
+        total:p.queries.at(-1)?.count,
+        nodes:Array.from(list?.querySelectorAll('[data-xdrive-places-photo-drawer-item]')||[])
+          .map(x=>x.getAttribute('data-xdrive-places-photo-drawer-item')),
+        pages:pages.map(x=>({offset:x.offset,items:x.items,limit:x.limit})),
+        scrollTop:list?.scrollTop??0,
+        target:list?Math.min(previous.scrollTop,
+          Math.max(0,list.scrollHeight-list.clientHeight)):0,
+      }
+    },beforeRotation)
+    const rotationPass=restoredAfterRotate&&rotation.reauthorized&&rotation.oldDetached&&
+      rotation.total===170&&rotation.nodes.length===142&&
+      new Set(rotation.nodes).size===142&&rotation.pages.length===3&&
+      rotation.pages.every((p,i)=>p.offset===i*48&&p.limit===48&&
+        p.items===[48,48,46][i])&&
+      Math.abs(rotation.scrollTop-rotation.target)<6&&
+      rotation.target>0&&errors.length===0
+    if(!rotationPass)console.error('places-142-rotation-diagnostic',JSON.stringify({
+      mode,restoredAfterRotate,reauthorized:rotation.reauthorized,
+      oldDetached:rotation.oldDetached,total:rotation.total,
+      nodes:rotation.nodes.length,uniqueNodes:new Set(rotation.nodes).size,
+      pages:rotation.pages,scrollTop:rotation.scrollTop,target:rotation.target,
+      errors:errors.length,
+    }))
+    record(mode+': 142-photo rotation reauthorizes all pages and scroll position',rotationPass)
     await page.keyboard.press('Escape')
     await dialog.waitFor({state:'hidden'})
   }finally{await context.close()}

@@ -230,6 +230,11 @@ export function XDriveMediaGalleryPlacesPhotoDrawer({
             }}
             sx={{px:1.25,py:0.75,overflowX:expanded?'hidden':'auto',
               overflowY:expanded?'auto':'hidden',minHeight:0,minWidth:0,
+              // Chromium may shift scrollTop by the viewport-height delta on
+              // rotation before Parent captures the signed reauthorization hint.
+              // Keep the user's pre-rotation visual anchor; fresh Owner pages
+              // are still required before any tile can be opened again.
+              overflowAnchor:'none',
               flex:expanded?'1 1 auto':'0 1 auto',
               display:expanded?'grid':'flex',gap:1,
               gridTemplateColumns:expanded?'repeat(auto-fill, minmax(108px, 1fr))':undefined,
