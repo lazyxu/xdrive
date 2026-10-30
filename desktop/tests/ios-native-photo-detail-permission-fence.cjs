@@ -21,7 +21,9 @@ test('fullscreen detail owns a real PhotoKit change observer while source scans 
 })
 
 test('mutation and app background immediately clear still Live and video resources', () => {
-  assert.match(detail, /\.onChange\(of: changes\.generation\) \{ _ in\s*model\.cancel\(\)\s*dismiss\(\)/)
+  const changeHandler = detail.slice(detail.indexOf('.onChange(of: changes.generation)'),
+    detail.indexOf('.onChange(of: phase)'))
+  assert.match(changeHandler, /model\.cancel\(\)\s*dismiss\(\)/)
   assert.match(detail, /\.onChange\(of: phase\) \{ state in\s*if state != \.active \{[\s\S]*?model\.cancel\(\)/)
   assert.match(detail, /\.task\(id: candidate\.id\) \{\s*if phase == \.active \{ model\.load\(candidate\) \}/)
   assert.match(local, /func cancel\(\) \{\s*epoch = UUID\(\)[\s\S]*?player\?\.pause\(\)[\s\S]*?player = nil\s*live = nil\s*still = nil/)
