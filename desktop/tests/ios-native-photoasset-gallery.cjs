@@ -152,3 +152,16 @@ test('canonical PhotoAsset Viewer retires signed media on scene/Owner changes', 
   assert.match(preview, /catch is CancellationError \{/)
   assert.match(preview, /previewRequestID = UUID\(\)[\s\S]*?player\?\.pause\(\)[\s\S]*?image = nil[\s\S]*?failure = nil/)
 })
+
+test('canonical PhotoAsset Viewer exposes explicit fenced Retry on preview failure', () => {
+  const start = view.indexOf('struct XDriveIOSNativeServerMediaPreview: View')
+  const end = view.indexOf('/// Root and album-specific media wall', start)
+  assert.ok(start >= 0 && end > start)
+  const preview = view.slice(start, end)
+  assert.match(preview, /else if let failure \{[\s\S]*?Button\("重试"\) \{[\s\S]*?retirePreview\(\)/)
+  assert.match(preview, /phase == \.active && login\.owner != nil/)
+  assert.match(preview, /native-ios-photoasset-viewer-retry/)
+  assert.match(preview, /private func retirePreview\(\)[\s\S]*?previewRequestID = UUID\(\)/)
+  assert.match(preview, /\.task\(id: previewRequestID\)[\s\S]*?login\.verifiedAuthorization\(\)/)
+  assert.doesNotMatch(preview, /document\.cookie|WKWebView/)
+})
