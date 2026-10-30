@@ -109,6 +109,41 @@ test('W2a sparse Range rejects fabricated count and invalid identity',()=>{
   assert.equal(lib.xDriveValidBaiduNativeCellRangePage({...first,limit:101},100,0),false)
   assert.equal(lib.xDriveValidBaiduNativeCellRangePage({...first,items:[{node:{id:0}}]},100,0),false)
 })
+test('signed Cell Range transport rejects overlap, repeated Nodes and bogus anchors',()=>{
+  const item=id=>({node:{id}})
+  // This lower-level contract intentionally accepts sparse pages. The
+  // higher-level 48-item Drawer independently requires complete pages.
+  const sparse={items:[item(19)],total_count:2,offset:0,limit:100}
+  assert.equal(lib.xDriveValidBaiduNativeCellRangePage(sparse,100,0),true)
+  assert.equal(lib.xDriveValidBaiduNativeCellRangePage({
+    ...sparse,items:[item(19),item(20)],anchor_index:1,
+  },100,0),true)
+  assert.equal(lib.xDriveValidBaiduNativeCellRangePage({
+    ...sparse,items:[],offset:2,
+  },100,2),true,'an empty page at the end remains a valid sparse response')
+
+  const cases=[
+    [{...sparse,items:[item(19),item(19)]},100,0],
+    [{...sparse,offset:1,items:[item(19),item(20)]},100,1],
+    [{...sparse,offset:2,items:[item(19)]},100,2],
+    [{...sparse,anchor_index:-1},100,0],
+    [{...sparse,anchor_index:2},100,0],
+    [{...sparse,anchor_index:1.5},100,0],
+    [{...sparse,anchor_index:'1'},100,0],
+    [{...sparse,items:[item(0)]},100,0],
+    [{...sparse,items:[item(1.5)]},100,0],
+    [{...sparse,items:[]},0,0],
+    [{...sparse,items:[]},101,0],
+    [{...sparse,items:[],offset:-1},100,-1],
+    [{...sparse,items:[],offset:10_000_001},100,10_000_001],
+    [{...sparse,items:{}},100,0],
+    [[],100,0],
+  ]
+  for(const [response,limit,offset] of cases)
+    assert.equal(lib.xDriveValidBaiduNativeCellRangePage(response,limit,offset),false,
+      JSON.stringify({response,limit,offset}))
+})
+
 test('W2a trusted Web/Mobile Web endpoint is not a general Gallery/share scope',()=>{
   const gallery=read('ui/shared/src/mui/MediaGallery.tsx')
   const adapter=read('ui/shared/src/mui/MediaGalleryAdapter.ts')

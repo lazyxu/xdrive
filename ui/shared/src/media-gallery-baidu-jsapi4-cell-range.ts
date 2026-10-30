@@ -92,14 +92,28 @@ export function xDriveBaiduNativeCellRangeParams(
   return query
 }
 
+/** Validate a bounded, possibly sparse signed Owner Cell page before it
+ * reaches Web/Desktop/Viewer adapters. The Gallery Drawer separately requires
+ * a complete page, but this transport guard must reject overlaps, duplicates
+ * and impossible anchors even for callers that do not open the Drawer. */
 export function xDriveValidBaiduNativeCellRangePage(
   page: unknown, limit: number, offset: number,
 ): page is MediaItemRange {
-  if (!page || typeof page !== 'object') return false
+  if (!page || typeof page !== 'object' || Array.isArray(page) ||
+      !Number.isSafeInteger(limit) || limit < 1 || limit > 100 ||
+      !Number.isSafeInteger(offset) || offset < 0 || offset > 10_000_000) return false
   const p = page as Partial<MediaItemRange>
-  return Number.isSafeInteger(p.total_count) && (p.total_count ?? -1) >= 0 &&
-    p.limit === limit && p.offset === offset && Array.isArray(p.items) &&
-    p.items.length <= limit && p.items.length <= (p.total_count ?? -1) &&
-    p.items.every(item => Number.isSafeInteger(item?.node?.id) &&
-      item.node.id > 0)
+  if (!Number.isSafeInteger(p.total_count) || (p.total_count ?? -1) < 0 ||
+      p.limit !== limit || p.offset !== offset || !Array.isArray(p.items) ||
+      p.items.length > limit || offset + p.items.length > (p.total_count ?? -1) ||
+      (p.anchor_index !== undefined &&
+        (!Number.isSafeInteger(p.anchor_index) || p.anchor_index < 0 ||
+          p.anchor_index >= (p.total_count ?? -1)))) return false
+  const seen = new Set<number>()
+  for (const item of p.items) {
+    const id = item?.node?.id
+    if (!Number.isSafeInteger(id) || id <= 0 || seen.has(id)) return false
+    seen.add(id)
+  }
+  return true
 }
