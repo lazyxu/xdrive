@@ -135,6 +135,18 @@ internal object NativePhotoMediaStoreInventory {
         )
     }
 
+    /** One genuine, disposable original snapshot for the existing Go uploader. */
+    suspend fun stageOriginal(
+        context: Context,
+        candidate: NativePhotoOriginalCandidate,
+    ): NativePhotoStagedOriginal {
+        check(hasNativeFullPhotoVideoReadGrant(context))
+        return NativePhotoOriginalStager.stage(
+            context.applicationContext.noBackupFilesDir,
+            candidate.sizeBytes,
+        ) { openOriginal(context.applicationContext, candidate) }
+    }
+
     /** No permission bypass, no conversion, and no media bytes cached in UI. */
     fun openOriginal(context: Context, candidate: NativePhotoOriginalCandidate): InputStream {
         check(hasNativeFullPhotoVideoReadGrant(context))
