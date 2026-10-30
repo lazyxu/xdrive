@@ -4,6 +4,7 @@ import type {
   XDriveWebAppBrowseContext,
   XDriveWebAppRoute,
 } from '../../ui/shared/src'
+import { xDriveWebDefaultLandingRoute } from './mobileDefaultLandingRoute'
 import {
   xDriveParseWebAppHash,
   xDriveWebAppHash,
@@ -100,8 +101,21 @@ function indexedState(value: unknown, index: number): XDriveWebAppHistoryState {
   }
 }
 
+/** The mobile-only bare-root landing matches native Photos-first entry. */
+function xDriveIsCompactWebViewport(): boolean {
+  try {
+    return typeof window.matchMedia === 'function' &&
+      window.matchMedia('(max-width:899.95px)').matches
+  } catch {
+    // Restricted Safari media-query getters cannot break login or deep links.
+    return false
+  }
+}
+
 function currentRoute(): XDriveWebAppRoute {
-  return xDriveParseWebAppHash(window.location.hash) ?? { app: 'overview', params: {} }
+  const hash = window.location.hash
+  return xDriveParseWebAppHash(hash) ??
+    xDriveWebDefaultLandingRoute(hash, xDriveIsCompactWebViewport())
 }
 
 function sessionKey(id: string) {
@@ -244,9 +258,10 @@ export function useXDriveWebAppRuntime(
 
   useEffect(() => {
     if (!xDriveParseWebAppHash(window.location.hash)) {
-      window.history.replaceState({ xdriveWebApp: true }, '', xDriveWebAppHash({ app: 'overview', params: {} }))
-      routeRef.current = currentRoute()
-      setRoute(routeRef.current)
+      const landing = currentRoute()
+      window.history.replaceState({ xdriveWebApp: true }, '', xDriveWebAppHash(landing))
+      routeRef.current = landing
+      setRoute(landing)
     }
     const initialIndex = historyIndex(xDriveReadableWebHistoryState()) ?? 0
     window.history.replaceState(indexedState(xDriveReadableWebHistoryState(), initialIndex), '', window.location.href)
