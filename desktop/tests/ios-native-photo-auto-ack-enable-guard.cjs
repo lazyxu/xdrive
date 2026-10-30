@@ -1,0 +1,50 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const root = path.resolve(__dirname, '../..')
+const read = p => fs.readFileSync(path.join(root, p), 'utf8')
+const controller = read('ios/XDriveIOS/NativePhotoBackupController.swift')
+const receipt = read('ios/XDriveIOS/NativePhotoReceiptReviewController.swift')
+const store = read('ios/XDriveIOS/PhotoAutoScheduleStore.swift')
+const flow = read('.github/workflows/ios-unsigned-ipa.yml')
+const configure = controller.slice(controller.indexOf('    func configure('),
+  controller.indexOf('    /// Local stop', controller.indexOf('    func configure(')))
+
+test('auto enable serializes verified ledger inspection with original writers', () => {
+  const auth = configure.indexOf('let first = try await login.verifiedAuthorization()')
+  const gate = configure.indexOf('XDriveIOSOriginalRunGate.shared.acquire()')
+  const scope = configure.indexOf('.existingLocalScope(owner: selected)')
+  const pending = configure.indexOf('.pendingReceiptSnapshot(scope: scope, limit: 0)')
+  const fresh = configure.indexOf('let second = try await login.verifiedAuthorization()')
+  const schedule = configure.indexOf('schedule = try store.configure(')
+  assert.ok(auth >= 0 && auth < gate && gate < scope && scope < pending &&
+    pending < fresh && fresh < schedule)
+  assert.match(configure, /defer \{ XDriveIOSOriginalRunGate\.shared\.release\(gate\) \}/)
+  assert.match(configure, /guard pending == 0 else \{/)
+  assert.match(configure, /if store\.status\(owner: selected\)\?\.pausedForReview == true/)
+  assert.match(configure, /else if store\.status\(owner: selected\)\?\.enabled == true/)
+  assert.doesNotMatch(configure, /\.localScopeAndTag\(|\.installationKey\(|\.uploadPrepared\(/)
+})
+
+test('Owner, PhotoKit, stop generation and foreground remain required after await', () => {
+  assert.match(configure, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\)/)
+  assert.match(configure, /XDriveIOSNativePhotoOwnerScope\.matches\(second\.owner, selected\)/)
+  assert.match(configure, /store\.localStopGeneration == stopVersion/)
+  assert.match(configure, /UIApplication\.shared\.applicationState == \.active/)
+  assert.match(configure, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/)
+  assert.match(configure, /var configured = false/)
+  assert.match(configure, /if configured \{ tickIfDue\(login: login\) \}/)
+  assert.match(store, /UserDefaults\.standard\.removeObject\(forKey: key\(for: owner\)\)/)
+  assert.match(receipt, /count == 0/)
+  assert.match(receipt, /current\.enabled, current\.pausedForReview/)
+})
+
+test('no silent pending-receipt deletion or new uploader introduced', () => {
+  assert.match(configure, /请先核对；自动备份未开启/)
+  assert.match(configure, /不会清除不确定收据/)
+  assert.doesNotMatch(configure, /delete|clearLedger|resetLedger|UploadSessionTransport|URLSession\(/)
+  assert.match(flow, /desktop\/tests\/ios-native-photo-auto-ack-enable-guard\.cjs/)
+  assert.match(flow, /desktop\/tests\/ios-native-photo-receipt-review\.cjs/)
+})
