@@ -87,7 +87,7 @@ export function XDriveBackupScheduleControl({ port }: { port: XDriveServerBackup
     (selection !== current || schedule?.state === 'not_detected')
 
   const submit = async () => {
-    if (!canSubmit || !page || selection === 'custom') return
+    if (!canSubmit || !page) return
     const expected = page.inventory.policy.revision
     const selected = selection
     const ownerGeneration = generation.current
