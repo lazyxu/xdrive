@@ -250,44 +250,92 @@ restart_services() {
     compose start worker >/dev/null 2>&1 || true
   fi
 }
-trap restart_services EXIT INT TERM
-
-compose up -d postgres >/dev/null
-wait_postgres
-
-server_id="$(compose ps -aq server | head -n1 || true)"
+# Fail closed on the actual /data mount before running Docker maintenance or
+# backing up a silently created empty directory. Existing Server metadata
+# takes precedence: a malformed mount must not fall back to another volume.
+server_id="$(compose ps -aq server)" || {
+  echo "xDrive backup: cannot inspect existing Server; no services stopped." >&2
+  exit 1
+}
+[[ "$server_id" != *$'\n'* ]] || {
+  echo "xDrive backup: ambiguous Server container identity; no services stopped." >&2
+  exit 1
+}
 mount_type=""
 data_source=""
 if [[ -n "$server_id" ]]; then
-  mount_type="$(docker inspect "$server_id" --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Type}}{{end}}{{end}}' </dev/null)"
-  if [[ "$mount_type" == "volume" ]]; then
-    data_source="$(docker inspect "$server_id" --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Name}}{{end}}{{end}}' </dev/null)"
-  else
-    data_source="$(docker inspect "$server_id" --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Source}}{{end}}{{end}}' </dev/null)"
-  fi
-fi
-if [[ -z "$data_source" ]]; then
+  mount_type="$(docker inspect "$server_id" --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Type}}{{end}}{{end}}' </dev/null)" || {
+    echo "xDrive backup: cannot inspect Server /data mount; no services stopped." >&2
+    exit 1
+  }
+  case "$mount_type" in
+    bind)
+      data_source="$(docker inspect "$server_id" --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Source}}{{end}}{{end}}' </dev/null)" || exit 1
+      ;;
+    volume)
+      data_source="$(docker inspect "$server_id" --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Name}}{{end}}{{end}}' </dev/null)" || exit 1
+      ;;
+    *)
+      echo "xDrive backup: unsupported or missing Server /data mount; no services stopped." >&2
+      exit 1
+      ;;
+  esac
+else
+  # Legacy installations with no Server container may use an existing,
+  # uniquely Compose-labelled file-data volume. Never select the first of
+  # several candidates or let -v implicitly create a missing named volume.
   data_source="$(docker volume ls -q \
     --filter 'label=com.docker.compose.project=xdrive' \
-    --filter 'label=com.docker.compose.volume=file-data' </dev/null | head -n1 || true)"
-  [[ -n "$data_source" ]] && mount_type="volume"
+    --filter 'label=com.docker.compose.volume=file-data' </dev/null)" || exit 1
+  [[ -n "$data_source" && "$data_source" != *$'\n'* ]] || {
+    echo "xDrive backup: missing or ambiguous legacy /data volume; no services stopped." >&2
+    exit 1
+  }
+  mount_type=volume
 fi
-[[ -n "$data_source" ]] || {
-  echo "cannot resolve xDrive /data mount without creating/recreating the server service" >&2
-  exit 1
-}
-if [[ "$INCREMENTAL" == "1" && "$data_source" == /* ]]; then
-  source_resolved="$(readlink -f -- "$data_source" 2>/dev/null || true)"
-  backup_resolved="$(readlink -f -- "$REPOSITORY_DIR" 2>/dev/null || true)"
-  if [[ -n "$source_resolved" && -n "$backup_resolved" ]]; then
-    case "$backup_resolved/" in
-      "$source_resolved/"*) echo "xDrive backup: incremental repository must not be inside live file storage." >&2; exit 1 ;;
-    esac
-    case "$source_resolved/" in
-      "$backup_resolved/"*) echo "xDrive backup: live file storage must not be inside incremental repository." >&2; exit 1 ;;
-    esac
-  fi
+case "$mount_type" in
+  bind)
+    [[ "$data_source" == /* && -d "$data_source" && ! -L "$data_source" ]] || {
+      echo "xDrive backup: missing or unsafe /data bind source; no services stopped." >&2
+      exit 1
+    }
+    source_resolved="$(readlink -e -- "$data_source" 2>/dev/null || true)"
+    [[ -n "$source_resolved" && "$source_resolved" != / && -d "$source_resolved" ]] || {
+      echo "xDrive backup: unsafe live /data directory; no services stopped." >&2
+      exit 1
+    }
+    ;;
+  volume)
+    [[ "$data_source" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || {
+      echo "xDrive backup: invalid /data volume identity; no services stopped." >&2
+      exit 1
+    }
+    actual_volume="$(docker volume inspect "$data_source" --format '{{.Name}}' </dev/null 2>/dev/null || true)"
+    [[ "$actual_volume" == "$data_source" ]] || {
+      echo "xDrive backup: missing /data named volume; no services stopped." >&2
+      exit 1
+    }
+    ;;
+esac
+if [[ "$INCREMENTAL" == "1" && "$mount_type" == bind ]]; then
+  backup_resolved="$(readlink -e -- "$REPOSITORY_DIR" 2>/dev/null || true)"
+  [[ -n "$backup_resolved" && -d "$backup_resolved" ]] || {
+    echo "xDrive backup: cannot verify incremental repository path; no services stopped." >&2
+    exit 1
+  }
+  case "$backup_resolved/" in
+    "$source_resolved/"*) echo "xDrive backup: incremental repository must not be inside live file storage." >&2; exit 1 ;;
+  esac
+  case "$source_resolved/" in
+    "$backup_resolved/"*) echo "xDrive backup: live file storage must not be inside incremental repository." >&2; exit 1 ;;
+  esac
 fi
+
+# No service is changed or restarted for rejected /data admission. The
+# existing maintenance trap is installed only once a real source is resolved.
+trap restart_services EXIT INT TERM
+compose up -d postgres >/dev/null
+wait_postgres
 
 postgres_id="$(compose ps -q postgres | head -n1)"
 postgres_image="$(docker inspect "$postgres_id" --format '{{.Config.Image}}' </dev/null)"
