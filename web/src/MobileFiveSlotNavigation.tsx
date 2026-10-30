@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import { XDRIVE_MOBILE_ITEM_HOLD_MS, xDriveMobileItemMoved } from '../../ui/shared/src/mobile-item-gesture'
 import AppsRoundedIcon from '@mui/icons-material/AppsRounded'
@@ -221,15 +221,16 @@ export function XDriveMobileFiveSlotNavigation({
 }
 
 export function XDriveMobileAllLauncher({
-  sections, onSelect, onOpenRecent, favoriteKeys, onToggleFavorite,
+  sections, onSelect, onOpenRecent, favoriteKeys, onToggleFavorite, search, onSearchChange,
 }: {
   sections: XDriveSidebarSectionModel[]
   onSelect: (key: string) => void
   onOpenRecent: () => void
   favoriteKeys: readonly string[]
   onToggleFavorite: (key: string) => void
+  search: string
+  onSearchChange: (value: string) => void
 }) {
-  const [search, setSearch] = useState('')
   const favorites = new Set(favoriteKeys)
   const term = search.trim().toLocaleLowerCase()
   const entries = sections.flatMap(section => section.items)
@@ -273,7 +274,8 @@ export function XDriveMobileAllLauncher({
         图库、文件和常用功能。当前 Web 只访问已授权的云端照片；本机照片由您手动选择上传。
       </Typography>
       <TextField fullWidth size="small" type="search" label="搜索功能" value={search}
-        onChange={event => setSearch(event.target.value)} inputProps={{ 'aria-label': '搜索功能' }} />
+        onChange={event => onSearchChange(event.target.value)}
+        inputProps={{ 'aria-label': '搜索功能', maxLength: 120 }} />
       <Button startIcon={<HistoryRoundedIcon />} onClick={onOpenRecent}
         sx={{ minHeight: 44, mt: 1 }}>最近动态功能</Button>
       {showGroup('收藏', favoritesItems)}

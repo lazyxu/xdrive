@@ -9,6 +9,7 @@ export type XDriveMobileNavigationMemory = {
   gallery: XDriveWebAppRoute
   dynamic: XDriveWebAppRoute[]
   favorites: string[]
+  launcherSearch: string
 }
 
 const viewers = new Set<string>([
@@ -41,6 +42,7 @@ export function xDriveInitialMobileNavigation(ownerScope = ''): XDriveMobileNavi
     gallery: { app: 'gallery', params: {} },
     dynamic: [],
     favorites: ['gallery', 'files'],
+    launcherSearch: '',
   }
 }
 
@@ -88,6 +90,20 @@ export function xDriveToggleMobileFavorite(
       ? favorites.filter(item => item !== key)
       : [...favorites, key].slice(-16),
   }
+}
+
+/** Preserve the Launcher query when its L1 tab unmounts; never persist it or
+ * accept a delayed input event from an earlier verified Owner. */
+export function xDriveSetMobileLauncherSearch(
+  previous: XDriveMobileNavigationMemory,
+  ownerScope: string,
+  value: string,
+): XDriveMobileNavigationMemory {
+  if (!ownerScope || (previous.ownerScope && previous.ownerScope !== ownerScope)) return previous
+  const base = previous.ownerScope === ownerScope
+    ? previous : xDriveInitialMobileNavigation(ownerScope)
+  const launcherSearch = value.slice(0, 120)
+  return base.launcherSearch === launcherSearch ? base : { ...base, launcherSearch }
 }
 
 export function xDriveMobileRouteForSlot(
