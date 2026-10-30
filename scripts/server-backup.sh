@@ -317,7 +317,23 @@ case "$mount_type" in
     }
     ;;
 esac
-if [[ "$INCREMENTAL" == "1" && "$mount_type" == bind ]]; then
+# Docker named volumes also have a real backing /data directory. Reject v2
+# rather than permitting repository/live-volume overlap when that directory
+# cannot be resolved (e.g. inaccessible or remote volume drivers). v1 stays
+# on its existing, separately verified path.
+if [[ "$INCREMENTAL" == "1" && "$mount_type" == volume ]]; then
+  volume_mountpoint="$(docker volume inspect "$data_source" --format '{{.Mountpoint}}' </dev/null 2>/dev/null || true)"
+  [[ "$volume_mountpoint" == /* ]] || {
+    echo "xDrive backup: cannot verify incremental /data volume mountpoint; no services stopped." >&2
+    exit 1
+  }
+  source_resolved="$(readlink -e -- "$volume_mountpoint" 2>/dev/null || true)"
+  [[ -n "$source_resolved" && "$source_resolved" != / && -d "$source_resolved" ]] || {
+    echo "xDrive backup: cannot verify incremental /data volume mountpoint; no services stopped." >&2
+    exit 1
+  }
+fi
+if [[ "$INCREMENTAL" == "1" ]]; then
   backup_resolved="$(readlink -e -- "$REPOSITORY_DIR" 2>/dev/null || true)"
   [[ -n "$backup_resolved" && -d "$backup_resolved" ]] || {
     echo "xDrive backup: cannot verify incremental repository path; no services stopped." >&2

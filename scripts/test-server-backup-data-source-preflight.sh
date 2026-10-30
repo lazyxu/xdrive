@@ -45,7 +45,11 @@ if [[ "$1" == volume && "$2" == ls ]]; then
 fi
 if [[ "$1" == volume && "$2" == inspect ]]; then
   [[ "$XD_BACKUP_MOUNT_VOLUME_EXISTS" == yes ]] || exit 89
-  printf '%s\n' "$3"
+  if [[ " $* " == *".Mountpoint"* ]]; then
+    printf '%s\n' "${XD_BACKUP_MOUNT_VOLUME_PATH:-}"
+  else
+    printf '%s\n' "$3"
+  fi
   exit 0
 fi
 echo "unexpected Docker operation in mount fixture" >&2
@@ -58,6 +62,8 @@ export XD_BACKUP_MOUNT_TYPE=bind
 export XD_BACKUP_MOUNT_SOURCE="$TMP/live"
 export XD_BACKUP_MOUNT_VOLUMES=none
 export XD_BACKUP_MOUNT_VOLUME_EXISTS=yes
+export XD_BACKUP_MOUNT_VOLUME_PATH="$TMP/volume-data"
+mkdir -p "$XD_BACKUP_MOUNT_VOLUME_PATH"
 
 invoke() {
   local label="$1"; shift
@@ -122,9 +128,42 @@ XD_BACKUP_MOUNT_TYPE=bind XD_BACKUP_MOUNT_SOURCE="$TMP/live" \
   'incremental repository must not be inside live file storage.' \
   --incremental --repository-dir "$TMP/live/backup-repo"
 
+# V2 must use the real host backing directory of a named volume,
+# including both overlap directions and symlinked parent aliases.
+mkdir -p "$TMP/volume-data/backup-inside" "$TMP/backup-parent/volume-data"
+XD_BACKUP_MOUNT_TYPE=volume XD_BACKUP_MOUNT_SOURCE=real-volume \
+  XD_BACKUP_MOUNT_VOLUME_PATH="$TMP/nonexistent-volume-mount" \
+  expect_refused v2-volume-mountpoint-missing \
+  'cannot verify incremental /data volume mountpoint' \
+  --incremental --repository-dir "$TMP/safe-v2-backup"
+XD_BACKUP_MOUNT_TYPE=volume XD_BACKUP_MOUNT_SOURCE=real-volume \
+  XD_BACKUP_MOUNT_VOLUME_PATH=/ \
+  expect_refused v2-volume-root \
+  'cannot verify incremental /data volume mountpoint' \
+  --incremental --repository-dir "$TMP/safe-v2-backup"
+XD_BACKUP_MOUNT_TYPE=volume XD_BACKUP_MOUNT_SOURCE=real-volume \
+  XD_BACKUP_MOUNT_VOLUME_PATH="$TMP/volume-data" \
+  expect_refused v2-volume-repository-nested \
+  'incremental repository must not be inside live file storage.' \
+  --incremental --repository-dir "$TMP/volume-data/backup-inside"
+XD_BACKUP_MOUNT_TYPE=volume XD_BACKUP_MOUNT_SOURCE=real-volume \
+  XD_BACKUP_MOUNT_VOLUME_PATH="$TMP/backup-parent/volume-data" \
+  expect_refused v2-volume-source-nested \
+  'live file storage must not be inside incremental repository.' \
+  --incremental --repository-dir "$TMP/backup-parent"
+ln -s "$TMP/volume-data" "$TMP/volume-link"
+XD_BACKUP_MOUNT_TYPE=volume XD_BACKUP_MOUNT_SOURCE=real-volume \
+  XD_BACKUP_MOUNT_VOLUME_PATH="$TMP/volume-link" \
+  expect_refused v2-volume-symlink-parent \
+  'incremental repository must not be inside live file storage.' \
+  --incremental --repository-dir "$TMP/volume-data/backup-inside"
+
 XD_BACKUP_MOUNT_SOURCE="$TMP/live" expect_admitted valid-bind
 XD_BACKUP_MOUNT_TYPE=volume XD_BACKUP_MOUNT_SOURCE=real-volume \
   expect_admitted valid-existing-volume
+XD_BACKUP_MOUNT_TYPE=volume XD_BACKUP_MOUNT_SOURCE=real-volume \
+  expect_admitted valid-disjoint-v2-volume \
+  --incremental --repository-dir "$TMP/safe-v2-backup"
 XD_BACKUP_MOUNT_SERVER=absent XD_BACKUP_MOUNT_VOLUMES=single-legacy-volume \
   expect_admitted valid-single-legacy-volume
 echo 'backup /data source admission rejected unsafe mounts before maintenance'
