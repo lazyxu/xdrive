@@ -24,9 +24,9 @@ struct XDriveIOSNativePhotosDashboard: View {
             .tabItem { Label("云端原件", systemImage: "cloud") }
 
             NavigationStack {
-                LocalPhotoInventoryScreen()
+                XDriveIOSNativePhotoAlbumsScreen()
             }
-            .tabItem { Label("相册目录", systemImage: "rectangle.stack") }
+            .tabItem { Label("相册", systemImage: "rectangle.stack") }
         }
         .navigationBarBackButtonHidden(false)
         // Scheduling lives on the authenticated root; changing tabs or
