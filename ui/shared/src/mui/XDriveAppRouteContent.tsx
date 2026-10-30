@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import type { SxProps, Theme } from '@mui/material/styles'
 import { XDriveWorkspaceRouteSurface } from './WorkspaceRouteSurface'
 import { XDriveAppPageOutlet } from './XDriveAppPageOutlet'
+import { XDriveWorkspaceHostAlerts } from './WorkspaceHostAlerts'
 import type { XDriveWorkspaceAppRoute } from './WorkspaceRoute'
 import type { XDriveWorkspaceHostAdapter } from './WorkspaceHostAdapter'
 
@@ -38,6 +39,9 @@ export function XDriveAppRouteContent({
       sx={view === 'files' ? undefined : pageSx}
     >
       {children}
+      {host.services?.workspaceAlerts ? (
+        <XDriveWorkspaceHostAlerts view={view} {...host.services.workspaceAlerts} />
+      ) : null}
       <XDriveAppPageOutlet
           // A React page instance belongs to one Host, route, role and refresh.
           // In particular, Mine/Global Tasks reuse a component type but must

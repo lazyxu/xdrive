@@ -292,9 +292,11 @@ state/controller extraction and real Host data-port convergence.
 Desktop no longer composes sync-error, paused, and conflict warning banners
 as route-adjacent JSX in its 3k-line Host controller. Both Hosts can reuse
 `XDriveWorkspaceHostAlerts`, which retains the original responsive Files/page
-margins and existing localized labels. Desktop passes current authenticated
-Agent status and native callbacks; the component itself has no Electron IPC,
-DSM CGI, browser fetch, or durable task ownership.
+margins and existing localized labels. Desktop supplies current authenticated
+Agent state and native callbacks through the typed `workspaceAlerts` Host port.
+The shared `XDriveAppRouteContent` renders the banners, rather than accepting
+Desktop-specific status JSX. The component has no Electron IPC, DSM CGI,
+browser fetch, or durable task ownership.
 
 Only a Host providing a real callback can display the corresponding action.
 DSM currently supplies no equivalent verified global sync/repair status port,

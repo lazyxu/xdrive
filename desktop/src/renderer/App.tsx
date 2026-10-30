@@ -55,7 +55,6 @@ import {
   xDriveFileExplorerHostCapabilities,
   XDriveTransferPopover,
   XDriveApp,
-  XDriveWorkspaceHostAlerts,
   xDriveWorkspaceHostSections,
   XDriveStatePanel,
   XDriveStatusAlert,
@@ -2625,6 +2624,17 @@ export default function App({
     platform: 'desktop',
     adminRoleVerified: status?.role === 'admin',
     services: {
+      workspaceAlerts: {
+        lastError: status?.last_error,
+        paused: status?.paused,
+        hasConflicts: status?.has_conflict,
+        conflictCount: status?.conflict_count,
+        resumeDisabled: !!busy,
+        onOpenDiagnostics: () => setView('diagnostics'),
+        onResumeSync: () => void run('pause',
+          () => window.xdriveDesktop.agent.setPaused(false), '同步已恢复。'),
+        onOpenConflicts: () => setView('conflicts'),
+      },
       // Transitional native Files controller. It is mounted only from the
       // single shared Files page outlet; other routes never instantiate it.
       filesControllerContent: view === 'files' ? (
@@ -3234,24 +3244,7 @@ export default function App({
       />
 
       </>}
-    >
-
-
-
-        <XDriveWorkspaceHostAlerts
-          view={view}
-          lastError={status?.last_error}
-          paused={status?.paused}
-          hasConflicts={status?.has_conflict}
-          conflictCount={status?.conflict_count}
-          resumeDisabled={!!busy}
-          onOpenDiagnostics={() => setView('diagnostics')}
-          onResumeSync={() => void run('pause',
-            () => window.xdriveDesktop.agent.setPaused(false), '同步已恢复。')}
-          onOpenConflicts={() => setView('conflicts')}
-        />
-
-    </XDriveApp>,
+    />,
     desktopTitlebarActions,
   )
 }
