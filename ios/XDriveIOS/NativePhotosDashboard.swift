@@ -103,7 +103,10 @@ private enum XDriveIOSNativeLauncherRoute: String, CaseIterable, Identifiable {
 struct XDriveIOSNativePhotosDashboard: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     @ObservedObject var backup: XDriveIOSNativePhotoBackupController
-    @Environment(\.dismiss) private var dismiss
+    let onSignOut: () -> Void
+    let signingOut: Bool
+    let logoutWarning: String?
+
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @State private var tab: XDriveIOSNativeBottomTab = .gallery
     @State private var gallerySource: XDriveIOSNativeGallerySource = .local
@@ -236,7 +239,6 @@ struct XDriveIOSNativePhotosDashboard: View {
             if owner == nil {
                 navigationRouteStore.clear()
                 resetNavigation()
-                dismiss()
             }
         }
         .onChange(of: tab) { _ in saveNavigationIfReady() }
@@ -502,8 +504,23 @@ struct XDriveIOSNativePhotosDashboard: View {
                 } else {
                     Text("尚未登录").foregroundStyle(.secondary)
                 }
-                Button("返回服务器与账号管理") { dismiss() }
-                    .accessibilityIdentifier("native-ios-mine-server-account")
+                Button(role: .destructive) {
+                    onSignOut()
+                } label: {
+                    if signingOut {
+                        Label("正在退出…", systemImage: "hourglass")
+                    } else {
+                        Label("退出登录或切换服务器",
+                              systemImage: "rectangle.portrait.and.arrow.right")
+                    }
+                }
+                .disabled(signingOut)
+                .accessibilityIdentifier("native-ios-login-signout")
+                if let logoutWarning {
+                    Text(logoutWarning)
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                }
             }
             Section("iPhone 相册") {
                 let granted = PHPhotoLibrary.authorizationStatus(for: .readWrite)
@@ -515,7 +532,7 @@ struct XDriveIOSNativePhotosDashboard: View {
                 }
             }
             Section("界面和管理") {
-                Text("账户切换和退出请在服务器账号页按现有安全流程执行。")
+                Text("切换服务器会先安全退出当前账户，再返回原生登录页。")
                     .font(.footnote).foregroundStyle(.secondary)
                 Text("主题、完整文件管理、服务器管理员功能仍待原生实现和授权验证。")
                     .font(.footnote).foregroundStyle(.secondary)

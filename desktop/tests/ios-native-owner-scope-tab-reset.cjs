@@ -26,8 +26,13 @@ test('all Owner, Server instance and root changes reset parent navigation state'
   }
 });
 
-test('signed-out dismissal remains separate from route reset', () => {
-  assert.match(source, /\.onChange\(of: login\.owner\)\s*\{ owner in\s*if owner == nil\s*\{[\s\S]*?dismiss\(\)/);
+test('signed-out route clearing remains independent of root authentication rendering', () => {
+  const login = fs.readFileSync(
+    path.resolve(__dirname, '../../ios/XDriveIOS/NativeOwnerLoginScreen.swift'), 'utf8'
+  );
+  assert.match(source, /\.onChange\(of: login\.owner\)\s*\{ owner in\s*if owner == nil\s*\{[\s\S]*?navigationRouteStore\.clear\(\)[\s\S]*?resetNavigation\(\)/);
+  assert.doesNotMatch(source, /\bdismiss\(\)/);
+  assert.match(login, /XDriveIOSNativeNavigationRouteStore\(\)\.clear\(\)/);
   assert.match(source, /XDriveIOSNativePhotoBackupScreen\(login: login, controller: backup\)/);
   assert.doesNotMatch(source, /WKWebView|document\.cookie/);
 });

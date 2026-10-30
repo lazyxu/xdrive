@@ -154,6 +154,7 @@ jobs:
           node --test \
             desktop/tests/ios-native-historical-screen-recovery.cjs \
             desktop/tests/ios-native-owner-login-foundation.cjs \
+            desktop/tests/ios-native-direct-workspace-entry.cjs \
             desktop/tests/ios-native-photos-auto-view-mvp.cjs \
             desktop/tests/ios-native-photo-receipt-review.cjs \
             desktop/tests/ios-native-cloud-original-thumbnail-wall.cjs \
