@@ -669,6 +669,31 @@ class DriveAppTest {
         compose.onNodeWithText("假期照片").assertIsDisplayed()
     }
 
+    @Test fun nativeFiveSlotNavigationKeepsGalleryFixedAndClearsAfterLogout() {
+        startAndLogin()
+        for (tab in listOf("all", "dynamic", "gallery", "files", "mine")) {
+            compose.onNodeWithTag("native-tab-$tab").assertExists()
+        }
+        compose.onNodeWithTag("native-five-slot-bar").assertIsDisplayed()
+        compose.onNodeWithTag("native-tab-all").performClick()
+        compose.onNodeWithTag("native-launcher").assertExists()
+        compose.onNodeWithTag("native-tab-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.GALLERY &&
+                controller.state.value.galleryLoaded
+        }
+        compose.onNodeWithTag("native-gallery-sources").assertExists()
+        compose.onNodeWithTag("native-gallery-source-local").performClick()
+        compose.onNodeWithTag("native-tab-dynamic").assertExists()
+        compose.onNodeWithTag("native-tab-mine").performClick()
+        compose.onNodeWithTag("native-mine").assertExists()
+        compose.onNodeWithTag("native-mine-logout").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.LOGIN
+        }
+        compose.onNodeWithTag("native-five-slot-bar").assertDoesNotExist()
+    }
+
     @Test fun nativeTransfersOpenFromFilesAndGalleryWithoutInventingHistory() {
         startAndLogin()
         compose.onNodeWithTag("native-transfer-open").assertIsDisplayed().performClick()
