@@ -11,6 +11,15 @@ struct XDriveIOSNativePhotoBackupScreen: View {
     @State private var showAutoConsent = false
     @State private var showManualConsent = false
     @State private var showResumeConsent = false
+    // Capture the exact verified Owner and settings BEFORE any native consent
+    // dialog; a late confirmation must never authorize another Server.
+    @State private var manualConsentOwner: XDriveNativeOwnerRoot?
+    @State private var manualConsentAllowICloud = false
+    @State private var autoConsentOwner: XDriveNativeOwnerRoot?
+    @State private var autoConsentMinutes = 60
+    @State private var autoConsentAllowICloud = false
+    @State private var resumeConsentOwner: XDriveNativeOwnerRoot?
+    @State private var consentError: String?
 
     var body: some View {
         Form {
@@ -24,7 +33,12 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("手动备份") {
-                Button("开始一轮原件备份") { showManualConsent = true }
+                Button("开始一轮原件备份") {
+                    consentError = nil
+                    manualConsentOwner = login.owner
+                    manualConsentAllowICloud = allowICloud
+                    showManualConsent = manualConsentOwner != nil
+                }
                     .disabled(controller.busy || login.owner == nil)
                     .accessibilityIdentifier("native-ios-photos-manual-start")
                 if controller.busy {
@@ -56,7 +70,13 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                         controller.disable(owner: login.owner)
                     }.accessibilityIdentifier("native-ios-photos-auto-disable")
                 } else {
-                    Button("启用前台自动备份") { showAutoConsent = true }
+                    Button("启用前台自动备份") {
+                        consentError = nil
+                        autoConsentOwner = login.owner
+                        autoConsentMinutes = interval
+                        autoConsentAllowICloud = allowICloud
+                        showAutoConsent = autoConsentOwner != nil
+                    }
                         .disabled(controller.busy || login.owner == nil)
                         .accessibilityIdentifier("native-ios-photos-auto-enable")
                 }
@@ -100,7 +120,9 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                         .font(.footnote).foregroundStyle(.orange)
                     if receipts.pending == 0 && receipts.hasLedgerScope && !receipts.busy {
                         Button("确认无待核对收据后恢复前台计划") {
-                            showResumeConsent = true
+                            consentError = nil
+                            resumeConsentOwner = login.owner
+                            showResumeConsent = resumeConsentOwner != nil
                         }
                         .accessibilityIdentifier("native-ios-photo-receipts-resume")
                     } else {
@@ -116,6 +138,10 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                 }
             }
             Section("执行结果") {
+                if let consentError {
+                    Text(consentError).foregroundStyle(.red)
+                        .accessibilityIdentifier("native-ios-photos-consent-error")
+                }
                 Text(controller.message)
                 if let error = controller.errorMessage {
                     Text(error).foregroundStyle(.red)
@@ -128,27 +154,52 @@ struct XDriveIOSNativePhotoBackupScreen: View {
         .navigationTitle("相册备份")
         .confirmationDialog("确认开始上传已授权的照片/视频/Live 原件？",
                             isPresented: $showManualConsent, titleVisibility: .visible) {
-            Button("确认备份到当前云端账户") {
-                controller.startManual(login: login, allowICloud: allowICloud)
+            Button("确认备份到已核验的云端账户") {
+                guard let expected = manualConsentOwner,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
+                else {
+                    consentError = "服务器或账户已变化，本次确认失效；没有上传文件。"
+                    return
+                }
+                controller.startManual(
+                    login: login, expectedOwner: expected,
+                    allowICloud: manualConsentAllowICloud
+                )
             }
         } message: {
-            Text("仅本轮执行，最多新增 20 个文件。\(allowICloud ? "允许按需下载 iCloud 原件。" : "不会下载 iCloud 原件。")")
+            Text("服务器：\(manualConsentOwner?.origin.host ?? "未验证") · Owner：\(manualConsentOwner?.username ?? "未验证")。本轮最多新增 20 个原件。\(manualConsentAllowICloud ? "允许按需下载 iCloud 原件。" : "不会下载 iCloud 原件。")")
         }
         .confirmationDialog("开启自动原件备份？",
                             isPresented: $showAutoConsent, titleVisibility: .visible) {
             Button("确认启用") {
-                Task { await controller.configure(login: login, minutes: interval,
-                                                  allowICloud: allowICloud) }
+                guard let expected = autoConsentOwner,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
+                else {
+                    consentError = "服务器或账户已变化，自动备份授权失效；未开启计划。"
+                    return
+                }
+                Task {
+                    await controller.configure(
+                        login: login, expectedOwner: expected,
+                        minutes: autoConsentMinutes,
+                        allowICloud: autoConsentAllowICloud
+                    )
+                }
             }
         } message: {
-            Text("仅前台运行，每 \(interval) 分钟检查授权相册；每轮最多新增 20 个原件，上传至当前登录的服务器与 Owner。")
+            Text("服务器：\(autoConsentOwner?.origin.host ?? "未验证") · Owner：\(autoConsentOwner?.username ?? "未验证")。仅前台运行，每 \(autoConsentMinutes) 分钟检查授权相册；每轮最多新增 20 个原件。")
         }
         .confirmationDialog("确认恢复当前 Owner 的前台自动备份？",
                             isPresented: $showResumeConsent, titleVisibility: .visible) {
             Button("核验账本后恢复计划") {
-                receipts.resumePausedAuto(login: login)
-                // The next foreground tick uses the persisted verified state,
-                // not the old UI cached value.
+                guard let expected = resumeConsentOwner,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
+                else {
+                    consentError = "服务器或账户已变化，未恢复旧账户的自动计划。"
+                    return
+                }
+                receipts.resumePausedAuto(login: login, expectedOwner: expected)
+                // A completed trusted read updates the visible schedule.
                 controller.refresh(owner: login.owner)
             }
         } message: {
@@ -158,13 +209,28 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             controller.refresh(owner: login.owner)
             receipts.refresh(login: login)
         }
-        .onDisappear { receipts.cancel() }
+        .onDisappear {
+            receipts.cancel()
+            showManualConsent = false
+            showAutoConsent = false
+            showResumeConsent = false
+            manualConsentOwner = nil
+            autoConsentOwner = nil
+            resumeConsentOwner = nil
+        }
         .onChange(of: receipts.mode) { mode in
             if mode == .idle {
                 controller.refresh(owner: login.owner)
             }
         }
         .onChange(of: login.owner) { _ in
+            // Invalidate any consent that was opened for the previous Owner.
+            showManualConsent = false
+            showAutoConsent = false
+            showResumeConsent = false
+            manualConsentOwner = nil
+            autoConsentOwner = nil
+            resumeConsentOwner = nil
             receipts.cancel()
             controller.refresh(owner: login.owner)
             receipts.refresh(login: login)

@@ -26,9 +26,17 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
     }
 
     func configure(login: XDriveIOSNativeOwnerLoginModel,
+                   expectedOwner: XDriveNativeOwnerRoot,
                    minutes: Int, allowICloud: Bool) async {
-        guard !busy, XDriveIOSPhotoAutoSchedulePolicy.accepts(minutes: minutes),
-              let selected = login.owner else { return }
+        guard !busy, XDriveIOSPhotoAutoSchedulePolicy.accepts(minutes: minutes)
+        else { return }
+        // A SwiftUI confirmation may outlive a sign-out or Server switch.
+        // Never silently retarget its approval to the new Owner.
+        guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner) else {
+            errorMessage = "确认后服务器或账户已变化，请重新确认；自动备份未开启。"
+            return
+        }
+        let selected = expectedOwner
         let store = XDriveIOSPhotoAutoScheduleStore.shared
         let stopVersion = store.localStopGeneration
         guard [.authorized, .limited].contains(
@@ -74,7 +82,13 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
     }
 
     func startManual(login: XDriveIOSNativeOwnerLoginModel,
-                     allowICloud: Bool) {
+                     expectedOwner: XDriveNativeOwnerRoot, allowICloud: Bool) {
+        // The exact Server/Owner was captured when native consent was shown.
+        // This synchronous MainActor fence precedes any upload or async work.
+        guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner) else {
+            errorMessage = "确认后服务器或账户已变化；未开始上传原件。"
+            return
+        }
         start(login: login, kind: .manual, allowICloud: allowICloud)
     }
 

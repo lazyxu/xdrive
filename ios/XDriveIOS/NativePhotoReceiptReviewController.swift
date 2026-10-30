@@ -192,8 +192,14 @@ final class XDriveIOSNativePhotoReceiptReviewController: ObservableObject {
 
     /// Explicit user re-enablement, never automatic after a partial review.
     /// It is intentionally a separate confirmation from the read-only pass.
-    func resumePausedAuto(login: XDriveIOSNativeOwnerLoginModel) {
-        guard mode == .idle, let expected = login.owner else { return }
+    func resumePausedAuto(login: XDriveIOSNativeOwnerLoginModel,
+                          expectedOwner: XDriveNativeOwnerRoot) {
+        guard mode == .idle else { return }
+        guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner) else {
+            errorMessage = "服务器或账户已变化；旧计划保持暂停。"
+            return
+        }
+        let expected = expectedOwner
         guard let gate = XDriveIOSOriginalRunGate.shared.acquire() else {
             errorMessage = "原件任务正在进行，暂不能恢复计划。"
             return
