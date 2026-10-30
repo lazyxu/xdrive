@@ -54,21 +54,16 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
         if let failure = error as? XDriveIOSNativeMediaReadFailure {
             switch failure {
             case .response(let status):
-                return status == 408 || status == 429 ||
-                    (500...599).contains(status)
+                return XDriveIOSNativeMediaPageRetryPolicy
+                    .permitsRetainingPreviousPage(httpStatus: status)
             case .invalidScope, .invalidPage, .unsupported,
                  .malformed, .tooLarge:
                 return false
             }
         }
         guard let network = error as? URLError else { return false }
-        switch network.code {
-        case .notConnectedToInternet, .networkConnectionLost, .timedOut,
-             .cannotConnectToHost, .cannotFindHost:
-            return true
-        default:
-            return false
-        }
+        return XDriveIOSNativeMediaPageRetryPolicy
+            .permitsRetainingPreviousPage(urlError: network.code)
     }
 
     func load(login: XDriveIOSNativeOwnerLoginModel,

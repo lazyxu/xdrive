@@ -139,6 +139,15 @@ jobs:
       - name: Verify actual bounded background original safety contract
         run: node --test desktop/tests/ios-bg-bounded-original-runner.cjs
 
+      - name: Verify read-only native Gallery cache retention on revoked access
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeMediaPageRetryPolicy.swift \
+            ios/tests/NativeMediaPageRetryPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-gallery-retention-check"
+          "$RUNNER_TEMP/xdrive-ios-gallery-retention-check"
+
       - name: Verify native Photos Owner, auto backup, cloud thumbnail and receipt contracts
         run: |
           set -euo pipefail
