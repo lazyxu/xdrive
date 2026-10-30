@@ -25,7 +25,9 @@ test('mutation and app background immediately clear still Live and video resourc
     detail.indexOf('.onChange(of: phase)'))
   assert.match(changeHandler, /model\.cancel\(\)\s*dismiss\(\)/)
   assert.match(detail, /\.onChange\(of: phase\) \{ state in\s*if state != \.active \{[\s\S]*?model\.cancel\(\)/)
-  assert.match(detail, /\.task\(id: candidate\.id\) \{\s*if phase == \.active \{ model\.load\(candidate\) \}/)
+  const startup = detail.slice(detail.indexOf('.task(id: candidate.id)'),
+    detail.indexOf('.onChange(of: changes.generation)'))
+  assert.match(startup, /if phase == \.active \{ model\.load\(candidate\) \}/)
   assert.match(local, /func cancel\(\) \{\s*epoch = UUID\(\)[\s\S]*?player\?\.pause\(\)[\s\S]*?player = nil\s*live = nil\s*still = nil/)
   assert.match(local, /self\.epoch == token/)
   assert.doesNotMatch(monitor+detail, /URLSession|UploadSession|WebKit|Keychain|accessToken/)
