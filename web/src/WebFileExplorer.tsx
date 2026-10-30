@@ -91,6 +91,17 @@ function xDriveWebFilesSearchInput(target: Element | null): target is HTMLInputE
     ))
 }
 
+/**
+ * Old WebKit may not expose AbortSignal.throwIfAborted() (or reason).
+ * Keep the Owner-authorized Files Columns reader usable while active and
+ * fail closed before/after the network read if its route is superseded.
+ */
+function xDriveAssertWebFileColumnReadActive(signal: AbortSignal): void {
+  if (!signal.aborted) return
+  if (typeof signal.throwIfAborted === 'function') signal.throwIfAborted()
+  throw signal.reason ?? new DOMException('The operation was aborted.', 'AbortError')
+}
+
 type WebSearchResult = XDriveCloudFilesSearchResult<Node>
 
 const FILE_VIEW_KEY = 'xdrive.files.view_mode'
@@ -655,13 +666,16 @@ export default function WebFileExplorer({
       if (!Number.isSafeInteger(parentID) || parentID <= 0) {
         throw new Error('Invalid Owner directory identity')
       }
-      signal.throwIfAborted()
+      xDriveAssertWebFileColumnReadActive(signal)
       const page = await api.listPageAbortable(parentID, {
         cursor: typeof cursor === 'string' && cursor ? cursor : undefined,
         limit: 200,
         sort: 'name',
         order: 'asc',
       }, signal)
+      // A non-cooperative or cached Host response cannot republish private
+      // directory rows after an Owner/route switch.
+      xDriveAssertWebFileColumnReadActive(signal)
       return { items: page.items, nextCursor: page.next_cursor ?? null }
     },
   }), [api, explorerCrumbs[0]?.id])
