@@ -164,6 +164,16 @@ jobs:
             desktop/tests/ios-native-photo-viewer-return.cjs \
             desktop/tests/ios-native-photoasset-gallery.cjs
 
+      - name: Verify native PhotoKit Viewer tile scroll return
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativePhotoViewerReturnAnchorPolicy.swift \
+            ios/tests/NativePhotoViewerReturnAnchorPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-viewer-return-tile"
+          "$RUNNER_TEMP/xdrive-ios-viewer-return-tile"
+          node --test desktop/tests/ios-native-photo-viewer-tile-scroll.cjs
+
       - name: Prepare native brand and home screen icon
         run: bash ios/scripts/prepare-assets.sh
 

@@ -222,9 +222,14 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
     @State private var epoch = UUID()
     @State private var error: String?
     @State private var savedOffset = 0
+    // Viewer return anchor stays in current SwiftUI view memory only.
+    @State private var viewerReturnID: String?
+    @State private var shouldRestoreViewerTile = false
+    @State private var pageRenderRevision: UInt64 = 0
     @State private var permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
 
     var body: some View {
+        ScrollViewReader { returnScroll in
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
                 if permission == .limited {
@@ -240,10 +245,14 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
                         spacing: 3
                     ) {
                         ForEach(page.items.filter { $0.kind != "unsupported" }) { item in
-                            Button { selected = item } label: {
+                            Button {
+                                viewerReturnID = item.id
+                                selected = item
+                            } label: {
                                 XDriveIOSLocalPhotoTile(candidate: item)
                             }
                             .buttonStyle(.plain)
+                            .id(item.id)
                         }
                     }
                     HStack {
@@ -265,6 +274,10 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
             }
             .padding(12)
         }
+        .onChange(of: pageRenderRevision) { _ in
+            restoreViewerTile(using: returnScroll)
+        }
+        }
         .navigationTitle(album.name)
         .navigationBarTitleDisplayMode(.inline)
         .fullScreenCover(item: $selected, onDismiss: { restoreAfterViewer() }) {
@@ -275,11 +288,16 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
             if selected == nil && page == nil && !loading { reload() }
         }
         .onChange(of: libraryMonitor.revision) { _ in
+            clearViewerTileAnchor()
             invalidate()
             error = "系统相册发生变化，请重新读取当前页面。"
         }
         .onChange(of: phase) { state in
-            if state == .active { reload() } else { invalidate() }
+            if state == .active { reload() }
+            else {
+                clearViewerTileAnchor()
+                invalidate()
+            }
         }
         .onDisappear {
             if selected != nil { suspendForViewer() }
@@ -288,15 +306,36 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
     }
 
     private func restoreAfterViewer() {
+        shouldRestoreViewerTile = viewerReturnID != nil && phase == .active
         // Open the same album/page only after fresh PhotoKit authorization.
         if phase == .active { reload() }
-        else { invalidate() }
+        else {
+            clearViewerTileAnchor()
+            invalidate()
+        }
+    }
+
+    private func restoreViewerTile(using scroll: ScrollViewProxy) {
+        guard shouldRestoreViewerTile else { return }
+        let authorized = permission == .authorized || permission == .limited
+        let target = XDriveIOSNativePhotoViewerReturnAnchorPolicy.target(
+            viewerReturnID, in: page?.items.map(\.id) ?? [],
+            authorized: authorized
+        )
+        clearViewerTileAnchor()
+        if let target { scroll.scrollTo(target, anchor: .center) }
+    }
+
+    private func clearViewerTileAnchor() {
+        viewerReturnID = nil
+        shouldRestoreViewerTile = false
     }
 
     private func reload() {
         permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
         invalidate()
         guard permission == .authorized || permission == .limited else {
+            clearViewerTileAnchor()
             error = "本机相册访问权限已失效，请返回相册重新授权。"
             return
         }
@@ -318,6 +357,7 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
                 permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
                 self.page = page
                 savedOffset = page.startOffset
+                pageRenderRevision &+= 1
             } catch is CancellationError {
             } catch {
                 guard epoch == ticket else { return }
