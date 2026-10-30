@@ -489,7 +489,7 @@ function FullGalleryPage(){
     onError={(error)=>{
       const type=error instanceof Error?error.name:'GalleryError'
       const reason=error instanceof Error?error.message:''
-      const match=/^genuine Gin Gallery HTTP ([45]\\d{2})$/.exec(reason)
+      const match=/^genuine Gin Gallery HTTP ([45]\d{2})$/.exec(reason)
       probe.galleryPageErrors.push(type)
       probe.galleryPageErrorContexts.push({
         type,httpStatus:match?Number(match[1]):null,
