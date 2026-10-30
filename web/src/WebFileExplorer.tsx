@@ -27,6 +27,7 @@ import {
   useXDriveFileExplorerOperationController,
   useXDriveFileExplorerOwnerSourceOptions,
   useXDriveFileExplorerLocalReveal,
+  xDriveFileExplorerLocationAncestorCrumbs,
   useXDriveFileExplorerExternalDropController,
   xDriveCaptureVideoPosterBlob,
   xDriveFileKind,
@@ -1368,11 +1369,8 @@ export default function WebFileExplorer({
   const revealTarget = localRevealTarget ?? routeRevealTarget
 
   const showNodeLocation = async (location: NodeLocation): Promise<boolean> => {
-    if (!location.parent_id) return false
-    const chain = location.breadcrumbs
-      .filter(crumb => crumb.id !== location.node_id)
-      .map(crumb => ({ id: crumb.id, name: crumb.name }))
-    if (!chain.length || chain.at(-1)?.id !== location.parent_id) return false
+    const chain = xDriveFileExplorerLocationAncestorCrumbs(location)
+    if (!chain || !location.parent_id) return false
     const intent = beginNavigationIntent()
     onCloseTrash()
     try {
