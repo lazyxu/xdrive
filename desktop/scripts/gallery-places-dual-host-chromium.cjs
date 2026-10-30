@@ -2027,7 +2027,12 @@ async function testMobilePhotoDrawer(browser,mode,port){
         closeBounds.width>=44 && closeBounds.height>=44 && closeBounds.hit===true)
     }
     // Apple-style Close uses the existing current Owner Gallery navigation,
-    // not an SDK Child route or a synthetic unfiltered photo reader.
+    // not an SDK Child route or a synthetic unfiltered photo reader. Capture
+    // whether an actual Gallery error occurred BEFORE Close (e.g. resizing
+    // across 899/900), rather than misattribute it to the Close handler.
+    const beforeClose=await page.evaluate(()=>({
+      errors:window.__mapProbe.galleryPageErrors.length,
+    }))
     const closeMap=page.locator('[data-xdrive-places-map-close]')
     await closeMap.waitFor({state:'visible'})
     await closeMap.tap()
@@ -2043,13 +2048,17 @@ async function testMobilePhotoDrawer(browser,mode,port){
       ordinaryOwnerReads:window.__mapProbe.galleryPageReads.filter(
         read=>read.kind==='ordinary').length,
       errors:window.__mapProbe.galleryPageErrors.length,
+      // Only error type, approved HTTP status and mobile breakpoint. Neither
+      // the raw exception nor a private request URL is emitted into CI logs.
+      errorKinds:window.__mapProbe.galleryPageErrorContexts.slice(-3),
     }))
     // Capture ONLY aggregate non-secret state if this fails again. Never
     // dump DOM, Owner names, signed URLs, photo IDs or screenshot content.
     record(mode+': closing the mobile map returns to authenticated Gallery '+
       JSON.stringify({mapCount:closed.mapCount,
         ordinaryOwnerReads:closed.ordinaryOwnerReads,
-        galleryErrorCount:closed.errors, pageErrorCount:errors.length}),
+        galleryErrorCount:closed.errors,preCloseErrors:beforeClose.errors,
+        errorKinds:closed.errorKinds,pageErrorCount:errors.length}),
       closed.mapCount===0&&closed.ordinaryOwnerReads>=1&&
       closed.errors===0&&errors.length===0)
     summary.mobileDrawerModes.push(mode)
