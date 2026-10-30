@@ -75,6 +75,7 @@ test('L3 photos reuse the tested UIKit zoom surface in local, originals and inde
 })
 
 test('new Cloud PhotoAsset Gallery is under the fixed Gallery tab; old originals remain distinct', () => {
+  const originals = src('ios/XDriveIOS/NativeCloudOriginalGallery.swift')
   assert.match(app, /case local, albums, cloud, originals, map/)
   assert.match(app, /XDriveIOSNativeServerMediaWall\(\s*login: login, album: nil,\s*onFocusChange:/)
   assert.match(app, /XDriveIOSNativeCloudOriginalGallery\(\s*login: login,\s*confirmedOriginalUpdate: backup\.confirmedOriginalUpdate\s*\)/)
@@ -117,7 +118,6 @@ test('new Cloud PhotoAsset Gallery is under the fixed Gallery tab; old originals
   assert.match(view, /model\.load\(login: login, albumID: album\?\.id, offset: 0, search: query\)/)
   const local = src('ios/XDriveIOS/NativeLocalPhotoGallery.swift')
   const album = src('ios/XDriveIOS/NativePhotoAlbumBrowser.swift')
-  const originals = src('ios/XDriveIOS/NativeCloudOriginalGallery.swift')
   assert.match(local, /savedOffset = next\.startOffset/)
   assert.match(local, /restoreAfterViewer\(\)/)
   assert.match(local, /refresh\(at: savedOffset\)/)
