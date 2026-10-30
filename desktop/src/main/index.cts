@@ -2399,6 +2399,15 @@ async function runAgentAction<T>(operation: () => Promise<T>, refresh = true): P
   }
 }
 
+function desktopHTTPSLoginOrigin(value: string): boolean {
+  try {
+    const target = new URL(value)
+    return target.protocol === 'https:' && !!target.hostname &&
+      !target.username && !target.password && target.pathname === '/' &&
+      !target.search && !target.hash
+  } catch { return false }
+}
+
 async function attemptAutomaticLogin() {
   // Keep this decision in the auto-login owner, so fixture execution of the
   // standalone entrypoint exercises exactly the same failure semantics.
@@ -2407,6 +2416,14 @@ async function attemptAutomaticLogin() {
     /password|credential|unauthorized|forbidden|revoked|disabled|tls|pin|trust/i.test(code)
   const profile = automaticLoginProfile(loginHistory)
   if (!profile || !profile.encrypted_password || !securePasswordStorageAvailable()) return
+  if (!desktopHTTPSLoginOrigin(profile.server)) {
+    // A previously saved HTTP profile cannot silently bypass the current
+    // HTTPS-only login policy after an upgrade. Do not decrypt credentials.
+    lastAutoLoginError = '已保存的 HTTP 连接已停用，请填写可信 HTTPS 地址后重新登录。'
+    loginHistory = disableAutomaticLogin(loginHistory)
+    await persistLoginHistoryBestEffort()
+    return
+  }
   if (!agentState.connected || agentState.status?.configured) return
 
   // Keep the history identity of this attempt; newer user saves replace it.

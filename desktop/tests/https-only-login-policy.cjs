@@ -13,6 +13,8 @@ test('Desktop refuses HTTP at UI, Chromium probe and native IPC before credentia
   assert.match(view, /httpsOrigin\.protocol !== 'https:'/)
   assert.match(probe, /target\.protocol !== 'https:'/)
   assert.match(main, /loginOrigin\.protocol !== 'https:'/)
+  assert.match(main, /if \(!desktopHTTPSLoginOrigin\(profile\.server\)\)/)
+  assert.match(main, /loginHistory = disableAutomaticLogin\(loginHistory\)/)
   const part = main.slice(main.indexOf("ipcMain.handle('agent:login'"))
   assert.ok(part.indexOf('loginOrigin.protocol') < part.indexOf('beginPrivateLANAuthentication(server)'))
   assert.ok(part.indexOf('loginOrigin.protocol') < part.indexOf('decryptLoginPassword('))
