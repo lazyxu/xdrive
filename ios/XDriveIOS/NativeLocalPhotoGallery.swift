@@ -195,14 +195,8 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                     XDriveIOSNativeLivePhotoView(live: live)
                         .accessibilityLabel("实况照片，长按播放")
                 } else if let image = model.still {
-                    GeometryReader { proxy in
-                        ScrollView([.horizontal, .vertical]) {
-                            Image(uiImage: image)
-                                .resizable().scaledToFit()
-                                .frame(minWidth: proxy.size.width,
-                                       minHeight: proxy.size.height)
-                        }
-                    }
+                    XDriveIOSNativeZoomablePhotoView(image: image)
+                        .accessibilityLabel("本机照片，可双指缩放或双击放大")
                 } else if let message = model.message {
                     Text(message).foregroundStyle(.secondary)
                 } else {
