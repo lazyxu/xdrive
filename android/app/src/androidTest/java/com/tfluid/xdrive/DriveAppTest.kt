@@ -856,7 +856,7 @@ class DriveAppTest {
 
         compose.onNodeWithTag("gallery-manual-more-manual:fixture-created").performClick()
         compose.onNodeWithTag("gallery-manual-rename-manual:fixture-created")
-            .assertIsDisplayed().performClick()
+            .performScrollTo().assertIsDisplayed().performClick()
         compose.onNodeWithTag("gallery-manual-rename-dialog").assertExists()
         compose.onNodeWithTag("gallery-manual-rename-name").performTextReplacement("夏季")
         compose.onNodeWithTag("gallery-manual-rename-confirm")
@@ -873,7 +873,7 @@ class DriveAppTest {
 
         compose.onNodeWithTag("gallery-manual-more-manual:fixture-created").performClick()
         compose.onNodeWithTag("gallery-manual-delete-manual:fixture-created")
-            .assertIsDisplayed().performClick()
+            .performScrollTo().assertIsDisplayed().performClick()
         compose.onNodeWithTag("gallery-manual-delete-dialog").assertExists()
         compose.onNodeWithText("不会删除原始照片", substring = true).assertExists()
         compose.onNodeWithTag("gallery-manual-delete-confirm")
@@ -973,7 +973,7 @@ class DriveAppTest {
         compose.onNodeWithTag("gallery-item-40").performClick()
         compose.onNodeWithTag("gallery-selection-more").performClick()
         compose.onNodeWithTag("gallery-selection-set-album-cover")
-            .assertIsDisplayed().performClick()
+            .performScrollTo().assertIsDisplayed().performClick()
         compose.waitUntil(timeoutMillis = 10_000) {
             controller.state.value.gallerySelectedAlbum?.revision == 3L &&
                 !controller.state.value.gallerySelectionMode &&
@@ -991,7 +991,7 @@ class DriveAppTest {
         }
         compose.onNodeWithTag("gallery-manual-more-manual:cover").performClick()
         compose.onNodeWithTag("gallery-manual-auto-cover-manual:cover")
-            .assertIsDisplayed().performClick()
+            .performScrollTo().assertIsDisplayed().performClick()
         compose.onNodeWithTag("gallery-manual-auto-cover-dialog").assertExists()
         compose.onNodeWithText("仍可能显示相册中的首张照片", substring = true)
             .assertExists()
