@@ -62,6 +62,7 @@ import {
   useXDriveFileExplorerUploadController,
   useXDriveFileExplorerOwnerActionLifecycle,
   useXDriveFileExplorerLocalReveal,
+  xDriveFileExplorerLocationAncestorCrumbs,
   useXDriveFileExplorerOwnerSourceOptions,
   xDriveFileExplorerDeviceStatusLabel,
   xDriveFileExplorerDeviceHydrationPathKey,
@@ -1962,11 +1963,8 @@ const desktopTransferLifecycleChildBatchSize = 1000
   const showNodeLocation = async (
     location: Awaited<ReturnType<typeof loadNodeLocation>>,
   ): Promise<void> => {
-    if (!location.parent_id) return
-    const ancestry = location.breadcrumbs
-      .filter(crumb => crumb.id !== location.node_id)
-      .map(crumb => ({ id: crumb.id, name: crumb.name }))
-    if (!ancestry.length || ancestry.at(-1)?.id !== location.parent_id) return
+    const ancestry = xDriveFileExplorerLocationAncestorCrumbs(location)
+    if (!ancestry || !location.parent_id) return
     const intent = beginNavigationIntent()
     try {
       let accepted = false
