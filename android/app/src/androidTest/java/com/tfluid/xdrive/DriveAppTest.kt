@@ -864,7 +864,6 @@ class DriveAppTest {
                 controller.state.value.galleryPrimaryTab)
             org.junit.Assert.assertNull(controller.state.value.gallerySelectedAlbum)
         }
-        compose.onRoot(useUnmergedTree = true).printToLog("GalleryMore-manual:fixture-created")
         compose.onNodeWithTag("gallery-manual-actions-manual:fixture-created").assertExists()
         compose.onNodeWithTag("gallery-manual-rename-manual:fixture-created")
             .assertIsDisplayed().performClick()
@@ -1011,7 +1010,6 @@ class DriveAppTest {
                 controller.state.value.galleryPrimaryTab)
             org.junit.Assert.assertNull(controller.state.value.gallerySelectedAlbum)
         }
-        compose.onRoot(useUnmergedTree = true).printToLog("GalleryMore-manual:cover")
         compose.onNodeWithTag("gallery-manual-actions-manual:cover").assertExists()
         compose.onNodeWithTag("gallery-manual-auto-cover-manual:cover")
             .assertIsDisplayed().performClick()
