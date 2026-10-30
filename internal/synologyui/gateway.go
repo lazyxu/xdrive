@@ -437,7 +437,9 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		root := g.nasShareRoot
-		if root == "" { root = "/" }
+		if root == "" {
+			root = "/"
+		}
 		choices, err := enumerateNASShareChoices(ctx, root, key, username, r.Header.Get("Cookie"), r.Host)
 		if err != nil {
 			http.Error(w, "NAS share inventory unavailable", http.StatusServiceUnavailable)
