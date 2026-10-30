@@ -243,14 +243,14 @@ func TestPlacesBD09Owner95kWorldStableActivePostgresCancellation(t *testing.T) {
 		t.Fatal("redacted world-stable cancellation output is required")
 	}
 	report := map[string]any{
-		"ci_git_head":                 head,
-		"owner_assets":                100000,
-		"sample_count":                len(samples),
-		"samples":                     samples,
-		"grid_scheme":                 baiduPhotoMapWorldStableGrid,
-		"fresh_world_stable_count":    page.TotalCount,
-		"fresh_world_stable_cells":    len(page.Items),
-		"fixture":                     "disposable PostgreSQL17 synthetic BD09 positions, genuine world-stable Owner SQL",
+		"ci_git_head":                  head,
+		"owner_assets":                 100000,
+		"sample_count":                 len(samples),
+		"samples":                      samples,
+		"grid_scheme":                  baiduPhotoMapWorldStableGrid,
+		"fresh_world_stable_count":     page.TotalCount,
+		"fresh_world_stable_cells":     len(page.Items),
+		"fixture":                      "disposable PostgreSQL17 synthetic BD09 positions, genuine world-stable Owner SQL",
 		"provider_conversion_verified": false,
 		"browser_abort_verified":       false,
 	}
