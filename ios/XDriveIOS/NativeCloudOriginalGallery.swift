@@ -173,11 +173,13 @@ struct XDriveIOSNativeCloudOriginalReader {
             guard let source = CGImageSourceCreateWithData(
                 bytes as CFData, [kCGImageSourceShouldCache: false] as CFDictionary
             ) else { return nil }
-            let options: [CFString: Any] = [
-                kCGImageSourceCreateThumbnailFromImageAlways: true,
-                kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceThumbnailMaxPixelSize: 280,
-                kCGImageSourceShouldCacheImmediately: false
+            // NSDictionary keys must be bridged String/NSString, not CFString
+            // as a Swift Dictionary key (CFString is not Hashable).
+            let options: [String: Any] = [
+                kCGImageSourceCreateThumbnailFromImageAlways as String: true,
+                kCGImageSourceCreateThumbnailWithTransform as String: true,
+                kCGImageSourceThumbnailMaxPixelSize as String: 280,
+                kCGImageSourceShouldCacheImmediately as String: false
             ]
             return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
         }.value
