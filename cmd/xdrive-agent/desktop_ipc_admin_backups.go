@@ -150,7 +150,7 @@ func boundedAdminBackupSnapshotPageQuery(values url.Values) (int, int, bool) {
 		return 0, 0, false
 	}
 	for _, raw := range []string{values.Get("offset"), values.Get("limit")} {
-		if raw == "" || len(raw) > 4 {
+		if raw == "" || len(raw) > 5 {
 			return 0, 0, false
 		}
 		for _, ch := range raw {
@@ -161,7 +161,7 @@ func boundedAdminBackupSnapshotPageQuery(values url.Values) (int, int, bool) {
 	}
 	offset, e1 := strconv.Atoi(values.Get("offset"))
 	limit, e2 := strconv.Atoi(values.Get("limit"))
-	if e1 != nil || e2 != nil || offset < 0 || offset > 1000 || limit < 1 || limit > 100 {
+	if e1 != nil || e2 != nil || offset < 0 || offset > 10_000 || limit < 1 || limit > 100 {
 		return 0, 0, false
 	}
 	return offset, limit, true

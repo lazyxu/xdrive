@@ -161,6 +161,27 @@ transport or change the backend's Owner/role checks. The Web root still owns
 its authenticated session, route/Hash history, unsaved-form guard, PWA
 lifecycle, Viewer and the remaining Files/Gallery/Overview controllers.
 
+### Browser Files through the one shared page outlet (transitional)
+
+Web's existing `WebFileExplorer` controller is now supplied to the
+canonical `XDriveAppPageOutlet` as an **explicit route-scoped Files
+controller element**, following Desktop's already-adopted transitional
+`filesControllerContent` pattern. The Browser Host wrapper is created
+**only** on the Files route; it never supplies a generic NAS client,
+native Agent operation, Owner Root capability or new upload writer.
+
+This shares Files **page dispatch**, not its entire state controller.
+The current Browser `XDriveApi`, signed Owner context, virtual range,
+selection, thumbnail cancellation, upload session and PWA Viewer return
+continue under the existing Web controller. Its internal scroll/frame,
+breadcrumb, quick-look and task receipt component order is preserved.
+No new Reader/Writer or second React application is introduced.
+
+The next step is to migrate Web/Desktop state lifecycle into typed common
+controllers, not multiply Host-specific JSX fallback slots. This staged
+Files outlet is a migration boundary, not a 1:1 physical-device acceptance
+claim.
+
 ## Ownership layers
 
 1. **Product contracts:** API schemas, Owner/Root semantics, page/navigation IDs, media and upload receipt identity, UI tokens/gesture/accessibility contracts. React and native UI must agree.

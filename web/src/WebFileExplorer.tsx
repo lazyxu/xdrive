@@ -972,11 +972,11 @@ export default function WebFileExplorer({
   const allowSelectionAction = (
     action: XDriveFileExplorerSelectionAction,
     selected: readonly XDriveFileExplorerItem[],
-  ) => {
-    const ticket = xDriveFileExplorerSelectionRequest(action, selected, getSelectionActionDisabledReason)
-    if (ticket.reason) onError(new Error(ticket.reason))
-    return ticket.allowed
-  }
+  ) => xDriveFileExplorerSelectionRequest(
+    action, selected, getSelectionActionDisabledReason,
+    // Web error UI receives an Error; the shared admission still only decides.
+    (reason) => onError(new Error(reason)),
+  ).allowed
   const copyItems = (selected: XDriveFileExplorerItem[]) => {
     if (allowSelectionAction('copy', selected)) copyWorkspaceItems(selected)
   }

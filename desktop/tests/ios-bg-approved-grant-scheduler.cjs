@@ -62,3 +62,18 @@ test('BGProcessingTask runs one scoped original only after approved native proof
   assert.doesNotMatch(boot,
     /uploadPreparedOriginal\(|startUploadSession\(|createUploadSession\(|PHAsset\.fetchAssets\(/)
 })
+
+test('iOS system Photos privacy prompt accurately discloses opt-in native background uploads', () => {
+  const project = read('ios/project.yml')
+  const line = project.split('\n').find(row => row.includes('NSPhotoLibraryUsageDescription:'))
+  assert.ok(line, 'xDrive iOS must disclose the purpose of protected PhotoKit reads')
+  assert.match(line, /手动备份由你主动启动/)
+  assert.match(line, /另外开启自动备份并明确批准后台授权/)
+  assert.match(line, /iOS 允许时才可能在前台或后台读取并向当前账户的 xDrive 服务器上传原件/)
+  assert.match(line, /你可以随时停止/)
+  assert.doesNotMatch(line, /不会在后台自动上传|永远不会后台|保证后台持续/)
+  assert.match(project, /BGTaskSchedulerPermittedIdentifiers:/)
+  assert.match(project, /UIBackgroundModes:/)
+  assert.match(bridge, /confirmBackgroundGrant\(owner: owner\)/)
+  assert.match(native, /kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly/)
+})

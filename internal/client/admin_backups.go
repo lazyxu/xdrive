@@ -37,8 +37,15 @@ func (c *Client) AdminServerBackupAction(ctx context.Context, input AdminServerB
 	return out, nil
 }
 
+// Keep the Desktop Agent client envelope in sync with the Server's v2
+// read-only 10,000-generation index. Older Hosts still return the v1 1,000
+// bound and explicitly disclose truncation; this does not authorize restore.
+func validAdminServerBackupSnapshotPage(offset, limit int) bool {
+	return offset >= 0 && offset <= 10_000 && limit >= 1 && limit <= 100
+}
+
 func (c *Client) AdminServerBackupSnapshotPage(ctx context.Context, offset, limit int) (json.RawMessage, error) {
-	if offset < 0 || offset > 1000 || limit < 1 || limit > 100 {
+	if !validAdminServerBackupSnapshotPage(offset, limit) {
 		return nil, fmt.Errorf("invalid administrator backup snapshot page")
 	}
 	var out json.RawMessage

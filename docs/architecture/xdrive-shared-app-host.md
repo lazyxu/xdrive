@@ -238,3 +238,51 @@ application controller, but **does not yet move its entire stateful
 DesktopFileExplorer controller to shared**. That remaining migration should
 replace the temporary `filesControllerContent` element with typed data and
 operation ports once the native lifecycle is actually extracted.
+
+
+## Consolidated read-only Files/Viewer controller extraction (2026-10-29)
+
+Two disjoint development branches were merged by a **two-parent Git commit**
+into one integration branch; only the integration branch opens a PR/CI run.
+Desktop's current-file availability request projection is now in
+`ui/shared/src/file-explorer-availability-request-projection.ts`, with
+source precedence and non-forged numeric Node identity preserved. It performs
+no network access: the existing Owner-fenced Agent batch read remains on
+Desktop, so a navigation or Owner switch still retires outdated responses.
+
+DSM's read-only Files -> QuickLook candidate selection is now in
+`ui/shared/src/mui/FileExplorerReadOnlyViewerSelection.ts`. It requires a
+current Owner scope, root revision, Host identity, and exact selected Node
+identity before showing the current Viewer item. Unsupported or stale
+selection IDs do not create an open Viewer. DSM still uses the same shared
+QuickLook component and its existing authorized media transport.
+
+**Explicit out-of-scope:** PDF editing, document/content editing, and other
+new modification/editor capabilities. Read-only PDF/text/media viewing and
+existing authorized file operations are not silently removed. Neither shared
+projection creates a new editing action, Owner permission, Agent method or
+generic CGI proxy. Full extraction of Desktop's remaining stateful Files
+controller is still required before removing the transitional
+`filesControllerContent`.
+
+
+## Current Files read-only controller extraction (2026-10-29)
+
+The existing queued Files/Viewer integration PR now includes two more
+Host-neutral, presentation-only modules consolidated *before CI starts*:
+
+- `FileExplorerDeviceReadPresentation` converts real Agent availability
+  snapshots and running hydration progress into shared Files status and
+  availability labels. Desktop retains its Owner-fenced batched Agent reads,
+  native keep/release actions, and truthful error behavior; this model owns no
+  filesystem permissions, timers, or durable transfers.
+- `FileExplorerReadOnlyDownloadAdmission` checks the current verified
+  DSM Owner directory, exact Node/revision/size/type, one-file limit, and
+  in-flight state before any existing authenticated original-file download.
+  DSM still verifies whole-file SHA-256 and requires an explicit user action
+  to save. The shared model does not mint a download token or a write method.
+
+**No PDF editor or other content-editing feature is being developed.**
+Existing read-only PDF/text/audio/video viewing remains intact. Retiring
+Desktop's temporary `filesControllerContent` still requires further
+state/controller extraction and real Host data-port convergence.

@@ -12,6 +12,8 @@ const sharedFolderIcon = read('ui', 'shared', 'src', 'mui', 'FolderIcon.tsx')
 const sharedAvailability = read('ui', 'shared', 'src', 'file-explorer-availability.ts')
 const sharedHostAvailability = read('ui', 'shared', 'src', 'file-explorer-host-availability.ts')
 const sharedHydration = read('ui', 'shared', 'src', 'mui', 'FileExplorerHydrationStatus.ts')
+const sharedDevicePresentation = read('ui', 'shared', 'src', 'mui', 'FileExplorerDeviceReadPresentation.ts')
+const sharedAvailabilityProjection = read('ui', 'shared', 'src', 'file-explorer-availability-request-projection.ts')
 const navigationPane = read('ui', 'shared', 'src', 'mui', 'FileExplorerNavigationPane.tsx')
 const columnView = read('ui', 'shared', 'src', 'mui', 'FileExplorerColumnView.tsx')
 const mountState = read('internal', 'mount', 'state.go')
@@ -75,10 +77,13 @@ test('Column View overlays canonical compact badges and joins the Desktop batch'
   ]) assert.ok(columnView.includes(token), 'Column View parity missing: ' + token)
   for (const token of [
     'const [columnAvailabilityItems, setColumnAvailabilityItems]',
-    'for (const item of columnAvailabilityItems)',
+    'const availabilityRequests = useMemo(() => xDriveFileExplorerAvailabilityRequests({',
+    'columns: columnAvailabilityItems,',
     'onColumnAvailabilityItemsChange={',
     'fileAvailabilitySupported ? handleColumnAvailabilityItemsChange : undefined',
   ]) assert.ok(desktopExplorer.includes(token), 'Desktop column batch missing: ' + token)
+  assert.ok(sharedAvailabilityProjection.includes('for (const item of columns) add(item.id, item.path)'),
+    'shared current-Owner availability projection must include the loaded column rows')
 })
 
 test('Desktop batches local availability instead of issuing one request per row', () => {
@@ -274,12 +279,19 @@ test('Desktop FileExplorer projects path-bound hydration transfer progress witho
   for (const token of [
     'desktopActiveHydrationProgress',
     'hydrationProgressByPath.has(',
-    'progress: hydrationProgress ?? undefined',
     'hadHydrationTransferRef.current',
     'hasUntrackedSyncing',
     'xDriveFileExplorerDeviceHydrationProgress(transfers)',
   ]) {
     assert.ok(desktopExplorer.includes(token), 'Desktop hydration wiring missing: ' + token)
+  }
+  for (const token of [
+    'progress: hydrationProgress ?? undefined',
+    'xDriveFileExplorerDeviceReadStatus',
+    'xDriveFileExplorerDeviceReadAvailability',
+  ]) {
+    assert.ok(sharedDevicePresentation.includes(token) || desktopExplorer.includes(token),
+      'shared device evidence projection missing: ' + token)
   }
   for (const token of [
     "transfer.kind !== 'hydration'",

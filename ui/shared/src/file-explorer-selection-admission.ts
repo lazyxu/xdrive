@@ -64,8 +64,12 @@ export function xDriveFileExplorerSelectionRequest<
     selected: readonly TItem[],
     count: number,
   ) => string | null,
+  /** Host retains its exact error channel (Error on Web, string on Desktop).
+   * Rejections notify exactly once; the shared policy never performs IO. */
+  onDenied?: (reason: string) => void,
 ): { allowed: boolean; reason: string | null; selectedCount: number } {
   const selectedCount = new Set(selected.map((item) => Number(item.id))).size
   const reason = getReason(action, selected, selectedCount)
+  if (reason) onDenied?.(reason)
   return { allowed: !reason, reason, selectedCount }
 }
