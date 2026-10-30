@@ -231,14 +231,16 @@ final class XDriveIOSNativeCloudOriginalModel: ObservableObject {
             defer { if self?.epoch == ticket { self?.busy = false; self?.work = nil } }
             do {
                 let auth = try await login.verifiedAuthorization()
-                guard auth.owner == expected else {
+                guard XDriveIOSNativePhotoOwnerScope.matches(auth.owner, expected) else {
                     throw XDriveIOSNativeSessionError.staleSession
                 }
                 let reply = try await XDriveIOSNativeCloudOriginalReader(
                     owner: expected, accessToken: auth.accessToken
                 ).page(offset: start)
                 try Task.checkCancellation()
-                guard self?.epoch == ticket, login.owner == expected else { return }
+                guard self?.epoch == ticket,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
+                else { return }
                 self?.nodes.append(contentsOf: reply.nodes)
                 self?.total = reply.total
                 self?.scanned = min(reply.total, start + 48)
@@ -262,8 +264,12 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
         NavigationStack {
             Group {
                 if node.isLiveArchive {
-                    ContentUnavailableView("Live 原件已保存为双资源 ZIP", systemImage: "livephoto",
-                        description: Text("本阶段尚未接通云端 Live ZIP 解包及动态播放；不能将 ZIP 当作单张照片。"))
+                    VStack(spacing: 16) {
+                        Image(systemName: "livephoto").font(.largeTitle)
+                        Text("Live 原件已保存为双资源 ZIP").font(.headline)
+                        Text("本阶段尚未接通云端 Live ZIP 解包及动态播放；不能将 ZIP 当作单张照片。")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }.padding()
                 } else if let still {
                     Image(uiImage: still).resizable().scaledToFit()
                 } else if let player {
@@ -291,7 +297,9 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                     owner: auth.owner, accessToken: auth.accessToken
                 ).preview(node)
                 try Task.checkCancellation()
-                guard before == auth.owner, before == login.owner else { return }
+                guard XDriveIOSNativePhotoOwnerScope.matches(auth.owner, before),
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, before)
+                else { return }
                 still = media.image
                 if let url = media.videoURL {
                     player = AVPlayer(url: url)

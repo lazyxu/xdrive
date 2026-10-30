@@ -44,8 +44,9 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
             let first = try await login.verifiedAuthorization()
             try Task.checkCancellation()
             let second = try await login.verifiedAuthorization()
-            guard login.owner == selected, first.owner == selected,
-                  second.owner == selected,
+            guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected),
+                  XDriveIOSNativePhotoOwnerScope.matches(first.owner, selected),
+                  XDriveIOSNativePhotoOwnerScope.matches(second.owner, selected),
                   store.localStopGeneration == stopVersion,
                   UIApplication.shared.applicationState == .active,
                   [.authorized, .limited].contains(
@@ -113,7 +114,8 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
             do {
                 let verified = try await login.verifiedAuthorization()
                 try Task.checkCancellation()
-                guard verified.owner == selected, login.owner == selected,
+                guard XDriveIOSNativePhotoOwnerScope.matches(verified.owner, selected),
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected),
                       UIApplication.shared.applicationState == .active else {
                     throw XDriveIOSNativeSessionError.staleSession
                 }
@@ -140,11 +142,12 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                 let result = try await XDriveIOSForegroundPhotoBackupMVP(
                     owner: selected, accessToken: verified.accessToken
                 ).run(allowICloudOriginals: cloud, startOffset: offset) { [weak self] value in
-                    guard self?.runningOwner == selected else { return }
+                    guard XDriveIOSNativePhotoOwnerScope.matches(self?.runningOwner, selected)
+                    else { return }
                     self?.progress = value
                 }
                 try Task.checkCancellation()
-                guard login.owner == selected else {
+                guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected) else {
                     throw XDriveIOSNativeSessionError.staleSession
                 }
                 self.progress = result

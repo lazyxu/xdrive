@@ -100,11 +100,35 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
             throw XDriveIOSNativeSessionError.notSignedIn
         }
         let ticket = generation
-        let fresh = try await XDriveNativeOwnerRootVerifier(
-            origin: snapshot.origin,
-            accessToken: snapshot.accessToken,
-            expectedUsername: snapshot.username
-        ).verify()
+        var token = snapshot.accessToken
+        var refresh = snapshot.refreshToken
+        let fresh: XDriveNativeOwnerRoot
+        do {
+            fresh = try await XDriveNativeOwnerRootVerifier(
+                origin: snapshot.origin, accessToken: token,
+                expectedUsername: snapshot.username
+            ).verify()
+        } catch XDriveNativeOwnerRootFailure.serverStatus(401) {
+            // Foreground schedules can outlive a short-lived access token.
+            // Renew ONLY using the isolated native refresh credential and
+            // re-prove the exact old Owner/root before any further file I/O.
+            let replacement = try await AuthService(origin: snapshot.origin)
+                .refresh(token: snapshot.refreshToken)
+            try Task.checkCancellation()
+            guard generation == ticket,
+                  replacement.must_change_password != true,
+                  replacement.username == snapshot.username,
+                  let newToken = currentAccessToken(replacement),
+                  !replacement.refresh_token.isEmpty else {
+                throw XDriveIOSNativeSessionError.ownerChanged
+            }
+            token = newToken
+            refresh = replacement.refresh_token
+            fresh = try await XDriveNativeOwnerRootVerifier(
+                origin: snapshot.origin, accessToken: token,
+                expectedUsername: snapshot.username
+            ).verify()
+        }
         try Task.checkCancellation()
         guard generation == ticket,
               let latest = active,
@@ -112,7 +136,22 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
               sameScope(fresh, snapshot.verifiedOwner),
               sameScope(latest.verifiedOwner, snapshot.verifiedOwner)
         else { throw XDriveIOSNativeSessionError.staleSession }
-        return (fresh, snapshot.accessToken)
+        if token != snapshot.accessToken || refresh != snapshot.refreshToken {
+            if keepSignedIn {
+                try XDriveIOSNativeOwnerSessionStore.save(record(
+                    owner: fresh, refreshToken: refresh
+                ))
+            }
+            // A logout/Owner switch cannot interleave with synchronous
+            // Keychain save and the following in-memory commit on MainActor.
+            active = Session(
+                origin: snapshot.origin, username: snapshot.username,
+                accessToken: token, refreshToken: refresh,
+                verifiedOwner: fresh
+            )
+            owner = fresh
+        }
+        return (fresh, token)
     }
 
     func restore() async {
