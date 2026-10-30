@@ -14,6 +14,10 @@ final class XDriveIOSBGOriginalWindowStore {
         var dueAt: Date
         var pausedForReview: Bool
         var lastCommittedAt: Date?
+        // Optional to decode old BG schedules without migrating or exposing
+        // original PhotoKit localIdentifiers or any background secret.
+        var libraryChangeEpoch: Data? = nil
+        var libraryAuthorizationRaw: Int? = nil
     }
 
     private func account(_ owner: XDriveNativeOwnerRoot) -> String {
@@ -65,6 +69,21 @@ final class XDriveIOSBGOriginalWindowStore {
         let next = now.addingTimeInterval(
             TimeInterval(approved.intervalMinutes * 60)
         )
+        // A past offset is meaningful only for the same PhotoKit library
+        // generation and Full/Limited authorization scope. Rewind on a
+        // changed, missing or damaged token; never trust the index alone.
+        let epoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
+        state.windowIndex = XDrivePhotoCursorEpochPolicy.trustedWindow(
+            requested: state.windowIndex,
+            hasPriorToken: state.libraryChangeEpoch != nil,
+            tokenUnchanged: XDriveIOSPhotoKitLibraryEpoch.matches(
+                state.libraryChangeEpoch, as: epoch.token
+            ),
+            previousAuthorization: state.libraryAuthorizationRaw,
+            currentAuthorization: epoch.authorization
+        )
+        state.libraryChangeEpoch = epoch.serialized
+        state.libraryAuthorizationRaw = epoch.authorization
         state.dueAt = next
         try store(state, owner: owner)
         return state.windowIndex
@@ -81,11 +100,26 @@ final class XDriveIOSBGOriginalWindowStore {
         let unresolved = report.needsReview > 0 || report.stoppedForReview
         // The same strategy as visible runs. Do not skip a 256-item window
         // just because one 1GiB video filled this BGTask's one-upload budget.
-        state.windowIndex = XDriveIOSPhotoAutoSchedulePolicy.nextWindow(
-            current: state.windowIndex, visibleTotal: report.totalVisible,
-            scanned: report.scanned, uploaded: report.uploaded,
-            needsReview: unresolved
+        // A Photos mutation while the original was staged/uploaded cannot
+        // commit the old window's next offset: the next BG task must restart
+        // the current authorized library from its beginning.
+        let epoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
+        let unchanged = XDrivePhotoCursorEpochPolicy.canResume(
+            hasPriorToken: state.libraryChangeEpoch != nil,
+            tokenUnchanged: XDriveIOSPhotoKitLibraryEpoch.matches(
+                state.libraryChangeEpoch, as: epoch.token
+            ),
+            previousAuthorization: state.libraryAuthorizationRaw,
+            currentAuthorization: epoch.authorization
         )
+        state.windowIndex = unchanged
+            ? XDriveIOSPhotoAutoSchedulePolicy.nextWindow(
+                current: state.windowIndex, visibleTotal: report.totalVisible,
+                scanned: report.scanned, uploaded: report.uploaded,
+                needsReview: unresolved
+              ) : 0
+        state.libraryChangeEpoch = epoch.serialized
+        state.libraryAuthorizationRaw = epoch.authorization
         state.pausedForReview = unresolved
         state.lastCommittedAt = now
         try store(state, owner: owner)
