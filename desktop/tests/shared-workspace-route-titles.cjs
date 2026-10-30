@@ -41,9 +41,9 @@ test('Desktop/DSM and Web/PWA consume canonical titles without a duplicate mobil
   for (const id of ['overview','conflicts','admin-users','global-tasks','admin-audit','admin-storage','admin-services','admin-maintenance']) {
     assert.ok(host.includes("xDriveWorkspaceRouteTitle('" + id + "')"), id)
   }
-  assert.match(web, /title=\\{mobileRouteTitle\\}/,
+  assert.match(web, /title=\{mobileRouteTitle\}/,
     'mobile header must select the active feature-local title')
-  assert.match(web, /mobileMapFocused \\? '地图' : xDriveWorkspaceRouteTitle\\(appView\\)/,
+  assert.match(web, /mobileMapFocused \? '地图' : xDriveWorkspaceRouteTitle\(appView\)/,
     'ordinary destinations still use the shared canonical title catalog')
   assert.doesNotMatch(web, /const mobileAppTitles:/)
   assert.match(web, /xDriveWebAppRouteForWorkspaceKey\(destination\)/)
