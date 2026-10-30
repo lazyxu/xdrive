@@ -888,8 +888,10 @@ async function testWorldBootstrapIsNotCamera(browser,mode,port){
     releaseSDK()
     await page.getByText('当前地图可查看 9 张照片',
       {exact:true}).waitFor({state:'visible'})
-    await page.locator('[data-xdrive-places-cluster-list] button').first()
-      .waitFor({state:'visible'})
+    // The complete accessible Cell list lives inside a collapsed <details>.
+    // Assert its authenticated buttons exist without requiring it to be open.
+    await page.waitForFunction(()=>document.querySelectorAll(
+      '[data-xdrive-places-cluster-list] button').length>0)
     const after=await page.evaluate(()=>({
       queries:window.__mapProbe?.queries?.length??0,
       count:window.__mapProbe?.queries?.at(-1)?.count,
