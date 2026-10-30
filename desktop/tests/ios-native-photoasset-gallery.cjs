@@ -49,6 +49,11 @@ test('new Cloud PhotoAsset Gallery is under the fixed Gallery tab; old originals
   assert.match(view, /ScrollViewReader \{ returnScroll in/)
   assert.match(view, /\.id\(item\.id\)/)
   assert.match(view, /returnScroll\.scrollTo\(anchor, anchor: \.center\)/)
+  assert.match(view, /focusedBrowsing\.toggle\(\)/)
+  assert.match(view, /\.toolbar\(focusedBrowsing \? \.hidden : \.visible, for: \.tabBar\)/)
+  assert.match(view, /native-ios-gallery-focus-toggle/)
+  assert.match(view, /focusedBrowsing = false/)
+
   assert.match(view, /lastOpenedMediaID = nil/)
   assert.match(view, /这不代表服务器没有原件/)
 

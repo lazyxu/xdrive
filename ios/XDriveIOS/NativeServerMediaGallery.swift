@@ -258,6 +258,7 @@ struct XDriveIOSNativeServerMediaWall: View {
     @State private var searchDraft = ""
     @State private var appliedSearch = ""
     @State private var lastOpenedMediaID: UInt64?
+    @State private var focusedBrowsing = false
 
     var body: some View {
         ScrollViewReader { returnScroll in
@@ -358,7 +359,21 @@ struct XDriveIOSNativeServerMediaWall: View {
                     }
                 }
             }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    focusedBrowsing.toggle()
+                } label: {
+                    Label(
+                        focusedBrowsing ? "显示底部导航" : "专注浏览",
+                        systemImage: focusedBrowsing ?
+                            "arrow.down.right.and.arrow.up.left" :
+                            "arrow.up.left.and.arrow.down.right"
+                    )
+                }
+                .accessibilityIdentifier("native-ios-gallery-focus-toggle")
+            }
         }
+        .toolbar(focusedBrowsing ? .hidden : .visible, for: .tabBar)
         .fullScreenCover(item: $selected) {
             XDriveIOSNativeServerMediaPreview(item: $0, login: login)
         }
@@ -384,8 +399,14 @@ struct XDriveIOSNativeServerMediaWall: View {
             }
         }
         .onDisappear {
-            if selected != nil { model.suspendForViewer() }
-            else { model.suspendForNavigation() }
+            if selected != nil {
+                model.suspendForViewer()
+            } else {
+                // A different feature/album should not inherit this wall's
+                // L2 focus state or hide the global bottom navigation.
+                focusedBrowsing = false
+                model.suspendForNavigation()
+            }
         }
         }
 
