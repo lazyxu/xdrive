@@ -108,6 +108,7 @@ const ownerRequest = async (route:string,query:URLSearchParams,
 
 const probe = ((window as any).__mapProbe = {
   mode, ready:false, failed:false, queries:[] as any[],
+  emptyCameraAfterPan:false,
   clicks:[] as any[], viewports:[] as any[], cameras:[] as any[],
   invalidations:0, realGin:genuineGin, ownerCellRange:null as any,
   ownerViewportRange:null as any, rangeError:false,
@@ -193,7 +194,12 @@ const listOwnerCells=async(bounds:Bounds,signal:AbortSignal,filters:any,albumKey
   }else{
     // Same strictly shaped signed Owner /cells DTO with no derived pins
     // until the synthetic background job finishes. Never substitute WGS84.
-    data=derivedLocationReady ? pageFor(bounds,favorite) : {
+    // Opt-in controlled pan regression: a fresh authenticated Camera may
+    // legitimately return ZERO photos. Never reuse the old signed pins.
+    data=probe.emptyCameraAfterPan ? {
+      coordinate_space:'bd09ll',index_scope:'owner_gps_auto_index',
+      grid_columns:8,grid_rows:8,total_count:0,cells:[],
+    } : derivedLocationReady ? pageFor(bounds,favorite) : {
       coordinate_space:'bd09ll',index_scope:'owner_gps_auto_index',
       grid_columns:8,grid_rows:8,total_count:0,cells:[],
     }

@@ -81,7 +81,7 @@ required = {
     "release-assets", "build-source-agent", "server-image", "caddy-image",
     "photo-face-image", "media-worker-image", "web", "package-linux-client",
     "package-windows-client", "desktop-linux", "desktop-windows",
-    "build-client-core",
+    "build-client-core", "build-synology-ui",
 }
 assert visited == required, f"review new/missing master release prerequisites: {visited ^ required}"
 for job in sorted(visited):

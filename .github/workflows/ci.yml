@@ -352,6 +352,18 @@ jobs:
         with:
           go-version: "1.25.x"
           cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Build source-exact DSM shared-MUI bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --prefix web
+          npm run build:synology --prefix web
+          node web/scripts/verify-synology-ui.mjs
       - name: Resolve client artifact version
         shell: bash
         run: |
@@ -373,11 +385,17 @@ jobs:
           bash scripts/ci/test-synology-release.sh
           source scripts/ci/synology-spk-version.sh
           source scripts/ci/build-metadata.sh
-          bash scripts/build-synology-spk.sh "$XDRIVE_SPK_VERSION" release/synology
+          # CLI-only stays a verified fallback, but is NOT the published SPK.
+          bash scripts/build-synology-spk.sh "$XDRIVE_SPK_VERSION" release/synology-cli
           python3 scripts/ci/test-synology-spk.py \
+            "release/synology-cli/xdrivenas-armada38x-$XDRIVE_SPK_VERSION.spk" \
+            release/synology-cli/core "$XDRIVE_SPK_VERSION"
+          bash scripts/build-synology-spk.sh "$XDRIVE_SPK_VERSION" \
+            release/synology release/synology-cli/core web/dist-synology
+          python3 scripts/ci/test-synology-spk-ui.py \
             "release/synology/xdrivenas-armada38x-$XDRIVE_SPK_VERSION.spk" \
-            release/synology/core "$XDRIVE_SPK_VERSION"
-          bash scripts/ci/verify-synology-spk-release.sh release/synology
+            release/synology-cli/core "$XDRIVE_SPK_VERSION" web/dist-synology
+          bash scripts/ci/verify-synology-spk-release.sh release/synology --require-mui
       - uses: actions/upload-artifact@v4
         with:
           name: xdrivenas-spk

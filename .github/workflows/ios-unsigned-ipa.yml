@@ -139,6 +139,36 @@ jobs:
       - name: Verify actual bounded background original safety contract
         run: node --test desktop/tests/ios-bg-bounded-original-runner.cjs
 
+      - name: Verify read-only native Gallery cache retention on revoked access
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeMediaPageRetryPolicy.swift \
+            ios/tests/NativeMediaPageRetryPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-gallery-retention-check"
+          "$RUNNER_TEMP/xdrive-ios-gallery-retention-check"
+
+      - name: Verify native Photos Owner, auto backup, cloud thumbnail and receipt contracts
+        run: |
+          set -euo pipefail
+          node --test \
+            desktop/tests/ios-native-historical-screen-recovery.cjs \
+            desktop/tests/ios-native-owner-login-foundation.cjs \
+            desktop/tests/ios-native-photos-auto-view-mvp.cjs \
+            desktop/tests/ios-native-photo-receipt-review.cjs \
+            desktop/tests/ios-native-cloud-original-thumbnail-wall.cjs \
+            desktop/tests/ios-native-auto-foreground-root-lifecycle.cjs \
+            desktop/tests/ios-native-album-navigation.cjs \
+            desktop/tests/ios-native-five-tab-navigation.cjs \
+            desktop/tests/ios-native-photo-zoom-viewer.cjs \
+            desktop/tests/ios-native-photo-viewer-return.cjs \
+            desktop/tests/ios-native-cloud-still-bounded-preview.cjs \
+            desktop/tests/ios-native-photo-auto-ack-enable-guard.cjs \
+            desktop/tests/ios-native-photo-detail-permission-fence.cjs \
+            desktop/tests/ios-native-photo-cloud-confirmed-refresh.cjs \
+            desktop/tests/ios-native-cloud-preview-scene-lifecycle.cjs \
+            desktop/tests/ios-native-photoasset-gallery.cjs
+
       - name: Prepare native brand and home screen icon
         run: bash ios/scripts/prepare-assets.sh
 

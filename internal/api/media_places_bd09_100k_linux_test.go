@@ -23,6 +23,7 @@ type placesBD09Sample struct {
 	Scope           string    `json:"scope"`
 	Window          string    `json:"window"`
 	Operation       string    `json:"operation"`
+	GridScheme      string    `json:"grid_scheme,omitempty"`
 	Expected        int64     `json:"expected"`
 	Count           int64     `json:"count"`
 	MaximumReturned int       `json:"max_returned"`
@@ -62,22 +63,58 @@ func placesBD09Measure(t *testing.T, db *gorm.DB, ownerID uint64,
 		var n int
 		var err error
 		switch operation {
-		case "cells":
+		case "cells", "cells_world_stable":
+			// Run the deployed world_stable_v1 SQL against the SAME 100k
+			// source-revision-fenced Owner and scoped 10k membership as the
+			// legacy grid; neither path is a client-side sampling shortcut.
+			stable := operation == "cells_world_stable"
 			var page baiduPhotoMapCellPage
 			if limitedTo10k {
 				members := db.WithContext(ctx).Table("xd_photo_assets").
 					Select("primary_node_id").Where("owner_id = ?", ownerID).
 					Order("id ASC").Limit(10000)
-				page, err = queryBaiduPhotoMapCellsScoped(ctx, db, ownerID, bounds, members, mediaQueryOptions{})
+				if stable {
+					page, err = queryBaiduPhotoMapCellsScopedGrid(ctx, db, ownerID,
+						bounds, members, mediaQueryOptions{}, true)
+				} else {
+					page, err = queryBaiduPhotoMapCellsScoped(ctx, db, ownerID,
+						bounds, members, mediaQueryOptions{})
+				}
+			} else if stable {
+				page, err = queryBaiduPhotoMapCellsScopedGrid(ctx, db, ownerID,
+					bounds, nil, mediaQueryOptions{}, true)
 			} else {
 				page, err = queryBaiduPhotoMapCells(ctx, db, ownerID, bounds)
 			}
 			count, n = page.TotalCount, len(page.Items)
+			if stable {
+				out.GridScheme = page.GridScheme
+				if page.GridScheme != baiduPhotoMapWorldStableGrid {
+					err = fmt.Errorf("world-stable Owner grid scheme lost")
+				}
+			} else if page.GridScheme != "" {
+				err = fmt.Errorf("legacy Owner grid scheme changed")
+			}
+			var total int64
 			for _, cell := range page.Items {
-				if cell.AssetID == 0 || cell.NodeID == 0 || cell.NodeRevision == 0 || cell.PhotoCount <= 0 {
+				if cell.AssetID == 0 || cell.NodeID == 0 ||
+					cell.NodeRevision == 0 || cell.PhotoCount <= 0 {
 					err = fmt.Errorf("bad source-fenced Owner representative")
 					break
 				}
+				total += cell.PhotoCount
+				if stable {
+					x, y, indexErr := baiduPhotoMapWorldCellIndex(bounds,
+						cell.Longitude, cell.Latitude)
+					if indexErr != nil || x != cell.CellX || y != cell.CellY {
+						err = fmt.Errorf("wrong world-stable tile for genuine BD09 representative")
+						break
+					}
+				}
+			}
+			if err == nil && total != count {
+				err = fmt.Errorf("Owner cell counts lost or duplicated: sum=%d total=%d",
+					total, count)
 			}
 		case "native_viewport":
 			var page baiduPhotoMapPage
@@ -176,10 +213,22 @@ WHERE mm.index_state = ? AND mm.media_kind IN (?,?)
 	if err != nil || other.TotalCount != 1 {
 		t.Fatalf("cross-Owner source predicate failed: page=%+v err=%v", other, err)
 	}
+	otherStable, stableErr := queryBaiduPhotoMapCellsScopedGrid(
+		context.Background(), db, peer.ID, world, nil, mediaQueryOptions{}, true)
+	if stableErr != nil || otherStable.TotalCount != 1 ||
+		otherStable.GridScheme != baiduPhotoMapWorldStableGrid ||
+		len(otherStable.Items) != 1 {
+		t.Fatalf("world-stable cross-Owner predicate failed: count=%d scheme=%q cells=%d err=%v",
+			otherStable.TotalCount, otherStable.GridScheme, len(otherStable.Items), stableErr)
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if _, err := queryBaiduPhotoMapCells(ctx, db, owner.ID, world); err == nil {
 		t.Fatal("cancelled Owner map Cells was accepted")
+	}
+	if _, err := queryBaiduPhotoMapCellsScopedGrid(ctx, db, owner.ID,
+		world, nil, mediaQueryOptions{}, true); err == nil {
+		t.Fatal("cancelled world-stable Owner map Cells was accepted")
 	}
 	if _, err := queryBaiduPhotoMapViewport(ctx, db, owner.ID, world, 48, 0); err == nil {
 		t.Fatal("cancelled native camera Viewport was accepted")
@@ -197,21 +246,35 @@ WHERE mm.index_state = ? AND mm.media_kind IN (?,?)
 		{"empty", baiduPhotoMapBounds{CoordinateSpace: "bd09ll",
 			West: -10, South: 0, East: -8, North: 1}, 0},
 	}
-	metrics := make([]placesBD09Sample, 0, 14)
+	metrics := make([]placesBD09Sample, 0, 20)
 	for _, w := range windows {
-		for _, op := range []string{"cells", "native_viewport", "camera_gallery_range"} {
+		// Alternate query order to avoid consistently giving the new world
+		// grid only a warm-cache advantage. P50/P95 are observed data, never
+		// a hard-coded performance improvement claim.
+		operations := []string{"cells", "cells_world_stable",
+			"native_viewport", "camera_gallery_range"}
+		if w.name == "dense_jinhua" || w.name == "empty" {
+			operations[0], operations[1] = operations[1], operations[0]
+		}
+		for _, op := range operations {
 			metrics = append(metrics, placesBD09Measure(t, db, owner.ID,
 				w.name, w.bounds, w.expected, op, false))
 		}
 	}
 	// This is a genuine first-10k membership subquery within the 100k
 	// Owner, not a separate 10k Owner. Preserve this distinction in JSON.
-	for _, w := range windows[:2] {
-		metrics = append(metrics, placesBD09Measure(t, db, owner.ID,
-			w.name, w.bounds, 10000, "cells", true))
+	for i, w := range windows[:2] {
+		operations := []string{"cells_world_stable", "cells"}
+		if i == 1 {
+			operations[0], operations[1] = operations[1], operations[0]
+		}
+		for _, op := range operations {
+			metrics = append(metrics, placesBD09Measure(t, db, owner.ID,
+				w.name, w.bounds, 10000, op, true))
+		}
 	}
 	artifact := os.Getenv("XD_PLACES_BD09_OUTPUT")
-	if artifact == "" || len(metrics) != 14 {
+	if artifact == "" || len(metrics) != 20 {
 		t.Fatal("no output path or incomplete 100k benchmark")
 	}
 	out := struct {

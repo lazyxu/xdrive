@@ -103,6 +103,8 @@ type Gateway struct {
 	Connect      func(context.Context) (Agent, error)
 	Now          func() time.Time
 	HTTPS        bool
+	// Test-only substitute for "/", inaccessible to the production caller.
+	nasShareRoot string
 }
 
 // The owner must run this from the SAME restricted DSM package account as the
@@ -399,7 +401,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		sendJSON(w, map[string]any{"dsm_user": username, "csrf_token": csrf(key, username, r.Header.Get("Cookie"), r.Host, interval)})
 		return
 	}
-	if r.URL.Path != "/v1/sources" && r.URL.Path != "/v1/status" && r.URL.Path != "/v1/history" && r.URL.Path != "/v1/run" && r.URL.Path != "/v1/control" && r.URL.Path != "/v1/schedule" && r.URL.Path != "/v1/device-backups" && r.URL.Path != "/v1/device-backup-runs" && r.URL.Path != "/v1/device-backup-page" && r.URL.Path != "/v1/device-backup-folders" && r.URL.Path != "/v1/cloud-quota" && r.URL.Path != "/v1/cloud-root" && r.URL.Path != "/v1/cloud-children" && r.URL.Path != "/v1/cloud-text-preview" && r.URL.Path != "/v1/cloud-media-range" && r.URL.Path != "/v1/cloud-media-stream" && r.URL.Path != "/v1/cloud-thumbnail" && r.URL.Path != "/v1/cloud-gallery-items" && r.URL.Path != "/v1/cloud-gallery-albums" && r.URL.Path != "/v1/cloud-live-motion" {
+	if r.URL.Path != "/v1/sources" && r.URL.Path != "/v1/status" && r.URL.Path != "/v1/history" && r.URL.Path != "/v1/run" && r.URL.Path != "/v1/control" && r.URL.Path != "/v1/schedule" && r.URL.Path != "/v1/device-backups" && r.URL.Path != "/v1/device-backup-runs" && r.URL.Path != "/v1/device-backup-page" && r.URL.Path != "/v1/device-backup-folders" && r.URL.Path != "/v1/cloud-quota" && r.URL.Path != "/v1/cloud-root" && r.URL.Path != "/v1/cloud-children" && r.URL.Path != "/v1/cloud-text-preview" && r.URL.Path != "/v1/cloud-media-range" && r.URL.Path != "/v1/cloud-media-stream" && r.URL.Path != "/v1/cloud-thumbnail" && r.URL.Path != "/v1/cloud-gallery-items" && r.URL.Path != "/v1/cloud-gallery-albums" && r.URL.Path != "/v1/cloud-live-motion" && r.URL.Path != "/v1/nas-shares" {
 		http.NotFound(w, r)
 		return
 	}
@@ -425,6 +427,29 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	agent, err := g.Connect(ctx) // Same-user protected discovery; never spawn a new Agent.
 	if err != nil {
 		http.Error(w, "owning Agent unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	// Only the authorized DSM principal and same-user Agent may inspect
+	// readable NAS share roots. No client-specified path or native Root grant.
+	if r.URL.Path == "/v1/nas-shares" {
+		if r.URL.RawQuery != "" {
+			http.Error(w, "NAS shares accept no path selector", http.StatusBadRequest)
+			return
+		}
+		root := g.nasShareRoot
+		if root == "" {
+			root = "/"
+		}
+		choices, err := enumerateNASShareChoices(ctx, root, key, username, r.Header.Get("Cookie"), r.Host)
+		if err != nil {
+			http.Error(w, "NAS share inventory unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		items := make([]map[string]string, 0, len(choices))
+		for _, choice := range choices {
+			items = append(items, map[string]string{"label": choice.Label, "selection_id": choice.SelectionID})
+		}
+		sendJSON(w, map[string]any{"items": items})
 		return
 	}
 	// Live Photo Motion is a separate, exact-revision, bounded Owner request

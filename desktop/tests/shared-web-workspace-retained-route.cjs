@@ -34,7 +34,10 @@ test('Browser route descriptors share canonical labels while preserving legacy v
   }
   assert.match(apps, /'sync-folders': \{ id: 'sync-folders', title: '同步文件夹'/)
   assert.match(apps, /'media-viewer': \{ id: 'media-viewer', title: '媒体查看器'/)
-  assert.match(app, /title=\{xDriveWorkspaceRouteTitle\(appView\)\}/)
+  assert.match(app, /title=\{mobileRouteTitle\}/,
+    'mobile header must select the active feature-local title')
+  assert.match(app, /mobileMapFocused \? '地图' : xDriveWorkspaceRouteTitle\(appView\)/,
+    'ordinary destinations still use the shared canonical title catalog')
   assert.match(app, /!xDriveWorkspaceNavigationAllowed\(appView, profile\.role === 'admin'\)/)
   assert.match(app, /xDriveSystemDependenciesNeedsExitConfirmation/)
   assert.match(app, /data-xdrive-pwa-upload-resume-picker/)

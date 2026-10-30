@@ -10,6 +10,7 @@ import { Box, IconButton, Tooltip, Typography } from '@mui/material'
 export function XDriveMobileAppHeader({
   title,
   canGoBack,
+  backLabel = '返回上一个应用',
   disabled = false,
   onBack,
   onOpenApps,
@@ -17,6 +18,7 @@ export function XDriveMobileAppHeader({
 }: {
   title: string
   canGoBack: boolean
+  backLabel?: string
   disabled?: boolean
   onBack: () => void
   onOpenApps: () => void
@@ -43,10 +45,10 @@ export function XDriveMobileAppHeader({
         borderColor: 'divider',
       }}
     >
-      <Tooltip title="返回上一个应用">
+      <Tooltip title={backLabel}>
         <span>
           <IconButton
-            aria-label="返回上一个应用"
+            aria-label={backLabel}
             disabled={!canGoBack || disabled}
             onClick={onBack}
             sx={{ width: 44, height: 44 }}

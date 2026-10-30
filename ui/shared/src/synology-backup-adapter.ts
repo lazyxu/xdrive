@@ -1,3 +1,4 @@
+import type { XDriveSynologyNASShare } from './synology-nas-share-inventory'
 import type { XDriveDiagnosticReport } from './mui/DiagnosticsPage'
 import type { XDriveFileTextPreview } from './file-preview'
 import type { QuotaUsage, MediaItemRange, MediaAlbum } from './models'
@@ -222,6 +223,8 @@ function validateOwnerGalleryAlbums(raw: unknown): MediaAlbum[] {
 
 export interface XDriveSynologyBackupLocalClient extends XDriveLocalBackupCommonBatchActions, XDriveLocalBackupScheduleActions {
   list(signal?: AbortSignal): Promise<XDriveSynologyLocalSource[]>
+  /** Same-principal DSM package-user read-only NAS share roots. */
+  nasShares(signal?: AbortSignal): Promise<XDriveSynologyNASShare[]>
   diagnostics(signal?: AbortSignal): Promise<XDriveDiagnosticReport>
   inspect(sourceID: number, signal?: AbortSignal): Promise<XDriveLocalBackupCommonBatch>
   history(sourceID: number, signal?: AbortSignal): Promise<XDriveLocalBackupCommonBatchHistoryPage>
@@ -287,7 +290,7 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
       'device-backups', 'device-backup-runs',
       'device-backup-page', 'device-backup-folders', 'cloud-quota',
       'cloud-root', 'cloud-children', 'cloud-text-preview', 'cloud-media-range', 'cloud-thumbnail',
-       'cloud-gallery-items', 'cloud-gallery-albums', 'cloud-live-motion'].includes(operation)) {
+       'cloud-gallery-items', 'cloud-gallery-albums', 'cloud-live-motion', 'nas-shares'].includes(operation)) {
       throw new Error('Unsupported DSM backup operation')
     }
     // DSM custom CGI is one executable URL. Extra /v1/ PATH_INFO suffixes
@@ -330,6 +333,15 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
   const canonicalDeviceID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
   const validPageLimit = (limit: number) => Number.isSafeInteger(limit) && limit >= 1 && limit <= 100
   const api: XDriveSynologyBackupLocalClient = {
+    async nasShares(signal) {
+      const raw = await request<unknown>('/v1/nas-shares', 'GET', undefined, signal)
+      // Keep this feature-only module out of the existing Owner-read VM
+      // fixtures, which execute unrelated methods without a module loader.
+      // Vite resolves the import into an isolated, same-origin DSM asset.
+      const { xDriveValidateSynologyNASShareInventory } =
+        await import('./synology-nas-share-inventory')
+      return xDriveValidateSynologyNASShareInventory(raw)
+    },
     async list(signal) {
       const page = await request<{ items: XDriveSynologyLocalSource[] }>(
         '/v1/sources', 'GET', undefined, signal)

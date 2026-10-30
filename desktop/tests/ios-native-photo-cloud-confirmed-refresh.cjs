@@ -1,0 +1,42 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const root = path.resolve(__dirname, '../..')
+const read = p => fs.readFileSync(path.join(root, p), 'utf8')
+const controller = read('ios/XDriveIOS/NativePhotoBackupController.swift')
+const dashboard = read('ios/XDriveIOS/NativePhotosDashboard.swift')
+const gallery = read('ios/XDriveIOS/NativeCloudOriginalGallery.swift')
+const authScope = read('ios/XDriveIOS/NativePhotoOwnerScope.swift')
+
+test('only confirmed new Original Node receipts signal UI invalidation', () => {
+  assert.match(controller, /struct ConfirmedOriginalUpdate: Equatable/)
+  assert.match(controller, /@Published private\(set\) var confirmedOriginalUpdate/)
+  assert.match(controller, /if result\.uploaded > 0 \{[\s\S]*confirmedOriginalUpdate = ConfirmedOriginalUpdate\(/)
+  const index = controller.indexOf('if result.uploaded > 0')
+  assert.ok(index > controller.indexOf('try Task.checkCancellation()', controller.indexOf('let result = try await')))
+  assert.ok(index > controller.indexOf('XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected)', controller.indexOf('let result = try await')))
+  assert.match(controller, /owner: selected, id: UUID\(\)/)
+  assert.doesNotMatch(controller, /NotificationCenter\.default\.post|document\.cookie|WKWebView/)
+})
+
+test('Gallery refresh is exact Owner scoped and deferred during full-screen preview', () => {
+  assert.match(dashboard, /XDriveIOSNativeCloudOriginalGallery\([\s\S]*login: login,[\s\S]*confirmedOriginalUpdate: backup\.confirmedOriginalUpdate/)
+  assert.match(gallery, /\.onChange\(of: confirmedOriginalUpdate\) \{ update in/)
+  assert.match(gallery, /XDriveIOSNativePhotoOwnerScope\.matches\(login.owner, update.owner\)/)
+  assert.match(gallery, /if selected != nil \{\s*refreshAfterViewer = true\s*\} else \{\s*model\.reload\(login: login\)/)
+  assert.match(gallery, /\.fullScreenCover\(item: \$selected, onDismiss: \{[\s\S]*if refreshAfterViewer \{[\s\S]*model\.reload\(login: login\)/)
+  assert.match(gallery, /\.onChange\(of: login.owner\) \{ _ in[\s\S]*?refreshAfterViewer = false[\s\S]*?selected = nil\s*model\.invalidate\(\)/)
+  assert.match(controller, /!XDriveIOSNativePhotoOwnerScope\.matches\(owner, last.owner\) \{\s*confirmedOriginalUpdate = nil/)
+  assert.match(authScope, /current\.instanceID == expected\.instanceID/)
+  assert.doesNotMatch(gallery, /UploadSessionTransport|window\.webkit|localStorage/)
+})
+
+test('no backup uploader or signed Viewer URL is changed by a read-only refresh event', () => {
+  assert.match(controller, /XDriveIOSForegroundPhotoBackupMVP\(/)
+  assert.match(controller, /XDriveIOSOriginalRunGate\.shared\.acquire\(\)/)
+  assert.match(controller, /XDriveIOSPhotoAutoScheduleStore\.shared\.recordResult/)
+  assert.match(gallery, /request\(url, bearer: false\)/)
+  assert.match(gallery, /player\?\.pause\(\)[\s\S]*?still = nil[\s\S]*?dismiss\(\)/)
+})

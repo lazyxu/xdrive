@@ -102,7 +102,11 @@ test('scoped map mode changes retain filter protections but allow cleared timezo
   assert.ok(map.indexOf('xDriveBaiduMapScopeSurvivesFullReload(scope)') <
     map.indexOf('window.location.replace(href)'))
   assert.match(map,/onMapModeHandoff\(scope, next, controller.signal,/)
-  assert.match(map,/xDrivePlacesMapScopeHandoffURL\(window.location.href, next, ticket\)/)
+  // The route captured at issuance, NOT a potentially changed current URL,
+  // is the only valid base for the one-use Owner handoff navigation.
+  assert.match(map,/routeHref: window\.location\.href/)
+  assert.match(map,/xDrivePlacesMapHandoffFenceMatches\(issuedFence,/)
+  assert.match(map,/xDrivePlacesMapScopeHandoffURL\(issuedFence\.routeHref, next, ticket\)/)
   assert.match(map,/setModeWarning\('地图状态交接失败/)
   assert.doesNotMatch(map,/localStorage|sessionStorage/)
   assert.ok(!map.includes('xDriveBaiduMapPhotoScopeKey(mapPhotoScope) !=='))

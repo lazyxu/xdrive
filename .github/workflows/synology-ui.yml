@@ -34,6 +34,9 @@ on:
       - 'ui/shared/src/synology-media-preview.ts'
       - 'ui/shared/src/synology-media-stream.ts'
       - 'web/scripts/test-synology-media-stream.mjs'
+      - 'ui/shared/src/synology-nas-share-inventory.ts'
+      - 'ui/shared/src/mui/SynologyNASShareInventory.tsx'
+      - 'web/scripts/test-synology-nas-shares.mjs'
       - 'web/scripts/test-synology-media-preview.mjs'
       - 'ui/shared/src/synology-owner-download.ts'
       - 'web/scripts/test-synology-owner-download.mjs'
@@ -54,6 +57,9 @@ on:
       - 'internal/localbackupipc/remote_backup_test.go'
       - 'web/scripts/test-synology-owner-read.mjs'
       - 'ui/shared/src/mui/SynologyBackupLocalPanel.tsx'
+      - 'ui/shared/src/mui/SynologyBackupTargetBrowser.tsx'
+      - 'ui/shared/src/synology-backup-target-directory.ts'
+      - 'web/scripts/test-synology-backup-target-browser.mjs'
       - 'ui/shared/src/mui/DeviceBackupFolderSummary.tsx'
       - 'ui/shared/src/mui/DeviceBackupFolderAccordion.tsx'
       - 'ui/shared/src/mui/DeviceBackupLocalPrimaryActions.tsx'
@@ -146,6 +152,9 @@ on:
       - 'ui/shared/src/synology-media-preview.ts'
       - 'ui/shared/src/synology-media-stream.ts'
       - 'web/scripts/test-synology-media-stream.mjs'
+      - 'ui/shared/src/synology-nas-share-inventory.ts'
+      - 'ui/shared/src/mui/SynologyNASShareInventory.tsx'
+      - 'web/scripts/test-synology-nas-shares.mjs'
       - 'web/scripts/test-synology-media-preview.mjs'
       - 'ui/shared/src/synology-owner-download.ts'
       - 'web/scripts/test-synology-owner-download.mjs'
@@ -166,6 +175,9 @@ on:
       - 'internal/localbackupipc/remote_backup_test.go'
       - 'web/scripts/test-synology-owner-read.mjs'
       - 'ui/shared/src/mui/SynologyBackupLocalPanel.tsx'
+      - 'ui/shared/src/mui/SynologyBackupTargetBrowser.tsx'
+      - 'ui/shared/src/synology-backup-target-directory.ts'
+      - 'web/scripts/test-synology-backup-target-browser.mjs'
       - 'ui/shared/src/mui/DeviceBackupFolderSummary.tsx'
       - 'ui/shared/src/mui/DeviceBackupFolderAccordion.tsx'
       - 'ui/shared/src/mui/DeviceBackupLocalPrimaryActions.tsx'
@@ -264,6 +276,7 @@ jobs:
         run: |
           npm ci --prefix web
           node web/scripts/test-synology-browser-storage.mjs
+          node web/scripts/test-synology-backup-target-browser.mjs
           node web/scripts/test-synology-batch-validation.mjs
           node web/scripts/test-synology-request-cancel.mjs
           node web/scripts/test-synology-owner-read.mjs
@@ -276,6 +289,7 @@ jobs:
           node web/scripts/test-synology-owner-preview.mjs
           node web/scripts/test-synology-owner-thumbnail.mjs
           node web/scripts/test-synology-media-stream.mjs
+          node web/scripts/test-synology-nas-shares.mjs
           npm run build:synology --prefix web
       - name: Verify static artifacts remain relative to DSM launcher
         run: |

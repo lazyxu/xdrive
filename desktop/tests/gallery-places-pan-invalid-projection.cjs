@@ -129,3 +129,24 @@ test('trusted shared Parent keeps invalidated gesture pixels inert and bounded',
   assert.match(isolated,/if \(gesture && gestureCells.length>0 && validPixels===0\) return/)
   assert.doesNotMatch(isolated,/\.node_id\b|\.asset_id\b|photo_url|Authorization:/)
 })
+
+
+test('fresh signed zero-photo Camera retires old gesture covers in shared Parent',()=>{
+  const query=surface.slice(
+    surface.indexOf('    const queryCells = async'),
+    surface.indexOf('    refreshFilteredCells.current=(skipPending=false)=>{'))
+  const signed=query.indexOf('if(!xDriveValidBaiduNativeCellsPage(page,bounds)')
+  const accepted=query.indexOf('acceptedCells.current=cells.map(item=>item.selection)')
+  const zero=query.indexOf('if (page.total_count === 0 && cells.length === 0) {')
+  const summary=query.indexOf('setSummary(page)')
+  assert.ok(signed>=0&&accepted>signed&&zero>accepted&&summary>zero,
+    'retire gesture only AFTER validated current Owner Cells, before painting empty')
+  assert.match(query.slice(zero,summary),
+    /committedPresentation\.current=null[\s\S]*?clearGesturePresentation\(\)/)
+  assert.match(surface,/const gesturePins=gesturePresentation &&/)
+  assert.match(surface,/disabled=\{!currentCoverActive\}/)
+  // Both SDK Hosts share this Parent query; neither isolated Child nor
+  // same-document Baidu SDK receives photo identity to clear the cover.
+  assert.match(surface,/xDriveMountBaiduInlineMap/)
+  assert.match(surface,/xDriveMountBaiduIsolatedFrame/)
+})

@@ -20,7 +20,7 @@ const source = [
   'type MediaThumbnailLoader = any; type ReactNode = any',
   "function revokeIfBlob(url: string) { if (url.startsWith('blob:')) URL.revokeObjectURL(url) }",
   original.slice(start, end),
-  'export { XDriveMediaAsyncThumbnail }',
+  'export { XDriveMediaAsyncThumbnail, XDriveBackgroundMediaThumbnailSuspended }',
 ].join('\n')
 const js = ts.transpileModule(source, {
   fileName: 'MountedRealMediaAsyncThumbnail.tsx',
@@ -45,6 +45,7 @@ new Function('exports', 'module', 'require', js)(mod.exports, mod, id => {
   return mocks[id]
 })
 const Thumb = mod.exports.XDriveMediaAsyncThumbnail
+const BackgroundPause = mod.exports.XDriveBackgroundMediaThumbnailSuspended
 const fallback = React.createElement('gallery-test-fallback', { 'data-fallback': true })
 const image = view => view.root.findAll(x =>
   x.type === 'gallery-test-box' && x.props.component === 'img')[0]
@@ -77,6 +78,78 @@ test('P0-L2 real Gallery thumbnail switches to fallback on actual image element 
   await act(async () => { view.unmount() })
 })
 
+
+test('opening Viewer drops undecoded Gallery DOM image without poisoning its next read', async () => {
+  const signals = []
+  let reads = 0
+  const loadThumbnail = async (_id, signal) => {
+    signals.push(signal)
+    return 'https://images.invalid/gallery-' + (++reads)
+  }
+  const element = suspended => React.createElement(
+    BackgroundPause.Provider, { value: suspended },
+    React.createElement(Thumb, {
+      nodeID: 910, revision: 2, alt: 'IMG_0910.HEIC', loadThumbnail, fallback,
+    }),
+  )
+  let view
+  try {
+    await act(async () => { view = renderer.create(element(false)); await flush() })
+    assert.equal(image(view)?.props.src, 'https://images.invalid/gallery-1')
+    const staleLoad = image(view).props.onLoad
+    await act(async () => { view.update(element(true)); await flush() })
+    assert.equal(signals[0].aborted, true)
+    assert.equal(image(view), undefined, 'unready DOM img must unmount to stop residual network and decoding')
+    assert.equal(failed(view), false, 'Viewer suspension is not a decoder error')
+    assert.equal(view.root.findAll(x => x.type === 'gallery-test-progress').length, 0,
+      'obscured Gallery progress must not compete with Viewer')
+    assert.equal(reads, 1, 'suspension itself never retries old source')
+    await act(async () => staleLoad({ currentTarget: { naturalWidth: 640 } }))
+    assert.equal(image(view), undefined, 'late old DOM load may not restore hidden decoding')
+    await act(async () => { view.update(element(false)); await flush() })
+    assert.equal(reads, 2)
+    assert.equal(image(view)?.props.src, 'https://images.invalid/gallery-2')
+    await act(async () => image(view).props.onLoad({ currentTarget: { naturalWidth: 640 } }))
+    await act(async () => { view.update(element(true)); await flush() })
+    assert.equal(image(view)?.props.src, 'https://images.invalid/gallery-2',
+      'already loaded Gallery pixels remain cached without restarting decoded work')
+    assert.equal(reads, 2)
+  } finally {
+    if (view) await act(async () => view.unmount())
+  }
+})
+
+test('visible Viewer Filmstrip can load while its parent Gallery thumbnails are suspended', async () => {
+  let wallReads = 0
+  let stripReads = 0
+  const wallLoader = async () => { wallReads++; return 'blob:background' }
+  const stripLoader = async () => { stripReads++; return 'blob:foreground' }
+  const viewNode = React.createElement(
+    BackgroundPause.Provider, { value: true },
+    React.createElement('gallery-test-container', null,
+      React.createElement(Thumb, {
+        nodeID: 100, revision: 1, alt: 'background', loadThumbnail: wallLoader,
+        fallback, revokeOnDispose: false,
+      }),
+      React.createElement(Thumb, {
+        nodeID: 101, revision: 1, alt: 'foreground filmstrip', loadThumbnail: stripLoader,
+        fallback, revokeOnDispose: false, viewerOwned: true,
+      }),
+    ),
+  )
+  let view
+  try {
+    await act(async () => { view = renderer.create(viewNode); await flush() })
+    assert.equal(wallReads, 0, 'gallery wall remains suspended')
+    assert.equal(stripReads, 1, 'Viewer must not inherit parent Gallery IO pause')
+    assert.equal(image(view)?.props.src, 'blob:foreground')
+    assert.match(read('ui/shared/src/mui/MediaGalleryFilmstrip.tsx'),
+      /<XDriveMediaAsyncThumbnail\s+viewerOwned\b/,
+      'the real shared Filmstrip marks its visible thumbnail as Viewer-owned')
+  } finally {
+    if (view) await act(async () => view.unmount())
+  }
+})
 
 test('P0-L3 real DOM image load only reports valid visible bytes and preserves a single fetch', async () => {
   const ready = []
@@ -378,4 +451,69 @@ test('P0-L4c2 stale same-revision URL/unmounted DOM errors cannot poison a repla
   const count = errors.length
   await act(async () => { oldOnError(); latestOnError() })
   assert.equal(errors.length, count, 'unmounted callbacks must not invalidate cache')
+})
+
+
+test('synchronous Host thumbnail loader exception becomes one terminal fallback without a second read', async () => {
+  let reads = 0
+  const signals = []
+  const ready = []
+  const loader = (_nodeID, signal) => {
+    reads += 1
+    signals.push(signal)
+    throw new Error('native Host thumbnail adapter was disposed')
+  }
+  let view
+  try {
+    await act(async () => {
+      view = renderer.create(React.createElement(Thumb, {
+        nodeID: 9911, revision: 4, alt: 'IMG_9911.HEIC',
+        loadThumbnail: loader, fallback,
+        onImageReadyChange: value => ready.push(value),
+      }))
+      await flush()
+    })
+    assert.equal(reads, 1, 'initial read is immediate and never retried automatically')
+    assert.equal(failed(view), true, 'synchronous Host fault is handled like an async transport failure')
+    assert.equal(image(view), undefined)
+    assert.deepEqual(ready, [false], 'fault cannot announce a decoded Live still')
+    assert.equal(signals[0].aborted, false)
+  } finally {
+    if (view) await act(async () => view.unmount())
+  }
+  assert.equal(signals[0].aborted, true, 'Viewer disposal still cancels the same signal')
+  assert.equal(reads, 1, 'fallback must not request originals or relaunch thumbnail bytes')
+})
+
+test('same Node and revision recover from previous Owner synchronous thumbnail fault', async () => {
+  const seen = []
+  const sourceA = (_nodeID, signal, revision) => {
+    seen.push({ owner: 'A', signal, revision })
+    throw new Error('retired Owner IPC adapter')
+  }
+  let resolveB
+  const sourceB = (_nodeID, signal, revision) => {
+    seen.push({ owner: 'B', signal, revision })
+    return new Promise(resolve => { resolveB = resolve })
+  }
+  const render = loadThumbnail => React.createElement(Thumb, {
+    nodeID: 9912, revision: 7, alt: 'IMG_9912.HEIC',
+    loadThumbnail, fallback, revokeOnDispose: false,
+  })
+  let view
+  try {
+    await act(async () => { view = renderer.create(render(sourceA)); await flush() })
+    assert.equal(failed(view), true)
+    assert.deepEqual(seen.map(x => [x.owner, x.revision]), [['A', 7]])
+    await act(async () => { view.update(render(sourceB)); await flush() })
+    assert.equal(failed(view), false, 'B pending cannot inherit A terminal failure')
+    assert.equal(image(view), undefined, 'old Owner never paints into new owner')
+    assert.equal(seen[0].signal.aborted, true)
+    await act(async () => { resolveB('blob:current-owner-thumbnail'); await flush() })
+    assert.equal(image(view)?.props.src, 'blob:current-owner-thumbnail')
+    assert.deepEqual(seen.map(x => x.owner), ['A', 'B'], 'only one read per authorized source')
+  } finally {
+    if (view) await act(async () => view.unmount())
+  }
+  assert.equal(seen[1].signal.aborted, true)
 })

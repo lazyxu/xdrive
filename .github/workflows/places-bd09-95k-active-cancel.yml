@@ -38,6 +38,7 @@ jobs:
       XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
       XD_PLACES_100K_DISPOSABLE_CI: '1'
       XD_PLACES_BD09_CANCEL_OUTPUT: ${{ github.workspace }}/artifacts/bd09-95k-active-cancel.json
+      XD_PLACES_BD09_CANCEL_OUTPUT_STABLE: ${{ github.workspace }}/artifacts/bd09-95k-active-cancel-stable.json
     steps:
       - uses: actions/checkout@v4
         with:
@@ -75,32 +76,51 @@ jobs:
         run: |
           set -euo pipefail
           go test -count=1 -run '^TestPlacesBD09Owner95kActivePostgresCancellation$' -v -timeout=12m ./internal/api 2>&1 | tee bd09-active-probe.log
-      - name: Verify bounded sanitized evidence, 95k Owner recovery and exact HEAD
+      - name: Cancel actual 95k world-stable Owner Cell SQL three times; verify same grid recovery
+        shell: bash
+        env:
+          XD_PLACES_BD09_CANCEL_ACTIVE: '1'
+        run: |
+          set -euo pipefail
+          go test -count=1 -run '^TestPlacesBD09Owner95kWorldStableActivePostgresCancellation$' -v -timeout=12m ./internal/api 2>&1 | tee bd09-active-stable-probe.log
+      - name: Verify bounded sanitized evidence, both 95k Owner recoveries and exact HEAD
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
           import json
-          path=Path('artifacts/bd09-95k-active-cancel.json')
-          assert path.is_file() and 450 < path.stat().st_size < 12000
-          data=json.loads(path.read_text())
-          assert data['ci_git_head']==Path('bd09-cancel-source.txt').read_text().strip()
-          assert data['owner_assets']==100000 and data['sample_count']==3
-          assert data['fresh_camera_count']==95000 and data['fresh_page_items']==48
-          assert data['provider_conversion_verified'] is False
-          assert data['browser_abort_verified'] is False
-          assert len(data['samples'])==3
-          for i,sample in enumerate(data['samples'],1):
-              assert sample['ordinal']==i
-              assert sample['observed_active_postgres_select'] is True
-              assert sample['old_owner_range_rejected'] is True
-              assert 0 <= sample['go_cancel_return_ms'] <= 1500
-          saved=path.read_text().lower()
-          for token in ('"owner_id"','"asset_id"','"node_id"','"gps"',
-                        '"sql"','"pid"','"jwt"','"cookie"','"token"'):
-              assert token not in saved
-          print('Actual 95k PostgreSQL in-flight Owner Camera cancellation verified')
+          sha=Path('bd09-cancel-source.txt').read_text().strip()
+          sources=(
+              (Path('artifacts/bd09-95k-active-cancel.json'),
+               'old_owner_range_rejected', 'fresh_camera_count', 48),
+              (Path('artifacts/bd09-95k-active-cancel-stable.json'),
+               'old_world_stable_cells_rejected', 'fresh_world_stable_count', None),
+          )
+          for path, rejection_key, count_key, page_size in sources:
+              assert path.is_file() and 450 < path.stat().st_size < 12000
+              data=json.loads(path.read_text())
+              assert data['ci_git_head']==sha
+              assert data['owner_assets']==100000 and data['sample_count']==3
+              assert data[count_key]==95000
+              if page_size is not None:
+                  assert data['fresh_page_items']==page_size
+              else:
+                  assert data['grid_scheme']=='world_stable_v1'
+                  assert 1 <= data['fresh_world_stable_cells'] <= 64
+              assert data['provider_conversion_verified'] is False
+              assert data['browser_abort_verified'] is False
+              assert len(data['samples'])==3
+              for i,sample in enumerate(data['samples'],1):
+                  assert sample['ordinal']==i
+                  assert sample['observed_active_postgres_select'] is True
+                  assert sample[rejection_key] is True
+                  assert 0 <= sample['go_cancel_return_ms'] <= 1500
+              saved=path.read_text().lower()
+              for token in ('"owner_id"','"asset_id"','"node_id"','"gps"',
+                            '"sql"','"pid"','"jwt"','"cookie"','"token"'):
+                  assert token not in saved
+          print('Actual 95k PostgreSQL Owner Camera and world-stable SQL cancellation verified')
           PY
       - name: Retain only redacted source-exact Owner cancellation evidence
         if: always()
@@ -109,8 +129,10 @@ jobs:
           name: places-bd09-95k-inflight-${{ github.run_id }}
           path: |
             artifacts/bd09-95k-active-cancel.json
+            artifacts/bd09-95k-active-cancel-stable.json
             bd09-cancel-source.txt
             bd09-active-seed.log
             bd09-active-probe.log
+            bd09-active-stable-probe.log
           if-no-files-found: warn
           retention-days: 14
