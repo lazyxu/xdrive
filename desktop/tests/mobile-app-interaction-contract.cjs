@@ -177,9 +177,19 @@ test('compact shell has no floating trigger or per-item action chrome', () => {
   assert.match(nav, /fullscreen \? \{ display: 'contents' \}/)
   assert.doesNotMatch(nav, /position: 'fixed'/)
   assert.match(frame, /data-xdrive-mobile-app-header/)
-  assert.match(frame, /aria-label="返回上一个应用"/)
+  assert.match(frame, /backLabel = '返回上一个应用'/,
+    'existing shared Host default label remains explicit')
+  assert.match(frame, /aria-label=\{backLabel\}/,
+    'mobile-specific back semantics must also be read by accessibility services')
   const web = source('web/src/App.tsx')
-  assert.match(web, /compactWorkspace \? accountAction : undefined/)
+  assert.match(web, /accountAction=\{accountAction\}/,
+    'the account menu must be reachable on the actual My tab')
+  assert.match(web, /backLabel="返回当前功能上一级"/,
+    'back is now feature-local rather than cross-tab')
+  assert.match(web, /onBack=\{goBackWithinMobileFeature\}/)
+  assert.match(web, /<XDriveMobileFiveSlotNavigation/,
+    'mobile tab navigation must be mounted directly, not through the legacy drawer')
+  assert.match(web, /onOpenApps=\{\(\) => selectMobileSlot\('all'\)\}/)
   assert.match(web, /transferAction=\{transferAction\}/)
   const transfer = web.slice(web.indexOf('const transferAction = ('), web.indexOf('const accountAction = ('))
   assert.match(transfer, /<XDriveTransferPopover/)
