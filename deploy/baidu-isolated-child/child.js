@@ -194,7 +194,9 @@
       const zoom = map.getZoom()
       if (center && Number.isFinite(center.lng) && Number.isFinite(center.lat) &&
           Math.abs(center.lng)<=180 && Math.abs(center.lat)<=85 &&
-          Number.isInteger(zoom) && zoom>=3 && zoom<=18) {
+          // A real JSAPI4 pinch may settle on a fractional zoom above 18.
+          // Forward only bounded BD09 camera primitives, never Provider data.
+          Number.isFinite(zoom) && zoom>=3 && zoom<=21) {
         send('camera',{camera:{coordinate_space:'bd09ll',
           latitude:center.lat,longitude:center.lng,zoom}})
       }
