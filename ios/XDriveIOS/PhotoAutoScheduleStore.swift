@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import Photos
 
 enum XDriveIOSPhotoAutoScheduleError: Error {
     case unsupportedInterval
@@ -25,6 +26,10 @@ final class XDriveIOSPhotoAutoScheduleStore {
         var windowIndex: Int
         var nextDueAt: Date
         var lastCompletedAt: Date?
+        // Device-local, opaque NSSecureCoding PhotoKit generation token.
+        // Optional for backward-compatible decoding of old schedules.
+        var libraryChangeEpoch: Data? = nil
+        var libraryAuthorizationRaw: Int? = nil
     }
     private func key(for owner: XDriveNativeOwnerRoot) -> String {
         let scope = owner.origin.absoluteString + "\n" + owner.instanceID +
@@ -57,7 +62,9 @@ final class XDriveIOSPhotoAutoScheduleStore {
             intervalMinutes: minutes, allowICloudOriginals: allowICloud,
             windowIndex: existing?.windowIndex ?? 0,
             // First scan is due on the next eligible foreground poll.
-            nextDueAt: Date(), lastCompletedAt: existing?.lastCompletedAt
+            nextDueAt: Date(), lastCompletedAt: existing?.lastCompletedAt,
+            libraryChangeEpoch: existing?.libraryChangeEpoch,
+            libraryAuthorizationRaw: existing?.libraryAuthorizationRaw
         )
         try persist(state, owner: owner)
         return state
@@ -101,6 +108,19 @@ final class XDriveIOSPhotoAutoScheduleStore {
               let following = XDriveIOSPhotoAutoSchedulePolicy.nextDue(
                 after: now, intervalMinutes: state.intervalMinutes
               ) else { return nil }
+        // PhotoKit's persistent change token survives app restarts. Never
+        // trust a positional window from a different library generation or
+        // Limited/Full access scope; re-scan the front instead.
+        let epoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
+        state.windowIndex = XDrivePhotoCursorEpochPolicy.trustedWindow(
+            requested: state.windowIndex,
+            hasPriorToken: state.libraryChangeEpoch != nil,
+            tokenUnchanged: XDriveIOSPhotoKitLibraryEpoch.matches(state.libraryChangeEpoch, as: epoch.token),
+            previousAuthorization: state.libraryAuthorizationRaw,
+            currentAuthorization: epoch.authorization
+        )
+        state.libraryChangeEpoch = epoch.serialized
+        state.libraryAuthorizationRaw = epoch.authorization
         state.nextDueAt = following
         try persist(state, owner: owner)
         return state
@@ -111,11 +131,24 @@ final class XDriveIOSPhotoAutoScheduleStore {
                       now: Date = Date()) throws -> State? {
         guard var state = status(owner: owner), state.enabled else { return nil }
         let pending = progress.stoppedForReview || progress.needsReview > 0
-        state.windowIndex = XDriveIOSPhotoAutoSchedulePolicy.nextWindow(
-            current: state.windowIndex, visibleTotal: progress.totalVisible,
-            scanned: progress.scanned, uploaded: progress.uploaded,
-            needsReview: pending
+        let epoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
+        // The photo library may have mutated AFTER reserveDue but BEFORE
+        // this upload report. Even a completed 256-slot window cannot be
+        // committed as a durable offset for a different generation.
+        let unchanged = XDrivePhotoCursorEpochPolicy.canResume(
+            hasPriorToken: state.libraryChangeEpoch != nil,
+            tokenUnchanged: XDriveIOSPhotoKitLibraryEpoch.matches(state.libraryChangeEpoch, as: epoch.token),
+            previousAuthorization: state.libraryAuthorizationRaw,
+            currentAuthorization: epoch.authorization
         )
+        state.windowIndex = unchanged
+            ? XDriveIOSPhotoAutoSchedulePolicy.nextWindow(
+                current: state.windowIndex, visibleTotal: progress.totalVisible,
+                scanned: progress.scanned, uploaded: progress.uploaded,
+                needsReview: pending
+              ) : 0
+        state.libraryChangeEpoch = epoch.serialized
+        state.libraryAuthorizationRaw = epoch.authorization
         state.pausedForReview = pending
         state.lastCompletedAt = now
         try persist(state, owner: owner)
