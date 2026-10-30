@@ -55,7 +55,7 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     // The Owner photo rows and thumbnails remain in the Controller/lifecycle.
     val gallerySaveable = rememberSaveableStateHolder()
     val filesSaveable = rememberSaveableStateHolder()
-    val filesStateKey = "files:${state.server}:${state.username}"
+    val filesStateKey = "files:${state.nativeUiSessionId}:${state.server}:${state.username}"
     // Keep only the UI viewport through Files -> Gallery/Trash -> Files for
     // the *same authenticated session*. The Controller retains the verified
     // directory rows; discarding this holder on ordinary app switching instead
@@ -85,10 +85,10 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     }
     // Preserve UI-only scroll state across Viewer -> Gallery, never across
     // leaving Gallery. The same user can log out/in against changed photo rows.
-    val galleryStateKey = "gallery:${state.server}:${state.username}"
-    val galleryAlbumsStateKey = "gallery-albums:${state.server}:${state.username}"
+    val galleryStateKey = "gallery:${state.nativeUiSessionId}:${state.server}:${state.username}"
+    val galleryAlbumsStateKey = "gallery-albums:${state.nativeUiSessionId}:${state.server}:${state.username}"
     val galleryMapCellStateKey = state.galleryMapCellSelected?.let { cell ->
-        "gallery-map-cell:${state.server}:${state.username}:" +
+        "gallery-map-cell:${state.nativeUiSessionId}:${state.server}:${state.username}:" +
             "${cell.cellX}:${cell.cellY}:${cell.nodeId}:${cell.nodeRevision}"
     }
     // A Viewer temporarily unmounts the cell wall, but not its return
@@ -133,7 +133,7 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
         } else controller.back()
     }
     // Never restore the previous Owner's transfer pane after a login change.
-    var transferCenterOpen by remember(state.server, state.username) {
+    var transferCenterOpen by remember(state.nativeUiSessionId, state.server, state.username) {
         mutableStateOf(false)
     }
     val photoViewerOpen = (state.screen == Screen.GALLERY && state.galleryViewer != null) ||
@@ -233,7 +233,8 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
             mobilePage else MaterialTheme.colorScheme.background,
         contentColor = MaterialTheme.colorScheme.onSurface,
         bottomBar = {
-            if (nativeAuthenticated && !photoViewerOpen && !state.galleryMapOpen)
+            if (nativeAuthenticated && !photoViewerOpen &&
+                (nativeNavigation.selected != NativeHomeTab.GALLERY || !state.galleryMapOpen))
                 NativeHomeBottomBar(nativeNavigation, ::selectNativeTab)
         },
         topBar = {
@@ -431,10 +432,14 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                             if (source == NativeGallerySource.MAP) pendingGalleryMap = true
                         }
                         when (nativeNavigation.gallerySource) {
-                            NativeGallerySource.LOCAL -> NativeLocalMediaStoreGallery(
-                                albumsOnly = false, sessionId = state.nativeUiSessionId)
-                            NativeGallerySource.ALBUMS -> NativeLocalMediaStoreGallery(
-                                albumsOnly = true, sessionId = state.nativeUiSessionId)
+                            NativeGallerySource.LOCAL -> Box(Modifier.weight(1f)) {
+                                NativeLocalMediaStoreGallery(albumsOnly = false,
+                                    sessionId = state.nativeUiSessionId)
+                            }
+                            NativeGallerySource.ALBUMS -> Box(Modifier.weight(1f)) {
+                                NativeLocalMediaStoreGallery(albumsOnly = true,
+                                    sessionId = state.nativeUiSessionId)
+                            }
                             NativeGallerySource.MAP -> TextButton(
                                 onClick = { pendingGalleryMap = true },
                                 modifier = Modifier.testTag("native-gallery-open-map")) {
