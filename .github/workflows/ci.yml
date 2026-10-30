@@ -2530,9 +2530,8 @@ jobs:
               echo "::error title=Invalid PR commit identity::Expected exact base and head SHA"
               exit 1
             fi
-            actual_parents="$(git cat-file -p "$checkout_sha" | sed -n 's/^parent //p')"
-            expected_parents="$(printf '%s\\n%s' "$PR_BASE_SHA" "$PR_HEAD_SHA")"
-            if [[ "$actual_parents" != "$expected_parents" ]]; then
+            mapfile -t actual_parents < <(git cat-file -p "$checkout_sha" | sed -n 's/^parent //p')
+            if [[ "${#actual_parents[@]}" -ne 2 || "${actual_parents[0]}" != "$PR_BASE_SHA" || "${actual_parents[1]}" != "$PR_HEAD_SHA" ]]; then
               echo "::error title=PR candidate mismatch::CI must validate the exact synthetic base+head merge commit"
               exit 1
             fi
