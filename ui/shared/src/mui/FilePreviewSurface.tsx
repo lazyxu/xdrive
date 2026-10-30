@@ -79,6 +79,17 @@ function revokePreviewURL(value: string) {
   if (value.startsWith('blob:')) URL.revokeObjectURL(value)
 }
 
+/** A native/Host reader may throw before it returns a Promise. Preserve its
+ * immediate start and let the current Viewer attempt own the rejection, Retry,
+ * AbortSignal and Owner/revision gates instead of crashing React's effect. */
+function beginDisposablePreviewRead<Value>(read: () => Promise<Value>): Promise<Value> {
+  try {
+    return Promise.resolve(read())
+  } catch (error) {
+    return Promise.reject(error)
+  }
+}
+
 /**
  * Only HEAD-check xDrive's Go signed PDF streams on Web. Generic URLs,
  * Desktop private-loopback proxy and Blob adapters retain their renderer lifecycle.
@@ -279,7 +290,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     let acquiredURL = ''
     let borrowedPoster: XDriveBorrowedPreviewImageURL | null = null
     setVideoPoster(null)
-    void loader(target, controller.signal).then((source) => {
+    void beginDisposablePreviewRead(() => loader(target, controller.signal)).then((source) => {
       if (!source) return
       const url = typeof source === 'string' ? source : source.url
       if (typeof source !== 'string') borrowedPoster = source
@@ -595,7 +606,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
       if (!loaders.text) return () => undefined
       const controller = new AbortController()
       setLoading(true)
-      void loaders.text(currentTarget, controller.signal)
+      void beginDisposablePreviewRead(() => loaders.text!(currentTarget, controller.signal))
         .then((value) => {
           if (!active || controller.signal.aborted ||
               previewGenerationRef.current !== generation) return
@@ -623,14 +634,14 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     // eventual URL after the response has consumed network resources.
     const controller = new AbortController()
     setLoading(true)
-    void loaders.url(currentTarget, previewKind, controller.signal,
+    void beginDisposablePreviewRead(() => loaders.url!(currentTarget, previewKind, controller.signal,
       (loadedBytes, totalBytes) => {
         if (!active || controller.signal.aborted ||
             previewGenerationRef.current !== generation ||
             !Number.isFinite(loadedBytes) || loadedBytes < 0 ||
             (totalBytes !== undefined && (!Number.isFinite(totalBytes) || totalBytes < 0))) return
         setURLDownloadProgress({ loadedBytes, totalBytes })
-      })
+      }))
       .then(async (value) => {
         if (!value) {
           if (active && !controller.signal.aborted &&
