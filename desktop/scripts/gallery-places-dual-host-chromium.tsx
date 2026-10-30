@@ -113,6 +113,11 @@ const probe = ((window as any).__mapProbe = {
   ownerViewportRange:null as any, rangeError:false,
   viewerSourceItem:null as any, viewerOpened:0, viewerClosed:0,
   galleryPageReads:[] as any[], galleryPageErrors:[] as string[],
+  // Only bounded diagnostic categories, NEVER Owner IDs, URL, Query, JWT
+  // or HTTP response bodies. Trace whether a failed request raced map Close.
+  galleryPageErrorContexts:[] as Array<{
+    type:string;httpStatus:number|null;mapVisible:boolean;width:number
+  }>,
   galleryPageDirectOpens:[] as any[], galleryPageDirectClosed:0,
   photoPreviewRanges:[] as any[], photoPreviewFailures:[] as any[],
   photoOpens:[] as any[],
@@ -481,8 +486,17 @@ function FullGalleryPage(){
       })
       setDirectViewer({item,context})
     } : undefined}
-    onError={(error)=>{probe.galleryPageErrors.push(
-      error instanceof Error?error.name:'GalleryError')}}/>
+    onError={(error)=>{
+      const type=error instanceof Error?error.name:'GalleryError'
+      const reason=error instanceof Error?error.message:''
+      const match=/^genuine Gin Gallery HTTP ([45]\\d{2})$/.exec(reason)
+      probe.galleryPageErrors.push(type)
+      probe.galleryPageErrorContexts.push({
+        type,httpStatus:match?Number(match[1]):null,
+        mapVisible:Boolean(document.querySelector('[data-xdrive-gallery-places-map]')),
+        width:window.innerWidth,
+      })
+    }}/>
 }
 function TestApp(){
   const [favorite,setFavorite]=useState(false)
