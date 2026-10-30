@@ -198,6 +198,34 @@ export function XDriveIOSPhotoBackupSettings({
     // Each explicit action uses the current session prop, never stale tokens.
   }, [host, session?.username, session?.ownerID])
 
+  // The global foreground scheduler may complete another real, authorized
+  // PhotoKit window while Settings is visible. Events carry only Owner scope,
+  // never a success claim; re-read the current schedule through the native
+  // verified Owner/Root Host before changing its displayed window.
+  useEffect(() => {
+    if (!session || typeof window === 'undefined') return
+    let mounted = true
+    let lastRequest = 0
+    const onNativeScheduleChanged = (event: Event) => {
+      const scope = (event as CustomEvent<{ ownerID: number; username: string }>).detail
+      if (!scope || scope.ownerID !== session.ownerID ||
+          scope.username !== session.username) return
+      const request = ++lastRequest
+      void host.autoStatus(session).then(status => {
+        if (mounted && request === lastRequest) setAutoStatus(status)
+      }).catch(() => {
+        // A missing Owner proof cannot become a fake completed backup.
+        // Preserve the last verified result until the Host is reachable.
+      })
+    }
+    window.addEventListener('xdrive-ios-photo-auto-status-invalidated', onNativeScheduleChanged)
+    return () => {
+      mounted = false
+      ++lastRequest
+      window.removeEventListener('xdrive-ios-photo-auto-status-invalidated', onNativeScheduleChanged)
+    }
+  }, [host, session?.ownerID, session?.username, session?.accessToken])
+
   if (!session || !available) return null
   const permitted = status?.authorization === 'authorized' || status?.authorization === 'limited'
   const scanWindows = host.scanWindowsSupported === true

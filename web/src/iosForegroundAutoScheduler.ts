@@ -35,7 +35,17 @@ export function xDriveStartIOSForegroundAutoScheduler(
       if (!active || !session || document.visibilityState !== 'visible') return
       // Native verified consent + per-Owner stored schedule is the only
       // authority; local JS timing alone must never authorize a PhotoKit read.
-      await host.autoTick(session)
+      const result = await host.autoTick(session)
+      // Native alone decides whether a scheduled scan actually ran. The
+      // browser event is only a read-only UI invalidation hint: never emit a
+      // bearer, grant secret, unverified success counter or PhotoKit ID.
+      if (active && result.ran === true &&
+          typeof window.dispatchEvent === 'function' &&
+          typeof CustomEvent === 'function') {
+        window.dispatchEvent(new CustomEvent('xdrive-ios-photo-auto-status-invalidated', {
+          detail: { ownerID: session.ownerID, username: session.username },
+        }))
+      }
     })().catch(() => {
       // A failed access refresh, Owner probe, transient network outage or
       // protected Keychain must never turn into an unscoped background retry.
