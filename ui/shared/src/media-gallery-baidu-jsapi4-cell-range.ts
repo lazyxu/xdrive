@@ -35,6 +35,7 @@ export function xDriveSelectBaiduNativeCell(
     cell_x: source.cell_x, cell_y: source.cell_y,
     asset_id: source.asset_id, node_id: source.node_id,
     node_revision: source.node_revision!, photo_count: source.photo_count,
+    ...(page.grid_scheme ? {grid_scheme:page.grid_scheme} : {}),
   }
 }
 
@@ -58,6 +59,8 @@ export function xDriveBaiduNativeCellRangeParams(
       selection.cell_y < 0 || selection.cell_y > 7 ||
       ![selection.asset_id, selection.node_id, selection.node_revision,
         selection.photo_count].every(n => Number.isSafeInteger(n) && n > 0) ||
+      (selection.grid_scheme !== undefined &&
+        selection.grid_scheme !== 'world_stable_v1') ||
       !Number.isSafeInteger(limit) || limit < 1 || limit > 100 ||
       !Number.isSafeInteger(offset) || offset < 0 || offset > 10_000_000 ||
       !sort || (sort.by !== 'captured' && sort.by !== 'added') ||

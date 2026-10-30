@@ -29,6 +29,65 @@ const p={cell_x:1,cell_y:1,asset_id:9,node_id:19,node_revision:3,
 const page={coordinate_space:'bd09ll',index_scope:'owner_gps_auto_index',
   grid_columns:8,grid_rows:8,total_count:2,cells:[p]}
 const sort={by:'captured',dir:'desc'}
+test('middle Owner clusters stay grouped after a small pan with negotiated world tiles',()=>{
+  const first={coordinate_space:'bd09ll',west:100,south:0,east:108,north:8}
+  const moved={...first,west:100.6,east:108.6}
+  const a=103.5,b=103.7,lat=1.5
+  const legacy=(bounds,lon)=>Math.floor((lon-bounds.west)/
+    ((bounds.east-bounds.west)/8))
+  // This reproduces the user's complaint in the PREVIOUS shipped 8x8 grid:
+  // two middle photos are ONE cell, then separate while both remain visible.
+  assert.equal(legacy(first,a),3)
+  assert.equal(legacy(first,b),3)
+  assert.equal(legacy(moved,a),2)
+  assert.equal(legacy(moved,b),3)
+  const posA=cells.xDriveWorldStableBaiduCellXY(first,a,lat)
+  const posB=cells.xDriveWorldStableBaiduCellXY(first,b,lat)
+  const movedA=cells.xDriveWorldStableBaiduCellXY(moved,a,lat)
+  const movedB=cells.xDriveWorldStableBaiduCellXY(moved,b,lat)
+  assert.deepEqual(posA,posB)
+  assert.deepEqual(movedA,movedB)
+  assert.deepEqual(posA,movedA)
+  const makePage=(bounds,id)=>({
+    coordinate_space:'bd09ll',index_scope:'owner_gps_auto_index',
+    grid_scheme:'world_stable_v1',grid_columns:8,grid_rows:8,
+    total_count:2,cells:[{
+      cell_x:cells.xDriveWorldStableBaiduCellXY(bounds,a,lat).x,
+      cell_y:cells.xDriveWorldStableBaiduCellXY(bounds,a,lat).y,
+      photo_count:2,asset_id:8,node_id:id,node_revision:3,
+      latitude:lat,longitude:a,
+    }],
+  })
+  const firstPage=makePage(first,88),movedPage=makePage(moved,88)
+  assert.equal(cells.xDriveValidBaiduNativeCellsPage(firstPage,first),true)
+  assert.equal(cells.xDriveValidBaiduNativeCellsPage(movedPage,moved),true)
+  const selected=lib.xDriveSelectBaiduNativeCell(movedPage,moved,movedPage.cells[0])
+  assert.equal(selected?.grid_scheme,'world_stable_v1')
+  assert.equal(selected?.photo_count,2)
+  assert.equal(selected?.node_id,88)
+  const range=lib.xDriveBaiduNativeCellRangeParams(selected,48,0,{
+    by:'captured',dir:'desc',
+  })
+  assert.ok(range)
+  assert.equal(range.has('grid_scheme'),false,
+    'scheme travels only in a trusted Owner header, not in public map URL')
+  for(const invalid of [
+    {...movedPage,grid_scheme:'unreviewed'},
+    {...movedPage,grid_scheme:undefined},
+    {...movedPage,cells:[{...movedPage.cells[0],cell_x:7}]},
+    {...movedPage,total_count:3},
+    {...movedPage,owner_id:999},
+  ])assert.equal(cells.xDriveValidBaiduNativeCellsPage(invalid,moved),false)
+  assert.equal(cells.xDriveValidBaiduNativeCellsPage({
+    ...firstPage,grid_scheme:undefined,
+  },first),false,'legacy DTO must not gain even an undefined scheme field')
+  const validLegacy={...page}
+  assert.equal(cells.xDriveValidBaiduNativeCellsPage(validLegacy,bounds),true)
+  const web=read('web/src/api.ts')
+  assert.match(web,/X-XDrive-Map-Grid-Scheme': 'world_stable_v1'/)
+  assert.match(web,/selection\.grid_scheme === 'world_stable_v1'/)
+})
+
 test('W2a freezes only actual Owner /cells identity and its BD09 bounds',()=>{
   const s=lib.xDriveSelectBaiduNativeCell(page,bounds,p)
   assert.deepEqual(s,{bounds,cell_x:1,cell_y:1,asset_id:9,
