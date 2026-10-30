@@ -1,8 +1,8 @@
 import Combine
 import Foundation
 
-/// Native SwiftUI login controller. No PWA cookies, no WKWebView, no
-/// permanent access-token storage and no unauthenticated device upload.
+/// Native SwiftUI login controller. No browser cookies or embedded web UI;
+/// no permanent access-token storage or unauthenticated device upload.
 @MainActor
 final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
     @Published var serverText = ""
@@ -27,7 +27,7 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
     private var restoreAttempted = false
 
     // Persist a non-secret native server hint only after Owner/root proof.
-    // Never consult retired WebView origins, PWA cookies or JS storage.
+    // Never consult retired browser origins, cookies or script storage.
     private static let lastNativeServerKey = "xdrive.ios.native.last-server"
 
     init() {

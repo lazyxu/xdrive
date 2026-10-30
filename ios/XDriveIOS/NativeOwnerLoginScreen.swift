@@ -181,7 +181,7 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
         .disabled(model.busy)
     }
 
-    /// Stop-only fallback for an offline/locked native login, not a WebView.
+    /// Stop-only native recovery during offline or locked credential access.
     /// Existing encrypted receipts and the v2 Owner session are untouched.
     @MainActor
     private func emergencyStopWithoutAccount() async {
