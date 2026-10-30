@@ -23,57 +23,57 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                 )
             } else {
                 NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack(spacing: 12) {
-                        Image("Brand")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 48, height: 48)
-                            .accessibilityLabel("xDrive")
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("xDrive")
-                                .font(.title.bold())
-                            Text("iOS 原生客户端")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 16) {
+                            HStack(spacing: 12) {
+                                Image("Brand")
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 48, height: 48)
+                                    .accessibilityLabel("xDrive")
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("xDrive")
+                                        .font(.title.bold())
+                                    Text("iOS 原生客户端")
+                                        .font(.footnote)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            Text("连接到你的个人云端")
+                                .font(.title3.weight(.semibold))
+
+                            loginForm
+                            if let logoutWarning {
+                                Text(logoutWarning)
+                                    .foregroundStyle(.orange)
+                                    .font(.footnote)
+                                    .accessibilityIdentifier("native-ios-logout-warning")
+                            }
+
+                            if let warning = model.errorMessage {
+                                Text(warning)
+                                    .foregroundStyle(.red)
+                                    .font(.footnote)
+                                    .accessibilityIdentifier("native-ios-login-error")
+                            }
+                            if let notice = model.noticeMessage {
+                                Text(notice)
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
+                        .padding(24)
+                        .frame(maxWidth: 430, alignment: .leading)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14)
+                                .fill(Color(uiColor: .secondarySystemGroupedBackground))
+                        )
+                        .padding(20)
+                        .frame(maxWidth: .infinity)
                     }
-                    Text("连接到你的个人云端")
-                        .font(.title3.weight(.semibold))
-
-                    loginForm
-                    if let logoutWarning {
-                        Text(logoutWarning)
-                            .foregroundStyle(.orange)
-                            .font(.footnote)
-                            .accessibilityIdentifier("native-ios-logout-warning")
-                    }
-
-                    if let warning = model.errorMessage {
-                        Text(warning)
-                            .foregroundStyle(.red)
-                            .font(.footnote)
-                            .accessibilityIdentifier("native-ios-login-error")
-                    }
-                    if let notice = model.noticeMessage {
-                        Text(notice)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .padding(24)
-                .frame(maxWidth: 430, alignment: .leading)
-                .background(
-                    RoundedRectangle(cornerRadius: 14)
-                        .fill(Color(uiColor: .secondarySystemGroupedBackground))
-                )
-                .padding(20)
-                .frame(maxWidth: .infinity)
-            }
-            .background(Color(uiColor: .systemGroupedBackground))
-            .navigationTitle("xDrive")
-            .navigationBarTitleDisplayMode(.inline)
+                    .background(Color(uiColor: .systemGroupedBackground))
+                    .navigationTitle("xDrive")
+                    .navigationBarTitleDisplayMode(.inline)
                 }
             }
         }
@@ -160,7 +160,6 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
         }
         .disabled(model.busy)
     }
-
 
     /// No new account may reuse a prior owner's pending foreground or
     /// BG grant. Fail closed if the global original writer is still active.
