@@ -11,6 +11,10 @@ import type { XDriveLocalBackupScheduleActions } from './mui/DeviceBackupLocalSc
 import type { XDriveLocalBackupCommonBatch, XDriveLocalBackupCommonBatchHistoryPage, XDriveLocalBoundBackupSchedule } from './device-backups'
 
 export type XDriveSynologyLocalSource = { source_id: number; name: string }
+export type XDriveSynologyNASVolumeSpace = {
+  capacity_bytes: number
+  available_bytes: number
+}
 
 export type XDriveSynologyOwnerFileNode = {
   id: number
@@ -223,6 +227,8 @@ function validateOwnerGalleryAlbums(raw: unknown): MediaAlbum[] {
 export interface XDriveSynologyBackupLocalClient extends XDriveLocalBackupCommonBatchActions, XDriveLocalBackupScheduleActions {
   list(signal?: AbortSignal): Promise<XDriveSynologyLocalSource[]>
   diagnostics(signal?: AbortSignal): Promise<XDriveDiagnosticReport>
+  /** Authorized DSM package configuration filesystem only; never all NAS disks or Server quota. */
+  nasVolumeSpace(signal?: AbortSignal): Promise<XDriveSynologyNASVolumeSpace>
   inspect(sourceID: number, signal?: AbortSignal): Promise<XDriveLocalBackupCommonBatch>
   history(sourceID: number, signal?: AbortSignal): Promise<XDriveLocalBackupCommonBatchHistoryPage>
   /** Other devices: Server-authenticated Owner B-scope, strictly read-only. */
@@ -285,7 +291,7 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
     const operation = virtual.pathname.slice('/v1/'.length)
     if (!['bootstrap', 'sources', 'status', 'history', 'run', 'control', 'schedule',
       'device-backups', 'device-backup-runs',
-      'device-backup-page', 'device-backup-folders', 'cloud-quota',
+      'device-backup-page', 'device-backup-folders', 'cloud-quota', 'nas-volume',
       'cloud-root', 'cloud-children', 'cloud-text-preview', 'cloud-media-range', 'cloud-thumbnail',
        'cloud-gallery-items', 'cloud-gallery-albums', 'cloud-live-motion'].includes(operation)) {
       throw new Error('Unsupported DSM backup operation')
@@ -568,6 +574,21 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
       return xDriveValidateSynologyOwnerFilesPage(
         await request<unknown>(url, 'GET', undefined, signal),
         parentID, limit, sort, order, cursor)
+    },
+    nasVolumeSpace: async (signal) => {
+      const raw = await request<unknown>('/v1/nas-volume', 'GET', undefined, signal)
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw) ||
+          Object.keys(raw).length !== 2 ||
+          Object.keys(raw).some(k => k !== 'capacity_bytes' && k !== 'available_bytes')) {
+        throw new Error('Invalid authenticated DSM package filesystem projection')
+      }
+      const info = raw as Record<string, unknown>
+      if (!Number.isSafeInteger(info.capacity_bytes) || (info.capacity_bytes as number) <= 0 ||
+          !Number.isSafeInteger(info.available_bytes) || (info.available_bytes as number) < 0 ||
+          (info.available_bytes as number) > (info.capacity_bytes as number)) {
+        throw new Error('Invalid DSM package filesystem capacity')
+      }
+      return { capacity_bytes: info.capacity_bytes as number, available_bytes: info.available_bytes as number }
     },
     ownerQuota: async (signal) => {
       const quota = await request<QuotaUsage>('/v1/cloud-quota', 'GET', undefined, signal)
