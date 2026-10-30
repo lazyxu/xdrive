@@ -163,3 +163,32 @@ test('malformed Owner root never invokes a cursor read or publishes stale files'
   assert.deepEqual(app.state.items.map(item => item.name), ['authorized'])
   await app.unmount()
 })
+
+
+test('root admission cannot be inherited by a replacement cursor port on the same Host', async () => {
+  const app = await mount()
+  await app.resolve(0, { items: [node(81, 'verified')], has_more: false })
+  assert.equal(app.state.authenticatedRootCurrent, true)
+  const newRoot = new Promise(resolve => { app.releaseRoot = resolve })
+  const replacementPort = { ...app.port, readRoot: () => newRoot }
+  await app.render(app.host, replacementPort)
+  assert.equal(app.state.authenticatedRootCurrent, false,
+    'same Host object is not proof that a replacement read port is authenticated')
+  assert.equal(app.state.currentScopeVerified, false)
+  app.releaseRoot({ id: 10, name: 'Owner' })
+  await app.call(() => {})
+  assert.equal(app.state.authenticatedRootCurrent, true)
+  const lastPage = app.requests.findIndex((r, i) => i > 0 && r.cursor === '')
+  assert.ok(lastPage > 0)
+  await app.resolve(lastPage, { items: [node(82, 'new-port')], has_more: false })
+  assert.equal(app.state.currentScopeVerified, true)
+  await app.unmount()
+})
+
+test('malformed authenticated root never exposes quota or a verified root', async () => {
+  const app = await mount({ id: '10', name: 'fake' }, 0)
+  assert.equal(app.state.authenticatedRootCurrent, false)
+  assert.equal(app.state.currentScopeVerified, false)
+  assert.equal(app.requests.length, 0)
+  await app.unmount()
+})
