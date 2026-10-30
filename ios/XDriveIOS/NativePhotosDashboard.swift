@@ -389,9 +389,8 @@ struct XDriveIOSNativePhotosDashboard: View {
                         confirmedOriginalUpdate: backup.confirmedOriginalUpdate
                     )
                 case .map:
-                    unavailable(
-                        title: "图库地图尚在原生迁移",
-                        detail: "地图归属于图库，不占动态位置；当前版本未接入原生地图和照片聚合。"
+                    XDriveIOSNativeLocalPhotoMapScreen(
+                        onFocusChange: { galleryFocused = $0 }
                     )
                 }
             }
