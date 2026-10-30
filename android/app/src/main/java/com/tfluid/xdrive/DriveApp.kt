@@ -352,7 +352,22 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
         Column(Modifier.padding(padding).fillMaxSize()) {
             if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.primary,
                 trackColor = MaterialTheme.colorScheme.primary.copy(alpha = .12f))
-            when (state.screen) {
+            if (nativeOverlay) {
+                when (nativeNavigation.selected) {
+                    NativeHomeTab.ALL -> NativeHomeLauncher(
+                        nativeNavigation, launcherSearch, { launcherSearch = it },
+                        ::openNativeShortcut,
+                        { nativeNavigation = nativeNavigation.toggleFavorite(it) })
+                    NativeHomeTab.MINE -> NativeHomeMine(
+                        state, controller::logout, controller::changeServer,
+                        updates?.let { it::show })
+                    NativeHomeTab.DYNAMIC -> NativeHomeDynamic(nativeNavigation, state) {
+                        transferCenterOpen = true
+                        controller.refreshTransferRecoveryNotices()
+                    }
+                    else -> Unit
+                }
+            } else when (state.screen) {
                 Screen.CONNECT, Screen.LOGIN -> UnifiedLoginForm(state, controller::connectAndLogin) {
                     AccountMenu(state, controller, updates?.let { it::show })
                 }
@@ -410,13 +425,31 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                             bd09Scroll.getOrPut(state.galleryBd09Bounds) {
                                 LazyListState()
                             })
-                    } else if (state.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS &&
-                        state.gallerySelectedAlbum == null) {
-                        gallerySaveable.SaveableStateProvider(galleryAlbumsStateKey) {
-                            GalleryCollections(state, controller, galleryThumbnails)
+                    } else {
+                        NativeGallerySourceSelector(nativeNavigation.gallerySource) { source ->
+                            nativeNavigation = nativeNavigation.copy(gallerySource = source)
+                            if (source == NativeGallerySource.MAP) pendingGalleryMap = true
                         }
-                    } else gallerySaveable.SaveableStateProvider(galleryStateKey) {
-                        Gallery(state, controller, galleryThumbnails)
+                        when (nativeNavigation.gallerySource) {
+                            NativeGallerySource.LOCAL -> NativeLocalMediaStoreGallery(
+                                albumsOnly = false, sessionId = state.nativeUiSessionId)
+                            NativeGallerySource.ALBUMS -> NativeLocalMediaStoreGallery(
+                                albumsOnly = true, sessionId = state.nativeUiSessionId)
+                            NativeGallerySource.MAP -> TextButton(
+                                onClick = { pendingGalleryMap = true },
+                                modifier = Modifier.testTag("native-gallery-open-map")) {
+                                Text("打开当前账户的地点地图")
+                            }
+                            NativeGallerySource.CLOUD ->
+                                if (state.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS &&
+                                    state.gallerySelectedAlbum == null) {
+                                    gallerySaveable.SaveableStateProvider(galleryAlbumsStateKey) {
+                                        GalleryCollections(state, controller, galleryThumbnails)
+                                    }
+                                } else gallerySaveable.SaveableStateProvider(galleryStateKey) {
+                                    Gallery(state, controller, galleryThumbnails)
+                                }
+                        }
                     }
                 }
                 Screen.TRASH -> Trash(state, controller)
