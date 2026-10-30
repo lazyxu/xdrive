@@ -23,6 +23,7 @@ internal data class NativeLocalAlbum(
     val id: String,
     val title: String,
     val count: Int,
+    val cover: NativeLocalMedia,
 )
 
 internal data class NativeLocalAlbumScan(
@@ -38,6 +39,7 @@ internal object NativeLocalMediaStore {
     const val SCAN_BATCH_SIZE = 512
     const val MAX_SCAN = 115_200
     const val MAX_ALBUMS = 4096
+    const val MAX_WALL_ITEMS = 512
 
     private val uri: Uri get() = MediaStore.Files.getContentUri("external")
     private val columns = arrayOf(
@@ -115,7 +117,7 @@ internal object NativeLocalMediaStore {
                 if (previous != null) buckets[asset.albumId] = previous.copy(
                     count = previous.count + 1)
                 else if (buckets.size < MAX_ALBUMS)
-                    buckets[asset.albumId] = NativeLocalAlbum(asset.albumId, asset.albumName, 1)
+                    buckets[asset.albumId] = NativeLocalAlbum(asset.albumId, asset.albumName, 1, asset)
                 else truncated = true
             }
             offset += batch.size
