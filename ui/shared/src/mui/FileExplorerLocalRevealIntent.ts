@@ -62,7 +62,6 @@ export function useXDriveFileExplorerLocalReveal({
     return true
   }, [owner, lifecycleKey, requestPrefix])
 
-  const clearLocalReveal = useCallback(() => setHeld(null), [])
   const localRevealTarget = held?.owner === owner ? held.target : null
-  return { localRevealTarget, requestReveal, clearLocalReveal }
+  return { localRevealTarget, requestReveal }
 }
