@@ -257,8 +257,10 @@ struct XDriveIOSNativeServerMediaWall: View {
     @State private var selected: XDriveIOSNativeMediaItem?
     @State private var searchDraft = ""
     @State private var appliedSearch = ""
+    @State private var lastOpenedMediaID: UInt64?
 
     var body: some View {
+        ScrollViewReader { returnScroll in
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
                 Text(album == nil ?
@@ -287,7 +289,8 @@ struct XDriveIOSNativeServerMediaWall: View {
                         .font(.caption).foregroundStyle(.red)
                 }
                 if let page = model.page {
-                    Text(page.total_count == 0 ? "当前没有可访问的媒体。" :
+                    Text(page.total_count == 0 ?
+                        "当前没有已索引且可访问的云端媒体；这不代表服务器没有原件。" :
                         "照片 \(page.offset + 1)–\(page.offset + page.items.count) / \(page.total_count)")
                         .font(.caption).foregroundStyle(.secondary)
                     LazyVGrid(
@@ -303,6 +306,7 @@ struct XDriveIOSNativeServerMediaWall: View {
                             .buttonStyle(.plain)
                             .disabled(!item.supportsPreview)
                             .accessibilityIdentifier("native-ios-server-media-tile")
+                            .id(item.id)
                         }
                     }
                     HStack {
@@ -333,6 +337,15 @@ struct XDriveIOSNativeServerMediaWall: View {
             }
             .padding(12)
         }
+        .onChange(of: selected?.id) { selectedID in
+            if let selectedID {
+                lastOpenedMediaID = selectedID
+            } else if let anchor = lastOpenedMediaID,
+                      model.page?.items.contains(where: { $0.id == anchor }) == true {
+                // Return to the exact logical item, not the first page.
+                returnScroll.scrollTo(anchor, anchor: .center)
+            }
+        }
         .navigationTitle(album?.name ?? "云端图库")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -355,6 +368,7 @@ struct XDriveIOSNativeServerMediaWall: View {
             }
         }
         .onChange(of: login.owner) { _ in
+            lastOpenedMediaID = nil
             selected = nil
             model.invalidate()
             if login.owner != nil && phase == .active {
@@ -373,6 +387,8 @@ struct XDriveIOSNativeServerMediaWall: View {
             if selected != nil { model.suspendForViewer() }
             else { model.suspendForNavigation() }
         }
+        }
+
     }
 
     private func applySearch() {
@@ -380,6 +396,7 @@ struct XDriveIOSNativeServerMediaWall: View {
         guard query.unicodeScalars.count <= 200 else { return }
         if query == appliedSearch && model.page != nil { return }
         appliedSearch = query
+        lastOpenedMediaID = nil
         model.load(login: login, albumID: album?.id, offset: 0, search: query)
     }
 }

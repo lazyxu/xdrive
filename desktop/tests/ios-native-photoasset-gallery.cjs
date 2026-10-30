@@ -46,6 +46,12 @@ test('new Cloud PhotoAsset Gallery is under the fixed Gallery tab; old originals
   assert.match(view, /NavigationLink\s*\{\s*XDriveIOSNativeServerMediaAlbums\(login: login\)/)
   assert.match(view, /XDriveIOSNativeServerMediaWall\(login: login, album: album\)/)
   assert.match(view, /\.fullScreenCover\(item: \$selected\)/)
+  assert.match(view, /ScrollViewReader \{ returnScroll in/)
+  assert.match(view, /\.id\(item\.id\)/)
+  assert.match(view, /returnScroll\.scrollTo\(anchor, anchor: \.center\)/)
+  assert.match(view, /lastOpenedMediaID = nil/)
+  assert.match(view, /这不代表服务器没有原件/)
+
   assert.match(view, /\.onChange\(of: login\.owner\)/)
   assert.match(view, /if selected != nil \{ model\.suspendForViewer\(\) \}/)
   assert.match(view, /model\.suspendForNavigation\(\)/)
