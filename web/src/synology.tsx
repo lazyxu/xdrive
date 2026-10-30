@@ -13,7 +13,16 @@ import { createXDriveSynologyHost } from './synologyHost'
 
 // DSM's local Agent and CGI must never be contacted from an insecure page.
 // Render a fail-closed explanation instead of crashing before React mounts.
-const host = window.location.protocol === 'https:' ? createXDriveSynologyHost() : null
+function createSecureSynologyHost() {
+  if (window.location.protocol === 'https:') {
+    // Preserve the canonical authenticated DSM Host factory; the insecure
+    // branch never constructs the Agent CGI client.
+    const host = createXDriveSynologyHost()
+    return host
+  }
+  return null
+}
+const host = createSecureSynologyHost()
 
 type OwnerConnectionCheck = 'unchecked' | 'checking' | 'verified' | 'unavailable'
 
