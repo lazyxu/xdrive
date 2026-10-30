@@ -38,6 +38,15 @@ test('canonical Server PhotoAsset range and Owner album REST are native read-onl
   assert.match(api, /Bearer " \+ accessToken/)
   assert.doesNotMatch(api, /WKWebView|document\.cookie|UploadSessionTransport|LocalPhotoKitUploader/)
 })
+test('revoked or malformed cloud page clears cached Owner data, transient outage retains', () => {
+  assert.match(view, /private static func canRetainPage\(after error: Error\) -> Bool/)
+  assert.match(view, /status == 408 \|\| status == 429/)
+  assert.match(view, /\(500\.\.\.599\)\.contains\(status\)/)
+  assert.match(view, /case \.invalidScope, \.invalidPage, \.unsupported/)
+  assert.match(view, /\.cannotConnectToHost, \.cannotFindHost/)
+  assert.match(view, /guard XDriveIOSNativeMediaWallModel\.canRetainPage\(after: error\) else/)
+  assert.match(view, /self\?\.invalidate\(\)\s+self\?\.error = "云端照片访问权限已变化或内容无效/)
+})
 test('thumbnail is revision-bound, bounded and downsampled without original fallback', () => {
   assert.match(api, /"\/api\/v1\/media\/items\/\\\(item.id\)\/thumbnail"/)
   assert.match(api, /String\(item\.node\.revision\)/)

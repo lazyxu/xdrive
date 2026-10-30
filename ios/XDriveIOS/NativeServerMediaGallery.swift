@@ -47,6 +47,30 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
         suspendForViewer()
     }
 
+    /// Retain a previously verified page only for a transient transport
+    /// problem. Access revocation, missing albums, invalid responses, TLS
+    /// trust failures and malformed media must immediately clear old rows.
+    private static func canRetainPage(after error: Error) -> Bool {
+        if let failure = error as? XDriveIOSNativeMediaReadFailure {
+            switch failure {
+            case .response(let status):
+                return status == 408 || status == 429 ||
+                    (500...599).contains(status)
+            case .invalidScope, .invalidPage, .unsupported,
+                 .malformed, .tooLarge:
+                return false
+            }
+        }
+        guard let network = error as? URLError else { return false }
+        switch network.code {
+        case .notConnectedToInternet, .networkConnectionLost, .timedOut,
+             .cannotConnectToHost, .cannotFindHost:
+            return true
+        default:
+            return false
+        }
+    }
+
     func load(login: XDriveIOSNativeOwnerLoginModel,
               albumID: String?, offset: Int = 0, search: String = "") {
         let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -123,8 +147,17 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
             } catch is CancellationError {
             } catch {
                 guard self?.epoch == ticket else { return }
-                // A failed second page cannot turn a valid first page into
-                // an empty library or silently retry the wrong offset.
+                // A verified Server can still revoke access or delete an
+                // album between page requests. Never show cached rows after
+                // a definitive 4xx/invalid response, even if the Owner was
+                // verified immediately before this request.
+                guard XDriveIOSNativeMediaWallModel.canRetainPage(after: error) else {
+                    self?.invalidate()
+                    self?.error = "云端照片访问权限已变化或内容无效；旧页面已清除。"
+                    return
+                }
+                // Only transient network/rate-limit/server failures may
+                // preserve the old verified page and retry the exact offset.
                 self?.failedOffset = offset
                 self?.error = "云端 PhotoAsset 读取失败；已保留当前浏览页，可重试刚才的分页请求。"
             }
