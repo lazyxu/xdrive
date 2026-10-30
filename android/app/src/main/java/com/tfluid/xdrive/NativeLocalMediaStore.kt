@@ -70,6 +70,7 @@ internal object NativeLocalMediaStore {
         MediaStore.Files.FileColumns._ID,
         MediaStore.Files.FileColumns.MEDIA_TYPE,
         MediaStore.Files.FileColumns.DATE_ADDED,
+        MediaStore.MediaColumns.IS_PENDING,
         MediaStore.Images.ImageColumns.BUCKET_ID,
         MediaStore.Images.ImageColumns.BUCKET_DISPLAY_NAME,
     )
@@ -120,12 +121,17 @@ internal object NativeLocalMediaStore {
             putInt(ContentResolver.QUERY_ARG_LIMIT, limit)
         }
         val result = ArrayList<NativeLocalMedia>(limit)
-        resolver.query(uri, columns, query, null)?.use { cursor ->
+        val projection = if (Build.VERSION.SDK_INT >= 30)
+            columns + MediaStore.MediaColumns.IS_TRASHED else columns
+        resolver.query(uri, projection, query, null)?.use { cursor ->
             // Unbounded OEM cursors are not treated as a complete or correct page.
             check(cursor.count <= limit) { "MediaStore ignored bounded keyset page" }
             val idIndex = cursor.getColumnIndexOrThrow(idColumn)
             val kindIndex = cursor.getColumnIndexOrThrow(mediaType)
             val dateIndex = cursor.getColumnIndexOrThrow(dateColumn)
+            val pendingIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.IS_PENDING)
+            val trashedIndex = if (Build.VERSION.SDK_INT >= 30)
+                cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.IS_TRASHED) else -1
             val bucketIndex = cursor.getColumnIndexOrThrow(MediaStore.Images.ImageColumns.BUCKET_ID)
             val nameIndex = cursor.getColumnIndexOrThrow(
                 MediaStore.Images.ImageColumns.BUCKET_DISPLAY_NAME)
@@ -139,6 +145,10 @@ internal object NativeLocalMediaStore {
                     "MediaStore returned a repeated or unordered Gallery page"
                 }
                 previous = key
+                check(cursor.getInt(pendingIndex) == 0 &&
+                    (trashedIndex < 0 || cursor.getInt(trashedIndex) == 0)) {
+                    "MediaStore returned a pending or trashed Gallery asset"
+                }
                 val video = when (cursor.getInt(kindIndex)) {
                     MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE -> false
                     MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO -> true
@@ -147,6 +157,9 @@ internal object NativeLocalMediaStore {
                 val source = if (video) MediaStore.Video.Media.EXTERNAL_CONTENT_URI
                     else MediaStore.Images.Media.EXTERNAL_CONTENT_URI
                 val bucket = cursor.getString(bucketIndex)?.takeIf { it.isNotBlank() } ?: "unknown"
+                check(albumId == null || albumId == bucket) {
+                    "MediaStore ignored selected album scope"
+                }
                 result += NativeLocalMedia(
                     id, ContentUris.withAppendedId(source, id), video, bucket,
                     cursor.getString(nameIndex)?.takeIf { it.isNotBlank() } ?: "未命名相册",
