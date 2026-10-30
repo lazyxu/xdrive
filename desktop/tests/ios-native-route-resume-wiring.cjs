@@ -24,7 +24,10 @@ test('native shell restores route hints only after verified Owner', () => {
 
 test('switching Owner/Root/Server invalidates previous navigation and avoids backup cancellation', () => {
   assert.match(ui, /\.onChange\(of: ownerScopeKey\) \{ _ in[\s\S]*?navigationRouteStore\.clear\(\)[\s\S]*?resetNavigation\(\)/);
-  assert.match(ui, /\.onChange\(of: login\.owner\) \{ owner in[\s\S]*?navigationRouteStore\.clear\(\)[\s\S]*?dismiss\(\)/);
+  assert.match(ui, /\.onChange\(of: login\.owner\) \{ owner in[\s\S]*?navigationRouteStore\.clear\(\)[\s\S]*?resetNavigation\(\)/);
+  const login = fs.readFileSync(path.join(root, 'ios/XDriveIOS/NativeOwnerLoginScreen.swift'), 'utf8');
+  assert.match(login, /XDriveIOSNativeNavigationRouteStore\(\)\.clear\(\)/);
+  assert.doesNotMatch(ui, /\bdismiss\(\)/);
   assert.match(ui, /activeDynamic: dynamicFeature\?\.implemented == true \? dynamicFeature\?\.rawValue : nil/);
   assert.match(routes, /saved\.scopeHash == scopeHash/);
   assert.match(routes, /recentDynamic\.filter \{ \$0 == "backup" \}/);
