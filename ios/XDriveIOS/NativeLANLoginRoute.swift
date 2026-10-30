@@ -7,6 +7,11 @@ enum XDriveIOSNativeLANLoginRoute {
     /// Only canonical RFC1918 IPv4 is accepted. The configured HTTPS server's
     /// original port is retained; an IP is never interpreted as a new URL.
     static func candidate(origin: URL, ip input: String) throws -> URL? {
+        // Hidden control characters are invalid, not quietly trimmed into
+        // an apparently canonical address before a credential-bearing login.
+        guard !input.unicodeScalars.contains(where: {
+            CharacterSet.controlCharacters.contains($0)
+        }) else { throw AuthFailure.invalidLANIP }
         let input = input.trimmingCharacters(in: .whitespacesAndNewlines)
         if input.isEmpty { return nil }
         let components = input.split(separator: ".", omittingEmptySubsequences: false)
