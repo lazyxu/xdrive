@@ -123,6 +123,7 @@ test('real Web and Desktop use one shared controller, no render-phase state upda
     assert.doesNotMatch(code,/revealSequenceRef/)
   }
   assert.match(web,/externalKey: routeRevealKey/)
+  assert.match(web,/return requestReveal\(location\.parent_id, location\.node_id\)/)
   assert.doesNotMatch(web,/setLocalRevealTarget/)
   assert.match(desktop,/requestPrefix: 'desktop-local'/)
   assert.doesNotMatch(source,/fetch\s*\(|ipcRenderer|window\.|localStorage|upload|delete/)
