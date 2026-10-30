@@ -105,17 +105,26 @@ export function useXDriveVirtualCollection<TItem>({
   }, [abortInFlight])
 
   const primePage = useCallback((page: XDriveVirtualCollectionPage<TItem>) => {
-    if (page.totalCount === null) {
+    if (!page || page.totalCount === null) {
       throw new Error('Cannot prime VirtualCollection without an authoritative total count.')
     }
     const generation = generationRef.current
     const range = { offset: page.offset, limit: page.limit }
-    loadedRangeRef.current.add(xDriveVirtualCollectionRangeKey(range))
-    commitSnapshot((current) => (
-      current.generation === generation
-        ? xDriveVirtualCollectionApplyPage(current, generation, page)
-        : current
-    ))
+    if (!xDriveVirtualCollectionPageMatchesRequest(range, page, snapshotRef.current.totalCount)) {
+      throw new Error('Cannot prime VirtualCollection with an invalid positional Range page.')
+    }
+    let accepted = false
+    commitSnapshot((current) => {
+      if (current.generation !== generation) return current
+      const next = xDriveVirtualCollectionApplyPage(current, generation, page)
+      accepted = next !== current
+      return next
+    })
+    // Invalid/stale primer must never poison the loaded-range key. In
+    // particular, a rejected first 100k page stays retryable after a real
+    // authorized Host response instead of claiming a false empty directory.
+    if (accepted) loadedRangeRef.current.add(xDriveVirtualCollectionRangeKey(range))
+    else throw new Error('Cannot prime VirtualCollection with unverified Range data.')
   }, [commitSnapshot])
 
   useEffect(() => {
