@@ -16,7 +16,7 @@ test('recovered native PhotoKit screens are real SwiftUI and independent of reti
   assert.match(scan, /XDrivePhotoKitBoundedSnapshotScanner\(/)
   for (const source of [inventory, scan]) {
     assert.doesNotMatch(source, /LoginViewModel|KeychainSessionStore|WebView|window\.webkit|URLSession/)
-    assert.doesNotMatch(source, /UploadSession|CAS\.create|server\.POST/)
+    assert.doesNotMatch(source, /XDriveIOSJournaledOriginalUpload\(|NativeUploadSessionTransport\(|URLSession\(|\.uploadPreparedOriginal\(/)
   }
   assert.match(inventory, /init\(onUploadStillPhoto:.*= nil\)/)
   assert.match(inventory, /onUploadStillPhoto != nil && model\.hasAccess/)
