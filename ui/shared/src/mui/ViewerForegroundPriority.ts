@@ -10,7 +10,12 @@ const owners = new Map<object, number>()
 // Each observer captures the page it belongs to at mount time. A new page
 // has its own newly mounted readers and must NEVER be paused together with
 // the obsolete page it replaces.
-type DisposableObserver = { notify: XDriveViewerForegroundObserver; page: string | null }
+type DisposableObserver = {
+  notify: XDriveViewerForegroundObserver
+  page: string | null
+  // A Viewer-owned filmstrip is foreground work, not an obsolete Gallery tile.
+  viewerOwned: boolean
+}
 const observers = new Set<DisposableObserver>()
 let foregroundPage: string | null = null
 // A content switch within one route (e.g. Files folder A -> B or Album A ->
@@ -68,7 +73,7 @@ export function xDriveEnterForegroundPage(page: string | null): void {
 function notifyDisposablePause(entry: DisposableObserver) {
   const obsoletePage = entry.page !== null && entry.page !== foregroundPage
   try {
-    entry.notify(xDriveViewerForegroundActive() || obsoletePage ||
+    entry.notify((!entry.viewerOwned && xDriveViewerForegroundActive()) || obsoletePage ||
       (entry.page === foregroundPage && contentTransitionPending(entry.page)))
   }
   catch { /* readers cannot block new page route commits */ }
@@ -138,8 +143,13 @@ export function xDriveAcquireViewerForeground(owner: object): () => void {
 /** Subscribe once per background provider/scheduler, never once per media tile. */
 export function xDriveObserveViewerForeground(
   notify: XDriveViewerForegroundObserver,
+  options: { viewerOwned?: boolean } = {},
 ): () => void {
-  const entry: DisposableObserver = { notify, page: foregroundPage }
+  // Viewer-owned reads still yield on page/content supersession. Only the
+  // Viewer lease itself must not suspend thumbnails visible inside that Viewer.
+  const entry: DisposableObserver = {
+    notify, page: foregroundPage, viewerOwned: options.viewerOwned === true,
+  }
   observers.add(entry)
   notifyDisposablePause(entry)
   return () => { observers.delete(entry) }
