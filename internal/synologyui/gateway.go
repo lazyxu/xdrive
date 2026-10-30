@@ -466,9 +466,9 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			projection := map[string]any{
-				"configured": status.Configured,
+				"configured":           status.Configured,
 				"must_change_password": status.MustChangePassword,
-				"owner_scope": scope,
+				"owner_scope":          scope,
 			}
 			if status.Configured {
 				projection["server"] = status.Server
