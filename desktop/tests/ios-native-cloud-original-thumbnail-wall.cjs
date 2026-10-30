@@ -1,0 +1,50 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const root = path.resolve(__dirname, '../..')
+const src = fs.readFileSync(path.join(root, 'ios/XDriveIOS/NativeCloudOriginalGallery.swift'), 'utf8')
+
+test('cloud originals render a real lazy 3-column thumbnail grid', () => {
+  assert.match(src, /private struct XDriveIOSNativeCloudOriginalTile: View/)
+  assert.match(src, /LazyVGrid\(/)
+  assert.match(src, /ForEach\(model.nodes\)/)
+  assert.match(src, /node: node, model: model, login: login/)
+  assert.match(src, /\.task\(id: "\\\(node.id\)-\\\(node.revision\)"\)/)
+  assert.match(src, /\.onDisappear \{ thumb = nil \}/)
+  assert.match(src, /node.isLiveArchive \|\| node.isVideo/)
+})
+
+test('every thumbnail uses same Owner bearer and node revision, never the full original', () => {
+  const t = src.slice(src.indexOf('    func thumbnail(_ node:'), src.indexOf('    func preview(_ node:'))
+  assert.match(t, /XDriveIOSBackgroundOriginalNamePolicy\.valid\(node.name\)/)
+  assert.match(t, /node.isImage \|\| node.isVideo/)
+  assert.match(t, /"\/api\/v1\/media\/items\/\\\(node.id\)\/thumbnail"/)
+  assert.match(t, /URLQueryItem\(name: "revision", value: String\(node.revision\)\)/)
+  assert.match(t, /client.data\(for: request\(url\)\)/)
+  assert.match(t, /maximum: 2 \* 1_048_576/)
+  assert.match(t, /UIImage\(cgImage: image\)/)
+  assert.doesNotMatch(t, /\/files\/.*\/content|preview-ticket|Bearer .*url|XDriveIOSOriginalRunGate|upload/)
+})
+
+test('untrusted image is downsampled off the main actor within a bounded memory envelope', () => {
+  const t = src.slice(src.indexOf('    func thumbnail(_ node:'), src.indexOf('    func preview(_ node:'))
+  assert.match(t, /Task.detached\(priority: \.utility\)/)
+  assert.match(t, /CGImageSourceCreateWithData/)
+  assert.match(t, /kCGImageSourceCreateThumbnailFromImageAlways: true/)
+  assert.match(t, /kCGImageSourceThumbnailMaxPixelSize: 280/)
+  assert.match(t, /CGImageSourceCreateThumbnailAtIndex/)
+  assert.match(t, /try Task.checkCancellation\(\)/)
+})
+
+test('thumbnail authority is reused only inside one verified Owner page generation', () => {
+  assert.match(src, /private var currentReader: XDriveIOSNativeCloudOriginalReader\?/)
+  assert.match(src, /currentReader = nil/)
+  assert.match(src, /login\.verifiedAuthorization\(\)/)
+  assert.match(src, /owner: expected, accessToken: auth.accessToken/)
+  assert.match(src, /XDriveIOSNativePhotoOwnerScope\.matches\(login.owner, reader.owner\)/)
+  assert.match(src, /guard epoch == token/)
+  assert.match(src, /XDriveIOSNativeCloudOriginalGallery: View/)
+  assert.doesNotMatch(src, /WKWebView|document\.cookie|localStorage|UserDefaults\.standard/)
+})
