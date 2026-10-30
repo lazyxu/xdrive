@@ -25,7 +25,7 @@ func TestRecoveryReviewUsesOnlyExistingOwningAgentReadEndpoint(t *testing.T) {
 		calls++
 		if r.Method != http.MethodGet ||
 			r.URL.Path != "/v1/device-backups/local-common-batch/recovery-review" ||
-			r.Header.Get("Authorization") != "Bearer " + strings.Repeat("a", 64) ||
+			r.Header.Get("Authorization") != "Bearer "+strings.Repeat("a", 64) ||
 			r.URL.Query().Get("source_id") != "42" {
 			t.Errorf("unexpected Agent historical read: %s %s", r.Method, r.URL.String())
 			w.WriteHeader(http.StatusForbidden)
@@ -55,7 +55,7 @@ func TestRecoveryReviewUsesOnlyExistingOwningAgentReadEndpoint(t *testing.T) {
 	c := &Client{
 		baseURL: server.URL, token: strings.Repeat("a", 64),
 		capabilities: []string{"device-backup-local-common-recovery-review"},
-		http: server.Client(),
+		http:         server.Client(),
 	}
 	first, err := c.RecoveryReview(context.Background(), 42, 0, "")
 	if err != nil || first.ReviewedFiles != 16 || !first.HasMore {
