@@ -139,11 +139,118 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     val photoViewerOpen = (state.screen == Screen.GALLERY && state.galleryViewer != null) ||
         (state.screen == Screen.FILES &&
             (state.filesPdfViewer != null || state.filesAudioViewer != null))
+    val nativeOverlay = nativeAuthenticated && !photoViewerOpen &&
+        nativeNavigation.selected in setOf(NativeHomeTab.ALL, NativeHomeTab.DYNAMIC, NativeHomeTab.MINE)
+    // Old native AccountMenu can still change a Controller route directly.
+    LaunchedEffect(state.screen, state.viewerReturnToFiles, state.nativeUiSessionId) {
+        if (state.screen == Screen.GALLERY && !state.viewerReturnToFiles &&
+            nativeNavigation.selected == NativeHomeTab.FILES) {
+            nativeNavigation = nativeNavigation.select(NativeHomeTab.GALLERY)
+        } else if (state.screen == Screen.FILES &&
+            nativeNavigation.selected == NativeHomeTab.GALLERY) {
+            nativeNavigation = nativeNavigation.select(NativeHomeTab.FILES)
+        }
+    }
+    LaunchedEffect(state.screen, state.loading, pendingGalleryTab, pendingGalleryMap, pendingTrash) {
+        if (pendingGalleryTab && state.screen == Screen.FILES && state.canNavigateFiles()) {
+            pendingGalleryTab = false
+            controller.openGallery()
+            nativeNavigation = nativeNavigation.select(NativeHomeTab.GALLERY)
+        }
+        if (pendingTrash && state.screen == Screen.FILES && state.canNavigateFiles()) {
+            pendingTrash = false
+            controller.openTrash()
+            nativeNavigation = nativeNavigation.select(NativeHomeTab.FILES)
+        }
+        if (pendingGalleryMap && state.screen == Screen.GALLERY && !state.loading) {
+            pendingGalleryMap = false
+            if (state.galleryPrimaryTab == GalleryPrimaryTab.LIBRARY &&
+                state.gallerySelectedAlbum == null && !state.galleryMapOpen) {
+                controller.openGalleryMapOverview()
+            } else nativeNavigation = nativeNavigation.copy(gallerySource = NativeGallerySource.CLOUD)
+        }
+    }
+    fun selectNativeTab(tab: NativeHomeTab) {
+        if (!nativeAuthenticated || photoViewerOpen) return
+        when (tab) {
+            NativeHomeTab.GALLERY -> when (state.screen) {
+                Screen.FILES -> if (state.canNavigateFiles()) {
+                    controller.openGallery()
+                    nativeNavigation = nativeNavigation.select(tab)
+                }
+                Screen.TRASH -> if (!state.trashRestoreAttempted && !state.hasActiveNativeTransfer()) {
+                    pendingGalleryTab = true
+                    controller.closeTrash()
+                }
+                Screen.GALLERY -> nativeNavigation = nativeNavigation.select(tab)
+                else -> Unit
+            }
+            NativeHomeTab.FILES -> when (state.screen) {
+                Screen.GALLERY -> if (!state.hasActiveNativeTransfer() &&
+                    !state.galleryMetadataWriteAttempted &&
+                    !state.galleryAlbumCreateAttempted && !state.galleryAlbumEditAttempted) {
+                    controller.openFilesApp()
+                    nativeNavigation = nativeNavigation.select(tab)
+                }
+                Screen.FILES, Screen.TRASH -> nativeNavigation = nativeNavigation.select(tab)
+                else -> Unit
+            }
+            else -> nativeNavigation = nativeNavigation.select(tab)
+        }
+    }
+    fun openNativeShortcut(shortcut: NativeHomeShortcut) {
+        val next = nativeNavigation.open(shortcut)
+        when (next.selected) {
+            NativeHomeTab.GALLERY -> {
+                val mayEnter = state.screen == Screen.GALLERY || state.canNavigateFiles()
+                selectNativeTab(NativeHomeTab.GALLERY)
+                if (mayEnter) {
+                    nativeNavigation = next
+                    if (shortcut == NativeHomeShortcut.GALLERY_MAP) pendingGalleryMap = true
+                }
+            }
+            NativeHomeTab.FILES -> {
+                val mayEnter = state.screen == Screen.FILES || state.screen == Screen.TRASH ||
+                    (state.screen == Screen.GALLERY && !state.hasActiveNativeTransfer() &&
+                        !state.galleryMetadataWriteAttempted &&
+                        !state.galleryAlbumCreateAttempted && !state.galleryAlbumEditAttempted)
+                selectNativeTab(NativeHomeTab.FILES)
+                if (mayEnter) {
+                    nativeNavigation = next
+                    if (shortcut == NativeHomeShortcut.TRASH) pendingTrash = true
+                }
+            }
+            NativeHomeTab.DYNAMIC -> {
+                nativeNavigation = next
+                controller.refreshTransferRecoveryNotices()
+                transferCenterOpen = true
+            }
+            else -> nativeNavigation = next
+        }
+    }
     Scaffold(modifier = Modifier.imePadding(),
         containerColor = if (state.screen == Screen.FILES || state.screen == Screen.GALLERY || state.screen == Screen.TRASH)
             mobilePage else MaterialTheme.colorScheme.background,
-        contentColor = MaterialTheme.colorScheme.onSurface, topBar = {
-        if (!photoViewerOpen &&
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        bottomBar = {
+            if (nativeAuthenticated && !photoViewerOpen && !state.galleryMapOpen)
+                NativeHomeBottomBar(nativeNavigation, ::selectNativeTab)
+        },
+        topBar = {
+        if (nativeOverlay) {
+            Surface(color = mobilePage) {
+                Row(Modifier.statusBarsPadding().fillMaxWidth().height(52.dp)
+                    .padding(horizontal = 16.dp).testTag("xdrive-mobile-app-header"),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Text(when (nativeNavigation.selected) {
+                        NativeHomeTab.ALL -> "全部"
+                        NativeHomeTab.DYNAMIC -> nativeNavigation.dynamicFeature?.title ?: "最近"
+                        NativeHomeTab.MINE -> "我的"
+                        else -> ""
+                    }, style = MaterialTheme.typography.titleMedium)
+                }
+            }
+        } else if (!photoViewerOpen &&
             (state.screen == Screen.FILES || state.screen == Screen.GALLERY || state.screen == Screen.TRASH))
             Surface(color = mobilePage, contentColor = MaterialTheme.colorScheme.onSurface) {
             Row(Modifier.statusBarsPadding().fillMaxWidth().height(52.dp).padding(horizontal = 8.dp)
