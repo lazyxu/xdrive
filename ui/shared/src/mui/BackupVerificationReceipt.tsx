@@ -2,6 +2,7 @@ import { Alert, Stack, Typography } from '@mui/material'
 import type { XDriveServerBackupHistoryEntry } from '../server-backup-admin'
 import { backupVerificationSummary } from '../server-backup-verification'
 import { backupVerificationGuidance } from '../server-backup-verification-guidance'
+import { classifyServerBackupVerificationEvidence } from '../server-backup-integrity'
 
 /** Historical Host evidence; never claim a backup has been physically restored. */
 export function XDriveBackupVerificationReceipt({ entry }: {
@@ -9,9 +10,12 @@ export function XDriveBackupVerificationReceipt({ entry }: {
 }) {
   const summary = backupVerificationSummary(entry)
   const guidance = backupVerificationGuidance(entry)
-  if (!summary.available) {
+  const evidence = classifyServerBackupVerificationEvidence(entry)
+  if (!summary.available || evidence === 'unattested') {
     return <Alert severity="info" data-xdrive-admin-backup-verification-report>
-      {summary.note}
+      {evidence === 'unattested' && summary.available
+        ? '该历史操作没有可信的结构化校验凭据，不能推断对象数量或备份完整性。'
+        : summary.note}
     </Alert>
   }
   const formatBytes = (value: number) =>

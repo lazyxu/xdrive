@@ -4,6 +4,36 @@ import type {
 } from './server-backup-admin'
 
 /**
+ * Treat task success and proven backup-byte verification separately. Old Host
+ * histories may contain a success flag without a structured verification
+ * receipt; no Admin surface may count that as an integrity pass.
+ */
+export type XDriveServerBackupVerificationEvidence = 'passed' | 'failed' | 'unattested'
+
+export function classifyServerBackupVerificationEvidence(
+  entry: XDriveServerBackupHistoryEntry,
+): XDriveServerBackupVerificationEvidence {
+  if (entry.action !== 'verify') return 'unattested'
+  // Even without a structured receipt, an actual Host failure is a failure.
+  if (entry.state === 'failed' || entry.verification?.state === 'failed') return 'failed'
+  const proof = entry.verification
+  const id = entry.snapshot_id || ''
+  const expected = id.startsWith('v1:') ? 'v1' :
+    (id.startsWith('v2-default:') || id.startsWith('v2-configured:')) ? 'v2' : null
+  if (entry.state !== 'success' || !proof || !expected ||
+      proof.protocol !== 'xdrive-host-backup-verify-v1' ||
+      proof.state !== 'success' || proof.format !== expected ||
+      proof.scope !== 'backup_snapshot_and_referenced_cas' ||
+      (proof.failure_category !== undefined && proof.failure_category !== '') ||
+      !Number.isSafeInteger(proof.cas_objects_checked) || proof.cas_objects_checked < 0 ||
+      !Number.isSafeInteger(proof.cas_bytes_hashed) || proof.cas_bytes_hashed < 0 ||
+      (expected === 'v1' && (proof.cas_objects_checked !== 0 || proof.cas_bytes_hashed !== 0))) {
+    return 'unattested'
+  }
+  return 'passed'
+}
+
+/**
  * Counts only Host-discovered snapshots. A structurally complete generation or
  * a previous successful verification is never treated as current integrity
  * evidence: bytes can change after the last receipt.
@@ -60,13 +90,10 @@ export function summarizeServerBackupIntegrity(
     }
 
     const receipt = lastVerify.get(snapshot.id)
-    if (!receipt) {
-      withoutRecentReceipt++
-    } else if (receipt.state === 'success') {
-      historicalPassed++
-    } else {
-      historicalFailed++
-    }
+    const evidence = receipt ? classifyServerBackupVerificationEvidence(receipt) : 'unattested'
+    if (evidence === 'passed') historicalPassed++
+    else if (evidence === 'failed') historicalFailed++
+    else withoutRecentReceipt++
   }
 
   return {
@@ -80,7 +107,7 @@ export function summarizeServerBackupIntegrity(
     withoutRecentReceipt,
     newestFullID: newestFull?.id || null,
     needsAttention: fullCandidates === 0 || incomplete > 0 ||
-      inconsistent > 0 || historicalFailed > 0,
+      inconsistent > 0 || historicalFailed > 0 || withoutRecentReceipt > 0,
   }
 }
 
@@ -104,10 +131,14 @@ export function serverBackupHistoricalVerificationLabel(
 ): string {
   const latest = latestServerBackupVerification(history, snapshotID)
   if (!latest) return '未见历史校验'
-  const outcome = latest.state === 'success' ? '历史通过' : '历史失败'
+  const evidence = classifyServerBackupVerificationEvidence(latest)
+  const outcome = evidence === 'passed' ? '历史通过' :
+    evidence === 'failed' ? '历史失败' : '历史结果未证实'
   const mode = latest.mode === 'deep' ? 'deep' : latest.mode === 'fast' ? 'fast' : '级别未知'
   const date = latest.finished_at ? new Date(latest.finished_at).toLocaleString() : '时间未知'
-  return outcome + ' · ' + mode + ' · ' + date
+  return outcome + ' · ' + mode + ' · ' + date +
+    (evidence === 'passed' ? '（结构化校验凭据）' :
+      evidence === 'unattested' ? '（缺少可信结构化校验凭据）' : '')
 }
 
 /** Duration is computed only from the two authentic Host timestamps. */
@@ -126,7 +157,9 @@ export function serverBackupReceiptExplanation(
 ): string {
   if (entry.state === 'success') {
     if (entry.action === 'verify') {
-      return '宿主机记录这次校验通过。历史结果不保证快照当前仍然完整，恢复时必须重新校验。'
+      return classifyServerBackupVerificationEvidence(entry) === 'passed'
+        ? '宿主机记录这次校验通过，并附有结构化完整性凭据。历史结果不保证快照当前仍然完整，恢复时必须重新校验。'
+        : '宿主机记录操作成功，但缺少可信结构化校验凭据；不能视为备份完整性通过，请重新运行验证。'
     }
     if (entry.action === 'delete_selected') {
       return entry.selected_delete

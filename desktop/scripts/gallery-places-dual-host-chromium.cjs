@@ -2139,6 +2139,78 @@ async function testDelayedBD09Map(browser,mode,port){
   } finally {await context.close()}
 }
 
+// Nonempty BD-09 backfill: the map already displays three signed photos,
+// so its intentionally EMPTY-only 120s poll cannot discover six newly
+// converted photos. A manual 44px Camera refresh must use the SAME Owner
+// filters, BD-09 bounds and mounted SDK Host, for inline and HTTPS Child.
+async function testPartialBD09CurrentCameraRefresh(browser,mode,port){
+  const context=await browser.newContext({
+    viewport:{width:960,height:760},locale:'zh-CN',
+    ignoreHTTPSErrors:true,serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(20000)
+  const errors=[]
+  page.on('pageerror',error=>errors.push(error.message))
+  await page.route('https://api.map.baidu.com/api?**',route=>{
+    assert.equal(new URL(route.request().url()).searchParams.get('ak'),
+      'TEST_ONLY_BROWSER_AK')
+    return route.fulfill({status:200,contentType:'text/javascript',body:sdkStub})
+  })
+  try{
+    await page.goto('https://'+galleryHost+':'+port+
+      '/?mode='+mode+'&partial_bd09=1',{waitUntil:'domcontentloaded'})
+    await page.getByText('当前地图可查看 3 张照片',{exact:true}).waitFor()
+    await page.waitForFunction(()=>window.__mapProbe?.queries.some(q=>
+      q.count===3 && q.bounds.west===100 && q.bounds.south===20 &&
+      q.bounds.east===125 && q.bounds.north===40))
+    const button=page.locator('[data-xdrive-places-nonempty-map-recheck]')
+    await button.waitFor({state:'visible'})
+    await page.locator('[data-xdrive-places-trusted-photo-cover]').first()
+      .waitFor({state:'visible'})
+    const prior=await page.evaluate(()=>({
+      queries:window.__mapProbe.queries.length,
+      count:window.__mapProbe.queries.at(-1)?.count,
+      completed:window.__mapProbe.bd09Completions,
+      noEmptyRefresh:document.querySelectorAll(
+        '[data-xdrive-places-empty-map-recheck]').length===0,
+    }))
+    const sdkLoads=mode==='inline'?inlineSDKLoads:childSDKLoads
+    await page.locator('#fixture-finish-partial-bd09').click()
+    const beforeClick=await page.evaluate(()=>window.__mapProbe.queries.length)
+    record(mode+': partially derived Owner map remains nonempty until explicit refresh',
+      prior.count===3&&prior.completed===0&&prior.noEmptyRefresh&&
+      prior.queries===beforeClick)
+    await button.click()
+    await page.getByText('当前地图可查看 9 张照片',{exact:true}).waitFor()
+    await page.locator('[data-xdrive-places-trusted-photo-cover]').first()
+      .waitFor({state:'visible'})
+    const after=await page.evaluate(()=>({
+      queries:window.__mapProbe.queries,
+      completed:window.__mapProbe.bd09Completions,
+      noSDKFailure:window.__mapProbe.failed===false,
+      cover:document.querySelectorAll('[data-xdrive-places-trusted-photo-cover]').length,
+    }))
+    const newer=after.queries.slice(beforeClick)
+    record(mode+': nonempty map refresh reauthorizes current BD09 camera and Owner scope',
+      after.completed===1&&after.noSDKFailure&&after.cover>0&&
+      newer.length===1&&newer[0].count===9&&newer[0].favorite===false&&
+      newer[0].albumKey===''&&
+      newer[0].bounds.west===100&&newer[0].bounds.south===20&&
+      newer[0].bounds.east===125&&newer[0].bounds.north===40&&
+      errors.length===0)
+    record(mode+': nonempty refresh does not remount map SDK or add provider conversions',
+      (mode==='inline'?inlineSDKLoads:childSDKLoads)===sdkLoads)
+    await page.locator('[data-xdrive-places-trusted-photo-cover]').first().click()
+    const dialog=page.locator('[data-xdrive-places-photo-drawer]')
+    await dialog.locator('[data-xdrive-places-photo-drawer-item]').first()
+      .waitFor({state:'visible'})
+    const range=await page.evaluate(()=>window.__mapProbe.photoPreviewRanges.at(-1))
+    record(mode+': refreshed map Cell still opens only its fresh 9-photo Range',
+      range?.total===9&&range?.items===9&&range?.offset===0&&
+      range?.limit===48&&errors.length===0)
+  }finally{await context.close()}
+}
+
 // Exercise the ACTUAL production 120-second empty-map interval callback in
 // mounted Chromium, not a manual Refresh click or source regex. Capture only
 // this named timer in the Parent and invoke it synchronously: neither a
@@ -3769,6 +3841,8 @@ async function main(){
       await testMapOverlayPinOcclusion(browser,'isolated',port)
       await testDelayedBD09Map(browser,'inline',port)
       await testDelayedBD09Map(browser,'isolated',port)
+      await testPartialBD09CurrentCameraRefresh(browser,'inline',port)
+      await testPartialBD09CurrentCameraRefresh(browser,'isolated',port)
       await testAutomaticBD09VisibilityRecheck(browser,'inline',port)
       await testAutomaticBD09VisibilityRecheck(browser,'isolated',port)
       await testMapColdH264Poster(browser,'inline',port)

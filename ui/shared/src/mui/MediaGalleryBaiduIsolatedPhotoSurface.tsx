@@ -1005,6 +1005,19 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
               刷新定位照片
             </Button>
           ) : null}
+          {acceptedViewport && phase === 'ready' && trustedSummary.total_count > 0 &&
+              acceptedScope.current?.key === currentFilterKey ? (
+            <Button size="small" variant="outlined"
+              data-xdrive-places-nonempty-map-recheck
+              sx={{minHeight:44,textTransform:'none',pointerEvents:'auto',
+                bgcolor:'background.paper',boxShadow:2}}
+              // A partially indexed GPS library can gain BD-09 positions
+              // without the camera moving. Reuse the current signed Owner
+              // Camera/Album, never launch a Provider SDK session or poll 100k.
+              onClick={() => refreshFilteredCells.current?.(true)}>
+              刷新当前地图照片
+            </Button>
+          ) : null}
           {unpaintedCellCount > 0 ? (
             <Button size="small" variant="outlined"
               data-xdrive-places-reveal-hidden-cells

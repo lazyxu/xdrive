@@ -29,6 +29,10 @@ const favoritesMapEntry = new URLSearchParams(location.search).get('start_favori
 // Controlled Owner GPS -> BD-09 delayed derivative. The mounted SDK starts
 // with no signed Cells, then the test completes indexing without remounting.
 const delayedBD09 = new URLSearchParams(location.search).get('delayed_bd09') === '1'
+// A nonempty signed Camera initially has only 3 of 9 derived photo positions.
+// Neither SDK Host may pretend the other 6 photos exist until a new /cells.
+const partialBD09 = !genuineGin &&
+  new URLSearchParams(location.search).get('partial_bd09') === '1'
 const videoPosterMode = new URLSearchParams(location.search).get('map_h264') === '1'
 // Synthetic two-Cell presentation test: both Owner Cells are valid and
 // accessible, but the SDK projects their thumbnails into one overlapping
@@ -62,6 +66,7 @@ const initialHandoff = fullDocumentHandoff
   ? xDriveTakeMapScopeHandoffFromURL(window) : {state:'none' as const}
 if(fullDocumentHandoff)xDriveRestoreMapReferrerAfterScrub(window)
 let derivedLocationReady = !delayedBD09
+let partialLocationReady = false
 let savedSyntheticPoster: Blob | null = null
 // An opt-in synthetic failure during a *post-ready* restricted Owner query.
 // The next identical retry must recover without remounting either SDK Host.
@@ -134,7 +139,8 @@ const pageFor = (bounds:Bounds, favorite:boolean) => {
   const x = Math.min(7,Math.max(0,Math.floor(offset/(width/8))))
   const y = Math.min(7,Math.max(0,Math.floor((locationPoint.latitude-bounds.south)/
     ((bounds.north-bounds.south)/8))))
-  const count = albumDialog28 ? 28 : favorite ? 3 : 9
+  const count = albumDialog28 ? 28 : favorite ? 3 :
+    partialBD09 && !partialLocationReady ? 3 : 9
   const first={cell_x:x,cell_y:y,photo_count:count,asset_id:33,node_id:75,
     node_revision:2,latitude:locationPoint.latitude,longitude:locationPoint.longitude,
     ...(videoPosterMode?{media_kind:'video' as const}:{})}
@@ -508,6 +514,12 @@ function TestApp(){
       <button type="button" id="fixture-finish-bd09"
         onClick={()=>{derivedLocationReady=true;probe.bd09Completions++}}>
         Complete synthetic Owner BD-09 indexing
+      </button>
+    ) : null}
+    {partialBD09 ? (
+      <button type="button" id="fixture-finish-partial-bd09"
+        onClick={()=>{partialLocationReady=true;probe.bd09Completions++}}>
+        Complete remaining synthetic Owner BD-09 positions
       </button>
     ) : null}
     {testCellsFailure ? (
