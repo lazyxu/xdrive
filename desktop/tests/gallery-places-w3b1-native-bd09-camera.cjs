@@ -35,10 +35,16 @@ test('W3b1 original BD09 camera never accepts WGS84 relabel, invalid points or z
   assert.equal(valid({ ...bd09, coordinate_space: undefined }), false)
   for (const camera of [
     { ...bd09, longitude: 181 }, { ...bd09, latitude: -86 },
-    { ...bd09, zoom: 2 }, { ...bd09, zoom: 19 },
-    { ...bd09, zoom: 13.1 }, { ...bd09, latitude: NaN },
+    { ...bd09, zoom: 2 }, { ...bd09, zoom: 22 },
+    { ...bd09, zoom: NaN }, { ...bd09, zoom: Infinity },
+    { ...bd09, latitude: NaN },
     { ...bd09, longitude: Infinity }, { ...bd09, zoom: '13' },
   ]) assert.equal(valid(camera), false)
+  // JSAPI 4.0 default min/max are 3–21 and getZoom() can be fractional.
+  // A legitimate high-zoom Owner camera must survive Viewer/Map return.
+  for (const zoom of [3, 13.1, 18, 19, 20.5, 21]) {
+    assert.equal(valid({ ...bd09, zoom }), true)
+  }
 })
 
 test('W3b1 Owner native camera is copied, bounded, ephemeral and scope isolated', () => {
@@ -52,7 +58,8 @@ test('W3b1 Owner native camera is copied, bounded, ephemeral and scope isolated'
   assert.equal(load('owner-A-signed', 1000 + ttl), undefined, '10-minute expiry is exact')
   assert.equal(remember('owner-A-signed', { ...bd09, coordinate_space: 'wgs84' }, 1200), false)
   assert.equal(remember('', bd09, 1200), false)
-  assert.equal(remember('owner-C-signed', bd09, 1200), true)
+  assert.equal(remember('owner-C-signed', { ...bd09, zoom: 20.5 }, 1200), true)
+  assert.deepEqual(load('owner-C-signed', 1201), { ...bd09, zoom: 20.5 })
   clear('owner-C-signed')
   assert.equal(load('owner-C-signed', 1201), undefined)
   const ghost = { ...bd09, token: 'must-not-persist', sdk: { privateGPS: true } }
@@ -65,6 +72,9 @@ test('W3b1 real map camera read returns BD09 only and fails closed on invalid pr
   const native = { getCenter: () => ({ lat: bd09.latitude, lng: bd09.longitude }),
     getZoom: () => bd09.zoom }
   assert.deepEqual(capture(native), bd09)
+  assert.deepEqual(capture({ ...native, getZoom: () => 21 }), { ...bd09, zoom: 21 })
+  assert.deepEqual(capture({ ...native, getZoom: () => 20.5 }), { ...bd09, zoom: 20.5 })
+  assert.equal(capture({ ...native, getZoom: () => 22 }), null)
   assert.equal(capture({ ...native, getCenter: () => ({ lat: 90, lng: 0 }) }), null)
   assert.equal(capture({ ...native, getZoom: () => '13' }), null)
   assert.equal(capture({ ...native, getCenter: () => { throw Error('map disposed') } }), null)
