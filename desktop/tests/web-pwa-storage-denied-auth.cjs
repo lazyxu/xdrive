@@ -49,7 +49,10 @@ function createHarness(storage, denyGetter = false) {
   const safe = {}
   new Function('exports', 'window', transpile(storageSource))(safe, win)
 
+  // Simulate an authenticated Owner with a pending forced password change;
+  // clearSession must revoke this UI gate even if browser storage is denied.
   let liveSession = null, username = null, notice = null, disposeCalls = 0
+  let loginPasswordChangeRequired = true
   const foregroundTransitions = []
   const keys = {
     ACCESS_KEY: 'xdrive.access_token',
@@ -69,6 +72,7 @@ function createHarness(storage, denyGetter = false) {
     ...safe, useCallback: fn => fn,
     setSession(next) { liveSession = next },
     setUsername(next) { username = next },
+    setLoginPasswordChangeRequired(next) { loginPasswordChangeRequired = next },
     setAuthNotice(next) { notice = next },
     transferApiRef: { current: { disposeTransfers() { disposeCalls++ } } },
     authEpochRef: { current: 0 },
@@ -81,6 +85,7 @@ function createHarness(storage, denyGetter = false) {
   return { safe, app, win, keys,
     get session() { return liveSession }, get username() { return username },
     get notice() { return notice }, get disposeCalls() { return disposeCalls },
+    get loginPasswordChangeRequired() { return loginPasswordChangeRequired },
     get foregroundTransitions() { return [...foregroundTransitions] } }
 }
 
@@ -110,6 +115,8 @@ test('PWA stored login/refresh and logout keep existing browser semantics', () =
   assert.equal(h.username, '')
   assert.equal(h.notice, '会话已失效。')
   assert.equal(h.disposeCalls, 1)
+  assert.equal(h.loginPasswordChangeRequired, false,
+    'logout must clear the forced-password UI gate before another Owner can log in')
   assert.deepEqual(h.foregroundTransitions, [null],
     'logout must invalidate obsolete foreground page before a new Owner can mount')
   for (const key of Object.values(h.keys)) assert.equal(values.has(key), false, key)
@@ -137,6 +144,7 @@ test('HTTPS Cookie mode serializes NO access or refresh secret to localStorage',
     assert.equal(values.has(key), false, key)
   }
   h.app.clearSession()
+  assert.equal(h.loginPasswordChangeRequired, false)
   assert.equal(values.has('xdrive.auth_cookie_mode'), false)
 })
 
@@ -176,6 +184,7 @@ test('PWA denied localStorage getter cannot crash first paint, login or logout',
   h.app.clearSession()
   assert.deepEqual(h.session, { accessToken: '', refreshToken: '', accessExpiresAt: 0 })
   assert.equal(h.username, '')
+  assert.equal(h.loginPasswordChangeRequired, false)
   assert.match(h.notice, /无法确认浏览器已清除本地登录记录/)
   assert.equal(h.disposeCalls, 1)
 })
@@ -213,6 +222,7 @@ test('PWA logout still clears memory and tries remaining keys after removeItem t
   assert.deepEqual(removed, [...Object.values(h.keys), 'xdrive.auth_cookie_mode'])
   assert.equal(h.session.accessToken, '')
   assert.equal(h.username, '')
+  assert.equal(h.loginPasswordChangeRequired, false)
   assert.match(h.notice, /请重新登录/)
   assert.match(h.notice, /浏览器设置中清理本站点数据/)
 })
