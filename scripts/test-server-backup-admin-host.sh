@@ -1138,4 +1138,23 @@ import json,sys
 x=json.load(open(sys.argv[1],encoding="utf-8"))
 assert x["state"]=="not_configured" and x["expression"]=="",x
 PY
+# A Host/installer cron edit must invalidate a stale administrator backup
+# format/retention draft, even if its other policy values have not changed.
+# No cron installation or backup file operation occurs in this read-only test.
+backup_admin_policy_values
+schedule_before="$backup_admin_revision"
+printf 'XD_BACKUP_SCHEDULE=17 3 * * *\n' >> "$XD_CONFIG_DIR/config/.env"
+backup_admin_policy_values
+schedule_after="$backup_admin_revision"
+[[ "$schedule_after" =~ ^[0-9a-f]{64}$ && "$schedule_after" != "$schedule_before" ]]
+if backup_admin_write_policy v2 7 "$schedule_before"; then
+  echo 'stale backup policy accepted after cron schedule change' >&2
+  exit 1
+fi
+grep -Fqx 'XD_BACKUP_SCHEDULE=17 3 * * *' "$XD_CONFIG_DIR/config/.env"
+grep -v '^XD_BACKUP_SCHEDULE=' "$XD_CONFIG_DIR/config/.env" > "$TMP/schedule-revision-cleanup.env"
+mv -f -- "$TMP/schedule-revision-cleanup.env" "$XD_CONFIG_DIR/config/.env"
+backup_admin_policy_values
+[[ "$backup_admin_revision" == "$schedule_before" ]]
+
 echo 'Admin Server Backup host bridge: CRUD, batch verify, selected-v2 delete and inventory truncation tests passed'

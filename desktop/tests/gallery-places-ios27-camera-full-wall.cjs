@@ -87,6 +87,41 @@ test('Owner BD09 cell summary uses exactly the same reviewed Gallery filter keys
   assert.equal(cellParams({...bounds,coordinate_space:'wgs84'},scoped),null)
 })
 
+test('runtime-malformed Camera/Cell filter objects never silently widen Gallery membership',()=>{
+  // These runtime values can come from a recovered Host or a browser route.
+  // Neither a missing-value unknown field nor malformed fold intent grants a
+  // fallback to the unrestricted Owner camera.
+  const malformed=[
+    {...query,search:undefined},
+    {...query,bbox:undefined},
+    {...query,album_key:undefined},
+    {...query,owner_id:undefined},
+    {...query,initial_position:undefined},
+    {...query,fold_duplicates:null},
+    {...query,fold_duplicates:'true'},
+    {...query,fold_duplicates:0},
+    {...query,fold_duplicates:true},
+    [],
+    [query],
+  ]
+  for(const value of malformed){
+    assert.equal(params(bounds,48,0,value),null,
+      'reject a malformed full viewport filter '+JSON.stringify(value))
+    assert.equal(cellParams(bounds,value),null,
+      'reject a malformed signed Camera Cells filter '+JSON.stringify(value))
+  }
+  // The empty Owner camera and intentionally unfolded original Gallery
+  // query are still valid. No media/Owner identity crosses to the SDK Child.
+  assert.ok(params(bounds,48,0,{}))
+  assert.ok(params(bounds,48,0,{...query,fold_duplicates:false}))
+  assert.equal(cellParams(bounds,{}).toString(),
+    'west=116&south=39&east=117&north=40')
+  assert.ok(cellParams(bounds,{...query,fold_duplicates:false}))
+  const accepted=params(bounds,48,0,{...query,fold_duplicates:false})
+  assert.equal(accepted?.get('fold_duplicates'),null)
+  assert.equal(accepted?.get('owner_id'),null)
+})
+
 test('Owner sparse Range remains page-bounded even with 100k authorized members',()=>{
   assert.equal(valid(page,48,0),true)
   assert.equal(valid({...page,offset:1},48,0),false)

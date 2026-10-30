@@ -719,3 +719,171 @@ test('Select All cancels a waiting Server response without emitting a user-visib
   rejectRange(Object.assign(new Error('The operation was aborted'), { name: 'AbortError' }))
   assert.equal(await result, null)
 })
+
+
+test('100k virtual Files viewport rejects shifted Host pages and retries the same position', async () => {
+  const runtime = createHookRuntime()
+  const useVirtualCollection = loadVirtualCollectionHook(runtime.react)
+  const errors = []
+  let calls = 0
+  let shifted = true
+  const loader = async (range) => {
+    calls += 1
+    return {
+      offset: range.offset + (shifted ? 2 : 0),
+      limit: range.limit,
+      totalCount: 100000,
+      items: [{ id: 3 }, { id: 4 }],
+    }
+  }
+  const render = () => runtime.render(() => useVirtualCollection({
+    queryKey: 'owner:directory-100k',
+    loadRange: loader,
+    onError: error => errors.push(String(error.message)),
+    pageSize: 2, overscanPages: 0, retentionOverscanPages: 1,
+  }))
+  let collection = render()
+  collection.primePage({
+    offset: 0, limit: 2, totalCount: 100000,
+    items: [{ id: 1 }, { id: 2 }],
+  })
+  collection = render()
+  await collection.ensureViewport(2, 3)
+  collection = render()
+  assert.equal(calls, 1)
+  assert.match(errors.at(-1), /invalid positional Range page/)
+  assert.equal(collection.itemAt(2), undefined)
+  assert.deepEqual(collection.itemAt(0), { id: 1 },
+    'a rejected viewport must not erase the retained verified first page')
+  shifted = false
+  await collection.ensureViewport(2, 3)
+  collection = render()
+  assert.equal(calls, 2, 'a rejected reply cannot poison the loaded-range key')
+  assert.deepEqual(collection.itemAt(2), { id: 3 })
+  assert.deepEqual(collection.itemAt(3), { id: 4 })
+})
+
+test('malformed range limits, row count and unsafe totals cannot poison a viewport', async () => {
+  const invalid = [
+    { offset: 4 },
+    { limit: 0 },
+    { limit: 3 },
+    { limit: 1, items: [{ id: 3 }, { id: 4 }] },
+    { totalCount: -1 },
+    { totalCount: Number.MAX_SAFE_INTEGER + 1 },
+    { totalCount: 2 },
+    { items: null },
+  ]
+  for (const mutation of invalid) {
+    const runtime = createHookRuntime()
+    const useVirtualCollection = loadVirtualCollectionHook(runtime.react)
+    const errors = []
+    let calls = 0
+    const render = () => runtime.render(() => useVirtualCollection({
+      queryKey: 'malformed-host',
+      loadRange: async range => {
+        calls += 1
+        return {
+          offset: range.offset,
+          limit: range.limit,
+          totalCount: 6,
+          items: [{ id: 3 }, { id: 4 }],
+          ...mutation,
+        }
+      },
+      onError: error => errors.push(String(error.message)),
+      pageSize: 2, overscanPages: 0, retentionOverscanPages: 1,
+    }))
+    let collection = render()
+    collection.primePage({
+      offset: 0, limit: 2, totalCount: 6, items: [{ id: 1 }, { id: 2 }],
+    })
+    collection = render()
+    await collection.ensureViewport(2, 3)
+    collection = render()
+    assert.equal(collection.itemAt(2), undefined, JSON.stringify(mutation))
+    assert.match(errors.at(-1), /invalid positional Range page/, JSON.stringify(mutation))
+    await collection.ensureViewport(2, 3)
+    assert.equal(calls, 2, 'unverified page must be retryable: ' + JSON.stringify(mutation))
+  }
+})
+
+test('count-free final page and explicit Select All preserve exact request ownership', async () => {
+  const runtime = createHookRuntime()
+  const useVirtualCollection = loadVirtualCollectionHook(runtime.react)
+  const calls = []
+  let invalidSelection = true
+  const render = () => runtime.render(() => useVirtualCollection({
+    queryKey: 'owner:final-partial',
+    loadRange: async (range, signal) => {
+      calls.push({ range, signal })
+      // Viewport requests also own AbortSignals. Only the deliberate
+      // Select All range (2..3) should receive this malformed response.
+      if (signal && invalidSelection && range.offset === 2 && range.limit === 2) return {
+        offset: range.offset, limit: 1, totalCount: null, items: [{ id: 3 }],
+      }
+      return {
+        offset: range.offset, limit: range.limit, totalCount: null,
+        items: Array.from({ length: Math.min(range.limit, 5 - range.offset) },
+          (_, i) => ({ id: range.offset + i + 1 })),
+      }
+    },
+    onError: error => { throw error },
+    pageSize: 2, overscanPages: 0, retentionOverscanPages: 0,
+  }))
+  let collection = render()
+  collection.primePage({
+    offset: 0, limit: 2, totalCount: 5, items: [{ id: 1 }, { id: 2 }],
+  })
+  collection = render()
+  await collection.ensureViewport(4, 4)
+  collection = render()
+  assert.deepEqual(collection.itemAt(4), { id: 5 },
+    'a legitimate short final range must load with a trusted total')
+  const controller = new AbortController()
+  assert.equal(await collection.collectRange(2, 3, controller.signal), null,
+    'a mismatched selection page must not be treated as a completed selection')
+  invalidSelection = false
+  const accepted = await collection.collectRange(2, 3, controller.signal)
+  assert.deepEqual(accepted, [{ id: 3 }, { id: 4 }])
+  assert.equal(calls.length, 3)
+  assert.equal(calls[1].signal, controller.signal)
+  assert.equal(calls[2].signal, controller.signal)
+})
+
+
+test('an invalid primer cannot poison the 100k loaded-page key', async () => {
+  const runtime = createHookRuntime()
+  const useVirtualCollection = loadVirtualCollectionHook(runtime.react)
+  let loads = 0
+  const render = () => runtime.render(() => useVirtualCollection({
+    queryKey: 'owner:unverified-first',
+    loadRange: async range => {
+      loads += 1
+      return {
+        offset: range.offset, limit: range.limit, totalCount: 100000,
+        items: [{ id: 1 }, { id: 2 }],
+      }
+    },
+    onError: error => { throw error },
+    pageSize: 2, overscanPages: 0, retentionOverscanPages: 0,
+  }))
+  let collection = render()
+  for (const invalid of [
+    { offset: 0, limit: 2, totalCount: -1, items: [{ id: 0 }] },
+    { offset: 0, limit: 1, totalCount: 100000, items: [{ id: 1 }, { id: 2 }] },
+    { offset: Number.MAX_SAFE_INTEGER, limit: 2, totalCount: 100000, items: [] },
+  ]) {
+    assert.throws(() => collection.primePage(invalid), /invalid positional Range|unverified Range/)
+  }
+  collection = render()
+  assert.equal(collection.totalCount, null)
+  assert.equal(collection.loadedCount, 0)
+  await collection.ensureViewport(0, 1)
+  collection = render()
+  assert.equal(loads, 1,
+    'invalid primer cannot claim the correct Range key or prevent legitimate retry')
+  assert.equal(collection.totalCount, 100000)
+  assert.deepEqual(collection.itemAt(0), { id: 1 })
+  assert.deepEqual(collection.itemAt(1), { id: 2 })
+})

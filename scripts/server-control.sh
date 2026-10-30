@@ -2370,7 +2370,9 @@ backup_admin_policy_values() {
       backup_admin_repo="$(cd "$backup_admin_repo" && pwd -P)" || return 1
     fi
   fi
-  backup_admin_revision="$(printf '%s\0%s\0%s' "$backup_admin_format" "$backup_admin_days" "$backup_admin_repo" | sha256sum | cut -d' ' -f1)"
+  # A schedule change by the installer/operator invalidates stale Web/Desktop
+  # policy drafts even if format, retention days and repository are unchanged.
+  backup_admin_revision="$(printf '%s\0%s\0%s\0%s' "$backup_admin_format" "$backup_admin_days" "$backup_admin_repo" "$(env_value XD_BACKUP_SCHEDULE)" | sha256sum | cut -d' ' -f1)"
 }
 
 backup_admin_snapshot_directory() {

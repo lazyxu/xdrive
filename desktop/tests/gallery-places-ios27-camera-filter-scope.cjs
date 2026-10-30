@@ -70,6 +70,45 @@ test('map filter snapshot refuses unknown filters, forged CRS and album identiti
     ...source,filters:{...source.filters,favorite:false},
   }),scope.xDriveBaiduMapPhotoScopeKey(source))
 })
+test('malformed outer PhotoScope claims never widen the signed Owner map or Viewer return',()=>{
+  // This can arrive from a restored route or third-party Host adapter as a
+  // runtime object, even though TypeScript advertises only two fields.
+  // Unknown *outer* fields have to fail closed, just like inner filters.
+  const unrestricted={albumKey:'',filters:{sort_by:'captured',sort_dir:'desc'}}
+  const invalid=[
+    {...unrestricted,album:'manual:Private'},
+    {...unrestricted,album_id:'manual:Private'},
+    {...unrestricted,albumKey:'',owner_id:42},
+    {...unrestricted,location:{coordinate_space:'wgs84',latitude:30}},
+    {...unrestricted,photoScope:{albumKey:'manual:Private'}},
+    {...unrestricted,restriction:undefined},
+    {...source,map_owner:'foreign'},
+    {...source,source_revision:5},
+    {albumKey:source.albumKey},
+    {filters:source.filters},
+  ]
+  for(const malformed of invalid){
+    assert.equal(scope.xDriveNormalizeBaiduMapPhotoScope(malformed),null,
+      'reject unknown/missing outer membership rather than drop it')
+    assert.equal(scope.xDriveCopyBaiduMapPhotoScope(malformed),null)
+    assert.equal(scope.xDriveBaiduMapPhotoScopeKey(malformed),'invalid-bd09-map-scope')
+    assert.equal(scope.xDriveBaiduMapScopeSurvivesFullReload(malformed),false)
+  }
+  assert.deepEqual(scope.xDriveNormalizeBaiduMapPhotoScope(unrestricted),unrestricted)
+  assert.equal(scope.xDriveBaiduMapScopeSurvivesFullReload(unrestricted),true)
+  assert.deepEqual(scope.xDriveNormalizeBaiduMapPhotoScope(source),source)
+  const selected={bounds:bd09,cell_x:1,cell_y:2,asset_id:11,node_id:22,
+    node_revision:3,photo_count:2}
+  const malformed={...unrestricted,album:'manual:Private'}
+  const cell={selection:selected,sort:{by:'captured',dir:'desc'},photoScope:malformed}
+  assert.equal(cellReturn.xDriveRememberBaiduCellReturn('owner-bad-cell',cell,1000),false)
+  assert.equal(cellReturn.xDriveReadBaiduCellReturn('owner-bad-cell',1001),undefined)
+  assert.equal(viewportReturn.xDriveRememberBaiduViewportReturn('owner-bad-camera',{
+    bounds:bd09,sort:{by:'captured',dir:'desc'},photoScope:malformed,
+  },1000),false)
+  assert.equal(viewportReturn.xDriveTakeBaiduViewportViewerReturn('owner-bad-camera',1001),undefined)
+})
+
 test('Cell Viewer return freezes the exact filtered scope, not caller-mutated filters',()=>{
   const selected={bounds:bd09,cell_x:1,cell_y:2,asset_id:11,node_id:22,
     node_revision:3,photo_count:2}

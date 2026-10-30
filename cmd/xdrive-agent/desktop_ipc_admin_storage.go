@@ -13,7 +13,7 @@ type desktopIPCAdminStorageController interface {
 }
 
 var desktopAdminStorageOperations = map[string]bool{
-	"stats": true, "health": true, "history": true, "verification-runs": true,
+	"stats": true, "health": true, "history": true, "verification-runs": true, "verification-run-detail": true,
 	"legacy": true, "optimization-advice": true,
 	"unreferenced": true, "staging": true, "cleanup-runs": true,
 	"cleanup-failures": true, "cleanup-staging": true, "cleanup-cache": true,
@@ -24,7 +24,8 @@ var desktopAdminStorageCacheKinds = map[string]bool{
 }
 
 func validDesktopAdminStorageRequest(input client.AdminStorageRequest) bool {
-	if !desktopAdminStorageOperations[input.Operation] ||
+	if (input.Operation != "verification-run-detail" && input.VerificationRunID != "") ||
+		!desktopAdminStorageOperations[input.Operation] ||
 		input.Limit < 0 || input.Limit > 200 || input.Offset < 0 ||
 		len(input.Cursor) > 2048 {
 		return false
@@ -32,6 +33,11 @@ func validDesktopAdminStorageRequest(input client.AdminStorageRequest) bool {
 	switch input.Operation {
 	case "history":
 		return input.Days == 30 || input.Days == 90 || input.Days == 180
+	case "verification-run-detail":
+		return input.VerificationRunID != "" &&
+			client.ValidVerificationHistoryCursor(input.VerificationRunID) &&
+			input.Limit == 0 && input.Offset == 0 && input.Days == 0 &&
+			input.RunID == 0 && input.Cursor == "" && !input.Fresh && input.Kind == ""
 	case "verification-runs":
 		return input.Limit >= 1 && input.Limit <= 50 &&
 			input.Offset == 0 && input.Days == 0 && input.RunID == 0 &&

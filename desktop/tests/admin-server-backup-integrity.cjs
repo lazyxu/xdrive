@@ -17,8 +17,16 @@ const { summarizeServerBackupIntegrity } = exported
 
 const snapshot = (id, date, state = 'complete', file_data_included = true) =>
   ({ id, created_at: date, state, file_data_included })
-const verify = (id, state, finished_at) =>
-  ({ snapshot_id: id, action: 'verify', mode: 'fast', state, finished_at })
+const verify = (id, state, finished_at) => ({
+  snapshot_id: id, action: 'verify', mode: 'fast', state, finished_at,
+  verification: state === 'success' ? {
+    protocol: 'xdrive-host-backup-verify-v1', state: 'success',
+    format: id.startsWith('v1:') ? 'v1' : 'v2',
+    scope: 'backup_snapshot_and_referenced_cas',
+    cas_objects_checked: id.startsWith('v1:') ? 0 : 1,
+    cas_bytes_hashed: id.startsWith('v1:') ? 0 : 2048,
+  } : undefined,
+})
 const page = (snapshots, history = []) =>
   ({ inventory: { snapshots }, history })
 
@@ -54,7 +62,7 @@ test('absence of recent receipts is unknown, not failed, and cannot assert curre
   assert.equal(result.withoutRecentReceipt, 1)
   assert.equal(result.historicalPassed, 0)
   assert.equal(result.historicalFailed, 0)
-  assert.equal(result.needsAttention, false)
+  assert.equal(result.needsAttention, true)
   const panel = fs.readFileSync(path.join(root, 'ui/shared/src/mui/ServerBackupManagementPanel.tsx'), 'utf8')
   assert.match(panel, /data-xdrive-admin-backup-integrity-summary/)
   assert.match(panel, /历史校验通过均不代表当前数据仍完好/)
@@ -131,4 +139,58 @@ test('older generations show historical receipts without implying current recove
   assert.match(parent, /history=\{page\.history\}/)
   // Even after showing a historic success, the old pager cannot restore/delete.
   assert.doesNotMatch(pager, /onRestoreOlder|onDeleteOlder|onDrillOlder/)
+})
+
+
+test('Admin integrity lists require a matching structured Host proof, not only a success status', () => {
+  const { classifyServerBackupVerificationEvidence: classify,
+    serverBackupHistoricalVerificationLabel: label,
+    serverBackupReceiptExplanation: explanation } = exported
+  const id = 'v2-default:xdrive-backup-20261029T010203Z'
+  const good = verify(id, 'success', '2026-10-29T01:02:03Z')
+  assert.equal(classify(good), 'passed')
+  assert.match(label([good], id), /^历史通过 · fast · .+结构化校验凭据/)
+  const old = { ...good, verification: undefined }
+  assert.equal(classify(old), 'unattested')
+  assert.match(label([old], id), /^历史结果未证实/)
+  assert.match(explanation(old), /缺少可信结构化校验凭据/)
+  const malformed = [
+    { ...good, verification: { ...good.verification, protocol: 'unrecognized' } },
+    { ...good, verification: { ...good.verification, scope: 'online_storage' } },
+    { ...good, verification: { ...good.verification, format: 'v1' } },
+    { ...good, verification: { ...good.verification, failure_category: 'object_read_failed' } },
+    { ...good, verification: { ...good.verification, cas_objects_checked: -1 } },
+    { ...good, verification: { ...good.verification, cas_bytes_hashed: 1.5 } },
+    { ...good, verification: { ...good.verification, cas_bytes_hashed: Number.MAX_SAFE_INTEGER + 1 } },
+    { ...good, snapshot_id: 'another-host:xdrive-backup-20261029T010203Z' },
+    { ...verify('v1:xdrive-backup-20261029T010203Z', 'success', good.finished_at),
+      verification: { ...good.verification, format: 'v1' } },
+  ]
+  for (const entry of malformed) assert.equal(classify(entry), 'unattested')
+  const status = summarizeServerBackupIntegrity(page([snapshot(id, '2026-10-29T01:02:03Z')], [old]))
+  assert.equal(status.historicalPassed, 0)
+  assert.equal(status.historicalFailed, 0)
+  assert.equal(status.withoutRecentReceipt, 1)
+  assert.equal(status.needsAttention, true)
+  const failed = { ...old, state: 'failed', finished_at: '2026-10-29T03:00:00Z' }
+  assert.equal(classify(failed), 'failed')
+  const latest = summarizeServerBackupIntegrity(page([snapshot(id, '2026-10-29T01:02:03Z')],
+    [good, failed]))
+  assert.equal(latest.historicalPassed, 0)
+  assert.equal(latest.historicalFailed, 1)
+  assert.match(label([good, failed], id), /^历史失败/)
+})
+
+test('shared Admin backup surfaces use the same evidence classification and fail closed', () => {
+  const panel = fs.readFileSync(path.join(root,
+    'ui/shared/src/mui/ServerBackupManagementPanel.tsx'), 'utf8')
+  const evidence = fs.readFileSync(path.join(root,
+    'ui/shared/src/mui/BackupRecoveryEvidencePanel.tsx'), 'utf8')
+  const receipt = fs.readFileSync(path.join(root,
+    'ui/shared/src/mui/BackupVerificationReceipt.tsx'), 'utf8')
+  assert.match(panel, /return serverBackupHistoricalVerificationLabel\(history, snapshotID\)/)
+  assert.match(panel, /无可信校验凭据/)
+  assert.match(evidence, /classifyServerBackupVerificationEvidence\(event\)/)
+  assert.match(receipt, /evidence === 'unattested'/)
+  assert.doesNotMatch(evidence, /action: 'delete'|action: 'restore'/)
 })

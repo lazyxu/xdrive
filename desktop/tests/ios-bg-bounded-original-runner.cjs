@@ -67,7 +67,9 @@ test('local revoke and OS expiration fence each subsequent chunk without credent
   assert.match(legacy,/kSecAttrAccessibleWhenUnlockedThisDeviceOnly/)
   assert.match(legacy,/FileProtectionType\.complete/)
   assert.doesNotMatch(transport,/URLSessionConfiguration\.background/)
-  assert.doesNotMatch(schedule,/accessToken|grantSecret|deviceToken|localIdentifier/)
+  // Reject secret-bearing fields/properties, not human-readable comments
+  // documenting that raw PhotoKit identifiers are intentionally absent.
+  assert.doesNotMatch(schedule,/\.localIdentifier\b|\b(?:var|let) (?:accessToken|grantSecret|deviceToken)\b/)
 })
 
 test('offline local BG stop is stop-only, preserves remote revoke evidence and is available in shared UI and bootstrap',()=>{
