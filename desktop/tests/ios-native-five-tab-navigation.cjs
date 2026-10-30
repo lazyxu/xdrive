@@ -30,8 +30,8 @@ test('Gallery owns local, albums, cloud and map subroutes; media uses native ful
   assert.match(ui, /XDriveIOSNativeCloudOriginalGallery\(login: login\)/);
   assert.match(ui, /gallerySource = source\s+tab = \.gallery/);
   assert.match(ui, /case \.map:/);
-  assert.match(local, /\.fullScreenCover\(item: \$selected\)/);
-  assert.match(albums, /\.fullScreenCover\(item: \$selected\)/);
+  assert.match(local, /\.fullScreenCover\(item: \$selected, onDismiss: \{ restoreAfterViewer\(\) \}\)/);
+  assert.match(albums, /\.fullScreenCover\(item: \$selected, onDismiss: \{ restoreAfterViewer\(\) \}\)/);
   const cloud = read('ios/XDriveIOS/NativeCloudOriginalGallery.swift');
   assert.match(cloud, /\.fullScreenCover\(item: \$selected\)/);
   assert.match(cloud, /if selected == nil \{ model\.invalidate\(\) \}/);
