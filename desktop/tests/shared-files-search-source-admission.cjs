@@ -41,7 +41,8 @@ test('authenticated Source UI allows only exact positive ID and visible name', (
 test('malformed or ambiguous Source identities fail the entire read, never ready empty', () => {
   const valid = { id: 13, name: '合法来源' }
   const invalid = [
-    null, undefined, [], 'not-an-array', { items: [] },
+    // [] is a legitimate verified empty list, tested above.
+    null, undefined, 'not-an-array', { items: [] },
     [{ ...valid, id: 0 }],
     [{ ...valid, id: -1 }],
     [{ ...valid, id: '13' }],
