@@ -116,7 +116,7 @@ func TestPackAllocationProjectionUsesComparableFourKiBBaselines(t *testing.T) {
 		pack.ProjectedSavingsPercent != 0 {
 		t.Fatalf("mixed physical/model allocation produced an invalid savings ratio: %+v", pack)
 	}
-	if pack.ObservedSourceObjects != 2 || pack.ObservedSourceAllocatedBytes != 192<<10 {
+	if pack.ObservedSourceObjects != 2 || pack.ObservedSourceAllocatedBytes != 192 << 10 {
 		t.Fatalf("observed source allocation must remain separate diagnostic evidence: %+v", pack)
 	}
 }
