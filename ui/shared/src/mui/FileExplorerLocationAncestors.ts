@@ -1,10 +1,10 @@
 import type { NodeLocation } from '../models'
 
 /** A shape-only, read-only projection of a current authenticated NodeLocation. */
-export type XDriveFileExplorerLocationAncestors = ReadonlyArray<Readonly<{
+export type XDriveFileExplorerLocationAncestors = Array<{
   id: number
   name: string
-}>>
+}>
 
 /**
  * Web and Desktop must navigate only an actual, internally consistent
