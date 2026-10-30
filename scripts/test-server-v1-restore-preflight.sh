@@ -324,4 +324,7 @@ printf '{"format_version":2,"format_version":1,"file_data_included":true}\n' > "
 (cd "$BACKUP_DIR"; sha256sum database.dump verify.json manifest.json objects.index legacy.tar > SHA256SUMS.txt)
 assert_fail_closed manifest_v2_duplicate_version 'invalid or unsafe backup manifest'
 
+bash -n "$ROOT/scripts/test-server-restore-target-preflight.sh"
+bash "$ROOT/scripts/test-server-restore-target-preflight.sh"
+
 echo 'v1/v2 restore manifest, checksum, tar and database-only fail-closed preflights passed'

@@ -61,6 +61,8 @@ import {
   useXDriveFileExplorerExternalDropController,
   useXDriveFileExplorerUploadController,
   useXDriveFileExplorerOwnerActionLifecycle,
+  useXDriveFileExplorerLocalReveal,
+  xDriveFileExplorerLocationAncestorCrumbs,
   useXDriveFileExplorerOwnerSourceOptions,
   xDriveFileExplorerDeviceStatusLabel,
   xDriveFileExplorerDeviceHydrationPathKey,
@@ -270,13 +272,10 @@ export default function DesktopFileExplorer({
   // Explicit Owner browse, media and write capability groups.
   const nativePort = hostPort.native
   const [createOpen, setCreateOpen] = useState(false)
-  const [localRevealTarget, setLocalRevealTarget] = useState<{ parentID: number; nodeID: number; requestID: string } | null>(null)
-  const revealSequenceRef = useRef(0)
-  const requestReveal = (parentID: number, nodeID: number) => {
-    revealSequenceRef.current += 1
-    setLocalRevealTarget({ parentID, nodeID,
-      requestID: `desktop-local:${navigationSessionStorageKey ?? ''}:${revealSequenceRef.current}` })
-  }
+  const { localRevealTarget, requestReveal } = useXDriveFileExplorerLocalReveal({
+    lifecycleKey: navigationSessionStorageKey ?? '',
+    requestPrefix: 'desktop-local',
+  })
   const createFolderParentIDRef = useRef<number | null>(null)
   const uploadPickerParentIDRef = useRef<number | null>(null)
   const folderUploadPickerParentIDRef = useRef<number | null>(null)
@@ -1964,11 +1963,8 @@ const desktopTransferLifecycleChildBatchSize = 1000
   const showNodeLocation = async (
     location: Awaited<ReturnType<typeof loadNodeLocation>>,
   ): Promise<void> => {
-    if (!location.parent_id) return
-    const ancestry = location.breadcrumbs
-      .filter(crumb => crumb.id !== location.node_id)
-      .map(crumb => ({ id: crumb.id, name: crumb.name }))
-    if (!ancestry.length || ancestry.at(-1)?.id !== location.parent_id) return
+    const ancestry = xDriveFileExplorerLocationAncestorCrumbs(location)
+    if (!ancestry || !location.parent_id) return
     const intent = beginNavigationIntent()
     try {
       let accepted = false

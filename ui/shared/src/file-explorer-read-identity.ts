@@ -12,13 +12,32 @@ export type XDriveFileExplorerReadonlyItem = Readonly<{
   kind: 'dir' | 'file'
 }>
 
+/**
+ * A read-only current Node/revision must be an exact positive safe integer,
+ * or its canonical base-10 string representation. JavaScript Number(...)
+ * also accepts whitespace, signs, hex, exponent and empty strings; those
+ * ambiguous aliases are not safe current Owner/Node identity evidence.
+ *
+ * This is shape validation, not a grant to read another Owner's file.
+ */
+export function xDriveFileExplorerCanonicalReadNodeID(
+  value: number | string | undefined,
+): number | null {
+  if (typeof value === 'number') {
+    return Number.isSafeInteger(value) && value > 0 ? value : null
+  }
+  if (typeof value !== 'string' || !/^[1-9]\d*$/.test(value)) return null
+  const id = Number(value)
+  return Number.isSafeInteger(id) && id > 0 ? id : null
+}
+
 export function xDriveFileExplorerReadNodeID(
   item: XDriveFileExplorerReadonlyItem,
   allowed = true,
 ): number | null {
-  if (!allowed || item.kind !== 'file') return null
-  const nodeID = Number(item.id)
-  return Number.isSafeInteger(nodeID) && nodeID > 0 ? nodeID : null
+  return allowed && item?.kind === 'file'
+    ? xDriveFileExplorerCanonicalReadNodeID(item.id)
+    : null
 }
 
 /**
@@ -34,8 +53,6 @@ export function xDriveFileExplorerThumbnailRequest(
 ): Readonly<{ nodeID: number; revision?: number }> | null {
   const nodeID = xDriveFileExplorerReadNodeID(item, allowed)
   if (nodeID === null) return null
-  const revision = Number(item.revision)
-  return Number.isSafeInteger(revision) && revision > 0
-    ? { nodeID, revision }
-    : { nodeID }
+  const revision = xDriveFileExplorerCanonicalReadNodeID(item.revision)
+  return revision !== null ? { nodeID, revision } : { nodeID }
 }
