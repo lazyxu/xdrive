@@ -1,4 +1,6 @@
-# xDrive Android — native client, first increment
+# xDrive Android — native Kotlin/Jetpack Compose client
+
+> **2026-10-30 architecture:** Android and iOS App product UIs are entirely native. Android already uses native Compose (NOT WebView); keep current Auth/Files/Gallery/Viewer/SAF/Media3/API/transfer code and finish gaps. Web/PWA is only a design/behavior reference, not a code-runtime dependency. Previous "first increment" missing-feature notes below describe historical stages, not necessarily current master. See [mobile-native-migration.md](../docs/architecture/mobile-native-migration.md).
 
 Kotlin / Jetpack Compose, Android 10 (API 29) and later. This is a native
 client of the existing xDrive Go Server, not a WebView wrapper.

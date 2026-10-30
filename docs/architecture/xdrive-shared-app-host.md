@@ -2,6 +2,8 @@
 
 ## Decision (2026-10-27)
 
+> **2026-10-30 scope clarification:** one React UI applies to Desktop + Synology DSM (and shared browser UI primitives), **not native iOS or Android Apps**. Both mobile Apps target fully native product screens. The current iOS WKWebView is temporary as-built; see [mobile-native-migration.md](./mobile-native-migration.md).
+
 Desktop and Synology DSM are **two hosts for one xDrive React/MUI
 application**. Do not implement or evolve DSM routes, menus, Gallery, Viewer,
 settings, dialogs, or page layout independently of Desktop. Desktop changes
