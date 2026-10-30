@@ -45,6 +45,7 @@ test('enable never bypasses pending original receipts, old grants or Owner revoc
   assert.match(enable, /manager\.verifyRemote\(/);
   assert.match(enable, /remote\.enabled/);
   assert.match(manager, /guard try !localStatus\(owner: owner\)\.enrolled/);
+  assert.match(manager, /guard try await XDriveIOSApprovedPhotoBGVault\.shared\.current\(\) == nil/);
   assert.doesNotMatch(enable, /XDriveIOSForegroundPhotoBackupMVP\(|UploadSessionTransport\(|WKWebView/);
 });
 
