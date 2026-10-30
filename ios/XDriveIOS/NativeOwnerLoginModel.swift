@@ -305,26 +305,31 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
         }
     }
 
-    /// Invalidate in-memory authority BEFORE any remote request. Failure
-    /// removing a persisted credential remains visible and blocks claims
-    /// that the local automatic login has been cleared.
-    func signOut() async {
+    /// A failed local Keychain deletion must NEVER expose a new login form
+    /// while the old Owner's refresh token can still be restored on restart.
+    /// Bump generation before local cleanup to fence late network responses;
+    /// after synchronous Keychain removal, invalidate memory BEFORE remote I/O.
+    @discardableResult
+    func signOut() async -> Bool {
         generation &+= 1
         let previous = active
-        active = nil
-        owner = nil
         password = ""
         noticeMessage = nil
         errorMessage = nil
         do {
             try XDriveIOSNativeOwnerSessionStore.clear()
         } catch {
+            // Keep the verified Owner/workspace mounted for a deliberate
+            // retry. No Server switch or new login is permitted until the
+            // exact persisted v2 credential is confirmed absent.
             errorMessage = humanMessage(error)
-            return
+            return false
         }
+        active = nil
+        owner = nil
         guard let previous else {
             noticeMessage = "本机原生登录凭据已清除。"
-            return
+            return true
         }
         do {
             try await AuthService(origin: previous.origin).logout(
@@ -334,5 +339,6 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
         } catch {
             noticeMessage = "本机凭据已清除；服务器会话撤销尚未确认。"
         }
+        return true
     }
 }

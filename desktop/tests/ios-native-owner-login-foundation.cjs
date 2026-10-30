@@ -59,10 +59,23 @@ test('native login and restoration re-prove exact Server Owner/root, not JS cook
   assert.match(read('ios/XDriveIOS/OwnerRootVerifier.swift'), /"\/api\/v1\/nodes\/root"/)
 })
 
-test('native logout clears the in-memory session before revocation and does not forge remote success', () => {
-  const logout = model.slice(model.indexOf('func signOut() async'))
-  assert.ok(logout.indexOf('generation &+= 1') < logout.indexOf('active = nil'))
-  assert.ok(logout.indexOf('active = nil') < logout.indexOf('XDriveIOSNativeOwnerSessionStore.clear()'))
-  assert.ok(logout.indexOf('XDriveIOSNativeOwnerSessionStore.clear()') < logout.indexOf('AuthService(origin: previous.origin).logout'))
+test('native logout fails closed when old Keychain credentials cannot be deleted', () => {
+  const logout = model.slice(model.indexOf('func signOut() async -> Bool'))
+  const before = [
+    'generation &+= 1',
+    'XDriveIOSNativeOwnerSessionStore.clear()',
+    'active = nil',
+    'owner = nil',
+    'AuthService(origin: previous.origin).logout'
+  ].map(value => logout.indexOf(value))
+  assert.ok(before.every((pos, index) => pos >= 0 &&
+    (index === 0 || pos > before[index - 1])),
+    'Keychain must clear before auth state disappears; remote revoke runs only after in-memory removal')
+  const failure = logout.slice(logout.indexOf('catch {'),
+    logout.indexOf('active = nil'))
+  assert.match(failure, /errorMessage = humanMessage\(error\)/)
+  assert.match(failure, /return false/)
+  assert.doesNotMatch(failure, /active = nil|owner = nil|AuthService\(/)
+  assert.match(logout, /return true/)
   assert.match(logout, /服务器会话撤销尚未确认/)
 })

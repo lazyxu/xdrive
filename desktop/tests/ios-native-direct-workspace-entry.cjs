@@ -42,4 +42,8 @@ test('security-first logout and durable runner survive the direct-root cutover',
   assert.match(login, /backup\.cancel\(\)/);
   assert.match(login, /backup\.tickIfDue\(login: model\)/);
   assert.match(login, /logoutWarning = "无法确认旧账户后台凭据已清除/);
+  assert.match(login, /guard await model\.signOut\(\) else \{/);
+  assert.match(login, /本机登录凭据未能从 Keychain 清除/);
+  assert.ok(signOut.indexOf('guard await model.signOut() else') <
+    signOut.indexOf('XDriveIOSNativeNavigationRouteStore().clear()'));
 });

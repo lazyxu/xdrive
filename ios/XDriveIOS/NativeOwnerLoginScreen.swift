@@ -222,7 +222,10 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
         do {
             let remotePending = try await XDriveIOSPhotoBackgroundGrantManager.shared
                 .emergencyStopLocally()
-            await model.signOut()
+            guard await model.signOut() else {
+                logoutWarning = "本机登录凭据未能从 Keychain 清除；为防止重启后恢复旧账户，本次未退出或切换服务器。请解锁后重试。"
+                return
+            }
             // Root conditionally unmounts the dashboard on logout, so its
             // onChange cannot be relied upon to erase persisted route hints.
             XDriveIOSNativeNavigationRouteStore().clear()
