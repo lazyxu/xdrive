@@ -98,7 +98,7 @@ func TestDSMRecoveryReviewRejectsForgedSelectorsBeforeAgent(t *testing.T) {
 		"?op=recovery-review&source_id=42&after_file=16",
 		"?op=recovery-review&source_id=42&page_epoch="+validEpoch,
 		"?op=recovery-review&source_id=42&after_file=16&page_epoch="+strings.Repeat("A", 64),
-		"?op=recovery-review&source_id=42&after_file=16&page_epoch="+validEpoch + "&page_epoch="+validEpoch,
+		"?op=recovery-review&source_id=42&after_file=16&page_epoch="+validEpoch+"&page_epoch="+validEpoch,
 		"?op=recovery-review&source_id=42&op=run",
 		"?op=recovery-review&source_id=42;action=run",
 		"?op=recovery-review&source_id=42&after_file=00016&page_epoch="+validEpoch,
