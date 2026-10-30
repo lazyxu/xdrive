@@ -116,7 +116,8 @@ const probe = ((window as any).__mapProbe = {
   // Only bounded diagnostic categories, NEVER Owner IDs, URL, Query, JWT
   // or HTTP response bodies. Trace whether a failed request raced map Close.
   galleryPageErrorContexts:[] as Array<{
-    type:string;httpStatus:number|null;mapVisible:boolean;width:number
+    type:string;reasonCode:string;httpStatus:number|null;
+    mapVisible:boolean;width:number
   }>,
   galleryPageDirectOpens:[] as any[], galleryPageDirectClosed:0,
   photoPreviewRanges:[] as any[], photoPreviewFailures:[] as any[],
@@ -489,10 +490,26 @@ function FullGalleryPage(){
     onError={(error)=>{
       const type=error instanceof Error?error.name:'GalleryError'
       const reason=error instanceof Error?error.message:''
-      const match=/^genuine Gin Gallery HTTP ([45]\d{2})$/.exec(reason)
+      const match=/^genuine Gin Gallery HTTP ([1-5]\d{2})$/.exec(reason)
+      // Fixed, non-secret categories only: raw Error.message/stack may
+      // contain private media or Owner URLs and must never enter CI logs.
+      const reasonCode=match?'gin-http'
+        : reason==='VirtualCollection returned an invalid positional Range page.'
+          ? 'virtual-position'
+        : reason==='VirtualCollection refused an unverified positional Range page.'
+          ? 'virtual-rejected'
+        : reason.startsWith('Count-free VirtualCollection range requires')
+          ? 'virtual-count-missing'
+        : /AbortError|aborted|Failed to fetch/.test(reason)
+          ? 'transport-abort'
+        : /Cannot read properties of/.test(reason)
+          ? 'runtime-undefined'
+        : /invalid|denied|changed|revoke/i.test(reason)
+          ? 'invalid-owner-scope'
+        : 'unclassified'
       probe.galleryPageErrors.push(type)
       probe.galleryPageErrorContexts.push({
-        type,httpStatus:match?Number(match[1]):null,
+        type,reasonCode,httpStatus:match?Number(match[1]):null,
         mapVisible:Boolean(document.querySelector('[data-xdrive-gallery-places-map]')),
         width:window.innerWidth,
       })
