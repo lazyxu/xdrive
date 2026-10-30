@@ -62,3 +62,40 @@ test('shared PWA receives only a redacted local count and never assumes older IP
   assert.match(shared, /data-xdrive-ios-bg-emergency-stop/)
   assert.doesNotMatch(shared, /grant_secret|deviceToken|rawSecret/)
 })
+
+
+test('automatic PhotoKit timer acquires the same native original gate as manual and BG runs before reserving a window', () => {
+  const bridge = read('ios/XDriveIOS/IOSPhotoHostBridge.swift')
+  const tick = bridge.slice(bridge.indexOf('case "photos.auto.tick":'),
+    bridge.indexOf('case "photos.reconcile.status":'))
+  const gate = tick.indexOf('let gate = XDriveIOSOriginalRunGate.shared.acquire()')
+  const reserve = tick.indexOf('reserved = try store.reserveDue(owner: owner)')
+  const task = tick.indexOf('activeBackup = Task { @MainActor [weak self] in')
+  assert.ok(gate >= 0 && gate < reserve && reserve < task,
+    'busy foreground and BG originals must not reserve an automatic due slot')
+  assert.match(tick, /guard let gate = XDriveIOSOriginalRunGate\.shared\.acquire\(\) else \{[\s\S]*?"reason": "busy"/)
+  assert.match(tick, /catch \{\s*XDriveIOSOriginalRunGate\.shared\.release\(gate\)\s*throw error\s*\}/)
+  assert.match(tick, /else \{\s*XDriveIOSOriginalRunGate\.shared\.release\(gate\)\s*sendResult\(id, \["ran": false, "reason": "notDue"\]\)/)
+  assert.match(tick, /activeBackup = Task \{ @MainActor \[weak self\] in\s*defer \{ XDriveIOSOriginalRunGate\.shared\.release\(gate\) \}/)
+  assert.match(read('ios/XDriveIOS/BackgroundPhotoTask.swift'),
+    /XDriveIOSOriginalRunGate\.shared\.acquire\(\)/)
+})
+
+test('automatic backup consent re-verifies exact authenticated Owner and active Host after UIKit awaits', () => {
+  const bridge = read('ios/XDriveIOS/IOSPhotoHostBridge.swift')
+  const configure = bridge.slice(bridge.indexOf('case "photos.auto.configure":'),
+    bridge.indexOf('case "photos.auto.tick":'))
+  const consent = configure.indexOf('let confirmed = await confirmAutoSchedule(')
+  const reverify = configure.indexOf('let currentOwner = try await verifiedOwner(source)')
+  const persist = configure.indexOf('let state = try store.configure(')
+  assert.ok(consent >= 0 && consent < reverify && reverify < persist,
+    'an old consent cannot enable a schedule for an owner or server that has switched')
+  for (const field of ['origin', 'instanceID', 'ownerID', 'username', 'rootNodeID']) {
+    assert.ok(configure.includes('currentOwner.' + field + ' == owner.' + field),
+      'must revalidate ' + field + ' after the consent await')
+  }
+  assert.match(configure, /store\.localStopGeneration == stopGeneration,[\s\S]*?let currentURL = webView\?\.url/)
+  assert.match(configure, /sameOrigin\(currentURL\)/)
+  assert.match(configure, /UIApplication\.shared\.applicationState == \.active/)
+  assert.match(configure, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/)
+})

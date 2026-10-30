@@ -452,6 +452,26 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                     sendError(id, "本机已紧急停止自动备份；此前的授权确认不能重新启用计划。")
                     return
                 }
+                // The native UIKit consent dialog crosses an await boundary:
+                // never persist a schedule for a stale Owner/root or a WebView
+                // that changed while the user considered the prompt.
+                let currentOwner = try await verifiedOwner(source)
+                try Task.checkCancellation()
+                guard currentOwner.origin == owner.origin,
+                      currentOwner.instanceID == owner.instanceID,
+                      currentOwner.ownerID == owner.ownerID,
+                      currentOwner.username == owner.username,
+                      currentOwner.rootNodeID == owner.rootNodeID,
+                      store.localStopGeneration == stopGeneration,
+                      let currentURL = webView?.url,
+                      sameOrigin(currentURL),
+                      UIApplication.shared.applicationState == .active,
+                      [.authorized, .limited].contains(
+                        PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                      ) else {
+                    sendError(id, "账户、服务器或照片授权已变化，自动备份未启用。")
+                    return
+                }
                 let state = try store.configure(
                     owner: owner, minutes: minutes, allowICloud: allowCloud
                 )
@@ -481,15 +501,31 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                     return
                 }
                 let store = XDriveIOSPhotoAutoScheduleStore.shared
-                guard let state = try store.reserveDue(owner: owner),
+                // Manual uploads and BGProcessingTask already share this gate.
+                // Acquire it BEFORE reserving a due window so a busy native
+                // original cannot be mistaken for a completed automatic tick.
+                guard let gate = XDriveIOSOriginalRunGate.shared.acquire() else {
+                    sendResult(id, ["ran": false, "reason": "busy"])
+                    return
+                }
+                let reserved: XDriveIOSPhotoAutoScheduleStore.State?
+                do {
+                    reserved = try store.reserveDue(owner: owner)
+                } catch {
+                    XDriveIOSOriginalRunGate.shared.release(gate)
+                    throw error
+                }
+                guard let state = reserved,
                       let start = XDrivePhotoBackupScanWindow.offset(
                         for: state.windowIndex
                       ) else {
+                    XDriveIOSOriginalRunGate.shared.release(gate)
                     sendResult(id, ["ran": false, "reason": "notDue"])
                     return
                 }
                 activeBackupID = id
                 activeBackup = Task { @MainActor [weak self] in
+                    defer { XDriveIOSOriginalRunGate.shared.release(gate) }
                     guard let self else { return }
                     defer {
                         self.activeBackup = nil
