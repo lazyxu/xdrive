@@ -24,7 +24,16 @@ test('native shell restores route hints only after verified Owner', () => {
 
 test('switching Owner/Root/Server invalidates previous navigation and avoids backup cancellation', () => {
   assert.match(ui, /\.onChange\(of: ownerScopeKey\) \{ _ in[\s\S]*?navigationRouteStore\.clear\(\)[\s\S]*?resetNavigation\(\)/);
-  assert.match(ui, /\.onChange\(of: login\.owner\) \{ owner in[\s\S]*?navigationRouteStore\.clear\(\)[\s\S]*?dismiss\(\)/);
+  // The verified workspace is now the root, not a NavigationStack push.
+  // The root owns logout and clears persisted hints even when the dashboard
+  // unmounts before its Owner-change callback can run.
+  const login = fs.readFileSync(
+    path.join(root, 'ios/XDriveIOS/NativeOwnerLoginScreen.swift'), 'utf8'
+  );
+  assert.match(ui, /\.onChange\(of: login\.owner\) \{ owner in\s*if owner == nil \{\s*navigationRouteStore\.clear\(\)\s*resetNavigation\(\)/);
+  assert.doesNotMatch(ui, /dismiss\(\)/);
+  assert.match(login, /await model\.signOut\(\)[\s\S]*?XDriveIOSNativeNavigationRouteStore\(\)\.clear\(\)/);
+  assert.match(login, /guard let gate = XDriveIOSOriginalRunGate\.shared\.acquire\(\)/);
   assert.match(ui, /activeDynamic: dynamicFeature\?\.implemented == true \? dynamicFeature\?\.rawValue : nil/);
   assert.match(routes, /saved\.scopeHash == scopeHash/);
   assert.match(routes, /recentDynamic\.filter \{ \$0 == "backup" \}/);
