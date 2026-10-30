@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -40,6 +41,105 @@ type retentionPlan struct {
 
 var committedV2Files = []string{
 	"database.dump", "verify.json", "manifest.json", "objects.index", "legacy.tar",
+}
+
+const maxV2ManifestBytes = 64 * 1024
+
+// readUniqueBackupJSON validates every nested object key. A SHA256SUMS file
+// authenticates manifest bytes, not their interpretation: regular json.Unmarshal
+// silently accepts duplicate keys, allowing different Host/Go readers to see
+// different backup consistency or format metadata.
+func readUniqueBackupJSON(decoder *json.Decoder, depth int) (any, error) {
+	if depth > 32 {
+		return nil, errors.New("v2 manifest JSON nesting limit exceeded")
+	}
+	token, err := decoder.Token()
+	if err != nil {
+		return nil, err
+	}
+	delim, ok := token.(json.Delim)
+	if !ok {
+		return token, nil
+	}
+	switch delim {
+	case '{':
+		object := make(map[string]any)
+		for decoder.More() {
+			keyToken, err := decoder.Token()
+			if err != nil {
+				return nil, err
+			}
+			key, ok := keyToken.(string)
+			if !ok {
+				return nil, errors.New("invalid v2 manifest object key")
+			}
+			if _, exists := object[key]; exists {
+				return nil, errors.New("duplicate v2 manifest JSON key")
+			}
+			child, err := readUniqueBackupJSON(decoder, depth+1)
+			if err != nil {
+				return nil, err
+			}
+			object[key] = child
+		}
+		end, err := decoder.Token()
+		if err != nil || end != json.Delim('}') {
+			return nil, errors.New("unterminated v2 manifest JSON object")
+		}
+		return object, nil
+	case '[':
+		array := make([]any, 0)
+		for decoder.More() {
+			child, err := readUniqueBackupJSON(decoder, depth+1)
+			if err != nil {
+				return nil, err
+			}
+			array = append(array, child)
+		}
+		end, err := decoder.Token()
+		if err != nil || end != json.Delim(']') {
+			return nil, errors.New("unterminated v2 manifest JSON array")
+		}
+		return array, nil
+	default:
+		return nil, errors.New("unexpected v2 manifest JSON delimiter")
+	}
+}
+
+// Keep the v2 Go retention/prune trust boundary aligned with the strict Host
+// verifier and destructive restore. All published v2 generations must include
+// complete file data and affirmative source consistency; missing/false/typed
+// differently is not a usable recovery point, even with freshly matched SHA.
+func validateV2SnapshotManifest(raw []byte) error {
+	if len(raw) == 0 || len(raw) > maxV2ManifestBytes {
+		return errors.New("unsafe v2 manifest size")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	value, err := readUniqueBackupJSON(decoder, 0)
+	if err != nil {
+		return err
+	}
+	if _, err := decoder.Token(); err != io.EOF {
+		return errors.New("trailing v2 manifest JSON")
+	}
+	manifest, ok := value.(map[string]any)
+	if !ok {
+		return errors.New("v2 manifest must be a JSON object")
+	}
+	version, ok := manifest["format_version"].(json.Number)
+	if !ok || version.String() != "2" {
+		return errors.New("unsupported v2 manifest format_version")
+	}
+	consistent, ok := manifest["consistency_verified"].(bool)
+	if !ok || !consistent {
+		return errors.New("v2 manifest requires consistency_verified=true")
+	}
+	withFiles, ok := manifest["file_data_included"].(bool)
+	if !ok || !withFiles {
+		return errors.New("v2 manifest requires file_data_included=true")
+	}
+	return nil
 }
 
 // Add byte counts without wrapping on untrusted repository sizes.
@@ -112,15 +212,20 @@ func validateCommittedSnapshot(dir string) (int64, error) {
 	if string(expected) != actual.String() {
 		return 0, fmt.Errorf("v2 checksum manifest mismatch in %s", dir)
 	}
-	var manifest struct {
-		FormatVersion int `json:"format_version"`
-	}
-	raw, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
+	manifestPath := filepath.Join(dir, "manifest.json")
+	manifestStat, err := regularFile(manifestPath)
 	if err != nil {
 		return 0, err
 	}
-	if err := json.Unmarshal(raw, &manifest); err != nil || manifest.FormatVersion != 2 {
-		return 0, fmt.Errorf("unsupported or invalid v2 manifest in %s", dir)
+	if manifestStat.Size() < 1 || manifestStat.Size() > maxV2ManifestBytes {
+		return 0, fmt.Errorf("unsafe v2 manifest size in %s", dir)
+	}
+	raw, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return 0, err
+	}
+	if err := validateV2SnapshotManifest(raw); err != nil {
+		return 0, fmt.Errorf("invalid v2 snapshot manifest in %s: %w", dir, err)
 	}
 	return bytesTotal, nil
 }
