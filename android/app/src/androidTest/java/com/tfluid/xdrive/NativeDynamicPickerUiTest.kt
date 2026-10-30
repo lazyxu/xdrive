@@ -28,6 +28,10 @@ class NativeDynamicPickerUiTest {
                 }
             }
         }
+        // The bottom bar must not consume the entire portrait viewport:
+        // both the long-press slot AND underlying Launcher must be displayed.
+        compose.onNodeWithTag("native-tab-dynamic").assertIsDisplayed()
+        compose.onNodeWithTag("native-launcher-dynamic-picker").assertIsDisplayed()
         compose.onNodeWithTag("native-tab-dynamic").performTouchInput { longClick() }
         compose.runOnIdle { assertEquals(1, opened.get()) }
         compose.onNodeWithTag("native-launcher-dynamic-picker").performClick()
