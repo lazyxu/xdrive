@@ -25,11 +25,15 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
     }
 
     func suspendForViewer() {
-        // The currently displayed page and its selected media must survive
-        // fullScreenCover. Disposable page IO can be interrupted.
+        // A Viewer or an album child route can temporarily cover the wall.
+        // Keep its 48-item page and exact source anchor for the return path.
         job?.cancel()
         job = nil
         busy = false
+    }
+
+    func suspendForNavigation() {
+        suspendForViewer()
     }
 
     func load(login: XDriveIOSNativeOwnerLoginModel,
@@ -301,7 +305,7 @@ struct XDriveIOSNativeServerMediaWall: View {
         }
         .onDisappear {
             if selected != nil { model.suspendForViewer() }
-            else { model.invalidate() }
+            else { model.suspendForNavigation() }
         }
     }
 }
@@ -360,7 +364,13 @@ struct XDriveIOSNativeServerMediaAlbums: View {
         .onChange(of: phase) { state in
             if state == .active { reload() } else { invalidate() }
         }
-        .onDisappear { invalidate() }
+        .onDisappear {
+            // Pushing an album wall must not remove the NavigationLink's
+            // underlying album identity from its original list.
+            job?.cancel()
+            job = nil
+            busy = false
+        }
     }
 
     private func reload() {
