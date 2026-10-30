@@ -11,6 +11,7 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
     @Environment(\.scenePhase) private var phase
     @State private var showPassword = false
     @State private var logoutWarning: String?
+    @State private var showingNativeWorkspace = false
 
     var body: some View {
         NavigationStack {
@@ -63,9 +64,15 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
             .background(Color(uiColor: .systemGroupedBackground))
             .navigationTitle("xDrive")
             .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(isPresented: $showingNativeWorkspace) {
+                XDriveIOSNativePhotosDashboard(login: model, backup: backup)
+            }
         }
         .task {
             await model.restore()
+            // Restoration must prove the original Server Owner and root.
+            // Only a verified native account enters the Photos-first workspace.
+            if model.owner != nil { showingNativeWorkspace = true }
             backup.refresh(owner: model.owner)
             if phase == .active { backup.tickIfDue(login: model) }
         }
@@ -83,6 +90,7 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
             backup.cancel()
             backup.refresh(owner: model.owner)
             if phase == .active { backup.tickIfDue(login: model) }
+            showingNativeWorkspace = model.owner != nil
         }
     }
 
@@ -159,8 +167,8 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
             Text("本机相册、原件自动增量备份及云端已备份文件查看已提供原生入口。完整 Files 和云端 Live ZIP 动态播放仍在迁移。")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
-            NavigationLink {
-                XDriveIOSNativePhotosDashboard(login: model, backup: backup)
+            Button {
+                showingNativeWorkspace = true
             } label: {
                 Label("打开原生相册与自动备份", systemImage: "photo.stack")
                     .frame(maxWidth: .infinity, minHeight: 44)

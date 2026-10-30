@@ -313,8 +313,7 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
                 } else if let page {
                     Text("当前显示 \(page.startOffset + 1)–\(page.nextOffset) / \(page.totalAccessibleAssets)")
                         .font(.footnote).monospacedDigit()
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 3),
-                                             count: 3), spacing: 3) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 95, maximum: 150), spacing: 3)], spacing: 3) {
                         ForEach(page.items.filter { $0.kind != "unsupported" }) { candidate in
                             Button { selected = candidate } label: {
                                 XDriveIOSLocalPhotoTile(candidate: candidate)

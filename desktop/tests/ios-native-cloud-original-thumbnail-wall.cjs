@@ -6,7 +6,7 @@ const path = require('node:path')
 const root = path.resolve(__dirname, '../..')
 const src = fs.readFileSync(path.join(root, 'ios/XDriveIOS/NativeCloudOriginalGallery.swift'), 'utf8')
 
-test('cloud originals render a real lazy 3-column thumbnail grid', () => {
+test('cloud originals render a bounded adaptive native thumbnail grid', () => {
   assert.match(src, /private struct XDriveIOSNativeCloudOriginalTile: View/)
   assert.match(src, /LazyVGrid\(/)
   assert.match(src, /ForEach\(model.nodes\)/)
