@@ -1,4 +1,3 @@
-import { xDriveValidateSynologyNASShareInventory } from './synology-nas-share-inventory'
 import type { XDriveSynologyNASShare } from './synology-nas-share-inventory'
 import type { XDriveDiagnosticReport } from './mui/DiagnosticsPage'
 import type { XDriveFileTextPreview } from './file-preview'
@@ -336,6 +335,11 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
   const api: XDriveSynologyBackupLocalClient = {
     async nasShares(signal) {
       const raw = await request<unknown>('/v1/nas-shares', 'GET', undefined, signal)
+      // Keep this feature-only module out of the existing Owner-read VM
+      // fixtures, which execute unrelated methods without a module loader.
+      // Vite resolves the import into an isolated, same-origin DSM asset.
+      const { xDriveValidateSynologyNASShareInventory } =
+        await import('./synology-nas-share-inventory')
       return xDriveValidateSynologyNASShareInventory(raw)
     },
     async list(signal) {
