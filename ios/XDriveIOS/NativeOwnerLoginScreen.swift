@@ -13,6 +13,8 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
     @State private var logoutWarning: String?
     @State private var restoreFinished = false
     @State private var signOutBusy = false
+    @State private var emergencyStopBusy = false
+    @State private var emergencyStopNotice: String?
 
     var body: some View {
         Group {
@@ -90,6 +92,18 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                 if let notice = model.noticeMessage {
                     Text(notice).font(.footnote).foregroundStyle(.secondary)
                 }
+                // Stop-only action remains accessible when login or Keychain
+                // verification is impossible, without restoring a Web screen.
+                Button("紧急停止本机相册自动备份", role: .destructive) {
+                    Task { await emergencyStopWithoutAccount() }
+                }
+                .disabled(emergencyStopBusy)
+                .accessibilityIdentifier("native-ios-offline-emergency-stop")
+                if let emergencyStopNotice {
+                    Text(emergencyStopNotice)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
             }
             .padding(24)
             .frame(maxWidth: 430, alignment: .leading)
@@ -165,6 +179,29 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                 .foregroundStyle(.secondary)
         }
         .disabled(model.busy)
+    }
+
+    /// Stop-only fallback for an offline/locked native login, not a WebView.
+    /// Existing encrypted receipts and the v2 Owner session are untouched.
+    @MainActor
+    private func emergencyStopWithoutAccount() async {
+        guard !emergencyStopBusy else { return }
+        emergencyStopBusy = true
+        defer { emergencyStopBusy = false }
+        // A prior upload may still be winding down; stop this scene's runner
+        // before revoking any persisted plans or background credentials.
+        backup.cancel()
+        let stopped = XDriveIOSPhotoAutoScheduleStore.shared.disableAllOnThisDevice()
+        XDriveIOSBackgroundPhotoTask.revokePendingRequests()
+        do {
+            let pendingRemote = try await XDriveIOSPhotoBackgroundGrantManager.shared
+                .emergencyStopLocally()
+            emergencyStopNotice = pendingRemote
+                ? "已停用本机 \(stopped) 个前台计划与后台任务；联网后须核对远端授权。"
+                : "已停用本机 \(stopped) 个前台计划并取消后台任务。"
+        } catch {
+            emergencyStopNotice = "已停用本机 \(stopped) 个前台计划；后台 Keychain 清除尚未确认，请解锁后重试。"
+        }
     }
 
     /// No new account may reuse a prior owner's pending foreground or

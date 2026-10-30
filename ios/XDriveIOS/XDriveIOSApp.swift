@@ -12,7 +12,6 @@ struct XDriveIOSApp: App {
     var body: some Scene {
         WindowGroup {
             // Native SwiftUI is the entry for the Photos backup/view MVP.
-            // The old WebView source remains available for rollback only.
             XDriveIOSNativeOwnerLoginScreen()
         }
     }

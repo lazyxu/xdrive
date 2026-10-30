@@ -26,11 +26,13 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
     private var generation: UInt64 = 0
     private var restoreAttempted = false
 
+    // Persist a non-secret native server hint only after Owner/root proof.
+    // Never consult retired WebView origins, PWA cookies or JS storage.
+    private static let lastNativeServerKey = "xdrive.ios.native.last-server"
+
     init() {
-        // A previously chosen Web server is ONLY a non-secret suggestion.
-        // No old browser Cookie/Keychain refresh is imported or revived.
         serverText = UserDefaults.standard.string(
-            forKey: "xdrive.ios.web.origin"
+            forKey: Self.lastNativeServerKey
         ) ?? ""
     }
 
@@ -199,6 +201,8 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
             )
             owner = verified
             serverText = origin.absoluteString
+            UserDefaults.standard.set(origin.absoluteString,
+                                      forKey: Self.lastNativeServerKey)
             username = verified.username
             keepSignedIn = true
             noticeMessage = "已恢复并再次验证当前原生账户和云端根目录。"
@@ -287,6 +291,8 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
             )
             owner = verified
             serverText = origin.absoluteString
+            UserDefaults.standard.set(origin.absoluteString,
+                                      forKey: Self.lastNativeServerKey)
             username = verified.username
             noticeMessage = keepSignedIn
                 ? "已在本机安全保存当前 Owner 的保持登录凭据。"
