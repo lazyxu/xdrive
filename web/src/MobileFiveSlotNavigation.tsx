@@ -221,16 +221,16 @@ export function XDriveMobileFiveSlotNavigation({
 }
 
 export function XDriveMobileAllLauncher({
-  sections, onSelect, onOpenRecent,
+  sections, onSelect, onOpenRecent, favoriteKeys, onToggleFavorite,
 }: {
   sections: XDriveSidebarSectionModel[]
   onSelect: (key: string) => void
   onOpenRecent: () => void
+  favoriteKeys: readonly string[]
+  onToggleFavorite: (key: string) => void
 }) {
   const [search, setSearch] = useState('')
-  const [favorites, setFavorites] = useState<ReadonlySet<string>>(
-    () => new Set(['gallery', 'files']),
-  )
+  const favorites = new Set(favoriteKeys)
   const term = search.trim().toLocaleLowerCase()
   const entries = sections.flatMap(section => section.items)
   const unique = new Map(entries.map(item => [item.key, item]))
@@ -253,12 +253,7 @@ export function XDriveMobileAllLauncher({
                   <Typography variant="caption" sx={{ overflowWrap: 'anywhere' }}>{item.label}</Typography>
                 </ButtonBase>
                 <IconButton size="small" aria-label={favorites.has(item.key) ? '取消收藏' : '收藏功能'}
-                  onClick={() => setFavorites(current => {
-                    const next = new Set(current)
-                    if (next.has(item.key)) next.delete(item.key)
-                    else next.add(item.key)
-                    return next
-                  })}
+                  onClick={() => onToggleFavorite(item.key)}
                   sx={{ position: 'absolute', top: 0, right: 0, width: 32, height: 32 }}>
                   {favorites.has(item.key) ? <StarRoundedIcon sx={{ fontSize: 17 }} /> :
                     <StarBorderRoundedIcon sx={{ fontSize: 17 }} />}
