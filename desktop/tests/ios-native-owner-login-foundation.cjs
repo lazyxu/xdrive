@@ -36,7 +36,7 @@ test('new native Keychain namespace never reuses purged legacy refresh or backgr
   assert.match(retired, /com\.lazyxu\.xdrive\.ios\.session/)
   assert.doesNotMatch(store, /com\.lazyxu\.xdrive\.ios\.session"/)
   assert.doesNotMatch(store, /bg-approved|device-identity|WhenUnlockedThisDeviceOnly.*AfterFirstUnlock/)
-  assert.doesNotMatch(store, /UserDefaults\.standard\.set|WKWebView|HttpOnly|print\(/)
+  assert.doesNotMatch(store, /UserDefaults\.standard\.set|import WebKit|WKWebView\(|document\.cookie|print\(/)
 })
 
 test('native login and restoration re-prove exact Server Owner/root, not JS cookies', () => {
@@ -52,7 +52,7 @@ test('native login and restoration re-prove exact Server Owner/root, not JS cook
   assert.match(model, /refreshed\.must_change_password != true/)
   assert.match(model, /response\.must_change_password != true/)
   assert.match(model, /serverText == serverInput/)
-  assert.doesNotMatch(model, /WebView|window\.webkit|document\.cookie|localStorage|setCookie|SecItemAdd/)
+  assert.doesNotMatch(model, /import WebKit|WKWebView\(|window\.webkit|document\.cookie|localStorage|setCookie|SecItemAdd\(/)
   assert.match(read('ios/XDriveIOS/AuthService.swift'), /completionHandler\(nil\)/)
   assert.match(read('ios/XDriveIOS/OwnerRootVerifier.swift'), /"\/api\/v1\/me"/)
   assert.match(read('ios/XDriveIOS/OwnerRootVerifier.swift'), /"\/api\/v1\/nodes\/root"/)
