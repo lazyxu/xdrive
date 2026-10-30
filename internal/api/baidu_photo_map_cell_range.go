@@ -27,11 +27,13 @@ type baiduPhotoMapCellSelection struct {
 	RepresentativeNodeID   uint64
 	RepresentativeRevision uint64
 	PhotoCount             int64
+	GridScheme             string // empty is the historical viewport-local grid
 }
 
 func (s baiduPhotoMapCellSelection) valid() bool {
 	_, _, err := baiduPhotoMapCellSteps(s.Bounds)
-	return err == nil && s.CellX >= 0 && s.CellX < baiduPhotoMapCellGrid &&
+	return err == nil && (s.GridScheme == "" || s.GridScheme == baiduPhotoMapWorldStableGrid) &&
+		s.CellX >= 0 && s.CellX < baiduPhotoMapCellGrid &&
 		s.CellY >= 0 && s.CellY < baiduPhotoMapCellGrid &&
 		s.RepresentativeAssetID > 0 && s.RepresentativeNodeID > 0 &&
 		s.RepresentativeRevision > 0 && s.PhotoCount > 0
@@ -155,19 +157,37 @@ func baiduPhotoMapCellMemberNodes(
 	}
 	subquery := baiduPhotoMapOwnerEligibleQuery(
 		ctx, db, ownerID, selection.Bounds, projection).
-		Select("p.primary_node_id").
-		Where("LEAST(7, GREATEST(0, FLOOR((p.latitude - ?) / ?)))::integer = ?",
-			selection.Bounds.South, dy, selection.CellY)
-	if selection.Bounds.West < selection.Bounds.East {
+		Select("p.primary_node_id")
+	if selection.GridScheme == baiduPhotoMapWorldStableGrid {
+		grid, errGrid := baiduPhotoMapWorldCellGrid(selection.Bounds)
+		if errGrid != nil { return nil, errGrid }
 		subquery = subquery.Where(
-			"LEAST(7, GREATEST(0, FLOOR((p.longitude - ?) / ?)))::integer = ?",
-			selection.Bounds.West, dx, selection.CellX)
+			"LEAST(7, GREATEST(0, FLOOR((p.latitude + 90) / ?) - ?))::integer = ?",
+			grid.StepY, grid.SouthTile, selection.CellY)
+		if selection.Bounds.West < selection.Bounds.East {
+			subquery = subquery.Where(
+				"LEAST(7, GREATEST(0, FLOOR((p.longitude + 180) / ?) - ?))::integer = ?",
+				grid.StepX, grid.WestTile, selection.CellX)
+		} else {
+			subquery = subquery.Where(
+				"LEAST(7, GREATEST(0, FLOOR(((CASE WHEN p.longitude < ? THEN p.longitude + 360 ELSE p.longitude END) + 180) / ?) - ?))::integer = ?",
+				selection.Bounds.West, grid.StepX, grid.WestTile, selection.CellX)
+		}
 	} else {
-		// Match original /cells' wrapped [0,360) bin, never inverse-geoconvert.
 		subquery = subquery.Where(
-			"LEAST(7, GREATEST(0, FLOOR((CASE WHEN p.longitude >= ? THEN p.longitude - ? ELSE p.longitude + 360 - ? END) / ?)))::integer = ?",
-			selection.Bounds.West, selection.Bounds.West,
-			selection.Bounds.West, dx, selection.CellX)
+			"LEAST(7, GREATEST(0, FLOOR((p.latitude - ?) / ?)))::integer = ?",
+			selection.Bounds.South, dy, selection.CellY)
+		if selection.Bounds.West < selection.Bounds.East {
+			subquery = subquery.Where(
+				"LEAST(7, GREATEST(0, FLOOR((p.longitude - ?) / ?)))::integer = ?",
+				selection.Bounds.West, dx, selection.CellX)
+		} else {
+			// Match old /cells wrapped geometry for installed clients.
+			subquery = subquery.Where(
+				"LEAST(7, GREATEST(0, FLOOR((CASE WHEN p.longitude >= ? THEN p.longitude - ? ELSE p.longitude + 360 - ? END) / ?)))::integer = ?",
+				selection.Bounds.West, selection.Bounds.West,
+				selection.Bounds.West, dx, selection.CellX)
+		}
 	}
 	return subquery, nil
 }
@@ -177,7 +197,8 @@ func baiduPhotoMapCellSelectionCurrent(
 ) bool {
 	if !selection.valid() || len(page.Items) == 0 || len(page.Items) > baiduPhotoMapCellMax ||
 		page.GridColumns != baiduPhotoMapCellGrid ||
-		page.GridRows != baiduPhotoMapCellGrid {
+		page.GridRows != baiduPhotoMapCellGrid ||
+		page.GridScheme != selection.GridScheme {
 		return false
 	}
 	for _, cell := range page.Items {
@@ -213,8 +234,9 @@ func (s *Server) baiduMapCellFilteredSummary(
 	if err != nil {
 		return baiduPhotoMapCellPage{}, err
 	}
-	return queryBaiduPhotoMapCellsScoped(ctx, s.DB, ownerID,
-		selection.Bounds, gallery.Select("n.id"), plain)
+	return queryBaiduPhotoMapCellsScopedGrid(ctx, s.DB, ownerID,
+		selection.Bounds, gallery.Select("n.id"), plain,
+		selection.GridScheme == baiduPhotoMapWorldStableGrid)
 }
 
 // W1 exposes a map-scoped *original Gallery Range DTO*, NOT a new media byte
@@ -243,6 +265,15 @@ func (s *Server) listBaiduNativeMapCellItems(c *gin.Context) {
 		return
 	}
 	selection, limit, offset, parsed, err := parseBaiduNativeMapCellItems(c.Request.URL.RawQuery)
+	gridHeader := c.Request.Header.Values("X-XDrive-Map-Grid-Scheme")
+	if len(gridHeader) > 0 {
+		if len(gridHeader) != 1 || gridHeader[0] != baiduPhotoMapWorldStableGrid {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_map_cell_grid"})
+			return
+		}
+		selection.GridScheme = baiduPhotoMapWorldStableGrid
+		parsed.BaiduCell = &selection
+	}
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_map_cell_range"})
 		return
