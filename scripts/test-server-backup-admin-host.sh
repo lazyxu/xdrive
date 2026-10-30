@@ -1095,9 +1095,15 @@ mkdir -p "$TMP/cron-bin"
 export XD_BACKUP_ADMIN_TEST_CRONTAB="$TMP/mock-crontab"
 cat > "$TMP/cron-bin/crontab" <<'CRON'
 #!/usr/bin/env bash
-[[ "${1:-}" == -l ]] || exit 2
-[[ "${XD_BACKUP_ADMIN_TEST_CRON_FAIL:-}" != yes ]] || exit 75
-cat -- "$XD_BACKUP_ADMIN_TEST_CRONTAB"
+if [[ "$1" == -l ]]; then
+  [[ "${XD_BACKUP_ADMIN_TEST_CRON_FAIL:-}" != yes ]] || exit 75
+  cat -- "$XD_BACKUP_ADMIN_TEST_CRONTAB"
+elif [[ $# -eq 1 && -f "$1" ]]; then
+  [[ "${XD_BACKUP_ADMIN_TEST_CRON_WRITE_FAIL:-}" != yes ]] || exit 75
+  cat -- "$1" > "$XD_BACKUP_ADMIN_TEST_CRONTAB"
+else
+  exit 2
+fi
 CRON
 chmod 700 "$TMP/cron-bin/crontab"
 export PATH="$TMP/cron-bin:$PATH"
@@ -1156,5 +1162,58 @@ grep -v '^XD_BACKUP_SCHEDULE=' "$XD_CONFIG_DIR/config/.env" > "$TMP/schedule-rev
 mv -f -- "$TMP/schedule-revision-cleanup.env" "$XD_CONFIG_DIR/config/.env"
 backup_admin_policy_values
 [[ "$backup_admin_revision" == "$schedule_before" ]]
+
+# New reviewed presets are the only possible scheduled Admin changes.
+cp -- "$XD_BACKUP_ADMIN_TEST_LOG" "$TMP/log-before-schedule-preset"
+printf '3 1 * * * /usr/bin/true # external-operator-job\n' > "$XD_BACKUP_ADMIN_TEST_CRONTAB"
+backup_admin_policy_values
+disabled_revision="$backup_admin_revision"
+[[ "$(backup_admin_schedule_expression daily)" == '17 3 * * *' ]]
+[[ "$(backup_admin_schedule_expression weekly)" == '17 3 * * 0' ]]
+[[ "$(backup_admin_schedule_expression disabled)" == disabled ]]
+if backup_admin_schedule_expression '../unsafe;touch /tmp/file'; then
+  echo 'arbitrary schedule preset accepted' >&2; exit 1
+fi
+backup_admin_write_schedule daily "$disabled_revision"
+grep -Fqx 'XD_BACKUP_SCHEDULE=17 3 * * *' "$ENV_PATH"
+[[ "$(backup_admin_schedule_status)" == *'"state":"registered"'* ]]
+grep -Fqx '3 1 * * * /usr/bin/true # external-operator-job' "$XD_BACKUP_ADMIN_TEST_CRONTAB"
+backup_admin_policy_values
+daily_revision="$backup_admin_revision"
+[[ "$daily_revision" != "$disabled_revision" ]]
+if backup_admin_write_schedule weekly "$disabled_revision"; then
+  echo 'stale schedule revision accepted' >&2; exit 1
+fi
+XD_BACKUP_ADMIN_TEST_CRON_WRITE_FAIL=yes
+if backup_admin_write_schedule weekly "$daily_revision"; then
+  echo 'failed cron write claimed successful schedule update' >&2; exit 1
+fi
+unset XD_BACKUP_ADMIN_TEST_CRON_WRITE_FAIL
+grep -Fqx 'XD_BACKUP_SCHEDULE=17 3 * * *' "$ENV_PATH"
+backup_admin_write_schedule weekly "$daily_revision"
+grep -Fqx 'XD_BACKUP_SCHEDULE=17 3 * * 0' "$ENV_PATH"
+backup_admin_policy_values
+weekly_revision="$backup_admin_revision"
+[[ "$weekly_revision" != "$daily_revision" ]]
+cp -- "$XD_BACKUP_ADMIN_TEST_CRONTAB" "$TMP/cron-weekly-clean"
+printf '1 2 * * * /bin/false # xdrive-managed-backup\n' >> "$XD_BACKUP_ADMIN_TEST_CRONTAB"
+if backup_admin_write_schedule disabled "$weekly_revision"; then
+  echo 'unexpected managed cron row was overwritten' >&2; exit 1
+fi
+grep -Fqx 'XD_BACKUP_SCHEDULE=17 3 * * 0' "$ENV_PATH"
+cp -- "$TMP/cron-weekly-clean" "$XD_BACKUP_ADMIN_TEST_CRONTAB"
+backup_admin_write_schedule disabled "$weekly_revision"
+grep -Fqx 'XD_BACKUP_SCHEDULE=disabled' "$ENV_PATH"
+[[ "$(backup_admin_schedule_status)" == *'"state":"not_configured"'* ]]
+! grep -Fq '# xdrive-managed-backup' "$XD_BACKUP_ADMIN_TEST_CRONTAB"
+grep -Fqx '3 1 * * * /usr/bin/true # external-operator-job' "$XD_BACKUP_ADMIN_TEST_CRONTAB"
+# Also exercise the actual Host execute dispatch, not only the helper.
+backup_admin_policy_values
+backup_admin_execute schedule "" "" "" 0 0 "$backup_admin_revision" "SCHEDULE daily" "" daily
+grep -Fqx 'XD_BACKUP_SCHEDULE=17 3 * * *' "$ENV_PATH"
+backup_admin_policy_values
+backup_admin_execute schedule "" "" "" 0 0 "$backup_admin_revision" "SCHEDULE disabled" "" disabled
+grep -Fqx 'XD_BACKUP_SCHEDULE=disabled' "$ENV_PATH"
+cmp -- "$TMP/log-before-schedule-preset" "$XD_BACKUP_ADMIN_TEST_LOG"
 
 echo 'Admin Server Backup host bridge: CRUD, batch verify, selected-v2 delete and inventory truncation tests passed'
