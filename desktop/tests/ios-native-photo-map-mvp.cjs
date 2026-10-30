@@ -36,3 +36,10 @@ test('only a fresh authorized PhotoKit 64-slot scan supplies local map pins', ()
   assert.match(policy, /latitude\.isFinite && longitude\.isFinite/)
   assert.doesNotMatch(map, /localStorage|\.write\(|Authorization:|postMessage\(/)
 })
+
+test('a presented cluster keeps PhotoKit change observation until dismissal', () => {
+  assert.match(map, /\.onDisappear \{\s*\/\/ A presented cluster sheet/)
+  assert.match(map, /if selection == nil \{\s*changes\.stop\(\)/)
+  assert.match(map, /\} else \{ suspendForSheet\(\) \}/)
+  assert.match(map, /onChange\(of: changes\.revision\) \{ _ in\s*invalidate\(\)/)
+})

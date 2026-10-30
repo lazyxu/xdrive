@@ -336,13 +336,15 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             else { changes.stop(); invalidate() }
         }
         .onDisappear {
-            changes.stop()
+            // A presented cluster sheet may hide its map presenter. Keep
+            // PhotoKit change observation active until the sheet is dismissed,
+            // so permission/library changes revoke its transient member IDs.
             if selection == nil {
+                changes.stop()
                 focused = false
                 onFocusChange?(false)
-            }
-            if selection != nil { suspendForSheet() }
-            else { invalidate() }
+                invalidate()
+            } else { suspendForSheet() }
         }
     }
 
