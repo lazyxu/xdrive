@@ -95,7 +95,7 @@ test('U09-D2c1 shared visual owner and Web/Desktop transport fence authorized fi
   assert.match(app, /childPositionSupported: filesHostCapabilities\.childPositionSupported/)
   assert.doesNotMatch(desktop, /\/children\/position\?/)
   assert.match(source, /position\.revision !== revision/)
-  assert.match(source, /xDriveVerifiedReanchorRow\\(rows, nodeID, position\\.revision\\)/)
+  assert.match(source, /xDriveVerifiedReanchorRow\(rows, nodeID, position\.revision\)/)
 })
 
 test('U09-D2c1 exact Range rejects ambiguous Node and revision projections', async () => {
