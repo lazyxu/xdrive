@@ -37,18 +37,20 @@ internal fun ColumnScope.GalleryCollections(
     controller: DriveController,
     cache: LruCache<String, ImageBitmap>,
 ) {
-    var createOpen by remember(state.server, state.username) { mutableStateOf(false) }
-    var createName by remember(state.server, state.username) { mutableStateOf("") }
-    var renameTarget by remember(state.server, state.username) {
+    var createOpen by remember(state.server, state.username, state.nativeUiSessionId) { mutableStateOf(false) }
+    var createName by remember(state.server, state.username, state.nativeUiSessionId) { mutableStateOf("") }
+    // Hoisted out of LazyVerticalGrid: modal state must not be disposed with an album cell.
+    var actionsTarget by remember(state.nativeUiSessionId) { mutableStateOf<GalleryAlbum?>(null) }
+    var renameTarget by remember(state.server, state.username, state.nativeUiSessionId) {
         mutableStateOf<GalleryAlbum?>(null)
     }
-    var deleteTarget by remember(state.server, state.username) {
+    var deleteTarget by remember(state.server, state.username, state.nativeUiSessionId) {
         mutableStateOf<GalleryAlbum?>(null)
     }
-    var resetCoverTarget by remember(state.server, state.username) {
+    var resetCoverTarget by remember(state.server, state.username, state.nativeUiSessionId) {
         mutableStateOf<GalleryAlbum?>(null)
     }
-    var renameDraft by remember(state.server, state.username) { mutableStateOf("") }
+    var renameDraft by remember(state.server, state.username, state.nativeUiSessionId) { mutableStateOf("") }
     val validCreateName =
         com.tfluid.xdrive.core.normalizeGalleryManualAlbumName(createName) != null
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
@@ -105,15 +107,57 @@ internal fun ColumnScope.GalleryCollections(
         ) {
             items(state.galleryAlbums, key = { it.id }) { album ->
                 GalleryAlbumCard(album, controller, cache, state.loading,
-                    onRename = {
-                        renameTarget = it
-                        renameDraft = it.name
-                    },
-                    onDelete = { deleteTarget = it },
-                    onResetCover = { resetCoverTarget = it },
+                    onActions = { actionsTarget = it },
                 )
             }
         }
+    }
+    // Keep the Owner-authorized action surface outside both the recyclable grid
+    // and the card's open-album click target. It must survive modal recomposition.
+    val actionAlbum = actionsTarget
+    if (actionAlbum != null && !state.loading && state.galleryAlbumsLoaded &&
+        state.galleryAlbums.any { it == actionAlbum } &&
+        actionAlbum.kind == "manual" && actionAlbum.revision > 0) {
+        AlertDialog(
+            onDismissRequest = { actionsTarget = null },
+            modifier = Modifier.testTag("gallery-manual-actions-${actionAlbum.id}"),
+            title = { Text("相册操作：${actionAlbum.name}") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(
+                        onClick = {
+                            actionsTarget = null
+                            renameTarget = actionAlbum
+                            renameDraft = actionAlbum.name
+                        },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                            .testTag("gallery-manual-rename-${actionAlbum.id}"),
+                    ) { Text("重命名") }
+                    TextButton(
+                        onClick = {
+                            actionsTarget = null
+                            resetCoverTarget = actionAlbum
+                        },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                            .testTag("gallery-manual-auto-cover-${actionAlbum.id}"),
+                    ) { Text("恢复自动封面") }
+                    TextButton(
+                        onClick = {
+                            actionsTarget = null
+                            deleteTarget = actionAlbum
+                        },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                            .testTag("gallery-manual-delete-${actionAlbum.id}"),
+                    ) { Text("删除相册") }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { actionsTarget = null },
+                    modifier = Modifier.testTag("gallery-manual-actions-close-${actionAlbum.id}"),
+                ) { Text("取消") }
+            },
+        )
     }
     if (createOpen) AlertDialog(
         onDismissRequest = { if (!state.loading) createOpen = false },
@@ -327,11 +371,8 @@ private fun GalleryAlbumCard(
     controller: DriveController,
     cache: LruCache<String, ImageBitmap>,
     busy: Boolean,
-    onRename: (GalleryAlbum) -> Unit,
-    onDelete: (GalleryAlbum) -> Unit,
-    onResetCover: (GalleryAlbum) -> Unit,
+    onActions: (GalleryAlbum) -> Unit,
 ) {
-    var actionsOpen by remember(album.id, album.revision) { mutableStateOf(false) }
     val identity = "${album.id}:${album.revision}:${album.coverNodeId}"
     var bitmap by remember(identity) { mutableStateOf<ImageBitmap?>(null) }
     var failed by remember(identity) { mutableStateOf(false) }
@@ -366,24 +407,26 @@ private fun GalleryAlbumCard(
         }
     }
 
-    Column(
-        Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .combinedClickable(
-                enabled = !busy,
-                onClick = { controller.openGalleryAlbum(album) },
-                onClickLabel = galleryAlbumOpenActionLabel(album),
-                onLongClickLabel = if (failed)
-                    galleryAlbumRetryActionLabel(album) else null,
-                onLongClick = if (failed) ({ retry++ }) else null,
-            )
-            .testTag("gallery-album-item-${album.id}"),
-    ) {
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))) {
+        // Only the image is the album-opening long-click target. The adjacent
+        // action IconButton is a sibling, never a child of a clickable ancestor.
         Box(
             Modifier.fillMaxWidth().aspectRatio(1f)
-                .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                .testTag("gallery-album-cover-${album.id}"),
+                .combinedClickable(
+                    enabled = !busy,
+                    onClick = { controller.openGalleryAlbum(album) },
+                    onClickLabel = galleryAlbumOpenActionLabel(album),
+                    onLongClickLabel = if (failed)
+                        galleryAlbumRetryActionLabel(album) else null,
+                    onLongClick = if (failed) ({ retry++ }) else null,
+                )
+                .testTag("gallery-album-item-${album.id}"),
         ) {
+            Box(
+                Modifier.fillMaxSize()
+                    .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                    .testTag("gallery-album-cover-${album.id}"),
+            ) {
             val ready = bitmap
             if (ready != null) {
                 Image(
@@ -415,10 +458,16 @@ private fun GalleryAlbumCard(
                     color = Color.White,
                     style = MaterialTheme.typography.labelSmall)
             }
+            }
         }
         Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Column(
+                Modifier.weight(1f).clickable(enabled = !busy) {
+                    controller.openGalleryAlbum(album)
+                },
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
                 Text(album.name, style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -427,50 +476,14 @@ private fun GalleryAlbumCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (album.kind == "manual" && album.revision > 0) {
-                Box {
-                    IconButton(
-                        onClick = { actionsOpen = true },
-                        enabled = !busy,
-                        modifier = Modifier.size(48.dp)
-                            .testTag("gallery-manual-more-${album.id}"),
-                    ) {
-                        Icon(painterResource(R.drawable.xd_more_vert),
-                            contentDescription = galleryAlbumMoreActionLabel(album))
-                    }
-                    // The anchored DropdownMenu was unreachable at the bottom of a
-                    // 320x640 Gallery after adding the fixed five-slot bar. This
-                    // dialog is independent of the viewport edge and exposes
-                    // actual Owner-authorized actions to touch and TalkBack.
-                    if (actionsOpen) AlertDialog(
-                        onDismissRequest = { actionsOpen = false },
-                        title = { Text("相册操作：${album.name}") },
-                        text = {
-                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                TextButton(
-                                    onClick = { actionsOpen = false; onRename(album) },
-                                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                                        .testTag("gallery-manual-rename-${album.id}"),
-                                ) { Text("重命名") }
-                                TextButton(
-                                    onClick = { actionsOpen = false; onResetCover(album) },
-                                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                                        .testTag("gallery-manual-auto-cover-${album.id}"),
-                                ) { Text("恢复自动封面") }
-                                TextButton(
-                                    onClick = { actionsOpen = false; onDelete(album) },
-                                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                                        .testTag("gallery-manual-delete-${album.id}"),
-                                ) { Text("删除相册") }
-                            }
-                        },
-                        confirmButton = {
-                            TextButton(onClick = { actionsOpen = false },
-                                modifier = Modifier.testTag("gallery-manual-actions-close-${album.id}")) {
-                                Text("取消")
-                            }
-                        },
-                        modifier = Modifier.testTag("gallery-manual-actions-${album.id}"),
-                    )
+                IconButton(
+                    onClick = { onActions(album) },
+                    enabled = !busy,
+                    modifier = Modifier.size(48.dp)
+                        .testTag("gallery-manual-more-${album.id}"),
+                ) {
+                    Icon(painterResource(R.drawable.xd_more_vert),
+                        contentDescription = galleryAlbumMoreActionLabel(album))
                 }
             }
         }
