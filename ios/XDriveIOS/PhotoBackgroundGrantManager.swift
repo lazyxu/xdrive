@@ -335,9 +335,14 @@ actor XDriveIOSPhotoBackgroundGrantManager {
                 throw XDriveIOSPhotoBackgroundGrantError.invalidOwner
             }
         }
-        XDriveIOSBackgroundPhotoTask.revokePendingRequests()
         if approved != nil {
-            try await XDriveIOSApprovedPhotoBGVault.shared.cancelLocally(owner: owner)
+            // The approved vault may be the ONLY surviving credential after
+            // an interrupted initial save. Reuse the canonical emergency
+            // stop to synthesize a durable revoke-pending grant before
+            // discarding that last remote secret/ID.
+            _ = try await emergencyStopLocally()
+        } else {
+            XDriveIOSBackgroundPhotoTask.revokePendingRequests()
         }
         if var stored = try read(owner: owner) {
             stored.revokePending = true
