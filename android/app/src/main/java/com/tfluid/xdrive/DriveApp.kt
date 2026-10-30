@@ -52,6 +52,9 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
         mutableStateOf<NativeLocalAlbum?>(null)
     }
     var pendingGalleryMap by remember(state.nativeUiSessionId) { mutableStateOf(false) }
+    var mapOriginSource by remember(state.nativeUiSessionId) {
+        mutableStateOf(NativeGallerySource.CLOUD)
+    }
     var pendingGalleryTab by remember(state.nativeUiSessionId) { mutableStateOf(false) }
     var pendingTrash by remember(state.nativeUiSessionId) { mutableStateOf(false) }
     // Retain only scroll UI state while the fullscreen Viewer replaces Gallery.
@@ -131,7 +134,7 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
         else if (filesEdit != null) filesEdit = null
         else if (state.galleryMapOpen && state.galleryBd09History.isEmpty() &&
             state.galleryMapCellSelected == null && state.galleryViewer == null) {
-            nativeNavigation = nativeNavigation.copy(gallerySource = NativeGallerySource.CLOUD)
+            nativeNavigation = nativeNavigation.copy(gallerySource = mapOriginSource)
             controller.back()
         } else controller.back()
     }
@@ -170,7 +173,7 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
             if (state.galleryPrimaryTab == GalleryPrimaryTab.LIBRARY &&
                 state.gallerySelectedAlbum == null && !state.galleryMapOpen) {
                 controller.openGalleryMapOverview()
-            } else nativeNavigation = nativeNavigation.copy(gallerySource = NativeGallerySource.CLOUD)
+            } else nativeNavigation = nativeNavigation.copy(gallerySource = mapOriginSource)
         }
     }
     fun selectNativeTab(tab: NativeHomeTab) {
@@ -209,7 +212,11 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                 selectNativeTab(NativeHomeTab.GALLERY)
                 if (mayEnter) {
                     nativeNavigation = next
-                    if (shortcut == NativeHomeShortcut.GALLERY_MAP) pendingGalleryMap = true
+                    if (shortcut == NativeHomeShortcut.GALLERY_MAP) {
+                        mapOriginSource = if (nativeNavigation.gallerySource == NativeGallerySource.MAP)
+                            NativeGallerySource.CLOUD else nativeNavigation.gallerySource
+                        pendingGalleryMap = true
+                    }
                 }
             }
             NativeHomeTab.FILES -> {
@@ -265,7 +272,7 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                         if (state.screen == Screen.TRASH) controller.closeTrash()
                         else if (state.galleryMapOpen && state.galleryBd09History.isEmpty() &&
                             state.galleryMapCellSelected == null && state.galleryViewer == null) {
-                            nativeNavigation = nativeNavigation.copy(gallerySource = NativeGallerySource.CLOUD)
+                            nativeNavigation = nativeNavigation.copy(gallerySource = mapOriginSource)
                             controller.back()
                         } else controller.back()
                     }) {
@@ -432,7 +439,10 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                     } else {
                         NativeGallerySourceSelector(nativeNavigation.gallerySource) { source ->
                             nativeNavigation = nativeNavigation.copy(gallerySource = source)
-                            if (source == NativeGallerySource.MAP) pendingGalleryMap = true
+                            if (source == NativeGallerySource.MAP) {
+                                mapOriginSource = nativeNavigation.gallerySource
+                                pendingGalleryMap = true
+                            }
                         }
                         when (nativeNavigation.gallerySource) {
                             NativeGallerySource.LOCAL -> Box(Modifier.weight(1f)) {
