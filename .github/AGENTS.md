@@ -26,10 +26,12 @@ AGENTS.md. Preserve the root policy and all other work.
   `github.event.pull_request.number`, with a unique `github.run_id` fallback
   for non-PR runs. Use `cancel-in-progress` only for `pull_request`
   events in required CI and evidence workflows; never cancel master
-  Snapshot, tagged release or manual evidence runs. The standalone
-  Android Master APK debug Artifact is the approved exception: cancel
-  superseded automatic master push APK builds while preserving each
-  manual workflow_dispatch run in its own run-ID concurrency group.
+  Snapshot, tagged release or manual evidence runs.
+- The standalone Android Master APK workflow must retain every automatic
+  master-push build independently. Do not define workflow/job concurrency or
+  cancel-in-progress for it: a newer master commit must never evict an older
+  queued or running APK build. Manual runs remain independent. Preserve
+  exact github.sha checkout and per-commit SHA-named artifacts.
 - Do not repeatedly rebase, amend or force-push an otherwise unchanged PR merely
   to chase every unrelated new master SHA. Preserve accepted green evidence
   when product code and affected test inputs are unchanged and protection
