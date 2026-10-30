@@ -1379,8 +1379,7 @@ export default function WebFileExplorer({
       let accepted = false
       await navigateTo(chain, true, intent, value => { accepted = value })
       if (!accepted || !isNavigationIntentCurrent(intent)) return false
-      requestReveal(location.parent_id, location.node_id)
-      return true
+      return requestReveal(location.parent_id, location.node_id)
     } catch (error) {
       if (isNavigationIntentCurrent(intent)) onError(error)
       return false
