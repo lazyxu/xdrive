@@ -302,10 +302,9 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
             if selected == nil && page == nil && !busy { refresh(at: savedOffset) }
         }
         .onChange(of: phase) { new in
-            if new != .active {
-                clearViewerTileAnchor()
-                invalidate()
-            } else { refresh(at: savedOffset) }
+            if new != .active { invalidate() }
+            else { refresh(at: savedOffset) }
+            if new != .active { clearViewerTileAnchor() }
         }
         .onDisappear {
             // fullScreenCover may hide its presenter before the Viewer closes.

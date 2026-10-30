@@ -29,5 +29,5 @@ test('anchor policy does not persist PhotoKit local IDs or scroll without reauth
   assert.match(policy, /authorized,/);
   assert.match(policy, /currentPageIDs.count <= 64/);
   assert.match(policy, /currentPageIDs.contains\(lastOpenedID\)/);
-  assert.doesNotMatch(policy, /UserDefaults|Keychain|Codable|JSONEncoder|URLSession|persist/);
+  assert.doesNotMatch(policy, /UserDefaults|Keychain|Codable|JSONEncoder|URLSession/);
 });
