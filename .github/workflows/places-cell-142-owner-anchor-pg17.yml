@@ -8,6 +8,12 @@ on:
       - '.github/workflows/places-cell-142-owner-anchor-pg17.yml'
       - 'internal/api/baidu_photo_map_cell_range.go'
       - 'internal/api/baidu_photo_map_cells.go'
+      - 'internal/api/baidu_jsapi4_native_cells_http.go'
+      - 'internal/api/baidu_jsapi4_native_cells_http_test.go'
+      - 'internal/api/baidu_photo_map_cell_range_test.go'
+      - 'ui/shared/src/media-gallery-baidu-jsapi4-cells.ts'
+      - 'ui/shared/src/media-gallery-baidu-jsapi4-cell-range.ts'
+      - 'desktop/tests/gallery-places-a3h-wall-w2a-trusted-cell-range.cjs'
       - 'internal/api/media_anchor.go'
       - 'internal/api/media.go'
   push:
@@ -17,6 +23,12 @@ on:
       - '.github/workflows/places-cell-142-owner-anchor-pg17.yml'
       - 'internal/api/baidu_photo_map_cell_range.go'
       - 'internal/api/baidu_photo_map_cells.go'
+      - 'internal/api/baidu_jsapi4_native_cells_http.go'
+      - 'internal/api/baidu_jsapi4_native_cells_http_test.go'
+      - 'internal/api/baidu_photo_map_cell_range_test.go'
+      - 'ui/shared/src/media-gallery-baidu-jsapi4-cells.ts'
+      - 'ui/shared/src/media-gallery-baidu-jsapi4-cell-range.ts'
+      - 'desktop/tests/gallery-places-a3h-wall-w2a-trusted-cell-range.cjs'
       - 'internal/api/media_anchor.go'
       - 'internal/api/media.go'
   workflow_dispatch:
@@ -66,8 +78,9 @@ jobs:
           # Normalize the test source in the disposable checkout before
           # compiling. No generated source is pushed back to any branch.
           gofmt -w internal/api/baidu_photo_map_cell_142_anchor_linux_test.go
-      - name: Real Owner 142+28 PostgreSQL17 Cell Range, anchor and invalidation
+      - name: Real Owner 142+28 and world-fixed panning Cell Range PostgreSQL17
         shell: bash
         run: |
           set -euo pipefail
-          go test ./internal/api -run '^TestPlacesOwnerCell142AnchorPagesPG17$' -count=1 -timeout=12m -v
+          go test ./internal/api -run '^Test(PlacesOwnerCell142AnchorPagesPG17|BaiduCellRangeOriginalGalleryScopeAndRevocation|BaiduNativeWorldGridStableForMiddlePanAndAntimeridian)
+ -count=1 -timeout=13m -v

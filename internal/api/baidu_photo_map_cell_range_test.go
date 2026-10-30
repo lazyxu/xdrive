@@ -272,8 +272,16 @@ func TestBaiduCellRangeOriginalGalleryScopeAndRevocation(t *testing.T) {
 		t.Fatalf("stable Owner moved viewport failed: %+v %v", stableB, err)
 	}
 	var firstStable, secondStable baiduPhotoMapCell
-	for _, item := range stableA.Items { if item.PhotoCount == 2 { firstStable = item } }
-	for _, item := range stableB.Items { if item.PhotoCount == 2 { secondStable = item } }
+	for _, item := range stableA.Items {
+		if item.PhotoCount == 2 {
+			firstStable = item
+		}
+	}
+	for _, item := range stableB.Items {
+		if item.PhotoCount == 2 {
+			secondStable = item
+		}
+	}
 	if firstStable.NodeID != n1.ID || secondStable.NodeID != n1.ID ||
 		firstStable.CellX != secondStable.CellX || firstStable.CellY != secondStable.CellY ||
 		firstStable.PhotoCount != secondStable.PhotoCount {
@@ -286,21 +294,25 @@ func TestBaiduCellRangeOriginalGalleryScopeAndRevocation(t *testing.T) {
 		RepresentativeRevision: secondStable.NodeRevision,
 		PhotoCount: secondStable.PhotoCount, GridScheme: baiduPhotoMapWorldStableGrid,
 	}
-	if !baiduPhotoMapCellSelectionCurrent(selectedStable,stableB) { t.Fatal("fresh stable Owner Cell not current") }
-	stableNodes, err := baiduPhotoMapCellMemberNodes(context.Background(),db,alice.ID,selectedStable)
-	if err != nil { t.Fatalf("stable member nodes: %v",err) }
-	var stableIDs []uint64
-	if err := stableNodes.Scan(&stableIDs).Error; err != nil || len(stableIDs)!=2 {
-		t.Fatalf("stable Cell Range must contain two authorized Nodes: %v %+v",err,stableIDs)
+	if !baiduPhotoMapCellSelectionCurrent(selectedStable, stableB) {
+		t.Fatal("fresh stable Owner Cell not current")
 	}
-	if (stableIDs[0]!=n1.ID && stableIDs[1]!=n1.ID) ||
-		(stableIDs[0]!=n2.ID && stableIDs[1]!=n2.ID) {
-		t.Fatalf("stable Owner Cell member identity changed: %+v",stableIDs)
+	stableNodes, err := baiduPhotoMapCellMemberNodes(context.Background(), db, alice.ID, selectedStable)
+	if err != nil {
+		t.Fatalf("stable member nodes: %v", err)
+	}
+	var stableIDs []uint64
+	if err := stableNodes.Scan(&stableIDs).Error; err != nil || len(stableIDs) != 2 {
+		t.Fatalf("stable Cell Range must contain two authorized Nodes: %v %+v", err, stableIDs)
+	}
+	if (stableIDs[0] != n1.ID && stableIDs[1] != n1.ID) ||
+		(stableIDs[0] != n2.ID && stableIDs[1] != n2.ID) {
+		t.Fatalf("stable Owner Cell member identity changed: %+v", stableIDs)
 	}
 	// A legacy Cell cannot accidentally borrow a world-stable selection.
 	selectedLegacy := selectedStable
 	selectedLegacy.GridScheme = ""
-	if baiduPhotoMapCellSelectionCurrent(selectedLegacy,stableB) {
+	if baiduPhotoMapCellSelectionCurrent(selectedLegacy, stableB) {
 		t.Fatal("legacy Cell selection borrowed a stable grouping snapshot")
 	}
 	// A video-only subset must return the real Owner-authenticated kind,

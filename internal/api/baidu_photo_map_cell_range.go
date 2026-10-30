@@ -160,7 +160,9 @@ func baiduPhotoMapCellMemberNodes(
 		Select("p.primary_node_id")
 	if selection.GridScheme == baiduPhotoMapWorldStableGrid {
 		grid, errGrid := baiduPhotoMapWorldCellGrid(selection.Bounds)
-		if errGrid != nil { return nil, errGrid }
+		if errGrid != nil {
+			return nil, errGrid
+		}
 		subquery = subquery.Where(
 			"LEAST(7, GREATEST(0, FLOOR((p.latitude + 90) / ?) - ?))::integer = ?",
 			grid.StepY, grid.SouthTile, selection.CellY)

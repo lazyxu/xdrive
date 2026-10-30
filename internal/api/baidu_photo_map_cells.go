@@ -32,7 +32,7 @@ type baiduPhotoMapCell struct {
 }
 
 type baiduPhotoMapCellPage struct {
-	GridScheme string // legacy zero value leaves wire shape unchanged
+	GridScheme  string // legacy zero value leaves wire shape unchanged
 	Items       []baiduPhotoMapCell
 	TotalCount  int64
 	GridColumns int
@@ -76,10 +76,14 @@ type baiduPhotoMapWorldGrid struct {
 
 func baiduPhotoMapWorldCellGrid(bounds baiduPhotoMapBounds) (baiduPhotoMapWorldGrid, error) {
 	dx, dy, err := baiduPhotoMapCellSteps(bounds)
-	if err != nil { return baiduPhotoMapWorldGrid{}, err }
+	if err != nil {
+		return baiduPhotoMapWorldGrid{}, err
+	}
 	step := func(worldWidth, span float64) float64 {
 		value := worldWidth
-		for i := 0; i < 26 && value / 2 >= span / 7; i++ { value /= 2 }
+		for i := 0; i < 26 && value/2 >= span/7; i++ {
+			value /= 2
+		}
 		return value
 	}
 	width := dx * baiduPhotoMapCellGrid
@@ -101,7 +105,9 @@ func baiduPhotoMapWorldCellIndex(bounds baiduPhotoMapBounds, lon, lat float64) (
 		math.IsNaN(lat) || math.IsInf(lat, 0) {
 		return 0, 0, fmt.Errorf("invalid stable map point")
 	}
-	if bounds.West > bounds.East && lon < bounds.West { lon += 360 }
+	if bounds.West > bounds.East && lon < bounds.West {
+		lon += 360
+	}
 	x := math.Floor((lon+180)/grid.StepX) - grid.WestTile
 	y := math.Floor((lat+90)/grid.StepY) - grid.SouthTile
 	return int(math.Min(7, math.Max(0, x))), int(math.Min(7, math.Max(0, y))), nil
@@ -169,7 +175,9 @@ func queryBaiduPhotoMapCellsScopedGrid(
 	var values []any
 	if stable {
 		grid, errorGrid := baiduPhotoMapWorldCellGrid(bounds)
-		if errorGrid != nil { return empty, errorGrid }
+		if errorGrid != nil {
+			return empty, errorGrid
+		}
 		selectCells += "LEAST(7, GREATEST(0, FLOOR((p.latitude + 90) / ?) - ?))::integer AS cell_y, "
 		values = append(values, grid.StepY, grid.SouthTile)
 		if bounds.West < bounds.East {
@@ -249,6 +257,8 @@ func queryBaiduPhotoMapCellsScopedGrid(
 		Items: cells, TotalCount: total,
 		GridColumns: baiduPhotoMapCellGrid, GridRows: baiduPhotoMapCellGrid,
 	}
-	if stable { result.GridScheme = baiduPhotoMapWorldStableGrid }
+	if stable {
+		result.GridScheme = baiduPhotoMapWorldStableGrid
+	}
 	return result, nil
 }

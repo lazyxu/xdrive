@@ -34,12 +34,12 @@ func TestBaiduNativeWorldGridStableForMiddlePanAndAntimeridian(t *testing.T) {
 		t.Fatalf("middle Owner-photo group changed across same zoom pan: (%d,%d) (%d,%d) (%d,%d) (%d,%d)",ax,ay,bx,by,cx,cy,dx,dy)
 	}
 	wrap := baiduPhotoMapBounds{
-		West:179.9,East:-179.9,South:-2,North:3,
-		CoordinateSpace:meta.BaiduPhotoMapSpaceBD09LL,
+		West: 179.9, East: -179.9, South: -2, North: 3,
+		CoordinateSpace: meta.BaiduPhotoMapSpaceBD09LL,
 	}
-	e1,_,err1:=baiduPhotoMapWorldCellIndex(wrap,179.95,1)
-	e2,_,err2:=baiduPhotoMapWorldCellIndex(wrap,-179.95,1)
-	if err1!=nil || err2!=nil || e1<0 || e1>7 || e2<0 || e2>7 {
+	e1, _, err1 := baiduPhotoMapWorldCellIndex(wrap, 179.95, 1)
+	e2, _, err2 := baiduPhotoMapWorldCellIndex(wrap, -179.95, 1)
+	if err1 != nil || err2 != nil || e1 < 0 || e1 > 7 || e2 < 0 || e2 > 7 {
 		t.Fatal("wrapped world tile escaped the bounded 8x8 protocol")
 	}
 }
