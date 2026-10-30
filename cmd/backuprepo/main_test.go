@@ -555,3 +555,61 @@ func TestCaptureRejectsSymlinkedParentAliasOverlapBeforeWriting(t *testing.T) {
 		}
 	})
 }
+
+func TestEstimateRejectsPhysicalPathOverlapThroughAliases(t *testing.T) {
+	base := t.TempDir()
+	realParent := filepath.Join(base, "real")
+	source := filepath.Join(realParent, "live")
+	if err := os.MkdirAll(source, 0700); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(base, "real-alias")
+	if err := os.Symlink(realParent, alias); err != nil {
+		t.Skipf("symlink fixture is unavailable: %v", err)
+	}
+
+	t.Run("not-yet-created repository inside aliased live source", func(t *testing.T) {
+		repo := filepath.Join(alias, "live", "future", "incremental")
+		_, err := estimateIncrementalBytes(source, repo)
+		if err == nil || !strings.Contains(err.Error(), "cannot nest") {
+			t.Fatalf("missing repository alias overlap was not rejected: %v", err)
+		}
+		if _, err := os.Lstat(filepath.Join(source, "future")); !os.IsNotExist(err) {
+			t.Fatalf("read-only estimate created repository directories: %v", err)
+		}
+	})
+
+	t.Run("existing repository inside aliased live source", func(t *testing.T) {
+		repo := filepath.Join(source, "backup")
+		if err := os.MkdirAll(repo, 0700); err != nil {
+			t.Fatal(err)
+		}
+		_, err := estimateIncrementalBytes(filepath.Join(alias, "live"), repo)
+		if err == nil || !strings.Contains(err.Error(), "cannot nest") {
+			t.Fatalf("source parent alias overlap was not rejected: %v", err)
+		}
+	})
+
+	t.Run("live source inside aliased repository", func(t *testing.T) {
+		repo := filepath.Join(realParent, "backup")
+		live := filepath.Join(repo, "files")
+		if err := os.MkdirAll(live, 0700); err != nil {
+			t.Fatal(err)
+		}
+		_, err := estimateIncrementalBytes(live, filepath.Join(alias, "backup"))
+		if err == nil || !strings.Contains(err.Error(), "cannot nest") {
+			t.Fatalf("repository parent alias overlap was not rejected: %v", err)
+		}
+	})
+
+	t.Run("disjoint missing repository stays supported", func(t *testing.T) {
+		repo := filepath.Join(base, "other", "not-yet-created", "incremental")
+		_, err := estimateIncrementalBytes(filepath.Join(alias, "live"), repo)
+		if err != nil {
+			t.Fatalf("disjoint missing backup repository must remain valid: %v", err)
+		}
+		if _, err := os.Lstat(filepath.Join(base, "other")); !os.IsNotExist(err) {
+			t.Fatalf("read-only estimate created a missing repository: %v", err)
+		}
+	})
+}
