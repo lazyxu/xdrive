@@ -19,3 +19,16 @@ New source check:
 Must be compiled on macOS as an unsigned iOS device IPA, and pass exact-HEAD
 applicable PR CI/Final Gate before merging to master. Current stacked branch
 has no verified IPA. Physical touch/rotation/VoiceOver: 跳过（未验收）.
+
+## Integration with the five-slot native Gallery
+
+This child now combines #3279's already-running five-slot Gallery / bounded
+PhotoKit album browser with the zoom-only child, without changing either
+parent's existing HEAD. Both local and album-specific full-screen viewers
+return to their most recent **verified 64-item page offset**, rechecking
+PhotoKit permission and recreating the bounded snapshot. The exact sub-cell
+pixel scroll anchor is not yet guaranteed. The new source contract is
+`desktop/tests/ios-native-photo-viewer-return.cjs`.
+
+This new combined HEAD requires its own macOS iOS IPA compilation and
+complete applicable CI/Final Gate before merging to master.

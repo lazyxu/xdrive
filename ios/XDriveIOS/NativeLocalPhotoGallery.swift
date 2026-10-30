@@ -227,6 +227,8 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
     @State private var generation = UUID()
     @State private var task: Task<Void, Never>?
     @State private var errorMessage: String?
+    // Page offset only: no PhotoKit ID is persisted across Viewer dismissal.
+    @State private var savedOffset = 0
     @State private var authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
 
     var body: some View {
@@ -279,20 +281,36 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
             }.padding(12)
         }
         .navigationTitle("本机相册")
-        .sheet(item: $selected) { XDriveIOSNativeLocalPhotoDetail(candidate: $0) }
-        .onAppear { refresh() }
+        .fullScreenCover(item: $selected, onDismiss: { restoreAfterViewer() }) {
+            XDriveIOSNativeLocalPhotoDetail(candidate: $0)
+        }
+        .onAppear {
+            // Returning from a full-screen Viewer must not discard its source.
+            if selected == nil && page == nil && !busy { refresh(at: savedOffset) }
+        }
         .onChange(of: phase) { new in
             if new != .active { invalidate() }
-            else { refresh() }
+            else { refresh(at: savedOffset) }
         }
-        .onDisappear { invalidate() }
+        .onDisappear {
+            // fullScreenCover may hide its presenter before the Viewer closes.
+            // Suspend disposable reads, not the presentation's selected identity.
+            if selected != nil { suspendForViewer() }
+            else { invalidate() }
+        }
     }
 
-    private func refresh() {
+    private func restoreAfterViewer() {
+        // Revalidate permission and re-open the originating 64-slot page.
+        if phase == .active { refresh(at: savedOffset) }
+        else { invalidate() }
+    }
+
+    private func refresh(at requestedOffset: Int = 0) {
         authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
         invalidate()
         guard authorization == .authorized || authorization == .limited else { return }
-        load(offset: 0)
+        load(offset: max(0, requestedOffset))
     }
 
     private func load(offset: Int) {
@@ -308,6 +326,7 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
                 try Task.checkCancellation()
                 guard generation == token, phase == .active else { return }
                 page = next
+                savedOffset = next.startOffset
                 authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             } catch is CancellationError {
             } catch {
@@ -316,6 +335,16 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
             }
             if generation == token { busy = false }
         }
+    }
+
+    private func suspendForViewer() {
+        generation = UUID()
+        task?.cancel()
+        task = nil
+        if let scanner { Task { await scanner.reset() } }
+        scanner = nil
+        busy = false
+        // Retain selected + current page until the full-screen Viewer closes.
     }
 
     private func invalidate() {

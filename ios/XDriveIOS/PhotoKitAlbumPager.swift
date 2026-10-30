@@ -7,6 +7,9 @@ struct XDriveLocalPhotoAlbumSummary: Identifiable {
     let id: String
     let name: String
     let kind: String
+    // Transient PhotoKit collection identity for native album navigation only.
+    // Never persist or transmit it as an Owner/backup/media identity.
+    let collectionIdentifier: String
     let accessibleAssetCount: Int
 }
 
@@ -69,6 +72,7 @@ enum XDriveLocalPhotoAlbumPager {
                     rows.append(XDriveLocalPhotoAlbumSummary(
                         id: "album-page-\(position)", name: name?.isEmpty == false ? name! : "未命名相册",
                         kind: kind,
+                        collectionIdentifier: album.localIdentifier,
                         accessibleAssetCount: PHAsset.fetchAssets(in: album, options: nil).count
                     ))
                 }

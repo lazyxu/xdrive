@@ -506,7 +506,7 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
             }.padding()
         }
         .navigationTitle("云端备份原件")
-        .sheet(item: $selected) {
+        .fullScreenCover(item: $selected) {
             XDriveIOSNativeCloudOriginalPreview(node: $0, login: login)
         }
         .task { model.reload(login: login) }
@@ -518,8 +518,10 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
             }
         }
         .onDisappear {
-            model.invalidate()
-            selected = nil
+            // Presenting a full-screen Viewer may make the wall disappear.
+            // Its selected identity must survive that presentation; Owner
+            // changes independently clear selection and invalidate the model.
+            if selected == nil { model.invalidate() }
         }
     }
 }

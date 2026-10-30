@@ -1,0 +1,44 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const root = path.resolve(__dirname, '../..')
+const read = p => fs.readFileSync(path.join(root, p), 'utf8')
+const local = read('ios/XDriveIOS/NativeLocalPhotoGallery.swift')
+const albums = read('ios/XDriveIOS/NativePhotoAlbumBrowser.swift')
+const cloud = read('ios/XDriveIOS/NativeCloudOriginalGallery.swift')
+
+test('PhotoKit viewer returns to same 64-item page after fresh permission check', () => {
+  const wall = local.slice(local.indexOf('struct XDriveIOSNativeLocalGalleryScreen'))
+  assert.match(wall, /@State private var savedOffset = 0/)
+  assert.match(wall, /\.fullScreenCover\(item: \$selected, onDismiss: \{ restoreAfterViewer\(\) \}\)/)
+  assert.match(wall, /if selected == nil && page == nil && !busy \{ refresh\(at: savedOffset\) \}/)
+  assert.match(wall, /if phase == \.active \{ refresh\(at: savedOffset\) \}/)
+  assert.match(wall, /load\(offset: max\(0, requestedOffset\)\)/)
+  assert.match(wall, /savedOffset = next\.startOffset/)
+  assert.match(wall, /if selected != nil \{ suspendForViewer\(\) \}/)
+  assert.match(wall, /if new != \.active \{ invalidate\(\) \}/)
+})
+
+test('album viewer return revalidates the same album and last confirmed offset', () => {
+  const wall = albums.slice(albums.indexOf('struct XDriveIOSNativeAlbumContentsScreen'),
+    albums.indexOf('struct XDriveIOSNativePhotoAlbumsScreen'))
+  assert.match(wall, /@State private var savedOffset = 0/)
+  assert.match(wall, /\.fullScreenCover\(item: \$selected, onDismiss: \{ restoreAfterViewer\(\) \}\)/)
+  assert.match(wall, /if selected == nil && page == nil && !loading \{ reload\(\) \}/)
+  assert.match(wall, /if phase == \.active \{ reload\(\) \}/)
+  assert.match(wall, /load\(offset: savedOffset\)/)
+  assert.match(wall, /savedOffset = page\.startOffset/)
+  assert.match(wall, /if selected != nil \{ suspendForViewer\(\) \}/)
+  assert.match(wall, /\.onChange\(of: libraryMonitor\.revision\)/)
+  assert.match(albums, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/)
+})
+
+test('Owner-specific cloud Viewer retains modal state but clears stale previews', () => {
+  assert.match(cloud, /\.fullScreenCover\(item: \$selected\)/)
+  assert.match(cloud, /if selected == nil \{ model\.invalidate\(\) \}/)
+  assert.match(cloud, /\.onChange\(of: login\.owner\) \{ _ in\s*selected = nil\s*model\.invalidate\(\)/)
+  assert.match(cloud, /player\?\.pause\(\)[\s\S]*still = nil[\s\S]*dismiss\(\)/)
+  assert.doesNotMatch(local + albums, /UserDefaults\.standard|URLSession\(|UploadSession|WKWebView/)
+})
