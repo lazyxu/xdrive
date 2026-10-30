@@ -159,6 +159,11 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             receipts.refresh(login: login)
         }
         .onDisappear { receipts.cancel() }
+        .onChange(of: receipts.mode) { mode in
+            if mode == .idle {
+                controller.refresh(owner: login.owner)
+            }
+        }
         .onChange(of: login.owner) { _ in
             receipts.cancel()
             controller.refresh(owner: login.owner)
