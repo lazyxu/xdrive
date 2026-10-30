@@ -122,7 +122,11 @@ internal fun NativeLocalMediaStoreGallery(
         mutableStateOf<List<NativeLocalMedia>>(emptyList())
     }
     var exhausted by remember(sessionId, albumsOnly, selectedAlbum?.id) { mutableStateOf(false) }
-    var loadedThrough by remember(sessionId, albumsOnly, selectedAlbum?.id) { mutableIntStateOf(0) }
+    var scannedCount by remember(sessionId, albumsOnly, selectedAlbum?.id) { mutableIntStateOf(0) }
+    // Not a MediaStore URI: memory-only bounded keyset, reset on library/grant changes.
+    var nextPageKey by remember(sessionId, albumsOnly, selectedAlbum?.id) {
+        mutableStateOf<NativeLocalPageKey?>(null)
+    }
     var firstOffset by remember(sessionId, albumsOnly, selectedAlbum?.id) { mutableIntStateOf(0) }
     var albumVisibleCount by remember(sessionId, albumsOnly) {
         mutableIntStateOf(NativeLocalMediaStore.ALBUM_PAGE_SIZE)
@@ -158,7 +162,8 @@ internal fun NativeLocalMediaStoreGallery(
         selectedMedia = null
         items = emptyList()
         exhausted = false
-        loadedThrough = 0
+        scannedCount = 0
+        nextPageKey = null
         firstOffset = 0
         pageIntent = 0
         failure = null
@@ -168,10 +173,12 @@ internal fun NativeLocalMediaStoreGallery(
             if (albumsOnly && selectedAlbum == null) {
                 if (albums == null) albums = NativeLocalMediaStore.albums(resolver)
             } else {
-                val page = NativeLocalMediaStore.page(resolver, 0,
-                    NativeLocalMediaStore.PHOTO_PAGE_SIZE, selectedAlbum?.id)
+                val page = NativeLocalMediaStore.pageAfter(resolver,
+                    limit = NativeLocalMediaStore.PHOTO_PAGE_SIZE,
+                    albumId = selectedAlbum?.id)
                 items = page
-                loadedThrough = page.size
+                nextPageKey = page.lastOrNull()?.pageKey
+                scannedCount = page.size
                 exhausted = page.size < NativeLocalMediaStore.PHOTO_PAGE_SIZE
             }
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -190,8 +197,10 @@ internal fun NativeLocalMediaStoreGallery(
         busy = true
         try {
             val current = items
-            val next = NativeLocalMediaStore.page(resolver, loadedThrough,
-                NativeLocalMediaStore.PHOTO_PAGE_SIZE, selectedAlbum?.id)
+            val next = NativeLocalMediaStore.pageAfter(resolver,
+                after = nextPageKey,
+                limit = NativeLocalMediaStore.PHOTO_PAGE_SIZE,
+                albumId = selectedAlbum?.id)
             if (!NativeLocalMediaStore.canAppend(current, next)) {
                 failure = "媒体提供程序返回了重复页面；已停止加载以避免错乱。"
             } else {
@@ -199,9 +208,10 @@ internal fun NativeLocalMediaStoreGallery(
                 val dropped = (merged.size - NativeLocalMediaStore.MAX_WALL_ITEMS).coerceAtLeast(0)
                 items = if (dropped > 0) merged.drop(dropped) else merged
                 firstOffset += dropped
-                loadedThrough += next.size
+                nextPageKey = next.lastOrNull()?.pageKey ?: nextPageKey
+                scannedCount += next.size
                 exhausted = next.size < NativeLocalMediaStore.PHOTO_PAGE_SIZE ||
-                    loadedThrough >= NativeLocalMediaStore.MAX_SCAN
+                    scannedCount >= NativeLocalMediaStore.MAX_SCAN
             }
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
