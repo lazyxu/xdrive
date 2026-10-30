@@ -29,6 +29,21 @@ class NativeHomeNavigationTest {
         assertEquals(NativeHomeTab.FILES, recent.open(NativeHomeShortcut.TRASH).selected)
     }
 
+    @Test fun recentAndFavoritesAreSessionOnlyAndNeverReplaceFixedTabs() {
+        val initial = NativeHomeNavigation()
+        val visited = initial
+            .open(NativeHomeShortcut.LOCAL_ALBUMS)
+            .open(NativeHomeShortcut.CLOUD_FILES)
+            .open(NativeHomeShortcut.LOCAL_ALBUMS)
+            .toggleFavorite(NativeHomeShortcut.LOCAL_ALBUMS)
+        assertEquals(listOf(NativeHomeShortcut.LOCAL_ALBUMS,
+            NativeHomeShortcut.CLOUD_FILES), visited.recentShortcuts)
+        assertEquals(setOf(NativeHomeShortcut.LOCAL_ALBUMS), visited.favoriteShortcuts)
+        assertEquals(NativeHomeTab.GALLERY, visited.open(NativeHomeShortcut.GALLERY_MAP).selected)
+        assertEquals(listOf("全部", "最近", "图库", "文件", "我的"),
+            NativeHomeNavigation().labels)
+    }
+
     @Test fun unauthorizedDynamicRouteFallsBackWithoutLeakingHistory() {
         val recent = NativeHomeNavigation().openDynamic(NativeDynamicFeature.TRANSFERS)
         val revoked = recent.restrictTo(emptySet())
