@@ -50,6 +50,31 @@ const dependencies = {
     XDriveHomePage: props => React.createElement('canonical-home', props),
   },
 }
+// Load the newly extracted, real shared projection modules rather than
+// creating duplicate Overview behavior in this mounted test harness.
+for (const [specifier, filename] of [
+  ['./OverviewSharedModels', 'ui/shared/src/mui/OverviewSharedModels.ts'],
+  ['./OverviewFileProjection', 'ui/shared/src/mui/OverviewFileProjection.ts'],
+]) {
+  const sourceFile = path.join(root, filename)
+  const compiled = ts.transpileModule(fs.readFileSync(sourceFile, 'utf8'), {
+    fileName: sourceFile,
+    reportDiagnostics: true,
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  })
+  assert.deepEqual((compiled.diagnostics || [])
+    .filter(d => d.category === ts.DiagnosticCategory.Error)
+    .map(d => ts.flattenDiagnosticMessageText(d.messageText, '\\n')), [])
+  const actual = { exports: {} }
+  new Function('module', 'exports', 'require', compiled.outputText)(
+    actual, actual.exports, name => {
+      assert.ok(Object.hasOwn(dependencies, name),
+        'unexpected extracted Overview dependency: ' + name)
+      return dependencies[name]
+    },
+  )
+  dependencies[specifier] = actual.exports
+}
 const loaded = { exports: {} }
 new Function('module', 'exports', 'require', result.outputText)(
   loaded, loaded.exports, name => {

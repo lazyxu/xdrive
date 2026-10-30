@@ -40,10 +40,13 @@ test('Desktop home prioritizes user work and actions over diagnostic internals',
     'openPath(relativePath)',
     '本地磁盘空间不足',
     'getLocalDiskSpace(controller.signal)',
-    'failedTransfer',
-    'failedOperation',
-    'failedBackgroundTask',
   ]) assert.ok((overview + desktopOverviewPort).includes(token), `shared Home or Desktop port missing: ${token}`)
+  const sharedActivity = read('ui', 'shared', 'src', 'mui', 'OverviewSharedModels.ts')
+  assert.ok(overview.includes('xDriveOverviewActivity({'),
+    'shared Overview must execute the canonical activity projection')
+  for (const token of ['failedTransfer', 'failedOperation', 'failedBackgroundTask']) {
+    assert.ok(sharedActivity.includes(token), 'shared activity contract missing: ' + token)
+  }
   assert.equal(overview.includes('window.xdriveDesktop'), false, 'shared Overview cannot call Electron IPC')
   assert.ok(app.includes('overviewPage: {') && commonOutlet.includes('<XDriveOverviewPage'),
     'Desktop Home must be mounted through the common shared outlet')

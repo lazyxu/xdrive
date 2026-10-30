@@ -11,6 +11,10 @@ final class XDriveIOSPhotoAutoScheduleStore {
     static let shared = XDriveIOSPhotoAutoScheduleStore()
     private init() {}
 
+    /// Bump on any offline global stop, invalidating UIKit confirmations
+    /// that started before the stop but may finish afterward.
+    private(set) var localStopGeneration: UInt64 = 0
+
     /// Contains no token, PhotoKit ID, filename, location or device grant.
     /// Scope identity is reverified against the Server on EVERY auto tick.
     struct State: Codable {
@@ -62,6 +66,28 @@ final class XDriveIOSPhotoAutoScheduleStore {
     func disable(owner: XDriveNativeOwnerRoot) {
         // Disable immediately, without requiring a network roundtrip.
         UserDefaults.standard.removeObject(forKey: key(for: owner))
+    }
+
+    /// Emergency STOP-only operation for every local Owner scope. This
+    /// does not require the Server, enumerate PhotoKit or touch any CAS bytes.
+    /// Only this app's exact SHA-256 auto-schedule keys can be deleted;
+    /// unrelated defaults and encrypted upload receipts remain untouched.
+    func disableAllOnThisDevice() -> Int {
+        localStopGeneration &+= 1
+        let prefix = "xdrive.ios.photos.auto.v1."
+        let keys = UserDefaults.standard.dictionaryRepresentation().keys.filter {
+            key in
+            guard key.hasPrefix(prefix) else { return false }
+            let suffix = key.dropFirst(prefix.count)
+            return suffix.utf8.count == 64 &&
+                suffix.utf8.allSatisfy {
+                    ($0 >= 48 && $0 <= 57) || ($0 >= 97 && $0 <= 102)
+                }
+        }
+        for key in keys {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+        return keys.count
     }
 
     /// Persist the next due time BEFORE any possible network write. A

@@ -1,59 +1,35 @@
 # Administrator Server backup snapshot index pagination
 
-This feature extends **read-only discovery**, not restore authorization.
+This is **read-only discovery and bounded verification admission**. A snapshot ID is never a restore, drill, prune or delete capability. Only the latest 100 Host-attested full inventory entries retain those separately guarded administrative actions.
 
-## Protocol and scope
+## Host index protocols and coverage
 
-The Host Control process still publishes its normal newest-100 backup inventory
-with metadata and verification evidence. When there are more generations, it
-also publishes a private, atomic `backup-admin-snapshot-index.json` with:
+The Host Control process discovers canonical local `v1`, `v2-default` and configured `v2-configured` snapshots from three fixed, Host-owned roots. It sorts their identity tuples once per inventory generation, then publishes an atomic private `backup-admin-snapshot-index.json` next to the normal newest-100 inventory.
 
-- `xdrive-backup-snapshot-index-v1` fixed protocol, fresh timestamp and exact
-  backup policy revision;
-- true total of all observed canonical local snapshots;
-- at most 1,000 ordered, canonical `v1:`, `v2-default:` or `v2-configured:`
-  IDs (no actual Host filesystem paths);
-- explicit `truncated` when more than 1,000 generations exist.
+- Legacy Host protocol `xdrive-backup-snapshot-index-v1`: at most **1,000** ordered IDs.
+- New Host protocol `xdrive-backup-snapshot-index-v2`: at most **10,000** ordered IDs.
+- Both declare the **actual full total** (up to 1,000,000), `indexed_snapshots`, `truncated`, fresh `generated_at`, and the exact 64-character policy revision.
+- New Host output remains bounded to 1 MiB. It fails closed on malformed, duplicate or unordered identities, source cardinality mismatch, or unsafe index inode. The v2 cap does not imply every backup beyond 10,000 has been inspected.
+- **No additional Host path, database field, raw file digest, credential or backup data** enters this index.
 
-The authenticated Server Admin endpoint is:
+The Server accepts both protocols, verifying the per-version index cap, complete indexed count, strict reverse order, distinct canonical IDs, policy revision, recent timestamps, and exact agreement with the full metadata of the newest 100. A missing, stale, symlinked, mismatched or oversized index is unavailable, not a valid empty backup library. Older Server versions may temporarily reject the new v2 index until upgraded; this is a read-only UI compatibility limitation, not permission to bypass verification.
+
+## Authenticated read-only pagination
 
 ```http
 GET /api/v1/admin/backups/snapshots?offset=100&limit=50
 ```
 
-Only validated decimal offsets (0–1,000) and limits (1–100) are accepted.
-The Server requires a live Host, a fresh inventory/index, policy-revision
-agreement, exact newest-100 identity agreement and a strictly descending
-unique list. The response contains `scope=unverified_identity_only` and
-bounded page metadata. When the Host index is truncated, a request beyond its
-coverage reports `backup_snapshot_index_truncated`; an older Host reports
-`backup_snapshot_index_unavailable`. Neither is misreported as a successful
-empty library.
+Only canonical bounded decimal offsets (0–10,000) and limits (1–100) are accepted. The response retains the existing `xdrive-backup-snapshot-page-v1` / `unverified_identity_only` contract so the same Web, Desktop and DSM page renderer can support old and new Host index generations.
 
-## Shared UI / isolation
+The shared UI starts at identity 101 and loads a maximum of 50 IDs per request on demand. It shows the *real* `indexed_snapshots` and `total_snapshots` counts. When truncated it explicitly warns that older generations exist but are **not** indexed. An offset at the truncated boundary fails with `backup_snapshot_index_truncated`; it is never represented as a successful end-of-results page.
 
-Web, Desktop and DSM use the same read-only React/MUI pager, shown only when
-the Host-backed inventory reports more than 100 snapshots. The user starts at
-snapshot 101; a page contains 50 identities. It is **lazy**: no extra Host
-inspection runs on initial navigation. Requests are canceled logically on
-Host/account/policy changes, so a late previous-owner response cannot replace
-current UI state.
+Each old identity may be submitted **only** to the existing administrator `verify` action after the Server rereads a fresh, matching Host index. The Host independently resolves its own fixed namespace and performs the actual verification; historical receipts do not grant ongoing integrity or recoverability. No older identity can be sent directly to destructive restore/delete/drill/prune from the index page. These actions remain gated by trusted newest-100 metadata, separate Host checks, and typed confirmations.
 
-Older entries display only canonical identity and ordinal. There are no
-buttons to verify, restore, delete or prune an older identity from this list.
-Those actions remain independently gated by the existing Host-backed,
-metadata-rich inventory and must never be inferred from names, counts,
-successful historical checks, or an index timestamp.
+## Validation and remaining limits
 
-## Limits and next phases
+The Host test checks both an actual >1,000 snapshot inventory and a synthetic 10,005-entry stream without writing ten thousand directories. API tests retain **legacy v1 1,000-entry** behavior, cover the v2 10,000-entry limit, offset boundaries, read-only older verification, rejected destructive actions and tampered indices.
 
-The 1,000-entry index is intentionally bounded to protect the 24×7 Host
-Control process. This does **not** implement unbounded cursor pagination
-across all snapshots, safe registration/migration of custom repositories or
-destructive management of older generations. Extending these requires a
-new Host-issued identity-plus-verification proof and independent exclusive
-lock validation. Automatic v2 CAS GC and compression/Pack remain disabled.
+The new cap remains intentionally finite to protect the always-on Host process and Server/Agent memory. Fully unbounded cursor-based snapshot discovery, safe destructive management of older generations, and new repository registration are separate P1 work; this feature does not change the underlying immutable backups, scheduling, retention, CAS GC, compression or Pack.
 
-Code/CI verification is required before merging. Production environment
-acceptance remains **按用户决定跳过（未验收）** if unavailable, and must not
-be confused with completed disaster-recovery proof.
+Unavailable production-only acceptance is **按用户决定跳过（未验收）**; source-level security and exact-head CI are not bypassed.

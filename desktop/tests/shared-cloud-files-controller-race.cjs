@@ -155,6 +155,16 @@ function loadCloudFilesController(react) {
       return moduleRef.exports
     }
     if (request === './ViewerForegroundPriority') return foregroundPriority
+    if (request === './CloudFilesFirstPageAdmission') {
+      const admissionPath = path.join(repo, 'ui/shared/src/mui/CloudFilesFirstPageAdmission.ts')
+      const compiled = ts.transpileModule(fs.readFileSync(admissionPath, 'utf8'), {
+        fileName: admissionPath,
+        compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+      }).outputText
+      const unit = { exports: {} }
+      new Function('exports', 'module', compiled)(unit.exports, unit)
+      return unit.exports
+    }
     return require(request)
   }
   new Function('exports', 'module', 'require', output)(mod.exports, mod, localRequire)
@@ -1502,4 +1512,90 @@ test('same-folder sort or grouping revert supersedes an unresolved range', async
       foregroundPriority.xDriveEnterForegroundPage(null)
     }
   }
+})
+
+
+
+test('U01 an uncounted or contradictory next folder first Range never commits unverified rows', async () => {
+  const runtime = createHookRuntime()
+  const useController = loadCloudFilesController(runtime.react)
+  const sort = { key: 'name', direction: 'asc' }
+  const failures = []
+  let next = null
+  const port = {
+    getRoot: async () => ({ id: 1 }),
+    getRange: async (parentID, offset, limit) => {
+      if (parentID === 1) return u01Range(10, '已核实根目录.txt', offset, limit)
+      if (parentID === 2 && next) return {
+        ...u01Range(20, '不应公开的目标行.txt', offset, limit),
+        ...next,
+      }
+      throw new Error('unexpected directory')
+    },
+    getQuota: async () => ({ quota_bytes: 100, used_bytes: 10 }),
+  }
+  const render = () => runtime.render(() => useController({
+    port, enabled: true, defaultSort: sort,
+    quotaRefreshIntervalMs: 0, changePollIntervalMs: 0,
+    onError: error => failures.push(String(error.message)),
+  }))
+  render()
+  await flushAsync()
+  let controller = render()
+  assert.equal(controller.current?.id, 1)
+  assert.deepEqual(controller.items.map(item => item.id), [10])
+  for (const bad of [
+    { total_count: 0, total_count_included: false },
+    { total_count: 0, total_count_included: true },
+    { items: [], total_count: 1, total_count_included: true },
+  ]) {
+    next = bad
+    assert.equal(await controller.loadDirectory(2, [
+      { id: 1, name: '我的文件' }, { id: 2, name: '目标' },
+    ], sort), false)
+    controller = render()
+    assert.equal(controller.current?.id, 1, 'old verified folder remains current')
+    assert.deepEqual(controller.items.map(item => item.id), [10],
+      'unverified first rows must not overwrite old Owner rows')
+    assert.deepEqual(controller.crumbs.map(crumb => crumb.id), [1],
+      'unverified first page must not change breadcrumbs')
+    // Both the first-page gate and the Host counted-Range guard may reject
+    // contradictory metadata before the Owner cursor is committed.
+    assert.match(failures.at(-1), /Unverified Files first counted Range|Invalid Files Host counted Range page/)
+  }
+  next = { total_count: 1, total_count_included: true }
+  assert.equal(await controller.loadDirectory(2, [
+    { id: 1, name: '我的文件' }, { id: 2, name: '目标' },
+  ], sort), true)
+  controller = render()
+  assert.equal(controller.current?.id, 2)
+  assert.deepEqual(controller.items.map(item => item.id), [20])
+})
+
+test('cold Root without an authoritative first total cannot publish files or quota', async () => {
+  const runtime = createHookRuntime()
+  const useController = loadCloudFilesController(runtime.react)
+  const errors = []
+  const port = {
+    getRoot: async () => ({ id: 1 }),
+    getQuota: async () => ({ quota_bytes: 99, used_bytes: 50 }),
+    getRange: async (_parent, offset, limit) => ({
+      ...u01Range(31, 'unverified.txt', offset, limit),
+      total_count_included: false,
+      total_count: 0,
+    }),
+  }
+  const render = () => runtime.render(() => useController({
+    port, enabled: true, defaultSort: { key: 'name', direction: 'asc' },
+    quotaRefreshIntervalMs: 0, changePollIntervalMs: 0,
+    onError: error => errors.push(String(error.message)),
+  }))
+  render()
+  await flushAsync()
+  const controller = render()
+  assert.equal(controller.current, undefined)
+  assert.deepEqual(controller.items, [])
+  assert.deepEqual(controller.crumbs, [])
+  assert.equal(controller.quota, null)
+  assert.match(errors.at(-1), /Unverified Files first counted Range/)
 })

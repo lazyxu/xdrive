@@ -50,6 +50,9 @@ function createHarness(storage, denyGetter = false) {
   new Function('exports', 'window', transpile(storageSource))(safe, win)
 
   let liveSession = null, username = null, notice = null, disposeCalls = 0
+  // The real App also revokes the forced-password UI on every logout.
+  // Start true to verify that clearSession actually resets this state.
+  let loginPasswordChangeRequired = true
   const foregroundTransitions = []
   const keys = {
     ACCESS_KEY: 'xdrive.access_token',
@@ -69,6 +72,7 @@ function createHarness(storage, denyGetter = false) {
     ...safe, useCallback: fn => fn,
     setSession(next) { liveSession = next },
     setUsername(next) { username = next },
+    setLoginPasswordChangeRequired(next) { loginPasswordChangeRequired = next },
     setAuthNotice(next) { notice = next },
     transferApiRef: { current: { disposeTransfers() { disposeCalls++ } } },
     authEpochRef: { current: 0 },
@@ -80,6 +84,7 @@ function createHarness(storage, denyGetter = false) {
   new Function('exports', ...Object.keys(vars), sessionCode)(app, ...Object.values(vars))
   return { safe, app, win, keys,
     get session() { return liveSession }, get username() { return username },
+    get loginPasswordChangeRequired() { return loginPasswordChangeRequired },
     get notice() { return notice }, get disposeCalls() { return disposeCalls },
     get foregroundTransitions() { return [...foregroundTransitions] } }
 }
@@ -105,7 +110,10 @@ test('PWA stored login/refresh and logout keep existing browser semantics', () =
   assert.equal(values.get(h.keys.LEGACY_TOKEN_KEY), 'fresh')
   assert.equal(values.get(h.keys.REFRESH_KEY), 'renewed')
   assert.equal(values.get(h.keys.EXPIRES_KEY), '789')
+  assert.equal(h.loginPasswordChangeRequired, true)
   h.app.clearSession('会话已失效。')
+  assert.equal(h.loginPasswordChangeRequired, false,
+    'logout must clear the former Owner forced-password gate')
   assert.deepEqual(h.session, { accessToken: '', refreshToken: '', accessExpiresAt: 0 })
   assert.equal(h.username, '')
   assert.equal(h.notice, '会话已失效。')
@@ -137,6 +145,7 @@ test('HTTPS Cookie mode serializes NO access or refresh secret to localStorage',
     assert.equal(values.has(key), false, key)
   }
   h.app.clearSession()
+  assert.equal(h.loginPasswordChangeRequired, false)
   assert.equal(values.has('xdrive.auth_cookie_mode'), false)
 })
 

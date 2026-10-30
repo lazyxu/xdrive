@@ -16,7 +16,8 @@ import { xDriveSelectBaiduNativeCell } from '../media-gallery-baidu-jsapi4-cell-
 import type { XDriveBaiduCellRangeSort } from '../media-gallery-baidu-jsapi4-cell-range'
 import { xDriveBaiduCellReturnMatchesFreshSelection } from '../media-gallery-baidu-cell-return-session'
 import {
-  XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT, xDrivePlacesDrawerValidRange,
+  XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT, XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT,
+  xDrivePlacesDrawerValidRange,
   xDrivePlacesDrawerMatchesFresh, xDrivePlacesDrawerMatchesResizedCell,
   xDriveTakePlacesDrawerViewerReturn,
 } from '../media-gallery-places-photo-drawer'
@@ -103,6 +104,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
 }) {
   const mount = useRef<HTMLDivElement | null>(null)
   const summaryElement = useRef<HTMLDivElement | null>(null)
+  const clusterListRef = useRef<HTMLDetailsElement | null>(null)
   const errorElement = useRef<HTMLDivElement | null>(null)
   const mapFrameRef = useRef<{
     setPhotoCoverSelections(selections: readonly MediaBaiduNativeCellSelection[]): boolean
@@ -498,7 +500,12 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
                 bounds:{...state.selection.bounds}},photoScope,
                 presentation:{expanded:state.expanded,
                   scrollTop:bounded(list?.scrollTop??0),
-                  scrollLeft:bounded(list?.scrollLeft??0)}}}
+                  scrollLeft:bounded(list?.scrollLeft??0),
+                  // Keep the already-viewed signed page depth on rotation.
+                  // The new camera must still reauthorize every page, capped
+                  // at the same 10-page limit as Viewer Back.
+                  loadedCount:Math.min(XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT,
+                    state.items.length)}}}
           }
           // When several CSS resize frames precede one /cells response,
           // preserve only the first valid intent. Native Hosts coalesce the
@@ -808,6 +815,13 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
           .filter(candidate => hasAcceptedCell(candidate.selection)),
         projected.width, projected.height, edgeToEdge, overlayRects)
     : []
+  // Collision/edge/toolbar decluttering can hide an otherwise current, signed
+  // Owner Cell's photo cover. The Cell itself is still accessible and must
+  // never be confused with missing media or a revoked Owner permission.
+  // This disclosure belongs to the ONE React Parent shared by both SDK Hosts.
+  const unpaintedCellCount = scopeIsCurrent && trustedSummary && acceptedViewport &&
+      phase === 'ready'
+    ? Math.max(0, accessible.length - coverPins.length) : 0
   // During a move, the last signed layer is projected by the SDK as a
   // VISUAL-ONLY overlay. It cannot open a Cell and is discarded on new
   // Owner evidence, filter/Owner revision or any map failure. Never treat
@@ -991,6 +1005,23 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
               刷新定位照片
             </Button>
           ) : null}
+          {unpaintedCellCount > 0 ? (
+            <Button size="small" variant="outlined"
+              data-xdrive-places-reveal-hidden-cells
+              sx={{minHeight:44,textTransform:'none',pointerEvents:'auto',
+                bgcolor:'background.paper',boxShadow:2}}
+              onClick={() => {
+                // Only reveal existing Owner-signed Cell actions. This is a
+                // Parent-only UI navigation, not a new SDK or Owner read.
+                const list=clusterListRef.current
+                if (!list) return
+                list.open=true
+                list.scrollIntoView({block:'nearest'})
+                list.querySelector<HTMLElement>('summary')?.focus({preventScroll:true})
+              }}>
+              查看其他 {unpaintedCellCount} 个地点
+            </Button>
+          ) : null}
           {acceptedViewport && phase === 'ready' && openViewport.current && trustedSummary.total_count > 0 ? (
             <Button size="small" variant="outlined"
               data-xdrive-places-full-camera-wall
@@ -1050,11 +1081,18 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         </Typography>
       ):null}
       {scopeIsCurrent && accessible.length>0 ? (
-        <Box component="details" data-xdrive-places-cluster-list>
+        <Box component="details" data-xdrive-places-cluster-list ref={clusterListRef}>
           <Box component="summary" sx={{cursor:'pointer',typography:'caption',
             color:'text.secondary',minHeight:44,display:'flex',alignItems:'center',
+            flexWrap:'wrap',gap:0.5,
             '&:focus-visible':{outline:'2px solid',outlineColor:'primary.main'}}}>
             聚集点列表（{accessible.length}）
+            {unpaintedCellCount > 0 ? (
+              <Box component="span" data-xdrive-places-unpainted-cell-count
+                sx={{fontWeight:500}}>
+                · {unpaintedCellCount} 个聚集点未显示照片封面，可从这里查看
+              </Box>
+            ) : null}
           </Box>
         <Box component="nav" aria-label="当前地图聚合区域"
           sx={{display:'flex',flexWrap:'wrap',gap:0.5,mt:0.5}}>

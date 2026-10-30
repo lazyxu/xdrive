@@ -152,7 +152,8 @@ test('native review reuses verified Owner, existing ledger and at most 20 read-o
   for (const expression of [
     /verifiedOwner\(source\)/,
     /existingLocalScope\(owner: owner\)/,
-    /uncertain\.prefix\(Self\.maxReceiptReviewPerRun\)/,
+    /pendingReceiptSnapshot\(\s*scope: scope, limit: Self\.maxReceiptReviewPerRun\s*\)/,
+    /let batch = snapshot\.batch/,
     /Task\.checkCancellation\(\)/,
     /XDriveIOSPhotoBackupUncertainReceiptRecovery\(/,
   ]) assert.match(block, expression)

@@ -2,6 +2,7 @@ import type {
   XDriveIOSPhotoBackupHost,
   XDriveIOSPhotoBackupProgress,
   XDriveIOSPhotoBackupSession,
+  XDriveIOSPhotoBackgroundGrantStatus,
   XDriveIOSReceiptReviewProgress,
   XDriveIOSReceiptReviewStatus,
   XDriveIOSPhotoAutoStatus,
@@ -38,6 +39,7 @@ class IOSPhotoBackupHost implements XDriveIOSPhotoBackupHost {
   foregroundAutoSupported = false
   originalVideoSupported = false
   liveOriginalBundleSupported = false
+  nativeBackgroundGrantSupported = false
 
   constructor(handler: NativeMessageHandler) {
     this.handler = handler
@@ -97,6 +99,7 @@ class IOSPhotoBackupHost implements XDriveIOSPhotoBackupHost {
       foregroundStillBackup: boolean; scanWindows?: boolean
       receiptReview?: boolean; foregroundAutoSchedule?: boolean
       originalVideo?: boolean; liveOriginalBundle?: boolean
+      nativeBackgroundGrant?: boolean
     }>('capabilities')
     const supported = value?.protocolVersion === 1 &&
       value.platform === 'ios' && value.photoKit === true &&
@@ -106,6 +109,7 @@ class IOSPhotoBackupHost implements XDriveIOSPhotoBackupHost {
     this.foregroundAutoSupported = supported && value.foregroundAutoSchedule === true
     this.originalVideoSupported = supported && value.originalVideo === true
     this.liveOriginalBundleSupported = supported && value.liveOriginalBundle === true
+    this.nativeBackgroundGrantSupported = supported && value.nativeBackgroundGrant === true
     return supported
   }
 
@@ -186,6 +190,43 @@ class IOSPhotoBackupHost implements XDriveIOSPhotoBackupHost {
     return this.request<XDriveIOSPhotoAutoTickResult>(
       'photos.auto.tick', { ...session }
     )
+  }
+
+  backgroundGrantStatus(
+    session: XDriveIOSPhotoBackupSession,
+  ): Promise<XDriveIOSPhotoBackgroundGrantStatus> {
+    if (!this.nativeBackgroundGrantSupported) {
+      return Promise.reject(new Error('当前 iOS IPA 尚未提供原生后台授权管理。'))
+    }
+    return this.request<XDriveIOSPhotoBackgroundGrantStatus>(
+      'photos.background.grant.status', { ...session },
+    )
+  }
+
+  configureBackgroundGrant(
+    session: XDriveIOSPhotoBackupSession,
+    enabled: boolean,
+  ): Promise<XDriveIOSPhotoBackgroundGrantStatus> {
+    if (!this.nativeBackgroundGrantSupported) {
+      return Promise.reject(new Error('当前 iOS IPA 尚未提供原生后台授权管理。'))
+    }
+    // The actual consent dialog, device registration, Keychain and server
+    // proof all run natively. JS only receives redacted status.
+    return this.request<XDriveIOSPhotoBackgroundGrantStatus>(
+      'photos.background.grant.configure',
+      { ...session, enabled },
+    )
+  }
+
+  emergencyStopBackground(): Promise<{
+    localStopped: boolean; remoteRevokePending: boolean
+    foregroundSchedulesStopped?: number
+  }> {
+    if (!this.nativeBackgroundGrantSupported)
+      return Promise.reject(new Error('当前 IPA 尚未提供原生后台安全停止能力。'))
+    // Stop-only: intentionally send NO login/Owner token or Keychain value.
+    // The host is restricted to a trusted HTTPS main-frame origin.
+    return this.request('photos.background.emergencyStop')
   }
 
   async cancel(): Promise<void> {

@@ -1,11 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import {
-  xDriveBackgroundTaskKindLabel,
-  xDriveBackgroundTaskStateLabel,
-  xDriveFileOperationTypeLabel,
-  xDriveTransferKindLabel,
-  xDriveTransferRootTasks,
-} from '../../ui/shared/src'
+import { xDriveOverviewActivity } from '../../ui/shared/src/mui/OverviewSharedModels'
+import { xDriveOverviewProjectFileItem } from '../../ui/shared/src/mui/OverviewFileProjection'
 import type {
   Node,
   QuotaUsage,
@@ -23,7 +18,6 @@ import {
 } from '@xdrive/ui/mui'
 import type {
   XDriveFileExplorerItem,
-  XDriveHomeAlert,
   XDriveHomeListItem,
 } from '@xdrive/ui/mui'
 import type { XDriveApi } from './api'
@@ -172,17 +166,7 @@ export default function WebOverviewPage({
     })
   }, [api])
 
-  const project = (
-    entry: XDriveFileRecentItem<Node> | XDriveFileFavoriteItem<Node>,
-  ): XDriveFileExplorerItem => ({
-    id: entry.node.id,
-    name: entry.node.name,
-    kind: entry.node.type,
-    size: entry.node.size,
-    revision: entry.node.revision,
-    updatedAt: entry.node.updated_at,
-    path: entry.path.replace(/^\/+/, ''),
-  })
+  const project = xDriveOverviewProjectFileItem
 
   const openEntry = (
     entry: XDriveFileRecentItem<Node> | XDriveFileFavoriteItem<Node>,
@@ -209,62 +193,11 @@ export default function WebOverviewPage({
     onOpen: () => openEntry(entry),
   }))
 
-  const failedTransfer = xDriveTransferRootTasks(transfers).find(
-    (task) => task.state === 'failed' || task.state === 'partial',
-  )
-  const failedOperation = fileOperations.find((operation) => operation.status === 'failed')
-  const failedBackgroundTask = backgroundTasks.find((task) => task.state === 'failed')
-  const failedSync = backgroundTasks.find((task) => (
-    (task.domain === 'sync_run' || task.kind === 'source.sync') &&
-    (task.state === 'failed' || task.state === 'partial')
-  ))
-  const runningSync = backgroundTasks.find((task) => (
-    (task.domain === 'sync_run' || task.kind === 'source.sync') &&
-    (task.state === 'running' || task.state === 'queued' || task.state === 'cancelling')
-  ))
-  const recentSync = [...backgroundTasks]
-    .filter((task) => (
-      (task.domain === 'sync_run' || task.kind === 'source.sync') &&
-      (task.state === 'completed' || task.state === 'partial')
-    ))
-    .sort((a, b) => Date.parse(b.finished_at || b.updated_at) - Date.parse(a.finished_at || a.updated_at))[0]
-
-  const alerts: XDriveHomeAlert[] = []
-  if (failedTransfer) {
-    alerts.push({
-      key: 'transfer-failed',
-      tone: 'bad',
-      title: '传输失败',
-      message: `${xDriveTransferKindLabel(failedTransfer.kind)} · ${failedTransfer.file_name}${failedTransfer.error ? ' · ' + failedTransfer.error : ''}`,
-    })
-  }
-  if (failedOperation) {
-    alerts.push({
-      key: 'operation-failed',
-      tone: 'bad',
-      title: '文件操作失败',
-      message: `${xDriveFileOperationTypeLabel(failedOperation.type)}${failedOperation.error ? ' · ' + failedOperation.error : ''}`,
-    })
-  }
-  if (failedBackgroundTask) {
-    alerts.push({
-      key: 'background-failed',
-      tone: 'bad',
-      title: failedBackgroundTask.kind === 'source.sync' || failedBackgroundTask.domain === 'sync_run'
-        ? '同步任务失败'
-        : '后台任务失败',
-      message: `${xDriveBackgroundTaskKindLabel(failedBackgroundTask.kind)}${failedBackgroundTask.source_name ? ' · ' + failedBackgroundTask.source_name : ''}${failedBackgroundTask.error ? ' · ' + failedBackgroundTask.error : ''}`,
-    })
-  }
-
-  const recentActivity = recentSync
-    ? [
-        xDriveBackgroundTaskKindLabel(recentSync.kind),
-        recentSync.source_name,
-        xDriveBackgroundTaskStateLabel(recentSync.state),
-        recentTime(recentSync.finished_at || recentSync.updated_at),
-      ].filter(Boolean).join(' · ')
-    : undefined
+  const { alerts, failedSync, runningSync, recentActivity } = xDriveOverviewActivity({
+    transfers,
+    fileOperations,
+    backgroundTasks,
+  })
 
   return (
     <>

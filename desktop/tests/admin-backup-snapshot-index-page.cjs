@@ -20,7 +20,10 @@ test('older Server backup snapshots use a bounded read-only Host-to-Admin pipeli
   const renderer = read('desktop/src/renderer/App.tsx')
 
   assert.match(host, /backup_admin_snapshot_index\(\)/)
-  assert.match(host, /xdrive-backup-snapshot-index-v1/)
+  // Host emits v2 for up to 10k identities; Server must still read v1 indexes.
+  assert.match(host, /xdrive-backup-snapshot-index-v2/)
+  assert.match(api, /case "xdrive-backup-snapshot-index-v1":/)
+  assert.match(api, /case "xdrive-backup-snapshot-index-v2":/)
   assert.match(router, /admin.GET\("\/backups\/snapshots"/)
   assert.match(api, /validBackupSnapshotIndex/)
   assert.match(api, /unverified_identity_only/)
