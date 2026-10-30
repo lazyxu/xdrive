@@ -205,6 +205,7 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
         }
     }
     fun openNativeShortcut(shortcut: NativeHomeShortcut) {
+        val previousGallerySource = nativeNavigation.gallerySource
         val next = nativeNavigation.open(shortcut)
         when (next.selected) {
             NativeHomeTab.GALLERY -> {
@@ -213,8 +214,8 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                 if (mayEnter) {
                     nativeNavigation = next
                     if (shortcut == NativeHomeShortcut.GALLERY_MAP) {
-                        mapOriginSource = if (nativeNavigation.gallerySource == NativeGallerySource.MAP)
-                            NativeGallerySource.CLOUD else nativeNavigation.gallerySource
+                        mapOriginSource = if (previousGallerySource == NativeGallerySource.MAP)
+                            NativeGallerySource.CLOUD else previousGallerySource
                         pendingGalleryMap = true
                     }
                 }
