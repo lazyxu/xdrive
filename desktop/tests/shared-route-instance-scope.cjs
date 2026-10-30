@@ -40,6 +40,10 @@ const mockModules = {
   './WorkspaceContent': { XDriveWorkspaceContent: WorkspaceContent },
   './WorkspaceRouteSurface': { XDriveWorkspaceRouteSurface: WorkspaceContent },
   './XDriveAppPageOutlet': { XDriveAppPageOutlet: PageOutlet },
+  './WorkspaceHostAlerts': {
+    XDriveWorkspaceHostAlerts: ({ paused, onResumeSync }) =>
+      React.createElement('host-alert', { paused, onResumeSync }),
+  },
   './WorkspaceRoute': {
     xDriveIsSharedHostPageRoute: value => value !== 'files',
     xDriveWorkspacePresentation: value => value === 'files' ? 'files' : 'page',
@@ -166,5 +170,29 @@ test('Files without a legacy controller uses the shared outlet on either Host', 
     'unmount:desktop:files:0',
     'mount:synology:files:0',
   ])
+  renderer.act(() => app.unmount())
+})
+
+test('Host status changes retain disposable route instance and cannot fire durable actions', () => {
+  events.length = 0
+  let called = 0
+  const resume = () => { called++ }
+  const host = {
+    ...desktopOwner,
+    services: { workspaceAlerts: { paused: true, onResumeSync: resume } },
+  }
+  let app
+  renderer.act(() => { app = renderer.create(ui(host, 'diagnostics', 0)) })
+  assert.equal(app.root.findAllByType('host-alert').length, 1)
+  assert.strictEqual(app.root.findByType('host-alert').props.onResumeSync, resume)
+  renderer.act(() => {
+    app.update(ui({ ...host, services: {
+      workspaceAlerts: { paused: false, onResumeSync: resume },
+    } }, 'diagnostics', 0))
+  })
+  assert.equal(app.root.findByType('host-alert').props.paused, false)
+  assert.deepEqual(events, ['mount:desktop:diagnostics:0'],
+    'a Host status update must not dispose and recreate the authenticated page')
+  assert.equal(called, 0, 'rendering Host status must not invoke native commands')
   renderer.act(() => app.unmount())
 })

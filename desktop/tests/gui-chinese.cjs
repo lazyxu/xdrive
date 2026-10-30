@@ -8,6 +8,8 @@ const rendererApp = fs.readFileSync(path.join(root, 'src', 'renderer', 'App.tsx'
 const desktopVirtualSettings = fs.readFileSync(path.join(root, 'src', 'renderer', 'DesktopVirtualDriveSettings.tsx'), 'utf8')
 const sharedXDriveApp = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'XDriveApp.tsx'), 'utf8')
 const sharedHostOutlet = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'XDriveAppPageOutlet.tsx'), 'utf8')
+const sharedHostRouteContent = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'XDriveAppRouteContent.tsx'), 'utf8')
+const sharedHostAlerts = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'WorkspaceHostAlerts.tsx'), 'utf8')
 const sharedHostSections = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'WorkspaceHostSections.tsx'), 'utf8')
 const sharedRouteTitles = fs.readFileSync(path.join(root, '..', 'ui', 'shared', 'src', 'mui', 'WorkspaceRouteTitles.ts'), 'utf8')
 const sharedSourceManager = [
@@ -49,6 +51,7 @@ const desktopHostFrame = fs.readFileSync(path.join(root, 'src', 'renderer', 'Des
 const renderer = [
   rendererApp,
   sharedHostSections,
+  sharedHostAlerts,
   sharedRouteTitles,
   sharedSourceManager,
   sharedSettingsDialog,
@@ -234,9 +237,17 @@ test('desktop keeps global sync, settings and account actions in the window titl
   assert.ok(sharedPageHeader.includes('component="h1"'), 'shared page header must own the h1 title')
   assert.equal(renderer.includes('<header className="topbar">'), false, 'legacy desktop content topbar should be removed')
 
-  assert.ok(renderer.includes('同步已暂停；此设备不会继续后台同步。'), 'missing paused-sync exception banner')
-  assert.ok(renderer.includes('发现 {status.conflict_count || 0} 个同步冲突'), 'missing conflict exception banner')
-  assert.ok(renderer.includes('同步异常：{status.last_error}'), 'missing sync-error exception banner')
+  assert.ok(rendererApp.includes('workspaceAlerts: {') &&
+    rendererApp.includes('paused: status?.paused') &&
+    rendererApp.includes('hasConflicts: status?.has_conflict') &&
+    rendererApp.includes('lastError: status?.last_error'),
+    'Desktop must pass current Agent status through the typed Host port')
+  assert.ok(sharedHostRouteContent.includes('host.services?.workspaceAlerts') &&
+    sharedHostRouteContent.includes('<XDriveWorkspaceHostAlerts'),
+    'the shared route, not Desktop, must own Host notice JSX')
+  assert.ok(sharedHostAlerts.includes('同步已暂停；此设备不会继续后台同步。'), 'missing shared paused-sync exception banner')
+  assert.ok(sharedHostAlerts.includes('发现 {conflictCount || 0} 个同步冲突'), 'missing shared conflict exception banner')
+  assert.ok(sharedHostAlerts.includes('同步异常：{lastError}'), 'missing shared sync-error exception banner')
 })
 
 test('desktop sidebar uses the shared complete sidebar renderer with Desktop-only extensions', () => {
@@ -393,8 +404,14 @@ test('desktop page actions use the cross-client MUI action component', () => {
   assert.equal(renderer.includes('className="primary"'), false, 'legacy primary row button remains')
   assert.equal(renderer.includes('className="secondary"'), false, 'legacy secondary row button remains')
   assert.equal(renderer.includes('className="danger"'), false, 'legacy danger row button remains')
-  assert.equal((rendererApp.match(/<MuiButton/g) || []).length, 3, 'raw MUI buttons must remain limited to inherit-color alert actions')
-  assert.equal((rendererApp.match(/color="inherit"/g) || []).length, 3, 'raw MUI buttons must remain limited to inherit-color alert actions')
+  assert.equal((rendererApp.match(/<MuiButton/g) || []).length, 0,
+    'Desktop route must not recreate raw MUI notice buttons')
+  assert.equal((sharedHostAlerts.match(/<Button color="inherit"/g) || []).length, 3,
+    'only the three shared Host notice actions may use inherit-color MUI buttons')
+  assert.equal((sharedHostAlerts.match(/color="inherit"/g) || []).length, 3,
+    'all shared Host notice buttons must inherit the alert color')
+  assert.equal((rendererApp.match(/color="inherit"/g) || []).length, 0,
+    'Desktop must not retain duplicate alert button presentation')
   assert.ok(sharedAuthForm.includes('clearSavedLabel') && renderer.includes('onClearSaved='), 'saved-password inline action must be owned by shared auth chrome')
   assert.equal(renderer.includes('className="auth-folder-button"'), false, 'sync-folder browsing should not remain in the login flow')
   assert.ok(renderer.includes('loadingLabel="正在创建…"'), 'cloud share creation lost shared loading feedback')
@@ -409,7 +426,8 @@ test('desktop persistent sync states use the cross-client MUI status alert', () 
   assert.equal((renderer.match(/<XDriveStatusAlert/g) || []).length >= 3, true, 'desktop persistent sync states are not using shared status alerts')
   assert.ok(renderer.includes('tone="bad"'), 'sync-error state is not mapped to the bad tone')
   assert.ok(renderer.includes('同步已暂停；此设备不会继续后台同步。'), 'paused status alert content is missing')
-  assert.ok(renderer.includes('发现 {status.conflict_count || 0} 个同步冲突'), 'conflict status alert content is missing')
+  assert.ok(sharedHostAlerts.includes('发现 {conflictCount || 0} 个同步冲突'), 'shared conflict status alert content is missing')
+  assert.ok(sharedHostRouteContent.includes('<XDriveWorkspaceHostAlerts'), 'shared route must display the status alert')
 })
 
 test('desktop page-level status alerts use the shared alert surface', () => {

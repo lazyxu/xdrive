@@ -17,10 +17,13 @@ import type { XDriveDiagnosticsPage } from './DiagnosticsPage'
 import type { XDriveOverviewPageProps } from './OverviewPage'
 import type { XDriveFileExplorerUnavailableActions } from './FileExplorer'
 import type { XDriveWorkspaceAppRoute } from './WorkspaceRoute'
+import type { XDriveWorkspaceHostAlertsProps } from './WorkspaceHostAlerts'
 import type { XDriveDiagnosticsReadSource } from './DiagnosticsHostController'
 
 /** Authenticated domain ports, not Host-owned JSX or a generic Agent proxy. */
 export type XDriveWorkspaceHostServices = {
+  /** Optional authenticated Host state and genuine actions, rendered by the shared app. */
+  readonly workspaceAlerts?: Omit<XDriveWorkspaceHostAlertsProps, 'view'>
   /** Transitional Owner-scoped bridge until file/task domain ports converge. */
   readonly overviewPage?: XDriveOverviewPageProps
   readonly localBackupClient?: XDriveSynologyBackupLocalClient

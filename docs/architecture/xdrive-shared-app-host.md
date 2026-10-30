@@ -288,3 +288,21 @@ Host-neutral, presentation-only modules consolidated *before CI starts*:
 Existing read-only PDF/text/audio/video viewing remains intact. Retiring
 Desktop's temporary `filesControllerContent` still requires further
 state/controller extraction and real Host data-port convergence.
+
+## Shared Host-wide status notices (2026-10-30)
+
+Desktop no longer composes sync-error, paused, and conflict warning banners
+as route-adjacent JSX in its 3k-line Host controller. Both Hosts can reuse
+`XDriveWorkspaceHostAlerts`, which retains the original responsive Files/page
+margins and existing localized labels. Desktop supplies current authenticated
+Agent state and native callbacks through the typed `workspaceAlerts` Host port.
+The shared `XDriveAppRouteContent` renders the banners, rather than accepting
+Desktop-specific status JSX. The component has no Electron IPC, DSM CGI,
+browser fetch, or durable task ownership.
+
+Only a Host providing a real callback can display the corresponding action.
+DSM currently supplies no equivalent verified global sync/repair status port,
+so it must not infer a paused/healthy state or fabricate resume/repair buttons.
+This extracts one presentation boundary; it does **not** complete the Desktop
+Files controller migration or make missing DSM transports available. Production
+DSM validation remains **跳过（未验收）**.
