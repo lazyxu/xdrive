@@ -447,3 +447,44 @@ func TestLegacyArchiveConflictsFailBeforeDestructiveRestore(t *testing.T) {
 		})
 	}
 }
+
+func TestRestoreRejectsSymlinkedParentAliasInsideBackupRepository(t *testing.T) {
+	base := t.TempDir()
+	source := filepath.Join(base, "source")
+	repo := filepath.Join(base, "repo")
+	if err := os.MkdirAll(source, 0700); err != nil {
+		t.Fatal(err)
+	}
+	hash := testCAS(t, source, "do-not-delete-backed-up-bytes")
+	snapshot := snapshotPath(t, repo, "generation1")
+	if err := capture(source, repo, snapshot); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(base, "repository-alias")
+	if err := os.Symlink(repo, alias); err != nil {
+		t.Skipf("symlink fixture is unavailable: %v", err)
+	}
+	// The target itself is a real directory; only a parent component is
+	// symlinked. The old text-prefix guard would clear repo/objects here.
+	if err := restore(repo, snapshot, filepath.Join(alias, "objects")); err == nil {
+		t.Fatal("restore accepted an alias into its own backup repository")
+	}
+	got, err := os.ReadFile(objectPath(repo, hash))
+	if err != nil || string(got) != "do-not-delete-backed-up-bytes" {
+		t.Fatalf("rejected restore modified backed-up CAS: %q %v", got, err)
+	}
+	if _, err := os.Stat(filepath.Join(snapshot, "objects.index")); err != nil {
+		t.Fatalf("rejected restore modified its backup snapshot: %v", err)
+	}
+}
+
+func TestRestorePathContainmentHandlesFilesystemRootAndSiblings(t *testing.T) {
+	root := filepath.VolumeName(t.TempDir()) + string(os.PathSeparator)
+	repo := filepath.Join(root, "xdrive-backup-test", "repo")
+	if !pathIsWithin(root, repo) || !pathIsWithin(repo, repo) {
+		t.Fatal("filesystem root and equality must count as containment")
+	}
+	if pathIsWithin(repo, filepath.Join(root, "xdrive-backup-test", "repo-other")) {
+		t.Fatal("a similarly prefixed sibling is not a descendant")
+	}
+}

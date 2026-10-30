@@ -53,6 +53,26 @@ test('nonempty BD09 Camera permits a user-only exact Owner refresh in both SDK H
   assert.match(source,/xDriveMountBaiduIsolatedFrame/)
 })
 
+test('compact iOS map frees photo cover space without losing an accessible scoped refresh', () => {
+  // This is ONE Parent presentation for both inline and isolated SDK hosts.
+  const marker=source.indexOf('data-xdrive-places-nonempty-map-recheck')
+  const action=source.slice(marker-160,marker+1400)
+  assert.equal(source.split('data-xdrive-places-nonempty-map-recheck').length-1,1)
+  assert.match(action,/aria-label="刷新当前地图照片" title="刷新当前地图照片"/)
+  assert.match(action,/minWidth:edgeToEdge \? 44 : undefined,minHeight:44/)
+  assert.match(action,/p:edgeToEdge \? 0 : undefined/)
+  assert.match(action,/<RefreshRoundedIcon aria-hidden="true" fontSize="small"/)
+  assert.match(action,/display:edgeToEdge \? 'block' : 'none'/)
+  assert.match(action,/display:edgeToEdge \? 'none' : 'inline'/)
+  assert.match(action,/onClick=\{\(\) => refreshFilteredCells\.current\?\.\(true\)\}/)
+  assert.match(source,/xDriveMountBaiduInlineMap/)
+  assert.match(source,/xDriveMountBaiduIsolatedFrame/)
+  // Mounted Chromium still exercises the nonempty 3→9-photo refresh on both.
+  const driver=read('desktop/scripts/gallery-places-dual-host-chromium.cjs')
+  assert.match(driver,/testPartialBD09CurrentCameraRefresh\(browser,'inline',port\)/)
+  assert.match(driver,/testPartialBD09CurrentCameraRefresh\(browser,'isolated',port\)/)
+})
+
 test('empty-map refresh reuses the original scoped Camera and never steals an in-flight request', () => {
   const start=source.indexOf('    refreshFilteredCells.current=(skipPending=false)=>{')
   const end=source.indexOf('    const acquireTicket=async()',start)
