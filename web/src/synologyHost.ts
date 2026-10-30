@@ -2,7 +2,7 @@ import {
   createXDriveSynologyBackupLocalClient,
   createXDriveSynologyOwnerBackupSource,
   createXDriveSynologyCloudStorageDataSource,
-  createXDriveSynologyBrowserStorageSource,
+  createXDriveSynologyNASStorageSource,
 } from '@xdrive/ui/mui'
 import type { XDriveWorkspaceHostAdapter } from '@xdrive/ui/mui'
 import { createXDriveSynologyOwnerGallerySource } from '../../ui/shared/src/mui/SynologyOwnerGallerySource'
@@ -48,7 +48,7 @@ export function createXDriveSynologyHost(): XDriveWorkspaceHostAdapter & { reado
       deviceBackups: createXDriveSynologyOwnerBackupSource(local),
       cloudStorage: createXDriveSynologyCloudStorageDataSource(local),
       cloudStorageRefresh: { clearOnRefresh: true },
-      localStorage: createXDriveSynologyBrowserStorageSource(),
+      localStorage: createXDriveSynologyNASStorageSource(local),
       diagnosticsSource: {
         read: signal => local.diagnostics(signal),
         scopeNotice: 'NAS 仅检测 DSM 登录授权和本机备份 Agent 读取；Server、磁盘、更新、传输等未检测。',
