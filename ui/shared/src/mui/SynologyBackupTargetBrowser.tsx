@@ -19,8 +19,11 @@ const targetPageSize = 200
 type TargetSort = { key: 'name'; direction: 'asc' }
 
 export function XDriveSynologyBackupTargetBrowser({
-  client,
-}: { client: XDriveSynologyBackupLocalClient }) {
+  client, onSelectTarget,
+}: {
+  client: XDriveSynologyBackupLocalClient
+  onSelectTarget?: (target: { id: number; name: string } | null) => void
+}) {
   const ownerPort = useMemo<XDriveFileExplorerCursorPort<
     XDriveSynologyOwnerFileNode, TargetSort
   >>(() => ({
@@ -50,6 +53,7 @@ export function XDriveSynologyBackupTargetBrowser({
       !itemsRef.current.some(item =>
         item.id === folder.id && item.revision === folder.revision &&
         item.parent_id === parentID && item.type === 'dir')) return
+    onSelectTarget?.(null)
     setCrumbs(current =>
       current[current.length - 1]?.id === parentID
         ? [...current, { id: folder.id, name: folder.name }] : current)
@@ -63,11 +67,15 @@ export function XDriveSynologyBackupTargetBrowser({
         <Typography variant="subtitle2" fontWeight={700}>云端备份目标目录（只读）</Typography>
         <Typography variant="body2" color="text.secondary">
           仅浏览当前 Agent 已登录的 xDrive Server Owner 云端目录。这里显示的 ID 可用于 NAS 本机
-          xd backup init 的 --target-id；当前 DSM 网页尚不能创建 Source、授权 NAS 本地目录或开始新来源备份。
+          xd backup init 的 --target-id；现在也可以明确选择当前目录作为新 NAS 备份的云端目标。
+          选择目录本身不会创建 Source 或开始备份。
         </Typography>
         <Box>
           <Button size="small" startIcon={<RefreshRoundedIcon />}
-            disabled={loadingRoot} onClick={refreshAuthenticatedRoot}>
+            disabled={loadingRoot} onClick={() => {
+              onSelectTarget?.(null)
+              refreshAuthenticatedRoot()
+            }}>
             重新验证云端目录
           </Button>
         </Box>
@@ -81,6 +89,7 @@ export function XDriveSynologyBackupTargetBrowser({
                   disabled={index === crumbs.length - 1 || !isCurrentOwner()}
                   onClick={() => {
                     if (!isCurrentOwner()) return
+                    onSelectTarget?.(null)
                     setCrumbs(current =>
                       current[index]?.id === crumb.id ? current.slice(0, index + 1) : current)
                   }}>
@@ -92,6 +101,18 @@ export function XDriveSynologyBackupTargetBrowser({
             {error ? <Typography role="alert" color="error.main">{error}</Typography> : null}
             {verified ? (
               <>
+                <Button size="small" variant="contained"
+                  disabled={loading || paging || !verified || !isCurrentOwner()}
+                  onClick={() => {
+                    if (!currentScopeVerified || !isCurrentOwner() ||
+                      typeof parentID !== 'number' || parentID < 1) return
+                    onSelectTarget?.({
+                      id: parentID,
+                      name: crumbs[crumbs.length - 1]?.name ?? '',
+                    })
+                  }}>
+                  选择当前云端目录作为备份目标
+                </Button>
                 <Typography variant="body2" data-xdrive-dsm-cloud-target-id={parentID}>
                   当前已验证云端目标 ID：{parentID}
                 </Typography>

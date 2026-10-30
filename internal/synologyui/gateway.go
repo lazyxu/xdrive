@@ -372,7 +372,13 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "DSM authenticated HTTPS required", http.StatusForbidden)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	timeout := 20 * time.Second
+	if r.URL.Path == "/v1/server-login" {
+		timeout = 45 * time.Second // Agent TLS login has its own 30s budget.
+	} else if r.URL.Path == "/v1/nas-share-create" {
+		timeout = 90 * time.Second // Existing native Root binding and Server Source creation.
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
 	username, err := g.Authenticate(ctx)
 	if err != nil || !validUser(username) {
@@ -391,8 +397,10 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		previous := csrf(key, username, r.Header.Get("Cookie"), r.Host, interval-1)
 		if !validOrigin(r) || len(token) != len(current) ||
 			(subtle.ConstantTimeCompare([]byte(token), []byte(current)) != 1 && subtle.ConstantTimeCompare([]byte(token), []byte(previous)) != 1) ||
-			(r.URL.Path != "/v1/schedule" && r.ContentLength != 0) ||
-			(r.URL.Path == "/v1/schedule" && (r.ContentLength < 2 || r.ContentLength > 1024)) {
+			(r.URL.Path != "/v1/schedule" && r.URL.Path != "/v1/nas-share-preflight" && r.URL.Path != "/v1/server-login" && r.URL.Path != "/v1/nas-share-create" && r.ContentLength != 0) ||
+			((r.URL.Path == "/v1/schedule" || r.URL.Path == "/v1/nas-share-preflight") && (r.ContentLength < 2 || r.ContentLength > 1024)) ||
+			(r.URL.Path == "/v1/server-login" && (r.ContentLength < 2 || r.ContentLength > 8192)) ||
+			(r.URL.Path == "/v1/nas-share-create" && (r.ContentLength < 2 || r.ContentLength > 1024)) {
 			http.Error(w, "CSRF validation failed", http.StatusForbidden)
 			return
 		}
@@ -401,11 +409,11 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		sendJSON(w, map[string]any{"dsm_user": username, "csrf_token": csrf(key, username, r.Header.Get("Cookie"), r.Host, interval)})
 		return
 	}
-	if r.URL.Path != "/v1/sources" && r.URL.Path != "/v1/status" && r.URL.Path != "/v1/history" && r.URL.Path != "/v1/run" && r.URL.Path != "/v1/control" && r.URL.Path != "/v1/schedule" && r.URL.Path != "/v1/device-backups" && r.URL.Path != "/v1/device-backup-runs" && r.URL.Path != "/v1/device-backup-page" && r.URL.Path != "/v1/device-backup-folders" && r.URL.Path != "/v1/cloud-quota" && r.URL.Path != "/v1/cloud-root" && r.URL.Path != "/v1/cloud-children" && r.URL.Path != "/v1/cloud-text-preview" && r.URL.Path != "/v1/cloud-media-range" && r.URL.Path != "/v1/cloud-media-stream" && r.URL.Path != "/v1/cloud-thumbnail" && r.URL.Path != "/v1/cloud-gallery-items" && r.URL.Path != "/v1/cloud-gallery-albums" && r.URL.Path != "/v1/cloud-live-motion" && r.URL.Path != "/v1/nas-shares" {
+	if r.URL.Path != "/v1/sources" && r.URL.Path != "/v1/status" && r.URL.Path != "/v1/history" && r.URL.Path != "/v1/run" && r.URL.Path != "/v1/control" && r.URL.Path != "/v1/schedule" && r.URL.Path != "/v1/device-backups" && r.URL.Path != "/v1/device-backup-runs" && r.URL.Path != "/v1/device-backup-page" && r.URL.Path != "/v1/device-backup-folders" && r.URL.Path != "/v1/cloud-quota" && r.URL.Path != "/v1/nas-volume" && r.URL.Path != "/v1/cloud-root" && r.URL.Path != "/v1/cloud-children" && r.URL.Path != "/v1/cloud-text-preview" && r.URL.Path != "/v1/cloud-media-range" && r.URL.Path != "/v1/cloud-media-stream" && r.URL.Path != "/v1/cloud-thumbnail" && r.URL.Path != "/v1/cloud-gallery-items" && r.URL.Path != "/v1/cloud-gallery-albums" && r.URL.Path != "/v1/cloud-live-motion" && r.URL.Path != "/v1/nas-shares" && r.URL.Path != "/v1/nas-share-preflight" && r.URL.Path != "/v1/server-connection" && r.URL.Path != "/v1/server-login" && r.URL.Path != "/v1/nas-share-create" {
 		http.NotFound(w, r)
 		return
 	}
-	if r.URL.Path == "/v1/run" || r.URL.Path == "/v1/control" {
+	if r.URL.Path == "/v1/run" || r.URL.Path == "/v1/control" || r.URL.Path == "/v1/nas-share-preflight" || r.URL.Path == "/v1/server-login" || r.URL.Path == "/v1/nas-share-create" {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -427,6 +435,208 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	agent, err := g.Connect(ctx) // Same-user protected discovery; never spawn a new Agent.
 	if err != nil {
 		http.Error(w, "owning Agent unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	// DSM permits an explicit, initial or same-Owner re-login through the
+	// original backup-only Agent. Neither the CGI nor the browser stores the
+	// password; no arbitrary Agent proxy, local Root grant or Source change.
+	if r.URL.Path == "/v1/server-connection" || r.URL.Path == "/v1/server-login" {
+		if r.URL.RawQuery != "" {
+			http.Error(w, "DSM Server login accepts no query", http.StatusBadRequest)
+			return
+		}
+		login, ok := agent.(ServerLoginAgent)
+		if !ok {
+			http.Error(w, "owning Agent login unavailable", http.StatusNotImplemented)
+			return
+		}
+		if r.URL.Path == "/v1/server-connection" {
+			status, err := login.ServerConnection(ctx)
+			if err != nil {
+				http.Error(w, "DSM Server connection unavailable", http.StatusServiceUnavailable)
+				return
+			}
+			scope := ""
+			if status.Configured {
+				scope = dsmOwnerScope(key, username, r.Header.Get("Cookie"), r.Host, status.Server, status.Username)
+				if scope == "" {
+					http.Error(w, "unverified DSM Owner scope", http.StatusServiceUnavailable)
+					return
+				}
+			}
+			projection := map[string]any{
+				"configured": status.Configured,
+				"must_change_password": status.MustChangePassword,
+				"owner_scope": scope,
+			}
+			if status.Configured {
+				projection["server"] = status.Server
+				projection["username"] = status.Username
+			}
+			sendJSON(w, projection)
+			return
+		}
+		input, err := parseServerLogin(r)
+		if err != nil {
+			http.Error(w, "invalid DSM Server login request", http.StatusBadRequest)
+			return
+		}
+		// Do not acknowledge a login unless the real Owner quota is readable
+		// under the Agent's newly selected Server session.
+		quotaReader, ok := agent.(OwnerQuotaReader)
+		if !ok {
+			http.Error(w, "owning Agent Owner proof unavailable", http.StatusNotImplemented)
+			return
+		}
+		if err := login.LoginServer(ctx, input.Server, input.Username, input.Password); err != nil {
+			http.Error(w, "owning Agent rejected DSM Server login", http.StatusConflict)
+			return
+		}
+		quota, err := quotaReader.OwnerQuota(ctx)
+		if err != nil || !localbackupipc.ValidateOwnerQuota(quota) {
+			http.Error(w, "Server Owner verification unavailable after login", http.StatusServiceUnavailable)
+			return
+		}
+		sendJSON(w, map[string]bool{"verified": true})
+		return
+	}
+	// Fixed read-only capacity of the filesystem backing the private DSM
+	// package configuration. No browser path/volume selector, storage mutation,
+	// general NAS inventory or Server account quota is exposed.
+	if r.URL.Path == "/v1/nas-volume" {
+		if r.URL.RawQuery != "" {
+			http.Error(w, "invalid DSM package volume query", http.StatusBadRequest)
+			return
+		}
+		space, err := readNASVolumeSpace(g.ConfigDir)
+		if err != nil {
+			http.Error(w, "DSM package filesystem capacity unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		sendJSON(w, space)
+		return
+	}
+	// Explicit local DSM consent, not general Server/Agent administration.
+	// Selection ID is bound to DSM principal, cookie and hostname; the
+	// directory path is derived only on the trusted NAS from fresh inventory.
+	if r.URL.Path == "/v1/nas-share-create" {
+		input, err := parseNASShareCreate(r)
+		if err != nil {
+			http.Error(w, "invalid DSM local backup Source setup", http.StatusBadRequest)
+			return
+		}
+		bootstrapper, ok := agent.(NASShareBootstrapper)
+		if !ok {
+			http.Error(w, "owning Agent Source setup unsupported", http.StatusNotImplemented)
+			return
+		}
+		quotaReader, ok := agent.(OwnerQuotaReader)
+		if !ok {
+			http.Error(w, "Owner Server verification unsupported", http.StatusNotImplemented)
+			return
+		}
+		root := g.nasShareRoot
+		if root == "" {
+			root = "/"
+		}
+		owner, ok := agent.(ServerLoginAgent)
+		if !ok {
+			http.Error(w, "current Server Owner identity unavailable", http.StatusNotImplemented)
+			return
+		}
+		connection, err := owner.ServerConnection(ctx)
+		if err != nil || !connection.Configured ||
+			subtle.ConstantTimeCompare([]byte(dsmOwnerScope(
+				key, username, r.Header.Get("Cookie"), r.Host,
+				connection.Server, connection.Username)), []byte(input.OwnerScope)) != 1 {
+			http.Error(w, "Server Owner changed; reload and reselect backup target", http.StatusConflict)
+			return
+		}
+		path, err := resolveNASSharePreflight(ctx, root, key, username, r.Header.Get("Cookie"), r.Host, input.SelectionID)
+		if err != nil {
+			http.Error(w, "NAS selection expired; recheck local permissions", http.StatusConflict)
+			return
+		}
+		// Revalidate the native path and current authenticated Server before
+		// any persistent Source mutation. The Server validates target_id as a
+		// directory belonging to the current Owner, not merely a GUI label.
+		if err := bootstrapper.PreflightLocalRoot(ctx, path); err != nil {
+			http.Error(w, "native backup Root preflight unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		if quota, err := quotaReader.OwnerQuota(ctx); err != nil || !localbackupipc.ValidateOwnerQuota(quota) {
+			http.Error(w, "current Server Owner cannot be verified", http.StatusServiceUnavailable)
+			return
+		}
+		created, err := bootstrapper.CreateLocalBackupSource(ctx, input.Name, input.TargetID)
+		if err != nil {
+			// An uncertain Server reply may have created a paused draft. Do
+			// not retry or fabricate an ID; ask for explicit native inspection.
+			http.Error(w, "Source creation outcome unknown; inspect owning Agent drafts before retry", http.StatusConflict)
+			return
+		}
+		// Re-read native Agent identity after the Server Source mutation.
+		// An Owner change here leaves an inspectable Source rather than
+		// granting a local Root to an unverified account.
+		latest, err := owner.ServerConnection(ctx)
+		if err != nil || !latest.Configured ||
+			subtle.ConstantTimeCompare([]byte(dsmOwnerScope(
+				key, username, r.Header.Get("Cookie"), r.Host,
+				latest.Server, latest.Username)), []byte(input.OwnerScope)) != 1 {
+			sendJSON(w, map[string]any{"source_id": created.ID, "state": "needs_inspection"})
+			return
+		}
+		grant, err := bootstrapper.AuthorizeLocalRoot(ctx, created.ID, path)
+		if err != nil || grant.SourceID != created.ID ||
+			grant.Path != path || grant.Status != "awaiting_executor" {
+			// Native binding may have succeeded before a lost reply; do not
+			// claim either a confirmed grant or a confirmed paused draft.
+			// Return an ID for explicit native draft/binding inspection.
+			sendJSON(w, map[string]any{"source_id": created.ID, "state": "needs_inspection"})
+			return
+		}
+		// Native binding completed, but do not report authorization under a
+		// different Agent Owner if a simultaneous local login rotated scope.
+		postGrantOwner, err := owner.ServerConnection(ctx)
+		if err != nil || !postGrantOwner.Configured ||
+			subtle.ConstantTimeCompare([]byte(dsmOwnerScope(
+				key, username, r.Header.Get("Cookie"), r.Host,
+				postGrantOwner.Server, postGrantOwner.Username)), []byte(input.OwnerScope)) != 1 {
+			sendJSON(w, map[string]any{"source_id": created.ID, "state": "needs_inspection"})
+			return
+		}
+		sendJSON(w, map[string]any{"source_id": created.ID, "state": "authorized"})
+		return
+	}
+	// A selected NAS directory must be verified by the original local Agent.
+	// The browser can submit only a session-scoped token, never an absolute
+	// path. This is still read-only: no Root grant or Source creation.
+	if r.URL.Path == "/v1/nas-share-preflight" {
+		selection, err := parseNASSharePreflight(r)
+		if err != nil {
+			http.Error(w, "invalid NAS share selection", http.StatusBadRequest)
+			return
+		}
+		checker, ok := agent.(NASSharePreflighter)
+		if !ok {
+			http.Error(w, "native NAS preflight not supported", http.StatusNotImplemented)
+			return
+		}
+		root := g.nasShareRoot
+		if root == "" {
+			root = "/"
+		}
+		path, err := resolveNASSharePreflight(ctx, root, key, username, r.Header.Get("Cookie"), r.Host, selection)
+		if err != nil {
+			http.Error(w, "NAS share selection expired; refresh required", http.StatusConflict)
+			return
+		}
+		if err := checker.PreflightLocalRoot(ctx, path); err != nil {
+			http.Error(w, "NAS source preflight unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		sendJSON(w, map[string]bool{"verified": true})
 		return
 	}
 	// Only the authorized DSM principal and same-user Agent may inspect

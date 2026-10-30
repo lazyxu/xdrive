@@ -24,6 +24,7 @@ const local = {
   },
 }
 const gallery = { readOnlyOwnerGallery: true }
+const nasStorage = { nasVerified: true }
 const seen = []
 const mod = { exports: {} }
 new Function('module', 'exports', 'require', 'window', compiled.outputText)(
@@ -32,7 +33,10 @@ new Function('module', 'exports', 'require', 'window', compiled.outputText)(
       createXDriveSynologyBackupLocalClient: href => { seen.push(href); return local },
       createXDriveSynologyOwnerBackupSource: client => ({ client }),
       createXDriveSynologyCloudStorageDataSource: client => ({ client }),
-      createXDriveSynologyBrowserStorageSource: () => ({ browser: true }),
+      createXDriveSynologyNASStorageSource: client => {
+        assert.strictEqual(client, local, 'NAS storage must reuse the authenticated DSM Agent')
+        return nasStorage
+      },
     }
     if (name === '../../ui/shared/src/mui/SynologyOwnerGallerySource') return {
       createXDriveSynologyOwnerGallerySource: client => {
@@ -55,6 +59,7 @@ test('one real authenticated DSM client powers both Files and shared Gallery', (
   assert.strictEqual(host.services.localBackupClient, local)
   assert.strictEqual(host.services.ownerFilesPage.client, local)
   assert.strictEqual(host.services.galleryPage.source, gallery)
+  assert.strictEqual(host.services.localStorage, nasStorage)
   assert.equal(host.services.galleryPage.pageSize, 100)
   assert.equal(typeof host.services.diagnosticsSource.read, 'function')
   assert.match(host.services.diagnosticsSource.scopeNotice, /未检测/)

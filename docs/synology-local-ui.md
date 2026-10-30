@@ -1,5 +1,60 @@
 # Synology DSM 7 authenticated local UI
 
+## 2026-10-30 DSM GUI login and first native Source setup (dependent PR, unmerged)
+
+This narrow DSM-only change adds initial and **same-Server/same-username re-login**
+inside the original shared `XDriveSettingsDialog`. It delegates to the owning
+Backup-only Agent's already implemented `POST /v1/auth/login`, rather than
+adding a separate account database, credential store, shell command, browser
+Agent RPC or NAS source authorization.
+
+The DSM browser submits `server`, `username` and `password` only to
+same-origin HTTPS `backup.cgi?op=server-login` using the authorized DSM
+session and bound CSRF key. The CGI rejects extra fields, duplicate JSON keys,
+unexpected query arguments and non-POST methods; credentials never appear in
+query strings or response content. The same-user local client enforces HTTPS,
+validates the Agent's authenticated status and rejects switches to a different
+Server or Owner. The CGI checks current Owner quota **after** login; the UI
+reloads after both successful and uncertain login outcomes so cached prior
+Owner content cannot be shown as newly authorized.
+
+The same dependent PR now also composes the original shared Device Backup
+page's verified NAS share inventory/preflight and verified Owner cursor-based
+cloud directory browser into an explicit **create local backup Source** form.
+The DSM browser sends only `selection_id`, a verified HMAC `owner_scope`,
+a Server Owner directory `target_id`, a Source display name, and
+`confirmed: true`. The CGI checks the DSM session, CSRF/Origin, exact
+bounded JSON, current Agent Server/Owner scope and fresh native NAS share
+identity. It reuses `localbackupipc.Client.PreflightLocalRoot`,
+`CreateLocalBackupSource` (paused), and `AuthorizeLocalRoot` (same
+restricted Agent) from `xd backup init`. No browser-selected absolute
+path, private Root/device token or general Agent API is exposed.
+
+The GUI acknowledges `authorized` **only** on a verified Agent
+`awaiting_executor` Root grant; no initial file, backup run or CAS receipt
+is implied. If Source creation or Root binding has an uncertain outcome,
+the GUI **does not retry** and instructs native draft/binding inspection
+before further action. Source creation is explicitly local and does not
+grant access to another Server Owner.
+
+**Still required before full DSM MVP:** coordinated cross-Server/Owner
+migration while existing Source/Runner work exists; actual first/incremental
+CAS upload receipts, restart/recovery; file upload/mutation Host ports;
+verified published and installed MUI SPK on physical DSM. An old Agent
+without the known typed native capability fails closed. No password is
+stored by the browser. A root CA must already be trusted by the native
+Agent; the DSM web form does not accept TLS bypass or browser-provided CA.
+
+This is implemented on a dependent development branch, **not a released or
+physically validated feature**. The current branch includes Go negative tests
+for forged selection/path/Owner scope, CSRF, missing consent, old Agent,
+unknown Source creation and uncertain Root binding; DSM Node wiring and
+shared-MUI build still require applicable exact-head CI. Run exact-head Go,
+Synology UI, PR CI/Final Gate and release checks before eventual master merge.
+DSM device-only install, ACL, browser and upload acceptance remains
+**跳过（未验收）** and is not PASS.
+
+
 ## 2026-10-30 source audit: minimal usable DSM scope
 
 Canonical master source audited at `0ff2fa1a3dd478e73fd48e84ff50ce2ef9c2cb99`. This is a **source-level capability inventory**, not a device acceptance or a claim of exact-HEAD CI PASS. The old 2026-10-27 seven-route matrix below is historical; the current Desktop/DSM app has one shared `XDriveApp` and **16 registered routes**. A rendered common page alone does not prove a DSM data/action adapter exists.
