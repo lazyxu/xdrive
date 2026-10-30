@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
+import { XDRIVE_MOBILE_ITEM_HOLD_MS, xDriveMobileItemMoved } from '../../ui/shared/src/mobile-item-gesture'
 import AppsRoundedIcon from '@mui/icons-material/AppsRounded'
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded'
 import PhotoLibraryRoundedIcon from '@mui/icons-material/PhotoLibraryRounded'
@@ -72,25 +73,62 @@ export function XDriveMobileFiveSlotNavigation({
   onPickRecent: (route: XDriveWebAppRoute) => void
 }) {
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const ignoreNextClick = useRef(false)
+  const activePointer = useRef<{ id: number; origin: { x: number; y: number } } | null>(null)
+  const heldPointer = useRef(false)
+  const suppressReleaseClick = useRef(false)
   const clearLongPress = () => {
     if (longPressTimer.current !== null) clearTimeout(longPressTimer.current)
     longPressTimer.current = null
   }
-  useEffect(() => () => clearLongPress(), [])
-  const startLongPress = () => {
+  const cancelLongPress = () => {
     clearLongPress()
+    activePointer.current = null
+    heldPointer.current = false
+  }
+  useEffect(() => () => cancelLongPress(), [])
+  const startLongPress = (event: ReactPointerEvent<HTMLElement>) => {
+    // A new independent gesture must never inherit a missing synthetic click
+    // from an earlier long hold. Secondary pointers and right-click do not hold.
+    cancelLongPress()
+    if (!event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return
+    suppressReleaseClick.current = false
+    activePointer.current = {
+      id: event.pointerId,
+      origin: { x: event.clientX, y: event.clientY },
+    }
     longPressTimer.current = setTimeout(() => {
       longPressTimer.current = null
-      ignoreNextClick.current = true
+      if (!activePointer.current) return
+      heldPointer.current = true
+      suppressReleaseClick.current = true
       onRecentOpenChange(true)
-    }, 450)
+    }, XDRIVE_MOBILE_ITEM_HOLD_MS)
   }
-  const chooseDynamic = () => {
-    if (ignoreNextClick.current) {
-      ignoreNextClick.current = false
+  const moveLongPress = (event: ReactPointerEvent<HTMLElement>) => {
+    if (activePointer.current?.id !== event.pointerId) return
+    // The same threshold as Files/Gallery: panning wins over hold.
+    if (xDriveMobileItemMoved(activePointer.current.origin, {
+      x: event.clientX, y: event.clientY,
+    })) cancelLongPress()
+  }
+  const finishLongPress = (event: ReactPointerEvent<HTMLElement>) => {
+    if (activePointer.current?.id !== event.pointerId) return
+    if (heldPointer.current) {
+      // Safari/Chromium may also dispatch a compatibility click on release.
+      event.preventDefault()
+      suppressReleaseClick.current = true
+    }
+    cancelLongPress()
+  }
+  const chooseDynamic = (event: ReactMouseEvent<HTMLElement>) => {
+    if (suppressReleaseClick.current && event.detail !== 0) {
+      suppressReleaseClick.current = false
+      event.preventDefault()
+      event.stopPropagation()
       return
     }
+    // Keyboard/VoiceOver activation (detail=0) must remain accessible.
+    suppressReleaseClick.current = false
     onSelect('dynamic')
   }
 
@@ -123,13 +161,18 @@ export function XDriveMobileFiveSlotNavigation({
           <BottomNavigationAction value="dynamic" label={dynamicLabel}
             icon={dynamicIcon ?? <HistoryRoundedIcon fontSize="small" />}
             aria-current={selected === 'dynamic' ? 'page' : undefined}
+            aria-label={'动态功能：' + String(dynamicLabel) + '，长按查看最近功能'}
             aria-haspopup="dialog" aria-expanded={recentOpen}
-            onTouchStart={startLongPress}
-            onTouchEnd={clearLongPress}
-            onTouchCancel={clearLongPress}
+            sx={{ touchAction: 'manipulation' }}
+            onPointerDown={startLongPress}
+            onPointerMove={moveLongPress}
+            onPointerUp={finishLongPress}
+            onPointerCancel={cancelLongPress}
+            onPointerLeave={cancelLongPress}
             onContextMenu={event => {
               event.preventDefault()
-              clearLongPress()
+              cancelLongPress()
+              suppressReleaseClick.current = true
               onRecentOpenChange(true)
             }}
             onClick={chooseDynamic} />
