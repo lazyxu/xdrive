@@ -835,6 +835,77 @@ async function testStaleSourceRevisionOwnerMap(browser,mode,port){
   }
 }
 
+// The first /cells query is the signed Owner WORLD overview used to fit the
+// camera. It is not the current SDK viewport. Hold the provider SDK script
+// after that request and verify the shared trusted Parent never presents a
+// global 9-photo count, world Cell list or nearby action as current-camera UI.
+async function testWorldBootstrapIsNotCamera(browser,mode,port){
+  const context=await browser.newContext({
+    viewport:{width:390,height:844},locale:'zh-CN',
+    ignoreHTTPSErrors:true,serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(30000)
+  const errors=[]
+  page.on('pageerror',error=>errors.push(error.message))
+  let releaseSDK
+  const blockedSDK=new Promise(resolve=>{releaseSDK=resolve})
+  const sdkPath=mode==='inline'
+    ? 'https://api.map.baidu.com/api?**'
+    : '**/_BMapService/api'
+  await page.route(sdkPath,async route=>{
+    if(mode==='inline')
+      assert.equal(new URL(route.request().url()).searchParams.get('ak'),
+        'TEST_ONLY_BROWSER_AK')
+    await blockedSDK
+    return route.fulfill({status:200,contentType:'text/javascript',body:sdkStub})
+  })
+  try{
+    await page.goto('https://'+galleryHost+':'+port+'/?mode='+mode,
+      {waitUntil:'domcontentloaded'})
+    await page.getByText('正在确认当前地图视窗的定位照片…',
+      {exact:true}).waitFor({state:'visible'})
+    const before=await page.evaluate(()=>{
+      const probe=window.__mapProbe
+      return {
+        queries:probe?.queries?.length??0,
+        firstCount:probe?.queries?.[0]?.count,
+        pending:document.querySelector(
+          '[data-xdrive-places-map-photo-summary]')?.textContent??'',
+        cameraRangeActions:document.querySelectorAll(
+          '[data-xdrive-places-cluster-list] button,'+
+          '[data-xdrive-places-full-camera-wall],'+
+          '[data-xdrive-places-reveal-hidden-cells],'+
+          '[data-xdrive-places-empty-map-recheck]').length,
+        covers:document.querySelectorAll(
+          '[data-xdrive-places-trusted-photo-cover]').length,
+      }
+    })
+    record(mode+': worldwide 9-photo bootstrap cannot claim current-camera count or actions',
+      before.queries>0&&before.firstCount===9&&
+      before.pending.includes('正在确认当前地图视窗的定位照片')&&
+      !before.pending.includes('当前地图可查看')&&
+      before.cameraRangeActions===0&&before.covers===0&&errors.length===0)
+    releaseSDK()
+    await page.getByText('当前地图可查看 9 张照片',
+      {exact:true}).waitFor({state:'visible'})
+    await page.locator('[data-xdrive-places-cluster-list] button').first()
+      .waitFor({state:'visible'})
+    const after=await page.evaluate(()=>({
+      queries:window.__mapProbe?.queries?.length??0,
+      count:window.__mapProbe?.queries?.at(-1)?.count,
+      realCamera:window.__mapProbe?.viewports?.length??0,
+      openCells:document.querySelectorAll(
+        '[data-xdrive-places-cluster-list] button').length,
+    }))
+    record(mode+': after SDK camera ready, newly accepted viewport reveals true Owner count',
+      after.queries>=2&&after.count===9&&after.openCells===1&&
+      errors.length===0)
+  }finally{
+    releaseSDK()
+    await context.close()
+  }
+}
+
 async function testMode(browser,mode,port){
   const context=await browser.newContext({
     viewport:{width:960,height:760},locale:'zh-CN',ignoreHTTPSErrors:true,
@@ -3936,6 +4007,8 @@ async function main(){
     record('only reviewed synthetic registered sites were accessed',
       requests.every(item=>item.host==='gallery'||item.host==='child'))
     if(!ginURL){
+      await testWorldBootstrapIsNotCamera(browser,'inline',port)
+      await testWorldBootstrapIsNotCamera(browser,'isolated',port)
       await testPhotoMarkerPresentation(browser,'inline',port)
       await testPhotoMarkerPresentation(browser,'isolated',port)
       await testPhotoCoverDuringMapPan(browser,'inline',port)
