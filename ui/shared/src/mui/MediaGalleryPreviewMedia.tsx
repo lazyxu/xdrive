@@ -77,9 +77,18 @@ export function XDriveMediaAsyncThumbnail({
     if (!nodeID) return () => undefined
     const controller = new AbortController()
 
-    void loadThumbnail(nodeID, controller.signal, revision, (loadedBytes, totalBytes, alphaMask) => {
-      if (active && !controller.signal.aborted) setProgress({ loadedBytes, totalBytes, alphaMask: alphaMask ?? null })
-    })
+    // A disposed native/Host adapter may throw before returning a Promise.
+    // Keep the current immediate read and route that failure through the
+    // existing Owner-fenced fallback without crashing the React effect.
+    let read: Promise<string | null>
+    try {
+      read = Promise.resolve(loadThumbnail(nodeID, controller.signal, revision, (loadedBytes, totalBytes, alphaMask) => {
+        if (active && !controller.signal.aborted) setProgress({ loadedBytes, totalBytes, alphaMask: alphaMask ?? null })
+      }))
+    } catch (error) {
+      read = Promise.reject(error)
+    }
+    void read
       .then((value) => {
         if (!value) {
           if (active) setFailedIdentity({ identity: sourceIdentity, owner: sourceOwner })

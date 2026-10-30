@@ -35,10 +35,16 @@ test('W3b1 original BD09 camera never accepts WGS84 relabel, invalid points or z
   assert.equal(valid({ ...bd09, coordinate_space: undefined }), false)
   for (const camera of [
     { ...bd09, longitude: 181 }, { ...bd09, latitude: -86 },
-    { ...bd09, zoom: 2 }, { ...bd09, zoom: 19 },
-    { ...bd09, zoom: 13.1 }, { ...bd09, latitude: NaN },
+    { ...bd09, zoom: 2 }, { ...bd09, zoom: 22 },
+    { ...bd09, zoom: NaN }, { ...bd09, zoom: Infinity },
+    { ...bd09, latitude: NaN },
     { ...bd09, longitude: Infinity }, { ...bd09, zoom: '13' },
   ]) assert.equal(valid(camera), false)
+  // JSAPI 4.0 default min/max are 3–21 and getZoom() can be fractional.
+  // A legitimate high-zoom Owner camera must survive Viewer/Map return.
+  for (const zoom of [3, 13.1, 18, 19, 20.5, 21]) {
+    assert.equal(valid({ ...bd09, zoom }), true)
+  }
 })
 
 test('W3b1 Owner native camera is copied, bounded, ephemeral and scope isolated', () => {
@@ -52,7 +58,8 @@ test('W3b1 Owner native camera is copied, bounded, ephemeral and scope isolated'
   assert.equal(load('owner-A-signed', 1000 + ttl), undefined, '10-minute expiry is exact')
   assert.equal(remember('owner-A-signed', { ...bd09, coordinate_space: 'wgs84' }, 1200), false)
   assert.equal(remember('', bd09, 1200), false)
-  assert.equal(remember('owner-C-signed', bd09, 1200), true)
+  assert.equal(remember('owner-C-signed', { ...bd09, zoom: 20.5 }, 1200), true)
+  assert.deepEqual(load('owner-C-signed', 1201), { ...bd09, zoom: 20.5 })
   clear('owner-C-signed')
   assert.equal(load('owner-C-signed', 1201), undefined)
   const ghost = { ...bd09, token: 'must-not-persist', sdk: { privateGPS: true } }
@@ -65,6 +72,9 @@ test('W3b1 real map camera read returns BD09 only and fails closed on invalid pr
   const native = { getCenter: () => ({ lat: bd09.latitude, lng: bd09.longitude }),
     getZoom: () => bd09.zoom }
   assert.deepEqual(capture(native), bd09)
+  assert.deepEqual(capture({ ...native, getZoom: () => 21 }), { ...bd09, zoom: 21 })
+  assert.deepEqual(capture({ ...native, getZoom: () => 20.5 }), { ...bd09, zoom: 20.5 })
+  assert.equal(capture({ ...native, getZoom: () => 22 }), null)
   assert.equal(capture({ ...native, getCenter: () => ({ lat: 90, lng: 0 }) }), null)
   assert.equal(capture({ ...native, getZoom: () => '13' }), null)
   assert.equal(capture({ ...native, getCenter: () => { throw Error('map disposed') } }), null)
@@ -96,4 +106,57 @@ test('W3b1 uses original Owner Gallery, WGS84/BD09 separated mount and no reflow
   assert.equal(surface.includes('sessionStorage'), false)
   assert.equal(surface.includes('localStorage'), false)
   assert.doesNotMatch(isolated, /sessionStorage|localStorage/)
+})
+
+
+test('JSAPI4 3–21 fractional camera crosses only the authenticated isolated BD09 protocol', () => {
+  const protocolPath = 'ui/shared/src/media-gallery-baidu-isolated-origin-protocol.ts'
+  const absolute = path.join(root, protocolPath)
+  const compiled = ts.transpileModule(read(protocolPath), {
+    fileName: absolute,
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText
+  const protocol = new Module(absolute, module)
+  protocol.filename = absolute
+  protocol.paths = Module._nodeModulePaths(path.join(root, 'desktop'))
+  protocol._compile(compiled, absolute)
+  const {
+    xDriveCreateBaiduIsolatedCameraMessage: create,
+    xDriveParseBaiduIsolatedChildEvent: parse,
+  } = protocol.exports
+  const childWindow = {}
+  const boundary = {
+    parentOrigin: 'https://gallery.example.net',
+    childOrigin: 'https://map-isolated.example.org',
+    childWindow,
+    generation: 7,
+    nonce: 'a'.repeat(64),
+  }
+  const event = (camera, origin=boundary.childOrigin, source=childWindow) => ({
+    origin, source,
+    data: {version: 1, generation: 7, nonce: boundary.nonce,
+      kind: 'camera', camera},
+  })
+  for (const zoom of [3, 13.125, 18, 19, 20.5, 21]) {
+    const camera={...bd09,zoom}
+    const sent=create(boundary,camera)
+    assert(sent, 'only four bounded BD09 camera fields cross to the Child')
+    assert.deepEqual(sent.camera,camera)
+    assert.deepEqual(parse(event(camera),boundary)?.camera,camera)
+  }
+  for (const zoom of [2.99, 21.01, -1, NaN, Infinity, '21']) {
+    const camera={...bd09,zoom}
+    assert.equal(create(boundary,camera),null)
+    assert.equal(parse(event(camera),boundary),null)
+  }
+  for (const extra of [{token:'secret'}, {ownerID:9}, {asset_id:42}]) {
+    const camera={...bd09, zoom:20.5, ...extra}
+    assert.equal(create(boundary,camera),null)
+    assert.equal(parse(event(camera),boundary),null)
+  }
+  const camera={...bd09,zoom:20.5}
+  assert.equal(parse(event(camera,'https://evil.example.net'),boundary),null)
+  assert.equal(parse(event(camera,boundary.childOrigin,{}),boundary),null)
+  assert.equal(parse({ ...event(camera),
+    data:{...event(camera).data,nonce:'b'.repeat(64)} },boundary),null)
 })
