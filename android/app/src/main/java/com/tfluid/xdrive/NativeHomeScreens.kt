@@ -2,6 +2,9 @@ package com.tfluid.xdrive
 
 import android.content.res.Configuration
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -12,6 +15,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -20,10 +25,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /** Exactly five native destinations in both rotations; dynamic changes label only. */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun NativeHomeBottomBar(
     navigation: NativeHomeNavigation,
     onSelect: (NativeHomeTab) -> Unit,
+    onShowDynamicPicker: () -> Unit = {},
 ) {
     val icons = listOf(
         R.drawable.xd_view_carousel, R.drawable.xd_refresh, R.drawable.xd_image,
@@ -37,7 +44,23 @@ internal fun NativeHomeBottomBar(
                     .testTag("native-five-slot-bar"),
             ) {
                 NativeHomeTab.entries.forEachIndexed { index, tab ->
-                    TextButton(
+                    if (tab == NativeHomeTab.DYNAMIC) {
+                        Row(
+                            modifier = Modifier.weight(1f).fillMaxHeight()
+                                .combinedClickable(
+                                    onClick = { onSelect(tab) },
+                                    onLongClickLabel = "选择最近动态功能",
+                                    onLongClick = onShowDynamicPicker,
+                                ).testTag("native-tab-dynamic"),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(painterResource(icons[index]), null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(3.dp))
+                            Text(navigation.labels[index], fontSize = 11.sp,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    } else TextButton(
                         onClick = { onSelect(tab) },
                         modifier = Modifier.weight(1f).fillMaxHeight()
                             .testTag("native-tab-${tab.name.lowercase()}"),
@@ -57,7 +80,30 @@ internal fun NativeHomeBottomBar(
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
         ) {
             NativeHomeTab.entries.forEachIndexed { index, tab ->
-                NavigationBarItem(
+                if (tab == NativeHomeTab.DYNAMIC) {
+                    Column(
+                        modifier = Modifier.weight(1f).fillMaxHeight()
+                            .combinedClickable(
+                                onClick = { onSelect(tab) },
+                                onLongClickLabel = "选择最近动态功能",
+                                onLongClick = onShowDynamicPicker,
+                            ).testTag("native-tab-dynamic"),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(18.dp),
+                            color = if (navigation.selected == tab)
+                                MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+                        ) {
+                            Icon(painterResource(icons[index]), null,
+                                Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
+                                    .size(24.dp))
+                        }
+                        Text(navigation.labels[index], fontSize = 11.sp,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                } else NavigationBarItem(
                     selected = navigation.selected == tab,
                     onClick = { onSelect(tab) },
                     icon = { Icon(painterResource(icons[index]), null) },
@@ -95,6 +141,7 @@ internal fun NativeHomeLauncher(
     onSearch: (String) -> Unit,
     onShortcut: (NativeHomeShortcut) -> Unit,
     onFavorite: (NativeHomeShortcut) -> Unit,
+    onChooseDynamic: () -> Unit = {},
 ) {
     val matched = nativeShortcuts.filter {
         search.isBlank() || it.title.contains(search.trim(), ignoreCase = true)
@@ -124,6 +171,12 @@ internal fun NativeHomeLauncher(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().testTag("native-launcher-search"),
             )
+        }
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            TextButton(
+                onClick = onChooseDynamic,
+                modifier = Modifier.testTag("native-launcher-dynamic-picker"),
+            ) { Text("选择最近动态功能") }
         }
         groups.forEach { (name, groupItems) ->
             if (groupItems.isNotEmpty()) {
@@ -202,6 +255,7 @@ internal fun NativeHomeDynamic(
     navigation: NativeHomeNavigation,
     state: DriveState,
     onOpenTransfers: () -> Unit,
+    onChooseDynamic: () -> Unit = {},
 ) {
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)
@@ -210,6 +264,10 @@ internal fun NativeHomeDynamic(
     ) {
         Text(navigation.dynamicFeature?.title ?: "最近",
             style = MaterialTheme.typography.headlineSmall)
+        TextButton(onClick = onChooseDynamic,
+            modifier = Modifier.testTag("native-dynamic-pick")) {
+            Text("选择最近动态功能")
+        }
         if (navigation.dynamicFeature == NativeDynamicFeature.TRANSFERS) {
             Text("当前登录的上传、下载和待核对操作；离开页面不会取消持久传输。")
             if (state.transferRecoveryIssue ||
