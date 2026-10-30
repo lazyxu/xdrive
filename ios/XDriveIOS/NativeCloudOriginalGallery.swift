@@ -351,6 +351,8 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
     let node: XDriveIOSNativeCloudOriginal
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var phase
+    @State private var previewRequestID = UUID()
     @State private var still: UIImage?
     @State private var player: AVPlayer?
     @State private var error: String?
@@ -385,24 +387,43 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                 }
             }
         }
-        .task(id: node.id) {
-            guard !node.isLiveArchive, let before = login.owner else { return }
+        .task(id: previewRequestID) {
+            guard !node.isLiveArchive, phase == .active,
+                  let before = login.owner else { return }
             do {
                 let auth = try await login.verifiedAuthorization()
                 let media = try await XDriveIOSNativeCloudOriginalReader(
                     owner: auth.owner, accessToken: auth.accessToken
                 ).preview(node)
                 try Task.checkCancellation()
-                guard XDriveIOSNativePhotoOwnerScope.matches(auth.owner, before),
+                guard phase == .active,
+                      XDriveIOSNativePhotoOwnerScope.matches(auth.owner, before),
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, before)
                 else { return }
                 still = media.image
                 if let url = media.videoURL {
                     player = AVPlayer(url: url)
                 }
+            } catch is CancellationError {
+                // Scene/Owner/view navigation invalidated the earlier request.
             } catch {
+                guard phase == .active, !Task.isCancelled,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, before)
+                else { return }
                 self.error = "此文件的云端预览不可用，未读取其他账户的数据。"
             }
+        }
+        .onChange(of: phase) { state in
+            if state != .active {
+                // Never keep a signed video URL or rendered still alive while
+                // the app is inactive/backgrounded. The next foreground
+                // request must independently re-verify native Owner/root.
+                player?.pause()
+                player = nil
+                still = nil
+                error = nil
+            }
+            previewRequestID = UUID()
         }
         .onChange(of: login.owner) { _ in
             // Retire the former Owner's signed media URL immediately.
