@@ -11,6 +11,10 @@ native Kotlin/Compose; Web/PWA stays an independent React client.
 login and pages. This must remain functional until native equivalents pass
 required tests and replace it; this decision alone is NOT shipped native UI.
 
+## Native navigation / Photos-first UI
+
+The approved iPhone portrait/landscape UI uses **全部 | 动态功能 | 图库 | 文件 | 我的**, independent per-feature back navigation and L1/L2/L3 display levels. PhotoKit albums/photo wall/Viewer are the first native UI priority. Details: [native navigation and Gallery contract](../docs/architecture/ios-native-navigation-and-gallery.md). This is not a claim that the currently released IPA implements this shell.
+
 ## Preserve and reuse existing native code
 
 The iOS code already contains useful Swift PhotoKit enumeration, Full/Limited

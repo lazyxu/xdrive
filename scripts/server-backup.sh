@@ -59,6 +59,14 @@ if [[ "$INCREMENTAL" == "1" ]]; then
     echo "xDrive backup: --incremental cannot be combined with --output-dir or --skip-file-data." >&2
     exit 2
   fi
+  # Every published v2 generation must be a consistent, restorable recovery
+  # point. Permitting an unverified capture would create a manifest that v2
+  # restore and reference-aware prune correctly refuse, potentially blocking
+  # retention of the entire repository. Reject before mkdir, locks or Docker.
+  if [[ "$ALLOW_INCONSISTENT" == "1" ]]; then
+    echo "xDrive backup: --incremental cannot be combined with --allow-inconsistent." >&2
+    exit 2
+  fi
   REPOSITORY_DIR="${REPOSITORY_DIR:-$XDRIVE_HOME/backups/incremental}"
   [[ "$REPOSITORY_DIR" == /* && ! -L "$REPOSITORY_DIR" ]] || {
     echo "xDrive backup: --repository-dir must be an absolute non-symlink path." >&2

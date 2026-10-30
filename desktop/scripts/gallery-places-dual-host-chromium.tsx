@@ -91,11 +91,17 @@ const geometry = (bounds:Bounds) => new URLSearchParams({
   west:String(bounds.west),south:String(bounds.south),
   east:String(bounds.east),north:String(bounds.north),
 })
-const ownerRequest = async (route:string,query:URLSearchParams,signal?:AbortSignal)=>{
+const ownerRequest = async (route:string,query:URLSearchParams,
+  signal?:AbortSignal,worldGrid=false)=>{
   const token=await ownerToken()
+  // The mounted Gin/Chromium fixture must exercise the same negotiated
+  // world-stable Cell contract as the shipping Web adapter. Never send the
+  // scheme on viewport-items or on an old, legacy Cell selection.
+  const negotiated=route==='cells'||(route==='cell-items'&&worldGrid)
   const response=await fetch('/api/v1/media/places/baidu-jsapi/'+route+
     '?'+query.toString(),{signal,cache:'no-store',
-    headers:{Authorization:'Bearer '+token}})
+    headers:{Authorization:'Bearer '+token,
+      ...(negotiated?{'X-XDrive-Map-Grid-Scheme':'world_stable_v1'}:{})}})
   if(!response.ok)throw Error('real Gin Owner map range denied')
   return response.json()
 }
@@ -107,6 +113,12 @@ const probe = ((window as any).__mapProbe = {
   ownerViewportRange:null as any, rangeError:false,
   viewerSourceItem:null as any, viewerOpened:0, viewerClosed:0,
   galleryPageReads:[] as any[], galleryPageErrors:[] as string[],
+  // Only bounded diagnostic categories, NEVER Owner IDs, URL, Query, JWT
+  // or HTTP response bodies. Trace whether a failed request raced map Close.
+  galleryPageErrorContexts:[] as Array<{
+    type:string;reasonCode:string;httpStatus:number|null;
+    mapVisible:boolean;width:number
+  }>,
   galleryPageDirectOpens:[] as any[], galleryPageDirectClosed:0,
   photoPreviewRanges:[] as any[], photoPreviewFailures:[] as any[],
   photoOpens:[] as any[],
@@ -187,6 +199,7 @@ const listOwnerCells=async(bounds:Bounds,signal:AbortSignal,filters:any,albumKey
     }
   }
   probe.queries.push({favorite,albumKey,count:data.total_count,
+    gridScheme:(data as {grid_scheme?:string}).grid_scheme??'legacy',
     filters:JSON.parse(JSON.stringify(filters??{})),
     bounds:JSON.parse(JSON.stringify(bounds))})
   return data
@@ -216,7 +229,8 @@ const listOwnerCellItems=async(selection:any,limit:number,offset:number,
     if(sort.filters?.favorite===true)params.set('favorite','true')
     if(sort.albumKey)params.set('album',sort.albumKey)
     if(sort.anchorNodeID)params.set('anchor_node_id',String(sort.anchorNodeID))
-    range=await ownerRequest('cell-items',params,signal)
+    range=await ownerRequest('cell-items',params,signal,
+      selection.grid_scheme==='world_stable_v1')
   }else{
     const count=selection.photo_count
     range={offset,limit,total_count:count,
@@ -234,7 +248,8 @@ const listOwnerCellItems=async(selection:any,limit:number,offset:number,
       })}
   }
   probe.photoPreviewRanges.push({limit,offset,total:range.total_count,
-    items:range.items?.length||0,realGin:genuineGin})
+    items:range.items?.length||0,realGin:genuineGin,
+    gridScheme:selection.grid_scheme??'legacy'})
   return range
 }
 const loadThumbnail=async(_id:number,signal?:AbortSignal,revision?:number)=>{
@@ -301,7 +316,8 @@ const onOpenCell=(selection:any,scope:Scope)=>{
       limit:48,offset:0,range:true,sort_by:'captured',sort_dir:'desc',
     }))params.set(key,String(value))
     if(scope.filters.favorite)params.set('favorite','true')
-    void ownerRequest('cell-items',params).then(page=>{
+    void ownerRequest('cell-items',params,undefined,
+      selection.grid_scheme==='world_stable_v1').then(page=>{
       probe.viewerSourceItem=(page.items||[])[0]||null
       probe.ownerCellRange={
         total:page.total_count,items:page.items?.length||0,
@@ -414,7 +430,8 @@ const galleryDataSource={
     sort:any,signal:AbortSignal)=>{
     const params=xDriveBaiduNativeCellRangeParams(selection,limit,offset,sort)
     if(!params)throw Error('invalid trusted Cell Range parameters')
-    const page=await ownerRequest('cell-items',params,signal)
+    const page=await ownerRequest('cell-items',params,signal,
+      selection.grid_scheme==='world_stable_v1')
     // Store only test-local Owner member IDs to compare a fresh Gin Range
     // after returning to the map. Do not expose IDs to the untrusted SDK.
     probe.galleryPageReads.push({kind:'cell',offset,limit,total:page.total_count,
@@ -470,8 +487,33 @@ function FullGalleryPage(){
       })
       setDirectViewer({item,context})
     } : undefined}
-    onError={(error)=>{probe.galleryPageErrors.push(
-      error instanceof Error?error.name:'GalleryError')}}/>
+    onError={(error)=>{
+      const type=error instanceof Error?error.name:'GalleryError'
+      const reason=error instanceof Error?error.message:''
+      const match=/^genuine Gin Gallery HTTP ([1-5]\d{2})$/.exec(reason)
+      // Fixed, non-secret categories only: raw Error.message/stack may
+      // contain private media or Owner URLs and must never enter CI logs.
+      const reasonCode=match?'gin-http'
+        : reason==='VirtualCollection returned an invalid positional Range page.'
+          ? 'virtual-position'
+        : reason==='VirtualCollection refused an unverified positional Range page.'
+          ? 'virtual-rejected'
+        : reason.startsWith('Count-free VirtualCollection range requires')
+          ? 'virtual-count-missing'
+        : /AbortError|aborted|Failed to fetch/.test(reason)
+          ? 'transport-abort'
+        : /Cannot read properties of/.test(reason)
+          ? 'runtime-undefined'
+        : /invalid|denied|changed|revoke/i.test(reason)
+          ? 'invalid-owner-scope'
+        : 'unclassified'
+      probe.galleryPageErrors.push(type)
+      probe.galleryPageErrorContexts.push({
+        type,reasonCode,httpStatus:match?Number(match[1]):null,
+        mapVisible:Boolean(document.querySelector('[data-xdrive-gallery-places-map]')),
+        width:window.innerWidth,
+      })
+    }}/>
 }
 function TestApp(){
   const [favorite,setFavorite]=useState(false)
