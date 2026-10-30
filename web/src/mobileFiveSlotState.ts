@@ -8,6 +8,7 @@ export type XDriveMobileNavigationMemory = {
   files: XDriveWebAppRoute
   gallery: XDriveWebAppRoute
   dynamic: XDriveWebAppRoute[]
+  favorites: string[]
 }
 
 const viewers = new Set<string>([
@@ -39,6 +40,7 @@ export function xDriveInitialMobileNavigation(ownerScope = ''): XDriveMobileNavi
     files: { app: 'files', params: {} },
     gallery: { app: 'gallery', params: {} },
     dynamic: [],
+    favorites: ['gallery', 'files'],
   }
 }
 
@@ -53,16 +55,38 @@ export function xDriveRememberMobileNavigation(
     ? previous : xDriveInitialMobileNavigation(ownerScope)
   if (!ownerScope) return base
   const dynamic = base.dynamic.filter(item => xDriveMobileRouteAllowed(item, adminVerified))
-  if (!xDriveMobileRouteAllowed(route, adminVerified)) return { ...base, dynamic }
+  const favorites = base.favorites.filter(key => adminVerified || !adminOnly.has(key))
+  if (!xDriveMobileRouteAllowed(route, adminVerified)) return { ...base, dynamic, favorites }
   switch (xDriveMobileSlotForRoute(route)) {
-    case 'files': return { ...base, files: route, dynamic }
-    case 'gallery': return { ...base, gallery: route, dynamic }
+    case 'files': return { ...base, files: route, dynamic, favorites }
+    case 'gallery': return { ...base, gallery: route, dynamic, favorites }
     case 'dynamic':
       return {
         ...base,
         dynamic: [route, ...dynamic.filter(item => item.app !== route.app)].slice(0, 6),
+        favorites,
       }
-    default: return { ...base, dynamic }
+    default: return { ...base, dynamic, favorites }
+  }
+}
+
+/** Launcher favorites are volatile, bounded, and verified-Owner scoped. */
+export function xDriveToggleMobileFavorite(
+  previous: XDriveMobileNavigationMemory,
+  ownerScope: string,
+  key: string,
+  adminVerified: boolean,
+): XDriveMobileNavigationMemory {
+  const base = previous.ownerScope === ownerScope
+    ? previous : xDriveInitialMobileNavigation(ownerScope)
+  if (!ownerScope || !key || key === 'overview' || key === 'sync-folders' ||
+    viewers.has(key) || (adminOnly.has(key) && !adminVerified)) return base
+  const favorites = base.favorites.filter(item => adminVerified || !adminOnly.has(item))
+  return {
+    ...base,
+    favorites: favorites.includes(key)
+      ? favorites.filter(item => item !== key)
+      : [...favorites, key].slice(-16),
   }
 }
 
