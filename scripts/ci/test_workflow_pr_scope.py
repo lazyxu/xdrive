@@ -154,6 +154,26 @@ class ScopeTests(unittest.TestCase):
                              f"{name} is a branch-only job in broad CI")
             self.assertIn("github.ref == 'refs/heads/master'", header)
 
+    def test_android_master_apk_builds_every_master_commit_independently(self):
+        """One master SHA must never evict another SHA's running or queued APK."""
+        root = Path(__file__).resolve().parents[2] / ".github/workflows"
+        source = (root / "android-master-apk.yml").read_text(encoding="utf-8")
+        events = source.split("\non:\n", 1)[1].split("\npermissions:\n", 1)[0]
+        self.assertIn("  push:\n    branches: [master]\n", events)
+        self.assertIn("  workflow_dispatch:\n", events)
+        self.assertNotIn("    paths:", events)
+        # No shared concurrency slot at either workflow or job level, even
+        # with cancel-in-progress:false (which can still evict pending runs).
+        self.assertNotRegex(source, r"(?m)^\s*(?:concurrency|cancel-in-progress):")
+        self.assertNotIn("latest-master", source)
+        self.assertIn("ref: ${{ github.sha }}", source)
+        self.assertIn("name: xdrive-android-master-${{ github.sha }}", source)
+        self.assertIn("retention-days: 30", source)
+        self.assertIn(
+            "  build-master-apk:\n    if: github.ref == 'refs/heads/master'",
+            source,
+        )
+
     def test_branch_sweeps_avoid_redundant_master_push_trigger(self):
         # PR closure drives immediate guarded cleanup; daily/manual sweeps
         # cover orphaned refs. A push on every master commit creates a queue

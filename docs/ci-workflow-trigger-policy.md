@@ -28,6 +28,23 @@ runs even though nothing was actually tested.
   records. The evidence is the **conclusion for the exact SHA**, not the
   number of rows in Actions.
 
+## Android Master APK: every master commit has an independent build
+
+`.github/workflows/android-master-apk.yml` intentionally runs on **every**
+`master` push, without a `paths` filter. It also accepts manual dispatch
+(on `master`). **No workflow-level or job-level concurrency/cancellation**
+may evict an earlier APK run when another master commit is pushed. Do not
+restore the old shared `latest-master` concurrency group or
+`cancel-in-progress`. Different master commits can queue and build
+independently, subject to available GitHub Actions runners.
+
+Each build checks out its own event `github.sha`, signs/verifies the
+Debug APK and uploads an artifact named `xdrive-android-master-<SHA>`
+(retained for 30 days). This is an exact-commit test artifact, not a
+stable-signing or full-CI guarantee. More concurrent/queued builds may use
+additional CI minutes. The policy applies to newly triggered runs; previously
+cancelled historical runs do not restart automatically.
+
 ## Core CI job inventory (2026-10-27)
 
 A 2026-10-27 audit found 50 one-off jobs inside the broadly triggered `ci.yml` which ran only when `github.head_ref` matched now-absent experimental branches. With no matching live branch or open PR, these jobs created 50 `Skipped` entries per `master` run without executing tests. They were removed from the GitHub CI job graph and from the matching GitLab branch-only job graph to preserve the enforced GitHub/GitLab parity contract, not from the underlying benchmark/test files or Git history. All 30 GitHub continuous/branch-relevant jobs (including `final-gate` and both release paths) and all 25 GitLab core jobs were retained with their job bodies and dependencies unchanged.

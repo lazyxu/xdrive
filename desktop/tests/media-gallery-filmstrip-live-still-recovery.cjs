@@ -27,7 +27,7 @@ const flush = async () => {
 }
 
 test('P0-L15 Viewer filmstrip owns one bounded shared Scheduler, not raw standalone thumb loading', () => {
-  assert.match(strip, /new XDriveMediaThumbnailScheduler\(loadThumbnail,\s*\{\s*concurrency: 3,\s*maxCacheEntries: 32,\s*\}\)/)
+  assert.match(strip, /new XDriveMediaThumbnailScheduler\(loadThumbnail,\s*\{\s*concurrency: 3,\s*maxCacheEntries: 32,\s*viewerOwned: true,\s*\}\)/)
   assert.match(strip, /thumbnailScheduler\.load\(nodeID, 0, revision, onProgress, signal\)/)
   assert.match(strip, /loadThumbnail=\{loadFilmstripThumbnail\}/)
   assert.match(strip, /revokeOnDispose=\{false\}/)
