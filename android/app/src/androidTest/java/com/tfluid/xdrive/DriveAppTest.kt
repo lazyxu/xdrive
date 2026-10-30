@@ -855,8 +855,9 @@ class DriveAppTest {
         }
 
         compose.onNodeWithTag("gallery-manual-more-manual:fixture-created").performClick()
+        compose.onNodeWithTag("gallery-manual-actions-manual:fixture-created").assertExists()
         compose.onNodeWithTag("gallery-manual-rename-manual:fixture-created")
-            .performScrollTo().assertIsDisplayed().performClick()
+            .assertIsDisplayed().performClick()
         compose.onNodeWithTag("gallery-manual-rename-dialog").assertExists()
         compose.onNodeWithTag("gallery-manual-rename-name").performTextReplacement("夏季")
         compose.onNodeWithTag("gallery-manual-rename-confirm")
@@ -873,7 +874,7 @@ class DriveAppTest {
 
         compose.onNodeWithTag("gallery-manual-more-manual:fixture-created").performClick()
         compose.onNodeWithTag("gallery-manual-delete-manual:fixture-created")
-            .performScrollTo().assertIsDisplayed().performClick()
+            .assertIsDisplayed().performClick()
         compose.onNodeWithTag("gallery-manual-delete-dialog").assertExists()
         compose.onNodeWithText("不会删除原始照片", substring = true).assertExists()
         compose.onNodeWithTag("gallery-manual-delete-confirm")
@@ -990,8 +991,9 @@ class DriveAppTest {
                 !controller.state.value.loading
         }
         compose.onNodeWithTag("gallery-manual-more-manual:cover").performClick()
+        compose.onNodeWithTag("gallery-manual-actions-manual:cover").assertExists()
         compose.onNodeWithTag("gallery-manual-auto-cover-manual:cover")
-            .performScrollTo().assertIsDisplayed().performClick()
+            .assertIsDisplayed().performClick()
         compose.onNodeWithTag("gallery-manual-auto-cover-dialog").assertExists()
         compose.onNodeWithText("仍可能显示相册中的首张照片", substring = true)
             .assertExists()

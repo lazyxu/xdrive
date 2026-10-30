@@ -437,27 +437,40 @@ private fun GalleryAlbumCard(
                         Icon(painterResource(R.drawable.xd_more_vert),
                             contentDescription = galleryAlbumMoreActionLabel(album))
                     }
-                    DropdownMenu(expanded = actionsOpen,
-                        onDismissRequest = { actionsOpen = false }) {
-                        DropdownMenuItem(
-                            text = { Text("重命名") },
-                            onClick = { actionsOpen = false; onRename(album) },
-                            modifier = Modifier.heightIn(min = 48.dp)
-                                .testTag("gallery-manual-rename-${album.id}"),
-                        )
-                        DropdownMenuItem(
-                            text = { Text("恢复自动封面") },
-                            onClick = { actionsOpen = false; onResetCover(album) },
-                            modifier = Modifier.heightIn(min = 48.dp)
-                                .testTag("gallery-manual-auto-cover-${album.id}"),
-                        )
-                        DropdownMenuItem(
-                            text = { Text("删除相册") },
-                            onClick = { actionsOpen = false; onDelete(album) },
-                            modifier = Modifier.heightIn(min = 48.dp)
-                                .testTag("gallery-manual-delete-${album.id}"),
-                        )
-                    }
+                    // The anchored DropdownMenu was unreachable at the bottom of a
+                    // 320x640 Gallery after adding the fixed five-slot bar. This
+                    // dialog is independent of the viewport edge and exposes
+                    // actual Owner-authorized actions to touch and TalkBack.
+                    if (actionsOpen) AlertDialog(
+                        onDismissRequest = { actionsOpen = false },
+                        title = { Text("相册操作：${album.name}") },
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                TextButton(
+                                    onClick = { actionsOpen = false; onRename(album) },
+                                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                                        .testTag("gallery-manual-rename-${album.id}"),
+                                ) { Text("重命名") }
+                                TextButton(
+                                    onClick = { actionsOpen = false; onResetCover(album) },
+                                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                                        .testTag("gallery-manual-auto-cover-${album.id}"),
+                                ) { Text("恢复自动封面") }
+                                TextButton(
+                                    onClick = { actionsOpen = false; onDelete(album) },
+                                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                                        .testTag("gallery-manual-delete-${album.id}"),
+                                ) { Text("删除相册") }
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(onClick = { actionsOpen = false },
+                                modifier = Modifier.testTag("gallery-manual-actions-close-${album.id}")) {
+                                Text("取消")
+                            }
+                        },
+                        modifier = Modifier.testTag("gallery-manual-actions-${album.id}"),
+                    )
                 }
             }
         }
