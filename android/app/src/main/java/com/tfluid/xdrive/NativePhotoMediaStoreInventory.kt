@@ -53,15 +53,20 @@ internal fun hasNativeFullPhotoVideoReadGrant(context: Context): Boolean =
  * Deny records that were replaced, trashed, pending or lost their grant.
  */
 internal fun nativePhotoSnapshotMatches(
-    selected: NativePhotoOriginalCandidate,
+    selectedId: Long, selectedIsVideo: Boolean, selectedMimeType: String,
+    selectedSize: Long, selectedModified: Long,
     id: Long, mimeType: String?, size: Long, modified: Long,
     isPending: Boolean, isTrashed: Boolean,
-): Boolean = id > 0 && selected.localId == id &&
-    selected.sizeBytes == size && size in 1..NativePhotoOriginalStager.MAX_ORIGINAL_BYTES &&
-    selected.modifiedAtSeconds == modified && !isPending && !isTrashed &&
-    mimeType == selected.mimeType && mimeType != null && mimeType.startsWith(
-        if (selected.isVideo) "video/" else "image/"
-    ) && selected.uri == ContentUris.withAppendedId(
+): Boolean = id > 0 && selectedId == id &&
+    selectedSize == size && size in 1..NativePhotoOriginalStager.MAX_ORIGINAL_BYTES &&
+    selectedModified == modified && !isPending && !isTrashed &&
+    mimeType == selectedMimeType && mimeType != null && mimeType.startsWith(
+        if (selectedIsVideo) "video/" else "image/"
+    )
+
+/** Android content:// URI validation is separate from the pure JVM snapshot check. */
+internal fun nativePhotoCanonicalUriMatches(selected: NativePhotoOriginalCandidate): Boolean =
+    selected.localId > 0 && selected.uri == ContentUris.withAppendedId(
         if (selected.isVideo) MediaStore.Video.Media.EXTERNAL_CONTENT_URI
             else MediaStore.Images.Media.EXTERNAL_CONTENT_URI, selected.localId)
 
@@ -159,7 +164,8 @@ internal object NativePhotoMediaStoreInventory {
      * foreground confirmation; do not silently upload a different original.
      */
     private fun sourceMatches(context: Context, selected: NativePhotoOriginalCandidate): Boolean {
-        if (!hasNativeFullPhotoVideoReadGrant(context)) return false
+        if (!hasNativeFullPhotoVideoReadGrant(context) ||
+            !nativePhotoCanonicalUriMatches(selected)) return false
         val id = MediaStore.MediaColumns._ID
         val mime = MediaStore.MediaColumns.MIME_TYPE
         val size = MediaStore.MediaColumns.SIZE
@@ -173,7 +179,11 @@ internal object NativePhotoMediaStoreInventory {
         return cursor.use {
             if (!it.moveToFirst()) return@use false
             val matches = nativePhotoSnapshotMatches(
-                selected,
+                selectedId = selected.localId,
+                selectedIsVideo = selected.isVideo,
+                selectedMimeType = selected.mimeType,
+                selectedSize = selected.sizeBytes,
+                selectedModified = selected.modifiedAtSeconds,
                 id = it.getLong(it.getColumnIndexOrThrow(id)),
                 mimeType = it.getString(it.getColumnIndexOrThrow(mime)),
                 size = it.getLong(it.getColumnIndexOrThrow(size)),
