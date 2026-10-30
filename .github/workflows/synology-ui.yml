@@ -72,6 +72,9 @@ on:
       - 'web/scripts/test-synology-batch-validation.mjs'
       - 'ui/shared/src/synology-browser-storage.ts'
       - 'web/scripts/test-synology-browser-storage.mjs'
+      - 'ui/shared/src/synology-nas-storage.ts'
+      - 'web/scripts/test-synology-nas-storage.mjs'
+      - 'web/src/synologyHost.ts'
       - 'ui/shared/src/mui/DiagnosticsPage.tsx'
       - 'ui/shared/src/mui/SynologyDiagnosticsPanel.tsx'
       - 'desktop/src/renderer/DesktopDiagnosticsPage.tsx'
@@ -184,6 +187,9 @@ on:
       - 'web/scripts/test-synology-batch-validation.mjs'
       - 'ui/shared/src/synology-browser-storage.ts'
       - 'web/scripts/test-synology-browser-storage.mjs'
+      - 'ui/shared/src/synology-nas-storage.ts'
+      - 'web/scripts/test-synology-nas-storage.mjs'
+      - 'web/src/synologyHost.ts'
       - 'ui/shared/src/mui/DiagnosticsPage.tsx'
       - 'ui/shared/src/mui/SynologyDiagnosticsPanel.tsx'
       - 'desktop/src/renderer/DesktopDiagnosticsPage.tsx'
@@ -264,6 +270,7 @@ jobs:
         run: |
           npm ci --prefix web
           node web/scripts/test-synology-browser-storage.mjs
+          node web/scripts/test-synology-nas-storage.mjs
           node web/scripts/test-synology-batch-validation.mjs
           node web/scripts/test-synology-request-cancel.mjs
           node web/scripts/test-synology-owner-read.mjs
