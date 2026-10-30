@@ -741,7 +741,10 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     if (requestedOriginal != null && state.screen == Screen.GALLERY &&
         nativeNavigation.gallerySource in setOf(
             NativeGallerySource.LOCAL, NativeGallerySource.ALBUMS)) {
-        val current = controller.state.value
+        // Compose already collects this StateFlow. Reading .value here bypasses
+        // recomposition and is rejected by StateFlowValueCalledInComposition.
+        // The confirm click separately checks controller.state.value afresh.
+        val current = state
         val resolved = verifiedBackupOriginal?.takeIf {
             it.localId == requestedOriginal.id &&
                 it.isVideo == requestedOriginal.isVideo &&
