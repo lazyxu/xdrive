@@ -40,7 +40,7 @@ internal fun ColumnScope.GalleryCollections(
     var createOpen by remember(state.server, state.username, state.nativeUiSessionId) { mutableStateOf(false) }
     var createName by remember(state.server, state.username, state.nativeUiSessionId) { mutableStateOf("") }
     // Hoisted out of LazyVerticalGrid: modal state must not be disposed with an album cell.
-    var actionsTarget by remember(state.nativeUiSessionId) { mutableStateOf<GalleryAlbum?>(null) }
+    var actionsTarget by remember(state.server, state.username, state.nativeUiSessionId) { mutableStateOf<GalleryAlbum?>(null) }
     var renameTarget by remember(state.server, state.username, state.nativeUiSessionId) {
         mutableStateOf<GalleryAlbum?>(null)
     }
@@ -115,17 +115,32 @@ internal fun ColumnScope.GalleryCollections(
     // Keep the Owner-authorized action surface outside both the recyclable grid
     // and the card's open-album click target. It must survive modal recomposition.
     val actionAlbum = actionsTarget
-    if (actionAlbum != null && !state.loading && state.galleryAlbumsLoaded &&
-        state.galleryAlbums.any { it == actionAlbum } &&
-        actionAlbum.kind == "manual" && actionAlbum.revision > 0) {
+    // A pending Owner read may briefly mark the Gallery busy after the More
+    // action was selected. Keep the modal visible, but gate *every* mutating
+    // option on the current verified Owner album and write state.
+    if (actionAlbum != null) {
+        val canMutate = state.screen == Screen.GALLERY &&
+            state.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS &&
+            state.gallerySelectedAlbum == null && !state.loading &&
+            state.galleryAlbumsLoaded &&
+            !state.galleryAlbumCreateAttempted &&
+            !state.galleryAlbumCreateCommittedNeedsRefresh &&
+            !state.galleryAlbumEditAttempted &&
+            !state.galleryAlbumEditCommittedNeedsRefresh &&
+            actionAlbum.kind == "manual" && actionAlbum.revision > 0 &&
+            state.galleryAlbums.any { it == actionAlbum }
         AlertDialog(
             onDismissRequest = { actionsTarget = null },
             modifier = Modifier.testTag("gallery-manual-actions-${actionAlbum.id}"),
             title = { Text("相册操作：${actionAlbum.name}") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (!canMutate) Text("相册状态已变化，请关闭并刷新列表后重试。",
+                        style = MaterialTheme.typography.bodySmall)
                     TextButton(
+                        enabled = canMutate,
                         onClick = {
+                            if (!canMutate) return@TextButton
                             actionsTarget = null
                             renameTarget = actionAlbum
                             renameDraft = actionAlbum.name
@@ -134,7 +149,9 @@ internal fun ColumnScope.GalleryCollections(
                             .testTag("gallery-manual-rename-${actionAlbum.id}"),
                     ) { Text("重命名") }
                     TextButton(
+                        enabled = canMutate,
                         onClick = {
+                            if (!canMutate) return@TextButton
                             actionsTarget = null
                             resetCoverTarget = actionAlbum
                         },
@@ -142,7 +159,9 @@ internal fun ColumnScope.GalleryCollections(
                             .testTag("gallery-manual-auto-cover-${actionAlbum.id}"),
                     ) { Text("恢复自动封面") }
                     TextButton(
+                        enabled = canMutate,
                         onClick = {
+                            if (!canMutate) return@TextButton
                             actionsTarget = null
                             deleteTarget = actionAlbum
                         },

@@ -855,6 +855,15 @@ class DriveAppTest {
         }
 
         compose.onNodeWithTag("gallery-manual-more-manual:fixture-created").performClick()
+        compose.runOnIdle {
+            // More is local to the current Owner's Collection; no navigation
+            // may be triggered by a nested album-card click target.
+            org.junit.Assert.assertEquals(Screen.GALLERY, controller.state.value.screen)
+            org.junit.Assert.assertEquals(GalleryPrimaryTab.COLLECTIONS,
+                controller.state.value.galleryPrimaryTab)
+            org.junit.Assert.assertNull(controller.state.value.gallerySelectedAlbum)
+        }
+        compose.onRoot(useUnmergedTree = true).printToLog("GalleryMore-manual:fixture-created")
         compose.onNodeWithTag("gallery-manual-actions-manual:fixture-created").assertExists()
         compose.onNodeWithTag("gallery-manual-rename-manual:fixture-created")
             .assertIsDisplayed().performClick()
@@ -991,6 +1000,15 @@ class DriveAppTest {
                 !controller.state.value.loading
         }
         compose.onNodeWithTag("gallery-manual-more-manual:cover").performClick()
+        compose.runOnIdle {
+            // More is local to the current Owner's Collection; no navigation
+            // may be triggered by a nested album-card click target.
+            org.junit.Assert.assertEquals(Screen.GALLERY, controller.state.value.screen)
+            org.junit.Assert.assertEquals(GalleryPrimaryTab.COLLECTIONS,
+                controller.state.value.galleryPrimaryTab)
+            org.junit.Assert.assertNull(controller.state.value.gallerySelectedAlbum)
+        }
+        compose.onRoot(useUnmergedTree = true).printToLog("GalleryMore-manual:cover")
         compose.onNodeWithTag("gallery-manual-actions-manual:cover").assertExists()
         compose.onNodeWithTag("gallery-manual-auto-cover-manual:cover")
             .assertIsDisplayed().performClick()
