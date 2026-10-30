@@ -399,7 +399,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		sendJSON(w, map[string]any{"dsm_user": username, "csrf_token": csrf(key, username, r.Header.Get("Cookie"), r.Host, interval)})
 		return
 	}
-	if r.URL.Path != "/v1/sources" && r.URL.Path != "/v1/status" && r.URL.Path != "/v1/history" && r.URL.Path != "/v1/run" && r.URL.Path != "/v1/control" && r.URL.Path != "/v1/schedule" && r.URL.Path != "/v1/device-backups" && r.URL.Path != "/v1/device-backup-runs" && r.URL.Path != "/v1/device-backup-page" && r.URL.Path != "/v1/device-backup-folders" && r.URL.Path != "/v1/cloud-quota" && r.URL.Path != "/v1/cloud-root" && r.URL.Path != "/v1/cloud-children" && r.URL.Path != "/v1/cloud-text-preview" && r.URL.Path != "/v1/cloud-media-range" && r.URL.Path != "/v1/cloud-media-stream" && r.URL.Path != "/v1/cloud-thumbnail" && r.URL.Path != "/v1/cloud-gallery-items" && r.URL.Path != "/v1/cloud-gallery-albums" && r.URL.Path != "/v1/cloud-live-motion" {
+	if r.URL.Path != "/v1/sources" && r.URL.Path != "/v1/status" && r.URL.Path != "/v1/history" && r.URL.Path != "/v1/run" && r.URL.Path != "/v1/control" && r.URL.Path != "/v1/schedule" && r.URL.Path != "/v1/device-backups" && r.URL.Path != "/v1/device-backup-runs" && r.URL.Path != "/v1/device-backup-page" && r.URL.Path != "/v1/device-backup-folders" && r.URL.Path != "/v1/cloud-quota" && r.URL.Path != "/v1/nas-volume" && r.URL.Path != "/v1/cloud-root" && r.URL.Path != "/v1/cloud-children" && r.URL.Path != "/v1/cloud-text-preview" && r.URL.Path != "/v1/cloud-media-range" && r.URL.Path != "/v1/cloud-media-stream" && r.URL.Path != "/v1/cloud-thumbnail" && r.URL.Path != "/v1/cloud-gallery-items" && r.URL.Path != "/v1/cloud-gallery-albums" && r.URL.Path != "/v1/cloud-live-motion" {
 		http.NotFound(w, r)
 		return
 	}
@@ -425,6 +425,22 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	agent, err := g.Connect(ctx) // Same-user protected discovery; never spawn a new Agent.
 	if err != nil {
 		http.Error(w, "owning Agent unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	// Fixed read-only capacity of the filesystem backing the private DSM
+	// package configuration. No browser path/volume selector, storage mutation,
+	// general NAS inventory or Server account quota is exposed.
+	if r.URL.Path == "/v1/nas-volume" {
+		if r.URL.RawQuery != "" {
+			http.Error(w, "invalid DSM package volume query", http.StatusBadRequest)
+			return
+		}
+		space, err := readNASVolumeSpace(g.ConfigDir)
+		if err != nil {
+			http.Error(w, "DSM package filesystem capacity unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		sendJSON(w, space)
 		return
 	}
 	// Live Photo Motion is a separate, exact-revision, bounded Owner request
