@@ -116,6 +116,11 @@ actor XDriveIOSPhotoBackgroundGrantManager {
         guard try !localStatus(owner: owner).enrolled else {
             throw XDriveIOSPhotoBackgroundGrantError.remoteRevokePending
         }
+        // A crash can leave the BG-only vault as the last record. Never
+        // overwrite such a grant, including one from another Owner.
+        guard try await XDriveIOSApprovedPhotoBGVault.shared.current() == nil else {
+            throw XDriveIOSPhotoBackgroundGrantError.remoteRevokePending
+        }
         try await verifyOwner(owner, accessToken: accessToken)
         let enrollment = XDriveIOSDeviceEnrollment.shared
         let existing = try await enrollment.verifyExisting(
