@@ -1,6 +1,6 @@
 # Synology DSM 7 authenticated local UI
 
-## 2026-10-30 DSM GUI login and first native Source setup (dependent PR, unmerged)
+## 2026-10-30 DSM MVP integration PR #3313 (unmerged; source-level)
 
 This narrow DSM-only change adds initial and **same-Server/same-username re-login**
 inside the original shared `XDriveSettingsDialog`. It delegates to the owning
@@ -18,7 +18,7 @@ Server or Owner. The CGI checks current Owner quota **after** login; the UI
 reloads after both successful and uncertain login outcomes so cached prior
 Owner content cannot be shown as newly authorized.
 
-The same dependent PR now also composes the original shared Device Backup
+The consolidated DSM integration PR also composes the original shared Device Backup
 page's verified NAS share inventory/preflight and verified Owner cursor-based
 cloud directory browser into an explicit **create local backup Source** form.
 The DSM browser sends only `selection_id`, a verified HMAC `owner_scope`,
@@ -45,8 +45,8 @@ without the known typed native capability fails closed. No password is
 stored by the browser. A root CA must already be trusted by the native
 Agent; the DSM web form does not accept TLS bypass or browser-provided CA.
 
-This is implemented on a dependent development branch, **not a released or
-physically validated feature**. The current branch includes Go negative tests
+This is proposed on a master-targeting integration PR containing the complete delta of previously untested DSM branches #3305 and #3286; **it is not released or
+physically validated**. The prior standalone development HEADs are retained as provenance until current-HEAD validation; no child PR is itself a master merge. The current branch includes Go negative tests
 for forged selection/path/Owner scope, CSRF, missing consent, old Agent,
 unknown Source creation and uncertain Root binding; DSM Node wiring and
 shared-MUI build still require applicable exact-head CI. Run exact-head Go,
@@ -55,7 +55,7 @@ DSM device-only install, ACL, browser and upload acceptance remains
 **跳过（未验收）** and is not PASS.
 
 
-## 2026-10-30 source audit: minimal usable DSM scope
+## Historical 2026-10-30 pre-integration source audit: minimal usable DSM scope
 
 Canonical master source audited at `0ff2fa1a3dd478e73fd48e84ff50ce2ef9c2cb99`. This is a **source-level capability inventory**, not a device acceptance or a claim of exact-HEAD CI PASS. The old 2026-10-27 seven-route matrix below is historical; the current Desktop/DSM app has one shared `XDriveApp` and **16 registered routes**. A rendered common page alone does not prove a DSM data/action adapter exists.
 
