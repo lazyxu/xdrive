@@ -49,4 +49,11 @@ test('new Cloud PhotoAsset Gallery is under the fixed Gallery tab; old originals
   assert.match(view, /model\.suspendForNavigation\(\)/)
   assert.match(view, /epoch = UUID\(\)/)
   assert.match(view, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expected\)/)
+  assert.match(view, /pageScope\.map/)
+  assert.match(view, /XDriveIOSNativePhotoOwnerScope\.matches\(expected, \$0\)/)
+  assert.match(view, /pageAlbumID == albumID/)
+  assert.match(view, /if !keepOldPage/)
+  assert.match(view, /self\?\.failedOffset = offset/)
+  assert.match(view, /offset: model\.failedOffset \?\? model\.page\?\.offset \?\? 0/)
+
 })

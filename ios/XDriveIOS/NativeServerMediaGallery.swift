@@ -9,7 +9,10 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
     @Published private(set) var page: XDriveIOSNativeMediaRange?
     @Published private(set) var busy = false
     @Published private(set) var error: String?
+    @Published private(set) var failedOffset: Int?
 
+    private var pageScope: XDriveNativeOwnerRoot?
+    private var pageAlbumID: String?
     private var epoch = UUID()
     private var job: Task<Void, Never>?
     private var currentReader: XDriveIOSNativeMediaGalleryReader?
@@ -20,6 +23,9 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
         job = nil
         currentReader = nil
         page = nil
+        pageScope = nil
+        pageAlbumID = nil
+        failedOffset = nil
         busy = false
         error = nil
     }
@@ -41,11 +47,27 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
 
     func load(login: XDriveIOSNativeOwnerLoginModel,
               albumID: String?, offset: Int = 0) {
-        invalidate()
         guard let expected = login.owner else {
+            invalidate()
             error = "当前尚未建立经过验证的服务器账户。"
             return
         }
+        // Only the same verified Owner AND album may retain an earlier page
+        // while the requested range loads. A different scope clears it first.
+        let keepOldPage = pageScope.map {
+            XDriveIOSNativePhotoOwnerScope.matches(expected, $0)
+        } == true && pageAlbumID == albumID
+        epoch = UUID()
+        job?.cancel()
+        job = nil
+        if !keepOldPage {
+            page = nil
+            currentReader = nil
+            pageScope = nil
+            pageAlbumID = nil
+        }
+        failedOffset = nil
+        error = nil
         let ticket = epoch
         busy = true
         job = Task { @MainActor [weak self] in
@@ -69,10 +91,16 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
                 else { return }
                 self?.currentReader = reader
                 self?.page = result
+                self?.pageScope = expected
+                self?.pageAlbumID = albumID
+                self?.failedOffset = nil
             } catch is CancellationError {
             } catch {
                 guard self?.epoch == ticket else { return }
-                self?.error = "云端 PhotoAsset 读取失败；请检查 Server、权限或索引状态后重试。"
+                // A failed second page cannot turn a valid first page into
+                // an empty library or silently retry the wrong offset.
+                self?.failedOffset = offset
+                self?.error = "云端 PhotoAsset 读取失败；已保留当前浏览页，可重试刚才的分页请求。"
             }
         }
     }
@@ -262,7 +290,7 @@ struct XDriveIOSNativeServerMediaWall: View {
                     Text(message).foregroundStyle(.red)
                     Button("重试读取") {
                         model.load(login: login, albumID: album?.id,
-                                   offset: model.page?.offset ?? 0)
+                                   offset: model.failedOffset ?? model.page?.offset ?? 0)
                     }
                 }
                 Text("每次最多保留 48 个逻辑媒体；只有当前可见图片申请授权缩略图。缩略图缺失不代表原件丢失。")
