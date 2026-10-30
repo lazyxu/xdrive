@@ -20,10 +20,18 @@ export const xDriveEmptyBaiduMapPhotoScope: XDriveBaiduMapPhotoScope = {
   albumKey: '',
 }
 
-/** Reject unknown Gallery filters instead of narrowing only the photo wall
- * while the /cells map still displays broader Owner counts. */
+/** Reject unknown Gallery filters AND top-level scope fields instead of
+ * narrowing only the photo wall while /cells displays broader Owner counts.
+ * Dropping an unexpected album/Owner membership claim is never permission
+ * to treat a malformed saved map intent as an unrestricted Gallery scope. */
 export function xDriveNormalizeBaiduMapPhotoScope(value: unknown): XDriveBaiduMapPhotoScope | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  // This is an exact two-field contract. In particular an unknown outer
+  // album/Owner/scope claim cannot be silently removed while accepting the
+  // remaining filters as a broader signed map selection.
+  const keys = Object.keys(value)
+  if (keys.length !== 2 ||
+      keys.some(key => key !== 'filters' && key !== 'albumKey')) return null
   const s = value as Partial<XDriveBaiduMapPhotoScope>
   if (typeof s.albumKey !== 'string' ||
       !s.filters || typeof s.filters !== 'object' || Array.isArray(s.filters)) return null
