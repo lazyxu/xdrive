@@ -89,7 +89,7 @@ func newDSMSourceCreateFixture(t *testing.T) (*Gateway, *fakeNASSourceCreator, s
 	g.nasShareRoot = root
 	agent := &fakeNASSourceCreator{
 		fakeServerLoginAgent: &fakeServerLoginAgent{fakeAgent: base},
-		wantPath: path,
+		wantPath:             path,
 	}
 	g.Connect = func(context.Context) (Agent, error) { return agent, nil }
 	_, key, err := loadAuthority(g.ConfigDir)
@@ -157,9 +157,9 @@ func TestDSMSourceCreateRejectsUnverifiedOrForgedIntentBeforeMutation(t *testing
 		{"invalid owner scope", "POST", sourceCreateBody(selection, strings.Repeat("f", 64), true), "https://nas.example:5001", csrfToken, p},
 		{"invalid share identity", "POST", sourceCreateBody(strings.Repeat("0", 64), scope, true), "https://nas.example:5001", csrfToken, p},
 		{"no explicit consent", "POST", sourceCreateBody(selection, scope, false), "https://nas.example:5001", csrfToken, p},
-		{"foreign pathname", "POST", strings.TrimSuffix(body, "}")+`,"path":"/etc"}`, "https://nas.example:5001", csrfToken, p},
-		{"foreign device", "POST", strings.TrimSuffix(body, "}")+`,"device_id":"untrusted"}`, "https://nas.example:5001", csrfToken, p},
-		{"duplicate name", "POST", strings.TrimSuffix(body, "}")+`,"name":"another"}`, "https://nas.example:5001", csrfToken, p},
+		{"foreign pathname", "POST", strings.TrimSuffix(body, "}") + `,"path":"/etc"}`, "https://nas.example:5001", csrfToken, p},
+		{"foreign device", "POST", strings.TrimSuffix(body, "}") + `,"device_id":"untrusted"}`, "https://nas.example:5001", csrfToken, p},
+		{"duplicate name", "POST", strings.TrimSuffix(body, "}") + `,"name":"another"}`, "https://nas.example:5001", csrfToken, p},
 		{"bad cloud target", "POST", strings.Replace(body, `"target_id":17`, `"target_id":0`, 1), "https://nas.example:5001", csrfToken, p},
 		{"extra CGI query", "POST", body, "https://nas.example:5001", csrfToken, p + "&path=/etc"},
 		{"wrong origin", "POST", body, "https://foreign.example:5001", csrfToken, p},
