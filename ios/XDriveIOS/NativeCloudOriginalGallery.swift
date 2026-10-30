@@ -347,7 +347,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                             .font(.footnote).foregroundStyle(.secondary)
                     }.padding()
                 } else if let still {
-                    Image(uiImage: still).resizable().scaledToFit()
+                    XDriveIOSNativeZoomableImage(image: still)
                 } else if let player {
                     VideoPlayer(player: player)
                         .onAppear { player.play() }

@@ -208,10 +208,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
                     VideoPlayer(player: player)
                         .onAppear { player.play() }
                 } else if let image {
-                    GeometryReader { proxy in
-                        Image(uiImage: image).resizable().scaledToFit()
-                            .frame(width: proxy.size.width, height: proxy.size.height)
-                    }
+                    XDriveIOSNativeZoomableImage(image: image)
                 } else if let failure {
                     Text(failure).foregroundStyle(.secondary).padding()
                 } else {
