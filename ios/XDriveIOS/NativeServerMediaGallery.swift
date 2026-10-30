@@ -240,7 +240,17 @@ struct XDriveIOSNativeServerMediaPreview: View {
                 } else if let image {
                     XDriveIOSNativeZoomablePhotoView(image: image)
                 } else if let failure {
-                    Text(failure).foregroundStyle(.secondary).padding()
+                    VStack(spacing: 8) {
+                        Text(failure).foregroundStyle(.secondary).padding(.horizontal)
+                        Button("重试") {
+                            // Explicit current-Owner retry only; a fresh task
+                            // must independently re-verify the signed source.
+                            if phase == .active && login.owner != nil {
+                                retirePreview()
+                            }
+                        }
+                        .accessibilityIdentifier("native-ios-photoasset-viewer-retry")
+                    }
                 } else {
                     ProgressView("正在验证并打开云端媒体…")
                 }
