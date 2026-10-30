@@ -732,6 +732,7 @@ func walkLegacyArchive(snapshot string, visitor func(*tar.Header, *tar.Reader) e
 	}
 	return nil
 }
+
 // pathIsWithin checks complete path components, including equality and the
 // filesystem root. A string prefix test misses "/" and symlink aliases.
 func pathIsWithin(root, path string) bool {
