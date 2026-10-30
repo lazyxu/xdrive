@@ -25,7 +25,7 @@ func TestRecoveryReviewUsesOnlyExistingOwningAgentReadEndpoint(t *testing.T) {
 		calls++
 		if r.Method != http.MethodGet ||
 			r.URL.Path != "/v1/device-backups/local-common-batch/recovery-review" ||
-			r.Header.Get("Authorization") != "Bearer "+strings.Repeat("a", 64) ||
+			r.Header.Get("Authorization") != "Bearer " + strings.Repeat("a", 64) ||
 			r.URL.Query().Get("source_id") != "42" {
 			t.Errorf("unexpected Agent historical read: %s %s", r.Method, r.URL.String())
 			w.WriteHeader(http.StatusForbidden)
@@ -94,17 +94,17 @@ func TestRecoveryReviewUsesOnlyExistingOwningAgentReadEndpoint(t *testing.T) {
 func TestRecoveryReviewRejectsForgedOrCurrentCASClaims(t *testing.T) {
 	base := validHistoricalReviewFixture()
 	cases := map[string]func(*RecoveryReviewPage){
-		"foreign_source": func(p *RecoveryReviewPage) { p.SourceID = 43 },
-		"unsafe_revision": func(p *RecoveryReviewPage) { p.Revision = MaxSafeSourceID + 1 },
-		"running": func(p *RecoveryReviewPage) { p.RunState = "running" },
-		"authoritative": func(p *RecoveryReviewPage) { p.Authoritative = true },
-		"oversized_page": func(p *RecoveryReviewPage) { p.ReviewedFiles = 17 },
+		"foreign_source":   func(p *RecoveryReviewPage) { p.SourceID = 43 },
+		"unsafe_revision":  func(p *RecoveryReviewPage) { p.Revision = MaxSafeSourceID + 1 },
+		"running":          func(p *RecoveryReviewPage) { p.RunState = "running" },
+		"authoritative":    func(p *RecoveryReviewPage) { p.Authoritative = true },
+		"oversized_page":   func(p *RecoveryReviewPage) { p.ReviewedFiles = 17 },
 		"impossible_total": func(p *RecoveryReviewPage) { p.PendingFiles++ },
-		"wrong_metadata": func(p *RecoveryReviewPage) { p.CurrentNodeMismatch++ },
-		"bad_epoch": func(p *RecoveryReviewPage) { p.PageEpoch = strings.Repeat("A", 64) },
-		"bad_next": func(p *RecoveryReviewPage) { p.NextAfterFile = 15 },
-		"no_continuation": func(p *RecoveryReviewPage) { p.HasMore = false },
-		"overflow_count": func(p *RecoveryReviewPage) { p.HistoricalCommitted = ^uint64(0) },
+		"wrong_metadata":   func(p *RecoveryReviewPage) { p.CurrentNodeMismatch++ },
+		"bad_epoch":        func(p *RecoveryReviewPage) { p.PageEpoch = strings.Repeat("A", 64) },
+		"bad_next":         func(p *RecoveryReviewPage) { p.NextAfterFile = 15 },
+		"no_continuation":  func(p *RecoveryReviewPage) { p.HasMore = false },
+		"overflow_count":   func(p *RecoveryReviewPage) { p.HistoricalCommitted = ^uint64(0) },
 	}
 	if !ValidateRecoveryReviewPage(base, 42, 0, "") {
 		t.Fatal("valid original receipt fixture rejected")
