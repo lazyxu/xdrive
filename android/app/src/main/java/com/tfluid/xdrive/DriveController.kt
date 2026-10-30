@@ -1,5 +1,9 @@
 package com.tfluid.xdrive
 
+import android.content.Context
+import android.content.ContentUris
+import android.provider.MediaStore
+
 import com.tfluid.xdrive.core.*
 import java.io.ByteArrayOutputStream
 import java.io.Closeable
@@ -1071,6 +1075,123 @@ class DriveController(
                     items = (fresh.items + result).distinctBy { it.id },
                     totalCount = fresh.totalCount + 1,
                     fileUploadCommitted = true, fileUploadActive = false)
+            }
+        }
+    }
+
+    /**
+     * Explicit user-triggered foreground ORIGINAL upload; not scheduled backup.
+     * The existing SAF global writer and Go UploadSession are reused unchanged.
+     */
+    fun backupNativePhotoOriginalForeground(
+        context: Context, candidate: NativePhotoOriginalCandidate, destinationName: String,
+    ) {
+        val initial = state.value
+        val service = api ?: return
+        val expectedUri = ContentUris.withAppendedId(
+            if (candidate.isVideo) MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+                else MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            candidate.localId,
+        )
+        if (initial.screen != Screen.GALLERY || initial.loading ||
+            initial.hasActiveNativeTransfer() || initial.destinationKind != null ||
+            initial.galleryAlbumCreateAttempted || initial.galleryAlbumEditAttempted ||
+            initial.galleryMetadataWriteAttempted || initial.galleryViewer != null ||
+            initial.fileUploadActive || initial.fileDownloadActive ||
+            initial.server.isBlank() || !initial.server.startsWith("https://") ||
+            initial.username.isBlank() || session == null ||
+            !hasNativeFullPhotoVideoReadGrant(context) ||
+            candidate.localId <= 0 || candidate.uri != expectedUri ||
+            candidate.sizeBytes !in 1..NativePhotoOriginalStager.MAX_ORIGINAL_BYTES ||
+            !candidate.mimeType.startsWith(if (candidate.isVideo) "video/" else "image/") ||
+            !validDriveNodeName(destinationName)) return
+
+        val origin = initial.server
+        val username = initial.username
+        mutableState.value = initial.copy(
+            fileUploadActive = true, fileUploadCommitted = false,
+            fileUploadBytes = 0, fileUploadTotal = candidate.sizeBytes,
+        )
+        request(isFileUpload = true) { ticket ->
+            val sameOwner = {
+                ticket == generation && state.value.server == origin &&
+                    state.value.username == username &&
+                    state.value.screen == Screen.GALLERY && session != null
+            }
+            // Known preflight failures occur before any UploadSession write.
+            val verified = try {
+                val proof = authenticated(service, ticket) { token ->
+                    NativePhotoOwnerPreflight.verify(service, origin, token,
+                        username, sameOwner)
+                }
+                checkCurrent(ticket)
+                val root = authenticated(service, ticket) { service.root(it) }
+                checkCurrent(ticket)
+                check(root.id == proof.rootId && root.revision == proof.rootRevision &&
+                    root.parentId == null && root.isDirectory)
+                proof to root
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                if (ticket == generation) mutableState.value = state.value.copy(
+                    fileUploadActive = false,
+                    error = "当前账户或根目录未通过验证，尚未开始上传原件。")
+                return@request
+            }
+            val staged = try {
+                NativePhotoMediaStoreInventory.stageOriginal(context, candidate)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                if (ticket == generation) mutableState.value = state.value.copy(
+                    fileUploadActive = false,
+                    error = "本机原件权限、大小或空间检查失败，尚未开始上传。")
+                return@request
+            }
+            staged.use { original ->
+                // No write has started: reject local changes before marking
+                // an uncertain network attempt in the existing checkpoint.
+                try {
+                    checkCurrent(ticket)
+                    check(sameOwner() && original.bytes == candidate.sizeBytes &&
+                        original.verifyBeforeWrite())
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    if (ticket == generation) mutableState.value = state.value.copy(
+                        fileUploadActive = false,
+                        error = "本机原件已变化，尚未开始上传。")
+                    return@request
+                }
+                val recovery = beginTransferRecovery(NativeTransferKind.UPLOAD, ticket)
+                val transferId = beginNativeTransfer(
+                    NativeTransferKind.UPLOAD, destinationName, original.bytes)
+                val acknowledged = authenticatedMutation(ticket) { token ->
+                    NativePhotoOneShotUploader.upload(
+                        service = service, token = token, owner = verified.first,
+                        root = verified.second, name = destinationName,
+                        original = original, currentSession = sameOwner,
+                        onProgress = { confirmed ->
+                            if (sameOwner()) {
+                                mutableState.value = state.value.copy(
+                                    fileUploadBytes = confirmed)
+                                nativeTransferProgress(transferId, confirmed)
+                            }
+                        },
+                    )
+                }
+                checkCurrent(ticket)
+                // Exact finalized Owner Node is the only successful outcome.
+                check(acknowledged.id > 0)
+                finishNativeTransfer(transferId, NativeTransferStatus.COMPLETED,
+                    original.bytes)
+                verifiedTransferRecovery(recovery, ticket)
+                checkCurrent(ticket)
+                mutableState.value = state.value.copy(
+                    fileUploadActive = false, fileUploadCommitted = true,
+                    fileUploadBytes = original.bytes)
+                // Gallery isn't modified; only a later Owner GET may show
+                // a Server original. No invented "backed up" local badge.
             }
         }
     }
