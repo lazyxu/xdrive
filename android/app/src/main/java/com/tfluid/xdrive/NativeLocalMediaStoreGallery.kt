@@ -10,6 +10,7 @@ import android.os.Looper
 import android.os.CancellationSignal
 import android.provider.MediaStore
 import android.util.Size
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -60,7 +61,12 @@ internal fun nativePhotoAccess(context: Context): Boolean =
  * All identifiers are in Compose memory for this login epoch; no uploads occur.
  */
 @Composable
-internal fun NativeLocalMediaStoreGallery(albumsOnly: Boolean, sessionId: Long) {
+internal fun NativeLocalMediaStoreGallery(
+    albumsOnly: Boolean,
+    sessionId: Long,
+    selectedAlbum: NativeLocalAlbum? = null,
+    onAlbumSelected: (NativeLocalAlbum?) -> Unit = {},
+) {
     val context = LocalContext.current
     val resolver = context.contentResolver
     val lifecycle = LocalLifecycleOwner.current
@@ -74,7 +80,9 @@ internal fun NativeLocalMediaStoreGallery(albumsOnly: Boolean, sessionId: Long) 
             PackageManager.PERMISSION_GRANTED)
     val permissionPrompt = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()) { permissionEpoch++ }
-    var selectedAlbum by remember(sessionId, albumsOnly) { mutableStateOf<NativeLocalAlbum?>(null) }
+    // The parent native Gallery owns the album breadcrumb across tab changes.
+    // It never serializes MediaStore URI/IDs into Android saved state.
+    BackHandler(albumsOnly && selectedAlbum != null) { onAlbumSelected(null) }
     var selectedMedia by remember(sessionId, albumsOnly) { mutableStateOf<NativeLocalMedia?>(null) }
     var albums by remember(sessionId, albumsOnly) { mutableStateOf<NativeLocalAlbumScan?>(null) }
     var items by remember(sessionId, albumsOnly, selectedAlbum?.id) {
@@ -196,7 +204,7 @@ internal fun NativeLocalMediaStoreGallery(albumsOnly: Boolean, sessionId: Long) 
                     style = MaterialTheme.typography.bodySmall)
             }
             if (selectedAlbum != null)
-                TextButton(onClick = { selectedAlbum = null },
+                TextButton(onClick = { onAlbumSelected(null) },
                     modifier = Modifier.testTag("native-local-album-back")) {
                     Text("返回相册")
                 }
@@ -225,7 +233,7 @@ internal fun NativeLocalMediaStoreGallery(albumsOnly: Boolean, sessionId: Long) 
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(visible, key = { it.id }) { album ->
-                    OutlinedCard(onClick = { selectedAlbum = album },
+                    OutlinedCard(onClick = { onAlbumSelected(album) },
                         modifier = Modifier.testTag("native-local-album-${album.id}")) {
                         Column(Modifier.fillMaxWidth().padding(8.dp)) {
                             NativeLocalThumbnail(album.cover, 260,
