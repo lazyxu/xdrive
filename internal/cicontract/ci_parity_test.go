@@ -58,9 +58,34 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		}
 		githubCoreJobs = append(githubCoreJobs, name)
 	}
-	if !reflect.DeepEqual(githubCoreJobs, gitlabJobs) {
-		t.Fatalf("CI core job drift: GitHub=%v GitLab=%v", githubCoreJobs, gitlabJobs)
+	// GitHub produces the isolated DSM MUI within build-client-core, whereas
+	// GitLab has a dedicated Node runner that hands its verified static assets
+	// to build-client-core as an explicit artifact dependency. Preserve the
+	// shared *core* job parity without requiring a redundant GitHub job.
+	// Only this one DSM-specific split is excluded from the name comparison;
+	// assert the matching build steps and dependency below.
+	var gitlabCoreJobs []string
+	for _, name := range gitlabJobs {
+		if name != "build-synology-ui" {
+			gitlabCoreJobs = append(gitlabCoreJobs, name)
+		}
 	}
+	if !reflect.DeepEqual(githubCoreJobs, gitlabCoreJobs) {
+		t.Fatalf("CI core job drift: GitHub=%v GitLab=%v", githubCoreJobs, gitlabCoreJobs)
+	}
+	assertGitLabJobNeeds(t, gitlab, "build-client-core", []string{"build-synology-ui"})
+	requireRaw(t, "GitHub DSM source-exact build in client-core", githubRaw,
+		"name: Build source-exact DSM shared-MUI bundle",
+		"npm run build:synology --prefix web",
+		"node web/scripts/verify-synology-ui.mjs",
+	)
+	requireRaw(t, "GitLab DSM source-exact artifact build", gitlabRaw,
+		"build-synology-ui:",
+		"npm run build:synology --prefix web",
+		"node web/scripts/verify-synology-ui.mjs",
+		"web/dist-synology/",
+		"- job: build-synology-ui",
+	)
 
 	expectedPlatforms := map[string]string{
 		"single-commit":                  "linux",
@@ -96,6 +121,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"desktop-linux":                  "$XDRIVE_CI_NODE_IMAGE",
 		"desktop-windows":                "",
 		"build-client-core":              "$XDRIVE_CI_GO_IMAGE",
+		"build-synology-ui":              "$XDRIVE_CI_NODE_IMAGE",
 		"go-linux":                       "$XDRIVE_CI_GO_IMAGE",
 		"go-linux-api":                   "$XDRIVE_CI_GO_IMAGE",
 		"go-windows":                     "",
