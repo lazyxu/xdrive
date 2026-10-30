@@ -105,7 +105,9 @@ struct XDriveIOSNativeMediaGalleryReader {
               var components = URLComponents(url: origin, resolvingAgainstBaseURL: false),
               components.scheme == "https"
         else { throw XDriveIOSNativeMediaReadFailure.invalidScope }
-        components.path = path
+        // Album IDs are individually percent-encoded. Do not double-encode
+        // their '%' escapes when constructing the URLComponents path.
+        components.percentEncodedPath = path
         components.queryItems = query.isEmpty ? nil : query
         guard let url = components.url else {
             throw XDriveIOSNativeMediaReadFailure.invalidScope
@@ -263,9 +265,24 @@ struct XDriveIOSNativeMediaGalleryReader {
         }
         if item.isVideo { return (nil, signedURL) }
         let still = try await read(signedURL, bearer: false, maximum: 32 * 1_048_576)
-        guard let image = UIImage(data: still) else {
+        // Preview responses can be compressed yet huge when decoded.
+        // Downsample off the MainActor instead of allocating unbounded pixels.
+        let bounded = await Task.detached(priority: .utility) { () -> CGImage? in
+            guard let source = CGImageSourceCreateWithData(
+                still as CFData, [kCGImageSourceShouldCache: false] as CFDictionary
+            ) else { return nil }
+            let options: [String: Any] = [
+                kCGImageSourceCreateThumbnailFromImageAlways as String: true,
+                kCGImageSourceCreateThumbnailWithTransform as String: true,
+                kCGImageSourceThumbnailMaxPixelSize as String: 4096,
+                kCGImageSourceShouldCacheImmediately as String: false
+            ]
+            return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+        }.value
+        try Task.checkCancellation()
+        guard let bounded else {
             throw XDriveIOSNativeMediaReadFailure.malformed
         }
-        return (image, nil)
+        return (UIImage(cgImage: bounded), nil)
     }
 }
