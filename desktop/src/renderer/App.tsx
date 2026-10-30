@@ -1493,6 +1493,15 @@ export default function App({
       setError('请输入服务器地址。')
       return
     }
+    // Provide immediate feedback; Electron Main enforces this independently.
+    let httpsOrigin: URL | null = null
+    try { httpsOrigin = new URL(server.trim()) } catch { /* invalid input */ }
+    if (!httpsOrigin || httpsOrigin.protocol !== 'https:' ||
+        !httpsOrigin.hostname || httpsOrigin.username || httpsOrigin.password ||
+        httpsOrigin.pathname !== '/' || httpsOrigin.search || httpsOrigin.hash) {
+      setError('服务器地址必须是完整的 HTTPS 根地址，不能使用明文 HTTP。')
+      return
+    }
     if (!username.trim()) {
       setError('请输入用户名。')
       return

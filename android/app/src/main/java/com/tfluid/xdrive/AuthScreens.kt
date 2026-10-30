@@ -151,17 +151,13 @@ internal fun UnifiedLoginForm(
     var username by remember(state.username) { mutableStateOf(state.username) }
     var password by remember { mutableStateOf("") }
     var keepLogin by remember { mutableStateOf(true) }
-    var allowHttp by remember(state.server) { mutableStateOf(state.allowHttp) }
-    var advanced by remember { mutableStateOf(false) }
-    // The transport normalizes the URL separately; the UI must not suggest
-    // that an HTTP scheme, including mixed case, can retain credentials.
-    val insecureHttp = server.trimStart().startsWith("http:", ignoreCase = true)
+    // Login only accepts HTTPS. The old HTTP opt-in is no longer exposed.
     AuthCard("欢迎使用 xDrive", "连接到你的个人云端", actions) {
         AuthField("服务器", server, { value ->
             // Do not carry an optional private socket from one Server to another.
             // Compare normalized HTTPS Origins, not a URL string's trailing slash.
-            val oldOrigin = runCatching { ServerAddress.parse(server, allowHttp).url }.getOrNull()
-            val newOrigin = runCatching { ServerAddress.parse(value, allowHttp).url }.getOrNull()
+            val oldOrigin = runCatching { ServerAddress.parse(server, false).url }.getOrNull()
+            val newOrigin = runCatching { ServerAddress.parse(value, false).url }.getOrNull()
             if (oldOrigin != newOrigin) lanIp = ""
             server = value
         }, "server", !state.loading,
@@ -178,50 +174,25 @@ internal fun UnifiedLoginForm(
         Row(
             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                 .toggleable(
-                    value = keepLogin && !insecureHttp,
-                    enabled = !state.loading && !insecureHttp,
+                    value = keepLogin,
+                    enabled = !state.loading,
                     role = Role.Checkbox,
                     onValueChange = { keepLogin = it },
                 ).testTag("keep-login"),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Checkbox(checked = keepLogin && !insecureHttp, onCheckedChange = null,
-                enabled = !state.loading && !insecureHttp,
+            Checkbox(checked = keepLogin, onCheckedChange = null,
+                enabled = !state.loading,
                 modifier = Modifier.testTag("keep-login-indicator"))
             Text("保持登录", modifier = Modifier.padding(start = 8.dp),
                 style = MaterialTheme.typography.bodyMedium)
-        }
-        if (insecureHttp) {
-            Text("明文 HTTP 连接不能保持登录，请尽量使用 HTTPS。",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-        }
-        TextButton(onClick = { advanced = !advanced }, enabled = !state.loading,
-            modifier = Modifier.testTag("connection-advanced")) {
-            Text(if (advanced) "收起连接设置" else "高级连接设置")
-        }
-        if (advanced) {
-            Row(
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                    .toggleable(
-                        value = allowHttp, enabled = !state.loading,
-                        role = Role.Checkbox, onValueChange = { allowHttp = it },
-                    ).testTag("allow-http"),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Checkbox(checked = allowHttp, onCheckedChange = null,
-                    enabled = !state.loading, modifier = Modifier.testTag("allow-http-indicator"))
-                Text("允许不安全的 HTTP 连接", modifier = Modifier.padding(start = 8.dp),
-                    style = MaterialTheme.typography.bodySmall)
-            }
-            if (allowHttp) Text("HTTP 不加密密码或文件，仅限明确可信的本地网络。",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         }
         ErrorNotice(state.error)
         Submit("登录", state.loading) {
             // Keep the entered value until successful navigation so Android
             // Autofill can offer to save it; never persist it in app state.
             // Invalid server or password errors remain editable in place.
-            login(server, allowHttp, lanIp, username, password, keepLogin && !insecureHttp)
+            login(server, false, lanIp, username, password, keepLogin)
         }
         Text("账户由 xDrive 管理员创建。", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)

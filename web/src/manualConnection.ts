@@ -36,17 +36,16 @@ function publicDNSName(host: string): boolean {
 /**
  * Return exactly one navigable origin. No paths, hashes, search parameters,
  * credentials, arbitrary schemes or non-private LAN hosts are accepted.
- * HTTP on a private address is EXPLICITLY marked insecure; the UI asks for
- * per-opening confirmation and never sends its current authentication tokens.
+ * LAN and public entry points both require HTTPS. No HTTP or auth migration.
  */
 export function xDriveManualEndpoint(
   kind: XDriveManualEndpointKind,
   input: string,
 ): XDriveManualEndpointResult {
   const raw = input.trim()
-  if (!raw) return invalid('请输入完整地址，包括 https:// 或 http:// 和端口。')
+  if (!raw) return invalid('请输入完整 HTTPS 地址和端口。')
   if (raw.length > 300) return invalid('地址太长。')
-  const authority = raw.match(/^https?:\/\/([^/?#]+)\/?$/i)?.[1]
+  const authority = raw.match(/^https:\/\/([^/?#]+)\/?$/i)?.[1]
   if (!authority) return invalid('只能填写站点根地址，不支持路径、参数、片段或其他协议。')
   let parsed: URL
   try {
@@ -54,7 +53,7 @@ export function xDriveManualEndpoint(
   } catch {
     return invalid('地址格式无效；请检查 IP、域名和端口。')
   }
-  if ((parsed.protocol !== 'https:' && parsed.protocol !== 'http:') ||
+  if (parsed.protocol !== 'https:' ||
     parsed.username || parsed.password || parsed.pathname !== '/' ||
     parsed.search || parsed.hash) {
     return invalid('不允许携带账号、密码、路径、参数或片段。')
@@ -68,7 +67,7 @@ export function xDriveManualEndpoint(
     if (hostOnly !== parsed.hostname || !privateIPv4(parsed.hostname)) {
       return invalid('局域网入口只能使用标准私有 IPv4 地址（10/8、172.16/12、192.168/16）。')
     }
-    return { origin: parsed.origin, insecure: parsed.protocol === 'http:', error: '' }
+    return { origin: parsed.origin, insecure: false, error: '' }
   }
   if (parsed.protocol !== 'https:' || !publicDNSName(parsed.hostname)) {
     return invalid('公网入口必须是 HTTPS 域名，不能使用 HTTP 或 IP。')

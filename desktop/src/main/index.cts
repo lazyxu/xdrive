@@ -7873,6 +7873,18 @@ function registerIPCHandlers() {
     if (!server || !username) {
       return { ok: false, error: { code: 'invalid_input', message: 'Server and username are required.' } }
     }
+    // The authenticated Desktop IPC must not accept plaintext HTTP even when
+    // a saved legacy profile or a direct renderer IPC caller supplies it.
+    // Do this before reading stored passwords or contacting the Go Agent.
+    let loginOrigin: URL
+    try { loginOrigin = new URL(server) } catch {
+      return { ok: false, error: { code: 'invalid_server', message: 'Desktop 登录只支持完整的 HTTPS 根地址。' } }
+    }
+    if (loginOrigin.protocol !== 'https:' || !loginOrigin.hostname ||
+        loginOrigin.username || loginOrigin.password || loginOrigin.pathname !== '/' ||
+        loginOrigin.search || loginOrigin.hash) {
+      return { ok: false, error: { code: 'invalid_server', message: 'Desktop 登录只支持完整的 HTTPS 根地址。' } }
+    }
     if (autoLogin && !rememberPassword) {
       return { ok: false, error: { code: 'invalid_input', message: 'Auto login requires remembered password.' } }
     }

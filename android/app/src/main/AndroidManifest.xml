@@ -25,12 +25,12 @@
         android:label="xDrive"
         android:supportsRtl="true"
         android:theme="@style/Theme.XDrive"
-        android:usesCleartextTraffic="true">
+        android:usesCleartextTraffic="false">
         <!-- Empty in the default APK; a signed Android-specific Baidu AK can
              be provided only at opt-in build time. Never reuse browser AK. -->
         <meta-data android:name="com.baidu.lbsapi.API_KEY"
             android:value="${xdriveBaiduAndroidMapAk}" />
-        <!-- Cleartext is admitted only by ServerAddress's explicit HTTP opt-in. -->
+        <!-- Server login is HTTPS-only; no cleartext app transport is permitted. -->
         <activity android:name=".MainActivity" android:exported="true"
             android:launchMode="singleTop" android:windowSoftInputMode="adjustResize">
             <intent-filter>

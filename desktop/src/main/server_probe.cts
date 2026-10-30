@@ -60,14 +60,14 @@ export async function probeDesktopServer(
   try {
     target = new URL(serverValue.trim())
   } catch {
-    return failure('invalid_server', '服务器地址格式无效，请填写完整的 http(s) 地址。')
+    return failure('invalid_server', '服务器地址格式无效，请填写完整的 HTTPS 地址。')
   }
   if (
-    (target.protocol !== 'https:' && target.protocol !== 'http:') ||
+    target.protocol !== 'https:' ||
     target.username || target.password || target.pathname !== '/' ||
     target.search || target.hash
   ) {
-    return failure('invalid_server', '服务器地址必须是 HTTP(S) 根地址，不能包含用户名、密码、路径、查询参数或锚点。')
+    return failure('invalid_server', '服务器地址必须是 HTTPS 根地址，不能包含用户名、密码、路径、查询参数或锚点。')
   }
 
   const controller = new AbortController()

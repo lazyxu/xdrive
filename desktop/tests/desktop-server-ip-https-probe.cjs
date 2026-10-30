@@ -36,6 +36,8 @@ test('Electron Main calls net.fetch, not Node fetch; no unsafe certificate overr
 
 test('rejects non-root, credentialed, and misleading destinations without requests', async () => {
   const disallowed = [
+    'http://192.168.2.4:8443',
+    'http://drive.example.com',
     'https://alice:secret@192.168.2.4:8443',
     lan + '/admin', lan + '/?token=sensitive', lan + '/#frag',
     'file:///etc/passwd', 'javascript:alert(1)', 'not-an-address',

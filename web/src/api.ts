@@ -736,6 +736,9 @@ export class XDriveApi {
   }
 
   private async refresh(force = false, signal?: AbortSignal | null) {
+    if (typeof window !== 'undefined' && window.location.protocol !== 'https:') {
+      throw new ApiError(403, 'Browser refresh requires HTTPS')
+    }
     if (!this.session.refreshToken && !this.session.browserSession) throw new ApiError(401, 'Session expired')
     if (!force && this.session.accessExpiresAt > Date.now() + 120_000) return
     if (this.refreshPromise) return this.refreshPromise
@@ -850,6 +853,11 @@ export class XDriveApi {
   }
 
   async login(username: string, password: string, rememberLogin = false): Promise<AuthResult> {
+    // Refuse plaintext before the first credential-bearing POST. HTTPS-only
+    // matches Desktop/Android; localhost development is not an exception.
+    if (typeof window !== 'undefined' && window.location.protocol !== 'https:') {
+      throw new ApiError(403, 'xDrive 登录只支持 HTTPS，请使用可信的 HTTPS 域名或 IP。')
+    }
     // A never-settling browser/network request must not disable Login forever.
     // Bound both Cookie login and the legacy JSON fallback with a single
     // deadline. Abort the old request and reject a late Web Lock grant before
@@ -863,8 +871,8 @@ export class XDriveApi {
       }, 15_000)
     })
     const performLogin = async (): Promise<AuthResult> => {
-      // Cookie mode is the default only on deployed HTTPS. Old Servers may not
-      // have /auth/browser yet; HTTP/dev and older deployments stay compatible.
+      // Cookie mode runs only on HTTPS. Older HTTPS Servers may still
+      // require the guarded legacy JSON login endpoint.
       if (rememberLogin && typeof window !== 'undefined' && window.location.protocol === 'https:') {
         // Sign-in must share the rotation lock with refresh/logout: otherwise
         // a delayed Set-Cookie from an old logout can erase a new Owner's login.
