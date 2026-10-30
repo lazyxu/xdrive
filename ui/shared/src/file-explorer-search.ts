@@ -38,14 +38,33 @@ export type XDriveFileExplorerSearchSourceOption = {
 }
 
 /**
- * Project only the current Owner-visible Source label and ID. Web and
- * Desktop get these through different authenticated Host transports; no
- * credentials, native Source Roots or provider secrets enter search UI.
+ * Project ONLY genuinely typed current-Owner Source IDs and labels. A typed
+ * API payload may still contain untrusted JSON at runtime: fail the entire
+ * read rather than treating malformed/duplicate rows as successful zero
+ * Sources or making a duplicated ID look like two different folders.
+ *
+ * Web and Desktop supply different authenticated transports. This function
+ * performs shape admission only; a Source ID does not convey authorization
+ * to any native mount, Server Source/Root or secret.
  */
 export function xDriveFileExplorerProjectSearchSources<T extends Readonly<{ id: number; name: string }>>(
   sources: readonly T[],
 ): XDriveFileExplorerSearchSourceOption[] {
-  return sources.map((source) => ({ id: source.id, name: source.name }))
+  if (!Array.isArray(sources)) {
+    throw new Error('Invalid authenticated Files search sources')
+  }
+  const seen = new Set<number>()
+  return sources.map(source => {
+    if (!source || typeof source !== 'object' ||
+        !Number.isSafeInteger(source.id) || source.id <= 0 ||
+        typeof source.name !== 'string' || source.name.trim().length === 0 ||
+        source.name.length > 512 || /[\x00-\x1f\x7f]/.test(source.name) ||
+        seen.has(source.id)) {
+      throw new Error('Invalid authenticated Files search sources')
+    }
+    seen.add(source.id)
+    return { id: source.id, name: source.name }
+  })
 }
 
 export type XDriveFileExplorerSearchTagOption = {
