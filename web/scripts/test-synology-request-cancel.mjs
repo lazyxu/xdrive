@@ -82,9 +82,9 @@ for (const call of [
 // Browser settings must reuse the already verified Agent Owner quota read,
 // never make a browser-origin Server request or grant a generic CGI write.
 const settingsSource = fs.readFileSync(path.join(root, 'web/src/synology.tsx'), 'utf8')
-assert.match(settingsSource, /window\\.location\\.protocol === 'https:'/)
-assert.match(settingsSource, /client\\.ownerQuota\\(controller\\.signal\\)/)
-assert.match(settingsSource, /controllerRef\\.current\\?\\.abort\\(\\)/)
+assert.match(settingsSource, /window\.location\.protocol === 'https:'/)
+assert.match(settingsSource, /client\.ownerQuota\(controller\.signal\)/)
+assert.match(settingsSource, /controllerRef\.current\?\.abort\(\)/)
 assert.match(settingsSource, /<XDriveSettingsDialog/)
-assert.doesNotMatch(settingsSource, /fetch\\(|localStorage\\.setItem\\(|Authorization:/)
+assert.doesNotMatch(settingsSource, /fetch\(|localStorage\.setItem\(|Authorization:/)
 console.log('DSM Server Owner connection check is scoped, cancellable, and fails closed on HTTP.')
