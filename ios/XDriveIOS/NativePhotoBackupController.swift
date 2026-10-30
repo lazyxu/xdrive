@@ -10,6 +10,13 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
     @Published private(set) var busy = false
     @Published private(set) var schedule: XDriveIOSPhotoAutoScheduleStore.State?
     @Published private(set) var progress: XDriveIOSPhotoBackupProgress?
+    /// Read-only UI invalidation only after this Owner's original writer
+    /// returns a Server-confirmed new Node receipt. Never asserts a write.
+    struct ConfirmedOriginalUpdate: Equatable {
+        let owner: XDriveNativeOwnerRoot
+        let id: UUID
+    }
+    @Published private(set) var confirmedOriginalUpdate: ConfirmedOriginalUpdate?
     @Published private(set) var message = "未启动相册备份"
     @Published private(set) var errorMessage: String?
 
@@ -18,6 +25,10 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
     private var runningOwner: XDriveNativeOwnerRoot?
 
     func refresh(owner: XDriveNativeOwnerRoot?) {
+        if let last = confirmedOriginalUpdate,
+           !XDriveIOSNativePhotoOwnerScope.matches(owner, last.owner) {
+            confirmedOriginalUpdate = nil
+        }
         schedule = owner.flatMap { XDriveIOSPhotoAutoScheduleStore.shared.status(owner: $0) }
     }
 
@@ -204,6 +215,13 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                 if kind == .automatic {
                     self.schedule = try XDriveIOSPhotoAutoScheduleStore.shared.recordResult(
                         owner: selected, progress: result
+                    )
+                }
+                if result.uploaded > 0 {
+                    // Confirmed writer result only; no browser notification
+                    // and no PhotoKit identifier or access token is exposed.
+                    self.confirmedOriginalUpdate = ConfirmedOriginalUpdate(
+                        owner: selected, id: UUID()
                     )
                 }
                 self.message = "本轮确认新增 \(result.uploaded)，已验证存在 \(result.verifiedAlready)，待核对 \(result.needsReview)，不可用 \(result.unavailable)。"

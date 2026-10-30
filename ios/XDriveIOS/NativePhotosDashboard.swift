@@ -214,7 +214,10 @@ struct XDriveIOSNativePhotosDashboard: View {
                 case .albums:
                     XDriveIOSNativePhotoAlbumsScreen()
                 case .cloud:
-                    XDriveIOSNativeCloudOriginalGallery(login: login)
+                    XDriveIOSNativeCloudOriginalGallery(
+                        login: login,
+                        confirmedOriginalUpdate: backup.confirmedOriginalUpdate
+                    )
                 case .map:
                     unavailable(
                         title: "图库地图尚在原生迁移",

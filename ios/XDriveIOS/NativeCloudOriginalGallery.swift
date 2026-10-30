@@ -479,8 +479,10 @@ private struct XDriveIOSNativeCloudOriginalTile: View {
 /// at a time; non-backup files never masquerade as imported PhotoAssets.
 struct XDriveIOSNativeCloudOriginalGallery: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
+    let confirmedOriginalUpdate: XDriveIOSNativePhotoBackupController.ConfirmedOriginalUpdate?
     @StateObject private var model = XDriveIOSNativeCloudOriginalModel()
     @State private var selected: XDriveIOSNativeCloudOriginal?
+    @State private var refreshAfterViewer = false
 
     var body: some View {
         ScrollView {
@@ -525,11 +527,30 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
             }.padding()
         }
         .navigationTitle("云端备份原件")
-        .fullScreenCover(item: $selected) {
+        .fullScreenCover(item: $selected, onDismiss: {
+            // Never discard an actively playing signed preview. Re-read
+            // after the Viewer closes and only for the current Owner.
+            if refreshAfterViewer {
+                refreshAfterViewer = false
+                model.reload(login: login)
+            }
+        }) {
             XDriveIOSNativeCloudOriginalPreview(node: $0, login: login)
         }
         .task { model.reload(login: login) }
+        .onChange(of: confirmedOriginalUpdate) { update in
+            guard let update,
+                  XDriveIOSNativePhotoOwnerScope.matches(login.owner, update.owner)
+            else { return }
+            if selected != nil {
+                refreshAfterViewer = true
+            } else {
+                model.reload(login: login)
+            }
+        }
         .onChange(of: login.owner) { _ in
+            // Old Owner's pending refresh must never select the next Owner.
+            refreshAfterViewer = false
             selected = nil
             model.invalidate()
             if login.owner != nil {
@@ -540,7 +561,10 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
             // Presenting a full-screen Viewer may make the wall disappear.
             // Its selected identity must survive that presentation; Owner
             // changes independently clear selection and invalidate the model.
-            if selected == nil { model.invalidate() }
+            if selected == nil {
+                refreshAfterViewer = false
+                model.invalidate()
+            }
         }
     }
 }

@@ -27,13 +27,13 @@ test('native bottom destinations have fixed order and only one dynamic slot', ()
 test('Gallery owns local, albums, cloud and map subroutes; media uses native fullscreen', () => {
   assert.match(ui, /XDriveIOSNativeLocalGalleryScreen\(\)/);
   assert.match(ui, /XDriveIOSNativePhotoAlbumsScreen\(\)/);
-  assert.match(ui, /XDriveIOSNativeCloudOriginalGallery\(login: login\)/);
+  assert.match(ui, /XDriveIOSNativeCloudOriginalGallery\([\s\S]*?login: login,[\s\S]*?confirmedOriginalUpdate: backup\.confirmedOriginalUpdate/);
   assert.match(ui, /gallerySource = source\s+tab = \.gallery/);
   assert.match(ui, /case \.map:/);
   assert.match(local, /\.fullScreenCover\(item: \$selected, onDismiss: \{ restoreAfterViewer\(\) \}\)/);
   assert.match(albums, /\.fullScreenCover\(item: \$selected, onDismiss: \{ restoreAfterViewer\(\) \}\)/);
   const cloud = read('ios/XDriveIOS/NativeCloudOriginalGallery.swift');
-  assert.match(cloud, /\.fullScreenCover\(item: \$selected\)/);
+  assert.match(cloud, /\.fullScreenCover\(item: \$selected, onDismiss:/);
   assert.match(cloud, /if selected == nil \{ model\.invalidate\(\) \}/);
   assert.match(cloud, /\.onChange\(of: login.owner\)/);
   assert.match(local, /if selected != nil \{ suspendForViewer\(\) \}/);
