@@ -1,5 +1,39 @@
 # Synology DSM 7 authenticated local UI
 
+## 2026-10-30 source audit: minimal usable DSM scope
+
+Canonical master source audited at \`0ff2fa1a3dd478e73fd48e84ff50ce2ef9c2cb99\`. This is a **source-level capability inventory**, not a device acceptance or a claim of exact-HEAD CI PASS. The old 2026-10-27 seven-route matrix below is historical; the current Desktop/DSM app has one shared \`XDriveApp\` and **16 registered routes**. A rendered common page alone does not prove a DSM data/action adapter exists.
+
+| Route | DSM authenticated capability currently wired | Remaining for full DSM graphic MVP |
+| --- | --- | --- |
+| Overview | Local Agent backup source/status fallback | Desktop Server metrics, tasks and complete actions |
+| Files | Authenticated current Owner root/cursor browse, thumbnail, bounded viewer/download | Search, upload/folder creation, move/copy/delete/rename, arbitrary-size download |
+| Gallery | Real Owner-scoped albums/wall and bounded viewer media | Interaction/metadata parity, unsupported formats, device playback verification |
+| Remote Pull | Shared page exists | No authenticated DSM SourceManager port |
+| Device Backup | Local Agent backup read/run/schedule and remote Owner read-only scope | Full local source setup/target/rules and safety validation |
+| Conflicts | Shared page exists | No authenticated DSM conflict data/control port |
+| Diagnostics | DSM session and local Agent source checks | Server/disk/update/transfer diagnostics |
+| Transfers | Local Agent backup tasks/history only | Complete cloud transfer queue and real controls |
+| Global Tasks | Shared page exists | No verified Server admin role or global task port |
+| Cloud Storage | Server Owner quota through Agent | Full inventory/distribution/admin storage operations |
+| Local Storage | Browser-origin quota only | NAS volume and Agent cache metrics |
+| Admin Maintenance | Shared page exists | Verified Server admin and maintenance port |
+| Admin Users | Shared page exists | Verified Server admin and users port |
+| Admin Audit | Shared page exists | Verified Server admin and audit port |
+| Admin Storage | Shared page exists | Verified Server admin and storage port |
+| Admin Services | Shared page exists | Verified Server admin and dependency port |
+
+**Therefore: 8 routes have a genuine but incomplete DSM data source and 8 lack a DSM route-specific authenticated adapter.** The shared settings dialog is an additional overlay, not a seventeenth route. No DSM remote Root grants or arbitrary Agent browser RPC are authorized.
+
+### GUI deployment and P0 delivery gates
+
+1. DSM 7 SPK remains package-user-only. Target architecture is \`armada38x\`/ARMv7 (DS218j); other NAS architectures are not supported by this package.
+2. The CLI already supports restricted-user \`xd login --server ... --password-stdin\`, local Source setup and Agent scheduling. GUI Server-address/login mutation is not implemented; it must not impersonate DSM authentication as xDrive Server authentication.
+3. Authenticated same-origin HTTPS CGI, CSRF and Owner read projection exist. GUI Files write, Server admin role and broader Source/Task operations remain deliberately unavailable until explicitly verified Host ports are built.
+4. Optional MUI SPK build has a separate reproducible package path. No source-only/Artifact result proves published, installed or accepted.
+5. The current PR adds a read-only Server Owner quota verification inside the **existing shared Settings dialog**, with cancellation and an explicit non-HTTPS fail-closed explanation. It does not add a new auth/write route or grant remote control. CI and merged status must be checked on its exact PR HEAD.
+6. Source-exact build, signing/manifest/SHA, install/upgrade persistence, actual Source first/incremental backup, crash recovery, ACL, CGI effective UID and browser playback/download still need evidence. Device-only acceptance is **跳过（未验收）** by the owner's decision, not PASS.
+
 ## Current shared UI status (2026-10-27)
 
 The merged baseline includes [#2712](https://github.com/lazyxu/xdrive/pull/2712) (authenticated local UI and Owner file preview), [#2785](https://github.com/lazyxu/xdrive/pull/2785) (native video/audio Range), [#2802](https://github.com/lazyxu/xdrive/pull/2802) (Owner thumbnails) and [#2820](https://github.com/lazyxu/xdrive/pull/2820) (thumbnail-first Quick Look). Single-file download [#2823](https://github.com/lazyxu/xdrive/pull/2823) is also merged; it was still open at the start of this audit and its merged state was rechecked before this continuation. This matrix records implemented components and adapter wiring; CI results, built artifacts, publication, installation and physical acceptance require their own evidence.
