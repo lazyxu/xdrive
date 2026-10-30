@@ -19,9 +19,9 @@ func TestBaiduNativeWorldGridStableForMiddlePanAndAntimeridian(t *testing.T) {
 	}
 	second := first
 	second.West, second.East = 100.6, 108.6
-	legacyA := int(math.Floor((103.5-first.West)/((first.East-first.West)/8)))
-	legacyB := int(math.Floor((103.5-second.West)/((second.East-second.West)/8)))
-	legacyC := int(math.Floor((103.7-second.West)/((second.East-second.West)/8)))
+	legacyA := int(math.Floor((103.5 - first.West) / ((first.East - first.West) / 8)))
+	legacyB := int(math.Floor((103.5 - second.West) / ((second.East - second.West) / 8)))
+	legacyC := int(math.Floor((103.7 - second.West) / ((second.East - second.West) / 8)))
 	if legacyA != 3 || legacyB != 2 || legacyC != 3 {
 		t.Fatal("regression fixture does not reproduce viewport-local grouping split")
 	}
@@ -31,7 +31,7 @@ func TestBaiduNativeWorldGridStableForMiddlePanAndAntimeridian(t *testing.T) {
 	dx, dy, err4 := baiduPhotoMapWorldCellIndex(second, 103.7, 1.5)
 	if err != nil || err2 != nil || err3 != nil || err4 != nil ||
 		ax != bx || ax != cx || ax != dx || ay != by || ay != cy || ay != dy {
-		t.Fatalf("middle Owner-photo group changed across same zoom pan: (%d,%d) (%d,%d) (%d,%d) (%d,%d)",ax,ay,bx,by,cx,cy,dx,dy)
+		t.Fatalf("middle Owner-photo group changed across same zoom pan: (%d,%d) (%d,%d) (%d,%d) (%d,%d)", ax, ay, bx, by, cx, cy, dx, dy)
 	}
 	wrap := baiduPhotoMapBounds{
 		West: 179.9, East: -179.9, South: -2, North: 3,

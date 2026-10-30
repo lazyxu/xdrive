@@ -14,8 +14,8 @@ import (
 // not 100 client-side points or fabricated grid-center GPS coordinates.
 // 8x8 fixed bins cap the returned cells at 64 at any viewport size.
 const (
-	baiduPhotoMapCellGrid = 8
-	baiduPhotoMapCellMax  = baiduPhotoMapCellGrid * baiduPhotoMapCellGrid
+	baiduPhotoMapCellGrid        = 8
+	baiduPhotoMapCellMax         = baiduPhotoMapCellGrid * baiduPhotoMapCellGrid
 	baiduPhotoMapWorldStableGrid = "world_stable_v1"
 )
 
@@ -70,7 +70,7 @@ func finiteBaiduCellDimension(value float64) bool {
 // Use the SAME base 360/180, maximum 26 halvings, and -180/-90 origins in
 // the trusted TypeScript validator; neither Host nor Baidu derives a group.
 type baiduPhotoMapWorldGrid struct {
-	StepX, StepY float64
+	StepX, StepY        float64
 	WestTile, SouthTile float64
 }
 
@@ -91,7 +91,7 @@ func baiduPhotoMapWorldCellGrid(bounds baiduPhotoMapBounds) (baiduPhotoMapWorldG
 	x, y := step(360, width), step(180, height)
 	return baiduPhotoMapWorldGrid{
 		StepX: x, StepY: y,
-		WestTile: math.Floor((bounds.West + 180) / x),
+		WestTile:  math.Floor((bounds.West + 180) / x),
 		SouthTile: math.Floor((bounds.South + 90) / y),
 	}, nil
 }

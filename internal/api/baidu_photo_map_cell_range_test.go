@@ -289,10 +289,10 @@ func TestBaiduCellRangeOriginalGalleryScopeAndRevocation(t *testing.T) {
 	}
 	selectedStable := baiduPhotoMapCellSelection{
 		Bounds: moved, CellX: secondStable.CellX, CellY: secondStable.CellY,
-		RepresentativeAssetID: secondStable.AssetID,
-		RepresentativeNodeID: secondStable.NodeID,
+		RepresentativeAssetID:  secondStable.AssetID,
+		RepresentativeNodeID:   secondStable.NodeID,
 		RepresentativeRevision: secondStable.NodeRevision,
-		PhotoCount: secondStable.PhotoCount, GridScheme: baiduPhotoMapWorldStableGrid,
+		PhotoCount:             secondStable.PhotoCount, GridScheme: baiduPhotoMapWorldStableGrid,
 	}
 	if !baiduPhotoMapCellSelectionCurrent(selectedStable, stableB) {
 		t.Fatal("fresh stable Owner Cell not current")
