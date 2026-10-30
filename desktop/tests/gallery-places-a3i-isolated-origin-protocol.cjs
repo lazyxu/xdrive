@@ -103,12 +103,22 @@ test('camera is strictly tagged BD09LL and camera JSON cannot carry secrets', ()
     longitude: 116.43, zoom: 14 }
   const packet = xDriveParseBaiduIsolatedChildEvent(input('camera', { camera }), boundary())
   assert.deepEqual(packet.camera, camera)
+  // JSAPI4 reports continuous camera zoom (3–21), not just old integers.
+  // These are still anonymous, exactly four-field BD09 camera snapshots.
+  for (const zoom of [3, 9.4, 18, 19, 20.5, 21]) {
+    assert.deepEqual(xDriveParseBaiduIsolatedChildEvent(
+      input('camera', { camera: { ...camera, zoom } }), boundary())?.camera,
+    { ...camera, zoom })
+  }
   for (const invalid of [
     { ...camera, coordinate_space: 'wgs84' },
     { ...camera, latitude: 91 },
     { ...camera, latitude: NaN },
     { ...camera, zoom: 2 },
-    { ...camera, zoom: 9.4 },
+    { ...camera, zoom: 22 },
+    { ...camera, zoom: NaN },
+    { ...camera, zoom: Infinity },
+    { ...camera, zoom: '20.5' },
     { ...camera, originalGPS: 'private EXIF' },
   ]) assert.equal(xDriveParseBaiduIsolatedChildEvent(
     input('camera', { camera: invalid }), boundary()), null)
@@ -175,10 +185,18 @@ test('one-time BD09 return camera cannot contain Owner or private EXIF', () => {
   const msg=xDriveCreateBaiduIsolatedCameraMessage(boundary(),valid)
   assert.deepEqual(msg,{version:1,generation:7,nonce,kind:'restore-camera',camera:valid})
   assert.deepEqual(Object.keys(msg.camera).sort(),['coordinate_space','latitude','longitude','zoom'])
+  for(const zoom of [3,3.5,18,19,20.5,21]){
+    const camera={...valid,zoom}
+    const returned=xDriveCreateBaiduIsolatedCameraMessage(boundary(),camera)
+    assert.deepEqual(returned?.camera,camera)
+    assert.deepEqual(Object.keys(returned.camera).sort(),
+      ['coordinate_space','latitude','longitude','zoom'])
+  }
   for(const candidate of [
     {...valid,coordinate_space:'wgs84'}, {...valid,photo_url:'/private/blob'},
-    {...valid,asset_id:90}, {...valid,latitude:NaN}, {...valid,zoom:19},
-    {...valid,zoom:3.5},
+    {...valid,asset_id:90}, {...valid,latitude:NaN}, {...valid,zoom:22},
+    {...valid,zoom:2.9}, {...valid,zoom:NaN}, {...valid,zoom:Infinity},
+    {...valid,zoom:'20.5'},
   ]) assert.equal(xDriveCreateBaiduIsolatedCameraMessage(boundary(),candidate),null)
   assert.equal(xDriveCreateBaiduIsolatedCameraMessage({...boundary(),nonce:'bad'},valid),null)
 })

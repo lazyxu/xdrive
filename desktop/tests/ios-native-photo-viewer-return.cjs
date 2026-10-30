@@ -36,9 +36,13 @@ test('album viewer return revalidates the same album and last confirmed offset',
 })
 
 test('Owner-specific cloud Viewer retains modal state but clears stale previews', () => {
-  assert.match(cloud, /\.fullScreenCover\(item: \$selected\)/)
-  assert.match(cloud, /if selected == nil \{ model\.invalidate\(\) \}/)
-  assert.match(cloud, /\.onChange\(of: login\.owner\) \{ _ in\s*selected = nil\s*model\.invalidate\(\)/)
+  assert.match(cloud, /\.fullScreenCover\(item: \$selected, onDismiss: \{/)
+  assert.match(cloud, /if selected == nil \{\s*refreshAfterViewer = false\s*model\.invalidate\(\)/)
+  assert.match(cloud, /if refreshAfterViewer \{\s*refreshAfterViewer = false\s*model\.reload\(login: login\)/)
+  const ownerChangeStart = cloud.lastIndexOf('.onChange(of: login.owner) { _ in')
+  assert.ok(ownerChangeStart >= 0)
+  const ownerChanged = cloud.slice(ownerChangeStart)
+  assert.match(ownerChanged, /refreshAfterViewer = false\s*selected = nil\s*model\.invalidate\(\)/)
   assert.match(cloud, /player\?\.pause\(\)[\s\S]*still = nil[\s\S]*dismiss\(\)/)
   assert.doesNotMatch(local + albums, /UserDefaults\.standard|URLSession\(|UploadSession|WKWebView/)
 })

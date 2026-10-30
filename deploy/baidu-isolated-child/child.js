@@ -45,7 +45,7 @@
     value.latitude >= -85 && value.latitude <= 85 &&
     typeof value.longitude === 'number' && Number.isFinite(value.longitude) &&
     value.longitude >= -180 && value.longitude <= 180 &&
-    Number.isInteger(value.zoom) && value.zoom >= 3 && value.zoom <= 18
+    Number.isFinite(value.zoom) && value.zoom >= 3 && value.zoom <= 21
   const validEnvelope = data => isRecord(data) && data.version === 1 &&
     Number.isSafeInteger(data.generation) && data.generation > 0 &&
     typeof data.nonce === 'string' && /^[a-f0-9]{32,64}$/.test(data.nonce) &&
@@ -194,7 +194,9 @@
       const zoom = map.getZoom()
       if (center && Number.isFinite(center.lng) && Number.isFinite(center.lat) &&
           Math.abs(center.lng)<=180 && Math.abs(center.lat)<=85 &&
-          Number.isInteger(zoom) && zoom>=3 && zoom<=18) {
+          // A real JSAPI4 pinch may settle on a fractional zoom above 18.
+          // Forward only bounded BD09 camera primitives, never Provider data.
+          Number.isFinite(zoom) && zoom>=3 && zoom<=21) {
         send('camera',{camera:{coordinate_space:'bd09ll',
           latitude:center.lat,longitude:center.lng,zoom}})
       }
