@@ -1,4 +1,6 @@
-# Android → iOS PWA 移动 UI 对齐清单（2026-10-25）
+# Android → iOS PWA 移动 UI 对齐清单（2026-10-25，历史对照）
+
+> **2026-10-30 new mobile rule:** iOS App 所有产品页面改用 SwiftUI/UIKit 原生实现；Android App 继续使用 Jetpack Compose 原生实现。Web/PWA 是独立的 React 浏览器产品和设计参考，不再作为 iOS IPA 的运行时 UI；原生客户端通过共用 Server API/数据契约与设计 Token 保持体验一致。下面旧版 iOS PWA 逐像素对照仅作历史基线，不再禁止原生实现。参见 [mobile-native-migration.md](architecture/mobile-native-migration.md)。
 
 > **2026-10-27 当期源代码补充（以此节优先，以下 2026-10-25 记录是开发历史，不再是现状）。** Android 已合入真实 Files/Recent/Favorites/Search、SAF 上传下载、回收站、图库/精选集 Owner Range、图片/Media3/Live Viewer、Keystore 会话与基础传输面板。#2816 真实相册封面、#2821 Files 缩略图、#2824 登录错误提示和 #2828 Files → 原生 Viewer 已合入 master。当前候选将真实图库跨 Range 左右滑动、加载失败重试与原生 Files 的单文件返回逻辑合并；准确 HEAD CI 尚需验证。
 

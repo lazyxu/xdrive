@@ -4,13 +4,15 @@
 
 ## 用户可见目标
 
+> **2026-10-30 mobile decision:** Android 的 Compose 连接/登录维持原生；iOS 的服务器选择、登录和设置必须逐步迁移为 SwiftUI/UIKit 原生页面，不再由 WKWebView PWA 登录页承载。现有 iOS WKWebView/ServerOrigin 代码仍是临时实现，切换必须保留 TLS、Owner 和后台授权隔离。
+
 四个平台都应让使用者明确知道自己正在连接哪个 **xDrive Server**，并能通过受支持的 Host 配置流程更换 Server。共享的是配置体验和安全规则，而非未经验证的统一网络/登录传输。
 
 | Host | 当前入口 | 现状 | 待补齐 |
 | --- | --- | --- | --- |
 | Desktop/Electron | Desktop 登录：服务器 + 内网连接参数 | 已有可编辑 Server 与连接探测 | 保持与 NAS/手机一致的文案和认证要求 |
 | Android 原生 | Compose \`UnifiedLoginForm\` 的“服务器”及“内网 IP（可选）” | 已能输入 Server；可信 HTTPS 域名校验，明文 HTTP 仅经高级设置明确选择 | 持续做 PWA 1:1 行为回归 |
-| iOS IPA | \`XDriveWebAppHome.swift\` 的“服务器 HTTPS 地址”与“更换服务器地址” | 已能配置/切换 HTTPS Origin，\`WKWebView\` 复用 Web/PWA 页面 | 保持 PhotoKit 与 Web Owner 的双向退出/清理和证书信任 |
+| iOS IPA（过渡中） | 当前 \`XDriveWebAppHome.swift\` 可选择 HTTPS Origin，随后 WKWebView 显示网页登录 | 此为迁移前真实实现，不是最终原生 UI | 原生 SwiftUI/UIKit 登录/切换 + Keychain/Owner/Root/后台授权安全迁移 |
 | DSM NAS 套件 | \`web/src/synology.tsx\` 的共用设置弹窗 | **仅外观设置**；数据来自套件用户已连接的 Agent，浏览器通过同源 HTTPS \`backup.cgi\` 读取 | **实现真正经授权的 Server 地址查看、输入、验证、切换流程** |
 
 DSM 的 Web 页面 Origin 是 DSM NAS 域名（例如 \`https://nas.example.com\`），不是 xDrive Server Origin；这两个地址不能直接互换。DSM 账户也不是 xDrive Server 的 Owner，二者权限不得相互推导。

@@ -1,87 +1,57 @@
-# xDrive iOS — one shared UI, native capabilities through Host Adapter
+# xDrive iOS — fully native SwiftUI/UIKit target (2026-10-30)
 
-The iOS app uses **one canonical xDrive React/MUI application**. The native
-SwiftUI shell exists only to select a trusted HTTPS server, host a persistent
-same-origin `WKWebView`, handle platform-level connection failures and connect
-approved iPhone capabilities. Files, Gallery, Map, Viewer, account Login,
-Settings and iPhone Photos backup are all rendered by **the same PWA UI**.
+**New decision:** ALL installed iPhone product pages will use native SwiftUI/
+UIKit: Server selection, Login/account, Files, Gallery/cloud/local PhotoKit,
+Map, Viewer, Settings, Transfers and native photo backup controls. The iOS App
+will **not use Web/PWA React or WKWebView for product UI**. Android stays
+native Kotlin/Compose; Web/PWA stays an independent React client.
 
-Do not create or revive separate SwiftUI Login, Files, Gallery, Viewer, Settings
-or Photos pages. The old native Login/Photos diagnostic screens have been
-removed from the consolidated shared-host branch; their reusable PhotoKit,
-encrypted ledger and existing Go UploadSession service code remains.
-On launch only the exact obsolete native-login refresh credential is purged
-from the legacy Keychain service; the PWA cookies, native Device identity and
-original-photo ledger secrets are not touched.
+**Current as-built, NOT completed target:** `XDriveIOSApp` still launches
+`XDriveWebAppHome.swift` and a trusted HTTPS WKWebView hosting the Web/PWA
+login and pages. This must remain functional until native equivalents pass
+required tests and replace it; this decision alone is NOT shipped native UI.
 
-## iPhone Photos backup
+## Preserve and reuse existing native code
 
-The shared xDrive **账户 → 设置 → iPhone 系统相册备份** section appears only
-when the real iOS WKWebView Host Adapter is available and the PWA has a current
-Server-authenticated Owner. The regular browser/PWA/Desktop/DSM UI does not
-pretend to provide iOS PhotoKit.
+The iOS code already contains useful Swift PhotoKit enumeration, Full/Limited
+permission checks, native still/video/Live original extraction, local albums,
+encrypted V1/V2 intent ledgers, SHA-256/Node receipt verification, Go
+UploadSession/CAS transfer, Device enrollment, Keychain and scoped BGTask
+authorization. Do NOT delete or duplicate these. The current foreground
+uploader uses a short-lived **Web Owner bearer**, which cannot simply be
+reused as a new native login. Migrate explicit Owner/root validation and
+Keychain refresh with a reviewed compatibility plan; do not silently restore
+obsolete native credentials or erase uncertain upload states.
 
-1. Sign in once through the **shared PWA login** in the iOS app.
-2. Open the existing account Settings; iOS native Photos status is verified
-   against the current PWA account's short-lived access token.
-3. Explicitly grant Full or Limited Photos permission if requested. The count
-   refers only to the authorized subset.
-4. Optionally allow iCloud original downloads (off by default).
-5. Tap **开始本轮照片备份** and confirm the destination Owner/server in
-   the iOS system prompt. Only then does PhotoKit export original bytes.
-6. The native host re-verifies Server installation + Owner/root and reuses the
-   existing encrypted intent journal and Go UploadSession/CAS/Node receipt
-   implementation. Results and bounded real progress return to shared Settings.
+## Native migration priorities
 
-MVP in the consolidated follow-up: each pass scans one bounded window of
-at most 256 currently authorized media (64 metadata entries per lazy page),
-and uploads at most 20 **original items** through a single existing Owner
-UploadSession/CAS/verified Node receipt path. Ordinary stills and original
-videos are single-resource uploads; Live Photos require both PhotoKit
-original resources packaged together into one full-SHA verified ZIP Node.
-The ZIP preserves the originals but is **not** yet a playable Gallery Live
-resource or an automatic restore into Apple Photos. The user may explicitly
-enable a 15-minute/1-hour/6-hour/daily *foreground-only* automatic interval
-while the authenticated App remains open, with Owner/root re-verification
-and encrypted journal incremental deduplication. The draft iOS scoped
-background integration additionally offers a revocable native Owner/Device/
-Root grant and a one-original BGProcessingTask attempt while protected data
-is available. Lock-screen work, force-quit wakeup, precise OS scheduling,
-100k sharded full-library ledger and privileged Device SourceRun are **not
-implemented or validated**. If Server login/PWA fails, the native connection
-recovery screen can cancel this device's BG request and Keychain vault without
-network access; this leaves remote grant revocation explicitly pending. PhotoKit offsets can shift on edits and are not durable IDs.
+1. Audit historical SwiftUI/UIKit Login, navigation, Files/Photos/Viewer
+   screens and recover safe code by focused adaptation, never broad revert.
+2. Native Server/HTTPS/Owner Login + Keychain scoped session, logout and
+   server switch; exact CA/hostname/IP-SAN checks, no credential redirects.
+3. Native Files/Gallery/Map/Viewer + local PhotoKit albums, thumbnail paging,
+   videos/Live, cancellations/return anchors, truthful missing capabilities.
+4. Native backup UI and state owned by Swift, reusing current PhotoKit and
+   encrypted journal/UploadSession/CAS/Node receipts; native Owner auth,
+   no blind duplicate writes on uncertain ACK; no mirror delete.
+5. Independent authorized BGTask/URLSession where supported, persistence,
+   revoke/stop, 100k bounded performance; no force-quit/locked-screen
+   guarantee without real hardware evidence.
+6. Exact-head IPA Xcode/native unit/API/security/CI gates and restore/update
+   compatibility; only then retire legacy WKWebView UI bridge.
 
-Canceled/backgrounded/stale-Owner work is stopped conservatively. A lost
-create/finalize acknowledgment remains **needs reconciliation**; it never
-licenses a blind duplicate upload. No mirror deletion or thumbnail-for-original
-substitution. Preserve the existing upload/ledger logic instead of creating a
-second uploader.
+The existing bounded core scans at most 256 authorized items (64 per page)
+and uploads at most 20 complete original still/video/Live ZIP items per
+foreground pass; an OS-admitted BGTask currently attempts at most one
+original while protected data is accessible. Live ZIP is not yet a native
+Gallery Live pair, and iOS does not guarantee background timing. Current
+features and limitations are not certified by a successful unsigned IPA build.
 
-## Security and session boundaries
-
-The native host bridge accepts only messages from the pinned, system-trusted
-HTTPS *main frame*. Each private operation verifies the current Owner identity
-and root with authenticated Server calls; the page cannot self-declare Owner
-privileges. Only a short-lived **in-memory PWA access token is passed one way,
-Web → native**, during a user-requested operation. Swift uses an ephemeral
-URLSession, ordinary TLS and redirect rejection. No native Keychain refresh
-credential, cookie, raw PhotoKit identifier, GPS, original filename or byte
-content is sent back to JavaScript. A sign-out, Owner change, WebView navigation,
-Settings closure or app background cancels active foreground work.
-
-The PWA-selected server uses `xdrive.ios.web.origin`; the legacy
-`xdrive.ios.server` key is migrated once for upgrades and is no longer an
-independent visible native Login entry. Only system-trusted HTTPS domain or IP
-certificates are supported; do not bypass certificate errors.
-
-The shared React Login and Settings include **更换 iPhone App 服务器**;
-the real iOS Host Adapter invokes the host's existing confirmation before a
-change. Only the initial trusted-HTTPS connection chooser and error recovery
-remain small SwiftUI bootstrapping surfaces, not a second authenticated UI.
-
-See [shared-ios-host-adapter.md](docs/shared-ios-host-adapter.md) for protocol,
-security expectations, exact CI, and physical acceptance matrix.
+Full target and recovery rules:
+[mobile-native-migration.md](../docs/architecture/mobile-native-migration.md).
+Historical `docs/shared-ios-host-adapter.md` and iOS-PWA docs describe
+**existing transitional behavior only**; their "no SwiftUI page" directions
+are superseded by this decision.
 
 ## GitHub Actions: unsigned IPA for SideStore
 
