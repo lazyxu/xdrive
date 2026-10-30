@@ -22,6 +22,8 @@ new Function('module', 'exports', compile(
   read('ui/shared/src/file-explorer-read-identity.ts'), 'file-explorer-read-identity.ts',
 ))(mod, mod.exports)
 const readNodeID = mod.exports.xDriveFileExplorerReadNodeID
+const canonicalReadNodeID = mod.exports.xDriveFileExplorerCanonicalReadNodeID
+const thumbnailRequest = mod.exports.xDriveFileExplorerThumbnailRequest
 
 function actualCallback(file, name, injected) {
   const source = read(file)
@@ -58,6 +60,9 @@ const file = { id: 12, kind:'file', revision: 7, name:'movie.mp4' }
 const invalids = [
   { ...file, id:0 }, { ...file, id:-1 }, { ...file, id:Number.MAX_SAFE_INTEGER+1 },
   { ...file, id:'bogus' }, { ...file, id:1.5 }, { ...file, kind:'dir' },
+  { ...file, id:'' }, { ...file, id:' 12 ' }, { ...file, id:'012' },
+  { ...file, id:'0xC' }, { ...file, id:'1.2e1' }, { ...file, id:'+12' },
+  { ...file, id:'12.0' }, { ...file, id:'12\n' }, { ...file, id:'0' },
 ]
 test('shared read projection retains legitimate numeric and numeric-string IDs, blocks invalid rows', () => {
   assert.equal(readNodeID(file),12)
@@ -101,4 +106,33 @@ test('real Host adapters and cancellation are not replaced with browser fallback
   assert.match(desktop,/folderTreeDownloadSupported/)
   assert.doesNotMatch(read('ui/shared/src/file-explorer-read-identity.ts'),
     /window\.|ipcRenderer|fetch\s*\(|credentials|mountPath/)
+})
+
+
+test('preview and thumbnail share canonical positive read IDs, not numeric aliases', () => {
+  assert.equal(canonicalReadNodeID(12), 12)
+  assert.equal(canonicalReadNodeID('12'), 12)
+  assert.equal(canonicalReadNodeID('9007199254740991'), Number.MAX_SAFE_INTEGER)
+  for (const alias of [
+    '', ' ', ' 12 ', '012', '0xC', '1.2e1', '+12', '12.0', '12\n',
+    0, 1.2, -1, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1,
+    '9007199254740992', null, undefined,
+  ]) {
+    assert.equal(canonicalReadNodeID(alias), null, String(alias))
+    assert.equal(readNodeID({ ...file, id: alias }), null, String(alias))
+    assert.equal(thumbnailRequest({ ...file, id: alias }), null, String(alias))
+  }
+})
+
+test('optional thumbnail revision never imports an ambiguous cache identity', () => {
+  assert.deepEqual(thumbnailRequest(file), { nodeID: 12, revision: 7 })
+  assert.deepEqual(thumbnailRequest({ ...file, id: '12', revision: '7' }),
+    { nodeID: 12, revision: 7 })
+  for (const revision of [undefined, '', ' ', '07', '0x7', '+7', '7.0',
+    '7e0', 0, -1, 7.5, NaN, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.deepEqual(thumbnailRequest({ ...file, revision }), { nodeID: 12 },
+      'unverified optional revision must be omitted: ' + String(revision))
+  }
+  assert.equal(thumbnailRequest(file, false), null)
+  assert.equal(thumbnailRequest({ ...file, kind: 'dir' }), null)
 })

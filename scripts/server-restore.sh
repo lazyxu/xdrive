@@ -395,6 +395,105 @@ if [[ "$BACKUP_VERSION" == "2" && "$DATABASE_ONLY" != "1" ]]; then
     "$CAS_SERVER_IMAGE" verify --repo /repo --snapshot "$CAS_SNAPSHOT" </dev/null
 fi
 
+# Resolve the real Server /data identity BEFORE any safety backup or service
+# interruption. Docker -v creates a missing bind source; doing this only
+# after Server stop risks a false-empty restore and an avoidable outage.
+preflight_restore_data_target() {
+  local server_id source_type source volume_matches actual_volume
+  local live_real archive_real archive_path
+  server_id="$(compose ps -aq server | head -n1 || true)"
+  source_type=""
+  source=""
+  if [[ -n "$server_id" ]]; then
+    source_type="$(docker inspect "$server_id" --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Type}}{{end}}{{end}}' </dev/null)" || {
+      echo "restore: cannot inspect existing Server /data; no services stopped." >&2
+      return 1
+    }
+    case "$source_type" in
+      bind)
+        source="$(docker inspect "$server_id" --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Source}}{{end}}{{end}}' </dev/null)" || return 1
+        ;;
+      volume)
+        source="$(docker inspect "$server_id" --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Name}}{{end}}{{end}}' </dev/null)" || return 1
+        ;;
+      *)
+        echo "restore: unsupported or missing Server /data mount; no services stopped." >&2
+        return 1
+        ;;
+    esac
+  else
+    # A legacy Compose volume is usable only if there is ONE unambiguous
+    # match. Never recreate a missing Server to discover its intended mount.
+    volume_matches="$(docker volume ls -q \
+      --filter 'label=com.docker.compose.project=xdrive' \
+      --filter 'label=com.docker.compose.volume=file-data' </dev/null)" || return 1
+    if [[ -z "$volume_matches" || "$volume_matches" == *$'\n'* ]]; then
+      echo "restore: missing or ambiguous legacy /data volume; no services stopped." >&2
+      return 1
+    fi
+    source_type=volume
+    source="$volume_matches"
+  fi
+  [[ -n "$source" ]] || {
+    echo "restore: cannot resolve live /data source; no services stopped." >&2
+    return 1
+  }
+  case "$source_type" in
+    bind)
+      if [[ "$source" != /* || ! -d "$source" || -L "$source" ]]; then
+        echo "restore: missing or unsafe /data bind source; no services stopped." >&2
+        return 1
+      fi
+      live_real="$(readlink -e -- "$source" 2>/dev/null || true)"
+      [[ -n "$live_real" && "$live_real" != / && -d "$live_real" ]] || {
+        echo "restore: unsafe live /data directory; no services stopped." >&2
+        return 1
+      }
+      if [[ "$DATABASE_ONLY" != 1 ]]; then
+        archive_path="$BACKUP_DIR"
+        [[ "$BACKUP_VERSION" != 2 ]] || archive_path="$CAS_REPOSITORY"
+        archive_real="$(readlink -e -- "$archive_path" 2>/dev/null || true)"
+        [[ -n "$archive_real" && -d "$archive_real" ]] || {
+          echo "restore: unsafe backup source path; no services stopped." >&2
+          return 1
+        }
+        case "$archive_real/" in
+          "$live_real/"*)
+            echo "restore: backup source nested inside live /data; no services stopped." >&2
+            return 1
+            ;;
+        esac
+        case "$live_real/" in
+          "$archive_real/"*)
+            echo "restore: live /data nested inside backup source; no services stopped." >&2
+            return 1
+            ;;
+        esac
+      fi
+      ;;
+    volume)
+      [[ "$source" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || {
+        echo "restore: invalid /data volume identity; no services stopped." >&2
+        return 1
+      }
+      actual_volume="$(docker volume inspect "$source" --format '{{.Name}}' </dev/null 2>/dev/null || true)"
+      [[ "$actual_volume" == "$source" ]] || {
+        echo "restore: missing /data named volume; no services stopped." >&2
+        return 1
+      }
+      ;;
+    *)
+      echo "restore: unsupported /data mount; no services stopped." >&2
+      return 1
+      ;;
+  esac
+  preflight_mount_type="$source_type"
+  preflight_data_source="$source"
+}
+preflight_restore_data_target || exit 1
+first_mount_type="$preflight_mount_type"
+first_data_source="$preflight_data_source"
+
 # Integrity of the requested v2 snapshot must be verified BEFORE creating a
 # pre-restore safety backup. Otherwise a corrupt/missing CAS object would
 # unnecessarily stop/restart the healthy live service even though restore is
@@ -406,6 +505,14 @@ if [[ "$SAFETY_BACKUP" == "1" ]]; then
     --config-dir "$XDRIVE_HOME" \
     --output-dir "$XDRIVE_HOME/backups/pre-restore" \
     --allow-inconsistent
+fi
+
+# server-backup.sh may pause/restart the Server. Re-evaluate the actual mount
+# before any destructive step and reject a changed Root/volume identity.
+preflight_restore_data_target || exit 1
+if [[ "$preflight_mount_type" != "$first_mount_type" || "$preflight_data_source" != "$first_data_source" ]]; then
+  echo "restore: Server /data mount changed during safety backup; no restore performed." >&2
+  exit 1
 fi
 
 server_was_running=0
@@ -465,6 +572,14 @@ if [[ "$BACKUP_VERSION" == "2" && "$DATABASE_ONLY" != "1" && "$data_source" == /
       "$repository_real/"*) echo "restore: live data is nested inside the repository." >&2; exit 1 ;;
     esac
   fi
+fi
+
+# Final identity fence: a different mount after Server stop cannot be used
+# to replace PostgreSQL or extract backup bytes. Keep the original fail-closed
+# v2 repository overlap guard as a second independent defense.
+if [[ "$mount_type" != "$first_mount_type" || "$data_source" != "$first_data_source" ]]; then
+  echo "restore: Server /data target changed during maintenance; refusing database replacement." >&2
+  exit 1
 fi
 
 postgres_id="$(compose ps -q postgres | head -n1)"

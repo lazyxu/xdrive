@@ -162,3 +162,88 @@ func TestStructuredVerificationCLIJSONUsesNonzeroExitOnCorruption(t *testing.T) 
 		t.Fatal("CLI JSON exposed private storage details")
 	}
 }
+
+// The public v2 writer publishes these six exact files. A CAS-only verifier
+// must not report success for a malformed or checksum-tampered published
+// snapshot, nor may standalone restore erase an existing destination.
+func TestPublishedV2MetadataGuardsVerifyAndRestore(t *testing.T) {
+	cases := []struct {
+		name   string
+		tamper func(*testing.T, string)
+	}{
+		{name: "valid"},
+		{name: "missing-manifest", tamper: func(t *testing.T, snapshot string) {
+			t.Helper()
+			if err := os.Remove(filepath.Join(snapshot, "manifest.json")); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{name: "altered-verify-receipt", tamper: func(t *testing.T, snapshot string) {
+			t.Helper()
+			writeTestFile(t, filepath.Join(snapshot, "verify.json"), []byte(`{"tampered":true}`))
+		}},
+		{name: "inconsistent-with-fresh-checksums", tamper: func(t *testing.T, snapshot string) {
+			t.Helper()
+			writeTestFile(t, filepath.Join(snapshot, "manifest.json"),
+				[]byte(`{"format_version":2,"file_data_included":true,"consistency_verified":false}`))
+			retentionFixtureChecksum(t, snapshot)
+		}},
+		{name: "duplicate-manifest-with-fresh-checksums", tamper: func(t *testing.T, snapshot string) {
+			t.Helper()
+			writeTestFile(t, filepath.Join(snapshot, "manifest.json"),
+				[]byte(`{"format_version":2,"file_data_included":true,"consistency_verified":false,"consistency_verified":true}`))
+			retentionFixtureChecksum(t, snapshot)
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			source, repo := filepath.Join(root, "source"), filepath.Join(root, "repo")
+			if err := os.MkdirAll(source, 0700); err != nil {
+				t.Fatal(err)
+			}
+			hash := testCAS(t, source, "actual CAS data that must remain intact")
+			snapshot := retentionFixtureSnapshot(t, repo, source, "xdrive-backup-20261030T010000Z")
+			if tc.tamper != nil {
+				tc.tamper(t, snapshot)
+			}
+			report, err := verifyWithReport(repo, snapshot, true)
+			if tc.tamper == nil {
+				if err != nil || report.State != "success" || report.ObjectsChecked != 1 {
+					t.Fatalf("valid published snapshot rejected: %+v %v", report, err)
+				}
+				return
+			}
+			if err == nil || report.State != "failed" || report.FailureCategory != "unsafe_snapshot" ||
+				report.ObjectsChecked != 0 || report.BytesHashed != 0 {
+				t.Fatalf("unsafe published snapshot verified: %+v err=%v", report, err)
+			}
+			var output bytes.Buffer
+			args := []string{"verify", "--repo", repo, "--snapshot", filepath.Base(snapshot), "--json"}
+			if err := runWithReportWriter(args, &output); err == nil {
+				t.Fatal("CLI verification accepted untrusted published metadata")
+			}
+			var decoded verificationReport
+			if err := json.Unmarshal(output.Bytes(), &decoded); err != nil ||
+				decoded.State != "failed" || decoded.FailureCategory != "unsafe_snapshot" {
+				t.Fatalf("CLI did not return bounded fail-closed receipt: %+v, %v", decoded, err)
+			}
+			if strings.Contains(output.String(), root) || strings.Contains(output.String(), hash) {
+				t.Fatal("structured report leaked a private path or object hash")
+			}
+			target := filepath.Join(root, "recovery")
+			if err := os.Mkdir(target, 0700); err != nil {
+				t.Fatal(err)
+			}
+			sentinel := filepath.Join(target, "must-not-remove")
+			writeTestFile(t, sentinel, []byte("original destination data"))
+			if err := restore(repo, snapshot, target); err == nil {
+				t.Fatal("standalone restore accepted an unsafe published snapshot")
+			}
+			unchanged, err := os.ReadFile(sentinel)
+			if err != nil || string(unchanged) != "original destination data" {
+				t.Fatalf("failed restore modified existing destination: %q %v", unchanged, err)
+			}
+		})
+	}
+}

@@ -1,6 +1,6 @@
 # Native iOS Server PhotoAsset Gallery — scoped read-only increment
 
-This master-targeted PR extends the native Photos/navigation code integrated by merged PR #3279. Its Gallery implementation has not yet passed its own exact-HEAD macOS IPA or complete CI; parent PR results do not substitute for those checks.
+This master-targeted PR extends the native Photos/navigation code integrated by merged PR #3279. Its Gallery implementation must pass a fresh exact-HEAD macOS IPA, full CI and Final Gate after conflict resolution. Previous green checks do not cover the new merge commit.
 
 The existing owner-authorized endpoints from Web/PWA supply native data: `GET /api/v1/media/items?range=true&offset=&limit=48`, `GET /api/v1/media/albums`, and `GET /api/v1/media/albums/{id}/items?range=true`. No new Server API or upload/CAS writer is introduced.
 
@@ -30,3 +30,7 @@ Before merging this PR into master: run the actual native source contracts and X
 - A prior verified cloud Gallery page is retained **only** for a transient network failure, HTTP 408/429, or HTTP 5xx. Clear cached names/thumb readers immediately on HTTP 401/403/404/410, invalid page/scope, TLS trust errors, or failed Owner/root re-verification; do not present a disconnected/error state as successful access.
 - The `NativeMediaPageRetryPolicyChecks.swift` Foundation-only regression tests classify these failures. They are run before the iPhoneOS build in `ios-unsigned-ipa.yml` and are a necessary source-level gate, **not** real iPhone UI evidence.
 - Do not add local backup task-log encryption, duplicate upload writers, PDF editing or other non-MVP work to this branch.
+
+## Conflict-resolution note
+
+The master iOS PhotoKit and cloud-original viewers already use `XDriveIOSNativeZoomablePhotoView` and preserve a bounded originating page on Viewer return. Retain those tested behaviors, adapt the local/cloud/album grids, and reuse the existing zoom view for the newly added canonical Server PhotoAsset Viewer. No second zoom component or media upload writer is introduced. Physical iPhone validation remains 未验收.

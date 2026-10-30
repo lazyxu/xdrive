@@ -236,7 +236,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
                     VideoPlayer(player: player)
                         .onAppear { player.play() }
                 } else if let image {
-                    XDriveIOSNativeZoomableImage(image: image)
+                    XDriveIOSNativeZoomablePhotoView(image: image)
                 } else if let failure {
                     Text(failure).foregroundStyle(.secondary).padding()
                 } else {

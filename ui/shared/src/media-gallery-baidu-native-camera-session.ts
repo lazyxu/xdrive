@@ -24,8 +24,10 @@ export function xDriveValidBaiduNativeCameraSnapshot(
     camera.latitude >= -85 && camera.latitude <= 85 &&
     typeof camera.longitude === 'number' && Number.isFinite(camera.longitude) &&
     camera.longitude >= -180 && camera.longitude <= 180 &&
-    typeof camera.zoom === 'number' && Number.isInteger(camera.zoom) &&
-    camera.zoom >= 3 && camera.zoom <= 18
+    typeof camera.zoom === 'number' && Number.isFinite(camera.zoom) &&
+    // JSAPI 4.0 supports smooth fractional zoom and levels through 21.
+    // This is a short-lived BD09 camera hint, never Owner/Cell permission.
+    camera.zoom >= 3 && camera.zoom <= 21
 }
 
 function validScope(scope: string): boolean {

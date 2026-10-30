@@ -1592,3 +1592,140 @@ test('video poster borrowed from Gallery never revokes the shared thumbnail URL'
     URL.revokeObjectURL = old
   }
 })
+
+
+test('synchronous Host text loader error is a recoverable Viewer failure, not a React effect crash', async () => {
+  const target = { id: 98811, revision: 4, name: 'report.txt', kind: 'file' }
+  const fault = new Error('disposed native text reader')
+  const signals = []
+  let view
+  try {
+    await act(async () => {
+      view = create(React.createElement(XDriveFilePreviewSurface, {
+        target,
+        loadTextPreview: (_node, signal) => {
+          signals.push(signal)
+          if (signals.length === 1) throw fault
+          return Promise.resolve({ text: 'Current authorized text', size: 23, truncated: false })
+        },
+        fallback: React.createElement('div', { role: 'alert' }, 'Preview unavailable'),
+      }))
+      await Promise.resolve()
+    })
+    assert.equal(signals.length, 1, 'read still starts synchronously for the current Owner')
+    assert.equal(view.root.findByProps({ role: 'alert' }).children.join(''), 'Preview unavailable')
+    const retry = view.root.findAll(el => el.type === 'button' && el.props['aria-label'] === '重试预览')
+    assert.equal(retry.length, 1, 'synchronous fault uses the same explicit Retry as async errors')
+    await act(async () => { retry[0].props.onClick(); await Promise.resolve() })
+    assert.equal(signals.length, 2, 'one authorized new read')
+    assert.equal(signals[0].aborted, true, 'failed attempt retires on Retry')
+    assert.deepEqual(view.root.findAllByType('pre').map(el => el.children.join('')), ['Current authorized text'])
+  } finally {
+    if (view) await act(async () => view.unmount())
+  }
+})
+
+test('synchronous signed media loader failures keep video, audio and PDF Retry usable', async () => {
+  for (const scenario of [
+    { name: 'clip.mp4', element: 'video' },
+    { name: 'clip.mp3', element: 'audio' },
+    { name: 'manual.pdf', element: 'iframe' },
+  ]) {
+    const signals = []
+    let view
+    try {
+      await act(async () => {
+        view = create(React.createElement(XDriveFilePreviewSurface, {
+          target: { id: 98812, revision: 1, name: scenario.name, kind: 'file' },
+          loadPreviewURL: (_node, _kind, signal) => {
+            signals.push(signal)
+            if (signals.length === 1) throw new Error('Host ticket reader closed')
+            return Promise.resolve('https://example.invalid/authorized/' + scenario.name)
+          },
+          fallback: React.createElement('div', { role: 'alert' }, 'Preview unavailable'),
+        }))
+        await Promise.resolve()
+      })
+      assert.equal(signals.length, 1, scenario.name + ': no asynchronous delay to the initial read')
+      assert.equal(view.root.findAllByProps({ role: 'alert' }).length, 1,
+        scenario.name + ': synchronous failure must render fallback')
+      const retry = view.root.findAll(el => el.type === 'button' && el.props['aria-label'] === '重试预览')
+      assert.equal(retry.length, 1, scenario.name + ': user can manually retry')
+      await act(async () => { retry[0].props.onClick(); await Promise.resolve() })
+      assert.equal(signals.length, 2, scenario.name + ': one new authorized ticket')
+      assert.equal(signals[0].aborted, true, scenario.name + ': cancelled initial signal')
+      assert.equal(view.root.findByType(scenario.element).props.src,
+        'https://example.invalid/authorized/' + scenario.name)
+    } finally {
+      if (view) await act(async () => view.unmount())
+    }
+  }
+})
+
+test('synchronous cached video poster failure cannot prevent valid native video playback', async () => {
+  let view
+  const calls = []
+  try {
+    await act(async () => {
+      view = create(React.createElement(XDriveFilePreviewSurface, {
+        target: { id: 98813, revision: 2, name: 'still-playable.mp4', kind: 'file' },
+        loadPreviewURL: async () => 'https://example.invalid/current-video.mp4',
+        loadImagePreview: (_node, signal) => {
+          calls.push(signal)
+          throw new Error('Host thumbnail adapter disposed')
+        },
+      }))
+      await Promise.resolve()
+    })
+    assert.equal(calls.length, 1)
+    assert.equal(view.root.findByType('video').props.src,
+      'https://example.invalid/current-video.mp4',
+      'poster lookup failure is nonfatal to native video playback')
+    assert.equal(view.root.findByType('video').props.poster, undefined)
+  } finally {
+    if (view) await act(async () => view.unmount())
+  }
+})
+
+test('synchronous Live Photo motion loader fault retires pending state and retries on next explicit hold', async () => {
+  const Chip = React.forwardRef(({ icon, label }, ref) => React.createElement('span', { ref }, icon, label))
+  const { XDriveLivePhotoSurface } = loadShared(
+    path.join(repo, 'ui/shared/src/mui/LivePhotoSurface.tsx'),
+    { '@mui/material': { ...require('@mui/material'), Chip } },
+    new Map(),
+  )
+  const calls = []
+  let view
+  const gesture = () => view.root.findAllByProps({ role: 'button' })[0]
+  const hold = async () => {
+    await act(async () => {
+      gesture().props.onKeyDown({ key: 'Enter', repeat: false, preventDefault() {}, stopPropagation() {} })
+      gesture().props.onKeyUp({ key: 'Enter', preventDefault() {}, stopPropagation() {} })
+      await Promise.resolve()
+    })
+  }
+  try {
+    await act(async () => {
+      view = create(React.createElement(XDriveLivePhotoSurface, {
+        still: React.createElement('div', null, 'Current still'),
+        sourceKey: '98814:7',
+        loadMotion: (_progress, signal) => {
+          calls.push(signal)
+          if (calls.length === 1) throw new Error('synchronous revoked native motion ticket')
+          return Promise.resolve({ url: 'https://example.invalid/current-motion.mp4' })
+        },
+      }))
+    })
+    await hold()
+    assert.equal(calls.length, 1)
+    assert.equal(gesture().props['aria-busy'], false,
+      'failed immediate ticket must not leave Live spinner or in-flight guard stuck')
+    assert.equal(view.root.findAllByType('video').length, 0)
+    await hold()
+    assert.equal(calls.length, 2, 'a new explicit hold retries exactly once')
+    assert.equal(view.root.findByType('video').props.src,
+      'https://example.invalid/current-motion.mp4')
+  } finally {
+    if (view) await act(async () => view.unmount())
+  }
+})

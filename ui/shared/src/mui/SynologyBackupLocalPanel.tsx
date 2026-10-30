@@ -11,6 +11,7 @@ import { XDriveDeviceBackupLocalCommonBatchDialog } from './DeviceBackupLocalCom
 import { XDriveDeviceBackupLocalScheduleDialog } from './DeviceBackupLocalScheduleDialog'
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
 import { XDriveStatePanel } from './StatePanel'
+import { XDriveSynologyBackupTargetBrowser } from './SynologyBackupTargetBrowser'
 import { XDriveStatusAlert } from './StatusAlert'
 
 type LocalHistory = {
@@ -34,6 +35,7 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
   const [scheduleID, setScheduleID] = useState<number | null>(null)
   const [notice, setNotice] = useState('')
   const [historyRevision, setHistoryRevision] = useState(0)
+  const [showTargetBrowser, setShowTargetBrowser] = useState(false)
   const [histories, setHistories] = useState<Record<number, LocalHistory>>({})
   const refresh = useCallback(() => { setRefreshID((n) => n + 1) }, [])
 
@@ -92,8 +94,14 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
       title="设备备份"
       subtitle="查看本机同步文件夹、进度与历史；所有操作只能在所属设备本机进行。"
       pageActions={
-        <Button size="small" startIcon={<RefreshRoundedIcon />} disabled={loading}
-          onClick={refresh}>刷新</Button>
+        <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+          <Button size="small" variant="outlined"
+            onClick={() => setShowTargetBrowser(open => !open)}>
+            {showTargetBrowser ? '收起云端目标' : '查看云端目标'}
+          </Button>
+          <Button size="small" startIcon={<RefreshRoundedIcon />} disabled={loading}
+            onClick={refresh}>刷新</Button>
+        </Stack>
       }
     >
       {error ? <XDriveStatusAlert tone="neutral">{error}</XDriveStatusAlert> : null}
@@ -152,6 +160,9 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
           </Stack>
         )}
       </Box>
+      {showTargetBrowser ? (
+        <XDriveSynologyBackupTargetBrowser key={refreshID} client={client} />
+      ) : null}
       {scheduleID !== null && (
         <XDriveDeviceBackupLocalScheduleDialog
           sourceID={scheduleID}

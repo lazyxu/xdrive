@@ -347,7 +347,8 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                             .font(.footnote).foregroundStyle(.secondary)
                     }.padding()
                 } else if let still {
-                    XDriveIOSNativeZoomableImage(image: still)
+                    XDriveIOSNativeZoomablePhotoView(image: still)
+                        .accessibilityLabel("云端照片，可双指缩放或双击放大")
                 } else if let player {
                     VideoPlayer(player: player)
                         .onAppear { player.play() }

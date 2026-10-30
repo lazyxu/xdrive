@@ -111,6 +111,42 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+# A v2 capture cannot publish a source-inconsistent snapshot: both v2 restore
+# and safe CAS pruning must refuse it. Reject either flag order before any
+# Docker operation, repository mkdir, lock inode or service maintenance.
+backup_drill_stage="v2-inconsistent-option-preflight"
+mkdir -p "$TMP/backup-flag-probe-bin"
+cat > "$TMP/backup-flag-probe-bin/docker" <<'DOCKER_PROBE'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'docker invoked despite rejected v2 options\n' >> "$XD_BACKUP_FLAG_DOCKER_MARKER"
+exit 91
+DOCKER_PROBE
+chmod 700 "$TMP/backup-flag-probe-bin/docker"
+for order in first second; do
+  case "$order" in
+    first) rejected_flags=(--incremental --allow-inconsistent) ;;
+    second) rejected_flags=(--allow-inconsistent --incremental
+      --repository-dir "$TMP/v2-forbidden-target/incremental") ;;
+  esac
+  marker="$TMP/rejected-v2-docker-$order"
+  if XD_BACKUP_FLAG_DOCKER_MARKER="$marker" \
+      PATH="$TMP/backup-flag-probe-bin:$PATH" \
+      bash "$ROOT/scripts/server-backup.sh" --config-dir "$XDRIVE_HOME" \
+        "${rejected_flags[@]}" >"$TMP/rejected-v2-$order.out" 2>"$TMP/rejected-v2-$order.err"; then
+    echo "v2 accepted --allow-inconsistent ($order)" >&2
+    exit 1
+  fi
+  grep -Fq 'xDrive backup: --incremental cannot be combined with --allow-inconsistent.' \
+    "$TMP/rejected-v2-$order.err"
+  if [[ -e "$marker" || -e "$XDRIVE_HOME/backups/incremental" ||
+        -e "$TMP/v2-forbidden-target" ]]; then
+    echo "invalid v2 flags started Docker or created a repository ($order)" >&2
+    exit 1
+  fi
+done
+backup_drill_stage="setup"
+
 compose up -d postgres >/dev/null
 wait_postgres
 printf 'admin-password-123\n' | compose run --rm --no-deps server admin create --username backup-admin --password-stdin >/dev/null

@@ -425,7 +425,16 @@ export function XDriveLivePhotoSurface({
       setMotionBytes({ loadedBytes, totalBytes })
     }
 
-    void loader(onProgress, controller.signal)
+    // Host/native motion callbacks can throw synchronously on disposal or
+    // permission revocation. Route that fault through the existing retryable
+    // ticket failure path without leaving loadStarted or the spinner stuck.
+    let request: Promise<XDriveLivePhotoMotionSource | null | undefined>
+    try {
+      request = Promise.resolve(loader(onProgress, controller.signal))
+    } catch (error) {
+      request = Promise.reject(error)
+    }
+    void request
       .then((value) => {
         if (!value) {
           if (isCurrentRequest()) {

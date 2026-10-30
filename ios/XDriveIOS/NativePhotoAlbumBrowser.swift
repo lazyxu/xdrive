@@ -267,8 +267,13 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
         }
         .navigationTitle(album.name)
         .navigationBarTitleDisplayMode(.inline)
-        .fullScreenCover(item: $selected) { XDriveIOSNativeLocalPhotoDetail(candidate: $0) }
-        .onAppear { libraryMonitor.start(); reload() }
+        .fullScreenCover(item: $selected, onDismiss: { restoreAfterViewer() }) {
+            XDriveIOSNativeLocalPhotoDetail(candidate: $0)
+        }
+        .onAppear {
+            libraryMonitor.start()
+            if selected == nil && page == nil && !loading { reload() }
+        }
         .onChange(of: libraryMonitor.revision) { _ in
             invalidate()
             error = "系统相册发生变化，请重新读取当前页面。"
@@ -280,6 +285,12 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
             if selected != nil { suspendForViewer() }
             else { libraryMonitor.stop(); invalidate() }
         }
+    }
+
+    private func restoreAfterViewer() {
+        // Open the same album/page only after fresh PhotoKit authorization.
+        if phase == .active { reload() }
+        else { invalidate() }
     }
 
     private func reload() {
@@ -422,8 +433,7 @@ struct XDriveIOSNativePhotoAlbumsScreen: View {
     }
 
     private func suspendForNavigation() {
-        // A pushed album detail still depends on its parent NavigationLink.
-        // Cancel the old read without dropping the original album row.
+        // Album NavigationLink must keep its originating row alive.
         epoch = UUID()
         task?.cancel()
         task = nil

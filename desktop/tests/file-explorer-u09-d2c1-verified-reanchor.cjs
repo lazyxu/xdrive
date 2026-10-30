@@ -95,5 +95,28 @@ test('U09-D2c1 shared visual owner and Web/Desktop transport fence authorized fi
   assert.match(app, /childPositionSupported: filesHostCapabilities\.childPositionSupported/)
   assert.doesNotMatch(desktop, /\/children\/position\?/)
   assert.match(source, /position\.revision !== revision/)
-  assert.match(source, /Number\(rows\[0\]\.revision\) !== position\.revision/)
+  assert.match(source, /xDriveVerifiedReanchorRow\(rows, nodeID, position\.revision\)/)
+})
+
+test('U09-D2c1 exact Range rejects ambiguous Node and revision projections', async () => {
+  const rows = [
+    { id: '042', revision: 7 },
+    { id: ' 42 ', revision: 7 },
+    { id: '0x2a', revision: 7 },
+    { id: '4.2e1', revision: 7 },
+    { id: 42, revision: '07' },
+    { id: 42, revision: ' 7 ' },
+    { id: 42, revision: '0x7' },
+    { id: 42, revision: 7.5 },
+    { id: 42, revision: Number.MAX_SAFE_INTEGER + 1 },
+  ]
+  for (const row of rows) {
+    assert.equal(await verify(params({
+      collectRange: async () => [row],
+    })), null, JSON.stringify(row))
+  }
+  const valid = await verify(params({
+    collectRange: async () => [{ id: '42', revision: '7', name: 'valid.jpg' }],
+  }))
+  assert.equal(valid?.item.id, '42', 'only canonical decimal strings are admitted')
 })

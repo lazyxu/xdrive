@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Box, Button, Typography } from '@mui/material'
 import PhotoLibraryOutlinedIcon from '@mui/icons-material/PhotoLibraryOutlined'
+import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import { XDriveMediaGalleryCoverThumbnail } from './MediaGalleryCoverThumbnail'
 import { XDriveMediaAsyncVideoPoster } from './MediaGalleryPreviewMedia'
 import type { MediaThumbnailLoader } from './MediaGallery'
@@ -989,13 +990,19 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
               boxShadow:2,
               backdropFilter:edgeToEdge ? 'blur(18px)' : undefined,
               WebkitBackdropFilter:edgeToEdge ? 'blur(18px)' : undefined}}>
-            {trustedSummary.total_count > 0
-              ? `当前地图可查看 ${trustedSummary.total_count.toLocaleString('zh-CN')} 张照片`
-              : hasMembershipFilters
-                ? '当前筛选条件下暂无定位照片；可调整筛选或手动刷新。'
-                : '当前地图暂无可显示的定位照片；位置派生完成后会自动重查，也可手动刷新。'}
+            {!acceptedViewport
+              // Bootstrapping /cells covers the entire Owner world, NOT the
+              // SDK camera. Never label its global count as visible photos.
+              // Both SDK Hosts get a truthful camera count only after a fresh
+              // bounded current-viewport /cells response is accepted.
+              ? '正在确认当前地图视窗的定位照片…'
+              : trustedSummary.total_count > 0
+                ? `当前地图可查看 ${trustedSummary.total_count.toLocaleString('zh-CN')} 张照片`
+                : hasMembershipFilters
+                  ? '当前筛选条件下暂无定位照片；可调整筛选或手动刷新。'
+                  : '当前地图暂无可显示的定位照片；位置派生完成后会自动重查，也可手动刷新。'}
           </Typography>
-          {phase === 'ready' && trustedSummary.total_count === 0 &&
+          {phase === 'ready' && acceptedViewport && trustedSummary.total_count === 0 &&
               acceptedScope.current?.key === currentFilterKey ? (
             <Button size="small" variant="outlined"
               data-xdrive-places-empty-map-recheck
@@ -1009,16 +1016,25 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
               acceptedScope.current?.key === currentFilterKey ? (
             <Button size="small" variant="outlined"
               data-xdrive-places-nonempty-map-recheck
-              sx={{minHeight:44,textTransform:'none',pointerEvents:'auto',
-                bgcolor:'background.paper',boxShadow:2}}
+              aria-label="刷新当前地图照片" title="刷新当前地图照片"
+              sx={{minWidth:edgeToEdge ? 44 : undefined,minHeight:44,
+                p:edgeToEdge ? 0 : undefined,textTransform:'none',
+                pointerEvents:'auto',bgcolor:'background.paper',boxShadow:2}}
               // A partially indexed GPS library can gain BD-09 positions
               // without the camera moving. Reuse the current signed Owner
               // Camera/Album, never launch a Provider SDK session or poll 100k.
+              // Only compact map chrome hides the long label; both SDK hosts
+              // keep this exact accessible, authorized Parent refresh.
               onClick={() => refreshFilteredCells.current?.(true)}>
-              刷新当前地图照片
+              <RefreshRoundedIcon aria-hidden="true" fontSize="small"
+                sx={{display:edgeToEdge ? 'block' : 'none'}}/>
+              <Box component="span"
+                sx={{display:edgeToEdge ? 'none' : 'inline'}}>
+                刷新当前地图照片
+              </Box>
             </Button>
           ) : null}
-          {unpaintedCellCount > 0 ? (
+          {acceptedViewport && unpaintedCellCount > 0 ? (
             <Button size="small" variant="outlined"
               data-xdrive-places-reveal-hidden-cells
               sx={{minHeight:44,textTransform:'none',pointerEvents:'auto',
@@ -1093,7 +1109,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
             : '动态地图隔离会话不可用；地点列表与照片墙仍可使用。'}
         </Typography>
       ):null}
-      {scopeIsCurrent && accessible.length>0 ? (
+      {scopeIsCurrent && acceptedViewport && accessible.length>0 ? (
         <Box component="details" data-xdrive-places-cluster-list ref={clusterListRef}>
           <Box component="summary" sx={{cursor:'pointer',typography:'caption',
             color:'text.secondary',minHeight:44,display:'flex',alignItems:'center',

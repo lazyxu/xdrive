@@ -26,6 +26,8 @@ import {
   useXDriveFileExplorerRecent,
   useXDriveFileExplorerOperationController,
   useXDriveFileExplorerOwnerSourceOptions,
+  useXDriveFileExplorerLocalReveal,
+  xDriveFileExplorerLocationAncestorCrumbs,
   useXDriveFileExplorerExternalDropController,
   xDriveCaptureVideoPosterBlob,
   xDriveFileKind,
@@ -87,6 +89,17 @@ function xDriveWebFilesSearchInput(target: Element | null): target is HTMLInputE
     target.placeholder === '搜索全部文件' && Boolean(target.closest(
       '[data-mobile-files-search-region], [data-xdrive-file-explorer]',
     ))
+}
+
+/**
+ * Old WebKit may not expose AbortSignal.throwIfAborted() (or reason).
+ * Keep the Owner-authorized Files Columns reader usable while active and
+ * fail closed before/after the network read if its route is superseded.
+ */
+function xDriveAssertWebFileColumnReadActive(signal: AbortSignal): void {
+  if (!signal.aborted) return
+  if (typeof signal.throwIfAborted === 'function') signal.throwIfAborted()
+  throw signal.reason ?? new DOMException('The operation was aborted.', 'AbortError')
 }
 
 type WebSearchResult = XDriveCloudFilesSearchResult<Node>
@@ -224,8 +237,17 @@ export default function WebFileExplorer({
   const uploadPickerParentIDRef = useRef<number | null>(null)
   const folderUploadPickerParentIDRef = useRef<number | null>(null)
   const folderPickerLimitNoticeShownRef = useRef(false)
-  const revealSequenceRef = useRef(0)
-  const [localRevealTarget, setLocalRevealTarget] = useState<{ parentID: number; nodeID: number; requestID: string } | null>(null)
+  const routeRevealTarget = initialDirectoryID && initialRevealNodeID &&
+    Number.isSafeInteger(initialRevealNodeID) && initialRevealNodeID > 0
+    ? { parentID: initialDirectoryID, nodeID: initialRevealNodeID,
+        requestID: `route:${navigationSessionStorageKey ?? ''}:${initialDirectoryID}:${initialRevealNodeID}` }
+    : null
+  const routeRevealKey = routeRevealTarget?.requestID ?? ''
+  const { localRevealTarget, requestReveal } = useXDriveFileExplorerLocalReveal({
+    lifecycleKey: navigationSessionStorageKey ?? '',
+    requestPrefix: 'local',
+    externalKey: routeRevealKey,
+  })
   const renameLifecycleKeyRef = useRef(navigationSessionStorageKey ?? '')
   renameLifecycleKeyRef.current = navigationSessionStorageKey ?? ''
 
@@ -644,13 +666,16 @@ export default function WebFileExplorer({
       if (!Number.isSafeInteger(parentID) || parentID <= 0) {
         throw new Error('Invalid Owner directory identity')
       }
-      signal.throwIfAborted()
+      xDriveAssertWebFileColumnReadActive(signal)
       const page = await api.listPageAbortable(parentID, {
         cursor: typeof cursor === 'string' && cursor ? cursor : undefined,
         limit: 200,
         sort: 'name',
         order: 'asc',
       }, signal)
+      // A non-cooperative or cached Host response cannot republish private
+      // directory rows after an Owner/route switch.
+      xDriveAssertWebFileColumnReadActive(signal)
       return { items: page.items, nextCursor: page.next_cursor ?? null }
     },
   }), [api, explorerCrumbs[0]?.id])
@@ -1353,43 +1378,20 @@ export default function WebFileExplorer({
   }, [api, beginNavigationIntent, isNavigationIntentCurrent,
     navigationReadSignalForIntent, navigateTo])
 
-  const requestReveal = (parentID: number, nodeID: number) => {
-    revealSequenceRef.current += 1
-    setLocalRevealTarget({
-      parentID, nodeID,
-      requestID: `local:${navigationSessionStorageKey ?? ''}:${revealSequenceRef.current}`,
-    })
-  }
-  const routeRevealTarget = initialDirectoryID && initialRevealNodeID &&
-    Number.isSafeInteger(initialRevealNodeID) && initialRevealNodeID > 0
-    ? { parentID: initialDirectoryID, nodeID: initialRevealNodeID,
-        requestID: `route:${navigationSessionStorageKey ?? ''}:${initialDirectoryID}:${initialRevealNodeID}` }
-    : null
-  // A new external deep link supersedes an earlier in-app lookup.
-  const routeRevealKey = routeRevealTarget?.requestID ?? ''
-  const lastRouteRevealKeyRef = useRef(routeRevealKey)
-  if (lastRouteRevealKeyRef.current !== routeRevealKey) {
-    lastRouteRevealKeyRef.current = routeRevealKey
-    if (localRevealTarget) setLocalRevealTarget(null)
-  }
-  const revealTarget = localRevealTarget?.requestID.startsWith(
-    `local:${navigationSessionStorageKey ?? ''}:`,
-  ) ? localRevealTarget : routeRevealTarget
+  // Route-scope changes synchronously revoke the retired in-app reveal,
+  // even before effects run. No setState occurs during React render.
+  const revealTarget = localRevealTarget ?? routeRevealTarget
 
   const showNodeLocation = async (location: NodeLocation): Promise<boolean> => {
-    if (!location.parent_id) return false
-    const chain = location.breadcrumbs
-      .filter(crumb => crumb.id !== location.node_id)
-      .map(crumb => ({ id: crumb.id, name: crumb.name }))
-    if (!chain.length || chain.at(-1)?.id !== location.parent_id) return false
+    const chain = xDriveFileExplorerLocationAncestorCrumbs(location)
+    if (!chain || !location.parent_id) return false
     const intent = beginNavigationIntent()
     onCloseTrash()
     try {
       let accepted = false
       await navigateTo(chain, true, intent, value => { accepted = value })
       if (!accepted || !isNavigationIntentCurrent(intent)) return false
-      requestReveal(location.parent_id, location.node_id)
-      return true
+      return requestReveal(location.parent_id, location.node_id)
     } catch (error) {
       if (isNavigationIntentCurrent(intent)) onError(error)
       return false
