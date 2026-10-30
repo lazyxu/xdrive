@@ -139,10 +139,16 @@ jobs:
       - name: Verify actual bounded background original safety contract
         run: node --test desktop/tests/ios-bg-bounded-original-runner.cjs
 
-      - name: Verify native Photos auto backup and uncertain receipt recovery
+      - name: Verify native Photos Owner, auto backup, cloud thumbnail and receipt contracts
         run: |
           set -euo pipefail
-          node --test desktop/tests/ios-native-photos-auto-view-mvp.cjs desktop/tests/ios-native-photo-receipt-review.cjs
+          node --test \
+            desktop/tests/ios-native-historical-screen-recovery.cjs \
+            desktop/tests/ios-native-owner-login-foundation.cjs \
+            desktop/tests/ios-native-photos-auto-view-mvp.cjs \
+            desktop/tests/ios-native-photo-receipt-review.cjs \
+            desktop/tests/ios-native-cloud-original-thumbnail-wall.cjs \
+            desktop/tests/ios-native-auto-foreground-root-lifecycle.cjs
 
       - name: Prepare native brand and home screen icon
         run: bash ios/scripts/prepare-assets.sh
