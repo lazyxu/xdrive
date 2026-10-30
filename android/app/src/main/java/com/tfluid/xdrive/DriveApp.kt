@@ -256,10 +256,14 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
             Row(Modifier.statusBarsPadding().fillMaxWidth().height(52.dp).padding(horizontal = 8.dp)
                 .testTag("xdrive-mobile-app-header"),
                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                if (state.screen == Screen.GALLERY || state.screen == Screen.TRASH)
+                if ((galleryHasLocalBack && showingCloudGallery) || state.screen == Screen.TRASH)
                     IconButton(onClick = {
                         if (state.screen == Screen.TRASH) controller.closeTrash()
-                        else controller.back() // Same hierarchy as system Back.
+                        else if (state.galleryMapOpen && state.galleryBd09History.isEmpty() &&
+                            state.galleryMapCellSelected == null && state.galleryViewer == null) {
+                            nativeNavigation = nativeNavigation.copy(gallerySource = NativeGallerySource.CLOUD)
+                            controller.back()
+                        } else controller.back()
                     }) {
                         Icon(painterResource(R.drawable.xd_arrow_back), when {
                             state.screen == Screen.TRASH -> "返回文件"
@@ -272,10 +276,11 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                             state.galleryMapOpen -> "返回图库"
                             state.gallerySelectedAlbum != null -> "返回精选集"
                             state.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS -> "返回图库"
-                            else -> "返回文件"
+                            else -> "返回图库"
                         })
                     }
-                else if (state.filesSection != FilesSection.BROWSE || state.path.size > 1)
+                else if (state.screen == Screen.FILES &&
+                    (state.filesSection != FilesSection.BROWSE || state.path.size > 1))
                     IconButton(onClick = controller::back) {
                         Icon(painterResource(R.drawable.xd_arrow_back), "返回上级")
                     }
