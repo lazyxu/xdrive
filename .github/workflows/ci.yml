@@ -2510,9 +2510,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # The commit header contains both parents even in a shallow clone.
-          # PR event github.sha is GitHub's two-parent test merge commit.
-          fetch-depth: 1
+          # Full history proves an advanced merge base is still on trusted
+          # master ancestry; the webhook's Base SHA may be stale while queued.
+          fetch-depth: 0
       - name: Verify exact CI checkout and PR merge candidate parents
         shell: bash
         env:
@@ -2531,11 +2531,28 @@ jobs:
               exit 1
             fi
             mapfile -t actual_parents < <(git cat-file -p "$checkout_sha" | sed -n 's/^parent //p')
-            if [[ "${#actual_parents[@]}" -ne 2 || "${actual_parents[0]}" != "$PR_BASE_SHA" || "${actual_parents[1]}" != "$PR_HEAD_SHA" ]]; then
-              echo "::error title=PR candidate mismatch::CI must validate the exact synthetic base+head merge commit"
+            # The event commit must have exactly the submitted Head as its
+            # SECOND parent, regardless of delayed base-branch advancement.
+            if [[ "${#actual_parents[@]}" -ne 2 || "${actual_parents[1]}" != "$PR_HEAD_SHA" ]]; then
+              echo "::error title=PR candidate mismatch::Expected a two-parent candidate with the exact submitted Head"
               exit 1
             fi
-            echo "PR candidate verified: event merge SHA has the exact base and head parents."
+            # A queued PR event can still carry an older Base SHA when GitHub
+            # regenerates its synthetic merge candidate on a newer master.
+            # Admit only a verified fast-forward along the same master history.
+            git fetch --quiet --no-tags origin '+refs/heads/master:refs/remotes/origin/master'
+            if ! git merge-base --is-ancestor "$PR_BASE_SHA" "${actual_parents[0]}"; then
+              echo "::error title=Invalid PR Base ancestry::Candidate Base must descend from the event Base"
+              exit 1
+            fi
+            if ! git merge-base --is-ancestor "${actual_parents[0]}" refs/remotes/origin/master; then
+              echo "::error title=Untrusted PR merge Base::Candidate Base must be on the current master ancestry"
+              exit 1
+            fi
+            if [[ "${actual_parents[0]}" != "$PR_BASE_SHA" ]]; then
+              echo "::notice title=GitHub advanced PR Base::Tested candidate Base ${actual_parents[0]} is a verified forward descendant of event Base $PR_BASE_SHA"
+            fi
+            echo "PR candidate verified: exact event SHA, submitted Head, and forward-only trusted Base ancestry."
           else
             echo "Non-PR checkout verified against the exact workflow event SHA."
           fi
