@@ -1184,7 +1184,7 @@ daily_revision="$backup_admin_revision"
 if backup_admin_write_schedule weekly "$disabled_revision"; then
   echo 'stale schedule revision accepted' >&2; exit 1
 fi
-XD_BACKUP_ADMIN_TEST_CRON_WRITE_FAIL=yes
+export XD_BACKUP_ADMIN_TEST_CRON_WRITE_FAIL=yes
 if backup_admin_write_schedule weekly "$daily_revision"; then
   echo 'failed cron write claimed successful schedule update' >&2; exit 1
 fi

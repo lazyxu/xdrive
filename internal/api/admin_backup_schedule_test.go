@@ -41,9 +41,9 @@ func TestBackupAdminScheduleRequiresFreshHostAttestation(t *testing.T) {
 		t.Fatal("missing trusted Host inventory")
 	}
 	page.Inventory.Schedule = &backupAdminScheduleStatus{
-		Protocol: "xdrive-host-backup-schedule-v1",
-		Source: "installer_crontab",
-		State: "registered",
+		Protocol:   "xdrive-host-backup-schedule-v1",
+		Source:     "installer_crontab",
+		State:      "registered",
 		Expression: "17 3 * * *",
 	}
 	writeBackupTestJSON(t, dir, "backup-admin-inventory.json", page.Inventory)
