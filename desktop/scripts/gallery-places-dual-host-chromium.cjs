@@ -2621,6 +2621,63 @@ async function testPhotoCoverDuringMapPan(browser,mode,port){
   }finally{await context.close()}
 }
 
+// P0: a signed EMPTY camera is a terminal state for the old gesture
+// photograph. The old cover stays visible *during* pan, then is removed
+// after fresh Owner /cells verifies zero, even with no new SDK pixels.
+async function testEmptyCameraRetiresPreviousGestureCovers(browser,mode,port){
+  const context=await browser.newContext({
+    viewport:{width:960,height:760},locale:'zh-CN',
+    ignoreHTTPSErrors:true,serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(30000)
+  const errors=[]
+  page.on('pageerror',error=>errors.push(error.message))
+  await page.route('https://api.map.baidu.com/api?**',route=>
+    route.fulfill({status:200,contentType:'text/javascript',body:sdkStub}))
+  try{
+    await page.goto('https://'+galleryHost+':'+port+'/?mode='+mode,
+      {waitUntil:'domcontentloaded'})
+    await page.getByText('当前地图可查看 9 张照片',{exact:true}).waitFor()
+    await page.locator('[data-xdrive-places-trusted-photo-cover]')
+      .first().waitFor({state:'visible'})
+    const frame=mode==='inline'
+      ? page : page.frames().find(f=>f.url().includes(childHost))
+    assert(frame,'mounted SDK Host must exist before gesture')
+    const before=await page.evaluate(()=>window.__mapProbe.queries.length)
+    await frame.evaluate(()=>{
+      const sdk=window.__xdriveSyntheticMapInstances?.at(-1)
+      if(!sdk)throw Error('missing native map SDK')
+      sdk.panOffset={x:88,y:33}
+      sdk.listeners.get('movestart')?.()
+      sdk.listeners.get('moving')?.()
+    })
+    const inert=page.locator('[data-xdrive-places-gesture-photo-cover]').first()
+    await inert.waitFor({state:'visible'})
+    await page.evaluate(()=>{window.__mapProbe.emptyCameraAfterPan=true})
+    await frame.evaluate(()=>{
+      const sdk=window.__xdriveSyntheticMapInstances?.at(-1)
+      sdk.listeners.get('moveend')?.()
+    })
+    await page.getByText(
+      '当前地图暂无可显示的定位照片；位置派生完成后会自动重查，也可手动刷新。',
+      {exact:true}).waitFor()
+    await inert.waitFor({state:'hidden'})
+    const actual=await page.evaluate(()=>({
+      reads:window.__mapProbe.queries.length,
+      count:window.__mapProbe.queries.at(-1)?.count,
+      inert:document.querySelectorAll(
+        '[data-xdrive-places-gesture-photo-cover]').length,
+      active:document.querySelectorAll(
+        '[data-xdrive-places-trusted-photo-cover]').length,
+      refresh:document.querySelector(
+        '[data-xdrive-places-empty-map-recheck]')?.textContent?.trim(),
+    }))
+    record(mode+': fresh signed empty Camera retires previous inert photo cover',
+      actual.reads>before&&actual.count===0&&actual.inert===0&&
+      actual.active===0&&actual.refresh==='刷新定位照片'&&errors.length===0)
+  }finally{await context.close()}
+}
+
 // Production regression from snapshot 0a1d56a8: a JSAPI build may send
 // movestart/zoomstart without moveend/zoomend for a PROGRAMMATIC move.
 // No physical pointer release exists to rescue the frozen, inert photo cover.
@@ -4028,6 +4085,8 @@ async function main(){
       await testPhotoMarkerPresentation(browser,'isolated',port)
       await testPhotoCoverDuringMapPan(browser,'inline',port)
       await testPhotoCoverDuringMapPan(browser,'isolated',port)
+      await testEmptyCameraRetiresPreviousGestureCovers(browser,'inline',port)
+      await testEmptyCameraRetiresPreviousGestureCovers(browser,'isolated',port)
       await testMissingSDKEndPhotoClickRecovery(browser,'inline',port)
       await testMissingSDKEndPhotoClickRecovery(browser,'isolated',port)
       await testTransientBadPixelProjection(browser,'inline',port)
