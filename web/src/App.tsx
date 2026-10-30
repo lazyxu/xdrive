@@ -101,9 +101,8 @@ import WebOverviewPage from './WebOverviewPage'
 import WebUnsupportedFileDialog from './WebUnsupportedFileDialog'
 import { xDriveWebOpenRouteForNode } from './webViewerRoute'
 import { useXDriveWebAppRuntime, xDriveCreateWebAppBrowseSession, xDriveClearPrivateMapBrowseSessions } from './webAppRuntime'
-import { xDriveCoreWorkspaceDestinations } from '../../ui/shared/src/mui/WorkspaceNavigation'
 import { xDriveWebAppRouteForWorkspaceKey, xDriveWebAppWorkspaceKey } from './webApps'
-import { XDriveMobileAllLauncher, XDriveMobileFiveSlotNavigation, XDriveMobileMinePage } from './MobileFiveSlotNavigation'
+import { XDriveMobileAllLauncher, XDriveMobileFiveSlotNavigation, XDriveMobileMinePage, xDriveBrowserMobileDestinations } from './MobileFiveSlotNavigation'
 import { xDriveInitialMobileNavigation, xDriveMobileFeatureParentRoute, xDriveMobileRouteForSlot, xDriveMobileSlotForRoute, xDriveRememberMobileNavigation } from './mobileFiveSlotState'
 import type { XDriveMobileSlot } from './mobileFiveSlotState'
 import { createWebMediaGalleryDataSource } from './mediaGalleryAdapter'
@@ -2335,11 +2334,8 @@ function FileManager({
     profile?.role === 'admin' && profile?.must_change_password !== true
   // Reuse the authenticated Web destinations, not native capabilities or a
   // second routing/backup stack. The iOS contract determines only mobile UX.
-  const mobileDestinations = [
-    ...xDriveCoreWorkspaceDestinations({ transferBadge: taskCenter.badge, showLocalStorage: true }),
-    ...webSidebarSections.flatMap(section => section.items),
-  ].filter(destination => destination.key !== 'overview' &&
-    xDriveWorkspaceNavigationAllowed(destination.key, serverAdminVerified))
+  const mobileDestinations = xDriveBrowserMobileDestinations(serverAdminVerified)
+    .filter(destination => xDriveWorkspaceNavigationAllowed(destination.key, serverAdminVerified))
   const mobileLauncherSections = [
     { key: 'web-mobile-apps', label: '全部应用', items: mobileDestinations },
   ]
@@ -2574,7 +2570,7 @@ function FileManager({
           sx={{ overflowAnchor: appView === 'gallery' ? 'none' : undefined }}
         >
         {appView === 'overview' ? (
-          route.app === 'overview' && route.params.section === 'mine' ? (
+          compactWorkspace && route.app === 'overview' && route.params.section === 'mine' ? (
             <XDriveMobileMinePage
               username={username}
               serverOrigin={window.location.origin}
