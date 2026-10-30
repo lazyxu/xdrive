@@ -56,7 +56,8 @@ test('native viewer pages PhotoKit without exporting data, provides still video 
   assert.match(local, /requestLivePhoto/)
   assert.match(local, /PHLivePhotoView/)
   assert.match(local, /isNetworkAccessAllowed = false/)
-  assert.match(local, /onDisappear \{ invalidate\(\) \}/)
+  assert.ok(local.includes('if selected != nil { suspendForViewer() }'))
+  assert.ok(local.includes('else { invalidate() }'))
   assert.doesNotMatch(local, /URLSession|UploadSession|document\.cookie|window\.webkit/)
 })
 
@@ -129,5 +130,6 @@ test('native cloud original list and preview clear stale media across Owner swit
   assert.match(preview, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?player\?\.pause\(\)[\s\S]*?still = nil[\s\S]*?dismiss\(\)/)
   const gallery = cloud.slice(cloud.indexOf('struct XDriveIOSNativeCloudOriginalGallery: View'))
   assert.match(gallery, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?selected = nil\s*model\.invalidate\(\)\s*if login\.owner != nil \{\s*model\.reload\(login: login\)/)
-  assert.match(gallery, /\.onDisappear \{\s*model\.invalidate\(\)\s*selected = nil/)
+  assert.match(gallery, /\.fullScreenCover\(item: \$selected\)/)
+  assert.match(gallery, /\.onDisappear \{\s*if selected == nil \{ model\.invalidate\(\) \}/)
 })

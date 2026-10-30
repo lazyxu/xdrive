@@ -148,7 +148,9 @@ jobs:
             desktop/tests/ios-native-photos-auto-view-mvp.cjs \
             desktop/tests/ios-native-photo-receipt-review.cjs \
             desktop/tests/ios-native-cloud-original-thumbnail-wall.cjs \
-            desktop/tests/ios-native-auto-foreground-root-lifecycle.cjs
+            desktop/tests/ios-native-auto-foreground-root-lifecycle.cjs \
+            desktop/tests/ios-native-album-navigation.cjs \
+            desktop/tests/ios-native-five-tab-navigation.cjs
 
       - name: Prepare native brand and home screen icon
         run: bash ios/scripts/prepare-assets.sh
