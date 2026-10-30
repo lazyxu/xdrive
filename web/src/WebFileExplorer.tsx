@@ -26,6 +26,7 @@ import {
   useXDriveFileExplorerRecent,
   useXDriveFileExplorerOperationController,
   useXDriveFileExplorerOwnerSourceOptions,
+  useXDriveFileExplorerLocalReveal,
   useXDriveFileExplorerExternalDropController,
   xDriveCaptureVideoPosterBlob,
   xDriveFileKind,
@@ -224,8 +225,17 @@ export default function WebFileExplorer({
   const uploadPickerParentIDRef = useRef<number | null>(null)
   const folderUploadPickerParentIDRef = useRef<number | null>(null)
   const folderPickerLimitNoticeShownRef = useRef(false)
-  const revealSequenceRef = useRef(0)
-  const [localRevealTarget, setLocalRevealTarget] = useState<{ parentID: number; nodeID: number; requestID: string } | null>(null)
+  const routeRevealTarget = initialDirectoryID && initialRevealNodeID &&
+    Number.isSafeInteger(initialRevealNodeID) && initialRevealNodeID > 0
+    ? { parentID: initialDirectoryID, nodeID: initialRevealNodeID,
+        requestID: `route:${navigationSessionStorageKey ?? ''}:${initialDirectoryID}:${initialRevealNodeID}` }
+    : null
+  const routeRevealKey = routeRevealTarget?.requestID ?? ''
+  const { localRevealTarget, requestReveal } = useXDriveFileExplorerLocalReveal({
+    lifecycleKey: navigationSessionStorageKey ?? '',
+    requestPrefix: 'local',
+    externalKey: routeRevealKey,
+  })
   const renameLifecycleKeyRef = useRef(navigationSessionStorageKey ?? '')
   renameLifecycleKeyRef.current = navigationSessionStorageKey ?? ''
 
@@ -1353,28 +1363,9 @@ export default function WebFileExplorer({
   }, [api, beginNavigationIntent, isNavigationIntentCurrent,
     navigationReadSignalForIntent, navigateTo])
 
-  const requestReveal = (parentID: number, nodeID: number) => {
-    revealSequenceRef.current += 1
-    setLocalRevealTarget({
-      parentID, nodeID,
-      requestID: `local:${navigationSessionStorageKey ?? ''}:${revealSequenceRef.current}`,
-    })
-  }
-  const routeRevealTarget = initialDirectoryID && initialRevealNodeID &&
-    Number.isSafeInteger(initialRevealNodeID) && initialRevealNodeID > 0
-    ? { parentID: initialDirectoryID, nodeID: initialRevealNodeID,
-        requestID: `route:${navigationSessionStorageKey ?? ''}:${initialDirectoryID}:${initialRevealNodeID}` }
-    : null
-  // A new external deep link supersedes an earlier in-app lookup.
-  const routeRevealKey = routeRevealTarget?.requestID ?? ''
-  const lastRouteRevealKeyRef = useRef(routeRevealKey)
-  if (lastRouteRevealKeyRef.current !== routeRevealKey) {
-    lastRouteRevealKeyRef.current = routeRevealKey
-    if (localRevealTarget) setLocalRevealTarget(null)
-  }
-  const revealTarget = localRevealTarget?.requestID.startsWith(
-    `local:${navigationSessionStorageKey ?? ''}:`,
-  ) ? localRevealTarget : routeRevealTarget
+  // Route-scope changes synchronously revoke the retired in-app reveal,
+  // even before effects run. No setState occurs during React render.
+  const revealTarget = localRevealTarget ?? routeRevealTarget
 
   const showNodeLocation = async (location: NodeLocation): Promise<boolean> => {
     if (!location.parent_id) return false
@@ -1388,8 +1379,7 @@ export default function WebFileExplorer({
       let accepted = false
       await navigateTo(chain, true, intent, value => { accepted = value })
       if (!accepted || !isNavigationIntentCurrent(intent)) return false
-      requestReveal(location.parent_id, location.node_id)
-      return true
+      return requestReveal(location.parent_id, location.node_id)
     } catch (error) {
       if (isNavigationIntentCurrent(intent)) onError(error)
       return false

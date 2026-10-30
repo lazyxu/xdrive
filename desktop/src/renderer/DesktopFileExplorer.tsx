@@ -61,6 +61,7 @@ import {
   useXDriveFileExplorerExternalDropController,
   useXDriveFileExplorerUploadController,
   useXDriveFileExplorerOwnerActionLifecycle,
+  useXDriveFileExplorerLocalReveal,
   useXDriveFileExplorerOwnerSourceOptions,
   xDriveFileExplorerDeviceStatusLabel,
   xDriveFileExplorerDeviceHydrationPathKey,
@@ -270,13 +271,10 @@ export default function DesktopFileExplorer({
   // Explicit Owner browse, media and write capability groups.
   const nativePort = hostPort.native
   const [createOpen, setCreateOpen] = useState(false)
-  const [localRevealTarget, setLocalRevealTarget] = useState<{ parentID: number; nodeID: number; requestID: string } | null>(null)
-  const revealSequenceRef = useRef(0)
-  const requestReveal = (parentID: number, nodeID: number) => {
-    revealSequenceRef.current += 1
-    setLocalRevealTarget({ parentID, nodeID,
-      requestID: `desktop-local:${navigationSessionStorageKey ?? ''}:${revealSequenceRef.current}` })
-  }
+  const { localRevealTarget, requestReveal } = useXDriveFileExplorerLocalReveal({
+    lifecycleKey: navigationSessionStorageKey ?? '',
+    requestPrefix: 'desktop-local',
+  })
   const createFolderParentIDRef = useRef<number | null>(null)
   const uploadPickerParentIDRef = useRef<number | null>(null)
   const folderUploadPickerParentIDRef = useRef<number | null>(null)
