@@ -148,6 +148,17 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-gallery-retention-check"
           "$RUNNER_TEMP/xdrive-ios-gallery-retention-check"
 
+      - name: Verify native HTTPS LAN pre-login selection without credential retries
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/AuthService.swift \
+            ios/XDriveIOS/NativeLANLoginRoute.swift \
+            ios/tests/NativeLANLoginRouteChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-lan-route-check"
+          "$RUNNER_TEMP/xdrive-ios-lan-route-check"
+          node --test desktop/tests/ios-native-lan-ip-login.cjs
+
       - name: Verify native Photos Owner, auto backup, cloud thumbnail and receipt contracts
         run: |
           set -euo pipefail

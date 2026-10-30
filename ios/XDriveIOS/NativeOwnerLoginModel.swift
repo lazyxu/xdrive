@@ -6,6 +6,7 @@ import Foundation
 @MainActor
 final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
     @Published var serverText = ""
+    @Published var lanIPText = ""
     @Published var username = ""
     @Published var password = ""
     @Published var keepSignedIn = true
@@ -226,6 +227,7 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
         errorMessage = nil
         noticeMessage = nil
         let serverInput = serverText
+        let lanInput = lanIPText
         let requestedUsername = username.trimmingCharacters(
             in: .whitespacesAndNewlines
         )
@@ -238,13 +240,26 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
         let ticket = generation
         defer { busy = false }
         do {
-            let origin = try ServerAddress.parse(serverInput)
+            let configuredOrigin = try ServerAddress.parse(serverInput)
+            // Probe before any credentials. The selected URL is the only
+            // transport identity used for this authenticated Owner session.
+            let origin = try await XDriveIOSNativeLANLoginRoute.selectOrigin(
+                origin: configuredOrigin, lanIP: lanInput
+            )
+            try Task.checkCancellation()
+            guard generation == ticket, serverText == serverInput,
+                  lanIPText == lanInput,
+                  username.trimmingCharacters(in: .whitespacesAndNewlines) ==
+                    requestedUsername else {
+                throw XDriveIOSNativeSessionError.staleSession
+            }
             let response = try await AuthService(origin: origin).login(
                 username: requestedUsername, password: password
             )
             try Task.checkCancellation()
             guard generation == ticket,
                   serverText == serverInput,
+                  lanIPText == lanInput,
                   username.trimmingCharacters(in: .whitespacesAndNewlines) ==
                     requestedUsername else {
                 throw XDriveIOSNativeSessionError.staleSession
@@ -265,6 +280,7 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
             try Task.checkCancellation()
             guard generation == ticket,
                   serverText == serverInput,
+                  lanIPText == lanInput,
                   username == requestedUsername else {
                 throw XDriveIOSNativeSessionError.staleSession
             }
@@ -286,11 +302,15 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
                 verifiedOwner: verified
             )
             owner = verified
-            serverText = origin.absoluteString
+            // Keep the entered domain visible for a future manual login.
+            // The Session and Keychain instead retain the actual chosen IP
+            // or domain; all subsequent authenticated requests use that one.
+            serverText = configuredOrigin.absoluteString
             username = verified.username
-            noticeMessage = keepSignedIn
+            let fixedRoute = "当前会话固定使用 \(origin.host ?? "服务器")，不在登录后切换入口。"
+            noticeMessage = (keepSignedIn
                 ? "已在本机安全保存当前 Owner 的保持登录凭据。"
-                : "本次仅内存登录，不保留刷新凭据。"
+                : "本次仅内存登录，不保留刷新凭据。") + fixedRoute
         } catch is CancellationError {
             password = ""
         } catch {
