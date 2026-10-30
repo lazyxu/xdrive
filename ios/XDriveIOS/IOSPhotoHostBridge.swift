@@ -200,16 +200,21 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
             let pendingApproval = activeGrantTask
             cancelActive()
             if let pendingApproval { await pendingApproval.value }
+            // Stop ALL local foreground schedules, not merely the active
+            // Owner's system background grant. Never infer this from JS.
+            let stoppedForeground = XDriveIOSPhotoAutoScheduleStore.shared
+                .disableAllOnThisDevice()
             do {
                 let pendingRemoteRevoke =
                     try await XDriveIOSPhotoBackgroundGrantManager.shared
                         .emergencyStopLocally()
                 sendResult(id, [
                     "localStopped": true,
+                    "foregroundSchedulesStopped": stoppedForeground,
                     "remoteRevokePending": pendingRemoteRevoke
                 ])
             } catch {
-                sendError(id, "已请求取消后台任务，但无法确认本机 Keychain 已清除。请解锁后重试。")
+                sendError(id, "本机前台自动计划已停用，但后台 Keychain 清除尚未证实；请解锁后重试。")
             }
         case "photos.background.grant.status":
             guard let source = parseOwner(body) else {
@@ -418,6 +423,7 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                     return
                 }
                 let store = XDriveIOSPhotoAutoScheduleStore.shared
+                let stopGeneration = store.localStopGeneration
                 if !enabled {
                     store.disable(owner: owner)
                     cancelActive()
@@ -440,6 +446,10 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                 try Task.checkCancellation()
                 guard confirmed else {
                     sendError(id, "未开启自动增量备份。")
+                    return
+                }
+                guard store.localStopGeneration == stopGeneration else {
+                    sendError(id, "本机已紧急停止自动备份；此前的授权确认不能重新启用计划。")
                     return
                 }
                 let state = try store.configure(
@@ -530,9 +540,10 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                     sendResult(id, ["pending": 0, "maxPerRun": Self.maxReceiptReviewPerRun])
                     return
                 }
-                let records = try await XDrivePhotoSyncLedger.shared.operations(scope: scope)
+                let snapshot = try await XDrivePhotoSyncLedger.shared
+                    .pendingReceiptSnapshot(scope: scope, limit: 0)
                 sendResult(id, [
-                    "pending": records.filter { self.needsReceiptReview($0) }.count,
+                    "pending": snapshot.pending,
                     "maxPerRun": Self.maxReceiptReviewPerRun
                 ])
             } catch {
@@ -575,11 +586,12 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                         return
                     }
                     let ledger = XDrivePhotoSyncLedger.shared
-                    let records = try await ledger.operations(scope: scope)
-                    let uncertain = records.filter { self.needsReceiptReview($0) }
-                    let batch = Array(uncertain.prefix(Self.maxReceiptReviewPerRun))
+                    let snapshot = try await ledger.pendingReceiptSnapshot(
+                        scope: scope, limit: Self.maxReceiptReviewPerRun
+                    )
+                    let batch = snapshot.batch
                     var progress: [String: Any] = [
-                        "pending": uncertain.count,
+                        "pending": snapshot.pending,
                         "checked": 0,
                         "confirmed": 0,
                         "activeUnverified": 0,
@@ -612,9 +624,11 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                         progress["stage"] = "已核对 \(progress["checked"] as? Int ?? 0)/\(batch.count) 项"
                         self.sendReviewProgress(id, progress)
                     }
-                    let latest = try await ledger.operations(scope: scope)
+                    let latest = try await ledger.pendingReceiptSnapshot(
+                        scope: scope, limit: 0
+                    )
                     try Task.checkCancellation()
-                    progress["pending"] = latest.filter { self.needsReceiptReview($0) }.count
+                    progress["pending"] = latest.pending
                     progress["stage"] = "本轮只读核对已结束；未证实的收据继续保留"
                     self.sendResult(id, progress)
                 } catch is CancellationError {

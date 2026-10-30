@@ -220,6 +220,7 @@ class IOSPhotoBackupHost implements XDriveIOSPhotoBackupHost {
 
   emergencyStopBackground(): Promise<{
     localStopped: boolean; remoteRevokePending: boolean
+    foregroundSchedulesStopped?: number
   }> {
     if (!this.nativeBackgroundGrantSupported)
       return Promise.reject(new Error('当前 IPA 尚未提供原生后台安全停止能力。'))
