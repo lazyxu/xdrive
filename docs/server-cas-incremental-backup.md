@@ -39,7 +39,11 @@ v2 retention and GC remain disabled.
 
 Use `--repository-dir ABSOLUTE_PATH` for a manual v2 backup on a separate
 disk; the absolute path must not point into the live files mount. Do not
-combine `--incremental` with `--output-dir` or `--skip-file-data`.
+combine `--incremental` with `--output-dir`, `--skip-file-data` or
+`--allow-inconsistent`. A v2 backup must pass source consistency verification:
+publishing an explicitly inconsistent generation would make it unusable for
+restore and block safe retention/pruning of other generations. The
+`--allow-inconsistent` option remains legacy-v1-only.
 
 ## Repository format
 
