@@ -1,6 +1,6 @@
 # Native iOS Server PhotoAsset Gallery — scoped read-only increment
 
-This developer child branch is built on integrated native Photos/navigation PR #3279 **without changing its already-running HEAD**. Full deployment/CI is not claimed.
+This master-targeted PR extends the native Photos/navigation code integrated by merged PR #3279. Its Gallery implementation has not yet passed its own exact-HEAD macOS IPA or complete CI; parent PR results do not substitute for those checks.
 
 The existing owner-authorized endpoints from Web/PWA supply native data: `GET /api/v1/media/items?range=true&offset=&limit=48`, `GET /api/v1/media/albums`, and `GET /api/v1/media/albums/{id}/items?range=true`. No new Server API or upload/CAS writer is introduced.
 
@@ -10,7 +10,7 @@ The iPhone UI renders just one bounded 48-item server page at a time; visible th
 
 Unsupported native files/map/admin routes remain honestly unavailable. Full page/timeline virtualization, cross-process history, real 100k performance, iCloud/SideStore and cloud Live motion are not verified. Device acceptance: **跳过（未验收）**.
 
-Before any merge to master: integrate parent PR #3279, then check Xcode compile, source/API contract, exact-HEAD iOS unsigned IPA and required CI/Final Gate. Never treat a child built only on a developer branch as already validated.
+Before merging this PR into master: run the actual native source contracts and Xcode iPhoneOS unsigned IPA on this PR's exact HEAD, complete required CI and Final Gate, and confirm the current mergeable state. Keep device/iCloud/SideStore acceptance labeled **跳过（未验收）** until exercised.
 
 ## Native landscape and search follow-up
 
@@ -24,3 +24,9 @@ Before any merge to master: integrate parent PR #3279, then check Xcode compile,
 - L3 still images from local PhotoKit, cloud original evidence and canonical PhotoAsset now share the same **native zoomable image surface**: pinch 1×–5×, double-tap to toggle magnification, two-axis panning and named VoiceOver zoom actions. This does not change original image bytes or enable editing.
 - Verified HTTPS Owner login/restore automatically opens the native **图库** tab; the user's **我的 → 服务器与账号** route can still return to the verified account screen. Existing global original-run gate, logout and Keychain owner safety remain unchanged.
 - Exact uploaded child HEAD must still compile via macOS iPhoneOS Xcode and pass the applicable PR CI/Final Gate. The V8 source-contract precheck is not a substitute for those checks.
+
+## MVP transient-failure cache policy
+
+- A prior verified cloud Gallery page is retained **only** for a transient network failure, HTTP 408/429, or HTTP 5xx. Clear cached names/thumb readers immediately on HTTP 401/403/404/410, invalid page/scope, TLS trust errors, or failed Owner/root re-verification; do not present a disconnected/error state as successful access.
+- The `NativeMediaPageRetryPolicyChecks.swift` Foundation-only regression tests classify these failures. They are run before the iPhoneOS build in `ios-unsigned-ipa.yml` and are a necessary source-level gate, **not** real iPhone UI evidence.
+- Do not add local backup task-log encryption, duplicate upload writers, PDF editing or other non-MVP work to this branch.
