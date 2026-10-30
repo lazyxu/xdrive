@@ -109,7 +109,10 @@ final class XDriveIOSLocalPhotoDetailModel: ObservableObject {
                 forVideo: asset, options: options
             ) { [weak self] movie, _, _ in
                 Task { @MainActor [weak self] in
-                    guard let self, self.epoch == token else { return }
+                    guard let self, self.epoch == token,
+                          [.authorized, .limited].contains(
+                            PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                          ) else { return }
                     if let movie {
                         self.player = AVPlayer(playerItem: AVPlayerItem(asset: movie))
                     } else {
@@ -127,7 +130,10 @@ final class XDriveIOSLocalPhotoDetailModel: ObservableObject {
                 contentMode: .aspectFit, options: options
             ) { [weak self] picture, _ in
                 Task { @MainActor [weak self] in
-                    guard let self, self.epoch == token else { return }
+                    guard let self, self.epoch == token,
+                          [.authorized, .limited].contains(
+                            PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                          ) else { return }
                     if let picture { self.still = picture }
                 }
             }
@@ -140,7 +146,10 @@ final class XDriveIOSLocalPhotoDetailModel: ObservableObject {
                     contentMode: .aspectFit, options: liveOptions
                 ) { [weak self] photo, _ in
                     Task { @MainActor [weak self] in
-                        guard let self, self.epoch == token else { return }
+                        guard let self, self.epoch == token,
+                              [.authorized, .limited].contains(
+                                PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                              ) else { return }
                         if let photo { self.live = photo }
                     }
                 }

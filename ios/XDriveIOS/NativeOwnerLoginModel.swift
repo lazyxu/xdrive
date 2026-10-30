@@ -149,7 +149,9 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
                 accessToken: token, refreshToken: refresh,
                 verifiedOwner: fresh
             )
-            owner = fresh
+            // Keep the published Owner identity stable: its root revision may
+            // change after a backup and must not cancel an active foreground
+            // run via the SwiftUI account-change observer.
         }
         return (fresh, token)
     }
