@@ -39,7 +39,7 @@ class NativePhotoOwnerPreflightTest {
             error("not used")
     }
 
-    @Test fun twoExactOwnerGetsAndNoAdminElevation() = runBlocking {
+    @Test fun twoExactOwnerGetsAndNoAdminElevation(): Unit = runBlocking {
         val service = Fake(owner, root)
         val proof = NativePhotoOwnerPreflight.verify(
             service, origin, "owner-bearer", "owner", { true })
@@ -53,7 +53,7 @@ class NativePhotoOwnerPreflightTest {
         assertFalse(proof.toString().contains("installation-one"))
     }
 
-    @Test fun logoutOrOwnerAbaFencesBeforeRoot() = runBlocking {
+    @Test fun logoutOrOwnerAbaFencesBeforeRoot(): Unit = runBlocking {
         var generation = 7
         val service = Fake(owner, root) { generation = 9 }
         assertThrows(IllegalStateException::class.java) {
@@ -67,7 +67,7 @@ class NativePhotoOwnerPreflightTest {
         assertEquals(0, service.rootCalls)
     }
 
-    @Test fun rejectsIncorrectOwnerOrRootAndCleartext() = runBlocking {
+    @Test fun rejectsIncorrectOwnerOrRootAndCleartext(): Unit = runBlocking {
         val badOwner = Fake(owner.copy(username = "other"), root)
         assertThrows(IllegalStateException::class.java) {
             kotlinx.coroutines.runBlocking {
@@ -94,7 +94,7 @@ class NativePhotoOwnerPreflightTest {
         }
     }
 
-    @Test fun realOwnerHttpGetRequiresExactServerInstallationIdAndExplicitRole() = runBlocking {
+    @Test fun realOwnerHttpGetRequiresExactServerInstallationIdAndExplicitRole(): Unit = runBlocking {
         MockWebServer().use { server ->
             val address = ServerAddress.parse(server.url("/").toString(), allowHttp = true)
             XDriveApi(address).use { api ->
