@@ -221,11 +221,29 @@ with tempfile.TemporaryDirectory(prefix='xdrive-gitlab-snapshot-') as temp:
             (tmp/'release'/name).write_bytes(('asset: '+name+'\n').encode())
     spk_path = tmp/'release'/SPK_NAME
     spk_info = (b'package="xdrivenas"\nversion="0.1.0-123"\n'
-                b'arch="armada38x"\nos_min_ver="7.0-40759"\n')
+                b'arch="armada38x"\nos_min_ver="7.0-40759"\n'
+                b'dsmuidir="ui"\ndsmappname="com.xdrive.NASBackup"\n')
+    # The published SPK is GUI-required. Match its nested package.tgz contract
+    # rather than incorrectly using a CLI-only fixture for successful cases.
+    nested = io.BytesIO()
+    with tarfile.open(fileobj=nested, mode='w:gz') as payload:
+        for item_name, body in (
+            ('./ui/config', b'fixture DSM app registration'),
+            ('./ui/backup.cgi', b'fixture authenticated CGI'),
+            ('./ui/synology.html', b'fixture shared MUI entry'),
+            ('./ui/assets/app.js', b'fixture compiled MUI JavaScript'),
+        ):
+            member = tarfile.TarInfo(item_name)
+            member.size = len(body)
+            payload.addfile(member, io.BytesIO(body))
     with tarfile.open(spk_path, 'w') as archive:
         member = tarfile.TarInfo('./INFO')
         member.size = len(spk_info)
         archive.addfile(member, io.BytesIO(spk_info))
+        packaged = nested.getvalue()
+        member = tarfile.TarInfo('./package.tgz')
+        member.size = len(packaged)
+        archive.addfile(member, io.BytesIO(packaged))
     (tmp/'release'/(SPK_NAME + '.sha256')).write_text(
         f'{hashlib.sha256(spk_path.read_bytes()).hexdigest()}  {SPK_NAME}\n')
     (tmp/'bin').mkdir()
