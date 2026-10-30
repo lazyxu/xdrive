@@ -234,6 +234,7 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
     @State private var task: Task<Void, Never>?
     @State private var errorMessage: String?
     @State private var authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+    @State private var lastVisibleOffset = 0
 
     var body: some View {
         ScrollView {
@@ -257,8 +258,7 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
                 } else if let page {
                     Text("当前显示 \(page.startOffset + 1)–\(page.nextOffset) / \(page.totalAccessibleAssets)")
                         .font(.footnote).monospacedDigit()
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 3),
-                                             count: 3), spacing: 3) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 95, maximum: 150), spacing: 3)], spacing: 3) {
                         ForEach(page.items.filter { $0.kind != "unsupported" }) { candidate in
                             Button { selected = candidate } label: {
                                 XDriveIOSLocalPhotoTile(candidate: candidate)
@@ -286,10 +286,15 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
         }
         .navigationTitle("本机相册")
         .fullScreenCover(item: $selected) { XDriveIOSNativeLocalPhotoDetail(candidate: $0) }
-        .onAppear { refresh() }
+        .onAppear {
+            let current = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+            if page == nil || current != authorization {
+                refresh(resumeOffset: true)
+            }
+        }
         .onChange(of: phase) { new in
             if new != .active { invalidate() }
-            else { refresh() }
+            else { refresh(resumeOffset: true) }
         }
         .onDisappear {
             // fullScreenCover may hide its presenter before the Viewer closes.
@@ -299,11 +304,14 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
         }
     }
 
-    private func refresh() {
+    private func refresh(resumeOffset: Bool = false) {
         authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
         invalidate()
-        guard authorization == .authorized || authorization == .limited else { return }
-        load(offset: 0)
+        guard authorization == .authorized || authorization == .limited else {
+            lastVisibleOffset = 0
+            return
+        }
+        load(offset: resumeOffset ? lastVisibleOffset : 0)
     }
 
     private func load(offset: Int) {
@@ -319,6 +327,7 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
                 try Task.checkCancellation()
                 guard generation == token, phase == .active else { return }
                 page = next
+                lastVisibleOffset = next.startOffset
                 authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             } catch is CancellationError {
             } catch {

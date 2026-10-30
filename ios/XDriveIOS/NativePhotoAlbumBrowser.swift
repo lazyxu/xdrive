@@ -236,7 +236,7 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
                         "已显示 \(page.startOffset + 1)–\(page.nextOffset) / \(page.totalAccessibleAssets) 项")
                         .font(.caption).foregroundStyle(.secondary)
                     LazyVGrid(
-                        columns: Array(repeating: GridItem(.flexible(), spacing: 3), count: 3),
+                        columns: [GridItem(.adaptive(minimum: 95, maximum: 150), spacing: 3)],
                         spacing: 3
                     ) {
                         ForEach(page.items.filter { $0.kind != "unsupported" }) { item in

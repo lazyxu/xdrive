@@ -470,7 +470,7 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
                 Text("已检查根目录 \(model.scanned) / \(model.total) 项")
                     .font(.footnote).monospacedDigit()
                 LazyVGrid(
-                    columns: Array(repeating: GridItem(.flexible(), spacing: 5), count: 3),
+                    columns: [GridItem(.adaptive(minimum: 95, maximum: 150), spacing: 5)],
                     spacing: 9
                 ) {
                     ForEach(model.nodes) { node in
