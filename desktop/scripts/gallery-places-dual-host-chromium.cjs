@@ -2500,6 +2500,86 @@ async function testPhotoCoverDuringMapPan(browser,mode,port){
   }finally{await context.close()}
 }
 
+// Production regression from snapshot 0a1d56a8: a JSAPI build may send
+// movestart/zoomstart without moveend/zoomend for a PROGRAMMATIC move.
+// No physical pointer release exists to rescue the frozen, inert photo cover.
+// The same two SDK Hosts must requery the exact Owner Camera, then allow a
+// REAL Chromium button click into the current signed photo Gallery modal.
+async function testMissingSDKEndPhotoClickRecovery(browser,mode,port){
+  const context=await browser.newContext({
+    viewport:{width:390,height:844},deviceScaleFactor:3,
+    isMobile:true,hasTouch:true,locale:'zh-CN',
+    ignoreHTTPSErrors:true,serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(20000)
+  const errors=[]
+  page.on('pageerror',e=>errors.push(e.message))
+  await page.route('https://api.map.baidu.com/api?**',route=>{
+    assert.equal(new URL(route.request().url()).searchParams.get('ak'),
+      'TEST_ONLY_BROWSER_AK')
+    return route.fulfill({status:200,contentType:'text/javascript',body:sdkStub})
+  })
+  try{
+    await page.goto('https://'+galleryHost+':'+port+'/?mode='+mode,
+      {waitUntil:'domcontentloaded'})
+    await page.getByText('当前地图可查看 9 张照片',{exact:true}).waitFor()
+    const cover=page.locator('[data-xdrive-places-trusted-photo-cover]').first()
+    await cover.waitFor({state:'visible'})
+    const before=await page.evaluate(()=>({
+      requests:window.__mapProbe.queries.length,
+      previews:window.__mapProbe.photoPreviewRanges.length,
+    }))
+    const sdkCount=mode==='inline'?inlineSDKLoads:childSDKLoads
+    const sdkFrame=mode==='inline' ? page :
+      page.frames().find(frame=>frame.url().includes(childHost))
+    assert(sdkFrame,'real SDK Host needed for missing moveend repro')
+    await sdkFrame.evaluate(()=>{
+      const sdk=window.__xdriveSyntheticMapInstances?.at(-1)
+      if(!sdk)throw Error('synthetic map instance missing')
+      sdk.panOffset={x:19,y:13}
+      sdk.listeners.get('movestart')?.()
+      sdk.listeners.get('moving')?.()
+      // DO NOT send moveend or zoomend; this is a programmatic move, with
+      // no trusted mouseup/touchend to trigger the old SDK lifecycle.
+    })
+    const inert=page.locator('[data-xdrive-places-gesture-photo-cover]').first()
+    await inert.waitFor({state:'visible'})
+    const revoked=await page.evaluate(()=>({
+      old:document.querySelectorAll('[data-xdrive-places-gesture-photo-cover]').length,
+      clickable:document.querySelectorAll('[data-xdrive-places-trusted-photo-cover]').length,
+      disabled:document.querySelector('[data-xdrive-places-gesture-photo-cover]')?.disabled,
+      requests:window.__mapProbe.queries.length,
+    }))
+    record(mode+': missing SDK moveend revokes old Cell without prematurely granting click',
+      revoked.old>0&&revoked.clickable===0&&revoked.disabled===true&&
+      revoked.requests===before.requests)
+    // Watchdog is 900ms of SDK silence plus the existing 500ms Camera
+    // debounce. No test-only direct /cells call or synthetic click allowed.
+    await cover.waitFor({state:'visible',timeout:6500})
+    await inert.waitFor({state:'hidden'})
+    const fresh=await page.evaluate(()=>({
+      requests:window.__mapProbe.queries,
+      previews:window.__mapProbe.photoPreviewRanges.length,
+      live:document.querySelectorAll('[data-xdrive-places-trusted-photo-cover]').length,
+    }))
+    record(mode+': omitted programmatic moveend recovers fresh signed current Camera',
+      fresh.requests.length===before.requests+1&&
+      fresh.requests.at(-1)?.count===9&&fresh.live>0&&
+      fresh.previews===before.previews&&
+      (mode==='inline'?inlineSDKLoads:childSDKLoads)===sdkCount&&errors.length===0)
+    // Click a TRUE browser-native Owner photo cover after reauthorization,
+    // not the SDK label, a test-only event dispatch, or an obsolete Cell.
+    await cover.tap()
+    const drawer=page.locator('[data-xdrive-places-photo-drawer]')
+    await drawer.locator('[data-xdrive-places-photo-drawer-item]').first()
+      .waitFor({state:'visible'})
+    const authorized=await page.evaluate(()=>window.__mapProbe.photoPreviewRanges.at(-1))
+    record(mode+': recovered map photo tap opens exact current Owner 9-photo Gallery',
+      authorized?.total===9&&authorized?.items===9&&authorized?.offset===0&&
+      authorized?.limit===48&&errors.length===0)
+  }finally{await context.close()}
+}
+
 // A real mounted map can have an occasional undecodable pointToPixel frame
 // while panning. This is NOT evidence all Owner photos left the camera.
 // Keep the previous inert visual on a completely invalid frame, then accept
@@ -3825,6 +3905,8 @@ async function main(){
       await testPhotoMarkerPresentation(browser,'isolated',port)
       await testPhotoCoverDuringMapPan(browser,'inline',port)
       await testPhotoCoverDuringMapPan(browser,'isolated',port)
+      await testMissingSDKEndPhotoClickRecovery(browser,'inline',port)
+      await testMissingSDKEndPhotoClickRecovery(browser,'isolated',port)
       await testTransientBadPixelProjection(browser,'inline',port)
       await testTransientBadPixelProjection(browser,'isolated',port)
       await testPhotoCoverWhileMouseHeld(browser,'inline',port)
