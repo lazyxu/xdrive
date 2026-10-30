@@ -36,6 +36,7 @@ test('Gallery owns local, albums, cloud and map subroutes; media uses native ful
 test('Owner scope and unsupported native routes never claim production parity', () => {
   assert.match(ui, /\.onChange\(of: login.owner\)/);
   assert.match(ui, /resetNavigation\(\)/);
+  assert.ok(ui.includes('.id(ownerScopeKey)'));
   assert.match(ui, /\.navigationBarBackButtonHidden\(true\)/);
   assert.match(ui, /func openDynamic/);
   assert.match(ui, /func openGallery/);
