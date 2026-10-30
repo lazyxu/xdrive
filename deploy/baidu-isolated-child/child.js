@@ -45,7 +45,7 @@
     value.latitude >= -85 && value.latitude <= 85 &&
     typeof value.longitude === 'number' && Number.isFinite(value.longitude) &&
     value.longitude >= -180 && value.longitude <= 180 &&
-    Number.isInteger(value.zoom) && value.zoom >= 3 && value.zoom <= 18
+    Number.isFinite(value.zoom) && value.zoom >= 3 && value.zoom <= 21
   const validEnvelope = data => isRecord(data) && data.version === 1 &&
     Number.isSafeInteger(data.generation) && data.generation > 0 &&
     typeof data.nonce === 'string' && /^[a-f0-9]{32,64}$/.test(data.nonce) &&
