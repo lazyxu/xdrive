@@ -1,0 +1,37 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const root = path.resolve(__dirname, '..', '..')
+const read = p => fs.readFileSync(path.join(root, p), 'utf8')
+
+const login = read('ios/XDriveIOS/NativeOwnerLoginScreen.swift')
+const dash = read('ios/XDriveIOS/NativePhotosDashboard.swift')
+const ctrl = read('ios/XDriveIOS/NativePhotoBackupController.swift')
+
+test('one authenticated native root owns the foreground schedule across Photos navigation', () => {
+  assert.match(login, /@StateObject private var model = XDriveIOSNativeOwnerLoginModel/)
+  assert.match(login, /@StateObject private var backup = XDriveIOSNativePhotoBackupController/)
+  assert.match(login, /@Environment\(\\.scenePhase\) private var phase/)
+  assert.match(login, /\.onReceive\(Timer\.publish\(every: 60/)
+  assert.match(login, /\.onChange\(of: phase\)/)
+  assert.match(login, /\.onChange\(of: model.owner\)/)
+  assert.match(login, /backup\.tickIfDue\(login: model\)/)
+  assert.match(login, /else \{ backup\.cancel\(\) \}/)
+  assert.match(login, /XDriveIOSNativePhotosDashboard\(login: model, backup: backup\)/)
+  assert.match(dash, /@ObservedObject var backup: XDriveIOSNativePhotoBackupController/)
+  assert.match(dash, /XDriveIOSNativePhotoBackupScreen\(login: login, controller: backup\)/)
+  assert.doesNotMatch(dash, /Timer\.publish|@StateObject private var backup|backup\.cancel\(\)/)
+})
+
+test('root Owner switching and logout cannot keep a previous upload alive', () => {
+  const changes = login.slice(login.indexOf('.onChange(of: model.owner)'),login.indexOf('    private var loginForm'))
+  assert.ok(changes.indexOf('backup.cancel()') < changes.indexOf('backup.refresh(owner: model.owner)'))
+  assert.ok(changes.indexOf('backup.refresh(owner: model.owner)') < changes.indexOf('backup.tickIfDue(login: model)'))
+  assert.match(login, /guard let gate = XDriveIOSOriginalRunGate\.shared\.acquire\(\)/)
+  assert.match(login, /XDriveIOSPhotoAutoScheduleStore\.shared\.disableAllOnThisDevice\(\)/)
+  assert.match(login, /XDriveIOSBackgroundPhotoTask\.revokePendingRequests\(\)/)
+  assert.match(ctrl, /guard !busy, running == nil/)
+  assert.match(ctrl, /XDriveIOSOriginalRunGate\.shared\.release\(gate\)/)
+})

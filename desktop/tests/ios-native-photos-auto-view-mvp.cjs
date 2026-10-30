@@ -19,12 +19,15 @@ const scope = read('ios/XDriveIOS/NativePhotoOwnerScope.swift')
 test('native Photos entry uses SwiftUI rather than WKWebView and supports verified login', () => {
   assert.match(app, /XDriveIOSNativeOwnerLoginScreen\(\)/)
   assert.doesNotMatch(app, /\bXDriveWebAppHome\(\)/)
-  assert.match(login, /XDriveIOSNativePhotosDashboard\(login: model\)/)
+  assert.match(login, /XDriveIOSNativePhotosDashboard\(login: model, backup: backup\)/)
   assert.match(dashboard, /XDriveIOSNativeLocalGalleryScreen\(\)/)
   assert.match(dashboard, /XDriveIOSNativePhotoBackupScreen\(login: login, controller: backup\)/)
   assert.match(dashboard, /XDriveIOSNativeCloudOriginalGallery\(login: login\)/)
-  assert.match(dashboard, /phase == \.active/)
-  assert.match(dashboard, /backup\.cancel\(\)/)
+  assert.match(login, /phase == \.active/)
+  assert.match(login, /backup\.cancel\(\)/)
+  assert.match(login, /Timer\.publish\(every: 60/)
+  assert.match(dashboard, /@ObservedObject var backup: XDriveIOSNativePhotoBackupController/)
+  assert.doesNotMatch(dashboard, /Timer\.publish|backup\.cancel\(\)/)
 })
 
 test('native auto schedule shares original CAS writer, gate and durable window cursor', () => {

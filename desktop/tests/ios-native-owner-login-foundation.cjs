@@ -22,7 +22,7 @@ test('native Login remains SwiftUI and mounts only after native Photos integrati
   const app = read('ios/XDriveIOS/XDriveIOSApp.swift')
   assert.match(app, /XDriveIOSNativeOwnerLoginScreen\(\)/, 'verified native Photos cutover')
   assert.doesNotMatch(app, /XDriveWebAppHome\(\)/)
-  assert.match(screen, /XDriveIOSNativePhotosDashboard\(login: model\)/)
+  assert.match(screen, /XDriveIOSNativePhotosDashboard\(login: model, backup: backup\)/)
 })
 
 test('new native Keychain namespace never reuses purged legacy refresh or background Device secrets', () => {

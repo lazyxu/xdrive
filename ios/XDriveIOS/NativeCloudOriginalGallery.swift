@@ -2,6 +2,7 @@ import AVFoundation
 import AVKit
 import Combine
 import Foundation
+import ImageIO
 import SwiftUI
 import UIKit
 
@@ -141,6 +142,54 @@ struct XDriveIOSNativeCloudOriginalReader {
         return (originals, result.total_count)
     }
 
+    /// Authenticated, revision-bound derivative for a visible tile only.
+    /// Never download a full original merely to render an image grid.
+    /// Missing/pending Server thumbnails leave a placeholder instead.
+    func thumbnail(_ node: XDriveIOSNativeCloudOriginal) async throws -> UIImage {
+        guard node.id > 0, node.revision > 0, node.type == "file",
+              XDriveIOSBackgroundOriginalNamePolicy.valid(node.name),
+              node.isImage || node.isVideo, !accessToken.isEmpty else {
+            throw XDriveIOSNativeCloudReadError.notSupported
+        }
+        let url = try endpoint("/api/v1/media/items/\(node.id)/thumbnail", query: [
+            URLQueryItem(name: "v", value: "4"),
+            URLQueryItem(name: "revision", value: String(node.revision))
+        ])
+        let client = session()
+        defer { client.invalidateAndCancel() }
+        let (bytes, response) = try await client.data(for: request(url))
+        try Task.checkCancellation()
+        try check(response, size: bytes.count, maximum: 2 * 1_048_576)
+        guard let http = response as? HTTPURLResponse,
+              let kind = http.value(forHTTPHeaderField: "Content-Type")?.lowercased(),
+              kind.hasPrefix("image/jpeg") || kind.hasPrefix("image/png") ||
+                kind.hasPrefix("image/heic") || kind.hasPrefix("image/webp"),
+              !bytes.isEmpty else {
+            throw XDriveIOSNativeCloudReadError.invalidResponse
+        }
+        // ImageIO downsamples off the UI actor. Do not decode an untrusted
+        // derivative to full-resolution UIImage before bounding its pixels.
+        let image = await Task.detached(priority: .utility) { () -> CGImage? in
+            guard let source = CGImageSourceCreateWithData(
+                bytes as CFData, [kCGImageSourceShouldCache: false] as CFDictionary
+            ) else { return nil }
+            // NSDictionary keys must be bridged String/NSString, not CFString
+            // as a Swift Dictionary key (CFString is not Hashable).
+            let options: [String: Any] = [
+                kCGImageSourceCreateThumbnailFromImageAlways as String: true,
+                kCGImageSourceCreateThumbnailWithTransform as String: true,
+                kCGImageSourceThumbnailMaxPixelSize as String: 280,
+                kCGImageSourceShouldCacheImmediately as String: false
+            ]
+            return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+        }.value
+        try Task.checkCancellation()
+        guard let image else {
+            throw XDriveIOSNativeCloudReadError.invalidResponse
+        }
+        return UIImage(cgImage: image)
+    }
+
     func preview(_ node: XDriveIOSNativeCloudOriginal) async throws
         -> (image: UIImage?, videoURL: URL?) {
         guard node.id > 0, node.revision > 0, node.type == "file",
@@ -204,16 +253,33 @@ final class XDriveIOSNativeCloudOriginalModel: ObservableObject {
 
     private var epoch = UUID()
     private var work: Task<Void, Never>?
+    // Never persisted or sent to a URL/JS: one current-Owner bearer in RAM
+    // from the last independently verified page request.
+    private var currentReader: XDriveIOSNativeCloudOriginalReader?
 
     func cancel() {
         epoch = UUID()
+        currentReader = nil
         work?.cancel()
         work = nil
         busy = false
     }
 
-    /// Drop every previously visible Owner's nodes and any in-flight page.
-    /// An old account's filenames cannot remain after a local Owner switch.
+    func thumbnail(_ node: XDriveIOSNativeCloudOriginal,
+                   login: XDriveIOSNativeOwnerLoginModel) async throws -> UIImage {
+        let token = epoch
+        guard let reader = currentReader,
+              XDriveIOSNativePhotoOwnerScope.matches(login.owner, reader.owner)
+        else { throw XDriveIOSNativeCloudReadError.invalidScope }
+        let picture = try await reader.thumbnail(node)
+        try Task.checkCancellation()
+        guard epoch == token,
+              XDriveIOSNativePhotoOwnerScope.matches(login.owner, reader.owner)
+        else { throw XDriveIOSNativeCloudReadError.invalidScope }
+        return picture
+    }
+
+    /// Drop all prior Owner rows and the RAM-only thumbnail reader.
     func invalidate() {
         cancel()
         nodes = []
@@ -248,6 +314,9 @@ final class XDriveIOSNativeCloudOriginalModel: ObservableObject {
                 guard self?.epoch == ticket,
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
                 else { return }
+                self?.currentReader = XDriveIOSNativeCloudOriginalReader(
+                    owner: expected, accessToken: auth.accessToken
+                )
                 self?.nodes.append(contentsOf: reply.nodes)
                 self?.total = reply.total
                 self?.scanned = min(reply.total, start + 48)
@@ -316,8 +385,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
             }
         }
         .onChange(of: login.owner) { _ in
-            // A stale preview must not remain visible for a new Owner, even
-            // when the previous Owner's signed video ticket still works.
+            // Retire the former Owner's signed media URL immediately.
             player?.pause()
             player = nil
             still = nil
@@ -329,6 +397,61 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
             player = nil
             still = nil
         }
+    }
+}
+
+/// Only visible native cells request the Owner-authenticated Server derivative.
+/// SwiftUI cancels .task on reuse/disappearance. No cache survives Owner switch.
+private struct XDriveIOSNativeCloudOriginalTile: View {
+    let node: XDriveIOSNativeCloudOriginal
+    @ObservedObject var model: XDriveIOSNativeCloudOriginalModel
+    @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
+    @State private var thumb: UIImage?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ZStack(alignment: .bottomTrailing) {
+                if let thumb {
+                    Image(uiImage: thumb)
+                        .resizable().scaledToFill()
+                        .frame(maxWidth: .infinity).frame(height: 112).clipped()
+                } else {
+                    Rectangle().fill(Color(uiColor: .secondarySystemGroupedBackground))
+                        .overlay {
+                            Image(systemName: node.isLiveArchive ? "livephoto" :
+                                  node.isVideo ? "video" : node.isImage ? "photo" : "doc")
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(height: 112)
+                }
+                if node.isLiveArchive || node.isVideo {
+                    Image(systemName: node.isLiveArchive ? "livephoto" : "play.circle.fill")
+                        .foregroundStyle(.white).shadow(radius: 3).padding(6)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            Text(node.name).font(.caption2).lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text(ByteCountFormatter.string(fromByteCount: node.size, countStyle: .file))
+                .font(.caption2).foregroundStyle(.secondary)
+        }
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(node.isLiveArchive
+            ? "已备份的 Live ZIP：\(node.name)" : node.isVideo
+            ? "已备份视频：\(node.name)" : "已备份照片：\(node.name)")
+        .task(id: "\(node.id)-\(node.revision)") {
+            guard node.isImage || node.isVideo else { return }
+            do {
+                let image = try await model.thumbnail(node, login: login)
+                try Task.checkCancellation()
+                thumb = image
+            } catch {
+                // 404/503 or unavailable thumbnail is not an original-file
+                // failure; keep the visible type placeholder and file row.
+            }
+        }
+        .onDisappear { thumb = nil }
     }
 }
 
@@ -346,24 +469,22 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
                     .font(.footnote).foregroundStyle(.secondary)
                 Text("已检查根目录 \(model.scanned) / \(model.total) 项")
                     .font(.footnote).monospacedDigit()
-                ForEach(model.nodes) { node in
-                    Button { selected = node } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: node.isLiveArchive ? "livephoto" :
-                                node.isVideo ? "video" : "photo")
-                                .frame(width: 28)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(node.name).lineLimit(2)
-                                Text("\(node.size) bytes · revision \(node.revision)")
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .foregroundStyle(.secondary)
-                        }.padding(8)
-                    }.buttonStyle(.plain)
-                    Divider()
+                LazyVGrid(
+                    columns: Array(repeating: GridItem(.flexible(), spacing: 5), count: 3),
+                    spacing: 9
+                ) {
+                    ForEach(model.nodes) { node in
+                        Button { selected = node } label: {
+                            XDriveIOSNativeCloudOriginalTile(
+                                node: node, model: model, login: login
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("native-ios-cloud-original-tile")
+                    }
                 }
+                Text("仅可见项目请求 Server 缩略图；若尚未生成则保留文件图标，不下载大体积原件填充缩略图。")
+                    .font(.footnote).foregroundStyle(.secondary)
                 if model.busy { ProgressView("正在验证并读取云端目录…") }
                 if let error = model.error {
                     Text(error).foregroundStyle(.red)
@@ -389,8 +510,6 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
         }
         .task { model.reload(login: login) }
         .onChange(of: login.owner) { _ in
-            // Drop the previous Owner's rows and selected preview BEFORE
-            // issuing the newly verified Owner's next page request.
             selected = nil
             model.invalidate()
             if login.owner != nil {
