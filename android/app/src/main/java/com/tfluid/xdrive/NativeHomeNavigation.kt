@@ -37,6 +37,8 @@ internal data class NativeHomeNavigation(
     val dynamicFeature: NativeDynamicFeature? = null,
     val recentDynamic: List<NativeDynamicFeature> = emptyList(),
     val gallerySource: NativeGallerySource = NativeGallerySource.CLOUD,
+    val favoriteShortcuts: Set<NativeHomeShortcut> = emptySet(),
+    val recentShortcuts: List<NativeHomeShortcut> = emptyList(),
 ) {
     val labels: List<String>
         get() = NativeHomeTab.entries.map {
@@ -45,7 +47,8 @@ internal data class NativeHomeNavigation(
 
     fun select(tab: NativeHomeTab) = copy(selected = tab)
 
-    fun open(shortcut: NativeHomeShortcut): NativeHomeNavigation = when (shortcut) {
+    fun open(shortcut: NativeHomeShortcut): NativeHomeNavigation {
+        val routed = when (shortcut) {
         NativeHomeShortcut.CLOUD_GALLERY -> copy(
             selected = NativeHomeTab.GALLERY, gallerySource = NativeGallerySource.CLOUD)
         NativeHomeShortcut.LOCAL_PHOTOS -> copy(
@@ -57,7 +60,16 @@ internal data class NativeHomeNavigation(
         NativeHomeShortcut.CLOUD_FILES, NativeHomeShortcut.TRASH ->
             copy(selected = NativeHomeTab.FILES)
         NativeHomeShortcut.TRANSFERS -> openDynamic(NativeDynamicFeature.TRANSFERS)
+        }
+        return routed.copy(
+            recentShortcuts = (listOf(shortcut) + recentShortcuts.filterNot {
+                it == shortcut
+            }).take(8))
     }
+
+    fun toggleFavorite(shortcut: NativeHomeShortcut) = copy(
+        favoriteShortcuts = if (shortcut in favoriteShortcuts)
+            favoriteShortcuts - shortcut else favoriteShortcuts + shortcut)
 
     fun openDynamic(feature: NativeDynamicFeature): NativeHomeNavigation = copy(
         selected = NativeHomeTab.DYNAMIC,
