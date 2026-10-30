@@ -225,6 +225,8 @@ struct XDriveIOSNativeServerMediaPreview: View {
     let item: XDriveIOSNativeMediaItem
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var phase
+    @State private var previewRequestID = UUID()
     @State private var image: UIImage?
     @State private var player: AVPlayer?
     @State private var failure: String?
@@ -255,36 +257,54 @@ struct XDriveIOSNativeServerMediaPreview: View {
                 }
             }
         }
-        .task(id: item.id) {
-            guard let expected = login.owner else { return }
+        .task(id: previewRequestID) {
+            // Signed previews must not survive a scene/Owner generation.
+            guard phase == .active, let expected = login.owner else { return }
+            let requestID = previewRequestID
             do {
                 let auth = try await login.verifiedAuthorization()
-                guard XDriveIOSNativePhotoOwnerScope.matches(auth.owner, expected)
-                else { throw XDriveIOSNativeMediaReadFailure.invalidScope }
+                try Task.checkCancellation()
+                guard phase == .active, previewRequestID == requestID,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected),
+                      XDriveIOSNativePhotoOwnerScope.matches(auth.owner, expected)
+                else { return }
                 let media = try await XDriveIOSNativeMediaGalleryReader(
                     owner: auth.owner, accessToken: auth.accessToken
                 ).preview(item)
                 try Task.checkCancellation()
-                guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
+                guard phase == .active, previewRequestID == requestID,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
                 else { return }
                 image = media.image
                 if let url = media.videoURL { player = AVPlayer(url: url) }
+            } catch is CancellationError {
+                // The generation has retired. Do not display a stale error.
             } catch {
+                guard phase == .active, previewRequestID == requestID,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
+                else { return }
                 failure = "该云端媒体预览暂不可用，未读取其他账户的数据。"
             }
         }
+        .onChange(of: phase) { _ in
+            // iOS app switcher must not expose the previous signed still/video.
+            // A fresh active generation re-verifies the Owner before loading.
+            retirePreview()
+        }
         .onChange(of: login.owner) { _ in
-            player?.pause()
-            player = nil
-            image = nil
-            failure = nil
+            retirePreview()
             dismiss()
         }
-        .onDisappear {
-            player?.pause()
-            player = nil
-            image = nil
-        }
+        .onDisappear { retirePreview() }
+    }
+
+    private func retirePreview() {
+        // Also cancels the .task(id:) network/decoder generation.
+        previewRequestID = UUID()
+        player?.pause()
+        player = nil
+        image = nil
+        failure = nil
     }
 }
 
