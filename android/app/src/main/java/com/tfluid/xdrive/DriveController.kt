@@ -32,6 +32,8 @@ data class DriveState(
     val route: ConnectionRoute = ConnectionRoute(),
     val connectionIp: String? = null,
     val username: String = "",
+    /** Ephemeral authentication epoch: never reuse a prior Owner's native navigation. */
+    val nativeUiSessionId: Long = 0,
     val loading: Boolean = false,
     /** True only for an explicitly cancellable Owner GET, not writes or SAF. */
     val discardableReadInFlight: Boolean = false,
@@ -214,6 +216,7 @@ class DriveController(
     private var session: AuthSession? = null // Never part of UI state or saved state.
     private var keepLogin = false
     private var generation = 0L
+    private var nativeUiSessionCounter = 0L
     private var active: Job? = null
     private val galleryThumbnailLimit = Semaphore(4)
     private var activeVideoPlayback: OwnerVideoPlayback? = null
@@ -486,6 +489,7 @@ class DriveController(
                 mutableState.value = DriveState(
                     screen = if (restored.mustChangePassword) Screen.PASSWORD else Screen.FILES,
                     server = server.url, route = route, connectionIp = ip, username = restored.username,
+                    nativeUiSessionId = ++nativeUiSessionCounter,
                 )
                 persistRefreshSession()
                 // A valid refreshed session survives a later transient directory read error.
@@ -560,6 +564,7 @@ class DriveController(
                     screen = if (result.mustChangePassword) Screen.PASSWORD else Screen.FILES,
                     server = next.url, allowHttp = allowHttp, route = route, connectionIp = ip,
                     username = result.username,
+                    nativeUiSessionId = ++nativeUiSessionCounter,
                 )
                 persistRefreshSession()
                 if (oldApi !== candidate) (oldApi as? Closeable)?.close()
@@ -597,6 +602,7 @@ class DriveController(
             mutableState.value = state.value.copy(
                 screen = if (result.mustChangePassword) Screen.PASSWORD else Screen.FILES,
                 username = result.username,
+                nativeUiSessionId = ++nativeUiSessionCounter,
             )
             persistRefreshSession()
             if (!result.mustChangePassword) {
@@ -3404,7 +3410,8 @@ class DriveController(
                 current.galleryViewer != null -> dismissGalleryViewer()
                 current.gallerySelectedAlbum != null -> closeGalleryAlbum()
                 current.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS -> openGalleryLibrary()
-                else -> openFilesApp()
+                // Gallery root is a fixed destination: Back never crosses to Files.
+                else -> Unit
             }
             return
         }
