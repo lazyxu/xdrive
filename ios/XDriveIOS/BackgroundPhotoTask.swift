@@ -36,6 +36,9 @@ enum XDriveIOSBackgroundPhotoTask {
         }
         let operation = Task { @MainActor in
             var successful = false
+            // Once an original writer starts, an interrupted create/finalize
+            // may have committed remotely. Never auto-reschedule that case.
+            var beganOriginalWrite = false
             defer {
                 active = nil
                 // success means the bounded local scan completed with no
@@ -63,6 +66,10 @@ enum XDriveIOSBackgroundPhotoTask {
                 guard access == .authorized || access == .limited else { return }
                 let owner = try approved.ownerScope()
                 guard let gate = XDriveIOSOriginalRunGate.shared.acquire() else {
+                    // A foreground upload consumed this one OS request.
+                    // Keep an explicitly approved future OS window, without
+                    // running a second writer or reserving a BG scan cursor.
+                    await resubmitOnlyIfStillApproved()
                     return
                 }
                 defer { XDriveIOSOriginalRunGate.shared.release(gate) }
@@ -81,6 +88,7 @@ enum XDriveIOSBackgroundPhotoTask {
                 // One newly committed original max per BGTask, even if the
                 // original is a video or an entire still+motion Live ZIP.
                 // The exact Owner journal and Go CAS writer are unchanged.
+                beganOriginalWrite = true
                 let progress = try await XDriveIOSForegroundPhotoBackupMVP(
                     owner: owner, approvedBackgroundGrant: approved
                 ).run(
@@ -104,13 +112,49 @@ enum XDriveIOSBackgroundPhotoTask {
             } catch is CancellationError {
                 // Unknown remote ACK stays in the encrypted journal.
             } catch {
-                // Grant revoked/expired, TLS failure, source unavailable,
-                // locked Keychain or changed Owner never means success.
-                // Do not hot-loop a new upload on a possible lost ACK.
+                // Only an independently identified, transient network failure
+                // BEFORE any potential Server write may keep the schedule
+                // alive. Invalid/revoked grants, missing permission, cancelled
+                // work or a possible lost finalize ACK MUST NOT auto-retry.
+                if !beganOriginalWrite && retryablePreflightNetworkFailure(error) {
+                    await resubmitOnlyIfStillApproved()
+                }
             }
         }
         active = operation
         task.expirationHandler = { operation.cancel() }
+    }
+
+    /// A one-off OS BG request is consumed when it fires. Network failure
+    /// before the initial *read-only* grant proof must not permanently
+    /// strand a valid user-approved backup. Never resubmit when a network
+    /// write might have begun or the Server rejected the grant.
+    private static func retryablePreflightNetworkFailure(_ error: Error) -> Bool {
+        guard let network = error as? URLError else { return false }
+        switch network.code {
+        case .timedOut, .networkConnectionLost, .notConnectedToInternet,
+             .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private static func resubmitOnlyIfStillApproved() async {
+        do {
+            try Task.checkCancellation()
+            // A local revoke removes the background-readable credential.
+            // Re-read it after any suspension before submitting a new task;
+            // do not reuse an old copied grant or bypass server proof.
+            guard let grant = try await XDriveIOSApprovedPhotoBGVault.shared.current(),
+                  let owner = try? grant.ownerScope(),
+                  grant.matches(owner) else { return }
+            try Task.checkCancellation()
+            try scheduleApprovedProbe(afterMinutes: grant.intervalMinutes)
+        } catch {
+            // Advisory OS scheduling is never a successful upload receipt.
+            // An unreadable/revoked grant cannot start a new task.
+        }
     }
 
     /// A background run must not continue with a copied, now-local-revoked
