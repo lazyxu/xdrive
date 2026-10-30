@@ -30,6 +30,9 @@ final class XDriveIOSPhotoAutoScheduleStore {
         // Optional for backward-compatible decoding of old schedules.
         var libraryChangeEpoch: Data? = nil
         var libraryAuthorizationRaw: Int? = nil
+        // Optional for decoding older schedules. Never accelerate unless
+        // the current Owner separately and explicitly opts in.
+        var catchUpWhenBehind: Bool? = nil
     }
     private func key(for owner: XDriveNativeOwnerRoot) -> String {
         let scope = owner.origin.absoluteString + "\n" + owner.instanceID +
@@ -64,7 +67,8 @@ final class XDriveIOSPhotoAutoScheduleStore {
             // First scan is due on the next eligible foreground poll.
             nextDueAt: Date(), lastCompletedAt: existing?.lastCompletedAt,
             libraryChangeEpoch: existing?.libraryChangeEpoch,
-            libraryAuthorizationRaw: existing?.libraryAuthorizationRaw
+            libraryAuthorizationRaw: existing?.libraryAuthorizationRaw,
+            catchUpWhenBehind: existing?.catchUpWhenBehind
         )
         try persist(state, owner: owner)
         return state
@@ -73,6 +77,30 @@ final class XDriveIOSPhotoAutoScheduleStore {
     func disable(owner: XDriveNativeOwnerRoot) {
         // Disable immediately, without requiring a network roundtrip.
         UserDefaults.standard.removeObject(forKey: key(for: owner))
+    }
+
+    /// Foreground-only, Owner-scoped optional acceleration. Older plans have
+    /// nil preference (disabled), and receipt-review pauses cannot be bypassed.
+    @discardableResult
+    func setCatchUp(owner: XDriveNativeOwnerRoot, enabled: Bool,
+                    now: Date = Date()) throws -> State {
+        guard var state = status(owner: owner), state.enabled,
+              (!enabled || !state.pausedForReview),
+              let regularDue = XDriveIOSPhotoAutoSchedulePolicy.nextDue(
+                after: now, intervalMinutes: state.intervalMinutes
+              ) else { throw XDriveIOSPhotoAutoScheduleError.persistenceUnavailable }
+        state.catchUpWhenBehind = enabled
+        // Opting in can start the next fresh, verified foreground check soon.
+        // Opting out takes effect immediately for future windows and restores
+        // the selected interval; the existing bounded run may finish safely.
+        let soon = now.addingTimeInterval(
+            XDriveIOSPhotoAutoSchedulePolicy.catchUpCooldown
+        )
+        state.nextDueAt = enabled
+            ? min(state.nextDueAt, soon)
+            : max(state.nextDueAt, regularDue)
+        try persist(state, owner: owner)
+        return state
     }
 
     /// Emergency STOP-only operation for every local Owner scope. This
@@ -141,12 +169,25 @@ final class XDriveIOSPhotoAutoScheduleStore {
             previousAuthorization: state.libraryAuthorizationRaw,
             currentAuthorization: epoch.authorization
         )
+        let completedWindow = state.windowIndex
         state.windowIndex = unchanged
             ? XDriveIOSPhotoAutoSchedulePolicy.nextWindow(
                 current: state.windowIndex, visibleTotal: progress.totalVisible,
                 scanned: progress.scanned, uploaded: progress.uploaded,
                 needsReview: pending
               ) : 0
+        // The regular interval and all existing Owner plans remain unchanged
+        // unless this specific Owner has actively opted into catch-up.
+        if state.catchUpWhenBehind == true {
+            guard let due = XDriveIOSPhotoAutoSchedulePolicy.nextDueAfterCompletedWindow(
+                at: now, intervalMinutes: state.intervalMinutes,
+                currentWindow: completedWindow, followingWindow: state.windowIndex,
+                visibleTotal: progress.totalVisible, scanned: progress.scanned,
+                uploaded: progress.uploaded, needsReview: pending,
+                libraryUnchanged: unchanged
+            ) else { throw XDriveIOSPhotoAutoScheduleError.unsupportedInterval }
+            state.nextDueAt = due
+        }
         state.libraryChangeEpoch = epoch.serialized
         state.libraryAuthorizationRaw = epoch.authorization
         state.pausedForReview = pending

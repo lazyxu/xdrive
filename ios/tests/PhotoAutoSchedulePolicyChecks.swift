@@ -24,6 +24,34 @@ import Foundation
     precondition(p.nextDue(after: now, intervalMinutes: 60) ==
                  now.addingTimeInterval(3600))
     precondition(p.nextDue(after: now, intervalMinutes: -5) == nil)
-    print("iOS foreground auto backup interval/cursor safety: PASS")
+
+    let fast = now.addingTimeInterval(60)
+    let normal = now.addingTimeInterval(3600)
+    func due(_ current: Int, _ next: Int, _ total: Int, _ scanned: Int,
+             _ uploaded: Int, review: Bool = false, unchanged: Bool = true)
+             -> Date? {
+      p.nextDueAfterCompletedWindow(at: now, intervalMinutes: 60,
+          currentWindow: current, followingWindow: next,
+          visibleTotal: total, scanned: scanned, uploaded: uploaded,
+          needsReview: review, libraryUnchanged: unchanged)
+    }
+    precondition(due(0,0,10000,20,20) == fast)
+    precondition(due(0,1,10000,256,3) == fast)
+    precondition(due(1,2,10000,256,0) == fast)
+    precondition(due(39,0,10000,16,0) == normal)
+    precondition(due(0,0,20,20,20) == fast)
+    precondition(due(0,0,20,20,0) == normal)
+    precondition(due(0,0,10000,30,1) == normal)
+    precondition(due(0,1,10000,256,1,review:true) == normal)
+    precondition(due(0,1,10000,256,1,unchanged:false) == normal)
+    precondition(due(0,0,0,0,0) == normal)
+    precondition(due(99,0,20,0,0) == normal)
+    precondition(due(0,1,10000,257,0) == normal)
+    precondition(due(0,1,10000,5,20) == normal)
+    precondition(due(0,1,10000,256,21) == normal)
+    precondition(p.nextDueAfterCompletedWindow(at:now,intervalMinutes:1,
+      currentWindow:0,followingWindow:1,visibleTotal:10000,scanned:256,
+      uploaded:0,needsReview:false,libraryUnchanged:true) == nil)
+    print("iOS foreground auto backup interval/cursor/opt-in catch-up safety: PASS")
   }
 }
