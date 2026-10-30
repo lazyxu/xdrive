@@ -26,6 +26,29 @@ type InFlightRange = {
   promise: Promise<void>
 }
 
+/**
+ * A viewport's request identity is its exact positional window, NOT merely
+ * the Host response's claimed page. A mismatched reply must never poison the
+ * loaded-range key or inject rows into another scroll position. The producer
+ * remains responsible for current Server/Owner authorization.
+ */
+function xDriveVirtualCollectionPageMatchesRequest<TItem>(
+  range: XDriveVirtualCollectionRange,
+  page: XDriveVirtualCollectionPage<TItem>,
+  knownTotal: number | null,
+): boolean {
+  if (!page || !Array.isArray(page.items) ||
+      !Number.isSafeInteger(page.offset) || page.offset !== range.offset ||
+      !Number.isSafeInteger(page.limit) || page.limit < 1 ||
+      page.limit > range.limit || page.items.length > page.limit ||
+      (page.totalCount !== null &&
+        (!Number.isSafeInteger(page.totalCount) || page.totalCount < 0))) return false
+  const total = page.totalCount ?? knownTotal
+  return total === null ||
+    (Number.isSafeInteger(total) && total >= 0 &&
+      page.offset + page.items.length <= total)
+}
+
 export function useXDriveVirtualCollection<TItem>({
   queryKey,
   loadRange,
@@ -174,6 +197,11 @@ export function useXDriveVirtualCollection<TItem>({
             generation !== generationRef.current ||
             queryKeyRef.current !== queryKey
           ) return
+          if (!xDriveVirtualCollectionPageMatchesRequest(
+            range, page, snapshotRef.current.totalCount,
+          )) {
+            throw new Error('VirtualCollection returned an invalid positional Range page.')
+          }
           if (
             page.totalCount === null &&
             snapshotRef.current.totalCount === null
@@ -281,7 +309,8 @@ export function useXDriveVirtualCollection<TItem>({
             activeQueryKey !== queryKeyRef.current
           ) return null
           if (
-            page.offset !== range.offset ||
+            !xDriveVirtualCollectionPageMatchesRequest(range, page, totalCount) ||
+            page.limit !== range.limit ||
             page.items.length !== range.limit ||
             (totalCount !== null && page.totalCount !== null && page.totalCount !== totalCount)
           ) return null
