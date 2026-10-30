@@ -58,7 +58,7 @@ test('new Cloud PhotoAsset Gallery is under the fixed Gallery tab; old originals
   assert.match(view, /这不代表服务器没有原件/)
 
   assert.match(view, /\.onChange\(of: login\.owner\)/)
-  assert.match(view, /if selected != nil \{ model\.suspendForViewer\(\) \}/)
+  assert.match(view, /if selected != nil \{\s*model\.suspendForViewer\(\)/)
   assert.match(view, /model\.suspendForNavigation\(\)/)
   assert.match(view, /epoch = UUID\(\)/)
   assert.match(view, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expected\)/)
