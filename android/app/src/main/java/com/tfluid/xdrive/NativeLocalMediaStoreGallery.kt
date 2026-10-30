@@ -367,7 +367,7 @@ private fun NativeLocalThumbnail(
 
 /** L3 local Viewer: content:// only, no server bearer, no generated upload ACK. */
 @Composable
-private fun NativeLocalMediaViewer(
+internal fun NativeLocalMediaViewer(
     asset: NativeLocalMedia, onDismiss: () -> Unit,
     onBackupOriginal: (() -> Unit)? = null,
 ) {
