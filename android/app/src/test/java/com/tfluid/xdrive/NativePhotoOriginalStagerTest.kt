@@ -16,7 +16,7 @@ class NativePhotoOriginalStagerTest {
             "%02x".format(byte.toInt() and 0xff)
         }
 
-    @Test fun exactOriginalIsStreamedHashedReopenedAndDiscarded() = runBlocking {
+    @Test fun exactOriginalIsStreamedHashedReopenedAndDiscarded(): Unit = runBlocking {
         val privateRoot = root()
         try {
             val original = ByteArray(128 * 1024 + 17) { (it % 251).toByte() }
@@ -36,7 +36,7 @@ class NativePhotoOriginalStagerTest {
         } finally { privateRoot.deleteRecursively() }
     }
 
-    @Test fun truncationOrExcessBytesNeverLeavesStagingFiles() = runBlocking {
+    @Test fun truncationOrExcessBytesNeverLeavesStagingFiles(): Unit = runBlocking {
         val privateRoot = root()
         try {
             for ((bytes, declared) in listOf(
@@ -54,7 +54,7 @@ class NativePhotoOriginalStagerTest {
         } finally { privateRoot.deleteRecursively() }
     }
 
-    @Test fun revokedSourceAndPrivateStageTamperFailClosed() = runBlocking {
+    @Test fun revokedSourceAndPrivateStageTamperFailClosed(): Unit = runBlocking {
         val privateRoot = root()
         try {
             try {
@@ -79,7 +79,7 @@ class NativePhotoOriginalStagerTest {
         } finally { privateRoot.deleteRecursively() }
     }
 
-    @Test fun oversizedOrZeroLengthIsDeniedBeforeOpeningMedia() = runBlocking {
+    @Test fun oversizedOrZeroLengthIsDeniedBeforeOpeningMedia(): Unit = runBlocking {
         val privateRoot = root()
         var opens = 0
         try {
