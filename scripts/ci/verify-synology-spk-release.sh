@@ -53,8 +53,7 @@ if [[ "$required_flavor" == "--require-mui" ]]; then
       echo "published DSM GUI payload missing $required" >&2; exit 1;
     }
   done
-  grep -Eq '^[.]/ui/assets/.+[.]jsecho "Verified exact DSM SPK and matching SHA256: $(basename "$spk")"
- <<<"$payload_entries" || {
+  grep -Eq '^[.]/ui/assets/.+[.]js$' <<<"$payload_entries" || {
     echo "published DSM GUI payload lacks compiled JavaScript" >&2; exit 1;
   }
 fi
