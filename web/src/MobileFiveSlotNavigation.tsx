@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import AppsRoundedIcon from '@mui/icons-material/AppsRounded'
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded'
 import PhotoLibraryRoundedIcon from '@mui/icons-material/PhotoLibraryRounded'
-import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
+import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
 import PersonRoundedIcon from '@mui/icons-material/PersonRounded'
 import BackupRoundedIcon from '@mui/icons-material/BackupRounded'
 import CloudDownloadRoundedIcon from '@mui/icons-material/CloudDownloadRounded'
@@ -27,7 +27,7 @@ import { XDRIVE_WEB_APPS } from './webApps'
  * Do not pull Desktop-only JSX navigation modules into the Web bundle. */
 function xDriveBrowserMobileDestinationIcon(key: string): ReactNode {
   switch (key) {
-    case 'files': return <FolderRoundedIcon fontSize="small" />
+    case 'files': return <FolderOpenRoundedIcon fontSize="small" />
     case 'gallery': return <PhotoLibraryRoundedIcon fontSize="small" />
     case 'device-backup': return <BackupRoundedIcon fontSize="small" />
     case 'remote-pull': return <CloudDownloadRoundedIcon fontSize="small" />
@@ -138,7 +138,7 @@ export function XDriveMobileFiveSlotNavigation({
             aria-current={selected === 'gallery' ? 'page' : undefined}
             onClick={() => onSelect('gallery')} />
           <BottomNavigationAction value="files" label="文件"
-            icon={<FolderRoundedIcon fontSize="small" />}
+            icon={<FolderOpenRoundedIcon fontSize="small" />}
             aria-current={selected === 'files' ? 'page' : undefined}
             onClick={() => onSelect('files')} />
           <BottomNavigationAction value="mine" label="我的"
