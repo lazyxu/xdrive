@@ -77,7 +77,9 @@ test('L3 photos reuse the tested UIKit zoom surface in local, originals and inde
 test('new Cloud PhotoAsset Gallery is under the fixed Gallery tab; old originals remain distinct', () => {
   assert.match(app, /case local, albums, cloud, originals, map/)
   assert.match(app, /XDriveIOSNativeServerMediaWall\(\s*login: login, album: nil,\s*onFocusChange:/)
-  assert.match(app, /XDriveIOSNativeCloudOriginalGallery\(login: login\)/)
+  assert.match(app, /XDriveIOSNativeCloudOriginalGallery\(\s*login: login,\s*confirmedOriginalUpdate: backup\.confirmedOriginalUpdate\s*\)/)
+  assert.match(originals, /\.onChange\(of: confirmedOriginalUpdate\) \{ update in/)
+  assert.match(originals, /XDriveIOSNativePhotoOwnerScope\.matches\(login.owner, update.owner\)/)
   assert.match(app, /case \.originals:\s*openGallery\(\.originals\)/)
   assert.match(app, /case \.cloud:\s*openGallery\(\.cloud\)/)
   assert.match(view, /NavigationLink\s*\{\s*XDriveIOSNativeServerMediaAlbums\(\s*login: login, onFocusChange: onFocusChange/)
