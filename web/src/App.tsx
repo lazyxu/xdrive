@@ -40,6 +40,7 @@ import {
   createXDriveCloudStorageDataSource,
   XDriveAppPageOutlet,
   XDriveWorkspaceSidebar,
+  xDriveCoreWorkspaceDestinations,
   xDriveWorkspaceHostSections,
   XDriveSettingsDialog,
   XDriveIOSPhotoBackupSettings,
@@ -102,6 +103,9 @@ import WebUnsupportedFileDialog from './WebUnsupportedFileDialog'
 import { xDriveWebOpenRouteForNode } from './webViewerRoute'
 import { useXDriveWebAppRuntime, xDriveCreateWebAppBrowseSession, xDriveClearPrivateMapBrowseSessions } from './webAppRuntime'
 import { xDriveWebAppRouteForWorkspaceKey, xDriveWebAppWorkspaceKey } from './webApps'
+import { XDriveMobileAllLauncher, XDriveMobileFiveSlotNavigation, XDriveMobileMinePage } from './MobileFiveSlotNavigation'
+import { xDriveInitialMobileNavigation, xDriveMobileFeatureParentRoute, xDriveMobileRouteForSlot, xDriveMobileSlotForRoute, xDriveRememberMobileNavigation } from './mobileFiveSlotState'
+import type { XDriveMobileSlot } from './mobileFiveSlotState'
 import { createWebMediaGalleryDataSource } from './mediaGalleryAdapter'
 import { XDriveRoutedGalleryThumbnailBridge } from './routedGalleryThumbnailBridge'
 import { xDriveTakeMapScopeHandoffFromURL, xDriveAbandonMapScopeRequired, xDriveRestoreMapReferrerAfterScrub } from './mapScopeHandoff'
@@ -1125,7 +1129,7 @@ function FileManager({
     return true
   }, [])
   const {
-    route, launch: launchWebAppRuntime, closeViewer, exitApp, canExitApp,
+    route, launch: launchWebAppRuntime, closeViewer, exitApp,
     cancelHistoryNavigation, confirmHistoryNavigation, markLoadedWorkspaceApp,
   } = useXDriveWebAppRuntime(guardBrowserNavigation)
   const activeAppRef = useRef(route.app)
@@ -1162,6 +1166,20 @@ function FileManager({
   // Browser routing stays in the owning Web runtime; the retained page identity
   // now follows the same canonical Desktop/DSM route union.
   const appView = useXDriveRetainedWorkspaceRoute(workspaceRouteKey)
+  // Mobile recents and tab return targets are volatile and strictly Owner-bound.
+  // No media coordinates, browser credentials or cross-Owner routes are stored.
+  const mobileOwnerScope = profile?.username === username && profile.id > 0 &&
+    !profile.must_change_password ? window.location.origin + ':' + profile.id : ''
+  const mobileAdminVerified = profile?.username === username && profile?.role === 'admin' &&
+    profile.must_change_password !== true
+  const [mobileNavigation, setMobileNavigation] = useState(() => xDriveInitialMobileNavigation())
+  useEffect(() => {
+    setMobileNavigation(previous => xDriveRememberMobileNavigation(
+      previous, route, mobileOwnerScope, mobileAdminVerified,
+    ))
+  }, [route, mobileOwnerScope, mobileAdminVerified])
+  const currentMobileNavigation = mobileNavigation.ownerScope === mobileOwnerScope
+    ? mobileNavigation : xDriveInitialMobileNavigation(mobileOwnerScope)
   // <main> survives app switches. A previous page's scrollTop must not shift
   // the first frame of a different app. The Viewer is a sibling overlay and
   // keeps the same appView, so its dedicated Gallery anchor remains intact.
@@ -1381,7 +1399,7 @@ function FileManager({
   const [transferPopoverOpen, setTransferPopoverOpen] = useState(false)
   const galleryUploadInputRef = useRef<HTMLInputElement>(null)
   const [galleryUploadRevision, setGalleryUploadRevision] = useState(0)
-  const [compactNavigationOpen, setCompactNavigationOpen] = useState(false)
+  const [mobileRecentOpen, setMobileRecentOpen] = useState(false)
   const [trashOpen, setTrashOpen] = useState(false)
   const [historyNode, setHistoryNode] = useState<Node | null>(null)
   const [shareNode, setShareNode] = useState<Node | null>(null)
@@ -1398,7 +1416,7 @@ function FileManager({
   const taskCenterFocusSequenceRef = useRef(0)
 
   useEffect(() => {
-    setCompactNavigationOpen(false)
+    setMobileRecentOpen(false)
     setTransferPopoverOpen(false)
   }, [compactWorkspace, viewerActive])
 
@@ -2286,7 +2304,7 @@ function FileManager({
   )
   const accountAction = (
     <WebAccountMenu
-      disabled={viewerActive || (compactWorkspace && !compactNavigationOpen)}
+      disabled={viewerActive}
       offlineOwner={offlineOwner}
       onOfflineConsentChange={setOfflineConsent}
       iosPhotoHost={iosPhotoHost}
@@ -2315,6 +2333,45 @@ function FileManager({
   const remotePullTargetPath = crumbs.slice(1).map((crumb) => crumb.name).join('/')
   const serverAdminVerified = profile?.username === username &&
     profile?.role === 'admin' && profile?.must_change_password !== true
+  // Reuse the authenticated Web destinations, not native capabilities or a
+  // second routing/backup stack. The iOS contract determines only mobile UX.
+  const mobileDestinations = [
+    ...xDriveCoreWorkspaceDestinations({ transferBadge: taskCenter.badge, showLocalStorage: true }),
+    ...webSidebarSections.flatMap(section => section.items),
+  ].filter(destination => destination.key !== 'overview' &&
+    xDriveWorkspaceNavigationAllowed(destination.key, serverAdminVerified))
+  const mobileLauncherSections = [
+    { key: 'web-mobile-apps', label: '全部应用', items: mobileDestinations },
+  ]
+  const mobileRecentDestinations = currentMobileNavigation.dynamic.flatMap(recent => {
+    const key = xDriveWebAppWorkspaceKey(recent.app, recent.params)
+    const destination = mobileDestinations.find(item => item.key === key)
+    return destination ? [{ route: recent, label: destination.label, icon: destination.icon }] : []
+  })
+  const latestMobileDynamic = mobileRecentDestinations[0]
+  const selectMobileLauncher = (destination: string) => {
+    const next = xDriveWebAppRouteForWorkspaceKey(destination)
+    if (next && xDriveWorkspaceNavigationAllowed(destination, serverAdminVerified)) launchWebApp(next)
+  }
+  const selectMobileSlot = (slot: XDriveMobileSlot) => {
+    const next = xDriveMobileRouteForSlot(currentMobileNavigation, slot, serverAdminVerified)
+    if (next) launchWebApp(next)
+    else setMobileRecentOpen(true)
+  }
+  const mobileParent = xDriveMobileFeatureParentRoute(route)
+  const mobileFolderParent = route.app === 'files' && crumbs.length > 1
+    ? crumbs[crumbs.length - 2] : null
+  const mobileCanGoBack = Boolean(mobileFolderParent || mobileParent)
+  const goBackWithinMobileFeature = () => {
+    if (mobileFolderParent && route.app === 'files') {
+      void loadDirectory(mobileFolderParent.id, crumbs.slice(0, -1))
+      launchWebApp({ app: 'files', params: { dir: mobileFolderParent.id } }, { replace: true })
+    } else if (mobileParent) launchWebApp(mobileParent, { replace: true })
+  }
+  const mobileMapFocused = route.app === 'gallery' && route.params.section === 'places'
+  const mobileRouteTitle = route.app === 'overview'
+    ? route.params.section === 'mine' ? '我的' : '全部'
+    : mobileMapFocused ? '地图' : xDriveWorkspaceRouteTitle(appView)
   const browserWorkspaceHost = useMemo(
     () => createXDriveBrowserWorkspaceHost({
       adminRoleVerified: serverAdminVerified,
@@ -2467,15 +2524,11 @@ function FileManager({
           onChange={(event) => { void resumeSelectedUpload(event) }}
           />
         }
-        sidebar={
+        sidebar={compactWorkspace ? null : (
           <XDriveWorkspaceSidebar
           ariaLabel="网页端功能区"
           navAriaLabel="网页端功能区导航"
           responsive
-          compactFullscreen
-          compactOpen={compactNavigationOpen}
-          onCompactOpenChange={setCompactNavigationOpen}
-          compactActions={compactWorkspace ? accountAction : undefined}
           disabled={viewerActive}
           selected={appView}
           transferBadge={taskCenter.badge}
@@ -2494,17 +2547,18 @@ function FileManager({
             setAppView(destination as AppView)
           }}
           />
-        }
+        )}
       >
 
         <Box data-xdrive-mobile-app-frame sx={{ minWidth: 0, minHeight: 0, height: '100%', flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {compactWorkspace ? (
             <XDriveMobileAppHeader
-              title={xDriveWorkspaceRouteTitle(appView)}
-              canGoBack={canExitApp}
+              title={mobileRouteTitle}
+              canGoBack={mobileCanGoBack}
+              backLabel="返回当前功能上一级"
               disabled={viewerActive}
-              onBack={exitWebApp}
-              onOpenApps={() => setCompactNavigationOpen(true)}
+              onBack={goBackWithinMobileFeature}
+              onOpenApps={() => selectMobileSlot('all')}
               transferAction={transferAction}
             />
           ) : null}
@@ -2520,6 +2574,22 @@ function FileManager({
           sx={{ overflowAnchor: appView === 'gallery' ? 'none' : undefined }}
         >
         {appView === 'overview' ? (
+          route.app === 'overview' && route.params.section === 'mine' ? (
+            <XDriveMobileMinePage
+              username={username}
+              serverOrigin={window.location.origin}
+              serverVersion={serverBuild?.version ?? '未知'}
+              profileVerified={Boolean(mobileOwnerScope)}
+              accountAction={accountAction}
+            />
+          ) : compactWorkspace ? (
+            <XDriveMobileAllLauncher
+              key={mobileOwnerScope}
+              sections={mobileLauncherSections}
+              onSelect={selectMobileLauncher}
+              onOpenRecent={() => setMobileRecentOpen(true)}
+            />
+          ) : (
           <WebOverviewPage
             api={api}
             username={username}
@@ -2552,6 +2622,7 @@ function FileManager({
             onOpenGallery={() => setAppView('gallery')}
             onOpenTransfers={() => setTransferPopoverOpen(true)}
           />
+          )
         ) : appView === 'files' ? (
           <XDriveAppPageOutlet
             host={xDriveBrowserFilesRouteHost(browserWorkspaceHost, (
@@ -2801,6 +2872,18 @@ function FileManager({
         </XDriveWorkspaceRouteSurface>
         <XDriveCommittedWorkspaceRoute view={appView} onReady={markLoadedWorkspaceApp} />
         </Suspense>
+        {compactWorkspace && !viewerActive && !mobileMapFocused ? (
+          <XDriveMobileFiveSlotNavigation
+            selected={xDriveMobileSlotForRoute(route) ?? 'all'}
+            dynamicLabel={latestMobileDynamic?.label ?? '最近'}
+            dynamicIcon={latestMobileDynamic?.icon}
+            recent={mobileRecentDestinations}
+            recentOpen={mobileRecentOpen}
+            onRecentOpenChange={setMobileRecentOpen}
+            onSelect={selectMobileSlot}
+            onPickRecent={next => launchWebApp(next)}
+          />
+        ) : null}
         </Box>
       </XDriveWorkspaceFrame>
       </Box>
