@@ -1930,6 +1930,12 @@ async function testMobilePhotoDrawer(browser,mode,port){
     const closeMap=page.locator('[data-xdrive-places-map-close]')
     await closeMap.waitFor({state:'visible'})
     await closeMap.tap()
+    // Media tiles can remain CSS-visible BEHIND the still-mounted map:
+    // Playwright's visible state is not a route-commit signal. Require the
+    // actual map surface to detach before accepting Gallery restoration.
+    // Timeout is still a failure of the original strict assertion below.
+    await page.locator('[data-xdrive-gallery-places-map]')
+      .waitFor({state:'detached',timeout:10000}).catch(()=>{})
     await page.locator('[data-xdrive-media-tile]').first().waitFor({state:'visible'})
     const closed=await page.evaluate(()=>({
       mapCount:document.querySelectorAll('[data-xdrive-gallery-places-map]').length,
@@ -1937,7 +1943,12 @@ async function testMobilePhotoDrawer(browser,mode,port){
         read=>read.kind==='ordinary').length,
       errors:window.__mapProbe.galleryPageErrors.length,
     }))
-    record(mode+': closing the mobile map returns to authenticated Gallery',
+    // Capture ONLY aggregate non-secret state if this fails again. Never
+    // dump DOM, Owner names, signed URLs, photo IDs or screenshot content.
+    record(mode+': closing the mobile map returns to authenticated Gallery '+
+      JSON.stringify({mapCount:closed.mapCount,
+        ordinaryOwnerReads:closed.ordinaryOwnerReads,
+        galleryErrorCount:closed.errors, pageErrorCount:errors.length}),
       closed.mapCount===0&&closed.ordinaryOwnerReads>=1&&
       closed.errors===0&&errors.length===0)
     summary.mobileDrawerModes.push(mode)
