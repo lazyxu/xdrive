@@ -58,7 +58,7 @@ test('paused schedule resumes only with explicit consent, zero trusted pending, 
   const snapshot = resume.indexOf('pendingReceiptSnapshot(')
   const configure = resume.indexOf('scheduleStore.configure(')
   assert.ok(snapshot >= 0 && configure > snapshot)
-  assert.match(resume, /guard let scope = try await XDriveIOSForegroundBackupIdentity\.shared/)
+  assert.match(resume, /let scope = try await XDriveIOSForegroundBackupIdentity\.shared/)
   assert.match(resume, /count == 0/)
   assert.match(resume, /current\.enabled, current\.pausedForReview/)
   assert.match(resume, /scheduleStore\.localStopGeneration == stopGeneration/)
