@@ -48,6 +48,9 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
         mutableStateOf(NativeHomeNavigation())
     }
     var launcherSearch by remember(state.nativeUiSessionId) { mutableStateOf("") }
+    var localAlbumSelection by remember(state.nativeUiSessionId) {
+        mutableStateOf<NativeLocalAlbum?>(null)
+    }
     var pendingGalleryMap by remember(state.nativeUiSessionId) { mutableStateOf(false) }
     var pendingGalleryTab by remember(state.nativeUiSessionId) { mutableStateOf(false) }
     var pendingTrash by remember(state.nativeUiSessionId) { mutableStateOf(false) }
@@ -437,8 +440,12 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                                     sessionId = state.nativeUiSessionId)
                             }
                             NativeGallerySource.ALBUMS -> Box(Modifier.weight(1f)) {
-                                NativeLocalMediaStoreGallery(albumsOnly = true,
-                                    sessionId = state.nativeUiSessionId)
+                                NativeLocalMediaStoreGallery(
+                                    albumsOnly = true,
+                                    sessionId = state.nativeUiSessionId,
+                                    selectedAlbum = localAlbumSelection,
+                                    onAlbumSelected = { localAlbumSelection = it },
+                                )
                             }
                             NativeGallerySource.MAP -> TextButton(
                                 onClick = { pendingGalleryMap = true },
