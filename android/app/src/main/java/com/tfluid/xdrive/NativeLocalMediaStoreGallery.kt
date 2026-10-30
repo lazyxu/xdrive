@@ -89,6 +89,7 @@ internal fun NativeLocalMediaStoreGallery(
     sessionId: Long,
     selectedAlbum: NativeLocalAlbum? = null,
     onAlbumSelected: (NativeLocalAlbum?) -> Unit = {},
+    onBackupOriginal: ((NativeLocalMedia) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val resolver = context.contentResolver
@@ -326,7 +327,13 @@ internal fun NativeLocalMediaStoreGallery(
         }
     }
     selectedMedia?.let { asset ->
-        NativeLocalMediaViewer(asset) { selectedMedia = null }
+        NativeLocalMediaViewer(
+            asset = asset,
+            onDismiss = { selectedMedia = null },
+            onBackupOriginal = onBackupOriginal?.let { callback ->
+                { selectedMedia = null; callback(asset) }
+            },
+        )
     }
 }
 
@@ -360,8 +367,9 @@ private fun NativeLocalThumbnail(
 
 /** L3 local Viewer: content:// only, no server bearer, no generated upload ACK. */
 @Composable
-private fun NativeLocalMediaViewer(
+internal fun NativeLocalMediaViewer(
     asset: NativeLocalMedia, onDismiss: () -> Unit,
+    onBackupOriginal: (() -> Unit)? = null,
 ) {
     Dialog(onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -370,6 +378,11 @@ private fun NativeLocalMediaViewer(
                 TextButton(onClick = onDismiss,
                     modifier = Modifier.statusBarsPadding()
                         .testTag("native-local-viewer-back")) { Text("返回本机照片") }
+                if (onBackupOriginal != null) TextButton(
+                    onClick = onBackupOriginal,
+                    modifier = Modifier.heightIn(min = 48.dp)
+                        .testTag("native-local-backup-request"),
+                ) { Text("备份这一项原件") }
                 if (asset.isVideo) NativeLocalVideoPlayer(asset)
                 else NativeLocalStillViewer(asset)
                 Text("本机原件只读预览（解码最长边不超过 4096 像素）；动态照片运动片段暂不支持播放，也不会自动备份。",
