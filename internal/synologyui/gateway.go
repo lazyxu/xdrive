@@ -103,6 +103,8 @@ type Gateway struct {
 	Connect      func(context.Context) (Agent, error)
 	Now          func() time.Time
 	HTTPS        bool
+	// Test-only substitute for "/", inaccessible to the production caller.
+	nasShareRoot string
 }
 
 // The owner must run this from the SAME restricted DSM package account as the
@@ -389,8 +391,8 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		previous := csrf(key, username, r.Header.Get("Cookie"), r.Host, interval-1)
 		if !validOrigin(r) || len(token) != len(current) ||
 			(subtle.ConstantTimeCompare([]byte(token), []byte(current)) != 1 && subtle.ConstantTimeCompare([]byte(token), []byte(previous)) != 1) ||
-			(r.URL.Path != "/v1/schedule" && r.ContentLength != 0) ||
-			(r.URL.Path == "/v1/schedule" && (r.ContentLength < 2 || r.ContentLength > 1024)) {
+			(r.URL.Path != "/v1/schedule" && r.URL.Path != "/v1/nas-share-preflight" && r.ContentLength != 0) ||
+			((r.URL.Path == "/v1/schedule" || r.URL.Path == "/v1/nas-share-preflight") && (r.ContentLength < 2 || r.ContentLength > 1024)) {
 			http.Error(w, "CSRF validation failed", http.StatusForbidden)
 			return
 		}
@@ -399,11 +401,11 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		sendJSON(w, map[string]any{"dsm_user": username, "csrf_token": csrf(key, username, r.Header.Get("Cookie"), r.Host, interval)})
 		return
 	}
-	if r.URL.Path != "/v1/sources" && r.URL.Path != "/v1/status" && r.URL.Path != "/v1/history" && r.URL.Path != "/v1/run" && r.URL.Path != "/v1/control" && r.URL.Path != "/v1/schedule" && r.URL.Path != "/v1/device-backups" && r.URL.Path != "/v1/device-backup-runs" && r.URL.Path != "/v1/device-backup-page" && r.URL.Path != "/v1/device-backup-folders" && r.URL.Path != "/v1/cloud-quota" && r.URL.Path != "/v1/nas-volume" && r.URL.Path != "/v1/cloud-root" && r.URL.Path != "/v1/cloud-children" && r.URL.Path != "/v1/cloud-text-preview" && r.URL.Path != "/v1/cloud-media-range" && r.URL.Path != "/v1/cloud-media-stream" && r.URL.Path != "/v1/cloud-thumbnail" && r.URL.Path != "/v1/cloud-gallery-items" && r.URL.Path != "/v1/cloud-gallery-albums" && r.URL.Path != "/v1/cloud-live-motion" {
+	if r.URL.Path != "/v1/sources" && r.URL.Path != "/v1/status" && r.URL.Path != "/v1/history" && r.URL.Path != "/v1/run" && r.URL.Path != "/v1/control" && r.URL.Path != "/v1/schedule" && r.URL.Path != "/v1/device-backups" && r.URL.Path != "/v1/device-backup-runs" && r.URL.Path != "/v1/device-backup-page" && r.URL.Path != "/v1/device-backup-folders" && r.URL.Path != "/v1/cloud-quota" && r.URL.Path != "/v1/nas-volume" && r.URL.Path != "/v1/cloud-root" && r.URL.Path != "/v1/cloud-children" && r.URL.Path != "/v1/cloud-text-preview" && r.URL.Path != "/v1/cloud-media-range" && r.URL.Path != "/v1/cloud-media-stream" && r.URL.Path != "/v1/cloud-thumbnail" && r.URL.Path != "/v1/cloud-gallery-items" && r.URL.Path != "/v1/cloud-gallery-albums" && r.URL.Path != "/v1/cloud-live-motion" && r.URL.Path != "/v1/nas-shares" && r.URL.Path != "/v1/nas-share-preflight" {
 		http.NotFound(w, r)
 		return
 	}
-	if r.URL.Path == "/v1/run" || r.URL.Path == "/v1/control" {
+	if r.URL.Path == "/v1/run" || r.URL.Path == "/v1/control" || r.URL.Path == "/v1/nas-share-preflight" {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -441,6 +443,59 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		sendJSON(w, space)
+		return
+	}
+	// A selected NAS directory must be verified by the original local Agent.
+	// The browser can submit only a session-scoped token, never an absolute
+	// path. This is still read-only: no Root grant or Source creation.
+	if r.URL.Path == "/v1/nas-share-preflight" {
+		selection, err := parseNASSharePreflight(r)
+		if err != nil {
+			http.Error(w, "invalid NAS share selection", http.StatusBadRequest)
+			return
+		}
+		checker, ok := agent.(NASSharePreflighter)
+		if !ok {
+			http.Error(w, "native NAS preflight not supported", http.StatusNotImplemented)
+			return
+		}
+		root := g.nasShareRoot
+		if root == "" {
+			root = "/"
+		}
+		path, err := resolveNASSharePreflight(ctx, root, key, username, r.Header.Get("Cookie"), r.Host, selection)
+		if err != nil {
+			http.Error(w, "NAS share selection expired; refresh required", http.StatusConflict)
+			return
+		}
+		if err := checker.PreflightLocalRoot(ctx, path); err != nil {
+			http.Error(w, "NAS source preflight unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		sendJSON(w, map[string]bool{"verified": true})
+		return
+	}
+	// Only the authorized DSM principal and same-user Agent may inspect
+	// readable NAS share roots. No client-specified path or native Root grant.
+	if r.URL.Path == "/v1/nas-shares" {
+		if r.URL.RawQuery != "" {
+			http.Error(w, "NAS shares accept no path selector", http.StatusBadRequest)
+			return
+		}
+		root := g.nasShareRoot
+		if root == "" {
+			root = "/"
+		}
+		choices, err := enumerateNASShareChoices(ctx, root, key, username, r.Header.Get("Cookie"), r.Host)
+		if err != nil {
+			http.Error(w, "NAS share inventory unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		items := make([]map[string]string, 0, len(choices))
+		for _, choice := range choices {
+			items = append(items, map[string]string{"label": choice.Label, "selection_id": choice.SelectionID})
+		}
+		sendJSON(w, map[string]any{"items": items})
 		return
 	}
 	// Live Photo Motion is a separate, exact-revision, bounded Owner request

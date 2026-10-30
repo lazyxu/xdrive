@@ -375,10 +375,21 @@ export class XDriveMediaThumbnailScheduler {
             }
           }
         : undefined
-      void this.loader(
-        task.nodeID, task.controller.signal, task.revision || undefined,
-        notify, task.bypassHTTPCache || undefined,
-      )
+      // A current Host loader may throw before returning its Promise (for
+      // example, after a native adapter has been disposed). Turn that
+      // synchronous failure into the same settled task rejection path as an
+      // async transport failure. Never strand the visible Viewer Filmstrip's
+      // bounded queue or leak an uncaught microtask exception.
+      let request: Promise<string | null>
+      try {
+        request = Promise.resolve(this.loader(
+          task.nodeID, task.controller.signal, task.revision || undefined,
+          notify, task.bypassHTTPCache || undefined,
+        ))
+      } catch (error) {
+        request = Promise.reject(error)
+      }
+      void request
         .then((url) => {
           if (task.cancelled || this.disposed) {
             if (url) this.revokeURL(url)

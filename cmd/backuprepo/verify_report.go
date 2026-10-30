@@ -36,6 +36,32 @@ func verify(repo, snapshot string, full bool) (int, error) {
 	return result.ObjectsChecked, err
 }
 
+// Before declaring a published v2 restore point usable, enforce the same
+// bounded, strictly parsed manifest and exact published-file checksums as
+// retention/prune. A raw capture-only in-process test fixture has only
+// objects.index and legacy.tar; it is not a published backup and remains
+// separately testable without fabricated PostgreSQL contents.
+func verifyPublishedSnapshotMetadata(snapshot string) error {
+	name := filepath.Base(snapshot)
+	published := strings.HasPrefix(name, "xdrive-backup-")
+	if published && !canonicalPruneSnapshotName(name) {
+		return errors.New("invalid committed v2 snapshot name")
+	}
+	// A renamed snapshot cannot bypass the published-metadata boundary.
+	for _, filename := range []string{"database.dump", "verify.json", "manifest.json", "SHA256SUMS.txt"} {
+		if _, err := os.Lstat(filepath.Join(snapshot, filename)); err == nil {
+			published = true
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	if !published {
+		return nil
+	}
+	_, err := validateCommittedSnapshot(snapshot)
+	return err
+}
+
 // A report counts fully verified referenced objects and actual bytes read for
 // SHA-256. On failure counts are PARTIAL, never claimed as a complete pass.
 // Fast (internal) mode checks sizes only and always reports 0 bytes hashed.
@@ -59,6 +85,11 @@ func verifyWithReport(repo, snapshot string, full bool) (verificationReport, err
 		return reject("unsafe_repository", err)
 	}
 	if err := requireRepositoryDirs(snapshot); err != nil {
+		return reject("unsafe_snapshot", err)
+	}
+	// Check the committed metadata BEFORE reporting any objects as verified.
+	// restore() calls this verification before removing destination content.
+	if err := verifyPublishedSnapshotMetadata(snapshot); err != nil {
 		return reject("unsafe_snapshot", err)
 	}
 	err := readIndex(snapshot, func(e entry) error {

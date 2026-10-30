@@ -138,8 +138,10 @@ function cameraValid(value: unknown): value is XDriveBaiduIsolatedCamera {
     value.latitude >= -85 && value.latitude <= 85 &&
     typeof value.longitude === 'number' && Number.isFinite(value.longitude) &&
     value.longitude >= -180 && value.longitude <= 180 &&
-    typeof value.zoom === 'number' && Number.isInteger(value.zoom) &&
-    value.zoom >= 3 && value.zoom <= 18
+    typeof value.zoom === 'number' && Number.isFinite(value.zoom) &&
+    // Match the real JSAPI 4.0 camera envelope in both isolated directions.
+    // Origin, generation, nonce, exact fields and byte budget still apply.
+    value.zoom >= 3 && value.zoom <= 21
 }
 
 /** Disallow a same-Origin "sandbox" that would still expose Gallery DOM.

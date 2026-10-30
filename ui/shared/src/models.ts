@@ -469,6 +469,8 @@ export interface StorageOptimizationPack {
   index_bytes: number
   source_allocated_bytes: number
   projected_allocated_bytes: number
+  observed_source_allocated_bytes?: number
+  observed_source_objects?: number
   projected_savings_percent: number
   build_ms: number
   allocation_model: string
