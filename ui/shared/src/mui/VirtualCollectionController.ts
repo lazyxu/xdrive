@@ -220,12 +220,19 @@ export function useXDriveVirtualCollection<TItem>({
             )
           }
 
+          let accepted = false
+          commitSnapshot((current) => {
+            if (current.generation !== generation) return current
+            const updated = xDriveVirtualCollectionApplyPage(current, generation, page)
+            accepted = updated !== current
+            return updated
+          })
+          if (!accepted) {
+            throw new Error('VirtualCollection refused an unverified positional Range page.')
+          }
+          // Only a committed page can occupy the requested range key. A
+          // malformed late Host response must leave this viewport retryable.
           loadedRangeRef.current.add(key)
-          commitSnapshot((current) => (
-            current.generation === generation
-              ? xDriveVirtualCollectionApplyPage(current, generation, page)
-              : current
-          ))
         } catch (error) {
           if (
             !controller.signal.aborted &&
