@@ -58,7 +58,7 @@ export function xDriveFileExplorerProjectSearchSources<T extends Readonly<{ id: 
     if (!source || typeof source !== 'object' ||
         !Number.isSafeInteger(source.id) || source.id <= 0 ||
         typeof source.name !== 'string' || source.name.trim().length === 0 ||
-        source.name.length > 512 || /[\\x00-\\x1f\\x7f]/.test(source.name) ||
+        source.name.length > 512 || /[\x00-\x1f\x7f]/.test(source.name) ||
         seen.has(source.id)) {
       throw new Error('Invalid authenticated Files search sources')
     }
