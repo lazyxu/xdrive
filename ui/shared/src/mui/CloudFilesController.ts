@@ -24,6 +24,7 @@ import type {
 import { useXDriveVirtualCollection } from './VirtualCollectionController'
 import { xDriveBeginForegroundContentTransition, xDriveForegroundContentTransitionPending } from './ViewerForegroundPriority'
 import { xDriveFileExplorerReadDirectoryPage } from './FileExplorerDirectoryReadStrategy'
+import { xDriveAdmitCloudFilesCountedFirstPage } from './CloudFilesFirstPageAdmission'
 
 export type XDriveCloudFilesVirtualDirectory<TNode extends { id: number }> = {
   itemCount: number
@@ -315,15 +316,17 @@ export function useXDriveCloudFilesController<
         signal: firstPageRequest.signal,
       })
       if (read.mode !== 'range') throw new Error('Files counted Range capability changed')
-      const range = read.page
       if (firstPageRequest.signal.aborted || requestID !== directoryRequestRef.current) return false
+      // Never publish a new directory's rows or crumbs until its first
+      // counted Range is authoritative and the virtual index is primed.
+      const range = xDriveAdmitCloudFilesCountedFirstPage(read.page)
+      activateVirtualDirectory(id, effectiveSort, effectiveGrouping, requestID, range)
       setItems([...range.items])
       if (nextCrumbs) {
         const copiedCrumbs = [...nextCrumbs]
         crumbsRef.current = copiedCrumbs
         setCrumbs(copiedCrumbs)
       }
-      activateVirtualDirectory(id, effectiveSort, effectiveGrouping, requestID, range)
       return true
     } catch (error) {
       if (!firstPageRequest.signal.aborted && requestID === directoryRequestRef.current) reportError(error)
@@ -531,8 +534,17 @@ export function useXDriveCloudFilesController<
         grouping: XDRIVE_FILE_EXPLORER_DEFAULT_GROUPING, signal: firstPageRequest.signal,
       })
       if (read.mode !== 'range') throw new Error('Files counted Range capability changed')
-      const range = read.page
       if (firstPageRequest.signal.aborted || requestID !== directoryRequestRef.current) return
+      const range = xDriveAdmitCloudFilesCountedFirstPage(read.page)
+      // The first authoritative Root Range must prime the sparse index before
+      // file rows, quota or breadcrumbs become visible under this Owner.
+      activateVirtualDirectory(
+        root.id,
+        defaultSort,
+        XDRIVE_FILE_EXPLORER_DEFAULT_GROUPING,
+        requestID,
+        range,
+      )
       if (
         quotaRequestID === quotaRequestRef.current &&
         enabledRef.current
@@ -541,13 +553,6 @@ export function useXDriveCloudFilesController<
       crumbsRef.current = rootCrumbs
       setCrumbs(rootCrumbs)
       setItems([...range.items])
-      activateVirtualDirectory(
-        root.id,
-        defaultSort,
-        XDRIVE_FILE_EXPLORER_DEFAULT_GROUPING,
-        requestID,
-        range,
-      )
     } catch (error) {
       if (!firstPageRequest.signal.aborted && requestID === directoryRequestRef.current) reportError(error)
     } finally {
