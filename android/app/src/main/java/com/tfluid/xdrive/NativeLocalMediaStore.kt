@@ -3,12 +3,33 @@ package com.tfluid.xdrive
 import android.content.ContentResolver
 import android.content.ContentUris
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+
+/** Stable page anchor. Date and ID are ordered in descending MediaStore order. */
+internal data class NativeLocalPageKey(val addedAtSeconds: Long, val id: Long)
+
+/** Fail closed if an OEM provider ignores the keyset predicate or SQL order. */
+internal fun nativeLocalStrictPageOrder(
+    after: NativeLocalPageKey?,
+    page: List<NativeLocalPageKey>,
+): Boolean {
+    var previous = after
+    for (item in page) {
+        if (item.id <= 0 || item.addedAtSeconds < 0) return false
+        val prior = previous
+        if (prior != null && (item.addedAtSeconds > prior.addedAtSeconds ||
+                (item.addedAtSeconds == prior.addedAtSeconds && item.id >= prior.id)))
+            return false
+        previous = item
+    }
+    return true
+}
 
 /** Local read-only MediaStore asset: never an authenticated Server PhotoAsset. */
 internal data class NativeLocalMedia(
@@ -17,7 +38,10 @@ internal data class NativeLocalMedia(
     val isVideo: Boolean,
     val albumId: String,
     val albumName: String,
-)
+    val addedAtSeconds: Long = 0,
+) {
+    val pageKey: NativeLocalPageKey get() = NativeLocalPageKey(addedAtSeconds, id)
+}
 
 internal data class NativeLocalAlbum(
     val id: String,
@@ -45,57 +69,89 @@ internal object NativeLocalMediaStore {
     private val columns = arrayOf(
         MediaStore.Files.FileColumns._ID,
         MediaStore.Files.FileColumns.MEDIA_TYPE,
+        MediaStore.Files.FileColumns.DATE_ADDED,
         MediaStore.Images.ImageColumns.BUCKET_ID,
         MediaStore.Images.ImageColumns.BUCKET_DISPLAY_NAME,
     )
 
     /**
-     * Keep all arguments typed/constant except a validated albumId selection
-     * argument. A provider ignoring offset is never silently taken as a new
-     * page: the UI also checks for duplicate IDs across requested pages.
+     * Keyset paging never reuses a shifting OFFSET when new photos arrive,
+     * and never counts an OEM provider's repeated first page as new assets.
+     * All filters are bound and all reads stay within an explicit row limit.
      */
-    suspend fun page(
-        resolver: ContentResolver, offset: Int, limit: Int = PHOTO_PAGE_SIZE,
+    suspend fun pageAfter(
+        resolver: ContentResolver,
+        after: NativeLocalPageKey? = null,
+        limit: Int = PHOTO_PAGE_SIZE,
         albumId: String? = null,
     ): List<NativeLocalMedia> = withContext(Dispatchers.IO) {
-        require(offset >= 0 && limit in 1..SCAN_BATCH_SIZE)
+        require(limit in 1..SCAN_BATCH_SIZE)
+        require(after == null || (after.id > 0 && after.addedAtSeconds >= 0))
+        require(albumId == null || albumId.isNotBlank())
+
+        val idColumn = MediaStore.Files.FileColumns._ID
         val mediaType = MediaStore.Files.FileColumns.MEDIA_TYPE
-        val where = if (albumId == null) "($mediaType=? OR $mediaType=?)"
-            else "($mediaType=? OR $mediaType=?) AND ${MediaStore.Images.ImageColumns.BUCKET_ID}=?"
-        val values = listOf(
+        val dateColumn = MediaStore.Files.FileColumns.DATE_ADDED
+        val selection = mutableListOf(
+            "($mediaType=? OR $mediaType=?)",
+            "${MediaStore.MediaColumns.IS_PENDING}=0",
+        )
+        val values = mutableListOf(
             MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE.toString(),
             MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO.toString(),
-        ) + listOfNotNull(albumId)
+        )
+        if (Build.VERSION.SDK_INT >= 30) {
+            selection += "${MediaStore.MediaColumns.IS_TRASHED}=0"
+        }
+        if (albumId != null) {
+            selection += "${MediaStore.Images.ImageColumns.BUCKET_ID}=?"
+            values += albumId
+        }
+        if (after != null) {
+            selection += "($dateColumn<? OR ($dateColumn=? AND $idColumn<?))"
+            values += after.addedAtSeconds.toString()
+            values += after.addedAtSeconds.toString()
+            values += after.id.toString()
+        }
         val query = Bundle().apply {
-            putString(ContentResolver.QUERY_ARG_SQL_SELECTION, where)
+            putString(ContentResolver.QUERY_ARG_SQL_SELECTION, selection.joinToString(" AND "))
             putStringArray(ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, values.toTypedArray())
-            putString(ContentResolver.QUERY_ARG_SQL_SORT_ORDER,
-                "${MediaStore.Files.FileColumns.DATE_ADDED} DESC, ${MediaStore.Files.FileColumns._ID} DESC")
+            putString(ContentResolver.QUERY_ARG_SQL_SORT_ORDER, "$dateColumn DESC, $idColumn DESC")
             putInt(ContentResolver.QUERY_ARG_LIMIT, limit)
-            putInt(ContentResolver.QUERY_ARG_OFFSET, offset)
         }
         val result = ArrayList<NativeLocalMedia>(limit)
         resolver.query(uri, columns, query, null)?.use { cursor ->
-            val idIndex = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns._ID)
-            val kindIndex = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.MEDIA_TYPE)
+            // Unbounded OEM cursors are not treated as a complete or correct page.
+            check(cursor.count <= limit) { "MediaStore ignored bounded keyset page" }
+            val idIndex = cursor.getColumnIndexOrThrow(idColumn)
+            val kindIndex = cursor.getColumnIndexOrThrow(mediaType)
+            val dateIndex = cursor.getColumnIndexOrThrow(dateColumn)
             val bucketIndex = cursor.getColumnIndexOrThrow(MediaStore.Images.ImageColumns.BUCKET_ID)
-            val bucketNameIndex = cursor.getColumnIndexOrThrow(
+            val nameIndex = cursor.getColumnIndexOrThrow(
                 MediaStore.Images.ImageColumns.BUCKET_DISPLAY_NAME)
-            // Some provider implementations ignore LIMIT/OFFSET. If the
-            // returned cursor is larger than our requested page, seek rather
-            // than allocating all rows; never trust a second repeated page.
-            if (cursor.count > limit) cursor.moveToPosition(offset - 1)
-            while (result.size < limit && cursor.moveToNext()) {
+            var previous = after
+            while (cursor.moveToNext()) {
                 currentCoroutineContext().ensureActive()
                 val id = cursor.getLong(idIndex)
-                if (id <= 0L) continue
-                val video = cursor.getInt(kindIndex) == MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO
+                val dateAdded = cursor.getLong(dateIndex)
+                val key = NativeLocalPageKey(dateAdded, id)
+                check(nativeLocalStrictPageOrder(previous, listOf(key))) {
+                    "MediaStore returned a repeated or unordered Gallery page"
+                }
+                previous = key
+                val video = when (cursor.getInt(kindIndex)) {
+                    MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE -> false
+                    MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO -> true
+                    else -> throw IllegalStateException("Unsupported Gallery media type")
+                }
                 val source = if (video) MediaStore.Video.Media.EXTERNAL_CONTENT_URI
                     else MediaStore.Images.Media.EXTERNAL_CONTENT_URI
                 val bucket = cursor.getString(bucketIndex)?.takeIf { it.isNotBlank() } ?: "unknown"
-                result += NativeLocalMedia(id, ContentUris.withAppendedId(source, id), video,
-                    bucket, cursor.getString(bucketNameIndex)?.takeIf { it.isNotBlank() }
-                        ?: "未命名相册")
+                result += NativeLocalMedia(
+                    id, ContentUris.withAppendedId(source, id), video, bucket,
+                    cursor.getString(nameIndex)?.takeIf { it.isNotBlank() } ?: "未命名相册",
+                    dateAdded,
+                )
             }
         } ?: throw IllegalStateException("设备媒体索引不可用")
         result
@@ -107,11 +163,12 @@ internal object NativeLocalMediaStore {
      */
     suspend fun albums(resolver: ContentResolver): NativeLocalAlbumScan = withContext(Dispatchers.IO) {
         val buckets = linkedMapOf<String, NativeLocalAlbum>()
-        var offset = 0
+        var scanned = 0
+        var after: NativeLocalPageKey? = null
         var truncated = false
-        while (offset < MAX_SCAN) {
+        while (scanned < MAX_SCAN) {
             currentCoroutineContext().ensureActive()
-            val batch = page(resolver, offset, minOf(SCAN_BATCH_SIZE, MAX_SCAN - offset))
+            val batch = pageAfter(resolver, after, minOf(SCAN_BATCH_SIZE, MAX_SCAN - scanned))
             for (asset in batch) {
                 val previous = buckets[asset.albumId]
                 if (previous != null) buckets[asset.albumId] = previous.copy(
@@ -120,14 +177,14 @@ internal object NativeLocalMediaStore {
                     buckets[asset.albumId] = NativeLocalAlbum(asset.albumId, asset.albumName, 1, asset)
                 else truncated = true
             }
-            offset += batch.size
+            scanned += batch.size
+            after = batch.lastOrNull()?.pageKey ?: after
             if (truncated || batch.size < SCAN_BATCH_SIZE) break
         }
-        if (offset >= MAX_SCAN) truncated = true
-        NativeLocalAlbumScan(buckets.values.toList(), truncated, offset)
+        if (scanned >= MAX_SCAN) truncated = true
+        NativeLocalAlbumScan(buckets.values.toList(), truncated, scanned)
     }
 
     fun canAppend(existing: List<NativeLocalMedia>, page: List<NativeLocalMedia>): Boolean =
-        page.map { it.id }.distinct().size == page.size &&
-            page.none { incoming -> existing.any { it.id == incoming.id } }
+        nativeLocalStrictPageOrder(existing.lastOrNull()?.pageKey, page.map { it.pageKey })
 }
