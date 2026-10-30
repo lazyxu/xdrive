@@ -46,7 +46,7 @@ func (f *fakeDSMRecoveryAgent) RecoveryReview(
 }
 
 func requestDSMRecoveryReview(g *Gateway, method, query string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(method, "https://nas.example:5001" + DSMCGIPath+query, nil)
+	req := httptest.NewRequest(method, "https://nas.example:5001"+DSMCGIPath+query, nil)
 	req.Header.Set("Cookie", "id=dsm-session")
 	w := httptest.NewRecorder()
 	CGIHandler(g).ServeHTTP(w, req)
@@ -72,7 +72,7 @@ func TestDSMRecoveryReviewUsesRealLocalAgentAndHistoricalCountsOnly(t *testing.T
 		}
 	}
 	next := requestDSMRecoveryReview(g, http.MethodGet,
-		"?op=recovery-review&source_id=42&after_file=16&page_epoch=" + page.PageEpoch)
+		"?op=recovery-review&source_id=42&after_file=16&page_epoch="+page.PageEpoch)
 	if next.Code != http.StatusOK || !strings.Contains(next.Body.String(), `"pending_original_files":1`) {
 		t.Fatalf("original Agent continuation denied: %d %s", next.Code, next.Body.String())
 	}
@@ -96,12 +96,12 @@ func TestDSMRecoveryReviewRejectsForgedSelectorsBeforeAgent(t *testing.T) {
 		"?op=recovery-review&source_id=42&after_file=-1",
 		"?op=recovery-review&source_id=42&after_file=1000001",
 		"?op=recovery-review&source_id=42&after_file=16",
-		"?op=recovery-review&source_id=42&page_epoch=" + validEpoch,
-		"?op=recovery-review&source_id=42&after_file=16&page_epoch=" + strings.Repeat("A", 64),
-		"?op=recovery-review&source_id=42&after_file=16&page_epoch=" + validEpoch + "&page_epoch=" + validEpoch,
+		"?op=recovery-review&source_id=42&page_epoch="+validEpoch,
+		"?op=recovery-review&source_id=42&after_file=16&page_epoch="+strings.Repeat("A", 64),
+		"?op=recovery-review&source_id=42&after_file=16&page_epoch="+validEpoch + "&page_epoch="+validEpoch,
 		"?op=recovery-review&source_id=42&op=run",
 		"?op=recovery-review&source_id=42;action=run",
-		"?op=recovery-review&source_id=42&after_file=00016&page_epoch=" + validEpoch,
+		"?op=recovery-review&source_id=42&after_file=00016&page_epoch="+validEpoch,
 	} {
 		r := requestDSMRecoveryReview(g, http.MethodGet, query)
 		if r.Code == http.StatusOK {
@@ -139,7 +139,7 @@ func TestDSMRecoveryReviewOldAgentForeignDSMAndForgedReplyFailClosed(t *testing.
 	}
 	// The first page is an ordinal projection, never an arbitrary file name.
 	if _, _, _, ok := parseDSMRecoveryReview(httptest.NewRequest(http.MethodGet,
-		"https://nas.example:5001/v1/recovery-review?source_id=" + strconv.Itoa(42), nil)); !ok {
+		"https://nas.example:5001/v1/recovery-review?source_id="+strconv.Itoa(42), nil)); !ok {
 		t.Fatal("canonical Source selector rejected")
 	}
 }
