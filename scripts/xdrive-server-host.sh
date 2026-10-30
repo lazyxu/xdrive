@@ -1812,12 +1812,19 @@ backup_cmd() {
 }
 
 restore_cmd() {
-  local script="$BIN_DIR/server-restore.sh" status
+  local script="$BIN_DIR/server-restore.sh" status read_only_preflight=0 arg
   [[ -x "$script" ]] || {
     echo "xdrive-server: restore tool is not installed at $script" >&2
     return 1
   }
+  for arg in "$@"; do
+    if [[ "$arg" == --preflight-only ]]; then read_only_preflight=1; fi
+  done
   if XD_CONFIG_DIR="$XDRIVE_HOME" "$script" "$@"; then status=0; else status=$?; fi
+  # The read-only v1 readiness probe does not restore a live system, even if
+  # it passes all manifest, SHA-256, tar and PG TOC checks. Never record a
+  # fake production restore success (or failure) for this inspection.
+  if [[ "$read_only_preflight" == 1 ]]; then return "$status"; fi
   if [[ "$status" -eq 0 ]]; then
     record_system_audit system.restore success
   else

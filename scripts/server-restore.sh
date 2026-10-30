@@ -7,10 +7,11 @@ BACKUP_DIR=""
 ASSUME_YES=0
 SAFETY_BACKUP=1
 DATABASE_ONLY=0
+PREFLIGHT_ONLY=0
 
 usage() {
   cat <<'EOF'
-Usage: server-restore.sh BACKUP_DIR [--config-dir DIR] [--yes] [--no-safety-backup] [--database-only]
+Usage: server-restore.sh BACKUP_DIR [--config-dir DIR] [--yes] [--no-safety-backup] [--database-only] [--preflight-only]
 
 Restore is destructive. By default xDrive first creates a pre-restore safety
 backup of the current state, then stops the API and pull worker, verifies
@@ -19,6 +20,10 @@ an offline consistency verification, and only then reopens the services.
 Any snapshot explicitly marked consistency_verified=false is rejected before
 Docker; v2 requires consistency_verified=true. Historical v1 snapshots with
 this field absent remain readable, but have no affirmative consistency proof.
+--preflight-only is a v1-only, read-only readiness check of the manifest,
+exact SHA-256 list, tar entry headers (full-file mode), and an isolated
+pg_restore --list. It never restores data, stops services or creates a safety
+backup; it is NOT an isolated full restore rehearsal.
 EOF
 }
 
@@ -28,6 +33,7 @@ while [[ $# -gt 0 ]]; do
     --yes) ASSUME_YES=1; shift ;;
     --no-safety-backup) SAFETY_BACKUP=0; shift ;;
     --database-only) DATABASE_ONLY=1; shift ;;
+    --preflight-only) PREFLIGHT_ONLY=1; shift ;;
     -h|--help) usage; exit 0 ;;
     -*)
       echo "unknown argument: $1" >&2
@@ -46,6 +52,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -n "$BACKUP_DIR" ]] || { usage >&2; exit 2; }
+# A read-only request cannot be combined with flags authorizing mutation.
+if [[ "$PREFLIGHT_ONLY" == 1 && ( "$ASSUME_YES" == 1 || "$SAFETY_BACKUP" != 1 ) ]]; then
+  echo 'restore: --preflight-only cannot be combined with destructive restore options.' >&2
+  exit 2
+fi
 [[ -d "$BACKUP_DIR" ]] || { echo "backup directory not found: $BACKUP_DIR" >&2; exit 1; }
 BACKUP_DIR="$(cd "$BACKUP_DIR" && pwd)"
 CONFIG_DIR="$XDRIVE_HOME/config"
@@ -135,6 +146,12 @@ except (OSError, ValueError, UnicodeError, TypeError):
     sys.exit(1)
 PY
 )" || exit 1
+# No v2 pseudo-readiness receipt: v2 has a separate CAS-aware verifier and
+# isolated drill. Refuse this v1-only mode before Docker or any live service.
+if [[ "$PREFLIGHT_ONLY" == 1 && "$BACKUP_VERSION" != 1 ]]; then
+  echo 'restore: --preflight-only is only available for v1 snapshots.' >&2
+  exit 2
+fi
 # Hold a SHARED lease on the same .backup.lock used by v2 snapshot capture.
 # A future reference-aware prune must acquire its EXCLUSIVE lease first.
 # Hold the lease from checksum preflight through the final physical restore:
@@ -290,6 +307,18 @@ if ! timeout --signal=TERM --kill-after=10s 120s \
     < "$BACKUP_DIR/database.dump" > /dev/null; then
   echo "restore: PostgreSQL custom dump preflight failed; production data was not replaced." >&2
   exit 1
+fi
+
+if [[ "$PREFLIGHT_ONLY" == 1 ]]; then
+  # Every check above is read-only. No compose call, safety backup, postgres
+  # replacement, live file extraction or Host schedule mutation may follow.
+  scope=manifest_sha256_pg_restore_toc
+  if [[ "$DATABASE_ONLY" != 1 ]]; then
+    scope=manifest_sha256_tar_headers_pg_restore_toc
+  fi
+  printf '{"protocol":"xdrive-v1-restore-readiness-v1","state":"success","scope":"%s","format":"v1","database_only":%s,"full_restore_performed":false,"production_modified":false}\n' \
+    "$scope" "$(if [[ "$DATABASE_ONLY" == 1 ]]; then printf true; else printf false; fi)"
+  exit 0
 fi
 
 if [[ "$ASSUME_YES" != "1" ]]; then
