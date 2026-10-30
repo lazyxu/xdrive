@@ -11,14 +11,15 @@ import (
 )
 
 type AdminStorageRequest struct {
-	Operation string `json:"operation"`
-	Limit     int    `json:"limit,omitempty"`
-	Offset    int    `json:"offset,omitempty"`
-	Cursor    string `json:"cursor,omitempty"`
-	Days      int    `json:"days,omitempty"`
-	RunID     uint64 `json:"run_id,omitempty"`
-	Fresh     bool   `json:"fresh,omitempty"`
-	Kind      string `json:"kind,omitempty"`
+	Operation         string `json:"operation"`
+	Limit             int    `json:"limit,omitempty"`
+	Offset            int    `json:"offset,omitempty"`
+	Cursor            string `json:"cursor,omitempty"`
+	VerificationRunID string `json:"verification_run_id,omitempty"`
+	Days              int    `json:"days,omitempty"`
+	RunID             uint64 `json:"run_id,omitempty"`
+	Fresh             bool   `json:"fresh,omitempty"`
+	Kind              string `json:"kind,omitempty"`
 }
 
 // Fixed Server /admin/storage endpoints only: no arbitrary URL, method or path.
@@ -37,6 +38,13 @@ func (c *Client) AdminStorage(ctx context.Context, input AdminStorageRequest) (j
 	case "history":
 		endpoint = "/api/v1/admin/storage/history"
 		params.Set("days", strconv.Itoa(input.Days))
+	case "verification-run-detail":
+		if input.VerificationRunID == "" || !validVerificationHistoryCursor(input.VerificationRunID) ||
+			input.Limit != 0 || input.Offset != 0 || input.Cursor != "" ||
+			input.Days != 0 || input.RunID != 0 || input.Fresh || input.Kind != "" {
+			return nil, errors.New("invalid bounded storage verification detail request")
+		}
+		endpoint = "/api/v1/admin/storage/verification-runs/" + input.VerificationRunID
 	case "verification-runs":
 		if input.Limit < 1 || input.Limit > 50 || input.Days != 0 ||
 			input.Offset != 0 || input.RunID != 0 || input.Fresh ||

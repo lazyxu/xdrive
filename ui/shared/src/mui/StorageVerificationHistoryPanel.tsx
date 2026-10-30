@@ -1,16 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  Box, Button, Stack, Table, TableBody, TableCell, TableHead,
-  TableRow, Typography,
+  Box, Button, Dialog, DialogActions, DialogContent, DialogTitle,
+  Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography,
 } from '@mui/material'
 import type {
   XDriveAdminStoragePort, XDriveStorageVerificationRunPage,
+  XDriveStorageVerificationRun, XDriveStorageVerificationRunDetail,
 } from '../admin-management'
 import {
   xDriveAppendStorageVerificationHistory,
   xDriveNormalizeStorageVerificationHistory,
+  xDriveNormalizeStorageVerificationDetail,
 } from '../storage-verification-history'
 import { XDriveSectionHeader } from './SectionHeader'
+import { XDriveStorageIntegrityReceipt } from './StorageIntegrityReceipt'
 import { XDriveTableSurface } from './TableSurface'
 
 const pageLimit = 20
@@ -37,6 +40,11 @@ export function XDriveStorageVerificationHistoryPanel({ api }: {
   const [loading, setLoading] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState('')
+  const detailGeneration = useRef(0)
+  const [detailRun, setDetailRun] = useState<XDriveStorageVerificationRun | null>(null)
+  const [detail, setDetail] = useState<XDriveStorageVerificationRunDetail | null>(null)
+  const [detailError, setDetailError] = useState('')
+  const [detailLoading, setDetailLoading] = useState(false)
   const page = snapshot?.api === api ? snapshot.page : null
 
   const refresh = useCallback(() => {
@@ -58,6 +66,11 @@ export function XDriveStorageVerificationHistoryPanel({ api }: {
   }, [api])
 
   useEffect(() => {
+    detailGeneration.current++
+    setDetailRun(null)
+    setDetail(null)
+    setDetailError('')
+    setDetailLoading(false)
     setSnapshot(null)
     setError('')
     setLoadingMore(false)
@@ -85,6 +98,37 @@ export function XDriveStorageVerificationHistoryPanel({ api }: {
     })
   }
 
+  const openDetail = (run: XDriveStorageVerificationRun) => {
+    const ticket = ++detailGeneration.current
+    setDetailRun(run)
+    setDetail(null)
+    setDetailError('')
+    if (!api.adminStorageVerificationRunDetail) {
+      setDetailLoading(false)
+      setDetailError('当前 Server 或 Agent 不支持读取历史校验详情，请升级后再试。')
+      return
+    }
+    setDetailLoading(true)
+    void api.adminStorageVerificationRunDetail(run.run_id).then(raw => {
+      if (ticket !== detailGeneration.current) return
+      const verified = xDriveNormalizeStorageVerificationDetail(raw, run)
+      if (!verified) throw new Error('invalid_detail_evidence')
+      setDetail(verified)
+    }).catch(() => {
+      if (ticket === detailGeneration.current)
+        setDetailError('无法读取该任务的可信结构化回执；不会将历史成功推断为当前数据完好。')
+    }).finally(() => {
+      if (ticket === detailGeneration.current) setDetailLoading(false)
+    })
+  }
+  const closeDetail = () => {
+    detailGeneration.current++
+    setDetailRun(null)
+    setDetail(null)
+    setDetailError('')
+    setDetailLoading(false)
+  }
+
   return (
     <Box data-xdrive-admin-storage-verification-history>
       <Stack spacing={1.5}>
@@ -109,6 +153,7 @@ export function XDriveStorageVerificationHistoryPanel({ api }: {
                   <TableCell>结果</TableCell>
                   <TableCell>开始时间</TableCell>
                   <TableCell>完成时间</TableCell>
+                  <TableCell>校验报告</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -119,6 +164,11 @@ export function XDriveStorageVerificationHistoryPanel({ api }: {
                     <TableCell>{stateText[item.state] || '未知状态'}</TableCell>
                     <TableCell>{localTime(item.started_at)}</TableCell>
                     <TableCell>{localTime(item.finished_at)}</TableCell>
+                    <TableCell>
+                      <Button size="small" variant="outlined"
+                        data-xdrive-admin-storage-verification-detail
+                        onClick={() => openDetail(item)}>查看详情</Button>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -129,6 +179,30 @@ export function XDriveStorageVerificationHistoryPanel({ api }: {
           <Button size="small" variant="outlined" disabled={loadingMore || loading}
             onClick={loadMore}>{loadingMore ? '正在加载…' : '加载更早记录'}</Button>
         ) : null}
+        <Dialog open={detailRun !== null} onClose={closeDetail} fullWidth maxWidth="sm">
+          <DialogTitle>历史完整性校验报告 · {detailRun?.run_id || ''}</DialogTitle>
+          <DialogContent>
+            <Stack spacing={1.5}>
+              <Typography variant="body2">
+                {detailRun?.mode === 'fast' ? 'fast · 元数据/可读性' : 'deep · SHA-256'} ·
+                {detailRun ? (stateText[detailRun.state] || '未知状态') : ''}
+              </Typography>
+              {detailLoading ? <Typography variant="body2">正在读取可信宿主机校验证据…</Typography> : null}
+              {detailError ? <Typography variant="body2" color="error" role="alert">{detailError}</Typography> : null}
+              {detail && !detail.evidence ? (
+                <Typography variant="body2" color="text.secondary">
+                  此历史任务没有新版结构化计数报告；不能推断问题数为零或确认当前数据完整。
+                </Typography>
+              ) : null}
+              {detail?.evidence ? <XDriveStorageIntegrityReceipt report={detail.evidence} /> : null}
+              <Typography variant="caption" color="text.secondary">
+                仅展示该任务结束时持久化的安全计数。历史结果不代表当前实时完整性，
+                也不等于备份快照校验、数据库恢复或隔离演练通过。
+              </Typography>
+            </Stack>
+          </DialogContent>
+          <DialogActions><Button onClick={closeDetail}>关闭</Button></DialogActions>
+        </Dialog>
         <Typography variant="caption" color="text.secondary">
           按固定游标逐页读取持久化历史记录，每次最多 20 条；系统通常保留 90 天，
           但每种维护任务的最后一条记录可能超过 90 天，不能将缺失历史解释为从未校验。
