@@ -289,9 +289,14 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
     @State private var errorMessage: String?
     // Page offset only: no PhotoKit ID is persisted across Viewer dismissal.
     @State private var savedOffset = 0
+    // This localIdentifier is in-memory only and never part of route persistence.
+    @State private var viewerReturnID: String?
+    @State private var shouldRestoreViewerTile = false
+    @State private var pageRenderRevision: UInt64 = 0
     @State private var authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
 
     var body: some View {
+        ScrollViewReader { returnScroll in
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 Text(authorization == .limited
@@ -313,12 +318,16 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
                 } else if let page {
                     Text("当前显示 \(page.startOffset + 1)–\(page.nextOffset) / \(page.totalAccessibleAssets)")
                         .font(.footnote).monospacedDigit()
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 3),
-                                             count: 3), spacing: 3) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 95, maximum: 150), spacing: 3)], spacing: 3) {
                         ForEach(page.items.filter { $0.kind != "unsupported" }) { candidate in
-                            Button { selected = candidate } label: {
+                            Button {
+                                viewerReturnID = candidate.id
+                                selected = candidate
+                            } label: {
                                 XDriveIOSLocalPhotoTile(candidate: candidate)
-                            }.buttonStyle(.plain)
+                            }
+                            .buttonStyle(.plain)
+                            .id(candidate.id)
                         }
                     }
                     HStack {
@@ -340,6 +349,10 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
                 Button("刷新") { refresh() }.disabled(busy)
             }.padding(12)
         }
+        .onChange(of: pageRenderRevision) { _ in
+            restoreViewerTile(using: returnScroll)
+        }
+        }
         .navigationTitle("本机相册")
         .fullScreenCover(item: $selected, onDismiss: { restoreAfterViewer() }) {
             XDriveIOSNativeLocalPhotoDetail(candidate: $0)
@@ -351,6 +364,7 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
         .onChange(of: phase) { new in
             if new != .active { invalidate() }
             else { refresh(at: savedOffset) }
+            if new != .active { clearViewerTileAnchor() }
         }
         .onDisappear {
             // fullScreenCover may hide its presenter before the Viewer closes.
@@ -361,15 +375,39 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
     }
 
     private func restoreAfterViewer() {
-        // Revalidate permission and re-open the originating 64-slot page.
+        // Never scroll to a stale position until PhotoKit has returned the
+        // currently authorized page after the full-screen Viewer exits.
+        shouldRestoreViewerTile = viewerReturnID != nil && phase == .active
         if phase == .active { refresh(at: savedOffset) }
-        else { invalidate() }
+        else {
+            clearViewerTileAnchor()
+            invalidate()
+        }
+    }
+
+    private func restoreViewerTile(using scroll: ScrollViewProxy) {
+        guard shouldRestoreViewerTile else { return }
+        let authorized = authorization == .authorized || authorization == .limited
+        let target = XDriveIOSNativePhotoViewerReturnAnchorPolicy.target(
+            viewerReturnID, in: page?.items.map(\.id) ?? [],
+            authorized: authorized
+        )
+        clearViewerTileAnchor()
+        if let target { scroll.scrollTo(target, anchor: .center) }
+    }
+
+    private func clearViewerTileAnchor() {
+        viewerReturnID = nil
+        shouldRestoreViewerTile = false
     }
 
     private func refresh(at requestedOffset: Int = 0) {
         authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
         invalidate()
-        guard authorization == .authorized || authorization == .limited else { return }
+        guard authorization == .authorized || authorization == .limited else {
+            clearViewerTileAnchor()
+            return
+        }
         load(offset: max(0, requestedOffset))
     }
 
@@ -388,6 +426,7 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
                 page = next
                 savedOffset = next.startOffset
                 authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                pageRenderRevision &+= 1
             } catch is CancellationError {
             } catch {
                 guard generation == token else { return }
