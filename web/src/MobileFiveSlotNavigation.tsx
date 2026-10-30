@@ -5,6 +5,12 @@ import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded'
 import PhotoLibraryRoundedIcon from '@mui/icons-material/PhotoLibraryRounded'
 import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
 import PersonRoundedIcon from '@mui/icons-material/PersonRounded'
+import BackupRoundedIcon from '@mui/icons-material/BackupRounded'
+import CloudDownloadRoundedIcon from '@mui/icons-material/CloudDownloadRounded'
+import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
+import CloudRoundedIcon from '@mui/icons-material/CloudRounded'
+import AssignmentOutlinedIcon from '@mui/icons-material/AssignmentOutlined'
+import ManageAccountsRoundedIcon from '@mui/icons-material/ManageAccountsRounded'
 import StarRoundedIcon from '@mui/icons-material/StarRounded'
 import StarBorderRoundedIcon from '@mui/icons-material/StarBorderRounded'
 import {
@@ -15,6 +21,36 @@ import {
 import type { XDriveSidebarDestinationModel, XDriveSidebarSectionModel } from '@xdrive/ui/mui'
 import type { XDriveWebAppRoute } from '../../ui/shared/src'
 import type { XDriveMobileSlot } from './mobileFiveSlotState'
+import { XDRIVE_WEB_APPS } from './webApps'
+
+/** Browser-local icon choices, canonical labels from existing Web descriptors.
+ * Do not pull Desktop-only JSX navigation modules into the Web bundle. */
+function xDriveBrowserMobileDestinationIcon(key: string): ReactNode {
+  switch (key) {
+    case 'files': return <FolderRoundedIcon fontSize="small" />
+    case 'gallery': return <PhotoLibraryRoundedIcon fontSize="small" />
+    case 'device-backup': return <BackupRoundedIcon fontSize="small" />
+    case 'remote-pull': return <CloudDownloadRoundedIcon fontSize="small" />
+    case 'transfers': return <AssignmentOutlinedIcon fontSize="small" />
+    case 'local-storage': return <StorageRoundedIcon fontSize="small" />
+    case 'cloud-storage': return <CloudRoundedIcon fontSize="small" />
+    case 'admin-users': return <ManageAccountsRoundedIcon fontSize="small" />
+    default: return <AppsRoundedIcon fontSize="small" />
+  }
+}
+
+export function xDriveBrowserMobileDestinations(
+  adminVerified: boolean,
+): XDriveSidebarDestinationModel[] {
+  return Object.values(XDRIVE_WEB_APPS)
+    .filter(item => item.sidebar && item.workspaceKey && item.id !== 'overview' &&
+      (!item.admin || adminVerified))
+    .map(item => ({
+      key: item.workspaceKey!,
+      label: item.title,
+      icon: xDriveBrowserMobileDestinationIcon(item.workspaceKey!),
+    }))
+}
 
 export type XDriveMobileRecentDestination = {
   route: XDriveWebAppRoute
