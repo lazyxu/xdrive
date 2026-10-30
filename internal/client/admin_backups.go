@@ -18,6 +18,7 @@ type AdminServerBackupRequest struct {
 	Revision         string `json:"revision,omitempty"`
 	Confirmation     string `json:"confirmation,omitempty"`
 	PreviewRequestID string `json:"preview_request_id,omitempty"`
+	Preset           string `json:"preset,omitempty"`
 }
 
 func (c *Client) AdminServerBackups(ctx context.Context) (json.RawMessage, error) {

@@ -2808,11 +2808,19 @@ install_backup_schedule() {
   existing="$(crontab -l 2>/dev/null || true)"
   tmp="$(mktemp)"
   printf '%s\n' "$existing" | grep -v '# xdrive-managed-backup$' > "$tmp" || true
-  printf '%s XD_CONFIG_DIR=%q %q >> %q 2>&1 # xdrive-managed-backup\n' \
-    "$schedule" "$XDRIVE_HOME" "$BIN_DIR/server-backup-scheduled.sh" "$LOG_DIR/backup.log" >> "$tmp"
-  crontab "$tmp"
-  rm -f "$tmp"
-  echo "Backup schedule installed: $schedule; retention $(env_value XD_BACKUP_RETENTION_DAYS) days."
+  # Persisting the Host-reviewed disabled sentinel must not install an
+  # invalid cron command during an upgrade. Preserve all non-xDrive jobs.
+  if [[ "$schedule" != disabled ]]; then
+    printf '%s XD_CONFIG_DIR=%q %q >> %q 2>&1 # xdrive-managed-backup\n' \
+      "$schedule" "$XDRIVE_HOME" "$BIN_DIR/server-backup-scheduled.sh" "$LOG_DIR/backup.log" >> "$tmp"
+  fi
+  if ! crontab "$tmp"; then rm -f -- "$tmp"; return 1; fi
+  rm -f -- "$tmp"
+  if [[ "$schedule" == disabled ]]; then
+    echo "Backup schedule explicitly disabled (existing snapshots untouched)."
+  else
+    echo "Backup schedule installed: $schedule; retention $(env_value XD_BACKUP_RETENTION_DAYS) days."
+  fi
 }
 
 echo "xDrive compose: $COMPOSE_PATH"

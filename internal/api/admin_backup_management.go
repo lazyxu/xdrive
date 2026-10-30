@@ -120,6 +120,7 @@ type backupAdminRequest struct {
 	Revision         string `json:"revision,omitempty"`
 	Confirmation     string `json:"confirmation,omitempty"`
 	PreviewRequestID string `json:"preview_request_id,omitempty"`
+	Preset           string `json:"preset,omitempty"`
 	RequestedBy      string `json:"requested_by,omitempty"`
 	CreatedAt        string `json:"created_at"`
 }
@@ -200,7 +201,7 @@ func validBackupAdminHistory(events []backupAdminHistoryEntry) bool {
 				(e.Action == "restore_database_only" && !strings.HasPrefix(e.SnapshotID, "v1:")) {
 				return false
 			}
-		case "create", "prune", "policy":
+		case "create", "prune", "policy", "schedule":
 			if e.SnapshotID != "" || e.Mode != "" {
 				return false
 			}
@@ -410,6 +411,9 @@ func validateBackupAdminRequest(request backupAdminRequest) error {
 	if request.SnapshotID != "" && !backupAdminSnapshotID.MatchString(request.SnapshotID) {
 		return errors.New("invalid backup snapshot identity")
 	}
+	if request.Action != "schedule" && request.Preset != "" {
+		return errors.New("preset only applies to fixed schedule control")
+	}
 	if request.Action != "delete_selected" && request.PreviewRequestID != "" {
 		return errors.New("preview receipt only applies to selected v2 deletion")
 	}
@@ -492,6 +496,14 @@ func validateBackupAdminRequest(request backupAdminRequest) error {
 			request.Format != "" || request.RetentionDays != 0 || request.Revision != "" {
 			return errors.New("prune requires keep-last and exact confirmation")
 		}
+	case "schedule":
+		if (request.Preset != "daily" && request.Preset != "weekly" && request.Preset != "disabled") ||
+			request.Confirmation != "SCHEDULE "+request.Preset ||
+			len(request.Revision) != 64 || strings.Trim(request.Revision, "0123456789abcdef") != "" ||
+			request.SnapshotID != "" || request.Mode != "" || request.Format != "" ||
+			request.KeepLast != 0 || request.RetentionDays != 0 {
+			return errors.New("schedule requires a fixed preset and current revision")
+		}
 	case "policy":
 		if (request.Format != "v1" && request.Format != "v2") ||
 			request.RetentionDays < 0 || request.RetentionDays > 3650 ||
@@ -534,9 +546,17 @@ func (s *Server) adminSubmitBackupManagement(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "backup_operation_in_progress"})
 		return
 	}
-	if request.Action == "policy" && request.Revision != page.Inventory.Policy.Revision {
+	if (request.Action == "policy" || request.Action == "schedule") && request.Revision != page.Inventory.Policy.Revision {
 		c.JSON(http.StatusConflict, gin.H{"error": "backup_policy_revision_changed"})
 		return
+	}
+	if request.Action == "schedule" {
+		schedule := page.Inventory.Schedule
+		if schedule == nil || !validBackupAdminScheduleStatus(schedule) ||
+			(schedule.State != "registered" && schedule.State != "not_configured" && schedule.State != "not_detected") {
+			c.JSON(http.StatusConflict, gin.H{"error": "backup_schedule_not_trusted"})
+			return
+		}
 	}
 	if request.Action == "delete_selected" {
 		preview := page.SelectedPreview

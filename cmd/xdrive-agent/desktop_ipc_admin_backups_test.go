@@ -27,6 +27,9 @@ func TestDesktopAdminServerBackupFixedActionValidation(t *testing.T) {
 			PreviewRequestID: "abcdef123456abcdef123456"},
 		{Action: "prune", KeepLast: 2, Confirmation: "PRUNE 2"},
 		{Action: "policy", Format: "v2", RetentionDays: 30, Revision: revision},
+		{Action: "schedule", Preset: "daily", Revision: revision, Confirmation: "SCHEDULE daily"},
+		{Action: "schedule", Preset: "weekly", Revision: revision, Confirmation: "SCHEDULE weekly"},
+		{Action: "schedule", Preset: "disabled", Revision: revision, Confirmation: "SCHEDULE disabled"},
 	}
 	for _, input := range good {
 		if !validDesktopAdminServerBackupRequest(input) {
@@ -63,6 +66,12 @@ func TestDesktopAdminServerBackupFixedActionValidation(t *testing.T) {
 		{Action: "create", Format: "v2", SnapshotID: id},
 		{Action: "policy", Format: "v2", RetentionDays: 1, Revision: "stale"},
 		{Action: "policy", Format: "v2", RetentionDays: 9999, Revision: revision},
+		{Action: "schedule", Preset: "0 0 * * *", Revision: revision, Confirmation: "SCHEDULE 0 0 * * *"},
+		{Action: "schedule", Preset: "daily;id", Revision: revision, Confirmation: "SCHEDULE daily;id"},
+		{Action: "schedule", Preset: "daily", Revision: revision, Confirmation: "SCHEDULE weekly"},
+		{Action: "schedule", Preset: "weekly", Revision: "bad", Confirmation: "SCHEDULE weekly"},
+		{Action: "schedule", Preset: "daily", Revision: revision, Confirmation: "SCHEDULE daily", SnapshotID: id},
+		{Action: "create", Format: "v1", Preset: "disabled"},
 	}
 	for _, input := range bad {
 		if validDesktopAdminServerBackupRequest(input) {
