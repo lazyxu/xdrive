@@ -46,7 +46,7 @@ function childFixture(parentOrigin='https://gallery.example.net',childOrigin='ht
       this.getBounds=()=>({getSouthWest:()=>new fakeSDK.Point(115,38),
         getNorthEast:()=>new fakeSDK.Point(117,40)})
       this.getCenter=()=>new fakeSDK.Point(116,39)
-      this.getZoom=()=>8
+      this.getZoom=()=>options.sdkZoom??8
     },
   }
   const env={window:{location:{origin:childOrigin},parent,
@@ -414,4 +414,40 @@ test('isolated Child container resize cancels old Owner cells and debounces one 
   assert.equal(count('viewport'),beforeDispose,'disposed Child cannot send late camera')
   assert.equal(count('cancel'),2)
   assert.equal(obsolete.click,null,'old numeric fallback remains detached')
+})
+
+
+test('isolated JSAPI4 Child publishes and restores genuine fractional BD09 zoom 20.5', async () => {
+  const f=childFixture('https://gallery.example.net',
+    'https://map-isolated.example.org',true,{sdkZoom:20.5})
+  f.sendObject(f.parent,'https://gallery.example.net',init)
+  f.sendObject(f.parent,'https://gallery.example.net',{
+    version:1,generation:7,nonce:'a'.repeat(64),
+    kind:'map-session',ticket:'b'.repeat(64)})
+  await waitForChild(()=>f.sent.some(x=>x.message.kind==='camera' &&
+    x.message.camera.zoom===20.5),'actual Child SDK 20.5 zoom camera reaches Parent')
+  const returned=f.sent.find(x=>x.message.kind==='camera' &&
+    x.message.camera.zoom===20.5)
+  assert.deepEqual(Object.keys(returned.message.camera).sort(),
+    ['coordinate_space','latitude','longitude','zoom'])
+  assert.equal(returned.message.camera.coordinate_space,'bd09ll')
+  const camera={coordinate_space:'bd09ll',latitude:35.5,longitude:139.4,zoom:20.5}
+  const before=f.moves.length
+  f.sendObject(f.parent,'https://gallery.example.net',{
+    version:1,generation:7,nonce:'a'.repeat(64),kind:'restore-camera',camera})
+  assert.equal(f.moves.length,before+1)
+  assert.deepEqual(f.moves.at(-1),{latitude:35.5,longitude:139.4,zoom:20.5})
+  // Expanded zoom range does NOT permit forged extra Owner fields, invalid
+  // coordinates, non-finite zooms or a stale/mismatched message source.
+  for(const bad of [
+    {...camera,zoom:22}, {...camera,zoom:2.9},
+    {...camera,zoom:Infinity}, {...camera,token:'forbidden'},
+    {...camera,coordinate_space:'wgs84'},
+  ]){
+    const n=f.moves.length
+    f.sendObject(f.parent,'https://gallery.example.net',{
+      version:1,generation:7,nonce:'a'.repeat(64),kind:'restore-camera',camera:bad})
+    assert.equal(f.moves.length,n)
+  }
+  f.events.get('pagehide')()
 })

@@ -1,11 +1,16 @@
+import Combine
 import SwiftUI
 
-/// First native product-login surface, adapted from historical #2891's
-/// visual card. Not mounted by XDriveIOSApp until native Files/Gallery
-/// navigation and safe Owner/grant migration are available.
+/// Native iOS owner root. The native foreground auto runner must survive
+/// leaving the Photos dashboard while the app and Owner session stay active.
 struct XDriveIOSNativeOwnerLoginScreen: View {
     @StateObject private var model = XDriveIOSNativeOwnerLoginModel()
+    // Own a single native auto runner for the entire authenticated foreground
+    // scene, rather than recreating it on every gallery/dashboard navigation.
+    @StateObject private var backup = XDriveIOSNativePhotoBackupController()
+    @Environment(\.scenePhase) private var phase
     @State private var showPassword = false
+    @State private var logoutWarning: String?
 
     var body: some View {
         NavigationStack {
@@ -59,7 +64,26 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
             .navigationTitle("xDrive")
             .navigationBarTitleDisplayMode(.inline)
         }
-        .task { await model.restore() }
+        .task {
+            await model.restore()
+            backup.refresh(owner: model.owner)
+            if phase == .active { backup.tickIfDue(login: model) }
+        }
+        .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
+            guard phase == .active else { return }
+            backup.tickIfDue(login: model)
+        }
+        .onChange(of: phase) { state in
+            if state == .active { backup.tickIfDue(login: model) }
+            else { backup.cancel() }
+        }
+        .onChange(of: model.owner) { _ in
+            // A late response from the previous Server/Owner may not keep
+            // uploading after native session changes or disappears.
+            backup.cancel()
+            backup.refresh(owner: model.owner)
+            if phase == .active { backup.tickIfDue(login: model) }
+        }
     }
 
     private var loginForm: some View {
@@ -132,14 +156,49 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
             Text("Owner #\(verified.ownerID) · Root #\(verified.rootNodeID)")
                 .font(.footnote.monospacedDigit())
                 .foregroundStyle(.secondary)
-            Text("原生文件和图库导航仍在迁移中；本页面不假装已具备云端 Files 或后台备份能力。")
+            Text("本机相册、原件自动增量备份及云端已备份文件查看已提供原生入口。完整 Files 和云端 Live ZIP 动态播放仍在迁移。")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
+            NavigationLink {
+                XDriveIOSNativePhotosDashboard(login: model, backup: backup)
+            } label: {
+                Label("打开原生相册与自动备份", systemImage: "photo.stack")
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(.borderedProminent)
+            .accessibilityIdentifier("native-ios-photos-open")
+            if let logoutWarning {
+                Text(logoutWarning).foregroundStyle(.red).font(.footnote)
+            }
             Button("退出原生账户", role: .destructive) {
-                Task { await model.signOut() }
+                Task { await signOutSafely() }
             }
             .buttonStyle(.bordered)
             .accessibilityIdentifier("native-ios-login-signout")
         }
     }
+    /// No new account may reuse a prior owner's pending foreground or
+    /// BG grant. Fail closed if the global original writer is still active.
+    @MainActor
+    private func signOutSafely() async {
+        logoutWarning = nil
+        guard let gate = XDriveIOSOriginalRunGate.shared.acquire() else {
+            logoutWarning = "已有原件操作正在结束，请先返回相册停止本轮后重试退出。"
+            return
+        }
+        defer { XDriveIOSOriginalRunGate.shared.release(gate) }
+        XDriveIOSPhotoAutoScheduleStore.shared.disableAllOnThisDevice()
+        XDriveIOSBackgroundPhotoTask.revokePendingRequests()
+        do {
+            let remotePending = try await XDriveIOSPhotoBackgroundGrantManager.shared
+                .emergencyStopLocally()
+            await model.signOut()
+            if remotePending {
+                logoutWarning = "本机自动上传已停止；旧服务器的授权撤销待网络恢复后复核。"
+            }
+        } catch {
+            logoutWarning = "无法确认旧账户后台凭据已清除。为防止跨账户自动备份，本次未切换账户。请解锁 Keychain 后重试。"
+        }
+    }
+
 }

@@ -732,15 +732,18 @@ func walkLegacyArchive(snapshot string, visitor func(*tar.Header, *tar.Reader) e
 	}
 	return nil
 }
+
+// pathIsWithin checks complete path components, including equality and the
+// filesystem root. A string prefix test misses "/" and symlink aliases.
+func pathIsWithin(root, path string) bool {
+	relative, err := filepath.Rel(root, path)
+	return err == nil && relative != ".." &&
+		!strings.HasPrefix(relative, ".."+string(os.PathSeparator))
+}
+
 func restore(repo, snapshot, target string) error {
 	dst, err := filepath.Abs(target)
 	if err != nil {
-		return err
-	}
-	if dst == repo || strings.HasPrefix(dst, repo+string(os.PathSeparator)) || strings.HasPrefix(repo, dst+string(os.PathSeparator)) {
-		return errors.New("repository and restore destination cannot nest")
-	}
-	if _, err = verify(repo, snapshot, true); err != nil {
 		return err
 	}
 	st, err := os.Lstat(dst)
@@ -750,18 +753,39 @@ func restore(repo, snapshot, target string) error {
 	if !st.IsDir() {
 		return errors.New("restore target must be an existing directory")
 	}
-	entries, err := os.ReadDir(dst)
+	repoAbs, err := filepath.Abs(repo)
+	if err != nil {
+		return err
+	}
+	repoResolved, err := filepath.EvalSymlinks(repoAbs)
+	if err != nil {
+		return fmt.Errorf("resolve backup repository: %w", err)
+	}
+	dstResolved, err := filepath.EvalSymlinks(dst)
+	if err != nil {
+		return fmt.Errorf("resolve restore destination: %w", err)
+	}
+	// Always enforce disjoint physical paths before the destructive restore.
+	// Operating on the resolved destination also avoids traversing an
+	// operator-supplied parent alias after the overlap check.
+	if pathIsWithin(repoResolved, dstResolved) || pathIsWithin(dstResolved, repoResolved) {
+		return errors.New("repository and restore destination cannot nest")
+	}
+	if _, err = verify(repo, snapshot, true); err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(dstResolved)
 	if err != nil {
 		return err
 	}
 	for _, e := range entries {
-		if err := os.RemoveAll(filepath.Join(dst, e.Name())); err != nil {
+		if err := os.RemoveAll(filepath.Join(dstResolved, e.Name())); err != nil {
 			return err
 		}
 	}
 	if err := walkLegacyArchive(snapshot, func(h *tar.Header, r *tar.Reader) error {
 		rel := filepath.Clean(filepath.FromSlash(h.Name))
-		dest := filepath.Join(dst, rel)
+		dest := filepath.Join(dstResolved, rel)
 		if h.Typeflag == tar.TypeDir {
 			return os.MkdirAll(dest, 0700)
 		}
@@ -790,7 +814,7 @@ func restore(repo, snapshot, target string) error {
 		return err
 	}
 	return readIndex(snapshot, func(e entry) error {
-		dest := filepath.Join(dst, filepath.FromSlash(casRoot), e.hash[:2], e.hash)
+		dest := filepath.Join(dstResolved, filepath.FromSlash(casRoot), e.hash[:2], e.hash)
 		if err := os.MkdirAll(filepath.Dir(dest), 0700); err != nil {
 			return err
 		}

@@ -379,3 +379,68 @@ test('P0-L4c2 stale same-revision URL/unmounted DOM errors cannot poison a repla
   await act(async () => { oldOnError(); latestOnError() })
   assert.equal(errors.length, count, 'unmounted callbacks must not invalidate cache')
 })
+
+
+test('synchronous Host thumbnail loader exception becomes one terminal fallback without a second read', async () => {
+  let reads = 0
+  const signals = []
+  const ready = []
+  const loader = (_nodeID, signal) => {
+    reads += 1
+    signals.push(signal)
+    throw new Error('native Host thumbnail adapter was disposed')
+  }
+  let view
+  try {
+    await act(async () => {
+      view = renderer.create(React.createElement(Thumb, {
+        nodeID: 9911, revision: 4, alt: 'IMG_9911.HEIC',
+        loadThumbnail: loader, fallback,
+        onImageReadyChange: value => ready.push(value),
+      }))
+      await flush()
+    })
+    assert.equal(reads, 1, 'initial read is immediate and never retried automatically')
+    assert.equal(failed(view), true, 'synchronous Host fault is handled like an async transport failure')
+    assert.equal(image(view), undefined)
+    assert.deepEqual(ready, [false], 'fault cannot announce a decoded Live still')
+    assert.equal(signals[0].aborted, false)
+  } finally {
+    if (view) await act(async () => view.unmount())
+  }
+  assert.equal(signals[0].aborted, true, 'Viewer disposal still cancels the same signal')
+  assert.equal(reads, 1, 'fallback must not request originals or relaunch thumbnail bytes')
+})
+
+test('same Node and revision recover from previous Owner synchronous thumbnail fault', async () => {
+  const seen = []
+  const sourceA = (_nodeID, signal, revision) => {
+    seen.push({ owner: 'A', signal, revision })
+    throw new Error('retired Owner IPC adapter')
+  }
+  let resolveB
+  const sourceB = (_nodeID, signal, revision) => {
+    seen.push({ owner: 'B', signal, revision })
+    return new Promise(resolve => { resolveB = resolve })
+  }
+  const render = loadThumbnail => React.createElement(Thumb, {
+    nodeID: 9912, revision: 7, alt: 'IMG_9912.HEIC',
+    loadThumbnail, fallback, revokeOnDispose: false,
+  })
+  let view
+  try {
+    await act(async () => { view = renderer.create(render(sourceA)); await flush() })
+    assert.equal(failed(view), true)
+    assert.deepEqual(seen.map(x => [x.owner, x.revision]), [['A', 7]])
+    await act(async () => { view.update(render(sourceB)); await flush() })
+    assert.equal(failed(view), false, 'B pending cannot inherit A terminal failure')
+    assert.equal(image(view), undefined, 'old Owner never paints into new owner')
+    assert.equal(seen[0].signal.aborted, true)
+    await act(async () => { resolveB('blob:current-owner-thumbnail'); await flush() })
+    assert.equal(image(view)?.props.src, 'blob:current-owner-thumbnail')
+    assert.deepEqual(seen.map(x => x.owner), ['A', 'B'], 'only one read per authorized source')
+  } finally {
+    if (view) await act(async () => view.unmount())
+  }
+  assert.equal(seen[1].signal.aborted, true)
+})

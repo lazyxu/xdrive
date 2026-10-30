@@ -10,7 +10,7 @@ const store = read('ios/XDriveIOS/NativeOwnerSessionStore.swift')
 const model = read('ios/XDriveIOS/NativeOwnerLoginModel.swift')
 const screen = read('ios/XDriveIOS/NativeOwnerLoginScreen.swift')
 
-test('native Login is a genuine unmounted SwiftUI surface, not a duplicate WKWebView', () => {
+test('native Login remains SwiftUI and mounts only after native Photos integration', () => {
   assert.match(screen, /struct XDriveIOSNativeOwnerLoginScreen: View/)
   assert.match(screen, /@StateObject private var model = XDriveIOSNativeOwnerLoginModel/)
   assert.match(screen, /native-ios-login-server/)
@@ -20,8 +20,9 @@ test('native Login is a genuine unmounted SwiftUI surface, not a duplicate WKWeb
   assert.match(screen, /native-ios-login-signout/)
   assert.doesNotMatch(screen, /WebView|URLSession|fetch\(|window\.webkit/)
   const app = read('ios/XDriveIOS/XDriveIOSApp.swift')
-  assert.match(app, /XDriveWebAppHome\(\)/, 'legacy UI stays mounted until verified cutover')
-  assert.doesNotMatch(app, /XDriveIOSNativeOwnerLoginScreen\(\)/)
+  assert.match(app, /XDriveIOSNativeOwnerLoginScreen\(\)/, 'verified native Photos cutover')
+  assert.doesNotMatch(app, /XDriveWebAppHome\(\)/)
+  assert.match(screen, /XDriveIOSNativePhotosDashboard\(login: model, backup: backup\)/)
 })
 
 test('new native Keychain namespace never reuses purged legacy refresh or background Device secrets', () => {

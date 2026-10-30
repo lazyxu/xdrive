@@ -291,4 +291,7 @@ if bash "$manager" backup list >"$TMP/symlink-list.log" 2>&1; then
 fi
 grep -Fq 'absolute non-symlink path' "$TMP/symlink-list.log"
 
+bash -n "$ROOT/scripts/test-server-backup-data-source-preflight.sh"
+bash "$ROOT/scripts/test-server-backup-data-source-preflight.sh"
+
 echo 'scheduled backup v1/v2 opt-in, no-v2-prune and custom repository discovery tests passed'
