@@ -256,3 +256,43 @@ test('invalidate a decode-failed cached revision without revoking the borrowing 
   assert.deepEqual(revoked, [url])
   scheduler.dispose()
 })
+
+test('synchronous thumbnail loader failure rejects its request and never strands a visible Viewer Filmstrip slot', async () => {
+  const problem = new Error('disposed Host thumbnail port')
+  const called = []
+  const scheduler = new XDriveMediaThumbnailScheduler((nodeID) => {
+    called.push(nodeID)
+    if (nodeID === 51) throw problem
+    return Promise.resolve('blob:visible-filmstrip-' + nodeID)
+  }, { concurrency: 1, viewerOwned: true, revokeURL: () => {} })
+  try {
+    const old = scheduler.load(51, 0, 2)
+    const handledOld = assert.rejects(old, error => error === problem,
+      'sync source errors must reject the request instead of escaping the scheduler microtask')
+    const visible = scheduler.load(52, 0, 2)
+    await handledOld
+    assert.equal(await visible, 'blob:visible-filmstrip-52',
+      'the next visible tile must start without waiting for an orphaned in-flight slot')
+    assert.deepEqual(called, [51, 52])
+  } finally {
+    scheduler.dispose()
+  }
+})
+
+test('synchronous loader failure does not leave the same Node/revision in-flight or poison a later authorized retry', async () => {
+  const problem = new Error('transient native thumbnail access failure')
+  let attempts = 0
+  const scheduler = new XDriveMediaThumbnailScheduler(() => {
+    attempts++
+    if (attempts === 1) throw problem
+    return Promise.resolve('blob:recovered-current-owner')
+  }, { concurrency: 1, viewerOwned: true, revokeURL: () => {} })
+  try {
+    await assert.rejects(scheduler.load(75, 0, 8), error => error === problem)
+    await flush()
+    assert.equal(await scheduler.load(75, 0, 8), 'blob:recovered-current-owner')
+    assert.equal(attempts, 2, 'a failed task must be detached before retry')
+  } finally {
+    scheduler.dispose()
+  }
+})
