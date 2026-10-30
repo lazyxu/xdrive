@@ -291,7 +291,12 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
             if new != .active { invalidate() }
             else { refresh() }
         }
-        .onDisappear { invalidate() }
+        .onDisappear {
+            // fullScreenCover may hide its presenter before the Viewer closes.
+            // Suspend disposable reads, not the presentation's selected identity.
+            if selected != nil { suspendForViewer() }
+            else { invalidate() }
+        }
     }
 
     private func refresh() {
@@ -322,6 +327,16 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
             }
             if generation == token { busy = false }
         }
+    }
+
+    private func suspendForViewer() {
+        generation = UUID()
+        task?.cancel()
+        task = nil
+        if let scanner { Task { await scanner.reset() } }
+        scanner = nil
+        busy = false
+        // Retain selected + current page until the full-screen Viewer closes.
     }
 
     private func invalidate() {

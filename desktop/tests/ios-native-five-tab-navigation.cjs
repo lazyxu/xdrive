@@ -32,6 +32,9 @@ test('Gallery owns local, albums, cloud and map subroutes; media uses native ful
   assert.match(ui, /case \.map:/);
   assert.match(local, /\.fullScreenCover\(item: \$selected\)/);
   assert.match(albums, /\.fullScreenCover\(item: \$selected\)/);
+  assert.match(local, /if selected != nil \{ suspendForViewer\(\) \}/);
+  assert.match(albums, /if selected != nil \{ suspendForViewer\(\) \}/);
+  assert.match(albums, /libraryMonitor.stop\(\); invalidate\(\)/);
 });
 test('Owner scope and unsupported native routes never claim production parity', () => {
   assert.match(ui, /\.onChange\(of: login.owner\)/);

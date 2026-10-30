@@ -494,10 +494,11 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
         .fullScreenCover(item: $selected) {
             XDriveIOSNativeCloudOriginalPreview(node: $0, login: login)
         }
-        .task { model.reload(login: login) }
+        .onAppear { model.reload(login: login) }
         .onDisappear {
+            // Do not dismiss fullScreenCover by clearing its selection while
+            // the presenting gallery temporarily disappears.
             model.cancel()
-            selected = nil
         }
     }
 }

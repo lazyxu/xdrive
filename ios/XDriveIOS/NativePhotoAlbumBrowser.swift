@@ -276,7 +276,10 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
         .onChange(of: phase) { state in
             if state == .active { reload() } else { invalidate() }
         }
-        .onDisappear { libraryMonitor.stop(); invalidate() }
+        .onDisappear {
+            if selected != nil { suspendForViewer() }
+            else { libraryMonitor.stop(); invalidate() }
+        }
     }
 
     private func reload() {
@@ -311,6 +314,16 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
             }
             if epoch == ticket { loading = false }
         }
+    }
+
+    private func suspendForViewer() {
+        epoch = UUID()
+        task?.cancel()
+        task = nil
+        if let reader { Task { await reader.reset() } }
+        reader = nil
+        loading = false
+        // The modal owns selected until dismissal; library monitor remains live.
     }
 
     private func invalidate() {
