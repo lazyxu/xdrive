@@ -1083,7 +1083,7 @@ class DriveController(
      * Explicit user-triggered foreground ORIGINAL upload; not scheduled backup.
      * The existing SAF global writer and Go UploadSession are reused unchanged.
      */
-    fun backupNativePhotoOriginalForeground(
+    internal fun backupNativePhotoOriginalForeground(
         context: Context, candidate: NativePhotoOriginalCandidate, destinationName: String,
     ) {
         val initial = state.value
