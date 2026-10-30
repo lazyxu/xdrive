@@ -40,3 +40,22 @@ test('no backup uploader or signed Viewer URL is changed by a read-only refresh 
   assert.match(gallery, /request\(url, bearer: false\)/)
   assert.match(gallery, /player\?\.pause\(\)[\s\S]*?still = nil[\s\S]*?dismiss\(\)/)
 })
+
+test('native cloud originals recheck after scene return without treating BG writes as receipts', () => {
+  const wall = gallery.slice(gallery.indexOf('struct XDriveIOSNativeCloudOriginalGallery: View'));
+  const model = gallery.slice(gallery.indexOf('final class XDriveIOSNativeCloudOriginalModel'),
+    gallery.indexOf('struct XDriveIOSNativeCloudOriginalPreview: View'));
+  assert.match(wall, /@Environment\(\\\.scenePhase\) private var phase/);
+  assert.match(wall, /@State private var needsForegroundReload = false/);
+  assert.match(wall, /\.task \{[\s\S]*?guard phase == \.active else \{[\s\S]*?needsForegroundReload = true/);
+  assert.match(wall, /\.onChange\(of: phase\) \{ state in/);
+  assert.match(wall, /if state != \.active \{[\s\S]*?needsForegroundReload = true[\s\S]*?model\.cancel\(\)/);
+  assert.match(wall, /guard needsForegroundReload else \{ return \}/);
+  assert.match(wall, /guard login\.owner != nil else \{[\s\S]*?model\.invalidate\(\)/);
+  assert.match(wall, /if selected != nil \{[\s\S]*?refreshAfterViewer = true[\s\S]*?\} else \{[\s\S]*?model\.reload\(login: login\)/);
+  assert.match(wall, /if phase != \.active \{[\s\S]*?needsForegroundReload = true[\s\S]*?return/);
+  assert.match(wall, /if login\.owner != nil \{[\s\S]*?if phase == \.active \{[\s\S]*?model\.reload\(login: login\)/);
+  assert.match(model, /let auth = try await login\.verifiedAuthorization\(\)/);
+  assert.match(model, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expected\)/);
+  assert.doesNotMatch(wall, /UploadSessionTransport|markUploaded|recordResult\(/);
+});
