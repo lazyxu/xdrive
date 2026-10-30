@@ -3,6 +3,33 @@ import { xDriveCloudFilesPositionMatchesRequest } from '../cloud-files'
 import type { XDriveFileExplorerGrouping } from '../file-explorer-grouping'
 import type { XDriveFileExplorerItem, XDriveFileExplorerSort } from './FileExplorer'
 
+/**
+ * An authenticated 1-row Range must match the exact current Node/revision.
+ * FileExplorer's legacy projections permit number or decimal-string IDs,
+ * but Number(...) alone would also admit empty, whitespace, hex, exponent
+ * and other ambiguous identities. Never coerce those into a verified reveal.
+ */
+function xDriveCanonicalPositiveReadIdentity(value: number | string | undefined): number | null {
+  if (typeof value === 'number') {
+    return Number.isSafeInteger(value) && value > 0 ? value : null
+  }
+  if (typeof value !== 'string' || !/^[1-9]\d*$/.test(value)) return null
+  const numeric = Number(value)
+  return Number.isSafeInteger(numeric) && numeric > 0 ? numeric : null
+}
+
+function xDriveVerifiedReanchorRow(
+  rows: readonly XDriveFileExplorerItem[] | null,
+  nodeID: number,
+  revision: number,
+): XDriveFileExplorerItem | null {
+  if (!rows || rows.length !== 1) return null
+  const row = rows[0]
+  return xDriveCanonicalPositiveReadIdentity(row?.id) === nodeID &&
+    xDriveCanonicalPositiveReadIdentity(row?.revision) === revision
+      ? row : null
+}
+
 // The Server owns logical position, and only an exact bounded new Range can
 // authorize restoring the old Node identity under the newly committed order.
 export async function xDriveFileExplorerVerifiedChildReanchor({
@@ -35,9 +62,8 @@ export async function xDriveFileExplorerVerifiedChildReanchor({
   }) || position.revision !== revision || position.index >= itemCount) return null
   const rows = await collectRange(position.index, position.index, signal)
   signal.throwIfAborted()
-  if (!rows || rows.length !== 1 || Number(rows[0].id) !== nodeID ||
-    Number(rows[0].revision) !== position.revision) return null
-  return { index: position.index, item: rows[0] }
+  const verifiedItem = xDriveVerifiedReanchorRow(rows, nodeID, position.revision)
+  return verifiedItem ? { index: position.index, item: verifiedItem } : null
 }
 
 
@@ -73,7 +99,6 @@ export async function xDriveFileExplorerVerifiedChildReveal({
   }) || position.index >= itemCount) return null
   const rows = await collectRange(position.index, position.index, signal)
   signal.throwIfAborted()
-  if (!rows || rows.length !== 1 || Number(rows[0].id) !== nodeID ||
-    Number(rows[0].revision) !== position.revision) return null
-  return { index: position.index, item: rows[0] }
+  const verifiedItem = xDriveVerifiedReanchorRow(rows, nodeID, position.revision)
+  return verifiedItem ? { index: position.index, item: verifiedItem } : null
 }
