@@ -855,8 +855,18 @@ class DriveAppTest {
         }
 
         compose.onNodeWithTag("gallery-manual-more-manual:fixture-created").performClick()
+        compose.runOnIdle {
+            // More is local to the current Owner's Collection; no navigation
+            // may be triggered by a nested album-card click target.
+            org.junit.Assert.assertEquals(Screen.GALLERY, controller.state.value.screen)
+            org.junit.Assert.assertEquals(GalleryPrimaryTab.COLLECTIONS,
+                controller.state.value.galleryPrimaryTab)
+            org.junit.Assert.assertNull(controller.state.value.gallerySelectedAlbum)
+        }
+        compose.onRoot(useUnmergedTree = true).printToLog("GalleryMore-manual:fixture-created")
+        compose.onNodeWithTag("gallery-manual-actions-manual:fixture-created").assertExists()
         compose.onNodeWithTag("gallery-manual-rename-manual:fixture-created")
-            .performScrollTo().assertIsDisplayed().performClick()
+            .assertIsDisplayed().performClick()
         compose.onNodeWithTag("gallery-manual-rename-dialog").assertExists()
         compose.onNodeWithTag("gallery-manual-rename-name").performTextReplacement("夏季")
         compose.onNodeWithTag("gallery-manual-rename-confirm")
@@ -873,7 +883,7 @@ class DriveAppTest {
 
         compose.onNodeWithTag("gallery-manual-more-manual:fixture-created").performClick()
         compose.onNodeWithTag("gallery-manual-delete-manual:fixture-created")
-            .performScrollTo().assertIsDisplayed().performClick()
+            .assertIsDisplayed().performClick()
         compose.onNodeWithTag("gallery-manual-delete-dialog").assertExists()
         compose.onNodeWithText("不会删除原始照片", substring = true).assertExists()
         compose.onNodeWithTag("gallery-manual-delete-confirm")
@@ -990,8 +1000,18 @@ class DriveAppTest {
                 !controller.state.value.loading
         }
         compose.onNodeWithTag("gallery-manual-more-manual:cover").performClick()
+        compose.runOnIdle {
+            // More is local to the current Owner's Collection; no navigation
+            // may be triggered by a nested album-card click target.
+            org.junit.Assert.assertEquals(Screen.GALLERY, controller.state.value.screen)
+            org.junit.Assert.assertEquals(GalleryPrimaryTab.COLLECTIONS,
+                controller.state.value.galleryPrimaryTab)
+            org.junit.Assert.assertNull(controller.state.value.gallerySelectedAlbum)
+        }
+        compose.onRoot(useUnmergedTree = true).printToLog("GalleryMore-manual:cover")
+        compose.onNodeWithTag("gallery-manual-actions-manual:cover").assertExists()
         compose.onNodeWithTag("gallery-manual-auto-cover-manual:cover")
-            .performScrollTo().assertIsDisplayed().performClick()
+            .assertIsDisplayed().performClick()
         compose.onNodeWithTag("gallery-manual-auto-cover-dialog").assertExists()
         compose.onNodeWithText("仍可能显示相册中的首张照片", substring = true)
             .assertExists()

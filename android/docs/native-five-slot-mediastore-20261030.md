@@ -61,6 +61,21 @@ and [mobile-native-migration.md](../../docs/architecture/mobile-native-migration
    or network lost-ACK acceptance has been performed: **跳过（未验收）**.
    Emulator instrumentation must run when available.
 
+## 2026-10-30 emulator failure follow-up
+
+- The first PR Head `cb0369efa3b98827b09d1a67868649af528c51bd`
+  compiled/linted/assembled successfully but its 320x640 Android emulator
+  ran 120 instrumentation tests with **two real Gallery manual-album failures**:
+  menu options were not reachable through anchored dropdowns after the fixed
+  bottom navigation reduced the viewport. These checks did **not** pass.
+- Replaced only manual album's edge-anchored action menu with an Android-native
+  accessible action dialog, maintaining real existing Owner update/delete
+  confirmations and the same action callbacks. Restored test assertions
+  to directly confirm visible menu actions, instead of `performScrollTo()`
+  on an absent node. Existing Cover Selection menu is unchanged.
+- This is a targeted fix and **must be rerun on the new exact PR HEAD**.
+  Neither earlier JVM green nor unrelated parent builds are a pass claim.
+
 ## Test gates
 
 - Added pure navigation/JVM route tests: five stable slots, dynamic feature
