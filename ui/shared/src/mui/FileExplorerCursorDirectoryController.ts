@@ -81,12 +81,15 @@ export function useXDriveFileExplorerCursorDirectory<
   const pagingActive = useRef(false)
   const itemsRef = useRef<TNode[]>([])
   const verifiedOwnerRef = useRef<{ host: THost; revision: number } | null>(null)
-  const rootOwnerRef = useRef<{ host: THost; revision: number } | null>(null)
+  const rootOwnerRef = useRef<{
+    host: THost; port: XDriveFileExplorerCursorPort<TNode, TSort>; revision: number
+  } | null>(null)
   const ownerIdentityRef = useRef({ host, revision: rootRevision })
   ownerIdentityRef.current = { host, revision: rootRevision }
 
   const currentScopeKey = scopeKeyFor(crumbs, sort.key, sort.direction)
   const rootCurrent = rootOwnerRef.current?.host === host &&
+    rootOwnerRef.current.port === port &&
     rootOwnerRef.current.revision === rootRevision
   const [verified, setVerified] = useState(false)
   const [verifiedScopeKey, setVerifiedScopeKey] = useState('')
@@ -110,7 +113,7 @@ export function useXDriveFileExplorerCursorDirectory<
           ownerIdentityRef.current.host !== host ||
           ownerIdentityRef.current.revision !== rootRevision) return
       const verifiedRoot = xDriveFileExplorerAdmitOwnerRoot(root)
-      rootOwnerRef.current = { host, revision: rootRevision }
+      rootOwnerRef.current = { host, port, revision: rootRevision }
       setCrumbs([{ id: verifiedRoot.id, name: verifiedRoot.name }])
     }).catch(() => {
       if (active && !controller.signal.aborted &&
@@ -127,6 +130,7 @@ export function useXDriveFileExplorerCursorDirectory<
       active = false
       controller.abort()
       if (rootOwnerRef.current?.host === host &&
+          rootOwnerRef.current.port === port &&
           rootOwnerRef.current.revision === rootRevision) rootOwnerRef.current = null
     }
   }, [host, port, rootRevision])
