@@ -267,6 +267,7 @@ export function useXDriveFileExplorerCursorDirectory<
   return {
     crumbs, setCrumbs, items, itemsRef, sort, setSort, loadingRoot, rootError,
     loading, error, paging, hasMore, nextCursor, rootRevision,
+    authenticatedRootCurrent: rootCurrent,
     currentScopeKey, currentScopeVerified, isCurrentOwner,
     loadMore, refreshAuthenticatedRoot,
   }
