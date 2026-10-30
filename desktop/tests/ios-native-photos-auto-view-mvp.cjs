@@ -114,3 +114,17 @@ test('native manual, auto and receipt-resume consent is pinned to the exact veri
   assert.match(resume, /XDriveIOSNativePhotoOwnerScope\.matches\(login.owner, expectedOwner\)/)
   assert.match(resume, /let expected = expectedOwner/)
 })
+
+
+test('native cloud original list and preview clear stale media across Owner switches', () => {
+  // Server/Owner logout or switch must immediately remove the old filenames
+  // and stop the AVPlayer, not merely protect a future page response.
+  assert.match(cloud, /func invalidate\(\) \{\s*cancel\(\)\s*nodes = \[\]\s*total = 0\s*scanned = 0\s*error = nil/)
+  assert.match(cloud, /func reload\(login: XDriveIOSNativeOwnerLoginModel\) \{\s*invalidate\(\)/)
+  const preview = cloud.slice(cloud.indexOf('struct XDriveIOSNativeCloudOriginalPreview: View'),
+    cloud.indexOf('struct XDriveIOSNativeCloudOriginalGallery: View'))
+  assert.match(preview, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?player\?\.pause\(\)[\s\S]*?still = nil[\s\S]*?dismiss\(\)/)
+  const gallery = cloud.slice(cloud.indexOf('struct XDriveIOSNativeCloudOriginalGallery: View'))
+  assert.match(gallery, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?selected = nil\s*model\.invalidate\(\)\s*if login\.owner != nil \{\s*model\.reload\(login: login\)/)
+  assert.match(gallery, /\.onDisappear \{\s*model\.invalidate\(\)\s*selected = nil/)
+})

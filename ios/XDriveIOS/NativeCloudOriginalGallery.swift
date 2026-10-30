@@ -212,11 +212,18 @@ final class XDriveIOSNativeCloudOriginalModel: ObservableObject {
         busy = false
     }
 
-    func reload(login: XDriveIOSNativeOwnerLoginModel) {
+    /// Drop every previously visible Owner's nodes and any in-flight page.
+    /// An old account's filenames cannot remain after a local Owner switch.
+    func invalidate() {
         cancel()
         nodes = []
         total = 0
         scanned = 0
+        error = nil
+    }
+
+    func reload(login: XDriveIOSNativeOwnerLoginModel) {
+        invalidate()
         loadNext(login: login)
     }
 
@@ -308,6 +315,15 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                 self.error = "此文件的云端预览不可用，未读取其他账户的数据。"
             }
         }
+        .onChange(of: login.owner) { _ in
+            // A stale preview must not remain visible for a new Owner, even
+            // when the previous Owner's signed video ticket still works.
+            player?.pause()
+            player = nil
+            still = nil
+            error = nil
+            dismiss()
+        }
         .onDisappear {
             player?.pause()
             player = nil
@@ -372,8 +388,17 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
             XDriveIOSNativeCloudOriginalPreview(node: $0, login: login)
         }
         .task { model.reload(login: login) }
+        .onChange(of: login.owner) { _ in
+            // Drop the previous Owner's rows and selected preview BEFORE
+            // issuing the newly verified Owner's next page request.
+            selected = nil
+            model.invalidate()
+            if login.owner != nil {
+                model.reload(login: login)
+            }
+        }
         .onDisappear {
-            model.cancel()
+            model.invalidate()
             selected = nil
         }
     }
