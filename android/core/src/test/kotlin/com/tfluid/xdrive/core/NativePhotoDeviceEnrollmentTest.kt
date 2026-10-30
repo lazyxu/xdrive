@@ -88,6 +88,43 @@ class NativePhotoDeviceEnrollmentTest {
         }
     }
 
+
+    @Test fun deviceTokenNeverLeaksToOrdinaryOwnerRequestsOrRedirectTargets(): Unit = runBlocking {
+        MockWebServer().use { server ->
+            MockWebServer().use { untrusted ->
+                val address = ServerAddress.parse(server.url("/").toString(), allowHttp = true)
+                val enrolled = NativeAndroidDeviceEnrollment(uuid, secret, "Android Photos", "0.1")
+                XDriveApi(address).use { api ->
+                    server.enqueue(MockResponse().setBody(
+                        """{"device_id":"00000000-0000-4000-8000-000000000111"}"""))
+                    api.verifyNativeAndroidDevice("owner-token", enrolled)
+                    val proof = server.takeRequest()
+                    assertEquals(secret, proof.getHeader("X-XDrive-Device-Token"))
+
+                    server.enqueue(MockResponse().setBody(
+                        """{"id":1,"parent_id":null,"name":"","type":"dir","revision":2}"""))
+                    assertEquals(1L, api.root("owner-token").id)
+                    val ordinary = server.takeRequest()
+                    assertEquals("/api/v1/nodes/root", ordinary.path)
+                    assertNull(ordinary.getHeader("X-XDrive-Device-ID"))
+                    assertNull(ordinary.getHeader("X-XDrive-Device-Token"))
+
+                    // A compromised Server cannot redirect a private device
+                    // proof to a third-party origin (including an HTTP URL).
+                    val target = untrusted.url("/receive-device-secret")
+                    server.enqueue(MockResponse().setResponseCode(307)
+                        .addHeader("Location", target.toString()))
+                    assertThrows(ApiException::class.java) {
+                        runBlocking { api.verifyNativeAndroidDevice("owner-token", enrolled) }
+                    }
+                    val redirect = server.takeRequest()
+                    assertEquals("/api/v1/devices/self", redirect.path)
+                    assertEquals(0, untrusted.requestCount)
+                }
+            }
+        }
+    }
+
     @Test fun exactVerifiedOwnerRegistersOnlyOnce(): Unit = runBlocking {
         val service = Fake(identity, root)
         val proof = NativePhotoDeviceEnrollment.register(
