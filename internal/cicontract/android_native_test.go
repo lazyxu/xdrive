@@ -58,11 +58,26 @@ func validateAndroidWorkflow(workflow map[string]any) error {
 			return fmt.Errorf("Android verification steps cannot skip or ignore failures")
 		}
 	}
+	// The policy contract also validates the candidate, while pr-scope
+	// intentionally runs trusted base code (verified independently above).
+	policy := androidJob(workflow, "policy-contract")
+	if policy == nil {
+		return fmt.Errorf("policy contract job is required")
+	}
+	policyCheckout := androidStep(policy, "uses", "actions/checkout@v4")
+	if policyCheckout == nil {
+		return fmt.Errorf("policy contract source checkout is missing")
+	}
+	policyRef, _ := policyCheckout["with"].(map[string]any)
+	if policyRef["ref"] != "${{ github.sha }}" {
+		return fmt.Errorf("policy contract must verify the same PR merge candidate")
+	}
 	for _, required := range []struct {
 		key, value string
 		with       map[string]any
 	}{
-		{"uses", "actions/checkout@v4", map[string]any{"ref": "${{ github.event.pull_request.head.sha || github.sha }}"}},
+		// Android validates the same GitHub PR merge candidate as all other source jobs.
+		{"uses", "actions/checkout@v4", map[string]any{"ref": "${{ github.sha }}"}},
 		{"uses", "actions/setup-java@v4", map[string]any{"java-version": "17", "distribution": "temurin"}},
 		{"uses", "android-actions/setup-android@v3", map[string]any{"packages": "platform-tools"}},
 		{"uses", "reactivecircus/android-emulator-runner@v2", map[string]any{
@@ -103,6 +118,35 @@ func validateAndroidWorkflow(workflow map[string]any) error {
 		}
 	}
 	gate := androidJob(workflow, "final-gate")
+	if gate == nil {
+		return fmt.Errorf("Final Gate is missing")
+	}
+	candidateCheckout := androidStep(gate, "uses", "actions/checkout@v4")
+	if candidateCheckout == nil {
+		return fmt.Errorf("Final Gate event checkout is missing")
+	}
+	candidateRef, _ := candidateCheckout["with"].(map[string]any)
+	if candidateRef["ref"] != nil {
+		return fmt.Errorf("Final Gate must check out the exact event SHA")
+	}
+	candidate := androidStep(gate, "name", "Verify exact CI checkout and PR merge candidate parents")
+	if candidate == nil || candidate["if"] != nil || candidate["continue-on-error"] != nil {
+		return fmt.Errorf("Final Gate must verify exact merge candidate parents without bypass")
+	}
+	candidateEnv, _ := candidate["env"].(map[string]any)
+	candidateRun, _ := candidate["run"].(string)
+	if candidateEnv["PR_BASE_SHA"] != "${{ github.event.pull_request.base.sha }}" ||
+		candidateEnv["PR_HEAD_SHA"] != "${{ github.event.pull_request.head.sha }}" ||
+		!strings.HasPrefix(candidateRun, "set -euo pipefail\n") {
+		return fmt.Errorf("Final Gate must enforce event base and head identities")
+	}
+	for _, required := range []string{
+		"git rev-parse HEAD", "GITHUB_SHA", "git cat-file -p", "actual_parents[0]", "actual_parents[1]", "PR_BASE_SHA", "PR_HEAD_SHA",
+	} {
+		if !strings.Contains(candidateRun, required) {
+			return fmt.Errorf("Final Gate merge candidate validation is missing %s", required)
+		}
+	}
 	needs, _ := gate["needs"].([]any)
 	if !slices.Contains(needs, any("android-native")) || gate["if"] != "${{ !cancelled() }}" || gate["continue-on-error"] != nil {
 		return fmt.Errorf("Final Gate must require Android and cancel when the workflow is cancelled")
@@ -160,6 +204,15 @@ func TestAndroidNativeCIRejectsWeakenedGates(t *testing.T) {
 		},
 		"wrong source": func(w map[string]any) {
 			androidStep(androidJob(w, "android-native"), "uses", "actions/checkout@v4")["with"].(map[string]any)["ref"] = "master"
+		},
+		"old PR head instead of candidate": func(w map[string]any) {
+			androidStep(androidJob(w, "android-native"), "uses", "actions/checkout@v4")["with"].(map[string]any)["ref"] = "${{ github.event.pull_request.head.sha || github.sha }}"
+		},
+		"policy contract checks raw PR head": func(w map[string]any) {
+			androidStep(androidJob(w, "policy-contract"), "uses", "actions/checkout@v4")["with"].(map[string]any)["ref"] = "master"
+		},
+		"Final Gate candidate check removed": func(w map[string]any) {
+			androidStep(androidJob(w, "final-gate"), "name", "Verify exact CI checkout and PR merge candidate parents")["run"] = "exit 0"
 		},
 		"legacy tools": func(w map[string]any) {
 			androidStep(androidJob(w, "android-native"), "uses", "android-actions/setup-android@v3")["with"].(map[string]any)["packages"] = "tools platform-tools"
