@@ -46,6 +46,7 @@ test('older Server backup snapshots use a bounded read-only Host-to-Admin pipeli
   assert.match(web, /readSnapshotIndexPage:/)
   assert.match(agent, /boundedAdminBackupSnapshotPageQuery/)
   assert.match(agent, /offset > 10_000/, 'Agent must not truncate the Server v2 index at 1,000')
+  assert.match(main, /\(query\.offset as number\) > 10_000 \|\|/, 'Electron Main must not reject valid 10k index pages')
   assert.match(client, /offset <= 10_000/, 'Server client must support the same v2 10k boundary')
   assert.match(api, /adminBackupPageNumber\(c.Query\("offset"\), 0, 10_000\)/)
   assert.match(agentRouter, /GET \/v1\/cloud\/admin-backups\/snapshots/)

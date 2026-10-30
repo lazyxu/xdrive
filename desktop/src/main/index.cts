@@ -6933,7 +6933,7 @@ function registerIPCHandlers() {
       const query = input as Record<string, unknown>
       if (Object.keys(query).length !== 2 ||
         !Number.isSafeInteger(query.offset) || (query.offset as number) < 0 ||
-        (query.offset as number) > 1000 ||
+        (query.offset as number) > 10_000 ||
         !Number.isSafeInteger(query.limit) || (query.limit as number) < 1 ||
         (query.limit as number) > 100) {
         throw new AgentIPCError('invalid_input', 0, 'Invalid bounded backup snapshot page.')
