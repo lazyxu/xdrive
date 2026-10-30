@@ -61,7 +61,7 @@ jobs:
           test -f source-agent/xdrive-source-agent-linux-arm64
           test -s backup-cli/xdrive-backup-linux-amd64.tar.gz
           test -s backup-cli/xdrive-backup-windows-amd64.zip
-          bash scripts/ci/verify-synology-spk-release.sh synology
+          bash scripts/ci/verify-synology-spk-release.sh synology --require-mui
           cli_count="$(find backup-cli -maxdepth 1 -type f | wc -l)"
           [[ "$cli_count" == "2" ]] || {
             echo "expected exactly two standalone Backup CLI archives; found $cli_count" >&2
@@ -321,7 +321,7 @@ jobs:
           test -f release/xdrive-source-agent-linux-arm64
           test -s release/xdrive-backup-linux-amd64.tar.gz
           test -s release/xdrive-backup-windows-amd64.zip
-          bash scripts/ci/verify-synology-spk-release.sh release
+          bash scripts/ci/verify-synology-spk-release.sh release --require-mui
           bash scripts/ci/verify-release-archive-allowlist.sh release
           if find release -maxdepth 1 -type f \( -name '*DesktopSetup*' -o -name 'xdrive-desktop-*' \) | grep -q .; then
             echo "standalone Desktop installer must not be published" >&2
