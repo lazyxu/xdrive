@@ -59,7 +59,10 @@ test('accessible signed Cell list has 44px touch targets and a real photo count 
   const start = source.indexOf('data-xdrive-places-cluster-list')
   const list = source.slice(start)
   assert.ok(start >= 0)
-  assert.match(source, /scopeIsCurrent && accessible.length>0/)
+  // Accessible Cell actions need both current Owner/PhotoScope and a
+  // freshly authenticated SDK viewport. Worldwide bootstrap is not a
+  // camera, even when it already has signed representative Cells.
+  assert.match(source, /scopeIsCurrent && acceptedViewport && accessible.length>0/)
   assert.match(list, /color:'text.secondary',minHeight:44,display:'flex',alignItems:'center'/)
   assert.match(list, /'&:focus-visible'/)
   assert.match(list, /<Box component="nav" aria-label="当前地图聚合区域"/)
