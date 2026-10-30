@@ -117,13 +117,12 @@ const previewSurface = fs.readFileSync(
   path.join(repo, 'ui/shared/src/mui/FilePreviewSurface.tsx'), 'utf8')
 assert.match(previewSurface, /setURLDownloadProgress/)
 // The current Owner loader must retain the exact target/kind/AbortSignal when
-// normalized to a settled Promise. Do not merely relax the old source match.
-assert.match(previewSurface,
-  /beginDisposablePreviewRead\\(\\(\\) => loaders\\.url!\\(currentTarget, previewKind, controller\\.signal,/)
-assert.match(previewSurface,
-  /function beginDisposablePreviewRead<Value>\\(read: \\(\\) => Promise<Value>\\): Promise<Value>/)
-assert.match(previewSurface, /return Promise\\.resolve\\(read\\(\\)\\)/)
-assert.match(previewSurface, /return Promise\\.reject\\(error\\)/)
+// normalized to a settled Promise. Verify that exact read boundary and both
+// settlement branches without a fragile whitespace-sensitive regexp.
+assert.ok(previewSurface.includes('beginDisposablePreviewRead(() => loaders.url!(currentTarget, previewKind, controller.signal,'))
+assert.ok(previewSurface.includes('function beginDisposablePreviewRead<Value>(read: () => Promise<Value>): Promise<Value>'))
+assert.ok(previewSurface.includes('return Promise.resolve(read())'))
+assert.ok(previewSurface.includes('return Promise.reject(error)'))
 assert.match(previewSurface, /loading && previewKind === 'pdf'/)
 assert.match(previewSurface, /totalBytes=\{urlDownloadProgress\?\.totalBytes\}/)
 console.log('DSM Owner safe media Blob: canonical common Viewer, 256 KiB ranges, true SHA-256, magic and cancellation')
