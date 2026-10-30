@@ -107,6 +107,11 @@ struct XDriveIOSNativePhotosDashboard: View {
     @State private var launcherQuery = ""
     @State private var showRecentPicker = false
 
+    private var ownerScopeKey: String {
+        guard let owner = login.owner else { return "signed-out" }
+        return "\(owner.origin.absoluteString)|\(owner.instanceID)|\(owner.ownerID)|\(owner.rootNodeID)"
+    }
+
     var body: some View {
         TabView(selection: $tab) {
             NavigationStack {
@@ -157,6 +162,7 @@ struct XDriveIOSNativePhotosDashboard: View {
             .tabItem { Label("我的", systemImage: "person.crop.circle") }
             .tag(XDriveIOSNativeBottomTab.mine)
         }
+        .id(ownerScopeKey)
         .navigationBarBackButtonHidden(true)
         .sheet(isPresented: $showRecentPicker) {
             NavigationStack {

@@ -3,6 +3,36 @@ import Photos
 import SwiftUI
 import UIKit
 
+import Combine
+
+/// PhotoKit change callbacks may arrive off-main. The visible album wall
+/// drops its page immediately instead of keeping a revoked/changed member.
+private final class XDriveIOSNativeAlbumChangeMonitor: NSObject, ObservableObject,
+    PHPhotoLibraryChangeObserver {
+    @Published private(set) var revision = 0
+    private var registered = false
+
+    func start() {
+        guard !registered else { return }
+        PHPhotoLibrary.shared().register(self)
+        registered = true
+    }
+
+    func stop() {
+        guard registered else { return }
+        PHPhotoLibrary.shared().unregisterChangeObserver(self)
+        registered = false
+    }
+
+    func photoLibraryDidChange(_ changeInstance: PHChange) {
+        DispatchQueue.main.async { [weak self] in
+            self?.revision &+= 1
+        }
+    }
+
+    deinit { stop() }
+}
+
 // Local PhotoKit collection IDs are transient, in-memory view identities.
 // Never persist them, send them to xDrive Server, or use them as backup receipts.
 private enum XDriveIOSAlbumReadFailure: Error {
@@ -183,6 +213,7 @@ private struct XDriveIOSNativeAlbumCover: View {
 struct XDriveIOSNativeAlbumContentsScreen: View {
     let album: XDriveLocalPhotoAlbumSummary
     @Environment(\.scenePhase) private var phase
+    @StateObject private var libraryMonitor = XDriveIOSNativeAlbumChangeMonitor()
     @State private var reader: XDriveIOSNativeAlbumPageReader?
     @State private var page: XDrivePhotoKitScanPage?
     @State private var selected: XDrivePhotoKitScanCandidate?
@@ -237,11 +268,15 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
         .navigationTitle(album.name)
         .navigationBarTitleDisplayMode(.inline)
         .fullScreenCover(item: $selected) { XDriveIOSNativeLocalPhotoDetail(candidate: $0) }
-        .onAppear { reload() }
+        .onAppear { libraryMonitor.start(); reload() }
+        .onChange(of: libraryMonitor.revision) { _ in
+            invalidate()
+            error = "系统相册发生变化，请重新读取当前页面。"
+        }
         .onChange(of: phase) { state in
             if state == .active { reload() } else { invalidate() }
         }
-        .onDisappear { invalidate() }
+        .onDisappear { libraryMonitor.stop(); invalidate() }
     }
 
     private func reload() {
@@ -295,6 +330,7 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
 /// existing 32-at-a-time PhotoKit album pager, never a 100k-sized array.
 struct XDriveIOSNativePhotoAlbumsScreen: View {
     @Environment(\.scenePhase) private var phase
+    @StateObject private var libraryMonitor = XDriveIOSNativeAlbumChangeMonitor()
     @State private var page: XDriveLocalPhotoAlbumPage?
     @State private var permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @State private var loading = false
@@ -321,7 +357,7 @@ struct XDriveIOSNativePhotoAlbumsScreen: View {
                     }
                 } else {
                     if permission == .limited {
-                        Label("仅显示已授权照片所属的相册及成员", systemImage: "lock.shield")
+                        Label("仅可查看 iOS 已授权的相册成员", systemImage: "lock.shield")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     if let page {
@@ -358,11 +394,15 @@ struct XDriveIOSNativePhotoAlbumsScreen: View {
             .padding(12)
         }
         .navigationTitle("相册")
-        .onAppear { reload() }
+        .onAppear { libraryMonitor.start(); reload() }
+        .onChange(of: libraryMonitor.revision) { _ in
+            invalidate()
+            error = "相册目录发生变化，请重新读取。"
+        }
         .onChange(of: phase) { state in
             if state == .active { reload() } else { invalidate() }
         }
-        .onDisappear { invalidate() }
+        .onDisappear { libraryMonitor.stop(); invalidate() }
     }
 
     private func reload() {
