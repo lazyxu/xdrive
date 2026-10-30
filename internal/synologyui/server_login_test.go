@@ -81,7 +81,7 @@ func TestServerLoginCGIRequiresDSMOwnerCSRFAndExactCredentialSchema(t *testing.T
 		{"arbitrary mount", "POST", `{"server":"https://drive.example.com","username":"owner","password":"private-password","mount_path":"/volume1/photo"}`, "https://nas.example:5001", csrf, p},
 		{"arbitrary trust root", "POST", `{"server":"https://drive.example.com","username":"owner","password":"private-password","trusted_lan_root_pem":"bad"}`, "https://nas.example:5001", csrf, p},
 		{"no password", "POST", `{"server":"https://drive.example.com","username":"owner"}`, "https://nas.example:5001", csrf, p},
-		{"trailing JSON", "POST", body+"{}", "https://nas.example:5001", csrf, p},
+		{"trailing JSON", "POST", body + "{}", "https://nas.example:5001", csrf, p},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			previous := agent.loginCalls
