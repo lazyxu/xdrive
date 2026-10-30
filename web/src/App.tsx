@@ -99,6 +99,7 @@ import { xDriveWebOpenRouteForNode } from './webViewerRoute'
 import { useXDriveWebAppRuntime, xDriveCreateWebAppBrowseSession, xDriveClearPrivateMapBrowseSessions } from './webAppRuntime'
 import { xDriveWebAppRouteForWorkspaceKey, xDriveWebAppWorkspaceKey } from './webApps'
 import { XDriveMobileAllLauncher, XDriveMobileFiveSlotNavigation, XDriveMobileMinePage, xDriveBrowserMobileDestinations } from './MobileFiveSlotNavigation'
+import { xDriveMobileLauncherSections } from './mobileLauncherSections'
 import { xDriveInitialMobileNavigation, xDriveMobileFeatureParentRoute, xDriveMobileRouteForSlot, xDriveMobileSlotForRoute, xDriveRememberMobileNavigation, xDriveToggleMobileFavorite } from './mobileFiveSlotState'
 import type { XDriveMobileSlot } from './mobileFiveSlotState'
 import { createWebMediaGalleryDataSource } from './mediaGalleryAdapter'
@@ -2279,9 +2280,7 @@ function FileManager({
   // second routing/backup stack. The iOS contract determines only mobile UX.
   const mobileDestinations = xDriveBrowserMobileDestinations(serverAdminVerified)
     .filter(destination => xDriveWorkspaceNavigationAllowed(destination.key, serverAdminVerified))
-  const mobileLauncherSections = [
-    { key: 'web-mobile-apps', label: '全部应用', items: mobileDestinations },
-  ]
+  const mobileLauncherSections = xDriveMobileLauncherSections(mobileDestinations)
   const toggleMobileFavorite = (key: string) => {
     if (!mobileOwnerScope || !mobileDestinations.some(item => item.key === key)) return
     setMobileNavigation(previous => xDriveToggleMobileFavorite(

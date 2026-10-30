@@ -20,8 +20,10 @@ test('server-address UI exists on Desktop, Android and iOS, DSM stays authentica
   assert.match(iosLogin, /Text\("服务器 HTTPS 地址"\)/)
   assert.match(iosLogin, /TextField\("https:\/\/drive\.example\.com", text: \$model\.serverText\)/)
   assert.match(iosLogin, /native-ios-login-server/)
-  assert.match(iosWorkspace, /Label\("退出登录或切换服务器"/)
-  assert.match(iosWorkspace, /native-ios-login-signout/)
+  assert.match(iosWorkspace, /Button\("退出并切换服务器或账户", role: \.destructive\)/);
+  assert.match(iosWorkspace, /onSignOut\(expected\)/);
+  assert.match(iosWorkspace, /native-ios-login-signout/);
+  assert.match(iosWorkspace, /native-ios-mine-server-account/);
   assert.match(iosNetwork, /parts\.scheme\?\.lowercased\(\) == "https"/)
   assert.match(iosNetwork, /completionHandler\(nil\)/)
   assert.doesNotMatch(iosLogin + iosWorkspace, /import WebKit|WKWebView|XDriveWebAppHome/)

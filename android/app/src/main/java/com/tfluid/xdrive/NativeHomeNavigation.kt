@@ -32,6 +32,15 @@ internal enum class NativeHomeShortcut {
 
 internal enum class NativeGallerySource { CLOUD, LOCAL, ALBUMS, MAP }
 
+/** Keep the originating Gallery wall when entering and leaving the Map child. */
+internal fun nativeGalleryMapReturnSource(
+    source: NativeGallerySource,
+    lastNonMap: NativeGallerySource = NativeGallerySource.CLOUD,
+): NativeGallerySource =
+    if (source == NativeGallerySource.MAP) {
+        lastNonMap.takeUnless { it == NativeGallerySource.MAP } ?: NativeGallerySource.CLOUD
+    } else source
+
 internal data class NativeHomeNavigation(
     val selected: NativeHomeTab = NativeHomeTab.FILES,
     val dynamicFeature: NativeDynamicFeature? = null,

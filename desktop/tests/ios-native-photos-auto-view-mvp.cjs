@@ -19,7 +19,7 @@ const scope = read('ios/XDriveIOS/NativePhotoOwnerScope.swift')
 test('native Photos entry uses SwiftUI rather than WKWebView and supports verified login', () => {
   assert.match(app, /XDriveIOSNativeOwnerLoginScreen\(\)/)
   assert.doesNotMatch(app, /\bXDriveWebAppHome\(\)/)
-  assert.match(login, /XDriveIOSNativePhotosDashboard\(\s*login: model,\s*backup: backup,/)
+  assert.match(login, /if model\.owner != nil \{[\s\S]*?XDriveIOSNativePhotosDashboard\(/)
   assert.match(dashboard, /XDriveIOSNativeLocalGalleryScreen\(\)/)
   assert.match(dashboard, /XDriveIOSNativePhotoBackupScreen\(login: login, controller: backup\)/)
   assert.match(dashboard, /XDriveIOSNativeCloudOriginalGallery\([\s\S]*?login: login,[\s\S]*?confirmedOriginalUpdate: backup\.confirmedOriginalUpdate/)

@@ -374,7 +374,11 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                     VideoPlayer(player: player)
                         .onAppear { player.play() }
                 } else if let error {
-                    Text(error).foregroundStyle(.red).padding()
+                    VStack(spacing: 8) {
+                        Text(error).foregroundStyle(.red).padding(.horizontal)
+                        Button("重试") { retryPreview() }
+                            .accessibilityIdentifier("native-ios-original-viewer-retry")
+                    }
                 } else {
                     ProgressView("正在安全读取云端预览…")
                 }
@@ -390,13 +394,14 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
         .task(id: previewRequestID) {
             guard !node.isLiveArchive, phase == .active,
                   let before = login.owner else { return }
+            let requestID = previewRequestID
             do {
                 let auth = try await login.verifiedAuthorization()
                 let media = try await XDriveIOSNativeCloudOriginalReader(
                     owner: auth.owner, accessToken: auth.accessToken
                 ).preview(node)
                 try Task.checkCancellation()
-                guard phase == .active,
+                guard phase == .active, previewRequestID == requestID,
                       XDriveIOSNativePhotoOwnerScope.matches(auth.owner, before),
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, before)
                 else { return }
@@ -408,6 +413,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                 // Scene/Owner/view navigation invalidated the earlier request.
             } catch {
                 guard phase == .active, !Task.isCancelled,
+                      previewRequestID == requestID,
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, before)
                 else { return }
                 self.error = "此文件的云端预览不可用，未读取其他账户的数据。"
@@ -438,6 +444,16 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
             player = nil
             still = nil
         }
+    }
+
+    private func retryPreview() {
+        guard !node.isLiveArchive, phase == .active, login.owner != nil else { return }
+        // Do not reuse an expired signed URL, previous player, or old pixels.
+        player?.pause()
+        player = nil
+        still = nil
+        error = nil
+        previewRequestID = UUID()
     }
 }
 

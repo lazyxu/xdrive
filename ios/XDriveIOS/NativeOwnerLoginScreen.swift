@@ -1,45 +1,104 @@
 import Combine
 import SwiftUI
 
-/// Native iOS owner root. The native foreground auto runner must survive
-/// leaving the Photos dashboard while the app and Owner session stay active.
+/// Native Owner-verified app root. A single controller owns the auto runner;
+/// the account card is shown ONLY while signed out, never behind a push route.
 struct XDriveIOSNativeOwnerLoginScreen: View {
     @StateObject private var model = XDriveIOSNativeOwnerLoginModel()
-    // Own a single native auto runner for the entire authenticated foreground
-    // scene, rather than recreating it on every gallery/dashboard navigation.
     @StateObject private var backup = XDriveIOSNativePhotoBackupController()
     @Environment(\.scenePhase) private var phase
     @State private var showPassword = false
     @State private var logoutWarning: String?
+    @State private var signingOut = false
     @State private var restoreFinished = false
-    @State private var signOutBusy = false
     @State private var emergencyStopBusy = false
     @State private var emergencyStopNotice: String?
 
     var body: some View {
         Group {
-            // Restoring Keychain credentials must finish with a fresh Owner/root
-            // proof before either the sign-in form or native tabs are shown.
+            // Suppress the signed-out form until native Keychain restoration
+            // has proved the exact Server instance, Owner and cloud root.
             if !restoreFinished {
                 ProgressView("正在验证本机账户…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if model.owner != nil {
-                // The verified workspace IS the root, not a push destination.
-                // Back gestures can no longer reveal an authenticated login
-                // interstitial. The one durable backup runner stays here.
                 XDriveIOSNativePhotosDashboard(
                     login: model, backup: backup,
-                    onSignOut: { Task { await signOutSafely() } },
-                    signingOut: signOutBusy,
-                    logoutWarning: logoutWarning
+                    signingOut: signingOut, logoutWarning: logoutWarning,
+                    onSignOut: { expected in
+                        Task { await signOutSafely(expectedOwner: expected) }
+                    }
                 )
             } else {
                 NavigationStack {
-                    loginPage
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 16) {
+                            HStack(spacing: 12) {
+                                Image("Brand")
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 48, height: 48)
+                                    .accessibilityLabel("xDrive")
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("xDrive")
+                                        .font(.title.bold())
+                                    Text("iOS 原生客户端")
+                                        .font(.footnote)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            Text("连接到你的个人云端")
+                                .font(.title3.weight(.semibold))
+
+                            loginForm
+                            if let logoutWarning {
+                                Text(logoutWarning)
+                                    .foregroundStyle(.orange)
+                                    .font(.footnote)
+                                    .accessibilityIdentifier("native-ios-logout-warning")
+                            }
+
+                            if let warning = model.errorMessage {
+                                Text(warning)
+                                    .foregroundStyle(.red)
+                                    .font(.footnote)
+                                    .accessibilityIdentifier("native-ios-login-error")
+                            }
+                            if let notice = model.noticeMessage {
+                                Text(notice)
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                            // Stop-only operation remains available even
+                            // when login/Keychain or the Server is unavailable.
+                            Button("紧急停止本机相册自动备份", role: .destructive) {
+                                Task { await emergencyStopWithoutAccount() }
+                            }
+                            .disabled(emergencyStopBusy)
+                            .accessibilityIdentifier("native-ios-offline-emergency-stop")
+                            if let emergencyStopNotice {
+                                Text(emergencyStopNotice)
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(24)
+                        .frame(maxWidth: 430, alignment: .leading)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14)
+                                .fill(Color(uiColor: .secondarySystemGroupedBackground))
+                        )
+                        .padding(20)
+                        .frame(maxWidth: .infinity)
+                    }
+                    .background(Color(uiColor: .systemGroupedBackground))
+                    .navigationTitle("xDrive")
+                    .navigationBarTitleDisplayMode(.inline)
                 }
             }
         }
         .task {
+            // Restore must verify Server instance, Owner and cloud root first.
             await model.restore()
             restoreFinished = true
             backup.refresh(owner: model.owner)
@@ -54,69 +113,11 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
             else { backup.cancel() }
         }
         .onChange(of: model.owner) { _ in
-            // Never retain a previous Server/Owner's in-flight foreground
-            // upload when authentication changes.
             backup.cancel()
             backup.refresh(owner: model.owner)
+            if model.owner == nil { showPassword = false }
             if phase == .active { backup.tickIfDue(login: model) }
-            if model.owner != nil { logoutWarning = nil }
         }
-    }
-
-    private var loginPage: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(spacing: 12) {
-                    Image("Brand")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 48, height: 48)
-                        .accessibilityLabel("xDrive")
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("xDrive").font(.title.bold())
-                        Text("iOS 原生客户端")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                Text("连接到你的个人云端")
-                    .font(.title3.weight(.semibold))
-                loginForm
-                if let error = model.errorMessage {
-                    Text(error).foregroundStyle(.red).font(.footnote)
-                        .accessibilityIdentifier("native-ios-login-error")
-                }
-                if let warning = logoutWarning {
-                    Text(warning).foregroundStyle(.orange).font(.footnote)
-                }
-                if let notice = model.noticeMessage {
-                    Text(notice).font(.footnote).foregroundStyle(.secondary)
-                }
-                // Stop-only action remains accessible when login or Keychain
-                // verification is impossible, without restoring a Web screen.
-                Button("紧急停止本机相册自动备份", role: .destructive) {
-                    Task { await emergencyStopWithoutAccount() }
-                }
-                .disabled(emergencyStopBusy)
-                .accessibilityIdentifier("native-ios-offline-emergency-stop")
-                if let emergencyStopNotice {
-                    Text(emergencyStopNotice)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .padding(24)
-            .frame(maxWidth: 430, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(Color(uiColor: .secondarySystemGroupedBackground))
-            )
-            .padding(20)
-            .frame(maxWidth: .infinity)
-        }
-        .background(Color(uiColor: .systemGroupedBackground))
-        .navigationTitle("xDrive")
-        .navigationBarTitleDisplayMode(.inline)
     }
 
     private var loginForm: some View {
@@ -181,15 +182,13 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
         .disabled(model.busy)
     }
 
-    /// Stop-only native recovery during offline or locked credential access.
-    /// Existing encrypted receipts and the v2 Owner session are untouched.
+    /// Native stop-only recovery for an unavailable Owner/Server.
+    /// Preserve the encrypted receipt journal and current v2 login secret.
     @MainActor
     private func emergencyStopWithoutAccount() async {
         guard !emergencyStopBusy else { return }
         emergencyStopBusy = true
         defer { emergencyStopBusy = false }
-        // A prior upload may still be winding down; stop this scene's runner
-        // before revoking any persisted plans or background credentials.
         backup.cancel()
         let stopped = XDriveIOSPhotoAutoScheduleStore.shared.disableAllOnThisDevice()
         XDriveIOSBackgroundPhotoTask.revokePendingRequests()
@@ -207,13 +206,17 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
     /// No new account may reuse a prior owner's pending foreground or
     /// BG grant. Fail closed if the global original writer is still active.
     @MainActor
-    private func signOutSafely() async {
-        guard !signOutBusy else { return }
-        signOutBusy = true
-        defer { signOutBusy = false }
+    private func signOutSafely(expectedOwner: XDriveNativeOwnerRoot) async {
+        guard !signingOut,
+              XDriveIOSNativePhotoOwnerScope.matches(model.owner, expectedOwner) else {
+            logoutWarning = "当前服务器或账号已变化；未退出另一账户。"
+            return
+        }
+        signingOut = true
+        defer { signingOut = false }
         logoutWarning = nil
         guard let gate = XDriveIOSOriginalRunGate.shared.acquire() else {
-            logoutWarning = "已有原件操作正在结束，请先在「相册备份」取消本轮后重试退出。"
+            logoutWarning = "已有原件操作正在结束，请先返回相册停止本轮后重试退出。"
             return
         }
         defer { XDriveIOSOriginalRunGate.shared.release(gate) }
@@ -222,12 +225,17 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
         do {
             let remotePending = try await XDriveIOSPhotoBackgroundGrantManager.shared
                 .emergencyStopLocally()
+            guard XDriveIOSNativePhotoOwnerScope.matches(model.owner, expectedOwner) else {
+                logoutWarning = "账户在安全退出过程中变化，未操作另一账户。"
+                return
+            }
+            // Do not expose an unauthenticated form while the old Owner's
+            // Keychain refresh token is still restorable after restart.
             guard await model.signOut() else {
                 logoutWarning = "本机登录凭据未能从 Keychain 清除；为防止重启后恢复旧账户，本次未退出或切换服务器。请解锁后重试。"
                 return
             }
-            // Root conditionally unmounts the dashboard on logout, so its
-            // onChange cannot be relied upon to erase persisted route hints.
+            // Only a confirmed local logout may retire Owner-scoped routes.
             XDriveIOSNativeNavigationRouteStore().clear()
             if remotePending {
                 logoutWarning = "本机自动上传已停止；旧服务器的授权撤销待网络恢复后复核。"
