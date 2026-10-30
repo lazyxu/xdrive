@@ -88,18 +88,19 @@ test('Global storage owns physical CAS distribution, inventory and cache cleanup
   assert.ok(storageDistribution.includes("value: XDriveStorageDistributionValue"))
 })
 
-test('Local storage is one shared Web/Desktop page with platform-specific sections', () => {
+test('Local storage is one shared Web/Desktop/DSM page with platform-specific sections', () => {
   assert.ok(localStorage.includes('export function XDriveLocalStoragePage'))
   assert.ok(localStorage.includes('title="本地存储"'))
   assert.ok(localStorage.includes('title="浏览器存储"'))
   assert.ok(localStorage.includes('title="Desktop 存储"'))
-  assert.equal((localStorage.match(/<XDriveMetricGrid\b/g) || []).length, 2)
-  assert.equal((localStorage.match(/<XDriveMetricCard\b/g) || []).length, 8)
+  assert.ok(localStorage.includes('title="DSM 套件数据所在文件系统"'))
+  assert.equal((localStorage.match(/<XDriveMetricGrid\b/g) || []).length, 3)
+  assert.equal((localStorage.match(/<XDriveMetricCard\b/g) || []).length, 11)
   assert.ok(webApp.includes('localStorage: localStorageSource') &&
     sharedOutlet.includes('<XDriveLocalStoragePage key={revision} source={services.localStorage} />'))
   assert.ok(desktopApp.includes('localStorage: localStorageSource') && sharedOutlet.includes('<XDriveLocalStoragePage'))
-  assert.equal((desktopApp.match(/<XDriveMetricGrid\b/g) || []).length, 3, 'diagnostics must not add another metric grid')
-  assert.equal((desktopApp.match(/<XDriveMetricCard\b/g) || []).length, 16, 'diagnostics must not add pass/warn/fail metric cards')
+  assert.equal((desktopApp.match(/<XDriveMetricGrid\b/g) || []).length, 4, 'DSM shares Local Storage; diagnostics must not add another metric grid')
+  assert.equal((desktopApp.match(/<XDriveMetricCard\b/g) || []).length, 19, 'DSM shares Local Storage; diagnostics must not add pass/warn/fail metric cards')
   assert.equal(desktopApp.includes('className="cloud-quota-grid"'), false)
   assert.equal(desktopApp.includes('className="cache-metrics"'), false)
   assert.equal(desktopApp.includes('className="update-metrics"'), false)

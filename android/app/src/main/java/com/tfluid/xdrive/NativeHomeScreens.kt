@@ -82,7 +82,11 @@ internal fun NativeHomeBottomBar(
             NativeHomeTab.entries.forEachIndexed { index, tab ->
                 if (tab == NativeHomeTab.DYNAMIC) {
                     Column(
-                        modifier = Modifier.weight(1f).fillMaxHeight()
+                        // NavigationBar measures its children with the parent viewport's
+                        // maximum height. fillMaxHeight() here expands the bar
+                        // across the whole screen and hides Files/Gallery/Viewer.
+                        // Limit the custom long-press item to the native bar.
+                        modifier = Modifier.weight(1f).height(64.dp)
                             .combinedClickable(
                                 onClick = { onSelect(tab) },
                                 onLongClickLabel = "选择最近动态功能",

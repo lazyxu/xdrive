@@ -225,6 +225,8 @@ struct XDriveIOSNativeServerMediaPreview: View {
     let item: XDriveIOSNativeMediaItem
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var phase
+    @State private var previewRequestID = UUID()
     @State private var image: UIImage?
     @State private var player: AVPlayer?
     @State private var failure: String?
@@ -255,36 +257,54 @@ struct XDriveIOSNativeServerMediaPreview: View {
                 }
             }
         }
-        .task(id: item.id) {
-            guard let expected = login.owner else { return }
+        .task(id: previewRequestID) {
+            // Signed previews must not survive a scene/Owner generation.
+            guard phase == .active, let expected = login.owner else { return }
+            let requestID = previewRequestID
             do {
                 let auth = try await login.verifiedAuthorization()
-                guard XDriveIOSNativePhotoOwnerScope.matches(auth.owner, expected)
-                else { throw XDriveIOSNativeMediaReadFailure.invalidScope }
+                try Task.checkCancellation()
+                guard phase == .active, previewRequestID == requestID,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected),
+                      XDriveIOSNativePhotoOwnerScope.matches(auth.owner, expected)
+                else { return }
                 let media = try await XDriveIOSNativeMediaGalleryReader(
                     owner: auth.owner, accessToken: auth.accessToken
                 ).preview(item)
                 try Task.checkCancellation()
-                guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
+                guard phase == .active, previewRequestID == requestID,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
                 else { return }
                 image = media.image
                 if let url = media.videoURL { player = AVPlayer(url: url) }
+            } catch is CancellationError {
+                // The generation has retired. Do not display a stale error.
             } catch {
+                guard phase == .active, previewRequestID == requestID,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
+                else { return }
                 failure = "该云端媒体预览暂不可用，未读取其他账户的数据。"
             }
         }
+        .onChange(of: phase) { _ in
+            // iOS app switcher must not expose the previous signed still/video.
+            // A fresh active generation re-verifies the Owner before loading.
+            retirePreview()
+        }
         .onChange(of: login.owner) { _ in
-            player?.pause()
-            player = nil
-            image = nil
-            failure = nil
+            retirePreview()
             dismiss()
         }
-        .onDisappear {
-            player?.pause()
-            player = nil
-            image = nil
-        }
+        .onDisappear { retirePreview() }
+    }
+
+    private func retirePreview() {
+        // Also cancels the .task(id:) network/decoder generation.
+        previewRequestID = UUID()
+        player?.pause()
+        player = nil
+        image = nil
+        failure = nil
     }
 }
 
@@ -292,6 +312,8 @@ struct XDriveIOSNativeServerMediaPreview: View {
 struct XDriveIOSNativeServerMediaWall: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     let album: XDriveIOSNativeMediaAlbum?
+    // Focus visibility belongs to the owning native five-tab shell.
+    var onFocusChange: ((Bool) -> Void)? = nil
     @StateObject private var model = XDriveIOSNativeMediaWallModel()
     @Environment(\.scenePhase) private var phase
     @State private var selected: XDriveIOSNativeMediaItem?
@@ -393,7 +415,9 @@ struct XDriveIOSNativeServerMediaWall: View {
             if album == nil {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     NavigationLink {
-                        XDriveIOSNativeServerMediaAlbums(login: login)
+                        XDriveIOSNativeServerMediaAlbums(
+                            login: login, onFocusChange: onFocusChange
+                        )
                     } label: {
                         Label("云端相册", systemImage: "rectangle.stack")
                     }
@@ -402,6 +426,7 @@ struct XDriveIOSNativeServerMediaWall: View {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
                     focusedBrowsing.toggle()
+                    onFocusChange?(focusedBrowsing)
                 } label: {
                     Label(
                         focusedBrowsing ? "显示底部导航" : "专注浏览",
@@ -413,7 +438,8 @@ struct XDriveIOSNativeServerMediaWall: View {
                 .accessibilityIdentifier("native-ios-gallery-focus-toggle")
             }
         }
-        .toolbar(focusedBrowsing ? .hidden : .visible, for: .tabBar)
+        // The owning five-tab shell controls its custom bar; never show a
+        // second system strip through a child toolbar override.
         .fullScreenCover(item: $selected) {
             XDriveIOSNativeServerMediaPreview(item: $0, login: login)
         }
@@ -423,6 +449,8 @@ struct XDriveIOSNativeServerMediaWall: View {
             }
         }
         .onChange(of: login.owner) { _ in
+            focusedBrowsing = false
+            onFocusChange?(false)
             lastOpenedMediaID = nil
             selected = nil
             model.invalidate()
@@ -432,6 +460,8 @@ struct XDriveIOSNativeServerMediaWall: View {
         }
         .onChange(of: phase) { state in
             if state != .active {
+                focusedBrowsing = false
+                onFocusChange?(false)
                 selected = nil
                 model.invalidate()
             } else if model.page == nil {
@@ -445,6 +475,7 @@ struct XDriveIOSNativeServerMediaWall: View {
                 // A different feature/album should not inherit this wall's
                 // L2 focus state or hide the global bottom navigation.
                 focusedBrowsing = false
+                onFocusChange?(false)
                 model.suspendForNavigation()
             }
         }
@@ -465,6 +496,7 @@ struct XDriveIOSNativeServerMediaWall: View {
 /// Server collection index is distinct from local PhotoKit smart/user albums.
 struct XDriveIOSNativeServerMediaAlbums: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
+    var onFocusChange: ((Bool) -> Void)? = nil
     @Environment(\.scenePhase) private var phase
     @State private var albums: [XDriveIOSNativeMediaAlbum] = []
     @State private var error: String?
@@ -479,7 +511,9 @@ struct XDriveIOSNativeServerMediaAlbums: View {
                     .font(.caption).foregroundStyle(.secondary)
                 ForEach(albums) { album in
                     NavigationLink {
-                        XDriveIOSNativeServerMediaWall(login: login, album: album)
+                        XDriveIOSNativeServerMediaWall(
+                            login: login, album: album, onFocusChange: onFocusChange
+                        )
                     } label: {
                         HStack(spacing: 12) {
                             Image(systemName: "rectangle.stack")

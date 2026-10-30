@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
-import { Box, Button, Stack, Typography, useTheme } from '@mui/material'
+import { Box, Button, Stack, TextField, Typography, useTheme } from '@mui/material'
 import {
   XDriveAppearanceThemeProvider,
   XDriveApp, XDriveSettingsDialog,
@@ -31,25 +31,58 @@ function SynologyServerConnectionSettings({
   open, client,
 }: { open: boolean; client: XDriveSynologyBackupLocalClient }) {
   const [status, setStatus] = useState<OwnerConnectionCheck>('unchecked')
+  const [profileStatus, setProfileStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading')
+  const [server, setServer] = useState('')
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [loginState, setLoginState] = useState<'idle' | 'logging' | 'failed'>('idle')
   const controllerRef = useRef<AbortController | null>(null)
+  const profileRef = useRef<AbortController | null>(null)
+  const loginRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
+    controllerRef.current?.abort()
+    profileRef.current?.abort()
+    // A submitted login may already have changed the owning Agent. Do not
+    // cancel its browser observation on dialog close: completion must reload
+    // the app and retire all potentially stale Owner-scoped UI state.
     if (!open) {
-      controllerRef.current?.abort()
       controllerRef.current = null
+      profileRef.current = null
       setStatus('unchecked')
+      setProfileStatus('loading')
+      setPassword('')
+      // Keep loginState=logging if the Agent request is still in flight.
+      // It will reload even if this shared Settings dialog is closed.
+      return
     }
-    return () => controllerRef.current?.abort()
-  }, [open])
+    const controller = new AbortController()
+    profileRef.current = controller
+    setProfileStatus('loading')
+    void client.serverConnection(controller.signal).then(
+      info => {
+        if (profileRef.current !== controller || controller.signal.aborted) return
+        setServer(info.server ?? '')
+        setUsername(info.username ?? '')
+        setProfileStatus('ready')
+      },
+      () => {
+        if (profileRef.current !== controller || controller.signal.aborted) return
+        setProfileStatus('unavailable')
+      },
+    )
+    return () => {
+      controller.abort()
+      controllerRef.current?.abort()
+    }
+  }, [open, client])
 
   const verifyOwnerConnection = () => {
     controllerRef.current?.abort()
     const controller = new AbortController()
     controllerRef.current = controller
     setStatus('checking')
-    // Existing Owner-authorized Agent->Server quota read. This proves an
-    // actual authorized read, not just a successful DSM browser session.
-    // No credential, arbitrary URL, write capability or new CGI route.
     void client.ownerQuota(controller.signal).then(
       () => {
         if (controllerRef.current !== controller || controller.signal.aborted) return
@@ -64,31 +97,94 @@ function SynologyServerConnectionSettings({
     )
   }
 
+  const login = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (loginState === 'logging') return
+    loginRef.current?.abort()
+    controllerRef.current?.abort()
+    const controller = new AbortController()
+    loginRef.current = controller
+    const requestedPassword = password
+    // Password is never stored in browser storage, query strings, logs,
+    // application Host state or persistent browser settings.
+    setPassword('')
+    setLoginState('logging')
+    void client.loginServer(server.trim(), username.trim(), requestedPassword, controller.signal).then(
+      () => {
+        if (loginRef.current !== controller || controller.signal.aborted) return
+        loginRef.current = null
+        // Retire all shared Owner-scoped UI data, async reads, thumbnails
+        // and Viewer resources before displaying the newly authenticated Owner.
+        window.location.reload()
+      },
+      () => {
+        if (loginRef.current !== controller || controller.signal.aborted) return
+        loginRef.current = null
+        // Agent login can persist a new Owner before a subsequent quota
+        // verification fails. Even an HTTP error must retire old caches.
+        window.location.reload()
+      },
+    )
+  }
+
   const statusText: Record<OwnerConnectionCheck, string> = {
     unchecked: '尚未检查当前 Agent 的 Server Owner 读取。',
     checking: '正在验证 DSM Agent 对当前 Server Owner 的授权读取…',
     verified: '已验证：当前 Agent 可以读取 Server Owner 配额。',
-    unavailable: '当前无法验证 Server Owner 读取；可能是登录、Agent、网络或该读取能力不可用，并不等同于 Server 离线。',
+    unavailable: '无法验证当前 Server Owner 读取；请检查登录、证书、Agent 和网络。',
   }
 
   return (
     <Box>
       <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1 }}>Server 连接</Typography>
-      <Stack spacing={1}>
+      <Stack spacing={1.25}>
         <Typography variant="body2" color="text.secondary">
-          DSM 使用本机受限 xdrive-agent 已登录的 Server 会话。验证只读取当前 Owner 配额，不更改服务器地址或账号。
+          DSM 与 Desktop 使用同一个 Server 账户。首次登录或对相同账户重新登录时，凭据仅经过当前 DSM HTTPS 会话和本机 Agent。
+          为避免已有本机备份跨 Owner 误操作，当前不允许直接切换到不同 Server 或账户。
         </Typography>
-        <Box>
-          <Button variant="outlined" disabled={status === 'checking'} onClick={verifyOwnerConnection}>
-            检查 Server Owner 连接
-          </Button>
+        {profileStatus === 'unavailable' ? (
+          <Typography variant="body2" role="status">
+            当前 Agent 登录状态暂不可读。请确认套件运行和 DSM 认证有效。
+          </Typography>
+        ) : null}
+        <Box component="form" onSubmit={login}>
+          <Stack spacing={1}>
+            <TextField label="Server HTTPS 地址" size="small" type="url"
+              autoComplete="url" value={server} onChange={(e) => setServer(e.target.value)}
+              placeholder="https://192.168.1.2:8443" required
+              disabled={loginState === 'logging'} />
+            <TextField label="xDrive 用户名" size="small"
+              autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)}
+              required disabled={loginState === 'logging'} />
+            <TextField label="密码" size="small"
+              type={showPassword ? 'text' : 'password'} autoComplete="current-password"
+              value={password} onChange={(e) => setPassword(e.target.value)}
+              required disabled={loginState === 'logging'} />
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+              <Button size="small" onClick={() => setShowPassword((value) => !value)}
+                disabled={loginState === 'logging'}>
+                {showPassword ? '隐藏密码' : '显示密码'}
+              </Button>
+              <Button type="submit" variant="contained"
+                disabled={loginState === 'logging' || profileStatus === 'loading' ||
+                  !server.trim() || !username.trim() || !password}>
+                {loginState === 'logging' ? '正在安全登录…' : '登录当前 Server'}
+              </Button>
+            </Stack>
+          </Stack>
         </Box>
+        {loginState === 'failed' ? (
+          <Typography variant="body2" role="alert">
+            未能完成经过 Owner 验证的登录。检查 HTTPS 证书和账户；如需切换其他 Server/Owner，先通过 NAS 本地管理入口安全迁移已有备份。
+          </Typography>
+        ) : null}
+        <Button variant="outlined" sx={{ alignSelf: 'flex-start' }}
+          disabled={status === 'checking' || loginState === 'logging'} onClick={verifyOwnerConnection}>
+          检查 Server Owner 连接
+        </Button>
         <Typography variant="body2" role="status"
           color={status === 'verified' ? 'success.main' : 'text.secondary'}>
           {statusText[status]}
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          当前 DSM 网页不提供修改 Server 地址或登录凭据的接口。首次登录或更换地址，请在 NAS 上以受限 xdrivenas 用户使用 <code>xd login --server</code> 配置；不要将密码填写到 DSM 网页或运行在 root 账户下。
         </Typography>
       </Stack>
     </Box>
@@ -138,10 +234,10 @@ function SynologyWorkspace({ host, appearance, onAppearanceChange }: {
           onClose={() => setSettingsOpen(false)}
           appearance={appearance}
           onAppearanceChange={onAppearanceChange}
-          subtitle="DSM 与 Desktop 共用设置对话框；连接检查只读取本机 Agent 的真实 Server Owner 状态。"
+          subtitle="DSM 与 Desktop 共用设置对话框；Server 登录使用本机受限 Agent。"
         >
           <Typography variant="body2" color="text.secondary">
-            外观仅在当前窗口生效。套件、账号及备份配置仍通过现有 DSM 或 xDrive 管理入口执行。
+            外观仅在当前窗口生效。Server 登录由受限 Agent 管理；备份源授权和套件设置仍遵循 DSM 权限。
           </Typography>
           {host.services?.localBackupClient ? (
             <SynologyServerConnectionSettings open={settingsOpen} client={host.services.localBackupClient} />

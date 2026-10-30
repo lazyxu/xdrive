@@ -1,3 +1,4 @@
+import CryptoKit
 import Photos
 import SwiftUI
 
@@ -103,16 +104,28 @@ struct XDriveIOSNativePhotosDashboard: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     @ObservedObject var backup: XDriveIOSNativePhotoBackupController
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @State private var tab: XDriveIOSNativeBottomTab = .gallery
     @State private var gallerySource: XDriveIOSNativeGallerySource = .local
     @State private var dynamicFeature: XDriveIOSNativeDynamicFeature?
     @State private var recentDynamic: [XDriveIOSNativeDynamicFeature] = []
     @State private var launcherQuery = ""
     @State private var showRecentPicker = false
+    @State private var galleryFocused = false
+    @State private var routeRestoreScopeKey: String?
+    private let navigationRouteStore = XDriveIOSNativeNavigationRouteStore()
 
     private var ownerScopeKey: String {
         guard let owner = login.owner else { return "signed-out" }
         return "\(owner.origin.absoluteString)|\(owner.instanceID)|\(owner.ownerID)|\(owner.rootNodeID)"
+    }
+
+    // Only a non-secret SHA-256 scope identifier is written with route hints.
+    // Credentials, PhotoKit identifiers and signed media URLs never enter it.
+    private var navigationScopeHash: String? {
+        guard login.owner != nil else { return nil }
+        return SHA256.hash(data: Data(ownerScopeKey.utf8))
+            .map { String(format: "%02x", $0) }.joined()
     }
 
     var body: some View {
@@ -165,6 +178,21 @@ struct XDriveIOSNativePhotosDashboard: View {
             .tabItem { Label("我的", systemImage: "person.crop.circle") }
             .tag(XDriveIOSNativeBottomTab.mine)
         }
+        // SwiftUI's TabView keeps native feature-local NavigationStacks, but
+        // the system tab strip is hidden in favor of an explicit 5-slot bar.
+        // This guarantees a compact horizontal label in iPhone landscape and
+        // gives the dynamic slot a real long-press/context-menu surface.
+        .toolbar(.hidden, for: .tabBar)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if XDriveIOSNativeFocusVisibilityPolicy.showsBar(
+                tab: tab.rawValue,
+                gallerySource: gallerySource.rawValue,
+                focused: galleryFocused,
+                ownerVerified: login.owner != nil
+            ) {
+                nativeBottomBar
+            }
+        }
         .id(ownerScopeKey)
         .navigationBarBackButtonHidden(true)
         .sheet(isPresented: $showRecentPicker) {
@@ -191,17 +219,116 @@ struct XDriveIOSNativePhotosDashboard: View {
                 }
             }
         }
-        .onAppear { backup.refresh(owner: login.owner) }
+        .onAppear {
+            restoreNavigationIfNeeded()
+            backup.refresh(owner: login.owner)
+        }
+        .onChange(of: ownerScopeKey) { _ in
+            // TabView .id does not reset this parent's @State. Revoke the old
+            // Owner's saved UI route even if switching A -> B -> A in one scene.
+            routeRestoreScopeKey = nil
+            navigationRouteStore.clear()
+            if login.owner != nil { routeRestoreScopeKey = ownerScopeKey }
+            // The app-root durable original/receipt runner is never touched.
+            resetNavigation()
+        }
         .onChange(of: login.owner) { owner in
             if owner == nil {
+                navigationRouteStore.clear()
                 resetNavigation()
                 dismiss()
             }
         }
+        .onChange(of: tab) { _ in saveNavigationIfReady() }
+        .onChange(of: gallerySource) { _ in saveNavigationIfReady() }
+        .onChange(of: dynamicFeature) { _ in saveNavigationIfReady() }
+        .onChange(of: recentDynamic) { _ in saveNavigationIfReady() }
+        // Rotation does not change focus; changing the owning route does.
+        .onChange(of: tab) { next in
+            if next != .gallery { galleryFocused = false }
+        }
+        .onChange(of: gallerySource) { _ in galleryFocused = false }
+    }
+
+    // L1 native bottom bar. The system safe-area inset remains managed by
+    // SwiftUI; 48/56pt here is visual height, not the home-indicator inset.
+    // Unlike a TabView tabItem, these buttons support an actual context menu.
+    private var nativeBottomBar: some View {
+        HStack(spacing: 0) {
+            navigationButton(.launcher, title: "全部", symbol: "square.grid.2x2")
+
+            navigationButton(
+                .dynamic,
+                title: dynamicFeature?.title ?? "最近",
+                symbol: dynamicFeature?.symbol ?? "clock.arrow.circlepath"
+            )
+            .contextMenu {
+                Button {
+                    showRecentPicker = true
+                } label: {
+                    Label("最近功能", systemImage: "clock.arrow.circlepath")
+                }
+                ForEach(recentDynamic) { feature in
+                    Button {
+                        openDynamic(feature)
+                    } label: {
+                        Label(
+                            feature.implemented ? feature.title : "\(feature.title)（未接入）",
+                            systemImage: feature.symbol
+                        )
+                    }
+                }
+            }
+            .accessibilityAction(named: Text("最近功能")) {
+                showRecentPicker = true
+            }
+
+            navigationButton(.gallery, title: "图库", symbol: "photo.on.rectangle")
+            navigationButton(.files, title: "文件", symbol: "folder")
+            navigationButton(.mine, title: "我的", symbol: "person.crop.circle")
+        }
+        .padding(.horizontal, 4)
+        .frame(height: verticalSizeClass == .compact ? 48 : 56)
+        .background(.regularMaterial)
+        .overlay(alignment: .top) { Divider() }
+        .accessibilityIdentifier("native-ios-five-slot-bar")
+    }
+
+    private func navigationButton(
+        _ destination: XDriveIOSNativeBottomTab, title: String, symbol: String
+    ) -> some View {
+        let selected = tab == destination
+        return Button {
+            tab = destination
+        } label: {
+            Group {
+                if verticalSizeClass == .compact {
+                    // iPhone landscape: label beside icon, not below it.
+                    HStack(spacing: 5) {
+                        Image(systemName: symbol).font(.body)
+                        Text(title).font(.caption).lineLimit(1)
+                    }
+                } else {
+                    VStack(spacing: 3) {
+                        Image(systemName: symbol).font(.body)
+                        Text(title).font(.caption2).lineLimit(1)
+                    }
+                }
+            }
+            .foregroundStyle(selected ? Color.accentColor : Color.secondary)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityIdentifier("native-ios-tab-\(destination.rawValue)")
     }
 
     private var gallery: some View {
         VStack(spacing: 0) {
+            if !galleryFocused {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(XDriveIOSNativeGallerySource.allCases) { source in
@@ -228,6 +355,7 @@ struct XDriveIOSNativePhotosDashboard: View {
                 .padding(.horizontal, 12)
             }
             .padding(.vertical, 3)
+            }
             Group {
                 switch gallerySource {
                 case .local:
@@ -235,7 +363,10 @@ struct XDriveIOSNativePhotosDashboard: View {
                 case .albums:
                     XDriveIOSNativePhotoAlbumsScreen()
                 case .cloud:
-                    XDriveIOSNativeServerMediaWall(login: login, album: nil)
+                    XDriveIOSNativeServerMediaWall(
+                        login: login, album: nil,
+                        onFocusChange: { galleryFocused = $0 }
+                    )
                 case .originals:
                     XDriveIOSNativeCloudOriginalGallery(
                         login: login,
@@ -351,7 +482,7 @@ struct XDriveIOSNativePhotosDashboard: View {
         )
         .safeAreaInset(edge: .bottom) {
             Button("查看云端已备份原件") {
-                gallerySource = .cloud
+                gallerySource = .originals
                 tab = .gallery
             }
             .buttonStyle(.bordered)
@@ -448,7 +579,39 @@ struct XDriveIOSNativePhotosDashboard: View {
         tab = .dynamic
     }
 
+    private func restoreNavigationIfNeeded() {
+        guard login.owner != nil, routeRestoreScopeKey != ownerScopeKey else { return }
+        routeRestoreScopeKey = ownerScopeKey
+        guard let scopeHash = navigationScopeHash,
+              let snapshot = navigationRouteStore.restore(scopeHash: scopeHash)
+        else { return }
+
+        // Only known, implemented routes are restored. Child PhotoKit pages
+        // re-query their own permission and Owner-signed Server data.
+        gallerySource = XDriveIOSNativeGallerySource(rawValue: snapshot.gallerySource) ?? .local
+        dynamicFeature = snapshot.activeDynamic.flatMap {
+            XDriveIOSNativeDynamicFeature(rawValue: $0)
+        }
+        recentDynamic = snapshot.recentDynamic.compactMap {
+            XDriveIOSNativeDynamicFeature(rawValue: $0)
+        }
+        tab = XDriveIOSNativeBottomTab(rawValue: snapshot.selectedTab) ?? .gallery
+    }
+
+    private func saveNavigationIfReady() {
+        guard login.owner != nil, routeRestoreScopeKey == ownerScopeKey,
+              let scopeHash = navigationScopeHash else { return }
+        navigationRouteStore.save(
+            scopeHash: scopeHash,
+            selectedTab: tab.rawValue,
+            gallerySource: gallerySource.rawValue,
+            activeDynamic: dynamicFeature?.implemented == true ? dynamicFeature?.rawValue : nil,
+            recentDynamic: recentDynamic.filter { $0.implemented }.map { $0.rawValue }
+        )
+    }
+
     private func resetNavigation() {
+        galleryFocused = false
         gallerySource = .local
         dynamicFeature = nil
         recentDynamic = []
