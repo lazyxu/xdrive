@@ -15,12 +15,12 @@ test('Agent heartbeat is credential-only, background and not a Push execution ca
   assert.match(meta, /HeartbeatAt\s+\*time\.Time/)
   assert.match(routes, /POST\("\/devices\/self\/heartbeat", s\.heartbeatClientDevice\)/)
   // Read-only heartbeat uses an Owner-bound *identity* proof, not the
-  // stronger Source/Root execution credential. Keep both gates distinct.
+  // stronger Source/Root execution credential. Keep both mobile platforms excluded.
   assert.match(server, /clientDeviceIdentityCredentialMatches\(device, token\)/)
   assert.doesNotMatch(server, /clientDeviceCredentialMatches\(device, token\)/)
   const credentials = read('internal', 'api', 'client_devices.go')
   assert.match(credentials,
-    /return device\.Platform != "ios" && clientDeviceIdentityCredentialMatches\(device, raw\)/)
+    /return device\.Platform != "ios" && device\.Platform != "android" &&\s*clientDeviceIdentityCredentialMatches\(device, raw\)/)
   assert.match(server, /clause\.Locking\{Strength: "UPDATE"\}/)
   assert.match(server, /device\.HeartbeatAt == nil/)
   assert.match(server, /return "unknown"/)

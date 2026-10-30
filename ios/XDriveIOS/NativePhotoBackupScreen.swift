@@ -6,11 +6,14 @@ struct XDriveIOSNativePhotoBackupScreen: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     @ObservedObject var controller: XDriveIOSNativePhotoBackupController
     @StateObject private var receipts = XDriveIOSNativePhotoReceiptReviewController()
+    @Environment(\.scenePhase) private var phase
     @State private var interval = 60
     @State private var allowICloud = false
     @State private var showAutoConsent = false
     @State private var showManualConsent = false
     @State private var showResumeConsent = false
+    @State private var showCatchUpConsent = false
+    @State private var catchUpConsentOwner: XDriveNativeOwnerRoot?
     // Capture the exact verified Owner and settings BEFORE any native consent
     // dialog; a late confirmation must never authorize another Server.
     @State private var manualConsentOwner: XDriveNativeOwnerRoot?
@@ -66,6 +69,35 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                     Label(active.pausedForReview ? "已暂停：需核对收据" : "前台自动备份已开启",
                           systemImage: active.pausedForReview ? "exclamationmark.triangle" : "checkmark.circle")
                     Text("下次允许检查：\(active.nextDueAt.formatted(date: .abbreviated, time: .shortened))")
+                    if active.catchUpWhenBehind == true {
+                        Label("积压加速已开启：前台约每分钟最多一轮",
+                              systemImage: "bolt.circle")
+                        Button("关闭积压加速，保留常规自动备份") {
+                            guard let selected = login.owner else { return }
+                            Task { @MainActor in
+                                // Local stop never needs Server connectivity.
+                                guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected)
+                                else { return }
+                                do {
+                                    _ = try XDriveIOSPhotoAutoScheduleStore.shared
+                                        .setCatchUp(owner: selected, enabled: false)
+                                    controller.refresh(owner: selected)
+                                } catch {
+                                    consentError = "无法保存加速关闭设置，请检查本机计划状态。"
+                                }
+                            }
+                        }.accessibilityIdentifier("native-ios-photos-catchup-disable")
+                    } else if !active.pausedForReview {
+                        Button("加速处理首次积压备份（需单独确认）") {
+                            consentError = nil
+                            catchUpConsentOwner = login.owner
+                            showCatchUpConsent = catchUpConsentOwner != nil
+                        }
+                        .disabled(login.owner == nil)
+                        .accessibilityIdentifier("native-ios-photos-catchup-enable")
+                    }
+                    Text("积压加速默认关闭。手动同意后，仅 App 前台且收据正常时，每轮最多新增 20 个原件；有积压时约 60 秒后尝试下一轮。扫描完一遍后恢复所选间隔。")
+                        .font(.caption).foregroundStyle(.secondary)
                     Button("关闭当前账户自动备份", role: .destructive) {
                         controller.disable(owner: login.owner)
                     }.accessibilityIdentifier("native-ios-photos-auto-disable")
@@ -205,6 +237,40 @@ struct XDriveIOSNativePhotoBackupScreen: View {
         } message: {
             Text("只在全部待核对记录已获 Server 确认、当前原生 Owner 未变、相册权限有效时恢复。若校验失败则继续保持暂停。")
         }
+        .confirmationDialog("允许当前账户加速积压备份？",
+                            isPresented: $showCatchUpConsent,
+                            titleVisibility: .visible) {
+            Button("确认：仅在前台约每分钟继续") {
+                guard let selected = catchUpConsentOwner,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected)
+                else {
+                    consentError = "服务器或账户已变化，积压加速授权失效。"
+                    return
+                }
+                let stopVersion = XDriveIOSPhotoAutoScheduleStore.shared.localStopGeneration
+                Task { @MainActor in
+                    do {
+                        let proof = try await login.verifiedAuthorization()
+                        guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected),
+                              XDriveIOSNativePhotoOwnerScope.matches(proof.owner, selected),
+                              XDriveIOSPhotoAutoScheduleStore.shared.localStopGeneration == stopVersion,
+                              phase == .active,
+                              [.authorized, .limited].contains(
+                                PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                              ) else {
+                            throw XDriveIOSNativeSessionError.staleSession
+                        }
+                        _ = try XDriveIOSPhotoAutoScheduleStore.shared
+                            .setCatchUp(owner: selected, enabled: true)
+                        controller.refresh(owner: selected)
+                    } catch {
+                        consentError = "未能重新验证当前账户或安全保存加速设置；维持原自动计划。"
+                    }
+                }
+            }
+        } message: {
+            Text("仅当前服务器和 Owner。积压未完成时每轮最多新增 20 个原件，约 60 秒后再尝试；完成整库一次扫描后恢复原间隔。不启用后台权限，未知收据继续暂停。")
+        }
         .onAppear {
             controller.refresh(owner: login.owner)
             receipts.refresh(login: login)
@@ -214,6 +280,8 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             showManualConsent = false
             showAutoConsent = false
             showResumeConsent = false
+            showCatchUpConsent = false
+            catchUpConsentOwner = nil
             manualConsentOwner = nil
             autoConsentOwner = nil
             resumeConsentOwner = nil
@@ -228,6 +296,8 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             showManualConsent = false
             showAutoConsent = false
             showResumeConsent = false
+            showCatchUpConsent = false
+            catchUpConsentOwner = nil
             manualConsentOwner = nil
             autoConsentOwner = nil
             resumeConsentOwner = nil

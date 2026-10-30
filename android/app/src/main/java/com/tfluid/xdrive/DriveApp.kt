@@ -42,11 +42,26 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     onDownload: ((DriveNode) -> Unit)? = null,
     onUpload: (() -> Unit)? = null) {
     val state by controller.state.collectAsStateWithLifecycle()
+    val nativeAuthenticated = state.screen in setOf(Screen.FILES, Screen.GALLERY, Screen.TRASH)
+    // A real authentication epoch, not a username, owns native navigation.
+    var nativeNavigation by remember(state.nativeUiSessionId, nativeAuthenticated) {
+        mutableStateOf(NativeHomeNavigation())
+    }
+    var launcherSearch by remember(state.nativeUiSessionId) { mutableStateOf("") }
+    var localAlbumSelection by remember(state.nativeUiSessionId) {
+        mutableStateOf<NativeLocalAlbum?>(null)
+    }
+    var pendingGalleryMap by remember(state.nativeUiSessionId) { mutableStateOf(false) }
+    var mapOriginSource by remember(state.nativeUiSessionId) {
+        mutableStateOf(NativeGallerySource.CLOUD)
+    }
+    var pendingGalleryTab by remember(state.nativeUiSessionId) { mutableStateOf(false) }
+    var pendingTrash by remember(state.nativeUiSessionId) { mutableStateOf(false) }
     // Retain only scroll UI state while the fullscreen Viewer replaces Gallery.
     // The Owner photo rows and thumbnails remain in the Controller/lifecycle.
     val gallerySaveable = rememberSaveableStateHolder()
     val filesSaveable = rememberSaveableStateHolder()
-    val filesStateKey = "files:${state.server}:${state.username}"
+    val filesStateKey = "files:${state.nativeUiSessionId}:${state.server}:${state.username}"
     // Keep only the UI viewport through Files -> Gallery/Trash -> Files for
     // the *same authenticated session*. The Controller retains the verified
     // directory rows; discarding this holder on ordinary app switching instead
@@ -76,10 +91,10 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     }
     // Preserve UI-only scroll state across Viewer -> Gallery, never across
     // leaving Gallery. The same user can log out/in against changed photo rows.
-    val galleryStateKey = "gallery:${state.server}:${state.username}"
-    val galleryAlbumsStateKey = "gallery-albums:${state.server}:${state.username}"
+    val galleryStateKey = "gallery:${state.nativeUiSessionId}:${state.server}:${state.username}"
+    val galleryAlbumsStateKey = "gallery-albums:${state.nativeUiSessionId}:${state.server}:${state.username}"
     val galleryMapCellStateKey = state.galleryMapCellSelected?.let { cell ->
-        "gallery-map-cell:${state.server}:${state.username}:" +
+        "gallery-map-cell:${state.nativeUiSessionId}:${state.server}:${state.username}:" +
             "${cell.cellX}:${cell.cellY}:${cell.nodeId}:${cell.nodeRevision}"
     }
     // A Viewer temporarily unmounts the cell wall, but not its return
@@ -105,34 +120,162 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
         state.screen, state.filesSection, state.path.map { it.id },
     ) { mutableStateOf(false) }
     val mobilePage = Color(if (LocalXDriveDarkTheme.current) SharedVisuals.darkMobilePage else SharedVisuals.lightMobilePage)
-    BackHandler(state.screen == Screen.GALLERY || state.screen == Screen.TRASH ||
+    val galleryHasLocalBack = state.screen == Screen.GALLERY && (
+        state.galleryMapCellSelected != null || state.galleryMapOpen ||
+        state.gallerySelectionMode || state.gallerySelected != null ||
+        state.galleryViewer != null || state.gallerySelectedAlbum != null ||
+        state.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS)
+    val showingCloudGallery = nativeNavigation.gallerySource == NativeGallerySource.CLOUD ||
+        state.galleryMapOpen || state.galleryViewer != null
+    BackHandler((galleryHasLocalBack && showingCloudGallery) || state.screen == Screen.TRASH ||
         shouldHandleFilesBack(state, filesEdit != null, batchTrashConfirm)) {
         if (state.destinationKind != null) controller.dismissDestination()
         else if (batchTrashConfirm) batchTrashConfirm = false
         else if (filesEdit != null) filesEdit = null
-        else controller.back()
+        else if (state.galleryMapOpen && state.galleryBd09History.isEmpty() &&
+            state.galleryMapCellSelected == null && state.galleryViewer == null) {
+            nativeNavigation = nativeNavigation.copy(gallerySource = mapOriginSource)
+            controller.back()
+        } else controller.back()
     }
     // Never restore the previous Owner's transfer pane after a login change.
-    var transferCenterOpen by remember(state.server, state.username) {
+    var transferCenterOpen by remember(state.nativeUiSessionId, state.server, state.username) {
         mutableStateOf(false)
     }
     val photoViewerOpen = (state.screen == Screen.GALLERY && state.galleryViewer != null) ||
         (state.screen == Screen.FILES &&
             (state.filesPdfViewer != null || state.filesAudioViewer != null))
+    val nativeOverlay = nativeAuthenticated && !photoViewerOpen &&
+        nativeNavigation.selected in setOf(NativeHomeTab.ALL, NativeHomeTab.DYNAMIC, NativeHomeTab.MINE)
+    // Old native AccountMenu can still change a Controller route directly.
+    LaunchedEffect(state.screen, state.viewerReturnToFiles, state.nativeUiSessionId) {
+        if (state.screen == Screen.GALLERY && !state.viewerReturnToFiles &&
+            nativeNavigation.selected == NativeHomeTab.FILES) {
+            nativeNavigation = nativeNavigation.select(NativeHomeTab.GALLERY)
+        } else if (state.screen == Screen.FILES &&
+            nativeNavigation.selected == NativeHomeTab.GALLERY) {
+            nativeNavigation = nativeNavigation.select(NativeHomeTab.FILES)
+        }
+    }
+    LaunchedEffect(state.screen, state.loading, pendingGalleryTab, pendingGalleryMap, pendingTrash) {
+        if (pendingGalleryTab && state.screen == Screen.FILES && state.canNavigateFiles()) {
+            pendingGalleryTab = false
+            controller.openGallery()
+            nativeNavigation = nativeNavigation.select(NativeHomeTab.GALLERY)
+        }
+        if (pendingTrash && state.screen == Screen.FILES && state.canNavigateFiles()) {
+            pendingTrash = false
+            controller.openTrash()
+            nativeNavigation = nativeNavigation.select(NativeHomeTab.FILES)
+        }
+        if (pendingGalleryMap && state.screen == Screen.GALLERY && !state.loading) {
+            pendingGalleryMap = false
+            if (state.galleryPrimaryTab == GalleryPrimaryTab.LIBRARY &&
+                state.gallerySelectedAlbum == null && !state.galleryMapOpen) {
+                controller.openGalleryMapOverview()
+            } else nativeNavigation = nativeNavigation.copy(gallerySource = mapOriginSource)
+        }
+    }
+    fun selectNativeTab(tab: NativeHomeTab) {
+        if (!nativeAuthenticated || photoViewerOpen) return
+        when (tab) {
+            NativeHomeTab.GALLERY -> when (state.screen) {
+                Screen.FILES -> if (state.canNavigateFiles()) {
+                    controller.openGallery()
+                    nativeNavigation = nativeNavigation.select(tab)
+                }
+                Screen.TRASH -> if (!state.trashRestoreAttempted && !state.hasActiveNativeTransfer()) {
+                    pendingGalleryTab = true
+                    controller.closeTrash()
+                }
+                Screen.GALLERY -> nativeNavigation = nativeNavigation.select(tab)
+                else -> Unit
+            }
+            NativeHomeTab.FILES -> when (state.screen) {
+                Screen.GALLERY -> if (!state.hasActiveNativeTransfer() &&
+                    !state.galleryMetadataWriteAttempted &&
+                    !state.galleryAlbumCreateAttempted && !state.galleryAlbumEditAttempted) {
+                    controller.openFilesApp()
+                    nativeNavigation = nativeNavigation.select(tab)
+                }
+                Screen.FILES, Screen.TRASH -> nativeNavigation = nativeNavigation.select(tab)
+                else -> Unit
+            }
+            else -> nativeNavigation = nativeNavigation.select(tab)
+        }
+    }
+    fun openNativeShortcut(shortcut: NativeHomeShortcut) {
+        val previousGallerySource = nativeNavigation.gallerySource
+        val next = nativeNavigation.open(shortcut)
+        when (next.selected) {
+            NativeHomeTab.GALLERY -> {
+                val mayEnter = state.screen == Screen.GALLERY || state.canNavigateFiles()
+                selectNativeTab(NativeHomeTab.GALLERY)
+                if (mayEnter) {
+                    nativeNavigation = next
+                    if (shortcut == NativeHomeShortcut.GALLERY_MAP) {
+                        mapOriginSource = if (previousGallerySource == NativeGallerySource.MAP)
+                            NativeGallerySource.CLOUD else previousGallerySource
+                        pendingGalleryMap = true
+                    }
+                }
+            }
+            NativeHomeTab.FILES -> {
+                val mayEnter = state.screen == Screen.FILES || state.screen == Screen.TRASH ||
+                    (state.screen == Screen.GALLERY && !state.hasActiveNativeTransfer() &&
+                        !state.galleryMetadataWriteAttempted &&
+                        !state.galleryAlbumCreateAttempted && !state.galleryAlbumEditAttempted)
+                selectNativeTab(NativeHomeTab.FILES)
+                if (mayEnter) {
+                    nativeNavigation = next
+                    if (shortcut == NativeHomeShortcut.TRASH) pendingTrash = true
+                }
+            }
+            NativeHomeTab.DYNAMIC -> {
+                nativeNavigation = next
+                controller.refreshTransferRecoveryNotices()
+                transferCenterOpen = true
+            }
+            else -> nativeNavigation = next
+        }
+    }
     Scaffold(modifier = Modifier.imePadding(),
         containerColor = if (state.screen == Screen.FILES || state.screen == Screen.GALLERY || state.screen == Screen.TRASH)
             mobilePage else MaterialTheme.colorScheme.background,
-        contentColor = MaterialTheme.colorScheme.onSurface, topBar = {
-        if (!photoViewerOpen &&
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        bottomBar = {
+            if (nativeAuthenticated && !photoViewerOpen &&
+                (nativeNavigation.selected != NativeHomeTab.GALLERY || !state.galleryMapOpen))
+                NativeHomeBottomBar(nativeNavigation, ::selectNativeTab)
+        },
+        topBar = {
+        if (nativeOverlay) {
+            Surface(color = mobilePage) {
+                Row(Modifier.statusBarsPadding().fillMaxWidth().height(52.dp)
+                    .padding(horizontal = 16.dp).testTag("xdrive-mobile-app-header"),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Text(when (nativeNavigation.selected) {
+                        NativeHomeTab.ALL -> "全部"
+                        NativeHomeTab.DYNAMIC -> nativeNavigation.dynamicFeature?.title ?: "最近"
+                        NativeHomeTab.MINE -> "我的"
+                        else -> ""
+                    }, style = MaterialTheme.typography.titleMedium)
+                }
+            }
+        } else if (!photoViewerOpen &&
             (state.screen == Screen.FILES || state.screen == Screen.GALLERY || state.screen == Screen.TRASH))
             Surface(color = mobilePage, contentColor = MaterialTheme.colorScheme.onSurface) {
             Row(Modifier.statusBarsPadding().fillMaxWidth().height(52.dp).padding(horizontal = 8.dp)
                 .testTag("xdrive-mobile-app-header"),
                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                if (state.screen == Screen.GALLERY || state.screen == Screen.TRASH)
+                if ((galleryHasLocalBack && showingCloudGallery) || state.screen == Screen.TRASH)
                     IconButton(onClick = {
                         if (state.screen == Screen.TRASH) controller.closeTrash()
-                        else controller.back() // Same hierarchy as system Back.
+                        else if (state.galleryMapOpen && state.galleryBd09History.isEmpty() &&
+                            state.galleryMapCellSelected == null && state.galleryViewer == null) {
+                            nativeNavigation = nativeNavigation.copy(gallerySource = mapOriginSource)
+                            controller.back()
+                        } else controller.back()
                     }) {
                         Icon(painterResource(R.drawable.xd_arrow_back), when {
                             state.screen == Screen.TRASH -> "返回文件"
@@ -145,10 +288,11 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                             state.galleryMapOpen -> "返回图库"
                             state.gallerySelectedAlbum != null -> "返回精选集"
                             state.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS -> "返回图库"
-                            else -> "返回文件"
+                            else -> "返回图库"
                         })
                     }
-                else if (state.filesSection != FilesSection.BROWSE || state.path.size > 1)
+                else if (state.screen == Screen.FILES &&
+                    (state.filesSection != FilesSection.BROWSE || state.path.size > 1))
                     IconButton(onClick = controller::back) {
                         Icon(painterResource(R.drawable.xd_arrow_back), "返回上级")
                     }
@@ -220,7 +364,22 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
         Column(Modifier.padding(padding).fillMaxSize()) {
             if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.primary,
                 trackColor = MaterialTheme.colorScheme.primary.copy(alpha = .12f))
-            when (state.screen) {
+            if (nativeOverlay) {
+                when (nativeNavigation.selected) {
+                    NativeHomeTab.ALL -> NativeHomeLauncher(
+                        nativeNavigation, launcherSearch, { launcherSearch = it },
+                        ::openNativeShortcut,
+                        { nativeNavigation = nativeNavigation.toggleFavorite(it) })
+                    NativeHomeTab.MINE -> NativeHomeMine(
+                        state, controller::logout, controller::changeServer,
+                        updates?.let { it::show })
+                    NativeHomeTab.DYNAMIC -> NativeHomeDynamic(nativeNavigation, state) {
+                        transferCenterOpen = true
+                        controller.refreshTransferRecoveryNotices()
+                    }
+                    else -> Unit
+                }
+            } else when (state.screen) {
                 Screen.CONNECT, Screen.LOGIN -> UnifiedLoginForm(state, controller::connectAndLogin) {
                     AccountMenu(state, controller, updates?.let { it::show })
                 }
@@ -278,13 +437,42 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                             bd09Scroll.getOrPut(state.galleryBd09Bounds) {
                                 LazyListState()
                             })
-                    } else if (state.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS &&
-                        state.gallerySelectedAlbum == null) {
-                        gallerySaveable.SaveableStateProvider(galleryAlbumsStateKey) {
-                            GalleryCollections(state, controller, galleryThumbnails)
+                    } else {
+                        NativeGallerySourceSelector(nativeNavigation.gallerySource) { source ->
+                            nativeNavigation = nativeNavigation.copy(gallerySource = source)
+                            if (source == NativeGallerySource.MAP) {
+                                mapOriginSource = nativeNavigation.gallerySource
+                                pendingGalleryMap = true
+                            }
                         }
-                    } else gallerySaveable.SaveableStateProvider(galleryStateKey) {
-                        Gallery(state, controller, galleryThumbnails)
+                        when (nativeNavigation.gallerySource) {
+                            NativeGallerySource.LOCAL -> Box(Modifier.weight(1f)) {
+                                NativeLocalMediaStoreGallery(albumsOnly = false,
+                                    sessionId = state.nativeUiSessionId)
+                            }
+                            NativeGallerySource.ALBUMS -> Box(Modifier.weight(1f)) {
+                                NativeLocalMediaStoreGallery(
+                                    albumsOnly = true,
+                                    sessionId = state.nativeUiSessionId,
+                                    selectedAlbum = localAlbumSelection,
+                                    onAlbumSelected = { localAlbumSelection = it },
+                                )
+                            }
+                            NativeGallerySource.MAP -> TextButton(
+                                onClick = { pendingGalleryMap = true },
+                                modifier = Modifier.testTag("native-gallery-open-map")) {
+                                Text("打开当前账户的地点地图")
+                            }
+                            NativeGallerySource.CLOUD ->
+                                if (state.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS &&
+                                    state.gallerySelectedAlbum == null) {
+                                    gallerySaveable.SaveableStateProvider(galleryAlbumsStateKey) {
+                                        GalleryCollections(state, controller, galleryThumbnails)
+                                    }
+                                } else gallerySaveable.SaveableStateProvider(galleryStateKey) {
+                                    Gallery(state, controller, galleryThumbnails)
+                                }
+                        }
                     }
                 }
                 Screen.TRASH -> Trash(state, controller)

@@ -103,7 +103,7 @@ import { xDriveWebOpenRouteForNode } from './webViewerRoute'
 import { useXDriveWebAppRuntime, xDriveCreateWebAppBrowseSession, xDriveClearPrivateMapBrowseSessions } from './webAppRuntime'
 import { xDriveWebAppRouteForWorkspaceKey, xDriveWebAppWorkspaceKey } from './webApps'
 import { XDriveMobileAllLauncher, XDriveMobileFiveSlotNavigation, XDriveMobileMinePage, xDriveBrowserMobileDestinations } from './MobileFiveSlotNavigation'
-import { xDriveInitialMobileNavigation, xDriveMobileFeatureParentRoute, xDriveMobileRouteForSlot, xDriveMobileSlotForRoute, xDriveRememberMobileNavigation } from './mobileFiveSlotState'
+import { xDriveInitialMobileNavigation, xDriveMobileFeatureParentRoute, xDriveMobileRouteForSlot, xDriveMobileSlotForRoute, xDriveRememberMobileNavigation, xDriveToggleMobileFavorite } from './mobileFiveSlotState'
 import type { XDriveMobileSlot } from './mobileFiveSlotState'
 import { createWebMediaGalleryDataSource } from './mediaGalleryAdapter'
 import { XDriveRoutedGalleryThumbnailBridge } from './routedGalleryThumbnailBridge'
@@ -2339,6 +2339,12 @@ function FileManager({
   const mobileLauncherSections = [
     { key: 'web-mobile-apps', label: '全部应用', items: mobileDestinations },
   ]
+  const toggleMobileFavorite = (key: string) => {
+    if (!mobileOwnerScope || !mobileDestinations.some(item => item.key === key)) return
+    setMobileNavigation(previous => xDriveToggleMobileFavorite(
+      previous, mobileOwnerScope, key, serverAdminVerified,
+    ))
+  }
   const mobileRecentDestinations = currentMobileNavigation.dynamic.flatMap(recent => {
     const key = xDriveWebAppWorkspaceKey(recent.app, recent.params)
     const destination = mobileDestinations.find(item => item.key === key)
@@ -2584,6 +2590,8 @@ function FileManager({
               sections={mobileLauncherSections}
               onSelect={selectMobileLauncher}
               onOpenRecent={() => setMobileRecentOpen(true)}
+              favoriteKeys={currentMobileNavigation.favorites}
+              onToggleFavorite={toggleMobileFavorite}
             />
           ) : (
           <WebOverviewPage

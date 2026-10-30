@@ -104,10 +104,10 @@ func TestIOSDeviceIdentityCannotClaimLocalSourceOrCrossOwner(t *testing.T) {
 	requestWithHeaders(t, router, http.MethodPost, "/api/v1/devices/self/heartbeat",
 		ownerToken, nil, http.StatusForbidden, headers)
 
-	// iOS is the only newly admitted identity-only platform; no new broad
-	// Android/browser device credential class is accidentally allowed.
+	// Native Android now also uses identity-only enrollment. A browser is
+	// still not a device platform and must not gain a client credential.
 	request(t, router, http.MethodPost, "/api/v1/devices", ownerToken,
-		strings.NewReader(`{"name":"Android","platform":"android","client_version":"0.1"}`),
+		strings.NewReader(`{"name":"Browser","platform":"web","client_version":"0.1"}`),
 		http.StatusBadRequest)
 }
 

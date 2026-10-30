@@ -37,6 +37,7 @@ export function XDriveMediaAsyncThumbnail({
   revokeOnDispose = true,
   onImageReadyChange,
   onImageDecodeError,
+  viewerOwned = false,
 }: {
   nodeID?: number
   revision?: number
@@ -46,8 +47,9 @@ export function XDriveMediaAsyncThumbnail({
   revokeOnDispose?: boolean
   onImageReadyChange?: (ready: boolean) => void
   onImageDecodeError?: (failedURL: string) => void
+  viewerOwned?: boolean
 }) {
-  const suspended = useContext(XDriveBackgroundMediaThumbnailSuspended)
+  const suspended = useContext(XDriveBackgroundMediaThumbnailSuspended) && !viewerOwned
   const sourceIdentity = [nodeID ?? 0, revision ?? 0].join(':')
   // Node ID + revision alone do not identify the authorized Owner when a
   // shared Viewer tile is rebound to a different authenticated Host loader.
@@ -55,12 +57,21 @@ export function XDriveMediaAsyncThumbnail({
   const sourceOwner = useMemo(() => ({}), [loadThumbnail])
   const [image, setImage] = useState<{ identity: string; owner: object; url: string } | null>(null)
   const [failedIdentity, setFailedIdentity] = useState<{ identity: string; owner: object } | null>(null)
+  // Avoid decoding an unfinished Gallery image behind the active Viewer.
+  // Previously assigned <img src> values can keep consuming browser network
+  // and CPU after their Host loader receives AbortSignal.
+  const [readyImage, setReadyImage] = useState<{ identity: string; owner: object; url: string } | null>(null)
   // Former Owner stills/failures must never paint under an identical Node ID
   // and revision while a new Owner's independent thumbnail is pending.
   const src = image?.identity === sourceIdentity && image.owner === sourceOwner ? image.url : ''
   const failed = failedIdentity?.identity === sourceIdentity && failedIdentity.owner === sourceOwner
+  const alreadyLoaded = Boolean(src &&
+    readyImage?.identity === sourceIdentity &&
+    readyImage.owner === sourceOwner && readyImage.url === src)
+  const deferUndecodedBackgroundImage = Boolean(suspended && src && !alreadyLoaded)
   const presentedImageRef = useRef<{ identity: string; owner: object; url: string } | null>(null)
-  presentedImageRef.current = !failed && src ? { identity: sourceIdentity, owner: sourceOwner, url: src } : null
+  presentedImageRef.current = !failed && src && !deferUndecodedBackgroundImage
+    ? { identity: sourceIdentity, owner: sourceOwner, url: src } : null
   useEffect(() => () => { presentedImageRef.current = null }, [])
   const [progress, setProgress] = useState<{ loadedBytes: number; totalBytes?: number; alphaMask?: string | null }>({ loadedBytes: 0, alphaMask: null })
 
@@ -72,6 +83,7 @@ export function XDriveMediaAsyncThumbnail({
     let resolved = ''
     setImage(null)
     setFailedIdentity(null)
+    setReadyImage(null)
     setProgress({ loadedBytes: 0, alphaMask: null })
     onImageReadyChange?.(false)
     if (!nodeID) return () => undefined
@@ -110,11 +122,11 @@ export function XDriveMediaAsyncThumbnail({
   }, [loadThumbnail, nodeID, revision, revokeOnDispose, onImageReadyChange, sourceIdentity, sourceOwner, suspended])
 
   if (!nodeID || failed) return <>{fallback}</>
-  if (!src) {
+  if (!src || deferUndecodedBackgroundImage) {
     return (
       <Box sx={{ position: 'relative', width: '100%', height: '100%' }}>
         <Skeleton variant="rectangular" animation={false} width="100%" height="100%" sx={{ borderRadius: 0 }} />
-        <XDriveMediaLoadingProgress compact stage="transfer" {...progress} />
+        {!suspended ? <XDriveMediaLoadingProgress compact stage="transfer" {...progress} /> : null}
       </Box>
     )
   }
@@ -131,7 +143,10 @@ export function XDriveMediaAsyncThumbnail({
       onLoad={(event) => {
         const displayed = presentedImageRef.current
         if (!displayed || displayed.identity !== sourceIdentity || displayed.owner !== sourceOwner || displayed.url !== src) return
-        if (event.currentTarget.naturalWidth > 0) onImageReadyChange?.(true)
+        if (event.currentTarget.naturalWidth > 0) {
+          setReadyImage({ identity: sourceIdentity, owner: sourceOwner, url: src })
+          onImageReadyChange?.(true)
+        }
       }}
       onError={() => {
         const displayed = presentedImageRef.current
@@ -139,6 +154,7 @@ export function XDriveMediaAsyncThumbnail({
         // A late decode error from a recycled Node/revision/URL cannot
         // replace the new still or invalidate a newer cached derivative.
         presentedImageRef.current = null
+        setReadyImage(null)
         onImageReadyChange?.(false)
         // Never retry here or load original bytes. A later visible mount
         // may request the current derivative through the existing adapter.

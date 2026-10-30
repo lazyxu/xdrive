@@ -2,6 +2,14 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- MediaStore is read-only and never queried before a user-initiated
+         permission action. Android 14 supports Selected Photos instead of
+         forcing all-library access. No broad write/storage grants. -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
     <!-- Photo-map pins use signed remote Owner metadata, NOT device location.
          Baidu map-only dependency must not silently add location, phone,
          or legacy broad-storage permissions through its AAR manifest. -->

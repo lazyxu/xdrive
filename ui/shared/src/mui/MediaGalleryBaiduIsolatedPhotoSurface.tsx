@@ -616,6 +616,16 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         if(approved.key!==filterRef.current.key || run!==generation)return false
         acceptedScope.current={key:approved.key,scope:verifiedScope}
         acceptedCells.current=cells.map(item=>item.selection)
+        // A fresh, Owner-signed EMPTY camera supersedes all visual remnants
+        // of the previous pan. Waiting for a new SDK projection here can
+        // strand inert photo covers above a truthful zero-photo summary,
+        // especially when the SDK emits no new pixel frame.
+        // Retain covers while dragging or waiting for a NONEMPTY camera;
+        // never let an old Cell survive the successful empty receipt.
+        if (page.total_count === 0 && cells.length === 0) {
+          committedPresentation.current=null
+          clearGesturePresentation()
+        }
         lastCanvasSize=canvasSize()
         // The old camera Cell cannot survive rotation. Only a new signed
         // Owner /cells with SAME representative asset+node+revision and

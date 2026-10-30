@@ -488,3 +488,128 @@ func TestRestorePathContainmentHandlesFilesystemRootAndSiblings(t *testing.T) {
 		t.Fatal("a similarly prefixed sibling is not a descendant")
 	}
 }
+
+func TestCaptureRejectsSymlinkedParentAliasOverlapBeforeWriting(t *testing.T) {
+	t.Run("repository is nested inside aliased source", func(t *testing.T) {
+		base := t.TempDir()
+		realParent := filepath.Join(base, "real")
+		source := filepath.Join(realParent, "live")
+		repo := filepath.Join(source, "backup")
+		snapshot := snapshotPath(t, repo, "generation1")
+		// In case the guard regresses, this invalid source-CAS path stops the
+		// subsequent WalkDir before a recursive legacy archive can be built.
+		writeTestFile(t, filepath.Join(source, filepath.FromSlash(casRoot), "not-a-bucket"), []byte("bad"))
+		alias := filepath.Join(base, "real-alias")
+		if err := os.Symlink(realParent, alias); err != nil {
+			t.Skipf("symlink fixture is unavailable: %v", err)
+		}
+		err := capture(filepath.Join(alias, "live"), repo, snapshot)
+		if err == nil || !strings.Contains(err.Error(), "cannot nest") {
+			t.Fatalf("backup source alias overlap was not rejected: %v", err)
+		}
+		if _, err := os.Lstat(filepath.Join(snapshot, "objects.index")); !os.IsNotExist(err) {
+			t.Fatalf("rejected capture wrote an objects.index: %v", err)
+		}
+	})
+
+	t.Run("source is nested inside aliased repository", func(t *testing.T) {
+		base := t.TempDir()
+		realParent := filepath.Join(base, "real")
+		realRepo := filepath.Join(realParent, "repo")
+		source := filepath.Join(realRepo, "live")
+		writeTestFile(t, filepath.Join(source, filepath.FromSlash(casRoot), "not-a-bucket"), []byte("bad"))
+		alias := filepath.Join(base, "real-alias")
+		if err := os.Symlink(realParent, alias); err != nil {
+			t.Skipf("symlink fixture is unavailable: %v", err)
+		}
+		repo := filepath.Join(alias, "repo")
+		snapshot := snapshotPath(t, repo, "generation2")
+		err := capture(source, repo, snapshot)
+		if err == nil || !strings.Contains(err.Error(), "cannot nest") {
+			t.Fatalf("backup repository alias overlap was not rejected: %v", err)
+		}
+		if _, err := os.Lstat(filepath.Join(snapshot, "objects.index")); !os.IsNotExist(err) {
+			t.Fatalf("rejected capture wrote an objects.index: %v", err)
+		}
+	})
+
+	t.Run("disjoint source alias remains valid", func(t *testing.T) {
+		base := t.TempDir()
+		realParent := filepath.Join(base, "real")
+		source := filepath.Join(realParent, "live")
+		if err := os.MkdirAll(source, 0700); err != nil {
+			t.Fatal(err)
+		}
+		hash := testCAS(t, source, "valid independent CAS")
+		alias := filepath.Join(base, "real-alias")
+		if err := os.Symlink(realParent, alias); err != nil {
+			t.Skipf("symlink fixture is unavailable: %v", err)
+		}
+		repo := filepath.Join(base, "backup")
+		snapshot := snapshotPath(t, repo, "generation3")
+		if err := capture(filepath.Join(alias, "live"), repo, snapshot); err != nil {
+			t.Fatalf("disjoint parent alias should be usable: %v", err)
+		}
+		if _, err := os.Stat(objectPath(repo, hash)); err != nil {
+			t.Fatalf("independent CAS object was not captured: %v", err)
+		}
+	})
+}
+
+func TestEstimateRejectsPhysicalPathOverlapThroughAliases(t *testing.T) {
+	base := t.TempDir()
+	realParent := filepath.Join(base, "real")
+	source := filepath.Join(realParent, "live")
+	if err := os.MkdirAll(source, 0700); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(base, "real-alias")
+	if err := os.Symlink(realParent, alias); err != nil {
+		t.Skipf("symlink fixture is unavailable: %v", err)
+	}
+
+	t.Run("not-yet-created repository inside aliased live source", func(t *testing.T) {
+		repo := filepath.Join(alias, "live", "future", "incremental")
+		_, err := estimateIncrementalBytes(source, repo)
+		if err == nil || !strings.Contains(err.Error(), "cannot nest") {
+			t.Fatalf("missing repository alias overlap was not rejected: %v", err)
+		}
+		if _, err := os.Lstat(filepath.Join(source, "future")); !os.IsNotExist(err) {
+			t.Fatalf("read-only estimate created repository directories: %v", err)
+		}
+	})
+
+	t.Run("existing repository inside aliased live source", func(t *testing.T) {
+		repo := filepath.Join(source, "backup")
+		if err := os.MkdirAll(repo, 0700); err != nil {
+			t.Fatal(err)
+		}
+		_, err := estimateIncrementalBytes(filepath.Join(alias, "live"), repo)
+		if err == nil || !strings.Contains(err.Error(), "cannot nest") {
+			t.Fatalf("source parent alias overlap was not rejected: %v", err)
+		}
+	})
+
+	t.Run("live source inside aliased repository", func(t *testing.T) {
+		repo := filepath.Join(realParent, "backup")
+		live := filepath.Join(repo, "files")
+		if err := os.MkdirAll(live, 0700); err != nil {
+			t.Fatal(err)
+		}
+		_, err := estimateIncrementalBytes(live, filepath.Join(alias, "backup"))
+		if err == nil || !strings.Contains(err.Error(), "cannot nest") {
+			t.Fatalf("repository parent alias overlap was not rejected: %v", err)
+		}
+	})
+
+	t.Run("disjoint missing repository stays supported", func(t *testing.T) {
+		repo := filepath.Join(base, "other", "not-yet-created", "incremental")
+		_, err := estimateIncrementalBytes(filepath.Join(alias, "live"), repo)
+		if err != nil {
+			t.Fatalf("disjoint missing backup repository must remain valid: %v", err)
+		}
+		if _, err := os.Lstat(filepath.Join(base, "other")); !os.IsNotExist(err) {
+			t.Fatalf("read-only estimate created a missing repository: %v", err)
+		}
+	})
+}

@@ -154,12 +154,25 @@ test('P0-4 startup suppresses ticket Referer but restores origin-only SDK policy
 })
 
 
-test('P0-4 in-flight map mode handoff is fenced to the issued Owner, filter and BD09 camera',()=>{
+test('P0-4 in-flight map handoff is fenced to the issued route, Owner, filter and BD09 camera',()=>{
   const original={ownerScope:'owner-a',photoScopeKey:'["manual:Trip",[["favorite",true]]]',
+    routeHref:'https://gallery.example.org/?theme=dark#/app/gallery?section=places',
     camera:{coordinate_space:'bd09ll',latitude:35.5,longitude:139.5,zoom:11}}
   assert.equal(mode.xDrivePlacesMapHandoffFenceMatches(original,{
     ...original,camera:{...original.camera},
   }),true)
+  for (const changedRoute of [
+    'https://gallery.example.org/?theme=dark#/app/files',
+    'https://gallery.example.org/?theme=dark#/app/gallery?section=albums',
+    'https://gallery.example.org/?theme=light#/app/gallery?section=places',
+  ]) {
+    assert.equal(mode.xDrivePlacesMapHandoffFenceMatches(original,{
+      ...original,routeHref:changedRoute,
+    }),false,'hash/tab/query navigation invalidates the issued map ticket')
+  }
+  assert.equal(mode.xDrivePlacesMapHandoffFenceMatches({
+    ...original,routeHref:'',
+  },{...original,routeHref:''}),false,'missing original route cannot authorize navigation')
   assert.equal(mode.xDrivePlacesMapHandoffFenceMatches(original,{
     ...original,ownerScope:'owner-b',
   }),false,'Owner switch invalidates an issued one-use ticket')
@@ -180,6 +193,11 @@ test('P0-4 in-flight map mode handoff is fenced to the issued Owner, filter and 
   assert.match(map,/cancelStaleHandoff\(\)/)
   assert.match(map,/currentHandoffOwnerScope, currentHandoffPhotoScopeKey/)
   assert.match(map,/priorCamera\.latitude !== camera\.latitude/)
+  assert.match(map,/routeHref: window\.location\.href/)
+  assert.match(map,/xDrivePlacesMapScopeHandoffURL\(issuedFence\.routeHref, next, ticket\)/)
+  assert.equal((map.match(/routeHref: window\.location\.href/g)||[]).length,2)
+  const issuedURL=mode.xDrivePlacesMapScopeHandoffURL(original.routeHref,'isolated',T)
+  assert.equal(new URL(issuedURL).hash,'#/app/gallery?section=places')
   assert.ok(map.indexOf('xDrivePlacesMapHandoffFenceMatches(issuedFence') <
     map.indexOf('window.location.replace(url)'),
     'do not navigate with a stale issued ticket')

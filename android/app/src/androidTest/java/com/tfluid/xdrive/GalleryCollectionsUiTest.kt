@@ -144,7 +144,10 @@ class GalleryCollectionsUiTest {
                 controller.state.value.galleryLoaded
         }
         compose.onNodeWithTag("files-nav-title").assertTextEquals("照片")
-        compose.onNodeWithContentDescription("返回文件").performClick()
+        // A fixed Gallery root cannot cross into Files through Back.
+        // Files is the independent destination in the native five-slot bar.
+        compose.onNodeWithContentDescription("返回文件").assertDoesNotExist()
+        compose.onNodeWithTag("native-tab-files").assertIsDisplayed().performClick()
         compose.waitUntil(timeoutMillis = 10_000) {
             controller.state.value.screen == Screen.FILES
         }

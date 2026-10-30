@@ -669,6 +669,31 @@ class DriveAppTest {
         compose.onNodeWithText("假期照片").assertIsDisplayed()
     }
 
+    @Test fun nativeFiveSlotNavigationKeepsGalleryFixedAndClearsAfterLogout() {
+        startAndLogin()
+        for (tab in listOf("all", "dynamic", "gallery", "files", "mine")) {
+            compose.onNodeWithTag("native-tab-$tab").assertExists()
+        }
+        compose.onNodeWithTag("native-five-slot-bar").assertIsDisplayed()
+        compose.onNodeWithTag("native-tab-all").performClick()
+        compose.onNodeWithTag("native-launcher").assertExists()
+        compose.onNodeWithTag("native-tab-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.GALLERY &&
+                controller.state.value.galleryLoaded
+        }
+        compose.onNodeWithTag("native-gallery-sources").assertExists()
+        compose.onNodeWithTag("native-gallery-source-local").performClick()
+        compose.onNodeWithTag("native-tab-dynamic").assertExists()
+        compose.onNodeWithTag("native-tab-mine").performClick()
+        compose.onNodeWithTag("native-mine").assertExists()
+        compose.onNodeWithTag("native-mine-logout").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.LOGIN
+        }
+        compose.onNodeWithTag("native-five-slot-bar").assertDoesNotExist()
+    }
+
     @Test fun nativeTransfersOpenFromFilesAndGalleryWithoutInventingHistory() {
         startAndLogin()
         compose.onNodeWithTag("native-transfer-open").assertIsDisplayed().performClick()
@@ -829,7 +854,17 @@ class DriveAppTest {
                 !controller.state.value.loading
         }
 
-        compose.onNodeWithTag("gallery-manual-more-manual:fixture-created").performClick()
+        compose.onNodeWithTag("gallery-manual-more-manual:fixture-created")
+            .performScrollTo().assertIsDisplayed().performClick()
+        compose.runOnIdle {
+            // More is local to the current Owner's Collection; no navigation
+            // may be triggered by a nested album-card click target.
+            org.junit.Assert.assertEquals(Screen.GALLERY, controller.state.value.screen)
+            org.junit.Assert.assertEquals(GalleryPrimaryTab.COLLECTIONS,
+                controller.state.value.galleryPrimaryTab)
+            org.junit.Assert.assertNull(controller.state.value.gallerySelectedAlbum)
+        }
+        compose.onNodeWithTag("gallery-manual-actions-manual:fixture-created").assertExists()
         compose.onNodeWithTag("gallery-manual-rename-manual:fixture-created")
             .assertIsDisplayed().performClick()
         compose.onNodeWithTag("gallery-manual-rename-dialog").assertExists()
@@ -846,7 +881,8 @@ class DriveAppTest {
             org.junit.Assert.assertEquals(0, galleryManualDeletes)
         }
 
-        compose.onNodeWithTag("gallery-manual-more-manual:fixture-created").performClick()
+        compose.onNodeWithTag("gallery-manual-more-manual:fixture-created")
+            .performScrollTo().assertIsDisplayed().performClick()
         compose.onNodeWithTag("gallery-manual-delete-manual:fixture-created")
             .assertIsDisplayed().performClick()
         compose.onNodeWithTag("gallery-manual-delete-dialog").assertExists()
@@ -948,7 +984,7 @@ class DriveAppTest {
         compose.onNodeWithTag("gallery-item-40").performClick()
         compose.onNodeWithTag("gallery-selection-more").performClick()
         compose.onNodeWithTag("gallery-selection-set-album-cover")
-            .assertIsDisplayed().performClick()
+            .performScrollTo().assertIsDisplayed().performClick()
         compose.waitUntil(timeoutMillis = 10_000) {
             controller.state.value.gallerySelectedAlbum?.revision == 3L &&
                 !controller.state.value.gallerySelectionMode &&
@@ -964,7 +1000,17 @@ class DriveAppTest {
                 controller.state.value.galleryAlbums.singleOrNull()?.revision == 3L &&
                 !controller.state.value.loading
         }
-        compose.onNodeWithTag("gallery-manual-more-manual:cover").performClick()
+        compose.onNodeWithTag("gallery-manual-more-manual:cover")
+            .performScrollTo().assertIsDisplayed().performClick()
+        compose.runOnIdle {
+            // More is local to the current Owner's Collection; no navigation
+            // may be triggered by a nested album-card click target.
+            org.junit.Assert.assertEquals(Screen.GALLERY, controller.state.value.screen)
+            org.junit.Assert.assertEquals(GalleryPrimaryTab.COLLECTIONS,
+                controller.state.value.galleryPrimaryTab)
+            org.junit.Assert.assertNull(controller.state.value.gallerySelectedAlbum)
+        }
+        compose.onNodeWithTag("gallery-manual-actions-manual:cover").assertExists()
         compose.onNodeWithTag("gallery-manual-auto-cover-manual:cover")
             .assertIsDisplayed().performClick()
         compose.onNodeWithTag("gallery-manual-auto-cover-dialog").assertExists()

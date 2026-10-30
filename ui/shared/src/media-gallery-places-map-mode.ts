@@ -64,12 +64,15 @@ export function xDrivePlacesMapScopeHandoffURL(
 }
 
 /** An in-flight Owner map-mode handoff is a snapshot, not a transferable
- * authorization for whatever Gallery scope or camera happens to be current
+ * authorization for whatever route, Gallery scope or camera is current
  * when its asynchronous ticket issuance finishes. Both SDK Hosts use this
  * same guard before performing a full-document navigation. */
 export type XDrivePlacesMapHandoffFence = Readonly<{
   ownerScope: string
   photoScopeKey: string
+  // Exact Parent route at issuance: a later hash/tab/history change must not
+  // receive an old one-use map-scope ticket.
+  routeHref: string
   camera: Readonly<{
     coordinate_space: 'bd09ll'; latitude: number; longitude: number; zoom: number
   }> | null
@@ -78,7 +81,8 @@ export type XDrivePlacesMapHandoffFence = Readonly<{
 export function xDrivePlacesMapHandoffFenceMatches(
   issued: XDrivePlacesMapHandoffFence, current: XDrivePlacesMapHandoffFence,
 ): boolean {
-  if (issued.ownerScope !== current.ownerScope ||
+  if (!issued.routeHref || issued.routeHref !== current.routeHref ||
+      issued.ownerScope !== current.ownerScope ||
       issued.photoScopeKey !== current.photoScopeKey) return false
   if (issued.camera === null || current.camera === null)
     return issued.camera === current.camera

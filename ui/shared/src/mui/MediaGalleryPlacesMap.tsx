@@ -157,6 +157,9 @@ export function XDriveMediaGalleryPlacesMap({
     const issuedFence = {
       ownerScope: currentHandoffOwnerScope,
       photoScopeKey: xDriveBaiduMapPhotoScopeKey(scope),
+      // A pending handoff must never rewrite a different Gallery tab,
+      // hash history entry or query after the user navigates elsewhere.
+      routeHref: window.location.href,
       camera: cameraRef.current ? { ...cameraRef.current } : null,
     }
     setModeSwitching(true)
@@ -166,11 +169,14 @@ export function XDriveMediaGalleryPlacesMap({
       if (controller.signal.aborted || handoffAbort.current !== controller) return
       if (!xDrivePlacesMapHandoffFenceMatches(issuedFence, {
         ...currentHandoffIdentity.current, camera: cameraRef.current,
+        routeHref: window.location.href,
       })) {
-        setModeWarning('地图范围或位置已变化，请重新选择地图模式。')
+        setModeWarning('地图范围、位置或页面已变化，请重新选择地图模式。')
         return
       }
-      const url = xDrivePlacesMapScopeHandoffURL(window.location.href, next, ticket)
+      // Navigate only the route that initiated this Owner-scoped request.
+      // The fence check and location.replace run in the same browser task.
+      const url = xDrivePlacesMapScopeHandoffURL(issuedFence.routeHref, next, ticket)
       if (!url) throw new Error('invalid-handoff')
       window.location.replace(url)
     }).catch(() => {
