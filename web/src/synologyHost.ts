@@ -11,7 +11,7 @@ import { createXDriveSynologyOwnerGallerySource } from '../../ui/shared/src/mui/
  * DSM-only authenticated transport adapter for the shared xDrive application.
  * No page JSX, user token forwarding, unverified admin role or native stub.
  */
-export function createXDriveSynologyHost(): XDriveWorkspaceHostAdapter {
+export function createXDriveSynologyHost(): XDriveWorkspaceHostAdapter & { readonly platform: 'synology' } {
   // DSM provides authenticated Host domain ports; ui/shared owns page JSX.
   const cgi = new URL('backup.cgi', window.location.href)
   const local = createXDriveSynologyBackupLocalClient(cgi.href)

@@ -72,10 +72,13 @@ test('actual Desktop and Web controllers both call the shared ticket and source 
   const desktop = read('desktop/src/renderer/DesktopFileExplorer.tsx')
   const web = read('web/src/WebFileExplorer.tsx')
   for(const source of [desktop,web]){
-    assert.match(source,/xDriveFileExplorerSelectionRequest\(action, selected, getSelectionActionDisabledReason\)/)
+    assert.match(source,/xDriveFileExplorerSelectionRequest\(\s*action,\s*selected,\s*getSelectionActionDisabledReason,/)
+    assert.match(source,/\)\.allowed/)
     assert.match(source,/xDriveFileExplorerProjectSearchSources\(/)
     assert.doesNotMatch(source,/new Set\(selected\.map\(\(item\) => Number\(item\.id\)\)\)\.size/)
   }
+  assert.match(desktop,/onError,\s*\)\.allowed/)
+  assert.match(web,/\(reason\) => onError\(new Error\(reason\)\),\s*\)\.allowed/)
   assert.match(desktop,/hostPort\.browse\.getSources\(\)/)
   assert.match(desktop,/archiveDownloadSupported/)
   assert.match(desktop,/folderTreeDownloadSupported/)

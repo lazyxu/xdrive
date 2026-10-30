@@ -70,7 +70,12 @@ test('directories require same verified Owner row before changing cursor root', 
 test('preview and download both independently verify actual current Owner row', () => {
   const page = fs.readFileSync(
     path.join(root, 'ui/shared/src/mui/SynologyOwnerFilesPage.tsx'), 'utf8')
-  assert.match(page, /const current = xDriveFindVerifiedOwnerSelection\(item, itemsRef\.current\)/)
+  // DSM's download proof moved into the shared read-only admission helper.
+  const downloadAdmission = fs.readFileSync(path.join(root,
+    'ui/shared/src/mui/FileExplorerReadOnlyDownloadAdmission.ts'), 'utf8')
+  assert.match(page, /xDriveFileExplorerReadOnlyDownloadReason\(\{/)
+  assert.match(page, /rows: itemsRef\.current,/)
+  assert.match(downloadAdmission, /const current = xDriveFindVerifiedOwnerSelection\(item, rows\)/)
   assert.match(page, /const authenticatedRow = xDriveFindVerifiedOwnerSelection\(item, itemsRef\.current\)/)
   assert.match(page, /const current = xDriveFindVerifiedOwnerSelection\(item, displayedItems\)/)
   assert.match(page, /if \(!isCurrentOwner\(\) \|\| !currentScopeVerified\) return/)

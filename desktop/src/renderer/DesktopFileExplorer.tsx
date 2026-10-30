@@ -27,9 +27,8 @@ import {
   xDriveFileExplorerPreviewRequest,
   xDriveFileExplorerResolveFolderUploadTargets,
   xDriveFileExplorerPropertiesRefs,
-  xDriveFileExplorerAvailabilityError,
-  xDriveFileExplorerAvailabilityFromSnapshot,
   xDriveReadFileExplorerHostAvailability,
+  xDriveFileExplorerAvailabilityRequests,
   xDriveFileExplorerPersistedSearchFilters,
   xDriveFileExplorerOrganizationSearchState,
   xDriveFileExplorerSavedSearchRuleLabels,
@@ -66,6 +65,8 @@ import {
   xDriveFileExplorerDeviceStatusLabel,
   xDriveFileExplorerDeviceHydrationPathKey,
   xDriveFileExplorerDeviceHydrationProgress,
+  xDriveFileExplorerDeviceReadStatus,
+  xDriveFileExplorerDeviceReadAvailability,
   xDriveFileExplorerUploadGroupLabel,
   XDriveUploadConflictDialog,
   XDRIVE_HOST_FILES_PREFERENCES,
@@ -890,11 +891,11 @@ export default function DesktopFileExplorer({
   const allowSelectionAction = (
     action: XDriveFileExplorerSelectionAction,
     selected: readonly XDriveFileExplorerItem[],
-  ) => {
-    const ticket = xDriveFileExplorerSelectionRequest(action, selected, getSelectionActionDisabledReason)
-    if (ticket.reason) onError(ticket.reason)
-    return ticket.allowed
-  }
+  ) => xDriveFileExplorerSelectionRequest(
+    action, selected, getSelectionActionDisabledReason,
+    // Keep the Desktop/Agent-specific error text and native download gates.
+    onError,
+  ).allowed
   const copyItems = (selected: XDriveFileExplorerItem[]) => {
     if (allowSelectionAction('copy', selected)) copyWorkspaceItems(selected)
   }
@@ -1205,29 +1206,16 @@ export default function DesktopFileExplorer({
     ) ? currentItems : items)
   }, [])
 
-  const availabilityRequests = useMemo(() => {
-    const byNodeID = new Map<number, string>()
-    for (const node of nodeByID.values()) {
-      const searchResult = searchByID.get(node.id)
-      const path = searchResult?.path ||
-        [...crumbs.slice(1).map((crumb) => crumb.name), node.name].join('/')
-      if (path) byNodeID.set(node.id, path)
-    }
-    for (const item of quickAccess.items) if (item.path) byNodeID.set(item.id, item.path)
-    for (const item of favorites.items) if (item.path) byNodeID.set(item.id, item.path)
-    for (const item of recent.items) if (item.path) byNodeID.set(item.id, item.path)
-    for (const item of navigationAvailabilityItems) {
-      if (item.path) byNodeID.set(Number(item.id), item.path)
-    }
-    // Reuse the existing Agent batch instead of probing each column row.
-    for (const item of columnAvailabilityItems) {
-      const nodeID = Number(item.id)
-      if (item.path && Number.isSafeInteger(nodeID) && nodeID > 0) {
-        byNodeID.set(nodeID, item.path)
-      }
-    }
-    return [...byNodeID].map(([nodeID, path]) => ({ nodeID, path }))
-  }, [
+  const availabilityRequests = useMemo(() => xDriveFileExplorerAvailabilityRequests({
+    nodes: nodeByID.values(),
+    searchByID,
+    crumbs,
+    quickAccess: quickAccess.items,
+    favorites: favorites.items,
+    recent: recent.items,
+    navigation: navigationAvailabilityItems,
+    columns: columnAvailabilityItems,
+  }), [
     crumbs,
     favorites.items,
     navigationAvailabilityItems,
@@ -1319,30 +1307,14 @@ export default function DesktopFileExplorer({
 
   const getItemStatus = useCallback((item: XDriveFileExplorerItem) => {
     const entry = availabilityByID.get(Number(item.id))
-    if (entry?.error) return '状态异常'
-    if (!entry?.state) return undefined
-    const hydrationActive = hydrationProgressByPath.has(
-      desktopFileAvailabilityPathKey(entry.state.Path),
+    return xDriveFileExplorerDeviceReadStatus(
+      entry, hydrationProgressByPath, desktopFileStatusLabel,
     )
-    return desktopFileStatusLabel(entry.state, hydrationActive)
   }, [availabilityByID, hydrationProgressByPath])
 
   const getItemAvailability = useCallback((item: XDriveFileExplorerItem) => {
     const entry = availabilityByID.get(Number(item.id))
-    if (entry?.error) return xDriveFileExplorerAvailabilityError()
-    if (!entry?.state) return undefined
-    const hydrationProgress = hydrationProgressByPath.get(
-      desktopFileAvailabilityPathKey(entry.state.Path),
-    )
-    return xDriveFileExplorerAvailabilityFromSnapshot({
-      mode: entry.state.Mode,
-      pinned: entry.state.Pinned,
-      onlineOnly: entry.state.OnlineOnly,
-      availableOffline: entry.state.AvailableOffline,
-      mixed: entry.state.Mixed,
-      syncing: entry.state.Syncing || hydrationProgress !== undefined,
-      progress: hydrationProgress ?? undefined,
-    })
+    return xDriveFileExplorerDeviceReadAvailability(entry, hydrationProgressByPath)
   }, [availabilityByID, hydrationProgressByPath])
 
   const setNodeAvailability = useCallback(async (

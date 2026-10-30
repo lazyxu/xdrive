@@ -434,6 +434,57 @@ test('semantic media Loader captures exactly the current Node revision after in-
 })
 
 
+
+test('read-only text reauthorizes same Node revision on Owner loader switch', async () => {
+  const target = { id: 77001, revision: 7, name: 'confidential.txt', kind: 'file' }
+  const calls = []
+  const a = async (node, signal) => {
+    calls.push({owner:'A',node,signal})
+    return {text:'PRIVATE OWNER A',size:15,truncated:false}
+  }
+  let resolveB
+  const b = (node, signal) => new Promise(resolve => {
+    calls.push({owner:'B',node,signal,resolve}); resolveB=resolve
+  })
+  const props = loadTextPreview => React.createElement(XDriveFilePreviewSurface, {target,loadTextPreview})
+  const shown = view => view.root.findAllByType('pre').map(x=>x.children.join(''))
+  let view
+  try {
+    await act(async () => { view=create(props(a)); await Promise.resolve() })
+    assert.deepEqual(shown(view), ['PRIVATE OWNER A'])
+    await act(async () => { view.update(props(b)); await Promise.resolve() })
+    assert.equal(calls.length,2)
+    assert.equal(calls[0].signal.aborted,true)
+    assert.deepEqual(shown(view), [], 'old Owner text must not paint while B pending')
+    assert.equal(view.root.findByProps({'data-xdrive-file-preview-kind':'text'}).props['aria-busy'],true)
+    await act(async () => {
+      resolveB({text:'CURRENT OWNER B',size:15,truncated:false})
+      await Promise.resolve()
+    })
+    assert.deepEqual(shown(view), ['CURRENT OWNER B'])
+  } finally { if (view) await act(async () => view.unmount()) }
+})
+
+test('former text Owner failed Retry is inert after same-Node source handoff', async () => {
+  const target={id:77002,revision:2,name:'private.md',kind:'file'},reads=[]
+  const load=owner=>(node,signal)=>new Promise((resolve,reject)=>reads.push({owner,node,signal,resolve,reject}))
+  const a=load('A'),b=load('B')
+  const props=loadTextPreview=>React.createElement(XDriveFilePreviewSurface,{target,loadTextPreview})
+  let view
+  try{
+    await act(async()=>{view=create(props(a))})
+    await act(async()=>{reads[0].reject(new Error('unauthorized'));await Promise.resolve()})
+    const stale=view.root.findAll(x=>x.type==='button'&&x.props['aria-label']==='重试预览')[0].props.onClick
+    await act(async()=>{view.update(props(b));await Promise.resolve()})
+    assert.equal(reads.length,2)
+    assert.equal(reads[0].signal.aborted,true)
+    await act(async()=>{stale();await Promise.resolve()})
+    assert.equal(reads.length,2,'former Owner must not issue an additional request')
+    await act(async()=>{reads[1].resolve({text:'B only',size:6,truncated:false});await Promise.resolve()})
+    assert.deepEqual(view.root.findAllByType('pre').map(x=>x.children.join('')),['B only'])
+  }finally{if(view)await act(async()=>view.unmount())}
+})
+
 test('P1 text preview aborts stale HTTP readers and discards late text on revision change/unmount', async () => {
   const reads = []
   const target = revision => ({ id: 600, revision, name: 'notes.txt', kind: 'file' })
@@ -553,6 +604,84 @@ test('P1 PDF ticket failure supports an explicit single-flight retry on the same
   } finally {
     if (renderer) await act(async () => renderer.unmount())
   }
+})
+
+
+test('read-only audio reauthorizes same Node and retires old signed native Range', async () => {
+  const RefBox=React.forwardRef(function RefBox({component='div',sx:_sx,...props},ref){
+    return React.createElement(component,{...props,ref})
+  })
+  const {XDriveFilePreviewSurface:RefAware}=loadShared(
+    path.join(repo,'ui/shared/src/mui/FilePreviewSurface.tsx'),
+    {'@mui/material':{...require('@mui/material'),Box:RefBox}},new Map())
+  const prev=URL.revokeObjectURL,revoked=[],requests=[],streams=[]
+  URL.revokeObjectURL=url=>revoked.push(url)
+  const target={id:78001,revision:3,name:'memo.mp3',kind:'file'}
+  const a=async(node,kind,signal)=>{requests.push({owner:'A',node,kind,signal});return 'blob:audio-A'}
+  let resolveB
+  const b=(node,kind,signal)=>new Promise(resolve=>{
+    requests.push({owner:'B',node,kind,signal});resolveB=resolve
+  })
+  const props=loadPreviewURL=>React.createElement(RefAware,{target,loadPreviewURL})
+  let view
+  try{
+    await act(async()=>{
+      view=create(props(a),{createNodeMock:element=>{
+        if(element.type!=='audio')return null
+        const x={pauses:0,detaches:0,resets:0,
+          pause(){this.pauses++},
+          removeAttribute(name){assert.equal(name,'src');this.detaches++},
+          load(){this.resets++}}
+        streams.push(x);return x
+      }})
+      await Promise.resolve()
+    })
+    assert.equal(requests.length,1)
+    assert.equal(requests[0].kind,'audio')
+    const old=view.root.findByType('audio')
+    assert.equal(old.props.src,'blob:audio-A')
+    const staleReady=old.props.onLoadedMetadata
+    await act(async()=>staleReady())
+    await act(async()=>{view.update(props(b));await Promise.resolve()})
+    assert.equal(requests.length,2)
+    assert.equal(requests[0].signal.aborted,true)
+    assert.equal(view.root.findAllByType('audio').length,0,'A audio cannot play under B')
+    assert.ok(streams[0].pauses>0&&streams[0].detaches>0&&streams[0].resets>0)
+    assert.ok(revoked.includes('blob:audio-A'))
+    await act(async()=>{resolveB('blob:audio-B');await Promise.resolve()})
+    assert.equal(view.root.findByType('audio').props.src,'blob:audio-B')
+    await act(async()=>staleReady())
+    assert.equal(view.root.findByProps({'data-xdrive-file-preview-kind':'audio'}).props['aria-busy'],true,
+      'old A callback must not mark B ready')
+    await act(async()=>view.root.findByType('audio').props.onLoadedMetadata())
+    assert.equal(view.root.findByProps({'data-xdrive-file-preview-kind':'audio'}).props['aria-busy'],undefined)
+  }finally{
+    if(view)await act(async()=>view.unmount())
+    URL.revokeObjectURL=prev
+  }
+  assert.equal(revoked.filter(x=>x==='blob:audio-A').length,1)
+  assert.equal(revoked.filter(x=>x==='blob:audio-B').length,1)
+})
+
+test('former audio Owner failed Retry cannot renew ticket for same Node',async()=>{
+  const target={id:78002,revision:1,name:'memo.mp3',kind:'file'},calls=[]
+  const load=owner=>(node,kind,signal)=>new Promise((resolve,reject)=>calls.push({owner,node,kind,signal,resolve,reject}))
+  const a=load('A'),b=load('B')
+  const props=loadPreviewURL=>React.createElement(XDriveFilePreviewSurface,{target,loadPreviewURL})
+  let view
+  try{
+    await act(async()=>{view=create(props(a))})
+    await act(async()=>{calls[0].reject(new Error('unauthorized'));await Promise.resolve()})
+    const stale=view.root.findAll(x=>x.type==='button'&&x.props['aria-label']==='重试预览')[0].props.onClick
+    await act(async()=>{view.update(props(b));await Promise.resolve()})
+    assert.equal(calls.length,2)
+    assert.equal(calls[0].signal.aborted,true)
+    assert.equal(view.root.findAllByType('audio').length,0)
+    await act(async()=>{stale();await Promise.resolve()})
+    assert.equal(calls.length,2)
+    await act(async()=>{calls[1].resolve('https://example.invalid/b.mp3');await Promise.resolve()})
+    assert.equal(view.root.findByType('audio').props.src,'https://example.invalid/b.mp3')
+  }finally{if(view)await act(async()=>view.unmount())}
 })
 
 test('P1 audio renderer failure reissues authenticated ticket and frees old blob on retry', async () => {

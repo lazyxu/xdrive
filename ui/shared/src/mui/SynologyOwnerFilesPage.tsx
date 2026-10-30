@@ -7,6 +7,8 @@ import type {
 } from '../synology-backup-adapter'
 import { XDriveFileExplorer } from './FileExplorer'
 import { xDriveFindVerifiedOwnerSelection } from './FileExplorerVerifiedOwnerSelection'
+import { xDriveFileExplorerReadOnlyDownloadReason } from './FileExplorerReadOnlyDownloadAdmission'
+import { xDriveFileExplorerReadOnlyViewerSelection } from './FileExplorerReadOnlyViewerSelection'
 import type { XDriveFileExplorerUnavailableActions } from './FileExplorer'
 import { useXDriveFileExplorerCursorDirectory } from './FileExplorerCursorDirectoryController'
 import type { XDriveFileExplorerCursorPort } from './FileExplorerCursorDirectoryController'
@@ -122,24 +124,27 @@ export function XDriveSynologyOwnerFilesPage({
     () => currentScopeVerified ? items.map(itemForExplorer) : [],
     [items, currentScopeVerified],
   )
-  const previewItems = useMemo(() => {
-    const candidates = displayedItems.filter(supportsOwnerPreview)
-    if (!preview?.sessionIDs) return candidates
-    const byID = new Map(candidates.map(item => [item.id, item]))
-    return preview.sessionIDs.flatMap(id => {
-      const item = byID.get(id)
-      return item ? [item] : []
-    })
-  }, [displayedItems, preview?.sessionIDs])
-  const previewIndex = currentScopeVerified && preview?.scopeKey === currentScopeKey &&
-    preview.rootRevision === rootRevision && preview.client === client
-    ? previewItems.findIndex(item => item.id === preview.item.id &&
-      item.revision === preview.item.revision && item.name === preview.item.name &&
-      item.size === preview.item.size)
-    : -1
-  const previewItem = previewIndex >= 0 ? previewItems[previewIndex] : null
-  const previewPositionLabel = previewItem
-    ? `${previewIndex + 1} / ${previewItems.length} ${preview?.sessionIDs ? '已选择' : '已加载'}` : ''
+  // Use the exact same Owner-fenced readonly Viewer selection lifecycle
+  // as any other Host supplying authorized Files rows and media evidence.
+  const viewerSelection = useMemo(() => xDriveFileExplorerReadOnlyViewerSelection({
+    items: displayedItems,
+    isPreviewable: supportsOwnerPreview,
+    preview: preview ? {
+      host: preview.client,
+      scopeKey: preview.scopeKey,
+      rootRevision: preview.rootRevision,
+      item: preview.item,
+      sessionIDs: preview.sessionIDs,
+    } : null,
+    host: client,
+    scopeKey: currentScopeKey,
+    rootRevision,
+    verified: currentScopeVerified,
+  }), [displayedItems, preview, client, currentScopeKey, rootRevision, currentScopeVerified])
+  const previewItems = viewerSelection.items
+  const previewIndex = viewerSelection.index
+  const previewItem = viewerSelection.item
+  const previewPositionLabel = viewerSelection.positionLabel
   // A verified explicit download is not a disposable directory read. Keep
   // its proven Blob/save action across same-Owner folder and sort changes.
   // Never offer it after an account/client or root-session replacement.
@@ -160,22 +165,16 @@ export function XDriveSynologyOwnerFilesPage({
   // Reject unsupported/stale requests before retiring an already verified save.
   const getDownloadDisabledReason = useCallback((
     selected: readonly XDriveFileExplorerItem[], count = selected.length,
-  ): string | null => {
-    if (!isCurrentOwner() || !currentScopeVerified) return '当前 Server Owner 目录尚未验证'
-    if (downloadAbort.current) return '已有正在执行的文件下载'
-    if (count !== 1 || selected.length !== 1) return '暂仅支持单个文件下载'
-    const item = selected[0]
-    if (item.kind !== 'file' || typeof item.size !== 'number' ||
-        !Number.isSafeInteger(item.size) || item.size < 1 ||
-        item.size > XDRIVE_SYNOLOGY_OWNER_DOWNLOAD_MAX_BYTES) {
-      return '仅支持大小为 1 B～32 MiB 的单个原始文件下载'
-    }
-    const current = xDriveFindVerifiedOwnerSelection(item, itemsRef.current)
-    if (!current || current.type !== 'file') {
-      return '该文件不属于当前已核实的 Server Owner 目录'
-    }
-    return null
-  }, [currentScopeVerified, isCurrentOwner])
+  ): string | null => xDriveFileExplorerReadOnlyDownloadReason({
+    selected,
+    count,
+    rows: itemsRef.current,
+    ownerCurrent: isCurrentOwner(),
+    scopeVerified: currentScopeVerified,
+    downloadActive: downloadAbort.current !== null,
+    maxBytes: XDRIVE_SYNOLOGY_OWNER_DOWNLOAD_MAX_BYTES,
+    sizeLimitLabel: '32 MiB',
+  }), [currentScopeVerified, isCurrentOwner])
   // Native OS/browser saving is initiated only AFTER complete Owner/revision
   // validation and whole-file SHA-256 proof. No unsafe Server URL or token
   // is ever exposed, and partial bytes never reach the browser download UI.
