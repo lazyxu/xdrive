@@ -5,6 +5,7 @@ import SwiftUI
 struct XDriveIOSNativePhotoBackupScreen: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     @ObservedObject var controller: XDriveIOSNativePhotoBackupController
+    let onShowCloudOriginals: () -> Void
     @StateObject private var receipts = XDriveIOSNativePhotoReceiptReviewController()
     @Environment(\.scenePhase) private var phase
     @State private var interval = 60
@@ -168,6 +169,20 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                 if let failure = receipts.errorMessage {
                     Text(failure).font(.footnote).foregroundStyle(.red)
                 }
+            }
+            Section("查看已备份原件") {
+                Button {
+                    // The destination performs a fresh native Owner/root proof;
+                    // this shortcut neither interprets ACKs nor uploads bytes.
+                    guard login.owner != nil else { return }
+                    onShowCloudOriginals()
+                } label: {
+                    Label("打开当前账户云端备份原件", systemImage: "icloud")
+                }
+                .disabled(login.owner == nil)
+                .accessibilityIdentifier("native-ios-photos-cloud-originals")
+                Text("只读查看当前 Owner 根目录中已写入的备份文件。待核对收据不代表上传成功；Live 双原件 ZIP 尚不支持云端动态播放。")
+                    .font(.footnote).foregroundStyle(.secondary)
             }
             Section("执行结果") {
                 if let consentError {

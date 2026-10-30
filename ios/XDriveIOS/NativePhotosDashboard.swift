@@ -329,6 +329,22 @@ struct XDriveIOSNativePhotosDashboard: View {
     private var gallery: some View {
         VStack(spacing: 0) {
             if !galleryFocused {
+                HStack(spacing: 10) {
+                    if backup.busy {
+                        Label("正在检查相册备份", systemImage: "arrow.triangle.2.circlepath")
+                    } else if let state = backup.schedule, state.enabled {
+                        Label(state.pausedForReview ? "自动备份已暂停：需核对收据" : "前台自动备份已开启",
+                              systemImage: state.pausedForReview ? "exclamationmark.shield" : "checkmark.shield")
+                    } else {
+                        Label("前台自动备份未开启", systemImage: "icloud.slash")
+                    }
+                    Spacer(minLength: 4)
+                    Button("备份设置") { openDynamic(.backup) }
+                        .accessibilityIdentifier("native-ios-gallery-backup-settings")
+                }
+                .font(.caption)
+                .padding(.horizontal, 12)
+                .frame(minHeight: 44)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(XDriveIOSNativeGallerySource.allCases) { source in
@@ -454,7 +470,11 @@ struct XDriveIOSNativePhotosDashboard: View {
         if let feature = dynamicFeature {
             switch feature {
             case .backup:
-                XDriveIOSNativePhotoBackupScreen(login: login, controller: backup)
+                XDriveIOSNativePhotoBackupScreen(login: login, controller: backup) {
+                    // Navigation only: never infer that a pending receipt is backed up.
+                    guard login.owner != nil else { return }
+                    openGallery(.originals)
+                }
             default:
                 unavailable(
                     title: "\(feature.title)尚未接通",
