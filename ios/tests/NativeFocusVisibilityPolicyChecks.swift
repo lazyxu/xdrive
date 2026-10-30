@@ -16,7 +16,8 @@ struct XDriveIOSNativeFocusVisibilityPolicyChecks {
         verify("gallery", "originals", true, true, true)
         verify("gallery", "albums", true, true, true)
         verify("gallery", "local", true, true, true)
-        verify("gallery", "map", true, true, true)
+        verify("gallery", "map", true, true, false)
+        verify("gallery", "map", false, true, true)
         verify("files", "cloud", true, true, true)
         verify("dynamic", "cloud", true, true, true)
         // Rotation is intentionally not an input and must not change L2.
