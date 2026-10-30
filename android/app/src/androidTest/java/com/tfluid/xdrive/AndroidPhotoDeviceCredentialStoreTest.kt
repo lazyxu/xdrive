@@ -6,6 +6,12 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.tfluid.xdrive.core.NativeAndroidDeviceEnrollment
 import com.tfluid.xdrive.core.NativePhotoBackupScope
 import com.tfluid.xdrive.core.ServerAddress
+import com.tfluid.xdrive.core.AuthSession
+import com.tfluid.xdrive.core.NativeServerOwnerIdentity
+import com.tfluid.xdrive.core.DriveNode
+import com.tfluid.xdrive.core.NodeRange
+import com.tfluid.xdrive.core.XDriveService
+import kotlinx.coroutines.runBlocking
 import java.security.KeyStore
 import org.junit.After
 import org.junit.Assert.*
@@ -32,6 +38,70 @@ class AndroidPhotoDeviceCredentialStoreTest {
         context.deleteSharedPreferences(pref)
         val keys = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
         if (keys.containsAlias(alias)) keys.deleteEntry(alias)
+    }
+
+    private class OwnerVerifier(
+        var identity: NativeServerOwnerIdentity =
+            NativeServerOwnerIdentity(42, "owner", "user", "server-instance-A"),
+        val onSelf: () -> Unit = {},
+    ) : XDriveService {
+        var reads = 0
+        override suspend fun login(username: String, password: String): AuthSession =
+            error("not used")
+        override suspend fun refresh(refreshToken: String): AuthSession = error("not used")
+        override suspend fun logout(refreshToken: String): Unit = Unit
+        override suspend fun changePassword(
+            accessToken: String, currentPassword: String, newPassword: String
+        ): AuthSession = error("not used")
+        override suspend fun verifiedOwnerIdentity(accessToken: String): NativeServerOwnerIdentity {
+            check(accessToken == "owner-bearer")
+            return identity
+        }
+        override suspend fun root(accessToken: String): DriveNode =
+            DriveNode(1, null, "", "dir", revision = 7)
+        override suspend fun children(
+            accessToken: String, parentId: Long, offset: Int,
+        ): NodeRange = error("not used")
+        override suspend fun verifyNativeAndroidDevice(
+            accessToken: String, enrolled: NativeAndroidDeviceEnrollment,
+        ) {
+            check(accessToken == "owner-bearer")
+            assertEquals("00000000-0000-4000-8000-000000000120", enrolled.deviceId)
+            reads++
+            onSelf()
+        }
+    }
+
+    @Test fun savedIdentityRequiresFreshOwnerAndReadOnlySelfProof(): Unit = runBlocking {
+        val s = store()
+        // No saved registration must not make a device request or enroll.
+        val api = OwnerVerifier()
+        assertNull(s.verifyExisting(api, scope.origin, "owner-bearer", "owner") { true })
+        assertEquals(0, api.reads)
+        s.saveVerified(scope, device)
+        val result = s.verifyExisting(api, scope.origin, "owner-bearer", "owner") { true }
+        assertEquals(device, result?.second)
+        assertEquals(1, api.reads)
+        val foreign = OwnerVerifier(identity =
+            NativeServerOwnerIdentity(42, "other", "user", "server-instance-A"))
+        assertThrows(IllegalStateException::class.java) {
+            runBlocking {
+                s.verifyExisting(foreign, scope.origin, "owner-bearer", "owner") { true }
+            }
+        }
+        assertEquals(0, foreign.reads)
+        val changedServer = OwnerVerifier(identity =
+            NativeServerOwnerIdentity(42, "owner", "user", "server-instance-B"))
+        assertNull(s.verifyExisting(changedServer, scope.origin, "owner-bearer", "owner") { true })
+        assertEquals(0, changedServer.reads)
+        var sessionActive = true
+        val logout = OwnerVerifier(onSelf = { sessionActive = false })
+        assertThrows(IllegalStateException::class.java) {
+            runBlocking {
+                s.verifyExisting(logout, scope.origin, "owner-bearer", "owner") { sessionActive }
+            }
+        }
+        assertEquals(1, logout.reads)
     }
 
     @Test fun oneTimeDeviceCredentialIsSealedAndScopedAcrossRestarts(): Unit {

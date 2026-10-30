@@ -23,3 +23,7 @@ Physical Android instrumentation tests verify real sealed storage, Owner and
 Server-instance isolation, restart retention, idempotent writes and
 fail-closed corruption/Keystore loss. No device CI or Final Gate success
 is claimed until this exact branch is tested.
+
+
+### Live, read-only device self validation
+A restored credential is never accepted solely from the Android Keystore. `verifyExisting()` first checks the exact current Owner and Root via authenticated `/me` and `/nodes/root`, then calls the existing read-only `/devices/self` endpoint with the **same** bearer plus private device ID and token headers. A mismatched ID, revoked token, owner switch, missing Server installation ID or logout after GET fails closed; it neither schedules an upload nor auto-POSTs another registration. JVM MockWebServer and Android instrumentation regressions cover these fences. No automatic backup is claimed.

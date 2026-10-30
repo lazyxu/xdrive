@@ -49,6 +49,45 @@ class NativePhotoDeviceEnrollmentTest {
         }
     }
 
+    @Test fun readOnlyDeviceSelfRequiresCurrentBearerAndValidExactAck(): Unit = runBlocking {
+        MockWebServer().use { server ->
+            val address = ServerAddress.parse(server.url("/").toString(), allowHttp = true)
+            XDriveApi(address).use { api ->
+                val enrolled = NativeAndroidDeviceEnrollment(uuid, secret, "Android Photos", "0.1")
+                server.enqueue(MockResponse().setBody(
+                    """{"device_id":"00000000-0000-4000-8000-000000000111"}"""))
+                api.verifyNativeAndroidDevice("owner-token", enrolled)
+                val request = server.takeRequest()
+                assertEquals("GET", request.method)
+                assertEquals("/api/v1/devices/self", request.path)
+                assertEquals("Bearer owner-token", request.getHeader("Authorization"))
+                assertEquals(uuid, request.getHeader("X-XDrive-Device-ID"))
+                assertEquals(secret, request.getHeader("X-XDrive-Device-Token"))
+                assertFalse(request.path!!.contains(secret))
+                assertEquals(0L, request.body.size)
+                val invalid = listOf(
+                    """{"device_id":"00000000-0000-4000-8000-000000000112"}""",
+                    """{"device_id":""}""",
+                    """{"device_id":"00000000-0000-4000-8000-000000000111","extra":"spoof"}""",
+                )
+                for (payload in invalid) {
+                    server.enqueue(MockResponse().setBody(payload))
+                    assertThrows(ApiException::class.java) {
+                        runBlocking { api.verifyNativeAndroidDevice("owner-token", enrolled) }
+                    }
+                    server.takeRequest()
+                }
+                server.enqueue(MockResponse().setResponseCode(403).setBody(
+                    """{"error":"revoked"}"""))
+                assertThrows(ApiException::class.java) {
+                    runBlocking { api.verifyNativeAndroidDevice("owner-token", enrolled) }
+                }
+                server.takeRequest()
+                assertEquals(5, server.requestCount)
+            }
+        }
+    }
+
     @Test fun exactVerifiedOwnerRegistersOnlyOnce(): Unit = runBlocking {
         val service = Fake(identity, root)
         val proof = NativePhotoDeviceEnrollment.register(

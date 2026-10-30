@@ -6,6 +6,10 @@ import android.security.keystore.KeyProperties
 import android.util.Base64
 import com.tfluid.xdrive.core.NativeAndroidDeviceEnrollment
 import com.tfluid.xdrive.core.NativePhotoBackupScope
+import com.tfluid.xdrive.core.NativePhotoOwnerPreflight
+import com.tfluid.xdrive.core.XDriveService
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -35,6 +39,30 @@ internal class AndroidPhotoDeviceCredentialStore(
     @Synchronized
     fun readFor(verifiedOwner: NativePhotoBackupScope): NativeAndroidDeviceEnrollment? =
         readStored()?.takeIf { sameOwner(it.owner, verifiedOwner) }?.device
+
+    /**
+     * Read-only resumption after a restart. The on-disk token is NOT proof:
+     * verify live /me + /nodes/root, scope it to one Owner and then GET
+     * /devices/self with the same bearer and exact private device credential.
+     * No POST/re-registration, upload, heartbeat or scope escalation occurs.
+     */
+    suspend fun verifyExisting(
+        service: XDriveService,
+        origin: String,
+        accessToken: String,
+        expectedUsername: String,
+        currentSession: () -> Boolean,
+    ): Pair<NativePhotoBackupScope, NativeAndroidDeviceEnrollment>? {
+        val owner = NativePhotoOwnerPreflight.verify(
+            service, origin, accessToken, expectedUsername, currentSession)
+        currentCoroutineContext().ensureActive()
+        check(currentSession()) { "Android device Owner session changed" }
+        val device = readFor(owner) ?: return null
+        service.verifyNativeAndroidDevice(accessToken, device)
+        currentCoroutineContext().ensureActive()
+        check(currentSession()) { "Android device Owner changed after self verification" }
+        return owner to device
+    }
 
     /** Caller must have just verified /me and /nodes/root for this session. */
     @Synchronized
