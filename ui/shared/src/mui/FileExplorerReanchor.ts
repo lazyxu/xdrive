@@ -13,7 +13,7 @@ function xDriveCanonicalPositiveReadIdentity(value: number | string | undefined)
   if (typeof value === 'number') {
     return Number.isSafeInteger(value) && value > 0 ? value : null
   }
-  if (typeof value !== 'string' || !/^[1-9]\\d*$/.test(value)) return null
+  if (typeof value !== 'string' || !/^[1-9]\d*$/.test(value)) return null
   const numeric = Number(value)
   return Number.isSafeInteger(numeric) && numeric > 0 ? numeric : null
 }
