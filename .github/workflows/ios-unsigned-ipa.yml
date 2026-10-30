@@ -81,6 +81,16 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-auto-policy-check"
           "$RUNNER_TEMP/xdrive-ios-auto-policy-check"
 
+      - name: Verify bounded private PhotoKit orphan staging cleanup
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/PhotoStagingCleanup.swift \
+            ios/tests/PhotoStagingCleanupChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-private-staging-check"
+          "$RUNNER_TEMP/xdrive-ios-private-staging-check"
+          node --test desktop/tests/ios-photo-staging-cleanup.cjs
+
       - name: Verify original still/video media limits
         run: |
           set -euo pipefail

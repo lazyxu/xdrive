@@ -2473,6 +2473,8 @@ backup_admin_snapshot_complete() {
 backup_admin_schedule_status() {
   local configured raw expected state=unknown expression="" managed_count=0
   configured="$(env_value XD_BACKUP_SCHEDULE)"
+  # Explicitly disabled schedules stay disabled through installer upgrades.
+  [[ "$configured" != disabled ]] || configured=""
   if [[ -n "$configured" && ${#configured} -le 80 ]] &&
      { [[ "$configured" =~ ^([0-9*/,-]+[[:space:]]+){4}[0-9*/,-]+$ ]] ||
        [[ "$configured" =~ ^@(hourly|daily|weekly|monthly|yearly)$ ]]; }; then
@@ -2770,7 +2772,7 @@ backup_admin_history_append() {
     "$snapshot" "$mode" "$started" "$finished" "$error_code" "$proof_path" <<'PY'
 import json, os, re, stat, sys, tempfile
 path,state,action,rid,snapshot,mode,started,finished,code,proof_path=sys.argv[1:]
-if state not in ("success","failed") or action not in ("create","verify","verify_all","preview_delete","drill","plan","restore","restore_database_only","delete","delete_selected","prune","policy"):
+if state not in ("success","failed") or action not in ("create","verify","verify_all","preview_delete","drill","plan","restore","restore_database_only","delete","delete_selected","prune","policy","schedule"):
     sys.exit(2)
 if not re.fullmatch(r"[0-9a-f]{24}",rid) or not re.fullmatch(r"[a-z_]{0,60}",code):
     sys.exit(2)
@@ -2980,6 +2982,95 @@ backup_admin_write_policy() {
   exec 4>&-
   return "$exit_code"
 }
+
+# Only three reviewed Host presets; no arbitrary user-supplied cron or shell.
+backup_admin_schedule_expression() {
+  case "$1" in
+    daily) printf '%s\n' '17 3 * * *' ;;
+    weekly) printf '%s\n' '17 3 * * 0' ;;
+    disabled) printf '%s\n' disabled ;;
+    *) return 2 ;;
+  esac
+}
+
+# Holds the Admin, scheduled-backup and installer locks. The current
+# installed row must exactly match the Host configuration or be absent.
+backup_admin_write_schedule() (
+  local preset="$1" revision="$2" expression current old_expr expected_row
+  local installed managed state result tmp_old="" tmp_new="" env_old="" env_new=""
+  local install_lock="$STATE_DIR/install.lock"
+  expression="$(backup_admin_schedule_expression "$preset")" || return 2
+  [[ "$revision" =~ ^[0-9a-f]{64}$ && -f "$ENV_PATH" && ! -L "$ENV_PATH" ]] || return 2
+  [[ ! -L "$install_lock" && ( ! -e "$install_lock" || -f "$install_lock" ) ]] || return 1
+  command -v crontab >/dev/null 2>&1 || return 1
+  [[ "$(grep -c '^XD_BACKUP_SCHEDULE=' "$ENV_PATH" || true)" -le 1 ]] || return 1
+  exec 4>>"$install_lock" || return 1
+  flock -n 4 || return 75
+  local backup_admin_format backup_admin_days backup_admin_repo backup_admin_revision
+  backup_admin_policy_values || return 1
+  [[ "$revision" == "$backup_admin_revision" ]] || return 1
+  state="$(backup_admin_schedule_status)" || return 1
+  case "$state" in
+    *'"state":"registered"'*|*'"state":"not_detected"'*|*'"state":"not_configured"'*) ;;
+    *) return 1 ;;
+  esac
+  current="$(crontab -l 2>/dev/null)" || return 1
+  managed="$(grep -c '# xdrive-managed-backup$' <<< "$current" || true)"
+  [[ "$managed" =~ ^[0-9]+$ ]] && (( managed <= 1 )) || return 1
+  old_expr="$(env_value XD_BACKUP_SCHEDULE)"
+  [[ "$old_expr" != disabled ]] || old_expr=""
+  if (( managed == 1 )); then
+    [[ -n "$old_expr" ]] || return 1
+    expected_row="$(printf '%s XD_CONFIG_DIR=%q %q >> %q 2>&1 # xdrive-managed-backup' \
+      "$old_expr" "$XDRIVE_HOME" "$BIN_DIR/server-backup-scheduled.sh" "$LOG_DIR/backup.log")"
+    [[ "$(grep -Fxc -- "$expected_row" <<< "$current" || true)" == 1 ]] || return 1
+  fi
+  tmp_old="$(mktemp "$STATE_DIR/.backup-cron-old.XXXXXXXX")" || return 1
+  tmp_new="$(mktemp "$STATE_DIR/.backup-cron-new.XXXXXXXX")" || { rm -f -- "$tmp_old"; return 1; }
+  env_old="$(mktemp "$CONFIG_DIR/.backup-env-old.XXXXXXXX")" || {
+    rm -f -- "$tmp_old" "$tmp_new"; return 1;
+  }
+  env_new="$(mktemp "$CONFIG_DIR/.backup-env-new.XXXXXXXX")" || {
+    rm -f -- "$tmp_old" "$tmp_new" "$env_old"; return 1;
+  }
+  trap 'rm -f -- "$tmp_old" "$tmp_new" "$env_old" "$env_new"' EXIT
+  chmod 0600 "$tmp_old" "$tmp_new" "$env_old" "$env_new" || return 1
+  cp -p -- "$ENV_PATH" "$env_old" || return 1
+  printf '%s\n' "$current" > "$tmp_old"
+  printf '%s\n' "$current" | grep -v '# xdrive-managed-backup$' > "$tmp_new" || true
+  if [[ "$expression" != disabled ]]; then
+    printf '%s XD_CONFIG_DIR=%q %q >> %q 2>&1 # xdrive-managed-backup\n' \
+      "$expression" "$XDRIVE_HOME" "$BIN_DIR/server-backup-scheduled.sh" "$LOG_DIR/backup.log" >> "$tmp_new"
+  fi
+  awk '!/^XD_BACKUP_SCHEDULE=/' "$ENV_PATH" > "$env_new" || return 1
+  printf 'XD_BACKUP_SCHEDULE=%s\n' "$expression" >> "$env_new"
+  chmod --reference="$ENV_PATH" "$env_new" || return 1
+  chown --reference="$ENV_PATH" "$env_new" 2>/dev/null || true
+  installed="$(crontab -l 2>/dev/null)" || return 1
+  [[ "$installed" == "$current" ]] || return 1
+  if ! crontab "$tmp_new"; then
+    crontab "$tmp_old" || true
+    return 1
+  fi
+  if ! installed="$(crontab -l 2>/dev/null)" ||
+     [[ "$installed" != "$(cat "$tmp_new")" ]]; then
+    crontab "$tmp_old" || true
+    return 1
+  fi
+  if ! mv -f -- "$env_new" "$ENV_PATH"; then
+    crontab "$tmp_old" || true
+    return 1
+  fi
+  state="$(backup_admin_schedule_status)" || state=""
+  result=registered
+  [[ "$expression" != disabled ]] || result=not_configured
+  if [[ "$state" != *"\"state\":\"$result\""* ]]; then
+    mv -f -- "$env_old" "$ENV_PATH" || true
+    crontab "$tmp_old" || true
+    return 1
+  fi
+  return 0
+)
 
 backup_admin_delete_v1() {
   local id="$1" target file name root remaining=0 retired fmt candidate_root
@@ -3473,13 +3564,13 @@ backup_admin_valid_database_only_manifest() {
 }
 
 backup_admin_execute() {
-  local action="$1" snapshot="$2" fmt="$3" mode="$4" keep="$5" days="$6" revision="$7" confirm="$8" preview_id="${9:-}"
+  local action="$1" snapshot="$2" fmt="$3" mode="$4" keep="$5" days="$6" revision="$7" confirm="$8" preview_id="${9:-}" preset="${10:-}"
   local target install_guard="$STATE_DIR/install.lock"
   local manifest_info version included consistent target_format
   # A standalone Host installer may be upgrading the Server outside this
   # controller's process. Never overlap its transactional install.lock with
   # backup/restore/GC. Policy changes already own the same lock internally.
-  if [[ "$action" != policy ]]; then
+  if [[ "$action" != policy && "$action" != schedule ]]; then
     [[ ! -L "$install_guard" && ( ! -e "$install_guard" || -f "$install_guard" ) ]] || return 75
     exec 4>>"$install_guard"
     flock -n 4 || { exec 4>&-; return 75; }
@@ -3586,6 +3677,11 @@ backup_admin_execute() {
     policy)
       [[ -z "$snapshot" && -z "$confirm" ]] || return 2
       backup_admin_write_policy "$fmt" "$days" "$revision" ;;
+    schedule)
+      [[ -z "$snapshot" && -z "$fmt" && -z "$mode" &&
+         ( -z "$keep" || "$keep" == 0 ) && ( -z "$days" || "$days" == 0 ) &&
+         "$confirm" == "SCHEDULE $preset" ]] || return 2
+      backup_admin_write_schedule "$preset" "$revision" ;;
     *) return 2 ;;
   esac
 }
@@ -3678,7 +3774,7 @@ PY
 
 backup_admin_process_request() {
   local dir="$1" request="$dir/backup-admin-request.json" active="$dir/backup-admin-active.json"
-  local protocol id action snapshot fmt mode keep days revision confirm preview_id created started result=0 log tmp
+  local protocol id action snapshot fmt mode keep days revision confirm preview_id preset created started result=0 log tmp
   local progress_file="$dir/backup-admin-progress.env"
   local verify_file="" drill_file="" selected_delete_file="" bulk_file="" bulk_progress="$dir/backup-admin-verify-all-progress.json"
   [[ -f "$request" && ! -L "$request" && ! -e "$active" && ! -L "$active" ]] || return 0
@@ -3694,6 +3790,7 @@ backup_admin_process_request() {
   revision="$(json_value "$active" revision)"
   confirm="$(json_value "$active" confirmation)"
   preview_id="$(json_value "$active" preview_request_id)"
+  preset="$(json_value "$active" preset)"
   created="$(json_value "$active" created_at)"
   if [[ "$protocol" != "$backup_admin_protocol" || ! "$id" =~ ^[0-9a-f]{24}$ ]] ||
      ! request_time_is_fresh "$created"; then
@@ -3747,7 +3844,7 @@ backup_admin_process_request() {
             export XD_BACKUP_ADMIN_BULK_REPORT_FILE="$bulk_file"
             export XD_BACKUP_ADMIN_BULK_PROGRESS_FILE="$bulk_progress"
           fi
-          XD_CONFIG_DIR="$XDRIVE_HOME" backup_admin_execute "$action" "$snapshot" "$fmt" "$mode" "$keep" "$days" "$revision" "$confirm" "$preview_id"
+          XD_CONFIG_DIR="$XDRIVE_HOME" backup_admin_execute "$action" "$snapshot" "$fmt" "$mode" "$keep" "$days" "$revision" "$confirm" "$preview_id" "$preset"
         ) > "$log" 2>&1 &
         pid=$!
         while kill -0 "$pid" 2>/dev/null; do

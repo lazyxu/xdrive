@@ -551,3 +551,38 @@ func TestSelectedV2PruneCLIRequiresExactConfirmationAndNoOtherFlags(t *testing.T
 		}
 	}
 }
+
+func TestManualPruneRejectsUnverifiedSurvivingManifestBeforeAnyMutation(t *testing.T) {
+	root := t.TempDir()
+	src, repo := filepath.Join(root, "source"), filepath.Join(root, "repo")
+	if err := os.MkdirAll(src, 0700); err != nil {
+		t.Fatal(err)
+	}
+	oldHash := testCAS(t, src, "last known consistent recovery point")
+	old := retentionFixtureSnapshot(t, repo, src, "xdrive-backup-20261024T010000Z")
+	newHash := testCAS(t, src, "unverified later generation")
+	newer := retentionFixtureSnapshot(t, repo, src, "xdrive-backup-20261025T010000Z")
+	testPruneLock(t, repo)
+
+	// This is a checksum-matched v2 snapshot whose source-consistency
+	// declaration is explicitly false. Prune must not retire the older
+	// recovery point, even if full CAS hashing succeeds.
+	writeTestFile(t, filepath.Join(newer, "manifest.json"),
+		[]byte(`{"format_version":2,"file_data_included":true,"consistency_verified":false}`))
+	retentionFixtureChecksum(t, newer)
+
+	if report, err := pruneRepository(repo, 1); err == nil {
+		t.Fatalf("manual retention pruned behind an inconsistent survivor: %+v", report)
+	}
+	if report, err := pruneSelectedSnapshot(repo, filepath.Base(old)); err == nil {
+		t.Fatalf("selected deletion pruned behind an inconsistent survivor: %+v", report)
+	}
+	for _, path := range []string{old, newer, objectPath(repo, oldHash), objectPath(repo, newHash)} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("rejected prune changed %s: %v", path, err)
+		}
+	}
+	if _, err := os.Lstat(filepath.Join(repo, pruneRetiredDirName)); !os.IsNotExist(err) {
+		t.Fatalf("rejected prune created a retirement transaction: %v", err)
+	}
+}

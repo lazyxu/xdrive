@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { XDriveServerBackupPort } from '../server-backup-admin'
 import { XDriveServerBackupManagementPanel } from './ServerBackupManagementPanel'
+import { XDriveBackupScheduleControl } from './BackupScheduleControl'
 import { XDriveActionButton } from './ActionButton'
 import { XDriveSectionHeader } from './SectionHeader'
 import { Stack } from '@mui/material'
@@ -80,7 +81,10 @@ export function XDriveSystemMaintenancePage({
           验证可读取、可恢复；不要在管理员网页中上传或展示这些密钥。
         </XDriveStatusAlert>
         {backupPort ? (
-          <XDriveServerBackupManagementPanel port={backupPort} onOpenStorage={onOpenStorage} />
+          <>
+            <XDriveServerBackupManagementPanel port={backupPort} onOpenStorage={onOpenStorage} />
+            <XDriveBackupScheduleControl port={backupPort} />
+          </>
         ) : (
           <Stack spacing={1.5} data-xdrive-admin-backup-host-unavailable>
             <XDriveSectionHeader

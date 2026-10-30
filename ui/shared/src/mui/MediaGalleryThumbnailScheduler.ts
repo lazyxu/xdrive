@@ -82,22 +82,24 @@ export class XDriveMediaThumbnailScheduler {
       concurrency = XDRIVE_MEDIA_THUMBNAIL_CONCURRENCY,
       maxCacheEntries = XDRIVE_MEDIA_THUMBNAIL_CACHE_SIZE,
       revokeURL = revokeThumbnailURL,
+      viewerOwned = false,
     }: {
       concurrency?: number
       maxCacheEntries?: number
       revokeURL?: (url: string) => void
+      viewerOwned?: boolean
     } = {},
   ) {
     this.loader = loader
     this.concurrency = Math.max(1, Math.trunc(concurrency) || 1)
     this.maxCacheEntries = Math.max(1, Math.trunc(maxCacheEntries) || 1)
     this.revokeURL = revokeURL
-    // One subscription per bounded pool. The shared foreground lease
-    // preempts Files, Gallery, album and map background reads alike.
+    // Background pools yield to an active Viewer. Its own bounded Filmstrip
+    // keeps loading visible neighbors, but still yields on page supersession.
     this.stopObservingViewer = xDriveObserveViewerForeground((active) => {
       this.viewerForeground = active
       this.setSuspended(this.requestedSuspended)
-    })
+    }, { viewerOwned })
   }
 
   load = (

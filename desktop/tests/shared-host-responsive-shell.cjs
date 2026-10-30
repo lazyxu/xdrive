@@ -47,6 +47,7 @@ const routeContent = loadProduction('ui/shared/src/mui/XDriveAppRouteContent.tsx
   'react/jsx-runtime': jsxRuntime,
   './WorkspaceRouteSurface': { XDriveWorkspaceRouteSurface: 'RouteSurface' },
   './XDriveAppPageOutlet': { XDriveAppPageOutlet: 'PageOutlet' },
+  './WorkspaceHostAlerts': { XDriveWorkspaceHostAlerts: 'HostAlerts' },
   './WorkspaceRoute': {
     xDriveIsSharedHostPageRoute: view => view !== 'files',
     xDriveWorkspacePresentation: view => view === 'files' ? 'files' : 'page',
@@ -101,5 +102,23 @@ test('Host can override page padding while Files keeps its edge-to-edge viewport
     assert.equal(files.props.view, 'files')
     assert.equal(files.props.sx, undefined, 'Files must not inherit page padding')
     assert.equal(child(files, 'PageOutlet').props.view, 'files')
+  }
+})
+
+test('Host notices come from an explicit typed port without changing the page outlet', () => {
+  for (const platform of ['desktop', 'synology']) {
+    const without = routeContent({ host: { platform, services: {} }, view: 'files' })
+    assert.equal([without.props.children].flat().filter(node => node?.type === 'HostAlerts').length, 0,
+      'a Host without a verified status port must not manufacture one')
+    const resume = () => { throw Error('rendering must not invoke native operations') }
+    const withPort = routeContent({
+      host: { platform, services: { workspaceAlerts: { paused: true, onResumeSync: resume } } },
+      view: 'files',
+    })
+    const alert = child(withPort, 'HostAlerts')
+    assert.equal(alert.props.view, 'files')
+    assert.equal(alert.props.paused, true)
+    assert.strictEqual(alert.props.onResumeSync, resume)
+    assert.equal(child(withPort, 'PageOutlet').props.view, 'files')
   }
 })

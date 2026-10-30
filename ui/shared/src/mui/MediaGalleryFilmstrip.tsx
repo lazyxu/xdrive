@@ -128,6 +128,7 @@ export function XDriveMediaGalleryFilmstrip({
     () => new XDriveMediaThumbnailScheduler(loadThumbnail, {
       concurrency: 3,
       maxCacheEntries: 32,
+      viewerOwned: true,
     }),
     [loadThumbnail],
   )
