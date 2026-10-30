@@ -534,7 +534,22 @@ func captureWithOwner(source, repo, snapshot string, uid, gid int) error {
 	if err != nil {
 		return err
 	}
-	if src == repo || strings.HasPrefix(repo, src+string(os.PathSeparator)) || strings.HasPrefix(src, repo+string(os.PathSeparator)) {
+	repoAbs, err := filepath.Abs(repo)
+	if err != nil {
+		return err
+	}
+	// Host preflight already checks the real /data mount; independently guard
+	// the backup helper against parent-symlink aliases before writing an index
+	// or walking a tree that could contain its own repository.
+	realSource, err := filepath.EvalSymlinks(src)
+	if err != nil {
+		return fmt.Errorf("resolve backup source: %w", err)
+	}
+	realRepo, err := filepath.EvalSymlinks(repoAbs)
+	if err != nil {
+		return fmt.Errorf("resolve backup repository: %w", err)
+	}
+	if pathIsWithin(realSource, realRepo) || pathIsWithin(realRepo, realSource) {
 		return errors.New("repository and source cannot nest inside each other")
 	}
 	if st, err := os.Stat(src); err != nil || !st.IsDir() {
