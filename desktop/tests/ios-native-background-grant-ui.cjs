@@ -62,7 +62,13 @@ test('stop is local-first, offline-safe and cannot silently revoke another Owner
   assert.match(local, /XDriveIOSApprovedPhotoBGVault\.shared\.current\(\)/);
   assert.match(local, /XDriveIOSNativePhotoOwnerScope\.matches\(existingOwner, owner\)/);
   assert.match(local, /XDriveIOSBackgroundPhotoTask\.revokePendingRequests\(\)/);
-  assert.match(local, /XDriveIOSApprovedPhotoBGVault\.shared\.cancelLocally\(owner: owner\)/);
+  assert.match(local, /try await emergencyStopLocally\(\)/);
+  const emergency = manager.slice(manager.indexOf('func emergencyStopLocally('),
+    manager.indexOf('func stopLocally('));
+  assert.match(emergency, /XDriveIOSApprovedPhotoBGVault\.shared\.cancelLocally\(owner: owner\)/);
+  assert.match(emergency, /pending = IOSPhotoNativeGrant\(/);
+  assert.match(emergency, /pending\.revokePending = true/);
+  assert.match(emergency, /try save\(pending, owner: owner\)/);
   assert.match(local, /stored\.revokePending = true/);
   assert.match(local, /try save\(stored, owner: owner\)/);
   assert.doesNotMatch(local, /try await verifyOwner\(/);
