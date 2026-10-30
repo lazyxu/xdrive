@@ -63,7 +63,7 @@ invoke() {
   local label="$1"; shift
   : > "$XD_BACKUP_MOUNT_LOG"
   if bash "$ROOT/scripts/server-backup.sh" --config-dir "$XD_CONFIG_DIR" \
-      --output-dir "$TMP/backup-output" "$@" > "$TMP/$label.log" 2>&1; then
+      "$@" > "$TMP/$label.log" 2>&1; then
     echo "mock backup unexpectedly succeeded: $label" >&2
     exit 1
   fi
