@@ -1,3 +1,36 @@
+## DSM MVP follow-up: read-only original receipt recovery review (PR validation pending)
+
+The original owning Linux/ARMv7 Backup-only Agent already has a bounded
+`GET /v1/device-backups/local-common-batch/recovery-review` endpoint. The
+shared `XDriveDeviceBackupLocalCommonBatchDialog` already has an optional
+advanced diagnostics view for this response. This change only connects the
+same implementation to the authenticated DSM Host. It does not create a
+second Scanner, Runner, Source, writer, backup Operation, or page.
+
+DSM `backup.cgi?op=recovery-review` is **GET-only**, rechecks the authorized
+DSM session and protected owning Agent discovery, and accepts only a
+canonical local Source ID, bounded file ordinal (up to 1,000,000) and the
+Agent's opaque 64-digit lower-hex generation epoch for a continuation. The
+same-user Agent revalidates Server Owner, native Root grant, Source revision,
+checkpoint, private inventory and original SQL receipts on every page.
+Results contain **only numeric counts** for a maximum of 16 files per read,
+the source revision, run state and continuation; no native path, device/Root
+identity, SQL Operation ID, content digest or credential is exposed.
+The browser validates all fields and aborts its own fetch when the
+shared dialog closes; that does **not cancel an Agent/Server operation**.
+
+The view deliberately labels historical commits and current cloud metadata
+comparisons as **non-authoritative**. It does not verify present-day CAS
+bytes, prove Source-wide backup completion, authorize retry of uncertain
+original SQL tasks, or replace the Agent's durable restart recovery.
+Old Agents lacking the exact capability fail closed. Physical DS218j
+install, first CAS upload/receipt, unchanged second incremental and
+restart/recovery acceptance remain **跳过（未验收）**, not PASS.
+
+This is an unmerged DSM-only PR until its precise HEAD passes Go tests,
+DSM authenticated UI, built shared MUI/ARMv7 SPK checks, full PR CI and
+Final Gate. No published snapshot containing this change is assumed.
+
 # Synology DSM 7 authenticated local UI
 
 ## 2026-10-30 DSM MVP integration PR #3313 (unmerged; source-level)
