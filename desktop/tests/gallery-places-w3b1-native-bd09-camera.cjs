@@ -107,3 +107,56 @@ test('W3b1 uses original Owner Gallery, WGS84/BD09 separated mount and no reflow
   assert.equal(surface.includes('localStorage'), false)
   assert.doesNotMatch(isolated, /sessionStorage|localStorage/)
 })
+
+
+test('JSAPI4 3–21 fractional camera crosses only the authenticated isolated BD09 protocol', () => {
+  const protocolPath = 'ui/shared/src/media-gallery-baidu-isolated-origin-protocol.ts'
+  const absolute = path.join(root, protocolPath)
+  const compiled = ts.transpileModule(read(protocolPath), {
+    fileName: absolute,
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText
+  const protocol = new Module(absolute, module)
+  protocol.filename = absolute
+  protocol.paths = Module._nodeModulePaths(path.join(root, 'desktop'))
+  protocol._compile(compiled, absolute)
+  const {
+    xDriveCreateBaiduIsolatedCameraMessage: create,
+    xDriveParseBaiduIsolatedChildEvent: parse,
+  } = protocol.exports
+  const childWindow = {}
+  const boundary = {
+    parentOrigin: 'https://gallery.example.net',
+    childOrigin: 'https://map-isolated.example.org',
+    childWindow,
+    generation: 7,
+    nonce: 'a'.repeat(64),
+  }
+  const event = (camera, origin=boundary.childOrigin, source=childWindow) => ({
+    origin, source,
+    data: {version: 1, generation: 7, nonce: boundary.nonce,
+      kind: 'camera', camera},
+  })
+  for (const zoom of [3, 13.125, 18, 19, 20.5, 21]) {
+    const camera={...bd09,zoom}
+    const sent=create(boundary,camera)
+    assert(sent, 'only four bounded BD09 camera fields cross to the Child')
+    assert.deepEqual(sent.camera,camera)
+    assert.deepEqual(parse(event(camera),boundary)?.camera,camera)
+  }
+  for (const zoom of [2.99, 21.01, -1, NaN, Infinity, '21']) {
+    const camera={...bd09,zoom}
+    assert.equal(create(boundary,camera),null)
+    assert.equal(parse(event(camera),boundary),null)
+  }
+  for (const extra of [{token:'secret'}, {ownerID:9}, {asset_id:42}]) {
+    const camera={...bd09, zoom:20.5, ...extra}
+    assert.equal(create(boundary,camera),null)
+    assert.equal(parse(event(camera),boundary),null)
+  }
+  const camera={...bd09,zoom:20.5}
+  assert.equal(parse(event(camera,'https://evil.example.net'),boundary),null)
+  assert.equal(parse(event(camera,boundary.childOrigin,{}),boundary),null)
+  assert.equal(parse({ ...event(camera),
+    data:{...event(camera).data,nonce:'b'.repeat(64)} },boundary),null)
+})
