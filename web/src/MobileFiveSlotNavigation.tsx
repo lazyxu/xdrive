@@ -254,7 +254,7 @@ export function XDriveMobileAllLauncher({
                 </ButtonBase>
                 <IconButton size="small" aria-label={favorites.has(item.key) ? '取消收藏' : '收藏功能'}
                   onClick={() => onToggleFavorite(item.key)}
-                  sx={{ position: 'absolute', top: 0, right: 0, width: 32, height: 32 }}>
+                  sx={{ position: 'absolute', top: 0, right: 0, width: 44, height: 44 }}>
                   {favorites.has(item.key) ? <StarRoundedIcon sx={{ fontSize: 17 }} /> :
                     <StarBorderRoundedIcon sx={{ fontSize: 17 }} />}
                 </IconButton>
@@ -266,7 +266,6 @@ export function XDriveMobileAllLauncher({
     )
   }
   const favoritesItems = [...unique.values()].filter(item => favorites.has(item.key))
-  const otherItems = [...unique.values()].filter(item => !favorites.has(item.key))
   return (
     <Box data-xdrive-mobile-all-launcher sx={{ width: '100%', maxWidth: 820, mx: 'auto', p: 2, pb: 4 }}>
       <Typography component="h1" variant="h6" fontWeight={700}>全部功能</Typography>
@@ -278,7 +277,7 @@ export function XDriveMobileAllLauncher({
       <Button startIcon={<HistoryRoundedIcon />} onClick={onOpenRecent}
         sx={{ minHeight: 44, mt: 1 }}>最近动态功能</Button>
       {showGroup('收藏', favoritesItems)}
-      {showGroup('应用', otherItems)}
+      {sections.map(section => showGroup(String(section.label ?? '其他功能'), section.items))}
       {term && ![...unique.values()].some(matches) ? (
         <Typography color="text.secondary" role="status" sx={{ mt: 2 }}>没有匹配的功能。</Typography>
       ) : null}

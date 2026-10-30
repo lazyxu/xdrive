@@ -103,7 +103,11 @@ private enum XDriveIOSNativeLauncherRoute: String, CaseIterable, Identifiable {
 struct XDriveIOSNativePhotosDashboard: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     @ObservedObject var backup: XDriveIOSNativePhotoBackupController
-    @Environment(\.dismiss) private var dismiss
+    let signingOut: Bool
+    let logoutWarning: String?
+    let onSignOut: (XDriveNativeOwnerRoot) -> Void
+    @State private var showSignOutConsent = false
+    @State private var signOutConsentOwner: XDriveNativeOwnerRoot?
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @State private var tab: XDriveIOSNativeBottomTab = .gallery
     @State private var gallerySource: XDriveIOSNativeGallerySource = .local
@@ -219,6 +223,25 @@ struct XDriveIOSNativePhotosDashboard: View {
                 }
             }
         }
+        .confirmationDialog(
+            "确认退出当前服务器和账户？",
+            isPresented: $showSignOutConsent,
+            titleVisibility: .visible
+        ) {
+            Button("停止本机自动备份并退出", role: .destructive) {
+                guard let expected = signOutConsentOwner,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
+                else {
+                    signOutConsentOwner = nil
+                    return
+                }
+                signOutConsentOwner = nil
+                onSignOut(expected)
+            }
+            .accessibilityIdentifier("native-ios-login-signout")
+        } message: {
+            Text("退出会停止本机原件自动计划并尝试撤销后台授权；已备份的云端文件和不确定上传收据不会被删除。")
+        }
         .onAppear {
             restoreNavigationIfNeeded()
             backup.refresh(owner: login.owner)
@@ -233,10 +256,12 @@ struct XDriveIOSNativePhotosDashboard: View {
             resetNavigation()
         }
         .onChange(of: login.owner) { owner in
+            // No push-route account card: parent root owns signed-out state.
+            showSignOutConsent = false
+            signOutConsentOwner = nil
             if owner == nil {
                 navigationRouteStore.clear()
                 resetNavigation()
-                dismiss()
             }
         }
         .onChange(of: tab) { _ in saveNavigationIfReady() }
@@ -329,6 +354,22 @@ struct XDriveIOSNativePhotosDashboard: View {
     private var gallery: some View {
         VStack(spacing: 0) {
             if !galleryFocused {
+                HStack(spacing: 10) {
+                    if backup.busy {
+                        Label("正在检查相册备份", systemImage: "arrow.triangle.2.circlepath")
+                    } else if let state = backup.schedule, state.enabled {
+                        Label(state.pausedForReview ? "自动备份已暂停：需核对收据" : "前台自动备份已开启",
+                              systemImage: state.pausedForReview ? "exclamationmark.shield" : "checkmark.shield")
+                    } else {
+                        Label("前台自动备份未开启", systemImage: "icloud.slash")
+                    }
+                    Spacer(minLength: 4)
+                    Button("备份设置") { openDynamic(.backup) }
+                        .accessibilityIdentifier("native-ios-gallery-backup-settings")
+                }
+                .font(.caption)
+                .padding(.horizontal, 12)
+                .frame(minHeight: 44)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(XDriveIOSNativeGallerySource.allCases) { source in
@@ -373,9 +414,8 @@ struct XDriveIOSNativePhotosDashboard: View {
                         confirmedOriginalUpdate: backup.confirmedOriginalUpdate
                     )
                 case .map:
-                    unavailable(
-                        title: "图库地图尚在原生迁移",
-                        detail: "地图归属于图库，不占动态位置；当前版本未接入原生地图和照片聚合。"
+                    XDriveIOSNativeLocalPhotoMapScreen(
+                        onFocusChange: { galleryFocused = $0 }
                     )
                 }
             }
@@ -454,7 +494,11 @@ struct XDriveIOSNativePhotosDashboard: View {
         if let feature = dynamicFeature {
             switch feature {
             case .backup:
-                XDriveIOSNativePhotoBackupScreen(login: login, controller: backup)
+                XDriveIOSNativePhotoBackupScreen(login: login, controller: backup) {
+                    // Navigation only: never infer that a pending receipt is backed up.
+                    guard login.owner != nil else { return }
+                    openGallery(.originals)
+                }
             default:
                 unavailable(
                     title: "\(feature.title)尚未接通",
@@ -502,8 +546,19 @@ struct XDriveIOSNativePhotosDashboard: View {
                 } else {
                     Text("尚未登录").foregroundStyle(.secondary)
                 }
-                Button("返回服务器与账号管理") { dismiss() }
-                    .accessibilityIdentifier("native-ios-mine-server-account")
+                if let logoutWarning {
+                    Text(logoutWarning)
+                        .foregroundStyle(.orange)
+                        .font(.footnote)
+                        .accessibilityIdentifier("native-ios-mine-logout-warning")
+                }
+                if signingOut { ProgressView("正在安全退出当前账户…") }
+                Button("退出并切换服务器或账户", role: .destructive) {
+                    signOutConsentOwner = login.owner
+                    showSignOutConsent = signOutConsentOwner != nil
+                }
+                .disabled(signingOut || login.owner == nil)
+                .accessibilityIdentifier("native-ios-mine-server-account")
             }
             Section("iPhone 相册") {
                 let granted = PHPhotoLibrary.authorizationStatus(for: .readWrite)
@@ -515,7 +570,7 @@ struct XDriveIOSNativePhotosDashboard: View {
                 }
             }
             Section("界面和管理") {
-                Text("账户切换和退出请在服务器账号页按现有安全流程执行。")
+                Text("账户退出及服务器切换直接在「我的」完成；若正在上传原件，先在相册备份页取消本轮，再退出。")
                     .font(.footnote).foregroundStyle(.secondary)
                 Text("主题、完整文件管理、服务器管理员功能仍待原生实现和授权验证。")
                     .font(.footnote).foregroundStyle(.secondary)

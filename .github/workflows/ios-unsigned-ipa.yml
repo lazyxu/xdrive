@@ -136,8 +136,8 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-bg-route-check"
           "$RUNNER_TEMP/xdrive-ios-bg-route-check"
 
-      - name: Verify actual bounded background original safety contract
-        run: node --test desktop/tests/ios-bg-bounded-original-runner.cjs
+      - name: Verify actual bounded background original safety and native BG consent
+        run: node --test desktop/tests/ios-bg-bounded-original-runner.cjs desktop/tests/ios-native-background-grant-ui.cjs
 
       - name: Verify read-only native Gallery cache retention on revoked access
         run: |
@@ -197,6 +197,16 @@ jobs:
             desktop/tests/ios-native-route-resume-wiring.cjs \
             desktop/tests/ios-native-compact-bottom-bar.cjs \
             desktop/tests/ios-native-l2-focus-bar-integration.cjs
+
+      - name: Verify native bounded MapKit PhotoKit page and Gallery route
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativePhotoMapPolicy.swift \
+            ios/tests/NativePhotoMapPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-native-map-policy-check"
+          "$RUNNER_TEMP/xdrive-ios-native-map-policy-check"
+          node --test desktop/tests/ios-native-photo-map-mvp.cjs
 
       - name: Prepare native brand and home screen icon
         run: bash ios/scripts/prepare-assets.sh

@@ -37,3 +37,14 @@ test('Owner switch and disappearance still retire player and image, no extra upl
   assert.match(preview, /\.onDisappear \{[\s\S]*?player\?\.pause\(\)[\s\S]*?still = nil/)
   assert.doesNotMatch(preview, /UploadSessionTransport|SecItemAdd\(|document\.cookie|WKWebView/)
 })
+
+test('backup-original Viewer Retry starts one new Owner-verified ticket, not old pixels', () => {
+  assert.match(preview, /else if let error \{[\s\S]*?Button\("重试"\) \{ retryPreview\(\) \}/)
+  assert.match(preview, /native-ios-original-viewer-retry/)
+  assert.match(preview, /let requestID = previewRequestID/)
+  assert.match(preview, /previewRequestID == requestID/)
+  assert.match(preview, /guard !node\.isLiveArchive, phase == \.active, login\.owner != nil/)
+  assert.match(preview, /private func retryPreview\(\)[\s\S]*?player\?\.pause\(\)[\s\S]*?still = nil[\s\S]*?error = nil[\s\S]*?previewRequestID = UUID\(\)/)
+  assert.match(preview, /\.task\(id: previewRequestID\)[\s\S]*?login\.verifiedAuthorization\(\)/)
+  assert.doesNotMatch(preview, /UploadSessionTransport|SecItemAdd\(|document\.cookie|WKWebView/)
+})

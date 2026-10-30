@@ -20,6 +20,18 @@ struct XDrivePhotoKitScanPage {
     var finished: Bool { nextOffset >= totalAccessibleAssets }
 }
 
+/// Map-only transient coordinates, never part of the backup candidate.
+struct XDrivePhotoKitLocatedCandidate: Identifiable {
+    let candidate: XDrivePhotoKitScanCandidate
+    let latitude: Double
+    let longitude: Double
+    var id: String { candidate.id }
+}
+struct XDrivePhotoKitLocatedPage {
+    let page: XDrivePhotoKitScanPage
+    let items: [XDrivePhotoKitLocatedCandidate]
+}
+
 enum XDrivePhotoKitScanFailure: Error {
     case notAuthorized
     case notStarted
@@ -151,6 +163,38 @@ actor XDrivePhotoKitBoundedSnapshotScanner {
             limitedAuthorization: initialAuthorization == .limited,
             items: rows
         )
+    }
+
+    /// Reuse the SAME lazy, permission-generation-fenced 64-slot PhotoKit
+    /// scan for native map coordinates, without changing backup scan results.
+    func nextLocatedPage() throws -> XDrivePhotoKitLocatedPage {
+        guard let snapshot = result, let expected = authorization else {
+            throw XDrivePhotoKitScanFailure.notStarted
+        }
+        let page = try nextPage()
+        var placed: [XDrivePhotoKitLocatedCandidate] = []
+        placed.reserveCapacity(page.items.count)
+        for (offset, candidate) in page.items.enumerated() {
+            try Task.checkCancellation()
+            let asset = snapshot.object(at: page.startOffset + offset)
+            guard asset.localIdentifier == candidate.id else {
+                reset()
+                throw XDrivePhotoKitScanFailure.snapshotChanged
+            }
+            guard candidate.kind != "unsupported", let location = asset.location else { continue }
+            let latitude = location.coordinate.latitude
+            let longitude = location.coordinate.longitude
+            if XDriveIOSNativePhotoMapPolicy.validCoordinate(
+                latitude: latitude, longitude: longitude
+            ) {
+                placed.append(XDrivePhotoKitLocatedCandidate(
+                    candidate: candidate, latitude: latitude, longitude: longitude
+                ))
+            }
+        }
+        try ensureCurrent(expected)
+        try Task.checkCancellation()
+        return XDrivePhotoKitLocatedPage(page: page, items: placed)
     }
 
     /// Drop the retained PHFetchResult; no IDs survive this scan or an app

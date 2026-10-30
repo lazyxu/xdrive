@@ -8,6 +8,6 @@ enum XDriveIOSNativeFocusVisibilityPolicy {
         tab: String, gallerySource: String, focused: Bool, ownerVerified: Bool
     ) -> Bool {
         !(ownerVerified && tab == "gallery" &&
-          gallerySource == "cloud" && focused)
+          (gallerySource == "cloud" || gallerySource == "map") && focused)
     }
 }

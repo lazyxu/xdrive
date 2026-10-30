@@ -5,7 +5,9 @@ import SwiftUI
 struct XDriveIOSNativePhotoBackupScreen: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     @ObservedObject var controller: XDriveIOSNativePhotoBackupController
+    let onShowCloudOriginals: () -> Void
     @StateObject private var receipts = XDriveIOSNativePhotoReceiptReviewController()
+    @StateObject private var background = XDriveIOSNativeBackgroundPhotoControls()
     @Environment(\.scenePhase) private var phase
     @State private var interval = 60
     @State private var allowICloud = false
@@ -13,6 +15,10 @@ struct XDriveIOSNativePhotoBackupScreen: View {
     @State private var showManualConsent = false
     @State private var showResumeConsent = false
     @State private var showCatchUpConsent = false
+    @State private var showBackgroundEnableConsent = false
+    @State private var showBackgroundDisableConsent = false
+    @State private var backgroundEnableOwner: XDriveNativeOwnerRoot?
+    @State private var backgroundDisableOwner: XDriveNativeOwnerRoot?
     @State private var catchUpConsentOwner: XDriveNativeOwnerRoot?
     // Capture the exact verified Owner and settings BEFORE any native consent
     // dialog; a late confirmation must never authorize another Server.
@@ -42,7 +48,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                     manualConsentAllowICloud = allowICloud
                     showManualConsent = manualConsentOwner != nil
                 }
-                    .disabled(controller.busy || login.owner == nil)
+                    .disabled(controller.busy || background.busy || login.owner == nil)
                     .accessibilityIdentifier("native-ios-photos-manual-start")
                 if controller.busy {
                     ProgressView("正在验证并备份原件…")
@@ -109,11 +115,69 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                         autoConsentAllowICloud = allowICloud
                         showAutoConsent = autoConsentOwner != nil
                     }
-                        .disabled(controller.busy || login.owner == nil)
+                        .disabled(controller.busy || background.busy || login.owner == nil)
                         .accessibilityIdentifier("native-ios-photos-auto-enable")
                 }
                 Text("只在 App 处于前台且当前原生账户已重新验证时运行。独立的系统 BGProcessing 授权不会因此自动开启；iOS 不保证强制退出或锁屏后按时运行。")
                     .font(.footnote).foregroundStyle(.secondary)
+            }
+            Section("可选系统后台原件备份") {
+                Text("前台自动备份与系统 BGProcessing 相互独立。后台需要单独授权当前设备及 Owner 根目录；iOS 决定执行时机，首次约 6 小时后才可尝试，每次最多新增 1 个原件。锁屏时若原件或加密账本不可读就安全退出；强制退出后不保证运行。")
+                    .font(.footnote).foregroundStyle(.secondary)
+                if background.checking {
+                    ProgressView("正在验证本机后台授权…")
+                }
+                if let state = background.status {
+                    if state.revokePending {
+                        Label("本机后台已停止，远端撤销待确认",
+                              systemImage: "exclamationmark.shield")
+                            .foregroundStyle(.orange)
+                    } else if state.enabled && background.serverVerified {
+                        Label("当前服务器已确认后台授权", systemImage: "checkmark.shield")
+                    } else if state.enabled {
+                        Label("本机存在后台凭据，服务器授权尚未确认",
+                              systemImage: "exclamationmark.shield")
+                            .foregroundStyle(.orange)
+                    } else {
+                        Label(state.enrolled ? "后台授权已过期或不可用" : "尚未启用系统后台备份",
+                              systemImage: "icloud.slash")
+                    }
+                    if let expiry = state.expiresAt {
+                        Text("本机记录的授权到期时间：\(expiry.formatted(date: .abbreviated, time: .shortened))")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    if state.enrolled {
+                        Button(state.revokePending ? "重试撤销服务器授权" : "停止本机后台备份并撤销授权",
+                               role: .destructive) {
+                            backgroundDisableOwner = login.owner
+                            showBackgroundDisableConsent = backgroundDisableOwner != nil
+                        }
+                        .disabled(background.busy || background.checking || controller.busy)
+                        .accessibilityIdentifier("native-ios-photo-background-disable")
+                    } else {
+                        Button("单独申请系统后台备份授权") {
+                            backgroundEnableOwner = login.owner
+                            showBackgroundEnableConsent = backgroundEnableOwner != nil
+                        }
+                        .disabled(background.busy || background.checking || controller.busy ||
+                                  login.owner == nil)
+                        .accessibilityIdentifier("native-ios-photo-background-enable")
+                    }
+                } else if !background.checking {
+                    Text("当前账户后台授权状态未验证；不会假定已开启。")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+                if background.busy { ProgressView("正在安全处理后台授权…") }
+                Button("刷新后台授权状态") { background.refresh(login: login) }
+                    .disabled(background.busy || background.checking)
+                    .accessibilityIdentifier("native-ios-photo-background-status")
+                if let note = background.notice {
+                    Text(note).font(.footnote).foregroundStyle(.secondary)
+                }
+                if let error = background.errorMessage {
+                    Text(error).font(.footnote).foregroundStyle(.red)
+                        .accessibilityIdentifier("native-ios-photo-background-error")
+                }
             }
             Section("不确定收据核对") {
                 Text("如果上传完成确认丢失，自动备份会暂停。以下功能只检查既有 Server 会话和文件收据，不重新上传、不删除账本。")
@@ -168,6 +232,20 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                 if let failure = receipts.errorMessage {
                     Text(failure).font(.footnote).foregroundStyle(.red)
                 }
+            }
+            Section("查看已备份原件") {
+                Button {
+                    // The destination performs a fresh native Owner/root proof;
+                    // this shortcut neither interprets ACKs nor uploads bytes.
+                    guard login.owner != nil else { return }
+                    onShowCloudOriginals()
+                } label: {
+                    Label("打开当前账户云端备份原件", systemImage: "icloud")
+                }
+                .disabled(login.owner == nil)
+                .accessibilityIdentifier("native-ios-photos-cloud-originals")
+                Text("只读查看当前 Owner 根目录中已写入的备份文件。待核对收据不代表上传成功；Live 双原件 ZIP 尚不支持云端动态播放。")
+                    .font(.footnote).foregroundStyle(.secondary)
             }
             Section("执行结果") {
                 if let consentError {
@@ -271,12 +349,54 @@ struct XDriveIOSNativePhotoBackupScreen: View {
         } message: {
             Text("仅当前服务器和 Owner。积压未完成时每轮最多新增 20 个原件，约 60 秒后再尝试；完成整库一次扫描后恢复原间隔。不启用后台权限，未知收据继续暂停。")
         }
+        .confirmationDialog(
+            "为当前账户授权系统后台原件备份？",
+            isPresented: $showBackgroundEnableConsent,
+            titleVisibility: .visible
+        ) {
+            Button("确认注册本机并申请受限后台授权") {
+                guard let selected = backgroundEnableOwner,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected)
+                else {
+                    consentError = "服务器或账户已变化，后台授权确认失效。"
+                    return
+                }
+                backgroundEnableOwner = nil
+                background.enable(login: login, expectedOwner: selected)
+            }
+        } message: {
+            Text("服务器：\(backgroundEnableOwner?.origin.host ?? "未验证")，Owner：\(backgroundEnableOwner?.username ?? "未验证")。系统会获得当前设备与 Owner 根目录的可撤销授权，后台任务仍受 iOS 调度和原件保护限制；不会保证锁屏或强制退出后备份。")
+        }
+        .confirmationDialog(
+            "停止本机后台备份并尝试撤销远端授权？",
+            isPresented: $showBackgroundDisableConsent,
+            titleVisibility: .visible
+        ) {
+            Button("本机立即停止，撤销当前 Owner 授权", role: .destructive) {
+                guard let selected = backgroundDisableOwner,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected)
+                else {
+                    consentError = "服务器或账户已变化，拒绝操作其他账户授权。"
+                    return
+                }
+                backgroundDisableOwner = nil
+                background.disable(login: login, expectedOwner: selected)
+            }
+        } message: {
+            Text("会优先停用本机后台授权，即使网络不可达；远端撤销需要服务器确认。已上传原件和加密收据不会删除，不影响前台自动计划。")
+        }
         .onAppear {
             controller.refresh(owner: login.owner)
             receipts.refresh(login: login)
+            background.refresh(login: login)
         }
         .onDisappear {
             receipts.cancel()
+            background.invalidateRead()
+            showBackgroundEnableConsent = false
+            showBackgroundDisableConsent = false
+            backgroundEnableOwner = nil
+            backgroundDisableOwner = nil
             showManualConsent = false
             showAutoConsent = false
             showResumeConsent = false
@@ -293,6 +413,12 @@ struct XDriveIOSNativePhotoBackupScreen: View {
         }
         .onChange(of: login.owner) { _ in
             // Invalidate any consent that was opened for the previous Owner.
+            background.invalidateRead()
+            showBackgroundEnableConsent = false
+            showBackgroundDisableConsent = false
+            backgroundEnableOwner = nil
+            backgroundDisableOwner = nil
+            background.refresh(login: login)
             showManualConsent = false
             showAutoConsent = false
             showResumeConsent = false
