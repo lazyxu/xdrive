@@ -40,7 +40,6 @@ import {
   createXDriveCloudStorageDataSource,
   XDriveAppPageOutlet,
   XDriveWorkspaceSidebar,
-  xDriveCoreWorkspaceDestinations,
   xDriveWorkspaceHostSections,
   XDriveSettingsDialog,
   XDriveIOSPhotoBackupSettings,
@@ -102,6 +101,7 @@ import WebOverviewPage from './WebOverviewPage'
 import WebUnsupportedFileDialog from './WebUnsupportedFileDialog'
 import { xDriveWebOpenRouteForNode } from './webViewerRoute'
 import { useXDriveWebAppRuntime, xDriveCreateWebAppBrowseSession, xDriveClearPrivateMapBrowseSessions } from './webAppRuntime'
+import { xDriveCoreWorkspaceDestinations } from '../../ui/shared/src/mui/WorkspaceNavigation'
 import { xDriveWebAppRouteForWorkspaceKey, xDriveWebAppWorkspaceKey } from './webApps'
 import { XDriveMobileAllLauncher, XDriveMobileFiveSlotNavigation, XDriveMobileMinePage } from './MobileFiveSlotNavigation'
 import { xDriveInitialMobileNavigation, xDriveMobileFeatureParentRoute, xDriveMobileRouteForSlot, xDriveMobileSlotForRoute, xDriveRememberMobileNavigation } from './mobileFiveSlotState'
