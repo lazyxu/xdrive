@@ -13,6 +13,7 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
 
     private var pageScope: XDriveNativeOwnerRoot?
     private var pageAlbumID: String?
+    private var pageSearch = ""
     private var epoch = UUID()
     private var job: Task<Void, Never>?
     private var currentReader: XDriveIOSNativeMediaGalleryReader?
@@ -25,6 +26,7 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
         page = nil
         pageScope = nil
         pageAlbumID = nil
+        pageSearch = ""
         failedOffset = nil
         busy = false
         error = nil
@@ -46,7 +48,12 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
     }
 
     func load(login: XDriveIOSNativeOwnerLoginModel,
-              albumID: String?, offset: Int = 0) {
+              albumID: String?, offset: Int = 0, search: String = "") {
+        let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard query.unicodeScalars.count <= 200 else {
+            error = "搜索关键词最多 200 个字符。"
+            return
+        }
         guard let expected = login.owner else {
             invalidate()
             error = "当前尚未建立经过验证的服务器账户。"
@@ -56,7 +63,7 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
         // while the requested range loads. A different scope clears it first.
         let keepOldPage = pageScope.map {
             XDriveIOSNativePhotoOwnerScope.matches(expected, $0)
-        } == true && pageAlbumID == albumID
+        } == true && pageAlbumID == albumID && pageSearch == query
         epoch = UUID()
         job?.cancel()
         job = nil
@@ -65,6 +72,7 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
             currentReader = nil
             pageScope = nil
             pageAlbumID = nil
+            pageSearch = ""
         }
         failedOffset = nil
         error = nil
@@ -84,7 +92,9 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
                 let reader = XDriveIOSNativeMediaGalleryReader(
                     owner: auth.owner, accessToken: auth.accessToken
                 )
-                let result = try await reader.page(offset: offset, albumID: albumID)
+                let result = try await reader.page(
+                    offset: offset, albumID: albumID, search: query
+                )
                 try Task.checkCancellation()
                 guard self?.epoch == ticket,
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
@@ -93,6 +103,7 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
                 self?.page = result
                 self?.pageScope = expected
                 self?.pageAlbumID = albumID
+                self?.pageSearch = query
                 self?.failedOffset = nil
             } catch is CancellationError {
             } catch {
@@ -244,6 +255,8 @@ struct XDriveIOSNativeServerMediaWall: View {
     @StateObject private var model = XDriveIOSNativeMediaWallModel()
     @Environment(\.scenePhase) private var phase
     @State private var selected: XDriveIOSNativeMediaItem?
+    @State private var searchDraft = ""
+    @State private var appliedSearch = ""
 
     var body: some View {
         ScrollView {
@@ -252,6 +265,27 @@ struct XDriveIOSNativeServerMediaWall: View {
                     "服务器 PhotoAsset 全库照片墙（非仅 iPhone 备份目录）。" :
                     "已验证的云端相册成员，按服务器分页读取。")
                     .font(.caption).foregroundStyle(.secondary)
+                HStack(spacing: 8) {
+                    TextField("搜索当前云端图库", text: $searchDraft)
+                        .textFieldStyle(.roundedBorder)
+                        .submitLabel(.search)
+                        .onSubmit { applySearch() }
+                        .accessibilityIdentifier("native-ios-server-gallery-search")
+                    Button("搜索") { applySearch() }
+                        .disabled(model.busy || searchDraft.unicodeScalars.count > 200)
+                    if !appliedSearch.isEmpty {
+                        Button("清除") {
+                            searchDraft = ""
+                            appliedSearch = ""
+                            model.load(login: login, albumID: album?.id, search: "")
+                        }
+                        .disabled(model.busy)
+                    }
+                }
+                if searchDraft.unicodeScalars.count > 200 {
+                    Text("搜索词不能超过 200 个字符。")
+                        .font(.caption).foregroundStyle(.red)
+                }
                 if let page = model.page {
                     Text(page.total_count == 0 ? "当前没有可访问的媒体。" :
                         "照片 \(page.offset + 1)–\(page.offset + page.items.count) / \(page.total_count)")
@@ -274,13 +308,13 @@ struct XDriveIOSNativeServerMediaWall: View {
                     HStack {
                         Button("上一页") {
                             model.load(login: login, albumID: album?.id,
-                                       offset: max(0, page.offset - 48))
+                                       offset: max(0, page.offset - 48), search: appliedSearch)
                         }
                         .disabled(model.busy || page.offset == 0)
                         Spacer()
                         Button("下一页") {
                             model.load(login: login, albumID: album?.id,
-                                       offset: page.offset + page.items.count)
+                                       offset: page.offset + page.items.count, search: appliedSearch)
                         }
                         .disabled(model.busy || page.offset + page.items.count >= page.total_count)
                     }.buttonStyle(.bordered)
@@ -290,7 +324,8 @@ struct XDriveIOSNativeServerMediaWall: View {
                     Text(message).foregroundStyle(.red)
                     Button("重试读取") {
                         model.load(login: login, albumID: album?.id,
-                                   offset: model.failedOffset ?? model.page?.offset ?? 0)
+                                   offset: model.failedOffset ?? model.page?.offset ?? 0,
+                                   search: appliedSearch)
                     }
                 }
                 Text("每次最多保留 48 个逻辑媒体；只有当前可见图片申请授权缩略图。缩略图缺失不代表原件丢失。")
@@ -316,14 +351,14 @@ struct XDriveIOSNativeServerMediaWall: View {
         }
         .onAppear {
             if model.page == nil, !model.busy {
-                model.load(login: login, albumID: album?.id)
+                model.load(login: login, albumID: album?.id, search: appliedSearch)
             }
         }
         .onChange(of: login.owner) { _ in
             selected = nil
             model.invalidate()
             if login.owner != nil && phase == .active {
-                model.load(login: login, albumID: album?.id)
+                model.load(login: login, albumID: album?.id, search: appliedSearch)
             }
         }
         .onChange(of: phase) { state in
@@ -331,13 +366,21 @@ struct XDriveIOSNativeServerMediaWall: View {
                 selected = nil
                 model.invalidate()
             } else if model.page == nil {
-                model.load(login: login, albumID: album?.id)
+                model.load(login: login, albumID: album?.id, search: appliedSearch)
             }
         }
         .onDisappear {
             if selected != nil { model.suspendForViewer() }
             else { model.suspendForNavigation() }
         }
+    }
+
+    private func applySearch() {
+        let query = searchDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard query.unicodeScalars.count <= 200 else { return }
+        if query == appliedSearch && model.page != nil { return }
+        appliedSearch = query
+        model.load(login: login, albumID: album?.id, offset: 0, search: query)
     }
 }
 

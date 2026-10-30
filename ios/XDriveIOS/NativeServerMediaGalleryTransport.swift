@@ -153,8 +153,11 @@ struct XDriveIOSNativeMediaGalleryReader {
         return escaped
     }
 
-    func page(offset: Int, albumID: String? = nil) async throws -> XDriveIOSNativeMediaRange {
-        guard offset >= 0 && offset <= 10_000_000 else {
+    func page(offset: Int, albumID: String? = nil,
+              search: String = "") async throws -> XDriveIOSNativeMediaRange {
+        let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard offset >= 0 && offset <= 10_000_000,
+              query.unicodeScalars.count <= 200 else {
             throw XDriveIOSNativeMediaReadFailure.invalidPage
         }
         let path: String
@@ -163,11 +166,15 @@ struct XDriveIOSNativeMediaGalleryReader {
         } else {
             path = "/api/v1/media/items"
         }
-        let url = try endpoint(path, query: [
+        var parameters = [
             URLQueryItem(name: "range", value: "true"),
             URLQueryItem(name: "limit", value: String(Self.pageSize)),
             URLQueryItem(name: "offset", value: String(offset))
-        ])
+        ]
+        if !query.isEmpty {
+            parameters.append(URLQueryItem(name: "q", value: query))
+        }
+        let url = try endpoint(path, query: parameters)
         let data = try await read(url, maximum: 2 * 1_048_576)
         let page = try JSONDecoder().decode(XDriveIOSNativeMediaRange.self, from: data)
         guard page.offset == offset, page.limit == Self.pageSize,
