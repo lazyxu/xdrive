@@ -817,7 +817,9 @@ test('count-free final page and explicit Select All preserve exact request owner
     queryKey: 'owner:final-partial',
     loadRange: async (range, signal) => {
       calls.push({ range, signal })
-      if (signal && invalidSelection) return {
+      // Viewport requests also own AbortSignals. Only the deliberate
+      // Select All range (2..3) should receive this malformed response.
+      if (signal && invalidSelection && range.offset === 2 && range.limit === 2) return {
         offset: range.offset, limit: 1, totalCount: null, items: [{ id: 3 }],
       }
       return {
