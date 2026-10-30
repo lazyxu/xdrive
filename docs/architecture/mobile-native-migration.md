@@ -12,6 +12,11 @@ Desktop/DSM architecture, nor the independent Web/Mobile Web/PWA.
 | Web/PWA | React/MUI | Browser app, including offline/service worker |
 | Desktop/DSM | One shared React/MUI XDriveApp + real Host ports | In-progress shared state/controller migration |
 
+
+## Native iOS navigation decision (2026-10-30)
+
+The approved five-slot bottom navigation, per-feature back stacks, three display levels and Photos-first rollout are specified in [ios-native-navigation-and-gallery.md](./ios-native-navigation-and-gallery.md). It is a UI contract; native implementation and acceptance remain separate.
+
 ## Product parity, not shared mobile JSX
 
 Mobile clients share the real Server REST/DTO contracts, Owner/Device/Root,
