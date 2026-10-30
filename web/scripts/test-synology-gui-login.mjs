@@ -1,0 +1,37 @@
+#!/usr/bin/env node
+// DSM GUI Server login reuses the owning Agent, not a browser credential store.
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+const base = new URL('../../', import.meta.url)
+const read = path => fs.readFileSync(new URL(path, base), 'utf8')
+const gui = read('web/src/synology.tsx')
+const adapter = read('ui/shared/src/synology-backup-adapter.ts')
+const cgi = read('internal/synologyui/cgi.go')
+const gateway = read('internal/synologyui/gateway.go')
+const native = read('internal/localbackupipc/server_login.go')
+const schema = read('internal/synologyui/server_login.go')
+const workflow = read('.github/workflows/synology-ui.yml')
+
+assert.match(gui, /<XDriveSettingsDialog/)
+assert.match(gui, /<TextField label="Server HTTPS 地址"/)
+assert.match(gui, /type=\{showPassword \? 'text' : 'password'\}/)
+assert.match(gui, /client\.loginServer\(server\.trim\(\), username\.trim\(\), requestedPassword, controller\.signal\)/)
+assert.match(gui, /setPassword\(''\)/)
+assert.match(gui, /window\.location\.reload\(\)/)
+assert.doesNotMatch(gui, /localStorage\.setItem|sessionStorage\.setItem|console\.log\(password/)
+
+assert.match(adapter, /'\/v1\/server-login', 'POST'/)
+assert.match(adapter, /'\/v1\/server-connection', 'GET'/)
+assert.match(adapter, /credentials: 'same-origin'/)
+assert.match(adapter, /redirect: 'error'/)
+assert.match(adapter, /Object\.keys\(raw\)\.length !== 1/)
+assert.match(cgi, /"server-connection", "server-login"/)
+assert.match(gateway, /parseServerLogin\(r\)/)
+assert.match(gateway, /login\.LoginServer\(ctx, input\.Server, input\.Username, input\.Password\)/)
+assert.match(gateway, /quotaReader\.OwnerQuota\(ctx\)/)
+assert.match(native, /"\/v1\/auth\/login"/)
+assert.match(native, /current\.Configured/)
+assert.match(schema, /duplicate DSM login field/)
+assert.doesNotMatch(schema, /exec\.Command|os\.WriteFile/)
+assert.match(workflow, /node web\/scripts\/test-synology-gui-login\.mjs/)
+console.log('DSM GUI login stays in shared Settings and requires typed same-Owner Agent verification')

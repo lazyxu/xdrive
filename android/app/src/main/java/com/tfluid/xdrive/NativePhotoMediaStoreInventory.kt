@@ -64,6 +64,23 @@ internal fun nativePhotoSnapshotMatches(
         if (selectedIsVideo) "video/" else "image/"
     )
 
+/**
+ * Fail-closed metadata gate for one user-selected media row. Whole-library
+ * inventory and selective Gallery browsing do not imply that this source
+ * is authorized for full-resolution foreground backup.
+ */
+internal fun nativePhotoSelectedFieldsValid(
+    expectedId: Long, expectedVideo: Boolean, foundId: Long,
+    mime: String?, bytes: Long, modified: Long,
+    pending: Boolean, trashed: Boolean,
+): Boolean = expectedId > 0 && foundId == expectedId &&
+    bytes in 1..NativePhotoOriginalStager.MAX_ORIGINAL_BYTES &&
+    modified >= 0 && !pending && !trashed &&
+    mime != null && mime.length in 7..128 &&
+    mime.none { it.isISOControl() } &&
+    mime.startsWith(if (expectedVideo) "video/" else "image/") &&
+    mime.substringAfter('/').isNotBlank()
+
 /** Android content:// URI validation is separate from the pure JVM snapshot check. */
 internal fun nativePhotoCanonicalUriMatches(selected: NativePhotoOriginalCandidate): Boolean =
     selected.localId > 0 && selected.uri == ContentUris.withAppendedId(
@@ -156,6 +173,59 @@ internal object NativePhotoMediaStoreInventory {
             candidates = results,
             nextAfterId = results.lastOrNull()?.localId,
         )
+    }
+
+    /**
+     * Resolve exactly one photo/video selected in the local Gallery, by its
+     * canonical MediaStore URI. No upload, no hidden all-library scan and no
+     * permission prompt inside this source reader.
+     */
+    suspend fun inspectSelected(
+        context: Context, localId: Long, isVideo: Boolean,
+    ): NativePhotoOriginalCandidate = withContext(Dispatchers.IO) {
+        require(localId > 0)
+        check(hasNativeFullPhotoVideoReadGrant(context)) {
+            "Full photos-and-videos grant is required for original backup"
+        }
+        val base = if (isVideo) MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+            else MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+        val uri = ContentUris.withAppendedId(base, localId)
+        val idColumn = MediaStore.MediaColumns._ID
+        val mimeColumn = MediaStore.MediaColumns.MIME_TYPE
+        val sizeColumn = MediaStore.MediaColumns.SIZE
+        val modifiedColumn = MediaStore.MediaColumns.DATE_MODIFIED
+        val pendingColumn = MediaStore.MediaColumns.IS_PENDING
+        val fields = mutableListOf(
+            idColumn, mimeColumn, sizeColumn, modifiedColumn, pendingColumn,
+        )
+        if (Build.VERSION.SDK_INT >= 30)
+            fields += MediaStore.MediaColumns.IS_TRASHED
+        val rows = context.contentResolver.query(
+            uri, fields.toTypedArray(), null, null, null
+        ) ?: throw IllegalStateException("Selected MediaStore original missing")
+        rows.use { cursor ->
+            currentCoroutineContext().ensureActive()
+            check(cursor.moveToFirst()) {
+                "Selected MediaStore original is no longer visible"
+            }
+            val foundId = cursor.getLong(cursor.getColumnIndexOrThrow(idColumn))
+            val mime = cursor.getString(cursor.getColumnIndexOrThrow(mimeColumn))
+            val bytes = cursor.getLong(cursor.getColumnIndexOrThrow(sizeColumn))
+            val modified = cursor.getLong(cursor.getColumnIndexOrThrow(modifiedColumn))
+            val pending = cursor.getInt(cursor.getColumnIndexOrThrow(pendingColumn)) != 0
+            val trashed = Build.VERSION.SDK_INT >= 30 &&
+                cursor.getInt(cursor.getColumnIndexOrThrow(
+                    MediaStore.MediaColumns.IS_TRASHED)) != 0
+            check(nativePhotoSelectedFieldsValid(
+                localId, isVideo, foundId, mime, bytes, modified, pending, trashed
+            )) { "Selected MediaStore original changed or is unavailable" }
+            check(!cursor.moveToNext()) { "Ambiguous MediaStore original result" }
+            NativePhotoOriginalCandidate(
+                localId = localId, uri = uri, isVideo = isVideo,
+                mimeType = requireNotNull(mime),
+                sizeBytes = bytes, modifiedAtSeconds = modified,
+            )
+        }
     }
 
     /**
