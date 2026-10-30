@@ -11,3 +11,5 @@ This is neither a released APK nor automatic backup nor Motion Photo playback.
 - Four JVM regressions exercise the real uploader boundary: one attempt/content, Owner/Root denial, tamper/forged receipt, and lost ACK no replay.
 
 Still required: native explicit consent/selection UI; Android device identity registration; bounded whole-library completed index, durable receipt reconciliation, automatic incremental schedule, Motion Photo pair semantics and real Android permission/restart/large-library validation. No final APK or CI success claimed.
+
+- **Source snapshot fence:** the candidate's canonical MediaStore URI, ID, MIME type, declared size and modification timestamp must still match a visible/nonpending/nontrashed provider row before and after staging. No provider failure or permission revocation may be treated as an upload-ready file. Three new JVM regressions cover tampering, media-type/URI changes and invalidated rows.

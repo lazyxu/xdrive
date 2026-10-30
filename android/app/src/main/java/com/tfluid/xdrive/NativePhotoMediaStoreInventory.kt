@@ -47,6 +47,24 @@ internal fun hasNativeFullPhotoVideoReadGrant(context: Context): Boolean =
             PackageManager.PERMISSION_GRANTED
     }
 
+/**
+ * Compare a user-selected original to a fresh provider record. This is NOT a
+ * hash of MediaStore metadata; the staged bytes still get their own SHA-256.
+ * Deny records that were replaced, trashed, pending or lost their grant.
+ */
+internal fun nativePhotoSnapshotMatches(
+    selected: NativePhotoOriginalCandidate,
+    id: Long, mimeType: String?, size: Long, modified: Long,
+    isPending: Boolean, isTrashed: Boolean,
+): Boolean = id > 0 && selected.localId == id &&
+    selected.sizeBytes == size && size in 1..NativePhotoOriginalStager.MAX_ORIGINAL_BYTES &&
+    selected.modifiedAtSeconds == modified && !isPending && !isTrashed &&
+    mimeType == selected.mimeType && mimeType != null && mimeType.startsWith(
+        if (selected.isVideo) "video/" else "image/"
+    ) && selected.uri == ContentUris.withAppendedId(
+        if (selected.isVideo) MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+            else MediaStore.Images.Media.EXTERNAL_CONTENT_URI, selected.localId)
+
 /** Bounded, read-only, ID-keyset MediaStore source scan; never requests a grant. */
 internal object NativePhotoMediaStoreInventory {
     const val PAGE_SIZE = 64
@@ -135,16 +153,60 @@ internal object NativePhotoMediaStoreInventory {
         )
     }
 
+    /**
+     * Recheck the precise MediaStore item before and after staging. A provider
+     * may reuse or mutate the selected ID between inventory and the user's
+     * foreground confirmation; do not silently upload a different original.
+     */
+    private fun sourceMatches(context: Context, selected: NativePhotoOriginalCandidate): Boolean {
+        if (!hasNativeFullPhotoVideoReadGrant(context)) return false
+        val id = MediaStore.MediaColumns._ID
+        val mime = MediaStore.MediaColumns.MIME_TYPE
+        val size = MediaStore.MediaColumns.SIZE
+        val modified = MediaStore.MediaColumns.DATE_MODIFIED
+        val pending = MediaStore.MediaColumns.IS_PENDING
+        val fields = mutableListOf(id, mime, size, modified, pending)
+        if (Build.VERSION.SDK_INT >= 30) fields += MediaStore.MediaColumns.IS_TRASHED
+        val cursor = context.contentResolver.query(
+            selected.uri, fields.toTypedArray(), null, null, null
+        ) ?: return false
+        return cursor.use {
+            if (!it.moveToFirst()) return@use false
+            val matches = nativePhotoSnapshotMatches(
+                selected,
+                id = it.getLong(it.getColumnIndexOrThrow(id)),
+                mimeType = it.getString(it.getColumnIndexOrThrow(mime)),
+                size = it.getLong(it.getColumnIndexOrThrow(size)),
+                modified = it.getLong(it.getColumnIndexOrThrow(modified)),
+                isPending = it.getInt(it.getColumnIndexOrThrow(pending)) != 0,
+                isTrashed = Build.VERSION.SDK_INT >= 30 &&
+                    it.getInt(it.getColumnIndexOrThrow(MediaStore.MediaColumns.IS_TRASHED)) != 0,
+            )
+            matches && !it.moveToNext()
+        }
+    }
+
     /** One genuine, disposable original snapshot for the existing Go uploader. */
     suspend fun stageOriginal(
         context: Context,
         candidate: NativePhotoOriginalCandidate,
-    ): NativePhotoStagedOriginal {
-        check(hasNativeFullPhotoVideoReadGrant(context))
-        return NativePhotoOriginalStager.stage(
-            context.applicationContext.noBackupFilesDir,
-            candidate.sizeBytes,
-        ) { openOriginal(context.applicationContext, candidate) }
+    ): NativePhotoStagedOriginal = withContext(Dispatchers.IO) {
+        val app = context.applicationContext
+        check(sourceMatches(app, candidate)) {
+            "Selected MediaStore original changed before staging"
+        }
+        val staged = NativePhotoOriginalStager.stage(
+            app.noBackupFilesDir, candidate.sizeBytes,
+        ) { openOriginal(app, candidate) }
+        try {
+            check(sourceMatches(app, candidate)) {
+                "Selected MediaStore original changed during staging"
+            }
+            staged
+        } catch (failure: Throwable) {
+            staged.close()
+            throw failure
+        }
     }
 
     /** No permission bypass, no conversion, and no media bytes cached in UI. */
