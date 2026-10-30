@@ -321,6 +321,10 @@ export default function DesktopFileExplorer({
     host: hostPort,
     ownerKey: navigationSessionStorageKey ?? '',
     read: loadSourceOptions,
+    // A malformed authenticated Source response is an actual Host read
+    // failure, never an authoritative empty Source list.
+    onError: error => onError(error instanceof Error
+      ? error.message : '文件搜索来源读取失败。'),
   })
   const [availabilityByID, setAvailabilityByID] = useState<Map<number, DesktopFileAvailabilityEntry>>(
     () => new Map(),
