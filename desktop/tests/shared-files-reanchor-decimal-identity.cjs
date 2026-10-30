@@ -87,3 +87,90 @@ test('no eager fallback, mistaken Parent or stale position can produce a read ti
   const code=fs.readFileSync(path.join(root,file),'utf8')
   assert.doesNotMatch(code,/fetch\s*\(|ipcRenderer|window\.|localStorage|cloudUpload|cloudDelete/)
 })
+
+function legacyWebKitSignal(controller, withoutReason = false) {
+  // Browser simulation on a genuine AbortSignal, not a fake transport object:
+  // legacy Safari/WebKit may lack throwIfAborted() (and older versions reason).
+  Object.defineProperty(controller.signal, 'throwIfAborted', {
+    configurable: true, value: undefined,
+  })
+  if (withoutReason) Object.defineProperty(controller.signal, 'reason', {
+    configurable: true, value: undefined,
+  })
+  return controller.signal
+}
+const legacyParams = (signal, overrides = {}) => ({
+  parentID: 12, nodeID: 321, revision: 7, itemCount: 100000,
+  sort, grouping, signal,
+  locate: async () => position,
+  collectRange: async () => [{ id: '321', revision: '7', kind: 'file' }],
+  ...overrides,
+})
+
+test('legacy WebKit without throwIfAborted still reveals and reanchors authorized exact Range', async () => {
+  for (const fn of [
+    shared.xDriveFileExplorerVerifiedChildReveal,
+    shared.xDriveFileExplorerVerifiedChildReanchor,
+  ]) {
+    const controller = new AbortController()
+    const signal = legacyWebKitSignal(controller)
+    const calls = []
+    const row = { id: '321', revision: '7', kind: 'file' }
+    const result = await fn(legacyParams(signal, {
+      locate: async (...args) => { calls.push(['locate', ...args]); return position },
+      collectRange: async (...args) => { calls.push(['range', ...args]); return [row] },
+    }))
+    assert.strictEqual(result.item, row)
+    assert.equal(result.index, 95237)
+    assert.deepEqual(calls.map(x => x[0]), ['locate', 'range'])
+    assert.equal(calls[0].at(-1), signal)
+    assert.equal(calls[1].at(-1), signal)
+  }
+})
+
+test('legacy WebKit cancellation never starts or publishes a stale Viewer child Range', async () => {
+  for (const fn of [
+    shared.xDriveFileExplorerVerifiedChildReveal,
+    shared.xDriveFileExplorerVerifiedChildReanchor,
+  ]) {
+    for (const phase of ['before', 'after-locate', 'after-range']) {
+      const controller = new AbortController()
+      const signal = legacyWebKitSignal(controller)
+      const reason = new DOMException('obsolete Owner or route', 'AbortError')
+      let locates = 0, ranges = 0
+      if (phase === 'before') controller.abort(reason)
+      await assert.rejects(() => fn(legacyParams(signal, {
+        locate: async () => {
+          locates++
+          if (phase === 'after-locate') controller.abort(reason)
+          return position
+        },
+        collectRange: async () => {
+          ranges++
+          if (phase === 'after-range') controller.abort(reason)
+          return [{ id: 321, revision: 7, kind: 'file' }]
+        },
+      })), error => error === reason,
+      'obsolete cancellation must preserve the exact AbortSignal reason')
+      assert.equal(locates, phase === 'before' ? 0 : 1, phase)
+      assert.equal(ranges, phase === 'after-range' ? 1 : 0, phase)
+    }
+  }
+})
+
+test('legacy WebKit missing AbortSignal.reason still rejects an obsolete read with AbortError', async () => {
+  for (const fn of [
+    shared.xDriveFileExplorerVerifiedChildReveal,
+    shared.xDriveFileExplorerVerifiedChildReanchor,
+  ]) {
+    const controller = new AbortController()
+    const signal = legacyWebKitSignal(controller, true)
+    controller.abort()
+    let requests = 0
+    await assert.rejects(() => fn(legacyParams(signal, {
+      locate: async () => { requests++; return position },
+      collectRange: async () => { requests++; return [] },
+    })), error => error?.name === 'AbortError')
+    assert.equal(requests, 0, 'obsolete Owner cannot issue any new private read')
+  }
+})
