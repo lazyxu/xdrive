@@ -2,7 +2,7 @@
 
 ## 2026-10-30 source audit: minimal usable DSM scope
 
-Canonical master source audited at \`0ff2fa1a3dd478e73fd48e84ff50ce2ef9c2cb99\`. This is a **source-level capability inventory**, not a device acceptance or a claim of exact-HEAD CI PASS. The old 2026-10-27 seven-route matrix below is historical; the current Desktop/DSM app has one shared \`XDriveApp\` and **16 registered routes**. A rendered common page alone does not prove a DSM data/action adapter exists.
+Canonical master source audited at `0ff2fa1a3dd478e73fd48e84ff50ce2ef9c2cb99`. This is a **source-level capability inventory**, not a device acceptance or a claim of exact-HEAD CI PASS. The old 2026-10-27 seven-route matrix below is historical; the current Desktop/DSM app has one shared `XDriveApp` and **16 registered routes**. A rendered common page alone does not prove a DSM data/action adapter exists.
 
 | Route | DSM authenticated capability currently wired | Remaining for full DSM graphic MVP |
 | --- | --- | --- |
@@ -27,8 +27,8 @@ Canonical master source audited at \`0ff2fa1a3dd478e73fd48e84ff50ce2ef9c2cb99\`.
 
 ### GUI deployment and P0 delivery gates
 
-1. DSM 7 SPK remains package-user-only. Target architecture is \`armada38x\`/ARMv7 (DS218j); other NAS architectures are not supported by this package.
-2. The CLI already supports restricted-user \`xd login --server ... --password-stdin\`, local Source setup and Agent scheduling. GUI Server-address/login mutation is not implemented; it must not impersonate DSM authentication as xDrive Server authentication.
+1. DSM 7 SPK remains package-user-only. Target architecture is `armada38x`/ARMv7 (DS218j); other NAS architectures are not supported by this package.
+2. The CLI already supports restricted-user `xd login --server ... --password-stdin`, local Source setup and Agent scheduling. GUI Server-address/login mutation is not implemented; it must not impersonate DSM authentication as xDrive Server authentication.
 3. Authenticated same-origin HTTPS CGI, CSRF and Owner read projection exist. GUI Files write, Server admin role and broader Source/Task operations remain deliberately unavailable until explicitly verified Host ports are built.
 4. Optional MUI SPK build has a separate reproducible package path. No source-only/Artifact result proves published, installed or accepted.
 5. The current PR adds a read-only Server Owner quota verification inside the **existing shared Settings dialog**, with cancellation and an explicit non-HTTPS fail-closed explanation. It does not add a new auth/write route or grant remote control. CI and merged status must be checked on its exact PR HEAD.
