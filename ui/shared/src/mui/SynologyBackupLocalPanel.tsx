@@ -12,6 +12,7 @@ import { XDriveDeviceBackupLocalScheduleDialog } from './DeviceBackupLocalSchedu
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
 import { XDriveStatePanel } from './StatePanel'
 import { XDriveStatusAlert } from './StatusAlert'
+import { XDriveSynologyNASShareInventory } from './SynologyNASShareInventory'
 
 type LocalHistory = {
   loading: boolean
@@ -152,6 +153,7 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
           </Stack>
         )}
       </Box>
+      <XDriveSynologyNASShareInventory client={client} />
       {scheduleID !== null && (
         <XDriveDeviceBackupLocalScheduleDialog
           sourceID={scheduleID}
