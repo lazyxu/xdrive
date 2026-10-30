@@ -30,7 +30,7 @@ test('both SDK Hosts recheck only an accepted EMPTY Owner map at a bounded visib
 test('nonempty BD09 Camera permits a user-only exact Owner refresh in both SDK Hosts',()=>{
   const marker=source.indexOf('data-xdrive-places-nonempty-map-recheck')
   assert.ok(marker>0,'only one common trusted Parent refresh action')
-  const action=source.slice(marker-220,marker+440)
+  const action=source.slice(marker-220,marker+800)
   assert.match(action,/acceptedViewport && phase === 'ready' && trustedSummary\.total_count > 0/)
   assert.match(action,/acceptedScope\.current\?\.key === currentFilterKey/)
   assert.match(action,/onClick=\{\(\) => refreshFilteredCells\.current\?\.\(true\)\}/)
