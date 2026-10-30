@@ -14,14 +14,14 @@ test('Desktop determines verified local identity only from Agent OS enrollment a
   const main = read('desktop', 'src', 'main', 'index.cts')
   const preload = read('desktop', 'src', 'preload', 'index.cts')
   assert.ok(router.includes('GET("/devices/self", s.verifyCurrentClientDevice)'))
-  // An iOS installation may prove identity without receiving local Push
+  // An iOS/Android installation may prove identity without receiving local Push
   // authority; Source/Root execution keeps the separate stronger gate.
   assert.ok(server.includes('clientDeviceIdentityCredentialMatches(device, c.GetHeader("X-XDrive-Device-Token"))'))
   assert.ok(server.includes('device.RevokedAt'))
   assert.ok(!server.includes('if !clientDeviceCredentialMatches(device, c.GetHeader("X-XDrive-Device-Token"))'))
   const credentials = read('internal', 'api', 'client_devices.go')
   assert.match(credentials,
-    /return device\.Platform != "ios" && clientDeviceIdentityCredentialMatches\(device, raw\)/)
+    /return device\.Platform != "ios" && device\.Platform != "android" &&\s*clientDeviceIdentityCredentialMatches\(device, raw\)/)
   assert.ok(client.includes('req.Header.Set("X-XDrive-Device-ID", deviceID)'))
   assert.ok(client.includes('req.Header.Set("X-XDrive-Device-Token", deviceToken)'))
   assert.ok(agent.includes('localpush.LoadDeviceRegistration('))
