@@ -225,6 +225,8 @@ export interface XDriveSynologyBackupLocalClient extends XDriveLocalBackupCommon
   list(signal?: AbortSignal): Promise<XDriveSynologyLocalSource[]>
   /** Same-principal DSM package-user read-only NAS share roots. */
   nasShares(signal?: AbortSignal): Promise<XDriveSynologyNASShare[]>
+  /** Verify a session-scoped share with the existing owning Agent; no Root grant. */
+  preflightNASShare(selectionID: string, signal?: AbortSignal): Promise<void>
   diagnostics(signal?: AbortSignal): Promise<XDriveDiagnosticReport>
   inspect(sourceID: number, signal?: AbortSignal): Promise<XDriveLocalBackupCommonBatch>
   history(sourceID: number, signal?: AbortSignal): Promise<XDriveLocalBackupCommonBatchHistoryPage>
@@ -290,7 +292,8 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
       'device-backups', 'device-backup-runs',
       'device-backup-page', 'device-backup-folders', 'cloud-quota',
       'cloud-root', 'cloud-children', 'cloud-text-preview', 'cloud-media-range', 'cloud-thumbnail',
-       'cloud-gallery-items', 'cloud-gallery-albums', 'cloud-live-motion', 'nas-shares'].includes(operation)) {
+       'cloud-gallery-items', 'cloud-gallery-albums', 'cloud-live-motion', 'nas-shares',
+      'nas-share-preflight'].includes(operation)) {
       throw new Error('Unsupported DSM backup operation')
     }
     // DSM custom CGI is one executable URL. Extra /v1/ PATH_INFO suffixes
@@ -333,6 +336,15 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
   const canonicalDeviceID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
   const validPageLimit = (limit: number) => Number.isSafeInteger(limit) && limit >= 1 && limit <= 100
   const api: XDriveSynologyBackupLocalClient = {
+    async preflightNASShare(selectionID, signal) {
+      if (!/^[0-9a-f]{64}$/.test(selectionID)) throw new Error('Invalid DSM NAS share selection')
+      const raw = await request<unknown>('/v1/nas-share-preflight', 'POST',
+        { selection_id: selectionID }, signal)
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw) ||
+        Object.keys(raw).length !== 1 || (raw as { verified?: unknown }).verified !== true) {
+        throw new Error('Unverified DSM native NAS share preflight')
+      }
+    },
     async nasShares(signal) {
       const raw = await request<unknown>('/v1/nas-shares', 'GET', undefined, signal)
       // Keep this feature-only module out of the existing Owner-read VM

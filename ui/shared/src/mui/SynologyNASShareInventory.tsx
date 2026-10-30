@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Box, Button, Stack, Typography } from '@mui/material'
 import type { XDriveSynologyBackupLocalClient } from '../synology-backup-adapter'
 import type { XDriveSynologyNASShare } from '../synology-nas-share-inventory'
@@ -16,8 +16,17 @@ export function XDriveSynologyNASShareInventory({ client }: {
   } | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const activePreflight = useRef<AbortController | null>(null)
+  const [preflighting, setPreflighting] = useState('')
+  const [verifiedSelection, setVerifiedSelection] = useState('')
+  const [preflightFailure, setPreflightFailure] = useState('')
 
   useEffect(() => {
+    activePreflight.current?.abort()
+    activePreflight.current = null
+    setPreflighting('')
+    setVerifiedSelection('')
+    setPreflightFailure('')
     setState(null)
     setError('')
     if (!open) {
@@ -38,10 +47,33 @@ export function XDriveSynologyNASShareInventory({ client }: {
     return () => {
       current = false
       controller.abort()
+      activePreflight.current?.abort()
+      activePreflight.current = null
     }
   }, [client, open, revision])
 
   const rows = state?.owner === client ? state.rows : null
+  const verifyShare = (share: XDriveSynologyNASShare) => {
+    if (!open || !rows?.some(row => row.label === share.label &&
+      row.selection_id === share.selection_id)) return
+    activePreflight.current?.abort()
+    const controller = new AbortController()
+    activePreflight.current = controller
+    setPreflighting(share.selection_id)
+    setVerifiedSelection('')
+    setPreflightFailure('')
+    void client.preflightNASShare(share.selection_id, controller.signal).then(() => {
+      if (activePreflight.current !== controller || controller.signal.aborted) return
+      setVerifiedSelection(share.selection_id)
+    }).catch(() => {
+      if (activePreflight.current !== controller || controller.signal.aborted) return
+      setPreflightFailure('本机 Agent 未能通过目录预检；请检查权限、Server 登录或目录变化后重新读取。')
+    }).finally(() => {
+      if (activePreflight.current !== controller || controller.signal.aborted) return
+      activePreflight.current = null
+      setPreflighting('')
+    })
+  }
   return (
     <Box data-xdrive-dsm-nas-share-inventory sx={{
       border: 1, borderColor: 'divider', borderRadius: 1, p: 2,
@@ -64,6 +96,9 @@ export function XDriveSynologyNASShareInventory({ client }: {
         </Stack>
         {open && loading ? <Typography role="status">正在检查本机目录…</Typography> : null}
         {open && error ? <Typography color="error.main" role="alert">{error}</Typography> : null}
+        {open && preflightFailure ? (
+          <Typography color="error.main" role="alert">{preflightFailure}</Typography>
+        ) : null}
         {open && rows ? (
           rows.length === 0 ? (
             <Typography color="text.secondary" role="status">
@@ -72,7 +107,18 @@ export function XDriveSynologyNASShareInventory({ client }: {
           ) : (
             <Stack spacing={0.5} data-xdrive-dsm-nas-share-results>
               {rows.map(share => (
-                <Typography key={share.label} variant="body2">{share.label}</Typography>
+                <Stack key={share.label} direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap">
+                  <Typography variant="body2">{share.label}</Typography>
+                  <Button size="small" variant="outlined" disabled={Boolean(preflighting) || loading}
+                    onClick={() => verifyShare(share)}>
+                    {preflighting === share.selection_id ? '正在预检…' : '验证备份权限'}
+                  </Button>
+                  {verifiedSelection === share.selection_id ? (
+                    <Typography variant="caption" role="status" color="success.main">
+                      本机 Agent 已通过预检；尚未创建或绑定备份来源。
+                    </Typography>
+                  ) : null}
+                </Stack>
               ))}
             </Stack>
           )

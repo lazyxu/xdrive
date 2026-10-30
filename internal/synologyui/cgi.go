@@ -33,7 +33,7 @@ func CGIHandler(next http.Handler) http.Handler {
 			"device-backup-page", "device-backup-folders", "cloud-quota",
 			"cloud-root", "cloud-children", "cloud-text-preview", "cloud-media-range",
 			"cloud-media-stream", "cloud-thumbnail", "cloud-gallery-items", "cloud-gallery-albums",
-			"cloud-live-motion", "nas-shares":
+			"cloud-live-motion", "nas-shares", "nas-share-preflight":
 		default:
 			http.Error(w, "unknown CGI operation", http.StatusNotFound)
 			return

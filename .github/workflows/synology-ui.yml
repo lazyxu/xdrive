@@ -37,6 +37,9 @@ on:
       - 'ui/shared/src/synology-nas-share-inventory.ts'
       - 'ui/shared/src/mui/SynologyNASShareInventory.tsx'
       - 'web/scripts/test-synology-nas-shares.mjs'
+      - 'internal/synologyui/nas_share_preflight.go'
+      - 'internal/synologyui/nas_share_preflight_test.go'
+      - 'web/scripts/test-synology-nas-preflight.mjs'
       - 'web/scripts/test-synology-media-preview.mjs'
       - 'ui/shared/src/synology-owner-download.ts'
       - 'web/scripts/test-synology-owner-download.mjs'
@@ -152,6 +155,9 @@ on:
       - 'ui/shared/src/synology-nas-share-inventory.ts'
       - 'ui/shared/src/mui/SynologyNASShareInventory.tsx'
       - 'web/scripts/test-synology-nas-shares.mjs'
+      - 'internal/synologyui/nas_share_preflight.go'
+      - 'internal/synologyui/nas_share_preflight_test.go'
+      - 'web/scripts/test-synology-nas-preflight.mjs'
       - 'web/scripts/test-synology-media-preview.mjs'
       - 'ui/shared/src/synology-owner-download.ts'
       - 'web/scripts/test-synology-owner-download.mjs'
@@ -283,6 +289,7 @@ jobs:
           node web/scripts/test-synology-owner-thumbnail.mjs
           node web/scripts/test-synology-media-stream.mjs
           node web/scripts/test-synology-nas-shares.mjs
+          node web/scripts/test-synology-nas-preflight.mjs
           npm run build:synology --prefix web
       - name: Verify static artifacts remain relative to DSM launcher
         run: |

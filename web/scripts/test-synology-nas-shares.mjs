@@ -41,8 +41,11 @@ assert.match(adapter, /xDriveValidateSynologyNASShareInventory/)
 assert.match(browser, /client\.nasShares\(controller\.signal\)/)
 assert.match(browser, /controller\.abort\(\)/)
 assert.match(browser, /share\.label/)
-assert.doesNotMatch(browser, /selection_id|AuthorizeLocalRoot|createLocalBackupSource|fetch\(/,
-  'read-only UI must never render selection token or grant a local Root')
+assert.match(browser, /client\.preflightNASShare\(share\.selection_id, controller\.signal\)/)
+assert.doesNotMatch(browser, /\{share\.selection_id\}\s*</,
+  'opaque share IDs must not be visibly rendered')
+assert.doesNotMatch(browser, /AuthorizeLocalRoot|createLocalBackupSource|fetch\(/,
+  'native preflight must not grant Root authority')
 assert.match(panel, /<XDriveSynologyNASShareInventory client=\{client\}/)
 assert.match(cgi, /"nas-shares"/)
 assert.match(gateway, /r\.URL\.Path == "\/v1\/nas-shares"/)
