@@ -15,14 +15,14 @@ import (
 
 type fakeNASSourceCreator struct {
 	*fakeServerLoginAgent
-	preflights int
-	creates    int
-	binds      int
-	failBind          bool
-	failCreate        bool
-	changeOwnerOnBind bool
-	ownerName         string
-	wantPath   string
+	preflights         int
+	creates            int
+	binds              int
+	failBind           bool
+	failCreate         bool
+	changeOwnerOnBind  bool
+	ownerName          string
+	wantPath           string
 }
 
 func (f *fakeNASSourceCreator) ServerConnection(context.Context) (localbackupipc.ServerConnection, error) {
@@ -153,7 +153,7 @@ func TestDSMSourceCreateRejectsUnverifiedOrForgedIntentBeforeMutation(t *testing
 	csrfToken := getCSRF(t, g)
 	p := DSMCGIPath + "?op=nas-share-create"
 	body := sourceCreateBody(selection, scope, true)
-	for _, tc := range []struct{ name, method, request, origin, token, path string }{
+	for _, tc := range []struct { name, method, request, origin, token, path string }{
 		{"invalid owner scope", "POST", sourceCreateBody(selection, strings.Repeat("f", 64), true), "https://nas.example:5001", csrfToken, p},
 		{"invalid share identity", "POST", sourceCreateBody(strings.Repeat("0", 64), scope, true), "https://nas.example:5001", csrfToken, p},
 		{"no explicit consent", "POST", sourceCreateBody(selection, scope, false), "https://nas.example:5001", csrfToken, p},
