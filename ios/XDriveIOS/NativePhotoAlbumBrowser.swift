@@ -415,7 +415,19 @@ struct XDriveIOSNativePhotoAlbumsScreen: View {
         .onChange(of: phase) { state in
             if state == .active { reload() } else { invalidate() }
         }
-        .onDisappear { libraryMonitor.stop(); invalidate() }
+        .onDisappear {
+            libraryMonitor.stop()
+            suspendForNavigation()
+        }
+    }
+
+    private func suspendForNavigation() {
+        // A pushed album detail still depends on its parent NavigationLink.
+        // Cancel the old read without dropping the original album row.
+        epoch = UUID()
+        task?.cancel()
+        task = nil
+        loading = false
     }
 
     private func reload() {
