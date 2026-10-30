@@ -155,6 +155,16 @@ jobs:
             desktop/tests/ios-native-photo-zoom-viewer.cjs \
             desktop/tests/ios-native-photo-viewer-return.cjs
 
+      - name: Verify scoped native iOS navigation route snapshots
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeNavigationRouteStore.swift \
+            ios/tests/NativeNavigationRouteStoreChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-navigation-route-check"
+          "$RUNNER_TEMP/xdrive-ios-navigation-route-check"
+          node --test desktop/tests/ios-native-route-resume-wiring.cjs
+
       - name: Prepare native brand and home screen icon
         run: bash ios/scripts/prepare-assets.sh
 

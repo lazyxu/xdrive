@@ -1,3 +1,4 @@
+import CryptoKit
 import Photos
 import SwiftUI
 
@@ -106,10 +107,20 @@ struct XDriveIOSNativePhotosDashboard: View {
     @State private var recentDynamic: [XDriveIOSNativeDynamicFeature] = []
     @State private var launcherQuery = ""
     @State private var showRecentPicker = false
+    @State private var routeRestoreScopeKey: String?
+    private let navigationRouteStore = XDriveIOSNativeNavigationRouteStore()
 
     private var ownerScopeKey: String {
         guard let owner = login.owner else { return "signed-out" }
         return "\(owner.origin.absoluteString)|\(owner.instanceID)|\(owner.ownerID)|\(owner.rootNodeID)"
+    }
+
+    // Only a non-secret SHA-256 scope identifier is written with route hints.
+    // Credentials, PhotoKit identifiers and signed media URLs never enter it.
+    private var navigationScopeHash: String? {
+        guard login.owner != nil else { return nil }
+        return SHA256.hash(data: Data(ownerScopeKey.utf8))
+            .map { String(format: "%02x", $0) }.joined()
     }
 
     var body: some View {
@@ -188,20 +199,30 @@ struct XDriveIOSNativePhotosDashboard: View {
                 }
             }
         }
-        .onAppear { backup.refresh(owner: login.owner) }
+        .onAppear {
+            restoreNavigationIfNeeded()
+            backup.refresh(owner: login.owner)
+        }
         .onChange(of: ownerScopeKey) { _ in
-            // The tab subtree's .id resets its views, but @State belongs to
-            // this parent. Clear dynamic recents, selected sources, launcher
-            // search and pending picker on *every* Owner/Root/Server change.
-            // Do not touch the app-root durable photo backup runner.
+            // TabView .id does not reset this parent's @State. Revoke the old
+            // Owner's saved UI route even if switching A -> B -> A in one scene.
+            routeRestoreScopeKey = nil
+            navigationRouteStore.clear()
             resetNavigation()
+            if login.owner != nil { routeRestoreScopeKey = ownerScopeKey }
+            // The app-root durable original/receipt runner is never touched.
         }
         .onChange(of: login.owner) { owner in
             if owner == nil {
+                navigationRouteStore.clear()
                 resetNavigation()
                 dismiss()
             }
         }
+        .onChange(of: tab) { _ in saveNavigationIfReady() }
+        .onChange(of: gallerySource) { _ in saveNavigationIfReady() }
+        .onChange(of: dynamicFeature) { _ in saveNavigationIfReady() }
+        .onChange(of: recentDynamic) { _ in saveNavigationIfReady() }
     }
 
     private var gallery: some View {
@@ -425,6 +446,37 @@ struct XDriveIOSNativePhotosDashboard: View {
         recentDynamic.insert(feature, at: 0)
         if recentDynamic.count > 6 { recentDynamic.removeLast() }
         tab = .dynamic
+    }
+
+    private func restoreNavigationIfNeeded() {
+        guard login.owner != nil, routeRestoreScopeKey != ownerScopeKey else { return }
+        routeRestoreScopeKey = ownerScopeKey
+        guard let scopeHash = navigationScopeHash,
+              let snapshot = navigationRouteStore.restore(scopeHash: scopeHash)
+        else { return }
+
+        // Only known, implemented routes are restored. Child PhotoKit pages
+        // re-query their own permission and Owner-signed Server data.
+        gallerySource = XDriveIOSNativeGallerySource(rawValue: snapshot.gallerySource) ?? .local
+        dynamicFeature = snapshot.activeDynamic.flatMap {
+            XDriveIOSNativeDynamicFeature(rawValue: $0)
+        }
+        recentDynamic = snapshot.recentDynamic.compactMap {
+            XDriveIOSNativeDynamicFeature(rawValue: $0)
+        }
+        tab = XDriveIOSNativeBottomTab(rawValue: snapshot.selectedTab) ?? .gallery
+    }
+
+    private func saveNavigationIfReady() {
+        guard login.owner != nil, routeRestoreScopeKey == ownerScopeKey,
+              let scopeHash = navigationScopeHash else { return }
+        navigationRouteStore.save(
+            scopeHash: scopeHash,
+            selectedTab: tab.rawValue,
+            gallerySource: gallerySource.rawValue,
+            activeDynamic: dynamicFeature?.implemented == true ? dynamicFeature?.rawValue : nil,
+            recentDynamic: recentDynamic.filter { $0.implemented }.map { $0.rawValue }
+        )
     }
 
     private func resetNavigation() {
