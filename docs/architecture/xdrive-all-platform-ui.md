@@ -1,6 +1,31 @@
 # xDrive all-platform UI architecture and capability boundaries
 
-**Decision (2026-10-29): One product, one React workspace for browser-based Hosts, explicit native feature modules.** This document extends [the Desktop/DSM Host migration](./xdrive-shared-app-host.md). It is a migration contract, **not** a claim that all clients already mount one application or that unverified native features work.
+## Active 2026-10-30 mobile decision (supersedes older iOS UI policy)
+
+**Native product UI for BOTH mobile Apps:** iOS must implement Server
+selection, Login, Files, Gallery/local PhotoKit, Map, Viewer, Settings,
+Transfers and photo backup using SwiftUI/UIKit. Android uses Kotlin/Jetpack
+Compose with its existing native UI and SDK. **Neither App embeds Web/PWA
+React as its product UI target.** Web/Mobile Web/PWA keeps React/MUI;
+Desktop and DSM continue their separate one-`XDriveApp` React agreement.
+
+Share authenticated xDrive Server API/DTO/Owner/Device/Root/Node/PhotoAsset,
+UploadSession/CAS receipt semantics, theme/design tokens and interaction
+acceptance; do **not** reuse JSX or Web Cookies for installed mobile Apps.
+**As built:** iOS still launches the PWA in `XDriveWebAppHome.swift`
+WKWebView; this is a transition/runtime fallback only, not a finished native
+client. Its native PhotoKit/Keychain/encrypted ledger, still/video/Live upload
+and BG grant core must not be deleted/reimplemented before tested migration.
+Android already is native Compose, not a WebView.
+
+Binding target and recovery gates: [mobile-native-migration.md](./mobile-native-migration.md).
+**All older iOS "do not create SwiftUI/Login/Gallery pages" directions, and
+older diagrams below treating WKWebView as the final architecture, are
+historical and superseded.** Browser/Desktop/DSM implementation records
+below remain accurate as historical as-built checkpoints; no code or
+feature parity is delivered by this documentation decision.
+
+**Earlier browser-host decision (2026-10-29; superseded for iOS product UI only): One product, one React workspace for browser-based Hosts, explicit native feature modules.** This document extends [the Desktop/DSM Host migration](./xdrive-shared-app-host.md). It is a migration contract, **not** a claim that all clients already mount one application or that unverified native features work.
 
 ## Implementation status in master (source checked 2026-10-29)
 
@@ -16,7 +41,7 @@ physical-device acceptance result are different states.
 | Browser Web / Mobile Web / PWA | `web/src/main.tsx` mounts `web/src/App.tsx`; it uses shared `XDriveWorkspaceFrame`, `WorkspaceSidebar`, Files, Gallery and Viewer | **Web still has its own top-level app controller; it does NOT yet mount `XDriveApp`.** Preserve hash deep links, Service Worker/offline, current Owner and viewer-return state when migrating. |
 | Browser route adaptation | `ui/shared/src/web-workspace-route.ts` maps Web route IDs to the canonical Workspace route registry | Page keys converge while Viewer/browser-only hashes and task scope remain independent and explicit. |
 | Files domain | Shared `file-explorer-controller.ts`, `file-explorer-selection-admission.ts`, `file-explorer-host-availability.ts`, `file-explorer-read-identity.ts`, `file-explorer-preview-request.ts` | Bounded read plans/selection/preview semantics share code; Web and Desktop full stateful controller components are still separate. |
-| iOS application | `ios/XDriveIOS/XDriveWebAppHome.swift` hosts the same Web/PWA UI in `WKWebView` with a dedicated PhotoKit bridge | No second native Login/Files/Gallery UI. Do not infer always-on background backup or full Live original recovery from the existence of a settings control or a draft PR. |
+| iOS application (current transitional) | `ios/XDriveIOS/XDriveWebAppHome.swift` still hosts Web/PWA in WKWebView with native PhotoKit bridge | Target is native SwiftUI/UIKit ALL product screens; preserve current native backup/ledger while migrating. Do not infer always-on background or full Live playback. |
 | Android application | `android/app/src/main/java/com/tfluid/xdrive/MainActivity.kt` uses Kotlin/Jetpack Compose; `android/scripts/shared-ui.mjs` derives visual assets | Native app uses the same Server/domain contract, not React JSX or a WebView replica. Functional and physical UI parity remains a measured target, not a completed migration. |
 
 ### One product with real Host-owned native capabilities
@@ -52,7 +77,7 @@ become fully migrated merely by importing shared MUI sidebar components.
 | --- | --- | --- | --- |
 | PC Web and Mobile Web | React/MUI responsive browser app | `web/src/App.tsx`, `WebFileExplorer.tsx`, `MobileFiles.tsx`, shared MUI Gallery/Viewer | Still a Web-specific top-level app; migrate its route/controller composition into `XDriveApp` without losing Hash deep-links |
 | Browser PWA | The same Web/Compact React app | Web + `web/src/pwaRuntime.ts` and Service Worker | Keep its offline, install, update, cross-window Owner and upload safety behavior |
-| iOS Web IPA | SwiftUI shell hosting origin-locked WKWebView | `ios/XDriveIOS/XDriveWebAppHome.swift` + live Web UI | Native PhotoKit interface and a secure Web/native Host bridge; do not create a second Files/Gallery in SwiftUI |
+| iOS IPA (transitional) | SwiftUI shell currently hosting WKWebView | `ios/XDriveIOS/XDriveWebAppHome.swift` + native PhotoKit/ledger core | Implement full native SwiftUI/UIKit Login/Files/Gallery/Viewer/Settings and migrate verified native auth; WKWebView only as temporary as-built fallback |
 | Electron Desktop | React/MUI + preload/Agent | `ui/shared/src/mui/XDriveApp.tsx` and `desktop/src/renderer/App.tsx` | Full Desktop Files controller is still large; keep native actions in the owning Host |
 | Synology DSM | Shared React app + authenticated CGI/owning Agent | `web/src/synology.tsx`, `synologyHost.ts`, `XDriveApp` | Fill *real* Owner-authorized domain ports; missing native actions must stay unavailable |
 | Android APK | Kotlin/Jetpack Compose native (not a WebView) | `android/app/src/main/java/com/tfluid/xdrive/` | Native UI parity by generated tokens, behavior/API contracts and screenshot tests; independent native SDK bridges |
@@ -185,9 +210,9 @@ claim.
 ## Ownership layers
 
 1. **Product contracts:** API schemas, Owner/Root semantics, page/navigation IDs, media and upload receipt identity, UI tokens/gesture/accessibility contracts. React and native UI must agree.
-2. **Shared React domain/controllers:** Files, Gallery/Map/Viewer, tasks, device backups, settings, Storage. Do not fork business state by Host; Wide/Compact is a viewport presentation, not a separate privileged product.
+2. **Shared React domain/controllers for browser Hosts only:** Files, Gallery/Map/Viewer, tasks, device backups, settings, Storage for Web/PWA/Desktop/DSM. iOS and Android implement their own native screens against equivalent Server contracts.
 3. **Platform feature modules:** LocalBackup (ordinary local Folder Push), VirtualDrive (CfAPI/FUSE mount), NAS Package/Photos Push, NativePhotoBackup (PhotoKit/MediaStore), Offline PWA, Desktop lifecycle. Features can share UI but only their owning platform implements privileged operations.
-4. **Host adapters:** Browser HTTP, PWA runtime, Electron preload/Agent IPC, DSM authenticated CGI, WKWebView Native Bridge, Android native SDK. Ports must be typed and allowlisted, not generic Agent RPC. Existence of a UI route is not evidence an operation is available.
+4. **Client/Host adapters:** Browser HTTP/PWA runtime, Electron preload/Agent IPC, DSM authenticated CGI, iOS native HTTPS/PhotoKit (current WKWebView bridge transitional), Android native SDK. Typed and allowlisted; UI routes do not grant server authority.
 5. **Server/Agent authority:** Every write validates current Owner/Root/device credential/revision. UI gating is defense-in-depth only; never forward secrets, raw local absolute paths or foreign device controls through Web page props.
 
 ## Non-negotiable Desktop distinction
@@ -206,7 +231,7 @@ Other exclusive modules: DSM suite status and authenticated NAS Push; iOS PhotoK
 2. Web Wide/Compact **and Desktop** now use `xDriveFileExplorerSelectionAdmissionReason` and `xDriveFileExplorerSelectionRequest` for current-selection/revision checks and 200-mutation/500-tag limits. Browser download selection is additionally capped at 1000; Desktop retains its own authenticated Agent archive/folder 1000-item capabilities. Both Hosts share the pure `xDriveFileExplorerProjectSearchSources`, `xDriveFileExplorerReadNodeID` and `xDriveFileExplorerPreviewRequest` without moving platform IO into domain policy.
 3. Bounded Host availability reads and the canonical Desktop/DSM navigation have already merged. **Next:** extract remaining `DesktopFileExplorer`/`WebFileExplorer` stateful lifecycle into common Host-neutral hooks, retaining `DesktopFileExplorerHostPort` for Electron read/media/write/native methods. The DSM Owner CGI bridge remains strictly Owner scoped and may have fewer mutating capabilities.
 4. Migrate the existing Web top-level workspace to the shared `XDriveApp` outlet only after its Browser routes, Hash deep-links, PWA disposal, native bridge and Viewer return anchors are maintained. Do not instantiate a second `XDriveApp` on top of the old Web app.
-5. Android native Compose and iOS native SDK views continue matching the same interaction specs, not reimplementing an entire React page tree.
+5. Android native Compose and iOS SwiftUI/UIKit match verified interaction/API specs by implementing their own native screen trees, never embedding React product pages.
 
 ## Acceptance and concurrent PR policy
 

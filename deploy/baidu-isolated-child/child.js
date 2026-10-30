@@ -55,6 +55,7 @@
   let script = null, pending = false, disposed = false, sessionFailed = false, labelBindings = []
   let initialOverviewPending = true
   let viewportTimer = null, gestureFrame = null
+  let missingSDKEndTimer = null, missingSDKEndEpoch = 0, awaitingSDKEnd = false
   // The Child observes ONLY genuine local mouse pointer lifecycle; no
   // Owner/Photo scope or mouse coordinates enter the Parent protocol.
   let heldMousePointer = null, viewportAfterMouseRelease = false
@@ -202,6 +203,8 @@
   // Coalesce SDK moveend + zoomend and repeated native settle events. The
   // Parent still cancels its current Owner query immediately at gesture START.
   const scheduleViewport = () => {
+    awaitingSDKEnd = false
+    clearMissingSDKEnd()
     projectGesture()
     if (viewportTimer !== null) clearTimeout(viewportTimer)
     viewportTimer = null
@@ -220,6 +223,31 @@
       if (!disposed && active) emitViewport()
     }, 500)
   }
+  // Same as the inline Host: a missing SDK moveend/zoomend can otherwise
+  // leave a photo visible but permanently disabled. This watchdog only emits
+  // a fresh anonymous BD09 viewport; the Parent must reauthorize its Owner
+  // /cells before the image becomes a clickable current Cell.
+  const clearMissingSDKEnd = () => {
+    missingSDKEndEpoch++
+    if (missingSDKEndTimer !== null) clearTimeout(missingSDKEndTimer)
+    missingSDKEndTimer = null
+  }
+  const armMissingSDKEnd = () => {
+    if (!awaitingSDKEnd || heldMousePointer !== null ||
+        heldTouchPointers.size > 0) return
+    clearMissingSDKEnd()
+    const epoch = missingSDKEndEpoch
+    missingSDKEndTimer = setTimeout(() => {
+      missingSDKEndTimer = null
+      if (epoch !== missingSDKEndEpoch || !awaitingSDKEnd ||
+          disposed || !active || !map) return
+      if (heldMousePointer !== null || heldTouchPointers.size > 0) {
+        viewportAfterMouseRelease = true
+        return
+      }
+      scheduleViewport()
+    }, 900)
+  }
   const stopViewport = () => {
     if (heldMousePointer !== null || heldTouchPointers.size > 0)
       viewportAfterMouseRelease = true
@@ -231,6 +259,12 @@
     clearLabels()
     send('cancel')
     projectGesture()
+    awaitingSDKEnd = true
+    armMissingSDKEnd()
+  }
+  const onSDKMoving = () => {
+    projectGesture()
+    if (awaitingSDKEnd) armMissingSDKEnd()
   }
   // A resize (including a mobile rotation or container-width change)
   // invalidates earlier camera pixels and their Owner Cell keys just like
@@ -368,8 +402,8 @@
     fitInitialOverview()
     map.addEventListener('movestart', stopViewport)
     map.addEventListener('zoomstart', stopViewport)
-    map.addEventListener('moving', projectGesture)
-    map.addEventListener('zooming', projectGesture)
+    map.addEventListener('moving', onSDKMoving)
+    map.addEventListener('zooming', onSDKMoving)
     map.addEventListener('moveend', scheduleViewport)
     map.addEventListener('zoomend', scheduleViewport)
     bindMousePointer()
@@ -436,6 +470,8 @@
       if (!sessionFailed && !disposed) {
         sessionFailed=true
         releaseCanvasSize()
+        clearMissingSDKEnd()
+        awaitingSDKEnd = false
         clearLabels()
         allowedKeys.clear()
         coveredKeys.clear()
@@ -471,7 +507,11 @@
         longitude:cell.longitude,count:cell.count}))
       // An EMPTY replacement revokes current media permissions but leaves
       // a cosmetic geometry-only pan projection until fresh /cells arrives.
-      if (data.cells.length>0)clearGesture()
+      if (data.cells.length>0) {
+        clearMissingSDKEnd()
+        awaitingSDKEnd = false
+        clearGesture()
+      }
       allowedKeys=next
       coveredKeys.clear()
       resizeRevoked=false
@@ -517,6 +557,8 @@
   }
   const dispose=()=>{
     clearGesture()
+    clearMissingSDKEnd()
+    awaitingSDKEnd = false
     releaseMousePointer()
     releaseCanvasSize()
     if (viewportTimer !== null) clearTimeout(viewportTimer)

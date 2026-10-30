@@ -109,6 +109,9 @@ export function xDriveMountBaiduInlineMap<T>(
   let gestureFrame: number | null = null
   let coveredSelections = new Set<T>()
   let pendingViewport: ReturnType<typeof setTimeout> | null = null
+  let missingSDKEndTimer: ReturnType<typeof setTimeout> | null = null
+  let missingSDKEndEpoch = 0
+  let awaitingSDKEnd = false
   // A real mouse-down pan may produce an early SDK moveend before pointerup.
   // Never issue the next Owner /cells while the same primary mouse is held.
   // Gesture-only photo pixels remain inert; Owner scope changes still clear them.
@@ -265,6 +268,8 @@ export function xDriveMountBaiduInlineMap<T>(
     } catch { /* Never echo third-party errors or arbitrary coordinates. */ }
   }
   const scheduleViewport = () => {
+    awaitingSDKEnd = false
+    clearMissingSDKEnd()
     projectGesture()
     clearTimer()
     if (heldMousePointer !== null || heldTouchPointers.size > 0) {
@@ -282,11 +287,43 @@ export function xDriveMountBaiduInlineMap<T>(
       emitViewport()
     }, 500)
   }
+  // Some JSAPI builds emit movestart/zoomstart but never an ending event,
+  // notably after programmatic camera motion. Keep the old photograph INERT
+  // and reauthorize a fresh Owner Camera after the SDK has been quiet. Never
+  // use this timeout to click the old signed Cell or reuse a previous Range.
+  const clearMissingSDKEnd = () => {
+    missingSDKEndEpoch++
+    if (missingSDKEndTimer !== null) clearTimeout(missingSDKEndTimer)
+    missingSDKEndTimer = null
+  }
+  const armMissingSDKEnd = () => {
+    if (!awaitingSDKEnd || heldMousePointer !== null ||
+        heldTouchPointers.size > 0) return
+    clearMissingSDKEnd()
+    const epoch = missingSDKEndEpoch
+    missingSDKEndTimer = setTimeout(() => {
+      missingSDKEndTimer = null
+      if (epoch !== missingSDKEndEpoch || !awaitingSDKEnd ||
+          !alive || !ready || !map) return
+      if (heldMousePointer !== null || heldTouchPointers.size > 0) {
+        viewportAfterMouseRelease = true
+        return
+      }
+      // Reuse the existing 500ms Camera debounce and Owner/PhotoScope gates.
+      scheduleViewport()
+    }, 900)
+  }
   const stopViewport = () => {
     if (!alive || !ready) return
     if (heldMousePointer !== null || heldTouchPointers.size > 0)
       viewportAfterMouseRelease = true
     invalidate()
+    awaitingSDKEnd = true
+    armMissingSDKEnd()
+  }
+  const onSDKMoving = () => {
+    projectGesture()
+    if (awaitingSDKEnd) armMissingSDKEnd()
   }
   const onMousePointerDown = (event: PointerEvent) => {
     if (!alive || !ready || !event.isTrusted || event.button !== 0) return
@@ -399,8 +436,8 @@ export function xDriveMountBaiduInlineMap<T>(
   const listeners: Array<{event:EventName; callback:()=>void}> = [
     {event:'movestart',callback:stopViewport},
     {event:'zoomstart',callback:stopViewport},
-    {event:'moving',callback:projectGesture},
-    {event:'zooming',callback:projectGesture},
+    {event:'moving',callback:onSDKMoving},
+    {event:'zooming',callback:onSDKMoving},
     {event:'moveend',callback:scheduleViewport},
     {event:'zoomend',callback:scheduleViewport},
   ]
@@ -410,6 +447,8 @@ export function xDriveMountBaiduInlineMap<T>(
     lifetime.abort()
     generation++
     clearTimer()
+    clearMissingSDKEnd()
+    awaitingSDKEnd = false
     heldMousePointer = null
     heldTouchPointers.clear()
     pointerOrigins.clear()
@@ -527,7 +566,11 @@ export function xDriveMountBaiduInlineMap<T>(
       }
       generation++
       cells = [...next]
-      if (next.length>0)clearGesture()
+      if (next.length>0) {
+        awaitingSDKEnd = false
+        clearMissingSDKEnd()
+        clearGesture()
+      }
       coveredSelections.clear()
       resizeRevoked = false
       return renderCells()

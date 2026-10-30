@@ -14,7 +14,7 @@ assert.ok(start > 0 && end > start, 'shared production Gallery video poster sour
 // Extract the real bounded poster queue + React component; provide only the
 // external transport as a deterministic stub, never replace the Owner gate.
 const selected = [
-  "import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'",
+  "import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'",
   "import { Box, XDriveMediaLoadingProgress } from './fixture'",
   "type ReactNode = any; type MediaThumbnailLoader = any",
   "type MediaPreviewURLLoader = any; type MediaVideoPosterSaver = any",

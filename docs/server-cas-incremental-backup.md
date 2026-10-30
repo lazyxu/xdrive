@@ -162,8 +162,13 @@ The JSON report distinguishes:
   zero. A mismatched component sum is visibly flagged. This remains a
   historical, read-only estimate rather than actual physical reclaim evidence.
 
-Every committed snapshot's exact v2 file set and SHA256SUMS are verified,
-alongside `objects.index` syntax, cross-generation CAS sizes and the existence
+Every committed snapshot's exact v2 file set and SHA256SUMS are verified.
+Retention planning and destructive pruning also require an unambiguous,
+bounded v2 Manifest: unique JSON keys at every nesting level, exact numeric
+`format_version=2`, `file_data_included=true` and
+`consistency_verified=true` ([PR #3256](https://github.com/lazyxu/xdrive/pull/3256)).
+A matching checksum alone cannot make an inconsistent recovery point safe.
+Validation also covers `objects.index` syntax, cross-generation CAS sizes and the existence
 and size of indexed repository objects. Any `.partial` generation, malformed
 or symlinked path, unexpected object, missing CAS reference, checksum failure,
 or unknown snapshot blocks the *entire* report. Running this scan hashes
@@ -285,8 +290,9 @@ command, refuses symlinks and live `/data` overlap, and invokes the bundled
 helper with `--network none`, a strictly **read-only** backup bind mount and
 no `--yes`. Deep preview holds a shared lock on the existing writer lock
 inode for its full read. The actual delete separately owns its exclusive
-lock and rechecks every byte. There remains **no authenticated Admin UI
-entry or browser-provided Host directory**.
+lock and rechecks every byte. The internal helper cannot accept a browser-provided Host directory or
+independently authorize an Admin action. Authenticated, fixed-shape Admin
+preview/deletion actions are described separately below.
 
 This is a fixed, **read-only** candidate calculation. The report explicitly
 names the selected generation, the number of remaining recoverable generations,
@@ -315,11 +321,12 @@ Invalid names, symlink aliases, missing generations and unexpected arguments
 are rejected before Docker starts. The lower-level helper independently
 revalidates safety under its exclusive lease.
 
-**Scope:** no automatic v2 GC, no scheduling, no browser-controlled Host path
-or shell command, and no production data deletion. The authenticated Admin preview and specifically confirmed selected-deletion
-paths are implemented in this **Draft PR**, but remain **unmerged and not
-production-validated** until their source/CI gates pass.
-Production physical acceptance remains **跳过（未验收）**.
+**Scope:** no automatic v2 GC, scheduled snapshot deletion, arbitrary
+browser-controlled Host path or shell command. Authenticated, read-only
+selected-v2 previews and explicitly confirmed selected deletion were merged
+in [PR #2932](https://github.com/lazyxu/xdrive/pull/2932); they are never
+triggered automatically. A merged source and passing CI do not establish
+production-host recovery or deletion acceptance (**跳过（未验收）**).
 
 ## Administrator Web / Desktop shared interface (Host-owned Server backups)
 
@@ -334,15 +341,18 @@ separate from owning-device Push backups and from online CAS storage checks.
   v2 retention previews. The Host counts all canonical generations while
   publishing full metadata only for the newest 100. The administrator sees
   the exact bounded count and whether older generations are omitted from
-  this view. A separate read-only pager exposes Host-indexed identities
-  #101–#1000; these can request individual fast/deep **verification only**.
+  this view. A separate read-only pager exposes older Host-indexed
+  identities: #101–#1000 under legacy index v1 and up to #10000 under index
+  v2. Those IDs can request fast/deep **verification only**.
   The Server validates the fresh Host index against the current inventory
   and policy revision, and the Host independently resolves and verifies the
   actual snapshot under its own operation locks. Older identities **never**
   grant restore, deletion or isolated drill authority; those still require
   a current fully described snapshot in the newest-100 inventory. The index
-  can be truncated at 1000, so undiscovered generations stay unavailable.
-  Batch verification has an independent 1000-generation safety bound.
+  is capped at 1,000 (legacy index v1) or 10,000 (index v2), with honest
+  truncation when additional generations exist. Batch verification has a
+  separate 1,000-generation safety bound; the larger read-only index does
+  not expand destructive authorization or batch verification.
   No browser-supplied Host path is accepted.
 - **Repository exploration**: the authenticated Host reports separate canonical
   counts for traditional v1, default v2 and configured v2. The administrator
@@ -358,9 +368,9 @@ separate from owning-device Push backups and from online CAS storage checks.
   retained; changing to v2 does not enable scheduled pruning.
 - **Delete**: separate explicitly confirmed v1 snapshot deletion with a
   restricted file allowlist. Existing merged v2 management supports manual
-  reference-aware `backup prune --keep-last N --yes`; this Draft additionally
-  implements exact selected-generation deletion. For precise v2 deletion, the
-  Admin UI requires a current selected-snapshot
+  reference-aware `backup prune --keep-last N --yes`; the merged
+  selected-v2 operation also permits exact selected-generation deletion.
+  For precise v2 deletion, the Admin UI requires a current selected-snapshot
   **deep** read-only preview and an exact typed `DELETE <snapshot_id>` confirmation.
   Host Control independently authenticates the most recent deep-preview request,
   holds upgrade/schedule/backup operation fences, and runs the separate Host-only
@@ -410,7 +420,7 @@ Desktop uses the same MUI panel via fixed Agent IPC methods with an independent 
 If the Host Control runner or current inventory is unavailable, the UI
 is disabled rather than pretending the operation succeeded.
 
-Host Control now persists the latest 30 terminal administrator backup outcomes
+Host Control now persists the latest 100 terminal administrator backup outcomes
 in a bounded private JSON history file. Shared Web/Desktop UI shows these
 executed results plus a per-snapshot *last verification (historical)* receipt.
 This is not a claim that previously verified bytes remain valid: any actual
@@ -425,7 +435,7 @@ Other actions retain indeterminate progress until native evidence exists.
 Final Host terminal receipts remain authoritative.
 
 The shared administrator panel also provides an **integrity overview** based
-only on Host-discovered generations and the most recent (up to 30) operation
+only on Host-discovered generations and the most recent (up to 100) operation
 receipts. It separates structurally complete file+database restore candidates,
 database-only, incomplete, inconsistent, previous verify success/failure and
 absent recent verify receipts. A failed historical check is a warning; a

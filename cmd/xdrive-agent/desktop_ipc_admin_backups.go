@@ -31,6 +31,9 @@ func validDesktopAdminServerBackupRequest(in client.AdminServerBackupRequest) bo
 	if in.SnapshotID != "" && !desktopBackupSnapshotID.MatchString(in.SnapshotID) {
 		return false
 	}
+	if in.Action != "schedule" && in.Preset != "" {
+		return false
+	}
 	if in.Action != "delete_selected" && in.PreviewRequestID != "" {
 		return false
 	}
@@ -77,6 +80,10 @@ func validDesktopAdminServerBackupRequest(in client.AdminServerBackupRequest) bo
 		return in.SnapshotID == "" && in.KeepLast >= 1 && in.KeepLast <= 1000 &&
 			in.Confirmation == fmt.Sprintf("PRUNE %d", in.KeepLast) &&
 			in.Format == "" && in.Mode == "" && in.RetentionDays == 0 && in.Revision == ""
+	case "schedule":
+		return (in.Preset == "daily" || in.Preset == "weekly" || in.Preset == "disabled") &&
+			in.Confirmation == "SCHEDULE "+in.Preset && desktopBackupRevision.MatchString(in.Revision) &&
+			in.SnapshotID == "" && in.Format == "" && in.Mode == "" && in.KeepLast == 0 && in.RetentionDays == 0
 	case "policy":
 		return (in.Format == "v1" || in.Format == "v2") && in.RetentionDays >= 0 &&
 			in.RetentionDays <= 3650 && desktopBackupRevision.MatchString(in.Revision) &&

@@ -2624,6 +2624,17 @@ export default function App({
     platform: 'desktop',
     adminRoleVerified: status?.role === 'admin',
     services: {
+      workspaceAlerts: {
+        lastError: status?.last_error,
+        paused: status?.paused,
+        hasConflicts: status?.has_conflict,
+        conflictCount: status?.conflict_count,
+        resumeDisabled: !!busy,
+        onOpenDiagnostics: () => setView('diagnostics'),
+        onResumeSync: () => void run('pause',
+          () => window.xdriveDesktop.agent.setPaused(false), '同步已恢复。'),
+        onOpenConflicts: () => setView('conflicts'),
+      },
       // Transitional native Files controller. It is mounted only from the
       // single shared Files page outlet; other routes never instantiate it.
       filesControllerContent: view === 'files' ? (
@@ -3233,55 +3244,7 @@ export default function App({
       />
 
       </>}
-    >
-
-
-        {(status?.last_error || status?.paused || status?.has_conflict) ? (
-          <Stack
-            spacing={1}
-            sx={{
-              mt: view === 'files' ? 1.5 : 2,
-              mx: view === 'files' ? 1.5 : 0,
-              flexShrink: 0,
-            }}
-          >
-            {status?.last_error ? (
-              <XDriveStatusAlert
-                tone="bad"
-                action={<MuiButton color="inherit" size="small" onClick={() => setView('diagnostics')}>运行诊断</MuiButton>}
-              >
-                同步异常：{status.last_error}
-              </XDriveStatusAlert>
-            ) : null}
-            {status?.paused ? (
-              <XDriveStatusAlert
-                tone="warning"
-                action={(
-                  <MuiButton
-                    color="inherit"
-                    size="small"
-                    disabled={!!busy}
-                    onClick={() => void run('pause', () => window.xdriveDesktop.agent.setPaused(false), '同步已恢复。')}
-                  >
-                    恢复同步
-                  </MuiButton>
-                )}
-              >
-                同步已暂停；此设备不会继续后台同步。
-              </XDriveStatusAlert>
-            ) : null}
-            {status?.has_conflict ? (
-              <XDriveStatusAlert
-                tone="warning"
-                action={<MuiButton color="inherit" size="small" onClick={() => setView('conflicts')}>处理冲突</MuiButton>}
-              >
-                发现 {status.conflict_count || 0} 个同步冲突，请进入“冲突”页面处理。
-              </XDriveStatusAlert>
-            ) : null}
-          </Stack>
-        ) : null}
-
-    </XDriveApp>,
+    />,
     desktopTitlebarActions,
   )
 }

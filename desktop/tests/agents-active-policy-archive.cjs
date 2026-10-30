@@ -35,6 +35,8 @@ test('the active policy remains concise and enforces real user decisions', () =>
     'GitHub master is canonical',
     'A newer master SHA does not invalidate a green PR by itself',
     'actual GitHub-required checks',
+    'Every change, including `AGENTS.md` and CI workflows',
+    'Never push directly to `master`',
     'complete build/testing/publishing contracts',
     'Never claim skipped checks passed',
     '跳过（未验收）',

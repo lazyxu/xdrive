@@ -30,7 +30,7 @@ function makeHost(kind,{empty=false,alreadyGesturing=false}={}){
   assert.deepEqual((compiled.diagnostics||[]).filter(x=>
     x.category===ts.DiagnosticCategory.Error),[])
 
-  const state={timers:[],viewports:0,invalidations:0,
+  const state={timers:[],watchdogs:[],viewports:0,invalidations:0,
     canceled:0,projected:0,sent:[],listeners:[]}
   const emitter={addEventListener:(name,fn,capture)=>
     state.listeners.push({name,fn,capture}),
@@ -44,6 +44,10 @@ function makeHost(kind,{empty=false,alreadyGesturing=false}={}){
     clearTimer:()=>{},
     clearTimeout:()=>{},
     setTimeout:(callback,ms)=>{
+      if (ms===900) {
+        state.watchdogs.push(callback)
+        return -state.watchdogs.length
+      }
       assert.equal(ms,500)
       state.timers.push(callback)
       return state.timers.length
@@ -59,8 +63,8 @@ function makeHost(kind,{empty=false,alreadyGesturing=false}={}){
   const names=Object.keys(env)
   // Execute the real host functions, not a reimplementation of their gate.
   const declarations=isInline
-    ? 'let heldMousePointer=null,heldTouchPointers=new Set(),pointerOrigins=new Map(),viewportAfterMouseRelease=false,pendingViewport=null;\n'
-    : 'let heldMousePointer=null,heldTouchPointers=new Set(),pointerOrigins=new Map(),viewportAfterMouseRelease=false,viewportTimer=null;\n'
+    ? 'let heldMousePointer=null,heldTouchPointers=new Set(),pointerOrigins=new Map(),viewportAfterMouseRelease=false,pendingViewport=null,missingSDKEndTimer=null,missingSDKEndEpoch=0,awaitingSDKEnd=false;\n'
+    : 'let heldMousePointer=null,heldTouchPointers=new Set(),pointerOrigins=new Map(),viewportAfterMouseRelease=false,viewportTimer=null,missingSDKEndTimer=null,missingSDKEndEpoch=0,awaitingSDKEnd=false;\n'
   const body=declarations+compiled.outputText+'\nreturn {'+
     ' onMousePointerDown,onMapPointerMove,releaseHeldMouse,onMousePointerUp,onMouseWindowBlur,'+
     ' scheduleViewport,stopViewport,'+
@@ -315,6 +319,45 @@ for(const kind of ['inline','isolated']){
     assert.equal(kind==='inline'?state.invalidations:state.sent.length,0)
     assert.equal(state.timers.length,0)
     assert.equal(state.viewports,0)
+  })
+}
+
+for(const kind of ['inline','isolated']){
+  test(kind+': missing SDK moveend without physical pointer reauthorizes current Camera',()=>{
+    const {host,state}=makeHost(kind)
+    host.stopViewport()
+    assert.equal(kind==='inline'?state.invalidations:state.sent.length,1)
+    assert.equal(state.viewports,0)
+    assert.equal(state.timers.length,0,'a missing moveend has no immediate Owner read')
+    assert.equal(state.watchdogs.length,1,'one bounded SDK quiet watchdog is armed')
+    state.watchdogs[0]() // the actual 900ms Host callback, no SDK moveend
+    assert.equal(state.timers.length,1,'use the existing 500ms debounce')
+    state.timers[0]()
+    assert.equal(state.viewports,1,'a NEW Owner Camera query restores click authority')
+  })
+  test(kind+': real SDK moveend cancels the missing-end watchdog',()=>{
+    const {host,state}=makeHost(kind)
+    host.stopViewport()
+    assert.equal(state.watchdogs.length,1)
+    host.scheduleViewport()
+    assert.equal(state.timers.length,1)
+    state.watchdogs[0]() // invoke canceled timer to prove epoch fence
+    assert.equal(state.timers.length,1,'do not issue a second Camera on late timeout')
+    state.timers[0]()
+    assert.equal(state.viewports,1)
+  })
+  test(kind+': missing SDK end cannot reauthorize while trusted pointer is still held',()=>{
+    const {host,state}=makeHost(kind)
+    host.stopViewport()
+    host.onMousePointerDown(primaryMouse)
+    state.watchdogs[0]() // move started before the physical button pressed
+    assert.equal(state.viewports,0)
+    assert.equal(state.timers.length,0)
+    assert.equal(host.status().viewportAfterMouseRelease,true)
+    host.onMousePointerUp({pointerId:primaryMouse.pointerId,isTrusted:true})
+    assert.equal(state.timers.length,1)
+    state.timers[0]()
+    assert.equal(state.viewports,1)
   })
 }
 

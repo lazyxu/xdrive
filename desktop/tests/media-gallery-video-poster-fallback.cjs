@@ -15,7 +15,7 @@ const start = original.indexOf('const mediaPosterConcurrency =')
 const end = original.indexOf('\nexport function xDriveMediaFallback(', start)
 assert.ok(start >= 0 && end > start, 'real production video poster component must exist')
 const source = [
-  "import { useEffect, useMemo, useRef, useState, useContext, createContext } from 'react'",
+  "import { useEffect, useLayoutEffect, useMemo, useRef, useState, useContext, createContext } from 'react'",
   "import { Box, XDriveMediaLoadingProgress, xDriveResolveMediaVideoPoster, xDriveCaptureVideoPosterBlob } from './fixture'",
   'type ReactNode = any',
   'const XDriveBackgroundMediaThumbnailSuspended = createContext(false)',

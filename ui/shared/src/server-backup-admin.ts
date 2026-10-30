@@ -201,6 +201,7 @@ export type XDriveServerBackupRequest =
   | { action: 'delete_selected'; snapshot_id: string; confirmation: string; preview_request_id: string }
   | { action: 'prune'; keep_last: number; confirmation: string }
   | { action: 'policy'; format: 'v1' | 'v2'; retention_days: number; revision: string }
+  | { action: 'schedule'; preset: 'daily' | 'weekly' | 'disabled'; revision: string; confirmation: string }
 
 /** Read-only identities beyond newest 100. This payload never grants restore/delete. */
 export type XDriveServerBackupSnapshotIndexPage = {
