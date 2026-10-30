@@ -236,10 +236,29 @@ struct XDriveIOSNativeCloudOriginalReader {
         )
         try Task.checkCancellation()
         try check(reply, size: bytes.count, maximum: 32 * 1_048_576)
-        guard let image = UIImage(data: bytes) else {
+        // Compressed data size is not a bound on decoded pixels: a small
+        // HEIC/JPEG can otherwise expand to an enormous UIImage on MainActor.
+        // Decode at most 4096px on a utility actor while keeping the signed
+        // preview ticket and verified Owner-scoped request unchanged.
+        let decoded = await Task.detached(priority: .utility) { () -> CGImage? in
+            guard !bytes.isEmpty,
+                  let source = CGImageSourceCreateWithData(
+                    bytes as CFData,
+                    [kCGImageSourceShouldCache: false] as CFDictionary
+                  ), CGImageSourceGetCount(source) > 0 else { return nil }
+            let options: [String: Any] = [
+                kCGImageSourceCreateThumbnailFromImageAlways as String: true,
+                kCGImageSourceCreateThumbnailWithTransform as String: true,
+                kCGImageSourceThumbnailMaxPixelSize as String: 4096,
+                kCGImageSourceShouldCacheImmediately as String: false
+            ]
+            return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+        }.value
+        try Task.checkCancellation()
+        guard let decoded else {
             throw XDriveIOSNativeCloudReadError.invalidResponse
         }
-        return (image, nil)
+        return (UIImage(cgImage: decoded), nil)
     }
 }
 
