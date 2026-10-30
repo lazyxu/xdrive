@@ -315,3 +315,17 @@ test('P0-4 silent History.replaceState no-op never marks explicit map abandon su
   assert.match(browser.location.href, /places_map_scope_required=1/)
   assert.equal(bootstrap.xDriveTakeMapScopeHandoffFromURL(browser).state, 'denied')
 })
+
+test('real mounted two-host Gin browser rejects a pending map ticket when Parent route changes',()=>{
+  const driver=fs.readFileSync(path.join(root,
+    'desktop/scripts/gallery-places-dual-host-chromium.cjs'),'utf8')
+  assert.match(driver,/async function testPendingMapHandoffRejectsChangedParentRoute\(/)
+  assert.match(driver,/page\.route\('\*\*\/api\/v1\/media\/places\/baidu-jsapi\/scope-handoff'/)
+  assert.match(driver,/history\.replaceState\(null,'',next\.href\)/)
+  assert.match(driver,/next\.hash='#\/app\/files'/)
+  assert.match(driver,/next\.searchParams\.set\('theme','dim'\)/)
+  assert.match(driver,/after\.consumes===0/)
+  assert.match(driver,/after\.reads===before\.reads/)
+  assert.match(driver,/await testPendingMapHandoffRejectsChangedParentRoute\(browser,'inline',port\)/)
+  assert.match(driver,/await testPendingMapHandoffRejectsChangedParentRoute\(browser,'isolated',port\)/)
+})
