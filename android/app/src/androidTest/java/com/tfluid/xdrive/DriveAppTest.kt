@@ -854,7 +854,8 @@ class DriveAppTest {
                 !controller.state.value.loading
         }
 
-        compose.onNodeWithTag("gallery-manual-more-manual:fixture-created").performClick()
+        compose.onNodeWithTag("gallery-manual-more-manual:fixture-created")
+            .performScrollTo().assertIsDisplayed().performClick()
         compose.runOnIdle {
             // More is local to the current Owner's Collection; no navigation
             // may be triggered by a nested album-card click target.
@@ -881,7 +882,8 @@ class DriveAppTest {
             org.junit.Assert.assertEquals(0, galleryManualDeletes)
         }
 
-        compose.onNodeWithTag("gallery-manual-more-manual:fixture-created").performClick()
+        compose.onNodeWithTag("gallery-manual-more-manual:fixture-created")
+            .performScrollTo().assertIsDisplayed().performClick()
         compose.onNodeWithTag("gallery-manual-delete-manual:fixture-created")
             .assertIsDisplayed().performClick()
         compose.onNodeWithTag("gallery-manual-delete-dialog").assertExists()
@@ -999,7 +1001,8 @@ class DriveAppTest {
                 controller.state.value.galleryAlbums.singleOrNull()?.revision == 3L &&
                 !controller.state.value.loading
         }
-        compose.onNodeWithTag("gallery-manual-more-manual:cover").performClick()
+        compose.onNodeWithTag("gallery-manual-more-manual:cover")
+            .performScrollTo().assertIsDisplayed().performClick()
         compose.runOnIdle {
             // More is local to the current Owner's Collection; no navigation
             // may be triggered by a nested album-card click target.

@@ -96,9 +96,11 @@ internal fun ColumnScope.GalleryCollections(
             Text("暂无相册", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         else -> LazyVerticalGrid(
-            // Match Mobile PWA Collections' 144dp image-card baseline. Lazy
-            // composition prevents fetching covers for offscreen albums.
-            columns = GridCells.Adaptive(minSize = 144.dp),
+            // At 320dp width, 144dp min + 12dp gutter/padding rounded down
+            // to ONE 296dp card, hiding its More action beyond the clipped
+            // list viewport. 136dp yields two ~142dp square cards instead.
+            // Still lazily load only visible Owner-scoped covers.
+            columns = GridCells.Adaptive(minSize = 136.dp),
             modifier = Modifier.weight(1f).fillMaxWidth()
                 .testTag("gallery-albums-list"),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
