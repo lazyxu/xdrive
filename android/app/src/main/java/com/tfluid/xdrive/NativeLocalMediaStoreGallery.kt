@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.database.ContentObserver
-import android.graphics.Bitmap
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -68,13 +67,11 @@ internal fun NativeLocalMediaStoreGallery(albumsOnly: Boolean, sessionId: Long) 
     var permissionEpoch by remember(sessionId) { mutableIntStateOf(0) }
     var libraryEpoch by remember(sessionId) { mutableIntStateOf(0) }
     val allowed = remember(permissionEpoch, sessionId) { nativePhotoAccess(context) }
-    val partialGrant = Build.VERSION.SDK_INT >= 34 &&
-        context.checkSelfPermission(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED) ==
-            PackageManager.PERMISSION_GRANTED &&
+    val limitedAccess = Build.VERSION.SDK_INT >= 33 && (
         context.checkSelfPermission(Manifest.permission.READ_MEDIA_IMAGES) !=
-            PackageManager.PERMISSION_GRANTED &&
+            PackageManager.PERMISSION_GRANTED ||
         context.checkSelfPermission(Manifest.permission.READ_MEDIA_VIDEO) !=
-            PackageManager.PERMISSION_GRANTED
+            PackageManager.PERMISSION_GRANTED)
     val permissionPrompt = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()) { permissionEpoch++ }
     var selectedAlbum by remember(sessionId, albumsOnly) { mutableStateOf<NativeLocalAlbum?>(null) }
@@ -84,6 +81,8 @@ internal fun NativeLocalMediaStoreGallery(albumsOnly: Boolean, sessionId: Long) 
         mutableStateOf<List<NativeLocalMedia>>(emptyList())
     }
     var exhausted by remember(sessionId, albumsOnly, selectedAlbum?.id) { mutableStateOf(false) }
+    var loadedThrough by remember(sessionId, albumsOnly, selectedAlbum?.id) { mutableIntStateOf(0) }
+    var firstOffset by remember(sessionId, albumsOnly, selectedAlbum?.id) { mutableIntStateOf(0) }
     var albumVisibleCount by remember(sessionId, albumsOnly) {
         mutableIntStateOf(NativeLocalMediaStore.ALBUM_PAGE_SIZE)
     }
@@ -119,6 +118,9 @@ internal fun NativeLocalMediaStoreGallery(albumsOnly: Boolean, sessionId: Long) 
         items = emptyList()
         albums = null
         exhausted = false
+        loadedThrough = 0
+        firstOffset = 0
+        pageIntent = 0
         failure = null
         if (!allowed) return@LaunchedEffect
         busy = true
@@ -129,6 +131,7 @@ internal fun NativeLocalMediaStoreGallery(albumsOnly: Boolean, sessionId: Long) 
                 val page = NativeLocalMediaStore.page(resolver, 0,
                     NativeLocalMediaStore.PHOTO_PAGE_SIZE, selectedAlbum?.id)
                 items = page
+                loadedThrough = page.size
                 exhausted = page.size < NativeLocalMediaStore.PHOTO_PAGE_SIZE
             }
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -147,13 +150,18 @@ internal fun NativeLocalMediaStoreGallery(albumsOnly: Boolean, sessionId: Long) 
         busy = true
         try {
             val current = items
-            val next = NativeLocalMediaStore.page(resolver, current.size,
+            val next = NativeLocalMediaStore.page(resolver, loadedThrough,
                 NativeLocalMediaStore.PHOTO_PAGE_SIZE, selectedAlbum?.id)
             if (!NativeLocalMediaStore.canAppend(current, next)) {
                 failure = "媒体提供程序返回了重复页面；已停止加载以避免错乱。"
             } else {
-                items = current + next
-                exhausted = next.size < NativeLocalMediaStore.PHOTO_PAGE_SIZE
+                val merged = current + next
+                val dropped = (merged.size - NativeLocalMediaStore.MAX_WALL_ITEMS).coerceAtLeast(0)
+                items = if (dropped > 0) merged.drop(dropped) else merged
+                firstOffset += dropped
+                loadedThrough += next.size
+                exhausted = next.size < NativeLocalMediaStore.PHOTO_PAGE_SIZE ||
+                    loadedThrough >= NativeLocalMediaStore.MAX_SCAN
             }
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
@@ -183,7 +191,7 @@ internal fun NativeLocalMediaStoreGallery(albumsOnly: Boolean, sessionId: Long) 
             Column {
                 Text(selectedAlbum?.title ?: if (albumsOnly) "本机相册" else "本机照片",
                     style = MaterialTheme.typography.titleMedium)
-                Text(if (partialGrant) "仅显示已授权的所选照片"
+                Text(if (limitedAccess) "仅显示当前授权范围内的媒体"
                     else "本机媒体 · 与云端原件分开",
                     style = MaterialTheme.typography.bodySmall)
             }
@@ -219,7 +227,9 @@ internal fun NativeLocalMediaStoreGallery(albumsOnly: Boolean, sessionId: Long) 
                 items(visible, key = { it.id }) { album ->
                     OutlinedCard(onClick = { selectedAlbum = album },
                         modifier = Modifier.testTag("native-local-album-${album.id}")) {
-                        Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                        Column(Modifier.fillMaxWidth().padding(8.dp)) {
+                            NativeLocalThumbnail(album.cover, 260,
+                                Modifier.fillMaxWidth().height(112.dp))
                             Text(album.title, maxLines = 2,
                                 overflow = TextOverflow.Ellipsis)
                             Text("${album.count} 项", style = MaterialTheme.typography.bodySmall)
@@ -236,6 +246,11 @@ internal fun NativeLocalMediaStoreGallery(albumsOnly: Boolean, sessionId: Long) 
                     }
             }
         } else {
+            if (firstOffset > 0) TextButton(
+                onClick = { libraryEpoch++ },
+                modifier = Modifier.testTag("native-local-back-to-start")) {
+                Text("返回最近照片 · 当前仅保留最近加载的 512 项")
+            }
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(112.dp),
                 modifier = Modifier.weight(1f).testTag("native-local-photo-wall"),
@@ -255,8 +270,7 @@ internal fun NativeLocalMediaStoreGallery(albumsOnly: Boolean, sessionId: Long) 
                         }
                     }
                 }
-                if (!exhausted && items.isNotEmpty() &&
-                    items.size < NativeLocalMediaStore.MAX_SCAN)
+                if (!exhausted && items.isNotEmpty())
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         TextButton(
                             onClick = { if (!busy) pageIntent++ },
