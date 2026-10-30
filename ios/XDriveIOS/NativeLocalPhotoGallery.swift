@@ -285,7 +285,7 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
             }.padding(12)
         }
         .navigationTitle("本机相册")
-        .sheet(item: $selected) { XDriveIOSNativeLocalPhotoDetail(candidate: $0) }
+        .fullScreenCover(item: $selected) { XDriveIOSNativeLocalPhotoDetail(candidate: $0) }
         .onAppear { refresh() }
         .onChange(of: phase) { new in
             if new != .active { invalidate() }

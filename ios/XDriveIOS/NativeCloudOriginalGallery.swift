@@ -491,7 +491,7 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
             }.padding()
         }
         .navigationTitle("云端备份原件")
-        .sheet(item: $selected) {
+        .fullScreenCover(item: $selected) {
             XDriveIOSNativeCloudOriginalPreview(node: $0, login: login)
         }
         .task { model.reload(login: login) }

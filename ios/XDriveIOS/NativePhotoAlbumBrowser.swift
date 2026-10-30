@@ -236,7 +236,7 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
         }
         .navigationTitle(album.name)
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(item: $selected) { XDriveIOSNativeLocalPhotoDetail(candidate: $0) }
+        .fullScreenCover(item: $selected) { XDriveIOSNativeLocalPhotoDetail(candidate: $0) }
         .onAppear { reload() }
         .onChange(of: phase) { state in
             if state == .active { reload() } else { invalidate() }
