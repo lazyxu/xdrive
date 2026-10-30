@@ -1586,7 +1586,11 @@ async function testFullGalleryDirectPhoto(browser,mode,port){
         await page.locator('[data-xdrive-baidu-isolated-frame]').count()===0)
     }
     await page.getByRole('button',{name:'关闭预览'}).click()
-    await page.getByText('当前地图可查看 3 张照片',{exact:true}).waitFor()
+    // A freshly reauthorized Viewer return restores the trusted photo dialog
+    // directly. The map summary is intentionally HIDDEN while the dialog is
+    // active; waiting for the global bootstrap/count label here was a false
+    // gate and did not prove camera or Owner Range restoration. The signed Gin
+    // /cell-items identity, count and source revision are checked below.
     const restored=page.locator('[data-xdrive-places-photo-drawer]')
     try {
       await restored.waitFor({state:'visible',timeout:11000})
