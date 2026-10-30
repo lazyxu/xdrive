@@ -111,6 +111,16 @@ actor XDriveIOSPhotoBackgroundGrantManager {
         owner: XDriveNativeOwnerRoot, accessToken: String,
         deviceName: String = "xDrive iPhone", clientVersion: String = "ios-bg-v1"
     ) async throws -> XDriveIOSPhotoBackgroundGrantStatus {
+        // Never overwrite a previous granted or revoke-pending credential
+        // after an uncertain Server create/revoke response.
+        guard try !localStatus(owner: owner).enrolled else {
+            throw XDriveIOSPhotoBackgroundGrantError.remoteRevokePending
+        }
+        // A crash can leave the BG-only vault as the last record. Never
+        // overwrite such a grant, including one from another Owner.
+        guard try await XDriveIOSApprovedPhotoBGVault.shared.current() == nil else {
+            throw XDriveIOSPhotoBackgroundGrantError.remoteRevokePending
+        }
         try await verifyOwner(owner, accessToken: accessToken)
         let enrollment = XDriveIOSDeviceEnrollment.shared
         let existing = try await enrollment.verifyExisting(
@@ -318,6 +328,34 @@ actor XDriveIOSPhotoBackgroundGrantManager {
         return true
     }
 
+    /// Stop one Owner's local BG capability even without network access.
+    /// This is not a remote revoke acknowledgment. Do not clear the shared
+    /// vault of a different Server/Owner/Root.
+    func stopLocally(owner: XDriveNativeOwnerRoot) async throws
+        -> XDriveIOSPhotoBackgroundGrantStatus {
+        let approved = try await XDriveIOSApprovedPhotoBGVault.shared.current()
+        if let approved {
+            let existingOwner = try approved.ownerScope()
+            guard XDriveIOSNativePhotoOwnerScope.matches(existingOwner, owner) else {
+                throw XDriveIOSPhotoBackgroundGrantError.invalidOwner
+            }
+        }
+        if approved != nil {
+            // The approved vault may be the ONLY surviving credential after
+            // an interrupted initial save. Reuse the canonical emergency
+            // stop to synthesize a durable revoke-pending grant before
+            // discarding that last remote secret/ID.
+            _ = try await emergencyStopLocally()
+        } else {
+            XDriveIOSBackgroundPhotoTask.revokePendingRequests()
+        }
+        if var stored = try read(owner: owner) {
+            stored.revokePending = true
+            try save(stored, owner: owner)
+        }
+        return try localStatus(owner: owner)
+    }
+
     /// Disable immediately in the local persisted state before contacting
     /// Server. On a network failure retain a *revocation-pending* record:
     /// the future background Runner must refuse it and UI can retry.
@@ -393,7 +431,10 @@ actor XDriveIOSPhotoBackgroundGrantManager {
             origin: owner.origin, accessToken: accessToken,
             expectedUsername: owner.username
         ).verify()
-        guard current == owner else {
+        // A successful original upload changes the mutable root revision.
+        // Only canonical Server/instance/Owner/root identity authorizes this
+        // grant; revision changes alone must not block safe revocation.
+        guard XDriveIOSNativePhotoOwnerScope.matches(current, owner) else {
             throw XDriveIOSPhotoBackgroundGrantError.invalidOwner
         }
     }

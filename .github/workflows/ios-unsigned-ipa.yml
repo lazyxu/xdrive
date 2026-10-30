@@ -136,8 +136,8 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-bg-route-check"
           "$RUNNER_TEMP/xdrive-ios-bg-route-check"
 
-      - name: Verify actual bounded background original safety contract
-        run: node --test desktop/tests/ios-bg-bounded-original-runner.cjs
+      - name: Verify actual bounded background original safety and native BG consent
+        run: node --test desktop/tests/ios-bg-bounded-original-runner.cjs desktop/tests/ios-native-background-grant-ui.cjs
 
       - name: Verify read-only native Gallery cache retention on revoked access
         run: |
