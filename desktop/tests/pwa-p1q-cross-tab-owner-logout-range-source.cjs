@@ -17,8 +17,12 @@ test('P1Q authentic second Owner window invokes real Logout and cancels first si
     'warmJPEG.returned.sameGrid',
     'The first',
     'genuinely opened H264 Viewer',
-    "visibleButtonCenter(auditor,'打开应用导航')",
-    "second window mounted real account navigation drawer",
+    // The browser now uses the genuine My destination, not an old drawer.
+    "const myPoint=await prepareAppDestination(auditor,'我的')",
+    'sendActualPointer(auditor,myPoint)',
+    "location.hash.startsWith('#/app/overview?section=mine')",
+    "data-xdrive-mobile-mine-page",
+    "second window actual My tab with account menu",
     'p1OriginalSignedVideoElement.toString()',
     'p1VisibleH264Tile.toString()',
     "await fetch(base+'/__perf/viewer-video-range-mark'",
@@ -42,6 +46,14 @@ test('P1Q authentic second Owner window invokes real Logout and cancels first si
   assert.doesNotMatch(p1q,/p1RestoreDeepVideoViewport\.toString\(\)/,
     'P1Q must not discard the real H264 Viewer Back scroll anchor')
   assert.match(d,/p1QAccountButtonPoint\.toString\(\)/)
+  assert.match(p1q,/sendActualPointer\(auditor,myPoint\)/,
+    'the Owner must enter My through a real Chromium tap')
+  assert.match(p1q,/sendActualPointer\(auditor,avatar\)/,
+    'account menu must be opened through a real Chromium tap')
+  assert.match(p1q,/sendActualPointer\(auditor,logout\)/,
+    'logout must be performed through a real Chromium tap')
+  assert.doesNotMatch(p1q,/\.click\(\)|location\.hash\s*=/,
+    'never bypass the actual Owner UI with injected clicks or URL writes')
   assert.match(d,/after\.max_cancel_us<=160000/)
   assert.doesNotMatch(d,/before\.active>=1&&before\.context_done===0/,
     'old decoder cancellations must not satisfy or falsely block the current Logout gate')

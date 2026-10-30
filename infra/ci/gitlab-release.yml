@@ -163,7 +163,7 @@ publish-release:
         echo "missing or ambiguous CI-built Synology SPK" >&2; exit 1;
       }
       cp "$1" "$1.sha256" release/
-      bash scripts/ci/verify-synology-spk-release.sh release
+      bash scripts/ci/verify-synology-spk-release.sh release --require-mui
       # Stable glab release create expands release/*; never pass build/core
       # directories as Release assets or upload them by mistake.
       rm -rf release/core release/backup-cli release/synology

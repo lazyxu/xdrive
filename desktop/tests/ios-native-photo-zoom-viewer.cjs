@@ -34,5 +34,6 @@ test('pinch pan and double tap are bounded and reset for new media', () => {
 test('zoom remains read only and preserves media ownership lifecycle', () => {
   assert.doesNotMatch(zoom, /URLSession|UploadSession|PHPhotoLibrary|accessToken|Bearer|Keychain|WKWebView/)
   assert.match(cloud, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?player\?\.pause\(\)[\s\S]*?still = nil[\s\S]*?dismiss\(\)/)
-  assert.match(local, /\.onDisappear \{ model\.cancel\(\) \}/)
+  assert.match(local, /\.onDisappear \{\s*changes\.stop\(\)\s*model\.cancel\(\)\s*\}/)
+  assert.match(local, /\.onChange\(of: changes\.generation\) \{ _ in[\s\S]*?model\.cancel\(\)\s*dismiss\(\)/)
 })
