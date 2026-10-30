@@ -50,6 +50,24 @@ data class AuthSession(
     override fun toString() = "AuthSession(accessToken=[redacted], refreshToken=[redacted], username=[redacted], mustChangePassword=$mustChangePassword)"
 }
 
+/** Authenticated Go /me response: server installation identity is required for durable photo sync. */
+data class NativeServerOwnerIdentity(
+    val id: Long,
+    val username: String,
+    val role: String,
+    val instanceId: String,
+) {
+    init {
+        require(id > 0 && username.isNotBlank() &&
+            username == username.trim() && username.length <= 256 &&
+            username.none { it.isISOControl() })
+        require(role == "user" || role == "admin")
+        require(instanceId.length in 1..256 && instanceId.none { it.isISOControl() })
+    }
+
+    override fun toString(): String = "NativeServerOwnerIdentity([redacted])"
+}
+
 data class DriveNode(
     val id: Long,
     val parentId: Long? = null,
@@ -320,6 +338,9 @@ interface XDriveService {
     suspend fun refresh(refreshToken: String): AuthSession
     suspend fun logout(refreshToken: String)
     suspend fun changePassword(accessToken: String, currentPassword: String, newPassword: String): AuthSession
+    /** No legacy fallback: a Server without installation ID cannot authorize native backup. */
+    suspend fun verifiedOwnerIdentity(accessToken: String): NativeServerOwnerIdentity =
+        throw ApiException(501, "Native owner identity unavailable")
     suspend fun root(accessToken: String): DriveNode
     suspend fun children(accessToken: String, parentId: Long, offset: Int): NodeRange
     /** Keep old fixtures default-only; never pretend unsupported sort succeeded. */
@@ -520,6 +541,23 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
 
     override suspend fun changePassword(accessToken: String, currentPassword: String, newPassword: String): AuthSession =
         session(request("me/change-password", accessToken, mapOf("current_password" to currentPassword, "new_password" to newPassword)))
+
+    override suspend fun verifiedOwnerIdentity(accessToken: String): NativeServerOwnerIdentity {
+        val data = request("me", accessToken)
+        val identity = try {
+            val mustChange = data["must_change_password"]
+            if (mustChange != JsonPrimitive(false)) invalidPayload()
+            NativeServerOwnerIdentity(
+                id = data.long("id"),
+                username = data.string("username"),
+                role = data.string("role"),
+                instanceId = data.string("pwa_offline_instance_id"),
+            )
+        } catch (invalid: IllegalArgumentException) {
+            invalidPayload()
+        }
+        return identity
+    }
 
     override suspend fun root(accessToken: String): DriveNode = node(request("nodes/root", accessToken)).also {
         if (!it.isDirectory || it.parentId != null) invalidPayload()

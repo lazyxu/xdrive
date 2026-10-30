@@ -31,7 +31,7 @@ const adminUsers = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'm
 const adminAudit = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'AdminAuditPage.tsx'), 'utf8')
 const storageStats = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'GlobalStorageStatsPage.tsx'), 'utf8')
 
-test('wide Web keeps compact chrome while mobile owns the full-screen title and global controls', () => {
+test('wide Web keeps compact chrome while mobile owns five-slot navigation and local back', () => {
   // Anchor on the actual workspace JSX, not the first source-text mention:
   // Viewer return-scroll logic also queries this selector before the render.
   const backgroundStart = webApp.indexOf('<Box' + String.fromCharCode(10) + '        data-xdrive-workspace-background')
@@ -48,19 +48,34 @@ test('wide Web keeps compact chrome while mobile owns the full-screen title and 
   const actions = webApp.slice(actionsStart, actionsEnd)
   assert.ok(actions.includes('<WebAccountMenu'), 'global actions must retain the account menu')
   assert.ok(actions.includes('<XDriveTransferPopover'), 'global actions must retain transfers')
-  assert.ok(actions.includes('disabled={viewerActive || (compactWorkspace && !compactNavigationOpen)}'), 'Viewer and closed mobile navigation must close account/transfer portals')
+  assert.ok(actions.includes('disabled={viewerActive}'),
+    'Viewer must disable the account menu independent of the retired drawer')
+  assert.ok(webApp.includes('compactWorkspace && !viewerActive && !mobileMapFocused'),
+    'Viewer and focused map must not render a competing bottom bar')
   assert.ok(appBar.includes("display: { xs: 'none', md: 'flex' }"), 'mobile AppBar must reserve no viewport height')
   assert.ok(appBar.includes('{!compactWorkspace ? workspaceActions : null}'), 'wide Web AppBar must retain global actions without mounting a hidden second mobile copy')
-  assert.ok(webApp.includes('compactFullscreen'), 'mobile Web must use the fullscreen app-navigation overlay')
-  assert.ok(webApp.includes('compactActions={compactWorkspace ? accountAction : undefined}'), 'account/settings remain reachable in the app Drawer')
+  const mobileNav = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'MobileFiveSlotNavigation.tsx'), 'utf8')
+  assert.ok(webApp.includes('<XDriveMobileFiveSlotNavigation'),
+    'mobile Web must use the new persistent five-slot bar')
+  assert.ok(mobileNav.includes('data-xdrive-mobile-five-slot') &&
+    ['all', 'dynamic', 'gallery', 'files', 'mine'].every(key =>
+      mobileNav.includes('value="' + key + '"')),
+    'the five fixed positions must be real navigation controls')
+  assert.ok(webApp.includes('accountAction={accountAction}') &&
+    mobileNav.includes('data-xdrive-mobile-mine-page'),
+    'My tab must retain access to the real account, settings and logout menu')
   assert.ok(webApp.includes('transferAction={transferAction}'), 'mobile title always uses the same transfer action as wide Web')
   assert.ok(webApp.includes('onOpenTransfers={() => setTransferPopoverOpen(true)}'), 'home opens the header transfer popover at every mobile width')
-  assert.ok(webApp.includes('onOpenApps={() => setCompactNavigationOpen(true)}'), 'mobile title opens application navigation without floating chrome')
-  assert.ok(webApp.includes('onBack={exitWebApp}'),
-    'App title back exits the app using the guarded runtime, not a Files directory action')
-  assert.ok(webApp.includes('const exitWebApp = useCallback('),
-    'Mobile Web back must confirm an unsaved admin service draft before exit')
-  assert.ok(webApp.includes('    exitApp()'), 'normal mobile back still delegates to App runtime')
+  assert.ok(webApp.includes("onOpenApps={() => selectMobileSlot('all')}"),
+    'top app launcher must select the existing All tab')
+  assert.ok(webApp.includes('onBack={goBackWithinMobileFeature}') &&
+    webApp.includes('const mobileCanGoBack = Boolean(mobileFolderParent || mobileParent)'),
+    'back must be feature-local and disabled at its root')
+  assert.ok(webApp.includes('else if (mobileParent) launchWebApp(mobileParent, { replace: true })'),
+    'feature-local back must retain the guarded Web route launcher')
+  assert.ok(webApp.includes('xDriveSystemDependenciesNeedsExitConfirmation(') &&
+    webApp.includes("setPendingSystemDependenciesExit({ kind: 'route', next, options })"),
+    'cross-tab navigation must still confirm unsaved administrator edits')
   assert.ok(appBar.includes('variant="titlebar"'), 'Web AppBar should reuse the Desktop-scale brand lockup')
   assert.ok(appBar.includes("borderBottom: 1"), 'Web AppBar should separate chrome with a divider instead of elevation')
   assert.ok(appBar.includes("minHeight: '48px !important'"), 'Web AppBar should stay at the compact 48px height')
