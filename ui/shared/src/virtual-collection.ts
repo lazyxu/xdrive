@@ -110,13 +110,25 @@ export function xDriveVirtualCollectionApplyPage<TItem>(
 ): XDriveVirtualCollectionSnapshot<TItem> {
   if (generation !== current.generation) return current
 
+  // A malformed Host page is not an empty successful collection. Reject it
+  // unchanged instead of coercing NaN/negative counts, offsets or limits to
+  // zero and accidentally clearing a previously verified sparse directory.
+  if (!page || !Array.isArray(page.items) ||
+      !Number.isSafeInteger(page.offset) || page.offset < 0 ||
+      !Number.isSafeInteger(page.limit) || page.limit <= 0 ||
+      !Number.isSafeInteger(page.offset + page.limit) ||
+      page.items.length > page.limit ||
+      (page.totalCount !== null &&
+        (!Number.isSafeInteger(page.totalCount) || page.totalCount < 0))) return current
   const totalCount = page.totalCount === null
-    ? current.totalCount
-    : nonNegativeInteger(page.totalCount)
-  if (totalCount === null) return current
+    ? current.totalCount : page.totalCount
+  if (totalCount === null ||
+      (page.items.length > 0 && page.offset + page.items.length > totalCount)) {
+    return current
+  }
 
-  const offset = nonNegativeInteger(page.offset)
-  const limit = positiveInteger(page.limit, page.items.length || 1)
+  const offset = page.offset
+  const limit = page.limit
   const items = new Map(current.items)
 
   const clearEnd = Math.min(totalCount, offset + limit)
