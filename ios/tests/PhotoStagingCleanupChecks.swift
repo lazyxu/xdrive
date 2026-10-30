@@ -36,13 +36,26 @@ import Foundation
                                    items: ["resource-0"], modifiedAt: old)
         let symlink = root.appendingPathComponent(prefix + UUID().uuidString)
         try fm.createSymbolicLink(at: symlink, withDestinationURL: unknown)
+        let linkedChild = try folder(named: prefix + UUID().uuidString,
+                                     items: [], modifiedAt: old)
+        try fm.createSymbolicLink(
+            at: linkedChild.appendingPathComponent("resource-0"),
+            withDestinationURL: foreign.appendingPathComponent("resource-0")
+        )
+        try fm.setAttributes([.modificationDate: old], ofItemAtPath: linkedChild.path)
+        let nestedChild = try folder(named: prefix + UUID().uuidString,
+                                     items: [], modifiedAt: old)
+        try fm.createDirectory(at: nestedChild.appendingPathComponent("nested"),
+                               withIntermediateDirectories: false)
+        try fm.setAttributes([.modificationDate: old], ofItemAtPath: nestedChild.path)
         precondition(XDriveIOSPhotoStagingCleanup.removeOrphans(in: root, limit: 1) == 1)
         let remaining = [stale1, stale2].filter { fm.fileExists(atPath: $0.path) }
         precondition(remaining.count == 1)
         precondition(XDriveIOSPhotoStagingCleanup.removeOrphans(in: root) == 1)
         precondition(!fm.fileExists(atPath: stale1.path))
         precondition(!fm.fileExists(atPath: stale2.path))
-        for file in [fresh, unknown, foreign, malformed, symlink] {
+        for file in [fresh, unknown, foreign, malformed, symlink,
+                     linkedChild, nestedChild] {
             precondition(fm.fileExists(atPath: file.path))
         }
         precondition(XDriveIOSPhotoStagingCleanup.removeOrphans(in: root) == 0)
