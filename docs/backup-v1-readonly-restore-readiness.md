@@ -50,6 +50,7 @@ before receiving a "drill passed" label.
   confusing a read-only request with flags authorizing a destructive restore.
 - It does not call Docker Compose, stop API/worker, start PostgreSQL,
   create a safety backup, or delete/rewrite snapshots.
+- The `xdrive-server restore` wrapper distinguishes `--preflight-only` from a real restore: it does **not** record `system.restore success/failure` for an inspection. Real restore auditing remains unchanged.
 - No administrator Web action or arbitrary Host path handling is added here.
   This is a local CLI building block; future Admin exposure requires the
   existing fixed Host namespace/Owner checks and an authenticated receipt.

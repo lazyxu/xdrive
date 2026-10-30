@@ -249,6 +249,7 @@ cat > "$TMP/home/bin/server-restore.sh" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" > "$TEST_STATE/restore-args"
+if [[ "${TEST_RESTORE_FAIL:-0}" == "1" ]]; then exit 7; fi
 echo "mock restore complete"
 SH
 chmod +x "$TMP/home/bin/server-restore.sh"
@@ -739,6 +740,29 @@ XD_CONFIG_DIR="$TMP/home" \
 bash "$HOST" restore /tmp/backup --yes >"$TMP/restore.out"
 grep -q '^/tmp/backup --yes$' "$TMP/state/restore-args"
 grep -q -- 'audit record --action system.restore --result success' "$TMP/state/audit-calls"
+
+# The v1-only read-only readiness command must not forge a true restore
+# audit outcome. Both success and failure remain inspections, not mutations.
+restore_audits_before="$(grep -c -- 'audit record --action system.restore --result' "$TMP/state/audit-calls" || true)"
+TEST_STATE="$TMP/state" \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/home" \
+bash "$HOST" restore /tmp/backup --preflight-only > "$TMP/restore-readiness.out"
+grep -q '^/tmp/backup --preflight-only$' "$TMP/state/restore-args"
+restore_audits_after="$(grep -c -- 'audit record --action system.restore --result' "$TMP/state/audit-calls" || true)"
+[[ "$restore_audits_after" == "$restore_audits_before" ]] || {
+  echo 'read-only restore preflight forged production restore audit success' >&2; exit 1
+}
+if TEST_RESTORE_FAIL=1 TEST_STATE="$TMP/state" \
+    PATH="$TMP/bin:/usr/bin:/bin" XD_CONFIG_DIR="$TMP/home" \
+    bash "$HOST" restore /tmp/backup --preflight-only > "$TMP/restore-readiness-fail.out"; then
+  echo 'failing readiness passed its Host wrapper' >&2; exit 1
+fi
+restore_audits_after="$(grep -c -- 'audit record --action system.restore --result' "$TMP/state/audit-calls" || true)"
+[[ "$restore_audits_after" == "$restore_audits_before" ]] || {
+  echo 'read-only restore preflight forged production restore failure audit' >&2; exit 1
+}
+
 
 set +e
 TEST_BACKUP_FAIL=1 \
