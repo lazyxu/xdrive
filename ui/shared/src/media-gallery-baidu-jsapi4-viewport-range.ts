@@ -18,14 +18,18 @@ export function xDriveBaiduNativeViewportRangeParams(
     return null
   // The Gallery's logical map count is never folded. Unsupported filter keys
   // must fail closed rather than silently broadening an Owner photo selection.
-  if (!query || typeof query !== 'object' ||
-      Object.entries(query).some(([key, value]) =>
-        value !== undefined && ![
-          'sort_by', 'sort_dir', 'anchor_node_id', 'favorite',
-          'captured_from', 'captured_to', 'time_zone', 'asset_kind',
-          'fold_duplicates',
-        ].includes(key)) ||
-      query.fold_duplicates === true ||
+  if (!query || typeof query !== 'object' || Array.isArray(query) ||
+      // Every field name carries possible Owner/gallery membership intent,
+      // even when its value is undefined in a restored Host adapter object.
+      // Never drop an unknown optional key and silently widen the Camera.
+      Object.keys(query).some(key => ![
+        'sort_by', 'sort_dir', 'anchor_node_id', 'favorite',
+        'captured_from', 'captured_to', 'time_zone', 'asset_kind',
+        'fold_duplicates',
+      ].includes(key)) ||
+      // false is the intentional no-fold Gallery compatibility value;
+      // null/string/number/true must NOT become an unfiltered map query.
+      (query.fold_duplicates !== undefined && query.fold_duplicates !== false) ||
       (query.asset_kind !== undefined &&
         query.asset_kind !== 'image' && query.asset_kind !== 'video'))
     return null
