@@ -54,6 +54,9 @@ on:
       - 'internal/localbackupipc/remote_backup_test.go'
       - 'web/scripts/test-synology-owner-read.mjs'
       - 'ui/shared/src/mui/SynologyBackupLocalPanel.tsx'
+      - 'ui/shared/src/mui/SynologyBackupTargetBrowser.tsx'
+      - 'ui/shared/src/synology-backup-target-directory.ts'
+      - 'web/scripts/test-synology-backup-target-browser.mjs'
       - 'ui/shared/src/mui/DeviceBackupFolderSummary.tsx'
       - 'ui/shared/src/mui/DeviceBackupFolderAccordion.tsx'
       - 'ui/shared/src/mui/DeviceBackupLocalPrimaryActions.tsx'
@@ -166,6 +169,9 @@ on:
       - 'internal/localbackupipc/remote_backup_test.go'
       - 'web/scripts/test-synology-owner-read.mjs'
       - 'ui/shared/src/mui/SynologyBackupLocalPanel.tsx'
+      - 'ui/shared/src/mui/SynologyBackupTargetBrowser.tsx'
+      - 'ui/shared/src/synology-backup-target-directory.ts'
+      - 'web/scripts/test-synology-backup-target-browser.mjs'
       - 'ui/shared/src/mui/DeviceBackupFolderSummary.tsx'
       - 'ui/shared/src/mui/DeviceBackupFolderAccordion.tsx'
       - 'ui/shared/src/mui/DeviceBackupLocalPrimaryActions.tsx'
@@ -264,6 +270,7 @@ jobs:
         run: |
           npm ci --prefix web
           node web/scripts/test-synology-browser-storage.mjs
+          node web/scripts/test-synology-backup-target-browser.mjs
           node web/scripts/test-synology-batch-validation.mjs
           node web/scripts/test-synology-request-cancel.mjs
           node web/scripts/test-synology-owner-read.mjs
