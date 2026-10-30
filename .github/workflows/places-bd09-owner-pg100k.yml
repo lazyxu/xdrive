@@ -68,7 +68,7 @@ jobs:
         run: |
           set -euo pipefail
           go test -count=1 -run '^TestPlacesBD09Owner100kPostgresBaseline$' -v -timeout=35m ./internal/api 2>&1 | tee bd09-seed.log
-      - name: Measure real production BD09 Cells, native Viewport and Gallery Camera Range
+      - name: Measure legacy and world-stable BD09 Cells, native Viewport and Gallery Camera Range
         shell: bash
         env:
           XD_PLACES_BD09_ACTION: probe
@@ -90,15 +90,43 @@ jobs:
           assert data['subset_members']==10000 and data['sample_count']==3
           assert data['provider_conversion_verified'] is False
           metrics=data['metrics']
-          assert len(metrics)==14
+          assert len(metrics)==20, 'missing world-stable or legacy measurements'
           assert {x['scope'] for x in metrics}=={'owner100k','owner100k_scoped_first10k_members'}
-          assert {x['operation'] for x in metrics}=={'cells','native_viewport','camera_gallery_range'}
+          assert {x['operation'] for x in metrics}=={
+              'cells','cells_world_stable','native_viewport','camera_gallery_range'}
+          expected_keys={
+              ('owner100k',window,operation)
+              for window in ('world','dense_jinhua','two_cities','empty')
+              for operation in ('cells','cells_world_stable','native_viewport','camera_gallery_range')
+          } | {
+              ('owner100k_scoped_first10k_members',window,operation)
+              for window in ('world','dense_jinhua')
+              for operation in ('cells','cells_world_stable')
+          }
+          actual_keys=[(x['scope'],x['window'],x['operation']) for x in metrics]
+          assert len(actual_keys)==len(set(actual_keys))==len(expected_keys)
+          assert set(actual_keys)==expected_keys, 'one or more exact Owner/grid windows missing'
+          by_key={key:row for key,row in zip(actual_keys,metrics)}
           for row in metrics:
               assert len(row['latency_ms'])==3 and all(x>=0 for x in row['latency_ms'])
-              assert row['count']==row['expected'] and row['max_returned']<=64
+              assert row['count']==row['expected'] and 0<=row['max_returned']<=64
               assert row['p95_ms']>=row['p50_ms']>=0
               assert row['peak_rss_kib']>0
-          print('Actual source-exact PostgreSQL Owner BD09 100k measurements verified')
+              if row['operation']=='cells_world_stable':
+                  assert row['grid_scheme']=='world_stable_v1'
+              else:
+                  assert not row.get('grid_scheme'), 'legacy protocol was silently changed'
+          for scope,window,operation in sorted(actual_keys):
+              if operation!='cells':
+                  continue
+              legacy=by_key[(scope,window,'cells')]
+              stable=by_key[(scope,window,'cells_world_stable')]
+              assert legacy['count']==stable['count']==legacy['expected']
+              # Observed matched A/B timings are evidence, NOT a claim of
+              # physical iPhone performance or a hard-coded speedup threshold.
+              print(f"Owner {scope}/{window}: legacy p95={legacy['p95_ms']:.2f}ms; "
+                    f"world-stable p95={stable['p95_ms']:.2f}ms")
+          print('Source-exact PostgreSQL17 100k Owner legacy/world-stable plus 10k membership verified')
           PY
       - name: Keep genuine SQL timing and source evidence
         if: always()
