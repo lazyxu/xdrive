@@ -310,7 +310,7 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
             } catch is CancellationError {
             } catch {
                 guard epoch == ticket else { return }
-                error = "相册内容或授权发生变化，旧结果已撤销；请返回或重新读取。"
+                self.error = "相册内容或授权发生变化，旧结果已撤销；请返回或重新读取。"
             }
             if epoch == ticket { loading = false }
         }
@@ -441,7 +441,7 @@ struct XDriveIOSNativePhotoAlbumsScreen: View {
             } catch is CancellationError {
             } catch {
                 guard epoch == ticket else { return }
-                error = "相册目录或授权发生变化，请刷新后重新查看。"
+                self.error = "相册目录或授权发生变化，请刷新后重新查看。"
             }
             if epoch == ticket { loading = false }
         }
