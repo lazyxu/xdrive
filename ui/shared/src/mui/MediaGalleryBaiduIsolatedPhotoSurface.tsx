@@ -16,7 +16,8 @@ import { xDriveSelectBaiduNativeCell } from '../media-gallery-baidu-jsapi4-cell-
 import type { XDriveBaiduCellRangeSort } from '../media-gallery-baidu-jsapi4-cell-range'
 import { xDriveBaiduCellReturnMatchesFreshSelection } from '../media-gallery-baidu-cell-return-session'
 import {
-  XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT, xDrivePlacesDrawerValidRange,
+  XDRIVE_PLACES_DRAWER_PREVIEW_LIMIT, XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT,
+  xDrivePlacesDrawerValidRange,
   xDrivePlacesDrawerMatchesFresh, xDrivePlacesDrawerMatchesResizedCell,
   xDriveTakePlacesDrawerViewerReturn,
 } from '../media-gallery-places-photo-drawer'
@@ -499,7 +500,12 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
                 bounds:{...state.selection.bounds}},photoScope,
                 presentation:{expanded:state.expanded,
                   scrollTop:bounded(list?.scrollTop??0),
-                  scrollLeft:bounded(list?.scrollLeft??0)}}}
+                  scrollLeft:bounded(list?.scrollLeft??0),
+                  // Keep the already-viewed signed page depth on rotation.
+                  // The new camera must still reauthorize every page, capped
+                  // at the same 10-page limit as Viewer Back.
+                  loadedCount:Math.min(XDRIVE_PLACES_DRAWER_RETURN_ITEM_LIMIT,
+                    state.items.length)}}}
           }
           // When several CSS resize frames precede one /cells response,
           // preserve only the first valid intent. Native Hosts coalesce the
