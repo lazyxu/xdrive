@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { formatBytes } from '../format'
-import { xDriveBackgroundTaskKindLabel, xDriveBackgroundTaskStateLabel } from '../background-tasks'
 import { xDriveFileExplorerAvailabilityError, xDriveFileExplorerAvailabilityFromSnapshot } from '../file-explorer-availability'
-import { xDriveFileOperationTypeLabel } from '../file-operations'
-import { xDriveTransferKindLabel, xDriveTransferRootTasks } from '../transfers'
 import { XDriveHomePage } from './HomePage'
+import { xDriveOverviewActivity } from './OverviewSharedModels'
+import { xDriveOverviewProjectFileItem } from './OverviewFileProjection'
 import type { XDriveHomeAlert, XDriveHomeListItem } from './HomePage'
 import type { XDriveFileExplorerItem } from './FileExplorer'
 import type { Node, QuotaUsage } from '../models'
@@ -241,17 +240,7 @@ export function XDriveOverviewPage({
     [port],
   )
 
-  const explorerItem = (
-    item: XDriveFileRecentItem<Node> | XDriveFileFavoriteItem<Node>,
-  ): XDriveFileExplorerItem => ({
-    id: item.node.id,
-    name: item.node.name,
-    kind: item.node.type === 'dir' ? 'dir' : 'file',
-    size: item.node.size,
-    revision: item.node.revision,
-    updatedAt: item.node.updated_at,
-    path: item.path.replace(/^\/+/, ''),
-  })
+  const explorerItem = xDriveOverviewProjectFileItem
 
   const availability = (item: XDriveFileExplorerItem) => {
     if (!fileAvailabilitySupported) return undefined
@@ -297,17 +286,11 @@ export function XDriveOverviewPage({
     }
   })
 
-  const failedTransfer = xDriveTransferRootTasks(transfers).find(
-    (task) => task.state === 'failed' || task.state === 'partial',
-  )
-  const failedOperation = fileOperations.find((operation) => operation.status === 'failed')
-  const failedBackgroundTask = backgroundTasks.find((task) => task.state === 'failed')
-  const recentSync = [...backgroundTasks]
-    .filter((task) => (
-      (task.domain === 'sync_run' || task.kind === 'source.sync') &&
-      (task.state === 'completed' || task.state === 'partial')
-    ))
-    .sort((a, b) => Date.parse(b.finished_at || b.updated_at) - Date.parse(a.finished_at || a.updated_at))[0]
+  const { alerts: activityAlerts, recentActivity } = xDriveOverviewActivity({
+    transfers,
+    fileOperations,
+    backgroundTasks,
+  })
   const lowDisk = Boolean(
     localDiskSpace?.supported &&
     localDiskSpace.status !== 'PASS',
@@ -336,41 +319,7 @@ export function XDriveOverviewPage({
       message: `剩余 ${formatBytes(localDiskSpace.free_bytes)} / ${formatBytes(localDiskSpace.total_bytes)}。释放本地缓存或清理磁盘后可避免下载与同步失败。`,
     })
   }
-  if (failedTransfer) {
-    alerts.push({
-      key: 'transfer-failed',
-      tone: 'bad',
-      title: '传输失败',
-      message: `${xDriveTransferKindLabel(failedTransfer.kind)} · ${failedTransfer.file_name}${failedTransfer.error ? ' · ' + failedTransfer.error : ''}`,
-    })
-  }
-  if (failedOperation) {
-    alerts.push({
-      key: 'operation-failed',
-      tone: 'bad',
-      title: '文件操作失败',
-      message: `${xDriveFileOperationTypeLabel(failedOperation.type)}${failedOperation.error ? ' · ' + failedOperation.error : ''}`,
-    })
-  }
-  if (failedBackgroundTask) {
-    alerts.push({
-      key: 'background-failed',
-      tone: 'bad',
-      title: failedBackgroundTask.kind === 'source.sync' || failedBackgroundTask.domain === 'sync_run'
-        ? '同步任务失败'
-        : '后台任务失败',
-      message: `${xDriveBackgroundTaskKindLabel(failedBackgroundTask.kind)}${failedBackgroundTask.source_name ? ' · ' + failedBackgroundTask.source_name : ''}${failedBackgroundTask.error ? ' · ' + failedBackgroundTask.error : ''}`,
-    })
-  }
-
-  const recentActivity = recentSync
-    ? [
-        xDriveBackgroundTaskKindLabel(recentSync.kind),
-        recentSync.source_name,
-        xDriveBackgroundTaskStateLabel(recentSync.state),
-        recentTime(recentSync.finished_at || recentSync.updated_at),
-      ].filter(Boolean).join(' · ')
-    : undefined
+  alerts.push(...activityAlerts)
 
   return (
     <XDriveHomePage

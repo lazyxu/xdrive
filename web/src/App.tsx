@@ -107,7 +107,7 @@ import { XDriveRoutedGalleryThumbnailBridge } from './routedGalleryThumbnailBrid
 import { xDriveTakeMapScopeHandoffFromURL, xDriveAbandonMapScopeRequired, xDriveRestoreMapReferrerAfterScrub } from './mapScopeHandoff'
 import type { XDriveMapScopeHandoffState } from './mapScopeHandoff'
 import { createWebShareDialogAdapter, createWebTrashDialogAdapter, createWebVersionHistoryDialogAdapter } from './fileDialogAdapters'
-import { createXDriveBrowserWorkspaceHost } from './browserWorkspaceHost'
+import { createXDriveBrowserWorkspaceHost, xDriveBrowserFilesRouteHost } from './browserWorkspaceHost'
 import { clearWebBrowserCache, createWebBrowserStorageSnapshot } from './browserStorage'
 import { xDriveBrowserStorageRead, xDriveBrowserStorageWrite, xDriveBrowserStorageRemove } from './browserSafeStorage'
 import PwaOfflineDirectorySection from './PwaOfflineDirectorySection'
@@ -345,9 +345,7 @@ function App({
   const [username, setUsername] = useState(() => xDriveBrowserStorageRead(USER_KEY) ?? '')
   const [serverBuild, setServerBuild] = useState<BuildInfo | null>(null)
   const [authNotice, setAuthNotice] = useState('')
-  // An authenticated login may require an immediate password change even
-  // before the first /me response finishes. This flag comes only from the
-  // Server's successful login result; cold-cookie restore still uses /me.
+  // Only the successful Server login can require password rotation before /me.
   const [loginPasswordChangeRequired, setLoginPasswordChangeRequired] = useState(false)
   const [logoutInProgress, setLogoutInProgress] = useState(false)
   const [cookieBootPending, setCookieBootPending] = useState(() =>
@@ -1932,8 +1930,7 @@ function FileManager({
       }
       try {
         await api.changePassword(passwordValues.current, passwordValues.next)
-        // Login-response gating can precede /me. Never spread a null profile
-        // into a fabricated authenticated Owner; read the real profile first.
+        // Preserve the real authenticated Owner identity even if /me has not completed.
         const currentProfile = profile || await api.me()
         if (currentProfile.username !== username) {
           throw new Error('修改密码后无法核对当前登录账号，请重新登录。')
@@ -2551,9 +2548,10 @@ function FileManager({
             onOpenTransfers={() => setTransferPopoverOpen(true)}
           />
         ) : appView === 'files' ? (
-          <Box
-           
-            sx={{
+          <XDriveAppPageOutlet
+            host={xDriveBrowserFilesRouteHost(browserWorkspaceHost, (
+              <Box
+                sx={{
               height: '100%',
               minHeight: 0,
               display: 'flex',
@@ -2631,7 +2629,10 @@ function FileManager({
                 }}
                 onError={handleError}
               />
-          </Box>
+              </Box>
+            ))}
+            view={appView}
+          />
         ) : appView === 'gallery' ? (
           <>
           <input

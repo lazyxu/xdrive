@@ -117,6 +117,11 @@ function verifyRangePage<TNode extends { id: number }>(
       page.items.length > page.limit ||
       !Number.isSafeInteger(page.total_count) || page.total_count < 0 ||
       (page.total_count_included !== undefined && typeof page.total_count_included !== 'boolean') ||
+      // A counted page with actual rows cannot assert fewer total entries
+      // than the end of its returned window. Empty out-of-range windows are
+      // legitimate, and legacy count-less sparse reads stay compatible.
+      (page.total_count_included === true && page.items.length > 0 &&
+        page.total_count < request.offset + page.items.length) ||
       (page.sort !== undefined && page.sort !== request.sort.key) ||
       (page.order !== undefined && page.order !== request.sort.direction)) {
     throw new Error('Invalid Files Host counted Range page')
@@ -128,6 +133,19 @@ function verifyRangePage<TNode extends { id: number }>(
     }
     seen.add(item.id)
   }
+}
+
+/**
+ * An AbortSignal is a real disposable read boundary, not merely advisory to a
+ * transport implementation. Reject before invoking any authenticated Host
+ * endpoint and again after the await: an Agent/CGI that ignores cancellation
+ * must not promote its late bytes to a current Files Controller.
+ */
+function assertActiveFilesRead(signal: AbortSignal): void {
+  if (!signal.aborted) return
+  const cancelled = new Error('Files Host read was cancelled')
+  cancelled.name = 'AbortError'
+  throw cancelled
 }
 
 /**
@@ -157,9 +175,11 @@ export async function xDriveFileExplorerReadDirectoryPage<
         /[\x00-\x1f\x7f]/.test(request.cursor)) {
       throw new Error('Invalid Files Host cursor request')
     }
+    assertActiveFilesRead(request.signal)
     const page = await port.readPage(
       request.parentID, request.limit, request.sort, request.cursor, request.signal,
     )
+    assertActiveFilesRead(request.signal)
     verifyCursorPage(page, request.limit, request.cursor)
     return { mode: 'cursor', page }
   }
@@ -168,13 +188,18 @@ export async function xDriveFileExplorerReadDirectoryPage<
     // Opaque cursor reads still require a strictly positive parent Node ID.
     if (!Number.isSafeInteger(request.parentID) || request.parentID < 0 ||
         !Number.isSafeInteger(request.offset) || request.offset < 0 ||
-        !Number.isSafeInteger(request.limit) || request.limit <= 0) {
+        !Number.isSafeInteger(request.limit) || request.limit <= 0 ||
+        // A huge pair of individually safe integers can still overflow the
+        // exact positional end. Do not send a rounded ordinal to the Host.
+        !Number.isSafeInteger(request.offset + request.limit)) {
       throw new Error('Invalid Files Host counted Range request')
     }
+    assertActiveFilesRead(request.signal)
     const page = await port.readRange(
       request.parentID, request.offset, request.limit, request.sort,
       request.includeCount, request.grouping, request.signal,
     )
+    assertActiveFilesRead(request.signal)
     verifyRangePage(page, request)
     return { mode: 'range', page }
   }

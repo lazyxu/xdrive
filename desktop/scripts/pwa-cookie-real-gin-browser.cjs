@@ -244,21 +244,58 @@ async function main() {
       ignoreHTTPSErrors: true, serviceWorkers: 'block', locale: 'zh-CN',
     })
     const passwordPage = await passwordContext.newPage()
+    // Diagnose this real Gin UI transition without ever recording JWTs,
+    // cookies, credentials, response bodies, private paths or user content.
+    // This does NOT turn a failed forced-password flow into a passing test.
+    const passwordLoginTrace = []
+    const passwordPageErrors = []
+    passwordPage.on('response', response => {
+      const pathname = new URL(response.url()).pathname
+      if (pathname !== '/api/v1/me' &&
+          pathname !== browserLogin && pathname !== browserRefresh) return
+      if (passwordLoginTrace.length >= 12) return
+      passwordLoginTrace.push({ route: pathname, status: response.status() })
+    })
+    passwordPage.on('pageerror', error => {
+      if (passwordPageErrors.length < 5) passwordPageErrors.push(error.name)
+    })
     passwordPage.setDefaultTimeout(30000)
+    checkpoint = 'forced-login-open-page'
     await passwordPage.goto(origin + '/#/app/files', { waitUntil: 'domcontentloaded' })
+    checkpoint = 'forced-login-await-form'
     await passwordPage.locator('#web-login-username').waitFor()
-    const passwordLogin = passwordPage.waitForResponse(
-      isResponse(browserLogin, 'POST', 200))
+    const passwordLogin = passwordPage.waitForResponse(response =>
+      matches(browserLogin)(response) && response.request().method() === 'POST')
+    checkpoint = 'forced-login-submit'
     await passwordPage.locator('#web-login-username').fill(ready.password_username)
     await passwordPage.locator('#web-login-password').fill('PwaCookieOld-TestOnly_2026!')
     await passwordPage.getByRole('button', { name: '登录', exact: true }).click()
-    const firstPasswordSession = await (await passwordLogin).json()
+    checkpoint = 'forced-login-http-status'
+    const passwordResponse = await passwordLogin
+    assert.equal(passwordResponse.status(), 200,
+      'temporary-password Owner must authenticate through the real Gin endpoint')
+    const firstPasswordSession = await passwordResponse.json()
     assert.equal(firstPasswordSession.browser_session, true)
     assert.equal(firstPasswordSession.refresh_token || '', '')
     const oldAccess = firstPasswordSession.access_token
     assert(typeof oldAccess === 'string' && oldAccess.length > 16)
-    await passwordPage.getByRole('heading',
-      { name: '修改临时密码', exact: true }).waitFor()
+    checkpoint = 'forced-login-required-password-form'
+    try {
+      await passwordPage.getByRole('heading',
+        { name: '修改临时密码', exact: true }).waitFor()
+    } catch (error) {
+      // Persist only redacted state/HTTP status evidence; never dump DOM,
+      // access token, Cookie, HTTP response body or submitted password.
+      summary.forcedPasswordDiagnostics = {
+        authRoutes: passwordLoginTrace,
+        pageErrorTypes: passwordPageErrors,
+        loginFormPresent: (await passwordPage.locator('#web-login-username').count()) > 0,
+        changeFormPresent: (await passwordPage.locator('#xdrive-current-password').count()) > 0,
+        filesWorkspacePresent: (await passwordPage.locator('[data-xdrive-files-workspace]').count()) > 0,
+        locationIsFiles: new URL(passwordPage.url()).hash === '#/app/files',
+      }
+      throw error
+    }
     const passwordCookieBefore = await refreshCookie(passwordContext)
     assert(passwordCookieBefore?.httpOnly && passwordCookieBefore.secure)
     summary.forcedPasswordForm = true

@@ -27,6 +27,32 @@ test('both SDK Hosts recheck only an accepted EMPTY Owner map at a bounded visib
   assert.doesNotMatch(effect,/mintChildTicket|beginAuthorizedInlineSession|ForwardWGS84|fetch\(/)
 })
 
+test('nonempty BD09 Camera permits a user-only exact Owner refresh in both SDK Hosts',()=>{
+  const marker=source.indexOf('data-xdrive-places-nonempty-map-recheck')
+  assert.ok(marker>0,'only one common trusted Parent refresh action')
+  const action=source.slice(marker-220,marker+800)
+  assert.match(action,/acceptedViewport && phase === 'ready' && trustedSummary\.total_count > 0/)
+  assert.match(action,/acceptedScope\.current\?\.key === currentFilterKey/)
+  assert.match(action,/onClick=\{\(\) => refreshFilteredCells\.current\?\.\(true\)\}/)
+  assert.match(action,/刷新当前地图照片/)
+  assert.match(action,/minHeight:44/)
+  const refresh=source.slice(source.indexOf('    refreshFilteredCells.current=(skipPending=false)=>{'),
+    source.indexOf('    const acquireTicket=async()'))
+  assert.match(refresh,/skipPending && \(activeQuery/)
+  assert.match(refresh,/acceptedScope\.current\?\.key!==filterRef\.current\.key/)
+  assert.match(refresh,/void queryCells\(bounds,worldwideDiscovery \? false : last\.live\)/)
+  assert.doesNotMatch(refresh,/mintChildTicket|beginAuthorizedInlineSession|convertor|ForwardWGS84/)
+  const driver=read('desktop/scripts/gallery-places-dual-host-chromium.cjs')
+  const fixture=read('desktop/scripts/gallery-places-dual-host-chromium.tsx')
+  assert.match(fixture,/partialBD09 && !partialLocationReady \? 3 : 9/)
+  assert.match(fixture,/fixture-finish-partial-bd09/)
+  assert.match(driver,/testPartialBD09CurrentCameraRefresh\(browser,'inline',port\)/)
+  assert.match(driver,/testPartialBD09CurrentCameraRefresh\(browser,'isolated',port\)/)
+  assert.match(driver,/nonempty map refresh reauthorizes current BD09 camera and Owner scope/)
+  assert.match(source,/xDriveMountBaiduInlineMap/)
+  assert.match(source,/xDriveMountBaiduIsolatedFrame/)
+})
+
 test('empty-map refresh reuses the original scoped Camera and never steals an in-flight request', () => {
   const start=source.indexOf('    refreshFilteredCells.current=(skipPending=false)=>{')
   const end=source.indexOf('    const acquireTicket=async()',start)

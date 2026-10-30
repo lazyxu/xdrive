@@ -1,0 +1,38 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const root = path.resolve(__dirname, '../..')
+const read = file => fs.readFileSync(path.join(root, file), 'utf8')
+
+test('server-address UI exists on Desktop, Android and iOS, DSM stays authenticated CGI', () => {
+  const desktop = read('desktop/src/renderer/App.tsx')
+  const android = read('android/app/src/main/java/com/tfluid/xdrive/AuthScreens.kt')
+  const ios = read('ios/XDriveIOS/XDriveWebAppHome.swift')
+  const synology = read('web/src/synology.tsx')
+  const host = read('web/src/synologyHost.ts')
+  assert.match(desktop, /setServer\(/)
+  assert.match(android, /AuthField\("服务器", server,/)
+  assert.match(android, /AuthField\("内网 IP（可选）", lanIp,/)
+  assert.match(ios, /Text\("服务器 HTTPS 地址"\)/)
+  assert.match(ios, /Button\("更换服务器地址"\)/)
+  assert.match(synology, /XDriveSettingsDialog/)
+  assert.match(host, /new URL\('backup\.cgi', window\.location\.href\)/)
+  // A typed `localStorage:` Host port is legitimate; reject actual
+  // browser storage access, native IPC, or an unscoped fetch instead.
+  assert.doesNotMatch(host, /fetch\s*\(|xdriveDesktop|ipcRenderer|(?:window\.|globalThis\.)?localStorage\s*(?:\.|\[)\s*(?:getItem|setItem|removeItem|clear)/)
+})
+test('current DSM CGI cannot turn a text field into an arbitrary Server credential proxy', () => {
+  const adapter = read('ui/shared/src/synology-backup-adapter.ts')
+  const gateway = read('internal/synologyui/gateway.go')
+  const cgi = read('packaging/synology/ui/backup.cgi')
+  const docs = read('docs/architecture/xdrive-server-target-parity.md')
+  assert.match(adapter, /authenticated same-origin HTTPS CGI/)
+  assert.match(gateway, /authenticate|Authenticate|loadAuthority/)
+  assert.match(gateway, /\/v1\/bootstrap/)
+  assert.match(cgi, /backup synology-ui cgi/)
+  assert.match(docs, /真正经授权的 Server 地址/)
+  assert.match(docs, /不允许旧 A → 新 B → A 混淆/)
+  assert.match(docs, /跳过（未验收）/)
+})

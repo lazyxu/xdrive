@@ -971,7 +971,7 @@ python3 - "$dir/backup-admin-inventory.json" "$dir/backup-admin-snapshot-index.j
 import json,sys
 inventory=json.load(open(sys.argv[1],encoding="utf-8"))
 index=json.load(open(sys.argv[2],encoding="utf-8"))
-assert index["protocol"]=="xdrive-backup-snapshot-index-v1",index
+assert index["protocol"]=="xdrive-backup-snapshot-index-v2",index
 assert index["policy_revision"]==inventory["policy"]["revision"],index
 assert index["total_snapshots"]==inventory["total_snapshots"],index
 assert index["indexed_snapshots"]==len(index["snapshot_ids"]),index
@@ -982,7 +982,7 @@ assert all(x.startswith(("v1:","v2-default:","v2-configured:")) and "/" not in x
            for x in index["snapshot_ids"]),index
 assert len(set(index["snapshot_ids"]))==len(index["snapshot_ids"]),index
 PY
-# >1000 snapshots: keep accurate total, clearly disclose the index cap.
+# >1000 snapshots: new Host index v2 exposes them without suggesting recoverability.
 for (( n=0; n<900; n++ )); do
   printf -v extra 'xdrive-backup-20240202T%02d%02d00Z' "$((n / 60))" "$((n % 60))"
   mkdir "$XD_CONFIG_DIR/backups/snapshots/$extra"
@@ -993,11 +993,35 @@ import json,sys
 inventory=json.load(open(sys.argv[1],encoding="utf-8"))
 index=json.load(open(sys.argv[2],encoding="utf-8"))
 assert index["total_snapshots"]==int(sys.argv[3])+105+900,index
-assert index["indexed_snapshots"]==len(index["snapshot_ids"])==1000,index
-assert index["truncated"] is True,index
+assert index["protocol"]=="xdrive-backup-snapshot-index-v2",index
+assert index["indexed_snapshots"]==len(index["snapshot_ids"])==index["total_snapshots"],index
+assert index["truncated"] is False,index
 assert inventory["total_snapshots"]==index["total_snapshots"],inventory
 assert index["snapshot_ids"][:100]==[s["id"] for s in inventory["snapshots"]],index
-assert len(set(index["snapshot_ids"]))==1000,index
+assert len(set(index["snapshot_ids"]))==index["indexed_snapshots"],index
+PY
+# Test the 10k cap without creating 10k disk directories; Host's index
+# generator receives a synthetic, sorted stream in exactly the same format.
+backup_admin_policy_values
+synthetic_index="$TMP/host-10005-snapshot-index.tsv"
+python3 - "$synthetic_index" <<'PY'
+import datetime,sys
+start=datetime.datetime(2024,1,1,tzinfo=datetime.timezone.utc)
+with open(sys.argv[1],"w",encoding="utf-8") as out:
+    for i in range(10004,-1,-1):
+        stamp=(start+datetime.timedelta(minutes=i)).strftime("%Y%m%dT%H%M%SZ")
+        out.write("xdrive-backup-"+stamp+"\tv1\n")
+PY
+backup_admin_snapshot_index "$dir" "$synthetic_index" 10005 "$backup_admin_revision"
+python3 - "$dir/backup-admin-snapshot-index.json" <<'PY'
+import json,sys
+index=json.load(open(sys.argv[1],encoding="utf-8"))
+assert index["protocol"]=="xdrive-backup-snapshot-index-v2",index
+assert index["total_snapshots"]==10005,index
+assert index["indexed_snapshots"]==len(index["snapshot_ids"])==10000,index
+assert index["truncated"] is True,index
+assert len(set(index["snapshot_ids"]))==10000,index
+assert index["snapshot_ids"][0]>index["snapshot_ids"][-1],index
 PY
 for (( n=0; n<900; n++ )); do
   printf -v extra 'xdrive-backup-20240202T%02d%02d00Z' "$((n / 60))" "$((n % 60))"

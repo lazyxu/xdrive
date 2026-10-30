@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import type {
   XDriveCloudStorageDataSource,
   XDriveLocalStorageDataSource,
@@ -76,6 +77,32 @@ export function createXDriveBrowserWorkspaceHost(ports: {
       ...(ports.adminRoleVerified === true && ports.adminStorage ? {
         adminStoragePage: ports.adminStorage,
       } : {}),
+    },
+  }
+}
+
+/**
+ * Transitional, explicitly authorized Web Files controller slot, mirroring
+ * Desktop's existing shared-outlet migration. Only the live authenticated
+ * Browser Files controller can supply this content, and this function never
+ * acquires a File/Root/Agent privilege or a network transport.
+ *
+ * Do not expose the slot on every route or persist it across Owner changes.
+ * Desktop native Files and DSM's authenticated read-only Files remain distinct
+ * Host data sources behind the same canonical route.
+ */
+export function xDriveBrowserFilesRouteHost(
+  browserHost: XDriveWorkspaceHostAdapter,
+  filesContent: ReactNode,
+): XDriveWorkspaceHostAdapter {
+  if (browserHost.platform !== 'web') {
+    throw new Error('Browser Files controller requires the Web Host')
+  }
+  return {
+    ...browserHost,
+    services: {
+      ...browserHost.services,
+      filesControllerContent: filesContent,
     },
   }
 }

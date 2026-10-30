@@ -52,7 +52,7 @@ export function XDriveBackupSnapshotIndexPager({
           !Number.isSafeInteger(incoming.total_snapshots) ||
           !Number.isSafeInteger(incoming.indexed_snapshots) ||
           incoming.total_snapshots < 0 || incoming.total_snapshots > 1000000 ||
-          incoming.indexed_snapshots < 0 || incoming.indexed_snapshots > 1000 ||
+          incoming.indexed_snapshots < 0 || incoming.indexed_snapshots > 10000 ||
           incoming.indexed_snapshots > incoming.total_snapshots ||
           incoming.truncated !== (incoming.indexed_snapshots < incoming.total_snapshots) ||
           incoming.offset !== offset || incoming.limit !== pageSize ||
@@ -61,7 +61,7 @@ export function XDriveBackupSnapshotIndexPager({
           new Set(ids).size !== ids.length ||
           (incoming.next_offset !== undefined &&
             (!Number.isSafeInteger(incoming.next_offset) ||
-              incoming.next_offset <= offset || incoming.next_offset > 1000))) {
+              incoming.next_offset <= offset || incoming.next_offset > 10000))) {
         throw new Error('宿主机返回的备份索引页不符合安全协议。')
       }
       setResult(incoming)
@@ -142,7 +142,7 @@ export function XDriveBackupSnapshotIndexPager({
             </Stack>
             {result.truncated ? (
               <Alert severity="warning">
-                宿主机最多提供 1,000 个快照编号；实际总数更多。
+                当前宿主机只索引了 {result.indexed_snapshots.toLocaleString('zh-CN')} / {result.total_snapshots.toLocaleString('zh-CN')} 代；超过已索引范围的备份仍不能从此页读取或验证。新版 Host 最多索引 10,000 代，旧版最多 1,000 代。
                 达到索引上限后不可据此推断已经读完全部备份。
               </Alert>
             ) : null}

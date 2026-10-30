@@ -2139,6 +2139,78 @@ async function testDelayedBD09Map(browser,mode,port){
   } finally {await context.close()}
 }
 
+// Nonempty BD-09 backfill: the map already displays three signed photos,
+// so its intentionally EMPTY-only 120s poll cannot discover six newly
+// converted photos. A manual 44px Camera refresh must use the SAME Owner
+// filters, BD-09 bounds and mounted SDK Host, for inline and HTTPS Child.
+async function testPartialBD09CurrentCameraRefresh(browser,mode,port){
+  const context=await browser.newContext({
+    viewport:{width:960,height:760},locale:'zh-CN',
+    ignoreHTTPSErrors:true,serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(20000)
+  const errors=[]
+  page.on('pageerror',error=>errors.push(error.message))
+  await page.route('https://api.map.baidu.com/api?**',route=>{
+    assert.equal(new URL(route.request().url()).searchParams.get('ak'),
+      'TEST_ONLY_BROWSER_AK')
+    return route.fulfill({status:200,contentType:'text/javascript',body:sdkStub})
+  })
+  try{
+    await page.goto('https://'+galleryHost+':'+port+
+      '/?mode='+mode+'&partial_bd09=1',{waitUntil:'domcontentloaded'})
+    await page.getByText('当前地图可查看 3 张照片',{exact:true}).waitFor()
+    await page.waitForFunction(()=>window.__mapProbe?.queries.some(q=>
+      q.count===3 && q.bounds.west===100 && q.bounds.south===20 &&
+      q.bounds.east===125 && q.bounds.north===40))
+    const button=page.locator('[data-xdrive-places-nonempty-map-recheck]')
+    await button.waitFor({state:'visible'})
+    await page.locator('[data-xdrive-places-trusted-photo-cover]').first()
+      .waitFor({state:'visible'})
+    const prior=await page.evaluate(()=>({
+      queries:window.__mapProbe.queries.length,
+      count:window.__mapProbe.queries.at(-1)?.count,
+      completed:window.__mapProbe.bd09Completions,
+      noEmptyRefresh:document.querySelectorAll(
+        '[data-xdrive-places-empty-map-recheck]').length===0,
+    }))
+    const sdkLoads=mode==='inline'?inlineSDKLoads:childSDKLoads
+    await page.locator('#fixture-finish-partial-bd09').click()
+    const beforeClick=await page.evaluate(()=>window.__mapProbe.queries.length)
+    record(mode+': partially derived Owner map remains nonempty until explicit refresh',
+      prior.count===3&&prior.completed===0&&prior.noEmptyRefresh&&
+      prior.queries===beforeClick)
+    await button.click()
+    await page.getByText('当前地图可查看 9 张照片',{exact:true}).waitFor()
+    await page.locator('[data-xdrive-places-trusted-photo-cover]').first()
+      .waitFor({state:'visible'})
+    const after=await page.evaluate(()=>({
+      queries:window.__mapProbe.queries,
+      completed:window.__mapProbe.bd09Completions,
+      noSDKFailure:window.__mapProbe.failed===false,
+      cover:document.querySelectorAll('[data-xdrive-places-trusted-photo-cover]').length,
+    }))
+    const newer=after.queries.slice(beforeClick)
+    record(mode+': nonempty map refresh reauthorizes current BD09 camera and Owner scope',
+      after.completed===1&&after.noSDKFailure&&after.cover>0&&
+      newer.length===1&&newer[0].count===9&&newer[0].favorite===false&&
+      newer[0].albumKey===''&&
+      newer[0].bounds.west===100&&newer[0].bounds.south===20&&
+      newer[0].bounds.east===125&&newer[0].bounds.north===40&&
+      errors.length===0)
+    record(mode+': nonempty refresh does not remount map SDK or add provider conversions',
+      (mode==='inline'?inlineSDKLoads:childSDKLoads)===sdkLoads)
+    await page.locator('[data-xdrive-places-trusted-photo-cover]').first().click()
+    const dialog=page.locator('[data-xdrive-places-photo-drawer]')
+    await dialog.locator('[data-xdrive-places-photo-drawer-item]').first()
+      .waitFor({state:'visible'})
+    const range=await page.evaluate(()=>window.__mapProbe.photoPreviewRanges.at(-1))
+    record(mode+': refreshed map Cell still opens only its fresh 9-photo Range',
+      range?.total===9&&range?.items===9&&range?.offset===0&&
+      range?.limit===48&&errors.length===0)
+  }finally{await context.close()}
+}
+
 // Exercise the ACTUAL production 120-second empty-map interval callback in
 // mounted Chromium, not a manual Refresh click or source regex. Capture only
 // this named timer in the Parent and invoke it synchronously: neither a
@@ -3109,6 +3181,67 @@ async function testAdjacent142And28PhotoCovers(browser,mode,port){
       JSON.stringify({mode,expected:scrollBefore,actual:restored}))
     record(mode+': Viewer Back reauthorizes 142 items before restoring scroll anchor',
       didRestore&&Math.abs(restored-scrollBefore)<6&&errors.length===0)
+    // Regression: a 142-photo Owner Cell has three verified pages. Rotating
+    // iOS after scrolling must not retain the old signed Cell or silently
+    // discard pages 48..141. Reauthorize the resized Camera, refetch 48/48/46
+    // and restore the visual anchor only after those fresh pages exist.
+    const beforeRotation=await page.evaluate(()=>{
+      const p=window.__mapProbe
+      p.preRotationDrawer=document.querySelector('[data-xdrive-places-photo-drawer]')
+      const list=document.querySelector('[data-xdrive-places-photo-drawer-items]')
+      return {queries:p.queries.length,previews:p.photoPreviewRanges.length,
+        scrollTop:list?.scrollTop??0}
+    })
+    await page.setViewportSize({width:844,height:390})
+    const restoredAfterRotate=await page.waitForFunction(previous=>{
+      const p=window.__mapProbe
+      const drawer=document.querySelector('[data-xdrive-places-photo-drawer]')
+      const list=drawer?.querySelector('[data-xdrive-places-photo-drawer-items]')
+      const pages=p.photoPreviewRanges.slice(previous.previews)
+        .filter(x=>x.total===142)
+      if(p.queries.length<=previous.queries||!list||
+          list.querySelectorAll('[data-xdrive-places-photo-drawer-item]').length!==142||
+          pages.length<3)return false
+      const maxScroll=Math.max(0,list.scrollHeight-list.clientHeight)
+      const target=Math.min(previous.scrollTop,maxScroll)
+      return p.preRotationDrawer?.isConnected===false &&
+        p.preRotationDrawer!==drawer &&
+        Math.abs(list.scrollTop-target)<6
+    },beforeRotation,{timeout:12000}).then(()=>true).catch(()=>false)
+    const rotation=await page.evaluate(previous=>{
+      const p=window.__mapProbe
+      const drawer=document.querySelector('[data-xdrive-places-photo-drawer]')
+      const list=drawer?.querySelector('[data-xdrive-places-photo-drawer-items]')
+      const pages=p.photoPreviewRanges.slice(previous.previews)
+        .filter(x=>x.total===142)
+      return {
+        reauthorized:p.queries.length>previous.queries,
+        oldDetached:p.preRotationDrawer?.isConnected===false &&
+          p.preRotationDrawer!==drawer,
+        total:p.queries.at(-1)?.count,
+        nodes:Array.from(list?.querySelectorAll('[data-xdrive-places-photo-drawer-item]')||[])
+          .map(x=>x.getAttribute('data-xdrive-places-photo-drawer-item')),
+        pages:pages.map(x=>({offset:x.offset,items:x.items,limit:x.limit})),
+        scrollTop:list?.scrollTop??0,
+        target:list?Math.min(previous.scrollTop,
+          Math.max(0,list.scrollHeight-list.clientHeight)):0,
+      }
+    },beforeRotation)
+    const rotationPass=restoredAfterRotate&&rotation.reauthorized&&rotation.oldDetached&&
+      rotation.total===170&&rotation.nodes.length===142&&
+      new Set(rotation.nodes).size===142&&rotation.pages.length===3&&
+      rotation.pages.every((p,i)=>p.offset===i*48&&p.limit===48&&
+        p.items===[48,48,46][i])&&
+      Math.abs(rotation.scrollTop-rotation.target)<6&&
+      rotation.target>0&&errors.length===0
+    if(!rotationPass)console.error('places-142-rotation-diagnostic',JSON.stringify({
+      mode,restoredAfterRotate,reauthorized:rotation.reauthorized,
+      oldDetached:rotation.oldDetached,total:rotation.total,
+      nodes:rotation.nodes.length,uniqueNodes:new Set(rotation.nodes).size,
+      pages:rotation.pages,scrollTop:rotation.scrollTop,target:rotation.target,
+      errors:errors.length,
+    }))
+    record(mode+': 142-photo rotation reauthorizes all pages and scroll position',rotationPass)
     await page.keyboard.press('Escape')
     await dialog.waitFor({state:'hidden'})
   }finally{await context.close()}
@@ -3159,9 +3292,17 @@ async function testPhotoMarkerPresentation(browser,mode,port){
     record(mode+': one verified photo layer removes competing SDK labels',
       presentation.pins===1&&presentation.cellCount===2&&
       presentation.count===14&&presentation.strip===0&&errors.length===0)
+    // The shared floating 44px action must reveal the ONE approved list of
+    // otherwise decluttered Cells; no second SDK label or broader query.
+    const reveal=page.locator('[data-xdrive-places-reveal-hidden-cells]')
+    await reveal.waitFor({state:'visible'})
+    const revealLabel=await reveal.textContent()
+    await reveal.click()
     const cells=page.locator('[data-xdrive-places-cluster-list]')
-    if(await cells.getAttribute('open')===null)
-      await cells.locator('summary').click()
+    const focused=await cells.evaluate(el=>el.open===true &&
+      el.querySelector('summary')===document.activeElement)
+    record(mode+': hidden signed map Cell has a direct accessible reveal',
+      revealLabel?.includes('1 个地点') && focused && errors.length===0)
     await cells.locator('button').nth(1).click()
     await page.locator('[data-xdrive-places-photo-drawer-items] button')
       .first().waitFor({state:'visible'})
@@ -3700,6 +3841,8 @@ async function main(){
       await testMapOverlayPinOcclusion(browser,'isolated',port)
       await testDelayedBD09Map(browser,'inline',port)
       await testDelayedBD09Map(browser,'isolated',port)
+      await testPartialBD09CurrentCameraRefresh(browser,'inline',port)
+      await testPartialBD09CurrentCameraRefresh(browser,'isolated',port)
       await testAutomaticBD09VisibilityRecheck(browser,'inline',port)
       await testAutomaticBD09VisibilityRecheck(browser,'isolated',port)
       await testMapColdH264Poster(browser,'inline',port)

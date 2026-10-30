@@ -19,6 +19,8 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
     private var activeBackupID: String?
     private var activeReview: Task<Void, Never>?
     private var activeReviewID: String?
+    private var activeGrantTask: Task<Void, Never>?
+    private var emergencyStopInProgress = false
     private static let maxReceiptReviewPerRun = 20
     private var consent: CheckedContinuation<Bool, Never>?
     private weak var consentAlert: UIAlertController?
@@ -137,6 +139,8 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                 "foregroundAutoSchedule": true,
                 "originalVideo": true,
                 "liveOriginalBundle": true,
+                "nativeBackgroundGrant": true,
+                "nativeBackgroundUpload": false,
                 "maxScannedAssets": XDriveIOSForegroundPhotoBackupMVP.maxScannedAssets,
                 "maxNewOriginalsPerRun": XDriveIOSForegroundPhotoBackupMVP.maxNewOriginalsPerRun
             ])
@@ -145,8 +149,8 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
             // *shared PWA login screen*, so it cannot demand an Owner token.
             // Still require the exact origin-locked main frame, and show an
             // explicit native confirmation before stopping that WebView.
-            guard activeBackup == nil && activeReview == nil else {
-                sendError(id, "相册备份或收据核对正在运行，请先完成或取消，再切换服务器。")
+            guard activeBackup == nil && activeReview == nil && activeGrantTask == nil else {
+                sendError(id, "照片备份、收据核对或授权正在运行，请先完成或取消。")
                 return
             }
             guard let currentURL = webView?.url, sameOrigin(currentURL) else {
@@ -181,9 +185,131 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
             } catch {
                 sendError(id, "无法核实当前服务器与 Owner，未读取系统相册。")
             }
+        case "photos.background.emergencyStop":
+            // Local stop-only capability: a trusted HTTPS main frame can
+            // always cancel its own iPhone background grant without a
+            // currently reachable Server, Owner bearer or PWA cookie.
+            guard !emergencyStopInProgress else {
+                sendError(id, "本机后台停止操作正在执行。")
+                return
+            }
+            emergencyStopInProgress = true
+            defer { emergencyStopInProgress = false }
+            // A simultaneous enable MUST finish before we delete its vault,
+            // otherwise an in-flight approval could reinstall the grant.
+            let pendingApproval = activeGrantTask
+            cancelActive()
+            if let pendingApproval { await pendingApproval.value }
+            // Stop ALL local foreground schedules, not merely the active
+            // Owner's system background grant. Never infer this from JS.
+            let stoppedForeground = XDriveIOSPhotoAutoScheduleStore.shared
+                .disableAllOnThisDevice()
+            do {
+                let pendingRemoteRevoke =
+                    try await XDriveIOSPhotoBackgroundGrantManager.shared
+                        .emergencyStopLocally()
+                sendResult(id, [
+                    "localStopped": true,
+                    "foregroundSchedulesStopped": stoppedForeground,
+                    "remoteRevokePending": pendingRemoteRevoke
+                ])
+            } catch {
+                sendError(id, "本机前台自动计划已停用，但后台 Keychain 清除尚未证实；请解锁后重试。")
+            }
+        case "photos.background.grant.status":
+            guard let source = parseOwner(body) else {
+                sendError(id, "后台授权状态需要当前登录的 Owner。")
+                return
+            }
+            do {
+                let owner = try await verifiedOwner(source)
+                let manager = XDriveIOSPhotoBackgroundGrantManager.shared
+                let local = try await manager.localStatus(owner: owner)
+                if local.enabled {
+                    do {
+                        let server = try await manager.verifyRemote(
+                            owner: owner, accessToken: source.accessToken
+                        )
+                        sendResult(id, backgroundGrantStatusObject(
+                            server, serverVerified: true
+                        ))
+                    } catch {
+                        // A network failure, revoked credential or old Server
+                        // cannot be represented as active upload permission.
+                        sendResult(id, backgroundGrantStatusObject(
+                            local, serverVerified: false
+                        ))
+                    }
+                } else {
+                    sendResult(id, backgroundGrantStatusObject(
+                        local, serverVerified: false
+                    ))
+                }
+            } catch {
+                sendError(id, "当前 Owner/Root 或本机后台凭据无法验证。")
+            }
+        case "photos.background.grant.configure":
+            guard activeBackup == nil && activeGrantTask == nil &&
+                  !emergencyStopInProgress,
+                  let source = parseOwner(body),
+                  let params = body["params"] as? [String: Any],
+                  let enabled = params["enabled"] as? Bool else {
+                sendError(id, "后台授权配置无效或已有前台任务正在运行。")
+                return
+            }
+            activeGrantTask = Task { @MainActor [weak self] in
+                guard let self else { return }
+                defer { self.activeGrantTask = nil }
+                do {
+                    let owner = try await self.verifiedOwner(source)
+                    try Task.checkCancellation()
+                    guard let currentURL = self.webView?.url,
+                          self.sameOrigin(currentURL) else {
+                        self.sendError(id, "当前网页已切换，拒绝修改后台授权。")
+                        return
+                    }
+                    let manager = XDriveIOSPhotoBackgroundGrantManager.shared
+                    if enabled {
+                        let access = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                        guard access == .authorized || access == .limited else {
+                            self.sendError(id, "请先授予 iPhone 相册访问权限。")
+                            return
+                        }
+                        let accepted = await self.confirmBackgroundGrant(owner: owner)
+                        try Task.checkCancellation()
+                        guard accepted else {
+                            self.sendError(id, "未创建后台备份授权。")
+                            return
+                        }
+                        _ = try await manager.enableAfterNativeConfirmation(
+                            owner: owner, accessToken: source.accessToken
+                        )
+                        let verified = try await manager.verifyRemote(
+                            owner: owner, accessToken: source.accessToken
+                        )
+                        try Task.checkCancellation()
+                        self.sendResult(id, self.backgroundGrantStatusObject(
+                            verified, serverVerified: true
+                        ))
+                    } else {
+                        let stopped = try await manager.disable(
+                            owner: owner, accessToken: source.accessToken
+                        )
+                        self.sendResult(id, self.backgroundGrantStatusObject(
+                            stopped, serverVerified: false
+                        ))
+                    }
+                } catch is CancellationError {
+                    self.sendError(id, "后台授权操作已取消，未假定成功。")
+                } catch {
+                    self.sendError(id, enabled
+                        ? "无法安全签发或验证后台凭据；请检查设备注册、Owner、服务器和 Keychain。"
+                        : "本机后台任务已请求停止；若服务器断线，请恢复后再次撤销远端授权。")
+                }
+            }
         case "photos.backup.start":
-            guard activeBackup == nil && activeReview == nil else {
-                sendError(id, "已有一轮照片备份正在运行。")
+            guard activeBackup == nil && activeReview == nil && activeGrantTask == nil else {
+                sendError(id, "已有照片备份、核对或授权任务正在运行。")
                 return
             }
             guard let source = parseOwner(body),
@@ -223,8 +349,13 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                 sendError(id, "尚未授权访问系统照片，未开始备份。")
                 return
             }
+            guard let gate = XDriveIOSOriginalRunGate.shared.acquire() else {
+                sendError(id, "另一项原件任务正在执行，请稍后重试。")
+                return
+            }
             activeBackupID = id
             activeBackup = Task { @MainActor [weak self] in
+                defer { XDriveIOSOriginalRunGate.shared.release(gate) }
                 guard let self else { return }
                 defer {
                     self.activeBackup = nil
@@ -292,6 +423,7 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                     return
                 }
                 let store = XDriveIOSPhotoAutoScheduleStore.shared
+                let stopGeneration = store.localStopGeneration
                 if !enabled {
                     store.disable(owner: owner)
                     cancelActive()
@@ -314,6 +446,10 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                 try Task.checkCancellation()
                 guard confirmed else {
                     sendError(id, "未开启自动增量备份。")
+                    return
+                }
+                guard store.localStopGeneration == stopGeneration else {
+                    sendError(id, "本机已紧急停止自动备份；此前的授权确认不能重新启用计划。")
                     return
                 }
                 let state = try store.configure(
@@ -404,22 +540,28 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                     sendResult(id, ["pending": 0, "maxPerRun": Self.maxReceiptReviewPerRun])
                     return
                 }
-                let records = try await XDrivePhotoSyncLedger.shared.operations(scope: scope)
+                let snapshot = try await XDrivePhotoSyncLedger.shared
+                    .pendingReceiptSnapshot(scope: scope, limit: 0)
                 sendResult(id, [
-                    "pending": records.filter { self.needsReceiptReview($0) }.count,
+                    "pending": snapshot.pending,
                     "maxPerRun": Self.maxReceiptReviewPerRun
                 ])
             } catch {
                 sendError(id, "未能核实 Owner 或读取加密账本；未推断任何备份成功。")
             }
         case "photos.reconcile.start":
-            guard activeBackup == nil && activeReview == nil,
+            guard activeBackup == nil && activeReview == nil && activeGrantTask == nil,
                   let source = parseOwner(body) else {
                 sendError(id, "已有备份/核对正在运行，或当前账户会话无效。")
                 return
             }
+            guard let gate = XDriveIOSOriginalRunGate.shared.acquire() else {
+                sendError(id, "原件任务正在执行，无法同时核对收据。")
+                return
+            }
             activeReviewID = id
             activeReview = Task { @MainActor [weak self] in
+                defer { XDriveIOSOriginalRunGate.shared.release(gate) }
                 guard let self else { return }
                 defer {
                     self.activeReview = nil
@@ -444,11 +586,12 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                         return
                     }
                     let ledger = XDrivePhotoSyncLedger.shared
-                    let records = try await ledger.operations(scope: scope)
-                    let uncertain = records.filter { self.needsReceiptReview($0) }
-                    let batch = Array(uncertain.prefix(Self.maxReceiptReviewPerRun))
+                    let snapshot = try await ledger.pendingReceiptSnapshot(
+                        scope: scope, limit: Self.maxReceiptReviewPerRun
+                    )
+                    let batch = snapshot.batch
                     var progress: [String: Any] = [
-                        "pending": uncertain.count,
+                        "pending": snapshot.pending,
                         "checked": 0,
                         "confirmed": 0,
                         "activeUnverified": 0,
@@ -481,9 +624,11 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
                         progress["stage"] = "已核对 \(progress["checked"] as? Int ?? 0)/\(batch.count) 项"
                         self.sendReviewProgress(id, progress)
                     }
-                    let latest = try await ledger.operations(scope: scope)
+                    let latest = try await ledger.pendingReceiptSnapshot(
+                        scope: scope, limit: 0
+                    )
                     try Task.checkCancellation()
-                    progress["pending"] = latest.filter { self.needsReceiptReview($0) }.count
+                    progress["pending"] = latest.pending
                     progress["stage"] = "本轮只读核对已结束；未证实的收据继续保留"
                     self.sendResult(id, progress)
                 } catch is CancellationError {
@@ -552,6 +697,51 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
             return true
         case .prepared, .confirmed:
             return false
+        }
+    }
+
+    private func backgroundGrantStatusObject(
+        _ result: XDriveIOSPhotoBackgroundGrantStatus,
+        serverVerified: Bool
+    ) -> [String: Any] {
+        let expiry = result.expiresAt?.timeIntervalSince1970 ?? 0
+        return [
+            "enrolled": result.enrolled,
+            "enabled": result.enabled && serverVerified,
+            "storedButUnverified": result.enabled && !serverVerified,
+            "revokePending": result.revokePending,
+            "serverVerified": serverVerified,
+            "expiresAt": expiry > 0 && expiry < 4_102_444_800
+                ? Int64((expiry * 1000).rounded(.towardZero)) : 0,
+            "backgroundUploadReady": false
+        ]
+    }
+
+    @MainActor
+    private func confirmBackgroundGrant(
+        owner: XDriveNativeOwnerRoot
+    ) async -> Bool {
+        await withCheckedContinuation { continuation in
+            guard let presenter = webView?.window?.rootViewController,
+                  presenter.presentedViewController == nil,
+                  consent == nil else {
+                continuation.resume(returning: false)
+                return
+            }
+            consent = continuation
+            let alert = UIAlertController(
+                title: "允许这台 iPhone 的受限后台备份授权？",
+                message: "当前账户：\(owner.username)\n服务器：\(owner.origin.host ?? "xDrive")\n只允许此设备向当前账户 Root 上传照片、视频和完整 Live 原件。授权有效期最多 14 天、可以随时撤销。\n为兼容锁屏，独立的受限 Device/Grant 证明将以此设备专用、首次解锁后可用的 Keychain 方式保存。\n系统允许且受保护文件可读取时，后台任务可检查并备份一项照片、视频或Live ZIP原件。锁屏时可能不可读取，强制退出不会保证自动运行。",
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "取消", style: .cancel) { [weak self] _ in
+                self?.finishConsent(false)
+            })
+            alert.addAction(UIAlertAction(title: "同意授权", style: .default) { [weak self] _ in
+                self?.finishConsent(true)
+            })
+            consentAlert = alert
+            presenter.present(alert, animated: true)
         }
     }
 
@@ -638,6 +828,7 @@ final class XDriveIOSPhotoHostBridge: NSObject, WKScriptMessageHandler {
     func cancelActive() {
         activeBackup?.cancel()
         activeReview?.cancel()
+        activeGrantTask?.cancel()
         if consent != nil {
             // Both WebKit and UIApplication lifecycle callbacks run on main.
             Task { @MainActor [weak self] in self?.finishConsent(false) }

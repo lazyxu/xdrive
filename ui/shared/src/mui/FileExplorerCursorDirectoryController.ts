@@ -79,6 +79,10 @@ export function useXDriveFileExplorerCursorDirectory<
   const pageEpoch = useRef(0)
   const pendingPage = useRef<AbortController | null>(null)
   const pagingActive = useRef(false)
+  // A signed Host cursor must advance across the ENTIRE current directory,
+  // not only differ from the immediately preceding token. Keep this bounded
+  // to the already loaded directory's lifetime and clear it on scope changes.
+  const issuedCursorsRef = useRef(new Set<string>())
   const itemsRef = useRef<TNode[]>([])
   const verifiedOwnerRef = useRef<{ host: THost; revision: number } | null>(null)
   const rootOwnerRef = useRef<{ host: THost; revision: number } | null>(null)
@@ -138,6 +142,7 @@ export function useXDriveFileExplorerCursorDirectory<
     const controller = new AbortController()
     pendingPage.current = controller
     pagingActive.current = false
+    issuedCursorsRef.current.clear()
     itemsRef.current = []
     verifiedOwnerRef.current = null
     setItems([])
@@ -166,6 +171,9 @@ export function useXDriveFileExplorerCursorDirectory<
       setItems([...page.items])
       setNextCursor(page.next_cursor ?? '')
       setHasMore(page.has_more)
+      if (page.has_more && page.next_cursor) {
+        issuedCursorsRef.current.add(page.next_cursor)
+      }
       verifiedOwnerRef.current = { host, revision: rootRevision }
       setVerifiedScopeKey(currentScopeKey)
       setVerified(true)
@@ -213,11 +221,22 @@ export function useXDriveFileExplorerCursorDirectory<
         setError('Server 返回了重复文件，已保留先前核实的结果；请刷新目录。')
         return
       }
+      // Reject A -> B -> A token cycles (and longer cycles) before publishing
+      // additional rows. A replayed token cannot be another verified page.
+      // Preserve the already verified rows and let the user retry/refresh.
+      if (page.has_more && page.next_cursor &&
+          issuedCursorsRef.current.has(page.next_cursor)) {
+        setError('Server 返回了重复分页游标，已保留先前核实的文件；请刷新目录。')
+        return
+      }
       const updated = [...itemsRef.current, ...page.items]
       itemsRef.current = updated
       setItems(updated)
       setHasMore(page.has_more)
       setNextCursor(page.next_cursor ?? '')
+      if (page.has_more && page.next_cursor) {
+        issuedCursorsRef.current.add(page.next_cursor)
+      }
     }).catch(() => {
       if (!controller.signal.aborted && epoch === pageEpoch.current && isCurrentOwner()) {
         setError('继续加载失败，已保留核实的文件；可重试。')
@@ -240,6 +259,7 @@ export function useXDriveFileExplorerCursorDirectory<
     pendingPage.current = null
     pageEpoch.current++
     pagingActive.current = false
+    issuedCursorsRef.current.clear()
     itemsRef.current = []
     setItems([])
     setCrumbs([])

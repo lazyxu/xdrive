@@ -40,8 +40,9 @@ struct XDriveIOSPhotoBackupUncertainReceiptRecovery {
             throw XDriveIOSPhotoBackupRecoveryError.invalidScope
         }
         try Task.checkCancellation()
-        let entries = try await ledger.operations(scope: scope)
-        guard let pending = entries.first(where: { $0.id == operationID }),
+        guard let pending = try await ledger.operation(
+                  scope: scope, id: operationID
+              ),
               pending.destinationParentID == owner.rootNodeID,
               pending.verifiedNodeID == nil,
               pending.verifiedNodeRevision == nil else {
