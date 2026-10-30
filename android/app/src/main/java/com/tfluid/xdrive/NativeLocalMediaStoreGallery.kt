@@ -21,6 +21,7 @@ import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material3.*
@@ -106,7 +107,16 @@ internal fun NativeLocalMediaStoreGallery(
     // It never serializes MediaStore URI/IDs into Android saved state.
     BackHandler(albumsOnly && selectedAlbum != null) { onAlbumSelected(null) }
     var selectedMedia by remember(sessionId, albumsOnly) { mutableStateOf<NativeLocalMedia?>(null) }
-    var albums by remember(sessionId, albumsOnly) { mutableStateOf<NativeLocalAlbumScan?>(null) }
+    // Permission/MediaStore generation invalidates the cached album index; merely
+    // opening an album must not rescan the whole local library on return.
+    var albums by remember(sessionId, albumsOnly, permissionEpoch, libraryEpoch) {
+        mutableStateOf<NativeLocalAlbumScan?>(null)
+    }
+    val albumGridState = remember(sessionId, albumsOnly, permissionEpoch, libraryEpoch) {
+        LazyGridState()
+    }
+    val photoGridState = remember(sessionId, albumsOnly, selectedAlbum?.id,
+        permissionEpoch, libraryEpoch) { LazyGridState() }
     var items by remember(sessionId, albumsOnly, selectedAlbum?.id) {
         mutableStateOf<List<NativeLocalMedia>>(emptyList())
     }
@@ -146,7 +156,6 @@ internal fun NativeLocalMediaStoreGallery(
         permissionEpoch, libraryEpoch, allowed) {
         selectedMedia = null
         items = emptyList()
-        albums = null
         exhausted = false
         loadedThrough = 0
         firstOffset = 0
@@ -156,7 +165,7 @@ internal fun NativeLocalMediaStoreGallery(
         busy = true
         try {
             if (albumsOnly && selectedAlbum == null) {
-                albums = NativeLocalMediaStore.albums(resolver)
+                if (albums == null) albums = NativeLocalMediaStore.albums(resolver)
             } else {
                 val page = NativeLocalMediaStore.page(resolver, 0,
                     NativeLocalMediaStore.PHOTO_PAGE_SIZE, selectedAlbum?.id)
@@ -248,6 +257,7 @@ internal fun NativeLocalMediaStoreGallery(
                 color = MaterialTheme.colorScheme.error)
             val visible = scan?.albums?.take(albumVisibleCount).orEmpty()
             LazyVerticalGrid(
+                state = albumGridState,
                 columns = GridCells.Adaptive(150.dp),
                 modifier = Modifier.weight(1f).testTag("native-local-albums"),
                 contentPadding = PaddingValues(12.dp),
@@ -281,7 +291,11 @@ internal fun NativeLocalMediaStoreGallery(
                 modifier = Modifier.testTag("native-local-back-to-start")) {
                 Text("返回最近照片 · 当前仅保留最近加载的 512 项")
             }
-            LazyVerticalGrid(
+            // L3 Viewer outranks thumbnail reads: unmount the wall to cancel
+            // unfinished ContentResolver thumbnail requests. The bounded rows
+            // and LazyGridState stay in this Owner-scoped Gallery composition.
+            if (selectedMedia == null) LazyVerticalGrid(
+                state = photoGridState,
                 columns = GridCells.Adaptive(112.dp),
                 modifier = Modifier.weight(1f).testTag("native-local-photo-wall"),
                 contentPadding = PaddingValues(4.dp),
@@ -308,7 +322,7 @@ internal fun NativeLocalMediaStoreGallery(
                             modifier = Modifier.testTag("native-local-next-page"),
                         ) { Text("加载下一页 · 每页最多 64 项") }
                     }
-            }
+            } else Spacer(Modifier.weight(1f))
         }
     }
     selectedMedia?.let { asset ->
@@ -322,14 +336,15 @@ private fun NativeLocalThumbnail(
     asset: NativeLocalMedia, size: Int, modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    val thumbnail by produceState<ImageBitmap?>(null, asset.uri, size) {
+    // Signal cancellation on composition disposal, not after an interrupted IO
+    // dispatcher resumes: a slow MediaStore provider must yield to the Viewer.
+    val signal = remember(asset.uri, size) { CancellationSignal() }
+    DisposableEffect(signal) { onDispose { signal.cancel() } }
+    val thumbnail by produceState<ImageBitmap?>(null, asset.uri, size, signal) {
         value = try {
             withContext(Dispatchers.IO) {
-                val signal = CancellationSignal()
-                try {
-                    context.contentResolver.loadThumbnail(asset.uri, Size(size, size), signal)
-                        .asImageBitmap()
-                } finally { signal.cancel() }
+                context.contentResolver.loadThumbnail(asset.uri, Size(size, size), signal)
+                    .asImageBitmap()
             }
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
