@@ -292,6 +292,8 @@ struct XDriveIOSNativeServerMediaPreview: View {
 struct XDriveIOSNativeServerMediaWall: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     let album: XDriveIOSNativeMediaAlbum?
+    // Focus visibility belongs to the owning native five-tab shell.
+    var onFocusChange: ((Bool) -> Void)? = nil
     @StateObject private var model = XDriveIOSNativeMediaWallModel()
     @Environment(\.scenePhase) private var phase
     @State private var selected: XDriveIOSNativeMediaItem?
@@ -393,7 +395,9 @@ struct XDriveIOSNativeServerMediaWall: View {
             if album == nil {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     NavigationLink {
-                        XDriveIOSNativeServerMediaAlbums(login: login)
+                        XDriveIOSNativeServerMediaAlbums(
+                            login: login, onFocusChange: onFocusChange
+                        )
                     } label: {
                         Label("云端相册", systemImage: "rectangle.stack")
                     }
@@ -402,6 +406,7 @@ struct XDriveIOSNativeServerMediaWall: View {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
                     focusedBrowsing.toggle()
+                    onFocusChange?(focusedBrowsing)
                 } label: {
                     Label(
                         focusedBrowsing ? "显示底部导航" : "专注浏览",
@@ -413,7 +418,8 @@ struct XDriveIOSNativeServerMediaWall: View {
                 .accessibilityIdentifier("native-ios-gallery-focus-toggle")
             }
         }
-        .toolbar(focusedBrowsing ? .hidden : .visible, for: .tabBar)
+        // The owning five-tab shell controls its custom bar; never show a
+        // second system strip through a child toolbar override.
         .fullScreenCover(item: $selected) {
             XDriveIOSNativeServerMediaPreview(item: $0, login: login)
         }
@@ -423,6 +429,8 @@ struct XDriveIOSNativeServerMediaWall: View {
             }
         }
         .onChange(of: login.owner) { _ in
+            focusedBrowsing = false
+            onFocusChange?(false)
             lastOpenedMediaID = nil
             selected = nil
             model.invalidate()
@@ -432,6 +440,8 @@ struct XDriveIOSNativeServerMediaWall: View {
         }
         .onChange(of: phase) { state in
             if state != .active {
+                focusedBrowsing = false
+                onFocusChange?(false)
                 selected = nil
                 model.invalidate()
             } else if model.page == nil {
@@ -445,6 +455,7 @@ struct XDriveIOSNativeServerMediaWall: View {
                 // A different feature/album should not inherit this wall's
                 // L2 focus state or hide the global bottom navigation.
                 focusedBrowsing = false
+                onFocusChange?(false)
                 model.suspendForNavigation()
             }
         }
@@ -465,6 +476,7 @@ struct XDriveIOSNativeServerMediaWall: View {
 /// Server collection index is distinct from local PhotoKit smart/user albums.
 struct XDriveIOSNativeServerMediaAlbums: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
+    var onFocusChange: ((Bool) -> Void)? = nil
     @Environment(\.scenePhase) private var phase
     @State private var albums: [XDriveIOSNativeMediaAlbum] = []
     @State private var error: String?
@@ -479,7 +491,9 @@ struct XDriveIOSNativeServerMediaAlbums: View {
                     .font(.caption).foregroundStyle(.secondary)
                 ForEach(albums) { album in
                     NavigationLink {
-                        XDriveIOSNativeServerMediaWall(login: login, album: album)
+                        XDriveIOSNativeServerMediaWall(
+                            login: login, album: album, onFocusChange: onFocusChange
+                        )
                     } label: {
                         HStack(spacing: 12) {
                             Image(systemName: "rectangle.stack")
