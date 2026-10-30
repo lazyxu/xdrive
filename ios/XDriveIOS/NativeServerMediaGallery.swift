@@ -27,6 +27,9 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
     func suspendForViewer() {
         // A Viewer or an album child route can temporarily cover the wall.
         // Keep its 48-item page and exact source anchor for the return path.
+        // Retire the request generation so a cancelled URLSession error
+        // cannot overwrite the returned page after navigation.
+        epoch = UUID()
         job?.cancel()
         job = nil
         busy = false
@@ -366,7 +369,9 @@ struct XDriveIOSNativeServerMediaAlbums: View {
         }
         .onDisappear {
             // Pushing an album wall must not remove the NavigationLink's
-            // underlying album identity from its original list.
+            // underlying album identity from its original list. Retire the
+            // generation before cancelling so late results cannot write back.
+            epoch = UUID()
             job?.cancel()
             job = nil
             busy = false
