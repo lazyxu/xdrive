@@ -989,13 +989,19 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
               boxShadow:2,
               backdropFilter:edgeToEdge ? 'blur(18px)' : undefined,
               WebkitBackdropFilter:edgeToEdge ? 'blur(18px)' : undefined}}>
-            {trustedSummary.total_count > 0
-              ? `当前地图可查看 ${trustedSummary.total_count.toLocaleString('zh-CN')} 张照片`
-              : hasMembershipFilters
-                ? '当前筛选条件下暂无定位照片；可调整筛选或手动刷新。'
-                : '当前地图暂无可显示的定位照片；位置派生完成后会自动重查，也可手动刷新。'}
+            {!acceptedViewport
+              // Bootstrapping /cells covers the entire Owner world, NOT the
+              // SDK camera. Never label its global count as visible photos.
+              // Both SDK Hosts get a truthful camera count only after a fresh
+              // bounded current-viewport /cells response is accepted.
+              ? '正在确认当前地图视窗的定位照片…'
+              : trustedSummary.total_count > 0
+                ? `当前地图可查看 ${trustedSummary.total_count.toLocaleString('zh-CN')} 张照片`
+                : hasMembershipFilters
+                  ? '当前筛选条件下暂无定位照片；可调整筛选或手动刷新。'
+                  : '当前地图暂无可显示的定位照片；位置派生完成后会自动重查，也可手动刷新。'}
           </Typography>
-          {phase === 'ready' && trustedSummary.total_count === 0 &&
+          {phase === 'ready' && acceptedViewport && trustedSummary.total_count === 0 &&
               acceptedScope.current?.key === currentFilterKey ? (
             <Button size="small" variant="outlined"
               data-xdrive-places-empty-map-recheck
@@ -1018,7 +1024,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
               刷新当前地图照片
             </Button>
           ) : null}
-          {unpaintedCellCount > 0 ? (
+          {acceptedViewport && unpaintedCellCount > 0 ? (
             <Button size="small" variant="outlined"
               data-xdrive-places-reveal-hidden-cells
               sx={{minHeight:44,textTransform:'none',pointerEvents:'auto',
@@ -1093,7 +1099,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
             : '动态地图隔离会话不可用；地点列表与照片墙仍可使用。'}
         </Typography>
       ):null}
-      {scopeIsCurrent && accessible.length>0 ? (
+      {scopeIsCurrent && acceptedViewport && accessible.length>0 ? (
         <Box component="details" data-xdrive-places-cluster-list ref={clusterListRef}>
           <Box component="summary" sx={{cursor:'pointer',typography:'caption',
             color:'text.secondary',minHeight:44,display:'flex',alignItems:'center',

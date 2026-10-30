@@ -835,6 +835,79 @@ async function testStaleSourceRevisionOwnerMap(browser,mode,port){
   }
 }
 
+// The first /cells query is the signed Owner WORLD overview used to fit the
+// camera. It is not the current SDK viewport. Hold the provider SDK script
+// after that request and verify the shared trusted Parent never presents a
+// global 9-photo count, world Cell list or nearby action as current-camera UI.
+async function testWorldBootstrapIsNotCamera(browser,mode,port){
+  const context=await browser.newContext({
+    viewport:{width:390,height:844},locale:'zh-CN',
+    ignoreHTTPSErrors:true,serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(30000)
+  const errors=[]
+  page.on('pageerror',error=>errors.push(error.message))
+  let releaseSDK
+  const blockedSDK=new Promise(resolve=>{releaseSDK=resolve})
+  const sdkPath=mode==='inline'
+    ? 'https://api.map.baidu.com/api?**'
+    : '**/_BMapService/api'
+  await page.route(sdkPath,async route=>{
+    if(mode==='inline')
+      assert.equal(new URL(route.request().url()).searchParams.get('ak'),
+        'TEST_ONLY_BROWSER_AK')
+    await blockedSDK
+    return route.fulfill({status:200,contentType:'text/javascript',body:sdkStub})
+  })
+  try{
+    await page.goto('https://'+galleryHost+':'+port+'/?mode='+mode,
+      {waitUntil:'domcontentloaded'})
+    await page.getByText('正在确认当前地图视窗的定位照片…',
+      {exact:true}).waitFor({state:'visible'})
+    const before=await page.evaluate(()=>{
+      const probe=window.__mapProbe
+      return {
+        queries:probe?.queries?.length??0,
+        firstCount:probe?.queries?.[0]?.count,
+        pending:document.querySelector(
+          '[data-xdrive-places-map-photo-summary]')?.textContent??'',
+        cameraRangeActions:document.querySelectorAll(
+          '[data-xdrive-places-cluster-list] button,'+
+          '[data-xdrive-places-full-camera-wall],'+
+          '[data-xdrive-places-reveal-hidden-cells],'+
+          '[data-xdrive-places-empty-map-recheck]').length,
+        covers:document.querySelectorAll(
+          '[data-xdrive-places-trusted-photo-cover]').length,
+      }
+    })
+    record(mode+': worldwide 9-photo bootstrap cannot claim current-camera count or actions',
+      before.queries>0&&before.firstCount===9&&
+      before.pending.includes('正在确认当前地图视窗的定位照片')&&
+      !before.pending.includes('当前地图可查看')&&
+      before.cameraRangeActions===0&&before.covers===0&&errors.length===0)
+    releaseSDK()
+    await page.getByText('当前地图可查看 9 张照片',
+      {exact:true}).waitFor({state:'visible'})
+    // The complete accessible Cell list lives inside a collapsed <details>.
+    // Assert its authenticated buttons exist without requiring it to be open.
+    await page.waitForFunction(()=>document.querySelectorAll(
+      '[data-xdrive-places-cluster-list] button').length>0)
+    const after=await page.evaluate(()=>({
+      queries:window.__mapProbe?.queries?.length??0,
+      count:window.__mapProbe?.queries?.at(-1)?.count,
+      realCamera:window.__mapProbe?.viewports?.length??0,
+      openCells:document.querySelectorAll(
+        '[data-xdrive-places-cluster-list] button').length,
+    }))
+    record(mode+': after SDK camera ready, newly accepted viewport reveals true Owner count',
+      after.queries>=2&&after.count===9&&after.openCells===1&&
+      errors.length===0)
+  }finally{
+    releaseSDK()
+    await context.close()
+  }
+}
+
 async function testMode(browser,mode,port){
   const context=await browser.newContext({
     viewport:{width:960,height:760},locale:'zh-CN',ignoreHTTPSErrors:true,
@@ -1513,7 +1586,11 @@ async function testFullGalleryDirectPhoto(browser,mode,port){
         await page.locator('[data-xdrive-baidu-isolated-frame]').count()===0)
     }
     await page.getByRole('button',{name:'关闭预览'}).click()
-    await page.getByText('当前地图可查看 3 张照片',{exact:true}).waitFor()
+    // A freshly reauthorized Viewer return restores the trusted photo dialog
+    // directly. The map summary is intentionally HIDDEN while the dialog is
+    // active; waiting for the global bootstrap/count label here was a false
+    // gate and did not prove camera or Owner Range restoration. The signed Gin
+    // /cell-items identity, count and source revision are checked below.
     const restored=page.locator('[data-xdrive-places-photo-drawer]')
     try {
       await restored.waitFor({state:'visible',timeout:11000})
@@ -1950,7 +2027,12 @@ async function testMobilePhotoDrawer(browser,mode,port){
         closeBounds.width>=44 && closeBounds.height>=44 && closeBounds.hit===true)
     }
     // Apple-style Close uses the existing current Owner Gallery navigation,
-    // not an SDK Child route or a synthetic unfiltered photo reader.
+    // not an SDK Child route or a synthetic unfiltered photo reader. Capture
+    // whether an actual Gallery error occurred BEFORE Close (e.g. resizing
+    // across 899/900), rather than misattribute it to the Close handler.
+    const beforeClose=await page.evaluate(()=>({
+      errors:window.__mapProbe.galleryPageErrors.length,
+    }))
     const closeMap=page.locator('[data-xdrive-places-map-close]')
     await closeMap.waitFor({state:'visible'})
     await closeMap.tap()
@@ -1966,13 +2048,17 @@ async function testMobilePhotoDrawer(browser,mode,port){
       ordinaryOwnerReads:window.__mapProbe.galleryPageReads.filter(
         read=>read.kind==='ordinary').length,
       errors:window.__mapProbe.galleryPageErrors.length,
+      // Only error type, approved HTTP status and mobile breakpoint. Neither
+      // the raw exception nor a private request URL is emitted into CI logs.
+      errorKinds:window.__mapProbe.galleryPageErrorContexts.slice(-3),
     }))
     // Capture ONLY aggregate non-secret state if this fails again. Never
     // dump DOM, Owner names, signed URLs, photo IDs or screenshot content.
     record(mode+': closing the mobile map returns to authenticated Gallery '+
       JSON.stringify({mapCount:closed.mapCount,
         ordinaryOwnerReads:closed.ordinaryOwnerReads,
-        galleryErrorCount:closed.errors, pageErrorCount:errors.length}),
+        galleryErrorCount:closed.errors,preCloseErrors:beforeClose.errors,
+        errorKinds:closed.errorKinds,pageErrorCount:errors.length}),
       closed.mapCount===0&&closed.ordinaryOwnerReads>=1&&
       closed.errors===0&&errors.length===0)
     summary.mobileDrawerModes.push(mode)
@@ -3936,6 +4022,8 @@ async function main(){
     record('only reviewed synthetic registered sites were accessed',
       requests.every(item=>item.host==='gallery'||item.host==='child'))
     if(!ginURL){
+      await testWorldBootstrapIsNotCamera(browser,'inline',port)
+      await testWorldBootstrapIsNotCamera(browser,'isolated',port)
       await testPhotoMarkerPresentation(browser,'inline',port)
       await testPhotoMarkerPresentation(browser,'isolated',port)
       await testPhotoCoverDuringMapPan(browser,'inline',port)
