@@ -33,8 +33,10 @@ Desktop reuse one shared MUI section, Server endpoint and durable task contract.
   Source files and Pack+Index **both** use the same assumed 4 KiB allocation
   model for the projected savings ratio. Any actual source filesystem blocks
   are displayed separately as diagnostic evidence and never mixed into that
-  modeled ratio. This is not a real Pack filesystem, network, durability,
-  production GC or P99 cold-read test.
+  modeled ratio. Previously persisted Pack reports are not rewritten: the
+  shared UI flags the older incomparable savings/recommendation and asks for
+  a fresh bounded read-only sample. This is not a real Pack filesystem,
+  network, durability, production GC or P99 cold-read test.
 - Results show distinct recommendations for online storage vs backup
   repository. Even a favorable candidate means **next test**, not automatic
   format migration. Partial first 512 KiB of large media does not establish

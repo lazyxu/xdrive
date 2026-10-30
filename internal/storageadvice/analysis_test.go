@@ -109,6 +109,9 @@ func TestPackAllocationProjectionUsesComparableFourKiBBaselines(t *testing.T) {
 		t.Fatal(err)
 	}
 	pack := report.Pack
+	if pack.AllocationModel != "4KiB symmetric source/pack+index projection (no disk writes)" {
+		t.Fatalf("missing explicit comparable model marker: %+v", pack)
+	}
 	if pack.SourceAllocatedBytes != 8192 || pack.ProjectedAllocatedBytes != 8192 ||
 		pack.ProjectedSavingsPercent != 0 {
 		t.Fatalf("mixed physical/model allocation produced an invalid savings ratio: %+v", pack)

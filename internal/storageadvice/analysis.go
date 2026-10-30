@@ -143,7 +143,7 @@ func gzipRoundTrip(ctx context.Context, samples []Sample, level int) (Compressio
 // in memory. Both source and packed allocation use the same explicit 4KiB
 // model, NOT measured disk write amplification or live read/GC performance.
 func evaluatePack(ctx context.Context, samples []Sample) (PackResult, error) {
-	result := PackResult{AllocationModel: "4KiB source-block/pack+index projection (no disk writes)"}
+	result := PackResult{AllocationModel: "4KiB symmetric source/pack+index projection (no disk writes)"}
 	type entry struct {
 		offset int64
 		data   []byte

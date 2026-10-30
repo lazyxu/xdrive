@@ -69,6 +69,9 @@ export function XDriveStorageOptimizationAdvisor({
   }
 
   const report = advice?.report
+  // Old durable reports used real source blocks against a hypothetical Pack.
+  // Their historical Pack savings and recommendation must not be relabeled.
+  const packComparable = report?.pack.allocation_model === '4KiB symmetric source/pack+index projection (no disk writes)'
   const active = advice?.status !== undefined && activeStatuses.has(advice.status)
 
   return (
@@ -147,11 +150,17 @@ export function XDriveStorageOptimizationAdvisor({
           </XDriveTableSurface>
           <Box>
             <Typography variant="body2" fontWeight={600}>小 Blob Pack / Index 模拟</Typography>
-            <Typography variant="body2" color="text.secondary">
-              {report.pack.objects} 个完整小文件 · 原文件 4 KiB 块模型 {formatBytes(report.pack.source_allocated_bytes)} ·
-              Pack+Index 4 KiB 块模型 {formatBytes(report.pack.projected_allocated_bytes)} ·
-              模型节省 {report.pack.objects > 0 ? `${report.pack.projected_savings_percent.toFixed(1)}%` : '—'}。
-            </Typography>
+            {packComparable ? (
+              <Typography variant="body2" color="text.secondary">
+                {report.pack.objects} 个完整小文件 · 原文件 4 KiB 块模型 {formatBytes(report.pack.source_allocated_bytes)} ·
+                Pack+Index 4 KiB 块模型 {formatBytes(report.pack.projected_allocated_bytes)} ·
+                模型节省 {report.pack.objects > 0 ? `${report.pack.projected_savings_percent.toFixed(1)}%` : '—'}。
+              </Typography>
+            ) : (
+              <XDriveStatusAlert tone="warning">
+                旧版 Pack 报告混合了源文件实际分配量与 4 KiB Pack 模型；历史节省率与 Pack 建议不可比较，请重新运行只读评估。
+              </XDriveStatusAlert>
+            )
             <Typography variant="caption" color="text.secondary">
               已对内存 Pack 的 SHA、偏移及原字节读回进行测试；物理空间为 4 KiB 块模型，
               并非真实 Pack 落盘、冷读取、在线 GC 或网络速度测试。
@@ -169,9 +178,13 @@ export function XDriveStorageOptimizationAdvisor({
                 <Typography variant="body2" fontWeight={600}>
                   {item.scope === 'online_storage' ? '在线存储' : '备份仓库'} ·
                   {item.feature === 'compression' ? '压缩' : 'Pack'}：
-                  {displayDecision[item.decision]}
+                  {item.feature === 'pack' && !packComparable ? displayDecision.observe : displayDecision[item.decision]}
                 </Typography>
-                <Typography variant="body2" color="text.secondary">{item.reason}</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {item.feature === 'pack' && !packComparable
+                    ? '旧版 Pack 模型节省率使用不同的比较基线，请重新运行当前版本的只读评估后再判断。'
+                    : item.reason}
+                </Typography>
               </Box>
             ))}
           </Stack>
