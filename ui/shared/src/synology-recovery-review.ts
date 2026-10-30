@@ -16,7 +16,7 @@ const receiptCounts = [
   'current_node_metadata_mismatch_files', 'pending_original_files',
 ] as const
 const validNumber = (n: unknown): n is number =>
-  Number.isSafeInteger(n) && typeof n === 'number' && n >= 0
+  typeof n === 'number' && Number.isSafeInteger(n) && n >= 0
 const epochPattern = /^[0-9a-f]{64}$/
 
 export function xDriveValidateSynologyRecoveryReview(
