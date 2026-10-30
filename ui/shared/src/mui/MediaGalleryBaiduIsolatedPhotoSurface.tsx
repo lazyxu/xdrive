@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Box, Button, Typography } from '@mui/material'
 import PhotoLibraryOutlinedIcon from '@mui/icons-material/PhotoLibraryOutlined'
+import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import { XDriveMediaGalleryCoverThumbnail } from './MediaGalleryCoverThumbnail'
 import { XDriveMediaAsyncVideoPoster } from './MediaGalleryPreviewMedia'
 import type { MediaThumbnailLoader } from './MediaGallery'
@@ -1015,13 +1016,22 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
               acceptedScope.current?.key === currentFilterKey ? (
             <Button size="small" variant="outlined"
               data-xdrive-places-nonempty-map-recheck
-              sx={{minHeight:44,textTransform:'none',pointerEvents:'auto',
-                bgcolor:'background.paper',boxShadow:2}}
+              aria-label="刷新当前地图照片" title="刷新当前地图照片"
+              sx={{minWidth:edgeToEdge ? 44 : undefined,minHeight:44,
+                p:edgeToEdge ? 0 : undefined,textTransform:'none',
+                pointerEvents:'auto',bgcolor:'background.paper',boxShadow:2}}
               // A partially indexed GPS library can gain BD-09 positions
               // without the camera moving. Reuse the current signed Owner
               // Camera/Album, never launch a Provider SDK session or poll 100k.
+              // Only compact map chrome hides the long label; both SDK hosts
+              // keep this exact accessible, authorized Parent refresh.
               onClick={() => refreshFilteredCells.current?.(true)}>
-              刷新当前地图照片
+              <RefreshRoundedIcon aria-hidden="true" fontSize="small"
+                sx={{display:edgeToEdge ? 'block' : 'none'}}/>
+              <Box component="span"
+                sx={{display:edgeToEdge ? 'none' : 'inline'}}>
+                刷新当前地图照片
+              </Box>
             </Button>
           ) : null}
           {acceptedViewport && unpaintedCellCount > 0 ? (
