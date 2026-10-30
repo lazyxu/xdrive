@@ -49,6 +49,11 @@ type PackResult struct {
 	ProjectedSavingsPercent float64 `json:"projected_savings_percent"`
 	BuildMS                 int64   `json:"build_ms"`
 	AllocationModel         string  `json:"allocation_model"`
+
+	// Actual source blocks are diagnostic only. Never mix measured source
+	// allocation with a hypothetical 4KiB Pack allocation in one ratio.
+	ObservedSourceAllocatedBytes int64 `json:"observed_source_allocated_bytes,omitempty"`
+	ObservedSourceObjects        int   `json:"observed_source_objects,omitempty"`
 }
 
 type Recommendation struct {
@@ -135,8 +140,8 @@ func gzipRoundTrip(ctx context.Context, samples []Sample, level int) (Compressio
 }
 
 // evaluatePack simulates a single immutable pack + 48-byte SHA/offset index
-// in memory. The projected 4KiB allocation is an explicit model, NOT a
-// measurement of disk write amplification or live read/GC performance.
+// in memory. Both source and packed allocation use the same explicit 4KiB
+// model, NOT measured disk write amplification or live read/GC performance.
 func evaluatePack(ctx context.Context, samples []Sample) (PackResult, error) {
 	result := PackResult{AllocationModel: "4KiB source-block/pack+index projection (no disk writes)"}
 	type entry struct {
@@ -170,10 +175,13 @@ func evaluatePack(ctx context.Context, samples []Sample) (PackResult, error) {
 		entries = append(entries, entry{offset: offset, data: sample.Data, hash: digest})
 		result.Objects++
 		result.PayloadBytes += sample.Size
+		// Both sides of the projected savings ratio MUST use the same
+		// assumed 4KiB allocation model; real filesystem blocks may use
+		// different granularity, compression, sparse extents or reflinks.
+		result.SourceAllocatedBytes += roundUp(sample.Size, assumedBlockBytes)
 		if sample.AllocatedBytes > 0 {
-			result.SourceAllocatedBytes += sample.AllocatedBytes
-		} else {
-			result.SourceAllocatedBytes += roundUp(sample.Size, assumedBlockBytes)
+			result.ObservedSourceAllocatedBytes += sample.AllocatedBytes
+			result.ObservedSourceObjects++
 		}
 	}
 	for i, entry := range entries {

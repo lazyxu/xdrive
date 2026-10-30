@@ -30,8 +30,11 @@ Desktop reuse one shared MUI section, Server endpoint and durable task contract.
   each compressed sample is decoded and compared with its input.
 - Pack: assemble full sampled small objects (64 KiB or smaller), build an
   in-memory 48 B/object offset+digest index and verify byte/hash readback.
-  Physical savings are a **4 KiB block allocation model**, not an actual
-  filesystem, network, durability, production GC or P99 cold-read test.
+  Source files and Pack+Index **both** use the same assumed 4 KiB allocation
+  model for the projected savings ratio. Any actual source filesystem blocks
+  are displayed separately as diagnostic evidence and never mixed into that
+  modeled ratio. This is not a real Pack filesystem, network, durability,
+  production GC or P99 cold-read test.
 - Results show distinct recommendations for online storage vs backup
   repository. Even a favorable candidate means **next test**, not automatic
   format migration. Partial first 512 KiB of large media does not establish

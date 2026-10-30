@@ -148,14 +148,20 @@ export function XDriveStorageOptimizationAdvisor({
           <Box>
             <Typography variant="body2" fontWeight={600}>小 Blob Pack / Index 模拟</Typography>
             <Typography variant="body2" color="text.secondary">
-              {report.pack.objects} 个完整小文件 · 原文件分配空间 {formatBytes(report.pack.source_allocated_bytes)} ·
-              Pack+Index 预计 {formatBytes(report.pack.projected_allocated_bytes)} ·
+              {report.pack.objects} 个完整小文件 · 原文件 4 KiB 块模型 {formatBytes(report.pack.source_allocated_bytes)} ·
+              Pack+Index 4 KiB 块模型 {formatBytes(report.pack.projected_allocated_bytes)} ·
               模型节省 {report.pack.objects > 0 ? `${report.pack.projected_savings_percent.toFixed(1)}%` : '—'}。
             </Typography>
             <Typography variant="caption" color="text.secondary">
               已对内存 Pack 的 SHA、偏移及原字节读回进行测试；物理空间为 4 KiB 块模型，
               并非真实 Pack 落盘、冷读取、在线 GC 或网络速度测试。
             </Typography>
+            {(report.pack.observed_source_objects ?? 0) > 0 && (
+              <Typography variant="caption" color="text.secondary">
+                文件系统实际分配量：{report.pack.observed_source_objects} 个样本共
+                {formatBytes(report.pack.observed_source_allocated_bytes ?? 0)}；仅供诊断，不参与 4 KiB 模型节省率计算。
+              </Typography>
+            )}
           </Box>
           <Stack spacing={1}>
             {report.recommendations.map((item) => (

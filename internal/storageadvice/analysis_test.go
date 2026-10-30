@@ -99,6 +99,25 @@ func TestAnalyzeSafetyLimitsAndCancellation(t *testing.T) {
 	}
 }
 
+func TestPackAllocationProjectionUsesComparableFourKiBBaselines(t *testing.T) {
+	samples := []Sample{
+		{Size: 1024, AllocatedBytes: 64 << 10, Data: bytes.Repeat([]byte{'a'}, 1024)},
+		{Size: 1024, AllocatedBytes: 128 << 10, Data: bytes.Repeat([]byte{'b'}, 1024)},
+	}
+	report, err := Analyze(context.Background(), samples)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pack := report.Pack
+	if pack.SourceAllocatedBytes != 8192 || pack.ProjectedAllocatedBytes != 8192 ||
+		pack.ProjectedSavingsPercent != 0 {
+		t.Fatalf("mixed physical/model allocation produced an invalid savings ratio: %+v", pack)
+	}
+	if pack.ObservedSourceObjects != 2 || pack.ObservedSourceAllocatedBytes != 192<<10 {
+		t.Fatalf("observed source allocation must remain separate diagnostic evidence: %+v", pack)
+	}
+}
+
 func TestEmptyReportIsNotRecommendationToMigrate(t *testing.T) {
 	r, err := Analyze(context.Background(), nil)
 	if err != nil {
