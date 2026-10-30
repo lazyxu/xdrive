@@ -842,6 +842,19 @@ async function testMode(browser,mode,port){
   const page=await context.newPage()
   page.setDefaultTimeout(20000)
   const errors=[]
+  // Capture only the scheme, never Bearer/Cookies/Owner query or private media.
+  // An actual Chromium request (not a fixture variable) proves both Host
+  // presentations use the same new Server negotiation and signed Cell Range.
+  const gridRequests={cells:[],items:[]}
+  page.on('request',request=>{
+    if(!ginURL)return
+    const endpoint=new URL(request.url()).pathname
+    if(endpoint!=='/api/v1/media/places/baidu-jsapi/cells'&&
+       endpoint!=='/api/v1/media/places/baidu-jsapi/cell-items')return
+    const scheme=request.headers()['x-xdrive-map-grid-scheme']??null
+    if(endpoint.endsWith('/cells'))gridRequests.cells.push(scheme)
+    else gridRequests.items.push(scheme)
+  })
   page.on('pageerror',error=>errors.push(error.name))
   page.on('requestfailed',request=>{
     if(!request.failure()?.errorText?.includes('ERR_ABORTED'))
@@ -862,9 +875,13 @@ async function testMode(browser,mode,port){
       await page.locator('[data-xdrive-places-cluster-list] button').count()===1)
     const first=await page.evaluate(()=>({
       mode:window.__mapProbe.mode,count:window.__mapProbe.queries.at(-1)?.count,
+      gridScheme:window.__mapProbe.queries.at(-1)?.gridScheme,
       ready:window.__mapProbe.ready}))
     record(mode+': actual mounted shared business state',
       first.mode===mode&&first.count===9&&first.ready===true)
+    if(ginURL)record(mode+': real Gin Owner /cells negotiates world-stable tiles',
+      first.gridScheme==='world_stable_v1'&&gridRequests.cells.length>0&&
+      gridRequests.cells.every(scheme=>scheme==='world_stable_v1'))
     // Measure the REAL common map container in the same Chromium fixture for
     // both SDK Host modes, not a screenshot/DOM-free source assertion.
     // A 640px desktop floor must not overflow a 390px iPhone landscape.
@@ -905,6 +922,13 @@ async function testMode(browser,mode,port){
     await mapCover.waitFor({state:'visible'})
     await mapCover.click()
     await page.locator('[data-xdrive-places-photo-drawer-items] button').first().waitFor()
+    if(ginURL){
+      const sheetGrid=await page.evaluate(()=>
+        window.__mapProbe.photoPreviewRanges.at(-1)?.gridScheme)
+      record(mode+': selected world Cell /cell-items preserves Owner grid scheme',
+        sheetGrid==='world_stable_v1'&&gridRequests.items.length>0&&
+        gridRequests.items.every(scheme=>scheme==='world_stable_v1'))
+    }
     const handle=page.locator('[data-xdrive-places-photo-drawer-handle]')
     // Gallery modal opens expanded by default, unlike retired small sheet.
     record(mode+': signed Owner Gallery dialog opens expanded by default',
