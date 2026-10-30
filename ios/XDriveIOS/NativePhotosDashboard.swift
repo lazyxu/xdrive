@@ -94,7 +94,7 @@ private enum XDriveIOSNativeLauncherRoute: String, CaseIterable, Identifiable {
 }
 
 /// Native Photos-first five-slot shell. All routes are native SwiftUI/UIKit;
-/// unfinished domains remain explicitly unavailable rather than WebView
+/// unfinished domains remain explicitly unavailable rather than embedded browser
 /// fallbacks or fake success. No separate Owner session or upload runner.
 struct XDriveIOSNativePhotosDashboard: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel

@@ -56,7 +56,8 @@ test('native viewer pages PhotoKit without exporting data, provides still video 
   assert.match(local, /requestLivePhoto/)
   assert.match(local, /PHLivePhotoView/)
   assert.match(local, /isNetworkAccessAllowed = false/)
-  assert.match(local, /onDisappear \{ invalidate\(\) \}/)
+  assert.ok(local.includes('if selected != nil { suspendForViewer() }'))
+  assert.ok(local.includes('else { invalidate() }'))
   assert.doesNotMatch(local, /URLSession|UploadSession|document\.cookie|window\.webkit/)
 })
 

@@ -14,7 +14,7 @@ assert.match(album, /PHPhotoLibrary\.shared\(\)\.register/);
 assert.match(album, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/);
 assert.match(album, /PHAsset\.fetchAssets\(in: collection, options: options\)/);
 assert.match(album, /offset \+ 64/);
-assert.match(album, /XDriveIOSNativeLocalPhotoTile\(candidate: item\)/);
+assert.match(album, /XDriveIOSLocalPhotoTile\(candidate: item\)/);
 assert.match(album, /XDriveIOSNativeLocalPhotoDetail\(candidate: \$0\)/);
 assert.match(album, /XDriveLocalPhotoAlbumPager\.readPage\(offset: requestedOffset\)/);
 assert.match(album, /PHPhotoLibraryChangeObserver/);
