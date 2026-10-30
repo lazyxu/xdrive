@@ -1,0 +1,52 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const repo = path.resolve(__dirname, '..', '..')
+const read = p => fs.readFileSync(path.join(repo, p), 'utf8')
+
+test('recovered native PhotoKit screens are real SwiftUI and independent of retired Web/native Login', () => {
+  const inventory = read('ios/XDriveIOS/LocalPhotoInventoryScreen.swift')
+  const scan = read('ios/XDriveIOS/PhotoKitScanPreviewScreen.swift')
+  assert.match(inventory, /struct LocalPhotoInventoryScreen: View/)
+  assert.match(scan, /struct XDrivePhotoKitScanPreviewScreen: View/)
+  assert.match(inventory, /XDriveLocalPhotoAlbumPager\.readPage\(/)
+  assert.match(inventory, /XDrivePhotoKitResourceInspector\.inspect\(/)
+  assert.match(scan, /XDrivePhotoKitBoundedSnapshotScanner\(/)
+  for (const source of [inventory, scan]) {
+    assert.doesNotMatch(source, /LoginViewModel|KeychainSessionStore|WebView|window\.webkit|URLSession/)
+    assert.doesNotMatch(source, /XDriveIOSJournaledOriginalUpload\(|NativeUploadSessionTransport\(|URLSession\(|\.uploadPreparedOriginal\(/)
+  }
+  assert.match(inventory, /init\(onUploadStillPhoto:.*= nil\)/)
+  assert.match(inventory, /onUploadStillPhoto != nil && model\.hasAccess/)
+})
+
+test('native PhotoKit inventory is permission scoped and cancels stale results on background', () => {
+  const inventory = read('ios/XDriveIOS/LocalPhotoInventoryScreen.swift')
+  assert.match(inventory, /authorization == \.authorized \|\| authorization == \.limited/)
+  assert.match(inventory, /PHPhotoLibrary\.requestAuthorization\(for: \.readWrite\)/)
+  assert.match(inventory, /guard !Task\.isCancelled else \{ return \}/)
+  assert.match(inventory, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/)
+  assert.match(inventory, /\.task \{ await model\.inspect\(askPermission: false\) \}/)
+  assert.match(inventory, /if phase != \.active/)
+  assert.match(inventory, /albumTask\?\.cancel\(\)/)
+  assert.match(inventory, /photoUploadTask\?\.cancel\(\)/)
+  assert.match(inventory, /\.onDisappear \{/)
+})
+
+test('recovered paged scan reuses current native bounded scanner and invalidates stale generations', () => {
+  const view = read('ios/XDriveIOS/PhotoKitScanPreviewScreen.swift')
+  const scanner = read('ios/XDriveIOS/PhotoKitBoundedSnapshotScanner.swift')
+  assert.match(view, /generation = UUID\(\)/)
+  assert.match(view, /scanTask\?\.cancel\(\)/)
+  assert.match(view, /Task \{ await scanner\.reset\(\) \}/)
+  assert.match(view, /guard generation == token else \{ return \}/)
+  assert.match(view, /if phase != \.active \{ invalidate\(\) \}/)
+  assert.match(view, /candidate\.isLive/)
+  assert.match(scanner, /static let pageSize = 64/)
+  assert.match(scanner, /func start\(atOffset requestedOffset: Int = 0\)/)
+  assert.match(scanner, /func nextPage\(\)/)
+  assert.match(scanner, /observer\.currentVersion\(\) == changeVersion/)
+  assert.match(scanner, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/)
+})
