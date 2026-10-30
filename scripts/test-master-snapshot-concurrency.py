@@ -100,27 +100,25 @@ assert bundle.index("- name: Classify stale master Snapshot eligibility before c
 ), "a stale completed build must not overwrite GHCR edge before being rejected"
 
 
-# The standalone APK is disposable and has no Snapshot publish dependency.
-# Keep only the newest automatic master push APK; preserve each manual build.
+# The standalone APK is independent of the master Snapshot publisher and
+# must retain every master-push commit's debug artifact. A shared concurrency
+# group (even cancel-in-progress: false) could evict older *pending* APK runs.
 apk = (root / ".github/workflows/android-master-apk.yml").read_text(encoding="utf-8")
 header, marker, apk_jobs = apk.partition("\njobs:\n")
 assert marker, "Android Master APK jobs are missing"
 assert "push:\n    branches: [master]" in header
 assert "  workflow_dispatch:" in header
-assert header.count("\nconcurrency:\n") == 1
-apk_group = re.findall(r"(?m)^  group: (.+)$", header)
-assert apk_group == [
-    "xdrive-android-master-apk-${{ github.event_name == 'push' && github.ref == 'refs/heads/master' && 'latest-master' || github.run_id }}"
-], "Android automatic APK must share the master slot while manual runs stay unique"
-apk_cancel = re.findall(r"(?m)^  cancel-in-progress: (.+)$", header)
-assert apk_cancel == [
-    "${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}"
-], "only outdated automatic master APKs may be cancelled"
+assert "\nconcurrency:\n" not in header, "Each master commit needs an independent APK workflow run"
+assert not re.search(r"(?m)^\s*(?:concurrency|cancel-in-progress):", apk), (
+    "No APK workflow/job may cancel or evict older queued or running commit builds"
+)
+assert "latest-master" not in apk, "Obsolete shared master APK cancellation group must not return"
 assert "  build-master-apk:" in apk_jobs and "    if: github.ref == 'refs/heads/master'" in apk_jobs
 assert "    needs:" not in apk_jobs, "Android debug Artifact must remain independent of Snapshot and required CI"
 assert 'ref: ${{ github.sha }}' in apk_jobs
 assert 'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"' in apk_jobs
 assert "Upload exact-master Android APK" in apk_jobs
+assert "name: xdrive-android-master-${{ github.sha }}" in apk_jobs
 assert "retention-days: 30" in apk_jobs
 
 # Snapshot App auth must use a numeric JWT issuer; an Iv1. Client ID creates
@@ -137,4 +135,4 @@ assert 'select([.repositories[]?.full_name] == [$repo])' in auth_script
 assert 'client-id:' not in release
 assert 'client-id:' not in smoke
 
-print("master Snapshot and disposable Android APK concurrency contract passed")
+print("master Snapshot concurrency and independent per-commit Android APK contract passed")
