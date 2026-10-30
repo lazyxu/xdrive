@@ -40,3 +40,15 @@ Must validate this branch on an exact macOS IPA build and suitable full CI /
 Final Gate before any master merge. The new contract is
 \`desktop/tests/ios-native-cloud-original-thumbnail-wall.cjs\`.
 The parent #3268 tests and PR head must not be rewritten.
+
+## Foreground scheduler lifetime (same iOS Photos task scope)
+
+The native login screen owns the sole foreground scheduler for its entire
+authenticated scene. Previously the 60-second tick belonged to the Photos
+Dashboard and stopping navigation to account details stopped scheduled checks,
+despite the App remaining active. The root now owns the timer and current Owner,
+cancels on scene background/Owner change, and passes the *same* controller to
+the Dashboard's backup tab. No second uploader or new BGTask is created.
+
+Source regressions update the existing #3268 login/MVP contracts and add a
+root-lifecycle contract rather than removing previously tested assertions.

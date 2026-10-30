@@ -1,10 +1,14 @@
+import Combine
 import SwiftUI
 
-/// First native product-login surface, adapted from historical #2891's
-/// visual card. Not mounted by XDriveIOSApp until native Files/Gallery
-/// navigation and safe Owner/grant migration are available.
+/// Native iOS owner root. The native foreground auto runner must survive
+/// leaving the Photos dashboard while the app and Owner session stay active.
 struct XDriveIOSNativeOwnerLoginScreen: View {
     @StateObject private var model = XDriveIOSNativeOwnerLoginModel()
+    // Own a single native auto runner for the entire authenticated foreground
+    // scene, rather than recreating it on every gallery/dashboard navigation.
+    @StateObject private var backup = XDriveIOSNativePhotoBackupController()
+    @Environment(\.scenePhase) private var phase
     @State private var showPassword = false
     @State private var logoutWarning: String?
 
@@ -60,7 +64,26 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
             .navigationTitle("xDrive")
             .navigationBarTitleDisplayMode(.inline)
         }
-        .task { await model.restore() }
+        .task {
+            await model.restore()
+            backup.refresh(owner: model.owner)
+            if phase == .active { backup.tickIfDue(login: model) }
+        }
+        .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
+            guard phase == .active else { return }
+            backup.tickIfDue(login: model)
+        }
+        .onChange(of: phase) { state in
+            if state == .active { backup.tickIfDue(login: model) }
+            else { backup.cancel() }
+        }
+        .onChange(of: model.owner) { _ in
+            // A late response from the previous Server/Owner may not keep
+            // uploading after native session changes or disappears.
+            backup.cancel()
+            backup.refresh(owner: model.owner)
+            if phase == .active { backup.tickIfDue(login: model) }
+        }
     }
 
     private var loginForm: some View {
@@ -137,7 +160,7 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             NavigationLink {
-                XDriveIOSNativePhotosDashboard(login: model)
+                XDriveIOSNativePhotosDashboard(login: model, backup: backup)
             } label: {
                 Label("打开原生相册与自动备份", systemImage: "photo.stack")
                     .frame(maxWidth: .infinity, minHeight: 44)
