@@ -637,6 +637,15 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
             let requestID = previewRequestID
             do {
                 let auth = try await login.verifiedAuthorization()
+                try Task.checkCancellation()
+                // Native Owner refresh may complete after an account switch,
+                // scene leave, Viewer dismissal or explicit retry. Never
+                // dispatch a preview/download-ticket request with the new
+                // Owner's bearer for a node selected under the old Owner.
+                guard phase == .active, previewRequestID == requestID,
+                      XDriveIOSNativePhotoOwnerScope.matches(auth.owner, before),
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, before)
+                else { return }
                 let reader = XDriveIOSNativeCloudOriginalReader(
                     owner: auth.owner, accessToken: auth.accessToken
                 )
