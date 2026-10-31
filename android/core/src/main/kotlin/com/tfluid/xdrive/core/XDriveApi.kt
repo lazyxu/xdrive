@@ -370,6 +370,10 @@ interface XDriveService {
         accessToken: String, displayName: String, clientVersion: String,
     ): NativeAndroidDeviceEnrollment =
         throw ApiException(501, "Android device identity enrollment unavailable")
+    /** Read-only device proof; a stored token alone is never authorization. */
+    suspend fun verifyNativeAndroidDevice(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment,
+    ): Unit = throw ApiException(501, "Android device identity verification unavailable")
     suspend fun root(accessToken: String): DriveNode
     suspend fun children(accessToken: String, parentId: Long, offset: Int): NodeRange
     /** Keep old fixtures default-only; never pretend unsupported sort succeeded. */
@@ -618,6 +622,16 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
             invalidPayload()
         }
         return enrollment
+    }
+
+    override suspend fun verifyNativeAndroidDevice(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment,
+    ) {
+        val result = request("devices/self", accessToken,
+            deviceIdentity = enrolled)
+        // Go returns only one Owner-bound, unrevoked identity proof.
+        if (result.size != 1 || result.string("device_id") != enrolled.deviceId)
+            invalidPayload()
     }
 
     override suspend fun root(accessToken: String): DriveNode = node(request("nodes/root", accessToken)).also {
@@ -2104,8 +2118,9 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         bodyObject: JsonObject? = null,
         longRunning: Boolean = false,
         pathTailSegments: List<String> = emptyList(),
+        deviceIdentity: NativeAndroidDeviceEnrollment? = null,
     ): JsonObject = requestElement(path, accessToken, values, query, emptyResponse, method,
-        ifMatch, numberValues, bodyObject, longRunning, pathTailSegments)
+        ifMatch, numberValues, bodyObject, longRunning, pathTailSegments, deviceIdentity)
         as? JsonObject ?: invalidPayload()
 
     private suspend fun requestArray(
@@ -2127,7 +2142,17 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         bodyObject: JsonObject? = null,
         longRunning: Boolean = false,
         pathTailSegments: List<String> = emptyList(),
+        deviceIdentity: NativeAndroidDeviceEnrollment? = null,
     ): JsonElement {
+        // Device headers are allowed on exactly one read-only identity route.
+        // A token never appears in the query, URI, body or ordinary API calls.
+        require(deviceIdentity == null ||
+            (path == "devices/self" && accessToken != null && method == null &&
+                values == null && query.isEmpty() && ifMatch == null &&
+                numberValues.isEmpty() && bodyObject == null &&
+                !longRunning && pathTailSegments.isEmpty())) {
+            "Device credentials may only be used for the current Owner identity GET"
+        }
         val url = address.url.toHttpUrlOrNull()!!.newBuilder().addPathSegments("api/v1/$path").apply {
             // Authenticated album IDs may be opaque (including reserved characters):
             // append each as ONE encoded path segment, never URL interpolation.
@@ -2142,6 +2167,10 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         if (ifMatch != null) {
             require(ifMatch > 0) { "Invalid node revision" }
             builder.header("If-Match", "\"$ifMatch\"")
+        }
+        if (deviceIdentity != null) {
+            builder.header("X-XDrive-Device-ID", deviceIdentity.deviceId)
+            builder.header("X-XDrive-Device-Token", deviceIdentity.deviceToken)
         }
         if (values != null || numberValues.isNotEmpty() || bodyObject != null) {
             val fields = mutableMapOf<String, JsonElement>()
