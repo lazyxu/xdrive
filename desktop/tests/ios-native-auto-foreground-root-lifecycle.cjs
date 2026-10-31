@@ -50,3 +50,38 @@ test('Photos permission revocation and limited access are accurately disclosed o
   assert.doesNotMatch(backupScreen, /尚不支持云端动态播放/)
   assert.doesNotMatch(dash + backupScreen, /PHPhotoLibrary\.requestAuthorization|PHPhotoLibrary\.shared\(\)\.performChanges/)
 })
+
+test('revoked PhotoKit permission cannot silently accept a manual original backup', () => {
+  const manual = backupScreen.slice(backupScreen.indexOf('Section("手动备份")'),
+    backupScreen.indexOf('Section("前台自动增量")'))
+  const startManual = ctrl.slice(ctrl.indexOf('    func startManual('),
+    ctrl.indexOf('    func tickIfDue('))
+  assert.match(manual, /if photoAuthorization != \.authorized && photoAuthorization != \.limited/)
+  assert.match(manual, /native-ios-photos-manual-permission-blocked/)
+  assert.match(manual, /\.disabled\(controller\.busy \|\| background\.busy \|\| login\.owner == nil \|\|\s*\(photoAuthorization != \.authorized && photoAuthorization != \.limited\)\)/)
+  assert.match(startManual, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expectedOwner\)/)
+  assert.match(startManual, /guard \[\.authorized, \.limited\]\.contains\(\s*PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)\s*\) else \{/)
+  assert.match(startManual, /if !busy \{ progress = nil \}/)
+  assert.match(startManual, /errorMessage = "照片读取权限已变化；未启动原件上传/)
+  const permission = startManual.indexOf('PHPhotoLibrary.authorizationStatus(for: .readWrite)')
+  const start = startManual.indexOf('start(login: login, kind: .manual')
+  assert.ok(permission > 0 && start > permission, 'recheck authorization before any native manual original writer')
+  assert.doesNotMatch(startManual, /requestAuthorization|URLSession|UploadSessionTransport/)
+})
+
+test('saved auto-backup status and enable action do not advertise success without Photos access', () => {
+  const auto = backupScreen.slice(backupScreen.indexOf('Section("前台自动增量")'),
+    backupScreen.indexOf('Section("可选系统后台原件备份")'))
+  const savedStatus = auto.slice(auto.indexOf('if let active = controller.schedule, active.enabled'))
+  const paused = savedStatus.indexOf('if active.pausedForReview')
+  const blocked = savedStatus.indexOf('else if photoAuthorization != .authorized && photoAuthorization != .limited')
+  const limited = savedStatus.indexOf('else if photoAuthorization == .limited')
+  const enabled = savedStatus.indexOf('Label("前台自动备份已开启"')
+  assert.ok(paused >= 0 && paused < blocked && blocked < limited && limited < enabled,
+    'pending receipt pause outranks revoked/limited permission status')
+  assert.match(auto, /备份计划已保存：照片权限不可用/)
+  assert.match(auto, /前台自动备份：仅处理已授权照片/)
+  assert.match(auto, /\.disabled\(controller\.busy \|\| background\.busy \|\| login\.owner == nil \|\|\s*\(photoAuthorization != \.authorized && photoAuthorization != \.limited\)\)\s*\.accessibilityIdentifier\("native-ios-photos-auto-enable"\)/)
+  assert.match(backupScreen, /onChange\(of: phase\) \{ state in[\s\S]*?photoAuthorization = PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/)
+  assert.doesNotMatch(auto, /requestAuthorization|UploadSession|performChanges/)
+})
