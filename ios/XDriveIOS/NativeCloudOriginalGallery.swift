@@ -481,6 +481,10 @@ final class XDriveIOSNativeCloudOriginalModel: ObservableObject {
                     self?.error = "当前账户身份验证失败；已清除旧备份原件列表，请重新登录或重试。"
                     return
                 }
+                // Async Owner validation can finish after Viewer suspension,
+                // route leave, or A -> B account replacement. The retired
+                // page must not invalidate a newer Owner's verified wall.
+                guard self?.epoch == ticket else { return }
                 guard XDriveIOSNativePhotoOwnerScope.matches(auth.owner, expected),
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
                 else {
