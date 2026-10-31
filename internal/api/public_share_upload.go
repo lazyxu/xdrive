@@ -182,6 +182,7 @@ func (s *Server) publicShareCreateUpload(c *gin.Context) {
 		len(req.ChunkSHA256) != 0 ||
 		(req.ConflictPolicy != "" && req.ConflictPolicy != meta.UploadConflictPolicyKeepBoth) ||
 		req.Size < 0 || req.Size > s.MaxUploadBytes ||
+		!strings.HasPrefix(req.ResumeKey, "ps1_") || len(req.ResumeKey) != 68 ||
 		meta.ValidateName(req.Name) != nil {
 		fail(c, http.StatusForbidden, "share upload request out of bounds")
 		return

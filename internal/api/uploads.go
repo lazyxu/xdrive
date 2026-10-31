@@ -1191,6 +1191,23 @@ func (s *Server) abortUploadSession(c *gin.Context) {
 }
 
 func (s *Server) writeUploadSession(c *gin.Context, session meta.UploadSession, status int) {
+	// The guest does not receive a private Owner Node, storage key, or
+	// mutable Owner write authority in a scoped upload receipt.
+	if session.ShareID != nil {
+		var parts []meta.UploadPart
+		_ = s.DB.Where("session_id = ?", session.ID).Order("part_index ASC").Find(&parts).Error
+		received := make([]uploadPartDTO, 0, len(parts))
+		for _, part := range parts {
+			received = append(received, uploadPartDTO{Index: part.PartIndex, Size: part.Size, SHA256: part.SHA256})
+		}
+		c.JSON(status, gin.H{
+			"id": session.ID, "name": session.Name, "size": session.TotalSize,
+			"chunk_size": session.ChunkSize, "chunk_count": session.ChunkCount,
+			"status": session.Status, "expires_at": session.ExpiresAt,
+			"received_chunks": received,
+		})
+		return
+	}
 	var parts []meta.UploadPart
 	_ = s.DB.Where("session_id = ?", session.ID).Order("part_index ASC").Find(&parts).Error
 	out := uploadSessionDTO{
