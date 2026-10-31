@@ -35,6 +35,12 @@ assert.deepEqual(nav.xDriveMobileRouteForSlot(state, 'dynamic', false), transfer
 assert.deepEqual(nav.xDriveMobileRouteForSlot(state, 'mine', false), mine)
 assert.equal(state.dynamic.length, 1, 'Gallery/map/Viewer must never replace dynamic')
 assert.deepEqual(nav.xDriveMobileFeatureParentRoute(map), library)
+// Only an actual map panel hides the five-slot bar; Places list restores L1.
+assert.equal(nav.xDriveMobileMapFocused(map, true), true)
+assert.equal(nav.xDriveMobileMapFocused(map, false), false, 'Places list must keep bottom tabs')
+assert.equal(nav.xDriveMobileMapFocused(library, true), false, 'Gallery library is L1')
+assert.equal(nav.xDriveMobileMapFocused(preview, true), false, 'Viewer is separately immersive')
+assert.equal(nav.xDriveMobileMapFocused(files, true), false, 'stale Gallery focus never hides Files')
 assert.deepEqual(nav.xDriveMobileFeatureParentRoute(transfers), { app: 'tasks', params: { scope: 'mine' } })
 assert.equal(nav.xDriveMobileFeatureParentRoute(library), null)
 state = nav.xDriveRememberMobileNavigation(state, admin, owner, true)
@@ -95,6 +101,7 @@ assert.equal(searchState.launcherSearch, '', 'A→B→A must not recover old sea
 
 const appSource = readFileSync(resolve(here, '../src/App.tsx'), 'utf8')
 const launcherSource = readFileSync(resolve(here, '../src/MobileFiveSlotNavigation.tsx'), 'utf8')
+const gallerySource = readFileSync(resolve(here, '../../ui/shared/src/mui/MediaGallery.tsx'), 'utf8')
 assert.match(appSource, /favoriteKeys=\{currentMobileNavigation\.favorites\}/)
 assert.match(appSource, /onToggleFavorite=\{toggleMobileFavorite\}/)
 assert.match(appSource, /!mobileOwnerScope \|\| !mobileDestinations\.some/)
@@ -103,6 +110,19 @@ assert.doesNotMatch(launcherSource, /setFavorites\(/, 'Launcher must not own rem
 assert.match(appSource, /search=\{currentMobileNavigation\.launcherSearch\}/)
 assert.match(appSource, /onSearchChange=\{setMobileLauncherSearch\}/)
 assert.match(launcherSource, /onChange=\{event => onSearchChange\(event\.target\.value\)\}/)
+assert.match(gallerySource, /const mobileMapFocusActive = compactGallery && showPlacesIndex && placesPanels\.map/,
+  'Gallery reports its actual map/list presentation rather than route-only Places')
+assert.match(gallerySource, /onMobileMapFocusChange\?\.\(mobileMapFocusActive\)/,
+  'Gallery must report active focus to the shell')
+assert.match(gallerySource, /onMobileMapFocusChange\?\.\(false\)/,
+  'Gallery must release focus on unmount or transition')
+assert.match(gallerySource, /mapImmersive=\{mobileMapFocusActive\}/,
+  'Gallery's own immersive chrome and the shell share one map truth')
+assert.match(appSource, /onMobileMapFocusChange=\{onMobileMapFocusChange\}/)
+assert.match(appSource, /mobileMapVisibility\.owner === mobileOwnerScope/,
+  'old Owner map visibility cannot hide new Owner tabs')
+assert.match(appSource, /xDriveMobileMapFocused\(route,/,
+  'bottom nav must use actual map focus instead of route-only section')
 assert.doesNotMatch(launcherSource, /const \[search, setSearch\] = useState/,
   'Launcher must not own a query that is lost on tab unmount')
 console.log('mobile five-slot state: routes, Owner, Viewer, back, role, favorites and Owner-scoped search passed')

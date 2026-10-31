@@ -676,6 +676,8 @@ export interface XDriveMediaGalleryPageProps {
     target:'prototype'|'isolated',signal:AbortSignal,
     camera?:XDriveBaiduNativeCameraSnapshot)=>Promise<string>
   onSectionRouteChange?: (section: MediaGallerySection) => void
+  /** Web Mobile shell L1/L2 display hint from actual Places map/list mode only. */
+  onMobileMapFocusChange?: (focused: boolean) => void
   onOpenViewer?: (item: MediaItem, context: XDriveMediaGalleryOpenViewerContext) => void
   /** Optional Web/PWA routed Viewer lease. No Owner token or URLs are persisted. */
   onRegisterViewerThumbnailCache?: XDriveMediaGalleryThumbnailCacheRegistrar
@@ -701,6 +703,7 @@ export function XDriveMediaGalleryPage({
   initialBaiduNativeCamera,
   onMapModeHandoff,
   onSectionRouteChange,
+  onMobileMapFocusChange,
   onOpenViewer,
   onRegisterViewerThumbnailCache,
   onShowInFolder,
@@ -7581,6 +7584,13 @@ export function XDriveMediaGallery({
   const showAlbumIndex = isRootSection && section === 'albums'
   const nativeCellWall = isBaiduCellWall || isBaiduViewportWall
   const showPlacesIndex = isRootSection && section === 'places' && !nativeCellWall
+  // The exact same local mode drives Gallery's compact Map chrome and the
+  // five-slot shell. A Places LIST stays L1 even though the route is 'places'.
+  const mobileMapFocusActive = compactGallery && showPlacesIndex && placesPanels.map
+  useLayoutEffect(() => {
+    onMobileMapFocusChange?.(mobileMapFocusActive)
+    return () => onMobileMapFocusChange?.(false)
+  }, [onMobileMapFocusChange, mobileMapFocusActive])
   // These are presentational delays only; real Source/Server/Agent GETs and
   // the previously accepted albums/places lists are never delayed or cleared.
   const showDelayedPlacesPage = useXDriveDeferredPendingLoading(
@@ -8055,7 +8065,7 @@ export function XDriveMediaGallery({
     >
       {compactGallery ? (
         <XDriveMobileGalleryChrome
-          mapImmersive={showPlacesIndex && placesPanels.map}
+          mapImmersive={mobileMapFocusActive}
           primaryTab={mobileCollectionsOverview || section !== 'library' ? 'collections' : 'library'}
           onPrimaryTabChange={(tab) => {
             // Capture before replacing the Library with the much shorter
