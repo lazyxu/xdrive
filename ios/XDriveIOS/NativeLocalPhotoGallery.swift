@@ -397,9 +397,31 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
             if selected == nil && page == nil && !busy { refresh(at: savedOffset) }
         }
         .onChange(of: phase) { new in
-            if new != .active { invalidate() }
-            else { refresh(at: savedOffset) }
-            if new != .active { clearViewerTileAnchor() }
+            authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+            if new != .active {
+                if selected != nil {
+                    // Keep only the in-memory source anchor; dismissal still
+                    // rereads PhotoKit and checks current authorization.
+                    accessibilityFocusedTileID = nil
+                    // The fullscreen Viewer owns its own privacy and PhotoKit
+                    // revalidation. Retire the hidden wall, not the modal.
+                    suspendForViewer()
+                    page = nil
+                    errorMessage = nil
+                } else {
+                    clearViewerTileAnchor()
+                    invalidate()
+                }
+            } else if selected != nil {
+                // Do not start a hidden 64-item scan while L3 is visible.
+                // On reactivation the Viewer revalidates this exact asset.
+                if authorization != .authorized && authorization != .limited {
+                    clearViewerTileAnchor()
+                    invalidate()
+                }
+            } else {
+                refresh(at: savedOffset)
+            }
         }
         .onDisappear {
             // fullScreenCover may hide its presenter before the Viewer closes.

@@ -331,6 +331,7 @@ jobs:
           node web/scripts/test-synology-nas-preflight.mjs
           node web/scripts/test-synology-gui-login.mjs
           node web/scripts/test-synology-nas-drafts.mjs
+          node web/scripts/test-synology-nas-draft-bind.mjs
           node web/scripts/test-synology-nas-source-create.mjs
           node web/scripts/test-synology-recovery-review.mjs
           npm run build:synology --prefix web

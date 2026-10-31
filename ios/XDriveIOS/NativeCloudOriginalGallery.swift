@@ -422,6 +422,26 @@ final class XDriveIOSNativeCloudOriginalModel: ObservableObject {
         return picture
     }
 
+    /// Share the native PhotoAsset wall's read-failure policy. Previously any
+    /// 401/403, malformed page, or TLS failure kept older original filenames
+    /// and a stale RAM bearer visible after the Server had denied access.
+    /// Only transient transport/rate-limit/server failures may retain a
+    /// previously verified Owner page and retry its exact offset.
+    private static func canRetainPage(after error: Error) -> Bool {
+        if let failure = error as? XDriveIOSNativeCloudReadError {
+            switch failure {
+            case .server(let status):
+                return XDriveIOSNativeMediaPageRetryPolicy
+                    .permitsRetainingPreviousPage(httpStatus: status)
+            case .invalidScope, .invalidResponse, .notSupported:
+                return false
+            }
+        }
+        guard let network = error as? URLError else { return false }
+        return XDriveIOSNativeMediaPageRetryPolicy
+            .permitsRetainingPreviousPage(urlError: network.code)
+    }
+
     /// Drop all prior Owner rows and the RAM-only thumbnail reader.
     func invalidate() {
         cancel()
@@ -447,9 +467,30 @@ final class XDriveIOSNativeCloudOriginalModel: ObservableObject {
         work = Task { @MainActor [weak self] in
             defer { if self?.epoch == ticket { self?.busy = false; self?.work = nil } }
             do {
-                let auth = try await login.verifiedAuthorization()
-                guard XDriveIOSNativePhotoOwnerScope.matches(auth.owner, expected) else {
-                    throw XDriveIOSNativeSessionError.staleSession
+                // Verify the exact current Owner before retaining ANY older
+                // filenames. A revoked/expired login must retire cached rows
+                // even if this is only a follow-up paginated request.
+                let auth: (owner: XDriveNativeOwnerRoot, accessToken: String)
+                do {
+                    auth = try await login.verifiedAuthorization()
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch {
+                    guard self?.epoch == ticket else { return }
+                    self?.invalidate()
+                    self?.error = "当前账户身份验证失败；已清除旧备份原件列表，请重新登录或重试。"
+                    return
+                }
+                // Async Owner validation can finish after Viewer suspension,
+                // route leave, or A -> B account replacement. The retired
+                // page must not invalidate a newer Owner's verified wall.
+                guard self?.epoch == ticket else { return }
+                guard XDriveIOSNativePhotoOwnerScope.matches(auth.owner, expected),
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
+                else {
+                    self?.invalidate()
+                    self?.error = "服务器或 Owner 已变化；旧备份原件列表已清除。"
+                    return
                 }
                 let reply = try await XDriveIOSNativeCloudOriginalReader(
                     owner: expected, accessToken: auth.accessToken
@@ -471,9 +512,18 @@ final class XDriveIOSNativeCloudOriginalModel: ObservableObject {
                 // Always advance by server rows, NOT new unique tiles.
                 model.total = reply.total
                 model.scanned = min(reply.total, start + 48)
+            } catch is CancellationError {
+                // A retired generation must never overwrite the current wall.
             } catch {
                 guard self?.epoch == ticket else { return }
-                self?.error = "无法读取当前账户的云端原件列表，请检查网络与权限后重试。"
+                guard XDriveIOSNativeCloudOriginalModel.canRetainPage(after: error) else {
+                    self?.invalidate()
+                    self?.error = "云端原件访问已失效或数据无效；旧页面已清除，请重新验证账户。"
+                    return
+                }
+                // Retry the same Server offset without discarding an already
+                // verified Owner page on a temporary network/503/429 failure.
+                self?.error = "云端原件读取暂时失败；已保留已验证页面，可重试当前批次。"
             }
         }
     }

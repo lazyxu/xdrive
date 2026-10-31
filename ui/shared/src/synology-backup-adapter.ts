@@ -262,6 +262,10 @@ export interface XDriveSynologyBackupLocalClient extends XDriveLocalBackupCommon
   preflightNASShare(selectionID: string, signal?: AbortSignal): Promise<void>
   /** Inspect only this original Agent's own never-bound Source drafts; no Root or write. */
   nativeDrafts(signal?: AbortSignal): Promise<XDriveSynologyNativeDraftReview>
+  /** Explicitly bind an existing creating-device draft to a newly verified NAS share. */
+  bindNativeDraft(
+    sourceID: number, selectionID: string, ownerScope: string, signal?: AbortSignal,
+  ): Promise<XDriveSynologyCreatedBackupSource>
   /** Creates a paused native Source on the verified NAS share; never starts Runner. */
   createNASBackupSource(
     selectionID: string, ownerScope: string, targetID: number, name: string, signal?: AbortSignal,
@@ -337,7 +341,7 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
       'device-backup-page', 'device-backup-folders', 'cloud-quota', 'nas-volume',
       'cloud-root', 'cloud-children', 'cloud-text-preview', 'cloud-media-range', 'cloud-thumbnail',
        'cloud-gallery-items', 'cloud-gallery-albums', 'cloud-live-motion', 'nas-shares',
-      'nas-share-preflight', 'nas-share-create', 'nas-drafts', 'server-connection', 'server-login',
+      'nas-share-preflight', 'nas-share-create', 'nas-draft-bind', 'nas-drafts', 'server-connection', 'server-login',
       'recovery-review'].includes(operation)) {
       throw new Error('Unsupported DSM backup operation')
     }
@@ -424,6 +428,27 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
         })
       }
       return { owner_scope: report.owner_scope as string, items }
+    },
+    async bindNativeDraft(sourceID, selectionID, ownerScope, signal) {
+      if (!Number.isSafeInteger(sourceID) || sourceID < 1 ||
+        !/^[0-9a-f]{64}$/.test(selectionID) ||
+        !/^[0-9a-f]{64}$/.test(ownerScope)) {
+        throw new Error('Invalid owning DSM native draft binding')
+      }
+      const raw = await request<unknown>('/v1/nas-draft-bind', 'POST', {
+        source_id: sourceID, selection_id: selectionID,
+        owner_scope: ownerScope, confirmed: true,
+      }, signal)
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        throw new Error('Unverified DSM native draft binding response')
+      }
+      const response = raw as Record<string, unknown>
+      if (Object.keys(response).length !== 2 ||
+        response.source_id !== sourceID ||
+        (response.state !== 'authorized' && response.state !== 'needs_inspection')) {
+        throw new Error('Invalid owning Agent native Root binding status')
+      }
+      return { source_id: sourceID, state: response.state }
     },
     async createNASBackupSource(selectionID, ownerScope, targetID, name, signal) {
       if (!/^[0-9a-f]{64}$/.test(selectionID) ||

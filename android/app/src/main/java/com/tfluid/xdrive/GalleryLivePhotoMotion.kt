@@ -153,7 +153,14 @@ internal fun GalleryLivePhotoMotion(
         var current: OwnerVideoPlayback? = null
         try {
             current = controller.openGalleryLivePhotoPlayback(photo)
-            if (current == null || !currentHeld) return@LaunchedEffect
+            if (current == null) {
+                // A completed Owner read without a valid motion lease is not
+                // indefinite buffering. A fresh physical hold may retry.
+                failed = liveMotionUnavailableAfterRead(
+                    activeHold = currentHeld, sourceReturned = false)
+                return@LaunchedEffect
+            }
+            if (!currentHeld) return@LaunchedEffect
             lease = current
             awaitCancellation()
         } catch (cancelled: CancellationException) {
@@ -269,7 +276,9 @@ internal fun GalleryLivePhotoMotion(
                     .padding(horizontal = 10.dp, vertical = 7.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (!ended && !failed) {
+                if (liveMotionPendingIndicatorAllowed(
+                        ended = ended, failed = failed,
+                        playerSetupFailed = playerSetupFailed)) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(15.dp), strokeWidth = 2.dp,
                         color = Color.White,

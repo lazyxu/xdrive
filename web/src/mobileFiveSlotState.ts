@@ -7,6 +7,7 @@ export type XDriveMobileNavigationMemory = {
   ownerScope: string
   files: XDriveWebAppRoute
   gallery: XDriveWebAppRoute
+  galleryAlbumID: string | null
   dynamic: XDriveWebAppRoute[]
   favorites: string[]
   launcherSearch: string
@@ -40,6 +41,7 @@ export function xDriveInitialMobileNavigation(ownerScope = ''): XDriveMobileNavi
     ownerScope,
     files: { app: 'files', params: {} },
     gallery: { app: 'gallery', params: {} },
+    galleryAlbumID: null,
     dynamic: [],
     favorites: ['gallery', 'files'],
     launcherSearch: '',
@@ -61,7 +63,9 @@ export function xDriveRememberMobileNavigation(
   if (!xDriveMobileRouteAllowed(route, adminVerified)) return { ...base, dynamic, favorites }
   switch (xDriveMobileSlotForRoute(route)) {
     case 'files': return { ...base, files: route, dynamic, favorites }
-    case 'gallery': return { ...base, gallery: route, dynamic, favorites }
+    case 'gallery': return { ...base, gallery: route, dynamic, favorites,
+      galleryAlbumID: route.app === 'gallery' && route.params.section === 'albums'
+        ? base.galleryAlbumID : null }
     case 'dynamic':
       return {
         ...base,
@@ -70,6 +74,18 @@ export function xDriveRememberMobileNavigation(
       }
     default: return { ...base, dynamic, favorites }
   }
+}
+
+/** An Owner-scoped committed Album ID is a return hint, never media authority. */
+export function xDriveRememberMobileGalleryAlbum(
+  previous: XDriveMobileNavigationMemory,
+  ownerScope: string,
+  albumID: string | null,
+): XDriveMobileNavigationMemory {
+  if (!ownerScope || previous.ownerScope !== ownerScope) return previous
+  if (albumID !== null && (typeof albumID !== 'string' || !albumID.length || albumID.length > 256))
+    return previous
+  return previous.galleryAlbumID === albumID ? previous : { ...previous, galleryAlbumID: albumID }
 }
 
 /** Launcher favorites are volatile, bounded, and verified-Owner scoped. */
@@ -119,6 +135,18 @@ export function xDriveMobileRouteForSlot(
     case 'dynamic':
       return memory.dynamic.find(item => xDriveMobileRouteAllowed(item, adminVerified)) ?? null
   }
+}
+
+/** A concrete Album owns the app-header Back only while its real Gallery
+ * instance has registered an Owner-matching handler. The Albums INDEX keeps
+ * its ordinary route parent (Library); other tabs cannot borrow that handler. */
+export function xDriveMobileAlbumOwnsBack(
+  route: XDriveWebAppRoute,
+  ownerScope: string,
+  registeredOwner: string | null,
+): boolean {
+  return route.app === 'gallery' && route.params.section === 'albums' &&
+    Boolean(ownerScope) && registeredOwner === ownerScope
 }
 
 /** L2 map focus belongs to the actual Gallery map panel, NOT every Places

@@ -93,3 +93,39 @@ test('native cloud original pages stay unique while automatic uploads shift desc
   assert.equal(visible.length, 94)
   assert.equal(new Set(visible).size, visible.length)
 })
+
+test('native cloud originals clear revoked Owner pages and invalid Server responses', () => {
+  const model = src.slice(src.indexOf('final class XDriveIOSNativeCloudOriginalModel'),
+    src.indexOf('struct XDriveIOSNativeCloudOriginalPreview: View'))
+  const policy = model.slice(model.indexOf('private static func canRetainPage('),
+    model.indexOf('/// Drop all prior Owner rows'))
+  const load = model.slice(model.indexOf('func loadNext('))
+  assert.match(policy, /case \.server\(let status\):[\s\S]*?permitsRetainingPreviousPage\(httpStatus: status\)/)
+  assert.match(policy, /case \.invalidScope, \.invalidResponse, \.notSupported:\s*return false/)
+  assert.match(policy, /guard let network = error as\? URLError else \{ return false \}/)
+  assert.match(policy, /permitsRetainingPreviousPage\(urlError: network.code\)/)
+  assert.match(load, /auth = try await login\.verifiedAuthorization\(\)/)
+  assert.match(load, /catch is CancellationError \{\s*throw CancellationError\(\)/)
+  assert.match(load, /catch \{\s*guard self\?\.epoch == ticket else \{ return \}\s*self\?\.invalidate\(\)/)
+  assert.match(load, /guard self\?\.epoch == ticket else \{ return \}\s*guard XDriveIOSNativePhotoOwnerScope\.matches\(auth.owner, expected\)/)
+  assert.match(load, /XDriveIOSNativePhotoOwnerScope\.matches\(auth.owner, expected\),\s*XDriveIOSNativePhotoOwnerScope\.matches\(login.owner, expected\)/)
+  assert.match(load, /guard XDriveIOSNativeCloudOriginalModel\.canRetainPage\(after: error\) else \{\s*self\?\.invalidate\(\)/)
+  assert.match(load, /旧页面已清除/)
+  assert.match(load, /已保留已验证页面，可重试当前批次/)
+  // Transient pagination retries the original offset, not the first page.
+  assert.match(load, /let start = scanned/)
+  assert.match(load, /\.page\(offset: start\)/)
+  assert.match(load, /model\.scanned = min\(reply\.total, start \+ 48\)/)
+})
+
+test('read failure policy preserves only the existing native Gallery transient statuses', () => {
+  const fs = require('node:fs')
+  const policy = fs.readFileSync(path.join(root, 'ios/XDriveIOS/NativeMediaPageRetryPolicy.swift'), 'utf8')
+  assert.match(policy, /httpStatus == 408 \|\| httpStatus == 429 \|\| \(500\.\.\.599\)\.contains\(httpStatus\)/)
+  assert.match(policy, /\.notConnectedToInternet, \.networkConnectionLost, \.timedOut/)
+  assert.match(policy, /case \.notConnectedToInternet,[\s\S]*?default:\s*return false/)
+  const original = src.slice(src.indexOf('private static func canRetainPage('),
+    src.indexOf('/// Drop all prior Owner rows'))
+  assert.doesNotMatch(original, /return true/)
+  assert.doesNotMatch(original, /catch \{/)
+})

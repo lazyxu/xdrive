@@ -85,6 +85,28 @@ class LivePlayerSetupTest {
         assertTrue(liveMotionMayStart(true, true, true, false))
     }
 
+    @Test fun missingOwnerMotionLeaseIsTerminalOnlyWhileCurrentHoldIsActive() {
+        assertTrue(liveMotionUnavailableAfterRead(
+            activeHold = true, sourceReturned = false))
+        assertFalse(liveMotionUnavailableAfterRead(
+            activeHold = false, sourceReturned = false))
+        assertFalse(liveMotionUnavailableAfterRead(
+            activeHold = true, sourceReturned = true))
+        assertFalse(liveMotionUnavailableAfterRead(
+            activeHold = false, sourceReturned = true))
+    }
+
+    @Test fun loadingIndicatorNeverOverlaysTerminalLiveMotionStatus() {
+        assertTrue(liveMotionPendingIndicatorAllowed(
+            ended = false, failed = false, playerSetupFailed = false))
+        assertFalse(liveMotionPendingIndicatorAllowed(
+            ended = false, failed = true, playerSetupFailed = false))
+        assertFalse(liveMotionPendingIndicatorAllowed(
+            ended = false, failed = false, playerSetupFailed = true))
+        assertFalse(liveMotionPendingIndicatorAllowed(
+            ended = true, failed = false, playerSetupFailed = false))
+    }
+
     @Test fun heldPointerSurvivingStopCannotRestartMotionOnResume() {
         // App was visible and motion legitimately played.
         assertTrue(liveMotionMayStart(true, true, true, false))
