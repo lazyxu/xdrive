@@ -145,6 +145,7 @@ internal class NativePhotoIncrementalWriter(
         // A root revision changes after normal uploads. An unresolved intent
         // from the *same stable Owner/device* must remain blocking even if
         // the current directory revision is different.
+        compactConfirmedReceipts()
         val relevant = journal.read().filter { sameStableOwner(it.owner, owner) }
         check(relevant.none { it.requiresReadOnlyReconciliation }) {
             "An uncertain native original needs read-only Owner reconciliation"
@@ -158,6 +159,7 @@ internal class NativePhotoIncrementalWriter(
                 prior.sizeBytes == original.bytes) { "Original version was replaced" }
             if (prior.phase == NativePhotoBackupPhase.VERIFIED) {
                 completed.recordVerified(prior)
+                compactConfirmedReceipts()
                 return NativePhotoIncrementalOutcome.ALREADY_VERIFIED
             }
             // A planned record with a different root revision must be
@@ -198,6 +200,7 @@ internal class NativePhotoIncrementalWriter(
             // If this write fails, VERIFIED remains in the journal. Next
             // invocation repairs SQLite from the same checked Go receipt.
             completed.recordVerified(verified)
+            compactConfirmedReceipts()
             return NativePhotoIncrementalOutcome.UPLOADED
         } catch (failure: Throwable) {
             if (mayHaveSent) {
@@ -208,6 +211,22 @@ internal class NativePhotoIncrementalWriter(
                 }
             }
             throw failure
+        }
+    }
+
+    /**
+     * Every discarded VERIFIED intent already has the identical committed
+     * SQLite receipt. This also safely prunes older Owners' verified entries
+     * without revealing their inventory or touching their unknown attempts.
+     */
+    private fun compactConfirmedReceipts() {
+        ledger.compactIndexedVerified { intent ->
+            val receipt = completed.findVerified(
+                intent.owner, intent.assetKey, intent.versionKey,
+                intent.resource, intent.originalSha256, intent.sizeBytes,
+            )
+            receipt?.nodeId == intent.verifiedNodeId &&
+                receipt?.nodeRevision == intent.verifiedNodeRevision
         }
     }
 
