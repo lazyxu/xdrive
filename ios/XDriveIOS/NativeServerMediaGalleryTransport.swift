@@ -226,8 +226,12 @@ struct XDriveIOSNativeMediaGalleryReader {
               ["image/jpeg", "image/png", "image/heic", "image/webp"]
                 .contains(where: { kind.hasPrefix($0) })
         else { throw XDriveIOSNativeMediaReadFailure.malformed }
-        let image = await Task.detached(priority: .utility) { () -> CGImage? in
-            guard let source = CGImageSourceCreateWithData(
+        // An unstructured decode doesn't inherit the tile's cancellation.
+        // Explicitly propagate L3 foreground preemption into the utility
+        // worker, without turning a cancelled thumbnail into a success.
+        let decodeWork = Task.detached(priority: .utility) { () -> CGImage? in
+            guard !Task.isCancelled,
+                  let source = CGImageSourceCreateWithData(
                 bytes as CFData, [kCGImageSourceShouldCache: false] as CFDictionary
             ) else { return nil }
             let opts: [String: Any] = [
@@ -236,8 +240,14 @@ struct XDriveIOSNativeMediaGalleryReader {
                 kCGImageSourceThumbnailMaxPixelSize as String: 280,
                 kCGImageSourceShouldCacheImmediately as String: false
             ]
-            return CGImageSourceCreateThumbnailAtIndex(source, 0, opts as CFDictionary)
-        }.value
+            let decoded = CGImageSourceCreateThumbnailAtIndex(source, 0, opts as CFDictionary)
+            return Task.isCancelled ? nil : decoded
+        }
+        let image = await withTaskCancellationHandler {
+            await decodeWork.value
+        } onCancel: {
+            decodeWork.cancel()
+        }
         try Task.checkCancellation()
         guard let image else { throw XDriveIOSNativeMediaReadFailure.malformed }
         return UIImage(cgImage: image)
@@ -274,8 +284,11 @@ struct XDriveIOSNativeMediaGalleryReader {
         let still = try await read(signedURL, bearer: false, maximum: 32 * 1_048_576)
         // Preview responses can be compressed yet huge when decoded.
         // Downsample off the MainActor instead of allocating unbounded pixels.
-        let bounded = await Task.detached(priority: .utility) { () -> CGImage? in
-            guard let source = CGImageSourceCreateWithData(
+        // The selected Viewer may close or switch Owner while ImageIO decodes
+        // the bounded still. Cancel the detached worker with its parent task.
+        let decodeWork = Task.detached(priority: .utility) { () -> CGImage? in
+            guard !Task.isCancelled,
+                  let source = CGImageSourceCreateWithData(
                 still as CFData, [kCGImageSourceShouldCache: false] as CFDictionary
             ) else { return nil }
             let options: [String: Any] = [
@@ -284,8 +297,14 @@ struct XDriveIOSNativeMediaGalleryReader {
                 kCGImageSourceThumbnailMaxPixelSize as String: 4096,
                 kCGImageSourceShouldCacheImmediately as String: false
             ]
-            return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
-        }.value
+            let decoded = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+            return Task.isCancelled ? nil : decoded
+        }
+        let bounded = await withTaskCancellationHandler {
+            await decodeWork.value
+        } onCancel: {
+            decodeWork.cancel()
+        }
         try Task.checkCancellation()
         guard let bounded else {
             throw XDriveIOSNativeMediaReadFailure.malformed
