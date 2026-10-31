@@ -1159,10 +1159,12 @@ test('Public JPEG image Quick Look requests one Share-only preview URL on explic
     typeof node.type === 'string' && node.props['data-xdrive-public-preview-target'] !== undefined).length, 0)
 })
 
-test('SH-P011: passworded and exhausted folder shares do not auto-open or expose children', async () => {
+test('SH-P011: passworded or server-denied folder grants cannot auto-open children', async () => {
   for (const scope of [
     { requires_password: true, max_downloads: 0, download_count: 0 },
-    { requires_password: false, max_downloads: 1, download_count: 1 },
+    { requires_password: false, max_downloads: 1, download_count: 1,
+      capabilities: { list: false, preview: false, download: false, downloadZip: false,
+        search: false, write: false, delete: false, upload: false } },
   ]) {
     let childRequests = 0
     class Api {

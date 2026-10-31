@@ -334,7 +334,7 @@ export default function PublicShareView({ token }: { token: string }) {
       if (err instanceof ApiError && err.status === 401) {
         setError('分享密码错误。')
       } else if (err instanceof ApiError && err.status === 410) {
-        setError('此分享已过期、达到下载上限或已被撤销。')
+        setError('此分享已过期或已被撤销。')
       } else {
         setError(err instanceof Error ? err.message : '下载失败。')
       }
@@ -635,7 +635,6 @@ export default function PublicShareView({ token }: { token: string }) {
                 {notice}
               </Typography>
             ) : null}
-            {exhausted ? <XDriveStatusAlert tone="warning">此分享已达到下载上限。</XDriveStatusAlert> : null}
             {share?.type === 'dir' && zipNotice ? (
               <Typography role="status" variant="caption"
                 sx={{ p: 1.25, bgcolor: 'background.paper', borderRadius: 1.5, boxShadow: 2 }}>
