@@ -21,6 +21,7 @@ type fakeNASSourceCreator struct {
 	failBind          bool
 	failCreate        bool
 	changeOwnerOnBind bool
+	weakIdentity      bool
 	ownerName         string
 	wantPath          string
 }
@@ -75,6 +76,7 @@ func (f *fakeNASSourceCreator) AuthorizeLocalRoot(
 	}
 	return localbackupipc.LocalBackupRootGrant{
 		SourceID: id, Path: path, Status: "awaiting_executor",
+		StrongIdentity: !f.weakIdentity,
 	}, nil
 }
 
@@ -196,6 +198,23 @@ func TestDSMSourceCreateNativeBindingFailureRequiresInspection(t *testing.T) {
 		!strings.Contains(r.Body.String(), `"state":"needs_inspection"`) ||
 		strings.Contains(r.Body.String(), `"state":"authorized"`) {
 		t.Fatalf("failed binding must not claim Root success, got %d %s", r.Code, r.Body.String())
+	}
+}
+
+// The original Agent worker refuses weak native Root identity. An old or
+// constrained NAS filesystem must not be presented as a runnable backup even
+// if the Source was created and the binding status says awaiting_executor.
+func TestDSMSourceCreateWeakNativeIdentityRequiresInspection(t *testing.T) {
+	g, agent, selection, scope := newDSMSourceCreateFixture(t)
+	agent.weakIdentity = true
+	r := requestServerLogin(g, "POST", sourceCreateBody(selection, scope, true),
+		"https://nas.example:5001", getCSRF(t, g),
+		DSMCGIPath+"?op=nas-share-create")
+	if r.Code != http.StatusOK || agent.creates != 1 || agent.binds != 1 ||
+		agent.runs != 0 || !strings.Contains(r.Body.String(), `"state":"needs_inspection"`) ||
+		strings.Contains(r.Body.String(), `"state":"authorized"`) ||
+		strings.Contains(r.Body.String(), agent.wantPath) {
+		t.Fatalf("weak native Root must never be acknowledged runnable: HTTP %d %s", r.Code, r.Body.String())
 	}
 }
 

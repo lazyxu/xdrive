@@ -599,7 +599,8 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		grant, err := bootstrapper.AuthorizeLocalRoot(ctx, created.ID, path)
 		if err != nil || grant.SourceID != created.ID ||
-			grant.Path != path || grant.Status != "awaiting_executor" {
+			grant.Path != path || grant.Status != "awaiting_executor" ||
+			!grant.StrongIdentity {
 			// Native binding may have succeeded before a lost reply; do not
 			// claim either a confirmed grant or a confirmed paused draft.
 			// Return an ID for explicit native draft/binding inspection.
