@@ -54,6 +54,24 @@ struct XDriveIOSNativePhotoMapPolicyChecks {
         precondition(!XDriveIOSNativePhotoMapPolicy.shouldRestoreCamera(
             savedPageOffset: -1, requestedPageOffset: 0,
             permissionGranted: true, sceneActive: true))
+        // Forward find operates on one PhotoKit snapshot, stops on the
+        // first GPS hit, end of the library, or <=1,024 scanned slots.
+        precondition(XDriveIOSNativePhotoMapPolicy.shouldSeekNextGPSPage(
+            foundPins: 0, finished: false, pagesRead: 1))
+        precondition(XDriveIOSNativePhotoMapPolicy.shouldSeekNextGPSPage(
+            foundPins: 0, finished: false, pagesRead: 15))
+        precondition(!XDriveIOSNativePhotoMapPolicy.shouldSeekNextGPSPage(
+            foundPins: 1, finished: false, pagesRead: 1))
+        precondition(!XDriveIOSNativePhotoMapPolicy.shouldSeekNextGPSPage(
+            foundPins: 0, finished: true, pagesRead: 1))
+        precondition(!XDriveIOSNativePhotoMapPolicy.shouldSeekNextGPSPage(
+            foundPins: 0, finished: false, pagesRead: 16))
+        precondition(!XDriveIOSNativePhotoMapPolicy.shouldSeekNextGPSPage(
+            foundPins: 0, finished: false, pagesRead: 0))
+        precondition(!XDriveIOSNativePhotoMapPolicy.shouldSeekNextGPSPage(
+            foundPins: 0, finished: false, pagesRead: -1))
+        precondition(XDriveIOSNativePhotoMapPolicy.maxSeekGPSPages *
+            XDriveIOSNativePhotoMapPolicy.pageSize == 1024)
         print("native iOS PhotoKit map policy: PASS")
     }
 }

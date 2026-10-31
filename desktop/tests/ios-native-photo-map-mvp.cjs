@@ -86,3 +86,25 @@ test('native map restores exact camera after Viewer return only for the same cur
   assert.match(map, /private func clearReturnCamera\(\)/)
   assert.doesNotMatch(map, /UserDefaults|localStorage|URLSession|WKWebView/)
 })
+
+test('native GPS find-next skips only a bounded PhotoKit snapshot, not 100k assets', () => {
+  assert.match(map, /Button\("查找下一批有定位照片"\)/)
+  assert.match(map, /refresh\(at: page\.page\.nextOffset, findNextGPS: true\)/)
+  assert.match(map, /\.disabled\(busy \|\| page\.page\.finished\)/)
+  assert.match(map, /refresh\(at: page\.page\.nextOffset, findNextGPS: true\)\s*\}\s*\.disabled\(busy \|\| page\.page\.finished\)\s*\.frame\(minHeight: 44\)/)
+  assert.match(map, /var next = try await worker\.nextLocatedPage\(\)/)
+  assert.match(map, /var pagesRead = 1/)
+  assert.match(map, /while findNextGPS && XDriveIOSNativePhotoMapPolicy\.shouldSeekNextGPSPage\(/)
+  assert.match(map, /try Task\.checkCancellation\(\)\s*next = try await worker\.nextLocatedPage\(\)\s*pagesRead \+= 1/)
+  assert.match(map, /gpsFindPagesScanned = findNextGPS \? pagesRead : 0/)
+  assert.match(map, /gpsFindPagesScanned = 0\s*page = nil/)
+  assert.match(map, /guard generation == ticket, phase == \.active/)
+  assert.match(policy, /static let maxSeekGPSPages = 16/)
+  assert.match(policy, /pagesRead >= 1 && pagesRead < maxSeekGPSPages/)
+  assert.match(map, /不代表全库已完成扫描/)
+  assert.match(scanner, /func nextLocatedPage\(\) throws -> XDrivePhotoKitLocatedPage/)
+  // Existing PhotoKit thumbnail fetch by localIdentifier remains necessary;
+  // find-next itself cannot introduce iCloud original download or upload.
+  assert.match(map, /PHAsset\.fetchAssets\(/)
+  assert.doesNotMatch(map, /isNetworkAccessAllowed = true|UserDefaults|POST|UploadSession/)
+})

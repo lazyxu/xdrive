@@ -269,6 +269,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     @State private var cameraReturn: MKCoordinateRegion?
     @State private var cameraReturnOffset: Int?
     @State private var busy = false
+    @State private var gpsFindPagesScanned = 0
     @State private var focused = false
     @State private var offset = 0
     @State private var error: String?
@@ -318,6 +319,11 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     Text("当前页暂无有效 GPS 照片，可以切换下一页。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
+                if gpsFindPagesScanned > 0 {
+                    Text("本次连续检查了 \(gpsFindPagesScanned) 个分页（每页最多 64 张），仅显示最后一页的定位照片；不代表全库已完成扫描。")
+                        .font(.footnote).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("native-ios-map-gps-find-progress")
+                }
                 HStack {
                     Button("上一页") { refresh(at: max(0, page.page.startOffset - 64)) }
                         .disabled(busy || page.page.startOffset == 0)
@@ -325,6 +331,15 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     Button("下一页") { refresh(at: page.page.nextOffset) }
                         .disabled(busy || page.page.finished)
                 }.buttonStyle(.bordered)
+                Button("查找下一批有定位照片") {
+                    refresh(at: page.page.nextOffset, findNextGPS: true)
+                }
+                .disabled(busy || page.page.finished)
+                .frame(minHeight: 44)
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("native-ios-map-find-next-gps-page")
+                Text("每次最多连续检查 16 页（1,024 张照片元数据），可重复查找；不自动读取 iCloud 原件。")
+                    .font(.footnote).foregroundStyle(.secondary)
             } else if busy {
                 ProgressView("读取授权照片位置…")
             }
@@ -376,7 +391,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         }
     }
 
-    private func refresh(at requested: Int) {
+    private func refresh(at requested: Int, findNextGPS: Bool = false) {
         authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
         if !XDriveIOSNativePhotoMapPolicy.shouldRestoreCamera(
             savedPageOffset: cameraReturnOffset,
@@ -396,7 +411,20 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         task = Task { @MainActor in
             do {
                 _ = try await worker.start(atOffset: max(0, requested))
-                let next = try await worker.nextLocatedPage()
+                var next = try await worker.nextLocatedPage()
+                var pagesRead = 1
+                // Reuse one lazy, permission-generation-fenced PhotoKit
+                // snapshot. Each explicit seek reads <=16 * 64 slots, never
+                // materializes the full 100k IDs or original media bytes.
+                while findNextGPS && XDriveIOSNativePhotoMapPolicy.shouldSeekNextGPSPage(
+                    foundPins: next.items.count,
+                    finished: next.page.finished,
+                    pagesRead: pagesRead
+                ) {
+                    try Task.checkCancellation()
+                    next = try await worker.nextLocatedPage()
+                    pagesRead += 1
+                }
                 try Task.checkCancellation()
                 guard generation == ticket, phase == .active,
                       XDriveIOSNativePhotoMapPolicy.validPage(
@@ -406,6 +434,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                       ) else { return }
                 page = next
                 offset = next.page.startOffset
+                gpsFindPagesScanned = findNextGPS ? pagesRead : 0
                 mapRevision = UUID()
             } catch is CancellationError {
             } catch {
@@ -434,6 +463,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
 
     private func invalidate() {
         suspendForSheet()
+        gpsFindPagesScanned = 0
         page = nil
         selection = nil
         error = nil
