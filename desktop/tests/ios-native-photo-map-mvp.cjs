@@ -115,7 +115,7 @@ test('full-library GPS map opts in to a transient bounded PhotoKit snapshot', ()
   assert.match(map, /Picker\("本机地图扫描范围", selection: \$mapScope\)/)
   assert.match(map, /case page, library/)
   assert.match(map, /Button\(globalComplete \? "重新扫描已授权图库位置" : "扫描已授权图库位置"\)/)
-  assert.match(map, /private func scanFullLibrary\(\) \{[\s\S]*?worker\.start\(atOffset: 0\)/)
+  assert.match(map, /private func scanFullLibrary\([\s\S]*?viewport: XDriveIOSNativeLocalMapViewport\? = nil[\s\S]*?worker\.start\(atOffset: 0\)/)
   assert.match(map, /while scanned < total \{[\s\S]*?worker\.nextLocatedPage\(\)/)
   assert.match(map, /XDriveIOSNativePhotoMapPolicy\.validPage\([\s\S]*?next\.page\.startOffset == scanned/)
   assert.match(map, /index\.add\(latitude: located\.latitude,[\s\S]*?representative: located\)/)
@@ -147,6 +147,78 @@ test('global map aggregates 100k GPS with only 64 representatives and on-demand 
   assert.match(map, /if state != \.active \{[\s\S]*?retire\(\)/)
   assert.doesNotMatch(map, /PHImageRequestOptions\(\)[\s\S]*?isNetworkAccessAllowed = true/)
 })
+
+
+test('full-authorized PhotoKit map explicitly refines live WGS84 viewport without automatic 100k rescans', () => {
+  assert.match(map, /var onCamera: \(\(MKCoordinateRegion\) -> Void\)\? = nil/)
+  assert.match(map, /func mapView\(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool\) \{[\s\S]*?onCamera\?\(mapView\.region\)/)
+  assert.match(map, /@State private var globalCamera: MKCoordinateRegion\?/)
+  assert.match(map, /@State private var globalViewport: XDriveIOSNativeLocalMapViewport\?/)
+  assert.match(map, /cameraReturn: globalCamera/)
+  assert.match(map, /onCamera: \{ current in[\s\S]*?globalCamera = current/)
+  assert.match(map, /Button\("细化当前视窗的定位照片"\)/)
+  assert.match(map, /XDriveIOSNativeLocalMapSpatialPolicy\.viewportBounds\([\s\S]*?latitude: region\.center\.latitude,[\s\S]*?longitude: region\.center\.longitude/)
+  assert.match(map, /scanFullLibrary\(viewport: view\)/)
+  assert.match(map, /Button\("还原已授权全库概览"\) \{ scanFullLibrary\(\) \}/)
+  assert.match(map, /let restoreCamera = viewport == nil \? nil : globalCamera[\s\S]*?invalidate\(\)[\s\S]*?globalCamera = restoreCamera/)
+  assert.match(map, /globalViewport = viewport/)
+  assert.match(map, /globalCamera = nil[\s\S]*?globalViewport = nil/)
+  assert.doesNotMatch(map, /Timer\.scheduledTimer|DispatchQueue\.main\.asyncAfter|UserDefaults\.|URLSession\(/)
+})
+
+test('map filtered overview and 48-photo cell wall share exact short-lived viewport', () => {
+  assert.match(spatial, /struct XDriveIOSNativeLocalMapViewport: Equatable/)
+  assert.match(spatial, /static func viewportBounds\(/)
+  assert.match(spatial, /static func includes\(/)
+  assert.match(spatial, /if viewport\.west <= viewport\.east \{/)
+  assert.match(spatial, /if longitudeSpan >= 360 \{/)
+  assert.match(spatial, /let boundaryLongitude = longitude == -180 && viewport\.east == 180/)
+  assert.match(spatial, /longitude == 180 && viewport\.west == -180/)
+  assert.match(spatial, /return boundaryLongitude >= viewport\.west \|\| boundaryLongitude <= viewport\.east/)
+  assert.match(map, /guard XDriveIOSNativeLocalMapSpatialPolicy\.includes\([\s\S]*?viewport, latitude: located\.latitude,[\s\S]*?longitude: located\.longitude/)
+  assert.match(map, /globalSelection = XDriveIOSMapSpatialSelection\([\s\S]*?cell: trusted, viewport: globalViewport/)
+  assert.match(map, /let viewport: XDriveIOSNativeLocalMapViewport\?/)
+  assert.match(map, /guard Policy\.includes\([\s\S]*?selection\.viewport,[\s\S]*?latitude: asset\.latitude, longitude: asset\.longitude[\s\S]*?Policy\.key\(/)
+  assert.match(map, /cursor = asset\.slotOffset \+ 1/)
+  assert.match(map, /guard generation == ticket, mapScope == \.library, phase == \.active/)
+  assert.match(map, /globalCells = index\.cells/)
+  assert.doesNotMatch(map, /isNetworkAccessAllowed = true|CoreData|localStorage|GPSUpload/)
+})
+
+
+test('refined PhotoKit map revokes old region cluster actions during and after pan or zoom', () => {
+  assert.match(spatial, /static func matchesViewport\(/)
+  assert.match(spatial, /longitudeDistance\(scanned\.west, current\.west\)/)
+  assert.match(map, /private var refinedViewportIsCurrent: Bool \{/)
+  assert.match(map, /guard !globalCameraMoving, let current = globalCamera/)
+  assert.match(map, /canSelectCells: refinedViewportIsCurrent/)
+  assert.match(map, /globalComplete,\s*refinedViewportIsCurrent,/)
+  assert.match(map, /context\.coordinator\.canSelectCells = canSelectCells/)
+  assert.match(map, /cover\.isEnabled = canSelectCells/)
+  assert.match(map, /cover\.accessibilityElementsHidden = !canSelectCells/)
+  assert.match(map, /guard canSelectCells else \{ return \}/)
+  assert.match(map, /func mapView\(_ mapView: MKMapView, regionWillChangeAnimated animated: Bool\)/)
+  assert.match(map, /globalCameraMoving = true/)
+  assert.match(map, /globalCameraMoving = false/)
+  assert.match(map, /native-ios-map-stale-viewport/)
+  assert.match(map, /上次细化的视窗没有可显示的 GPS 照片/)
+})
+
+test('local library permission grant advances the displayed PhotoKit auth state before opt-in scan', () => {
+  assert.match(map, /PHPhotoLibrary\.requestAuthorization\(for: \.readWrite\)[\s\S]*?authorization = PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/)
+  assert.match(map, /if mapScope == \.page \{ refresh\(at: 0\) \}[\s\S]*?else \{ invalidate\(\) \}/)
+  assert.match(map, /trusted\.representative\.id == cell\.representative\.id/)
+})
+
+
+test('empty refined viewport keeps its prior MapKit camera without fitting world or stale pins', () => {
+  const start = map.indexOf('func updateUIView(_ map: MKMapView, context: Context)')
+  const end = map.indexOf('static func dismantleUIView(_ map: MKMapView, coordinator: Coordinator)', start)
+  assert.ok(start > 0 && end > start)
+  const update = map.slice(start, end)
+  assert.match(update, /map\.addAnnotations\(pins\)[\s\S]*?if let cameraReturn \{[\s\S]*?map\.setRegion\(cameraReturn, animated: false\)[\s\S]*?\} else if !pins\.isEmpty \{[\s\S]*?map\.showAnnotations\(pins, animated: false\)/)
+})
+
 
 test('short landscape local map preserves controls and PhotoKit authority while recovering map height', () => {
   assert.match(map, /@Environment\(\\\.dynamicTypeSize\) private var dynamicTypeSize/);
