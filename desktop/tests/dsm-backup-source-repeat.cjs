@@ -109,6 +109,21 @@ async function mountSetup(client, onCreated) {
   })
   return tree
 }
+// Only inspect text actually rendered by mounted components and form values.
+// React test instances retain Fiber owners in their props; serializing
+// tree.toJSON() can throw on a circular FiberNode instead of testing isolation.
+function renderedSetupText(node) {
+  if (typeof node === 'string' || typeof node === 'number') return String(node)
+  if (!node || !Array.isArray(node.children)) return ''
+  return node.children.map(renderedSetupText).join('')
+}
+function visibleSetupCopy(tree) {
+  return [
+    ...tree.root.findAllByType('Typography').map(renderedSetupText),
+    ...tree.root.findAllByType('Button').map(renderedSetupText),
+    ...tree.root.findAllByType('TextField').map(x => String(x.props.value ?? '')),
+  ].join(' ')
+}
 test('DSM Source create is synchronously one-shot; only confirmed bind unlocks a fresh second Source', async () => {
   const pending = []
   const calls = []
@@ -559,7 +574,7 @@ test('DSM Source setup isolates confirmed Root, draft selection and consent on a
   await act(async () => {
     tree.update(React.createElement(Setup, { client: ownerB, onCreated }))
   })
-  const firstFrame = JSON.stringify(tree.toJSON())
+  const firstFrame = visibleSetupCopy(tree)
   assert.doesNotMatch(firstFrame, /本机 Source 57|配置另一个 NAS 备份来源|NAS Photos A|Backup Target/,
     'the very first render of Owner B must not contain Owner A Source, target, consent or success')
   assert.equal(tree.root.findByType('TextField').props.value, '')
@@ -619,7 +634,7 @@ test('DSM previous Host in-flight Source ACK cannot contaminate next Host or blo
       await Promise.resolve()
     })
     assert.equal(refreshed, 0, 'old Agent completion must never refresh the replacement Host')
-    assert.doesNotMatch(JSON.stringify(tree.toJSON()),
+    assert.doesNotMatch(visibleSetupCopy(tree),
       /本机 Source 57|创建结果无法确认|配置另一个 NAS 备份来源|NAS Pending A/,
       'neither success nor uncertainty from old Agent may appear for replacement Host')
     assert.equal(button(tree, '确认创建并绑定本地目录').props.disabled, true)
