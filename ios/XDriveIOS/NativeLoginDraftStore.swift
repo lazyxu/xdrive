@@ -26,6 +26,16 @@ enum XDriveIOSNativeLoginDraftStore {
         return draft
     }
 
+    /// Clear both the current draft and older fallback server preference.
+    /// This does not touch PWA credentials, photos or backup receipts.
+    @discardableResult
+    static func clear() -> Bool {
+        UserDefaults.standard.removeObject(forKey: key)
+        UserDefaults.standard.removeObject(forKey: legacyServerKey)
+        return UserDefaults.standard.object(forKey: key) == nil &&
+            UserDefaults.standard.object(forKey: legacyServerKey) == nil
+    }
+
     static func save(server: String, lanIP: String, username: String) {
         // Drafts may be incomplete while typing. Bounds protect preferences;
         // HTTPS validation occurs before a credential-bearing request.
