@@ -54,6 +54,7 @@ jobs:
               [2692, 2728], [2696, 2728],
               [2722, 2721],
               [2729, 2721], [2730, 2721], [2731, 2721],
+              [3330, 3331], // iOS native direct-entry duplicate superseded by merged WebKit retirement
             ]);
 
             // Deliberately retired historical heads: all values are immutable
