@@ -198,6 +198,71 @@ test('P93 original Person and Suggested Person callbacks stage only accepted com
     'wide Web/Desktop must not register a mobile tab-return target')
 })
 
+
+/** Exercise the exact production browse-position selection inside loadFirstPage. */
+function actualBrowsePosition(env) {
+  const factory = 'function select() { const ' + declaration('browsePosition') +
+    '; const ' + declaration('matchingBrowsePosition') +
+    '; return { browsePosition, matchingBrowsePosition }; }'
+  const js = ts.transpileModule(factory, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText
+  return new Function(...Object.keys(env), js + '\\nreturn select();')(...Object.values(env))
+}
+
+test('P93 Mobile Gallery→Files→Album restores its own visible Node after Albums index Range', () => {
+  const positions = new Map()
+  const query = { sort_by: 'captured', sort_dir: 'desc', time_zone: 'UTC' }
+  const signature = value => JSON.stringify(value)
+  const makeAnchor = (scope, section, target, mobile = true) => actualCallback(
+    'rememberMobileGalleryAnchor', {
+      useCallback: fn => fn,
+      preferenceScope: scope, section, mobileGalleryViewport: mobile,
+      collectionTargetRef: { current: target },
+      mapGalleryVisibleAnchorRef: { current: null },
+      mobileGalleryBrowsePositions: positions,
+      mediaGalleryQuerySignature: signature,
+      xDriveRememberBaiduCellAnchor: () => assert.fail('unexpected private Map Cell'),
+      xDriveRememberBaiduViewportAnchor: () => assert.fail('unexpected private Map Viewport'),
+    })
+  const readPosition = (scope, album, section = 'albums', scopedQuery = query, mobile = true) =>
+    actualBrowsePosition({
+      mobileGalleryViewport: mobile,
+      preferenceScope: scope,
+      mobileGalleryBrowsePositions: positions,
+      album, section, scopedQuery,
+      mediaGalleryQuerySignature: signature,
+    })
+  const album = { kind: 'album', id: 'a', query }
+  makeAnchor('web:owner-A', 'albums', album)(501, 500)
+  assert.equal(readPosition('web:owner-A', albumA).browsePosition.nodeID, 501)
+  assert.equal(readPosition('web:owner-A', albumA).matchingBrowsePosition, true)
+  // On reentering section=albums the first verified Gallery Range is 'all';
+  // it must not overwrite the previous Album anchor before Album list/Range.
+  makeAnchor('web:owner-A', 'albums', { kind: 'all', query })(13, 12)
+  assert.equal(positions.get('web:owner-A').all.nodeID, 13)
+  assert.equal(positions.get('web:owner-A').album.nodeID, 501,
+    'temporary all-wall must not replace the committed Album return')
+  assert.equal(readPosition('web:owner-A', albumA).browsePosition.nodeID, 501)
+  assert.equal(readPosition('web:owner-A', albumA).matchingBrowsePosition, true)
+  assert.equal(readPosition('web:owner-A', null).browsePosition.nodeID, 13,
+    'ordinary all-wall uses its own independent slot')
+  // Different source Owner, deleted/renamed ID, changed query or wide Web
+  // must not reuse a stale Album Range anchor.
+  makeAnchor('web:owner-B', 'albums', { kind: 'all', query })(22, 21)
+  assert.equal(readPosition('web:owner-B', albumA).matchingBrowsePosition, false)
+  assert.equal(readPosition('web:owner-A', albumB).matchingBrowsePosition, false)
+  assert.equal(readPosition('web:owner-A', albumA, 'albums', { ...query, search: 'new' })
+    .matchingBrowsePosition, false)
+  assert.equal(readPosition('web:owner-A', albumA, 'library').matchingBrowsePosition, false)
+  assert.equal(readPosition('web:owner-A', albumA, 'albums', query, false).browsePosition, undefined)
+  // Failed/revoked navigation does not invent a new anchor, and wide Web
+  // cannot overwrite a valid compact Owner position.
+  makeAnchor('web:owner-A', 'albums', { kind: 'album', id: 'a', query }, false)(999, 0)
+  assert.equal(readPosition('web:owner-A', albumA).browsePosition.nodeID, 501)
+  assert.equal(positions.size, 2)
+})
+
 test('P93 real Gallery Server range acceptance owns the callback, not request start or Boolean loading', () => {
   const start = originalGallery.indexOf('  const loadFirstPage = useCallback')
   const end = originalGallery.indexOf('\n\n  const loadMemories =', start)
