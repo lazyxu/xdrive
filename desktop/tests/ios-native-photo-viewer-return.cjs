@@ -18,7 +18,15 @@ test('PhotoKit viewer returns to same 64-item page after fresh permission check'
   assert.match(wall, /load\(offset: max\(0, requestedOffset\)\)/)
   assert.match(wall, /savedOffset = next\.startOffset/)
   assert.match(wall, /if selected != nil \{ suspendForViewer\(\) \}/)
-  assert.match(wall, /if new != \.active \{ invalidate\(\) \}/)
+  const phase = wall.slice(wall.indexOf('.onChange(of: phase)'),
+    wall.indexOf('.onDisappear', wall.indexOf('.onChange(of: phase)')))
+  assert.match(phase, /if new != \.active \{\s*if selected != nil \{[\s\S]*?accessibilityFocusedTileID = nil[\s\S]*?suspendForViewer\(\)\s*page = nil/)
+  assert.match(phase, /else \{\s*clearViewerTileAnchor\(\)\s*invalidate\(\)\s*\}\s*\} else if selected != nil/)
+  assert.match(phase, /if authorization != \.authorized && authorization != \.limited \{\s*clearViewerTileAnchor\(\)\s*invalidate\(\)/)
+  assert.match(phase, /\} else \{\s*refresh\(at: savedOffset\)\s*\}/)
+  assert.doesNotMatch(phase.slice(phase.indexOf('if selected != nil {'),
+    phase.indexOf('} else {', phase.indexOf('if selected != nil {'))),
+    /selected = nil|viewerReturnID = nil|clearViewerTileAnchor\(\)|invalidate\(\)/)
 })
 
 test('album viewer return revalidates the same album and last confirmed offset', () => {
@@ -32,6 +40,15 @@ test('album viewer return revalidates the same album and last confirmed offset',
   assert.match(wall, /savedOffset = page\.startOffset/)
   assert.match(wall, /if selected != nil \{ suspendForViewer\(\) \}/)
   assert.match(wall, /\.onChange\(of: libraryMonitor\.revision\)/)
+  const phase = wall.slice(wall.indexOf('.onChange(of: phase)'),
+    wall.indexOf('.onDisappear', wall.indexOf('.onChange(of: phase)')))
+  assert.match(phase, /if state != \.active \{\s*if selected != nil \{[\s\S]*?accessibilityFocusedTileID = nil[\s\S]*?suspendForViewer\(\)\s*page = nil/)
+  assert.match(phase, /else \{\s*clearViewerTileAnchor\(\)\s*invalidate\(\)\s*\}\s*\} else if selected != nil/)
+  assert.match(phase, /if permission != \.authorized && permission != \.limited \{\s*clearViewerTileAnchor\(\)\s*invalidate\(\)/)
+  assert.match(phase, /\} else \{\s*reload\(\)\s*\}/)
+  assert.doesNotMatch(phase.slice(phase.indexOf('if selected != nil {'),
+    phase.indexOf('} else {', phase.indexOf('if selected != nil {'))),
+    /selected = nil|viewerReturnID = nil|clearViewerTileAnchor\(\)|invalidate\(\)/)
   assert.match(albums, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/)
 })
 
