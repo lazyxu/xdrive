@@ -96,7 +96,7 @@ assert.match(binder, /bootstrap\.AuthorizeLocalRoot\(ctx, input\.SourceID, path\
 assert.match(binder, /grant\.StrongIdentity/)
 assert.doesNotMatch(binder, /CreateLocalBackupSource\(|Start\(|exec\.Command/)
 assert.match(review, /client\.bindNativeDraft\(draft\.source_id, pinnedSelection, pinnedScope\)/)
-assert.match(review, /!confirmed \|\| attempted/)
+assert.match(review, /!confirmed \\|\\| attemptedRef\\.current/)
 assert.match(setup, /selectionID=\{selectedShare\?\.selection_id \?\? ''\}/)
 assert.match(workflow, /node web\/scripts\/test-synology-nas-draft-bind\.mjs/)
 console.log('DSM native draft bind requires owning Agent, fresh NAS selection, verified Owner and one explicit consent')
