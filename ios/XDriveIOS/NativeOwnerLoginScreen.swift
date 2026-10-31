@@ -10,10 +10,18 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
     @State private var showPassword = false
     @State private var logoutWarning: String?
     @State private var signingOut = false
+    @State private var restoreFinished = false
+    @State private var emergencyStopBusy = false
+    @State private var emergencyStopNotice: String?
 
     var body: some View {
         Group {
-            if model.owner != nil {
+            // Suppress the signed-out form until native Keychain restoration
+            // has proved the exact Server instance, Owner and cloud root.
+            if !restoreFinished {
+                ProgressView("正在验证本机账户…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if model.owner != nil {
                 XDriveIOSNativePhotosDashboard(
                     login: model, backup: backup,
                     signingOut: signingOut, logoutWarning: logoutWarning,
@@ -61,6 +69,18 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                                     .font(.footnote)
                                     .foregroundStyle(.secondary)
                             }
+                            // Stop-only operation remains available even
+                            // when login/Keychain or the Server is unavailable.
+                            Button("紧急停止本机相册自动备份", role: .destructive) {
+                                Task { await emergencyStopWithoutAccount() }
+                            }
+                            .disabled(emergencyStopBusy)
+                            .accessibilityIdentifier("native-ios-offline-emergency-stop")
+                            if let emergencyStopNotice {
+                                Text(emergencyStopNotice)
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                         .padding(24)
                         .frame(maxWidth: 430, alignment: .leading)
@@ -80,6 +100,7 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
         .task {
             // Restore must verify Server instance, Owner and cloud root first.
             await model.restore()
+            restoreFinished = true
             backup.refresh(owner: model.owner)
             if phase == .active { backup.tickIfDue(login: model) }
         }
@@ -161,6 +182,27 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
         .disabled(model.busy)
     }
 
+    /// Native stop-only recovery for an unavailable Owner/Server.
+    /// Preserve the encrypted receipt journal and current v2 login secret.
+    @MainActor
+    private func emergencyStopWithoutAccount() async {
+        guard !emergencyStopBusy else { return }
+        emergencyStopBusy = true
+        defer { emergencyStopBusy = false }
+        backup.cancel()
+        let stopped = XDriveIOSPhotoAutoScheduleStore.shared.disableAllOnThisDevice()
+        XDriveIOSBackgroundPhotoTask.revokePendingRequests()
+        do {
+            let pendingRemote = try await XDriveIOSPhotoBackgroundGrantManager.shared
+                .emergencyStopLocally()
+            emergencyStopNotice = pendingRemote
+                ? "已停用本机 \(stopped) 个前台计划与后台任务；联网后须核对远端授权。"
+                : "已停用本机 \(stopped) 个前台计划并取消后台任务。"
+        } catch {
+            emergencyStopNotice = "已停用本机 \(stopped) 个前台计划；后台 Keychain 清除尚未确认，请解锁后重试。"
+        }
+    }
+
     /// No new account may reuse a prior owner's pending foreground or
     /// BG grant. Fail closed if the global original writer is still active.
     @MainActor
@@ -187,10 +229,14 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                 logoutWarning = "账户在安全退出过程中变化，未操作另一账户。"
                 return
             }
-            // The direct native root has no intermediate account page.
-            // Explicit logout must retire saved Gallery navigation too.
+            // Do not expose an unauthenticated form while the old Owner's
+            // Keychain refresh token is still restorable after restart.
+            guard await model.signOut() else {
+                logoutWarning = "本机登录凭据未能从 Keychain 清除；为防止重启后恢复旧账户，本次未退出或切换服务器。请解锁后重试。"
+                return
+            }
+            // Only a confirmed local logout may retire Owner-scoped routes.
             XDriveIOSNativeNavigationRouteStore().clear()
-            await model.signOut()
             if remotePending {
                 logoutWarning = "本机自动上传已停止；旧服务器的授权撤销待网络恢复后复核。"
             }

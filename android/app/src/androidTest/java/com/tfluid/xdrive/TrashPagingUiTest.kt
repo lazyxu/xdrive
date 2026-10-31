@@ -58,7 +58,7 @@ class TrashPagingUiTest {
     @After fun close() { controller.close(); scope.cancel() }
 
     @Test fun firstShortPageRequiresManualLoadAndNeverPrefetchesOnLayout() {
-        compose.setContent { XDriveTheme { DriveApp(controller) } }
+        compose.setContent { XDriveTheme { DriveApp(controller, galleryFirstOnLogin = false) } }
         compose.runOnIdle {
             controller.connectAndLogin("https://drive.example", false,
                 "", "owner", "fixture-password", true)

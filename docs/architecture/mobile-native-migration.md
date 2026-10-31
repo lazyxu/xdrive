@@ -7,7 +7,7 @@ Desktop/DSM architecture, nor the independent Web/Mobile Web/PWA.
 
 | Client | UI target | Current as-built |
 | --- | --- | --- |
-| iOS App | SwiftUI/UIKit, every product screen native | PWA-in-WKWebView shell + valuable native PhotoKit and backup core |
+| iOS App | SwiftUI/UIKit, every product screen native | Native verified Owner login + five-slot Photos-first workspace; Files/Map and some media/tools remain incomplete |
 | Android App | Kotlin/Jetpack Compose, every product screen native | Already native Auth/Files/Gallery/Viewer/transfers; remaining gaps |
 | Web/PWA | React/MUI | Browser app, including offline/service worker |
 | Desktop/DSM | One shared React/MUI XDriveApp + real Host ports | In-progress shared state/controller migration |
@@ -33,7 +33,7 @@ selection and scoped account login, Owner state and logout.
    navigation/controllers, photo inventory, diagnostics and auth. Record exact
    commit/path, dependencies, current API compatibility, security effects
    and usable pieces. Cherry-pick or adapt only bounded components; never
-   blanket-revert the WebView integration or revive unreviewed refresh tokens.
+   restore retired WKWebView integration or revive unreviewed refresh tokens.
 2. **Native shell/auth.** Native server address/HTTPS and IP SAN validation;
    native Login/password change/remember/logout using a reviewed, Owner- and
    origin-scoped Keychain/session design, no TLS bypass or redirects.
@@ -52,10 +52,9 @@ selection and scoped account login, Owner state and logout.
    native Owner proof.
 5. **Background and cutover.** Native BGProcessingTask and scoped grant,
    compatible Keychain/file-protection plan, crash/restart replay, bounded
-   100k media, realistic system scheduling and cancellation. Keep existing
-   WKWebView product runnable until all native critical paths are tested;
-   remove only obsolete bridge/credentials when true native replacements
-   and rollback are verified.
+   100k media, realistic system scheduling and cancellation. The native
+   App does not ship a WKWebView fallback; protect existing journals, background
+   credentials and backups while completing missing native product routes.
 
 ## Android: extend existing native implementation
 

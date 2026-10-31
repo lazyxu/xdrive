@@ -308,6 +308,9 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
     throw new Error('DSM Backup requires an authenticated same-origin HTTPS CGI')
   }
   let token: string | null = null
+  // Browser-only abort handles for the optional read-only recovery observer.
+  // These are never sent to the Server or persisted as backup operation IDs.
+  const recoveryReads = new Map<string, AbortController>()
   async function request<T>(
     path: string, method: 'GET' | 'POST' = 'GET', payload?: unknown, signal?: AbortSignal,
   ): Promise<T> {
@@ -321,7 +324,8 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
       'device-backup-page', 'device-backup-folders', 'cloud-quota', 'nas-volume',
       'cloud-root', 'cloud-children', 'cloud-text-preview', 'cloud-media-range', 'cloud-thumbnail',
        'cloud-gallery-items', 'cloud-gallery-albums', 'cloud-live-motion', 'nas-shares',
-      'nas-share-preflight', 'nas-share-create', 'server-connection', 'server-login'].includes(operation)) {
+      'nas-share-preflight', 'nas-share-create', 'server-connection', 'server-login',
+      'recovery-review'].includes(operation)) {
       throw new Error('Unsupported DSM backup operation')
     }
     // DSM custom CGI is one executable URL. Extra /v1/ PATH_INFO suffixes
@@ -765,6 +769,39 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
       '/v1/status' + sourceQuery(sourceID), 'GET', undefined, signal),
     history: (sourceID, signal) => request<XDriveLocalBackupCommonBatchHistoryPage>(
       '/v1/history' + sourceQuery(sourceID), 'GET', undefined, signal),
+    // Read-only historical SQL receipt diagnosis already implemented by the
+    // original Agent and the shared Device Backup dialog. Never restart a
+    // writer, expose local paths or claim current CAS physical integrity.
+    async review(sourceID, afterFile, pageEpoch, requestID) {
+      if (!Number.isSafeInteger(afterFile) || afterFile < 0 || afterFile > 1_000_000 ||
+        (afterFile === 0 && pageEpoch !== '') ||
+        (afterFile > 0 && !/^[0-9a-f]{64}$/.test(pageEpoch)) ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(requestID) ||
+        recoveryReads.has(requestID) || recoveryReads.size >= 4) {
+        throw new Error('Invalid DSM historical review selector')
+      }
+      const selector = sourceQuery(sourceID) +
+        (afterFile > 0 ? '&after_file=' + afterFile + '&page_epoch=' + pageEpoch : '')
+      const controller = new AbortController()
+      recoveryReads.set(requestID, controller)
+      try {
+        const page = await request<unknown>(
+          '/v1/recovery-review' + selector, 'GET', undefined, controller.signal)
+        // This optional diagnostics module is only needed when the user
+        // requests historical review. Keep ordinary DSM Host startup free of
+        // a runtime module dependency (also exercised by existing VM tests).
+        const { xDriveValidateSynologyRecoveryReview } = await import('./synology-recovery-review')
+        return xDriveValidateSynologyRecoveryReview(page, sourceID, afterFile, pageEpoch)
+      } finally {
+        if (recoveryReads.get(requestID) === controller) recoveryReads.delete(requestID)
+      }
+    },
+    async cancelReview(requestID) {
+      // Detach only this browser observer. Never issue a new Agent mutation
+      // or assume a historical Server Operation was physically cancelled.
+      recoveryReads.get(requestID)?.abort()
+      recoveryReads.delete(requestID)
+    },
     // The original owning Agent remains authoritative for Source identity,
     // the optimistic revision and all schedule semantics. No NAS scheduler.
     load: sourceID => request<XDriveLocalBoundBackupSchedule>(
