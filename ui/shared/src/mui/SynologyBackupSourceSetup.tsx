@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Box, Button, Checkbox, FormControlLabel, Stack, TextField, Typography } from '@mui/material'
 import type { XDriveSynologyBackupLocalClient } from '../synology-backup-adapter'
 import type { XDriveSynologyNASShare } from '../synology-nas-share-inventory'
@@ -29,6 +29,17 @@ export function XDriveSynologyBackupSourceSetup({
   const [status, setStatus] = useState<CreateStatus>('idle')
   const [createdID, setCreatedID] = useState<number | null>(null)
   const [showDrafts, setShowDrafts] = useState(false)
+  // React state updates are asynchronous; this guard closes the double-click
+  // window before the first Owner-backed Source mutation gets an ACK.
+  const createAttemptedRef = useRef(false)
+  const mountedRef = useRef(false)
+  const latestScopeRef = useRef({ client, ownerScope })
+  latestScopeRef.current = { client, ownerScope }
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -54,34 +65,64 @@ export function XDriveSynologyBackupSourceSetup({
   }, [client, scopeRevision])
 
   const onVerifiedShare = useCallback((share: XDriveSynologyNASShare | null) => {
+    if (createAttemptedRef.current) return
     setSelectedShare(share)
     setConfirmed(false)
   }, [])
   const onSelectTarget = useCallback((target: Target | null) => {
+    if (createAttemptedRef.current) return
     setSelectedTarget(target)
     setConfirmed(false)
   }, [])
   const create = () => {
-    if (status !== 'idle' || scopeStatus !== 'ready' ||
-      !/^[0-9a-f]{64}$/.test(ownerScope) ||
+    if (status !== 'idle' || createAttemptedRef.current ||
+      scopeStatus !== 'ready' || !/^[0-9a-f]{64}$/.test(ownerScope) ||
       !selectedShare || !selectedTarget || !confirmed ||
       name.trim() !== name || name.length < 1 ||
       new TextEncoder().encode(name).length > 128) return
-    // A single deliberate click submits once. Any lost reply may have
-    // created a paused Source; never automatically retry or assume success.
+    // A single deliberate click submits once, synchronously locked. Any lost
+    // reply may have created a paused Source: never auto-retry.
+    createAttemptedRef.current = true
+    const pinnedClient = client
+    const pinnedOwnerScope = ownerScope
     setStatus('creating')
     setCreatedID(null)
     void client.createNASBackupSource(
       selectedShare.selection_id, ownerScope, selectedTarget.id, name,
     ).then(result => {
+      if (!mountedRef.current) return
+      if (latestScopeRef.current.client !== pinnedClient ||
+        latestScopeRef.current.ownerScope !== pinnedOwnerScope) {
+        setStatus('uncertain')
+        setShowDrafts(true)
+        return
+      }
       setCreatedID(result.source_id)
       setStatus(result.state)
       if (result.state === 'authorized') onCreated()
       if (result.state === 'needs_inspection') setShowDrafts(true)
     }).catch(() => {
+      if (!mountedRef.current) return
       setStatus('uncertain')
       setShowDrafts(true)
     })
+  }
+
+  // Only a *confirmed* successful native Root grant permits a separate new
+  // Source. Fresh Owner verification, share preflight, target and explicit
+  // consent are required again. Uncertain/create-in-flight is never reset.
+  const configureAnother = () => {
+    if (status !== 'authorized' || !createAttemptedRef.current) return
+    createAttemptedRef.current = false
+    setStatus('idle')
+    setCreatedID(null)
+    setSelectedShare(null)
+    setSelectedTarget(null)
+    setTargetOpen(false)
+    setName('')
+    setConfirmed(false)
+    setShowDrafts(false)
+    setScopeRevision(value => value + 1)
   }
 
   return (
@@ -154,15 +195,20 @@ export function XDriveSynologyBackupSourceSetup({
             <Typography role="status">正在通过本机 Agent 创建暂停的 Source 并绑定原生 Root…</Typography>
           ) : null}
           {status === 'authorized' ? (
-            <Typography role="status" color="success.main">
-              本机 Source {createdID} 已原生授权。可在上方来源列表手动执行首次备份；尚未验证任何上传收据。
-            </Typography>
+            <Stack spacing={1}>
+              <Typography role="status" color="success.main">
+                本机 Source {createdID} 已原生授权。可在上方来源列表手动执行首次备份；尚未验证任何上传收据。
+              </Typography>
+              <Button variant="outlined" size="small" onClick={configureAnother}>
+                配置另一个 NAS 备份来源
+              </Button>
+            </Stack>
           ) : null}
           {status === 'needs_inspection' ? (
             <Typography role="alert" color="text.secondary">
               Source {createdID} 已创建，但原生 Root 绑定结果尚未确认，可能仍为暂停草稿。
-              请先使用下方只读草稿检查核对；如需恢复绑定，仍须在 NAS 本机以套件用户执行原有 xd backup bind。
-              勿再次点击创建。
+              请先检查下方原建设备草稿，并在确认目录与当前 Owner 后通过 DSM 恢复绑定；
+              若无法确认，使用 NAS 套件用户的 xd backup drafts 检查。勿再次点击创建。
             </Typography>
           ) : null}
           {status === 'uncertain' ? (
