@@ -181,6 +181,12 @@ test('system-expired prewrite BGTask re-arms only after unchanged Owner-approved
   assert.match(helper, /try scheduleApprovedProbe\(afterMinutes: grant\.intervalMinutes\)/)
   assert.doesNotMatch(helper, /UploadSession|Bearer|writeResource|uploadPrepared|maximumNewOriginals/)
   assert.match(task, /func revokePendingRequests\(\) \{[\s\S]*?BGTaskScheduler\.shared\.cancel[\s\S]*?localStopVersion &\+= 1[\s\S]*?active\?\.cancel\(\)/)
+  const revoke = task.slice(task.indexOf('static func revokePendingRequests()'),
+    task.indexOf('static func scheduleApprovedProbe('))
+  assert.ok((revoke.match(/BGTaskScheduler\.shared\.cancel\(/g) || []).length === 2,
+    'local stop must cancel again after its actor fence to defeat an expiring rearm')
+  assert.ok(revoke.lastIndexOf('BGTaskScheduler.shared.cancel(') >
+    revoke.indexOf('localStopVersion &+= 1'))
   assert.match(task, /beganOriginalWrite = true/)
   assert.match(task, /onPotentialWrite: \{ beganOriginalWrite = true \}/)
 })
