@@ -13,6 +13,7 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
 
     private var pageScope: XDriveNativeOwnerRoot?
     private var pageAlbumID: String?
+    private var pagePlaceID: String?
     private var pageSearch = ""
     private var epoch = UUID()
     private var job: Task<Void, Never>?
@@ -26,6 +27,7 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
         page = nil
         pageScope = nil
         pageAlbumID = nil
+        pagePlaceID = nil
         pageSearch = ""
         failedOffset = nil
         busy = false
@@ -67,10 +69,19 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
     }
 
     func load(login: XDriveIOSNativeOwnerLoginModel,
-              albumID: String?, offset: Int = 0, search: String = "") {
+              albumID: String?, placeID: String? = nil,
+              offset: Int = 0, search: String = "") {
         let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
         guard query.unicodeScalars.count <= 200 else {
             error = "搜索关键词最多 200 个字符。"
+            return
+        }
+        guard placeID == nil || (
+            albumID == nil &&
+            XDriveIOSNativeOwnerMapSelectionPolicy.canonicalPlaceID(placeID!)
+        ) else {
+            invalidate()
+            error = "地图地点已失效，请返回云端地图刷新后重试。"
             return
         }
         guard let expected = login.owner else {
@@ -82,7 +93,8 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
         // while the requested range loads. A different scope clears it first.
         let keepOldPage = pageScope.map {
             XDriveIOSNativePhotoOwnerScope.matches(expected, $0)
-        } == true && pageAlbumID == albumID && pageSearch == query
+        } == true && pageAlbumID == albumID &&
+            pagePlaceID == placeID && pageSearch == query
         epoch = UUID()
         job?.cancel()
         job = nil
@@ -91,6 +103,7 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
             currentReader = nil
             pageScope = nil
             pageAlbumID = nil
+            pagePlaceID = nil
             pageSearch = ""
         }
         failedOffset = nil
@@ -127,7 +140,8 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
                     owner: auth.owner, accessToken: auth.accessToken
                 )
                 let result = try await reader.page(
-                    offset: offset, albumID: albumID, search: query
+                    offset: offset, albumID: albumID,
+                    placeID: placeID, search: query
                 )
                 try Task.checkCancellation()
                 guard self?.epoch == ticket,
@@ -137,6 +151,7 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
                 self?.page = result
                 self?.pageScope = expected
                 self?.pageAlbumID = albumID
+                self?.pagePlaceID = placeID
                 self?.pageSearch = query
                 self?.failedOffset = nil
             } catch is CancellationError {
@@ -328,6 +343,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
 struct XDriveIOSNativeServerMediaWall: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     let album: XDriveIOSNativeMediaAlbum?
+    var placeID: String? = nil
     // Focus visibility belongs to the owning native five-tab shell.
     var onFocusChange: ((Bool) -> Void)? = nil
     @StateObject private var model = XDriveIOSNativeMediaWallModel()
@@ -344,7 +360,9 @@ struct XDriveIOSNativeServerMediaWall: View {
         ScrollViewReader { returnScroll in
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
-                Text(album == nil ?
+                Text(placeID != nil ?
+                    "当前 Owner 原始 GPS 地点的授权 PhotoAsset 分页（非全库）。" :
+                    album == nil ?
                     "服务器 PhotoAsset 全库照片墙（非仅 iPhone 备份目录）。" :
                     "已验证的云端相册成员，按服务器分页读取。")
                     .font(.caption).foregroundStyle(.secondary)
@@ -360,7 +378,7 @@ struct XDriveIOSNativeServerMediaWall: View {
                         Button("清除") {
                             searchDraft = ""
                             appliedSearch = ""
-                            model.load(login: login, albumID: album?.id, search: "")
+                            model.load(login: login, albumID: album?.id, placeID: placeID, search: "")
                         }
                         .disabled(model.busy)
                     }
@@ -394,13 +412,13 @@ struct XDriveIOSNativeServerMediaWall: View {
                     }
                     HStack {
                         Button("上一页") {
-                            model.load(login: login, albumID: album?.id,
+                            model.load(login: login, albumID: album?.id, placeID: placeID,
                                        offset: max(0, page.offset - 48), search: appliedSearch)
                         }
                         .disabled(model.busy || page.offset == 0)
                         Spacer()
                         Button("下一页") {
-                            model.load(login: login, albumID: album?.id,
+                            model.load(login: login, albumID: album?.id, placeID: placeID,
                                        offset: page.offset + page.items.count, search: appliedSearch)
                         }
                         .disabled(model.busy || page.offset + page.items.count >= page.total_count)
@@ -410,7 +428,7 @@ struct XDriveIOSNativeServerMediaWall: View {
                 if let message = model.error {
                     Text(message).foregroundStyle(.red)
                     Button("重试读取") {
-                        model.load(login: login, albumID: album?.id,
+                        model.load(login: login, albumID: album?.id, placeID: placeID,
                                    offset: model.failedOffset ?? model.page?.offset ?? 0,
                                    search: appliedSearch)
                     }
@@ -436,10 +454,20 @@ struct XDriveIOSNativeServerMediaWall: View {
                 accessibilityFocusedMediaID = nil
             }
         }
-        .navigationTitle(album?.name ?? "云端图库")
+        .navigationTitle(placeID == nil ? (album?.name ?? "云端图库") : "地点照片")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            if album == nil {
+            if album == nil && placeID == nil {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    NavigationLink {
+                        XDriveIOSNativeOwnerPhotoMapScreen(
+                            login: login, onFocusChange: onFocusChange
+                        )
+                    } label: {
+                        Label("云端地图", systemImage: "map")
+                    }
+                    .accessibilityIdentifier("native-ios-server-gallery-map")
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     NavigationLink {
                         XDriveIOSNativeServerMediaAlbums(
@@ -472,7 +500,7 @@ struct XDriveIOSNativeServerMediaWall: View {
         }
         .onAppear {
             if model.page == nil, !model.busy {
-                model.load(login: login, albumID: album?.id, search: appliedSearch)
+                model.load(login: login, albumID: album?.id, placeID: placeID, search: appliedSearch)
             }
         }
         .onChange(of: login.owner) { _ in
@@ -483,7 +511,7 @@ struct XDriveIOSNativeServerMediaWall: View {
             selected = nil
             model.invalidate()
             if login.owner != nil && phase == .active {
-                model.load(login: login, albumID: album?.id, search: appliedSearch)
+                model.load(login: login, albumID: album?.id, placeID: placeID, search: appliedSearch)
             }
         }
         .onChange(of: phase) { state in
@@ -494,7 +522,7 @@ struct XDriveIOSNativeServerMediaWall: View {
                 selected = nil
                 model.invalidate()
             } else if model.page == nil {
-                model.load(login: login, albumID: album?.id, search: appliedSearch)
+                model.load(login: login, albumID: album?.id, placeID: placeID, search: appliedSearch)
             }
         }
         .onDisappear {
@@ -520,7 +548,7 @@ struct XDriveIOSNativeServerMediaWall: View {
         appliedSearch = query
         lastOpenedMediaID = nil
         accessibilityFocusedMediaID = nil
-        model.load(login: login, albumID: album?.id, offset: 0, search: query)
+        model.load(login: login, albumID: album?.id, placeID: placeID, offset: 0, search: query)
     }
 }
 
