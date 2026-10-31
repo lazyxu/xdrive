@@ -21,6 +21,8 @@ test('Desktop first failed attempt survives startup history and restores LAN met
   assert.match(desktop, /useMemo\(readDesktopLoginDraft, \[\]\)/)
   assert.match(desktop, /saveDesktopLoginDraft\(\{ server, lanIp: connectionRoute\.lan_ip, username \}\)/)
   assert.match(desktop, /if \(!initialLoginDraft\.server\)/)
+  assert.match(desktop, /loginDraftUserEditedRef\.current = true/)
+  assert.match(desktop, /if \(latest && !loginDraftUserEditedRef\.current\)/)
   assert.match(desktopDraft, /window\.localStorage\.setItem/)
   assert.doesNotMatch(desktopDraft, /password:|refreshToken:|accessToken:/)
 })

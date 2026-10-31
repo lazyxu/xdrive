@@ -188,6 +188,7 @@ export default function App({
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const initialLoginDraft = useMemo(readDesktopLoginDraft, [])
+  const loginDraftUserEditedRef = useRef(false)
   const [connectionRoute, setConnectionRoute] = useState<DesktopConnectionRoute>({
     mode: 'auto', lan_ip: initialLoginDraft.lanIp, public_ip: '',
   })
@@ -1130,7 +1131,7 @@ export default function App({
             profile.server === initialLoginDraft.server &&
             profile.username === initialLoginDraft.username)
         : value.profiles[0]
-      if (latest) {
+      if (latest && !loginDraftUserEditedRef.current) {
         // A failed first attempt must not be overwritten by an older
         // successful profile while the async history bootstrap completes.
         if (!initialLoginDraft.server) {
@@ -1475,6 +1476,7 @@ export default function App({
   }
 
   const selectLoginServer = (value: string) => {
+    loginDraftUserEditedRef.current = true
     setServer(value)
     const normalized = value.trim()
     const profile = loginHistory.profiles.find((item) => item.server === normalized)
@@ -1485,6 +1487,7 @@ export default function App({
   }
 
   const selectLoginUsername = (value: string) => {
+    loginDraftUserEditedRef.current = true
     setUsername(value)
     const normalized = value.trim()
     const currentServer = server.trim()
@@ -2309,6 +2312,7 @@ export default function App({
                 disabled={busy === 'login'}
                 onInputChange={(_event, value, reason) => {
                   if (reason !== 'reset') {
+                    loginDraftUserEditedRef.current = true
                     setServer(value)
                     setError('')
                   }
@@ -2332,7 +2336,10 @@ export default function App({
 
             <TextField fullWidth size="small" label="内网 IP（可选）" placeholder="192.168.2.4"
               value={connectionRoute.lan_ip} disabled={!!busy}
-              onChange={event => setConnectionRoute({ mode: 'auto', lan_ip: event.target.value.trim(), public_ip: '' })}
+              onChange={event => {
+                loginDraftUserEditedRef.current = true
+                setConnectionRoute({ mode: 'auto', lan_ip: event.target.value.trim(), public_ip: '' })
+              }}
               helperText="自动优先尝试此内网地址；网络不可达时使用服务器域名 DNS。不会跳过 HTTPS 身份校验。"
             />
 
@@ -2367,6 +2374,7 @@ export default function App({
                 disabled={busy === 'login'}
                 onInputChange={(_event, value, reason) => {
                   if (reason !== 'reset') {
+                    loginDraftUserEditedRef.current = true
                     setUsername(value)
                     setError('')
                   }
