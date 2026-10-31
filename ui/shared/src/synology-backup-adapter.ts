@@ -396,6 +396,7 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
         throw new Error('Untrusted native DSM draft inventory')
       }
       let previous = 0
+      const items: XDriveSynologyNativeDraft[] = []
       for (const value of report.items) {
         if (!value || typeof value !== 'object' || Array.isArray(value)) {
           throw new Error('Invalid native DSM draft row')
@@ -415,8 +416,14 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
           throw new Error('Untrusted native DSM draft row or ordering')
         }
         previous = item.source_id as number
+        items.push({
+          source_id: item.source_id as number,
+          name: item.name as string,
+          revision: 1,
+          created_at: item.created_at as string,
+        })
       }
-      return report as XDriveSynologyNativeDraftReview
+      return { owner_scope: report.owner_scope as string, items }
     },
     async createNASBackupSource(selectionID, ownerScope, targetID, name, signal) {
       if (!/^[0-9a-f]{64}$/.test(selectionID) ||
