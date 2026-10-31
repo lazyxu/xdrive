@@ -7,3 +7,5 @@ Scope: native iOS/Android login input persistence only. No new password vault, n
 - In both platforms login identity and certificate validation still happen before sending credentials, and any saved draft is **never** proof of an authenticated Owner.
 
 Tests: `node --test desktop/tests/native-login-draft-resilience.cjs`; iOS build and Android compile/test workflows are required for the exact PR head. Physical iOS/Android behavior remains unverified until device testing.
+
+- Upgrade failure regression: unit tests exercise a pre-existing encrypted refresh token receiving 401 (the non-secret draft is saved before revocation), plus a different newer Server/Owner draft remaining visible when that older token fails. A failed 503 still preserves the actual encrypted session; no automatic cross-Owner login is introduced.

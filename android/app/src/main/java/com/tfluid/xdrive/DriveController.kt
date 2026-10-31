@@ -553,15 +553,25 @@ class DriveController(
                     api = null
                 }
                 (candidate as? Closeable)?.close()
+                // A previously remembered credential may belong to an older
+                // Owner than the most recent failed/manual login draft. Its
+                // refresh failure must not overwrite the newer input fields.
+                val newerDraft = state.value.takeIf { draft ->
+                    draft.username.isNotBlank() &&
+                        (draft.server != server.url || draft.username != saved.username)
+                }
+                val shownServer = newerDraft?.server ?: server.url
+                val shownRoute = newerDraft?.route ?: route
+                val shownUsername = newerDraft?.username ?: saved.username
                 if (failure is ApiException && failure.statusCode in listOf(401, 403)) {
                     runCatching { vault.clear() }
-                    mutableState.value = DriveState(screen = Screen.LOGIN, server = server.url,
-                        route = route, username = saved.username,
+                    mutableState.value = DriveState(screen = Screen.LOGIN, server = shownServer,
+                        route = shownRoute, username = shownUsername,
                         error = "登录已失效，请重新输入密码。")
                 } else {
                     // Network outage is NOT logout; preserve the refresh token on disk.
-                    mutableState.value = DriveState(screen = Screen.CONNECT, server = server.url,
-                        route = route, username = saved.username,
+                    mutableState.value = DriveState(screen = Screen.CONNECT, server = shownServer,
+                        route = shownRoute, username = shownUsername,
                         error = "无法自动恢复登录，请检查网络或直接登录。")
                 }
             }

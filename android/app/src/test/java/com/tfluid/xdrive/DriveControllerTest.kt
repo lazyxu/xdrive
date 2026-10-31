@@ -3736,6 +3736,48 @@ class DriveControllerTest {
         second.close()
     }
 
+    @Test fun legacyRememberedSessionWritesSafeDraftBefore401Revocation() = runTest {
+        val server = ServerAddress.parse("https://drive.example").url
+        val vault = TestVault().apply {
+            value = SavedDriveSession(server, "owner", "old-refresh")
+        }
+        val expired = Service().apply { refreshFailure = ApiException(401, "revoked") }
+        val drafts = mutableListOf<Triple<String, String, String>>()
+        val controller = DriveController(this, { expired },
+            initialServer = server, sessionPersistence = vault,
+            saveLoginDraft = { origin, ip, user -> drafts += Triple(origin, ip, user) })
+        controller.restoreSession()
+        runCurrent()
+        assertEquals(listOf(Triple(server, "", "owner")), drafts)
+        assertEquals(Screen.LOGIN, controller.state.value.screen)
+        assertEquals(server, controller.state.value.server)
+        assertEquals("owner", controller.state.value.username)
+        assertNull(vault.value)
+        controller.close()
+    }
+
+    @Test fun staleRememberedSessionFailureCannotOverwriteAnotherLoginDraft() = runTest {
+        val oldServer = ServerAddress.parse("https://old.example").url
+        val newServer = ServerAddress.parse("https://new.example").url
+        val vault = TestVault().apply {
+            value = SavedDriveSession(oldServer, "former-owner", "old-refresh")
+        }
+        val drafts = mutableListOf<Triple<String, String, String>>()
+        val expired = Service().apply { refreshFailure = ApiException(401, "revoked") }
+        val controller = DriveController(this, { expired },
+            initialServer = newServer, initialUsername = "new-owner",
+            sessionPersistence = vault,
+            saveLoginDraft = { origin, ip, user -> drafts += Triple(origin, ip, user) })
+        controller.restoreSession()
+        runCurrent()
+        assertEquals(Screen.LOGIN, controller.state.value.screen)
+        assertEquals(newServer, controller.state.value.server)
+        assertEquals("new-owner", controller.state.value.username)
+        assertTrue(drafts.isEmpty())
+        assertNull(vault.value)
+        controller.close()
+    }
+
     @Test fun optOutOfKeepingLoginDoesNotPersistCredential() = runTest {
         val vault = TestVault()
         val service = Service()
