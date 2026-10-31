@@ -118,9 +118,9 @@ func TestXDLoginDraftRejectsInvalidInputWithoutOverwritingPriorHint(t *testing.T
 func TestXDLoginTargetUsesOnlyMatchingServerHint(t *testing.T) {
 	saved := xdLoginDraft{Version: 1, Server: "https://drive.example:8443", Username: "owner"}
 	for _, tc := range []struct {
-		server, username string
+		server, username         string
 		wantServer, wantUsername string
-		fail bool
+		fail                     bool
 	}{
 		{"", "", "https://drive.example:8443", "owner", false},
 		{"https://drive.example:8443/", "", "https://drive.example:8443", "owner", false},
