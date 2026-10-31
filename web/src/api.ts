@@ -3815,7 +3815,25 @@ export class XDriveApi {
       hashes.push(await sha256Blob(file.slice(offset, Math.min(file.size, offset + chunkSize)), scratch))
     }
     const manifest = `share-v1\n${parentID}\n${file.name}\n${file.size}\n${hashes.join('\n')}`
-    const resumeKey = 'ps1_' + await sha256Blob(new Blob([manifest]), scratch)
+    // Persist only a random, non-authorizing resume hint. The storage key
+    // contains a one-way hash of the link identity and file manifest; never
+    // persist a Share bearer, password or private file bytes.
+    const manifestFingerprint = await sha256Blob(new Blob([token, '\n', manifest]), scratch)
+    const storageKey = `xdrive-public-share-resume-v1:${manifestFingerprint}`
+    let resumeKey: string | null = null
+    try {
+      const stored = sessionStorage.getItem(storageKey)
+      if (stored && /^ps1_[a-f0-9]{64}$/.test(stored)) resumeKey = stored
+    } catch { /* Restricted storage only disables cross-reload resume. */ }
+    if (!resumeKey) {
+      const nonce = crypto.getRandomValues(new Uint8Array(16))
+      const nonceHex = Array.from(nonce, part => part.toString(16).padStart(2, '0')).join('')
+      resumeKey = 'ps1_' + await sha256Blob(new Blob([manifest, '\n', nonceHex]), scratch)
+      try { sessionStorage.setItem(storageKey, resumeKey) } catch { /* keep upload valid */ }
+    }
+    const clearResume = () => {
+      try { sessionStorage.removeItem(storageKey) } catch { /* optional cleanup */ }
+    }
     const headers = { 'X-XDrive-Share-Token': token, 'X-XDrive-Share-Password': password }
     const session = await this.request<UploadSessionState>('/api/v1/public/share/uploads', {
       method: 'POST', headers,
@@ -3824,7 +3842,7 @@ export class XDriveApi {
         chunk_size: chunkSize, conflict_policy: 'keep_both', resume_key: resumeKey,
       }),
     }, false)
-    if (session.status === 'finalized') { onProgress(1); return }
+    if (session.status === 'finalized') { clearResume(); onProgress(1); return }
     const received = new Map((session.received_chunks ?? []).map((chunk) => [chunk.index, chunk]))
     let done = 0
     for (let index = 0; index < hashes.length; index += 1) {
@@ -3856,6 +3874,7 @@ export class XDriveApi {
       }, false,
     )
     if (finalized.status !== 'finalized') throw new Error('匿名上传未完成提交')
+    clearResume()
     onProgress(1)
   }
 
