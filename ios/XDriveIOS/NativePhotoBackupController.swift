@@ -250,13 +250,6 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                         owner: selected, progress: result
                     )
                 }
-                if result.uploaded > 0 {
-                    // Confirmed writer result only; no browser notification
-                    // and no PhotoKit identifier or access token is exposed.
-                    self.confirmedOriginalUpdate = ConfirmedOriginalUpdate(
-                        owner: selected, id: UUID()
-                    )
-                }
                 self.message = "本轮确认新增 \(result.uploaded)，已验证存在 \(result.verifiedAlready)，待核对 \(result.needsReview)，不可用 \(result.unavailable)。"
                 if result.stoppedForReview {
                     self.errorMessage = "发现结果不确定的上传收据：本轮已暂停，不会盲目重传。"
@@ -265,6 +258,20 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                 self.message = "原件任务已取消。可能已经提交的原件须通过加密账本与 Server 收据确认。"
             } catch {
                 self.errorMessage = "本轮未完成：请检查当前 Owner、PhotoKit 权限、连接与本机加密账本；不能假定上传成功。"
+            }
+            // A successful original may be followed by a PhotoKit scan error,
+            // cancellation, or failure persisting the automatic cursor.
+            // The per-item progress increments uploaded ONLY after a verified
+            // Server receipt, whereas the whole run might not return.
+            // Invalidate the cloud wall once at the terminal boundary using
+            // only that confirmed count; never interpret an unknown ACK as
+            // a successful backup or let an old Owner refresh another account.
+            if let current = self.progress, current.uploaded > 0,
+               XDriveIOSNativePhotoOwnerScope.matches(self.runningOwner, selected),
+               XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected) {
+                self.confirmedOriginalUpdate = ConfirmedOriginalUpdate(
+                    owner: selected, id: UUID()
+                )
             }
             self.refresh(owner: login.owner)
         }
