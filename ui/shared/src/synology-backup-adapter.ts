@@ -1,5 +1,4 @@
 import type { XDriveSynologyNASShare } from './synology-nas-share-inventory'
-import { xDriveValidateSynologyRecoveryReview } from './synology-recovery-review'
 import type { XDriveDiagnosticReport } from './mui/DiagnosticsPage'
 import type { XDriveFileTextPreview } from './file-preview'
 import type { QuotaUsage, MediaItemRange, MediaAlbum } from './models'
@@ -788,6 +787,10 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
       try {
         const page = await request<unknown>(
           '/v1/recovery-review' + selector, 'GET', undefined, controller.signal)
+        // This optional diagnostics module is only needed when the user
+        // requests historical review. Keep ordinary DSM Host startup free of
+        // a runtime module dependency (also exercised by existing VM tests).
+        const { xDriveValidateSynologyRecoveryReview } = await import('./synology-recovery-review')
         return xDriveValidateSynologyRecoveryReview(page, sourceID, afterFile, pageEpoch)
       } finally {
         if (recoveryReads.get(requestID) === controller) recoveryReads.delete(requestID)
