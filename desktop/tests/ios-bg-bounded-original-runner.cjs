@@ -112,8 +112,13 @@ test('PhotoKit 256-slot window counts unsupported assets instead of silently ski
 test('transient prewrite BG failure retains a future approval without retrying a possible lost ACK', () => {
   const task = read('BackgroundPhotoTask.swift');
   assert.match(task, /var beganOriginalWrite = false/);
-  assert.match(task, /beganOriginalWrite = true[\s\S]*?XDriveIOSForegroundPhotoBackupMVP\(/);
-  assert.match(task, /if !beganOriginalWrite && retryablePreflightNetworkFailure\(error\) \{[\s\S]*?await resubmitOnlyIfStillApproved\(\)/);
+  // The real writer advertises potential mutation only at the prepared
+  // journaled upload boundary; scanning alone must not arm a BG pause.
+  assert.match(task, /let progress = try await XDriveIOSForegroundPhotoBackupMVP\([\s\S]*?onPotentialWrite: \{ beganOriginalWrite = true \}/);
+  const pending = task.slice(task.indexOf('} catch is CancellationError {'),
+    task.indexOf('private static func retryablePreflightNetworkFailure('));
+  assert.match(pending, /if beganOriginalWrite, let attemptedOwner \{[\s\S]*?BGOriginalWindowStore\.shared\.pause\([\s\S]*?\} else if retryablePreflightNetworkFailure\(error\) \{[\s\S]*?await resubmitOnlyIfStillApproved\(\)/);
+  assert.doesNotMatch(task, /beganOriginalWrite = true\s*let progress = try await XDriveIOSForegroundPhotoBackupMVP/);
   assert.match(task, /guard let network = error as\? URLError else \{ return false \}/);
   assert.match(task, /case \.timedOut, \.networkConnectionLost, \.notConnectedToInternet/);
   assert.match(task, /\.cannotFindHost, \.cannotConnectToHost, \.dnsLookupFailed/);
