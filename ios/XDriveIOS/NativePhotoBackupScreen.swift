@@ -234,6 +234,15 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                 background.refresh(login: login)
             }
         }
+        .onChange(of: receipts.confirmedReadback) { readback in
+            guard let readback else { return }
+            // This is an already-confirmed historical ACK, not a new upload
+            // or permission to resume a paused schedule. Gallery re-verifies
+            // the current Owner and defers refresh while Viewer is active.
+            controller.signalConfirmedReceiptReadback(
+                owner: readback.owner, login: login
+            )
+        }
         .onChange(of: phase) { state in
             if state == .active {
                 photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
