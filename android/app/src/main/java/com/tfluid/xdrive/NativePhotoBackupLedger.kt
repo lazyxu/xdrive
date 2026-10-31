@@ -1,6 +1,7 @@
 package com.tfluid.xdrive
 
 import com.tfluid.xdrive.core.ServerAddress
+import com.tfluid.xdrive.core.validDriveNodeName
 import java.util.UUID
 
 /**
@@ -85,6 +86,9 @@ internal data class NativePhotoBackupIntent(
     val sizeBytes: Long,
     val phase: NativePhotoBackupPhase,
     val createdAtMillis: Long,
+    /** Exact new original destination for an Owner-scoped, read-only ACK lookup.
+     * Old journal rows omit it and stay blocked rather than guessing a filename. */
+    val destinationName: String? = null,
     val verifiedNodeId: Long? = null,
     val verifiedNodeRevision: Long? = null,
 ) {
@@ -93,6 +97,7 @@ internal data class NativePhotoBackupIntent(
         require(nativeBackupHex(assetKey) && nativeBackupHex(versionKey) &&
             nativeBackupHex(originalSha256))
         require(sizeBytes > 0 && createdAtMillis > 0)
+        require(destinationName == null || validDriveNodeName(destinationName))
         require((verifiedNodeId == null) == (verifiedNodeRevision == null))
         if (phase == NativePhotoBackupPhase.VERIFIED) {
             require(verifiedNodeId != null && verifiedNodeId > 0 &&
@@ -139,6 +144,7 @@ internal class NativePhotoBackupLedger(
         resource: NativePhotoBackupResource,
         originalSha256: String,
         sizeBytes: Long,
+        destinationName: String? = null,
     ): NativePhotoBackupIntent {
         val previous = validated()
         require(nativeBackupHex(assetKey) && nativeBackupHex(versionKey) &&
@@ -150,13 +156,17 @@ internal class NativePhotoBackupLedger(
         if (existing != null) {
             // One asset/resource/version cannot change content under our feet.
             check(existing.originalSha256 == originalSha256 &&
-                existing.sizeBytes == sizeBytes) { "Original changed: new verified version required" }
+                existing.sizeBytes == sizeBytes &&
+                (destinationName == null || existing.destinationName == destinationName)) {
+                "Original changed: new verified version required"
+            }
             return existing
         }
         check(previous.size < MAX_ENTRIES) { "Photo backup journal full; reconcile before adding" }
         val intent = NativePhotoBackupIntent(
             nextId(), owner, assetKey, versionKey, resource, originalSha256,
-            sizeBytes, NativePhotoBackupPhase.PLANNED, now())
+            sizeBytes, NativePhotoBackupPhase.PLANNED, now(),
+            destinationName = destinationName)
         check(previous.none { it.id == intent.id })
         store.write(previous + intent)
         return intent
