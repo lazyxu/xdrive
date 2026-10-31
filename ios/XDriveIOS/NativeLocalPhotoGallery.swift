@@ -292,6 +292,9 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
     // This localIdentifier is in-memory only and never part of route persistence.
     @State private var viewerReturnID: String?
     @State private var shouldRestoreViewerTile = false
+    // VoiceOver focus is transient, like the in-memory Viewer tile anchor.
+    // Never persist PhotoKit local identifiers in a route snapshot.
+    @AccessibilityFocusState private var accessibilityFocusedTileID: String?
     @State private var pageRenderRevision: UInt64 = 0
     @State private var authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
 
@@ -322,12 +325,14 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
                         ForEach(page.items.filter { $0.kind != "unsupported" }) { candidate in
                             Button {
                                 viewerReturnID = candidate.id
+                                accessibilityFocusedTileID = nil
                                 selected = candidate
                             } label: {
                                 XDriveIOSLocalPhotoTile(candidate: candidate)
                             }
                             .buttonStyle(.plain)
                             .id(candidate.id)
+                            .accessibilityFocused($accessibilityFocusedTileID, equals: candidate.id)
                         }
                     }
                     HStack {
@@ -393,12 +398,17 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
             authorized: authorized
         )
         clearViewerTileAnchor()
-        if let target { scroll.scrollTo(target, anchor: .center) }
+        if let target {
+            scroll.scrollTo(target, anchor: .center)
+            // Restore VoiceOver only to the reauthorized originating tile.
+            accessibilityFocusedTileID = target
+        }
     }
 
     private func clearViewerTileAnchor() {
         viewerReturnID = nil
         shouldRestoreViewerTile = false
+        accessibilityFocusedTileID = nil
     }
 
     private func refresh(at requestedOffset: Int = 0) {
