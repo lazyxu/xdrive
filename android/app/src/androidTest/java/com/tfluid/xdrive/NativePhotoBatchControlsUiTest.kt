@@ -103,6 +103,7 @@ class NativePhotoBatchControlsUiTest {
         val cancels = AtomicInteger(0)
         var state by mutableStateOf(ready.copy(
             nativePhotoDeviceVerified = true, fileUploadActive = true,
+            nativePhotoBatchRunning = true,
             nativePhotoBatchScanned = 3, nativePhotoBatchUploaded = 1,
         ))
         compose.setContent {
@@ -121,8 +122,32 @@ class NativePhotoBatchControlsUiTest {
         compose.onNodeWithTag("native-photo-batch-confirm-open").assertDoesNotExist()
         compose.runOnIdle {
             assertEquals(1, cancels.get())
-            state = state.copy(fileUploadActive = false)
+            state = state.copy(fileUploadActive = false,
+                nativePhotoBatchRunning = false)
         }
         compose.onNodeWithTag("native-photo-batch-stop").assertDoesNotExist()
     }
+    @Test fun unrelatedManualUploadCannotBeStoppedFromPhotoBatchPanel() {
+        val stops = AtomicInteger(0)
+        compose.setContent {
+            XDriveTheme {
+                NativePhotoBatchControls(
+                    ready.copy(fileUploadActive = true,
+                        nativePhotoBatchRunning = false,
+                        nativePhotoDeviceVerified = true),
+                    fullReadGrant = true,
+                    onRequestReadGrant = {},
+                    onEnrollDevice = {},
+                    onStartBatch = { error("Must not start while manual upload runs") },
+                    onCancelBatch = { stops.incrementAndGet() },
+                )
+            }
+        }
+        compose.onNodeWithTag("native-photo-batch-open").performClick()
+        compose.onNodeWithTag("native-photo-batch-other-writer").assertIsDisplayed()
+        compose.onNodeWithTag("native-photo-batch-stop").assertDoesNotExist()
+        compose.onNodeWithTag("native-photo-batch-confirm-open").assertIsNotEnabled()
+        compose.runOnIdle { assertEquals(0, stops.get()) }
+    }
+
 }
