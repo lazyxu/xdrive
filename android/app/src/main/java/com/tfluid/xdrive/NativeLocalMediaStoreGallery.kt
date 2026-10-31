@@ -28,11 +28,13 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import kotlinx.coroutines.android.awaitFrame
+import kotlinx.coroutines.flow.first
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -42,6 +44,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -444,24 +447,30 @@ internal fun NativeLocalPhotoWallTile(
     },
 ) {
     val requester = remember(asset.id, asset.uri) { FocusRequester() }
-    // Own the same focus target that holds the testTag/click action. The
-    // clickable OutlinedCard overload wraps an inner Surface and can return
-    // focus on a different semantics node from this tile's source anchor.
+    val windowInfo = LocalWindowInfo.current
+    // A Dialog is a separate Android window. RequestFocus may report success
+    // before the activity window owns *actual* input focus again; clearing the
+    // source anchor on that result leaves Focused=false indefinitely.
     OutlinedCard(
         modifier = Modifier.height(142.dp)
             .focusRequester(requester)
+            .onFocusChanged {
+                if (it.isFocused && restoreFocus) onFocusRestored()
+            }
             .clickable(onClick = onOpen)
             .testTag("native-local-media-${asset.id}"),
     ) {
         Column { tileContent() }
     }
-    LaunchedEffect(restoreFocus, asset.id, asset.uri) {
+    LaunchedEffect(restoreFocus, asset.id, asset.uri, windowInfo) {
         if (restoreFocus) {
-            // Dialog's window owns input focus while dismissing. Resume on the
-            // next Compose frame, once that window has been removed, rather
-            // than issue a successful-but-overwritten focus request mid-close.
+            // Wait for the activity window to regain focus after the Dialog
+            // has released it, not merely for one arbitrary animation frame.
+            snapshotFlow { windowInfo.isWindowFocused }.first { it }
             awaitFrame()
-            if (requester.requestFocus()) onFocusRestored()
+            requester.requestFocus()
+            // onFocusChanged is the only success acknowledgement: it observes
+            // actual tile focus, not an accepted-but-overwritten focus request.
         }
     }
 }
