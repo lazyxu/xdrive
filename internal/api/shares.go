@@ -24,7 +24,7 @@ import (
 var errShareUnavailable = errors.New("share unavailable")
 
 const (
-	shareAccessReadOnly = "read_only"
+	shareAccessReadOnly   = "read_only"
 	shareAccessViewUpload = "view_upload"
 )
 
@@ -109,11 +109,11 @@ type publicShareDTO struct {
 
 func toShareDTO(share meta.Share, now time.Time) shareDTO {
 	return shareDTO{
-		Access:        share.Access,
-		ID:            share.ID,
-		NodeID:        share.NodeID,
-		HasPassword:   share.PasswordHash != "",
-		ExpiresAt:     share.ExpiresAt,
+		Access:      share.Access,
+		ID:          share.ID,
+		NodeID:      share.NodeID,
+		HasPassword: share.PasswordHash != "",
+		ExpiresAt:   share.ExpiresAt,
 		// Legacy rows may store a historical download limit. The link now
 		// allows unlimited downloads, including for older clients which
 		// still honor the additive max_downloads response field.
@@ -266,7 +266,7 @@ func (s *Server) updateShare(c *gin.Context) {
 		if err := tx.Model(&updated).Updates(map[string]any{
 			"access": access, "expires_at": req.ExpiresAt,
 			"max_downloads": int64(0),
-			"updated_at": now,
+			"updated_at":    now,
 		}).Error; err != nil {
 			return err
 		}

@@ -593,7 +593,9 @@ func (s *Server) createUploadSession(c *gin.Context) {
 		if guest {
 			if _, err := s.publicShareUploadAdmissionTx(
 				c.Request.Context(), tx, guestID, uid, *req.ParentID,
-			); err != nil { return err }
+			); err != nil {
+				return err
+			}
 		}
 		quotaReservation, err := s.reserveUploadQuota(tx, uid, "", session.TotalSize, quotaKey)
 		if err != nil {

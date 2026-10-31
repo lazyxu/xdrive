@@ -173,7 +173,9 @@ func TestPublicShareUploadGrantSubtreeResumeAndRevocation(t *testing.T) {
 	var count int64
 	if err := db.Model(&meta.Node{}).Where(
 		"owner_id = ? AND parent_id = ? AND type = ? AND deleted_at IS NULL",
-		root.OwnerID, subID, meta.NodeTypeFile).Count(&count).Error; err != nil { t.Fatal(err) }
+		root.OwnerID, subID, meta.NodeTypeFile).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
 	if count != 5 {
 		t.Fatalf("visible owner files=%d", count)
 	}
