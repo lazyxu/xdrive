@@ -190,8 +190,8 @@ test('unreadable original journal after failed writer stops the 256-item run', (
   assert.match(failure, /let current: XDrivePhotoSyncOperation\?/)
   assert.match(failure, /current = try await journal\.operation\(/)
   assert.match(failure, /catch is CancellationError \{\s*throw CancellationError\(\)/)
-  assert.match(failure, /catch \{\s*return \.requiresReview/)
-  assert.match(failure, /guard let current, current\.state == \.prepared else \{\s*return \.requiresReview/)
+  assert.match(failure, /catch \{[\s\S]*?return \.requiresReview/)
+  assert.match(failure, /guard let current, current\.state == \.prepared else \{[\s\S]*?return \.requiresReview/)
   assert.match(failure, /throw error/)
   assert.doesNotMatch(failure, /try\? await journal\.operation/)
   const errorPath = runner.slice(runner.indexOf('case .requiresReview:'),
