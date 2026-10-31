@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -688,6 +689,10 @@ internal fun GalleryTile(
             tileActuallyFocused = it.isFocused
             if (it.isFocused && restoreFocus) onFocusRestored()
         }
+        // The same clickable source tile must accept keyboard focus even
+        // when a preceding emulator/touch click selected touch input mode.
+        // No second focusable() target is introduced for long-press actions.
+        .focusProperties { canFocus = true }
         .clip(androidx.compose.foundation.shape.RoundedCornerShape(2.dp))
         .background(MaterialTheme.colorScheme.surfaceContainerLow)
         // In selection mode the real visible media toggles; never open Viewer.
