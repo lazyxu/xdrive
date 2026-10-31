@@ -1,17 +1,19 @@
-import { useEffect, useState } from 'react'
-import { Box, Button, Stack, Typography } from '@mui/material'
+import { useEffect, useRef, useState } from 'react'
+import { Box, Button, Checkbox, FormControlLabel, Stack, Typography } from '@mui/material'
 import type {
   XDriveSynologyBackupLocalClient, XDriveSynologyNativeDraft,
 } from '../synology-backup-adapter'
 
-// Read-only recovery inside the shared Device Backup page. This never
-// guesses the outcome of an uncertain Source create/bind acknowledgement and
-// cannot mint a device credential, retry Create or grant a native Root.
+// The original Agent's creating-device draft list remains read-only. The only
+// mutation is one explicit, Owner-pinned and NAS-share-verified native Root
+// binding to the selected existing Source. It never creates or runs a backup.
 export function XDriveSynologyNativeDraftReview({
-  client, ownerScope,
+  client, ownerScope, selectionID, onBound,
 }: {
   client: XDriveSynologyBackupLocalClient
   ownerScope: string
+  selectionID: string
+  onBound: () => void
 }) {
   const [revision, setRevision] = useState(0)
   const [state, setState] = useState<{
@@ -19,6 +21,22 @@ export function XDriveSynologyNativeDraftReview({
     error: boolean
     items: XDriveSynologyNativeDraft[]
   }>({ loading: true, error: false, items: [] })
+  const [confirmed, setConfirmed] = useState(false)
+  const [workingID, setWorkingID] = useState<number | null>(null)
+  const [attempted, setAttempted] = useState(false)
+  const [outcome, setOutcome] = useState<{
+    id: number
+    state: 'authorized' | 'needs_inspection' | 'uncertain'
+  } | null>(null)
+  const currentScope = useRef({ ownerScope, selectionID })
+  const attemptedRef = useRef(false)
+  const mountedRef = useRef(false)
+  currentScope.current = { ownerScope, selectionID }
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -39,52 +57,114 @@ export function XDriveSynologyNativeDraftReview({
     return () => controller.abort()
   }, [client, ownerScope, revision])
 
+  useEffect(() => {
+    setConfirmed(false)
+  }, [ownerScope, selectionID])
+
+  const bind = (draft: XDriveSynologyNativeDraft) => {
+    if (!confirmed || attemptedRef.current || workingID !== null || state.loading ||
+      state.error || !/^[0-9a-f]{64}$/.test(selectionID) ||
+      !/^[0-9a-f]{64}$/.test(ownerScope) ||
+      !state.items.some(item => item.source_id === draft.source_id)) return
+    // Never automatically retry a lost Root-binding ACK. The Server may have
+    // committed the original binding even if the browser never saw its reply.
+    const pinnedScope = ownerScope
+    const pinnedSelection = selectionID
+    attemptedRef.current = true
+    setAttempted(true)
+    setWorkingID(draft.source_id)
+    setOutcome(null)
+    void client.bindNativeDraft(draft.source_id, pinnedSelection, pinnedScope).then(result => {
+      if (!mountedRef.current) return
+      if (currentScope.current.ownerScope !== pinnedScope ||
+        currentScope.current.selectionID !== pinnedSelection) {
+        setOutcome({ id: draft.source_id, state: 'uncertain' })
+        return
+      }
+      setOutcome({ id: draft.source_id, state: result.state })
+      if (result.state === 'authorized') {
+        onBound()
+        setRevision(value => value + 1)
+      }
+    }).catch(() => {
+      if (mountedRef.current) {
+        setOutcome({ id: draft.source_id, state: 'uncertain' })
+      }
+    }).finally(() => {
+      if (mountedRef.current) setWorkingID(null)
+    })
+  }
+
   return (
     <Box data-xdrive-dsm-draft-review sx={{
       border: 1, borderColor: 'divider', borderRadius: 1, p: 2,
     }}>
       <Stack spacing={1}>
         <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}>
-          <Typography variant="subtitle2">检查本机未绑定的 Source 草稿（只读）</Typography>
-          <Button size="small" variant="outlined" disabled={state.loading}
+          <Typography variant="subtitle2">恢复本机未绑定的 Source 草稿</Typography>
+          <Button size="small" variant="outlined" disabled={state.loading || workingID !== null}
             onClick={() => setRevision(value => value + 1)}>刷新草稿</Button>
         </Stack>
         <Typography variant="caption" color="text.secondary">
-          仅显示当前 Agent 和 Server Owner 下，这台设备创建、从未绑定过 Root 的暂停草稿。
-          这里不能重新授权、删除或启动备份，任何草稿也不代表文件已上传。
+          仅列出原 Agent 当前建设备从未绑定过 Root 的暂停草稿；不代表已经上传任何文件。
+          继续绑定必须先重新选择上方 NAS 共享目录并通过本机预检，再明确确认。
         </Typography>
         {state.loading ? (
           <Typography role="status" variant="body2">正在核对本机未绑定草稿…</Typography>
         ) : state.error ? (
           <Typography role="alert" variant="body2">
-            无法可靠确认本机草稿或当前 Owner，请不要重试创建来源。
-            请先在 NAS 上以 xdrivenas 套件用户运行 xd backup drafts 检查。
+            无法可靠确认草稿或当前 Server Owner。请勿重新创建或盲目绑定，
+            使用 NAS 套件用户的 xd backup drafts 检查。
           </Typography>
         ) : state.items.length === 0 ? (
           <Typography role="status" variant="body2">
-            当前没有可确认的未绑定草稿。这不代表创建一定失败：来源可能已完成绑定，
-            请检查上方本机来源及其状态，勿直接重新创建。
+            当前没有可确认的未绑定草稿；这不证明上次创建没有成功。
+            请检查已授权来源以及原 Agent 的当前状态。
           </Typography>
         ) : (
           <Stack spacing={1}>
+            <FormControlLabel
+              control={<Checkbox size="small" checked={confirmed}
+                disabled={attempted || workingID !== null || !/^[0-9a-f]{64}$/.test(selectionID)}
+                onChange={event => setConfirmed(event.target.checked)} />}
+              label="我确认将上方已通过预检的 NAS 目录绑定到下方选定的现有 Source，不会创建新 Source 或启动备份"
+            />
             {state.items.map(draft => (
               <Box key={draft.source_id}>
-                <Typography variant="body2" fontWeight={600}>
-                  {draft.name}（Source {draft.source_id}）
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  创建于 {new Date(draft.created_at).toLocaleString('zh-CN')} ·
-                  版本 {draft.revision} · 未绑定，未验证任何 CAS 收据
-                </Typography>
+                <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                  <Box sx={{ flex: 1, minWidth: 150 }}>
+                    <Typography variant="body2" fontWeight={600}>
+                      {draft.name}（Source {draft.source_id}）
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      创建于 {new Date(draft.created_at).toLocaleString('zh-CN')} ·
+                      版本 {draft.revision} · 尚无 CAS 备份收据
+                    </Typography>
+                  </Box>
+                  <Button size="small" variant="outlined"
+                    disabled={!confirmed || attempted || workingID !== null ||
+                      !/^[0-9a-f]{64}$/.test(selectionID)}
+                    onClick={() => bind(draft)}>
+                    {workingID === draft.source_id ? '正在绑定…' : '确认绑定这个 Source'}
+                  </Button>
+                </Stack>
               </Box>
             ))}
-            <Typography variant="caption" color="text.secondary">
-              需要继续授权时，按原有 NAS 本机 xd backup bind --source ID --path ABS_DIR
-              流程操作；必须由同一 xdrivenas 套件用户执行，并重新选择真实目录。
-              不能根据同名草稿自动绑定、覆盖或删除来源。
-            </Typography>
           </Stack>
         )}
+        {outcome?.state === 'authorized' ? (
+          <Typography role="status" variant="body2">
+            Source {outcome.id} 的原生目录身份已确认；仍需在上方来源中手动运行首次备份，
+            这不是任何文件已备份或 CAS 已校验的证明。
+          </Typography>
+        ) : null}
+        {outcome?.state === 'needs_inspection' || outcome?.state === 'uncertain' ? (
+          <Typography role="alert" variant="body2">
+            Source {outcome.id} 的绑定结果未能可靠确认。原 Agent 可能已经完成绑定。
+            请先重新检查草稿及本机来源；必要时以套件用户执行 xd backup drafts，
+            不要重复点击绑定，也不要重新创建 Source。
+          </Typography>
+        ) : null}
       </Stack>
     </Box>
   )
