@@ -73,7 +73,7 @@ async function exercise({changedTarget = null, changedSource = null,
       },
     },
     pulls: {
-      list() {},
+      list: async () => ({data: []}),
       get: async () => ({data: {state: 'open', merged_at: null,
         head: {repo: {full_name: repo}}}}),
     },
