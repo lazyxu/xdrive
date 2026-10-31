@@ -57,8 +57,8 @@ test('Web public share keeps native download, password and eligibility feedback'
     "setNotice('已交给浏览器下载。')",
     'share.requires_password',
     'placeholder="分享密码"',
-    'share.max_downloads > 0',
-    '此分享已达到下载上限。',
+    '下载不限次数',
+    'const canUpload = canBrowse',
     'loading={downloading}',
     'disabled={!canStartDownload}',
     'const canStartDownload = canDownload && !downloading',
@@ -74,8 +74,10 @@ test('Web public share keeps native download, password and eligibility feedback'
     'Share folder ZIP requires server read-only download+ZIP grants')
   assert.ok(publicShare.includes('const canStartDownload = canDownload && !downloading'),
     'native handoff busy is independent of granted browse/preview')
-  assert.ok(!publicShare.includes('!downloading && !exhausted'),
-    'native handoff activity must not revoke the UI browse/preview grant')
+  assert.ok(!publicShare.includes('const exhausted ='),
+    'unlimited shares must not have a download-count eligibility gate')
+  assert.ok(!publicShare.includes('达到下载上限'),
+    'the public UI must not advertise an obsolete max-download policy')
 })
 
 
@@ -134,7 +136,7 @@ test('SH-P002 first public metadata GET owns an abortable request, not a durable
   assert.ok(getter.includes('signal,'), 'the actual fetch RequestInit must carry the signal')
   const first = publicShare.slice(
     publicShare.indexOf('  useEffect(() => {\n    let active = true'),
-    publicShare.indexOf('  const exhausted ='),
+    publicShare.indexOf('  const grants ='),
   )
   assert.ok(first.includes('const controller = new AbortController()'))
   assert.ok(first.includes('api.publicShare(token, controller.signal)'))
