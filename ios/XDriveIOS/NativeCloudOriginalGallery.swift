@@ -757,6 +757,31 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
     }
 }
 
+/// SwiftUI's ForEach identity is the stable Node ID, but a Node revision
+/// can change while its tile stays mounted. Tie the tile's private UIImage
+/// state to BOTH that revision and the exact verified Owner/root scope.
+/// Root revision intentionally isn't part of identity: it changes whenever
+/// unrelated originals are backed up and must not refresh every thumbnail.
+private struct XDriveIOSNativeCloudOriginalTileIdentity: Hashable {
+    let nodeID: UInt64
+    let revision: UInt64
+    let origin: URL?
+    let instanceID: String?
+    let ownerID: UInt64?
+    let username: String?
+    let rootNodeID: UInt64?
+
+    init(node: XDriveIOSNativeCloudOriginal, owner: XDriveNativeOwnerRoot?) {
+        nodeID = node.id
+        revision = node.revision
+        origin = owner?.origin
+        instanceID = owner?.instanceID
+        ownerID = owner?.ownerID
+        username = owner?.username
+        rootNodeID = owner?.rootNodeID
+    }
+}
+
 /// Only visible native cells request the Owner-authenticated Server derivative.
 /// SwiftUI cancels .task on reuse/disappearance. No cache survives Owner switch.
 private struct XDriveIOSNativeCloudOriginalTile: View {
@@ -851,6 +876,12 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
                                 node: node, viewerActive: selected != nil,
                                 model: model, login: login
                             )
+                            // Reset @State thumbnail pixels if an in-place
+                            // Server revision or authenticated Owner changes.
+                            // ForEach keeps the Node ID for scroll/Viewer focus.
+                            .id(XDriveIOSNativeCloudOriginalTileIdentity(
+                                node: node, owner: login.owner
+                            ))
                         }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("native-ios-cloud-original-tile")

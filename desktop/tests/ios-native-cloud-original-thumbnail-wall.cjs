@@ -154,3 +154,30 @@ test('cloud original Viewer fences Owner and request generation BEFORE issuing s
   assert.match(work.slice(liveRead), /live\.files\.discard\(\); return/)
   assert.doesNotMatch(guard, /uploadPrepared|UploadSession|URLSession|confirmReceipt/)
 })
+
+test('cloud originals retire thumbnail pixels on Node revision or exact Owner/root change', () => {
+  const identity = src.slice(
+    src.indexOf('private struct XDriveIOSNativeCloudOriginalTileIdentity: Hashable'),
+    src.indexOf('private struct XDriveIOSNativeCloudOriginalTile: View'))
+  const tile = src.slice(
+    src.indexOf('private struct XDriveIOSNativeCloudOriginalTile: View'),
+    src.indexOf('struct XDriveIOSNativeCloudOriginalGallery: View'))
+  const wall = src.slice(src.indexOf('struct XDriveIOSNativeCloudOriginalGallery: View'))
+  assert.match(identity, /init\(node: XDriveIOSNativeCloudOriginal, owner: XDriveNativeOwnerRoot\?\)/)
+  for (const field of [
+    'nodeID = node.id', 'revision = node.revision', 'origin = owner?.origin',
+    'instanceID = owner?.instanceID', 'ownerID = owner?.ownerID',
+    'username = owner?.username', 'rootNodeID = owner?.rootNodeID'
+  ]) {
+    assert.ok(identity.includes(field), 'missing thumbnail identity field: ' + field)
+  }
+  assert.doesNotMatch(identity, /rootRevision/, 'unrelated root writes must not reload all visible tiles')
+  assert.match(tile, /@State private var thumb: UIImage\?/)
+  assert.match(tile, /guard !viewerActive, thumb == nil/)
+  // The ForEach Node ID remains stable for scroll focus; the *child tile* gets
+  // a separate explicit identity, so an updated revision cannot reuse its old
+  // @State UIImage and skip the new thumbnail request.
+  assert.match(wall, /ForEach\(model.nodes\) \{ node in[\s\S]*?XDriveIOSNativeCloudOriginalTile\([\s\S]*?\.id\(XDriveIOSNativeCloudOriginalTileIdentity\(\s*node: node, owner: login.owner\s*\)\)[\s\S]*?\.buttonStyle\(\.plain\)/)
+  assert.match(tile, /\.task\(id: "\\\(node.id\)-\\\(node.revision\)-\\\(viewerActive\)"\)/)
+  assert.doesNotMatch(identity, /token|accessToken|localIdentifier|password|UserDefaults/)
+})
