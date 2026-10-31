@@ -29,7 +29,14 @@ export function XDriveSynologyNativeDraftReview({
     state: 'authorized' | 'needs_inspection' | 'uncertain'
   } | null>(null)
   const currentScope = useRef({ ownerScope, selectionID })
+  const attemptedRef = useRef(false)
+  const mountedRef = useRef(false)
   currentScope.current = { ownerScope, selectionID }
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -55,7 +62,7 @@ export function XDriveSynologyNativeDraftReview({
   }, [ownerScope, selectionID])
 
   const bind = (draft: XDriveSynologyNativeDraft) => {
-    if (!confirmed || attempted || workingID !== null || state.loading ||
+    if (!confirmed || attemptedRef.current || workingID !== null || state.loading ||
       state.error || !/^[0-9a-f]{64}$/.test(selectionID) ||
       !/^[0-9a-f]{64}$/.test(ownerScope) ||
       !state.items.some(item => item.source_id === draft.source_id)) return
@@ -63,10 +70,12 @@ export function XDriveSynologyNativeDraftReview({
     // committed the original binding even if the browser never saw its reply.
     const pinnedScope = ownerScope
     const pinnedSelection = selectionID
+    attemptedRef.current = true
     setAttempted(true)
     setWorkingID(draft.source_id)
     setOutcome(null)
     void client.bindNativeDraft(draft.source_id, pinnedSelection, pinnedScope).then(result => {
+      if (!mountedRef.current) return
       if (currentScope.current.ownerScope !== pinnedScope ||
         currentScope.current.selectionID !== pinnedSelection) {
         setOutcome({ id: draft.source_id, state: 'uncertain' })
@@ -78,8 +87,12 @@ export function XDriveSynologyNativeDraftReview({
         setRevision(value => value + 1)
       }
     }).catch(() => {
-      setOutcome({ id: draft.source_id, state: 'uncertain' })
-    }).finally(() => setWorkingID(null))
+      if (mountedRef.current) {
+        setOutcome({ id: draft.source_id, state: 'uncertain' })
+      }
+    }).finally(() => {
+      if (mountedRef.current) setWorkingID(null)
+    })
   }
 
   return (
