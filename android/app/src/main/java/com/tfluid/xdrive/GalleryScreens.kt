@@ -24,11 +24,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
@@ -41,6 +43,7 @@ import com.tfluid.xdrive.core.GalleryTimelineGroup
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.android.awaitFrame
+import kotlinx.coroutines.flow.first
 
 /** Match the shared Mobile Gallery KFS column-first contract for All photos:
  * reference width 144dp, three baseline columns, preference range 2..10.
@@ -640,6 +643,7 @@ internal fun GalleryTile(
     onFocusRestored: () -> Unit = {},
 ) {
     val focusRequester = remember(item.node.id, item.node.revision) { FocusRequester() }
+    val windowInfo = LocalWindowInfo.current
     val key = "${item.node.id}:${item.node.revision}"
     // A new Owner Range/revision or thumbnail-availability change invalidates
     // the bitmap. A refreshed metadata object for the SAME version must not
@@ -680,6 +684,7 @@ internal fun GalleryTile(
 
     Box(Modifier.fillMaxWidth().aspectRatio(1f)
         .focusRequester(focusRequester)
+        .onFocusChanged { if (it.isFocused && restoreFocus) onFocusRestored() }
         .clip(androidx.compose.foundation.shape.RoundedCornerShape(2.dp))
         .background(MaterialTheme.colorScheme.surfaceContainerLow)
         // In selection mode the real visible media toggles; never open Viewer.
@@ -755,15 +760,16 @@ internal fun GalleryTile(
                 color = Color.White, style = MaterialTheme.typography.labelSmall)
         }
     }
-    LaunchedEffect(restoreFocus, item.node.id, item.node.revision) {
+    LaunchedEffect(restoreFocus, item.node.id, item.node.revision, windowInfo) {
         if (restoreFocus) {
-            // The full-screen Viewer is another branch of the host's
-            // composition. Wait for its focus target to leave the tree
-            // before requesting the source tile's real keyboard focus.
-            // A successful early request can otherwise be superseded by
-            // Viewer teardown in the same Compose frame.
+            // A Viewer may have owned the window's input focus even after
+            // Compose has recreated this Gallery card. Await the activity
+            // window regaining input focus before requesting a real target.
+            snapshotFlow { windowInfo.isWindowFocused }.first { it }
             awaitFrame()
-            if (focusRequester.requestFocus()) onFocusRestored()
+            focusRequester.requestFocus()
+            // A request accepted while the host was losing focus is NOT a
+            // successful return. Only onFocusChanged(isFocused) retires it.
         }
     }
 
