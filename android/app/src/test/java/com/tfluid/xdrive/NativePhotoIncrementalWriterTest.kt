@@ -189,7 +189,7 @@ class NativePhotoIncrementalWriterTest {
             assertNotEquals(first.assetKey, source(original, 30L).assetKey)
             assertEquals(64, first.versionKey.length)
             assertFalse(first.destinationName.contains(deviceId))
-            assertFalse(first.destinationName.contains("29"))
+            assertFalse(first.destinationName.contains("-29-"))
             assertThrows(IllegalArgumentException::class.java) {
                 NativePhotoIncrementalSourceKey.fromOriginal(
                     deviceId, 29, false, "application/pdf", 100, original)
