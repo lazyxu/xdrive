@@ -37,7 +37,8 @@ const ancestors = [
 ]
 
 async function exercise({changedTarget = null, changedSource = null,
-  noAncestry = false, openSource = null, dryRun = false} = {}) {
+  noAncestry = false, openSource = null, dryRun = false,
+  lateTargetMove = null} = {}) {
   const refs = new Map([['master', master]])
   for (const [name, sha, target, targetSha] of ancestors) {
     refs.set(name, name === changedSource ? 'a'.repeat(40) : sha)
@@ -52,7 +53,13 @@ async function exercise({changedTarget = null, changedSource = null,
     base: {ref: 'master', repo: {full_name: repo}},
   }] : []
   const deleted = []
+  const targetReads = new Map()
   const get = (branch) => {
+    if (branch === lateTargetMove) {
+      const calls = (targetReads.get(branch) || 0) + 1
+      targetReads.set(branch, calls)
+      if (calls >= 2) refs.set(branch, 'b'.repeat(40))
+    }
     if (!refs.has(branch)) {
       const error = new Error('missing branch')
       error.status = 404
@@ -110,6 +117,10 @@ test('exact development-ancestor tips prune only four source branches', async ()
 })
 test('a moved retained development head protects both of its ancestors', async () => {
   const deleted = await exercise({changedTarget: ancestors[0][2]})
+  assert.deepEqual(new Set(deleted), new Set(ancestors.slice(2).map(a => a[0])))
+})
+test('target changing between evidence and final delete refuses stale source', async () => {
+  const deleted = await exercise({lateTargetMove: ancestors[0][2]})
   assert.deepEqual(new Set(deleted), new Set(ancestors.slice(2).map(a => a[0])))
 })
 test('ancestry failure rejects all development-only deletions', async () => {
