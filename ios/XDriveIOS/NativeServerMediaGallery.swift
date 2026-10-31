@@ -192,6 +192,28 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
     }
 }
 
+/// Retire a tile's private UIImage when its authoritative Node revision or
+/// verified Owner/root changes. Keep the ForEach Node ID for scroll focus.
+private struct XDriveIOSNativeMediaWallTileIdentity: Hashable {
+    let nodeID: UInt64
+    let revision: UInt64
+    let origin: URL?
+    let instanceID: String?
+    let ownerID: UInt64?
+    let username: String?
+    let rootNodeID: UInt64?
+
+    init(item: XDriveIOSNativeMediaItem, owner: XDriveNativeOwnerRoot?) {
+        nodeID = item.id
+        revision = item.node.revision
+        origin = owner?.origin
+        instanceID = owner?.instanceID
+        ownerID = owner?.ownerID
+        username = owner?.username
+        rootNodeID = owner?.rootNodeID
+    }
+}
+
 private struct XDriveIOSNativeMediaWallTile: View {
     let item: XDriveIOSNativeMediaItem
     let viewerActive: Bool
@@ -402,6 +424,10 @@ struct XDriveIOSNativeServerMediaWall: View {
                                     item: item, viewerActive: selected != nil,
                                     model: model, login: login
                                 )
+                                // Reset stale thumbnail pixels, not the Node-ID focus anchor.
+                                .id(XDriveIOSNativeMediaWallTileIdentity(
+                                    item: item, owner: login.owner
+                                ))
                             }
                             .buttonStyle(.plain)
                             .disabled(!item.supportsPreview)
