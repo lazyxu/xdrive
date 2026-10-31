@@ -298,7 +298,76 @@ jobs:
           go test -count=1 ./internal/localbackupipc -run 'Test(Remote|OwnerQuota|OwnerFile|OwnerTextPreview|OwnerMediaRange|OwnerThumbnail|OwnerGallery|OwnerLiveMotion|ServerLogin|RecoveryReview)'
           go test -count=1 ./internal/client -run 'Test(DownloadVerifiedRange|OwnerThumbnail|MediaOwnerThumbnail|OwnerGallery|ReadVerifiedOwnerLiveMotion|OwnerLiveMotion)'
           go test -count=1 ./cmd/xdrive-agent -run 'Test(BackupOnly(CloudQuota|CloudFileRead|OwnerMediaRange|OwnerThumbnail)|OwnerGallery|OwnerLiveMotion)'
-          go test -count=1 ./cmd/xd -run 'TestBackup'
+          # Keep the existing real authenticated xd→owning-Agent IPC two-pass
+          # fixture in the DSM gate. Its Server responses are simulated:
+          # first-file and unchanged-file observations are not physical CAS proof.
+          go test -count=1 ./cmd/xd \
+            -run '^Test(Backup|HeadlessCLIInitAndIncrementalsShareOneAuthenticatedAgent)'
+          # Reuse the original Agent's per-file SQL receipt, no-change skip,
+          # and restart recovery safety regressions; no DSM-specific writer.
+          go test -count=1 ./cmd/xdrive-agent \
+            -run '^(TestCommonBatchFileAThenFileBThenUpdatedA|TestLocalCommonIncrementalSkipRechecksCurrentParentWithoutWrites|TestLocalCommonSkipRechecksCurrentFileBeforeCountingUnchanged|TestPrivateStageRestartOnlyHistoricalPhysicalReceiptCountsAsObserved|TestLocalCommonBatchFailedWorkerNeverReturnsConfirmedPartial)
+      - name: Check Desktop and DSM shared backup presentation contracts
+        run: node web/scripts/check-synology-desktop-backup-parity.mjs
+      - name: Build isolated DSM-only shared MUI page
+        run: |
+          npm ci --prefix web
+          node web/scripts/test-synology-browser-storage.mjs
+          node web/scripts/test-synology-nas-storage.mjs
+          node web/scripts/test-synology-backup-target-browser.mjs
+          node web/scripts/test-synology-batch-validation.mjs
+          node web/scripts/test-synology-request-cancel.mjs
+          node web/scripts/test-synology-owner-read.mjs
+          node web/scripts/test-synology-owner-quota.mjs
+          node web/scripts/test-synology-owner-gallery.mjs
+          node web/scripts/test-synology-owner-live-motion.mjs
+          node web/scripts/test-synology-owner-files.mjs
+          node web/scripts/test-synology-media-preview.mjs
+          node web/scripts/test-synology-owner-download.mjs
+          node web/scripts/test-synology-owner-preview.mjs
+          node web/scripts/test-synology-owner-thumbnail.mjs
+          node web/scripts/test-synology-media-stream.mjs
+          node web/scripts/test-synology-nas-shares.mjs
+          node web/scripts/test-synology-nas-preflight.mjs
+          node web/scripts/test-synology-gui-login.mjs
+          node web/scripts/test-synology-nas-source-create.mjs
+          node web/scripts/test-synology-recovery-review.mjs
+          npm run build:synology --prefix web
+      - name: Verify static artifacts remain relative to DSM launcher
+        run: |
+          test -s web/dist-synology/synology.html
+          test -s web/dist-synology/.vite/manifest.json
+          node web/scripts/verify-synology-ui.mjs
+      - name: Package CLI-only and optional shared-MUI ARMv7 SPKs separately
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -x scripts/build-synology-spk.sh  # Preserve original executable file mode in SPK release tooling.
+          sh -n packaging/synology/ui/backup.cgi
+          export XDRIVE_BUILD_VERSION=0.1.0+synology-dev
+          bash scripts/build-synology-spk.sh 0.1.0-1 release/synology-cli
+          python3 scripts/ci/test-synology-spk.py \
+            release/synology-cli/xdrivenas-armada38x-0.1.0-1.spk \
+            release/synology-cli/core 0.1.0-1
+          bash scripts/build-synology-spk.sh 0.1.0-1 \
+            release/synology-ui release/synology-cli/core web/dist-synology
+          python3 scripts/ci/test-synology-spk-ui.py \
+            release/synology-ui/xdrivenas-armada38x-0.1.0-1.spk \
+            release/synology-cli/core 0.1.0-1 web/dist-synology
+          bash scripts/build-synology-spk.sh 0.1.0-1 \
+            release/synology-repeat release/synology-cli/core web/dist-synology
+          cmp release/synology-ui/xdrivenas-armada38x-0.1.0-1.spk \
+            release/synology-repeat/xdrivenas-armada38x-0.1.0-1.spk
+      - name: Retain source-exact optional DSM MUI candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: xdrivenas-mui-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            release/synology-ui/*.spk
+            release/synology-ui/*.sha256
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Check Desktop and DSM shared backup presentation contracts
         run: node web/scripts/check-synology-desktop-backup-parity.mjs
       - name: Build isolated DSM-only shared MUI page
