@@ -44,6 +44,15 @@ other file actions, and never overrides an explicit Launcher/Files/Dynamic tab
 choice. Once the user opens Files, their navigation remains Files until they
 choose another tab; no cross-tab Back and no WebView transition.
 
+## Preserved emulator acceptance fixtures
+
+The production DriveApp defaults to one-shot native Gallery-first landing after a freshly
+verified Owner root. Existing Files/Trash/Cloud Gallery Android instrumentation fixtures
+explicitly request a **Files-first starting tab** so their navigation and write regressions
+continue testing exactly the intended Files paths. A new Compose emulator test runs the
+production Gallery-first behavior after real fixture Owner login and verifies that an
+explicit Files tab selection remains stable. Neither path skips, removes or weakens a test.
+
 ## Gates and limitations
 
 Pure JVM tests cover sort ties, page boundary continuity, invalid cursor keys,

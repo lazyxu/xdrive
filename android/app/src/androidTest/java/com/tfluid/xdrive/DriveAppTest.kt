@@ -605,6 +605,7 @@ class DriveAppTest {
     private fun startAndLogin(
         onDownload: ((DriveNode) -> Unit)? = null,
         onUpload: (() -> Unit)? = null,
+        galleryFirstOnLogin: Boolean = false,
     ) {
         // Read the real Compose IME inset from composition (not a fixed delay
         // or a guessed keyboard state). Done hides the keyboard; only click
@@ -614,7 +615,8 @@ class DriveAppTest {
             val observedImeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
             SideEffect { imeBottomPx.set(observedImeBottom) }
             XDriveTheme {
-                DriveApp(controller, onDownload = onDownload, onUpload = onUpload)
+                DriveApp(controller, onDownload = onDownload, onUpload = onUpload,
+                    galleryFirstOnLogin = galleryFirstOnLogin)
             }
         }
         compose.onNodeWithTag("server").performTextInput("https://drive.example")
@@ -651,7 +653,9 @@ class DriveAppTest {
             .performScrollTo().assertIsEnabled().performClick()
         try {
             compose.waitUntil(timeoutMillis = 10_000) {
-                controller.state.value.screen == Screen.FILES && controller.state.value.loaded
+                val current = controller.state.value
+                if (galleryFirstOnLogin) current.screen == Screen.GALLERY && current.galleryLoaded
+                else current.screen == Screen.FILES && current.loaded
             }
         } catch (failure: androidx.compose.ui.test.ComposeTimeoutException) {
             // Fixture-only state; no server, user, password, token, path or
@@ -666,7 +670,28 @@ class DriveAppTest {
                 failure,
             )
         }
+        if (galleryFirstOnLogin) {
+            compose.onNodeWithTag("native-gallery-sources").assertExists()
+        } else {
+            compose.onNodeWithText("假期照片").assertIsDisplayed()
+        }
+    }
+
+    @Test fun authenticatedNewOwnerLandsInGalleryAndFilesSelectionStaysExplicit() {
+        startAndLogin(galleryFirstOnLogin = true)
+        compose.onNodeWithTag("native-five-slot-bar").assertIsDisplayed()
+        compose.onNodeWithTag("native-tab-gallery").assertExists()
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(Screen.GALLERY, controller.state.value.screen)
+            org.junit.Assert.assertTrue(controller.state.value.path.isNotEmpty())
+        }
+        compose.onNodeWithTag("native-tab-files").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.FILES && controller.state.value.loaded
+        }
         compose.onNodeWithText("假期照片").assertIsDisplayed()
+        compose.waitForIdle()
+        compose.onNodeWithTag("native-tab-files").assertExists()
     }
 
     @Test fun nativeFiveSlotNavigationKeepsGalleryFixedAndClearsAfterLogout() {
@@ -2185,7 +2210,7 @@ class DriveAppTest {
     }
 
     @Test fun cleartextRequiresExplicitOptIn() {
-        compose.setContent { XDriveTheme { DriveApp(controller) } }
+        compose.setContent { XDriveTheme { DriveApp(controller, galleryFirstOnLogin = false) } }
         compose.onNodeWithTag("server").performTextInput("http://drive.example:1080")
         compose.onNodeWithTag("username").performTextInput("owner")
         compose.onNodeWithTag("password").performTextInput("fixture-password")
@@ -2204,7 +2229,7 @@ class DriveAppTest {
     }
 
     @Test fun unifiedLoginValidatesLanAndClearsStaleOriginSettings() {
-        compose.setContent { XDriveTheme { DriveApp(controller) } }
+        compose.setContent { XDriveTheme { DriveApp(controller, galleryFirstOnLogin = false) } }
         compose.onNodeWithTag("server").performTextInput("https://drive.example")
         compose.onNodeWithTag("username").performTextInput("owner")
         compose.onNodeWithTag("password").performTextInput("fixture-password")

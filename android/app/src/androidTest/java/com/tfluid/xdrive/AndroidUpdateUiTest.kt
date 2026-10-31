@@ -29,7 +29,7 @@ class AndroidUpdateUiTest {
         override suspend fun check(source: UpdateSource, installedCode: Long): AndroidUpdate? { checkedSource = source; return available }
     })
     @After fun cleanup() { updates.close(); drive.close(); scope.cancel() }
-    private fun start() { compose.setContent { XDriveTheme { DriveApp(drive, updates, openUpdate = { opened = it; browserWorks }) } } }
+    private fun start() { compose.setContent { XDriveTheme { DriveApp(drive, updates, openUpdate = { opened = it; browserWorks }, galleryFirstOnLogin = false) } } }
     private fun openUpdates() {
         compose.onNodeWithContentDescription("账户菜单").performClick()
         compose.onNodeWithText("检查更新").performClick()

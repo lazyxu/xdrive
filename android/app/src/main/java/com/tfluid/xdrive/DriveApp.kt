@@ -74,7 +74,7 @@ internal fun nativePhotoBackupCanConfirm(
 fun DriveApp(controller: DriveController, updates: UpdateController? = null, openUpdate: (String) -> Boolean = { false },
     initialFilesView: FileViewMode = FileViewMode.LIST, saveFilesView: (FileViewMode) -> Unit = {},
     onDownload: ((DriveNode) -> Unit)? = null,
-    onUpload: (() -> Unit)? = null) {
+    onUpload: (() -> Unit)? = null, galleryFirstOnLogin: Boolean = true) {
     val state by controller.state.collectAsStateWithLifecycle()
     val androidContext = LocalContext.current
     // Private selection is scoped to this authenticated login epoch; no URI
@@ -147,8 +147,8 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     }
     // Only the first fully verified Owner root of this login lands in Gallery.
     // On reselecting Files, or on an incomplete/failed login, never hijack it.
-    var galleryFirstPending by remember(state.nativeUiSessionId, nativeAuthenticated) {
-        mutableStateOf(state.nativeUiSessionId > 0 && nativeAuthenticated)
+    var galleryFirstPending by remember(state.nativeUiSessionId, nativeAuthenticated, galleryFirstOnLogin) {
+        mutableStateOf(galleryFirstOnLogin && state.nativeUiSessionId > 0 && nativeAuthenticated)
     }
     var launcherSearch by remember(state.nativeUiSessionId) { mutableStateOf("") }
     var dynamicPickerOpen by remember(state.nativeUiSessionId, nativeAuthenticated) {

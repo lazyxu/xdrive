@@ -58,7 +58,7 @@ class VisualParityTest {
             CompositionLocalProvider(LocalDensity provides Density(density.density, if (narrow) 1.5f else 1f)) {
                 XDriveTheme(dark) {
                     Box(if (narrow) Modifier.width(280.dp) else if (landscape && compactViewport) Modifier.width(640.dp).height(300.dp) else Modifier) {
-                        DriveApp(controller)
+                        DriveApp(controller, galleryFirstOnLogin = false)
                     }
                 }
             }
