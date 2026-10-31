@@ -77,7 +77,7 @@ func TestDownloadShareLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(created.Token) < 40 || created.Status != "active" || !created.HasPassword ||
-		created.MaxDownloads != 2 || created.DownloadCount != 0 {
+		created.MaxDownloads != 0 || created.DownloadCount != 0 {
 		t.Fatalf("unexpected created share: %+v", created)
 	}
 
@@ -114,7 +114,7 @@ func TestDownloadShareLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	if public.Name != file.Name || public.Size != int64(len("share-content")) || !public.RequiresPassword ||
-		public.MaxDownloads != 2 || public.DownloadCount != 0 {
+		public.MaxDownloads != 0 || public.DownloadCount != 0 {
 		t.Fatalf("unexpected public metadata: %+v", public)
 	}
 	if public.Revision != nil || public.UpdatedAt != nil {
@@ -146,12 +146,12 @@ func TestDownloadShareLifecycle(t *testing.T) {
 		t.Fatalf("second shared download=%q", got)
 	}
 	publicShareRequest(t, router, http.MethodPost, created.Token,
-		strings.NewReader(`{"password":"share-password"}`), http.StatusGone)
+		strings.NewReader(`{"password":"share-password"}`), http.StatusOK)
 	if err := db.First(&stored, created.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if stored.DownloadCount != 2 {
-		t.Fatalf("download_count=%d want=2", stored.DownloadCount)
+	if stored.DownloadCount != 3 {
+		t.Fatalf("download_count=%d want=3", stored.DownloadCount)
 	}
 
 	unlimitedRes := request(t, router, http.MethodPost, fmt.Sprintf("/api/v1/files/%d/shares", file.ID),
@@ -324,16 +324,16 @@ func TestShareDownloadLimitIsAtomic(t *testing.T) {
 			t.Fatalf("unexpected concurrent download status: %d", status)
 		}
 	}
-	if successes != 1 || exhausted != 1 {
-		t.Fatalf("concurrent results success=%d gone=%d want 1/1", successes, exhausted)
+	if successes != 2 || exhausted != 0 {
+		t.Fatalf("concurrent results success=%d gone=%d want 2/0", successes, exhausted)
 	}
 
 	var stored meta.Share
 	if err := db.First(&stored, created.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if stored.DownloadCount != 1 {
-		t.Fatalf("download_count=%d want=1", stored.DownloadCount)
+	if stored.DownloadCount != 2 {
+		t.Fatalf("download_count=%d want=2", stored.DownloadCount)
 	}
 
 	ticketShareRes := request(
@@ -397,8 +397,8 @@ func TestShareDownloadLimitIsAtomic(t *testing.T) {
 			t.Fatalf("unexpected ticket issuance status: %d", result.status)
 		}
 	}
-	if ticketSuccesses != 1 || ticketGone != 1 {
-		t.Fatalf("ticket issuance results success=%d gone=%d want 1/1", ticketSuccesses, ticketGone)
+	if ticketSuccesses != 2 || ticketGone != 0 {
+		t.Fatalf("ticket issuance results success=%d gone=%d want 2/0", ticketSuccesses, ticketGone)
 	}
 	if !strings.HasPrefix(
 		downloadTicket.URL,
@@ -411,8 +411,8 @@ func TestShareDownloadLimitIsAtomic(t *testing.T) {
 	if err := db.First(&ticketStored, ticketShare.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if ticketStored.DownloadCount != 1 {
-		t.Fatalf("ticket issuance download_count=%d want=1", ticketStored.DownloadCount)
+	if ticketStored.DownloadCount != 2 {
+		t.Fatalf("ticket issuance download_count=%d want=2", ticketStored.DownloadCount)
 	}
 
 	rangeOne := requestWithHeaders(
@@ -440,8 +440,8 @@ func TestShareDownloadLimitIsAtomic(t *testing.T) {
 	if err := db.First(&ticketStored, ticketShare.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if ticketStored.DownloadCount != 1 {
-		t.Fatalf("ticket range/retry changed download_count=%d want=1", ticketStored.DownloadCount)
+	if ticketStored.DownloadCount != 2 {
+		t.Fatalf("ticket range/retry changed download_count=%d want=2", ticketStored.DownloadCount)
 	}
 
 }

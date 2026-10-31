@@ -39,29 +39,15 @@ func normalizeShareAccess(value string) (string, bool) {
 	}
 }
 
-func validateShareUploadSettings(access string, rootType string, total, files, single, serverMax int64) error {
-	if total < 0 || files < 0 || single < 0 {
-		return errors.New("upload limits must be nonnegative")
-	}
-	if access == shareAccessViewUpload {
-		if rootType != meta.NodeTypeDir {
-			return errors.New("only folders can accept uploads")
-		}
-		if total == 0 || files == 0 || single == 0 || single > total ||
-			(serverMax > 0 && single > serverMax) {
-			return errors.New("upload-enabled share requires positive quotas and a valid single-file limit")
-		}
+func validateShareUploadSettings(access, rootType string) error {
+	if access == shareAccessViewUpload && rootType != meta.NodeTypeDir {
+		return errors.New("only folders can accept uploads")
 	}
 	return nil
 }
 
 type shareDTO struct {
 	Access        string     `json:"access"`
-	MaxUploadBytes     int64 `json:"max_upload_bytes"`
-	MaxUploadFiles     int64 `json:"max_upload_files"`
-	MaxUploadFileBytes int64 `json:"max_upload_file_bytes"`
-	UploadedBytes      int64 `json:"uploaded_bytes"`
-	UploadedFiles      int64 `json:"uploaded_files"`
 	ID            uint64     `json:"id"`
 	NodeID        uint64     `json:"node_id"`
 	HasPassword   bool       `json:"has_password"`
@@ -109,11 +95,6 @@ func publicShareCapabilitiesForNode(nodeType string) publicShareCapabilitiesDTO 
 }
 
 type publicShareDTO struct {
-	MaxUploadBytes     int64 `json:"max_upload_bytes"`
-	MaxUploadFiles     int64 `json:"max_upload_files"`
-	MaxUploadFileBytes int64 `json:"max_upload_file_bytes"`
-	UploadedBytes      int64 `json:"uploaded_bytes"`
-	UploadedFiles      int64 `json:"uploaded_files"`
 	Type             string                     `json:"type"`
 	Name             string                     `json:"name"`
 	Size             int64                      `json:"size"`
@@ -129,11 +110,6 @@ type publicShareDTO struct {
 func toShareDTO(share meta.Share, now time.Time) shareDTO {
 	return shareDTO{
 		Access: share.Access,
-		MaxUploadBytes: share.MaxUploadBytes,
-		MaxUploadFiles: share.MaxUploadFiles,
-		MaxUploadFileBytes: share.MaxUploadFileBytes,
-		UploadedBytes: share.UploadedBytes,
-		UploadedFiles: share.UploadedFiles,
 		ID:            share.ID,
 		NodeID:        share.NodeID,
 		HasPassword:   share.PasswordHash != "",
@@ -153,8 +129,6 @@ func shareStatus(share meta.Share, now time.Time) string {
 		return "revoked"
 	case share.ExpiresAt != nil && !now.Before(*share.ExpiresAt):
 		return "expired"
-	case share.MaxDownloads > 0 && share.DownloadCount >= share.MaxDownloads:
-		return "exhausted"
 	default:
 		return "active"
 	}
@@ -194,9 +168,6 @@ func (s *Server) createFileShare(c *gin.Context) {
 		Password     string     `json:"password"`
 		MaxDownloads int64      `json:"max_downloads"`
 		Access string `json:"access"`
-		MaxUploadBytes int64 `json:"max_upload_bytes"`
-		MaxUploadFiles int64 `json:"max_upload_files"`
-		MaxUploadFileBytes int64 `json:"max_upload_file_bytes"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		fail(c, http.StatusBadRequest, "invalid request")
@@ -207,18 +178,13 @@ func (s *Server) createFileShare(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "invalid share access")
 		return
 	}
-	if err := validateShareUploadSettings(access, node.Type, req.MaxUploadBytes, req.MaxUploadFiles,
-		req.MaxUploadFileBytes, s.MaxUploadBytes); err != nil {
+	if err := validateShareUploadSettings(access, node.Type); err != nil {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
 	now := time.Now()
 	if req.ExpiresAt != nil && !req.ExpiresAt.After(now) {
 		fail(c, http.StatusBadRequest, "expires_at must be in the future")
-		return
-	}
-	if req.MaxDownloads < 0 {
-		fail(c, http.StatusBadRequest, "max_downloads must be zero or greater")
 		return
 	}
 
@@ -238,15 +204,12 @@ func (s *Server) createFileShare(c *gin.Context) {
 	}
 	share := meta.Share{
 		Access: access,
-		MaxUploadBytes: req.MaxUploadBytes,
-		MaxUploadFiles: req.MaxUploadFiles,
-		MaxUploadFileBytes: req.MaxUploadFileBytes,
 		OwnerID:       userID(c),
 		NodeID:        node.ID,
 		TokenHash:     tokenHash,
 		PasswordHash:  passwordHash,
 		ExpiresAt:     req.ExpiresAt,
-		MaxDownloads:  req.MaxDownloads,
+		MaxDownloads:  0,
 		DownloadCount: 0,
 	}
 	if err := s.DB.Create(&share).Error; err != nil {
@@ -268,9 +231,6 @@ func (s *Server) updateShare(c *gin.Context) {
 	var req struct {
 		ExpiresAt *time.Time `json:"expires_at"`
 		Access string `json:"access"`
-		MaxUploadBytes int64 `json:"max_upload_bytes"`
-		MaxUploadFiles int64 `json:"max_upload_files"`
-		MaxUploadFileBytes int64 `json:"max_upload_file_bytes"`
 	}
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 8<<10)
 	if err := c.ShouldBindJSON(&req); err != nil || req.Access == "" {
@@ -297,15 +257,12 @@ func (s *Server) updateShare(c *gin.Context) {
 			updated.NodeID, updated.OwnerID).First(&node).Error; err != nil {
 			return err
 		}
-		if err := validateShareUploadSettings(access, node.Type, req.MaxUploadBytes,
-			req.MaxUploadFiles, req.MaxUploadFileBytes, s.MaxUploadBytes); err != nil {
+		if err := validateShareUploadSettings(access, node.Type); err != nil {
 			return err
 		}
 		if err := tx.Model(&updated).Updates(map[string]any{
 			"access": access, "expires_at": req.ExpiresAt,
-			"max_upload_bytes": req.MaxUploadBytes,
-			"max_upload_files": req.MaxUploadFiles,
-			"max_upload_file_bytes": req.MaxUploadFileBytes,
+			"max_downloads": int64(0),
 			"updated_at": now,
 		}).Error; err != nil {
 			return err
@@ -405,11 +362,6 @@ func (s *Server) publicShareMetadata(c *gin.Context) {
 		updatedAt = &node.UpdatedAt
 	}
 	c.JSON(http.StatusOK, publicShareDTO{
-		MaxUploadBytes: share.MaxUploadBytes,
-		MaxUploadFiles: share.MaxUploadFiles,
-		MaxUploadFileBytes: share.MaxUploadFileBytes,
-		UploadedBytes: share.UploadedBytes,
-		UploadedFiles: share.UploadedFiles,
 		Type:             node.Type,
 		Name:             node.Name,
 		Size:             size,

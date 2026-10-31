@@ -252,12 +252,6 @@ func (SystemMaintenanceRun) TableName() string {
 
 type Share struct {
 	Access        string     `gorm:"size:16;not null;default:'read_only'"`
-	MaxUploadBytes     int64 `gorm:"not null;default:0"`
-	MaxUploadFiles     int64 `gorm:"not null;default:0"`
-	MaxUploadFileBytes int64 `gorm:"not null;default:0"`
-	UploadedBytes      int64 `gorm:"not null;default:0"`
-	UploadedFiles      int64 `gorm:"not null;default:0"`
-	CreatedDirectories int64 `gorm:"not null;default:0"`
 	ID            uint64     `gorm:"primaryKey"`
 	OwnerID       uint64     `gorm:"not null;index;index:idx_xd_shares_owner_node"`
 	NodeID        uint64     `gorm:"not null;index;index:idx_xd_shares_owner_node"`
