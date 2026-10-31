@@ -30,7 +30,18 @@ struct XDriveNativeRouteChecks {
         store.save(scopeHash: ownerB, selectedTab: "dynamic", gallerySource: "map",
                    activeDynamic: "storage", recentDynamic: ["storage"])
         require(store.restore(scopeHash: ownerB)?.selectedTab == "gallery", "unimplemented dynamic fallback")
-        require(store.restore(scopeHash: ownerB)?.gallerySource == "local", "map placeholder fallback")
+        require(store.restore(scopeHash: ownerB)?.gallerySource == "map", "native map is now a supported Gallery source")
+
+        // Gallery map is an implemented native MapKit route, not a placeholder;
+        // it is still only a navigation hint, never a persisted GPS or asset ID.
+        store.save(scopeHash: ownerB, selectedTab: "gallery", gallerySource: "map",
+                   activeDynamic: nil, recentDynamic: [])
+        require(store.restore(scopeHash: ownerB)?.gallerySource == "map",
+                "restores verified Owner Gallery map route")
+        store.save(scopeHash: ownerB, selectedTab: "gallery", gallerySource: "missing",
+                   activeDynamic: nil, recentDynamic: [])
+        require(store.restore(scopeHash: ownerB)?.gallerySource == "local",
+                "unknown Gallery sources still fail closed")
 
         store.save(scopeHash: ownerB, selectedTab: "files", gallerySource: "cloud",
                    activeDynamic: nil, recentDynamic: [])
