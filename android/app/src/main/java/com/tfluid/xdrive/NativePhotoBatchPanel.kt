@@ -52,7 +52,8 @@ internal fun NativePhotoBatchControls(
     var confirmation by remember(state.nativeUiSessionId) {
         mutableStateOf<NativePhotoBatchConsent?>(null)
     }
-    val busy = state.fileUploadActive
+    val busy = state.nativePhotoBatchRunning
+    val otherWriterBusy = state.fileUploadActive && !busy
     val eligible = state.canStartNativePhotoForeground()
     val nextCursor = if (state.nativePhotoBatchScanned > 0 &&
         !state.nativePhotoBatchExhausted)
@@ -103,6 +104,10 @@ internal fun NativePhotoBatchControls(
                             modifier = Modifier.testTag("native-photo-batch-progress"))
                         if (state.nativePhotoBatchExhausted)
                             Text("本次分页已到末尾，不代表其他设备或云端原件已经完成备份。")
+                    }
+                    if (otherWriterBusy) {
+                        Text("已有其他手动上传正在运行；请返回该操作处理，不会在此处停止或重复启动。",
+                            modifier = Modifier.testTag("native-photo-batch-other-writer"))
                     }
                     if (busy) {
                         Text("正在处理本次授权的原件；停止可能使正在发送的原件进入待核对状态。",
