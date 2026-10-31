@@ -4,7 +4,6 @@ import type {
   XDriveWebAppBrowseContext,
   XDriveWebAppRoute,
 } from '../../ui/shared/src'
-import { xDriveWebDefaultLandingRoute } from './mobileDefaultLandingRoute'
 import {
   xDriveParseWebAppHash,
   xDriveWebAppHash,
@@ -113,9 +112,21 @@ function xDriveIsCompactWebViewport(): boolean {
 }
 
 function currentRoute(): XDriveWebAppRoute {
-  const hash = window.location.hash
-  return xDriveParseWebAppHash(hash) ??
-    xDriveWebDefaultLandingRoute(hash, xDriveIsCompactWebViewport())
+  return xDriveParseWebAppHash(window.location.hash) ?? { app: 'overview', params: {} }
+}
+
+/** Only a mobile bare-root startup, never a deep link or history traversal,
+ * may prefer Gallery over the canonical Web Home fallback. */
+export function xDriveWebMobileColdLanding(
+  hash: string,
+  compactWeb: boolean,
+): XDriveWebAppRoute | null {
+  return hash === '' && compactWeb ? { app: 'gallery', params: {} } : null
+}
+
+function initialRootRoute(): XDriveWebAppRoute {
+  return xDriveWebMobileColdLanding(window.location.hash, xDriveIsCompactWebViewport())
+    ?? currentRoute()
 }
 
 function sessionKey(id: string) {
@@ -209,7 +220,7 @@ export function xDriveReadWebAppBrowseSession(id?: string) {
 export function useXDriveWebAppRuntime(
   guardBrowserNavigation?: (from: XDriveWebAppRoute, to: XDriveWebAppRoute) => boolean,
 ) {
-  const [route, setRoute] = useState<XDriveWebAppRoute>(() => currentRoute())
+  const [route, setRoute] = useState<XDriveWebAppRoute>(() => initialRootRoute())
   const routeRef = useRef(route)
   // The real committed route is authoritative, including history/back,
   // deep links and deferred admin navigation. Never preempt for an unapproved
@@ -258,7 +269,7 @@ export function useXDriveWebAppRuntime(
 
   useEffect(() => {
     if (!xDriveParseWebAppHash(window.location.hash)) {
-      const landing = currentRoute()
+      const landing = initialRootRoute()
       window.history.replaceState({ xdriveWebApp: true }, '', xDriveWebAppHash(landing))
       routeRef.current = landing
       setRoute(landing)
