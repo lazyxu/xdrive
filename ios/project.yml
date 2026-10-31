@@ -17,6 +17,17 @@ targets:
     info:
       path: XDriveIOS/Info.plist
       properties:
+        # Rotation is an App entitlement of the generated Info.plist, not
+        # something SwiftUI size classes can enable on their own.
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        "UISupportedInterfaceOrientations~ipad":
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
         CFBundleDisplayName: xDrive
         UILaunchScreen: {}
         LSRequiresIPhoneOS: true
