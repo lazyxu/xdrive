@@ -88,6 +88,10 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     var backupSelection by remember(state.nativeUiSessionId, state.server, state.username) {
         mutableStateOf<NativeLocalMedia?>(null)
     }
+    // Native cloud-gallery focus, memory-only for one verified Owner/session.
+    var cloudViewerReturn by remember(state.nativeUiSessionId, state.server, state.username) {
+        mutableStateOf<NativeCloudViewerReturnAnchor?>(null)
+    }
     var verifiedBackupOriginal by remember(state.nativeUiSessionId, state.server, state.username) {
         mutableStateOf<NativePhotoOriginalCandidate?>(null)
     }
@@ -355,6 +359,7 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     }
     fun selectNativeTab(tab: NativeHomeTab) {
         if (!nativeAuthenticated || photoViewerOpen) return
+        if (tab != NativeHomeTab.GALLERY) cloudViewerReturn = null
         galleryFirstPending = false // Explicit user choice always wins.
         pendingRoutes = pendingRoutes.afterExplicitTab(tab)
         when (tab) {
@@ -663,6 +668,7 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                                     nativeNavigation.gallerySource, mapOriginSource)
                                 pendingRoutes = pendingRoutes.copy(galleryMap = true)
                             } else pendingRoutes = pendingRoutes.afterGallerySource(source)
+                            if (source != NativeGallerySource.CLOUD) cloudViewerReturn = null
                             nativeNavigation = nativeNavigation.copy(gallerySource = source)
                         }
                         if (nativeNavigation.gallerySource == NativeGallerySource.LOCAL ||
@@ -702,7 +708,24 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                                         GalleryCollections(state, controller, galleryThumbnails)
                                     }
                                 } else gallerySaveable.SaveableStateProvider(galleryStateKey) {
-                                    Gallery(state, controller, galleryThumbnails)
+                                    Gallery(state, controller, galleryThumbnails,
+                                        returnAnchor = cloudViewerReturn,
+                                        onViewerOpened = { opened ->
+                                            if (controller.state.value.galleryViewer == opened &&
+                                                state.screen == Screen.GALLERY &&
+                                                nativeNavigation.gallerySource ==
+                                                    NativeGallerySource.CLOUD) {
+                                                cloudViewerReturn = NativeCloudViewerReturnAnchor(
+                                                    NativeCloudViewerKey(opened.node.id,
+                                                        opened.node.revision),
+                                                    state.gallerySelectedAlbum?.id,
+                                                    state.gallerySearchQuery,
+                                                    state.galleryMediaKind,
+                                                    state.gallerySortBy, state.gallerySortDir,
+                                                    state.galleryJumpEpoch)
+                                            }
+                                        },
+                                        onReturnResolved = { cloudViewerReturn = null })
                                 }
                         }
                     }

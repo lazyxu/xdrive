@@ -1559,6 +1559,16 @@ class DriveAppTest {
         compose.onNodeWithTag("gallery-photo-viewer").assertExists()
         compose.onNodeWithTag("gallery-photo-close").performClick()
         compose.onNodeWithTag("gallery-wall").assertExists()
+        // The Viewer's focus target is retired across a Compose frame.
+        // Wait for actual source-tile focus (not merely a visible tile),
+        // while failing deterministically if the Owner focus never returns.
+        compose.waitUntil(timeoutMillis = 5_000) {
+            runCatching {
+                compose.onNodeWithTag("gallery-item-40", useUnmergedTree = true)
+                    .assertIsFocused()
+            }.isSuccess
+        }
+        compose.onNodeWithTag("gallery-item-40", useUnmergedTree = true).assertIsFocused()
         compose.runOnIdle {
             org.junit.Assert.assertNull(controller.state.value.galleryViewer)
             org.junit.Assert.assertEquals(Screen.GALLERY, controller.state.value.screen)
