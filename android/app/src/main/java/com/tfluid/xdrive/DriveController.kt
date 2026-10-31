@@ -38,6 +38,14 @@ data class DriveState(
     val username: String = "",
     /** Ephemeral authentication epoch: never reuse a prior Owner's native navigation. */
     val nativeUiSessionId: Long = 0,
+    /** Foreground photo progress only; neither cursor nor success is persisted
+     * as a backup receipt. Owner/session changes reset these fields. */
+    val nativePhotoDeviceVerified: Boolean = false,
+    val nativePhotoBatchScanned: Int = 0,
+    val nativePhotoBatchUploaded: Int = 0,
+    val nativePhotoBatchAlreadyVerified: Int = 0,
+    val nativePhotoBatchNextAfterId: Long = 0,
+    val nativePhotoBatchExhausted: Boolean = false,
     val loading: Boolean = false,
     /** True only for an explicitly cancellable Owner GET, not writes or SAF. */
     val discardableReadInFlight: Boolean = false,
@@ -178,6 +186,18 @@ internal fun DriveState.canNavigateFiles(): Boolean =
     screen == Screen.FILES && (!loading || discardableReadInFlight) &&
         !hasActiveNativeTransfer() &&
         destinationKind == null && !browseBatchWriteAttempted
+
+/** Pure gate: a live Owner's Gallery may hold the one global native writer.
+ * No automatically scheduled task or implicit permission grant is allowed. */
+internal fun DriveState.canStartNativePhotoForeground(): Boolean =
+    screen == Screen.GALLERY && nativeUiSessionId > 0 && !loading &&
+        !hasActiveNativeTransfer() && destinationKind == null &&
+        !galleryMapOpen && galleryViewer == null &&
+        gallerySelected == null && !gallerySelectionMode &&
+        !galleryMetadataWriteAttempted && !galleryAlbumCreateAttempted &&
+        !galleryAlbumEditAttempted && !browseBatchWriteAttempted &&
+        fileUploadPickerParent == null && fileExportPending == null &&
+        filesPdfViewer == null && filesAudioViewer == null
 
 /** A lost batch DELETE ACK is resolved by a fresh GET, never by replaying DELETE. */
 internal fun DriveState.canReconcileBatchBrowse(): Boolean =
@@ -1198,6 +1218,118 @@ class DriveController(
                     fileUploadBytes = original.bytes)
                 // Gallery isn't modified; only a later Owner GET may show
                 // a Server original. No invented "backed up" local badge.
+            }
+        }
+    }
+
+    /**
+     * Explicit Owner action: one Android identity-only registration, or a
+     * fresh read-only /devices/self proof of an existing private credential.
+     * Never background-enroll or retry an ambiguous registration POST.
+     */
+    internal fun enrollNativePhotoDeviceExplicit(
+        context: Context, displayName: String, clientVersion: String,
+    ) {
+        val initial = state.value
+        val service = api ?: return
+        if (!initial.canStartNativePhotoForeground() ||
+            session == null || !initial.server.startsWith("https://")) return
+        val origin = initial.server
+        val username = initial.username
+        request { ticket ->
+            val sameOwner = {
+                ticket == generation && state.value.nativeUiSessionId == initial.nativeUiSessionId &&
+                    state.value.server == origin && state.value.username == username &&
+                    state.value.screen == Screen.GALLERY && session != null
+            }
+            val token = session?.accessToken ?: throw CancellationException()
+            val privateStore = AndroidPhotoDeviceCredentialStore(context)
+            val proof = NativePhotoOwnerPreflight.verify(
+                service, origin, token, username, sameOwner)
+            checkCurrent(ticket)
+            val existing = privateStore.readFor(proof)
+            if (existing != null) {
+                check(privateStore.verifyExisting(
+                    service, origin, token, username, sameOwner) != null) {
+                    "Existing Android device identity could not be verified"
+                }
+            } else {
+                // Even another Owner's retained identity is not a blank slot.
+                // A lost POST ACK cannot be silently repeated.
+                check(!privateStore.hasAnyRegistration()) {
+                    "Existing device enrollment requires explicit reset or revoke"
+                }
+                val (verified, enrolled) = NativePhotoDeviceEnrollment.register(
+                    service, origin, token, username, displayName, clientVersion,
+                    sameOwner)
+                checkCurrent(ticket)
+                privateStore.saveVerified(verified, enrolled)
+            }
+            checkCurrent(ticket)
+            mutableState.value = state.value.copy(
+                nativePhotoDeviceVerified = true, error = null)
+        }
+    }
+
+    /**
+     * One bounded explicit foreground increment, not Android WorkManager.
+     * MediaStore permission is checked again inside the native reader and
+     * the same authenticated Owner identity/UploadSession is reused.
+     */
+    internal fun backupNativePhotoNextForegroundBatch(
+        context: Context, startAfterId: Long = 0, maxUploads: Int = 8,
+    ) {
+        val initial = state.value
+        val service = api ?: return
+        if (!initial.canStartNativePhotoForeground() || session == null ||
+            !initial.server.startsWith("https://") ||
+            !hasNativeFullPhotoVideoReadGrant(context) ||
+            startAfterId < 0 || maxUploads !in 1..16) return
+        val origin = initial.server
+        val username = initial.username
+        mutableState.value = initial.copy(
+            fileUploadActive = true, fileUploadCommitted = false,
+            fileUploadBytes = 0, fileUploadTotal = 0,
+            nativePhotoBatchScanned = 0, nativePhotoBatchUploaded = 0,
+            nativePhotoBatchAlreadyVerified = 0,
+            nativePhotoBatchNextAfterId = startAfterId,
+            nativePhotoBatchExhausted = false)
+        request(isFileUpload = true) { ticket ->
+            val sameOwner = {
+                ticket == generation && state.value.nativeUiSessionId == initial.nativeUiSessionId &&
+                    state.value.server == origin && state.value.username == username &&
+                    state.value.screen == Screen.GALLERY && session != null
+            }
+            // No automatic 401 re-entry: restarting a batch after a lost
+            // finalize ACK must go through the journal's read-only gate.
+            val token = session?.accessToken ?: throw CancellationException()
+            val index = AndroidPhotoVerifiedIndex(context)
+            try {
+                val progress = NativePhotoForegroundBatch(
+                    context, AndroidPhotoDeviceCredentialStore(context),
+                    AndroidPhotoBackupIntentStore(context), index)
+                    .run(service, token, origin, username, sameOwner,
+                        startAfterId = startAfterId, maxUploads = maxUploads,
+                        onProgress = { status ->
+                            if (sameOwner()) mutableState.value = state.value.copy(
+                                nativePhotoBatchScanned = status.scanned,
+                                nativePhotoBatchUploaded = status.uploaded,
+                                nativePhotoBatchAlreadyVerified = status.alreadyVerified,
+                                nativePhotoBatchNextAfterId = status.nextAfterId,
+                                nativePhotoBatchExhausted = false)
+                        })
+                checkCurrent(ticket)
+                mutableState.value = state.value.copy(
+                    fileUploadActive = false,
+                    fileUploadCommitted = progress.uploaded > 0,
+                    nativePhotoBatchScanned = progress.scanned,
+                    nativePhotoBatchUploaded = progress.uploaded,
+                    nativePhotoBatchAlreadyVerified = progress.alreadyVerified,
+                    nativePhotoBatchNextAfterId = progress.nextAfterId,
+                    nativePhotoBatchExhausted = progress.inventoryExhausted,
+                    error = null)
+            } finally {
+                index.close()
             }
         }
     }
