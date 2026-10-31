@@ -58,8 +58,15 @@ async function flush() {
   await Promise.resolve()
 }
 
-function mountBootstrap(pendingHistory) {
+function mountBootstrap(pendingHistory, {
+  draft = { server: '', lanIp: '', username: '' },
+  manualEdits = false,
+} = {}) {
   const noop = () => {}
+  // The authentic App bootstrap reads these two renderer-lifetime bindings.
+  // Model both explicitly instead of running a partial effect with undeclared
+  // globals, while keeping the tested callback sourced from App.tsx.
+  const loginDraftUserEditedRef = { current: manualEdits }
   const noSubscription = () => noop
   let historyListener = null
   let latestHistory = null
@@ -92,6 +99,8 @@ function mountBootstrap(pendingHistory) {
       latestHistory = value
       historyWrites.push(value.profiles[0]?.server || '')
     },
+    initialLoginDraft: draft,
+    loginDraftUserEditedRef,
     setServer: (value) => { profileInputs.push(['server', value]) },
     setConnectionRoute: noop,
     routeOriginRef: { current: '' },
@@ -116,6 +125,7 @@ function mountBootstrap(pendingHistory) {
     latest: () => latestHistory,
     writes: historyWrites,
     inputs: profileInputs,
+    markUserEdited: () => { loginDraftUserEditedRef.current = true },
     cleanup,
   }
 }
@@ -172,4 +182,45 @@ test('Desktop first login history snapshot still populates form when no IPC upda
   } finally {
     renderer.cleanup()
   }
+})
+
+test('Desktop failed first-login draft is not overwritten by older saved success history', async () => {
+  const pendingOld = deferred()
+  const draft = { server: 'https://typed.example', lanIp: '192.168.2.4', username: 'typed-user' }
+  const renderer = mountBootstrap(pendingOld, { draft })
+  try {
+    pendingOld.resolve(oldHistory)
+    await flush()
+    assert.deepEqual(renderer.writes, ['https://old.example'],
+      'saved history remains accessible for account selection')
+    assert.deepEqual(renderer.inputs, [],
+      'non-matching successful profile must not replace a failed first-login draft')
+  } finally { renderer.cleanup() }
+})
+
+test('Desktop user edits after mount fence late initial login history inputs', async () => {
+  const pendingOld = deferred()
+  const renderer = mountBootstrap(pendingOld)
+  try {
+    renderer.markUserEdited()
+    pendingOld.resolve(oldHistory)
+    await flush()
+    assert.deepEqual(renderer.writes, ['https://old.example'])
+    assert.deepEqual(renderer.inputs, [],
+      'asynchronous history must not replace a newer manually entered login')
+  } finally { renderer.cleanup() }
+})
+
+test('Desktop matching stored login draft receives saved options without replacing typed server or username', async () => {
+  const pendingOld = deferred()
+  const draft = { server: 'https://old.example', lanIp: '', username: 'account-a' }
+  const renderer = mountBootstrap(pendingOld, { draft })
+  try {
+    pendingOld.resolve(oldHistory)
+    await flush()
+    assert.deepEqual(renderer.writes, ['https://old.example'])
+    assert.deepEqual(renderer.inputs, [
+      ['mount', '/mnt/a'], ['remember', true], ['auto', true],
+    ], 'profile-scoped secure options are restored without touching draft fields')
+  } finally { renderer.cleanup() }
 })
