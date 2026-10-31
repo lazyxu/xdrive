@@ -4,6 +4,7 @@ import com.tfluid.xdrive.core.AuthSession
 import com.tfluid.xdrive.core.DriveNode
 import com.tfluid.xdrive.core.NativePhotoBackupScope
 import com.tfluid.xdrive.core.NodeRange
+import com.tfluid.xdrive.core.ServerAddress
 import com.tfluid.xdrive.core.XDriveService
 import java.io.File
 import java.io.IOException
@@ -16,7 +17,7 @@ import org.junit.Test
 /** Real staged bytes + a fake Go UploadSession and a durable in-memory checkpoint. */
 class NativePhotoIncrementalWriterTest {
     private val scope = NativePhotoBackupScope(
-        "https://drive.example", "instance-A", 42L, "owner", 1L, 1L)
+        ServerAddress.parse("https://drive.example").url, "instance-A", 42L, "owner", 1L, 1L)
     private val root = DriveNode(1, null, "", "dir", revision = 1)
     private val deviceId = "00000000-0000-4000-8000-000000000120"
 
@@ -111,7 +112,13 @@ class NativePhotoIncrementalWriterTest {
             assertEquals(NativePhotoIncrementalOutcome.UPLOADED, writer.uploadOne(
                 service, "owner-token", scope, deviceId, root, identity, original, { true }))
             assertEquals(1, service.calls)
-            assertEquals(NativePhotoBackupPhase.VERIFIED, journal.rows.single().phase)
+            // Journal entries are pruned only after SQLite stores the matching
+            // finalized Go Node ID/revision, Owner, SHA and version.
+            assertTrue(journal.rows.isEmpty())
+            val owner = NativePhotoBackupOwner(scope.origin, scope.serverInstanceId,
+                scope.ownerId, scope.username, scope.rootId, scope.rootRevision, deviceId)
+            assertNotNull(index.findVerified(owner, identity.assetKey,
+                identity.versionKey, identity.resource, original.sha256, original.bytes))
             assertEquals(NativePhotoIncrementalOutcome.ALREADY_VERIFIED, writer.uploadOne(
                 service, "owner-token", scope, deviceId, root, identity, original, { true }))
             assertEquals(1, service.calls)
@@ -162,6 +169,7 @@ class NativePhotoIncrementalWriterTest {
             assertEquals(NativePhotoIncrementalOutcome.ALREADY_VERIFIED, writer.uploadOne(
                 service, "owner-token", scope, deviceId, root, identity, original, { true }))
             assertEquals(1, service.calls)
+            assertTrue(journal.rows.isEmpty())
         }
     }
 
