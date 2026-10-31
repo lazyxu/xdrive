@@ -254,8 +254,16 @@ struct XDriveIOSNativeMediaGalleryReader {
         request.httpShouldHandleCookies = false
         let (bytes, response) = try await client.data(for: request)
         try Task.checkCancellation()
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200,
-              bytes.count <= 2 * 1_048_576,
+        guard let http = response as? HTTPURLResponse else {
+            throw XDriveIOSNativeMediaReadFailure.malformed
+        }
+        // Match the paginated Owner Reader: the map must distinguish
+        // revoked credentials (401/403) from missing image derivatives.
+        // Otherwise it cannot invalidate old pins and cover thumbnails.
+        guard http.statusCode == 200 else {
+            throw XDriveIOSNativeMediaReadFailure.response(http.statusCode)
+        }
+        guard bytes.count <= 2 * 1_048_576,
               let kind = http.value(forHTTPHeaderField: "Content-Type")?.lowercased(),
               ["image/jpeg", "image/png", "image/heic", "image/webp"]
                 .contains(where: { kind.hasPrefix($0) })

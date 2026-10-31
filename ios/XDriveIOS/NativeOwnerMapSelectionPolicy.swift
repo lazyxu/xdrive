@@ -29,6 +29,42 @@ enum XDriveIOSNativeOwnerMapSelectionPolicy {
         canonicalPlaceID(id) && currentlyVisibleIDs.contains(id)
     }
 
+    /// Camera movement revokes the click authority of the previous signed
+    /// Owner overview, even if its pins remain visible as inert map markers.
+    /// Never use a previous WGS84 viewport as a fresh PhotoAsset Range scope.
+    static func isSameViewport(
+        _ authorized: XDriveIOSNativeOwnerMapBounds,
+        current: XDriveIOSNativeOwnerMapBounds?
+    ) -> Bool {
+        guard let current,
+              XDriveIOSNativeOwnerMapOverviewPolicy.validBounds(authorized),
+              XDriveIOSNativeOwnerMapOverviewPolicy.validBounds(current)
+        else { return false }
+        return authorized == current
+    }
+
+    /// Choose a bounded number of canonical Owner GPS places for visual
+    /// photo covers. Keep SDK/aggregate identities out of the photo Reader,
+    /// prioritize the actual signed photo count, and reject duplicates.
+    static let maximumPhotoCovers = 12
+
+    static func prioritizedPhotoCovers(
+        _ places: [XDriveIOSNativeOwnerMapFacet]
+    ) -> [XDriveIOSNativeOwnerMapFacet] {
+        guard places.count <= XDriveIOSNativeOwnerMapOverviewPolicy.maximumCells else {
+            return []
+        }
+        let ids = places.map(\.id)
+        guard Set(ids).count == ids.count else { return [] }
+        return Array(places.filter { canOpenPhotoRange($0) }
+            .sorted {
+                if $0.item_count != $1.item_count {
+                    return $0.item_count > $1.item_count
+                }
+                return $0.id < $1.id
+            }.prefix(maximumPhotoCovers))
+    }
+
     /// Request WGS84 bounds directly from MapKit's current camera, never BD09.
     /// Full world is explicit; west > east denotes antimeridian crossing.
     static func viewportBounds(
