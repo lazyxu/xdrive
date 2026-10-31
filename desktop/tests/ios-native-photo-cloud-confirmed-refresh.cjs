@@ -79,3 +79,36 @@ test('native cloud originals recheck after scene return without treating BG writ
   assert.match(model, /XDriveIOSNativePhotoOwnerScope\.matches\(auth\.owner, expected\),\s*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expected\)/);
   assert.doesNotMatch(wall, /UploadSessionTransport|markUploaded|recordResult\(/);
 });
+
+test('read-only confirmed receipt reconciliation refreshes the exact Owner cloud wall once', () => {
+  const receiptReview = read('ios/XDriveIOS/NativePhotoReceiptReviewController.swift')
+  const backupScreen = read('ios/XDriveIOS/NativePhotoBackupScreen.swift')
+  const recovery = read('ios/XDriveIOS/PhotoBackupUncertainReceiptRecovery.swift')
+  const review = receiptReview.slice(receiptReview.indexOf('    func reconcile('),
+    receiptReview.indexOf('    func resumePausedBackground('))
+  const tally = review.indexOf('var tally = Summary()')
+  const signal = review.indexOf('self.confirmedReadback = ConfirmedReadback(')
+  const loop = review.indexOf('for record in snapshot.batch {')
+  const confirmed = review.indexOf('case .confirmed:')
+  const pending = review.indexOf('self.pending = latest.pending')
+  assert.ok(tally > 0 && signal > tally && signal < loop &&
+    confirmed > loop && pending > confirmed,
+    'signal from deferred, previously verified receipts, including a partial read-only review')
+  assert.match(review, /defer \{\s*if tally\.confirmed > 0, self\.generation == epoch,\s*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expected\)/)
+  assert.match(review, /case \.confirmed:\s*tally\.confirmed \+= 1/)
+  assert.match(receiptReview, /struct ConfirmedReadback: Equatable \{\s*let owner: XDriveNativeOwnerRoot\s*let id: UUID/)
+  assert.match(receiptReview, /func cancel\(\) \{[\s\S]*?generation = UUID\(\)[\s\S]*?confirmedReadback = nil/)
+  assert.match(review, /confirmedReadback = nil[\s\S]*?mode = \.reviewing/)
+  assert.match(recovery, /XDriveIOSNodeReceiptReadbackVerifier\(/)
+  assert.match(recovery, /let updated = try await ledger\.confirmReceipt\(/)
+  assert.match(recovery, /guard updated\.state == \.confirmed/)
+  assert.match(backupScreen, /\.onChange\(of: receipts\.confirmedReadback\) \{ readback in\s*guard let readback else \{ return \}[\s\S]*?controller\.signalConfirmedReceiptReadback\(\s*owner: readback\.owner, login: login\s*\)/)
+  const forward = controller.slice(controller.indexOf('    func signalConfirmedReceiptReadback('),
+    controller.indexOf('    func cancel()'))
+  assert.match(forward, /guard XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, owner\) else \{ return \}/)
+  assert.match(forward, /confirmedOriginalUpdate = ConfirmedOriginalUpdate\(owner: owner, id: UUID\(\)\)/)
+  assert.doesNotMatch(forward, /uploadPrepared|recordResult|reserveDue|UploadSession|URLSession/)
+  assert.match(gallery, /\.onChange\(of: confirmedOriginalUpdate\) \{ update in[\s\S]*?XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, update\.owner\)/)
+  assert.match(gallery, /if selected != nil \{\s*refreshAfterViewer = true\s*\} else \{\s*model\.reload\(login: login\)/)
+  assert.doesNotMatch(review, /uploadPrepared\(|uploadOnce\(|\.finalize\(|\.beginCreate\(/)
+})
