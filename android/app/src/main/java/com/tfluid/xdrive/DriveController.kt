@@ -1310,7 +1310,8 @@ class DriveController(
             val token = session?.accessToken ?: throw CancellationException()
             val index = AndroidPhotoVerifiedIndex(context)
             try {
-                val progress = NativePhotoForegroundBatch(
+                val progress = NativePhotoBatchExecution.foreground {
+                    NativePhotoForegroundBatch(
                     context, AndroidPhotoDeviceCredentialStore(context),
                     AndroidPhotoBackupIntentStore(context), index)
                     .run(service, token, origin, username, sameOwner,
@@ -1323,6 +1324,7 @@ class DriveController(
                                 nativePhotoBatchNextAfterId = status.nextAfterId,
                                 nativePhotoBatchExhausted = false)
                         })
+                }
                 checkCurrent(ticket)
                 mutableState.value = state.value.copy(
                     fileUploadActive = false,
