@@ -20,11 +20,14 @@ enum XDriveIOSPhotoAutoSchedulePolicy {
         let offset = current > Int.max / windowSize
             ? Int.max : current * windowSize
         let capacity = offset >= visibleTotal ? 0 : min(windowSize, visibleTotal - offset)
-        // When 20 new uploads stop midway, repeat this window next time.
-        // Ledger SHA/Owner verification skips real confirmed originals.
-        guard scanned >= capacity && uploaded < maxNewFiles else { return current }
+        // A cap of 20 only blocks advancement if it was hit before the
+        // final authorized slot. Otherwise the window is fully examined;
+        // replaying it delays the next 256 items by an entire interval.
+        // Ledger SHA/Owner verification still skips confirmed originals.
+        if offset >= visibleTotal { return 0 }
+        guard scanned == capacity, uploaded <= maxNewFiles,
+              uploaded <= scanned else { return current }
         let count = 1 + (visibleTotal - 1) / windowSize
-        if current >= count { return 0 }
         return (current + 1) % count
     }
 
@@ -53,7 +56,10 @@ enum XDriveIOSPhotoAutoSchedulePolicy {
         guard offset < visibleTotal else { return periodic }
         let capacity = min(windowSize, visibleTotal - offset)
         guard scanned <= capacity else { return periodic }
-        let reachedUploadCap = uploaded == maxNewFiles
+        // Upload-cap acceleration is only needed for an unfinished window.
+        // On the exact final slot, nextWindow advances to the next page;
+        // a final-page wrap returns to the normal user-selected interval.
+        let reachedUploadCap = uploaded == maxNewFiles && scanned < capacity
         // Do not accelerate the wrap to the first page after a full pass.
         let hasAnotherWindow = scanned == capacity &&
             followingWindow != 0 && followingWindow != currentWindow
