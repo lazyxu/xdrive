@@ -121,6 +121,12 @@ export function xDriveMobileRouteForSlot(
   }
 }
 
+/** L2 map focus belongs to the actual Gallery map panel, NOT every Places
+ * route: Places list is L1 and must keep the global five-slot navigation. */
+export function xDriveMobileMapFocused(route: XDriveWebAppRoute, mapPanelVisible: boolean): boolean {
+  return route.app === 'gallery' && route.params.section === 'places' && mapPanelVisible
+}
+
 /** The in-app arrow never jumps to a different bottom destination. */
 export function xDriveMobileFeatureParentRoute(route: XDriveWebAppRoute): XDriveWebAppRoute | null {
   switch (route.app) {

@@ -133,7 +133,10 @@ test('photo thumbnails, real Owner camera count and wall action remain on map', 
 test('immersive Places uses its own shared controls instead of duplicate Gallery chrome', () => {
   const gallery = read('ui/shared/src/mui/MediaGallery.tsx')
   const chrome = read('ui/shared/src/mui/MobileGalleryChrome.tsx')
-  assert.match(gallery, /mapImmersive=\{showPlacesIndex && placesPanels\.map\}/)
+  assert.match(gallery, /const mobileMapFocusActive = compactGallery && showPlacesIndex && placesPanels\.map/)
+  assert.match(gallery, /mapImmersive=\{mobileMapFocusActive\}/)
+  assert.match(gallery, /onMobileMapFocusChange=\{onMobileMapFocusChange\}/)
+  assert.match(gallery, /onMobileMapFocusChange\?\.\(mobileMapFocusActive\)/)
   assert.match(chrome, /mapImmersive\?: boolean/)
   assert.match(chrome, /!mapImmersive \? \(/)
   assert.match(chrome, /!mapImmersive && !selectionMode \? \(/)

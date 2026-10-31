@@ -100,7 +100,7 @@ import { useXDriveWebAppRuntime, xDriveCreateWebAppBrowseSession, xDriveClearPri
 import { xDriveWebAppRouteForWorkspaceKey, xDriveWebAppWorkspaceKey } from './webApps'
 import { XDriveMobileAllLauncher, XDriveMobileFiveSlotNavigation, XDriveMobileMinePage, xDriveBrowserMobileDestinations } from './MobileFiveSlotNavigation'
 import { xDriveMobileLauncherSections } from './mobileLauncherSections'
-import { xDriveInitialMobileNavigation, xDriveMobileFeatureParentRoute, xDriveMobileRouteForSlot, xDriveMobileSlotForRoute, xDriveRememberMobileNavigation, xDriveToggleMobileFavorite, xDriveSetMobileLauncherSearch } from './mobileFiveSlotState'
+import { xDriveInitialMobileNavigation, xDriveMobileFeatureParentRoute, xDriveMobileRouteForSlot, xDriveMobileSlotForRoute, xDriveRememberMobileNavigation, xDriveToggleMobileFavorite, xDriveSetMobileLauncherSearch, xDriveMobileMapFocused } from './mobileFiveSlotState'
 import type { XDriveMobileSlot } from './mobileFiveSlotState'
 import { createWebMediaGalleryDataSource } from './mediaGalleryAdapter'
 import { XDriveRoutedGalleryThumbnailBridge } from './routedGalleryThumbnailBridge'
@@ -1357,6 +1357,13 @@ function FileManager({
   const galleryUploadInputRef = useRef<HTMLInputElement>(null)
   const [galleryUploadRevision, setGalleryUploadRevision] = useState(0)
   const [mobileRecentOpen, setMobileRecentOpen] = useState(false)
+  // The Gallery alone owns Map/List presentation. Keep the browser shell's
+  // L2 focus hint Owner-scoped; do not infer Map solely from section='places'.
+  const [mobileMapVisibility, setMobileMapVisibility] = useState({ owner: '', visible: false })
+  const onMobileMapFocusChange = useCallback((visible: boolean) => {
+    setMobileMapVisibility(previous => previous.owner === mobileOwnerScope && previous.visible === visible
+      ? previous : { owner: mobileOwnerScope, visible })
+  }, [mobileOwnerScope])
   const [trashOpen, setTrashOpen] = useState(false)
   const [historyNode, setHistoryNode] = useState<Node | null>(null)
   const [shareNode, setShareNode] = useState<Node | null>(null)
@@ -2325,7 +2332,8 @@ function FileManager({
       launchWebApp({ app: 'files', params: { dir: mobileFolderParent.id } }, { replace: true })
     } else if (mobileParent) launchWebApp(mobileParent, { replace: true })
   }
-  const mobileMapFocused = route.app === 'gallery' && route.params.section === 'places'
+  const mobileMapFocused = xDriveMobileMapFocused(route,
+    mobileMapVisibility.owner === mobileOwnerScope && Boolean(mobileOwnerScope) && mobileMapVisibility.visible)
   const mobileRouteTitle = route.app === 'overview'
     ? route.params.section === 'mine' ? '我的' : '全部'
     : mobileMapFocused ? '地图' : xDriveWorkspaceRouteTitle(appView)
@@ -2729,6 +2737,7 @@ function FileManager({
               : undefined}
             mobileWebChrome
             source={gallerySource}
+            onMobileMapFocusChange={onMobileMapFocusChange}
             suspendBackgroundThumbnails={viewerActive}
             onRegisterViewerThumbnailCache={galleryThumbnailBridge.register}
             uploadRevision={galleryUploadRevision}
