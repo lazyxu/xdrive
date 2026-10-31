@@ -65,8 +65,11 @@ class NativeLocalGalleryMemoryTest {
         val photoGrid = photos.gridState.value
         val albumGrid = owner.albumGridState.value
         val epoch = owner.generation.intValue
+        val pendingReadRevision = photos.revision.intValue
 
         owner.invalidate()
+        // A provider request started before a changed grant must be rejected.
+        assertTrue(photos.revision.intValue != pendingReadRevision)
         assertEquals(epoch + 1, owner.generation.intValue)
         assertFalse(photos.loaded.value)
         assertFalse(albums.loaded.value)
