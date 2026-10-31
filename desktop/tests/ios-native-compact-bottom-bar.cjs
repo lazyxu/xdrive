@@ -40,3 +40,15 @@ test('dynamic long press opens recent features and has an accessible picker', ()
   assert.match(ui, /feature\.implemented \? feature\.title :/);
   assert.match(ui, /showRecentPicker = true/);
 });
+
+test('Gallery short landscape uses one safe-area row without remounting its active source', () => {
+  assert.match(ui, /@Environment\(\\\.dynamicTypeSize\) private var dynamicTypeSize/);
+  assert.match(ui, /GeometryReader \{ availableSpace in/);
+  assert.match(ui, /availableSpace\.size\.width >= 680 &&[\s\S]*?availableSpace\.size\.height < 500 &&[\s\S]*?!dynamicTypeSize\.isAccessibilitySize/);
+  assert.match(ui, /if !galleryFocused \{[\s\S]*?HStack\(spacing: 0\) \{\s*gallerySourceRow\s*galleryCompactBackupAction\s*\}/);
+  assert.match(ui, /else \{\s*galleryStatusRow\s*gallerySourceRow/);
+  assert.match(ui, /private var gallerySourceRow: some View \{[\s\S]*?ScrollView\(\.horizontal, showsIndicators: false\)/);
+  assert.match(ui, /\.accessibilityValue\([\s\S]*?"自动备份已暂停，需核对收据"/);
+  assert.match(ui, /\.accessibilityIdentifier\("native-ios-gallery-backup-settings-compact"\)/);
+  assert.equal((ui.match(/switch gallerySource/g) || []).length, 1);
+});
