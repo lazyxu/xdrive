@@ -3797,7 +3797,7 @@ class DriveControllerTest {
         assertEquals(listOf(server), cleared)
         c.restoreSession()
         runCurrent()
-        assertEquals(1, api.refreshed, "forgotten refresh token cannot replay")
+        assertEquals("forgotten refresh token cannot replay", 1, api.refreshed)
         c.close()
     }
 
