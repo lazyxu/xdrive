@@ -14,6 +14,17 @@ import Foundation
                               needsReview: false) == 0)
     precondition(p.nextWindow(current: 1, visibleTotal: 600, scanned: 35, uploaded: 20,
                               needsReview: false) == 1)
+    // Exactly the twentieth original at the last candidate is complete:
+    // do not scan it all again or delay the next 256 candidates.
+    precondition(p.nextWindow(current: 0, visibleTotal: 600, scanned: 256, uploaded: 20,
+                              needsReview: false) == 1)
+    precondition(p.nextWindow(current: 2, visibleTotal: 600, scanned: 88, uploaded: 20,
+                              needsReview: false) == 0)
+    // A capped partial segment or impossible oversized progress never advances.
+    precondition(p.nextWindow(current: 0, visibleTotal: 600, scanned: 255, uploaded: 20,
+                              needsReview: false) == 0)
+    precondition(p.nextWindow(current: 0, visibleTotal: 600, scanned: 257, uploaded: 20,
+                              needsReview: false) == 0)
     precondition(p.nextWindow(current: 1, visibleTotal: 600, scanned: 256, uploaded: 0,
                               needsReview: true) == 1)
     precondition(p.nextWindow(current: 99, visibleTotal: 100, scanned: 0, uploaded: 0,
@@ -39,7 +50,10 @@ import Foundation
     precondition(due(0,1,10000,256,3) == fast)
     precondition(due(1,2,10000,256,0) == fast)
     precondition(due(39,0,10000,16,0) == normal)
-    precondition(due(0,0,20,20,20) == fast)
+    precondition(due(0,0,20,20,20) == normal)
+    precondition(due(0,1,600,256,20) == fast)
+    precondition(due(2,0,600,88,20) == normal)
+    precondition(due(0,0,20,19,20) == normal)
     precondition(due(0,0,20,20,0) == normal)
     precondition(due(0,0,10000,30,1) == normal)
     precondition(due(0,1,10000,256,1,review:true) == normal)
