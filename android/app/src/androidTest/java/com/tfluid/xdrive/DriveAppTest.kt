@@ -493,6 +493,10 @@ class DriveAppTest {
             if (index >= 0) mutableRootRows[index] = updated
             return updated
         }
+        override suspend fun trashPage(accessToken: String, offset: Int): TrashPage {
+            check(accessToken == "fixture" && offset == 0)
+            return TrashPage(emptyList(), totalCount = 0, offset = 0)
+        }
         override suspend fun trashNode(accessToken: String, original: DriveNode) {
             trashCalls++
             mutableRootRows.removeAll { it.id == original.id }
@@ -716,6 +720,49 @@ class DriveAppTest {
         compose.waitUntil(timeoutMillis = 10_000) {
             controller.state.value.screen == Screen.LOGIN
         }
+        compose.onNodeWithTag("native-five-slot-bar").assertDoesNotExist()
+    }
+
+    @Test fun nativeFilesTabAndLauncherShortcutBothLeaveTheTrashChild() {
+        startAndLogin(galleryFirstOnLogin = false)
+        compose.onNodeWithTag("native-tab-all").performClick()
+        compose.onNodeWithText("回收站").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.TRASH && controller.state.value.trashLoaded
+        }
+        compose.onNodeWithTag("native-tab-files").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.FILES && controller.state.value.loaded
+        }
+        compose.onNodeWithText("假期照片").assertIsDisplayed()
+
+        compose.onNodeWithTag("native-tab-all").performClick()
+        compose.onNodeWithText("回收站").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.TRASH && controller.state.value.trashLoaded
+        }
+        compose.onNodeWithTag("native-tab-all").performClick()
+        compose.onNodeWithText("云端文件").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.FILES && controller.state.value.loaded
+        }
+        compose.onNodeWithText("假期照片").assertIsDisplayed()
+    }
+
+    @Test fun galleryMapLauncherShortcutFromTrashKeepsGalleryAsItsOwnerTab() {
+        galleryGpsOverviewFixture = true
+        startAndLogin(galleryFirstOnLogin = false)
+        compose.onNodeWithTag("native-tab-all").performClick()
+        compose.onNodeWithText("回收站").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.TRASH && controller.state.value.trashLoaded
+        }
+        compose.onNodeWithTag("native-tab-all").performClick()
+        compose.onNodeWithText("地点地图").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.GALLERY && controller.state.value.galleryMapOpen
+        }
+        // L2 map keeps the Gallery route and hides its single L1 bottom bar.
         compose.onNodeWithTag("native-five-slot-bar").assertDoesNotExist()
     }
 
