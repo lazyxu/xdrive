@@ -23,7 +23,8 @@ internal class AndroidPhotoVerifiedIndex(
     context: Context,
     databaseName: String = "xdrive-native-photo-verified-v1.db",
     private val maxRows: Int = MAX_ENTRIES,
-) : SQLiteOpenHelper(context.applicationContext, databaseName, null, 1) {
+) : SQLiteOpenHelper(context.applicationContext, databaseName, null, 1),
+    NativePhotoVerifiedReceiptIndex {
     init {
         require(databaseName.length in 1..128 &&
             databaseName.matches(Regex("[A-Za-z0-9_.-]+")))
@@ -59,7 +60,7 @@ internal class AndroidPhotoVerifiedIndex(
      * merely planned upload is never included in the completed index.
      */
     @Synchronized
-    fun recordVerified(intent: NativePhotoBackupIntent) {
+    override fun recordVerified(intent: NativePhotoBackupIntent) {
         require(intent.phase == NativePhotoBackupPhase.VERIFIED &&
             intent.verifiedNodeId != null && intent.verifiedNodeRevision != null)
         val db = writableDatabase
@@ -103,7 +104,7 @@ internal class AndroidPhotoVerifiedIndex(
      * ledger before any write attempt.
      */
     @Synchronized
-    fun findVerified(
+    override fun findVerified(
         owner: NativePhotoBackupOwner,
         assetKey: String,
         versionKey: String,
