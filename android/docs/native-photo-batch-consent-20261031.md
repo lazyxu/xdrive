@@ -63,6 +63,26 @@ Pure JVM tests cover exact-index-only pruning, unknown-ACK retention,
 failed index/commit, more than 128 completed originals, and no duplicate
 UploadSession after journal repair.
 
+## Owner-bound restart cursor (not another task log)
+
+The foreground MediaStore ID-keyset scanner now resumes from a tiny committed
+`(hash(Server installation, Owner, Root ID, Android device), lastVerifiedID)`
+checkpoint after process restart. It advances **only after**
+`NativePhotoIncrementalWriter` has a finalized Go receipt in SQLite or an
+exact index-confirmed skip; a failed upload, stale Owner or UNKNOWN_ACK never
+advances it. A clean end-of-sweep resets to zero for a future explicit rescan
+and must not be described as proof of every original being backed up.
+
+This is a numeric scanner position, not a backup task-record ledger. No new
+Keystore/encryption format, raw URI, local filename, token, title, GPS,
+media bytes or album list is stored. Existing encrypted uncertain-intent ledger
+continues to fence all write decisions. Malformed or unavailable cursor state
+fails closed rather than silently replaying an old upload.
+
+Android instrumentation covers real preferences restarts, Owner A/B/ABA and
+Server/device isolation, root-revision changes, stale-cursor failure,
+validated sweep rewind and corruption. The cursor cannot authorize an upload.
+
 ## Not yet MVP complete
 
 WorkManager opt-in automatic scheduling, safe durable large-library scanner
