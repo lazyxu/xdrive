@@ -112,7 +112,13 @@ class NativePhotoIncrementalWriterTest {
             assertEquals(NativePhotoIncrementalOutcome.UPLOADED, writer.uploadOne(
                 service, "owner-token", scope, deviceId, root, identity, original, { true }))
             assertEquals(1, service.calls)
-            assertEquals(NativePhotoBackupPhase.VERIFIED, journal.rows.single().phase)
+            // Journal entries are pruned only after SQLite stores the matching
+            // finalized Go Node ID/revision, Owner, SHA and version.
+            assertTrue(journal.rows.isEmpty())
+            val owner = NativePhotoBackupOwner(scope.origin, scope.serverInstanceId,
+                scope.ownerId, scope.username, scope.rootId, scope.rootRevision, deviceId)
+            assertNotNull(index.findVerified(owner, identity.assetKey,
+                identity.versionKey, identity.resource, original.sha256, original.bytes))
             assertEquals(NativePhotoIncrementalOutcome.ALREADY_VERIFIED, writer.uploadOne(
                 service, "owner-token", scope, deviceId, root, identity, original, { true }))
             assertEquals(1, service.calls)
@@ -163,6 +169,7 @@ class NativePhotoIncrementalWriterTest {
             assertEquals(NativePhotoIncrementalOutcome.ALREADY_VERIFIED, writer.uploadOne(
                 service, "owner-token", scope, deviceId, root, identity, original, { true }))
             assertEquals(1, service.calls)
+            assertTrue(journal.rows.isEmpty())
         }
     }
 

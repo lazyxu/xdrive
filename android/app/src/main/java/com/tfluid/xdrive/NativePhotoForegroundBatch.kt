@@ -62,10 +62,18 @@ internal class NativePhotoForegroundBatch(
             service, origin, token, expectedUsername, currentSession)
             ?: throw IllegalStateException("Register this Android device explicitly before backup")
         checkActive(currentSession)
+        val scope = NativePhotoBackupOwner(
+            initial.origin, initial.serverInstanceId, initial.ownerId,
+            initial.username, initial.rootId, initial.rootRevision, device.deviceId)
+        val cursor = AndroidPhotoScanCursorStore(app)
+        val durableAfter = cursor.readFor(scope)
+        check(startAfterId == 0L || startAfterId == durableAfter) {
+            "Photo cursor changed; reopen a verified Owner scan"
+        }
         var scanned = 0
         var uploaded = 0
         var already = 0
-        var after = startAfterId
+        var after = if (startAfterId == 0L) durableAfter else startAfterId
         var exhausted = false
 
         while (scanned < maxScanned && uploaded < maxUploads) {
@@ -107,6 +115,10 @@ internal class NativePhotoForegroundBatch(
                         NativePhotoIncrementalOutcome.UPLOADED -> uploaded++
                     }
                 }
+                // The writer returned only after a matched Go finalize receipt
+                // was durably indexed, or an already-verified exact SQLite hit.
+                // An exception/unknown ACK never advances this checkpoint.
+                cursor.advanceVerified(scope, after, candidate.localId)
                 scanned++
                 after = candidate.localId
                 onProgress(NativePhotoForegroundBatchResult(
@@ -121,6 +133,9 @@ internal class NativePhotoForegroundBatch(
             }
         }
         checkActive(currentSession)
+        if (exhausted) {
+            cursor.finishSweep(scope, after)
+        }
         return NativePhotoForegroundBatchResult(
             scanned, uploaded, already, after, exhausted)
     }

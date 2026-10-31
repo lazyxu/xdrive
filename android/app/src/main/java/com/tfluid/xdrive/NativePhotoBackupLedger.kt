@@ -235,6 +235,31 @@ internal class NativePhotoBackupLedger(
         return completed
     }
 
+    /**
+     * Bounded journal capacity must not stop a 100k-photo incremental scan.
+     * A VERIFIED intent can be discarded ONLY after the caller confirms its
+     * exact matching Node ID/revision, original hash/bytes, Owner/device and
+     * resource/version in the durable verified receipt index.
+     *
+     * PLANNED / MAY_HAVE_SENT / UNKNOWN_ACK are never pruned. A failed index
+     * lookup or failed durable write leaves the original journal untouched.
+     * Caller must not infer Go success from this cleanup operation.
+     */
+    @Synchronized
+    fun compactIndexedVerified(
+        exactIndexedReceiptMatches: (NativePhotoBackupIntent) -> Boolean,
+    ): Int {
+        val original = validated()
+        if (original.none { it.phase == NativePhotoBackupPhase.VERIFIED }) return 0
+        val kept = original.filterNot { entry ->
+            entry.phase == NativePhotoBackupPhase.VERIFIED &&
+                exactIndexedReceiptMatches(entry)
+        }
+        val removed = original.size - kept.size
+        if (removed > 0) store.write(kept)
+        return removed
+    }
+
     /** No resume/retry operations here. Records survive Owner switches. */
     @Synchronized
     fun inspect(owner: NativePhotoBackupOwner): List<NativePhotoBackupIntent> =
