@@ -226,6 +226,11 @@ enum XDriveIOSBackgroundPhotoTask {
         BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: identifier)
         Task { @MainActor in
             localStopVersion &+= 1
+            // A concurrently expiring read-only task may have re-submitted
+            // between the synchronous cancel and this actor turn. Cancel a
+            // second time *after* advancing the stop fence so no late
+            // approval can re-arm this user's explicit local opt-out.
+            BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: identifier)
             active?.cancel()
         }
     }
