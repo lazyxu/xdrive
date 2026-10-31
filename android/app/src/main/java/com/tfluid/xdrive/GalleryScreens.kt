@@ -22,6 +22,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -70,6 +72,9 @@ internal fun galleryTimelineGroupLabel(group: GalleryTimelineGroup): String = wh
 internal fun ColumnScope.Gallery(
     state: DriveState, controller: DriveController,
     bitmaps: LruCache<String, ImageBitmap>,
+    returnAnchor: NativeCloudViewerReturnAnchor? = null,
+    onViewerOpened: (GalleryAsset) -> Unit = {},
+    onReturnResolved: () -> Unit = {},
 ) {
     val gridState = rememberLazyGridState()
     var searchOpen by remember { mutableStateOf(false) }
@@ -336,6 +341,34 @@ internal fun ColumnScope.Gallery(
             }
         }
 
+        // Focus restoration is scoped to the exact Owner, query, album and
+        // source revision. Only the currently loaded bounded Server page is
+        // eligible; an absent/changed tile must never gain focus by numeric ID.
+        val returnIndex = remember(returnAnchor, state.galleryItems,
+            state.galleryLoaded, state.gallerySelectedAlbum,
+            state.gallerySearchQuery, state.galleryMediaKind, state.gallerySortBy,
+            state.gallerySortDir, state.galleryJumpEpoch) {
+            if (state.galleryLoaded) nativeCloudViewerReturnIndex(
+                returnAnchor, state.galleryItems.map {
+                    NativeCloudViewerKey(it.node.id, it.node.revision)
+                }, state.gallerySelectedAlbum?.id, state.gallerySearchQuery,
+                state.galleryMediaKind, state.gallerySortBy,
+                state.gallerySortDir, state.galleryJumpEpoch
+            ) else null
+        }
+        LaunchedEffect(returnAnchor, state.galleryLoaded, returnIndex) {
+            if (returnAnchor != null && state.galleryLoaded && returnIndex == null)
+                onReturnResolved() // stale/evicted row or changed filter
+        }
+        LaunchedEffect(returnIndex, state.galleryLoaded, blankTop, gridState) {
+            if (returnIndex != null && state.galleryLoaded &&
+                returnIndex in state.galleryItems.indices) {
+                val id = state.galleryItems[returnIndex].node.id
+                if (gridState.layoutInfo.visibleItemsInfo.none { it.key == id }) {
+                    gridState.scrollToItem(returnIndex + if (blankTop > 0.dp) 1 else 0)
+                }
+            }
+        }
         LazyVerticalGrid(
             columns = GridCells.Fixed(columns),
             state = gridState,
@@ -361,7 +394,12 @@ internal fun ColumnScope.Gallery(
             items(state.galleryItems, key = { it.node.id }) { item ->
                 GalleryTile(item, controller, bitmaps, containTiles,
                     state.gallerySelectionMode,
-                    state.gallerySelectedItems.any { it.node.id == item.node.id })
+                    state.gallerySelectedItems.any { it.node.id == item.node.id },
+                    restoreFocus = !state.gallerySelectionMode &&
+                        returnIndex != null &&
+                        state.galleryItems.getOrNull(returnIndex)?.node == item.node,
+                    onViewerOpened = onViewerOpened,
+                    onFocusRestored = onReturnResolved)
             }
         }
         // Native functional Gallery controls float over this same Owner grid.
@@ -596,7 +634,11 @@ internal fun GalleryTile(
     selectionMode: Boolean,
     isSelected: Boolean,
     allowSelection: Boolean = true,
+    restoreFocus: Boolean = false,
+    onViewerOpened: (GalleryAsset) -> Unit = {},
+    onFocusRestored: () -> Unit = {},
 ) {
+    val focusRequester = remember(item.node.id, item.node.revision) { FocusRequester() }
     val key = "${item.node.id}:${item.node.revision}"
     // A new Owner Range/revision or thumbnail-availability change invalidates
     // the bitmap. A refreshed metadata object for the SAME version must not
@@ -636,15 +678,20 @@ internal fun GalleryTile(
     }
 
     Box(Modifier.fillMaxWidth().aspectRatio(1f)
+        .focusRequester(focusRequester)
         .clip(androidx.compose.foundation.shape.RoundedCornerShape(2.dp))
         .background(MaterialTheme.colorScheme.surfaceContainerLow)
         // In selection mode the real visible media toggles; never open Viewer.
         .combinedClickable(
             onClick = {
                 if (selectionMode) controller.toggleGallerySelection(item)
-                else if (item.mediaKind == "image" || item.mediaKind == "video")
+                else if (item.mediaKind == "image" || item.mediaKind == "video") {
                     controller.openGalleryViewer(item)
-                else controller.showGalleryInfo(item)
+                    // Only an actually accepted Owner Viewer can establish
+                    // the source focus anchor; rejected clicks are inert.
+                    if (controller.state.value.galleryViewer == item)
+                        onViewerOpened(item)
+                } else controller.showGalleryInfo(item)
             },
             onLongClickLabel = if (failed) "重试缩略图"
                 else if (!selectionMode && allowSelection) "选择照片" else null,
@@ -707,4 +754,8 @@ internal fun GalleryTile(
                 color = Color.White, style = MaterialTheme.typography.labelSmall)
         }
     }
+    LaunchedEffect(restoreFocus, item.node.id, item.node.revision) {
+        if (restoreFocus && focusRequester.requestFocus()) onFocusRestored()
+    }
+
 }

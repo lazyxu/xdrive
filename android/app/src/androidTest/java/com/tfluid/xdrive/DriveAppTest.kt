@@ -1559,6 +1559,9 @@ class DriveAppTest {
         compose.onNodeWithTag("gallery-photo-viewer").assertExists()
         compose.onNodeWithTag("gallery-photo-close").performClick()
         compose.onNodeWithTag("gallery-wall").assertExists()
+        // L3 Viewer must return input focus to the exact current-Owner tile,
+        // not merely preserve the Gallery's remembered scroll offset.
+        compose.onNodeWithTag("gallery-item-40", useUnmergedTree = true).assertIsFocused()
         compose.runOnIdle {
             org.junit.Assert.assertNull(controller.state.value.galleryViewer)
             org.junit.Assert.assertEquals(Screen.GALLERY, controller.state.value.screen)
