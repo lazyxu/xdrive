@@ -336,6 +336,8 @@ struct XDriveIOSNativeServerMediaWall: View {
     @State private var searchDraft = ""
     @State private var appliedSearch = ""
     @State private var lastOpenedMediaID: UInt64?
+    // VoiceOver focus is transient and remains scoped to the current Owner.
+    @AccessibilityFocusState private var accessibilityFocusedMediaID: UInt64?
     @State private var focusedBrowsing = false
 
     var body: some View {
@@ -387,6 +389,7 @@ struct XDriveIOSNativeServerMediaWall: View {
                             .disabled(!item.supportsPreview)
                             .accessibilityIdentifier("native-ios-server-media-tile")
                             .id(item.id)
+                            .accessibilityFocused($accessibilityFocusedMediaID, equals: item.id)
                         }
                     }
                     HStack {
@@ -420,6 +423,7 @@ struct XDriveIOSNativeServerMediaWall: View {
         .onChange(of: selected?.id) { selectedID in
             if let selectedID {
                 lastOpenedMediaID = selectedID
+                accessibilityFocusedMediaID = nil
                 // Guaranteed foreground priority, independent of whether
                 // SwiftUI sends onDisappear to the covered photo wall.
                 model.suspendForViewer()
@@ -427,6 +431,9 @@ struct XDriveIOSNativeServerMediaWall: View {
                       model.page?.items.contains(where: { $0.id == anchor }) == true {
                 // Return to the exact logical item, not the first page.
                 returnScroll.scrollTo(anchor, anchor: .center)
+                accessibilityFocusedMediaID = anchor
+            } else {
+                accessibilityFocusedMediaID = nil
             }
         }
         .navigationTitle(album?.name ?? "云端图库")
@@ -472,6 +479,7 @@ struct XDriveIOSNativeServerMediaWall: View {
             focusedBrowsing = false
             onFocusChange?(false)
             lastOpenedMediaID = nil
+            accessibilityFocusedMediaID = nil
             selected = nil
             model.invalidate()
             if login.owner != nil && phase == .active {
@@ -482,6 +490,7 @@ struct XDriveIOSNativeServerMediaWall: View {
             if state != .active {
                 focusedBrowsing = false
                 onFocusChange?(false)
+                accessibilityFocusedMediaID = nil
                 selected = nil
                 model.invalidate()
             } else if model.page == nil {
@@ -496,6 +505,7 @@ struct XDriveIOSNativeServerMediaWall: View {
                 // L2 focus state or hide the global bottom navigation.
                 focusedBrowsing = false
                 onFocusChange?(false)
+                accessibilityFocusedMediaID = nil
                 model.suspendForNavigation()
             }
         }
@@ -509,6 +519,7 @@ struct XDriveIOSNativeServerMediaWall: View {
         if query == appliedSearch && model.page != nil { return }
         appliedSearch = query
         lastOpenedMediaID = nil
+        accessibilityFocusedMediaID = nil
         model.load(login: login, albumID: album?.id, offset: 0, search: query)
     }
 }
