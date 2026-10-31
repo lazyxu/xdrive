@@ -154,10 +154,14 @@ struct XDriveIOSNativeMediaGalleryReader {
     }
 
     func page(offset: Int, albumID: String? = nil,
-              search: String = "") async throws -> XDriveIOSNativeMediaRange {
+              placeID: String? = nil, search: String = "") async throws -> XDriveIOSNativeMediaRange {
         let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
         guard offset >= 0 && offset <= 10_000_000,
-              query.unicodeScalars.count <= 200 else {
+              query.unicodeScalars.count <= 200,
+              (placeID == nil || (
+                  albumID == nil &&
+                  XDriveIOSNativeOwnerMapSelectionPolicy.canonicalPlaceID(placeID!)
+              )) else {
             throw XDriveIOSNativeMediaReadFailure.invalidPage
         }
         let path: String
@@ -173,6 +177,11 @@ struct XDriveIOSNativeMediaGalleryReader {
         ]
         if !query.isEmpty {
             parameters.append(URLQueryItem(name: "q", value: query))
+        }
+        if let placeID {
+            // Original Server Owner GPS place, never synthetic map-region.
+            parameters.append(URLQueryItem(name: "place", value: placeID))
+            parameters.append(URLQueryItem(name: "has_location", value: "true"))
         }
         let url = try endpoint(path, query: parameters)
         let data = try await read(url, maximum: 2 * 1_048_576)

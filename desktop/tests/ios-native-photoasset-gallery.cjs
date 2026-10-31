@@ -116,11 +116,11 @@ test('new Cloud PhotoAsset Gallery is under the fixed Gallery tab; old originals
 
   assert.match(view, /pageScope\.map/)
   assert.match(view, /XDriveIOSNativePhotoOwnerScope\.matches\(expected, \$0\)/)
-  assert.match(view, /pageAlbumID == albumID && pageSearch == query/)
+  assert.match(view, /pageAlbumID == albumID &&\s+pagePlaceID == placeID && pageSearch == query/)
   assert.match(view, /self\?\.pageSearch = query/)
   assert.match(view, /\.onSubmit \{ applySearch\(\) \}/)
   assert.match(view, /offset: model\.failedOffset \?\? model\.page\?\.offset \?\? 0,[\s\S]*search: appliedSearch/)
-  assert.match(view, /model\.load\(login: login, albumID: album\?\.id, offset: 0, search: query\)/)
+  assert.match(view, /model\.load\(login: login, albumID: album\?\.id, placeID: placeID, offset: 0, search: query\)/)
   const local = src('ios/XDriveIOS/NativeLocalPhotoGallery.swift')
   const album = src('ios/XDriveIOS/NativePhotoAlbumBrowser.swift')
   assert.match(local, /savedOffset = next\.startOffset/)
