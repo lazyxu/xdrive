@@ -52,3 +52,30 @@ test('Owner PhotoAsset Viewer restores bounded cloud VoiceOver focus only to its
   assert.doesNotMatch(cloud, /UserDefaults|@AppStorage|Keychain/);
 });
 
+
+
+for (const [name, view, permission] of [
+  ['PhotoKit full wall', local, 'authorization'],
+  ['PhotoKit album wall', album, 'permission']
+]) {
+  test(name + ' preserves L3 Viewer while redacting its hidden wall on inactivity', () => {
+    const phaseStart = view.indexOf('.onChange(of: phase)');
+    const phaseEnd = view.indexOf('.onDisappear', phaseStart);
+    assert.ok(phaseStart >= 0 && phaseEnd > phaseStart);
+    const phase = view.slice(phaseStart, phaseEnd);
+    assert.ok(phase.includes(permission + ' = PHPhotoLibrary.authorizationStatus(for: .readWrite)'));
+    assert.match(phase, /if (?:new|state) != \.active \{\s*clearViewerTileAnchor\(\)\s*if selected != nil \{[\s\S]*?suspendForViewer\(\)\s*page = nil\s*(?:errorMessage|error) = nil/);
+    assert.match(phase, /\} else \{\s*invalidate\(\)\s*\}\s*\} else if selected != nil \{/);
+    assert.match(phase, /if (?:authorization|permission) != \.authorized && (?:authorization|permission) != \.limited \{\s*clearViewerTileAnchor\(\)\s*invalidate\(\)/);
+    assert.match(phase, /\} else \{\s*(?:refresh\(at: savedOffset\)|reload\(\))\s*\}/);
+    // The Viewer revalidates its own PhotoKit asset on foreground return.
+    // The source wall must not re-scan or dismiss the modal while covered.
+    const inactiveViewer = phase.slice(phase.indexOf('if selected != nil {'),
+      phase.indexOf('} else {', phase.indexOf('if selected != nil {')));
+    const foregroundViewer = phase.slice(phase.indexOf('} else if selected != nil {'),
+      phase.lastIndexOf('} else {'));
+    assert.doesNotMatch(inactiveViewer, /selected = nil|invalidate\(\)|load\(offset:/);
+    assert.doesNotMatch(foregroundViewer, /refresh\(at: savedOffset\)|reload\(\)|load\(offset:/);
+    assert.match(view, /\.fullScreenCover\(item: \$selected, onDismiss: \{ restoreAfterViewer\(\) \}\)/);
+  });
+}

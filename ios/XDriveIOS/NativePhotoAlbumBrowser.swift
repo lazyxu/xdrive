@@ -298,10 +298,28 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
             error = "系统相册发生变化，请重新读取当前页面。"
         }
         .onChange(of: phase) { state in
-            if state == .active { reload() }
-            else {
+            permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+            if state != .active {
                 clearViewerTileAnchor()
-                invalidate()
+                if selected != nil {
+                    // Redact the hidden album page, but let the fullscreen
+                    // Viewer own its selected media and foreground recheck.
+                    suspendForViewer()
+                    page = nil
+                    error = nil
+                } else {
+                    invalidate()
+                }
+            } else if selected != nil {
+                // The Viewer revalidates its selected PhotoKit asset. Never
+                // scan the album wall behind a still-presented modal.
+                if permission != .authorized && permission != .limited {
+                    clearViewerTileAnchor()
+                    invalidate()
+                    error = "本机相册访问权限已失效，请返回相册重新授权。"
+                }
+            } else {
+                reload()
             }
         }
         .onDisappear {
