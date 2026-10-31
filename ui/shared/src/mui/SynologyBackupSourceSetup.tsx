@@ -4,6 +4,7 @@ import type { XDriveSynologyBackupLocalClient } from '../synology-backup-adapter
 import type { XDriveSynologyNASShare } from '../synology-nas-share-inventory'
 import { XDriveSynologyNASShareInventory } from './SynologyNASShareInventory'
 import { XDriveSynologyBackupTargetBrowser } from './SynologyBackupTargetBrowser'
+import { XDriveSynologyNativeDraftReview } from './SynologyNativeDraftReview'
 
 type CreateStatus = 'idle' | 'creating' | 'authorized' | 'needs_inspection' | 'uncertain'
 type Target = { id: number; name: string }
@@ -27,6 +28,7 @@ export function XDriveSynologyBackupSourceSetup({
   const [confirmed, setConfirmed] = useState(false)
   const [status, setStatus] = useState<CreateStatus>('idle')
   const [createdID, setCreatedID] = useState<number | null>(null)
+  const [showDrafts, setShowDrafts] = useState(false)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -35,6 +37,7 @@ export function XDriveSynologyBackupSourceSetup({
     setSelectedTarget(null)
     setSelectedShare(null)
     setConfirmed(false)
+    setShowDrafts(false)
     void client.serverConnection(controller.signal).then(info => {
       if (controller.signal.aborted) return
       if (!info.configured || info.must_change_password ||
@@ -74,7 +77,11 @@ export function XDriveSynologyBackupSourceSetup({
       setCreatedID(result.source_id)
       setStatus(result.state)
       if (result.state === 'authorized') onCreated()
-    }).catch(() => setStatus('uncertain'))
+      if (result.state === 'needs_inspection') setShowDrafts(true)
+    }).catch(() => {
+      setStatus('uncertain')
+      setShowDrafts(true)
+    })
   }
 
   return (
@@ -101,6 +108,11 @@ export function XDriveSynologyBackupSourceSetup({
               disabled={scopeStatus === 'checking' || status !== 'idle'}
               onClick={() => setScopeRevision(n => n + 1)}>
               重新验证 Server Owner
+            </Button>
+            <Button variant="text" size="small"
+              disabled={scopeStatus !== 'ready' || status === 'creating'}
+              onClick={() => setShowDrafts(value => !value)}>
+              {showDrafts ? '收起未绑定草稿' : '检查未绑定草稿'}
             </Button>
           </Stack>
           {scopeStatus === 'checking' ? (
@@ -149,14 +161,18 @@ export function XDriveSynologyBackupSourceSetup({
           {status === 'needs_inspection' ? (
             <Typography role="alert" color="text.secondary">
               Source {createdID} 已创建，但原生 Root 绑定结果尚未确认，可能仍为暂停草稿。
-              请在 NAS 上先用 xd backup drafts 检查并核实绑定，再按实际状态选择恢复方式；勿再次点击创建。
+              请先使用下方只读草稿检查核对；如需恢复绑定，仍须在 NAS 本机以套件用户执行原有 xd backup bind。
+              勿再次点击创建。
             </Typography>
           ) : null}
           {status === 'uncertain' ? (
             <Typography role="alert" color="text.secondary">
-              创建结果无法确认；Server 可能已经保留暂停的 Source。不要重试创建，
-              请先在 NAS 本机使用 xd backup drafts 检查和恢复。
+              创建结果无法确认；Server 可能已经保留暂停的 Source。不要重试创建。
+              请检查下方未绑定草稿与上方已授权来源；无法确认时，再通过 NAS 本机 xd 检查。
             </Typography>
+          ) : null}
+          {showDrafts && scopeStatus === 'ready' ? (
+            <XDriveSynologyNativeDraftReview client={client} ownerScope={ownerScope} />
           ) : null}
         </Stack>
       </Box>
