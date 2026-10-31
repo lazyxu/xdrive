@@ -144,7 +144,6 @@ export function XDriveShareDialog({
     setEditingShare(null)
     setExpiryError('')
     setPasswordError('')
-
   }, [node?.id, expiryMode])
 
   useEffect(() => {

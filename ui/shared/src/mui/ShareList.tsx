@@ -72,16 +72,17 @@ export function XDriveShareList({
               </Typography>
             </Box>
             <Stack direction="row" spacing={1}>
-            {onEdit && share.status !== 'revoked' ? <XDriveActionButton compact
-              onClick={() => onEdit(share)}>编辑</XDriveActionButton> : null}
-            <XDriveActionButton
-              compact
-              intent="danger"
-              disabled={revokeDisabled || share.status === 'revoked'}
-              onClick={() => void onRevoke(share)}
-            >
-              撤销
-            </XDriveActionButton>
+              {onEdit && share.status !== 'revoked' ? (
+                <XDriveActionButton compact onClick={() => onEdit(share)}>编辑</XDriveActionButton>
+              ) : null}
+              <XDriveActionButton
+                compact
+                intent="danger"
+                disabled={revokeDisabled || share.status === 'revoked'}
+                onClick={() => void onRevoke(share)}
+              >
+                撤销
+              </XDriveActionButton>
             </Stack>
           </Stack>
         ))}

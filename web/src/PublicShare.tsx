@@ -143,7 +143,7 @@ export default function PublicShareView({ token }: { token: string }) {
           setShare(result)
           // Directly open the first bounded Share-scoped folder page: do not
           // mount the authenticated Owner FileExplorer or prefetch media.
-          // Protected / exhausted shares keep their existing explicit form.
+          // Password-protected shares keep their existing explicit form.
           if (result.type === 'dir' && !result.requires_password &&
               result.capabilities?.list !== false) {
             const firstPage = new AbortController()
@@ -178,7 +178,7 @@ export default function PublicShareView({ token }: { token: string }) {
       } catch (err) {
         if (!active || controller.signal.aborted) return
         if (err instanceof ApiError && err.status === 410) {
-          setError('此分享已过期、达到下载上限或已被撤销。')
+          setError('此分享已过期或已被撤销。')
         } else if (err instanceof ApiError && err.status === 404) {
           setError('此分享链接不存在。')
         } else {
@@ -200,7 +200,7 @@ export default function PublicShareView({ token }: { token: string }) {
 
   // A pending browser handoff is not an authorization revocation. The granted
   // browse/preview/download capabilities remain stable across downloading.
-  // Go grants only narrow the UI; password/revoke/quota/root are verified by
+  // Go grants only narrow the UI; password/revoke/root are verified by
   // every independent Share API and signed media endpoint.
   const grants = share?.capabilities ?? xDriveShareReadOnlyDefaultCapabilities
   const shareEligible = !!share && (!share.requires_password || Boolean(password))

@@ -7,7 +7,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/meta"
 )
 
-func TestPublicShareSevenCapabilitiesDefaultReadOnly(t *testing.T) {
+func TestPublicShareEightCapabilitiesDefaultReadOnly(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		nodeType string
@@ -40,4 +40,12 @@ func TestPublicShareSevenCapabilitiesDefaultReadOnly(t *testing.T) {
 			}
 		})
 	}
+	upload := publicShareCapabilitiesForShare(
+		meta.Share{Access: shareAccessViewUpload}, meta.NodeTypeDir)
+	if !upload.Upload || upload.Write || upload.Delete || !upload.List || !upload.Download {
+		t.Fatalf("upload grant must be independent from generic write/delete: %+v", upload)
+	}
+	file := publicShareCapabilitiesForShare(
+		meta.Share{Access: shareAccessViewUpload}, meta.NodeTypeFile)
+	if file.Upload { t.Fatalf("file shares must never grant upload: %+v", file) }
 }

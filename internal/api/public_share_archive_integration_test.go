@@ -263,11 +263,17 @@ func TestPublicShareFolderZIPLifecycleAndSecurity(t *testing.T) {
 	if current.DownloadCount != 1 {
 		t.Fatalf("folder ZIP must count once, got %d", current.DownloadCount)
 	}
-	post(share.Token, ticketPath, "zip-secret", first.PrepareID, http.StatusGone)
-	post(share.Token, preparePath, "zip-secret", "", http.StatusGone)
-	// Even when exhausted AFTER ticket issue, that already-issued ticket is
-	// valid for the duration of its short TTL, like existing file tickets.
+	// Download attempts are unlimited: another signed ticket can be issued
+	// for the same prepared ZIP, without increasing the number of preparations.
+	post(share.Token, ticketPath, "zip-secret", first.PrepareID, http.StatusOK)
+	reused := post(share.Token, preparePath, "zip-secret", "", http.StatusAccepted)
+	if reused.PrepareID != first.PrepareID {
+		t.Fatalf("unlimited download unexpectedly restarted ZIP: %s != %s", reused.PrepareID, first.PrepareID)
+	}
 	requestWithHeaders(t, peer, http.MethodGet, ticket.URL, "", nil, http.StatusOK, nil)
+	if err := db.First(&current, share.ID).Error; err != nil || current.DownloadCount != 2 {
+		t.Fatalf("two download tickets must count, but not exhaust: %+v err=%v", current, err)
+	}
 
 	// Different share capability with the same folder cannot reuse or read
 	// the first share's private preparation UUID.
