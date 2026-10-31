@@ -205,7 +205,8 @@ internal fun NativeHomeLauncher(
                                 }
                             }
                             TextButton(onClick = { onShortcut(entry.shortcut) },
-                                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                                    .testTag("native-launcher-open-${entry.shortcut.name.lowercase()}")) {
                                 Text(entry.title, maxLines = 2)
                             }
                         }

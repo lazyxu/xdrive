@@ -32,6 +32,31 @@ internal enum class NativeHomeShortcut {
 
 internal enum class NativeGallerySource { CLOUD, LOCAL, ALBUMS, MAP }
 
+/** Pending Controller transitions are ephemeral and may never override a newer tab choice. */
+internal data class NativeHomePendingRoutes(
+    val galleryTab: Boolean = false,
+    val galleryMap: Boolean = false,
+    val trash: Boolean = false,
+) {
+    fun afterExplicitTab(tab: NativeHomeTab) = copy(
+        galleryTab = galleryTab && tab == NativeHomeTab.GALLERY,
+        galleryMap = galleryMap && tab == NativeHomeTab.GALLERY,
+        trash = trash && tab == NativeHomeTab.FILES,
+    )
+
+    fun afterGallerySource(source: NativeGallerySource) =
+        if (source == NativeGallerySource.MAP) this else copy(galleryMap = false)
+}
+
+/** Cloud map/Viewer chrome must not swallow the native local album breadcrumb. */
+internal fun nativeLocalAlbumTopBackVisible(
+    navigation: NativeHomeNavigation,
+    hasSelectedAlbum: Boolean,
+    cloudFocusOpen: Boolean,
+): Boolean = navigation.selected == NativeHomeTab.GALLERY &&
+    navigation.gallerySource == NativeGallerySource.ALBUMS &&
+    hasSelectedAlbum && !cloudFocusOpen
+
 /** Keep the originating Gallery wall when entering and leaving the Map child. */
 internal fun nativeGalleryMapReturnSource(
     source: NativeGallerySource,
