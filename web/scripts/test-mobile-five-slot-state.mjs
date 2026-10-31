@@ -88,6 +88,32 @@ assert.equal(albumState.galleryAlbumID, null, 'new Owner never inherits previous
 albumState = nav.xDriveRememberMobileNavigation(albumState, albumsRoute, owner, false)
 assert.equal(albumState.galleryAlbumID, null, 'A→B→A must not resurrect Album')
 
+
+const galleryLastRoute = { ownerScope: owner, section: 'albums' }
+const galleryViewer = { app: 'media-viewer', params: { node: 42 } }
+assert.equal(nav.xDriveMobileGallerySectionForViewer(albumsRoute, 'gallery', owner, null),
+  'albums', 'direct Gallery route remains the sole source for its own section')
+assert.equal(nav.xDriveMobileGallerySectionForViewer(galleryViewer, 'gallery', owner, galleryLastRoute),
+  'albums', 'Viewer over a retained Album must not reset it to Library')
+assert.equal(nav.xDriveMobileGallerySectionForViewer({ app: 'pdf-viewer', params: { node: 42 } },
+  'gallery', owner, { ownerScope: owner, section: 'places' }), 'places',
+  'all routed Viewer overlays must leave the current Gallery section unchanged')
+assert.equal(nav.xDriveMobileGallerySectionForViewer(galleryViewer, 'files', owner, galleryLastRoute),
+  undefined, 'a Files Viewer cannot revive an old Gallery section')
+assert.equal(nav.xDriveMobileGallerySectionForViewer(galleryViewer, 'gallery', '', galleryLastRoute),
+  undefined, 'unverified Owner cannot recover a Gallery section')
+assert.equal(nav.xDriveMobileGallerySectionForViewer(
+  galleryViewer, 'gallery', 'https://example.test:2', galleryLastRoute,
+), undefined, 'old-Owner Gallery detail must not appear after a session switch')
+assert.equal(nav.xDriveMobileGallerySectionForViewer(files, 'gallery', owner, galleryLastRoute),
+  undefined, 'other ordinary workspace routes do not inherit Gallery history')
+assert.equal(nav.xDriveMobileGallerySectionForViewer(
+  { app: 'gallery', params: { section: 'library' } }, 'gallery', owner, galleryLastRoute,
+), 'library', 'explicit Gallery Library navigation supersedes retained detail')
+assert.equal(nav.xDriveMobileGallerySectionForViewer(
+  { app: 'gallery', params: {} }, 'gallery', owner, galleryLastRoute,
+), undefined, 'bare Gallery root retains its canonical default Library')
+
 // Favorites live above the Launcher component so tab switching cannot reset them.
 let favoriteState = nav.xDriveInitialMobileNavigation(owner)
 assert.deepEqual(favoriteState.favorites, ['gallery', 'files'])
@@ -348,6 +374,9 @@ assert.match(appSource, /onMobileAlbumDetailBackChange=\{compactWorkspace \? reg
 assert.match(gallerySource, /onMobileAlbumDetailBackChange\?\.\(leaveCollection\)/)
 assert.match(gallerySource, /onMobileAlbumDetailBackChange\?\.\(null\)/)
 assert.match(gallerySource, /mobileGalleryViewport \|\| section !== 'albums' \|\| !currentAlbum/)
+assert.match(appSource, /xDriveMobileGallerySectionForViewer\(\s*route, appView, mobileOwnerScope, retainedGallerySectionRef\.current/)
+assert.match(appSource, /else if \(route\.app === 'gallery'\) \{\s*retainedGallerySectionRef\.current = \{/)
+assert.match(appSource, /if \(!mobileOwnerScope\) retainedGallerySectionRef\.current = null/)
 assert.match(appSource, /initialMobileAlbumID=\{compactWorkspace/)
 assert.match(appSource, /onMobileAlbumSelectionChange=\{compactWorkspace \? rememberMobileGalleryAlbum/)
 assert.match(gallerySource, /acceptedFacetOwner !== preferenceScope/, 'Owner list must be verified')
