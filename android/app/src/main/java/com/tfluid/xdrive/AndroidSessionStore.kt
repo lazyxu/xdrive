@@ -139,8 +139,8 @@ internal class AndroidSessionStore(context: Context) : DriveSessionPersistence {
             "Photo backup Owner or Server changed before refresh"
         }
         val latest = service.refresh(original.refreshToken)
-        check(latest.username == username && !latest.mustChangePassword) {
-            "Rotated session requires reauthentication"
+        check(latest.username == username) {
+            "Rotated session belongs to another Owner"
         }
         synchronized(persistenceGuard) {
             val current = load() ?: throw ApiException(401, "Session revoked")
