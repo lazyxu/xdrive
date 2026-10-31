@@ -11,6 +11,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
     @Environment(\.scenePhase) private var phase
     @State private var interval = 60
     @State private var allowICloud = false
+    @State private var autoAllowICloud = false
     @State private var showAutoConsent = false
     @State private var showManualConsent = false
     @State private var showResumeConsent = false
@@ -38,9 +39,9 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                 Text("当前账户：\(login.owner?.username ?? "未登录")")
                 Text("照片、视频与 Live Photo 双原件 ZIP 会保存到当前 Owner 云端根目录。每轮最多检查 256 项、新增 20 个原件；上传前后核验身份与收据。")
                     .font(.footnote).foregroundStyle(.secondary)
-                Toggle("允许下载 iCloud 原件", isOn: $allowICloud)
+                Toggle("手动备份允许下载 iCloud 原件", isOn: $allowICloud)
                     .disabled(controller.busy)
-                Text("关闭时只备份设备上可读取的原件；不为节省流量而降低文件质量。")
+                Text("此开关只用于手动备份；前台自动备份的 iCloud 选项在下方独立保存。关闭时只备份本机可读取的原件，不降低原件质量。")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("手动备份") {
@@ -73,7 +74,13 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                     Text("24 小时").tag(1440)
                 }
                 .disabled(controller.busy || controller.schedule?.enabled == true)
+                Toggle("前台自动备份允许下载 iCloud 原件", isOn: $autoAllowICloud)
+                    .disabled(controller.busy || controller.schedule?.enabled == true)
+                    .accessibilityIdentifier("native-ios-photos-auto-icloud")
                 if let active = controller.schedule, active.enabled {
+                    Text("当前已保存：每 \(active.intervalMinutes) 分钟检查；iCloud 原件 \(active.allowICloudOriginals ? "允许下载" : "仅限本机已下载")。")
+                        .font(.footnote).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("native-ios-photos-auto-saved-settings")
                     Label(active.pausedForReview ? "已暂停：需核对收据" : "前台自动备份已开启",
                           systemImage: active.pausedForReview ? "exclamationmark.triangle" : "checkmark.circle")
                     Text("下次允许检查：\(active.nextDueAt.formatted(date: .abbreviated, time: .shortened))")
@@ -114,13 +121,13 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                         consentError = nil
                         autoConsentOwner = login.owner
                         autoConsentMinutes = interval
-                        autoConsentAllowICloud = allowICloud
+                        autoConsentAllowICloud = autoAllowICloud
                         showAutoConsent = autoConsentOwner != nil
                     }
                         .disabled(controller.busy || background.busy || login.owner == nil)
                         .accessibilityIdentifier("native-ios-photos-auto-enable")
                 }
-                Text("只在 App 处于前台且当前原生账户已重新验证时运行。独立的系统 BGProcessing 授权不会因此自动开启；iOS 不保证强制退出或锁屏后按时运行。")
+                Text("自动计划仅采用启用时确认的检查间隔和 iCloud 设置；修改设置需先停用再重新确认。手动备份的开关不会改变自动计划。仅 App 前台、Owner 重新验证后检查，iOS 不保证锁屏或强制退出后定时执行。系统 BGProcessing 需另行授权。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
             Section("可选系统后台原件备份") {
@@ -427,7 +434,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             Text("会优先停用本机后台授权，即使网络不可达；远端撤销需要服务器确认。已上传原件和加密收据不会删除，不影响前台自动计划。")
         }
         .onAppear {
-            controller.refresh(owner: login.owner)
+            syncSavedAutomaticSettings()
             receipts.refresh(login: login)
             background.refresh(login: login)
         }
@@ -474,8 +481,20 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             autoConsentOwner = nil
             resumeConsentOwner = nil
             receipts.cancel()
-            controller.refresh(owner: login.owner)
+            // Per-Owner input state never flows to a replacement account.
+            allowICloud = false
+            autoAllowICloud = false
+            interval = 60
+            syncSavedAutomaticSettings()
             receipts.refresh(login: login)
+        }
+    }
+
+    private func syncSavedAutomaticSettings() {
+        controller.refresh(owner: login.owner)
+        if let active = controller.schedule, active.enabled {
+            interval = active.intervalMinutes
+            autoAllowICloud = active.allowICloudOriginals
         }
     }
 }
