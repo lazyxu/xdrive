@@ -81,3 +81,24 @@ test('native logout never exposes login until exact Keychain credential is delet
   assert.ok(signOut.indexOf('guard await model.signOut() else') <
     signOut.indexOf('XDriveIOSNativeNavigationRouteStore().clear()'))
 })
+
+
+test('Owner/root and URLSession failures map to safe actionable diagnostics, not one generic string', () => {
+  const policy = read('ios/XDriveIOS/NativeOwnerLoginFailurePolicy.swift')
+  const auth = read('ios/XDriveIOS/AuthService.swift')
+  const ui = read('ios/XDriveIOS/NativeOwnerLoginScreen.swift')
+  assert.match(model, /XDriveIOSNativeOwnerLoginFailurePolicy\.message\(for: failure\)/)
+  assert.match(model, /XDriveIOSNativeOwnerLoginFailurePolicy\.canRetrySavedSession\(after: failure\)/)
+  assert.match(policy, /failure is AuthFailure \|\| failure is URLError/)
+  assert.match(policy, /XDriveNativeOwnerRootFailure/)
+  assert.match(policy, /case \.missingServerIdentity:/)
+  assert.match(policy, /case \.invalidServerReply:/)
+  assert.match(policy, /\.serverStatus\(let status\)/)
+  assert.match(policy, /status == 429 \|\| \(500\.\.\.599\)\.contains\(status\)/)
+  assert.match(policy, /case \.rateLimited, \.unavailable: return true/)
+  assert.match(policy, /case \.cannotFindHost, \.dnsLookupFailed, \.cannotConnectToHost/)
+  assert.match(policy, /default:\s*return false/)
+  assert.match(auth, /证书包含该 IP 的 SAN/)
+  assert.match(ui, /model\.canRetryStoredSessionForCurrentDraft/)
+  assert.doesNotMatch(policy, /print\(|dump\(|localizedDescription|refreshToken|accessToken/)
+})
