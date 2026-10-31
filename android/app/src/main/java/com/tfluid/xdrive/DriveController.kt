@@ -41,6 +41,8 @@ data class DriveState(
     /** Foreground photo progress only; neither cursor nor success is persisted
      * as a backup receipt. Owner/session changes reset these fields. */
     val nativePhotoDeviceVerified: Boolean = false,
+    /** Only a live current Owner verification may mark scheduling approved. */
+    val nativePhotoAutoApproved: Boolean = false,
     val nativePhotoBatchScanned: Int = 0,
     val nativePhotoBatchUploaded: Int = 0,
     val nativePhotoBatchAlreadyVerified: Int = 0,
@@ -505,7 +507,9 @@ class DriveController(
                 checkCurrent(ticket)
                 val restoredApi = if (ip == null) serviceFactory(server) else routedServiceFactory(server, ip)
                 candidate = restoredApi
-                val restored = restoredApi.refresh(saved.refreshToken)
+                val coordinated = vault.coordinatedRefresh(
+                    restoredApi, server.url, saved.username)
+                val restored = coordinated ?: restoredApi.refresh(saved.refreshToken)
                 checkCurrent(ticket)
                 if (restored.username != saved.username) throw ApiException(401, "Owner mismatch")
                 api = restoredApi
@@ -517,7 +521,7 @@ class DriveController(
                     server = server.url, route = route, connectionIp = ip, username = restored.username,
                     nativeUiSessionId = ++nativeUiSessionCounter,
                 )
-                persistRefreshSession()
+                if (coordinated == null) persistRefreshSession()
                 // A valid refreshed session survives a later transient directory read error.
                 // Let request() report it without turning a network outage into logout.
                 if (!restored.mustChangePassword) {
@@ -1274,6 +1278,55 @@ class DriveController(
     }
 
     /**
+     * A user opt-in, authenticated in the existing native Gallery session.
+     * WorkManager itself performs no registration and is never permitted to
+     * use a cleartext, unremembered or guessed Owner identity.
+     */
+    internal fun enableNativePhotoAutoBackup(context: Context) {
+        val initial = state.value
+        val service = api ?: return
+        if (!initial.canStartNativePhotoForeground() ||
+            !initial.nativePhotoDeviceVerified ||
+            session == null || !initial.server.startsWith("https://") ||
+            !hasNativeFullPhotoVideoReadGrant(context)) return
+        if (!keepLogin || sessionPersistence !is AndroidSessionStore) {
+            mutableState.value = initial.copy(
+                error = "自动备份需要启用 HTTPS 记住登录；本次未创建后台任务。")
+            return
+        }
+        val origin = initial.server
+        val username = initial.username
+        request { ticket ->
+            val sameOwner = {
+                ticket == generation && session != null &&
+                    state.value.nativeUiSessionId == initial.nativeUiSessionId &&
+                    state.value.server == origin && state.value.username == username &&
+                    state.value.screen == Screen.GALLERY
+            }
+            val token = session?.accessToken ?: throw CancellationException()
+            val verified = AndroidPhotoDeviceCredentialStore(context).verifyExisting(
+                service, origin, token, username, sameOwner)
+                ?: throw IllegalStateException("Registered Android Owner device unavailable")
+            checkCurrent(ticket)
+            check(sameOwner())
+            val scope = verified.first
+            val owner = NativePhotoBackupOwner(
+                scope.origin, scope.serverInstanceId, scope.ownerId, scope.username,
+                scope.rootId, scope.rootRevision, verified.second.deviceId)
+            AndroidPhotoAutoBackupScheduler.enable(context, owner)
+            checkCurrent(ticket)
+            mutableState.value = state.value.copy(
+                nativePhotoAutoApproved = true, error = null)
+        }
+    }
+
+    /** Does not cancel any manual file upload or reclassify unknown receipts. */
+    internal fun disableNativePhotoAutoBackup(context: Context) {
+        AndroidPhotoAutoBackupScheduler.disable(context)
+        mutableState.value = state.value.copy(nativePhotoAutoApproved = false)
+    }
+
+    /**
      * One bounded explicit foreground increment, not Android WorkManager.
      * MediaStore permission is checked again inside the native reader and
      * the same authenticated Owner identity/UploadSession is reused.
@@ -1308,7 +1361,8 @@ class DriveController(
             val token = session?.accessToken ?: throw CancellationException()
             val index = AndroidPhotoVerifiedIndex(context)
             try {
-                val progress = NativePhotoForegroundBatch(
+                val progress = NativePhotoBatchExecution.foreground {
+                    NativePhotoForegroundBatch(
                     context, AndroidPhotoDeviceCredentialStore(context),
                     AndroidPhotoBackupIntentStore(context), index)
                     .run(service, token, origin, username, sameOwner,
@@ -1321,6 +1375,7 @@ class DriveController(
                                 nativePhotoBatchNextAfterId = status.nextAfterId,
                                 nativePhotoBatchExhausted = false)
                         })
+                }
                 checkCurrent(ticket)
                 mutableState.value = state.value.copy(
                     fileUploadActive = false,
@@ -3886,8 +3941,13 @@ class DriveController(
                 (allowPasswordChange && failure.reason == ApiFailureReason.CURRENT_PASSWORD_INCORRECT)) throw failure
         }
         checkCurrent(ticket)
+        var alreadyPersisted = false
         val refreshed = try {
-            service.refresh(current.refreshToken)
+            val coordinated = if (keepLogin && state.value.server.startsWith("https://"))
+                sessionPersistence?.coordinatedRefresh(
+                    service, state.value.server, current.username) else null
+            alreadyPersisted = coordinated != null
+            coordinated ?: service.refresh(current.refreshToken)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
@@ -3896,7 +3956,7 @@ class DriveController(
         }
         checkCurrent(ticket)
         session = refreshed
-        persistRefreshSession()
+        if (!alreadyPersisted) persistRefreshSession()
         if (refreshed.mustChangePassword && !allowPasswordChange) {
             // A token refresh may require password rotation while the
             // destination picker is open. Clear its Owner-private folder rows

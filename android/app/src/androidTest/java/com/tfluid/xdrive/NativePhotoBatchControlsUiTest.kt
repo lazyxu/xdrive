@@ -12,6 +12,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -42,13 +43,13 @@ class NativePhotoBatchControlsUiTest {
         }
         compose.onNodeWithTag("native-photo-batch-open").assertIsDisplayed().performClick()
         compose.onNodeWithTag("native-photo-batch-request-permission")
-            .assertIsDisplayed().performClick()
+            .performScrollTo().assertIsDisplayed().performClick()
         compose.onNodeWithTag("native-photo-batch-register-device")
-            .assertIsDisplayed().performClick()
+            .performScrollTo().assertIsDisplayed().performClick()
         compose.onNodeWithTag("native-photo-batch-register-cancel").performClick()
-        compose.onNodeWithTag("native-photo-batch-register-device").performClick()
+        compose.onNodeWithTag("native-photo-batch-register-device").performScrollTo().performClick()
         compose.onNodeWithTag("native-photo-batch-register-confirm").performClick()
-        compose.onNodeWithTag("native-photo-batch-confirm-open").assertIsNotEnabled()
+        compose.onNodeWithTag("native-photo-batch-confirm-open").performScrollTo().assertIsNotEnabled()
         compose.runOnIdle {
             assertEquals(1, asks.get())
             assertEquals(1, registrations.get())
@@ -81,14 +82,14 @@ class NativePhotoBatchControlsUiTest {
             }
         }
         compose.onNodeWithTag("native-photo-batch-open").performClick()
-        compose.onNodeWithTag("native-photo-batch-progress").assertIsDisplayed()
+        compose.onNodeWithTag("native-photo-batch-progress").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("native-photo-batch-confirm-open")
-            .assertIsEnabled().performClick()
+            .performScrollTo().assertIsEnabled().performClick()
         compose.runOnIdle { assertEquals(0, starts.get()) }
         compose.onNodeWithTag("native-photo-batch-start-cancel").performClick()
         compose.runOnIdle { assertEquals(0, starts.get()) }
 
-        compose.onNodeWithTag("native-photo-batch-confirm-open").performClick()
+        compose.onNodeWithTag("native-photo-batch-confirm-open").performScrollTo().performClick()
         compose.onNodeWithTag("native-photo-batch-start-confirm").performClick()
         compose.runOnIdle {
             assertEquals(1, starts.get())
@@ -117,7 +118,7 @@ class NativePhotoBatchControlsUiTest {
             }
         }
         compose.onNodeWithTag("native-photo-batch-open").performClick()
-        compose.onNodeWithTag("native-photo-batch-stop").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("native-photo-batch-stop").performScrollTo().assertIsDisplayed().performClick()
         compose.onNodeWithTag("native-photo-batch-confirm-open").assertDoesNotExist()
         compose.runOnIdle {
             assertEquals(1, cancels.get())
@@ -143,9 +144,9 @@ class NativePhotoBatchControlsUiTest {
             }
         }
         compose.onNodeWithTag("native-photo-batch-open").performClick()
-        compose.onNodeWithTag("native-photo-batch-other-writer").assertIsDisplayed()
+        compose.onNodeWithTag("native-photo-batch-other-writer").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("native-photo-batch-stop").assertDoesNotExist()
-        compose.onNodeWithTag("native-photo-batch-confirm-open").assertIsNotEnabled()
+        compose.onNodeWithTag("native-photo-batch-confirm-open").performScrollTo().assertIsNotEnabled()
         compose.runOnIdle { assertEquals(0, stops.get()) }
     }
 

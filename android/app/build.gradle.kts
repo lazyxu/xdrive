@@ -76,6 +76,8 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1")
+    // Android native Photos opt-in periodic work, no separate upload protocol.
+    implementation("androidx.work:work-runtime-ktx:2.12.0")
     // 1.7.1 is API-35-compatible (1.7.0 was an accidental stable tag).
     implementation("androidx.media3:media3-exoplayer:1.7.1")
     implementation("androidx.media3:media3-ui:1.7.1")
