@@ -231,6 +231,13 @@ jobs:
             ios/tests/NativePhotoMapPolicyChecks.swift \
             -o "$RUNNER_TEMP/xdrive-ios-native-map-policy-check"
           "$RUNNER_TEMP/xdrive-ios-native-map-policy-check"
+          # Full-library streaming aggregation keeps only 64 representatives
+          # while exercising a deterministic 100k-item metadata simulation.
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeLocalPhotoMapSpatialPolicy.swift \
+            ios/tests/NativeLocalPhotoMapSpatialPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-full-photo-gps-policy-check"
+          "$RUNNER_TEMP/xdrive-ios-full-photo-gps-policy-check"
           node --test desktop/tests/ios-native-photo-map-mvp.cjs
 
       - name: Verify native Owner WGS84 map overview transport

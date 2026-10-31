@@ -25,6 +25,9 @@ struct XDrivePhotoKitLocatedCandidate: Identifiable {
     let candidate: XDrivePhotoKitScanCandidate
     let latitude: Double
     let longitude: Double
+    // Transient PHFetchResult cursor position, never serialized. Cell album
+    // pagination can resume after a 48th hit within a 64-slot scan page.
+    var slotOffset: Int = 0
     var id: String { candidate.id }
 }
 struct XDrivePhotoKitLocatedPage {
@@ -188,7 +191,8 @@ actor XDrivePhotoKitBoundedSnapshotScanner {
                 latitude: latitude, longitude: longitude
             ) {
                 placed.append(XDrivePhotoKitLocatedCandidate(
-                    candidate: candidate, latitude: latitude, longitude: longitude
+                    candidate: candidate, latitude: latitude, longitude: longitude,
+                    slotOffset: page.startOffset + offset
                 ))
             }
         }
