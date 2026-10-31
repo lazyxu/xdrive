@@ -12,6 +12,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.supervisorScope
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Test
@@ -72,6 +73,8 @@ class AndroidPhotoCoordinatedSessionTest {
     }
 
     @Test fun logoutDuringNetworkRefreshCannotResurrectOldOwner(): Unit = runBlocking {
+        // Expected async authentication rejection must not cancel the parent.
+        supervisorScope {
         store().save(origin, AuthSession("initial", "refresh-0", "owner"))
         val started = CompletableDeferred<Unit>()
         val allowed = CompletableDeferred<Unit>()
@@ -85,9 +88,12 @@ class AndroidPhotoCoordinatedSessionTest {
         assertNotNull(runCatching { pending.await() }.exceptionOrNull())
         assertNull(store().load())
         assertEquals(listOf("refresh-0"), backend.seen)
+        }
     }
 
     @Test fun newOwnerLoginCannotBeOverwrittenByLateWorkerRefresh(): Unit = runBlocking {
+        // Expected async authentication rejection must not cancel the parent.
+        supervisorScope {
         store().save(origin, AuthSession("initial", "refresh-0", "owner"))
         val started = CompletableDeferred<Unit>()
         val allowed = CompletableDeferred<Unit>()
@@ -100,6 +106,7 @@ class AndroidPhotoCoordinatedSessionTest {
         assertNotNull(runCatching { pending.await() }.exceptionOrNull())
         assertEquals("other", store().load()?.username)
         assertEquals("owner-b-refresh", store().load()?.refreshToken)
+        }
     }
 
     @Test fun mandatoryPasswordRotationIsPreservedForForegroundUi(): Unit = runBlocking {
