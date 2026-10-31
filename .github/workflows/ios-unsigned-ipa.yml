@@ -170,6 +170,19 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-lan-route-check"
           node --test desktop/tests/ios-native-lan-ip-login.cjs
 
+      - name: Reproduce and classify native login TLS, Owner/root and retry errors
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/AuthService.swift \
+            ios/XDriveIOS/OwnerRootVerifier.swift \
+            ios/XDriveIOS/NativeOwnerSessionStore.swift \
+            ios/XDriveIOS/NativeOwnerLoginFailurePolicy.swift \
+            ios/tests/NativeOwnerLoginFailureChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-login-failure-policy"
+          "$RUNNER_TEMP/xdrive-ios-login-failure-policy"
+          node --test desktop/tests/ios-native-owner-login-errors.cjs
+
       - name: Verify native Photos Owner, auto backup, cloud thumbnail and receipt contracts
         run: |
           set -euo pipefail

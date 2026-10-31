@@ -102,41 +102,14 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
                 origin: configured, ip: lanIPText)) == origin
     }
 
+    /// Diagnostics contain only a fixed failure category, never raw Server
+    /// bodies, bearer credentials, the stored password, or a Keychain record.
     private func isTransientRestoreError(_ failure: Error) -> Bool {
-        if let auth = failure as? AuthFailure {
-            switch auth {
-            case .rateLimited, .unavailable: return true
-            case .httpStatus(let status): return (500...599).contains(status)
-            default: return false
-            }
-        }
-        guard let network = failure as? URLError else { return false }
-        switch network.code {
-        case .cannotFindHost, .dnsLookupFailed, .cannotConnectToHost,
-             .networkConnectionLost, .notConnectedToInternet, .timedOut:
-            return true
-        default:
-            return false
-        }
+        XDriveIOSNativeOwnerLoginFailurePolicy.canRetrySavedSession(after: failure)
     }
 
     private func humanMessage(_ failure: Error) -> String {
-        if let local = failure as? XDriveIOSNativeSessionError {
-            switch local {
-            case .malformedCredential:
-                return "本机保持登录记录不可验证；未读取或替换其他账户。请明确退出并重新登录。"
-            case .keychainUnavailable:
-                return "iOS Keychain 暂不可用；登录凭据未确认保存或清除。请解锁后重试。"
-            case .staleSession, .ownerChanged:
-                return "服务器或账户在验证期间发生变化；未建立原生登录会话。"
-            case .passwordChangeRequired:
-                return "当前账户要求修改密码；原生密码修改页面尚未接入，未建立会话。"
-            case .notSignedIn:
-                return "当前没有经过验证的原生登录会话。"
-            }
-        }
-        if failure is AuthFailure { return AuthFailure.message(for: failure) }
-        return "无法验证当前服务器、账户或云端根目录；未建立原生会话。"
+        XDriveIOSNativeOwnerLoginFailurePolicy.message(for: failure)
     }
 
     /// Revalidate the Server Owner and root with an access token obtained
