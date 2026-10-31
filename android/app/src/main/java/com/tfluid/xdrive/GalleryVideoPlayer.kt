@@ -40,6 +40,12 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 import com.tfluid.xdrive.core.GalleryAsset
 
+/** Only terminal media failures can retry a current, Owner-verified playback.
+ * This is an explicit user action; no automatic source re-opening. */
+internal fun galleryVideoRetryAvailable(
+    hasSource: Boolean, hasPlayer: Boolean, playbackFailed: Boolean,
+): Boolean = !hasSource || !hasPlayer || playbackFailed
+
 /** Observe a deliberate horizontal swipe without consuming Media3 touch events.
  * The bottom player-control area is excluded so seeking does not change files.
  * Native media controls retain full ownership of their touch and seek events. */
@@ -84,16 +90,17 @@ internal fun GalleryVideoPlayer(
 ) {
     val context = LocalContext.current
     val thumbKey = "${video.node.id}:${video.node.revision}"
+    var retryNonce by remember(video.node.id, video.node.revision) { mutableIntStateOf(0) }
     var cover by remember(video.node.id, video.node.revision) {
         mutableStateOf(thumbnails.get(thumbKey))
     }
-    var firstFrame by remember(video.node.id, video.node.revision) {
+    var firstFrame by remember(video.node.id, video.node.revision, retryNonce) {
         mutableStateOf(false)
     }
-    var bufferedMs by remember(video.node.id, video.node.revision) {
+    var bufferedMs by remember(video.node.id, video.node.revision, retryNonce) {
         mutableLongStateOf(0L)
     }
-    var durationMs by remember(video.node.id, video.node.revision) {
+    var durationMs by remember(video.node.id, video.node.revision, retryNonce) {
         mutableLongStateOf(video.durationMs)
     }
     // A cached Gallery tile is the first frame. Otherwise use only the
@@ -113,11 +120,16 @@ internal fun GalleryVideoPlayer(
             cover = bitmap
         }
     }
-    val source = remember(controller, video.node.id, video.node.revision) {
+    val source = remember(controller, video.node.id, video.node.revision, retryNonce) {
         controller.openGalleryVideoPlayback(video)
     }
-    var failed by remember(video.node.id, video.node.revision) { mutableStateOf(false) }
-    val player = remember(context, source) {
+    var failed by remember(video.node.id, video.node.revision, retryNonce) { mutableStateOf(false) }
+    val retryPlayback: () -> Unit = {
+        // Reuse current Controller Owner/Node/Revision admission; a dismissed
+        // Viewer or changed media must never mint another signed playback URL.
+        if (controller.state.value.galleryViewer == video) retryNonce++
+    }
+    val player = remember(context, source, retryNonce) {
         if (source == null) null else createPreparedMediaResource(
             build = { ExoPlayer.Builder(context).build() },
             prepare = { owned ->
@@ -204,7 +216,14 @@ internal fun GalleryVideoPlayer(
         }
         if (source == null || player == null) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("暂时无法播放这个视频", color = Color.White)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("暂时无法播放这个视频", color = Color.White)
+                    TextButton(onClick = retryPlayback,
+                        modifier = Modifier.heightIn(min = 48.dp)
+                            .testTag("gallery-video-retry")) {
+                        Text("重试播放", color = Color.White)
+                    }
+                }
             }
         } else {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -234,11 +253,21 @@ internal fun GalleryVideoPlayer(
                         color = Color.White,
                     )
                 }
-                if (failed) {
-                    Text("视频播放失败，请检查网络或文件格式。",
+                if (galleryVideoRetryAvailable(
+                        hasSource = true, hasPlayer = true, playbackFailed = failed)) {
+                    Column(
                         modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp)
                             .background(Color.Black.copy(alpha = 0.7f)),
-                        color = Color.White)
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text("视频播放失败，请检查网络或文件格式。",
+                            color = Color.White)
+                        TextButton(onClick = retryPlayback,
+                            modifier = Modifier.heightIn(min = 48.dp)
+                                .testTag("gallery-video-retry")) {
+                            Text("重试播放", color = Color.White)
+                        }
+                    }
                 } else if (!firstFrame && bufferedMs > 0L) {
                     val total = if (durationMs > 0L) " / ${formatBufferedTime(durationMs)}" else ""
                     Text("已缓冲 ${formatBufferedTime(bufferedMs)}$total",
