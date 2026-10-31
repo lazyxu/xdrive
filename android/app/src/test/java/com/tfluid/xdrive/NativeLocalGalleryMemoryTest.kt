@@ -31,6 +31,29 @@ class NativeLocalGalleryMemoryTest {
         assertEquals(returned.consumedPageIntent.intValue, returned.pageIntent.intValue)
     }
 
+    @Test fun cachedAlbumIndexAndVisibleWindowSurviveNativeTabReturn() {
+        val memory = NativeLocalGalleryMemory()
+        val scan = NativeLocalAlbumScan(
+            albums = emptyList(), truncated = false, scanned = 0)
+        memory.albumIndex.value = scan
+        memory.albumVisibleCount.intValue = 160
+        val grid = memory.albumGridState.value
+
+        // Returning from another fixed tab must not rescan or reset the
+        // user's local album grid merely because its Compose view unmounted.
+        memory.wallFor(albumsOnly = false, selectedAlbumId = null)
+        memory.wallFor(albumsOnly = true, selectedAlbumId = null)
+        assertSame(scan, memory.albumIndex.value)
+        assertSame(grid, memory.albumGridState.value)
+        assertEquals(160, memory.albumVisibleCount.intValue)
+
+        // A changed MediaStore grant/library is a different data generation.
+        memory.invalidate()
+        assertEquals(null, memory.albumIndex.value)
+        assertEquals(NativeLocalMediaStore.ALBUM_PAGE_SIZE,
+            memory.albumVisibleCount.intValue)
+    }
+
     @Test fun changingTheActualAlbumDropsOnlyItsOldContentsNotThePhotoWall() {
         val owner = NativeLocalGalleryMemory()
         val photos = owner.wallFor(albumsOnly = false, selectedAlbumId = null)
