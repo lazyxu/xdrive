@@ -23,6 +23,7 @@ internal class NativeLocalGalleryWallMemory {
     val pageIntent: MutableIntState = mutableIntStateOf(0)
     val consumedPageIntent: MutableIntState = mutableIntStateOf(0)
     val loaded: MutableState<Boolean> = mutableStateOf(false)
+    val revision: MutableIntState = mutableIntStateOf(0)
     val gridState: MutableState<LazyGridState> = mutableStateOf(LazyGridState())
 
     private var albumId: String? = null
@@ -35,6 +36,7 @@ internal class NativeLocalGalleryWallMemory {
     }
 
     fun clear() {
+        revision.intValue++
         items.value = emptyList()
         exhausted.value = false
         scannedCount.intValue = 0
