@@ -14,6 +14,7 @@ class AuthToggleUiTest {
     @get:Rule val compose = createComposeRule()
     private var formState by mutableStateOf(DriveState())
     private var submitted: Pair<Boolean, Boolean>? = null // allowHttp, remember
+    private var savedRestoreRetries = 0
 
     private fun showForm() {
         compose.setContent {
@@ -23,10 +24,28 @@ class AuthToggleUiTest {
                     login = { _, allowHttp, _, _, _, remember ->
                         submitted = allowHttp to remember
                     },
+                    retrySavedSession = { savedRestoreRetries++ },
                     actions = {},
                 )
             }
         }
+    }
+
+
+    @Test fun savedSessionRetryIsExplicitAndDisappearsAfterManualDraftEdit() {
+        formState = DriveState(
+            screen = Screen.CONNECT,
+            server = "https://drive.example",
+            username = "owner",
+            savedSessionRestoreRetryAvailable = true,
+        )
+        showForm()
+        compose.onNodeWithTag("auth-saved-session-retry")
+            .performScrollTo().assertIsDisplayed().performClick()
+        compose.runOnIdle { Assert.assertEquals(1, savedRestoreRetries) }
+        compose.onNodeWithTag("username").performTextInput("-changed")
+        compose.onNodeWithTag("auth-saved-session-retry").assertDoesNotExist()
+        compose.runOnIdle { Assert.assertEquals(1, savedRestoreRetries) }
     }
 
     @Test fun tappingKeepLoginLabelTogglesOneAccessibleActionAndForwardsChoice() {

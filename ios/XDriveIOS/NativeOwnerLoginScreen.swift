@@ -64,6 +64,14 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                                     .font(.footnote)
                                     .accessibilityIdentifier("native-ios-login-error")
                             }
+                            if model.canRetryStoredSessionForCurrentDraft {
+                                Button("重试恢复已保存的登录") {
+                                    Task { await model.retryStoredSession() }
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(model.busy)
+                                .accessibilityIdentifier("native-ios-saved-session-retry")
+                            }
                             if let notice = model.noticeMessage {
                                 Text(notice)
                                     .font(.footnote)

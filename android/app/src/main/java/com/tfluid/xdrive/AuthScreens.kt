@@ -144,6 +144,7 @@ private fun Submit(label: String, loading: Boolean, onClick: () -> Unit) {
 internal fun UnifiedLoginForm(
     state: DriveState,
     login: (String, Boolean, String, String, String, Boolean) -> Unit,
+    retrySavedSession: () -> Unit,
     actions: @Composable () -> Unit,
 ) {
     var server by remember(state.server) { mutableStateOf(state.server) }
@@ -188,6 +189,15 @@ internal fun UnifiedLoginForm(
                 style = MaterialTheme.typography.bodyMedium)
         }
         ErrorNotice(state.error)
+        if (state.savedSessionRestoreRetryAvailable && !state.loading &&
+            server == state.server && username == state.username &&
+            lanIp == state.route.lanIp) {
+            TextButton(onClick = retrySavedSession,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                    .testTag("auth-saved-session-retry")) {
+                Text("重试恢复已保存的登录")
+            }
+        }
         Submit("登录", state.loading) {
             // Keep the entered value until successful navigation so Android
             // Autofill can offer to save it; never persist it in app state.

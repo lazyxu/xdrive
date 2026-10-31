@@ -3716,6 +3716,65 @@ class DriveControllerTest {
         second.close()
     }
 
+    @Test fun transientSavedSessionRestoreSupportsExplicitRetryWithoutPassword() = runTest {
+        val server = ServerAddress.parse("https://drive.example").url
+        val vault = TestVault().apply {
+            value = SavedDriveSession(server, "owner", "saved-refresh")
+        }
+        val api = Service().apply { refreshFailure = ApiException(503, "temporarily offline") }
+        val c = DriveController(this, { api }, initialServer = server,
+            initialUsername = "owner", sessionPersistence = vault)
+        c.restoreSession()
+        runCurrent()
+        assertEquals(Screen.CONNECT, c.state.value.screen)
+        assertTrue(c.state.value.savedSessionRestoreRetryAvailable)
+        assertEquals("saved-refresh", vault.value?.refreshToken)
+        assertEquals(1, api.refreshed)
+        // No timer or automatic replay: the explicit second call is required.
+        api.refreshFailure = null
+        assertEquals(1, api.refreshed)
+        c.restoreSession()
+        runCurrent()
+        assertEquals(2, api.refreshed)
+        assertEquals(Screen.FILES, c.state.value.screen)
+        assertFalse(c.state.value.savedSessionRestoreRetryAvailable)
+        assertEquals("rotated", vault.value?.refreshToken)
+        c.close()
+    }
+
+    @Test fun revokedSavedSessionDoesNotOfferRetry() = runTest {
+        val vault = TestVault().apply {
+            value = SavedDriveSession("https://drive.example/", "owner", "revoked")
+        }
+        val api = Service().apply { refreshFailure = ApiException(401, "revoked") }
+        val c = DriveController(this, { api }, sessionPersistence = vault)
+        c.restoreSession()
+        runCurrent()
+        assertEquals(Screen.LOGIN, c.state.value.screen)
+        assertFalse(c.state.value.savedSessionRestoreRetryAvailable)
+        assertNull(vault.value)
+        c.close()
+    }
+
+    @Test fun newerManualDraftNeverOffersOldSavedSessionRetry() = runTest {
+        val oldServer = ServerAddress.parse("https://old.example").url
+        val newServer = ServerAddress.parse("https://new.example").url
+        val vault = TestVault().apply {
+            value = SavedDriveSession(oldServer, "old-owner", "old-refresh")
+        }
+        val api = Service().apply { refreshFailure = ApiException(503, "unavailable") }
+        val c = DriveController(this, { api }, initialServer = newServer,
+            initialUsername = "new-owner", sessionPersistence = vault)
+        c.restoreSession()
+        runCurrent()
+        assertEquals(Screen.CONNECT, c.state.value.screen)
+        assertEquals(newServer, c.state.value.server)
+        assertEquals("new-owner", c.state.value.username)
+        assertFalse(c.state.value.savedSessionRestoreRetryAvailable)
+        assertEquals("old-refresh", vault.value?.refreshToken)
+        c.close()
+    }
+
     @Test fun offlineRestoreKeepsVaultButRevokedRefreshReturnsToLogin() = runTest {
         val vault = TestVault().apply {
             value = SavedDriveSession("https://drive.example/", "owner", "saved-refresh")

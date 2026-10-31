@@ -11,6 +11,7 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
     @Published var password = ""
     @Published var keepSignedIn = true
     @Published private(set) var busy = false
+    @Published private(set) var canRetryStoredSession = false
     @Published private(set) var owner: XDriveNativeOwnerRoot?
     @Published private(set) var errorMessage: String?
     @Published private(set) var noticeMessage: String?
@@ -26,6 +27,15 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
     private var active: Session?
     private var generation: UInt64 = 0
     private var restoreAttempted = false
+    private var retryDraftSnapshot: (server: String, lanIP: String, username: String)?
+
+    /// A retry can only restore the currently displayed Server/Owner hint,
+    /// never a different Keychain Owner after the user starts editing.
+    var canRetryStoredSessionForCurrentDraft: Bool {
+        guard canRetryStoredSession, let draft = retryDraftSnapshot else { return false }
+        return serverText == draft.server && lanIPText == draft.lanIP &&
+            username == draft.username
+    }
 
     // Persist a non-secret native server hint only after Owner/root proof.
     // Never consult retired browser origins, cookies or script storage.
@@ -75,6 +85,39 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
         verified.ownerID == saved.ownerID &&
         verified.username == saved.username &&
         verified.rootNodeID == saved.rootNodeID
+    }
+
+    /// Only transient transport/server failures qualify for an explicit retry.
+    /// TLS identity, Owner mismatch, malformed credentials and 401/403 never do.
+    private func draftMatchesSavedCredential(
+        _ saved: XDriveIOSNativeOwnerCredential
+    ) -> Bool {
+        guard username.trimmingCharacters(in: .whitespacesAndNewlines) ==
+                saved.username,
+              let origin = try? ServerAddress.parse(saved.origin),
+              let configured = try? ServerAddress.parse(serverText)
+        else { return false }
+        return configured == origin ||
+            (try? XDriveIOSNativeLANLoginRoute.candidate(
+                origin: configured, ip: lanIPText)) == origin
+    }
+
+    private func isTransientRestoreError(_ failure: Error) -> Bool {
+        if let auth = failure as? AuthFailure {
+            switch auth {
+            case .rateLimited, .unavailable: return true
+            case .httpStatus(let status): return (500...599).contains(status)
+            default: return false
+            }
+        }
+        guard let network = failure as? URLError else { return false }
+        switch network.code {
+        case .cannotFindHost, .dnsLookupFailed, .cannotConnectToHost,
+             .networkConnectionLost, .notConnectedToInternet, .timedOut:
+            return true
+        default:
+            return false
+        }
     }
 
     private func humanMessage(_ failure: Error) -> String {
@@ -163,13 +206,18 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
     func restore() async {
         guard !restoreAttempted, !busy, active == nil else { return }
         restoreAttempted = true
+        canRetryStoredSession = false
+        retryDraftSnapshot = nil
+        errorMessage = nil
         busy = true
         generation &+= 1
         let ticket = generation
         defer { busy = false }
+        var savedForRetry: XDriveIOSNativeOwnerCredential?
         do {
             guard let saved = try XDriveIOSNativeOwnerSessionStore.load()
             else { return }
+            savedForRetry = saved
             let origin = try ServerAddress.parse(saved.origin)
             let refreshed = try await AuthService(origin: origin).refresh(
                 token: saved.refreshToken
@@ -230,6 +278,12 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
             // A cancelled restore cannot resurrect credentials or Owner UI.
         } catch {
             guard generation == ticket else { return }
+            if isTransientRestoreError(error),
+               let saved = savedForRetry,
+               draftMatchesSavedCredential(saved) {
+                canRetryStoredSession = true
+                retryDraftSnapshot = (serverText, lanIPText, username)
+            }
             if let failure = error as? AuthFailure, case .rejected = failure {
                 do {
                     try XDriveIOSNativeOwnerSessionStore.clear()
@@ -242,10 +296,24 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
         }
     }
 
+    /// User-initiated only: never auto-loop a rotating refresh credential.
+    /// restore() re-reads the exact same Keychain Owner and verifies its root.
+    func retryStoredSession() async {
+        guard canRetryStoredSessionForCurrentDraft, !busy, active == nil else {
+            return
+        }
+        canRetryStoredSession = false
+        retryDraftSnapshot = nil
+        restoreAttempted = false
+        await restore()
+    }
+
     /// Explicit user sign-in, not a PWA Cookie session. A successful HTTP
     /// login alone is insufficient: /me and the Owner root MUST both match.
     func signIn() async {
         guard !busy, active == nil else { return }
+        canRetryStoredSession = false
+        retryDraftSnapshot = nil
         errorMessage = nil
         noticeMessage = nil
         let serverInput = serverText
@@ -356,6 +424,8 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
     /// after synchronous Keychain removal, invalidate memory BEFORE remote I/O.
     @discardableResult
     func signOut() async -> Bool {
+        canRetryStoredSession = false
+        retryDraftSnapshot = nil
         generation &+= 1
         let previous = active
         password = ""
