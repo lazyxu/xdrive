@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -80,8 +82,13 @@ internal fun NativePhotoBatchControls(
             },
             title = { Text("本机照片和视频增量备份") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("只上传当前账户授权的原件；与云端图库分开。每次明确确认后处理最多 8 项新原件，不会自动定时执行。")
+                Column(
+                    modifier = Modifier.heightIn(max = 430.dp)
+                        .verticalScroll(rememberScrollState())
+                        .testTag("native-photo-backup-scroll"),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text("只上传当前账户授权的原件；与云端图库分开。手动处理每批最多 8 项新原件；自动定时需另行明确开启。")
                     Text(if (fullReadGrant) "照片和视频：已授权完整读取"
                         else "未取得完整照片及视频读取授权；Android 14 只选部分照片不等于完整授权。",
                         modifier = Modifier.testTag("native-photo-batch-permission-status"))
