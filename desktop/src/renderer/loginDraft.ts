@@ -15,9 +15,13 @@ export function readDesktopLoginDraft(): XDriveLoginDraft {
 }
 
 export function saveDesktopLoginDraft(value: XDriveLoginDraft): void {
+  const draft = xDriveNormalizeLoginDraft(value)
+  // A malformed URL may embed a password or bearer query. Never persist it.
+  // Retain the last valid draft until the user finishes editing the address.
+  if (value.server.trim() && !draft.server) return
   try {
     window.localStorage.setItem(KEY, JSON.stringify({
-      version: 1, ...xDriveNormalizeLoginDraft(value),
+      version: 1, ...draft,
     }))
   } catch { /* Best effort: never block login when storage is denied. */ }
 }

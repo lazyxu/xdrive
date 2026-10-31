@@ -10,8 +10,7 @@ import {
 import type { XDriveSynologyBackupLocalClient } from '@xdrive/ui/mui'
 import './styles.css'
 import { createXDriveSynologyHost } from './synologyHost'
-import { xDriveNormalizeLoginDraft, xDriveEmptyLoginDraft } from '@xdrive/shared'
-import type { XDriveLoginDraft } from '@xdrive/shared'
+import { readDSMLoginDraft, saveDSMLoginDraft } from './synologyLoginDraft'
 
 // DSM's local Agent and CGI must never be contacted from an insecure page.
 // Render a fail-closed explanation instead of crashing before React mounts.
@@ -27,24 +26,6 @@ function createSecureSynologyHost() {
 const host = createSecureSynologyHost()
 
 type OwnerConnectionCheck = 'unchecked' | 'checking' | 'verified' | 'unavailable'
-const DSM_LOGIN_DRAFT_KEY = 'xdrive.dsm.login-draft.v1'
-
-// Only non-secret hints survive a full Owner-scoped workspace reload. Never
-// serialize the password or Agent/DSM bearer to browser storage.
-function readDSMLoginDraft(): XDriveLoginDraft {
-  try {
-    const raw = window.localStorage.getItem(DSM_LOGIN_DRAFT_KEY)
-    return raw ? xDriveNormalizeLoginDraft(JSON.parse(raw)) : xDriveEmptyLoginDraft()
-  } catch { return xDriveEmptyLoginDraft() }
-}
-function saveDSMLoginDraft(server: string, username: string): void {
-  try {
-    window.localStorage.setItem(DSM_LOGIN_DRAFT_KEY, JSON.stringify({
-      version: 1, server, username, lanIp: '',
-    }))
-  } catch { /* Storage may be blocked; never fail authenticated DSM actions. */ }
-}
-
 /** Host-specific capability inside the canonical shared Settings dialog. */
 function SynologyServerConnectionSettings({
   open, client,

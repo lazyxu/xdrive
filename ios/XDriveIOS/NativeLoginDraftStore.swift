@@ -33,6 +33,18 @@ enum XDriveIOSNativeLoginDraftStore {
               username.utf8.count <= 128,
               !server.contains("\u{0000}"), !lanIP.contains("\u{0000}"),
               !username.contains("\u{0000}") else { return }
+        // A user may paste a URL containing credentials or a bearer query.
+        // Retain the previous safe draft, never serialize that input.
+        if !server.isEmpty {
+            guard let origin = try? ServerAddress.parse(server) else { return }
+            if !lanIP.isEmpty {
+                guard (try? XDriveIOSNativeLANLoginRoute.candidate(
+                    origin: origin, ip: lanIP
+                )) != nil else { return }
+            }
+        } else if !lanIP.isEmpty {
+            return
+        }
         let draft = XDriveIOSNativeLoginDraft(
             server: server, lanIP: lanIP, username: username
         )
