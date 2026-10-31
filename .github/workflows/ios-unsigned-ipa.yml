@@ -109,6 +109,17 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-live-original-check"
           "$RUNNER_TEMP/xdrive-ios-live-original-check"
 
+      - name: Verify bounded cloud Live ZIP extraction and corruption cleanup
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/LiveOriginalArchive.swift \
+            ios/XDriveIOS/LivePreviewArchive.swift \
+            ios/tests/LivePreviewArchiveChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-live-preview-check"
+          "$RUNNER_TEMP/xdrive-ios-live-preview-check"
+          node --test desktop/tests/ios-native-cloud-preview-scene-lifecycle.cjs
+
       - name: Verify native background grant token and expiry contract
         run: |
           set -euo pipefail

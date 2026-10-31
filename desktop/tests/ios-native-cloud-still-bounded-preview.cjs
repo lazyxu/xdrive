@@ -34,10 +34,13 @@ test('compressed original is decoded off main at bounded pixel dimensions', () =
   assert.doesNotMatch(still, /UIImage\(data: bytes\)|UIImage\.init\(data:/)
 })
 
-test('existing thumbnail and Live ZIP/cloud movie behavior is preserved', () => {
+test('existing thumbnails and verified Live ZIP/cloud movies preserve Owner teardown', () => {
   assert.match(cloud, /kCGImageSourceThumbnailMaxPixelSize as String: 280/)
   assert.match(cloud, /if node\.isVideo \{ return \(nil, url\) \}/)
-  assert.match(cloud, /Live 原件已保存为双资源 ZIP/)
+  assert.match(cloud, /func livePreview\(_ node:/)
+  assert.match(cloud, /XDriveIOSLivePreviewArchive.extract\(temporary\)/)
+  assert.match(cloud, /player = AVPlayer\(url: live.files.motionURL\)/)
+  assert.match(cloud, /liveResources\?\.discard\(\)/)
   assert.match(cloud, /XDriveIOSNativeZoomablePhotoView\(image: still\)/)
   assert.match(cloud, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?player\?\.pause\(\)[\s\S]*?still = nil[\s\S]*?dismiss\(\)/)
 })

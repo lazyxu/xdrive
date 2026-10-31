@@ -38,6 +38,10 @@ private struct XDriveIOSNativeCloudPreviewTicket: Decodable {
     let mime_type: String
 }
 
+private struct XDriveIOSNativeCloudDownloadTicket: Decodable {
+    let url: String
+}
+
 enum XDriveIOSNativeCloudReadError: Error {
     case invalidScope, server(Int), invalidResponse, notSupported
 }
@@ -260,6 +264,113 @@ struct XDriveIOSNativeCloudOriginalReader {
         }
         return (UIImage(cgImage: decoded), nil)
     }
+
+    /// Fetch the exact verified Owner's original ZIP to a temporary file.
+    /// Unlike the grid, this is only called from the foreground L3 Viewer.
+    /// The signed download URL is never passed to AVPlayer or persisted.
+    func livePreview(_ node: XDriveIOSNativeCloudOriginal) async throws
+        -> (image: UIImage, files: XDriveIOSLivePreviewFiles) {
+        guard node.isLiveArchive, node.id > 0, node.revision > 0,
+              node.type == "file",
+              XDriveIOSBackgroundOriginalNamePolicy.valid(node.name),
+              node.size > 0,
+              UInt64(node.size) <= XDriveIOSLivePreviewArchive.maximumArchiveBytes,
+              !accessToken.isEmpty else {
+            throw XDriveIOSNativeCloudReadError.notSupported
+        }
+        let client = session()
+        defer { client.invalidateAndCancel() }
+        let ticketURL = try endpoint("/api/v1/files/\(node.id)/download-ticket")
+        let (ticketData, ticketReply) = try await client.data(
+            for: request(ticketURL, method: "POST")
+        )
+        try Task.checkCancellation()
+        try check(ticketReply, size: ticketData.count, maximum: 32_768)
+        let ticket = try JSONDecoder().decode(
+            XDriveIOSNativeCloudDownloadTicket.self, from: ticketData
+        )
+        // Only one signed, same-origin path for THIS file ID is accepted.
+        let expectedPath = "/api/v1/file-download/\(node.id)"
+        guard let parsed = URLComponents(string: ticket.url),
+              parsed.scheme == nil, parsed.host == nil,
+              parsed.user == nil, parsed.password == nil,
+              parsed.fragment == nil, parsed.path == expectedPath,
+              let query = parsed.queryItems, query.count == 1,
+              query[0].name == "ticket", !(query[0].value ?? "").isEmpty,
+              (query[0].value ?? "").utf8.count <= 8192,
+              let origin = URLComponents(
+                url: try ServerAddress.parse(owner.origin.absoluteString),
+                resolvingAgainstBaseURL: false
+              ),
+              var resolved = URLComponents(url: owner.origin,
+                                           resolvingAgainstBaseURL: false)
+        else { throw XDriveIOSNativeCloudReadError.invalidResponse }
+        resolved.path = expectedPath
+        resolved.percentEncodedQuery = parsed.percentEncodedQuery
+        resolved.fragment = nil
+        guard resolved.scheme == "https", resolved.host == origin.host,
+              resolved.port == origin.port, let url = resolved.url else {
+            throw XDriveIOSNativeCloudReadError.invalidResponse
+        }
+        var download = request(url, bearer: false)
+        download.setValue("application/zip", forHTTPHeaderField: "Accept")
+        let (temporary, response) = try await client.download(for: download)
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        try Task.checkCancellation()
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+              let attributes = try? FileManager.default.attributesOfItem(
+                atPath: temporary.path
+              ),
+              (attributes[.type] as? FileAttributeType) == .typeRegular,
+              (attributes[.size] as? NSNumber)?.int64Value == node.size else {
+            throw XDriveIOSNativeCloudReadError.invalidResponse
+        }
+
+        // CRC, local/central ZIP headers, two roles and manifest are validated
+        // on a utility worker, using at most 1 MiB per read. No main-thread
+        // unzip or unbounded Data for a 1 GiB original pair.
+        let decodeWork = Task.detached(priority: .utility) {
+            () throws -> (files: XDriveIOSLivePreviewFiles, image: CGImage) in
+            let files = try XDriveIOSLivePreviewArchive.extract(temporary)
+            do {
+                try Task.checkCancellation()
+                guard let source = CGImageSourceCreateWithURL(
+                    files.stillURL as CFURL,
+                    [kCGImageSourceShouldCache: false] as CFDictionary
+                ), CGImageSourceGetCount(source) > 0 else {
+                    throw XDriveIOSNativeCloudReadError.invalidResponse
+                }
+                let options: [String: Any] = [
+                    kCGImageSourceCreateThumbnailFromImageAlways as String: true,
+                    kCGImageSourceCreateThumbnailWithTransform as String: true,
+                    kCGImageSourceThumbnailMaxPixelSize as String: 4096,
+                    kCGImageSourceShouldCacheImmediately as String: false
+                ]
+                guard let image = CGImageSourceCreateThumbnailAtIndex(
+                    source, 0, options as CFDictionary
+                ) else { throw XDriveIOSNativeCloudReadError.invalidResponse }
+                try Task.checkCancellation()
+                return (files, image)
+            } catch {
+                files.discard()
+                throw error
+            }
+        }
+        // Viewer preemption must cancel *both* remote download and bounded
+        // ZIP/decode work rather than letting a detached worker run to 1 GiB.
+        let verified = try await withTaskCancellationHandler {
+            try await decodeWork.value
+        } onCancel: {
+            decodeWork.cancel()
+        }
+        do {
+            try Task.checkCancellation()
+            return (UIImage(cgImage: verified.image), verified.files)
+        } catch {
+            verified.files.discard()
+            throw error
+        }
+    }
 }
 
 @MainActor
@@ -355,18 +466,31 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
     @State private var previewRequestID = UUID()
     @State private var still: UIImage?
     @State private var player: AVPlayer?
+    @State private var liveResources: XDriveIOSLivePreviewFiles?
+    @State private var showingLiveMotion = false
     @State private var error: String?
 
     var body: some View {
         NavigationStack {
             Group {
-                if node.isLiveArchive {
-                    VStack(spacing: 16) {
-                        Image(systemName: "livephoto").font(.largeTitle)
-                        Text("Live 原件已保存为双资源 ZIP").font(.headline)
-                        Text("本阶段尚未接通云端 Live ZIP 解包及动态播放；不能将 ZIP 当作单张照片。")
-                            .font(.footnote).foregroundStyle(.secondary)
-                    }.padding()
+                if node.isLiveArchive, let still {
+                    VStack(spacing: 10) {
+                        if showingLiveMotion, let player {
+                            VideoPlayer(player: player)
+                                .onAppear { player.play() }
+                                .onDisappear { player.pause() }
+                        } else {
+                            XDriveIOSNativeZoomablePhotoView(image: still)
+                                .accessibilityLabel("云端 Live 静态原件")
+                        }
+                        Button(showingLiveMotion ? "查看静态原件" : "播放实况动态片段") {
+                            if showingLiveMotion { player?.pause() }
+                            showingLiveMotion.toggle()
+                        }
+                        .accessibilityIdentifier("native-ios-cloud-live-motion-toggle")
+                        Text("已校验 Live ZIP 原件双资源；动态为原始视频片段，尚非 Photos 同步实况动画。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 } else if let still {
                     XDriveIOSNativeZoomablePhotoView(image: still)
                         .accessibilityLabel("云端照片，可双指缩放或双击放大")
@@ -392,22 +516,38 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
             }
         }
         .task(id: previewRequestID) {
-            guard !node.isLiveArchive, phase == .active,
-                  let before = login.owner else { return }
+            guard phase == .active, let before = login.owner else { return }
             let requestID = previewRequestID
             do {
                 let auth = try await login.verifiedAuthorization()
-                let media = try await XDriveIOSNativeCloudOriginalReader(
+                let reader = XDriveIOSNativeCloudOriginalReader(
                     owner: auth.owner, accessToken: auth.accessToken
-                ).preview(node)
-                try Task.checkCancellation()
-                guard phase == .active, previewRequestID == requestID,
-                      XDriveIOSNativePhotoOwnerScope.matches(auth.owner, before),
-                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, before)
-                else { return }
-                still = media.image
-                if let url = media.videoURL {
-                    player = AVPlayer(url: url)
+                )
+                if node.isLiveArchive {
+                    let live = try await reader.livePreview(node)
+                    // All rejected/retired generations must remove the
+                    // temporary originals, even after a slow download/decode.
+                    guard !Task.isCancelled, phase == .active,
+                          previewRequestID == requestID,
+                          XDriveIOSNativePhotoOwnerScope.matches(auth.owner, before),
+                          XDriveIOSNativePhotoOwnerScope.matches(login.owner, before)
+                    else { live.files.discard(); return }
+                    liveResources?.discard()
+                    liveResources = live.files
+                    still = live.image
+                    player = AVPlayer(url: live.files.motionURL)
+                    showingLiveMotion = false
+                } else {
+                    let media = try await reader.preview(node)
+                    try Task.checkCancellation()
+                    guard phase == .active, previewRequestID == requestID,
+                          XDriveIOSNativePhotoOwnerScope.matches(auth.owner, before),
+                          XDriveIOSNativePhotoOwnerScope.matches(login.owner, before)
+                    else { return }
+                    still = media.image
+                    if let url = media.videoURL {
+                        player = AVPlayer(url: url)
+                    }
                 }
             } catch is CancellationError {
                 // Scene/Owner/view navigation invalidated the earlier request.
@@ -416,7 +556,9 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                       previewRequestID == requestID,
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, before)
                 else { return }
-                self.error = "此文件的云端预览不可用，未读取其他账户的数据。"
+                self.error = node.isLiveArchive
+                    ? "此 Live ZIP 原件无法读取或未通过双资源校验；请检查空间、网络与权限。"
+                    : "此文件的云端预览不可用，未读取其他账户的数据。"
             }
         }
         .onChange(of: phase) { state in
@@ -428,6 +570,9 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                 player = nil
                 still = nil
                 error = nil
+                liveResources?.discard()
+                liveResources = nil
+                showingLiveMotion = false
             }
             previewRequestID = UUID()
         }
@@ -437,22 +582,31 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
             player = nil
             still = nil
             error = nil
+            liveResources?.discard()
+            liveResources = nil
+            showingLiveMotion = false
             dismiss()
         }
         .onDisappear {
             player?.pause()
             player = nil
             still = nil
+            liveResources?.discard()
+            liveResources = nil
+            showingLiveMotion = false
         }
     }
 
     private func retryPreview() {
-        guard !node.isLiveArchive, phase == .active, login.owner != nil else { return }
+        guard phase == .active, login.owner != nil else { return }
         // Do not reuse an expired signed URL, previous player, or old pixels.
         player?.pause()
         player = nil
         still = nil
         error = nil
+        liveResources?.discard()
+        liveResources = nil
+        showingLiveMotion = false
         previewRequestID = UUID()
     }
 }
