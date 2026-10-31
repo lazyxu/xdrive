@@ -114,6 +114,8 @@ struct XDriveIOSNativePhotosDashboard: View {
     @State private var photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @State private var tab: XDriveIOSNativeBottomTab = .gallery
     @State private var gallerySource: XDriveIOSNativeGallerySource = .local
+    @State private var localMapScope: XDriveIOSNativeLocalMapScope = .page
+    @State private var localMapPageOffset = 0
     @State private var dynamicFeature: XDriveIOSNativeDynamicFeature?
     @State private var recentDynamic: [XDriveIOSNativeDynamicFeature] = []
     @State private var launcherQuery = ""
@@ -280,6 +282,8 @@ struct XDriveIOSNativePhotosDashboard: View {
         .onChange(of: gallerySource) { _ in saveNavigationIfReady() }
         .onChange(of: dynamicFeature) { _ in saveNavigationIfReady() }
         .onChange(of: recentDynamic) { _ in saveNavigationIfReady() }
+        .onChange(of: localMapScope) { _ in saveNavigationIfReady() }
+        .onChange(of: localMapPageOffset) { _ in saveNavigationIfReady() }
         // Rotation does not change focus; changing the owning route does.
         .onChange(of: tab) { next in
             if next != .gallery { galleryFocused = false }
@@ -490,6 +494,8 @@ struct XDriveIOSNativePhotosDashboard: View {
                     )
                 case .map:
                     XDriveIOSNativeLocalPhotoMapScreen(
+                        mapScope: $localMapScope,
+                        offset: $localMapPageOffset,
                         onFocusChange: { galleryFocused = $0 }
                     )
                 }
@@ -720,6 +726,8 @@ struct XDriveIOSNativePhotosDashboard: View {
         // Only known, implemented routes are restored. Child PhotoKit pages
         // re-query their own permission and Owner-signed Server data.
         gallerySource = XDriveIOSNativeGallerySource(rawValue: snapshot.gallerySource) ?? .local
+        localMapScope = XDriveIOSNativeLocalMapScope(rawValue: snapshot.mapScope ?? "page") ?? .page
+        localMapPageOffset = snapshot.mapPageOffset ?? 0
         dynamicFeature = snapshot.activeDynamic.flatMap {
             XDriveIOSNativeDynamicFeature(rawValue: $0)
         }
@@ -737,13 +745,17 @@ struct XDriveIOSNativePhotosDashboard: View {
             selectedTab: tab.rawValue,
             gallerySource: gallerySource.rawValue,
             activeDynamic: dynamicFeature?.implemented == true ? dynamicFeature?.rawValue : nil,
-            recentDynamic: recentDynamic.filter { $0.implemented }.map { $0.rawValue }
+            recentDynamic: recentDynamic.filter { $0.implemented }.map { $0.rawValue },
+            mapScope: localMapScope.rawValue,
+            mapPageOffset: localMapPageOffset
         )
     }
 
     private func resetNavigation() {
         galleryFocused = false
         gallerySource = .local
+        localMapScope = .page
+        localMapPageOffset = 0
         dynamicFeature = nil
         recentDynamic = []
         tab = .gallery

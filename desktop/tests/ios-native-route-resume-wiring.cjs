@@ -45,3 +45,21 @@ test('native Gallery MapKit route restores only under its verified Owner-scoped 
   assert.match(routes, /gallerySource: Self\.validGallery\(gallerySource\) \? gallerySource : "local"/);
   assert.doesNotMatch(routes, /PhotoKit\.fetch|PHAsset|GPS|Authorization:|accessToken|refreshToken/);
 });
+
+test('Owner-scoped native Gallery map resumes mode/page without storing media identity', () => {
+  assert.match(ui, /@State private var localMapScope: XDriveIOSNativeLocalMapScope = \.page/);
+  assert.match(ui, /@State private var localMapPageOffset = 0/);
+  assert.match(ui, /XDriveIOSNativeLocalPhotoMapScreen\(\s*mapScope: \$localMapScope,\s*offset: \$localMapPageOffset/);
+  assert.match(ui, /\.onChange\(of: localMapScope\) \{ _ in saveNavigationIfReady\(\) \}/);
+  assert.match(ui, /\.onChange\(of: localMapPageOffset\) \{ _ in saveNavigationIfReady\(\) \}/);
+  assert.match(ui, /snapshot\.mapScope \?\? "page"/);
+  assert.match(ui, /snapshot\.mapPageOffset \?\? 0/);
+  assert.match(ui, /mapScope: localMapScope\.rawValue,\s*mapPageOffset: localMapPageOffset/);
+  assert.match(ui, /gallerySource = \.local\s*localMapScope = \.page\s*localMapPageOffset = 0/);
+  assert.match(routes, /let mapScope: String\?/);
+  assert.match(routes, /let mapPageOffset: Int\?/);
+  assert.match(routes, /Self\.validMapScope\(saved\.mapScope \?\? "page"\)/);
+  assert.match(routes, /Self\.validMapPageOffset\(saved\.mapPageOffset \?\? 0\)/);
+  assert.match(routes, /value >= 0 && value <= 1_000_000 && value % 64 == 0/);
+  assert.doesNotMatch(routes, /assetID|latitude|longitude|photoID|previewTicket|location/);
+});

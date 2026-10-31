@@ -147,3 +147,16 @@ test('global map aggregates 100k GPS with only 64 representatives and on-demand 
   assert.match(map, /if state != \.active \{[\s\S]*?retire\(\)/)
   assert.doesNotMatch(map, /PHImageRequestOptions\(\)[\s\S]*?isNetworkAccessAllowed = true/)
 })
+
+test('local Gallery map retains parent-owned mode and page only, but revalidates PhotoKit on entry', () => {
+  assert.match(map, /enum XDriveIOSNativeLocalMapScope: String, CaseIterable/);
+  assert.match(map, /@Binding var mapScope: XDriveIOSNativeLocalMapScope/);
+  assert.match(map, /@Binding var offset: Int/);
+  assert.doesNotMatch(map, /@State private var offset = 0/);
+  assert.doesNotMatch(map, /@State private var mapScope: XDriveIOSNativeLocalMapScope = \.page/);
+  assert.match(map, /if next == \.page && phase == \.active \{ refresh\(at: offset\) \}/);
+  assert.match(map, /if mapScope == \.page, page == nil, !busy, phase == \.active \{\s*refresh\(at: offset\)/);
+  assert.match(map, /XDriveIOSNativePhotoMapPolicy\.validPage\(/);
+  assert.match(map, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/);
+  assert.doesNotMatch(map, /UserDefaults|WKWebView|UploadSession/);
+});

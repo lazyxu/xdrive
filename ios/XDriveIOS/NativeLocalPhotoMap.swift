@@ -302,7 +302,7 @@ private struct XDriveIOSMapPhotoAlbum: View {
     }
 }
 
-private enum XDriveIOSNativeLocalMapScope: String, CaseIterable {
+enum XDriveIOSNativeLocalMapScope: String, CaseIterable {
     case page, library
     var label: String {
         self == .page ? "当前页" : "已授权全库"
@@ -488,6 +488,9 @@ private struct XDriveIOSMapSpatialAlbum: View {
 /// explicit, transient full-authorized-library GPS overview. No WebView or
 /// second backup/upload worker; never persists or sends GPS/local IDs.
 struct XDriveIOSNativeLocalPhotoMapScreen: View {
+    // Parent-owned route hints; current PhotoKit reads and camera remain transient.
+    @Binding var mapScope: XDriveIOSNativeLocalMapScope
+    @Binding var offset: Int
     var onFocusChange: ((Bool) -> Void)?
     @Environment(\.scenePhase) private var phase
     @StateObject private var changes = XDriveIOSMapPhotoChanges()
@@ -501,11 +504,9 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     @State private var busy = false
     @State private var gpsFindPagesScanned = 0
     @State private var focused = false
-    @State private var offset = 0
     @State private var error: String?
     @State private var selection: XDriveIOSMapPhotoSelection?
     @State private var authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-    @State private var mapScope: XDriveIOSNativeLocalMapScope = .page
     @State private var globalCells: [
         XDriveIOSNativeLocalMapSpatialCell<XDrivePhotoKitLocatedCandidate>
     ] = []
@@ -673,7 +674,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         .onChange(of: mapScope) { next in
             clearReturnCamera()
             invalidate()
-            if next == .page && phase == .active { refresh(at: 0) }
+            if next == .page && phase == .active { refresh(at: offset) }
         }
         .onChange(of: changes.revision) { _ in
             clearReturnCamera()

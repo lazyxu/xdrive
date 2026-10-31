@@ -9,6 +9,9 @@ struct XDriveIOSNativeNavigationRouteSnapshot: Codable, Equatable {
     let gallerySource: String
     let activeDynamic: String?
     let recentDynamic: [String]
+    // Optional so the previous v1 snapshots continue decoding.
+    let mapScope: String?
+    let mapPageOffset: Int?
 }
 
 /// One fail-closed, server/Owner/root-scoped navigation snapshot. A different
@@ -40,6 +43,8 @@ struct XDriveIOSNativeNavigationRouteStore {
               Self.validTab(saved.selectedTab),
               Self.validGallery(saved.gallerySource),
               Self.validDynamic(saved.activeDynamic),
+              Self.validMapScope(saved.mapScope ?? "page"),
+              Self.validMapPageOffset(saved.mapPageOffset ?? 0),
               saved.recentDynamic.count <= 6,
               saved.recentDynamic.allSatisfy({ $0 == "backup" })
         else {
@@ -59,7 +64,9 @@ struct XDriveIOSNativeNavigationRouteStore {
         selectedTab: String,
         gallerySource: String,
         activeDynamic: String?,
-        recentDynamic: [String]
+        recentDynamic: [String],
+        mapScope: String = "page",
+        mapPageOffset: Int = 0
     ) {
         guard validScopeHash(scopeHash) else { return }
         // Unknown/newer features and unavailable native routes are not
@@ -75,7 +82,9 @@ struct XDriveIOSNativeNavigationRouteStore {
             selectedTab: safeTab,
             gallerySource: Self.validGallery(gallerySource) ? gallerySource : "local",
             activeDynamic: safeDynamic,
-            recentDynamic: Array(recentDynamic.filter { $0 == "backup" }.prefix(6))
+            recentDynamic: Array(recentDynamic.filter { $0 == "backup" }.prefix(6)),
+            mapScope: Self.validMapScope(mapScope) ? mapScope : "page",
+            mapPageOffset: Self.validMapPageOffset(mapPageOffset) ? mapPageOffset : 0
         )
         guard let data = try? JSONEncoder().encode(snapshot), data.count <= 2048 else {
             clear()
@@ -100,5 +109,15 @@ struct XDriveIOSNativeNavigationRouteStore {
 
     private static func validDynamic(_ feature: String?) -> Bool {
         feature == nil || feature == "backup"
+    }
+
+    private static func validMapScope(_ value: String) -> Bool {
+        value == "page" || value == "library"
+    }
+
+    // A bounded start position, not a photo identity or coordinate.
+    // The active authorized library is always reread on reentry.
+    private static func validMapPageOffset(_ value: Int) -> Bool {
+        value >= 0 && value <= 1_000_000 && value % 64 == 0
     }
 }

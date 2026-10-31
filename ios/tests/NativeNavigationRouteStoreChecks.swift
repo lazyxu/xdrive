@@ -63,6 +63,65 @@ struct XDriveNativeRouteChecks {
                    activeDynamic: nil, recentDynamic: [])
         require(defaults.object(forKey: XDriveIOSNativeNavigationRouteStore.key) == nil,
                 "unverified scope never persisted")
+        store.save(scopeHash: ownerB, selectedTab: "gallery", gallerySource: "map",
+                   activeDynamic: nil, recentDynamic: [],
+                   mapScope: "page", mapPageOffset: 128)
+        require(store.restore(scopeHash: ownerB)?.mapScope == "page",
+                "map mode can resume")
+        require(store.restore(scopeHash: ownerB)?.mapPageOffset == 128,
+                "page cursor can resume")
+        store.save(scopeHash: ownerB, selectedTab: "gallery", gallerySource: "map",
+                   activeDynamic: nil, recentDynamic: [],
+                   mapScope: "library", mapPageOffset: 128)
+        require(store.restore(scopeHash: ownerB)?.mapScope == "library",
+                "library mode requires new explicit scan on entry")
+        require(store.restore(scopeHash: ownerB)?.mapPageOffset == 128,
+                "last page remembered while selecting full library")
+        store.save(scopeHash: ownerB, selectedTab: "gallery", gallerySource: "map",
+                   activeDynamic: nil, recentDynamic: [],
+                   mapScope: "invalid", mapPageOffset: -64)
+        require(store.restore(scopeHash: ownerB)?.mapScope == "page",
+                "unsupported scan mode sanitized")
+        require(store.restore(scopeHash: ownerB)?.mapPageOffset == 0,
+                "negative cursor sanitized")
+        store.save(scopeHash: ownerB, selectedTab: "gallery", gallerySource: "map",
+                   activeDynamic: nil, recentDynamic: [],
+                   mapScope: "page", mapPageOffset: 65)
+        require(store.restore(scopeHash: ownerB)?.mapPageOffset == 0,
+                "unaligned cursor sanitized")
+        store.save(scopeHash: ownerB, selectedTab: "gallery", gallerySource: "map",
+                   activeDynamic: nil, recentDynamic: [],
+                   mapScope: "page", mapPageOffset: 1_000_064)
+        require(store.restore(scopeHash: ownerB)?.mapPageOffset == 0,
+                "out-of-range cursor sanitized")
+        // Legacy v1 snapshots had neither optional field.
+        let legacy = """
+        {"version":1,"scopeHash":"\(ownerB)","selectedTab":"gallery",
+        "gallerySource":"map","activeDynamic":null,"recentDynamic":[]}
+        """.data(using: .utf8)!
+        defaults.set(legacy, forKey: XDriveIOSNativeNavigationRouteStore.key)
+        require(store.restore(scopeHash: ownerB)?.mapScope == nil,
+                "legacy v1 route snapshot decodes without mode")
+        require(store.restore(scopeHash: ownerB)?.mapPageOffset == nil,
+                "legacy v1 route snapshot decodes without cursor")
+        // Tampered persisted data fails closed instead of replaying a stale
+        // unverified page or crossing Owner identity.
+        let bad = XDriveIOSNativeNavigationRouteSnapshot(
+            version: 1, scopeHash: ownerB, selectedTab: "gallery",
+            gallerySource: "map", activeDynamic: nil, recentDynamic: [],
+            mapScope: "page", mapPageOffset: 65
+        )
+        defaults.set(try! JSONEncoder().encode(bad),
+                     forKey: XDriveIOSNativeNavigationRouteStore.key)
+        require(store.restore(scopeHash: ownerB) == nil,
+                "tampered map cursor denied")
+        require(defaults.object(forKey: XDriveIOSNativeNavigationRouteStore.key) == nil,
+                "invalid snapshot removed")
+        store.save(scopeHash: ownerB, selectedTab: "gallery", gallerySource: "map",
+                   activeDynamic: nil, recentDynamic: [],
+                   mapScope: "page", mapPageOffset: 192)
+        require(store.restore(scopeHash: ownerA) == nil,
+                "map cursor never crosses Owner")
         print("native iOS navigation route scoped persistence checks passed")
     }
 }
