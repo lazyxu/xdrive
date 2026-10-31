@@ -72,6 +72,27 @@ assert.deepEqual(favoriteState.favorites, ['gallery', 'files'], 'Owner B sees on
 favoriteState = nav.xDriveRememberMobileNavigation(favoriteState, all, owner, false)
 assert.deepEqual(favoriteState.favorites, ['gallery', 'files'], 'A→B→A cannot resurrect Owner A history')
 
+// The Launcher unmounts when another fixed tab is active. Search and favorites
+// must be retained in the verified Owner's volatile navigation state only.
+let searchState = nav.xDriveInitialMobileNavigation(owner)
+searchState = nav.xDriveSetMobileLauncherSearch(searchState, owner, '图库')
+assert.equal(searchState.launcherSearch, '图库')
+searchState = nav.xDriveRememberMobileNavigation(searchState, files, owner, false)
+searchState = nav.xDriveRememberMobileNavigation(searchState, library, owner, false)
+assert.equal(searchState.launcherSearch, '图库', 'Files/Gallery tab switches must retain Launcher query')
+assert.equal(nav.xDriveSetMobileLauncherSearch(searchState, owner, '图库'), searchState,
+  'same text must not mutate navigation state')
+searchState = nav.xDriveSetMobileLauncherSearch(searchState, owner, 'x'.repeat(300))
+assert.equal(searchState.launcherSearch.length, 120, 'untrusted queries are bounded')
+const anonymousSearch = nav.xDriveSetMobileLauncherSearch(searchState, '', 'secret')
+assert.equal(anonymousSearch, searchState, 'unverified Owner cannot capture search')
+searchState = nav.xDriveRememberMobileNavigation(searchState, all, 'https://example.test:2', false)
+assert.equal(searchState.launcherSearch, '', 'new Owner cannot inherit another Owner query')
+const staleSearch = nav.xDriveSetMobileLauncherSearch(searchState, owner, 'stale')
+assert.equal(staleSearch, searchState, 'late callback from previous Owner must be ignored')
+searchState = nav.xDriveRememberMobileNavigation(searchState, all, owner, false)
+assert.equal(searchState.launcherSearch, '', 'A→B→A must not recover old search')
+
 const appSource = readFileSync(resolve(here, '../src/App.tsx'), 'utf8')
 const launcherSource = readFileSync(resolve(here, '../src/MobileFiveSlotNavigation.tsx'), 'utf8')
 assert.match(appSource, /favoriteKeys=\{currentMobileNavigation\.favorites\}/)
@@ -79,4 +100,9 @@ assert.match(appSource, /onToggleFavorite=\{toggleMobileFavorite\}/)
 assert.match(appSource, /!mobileOwnerScope \|\| !mobileDestinations\.some/)
 assert.match(launcherSource, /onClick=\{\(\) => onToggleFavorite\(item\.key\)\}/)
 assert.doesNotMatch(launcherSource, /setFavorites\(/, 'Launcher must not own remount-volatile favorites')
-console.log('mobile five-slot state: routes, Owner, Viewer, back, role and Launcher favorites passed')
+assert.match(appSource, /search=\{currentMobileNavigation\.launcherSearch\}/)
+assert.match(appSource, /onSearchChange=\{setMobileLauncherSearch\}/)
+assert.match(launcherSource, /onChange=\{event => onSearchChange\(event\.target\.value\)\}/)
+assert.doesNotMatch(launcherSource, /const \[search, setSearch\] = useState/,
+  'Launcher must not own a query that is lost on tab unmount')
+console.log('mobile five-slot state: routes, Owner, Viewer, back, role, favorites and Owner-scoped search passed')

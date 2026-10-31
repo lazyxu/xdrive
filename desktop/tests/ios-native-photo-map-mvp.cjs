@@ -47,3 +47,12 @@ test('a presented cluster keeps PhotoKit change observation until dismissal', ()
 test('Swift catch does not shadow the map screen state error value', () => {
   assert.match(map, /if generation == ticket \{ self\.error = "照片权限或位置已变化，请刷新重试。"/)
 })
+
+test('native Launcher marks the real local map available, not as an unavailable placeholder', () => {
+  const available = dashboard.match(/var available: Bool \{([\s\S]*?)\n    \}/)?.[1]
+  assert.ok(available, 'native launcher route availability must remain explicit')
+  assert.match(available, /case \.local, \.albums, \.cloud, \.originals, \.map, \.backup: return true/)
+  assert.match(dashboard, /case \.map:\s*openGallery\(\.map\)/)
+  assert.match(dashboard, /case \.map:\s*XDriveIOSNativeLocalPhotoMapScreen\(/)
+  assert.match(dashboard, /if !route\.available \{\s*Text\("未接入"\)/)
+})

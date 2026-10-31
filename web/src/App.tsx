@@ -104,7 +104,7 @@ import { useXDriveWebAppRuntime, xDriveCreateWebAppBrowseSession, xDriveClearPri
 import { xDriveWebAppRouteForWorkspaceKey, xDriveWebAppWorkspaceKey } from './webApps'
 import { XDriveMobileAllLauncher, XDriveMobileFiveSlotNavigation, XDriveMobileMinePage, xDriveBrowserMobileDestinations } from './MobileFiveSlotNavigation'
 import { xDriveMobileLauncherSections } from './mobileLauncherSections'
-import { xDriveInitialMobileNavigation, xDriveMobileFeatureParentRoute, xDriveMobileRouteForSlot, xDriveMobileSlotForRoute, xDriveRememberMobileNavigation, xDriveToggleMobileFavorite } from './mobileFiveSlotState'
+import { xDriveInitialMobileNavigation, xDriveMobileFeatureParentRoute, xDriveMobileRouteForSlot, xDriveMobileSlotForRoute, xDriveRememberMobileNavigation, xDriveToggleMobileFavorite, xDriveSetMobileLauncherSearch } from './mobileFiveSlotState'
 import type { XDriveMobileSlot } from './mobileFiveSlotState'
 import { createWebMediaGalleryDataSource } from './mediaGalleryAdapter'
 import { XDriveRoutedGalleryThumbnailBridge } from './routedGalleryThumbnailBridge'
@@ -2344,6 +2344,12 @@ function FileManager({
       previous, mobileOwnerScope, key, serverAdminVerified,
     ))
   }
+  const setMobileLauncherSearch = (value: string) => {
+    if (!mobileOwnerScope) return
+    setMobileNavigation(previous => xDriveSetMobileLauncherSearch(
+      previous, mobileOwnerScope, value,
+    ))
+  }
   const mobileRecentDestinations = currentMobileNavigation.dynamic.flatMap(recent => {
     const key = xDriveWebAppWorkspaceKey(recent.app, recent.params)
     const destination = mobileDestinations.find(item => item.key === key)
@@ -2591,6 +2597,8 @@ function FileManager({
               onOpenRecent={() => setMobileRecentOpen(true)}
               favoriteKeys={currentMobileNavigation.favorites}
               onToggleFavorite={toggleMobileFavorite}
+              search={currentMobileNavigation.launcherSearch}
+              onSearchChange={setMobileLauncherSearch}
             />
           ) : (
           <WebOverviewPage
