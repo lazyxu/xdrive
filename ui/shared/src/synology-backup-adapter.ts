@@ -410,7 +410,7 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
           item.revision !== 1 ||
           typeof item.name !== 'string' || item.name.length < 1 ||
           new TextEncoder().encode(item.name).length > 128 ||
-          item.name.trim() !== item.name || /[\\r\\n\\0]/.test(item.name) ||
+          item.name.trim() !== item.name || /[\r\n\0]/.test(item.name) ||
           typeof item.created_at !== 'string' ||
           !Number.isFinite(Date.parse(item.created_at))) {
           throw new Error('Untrusted native DSM draft row or ordering')
