@@ -68,6 +68,8 @@ func usage() {
 
 Usage:
   xd login --server https://drive.example.com --username USER --password-stdin
+  xd login --password-stdin           (reuse saved HTTPS server and username)
+  xd login --forget-draft             (clear only local non-secret login hints)
   xd password --current CURRENT --new NEW
   xd status
   xd config --mount PATH
@@ -104,21 +106,34 @@ func validateXDHTTPSLoginOrigin(input string) (string, error) {
 
 func login(args []string) error {
 	fs := flag.NewFlagSet("login", flag.ContinueOnError)
-	server := fs.String("server", "", "xDrive HTTPS server origin (required)")
+	server := fs.String("server", "", "xDrive HTTPS server origin (optional with saved login hints)")
 	username := fs.String("username", "", "username")
 	password := fs.String("password", "", "password (or XD_PASSWORD)")
 	passwordStdin := fs.Bool("password-stdin", false, "read password from stdin (no argv/env secret)")
+	forgetDraft := fs.Bool("forget-draft", false, "delete saved non-secret server/username hints; keep active session")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if *username == "" {
-		return fmt.Errorf("--username is required")
+	if *forgetDraft {
+		if *server != "" || *username != "" || *password != "" || *passwordStdin || fs.NArg() != 0 {
+			return fmt.Errorf("--forget-draft cannot be combined with login credentials or server/username flags")
+		}
+		if err := clearXDLoginDraft(); err != nil {
+			return fmt.Errorf("could not clear saved login hints: %w", err)
+		}
+		fmt.Println("saved login hints cleared; authenticated session unchanged")
+		return nil
 	}
-	secureServer, err := validateXDHTTPSLoginOrigin(*server)
+	secureServer, chosenUsername, err := resolveXDLoginTarget(*server, *username, loadXDLoginDraft())
 	if err != nil {
 		return err
 	}
-	*server = secureServer
+	*server, *username = secureServer, chosenUsername
+	// Persist non-secret hints before any remote authentication. Wrong passwords
+	// and offline failures must not force a user to retype both fields.
+	if err := saveXDLoginDraft(*server, *username); err != nil {
+		fmt.Fprintln(os.Stderr, "xd: warning: could not save server/username login hints")
+	}
 	resolvedPassword, err := resolveLoginPassword(*password, os.Getenv("XD_PASSWORD"), *passwordStdin, os.Stdin)
 	if err != nil {
 		return err
