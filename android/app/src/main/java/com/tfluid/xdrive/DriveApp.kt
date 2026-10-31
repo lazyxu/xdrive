@@ -202,6 +202,12 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     var localAlbumSelection by remember(state.nativeUiSessionId) {
         mutableStateOf<NativeLocalAlbum?>(null)
     }
+    // A revoked grant, changed library or background transition also
+    // invalidates the selected album and any not-yet-confirmed local original.
+    LaunchedEffect(state.nativeUiSessionId, localGalleryMemory.generation.intValue) {
+        localAlbumSelection = null
+        backupSelection = null
+    }
     var pendingRoutes by remember(state.nativeUiSessionId, nativeAuthenticated) {
         mutableStateOf(NativeHomePendingRoutes())
     }
