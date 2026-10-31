@@ -673,6 +673,8 @@ export interface XDriveMediaGalleryPageProps {
   /** Owner-scoped Web Mobile tab-return hint; Server must reauthorize it. */
   initialMobileAlbumID?: string
   onMobileAlbumSelectionChange?: (albumID: string | null) => void
+  /** Live Album-detail Back command for the compact app header, never a route. */
+  onMobileAlbumDetailBackChange?: (back: (() => void) | null) => void
   initialMapPhotoScope?: XDriveBaiduMapPhotoScope
   initialBaiduNativeCamera?: XDriveBaiduNativeCameraSnapshot
   onMapModeHandoff?: (scope:XDriveBaiduMapPhotoScope,
@@ -704,6 +706,7 @@ export function XDriveMediaGalleryPage({
   initialSection,
   initialMobileAlbumID,
   onMobileAlbumSelectionChange,
+  onMobileAlbumDetailBackChange,
   initialMapPhotoScope,
   initialBaiduNativeCamera,
   onMapModeHandoff,
@@ -3270,6 +3273,17 @@ export function XDriveMediaGalleryPage({
     query.nearby,
     query.bbox,
   ])
+
+  // The global Web app header must not skip a concrete Album's index. Let
+  // the shared Gallery perform its existing verified first-Range Back instead
+  // of rewriting the hash to Library. Clear on unmount, Owner/section change
+  // or when the detail is no longer the committed current Album.
+  useLayoutEffect(() => {
+    if (!mobileGalleryViewport || section !== 'albums' || !currentAlbum) return
+    onMobileAlbumDetailBackChange?.(leaveCollection)
+    return () => onMobileAlbumDetailBackChange?.(null)
+  }, [mobileGalleryViewport, section, currentAlbum?.id,
+    leaveCollection, onMobileAlbumDetailBackChange])
 
   const reviewSuggestedPerson = useCallback(async (
     suggestion: MediaSuggestedPerson,

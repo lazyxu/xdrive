@@ -35,6 +35,15 @@ assert.deepEqual(nav.xDriveMobileRouteForSlot(state, 'dynamic', false), transfer
 assert.deepEqual(nav.xDriveMobileRouteForSlot(state, 'mine', false), mine)
 assert.equal(state.dynamic.length, 1, 'Gallery/map/Viewer must never replace dynamic')
 assert.deepEqual(nav.xDriveMobileFeatureParentRoute(map), library)
+// The mobile header delegates Back to an actual committed Album, never
+// to a stale handler from an earlier Owner or an Albums/Places index.
+assert.equal(nav.xDriveMobileAlbumOwnsBack({ app: 'gallery', params: { section: 'albums' } }, owner, owner), true)
+assert.equal(nav.xDriveMobileAlbumOwnsBack({ app: 'gallery', params: { section: 'albums' } }, owner, ''), false)
+assert.equal(nav.xDriveMobileAlbumOwnsBack({ app: 'gallery', params: { section: 'albums' } }, '', owner), false)
+assert.equal(nav.xDriveMobileAlbumOwnsBack(library, owner, owner), false)
+assert.equal(nav.xDriveMobileAlbumOwnsBack(map, owner, owner), false)
+assert.equal(nav.xDriveMobileAlbumOwnsBack(files, owner, owner), false)
+assert.equal(nav.xDriveMobileAlbumOwnsBack({ app: 'gallery', params: { section: 'albums' } }, 'https://example.test:2', owner), false)
 // Only an actual map panel hides the five-slot bar; Places list restores L1.
 assert.equal(nav.xDriveMobileMapFocused(map, true), true)
 assert.equal(nav.xDriveMobileMapFocused(map, false), false, 'Places list must keep bottom tabs')
@@ -127,6 +136,12 @@ assert.equal(searchState.launcherSearch, '', 'A→B→A must not recover old sea
 const appSource = readFileSync(resolve(here, '../src/App.tsx'), 'utf8')
 const launcherSource = readFileSync(resolve(here, '../src/MobileFiveSlotNavigation.tsx'), 'utf8')
 const gallerySource = readFileSync(resolve(here, '../../ui/shared/src/mui/MediaGallery.tsx'), 'utf8')
+assert.match(appSource, /xDriveMobileAlbumOwnsBack\(route, mobileOwnerScope, albumBack\?\.owner \?\? null\)/)
+assert.match(appSource, /albumBack\?\.back\(\)/)
+assert.match(appSource, /onMobileAlbumDetailBackChange=\{compactWorkspace \? registerMobileAlbumBack/)
+assert.match(gallerySource, /onMobileAlbumDetailBackChange\?\.\(leaveCollection\)/)
+assert.match(gallerySource, /onMobileAlbumDetailBackChange\?\.\(null\)/)
+assert.match(gallerySource, /mobileGalleryViewport \|\| section !== 'albums' \|\| !currentAlbum/)
 assert.match(appSource, /initialMobileAlbumID=\{compactWorkspace/)
 assert.match(appSource, /onMobileAlbumSelectionChange=\{compactWorkspace \? rememberMobileGalleryAlbum/)
 assert.match(gallerySource, /acceptedFacetOwner !== preferenceScope/, 'Owner list must be verified')

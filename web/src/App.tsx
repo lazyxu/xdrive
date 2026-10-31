@@ -100,7 +100,7 @@ import { useXDriveWebAppRuntime, xDriveCreateWebAppBrowseSession, xDriveClearPri
 import { xDriveWebAppRouteForWorkspaceKey, xDriveWebAppWorkspaceKey } from './webApps'
 import { XDriveMobileAllLauncher, XDriveMobileFiveSlotNavigation, XDriveMobileMinePage, xDriveBrowserMobileDestinations } from './MobileFiveSlotNavigation'
 import { xDriveMobileLauncherSections } from './mobileLauncherSections'
-import { xDriveInitialMobileNavigation, xDriveMobileFeatureParentRoute, xDriveMobileRouteForSlot, xDriveMobileSlotForRoute, xDriveRememberMobileNavigation, xDriveToggleMobileFavorite, xDriveSetMobileLauncherSearch, xDriveRememberMobileGalleryAlbum, xDriveMobileMapFocused } from './mobileFiveSlotState'
+import { xDriveInitialMobileNavigation, xDriveMobileFeatureParentRoute, xDriveMobileRouteForSlot, xDriveMobileSlotForRoute, xDriveRememberMobileNavigation, xDriveToggleMobileFavorite, xDriveSetMobileLauncherSearch, xDriveRememberMobileGalleryAlbum, xDriveMobileAlbumOwnsBack, xDriveMobileMapFocused } from './mobileFiveSlotState'
 import type { XDriveMobileSlot } from './mobileFiveSlotState'
 import { createWebMediaGalleryDataSource } from './mediaGalleryAdapter'
 import { XDriveRoutedGalleryThumbnailBridge } from './routedGalleryThumbnailBridge'
@@ -1142,6 +1142,16 @@ function FileManager({
     setMobileNavigation(previous => xDriveRememberMobileGalleryAlbum(
       previous, mobileOwnerScope, albumID,
     ))
+  }, [mobileOwnerScope])
+  // The shared Gallery owns Album-detail Back. This ref is only a live,
+  // Owner-fenced command; no Album object or callback enters browser history.
+  const mobileAlbumBackRef = useRef<{ owner: string; back: () => void } | null>(null)
+  const registerMobileAlbumBack = useCallback((back: (() => void) | null) => {
+    if (back && mobileOwnerScope) {
+      mobileAlbumBackRef.current = { owner: mobileOwnerScope, back }
+    } else if (mobileAlbumBackRef.current?.owner === mobileOwnerScope) {
+      mobileAlbumBackRef.current = null
+    }
   }, [mobileOwnerScope])
   // <main> survives app switches. A previous page's scrollTop must not shift
   // the first frame of a different app. The Viewer is a sibling overlay and
@@ -2333,6 +2343,11 @@ function FileManager({
     ? crumbs[crumbs.length - 2] : null
   const mobileCanGoBack = Boolean(mobileFolderParent || mobileParent)
   const goBackWithinMobileFeature = () => {
+    const albumBack = mobileAlbumBackRef.current
+    if (xDriveMobileAlbumOwnsBack(route, mobileOwnerScope, albumBack?.owner ?? null)) {
+      albumBack?.back()
+      return
+    }
     if (mobileFolderParent && route.app === 'files') {
       void loadDirectory(mobileFolderParent.id, crumbs.slice(0, -1))
       launchWebApp({ app: 'files', params: { dir: mobileFolderParent.id } }, { replace: true })
@@ -2766,6 +2781,7 @@ function FileManager({
               route.params.section === 'albums'
                 ? currentMobileNavigation.galleryAlbumID ?? undefined : undefined}
             onMobileAlbumSelectionChange={compactWorkspace ? rememberMobileGalleryAlbum : undefined}
+            onMobileAlbumDetailBackChange={compactWorkspace ? registerMobileAlbumBack : undefined}
             onSectionRouteChange={(section) => {
               if (route.app === 'gallery' && route.params.section !== section) {
                 launchWebApp({ app: 'gallery', params: { section } }, { replace: true })

@@ -136,6 +136,18 @@ export function xDriveMobileRouteForSlot(
   }
 }
 
+/** A concrete Album owns the app-header Back only while its real Gallery
+ * instance has registered an Owner-matching handler. The Albums INDEX keeps
+ * its ordinary route parent (Library); other tabs cannot borrow that handler. */
+export function xDriveMobileAlbumOwnsBack(
+  route: XDriveWebAppRoute,
+  ownerScope: string,
+  registeredOwner: string | null,
+): boolean {
+  return route.app === 'gallery' && route.params.section === 'albums' &&
+    Boolean(ownerScope) && registeredOwner === ownerScope
+}
+
 /** L2 map focus belongs to the actual Gallery map panel, NOT every Places
  * route: Places list is L1 and must keep the global five-slot navigation. */
 export function xDriveMobileMapFocused(route: XDriveWebAppRoute, mapPanelVisible: boolean): boolean {
