@@ -44,3 +44,30 @@ test('existing thumbnails and verified Live ZIP/cloud movies preserve Owner tear
   assert.match(cloud, /XDriveIOSNativeZoomablePhotoView\(image: still\)/)
   assert.match(cloud, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?player\?\.pause\(\)[\s\S]*?still = nil[\s\S]*?dismiss\(\)/)
 })
+
+test('native PhotoAsset Viewer foreground cancellation reaches both detached ImageIO decoders', () => {
+  const media = fs.readFileSync(
+    path.join(root, 'ios/XDriveIOS/NativeServerMediaGalleryTransport.swift'), 'utf8'
+  )
+  const start = media.indexOf('    func thumbnail(_ item:')
+  const end = media.indexOf('    func preview(_ item:', start)
+  assert.ok(start >= 0 && end > start)
+  const tile = media.slice(start, end)
+  const viewer = media.slice(end)
+  for (const source of [tile, viewer]) {
+    assert.match(source, /let decodeWork = Task\.detached\(priority: \.utility\)/)
+    assert.match(source, /guard !Task\.isCancelled/)
+    assert.match(source, /let decoded = CGImageSourceCreateThumbnailAtIndex\(source, 0/)
+    assert.match(source, /return Task\.isCancelled \? nil : decoded/)
+    assert.match(source, /await withTaskCancellationHandler \{\s*await decodeWork\.value\s*\} onCancel: \{\s*decodeWork\.cancel\(\)\s*\}/)
+    assert.match(source, /try Task\.checkCancellation\(\)/)
+    assert.doesNotMatch(source, /let (image|bounded) = await Task\.detached/)
+  }
+  assert.match(tile, /URLQueryItem\(name: "revision", value: String\(item\.node\.revision\)\)/)
+  assert.match(tile, /kCGImageSourceThumbnailMaxPixelSize as String: 280/)
+  assert.match(tile, /client\.invalidateAndCancel\(\)/)
+  assert.match(viewer, /endpoint\("\/api\/v1\/files\/\\\(item\.id\)\/preview-ticket"\)/)
+  assert.match(viewer, /read\(signedURL, bearer: false, maximum: 32 \* 1_048_576\)/)
+  assert.match(viewer, /kCGImageSourceThumbnailMaxPixelSize as String: 4096/)
+  assert.doesNotMatch(media, /UploadSessionTransport|PHAssetCreationRequest/)
+})
