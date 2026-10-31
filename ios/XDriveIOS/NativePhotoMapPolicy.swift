@@ -46,6 +46,18 @@ enum XDriveIOSNativePhotoMapPolicy {
             savedPageOffset == requestedPageOffset
     }
 
+    // Each explicit "find GPS" action scans at most 16 consecutive
+    // PhotoKit pages (16 * 64 = 1,024 metadata slots). Empty pages do not
+    // silently imply there are no valid GPS assets in the full library.
+    static let maxSeekGPSPages = 16
+
+    static func shouldSeekNextGPSPage(
+        foundPins: Int, finished: Bool, pagesRead: Int
+    ) -> Bool {
+        foundPins == 0 && !finished &&
+        pagesRead >= 1 && pagesRead < maxSeekGPSPages
+    }
+
     static func markerLabel(_ count: Int) -> String {
         "当前页此位置\(max(0, min(pageSize, count)))张照片"
     }
