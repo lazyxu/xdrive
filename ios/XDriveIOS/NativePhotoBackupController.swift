@@ -136,6 +136,16 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
             errorMessage = "确认后服务器或账户已变化；未开始上传原件。"
             return
         }
+        // PhotoKit access may be revoked while the native consent sheet is
+        // open. The shared writer's guard must not fail silently or leave an
+        // earlier successful upload report looking like this attempt.
+        guard [.authorized, .limited].contains(
+            PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        ) else {
+            if !busy { progress = nil }
+            errorMessage = "照片读取权限已变化；未启动原件上传。请先恢复 iOS 照片访问权限。"
+            return
+        }
         start(login: login, kind: .manual, allowICloud: allowICloud)
     }
 
