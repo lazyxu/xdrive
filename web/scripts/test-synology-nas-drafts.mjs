@@ -21,7 +21,7 @@ const scope = 'a'.repeat(64)
 const createdAt = '2026-10-30T00:00:00Z'
 const valid = { owner_scope: scope, items: [
   { source_id: 57, name: 'NAS Photos', revision: 1, created_at: createdAt },
-  { source_id: 58, name: 'NAS Files', revision: 1, created_at: createdAt },
+  { source_id: 58, name: 'NAS Documents', revision: 1, created_at: createdAt },
 ] }
 let reply = valid
 const requests = []
@@ -62,6 +62,8 @@ for (const bad of [
   { ...valid, items: [valid.items[1], valid.items[0]] },
   { ...valid, items: [{ ...valid.items[0], created_at: 'invalid' }] },
   { ...valid, items: [{ ...valid.items[0], name: 'NAS\nRoot' }] },
+  { ...valid, items: [{ ...valid.items[0], name: 'NAS\rRoot' }] },
+  { ...valid, items: [{ ...valid.items[0], name: 'NAS\0Root' }] },
   { ...valid, items: [{ ...valid.items[0], root_id: 'private' }] },
 ]) {
   reply = bad
