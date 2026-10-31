@@ -43,3 +43,14 @@ internal fun liveMotionMayStart(
     freshPressRequired: Boolean,
 ): Boolean =
     held && stillReady && lifecycleStarted && !freshPressRequired
+
+/** A completed, missing Owner motion lease is a terminal result for this
+ * current deliberate hold. Release/Owner switches cannot show stale errors. */
+internal fun liveMotionUnavailableAfterRead(
+    activeHold: Boolean, sourceReturned: Boolean,
+): Boolean = activeHold && !sourceReturned
+
+/** Do not show a buffering spinner over a terminal Media3 setup/read error. */
+internal fun liveMotionPendingIndicatorAllowed(
+    ended: Boolean, failed: Boolean, playerSetupFailed: Boolean,
+): Boolean = !ended && !failed && !playerSetupFailed
