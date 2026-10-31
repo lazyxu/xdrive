@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -18,7 +19,47 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-const shareUploadMaxActiveSessions = int64(4) // rate-limits parallel in-flight sessions, not file count
+// Short-window abuse protection, not a permanent Share upload size/file quota.
+const (
+	shareUploadAdmissionWindow = time.Minute
+	shareUploadAdmissionRate = 600
+	shareUploadAdmissionWindows = 4096
+)
+
+type shareUploadAdmissionWindowState struct {
+	start time.Time
+	count int
+}
+
+var shareUploadAdmission = struct {
+	sync.Mutex
+	windows map[uint64]shareUploadAdmissionWindowState
+}{windows: make(map[uint64]shareUploadAdmissionWindowState)}
+
+func admitPublicShareUpload(shareID uint64, now time.Time) bool {
+	shareUploadAdmission.Lock()
+	defer shareUploadAdmission.Unlock()
+	entry, exists := shareUploadAdmission.windows[shareID]
+	if !exists || now.Sub(entry.start) >= shareUploadAdmissionWindow {
+		if !exists && len(shareUploadAdmission.windows) >= shareUploadAdmissionWindows {
+			for id, old := range shareUploadAdmission.windows {
+				if now.Sub(old.start) >= shareUploadAdmissionWindow {
+					delete(shareUploadAdmission.windows, id)
+				}
+			}
+			if len(shareUploadAdmission.windows) >= shareUploadAdmissionWindows {
+				return false
+			}
+		}
+		entry = shareUploadAdmissionWindowState{start: now}
+	}
+	if entry.count >= shareUploadAdmissionRate {
+		return false
+	}
+	entry.count++
+	shareUploadAdmission.windows[shareID] = entry
+	return true
+}
 
 var (
 	errShareUploadDenied = errors.New("share upload unavailable")
@@ -71,9 +112,9 @@ SELECT EXISTS (SELECT 1 FROM ancestors WHERE id = ?) AS allowed
 	return result.Allowed, err
 }
 
-// Guest session creation and grant updates serialize on the Share row.
+// Guest admission and grant updates serialize on the Share row.
 func (s *Server) publicShareUploadAdmissionTx(
-	ctx context.Context, tx *gorm.DB, shareID, ownerID, parentID uint64, creating bool,
+	ctx context.Context, tx *gorm.DB, shareID, ownerID, parentID uint64,
 ) (meta.Share, error) {
 	var share meta.Share
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -100,26 +141,13 @@ func (s *Server) publicShareUploadAdmissionTx(
 	if err != nil || !allowed {
 		return share, errShareUploadDenied
 	}
-	// Not a per-share quota. This protects concurrent requests and staging
-	// resources without limiting lifetime bytes, file count or folder count.
-	if creating {
-		var active int64
-		if err := tx.Model(&meta.UploadSession{}).
-			Where("share_id = ? AND status = ? AND expires_at > ?",
-				shareID, meta.UploadStatusActive, time.Now()).Count(&active).Error; err != nil {
-			return share, err
-		}
-		if active >= shareUploadMaxActiveSessions {
-			return share, errShareUploadBusy
-		}
-	}
 	return share, nil
 }
 
 func writePublicShareUploadError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, errShareUploadBusy):
-		fail(c, http.StatusTooManyRequests, "share upload concurrency full")
+		fail(c, http.StatusTooManyRequests, "share upload request rate exceeded")
 	case errors.Is(err, errShareUploadDenied):
 		fail(c, http.StatusForbidden, "share upload unavailable")
 	default:
@@ -132,6 +160,10 @@ func writePublicShareUploadError(c *gin.Context, err error) {
 func (s *Server) publicShareCreateDirectory(c *gin.Context) {
 	share, root, ok := s.publicShareUploadAuthorization(c)
 	if !ok { return }
+	if !admitPublicShareUpload(share.ID, time.Now()) {
+		fail(c, http.StatusTooManyRequests, "share upload request rate exceeded")
+		return
+	}
 	var req struct {
 		ParentID uint64 `json:"parent_id"`
 		Name string `json:"name"`
@@ -146,7 +178,7 @@ func (s *Server) publicShareCreateDirectory(c *gin.Context) {
 	var created bool
 	err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		_, err := s.publicShareUploadAdmissionTx(
-			c.Request.Context(), tx, share.ID, share.OwnerID, req.ParentID, false)
+			c.Request.Context(), tx, share.ID, share.OwnerID, req.ParentID)
 		if err != nil { return err }
 		if err := tx.Where(
 			"owner_id = ? AND parent_id = ? AND lower(name) = lower(?) AND deleted_at IS NULL",
@@ -172,6 +204,10 @@ func (s *Server) publicShareCreateDirectory(c *gin.Context) {
 func (s *Server) publicShareCreateUpload(c *gin.Context) {
 	share, root, ok := s.publicShareUploadAuthorization(c)
 	if !ok { return }
+	if !admitPublicShareUpload(share.ID, time.Now()) {
+		fail(c, http.StatusTooManyRequests, "share upload request rate exceeded")
+		return
+	}
 	var req uploadInitRequest
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 16<<10)
 	if err := c.ShouldBindJSON(&req); err != nil {

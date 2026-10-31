@@ -592,7 +592,7 @@ func (s *Server) createUploadSession(c *gin.Context) {
 	if err := s.DB.Transaction(func(tx *gorm.DB) error {
 		if guest {
 			if _, err := s.publicShareUploadAdmissionTx(
-				c.Request.Context(), tx, guestID, uid, *req.ParentID, true,
+				c.Request.Context(), tx, guestID, uid, *req.ParentID,
 			); err != nil { return err }
 		}
 		quotaReservation, err := s.reserveUploadQuota(tx, uid, "", session.TotalSize, quotaKey)
@@ -987,7 +987,7 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 			}
 			_, err := s.publicShareUploadAdmissionTx(
 				c.Request.Context(), tx, *currentSession.ShareID, currentSession.OwnerID,
-				*currentSession.ParentID, false,
+				*currentSession.ParentID,
 			)
 			if err != nil { return err }
 		}

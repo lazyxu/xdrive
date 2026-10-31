@@ -10,7 +10,7 @@
   Historical `max_downloads` is ignored as an authorization threshold; new
   shares store zero. Download counts can remain diagnostic metadata.
 - Standard Server file-size, chunk-size, physical free-space, Owner storage
-  quota and active-transfer resource controls still apply. These are not
+  quota and short-window request-rate resource controls still apply. These are not
   Share-specific user-configurable quotas.
 - Every completed file is owned by the original Owner and immediately visible
   to all authorized readers of that share. Guest uploads cannot overwrite,
