@@ -3974,7 +3974,7 @@ func (h *desktopIPCHandler) cloudCreateShare(w http.ResponseWriter, r *http.Requ
 		NodeID       uint64 `json:"node_id"`
 		ExpiresAt    string `json:"expires_at,omitempty"`
 		Password     string `json:"password,omitempty"`
-		Access       string `json:"access"`
+		Access    string `json:"access"`
 	}
 	if !decodeDesktopIPCJSON(w, r, &input) {
 		return
