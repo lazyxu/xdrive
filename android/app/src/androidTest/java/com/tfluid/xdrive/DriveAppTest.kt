@@ -1563,10 +1563,10 @@ class DriveAppTest {
         // Wait for actual source-tile focus (not merely a visible tile),
         // while failing deterministically if the Owner focus never returns.
         compose.waitUntil(timeoutMillis = 5_000) {
-            compose.onAllNodesWithTag("gallery-item-40", useUnmergedTree = true)
-                .fetchSemanticsNodes().any {
-                    it.config.getOrNull(SemanticsProperties.Focused) == true
-                }
+            runCatching {
+                compose.onNodeWithTag("gallery-item-40", useUnmergedTree = true)
+                    .assertIsFocused()
+            }.isSuccess
         }
         compose.onNodeWithTag("gallery-item-40", useUnmergedTree = true).assertIsFocused()
         compose.runOnIdle {
