@@ -42,9 +42,13 @@ interface DriveSessionPersistence {
  * Never persist the key, plaintext credentials, or an HTTP-origin refresh token.
  * Keystore loss/corruption fails closed and returns to the normal login form.
  */
-internal class AndroidSessionStore(context: Context) : DriveSessionPersistence {
+internal class AndroidSessionStore(
+    context: Context,
+    preferenceName: String = "auth-session",
+    private val keyAlias: String = "xdrive-android-session-v1",
+) : DriveSessionPersistence {
     private val app = context.applicationContext
-    private val prefs = app.getSharedPreferences("auth-session", Context.MODE_PRIVATE)
+    private val prefs = app.getSharedPreferences(preferenceName, Context.MODE_PRIVATE)
     private val recoveryBridge by lazy {
         AndroidDriveTransferRecoveryBridge(context.applicationContext)
     }
@@ -52,10 +56,10 @@ internal class AndroidSessionStore(context: Context) : DriveSessionPersistence {
 
     private fun key(): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        val existing = store.getKey(KEY_ALIAS, null) as? SecretKey
+        val existing = store.getKey(keyAlias, null) as? SecretKey
         if (existing != null) return existing
         val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
-        generator.init(KeyGenParameterSpec.Builder(KEY_ALIAS,
+        generator.init(KeyGenParameterSpec.Builder(keyAlias,
             KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
             .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
             .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
