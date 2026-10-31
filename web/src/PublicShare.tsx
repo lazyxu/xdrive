@@ -440,7 +440,9 @@ export default function PublicShareView({ token }: { token: string }) {
             borderBottom: 1, borderColor: 'divider', bgcolor: 'background.paper',
           }}>
           <XDriveBrandLockup iconSrc={xDriveBrandIcon} variant="titlebar" subtitle="安全文件分享" />
-          <Typography variant="caption" color="text.secondary">只读 · 授权访问</Typography>
+          <Typography variant="caption" color="text.secondary">
+            {canUpload ? '查看 + 上传 · 授权访问' : '只读 · 授权访问'}
+          </Typography>
         </Box>
         <Box component="main" data-xdrive-public-share-workspace
           sx={{

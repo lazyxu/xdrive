@@ -168,6 +168,8 @@ test('Anonymous Share upload grants use only scoped HTTP and preserve read-only 
   assert.equal(scoped.includes('/api/v1/uploads/'), false, 'no authenticated UploadSession route')
   assert.equal(scoped.includes('accessToken'), false, 'no JWT credential leakage')
   assert.ok(publicShare.includes("grants.upload === true"), 'only explicit server grants show guest upload')
+  assert.ok(publicShare.includes("canUpload ? '查看 + 上传 · 授权访问' : '只读 · 授权访问'"),
+    'the public share titlebar must not claim read-only when guest uploads are granted')
   assert.ok(publicShare.includes('api.uploadPublicShareFile('), 'actual scoped upload client is wired')
   assert.ok(publicShare.includes('api.publicShareCreateDirectory('), 'nested directory creation is wired')
   assert.ok(publicShare.includes('parts') === false || publicShare.includes('const components = relative.split('),
