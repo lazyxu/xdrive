@@ -103,3 +103,16 @@ implementation and validation. Real-device acceptance: **跳过（未验收）**
 The child cannot merge into master until #3349 is independently green/merged,
 and this child exact HEAD passes applicable Android JVM, lint, debug APK,
 emulator and final gate. Developer-branch integration is not a master merge.
+
+## 2026-10-31 development integration with verified Gallery-first master
+
+The independent native incremental-writer parent #3349 completed its exact
+Android CI and required Final Gate and was merged to master as `25e54470`.
+The unstarted-CI child branch was then integrated with master using a
+two-parent developer merge. Its `DriveApp.kt` keeps the already-validated
+**native Gallery-first login** from #3345, and inserts only the consent panel
+into the existing local Gallery fixed tab. This never reintroduces Files-first,
+creates a second WebView UI, alters the Android global uploader or retests
+the already-green parent HEAD. The child is now master-targeted for its own
+exact-HEAD Android JVM/lint/APK/emulator and Final Gate verification.
+
