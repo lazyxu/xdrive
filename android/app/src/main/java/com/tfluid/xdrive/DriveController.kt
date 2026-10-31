@@ -505,6 +505,15 @@ class DriveController(
             var candidate: XDriveService? = null
             try {
                 route.validate(server)
+                // Upgrade from older app versions: existing Keystore credentials
+                // already identify the Owner, but no separate username hint
+                // may have been saved. Capture it BEFORE refresh/401 revocation.
+                // Never overwrite a newer failed-login draft for another
+                // server or username with this older remembered session.
+                if (state.value.username.isBlank() &&
+                    (state.value.server.isBlank() || state.value.server == server.url)) {
+                    runCatching { saveLoginDraft(server.url, route.lanIp, saved.username) }
+                }
                 val ip = if (route.enabled) routeSelector(server, route) else null
                 checkCurrent(ticket)
                 val restoredApi = if (ip == null) serviceFactory(server) else routedServiceFactory(server, ip)

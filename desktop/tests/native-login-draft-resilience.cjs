@@ -30,6 +30,14 @@ test('iOS draft stores only bounded non-secret fields, never session credentials
   assert.ok(iosDraft.includes('UserDefaults.standard.set(bytes, forKey: key)'))
 })
 
+test('Android upgrades a legacy remembered session without losing the username on 401', () => {
+  const restore = android.split('fun restoreSession() {')[1].split('fun connectAndLogin(')[0]
+  assert.ok(restore.includes('state.value.username.isBlank()'))
+  assert.ok(restore.includes('state.value.server == server.url'))
+  assert.ok(restore.includes('saveLoginDraft(server.url, route.lanIp, saved.username)'))
+  assert.ok(restore.indexOf('saveLoginDraft(server.url') < restore.indexOf('vault.coordinatedRefresh('))
+})
+
 test('Android saves a non-secret draft before network login and keeps username after 401', () => {
   assert.ok(android.includes('initialUsername: String = ""'))
   assert.ok(android.includes('saveLoginDraft(next.url, route.lanIp, username.trim())'))
