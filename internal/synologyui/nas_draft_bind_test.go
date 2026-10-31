@@ -145,6 +145,24 @@ func TestDSMNativeDraftBindWeakUnknownOrRotatedOwnerNeedsInspection(t *testing.T
 	}
 }
 
+// A valid draft read cannot authorize the binding if the Agent's actual
+// Server Owner changes between listing the creating-device drafts and the
+// irreversible native Root grant.
+func TestDSMNativeDraftBindOwnerChangedBeforeGrantRefusesMutation(t *testing.T) {
+	g, agent, selection, scope := dsmDraftBindFixture(t)
+	agent.changeOwner = true
+	result := requestServerLogin(g, http.MethodPost,
+		dsmDraftBindBody(57, selection, scope, true),
+		"https://nas.example:5001", getCSRF(t, g),
+		DSMCGIPath+"?op=nas-draft-bind")
+	if result.Code != http.StatusConflict || agent.reads != 1 ||
+		agent.binds != 0 || agent.creates != 0 ||
+		agent.runs != 0 {
+		t.Fatalf("rotated Owner reached irreversible native grant: HTTP %d %s",
+			result.Code, result.Body.String())
+	}
+}
+
 func TestDSMNativeDraftBindOldAgentUnavailable(t *testing.T) {
 	g, base := newFixture(t)
 	g.Connect = func(context.Context) (Agent, error) { return base, nil }
