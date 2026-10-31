@@ -213,6 +213,8 @@ private struct XDriveIOSNativeAlbumCover: View {
 struct XDriveIOSNativeAlbumContentsScreen: View {
     let album: XDriveLocalPhotoAlbumSummary
     @Environment(\.scenePhase) private var phase
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var showingAlbumHelp = false
     @StateObject private var libraryMonitor = XDriveIOSNativeAlbumChangeMonitor()
     @State private var reader: XDriveIOSNativeAlbumPageReader?
     @State private var page: XDrivePhotoKitScanPage?
@@ -232,6 +234,9 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
     @State private var permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
 
     var body: some View {
+        GeometryReader { viewport in
+        let compactGallery = viewport.size.width >= 680 &&
+            viewport.size.height < 500 && !dynamicTypeSize.isAccessibilitySize
         ScrollViewReader { returnScroll in
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
@@ -274,8 +279,10 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
                     Text(error).foregroundStyle(.red)
                     Button("重新读取") { savedOffset = 0; reload() }
                 }
-                Text("仅预览已授权的本机资源；不读取 iCloud 原件、不上传、不保存相册成员标识。")
-                    .font(.caption).foregroundStyle(.secondary)
+                if !compactGallery {
+                    Text("仅预览已授权的本机资源；不读取 iCloud 原件、不上传、不保存相册成员标识。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             .padding(12)
         }
@@ -283,8 +290,22 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
             restoreViewerTile(using: returnScroll)
         }
         }
+        }
         .navigationTitle(album.name)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button { showingAlbumHelp = true } label: {
+                    Label("相册说明", systemImage: "info.circle")
+                }
+                .accessibilityIdentifier("native-ios-local-album-layout-help")
+            }
+        }
+        .alert("相册说明", isPresented: $showingAlbumHelp) {
+            Button("完成", role: .cancel) {}
+        } message: {
+            Text("仅预览 iOS 当前授权的相册成员，不读取 iCloud 原件、不上传或保存相册成员 ID。每页最多读取 64 项。")
+        }
         .fullScreenCover(item: $selected, onDismiss: { restoreAfterViewer() }) {
             XDriveIOSNativeLocalPhotoDetail(candidate: $0)
         }
