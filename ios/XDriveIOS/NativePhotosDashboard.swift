@@ -84,7 +84,7 @@ private enum XDriveIOSNativeLauncherRoute: String, CaseIterable, Identifiable {
     }
     var available: Bool {
         switch self {
-        case .local, .albums, .cloud, .originals, .backup: return true
+        case .local, .albums, .cloud, .originals, .map, .backup: return true
         default: return false
         }
     }
