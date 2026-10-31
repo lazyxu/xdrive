@@ -90,11 +90,16 @@ func TestPublicShareUploadGrantSubtreeResumeAndRevocation(t *testing.T) {
 	updatePath := fmt.Sprintf("/api/v1/shares/%d", created.ID)
 	request(t, router, http.MethodPatch, updatePath, foreignToken,
 		strings.NewReader(`{"access":"view_upload"}`), http.StatusNotFound)
+	expiry := time.Now().UTC().Add(2 * time.Hour).Truncate(time.Second)
 	updated := request(t, router, http.MethodPatch, updatePath, ownerToken,
-		strings.NewReader(`{"access":"view_upload","expires_at":null}`), http.StatusOK)
+		strings.NewReader(fmt.Sprintf(`{"access":"view_upload","expires_at":%q}`,
+			expiry.Format(time.RFC3339))), http.StatusOK)
 	var updatedShare shareDTO
 	if err := json.Unmarshal(updated.Body.Bytes(), &updatedShare); err != nil { t.Fatal(err) }
-	if updatedShare.Access != shareAccessViewUpload { t.Fatal("permission update did not persist") }
+	if updatedShare.Access != shareAccessViewUpload || updatedShare.ExpiresAt == nil ||
+		!updatedShare.ExpiresAt.Equal(expiry) {
+		t.Fatalf("link mutation did not persist permission and expiry: %+v", updatedShare)
+	}
 	metadata := publicShareRequest(t, router, http.MethodGet, created.Token, nil, http.StatusOK)
 	var public publicShareDTO
 	if err := json.Unmarshal(metadata.Body.Bytes(), &public); err != nil { t.Fatal(err) }
@@ -115,13 +120,26 @@ func TestPublicShareUploadGrantSubtreeResumeAndRevocation(t *testing.T) {
 		created.Token, "guest-share-password", []byte(`{"name":"sub"}`), http.StatusOK, nil)
 	if uint64(sameDir["id"].(float64)) != subID { t.Fatal("retry created duplicate directory") }
 
-	for i := range 3 {
+	for i := range 5 {
 		resume := "ps1_" + fmt.Sprintf("%064x", i+1)
-		guestUploadFile(t, router, created.Token, "guest-share-password",
+		original := guestUploadFile(t, router, created.Token, "guest-share-password",
 			subID, "same.txt", fmt.Sprintf("guest-content-%d", i), resume)
+		if i == 0 {
+			// The exact same lost-final-ACK retry is idempotent, but another
+			// fresh user intent creates a separate duplicate-name copy.
+			body := []byte(fmt.Sprintf(
+				`{"parent_id":%d,"name":"same.txt","size":%d,"chunk_size":8388608,"conflict_policy":"keep_both","resume_key":%q}`,
+				subID, len("guest-content-0"), resume))
+			retry := guestUploadRequest(t, router, http.MethodPost,
+				"/api/v1/public/share/uploads", created.Token,
+				"guest-share-password", body, http.StatusOK, nil)
+			if retry["id"] != original || retry["status"] != "finalized" {
+				t.Fatalf("uncertain ACK resume created a duplicate receipt: %+v", retry)
+			}
+		}
 	}
 	page := publicFolderChildrenTestRequest(t, router, created.Token, "guest-share-password", subID, 0, http.StatusOK)
-	if len(page.Items) != 3 { t.Fatalf("unlimited share upload files=%d want 3", len(page.Items)) }
+	if len(page.Items) != 5 { t.Fatalf("unlimited share upload files=%d want 5", len(page.Items)) }
 	for _, item := range page.Items {
 		if item.Name == "" || item.Type != meta.NodeTypeFile { t.Fatalf("unexpected shared result %+v", item) }
 	}
@@ -130,7 +148,14 @@ func TestPublicShareUploadGrantSubtreeResumeAndRevocation(t *testing.T) {
 	if err := db.Model(&meta.Node{}).Where(
 		"owner_id = ? AND parent_id = ? AND type = ? AND deleted_at IS NULL",
 		root.OwnerID, subID, meta.NodeTypeFile).Count(&count).Error; err != nil { t.Fatal(err) }
-	if count != 3 { t.Fatalf("visible owner files=%d", count) }
+	if count != 5 { t.Fatalf("visible owner files=%d", count) }
+	// The guest did not change an existing Owner original outside the
+	// created subfolder, even when uploading the same filename repeatedly.
+	original := request(t, router, http.MethodGet,
+		fmt.Sprintf("/api/v1/files/%d/content", fileShare.ID), ownerToken, nil, http.StatusOK)
+	if original.Body.String() != "existing-owner-file" {
+		t.Fatalf("guest overwrote existing Owner file: %q", original.Body.String())
+	}
 
 	// Session IDs must never authorize a different link or an Owner endpoint.
 	secondRes := request(t, router, http.MethodPost,
@@ -148,10 +173,29 @@ func TestPublicShareUploadGrantSubtreeResumeAndRevocation(t *testing.T) {
 		second.Token, "", []byte{}, http.StatusNotFound, nil)
 	request(t, router, http.MethodGet, "/api/v1/uploads/"+sessionID, "", nil, http.StatusUnauthorized)
 
+	// Invalid per-part hashes cannot create a committed Node/CAS receipt.
+	badBody := []byte(fmt.Sprintf(
+		`{"parent_id":%d,"name":"corrupted.bin","size":1,"chunk_size":8388608,"conflict_policy":"keep_both","resume_key":"ps1_%064x"}`,
+		subID, 100))
+	badSession := guestUploadRequest(t, router, http.MethodPost, "/api/v1/public/share/uploads",
+		created.Token, "guest-share-password", badBody, http.StatusCreated, nil)
+	badID := badSession["id"].(string)
+	guestUploadRequest(t, router, http.MethodPut,
+		"/api/v1/public/share/uploads/"+badID+"/chunks/0", created.Token, "guest-share-password",
+		[]byte("x"), http.StatusUnprocessableEntity,
+		map[string]string{"X-Chunk-SHA256": strings.Repeat("0", 64), "Content-Type": "application/octet-stream"})
+	guestUploadRequest(t, router, http.MethodDelete,
+		"/api/v1/public/share/uploads/"+badID, created.Token, "guest-share-password",
+		nil, http.StatusNoContent, nil)
+
 	// Downgrading the existing link blocks an unfinished upload, without
 	// rolling back files already finalized or changing the raw share token.
 	request(t, router, http.MethodPatch, updatePath, ownerToken,
 		strings.NewReader(`{"access":"read_only","expires_at":null}`), http.StatusOK)
+	guestUploadRequest(t, router, http.MethodPut,
+		"/api/v1/public/share/uploads/"+sessionID+"/chunks/0",
+		created.Token, "guest-share-password", []byte("x"), http.StatusForbidden,
+		map[string]string{"X-Chunk-SHA256": strings.Repeat("0", 64), "Content-Type": "application/octet-stream"})
 	guestUploadRequest(t, router, http.MethodPost,
 		"/api/v1/public/share/uploads/"+sessionID+"/finalize",
 		created.Token, "guest-share-password", []byte("{}"), http.StatusForbidden, nil)
@@ -161,5 +205,4 @@ func TestPublicShareUploadGrantSubtreeResumeAndRevocation(t *testing.T) {
 		"/api/v1/public/share/directories", created.Token, "guest-share-password",
 		[]byte(`{"name":"after-revoke"}`), http.StatusGone, nil)
 
-	_ = time.Second
 }
