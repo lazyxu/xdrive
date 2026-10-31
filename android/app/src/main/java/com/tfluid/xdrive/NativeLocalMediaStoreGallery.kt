@@ -90,68 +90,76 @@ internal fun NativeLocalMediaStoreGallery(
     selectedAlbum: NativeLocalAlbum? = null,
     onAlbumSelected: (NativeLocalAlbum?) -> Unit = {},
     onBackupOriginal: ((NativeLocalMedia) -> Unit)? = null,
+    memory: NativeLocalGalleryMemory? = null,
 ) {
     val context = LocalContext.current
     val resolver = context.contentResolver
     val lifecycle = LocalLifecycleOwner.current
-    var permissionEpoch by remember(sessionId) { mutableIntStateOf(0) }
-    var libraryEpoch by remember(sessionId) { mutableIntStateOf(0) }
-    val allowed = remember(permissionEpoch, sessionId) { nativePhotoAccess(context) }
+    // The host owns this cache for exactly one authenticated Owner epoch.
+    // The stand-alone fallback remains per-composition and does not persist.
+    val cache = remember(sessionId, memory) { memory ?: NativeLocalGalleryMemory() }
+    val wall = remember(cache, albumsOnly, selectedAlbum?.id) {
+        cache.wallFor(albumsOnly, selectedAlbum?.id)
+    }
+    var permissionEpoch by remember(sessionId, cache) { mutableIntStateOf(0) }
+    val libraryEpoch = cache.generation.intValue
+    val allowed = remember(sessionId, permissionEpoch, libraryEpoch) {
+        nativePhotoAccess(context)
+    }
     val limitedAccess = Build.VERSION.SDK_INT >= 33 && (
         context.checkSelfPermission(Manifest.permission.READ_MEDIA_IMAGES) !=
             PackageManager.PERMISSION_GRANTED ||
         context.checkSelfPermission(Manifest.permission.READ_MEDIA_VIDEO) !=
             PackageManager.PERMISSION_GRANTED)
     val permissionPrompt = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()) { permissionEpoch++ }
-    // The parent native Gallery owns the album breadcrumb across tab changes.
-    // It never serializes MediaStore URI/IDs into Android saved state.
+        ActivityResultContracts.RequestMultiplePermissions()) {
+        permissionEpoch++
+        cache.invalidate()
+    }
+    // Album navigation is a Gallery-local child; it does not alter bottom tabs.
     BackHandler(albumsOnly && selectedAlbum != null) { onAlbumSelected(null) }
-    var selectedMedia by remember(sessionId, albumsOnly) { mutableStateOf<NativeLocalMedia?>(null) }
-    // Permission/MediaStore generation invalidates the cached album index; merely
-    // opening an album must not rescan the whole local library on return.
-    var albums by remember(sessionId, albumsOnly, permissionEpoch, libraryEpoch) {
-        mutableStateOf<NativeLocalAlbumScan?>(null)
+    var selectedMedia by remember(sessionId, albumsOnly) {
+        mutableStateOf<NativeLocalMedia?>(null)
     }
-    val albumGridState = remember(sessionId, albumsOnly, permissionEpoch, libraryEpoch) {
-        LazyGridState()
-    }
-    val photoGridState = remember(sessionId, albumsOnly, selectedAlbum?.id,
-        permissionEpoch, libraryEpoch) { LazyGridState() }
-    var items by remember(sessionId, albumsOnly, selectedAlbum?.id) {
-        mutableStateOf<List<NativeLocalMedia>>(emptyList())
-    }
-    var exhausted by remember(sessionId, albumsOnly, selectedAlbum?.id) { mutableStateOf(false) }
-    var scannedCount by remember(sessionId, albumsOnly, selectedAlbum?.id) { mutableIntStateOf(0) }
-    // Not a MediaStore URI: memory-only bounded keyset, reset on library/grant changes.
-    var nextPageKey by remember(sessionId, albumsOnly, selectedAlbum?.id) {
-        mutableStateOf<NativeLocalPageKey?>(null)
-    }
-    var firstOffset by remember(sessionId, albumsOnly, selectedAlbum?.id) { mutableIntStateOf(0) }
-    var albumVisibleCount by remember(sessionId, albumsOnly) {
-        mutableIntStateOf(NativeLocalMediaStore.ALBUM_PAGE_SIZE)
-    }
-    var failure by remember(sessionId, albumsOnly, selectedAlbum?.id) {
-        mutableStateOf<String?>(null)
-    }
-    var busy by remember(sessionId, albumsOnly, selectedAlbum?.id) { mutableStateOf(false) }
-    var pageIntent by remember(sessionId, albumsOnly, selectedAlbum?.id) { mutableIntStateOf(0) }
+    var albums by cache.albumIndex
+    val albumGridState by cache.albumGridState
+    val photoGridState by wall.gridState
+    var items by wall.items
+    var exhausted by wall.exhausted
+    var scannedCount by wall.scannedCount
+    var nextPageKey by wall.nextPageKey
+    var firstOffset by wall.firstOffset
+    var albumVisibleCount by cache.albumVisibleCount
+    var failure by wall.failure
+    var busy by wall.busy
+    var pageIntent by wall.pageIntent
+    var consumedPageIntent by wall.consumedPageIntent
 
-    DisposableEffect(resolver, lifecycle, sessionId) {
-        val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
-            override fun onChange(selfChange: Boolean) { libraryEpoch++ }
-        }
+    // When no Owner-host observer was provided, retain the previous in-screen
+    // ContentObserver/lifecycle contract. The host observer covers inactive tabs,
+    // so it is not registered twice for an Owner-bound memory instance.
+    DisposableEffect(resolver, lifecycle, sessionId, cache, memory) {
+        val observer = if (memory == null) object : ContentObserver(
+            Handler(Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean) { cache.invalidate() }
+        } else null
         val lifecycleObserver = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) permissionEpoch++
-            if (event == Lifecycle.Event.ON_STOP) selectedMedia = null
+            if (event == Lifecycle.Event.ON_RESUME && memory == null) {
+                permissionEpoch++
+                cache.invalidate()
+            }
+            if (event == Lifecycle.Event.ON_STOP) {
+                selectedMedia = null
+                if (memory == null) cache.invalidate()
+            }
         }
-        runCatching {
+        if (observer != null) runCatching {
             resolver.registerContentObserver(
                 MediaStore.Files.getContentUri("external"), true, observer)
         }
         lifecycle.lifecycle.addObserver(lifecycleObserver)
         onDispose {
-            runCatching { resolver.unregisterContentObserver(observer) }
+            if (observer != null) runCatching { resolver.unregisterContentObserver(observer) }
             lifecycle.lifecycle.removeObserver(lifecycleObserver)
             selectedMedia = null
         }
@@ -160,18 +168,20 @@ internal fun NativeLocalMediaStoreGallery(
     LaunchedEffect(sessionId, albumsOnly, selectedAlbum?.id,
         permissionEpoch, libraryEpoch, allowed) {
         selectedMedia = null
-        items = emptyList()
-        exhausted = false
-        scannedCount = 0
-        nextPageKey = null
-        firstOffset = 0
-        pageIntent = 0
-        failure = null
-        if (!allowed) return@LaunchedEffect
+        if (!allowed) {
+            cache.clearUnauthorized()
+            return@LaunchedEffect
+        }
+        // A tab/source switch need not requery all earlier pages. The
+        // foreground Owner observer invalidates them on library/grant change,
+        // app background, or logout before any stale tile can be reused.
+        if (albumsOnly && selectedAlbum == null && albums != null) return@LaunchedEffect
+        if ((!albumsOnly || selectedAlbum != null) && wall.loaded.value) return@LaunchedEffect
+        wall.clear()
         busy = true
         try {
             if (albumsOnly && selectedAlbum == null) {
-                if (albums == null) albums = NativeLocalMediaStore.albums(resolver)
+                albums = NativeLocalMediaStore.albums(resolver)
             } else {
                 val page = NativeLocalMediaStore.pageAfter(resolver,
                     limit = NativeLocalMediaStore.PHOTO_PAGE_SIZE,
@@ -181,6 +191,7 @@ internal fun NativeLocalMediaStoreGallery(
                 scannedCount = page.size
                 exhausted = page.size < NativeLocalMediaStore.PHOTO_PAGE_SIZE
             }
+            wall.loaded.value = true
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
         } catch (_: SecurityException) {
@@ -192,8 +203,12 @@ internal fun NativeLocalMediaStoreGallery(
         }
     }
     LaunchedEffect(pageIntent, sessionId, albumsOnly, selectedAlbum?.id,
-        permissionEpoch, libraryEpoch) {
-        if (pageIntent == 0 || !allowed || exhausted || busy || failure != null) return@LaunchedEffect
+        permissionEpoch, libraryEpoch, allowed) {
+        // Re-entering an inactive tab must not accidentally request another
+        // page merely because its old pageIntent was already consumed.
+        if (pageIntent == 0 || pageIntent == consumedPageIntent || !wall.loaded.value ||
+            !allowed || exhausted || busy || failure != null) return@LaunchedEffect
+        consumedPageIntent = pageIntent
         busy = true
         try {
             val current = items
