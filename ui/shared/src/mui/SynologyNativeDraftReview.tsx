@@ -30,6 +30,9 @@ export function XDriveSynologyNativeDraftReview({
   } | null>(null)
   const currentScope = useRef({ ownerScope, selectionID })
   const attemptedRef = useRef(false)
+  // Only an Agent-confirmed bind may be retired, and only after a fresh
+  // owning-device draft inventory proves that Source is no longer unbound.
+  const confirmedBoundSourceRef = useRef<number | null>(null)
   const mountedRef = useRef(false)
   currentScope.current = { ownerScope, selectionID }
 
@@ -47,6 +50,19 @@ export function XDriveSynologyNativeDraftReview({
       if (report.owner_scope !== ownerScope) {
         setState({ loading: false, error: true, items: [] })
         return
+      }
+      if (confirmedBoundSourceRef.current !== null) {
+        const boundID = confirmedBoundSourceRef.current
+        if (report.items.some(item => item.source_id === boundID)) {
+          // An apparently authorized Source is still reported unbound.
+          // This inconsistent evidence must never unlock another mutation.
+          setOutcome({ id: boundID, state: 'uncertain' })
+        } else {
+          confirmedBoundSourceRef.current = null
+          attemptedRef.current = false
+          setAttempted(false)
+          setConfirmed(false)
+        }
       }
       setState({ loading: false, error: false, items: report.items })
     }).catch(() => {
@@ -83,6 +99,7 @@ export function XDriveSynologyNativeDraftReview({
       }
       setOutcome({ id: draft.source_id, state: result.state })
       if (result.state === 'authorized') {
+        confirmedBoundSourceRef.current = draft.source_id
         onBound()
         setRevision(value => value + 1)
       }
@@ -127,7 +144,7 @@ export function XDriveSynologyNativeDraftReview({
               control={<Checkbox size="small" checked={confirmed}
                 disabled={attempted || workingID !== null || !/^[0-9a-f]{64}$/.test(selectionID)}
                 onChange={event => setConfirmed(event.target.checked)} />}
-              label="我确认将上方已通过预检的 NAS 目录绑定到下方选定的现有 Source，不会创建新 Source 或启动备份"
+              label="我确认将上方已通过预检的 NAS 目录绑定到下方选定的现有 Source，不会创建新 Source 或启动备份；每次成功绑定后须重新确认"
             />
             {state.items.map(draft => (
               <Box key={draft.source_id}>
