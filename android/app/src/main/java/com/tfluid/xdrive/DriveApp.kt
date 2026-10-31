@@ -157,12 +157,12 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     var localAlbumSelection by remember(state.nativeUiSessionId) {
         mutableStateOf<NativeLocalAlbum?>(null)
     }
-    var pendingGalleryMap by remember(state.nativeUiSessionId) { mutableStateOf(false) }
+    var pendingRoutes by remember(state.nativeUiSessionId, nativeAuthenticated) {
+        mutableStateOf(NativeHomePendingRoutes())
+    }
     var mapOriginSource by remember(state.nativeUiSessionId) {
         mutableStateOf(NativeGallerySource.CLOUD)
     }
-    var pendingGalleryTab by remember(state.nativeUiSessionId) { mutableStateOf(false) }
-    var pendingTrash by remember(state.nativeUiSessionId) { mutableStateOf(false) }
     LaunchedEffect(state.screen, nativeNavigation.gallerySource, state.nativeUiSessionId) {
         if (state.screen != Screen.GALLERY ||
             nativeNavigation.gallerySource !in setOf(
@@ -261,28 +261,34 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     val nativeOverlay = nativeAuthenticated && !photoViewerOpen &&
         nativeNavigation.selected in setOf(NativeHomeTab.ALL, NativeHomeTab.DYNAMIC, NativeHomeTab.MINE)
     // Old native AccountMenu can still change a Controller route directly.
-    LaunchedEffect(state.screen, state.viewerReturnToFiles, state.nativeUiSessionId) {
+    // In-flight Trash/Files/Map transitions must not silently replace a later
+    // explicit tab selection. Cloud reads and local media remain Owner-scoped.
+    LaunchedEffect(state.screen, state.viewerReturnToFiles, state.nativeUiSessionId,
+        pendingRoutes.galleryTab, pendingRoutes.trash) {
         if (state.screen == Screen.GALLERY && !state.viewerReturnToFiles &&
-            nativeNavigation.selected == NativeHomeTab.FILES) {
+            nativeNavigation.selected == NativeHomeTab.FILES && !pendingRoutes.trash) {
             nativeNavigation = nativeNavigation.select(NativeHomeTab.GALLERY)
         } else if (state.screen == Screen.FILES &&
-            nativeNavigation.selected == NativeHomeTab.GALLERY) {
+            nativeNavigation.selected == NativeHomeTab.GALLERY && !pendingRoutes.galleryTab) {
             nativeNavigation = nativeNavigation.select(NativeHomeTab.FILES)
         }
     }
-    LaunchedEffect(state.screen, state.loading, pendingGalleryTab, pendingGalleryMap, pendingTrash) {
-        if (pendingGalleryTab && state.screen == Screen.FILES && state.canNavigateFiles()) {
-            pendingGalleryTab = false
+    LaunchedEffect(state.screen, state.loading, pendingRoutes,
+        nativeNavigation.selected, nativeNavigation.gallerySource) {
+        if (pendingRoutes.galleryTab && state.screen == Screen.FILES &&
+            nativeNavigation.selected == NativeHomeTab.GALLERY && state.canNavigateFiles()) {
+            pendingRoutes = pendingRoutes.copy(galleryTab = false)
             controller.openGallery()
-            nativeNavigation = nativeNavigation.select(NativeHomeTab.GALLERY)
         }
-        if (pendingTrash && state.screen == Screen.FILES && state.canNavigateFiles()) {
-            pendingTrash = false
+        if (pendingRoutes.trash && state.screen == Screen.FILES &&
+            nativeNavigation.selected == NativeHomeTab.FILES && state.canNavigateFiles()) {
+            pendingRoutes = pendingRoutes.copy(trash = false)
             controller.openTrash()
-            nativeNavigation = nativeNavigation.select(NativeHomeTab.FILES)
         }
-        if (pendingGalleryMap && state.screen == Screen.GALLERY && !state.loading) {
-            pendingGalleryMap = false
+        if (pendingRoutes.galleryMap && state.screen == Screen.GALLERY &&
+            !state.loading && nativeNavigation.selected == NativeHomeTab.GALLERY &&
+            nativeNavigation.gallerySource == NativeGallerySource.MAP) {
+            pendingRoutes = pendingRoutes.copy(galleryMap = false)
             if (state.galleryPrimaryTab == GalleryPrimaryTab.LIBRARY &&
                 state.gallerySelectedAlbum == null && !state.galleryMapOpen) {
                 controller.openGalleryMapOverview()
@@ -292,6 +298,7 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     fun selectNativeTab(tab: NativeHomeTab) {
         if (!nativeAuthenticated || photoViewerOpen) return
         galleryFirstPending = false // Explicit user choice always wins.
+        pendingRoutes = pendingRoutes.afterExplicitTab(tab)
         when (tab) {
             NativeHomeTab.GALLERY -> when (state.screen) {
                 Screen.FILES -> if (state.canNavigateFiles()) {
@@ -299,7 +306,8 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                     nativeNavigation = nativeNavigation.select(tab)
                 }
                 Screen.TRASH -> if (!state.trashRestoreAttempted && !state.hasActiveNativeTransfer()) {
-                    pendingGalleryTab = true
+                    pendingRoutes = pendingRoutes.copy(galleryTab = true)
+                    nativeNavigation = nativeNavigation.select(tab)
                     controller.closeTrash()
                 }
                 Screen.GALLERY -> nativeNavigation = nativeNavigation.select(tab)
@@ -312,7 +320,11 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                     controller.openFilesApp()
                     nativeNavigation = nativeNavigation.select(tab)
                 }
-                Screen.FILES, Screen.TRASH -> nativeNavigation = nativeNavigation.select(tab)
+                Screen.TRASH -> if (!state.trashRestoreAttempted && !state.hasActiveNativeTransfer()) {
+                    controller.closeTrash() // Files is the fixed root, not the Trash child.
+                    nativeNavigation = nativeNavigation.select(tab)
+                }
+                Screen.FILES -> nativeNavigation = nativeNavigation.select(tab)
                 else -> Unit
             }
             else -> nativeNavigation = nativeNavigation.select(tab)
@@ -322,16 +334,19 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
         galleryFirstPending = false
         val previousGallerySource = nativeNavigation.gallerySource
         val next = nativeNavigation.open(shortcut)
+        pendingRoutes = pendingRoutes.afterExplicitTab(next.selected)
         when (next.selected) {
             NativeHomeTab.GALLERY -> {
-                val mayEnter = state.screen == Screen.GALLERY || state.canNavigateFiles()
+                val mayEnter = state.screen == Screen.GALLERY || state.canNavigateFiles() ||
+                    (state.screen == Screen.TRASH && !state.trashRestoreAttempted &&
+                        !state.hasActiveNativeTransfer())
                 selectNativeTab(NativeHomeTab.GALLERY)
                 if (mayEnter) {
                     nativeNavigation = next
                     if (shortcut == NativeHomeShortcut.GALLERY_MAP) {
                         mapOriginSource = nativeGalleryMapReturnSource(
                             previousGallerySource, mapOriginSource)
-                        pendingGalleryMap = true
+                        pendingRoutes = pendingRoutes.copy(galleryMap = true)
                     }
                 }
             }
@@ -340,10 +355,16 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                     (state.screen == Screen.GALLERY && !state.hasActiveNativeTransfer() &&
                         !state.galleryMetadataWriteAttempted &&
                         !state.galleryAlbumCreateAttempted && !state.galleryAlbumEditAttempted)
-                selectNativeTab(NativeHomeTab.FILES)
-                if (mayEnter) {
+                // Opening Trash from Trash should never close and reopen it.
+                if (shortcut == NativeHomeShortcut.TRASH && state.screen == Screen.TRASH) {
                     nativeNavigation = next
-                    if (shortcut == NativeHomeShortcut.TRASH) pendingTrash = true
+                } else {
+                    selectNativeTab(NativeHomeTab.FILES)
+                    if (mayEnter) {
+                        nativeNavigation = next
+                        if (shortcut == NativeHomeShortcut.TRASH)
+                            pendingRoutes = pendingRoutes.copy(trash = true)
+                    }
                 }
             }
             NativeHomeTab.DYNAMIC -> {
