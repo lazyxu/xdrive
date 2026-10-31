@@ -41,6 +41,28 @@ This is not a release, automatic backup scheduler, or claimed complete MVP.
 - No new Go endpoint, crypto layer, durable backup task record format, Web UI
   or unrelated platform changes.
 
+## Safe 128-intent capacity recycling (MVP reliability)
+
+The native incremental writer now reclaims **only VERIFIED intents backed by
+an exact matching, durably committed SQLite receipt**, including matching
+Owner/device, asset/resource/version, source SHA-256/bytes and verified
+Go Node ID/revision. It verifies and compacts before a new intent is added,
+and again after SQLite acknowledges an exact finalized Go upload. Different
+Owners' fully verified intents may be reclaimed without making their pending
+or unknown work eligible for replay.
+
+PLANNED, MAY_HAVE_SENT and UNKNOWN_ACK cannot be removed by this path. An
+unreadable index or failed journal commit preserves the original entries
+and stops instead of silently discarding backup state. A post-finalize
+SQLite failure leaves the original VERIFIED journal entry available for
+repair. This is capacity management needed for >128 original uploads, **not
+a new at-rest encryption scheme**. The existing private checkpoint and
+SQLite index formats remain unchanged.
+
+Pure JVM tests cover exact-index-only pruning, unknown-ACK retention,
+failed index/commit, more than 128 completed originals, and no duplicate
+UploadSession after journal repair.
+
 ## Not yet MVP complete
 
 WorkManager opt-in automatic scheduling, safe durable large-library scanner
