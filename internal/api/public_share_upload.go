@@ -18,14 +18,11 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-const (
-	shareUploadMaxActiveSessions = int64(4)
-	shareUploadMaxDirectories = int64(2048)
-)
+const shareUploadMaxActiveSessions = int64(4) // rate-limits parallel in-flight sessions, not file count
 
 var (
 	errShareUploadDenied = errors.New("share upload unavailable")
-	errShareUploadLimit = errors.New("share upload quota exceeded")
+	errShareUploadBusy = errors.New("share upload concurrency limit reached")
 )
 
 // A Guest Share token is NEVER an account JWT. Only these explicit upload
@@ -74,19 +71,16 @@ SELECT EXISTS (SELECT 1 FROM ancestors WHERE id = ?) AS allowed
 	return result.Allowed, err
 }
 
-// Caller holds Share FOR UPDATE. The active count includes resumable sessions,
-// preventing concurrent guests from exceeding the configured link limits.
+// Guest session creation and grant updates serialize on the Share row.
 func (s *Server) publicShareUploadAdmissionTx(
-	ctx context.Context, tx *gorm.DB, shareID, ownerID, parentID uint64,
-	extraBytes, extraFiles int64, checkQuota bool,
+	ctx context.Context, tx *gorm.DB, shareID, ownerID, parentID uint64, creating bool,
 ) (meta.Share, error) {
 	var share meta.Share
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("id = ? AND owner_id = ?", shareID, ownerID).First(&share).Error; err != nil {
 		return share, errShareUploadDenied
 	}
-	if shareStatus(share, time.Now()) != "active" || share.Access != shareAccessViewUpload ||
-		share.MaxUploadBytes <= 0 || share.MaxUploadFiles <= 0 || share.MaxUploadFileBytes <= 0 {
+	if shareStatus(share, time.Now()) != "active" || share.Access != shareAccessViewUpload {
 		return share, errShareUploadDenied
 	}
 	var owner meta.User
@@ -106,42 +100,26 @@ func (s *Server) publicShareUploadAdmissionTx(
 	if err != nil || !allowed {
 		return share, errShareUploadDenied
 	}
-	if !checkQuota {
-		return share, nil
-	}
-	if extraBytes < 0 || extraFiles < 0 {
-		return share, errShareUploadDenied
-	}
-	var pending struct {
-		Files int64 `gorm:"column:files"`
-		Bytes int64 `gorm:"column:bytes"`
-	}
-	if err := tx.Model(&meta.UploadSession{}).
-		Select("COUNT(*) AS files, COALESCE(SUM(total_size), 0) AS bytes").
-		Where("share_id = ? AND status = ? AND expires_at > ?",
-			shareID, meta.UploadStatusActive, time.Now()).
-		Scan(&pending).Error; err != nil {
-		return share, err
-	}
-	if pending.Files > shareUploadMaxActiveSessions ||
-		(extraFiles > 0 && pending.Files >= shareUploadMaxActiveSessions) ||
-		extraFiles > share.MaxUploadFiles ||
-		pending.Files > share.MaxUploadFiles-extraFiles ||
-		share.UploadedFiles > share.MaxUploadFiles-extraFiles-pending.Files {
-		return share, errShareUploadLimit
-	}
-	if extraBytes > share.MaxUploadBytes ||
-		pending.Bytes > share.MaxUploadBytes-extraBytes ||
-		share.UploadedBytes > share.MaxUploadBytes-extraBytes-pending.Bytes {
-		return share, errShareUploadLimit
+	// Not a per-share quota. This protects concurrent requests and staging
+	// resources without limiting lifetime bytes, file count or folder count.
+	if creating {
+		var active int64
+		if err := tx.Model(&meta.UploadSession{}).
+			Where("share_id = ? AND status = ? AND expires_at > ?",
+				shareID, meta.UploadStatusActive, time.Now()).Count(&active).Error; err != nil {
+			return share, err
+		}
+		if active >= shareUploadMaxActiveSessions {
+			return share, errShareUploadBusy
+		}
 	}
 	return share, nil
 }
 
 func writePublicShareUploadError(c *gin.Context, err error) {
 	switch {
-	case errors.Is(err, errShareUploadLimit):
-		fail(c, http.StatusRequestEntityTooLarge, "share upload quota exceeded")
+	case errors.Is(err, errShareUploadBusy):
+		fail(c, http.StatusTooManyRequests, "share upload concurrency full")
 	case errors.Is(err, errShareUploadDenied):
 		fail(c, http.StatusForbidden, "share upload unavailable")
 	default:
@@ -167,8 +145,8 @@ func (s *Server) publicShareCreateDirectory(c *gin.Context) {
 	var result meta.Node
 	var created bool
 	err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		current, err := s.publicShareUploadAdmissionTx(
-			c.Request.Context(), tx, share.ID, share.OwnerID, req.ParentID, 0, 0, false)
+		_, err := s.publicShareUploadAdmissionTx(
+			c.Request.Context(), tx, share.ID, share.OwnerID, req.ParentID, false)
 		if err != nil { return err }
 		if err := tx.Where(
 			"owner_id = ? AND parent_id = ? AND lower(name) = lower(?) AND deleted_at IS NULL",
@@ -177,16 +155,11 @@ func (s *Server) publicShareCreateDirectory(c *gin.Context) {
 			if result.Type != meta.NodeTypeDir { return errShareUploadDenied }
 			return nil
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) { return err }
-		if current.CreatedDirectories >= shareUploadMaxDirectories { return errShareUploadLimit }
 		result = meta.Node{
 			OwnerID: share.OwnerID, ParentID: &req.ParentID, Name: req.Name,
 			Type: meta.NodeTypeDir, Revision: 1,
 		}
 		if err := tx.Create(&result).Error; err != nil { return err }
-		if err := tx.Model(&meta.Share{}).Where("id = ?", share.ID).
-			Update("created_directories", gorm.Expr("created_directories + 1")).Error; err != nil {
-			return err
-		}
 		created = true
 		return nil
 	})
@@ -208,7 +181,7 @@ func (s *Server) publicShareCreateUpload(c *gin.Context) {
 	if req.NodeID != nil || req.ExpectedRevision != 0 || req.MD5 != "" ||
 		len(req.ChunkSHA256) != 0 ||
 		(req.ConflictPolicy != "" && req.ConflictPolicy != meta.UploadConflictPolicyKeepBoth) ||
-		req.Size < 0 || req.Size > share.MaxUploadFileBytes || req.Size > s.MaxUploadBytes ||
+		req.Size < 0 || req.Size > s.MaxUploadBytes ||
 		meta.ValidateName(req.Name) != nil {
 		fail(c, http.StatusForbidden, "share upload request out of bounds")
 		return
@@ -246,7 +219,6 @@ func (s *Server) publicShareOwnedUpload(c *gin.Context) bool {
 		return false
 	}
 	if session.ParentID == nil || session.TotalSize < 0 ||
-		session.TotalSize > share.MaxUploadFileBytes ||
 		session.ConflictPolicy != meta.UploadConflictPolicyKeepBoth {
 		fail(c, http.StatusForbidden, "share upload session unavailable")
 		return false

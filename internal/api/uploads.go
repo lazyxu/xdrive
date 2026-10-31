@@ -592,7 +592,7 @@ func (s *Server) createUploadSession(c *gin.Context) {
 	if err := s.DB.Transaction(func(tx *gorm.DB) error {
 		if guest {
 			if _, err := s.publicShareUploadAdmissionTx(
-				c.Request.Context(), tx, guestID, uid, *req.ParentID, req.Size, 1, true,
+				c.Request.Context(), tx, guestID, uid, *req.ParentID, true,
 			); err != nil { return err }
 		}
 		quotaReservation, err := s.reserveUploadQuota(tx, uid, "", session.TotalSize, quotaKey)
@@ -617,7 +617,7 @@ func (s *Server) createUploadSession(c *gin.Context) {
 		}
 		return nil
 	}); err != nil {
-		if errors.Is(err, errShareUploadDenied) || errors.Is(err, errShareUploadLimit) {
+		if errors.Is(err, errShareUploadDenied) || errors.Is(err, errShareUploadBusy) {
 			writePublicShareUploadError(c, err)
 			return
 		}
@@ -985,14 +985,11 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 				currentSession.ConflictPolicy != meta.UploadConflictPolicyKeepBoth {
 				return errShareUploadDenied
 			}
-			currentShare, err := s.publicShareUploadAdmissionTx(
+			_, err := s.publicShareUploadAdmissionTx(
 				c.Request.Context(), tx, *currentSession.ShareID, currentSession.OwnerID,
-				*currentSession.ParentID, 0, 0, true,
+				*currentSession.ParentID, false,
 			)
 			if err != nil { return err }
-			if currentSession.TotalSize > currentShare.MaxUploadFileBytes {
-				return errShareUploadLimit
-			}
 		}
 		now := time.Now()
 		skipped := false
@@ -1112,15 +1109,6 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 				return err
 			}
 		}
-		// A guest's finalized logical bytes and file count are recorded in
-		// the same SQL transaction as the canonical Node/CAS receipt.
-		if currentSession.ShareID != nil {
-			if err := tx.Model(&meta.Share{}).Where("id = ? AND owner_id = ?",
-				*currentSession.ShareID, currentSession.OwnerID).Updates(map[string]any{
-				"uploaded_bytes": gorm.Expr("uploaded_bytes + ?", size),
-				"uploaded_files": gorm.Expr("uploaded_files + 1"),
-			}).Error; err != nil { return err }
-		}
 		// The original local Push checkpoint, if one was authenticated and
 		// bound, is persisted inside this exact ordinary CAS/Node/Version
 		// transaction. Missing or revoked bindings fail the WHOLE finalize.
@@ -1155,7 +1143,7 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 			s.writeUploadSession(c, fresh, http.StatusOK)
 		case errors.Is(err, errUploadExpired):
 			fail(c, http.StatusGone, "upload session expired")
-		case errors.Is(err, errShareUploadDenied), errors.Is(err, errShareUploadLimit):
+		case errors.Is(err, errShareUploadDenied), errors.Is(err, errShareUploadBusy):
 			writePublicShareUploadError(c, err)
 		case errors.Is(err, errRevisionConflict):
 			revisionConflict(c, session.ExpectedRevision, currentRevision)
