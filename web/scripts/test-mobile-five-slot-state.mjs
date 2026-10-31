@@ -121,7 +121,7 @@ assert.match(gallerySource, /onMobileMapFocusChange\?\.\(mobileMapFocusActive\)/
 assert.match(gallerySource, /onMobileMapFocusChange\?\.\(false\)/,
   'Gallery must release focus on unmount or transition')
 assert.match(gallerySource, /mapImmersive=\{mobileMapFocusActive\}/,
-  'Gallery's own immersive chrome and the shell share one map truth')
+  "Gallery's own immersive chrome and the shell share one map truth")
 assert.match(appSource, /onMobileMapFocusChange=\{onMobileMapFocusChange\}/)
 assert.match(appSource, /mobileMapVisibility\.owner === mobileOwnerScope/,
   'old Owner map visibility cannot hide new Owner tabs')
