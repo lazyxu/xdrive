@@ -60,6 +60,13 @@ class NativeLocalViewerReturnFocusUiTest {
         }
         compose.onNodeWithTag("native-local-media-21").performClick()
         compose.onNodeWithTag("fixture-viewer-close").assertIsDisplayed().performClick()
+        // The real Dialog and returning source tile exchange focus across
+        // Compose frames. Keep a bounded assertion on ACTUAL input focus.
+        compose.waitUntil(timeoutMillis = 5_000) {
+            runCatching {
+                compose.onNodeWithTag("native-local-media-21").assertIsFocused()
+            }.isSuccess
+        }
         compose.onNodeWithTag("native-local-media-21").assertIsFocused()
         compose.onNodeWithTag("fixture-viewer-close").assertDoesNotExist()
     }
