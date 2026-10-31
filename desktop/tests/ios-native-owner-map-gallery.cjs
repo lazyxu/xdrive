@@ -156,3 +156,19 @@ test('Owner cloud map thumbnail distinguishes 401/403 revocation from a bad deri
   assert.match(thumbnail, /guard bytes\.count <= 2 \* 1_048_576,[\s\S]*?Content-Type[\s\S]*?XDriveIOSNativeMediaReadFailure\.malformed/)
   assert.match(map, /catch let failure as XDriveIOSNativeMediaReadFailure \{[\s\S]*?case \.response\(let status\)[\s\S]*?status == 401 \|\| status == 403[\s\S]*?invalidate\(\)/)
 })
+
+test('short landscape Owner map retains verified camera, feedback, Sheet and accessible help', () => {
+  assert.match(map, /@Environment\(\\\.dynamicTypeSize\) private var dynamicTypeSize/);
+  assert.match(map, /GeometryReader \{ viewport in[\s\S]*?XDriveIOSNativePhotoMapPolicy\.compactViewport\(/);
+  assert.match(map, /accessibilityText: dynamicTypeSize\.isAccessibilitySize/);
+  assert.match(map, /VStack\(spacing: compactMap \? 4 : 8\)/);
+  assert.match(map, /if !compactMap \{\s*Text\("当前 Server Owner/);
+  assert.match(map, /if !compactMap \{\s*Text\("选择真实地点后/);
+  assert.match(map, /\.alert\("云端照片地图说明", isPresented: \$showingMapHelp\)/);
+  assert.match(map, /\.accessibilityIdentifier\("native-ios-owner-map-layout-help"\)/);
+  assert.match(map, /Button\("刷新当前视窗"\)/);
+  assert.match(map, /Button\(focused \? "显示底部导航" : "专注地图"\)/);
+  assert.match(map, /if let overview \{[\s\S]*?if verifiedBounds != nil[\s\S]*?上次验证视窗有/);
+  assert.match(map, /\.sheet\(item: \$selected, onDismiss:/);
+  assert.doesNotMatch(map, /onChange\(of: compactMap\)|\.id\(compactMap\)/);
+});

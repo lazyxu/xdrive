@@ -3,6 +3,24 @@ import Foundation
 @main
 struct XDriveIOSNativePhotoMapPolicyChecks {
     static func main() {
+        // Short-landscape layout is shared by local and Owner-cloud MapKit.
+        // Check the measured safe-area viewport, not the size-class or rotation.
+        precondition(XDriveIOSNativePhotoMapPolicy.compactViewport(
+            width: 844, height: 360, accessibilityText: false))
+        precondition(XDriveIOSNativePhotoMapPolicy.compactViewport(
+            width: 680, height: 499, accessibilityText: false))
+        precondition(!XDriveIOSNativePhotoMapPolicy.compactViewport(
+            width: 679, height: 360, accessibilityText: false))
+        precondition(!XDriveIOSNativePhotoMapPolicy.compactViewport(
+            width: 844, height: 500, accessibilityText: false))
+        precondition(!XDriveIOSNativePhotoMapPolicy.compactViewport(
+            width: 900, height: 360, accessibilityText: true))
+        precondition(!XDriveIOSNativePhotoMapPolicy.compactViewport(
+            width: 390, height: 720, accessibilityText: false))
+        precondition(!XDriveIOSNativePhotoMapPolicy.compactViewport(
+            width: .nan, height: 360, accessibilityText: false))
+        precondition(!XDriveIOSNativePhotoMapPolicy.compactViewport(
+            width: 844, height: 0, accessibilityText: false))
         precondition(XDriveIOSNativePhotoMapPolicy.validCoordinate(latitude: 0, longitude: 0))
         precondition(XDriveIOSNativePhotoMapPolicy.validCoordinate(latitude: 90, longitude: -180))
         precondition(!XDriveIOSNativePhotoMapPolicy.validCoordinate(latitude: 90.1, longitude: 0))

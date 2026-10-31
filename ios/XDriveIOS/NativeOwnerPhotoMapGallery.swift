@@ -286,6 +286,7 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     var onFocusChange: ((Bool) -> Void)?
     @Environment(\.scenePhase) private var phase
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var overview: XDriveIOSNativeOwnerMapOverview?
     @State private var coverImages: [String: UIImage] = [:]
     @State private var coverTask: Task<Void, Never>?
@@ -300,6 +301,7 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
     @State private var task: Task<Void, Never>?
     @State private var selected: XDriveIOSOwnerMapChosenPlace?
     @State private var focused = false
+    @State private var showingMapHelp = false
     @State private var camera = MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: 0, longitude: 0),
         span: MKCoordinateSpan(latitudeDelta: 160, longitudeDelta: 360))
@@ -312,9 +314,17 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
     }
 
     var body: some View {
-        VStack(spacing: 8) {
-            Text("当前 Server Owner 已索引的 WGS84 云端位置，不是本机 PhotoKit 相册。")
-                .font(.footnote).foregroundStyle(.secondary)
+        GeometryReader { viewport in
+        let compactMap = XDriveIOSNativePhotoMapPolicy.compactViewport(
+            width: Double(viewport.size.width),
+            height: Double(viewport.size.height),
+            accessibilityText: dynamicTypeSize.isAccessibilitySize
+        )
+        VStack(spacing: compactMap ? 4 : 8) {
+            if !compactMap {
+                Text("当前 Server Owner 已索引的 WGS84 云端位置，不是本机 PhotoKit 相册。")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
             XDriveIOSOwnerMapSurface(
                 overview: overview, coverImages: coverImages,
                 markersEnabled: mapMarkersEnabled,
@@ -379,17 +389,33 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
                 .frame(minHeight: 44)
                 .buttonStyle(.bordered)
                 .accessibilityIdentifier("native-ios-owner-map-refresh")
-            Text("选择真实地点后仅打开当前 Owner 重新验证的 48 项 PhotoAsset 分页与原生 Viewer；聚合区域不能当成照片访问凭证。")
-                .font(.footnote).foregroundStyle(.secondary)
+            if !compactMap {
+                Text("选择真实地点后仅打开当前 Owner 重新验证的 48 项 PhotoAsset 分页与原生 Viewer；聚合区域不能当成照片访问凭证。")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+        }
         }
         .padding(.horizontal, 8)
         .navigationTitle("云端照片地图")
+        .alert("云端照片地图说明", isPresented: $showingMapHelp) {
+            Button("完成", role: .cancel) {}
+        } message: {
+            Text("当前地图仅展示已经验证的 Server Owner 位置代表项。地图移动后旧封面暂不可操作；相机稳定后重新核对。只有实际授权地点才可打开当前 Owner 的 48 项 PhotoAsset 分页与 Viewer；聚合区域不是照片访问凭证。")
+        }
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button(focused ? "显示底部导航" : "专注地图") {
                     focused.toggle()
                     onFocusChange?(focused)
                 }
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    showingMapHelp = true
+                } label: {
+                    Label("地图说明", systemImage: "info.circle")
+                }
+                .accessibilityIdentifier("native-ios-owner-map-layout-help")
             }
         }
         .sheet(item: $selected, onDismiss: {
