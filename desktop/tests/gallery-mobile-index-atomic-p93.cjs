@@ -207,7 +207,7 @@ function actualBrowsePosition(env) {
   const js = ts.transpileModule(factory, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText
-  return new Function(...Object.keys(env), js + '\\nreturn select();')(...Object.values(env))
+  return new Function(...Object.keys(env), js + '\nreturn select();')(...Object.values(env))
 }
 
 test('P93 Mobile Gallery→Files→Album restores its own visible Node after Albums index Range', () => {
