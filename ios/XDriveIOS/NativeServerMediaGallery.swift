@@ -348,6 +348,8 @@ struct XDriveIOSNativeServerMediaWall: View {
     var onFocusChange: ((Bool) -> Void)? = nil
     @StateObject private var model = XDriveIOSNativeMediaWallModel()
     @Environment(\.scenePhase) private var phase
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var showingGalleryHelp = false
     @State private var selected: XDriveIOSNativeMediaItem?
     @State private var searchDraft = ""
     @State private var appliedSearch = ""
@@ -359,15 +361,22 @@ struct XDriveIOSNativeServerMediaWall: View {
     @State private var focusedBrowsing = false
 
     var body: some View {
+        GeometryReader { viewport in
+        // Presentation-only safe-area measurement. The exact Owner, 48-item
+        // current page, L2 intent and L3 Viewer are owned outside this branch.
+        let compactGallery = viewport.size.width >= 680 &&
+            viewport.size.height < 500 && !dynamicTypeSize.isAccessibilitySize
         ScrollViewReader { returnScroll in
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
-                Text(placeID != nil ?
-                    "当前 Owner 原始 GPS 地点的授权 PhotoAsset 分页（非全库）。" :
-                    album == nil ?
-                    "服务器 PhotoAsset 全库照片墙（非仅 iPhone 备份目录）。" :
-                    "已验证的云端相册成员，按服务器分页读取。")
-                    .font(.caption).foregroundStyle(.secondary)
+                if !compactGallery {
+                    Text(placeID != nil ?
+                        "当前 Owner 原始 GPS 地点的授权 PhotoAsset 分页（非全库）。" :
+                        album == nil ?
+                        "服务器 PhotoAsset 全库照片墙（非仅 iPhone 备份目录）。" :
+                        "已验证的云端相册成员，按服务器分页读取。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 HStack(spacing: 8) {
                     TextField("搜索当前云端图库", text: $searchDraft)
                         .textFieldStyle(.roundedBorder)
@@ -435,8 +444,10 @@ struct XDriveIOSNativeServerMediaWall: View {
                                    search: appliedSearch)
                     }
                 }
-                Text("每次最多保留 48 个逻辑媒体；只有当前可见图片申请授权缩略图。缩略图缺失不代表原件丢失。")
-                    .font(.caption).foregroundStyle(.secondary)
+                if !compactGallery {
+                    Text("每次最多保留 48 个逻辑媒体；只有当前可见图片申请授权缩略图。缩略图缺失不代表原件丢失。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             .padding(12)
         }
@@ -513,6 +524,19 @@ struct XDriveIOSNativeServerMediaWall: View {
                 }
                 .accessibilityIdentifier("native-ios-gallery-focus-toggle")
             }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button { showingGalleryHelp = true } label: {
+                    Image(systemName: "info.circle")
+                        .frame(minWidth: 44, minHeight: 44)
+                }
+                .accessibilityLabel("云端图库说明")
+                .accessibilityIdentifier("native-ios-cloud-gallery-layout-help")
+            }
+        }
+        .alert("云端图库说明", isPresented: $showingGalleryHelp) {
+            Button("完成", role: .cancel) {}
+        } message: {
+            Text("图库范围属于当前已验证 Server Owner：普通云端图库、指定相册和地图地点分别按授权读取，每页最多保留 48 个逻辑媒体。只有可见缩略图才发起请求；缩略图缺失不代表原件丢失。")
         }
         // The owning five-tab shell controls its custom bar; never show a
         // second system strip through a child toolbar override.
@@ -565,6 +589,7 @@ struct XDriveIOSNativeServerMediaWall: View {
                 lastOpenedRevision = nil
                 lastOpenedOwner = nil
             }
+        }
         }
         }
 
