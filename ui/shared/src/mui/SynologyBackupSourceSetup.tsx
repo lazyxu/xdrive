@@ -172,7 +172,11 @@ export function XDriveSynologyBackupSourceSetup({
             </Typography>
           ) : null}
           {showDrafts && scopeStatus === 'ready' ? (
-            <XDriveSynologyNativeDraftReview client={client} ownerScope={ownerScope} />
+            <XDriveSynologyNativeDraftReview
+              client={client} ownerScope={ownerScope}
+              selectionID={selectedShare?.selection_id ?? ''}
+              onBound={onCreated}
+            />
           ) : null}
         </Stack>
       </Box>
