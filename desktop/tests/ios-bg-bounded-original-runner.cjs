@@ -127,3 +127,19 @@ test('transient prewrite BG failure retains a future approval without retrying a
   assert.match(task, /catch is CancellationError \{/);
   assert.match(task, /successful = !progress\.stoppedForReview/);
 });
+
+test('lost or cancelled BG writer preserves durable pause until explicit receipt review', () => {
+  const task = read('BackgroundPhotoTask.swift')
+  const store = read('BGOriginalWindowStore.swift')
+  assert.match(task, /var beganOriginalWrite = false/)
+  assert.match(task, /var attemptedOwner: XDriveNativeOwnerRoot\?/)
+  assert.match(task, /attemptedOwner = owner[\s\S]*?beganOriginalWrite = true/)
+  const cancelled = task.slice(task.indexOf('} catch is CancellationError {'),
+    task.indexOf('private static func retryablePreflightNetworkFailure('))
+  assert.match(cancelled, /if beganOriginalWrite, let attemptedOwner \{[\s\S]*?BGOriginalWindowStore\.shared\.pause\(/)
+  assert.match(cancelled, /else if retryablePreflightNetworkFailure\(error\) \{[\s\S]*?await resubmitOnlyIfStillApproved\(\)/)
+  assert.match(store, /func pause\(owner: XDriveNativeOwnerRoot\) throws/)
+  assert.match(store, /state\.pausedForReview = true/)
+  assert.match(store, /guard !state\.pausedForReview, state\.dueAt <= now else \{ return nil \}/)
+  assert.doesNotMatch(cancelled, /uploadPrepared\(|confirmReceipt\(|beginFinalize\(/)
+})
