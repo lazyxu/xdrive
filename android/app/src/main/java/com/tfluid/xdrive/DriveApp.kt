@@ -240,11 +240,18 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
         state.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS)
     val showingCloudGallery = nativeNavigation.gallerySource == NativeGallerySource.CLOUD ||
         state.galleryMapOpen || state.galleryViewer != null
-    BackHandler((galleryHasLocalBack && showingCloudGallery) || state.screen == Screen.TRASH ||
+    val localAlbumTopBack = state.screen == Screen.GALLERY &&
+        nativeLocalAlbumTopBackVisible(
+            nativeNavigation, localAlbumSelection != null,
+            state.galleryMapOpen || state.galleryMapCellSelected != null ||
+                state.galleryViewer != null)
+    BackHandler((galleryHasLocalBack && showingCloudGallery) || localAlbumTopBack ||
+        state.screen == Screen.TRASH ||
         shouldHandleFilesBack(state, filesEdit != null, batchTrashConfirm)) {
         if (state.destinationKind != null) controller.dismissDestination()
         else if (batchTrashConfirm) batchTrashConfirm = false
         else if (filesEdit != null) filesEdit = null
+        else if (localAlbumTopBack) localAlbumSelection = null
         else if (state.galleryMapOpen && state.galleryBd09History.isEmpty() &&
             state.galleryMapCellSelected == null && state.galleryViewer == null) {
             nativeNavigation = nativeNavigation.copy(gallerySource = mapOriginSource)
@@ -419,9 +426,11 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
             Row(Modifier.statusBarsPadding().fillMaxWidth().height(52.dp).padding(horizontal = 8.dp)
                 .testTag("xdrive-mobile-app-header"),
                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                if ((galleryHasLocalBack && showingCloudGallery) || state.screen == Screen.TRASH)
+                if ((galleryHasLocalBack && showingCloudGallery) ||
+                    localAlbumTopBack || state.screen == Screen.TRASH)
                     IconButton(onClick = {
                         if (state.screen == Screen.TRASH) controller.closeTrash()
+                        else if (localAlbumTopBack) localAlbumSelection = null
                         else if (state.galleryMapOpen && state.galleryBd09History.isEmpty() &&
                             state.galleryMapCellSelected == null && state.galleryViewer == null) {
                             nativeNavigation = nativeNavigation.copy(gallerySource = mapOriginSource)
@@ -430,6 +439,7 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                     }) {
                         Icon(painterResource(R.drawable.xd_arrow_back), when {
                             state.screen == Screen.TRASH -> "返回文件"
+                            localAlbumTopBack -> "返回本机相册"
                             // The visible GPS overview returns to the Gallery
                             // wall, not the Files app. Match Android Back and
                             // the iOS PWA navigation's accessible destination.
@@ -455,6 +465,9 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                     val title = if (state.screen == Screen.TRASH) "回收站"
                         else if (state.screen == Screen.GALLERY) when {
                             state.galleryMapOpen -> "地点"
+                            localAlbumTopBack -> localAlbumSelection?.title ?: "本机相册"
+                            nativeNavigation.gallerySource == NativeGallerySource.LOCAL -> "本机照片"
+                            nativeNavigation.gallerySource == NativeGallerySource.ALBUMS -> "本机相册"
                             state.gallerySelectedAlbum != null -> state.gallerySelectedAlbum?.name ?: "相册"
                             state.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS -> "精选集"
                             else -> "照片"
@@ -597,8 +610,8 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                             if (source == NativeGallerySource.MAP) {
                                 mapOriginSource = nativeGalleryMapReturnSource(
                                     nativeNavigation.gallerySource, mapOriginSource)
-                                pendingGalleryMap = true
-                            }
+                                pendingRoutes = pendingRoutes.copy(galleryMap = true)
+                            } else pendingRoutes = pendingRoutes.afterGallerySource(source)
                             nativeNavigation = nativeNavigation.copy(gallerySource = source)
                         }
                         if (nativeNavigation.gallerySource == NativeGallerySource.LOCAL ||
@@ -621,7 +634,7 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                                 )
                             }
                             NativeGallerySource.MAP -> TextButton(
-                                onClick = { pendingGalleryMap = true },
+                                onClick = { pendingRoutes = pendingRoutes.copy(galleryMap = true) },
                                 modifier = Modifier.testTag("native-gallery-open-map")) {
                                 Text("打开当前账户的地点地图")
                             }
