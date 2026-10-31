@@ -108,3 +108,22 @@ test('PhotoKit 256-slot window counts unsupported assets instead of silently ski
   assert.match(runner,/report.scanned \+= 1/)
   assert.match(runner,/windowCapacity = XDrivePhotoBackupScanWindow.capacity/)
 })
+
+test('transient prewrite BG failure retains a future approval without retrying a possible lost ACK', () => {
+  const task = read('BackgroundPhotoTask.swift');
+  assert.match(task, /var beganOriginalWrite = false/);
+  assert.match(task, /beganOriginalWrite = true[\s\S]*?XDriveIOSForegroundPhotoBackupMVP\(/);
+  assert.match(task, /if !beganOriginalWrite && retryablePreflightNetworkFailure\(error\) \{[\s\S]*?await resubmitOnlyIfStillApproved\(\)/);
+  assert.match(task, /guard let network = error as\? URLError else \{ return false \}/);
+  assert.match(task, /case \.timedOut, \.networkConnectionLost, \.notConnectedToInternet/);
+  assert.match(task, /\.cannotFindHost, \.cannotConnectToHost, \.dnsLookupFailed/);
+  assert.match(task, /guard let grant = try await XDriveIOSApprovedPhotoBGVault\.shared\.current\(\)/);
+  assert.match(task, /grant\.matches\(owner\)/);
+  assert.match(task, /try Task\.checkCancellation\(\)[\s\S]*?try scheduleApprovedProbe\(afterMinutes: grant\.intervalMinutes\)/);
+  assert.match(task, /guard let gate = XDriveIOSOriginalRunGate\.shared\.acquire\(\) else \{[\s\S]*?await resubmitOnlyIfStillApproved\(\)/);
+  const resubmit = task.slice(task.indexOf('private static func resubmitOnlyIfStillApproved()'),
+    task.indexOf('/// A background run must not continue', task.indexOf('private static func resubmitOnlyIfStillApproved()')));
+  assert.doesNotMatch(resubmit, /XDriveIOSForegroundPhotoBackupMVP|UploadSessionTransport|reserveDue|beginFinalize|Bearer /);
+  assert.match(task, /catch is CancellationError \{/);
+  assert.match(task, /successful = !progress\.stoppedForReview/);
+});
