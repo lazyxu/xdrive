@@ -15,6 +15,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
@@ -26,6 +27,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.android.awaitFrame
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clipToBounds
@@ -442,15 +444,25 @@ internal fun NativeLocalPhotoWallTile(
     },
 ) {
     val requester = remember(asset.id, asset.uri) { FocusRequester() }
+    // Own the same focus target that holds the testTag/click action. The
+    // clickable OutlinedCard overload wraps an inner Surface and can return
+    // focus on a different semantics node from this tile's source anchor.
     OutlinedCard(
-        onClick = onOpen,
-        modifier = Modifier.height(142.dp).focusRequester(requester)
+        modifier = Modifier.height(142.dp)
+            .focusRequester(requester)
+            .clickable(onClick = onOpen)
             .testTag("native-local-media-${asset.id}"),
     ) {
         Column { tileContent() }
     }
     LaunchedEffect(restoreFocus, asset.id, asset.uri) {
-        if (restoreFocus && requester.requestFocus()) onFocusRestored()
+        if (restoreFocus) {
+            // Dialog's window owns input focus while dismissing. Resume on the
+            // next Compose frame, once that window has been removed, rather
+            // than issue a successful-but-overwritten focus request mid-close.
+            awaitFrame()
+            if (requester.requestFocus()) onFocusRestored()
+        }
     }
 }
 
