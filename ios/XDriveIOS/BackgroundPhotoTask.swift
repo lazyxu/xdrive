@@ -90,13 +90,13 @@ enum XDriveIOSBackgroundPhotoTask {
                 // original is a video or an entire still+motion Live ZIP.
                 // The exact Owner journal and Go CAS writer are unchanged.
                 attemptedOwner = owner
-                beganOriginalWrite = true
                 let progress = try await XDriveIOSForegroundPhotoBackupMVP(
                     owner: owner, approvedBackgroundGrant: approved
                 ).run(
                     allowICloudOriginals: false,
                     startOffset: offset,
-                    maximumNewOriginals: 1
+                    maximumNewOriginals: 1,
+                    onPotentialWrite: { beganOriginalWrite = true }
                 ) { _ in
                     // No inactive WebView progress or long-lived credentials.
                 }
