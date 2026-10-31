@@ -1559,8 +1559,15 @@ class DriveAppTest {
         compose.onNodeWithTag("gallery-photo-viewer").assertExists()
         compose.onNodeWithTag("gallery-photo-close").performClick()
         compose.onNodeWithTag("gallery-wall").assertExists()
-        // L3 Viewer must return input focus to the exact current-Owner tile,
-        // not merely preserve the Gallery's remembered scroll offset.
+        // The Viewer's focus target is retired across a Compose frame.
+        // Wait for actual source-tile focus (not merely a visible tile),
+        // while failing deterministically if the Owner focus never returns.
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithTag("gallery-item-40", useUnmergedTree = true)
+                .fetchSemanticsNodes().any {
+                    it.config.getOrNull(SemanticsProperties.Focused) == true
+                }
+        }
         compose.onNodeWithTag("gallery-item-40", useUnmergedTree = true).assertIsFocused()
         compose.runOnIdle {
             org.junit.Assert.assertNull(controller.state.value.galleryViewer)
