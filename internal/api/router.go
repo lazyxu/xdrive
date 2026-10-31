@@ -167,6 +167,12 @@ func (s *Server) Router() *gin.Engine {
 	iosPhotoBackground.GET("/receipts/nodes/:id", s.iosBackgroundReceipt)
 	v1.GET("/public/share", s.publicShareMetadata)
 	v1.POST("/public/share/children", s.publicFolderShareChildren)
+	v1.POST("/public/share/directories", s.publicShareCreateDirectory)
+	v1.POST("/public/share/uploads", s.publicShareCreateUpload)
+	v1.GET("/public/share/uploads/:id", s.publicShareGetUpload)
+	v1.PUT("/public/share/uploads/:id/chunks/:index", s.publicSharePutChunk)
+	v1.POST("/public/share/uploads/:id/finalize", s.publicShareFinalizeUpload)
+	v1.DELETE("/public/share/uploads/:id", s.publicShareAbortUpload)
 	v1.POST("/public/share/download", s.publicShareDownload)
 	v1.POST("/public/share/download-ticket", s.publicShareDownloadTicket)
 	v1.POST("/public/share/preview-ticket", s.publicSharePreviewTicket)
@@ -659,7 +665,7 @@ func (s *Server) cors() gin.HandlerFunc {
 		if origin != "" && (s.AllowedOrigin == "*" || origin == s.AllowedOrigin) {
 			c.Header("Access-Control-Allow-Origin", origin)
 			c.Header("Vary", "Origin")
-			c.Header("Access-Control-Allow-Headers", "Authorization, Content-Type, If-Match, X-Chunk-SHA256, X-XDrive-Share-Token, X-Request-ID")
+			c.Header("Access-Control-Allow-Headers", "Authorization, Content-Type, If-Match, X-Chunk-SHA256, X-XDrive-Share-Token, X-XDrive-Share-Password, X-Request-ID")
 			c.Header("Access-Control-Expose-Headers", "ETag, X-Content-SHA256, Content-Range, X-Request-ID, Retry-After, X-XDrive-Thumbnail-Alpha-Mask, X-XDrive-Thumbnail-Alpha-State")
 			c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		}

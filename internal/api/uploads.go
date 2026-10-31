@@ -271,6 +271,13 @@ func (s *Server) createUploadSession(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "resume_key too long")
 		return
 	}
+	guestScope, guest := c.Get("xdriveShareUploadID")
+	guestID, guestScopeValid := guestScope.(uint64)
+	if guest && (!guestScopeValid || guestID == 0 || req.NodeID != nil ||
+		req.ConflictPolicy != meta.UploadConflictPolicyKeepBoth) {
+		fail(c, http.StatusForbidden, "invalid share upload scope")
+		return
+	}
 	if (req.ParentID == nil) == (req.NodeID == nil) {
 		fail(c, http.StatusBadRequest, "exactly one of parent_id or node_id is required")
 		return
@@ -312,6 +319,10 @@ func (s *Server) createUploadSession(c *gin.Context) {
 	}
 
 	uid := userID(c)
+	if guest && uid == 0 {
+		fail(c, http.StatusForbidden, "invalid share upload owner")
+		return
+	}
 	if req.SHA256 == "" && req.MD5 != "" {
 		resolved, ok, err := verifiedDigestSHA256(
 			c.Request.Context(), s.DB, uid, contentDigestAlgorithmMD5, req.MD5, req.Size,
@@ -333,6 +344,11 @@ func (s *Server) createUploadSession(c *gin.Context) {
 		q := s.DB.Where("owner_id = ? AND resume_key = ? AND total_size = ? AND chunk_size = ? AND status IN ? AND expires_at > ?",
 			uid, req.ResumeKey, req.Size, req.ChunkSize,
 			[]string{meta.UploadStatusActive, meta.UploadStatusFinalized, meta.UploadStatusSkipped}, time.Now())
+		if guest {
+			q = q.Where("share_id = ?", guestID)
+		} else {
+			q = q.Where("share_id IS NULL")
+		}
 		if req.NodeID != nil {
 			q = q.Where("node_id = ? AND expected_revision = ?", *req.NodeID, req.ExpectedRevision)
 		} else if policyProvided {
@@ -497,7 +513,7 @@ func (s *Server) createUploadSession(c *gin.Context) {
 	// lp2_ is reserved for an authenticated, durable local Push operation.
 	// Its normal UploadSession must bind to that operation before finalize;
 	// the generic immediate CAS fast path would commit before binding.
-	if req.SHA256 != "" && !strings.HasPrefix(req.ResumeKey, "lp2_") {
+	if req.SHA256 != "" && !strings.HasPrefix(req.ResumeKey, "lp2_") && !guest {
 		session, currentRevision, instant, err := s.tryInstantUploadSession(
 			c.Request.Context(), uid, req, chunkCount,
 		)
@@ -559,6 +575,9 @@ func (s *Server) createUploadSession(c *gin.Context) {
 		Status:           meta.UploadStatusActive,
 		ExpiresAt:        time.Now().Add(uploadSessionTTL),
 	}
+	if guest {
+		session.ShareID = &guestID
+	}
 	var reusable []meta.UploadPart
 	if reuseSource != nil && len(req.ChunkSHA256) != 0 {
 		var err error
@@ -571,6 +590,11 @@ func (s *Server) createUploadSession(c *gin.Context) {
 	requiredReservation := uploadReservationBytes(session.TotalSize, reusable)
 	session.ReservedBytes = requiredReservation
 	if err := s.DB.Transaction(func(tx *gorm.DB) error {
+		if guest {
+			if _, err := s.publicShareUploadAdmissionTx(
+				c.Request.Context(), tx, guestID, uid, *req.ParentID, req.Size, 1, true,
+			); err != nil { return err }
+		}
 		quotaReservation, err := s.reserveUploadQuota(tx, uid, "", session.TotalSize, quotaKey)
 		if err != nil {
 			return err
@@ -593,6 +617,10 @@ func (s *Server) createUploadSession(c *gin.Context) {
 		}
 		return nil
 	}); err != nil {
+		if errors.Is(err, errShareUploadDenied) || errors.Is(err, errShareUploadLimit) {
+			writePublicShareUploadError(c, err)
+			return
+		}
 		if errors.Is(err, errReusedUploadSourceChanged) {
 			fail(c, http.StatusConflict, "reused upload source changed; retry without reuse")
 			return
@@ -952,6 +980,20 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 		if time.Now().After(currentSession.ExpiresAt) {
 			return errUploadExpired
 		}
+		if currentSession.ShareID != nil {
+			if currentSession.ParentID == nil || currentSession.NodeID != nil ||
+				currentSession.ConflictPolicy != meta.UploadConflictPolicyKeepBoth {
+				return errShareUploadDenied
+			}
+			currentShare, err := s.publicShareUploadAdmissionTx(
+				c.Request.Context(), tx, *currentSession.ShareID, currentSession.OwnerID,
+				*currentSession.ParentID, 0, 0, true,
+			)
+			if err != nil { return err }
+			if currentSession.TotalSize > currentShare.MaxUploadFileBytes {
+				return errShareUploadLimit
+			}
+		}
 		now := time.Now()
 		skipped := false
 		if currentSession.NodeID == nil {
@@ -1070,6 +1112,15 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 				return err
 			}
 		}
+		// A guest's finalized logical bytes and file count are recorded in
+		// the same SQL transaction as the canonical Node/CAS receipt.
+		if currentSession.ShareID != nil {
+			if err := tx.Model(&meta.Share{}).Where("id = ? AND owner_id = ?",
+				*currentSession.ShareID, currentSession.OwnerID).Updates(map[string]any{
+				"uploaded_bytes": gorm.Expr("uploaded_bytes + ?", size),
+				"uploaded_files": gorm.Expr("uploaded_files + 1"),
+			}).Error; err != nil { return err }
+		}
 		// The original local Push checkpoint, if one was authenticated and
 		// bound, is persisted inside this exact ordinary CAS/Node/Version
 		// transaction. Missing or revoked bindings fail the WHOLE finalize.
@@ -1104,6 +1155,8 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 			s.writeUploadSession(c, fresh, http.StatusOK)
 		case errors.Is(err, errUploadExpired):
 			fail(c, http.StatusGone, "upload session expired")
+		case errors.Is(err, errShareUploadDenied), errors.Is(err, errShareUploadLimit):
+			writePublicShareUploadError(c, err)
 		case errors.Is(err, errRevisionConflict):
 			revisionConflict(c, session.ExpectedRevision, currentRevision)
 		case errors.Is(err, errUploadNameTaken) || isDuplicate(err):
