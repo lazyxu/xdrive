@@ -1,0 +1,7 @@
+# iOS native indexed cloud PhotoAsset Viewer: exact revision return (2026-11-01)
+
+Scope: L3 Viewer -> originating Gallery/cloud album/place range only. No changes to viewer data fetch, uploads, map positions, Server APIs or navigation architecture.
+
+The source wall used to restore focus to any currently retained 48-item page entry sharing the last Viewer Node ID. Node IDs remain stable across revisions; this could focus an updated item rather than the exact original Viewer source. On opening an indexed native Viewer, capture the current verified Owner, Node ID and immutable Node revision **in memory only**. On Viewer dismissal, return focus only when the same verified Owner and active scene remain, and a single valid row with **both** the same ID and revision is present in the current bounded page. Otherwise decline focus restoration, leaving the wall visible without focusing another item. A new album, query, Owner or backgrounded scene invalidates the anchor. No signed URL, token, PhotoKit ID or media content is persisted.
+
+Existing pure Swift `NativePhotoViewerReturnAnchorPolicyChecks` exercises same version, different version, Owner revocation, duplicate IDs and bounded page; existing iOS Native Unsigned IPA Node source contract additionally checks the real cloud wall wiring. Run exact-HEAD Xcode build, applicable CI/Final Gate and mergeability. Real iPhone/VoiceOver focus is **跳过（未验收）**.

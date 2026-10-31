@@ -44,11 +44,17 @@ test('anchor policy does not persist PhotoKit local IDs or scroll without reauth
 test('Owner PhotoAsset Viewer restores bounded cloud VoiceOver focus only to its live source', () => {
   assert.match(cloud, /@AccessibilityFocusState private var accessibilityFocusedMediaID: UInt64\?/);
   assert.match(cloud, /\.accessibilityFocused\(\$accessibilityFocusedMediaID, equals: item\.id\)/);
-  assert.match(cloud, /model\.page\?\.items\.contains\(where: \{ \$0\.id == anchor \}\) == true/);
+  assert.match(cloud, /XDriveIOSNativePhotoViewerReturnAnchorPolicy\.cloudTarget\(/);
+  assert.match(cloud, /lastOpenedRevision = selected\?\.node\.revision/);
+  assert.match(cloud, /lastOpenedOwner = login\.owner/);
+  assert.match(cloud, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, \$0\)/);
+  assert.match(cloud, /ownerAuthorized: ownerAuthorized && phase == \.active/);
+  assert.match(policy, /\$0\.id == lastOpenedID && \$0\.revision == lastOpenedRevision/);
+  assert.doesNotMatch(cloud, /model\.page\?\.items\.contains\(where: \{ \$0\.id == anchor \}\) == true/);
   assert.match(cloud, /returnScroll\.scrollTo\(anchor, anchor: \.center\)\s*accessibilityFocusedMediaID = anchor/);
   assert.match(cloud, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?accessibilityFocusedMediaID = nil/);
   assert.match(cloud, /if state != \.active \{[\s\S]*?accessibilityFocusedMediaID = nil/);
-  assert.match(cloud, /private func applySearch\(\) \{[\s\S]*?lastOpenedMediaID = nil\s*accessibilityFocusedMediaID = nil/);
+  assert.match(cloud, /private func applySearch\(\) \{[\s\S]*?lastOpenedMediaID = nil\s*lastOpenedRevision = nil\s*lastOpenedOwner = nil\s*accessibilityFocusedMediaID = nil/);
   assert.doesNotMatch(cloud, /UserDefaults|@AppStorage|Keychain/);
 });
 

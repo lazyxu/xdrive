@@ -352,6 +352,8 @@ struct XDriveIOSNativeServerMediaWall: View {
     @State private var searchDraft = ""
     @State private var appliedSearch = ""
     @State private var lastOpenedMediaID: UInt64?
+    @State private var lastOpenedRevision: UInt64?
+    @State private var lastOpenedOwner: XDriveNativeOwnerRoot?
     // VoiceOver focus is transient and remains scoped to the current Owner.
     @AccessibilityFocusState private var accessibilityFocusedMediaID: UInt64?
     @State private var focusedBrowsing = false
@@ -441,17 +443,36 @@ struct XDriveIOSNativeServerMediaWall: View {
         .onChange(of: selected?.id) { selectedID in
             if let selectedID {
                 lastOpenedMediaID = selectedID
+                lastOpenedRevision = selected?.node.revision
+                lastOpenedOwner = login.owner
                 accessibilityFocusedMediaID = nil
                 // Guaranteed foreground priority, independent of whether
                 // SwiftUI sends onDisappear to the covered photo wall.
                 model.suspendForViewer()
-            } else if let anchor = lastOpenedMediaID,
-                      model.page?.items.contains(where: { $0.id == anchor }) == true {
-                // Return to the exact logical item, not the first page.
-                returnScroll.scrollTo(anchor, anchor: .center)
-                accessibilityFocusedMediaID = anchor
             } else {
-                accessibilityFocusedMediaID = nil
+                // Only return focus to the identical current Node revision
+                // under the same verified Owner. A different revision/page
+                // cannot inherit the prior Viewer focus just by reusing ID.
+                let ownerAuthorized = lastOpenedOwner.map {
+                    XDriveIOSNativePhotoOwnerScope.matches(login.owner, $0)
+                } ?? false
+                let anchor = XDriveIOSNativePhotoViewerReturnAnchorPolicy.cloudTarget(
+                    lastOpenedID: lastOpenedMediaID,
+                    lastOpenedRevision: lastOpenedRevision,
+                    in: model.page?.items.map {
+                        (id: $0.id, revision: $0.node.revision)
+                    } ?? [],
+                    ownerAuthorized: ownerAuthorized && phase == .active
+                )
+                lastOpenedMediaID = nil
+                lastOpenedRevision = nil
+                lastOpenedOwner = nil
+                if let anchor {
+                    returnScroll.scrollTo(anchor, anchor: .center)
+                    accessibilityFocusedMediaID = anchor
+                } else {
+                    accessibilityFocusedMediaID = nil
+                }
             }
         }
         .navigationTitle(placeID == nil ? (album?.name ?? "云端图库") : "地点照片")
@@ -507,6 +528,8 @@ struct XDriveIOSNativeServerMediaWall: View {
             focusedBrowsing = false
             onFocusChange?(false)
             lastOpenedMediaID = nil
+            lastOpenedRevision = nil
+            lastOpenedOwner = nil
             accessibilityFocusedMediaID = nil
             selected = nil
             model.invalidate()
@@ -518,6 +541,9 @@ struct XDriveIOSNativeServerMediaWall: View {
             if state != .active {
                 focusedBrowsing = false
                 onFocusChange?(false)
+                lastOpenedMediaID = nil
+                lastOpenedRevision = nil
+                lastOpenedOwner = nil
                 accessibilityFocusedMediaID = nil
                 selected = nil
                 model.invalidate()
@@ -535,6 +561,9 @@ struct XDriveIOSNativeServerMediaWall: View {
                 onFocusChange?(false)
                 accessibilityFocusedMediaID = nil
                 model.suspendForNavigation()
+                lastOpenedMediaID = nil
+                lastOpenedRevision = nil
+                lastOpenedOwner = nil
             }
         }
         }
@@ -547,6 +576,8 @@ struct XDriveIOSNativeServerMediaWall: View {
         if query == appliedSearch && model.page != nil { return }
         appliedSearch = query
         lastOpenedMediaID = nil
+        lastOpenedRevision = nil
+        lastOpenedOwner = nil
         accessibilityFocusedMediaID = nil
         model.load(login: login, albumID: album?.id, placeID: placeID, offset: 0, search: query)
     }
