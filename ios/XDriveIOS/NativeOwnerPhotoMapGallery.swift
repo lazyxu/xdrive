@@ -14,6 +14,10 @@ struct XDriveIOSNativePhotoMapsScreen: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     var onFocusChange: ((Bool) -> Void)?
     @State private var source: XDriveIOSNativePhotoMapSource = .local
+    // This legacy map-source wrapper also owns temporary local route hints;
+    // it never persists PhotoKit identities or media while changing sources.
+    @State private var localMapScope: XDriveIOSNativeLocalMapScope = .page
+    @State private var localMapPageOffset = 0
 
     var body: some View {
         VStack(spacing: 4) {
@@ -28,7 +32,11 @@ struct XDriveIOSNativePhotoMapsScreen: View {
             Group {
                 switch source {
                 case .local:
-                    XDriveIOSNativeLocalPhotoMapScreen(onFocusChange: onFocusChange)
+                    XDriveIOSNativeLocalPhotoMapScreen(
+                        mapScope: $localMapScope,
+                        offset: $localMapPageOffset,
+                        onFocusChange: onFocusChange
+                    )
                 case .cloud:
                     XDriveIOSNativeOwnerPhotoMapScreen(
                         login: login, onFocusChange: onFocusChange)

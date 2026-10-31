@@ -63,3 +63,11 @@ test('Owner-scoped native Gallery map resumes mode/page without storing media id
   assert.match(routes, /value >= 0 && value <= 1_000_000 && value % 64 == 0/);
   assert.doesNotMatch(routes, /assetID|latitude|longitude|photoID|previewTicket|location/);
 });
+
+test('the secondary native map-source wrapper supplies owned bindings to local MapKit', () => {
+  const wrapper = fs.readFileSync(path.join(root, 'ios/XDriveIOS/NativeOwnerPhotoMapGallery.swift'), 'utf8');
+  assert.match(wrapper, /@State private var localMapScope: XDriveIOSNativeLocalMapScope = \.page/);
+  assert.match(wrapper, /@State private var localMapPageOffset = 0/);
+  assert.match(wrapper, /XDriveIOSNativeLocalPhotoMapScreen\(\s*mapScope: \$localMapScope,\s*offset: \$localMapPageOffset,\s*onFocusChange: onFocusChange/);
+  assert.match(wrapper, /case \.cloud:\s*XDriveIOSNativeOwnerPhotoMapScreen\(/);
+});
