@@ -17,7 +17,7 @@ test('BG task performs a bounded real original run only after current native gra
   assert.match(task,/maximumNewOriginals: 1/)
   assert.match(task,/\.record\(\s*owner: owner, approved: approved, report: progress/)
   assert.match(task,/!progress\.stoppedForReview/)
-  assert.match(task,/task\.expirationHandler = \{ operation\.cancel\(\) \}/)
+  assert.match(task,/task\.expirationHandler = \{[\s\S]*?expiration\.systemExpired = true[\s\S]*?operation\.cancel\(\)/)
   assert.doesNotMatch(task,/Bearer |refreshToken|localStorage|createUploadSession|\.setValue\("Authorization"/)
   assert.ok(task.indexOf('.proveInBackground()') < task.indexOf('isProtectedDataAvailable'),
     'no PhotoKit work before current Server grant proof')
@@ -155,4 +155,32 @@ test('lost or cancelled BG writer preserves durable pause until explicit receipt
   assert.match(store, /state\.pausedForReview = true/)
   assert.match(store, /guard !state\.pausedForReview, state\.dueAt <= now else \{ return nil \}/)
   assert.doesNotMatch(cancelled, /uploadPrepared\(|confirmReceipt\(|beginFinalize\(/)
+})
+
+test('system-expired prewrite BGTask re-arms only after unchanged Owner-approved stop epoch', () => {
+  const task = read('BackgroundPhotoTask.swift')
+  assert.match(task, /private final class XDriveIOSBGExpirationSignal/)
+  assert.match(task, /var systemExpired = false/)
+  assert.match(task, /let stopVersionAtStart = localStopVersion/)
+  assert.match(task, /let runID = UUID\(\)/)
+  assert.match(task, /activeRunID = runID/)
+  assert.match(task, /task\.expirationHandler = \{[\s\S]*?Task \{ @MainActor in[\s\S]*?guard activeRunID == runID else \{ return \}[\s\S]*?expiration\.systemExpired = true[\s\S]*?operation\.cancel\(\)/)
+  const cancel = task.slice(task.indexOf('} catch is CancellationError {'),
+    task.indexOf('} catch {', task.indexOf('} catch is CancellationError {')))
+  assert.match(cancel, /if beganOriginalWrite, let attemptedOwner \{[\s\S]*?BGOriginalWindowStore\.shared\.pause\(/)
+  assert.match(cancel, /else if expiration\.systemExpired &&[\s\S]*?localStopVersion == stopVersionAtStart/)
+  assert.match(cancel, /await resubmitOnlyIfStillApproved\([\s\S]*?afterSystemExpirationAt: stopVersionAtStart/)
+  assert.doesNotMatch(cancel, /uploadPrepared\(|beginFinalize\(|confirmReceipt\(/)
+  const helper = task.slice(task.indexOf('private static func resubmitOnlyIfStillApproved('),
+    task.indexOf('/// A background run must not continue', task.indexOf('private static func resubmitOnlyIfStillApproved(')))
+  assert.match(helper, /afterSystemExpirationAt expectedStopVersion: UInt64\? = nil/)
+  assert.ok((helper.match(/guard localStopVersion == expectedStopVersion else \{ return \}/g)||[]).length === 2,
+    'must fence local stop before and after async Keychain lookup')
+  assert.match(helper, /XDriveIOSApprovedPhotoBGVault\.shared\.current\(\)/)
+  assert.match(helper, /grant\.matches\(owner\)/)
+  assert.match(helper, /try scheduleApprovedProbe\(afterMinutes: grant\.intervalMinutes\)/)
+  assert.doesNotMatch(helper, /UploadSession|Bearer|writeResource|uploadPrepared|maximumNewOriginals/)
+  assert.match(task, /func revokePendingRequests\(\) \{[\s\S]*?BGTaskScheduler\.shared\.cancel[\s\S]*?localStopVersion &\+= 1[\s\S]*?active\?\.cancel\(\)/)
+  assert.match(task, /beganOriginalWrite = true/)
+  assert.match(task, /onPotentialWrite: \{ beganOriginalWrite = true \}/)
 })
