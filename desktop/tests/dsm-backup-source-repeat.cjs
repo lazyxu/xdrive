@@ -66,6 +66,9 @@ function load(name, extra = {}) {
 }
 const Setup = load('SynologyBackupSourceSetup').XDriveSynologyBackupSourceSetup
 const Drafts = load('SynologyNativeDraftReview').XDriveSynologyNativeDraftReview
+const SetupWithDrafts = load('SynologyBackupSourceSetup', {
+  './SynologyNativeDraftReview': { XDriveSynologyNativeDraftReview: Drafts },
+}).XDriveSynologyBackupSourceSetup
 const deferred = () => {
   let resolve, reject
   const promise = new Promise((res, rej) => { resolve = res; reject = rej })
@@ -289,4 +292,166 @@ test('ambiguous native Root bind never unlocks next draft, even after manual inv
   await act(async () => { button(tree, '确认绑定这个 Source').props.onClick() })
   assert.equal(binds, 1, 'uncertain original binding must not permit a second native mutation')
   await act(async () => tree.unmount())
+})
+
+test('previous share preflight callback cannot authorize a new Source generation after confirmed success', async () => {
+  const client = {
+    serverConnection: async () => ({
+      configured: true, must_change_password: false, owner_scope: SCOPE,
+    }),
+    createNASBackupSource: async () => ({ source_id: 57, state: 'authorized' }),
+  }
+  const tree = await mountSetup(client, () => {})
+  await selectNewSource(tree, 'NAS Photos')
+  const oldVerifier = tree.root.findByType('share-inventory').props.onVerifiedShare
+  await act(async () => {
+    button(tree, '确认创建并绑定本地目录').props.onClick()
+    await Promise.resolve()
+  })
+  await act(async () => {
+    button(tree, '配置另一个 NAS 备份来源').props.onClick()
+    await Promise.resolve()
+  })
+  const newVerifier = tree.root.findByType('share-inventory').props.onVerifiedShare
+  assert.notEqual(newVerifier, oldVerifier, 'new Source must have a fresh NAS inventory callback')
+  await act(async () => {
+    oldVerifier({ label: '/volume1/Photos', selection_id: SELECTION })
+  })
+  await act(async () => {
+    button(tree, '选择云端备份目标').props.onClick()
+  })
+  await act(async () => {
+    tree.root.findByType('cloud-target').props.onSelectTarget({ id: 17, name: 'Backup Target' })
+    tree.root.findByType('TextField').props.onChange({ target: { value: 'NAS Documents' } })
+    checkbox(tree, '我确认在当前 NAS').props.onChange({ target: { checked: true } })
+  })
+  assert.equal(button(tree, '确认创建并绑定本地目录').props.disabled, true,
+    'stale verified share callback cannot satisfy new Source admission')
+  await act(async () => {
+    newVerifier({ label: '/volume1/Photos', selection_id: SELECTION })
+  })
+  await act(async () => {
+    checkbox(tree, '我确认在当前 NAS').props.onChange({ target: { checked: true } })
+  })
+  assert.equal(button(tree, '确认创建并绑定本地目录').props.disabled, false,
+    'new native preflight callback plus explicit consent may authorize the next Source')
+  await act(async () => tree.unmount())
+})
+
+test('confirmed original draft bind clears share and requires fresh NAS preflight before next draft', async () => {
+  let inventory = rows.slice()
+  const binds = []
+  let refreshes = 0
+  const client = {
+    serverConnection: async () => ({
+      configured: true, must_change_password: false, owner_scope: SCOPE,
+    }),
+    nativeDrafts: async () => ({ owner_scope: SCOPE, items: inventory }),
+    bindNativeDraft: (...args) => {
+      const promise = deferred()
+      binds.push({ args, promise })
+      return promise.promise
+    },
+  }
+  let tree
+  await act(async () => {
+    tree = Renderer.create(React.createElement(SetupWithDrafts, {
+      client, onCreated: () => { refreshes++ },
+    }))
+    await Promise.resolve()
+  })
+  await act(async () => {
+    tree.root.findByType('share-inventory').props.onVerifiedShare({
+      label: '/volume1/Photos', selection_id: SELECTION,
+    })
+    button(tree, '检查未绑定草稿').props.onClick()
+    await Promise.resolve()
+  })
+  const oldVerifier = tree.root.findByType('share-inventory').props.onVerifiedShare
+  await act(async () => {
+    checkbox(tree, '我确认将上方').props.onChange({ target: { checked: true } })
+  })
+  await act(async () => {
+    button(tree, '确认绑定这个 Source').props.onClick()
+  })
+  assert.deepEqual(binds[0].args.slice(0, 3), [57, SELECTION, SCOPE])
+  inventory = rows.slice(1)
+  await act(async () => {
+    binds[0].promise.resolve({ source_id: 57, state: 'authorized' })
+    await Promise.resolve()
+  })
+  assert.equal(refreshes, 1)
+  assert.equal(tree.root.findByType(Drafts).props.selectionID, '',
+    'a confirmed Root bind must clear the previous NAS share selection')
+  await act(async () => {
+    oldVerifier({ label: '/volume1/Photos', selection_id: SELECTION })
+  })
+  assert.equal(tree.root.findByType(Drafts).props.selectionID, '',
+    'late previous share response must not reauthorize the next draft')
+  await act(async () => {
+    checkbox(tree, '我确认将上方').props.onChange({ target: { checked: true } })
+    button(tree, '确认绑定这个 Source').props.onClick()
+  })
+  assert.equal(binds.length, 1, 'a second Root grant needs a fresh preflight')
+  await act(async () => {
+    tree.root.findByType('share-inventory').props.onVerifiedShare({
+      label: '/volume1/Photos', selection_id: SELECTION,
+    })
+  })
+  await act(async () => {
+    checkbox(tree, '我确认将上方').props.onChange({ target: { checked: true } })
+  })
+  await act(async () => {
+    button(tree, '确认绑定这个 Source').props.onClick()
+  })
+  assert.equal(binds.length, 2)
+  assert.deepEqual(binds[1].args.slice(0, 3), [58, SELECTION, SCOPE])
+  inventory = []
+  await act(async () => {
+    binds[1].promise.resolve({ source_id: 58, state: 'authorized' })
+    await Promise.resolve()
+  })
+  assert.equal(refreshes, 2)
+  await act(async () => tree.unmount())
+})
+
+test('recovering precisely the pending created Source unlocks next setup, unrelated draft does not', async () => {
+  for (const boundSourceID of [57, 58]) {
+    let inventory = rows.slice()
+    const client = {
+      serverConnection: async () => ({
+        configured: true, must_change_password: false, owner_scope: SCOPE,
+      }),
+      createNASBackupSource: async () => ({ source_id: 57, state: 'needs_inspection' }),
+      nativeDrafts: async () => ({ owner_scope: SCOPE, items: inventory }),
+      bindNativeDraft: async () => {
+        inventory = rows.filter(row => row.source_id !== boundSourceID)
+        return { source_id: boundSourceID, state: 'authorized' }
+      },
+    }
+    let tree
+    await act(async () => {
+      tree = Renderer.create(React.createElement(SetupWithDrafts, { client, onCreated: () => {} }))
+      await Promise.resolve()
+    })
+    await selectNewSource(tree, 'NAS Photos')
+    await act(async () => {
+      button(tree, '确认创建并绑定本地目录').props.onClick()
+      await Promise.resolve()
+    })
+    const options = tree.root.findAllByType('Button')
+      .filter(x => x.props.children === '确认绑定这个 Source')
+    assert.equal(options.length, 2)
+    await act(async () => {
+      checkbox(tree, '我确认将上方').props.onChange({ target: { checked: true } })
+    })
+    await act(async () => {
+      options[boundSourceID === 57 ? 0 : 1].props.onClick()
+      await Promise.resolve()
+    })
+    assert.equal(tree.root.findAllByType('Button').some(x =>
+      x.props.children === '配置另一个 NAS 备份来源'), boundSourceID === 57,
+    'only the previously uncertain Source ID may transition to verified authorized')
+    await act(async () => tree.unmount())
+  }
 })
