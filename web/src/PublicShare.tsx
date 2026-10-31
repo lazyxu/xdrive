@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import FolderZipRoundedIcon from '@mui/icons-material/FolderZipRounded'
+import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded'
+import CreateNewFolderRoundedIcon from '@mui/icons-material/CreateNewFolderRounded'
 import LockRoundedIcon from '@mui/icons-material/LockRounded'
 import { Box, InputAdornment, Stack, Typography } from '@mui/material'
 import { XDriveActionButton, XDriveAuthPanel, XDriveAuthShell, XDriveBrandLockup, XDrivePublicShareReadOnlyExplorer, XDriveStatusAlert, XDriveSensitiveField, XDriveFileExplorerItemIcon } from '@xdrive/ui/mui'
@@ -50,6 +52,10 @@ export default function PublicShareView({ token }: { token: string }) {
   const [folderError, setFolderError] = useState('')
   const [folderPending, setFolderPending] = useState(false)
   const [zipPreparing, setZipPreparing] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState('')
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const folderInputRef = useRef<HTMLInputElement | null>(null)
   const [zipTaskID, setZipTaskID] = useState('')
   const [zipNotice, setZipNotice] = useState('')
   const [zipError, setZipError] = useState('')
@@ -137,10 +143,9 @@ export default function PublicShareView({ token }: { token: string }) {
           setShare(result)
           // Directly open the first bounded Share-scoped folder page: do not
           // mount the authenticated Owner FileExplorer or prefetch media.
-          // Protected / exhausted shares keep their existing explicit form.
+          // Password-protected shares keep their existing explicit form.
           if (result.type === 'dir' && !result.requires_password &&
-              result.capabilities?.list !== false &&
-              !(result.max_downloads > 0 && result.download_count >= result.max_downloads)) {
+              result.capabilities?.list !== false) {
             const firstPage = new AbortController()
             pendingPage.current?.abort()
             pendingPage.current = firstPage
@@ -173,7 +178,7 @@ export default function PublicShareView({ token }: { token: string }) {
       } catch (err) {
         if (!active || controller.signal.aborted) return
         if (err instanceof ApiError && err.status === 410) {
-          setError('此分享已过期、达到下载上限或已被撤销。')
+          setError('此分享已过期或已被撤销。')
         } else if (err instanceof ApiError && err.status === 404) {
           setError('此分享链接不存在。')
         } else {
@@ -193,17 +198,19 @@ export default function PublicShareView({ token }: { token: string }) {
     }
   }, [api, token])
 
-  const exhausted = !!share && share.max_downloads > 0 && share.download_count >= share.max_downloads
   // A pending browser handoff is not an authorization revocation. The granted
   // browse/preview/download capabilities remain stable across downloading.
-  // Go grants only narrow the UI; password/revoke/quota/root are verified by
+  // Go grants only narrow the UI; password/revoke/root are verified by
   // every independent Share API and signed media endpoint.
   const grants = share?.capabilities ?? xDriveShareReadOnlyDefaultCapabilities
-  const shareEligible = !!share && !exhausted &&
-    (!share.requires_password || Boolean(password))
+  const shareEligible = !!share && (!share.requires_password || Boolean(password))
   const canBrowse = shareEligible && grants.list
   const canPreview = canBrowse && grants.preview
   const canDownload = canBrowse && grants.download
+  // Upload is Share-specific, not an Owner FileExplorer write grant. Old
+  // Servers omit this field, which must fail closed.
+  const canUpload = canBrowse && share?.type === 'dir' &&
+    share?.capabilities?.upload === true
   const canDownloadZip = canDownload && grants.downloadZip
   const canStartDownload = canDownload && !downloading
   const canStartZip = canDownloadZip && !downloading
@@ -269,6 +276,54 @@ export default function PublicShareView({ token }: { token: string }) {
     }
   }
 
+  const uploadSelected = async (files: FileList | null) => {
+    if (!canUpload || uploading || !files?.length || !share) return
+    const batch = Array.from(files)
+    setUploading(true)
+    setUploadProgress('')
+    setError('')
+    setNotice('')
+    let committed = 0
+    try {
+      const parentID = folder?.path.at(-1)?.id ?? 0
+      const directoryIDs = new Map<string, number>()
+      for (const [index, file] of batch.entries()) {
+        const relative = file.webkitRelativePath || file.name
+        const components = relative.split('/')
+        // Never transform untrusted browser path separators into an Owner path.
+        if (components.some((name) => !name || name === '.' || name === '..' || name.includes('\\'))) {
+          throw new Error('文件夹中存在无效路径')
+        }
+        let destination = parentID
+        let key = ''
+        for (const directory of components.slice(0, -1)) {
+          key += '/' + directory
+          let known = directoryIDs.get(key)
+          if (known === undefined) {
+            const created = await api.publicShareCreateDirectory(token, password, destination, directory)
+            known = created.id
+            directoryIDs.set(key, known)
+          }
+          destination = known
+        }
+        setUploadProgress(`正在上传 ${index + 1}/${batch.length}：${file.name}`)
+        await api.uploadPublicShareFile(token, password, destination, file, (fraction) =>
+          setUploadProgress(`正在上传 ${index + 1}/${batch.length}：${file.name}（${Math.floor(fraction * 100)}%）`))
+        committed += 1
+      }
+      setNotice(`成功上传 ${committed} 个文件`)
+      setUploadProgress('')
+      if (folder) await loadFolder(folder.path, folder.cursor, false, true)
+    } catch (err) {
+      setUploadProgress('')
+      setError(`已完成 ${committed}/${batch.length} 个文件；${err instanceof Error ? err.message : '匿名上传失败'}`)
+    } finally {
+      setUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+      if (folderInputRef.current) folderInputRef.current.value = ''
+    }
+  }
+
   const download = async (entry?: PublicShareChild) => {
     if (!share || !canStartDownload) return
     setDownloading(true)
@@ -282,7 +337,7 @@ export default function PublicShareView({ token }: { token: string }) {
       if (err instanceof ApiError && err.status === 401) {
         setError('分享密码错误。')
       } else if (err instanceof ApiError && err.status === 410) {
-        setError('此分享已过期、达到下载上限或已被撤销。')
+        setError('此分享已过期或已被撤销。')
       } else {
         setError(err instanceof Error ? err.message : '下载失败。')
       }
@@ -388,7 +443,9 @@ export default function PublicShareView({ token }: { token: string }) {
             borderBottom: 1, borderColor: 'divider', bgcolor: 'background.paper',
           }}>
           <XDriveBrandLockup iconSrc={xDriveBrandIcon} variant="titlebar" subtitle="安全文件分享" />
-          <Typography variant="caption" color="text.secondary">只读 · 授权访问</Typography>
+          <Typography variant="caption" color="text.secondary">
+            {canUpload ? '查看 + 上传 · 授权访问' : '只读 · 授权访问'}
+          </Typography>
         </Box>
         <Box component="main" data-xdrive-public-share-workspace
           sx={{
@@ -421,17 +478,14 @@ export default function PublicShareView({ token }: { token: string }) {
                     {share.name}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
-                    {share.type === 'dir' ? '只读文件夹 · 按需浏览' : formatBytes(share.size)}
+                    {share.type === 'dir' ? (canUpload ? '查看 + 上传 · 可提交文件和完整文件夹' : '只读文件夹 · 按需浏览') : formatBytes(share.size)}
                   </Typography>
                 </Box>
               </Stack>
 
               <Typography variant="body2" color="text.secondary" sx={{ px: 0.5 }}>
                 {share.expires_at ? `过期时间 ${new Date(share.expires_at).toLocaleString()}` : '永不过期'}
-                {' · '}
-                {share.max_downloads > 0
-                  ? `剩余 ${Math.max(0, share.max_downloads - share.download_count)} / ${share.max_downloads} 次下载`
-                  : '不限下载次数'}
+                {' · '}下载不限次数
               </Typography>
 
               {share.requires_password && (
@@ -480,6 +534,25 @@ export default function PublicShareView({ token }: { token: string }) {
                     hasNextPage={Boolean(folder && folder.next > 0)}
                     toolbarActions={
                       <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                        {canUpload ? (
+                          <>
+                            <input ref={fileInputRef} type="file" multiple hidden
+                              aria-label="选择要上传的文件"
+                              onChange={(event) => { void uploadSelected(event.target.files) }} />
+                            <input ref={(element) => {
+                              folderInputRef.current = element
+                              element?.setAttribute('webkitdirectory', '')
+                            }} type="file" multiple hidden
+                              aria-label="选择要上传的文件夹"
+                              onChange={(event) => { void uploadSelected(event.target.files) }} />
+                            <XDriveActionButton type="button" intent="secondary"
+                              disabled={uploading} startIcon={<UploadFileRoundedIcon />}
+                              onClick={() => fileInputRef.current?.click()}>上传文件</XDriveActionButton>
+                            <XDriveActionButton type="button" intent="secondary"
+                              disabled={uploading} startIcon={<CreateNewFolderRoundedIcon />}
+                              onClick={() => folderInputRef.current?.click()}>上传文件夹</XDriveActionButton>
+                          </>
+                        ) : null}
                         <XDriveActionButton type="button" intent="primary"
                           disabled={!canStartZip || zipPreparing}
                           loading={zipPreparing}
@@ -560,13 +633,18 @@ export default function PublicShareView({ token }: { token: string }) {
               flexDirection: 'column', gap: 0.5,
             }}>
             {share && error ? <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert> : null}
+            {share?.type === 'dir' && uploadProgress ? (
+              <Typography role="status" variant="caption"
+                sx={{ p: 1.25, bgcolor: 'background.paper', borderRadius: 1.5, boxShadow: 2 }}>
+                {uploadProgress}
+              </Typography>
+            ) : null}
             {share && notice ? (
               <Typography role="status" variant="caption"
                 sx={{ p: 1.25, bgcolor: 'background.paper', borderRadius: 1.5, boxShadow: 2 }}>
                 {notice}
               </Typography>
             ) : null}
-            {exhausted ? <XDriveStatusAlert tone="warning">此分享已达到下载上限。</XDriveStatusAlert> : null}
             {share?.type === 'dir' && zipNotice ? (
               <Typography role="status" variant="caption"
                 sx={{ p: 1.25, bgcolor: 'background.paper', borderRadius: 1.5, boxShadow: 2 }}>

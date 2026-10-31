@@ -3768,13 +3768,13 @@ export class XDriveApi {
     })
   }
 
-  createShare(nodeID: number, input: { expires_at?: string; password?: string; max_downloads?: number }) {
+  createShare(nodeID: number, input: { expires_at?: string; password?: string; access?: 'read_only' | 'view_upload' }) {
     return this.request<CreatedFileShare>(`/api/v1/nodes/${nodeID}/shares`, {
       method: 'POST',
       body: JSON.stringify({
         expires_at: input.expires_at || null,
         password: input.password || '',
-        max_downloads: input.max_downloads ?? 0,
+        access: input.access ?? 'read_only',
       }),
     })
   }
@@ -3785,6 +3785,97 @@ export class XDriveApi {
 
   revokeShare(shareID: number) {
     return this.request<void>(`/api/v1/shares/${shareID}`, { method: 'DELETE' })
+  }
+
+  updateShare(shareID: number, input: { expires_at?: string | null; access: 'read_only' | 'view_upload' }) {
+    return this.request<FileShare>(`/api/v1/shares/${shareID}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ expires_at: input.expires_at ?? null, access: input.access }),
+    })
+  }
+
+  publicShareCreateDirectory(token: string, password: string, parentID: number, name: string) {
+    return this.request<{ id: number; name: string; parent_id: number }>('/api/v1/public/share/directories', {
+      method: 'POST', headers: {
+        'X-XDrive-Share-Token': token, 'X-XDrive-Share-Password': password,
+      }, body: JSON.stringify({ parent_id: parentID, name }),
+    }, false)
+  }
+
+  // A manifest-scoped resume key can recover an interrupted guest upload.
+  // Reuse the real Go SHA-256 UploadSession/CAS writer; no Owner credentials.
+  async uploadPublicShareFile(
+    token: string, password: string, parentID: number, file: File,
+    onProgress: (fraction: number) => void = () => undefined,
+  ): Promise<void> {
+    const chunkSize = 8 * 1024 * 1024
+    const hashes: string[] = []
+    const scratch: UploadHashScratch = { buffer: null, byob: true }
+    for (let offset = 0; offset < file.size; offset += chunkSize) {
+      hashes.push(await sha256Blob(file.slice(offset, Math.min(file.size, offset + chunkSize)), scratch))
+    }
+    const manifest = `share-v1\n${parentID}\n${file.name}\n${file.size}\n${hashes.join('\n')}`
+    // Persist only a random, non-authorizing resume hint. The storage key
+    // contains a one-way hash of the link identity and file manifest; never
+    // persist a Share bearer, password or private file bytes.
+    const manifestFingerprint = await sha256Blob(new Blob([token, '\n', manifest]), scratch)
+    const storageKey = `xdrive-public-share-resume-v1:${manifestFingerprint}`
+    let resumeKey: string | null = null
+    try {
+      const stored = sessionStorage.getItem(storageKey)
+      if (stored && /^ps1_[a-f0-9]{64}$/.test(stored)) resumeKey = stored
+    } catch { /* Restricted storage only disables cross-reload resume. */ }
+    if (!resumeKey) {
+      const nonce = crypto.getRandomValues(new Uint8Array(16))
+      const nonceHex = Array.from(nonce, part => part.toString(16).padStart(2, '0')).join('')
+      resumeKey = 'ps1_' + await sha256Blob(new Blob([manifest, '\n', nonceHex]), scratch)
+      try { sessionStorage.setItem(storageKey, resumeKey) } catch { /* keep upload valid */ }
+    }
+    const clearResume = () => {
+      try { sessionStorage.removeItem(storageKey) } catch { /* optional cleanup */ }
+    }
+    const headers = { 'X-XDrive-Share-Token': token, 'X-XDrive-Share-Password': password }
+    const session = await this.request<UploadSessionState>('/api/v1/public/share/uploads', {
+      method: 'POST', headers,
+      body: JSON.stringify({
+        parent_id: parentID, name: file.name, size: file.size,
+        chunk_size: chunkSize, conflict_policy: 'keep_both', resume_key: resumeKey,
+      }),
+    }, false)
+    if (session.status === 'finalized') { clearResume(); onProgress(1); return }
+    const received = new Map((session.received_chunks ?? []).map((chunk) => [chunk.index, chunk]))
+    let done = 0
+    for (let index = 0; index < hashes.length; index += 1) {
+      const start = index * chunkSize
+      const end = Math.min(file.size, start + chunkSize)
+      const len = end - start
+      const known = received.get(index)
+      if (!known || known.size !== len || known.sha256 !== hashes[index]) {
+        const response = await xDriveUploadBytes(`${API_BASE}/api/v1/public/share/uploads/${session.id}/chunks/${index}`, {
+          headers: { ...headers, 'Content-Type': 'application/octet-stream', 'X-Chunk-SHA256': hashes[index] },
+          body: file.slice(start, end),
+          onProgress: (loaded) => onProgress(file.size === 0 ? 0 : (done + Math.min(len, loaded)) / file.size),
+        })
+        if (!response.ok) {
+          let message = '匿名上传分块失败'
+          try {
+            const detail = await response.json() as { error?: string }
+            if (detail.error) message = detail.error
+          } catch { /* preserve transport status */ }
+          throw new ApiError(response.status, message)
+        }
+      }
+      done += len
+      onProgress(file.size === 0 ? 0 : done / file.size)
+    }
+    const finalized = await this.request<UploadSessionState>(
+      `/api/v1/public/share/uploads/${session.id}/finalize`, {
+        method: 'POST', headers, body: JSON.stringify({}),
+      }, false,
+    )
+    if (finalized.status !== 'finalized') throw new Error('匿名上传未完成提交')
+    clearResume()
+    onProgress(1)
   }
 
   publicShare(token: string, signal?: AbortSignal) {

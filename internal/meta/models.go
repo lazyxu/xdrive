@@ -251,6 +251,7 @@ func (SystemMaintenanceRun) TableName() string {
 }
 
 type Share struct {
+	Access        string     `gorm:"size:16;not null;default:'read_only'"`
 	ID            uint64     `gorm:"primaryKey"`
 	OwnerID       uint64     `gorm:"not null;index;index:idx_xd_shares_owner_node"`
 	NodeID        uint64     `gorm:"not null;index;index:idx_xd_shares_owner_node"`
@@ -309,6 +310,7 @@ func NormalizeUploadConflictPolicy(value string) (string, bool) {
 }
 
 type UploadSession struct {
+	ShareID            *uint64 `gorm:"index"` // non-nil only for scoped anonymous Share uploads
 	ID                 string  `gorm:"size:36;primaryKey"`
 	OwnerID            uint64  `gorm:"not null;index"`
 	ParentID           *uint64 `gorm:"index"`

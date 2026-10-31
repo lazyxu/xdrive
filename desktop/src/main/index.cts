@@ -7824,17 +7824,28 @@ function registerIPCHandlers() {
     if (typeof nodeID !== 'number' || !Number.isSafeInteger(nodeID) || nodeID <= 0 || typeof input !== 'object' || input === null) {
       throw new AgentIPCError('invalid_input', 0, 'Valid share input is required.')
     }
-    const value = input as { expires_at?: unknown; password?: unknown; max_downloads?: unknown }
+    const value = input as { expires_at?: unknown; password?: unknown; access?: unknown }
     const expiresAt = typeof value.expires_at === 'string' ? value.expires_at : undefined
     const password = typeof value.password === 'string' ? value.password : undefined
-    const maxDownloads = value.max_downloads === undefined ? 0 : value.max_downloads
-    if (typeof maxDownloads !== 'number' || !Number.isSafeInteger(maxDownloads) || maxDownloads < 0) {
-      throw new AgentIPCError('invalid_input', 0, 'Maximum downloads must be a non-negative integer.')
+    const access = value.access ?? 'read_only'
+    if (access !== 'read_only' && access !== 'view_upload') {
+      throw new AgentIPCError('invalid_input', 0, 'Share access must be read_only or view_upload.')
     }
-    return requireAgentClient().cloudCreateShare(nodeID, {
-      expires_at: expiresAt,
-      password,
-      max_downloads: maxDownloads,
+    return requireAgentClient().cloudCreateShare(nodeID, { expires_at: expiresAt, password, access })
+  }, false))
+  ipcMain.handle('agent:cloud-update-share', (_event, id: unknown, input: unknown) => runAgentAction<AgentCloudShare>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'cloud-files')
+    if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0 || typeof input !== 'object' || input === null) {
+      throw new AgentIPCError('invalid_input', 0, 'Valid share update is required.')
+    }
+    const value = input as { expires_at?: unknown; access?: unknown }
+    if ((value.access !== 'read_only' && value.access !== 'view_upload') ||
+        (value.expires_at !== undefined && value.expires_at !== null && typeof value.expires_at !== 'string')) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid share access or expiry.')
+    }
+    return requireAgentClient().cloudUpdateShare(id, {
+      access: value.access, expires_at: typeof value.expires_at === 'string' ? value.expires_at : null,
     })
   }, false))
   ipcMain.handle('agent:cloud-revoke-share', (_event, id: unknown) => runAgentAction<{ ok: boolean }>(async () => {

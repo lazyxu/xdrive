@@ -19,10 +19,10 @@ test('P115: public share live status cannot be inserted among normal Explorer la
     '{folderError && <XDriveStatusAlert',
     '{zipError && <XDriveStatusAlert',
     '{zipNotice && <Typography',
-    '{exhausted && <XDriveStatusAlert',
+    '{uploadProgress ? <Typography',
   ])assert.equal(originalStack.includes(bad),false,bad)
   for(const must of [
-    'folderError','zipError','zipNotice','exhausted','notice',
+    'folderError','zipError','zipNotice','uploadProgress','notice',
     'role="status"', "position: 'fixed'",
     "env(safe-area-inset-bottom", "pointerEvents: 'none'",
   ])assert.ok(page.slice(floating).includes(must),must)
