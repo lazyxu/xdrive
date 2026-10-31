@@ -52,7 +52,9 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
     const abort = new AbortController()
     setLoading(true)
     setError('')
-    setNotice('')
+    // A normal same-client refresh must keep its legitimate outcome notice.
+    // Revoke it only when a different owning Host client replaces this one.
+    if (viewClient !== client) setNotice('')
     // Mark this Host generation only with the other state invalidations.
     setViewClient(client)
     // DSM session/principal changes must not retain the old Source list.
