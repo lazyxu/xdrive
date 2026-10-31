@@ -12,7 +12,30 @@ type Target = { id: number; name: string }
 // One opt-in section in the original shared Device Backup page. DSM never
 // owns another backup Runner, Source store or native file browser. The form
 // sends only verified opaque share/Owner identities and a cloud directory ID.
-export function XDriveSynologyBackupSourceSetup({
+// The Source creation form is an Owner/Host-local transaction, not reusable
+// form state. A different owning Agent must get a fresh React subtree *during*
+// reconciliation, before passive effects or a prior Source ACK can render.
+// Weak keys preserve same-Agent state across ordinary local list refreshes.
+const sourceSetupHostKeys = new WeakMap<XDriveSynologyBackupLocalClient, number>()
+let nextSourceSetupHostKey = 0
+function sourceSetupHostKey(client: XDriveSynologyBackupLocalClient): number {
+  let key = sourceSetupHostKeys.get(client)
+  if (key === undefined) {
+    key = ++nextSourceSetupHostKey
+    sourceSetupHostKeys.set(client, key)
+  }
+  return key
+}
+
+export function XDriveSynologyBackupSourceSetup(props: {
+  client: XDriveSynologyBackupLocalClient
+  onCreated: () => void
+}) {
+  return <XDriveSynologyBackupSourceSetupForHost
+    key={sourceSetupHostKey(props.client)} {...props} />
+}
+
+function XDriveSynologyBackupSourceSetupForHost({
   client, onCreated,
 }: {
   client: XDriveSynologyBackupLocalClient
