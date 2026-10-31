@@ -1286,10 +1286,14 @@ class DriveController(
         val initial = state.value
         val service = api ?: return
         if (!initial.canStartNativePhotoForeground() ||
-            initial.nativePhotoDeviceVerified.not() ||
-            !keepLogin || session == null ||
-            !initial.server.startsWith("https://") ||
+            !initial.nativePhotoDeviceVerified ||
+            session == null || !initial.server.startsWith("https://") ||
             !hasNativeFullPhotoVideoReadGrant(context)) return
+        if (!keepLogin || sessionPersistence !is AndroidSessionStore) {
+            mutableState.value = initial.copy(
+                error = "自动备份需要启用 HTTPS 记住登录；本次未创建后台任务。")
+            return
+        }
         val origin = initial.server
         val username = initial.username
         request { ticket ->
