@@ -129,3 +129,28 @@ test('read failure policy preserves only the existing native Gallery transient s
   assert.doesNotMatch(original, /return true/)
   assert.doesNotMatch(original, /catch \{/)
 })
+
+test('cloud original Viewer fences Owner and request generation BEFORE issuing signed media reads', () => {
+  const viewer = src.slice(
+    src.indexOf('struct XDriveIOSNativeCloudOriginalPreview: View'),
+    src.indexOf('private struct XDriveIOSNativeCloudOriginalTile: View'))
+  const work = viewer.slice(viewer.indexOf('.task(id: previewRequestID) {'),
+    viewer.indexOf('.onChange(of: phase)'))
+  const verify = work.indexOf('let auth = try await login.verifiedAuthorization()')
+  const cancel = work.indexOf('try Task.checkCancellation()', verify)
+  const fence = work.indexOf('guard phase == .active, previewRequestID == requestID,', cancel)
+  const reader = work.indexOf('let reader = XDriveIOSNativeCloudOriginalReader(')
+  const liveRead = work.indexOf('reader.livePreview(node)')
+  const otherRead = work.indexOf('reader.preview(node)')
+  assert.ok(verify >= 0 && verify < cancel && cancel < fence &&
+    fence < reader && reader < liveRead && reader < otherRead,
+    'no Live ZIP download-ticket or still/video preview-ticket until current Owner and Viewer generation are verified')
+  const guard = work.slice(fence, reader)
+  assert.match(guard, /XDriveIOSNativePhotoOwnerScope\.matches\(auth\.owner, before\)/)
+  assert.match(guard, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, before\)/)
+  assert.match(guard, /else \{ return \}/)
+  assert.match(viewer, /\.onChange\(of: login\.owner\) \{ _ in/)
+  assert.match(viewer, /\.onChange\(of: phase\) \{ state in/)
+  assert.match(work.slice(liveRead), /live\.files\.discard\(\); return/)
+  assert.doesNotMatch(guard, /uploadPrepared|UploadSession|URLSession|confirmReceipt/)
+})
