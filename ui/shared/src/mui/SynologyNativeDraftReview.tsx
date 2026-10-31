@@ -13,7 +13,7 @@ export function XDriveSynologyNativeDraftReview({
   client: XDriveSynologyBackupLocalClient
   ownerScope: string
   selectionID: string
-  onBound: () => void
+  onBound: (sourceID: number) => void
 }) {
   const [revision, setRevision] = useState(0)
   const [state, setState] = useState<{
@@ -100,7 +100,7 @@ export function XDriveSynologyNativeDraftReview({
       setOutcome({ id: draft.source_id, state: result.state })
       if (result.state === 'authorized') {
         confirmedBoundSourceRef.current = draft.source_id
-        onBound()
+        onBound(draft.source_id)
         setRevision(value => value + 1)
       }
     }).catch(() => {

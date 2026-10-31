@@ -21,6 +21,7 @@ export function XDriveSynologyBackupSourceSetup({
   const [ownerScope, setOwnerScope] = useState('')
   const [scopeStatus, setScopeStatus] = useState<'checking' | 'ready' | 'unavailable'>('checking')
   const [scopeRevision, setScopeRevision] = useState(0)
+  const [shareRevision, setShareRevision] = useState(0)
   const [selectedShare, setSelectedShare] = useState<XDriveSynologyNASShare | null>(null)
   const [selectedTarget, setSelectedTarget] = useState<Target | null>(null)
   const [targetOpen, setTargetOpen] = useState(false)
@@ -32,6 +33,7 @@ export function XDriveSynologyBackupSourceSetup({
   // React state updates are asynchronous; this guard closes the double-click
   // window before the first Owner-backed Source mutation gets an ACK.
   const createAttemptedRef = useRef(false)
+  const shareRevisionRef = useRef(0)
   const mountedRef = useRef(false)
   const latestScopeRef = useRef({ client, ownerScope })
   latestScopeRef.current = { client, ownerScope }
@@ -64,16 +66,38 @@ export function XDriveSynologyBackupSourceSetup({
     return () => controller.abort()
   }, [client, scopeRevision])
 
+  // A confirmed Source/Root bind must not leave the previous native share
+  // preflight valid for a distinct Source. Rotate synchronously to also
+  // reject an old NAS inventory callback that resolves after the reset.
+  const resetShareAuthorization = () => {
+    shareRevisionRef.current += 1
+    setShareRevision(shareRevisionRef.current)
+    setSelectedShare(null)
+    setConfirmed(false)
+  }
   const onVerifiedShare = useCallback((share: XDriveSynologyNASShare | null) => {
-    if (createAttemptedRef.current) return
+    if (createAttemptedRef.current || shareRevision !== shareRevisionRef.current) return
     setSelectedShare(share)
     setConfirmed(false)
-  }, [])
+  }, [shareRevision])
   const onSelectTarget = useCallback((target: Target | null) => {
     if (createAttemptedRef.current) return
     setSelectedTarget(target)
     setConfirmed(false)
   }, [])
+  const onNativeDraftBound = (sourceID: number) => {
+    // A draft binding is a distinct native Root mutation, even if the
+    // selected directory label is unchanged. Force a new Agent preflight
+    // and fresh explicit share selection before binding another draft.
+    resetShareAuthorization()
+    if (status === 'needs_inspection' && createdID === sourceID) {
+      // This particular previously uncertain Source now has a confirmed
+      // strong native Root grant. Another Source is safe to configure.
+      setStatus('authorized')
+    }
+    onCreated()
+  }
+
   const create = () => {
     if (status !== 'idle' || createAttemptedRef.current ||
       scopeStatus !== 'ready' || !/^[0-9a-f]{64}$/.test(ownerScope) ||
@@ -116,18 +140,18 @@ export function XDriveSynologyBackupSourceSetup({
     createAttemptedRef.current = false
     setStatus('idle')
     setCreatedID(null)
-    setSelectedShare(null)
+    resetShareAuthorization()
     setSelectedTarget(null)
     setTargetOpen(false)
     setName('')
-    setConfirmed(false)
     setShowDrafts(false)
     setScopeRevision(value => value + 1)
   }
 
   return (
     <Box data-xdrive-dsm-source-setup sx={{ display: 'grid', gap: 1.5 }}>
-      <XDriveSynologyNASShareInventory client={client} onVerifiedShare={onVerifiedShare} />
+      <XDriveSynologyNASShareInventory key={shareRevision}
+        client={client} onVerifiedShare={onVerifiedShare} />
       <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 1, p: 2 }}>
         <Stack spacing={1.5}>
           <Typography variant="subtitle2" fontWeight={700}>创建 NAS 本机备份来源</Typography>
@@ -147,7 +171,10 @@ export function XDriveSynologyBackupSourceSetup({
             </Button>
             <Button variant="text" size="small"
               disabled={scopeStatus === 'checking' || status !== 'idle'}
-              onClick={() => setScopeRevision(n => n + 1)}>
+              onClick={() => {
+                resetShareAuthorization()
+                setScopeRevision(n => n + 1)
+              }}>
               重新验证 Server Owner
             </Button>
             <Button variant="text" size="small"
@@ -221,7 +248,7 @@ export function XDriveSynologyBackupSourceSetup({
             <XDriveSynologyNativeDraftReview
               client={client} ownerScope={ownerScope}
               selectionID={selectedShare?.selection_id ?? ''}
-              onBound={onCreated}
+              onBound={onNativeDraftBound}
             />
           ) : null}
         </Stack>

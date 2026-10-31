@@ -48,7 +48,9 @@ assert.doesNotMatch(browser, /\{share\.selection_id\}\s*</,
 assert.doesNotMatch(browser, /AuthorizeLocalRoot|createLocalBackupSource|fetch\(/,
   'native preflight must not grant Root authority')
 assert.match(panel, /<XDriveSynologyBackupSourceSetup client=\{client\} onCreated=\{refresh\}/)
-assert.match(setup, /<XDriveSynologyNASShareInventory client=\{client\} onVerifiedShare=\{onVerifiedShare\}/)
+assert.match(setup, /<XDriveSynologyNASShareInventory key=\{shareRevision\}\s+client=\{client\} onVerifiedShare=\{onVerifiedShare\}/)
+assert.match(setup, /shareRevision !== shareRevisionRef\.current/)
+assert.match(setup, /resetShareAuthorization\(\)/)
 assert.match(browser, /onVerifiedShare\?\.\(share\)/)
 assert.doesNotMatch(browser, /createNASBackupSource\(/)
 assert.match(cgi, /"nas-shares"/)
