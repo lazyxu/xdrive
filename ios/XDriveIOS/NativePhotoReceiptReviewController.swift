@@ -19,6 +19,14 @@ final class XDriveIOSNativePhotoReceiptReviewController: ObservableObject {
         var ambiguous = 0
     }
 
+    /// Read-only notification after at least one previously uncertain ACK
+    /// is proven against BOTH its UploadSession and current Owner Node.
+    struct ConfirmedReadback: Equatable {
+        let owner: XDriveNativeOwnerRoot
+        let id: UUID
+    }
+
+    @Published private(set) var confirmedReadback: ConfirmedReadback?
     @Published private(set) var mode: Mode = .idle
     @Published private(set) var pending: Int?
     @Published private(set) var hasLedgerScope = false
@@ -36,6 +44,7 @@ final class XDriveIOSNativePhotoReceiptReviewController: ObservableObject {
         generation = UUID()
         work?.cancel()
         work = nil
+        confirmedReadback = nil
         mode = .idle
         pending = nil
         hasLedgerScope = false
@@ -109,6 +118,7 @@ final class XDriveIOSNativePhotoReceiptReviewController: ObservableObject {
         generation = epoch
         pending = nil
         summary = Summary()
+        confirmedReadback = nil
         notice = nil
         errorMessage = nil
         mode = .reviewing
@@ -136,6 +146,19 @@ final class XDriveIOSNativePhotoReceiptReviewController: ObservableObject {
                     scope: scope, limit: Self.maxPerReview
                 )
                 var tally = Summary()
+                // A later network error or inaccessible ledger must not hide
+                // originals whose receipts were ALREADY verified in this
+                // read-only review. Publish at most one same-Owner wall reload,
+                // including a partially completed review. Never signal for an
+                // ambiguous/expired/unverified ACK or a retired Owner/task.
+                defer {
+                    if tally.confirmed > 0, self.generation == epoch,
+                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected) {
+                        self.confirmedReadback = ConfirmedReadback(
+                            owner: expected, id: UUID()
+                        )
+                    }
+                }
                 for record in snapshot.batch {
                     try Task.checkCancellation()
                     // Native access-token refresh is Owner/Root verified.
