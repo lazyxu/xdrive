@@ -61,6 +61,20 @@ android {
         "src/baidu/java" else "src/noBaidu/java")
 }
 tasks.named("preBuild").configure { dependsOn(copyXDriveBrand) }
+
+// The required PR Android job has twice hit its existing 35-minute limit
+// while :app:testDebugUnitTest was silent. In GitHub Actions only, expose
+// every actual JUnit start/end so a further timeout identifies the precise
+// unfinished test. This neither skips tests nor changes task timeout, worker
+// concurrency, Android SDK, lint, debug APK, or emulator requirements.
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    if (System.getenv("GITHUB_ACTIONS") == "true") {
+        testLogging {
+            events("started", "passed", "failed", "skipped")
+            exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        }
+    }
+}
 dependencies {
     implementation(project(":core"))
     if (nativeBaiduMapEnabled) {

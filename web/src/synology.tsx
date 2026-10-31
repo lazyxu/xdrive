@@ -10,6 +10,7 @@ import {
 import type { XDriveSynologyBackupLocalClient } from '@xdrive/ui/mui'
 import './styles.css'
 import { createXDriveSynologyHost } from './synologyHost'
+import { readDSMLoginDraft, saveDSMLoginDraft } from './synologyLoginDraft'
 
 // DSM's local Agent and CGI must never be contacted from an insecure page.
 // Render a fail-closed explanation instead of crashing before React mounts.
@@ -25,16 +26,19 @@ function createSecureSynologyHost() {
 const host = createSecureSynologyHost()
 
 type OwnerConnectionCheck = 'unchecked' | 'checking' | 'verified' | 'unavailable'
-
 /** Host-specific capability inside the canonical shared Settings dialog. */
 function SynologyServerConnectionSettings({
   open, client,
 }: { open: boolean; client: XDriveSynologyBackupLocalClient }) {
   const [status, setStatus] = useState<OwnerConnectionCheck>('unchecked')
   const [profileStatus, setProfileStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading')
-  const [server, setServer] = useState('')
-  const [username, setUsername] = useState('')
+  const initialLoginDraft = useRef(readDSMLoginDraft()).current
+  const [server, setServer] = useState(initialLoginDraft.server)
+  const [username, setUsername] = useState(initialLoginDraft.username)
   const [password, setPassword] = useState('')
+  useEffect(() => {
+    saveDSMLoginDraft(server, username)
+  }, [server, username])
   const [showPassword, setShowPassword] = useState(false)
   const [loginState, setLoginState] = useState<'idle' | 'logging' | 'failed'>('idle')
   const controllerRef = useRef<AbortController | null>(null)
@@ -63,8 +67,12 @@ function SynologyServerConnectionSettings({
     void client.serverConnection(controller.signal).then(
       info => {
         if (profileRef.current !== controller || controller.signal.aborted) return
-        setServer(info.server ?? '')
-        setUsername(info.username ?? '')
+        // An unconfigured Agent has no Owner to override a failed draft.
+        // A configured Agent always wins to avoid cross-Owner confusion.
+        if (info.configured) {
+          setServer(info.server ?? '')
+          setUsername(info.username ?? '')
+        }
         setProfileStatus('ready')
       },
       () => {
@@ -104,9 +112,22 @@ function SynologyServerConnectionSettings({
     controllerRef.current?.abort()
     const controller = new AbortController()
     loginRef.current = controller
+    // Local validation is guaranteed not to mutate the owning Agent. Keep
+    // the editable password in memory for this failure class only.
+    try {
+      const origin = new URL(server.trim())
+      if (origin.protocol !== 'https:' || !origin.hostname || origin.username ||
+          origin.password || origin.pathname !== '/' || origin.search || origin.hash) {
+        setLoginState('failed')
+        return
+      }
+    } catch {
+      setLoginState('failed')
+      return
+    }
     const requestedPassword = password
-    // Password is never stored in browser storage, query strings, logs,
-    // application Host state or persistent browser settings.
+    // An actual Agent call may commit an Owner before its ACK is lost.
+    // Reload on either outcome; only non-secret hints survive reload.
     setPassword('')
     setLoginState('logging')
     void client.loginServer(server.trim(), username.trim(), requestedPassword, controller.signal).then(

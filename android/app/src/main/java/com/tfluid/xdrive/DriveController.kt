@@ -235,8 +235,10 @@ class DriveController(
     private val loadRoute: (String) -> ConnectionRoute = { ConnectionRoute() },
     private val sessionPersistence: DriveSessionPersistence? = null,
     private val transferClockMillis: () -> Long = { System.nanoTime() / 1_000_000L },
+    initialUsername: String = "",
+    private val saveLoginDraft: (String, String, String) -> Unit = { _, _, _ -> },
 ) : Closeable {
-    private val mutableState = MutableStateFlow(DriveState(server = initialServer, allowHttp = initialAllowHttp,
+    private val mutableState = MutableStateFlow(DriveState(server = initialServer, username = initialUsername, allowHttp = initialAllowHttp,
         route = savedRoute(initialServer, initialAllowHttp)))
     val state = mutableState.asStateFlow()
     private var address: ServerAddress? = null
@@ -503,6 +505,15 @@ class DriveController(
             var candidate: XDriveService? = null
             try {
                 route.validate(server)
+                // Upgrade from older app versions: existing Keystore credentials
+                // already identify the Owner, but no separate username hint
+                // may have been saved. Capture it BEFORE refresh/401 revocation.
+                // Never overwrite a newer failed-login draft for another
+                // server or username with this older remembered session.
+                if (state.value.username.isBlank() &&
+                    (state.value.server.isBlank() || state.value.server == server.url)) {
+                    runCatching { saveLoginDraft(server.url, route.lanIp, saved.username) }
+                }
                 val ip = if (route.enabled) routeSelector(server, route) else null
                 checkCurrent(ticket)
                 val restoredApi = if (ip == null) serviceFactory(server) else routedServiceFactory(server, ip)
@@ -542,15 +553,25 @@ class DriveController(
                     api = null
                 }
                 (candidate as? Closeable)?.close()
+                // A previously remembered credential may belong to an older
+                // Owner than the most recent failed/manual login draft. Its
+                // refresh failure must not overwrite the newer input fields.
+                val newerDraft = state.value.takeIf { draft ->
+                    draft.username.isNotBlank() &&
+                        (draft.server != server.url || draft.username != saved.username)
+                }
+                val shownServer = newerDraft?.server ?: server.url
+                val shownRoute = newerDraft?.route ?: route
+                val shownUsername = newerDraft?.username ?: saved.username
                 if (failure is ApiException && failure.statusCode in listOf(401, 403)) {
                     runCatching { vault.clear() }
-                    mutableState.value = DriveState(screen = Screen.LOGIN, server = server.url,
-                        route = route, username = saved.username,
+                    mutableState.value = DriveState(screen = Screen.LOGIN, server = shownServer,
+                        route = shownRoute, username = shownUsername,
                         error = "登录已失效，请重新输入密码。")
                 } else {
                     // Network outage is NOT logout; preserve the refresh token on disk.
-                    mutableState.value = DriveState(screen = Screen.CONNECT, server = server.url,
-                        route = route, username = saved.username,
+                    mutableState.value = DriveState(screen = Screen.CONNECT, server = shownServer,
+                        route = shownRoute, username = shownUsername,
                         error = "无法自动恢复登录，请检查网络或直接登录。")
                 }
             }
@@ -576,6 +597,9 @@ class DriveController(
             mutableState.value = state.value.copy(error = "内网 IP 无效，或服务器已直接使用 IP 地址。")
             return
         }
+        // Save only public login hints, BEFORE the network request. Token
+        // revocation and invalid passwords cannot delete this independent draft.
+        runCatching { saveLoginDraft(next.url, route.lanIp, username.trim()) }
         request { ticket ->
             val ip = if (route.enabled) routeSelector(next, route) else null
             checkCurrent(ticket)
@@ -616,6 +640,7 @@ class DriveController(
             mutableState.value = state.value.copy(error = "请输入用户名和密码。")
             return
         }
+        runCatching { saveLoginDraft(state.value.server, state.value.route.lanIp, username.trim()) }
         request {
             if (api == null && state.value.route.enabled) {
                 val next = address ?: return@request
@@ -4031,7 +4056,7 @@ class DriveController(
                         if (state.value.route.enabled) { (api as? Closeable)?.close(); api = null }
                         mutableState.value = DriveState(
                             screen = Screen.LOGIN, server = state.value.server, allowHttp = state.value.allowHttp,
-                            route = state.value.route,
+                            route = state.value.route, username = state.value.username,
                             error = "登录已失效，请重新登录。",
                         )
                     } else if (failure is NativeTransferCheckpointFailure) {
@@ -4126,6 +4151,7 @@ class DriveController(
             screen = if (changeServer) Screen.CONNECT else Screen.LOGIN,
             server = state.value.server, allowHttp = state.value.allowHttp,
             route = state.value.route,
+            username = if (changeServer) "" else state.value.username,
         )
         scope.launch {
             try {

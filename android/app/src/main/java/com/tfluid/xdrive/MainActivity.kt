@@ -355,13 +355,17 @@ class DriveViewModel(application: Application) : AndroidViewModel(application) {
     )
     val controller = DriveController(
         scope = viewModelScope,
-        initialServer = preferences.getString("server", "").orEmpty(),
+        initialServer = preferences.getString("login.draft.server", null)
+            ?: preferences.getString("server", "").orEmpty(),
+        initialUsername = preferences.getString("login.draft.username", "").orEmpty(),
         initialAllowHttp = preferences.getBoolean("allowHttp", false),
         routeSelector = routeSelector::select,
         saveConnection = { server, allow -> preferences.edit { putString("server", server); putBoolean("allowHttp", allow) } },
         loadRoute = { origin -> ConnectionRoute(
             mode = RouteMode.fromPreference(preferences.getString("route.mode:$origin", null)),
-            lanIp = preferences.getString("route.lan:$origin", "").orEmpty(),
+            lanIp = if (preferences.getString("login.draft.server", null) == origin)
+                preferences.getString("login.draft.lan-ip", preferences.getString("route.lan:$origin", "")).orEmpty()
+            else preferences.getString("route.lan:$origin", "").orEmpty(),
             publicIp = preferences.getString("route.public:$origin", "").orEmpty(),
         ) },
         saveRoute = { origin, route -> preferences.edit {
@@ -370,6 +374,11 @@ class DriveViewModel(application: Application) : AndroidViewModel(application) {
             putString("route.public:$origin", route.publicIp)
         } },
         sessionPersistence = AndroidSessionStore(application),
+        saveLoginDraft = { server, lanIp, username -> preferences.edit {
+            putString("login.draft.server", server)
+            putString("login.draft.lan-ip", lanIp)
+            putString("login.draft.username", username)
+        } },
     )
     init { controller.restoreSession() }
     override fun onCleared() { updates.close(); controller.close() }
