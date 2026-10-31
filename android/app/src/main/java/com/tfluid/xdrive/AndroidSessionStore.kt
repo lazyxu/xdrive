@@ -85,6 +85,15 @@ internal class AndroidSessionStore(
         // commit() reports an actual persistence failure rather than claiming success.
         try {
             synchronized(persistenceGuard) {
+                // Manual login under a different Owner or HTTPS installation
+                // revokes the former photo schedule before new credentials
+                // become current. Coordinated refresh keeps the same identity.
+                val previous = load()
+                if (previous != null &&
+                    (previous.server != origin ||
+                        previous.username != session.username)) {
+                    AndroidPhotoAutoBackupScheduler.disable(app)
+                }
                 check(prefs.edit().putString(PREF_KEY,
                     Base64.encodeToString(sealed, Base64.NO_WRAP)).commit())
             }
