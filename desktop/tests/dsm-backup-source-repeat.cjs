@@ -455,3 +455,70 @@ test('recovering precisely the pending created Source unlocks next setup, unrela
     await act(async () => tree.unmount())
   }
 })
+
+test('DSM ignores an old Agent Root-bind ACK when the Host client instance changes without an Owner or selection change', async () => {
+  const pending = deferred()
+  let oldBinds = 0
+  let newBinds = 0
+  let accepted = 0
+  const oldClient = {
+    nativeDrafts: async () => ({ owner_scope: SCOPE, items: rows.slice() }),
+    bindNativeDraft: () => { oldBinds++; return pending.promise },
+  }
+  const newClient = {
+    nativeDrafts: async () => ({ owner_scope: SCOPE, items: rows.slice() }),
+    bindNativeDraft: async () => {
+      newBinds++
+      return { source_id: 57, state: 'authorized' }
+    },
+  }
+  const onBound = () => { accepted++ }
+  const tree = await mountDraft(oldClient, onBound)
+  await act(async () => {
+    checkbox(tree, '我确认将上方').props.onChange({ target: { checked: true } })
+  })
+  await act(async () => { button(tree, '确认绑定这个 Source').props.onClick() })
+  assert.equal(oldBinds, 1)
+  await act(async () => {
+    tree.update(React.createElement(Drafts, {
+      client: newClient, ownerScope: SCOPE, selectionID: SELECTION, onBound,
+    }))
+    await Promise.resolve()
+  })
+  await act(async () => {
+    pending.resolve({ source_id: 57, state: 'authorized' })
+    await Promise.resolve()
+  })
+  assert.equal(accepted, 0, 'a prior Agent cannot claim authorization for the new Host client')
+  assert.equal(newBinds, 0, 'a Host switch never submits a second native Root grant')
+  assert.equal(checkbox(tree, '我确认将上方').props.checked, false)
+  assert.equal(button(tree, '确认绑定这个 Source').props.disabled, true,
+    'an uncertain ACK remains latched until explicit inspection in the owning context')
+  const alerts = tree.root.findAllByType('Typography')
+    .filter(x => x.props.role === 'alert')
+  assert.ok(alerts.length > 0, 'the old Agent ACK must be reported uncertain, not successful')
+  await act(async () => tree.unmount())
+})
+
+test('DSM requires renewed draft-bind consent when Host client changes without an Owner identity change', async () => {
+  const oldClient = {
+    nativeDrafts: async () => ({ owner_scope: SCOPE, items: rows.slice() }),
+  }
+  const newClient = {
+    nativeDrafts: async () => ({ owner_scope: SCOPE, items: rows.slice() }),
+  }
+  const tree = await mountDraft(oldClient)
+  await act(async () => {
+    checkbox(tree, '我确认将上方').props.onChange({ target: { checked: true } })
+  })
+  assert.equal(checkbox(tree, '我确认将上方').props.checked, true)
+  await act(async () => {
+    tree.update(React.createElement(Drafts, {
+      client: newClient, ownerScope: SCOPE, selectionID: SELECTION, onBound: () => {},
+    }))
+    await Promise.resolve()
+  })
+  assert.equal(checkbox(tree, '我确认将上方').props.checked, false,
+    'same Owner scope is not sufficient proof of identical owning Agent identity')
+  await act(async () => tree.unmount())
+})
