@@ -8,6 +8,8 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/lazyxu/xdrive/internal/localbackupipc"
 )
@@ -140,11 +142,26 @@ func serveDSMNativeDraftBind(
 		http.Error(w, "creating-device draft proof unavailable", http.StatusServiceUnavailable)
 		return
 	}
+	// The read-only DSM draft view already requires a complete, ordered
+	// first-bind inventory. Recheck the same contract at this mutation
+	// boundary: an older or malformed Agent response cannot authorize a
+	// Root merely because one numeric Source ID happens to match.
 	found := false
+	var previous uint64
 	for _, draft := range drafts {
-		if draft.SourceID == input.SourceID && draft.Revision == 1 {
+		if !localbackupipc.ValidSourceID(draft.SourceID) ||
+			draft.SourceID <= previous || draft.Revision != 1 ||
+			draft.Created.IsZero() || !utf8.ValidString(draft.Name) ||
+			len([]byte(draft.Name)) < 1 || len([]byte(draft.Name)) > 128 ||
+			strings.TrimSpace(draft.Name) != draft.Name ||
+			strings.ContainsAny(draft.Name, "\x00\r\n") {
+			http.Error(w, "invalid owning Agent native draft inventory", http.StatusServiceUnavailable)
+			return
+		}
+		if draft.SourceID == input.SourceID {
 			found = true
 		}
+		previous = draft.SourceID
 	}
 	if !found {
 		http.Error(w, "Source is not a current original-device unbound draft", http.StatusConflict)
