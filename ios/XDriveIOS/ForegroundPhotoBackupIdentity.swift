@@ -154,3 +154,18 @@ actor XDriveIOSForegroundBackupIdentity {
         data.map { String(format: "%02x", $0) }.joined()
     }
 }
+
+/// A single read-only Owner journal gate shared by native manual,
+/// foreground automatic, and system-approved BG original runs.
+/// Call only AFTER authenticating the exact Owner and acquiring the global
+/// original writer gate. The *absence* of a first-install Keychain scope is
+/// not evidence of an uploaded original; an unreadable/corrupt scope throws
+/// and no upload is permitted.
+enum XDriveIOSOriginalPendingReceiptPreflight {
+    static func pendingCount(owner: XDriveNativeOwnerRoot) async throws -> Int {
+        guard let scope = try await XDriveIOSForegroundBackupIdentity.shared
+            .existingLocalScope(owner: owner) else { return 0 }
+        return try await XDrivePhotoSyncLedger.shared
+            .pendingReceiptSnapshot(scope: scope, limit: 0).pending
+    }
+}
