@@ -76,5 +76,5 @@ test('single original upload and unknown-ACK checks read only their authenticate
   assert.match(runner, /journal\.operation\(/)
   assert.doesNotMatch(runner, /journal\.operations\(scope: binding\.scope\)/)
   assert.match(journal, /last\.state != \.prepared, last\.state != \.confirmed/)
-  assert.match(runner, /current\.state != \.prepared/)
+  assert.match(runner, /guard let current, current\.state == \.prepared else/)
 })
