@@ -308,6 +308,35 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
         await restore()
     }
 
+    /// Explicit signed-out cleanup, distinct from logout. Delete the Keychain
+    /// refresh credential before touching display-only preferences; never
+    /// claim that an inaccessible Keychain credential has been forgotten.
+    func clearSavedLogin() {
+        guard !busy, active == nil else { return }
+        canRetryStoredSession = false
+        retryDraftSnapshot = nil
+        errorMessage = nil
+        noticeMessage = nil
+        generation &+= 1
+        do {
+            try XDriveIOSNativeOwnerSessionStore.clear()
+        } catch {
+            errorMessage = humanMessage(error)
+            return
+        }
+        guard XDriveIOSNativeLoginDraftStore.clear() else {
+            errorMessage = "本机会话凭据已清除，但无法确认登录填写记录已删除。请检查系统存储后重试。"
+            return
+        }
+        serverText = ""
+        lanIPText = ""
+        username = ""
+        password = ""
+        keepSignedIn = true
+        restoreAttempted = true
+        noticeMessage = "本机已清除保存的登录凭据、服务器和用户名。远端会话撤销未确认；备份记录未删除。"
+    }
+
     /// Explicit user sign-in, not a PWA Cookie session. A successful HTTP
     /// login alone is insufficient: /me and the Owner root MUST both match.
     func signIn() async {

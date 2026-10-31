@@ -379,6 +379,22 @@ class DriveViewModel(application: Application) : AndroidViewModel(application) {
             putString("login.draft.lan-ip", lanIp)
             putString("login.draft.username", username)
         } },
+        clearLoginDraft = { origin ->
+            // A single committed transaction must clear current and legacy
+            // fallback hints; other Servers' route profiles are untouched.
+            preferences.edit().apply {
+                remove("login.draft.server")
+                remove("login.draft.lan-ip")
+                remove("login.draft.username")
+                remove("server")
+                remove("allowHttp")
+                if (origin.isNotBlank()) {
+                    remove("route.mode:$origin")
+                    remove("route.lan:$origin")
+                    remove("route.public:$origin")
+                }
+            }.commit()
+        },
     )
     init { controller.restoreSession() }
     override fun onCleared() { updates.close(); controller.close() }
