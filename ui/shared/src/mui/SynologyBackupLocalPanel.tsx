@@ -27,6 +27,13 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
   client: XDriveSynologyBackupLocalClient
 }) {
   const [sources, setSources] = useState<XDriveSynologyLocalSource[]>([])
+  // Keep the rendered list, history and mutation dialogs tied to the client
+  // whose DSM session actually produced them. A new Host client is visible
+  // before passive effects can clear the old owner's data.
+  const [viewClient, setViewClient] = useState(client)
+  const sameOwningClient = viewClient === client
+  const visibleSources = sameOwningClient ? sources : []
+  const visibleLoading = loading || !sameOwningClient
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [refreshID, setRefreshID] = useState(0)
@@ -36,6 +43,8 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
   const [notice, setNotice] = useState('')
   const [historyRevision, setHistoryRevision] = useState(0)
   const [histories, setHistories] = useState<Record<number, LocalHistory>>({})
+  const visibleError = sameOwningClient ? error : ''
+  const visibleNotice = sameOwningClient ? notice : ''
   const refresh = useCallback(() => { setRefreshID((n) => n + 1) }, [])
 
   useEffect(() => {
@@ -43,6 +52,9 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
     const abort = new AbortController()
     setLoading(true)
     setError('')
+    setNotice('')
+    // Mark this Host generation only with the other state invalidations.
+    setViewClient(client)
     // DSM session/principal changes must not retain the old Source list.
     setSources([])
     setExpandedID(null)
@@ -60,7 +72,7 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
   }, [client, refreshID])
 
   useEffect(() => {
-    if (expandedID === null) return
+    if (!sameOwningClient || expandedID === null) return
     let active = true
     const abort = new AbortController()
     const id = expandedID
@@ -85,7 +97,7 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
       }))
     })
     return () => { active = false; abort.abort() }
-  }, [client, expandedID, historyRevision])
+  }, [client, expandedID, historyRevision, sameOwningClient])
 
   return (
     <XDriveWorkspaceSurface
@@ -97,17 +109,17 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
           onClick={refresh}>刷新</Button>
       }
     >
-      {error ? <XDriveStatusAlert tone="neutral">{error}</XDriveStatusAlert> : null}
-      {notice ? <XDriveStatusAlert tone="neutral">{notice}</XDriveStatusAlert> : null}
+      {visibleError ? <XDriveStatusAlert tone="neutral">{visibleError}</XDriveStatusAlert> : null}
+      {visibleNotice ? <XDriveStatusAlert tone="neutral">{visibleNotice}</XDriveStatusAlert> : null}
       <Box data-xdrive-device-backup-overview sx={{
         position: 'relative', minWidth: 0,
-        minHeight: loading || sources.length === 0 ? 180 : undefined,
+        minHeight: visibleLoading || visibleSources.length === 0 ? 180 : undefined,
       }}>
-        {loading ? (
+        {visibleLoading ? (
           <Box data-xdrive-device-backup-first-read aria-busy="true" sx={{
             minHeight: 180, display: 'grid', placeItems: 'center',
           }} />
-        ) : error ? null : sources.length === 0 ? (
+        ) : visibleError ? null : visibleSources.length === 0 ? (
           <XDriveStatePanel variant="plain"
             message="暂无已授权的本机同步文件夹。可在下方确认创建 NAS 备份来源，或使用本机 xd backup init。" />
         ) : (
@@ -118,7 +130,7 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
                 name="当前 NAS"
                 details="Synology DSM · 仅显示本机 Agent 已验证的备份来源"
               >
-                {sources.map((item) => {
+                {visibleSources.map((item) => {
                   const history = histories[item.source_id]
                   return (
                     <XDriveDeviceBackupFolderAccordion
@@ -154,7 +166,7 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
         )}
       </Box>
       <XDriveSynologyBackupSourceSetup client={client} onCreated={refresh} />
-      {scheduleID !== null && (
+      {sameOwningClient && scheduleID !== null && (
         <XDriveDeviceBackupLocalScheduleDialog
           sourceID={scheduleID}
           actions={client}
@@ -166,7 +178,7 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
           }}
         />
       )}
-      {activeID !== null && (
+      {sameOwningClient && activeID !== null && (
         <XDriveDeviceBackupLocalCommonBatchDialog
           sourceID={activeID}
           actions={client}
