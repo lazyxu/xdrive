@@ -81,7 +81,8 @@ test('native logout never exposes login until exact Keychain credential is delet
   assert.ok(signOut.indexOf('guard await model.signOut() else') <
     signOut.indexOf('XDriveIOSNativeNavigationRouteStore().clear()'))
 })
-\n
+
+
 test('Owner/root and URLSession failures map to safe actionable diagnostics, not one generic string', () => {
   const policy = read('ios/XDriveIOS/NativeOwnerLoginFailurePolicy.swift')
   const auth = read('ios/XDriveIOS/AuthService.swift')

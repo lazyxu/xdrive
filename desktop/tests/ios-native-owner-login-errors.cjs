@@ -24,7 +24,10 @@ test('exact native login screen now delegates error category and retry to tested
 })
 
 test('password and origin are not replayed, and LAN cert validation is still enforced', () => {
-  assert.match(route, /\.secureConnectionFailed,\s*\.serverCertificateUntrusted|\.serverCertificateUntrusted, \.serverCertificateHasBadDate/)
+  // A certificate failure is not in the exact network-fallback allowlist.
+  assert.match(route, /if let failure = error as\? URLError/)
+  assert.match(route, /\.cannotConnectToHost, \.timedOut, \.networkConnectionLost/)
+  assert.doesNotMatch(route, /if let failure = error as\? URLError,[\s\S]{0,200}\.serverCertificateUntrusted/)
   assert.match(route, /throw error/)
   assert.match(route, /URLSessionConfiguration\.ephemeral/)
   assert.match(auth, /证书包含该 IP 的 SAN/)
