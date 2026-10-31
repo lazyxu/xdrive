@@ -251,21 +251,106 @@ struct XDriveIOSNativeServerMediaPreview: View {
     @State private var image: UIImage?
     @State private var player: AVPlayer?
     @State private var failure: String?
+    // Paired originals belong to this single verified L3 Viewer, never the wall.
+    @State private var liveResources: XDriveIOSLivePreviewFiles?
+    @State private var liveOwner: XDriveNativeOwnerRoot?
+    @State private var nativeLiveReady = false
+    @State private var nativeLiveUnavailable = false
+    @State private var livePlaybackRequest: UUID?
+    @State private var showingLiveMotion = false
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 12) {
-                if let player {
+                if item.isLive, let still = image {
+                    if showingLiveMotion, let player {
+                        VideoPlayer(player: player)
+                            .onAppear { player.play() }
+                            .onDisappear { player.pause() }
+                    } else if let resources = liveResources,
+                              !nativeLiveUnavailable {
+                        ZStack {
+                            Image(uiImage: still).resizable().scaledToFit()
+                            XDriveIOSNativeCloudPairedLivePhotoView(
+                                files: resources,
+                                placeholder: still,
+                                playbackRequest: livePlaybackRequest
+                            ) { ready in
+                                // Old Photos callbacks cannot revive a retired
+                                // Owner, scene, Viewer or temporary resource set.
+                                guard phase == .active,
+                                      let currentOwner = liveOwner,
+                                      XDriveIOSNativePhotoOwnerScope.matches(
+                                        login.owner, currentOwner
+                                      ),
+                                      liveResources?.folderURL == resources.folderURL
+                                else { return }
+                                nativeLiveReady = ready
+                                if !ready { nativeLiveUnavailable = true }
+                            }
+                            .id(resources.folderURL)
+                        }
+                        .accessibilityLabel("云端 Live Photo，长按播放")
+                    } else {
+                        XDriveIOSNativeZoomablePhotoView(image: still)
+                    }
+                    if liveResources != nil {
+                        HStack(spacing: 12) {
+                            if nativeLiveReady && !nativeLiveUnavailable &&
+                                !showingLiveMotion {
+                                Button("播放原生实况") {
+                                    guard phase == .active,
+                                          let currentOwner = liveOwner,
+                                          XDriveIOSNativePhotoOwnerScope.matches(
+                                            login.owner, currentOwner
+                                          ) else { return }
+                                    livePlaybackRequest = UUID()
+                                }
+                                .accessibilityIdentifier("native-ios-photoasset-live-play")
+                            }
+                            Button(showingLiveMotion ? "返回静态照片" : "播放原始动态视频") {
+                                guard phase == .active,
+                                      let currentOwner = liveOwner,
+                                      XDriveIOSNativePhotoOwnerScope.matches(
+                                        login.owner, currentOwner
+                                      ) else { return }
+                                if showingLiveMotion {
+                                    player?.pause()
+                                } else {
+                                    // Dismantle Photos' paired player before
+                                    // starting the independent local MOV.
+                                    livePlaybackRequest = nil
+                                    nativeLiveReady = false
+                                }
+                                showingLiveMotion.toggle()
+                            }
+                            .accessibilityIdentifier("native-ios-photoasset-live-motion")
+                        }
+                        Text(nativeLiveUnavailable
+                             ? "原生 Live 配对不可用，仍可播放已校验的动态资源。"
+                             : "已取得当前账户的 Live 双资源；原生配对优先，视频为回退。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    if let failure {
+                        Text(failure).foregroundStyle(.secondary)
+                            .font(.caption).padding(.horizontal)
+                        Button("重试") {
+                            if phase == .active && login.owner != nil {
+                                retirePreview()
+                            }
+                        }
+                        .accessibilityIdentifier("native-ios-photoasset-viewer-retry")
+                    }
+                } else if let player {
                     VideoPlayer(player: player)
                         .onAppear { player.play() }
+                        .onDisappear { player.pause() }
                 } else if let image {
                     XDriveIOSNativeZoomablePhotoView(image: image)
                 } else if let failure {
                     VStack(spacing: 8) {
                         Text(failure).foregroundStyle(.secondary).padding(.horizontal)
                         Button("重试") {
-                            // Explicit current-Owner retry only; a fresh task
-                            // must independently re-verify the signed source.
                             if phase == .active && login.owner != nil {
                                 retirePreview()
                             }
@@ -274,10 +359,6 @@ struct XDriveIOSNativeServerMediaPreview: View {
                     }
                 } else {
                     ProgressView("正在验证并打开云端媒体…")
-                }
-                if item.isLive {
-                    Text("此项属于云端 Live Photo；目前只支持静态预览，原件动态配对播放尚未接通。")
-                        .font(.caption).foregroundStyle(.secondary).padding(.horizontal)
                 }
             }
             .navigationTitle(item.node.name)
@@ -299,15 +380,62 @@ struct XDriveIOSNativeServerMediaPreview: View {
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected),
                       XDriveIOSNativePhotoOwnerScope.matches(auth.owner, expected)
                 else { return }
-                let media = try await XDriveIOSNativeMediaGalleryReader(
-                    owner: auth.owner, accessToken: auth.accessToken
-                ).preview(item)
-                try Task.checkCancellation()
-                guard phase == .active, previewRequestID == requestID,
-                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
-                else { return }
-                image = media.image
-                if let url = media.videoURL { player = AVPlayer(url: url) }
+                if item.isLive {
+                    let reader = XDriveIOSNativeMediaGalleryReader(
+                        owner: auth.owner, accessToken: auth.accessToken
+                    )
+                    do {
+                        let live = try await reader.livePreview(item)
+                        // If a logout/scene change races the final download,
+                        // discard both local originals before returning.
+                        guard !Task.isCancelled, phase == .active,
+                              previewRequestID == requestID,
+                              XDriveIOSNativePhotoOwnerScope.matches(
+                                login.owner, expected
+                              ),
+                              XDriveIOSNativePhotoOwnerScope.matches(
+                                auth.owner, expected
+                              ) else {
+                            live.files.discard()
+                            return
+                        }
+                        liveResources?.discard()
+                        liveResources = live.files
+                        liveOwner = expected
+                        image = live.image
+                        player = AVPlayer(url: live.files.motionURL)
+                        failure = nil
+                    } catch is CancellationError {
+                        throw CancellationError()
+                    } catch {
+                        // An unsupported or revoked pair is NEVER presented as
+                        // a working Live Photo. Retain a verified still where
+                        // possible; allow an explicit retry, not background polling.
+                        guard phase == .active, previewRequestID == requestID,
+                              XDriveIOSNativePhotoOwnerScope.matches(
+                                login.owner, expected
+                              ) else { return }
+                        failure = "Live 动态资源暂不可用；可重试配对，静态封面将独立读取。"
+                        if let still = try? await reader.thumbnail(item) {
+                            try Task.checkCancellation()
+                            guard phase == .active, previewRequestID == requestID,
+                                  XDriveIOSNativePhotoOwnerScope.matches(
+                                    login.owner, expected
+                                  ) else { return }
+                            image = still
+                        }
+                    }
+                } else {
+                    let media = try await XDriveIOSNativeMediaGalleryReader(
+                        owner: auth.owner, accessToken: auth.accessToken
+                    ).preview(item)
+                    try Task.checkCancellation()
+                    guard phase == .active, previewRequestID == requestID,
+                          XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
+                    else { return }
+                    image = media.image
+                    if let url = media.videoURL { player = AVPlayer(url: url) }
+                }
             } catch is CancellationError {
                 // The generation has retired. Do not display a stale error.
             } catch {
@@ -318,8 +446,8 @@ struct XDriveIOSNativeServerMediaPreview: View {
             }
         }
         .onChange(of: phase) { _ in
-            // iOS app switcher must not expose the previous signed still/video.
-            // A fresh active generation re-verifies the Owner before loading.
+            // iOS app switcher must not expose signed still/video or local
+            // Live originals. Foreground re-verifies Owner before fetching.
             retirePreview()
         }
         .onChange(of: login.owner) { _ in
@@ -336,6 +464,13 @@ struct XDriveIOSNativeServerMediaPreview: View {
         player = nil
         image = nil
         failure = nil
+        liveResources?.discard()
+        liveResources = nil
+        liveOwner = nil
+        livePlaybackRequest = nil
+        nativeLiveReady = false
+        nativeLiveUnavailable = false
+        showingLiveMotion = false
     }
 }
 
