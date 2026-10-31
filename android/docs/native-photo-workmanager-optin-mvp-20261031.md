@@ -1,8 +1,13 @@
 # Android Photos — explicit WorkManager auto-incremental MVP
 
-Date: 2026-10-31. Android native app only. Development child of #3351.
-Do not modify its started CI HEAD, nor merge this child before its own
-exact-HEAD Android + Final Gate verification.
+Date: 2026-10-31. Android native app only. PR #3359.
+The dependent #3351 exact-HEAD CI and Final Gate completed successfully
+and #3351 merged to master as b349b40347c956f8231334278a967608ea3d9f2c.
+This branch merged the verified master into its untested development HEAD,
+preserving the already-validated native Gallery-first navigation and the
+existing foreground backup controls, then retargeted #3359 to master. Only
+this PR's own exact-HEAD Android / applicable specialist workflows / Final
+Gate can authorize its master merge.
 
 ## Real implementation in this branch
 
