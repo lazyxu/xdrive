@@ -72,10 +72,11 @@ test('revoked PhotoKit permission cannot silently accept a manual original backu
 test('saved auto-backup status and enable action do not advertise success without Photos access', () => {
   const auto = backupScreen.slice(backupScreen.indexOf('Section("前台自动增量")'),
     backupScreen.indexOf('Section("可选系统后台原件备份")'))
-  const paused = auto.indexOf('if active.pausedForReview')
-  const blocked = auto.indexOf('else if photoAuthorization != .authorized && photoAuthorization != .limited')
-  const limited = auto.indexOf('else if photoAuthorization == .limited')
-  const enabled = auto.indexOf('Label("前台自动备份已开启"')
+  const savedStatus = auto.slice(auto.indexOf('if let active = controller.schedule, active.enabled'))
+  const paused = savedStatus.indexOf('if active.pausedForReview')
+  const blocked = savedStatus.indexOf('else if photoAuthorization != .authorized && photoAuthorization != .limited')
+  const limited = savedStatus.indexOf('else if photoAuthorization == .limited')
+  const enabled = savedStatus.indexOf('Label("前台自动备份已开启"')
   assert.ok(paused >= 0 && paused < blocked && blocked < limited && limited < enabled,
     'pending receipt pause outranks revoked/limited permission status')
   assert.match(auto, /备份计划已保存：照片权限不可用/)
