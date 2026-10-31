@@ -274,14 +274,14 @@ internal fun NativeLocalMediaStoreGallery(
                     modifier = Modifier.testTag("native-local-album-back")) {
                     Text("返回相册")
                 }
-            else TextButton(onClick = { libraryEpoch++ },
+            else TextButton(onClick = { cache.invalidate() },
                 modifier = Modifier.testTag("native-local-refresh")) { Text("刷新") }
         }
         if (failure != null) {
             Text(failure.orEmpty(), color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.padding(horizontal = 12.dp)
                     .testTag("native-local-error"))
-            TextButton(onClick = { libraryEpoch++ }) { Text("重试读取") }
+            TextButton(onClick = { cache.invalidate() }) { Text("重试读取") }
         }
         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
         if (albumsOnly && selectedAlbum == null) {
@@ -322,7 +322,7 @@ internal fun NativeLocalMediaStoreGallery(
             }
         } else {
             if (firstOffset > 0) TextButton(
-                onClick = { libraryEpoch++ },
+                onClick = { cache.invalidate() },
                 modifier = Modifier.testTag("native-local-back-to-start")) {
                 Text("返回最近照片 · 当前仅保留最近加载的 512 项")
             }
