@@ -34,7 +34,12 @@ test('native stop-only root is available offline and prevents new auto runs', ()
   assert.match(stop, /\.emergencyStopLocally\(\)/)
   assert.ok(stop.indexOf('disableAllOnThisDevice()') <
     stop.indexOf('emergencyStopLocally()'))
-  const logout = login.slice(login.indexOf('private func signOutSafely() async'))
+  const logoutStart = login.indexOf('private func signOutSafely(expectedOwner: XDriveNativeOwnerRoot) async')
+  assert.ok(logoutStart >= 0, 'native Owner-scoped logout must be present')
+  const logout = login.slice(logoutStart)
+  assert.match(logout, /XDriveIOSNativePhotoOwnerScope\.matches\(model\.owner, expectedOwner\)/)
+  assert.ok(logout.indexOf('XDriveIOSNativePhotoOwnerScope.matches(model.owner, expectedOwner)') <
+    logout.indexOf('XDriveIOSOriginalRunGate.shared.acquire()'))
   assert.match(logout, /XDriveIOSOriginalRunGate\.shared\.acquire\(\)/)
   assert.match(logout, /disableAllOnThisDevice\(\)/)
   assert.match(logout, /emergencyStopLocally\(\)/)
