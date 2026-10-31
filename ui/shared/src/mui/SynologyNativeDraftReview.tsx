@@ -28,13 +28,13 @@ export function XDriveSynologyNativeDraftReview({
     id: number
     state: 'authorized' | 'needs_inspection' | 'uncertain'
   } | null>(null)
-  const currentScope = useRef({ ownerScope, selectionID })
+  const currentScope = useRef({ client, ownerScope, selectionID })
   const attemptedRef = useRef(false)
   // Only an Agent-confirmed bind may be retired, and only after a fresh
   // owning-device draft inventory proves that Source is no longer unbound.
   const confirmedBoundSourceRef = useRef<number | null>(null)
   const mountedRef = useRef(false)
-  currentScope.current = { ownerScope, selectionID }
+  currentScope.current = { client, ownerScope, selectionID }
 
   useEffect(() => {
     mountedRef.current = true
@@ -74,8 +74,10 @@ export function XDriveSynologyNativeDraftReview({
   }, [client, ownerScope, revision])
 
   useEffect(() => {
+    // A replaced Host client may point to another owning Agent even when
+    // the Server Owner and share token remain textually identical.
     setConfirmed(false)
-  }, [ownerScope, selectionID])
+  }, [client, ownerScope, selectionID])
 
   const bind = (draft: XDriveSynologyNativeDraft) => {
     if (!confirmed || attemptedRef.current || workingID !== null || state.loading ||
@@ -84,6 +86,7 @@ export function XDriveSynologyNativeDraftReview({
       !state.items.some(item => item.source_id === draft.source_id)) return
     // Never automatically retry a lost Root-binding ACK. The Server may have
     // committed the original binding even if the browser never saw its reply.
+    const pinnedClient = client
     const pinnedScope = ownerScope
     const pinnedSelection = selectionID
     attemptedRef.current = true
@@ -92,7 +95,8 @@ export function XDriveSynologyNativeDraftReview({
     setOutcome(null)
     void client.bindNativeDraft(draft.source_id, pinnedSelection, pinnedScope).then(result => {
       if (!mountedRef.current) return
-      if (currentScope.current.ownerScope !== pinnedScope ||
+      if (currentScope.current.client !== pinnedClient ||
+        currentScope.current.ownerScope !== pinnedScope ||
         currentScope.current.selectionID !== pinnedSelection) {
         setOutcome({ id: draft.source_id, state: 'uncertain' })
         return
