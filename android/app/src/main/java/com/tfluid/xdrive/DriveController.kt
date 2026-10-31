@@ -46,6 +46,8 @@ data class DriveState(
     val nativePhotoBatchAlreadyVerified: Int = 0,
     val nativePhotoBatchNextAfterId: Long = 0,
     val nativePhotoBatchExhausted: Boolean = false,
+    /** Distinguish a Gallery batch from any other SAF/manual upload writer. */
+    val nativePhotoBatchRunning: Boolean = false,
     val loading: Boolean = false,
     /** True only for an explicitly cancellable Owner GET, not writes or SAF. */
     val discardableReadInFlight: Boolean = false,
@@ -1293,7 +1295,8 @@ class DriveController(
             nativePhotoBatchScanned = 0, nativePhotoBatchUploaded = 0,
             nativePhotoBatchAlreadyVerified = 0,
             nativePhotoBatchNextAfterId = startAfterId,
-            nativePhotoBatchExhausted = false)
+            nativePhotoBatchExhausted = false,
+            nativePhotoBatchRunning = true)
         request(isFileUpload = true) { ticket ->
             val sameOwner = {
                 ticket == generation && state.value.nativeUiSessionId == initial.nativeUiSessionId &&
@@ -1327,6 +1330,7 @@ class DriveController(
                     nativePhotoBatchAlreadyVerified = progress.alreadyVerified,
                     nativePhotoBatchNextAfterId = progress.nextAfterId,
                     nativePhotoBatchExhausted = progress.inventoryExhausted,
+                    nativePhotoBatchRunning = false,
                     error = null)
             } finally {
                 index.close()
@@ -1340,6 +1344,7 @@ class DriveController(
         mutableState.value = state.value.copy(
             loading = false, fileUploadActive = false, fileUploadPickerParent = null,
             fileUploadCommitted = false, fileUploadBytes = 0, fileUploadTotal = 0,
+            nativePhotoBatchRunning = false,
             error = "上传已取消或结果未确认，请刷新目录核对后再尝试。")
     }
 
@@ -4036,7 +4041,9 @@ class DriveController(
             } finally {
                 if (ticket == generation) mutableState.value =
                     state.value.copy(loading = false, discardableReadInFlight = false,
-                        destinationSubmitting = false)
+                        destinationSubmitting = false,
+                        nativePhotoBatchRunning = if (isFileUpload) false
+                            else state.value.nativePhotoBatchRunning)
             }
         }
     }
