@@ -107,6 +107,7 @@ test('native cloud originals clear revoked Owner pages and invalid Server respon
   assert.match(load, /auth = try await login\.verifiedAuthorization\(\)/)
   assert.match(load, /catch is CancellationError \{\s*throw CancellationError\(\)/)
   assert.match(load, /catch \{\s*guard self\?\.epoch == ticket else \{ return \}\s*self\?\.invalidate\(\)/)
+  assert.match(load, /guard self\?\.epoch == ticket else \{ return \}\s*guard XDriveIOSNativePhotoOwnerScope\.matches\(auth.owner, expected\)/)
   assert.match(load, /XDriveIOSNativePhotoOwnerScope\.matches\(auth.owner, expected\),\s*XDriveIOSNativePhotoOwnerScope\.matches\(login.owner, expected\)/)
   assert.match(load, /guard XDriveIOSNativeCloudOriginalModel\.canRetainPage\(after: error\) else \{\s*self\?\.invalidate\(\)/)
   assert.match(load, /旧页面已清除/)
