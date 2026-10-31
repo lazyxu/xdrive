@@ -24,6 +24,8 @@ enum ServerAddress {
 enum AuthFailure: Error {
     case invalidServer
     case invalidResponse
+    case invalidLANIP
+    case invalidLANProbe
     case redirectRefused
     case rejected
     case rateLimited
@@ -37,6 +39,10 @@ enum AuthFailure: Error {
                 return "请输入完整的 HTTPS 服务器地址，不包含路径或查询参数。"
             case .invalidResponse:
                 return "服务器返回的数据格式不正确，请确认这是 xDrive 服务。"
+            case .invalidLANIP:
+                return "内网 IP 必须是规范的私有 IPv4 地址；服务器本身使用 IP 时请留空此选项。"
+            case .invalidLANProbe:
+                return "内网 IP 未返回有效的 xDrive HTTPS 版本信息；为保护登录凭据已停止连接。"
             case .redirectRefused:
                 return "登录请求被重定向，请直接填写正确的 HTTPS 服务器地址。"
             case .rejected:

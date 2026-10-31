@@ -1,3 +1,5 @@
+> **当前策略（2026-10-31）**：用户端登录仅允许 HTTPS。下文历史阶段曾记录 HTTP LAN 手动切换和本机开发 HTTP 入口，均不代表新版 Desktop、Android、Web/PWA、xd CLI 仍允许 HTTP 登录。Server 内部 HTTP 反向代理与 Agent 的认证 Loopback IPC 不是面向用户的远端 Server 登录入口。
+
 ## Desktop 局域网首次信任：用户明确决定（TOFU）
 
 对于只部署了局域网私有 IP、没有公网域名的 xDrive，Desktop 在地址如 `https://192.168.2.4:8443` 出现 `server_tls_trust` 时显示 **「信任此局域网服务器」**。
@@ -73,7 +75,7 @@ Desktop 登录前的 `/api/v1/version` 检查现使用 Electron Main 的 Chromiu
 - 私有 LAN 入口必须是显式完整的 RFC1918 IPv4 根地址，例如 \`https://192.168.2.4:8443\`。公网入口必须为 \`https://drive.example.com:8443\` 这类 HTTPS 域名。URL 带账号密码、路径、参数、hash、奇异 IPv4、公共 IP 伪装内网地址、JS/File scheme 均拒绝。
 - 只记录 URL Origin（无路径、密码、Token），存在当前站点独立的 \`localStorage\`；不同 IP／域名站点没有共享浏览器存储，首次打开各自需要分别配置并可能重新登录。
 - 每个地址使用显式、新标签页的 \`noopener noreferrer\` 导航。没有后台 IP/域名探测、跨域 fetch、CORS 豁免、会话迁移、强制当前标签页重载或中断正在进行的浏览器上传；旧标签页保留当前任务。iOS PWA 中新窗口行为由系统决定。
-- LAN HTTPS 仍要求真实受信任证书及包含所访问 IP 的 SAN；不绕过警告。\`http://\` 的私有 LAN Origin 可以录入，但每次打开都必须主动确认其**明文登录风险**，绝不自动发送当前 Bearer/Refresh Token。用户必须自行确保该地址只在可信网络可达；该选择不是建议在日常环境使用 HTTP 密码登录。
+- **历史说明（已退役）**：LAN HTTPS 仍要求受信任 CA 和所访问 IP 的 SAN；Web/PWA 自 2026-10-31 起不再允许将私有 LAN HTTP Origin 保存或作为用户登录入口。旧文档所述明文风险确认功能不可再使用。
 - xDrive 当前 Caddy HTTP Web 监听默认 \`127.0.0.1:3000\`，HTTPS 域名证书不自动适用于 \`192.168.2.4\`。所以本阶段 **不承诺用户已经有可达的 HTTPS IP 入口或安全 HTTP LAN 入口**。切换只是访问已经由运维正确部署的入口；没有暗中开启 \`3000\` 或修改 \`8443\`。
 - 特别是家庭光猫 DMZ 已转发到 Linux 的情况下，擅自新增 LAN HTTP 监听存在公网明文暴露风险；后续必须独立审查防火墙/入站访问控制及 LAN HTTPS 身份后，才能授权真实 IP 登录部署。不要靠浏览器「忽略证书错误」获得安全会话。
 - Desktop 已有自由编辑的服务器地址与服务器专属的安全密码记录；本阶段仅增加醒目的「手动切换」入口，先确认退出当前 Agent 连接再由用户登录所选入口。不会静默复用另一个服务器地址的凭据、自动迁移同步根或接管后台任务。

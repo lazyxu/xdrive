@@ -2399,6 +2399,15 @@ async function runAgentAction<T>(operation: () => Promise<T>, refresh = true): P
   }
 }
 
+function desktopHTTPSLoginOrigin(value: string): boolean {
+  try {
+    const target = new URL(value)
+    return target.protocol === 'https:' && !!target.hostname &&
+      !target.username && !target.password && target.pathname === '/' &&
+      !target.search && !target.hash
+  } catch { return false }
+}
+
 async function attemptAutomaticLogin() {
   // Keep this decision in the auto-login owner, so fixture execution of the
   // standalone entrypoint exercises exactly the same failure semantics.
@@ -2407,6 +2416,14 @@ async function attemptAutomaticLogin() {
     /password|credential|unauthorized|forbidden|revoked|disabled|tls|pin|trust/i.test(code)
   const profile = automaticLoginProfile(loginHistory)
   if (!profile || !profile.encrypted_password || !securePasswordStorageAvailable()) return
+  if (!desktopHTTPSLoginOrigin(profile.server)) {
+    // A previously saved HTTP profile cannot silently bypass the current
+    // HTTPS-only login policy after an upgrade. Do not decrypt credentials.
+    lastAutoLoginError = '已保存的 HTTP 连接已停用，请填写可信 HTTPS 地址后重新登录。'
+    loginHistory = disableAutomaticLogin(loginHistory)
+    await persistLoginHistoryBestEffort()
+    return
+  }
   if (!agentState.connected || agentState.status?.configured) return
 
   // Keep the history identity of this attempt; newer user saves replace it.
@@ -7872,6 +7889,18 @@ function registerIPCHandlers() {
     lastAutoLoginError = ''
     if (!server || !username) {
       return { ok: false, error: { code: 'invalid_input', message: 'Server and username are required.' } }
+    }
+    // The authenticated Desktop IPC must not accept plaintext HTTP even when
+    // a saved legacy profile or a direct renderer IPC caller supplies it.
+    // Do this before reading stored passwords or contacting the Go Agent.
+    let loginOrigin: URL
+    try { loginOrigin = new URL(server) } catch {
+      return { ok: false, error: { code: 'invalid_server', message: 'Desktop 登录只支持完整的 HTTPS 根地址。' } }
+    }
+    if (loginOrigin.protocol !== 'https:' || !loginOrigin.hostname ||
+        loginOrigin.username || loginOrigin.password || loginOrigin.pathname !== '/' ||
+        loginOrigin.search || loginOrigin.hash) {
+      return { ok: false, error: { code: 'invalid_server', message: 'Desktop 登录只支持完整的 HTTPS 根地址。' } }
     }
     if (autoLogin && !rememberPassword) {
       return { ok: false, error: { code: 'invalid_input', message: 'Auto login requires remembered password.' } }

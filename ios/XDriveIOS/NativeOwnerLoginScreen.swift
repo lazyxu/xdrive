@@ -131,6 +131,17 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                 .textFieldStyle(.roundedBorder)
                 .accessibilityIdentifier("native-ios-login-server")
 
+            Text("内网 IP（可选）").font(.subheadline.weight(.medium))
+            TextField("192.168.2.4", text: $model.lanIPText)
+                .keyboardType(.numbersAndPunctuation)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .textFieldStyle(.roundedBorder)
+                .accessibilityIdentifier("native-ios-login-lan-ip")
+            Text("登录前检测一次内网 HTTPS；不可达或超时才使用上方域名。登录后固定已选入口，不自动切换；内网证书必须匹配 IP。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
             Text("用户名").font(.subheadline.weight(.medium))
             TextField("用户名", text: $model.username)
                 .textContentType(.username)

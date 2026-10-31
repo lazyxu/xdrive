@@ -223,6 +223,13 @@ type ConfirmAction = {
 }
 
 function initialSession(): AuthSession {
+  // Legacy localStorage credentials from an HTTP Origin may not be restored
+  // after HTTPS-only cutover. Remove them before any authenticated request.
+  if (typeof window !== 'undefined' && window.location.protocol !== 'https:') {
+    xDriveBrowserStorageRemove(AUTH_STORAGE_KEYS)
+    xDriveBrowserStorageRemove(COOKIE_MODE_KEY)
+    return { accessToken: '', refreshToken: '', accessExpiresAt: 0 }
+  }
   if (xDriveBrowserStorageRead(REMEMBER_LOGIN_KEY) === 'false') {
     // A previous interrupted opt-out must not resurrect old durable credentials.
     xDriveBrowserStorageRemove(AUTH_STORAGE_KEYS)

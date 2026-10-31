@@ -437,24 +437,24 @@ class DriveController(
     }
 
     fun savedRoute(input: String, allowHttp: Boolean = false): ConnectionRoute = try {
-        loadRoute(ServerAddress.parse(input, allowHttp).url)
+        loadRoute(ServerAddress.parse(input, false).url)
     } catch (_: IllegalArgumentException) { ConnectionRoute() }
 
     fun connect(input: String, allowHttp: Boolean, route: ConnectionRoute = ConnectionRoute()) {
         if (state.value.screen != Screen.CONNECT) return
         try {
-            val next = ServerAddress.parse(input, allowHttp)
+            val next = ServerAddress.parse(input, false)
             route.validate(next)
             invalidate()
             (api as? Closeable)?.close()
             api = null
             address = null
-            mutableState.value = DriveState(server = next.url, allowHttp = allowHttp, route = route)
-            if (!route.enabled) install(next, allowHttp, route, null)
+            mutableState.value = DriveState(server = next.url, allowHttp = false, route = route)
+            if (!route.enabled) install(next, false, route, null)
             else request { ticket ->
                 val ip = routeSelector(next, route) ?: throw ApiException(0, "Unable to select route", ApiFailureReason.CONNECTION)
                 checkCurrent(ticket)
-                install(next, allowHttp, route, ip)
+                install(next, false, route, ip)
             }
         } catch (_: IllegalArgumentException) {
             mutableState.value = state.value.copy(error = "服务器地址或内网 IP 配置无效。请检查完整服务器 URL；可选内网 IP 须为私有地址，不能与 IP 形式的服务器地址同时配置。")
@@ -563,7 +563,7 @@ class DriveController(
             mutableState.value = state.value.copy(error = "请输入用户名和密码。")
             return
         }
-        val next = try { ServerAddress.parse(serverInput, allowHttp) } catch (_: IllegalArgumentException) {
+        val next = try { ServerAddress.parse(serverInput, false) } catch (_: IllegalArgumentException) {
             mutableState.value = state.value.copy(error = "请输入完整有效的 HTTPS 服务器地址。")
             return
         }
@@ -584,11 +584,11 @@ class DriveController(
                 address = next
                 session = result
                 keepLogin = rememberSession && next.url.startsWith("https://")
-                saveConnection(next.url, allowHttp)
+                saveConnection(next.url, false)
                 saveRoute(next.url, route)
                 mutableState.value = DriveState(
                     screen = if (result.mustChangePassword) Screen.PASSWORD else Screen.FILES,
-                    server = next.url, allowHttp = allowHttp, route = route, connectionIp = ip,
+                    server = next.url, allowHttp = false, route = route, connectionIp = ip,
                     username = result.username,
                     nativeUiSessionId = ++nativeUiSessionCounter,
                 )

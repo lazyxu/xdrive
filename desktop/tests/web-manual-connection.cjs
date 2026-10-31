@@ -29,9 +29,9 @@ test('manual LAN origin accepts only canonical private IPv4 with explicit scheme
       origin: 'https://' + ip + ':8443', insecure: false, error: '',
     })
   }
-  assert.deepEqual(check('lan', 'http://192.168.2.4:3000'), {
-    origin: 'http://192.168.2.4:3000', insecure: true, error: '',
-  })
+  assert.ok(check('lan', 'http://192.168.2.4:3000').error,
+    'HTTP private LAN must never be an enabled browser entry')
+  assert.equal(check('lan', 'http://192.168.2.4:3000').origin, '')
   for (const candidate of [
     'https://8.8.8.8:8443', 'https://172.32.0.1',
     'https://127.0.0.1', 'https://169.254.0.1', 'https://0.0.0.0',
@@ -72,8 +72,8 @@ test('Web/Mobile Web/PWA login and account menu expose manual origin navigation 
   assert.match(dialog, /data-xdrive-open-manual-lan/)
   assert.match(dialog, /data-xdrive-open-manual-public/)
   assert.match(dialog, /target="_blank" rel="noopener noreferrer"/)
-  assert.match(dialog, /allowInsecureLAN/)
-  assert.match(dialog, /lanTarget\.insecure/)
+  assert.doesNotMatch(dialog, /allowInsecureLAN|setAllowInsecureLAN|明文登录风险/)
+  assert.match(dialog, /lanReady = !lanTarget\.error && lanTarget\.origin !== currentOrigin/)
   assert.match(dialog, /HTTPS.*证书/)
   assert.match(dialog, /window\.location\.origin/)
   assert.match(dialog, /window\.localStorage\.(?:getItem|setItem)/)

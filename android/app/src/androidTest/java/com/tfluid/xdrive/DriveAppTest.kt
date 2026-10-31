@@ -2209,23 +2209,25 @@ class DriveAppTest {
         compose.onNodeWithTag("request-error").assertDoesNotExist()
     }
 
-    @Test fun cleartextRequiresExplicitOptIn() {
+    @Test fun cleartextLoginIsAlwaysRejectedWithNoUnsafeOptIn() {
         compose.setContent { XDriveTheme { DriveApp(controller, galleryFirstOnLogin = false) } }
         compose.onNodeWithTag("server").performTextInput("http://drive.example:1080")
         compose.onNodeWithTag("username").performTextInput("owner")
         compose.onNodeWithTag("password").performTextInput("fixture-password")
-        // The unified form never stores a cleartext HTTP refresh credential.
-        compose.onNodeWithTag("keep-login").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithTag("connection-advanced").assertDoesNotExist()
+        compose.onNodeWithTag("allow-http").assertDoesNotExist()
         compose.onNodeWithTag("auth-submit").performScrollTo().performClick()
         compose.waitUntil(timeoutMillis = 10_000) { controller.state.value.error != null }
         compose.onNodeWithTag("request-error").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithTag("connection-advanced").performScrollTo().performClick()
-        compose.onNodeWithTag("allow-http").performScrollTo().performClick()
-        compose.onNodeWithTag("auth-submit").performScrollTo().performClick()
-        compose.waitUntil(timeoutMillis = 10_000) {
-            controller.state.value.screen == Screen.FILES && controller.state.value.loaded
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(Screen.CONNECT, controller.state.value.screen)
+            org.junit.Assert.assertNull(controller.state.value.connectionIp)
         }
-        compose.onNodeWithText("假期照片").assertIsDisplayed()
+        // No second submit can override the HTTPS-only controller policy.
+        compose.onNodeWithTag("auth-submit").performScrollTo().performClick()
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(Screen.CONNECT, controller.state.value.screen)
+        }
     }
 
     @Test fun unifiedLoginValidatesLanAndClearsStaleOriginSettings() {

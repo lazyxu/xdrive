@@ -13,7 +13,7 @@ const {
 const mainPath = path.join(__dirname, '..', 'src', 'main', 'index.cts')
 const required = [
   'saveLoginHistory', 'persistLoginHistoryBestEffort',
-  'loginHistorySnapshot', 'attemptAutomaticLogin',
+  'loginHistorySnapshot', 'desktopHTTPSLoginOrigin', 'attemptAutomaticLogin',
 ]
 const oldServer = 'https://old-auto-race.example.invalid'
 const newerServer = 'https://new-manual-race.example.invalid'

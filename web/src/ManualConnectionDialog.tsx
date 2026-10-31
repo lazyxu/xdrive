@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Alert, Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, Stack, TextField, Typography } from '@mui/material'
+import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack, TextField, Typography } from '@mui/material'
 import {
   XDRIVE_MANUAL_LAN_ENTRY_KEY,
   XDRIVE_MANUAL_PUBLIC_ENTRY_KEY,
@@ -18,7 +18,6 @@ export default function XDriveManualConnectionDialog({
 }) {
   const [lan, setLan] = useState('')
   const [publicURL, setPublicURL] = useState('')
-  const [allowInsecureLAN, setAllowInsecureLAN] = useState(false)
   const [message, setMessage] = useState('')
   const currentOrigin = window.location.origin
 
@@ -33,14 +32,12 @@ export default function XDriveManualConnectionDialog({
       setLan('')
       setPublicURL(!currentPublic.error ? currentPublic.origin : '')
     }
-    setAllowInsecureLAN(false)
     setMessage('')
   }, [open, currentOrigin])
 
   const lanTarget = xDriveManualEndpoint('lan', lan)
   const publicTarget = xDriveManualEndpoint('public', publicURL)
-  const lanReady = !lanTarget.error && lanTarget.origin !== currentOrigin &&
-    (!lanTarget.insecure || allowInsecureLAN)
+  const lanReady = !lanTarget.error && lanTarget.origin !== currentOrigin
   const publicReady = !publicTarget.error && publicTarget.origin !== currentOrigin
 
   const save = () => {
@@ -79,25 +76,12 @@ export default function XDriveManualConnectionDialog({
             autoComplete="off" value={lan}
             onChange={(event) => {
               setLan(event.target.value)
-              setAllowInsecureLAN(false)
               setMessage('')
             }}
             error={Boolean(lan.trim() && lanTarget.error)}
             helperText={lan.trim() && lanTarget.error
-              ? lanTarget.error : '只允许私有 IPv4。HTTPS IP 需要浏览器信任并且证书包含该 IP。'}
+              ? lanTarget.error : '只允许私有 IPv4 的 HTTPS 入口；浏览器必须信任 CA，证书必须包含 IP SAN。'}
           />
-          {lanTarget.insecure && !lanTarget.error && (
-            <Alert severity="warning">
-              这个 LAN HTTP 地址没有加密。用户名、密码以及后续 Token 可能被局域网窃听。
-              当前设备若使用 DMZ，开放 HTTP 端口前必须另行检查防火墙；不建议作为日常登录入口。
-              <FormControlLabel
-                sx={{ display: 'flex', mt: 0.5 }}
-                control={<Checkbox size="small" checked={allowInsecureLAN}
-                  onChange={(_event, checked) => setAllowInsecureLAN(checked)} />}
-                label="我了解明文登录风险，仍要手动打开此私网入口"
-              />
-            </Alert>
-          )}
           <TextField size="small" fullWidth label="公网 HTTPS 域名入口"
             placeholder="https://drive.example.com:8443"
             autoComplete="off" value={publicURL}

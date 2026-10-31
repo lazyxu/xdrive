@@ -46,37 +46,30 @@ class AuthToggleUiTest {
         }
     }
 
-    @Test fun mixedCaseHttpCannotOfferCredentialPersistence() {
+    @Test fun mixedCaseHttpNeverEnablesUnsafeLoginTransport() {
         formState = DriveState(server = "HTTP://192.168.1.2")
         showForm()
-        compose.onNodeWithTag("keep-login")
-            .performScrollTo().assertIsOff().assertIsNotEnabled()
-        compose.onNodeWithText("明文 HTTP 连接不能保持登录，请尽量使用 HTTPS。")
-            .performScrollTo().assertIsDisplayed()
-        compose.onNodeWithTag("connection-advanced").performScrollTo().assertIsDisplayed().performClick()
-        compose.onNodeWithTag("allow-http")
-            .performScrollTo().assertIsOff().assertIsEnabled().performClick()
-        compose.onNodeWithTag("allow-http").assertIsOn()
+        // No switch can authorize plaintext: even a stale HTTP input can
+        // never set the old allowHttp transport flag or persist it as opt-in.
+        compose.onNodeWithTag("connection-advanced").assertDoesNotExist()
+        compose.onNodeWithTag("allow-http").assertDoesNotExist()
+        compose.onNodeWithTag("keep-login").performScrollTo().assertIsOn()
         compose.onNodeWithTag("username").performTextInput("owner")
         compose.onNodeWithTag("password").performTextInput("fixture-only")
         compose.onNodeWithTag("auth-submit").performScrollTo().performClick()
-        compose.runOnIdle {
-            Assert.assertEquals(true to false, submitted)
-        }
+        compose.runOnIdle { Assert.assertEquals(false to true, submitted) }
     }
 
-    @Test fun loginInFlightDisablesBothAuthToggles() {
+    @Test fun loginInFlightDisablesKeepLoginWithNoUnsafeToggle() {
         formState = DriveState(server = "https://drive.example")
         showForm()
-        compose.onNodeWithTag("connection-advanced").performScrollTo().assertIsDisplayed().performClick()
         compose.onNodeWithTag("keep-login").performScrollTo().assertIsEnabled()
-        compose.onNodeWithTag("allow-http").performScrollTo().assertIsEnabled()
+        compose.onNodeWithTag("allow-http").assertDoesNotExist()
+        compose.onNodeWithTag("connection-advanced").assertDoesNotExist()
         compose.runOnIdle { formState = formState.copy(loading = true) }
         compose.onNodeWithTag("keep-login").assertIsNotEnabled()
-        compose.onNodeWithTag("allow-http").assertIsNotEnabled()
-        compose.onNodeWithTag("connection-advanced").assertIsNotEnabled()
+        compose.onNodeWithTag("allow-http").assertDoesNotExist()
         compose.runOnIdle { formState = formState.copy(loading = false) }
         compose.onNodeWithTag("keep-login").assertIsEnabled()
-        compose.onNodeWithTag("allow-http").assertIsEnabled()
     }
 }

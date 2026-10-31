@@ -45,6 +45,7 @@ function createBrowser(fetchResponse = () => { throw new Error('Unexpected fetch
     console, Date: Clock, Headers, Response, FormData, Blob, File,
     URL, TextEncoder, Uint8Array, ArrayBuffer, ReadableStream,
     AbortController, DOMException, crypto: webcrypto,
+    location: { protocol: 'https:', origin: 'https://drive.example.test' },
     performance: { now: () => now },
     XMLHttpRequest: UploadRequest,
     setTimeout(callback, milliseconds) {
