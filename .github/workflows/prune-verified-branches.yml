@@ -62,6 +62,7 @@ jobs:
               [2722, 2721],
               [2729, 2721], [2730, 2721], [2731, 2721],
               [3330, 3331], // iOS native direct-entry duplicate superseded by merged WebKit retirement
+              [3382, 3384], // closed mobile-only login draft source subsumed in cross-host PR
             ]);
 
             // Deliberately retired historical heads: all values are immutable
@@ -88,6 +89,44 @@ jobs:
                 retainedDevBranch: 'refactor/files-shared-location-ancestors-20261030',
                 retainedDevSha: '81448e43567d9949e14fdb7d514b8f411a3d9571',
                 why: 'source SHA retained by exact development integration head; not master acceptance',
+              }],
+              // Source tips with proven commit ancestry to already-merged consolidation PRs.
+              ['fix/files-cursor-cycle-guard-20261030@0acf1e8df5a815a5b7001e17766c1d3f22fe120d', {
+                mergedPullAncestor: 3230,
+                mergedPullHeadSha: '14e3292057c3bc21f8a31e5b1d0173bdf1a0014a',
+                why: 'exact source tip is an ancestor of merged master PR #3230 head',
+              }],
+              ['fix/files-readonly-abort-boundary-20261030@4a2fc96ed6a698cd7e47355e1f86ecd5cff0f02d', {
+                mergedPullAncestor: 3230,
+                mergedPullHeadSha: '14e3292057c3bc21f8a31e5b1d0173bdf1a0014a',
+                why: 'exact source tip is an ancestor of merged master PR #3230 head',
+              }],
+              ['fix/shared-virtual-range-window-integrity-20261030@9071552f4cf88817e2d517a8f9c83248a164546c', {
+                mergedPullAncestor: 3240,
+                mergedPullHeadSha: '257b1b47aed27a87040fbac2e18b9ae0954e9de2',
+                why: 'exact source tip is an ancestor of merged master PR #3240 head',
+              }],
+              ['fix/shared-virtual-snapshot-admission-20261030@a3f4fed6cf972f731eecfe29a82581d72112bd4f', {
+                mergedPullAncestor: 3240,
+                mergedPullHeadSha: '257b1b47aed27a87040fbac2e18b9ae0954e9de2',
+                why: 'exact source tip is an ancestor of merged master PR #3240 head',
+              }],
+              ['fix/files-preview-canonical-read-id-20261030@6ba93902c6ad9b90965567626f4050cd13f52eec', {
+                mergedPullAncestor: 3246,
+                mergedPullHeadSha: '7496e170f72411f79b05c2a9043142dbbd89d118',
+                why: 'exact source tip is an ancestor of merged master PR #3246 head',
+              }],
+              // Identical alternate refs of current Android PR heads. Wait for
+              // exact PR head merge, then retire aliases without touching PR refs.
+              ['fix/android-local-viewer-touch-focus-20261031@af37b139d2a6efc133c854081ec930d3ea7bb46f', {
+                mergedPullAncestor: 3391,
+                mergedPullHeadSha: 'af37b139d2a6efc133c854081ec930d3ea7bb46f',
+                why: 'duplicate branch tip identical to merged Android local Viewer PR #3391',
+              }],
+              ['fix/android-cloud-viewer-touch-focus-20261031@869abc93b248eb45b8c3e13e80049a05d20fcea6', {
+                mergedPullAncestor: 3392,
+                mergedPullHeadSha: '869abc93b248eb45b8c3e13e80049a05d20fcea6',
+                why: 'duplicate branch tip identical to merged Android cloud Viewer PR #3392',
               }],
               ['feat/sync-run-outcome-telemetry-p0-p2-20261016@d2d9e87c7f1597ab0412c101806218a9c1acf17d', {
                 closedIssue: 2524,
@@ -193,7 +232,26 @@ jobs:
               const expectedSHA = tip.slice(at + 1);
               if (!branchName || !/^[0-9a-f]{40}$/.test(expectedSHA)) continue;
               let accepted = true;
-              if (policy.closedPull) {
+              // Require an exact merged integration PR head containing this source
+              // and a reachable master merge commit (not merely matching filenames).
+              if (accepted && policy.mergedPullAncestor) {
+                const {data: integrated} = await github.rest.pulls.get({
+                  owner, repo, pull_number: policy.mergedPullAncestor,
+                });
+                accepted = Boolean(integrated.merged_at && integrated.merge_commit_sha &&
+                  integrated.base?.ref === defaultBranch &&
+                  integrated.head?.repo?.full_name === repository &&
+                  integrated.head?.sha === policy.mergedPullHeadSha &&
+                  await isAcceptedAncestor(integrated.merge_commit_sha));
+                if (accepted) {
+                  const {data: ancestry} = await github.rest.repos.compareCommits({
+                    owner, repo, base: expectedSHA, head: policy.mergedPullHeadSha,
+                  });
+                  accepted = ancestry.behind_by === 0 &&
+                    (ancestry.status === 'ahead' || ancestry.status === 'identical');
+                }
+              }
+              if (accepted && policy.closedPull) {
                 const {data: source} = await github.rest.pulls.get({
                   owner, repo, pull_number: policy.closedPull,
                 });
@@ -348,6 +406,35 @@ jobs:
                 if (!retained) {
                   report.push([name, 'KEEP: retained development tip changed or absent',
                     devPolicy.retainedDevBranch]);
+                  skipped++;
+                  continue;
+                }
+              }
+              // Repeat source-to-merged-PR ancestry checks just before deletion.
+              if (devPolicy?.mergedPullAncestor && retiredTips.has(tip)) {
+                let verified = false;
+                try {
+                  const {data: integrated} = await github.rest.pulls.get({
+                    owner, repo, pull_number: devPolicy.mergedPullAncestor,
+                  });
+                  if (integrated.merged_at && integrated.merge_commit_sha &&
+                      integrated.base?.ref === defaultBranch &&
+                      integrated.head?.repo?.full_name === repository &&
+                      integrated.head?.sha === devPolicy.mergedPullHeadSha &&
+                      await isAcceptedAncestor(integrated.merge_commit_sha)) {
+                    const {data: cmp} = await github.rest.repos.compareCommits({
+                      owner, repo, base: branch.commit.sha,
+                      head: devPolicy.mergedPullHeadSha,
+                    });
+                    verified = cmp.behind_by === 0 &&
+                      (cmp.status === 'ahead' || cmp.status === 'identical');
+                  }
+                } catch (error) {
+                  if (error.status !== 404) throw error;
+                }
+                if (!verified) {
+                  report.push([name, 'KEEP: merged consolidation provenance changed',
+                    'PR #' + devPolicy.mergedPullAncestor]);
                   skipped++;
                   continue;
                 }
