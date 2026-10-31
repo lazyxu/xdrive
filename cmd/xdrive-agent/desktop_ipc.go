@@ -3974,7 +3974,10 @@ func (h *desktopIPCHandler) cloudCreateShare(w http.ResponseWriter, r *http.Requ
 		NodeID       uint64 `json:"node_id"`
 		ExpiresAt    string `json:"expires_at,omitempty"`
 		Password     string `json:"password,omitempty"`
-		Access    string `json:"access"`
+		Access       string `json:"access"`
+		// Older Desktop clients can still send the retired limit.
+		// Decode for wire compatibility but do not enforce or forward it.
+		MaxDownloads int64 `json:"max_downloads,omitempty"`
 	}
 	if !decodeDesktopIPCJSON(w, r, &input) {
 		return

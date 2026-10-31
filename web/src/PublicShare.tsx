@@ -55,7 +55,7 @@ export default function PublicShareView({ token }: { token: string }) {
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const folderInputRef = useRef<HTMLInputElement>(null)
+  const folderInputRef = useRef<HTMLInputElement | null>(null)
   const [zipTaskID, setZipTaskID] = useState('')
   const [zipNotice, setZipNotice] = useState('')
   const [zipError, setZipError] = useState('')
@@ -207,7 +207,10 @@ export default function PublicShareView({ token }: { token: string }) {
   const canBrowse = shareEligible && grants.list
   const canPreview = canBrowse && grants.preview
   const canDownload = canBrowse && grants.download
-  const canUpload = canBrowse && share?.type === 'dir' && grants.upload === true
+  // Upload is Share-specific, not an Owner FileExplorer write grant. Old
+  // Servers omit this field, which must fail closed.
+  const canUpload = canBrowse && share?.type === 'dir' &&
+    share?.capabilities?.upload === true
   const canDownloadZip = canDownload && grants.downloadZip
   const canStartDownload = canDownload && !downloading
   const canStartZip = canDownloadZip && !downloading
@@ -505,7 +508,6 @@ export default function PublicShareView({ token }: { token: string }) {
 
               {share.type === 'dir' ? (
                 <>
-                  {uploadProgress ? <Typography role="status" sx={{ px: 0.5 }}>{uploadProgress}</Typography> : null}
                   <Box data-xdrive-public-share-zip-status-slot
                     aria-live="polite" aria-busy={zipPreparing || undefined}
                     sx={{ height: 24, minHeight: 24, px: 0.5, minWidth: 0 }}>
@@ -631,6 +633,12 @@ export default function PublicShareView({ token }: { token: string }) {
               flexDirection: 'column', gap: 0.5,
             }}>
             {share && error ? <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert> : null}
+            {share?.type === 'dir' && uploadProgress ? (
+              <Typography role="status" variant="caption"
+                sx={{ p: 1.25, bgcolor: 'background.paper', borderRadius: 1.5, boxShadow: 2 }}>
+                {uploadProgress}
+              </Typography>
+            ) : null}
             {share && notice ? (
               <Typography role="status" variant="caption"
                 sx={{ p: 1.25, bgcolor: 'background.paper', borderRadius: 1.5, boxShadow: 2 }}>
