@@ -212,6 +212,134 @@ assert.equal(sameHome.launched.length, 0, 'repeat All tab is idempotent')
 sameHome.select('mine')
 assert.deepEqual(sameHome.launched, [mine], 'Mine remains a separate fixed tab')
 
+
+// The original Web Mobile App header Back callback is evaluated directly with
+// deferred real-controller results; this is not a reimplemented navigator.
+function originalMobileHeaderBack(env) {
+  const ast = ts.createSourceFile('App.tsx', appSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  const declarations = []
+  const visit = node => {
+    if (ts.isVariableDeclaration(node) && node.name.getText(ast) === 'goBackWithinMobileFeature')
+      declarations.push(node.getText(ast))
+    ts.forEachChild(node, visit)
+  }
+  visit(ast)
+  assert.equal(declarations.length, 1, 'one original mobile feature Back callback')
+  const js = ts.transpileModule(
+    'function getHandler() { const ' + declarations[0] + '; return goBackWithinMobileFeature; }',
+    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } },
+  ).outputText
+  return new Function(...Object.keys(env), js + '\nreturn getHandler();')(...Object.values(env))
+}
+const filesBackCrumbs = [
+  { id: 1, name: '根目录' }, { id: 4, name: '父目录' }, { id: 9, name: '子目录' },
+]
+const filesChildRoute = { app: 'files', params: { dir: 9 } }
+function filesBackHarness(route = filesChildRoute, overrides = {}) {
+  const launched = []
+  const reads = []
+  const pending = []
+  const location = { hash: testCanonicalHash(route) }
+  const context = { current: { owner, route } }
+  const mobileParent = nav.xDriveMobileFeatureParentRoute(route)
+  const crumbs = overrides.crumbs ?? filesBackCrumbs
+  const mobileFolderParent = route.app === 'files' && crumbs.length > 1
+    ? crumbs[crumbs.length - 2] : null
+  const back = originalMobileHeaderBack({
+    mobileAlbumBackRef: { current: overrides.albumBack ?? null },
+    xDriveMobileAlbumOwnsBack: nav.xDriveMobileAlbumOwnsBack,
+    route, mobileOwnerScope: owner, mobileParent, mobileFolderParent,
+    crumbs, mobileBackContextRef: context,
+    xDriveWebAppHash: testCanonicalHash, window: { location },
+    loadDirectory: (id, nextCrumbs) => {
+      reads.push({ id, crumbs: nextCrumbs })
+      return new Promise(resolve => pending.push(resolve))
+    },
+    launchWebApp: (next, options) => launched.push({ next, options }),
+  })
+  return { back, launched, reads, pending, location, context }
+}
+const flushBack = async (h, committed) => {
+  assert.equal(h.pending.length, 1)
+  h.pending[0](committed)
+  await Promise.resolve()
+}
+{
+  const h = filesBackHarness()
+  h.back()
+  assert.deepEqual(h.reads, [{ id: 4, crumbs: filesBackCrumbs.slice(0, -1) }])
+  assert.deepEqual(h.launched, [], 'pending authenticated Files parent Range cannot rewrite URL')
+  await flushBack(h, true)
+  assert.deepEqual(h.launched, [{ next: { app: 'files', params: { dir: 4 } },
+    options: { replace: true } }], 'only committed parent Range permits header Back')
+}
+{
+  const h = filesBackHarness()
+  h.back()
+  await flushBack(h, false)
+  assert.deepEqual(h.launched, [], 'failed or superseded first Range preserves old route')
+}
+{
+  const h = filesBackHarness()
+  h.back()
+  h.location.hash = 'gallery|section=library'
+  await flushBack(h, true)
+  assert.deepEqual(h.launched, [], 'switching to Gallery while Files Back is pending wins')
+}
+{
+  const h = filesBackHarness()
+  h.back()
+  h.context.current.owner = 'https://example.test:other'
+  await flushBack(h, true)
+  assert.deepEqual(h.launched, [], 'late old-Owner receipt cannot navigate new Owner')
+}
+{
+  const h = filesBackHarness()
+  h.back()
+  h.context.current.route = { app: 'files', params: { dir: 9 } }
+  await flushBack(h, true)
+  assert.deepEqual(h.launched, [], 'same Hash after a later A→B→A intent is still stale')
+}
+{
+  const route = { app: 'files', params: { dir: 9, select: 42 } }
+  const h = filesBackHarness(route)
+  h.back()
+  assert.equal(h.reads.length, 0, 'selection Back clears selected file before parent folder')
+  assert.deepEqual(h.launched, [{
+    next: { app: 'files', params: { dir: 9 } }, options: { replace: true },
+  }])
+}
+{
+  let called = 0
+  const route = { app: 'gallery', params: { section: 'albums' } }
+  const h = filesBackHarness(route, { albumBack: { owner, back: () => { called += 1 } } })
+  h.back()
+  assert.equal(called, 1, 'Album owns Back through the existing shared Gallery')
+  assert.deepEqual(h.launched, [])
+  assert.deepEqual(h.reads, [])
+}
+{
+  const route = { app: 'gallery', params: { section: 'albums' } }
+  const h = filesBackHarness(route)
+  h.back()
+  assert.deepEqual(h.launched, [{ next: library, options: { replace: true } }],
+    'Albums index keeps the ordinary Gallery-internal parent')
+}
+const controllerSource = readFileSync(resolve(here,
+  '../../ui/shared/src/mui/CloudFilesController.ts'), 'utf8')
+const controllerStart = controllerSource.indexOf('  const loadDirectory = useCallback')
+const controllerEnd = controllerSource.indexOf('\n\n  const refreshChangedDirectory', controllerStart)
+assert.ok(controllerStart > 0 && controllerEnd > controllerStart)
+const committedDirectory = controllerSource.slice(controllerStart, controllerEnd)
+assert.ok(committedDirectory.indexOf('xDriveAdmitCloudFilesCountedFirstPage(read.page)') >
+  committedDirectory.indexOf('requestID !== directoryRequestRef.current'))
+assert.ok(committedDirectory.indexOf('return true') >
+  committedDirectory.indexOf('setCrumbs(copiedCrumbs)'),
+  'Files Back promise resolves true only after Server first Range/crumbs commit')
+assert.match(appSource, /mobileBackContextRef\.current\.owner !== mobileOwnerScope/)
+assert.match(appSource, /mobileBackContextRef\.current\.route !== route/)
+assert.match(appSource, /window\.location\.hash !== fromHash/)
+
 const launcherSource = readFileSync(resolve(here, '../src/MobileFiveSlotNavigation.tsx'), 'utf8')
 const gallerySource = readFileSync(resolve(here, '../../ui/shared/src/mui/MediaGallery.tsx'), 'utf8')
 assert.match(appSource, /xDriveMobileAlbumOwnsBack\(route, mobileOwnerScope, albumBack\?\.owner \?\? null\)/)
