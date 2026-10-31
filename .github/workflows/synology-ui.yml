@@ -298,7 +298,15 @@ jobs:
           go test -count=1 ./internal/localbackupipc -run 'Test(Remote|OwnerQuota|OwnerFile|OwnerTextPreview|OwnerMediaRange|OwnerThumbnail|OwnerGallery|OwnerLiveMotion|ServerLogin|RecoveryReview)'
           go test -count=1 ./internal/client -run 'Test(DownloadVerifiedRange|OwnerThumbnail|MediaOwnerThumbnail|OwnerGallery|ReadVerifiedOwnerLiveMotion|OwnerLiveMotion)'
           go test -count=1 ./cmd/xdrive-agent -run 'Test(BackupOnly(CloudQuota|CloudFileRead|OwnerMediaRange|OwnerThumbnail)|OwnerGallery|OwnerLiveMotion)'
-          go test -count=1 ./cmd/xd -run 'TestBackup'
+          # Keep the existing real authenticated xd→owning-Agent IPC two-pass
+          # fixture in the DSM gate. Its Server responses are simulated:
+          # first-file and unchanged-file observations are not physical CAS proof.
+          go test -count=1 ./cmd/xd \
+            -run '^Test(Backup|HeadlessCLIInitAndIncrementalsShareOneAuthenticatedAgent)'
+          # Reuse the original Agent's per-file SQL receipt, no-change skip,
+          # and restart recovery safety regressions; no DSM-specific writer.
+          go test -count=1 ./cmd/xdrive-agent \
+            -run '^(TestCommonBatchFileAThenFileBThenUpdatedA|TestLocalCommonIncrementalSkipRechecksCurrentParentWithoutWrites|TestLocalCommonSkipRechecksCurrentFileBeforeCountingUnchanged|TestPrivateStageRestartOnlyHistoricalPhysicalReceiptCountsAsObserved|TestLocalCommonBatchFailedWorkerNeverReturnsConfirmedPartial)$'
       - name: Check Desktop and DSM shared backup presentation contracts
         run: node web/scripts/check-synology-desktop-backup-parity.mjs
       - name: Build isolated DSM-only shared MUI page
