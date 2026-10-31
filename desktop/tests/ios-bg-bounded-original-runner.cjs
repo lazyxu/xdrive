@@ -133,7 +133,15 @@ test('lost or cancelled BG writer preserves durable pause until explicit receipt
   const store = read('BGOriginalWindowStore.swift')
   assert.match(task, /var beganOriginalWrite = false/)
   assert.match(task, /var attemptedOwner: XDriveNativeOwnerRoot\?/)
-  assert.match(task, /attemptedOwner = owner[\s\S]*?beganOriginalWrite = true/)
+  assert.match(task, /attemptedOwner = owner[\s\S]*?onPotentialWrite: \{ beganOriginalWrite = true \}/)
+  assert.doesNotMatch(task, /attemptedOwner = owner\s*beganOriginalWrite = true/)
+  const runner = read('ForegroundPhotoBackupMVP.swift')
+  assert.match(runner, /onPotentialWrite: @MainActor @escaping \(\) -> Void = \{\}/)
+  assert.match(runner, /onPotentialWrite: onPotentialWrite/)
+  const writing = runner.slice(runner.indexOf('case .prepared:'),
+    runner.indexOf('case .creating, .uploading, .finalizing'))
+  assert.match(writing, /await onPotentialWrite\(\)\s*try Task.checkCancellation\(\)\s*_ = try await writer.uploadPrepared/)
+  assert.doesNotMatch(runner.slice(0, runner.indexOf('case .prepared:')), /await onPotentialWrite\(\)/)
   const cancelled = task.slice(task.indexOf('} catch is CancellationError {'),
     task.indexOf('private static func retryablePreflightNetworkFailure('))
   assert.match(cancelled, /if beganOriginalWrite, let attemptedOwner \{[\s\S]*?BGOriginalWindowStore\.shared\.pause\(/)
