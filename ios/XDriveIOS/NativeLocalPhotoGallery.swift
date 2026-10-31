@@ -399,14 +399,17 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
         .onChange(of: phase) { new in
             authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             if new != .active {
-                clearViewerTileAnchor()
                 if selected != nil {
+                    // Keep only the in-memory source anchor; dismissal still
+                    // rereads PhotoKit and checks current authorization.
+                    accessibilityFocusedTileID = nil
                     // The fullscreen Viewer owns its own privacy and PhotoKit
                     // revalidation. Retire the hidden wall, not the modal.
                     suspendForViewer()
                     page = nil
                     errorMessage = nil
                 } else {
+                    clearViewerTileAnchor()
                     invalidate()
                 }
             } else if selected != nil {

@@ -300,14 +300,17 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
         .onChange(of: phase) { state in
             permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             if state != .active {
-                clearViewerTileAnchor()
                 if selected != nil {
+                    // Keep the transient tile anchor only until reauthorized
+                    // Viewer dismissal; revoke accessibility focus immediately.
+                    accessibilityFocusedTileID = nil
                     // Redact the hidden album page, but let the fullscreen
                     // Viewer own its selected media and foreground recheck.
                     suspendForViewer()
                     page = nil
                     error = nil
                 } else {
+                    clearViewerTileAnchor()
                     invalidate()
                 }
             } else if selected != nil {

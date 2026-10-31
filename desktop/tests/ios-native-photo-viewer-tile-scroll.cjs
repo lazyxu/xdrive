@@ -64,8 +64,8 @@ for (const [name, view, permission] of [
     assert.ok(phaseStart >= 0 && phaseEnd > phaseStart);
     const phase = view.slice(phaseStart, phaseEnd);
     assert.ok(phase.includes(permission + ' = PHPhotoLibrary.authorizationStatus(for: .readWrite)'));
-    assert.match(phase, /if (?:new|state) != \.active \{\s*clearViewerTileAnchor\(\)\s*if selected != nil \{[\s\S]*?suspendForViewer\(\)\s*page = nil\s*(?:errorMessage|error) = nil/);
-    assert.match(phase, /\} else \{\s*invalidate\(\)\s*\}\s*\} else if selected != nil \{/);
+    assert.match(phase, /if (?:new|state) != \.active \{\s*if selected != nil \{[\s\S]*?accessibilityFocusedTileID = nil[\s\S]*?suspendForViewer\(\)\s*page = nil\s*(?:errorMessage|error) = nil/);
+    assert.match(phase, /\} else \{\s*clearViewerTileAnchor\(\)\s*invalidate\(\)\s*\}\s*\} else if selected != nil \{/);
     assert.match(phase, /if (?:authorization|permission) != \.authorized && (?:authorization|permission) != \.limited \{\s*clearViewerTileAnchor\(\)\s*invalidate\(\)/);
     assert.match(phase, /\} else \{\s*(?:refresh\(at: savedOffset\)|reload\(\))\s*\}/);
     // The Viewer revalidates its own PhotoKit asset on foreground return.
@@ -74,7 +74,7 @@ for (const [name, view, permission] of [
       phase.indexOf('} else {', phase.indexOf('if selected != nil {')));
     const foregroundViewer = phase.slice(phase.indexOf('} else if selected != nil {'),
       phase.lastIndexOf('} else {'));
-    assert.doesNotMatch(inactiveViewer, /selected = nil|invalidate\(\)|load\(offset:/);
+    assert.doesNotMatch(inactiveViewer, /selected = nil|viewerReturnID = nil|clearViewerTileAnchor\(\)|invalidate\(\)|load\(offset:/);
     assert.doesNotMatch(foregroundViewer, /refresh\(at: savedOffset\)|reload\(\)|load\(offset:/);
     assert.match(view, /\.fullScreenCover\(item: \$selected, onDismiss: \{ restoreAfterViewer\(\) \}\)/);
   });
