@@ -52,7 +52,9 @@ test('BGProcessingTask runs one scoped original only after approved native proof
   assert.match(boot, /XDriveIOSForegroundPhotoBackupMVP\(/)
   assert.match(boot, /approvedBackgroundGrant: approved/)
   assert.match(boot, /maximumNewOriginals: 1/)
-  assert.match(boot, /expirationHandler = \{ operation\.cancel\(\) \}/)
+  assert.match(boot, /task\.expirationHandler = \{[\s\S]*?guard activeRunID == runID else \{ return \}[\s\S]*?expiration\.systemExpired = true[\s\S]*?operation\.cancel\(\)/)
+  assert.match(boot, /if beganOriginalWrite, let attemptedOwner \{[\s\S]*?XDriveIOSBGOriginalWindowStore\.shared\.pause\(/)
+  assert.match(boot, /else if expiration\.systemExpired &&[\s\S]*?localStopVersion == stopVersionAtStart/)
   assert.match(boot, /hasTrustedBackgroundExecutionGrant: Bool \{ false \}/)
   assert.doesNotMatch(boot,
     /uploadPreparedOriginal\(|startUploadSession\(|createUploadSession\(|PHAsset\.fetchAssets\(/)

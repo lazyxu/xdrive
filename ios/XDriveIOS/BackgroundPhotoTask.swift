@@ -3,6 +3,13 @@ import Foundation
 import Photos
 import UIKit
 
+/// One BGTask invocation's expiration signal. It is actor-confined; manual
+/// revocation must never be mistaken for OS expiration.
+@MainActor
+private final class XDriveIOSBGExpirationSignal {
+    var systemExpired = false
+}
+
 /// One OS BGProcessingTask for a previously *explicitly approved* Owner.
 /// It now makes a real bounded media backup attempt, not merely a grant
 /// proof: photos, original video and both Live Photo resources use ONE
@@ -15,6 +22,11 @@ import UIKit
 enum XDriveIOSBackgroundPhotoTask {
     static let identifier = "com.lazyxu.xdrive.ios.photos.backup"
     @MainActor private static var active: Task<Void, Never>?
+    @MainActor private static var activeRunID: UUID?
+    // Incremented by explicit native local stop/revocation, not by an
+    // automatic system expiration. A late expired task cannot re-arm a
+    // previously stopped Owner's system schedule.
+    @MainActor private static var localStopVersion: UInt64 = 0
 
     static func registerAtLaunch() {
         _ = BGTaskScheduler.shared.register(
@@ -34,6 +46,9 @@ enum XDriveIOSBackgroundPhotoTask {
             task.setTaskCompleted(success: false)
             return
         }
+        let runID = UUID()
+        let stopVersionAtStart = localStopVersion
+        let expiration = XDriveIOSBGExpirationSignal()
         let operation = Task { @MainActor in
             var successful = false
             // Once an original writer starts, an interrupted create/finalize
@@ -42,6 +57,7 @@ enum XDriveIOSBackgroundPhotoTask {
             var attemptedOwner: XDriveNativeOwnerRoot?
             defer {
                 active = nil
+                activeRunID = nil
                 // success means the bounded local scan completed with no
                 // unresolved ACK; never means all iPhone photos are backed up.
                 task.setTaskCompleted(success: successful)
@@ -112,12 +128,21 @@ enum XDriveIOSBackgroundPhotoTask {
                     )
                 }
             } catch is CancellationError {
-                // A cancelled writer might already have committed remotely.
-                // Preserve an explicit pause even if it could not finish the
-                // normal record() call. No automatic resubmission.
                 if beganOriginalWrite, let attemptedOwner {
+                    // A cancelled writer might have committed remotely.
+                    // Only a trusted receipt review can clear this pause.
                     try? XDriveIOSBGOriginalWindowStore.shared.pause(
                         owner: attemptedOwner
+                    )
+                } else if expiration.systemExpired &&
+                          localStopVersion == stopVersionAtStart {
+                    // A one-shot OS request was consumed BEFORE any possible
+                    // UploadSession write. Re-arm at the Owner's *original*
+                    // advisory interval, not an immediate retry. The current
+                    // Task is cancelled, so the helper must use an explicit
+                    // system-expiration fence instead of Task cancellation.
+                    await resubmitOnlyIfStillApproved(
+                        afterSystemExpirationAt: stopVersionAtStart
                     )
                 }
             } catch {
@@ -136,7 +161,17 @@ enum XDriveIOSBackgroundPhotoTask {
             }
         }
         active = operation
-        task.expirationHandler = { operation.cancel() }
+        activeRunID = runID
+        task.expirationHandler = {
+            // The expiration callback may arrive off MainActor. Set the
+            // distinct system-expiration reason on MainActor BEFORE cancelling
+            // the operation; a manual stop never sets this marker.
+            Task { @MainActor in
+                guard activeRunID == runID else { return }
+                expiration.systemExpired = true
+                operation.cancel()
+            }
+        }
     }
 
     /// A one-off OS BG request is consumed when it fires. Network failure
@@ -154,20 +189,32 @@ enum XDriveIOSBackgroundPhotoTask {
         }
     }
 
-    private static func resubmitOnlyIfStillApproved() async {
+    @MainActor
+    private static func resubmitOnlyIfStillApproved(
+        afterSystemExpirationAt expectedStopVersion: UInt64? = nil
+    ) async {
         do {
-            try Task.checkCancellation()
+            if let expectedStopVersion {
+                guard localStopVersion == expectedStopVersion else { return }
+            } else {
+                try Task.checkCancellation()
+            }
             // A local revoke removes the background-readable credential.
-            // Re-read it after any suspension before submitting a new task;
-            // do not reuse an old copied grant or bypass server proof.
+            // Re-read it instead of using a copied stale grant. The exception
+            // for system expiration is limited to the cancellation check, NOT
+            // to any credential/Owner/expiry or explicit stop fence.
             guard let grant = try await XDriveIOSApprovedPhotoBGVault.shared.current(),
                   let owner = try? grant.ownerScope(),
                   grant.matches(owner) else { return }
-            try Task.checkCancellation()
+            if let expectedStopVersion {
+                guard localStopVersion == expectedStopVersion else { return }
+            } else {
+                try Task.checkCancellation()
+            }
             try scheduleApprovedProbe(afterMinutes: grant.intervalMinutes)
         } catch {
-            // Advisory OS scheduling is never a successful upload receipt.
-            // An unreadable/revoked grant cannot start a new task.
+            // No guaranteed OS scheduling, and no upload-success receipt.
+            // Unreadable, expired or revoked grant fails closed.
         }
     }
 
@@ -177,7 +224,15 @@ enum XDriveIOSBackgroundPhotoTask {
     /// separate immediate device-side fence.
     static func revokePendingRequests() {
         BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: identifier)
-        Task { @MainActor in active?.cancel() }
+        Task { @MainActor in
+            localStopVersion &+= 1
+            // A concurrently expiring read-only task may have re-submitted
+            // between the synchronous cancel and this actor turn. Cancel a
+            // second time *after* advancing the stop fence so no late
+            // approval can re-arm this user's explicit local opt-out.
+            BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: identifier)
+            active?.cancel()
+        }
     }
 
     /// OS scheduling is advisory, not a precise timer and not a promise
