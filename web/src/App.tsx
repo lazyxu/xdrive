@@ -100,7 +100,7 @@ import { useXDriveWebAppRuntime, xDriveCreateWebAppBrowseSession, xDriveClearPri
 import { xDriveWebAppRouteForWorkspaceKey, xDriveWebAppWorkspaceKey } from './webApps'
 import { XDriveMobileAllLauncher, XDriveMobileFiveSlotNavigation, XDriveMobileMinePage, xDriveBrowserMobileDestinations } from './MobileFiveSlotNavigation'
 import { xDriveMobileLauncherSections } from './mobileLauncherSections'
-import { xDriveInitialMobileNavigation, xDriveMobileFeatureParentRoute, xDriveMobileRouteForSlot, xDriveMobileSlotForRoute, xDriveRememberMobileNavigation, xDriveToggleMobileFavorite, xDriveSetMobileLauncherSearch, xDriveMobileMapFocused } from './mobileFiveSlotState'
+import { xDriveInitialMobileNavigation, xDriveMobileFeatureParentRoute, xDriveMobileRouteForSlot, xDriveMobileSlotForRoute, xDriveRememberMobileNavigation, xDriveToggleMobileFavorite, xDriveSetMobileLauncherSearch, xDriveRememberMobileGalleryAlbum, xDriveMobileMapFocused } from './mobileFiveSlotState'
 import type { XDriveMobileSlot } from './mobileFiveSlotState'
 import { createWebMediaGalleryDataSource } from './mediaGalleryAdapter'
 import { XDriveRoutedGalleryThumbnailBridge } from './routedGalleryThumbnailBridge'
@@ -1137,6 +1137,12 @@ function FileManager({
   }, [route, mobileOwnerScope, mobileAdminVerified])
   const currentMobileNavigation = mobileNavigation.ownerScope === mobileOwnerScope
     ? mobileNavigation : xDriveInitialMobileNavigation(mobileOwnerScope)
+  const rememberMobileGalleryAlbum = useCallback((albumID: string | null) => {
+    if (!mobileOwnerScope) return
+    setMobileNavigation(previous => xDriveRememberMobileGalleryAlbum(
+      previous, mobileOwnerScope, albumID,
+    ))
+  }, [mobileOwnerScope])
   // <main> survives app switches. A previous page's scrollTop must not shift
   // the first frame of a different app. The Viewer is a sibling overlay and
   // keeps the same appView, so its dedicated Gallery anchor remains intact.
@@ -2756,6 +2762,10 @@ function FileManager({
             initialSection={webMapScopeOwnerReady ? 'places' : route.app === 'gallery'
               ? route.params.section as MediaGallerySection | undefined
               : undefined}
+            initialMobileAlbumID={compactWorkspace && route.app === 'gallery' &&
+              route.params.section === 'albums'
+                ? currentMobileNavigation.galleryAlbumID ?? undefined : undefined}
+            onMobileAlbumSelectionChange={compactWorkspace ? rememberMobileGalleryAlbum : undefined}
             onSectionRouteChange={(section) => {
               if (route.app === 'gallery' && route.params.section !== section) {
                 launchWebApp({ app: 'gallery', params: { section } }, { replace: true })

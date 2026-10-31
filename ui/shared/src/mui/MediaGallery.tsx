@@ -670,6 +670,9 @@ export interface XDriveMediaGalleryPageProps {
   pageSize?: number
   shareDialog?: XDriveMediaGalleryShareDialogOptions
   initialSection?: MediaGallerySection
+  /** Owner-scoped Web Mobile tab-return hint; Server must reauthorize it. */
+  initialMobileAlbumID?: string
+  onMobileAlbumSelectionChange?: (albumID: string | null) => void
   initialMapPhotoScope?: XDriveBaiduMapPhotoScope
   initialBaiduNativeCamera?: XDriveBaiduNativeCameraSnapshot
   onMapModeHandoff?: (scope:XDriveBaiduMapPhotoScope,
@@ -699,6 +702,8 @@ export function XDriveMediaGalleryPage({
   pageSize = 100,
   shareDialog,
   initialSection,
+  initialMobileAlbumID,
+  onMobileAlbumSelectionChange,
   initialMapPhotoScope,
   initialBaiduNativeCamera,
   onMapModeHandoff,
@@ -2329,11 +2334,14 @@ export function XDriveMediaGalleryPage({
     }
     setAlbums((current) => current.filter((value) => value.id !== album.id))
     if (currentAlbum?.id === album.id) {
+      // Confirmed Server deletion invalidates a future tab-return hint.
+      if (mobileGalleryViewport) onMobileAlbumSelectionChange?.(null)
       setDraftFilters(emptyMediaGalleryFilterDraft)
       setQuery({})
       await loadFirstPage(null, {})
     }
-  }, [currentAlbum?.id, loadFirstPage, source])
+  }, [currentAlbum?.id, loadFirstPage, mobileGalleryViewport,
+    onMobileAlbumSelectionChange, source])
 
   const addToAlbum = useCallback(async (album: MediaAlbum, item: MediaItem) => {
     if (!source.addToAlbum || !album.revision) throw new Error('当前相册不可编辑')
@@ -2439,7 +2447,8 @@ export function XDriveMediaGalleryPage({
     // folder card click or Promise start as permission to clear the photo wall.
     const fromCommittedMobileIndex = mobileGalleryViewport && !fromCollections &&
       section === 'albums' && !currentAlbum && !currentFolderView
-    const commitAfterFirstRange = (fromCollections || fromCommittedMobileIndex) ? () => {
+    const rememberMobileAlbum = mobileGalleryViewport && Boolean(onMobileAlbumSelectionChange)
+    const commitAfterFirstRange = (fromCollections || fromCommittedMobileIndex || rememberMobileAlbum) ? () => {
       setCurrentFolderView(null)
       setSection('albums')
       setActiveMediaType('')
@@ -2450,6 +2459,12 @@ export function XDriveMediaGalleryPage({
         setQuery({})
       }
       if (fromCollections) setMobileCollectionsOverview(false)
+      if (rememberMobileAlbum) {
+        // The accepted first counted Range commits the Album and its route.
+        routeSectionAppliedRef.current = 'albums'
+        onSectionRouteChange?.('albums')
+        onMobileAlbumSelectionChange?.(album.id)
+      }
     } : undefined
     if (!fromCollections && !fromCommittedMobileIndex) {
       // Preserve the existing immediate route for wide Web/Desktop and
@@ -2464,7 +2479,29 @@ export function XDriveMediaGalleryPage({
     }
     void loadFirstPage(album, fromCollections || album.kind === 'smart' ? {} : query,
       null, null, 'default', null, null, null, commitAfterFirstRange)
-  }, [currentAlbum, currentFolderView, loadFirstPage, mobileGalleryViewport, query, section])
+  }, [currentAlbum, currentFolderView, loadFirstPage, mobileGalleryViewport,
+    onMobileAlbumSelectionChange, onSectionRouteChange, query, section])
+
+  // A new Web Gallery instance may re-enter the same verified Owner's last
+  // Album, but only after an authorized Gallery Range and fresh album list.
+  // Missing/revoked IDs stay on the index; no old tiles or bytes are reused.
+  const restoredMobileAlbumRef = useRef(false)
+  useEffect(() => {
+    if (restoredMobileAlbumRef.current || !mobileGalleryViewport ||
+        !initialMobileAlbumID || initialSection !== 'albums' ||
+        section !== 'albums' || !preferenceScope ||
+        acceptedFacetOwner !== preferenceScope) return
+    restoredMobileAlbumRef.current = true
+    if (currentAlbum) return // a later explicit selection always wins
+    const verifiedAlbum = albums.find(album => album.id === initialMobileAlbumID)
+    if (!verifiedAlbum) {
+      onMobileAlbumSelectionChange?.(null)
+      return
+    }
+    openAlbum(verifiedAlbum)
+  }, [acceptedFacetOwner, albums, currentAlbum, initialMobileAlbumID,
+    initialSection, mobileGalleryViewport, onMobileAlbumSelectionChange,
+    openAlbum, preferenceScope, section])
 
   // A cover click becomes a navigation intent. The old Places map is retained
   // until the FIRST authenticated Server cell Range succeeds. Never use a
@@ -3136,6 +3173,8 @@ export function XDriveMediaGalleryPage({
           routeSectionAppliedRef.current = mapReturn.section
           mapGalleryEntryReturnRef.current = null
           onSectionRouteChange?.(mapReturn.section)
+          if (mobileGalleryViewport && mapReturn.section === 'albums')
+            onMobileAlbumSelectionChange?.(mapReturn.album?.id ?? null)
         })
       return
     }
@@ -3193,6 +3232,8 @@ export function XDriveMediaGalleryPage({
       }
       setDraftFilters(nextDraft)
       setQuery(nextQuery)
+      if (mobileGalleryViewport && section === 'albums' && currentAlbum)
+        onMobileAlbumSelectionChange?.(null)
     }
     if (mobileGalleryViewport) {
       // Album/Person/Media-type/Places detail Back must not reset the 100k
@@ -3225,6 +3266,7 @@ export function XDriveMediaGalleryPage({
     preferenceScope,
     currentAlbum,
     onSectionRouteChange,
+    onMobileAlbumSelectionChange,
     query.nearby,
     query.bbox,
   ])
