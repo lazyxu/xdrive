@@ -66,8 +66,8 @@ class NativePhotoIntentCompactionTest {
         assertTrue(store.rows.any { it.id == pending.id &&
             it.phase == NativePhotoBackupPhase.UNKNOWN_ACK })
 
-        assertEquals(0, ledger.compactIndexedVerified { true /* pending is excluded */ }
-            .also { assertEquals(1, store.rows.size) } - 1)
+        assertEquals(1, ledger.compactIndexedVerified { true /* pending is excluded */ })
+        assertEquals(1, store.rows.size)
         assertEquals(NativePhotoBackupPhase.UNKNOWN_ACK, store.rows.single().phase)
     }
 
