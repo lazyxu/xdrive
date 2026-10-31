@@ -88,6 +88,9 @@ test('login suggestions are never durable passwords and do not migrate between O
   assert.match(login, /xDriveForgetWebLoginUsername\(selected\)/)
   assert.match(login, /data-xdrive-login-forget-username/)
   assert.match(login, /options=\{rememberedUsernames\}/)
+  // Autocomplete owns the actual textbox ID. Putting it only on TextField
+  // can leave a generated Mui ID and break the real Chromium login contract.
+  assert.match(login, /<Autocomplete\s+id="web-login-username"/)
   assert.match(login, /if \(reason !== 'reset'\) editLoginUsername\(value\)/)
   assert.match(login, /setPassword\(''\)/)
   assert.match(login, /xDriveBrowserStorageRemove\(LOGIN_DRAFT_USERNAME_KEY\)/)

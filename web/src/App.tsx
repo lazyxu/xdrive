@@ -852,6 +852,7 @@ function AuthView({
             helper={usernameError || ' '}
           >
             <Autocomplete
+              id="web-login-username"
               freeSolo
               clearOnBlur={false}
               options={rememberedUsernames}
@@ -866,7 +867,6 @@ function AuthView({
               renderInput={(params) => (
                 <TextField
                   {...params}
-                  id="web-login-username"
                   autoFocus
                   fullWidth
                   size="small"
