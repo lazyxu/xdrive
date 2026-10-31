@@ -30,7 +30,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 
-internal enum class NativePhotoBatchConsent { REGISTER_DEVICE, START_BATCH }
+internal enum class NativePhotoBatchConsent {
+    REGISTER_DEVICE, START_BATCH, ENABLE_AUTO, DISABLE_AUTO,
+}
 
 /**
  * A real Owner's native Gallery owns this explicit foreground backup control.
@@ -45,6 +47,10 @@ internal fun NativePhotoBatchControls(
     onEnrollDevice: () -> Unit,
     onStartBatch: (Long) -> Unit,
     onCancelBatch: () -> Unit,
+    autoConfigured: Boolean = false,
+    autoStatus: String? = null,
+    onEnableAuto: () -> Unit = {},
+    onDisableAuto: () -> Unit = {},
 ) {
     if (state.screen != Screen.GALLERY || state.nativeUiSessionId <= 0L) return
 
@@ -127,6 +133,30 @@ internal fun NativePhotoBatchControls(
                         ) { Text(if (nextCursor > 0) "继续下一批（需要确认）"
                             else "备份下一批原件（需要确认）") }
                     }
+                    Text(
+                        if (autoConfigured) "后台自动备份：本机已保存定时计划，需以当前 Owner 重新核验。"
+                        else "后台自动备份：未开启（不会在后台读取照片）。",
+                        modifier = Modifier.testTag("native-photo-auto-status"))
+                    if (autoStatus == AndroidPhotoAutoPolicyStore.STATUS_NEEDS_REVIEW) {
+                        Text("后台备份已暂停：有上传结果需要核对，禁止自动重传。",
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.testTag("native-photo-auto-needs-review"))
+                    }
+                    if (!autoConfigured) {
+                        OutlinedButton(
+                            onClick = { confirmation = NativePhotoBatchConsent.ENABLE_AUTO },
+                            enabled = eligible && fullReadGrant &&
+                                state.nativePhotoDeviceVerified,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                                .testTag("native-photo-auto-enable"),
+                        ) { Text("开启定时增量备份（需确认）") }
+                    } else {
+                        OutlinedButton(
+                            onClick = { confirmation = NativePhotoBatchConsent.DISABLE_AUTO },
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                                .testTag("native-photo-auto-disable"),
+                        ) { Text("关闭本机后台备份计划") }
+                    }
                     if (state.error != null) Text("操作受阻：${state.error}",
                         color = MaterialTheme.colorScheme.error,
                         modifier = Modifier.testTag("native-photo-batch-error"))
@@ -189,6 +219,49 @@ internal fun NativePhotoBatchControls(
                 ) { Text("取消") }
             },
         )
+        NativePhotoBatchConsent.ENABLE_AUTO -> AlertDialog(
+            onDismissRequest = { confirmation = null },
+            title = { Text("确认开启自动增量备份") },
+            text = {
+                Text("需要已记住的 HTTPS 登录、完整照片及视频授权和当前 Owner 的真实设备登记。" +
+                    "系统按网络及电量条件定期执行，每次最多处理 8 项新原件；" +
+                    "停用或退出登录立即撤销授权。未知上传结果会暂停等待人工核对。")
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = eligible && fullReadGrant &&
+                        state.nativePhotoDeviceVerified,
+                    onClick = { confirmation = null; onEnableAuto() },
+                    modifier = Modifier.testTag("native-photo-auto-enable-confirm"),
+                ) { Text("确认开启") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmation = null },
+                    modifier = Modifier.testTag("native-photo-auto-enable-cancel")) {
+                    Text("取消")
+                }
+            },
+        )
+        NativePhotoBatchConsent.DISABLE_AUTO -> AlertDialog(
+            onDismissRequest = { confirmation = null },
+            title = { Text("关闭后台照片备份") },
+            text = {
+                Text("停止本机自动定时任务。正在上传的原件如未收到真实回执，" +
+                    "仍需人工核对；不会影响其他手动文件上传。")
+            },
+            confirmButton = {
+                TextButton(onClick = { confirmation = null; onDisableAuto() },
+                    modifier = Modifier.testTag("native-photo-auto-disable-confirm")) {
+                    Text("确认关闭")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmation = null },
+                    modifier = Modifier.testTag("native-photo-auto-disable-cancel")) {
+                    Text("取消")
+                }
+            },
+        )
         null -> Unit
     }
 }
@@ -217,6 +290,10 @@ internal fun NativePhotoBatchPanel(state: DriveState, controller: DriveControlle
             context.packageManager.getPackageInfo(context.packageName, 0).versionName
         }.getOrNull()?.takeIf { it.isNotBlank() } ?: "0.1"
     }
+    val auto = remember(permissionEpoch, state.nativePhotoAutoApproved,
+        state.nativeUiSessionId) {
+        AndroidPhotoAutoPolicyStore(context).snapshot()
+    }
     NativePhotoBatchControls(
         state = state,
         fullReadGrant = fullRead,
@@ -229,5 +306,9 @@ internal fun NativePhotoBatchPanel(state: DriveState, controller: DriveControlle
             controller.backupNativePhotoNextForegroundBatch(context, after)
         },
         onCancelBatch = controller::cancelFileUpload,
+        autoConfigured = auto?.enabled == true,
+        autoStatus = auto?.status,
+        onEnableAuto = { controller.enableNativePhotoAutoBackup(context) },
+        onDisableAuto = { controller.disableNativePhotoAutoBackup(context) },
     )
 }
