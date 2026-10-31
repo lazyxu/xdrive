@@ -11,6 +11,7 @@ import type { XDriveSynologyBackupLocalClient } from '@xdrive/ui/mui'
 import './styles.css'
 import { createXDriveSynologyHost } from './synologyHost'
 import { readDSMLoginDraft, saveDSMLoginDraft } from './synologyLoginDraft'
+import { xDriveDSMLoginInputError, xDriveDSMLoginOwnerError } from './synologyLoginPreflight'
 
 // DSM's local Agent and CGI must never be contacted from an insecure page.
 // Render a fail-closed explanation instead of crashing before React mounts.
@@ -40,10 +41,14 @@ function SynologyServerConnectionSettings({
     saveDSMLoginDraft(server, username)
   }, [server, username])
   const [showPassword, setShowPassword] = useState(false)
-  const [loginState, setLoginState] = useState<'idle' | 'logging' | 'failed'>('idle')
+  const [loginState, setLoginState] = useState<'idle' | 'checking' | 'logging' | 'failed'>('idle')
+  const [loginError, setLoginError] = useState('')
   const controllerRef = useRef<AbortController | null>(null)
   const profileRef = useRef<AbortController | null>(null)
   const loginRef = useRef<AbortController | null>(null)
+  // A preflight can be cancelled. Once a login POST begins, a lost ACK may
+  // conceal an Owner commit; its eventual outcome still reloads the page.
+  const loginPhaseRef = useRef<'idle' | 'checking' | 'logging'>('idle')
 
   useEffect(() => {
     controllerRef.current?.abort()
@@ -52,11 +57,18 @@ function SynologyServerConnectionSettings({
     // cancel its browser observation on dialog close: completion must reload
     // the app and retire all potentially stale Owner-scoped UI state.
     if (!open) {
+      if (loginPhaseRef.current === 'checking') {
+        loginRef.current?.abort()
+        loginRef.current = null
+        loginPhaseRef.current = 'idle'
+        setLoginState('idle')
+      }
       controllerRef.current = null
       profileRef.current = null
       setStatus('unchecked')
       setProfileStatus('loading')
       setPassword('')
+      setLoginError('')
       // Keep loginState=logging if the Agent request is still in flight.
       // It will reload even if this shared Settings dialog is closed.
       return
@@ -83,6 +95,14 @@ function SynologyServerConnectionSettings({
     return () => {
       controller.abort()
       controllerRef.current?.abort()
+      if (loginPhaseRef.current === 'checking') {
+        loginRef.current?.abort()
+        loginRef.current = null
+        loginPhaseRef.current = 'idle'
+        // The Host can change while Settings is open. Re-enable inputs so
+        // the new Agent's verified identity can be checked again.
+        setLoginState('idle')
+      }
     }
   }, [open, client])
 
@@ -107,43 +127,69 @@ function SynologyServerConnectionSettings({
 
   const login = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (loginState === 'logging') return
-    loginRef.current?.abort()
+    if (loginPhaseRef.current !== 'idle') return
     controllerRef.current?.abort()
-    const controller = new AbortController()
-    loginRef.current = controller
-    // Local validation is guaranteed not to mutate the owning Agent. Keep
-    // the editable password in memory for this failure class only.
-    try {
-      const origin = new URL(server.trim())
-      if (origin.protocol !== 'https:' || !origin.hostname || origin.username ||
-          origin.password || origin.pathname !== '/' || origin.search || origin.hash) {
-        setLoginState('failed')
-        return
-      }
-    } catch {
+    const requestedServer = server.trim()
+    const requestedUsername = username.trim()
+    const requestedPassword = password
+    const inputError = xDriveDSMLoginInputError(requestedServer, requestedUsername, requestedPassword)
+    if (inputError) {
+      // No Agent operation has started; preserve the typed password in memory.
+      setLoginError(inputError)
       setLoginState('failed')
       return
     }
-    const requestedPassword = password
-    // An actual Agent call may commit an Owner before its ACK is lost.
-    // Reload on either outcome; only non-secret hints survive reload.
-    setPassword('')
-    setLoginState('logging')
-    void client.loginServer(server.trim(), username.trim(), requestedPassword, controller.signal).then(
-      () => {
+
+    loginRef.current?.abort()
+    const controller = new AbortController()
+    loginRef.current = controller
+    loginPhaseRef.current = 'checking'
+    setLoginState('checking')
+    setLoginError('')
+    // An unreadable Agent is not a failed POST. Do not send or discard a
+    // password simply because a read-only preflight cannot finish.
+    void client.serverConnection(controller.signal).then(
+      info => {
         if (loginRef.current !== controller || controller.signal.aborted) return
-        loginRef.current = null
-        // Retire all shared Owner-scoped UI data, async reads, thumbnails
-        // and Viewer resources before displaying the newly authenticated Owner.
-        window.location.reload()
+        const ownerError = xDriveDSMLoginOwnerError(requestedServer, requestedUsername, info)
+        if (ownerError) {
+          loginRef.current = null
+          loginPhaseRef.current = 'idle'
+          setProfileStatus('ready')
+          setLoginError(ownerError)
+          setLoginState('failed')
+          return
+        }
+        setProfileStatus('ready')
+        // A POST may have changed Owner before its ACK is lost. From this
+        // boundary onward, reload on both success and ambiguous failure.
+        loginPhaseRef.current = 'logging'
+        setPassword('')
+        setLoginState('logging')
+        void client.loginServer(requestedServer, requestedUsername, requestedPassword, controller.signal).then(
+          () => {
+            if (loginRef.current !== controller || controller.signal.aborted) return
+            loginRef.current = null
+            loginPhaseRef.current = 'idle'
+            window.location.reload()
+          },
+          () => {
+            if (loginRef.current !== controller || controller.signal.aborted) return
+            loginRef.current = null
+            loginPhaseRef.current = 'idle'
+            // HTTP failure may still follow a committed Owner change: discard
+            // all shared Owner-scoped UI, thumbnails, caches and async reads.
+            window.location.reload()
+          },
+        )
       },
       () => {
         if (loginRef.current !== controller || controller.signal.aborted) return
         loginRef.current = null
-        // Agent login can persist a new Owner before a subsequent quota
-        // verification fails. Even an HTTP error must retire old caches.
-        window.location.reload()
+        loginPhaseRef.current = 'idle'
+        setProfileStatus('unavailable')
+        setLoginError('无法读取本机 Agent 的当前账户；未发送密码，输入仍保留。请检查套件连接后重试。')
+        setLoginState('failed')
       },
     )
   }
@@ -173,34 +219,34 @@ function SynologyServerConnectionSettings({
             <TextField label="Server HTTPS 地址" size="small" type="url"
               autoComplete="url" value={server} onChange={(e) => setServer(e.target.value)}
               placeholder="https://192.168.1.2:8443" required
-              disabled={loginState === 'logging'} />
+              disabled={loginState === 'logging' || loginState === 'checking'} />
             <TextField label="xDrive 用户名" size="small"
               autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)}
-              required disabled={loginState === 'logging'} />
+              required disabled={loginState === 'logging' || loginState === 'checking'} />
             <TextField label="密码" size="small"
               type={showPassword ? 'text' : 'password'} autoComplete="current-password"
               value={password} onChange={(e) => setPassword(e.target.value)}
-              required disabled={loginState === 'logging'} />
+              required disabled={loginState === 'logging' || loginState === 'checking'} />
             <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
               <Button size="small" onClick={() => setShowPassword((value) => !value)}
-                disabled={loginState === 'logging'}>
+                disabled={loginState === 'logging' || loginState === 'checking'}>
                 {showPassword ? '隐藏密码' : '显示密码'}
               </Button>
               <Button type="submit" variant="contained"
-                disabled={loginState === 'logging' || profileStatus === 'loading' ||
+                disabled={loginState === 'logging' || loginState === 'checking' || profileStatus === 'loading' ||
                   !server.trim() || !username.trim() || !password}>
-                {loginState === 'logging' ? '正在安全登录…' : '登录当前 Server'}
+                {loginState === 'checking' ? '正在检查 Agent…' : loginState === 'logging' ? '正在安全登录…' : '登录当前 Server'}
               </Button>
             </Stack>
           </Stack>
         </Box>
         {loginState === 'failed' ? (
           <Typography variant="body2" role="alert">
-            未能完成经过 Owner 验证的登录。检查 HTTPS 证书和账户；如需切换其他 Server/Owner，先通过 NAS 本地管理入口安全迁移已有备份。
+            {loginError || '未能完成经过 Owner 验证的登录。检查 HTTPS 证书和账户；如需切换其他 Server/Owner，先通过 NAS 本地管理入口安全迁移已有备份。'}
           </Typography>
         ) : null}
         <Button variant="outlined" sx={{ alignSelf: 'flex-start' }}
-          disabled={status === 'checking' || loginState === 'logging'} onClick={verifyOwnerConnection}>
+          disabled={status === 'checking' || loginState === 'logging' || loginState === 'checking'} onClick={verifyOwnerConnection}>
           检查 Server Owner 连接
         </Button>
         <Typography variant="body2" role="status"
