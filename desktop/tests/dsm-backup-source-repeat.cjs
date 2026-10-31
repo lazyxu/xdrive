@@ -522,3 +522,115 @@ test('DSM requires renewed draft-bind consent when Host client changes without a
     'same Owner scope is not sufficient proof of identical owning Agent identity')
   await act(async () => tree.unmount())
 })
+test('DSM Source setup isolates confirmed Root, draft selection and consent on a new owning Host', async () => {
+  let oldWrites = 0
+  const newWrites = []
+  let refreshes = 0
+  const ownerA = {
+    serverConnection: async () => ({
+      configured: true, must_change_password: false, owner_scope: SCOPE,
+    }),
+    createNASBackupSource: async () => {
+      oldWrites++
+      return { source_id: 57, state: 'authorized' }
+    },
+  }
+  const ownerBReady = deferred()
+  const ownerB = {
+    serverConnection: () => ownerBReady.promise,
+    createNASBackupSource: async (...args) => {
+      newWrites.push(args)
+      return { source_id: 58, state: 'authorized' }
+    },
+  }
+  const onCreated = () => { refreshes++ }
+  const tree = await mountSetup(ownerA, onCreated)
+  await selectNewSource(tree, 'NAS Photos A')
+  const oldVerifiedShare = tree.root.findByType('share-inventory').props.onVerifiedShare
+  await act(async () => {
+    button(tree, '确认创建并绑定本地目录').props.onClick()
+    await Promise.resolve()
+  })
+  assert.equal(oldWrites, 1)
+  assert.equal(refreshes, 1)
+  assert.ok(button(tree, '配置另一个 NAS 备份来源'),
+    'Owner A must reach a real confirmed Source state before switching')
+
+  await act(async () => {
+    tree.update(React.createElement(Setup, { client: ownerB, onCreated }))
+  })
+  const firstFrame = JSON.stringify(tree.toJSON())
+  assert.doesNotMatch(firstFrame, /本机 Source 57|配置另一个 NAS 备份来源|NAS Photos A|Backup Target/,
+    'the very first render of Owner B must not contain Owner A Source, target, consent or success')
+  assert.equal(tree.root.findByType('TextField').props.value, '')
+  assert.equal(checkbox(tree, '我确认在当前 NAS').props.checked, false)
+  assert.equal(button(tree, '确认创建并绑定本地目录').props.disabled, true,
+    'Owner B must fail closed while its own Agent identity is being checked')
+
+  await act(async () => {
+    ownerBReady.resolve({ configured: true, must_change_password: false, owner_scope: OTHER_SCOPE })
+    await Promise.resolve()
+    oldVerifiedShare({ label: '/volume1/Photos', selection_id: SELECTION })
+  })
+  assert.equal(button(tree, '确认创建并绑定本地目录').props.disabled, true,
+    'a stale prior Host share callback must not grant the new Host Root')
+  await selectNewSource(tree, 'NAS Photos B')
+  await act(async () => {
+    button(tree, '确认创建并绑定本地目录').props.onClick()
+    await Promise.resolve()
+  })
+  assert.deepEqual(newWrites, [[SELECTION, OTHER_SCOPE, 17, 'NAS Photos B']])
+  assert.equal(refreshes, 2)
+  await act(async () => tree.unmount())
+})
+
+test('DSM previous Host in-flight Source ACK cannot contaminate next Host or block fresh setup', async () => {
+  for (const result of ['authorized', 'rejected']) {
+    const pending = deferred()
+    let refreshed = 0
+    const ownerA = {
+      serverConnection: async () => ({
+        configured: true, must_change_password: false, owner_scope: SCOPE,
+      }),
+      createNASBackupSource: () => pending.promise,
+    }
+    const callsB = []
+    const ownerB = {
+      // Equal Owner scope alone does not prove equal owning Agent.
+      serverConnection: async () => ({
+        configured: true, must_change_password: false, owner_scope: SCOPE,
+      }),
+      createNASBackupSource: async (...args) => {
+        callsB.push(args)
+        return { source_id: 58, state: 'authorized' }
+      },
+    }
+    const onCreated = () => { refreshed++ }
+    const tree = await mountSetup(ownerA, onCreated)
+    await selectNewSource(tree, 'NAS Pending A')
+    await act(async () => { button(tree, '确认创建并绑定本地目录').props.onClick() })
+    await act(async () => {
+      tree.update(React.createElement(Setup, { client: ownerB, onCreated }))
+      await Promise.resolve()
+    })
+    await act(async () => {
+      if (result === 'authorized') pending.resolve({ source_id: 57, state: 'authorized' })
+      else pending.reject(new Error('old Agent acknowledgement lost'))
+      await Promise.resolve()
+    })
+    assert.equal(refreshed, 0, 'old Agent completion must never refresh the replacement Host')
+    assert.doesNotMatch(JSON.stringify(tree.toJSON()),
+      /本机 Source 57|创建结果无法确认|配置另一个 NAS 备份来源|NAS Pending A/,
+      'neither success nor uncertainty from old Agent may appear for replacement Host')
+    assert.equal(button(tree, '确认创建并绑定本地目录').props.disabled, true)
+    await selectNewSource(tree, 'NAS Fresh B')
+    await act(async () => {
+      button(tree, '确认创建并绑定本地目录').props.onClick()
+      await Promise.resolve()
+    })
+    assert.deepEqual(callsB, [[SELECTION, SCOPE, 17, 'NAS Fresh B']],
+      'replacement Host accepts only its own freshly verified Source transaction')
+    assert.equal(refreshed, 1)
+    await act(async () => tree.unmount())
+  }
+})
