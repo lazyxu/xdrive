@@ -178,28 +178,34 @@ internal fun NativeLocalMediaStoreGallery(
         if (albumsOnly && selectedAlbum == null && albums != null) return@LaunchedEffect
         if ((!albumsOnly || selectedAlbum != null) && wall.loaded.value) return@LaunchedEffect
         wall.clear()
+        val readRevision = wall.revision.intValue
         busy = true
         try {
             if (albumsOnly && selectedAlbum == null) {
-                albums = NativeLocalMediaStore.albums(resolver)
+                val page = NativeLocalMediaStore.albums(resolver)
+                if (wall.revision.intValue != readRevision) return@LaunchedEffect
+                albums = page
             } else {
                 val page = NativeLocalMediaStore.pageAfter(resolver,
                     limit = NativeLocalMediaStore.PHOTO_PAGE_SIZE,
                     albumId = selectedAlbum?.id)
+                if (wall.revision.intValue != readRevision) return@LaunchedEffect
                 items = page
                 nextPageKey = page.lastOrNull()?.pageKey
                 scannedCount = page.size
                 exhausted = page.size < NativeLocalMediaStore.PHOTO_PAGE_SIZE
             }
-            wall.loaded.value = true
+            if (wall.revision.intValue == readRevision) wall.loaded.value = true
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
         } catch (_: SecurityException) {
-            failure = "相册权限已变化，请重新授权或重试。"
+            if (wall.revision.intValue == readRevision)
+                failure = "相册权限已变化，请重新授权或重试。"
         } catch (_: Exception) {
-            failure = "本机媒体索引读取失败，请重试。"
+            if (wall.revision.intValue == readRevision)
+                failure = "本机媒体索引读取失败，请重试。"
         } finally {
-            busy = false
+            if (wall.revision.intValue == readRevision) busy = false
         }
     }
     LaunchedEffect(pageIntent, sessionId, albumsOnly, selectedAlbum?.id,
@@ -209,6 +215,7 @@ internal fun NativeLocalMediaStoreGallery(
         if (pageIntent == 0 || pageIntent == consumedPageIntent || !wall.loaded.value ||
             !allowed || exhausted || busy || failure != null) return@LaunchedEffect
         consumedPageIntent = pageIntent
+        val readRevision = wall.revision.intValue
         busy = true
         try {
             val current = items
@@ -216,6 +223,7 @@ internal fun NativeLocalMediaStoreGallery(
                 after = nextPageKey,
                 limit = NativeLocalMediaStore.PHOTO_PAGE_SIZE,
                 albumId = selectedAlbum?.id)
+            if (wall.revision.intValue != readRevision) return@LaunchedEffect
             if (!NativeLocalMediaStore.canAppend(current, next)) {
                 failure = "媒体提供程序返回了重复页面；已停止加载以避免错乱。"
             } else {
@@ -231,9 +239,10 @@ internal fun NativeLocalMediaStoreGallery(
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
         } catch (_: Exception) {
-            failure = "下一页读取失败；现有照片保持不变。"
+            if (wall.revision.intValue == readRevision)
+                failure = "下一页读取失败；现有照片保持不变。"
         } finally {
-            busy = false
+            if (wall.revision.intValue == readRevision) busy = false
         }
     }
     if (!allowed) {
