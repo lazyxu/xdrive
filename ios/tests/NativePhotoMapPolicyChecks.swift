@@ -12,6 +12,28 @@ struct XDriveIOSNativePhotoMapPolicyChecks {
         precondition(!XDriveIOSNativePhotoMapPolicy.validPage(total: 100000, start: 0, next: 100000, rows: 100000, pins: 64))
         precondition(!XDriveIOSNativePhotoMapPolicy.validPage(total: 64, start: 0, next: 64, rows: 64, pins: 65))
         precondition(XDriveIOSNativePhotoMapPolicy.markerLabel(27) == "当前页此位置27张照片")
+        // A late MKAnnotation callback can carry an earlier 64-slot page;
+        // even with active permission, it must never resurrect old photos.
+        precondition(XDriveIOSNativePhotoMapPolicy.acceptsSelection(
+            selectedIDs: ["a"], currentPageIDs: ["a", "b"]))
+        precondition(XDriveIOSNativePhotoMapPolicy.acceptsSelection(
+            selectedIDs: ["a", "b"], currentPageIDs: ["a", "b"]))
+        precondition(!XDriveIOSNativePhotoMapPolicy.acceptsSelection(
+            selectedIDs: ["stale"], currentPageIDs: ["current"]))
+        precondition(!XDriveIOSNativePhotoMapPolicy.acceptsSelection(
+            selectedIDs: ["current", "stale"], currentPageIDs: ["current"]))
+        precondition(!XDriveIOSNativePhotoMapPolicy.acceptsSelection(
+            selectedIDs: [], currentPageIDs: ["current"]))
+        precondition(!XDriveIOSNativePhotoMapPolicy.acceptsSelection(
+            selectedIDs: ["current", "current"], currentPageIDs: ["current"]))
+        precondition(!XDriveIOSNativePhotoMapPolicy.acceptsSelection(
+            selectedIDs: ["current"], currentPageIDs: ["current", "current"]))
+        precondition(!XDriveIOSNativePhotoMapPolicy.acceptsSelection(
+            selectedIDs: [""], currentPageIDs: [""]))
+        precondition(!XDriveIOSNativePhotoMapPolicy.acceptsSelection(
+            selectedIDs: Array(repeating: "x", count: 65),
+            currentPageIDs: ["x"]))
+
         print("native iOS PhotoKit map policy: PASS")
     }
 }

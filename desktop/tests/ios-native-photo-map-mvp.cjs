@@ -56,3 +56,15 @@ test('native Launcher marks the real local map available, not as an unavailable 
   assert.match(dashboard, /case \.map:\s*XDriveIOSNativeLocalPhotoMapScreen\(/)
   assert.match(dashboard, /if !route\.available \{\s*Text\("未接入"\)/)
 })
+
+test('late map annotation selection cannot reopen a photo from the previous page', () => {
+  assert.match(map, /let currentPage = self\.page/)
+  assert.match(map, /XDriveIOSNativePhotoMapPolicy\.acceptsSelection\(/)
+  assert.match(map, /selectedIDs: selected\.map\(\\\.id\)/)
+  assert.match(map, /currentPageIDs: currentPage\.items\.map\(\\\.id\)/)
+  assert.match(policy, /static func acceptsSelection\(/)
+  assert.match(policy, /selectedSet\.isSubset\(of: pageSet\)/)
+  assert.match(policy, /selectedSet\.count == selectedIDs\.count/)
+  assert.match(policy, /pageSet\.count == currentPageIDs\.count/)
+  assert.match(map, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/)
+})

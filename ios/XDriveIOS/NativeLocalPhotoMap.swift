@@ -280,9 +280,18 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                 Text("已检查 \(page.page.startOffset)–\(page.page.nextOffset) / \(page.page.totalAccessibleAssets)，当前页有 \(page.items.count) 张带位置照片")
                     .font(.footnote).monospacedDigit()
                 XDriveIOSMapKitPhotoPage(items: page.items, revision: mapRevision) { selected in
+                    // UIKit can dispatch an old annotation selection after a
+                    // new PhotoKit page has replaced the displayed markers.
+                    // The current State page, not the captured SwiftUI
+                    // branch or the annotation, is the membership authority.
                     guard phase == .active, !busy,
                           [.authorized, .limited].contains(
                             PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                          ),
+                          let currentPage = self.page,
+                          XDriveIOSNativePhotoMapPolicy.acceptsSelection(
+                            selectedIDs: selected.map(\.id),
+                            currentPageIDs: currentPage.items.map(\.id)
                           ) else { return }
                     selection = XDriveIOSMapPhotoSelection(items: selected)
                 }
