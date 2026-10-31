@@ -32,9 +32,10 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
     private static let lastNativeServerKey = "xdrive.ios.native.last-server"
 
     init() {
-        serverText = UserDefaults.standard.string(
-            forKey: Self.lastNativeServerKey
-        ) ?? ""
+        let draft = XDriveIOSNativeLoginDraftStore.load()
+        serverText = draft.server
+        lanIPText = draft.lanIP
+        username = draft.username
     }
 
     private func currentAccessToken(_ response: AuthResponse) -> String? {
@@ -201,10 +202,27 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
                 verifiedOwner: verified
             )
             owner = verified
-            serverText = origin.absoluteString
-            UserDefaults.standard.set(origin.absoluteString,
-                                      forKey: Self.lastNativeServerKey)
+            // A restored refresh credential may be pinned to the selected LAN IP.
+            // Preserve the user's original HTTPS domain and LAN hint only when
+            // they resolve to exactly this already-verified Owner endpoint.
+            let draft = XDriveIOSNativeLoginDraftStore.load()
+            let configured = try? ServerAddress.parse(draft.server)
+            let matchesRestoredEndpoint = configured.map { candidate in
+                candidate == origin ||
+                (try? XDriveIOSNativeLANLoginRoute.candidate(
+                    origin: candidate, ip: draft.lanIP
+                )) == origin
+            } ?? false
+            if !matchesRestoredEndpoint {
+                serverText = origin.absoluteString
+                lanIPText = ""
+            }
             username = verified.username
+            XDriveIOSNativeLoginDraftStore.save(
+                server: serverText, lanIP: lanIPText, username: username
+            )
+            UserDefaults.standard.set(serverText,
+                                      forKey: Self.lastNativeServerKey)
             keepSignedIn = true
             noticeMessage = "已恢复并再次验证当前原生账户和云端根目录。"
             errorMessage = nil
@@ -234,6 +252,11 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
         let lanInput = lanIPText
         let requestedUsername = username.trimmingCharacters(
             in: .whitespacesAndNewlines
+        )
+        // Non-secret draft is independent of Keychain/session success. An
+        // offline or incorrect-password attempt must not erase entered fields.
+        XDriveIOSNativeLoginDraftStore.save(
+            server: serverInput, lanIP: lanInput, username: requestedUsername
         )
         guard !requestedUsername.isEmpty, !password.isEmpty else {
             errorMessage = "请填写用户名和密码。"
@@ -268,7 +291,6 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
                     requestedUsername else {
                 throw XDriveIOSNativeSessionError.staleSession
             }
-            password = ""
             guard response.must_change_password != true else {
                 throw XDriveIOSNativeSessionError.passwordChangeRequired
             }
@@ -306,20 +328,24 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
                 verifiedOwner: verified
             )
             owner = verified
+            password = ""
             // The verified Session and Keychain retain the selected endpoint.
             // Keep the configured domain as the non-secret sign-in hint.
             serverText = configuredOrigin.absoluteString
             UserDefaults.standard.set(configuredOrigin.absoluteString,
                                       forKey: Self.lastNativeServerKey)
             username = verified.username
+            XDriveIOSNativeLoginDraftStore.save(
+                server: serverText, lanIP: lanIPText, username: username
+            )
             let fixedRoute = "当前会话固定使用 \(origin.host ?? "服务器")，不在登录后切换入口。"
             noticeMessage = (keepSignedIn
                 ? "已在本机安全保存当前 Owner 的保持登录凭据。"
                 : "本次仅内存登录，不保留刷新凭据。") + fixedRoute
         } catch is CancellationError {
-            password = ""
+            // A cancelled sign-in never authorizes a Session; the editable
+            // form remains intact until the user deliberately changes it.
         } catch {
-            password = ""
             if generation == ticket { errorMessage = humanMessage(error) }
         }
     }

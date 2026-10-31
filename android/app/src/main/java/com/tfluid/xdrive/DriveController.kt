@@ -235,8 +235,10 @@ class DriveController(
     private val loadRoute: (String) -> ConnectionRoute = { ConnectionRoute() },
     private val sessionPersistence: DriveSessionPersistence? = null,
     private val transferClockMillis: () -> Long = { System.nanoTime() / 1_000_000L },
+    initialUsername: String = "",
+    private val saveLoginDraft: (String, String, String) -> Unit = { _, _, _ -> },
 ) : Closeable {
-    private val mutableState = MutableStateFlow(DriveState(server = initialServer, allowHttp = initialAllowHttp,
+    private val mutableState = MutableStateFlow(DriveState(server = initialServer, username = initialUsername, allowHttp = initialAllowHttp,
         route = savedRoute(initialServer, initialAllowHttp)))
     val state = mutableState.asStateFlow()
     private var address: ServerAddress? = null
@@ -576,6 +578,9 @@ class DriveController(
             mutableState.value = state.value.copy(error = "内网 IP 无效，或服务器已直接使用 IP 地址。")
             return
         }
+        // Save only public login hints, BEFORE the network request. Token
+        // revocation and invalid passwords cannot delete this independent draft.
+        runCatching { saveLoginDraft(next.url, route.lanIp, username.trim()) }
         request { ticket ->
             val ip = if (route.enabled) routeSelector(next, route) else null
             checkCurrent(ticket)
@@ -616,6 +621,7 @@ class DriveController(
             mutableState.value = state.value.copy(error = "请输入用户名和密码。")
             return
         }
+        runCatching { saveLoginDraft(state.value.server, state.value.route.lanIp, username.trim()) }
         request {
             if (api == null && state.value.route.enabled) {
                 val next = address ?: return@request
@@ -4031,7 +4037,7 @@ class DriveController(
                         if (state.value.route.enabled) { (api as? Closeable)?.close(); api = null }
                         mutableState.value = DriveState(
                             screen = Screen.LOGIN, server = state.value.server, allowHttp = state.value.allowHttp,
-                            route = state.value.route,
+                            route = state.value.route, username = state.value.username,
                             error = "登录已失效，请重新登录。",
                         )
                     } else if (failure is NativeTransferCheckpointFailure) {
@@ -4126,6 +4132,7 @@ class DriveController(
             screen = if (changeServer) Screen.CONNECT else Screen.LOGIN,
             server = state.value.server, allowHttp = state.value.allowHttp,
             route = state.value.route,
+            username = if (changeServer) "" else state.value.username,
         )
         scope.launch {
             try {
