@@ -6,10 +6,13 @@ Map, Viewer, Settings, Transfers and native photo backup controls. The iOS App
 will **not use Web/PWA React or WKWebView for product UI**. Android stays
 native Kotlin/Compose; Web/PWA stays an independent React client.
 
-**Current as-built, NOT completed target:** `XDriveIOSApp` still launches
-`XDriveWebAppHome.swift` and a trusted HTTPS WKWebView hosting the Web/PWA
-login and pages. This must remain functional until native equivalents pass
-required tests and replace it; this decision alone is NOT shipped native UI.
+**Current as-built:** the installed App enters the native SwiftUI Owner login
+and five-slot Photos-first workspace. The old WKWebView/PWA connection shell,
+WebKit download delegate, and JavaScript PhotoKit Host bridge have been
+retired from the iOS target. Web/PWA remains a separate browser client.
+The iOS native Files, Map, full cloud Live playback and some tools are not
+yet complete and must show truthful unavailable states rather than fallback
+to browser pages.
 
 ## Native navigation / Photos-first UI
 
@@ -21,11 +24,10 @@ The iOS code already contains useful Swift PhotoKit enumeration, Full/Limited
 permission checks, native still/video/Live original extraction, local albums,
 encrypted V1/V2 intent ledgers, SHA-256/Node receipt verification, Go
 UploadSession/CAS transfer, Device enrollment, Keychain and scoped BGTask
-authorization. Do NOT delete or duplicate these. The current foreground
-uploader uses a short-lived **Web Owner bearer**, which cannot simply be
-reused as a new native login. Migrate explicit Owner/root validation and
-Keychain refresh with a reviewed compatibility plan; do not silently restore
-obsolete native credentials or erase uncertain upload states.
+authorization. Do NOT delete or duplicate these. The native foreground uploader uses verified Owner/root authorization.
+The current native Keychain v2 session, encrypted backup journal, background
+grants and uncertain upload receipts must remain intact. The exact retired
+Keychain service is purged only for security, not used to restore Web login.
 
 ## Native migration priorities
 
@@ -42,7 +44,7 @@ obsolete native credentials or erase uncertain upload states.
    revoke/stop, 100k bounded performance; no force-quit/locked-screen
    guarantee without real hardware evidence.
 6. Exact-head IPA Xcode/native unit/API/security/CI gates and restore/update
-   compatibility; only then retire legacy WKWebView UI bridge.
+   compatibility; do not reintroduce the deleted legacy WKWebView UI bridge.
 
 The existing bounded core scans at most 256 authorized items (64 per page)
 and uploads at most 20 complete original still/video/Live ZIP items per
@@ -53,9 +55,8 @@ features and limitations are not certified by a successful unsigned IPA build.
 
 Full target and recovery rules:
 [mobile-native-migration.md](../docs/architecture/mobile-native-migration.md).
-Historical `docs/shared-ios-host-adapter.md` and iOS-PWA docs describe
-**existing transitional behavior only**; their "no SwiftUI page" directions
-are superseded by this decision.
+Historical `ios/docs/shared-ios-host-adapter.md` and iOS-PWA documents
+describe removed implementations, not active app behavior or fallback code.
 
 ## GitHub Actions: unsigned IPA for SideStore
 

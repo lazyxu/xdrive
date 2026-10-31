@@ -22,43 +22,35 @@ test('offline emergency stop deletes only exact per-Owner foreground schedule ke
   assert.match(source, /private\(set\) var localStopGeneration: UInt64 = 0/)
 })
 
-test('native bootstrap and trusted bridge stop all local schedules before BG credential', () => {
-  const home = read('ios/XDriveIOS/XDriveWebAppHome.swift')
-  const bridge = read('ios/XDriveIOS/IOSPhotoHostBridge.swift')
-  const bootstrap = home.slice(home.indexOf('private func emergencyStopBackgroundLocally()'),
-    home.indexOf('private var connectionForm:'))
-  assert.match(home, /offline-ios-photo-emergency-stop/)
-  assert.match(bootstrap, /disableAllOnThisDevice\(\)/)
-  assert.match(bootstrap, /if pageError != nil/)
-  assert.match(bootstrap, /openedOrigin = nil/)
-  assert.match(home, /func stopDownloads\(\) \{[\s\S]*?photoHost\.cancelActive\(\)/)
-  assert.ok(bootstrap.indexOf('disableAllOnThisDevice()') <
-    bootstrap.indexOf('emergencyStopLocally()'))
-  const native = bridge.slice(bridge.indexOf('case "photos.background.emergencyStop":'),
-    bridge.indexOf('case "photos.background.grant.status":'))
-  assert.match(native, /cancelActive\(\)/)
-  assert.match(native, /disableAllOnThisDevice\(\)/)
-  assert.match(native, /foregroundSchedulesStopped/)
-  assert.ok(native.indexOf('disableAllOnThisDevice()') <
-    native.indexOf('emergencyStopLocally()'))
-  assert.doesNotMatch(native, /parseOwner\(|accessToken|authorization: Bearer/)
-  assert.match(bridge, /trustedMainFrame\(message\)/)
-  assert.match(bridge, /let stopGeneration = store\.localStopGeneration/)
-  assert.match(bridge, /guard store\.localStopGeneration == stopGeneration/)
-  const consent = bridge.indexOf('let confirmed = await confirmAutoSchedule(')
-  const fence = bridge.indexOf('guard store.localStopGeneration == stopGeneration')
-  const configure = bridge.indexOf('let state = try store.configure(')
-  assert.ok(consent >= 0 && consent < fence && fence < configure,
-    'late UIKit consent cannot re-enable auto upload after emergency stop')
+test('native stop-only root is available offline and prevents new auto runs', () => {
+  const login = read('ios/XDriveIOS/NativeOwnerLoginScreen.swift')
+  const manager = read('ios/XDriveIOS/PhotoBackgroundGrantManager.swift')
+  const stop = login.slice(login.indexOf('private func emergencyStopWithoutAccount()'),
+    login.indexOf('/// No new account may reuse'))
+  assert.match(login, /native-ios-offline-emergency-stop/)
+  assert.match(stop, /backup.cancel\(\)/)
+  assert.match(stop, /disableAllOnThisDevice\(\)/)
+  assert.match(stop, /XDriveIOSBackgroundPhotoTask.revokePendingRequests\(\)/)
+  assert.match(stop, /\.emergencyStopLocally\(\)/)
+  assert.ok(stop.indexOf('disableAllOnThisDevice()') <
+    stop.indexOf('emergencyStopLocally()'))
+  const logoutStart = login.indexOf('private func signOutSafely(expectedOwner: XDriveNativeOwnerRoot) async')
+  assert.ok(logoutStart >= 0, 'native Owner-scoped logout must be present')
+  const logout = login.slice(logoutStart)
+  assert.match(logout, /XDriveIOSNativePhotoOwnerScope\.matches\(model\.owner, expectedOwner\)/)
+  assert.ok(logout.indexOf('XDriveIOSNativePhotoOwnerScope.matches(model.owner, expectedOwner)') <
+    logout.indexOf('XDriveIOSOriginalRunGate.shared.acquire()'))
+  assert.match(logout, /XDriveIOSOriginalRunGate\.shared\.acquire\(\)/)
+  assert.match(logout, /disableAllOnThisDevice\(\)/)
+  assert.match(logout, /emergencyStopLocally\(\)/)
+  assert.match(manager, /func emergencyStopLocally\(\) async throws -> Bool/)
 })
 
-test('shared PWA receives only a redacted local count and never assumes older IPA stopped schedules', () => {
-  const web = read('web/src/iosPhotoHostAdapter.ts')
-  const shared = read('ui/shared/src/mui/IOSPhotoBackupSettings.tsx')
-  assert.match(web, /foregroundSchedulesStopped\?: number/)
-  assert.match(web, /this\.request\('photos\.background\.emergencyStop'\)/)
-  assert.match(shared, /Number\.isSafeInteger\(count\)/)
-  assert.match(shared, /本机前台自动计划停用状态未确认/)
-  assert.match(shared, /data-xdrive-ios-bg-emergency-stop/)
-  assert.doesNotMatch(shared, /grant_secret|deviceToken|rawSecret/)
+test('the independent Web/PWA has no retired iOS script Host or secret bridge', () => {
+  const web = read('web/src/App.tsx')
+  const native = read('ios/XDriveIOS/NativePhotoBackupScreen.swift')
+  assert.doesNotMatch(web, /iosPhotoHostAdapter|xdriveIOSHost|iosForegroundAutoScheduler/)
+  assert.match(native, /manualConsentOwner = login\.owner/)
+  assert.match(native, /native-ios-photos-auto-disable/)
+  assert.doesNotMatch(native, /window\.webkit|document\.cookie/)
 })

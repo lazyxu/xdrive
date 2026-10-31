@@ -6,7 +6,7 @@ const path = require('node:path')
 const root = path.resolve(__dirname, '../..')
 const read = file => fs.readFileSync(path.join(root, file), 'utf8')
 const ledger = read('ios/XDriveIOS/PhotoSyncEncryptedLedger.swift')
-const bridge = read('ios/XDriveIOS/IOSPhotoHostBridge.swift')
+const controller = read('ios/XDriveIOS/NativePhotoReceiptReviewController.swift')
 const recovery = read('ios/XDriveIOS/PhotoBackupUncertainReceiptRecovery.swift')
 
 test('bounded exact pending receipt count keeps at most 20 records while streaming shards', () => {
@@ -39,19 +39,22 @@ test('cross-version V1/V2 identity collision is fail-closed under encrypted scop
   assert.match(ledger, /envelope\.operations\.allSatisfy/)
 })
 
-test('shared iOS Host presents exact count, bounded batch and no false all-confirmed state', () => {
-  const start = bridge.indexOf('case "photos.reconcile.status":')
-  const end = bridge.indexOf('case "photos.backup.cancel":', start)
-  assert.ok(start >= 0 && end > start)
-  const ui = bridge.slice(start,end)
-  assert.match(ui, /pendingReceiptSnapshot\(scope: scope, limit: 0\)/)
-  assert.match(ui, /limit: Self\.maxReceiptReviewPerRun/)
-  assert.match(ui, /let batch = snapshot\.batch/)
-  assert.match(ui, /"pending": snapshot\.pending/)
-  assert.match(ui, /progress\["pending"\] = latest\.pending/)
-  assert.doesNotMatch(ui, /\.operations\(scope: scope\)/)
-  assert.match(ui, /case \.confirmed:/)
-  assert.match(ui, /case \.ambiguousSession:/)
+test('native Owner receipt controller retains bounded, exact and read-only review', () => {
+  const refresh = controller.slice(controller.indexOf('func refresh('),
+    controller.indexOf('func reconcile('))
+  const review = controller.slice(controller.indexOf('func reconcile('),
+    controller.indexOf('func resumePausedAuto('))
+  assert.match(refresh, /pendingReceiptSnapshot\(scope: scope, limit: 0\)\.pending/)
+  assert.match(review, /limit: Self\.maxPerReview/)
+  assert.match(controller, /private static let maxPerReview = 20/)
+  assert.match(review, /let snapshot = try await ledger\.pendingReceiptSnapshot/)
+  assert.match(review, /for record in snapshot\.batch/)
+  assert.match(review, /XDriveIOSPhotoBackupUncertainReceiptRecovery/)
+  assert.match(review, /case \.confirmed:/)
+  assert.match(review, /case \.ambiguousSession:/)
+  assert.match(review, /self\.pending = latest\.pending/)
+  assert.doesNotMatch(review, /ledger\.operations\(scope: scope\)/)
+  assert.doesNotMatch(review, /uploadPreparedOriginal\(|beginCreate\(/)
 })
 
 test('reconcile single uncertain intent never loads the entire encrypted history', () => {

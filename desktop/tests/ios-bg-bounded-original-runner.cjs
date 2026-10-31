@@ -53,12 +53,12 @@ test('local revoke and OS expiration fence each subsequent chunk without credent
   const transport=read('NativeUploadSessionTransport.swift')
   const schedule=read('BGOriginalWindowStore.swift')
   const grant=read('ApprovedBackgroundPhotoVault.swift')
-  const bridge=read('IOSPhotoHostBridge.swift')
+  const login=read('NativeOwnerLoginScreen.swift')
   assert.match(transport,/XDriveIOSApprovedPhotoBGVault\.shared\.current\(\)/)
   assert.match(transport,/local\.grantID == approved\.grantID/)
   assert.match(transport,/URLSessionConfiguration\.ephemeral/)
   assert.match(transport,/NativePhotoDenyRedirects/)
-  assert.match(bridge,/XDriveIOSOriginalRunGate\.shared\.acquire\(\)/)
+  assert.match(login,/XDriveIOSOriginalRunGate\.shared\.acquire\(\)/)
   assert.match(schedule,/pausedForReview/)
   assert.match(schedule,/record\(owner: XDriveNativeOwnerRoot/)
   assert.match(schedule,/needsReview: unresolved/)
@@ -72,14 +72,12 @@ test('local revoke and OS expiration fence each subsequent chunk without credent
   assert.doesNotMatch(schedule,/\.localIdentifier\b|\b(?:var|let) (?:accessToken|grantSecret|deviceToken)\b/)
 })
 
-test('offline local BG stop is stop-only, preserves remote revoke evidence and is available in shared UI and bootstrap',()=>{
+test('offline stop remains native, stop-only and preserves remote revoke evidence',()=>{
   const manager=read('PhotoBackgroundGrantManager.swift')
-  const bridge=read('IOSPhotoHostBridge.swift')
-  const native=fs.readFileSync(path.join(root,'ios/XDriveIOS/XDriveWebAppHome.swift'),'utf8')
-  const web=fs.readFileSync(path.join(root,'web/src/iosPhotoHostAdapter.ts'),'utf8')
-  const shared=fs.readFileSync(path.join(root,'ui/shared/src/mui/IOSPhotoBackupSettings.tsx'),'utf8')
+  const root=read('NativeOwnerLoginScreen.swift')
+  const schedule=read('PhotoAutoScheduleStore.swift')
   const localStop=manager.match(/func emergencyStopLocally\(\) async throws -> Bool \{[\s\S]*?\n    \}/)?.[0]
-  assert.ok(localStop,'missing native offline stop method')
+  assert.ok(localStop)
   assert.ok(localStop.indexOf('revokePendingRequests()') <
             localStop.indexOf('XDriveIOSApprovedPhotoBGVault.shared.current()'))
   assert.ok(localStop.indexOf('.cancelLocally(owner: owner)') <
@@ -87,14 +85,16 @@ test('offline local BG stop is stop-only, preserves remote revoke evidence and i
   assert.match(localStop,/pending.revokePending = true/)
   assert.match(localStop,/try save\(pending, owner: owner\)/)
   assert.doesNotMatch(localStop,/accessToken|Bearer |URLSession|\.request\(/)
-  assert.match(bridge,/case "photos\.background\.emergencyStop":/)
-  assert.match(bridge,/let pendingApproval = activeGrantTask[\s\S]*?await pendingApproval.value/)
-  assert.match(bridge,/!emergencyStopInProgress/)
-  assert.match(native,/offline-ios-photo-emergency-stop/)
-  assert.match(native,/\.shared.emergencyStopLocally\(\)/)
-  assert.match(web,/this.request\('photos\.background\.emergencyStop'\)/)
-  assert.match(shared,/data-xdrive-ios-bg-emergency-stop/)
-  assert.match(shared,/remoteRevokePending/)
+  const emergency=root.slice(root.indexOf('private func emergencyStopWithoutAccount()'),
+    root.indexOf('/// No new account may reuse'))
+  assert.match(root,/native-ios-offline-emergency-stop/)
+  assert.match(emergency,/backup.cancel\(\)/)
+  assert.match(emergency,/disableAllOnThisDevice\(\)/)
+  assert.match(emergency,/\.emergencyStopLocally\(\)/)
+  assert.match(emergency,/XDriveIOSBackgroundPhotoTask.revokePendingRequests\(\)/)
+  assert.ok(emergency.indexOf('disableAllOnThisDevice()') <
+    emergency.indexOf('emergencyStopLocally()'))
+  assert.match(schedule,/localStopGeneration &\+= 1/)
 })
 
 test('PhotoKit 256-slot window counts unsupported assets instead of silently skipping their offsets',()=>{
