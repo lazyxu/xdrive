@@ -30,7 +30,6 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
@@ -43,7 +42,6 @@ import com.tfluid.xdrive.core.GalleryTimelineGroup
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.android.awaitFrame
-import kotlinx.coroutines.flow.first
 
 /** Match the shared Mobile Gallery KFS column-first contract for All photos:
  * reference width 144dp, three baseline columns, preference range 2..10.
@@ -643,7 +641,9 @@ internal fun GalleryTile(
     onFocusRestored: () -> Unit = {},
 ) {
     val focusRequester = remember(item.node.id, item.node.revision) { FocusRequester() }
-    val windowInfo = LocalWindowInfo.current
+    var tileActuallyFocused by remember(item.node.id, item.node.revision) {
+        mutableStateOf(false)
+    }
     val key = "${item.node.id}:${item.node.revision}"
     // A new Owner Range/revision or thumbnail-availability change invalidates
     // the bitmap. A refreshed metadata object for the SAME version must not
@@ -684,7 +684,10 @@ internal fun GalleryTile(
 
     Box(Modifier.fillMaxWidth().aspectRatio(1f)
         .focusRequester(focusRequester)
-        .onFocusChanged { if (it.isFocused && restoreFocus) onFocusRestored() }
+        .onFocusChanged {
+            tileActuallyFocused = it.isFocused
+            if (it.isFocused && restoreFocus) onFocusRestored()
+        }
         .clip(androidx.compose.foundation.shape.RoundedCornerShape(2.dp))
         .background(MaterialTheme.colorScheme.surfaceContainerLow)
         // In selection mode the real visible media toggles; never open Viewer.
@@ -760,16 +763,19 @@ internal fun GalleryTile(
                 color = Color.White, style = MaterialTheme.typography.labelSmall)
         }
     }
-    LaunchedEffect(restoreFocus, item.node.id, item.node.revision, windowInfo) {
+    LaunchedEffect(restoreFocus, item.node.id, item.node.revision) {
         if (restoreFocus) {
-            // A Viewer may have owned the window's input focus even after
-            // Compose has recreated this Gallery card. Await the activity
-            // window regaining input focus before requesting a real target.
-            snapshotFlow { windowInfo.isWindowFocused }.first { it }
-            awaitFrame()
-            focusRequester.requestFocus()
-            // A request accepted while the host was losing focus is NOT a
-            // successful return. Only onFocusChanged(isFocused) retires it.
+            // The Viewer temporarily replaces this authenticated Gallery
+            // wall. A single accepted request may precede the host focus
+            // handoff; retry only the same Owner + Node revision for at most
+            // 120 frames, stopping as soon as focus is actually observed.
+            repeat(120) {
+                awaitFrame()
+                if (tileActuallyFocused) return@LaunchedEffect
+                focusRequester.requestFocus()
+            }
+            // The return anchor is retired ONLY by the verified tile's
+            // onFocusChanged(isFocused), never by requestFocus's return value.
         }
     }
 
