@@ -1,4 +1,5 @@
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import {
   Box,
   Stack,
@@ -27,22 +28,21 @@ function expiryLabel(share: FileShare, compact: boolean) {
   return compact ? `到期时间 ${value}` : value
 }
 
-function downloadLabel(share: FileShare, compact: boolean) {
-  const value = share.max_downloads > 0
-    ? `${share.download_count} / ${share.max_downloads}`
-    : `${share.download_count} / 不限`
-  return compact ? `${value} 次下载` : value
+function accessLabel(share: FileShare) {
+  return share.access === 'view_upload' ? '查看 + 上传' : '只读'
 }
 
 export function XDriveShareList({
   shares,
   variant = 'table',
   revokeDisabled = false,
+  onEdit,
   onRevoke,
 }: {
   shares: FileShare[]
   variant?: XDriveShareListVariant
   revokeDisabled?: boolean
+  onEdit?: (share: FileShare) => void
   onRevoke: (share: FileShare) => void | Promise<void>
 }) {
   if (variant === 'compact') {
@@ -68,9 +68,12 @@ export function XDriveShareList({
               <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.45, overflowWrap: 'anywhere' }}>
                 {protectionLabel(share, true)}
                 {' · '}{expiryLabel(share, true)}
-                {' · '}{downloadLabel(share, true)}
+                {' · '}{accessLabel(share)} · 下载不限次
               </Typography>
             </Box>
+            <Stack direction="row" spacing={1}>
+            {onEdit && share.status !== 'revoked' ? <XDriveActionButton compact
+              onClick={() => onEdit(share)}>编辑</XDriveActionButton> : null}
             <XDriveActionButton
               compact
               intent="danger"
@@ -79,6 +82,7 @@ export function XDriveShareList({
             >
               撤销
             </XDriveActionButton>
+            </Stack>
           </Stack>
         ))}
       </Box>
@@ -94,7 +98,7 @@ export function XDriveShareList({
             <TableCell>状态</TableCell>
             <TableCell>保护方式</TableCell>
             <TableCell>过期时间</TableCell>
-            <TableCell>下载次数</TableCell>
+            <TableCell>访问权限</TableCell>
             <TableCell align="right">操作</TableCell>
           </TableRow>
         </TableHead>
@@ -105,8 +109,12 @@ export function XDriveShareList({
               <TableCell><XDriveShareStatusBadge status={share.status} /></TableCell>
               <TableCell>{protectionLabel(share, false)}</TableCell>
               <TableCell>{expiryLabel(share, false)}</TableCell>
-              <TableCell>{downloadLabel(share, false)}</TableCell>
+              <TableCell>{accessLabel(share)}</TableCell>
               <TableCell align="right">
+                {onEdit && share.status !== 'revoked' ? (
+                  <XDriveActionButton compact startIcon={<EditOutlinedIcon />}
+                    onClick={() => onEdit(share)}>编辑</XDriveActionButton>
+                ) : null}
                 <XDriveActionButton
                   compact
                   intent="danger"

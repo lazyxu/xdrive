@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import LinkRoundedIcon from '@mui/icons-material/LinkRounded'
-import { Box, Dialog, LinearProgress } from '@mui/material'
-import type { FileShare } from '../models'
+import { Box, Dialog, LinearProgress, MenuItem, Stack, TextField } from '@mui/material'
+import type { FileShare, XDriveShareAccess } from '../models'
 import { XDriveActionButton } from './ActionButton'
 import { xDriveCanUseNativeShare } from './NativeShareCapability'
 import { XDriveDialogActions } from './DialogActions'
@@ -28,13 +28,14 @@ export interface XDriveShareNode {
 export interface XDriveShareCreateInput {
   expires_at?: string
   password?: string
-  max_downloads?: number
+  access?: XDriveShareAccess
 }
 
 export interface XDriveShareDialogAdapter {
   listShares(nodeID: number): Promise<FileShare[]>
   createShare(nodeID: number, input: XDriveShareCreateInput): Promise<{ url: string }>
   revokeShare(shareID: number): Promise<unknown>
+  updateShare?(shareID: number, input: { expires_at?: string | null; access: XDriveShareAccess }): Promise<FileShare>
 }
 
 type Feedback = {
@@ -95,10 +96,14 @@ export function XDriveShareDialog({
   const [createdLink, setCreatedLink] = useState('')
   const [expiresAt, setExpiresAt] = useState(() => defaultExpiryInput(expiryMode))
   const [password, setPassword] = useState('')
-  const [maxDownloads, setMaxDownloads] = useState('0')
+  const [access, setAccess] = useState<XDriveShareAccess>('read_only')
+  const [editingShare, setEditingShare] = useState<FileShare | null>(null)
+  const [editExpiry, setEditExpiry] = useState('')
+  const [editAccess, setEditAccess] = useState<XDriveShareAccess>('read_only')
+  const [savingEdit, setSavingEdit] = useState(false)
   const [expiryError, setExpiryError] = useState('')
   const [passwordError, setPasswordError] = useState('')
-  const [maxDownloadsError, setMaxDownloadsError] = useState('')
+
   const [feedback, setFeedback] = useState<Feedback | null>(null)
   const { compactTouch, dialogPaper } = useXDriveCompactTouchDialog()
   const nativeShareAvailable = compactTouch && xDriveCanUseNativeShare('link')
@@ -125,6 +130,8 @@ export function XDriveShareDialog({
     nodeLifecycleGenerationRef.current += 1
     setCreating(false)
     setRevokingID(null)
+    setEditingShare(null)
+    setSavingEdit(false)
     setFeedback(null)
   }, [node?.id])
 
@@ -133,10 +140,11 @@ export function XDriveShareDialog({
     setCreatedLink('')
     setExpiresAt(defaultExpiryInput(expiryMode))
     setPassword('')
-    setMaxDownloads('0')
+    setAccess('read_only')
+    setEditingShare(null)
     setExpiryError('')
     setPasswordError('')
-    setMaxDownloadsError('')
+
   }, [node?.id, expiryMode])
 
   useEffect(() => {
@@ -159,16 +167,11 @@ export function XDriveShareDialog({
     if (!node) return
 
     const expiry = expiryInput(expiryMode, expiresAt)
-    const parsedMaxDownloads = Number(maxDownloads)
     const nextPasswordError = password && password.length < 8 ? '至少需要 8 个字符' : ''
-    const nextMaxDownloadsError = !Number.isSafeInteger(parsedMaxDownloads) || parsedMaxDownloads < 0
-      ? '最大下载次数必须是非负整数'
-      : ''
 
     setExpiryError(expiry.error ?? '')
     setPasswordError(nextPasswordError)
-    setMaxDownloadsError(nextMaxDownloadsError)
-    if (expiry.error || nextPasswordError || nextMaxDownloadsError) return
+    if (expiry.error || nextPasswordError) return
 
     const lifecycleGeneration = nodeLifecycleGenerationRef.current
     setCreating(true)
@@ -176,7 +179,7 @@ export function XDriveShareDialog({
       const created = await adapter.createShare(node.id, {
         expires_at: expiry.expiresAt,
         password,
-        max_downloads: parsedMaxDownloads,
+        access: node.type === 'dir' ? access : 'read_only',
       })
       if (lifecycleGeneration !== nodeLifecycleGenerationRef.current) return
       setCreatedLink(created.url)
@@ -231,7 +234,49 @@ export function XDriveShareDialog({
     }
   }
 
-  const closeDisabled = creating || revokingID !== null
+  const startEdit = (share: FileShare) => {
+    setEditingShare(share)
+    setEditAccess(share.access ?? 'read_only')
+    if (expiryMode === 'days') {
+      const days = share.expires_at
+        ? Math.max(1, Math.ceil((new Date(share.expires_at).getTime() - Date.now()) / 86_400_000))
+        : 0
+      setEditExpiry(String(days))
+    } else if (share.expires_at) {
+      const value = new Date(share.expires_at)
+      const offset = value.getTimezoneOffset() * 60_000
+      setEditExpiry(new Date(value.getTime() - offset).toISOString().slice(0, 16))
+    } else {
+      setEditExpiry('')
+    }
+  }
+
+  const saveEdit = async () => {
+    if (!editingShare || !adapter.updateShare || !node) return
+    const expiry = expiryInput(expiryMode, editExpiry)
+    if (expiry.error) {
+      setFeedback({ tone: 'bad', message: expiry.error })
+      return
+    }
+    const generation = nodeLifecycleGenerationRef.current
+    setSavingEdit(true)
+    try {
+      await adapter.updateShare(editingShare.id, {
+        expires_at: expiry.expiresAt ?? null,
+        access: node.type === 'dir' ? editAccess : 'read_only',
+      })
+      if (generation !== nodeLifecycleGenerationRef.current) return
+      setEditingShare(null)
+      setFeedback({ tone: 'good', message: '分享权限和有效期已更新，原链接保持不变' })
+      await load()
+    } catch (error) {
+      if (generation === nodeLifecycleGenerationRef.current) onError(error)
+    } finally {
+      if (generation === nodeLifecycleGenerationRef.current) setSavingEdit(false)
+    }
+  }
+
+  const closeDisabled = creating || revokingID !== null || savingEdit
 
   return (
     <>
@@ -280,12 +325,6 @@ export function XDriveShareDialog({
                 setExpiresAt(value)
                 if (expiryError) setExpiryError('')
               }}
-              maxDownloadsValue={maxDownloads}
-              onMaxDownloadsChange={(value) => {
-                setMaxDownloads(value)
-                if (maxDownloadsError) setMaxDownloadsError('')
-              }}
-              maxDownloadsHelperText={maxDownloadsError || (expiryMode === 'days' ? '0 表示不限次数。' : '0 表示不限')}
               password={password}
               passwordError={Boolean(passwordError)}
               passwordHelperText={passwordError || ' '}
@@ -296,6 +335,14 @@ export function XDriveShareDialog({
               }}
               sx={{ mb: 1.5 }}
             />
+            {node?.type === 'dir' ? (
+              <TextField select size="small" label="访问权限" value={access}
+                onChange={(event) => setAccess(event.target.value as XDriveShareAccess)}
+                sx={{ minWidth: 240, mb: 1.5, display: 'block' }}>
+                <MenuItem value="read_only">只读（查看、预览、下载）</MenuItem>
+                <MenuItem value="view_upload">查看 + 上传（可上传整个文件夹）</MenuItem>
+              </TextField>
+            ) : null}
             <XDriveActionButton
               intent="primary"
               type="submit"
@@ -319,8 +366,31 @@ export function XDriveShareDialog({
               variant={compactTouch ? 'compact' : listVariant}
               revokeDisabled={revokingID !== null}
               onRevoke={(share) => void revoke(share)}
+              onEdit={adapter.updateShare ? startEdit : undefined}
             />
           )}
+          {editingShare && adapter.updateShare ? (
+            <Box sx={{ mt: 2, p: 2, border: 1, borderColor: 'divider', borderRadius: 2 }}>
+              <XDriveSectionHeader level="h3" title="编辑已有分享（不更换链接）" sx={{ mb: 1.5 }} />
+              <Stack spacing={1.5}>
+                <TextField size="small" label={expiryMode === 'days' ? '从现在起有效天数（0 为永久）' : '过期时间（留空为永久）'}
+                  type={expiryMode === 'days' ? 'number' : 'datetime-local'}
+                  value={editExpiry} onChange={(event) => setEditExpiry(event.target.value)}
+                  slotProps={expiryMode === 'days' ? { htmlInput: { min: 0, max: 3650 } } : { inputLabel: { shrink: true } }} />
+                {node?.type === 'dir' ? (
+                  <TextField select size="small" label="访问权限" value={editAccess}
+                    onChange={(event) => setEditAccess(event.target.value as XDriveShareAccess)}>
+                    <MenuItem value="read_only">只读</MenuItem>
+                    <MenuItem value="view_upload">查看 + 上传</MenuItem>
+                  </TextField>
+                ) : null}
+                <Stack direction="row" spacing={1}>
+                  <XDriveActionButton loading={savingEdit} onClick={() => void saveEdit()}>保存修改</XDriveActionButton>
+                  <XDriveActionButton disabled={savingEdit} onClick={() => setEditingShare(null)}>取消</XDriveActionButton>
+                </Stack>
+              </Stack>
+            </Box>
+          ) : null}
         </XDriveDialogContent>
         {showCloseAction ? (
           <XDriveDialogActions>

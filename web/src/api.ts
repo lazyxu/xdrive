@@ -3768,13 +3768,13 @@ export class XDriveApi {
     })
   }
 
-  createShare(nodeID: number, input: { expires_at?: string; password?: string; max_downloads?: number }) {
+  createShare(nodeID: number, input: { expires_at?: string; password?: string; access?: 'read_only' | 'view_upload' }) {
     return this.request<CreatedFileShare>(`/api/v1/nodes/${nodeID}/shares`, {
       method: 'POST',
       body: JSON.stringify({
         expires_at: input.expires_at || null,
         password: input.password || '',
-        max_downloads: input.max_downloads ?? 0,
+        access: input.access ?? 'read_only',
       }),
     })
   }
@@ -3785,6 +3785,13 @@ export class XDriveApi {
 
   revokeShare(shareID: number) {
     return this.request<void>(`/api/v1/shares/${shareID}`, { method: 'DELETE' })
+  }
+
+  updateShare(shareID: number, input: { expires_at?: string | null; access: 'read_only' | 'view_upload' }) {
+    return this.request<FileShare>(`/api/v1/shares/${shareID}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ expires_at: input.expires_at ?? null, access: input.access }),
+    })
   }
 
   publicShare(token: string, signal?: AbortSignal) {
