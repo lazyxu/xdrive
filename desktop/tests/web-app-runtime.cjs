@@ -125,7 +125,17 @@ test('Text/Code Viewer is read-only textarea with common source/config allowlist
 
 test('optional deep-link arguments are consumed by their owning apps', () => {
   assert.ok(app.includes("initialDirectoryID={route.app === 'files' ? route.params.dir : undefined}"))
-  assert.ok(app.includes("initialSection={webMapScopeOwnerReady ? 'places' : route.app === 'gallery'"))
+  // Actual Viewer overlay keeps the currently authorized Gallery section
+  // instead of interpreting an undefined Viewer route as Library. An explicit
+  // map handoff still wins; other Owners/workspaces never inherit the hint.
+  assert.match(app, /initialSection=\{webMapScopeOwnerReady \? 'places' :\s*xDriveMobileGallerySectionForViewer\(\s*route, appView, mobileOwnerScope, retainedGallerySectionRef\.current,\s*\)\}/)
+  assert.match(app, /if \(!mobileOwnerScope\) retainedGallerySectionRef\.current = null/)
+  assert.match(app, /else if \(route\.app === 'gallery'\) \{\s*retainedGallerySectionRef\.current = \{\s*ownerScope: mobileOwnerScope,\s*section: route\.params\.section,/)
+  const mobileRouteState = read('web', 'src', 'mobileFiveSlotState.ts')
+  assert.match(mobileRouteState, /if \(route\.app === 'gallery'\) return route\.params\.section/)
+  assert.match(mobileRouteState, /retainedWorkspace !== 'gallery' \|\| !viewers\.has\(route\.app\)/)
+  assert.match(mobileRouteState, /lastGallery\?\.ownerScope !== ownerScope\) return undefined/)
+  assert.match(mobileRouteState, /return lastGallery\.section/)
   // The exact deep-link is now passed through Browser Host to the shared
   // SourceManager outlet; it must never leak into Device Backup Push.
   assert.ok(app.includes("const remotePullSourceID = route.app === 'remote-pull' ? route.params.source : undefined"))

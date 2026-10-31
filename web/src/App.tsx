@@ -100,7 +100,7 @@ import { useXDriveWebAppRuntime, xDriveCreateWebAppBrowseSession, xDriveClearPri
 import { xDriveWebAppRouteForWorkspaceKey, xDriveWebAppWorkspaceKey } from './webApps'
 import { XDriveMobileAllLauncher, XDriveMobileFiveSlotNavigation, XDriveMobileMinePage, xDriveBrowserMobileDestinations } from './MobileFiveSlotNavigation'
 import { xDriveMobileLauncherSections } from './mobileLauncherSections'
-import { xDriveInitialMobileNavigation, xDriveMobileFeatureParentRoute, xDriveMobileRouteForSlot, xDriveMobileSlotForRoute, xDriveRememberMobileNavigation, xDriveToggleMobileFavorite, xDriveSetMobileLauncherSearch, xDriveRememberMobileGalleryAlbum, xDriveMobileAlbumOwnsBack, xDriveMobileMapFocused } from './mobileFiveSlotState'
+import { xDriveInitialMobileNavigation, xDriveMobileFeatureParentRoute, xDriveMobileRouteForSlot, xDriveMobileSlotForRoute, xDriveRememberMobileNavigation, xDriveToggleMobileFavorite, xDriveSetMobileLauncherSearch, xDriveRememberMobileGalleryAlbum, xDriveMobileGallerySectionForViewer, xDriveMobileAlbumOwnsBack, xDriveMobileMapFocused } from './mobileFiveSlotState'
 import type { XDriveMobileSlot } from './mobileFiveSlotState'
 import { createWebMediaGalleryDataSource } from './mediaGalleryAdapter'
 import { XDriveRoutedGalleryThumbnailBridge } from './routedGalleryThumbnailBridge'
@@ -1174,6 +1174,21 @@ function FileManager({
     if (main) main.scrollTop = 0
   }, [appView])
   const viewerActive = Boolean(xDriveWebAppViewer(route.app))
+  // A routed Viewer overlays the still-mounted Gallery, so do not send an
+  // undefined initialSection and silently navigate its photo wall to Library.
+  // Keep only the last committed Gallery section for this authenticated Owner.
+  const retainedGallerySectionRef = useRef<{
+    ownerScope: string; section: MediaGallerySection | undefined
+  } | null>(null)
+  useLayoutEffect(() => {
+    if (!mobileOwnerScope) retainedGallerySectionRef.current = null
+    else if (route.app === 'gallery') {
+      retainedGallerySectionRef.current = {
+        ownerScope: mobileOwnerScope,
+        section: route.params.section,
+      }
+    }
+  }, [mobileOwnerScope, route])
   // All routed Viewer entries converge here: Files, search, Gallery, album,
   // maps and standalone image/video/text/PDF/audio. Popstate/back is included.
   // The lease starts before paint, even if the Viewer bundle is still lazy.
@@ -2800,9 +2815,10 @@ function FileManager({
             onOpenBaiduMapDiagnostics={profile?.role === 'admin' ? () =>
               launchWebApp({ app: 'admin-services', params: { service: 'baidu-map', tab: 'verify' } })
               : undefined}
-            initialSection={webMapScopeOwnerReady ? 'places' : route.app === 'gallery'
-              ? route.params.section as MediaGallerySection | undefined
-              : undefined}
+            initialSection={webMapScopeOwnerReady ? 'places' :
+              xDriveMobileGallerySectionForViewer(
+                route, appView, mobileOwnerScope, retainedGallerySectionRef.current,
+              )}
             initialMobileAlbumID={compactWorkspace && route.app === 'gallery' &&
               route.params.section === 'albums'
                 ? currentMobileNavigation.galleryAlbumID ?? undefined : undefined}

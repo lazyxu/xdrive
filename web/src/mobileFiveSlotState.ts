@@ -1,4 +1,5 @@
 import type { XDriveWebAppRoute } from '../../ui/shared/src'
+import type { MediaGallerySection } from '../../ui/shared/src/mui/MediaGalleryNavigation'
 
 export const XDRIVE_MOBILE_SLOTS = ['all', 'dynamic', 'gallery', 'files', 'mine'] as const
 export type XDriveMobileSlot = typeof XDRIVE_MOBILE_SLOTS[number]
@@ -74,6 +75,25 @@ export function xDriveRememberMobileNavigation(
       }
     default: return { ...base, dynamic, favorites }
   }
+}
+
+/** Last Gallery route must remain the same while a Viewer overlays the
+ * retained workspace. This is a section hint only, not Album/media authority. */
+export type XDriveMobileGalleryOwnerSection = {
+  ownerScope: string
+  section: MediaGallerySection | undefined
+}
+
+export function xDriveMobileGallerySectionForViewer(
+  route: XDriveWebAppRoute,
+  retainedWorkspace: string,
+  ownerScope: string,
+  lastGallery: XDriveMobileGalleryOwnerSection | null,
+): MediaGallerySection | undefined {
+  if (route.app === 'gallery') return route.params.section
+  if (!ownerScope || retainedWorkspace !== 'gallery' || !viewers.has(route.app) ||
+      lastGallery?.ownerScope !== ownerScope) return undefined
+  return lastGallery.section
 }
 
 /** An Owner-scoped committed Album ID is a return hint, never media authority. */
