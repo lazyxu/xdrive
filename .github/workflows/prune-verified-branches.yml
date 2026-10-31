@@ -40,7 +40,12 @@ jobs:
             // Open PR head/base and exact-tip evidence guard all remaining work.
             // #2524 is closed after a semantic audit; its immutable source tip
             // may be retired only by the explicitly reviewed entry below.
-            const preserved = new Set();
+            // Retain these development integration heads. Their ancestors are
+            // reviewed for cleanup below, but neither head is merged to master.
+            const preserved = new Set([
+              'fix/files-owner-read-admission-consolidated-20261030',
+              'refactor/files-shared-location-ancestors-20261030',
+            ]);
 
             // Closed unmerged source PR -> accepted consolidated PR.
             // Only retire the source when the target is actually merged to master
@@ -63,6 +68,27 @@ jobs:
             // source tips and independently reviewed accepted-master evidence.
             // No branch-name-only or closed-PR-only deletion is permitted.
             const exactRetirements = new Map([
+              // Four SHA-pinned source commits wholly retained in two active dev heads.
+              ['fix/files-owner-root-quota-admission-20261030@284b086560a9b489aff6d34cf013d08a5dea0876', {
+                retainedDevBranch: 'fix/files-owner-read-admission-consolidated-20261030',
+                retainedDevSha: '0ed94690a3e9eaea0aa415ef92c0c1deef3dee5a',
+                why: 'source SHA retained by exact development integration head; not master acceptance',
+              }],
+              ['fix/files-owner-search-sources-admission-20261030@940128fd536d6b2869bde56c88a8f373bb306e76', {
+                retainedDevBranch: 'fix/files-owner-read-admission-consolidated-20261030',
+                retainedDevSha: '0ed94690a3e9eaea0aa415ef92c0c1deef3dee5a',
+                why: 'source SHA retained by exact development integration head; not master acceptance',
+              }],
+              ['fix/files-exact-reanchor-row-identity-20261030@e8d073cc184f84398cd4599d3e0b7e584d1702f8', {
+                retainedDevBranch: 'refactor/files-shared-location-ancestors-20261030',
+                retainedDevSha: '81448e43567d9949e14fdb7d514b8f411a3d9571',
+                why: 'source SHA retained by exact development integration head; not master acceptance',
+              }],
+              ['refactor/files-shared-reveal-lifecycle-20261030@e33567770ff7c517f8f1cb707a4b72f016b0948a', {
+                retainedDevBranch: 'refactor/files-shared-location-ancestors-20261030',
+                retainedDevSha: '81448e43567d9949e14fdb7d514b8f411a3d9571',
+                why: 'source SHA retained by exact development integration head; not master acceptance',
+              }],
               ['feat/sync-run-outcome-telemetry-p0-p2-20261016@d2d9e87c7f1597ab0412c101806218a9c1acf17d', {
                 closedIssue: 2524,
                 requiredMergedPulls: [2800],
@@ -205,6 +231,30 @@ jobs:
                   }
                 }
               }
+              // Development-only retirement: prove the exact source commit is
+              // still an ancestor of an unchanged, retained development branch.
+              if (accepted && policy.retainedDevBranch) {
+                accepted = policy.retainedDevBranch !== branchName &&
+                  /^[0-9a-f]{40}$/.test(policy.retainedDevSha);
+                if (accepted) {
+                  try {
+                    const {data: target} = await github.rest.repos.getBranch({
+                      owner, repo, branch: policy.retainedDevBranch,
+                    });
+                    accepted = target.commit.sha === policy.retainedDevSha;
+                    if (accepted) {
+                      const {data: cmp} = await github.rest.repos.compareCommits({
+                        owner, repo, base: expectedSHA, head: policy.retainedDevSha,
+                      });
+                      accepted = cmp.behind_by === 0 &&
+                        (cmp.status === 'ahead' || cmp.status === 'identical');
+                    }
+                  } catch (error) {
+                    if (error.status !== 404) throw error;
+                    accepted = false;
+                  }
+                }
+              }
               if (accepted) retiredTips.set(tip, policy.why);
             }
 
@@ -274,6 +324,33 @@ jobs:
                 report.push([name, 'KEEP: head changed/protected', evidence]);
                 skipped++;
                 continue;
+              }
+              // Re-read retained HEAD and ancestry just before deleting this
+              // source ref; stale cross-branch evidence never authorizes deletion.
+              const devPolicy = exactRetirements.get(tip);
+              if (devPolicy?.retainedDevBranch && retiredTips.has(tip)) {
+                let retained = false;
+                try {
+                  const {data: currentTarget} = await github.rest.repos.getBranch({
+                    owner, repo, branch: devPolicy.retainedDevBranch,
+                  });
+                  if (currentTarget.commit.sha === devPolicy.retainedDevSha) {
+                    const {data: cmp} = await github.rest.repos.compareCommits({
+                      owner, repo, base: branch.commit.sha,
+                      head: currentTarget.commit.sha,
+                    });
+                    retained = cmp.behind_by === 0 &&
+                      (cmp.status === 'ahead' || cmp.status === 'identical');
+                  }
+                } catch (error) {
+                  if (error.status !== 404) throw error;
+                }
+                if (!retained) {
+                  report.push([name, 'KEEP: retained development tip changed or absent',
+                    devPolicy.retainedDevBranch]);
+                  skipped++;
+                  continue;
+                }
               }
               if (removed >= 50) {
                 report.push([name, 'KEEP: deletion budget reached', evidence]);
