@@ -58,6 +58,11 @@ function owner(section, mobileGalleryViewport, extra = {}) {
     setDraftFilters: record('draft'),
     setQuery: record('query'),
     setMobileCollectionsOverview: record('collections'),
+    // Same optional Web Mobile host callbacks consumed by the ORIGINAL
+    // openAlbum production closure. Record them; do not stub away the branch.
+    routeSectionAppliedRef: { current: null },
+    onSectionRouteChange: record('route'),
+    onMobileAlbumSelectionChange: record('albumReturn'),
     loadFirstPage: async (...args) => {
       const ticket = ++generation
       requests.push({
@@ -147,6 +152,11 @@ test('P93 mounted original Album index: held, failed, superseded clicks do not c
     assert.deepEqual(state.mutations.filter(x => x.key === 'section').map(x => x.value), ['albums'])
     assert.equal(state.mutations.filter(x => x.key === 'folder').length, 1)
     assert.equal(state.env.syncFolderRequestID.current, 2)
+    assert.deepEqual(state.mutations.filter(x => x.key === 'albumReturn').map(x => x.value),
+      ['b'], 'only accepted Album B may become a mobile tab-return target')
+    assert.deepEqual(state.mutations.filter(x => x.key === 'route').map(x => x.value),
+      ['albums'], 'only accepted Album Range commits its section hash')
+    assert.equal(state.env.routeSectionAppliedRef.current, 'albums')
   } finally {
     if (view) await act(async () => view.unmount())
   }
@@ -177,11 +187,15 @@ test('P93 original Person and Suggested Person callbacks stage only accepted com
   assert.deepEqual(collections.mutations, [], 'existing Collections -> Album staging remains')
   collections.requests[0].accept()
   assert.deepEqual(collections.mutations.filter(x => x.key === 'collections').map(x => x.value), [false])
+  assert.deepEqual(collections.mutations.filter(x => x.key === 'albumReturn').map(x => x.value),
+    ['a'], 'Collections album is remembered only after accepted Range')
   const wide = owner('albums', false)
   actualCallback('openAlbum', wide.env)(albumA)
   assert.equal(wide.requests.length, 1)
   assert.deepEqual(wide.mutations.filter(x => x.key === 'section').map(x => x.value), ['albums'],
     'wide Web/Desktop established immediate path unchanged')
+  assert.deepEqual(wide.mutations.filter(x => x.key === 'albumReturn'), [],
+    'wide Web/Desktop must not register a mobile tab-return target')
 })
 
 test('P93 real Gallery Server range acceptance owns the callback, not request start or Boolean loading', () => {

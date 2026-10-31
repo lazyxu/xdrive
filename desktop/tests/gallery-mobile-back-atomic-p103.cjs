@@ -42,6 +42,7 @@ function harness(kind, mobile = true) {
     mapGalleryEntryReturnRef: { current: null },
     source: {}, preferenceScope: 'p103', currentAlbum: null,
     onSectionRouteChange: () => {},
+    onMobileAlbumSelectionChange: record('albumReturn'),
     // A3h Cell isolation: this is an ordinary non-Cell Gallery Back fixture.
     collectionTargetRef: { current: null },
     leaveBaiduCellWall: () => { throw new Error('ordinary Gallery Back must not leave a Cell wall') },
@@ -181,6 +182,24 @@ test('P103 compact Album/Person/Place detail Back keeps query/Collections anchor
       }
     })
   }
+})
+
+test('P103 compact Album Back clears mobile return only after accepted first Range', () => {
+  const h = harness('album')
+  const back = createBack({ ...h.env, currentAlbum: {
+    id: 'owner-album-a', kind: 'manual', name: '相册 A', item_count: 1,
+  } })
+  back()
+  assert.equal(h.requests.length, 1)
+  assert.equal(count(h.updates, 'albumReturn'), 0, 'pending Back retains the Album target')
+  h.requests[0].fail()
+  assert.equal(count(h.updates, 'albumReturn'), 0, 'failed Back cannot discard Album target')
+  back()
+  h.requests[0].accept()
+  assert.equal(count(h.updates, 'albumReturn'), 0, 'superseded Back cannot discard it')
+  h.requests[1].accept()
+  assert.deepEqual(h.updates.filter(x => x.key === 'albumReturn').map(x => x.value),
+    [null], 'only accepted index Range clears the mobile Album target')
 })
 
 test('P103 wide Web/Desktop Pet and detail Back retain their pre-existing eager navigation', () => {
