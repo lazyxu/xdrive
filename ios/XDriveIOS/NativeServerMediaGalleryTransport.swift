@@ -190,6 +190,31 @@ struct XDriveIOSNativeMediaGalleryReader {
         return page
     }
 
+    /// Bounded WGS84 Owner map overview; MapKit must never receive BD09.
+    /// Reuses this Reader's HTTPS-only, no-redirect authenticated transport.
+    func mapOverview(
+        bounds: XDriveIOSNativeOwnerMapBounds,
+        detail: Bool = false
+    ) async throws -> XDriveIOSNativeOwnerMapOverview {
+        guard XDriveIOSNativeOwnerMapOverviewPolicy.validBounds(bounds) else {
+            throw XDriveIOSNativeMediaReadFailure.invalidPage
+        }
+        var query = [
+            URLQueryItem(name: "west", value: String(bounds.west)),
+            URLQueryItem(name: "south", value: String(bounds.south)),
+            URLQueryItem(name: "east", value: String(bounds.east)),
+            URLQueryItem(name: "north", value: String(bounds.north))
+        ]
+        if detail { query.append(URLQueryItem(name: "detail", value: "1")) }
+        let url = try endpoint("/api/v1/media/places/overview", query: query)
+        let bytes = try await read(url, maximum: XDriveIOSNativeOwnerMapOverviewPolicy.maximumBytes)
+        let overview = try JSONDecoder().decode(XDriveIOSNativeOwnerMapOverview.self, from: bytes)
+        guard XDriveIOSNativeOwnerMapOverviewPolicy.valid(overview) else {
+            throw XDriveIOSNativeMediaReadFailure.invalidPage
+        }
+        return overview
+    }
+
     func albums() async throws -> [XDriveIOSNativeMediaAlbum] {
         let url = try endpoint("/api/v1/media/albums")
         let data = try await read(url, maximum: 2 * 1_048_576)
