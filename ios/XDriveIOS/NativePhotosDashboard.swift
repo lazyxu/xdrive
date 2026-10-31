@@ -109,6 +109,8 @@ struct XDriveIOSNativePhotosDashboard: View {
     @State private var showSignOutConsent = false
     @State private var signOutConsentOwner: XDriveNativeOwnerRoot?
     @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(\.scenePhase) private var phase
+    @State private var photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @State private var tab: XDriveIOSNativeBottomTab = .gallery
     @State private var gallerySource: XDriveIOSNativeGallerySource = .local
     @State private var dynamicFeature: XDriveIOSNativeDynamicFeature?
@@ -244,6 +246,14 @@ struct XDriveIOSNativePhotosDashboard: View {
         }
         .onAppear {
             restoreNavigationIfNeeded()
+            photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+            backup.refresh(owner: login.owner)
+        }
+        .onChange(of: phase) { state in
+            guard state == .active else { return }
+            // Settings may revoke PhotoKit permission or a BGTask may pause
+            // the durable plan without changing the logged-in Owner.
+            photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             backup.refresh(owner: login.owner)
         }
         .onChange(of: ownerScopeKey) { _ in
@@ -256,6 +266,7 @@ struct XDriveIOSNativePhotosDashboard: View {
             resetNavigation()
         }
         .onChange(of: login.owner) { owner in
+            photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             // No push-route account card: parent root owns signed-out state.
             showSignOutConsent = false
             signOutConsentOwner = nil
@@ -358,8 +369,21 @@ struct XDriveIOSNativePhotosDashboard: View {
                     if backup.busy {
                         Label("正在检查相册备份", systemImage: "arrow.triangle.2.circlepath")
                     } else if let state = backup.schedule, state.enabled {
-                        Label(state.pausedForReview ? "自动备份已暂停：需核对收据" : "前台自动备份已开启",
-                              systemImage: state.pausedForReview ? "exclamationmark.shield" : "checkmark.shield")
+                        if state.pausedForReview {
+                            Label("自动备份已暂停：需核对收据",
+                                  systemImage: "exclamationmark.shield")
+                        } else if photoAuthorization != .authorized && photoAuthorization != .limited {
+                            // The persisted schedule remains enabled, but its
+                            // PhotoKit reader cannot run without authorization.
+                            Label("备份计划已保存：照片权限不可用",
+                                  systemImage: "exclamationmark.triangle")
+                        } else if photoAuthorization == .limited {
+                            Label("前台自动备份：仅处理已授权照片",
+                                  systemImage: "checkmark.shield")
+                        } else {
+                            Label("前台自动备份已开启",
+                                  systemImage: "checkmark.shield")
+                        }
                     } else {
                         Label("前台自动备份未开启", systemImage: "icloud.slash")
                     }
