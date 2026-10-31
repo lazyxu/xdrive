@@ -203,3 +203,22 @@ test('unreadable original journal after failed writer stops the 256-item run', (
   assert.match(writer, /beforeFinalize: \{[\s\S]*?ledger\.beginFinalize/)
   assert.doesNotMatch(failure, /confirmReceipt\(|beginCreate\(|resetLedger|uploadPreparedOriginal\(/)
 })
+
+test('backup portrait stays one ordered form and short landscape splits status from settings only once', () => {
+  assert.match(ui, /@Environment\(\\\.dynamicTypeSize\) private var dynamicTypeSize/);
+  assert.match(ui, /GeometryReader \{ viewport in/);
+  assert.match(ui, /viewport\.size\.width >= 760 &&[\s\S]*?viewport\.size\.height < 500 &&[\s\S]*?!dynamicTypeSize\.isAccessibilitySize/);
+  assert.match(ui, /HStack\(alignment: \.top, spacing: 0\) \{\s*Form \{ backupStatusSections \}/);
+  assert.match(ui, /Form \{ backupSettingsSections \}/);
+  assert.match(ui, /Form \{\s*backupSettingsSections\s*backupStatusSections\s*\}/);
+  assert.match(ui, /@ViewBuilder\s*private var backupSettingsSections: some View \{[\s\S]*?Section\("备份范围"\)[\s\S]*?Section\("手动备份"\)[\s\S]*?Section\("前台自动增量"\)/);
+  assert.match(ui, /@ViewBuilder\s*private var backupStatusSections: some View \{[\s\S]*?Section\("可选系统后台原件备份"\)[\s\S]*?Section\("不确定收据核对"\)[\s\S]*?Section\("查看已备份原件"\)[\s\S]*?Section\("执行结果"\)/);
+  for (const name of ['备份范围','手动备份','前台自动增量','可选系统后台原件备份','不确定收据核对','查看已备份原件','执行结果']) {
+    assert.equal(ui.split('Section("'+name+'")').length-1, 1, name+' must not duplicate');
+  }
+  assert.match(ui, /\.accessibilityIdentifier\("native-ios-backup-landscape-status"\)/);
+  assert.match(ui, /\.accessibilityIdentifier\("native-ios-backup-landscape-settings"\)/);
+  assert.match(ui, /\.onDisappear \{[\s\S]*?receipts\.cancel\(\)/);
+  assert.match(ui, /\.confirmationDialog\("开启自动原件备份？"/);
+  assert.doesNotMatch(ui, /\.onChange\(of: viewport\)|\.id\(viewport\)/);
+});
