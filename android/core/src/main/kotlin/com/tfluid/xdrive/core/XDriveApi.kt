@@ -444,6 +444,21 @@ interface XDriveService {
     suspend fun uploadFile(accessToken: String, parent: DriveNode, name: String, size: Long,
         openSource: () -> InputStream, onProgress: (Long) -> Unit = {}): DriveNode =
         throw ApiException(501, "Native upload unavailable")
+    /** Android Photo only: immutable original hash and per-intent idempotency
+     * key are committed before POST /uploads. Other client/fixtures may keep
+     * the old uploadFile contract; absent support still fails UNKNOWN safely. */
+    suspend fun uploadNativePhotoOriginal(
+        accessToken: String, parent: DriveNode, name: String, size: Long,
+        originalSha256: String, resumeKey: String,
+        openSource: () -> InputStream, onProgress: (Long) -> Unit = {},
+    ): DriveNode = uploadFile(accessToken, parent, name, size, openSource, onProgress)
+
+    /** Owner-JWT read-only exact lookup: null = ACTIVE / no finalized proof.
+     * Missing/expired/ambiguous responses throw and NEVER authorize replay. */
+    suspend fun inspectNativePhotoUpload(
+        accessToken: String, parentId: Long, name: String, size: Long,
+        originalSha256: String, resumeKey: String,
+    ): DriveNode? = throw ApiException(501, "Android photo receipt lookup unavailable")
     /** Validate a current Files node against its authenticated Owner media DTO. */
     suspend fun filesMediaItem(accessToken: String, node: DriveNode): GalleryAsset =
         throw ApiException(501, "Native Files media detail unavailable")
