@@ -11,6 +11,7 @@ import InstallDesktopRoundedIcon from '@mui/icons-material/InstallDesktopRounded
 import DnsRoundedIcon from '@mui/icons-material/DnsRounded'
 import {
   AppBar,
+  Autocomplete,
   Box,
   Button,
   Checkbox,
@@ -110,6 +111,10 @@ import { createWebShareDialogAdapter, createWebTrashDialogAdapter, createWebVers
 import { createXDriveBrowserWorkspaceHost, xDriveBrowserFilesRouteHost } from './browserWorkspaceHost'
 import { clearWebBrowserCache, createWebBrowserStorageSnapshot } from './browserStorage'
 import { xDriveBrowserStorageRead, xDriveBrowserStorageWrite, xDriveBrowserStorageRemove } from './browserSafeStorage'
+import {
+  xDriveReadWebLoginUsernames, xDriveRememberWebLoginUsername,
+  xDriveForgetWebLoginUsername,
+} from './loginProfiles'
 import PwaOfflineDirectorySection from './PwaOfflineDirectorySection'
 import PwaOfflineDirectoryBrowser from './PwaOfflineDirectoryBrowser'
 import { xDrivePwaCaptureAlbumSummaries, xDrivePwaCaptureVisitedDirectory, xDrivePwaClearOfflineMetadata, xDrivePwaOfflineScopeKey, xDrivePwaReadOfflineDirectories, xDrivePwaObserveOfflinePurge } from './pwaOfflineDirectory'
@@ -707,6 +712,10 @@ function App({
             xDriveBrowserStorageRemove(COOKIE_LOGOUT_OWNER_KEY)
           }
           persistSession(sessionFromAuth(result), rememberLogin)
+          // A successful verified login may contribute only a username to
+          // this Origin's bounded account suggestions. Never save passwords,
+          // refresh tokens or share credentials across LAN/domain Origins.
+          xDriveRememberWebLoginUsername(result.username)
           setLoginPasswordChangeRequired(result.must_change_password === true)
           if (rememberLogin) xDriveBrowserStorageWrite(LAST_USERNAME_KEY, result.username)
           if (rememberLogin && !xDriveBrowserStorageWrite(USER_KEY, result.username)) {
@@ -760,11 +769,46 @@ function AuthView({
   const [loginUsername, setLoginUsername] = useState(() =>
     xDriveBrowserStorageRead(LOGIN_DRAFT_USERNAME_KEY) ??
     xDriveBrowserStorageRead(LAST_USERNAME_KEY) ?? '')
+  const [rememberedUsernames, setRememberedUsernames] = useState(xDriveReadWebLoginUsernames)
   const [password, setPassword] = useState('')
   const [usernameError, setUsernameError] = useState('')
   const [passwordError, setPasswordError] = useState('')
   const [installOpen, setInstallOpen] = useState(false)
   const [connectionOpen, setConnectionOpen] = useState(false)
+
+  const editLoginUsername = (next: string) => {
+    if (next !== loginUsername) {
+      setLoginUsername(next)
+      // Never carry a password to another saved username.
+      setPassword('')
+      xDriveBrowserStorageWrite(LOGIN_DRAFT_USERNAME_KEY, next)
+    }
+    if (usernameError) setUsernameError('')
+    if (passwordError) setPasswordError('')
+    if (error) setError('')
+  }
+
+  const forgetLoginUsername = () => {
+    // These are *only* non-secret username suggestions. Do not remove USER_KEY
+    // (needed to fence the exact Owner's HttpOnly Cookie/logout tombstone),
+    // COOKIE_MODE_KEY or an authenticated session.
+    const selected = loginUsername.trim()
+    const forgotten = xDriveForgetWebLoginUsername(selected)
+    const oldLast = xDriveBrowserStorageRead(LAST_USERNAME_KEY)
+    const lastCleared = oldLast !== selected || xDriveBrowserStorageRemove(LAST_USERNAME_KEY)
+    const draftCleared = xDriveBrowserStorageRemove(LOGIN_DRAFT_USERNAME_KEY)
+    if (!forgotten || !lastCleared || !draftCleared) {
+      setError('浏览器未能清除所有用户名记录；请在站点数据设置中检查。')
+      return
+    }
+    setRememberedUsernames(xDriveReadWebLoginUsernames())
+    setLoginUsername('')
+    setPassword('')
+    setUsernameError('')
+    setPasswordError('')
+    setError('')
+  }
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const username = loginUsername.trim()
@@ -807,22 +851,43 @@ function AuthView({
             error={Boolean(usernameError)}
             helper={usernameError || ' '}
           >
-            <TextField
-              id="web-login-username"
-              autoFocus
-              fullWidth
-              size="small"
-              autoComplete="username"
-              value={loginUsername}
-              error={Boolean(usernameError)}
-              onChange={(event) => {
-                setLoginUsername(event.target.value)
-                // Non-secret draft is independent of authenticated Owner Cookie.
-                xDriveBrowserStorageWrite(LOGIN_DRAFT_USERNAME_KEY, event.target.value)
-                if (usernameError) setUsernameError('')
+            <Autocomplete
+              freeSolo
+              clearOnBlur={false}
+              options={rememberedUsernames}
+              inputValue={loginUsername}
+              disabled={busy || logoutInProgress}
+              onInputChange={(_event, value, reason) => {
+                if (reason !== 'reset') editLoginUsername(value)
               }}
+              onChange={(_event, value) => {
+                if (typeof value === 'string') editLoginUsername(value)
+              }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  id="web-login-username"
+                  autoFocus
+                  fullWidth
+                  size="small"
+                  autoComplete="username"
+                  error={Boolean(usernameError)}
+                />
+              )}
             />
           </XDriveAuthField>
+          {(loginUsername.trim() || rememberedUsernames.length > 0) && (
+            <Button
+              variant="text"
+              size="small"
+              data-xdrive-login-forget-username
+              disabled={busy || logoutInProgress}
+              sx={{ alignSelf: 'flex-start', minHeight: 40, mt: -1 }}
+              onClick={forgetLoginUsername}
+            >
+              清除当前用户名的自动填写记录
+            </Button>
+          )}
           <XDriveAuthPasswordField
             id="web-login-password"
             value={password}
