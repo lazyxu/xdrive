@@ -153,6 +153,33 @@ func TestDownloadShareLifecycle(t *testing.T) {
 	if stored.DownloadCount != 3 {
 		t.Fatalf("download_count=%d want=3", stored.DownloadCount)
 	}
+	// Migration compatibility: historical links may retain nonzero limits
+	// in SQL, but both Owner inventory and public metadata must report
+	// unlimited to older clients which independently gate on max_downloads.
+	if err := db.Model(&meta.Share{}).Where("id = ?", created.ID).
+		Update("max_downloads", int64(1)).Error; err != nil {
+		t.Fatal(err)
+	}
+	legacyList := request(t, router, http.MethodGet,
+		fmt.Sprintf("/api/v1/files/%d/shares", file.ID), ownerToken, nil, http.StatusOK)
+	var legacyListed []shareDTO
+	if err := json.Unmarshal(legacyList.Body.Bytes(), &legacyListed); err != nil {
+		t.Fatal(err)
+	}
+	if len(legacyListed) != 1 || legacyListed[0].MaxDownloads != 0 ||
+		legacyListed[0].Status != "active" {
+		t.Fatalf("legacy share inventory still advertises a download cap: %+v", legacyListed)
+	}
+	legacyPublic := publicShareRequest(t, router, http.MethodGet, created.Token, nil, http.StatusOK)
+	var legacyDTO publicShareDTO
+	if err := json.Unmarshal(legacyPublic.Body.Bytes(), &legacyDTO); err != nil {
+		t.Fatal(err)
+	}
+	if legacyDTO.MaxDownloads != 0 || legacyDTO.DownloadCount != 3 {
+		t.Fatalf("legacy public share still advertises an exhausted cap: %+v", legacyDTO)
+	}
+	publicShareRequest(t, router, http.MethodPost, created.Token,
+		strings.NewReader(`{"password":"share-password"}`), http.StatusOK)
 
 	unlimitedRes := request(t, router, http.MethodPost, fmt.Sprintf("/api/v1/files/%d/shares", file.ID),
 		ownerToken, strings.NewReader(`{"max_downloads":0}`), http.StatusCreated)

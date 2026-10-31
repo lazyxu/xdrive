@@ -114,7 +114,10 @@ func toShareDTO(share meta.Share, now time.Time) shareDTO {
 		NodeID:        share.NodeID,
 		HasPassword:   share.PasswordHash != "",
 		ExpiresAt:     share.ExpiresAt,
-		MaxDownloads:  share.MaxDownloads,
+		// Legacy rows may store a historical download limit. The link now
+		// allows unlimited downloads, including for older clients which
+		// still honor the additive max_downloads response field.
+		MaxDownloads:  0,
 		DownloadCount: share.DownloadCount,
 		RevokedAt:     share.RevokedAt,
 		Status:        shareStatus(share, now),
@@ -369,7 +372,7 @@ func (s *Server) publicShareMetadata(c *gin.Context) {
 		UpdatedAt:        updatedAt,
 		RequiresPassword: share.PasswordHash != "",
 		ExpiresAt:        share.ExpiresAt,
-		MaxDownloads:     share.MaxDownloads,
+		MaxDownloads:     0, // never advertise a retired limit to old clients
 		DownloadCount:    share.DownloadCount,
 		Capabilities:     publicShareCapabilitiesForShare(share, node.Type),
 	})
