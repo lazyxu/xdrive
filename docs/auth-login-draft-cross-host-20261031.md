@@ -1,0 +1,9 @@
+# Login draft / session separation across Desktop, Web/PWA and DSM
+
+The shared `xDriveNormalizeLoginDraft` schema contains only bounded server, LAN IP and username strings. It does **not** represent an authenticated Owner or store passwords/tokens. Hosts use independent local preferences with safe fallback if browser storage is unavailable.
+
+- Desktop: best-effort renderer-local draft preserves a failed first server/IP/username entry. It is preferred over the async latest-success history only when a valid draft exists. Existing main-only `safeStorage` password protection and Agent session restoration remain unchanged. If Electron disallows renderer storage, successful-login history is still the fallback.
+- Web/PWA: store the editable username as a separate non-secret draft before successful login; this does not change HttpOnly Cookie, JSON/Bearer compatibility, same-Origin isolation, manual LAN/domain navigation or offline history.
+- DSM: preserve Server/username across an Owner-scoped full page reload, including failed first attempts. An unconfigured Agent cannot overwrite the draft; a configured Agent's identity takes precedence. The password stays only in React memory. On an invalid *local* URL the form remains editable; after sending an Agent login, **both success and ambiguous failure** continue to reload the workspace. A lost ACK can conceal a committed Owner change, so no password is retained across that reload.
+
+No change to HTTP/TLS enforcement, cross-Origin migration, identity pinning, stored refresh-token formats or logout revocation. Contract test: `node --test desktop/tests/auth-login-draft-parity.cjs`. Native/browser integration and production environments require their independent exact-head tests.

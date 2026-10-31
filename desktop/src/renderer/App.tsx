@@ -87,6 +87,7 @@ import type { XDriveFileExplorerDownloadResult, XDriveDeviceBackupDataSource, XD
 import { DesktopFilesPage } from './DesktopFilesPage'
 import { DesktopHostFrame } from './DesktopHostFrame'
 import { desktopWindowHostAdapter } from './desktopWindowHostAdapter'
+import { readDesktopLoginDraft, saveDesktopLoginDraft } from './loginDraft'
 import { createDesktopFileExplorerHostPort } from './DesktopFileExplorerHostPort'
 import { createDesktopCloudFilesHostPort } from './desktopCloudFilesHostPort'
 import type { DesktopFileExplorerAction, DesktopFileExplorerActionIntent } from './DesktopFileExplorer'
@@ -186,8 +187,11 @@ export default function App({
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
-  const [connectionRoute, setConnectionRoute] = useState<DesktopConnectionRoute>({ mode: 'auto', lan_ip: '', public_ip: '' })
-  const routeOriginRef = useRef('')
+  const initialLoginDraft = useMemo(readDesktopLoginDraft, [])
+  const [connectionRoute, setConnectionRoute] = useState<DesktopConnectionRoute>({
+    mode: 'auto', lan_ip: initialLoginDraft.lanIp, public_ip: '',
+  })
+  const routeOriginRef = useRef(initialLoginDraft.server.trim().replace(/\/$/, ''))
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null)
   const [syncMenuAnchor, setSyncMenuAnchor] = useState<HTMLElement | null>(null)
   const [accountMenuAnchor, setAccountMenuAnchor] = useState<HTMLElement | null>(null)
@@ -273,9 +277,13 @@ export default function App({
     await pending.onConfirm()
   }
 
-  const [server, setServer] = useState('')
-  const [username, setUsername] = useState('')
+  const [server, setServer] = useState(initialLoginDraft.server)
+  const [username, setUsername] = useState(initialLoginDraft.username)
   const [password, setPassword] = useState('')
+  useEffect(() => {
+    // Failed first-login drafts survive restart; no secret crosses Renderer storage.
+    saveDesktopLoginDraft({ server, lanIp: connectionRoute.lan_ip, username })
+  }, [server, connectionRoute.lan_ip, username])
   const [loginMount, setLoginMount] = useState('')
   const [loginHistory, setLoginHistory] = useState<DesktopLoginHistory>({ profiles: [], secure_password_storage: false })
   const [rememberPassword, setRememberPassword] = useState(false)
@@ -1117,12 +1125,20 @@ export default function App({
     void window.xdriveDesktop.getLoginHistory().then((value) => {
       if (!active || hasLoginHistoryEvent) return
       setLoginHistory(value)
-      const latest = value.profiles[0]
+      const latest = initialLoginDraft.server
+        ? value.profiles.find((profile) =>
+            profile.server === initialLoginDraft.server &&
+            profile.username === initialLoginDraft.username)
+        : value.profiles[0]
       if (latest) {
-        setServer(latest.server)
-        setConnectionRoute(latest.connection_route || { mode: 'auto', lan_ip: '', public_ip: '' })
-        routeOriginRef.current = latest.server.trim().replace(/\/$/, '')
-        setUsername(latest.username)
+        // A failed first attempt must not be overwritten by an older
+        // successful profile while the async history bootstrap completes.
+        if (!initialLoginDraft.server) {
+          setServer(latest.server)
+          setConnectionRoute(latest.connection_route || { mode: 'auto', lan_ip: '', public_ip: '' })
+          routeOriginRef.current = latest.server.trim().replace(/\/$/, '')
+          setUsername(latest.username)
+        }
         setLoginMount(latest.mount_path || '')
         setRememberPassword(value.secure_password_storage && latest.remember_password)
         setAutoLogin(value.secure_password_storage && latest.auto_login)

@@ -179,6 +179,7 @@ const LEGACY_TOKEN_KEY = 'xdrive.token'
 const USER_KEY = 'xdrive.username'
 const REMEMBER_LOGIN_KEY = 'xdrive.remember_login'
 const LAST_USERNAME_KEY = 'xdrive.last_username'
+const LOGIN_DRAFT_USERNAME_KEY = 'xdrive.login_draft_username'
 const COOKIE_MODE_KEY = 'xdrive.auth_cookie_mode'
 const COOKIE_LOGOUT_PENDING_KEY = 'xdrive.auth_cookie_logout_pending'
 const COOKIE_LOGOUT_OWNER_KEY = 'xdrive.auth_cookie_logout_owner'
@@ -756,7 +757,9 @@ function AuthView({
 }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [loginUsername, setLoginUsername] = useState(() => xDriveBrowserStorageRead(LAST_USERNAME_KEY) ?? '')
+  const [loginUsername, setLoginUsername] = useState(() =>
+    xDriveBrowserStorageRead(LOGIN_DRAFT_USERNAME_KEY) ??
+    xDriveBrowserStorageRead(LAST_USERNAME_KEY) ?? '')
   const [password, setPassword] = useState('')
   const [usernameError, setUsernameError] = useState('')
   const [passwordError, setPasswordError] = useState('')
@@ -814,6 +817,8 @@ function AuthView({
               error={Boolean(usernameError)}
               onChange={(event) => {
                 setLoginUsername(event.target.value)
+                // Non-secret draft is independent of authenticated Owner Cookie.
+                xDriveBrowserStorageWrite(LOGIN_DRAFT_USERNAME_KEY, event.target.value)
                 if (usernameError) setUsernameError('')
               }}
             />
