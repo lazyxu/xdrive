@@ -134,6 +134,84 @@ searchState = nav.xDriveRememberMobileNavigation(searchState, all, owner, false)
 assert.equal(searchState.launcherSearch, '', 'A→B→A must not recover old search')
 
 const appSource = readFileSync(resolve(here, '../src/App.tsx'), 'utf8')
+
+/** Execute the original App's navigation callback, not a copy of its logic. */
+function originalMobileSlotSelector(env) {
+  const ast = ts.createSourceFile('App.tsx', appSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  const declarations = []
+  const visit = node => {
+    if (ts.isVariableDeclaration(node) && node.name.getText(ast) === 'selectMobileSlot') {
+      declarations.push(node.getText(ast))
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(ast)
+  assert.equal(declarations.length, 1, 'must execute exactly one actual mobile Tab handler')
+  const js = ts.transpileModule(
+    'function getHandler() { const ' + declarations[0] + '; return selectMobileSlot; }',
+    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } },
+  ).outputText
+  return new Function(...Object.keys(env), js + '\nreturn getHandler();')(...Object.values(env))
+}
+
+// Duplicate fixed-Tab taps used to call launchWebApp on the current Hash.
+// The real browser runtime turns that call into history.pushState even when
+// the destination is unchanged, creating invisible Safari Back-swipe steps.
+const testCanonicalHash = route => [route.app, ...Object.entries(route.params)
+  .filter(([,value]) => value !== undefined)
+  .sort(([left],[right]) => left.localeCompare(right))
+  .map(([key,value]) => key + '=' + value)].join('|')
+function mobileTabHarness(route, memory) {
+  const launched = []
+  const recent = []
+  const select = originalMobileSlotSelector({
+    currentMobileNavigation: memory,
+    serverAdminVerified: false,
+    route,
+    xDriveMobileRouteForSlot: nav.xDriveMobileRouteForSlot,
+    xDriveWebAppHash: testCanonicalHash,
+    launchWebApp: next => launched.push(next),
+    setMobileRecentOpen: open => recent.push(open),
+  })
+  return { select, launched, recent }
+}
+const activeAlbums = { app: 'gallery', params: { section: 'albums' } }
+const galleryTabs = {
+  ...nav.xDriveInitialMobileNavigation(owner),
+  gallery: { app: 'gallery', params: { section: 'albums' } },
+  files,
+}
+const sameGallery = mobileTabHarness(activeAlbums, galleryTabs)
+sameGallery.select('gallery')
+sameGallery.select('gallery')
+assert.deepEqual(sameGallery.launched, [], 'repeat Gallery tab cannot push invisible History')
+assert.deepEqual(sameGallery.recent, [])
+sameGallery.select('files')
+assert.deepEqual(sameGallery.launched, [files], 'real destination switch still launches')
+sameGallery.select('dynamic')
+assert.deepEqual(sameGallery.recent, [true], 'empty dynamic Tab still opens recent picker')
+
+const otherGallery = mobileTabHarness(activeAlbums, {
+  ...galleryTabs, gallery: { app: 'gallery', params: { section: 'places' } },
+})
+otherGallery.select('gallery')
+assert.deepEqual(otherGallery.launched, [{ app: 'gallery', params: { section: 'places' } }],
+  'another Gallery section must not be suppressed')
+const galleryReordered = mobileTabHarness(
+  { app: 'files', params: { select: 21, dir: 5 } },
+  { ...galleryTabs, files: { app: 'files', params: { dir: 5, select: 21 } } },
+)
+galleryReordered.select('files')
+assert.equal(galleryReordered.launched.length, 0,
+  'same canonical Files route is not a new history destination')
+galleryReordered.select('all')
+assert.deepEqual(galleryReordered.launched, [all], 'all-tab navigation remains reachable')
+const sameHome = mobileTabHarness(all, galleryTabs)
+sameHome.select('all')
+assert.equal(sameHome.launched.length, 0, 'repeat All tab is idempotent')
+sameHome.select('mine')
+assert.deepEqual(sameHome.launched, [mine], 'Mine remains a separate fixed tab')
+
 const launcherSource = readFileSync(resolve(here, '../src/MobileFiveSlotNavigation.tsx'), 'utf8')
 const gallerySource = readFileSync(resolve(here, '../../ui/shared/src/mui/MediaGallery.tsx'), 'utf8')
 assert.match(appSource, /xDriveMobileAlbumOwnsBack\(route, mobileOwnerScope, albumBack\?\.owner \?\? null\)/)
