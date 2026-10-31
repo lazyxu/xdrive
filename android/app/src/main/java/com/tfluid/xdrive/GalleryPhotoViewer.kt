@@ -46,6 +46,12 @@ private sealed interface ImageStage {
     data object Failed : ImageStage
 }
 
+/** A failed original can be retried without discarding its decoded thumbnail.
+ * Oversize/unsupported originals must not offer an ineffective retry. */
+internal fun galleryOriginalFallbackRetryVisible(
+    thumbnailOnly: Boolean, upgrading: Boolean, originalEligible: Boolean,
+): Boolean = thumbnailOnly && !upgrading && originalEligible
+
 /** Sample pixels off the main thread and cap the decoded long edge to 2048.
  * This first stage intentionally rejects >32 MiB originals in the Controller
  * instead of risking unbounded memory; a later tiled decoder removes the cap. */
@@ -79,6 +85,13 @@ internal fun GalleryPhotoViewer(
     }
     var originalProgress by remember(photo.node.id, photo.node.revision) {
         mutableStateOf(0L to (null as Long?))
+    }
+    val retryPreview: () -> Unit = {
+        // This is an explicit, current-Viewer action, never an automatic retry.
+        if (controller.state.value.galleryViewer == photo) {
+            originalProgress = 0L to null
+            retryNonce++
+        }
     }
     val currentZoom by rememberUpdatedState(zoom)
     val swipeThreshold = with(LocalDensity.current) { 72.dp.toPx() }
@@ -264,9 +277,7 @@ internal fun GalleryPhotoViewer(
                     Text("请检查连接或图片格式；大于 32 MiB 的原图尚不支持分块预览。",
                         color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
                     TextButton(
-                        onClick = {
-                            if (controller.state.value.galleryViewer == photo) retryNonce++
-                        },
+                        onClick = retryPreview,
                         modifier = Modifier.heightIn(min = 48.dp)
                             .testTag("gallery-photo-retry"),
                     ) {
@@ -321,18 +332,31 @@ internal fun GalleryPhotoViewer(
                             color = Color.White, strokeWidth = 2.dp,
                         )
                     } else if (current.thumbnailOnly) {
-                        Text(
-                            if (photo.node.size > 32L * 1024 * 1024)
-                                "仅显示缩略图 · 原图超过 32 MiB"
-                            else "仅显示缩略图 · 原图暂不可预览",
+                        Column(
                             modifier = Modifier.align(Alignment.BottomCenter)
                                 .padding(bottom = 16.dp)
                                 .background(Color.Black.copy(alpha = 0.72f))
-                                .padding(horizontal = 12.dp, vertical = 7.dp)
-                                .testTag("gallery-photo-fallback"),
-                            color = Color.White,
-                            style = MaterialTheme.typography.labelMedium,
-                        )
+                                .padding(horizontal = 12.dp, vertical = 7.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Text(
+                                if (canReadOriginal) "仅显示缩略图 · 原图暂不可预览"
+                                else if (photo.node.size > 32L * 1024 * 1024)
+                                    "仅显示缩略图 · 原图超过 32 MiB"
+                                else "仅显示缩略图 · 原图当前不支持预览",
+                                modifier = Modifier.testTag("gallery-photo-fallback"),
+                                color = Color.White,
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                            if (galleryOriginalFallbackRetryVisible(
+                                    current.thumbnailOnly, current.upgrading, canReadOriginal)) {
+                                TextButton(
+                                    onClick = retryPreview,
+                                    modifier = Modifier.heightIn(min = 48.dp)
+                                        .testTag("gallery-photo-original-retry"),
+                                ) { Text("重试原图", color = Color.White) }
+                            }
+                        }
                     }
                 }
             }
