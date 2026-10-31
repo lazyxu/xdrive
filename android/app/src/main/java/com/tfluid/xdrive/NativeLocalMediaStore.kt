@@ -3,6 +3,7 @@ package com.tfluid.xdrive
 import android.content.ContentResolver
 import android.content.ContentUris
 import android.net.Uri
+import android.os.CancellationSignal
 import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
@@ -85,7 +86,9 @@ internal object NativeLocalMediaStore {
         after: NativeLocalPageKey? = null,
         limit: Int = PHOTO_PAGE_SIZE,
         albumId: String? = null,
+        cancellationSignal: CancellationSignal? = null,
     ): List<NativeLocalMedia> = withContext(Dispatchers.IO) {
+        cancellationSignal?.throwIfCanceled()
         require(limit in 1..SCAN_BATCH_SIZE)
         require(after == null || (after.id > 0 && after.addedAtSeconds >= 0))
         require(albumId == null || albumId.isNotBlank())
@@ -123,7 +126,10 @@ internal object NativeLocalMediaStore {
         val result = ArrayList<NativeLocalMedia>(limit)
         val projection = if (Build.VERSION.SDK_INT >= 30)
             columns + MediaStore.MediaColumns.IS_TRASHED else columns
-        resolver.query(uri, projection, query, null)?.use { cursor ->
+        // Do not discard this signal: a cancelled Android tab, Owner grant
+        // epoch or album scan must interrupt an in-flight provider query,
+        // not merely drop its eventual cursor after IO finishes.
+        resolver.query(uri, projection, query, cancellationSignal)?.use { cursor ->
             // Unbounded OEM cursors are not treated as a complete or correct page.
             check(cursor.count <= limit) { "MediaStore ignored bounded keyset page" }
             val idIndex = cursor.getColumnIndexOrThrow(idColumn)
@@ -138,6 +144,7 @@ internal object NativeLocalMediaStore {
             var previous = after
             while (cursor.moveToNext()) {
                 currentCoroutineContext().ensureActive()
+                cancellationSignal?.throwIfCanceled()
                 val id = cursor.getLong(idIndex)
                 val dateAdded = cursor.getLong(dateIndex)
                 val key = NativeLocalPageKey(dateAdded, id)
@@ -167,6 +174,8 @@ internal object NativeLocalMediaStore {
                 )
             }
         } ?: throw IllegalStateException("设备媒体索引不可用")
+        currentCoroutineContext().ensureActive()
+        cancellationSignal?.throwIfCanceled()
         result
     }
 
@@ -174,14 +183,21 @@ internal object NativeLocalMediaStore {
      * Scan bucket metadata in bounded pages. Never hold full 100k photo rows.
      * A capped/permission-limited album list is explicitly marked incomplete.
      */
-    suspend fun albums(resolver: ContentResolver): NativeLocalAlbumScan = withContext(Dispatchers.IO) {
+    suspend fun albums(
+        resolver: ContentResolver,
+        cancellationSignal: CancellationSignal? = null,
+    ): NativeLocalAlbumScan = withContext(Dispatchers.IO) {
+        cancellationSignal?.throwIfCanceled()
         val buckets = linkedMapOf<String, NativeLocalAlbum>()
         var scanned = 0
         var after: NativeLocalPageKey? = null
         var truncated = false
         while (scanned < MAX_SCAN) {
             currentCoroutineContext().ensureActive()
-            val batch = pageAfter(resolver, after, minOf(SCAN_BATCH_SIZE, MAX_SCAN - scanned))
+            cancellationSignal?.throwIfCanceled()
+            val batch = pageAfter(resolver, after,
+                minOf(SCAN_BATCH_SIZE, MAX_SCAN - scanned),
+                cancellationSignal = cancellationSignal)
             for (asset in batch) {
                 val previous = buckets[asset.albumId]
                 if (previous != null) buckets[asset.albumId] = previous.copy(
@@ -195,6 +211,8 @@ internal object NativeLocalMediaStore {
             if (truncated || batch.size < SCAN_BATCH_SIZE) break
         }
         if (scanned >= MAX_SCAN) truncated = true
+        currentCoroutineContext().ensureActive()
+        cancellationSignal?.throwIfCanceled()
         NativeLocalAlbumScan(buckets.values.toList(), truncated, scanned)
     }
 

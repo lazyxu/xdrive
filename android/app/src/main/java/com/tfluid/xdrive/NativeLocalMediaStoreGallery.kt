@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.CancellationSignal
+import android.os.OperationCanceledException
 import android.graphics.ImageDecoder
 import android.provider.MediaStore
 import android.util.Size
@@ -105,6 +106,31 @@ internal fun NativeLocalMediaReselectAction(
     ) { Text("调整可查看的照片与视频") }
 }
 
+
+/**
+ * A single provider-query cancellation lease per Owner/source/grant generation.
+ * Compose disposes the previous signal as soon as a tab, selected album,
+ * library revision or permission epoch changes, including while an OEM
+ * provider is still blocked inside ContentResolver.query().
+ *
+ * Never save a CancellationSignal in Bundle, preferences or background tasks.
+ */
+@Composable
+internal fun rememberNativeLocalGalleryQuerySignal(
+    memory: NativeLocalGalleryMemory,
+    sessionId: Long,
+    albumsOnly: Boolean,
+    albumId: String?,
+    permissionEpoch: Int,
+    libraryEpoch: Int,
+    allowed: Boolean,
+): CancellationSignal {
+    val signal = remember(memory, sessionId, albumsOnly, albumId,
+        permissionEpoch, libraryEpoch, allowed) { CancellationSignal() }
+    DisposableEffect(signal) { onDispose { signal.cancel() } }
+    return signal
+}
+
 /** ImageDecoder reads the authorized original but never allocates an unbounded display bitmap. */
 internal fun nativeStillDecodeSize(width: Int, height: Int): Pair<Int, Int> {
     require(width > 0 && height > 0)
@@ -143,6 +169,9 @@ internal fun NativeLocalMediaStoreGallery(
     val allowed = remember(sessionId, permissionEpoch, libraryEpoch) {
         nativePhotoAccess(context)
     }
+    val querySignal = rememberNativeLocalGalleryQuerySignal(
+        cache, sessionId, albumsOnly, selectedAlbum?.id, permissionEpoch,
+        libraryEpoch, allowed)
     val fullImages = Build.VERSION.SDK_INT >= 33 &&
         context.checkSelfPermission(Manifest.permission.READ_MEDIA_IMAGES) ==
             PackageManager.PERMISSION_GRANTED
@@ -210,7 +239,7 @@ internal fun NativeLocalMediaStoreGallery(
         }
     }
 
-    LaunchedEffect(sessionId, albumsOnly, selectedAlbum?.id,
+    LaunchedEffect(querySignal, sessionId, albumsOnly, selectedAlbum?.id,
         permissionEpoch, libraryEpoch, allowed) {
         selectedMedia = null
         val sameOrigin = viewerReturn?.let { anchor ->
@@ -232,13 +261,13 @@ internal fun NativeLocalMediaStoreGallery(
         busy = true
         try {
             if (albumsOnly && selectedAlbum == null) {
-                val page = NativeLocalMediaStore.albums(resolver)
+                val page = NativeLocalMediaStore.albums(resolver, querySignal)
                 if (wall.revision.intValue != readRevision) return@LaunchedEffect
                 albums = page
             } else {
                 val page = NativeLocalMediaStore.pageAfter(resolver,
                     limit = NativeLocalMediaStore.PHOTO_PAGE_SIZE,
-                    albumId = selectedAlbum?.id)
+                    albumId = selectedAlbum?.id, cancellationSignal = querySignal)
                 if (wall.revision.intValue != readRevision) return@LaunchedEffect
                 items = page
                 nextPageKey = page.lastOrNull()?.pageKey
@@ -248,6 +277,9 @@ internal fun NativeLocalMediaStoreGallery(
             if (wall.revision.intValue == readRevision) wall.loaded.value = true
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
+        } catch (_: OperationCanceledException) {
+            if (!querySignal.isCanceled && wall.revision.intValue == readRevision)
+                failure = "本机媒体查询已中断，请重试。"
         } catch (_: SecurityException) {
             if (wall.revision.intValue == readRevision)
                 failure = "相册权限已变化，请重新授权或重试。"
@@ -258,7 +290,7 @@ internal fun NativeLocalMediaStoreGallery(
             if (wall.revision.intValue == readRevision) busy = false
         }
     }
-    LaunchedEffect(pageIntent, sessionId, albumsOnly, selectedAlbum?.id,
+    LaunchedEffect(querySignal, pageIntent, sessionId, albumsOnly, selectedAlbum?.id,
         permissionEpoch, libraryEpoch, allowed) {
         // Re-entering an inactive tab must not accidentally request another
         // page merely because its old pageIntent was already consumed.
@@ -272,7 +304,7 @@ internal fun NativeLocalMediaStoreGallery(
             val next = NativeLocalMediaStore.pageAfter(resolver,
                 after = nextPageKey,
                 limit = NativeLocalMediaStore.PHOTO_PAGE_SIZE,
-                albumId = selectedAlbum?.id)
+                albumId = selectedAlbum?.id, cancellationSignal = querySignal)
             if (wall.revision.intValue != readRevision) return@LaunchedEffect
             if (!NativeLocalMediaStore.canAppend(current, next)) {
                 failure = "媒体提供程序返回了重复页面；已停止加载以避免错乱。"
@@ -288,6 +320,9 @@ internal fun NativeLocalMediaStoreGallery(
             }
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
+        } catch (_: OperationCanceledException) {
+            if (!querySignal.isCanceled && wall.revision.intValue == readRevision)
+                failure = "下一页查询已中断；现有照片保持不变。"
         } catch (_: Exception) {
             if (wall.revision.intValue == readRevision)
                 failure = "下一页读取失败；现有照片保持不变。"
