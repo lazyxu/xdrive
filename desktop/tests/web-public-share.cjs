@@ -151,3 +151,26 @@ test('SH-P002 first public metadata GET owns an abortable request, not a durable
   assert.ok(publicShare.includes('api.downloadPublicShare(token, password, entry?.name ?? share.name, entry?.id)'),
     'do not cancel a user-started native download from metadata teardown')
 })
+
+test('Anonymous Share upload grants use only scoped HTTP and preserve read-only fallback', () => {
+  const api = fs.readFileSync(path.join(repo, 'web', 'src', 'api.ts'), 'utf8')
+  const uploadStart = api.indexOf('  publicShareCreateDirectory(')
+  const uploadEnd = api.indexOf('  publicShare(token:', uploadStart)
+  assert.ok(uploadStart > 0 && uploadEnd > uploadStart, 'dedicated public upload adapter must exist')
+  const scoped = api.slice(uploadStart, uploadEnd)
+  for (const expected of [
+    '/api/v1/public/share/directories', '/api/v1/public/share/uploads',
+    '/chunks/${index}', '/finalize',
+    'X-XDrive-Share-Token', 'X-XDrive-Share-Password', "'keep_both'",
+    'sessionStorage.removeItem(storageKey)',
+  ]) assert.ok(scoped.includes(expected), 'required guest upload protocol: ' + expected)
+  assert.equal(scoped.includes('/api/v1/nodes/'), false, 'no Owner mutation endpoint in guest uploader')
+  assert.equal(scoped.includes('/api/v1/uploads/'), false, 'no authenticated UploadSession route')
+  assert.equal(scoped.includes('accessToken'), false, 'no JWT credential leakage')
+  assert.ok(publicShare.includes("grants.upload === true"), 'only explicit server grants show guest upload')
+  assert.ok(publicShare.includes('api.uploadPublicShareFile('), 'actual scoped upload client is wired')
+  assert.ok(publicShare.includes('api.publicShareCreateDirectory('), 'nested directory creation is wired')
+  assert.ok(publicShare.includes('parts') === false || publicShare.includes('const components = relative.split('),
+    'relative paths remain explicit segments')
+  assert.ok(!publicShare.includes('const exhausted ='), 'no download-count gate')
+})
