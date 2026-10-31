@@ -189,3 +189,28 @@ test('fullscreen PhotoAsset Viewer cancels the still-mounted cloud wall and keep
   assert.match(view, /func suspendForViewer\(\) \{[\s\S]*?job\?\.cancel\(\)/)
   assert.match(wall, /\.onChange\(of: login\.owner\)[\s\S]*?model\.invalidate\(\)/)
 })
+
+
+test('cloud L3 Viewer return anchor is revision- and Owner-bound, not just a reused Node ID', () => {
+  const policy = src('ios/XDriveIOS/NativePhotoViewerReturnAnchorPolicy.swift')
+  const checks = src('ios/tests/NativePhotoViewerReturnAnchorPolicyChecks.swift')
+  const wall = view.slice(view.indexOf('struct XDriveIOSNativeServerMediaWall: View'),
+    view.indexOf('struct XDriveIOSNativeServerMediaAlbums: View'))
+  assert.match(policy, /static func cloudTarget\(/)
+  assert.match(policy, /lastOpenedRevision: UInt64\?/)
+  assert.match(policy, /ownerAuthorized: Bool/)
+  assert.match(policy, /currentPage\.count <= 48/)
+  assert.match(policy, /Set\(currentPage\.map\(\\\.id\)\)\.count == currentPage\.count/)
+  assert.match(policy, /\$0\.id == lastOpenedID && \$0\.revision == lastOpenedRevision/)
+  assert.match(checks, /older revision/)
+  assert.match(checks, /duplicate current ID/)
+  assert.match(wall, /@State private var lastOpenedRevision: UInt64\?/)
+  assert.match(wall, /@State private var lastOpenedOwner: XDriveNativeOwnerRoot\?/)
+  assert.match(wall, /lastOpenedRevision = selected\?\.node\.revision/)
+  assert.match(wall, /lastOpenedOwner = login\.owner/)
+  assert.match(wall, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, \$0\)/)
+  assert.match(wall, /XDriveIOSNativePhotoViewerReturnAnchorPolicy\.cloudTarget\(/)
+  assert.match(wall, /ownerAuthorized: ownerAuthorized && phase == \.active/)
+  assert.match(wall, /if let anchor \{\s*returnScroll\.scrollTo\(anchor, anchor: \.center\)/)
+  assert.doesNotMatch(wall, /model\.page\?\.items\.contains\(where: \{ \$0\.id == anchor \}\)/)
+});
