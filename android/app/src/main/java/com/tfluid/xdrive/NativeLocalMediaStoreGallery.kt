@@ -33,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
@@ -456,6 +457,10 @@ internal fun NativeLocalPhotoWallTile(
                 tileActuallyFocused = it.isFocused
                 if (it.isFocused && restoreFocus) onFocusRestored()
             }
+            // Android Compose clickable is not keyboard-focusable in touch
+            // input mode by default. Override only this exact source tile;
+            // do not add a second independent focusable() node.
+            .focusProperties { canFocus = true }
             .clickable(onClick = onOpen)
             .testTag("native-local-media-${asset.id}"),
     ) {
