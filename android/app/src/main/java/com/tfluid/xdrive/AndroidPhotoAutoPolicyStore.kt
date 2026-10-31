@@ -61,6 +61,19 @@ internal class AndroidPhotoAutoPolicyStore(
         true
     }
 
+    /** Pre-proof status is permissible only for the SAME stored consent
+     * epoch/hash, never based solely on an unverified local username. */
+    fun updateBySnapshot(captured: Consent, status: String): Boolean =
+        synchronized(guard) {
+            require(status in ALLOWED_STATUSES)
+            val old = readUnsafe() ?: return@synchronized false
+            if (!old.enabled || old.epoch != captured.epoch ||
+                old.scopeHash != captured.scopeHash)
+                return@synchronized false
+            writeUnsafe(old.copy(status = status))
+            true
+        }
+
     fun disable(): Unit = synchronized(guard) {
         check(prefs.edit().remove(KEY).commit()) {
             "Photo automatic backup opt-out did not commit"
