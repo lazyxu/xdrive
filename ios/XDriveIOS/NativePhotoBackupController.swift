@@ -180,6 +180,29 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                       UIApplication.shared.applicationState == .active else {
                     throw XDriveIOSNativeSessionError.staleSession
                 }
+                // An older manual/BG UploadSession could have lost its
+                // finalize ACK after this automatic plan was first enabled.
+                // This is a GLOBAL current-Owner receipt gate, not a check
+                // limited to the next 256-item PhotoKit window. It runs while
+                // holding the same original writer lock as every upload.
+                let olderPending = try await XDriveIOSOriginalPendingReceiptPreflight
+                    .pendingCount(owner: selected)
+                try Task.checkCancellation()
+                guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected),
+                      UIApplication.shared.applicationState == .active else {
+                    throw XDriveIOSNativeSessionError.staleSession
+                }
+                if olderPending > 0 {
+                    if kind == .automatic {
+                        // Persist a durable pause, not a consumed next window.
+                        // A later explicit receipt review can safely resume.
+                        self.schedule = try XDriveIOSPhotoAutoScheduleStore.shared
+                            .pauseForPendingReceipts(owner: selected)
+                    }
+                    self.errorMessage = "当前账户已有 \(olderPending) 项不确定原件收据；请先只读核对，本轮未上传新原件。"
+                    return
+                }
+
                 let window: Int
                 let cloud: Bool
                 if kind == .automatic {

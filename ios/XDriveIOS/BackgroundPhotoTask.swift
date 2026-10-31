@@ -90,6 +90,23 @@ enum XDriveIOSBackgroundPhotoTask {
                     return
                 }
                 defer { XDriveIOSOriginalRunGate.shared.release(gate) }
+                // A foreground or earlier BG writer can leave a lost ACK
+                // outside this BG scan window. A new system task must never
+                // use its separate Device grant to bypass that Owner journal.
+                // Check under the global original-writer lock, BEFORE the
+                // BG cursor reserves a new due window.
+                let olderPending = try await XDriveIOSOriginalPendingReceiptPreflight
+                    .pendingCount(owner: owner)
+                try Task.checkCancellation()
+                guard approved.matches(owner) else {
+                    throw XDriveIOSPhotoBGVaultFailure.corrupt
+                }
+                if olderPending > 0 {
+                    try XDriveIOSBGOriginalWindowStore.shared.pause(owner: owner)
+                    // No new upload or automatic resubmit until the user
+                    // finishes trusted Owner receipt review and consents.
+                    return
+                }
                 guard let window = try XDriveIOSBGOriginalWindowStore.shared
                         .reserveDue(owner: owner, approved: approved),
                       let offset = XDrivePhotoBackupScanWindow.offset(
