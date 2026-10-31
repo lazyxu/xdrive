@@ -6,6 +6,10 @@ import android.security.keystore.KeyProperties
 import android.util.Base64
 import com.tfluid.xdrive.core.AuthSession
 import com.tfluid.xdrive.core.ServerAddress
+import com.tfluid.xdrive.core.XDriveService
+import com.tfluid.xdrive.core.ApiException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -22,6 +26,11 @@ interface DriveSessionPersistence {
     fun load(): SavedDriveSession?
     fun save(server: String, session: AuthSession)
     fun clear()
+    /** Null means this host does not provide a coordinated remembered refresh.
+     * The foreground and WorkManager Android hosts use the same rotation gate. */
+    suspend fun coordinatedRefresh(
+        service: XDriveService, server: String, username: String,
+    ): AuthSession? = null
 
     /** Native Android also owns a distinct, encrypted transfer uncertainty
      * journal. Other test/host persistence implementations may omit it. */
@@ -34,7 +43,8 @@ interface DriveSessionPersistence {
  * Keystore loss/corruption fails closed and returns to the normal login form.
  */
 internal class AndroidSessionStore(context: Context) : DriveSessionPersistence {
-    private val prefs = context.getSharedPreferences("auth-session", Context.MODE_PRIVATE)
+    private val app = context.applicationContext
+    private val prefs = app.getSharedPreferences("auth-session", Context.MODE_PRIVATE)
     private val recoveryBridge by lazy {
         AndroidDriveTransferRecoveryBridge(context.applicationContext)
     }
@@ -69,8 +79,12 @@ internal class AndroidSessionStore(context: Context) : DriveSessionPersistence {
         cipher.updateAAD(AAD)
         val sealed = cipher.iv + cipher.doFinal(plain)
         // commit() reports an actual persistence failure rather than claiming success.
-        check(prefs.edit().putString(PREF_KEY, Base64.encodeToString(sealed, Base64.NO_WRAP)).commit())
-        plain.fill(0)
+        try {
+            synchronized(persistenceGuard) {
+                check(prefs.edit().putString(PREF_KEY,
+                    Base64.encodeToString(sealed, Base64.NO_WRAP)).commit())
+            }
+        } finally { plain.fill(0) }
     }
 
     override fun load(): SavedDriveSession? {
@@ -96,11 +110,53 @@ internal class AndroidSessionStore(context: Context) : DriveSessionPersistence {
     }
 
     override fun clear() {
-        // A stale/failed clear must never resurrect an old session on next launch.
-        check(prefs.edit().remove(PREF_KEY).commit())
+        // Revoke the WorkManager grant BEFORE deleting credentials. A running
+        // photo job then fails its consent check, even if it held an old bearer.
+        synchronized(persistenceGuard) {
+            AndroidPhotoAutoBackupScheduler.disable(app)
+            check(prefs.edit().remove(PREF_KEY).commit()) {
+                "Android remembered session was not cleared"
+            }
+        }
+    }
+
+    /**
+     * One process-wide refresh rotation for UI and WorkManager.
+     *
+     * The transport uses the latest *persisted* refresh secret, not an old
+     * Controller copy. After a network ACK, a fresh committed-state comparison
+     * prevents logout, server switch or another login from resurrecting the
+     * previous Owner. Only the current exact Owner's newly rotated credential
+     * is atomically saved. No second background session store is created.
+     */
+    override suspend fun coordinatedRefresh(
+        service: XDriveService, server: String, username: String,
+    ): AuthSession = refreshMutex.withLock {
+        val origin = ServerAddress.parse(server).url
+        check(origin == server && username.isNotBlank())
+        val original = load() ?: throw ApiException(401, "Remembered session unavailable")
+        check(original.server == server && original.username == username) {
+            "Photo backup Owner or Server changed before refresh"
+        }
+        val latest = service.refresh(original.refreshToken)
+        check(latest.username == username && !latest.mustChangePassword) {
+            "Rotated session requires reauthentication"
+        }
+        synchronized(persistenceGuard) {
+            val current = load() ?: throw ApiException(401, "Session revoked")
+            check(current.server == original.server &&
+                current.username == original.username &&
+                current.refreshToken == original.refreshToken) {
+                "Photo session was replaced during refresh"
+            }
+            save(server, latest)
+        }
+        latest
     }
 
     private companion object {
+        val refreshMutex = Mutex()
+        val persistenceGuard = Any()
         const val KEY_ALIAS = "xdrive-android-session-v1"
         const val PREF_KEY = "sealed-v1"
         const val IV_BYTES = 12
