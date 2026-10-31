@@ -209,7 +209,8 @@ jobs:
             desktop/tests/ios-native-owner-scope-tab-reset.cjs \
             desktop/tests/ios-native-route-resume-wiring.cjs \
             desktop/tests/ios-native-compact-bottom-bar.cjs \
-            desktop/tests/ios-native-l2-focus-bar-integration.cjs
+            desktop/tests/ios-native-l2-focus-bar-integration.cjs \
+            desktop/tests/ios-native-supported-orientations.cjs
 
       - name: Verify native bounded MapKit PhotoKit page and Gallery route
         run: |
@@ -256,6 +257,31 @@ jobs:
           actual=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$app/Info.plist")
           test "$actual" = 'com.lazyxu.xdrive.ios'
           /usr/libexec/PlistBuddy -c 'Print NSLocalNetworkUsageDescription' "$app/Info.plist" | grep -Fq 'xDrive'
+          # Test the actual compiled device app, not only the XcodeGen YAML.
+          APP_PLIST="$app/Info.plist" python3 - <<'PY'
+          import os
+          import plistlib
+          with open(os.environ["APP_PLIST"], "rb") as fp:
+              info = plistlib.load(fp)
+          iphone = [
+              "UIInterfaceOrientationPortrait",
+              "UIInterfaceOrientationLandscapeLeft",
+              "UIInterfaceOrientationLandscapeRight",
+          ]
+          ipad = [
+              "UIInterfaceOrientationPortrait",
+              "UIInterfaceOrientationPortraitUpsideDown",
+              "UIInterfaceOrientationLandscapeLeft",
+              "UIInterfaceOrientationLandscapeRight",
+          ]
+          assert info.get("UISupportedInterfaceOrientations") == iphone, (
+              "iPhone IPA must support portrait and both landscape orientations"
+          )
+          assert info.get("UISupportedInterfaceOrientations~ipad") == ipad, (
+              "iPad IPA must support all four interface orientations"
+          )
+          print("compiled iOS device orientation declarations: PASS")
+          PY
           mkdir -p "$RUNNER_TEMP/unsigned/Payload"
           cp -R "$app" "$RUNNER_TEMP/unsigned/Payload/"
           (
