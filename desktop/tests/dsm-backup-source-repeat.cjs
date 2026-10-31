@@ -62,7 +62,7 @@ function load(name, extra = {}) {
       return imports[id]
     },
   )
-  return mod.exports[name]
+  return mod.exports
 }
 const Setup = load('SynologyBackupSourceSetup').XDriveSynologyBackupSourceSetup
 const Drafts = load('SynologyNativeDraftReview').XDriveSynologyNativeDraftReview
