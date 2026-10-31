@@ -21,8 +21,8 @@ import (
 
 // Short-window abuse protection, not a permanent Share upload size/file quota.
 const (
-	shareUploadAdmissionWindow = time.Minute
-	shareUploadAdmissionRate = 600
+	shareUploadAdmissionWindow  = time.Minute
+	shareUploadAdmissionRate    = 600
 	shareUploadAdmissionWindows = 4096
 )
 
@@ -63,7 +63,7 @@ func admitPublicShareUpload(shareID uint64, now time.Time) bool {
 
 var (
 	errShareUploadDenied = errors.New("share upload unavailable")
-	errShareUploadBusy = errors.New("share upload concurrency limit reached")
+	errShareUploadBusy   = errors.New("share upload concurrency limit reached")
 )
 
 // A Guest Share token is NEVER an account JWT. Only these explicit upload
@@ -97,7 +97,9 @@ func (s *Server) publicShareUploadAuthorization(c *gin.Context) (meta.Share, met
 func publicShareUploadContainsNodeTx(
 	ctx context.Context, tx *gorm.DB, ownerID, rootID, candidateID uint64,
 ) (bool, error) {
-	var result struct { Allowed bool `gorm:"column:allowed"` }
+	var result struct {
+		Allowed bool `gorm:"column:allowed"`
+	}
 	err := tx.WithContext(ctx).Raw(`
 WITH RECURSIVE ancestors AS (
     SELECT id, parent_id, 0 AS depth
@@ -159,51 +161,70 @@ func writePublicShareUploadError(c *gin.Context, err error) {
 // The only mutation is creating a directory inside the active share subtree.
 func (s *Server) publicShareCreateDirectory(c *gin.Context) {
 	share, root, ok := s.publicShareUploadAuthorization(c)
-	if !ok { return }
+	if !ok {
+		return
+	}
 	if !admitPublicShareUpload(share.ID, time.Now()) {
 		fail(c, http.StatusTooManyRequests, "share upload request rate exceeded")
 		return
 	}
 	var req struct {
 		ParentID uint64 `json:"parent_id"`
-		Name string `json:"name"`
+		Name     string `json:"name"`
 	}
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 8<<10)
 	if err := c.ShouldBindJSON(&req); err != nil || meta.ValidateName(req.Name) != nil {
 		fail(c, http.StatusBadRequest, "invalid directory request")
 		return
 	}
-	if req.ParentID == 0 { req.ParentID = root.ID }
+	if req.ParentID == 0 {
+		req.ParentID = root.ID
+	}
 	var result meta.Node
 	var created bool
 	err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		_, err := s.publicShareUploadAdmissionTx(
 			c.Request.Context(), tx, share.ID, share.OwnerID, req.ParentID)
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		if err := tx.Where(
 			"owner_id = ? AND parent_id = ? AND lower(name) = lower(?) AND deleted_at IS NULL",
 			share.OwnerID, req.ParentID, req.Name,
 		).Take(&result).Error; err == nil {
-			if result.Type != meta.NodeTypeDir { return errShareUploadDenied }
+			if result.Type != meta.NodeTypeDir {
+				return errShareUploadDenied
+			}
 			return nil
-		} else if !errors.Is(err, gorm.ErrRecordNotFound) { return err }
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
 		result = meta.Node{
 			OwnerID: share.OwnerID, ParentID: &req.ParentID, Name: req.Name,
 			Type: meta.NodeTypeDir, Revision: 1,
 		}
-		if err := tx.Create(&result).Error; err != nil { return err }
+		if err := tx.Create(&result).Error; err != nil {
+			return err
+		}
 		created = true
 		return nil
 	})
-	if err != nil { writePublicShareUploadError(c, err); return }
+	if err != nil {
+		writePublicShareUploadError(c, err)
+		return
+	}
 	status := http.StatusOK
-	if created { status = http.StatusCreated }
+	if created {
+		status = http.StatusCreated
+	}
 	c.JSON(status, gin.H{"id": result.ID, "name": result.Name, "parent_id": req.ParentID})
 }
 
 func (s *Server) publicShareCreateUpload(c *gin.Context) {
 	share, root, ok := s.publicShareUploadAuthorization(c)
-	if !ok { return }
+	if !ok {
+		return
+	}
 	if !admitPublicShareUpload(share.ID, time.Now()) {
 		fail(c, http.StatusTooManyRequests, "share upload request rate exceeded")
 		return
@@ -224,7 +245,9 @@ func (s *Server) publicShareCreateUpload(c *gin.Context) {
 		fail(c, http.StatusForbidden, "share upload request out of bounds")
 		return
 	}
-	if req.ParentID == nil || *req.ParentID == 0 { req.ParentID = &root.ID }
+	if req.ParentID == nil || *req.ParentID == 0 {
+		req.ParentID = &root.ID
+	}
 	allowed, err := s.publicFolderShareContainsNode(
 		c.Request.Context(), share.OwnerID, root.ID, *req.ParentID)
 	if err != nil || !allowed {
@@ -233,7 +256,10 @@ func (s *Server) publicShareCreateUpload(c *gin.Context) {
 	}
 	req.ConflictPolicy = meta.UploadConflictPolicyKeepBoth
 	body, err := json.Marshal(req)
-	if err != nil { fail(c, http.StatusBadRequest, "invalid upload request"); return }
+	if err != nil {
+		fail(c, http.StatusBadRequest, "invalid upload request")
+		return
+	}
 	c.Set("xdriveShareUploadID", share.ID)
 	c.Request.Body = io.NopCloser(bytes.NewReader(body))
 	s.createUploadSession(c)
@@ -243,7 +269,9 @@ func (s *Server) publicShareCreateUpload(c *gin.Context) {
 // the exact ShareID, owner, subtree and current token/password/grant.
 func (s *Server) publicShareOwnedUpload(c *gin.Context) bool {
 	share, root, ok := s.publicShareUploadAuthorization(c)
-	if !ok { return false }
+	if !ok {
+		return false
+	}
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		fail(c, http.StatusBadRequest, "invalid upload session id")
@@ -271,22 +299,30 @@ func (s *Server) publicShareOwnedUpload(c *gin.Context) bool {
 }
 
 func (s *Server) publicShareGetUpload(c *gin.Context) {
-	if s.publicShareOwnedUpload(c) { s.getUploadSession(c) }
+	if s.publicShareOwnedUpload(c) {
+		s.getUploadSession(c)
+	}
 }
 
 func (s *Server) publicSharePutChunk(c *gin.Context) {
-	if !s.publicShareOwnedUpload(c) { return }
+	if !s.publicShareOwnedUpload(c) {
+		return
+	}
 	// The underlying PUT retains its exact part size and digest checks.
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxUploadChunkSize+4096)
 	s.putUploadChunk(c)
 }
 
 func (s *Server) publicShareFinalizeUpload(c *gin.Context) {
-	if !s.publicShareOwnedUpload(c) { return }
+	if !s.publicShareOwnedUpload(c) {
+		return
+	}
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 4096)
 	s.finalizeUploadSession(c)
 }
 
 func (s *Server) publicShareAbortUpload(c *gin.Context) {
-	if s.publicShareOwnedUpload(c) { s.abortUploadSession(c) }
+	if s.publicShareOwnedUpload(c) {
+		s.abortUploadSession(c)
+	}
 }

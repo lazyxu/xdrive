@@ -109,7 +109,7 @@ type publicShareDTO struct {
 
 func toShareDTO(share meta.Share, now time.Time) shareDTO {
 	return shareDTO{
-		Access: share.Access,
+		Access:        share.Access,
 		ID:            share.ID,
 		NodeID:        share.NodeID,
 		HasPassword:   share.PasswordHash != "",
@@ -170,7 +170,7 @@ func (s *Server) createFileShare(c *gin.Context) {
 		ExpiresAt    *time.Time `json:"expires_at"`
 		Password     string     `json:"password"`
 		MaxDownloads int64      `json:"max_downloads"`
-		Access string `json:"access"`
+		Access       string     `json:"access"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		fail(c, http.StatusBadRequest, "invalid request")
@@ -206,7 +206,7 @@ func (s *Server) createFileShare(c *gin.Context) {
 		return
 	}
 	share := meta.Share{
-		Access: access,
+		Access:        access,
 		OwnerID:       userID(c),
 		NodeID:        node.ID,
 		TokenHash:     tokenHash,
@@ -233,7 +233,7 @@ func (s *Server) updateShare(c *gin.Context) {
 	}
 	var req struct {
 		ExpiresAt *time.Time `json:"expires_at"`
-		Access string `json:"access"`
+		Access    string     `json:"access"`
 	}
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 8<<10)
 	if err := c.ShouldBindJSON(&req); err != nil || req.Access == "" {

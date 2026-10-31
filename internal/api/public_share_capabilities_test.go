@@ -47,5 +47,7 @@ func TestPublicShareEightCapabilitiesDefaultReadOnly(t *testing.T) {
 	}
 	file := publicShareCapabilitiesForShare(
 		meta.Share{Access: shareAccessViewUpload}, meta.NodeTypeFile)
-	if file.Upload { t.Fatalf("file shares must never grant upload: %+v", file) }
+	if file.Upload {
+		t.Fatalf("file shares must never grant upload: %+v", file)
+	}
 }

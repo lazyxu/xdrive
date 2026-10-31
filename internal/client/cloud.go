@@ -20,7 +20,7 @@ type FileVersion struct {
 }
 
 type FileShare struct {
-	Access string `json:"access"`
+	Access        string     `json:"access"`
 	ID            uint64     `json:"id"`
 	NodeID        uint64     `json:"node_id"`
 	HasPassword   bool       `json:"has_password"`
@@ -39,7 +39,7 @@ type CreatedFileShare struct {
 }
 
 type CreateShareInput struct {
-	Access string `json:"access"`
+	Access       string     `json:"access"`
 	ExpiresAt    *time.Time `json:"expires_at,omitempty"`
 	Password     string     `json:"password"`
 	MaxDownloads int64      `json:"max_downloads"`
@@ -135,7 +135,7 @@ func (c *Client) Shares(ctx context.Context, nodeID uint64) ([]FileShare, error)
 }
 
 type UpdateShareInput struct {
-	Access string `json:"access"`
+	Access    string     `json:"access"`
 	ExpiresAt *time.Time `json:"expires_at"`
 }
 

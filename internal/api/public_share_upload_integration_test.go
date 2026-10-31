@@ -22,11 +22,17 @@ func guestUploadRequest(
 	headers := map[string]string{
 		"X-XDrive-Share-Token": token, "X-XDrive-Share-Password": password,
 	}
-	for key, value := range extra { headers[key] = value }
+	for key, value := range extra {
+		headers[key] = value
+	}
 	response := requestWithHeaders(t, router, method, path, "",
 		bytes.NewReader(body), status, headers)
-	if status == http.StatusNoContent || len(response.Body.Bytes()) == 0 { return nil }
-	if status >= 300 { return nil }
+	if status == http.StatusNoContent || len(response.Body.Bytes()) == 0 {
+		return nil
+	}
+	if status >= 300 {
+		return nil
+	}
 	var payload map[string]any
 	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("decode guest response: %v body=%s", err, response.Body.String())
@@ -47,9 +53,15 @@ func guestUploadFile(
 	created := guestUploadRequest(t, router, http.MethodPost,
 		"/api/v1/public/share/uploads", shareToken, password, body, http.StatusCreated, nil)
 	id, ok := created["id"].(string)
-	if !ok || id == "" { t.Fatalf("invalid upload session: %+v", created) }
-	if _, leaked := created["result"]; leaked { t.Fatal("guest receipt leaked Owner node") }
-	if _, leaked := created["owner_id"]; leaked { t.Fatal("guest receipt leaked Owner ID") }
+	if !ok || id == "" {
+		t.Fatalf("invalid upload session: %+v", created)
+	}
+	if _, leaked := created["result"]; leaked {
+		t.Fatal("guest receipt leaked Owner node")
+	}
+	if _, leaked := created["owner_id"]; leaked {
+		t.Fatal("guest receipt leaked Owner ID")
+	}
 	sum := sha256.Sum256(data)
 	guestUploadRequest(t, router, http.MethodPut,
 		"/api/v1/public/share/uploads/"+id+"/chunks/0", shareToken, password,
@@ -58,7 +70,9 @@ func guestUploadFile(
 	finalized := guestUploadRequest(t, router, http.MethodPost,
 		"/api/v1/public/share/uploads/"+id+"/finalize", shareToken, password,
 		[]byte("{}"), http.StatusOK, nil)
-	if finalized["status"] != "finalized" { t.Fatalf("not finalized: %+v", finalized) }
+	if finalized["status"] != "finalized" {
+		t.Fatalf("not finalized: %+v", finalized)
+	}
 	return id
 }
 
@@ -78,7 +92,9 @@ func TestPublicShareUploadGrantSubtreeResumeAndRevocation(t *testing.T) {
 		strings.NewReader(`{"access":"read_only","password":"guest-share-password","max_downloads":1}`),
 		http.StatusCreated)
 	var created createdShareDTO
-	if err := json.Unmarshal(createdResponse.Body.Bytes(), &created); err != nil { t.Fatal(err) }
+	if err := json.Unmarshal(createdResponse.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
 	if created.Access != shareAccessReadOnly || created.MaxDownloads != 0 {
 		t.Fatalf("new share must default to unlimited download: %+v", created)
 	}
@@ -95,14 +111,18 @@ func TestPublicShareUploadGrantSubtreeResumeAndRevocation(t *testing.T) {
 		strings.NewReader(fmt.Sprintf(`{"access":"view_upload","expires_at":%q}`,
 			expiry.Format(time.RFC3339))), http.StatusOK)
 	var updatedShare shareDTO
-	if err := json.Unmarshal(updated.Body.Bytes(), &updatedShare); err != nil { t.Fatal(err) }
+	if err := json.Unmarshal(updated.Body.Bytes(), &updatedShare); err != nil {
+		t.Fatal(err)
+	}
 	if updatedShare.Access != shareAccessViewUpload || updatedShare.ExpiresAt == nil ||
 		!updatedShare.ExpiresAt.Equal(expiry) {
 		t.Fatalf("link mutation did not persist permission and expiry: %+v", updatedShare)
 	}
 	metadata := publicShareRequest(t, router, http.MethodGet, created.Token, nil, http.StatusOK)
 	var public publicShareDTO
-	if err := json.Unmarshal(metadata.Body.Bytes(), &public); err != nil { t.Fatal(err) }
+	if err := json.Unmarshal(metadata.Body.Bytes(), &public); err != nil {
+		t.Fatal(err)
+	}
 	if !public.Capabilities.Upload || public.Capabilities.Write || public.Capabilities.Delete {
 		t.Fatalf("Share upload must not confer generic write/delete: %+v", public.Capabilities)
 	}
@@ -118,7 +138,9 @@ func TestPublicShareUploadGrantSubtreeResumeAndRevocation(t *testing.T) {
 	subID := uint64(firstDir["id"].(float64))
 	sameDir := guestUploadRequest(t, router, http.MethodPost, "/api/v1/public/share/directories",
 		created.Token, "guest-share-password", []byte(`{"name":"sub"}`), http.StatusOK, nil)
-	if uint64(sameDir["id"].(float64)) != subID { t.Fatal("retry created duplicate directory") }
+	if uint64(sameDir["id"].(float64)) != subID {
+		t.Fatal("retry created duplicate directory")
+	}
 
 	for i := range 5 {
 		resume := "ps1_" + fmt.Sprintf("%064x", i+1)
@@ -139,16 +161,22 @@ func TestPublicShareUploadGrantSubtreeResumeAndRevocation(t *testing.T) {
 		}
 	}
 	page := publicFolderChildrenTestRequest(t, router, created.Token, "guest-share-password", subID, 0, http.StatusOK)
-	if len(page.Items) != 5 { t.Fatalf("unlimited share upload files=%d want 5", len(page.Items)) }
+	if len(page.Items) != 5 {
+		t.Fatalf("unlimited share upload files=%d want 5", len(page.Items))
+	}
 	for _, item := range page.Items {
-		if item.Name == "" || item.Type != meta.NodeTypeFile { t.Fatalf("unexpected shared result %+v", item) }
+		if item.Name == "" || item.Type != meta.NodeTypeFile {
+			t.Fatalf("unexpected shared result %+v", item)
+		}
 	}
 	// Every new file is owned by the original Owner and immediately Share-visible.
 	var count int64
 	if err := db.Model(&meta.Node{}).Where(
 		"owner_id = ? AND parent_id = ? AND type = ? AND deleted_at IS NULL",
 		root.OwnerID, subID, meta.NodeTypeFile).Count(&count).Error; err != nil { t.Fatal(err) }
-	if count != 5 { t.Fatalf("visible owner files=%d", count) }
+	if count != 5 {
+		t.Fatalf("visible owner files=%d", count)
+	}
 	// The guest did not change an existing Owner original outside the
 	// created subfolder, even when uploading the same filename repeatedly.
 	original := request(t, router, http.MethodGet,
@@ -162,7 +190,9 @@ func TestPublicShareUploadGrantSubtreeResumeAndRevocation(t *testing.T) {
 		fmt.Sprintf("/api/v1/nodes/%d/shares", shared.ID), ownerToken,
 		strings.NewReader(`{"access":"view_upload"}`), http.StatusCreated)
 	var second createdShareDTO
-	if err := json.Unmarshal(secondRes.Body.Bytes(), &second); err != nil { t.Fatal(err) }
+	if err := json.Unmarshal(secondRes.Body.Bytes(), &second); err != nil {
+		t.Fatal(err)
+	}
 	newBody := []byte(fmt.Sprintf(
 		`{"parent_id":%d,"name":"blocked.bin","size":1,"chunk_size":8388608,"conflict_policy":"keep_both","resume_key":"ps1_%064x"}`,
 		subID, 99))

@@ -989,7 +989,9 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 				c.Request.Context(), tx, *currentSession.ShareID, currentSession.OwnerID,
 				*currentSession.ParentID,
 			)
-			if err != nil { return err }
+			if err != nil {
+				return err
+			}
 		}
 		now := time.Now()
 		skipped := false
