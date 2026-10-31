@@ -33,8 +33,8 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
   const [viewClient, setViewClient] = useState(client)
   const sameOwningClient = viewClient === client
   const visibleSources = sameOwningClient ? sources : []
-  const visibleLoading = loading || !sameOwningClient
   const [loading, setLoading] = useState(true)
+  const visibleLoading = loading || !sameOwningClient
   const [error, setError] = useState('')
   const [refreshID, setRefreshID] = useState(0)
   const [expandedID, setExpandedID] = useState<number | null>(null)
