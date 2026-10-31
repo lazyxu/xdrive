@@ -1073,6 +1073,7 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         accessToken: String, parent: DriveNode, name: String, size: Long,
         openSource: () -> InputStream, onProgress: (Long) -> Unit,
     ): DriveNode = withContext(Dispatchers.IO) {
+        NativeUploadAdmission.withWriter {
         require(parent.isDirectory && parent.id > 0 && validDriveNodeName(name) && size >= 0)
         require(validToken(accessToken)) { "Invalid access token" }
         val chunkSize = 8 * 1024 * 1024
@@ -1149,6 +1150,7 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
                 }
             }
         }
+        } // NativeUploadAdmission.withWriter: permit after network cleanup.
     }
 
     private suspend fun putUploadChunk(

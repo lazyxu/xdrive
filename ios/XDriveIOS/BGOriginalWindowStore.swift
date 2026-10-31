@@ -125,6 +125,37 @@ final class XDriveIOSBGOriginalWindowStore {
         try store(state, owner: owner)
     }
 
+    /// Read-only, non-secret current Owner pause bit. A missing schedule is
+    /// not evidence of an approved background grant.
+    func pausedForReview(owner: XDriveNativeOwnerRoot) throws -> Bool {
+        try current(owner: owner).pausedForReview
+    }
+
+    /// Called ONLY from the Owner-verified native receipt-review controller
+    /// after a shared-writer-gated, trusted zero-pending ledger read and
+    /// independent Server BG grant proof. A consent dialog alone is not a
+    /// receipt. Keep the PhotoKit epoch and window cursor; the next admitted
+    /// task will validate the current library before reading any originals.
+    func resumeAfterTrustedReview(
+        owner: XDriveNativeOwnerRoot,
+        approved: XDriveIOSApprovedPhotoBGCredential,
+        trustedPending: Int,
+        now: Date = Date()
+    ) throws {
+        guard trustedPending == 0, approved.matches(owner, now: now) else {
+            throw XDrivePhotoSyncLedgerError.identityMismatch
+        }
+        var state = try current(owner: owner)
+        guard state.pausedForReview else {
+            throw XDrivePhotoSyncLedgerError.identityMismatch
+        }
+        state.pausedForReview = false
+        // The OS request is scheduled separately. Never spin in-place or
+        // force a foreground upload; preserve old window/epoch counters.
+        state.dueAt = now
+        try store(state, owner: owner)
+    }
+
     func pause(owner: XDriveNativeOwnerRoot) throws {
         var state = try current(owner: owner)
         state.pausedForReview = true

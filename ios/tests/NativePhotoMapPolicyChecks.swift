@@ -12,6 +12,48 @@ struct XDriveIOSNativePhotoMapPolicyChecks {
         precondition(!XDriveIOSNativePhotoMapPolicy.validPage(total: 100000, start: 0, next: 100000, rows: 100000, pins: 64))
         precondition(!XDriveIOSNativePhotoMapPolicy.validPage(total: 64, start: 0, next: 64, rows: 64, pins: 65))
         precondition(XDriveIOSNativePhotoMapPolicy.markerLabel(27) == "当前页此位置27张照片")
+        // A late MKAnnotation callback can carry an earlier 64-slot page;
+        // even with active permission, it must never resurrect old photos.
+        precondition(XDriveIOSNativePhotoMapPolicy.acceptsSelection(
+            selectedIDs: ["a"], currentPageIDs: ["a", "b"]))
+        precondition(XDriveIOSNativePhotoMapPolicy.acceptsSelection(
+            selectedIDs: ["a", "b"], currentPageIDs: ["a", "b"]))
+        precondition(!XDriveIOSNativePhotoMapPolicy.acceptsSelection(
+            selectedIDs: ["stale"], currentPageIDs: ["current"]))
+        precondition(!XDriveIOSNativePhotoMapPolicy.acceptsSelection(
+            selectedIDs: ["current", "stale"], currentPageIDs: ["current"]))
+        precondition(!XDriveIOSNativePhotoMapPolicy.acceptsSelection(
+            selectedIDs: [], currentPageIDs: ["current"]))
+        precondition(!XDriveIOSNativePhotoMapPolicy.acceptsSelection(
+            selectedIDs: ["current", "current"], currentPageIDs: ["current"]))
+        precondition(!XDriveIOSNativePhotoMapPolicy.acceptsSelection(
+            selectedIDs: ["current"], currentPageIDs: ["current", "current"]))
+        precondition(!XDriveIOSNativePhotoMapPolicy.acceptsSelection(
+            selectedIDs: [""], currentPageIDs: [""]))
+        precondition(!XDriveIOSNativePhotoMapPolicy.acceptsSelection(
+            selectedIDs: Array(repeating: "x", count: 65),
+            currentPageIDs: ["x"]))
+
+        // MapKit camera return is strictly same-page; switching the PhotoKit
+        // window, losing access or backgrounding must drop saved camera.
+        precondition(XDriveIOSNativePhotoMapPolicy.shouldRestoreCamera(
+            savedPageOffset: 128, requestedPageOffset: 128,
+            permissionGranted: true, sceneActive: true))
+        precondition(!XDriveIOSNativePhotoMapPolicy.shouldRestoreCamera(
+            savedPageOffset: nil, requestedPageOffset: 128,
+            permissionGranted: true, sceneActive: true))
+        precondition(!XDriveIOSNativePhotoMapPolicy.shouldRestoreCamera(
+            savedPageOffset: 128, requestedPageOffset: 192,
+            permissionGranted: true, sceneActive: true))
+        precondition(!XDriveIOSNativePhotoMapPolicy.shouldRestoreCamera(
+            savedPageOffset: 128, requestedPageOffset: 128,
+            permissionGranted: false, sceneActive: true))
+        precondition(!XDriveIOSNativePhotoMapPolicy.shouldRestoreCamera(
+            savedPageOffset: 128, requestedPageOffset: 128,
+            permissionGranted: true, sceneActive: false))
+        precondition(!XDriveIOSNativePhotoMapPolicy.shouldRestoreCamera(
+            savedPageOffset: -1, requestedPageOffset: 0,
+            permissionGranted: true, sceneActive: true))
         print("native iOS PhotoKit map policy: PASS")
     }
 }

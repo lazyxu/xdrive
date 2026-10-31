@@ -190,6 +190,102 @@ final class XDriveIOSNativePhotoReceiptReviewController: ObservableObject {
         }
     }
 
+    /// The BG original cursor is independent of the foreground schedule.
+    /// A successful receipt reconciliation never silently clears its pause:
+    /// only a separate, explicit current-Owner confirmation can do that.
+    func resumePausedBackground(
+        login: XDriveIOSNativeOwnerLoginModel,
+        expectedOwner: XDriveNativeOwnerRoot
+    ) {
+        guard mode == .idle,
+              XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner)
+        else {
+            errorMessage = "服务器或账户已变化；后台原件计划保持暂停。"
+            return
+        }
+        guard let gate = XDriveIOSOriginalRunGate.shared.acquire() else {
+            errorMessage = "原件上传或收据核对正在进行；未恢复后台计划。"
+            return
+        }
+        let expected = expectedOwner
+        let epoch = UUID()
+        generation = epoch
+        errorMessage = nil
+        notice = nil
+        mode = .resuming
+        work = Task { @MainActor [weak self] in
+            defer { XDriveIOSOriginalRunGate.shared.release(gate) }
+            guard let self else { return }
+            defer {
+                if self.generation == epoch {
+                    self.mode = .idle
+                    self.work = nil
+                }
+            }
+            do {
+                let stopVersion = XDriveIOSPhotoAutoScheduleStore.shared
+                    .localStopGeneration
+                let verified = try await login.verifiedAuthorization()
+                guard XDriveIOSNativePhotoOwnerScope.matches(verified.owner, expected),
+                      let scope = try await XDriveIOSForegroundBackupIdentity.shared
+                        .existingLocalScope(owner: expected)
+                else { throw XDriveIOSNativeSessionError.staleSession }
+
+                // A zero count must come from the trusted encrypted current-
+                // Owner ledger, not a saved UI badge or manually edited state.
+                let pending = try await XDrivePhotoSyncLedger.shared
+                    .pendingReceiptSnapshot(scope: scope, limit: 0).pending
+                guard pending == 0 else {
+                    throw XDrivePhotoSyncLedgerError.identityMismatch
+                }
+                try Task.checkCancellation()
+
+                // The User bearer and the independent iPhone Device+grant
+                // both re-prove exact Server/Owner/Root, including revocation.
+                let fresh = try await login.verifiedAuthorization()
+                guard XDriveIOSNativePhotoOwnerScope.matches(fresh.owner, expected)
+                else { throw XDriveIOSNativeSessionError.staleSession }
+                let remote = try await XDriveIOSPhotoBackgroundGrantManager.shared
+                    .verifyRemote(owner: expected, accessToken: fresh.accessToken)
+                guard remote.enabled else {
+                    throw XDriveIOSPhotoBackgroundGrantError.invalidGrantResponse
+                }
+                let approved = try await XDriveIOSApprovedPhotoBGVault.shared
+                    .proveInBackground()
+                let store = XDriveIOSBGOriginalWindowStore.shared
+                let paused = try store.pausedForReview(owner: expected)
+                try Task.checkCancellation()
+                guard self.generation == epoch, pending == 0, paused,
+                      approved.matches(expected),
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected),
+                      XDriveIOSPhotoAutoScheduleStore.shared.localStopGeneration == stopVersion,
+                      UIApplication.shared.applicationState == .active,
+                      [.authorized, .limited].contains(
+                        PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                      ) else { throw XDriveIOSNativeSessionError.staleSession }
+
+                // Schedule first; on failure retain the durable BG pause.
+                // The OS earliest-attempt is advisory, not a foreground run.
+                try XDriveIOSBackgroundPhotoTask.scheduleApprovedProbe(
+                    afterMinutes: approved.intervalMinutes
+                )
+                try store.resumeAfterTrustedReview(
+                    owner: expected, approved: approved, trustedPending: pending
+                )
+                self.pending = 0
+                self.hasLedgerScope = true
+                self.notice = "全部不确定收据已核验；由你确认重新安排当前 Owner 的系统后台计划。下次执行时机由 iOS 决定。"
+            } catch is CancellationError {
+                // No implicit resume or ledger destruction.
+            } catch {
+                guard self.generation == epoch,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
+                else { return }
+                self.errorMessage = "收据、后台授权、账户或相册权限尚未全部验证；后台原件计划继续暂停。"
+            }
+        }
+    }
+
     /// Explicit user re-enablement, never automatic after a partial review.
     /// It is intentionally a separate confirmation from the read-only pass.
     func resumePausedAuto(login: XDriveIOSNativeOwnerLoginModel,

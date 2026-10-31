@@ -87,3 +87,15 @@ test('mutable root revision is not identity; BGTask remains bounded and fail-clo
   assert.match(task, /progress\.needsReview == 0/);
   assert.doesNotMatch(control, /document\.cookie|window\.webkit|UserDefaults|grantSecret|deviceToken/);
 });
+
+test('native BG status differentiates a paused receipt window from a live authorized grant', () => {
+  assert.match(ui, /background\.pausedForReview/)
+  assert.match(ui, /后台原件备份已暂停：需核对不确定收据/)
+  assert.match(ui, /native-ios-photo-background-receipts-resume/)
+  assert.match(ui, /native-ios-photo-background-receipts-resume-confirm/)
+  assert.match(ui, /showBackgroundResumeConsent = false/)
+  assert.match(ui, /backgroundResumeOwner = nil/)
+  assert.match(control, /@Published private\(set\) var pausedForReview = false/)
+  assert.match(control, /\.pausedForReview\(owner: owner\)/)
+  assert.doesNotMatch(ui, /UploadSessionTransport|document\.cookie|grantSecret|deviceToken/)
+})

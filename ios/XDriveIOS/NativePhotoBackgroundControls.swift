@@ -11,6 +11,7 @@ final class XDriveIOSNativeBackgroundPhotoControls: ObservableObject {
     @Published private(set) var checking = false
     @Published private(set) var status: XDriveIOSPhotoBackgroundGrantStatus?
     @Published private(set) var serverVerified = false
+    @Published private(set) var pausedForReview = false
     @Published private(set) var notice: String?
     @Published private(set) var errorMessage: String?
 
@@ -24,6 +25,7 @@ final class XDriveIOSNativeBackgroundPhotoControls: ObservableObject {
         checking = false
         status = nil
         serverVerified = false
+        pausedForReview = false
     }
 
     func refresh(login: XDriveIOSNativeOwnerLoginModel) {
@@ -32,6 +34,7 @@ final class XDriveIOSNativeBackgroundPhotoControls: ObservableObject {
         let ticket = readGeneration
         status = nil
         serverVerified = false
+        pausedForReview = false
         guard let owner = login.owner else {
             checking = false
             return
@@ -41,10 +44,13 @@ final class XDriveIOSNativeBackgroundPhotoControls: ObservableObject {
             do {
                 let local = try await XDriveIOSPhotoBackgroundGrantManager.shared
                     .localStatus(owner: owner)
+                let paused = try XDriveIOSBGOriginalWindowStore.shared
+                    .pausedForReview(owner: owner)
                 guard self?.readGeneration == ticket,
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner)
                 else { return }
                 self?.status = local
+                self?.pausedForReview = paused
                 self?.checking = false
                 if local.enabled {
                     do {
@@ -74,6 +80,7 @@ final class XDriveIOSNativeBackgroundPhotoControls: ObservableObject {
                 self?.status = nil
                 self?.checking = false
                 self?.serverVerified = false
+                self?.pausedForReview = false
                 self?.errorMessage = "本机后台授权状态无法安全读取；未修改权限。"
             }
         }
