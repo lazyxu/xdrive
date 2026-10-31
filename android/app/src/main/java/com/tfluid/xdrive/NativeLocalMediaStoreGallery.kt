@@ -482,8 +482,30 @@ internal fun NativeLocalMediaStoreGallery(
         }
     }
     selectedMedia?.let { asset ->
+        val sourceKey = asset.viewerReturnKey()
+        val loadedKeys = remember(items) { items.map { it.viewerReturnKey() } }
+        val loadedIndex = if (allowed && wall.loaded.value)
+            nativeLocalViewerLoadedIndex(loadedKeys, sourceKey) else null
+        // Do not skip more than one item on a double tap against the old
+        // composition. Also reject stale, revoked or switched album windows.
+        val shiftLoaded: (Int) -> Unit = { direction ->
+            val current = selectedMedia
+            if (current != null && current.viewerReturnKey() == sourceKey &&
+                allowed && wall.loaded.value &&
+                cache.generation.intValue == libraryEpoch) {
+                val next = nativeLocalViewerNeighborIndex(
+                    items.map { it.viewerReturnKey() }, sourceKey, direction)
+                if (next != null) selectedMedia = items[next]
+            }
+        }
         NativeLocalMediaViewer(
             asset = asset,
+            loadedPosition = loadedIndex,
+            loadedCount = loadedKeys.size,
+            onPrevious = if (loadedIndex != null && loadedIndex > 0)
+                ({ shiftLoaded(-1) }) else null,
+            onNext = if (loadedIndex != null && loadedIndex < loadedKeys.lastIndex)
+                ({ shiftLoaded(1) }) else null,
             onDismiss = {
                 viewerReturn = NativeLocalViewerReturnAnchor(
                     asset.viewerReturnKey(), albumsOnly,
@@ -591,6 +613,10 @@ private fun NativeLocalThumbnail(
 internal fun NativeLocalMediaViewer(
     asset: NativeLocalMedia, onDismiss: () -> Unit,
     onBackupOriginal: (() -> Unit)? = null,
+    loadedPosition: Int? = null,
+    loadedCount: Int = 0,
+    onPrevious: (() -> Unit)? = null,
+    onNext: (() -> Unit)? = null,
 ) {
     Dialog(onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -604,6 +630,8 @@ internal fun NativeLocalMediaViewer(
                     modifier = Modifier.heightIn(min = 48.dp)
                         .testTag("native-local-backup-request"),
                 ) { Text("备份这一项原件") }
+                NativeLocalViewerLoadedNavigation(
+                    loadedPosition, loadedCount, onPrevious, onNext)
                 if (asset.isVideo) NativeLocalVideoPlayer(asset)
                 else NativeLocalStillViewer(asset)
                 Text("本机原件只读预览（解码最长边不超过 4096 像素）；动态照片运动片段暂不支持播放，也不会自动备份。",
@@ -611,6 +639,46 @@ internal fun NativeLocalMediaViewer(
                     style = MaterialTheme.typography.bodySmall)
             }
         }
+    }
+}
+
+
+/**
+ * Viewer-only native navigation. Adjacent controls operate exclusively on
+ * already-loaded local rows; they cannot query MediaStore, trigger backup,
+ * or claim that a bounded page is the complete device photo library.
+ */
+@Composable
+internal fun NativeLocalViewerLoadedNavigation(
+    loadedPosition: Int?,
+    loadedCount: Int,
+    onPrevious: (() -> Unit)?,
+    onNext: (() -> Unit)?,
+) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        TextButton(
+            onClick = { onPrevious?.invoke() },
+            enabled = onPrevious != null,
+            modifier = Modifier.heightIn(min = 48.dp)
+                .testTag("native-local-viewer-previous"),
+        ) { Text("上一项") }
+        Text(
+            text = if (loadedPosition != null && loadedPosition in 0 until loadedCount)
+                "${loadedPosition + 1}/${loadedCount}（已加载）"
+            else "当前媒体已变化",
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.testTag("native-local-viewer-position"),
+        )
+        TextButton(
+            onClick = { onNext?.invoke() },
+            enabled = onNext != null,
+            modifier = Modifier.heightIn(min = 48.dp)
+                .testTag("native-local-viewer-next"),
+        ) { Text("下一项") }
     }
 }
 

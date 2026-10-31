@@ -39,3 +39,26 @@ internal fun nativeLocalViewerReturnIndex(
     val index = available.indexOf(anchor.item)
     return index.takeIf { it >= 0 }
 }
+
+/**
+ * Local Viewer navigation is confined to the current bounded, authorized wall.
+ * A MediaStore numeric ID alone is not a valid neighbor identity: media kind,
+ * album and creation time must still match. Never fetch extra pages here.
+ */
+internal fun nativeLocalViewerLoadedIndex(
+    available: List<NativeLocalViewerItemKey>,
+    current: NativeLocalViewerItemKey,
+): Int? {
+    if (available.size > NativeLocalMediaStore.MAX_WALL_ITEMS) return null
+    return available.indexOf(current).takeIf { it >= 0 }
+}
+
+internal fun nativeLocalViewerNeighborIndex(
+    available: List<NativeLocalViewerItemKey>,
+    current: NativeLocalViewerItemKey,
+    direction: Int,
+): Int? {
+    if (direction != -1 && direction != 1) return null
+    val index = nativeLocalViewerLoadedIndex(available, current) ?: return null
+    return (index + direction).takeIf { it in available.indices }
+}
