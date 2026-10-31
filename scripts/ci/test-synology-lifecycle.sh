@@ -63,6 +63,10 @@ check_status 3
 # Replace the whole target directory as DSM does during an SPK upgrade.
 # A persisted credential/config is intentionally outside the replaced target.
 printf '%s\n' 'must-survive-upgrade' > "$tmp/home-real/.config/credentials-probe"
+# DSM var/cache is persistent too: an interrupted local task must not be
+# discarded merely because Package Center replaces the immutable target.
+# This is a filesystem lifecycle probe, not an SQL/CAS recovery receipt.
+printf '%s\n' 'pending-reconciliation' > "$tmp/var-real/cache/task-state-probe"
 cp "$tmp/target/bin/xdrive-agent" "$tmp/replacement-agent"
 rm -rf "$tmp/target"
 mkdir -p "$tmp/target/bin"
@@ -70,6 +74,31 @@ install -m 0755 "$tmp/replacement-agent" "$tmp/target/bin/xdrive-agent"
 "$SCRIPT" start
 check_status 0
 [[ "$(cat "$tmp/home-real/.config/credentials-probe")" == 'must-survive-upgrade' ]]
+[[ "$(cat "$tmp/var-real/cache/task-state-probe")" == 'pending-reconciliation' ]]
+"$SCRIPT" stop
+check_status 3
+
+# An ungraceful Agent crash leaves a stale PID. Package Center must recover
+# the same single installed Agent executable without clearing persistent
+# config/cache or mistaking the stale PID for a live owned backup operation.
+"$SCRIPT" start
+check_status 0
+crashed_pid="$(cat "$tmp/var/run/agent.pid")"
+previous_agent_starts="$(wc -l < "$tmp/var-real/cache/agent-environment")"
+kill -KILL "$crashed_pid"
+for attempt in $(seq 1 50); do
+  if ! "$SCRIPT" status >/dev/null 2>&1; then break; fi
+  sleep 0.1
+done
+check_status 1
+"$SCRIPT" start
+check_status 0
+current_agent_starts="$(wc -l < "$tmp/var-real/cache/agent-environment")"
+[[ "$current_agent_starts" -eq "$((previous_agent_starts + 1))" ]] || {
+  echo 'crash restart did not launch exactly one new Agent' >&2; exit 1
+}
+[[ "$(cat "$tmp/home-real/.config/credentials-probe")" == 'must-survive-upgrade' ]]
+[[ "$(cat "$tmp/var-real/cache/task-state-probe")" == 'pending-reconciliation' ]]
 "$SCRIPT" stop
 check_status 3
 
@@ -119,4 +148,4 @@ if "$SCRIPT" start; then
   exit 1
 fi
 check_status 3
-printf '%s\n' 'Synology lifecycle passed: cold start, idempotence, SIGTERM, FHS symlinks, persistence, PID reuse, symlink refusal and forged argv.'
+printf '%s\n' 'Synology lifecycle passed: cold start, idempotence, SIGTERM, upgrade/config/cache persistence, stale-PID crash restart, FHS symlinks, PID reuse, symlink refusal and forged argv.'
