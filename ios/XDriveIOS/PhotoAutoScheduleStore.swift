@@ -74,6 +74,21 @@ final class XDriveIOSPhotoAutoScheduleStore {
         return state
     }
 
+    /// A new timed run must not bypass an uncertain Server ACK left by a
+    /// previous manual or BG writer of this same Owner. Persist a pause
+    /// WITHOUT advancing the PhotoKit generation, cursor or due time.
+    /// The current encrypted ledger remains authoritative; only the
+    /// explicit zero-pending receipt-review flow may re-enable this plan.
+    @discardableResult
+    func pauseForPendingReceipts(owner: XDriveNativeOwnerRoot) throws -> State? {
+        guard var state = status(owner: owner), state.enabled else { return nil }
+        if !state.pausedForReview {
+            state.pausedForReview = true
+            try persist(state, owner: owner)
+        }
+        return state
+    }
+
     func disable(owner: XDriveNativeOwnerRoot) {
         // Disable immediately, without requiring a network roundtrip.
         UserDefaults.standard.removeObject(forKey: key(for: owner))
