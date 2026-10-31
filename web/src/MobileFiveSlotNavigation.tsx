@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import { XDRIVE_MOBILE_ITEM_HOLD_MS, xDriveMobileItemMoved } from '../../ui/shared/src/mobile-item-gesture'
 import AppsRoundedIcon from '@mui/icons-material/AppsRounded'
@@ -221,15 +221,16 @@ export function XDriveMobileFiveSlotNavigation({
 }
 
 export function XDriveMobileAllLauncher({
-  sections, onSelect, onOpenRecent, favoriteKeys, onToggleFavorite,
+  sections, onSelect, onOpenRecent, favoriteKeys, onToggleFavorite, search, onSearchChange,
 }: {
   sections: XDriveSidebarSectionModel[]
   onSelect: (key: string) => void
   onOpenRecent: () => void
   favoriteKeys: readonly string[]
   onToggleFavorite: (key: string) => void
+  search: string
+  onSearchChange: (value: string) => void
 }) {
-  const [search, setSearch] = useState('')
   const favorites = new Set(favoriteKeys)
   const term = search.trim().toLocaleLowerCase()
   const entries = sections.flatMap(section => section.items)
@@ -254,7 +255,7 @@ export function XDriveMobileAllLauncher({
                 </ButtonBase>
                 <IconButton size="small" aria-label={favorites.has(item.key) ? '取消收藏' : '收藏功能'}
                   onClick={() => onToggleFavorite(item.key)}
-                  sx={{ position: 'absolute', top: 0, right: 0, width: 32, height: 32 }}>
+                  sx={{ position: 'absolute', top: 0, right: 0, width: 44, height: 44 }}>
                   {favorites.has(item.key) ? <StarRoundedIcon sx={{ fontSize: 17 }} /> :
                     <StarBorderRoundedIcon sx={{ fontSize: 17 }} />}
                 </IconButton>
@@ -266,7 +267,6 @@ export function XDriveMobileAllLauncher({
     )
   }
   const favoritesItems = [...unique.values()].filter(item => favorites.has(item.key))
-  const otherItems = [...unique.values()].filter(item => !favorites.has(item.key))
   return (
     <Box data-xdrive-mobile-all-launcher sx={{ width: '100%', maxWidth: 820, mx: 'auto', p: 2, pb: 4 }}>
       <Typography component="h1" variant="h6" fontWeight={700}>全部功能</Typography>
@@ -274,11 +274,12 @@ export function XDriveMobileAllLauncher({
         图库、文件和常用功能。当前 Web 只访问已授权的云端照片；本机照片由您手动选择上传。
       </Typography>
       <TextField fullWidth size="small" type="search" label="搜索功能" value={search}
-        onChange={event => setSearch(event.target.value)} inputProps={{ 'aria-label': '搜索功能' }} />
+        onChange={event => onSearchChange(event.target.value)}
+        inputProps={{ 'aria-label': '搜索功能', maxLength: 120 }} />
       <Button startIcon={<HistoryRoundedIcon />} onClick={onOpenRecent}
         sx={{ minHeight: 44, mt: 1 }}>最近动态功能</Button>
       {showGroup('收藏', favoritesItems)}
-      {showGroup('应用', otherItems)}
+      {sections.map(section => showGroup(String(section.label ?? '其他功能'), section.items))}
       {term && ![...unique.values()].some(matches) ? (
         <Typography color="text.secondary" role="status" sx={{ mt: 2 }}>没有匹配的功能。</Typography>
       ) : null}

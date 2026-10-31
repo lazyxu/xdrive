@@ -109,6 +109,17 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-live-original-check"
           "$RUNNER_TEMP/xdrive-ios-live-original-check"
 
+      - name: Verify bounded cloud Live ZIP extraction and corruption cleanup
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/LiveOriginalArchive.swift \
+            ios/XDriveIOS/LivePreviewArchive.swift \
+            ios/tests/LivePreviewArchiveChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-live-preview-check"
+          "$RUNNER_TEMP/xdrive-ios-live-preview-check"
+          node --test desktop/tests/ios-native-cloud-preview-scene-lifecycle.cjs
+
       - name: Verify native background grant token and expiry contract
         run: |
           set -euo pipefail
@@ -136,8 +147,8 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-bg-route-check"
           "$RUNNER_TEMP/xdrive-ios-bg-route-check"
 
-      - name: Verify actual bounded background original safety contract
-        run: node --test desktop/tests/ios-bg-bounded-original-runner.cjs
+      - name: Verify actual bounded background original safety and native BG consent
+        run: node --test desktop/tests/ios-bg-bounded-original-runner.cjs desktop/tests/ios-native-background-grant-ui.cjs
 
       - name: Verify read-only native Gallery cache retention on revoked access
         run: |
@@ -165,6 +176,8 @@ jobs:
           node --test \
             desktop/tests/ios-native-historical-screen-recovery.cjs \
             desktop/tests/ios-native-owner-login-foundation.cjs \
+            desktop/tests/ios-native-direct-workspace-entry.cjs \
+            desktop/tests/ios-native-no-webview-fallback.cjs \
             desktop/tests/ios-native-photos-auto-view-mvp.cjs \
             desktop/tests/ios-native-photo-receipt-review.cjs \
             desktop/tests/ios-native-cloud-original-thumbnail-wall.cjs \
@@ -173,12 +186,51 @@ jobs:
             desktop/tests/ios-native-five-tab-navigation.cjs \
             desktop/tests/ios-native-photo-zoom-viewer.cjs \
             desktop/tests/ios-native-photo-viewer-return.cjs \
+            desktop/tests/ios-native-photoasset-gallery.cjs \
             desktop/tests/ios-native-cloud-still-bounded-preview.cjs \
             desktop/tests/ios-native-photo-auto-ack-enable-guard.cjs \
             desktop/tests/ios-native-photo-detail-permission-fence.cjs \
             desktop/tests/ios-native-photo-cloud-confirmed-refresh.cjs \
-            desktop/tests/ios-native-cloud-preview-scene-lifecycle.cjs \
-            desktop/tests/ios-native-photoasset-gallery.cjs
+            desktop/tests/ios-native-cloud-preview-scene-lifecycle.cjs
+
+      - name: Verify native PhotoKit Viewer tile scroll return
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativePhotoViewerReturnAnchorPolicy.swift \
+            ios/tests/NativePhotoViewerReturnAnchorPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-viewer-return-tile"
+          "$RUNNER_TEMP/xdrive-ios-viewer-return-tile"
+          node --test desktop/tests/ios-native-photo-viewer-tile-scroll.cjs
+
+      - name: Verify native five-slot, Owner route resume and Gallery L2 focus
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeNavigationRouteStore.swift \
+            ios/tests/NativeNavigationRouteStoreChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-nav-route-check"
+          "$RUNNER_TEMP/xdrive-ios-nav-route-check"
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeFocusVisibilityPolicy.swift \
+            ios/tests/NativeFocusVisibilityPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-focus-policy-check"
+          "$RUNNER_TEMP/xdrive-ios-focus-policy-check"
+          node --test \
+            desktop/tests/ios-native-owner-scope-tab-reset.cjs \
+            desktop/tests/ios-native-route-resume-wiring.cjs \
+            desktop/tests/ios-native-compact-bottom-bar.cjs \
+            desktop/tests/ios-native-l2-focus-bar-integration.cjs
+
+      - name: Verify native bounded MapKit PhotoKit page and Gallery route
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativePhotoMapPolicy.swift \
+            ios/tests/NativePhotoMapPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-native-map-policy-check"
+          "$RUNNER_TEMP/xdrive-ios-native-map-policy-check"
+          node --test desktop/tests/ios-native-photo-map-mvp.cjs
 
       - name: Prepare native brand and home screen icon
         run: bash ios/scripts/prepare-assets.sh

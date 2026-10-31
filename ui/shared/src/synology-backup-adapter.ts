@@ -12,6 +12,11 @@ import type { XDriveLocalBackupScheduleActions } from './mui/DeviceBackupLocalSc
 import type { XDriveLocalBackupCommonBatch, XDriveLocalBackupCommonBatchHistoryPage, XDriveLocalBoundBackupSchedule } from './device-backups'
 
 export type XDriveSynologyLocalSource = { source_id: number; name: string }
+export type XDriveSynologyNASVolumeSpace = {
+  capacity_bytes: number
+  available_bytes: number
+}
+
 
 export type XDriveSynologyOwnerFileNode = {
   id: number
@@ -221,11 +226,36 @@ function validateOwnerGalleryAlbums(raw: unknown): MediaAlbum[] {
   return raw as MediaAlbum[]
 }
 
+export type XDriveSynologyCreatedBackupSource = {
+  source_id: number
+  state: 'authorized' | 'needs_inspection'
+}
+
+export type XDriveSynologyServerConnection = {
+  owner_scope: string
+  configured: boolean
+  server?: string
+  username?: string
+  must_change_password: boolean
+}
+
 export interface XDriveSynologyBackupLocalClient extends XDriveLocalBackupCommonBatchActions, XDriveLocalBackupScheduleActions {
   list(signal?: AbortSignal): Promise<XDriveSynologyLocalSource[]>
+  /** Credential-free, same-user read-only Agent login status. */
+  serverConnection(signal?: AbortSignal): Promise<XDriveSynologyServerConnection>
+  /** Initial or same-Owner login only; no Server/Owner migration or Root grants. */
+  loginServer(server: string, username: string, password: string, signal?: AbortSignal): Promise<void>
   /** Same-principal DSM package-user read-only NAS share roots. */
   nasShares(signal?: AbortSignal): Promise<XDriveSynologyNASShare[]>
+  /** Verify a session-scoped share with the existing owning Agent; no Root grant. */
+  preflightNASShare(selectionID: string, signal?: AbortSignal): Promise<void>
+  /** Creates a paused native Source on the verified NAS share; never starts Runner. */
+  createNASBackupSource(
+    selectionID: string, ownerScope: string, targetID: number, name: string, signal?: AbortSignal,
+  ): Promise<XDriveSynologyCreatedBackupSource>
   diagnostics(signal?: AbortSignal): Promise<XDriveDiagnosticReport>
+  /** Authorized DSM package configuration filesystem only; never all NAS disks or Server quota. */
+  nasVolumeSpace(signal?: AbortSignal): Promise<XDriveSynologyNASVolumeSpace>
   inspect(sourceID: number, signal?: AbortSignal): Promise<XDriveLocalBackupCommonBatch>
   history(sourceID: number, signal?: AbortSignal): Promise<XDriveLocalBackupCommonBatchHistoryPage>
   /** Other devices: Server-authenticated Owner B-scope, strictly read-only. */
@@ -278,6 +308,9 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
     throw new Error('DSM Backup requires an authenticated same-origin HTTPS CGI')
   }
   let token: string | null = null
+  // Browser-only abort handles for the optional read-only recovery observer.
+  // These are never sent to the Server or persisted as backup operation IDs.
+  const recoveryReads = new Map<string, AbortController>()
   async function request<T>(
     path: string, method: 'GET' | 'POST' = 'GET', payload?: unknown, signal?: AbortSignal,
   ): Promise<T> {
@@ -288,9 +321,11 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
     const operation = virtual.pathname.slice('/v1/'.length)
     if (!['bootstrap', 'sources', 'status', 'history', 'run', 'control', 'schedule',
       'device-backups', 'device-backup-runs',
-      'device-backup-page', 'device-backup-folders', 'cloud-quota',
+      'device-backup-page', 'device-backup-folders', 'cloud-quota', 'nas-volume',
       'cloud-root', 'cloud-children', 'cloud-text-preview', 'cloud-media-range', 'cloud-thumbnail',
-       'cloud-gallery-items', 'cloud-gallery-albums', 'cloud-live-motion', 'nas-shares'].includes(operation)) {
+       'cloud-gallery-items', 'cloud-gallery-albums', 'cloud-live-motion', 'nas-shares',
+      'nas-share-preflight', 'nas-share-create', 'server-connection', 'server-login',
+      'recovery-review'].includes(operation)) {
       throw new Error('Unsupported DSM backup operation')
     }
     // DSM custom CGI is one executable URL. Extra /v1/ PATH_INFO suffixes
@@ -333,6 +368,94 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
   const canonicalDeviceID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
   const validPageLimit = (limit: number) => Number.isSafeInteger(limit) && limit >= 1 && limit <= 100
   const api: XDriveSynologyBackupLocalClient = {
+    async createNASBackupSource(selectionID, ownerScope, targetID, name, signal) {
+      if (!/^[0-9a-f]{64}$/.test(selectionID) ||
+        !/^[0-9a-f]{64}$/.test(ownerScope) ||
+        !Number.isSafeInteger(targetID) || targetID < 1 ||
+        name.trim() !== name || name.length < 1 ||
+        new TextEncoder().encode(name).length > 128 ||
+        /[\r\n\0]/.test(name)) {
+        throw new Error('Invalid DSM local Source setup selection')
+      }
+      const raw = await request<unknown>('/v1/nas-share-create', 'POST',
+        { selection_id: selectionID, owner_scope: ownerScope, target_id: targetID, name, confirmed: true }, signal)
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        throw new Error('Unverified owning Agent Source setup')
+      }
+      const payload = raw as Record<string, unknown>
+      if (Object.keys(payload).length !== 2 ||
+        !Number.isSafeInteger(payload.source_id) || (payload.source_id as number) < 1 ||
+        (payload.state !== 'authorized' && payload.state !== 'needs_inspection')) {
+        throw new Error('Invalid owning Agent Source setup acknowledgement')
+      }
+      return { source_id: payload.source_id as number, state: payload.state }
+    },
+
+    async serverConnection(signal) {
+      const raw = await request<unknown>('/v1/server-connection', 'GET', undefined, signal)
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        throw new Error('Invalid DSM Agent Server identity')
+      }
+      const status = raw as Record<string, unknown>
+      if (Object.keys(status).some(key =>
+          !['configured', 'server', 'username', 'must_change_password', 'owner_scope'].includes(key)) ||
+        typeof status.configured !== 'boolean' ||
+        typeof status.must_change_password !== 'boolean' ||
+        typeof status.owner_scope !== 'string' ||
+        (status.configured && !/^[0-9a-f]{64}$/.test(status.owner_scope)) ||
+        (!status.configured && status.owner_scope !== '') ||
+        (status.configured && (typeof status.server !== 'string' ||
+          typeof status.username !== 'string' || status.username.length < 1 ||
+          status.username.length > 128)) ||
+        (!status.configured && (status.server !== undefined || status.username !== undefined))) {
+        throw new Error('Untrusted DSM Agent Server connection')
+      }
+      if (status.configured) {
+        const url = new URL(status.server as string)
+        if (url.protocol !== 'https:' || !url.hostname || url.username || url.password ||
+          url.search || url.hash || (url.pathname !== '/' && url.pathname !== '')) {
+          throw new Error('Invalid authenticated DSM Server URL')
+        }
+      }
+      return {
+        configured: status.configured === true,
+        must_change_password: status.must_change_password === true,
+        owner_scope: status.owner_scope as string,
+        ...(typeof status.server === 'string' ? { server: status.server } : {}),
+        ...(typeof status.username === 'string' ? { username: status.username } : {}),
+      }
+    },
+    async loginServer(server, username, password, signal) {
+      // Do not accept browser-provided trust roots, local paths, Owner IDs,
+      // password persistence, or generic Agent method selectors.
+      let parsed: URL
+      try { parsed = new URL(server) } catch { throw new Error('Server URL must use HTTPS') }
+      if (parsed.protocol !== 'https:' || !parsed.hostname ||
+        parsed.username || parsed.password || parsed.search || parsed.hash ||
+        parsed.pathname !== '/' || server.length > 512 ||
+        username.length < 1 || username.length > 128 ||
+        username.trim() !== username || /[\r\n\0]/.test(username) ||
+        password.length < 1 || new TextEncoder().encode(password).length > 4096 ||
+        /[\r\n\0]/.test(password)) {
+        throw new Error('Invalid DSM Server login form')
+      }
+      const raw = await request<unknown>('/v1/server-login', 'POST',
+        { server, username, password }, signal)
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw) ||
+        Object.keys(raw).length !== 1 || (raw as { verified?: unknown }).verified !== true) {
+        throw new Error('DSM Agent did not verify current Server Owner login')
+      }
+    },
+
+    async preflightNASShare(selectionID, signal) {
+      if (!/^[0-9a-f]{64}$/.test(selectionID)) throw new Error('Invalid DSM NAS share selection')
+      const raw = await request<unknown>('/v1/nas-share-preflight', 'POST',
+        { selection_id: selectionID }, signal)
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw) ||
+        Object.keys(raw).length !== 1 || (raw as { verified?: unknown }).verified !== true) {
+        throw new Error('Unverified DSM native NAS share preflight')
+      }
+    },
     async nasShares(signal) {
       const raw = await request<unknown>('/v1/nas-shares', 'GET', undefined, signal)
       // Keep this feature-only module out of the existing Owner-read VM
@@ -581,6 +704,21 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
         await request<unknown>(url, 'GET', undefined, signal),
         parentID, limit, sort, order, cursor)
     },
+    nasVolumeSpace: async (signal) => {
+      const raw = await request<unknown>('/v1/nas-volume', 'GET', undefined, signal)
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw) ||
+          Object.keys(raw).length !== 2 ||
+          Object.keys(raw).some(k => k !== 'capacity_bytes' && k !== 'available_bytes')) {
+        throw new Error('Invalid authenticated DSM package filesystem projection')
+      }
+      const info = raw as Record<string, unknown>
+      if (!Number.isSafeInteger(info.capacity_bytes) || (info.capacity_bytes as number) <= 0 ||
+          !Number.isSafeInteger(info.available_bytes) || (info.available_bytes as number) < 0 ||
+          (info.available_bytes as number) > (info.capacity_bytes as number)) {
+        throw new Error('Invalid DSM package filesystem capacity')
+      }
+      return { capacity_bytes: info.capacity_bytes as number, available_bytes: info.available_bytes as number }
+    },
     ownerQuota: async (signal) => {
       const quota = await request<QuotaUsage>('/v1/cloud-quota', 'GET', undefined, signal)
       const fields = [
@@ -631,6 +769,39 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
       '/v1/status' + sourceQuery(sourceID), 'GET', undefined, signal),
     history: (sourceID, signal) => request<XDriveLocalBackupCommonBatchHistoryPage>(
       '/v1/history' + sourceQuery(sourceID), 'GET', undefined, signal),
+    // Read-only historical SQL receipt diagnosis already implemented by the
+    // original Agent and the shared Device Backup dialog. Never restart a
+    // writer, expose local paths or claim current CAS physical integrity.
+    async review(sourceID, afterFile, pageEpoch, requestID) {
+      if (!Number.isSafeInteger(afterFile) || afterFile < 0 || afterFile > 1_000_000 ||
+        (afterFile === 0 && pageEpoch !== '') ||
+        (afterFile > 0 && !/^[0-9a-f]{64}$/.test(pageEpoch)) ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(requestID) ||
+        recoveryReads.has(requestID) || recoveryReads.size >= 4) {
+        throw new Error('Invalid DSM historical review selector')
+      }
+      const selector = sourceQuery(sourceID) +
+        (afterFile > 0 ? '&after_file=' + afterFile + '&page_epoch=' + pageEpoch : '')
+      const controller = new AbortController()
+      recoveryReads.set(requestID, controller)
+      try {
+        const page = await request<unknown>(
+          '/v1/recovery-review' + selector, 'GET', undefined, controller.signal)
+        // This optional diagnostics module is only needed when the user
+        // requests historical review. Keep ordinary DSM Host startup free of
+        // a runtime module dependency (also exercised by existing VM tests).
+        const { xDriveValidateSynologyRecoveryReview } = await import('./synology-recovery-review')
+        return xDriveValidateSynologyRecoveryReview(page, sourceID, afterFile, pageEpoch)
+      } finally {
+        if (recoveryReads.get(requestID) === controller) recoveryReads.delete(requestID)
+      }
+    },
+    async cancelReview(requestID) {
+      // Detach only this browser observer. Never issue a new Agent mutation
+      // or assume a historical Server Operation was physically cancelled.
+      recoveryReads.get(requestID)?.abort()
+      recoveryReads.delete(requestID)
+    },
     // The original owning Agent remains authoritative for Source identity,
     // the optimistic revision and all schedule semantics. No NAS scheduler.
     load: sourceID => request<XDriveLocalBoundBackupSchedule>(

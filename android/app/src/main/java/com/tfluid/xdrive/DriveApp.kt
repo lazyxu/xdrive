@@ -18,6 +18,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalContext
+import android.provider.MediaStore
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import com.tfluid.xdrive.core.validDriveNodeName
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
@@ -36,18 +42,118 @@ internal fun shouldHandleFilesBack(state: DriveState, editOpen: Boolean, batchCo
         (state.screen == Screen.FILES &&
             (state.browseSelectionMode || state.filesSection != FilesSection.BROWSE || state.path.size > 1))
 
+/**
+ * iOS-aligned Photos-first entry: only after this new authenticated session's
+ * real Owner Files root has loaded. Never interrupt a write/confirmation or
+ * override a user's explicit tab selection to jump back from Files.
+ */
+internal fun nativeGalleryFirstLandingAllowed(
+    pending: Boolean, navigation: NativeHomeNavigation, state: DriveState,
+): Boolean = pending && state.nativeUiSessionId > 0 &&
+    navigation.selected == NativeHomeTab.FILES &&
+    state.screen == Screen.FILES && state.loaded && state.path.isNotEmpty() &&
+    state.filesSection == FilesSection.BROWSE && !state.browseSelectionMode &&
+    state.selected == null && state.fileUploadPickerParent == null &&
+    state.fileExportPending == null &&
+    state.filesPdfViewer == null && state.filesAudioViewer == null &&
+    state.canNavigateFiles()
+
+/**
+ * Actual one-original request requires current Gallery, exact login epoch,
+ * full original grants, a single verified MediaStore selection and a safe name.
+ * The Controller independently re-checks all of these before UploadSession.
+ */
+internal fun nativePhotoBackupCanConfirm(
+    sameSession: Boolean, galleryVisible: Boolean,
+    verifiedOriginal: Boolean, fullMediaGrant: Boolean,
+    writerBusy: Boolean, destinationName: String,
+): Boolean = sameSession && galleryVisible && verifiedOriginal &&
+    fullMediaGrant && !writerBusy && validDriveNodeName(destinationName)
+
 @Composable
 fun DriveApp(controller: DriveController, updates: UpdateController? = null, openUpdate: (String) -> Boolean = { false },
     initialFilesView: FileViewMode = FileViewMode.LIST, saveFilesView: (FileViewMode) -> Unit = {},
     onDownload: ((DriveNode) -> Unit)? = null,
-    onUpload: (() -> Unit)? = null) {
+    onUpload: (() -> Unit)? = null, galleryFirstOnLogin: Boolean = true) {
     val state by controller.state.collectAsStateWithLifecycle()
+    val androidContext = LocalContext.current
+    // Private selection is scoped to this authenticated login epoch; no URI
+    // is retained in saved state, history or a background upload task.
+    var backupSelection by remember(state.nativeUiSessionId, state.server, state.username) {
+        mutableStateOf<NativeLocalMedia?>(null)
+    }
+    var verifiedBackupOriginal by remember(state.nativeUiSessionId, state.server, state.username) {
+        mutableStateOf<NativePhotoOriginalCandidate?>(null)
+    }
+    var backupDestinationName by remember(state.nativeUiSessionId, state.server, state.username) {
+        mutableStateOf("")
+    }
+    var backupInspectError by remember(state.nativeUiSessionId, state.server, state.username) {
+        mutableStateOf<String?>(null)
+    }
+    LaunchedEffect(backupSelection?.id, backupSelection?.isVideo,
+        state.nativeUiSessionId, state.server, state.username) {
+        verifiedBackupOriginal = null
+        backupDestinationName = ""
+        backupInspectError = null
+        val selected = backupSelection ?: return@LaunchedEffect
+        val sessionId = state.nativeUiSessionId
+        val origin = state.server
+        val username = state.username
+        if (state.screen != Screen.GALLERY) {
+            backupSelection = null
+            return@LaunchedEffect
+        }
+        try {
+            // One exact, read-only ContentResolver query from the user's
+            // selected local Viewer; selected-photo-only access cannot be
+            // misreported as permission for full-resolution backup.
+            val exact = NativePhotoMediaStoreInventory.inspectSelected(
+                androidContext, selected.id, selected.isVideo)
+            check(exact.uri == selected.uri) { "Selected MediaStore URI changed" }
+            val suggested = withContext(Dispatchers.IO) {
+                androidContext.contentResolver.query(
+                    exact.uri, arrayOf(MediaStore.MediaColumns.DISPLAY_NAME),
+                    null, null, null,
+                )?.use { cursor ->
+                    if (!cursor.moveToFirst()) null else {
+                        val value = cursor.getString(cursor.getColumnIndexOrThrow(
+                            MediaStore.MediaColumns.DISPLAY_NAME))
+                        if (cursor.moveToNext()) null else value
+                    }
+                }
+            }
+            val current = controller.state.value
+            if (current.nativeUiSessionId == sessionId &&
+                current.server == origin && current.username == username &&
+                current.screen == Screen.GALLERY &&
+                backupSelection?.id == selected.id &&
+                backupSelection?.isVideo == selected.isVideo) {
+                verifiedBackupOriginal = exact
+                backupDestinationName = suggested?.takeIf(::validDriveNodeName).orEmpty()
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: SecurityException) {
+            backupInspectError = "本机原件读取权限已变化；请在系统设置中允许完整照片与视频访问。"
+        } catch (_: Exception) {
+            backupInspectError = "无法确认选中的本机原件。请返回刷新或检查照片权限。"
+        }
+    }
     val nativeAuthenticated = state.screen in setOf(Screen.FILES, Screen.GALLERY, Screen.TRASH)
     // A real authentication epoch, not a username, owns native navigation.
     var nativeNavigation by remember(state.nativeUiSessionId, nativeAuthenticated) {
         mutableStateOf(NativeHomeNavigation())
     }
+    // Only the first fully verified Owner root of this login lands in Gallery.
+    // On reselecting Files, or on an incomplete/failed login, never hijack it.
+    var galleryFirstPending by remember(state.nativeUiSessionId, nativeAuthenticated, galleryFirstOnLogin) {
+        mutableStateOf(galleryFirstOnLogin && state.nativeUiSessionId > 0 && nativeAuthenticated)
+    }
     var launcherSearch by remember(state.nativeUiSessionId) { mutableStateOf("") }
+    var dynamicPickerOpen by remember(state.nativeUiSessionId, nativeAuthenticated) {
+        mutableStateOf(false)
+    }
     var localAlbumSelection by remember(state.nativeUiSessionId) {
         mutableStateOf<NativeLocalAlbum?>(null)
     }
@@ -57,6 +163,13 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     }
     var pendingGalleryTab by remember(state.nativeUiSessionId) { mutableStateOf(false) }
     var pendingTrash by remember(state.nativeUiSessionId) { mutableStateOf(false) }
+    LaunchedEffect(state.screen, nativeNavigation.gallerySource, state.nativeUiSessionId) {
+        if (state.screen != Screen.GALLERY ||
+            nativeNavigation.gallerySource !in setOf(
+                NativeGallerySource.LOCAL, NativeGallerySource.ALBUMS)) {
+            backupSelection = null
+        }
+    }
     // Retain only scroll UI state while the fullscreen Viewer replaces Gallery.
     // The Owner photo rows and thumbnails remain in the Controller/lifecycle.
     val gallerySaveable = rememberSaveableStateHolder()
@@ -178,6 +291,7 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     }
     fun selectNativeTab(tab: NativeHomeTab) {
         if (!nativeAuthenticated || photoViewerOpen) return
+        galleryFirstPending = false // Explicit user choice always wins.
         when (tab) {
             NativeHomeTab.GALLERY -> when (state.screen) {
                 Screen.FILES -> if (state.canNavigateFiles()) {
@@ -205,6 +319,7 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
         }
     }
     fun openNativeShortcut(shortcut: NativeHomeShortcut) {
+        galleryFirstPending = false
         val previousGallerySource = nativeNavigation.gallerySource
         val next = nativeNavigation.open(shortcut)
         when (next.selected) {
@@ -214,8 +329,8 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                 if (mayEnter) {
                     nativeNavigation = next
                     if (shortcut == NativeHomeShortcut.GALLERY_MAP) {
-                        mapOriginSource = if (previousGallerySource == NativeGallerySource.MAP)
-                            NativeGallerySource.CLOUD else previousGallerySource
+                        mapOriginSource = nativeGalleryMapReturnSource(
+                            previousGallerySource, mapOriginSource)
                         pendingGalleryMap = true
                     }
                 }
@@ -239,6 +354,20 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
             else -> nativeNavigation = next
         }
     }
+    LaunchedEffect(state.nativeUiSessionId, state.screen, state.loaded,
+        state.loading, state.path.map { it.id }, nativeNavigation.selected,
+        galleryFirstPending, state.fileUploadActive, state.fileDownloadActive) {
+        if (nativeGalleryFirstLandingAllowed(
+                galleryFirstPending, nativeNavigation, controller.state.value)) {
+            // Do not preempt the authenticated initial root GET: it must have
+            // completed to establish this new Owner's safe landing point.
+            galleryFirstPending = false
+            controller.openGallery()
+            if (controller.state.value.screen == Screen.GALLERY) {
+                nativeNavigation = nativeNavigation.select(NativeHomeTab.GALLERY)
+            }
+        }
+    }
     Scaffold(modifier = Modifier.imePadding(),
         containerColor = if (state.screen == Screen.FILES || state.screen == Screen.GALLERY || state.screen == Screen.TRASH)
             mobilePage else MaterialTheme.colorScheme.background,
@@ -246,7 +375,8 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
         bottomBar = {
             if (nativeAuthenticated && !photoViewerOpen &&
                 (nativeNavigation.selected != NativeHomeTab.GALLERY || !state.galleryMapOpen))
-                NativeHomeBottomBar(nativeNavigation, ::selectNativeTab)
+                NativeHomeBottomBar(nativeNavigation, ::selectNativeTab,
+                    onShowDynamicPicker = { dynamicPickerOpen = true })
         },
         topBar = {
         if (nativeOverlay) {
@@ -369,14 +499,17 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                     NativeHomeTab.ALL -> NativeHomeLauncher(
                         nativeNavigation, launcherSearch, { launcherSearch = it },
                         ::openNativeShortcut,
-                        { nativeNavigation = nativeNavigation.toggleFavorite(it) })
+                        { nativeNavigation = nativeNavigation.toggleFavorite(it) },
+                        onChooseDynamic = { dynamicPickerOpen = true })
                     NativeHomeTab.MINE -> NativeHomeMine(
                         state, controller::logout, controller::changeServer,
                         updates?.let { it::show })
-                    NativeHomeTab.DYNAMIC -> NativeHomeDynamic(nativeNavigation, state) {
-                        transferCenterOpen = true
-                        controller.refreshTransferRecoveryNotices()
-                    }
+                    NativeHomeTab.DYNAMIC -> NativeHomeDynamic(nativeNavigation, state,
+                        onOpenTransfers = {
+                            transferCenterOpen = true
+                            controller.refreshTransferRecoveryNotices()
+                        },
+                        onChooseDynamic = { dynamicPickerOpen = true })
                     else -> Unit
                 }
             } else when (state.screen) {
@@ -439,16 +572,19 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                             })
                     } else {
                         NativeGallerySourceSelector(nativeNavigation.gallerySource) { source ->
-                            nativeNavigation = nativeNavigation.copy(gallerySource = source)
+                            // Capture the originating local/cloud/album wall BEFORE changing chips.
                             if (source == NativeGallerySource.MAP) {
-                                mapOriginSource = nativeNavigation.gallerySource
+                                mapOriginSource = nativeGalleryMapReturnSource(
+                                    nativeNavigation.gallerySource, mapOriginSource)
                                 pendingGalleryMap = true
                             }
+                            nativeNavigation = nativeNavigation.copy(gallerySource = source)
                         }
                         when (nativeNavigation.gallerySource) {
                             NativeGallerySource.LOCAL -> Box(Modifier.weight(1f)) {
                                 NativeLocalMediaStoreGallery(albumsOnly = false,
-                                    sessionId = state.nativeUiSessionId)
+                                    sessionId = state.nativeUiSessionId,
+                                    onBackupOriginal = { backupSelection = it })
                             }
                             NativeGallerySource.ALBUMS -> Box(Modifier.weight(1f)) {
                                 NativeLocalMediaStoreGallery(
@@ -456,6 +592,7 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                                     sessionId = state.nativeUiSessionId,
                                     selectedAlbum = localAlbumSelection,
                                     onAlbumSelected = { localAlbumSelection = it },
+                                    onBackupOriginal = { backupSelection = it },
                                 )
                             }
                             NativeGallerySource.MAP -> TextButton(
@@ -478,6 +615,38 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                 Screen.TRASH -> Trash(state, controller)
             }
         }
+    }
+    if (dynamicPickerOpen && nativeAuthenticated && !photoViewerOpen) {
+        AlertDialog(
+            onDismissRequest = { dynamicPickerOpen = false },
+            title = { Text("选择动态功能") },
+            text = {
+                Column {
+                    // Only implemented native features, scoped to the current Owner session.
+                    val choices = (nativeNavigation.recentDynamic +
+                        NativeDynamicFeature.entries).distinct()
+                    choices.forEach { feature ->
+                        TextButton(
+                            onClick = {
+                                nativeNavigation = nativeNavigation.openDynamic(feature)
+                                dynamicPickerOpen = false
+                                if (feature == NativeDynamicFeature.TRANSFERS)
+                                    controller.refreshTransferRecoveryNotices()
+                            },
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                                .testTag("native-dynamic-choice-${feature.name.lowercase()}"),
+                        ) { Text(feature.title) }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { dynamicPickerOpen = false },
+                    modifier = Modifier.testTag("native-dynamic-picker-close")) {
+                    Text("关闭")
+                }
+            },
+            modifier = Modifier.testTag("native-dynamic-picker"),
+        )
     }
     if (transferCenterOpen &&
         state.screen in listOf(Screen.FILES, Screen.GALLERY, Screen.TRASH)) {
@@ -604,6 +773,104 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                     }
                 }
             }, confirmButton = { TextButton(onClick = controller::dismissDetails, modifier = Modifier.heightIn(min = 48.dp)) { Text("关闭") } })
+    }
+    val requestedOriginal = backupSelection
+    if (requestedOriginal != null && state.screen == Screen.GALLERY &&
+        nativeNavigation.gallerySource in setOf(
+            NativeGallerySource.LOCAL, NativeGallerySource.ALBUMS)) {
+        // Compose already collects this StateFlow. Reading .value here bypasses
+        // recomposition and is rejected by StateFlowValueCalledInComposition.
+        // The confirm click separately checks controller.state.value afresh.
+        val current = state
+        val resolved = verifiedBackupOriginal?.takeIf {
+            it.localId == requestedOriginal.id &&
+                it.isVideo == requestedOriginal.isVideo &&
+                it.uri == requestedOriginal.uri
+        }
+        val confirmedSession = current.nativeUiSessionId == state.nativeUiSessionId &&
+            current.server == state.server && current.username == state.username &&
+            backupSelection?.id == requestedOriginal.id
+        val currentGallery = current.screen == Screen.GALLERY
+        val inactiveWriter = current.loading || current.fileUploadActive ||
+            current.fileDownloadActive || current.hasActiveNativeTransfer()
+        val canConfirm = nativePhotoBackupCanConfirm(
+            confirmedSession, currentGallery, resolved != null,
+            hasNativeFullPhotoVideoReadGrant(androidContext), inactiveWriter,
+            backupDestinationName,
+        )
+        AlertDialog(
+            onDismissRequest = { backupSelection = null },
+            modifier = Modifier.testTag("native-local-backup-consent"),
+            title = { Text("确认备份当前本机原件") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("仅上传这一项到当前账户的根目录；保留原件，不覆盖重名文件。")
+                    Text("上传成功必须收到服务器的最终文件收据；结果不确定时不会自动重试。",
+                        style = MaterialTheme.typography.bodySmall)
+                    when {
+                        backupInspectError != null ->
+                            Text(backupInspectError.orEmpty(),
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.testTag("native-local-backup-error"))
+                        resolved == null ->
+                            CircularProgressIndicator(
+                                modifier = Modifier.testTag("native-local-backup-preflight"))
+                        else -> {
+                            Text("原件大小：" + formatSize(resolved.sizeBytes),
+                                style = MaterialTheme.typography.bodySmall)
+                            OutlinedTextField(
+                                value = backupDestinationName,
+                                onValueChange = {
+                                    if (it.length <= 255) backupDestinationName = it
+                                },
+                                label = { Text("保存到服务器的文件名") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                                    .testTag("native-local-backup-name"),
+                            )
+                            if (backupDestinationName.isBlank())
+                                Text("请输入文件名；若原始名称不可用，不会猜测文件名。",
+                                    style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = canConfirm,
+                    onClick = {
+                        val exact = resolved ?: return@TextButton
+                        val now = controller.state.value
+                        if (!nativePhotoBackupCanConfirm(
+                            now.nativeUiSessionId == state.nativeUiSessionId &&
+                                now.server == state.server &&
+                                now.username == state.username &&
+                                backupSelection?.id == requestedOriginal.id,
+                            now.screen == Screen.GALLERY &&
+                                nativeNavigation.gallerySource in setOf(
+                                    NativeGallerySource.LOCAL, NativeGallerySource.ALBUMS),
+                            exact.localId == requestedOriginal.id &&
+                                exact.uri == requestedOriginal.uri &&
+                                exact.isVideo == requestedOriginal.isVideo,
+                            hasNativeFullPhotoVideoReadGrant(androidContext),
+                            now.loading || now.fileUploadActive ||
+                                now.fileDownloadActive || now.hasActiveNativeTransfer(),
+                            backupDestinationName,
+                        )) return@TextButton
+                        controller.backupNativePhotoOriginalForeground(
+                            androidContext, exact, backupDestinationName)
+                        backupSelection = null
+                    },
+                    modifier = Modifier.testTag("native-local-backup-confirm"),
+                ) { Text("确认上传原件") }
+            },
+            dismissButton = {
+                TextButton(onClick = { backupSelection = null },
+                    modifier = Modifier.testTag("native-local-backup-cancel")) {
+                    Text("取消")
+                }
+            },
+        )
     }
     if (updates != null) UpdateDialog(updates, openUpdate)
 }
@@ -790,6 +1057,8 @@ internal fun AccountMenu(state: DriveState, controller: DriveController, checkUp
             },
         )
     }
+
+
 }
 
 /** Viewer-only, non-blocking range feedback; stays above photo/video, not

@@ -1,3 +1,4 @@
+import CryptoKit
 import Photos
 import SwiftUI
 
@@ -83,7 +84,7 @@ private enum XDriveIOSNativeLauncherRoute: String, CaseIterable, Identifiable {
     }
     var available: Bool {
         switch self {
-        case .local, .albums, .cloud, .originals, .backup: return true
+        case .local, .albums, .cloud, .originals, .map, .backup: return true
         default: return false
         }
     }
@@ -102,17 +103,33 @@ private enum XDriveIOSNativeLauncherRoute: String, CaseIterable, Identifiable {
 struct XDriveIOSNativePhotosDashboard: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     @ObservedObject var backup: XDriveIOSNativePhotoBackupController
-    @Environment(\.dismiss) private var dismiss
+    let signingOut: Bool
+    let logoutWarning: String?
+    let onSignOut: (XDriveNativeOwnerRoot) -> Void
+    @State private var showSignOutConsent = false
+    @State private var signOutConsentOwner: XDriveNativeOwnerRoot?
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @State private var tab: XDriveIOSNativeBottomTab = .gallery
     @State private var gallerySource: XDriveIOSNativeGallerySource = .local
     @State private var dynamicFeature: XDriveIOSNativeDynamicFeature?
     @State private var recentDynamic: [XDriveIOSNativeDynamicFeature] = []
     @State private var launcherQuery = ""
     @State private var showRecentPicker = false
+    @State private var galleryFocused = false
+    @State private var routeRestoreScopeKey: String?
+    private let navigationRouteStore = XDriveIOSNativeNavigationRouteStore()
 
     private var ownerScopeKey: String {
         guard let owner = login.owner else { return "signed-out" }
         return "\(owner.origin.absoluteString)|\(owner.instanceID)|\(owner.ownerID)|\(owner.rootNodeID)"
+    }
+
+    // Only a non-secret SHA-256 scope identifier is written with route hints.
+    // Credentials, PhotoKit identifiers and signed media URLs never enter it.
+    private var navigationScopeHash: String? {
+        guard login.owner != nil else { return nil }
+        return SHA256.hash(data: Data(ownerScopeKey.utf8))
+            .map { String(format: "%02x", $0) }.joined()
     }
 
     var body: some View {
@@ -165,6 +182,21 @@ struct XDriveIOSNativePhotosDashboard: View {
             .tabItem { Label("我的", systemImage: "person.crop.circle") }
             .tag(XDriveIOSNativeBottomTab.mine)
         }
+        // SwiftUI's TabView keeps native feature-local NavigationStacks, but
+        // the system tab strip is hidden in favor of an explicit 5-slot bar.
+        // This guarantees a compact horizontal label in iPhone landscape and
+        // gives the dynamic slot a real long-press/context-menu surface.
+        .toolbar(.hidden, for: .tabBar)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if XDriveIOSNativeFocusVisibilityPolicy.showsBar(
+                tab: tab.rawValue,
+                gallerySource: gallerySource.rawValue,
+                focused: galleryFocused,
+                ownerVerified: login.owner != nil
+            ) {
+                nativeBottomBar
+            }
+        }
         .id(ownerScopeKey)
         .navigationBarBackButtonHidden(true)
         .sheet(isPresented: $showRecentPicker) {
@@ -191,17 +223,153 @@ struct XDriveIOSNativePhotosDashboard: View {
                 }
             }
         }
-        .onAppear { backup.refresh(owner: login.owner) }
+        .confirmationDialog(
+            "确认退出当前服务器和账户？",
+            isPresented: $showSignOutConsent,
+            titleVisibility: .visible
+        ) {
+            Button("停止本机自动备份并退出", role: .destructive) {
+                guard let expected = signOutConsentOwner,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
+                else {
+                    signOutConsentOwner = nil
+                    return
+                }
+                signOutConsentOwner = nil
+                onSignOut(expected)
+            }
+            .accessibilityIdentifier("native-ios-login-signout")
+        } message: {
+            Text("退出会停止本机原件自动计划并尝试撤销后台授权；已备份的云端文件和不确定上传收据不会被删除。")
+        }
+        .onAppear {
+            restoreNavigationIfNeeded()
+            backup.refresh(owner: login.owner)
+        }
+        .onChange(of: ownerScopeKey) { _ in
+            // TabView .id does not reset this parent's @State. Revoke the old
+            // Owner's saved UI route even if switching A -> B -> A in one scene.
+            routeRestoreScopeKey = nil
+            navigationRouteStore.clear()
+            if login.owner != nil { routeRestoreScopeKey = ownerScopeKey }
+            // The app-root durable original/receipt runner is never touched.
+            resetNavigation()
+        }
         .onChange(of: login.owner) { owner in
+            // No push-route account card: parent root owns signed-out state.
+            showSignOutConsent = false
+            signOutConsentOwner = nil
             if owner == nil {
+                navigationRouteStore.clear()
                 resetNavigation()
-                dismiss()
             }
         }
+        .onChange(of: tab) { _ in saveNavigationIfReady() }
+        .onChange(of: gallerySource) { _ in saveNavigationIfReady() }
+        .onChange(of: dynamicFeature) { _ in saveNavigationIfReady() }
+        .onChange(of: recentDynamic) { _ in saveNavigationIfReady() }
+        // Rotation does not change focus; changing the owning route does.
+        .onChange(of: tab) { next in
+            if next != .gallery { galleryFocused = false }
+        }
+        .onChange(of: gallerySource) { _ in galleryFocused = false }
+    }
+
+    // L1 native bottom bar. The system safe-area inset remains managed by
+    // SwiftUI; 48/56pt here is visual height, not the home-indicator inset.
+    // Unlike a TabView tabItem, these buttons support an actual context menu.
+    private var nativeBottomBar: some View {
+        HStack(spacing: 0) {
+            navigationButton(.launcher, title: "全部", symbol: "square.grid.2x2")
+
+            navigationButton(
+                .dynamic,
+                title: dynamicFeature?.title ?? "最近",
+                symbol: dynamicFeature?.symbol ?? "clock.arrow.circlepath"
+            )
+            .contextMenu {
+                Button {
+                    showRecentPicker = true
+                } label: {
+                    Label("最近功能", systemImage: "clock.arrow.circlepath")
+                }
+                ForEach(recentDynamic) { feature in
+                    Button {
+                        openDynamic(feature)
+                    } label: {
+                        Label(
+                            feature.implemented ? feature.title : "\(feature.title)（未接入）",
+                            systemImage: feature.symbol
+                        )
+                    }
+                }
+            }
+            .accessibilityAction(named: Text("最近功能")) {
+                showRecentPicker = true
+            }
+
+            navigationButton(.gallery, title: "图库", symbol: "photo.on.rectangle")
+            navigationButton(.files, title: "文件", symbol: "folder")
+            navigationButton(.mine, title: "我的", symbol: "person.crop.circle")
+        }
+        .padding(.horizontal, 4)
+        .frame(height: verticalSizeClass == .compact ? 48 : 56)
+        .background(.regularMaterial)
+        .overlay(alignment: .top) { Divider() }
+        .accessibilityIdentifier("native-ios-five-slot-bar")
+    }
+
+    private func navigationButton(
+        _ destination: XDriveIOSNativeBottomTab, title: String, symbol: String
+    ) -> some View {
+        let selected = tab == destination
+        return Button {
+            tab = destination
+        } label: {
+            Group {
+                if verticalSizeClass == .compact {
+                    // iPhone landscape: label beside icon, not below it.
+                    HStack(spacing: 5) {
+                        Image(systemName: symbol).font(.body)
+                        Text(title).font(.caption).lineLimit(1)
+                    }
+                } else {
+                    VStack(spacing: 3) {
+                        Image(systemName: symbol).font(.body)
+                        Text(title).font(.caption2).lineLimit(1)
+                    }
+                }
+            }
+            .foregroundStyle(selected ? Color.accentColor : Color.secondary)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityIdentifier("native-ios-tab-\(destination.rawValue)")
     }
 
     private var gallery: some View {
         VStack(spacing: 0) {
+            if !galleryFocused {
+                HStack(spacing: 10) {
+                    if backup.busy {
+                        Label("正在检查相册备份", systemImage: "arrow.triangle.2.circlepath")
+                    } else if let state = backup.schedule, state.enabled {
+                        Label(state.pausedForReview ? "自动备份已暂停：需核对收据" : "前台自动备份已开启",
+                              systemImage: state.pausedForReview ? "exclamationmark.shield" : "checkmark.shield")
+                    } else {
+                        Label("前台自动备份未开启", systemImage: "icloud.slash")
+                    }
+                    Spacer(minLength: 4)
+                    Button("备份设置") { openDynamic(.backup) }
+                        .accessibilityIdentifier("native-ios-gallery-backup-settings")
+                }
+                .font(.caption)
+                .padding(.horizontal, 12)
+                .frame(minHeight: 44)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(XDriveIOSNativeGallerySource.allCases) { source in
@@ -228,6 +396,7 @@ struct XDriveIOSNativePhotosDashboard: View {
                 .padding(.horizontal, 12)
             }
             .padding(.vertical, 3)
+            }
             Group {
                 switch gallerySource {
                 case .local:
@@ -235,16 +404,18 @@ struct XDriveIOSNativePhotosDashboard: View {
                 case .albums:
                     XDriveIOSNativePhotoAlbumsScreen()
                 case .cloud:
-                    XDriveIOSNativeServerMediaWall(login: login, album: nil)
+                    XDriveIOSNativeServerMediaWall(
+                        login: login, album: nil,
+                        onFocusChange: { galleryFocused = $0 }
+                    )
                 case .originals:
                     XDriveIOSNativeCloudOriginalGallery(
                         login: login,
                         confirmedOriginalUpdate: backup.confirmedOriginalUpdate
                     )
                 case .map:
-                    unavailable(
-                        title: "图库地图尚在原生迁移",
-                        detail: "地图归属于图库，不占动态位置；当前版本未接入原生地图和照片聚合。"
+                    XDriveIOSNativeLocalPhotoMapScreen(
+                        onFocusChange: { galleryFocused = $0 }
                     )
                 }
             }
@@ -323,7 +494,11 @@ struct XDriveIOSNativePhotosDashboard: View {
         if let feature = dynamicFeature {
             switch feature {
             case .backup:
-                XDriveIOSNativePhotoBackupScreen(login: login, controller: backup)
+                XDriveIOSNativePhotoBackupScreen(login: login, controller: backup) {
+                    // Navigation only: never infer that a pending receipt is backed up.
+                    guard login.owner != nil else { return }
+                    openGallery(.originals)
+                }
             default:
                 unavailable(
                     title: "\(feature.title)尚未接通",
@@ -351,7 +526,7 @@ struct XDriveIOSNativePhotosDashboard: View {
         )
         .safeAreaInset(edge: .bottom) {
             Button("查看云端已备份原件") {
-                gallerySource = .cloud
+                gallerySource = .originals
                 tab = .gallery
             }
             .buttonStyle(.bordered)
@@ -371,8 +546,19 @@ struct XDriveIOSNativePhotosDashboard: View {
                 } else {
                     Text("尚未登录").foregroundStyle(.secondary)
                 }
-                Button("返回服务器与账号管理") { dismiss() }
-                    .accessibilityIdentifier("native-ios-mine-server-account")
+                if let logoutWarning {
+                    Text(logoutWarning)
+                        .foregroundStyle(.orange)
+                        .font(.footnote)
+                        .accessibilityIdentifier("native-ios-mine-logout-warning")
+                }
+                if signingOut { ProgressView("正在安全退出当前账户…") }
+                Button("退出并切换服务器或账户", role: .destructive) {
+                    signOutConsentOwner = login.owner
+                    showSignOutConsent = signOutConsentOwner != nil
+                }
+                .disabled(signingOut || login.owner == nil)
+                .accessibilityIdentifier("native-ios-mine-server-account")
             }
             Section("iPhone 相册") {
                 let granted = PHPhotoLibrary.authorizationStatus(for: .readWrite)
@@ -384,7 +570,7 @@ struct XDriveIOSNativePhotosDashboard: View {
                 }
             }
             Section("界面和管理") {
-                Text("账户切换和退出请在服务器账号页按现有安全流程执行。")
+                Text("账户退出及服务器切换直接在「我的」完成；若正在上传原件，先在相册备份页取消本轮，再退出。")
                     .font(.footnote).foregroundStyle(.secondary)
                 Text("主题、完整文件管理、服务器管理员功能仍待原生实现和授权验证。")
                     .font(.footnote).foregroundStyle(.secondary)
@@ -448,7 +634,39 @@ struct XDriveIOSNativePhotosDashboard: View {
         tab = .dynamic
     }
 
+    private func restoreNavigationIfNeeded() {
+        guard login.owner != nil, routeRestoreScopeKey != ownerScopeKey else { return }
+        routeRestoreScopeKey = ownerScopeKey
+        guard let scopeHash = navigationScopeHash,
+              let snapshot = navigationRouteStore.restore(scopeHash: scopeHash)
+        else { return }
+
+        // Only known, implemented routes are restored. Child PhotoKit pages
+        // re-query their own permission and Owner-signed Server data.
+        gallerySource = XDriveIOSNativeGallerySource(rawValue: snapshot.gallerySource) ?? .local
+        dynamicFeature = snapshot.activeDynamic.flatMap {
+            XDriveIOSNativeDynamicFeature(rawValue: $0)
+        }
+        recentDynamic = snapshot.recentDynamic.compactMap {
+            XDriveIOSNativeDynamicFeature(rawValue: $0)
+        }
+        tab = XDriveIOSNativeBottomTab(rawValue: snapshot.selectedTab) ?? .gallery
+    }
+
+    private func saveNavigationIfReady() {
+        guard login.owner != nil, routeRestoreScopeKey == ownerScopeKey,
+              let scopeHash = navigationScopeHash else { return }
+        navigationRouteStore.save(
+            scopeHash: scopeHash,
+            selectedTab: tab.rawValue,
+            gallerySource: gallerySource.rawValue,
+            activeDynamic: dynamicFeature?.implemented == true ? dynamicFeature?.rawValue : nil,
+            recentDynamic: recentDynamic.filter { $0.implemented }.map { $0.rawValue }
+        )
+    }
+
     private func resetNavigation() {
+        galleryFocused = false
         gallerySource = .local
         dynamicFeature = nil
         recentDynamic = []

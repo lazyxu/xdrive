@@ -1,8 +1,8 @@
 import Combine
 import Foundation
 
-/// Native SwiftUI login controller. No PWA cookies, no WKWebView, no
-/// permanent access-token storage and no unauthenticated device upload.
+/// Native SwiftUI login controller. No browser cookies or embedded web UI;
+/// no permanent access-token storage or unauthenticated device upload.
 @MainActor
 final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
     @Published var serverText = ""
@@ -27,11 +27,13 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
     private var generation: UInt64 = 0
     private var restoreAttempted = false
 
+    // Persist a non-secret native server hint only after Owner/root proof.
+    // Never consult retired browser origins, cookies or script storage.
+    private static let lastNativeServerKey = "xdrive.ios.native.last-server"
+
     init() {
-        // A previously chosen Web server is ONLY a non-secret suggestion.
-        // No old browser Cookie/Keychain refresh is imported or revived.
         serverText = UserDefaults.standard.string(
-            forKey: "xdrive.ios.web.origin"
+            forKey: Self.lastNativeServerKey
         ) ?? ""
     }
 
@@ -200,6 +202,8 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
             )
             owner = verified
             serverText = origin.absoluteString
+            UserDefaults.standard.set(origin.absoluteString,
+                                      forKey: Self.lastNativeServerKey)
             username = verified.username
             keepSignedIn = true
             noticeMessage = "已恢复并再次验证当前原生账户和云端根目录。"
@@ -302,10 +306,11 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
                 verifiedOwner: verified
             )
             owner = verified
-            // Keep the entered domain visible for a future manual login.
-            // The Session and Keychain instead retain the actual chosen IP
-            // or domain; all subsequent authenticated requests use that one.
+            // The verified Session and Keychain retain the selected endpoint.
+            // Keep the configured domain as the non-secret sign-in hint.
             serverText = configuredOrigin.absoluteString
+            UserDefaults.standard.set(configuredOrigin.absoluteString,
+                                      forKey: Self.lastNativeServerKey)
             username = verified.username
             let fixedRoute = "当前会话固定使用 \(origin.host ?? "服务器")，不在登录后切换入口。"
             noticeMessage = (keepSignedIn
@@ -319,26 +324,31 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
         }
     }
 
-    /// Invalidate in-memory authority BEFORE any remote request. Failure
-    /// removing a persisted credential remains visible and blocks claims
-    /// that the local automatic login has been cleared.
-    func signOut() async {
+    /// A failed local Keychain deletion must NEVER expose a new login form
+    /// while the old Owner's refresh token can still be restored on restart.
+    /// Bump generation before local cleanup to fence late network responses;
+    /// after synchronous Keychain removal, invalidate memory BEFORE remote I/O.
+    @discardableResult
+    func signOut() async -> Bool {
         generation &+= 1
         let previous = active
-        active = nil
-        owner = nil
         password = ""
         noticeMessage = nil
         errorMessage = nil
         do {
             try XDriveIOSNativeOwnerSessionStore.clear()
         } catch {
+            // Keep the verified Owner/workspace mounted for a deliberate
+            // retry. No Server switch or new login is permitted until the
+            // exact persisted v2 credential is confirmed absent.
             errorMessage = humanMessage(error)
-            return
+            return false
         }
+        active = nil
+        owner = nil
         guard let previous else {
             noticeMessage = "本机原生登录凭据已清除。"
-            return
+            return true
         }
         do {
             try await AuthService(origin: previous.origin).logout(
@@ -348,5 +358,6 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
         } catch {
             noticeMessage = "本机凭据已清除；服务器会话撤销尚未确认。"
         }
+        return true
     }
 }

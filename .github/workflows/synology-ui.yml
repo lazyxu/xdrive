@@ -7,6 +7,8 @@ on:
       - 'cmd/xd/backup_synology_ui.go'
       - 'internal/synologyui/**'
       - 'internal/localbackupipc/remote_backup.go'
+      - 'internal/localbackupipc/recovery_review.go'
+      - 'internal/localbackupipc/recovery_review_test.go'
       - 'internal/localbackupipc/owner_quota.go'
       - 'internal/localbackupipc/owner_files.go'
       - 'internal/localbackupipc/owner_files_test.go'
@@ -37,6 +39,10 @@ on:
       - 'ui/shared/src/synology-nas-share-inventory.ts'
       - 'ui/shared/src/mui/SynologyNASShareInventory.tsx'
       - 'web/scripts/test-synology-nas-shares.mjs'
+      - 'internal/synologyui/nas_share_preflight.go'
+      - 'internal/synologyui/nas_share_preflight_test.go'
+      - 'web/scripts/test-synology-nas-preflight.mjs'
+      - 'web/scripts/test-synology-nas-source-create.mjs'
       - 'web/scripts/test-synology-media-preview.mjs'
       - 'ui/shared/src/synology-owner-download.ts'
       - 'web/scripts/test-synology-owner-download.mjs'
@@ -57,6 +63,7 @@ on:
       - 'internal/localbackupipc/remote_backup_test.go'
       - 'web/scripts/test-synology-owner-read.mjs'
       - 'ui/shared/src/mui/SynologyBackupLocalPanel.tsx'
+      - 'ui/shared/src/mui/SynologyBackupSourceSetup.tsx'
       - 'ui/shared/src/mui/SynologyBackupTargetBrowser.tsx'
       - 'ui/shared/src/synology-backup-target-directory.ts'
       - 'web/scripts/test-synology-backup-target-browser.mjs'
@@ -78,6 +85,9 @@ on:
       - 'web/scripts/test-synology-batch-validation.mjs'
       - 'ui/shared/src/synology-browser-storage.ts'
       - 'web/scripts/test-synology-browser-storage.mjs'
+      - 'ui/shared/src/synology-nas-storage.ts'
+      - 'web/scripts/test-synology-nas-storage.mjs'
+      - 'web/src/synologyHost.ts'
       - 'ui/shared/src/mui/DiagnosticsPage.tsx'
       - 'ui/shared/src/mui/SynologyDiagnosticsPanel.tsx'
       - 'desktop/src/renderer/DesktopDiagnosticsPage.tsx'
@@ -105,6 +115,8 @@ on:
       - 'desktop/tests/shared-synology-gallery-source.cjs'
       - 'web/scripts/test-synology-owner-gallery.mjs'
       - 'ui/shared/src/synology-backup-adapter.ts'
+      - 'ui/shared/src/synology-recovery-review.ts'
+      - 'web/scripts/test-synology-recovery-review.mjs'
       - 'web/scripts/test-synology-request-cancel.mjs'
       - 'ui/shared/src/mui/index.tsx'
       - 'web/synology.html'
@@ -125,6 +137,8 @@ on:
       - 'cmd/xd/backup_synology_ui.go'
       - 'internal/synologyui/**'
       - 'internal/localbackupipc/remote_backup.go'
+      - 'internal/localbackupipc/recovery_review.go'
+      - 'internal/localbackupipc/recovery_review_test.go'
       - 'internal/localbackupipc/owner_quota.go'
       - 'internal/localbackupipc/owner_files.go'
       - 'internal/localbackupipc/owner_files_test.go'
@@ -155,6 +169,10 @@ on:
       - 'ui/shared/src/synology-nas-share-inventory.ts'
       - 'ui/shared/src/mui/SynologyNASShareInventory.tsx'
       - 'web/scripts/test-synology-nas-shares.mjs'
+      - 'internal/synologyui/nas_share_preflight.go'
+      - 'internal/synologyui/nas_share_preflight_test.go'
+      - 'web/scripts/test-synology-nas-preflight.mjs'
+      - 'web/scripts/test-synology-nas-source-create.mjs'
       - 'web/scripts/test-synology-media-preview.mjs'
       - 'ui/shared/src/synology-owner-download.ts'
       - 'web/scripts/test-synology-owner-download.mjs'
@@ -175,6 +193,7 @@ on:
       - 'internal/localbackupipc/remote_backup_test.go'
       - 'web/scripts/test-synology-owner-read.mjs'
       - 'ui/shared/src/mui/SynologyBackupLocalPanel.tsx'
+      - 'ui/shared/src/mui/SynologyBackupSourceSetup.tsx'
       - 'ui/shared/src/mui/SynologyBackupTargetBrowser.tsx'
       - 'ui/shared/src/synology-backup-target-directory.ts'
       - 'web/scripts/test-synology-backup-target-browser.mjs'
@@ -196,6 +215,9 @@ on:
       - 'web/scripts/test-synology-batch-validation.mjs'
       - 'ui/shared/src/synology-browser-storage.ts'
       - 'web/scripts/test-synology-browser-storage.mjs'
+      - 'ui/shared/src/synology-nas-storage.ts'
+      - 'web/scripts/test-synology-nas-storage.mjs'
+      - 'web/src/synologyHost.ts'
       - 'ui/shared/src/mui/DiagnosticsPage.tsx'
       - 'ui/shared/src/mui/SynologyDiagnosticsPanel.tsx'
       - 'desktop/src/renderer/DesktopDiagnosticsPage.tsx'
@@ -223,6 +245,8 @@ on:
       - 'desktop/tests/shared-synology-gallery-source.cjs'
       - 'web/scripts/test-synology-owner-gallery.mjs'
       - 'ui/shared/src/synology-backup-adapter.ts'
+      - 'ui/shared/src/synology-recovery-review.ts'
+      - 'web/scripts/test-synology-recovery-review.mjs'
       - 'web/scripts/test-synology-request-cancel.mjs'
       - 'web/synology.html'
       - 'web/src/synology.tsx'
@@ -264,9 +288,14 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - name: Native DSM session, owner ACL and CSRF negative contracts
         run: |
-          test -z "$(gofmt -l internal/synologyui cmd/xd/backup_synology_ui.go)"
+          unformatted="$(gofmt -l internal/synologyui internal/localbackupipc/server_login*.go internal/localbackupipc/recovery_review*.go cmd/xd/backup_synology_ui.go)"
+          if test -n "$unformatted"; then
+            echo "::error title=DSM Go formatting::Unformatted source files detected"
+            printf '%s\n' "$unformatted" >&2
+            exit 1
+          fi
           go test -count=1 ./internal/synologyui
-          go test -count=1 ./internal/localbackupipc -run 'Test(Remote|OwnerQuota|OwnerFile|OwnerTextPreview|OwnerMediaRange|OwnerThumbnail|OwnerGallery|OwnerLiveMotion)'
+          go test -count=1 ./internal/localbackupipc -run 'Test(Remote|OwnerQuota|OwnerFile|OwnerTextPreview|OwnerMediaRange|OwnerThumbnail|OwnerGallery|OwnerLiveMotion|ServerLogin|RecoveryReview)'
           go test -count=1 ./internal/client -run 'Test(DownloadVerifiedRange|OwnerThumbnail|MediaOwnerThumbnail|OwnerGallery|ReadVerifiedOwnerLiveMotion|OwnerLiveMotion)'
           go test -count=1 ./cmd/xdrive-agent -run 'Test(BackupOnly(CloudQuota|CloudFileRead|OwnerMediaRange|OwnerThumbnail)|OwnerGallery|OwnerLiveMotion)'
           go test -count=1 ./cmd/xd -run 'TestBackup'
@@ -276,6 +305,7 @@ jobs:
         run: |
           npm ci --prefix web
           node web/scripts/test-synology-browser-storage.mjs
+          node web/scripts/test-synology-nas-storage.mjs
           node web/scripts/test-synology-backup-target-browser.mjs
           node web/scripts/test-synology-batch-validation.mjs
           node web/scripts/test-synology-request-cancel.mjs
@@ -290,6 +320,10 @@ jobs:
           node web/scripts/test-synology-owner-thumbnail.mjs
           node web/scripts/test-synology-media-stream.mjs
           node web/scripts/test-synology-nas-shares.mjs
+          node web/scripts/test-synology-nas-preflight.mjs
+          node web/scripts/test-synology-gui-login.mjs
+          node web/scripts/test-synology-nas-source-create.mjs
+          node web/scripts/test-synology-recovery-review.mjs
           npm run build:synology --prefix web
       - name: Verify static artifacts remain relative to DSM launcher
         run: |

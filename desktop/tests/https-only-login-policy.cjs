@@ -57,7 +57,8 @@ test('CLI and DSM keep distinct but HTTPS-only user login boundaries', () => {
   assert.match(cli, /server := fs\.String\("server", ""/)
   assert.match(cli, /u\.Scheme != "https"/)
   assert.match(dsm, /window\.location\.protocol === 'https:'/)
-  assert.match(dsm, /xd login --server/)
+  assert.match(dsm, /client\.loginServer\(server\.trim\(\), username\.trim\(\), requestedPassword, controller\.signal\)/)
+  assert.match(dsm, /label="Server HTTPS 地址"/)
   assert.doesNotMatch(dsm, /ServerAddress\.parse|UserPassword/)
 })
 

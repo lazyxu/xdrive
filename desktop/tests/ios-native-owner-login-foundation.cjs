@@ -9,6 +9,7 @@ const read = file => fs.readFileSync(path.join(root, file), 'utf8')
 const store = read('ios/XDriveIOS/NativeOwnerSessionStore.swift')
 const model = read('ios/XDriveIOS/NativeOwnerLoginModel.swift')
 const screen = read('ios/XDriveIOS/NativeOwnerLoginScreen.swift')
+const workspace = read('ios/XDriveIOS/NativePhotosDashboard.swift')
 
 test('native Login remains SwiftUI and mounts only after native Photos integration', () => {
   assert.match(screen, /struct XDriveIOSNativeOwnerLoginScreen: View/)
@@ -17,12 +18,14 @@ test('native Login remains SwiftUI and mounts only after native Photos integrati
   assert.match(screen, /native-ios-login-username/)
   assert.match(screen, /native-ios-login-password/)
   assert.match(screen, /native-ios-login-submit/)
-  assert.match(screen, /native-ios-login-signout/)
+  assert.match(workspace, /native-ios-login-signout/)
+  assert.match(screen, /XDriveIOSNativePhotoOwnerScope\.matches\(model\.owner, expectedOwner\)/)
+  assert.doesNotMatch(screen, /showingNativeWorkspace|verifiedAccount\(|已验证的原生账户/)
   assert.doesNotMatch(screen, /WebView|URLSession|fetch\(|window\.webkit/)
   const app = read('ios/XDriveIOS/XDriveIOSApp.swift')
   assert.match(app, /XDriveIOSNativeOwnerLoginScreen\(\)/, 'verified native Photos cutover')
   assert.doesNotMatch(app, /XDriveWebAppHome\(\)/)
-  assert.match(screen, /XDriveIOSNativePhotosDashboard\(login: model, backup: backup\)/)
+  assert.match(screen, /if model\.owner != nil \{[\s\S]*?XDriveIOSNativePhotosDashboard\(/)
 })
 
 test('new native Keychain namespace never reuses purged legacy refresh or background Device secrets', () => {
@@ -59,10 +62,22 @@ test('native login and restoration re-prove exact Server Owner/root, not JS cook
   assert.match(read('ios/XDriveIOS/OwnerRootVerifier.swift'), /"\/api\/v1\/nodes\/root"/)
 })
 
-test('native logout clears the in-memory session before revocation and does not forge remote success', () => {
-  const logout = model.slice(model.indexOf('func signOut() async'))
-  assert.ok(logout.indexOf('generation &+= 1') < logout.indexOf('active = nil'))
-  assert.ok(logout.indexOf('active = nil') < logout.indexOf('XDriveIOSNativeOwnerSessionStore.clear()'))
-  assert.ok(logout.indexOf('XDriveIOSNativeOwnerSessionStore.clear()') < logout.indexOf('AuthService(origin: previous.origin).logout'))
+test('native logout never exposes login until exact Keychain credential is deleted', () => {
+  const logout = model.slice(model.indexOf('func signOut() async -> Bool'))
+  const steps = ['generation &+= 1', 'XDriveIOSNativeOwnerSessionStore.clear()',
+    'active = nil', 'owner = nil', 'AuthService(origin: previous.origin).logout']
+    .map(x => logout.indexOf(x))
+  assert.ok(steps.every((x, i) => x >= 0 && (i === 0 || x > steps[i - 1])))
+  const blocked = logout.slice(logout.indexOf('catch {'),
+    logout.indexOf('active = nil'))
+  assert.match(blocked, /errorMessage = humanMessage\(error\)/)
+  assert.match(blocked, /return false/)
+  assert.doesNotMatch(blocked, /active = nil|owner = nil|AuthService\(/)
+  assert.match(logout, /return true/)
   assert.match(logout, /服务器会话撤销尚未确认/)
+  const signOut = screen.slice(screen.indexOf('private func signOutSafely('))
+  assert.match(signOut, /XDriveIOSNativePhotoOwnerScope\.matches\(model\.owner, expectedOwner\)/)
+  assert.match(signOut, /guard await model\.signOut\(\) else \{/)
+  assert.ok(signOut.indexOf('guard await model.signOut() else') <
+    signOut.indexOf('XDriveIOSNativeNavigationRouteStore().clear()'))
 })

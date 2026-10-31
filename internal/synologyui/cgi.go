@@ -30,10 +30,11 @@ func CGIHandler(next http.Handler) http.Handler {
 		switch op {
 		case "bootstrap", "sources", "status", "history", "run", "control", "schedule",
 			"device-backups", "device-backup-runs",
-			"device-backup-page", "device-backup-folders", "cloud-quota",
+			"device-backup-page", "device-backup-folders", "cloud-quota", "nas-volume",
 			"cloud-root", "cloud-children", "cloud-text-preview", "cloud-media-range",
 			"cloud-media-stream", "cloud-thumbnail", "cloud-gallery-items", "cloud-gallery-albums",
-			"cloud-live-motion", "nas-shares":
+			"cloud-live-motion", "nas-shares", "nas-share-preflight",
+			"server-connection", "server-login", "nas-share-create", "recovery-review":
 		default:
 			http.Error(w, "unknown CGI operation", http.StatusNotFound)
 			return

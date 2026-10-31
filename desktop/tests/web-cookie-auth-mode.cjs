@@ -130,11 +130,12 @@ test('HTTPS cookie restoration never reads an old localStorage Access/Refresh JW
     accessToken: '', refreshToken: '', accessExpiresAt: 0, browserSession: true,
   })
   env.window.location.protocol = 'http:'
-  assert.equal(exports.run().accessToken, 'old-access',
-    'Legacy HTTP/local dev must remain compatible until Server is upgraded')
+  assert.deepEqual(exports.run(), { accessToken: '', refreshToken: '', accessExpiresAt: 0 },
+    'HTTPS-only cutover must fail closed before loading any HTTP-origin JWT')
+  assert.equal(values.has('xdrive.access_token'), false)
+  assert.equal(values.has('xdrive.refresh_token'), false)
   values.set('xdrive.remember_login', 'false')
   assert.equal(exports.run().accessToken, '')
-  assert.equal(values.has('xdrive.refresh_token'), false)
 })
 
 test('Logout and cross-tab events fence late Owner refresh callbacks', () => {
@@ -540,16 +541,13 @@ test('Login timeout bounds Cookie, late Web Locks and legacy JSON without replay
   assert.equal(requests.length, 1, 'late lock grant cannot send stale login POST')
   assert.deepEqual(cleared, [1, 2])
 
-  const legacy = makeAPI('http:', never, async task => task(), never)
-  const third = legacy.login('owner', 'fixture-only', true)
-  assert.equal(native.length, 1, 'HTTP remains on compatible native JSON path')
-  assert.equal(native[0].path, '/api/v1/auth/login')
-  assert.equal(native[0].retry, false)
-  assert.equal(timers[2].ms, 15000)
-  timers[2].callback()
-  await assert.rejects(third, error => error.status === 408)
-  assert.equal(native[0].init.signal.aborted, true)
-  assert.deepEqual(cleared, [1, 2, 3])
+  const insecure = makeAPI('http:', never, async task => task(), never)
+  await assert.rejects(insecure.login('owner', 'fixture-only', true),
+    error => error.status === 403 && /HTTPS/.test(error.message),
+    'HTTP must reject before Cookie, Web Locks, native JSON or timers')
+  assert.equal(native.length, 0)
+  assert.equal(timers.length, 2)
+  assert.deepEqual(cleared, [1, 2])
   assert.equal(requests.length, 1)
 
   // A genuinely old HTTPS Server returns 404 and must still use the native
@@ -558,9 +556,9 @@ test('Login timeout bounds Cookie, late Web Locks and legacy JSON without replay
     async task => task(), async () => ({ username: 'owner', token: 'legacy-access' }))
   const fourth = await oldServer.login('owner', 'fixture-only', true)
   assert.equal(fourth.username, 'owner')
-  assert.equal(native.length, 2)
-  assert.equal(native[1].path, '/api/v1/auth/login')
-  assert.deepEqual(cleared, [1, 2, 3, 4])
+  assert.equal(native.length, 1)
+  assert.equal(native[0].path, '/api/v1/auth/login')
+  assert.deepEqual(cleared, [1, 2, 3])
 })
 
 test('Interactive logout acknowledgement only clears its own Cookie tombstone', async () => {

@@ -100,8 +100,33 @@ function indexedState(value: unknown, index: number): XDriveWebAppHistoryState {
   }
 }
 
+/** The mobile-only bare-root landing matches native Photos-first entry. */
+function xDriveIsCompactWebViewport(): boolean {
+  try {
+    return typeof window.matchMedia === 'function' &&
+      window.matchMedia('(max-width:899.95px)').matches
+  } catch {
+    // Restricted Safari media-query getters cannot break login or deep links.
+    return false
+  }
+}
+
 function currentRoute(): XDriveWebAppRoute {
   return xDriveParseWebAppHash(window.location.hash) ?? { app: 'overview', params: {} }
+}
+
+/** Only a mobile bare-root startup, never a deep link or history traversal,
+ * may prefer Gallery over the canonical Web Home fallback. */
+export function xDriveWebMobileColdLanding(
+  hash: string,
+  compactWeb: boolean,
+): XDriveWebAppRoute | null {
+  return hash === '' && compactWeb ? { app: 'gallery', params: {} } : null
+}
+
+function initialRootRoute(): XDriveWebAppRoute {
+  return xDriveWebMobileColdLanding(window.location.hash, xDriveIsCompactWebViewport())
+    ?? currentRoute()
 }
 
 function sessionKey(id: string) {
@@ -195,7 +220,7 @@ export function xDriveReadWebAppBrowseSession(id?: string) {
 export function useXDriveWebAppRuntime(
   guardBrowserNavigation?: (from: XDriveWebAppRoute, to: XDriveWebAppRoute) => boolean,
 ) {
-  const [route, setRoute] = useState<XDriveWebAppRoute>(() => currentRoute())
+  const [route, setRoute] = useState<XDriveWebAppRoute>(() => initialRootRoute())
   const routeRef = useRef(route)
   // The real committed route is authoritative, including history/back,
   // deep links and deferred admin navigation. Never preempt for an unapproved
@@ -244,9 +269,10 @@ export function useXDriveWebAppRuntime(
 
   useEffect(() => {
     if (!xDriveParseWebAppHash(window.location.hash)) {
-      window.history.replaceState({ xdriveWebApp: true }, '', xDriveWebAppHash({ app: 'overview', params: {} }))
-      routeRef.current = currentRoute()
-      setRoute(routeRef.current)
+      const landing = initialRootRoute()
+      window.history.replaceState({ xdriveWebApp: true }, '', xDriveWebAppHash(landing))
+      routeRef.current = landing
+      setRoute(landing)
     }
     const initialIndex = historyIndex(xDriveReadableWebHistoryState()) ?? 0
     window.history.replaceState(indexedState(xDriveReadableWebHistoryState(), initialIndex), '', window.location.href)

@@ -5,7 +5,7 @@ import "testing"
 func TestValidateXDHTTPSLoginOrigin(t *testing.T) {
 	for _, tc := range []struct {
 		in, want string
-		valid bool
+		valid    bool
 	}{
 		{"https://drive.example.com:8443", "https://drive.example.com:8443", true},
 		{"https://192.168.2.4:8443/", "https://192.168.2.4:8443", true},
@@ -22,7 +22,11 @@ func TestValidateXDHTTPSLoginOrigin(t *testing.T) {
 	} {
 		got, err := validateXDHTTPSLoginOrigin(tc.in)
 		if tc.valid {
-			if err != nil || got != tc.want { t.Errorf("%q got %q, %v, want %q", tc.in, got, err, tc.want) }
-		} else if err == nil { t.Errorf("%q unexpectedly accepted: %q", tc.in, got) }
+			if err != nil || got != tc.want {
+				t.Errorf("%q got %q, %v, want %q", tc.in, got, err, tc.want)
+			}
+		} else if err == nil {
+			t.Errorf("%q unexpectedly accepted: %q", tc.in, got)
+		}
 	}
 }

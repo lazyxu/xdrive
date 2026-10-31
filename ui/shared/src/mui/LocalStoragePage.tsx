@@ -71,8 +71,17 @@ export type XDriveDesktopStorageReleaseResult = {
   failed_files: number
 }
 
+export type XDriveNASFilesystemSpace = {
+  supported: boolean
+  capacity_bytes?: number
+  available_bytes?: number
+  reason?: string
+}
+
 export type XDriveLocalStorageSnapshot = {
   browserStorage: XDriveBrowserStorageStats
+  /** DSM package-data backing filesystem; neither package usage nor entire NAS disk list. */
+  nasSpace?: XDriveNASFilesystemSpace
   desktopStorage?: XDriveDesktopStorageSnapshot | null
 }
 
@@ -277,6 +286,7 @@ export function XDriveLocalStoragePage({ source }: { source: XDriveLocalStorageD
 
   const browser = snapshot?.browserStorage
   const desktop = snapshot?.desktopStorage
+  const nas = snapshot?.nasSpace
   const cache = desktop?.cacheStats
   const treeChildren = useMemo(() => desktop?.storageTree?.children || [], [desktop?.storageTree])
   const browserHasClearableCache = Boolean(
@@ -452,6 +462,22 @@ export function XDriveLocalStoragePage({ source }: { source: XDriveLocalStorageD
               </>
             )}
           </Stack>
+
+          {nas ? (
+            <Stack spacing={1.5}>
+              <XDriveSectionHeader level="h3" title="DSM 套件数据所在文件系统"
+                subtitle="受 DSM 会话保护的 NAS 文件系统容量，非 xDrive 套件独占空间、非所有 NAS 存储池、非 Server Owner 配额。" />
+              {!nas.supported || nas.capacity_bytes === undefined || nas.available_bytes === undefined ? (
+                <XDriveStatusAlert tone="neutral">{nas.reason || '当前不可验证 DSM 套件所在文件系统容量。'}</XDriveStatusAlert>
+              ) : (
+                <XDriveMetricGrid>
+                  <XDriveMetricCard title="文件系统容量" value={formatBytes(nas.capacity_bytes)} suffix="包含该文件系统其他数据" />
+                  <XDriveMetricCard title="当前可用" value={formatBytes(nas.available_bytes)} suffix="按 xdrivenas 进程权限可用" />
+                  <XDriveMetricCard title="文件系统已占用" value={formatBytes(nas.capacity_bytes - nas.available_bytes)} suffix="不可归因于 xDrive 套件" />
+                </XDriveMetricGrid>
+              )}
+            </Stack>
+          ) : null}
 
           {desktop ? (
             <Stack spacing={2}>

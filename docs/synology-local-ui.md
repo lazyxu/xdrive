@@ -1,6 +1,94 @@
+## DSM MVP follow-up: read-only original receipt recovery review (PR validation pending)
+
+The original owning Linux/ARMv7 Backup-only Agent already has a bounded
+`GET /v1/device-backups/local-common-batch/recovery-review` endpoint. The
+shared `XDriveDeviceBackupLocalCommonBatchDialog` already has an optional
+advanced diagnostics view for this response. This change only connects the
+same implementation to the authenticated DSM Host. It does not create a
+second Scanner, Runner, Source, writer, backup Operation, or page.
+
+DSM `backup.cgi?op=recovery-review` is **GET-only**, rechecks the authorized
+DSM session and protected owning Agent discovery, and accepts only a
+canonical local Source ID, bounded file ordinal (up to 1,000,000) and the
+Agent's opaque 64-digit lower-hex generation epoch for a continuation. The
+same-user Agent revalidates Server Owner, native Root grant, Source revision,
+checkpoint, private inventory and original SQL receipts on every page.
+Results contain **only numeric counts** for a maximum of 16 files per read,
+the source revision, run state and continuation; no native path, device/Root
+identity, SQL Operation ID, content digest or credential is exposed.
+The browser validates all fields and aborts its own fetch when the
+shared dialog closes; that does **not cancel an Agent/Server operation**.
+
+The view deliberately labels historical commits and current cloud metadata
+comparisons as **non-authoritative**. It does not verify present-day CAS
+bytes, prove Source-wide backup completion, authorize retry of uncertain
+original SQL tasks, or replace the Agent's durable restart recovery.
+Old Agents lacking the exact capability fail closed. Physical DS218j
+install, first CAS upload/receipt, unchanged second incremental and
+restart/recovery acceptance remain **跳过（未验收）**, not PASS.
+
+This is an unmerged DSM-only PR until its precise HEAD passes Go tests,
+DSM authenticated UI, built shared MUI/ARMv7 SPK checks, full PR CI and
+Final Gate. No published snapshot containing this change is assumed.
+
 # Synology DSM 7 authenticated local UI
 
-## 2026-10-30 source audit: minimal usable DSM scope
+## 2026-10-30 DSM MVP integration PR #3313 (unmerged; source-level)
+
+This narrow DSM-only change adds initial and **same-Server/same-username re-login**
+inside the original shared `XDriveSettingsDialog`. It delegates to the owning
+Backup-only Agent's already implemented `POST /v1/auth/login`, rather than
+adding a separate account database, credential store, shell command, browser
+Agent RPC or NAS source authorization.
+
+The DSM browser submits `server`, `username` and `password` only to
+same-origin HTTPS `backup.cgi?op=server-login` using the authorized DSM
+session and bound CSRF key. The CGI rejects extra fields, duplicate JSON keys,
+unexpected query arguments and non-POST methods; credentials never appear in
+query strings or response content. The same-user local client enforces HTTPS,
+validates the Agent's authenticated status and rejects switches to a different
+Server or Owner. The CGI checks current Owner quota **after** login; the UI
+reloads after both successful and uncertain login outcomes so cached prior
+Owner content cannot be shown as newly authorized.
+
+The consolidated DSM integration PR also composes the original shared Device Backup
+page's verified NAS share inventory/preflight and verified Owner cursor-based
+cloud directory browser into an explicit **create local backup Source** form.
+The DSM browser sends only `selection_id`, a verified HMAC `owner_scope`,
+a Server Owner directory `target_id`, a Source display name, and
+`confirmed: true`. The CGI checks the DSM session, CSRF/Origin, exact
+bounded JSON, current Agent Server/Owner scope and fresh native NAS share
+identity. It reuses `localbackupipc.Client.PreflightLocalRoot`,
+`CreateLocalBackupSource` (paused), and `AuthorizeLocalRoot` (same
+restricted Agent) from `xd backup init`. No browser-selected absolute
+path, private Root/device token or general Agent API is exposed.
+
+The GUI acknowledges `authorized` **only** on a verified Agent
+`awaiting_executor` Root grant; no initial file, backup run or CAS receipt
+is implied. If Source creation or Root binding has an uncertain outcome,
+the GUI **does not retry** and instructs native draft/binding inspection
+before further action. Source creation is explicitly local and does not
+grant access to another Server Owner.
+
+**Still required before full DSM MVP:** coordinated cross-Server/Owner
+migration while existing Source/Runner work exists; actual first/incremental
+CAS upload receipts, restart/recovery; file upload/mutation Host ports;
+verified published and installed MUI SPK on physical DSM. An old Agent
+without the known typed native capability fails closed. No password is
+stored by the browser. A root CA must already be trusted by the native
+Agent; the DSM web form does not accept TLS bypass or browser-provided CA.
+
+This is proposed on a master-targeting integration PR containing the complete delta of previously untested DSM branches #3305 and #3286; **it is not released or
+physically validated**. The prior standalone development HEADs are retained as provenance until current-HEAD validation; no child PR is itself a master merge. The current branch includes Go negative tests
+for forged selection/path/Owner scope, CSRF, missing consent, old Agent,
+unknown Source creation and uncertain Root binding; DSM Node wiring and
+shared-MUI build still require applicable exact-head CI. Run exact-head Go,
+Synology UI, PR CI/Final Gate and release checks before eventual master merge.
+DSM device-only install, ACL, browser and upload acceptance remains
+**跳过（未验收）** and is not PASS.
+
+
+## Historical 2026-10-30 pre-integration source audit: minimal usable DSM scope
 
 Canonical master source audited at `0ff2fa1a3dd478e73fd48e84ff50ce2ef9c2cb99`. This is a **source-level capability inventory**, not a device acceptance or a claim of exact-HEAD CI PASS. The old 2026-10-27 seven-route matrix below is historical; the current Desktop/DSM app has one shared `XDriveApp` and **16 registered routes**. A rendered common page alone does not prove a DSM data/action adapter exists.
 

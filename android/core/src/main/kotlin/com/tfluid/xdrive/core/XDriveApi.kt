@@ -68,6 +68,30 @@ data class NativeServerOwnerIdentity(
     override fun toString(): String = "NativeServerOwnerIdentity([redacted])"
 }
 
+/**
+ * Go Server's one-time Android identity-only device enrollment response.
+ * The credential is NEVER a Desktop Agent/Source token and must not be logged.
+ * This object alone does not persist it or imply a working auto-backup runner.
+ */
+data class NativeAndroidDeviceEnrollment(
+    val deviceId: String,
+    val deviceToken: String,
+    val displayName: String,
+    val clientVersion: String,
+) {
+    init {
+        require(runCatching {
+            java.util.UUID.fromString(deviceId).toString() == deviceId
+        }.getOrDefault(false))
+        require(deviceToken.matches(Regex("[A-Za-z0-9_-]{43}")))
+        require(displayName.isNotBlank() && displayName == displayName.trim() &&
+            displayName.toByteArray(Charsets.UTF_8).size <= 128 &&
+            displayName.none { it.isISOControl() })
+        require(clientVersion.length <= 64 && clientVersion.none { it.isISOControl() })
+    }
+    override fun toString(): String = "NativeAndroidDeviceEnrollment([redacted])"
+}
+
 data class DriveNode(
     val id: Long,
     val parentId: Long? = null,
@@ -341,6 +365,15 @@ interface XDriveService {
     /** No legacy fallback: a Server without installation ID cannot authorize native backup. */
     suspend fun verifiedOwnerIdentity(accessToken: String): NativeServerOwnerIdentity =
         throw ApiException(501, "Native owner identity unavailable")
+    /** Explicit Owner action only; no automatic device re-registration on lost ACK. */
+    suspend fun registerNativeAndroidDevice(
+        accessToken: String, displayName: String, clientVersion: String,
+    ): NativeAndroidDeviceEnrollment =
+        throw ApiException(501, "Android device identity enrollment unavailable")
+    /** Read-only device proof; a stored token alone is never authorization. */
+    suspend fun verifyNativeAndroidDevice(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment,
+    ): Unit = throw ApiException(501, "Android device identity verification unavailable")
     suspend fun root(accessToken: String): DriveNode
     suspend fun children(accessToken: String, parentId: Long, offset: Int): NodeRange
     /** Keep old fixtures default-only; never pretend unsupported sort succeeded. */
@@ -557,6 +590,48 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
             invalidPayload()
         }
         return identity
+    }
+
+    override suspend fun registerNativeAndroidDevice(
+        accessToken: String, displayName: String, clientVersion: String,
+    ): NativeAndroidDeviceEnrollment {
+        // POST /devices creates a real Owner record and returns its credential
+        // exactly once; a lost ACK is ambiguous and MUST NOT be auto-replayed.
+        require(displayName.isNotBlank() && displayName == displayName.trim() &&
+            displayName.toByteArray(Charsets.UTF_8).size <= 128 &&
+            displayName.none { it.isISOControl() } &&
+            clientVersion.length <= 64 && clientVersion.none { it.isISOControl() })
+        val response = request("devices", accessToken, values = mapOf(
+            "name" to displayName,
+            "platform" to "android",
+            "client_version" to clientVersion,
+        ))
+        val raw = response["device"] as? JsonObject ?: invalidPayload()
+        val enrollment = try {
+            if (raw.string("platform") != "android" ||
+                raw.string("name") != displayName ||
+                (raw.optionalString("client_version") ?: "") != clientVersion ||
+                raw["revoked_at"] != null) invalidPayload()
+            NativeAndroidDeviceEnrollment(
+                deviceId = raw.string("id"),
+                deviceToken = response.string("device_token"),
+                displayName = displayName,
+                clientVersion = clientVersion,
+            )
+        } catch (_: IllegalArgumentException) {
+            invalidPayload()
+        }
+        return enrollment
+    }
+
+    override suspend fun verifyNativeAndroidDevice(
+        accessToken: String, enrolled: NativeAndroidDeviceEnrollment,
+    ) {
+        val result = request("devices/self", accessToken,
+            deviceIdentity = enrolled)
+        // Go returns only one Owner-bound, unrevoked identity proof.
+        if (result.size != 1 || result.string("device_id") != enrolled.deviceId)
+            invalidPayload()
     }
 
     override suspend fun root(accessToken: String): DriveNode = node(request("nodes/root", accessToken)).also {
@@ -2043,8 +2118,9 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         bodyObject: JsonObject? = null,
         longRunning: Boolean = false,
         pathTailSegments: List<String> = emptyList(),
+        deviceIdentity: NativeAndroidDeviceEnrollment? = null,
     ): JsonObject = requestElement(path, accessToken, values, query, emptyResponse, method,
-        ifMatch, numberValues, bodyObject, longRunning, pathTailSegments)
+        ifMatch, numberValues, bodyObject, longRunning, pathTailSegments, deviceIdentity)
         as? JsonObject ?: invalidPayload()
 
     private suspend fun requestArray(
@@ -2066,7 +2142,17 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         bodyObject: JsonObject? = null,
         longRunning: Boolean = false,
         pathTailSegments: List<String> = emptyList(),
+        deviceIdentity: NativeAndroidDeviceEnrollment? = null,
     ): JsonElement {
+        // Device headers are allowed on exactly one read-only identity route.
+        // A token never appears in the query, URI, body or ordinary API calls.
+        require(deviceIdentity == null ||
+            (path == "devices/self" && accessToken != null && method == null &&
+                values == null && query.isEmpty() && ifMatch == null &&
+                numberValues.isEmpty() && bodyObject == null &&
+                !longRunning && pathTailSegments.isEmpty())) {
+            "Device credentials may only be used for the current Owner identity GET"
+        }
         val url = address.url.toHttpUrlOrNull()!!.newBuilder().addPathSegments("api/v1/$path").apply {
             // Authenticated album IDs may be opaque (including reserved characters):
             // append each as ONE encoded path segment, never URL interpolation.
@@ -2081,6 +2167,10 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
         if (ifMatch != null) {
             require(ifMatch > 0) { "Invalid node revision" }
             builder.header("If-Match", "\"$ifMatch\"")
+        }
+        if (deviceIdentity != null) {
+            builder.header("X-XDrive-Device-ID", deviceIdentity.deviceId)
+            builder.header("X-XDrive-Device-Token", deviceIdentity.deviceToken)
         }
         if (values != null || numberValues.isNotEmpty() || bodyObject != null) {
             val fields = mutableMapOf<String, JsonElement>()

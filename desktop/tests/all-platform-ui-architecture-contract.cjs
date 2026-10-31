@@ -77,13 +77,30 @@ test('unsupported DSM operations remain explicit, with no fabricated permissions
   assert.match(outlet, /host\.adminRoleVerified !== true/)
 })
 
-test('iOS uses a WKWebView shell; Android uses Compose and generated design tokens', () => {
-  const ios = read('ios/XDriveIOS/XDriveWebAppHome.swift')
+test('iOS boots only native SwiftUI Owner workspace; Android retains Compose and design tokens', () => {
+  const iosApp = read('ios/XDriveIOS/XDriveIOSApp.swift')
+  const iosLogin = read('ios/XDriveIOS/NativeOwnerLoginScreen.swift')
+  const iosDashboard = read('ios/XDriveIOS/NativePhotosDashboard.swift')
+  const iosProject = read('ios/project.yml')
   const android = read('android/app/src/main/java/com/tfluid/xdrive/MainActivity.kt')
   const visuals = read('android/scripts/shared-ui.mjs')
 
-  assert.match(ios, /WKWebView\(/)
-  assert.match(ios, /WKWebViewConfiguration\(/)
+  assert.match(iosApp, /XDriveIOSNativeOwnerLoginScreen\(\)/)
+  assert.match(iosLogin, /else if model\.owner != nil\s*\{[\s\S]*?XDriveIOSNativePhotosDashboard\(/)
+  assert.match(iosDashboard, /\.tag\(XDriveIOSNativeBottomTab\.gallery\)/)
+  assert.match(iosDashboard, /\.tag\(XDriveIOSNativeBottomTab\.mine\)/)
+  assert.match(iosProject, /- path: XDriveIOS/)
+  assert.doesNotMatch(iosApp + iosLogin + iosDashboard,
+    /import WebKit|WKWebView|XDriveWebAppHome|window\.webkit|document\.cookie/)
+  for (const retired of [
+    'ios/XDriveIOS/XDriveWebAppHome.swift',
+    'ios/XDriveIOS/IOSPhotoHostBridge.swift',
+    'ios/XDriveIOS/WebDownloadCoordinator.swift',
+  ]) {
+    assert.equal(fs.existsSync(path.join(root, retired)), false,
+      'retired iOS WebKit fallback cannot remain in the native source target')
+  }
+
   assert.match(android, /\bsetContent\s*\{/)
   assert.match(visuals, /ui\/shared\/src\/mui\/theme\.ts/)
   assert.match(visuals, /web\/src\/MobileFiles\.tsx/)

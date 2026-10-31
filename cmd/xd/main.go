@@ -90,11 +90,15 @@ On Linux, the path is a FUSE mountpoint. On Windows, it is a CfAPI sync root.`)
 // before resolving password input or constructing the HTTP client.
 func validateXDHTTPSLoginOrigin(input string) (string, error) {
 	fail := func() (string, error) { return "", fmt.Errorf("--server must be a complete HTTPS root URL") }
-	if input == "" || input != strings.TrimSpace(input) { return fail() }
+	if input == "" || input != strings.TrimSpace(input) {
+		return fail()
+	}
 	u, err := url.ParseRequestURI(input)
 	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil ||
 		(u.Path != "" && u.Path != "/") || u.RawQuery != "" ||
-		u.ForceQuery || u.Fragment != "" || u.Opaque != "" { return fail() }
+		u.ForceQuery || u.Fragment != "" || u.Opaque != "" {
+		return fail()
+	}
 	return strings.TrimSuffix(u.String(), "/"), nil
 }
 
@@ -111,7 +115,9 @@ func login(args []string) error {
 		return fmt.Errorf("--username is required")
 	}
 	secureServer, err := validateXDHTTPSLoginOrigin(*server)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	*server = secureServer
 	resolvedPassword, err := resolveLoginPassword(*password, os.Getenv("XD_PASSWORD"), *passwordStdin, os.Stdin)
 	if err != nil {

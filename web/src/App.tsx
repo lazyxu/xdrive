@@ -42,7 +42,6 @@ import {
   XDriveWorkspaceSidebar,
   xDriveWorkspaceHostSections,
   XDriveSettingsDialog,
-  XDriveIOSPhotoBackupSettings,
   XDriveFeedbackSnackbar,
   XDriveShareDialog,
   createXDriveSourceManagerAdapter,
@@ -80,9 +79,6 @@ import type {
 } from '@xdrive/ui/mui'
 import { xDriveCaptureGalleryViewerFocus, xDriveRestoreGalleryViewerFocus } from './galleryViewerReturnFocus'
 import { ApiError, XDriveApi, sessionFromAuth } from './api'
-import { xDriveCreateIOSPhotoBackupHost } from './iosPhotoHostAdapter'
-import { xDriveStartIOSForegroundAutoScheduler } from './iosForegroundAutoScheduler'
-import type { XDriveIOSPhotoBackupHost, XDriveIOSPhotoBackupSession } from '../../ui/shared/src/mui/IOSPhotoBackupSettings'
 import type { AuthResult, AuthSession, BuildInfo } from './api'
 import type {
   MeResult,
@@ -103,7 +99,8 @@ import { xDriveWebOpenRouteForNode } from './webViewerRoute'
 import { useXDriveWebAppRuntime, xDriveCreateWebAppBrowseSession, xDriveClearPrivateMapBrowseSessions } from './webAppRuntime'
 import { xDriveWebAppRouteForWorkspaceKey, xDriveWebAppWorkspaceKey } from './webApps'
 import { XDriveMobileAllLauncher, XDriveMobileFiveSlotNavigation, XDriveMobileMinePage, xDriveBrowserMobileDestinations } from './MobileFiveSlotNavigation'
-import { xDriveInitialMobileNavigation, xDriveMobileFeatureParentRoute, xDriveMobileRouteForSlot, xDriveMobileSlotForRoute, xDriveRememberMobileNavigation, xDriveToggleMobileFavorite } from './mobileFiveSlotState'
+import { xDriveMobileLauncherSections } from './mobileLauncherSections'
+import { xDriveInitialMobileNavigation, xDriveMobileFeatureParentRoute, xDriveMobileRouteForSlot, xDriveMobileSlotForRoute, xDriveRememberMobileNavigation, xDriveToggleMobileFavorite, xDriveSetMobileLauncherSearch } from './mobileFiveSlotState'
 import type { XDriveMobileSlot } from './mobileFiveSlotState'
 import { createWebMediaGalleryDataSource } from './mediaGalleryAdapter'
 import { XDriveRoutedGalleryThumbnailBridge } from './routedGalleryThumbnailBridge'
@@ -260,8 +257,6 @@ function WebAccountMenu({
   onLogout,
   offlineOwner,
   onOfflineConsentChange,
-  iosPhotoHost,
-  iosPhotoSession,
 }: {
   username: string
   serverBuild: BuildInfo | null
@@ -271,8 +266,6 @@ function WebAccountMenu({
   onLogout: () => void
   offlineOwner?: XDrivePwaOfflineOwner | null
   onOfflineConsentChange?: (enabled: boolean) => void
-  iosPhotoHost?: XDriveIOSPhotoBackupHost | null
-  iosPhotoSession?: XDriveIOSPhotoBackupSession | null
 }) {
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -328,9 +321,6 @@ function WebAccountMenu({
         buildInfo={[{ title: 'Server 构建信息', info: serverBuild }]}
       >
         {offlineOwner ? <PwaOfflineDirectorySection owner={offlineOwner} onConsentChange={onOfflineConsentChange} /> : null}
-        {iosPhotoHost && iosPhotoSession ? (
-          <XDriveIOSPhotoBackupSettings host={iosPhotoHost} session={iosPhotoSession} />
-        ) : null}
       </XDriveSettingsDialog>
       <XDriveManualConnectionDialog open={connectionOpen && !disabled}
         onClose={() => setConnectionOpen(false)} />
@@ -772,10 +762,6 @@ function AuthView({
   const [passwordError, setPasswordError] = useState('')
   const [installOpen, setInstallOpen] = useState(false)
   const [connectionOpen, setConnectionOpen] = useState(false)
-  // Native host switching is accessible from the *same* shared login UI,
-  // even before an Owner exists. Never create a second SwiftUI login page.
-  const iosNativeHost = useMemo(() => xDriveCreateIOSPhotoBackupHost(), [])
-
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const username = loginUsername.trim()
@@ -869,16 +855,6 @@ function AuthView({
           onClick={() => setConnectionOpen(true)}>
           手动切换公网 / 局域网入口
         </Button>
-        {iosNativeHost ? (
-          <Button data-xdrive-ios-native-switch-server variant="text" sx={{ minHeight: 44 }}
-            onClick={() => {
-              void iosNativeHost.switchServer().catch(caught => {
-                setError(caught instanceof Error ? caught.message : '无法请求切换 iOS 服务器。')
-              })
-            }}>
-            更换 iPhone App 服务器
-          </Button>
-        ) : null}
         <Button data-xdrive-pwa-login-entry variant="text" sx={{ minHeight: 44 }}
           onClick={() => setInstallOpen(true)}>
           安装 xDrive 到主屏幕 / 桌面
@@ -923,33 +899,8 @@ function FileManager({
   onPasswordChanged: () => void
 }) {
   const compactWorkspace = useMediaQuery('(max-width:899.95px)')
-  const iosPhotoHost = useMemo(() => xDriveCreateIOSPhotoBackupHost(), [])
   const [profile, setProfile] = useState<MeResult | null>(null)
   const [profileReadFailed, setProfileReadFailed] = useState(false)
-  // Keep a stable Owner-scoped scheduler across short-lived bearer rotation.
-  // The latest real API is always read at the moment of a visible auto tick.
-  // AuthSession is an explicitly supplied, mutable authenticated prop.
-  // XDriveApi.session is private; never bypass its encapsulation or invent a
-  // token from the browser Cookie. A fresh Owner read precedes every tick.
-  const iosAutoRef = useRef({ api, profile, username, authSession })
-  iosAutoRef.current = { api, profile, username, authSession }
-  useEffect(() => {
-    if (!iosPhotoHost || !profile?.id || profile.username !== username ||
-        profile.must_change_password) return
-    return xDriveStartIOSForegroundAutoScheduler(iosPhotoHost, async () => {
-      const captured = iosAutoRef.current
-      if (!captured.profile || captured.profile.id !== profile.id ||
-          captured.username !== username) return null
-      const current = await captured.api.me()
-      const latest = iosAutoRef.current
-      if (latest.api !== captured.api || latest.profile?.id !== profile.id ||
-          current.id !== profile.id || current.username !== username ||
-          current.must_change_password || !latest.authSession.accessToken) return null
-      return { ownerID: current.id, username,
-        accessToken: latest.authSession.accessToken }
-    })
-  }, [iosPhotoHost, profile?.id, profile?.username,
-      profile?.must_change_password, username])
   const [webMapScopeHandoff,setWebMapScopeHandoff] = useState<XDriveMapScopeHandoffState>(
     () => window.xdriveSecureMapBridge ? {state:'none'} : initialWebMapScopeHandoff)
   // The promise is reused through StrictMode effect replay; never redeem the
@@ -2313,13 +2264,6 @@ function FileManager({
       disabled={viewerActive}
       offlineOwner={offlineOwner}
       onOfflineConsentChange={setOfflineConsent}
-      iosPhotoHost={iosPhotoHost}
-      iosPhotoSession={profile && profile.username === username &&
-        !profile.must_change_password && Number.isSafeInteger(profile.id) &&
-        profile.id > 0 && authSession.accessToken &&
-        (!authSession.browserSession || authSession.username === username)
-          ? { username, ownerID: profile.id, accessToken: authSession.accessToken }
-          : null}
       username={username}
       serverBuild={serverBuild}
       appearance={appearance}
@@ -2343,13 +2287,17 @@ function FileManager({
   // second routing/backup stack. The iOS contract determines only mobile UX.
   const mobileDestinations = xDriveBrowserMobileDestinations(serverAdminVerified)
     .filter(destination => xDriveWorkspaceNavigationAllowed(destination.key, serverAdminVerified))
-  const mobileLauncherSections = [
-    { key: 'web-mobile-apps', label: '全部应用', items: mobileDestinations },
-  ]
+  const mobileLauncherSections = xDriveMobileLauncherSections(mobileDestinations)
   const toggleMobileFavorite = (key: string) => {
     if (!mobileOwnerScope || !mobileDestinations.some(item => item.key === key)) return
     setMobileNavigation(previous => xDriveToggleMobileFavorite(
       previous, mobileOwnerScope, key, serverAdminVerified,
+    ))
+  }
+  const setMobileLauncherSearch = (value: string) => {
+    if (!mobileOwnerScope) return
+    setMobileNavigation(previous => xDriveSetMobileLauncherSearch(
+      previous, mobileOwnerScope, value,
     ))
   }
   const mobileRecentDestinations = currentMobileNavigation.dynamic.flatMap(recent => {
@@ -2599,6 +2547,8 @@ function FileManager({
               onOpenRecent={() => setMobileRecentOpen(true)}
               favoriteKeys={currentMobileNavigation.favorites}
               onToggleFavorite={toggleMobileFavorite}
+              search={currentMobileNavigation.launcherSearch}
+              onSearchChange={setMobileLauncherSearch}
             />
           ) : (
           <WebOverviewPage
