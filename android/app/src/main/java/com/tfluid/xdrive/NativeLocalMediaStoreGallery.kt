@@ -15,6 +15,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
@@ -26,9 +27,14 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.android.awaitFrame
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -121,6 +127,11 @@ internal fun NativeLocalMediaStoreGallery(
     var selectedMedia by remember(sessionId, albumsOnly) {
         mutableStateOf<NativeLocalMedia?>(null)
     }
+    // Viewer return is a transient input-focus request, never persisted.
+    // It can only resolve against an unchanged, authorized MediaStore window.
+    var viewerReturn by remember(sessionId, albumsOnly) {
+        mutableStateOf<NativeLocalViewerReturnAnchor?>(null)
+    }
     var albums by cache.albumIndex
     val albumGridState by cache.albumGridState
     val photoGridState by wall.gridState
@@ -162,12 +173,18 @@ internal fun NativeLocalMediaStoreGallery(
             if (observer != null) runCatching { resolver.unregisterContentObserver(observer) }
             lifecycle.lifecycle.removeObserver(lifecycleObserver)
             selectedMedia = null
+            viewerReturn = null
         }
     }
 
     LaunchedEffect(sessionId, albumsOnly, selectedAlbum?.id,
         permissionEpoch, libraryEpoch, allowed) {
         selectedMedia = null
+        val sameOrigin = viewerReturn?.let { anchor ->
+            anchor.generation == libraryEpoch && anchor.albumsOnly == albumsOnly &&
+                anchor.albumId == (if (albumsOnly) selectedAlbum?.id else null)
+        } ?: true
+        if (!allowed || !sameOrigin) viewerReturn = null
         if (!allowed) {
             cache.clearUnauthorized()
             return@LaunchedEffect
@@ -326,9 +343,35 @@ internal fun NativeLocalMediaStoreGallery(
                 modifier = Modifier.testTag("native-local-back-to-start")) {
                 Text("返回最近照片 · 当前仅保留最近加载的 512 项")
             }
-            // L3 Viewer outranks thumbnail reads: unmount the wall to cancel
-            // unfinished ContentResolver thumbnail requests. The bounded rows
-            // and LazyGridState stay in this Owner-scoped Gallery composition.
+            // The Viewer unmounts the wall to cancel disposable thumbnail
+            // reads, while the bounded Owner-local rows and viewport remain.
+            val returnIndex = remember(viewerReturn, items, albumsOnly,
+                selectedAlbum?.id, libraryEpoch, allowed) {
+                nativeLocalViewerReturnIndex(viewerReturn, items.map { it.viewerReturnKey() },
+                    albumsOnly, selectedAlbum?.id, libraryEpoch, allowed)
+            }
+            // Never retain a Viewer anchor after a grant, source or page
+            // invalidation (including a media ID reused for a different item).
+            LaunchedEffect(viewerReturn, returnIndex, allowed, libraryEpoch,
+                selectedAlbum?.id, wall.loaded.value) {
+                val anchor = viewerReturn ?: return@LaunchedEffect
+                if (!allowed || anchor.generation != libraryEpoch ||
+                    anchor.albumsOnly != albumsOnly ||
+                    anchor.albumId != (if (albumsOnly) selectedAlbum?.id else null) ||
+                    (wall.loaded.value && returnIndex == null)) {
+                    viewerReturn = null
+                }
+            }
+            LaunchedEffect(returnIndex, selectedMedia, photoGridState) {
+                if (selectedMedia == null && returnIndex != null &&
+                    returnIndex in items.indices) {
+                    val key = items[returnIndex].id
+                    // Keep the exact pre-Viewer pixel viewport if the tile is
+                    // still visible; scroll only when paging/rotation hid it.
+                    if (photoGridState.layoutInfo.visibleItemsInfo.none { it.key == key })
+                        photoGridState.scrollToItem(returnIndex)
+                }
+            }
             if (selectedMedia == null) LazyVerticalGrid(
                 state = photoGridState,
                 columns = GridCells.Adaptive(112.dp),
@@ -338,16 +381,19 @@ internal fun NativeLocalMediaStoreGallery(
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 items(items, key = { it.id }) { asset ->
-                    OutlinedCard(onClick = { selectedMedia = asset },
-                        modifier = Modifier.height(142.dp)
-                            .testTag("native-local-media-${asset.id}")) {
-                        Column {
-                            NativeLocalThumbnail(asset, 260, Modifier.fillMaxWidth().weight(1f))
-                            Text(if (asset.isVideo) "视频" else "照片",
-                                modifier = Modifier.padding(4.dp),
-                                style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
+                    NativeLocalPhotoWallTile(
+                        asset = asset,
+                        restoreFocus = returnIndex != null &&
+                            items.getOrNull(returnIndex) == asset,
+                        onOpen = {
+                            viewerReturn = null
+                            selectedMedia = asset
+                        },
+                        onFocusRestored = {
+                            if (viewerReturn?.item == asset.viewerReturnKey())
+                                viewerReturn = null
+                        },
+                    )
                 }
                 if (!exhausted && items.isNotEmpty())
                     item(span = { GridItemSpan(maxLineSpan) }) {
@@ -363,11 +409,77 @@ internal fun NativeLocalMediaStoreGallery(
     selectedMedia?.let { asset ->
         NativeLocalMediaViewer(
             asset = asset,
-            onDismiss = { selectedMedia = null },
+            onDismiss = {
+                viewerReturn = NativeLocalViewerReturnAnchor(
+                    asset.viewerReturnKey(), albumsOnly,
+                    if (albumsOnly) selectedAlbum?.id else null, libraryEpoch)
+                selectedMedia = null
+            },
             onBackupOriginal = onBackupOriginal?.let { callback ->
-                { selectedMedia = null; callback(asset) }
+                {
+                    viewerReturn = null // consent overlay must own input focus
+                    selectedMedia = null
+                    callback(asset)
+                }
             },
         )
+    }
+}
+
+/**
+ * One real, focusable native source tile. Recreated after the L3 Dialog
+ * unmounts the thumbnail wall; the focus request targets this tile only.
+ * Keyboard/DPAD focus is verified in Compose tests. TalkBack's separate
+ * accessibility-focus restoration still requires physical-device acceptance.
+ */
+@Composable
+internal fun NativeLocalPhotoWallTile(
+    asset: NativeLocalMedia,
+    restoreFocus: Boolean,
+    onOpen: () -> Unit,
+    onFocusRestored: () -> Unit,
+    tileContent: @Composable ColumnScope.() -> Unit = {
+        NativeLocalThumbnail(asset, 260, Modifier.fillMaxWidth().weight(1f))
+        Text(if (asset.isVideo) "视频" else "照片",
+            modifier = Modifier.padding(4.dp),
+            style = MaterialTheme.typography.labelSmall)
+    },
+) {
+    val requester = remember(asset.id, asset.uri) { FocusRequester() }
+    var tileActuallyFocused by remember(asset.id, asset.uri) { mutableStateOf(false) }
+    // A Dialog is a separate Android window. RequestFocus may report success
+    // before the activity window owns *actual* input focus again; clearing the
+    // source anchor on that result leaves Focused=false indefinitely.
+    OutlinedCard(
+        modifier = Modifier.height(142.dp)
+            .focusRequester(requester)
+            .onFocusChanged {
+                tileActuallyFocused = it.isFocused
+                if (it.isFocused && restoreFocus) onFocusRestored()
+            }
+            // Android Compose clickable is not keyboard-focusable in touch
+            // input mode by default. Override only this exact source tile;
+            // do not add a second independent focusable() node.
+            .focusProperties { canFocus = true }
+            .clickable(onClick = onOpen)
+            .testTag("native-local-media-${asset.id}"),
+    ) {
+        Column { tileContent() }
+    }
+    LaunchedEffect(restoreFocus, asset.id, asset.uri) {
+        if (restoreFocus) {
+            // The Dialog is a distinct window. A one-shot request can be
+            // accepted during its teardown without the source tile becoming
+            // focused. Retry for at most 120 frames; the exact source anchor
+            // remains scoped to this MediaStore item and permission epoch.
+            repeat(120) {
+                awaitFrame()
+                if (tileActuallyFocused) return@LaunchedEffect
+                requester.requestFocus()
+            }
+            // Never report success or clear the anchor without the tile's
+            // actual onFocusChanged(isFocused) event.
+        }
     }
 }
 
