@@ -723,10 +723,18 @@ class DriveAppTest {
         compose.onNodeWithTag("native-five-slot-bar").assertDoesNotExist()
     }
 
+    /** A category grid is virtualized; tap the actual native shortcut after scrolling it into view. */
+    private fun clickNativeLauncherShortcut(shortcut: NativeHomeShortcut) {
+        val tag = "native-launcher-open-${shortcut.name.lowercase()}"
+        compose.onNodeWithTag("native-launcher").performScrollToNode(hasTestTag(tag))
+        // Recent and category sections may both show this same native action.
+        compose.onAllNodesWithTag(tag).onFirst().assertIsDisplayed().performClick()
+    }
+
     @Test fun nativeFilesTabAndLauncherShortcutBothLeaveTheTrashChild() {
         startAndLogin(galleryFirstOnLogin = false)
         compose.onNodeWithTag("native-tab-all").performClick()
-        compose.onNodeWithText("回收站").performClick()
+        clickNativeLauncherShortcut(NativeHomeShortcut.TRASH)
         compose.waitUntil(timeoutMillis = 10_000) {
             controller.state.value.screen == Screen.TRASH && controller.state.value.trashLoaded
         }
@@ -737,12 +745,12 @@ class DriveAppTest {
         compose.onNodeWithText("假期照片").assertIsDisplayed()
 
         compose.onNodeWithTag("native-tab-all").performClick()
-        compose.onNodeWithText("回收站").performClick()
+        clickNativeLauncherShortcut(NativeHomeShortcut.TRASH)
         compose.waitUntil(timeoutMillis = 10_000) {
             controller.state.value.screen == Screen.TRASH && controller.state.value.trashLoaded
         }
         compose.onNodeWithTag("native-tab-all").performClick()
-        compose.onNodeWithText("云端文件").performClick()
+        clickNativeLauncherShortcut(NativeHomeShortcut.CLOUD_FILES)
         compose.waitUntil(timeoutMillis = 10_000) {
             controller.state.value.screen == Screen.FILES && controller.state.value.loaded
         }
@@ -753,12 +761,12 @@ class DriveAppTest {
         galleryGpsOverviewFixture = true
         startAndLogin(galleryFirstOnLogin = false)
         compose.onNodeWithTag("native-tab-all").performClick()
-        compose.onNodeWithText("回收站").performClick()
+        clickNativeLauncherShortcut(NativeHomeShortcut.TRASH)
         compose.waitUntil(timeoutMillis = 10_000) {
             controller.state.value.screen == Screen.TRASH && controller.state.value.trashLoaded
         }
         compose.onNodeWithTag("native-tab-all").performClick()
-        compose.onNodeWithText("地点地图").performClick()
+        clickNativeLauncherShortcut(NativeHomeShortcut.GALLERY_MAP)
         compose.waitUntil(timeoutMillis = 10_000) {
             controller.state.value.screen == Screen.GALLERY && controller.state.value.galleryMapOpen
         }
