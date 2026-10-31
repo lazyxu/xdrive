@@ -64,7 +64,8 @@ export function xDriveRememberMobileNavigation(
   switch (xDriveMobileSlotForRoute(route)) {
     case 'files': return { ...base, files: route, dynamic, favorites }
     case 'gallery': return { ...base, gallery: route, dynamic, favorites,
-      galleryAlbumID: route.params.section === 'albums' ? base.galleryAlbumID : null }
+      galleryAlbumID: route.app === 'gallery' && route.params.section === 'albums'
+        ? base.galleryAlbumID : null }
     case 'dynamic':
       return {
         ...base,
