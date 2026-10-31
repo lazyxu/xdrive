@@ -40,6 +40,7 @@ import com.tfluid.xdrive.core.GalleryAsset
 import com.tfluid.xdrive.core.GalleryTimelineGroup
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.android.awaitFrame
 
 /** Match the shared Mobile Gallery KFS column-first contract for All photos:
  * reference width 144dp, three baseline columns, preference range 2..10.
@@ -755,7 +756,15 @@ internal fun GalleryTile(
         }
     }
     LaunchedEffect(restoreFocus, item.node.id, item.node.revision) {
-        if (restoreFocus && focusRequester.requestFocus()) onFocusRestored()
+        if (restoreFocus) {
+            // The full-screen Viewer is another branch of the host's
+            // composition. Wait for its focus target to leave the tree
+            // before requesting the source tile's real keyboard focus.
+            // A successful early request can otherwise be superseded by
+            // Viewer teardown in the same Compose frame.
+            awaitFrame()
+            if (focusRequester.requestFocus()) onFocusRestored()
+        }
     }
 
 }
