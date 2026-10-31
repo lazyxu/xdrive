@@ -650,12 +650,17 @@ type XDriveMobileGalleryReturnAnchor = {
 // the same Web session. No photo items or thumbnails are retained here.
 const mobileGalleryViewerReturns = new Map<string, XDriveMobileGalleryReturnAnchor>()
 
-// Only one visible Node identity per scope is retained. No 100k image array,
-// photo bytes or virtual page cache survives leaving the Mobile Web app.
+// Retain a bounded last-visible Node per collection kind and verified Owner.
+// A cold Albums index renders an 'all' Range before opening its accepted
+// Album; that temporary all-wall must never replace the Album return anchor.
+// No 100k image array, photo bytes, or virtual page cache is retained.
 type XDriveMobileGalleryBrowsePosition = XDriveMobileGalleryReturnAnchor & {
   querySignature: string
 }
-const mobileGalleryBrowsePositions = new Map<string, XDriveMobileGalleryBrowsePosition>()
+type XDriveMobileGalleryBrowseSlots = Partial<
+  Record<XDriveMobileGalleryBrowsePosition['kind'], XDriveMobileGalleryBrowsePosition>
+>
+const mobileGalleryBrowsePositions = new Map<string, XDriveMobileGalleryBrowseSlots>()
 
 export interface XDriveMediaGalleryPageProps {
   source: MediaGalleryDataSource
@@ -1148,7 +1153,8 @@ export function XDriveMediaGalleryPage({
     }
     if (!mobileGalleryViewport || !current ||
         (current.kind !== 'all' && current.kind !== 'album')) return
-    mobileGalleryBrowsePositions.set(preferenceScope, {
+    const slots = mobileGalleryBrowsePositions.get(preferenceScope) ?? {}
+    slots[current.kind] = {
       nodeID,
       section,
       kind: current.kind,
@@ -1158,7 +1164,8 @@ export function XDriveMediaGalleryPage({
         anchor_node_id: undefined,
         initial_position: undefined,
       }),
-    })
+    }
+    mobileGalleryBrowsePositions.set(preferenceScope, slots)
   }, [mobileGalleryViewport, preferenceScope, section])
 
   const listAllPeople = useCallback(async () => {
@@ -1218,7 +1225,7 @@ export function XDriveMediaGalleryPage({
       initial_position: undefined,
     }
     const browsePosition = mobileGalleryViewport && preferenceScope
-      ? mobileGalleryBrowsePositions.get(preferenceScope)
+      ? mobileGalleryBrowsePositions.get(preferenceScope)?.[album ? 'album' : 'all']
       : undefined
     const matchingBrowsePosition = Boolean(browsePosition &&
       browsePosition.section === section &&
