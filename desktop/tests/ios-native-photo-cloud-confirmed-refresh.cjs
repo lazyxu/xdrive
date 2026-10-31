@@ -55,7 +55,12 @@ test('native cloud originals recheck after scene return without treating BG writ
   assert.match(wall, /if selected != nil \{[\s\S]*?refreshAfterViewer = true[\s\S]*?\} else \{[\s\S]*?model\.reload\(login: login\)/);
   assert.match(wall, /if phase != \.active \{[\s\S]*?needsForegroundReload = true[\s\S]*?return/);
   assert.match(wall, /if login\.owner != nil \{[\s\S]*?if phase == \.active \{[\s\S]*?model\.reload\(login: login\)/);
-  assert.match(model, /let auth = try await login\.verifiedAuthorization\(\)/);
-  assert.match(model, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expected\)/);
+  // A failed login/root re-verification must drop the prior page immediately:
+  // requiring a bare `let auth = try` would forbid that stronger fail-closed path.
+  assert.match(model, /let auth: \(owner: XDriveNativeOwnerRoot, accessToken: String\)/);
+  assert.match(model, /auth = try await login\.verifiedAuthorization\(\)/);
+  assert.match(model, /catch is CancellationError \{\s*throw CancellationError\(\)/);
+  assert.match(model, /catch \{\s*guard self\?\.epoch == ticket else \{ return \}\s*self\?\.invalidate\(\)/);
+  assert.match(model, /XDriveIOSNativePhotoOwnerScope\.matches\(auth\.owner, expected\),\s*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expected\)/);
   assert.doesNotMatch(wall, /UploadSessionTransport|markUploaded|recordResult\(/);
 });
