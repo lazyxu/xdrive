@@ -1,9 +1,15 @@
 name: Prune verified integrated branches
 
 # Trusted default-branch code only. Never execute a PR's checkout or script.
-# Daily/manual sweep only: merged PR events use the separate guarded cleanup workflow.
-# Avoid creating a redundant queued scan on every master push.
+# Only trusted master policy/manifest merges, daily schedule or manual dispatch.
+# No PR-controlled code, and ordinary master commits cannot enqueue a scan.
+# Merged PR exact-head cleanup stays in the separate guarded workflow.
 on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/prune-verified-branches.yml'
+      - '.github/retired-branches.tsv'
   schedule:
     - cron: '43 3 * * *'
   workflow_dispatch:
