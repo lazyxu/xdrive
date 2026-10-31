@@ -4,6 +4,7 @@ import com.tfluid.xdrive.core.AuthSession
 import com.tfluid.xdrive.core.DriveNode
 import com.tfluid.xdrive.core.NativePhotoBackupScope
 import com.tfluid.xdrive.core.NodeRange
+import com.tfluid.xdrive.core.ServerAddress
 import com.tfluid.xdrive.core.XDriveService
 import java.io.File
 import java.io.IOException
@@ -16,7 +17,7 @@ import org.junit.Test
 /** Real staged bytes + a fake Go UploadSession and a durable in-memory checkpoint. */
 class NativePhotoIncrementalWriterTest {
     private val scope = NativePhotoBackupScope(
-        "https://drive.example", "instance-A", 42L, "owner", 1L, 1L)
+        ServerAddress.parse("https://drive.example").url, "instance-A", 42L, "owner", 1L, 1L)
     private val root = DriveNode(1, null, "", "dir", revision = 1)
     private val deviceId = "00000000-0000-4000-8000-000000000120"
 
