@@ -28,7 +28,6 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import kotlinx.coroutines.android.awaitFrame
-import kotlinx.coroutines.flow.first
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clipToBounds
@@ -44,7 +43,6 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -447,7 +445,7 @@ internal fun NativeLocalPhotoWallTile(
     },
 ) {
     val requester = remember(asset.id, asset.uri) { FocusRequester() }
-    val windowInfo = LocalWindowInfo.current
+    var tileActuallyFocused by remember(asset.id, asset.uri) { mutableStateOf(false) }
     // A Dialog is a separate Android window. RequestFocus may report success
     // before the activity window owns *actual* input focus again; clearing the
     // source anchor on that result leaves Focused=false indefinitely.
@@ -455,6 +453,7 @@ internal fun NativeLocalPhotoWallTile(
         modifier = Modifier.height(142.dp)
             .focusRequester(requester)
             .onFocusChanged {
+                tileActuallyFocused = it.isFocused
                 if (it.isFocused && restoreFocus) onFocusRestored()
             }
             .clickable(onClick = onOpen)
@@ -462,15 +461,19 @@ internal fun NativeLocalPhotoWallTile(
     ) {
         Column { tileContent() }
     }
-    LaunchedEffect(restoreFocus, asset.id, asset.uri, windowInfo) {
+    LaunchedEffect(restoreFocus, asset.id, asset.uri) {
         if (restoreFocus) {
-            // Wait for the activity window to regain focus after the Dialog
-            // has released it, not merely for one arbitrary animation frame.
-            snapshotFlow { windowInfo.isWindowFocused }.first { it }
-            awaitFrame()
-            requester.requestFocus()
-            // onFocusChanged is the only success acknowledgement: it observes
-            // actual tile focus, not an accepted-but-overwritten focus request.
+            // The Dialog is a distinct window. A one-shot request can be
+            // accepted during its teardown without the source tile becoming
+            // focused. Retry for at most 120 frames; the exact source anchor
+            // remains scoped to this MediaStore item and permission epoch.
+            repeat(120) {
+                awaitFrame()
+                if (tileActuallyFocused) return@LaunchedEffect
+                requester.requestFocus()
+            }
+            // Never report success or clear the anchor without the tile's
+            // actual onFocusChanged(isFocused) event.
         }
     }
 }
