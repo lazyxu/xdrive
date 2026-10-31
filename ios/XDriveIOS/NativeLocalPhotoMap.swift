@@ -113,7 +113,10 @@ private final class XDriveIOSMapPhotoCover: MKAnnotationView {
 private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
     let items: [XDrivePhotoKitLocatedCandidate]
     let revision: UUID
-    let onOpen: ([XDrivePhotoKitScanCandidate]) -> Void
+    // Only a short-lived camera snapshot from the currently selected pin;
+    // no GPS or PhotoKit identity is persisted between views or Owners.
+    let cameraReturn: MKCoordinateRegion?
+    let onOpen: ([XDrivePhotoKitScanCandidate], MKCoordinateRegion) -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(onOpen: onOpen) }
 
@@ -134,7 +137,15 @@ private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
         let pins = items.prefix(XDriveIOSNativePhotoMapPolicy.pageSize)
             .map(XDriveIOSMapPhotoPin.init)
         map.addAnnotations(pins)
-        if !pins.isEmpty { map.showAnnotations(pins, animated: false) }
+        if !pins.isEmpty {
+            // Refreshing the SAME authorized PhotoKit page after a Viewer
+            // return must not zoom out to fit all annotations again.
+            if let cameraReturn {
+                map.setRegion(cameraReturn, animated: false)
+            } else {
+                map.showAnnotations(pins, animated: false)
+            }
+        }
     }
 
     static func dismantleUIView(_ map: MKMapView, coordinator: Coordinator) {
@@ -144,9 +155,9 @@ private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
 
     final class Coordinator: NSObject, MKMapViewDelegate {
         var revision: UUID?
-        var onOpen: ([XDrivePhotoKitScanCandidate]) -> Void
+        var onOpen: ([XDrivePhotoKitScanCandidate], MKCoordinateRegion) -> Void
 
-        init(onOpen: @escaping ([XDrivePhotoKitScanCandidate]) -> Void) {
+        init(onOpen: @escaping ([XDrivePhotoKitScanCandidate], MKCoordinateRegion) -> Void) {
             self.onOpen = onOpen
         }
 
@@ -181,7 +192,7 @@ private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
             let members = items.map(\.candidate).sorted {
                 ($0.capturedAt ?? .distantPast) > ($1.capturedAt ?? .distantPast)
             }
-            if !members.isEmpty { onOpen(members) }
+            if !members.isEmpty { onOpen(members, mapView.region) }
         }
     }
 }
@@ -255,6 +266,8 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     @State private var task: Task<Void, Never>?
     @State private var generation = UUID()
     @State private var mapRevision = UUID()
+    @State private var cameraReturn: MKCoordinateRegion?
+    @State private var cameraReturnOffset: Int?
     @State private var busy = false
     @State private var focused = false
     @State private var offset = 0
@@ -279,7 +292,9 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             } else if let page {
                 Text("已检查 \(page.page.startOffset)–\(page.page.nextOffset) / \(page.page.totalAccessibleAssets)，当前页有 \(page.items.count) 张带位置照片")
                     .font(.footnote).monospacedDigit()
-                XDriveIOSMapKitPhotoPage(items: page.items, revision: mapRevision) { selected in
+                XDriveIOSMapKitPhotoPage(
+                    items: page.items, revision: mapRevision, cameraReturn: cameraReturn
+                ) { selected, region in
                     // UIKit can dispatch an old annotation selection after a
                     // new PhotoKit page has replaced the displayed markers.
                     // The current State page, not the captured SwiftUI
@@ -293,6 +308,8 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                             selectedIDs: selected.map(\.id),
                             currentPageIDs: currentPage.items.map(\.id)
                           ) else { return }
+                    cameraReturn = region
+                    cameraReturnOffset = currentPage.page.startOffset
                     selection = XDriveIOSMapPhotoSelection(items: selected)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -337,12 +354,13 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             if page == nil && !busy && phase == .active { refresh(at: offset) }
         }
         .onChange(of: changes.revision) { _ in
+            clearReturnCamera()
             invalidate()
             error = "照片库已改变，旧地图已经清除；请刷新。"
         }
         .onChange(of: phase) { state in
             if state == .active { changes.start(); refresh(at: offset) }
-            else { changes.stop(); invalidate() }
+            else { changes.stop(); clearReturnCamera(); invalidate() }
         }
         .onDisappear {
             // A presented cluster sheet may hide its map presenter. Keep
@@ -350,6 +368,7 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             // so permission/library changes revoke its transient member IDs.
             if selection == nil {
                 changes.stop()
+                clearReturnCamera()
                 focused = false
                 onFocusChange?(false)
                 invalidate()
@@ -359,6 +378,14 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
 
     private func refresh(at requested: Int) {
         authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        if !XDriveIOSNativePhotoMapPolicy.shouldRestoreCamera(
+            savedPageOffset: cameraReturnOffset,
+            requestedPageOffset: max(0, requested),
+            permissionGranted: authorization == .authorized || authorization == .limited,
+            sceneActive: phase == .active
+        ) {
+            clearReturnCamera()
+        }
         invalidate()
         guard phase == .active,
               authorization == .authorized || authorization == .limited else { return }
@@ -382,7 +409,10 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                 mapRevision = UUID()
             } catch is CancellationError {
             } catch {
-                if generation == ticket { self.error = "照片权限或位置已变化，请刷新重试。" }
+                if generation == ticket {
+                    clearReturnCamera()
+                    self.error = "照片权限或位置已变化，请刷新重试。"
+                }
             }
             if generation == ticket { busy = false }
         }
@@ -395,6 +425,11 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
         if let scanner { Task { await scanner.reset() } }
         scanner = nil
         busy = false
+    }
+
+    private func clearReturnCamera() {
+        cameraReturn = nil
+        cameraReturnOffset = nil
     }
 
     private func invalidate() {

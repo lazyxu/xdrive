@@ -41,11 +41,11 @@ test('a presented cluster keeps PhotoKit change observation until dismissal', ()
   assert.match(map, /\.onDisappear \{\s*\/\/ A presented cluster sheet/)
   assert.match(map, /if selection == nil \{\s*changes\.stop\(\)/)
   assert.match(map, /\} else \{ suspendForSheet\(\) \}/)
-  assert.match(map, /onChange\(of: changes\.revision\) \{ _ in\s*invalidate\(\)/)
+  assert.match(map, /onChange\(of: changes\.revision\) \{ _ in\s*clearReturnCamera\(\)\s*invalidate\(\)/)
 })
 
 test('Swift catch does not shadow the map screen state error value', () => {
-  assert.match(map, /if generation == ticket \{ self\.error = "照片权限或位置已变化，请刷新重试。"/)
+  assert.match(map, /if generation == ticket \{\s*clearReturnCamera\(\)\s*self\.error = "照片权限或位置已变化，请刷新重试。"/)
 })
 
 test('native Launcher marks the real local map available, not as an unavailable placeholder', () => {
@@ -67,4 +67,22 @@ test('late map annotation selection cannot reopen a photo from the previous page
   assert.match(policy, /selectedSet\.count == selectedIDs\.count/)
   assert.match(policy, /pageSet\.count == currentPageIDs\.count/)
   assert.match(map, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/)
+})
+
+test('native map restores exact camera after Viewer return only for the same current PhotoKit page', () => {
+  assert.match(map, /let cameraReturn: MKCoordinateRegion\?/)
+  assert.match(map, /onOpen\(members, mapView\.region\)/)
+  assert.match(map, /cameraReturn: cameraReturn/)
+  assert.match(map, /cameraReturn = region/)
+  assert.match(map, /cameraReturnOffset = currentPage\.page\.startOffset/)
+  assert.match(map, /map\.setRegion\(cameraReturn, animated: false\)/)
+  assert.match(map, /map\.showAnnotations\(pins, animated: false\)/)
+  assert.match(map, /XDriveIOSNativePhotoMapPolicy\.shouldRestoreCamera\(/)
+  assert.match(map, /requestedPageOffset: max\(0, requested\)/)
+  assert.match(policy, /savedPageOffset == requestedPageOffset/)
+  assert.match(policy, /permissionGranted && sceneActive/)
+  assert.match(map, /onChange\(of: changes\.revision\) \{ _ in\s*clearReturnCamera\(\)/)
+  assert.match(map, /changes\.stop\(\); clearReturnCamera\(\); invalidate\(\)/)
+  assert.match(map, /private func clearReturnCamera\(\)/)
+  assert.doesNotMatch(map, /UserDefaults|localStorage|URLSession|WKWebView/)
 })
