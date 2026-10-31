@@ -156,7 +156,10 @@ internal class NativePhotoIncrementalWriter(
         }
         if (prior != null) {
             check(prior.originalSha256 == original.sha256 &&
-                prior.sizeBytes == original.bytes) { "Original version was replaced" }
+                prior.sizeBytes == original.bytes &&
+                prior.destinationName == source.destinationName) {
+                "Original version or destination changed"
+            }
             if (prior.phase == NativePhotoBackupPhase.VERIFIED) {
                 completed.recordVerified(prior)
                 compactConfirmedReceipts()
@@ -181,7 +184,10 @@ internal class NativePhotoIncrementalWriter(
         currentCoroutineContext().ensureActive()
         check(currentSession()) { "Owner session changed before upload" }
         val intent = prior ?: ledger.plan(owner, source.assetKey, source.versionKey,
-            source.resource, original.sha256, original.bytes)
+            source.resource, original.sha256, original.bytes, source.destinationName)
+        check(intent.destinationName == source.destinationName) {
+            "Photo upload needs an exact original destination for recovery"
+        }
 
         // Exactly one durable MAY_HAVE_SENT prior to the first write.
         ledger.beginAttempt(owner, intent.id, original.sha256, original.bytes)
@@ -190,6 +196,7 @@ internal class NativePhotoIncrementalWriter(
             val node = NativePhotoOneShotUploader.upload(
                 service, token, scope, root, source.destinationName,
                 original, currentSession, onProgress,
+                resumeKey = NativePhotoResumeKey.forIntent(intent),
             )
             currentCoroutineContext().ensureActive()
             check(currentSession()) { "Owner session changed after Go finalize" }
@@ -212,6 +219,68 @@ internal class NativePhotoIncrementalWriter(
             }
             throw failure
         }
+    }
+
+
+    /**
+     * Read-only exact Go lookup for uploads that MAY have reached the Server.
+     * No POST /uploads, chunk, finalize, retry, network cleanup or inferred
+     * success from absence of a record. Only a fresh Owner bearer + same
+     * registered Android device can call this method (verified by caller).
+     *
+     * Sessions from older v1 journals lacking destinationName remain blocked;
+     * the user must review them manually instead of guessing a name.
+     */
+    suspend fun reconcileUncertain(
+        service: XDriveService,
+        token: String,
+        scope: NativePhotoBackupScope,
+        verifiedDeviceId: String,
+        currentSession: () -> Boolean,
+        maxChecks: Int = 16,
+    ): Int {
+        require(token.isNotBlank() && verifiedDeviceId.isNotBlank() &&
+            maxChecks in 1..NativePhotoBackupLedger.MAX_ENTRIES)
+        val owner = NativePhotoBackupOwner(
+            scope.origin, scope.serverInstanceId, scope.ownerId,
+            scope.username, scope.rootId, scope.rootRevision, verifiedDeviceId)
+        currentCoroutineContext().ensureActive()
+        check(currentSession()) { "Photo Owner session changed before receipt review" }
+        val waiting = journal.read().filter {
+            sameStableOwner(it.owner, owner) && it.requiresReadOnlyReconciliation
+        }
+        check(waiting.size <= maxChecks) { "Too many unknown photo receipts to inspect" }
+        var recovered = 0
+        for (entry in waiting) {
+            currentCoroutineContext().ensureActive()
+            check(currentSession()) { "Owner session changed during read-only review" }
+            val exactName = entry.destinationName
+                ?: throw IllegalStateException("Legacy uncertain photo requires manual review")
+            val result = service.inspectNativePhotoUpload(
+                token, entry.owner.rootNodeId, exactName, entry.sizeBytes,
+                entry.originalSha256, NativePhotoResumeKey.forIntent(entry))
+            // ACTIVE is not a terminal ACK. 404/410/409 also remain unknown.
+            if (result == null) continue
+            check(result.id > 0 && result.parentId == entry.owner.rootNodeId &&
+                result.name == exactName && result.type == "file" &&
+                result.size == entry.sizeBytes && result.revision > 0) {
+                "Read-only Owner upload result was not an exact original receipt"
+            }
+            currentCoroutineContext().ensureActive()
+            check(currentSession()) { "Owner session changed after read-only review" }
+            val verified = ledger.acknowledgeVerified(
+                entry.owner, entry.id, NativePhotoBackupVerifiedReceipt(
+                    entry.owner, result.id, result.revision,
+                    entry.sizeBytes, entry.originalSha256))
+            completed.recordVerified(verified)
+            recovered++
+        }
+        compactConfirmedReceipts()
+        // An ACTIVE or missing record is never permission for a new POST.
+        check(journal.read().none {
+            sameStableOwner(it.owner, owner) && it.requiresReadOnlyReconciliation
+        }) { "Native original upload still needs explicit receipt review" }
+        return recovered
     }
 
     /**
