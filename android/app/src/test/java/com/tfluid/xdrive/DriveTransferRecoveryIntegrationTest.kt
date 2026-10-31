@@ -226,30 +226,44 @@ class DriveTransferRecoveryIntegrationTest {
         val gate = CompletableDeferred<Unit>()
         val recovery = Recovery().apply { finishGate = gate }
         val service = Service(recovery.events)
-        val c = DriveController(this, { service }, sessionPersistence = Vault(recovery))
-        c.connectAndLogin("https://drive.example", false, "", "owner", "pw", true)
-        runCurrent()
-        assertTrue(c.prepareFileUpload())
-        c.acceptFileUpload("new.txt", 3L) {
-            ByteArrayInputStream("abc".toByteArray())
+        val vault = Vault(recovery)
+        val c = DriveController(this, { service }, sessionPersistence = vault)
+        try {
+            c.connectAndLogin("https://drive.example", false, "", "owner", "pw", true)
+            runCurrent()
+            assertTrue(c.prepareFileUpload())
+            c.acceptFileUpload("new.txt", 3L) {
+                ByteArrayInputStream("abc".toByteArray())
+            }
+            runCurrent()
+            // The original Server ACK is already verified, but the old
+            // non-cancellable local Keystore cleanup is still waiting.
+            assertEquals(1, service.uploadCalls)
+            assertEquals(1, recovery.entries.size)
+            c.logout()
+            runCurrent()
+            assertEquals(Screen.LOGIN, c.state.value.screen)
+            // Logout revokes the secret, but deliberately keeps the editable
+            // username so a failed/revoked login needs only a new password.
+            // The old empty-username assertion threw before completing the
+            // NonCancellable cleanup gate, hanging this required JUnit test.
+            assertEquals("owner", c.state.value.username)
+            assertNull(vault.saved)
+            gate.complete(Unit)
+            runCurrent()
+            assertTrue(recovery.entries.isEmpty()) // safe exact-Owner cleanup
+            assertEquals(Screen.LOGIN, c.state.value.screen)
+            assertEquals("owner", c.state.value.username)
+            assertFalse(c.state.value.fileUploadCommitted)
+            assertTrue(c.state.value.items.isEmpty())
+            assertTrue(c.state.value.nativeTransfers.isEmpty())
+        } finally {
+            // An assertion failure must never abandon the NonCancellable
+            // Owner-specific journal cleanup and hang the full Android suite.
+            gate.complete(Unit)
+            runCurrent()
+            c.close()
         }
-        runCurrent()
-        // The original Server ACK is already verified, but the old
-        // non-cancellable local Keystore cleanup is still waiting.
-        assertEquals(1, service.uploadCalls)
-        assertEquals(1, recovery.entries.size)
-        c.logout()
-        runCurrent()
-        assertEquals(Screen.LOGIN, c.state.value.screen)
-        assertEquals("", c.state.value.username)
-        gate.complete(Unit)
-        runCurrent()
-        assertTrue(recovery.entries.isEmpty()) // safe exact-Owner cleanup
-        assertEquals(Screen.LOGIN, c.state.value.screen)
-        assertFalse(c.state.value.fileUploadCommitted)
-        assertTrue(c.state.value.items.isEmpty())
-        assertTrue(c.state.value.nativeTransfers.isEmpty())
-        c.close()
     }
 
     @Test fun coldRestoredOwnerSeesPriorUnknownTransferWithoutAnyAutoReplay() = runTest {
