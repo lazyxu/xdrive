@@ -54,6 +54,8 @@ data class DriveState(
     /** True only for an explicitly cancellable Owner GET, not writes or SAF. */
     val discardableReadInFlight: Boolean = false,
     val error: String? = null,
+    /** Explicit user retry only after a transient saved-session restore failure. */
+    val savedSessionRestoreRetryAvailable: Boolean = false,
     val path: List<DriveNode> = emptyList(),
     val items: List<DriveNode> = emptyList(),
     val offset: Int = 0,
@@ -493,6 +495,7 @@ class DriveController(
     fun restoreSession() {
         val vault = sessionPersistence ?: return
         if (state.value.screen != Screen.CONNECT || state.value.loading) return
+        mutableState.value = state.value.copy(savedSessionRestoreRetryAvailable = false, error = null)
         request { ticket ->
             val saved = try { vault.load() } catch (_: Exception) { null } ?: return@request
             checkCurrent(ticket)
@@ -569,9 +572,23 @@ class DriveController(
                         route = shownRoute, username = shownUsername,
                         error = "登录已失效，请重新输入密码。")
                 } else {
-                    // Network outage is NOT logout; preserve the refresh token on disk.
+                    // Never offer a retry for another account's newer login draft,
+                    // TLS identity failures or invalid response/Owner proof.
+                    // Retain the encrypted refresh credential on transient errors;
+                    // no background loop or password replay is permitted.
+                    val transient = when (failure) {
+                        is ApiException -> failure.statusCode == 429 ||
+                            failure.statusCode in 500..599 ||
+                            (failure.statusCode == 0 && failure.reason in setOf(
+                                ApiFailureReason.DNS, ApiFailureReason.CONNECTION,
+                                ApiFailureReason.TIMEOUT))
+                        is java.net.UnknownHostException, is java.net.ConnectException,
+                        is java.net.SocketTimeoutException, is java.net.NoRouteToHostException -> true
+                        else -> false
+                    }
                     mutableState.value = DriveState(screen = Screen.CONNECT, server = shownServer,
                         route = shownRoute, username = shownUsername,
+                        savedSessionRestoreRetryAvailable = transient && newerDraft == null,
                         error = "无法自动恢复登录，请检查网络或直接登录。")
                 }
             }
@@ -600,6 +617,7 @@ class DriveController(
         // Save only public login hints, BEFORE the network request. Token
         // revocation and invalid passwords cannot delete this independent draft.
         runCatching { saveLoginDraft(next.url, route.lanIp, username.trim()) }
+        mutableState.value = state.value.copy(savedSessionRestoreRetryAvailable = false)
         request { ticket ->
             val ip = if (route.enabled) routeSelector(next, route) else null
             checkCurrent(ticket)
@@ -641,6 +659,7 @@ class DriveController(
             return
         }
         runCatching { saveLoginDraft(state.value.server, state.value.route.lanIp, username.trim()) }
+        mutableState.value = state.value.copy(savedSessionRestoreRetryAvailable = false)
         request {
             if (api == null && state.value.route.enabled) {
                 val next = address ?: return@request

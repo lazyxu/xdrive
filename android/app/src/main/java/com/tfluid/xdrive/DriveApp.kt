@@ -603,7 +603,7 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                     else -> Unit
                 }
             } else when (state.screen) {
-                Screen.CONNECT, Screen.LOGIN -> UnifiedLoginForm(state, controller::connectAndLogin) {
+                Screen.CONNECT, Screen.LOGIN -> UnifiedLoginForm(state, controller::connectAndLogin, controller::restoreSession) {
                     AccountMenu(state, controller, updates?.let { it::show })
                 }
                 Screen.PASSWORD -> PasswordForm(state, controller::changePassword) { AccountMenu(state, controller, updates?.let { it::show }) }
