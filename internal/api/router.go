@@ -386,6 +386,8 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/uploads/preflight", s.preflightUploadConflict)
 	authed.POST("/uploads/preflight/batch", s.preflightUploadConflictsBatch)
 	authed.POST("/uploads/resume-lookup", s.lookupIOSUploadResumeKey)
+	// Strict Owner-scoped Android photo UNKNOWN_ACK query, never a second writer.
+	authed.POST("/uploads/android-photo-receipt", s.lookupAndroidPhotoUploadReceipt)
 	authed.POST("/uploads", s.createUploadSession)
 	authed.GET("/uploads/:id", s.getUploadSession)
 	authed.PUT("/uploads/:id/chunks/:index", s.putUploadChunk)

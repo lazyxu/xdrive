@@ -75,4 +75,25 @@ class AndroidPhotoBackupIntentStoreTest {
         // Never replace unknown old intentions with a new empty store.
         assertEquals(saved, prefs.getString("sealed-v1", null))
     }
+    @Test fun newOriginalNameSurvivesEncryptedRestartWithoutLeakingPrivatePath() {
+        val destination = "xdrive-photo-" + "a".repeat(20) + "-" +
+            "b".repeat(20) + ".heic"
+        val planned = ledger().plan(owner, key, "d".repeat(64),
+            NativePhotoBackupResource.STILL, hash, 4096L, destination)
+        ledger().beginAttempt(owner, planned.id, hash, 4096L)
+        val reopened = ledger().inspect(owner).single()
+        assertEquals(destination, reopened.destinationName)
+        assertEquals(NativePhotoBackupPhase.MAY_HAVE_SENT, reopened.phase)
+        val raw = context.getSharedPreferences(pref, Context.MODE_PRIVATE)
+            .getString("sealed-v1", null)!!
+        assertFalse(raw.contains(destination))
+        assertFalse(raw.contains(owner.serverOrigin))
+        // An old unextended ledger record remains readable, with no guessed
+        // destination allowed for an uncertain ACK lookup.
+        store().write(listOf(reopened.copy(destinationName = null)))
+        assertNull(store().read().single().destinationName)
+        assertEquals(NativePhotoBackupPhase.MAY_HAVE_SENT,
+            store().read().single().phase)
+    }
+
 }

@@ -62,6 +62,13 @@ internal class NativePhotoForegroundBatch(
             service, origin, token, expectedUsername, currentSession)
             ?: throw IllegalStateException("Register this Android device explicitly before backup")
         checkActive(currentSession)
+        // Existing UNKNOWN_ACK/MAY_HAVE_SENT has priority over new scans.
+        // One exact, current Owner /devices/self proof already occurred.
+        // The read-only receipt query never starts a second UploadSession;
+        // active, missing or expired sessions keep the journal write-blocked.
+        writer.reconcileUncertain(
+            service, token, initial, device.deviceId, currentSession)
+        checkActive(currentSession)
         val scope = NativePhotoBackupOwner(
             initial.origin, initial.serverInstanceId, initial.ownerId,
             initial.username, initial.rootId, initial.rootRevision, device.deviceId)
