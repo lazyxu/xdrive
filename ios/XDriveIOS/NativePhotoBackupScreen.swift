@@ -46,13 +46,19 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("手动备份") {
+                if photoAuthorization != .authorized && photoAuthorization != .limited {
+                    Text("照片访问权限不可用，无法启动手动原件备份。请先在本机相册授权，或在 iOS 设置中恢复照片访问。")
+                        .font(.footnote).foregroundStyle(.orange)
+                        .accessibilityIdentifier("native-ios-photos-manual-permission-blocked")
+                }
                 Button("开始一轮原件备份") {
                     consentError = nil
                     manualConsentOwner = login.owner
                     manualConsentAllowICloud = allowICloud
                     showManualConsent = manualConsentOwner != nil
                 }
-                    .disabled(controller.busy || background.busy || login.owner == nil)
+                    .disabled(controller.busy || background.busy || login.owner == nil ||
+                              (photoAuthorization != .authorized && photoAuthorization != .limited))
                     .accessibilityIdentifier("native-ios-photos-manual-start")
                 if controller.busy {
                     ProgressView("正在验证并备份原件…")
@@ -93,8 +99,15 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                     Text("当前已保存：每 \(active.intervalMinutes) 分钟检查；iCloud 原件 \(active.allowICloudOriginals ? "允许下载" : "仅限本机已下载")。")
                         .font(.footnote).foregroundStyle(.secondary)
                         .accessibilityIdentifier("native-ios-photos-auto-saved-settings")
-                    Label(active.pausedForReview ? "已暂停：需核对收据" : "前台自动备份已开启",
-                          systemImage: active.pausedForReview ? "exclamationmark.triangle" : "checkmark.circle")
+                    if active.pausedForReview {
+                        Label("已暂停：需核对收据", systemImage: "exclamationmark.triangle")
+                    } else if photoAuthorization != .authorized && photoAuthorization != .limited {
+                        Label("备份计划已保存：照片权限不可用", systemImage: "exclamationmark.triangle")
+                    } else if photoAuthorization == .limited {
+                        Label("前台自动备份：仅处理已授权照片", systemImage: "info.circle")
+                    } else {
+                        Label("前台自动备份已开启", systemImage: "checkmark.circle")
+                    }
                     Text("下次允许检查：\(active.nextDueAt.formatted(date: .abbreviated, time: .shortened))")
                     if active.catchUpWhenBehind == true {
                         Label("积压加速已开启：前台约每分钟最多一轮",
@@ -136,7 +149,8 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                         autoConsentAllowICloud = autoAllowICloud
                         showAutoConsent = autoConsentOwner != nil
                     }
-                        .disabled(controller.busy || background.busy || login.owner == nil)
+                        .disabled(controller.busy || background.busy || login.owner == nil ||
+                                  (photoAuthorization != .authorized && photoAuthorization != .limited))
                         .accessibilityIdentifier("native-ios-photos-auto-enable")
                 }
                 Text("自动计划仅采用启用时确认的检查间隔和 iCloud 设置；修改设置需先停用再重新确认。手动备份的开关不会改变自动计划。仅 App 前台、Owner 重新验证后检查，iOS 不保证锁屏或强制退出后定时执行。系统 BGProcessing 需另行授权。")
