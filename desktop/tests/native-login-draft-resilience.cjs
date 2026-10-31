@@ -55,8 +55,10 @@ test('Android saves a non-secret draft before network login and keeps username a
 
 test('iOS and Android allow explicit transient refresh retry, not password replay', () => {
   assert.match(ios, /@Published private\(set\) var canRetryStoredSession = false/)
-  assert.match(ios, /canRetryStoredSession = isTransientRestoreError\(error\)/)
-  assert.match(ios, /guard canRetryStoredSession, !busy, active == nil/)
+  assert.match(ios, /draftMatchesSavedCredential\(saved\)/)
+  assert.match(ios, /retryDraftSnapshot = \(serverText, lanIPText, username\)/)
+  assert.match(ios, /guard canRetryStoredSessionForCurrentDraft, !busy, active == nil/)
+  assert.match(iosScreen, /if model\.canRetryStoredSessionForCurrentDraft/)
   assert.match(ios, /case \.rateLimited, \.unavailable: return true/)
   assert.match(ios, /default:\s*return false/)
   assert.match(iosScreen, /native-ios-saved-session-retry/)
