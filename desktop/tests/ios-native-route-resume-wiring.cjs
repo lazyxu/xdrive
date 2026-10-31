@@ -33,3 +33,15 @@ test('switching Owner/Root/Server invalidates previous navigation and avoids bac
   assert.doesNotMatch(routes, /accessToken|refreshToken|PhotoKitID|signedURL|backupReceipt/);
   assert.doesNotMatch(ui, /WKWebView|document\.cookie/);
 });
+
+test('native Gallery MapKit route restores only under its verified Owner-scoped navigation hint', () => {
+  assert.match(ui, /case \.map:\s*XDriveIOSNativeLocalPhotoMapScreen\(/);
+  assert.match(ui, /case \.map:\s*openGallery\(\.map\)/);
+  const galleryAllowlist = routes.match(/private static func validGallery\(_ source: String\) -> Bool \{([\s\S]*?)\n    \}/)?.[1];
+  assert.ok(galleryAllowlist, 'exact Gallery navigation allowlist missing');
+  assert.match(galleryAllowlist, /\["local", "albums", "cloud", "originals", "map"\]\.contains\(source\)/);
+  assert.match(routes, /saved\.scopeHash == scopeHash/);
+  assert.match(routes, /Self\.validGallery\(saved\.gallerySource\)/);
+  assert.match(routes, /gallerySource: Self\.validGallery\(gallerySource\) \? gallerySource : "local"/);
+  assert.doesNotMatch(routes, /PhotoKit\.fetch|PHAsset|GPS|Authorization:|accessToken|refreshToken/);
+});

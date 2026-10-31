@@ -62,8 +62,9 @@ struct XDriveIOSNativeNavigationRouteStore {
         recentDynamic: [String]
     ) {
         guard validScopeHash(scopeHash) else { return }
-        // Unknown/newer features and native Map placeholders are deliberately
-        // not restored until their real Owner-authorized screens exist.
+        // Unknown/newer features and unavailable native routes are not
+        // restored until their real Owner-authorized screens exist.
+        // The native Gallery MapKit route is implemented, so map is allowed.
         let safeDynamic = activeDynamic == "backup" ? "backup" : nil
         let safeTab = Self.validTab(selectedTab) &&
             (selectedTab != "dynamic" || safeDynamic != nil)
@@ -94,7 +95,7 @@ struct XDriveIOSNativeNavigationRouteStore {
     }
 
     private static func validGallery(_ source: String) -> Bool {
-        ["local", "albums", "cloud", "originals"].contains(source)
+        ["local", "albums", "cloud", "originals", "map"].contains(source)
     }
 
     private static func validDynamic(_ feature: String?) -> Bool {
