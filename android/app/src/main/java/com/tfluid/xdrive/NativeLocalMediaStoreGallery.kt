@@ -74,6 +74,37 @@ internal fun nativePhotoAccess(context: Context): Boolean =
         context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
     }
 
+/**
+ * Android 14+ explicitly supports re-selecting photos from within an app.
+ * Do not offer re-selection for denied grants (the initial permission CTA
+ * handles those), older Android releases, or already-full photo+video grants.
+ * The selected-photo permission counts as readable even when neither broad
+ * media grant is present.
+ */
+internal fun nativeLocalCanReselectMedia(
+    sdkInt: Int,
+    canReadAny: Boolean,
+    fullImages: Boolean,
+    fullVideos: Boolean,
+): Boolean = sdkInt >= 34 && canReadAny && !(fullImages && fullVideos)
+
+@Composable
+internal fun NativeLocalMediaReselectAction(
+    sdkInt: Int,
+    canReadAny: Boolean,
+    fullImages: Boolean,
+    fullVideos: Boolean,
+    onRequest: () -> Unit,
+) {
+    if (!nativeLocalCanReselectMedia(sdkInt, canReadAny, fullImages, fullVideos)) return
+    // Only this explicit user gesture may launch the OS authorization flow.
+    TextButton(
+        onClick = onRequest,
+        modifier = Modifier.heightIn(min = 48.dp)
+            .testTag("native-local-reselect-media"),
+    ) { Text("调整可查看的照片与视频") }
+}
+
 /** ImageDecoder reads the authorized original but never allocates an unbounded display bitmap. */
 internal fun nativeStillDecodeSize(width: Int, height: Int): Pair<Int, Int> {
     require(width > 0 && height > 0)
@@ -112,11 +143,13 @@ internal fun NativeLocalMediaStoreGallery(
     val allowed = remember(sessionId, permissionEpoch, libraryEpoch) {
         nativePhotoAccess(context)
     }
-    val limitedAccess = Build.VERSION.SDK_INT >= 33 && (
-        context.checkSelfPermission(Manifest.permission.READ_MEDIA_IMAGES) !=
-            PackageManager.PERMISSION_GRANTED ||
-        context.checkSelfPermission(Manifest.permission.READ_MEDIA_VIDEO) !=
-            PackageManager.PERMISSION_GRANTED)
+    val fullImages = Build.VERSION.SDK_INT >= 33 &&
+        context.checkSelfPermission(Manifest.permission.READ_MEDIA_IMAGES) ==
+            PackageManager.PERMISSION_GRANTED
+    val fullVideos = Build.VERSION.SDK_INT >= 33 &&
+        context.checkSelfPermission(Manifest.permission.READ_MEDIA_VIDEO) ==
+            PackageManager.PERMISSION_GRANTED
+    val limitedAccess = Build.VERSION.SDK_INT >= 33 && !(fullImages && fullVideos)
     val permissionPrompt = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()) {
         permissionEpoch++
@@ -294,6 +327,13 @@ internal fun NativeLocalMediaStoreGallery(
             else TextButton(onClick = { cache.invalidate() },
                 modifier = Modifier.testTag("native-local-refresh")) { Text("刷新") }
         }
+        NativeLocalMediaReselectAction(
+            sdkInt = Build.VERSION.SDK_INT,
+            canReadAny = allowed,
+            fullImages = fullImages,
+            fullVideos = fullVideos,
+            onRequest = { permissionPrompt.launch(nativePhotoPermissions()) },
+        )
         if (failure != null) {
             Text(failure.orEmpty(), color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.padding(horizontal = 12.dp)
