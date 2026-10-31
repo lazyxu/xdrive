@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Box, Button, Stack, Typography } from '@mui/material'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import type { XDriveLocalBackupCommonBatchHistoryItem } from '../device-backups'
@@ -26,6 +26,16 @@ type LocalHistory = {
 export function XDriveSynologyBackupLocalPanel({ client }: {
   client: XDriveSynologyBackupLocalClient
 }) {
+  // A held callback from an old Host must not mutate this component's state
+  // after a different owning Agent is rendered. Track *transitions*, not just
+  // client equality, so a later A -> B -> A does not revive old A callbacks.
+  const hostEpochRef = useRef({ client, epoch: 0 })
+  if (hostEpochRef.current.client !== client) {
+    hostEpochRef.current = { client, epoch: hostEpochRef.current.epoch + 1 }
+  }
+  const renderedHostEpoch = hostEpochRef.current.epoch
+  const isCurrentHost = () => hostEpochRef.current.client === client &&
+    hostEpochRef.current.epoch === renderedHostEpoch
   const [sources, setSources] = useState<XDriveSynologyLocalSource[]>([])
   // Keep the rendered list, history and mutation dialogs tied to the client
   // whose DSM session actually produced them. A new Host client is visible
@@ -107,8 +117,8 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
       title="设备备份"
       subtitle="查看本机同步文件夹、进度与历史；所有操作只能在所属设备本机进行。"
       pageActions={
-        <Button size="small" startIcon={<RefreshRoundedIcon />} disabled={loading}
-          onClick={refresh}>刷新</Button>
+        <Button size="small" startIcon={<RefreshRoundedIcon />} disabled={visibleLoading}
+          onClick={() => { if (isCurrentHost()) refresh() }}>刷新</Button>
       }
     >
       {visibleError ? <XDriveStatusAlert tone="neutral">{visibleError}</XDriveStatusAlert> : null}
@@ -141,11 +151,13 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
                       targetUnavailableLabel="当前 DSM 页面未提供"
                       historyUnavailableLabel="展开查看本机运行历史"
                       expanded={expandedID === item.source_id}
-                      onExpandedChange={(isOpen) => setExpandedID(isOpen ? item.source_id : null)}
+                      onExpandedChange={(isOpen) => {
+                        if (isCurrentHost()) setExpandedID(isOpen ? item.source_id : null)
+                      }}
                     >
                       <XDriveDeviceBackupLocalPrimaryActions
-                        onRun={() => setActiveID(item.source_id)}
-                        onSchedule={() => setScheduleID(item.source_id)}
+                        onRun={() => { if (isCurrentHost()) setActiveID(item.source_id) }}
+                        onSchedule={() => { if (isCurrentHost()) setScheduleID(item.source_id) }}
                       />
                           <Typography variant="subtitle2">同步历史（只读）</Typography>
                           <Typography variant="caption" color="text.secondary">
@@ -167,13 +179,15 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
           </Stack>
         )}
       </Box>
-      <XDriveSynologyBackupSourceSetup client={client} onCreated={refresh} />
+      <XDriveSynologyBackupSourceSetup client={client}
+        onCreated={() => { if (isCurrentHost()) refresh() }} />
       {sameOwningClient && scheduleID !== null && (
         <XDriveDeviceBackupLocalScheduleDialog
           sourceID={scheduleID}
           actions={client}
-          onClose={() => setScheduleID(null)}
+          onClose={() => { if (isCurrentHost()) setScheduleID(null) }}
           onFinished={(message) => {
+            if (!isCurrentHost()) return
             setScheduleID(null)
             setNotice(message)
             setRefreshID((n) => n + 1)
@@ -185,6 +199,7 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
           sourceID={activeID}
           actions={client}
           onClose={() => {
+            if (!isCurrentHost()) return
             setActiveID(null)
             setHistoryRevision((n) => n + 1)
           }}

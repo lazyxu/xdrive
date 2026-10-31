@@ -163,3 +163,96 @@ test('DSM clears prior owner operation notice on Host replacement and keeps fres
     ['Owner B'])
   await act(async () => tree.unmount())
 })
+test('DSM ignores a prior Agent schedule completion and close after Host replacement', async () => {
+  let ownerBReads = 0
+  const ownerA = {
+    list: async () => [folder(57, 'Owner A folder')],
+    history: async id => emptyHistory(id),
+  }
+  const ownerB = {
+    list: async () => { ownerBReads++; return [folder(58, 'Owner B folder')] },
+    history: async id => emptyHistory(id),
+  }
+  let tree
+  await act(async () => {
+    tree = Renderer.create(React.createElement(Panel, { client: ownerA }))
+    await Promise.resolve()
+  })
+  await act(async () => tree.root.findByType('local-actions').props.onSchedule())
+  const oldSchedule = tree.root.findByType('schedule-dialog').props
+
+  await act(async () => {
+    tree.update(React.createElement(Panel, { client: ownerB }))
+    await Promise.resolve()
+  })
+  assert.equal(ownerBReads, 1)
+  assert.equal(tree.root.findAllByType('schedule-dialog').length, 0)
+  await act(async () => tree.root.findByType('local-actions').props.onSchedule())
+  assert.equal(tree.root.findByType('schedule-dialog').props.sourceID, 58)
+  await act(async () => {
+    // Actual shared schedule dialog can call onFinished after its awaited
+    // actions.save() even though a Host change unmounted it meanwhile.
+    oldSchedule.onFinished('Owner A private completion after async ACK')
+    oldSchedule.onClose()
+    await Promise.resolve()
+  })
+  assert.equal(tree.root.findByType('schedule-dialog').props.sourceID, 58,
+    'old Host callbacks must not close a newer Owner schedule dialog')
+  assert.equal(ownerBReads, 1,
+    'old Host schedule completion must not refresh new Agent Source state')
+  assert.equal(tree.root.findAllByType('status-alert').length, 0,
+    'old Host completion must never be displayed in replacement Host')
+
+  await act(async () => {
+    tree.root.findByType('schedule-dialog').props.onFinished('Owner B schedule saved')
+    await Promise.resolve()
+  })
+  assert.equal(tree.root.findAllByType('schedule-dialog').length, 0)
+  assert.equal(tree.root.findAllByType('status-alert').length, 1,
+    'current Host completion notice must still work')
+  assert.equal(ownerBReads, 2, 'same-Host schedule completion may refresh its own listing')
+  await act(async () => tree.unmount())
+})
+
+test('DSM ignores old run/close callbacks after Host A -> B -> A even with identical client identity', async () => {
+  const ownerA = {
+    list: async () => [folder(57, 'Owner A folder')],
+    history: async id => emptyHistory(id),
+  }
+  const ownerB = {
+    list: async () => [folder(58, 'Owner B folder')],
+    history: async id => emptyHistory(id),
+  }
+  let tree
+  await act(async () => {
+    tree = Renderer.create(React.createElement(Panel, { client: ownerA }))
+    await Promise.resolve()
+  })
+  const oldRun = tree.root.findByType('local-actions').props.onRun
+  await act(async () => oldRun())
+  const oldClose = tree.root.findByType('batch-dialog').props.onClose
+
+  await act(async () => {
+    tree.update(React.createElement(Panel, { client: ownerB }))
+    await Promise.resolve()
+  })
+  await act(async () => oldRun())
+  assert.equal(tree.root.findAllByType('batch-dialog').length, 0,
+    'old Owner run closure must never invoke an alien Source on the B Agent')
+
+  await act(async () => {
+    tree.update(React.createElement(Panel, { client: ownerA }))
+    await Promise.resolve()
+  })
+  await act(async () => oldRun())
+  assert.equal(tree.root.findAllByType('batch-dialog').length, 0,
+    'returning to the same Agent object must not revive an old Host generation')
+  await act(async () => tree.root.findByType('local-actions').props.onRun())
+  assert.equal(tree.root.findByType('batch-dialog').props.sourceID, 57)
+  await act(async () => oldClose())
+  assert.equal(tree.root.findByType('batch-dialog').props.sourceID, 57,
+    'old Host close may not close a current-generation backup dialog')
+  await act(async () => tree.root.findByType('batch-dialog').props.onClose())
+  assert.equal(tree.root.findAllByType('batch-dialog').length, 0)
+  await act(async () => tree.unmount())
+})
