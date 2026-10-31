@@ -41,6 +41,8 @@ data class DriveState(
     /** Foreground photo progress only; neither cursor nor success is persisted
      * as a backup receipt. Owner/session changes reset these fields. */
     val nativePhotoDeviceVerified: Boolean = false,
+    /** Only a live current Owner verification may mark scheduling approved. */
+    val nativePhotoAutoApproved: Boolean = false,
     val nativePhotoBatchScanned: Int = 0,
     val nativePhotoBatchUploaded: Int = 0,
     val nativePhotoBatchAlreadyVerified: Int = 0,
@@ -1273,6 +1275,51 @@ class DriveController(
             mutableState.value = state.value.copy(
                 nativePhotoDeviceVerified = true, error = null)
         }
+    }
+
+    /**
+     * A user opt-in, authenticated in the existing native Gallery session.
+     * WorkManager itself performs no registration and is never permitted to
+     * use a cleartext, unremembered or guessed Owner identity.
+     */
+    internal fun enableNativePhotoAutoBackup(context: Context) {
+        val initial = state.value
+        val service = api ?: return
+        if (!initial.canStartNativePhotoForeground() ||
+            initial.nativePhotoDeviceVerified.not() ||
+            !keepLogin || session == null ||
+            !initial.server.startsWith("https://") ||
+            !hasNativeFullPhotoVideoReadGrant(context)) return
+        val origin = initial.server
+        val username = initial.username
+        request { ticket ->
+            val sameOwner = {
+                ticket == generation && session != null &&
+                    state.value.nativeUiSessionId == initial.nativeUiSessionId &&
+                    state.value.server == origin && state.value.username == username &&
+                    state.value.screen == Screen.GALLERY
+            }
+            val token = session?.accessToken ?: throw CancellationException()
+            val verified = AndroidPhotoDeviceCredentialStore(context).verifyExisting(
+                service, origin, token, username, sameOwner)
+                ?: throw IllegalStateException("Registered Android Owner device unavailable")
+            checkCurrent(ticket)
+            check(sameOwner())
+            val scope = verified.first
+            val owner = NativePhotoBackupOwner(
+                scope.origin, scope.serverInstanceId, scope.ownerId, scope.username,
+                scope.rootId, scope.rootRevision, verified.second.deviceId)
+            AndroidPhotoAutoBackupScheduler.enable(context, owner)
+            checkCurrent(ticket)
+            mutableState.value = state.value.copy(
+                nativePhotoAutoApproved = true, error = null)
+        }
+    }
+
+    /** Does not cancel any manual file upload or reclassify unknown receipts. */
+    internal fun disableNativePhotoAutoBackup(context: Context) {
+        AndroidPhotoAutoBackupScheduler.disable(context)
+        mutableState.value = state.value.copy(nativePhotoAutoApproved = false)
     }
 
     /**
