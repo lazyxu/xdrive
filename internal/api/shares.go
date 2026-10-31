@@ -23,7 +23,45 @@ import (
 
 var errShareUnavailable = errors.New("share unavailable")
 
+const (
+	shareAccessReadOnly = "read_only"
+	shareAccessViewUpload = "view_upload"
+)
+
+func normalizeShareAccess(value string) (string, bool) {
+	switch value {
+	case "", shareAccessReadOnly:
+		return shareAccessReadOnly, true
+	case shareAccessViewUpload:
+		return shareAccessViewUpload, true
+	default:
+		return "", false
+	}
+}
+
+func validateShareUploadSettings(access string, rootType string, total, files, single, serverMax int64) error {
+	if total < 0 || files < 0 || single < 0 {
+		return errors.New("upload limits must be nonnegative")
+	}
+	if access == shareAccessViewUpload {
+		if rootType != meta.NodeTypeDir {
+			return errors.New("only folders can accept uploads")
+		}
+		if total == 0 || files == 0 || single == 0 || single > total ||
+			(serverMax > 0 && single > serverMax) {
+			return errors.New("upload-enabled share requires positive quotas and a valid single-file limit")
+		}
+	}
+	return nil
+}
+
 type shareDTO struct {
+	Access        string     `json:"access"`
+	MaxUploadBytes     int64 `json:"max_upload_bytes"`
+	MaxUploadFiles     int64 `json:"max_upload_files"`
+	MaxUploadFileBytes int64 `json:"max_upload_file_bytes"`
+	UploadedBytes      int64 `json:"uploaded_bytes"`
+	UploadedFiles      int64 `json:"uploaded_files"`
 	ID            uint64     `json:"id"`
 	NodeID        uint64     `json:"node_id"`
 	HasPassword   bool       `json:"has_password"`
@@ -46,6 +84,7 @@ type createdShareDTO struct {
 // Every actual Share API, derivative, signed ticket, Range and ZIP path must
 // continue validating capability, password, expiry, quota and share subtree.
 type publicShareCapabilitiesDTO struct {
+	Upload      bool `json:"upload"`
 	List        bool `json:"list"`
 	Preview     bool `json:"preview"`
 	Download    bool `json:"download"`
@@ -53,6 +92,12 @@ type publicShareCapabilitiesDTO struct {
 	Search      bool `json:"search"`
 	Write       bool `json:"write"`
 	Delete      bool `json:"delete"`
+}
+
+func publicShareCapabilitiesForShare(share meta.Share, nodeType string) publicShareCapabilitiesDTO {
+	result := publicShareCapabilitiesForNode(nodeType)
+	result.Upload = nodeType == meta.NodeTypeDir && share.Access == shareAccessViewUpload
+	return result
 }
 
 func publicShareCapabilitiesForNode(nodeType string) publicShareCapabilitiesDTO {
@@ -64,6 +109,11 @@ func publicShareCapabilitiesForNode(nodeType string) publicShareCapabilitiesDTO 
 }
 
 type publicShareDTO struct {
+	MaxUploadBytes     int64 `json:"max_upload_bytes"`
+	MaxUploadFiles     int64 `json:"max_upload_files"`
+	MaxUploadFileBytes int64 `json:"max_upload_file_bytes"`
+	UploadedBytes      int64 `json:"uploaded_bytes"`
+	UploadedFiles      int64 `json:"uploaded_files"`
 	Type             string                     `json:"type"`
 	Name             string                     `json:"name"`
 	Size             int64                      `json:"size"`
@@ -78,6 +128,12 @@ type publicShareDTO struct {
 
 func toShareDTO(share meta.Share, now time.Time) shareDTO {
 	return shareDTO{
+		Access: share.Access,
+		MaxUploadBytes: share.MaxUploadBytes,
+		MaxUploadFiles: share.MaxUploadFiles,
+		MaxUploadFileBytes: share.MaxUploadFileBytes,
+		UploadedBytes: share.UploadedBytes,
+		UploadedFiles: share.UploadedFiles,
 		ID:            share.ID,
 		NodeID:        share.NodeID,
 		HasPassword:   share.PasswordHash != "",
@@ -137,9 +193,23 @@ func (s *Server) createFileShare(c *gin.Context) {
 		ExpiresAt    *time.Time `json:"expires_at"`
 		Password     string     `json:"password"`
 		MaxDownloads int64      `json:"max_downloads"`
+		Access string `json:"access"`
+		MaxUploadBytes int64 `json:"max_upload_bytes"`
+		MaxUploadFiles int64 `json:"max_upload_files"`
+		MaxUploadFileBytes int64 `json:"max_upload_file_bytes"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		fail(c, http.StatusBadRequest, "invalid request")
+		return
+	}
+	access, ok := normalizeShareAccess(req.Access)
+	if !ok {
+		fail(c, http.StatusBadRequest, "invalid share access")
+		return
+	}
+	if err := validateShareUploadSettings(access, node.Type, req.MaxUploadBytes, req.MaxUploadFiles,
+		req.MaxUploadFileBytes, s.MaxUploadBytes); err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
 	now := time.Now()
@@ -167,6 +237,10 @@ func (s *Server) createFileShare(c *gin.Context) {
 		return
 	}
 	share := meta.Share{
+		Access: access,
+		MaxUploadBytes: req.MaxUploadBytes,
+		MaxUploadFiles: req.MaxUploadFiles,
+		MaxUploadFileBytes: req.MaxUploadFileBytes,
 		OwnerID:       userID(c),
 		NodeID:        node.ID,
 		TokenHash:     tokenHash,
@@ -181,6 +255,76 @@ func (s *Server) createFileShare(c *gin.Context) {
 	}
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusCreated, createdShareDTO{shareDTO: toShareDTO(share, now), Token: rawToken})
+}
+
+// updateShare changes an Owner's existing link policy without rotating its token.
+// Revocation stays irreversible; in-flight uploads must re-check this policy at finalize.
+func (s *Server) updateShare(c *gin.Context) {
+	shareID, ok := parseID(c.Param("id"))
+	if !ok {
+		fail(c, http.StatusBadRequest, "invalid share id")
+		return
+	}
+	var req struct {
+		ExpiresAt *time.Time `json:"expires_at"`
+		Access string `json:"access"`
+		MaxUploadBytes int64 `json:"max_upload_bytes"`
+		MaxUploadFiles int64 `json:"max_upload_files"`
+		MaxUploadFileBytes int64 `json:"max_upload_file_bytes"`
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 8<<10)
+	if err := c.ShouldBindJSON(&req); err != nil || req.Access == "" {
+		fail(c, http.StatusBadRequest, "invalid share update")
+		return
+	}
+	access, valid := normalizeShareAccess(req.Access)
+	if !valid || (req.ExpiresAt != nil && !req.ExpiresAt.After(time.Now())) {
+		fail(c, http.StatusBadRequest, "invalid share policy or expiry")
+		return
+	}
+	now := time.Now()
+	var updated meta.Share
+	err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND owner_id = ?", shareID, userID(c)).First(&updated).Error; err != nil {
+			return err
+		}
+		if updated.RevokedAt != nil {
+			return errShareUnavailable
+		}
+		var node meta.Node
+		if err := tx.Where("id = ? AND owner_id = ? AND deleted_at IS NULL",
+			updated.NodeID, updated.OwnerID).First(&node).Error; err != nil {
+			return err
+		}
+		if err := validateShareUploadSettings(access, node.Type, req.MaxUploadBytes,
+			req.MaxUploadFiles, req.MaxUploadFileBytes, s.MaxUploadBytes); err != nil {
+			return err
+		}
+		if err := tx.Model(&updated).Updates(map[string]any{
+			"access": access, "expires_at": req.ExpiresAt,
+			"max_upload_bytes": req.MaxUploadBytes,
+			"max_upload_files": req.MaxUploadFiles,
+			"max_upload_file_bytes": req.MaxUploadFileBytes,
+			"updated_at": now,
+		}).Error; err != nil {
+			return err
+		}
+		return tx.First(&updated, updated.ID).Error
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			fail(c, http.StatusNotFound, "share not found")
+		case errors.Is(err, errShareUnavailable):
+			fail(c, http.StatusGone, "share revoked")
+		default:
+			fail(c, http.StatusBadRequest, "share update rejected")
+		}
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, toShareDTO(updated, now))
 }
 
 func (s *Server) listFileShares(c *gin.Context) {
@@ -261,6 +405,11 @@ func (s *Server) publicShareMetadata(c *gin.Context) {
 		updatedAt = &node.UpdatedAt
 	}
 	c.JSON(http.StatusOK, publicShareDTO{
+		MaxUploadBytes: share.MaxUploadBytes,
+		MaxUploadFiles: share.MaxUploadFiles,
+		MaxUploadFileBytes: share.MaxUploadFileBytes,
+		UploadedBytes: share.UploadedBytes,
+		UploadedFiles: share.UploadedFiles,
 		Type:             node.Type,
 		Name:             node.Name,
 		Size:             size,
@@ -270,7 +419,7 @@ func (s *Server) publicShareMetadata(c *gin.Context) {
 		ExpiresAt:        share.ExpiresAt,
 		MaxDownloads:     share.MaxDownloads,
 		DownloadCount:    share.DownloadCount,
-		Capabilities:     publicShareCapabilitiesForNode(node.Type),
+		Capabilities:     publicShareCapabilitiesForShare(share, node.Type),
 	})
 }
 

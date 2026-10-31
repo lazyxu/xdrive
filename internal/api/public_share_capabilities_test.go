@@ -19,7 +19,7 @@ func TestPublicShareSevenCapabilitiesDefaultReadOnly(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			got := publicShareCapabilitiesForNode(tc.nodeType)
 			if !got.List || !got.Preview || !got.Download ||
-				got.DownloadZIP != tc.wantZIP || got.Search || got.Write || got.Delete {
+				got.DownloadZIP != tc.wantZIP || got.Search || got.Write || got.Delete || got.Upload {
 				t.Fatalf("Share must remain default-read-only and only folder ZIP: %+v", got)
 			}
 			payload, err := json.Marshal(got)
@@ -30,10 +30,10 @@ func TestPublicShareSevenCapabilitiesDefaultReadOnly(t *testing.T) {
 			if err = json.Unmarshal(payload, &fields); err != nil {
 				t.Fatal(err)
 			}
-			if len(fields) != 7 {
-				t.Fatalf("expected 7 service-issued grants, received %v", fields)
+			if len(fields) != 8 {
+				t.Fatalf("expected 8 service-issued grants, received %v", fields)
 			}
-			for _, field := range []string{"list", "preview", "download", "downloadZip", "search", "write", "delete"} {
+			for _, field := range []string{"list", "preview", "download", "downloadZip", "search", "write", "delete", "upload"} {
 				if _, ok := fields[field]; !ok {
 					t.Fatalf("missing grant %q from server JSON: %s", field, payload)
 				}

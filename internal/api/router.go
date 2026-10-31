@@ -402,6 +402,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/files/:id/shares", s.createFileShare)
 	authed.GET("/files/:id/shares", s.listFileShares)
 	authed.DELETE("/shares/:id", s.revokeShare)
+	authed.PATCH("/shares/:id", s.updateShare)
 
 	authed.POST("/source-credentials/test", s.testSourceCredential)
 
