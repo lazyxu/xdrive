@@ -242,17 +242,23 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                 } else if let message = model.message {
                     VStack(spacing: 8) {
                         Text(message).foregroundStyle(.secondary)
-                        Button("重试") {
-                            // The existing loader cancels the prior request and
-                            // re-fetches this exact ID from the current PhotoKit
-                            // authorization. Never enable an iCloud download.
-                            guard phase == .active,
-                                  [.authorized, .limited].contains(
-                                    PHPhotoLibrary.authorizationStatus(for: .readWrite)
-                                  ) else { return }
-                            model.load(candidate)
+                        // The permission-revoked error is informative only:
+                        // do not offer an enabled action that cannot run.
+                        if phase == .active,
+                           [.authorized, .limited].contains(
+                             PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                           ) {
+                            Button("重试") {
+                                // Cancel old requests and re-fetch only this
+                                // still-authorized PhotoKit ID, never iCloud.
+                                guard phase == .active,
+                                      [.authorized, .limited].contains(
+                                        PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                                      ) else { return }
+                                model.load(candidate)
+                            }
+                            .accessibilityIdentifier("native-ios-local-viewer-retry")
                         }
-                        .accessibilityIdentifier("native-ios-local-viewer-retry")
                     }
                 } else {
                     ProgressView("正在读取已授权的本机媒体…")
