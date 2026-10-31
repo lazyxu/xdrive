@@ -737,9 +737,13 @@ private struct XDriveIOSNativeCloudOriginalTile: View {
 struct XDriveIOSNativeCloudOriginalGallery: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     let confirmedOriginalUpdate: XDriveIOSNativePhotoBackupController.ConfirmedOriginalUpdate?
+    @Environment(\.scenePhase) private var phase
     @StateObject private var model = XDriveIOSNativeCloudOriginalModel()
     @State private var selected: XDriveIOSNativeCloudOriginal?
     @State private var refreshAfterViewer = false
+    // An OS BGTask can commit a new original without a foreground writer
+    // notification. Revalidate once after returning from an inactive scene.
+    @State private var needsForegroundReload = false
 
     var body: some View {
         ScrollView {
@@ -794,11 +798,46 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
         }) {
             XDriveIOSNativeCloudOriginalPreview(node: $0, login: login)
         }
-        .task { model.reload(login: login) }
+        .task {
+            guard phase == .active else {
+                needsForegroundReload = true
+                return
+            }
+            model.reload(login: login)
+        }
+        .onChange(of: phase) { state in
+            if state != .active {
+                // Stop directory/thumbnail work while the App is inactive.
+                // Keep the selected full-screen Viewer identity for return.
+                needsForegroundReload = true
+                model.cancel()
+                return
+            }
+            guard needsForegroundReload else { return }
+            needsForegroundReload = false
+            guard login.owner != nil else {
+                refreshAfterViewer = false
+                model.invalidate()
+                return
+            }
+            if selected != nil {
+                // Never replace the active Viewer with a background refresh.
+                refreshAfterViewer = true
+            } else {
+                // Fresh native Owner/root verification happens in loadNext.
+                // Re-reading entries is NOT an upload-success receipt.
+                model.reload(login: login)
+            }
+        }
         .onChange(of: confirmedOriginalUpdate) { update in
             guard let update,
                   XDriveIOSNativePhotoOwnerScope.matches(login.owner, update.owner)
             else { return }
+            if phase != .active {
+                needsForegroundReload = true
+                if selected != nil { refreshAfterViewer = true }
+                return
+            }
             if selected != nil {
                 refreshAfterViewer = true
             } else {
@@ -811,7 +850,11 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
             selected = nil
             model.invalidate()
             if login.owner != nil {
-                model.reload(login: login)
+                if phase == .active {
+                    model.reload(login: login)
+                } else {
+                    needsForegroundReload = true
+                }
             }
         }
         .onDisappear {
