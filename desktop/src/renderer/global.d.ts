@@ -1084,7 +1084,8 @@ declare global {
         cloudVersions: (nodeID: number) => Promise<DesktopResult<AgentCloudVersion[]>>
         cloudRestoreVersion: (nodeID: number, revision: number, versionID: number) => Promise<DesktopResult<AgentCloudNode>>
         cloudShares: (nodeID: number) => Promise<DesktopResult<AgentCloudShare[]>>
-        cloudCreateShare: (nodeID: number, input: { expires_at?: string; password?: string; max_downloads?: number }) => Promise<DesktopResult<AgentCreatedCloudShare>>
+        cloudCreateShare: (nodeID: number, input: { expires_at?: string; password?: string; access?: 'read_only' | 'view_upload' }) => Promise<DesktopResult<AgentCreatedCloudShare>>
+        cloudUpdateShare: (id: number, input: { expires_at?: string | null; access: 'read_only' | 'view_upload' }) => Promise<DesktopResult<AgentCloudShare>>
         cloudRevokeShare: (id: number) => Promise<DesktopResult<{ ok: boolean }>>
         getDiagnostics: () => Promise<DesktopResult<AgentDiagnosticReport>>
         reconnect: () => Promise<DesktopResult<AgentStatus>>
