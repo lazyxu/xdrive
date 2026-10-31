@@ -31,6 +31,21 @@ enum XDriveIOSNativePhotoMapPolicy {
             !selectedSet.contains("") && selectedSet.isSubset(of: pageSet)
     }
 
+    /// A Viewer return may reuse its source PhotoKit page camera only while
+    /// that very page is still authorized and active. Never carry a camera
+    /// from a previous page, revoked PhotoKit subset or background scene.
+    static func shouldRestoreCamera(
+        savedPageOffset: Int?,
+        requestedPageOffset: Int,
+        permissionGranted: Bool,
+        sceneActive: Bool
+    ) -> Bool {
+        guard let savedPageOffset, savedPageOffset >= 0,
+              requestedPageOffset >= 0 else { return false }
+        return permissionGranted && sceneActive &&
+            savedPageOffset == requestedPageOffset
+    }
+
     static func markerLabel(_ count: Int) -> String {
         "当前页此位置\(max(0, min(pageSize, count)))张照片"
     }

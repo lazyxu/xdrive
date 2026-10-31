@@ -34,6 +34,26 @@ struct XDriveIOSNativePhotoMapPolicyChecks {
             selectedIDs: Array(repeating: "x", count: 65),
             currentPageIDs: ["x"]))
 
+        // MapKit camera return is strictly same-page; switching the PhotoKit
+        // window, losing access or backgrounding must drop saved camera.
+        precondition(XDriveIOSNativePhotoMapPolicy.shouldRestoreCamera(
+            savedPageOffset: 128, requestedPageOffset: 128,
+            permissionGranted: true, sceneActive: true))
+        precondition(!XDriveIOSNativePhotoMapPolicy.shouldRestoreCamera(
+            savedPageOffset: nil, requestedPageOffset: 128,
+            permissionGranted: true, sceneActive: true))
+        precondition(!XDriveIOSNativePhotoMapPolicy.shouldRestoreCamera(
+            savedPageOffset: 128, requestedPageOffset: 192,
+            permissionGranted: true, sceneActive: true))
+        precondition(!XDriveIOSNativePhotoMapPolicy.shouldRestoreCamera(
+            savedPageOffset: 128, requestedPageOffset: 128,
+            permissionGranted: false, sceneActive: true))
+        precondition(!XDriveIOSNativePhotoMapPolicy.shouldRestoreCamera(
+            savedPageOffset: 128, requestedPageOffset: 128,
+            permissionGranted: true, sceneActive: false))
+        precondition(!XDriveIOSNativePhotoMapPolicy.shouldRestoreCamera(
+            savedPageOffset: -1, requestedPageOffset: 0,
+            permissionGranted: true, sceneActive: true))
         print("native iOS PhotoKit map policy: PASS")
     }
 }
