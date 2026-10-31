@@ -41,6 +41,15 @@ This is not a release, automatic backup scheduler, or claimed complete MVP.
 - No new Go endpoint, crypto layer, durable backup task record format, Web UI
   or unrelated platform changes.
 
+## Scope of Stop / cancel action
+
+An explicit native Gallery batch sets `nativePhotoBatchRunning` in the
+Controller. The panel Stop button is present **only while that exact batch**
+is running; an unrelated SAF upload or one-original manual upload still holds
+the global writer but cannot be cancelled from this panel. The running flag
+clears after verified completion, failure, logout or cancellation. Compose
+emulator tests cover this distinction instead of relaxing writer exclusion.
+
 ## Safe 128-intent capacity recycling (MVP reliability)
 
 The native incremental writer now reclaims **only VERIFIED intents backed by
