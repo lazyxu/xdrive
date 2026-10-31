@@ -9,6 +9,7 @@ const read = p => fs.readFileSync(path.join(root, p), 'utf8')
 const login = read('ios/XDriveIOS/NativeOwnerLoginScreen.swift')
 const dash = read('ios/XDriveIOS/NativePhotosDashboard.swift')
 const ctrl = read('ios/XDriveIOS/NativePhotoBackupController.swift')
+const backupScreen = read('ios/XDriveIOS/NativePhotoBackupScreen.swift')
 
 test('one authenticated native root owns the foreground schedule across Photos navigation', () => {
   assert.match(login, /@StateObject private var model = XDriveIOSNativeOwnerLoginModel/)
@@ -35,4 +36,17 @@ test('root Owner switching and logout cannot keep a previous upload alive', () =
   assert.match(login, /XDriveIOSBackgroundPhotoTask\.revokePendingRequests\(\)/)
   assert.match(ctrl, /guard !busy, running == nil/)
   assert.match(ctrl, /XDriveIOSOriginalRunGate\.shared\.release\(gate\)/)
+})
+
+test('Photos permission revocation and limited access are accurately disclosed on foreground return', () => {
+  assert.match(dash, /@Environment\(\\\.scenePhase\) private var phase/)
+  assert.match(dash, /@State private var photoAuthorization = PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/)
+  assert.match(dash, /onChange\(of: phase\) \{ state in[\s\S]*?photoAuthorization = PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)[\s\S]*?backup\.refresh\(owner: login\.owner\)/)
+  assert.match(dash, /if state\.pausedForReview[\s\S]*?备份计划已保存：照片权限不可用[\s\S]*?前台自动备份：仅处理已授权照片/)
+  assert.match(backupScreen, /native-ios-photos-auto-permission-blocked/)
+  assert.match(backupScreen, /native-ios-photos-auto-permission-limited/)
+  assert.match(backupScreen, /onChange\(of: phase\) \{ state in[\s\S]*?photoAuthorization = PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/)
+  assert.match(backupScreen, /Live ZIP 通过双资源校验后可在 Viewer 中播放原生实况/)
+  assert.doesNotMatch(backupScreen, /尚不支持云端动态播放/)
+  assert.doesNotMatch(dash + backupScreen, /PHPhotoLibrary\.requestAuthorization|PHPhotoLibrary\.shared\(\)\.performChanges/)
 })

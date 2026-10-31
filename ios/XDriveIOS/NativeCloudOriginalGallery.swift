@@ -383,6 +383,9 @@ final class XDriveIOSNativeCloudOriginalModel: ObservableObject {
 
     private var epoch = UUID()
     private var work: Task<Void, Never>?
+    // Page offsets can overlap when automatic backup inserts new files.
+    // Keep tile/Viewer identities unique within this Owner generation.
+    private var seenNodeIDs = Set<UInt64>()
     // Never persisted or sent to a URL/JS: one current-Owner bearer in RAM
     // from the last independently verified page request.
     private var currentReader: XDriveIOSNativeCloudOriginalReader?
@@ -423,6 +426,7 @@ final class XDriveIOSNativeCloudOriginalModel: ObservableObject {
     func invalidate() {
         cancel()
         nodes = []
+        seenNodeIDs.removeAll()
         total = 0
         scanned = 0
         error = nil
@@ -454,12 +458,19 @@ final class XDriveIOSNativeCloudOriginalModel: ObservableObject {
                 guard self?.epoch == ticket,
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
                 else { return }
-                self?.currentReader = XDriveIOSNativeCloudOriginalReader(
+                guard let model = self else { return }
+                model.currentReader = XDriveIOSNativeCloudOriginalReader(
                     owner: expected, accessToken: auth.accessToken
                 )
-                self?.nodes.append(contentsOf: reply.nodes)
-                self?.total = reply.total
-                self?.scanned = min(reply.total, start + 48)
+                // Uploads can move older nodes into both adjacent pages.
+                // Retain the first visible occurrence of each node ID.
+                for node in reply.nodes {
+                    guard model.seenNodeIDs.insert(node.id).inserted else { continue }
+                    model.nodes.append(node)
+                }
+                // Always advance by server rows, NOT new unique tiles.
+                model.total = reply.total
+                model.scanned = min(reply.total, start + 48)
             } catch {
                 guard self?.epoch == ticket else { return }
                 self?.error = "无法读取当前账户的云端原件列表，请检查网络与权限后重试。"

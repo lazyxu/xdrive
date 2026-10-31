@@ -226,6 +226,17 @@ function validateOwnerGalleryAlbums(raw: unknown): MediaAlbum[] {
   return raw as MediaAlbum[]
 }
 
+export type XDriveSynologyNativeDraft = {
+  source_id: number
+  name: string
+  revision: 1
+  created_at: string
+}
+export type XDriveSynologyNativeDraftReview = {
+  owner_scope: string
+  items: XDriveSynologyNativeDraft[]
+}
+
 export type XDriveSynologyCreatedBackupSource = {
   source_id: number
   state: 'authorized' | 'needs_inspection'
@@ -249,6 +260,8 @@ export interface XDriveSynologyBackupLocalClient extends XDriveLocalBackupCommon
   nasShares(signal?: AbortSignal): Promise<XDriveSynologyNASShare[]>
   /** Verify a session-scoped share with the existing owning Agent; no Root grant. */
   preflightNASShare(selectionID: string, signal?: AbortSignal): Promise<void>
+  /** Inspect only this original Agent's own never-bound Source drafts; no Root or write. */
+  nativeDrafts(signal?: AbortSignal): Promise<XDriveSynologyNativeDraftReview>
   /** Creates a paused native Source on the verified NAS share; never starts Runner. */
   createNASBackupSource(
     selectionID: string, ownerScope: string, targetID: number, name: string, signal?: AbortSignal,
@@ -324,7 +337,7 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
       'device-backup-page', 'device-backup-folders', 'cloud-quota', 'nas-volume',
       'cloud-root', 'cloud-children', 'cloud-text-preview', 'cloud-media-range', 'cloud-thumbnail',
        'cloud-gallery-items', 'cloud-gallery-albums', 'cloud-live-motion', 'nas-shares',
-      'nas-share-preflight', 'nas-share-create', 'server-connection', 'server-login',
+      'nas-share-preflight', 'nas-share-create', 'nas-drafts', 'server-connection', 'server-login',
       'recovery-review'].includes(operation)) {
       throw new Error('Unsupported DSM backup operation')
     }
@@ -368,6 +381,50 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
   const canonicalDeviceID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
   const validPageLimit = (limit: number) => Number.isSafeInteger(limit) && limit >= 1 && limit <= 100
   const api: XDriveSynologyBackupLocalClient = {
+    async nativeDrafts(signal) {
+      const raw = await request<unknown>('/v1/nas-drafts', 'GET', undefined, signal)
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        throw new Error('Invalid owning Agent draft inspection')
+      }
+      const report = raw as Record<string, unknown>
+      if (Object.keys(report).length !== 2 ||
+        !Object.prototype.hasOwnProperty.call(report, 'owner_scope') ||
+        !Object.prototype.hasOwnProperty.call(report, 'items') ||
+        typeof report.owner_scope !== 'string' ||
+        !/^[0-9a-f]{64}$/.test(report.owner_scope) ||
+        !Array.isArray(report.items) || report.items.length > 100) {
+        throw new Error('Untrusted native DSM draft inventory')
+      }
+      let previous = 0
+      const items: XDriveSynologyNativeDraft[] = []
+      for (const value of report.items) {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) {
+          throw new Error('Invalid native DSM draft row')
+        }
+        const item = value as Record<string, unknown>
+        if (Object.keys(item).length !== 4 ||
+          !['source_id', 'name', 'revision', 'created_at'].every(
+            key => Object.prototype.hasOwnProperty.call(item, key)) ||
+          !Number.isSafeInteger(item.source_id) ||
+          (item.source_id as number) <= previous ||
+          item.revision !== 1 ||
+          typeof item.name !== 'string' || item.name.length < 1 ||
+          new TextEncoder().encode(item.name).length > 128 ||
+          item.name.trim() !== item.name || /[\r\n\0]/.test(item.name) ||
+          typeof item.created_at !== 'string' ||
+          !Number.isFinite(Date.parse(item.created_at))) {
+          throw new Error('Untrusted native DSM draft row or ordering')
+        }
+        previous = item.source_id as number
+        items.push({
+          source_id: item.source_id as number,
+          name: item.name as string,
+          revision: 1,
+          created_at: item.created_at as string,
+        })
+      }
+      return { owner_scope: report.owner_scope as string, items }
+    },
     async createNASBackupSource(selectionID, ownerScope, targetID, name, signal) {
       if (!/^[0-9a-f]{64}$/.test(selectionID) ||
         !/^[0-9a-f]{64}$/.test(ownerScope) ||

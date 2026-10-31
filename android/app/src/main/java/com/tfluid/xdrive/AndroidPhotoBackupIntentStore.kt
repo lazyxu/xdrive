@@ -49,7 +49,10 @@ internal class AndroidPhotoBackupIntentStore(
             require(rows.length() <= NativePhotoBackupLedger.MAX_ENTRIES)
             (0 until rows.length()).map { i ->
                 val row = rows.getJSONObject(i)
-                require(row.length() == 17)
+                // Old 17-field rows are intentionally accepted, but have
+                // no exact destination and cannot be guessed/replayed.
+                require(row.length() == 17 || row.length() == 18 &&
+                    row.has("destination_name"))
                 NativePhotoBackupIntent(
                     id = row.getString("id"),
                     owner = NativePhotoBackupOwner(
@@ -68,6 +71,9 @@ internal class AndroidPhotoBackupIntentStore(
                     sizeBytes = row.getLong("bytes"),
                     phase = NativePhotoBackupPhase.valueOf(row.getString("phase")),
                     createdAtMillis = row.getLong("created_ms"),
+                    destinationName = if (row.has("destination_name") &&
+                        !row.isNull("destination_name"))
+                        row.getString("destination_name") else null,
                     verifiedNodeId = if (row.isNull("node_id")) null else row.getLong("node_id"),
                     verifiedNodeRevision = if (row.isNull("node_revision")) null
                         else row.getLong("node_revision"),
@@ -125,7 +131,11 @@ internal class AndroidPhotoBackupIntentStore(
                     .put("phase", entry.phase.name)
                     .put("created_ms", entry.createdAtMillis)
                     .put("node_id", entry.verifiedNodeId ?: JSONObject.NULL)
-                    .put("node_revision", entry.verifiedNodeRevision ?: JSONObject.NULL))
+                    .put("node_revision", entry.verifiedNodeRevision ?: JSONObject.NULL)
+                    .apply {
+                        if (entry.destinationName != null)
+                            put("destination_name", entry.destinationName)
+                    })
             }
             clear = JSONObject().put("version", 1).put("entries", rows)
                 .toString().toByteArray(Charsets.UTF_8)

@@ -493,6 +493,10 @@ class DriveAppTest {
             if (index >= 0) mutableRootRows[index] = updated
             return updated
         }
+        override suspend fun trashPage(accessToken: String, offset: Int): TrashPage {
+            check(accessToken == "fixture" && offset == 0)
+            return TrashPage(emptyList(), totalCount = 0, offset = 0)
+        }
         override suspend fun trashNode(accessToken: String, original: DriveNode) {
             trashCalls++
             mutableRootRows.removeAll { it.id == original.id }
@@ -716,6 +720,57 @@ class DriveAppTest {
         compose.waitUntil(timeoutMillis = 10_000) {
             controller.state.value.screen == Screen.LOGIN
         }
+        compose.onNodeWithTag("native-five-slot-bar").assertDoesNotExist()
+    }
+
+    /** A category grid is virtualized; tap the actual native shortcut after scrolling it into view. */
+    private fun clickNativeLauncherShortcut(shortcut: NativeHomeShortcut) {
+        val tag = "native-launcher-open-${shortcut.name.lowercase()}"
+        compose.onNodeWithTag("native-launcher").performScrollToNode(hasTestTag(tag))
+        // Recent and category sections may both show this same native action.
+        compose.onAllNodesWithTag(tag).onFirst().assertIsDisplayed().performClick()
+    }
+
+    @Test fun nativeFilesTabAndLauncherShortcutBothLeaveTheTrashChild() {
+        startAndLogin(galleryFirstOnLogin = false)
+        compose.onNodeWithTag("native-tab-all").performClick()
+        clickNativeLauncherShortcut(NativeHomeShortcut.TRASH)
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.TRASH && controller.state.value.trashLoaded
+        }
+        compose.onNodeWithTag("native-tab-files").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.FILES && controller.state.value.loaded
+        }
+        compose.onNodeWithText("假期照片").assertIsDisplayed()
+
+        compose.onNodeWithTag("native-tab-all").performClick()
+        clickNativeLauncherShortcut(NativeHomeShortcut.TRASH)
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.TRASH && controller.state.value.trashLoaded
+        }
+        compose.onNodeWithTag("native-tab-all").performClick()
+        clickNativeLauncherShortcut(NativeHomeShortcut.CLOUD_FILES)
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.FILES && controller.state.value.loaded
+        }
+        compose.onNodeWithText("假期照片").assertIsDisplayed()
+    }
+
+    @Test fun galleryMapLauncherShortcutFromTrashKeepsGalleryAsItsOwnerTab() {
+        galleryGpsOverviewFixture = true
+        startAndLogin(galleryFirstOnLogin = false)
+        compose.onNodeWithTag("native-tab-all").performClick()
+        clickNativeLauncherShortcut(NativeHomeShortcut.TRASH)
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.TRASH && controller.state.value.trashLoaded
+        }
+        compose.onNodeWithTag("native-tab-all").performClick()
+        clickNativeLauncherShortcut(NativeHomeShortcut.GALLERY_MAP)
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.GALLERY && controller.state.value.galleryMapOpen
+        }
+        // L2 map keeps the Gallery route and hides its single L1 bottom bar.
         compose.onNodeWithTag("native-five-slot-bar").assertDoesNotExist()
     }
 

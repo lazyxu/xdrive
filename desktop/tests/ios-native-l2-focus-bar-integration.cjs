@@ -28,7 +28,7 @@ test('cloud and album Viewer return uses source-local L2 and explicit restore ac
   assert.match(wall, /focusedBrowsing \? "显示底部导航" : "专注浏览"/);
   assert.match(wall, /onFocusChange: onFocusChange/);
   assert.match(wall, /if selected != nil \{\s*model\.suspendForViewer\(\)/);
-  assert.match(wall, /focusedBrowsing = false\s*onFocusChange\?\(false\)\s*model\.suspendForNavigation\(\)/);
+  assert.match(wall, /focusedBrowsing = false\s*onFocusChange\?\(false\)\s*accessibilityFocusedMediaID = nil\s*model\.suspendForNavigation\(\)/);
   assert.match(shell, /private func resetNavigation\(\) \{\s*galleryFocused = false/);
   assert.match(shell, /\.onChange\(of: gallerySource\) \{ _ in galleryFocused = false \}/);
   assert.match(shell, /\.onChange\(of: tab\) \{ next in\s*if next != \.gallery \{ galleryFocused = false \}/);

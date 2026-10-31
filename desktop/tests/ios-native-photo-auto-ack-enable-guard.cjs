@@ -48,3 +48,28 @@ test('no silent pending-receipt deletion or new uploader introduced', () => {
   assert.match(flow, /desktop\/tests\/ios-native-photo-auto-ack-enable-guard\.cjs/)
   assert.match(flow, /desktop\/tests\/ios-native-photo-receipt-review\.cjs/)
 })
+
+test('runtime manual and automatic original runs consult global existing Owner pending receipts', () => {
+  const identity = read('ios/XDriveIOS/ForegroundPhotoBackupIdentity.swift')
+  const preflight = identity.slice(identity.indexOf('enum XDriveIOSOriginalPendingReceiptPreflight'))
+  const runner = controller.slice(controller.indexOf('    private func start('))
+  const pendingRead = runner.indexOf('XDriveIOSOriginalPendingReceiptPreflight')
+  const reserve = runner.indexOf('.reserveDue(owner: selected)')
+  const writer = runner.indexOf('XDriveIOSForegroundPhotoBackupMVP(')
+  assert.match(preflight, /existingLocalScope\(owner: owner\)/)
+  assert.match(preflight, /pendingReceiptSnapshot\(scope: scope, limit: 0\)\.pending/)
+  assert.match(preflight, /else \{ return 0 \}/)
+  assert.doesNotMatch(preflight, /localScopeAndTag|installationKey\(|uploadPrepared|createUploadSession/)
+  assert.ok(pendingRead > runner.indexOf('XDriveIOSOriginalRunGate.shared.acquire()'),
+    'global original gate must be acquired before reading pending receipts')
+  assert.ok(reserve > pendingRead && writer > reserve,
+    'never consume a due window or create UploadSession before the global pending ACK gate')
+  assert.match(runner, /try Task\.checkCancellation\(\)[\s\S]*?XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\)/)
+  assert.match(runner, /if olderPending > 0 \{[\s\S]*?if kind == \.automatic \{[\s\S]*?\.pauseForPendingReceipts\(owner: selected\)/)
+  assert.match(runner, /当前账户已有 \\?\(olderPending\) 项不确定原件收据/)
+  const pause = store.slice(store.indexOf('func pauseForPendingReceipts('),store.indexOf('func disable('))
+  assert.match(pause, /guard var state = status\(owner: owner\), state\.enabled else \{ return nil \}/)
+  assert.match(pause, /state\.pausedForReview = true/)
+  assert.match(pause, /try persist\(state, owner: owner\)/)
+  assert.doesNotMatch(pause, /windowIndex =|nextDueAt =|libraryChangeEpoch =|libraryAuthorizationRaw =|disable\(/)
+})

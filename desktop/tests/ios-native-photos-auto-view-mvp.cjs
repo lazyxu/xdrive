@@ -127,7 +127,7 @@ test('native manual, auto and receipt-resume consent is pinned to the exact veri
 test('native cloud original list and preview clear stale media across Owner switches', () => {
   // Server/Owner logout or switch must immediately remove the old filenames
   // and stop the AVPlayer, not merely protect a future page response.
-  assert.match(cloud, /func invalidate\(\) \{\s*cancel\(\)\s*nodes = \[\]\s*total = 0\s*scanned = 0\s*error = nil/)
+  assert.match(cloud, /func invalidate\(\) \{\s*cancel\(\)\s*nodes = \[\]\s*seenNodeIDs\.removeAll\(\)\s*total = 0\s*scanned = 0\s*error = nil/)
   assert.match(cloud, /func reload\(login: XDriveIOSNativeOwnerLoginModel\) \{\s*invalidate\(\)/)
   const preview = cloud.slice(cloud.indexOf('struct XDriveIOSNativeCloudOriginalPreview: View'),
     cloud.indexOf('struct XDriveIOSNativeCloudOriginalGallery: View'))
@@ -170,7 +170,7 @@ test('foreground auto iCloud and interval settings show the stored current Owner
   assert.match(setup, /\.disabled\(controller\.busy \|\| controller\.schedule\?\.enabled == true\)/)
   assert.match(setup, /autoConsentAllowICloud = autoAllowICloud/)
   assert.match(setup, /manualConsentAllowICloud = allowICloud/)
-  assert.match(ui, /\.onAppear \{\s*syncSavedAutomaticSettings\(\)/)
+  assert.match(ui, /\.onAppear \{\s*photoAuthorization = PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)\s*syncSavedAutomaticSettings\(\)/)
   assert.match(ui, /allowICloud = false\s*autoAllowICloud = false\s*interval = 60\s*syncSavedAutomaticSettings\(\)/)
   assert.match(hydrate, /controller\.refresh\(owner: login\.owner\)/)
   assert.match(hydrate, /if let active = controller\.schedule, active\.enabled \{\s*interval = active\.intervalMinutes\s*autoAllowICloud = active\.allowICloudOriginals/)
@@ -179,3 +179,27 @@ test('foreground auto iCloud and interval settings show the stored current Owner
   assert.match(controller, /allowICloud: state\.allowICloudOriginals/)
   assert.doesNotMatch(setup, /scheduleStore\.configure|UploadSessionTransport|XDriveIOSJournaledOriginalUpload/)
 });
+
+
+test('unreadable original journal after failed writer stops the 256-item run', () => {
+  const runner = read('ios/XDriveIOS/ForegroundPhotoBackupMVP.swift')
+  const writer = read('ios/XDriveIOS/IOSJournaledOriginalUpload.swift')
+  const prepared = runner.slice(runner.indexOf('case .prepared:'),
+    runner.indexOf('case .creating, .uploading, .finalizing, .needsReconciliation:'))
+  const failure = prepared.slice(prepared.indexOf('} catch {', prepared.indexOf('writer.uploadPrepared(')))
+  assert.match(failure, /let current: XDrivePhotoSyncOperation\?/)
+  assert.match(failure, /current = try await journal\.operation\(/)
+  assert.match(failure, /catch is CancellationError \{\s*throw CancellationError\(\)/)
+  assert.match(failure, /catch \{[\s\S]*?return \.requiresReview/)
+  assert.match(failure, /guard let current, current\.state == \.prepared else \{[\s\S]*?return \.requiresReview/)
+  assert.match(failure, /throw error/)
+  assert.doesNotMatch(failure, /try\? await journal\.operation/)
+  const errorPath = runner.slice(runner.indexOf('case .requiresReview:'),
+    runner.indexOf('if report.stoppedForReview { break scanning }'))
+  assert.match(errorPath, /report\.needsReview \+= 1/)
+  assert.match(errorPath, /report\.stoppedForReview = true/)
+  assert.match(runner, /if report\.stoppedForReview \{ break scanning \}/)
+  assert.match(writer, /beforeCreate: \{[\s\S]*?ledger\.beginCreate/)
+  assert.match(writer, /beforeFinalize: \{[\s\S]*?ledger\.beginFinalize/)
+  assert.doesNotMatch(failure, /confirmReceipt\(|beginCreate\(|resetLedger|uploadPreparedOriginal\(/)
+})

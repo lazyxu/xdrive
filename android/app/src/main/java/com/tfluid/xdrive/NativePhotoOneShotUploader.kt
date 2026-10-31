@@ -23,6 +23,7 @@ internal object NativePhotoOneShotUploader {
         original: NativePhotoStagedOriginal,
         currentSession: () -> Boolean,
         onProgress: (Long) -> Unit = {},
+        resumeKey: String? = null,
     ): DriveNode {
         require(token.isNotBlank() && validDriveNodeName(name) && original.bytes > 0)
         check(root.id == owner.rootId && root.revision == owner.rootRevision &&
@@ -36,11 +37,15 @@ internal object NativePhotoOneShotUploader {
         }
         currentCoroutineContext().ensureActive()
         check(currentSession()) { "Owner session was invalidated" }
-        val result = service.uploadFile(token, root, name, original.bytes,
-            original::openVerifiedSource) { confirmed ->
+        val progress: (Long) -> Unit = { confirmed ->
             if (!currentSession()) throw CancellationException("Owner session changed")
             onProgress(confirmed)
         }
+        val result = if (resumeKey != null) service.uploadNativePhotoOriginal(
+            token, root, name, original.bytes, original.sha256, resumeKey,
+            original::openVerifiedSource, progress)
+        else service.uploadFile(token, root, name, original.bytes,
+            original::openVerifiedSource, progress)
         currentCoroutineContext().ensureActive()
         check(currentSession()) { "Owner session invalid after finalize" }
         check(result.id > 0 && result.parentId == owner.rootId &&

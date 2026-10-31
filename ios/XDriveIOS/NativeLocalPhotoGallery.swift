@@ -128,13 +128,24 @@ final class XDriveIOSLocalPhotoDetailModel: ObservableObject {
             let id = PHImageManager.default().requestImage(
                 for: asset, targetSize: CGSize(width: 1800, height: 1800),
                 contentMode: .aspectFit, options: options
-            ) { [weak self] picture, _ in
+            ) { [weak self] picture, info in
+                // PhotoKit can return no local pixels for an iCloud-only
+                // original when network access is intentionally disabled.
+                // Never leave a permanent spinner for this terminal result.
+                let degraded = info?[PHImageResultIsDegradedKey] as? Bool == true
+                let cancelled = info?[PHImageCancelledKey] as? Bool == true
                 Task { @MainActor [weak self] in
                     guard let self, self.epoch == token,
                           [.authorized, .limited].contains(
                             PHPhotoLibrary.authorizationStatus(for: .readWrite)
                           ) else { return }
-                    if let picture { self.still = picture }
+                    if let picture {
+                        self.still = picture
+                        self.message = nil
+                    } else if !degraded && !cancelled &&
+                              self.still == nil && self.live == nil {
+                        self.message = "本机照片暂不可读取（可能仅保存在 iCloud）。"
+                    }
                 }
             }
             requests.append(id)
@@ -229,7 +240,26 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                     XDriveIOSNativeZoomablePhotoView(image: image)
                         .accessibilityLabel("本机照片，可双指缩放或双击放大")
                 } else if let message = model.message {
-                    Text(message).foregroundStyle(.secondary)
+                    VStack(spacing: 8) {
+                        Text(message).foregroundStyle(.secondary)
+                        // The permission-revoked error is informative only:
+                        // do not offer an enabled action that cannot run.
+                        if phase == .active,
+                           [.authorized, .limited].contains(
+                             PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                           ) {
+                            Button("重试") {
+                                // Cancel old requests and re-fetch only this
+                                // still-authorized PhotoKit ID, never iCloud.
+                                guard phase == .active,
+                                      [.authorized, .limited].contains(
+                                        PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                                      ) else { return }
+                                model.load(candidate)
+                            }
+                            .accessibilityIdentifier("native-ios-local-viewer-retry")
+                        }
+                    }
                 } else {
                     ProgressView("正在读取已授权的本机媒体…")
                 }
@@ -292,6 +322,9 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
     // This localIdentifier is in-memory only and never part of route persistence.
     @State private var viewerReturnID: String?
     @State private var shouldRestoreViewerTile = false
+    // VoiceOver focus is transient, like the in-memory Viewer tile anchor.
+    // Never persist PhotoKit local identifiers in a route snapshot.
+    @AccessibilityFocusState private var accessibilityFocusedTileID: String?
     @State private var pageRenderRevision: UInt64 = 0
     @State private var authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
 
@@ -322,12 +355,14 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
                         ForEach(page.items.filter { $0.kind != "unsupported" }) { candidate in
                             Button {
                                 viewerReturnID = candidate.id
+                                accessibilityFocusedTileID = nil
                                 selected = candidate
                             } label: {
                                 XDriveIOSLocalPhotoTile(candidate: candidate)
                             }
                             .buttonStyle(.plain)
                             .id(candidate.id)
+                            .accessibilityFocused($accessibilityFocusedTileID, equals: candidate.id)
                         }
                     }
                     HStack {
@@ -393,12 +428,17 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
             authorized: authorized
         )
         clearViewerTileAnchor()
-        if let target { scroll.scrollTo(target, anchor: .center) }
+        if let target {
+            scroll.scrollTo(target, anchor: .center)
+            // Restore VoiceOver only to the reauthorized originating tile.
+            accessibilityFocusedTileID = target
+        }
     }
 
     private func clearViewerTileAnchor() {
         viewerReturnID = nil
         shouldRestoreViewerTile = false
+        accessibilityFocusedTileID = nil
     }
 
     private func refresh(at requestedOffset: Int = 0) {

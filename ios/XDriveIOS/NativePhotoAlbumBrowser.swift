@@ -225,6 +225,9 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
     // Viewer return anchor stays in current SwiftUI view memory only.
     @State private var viewerReturnID: String?
     @State private var shouldRestoreViewerTile = false
+    // VoiceOver focus is transient, like the in-memory Viewer tile anchor.
+    // Never persist PhotoKit local identifiers in a route snapshot.
+    @AccessibilityFocusState private var accessibilityFocusedTileID: String?
     @State private var pageRenderRevision: UInt64 = 0
     @State private var permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
 
@@ -247,12 +250,14 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
                         ForEach(page.items.filter { $0.kind != "unsupported" }) { item in
                             Button {
                                 viewerReturnID = item.id
+                                accessibilityFocusedTileID = nil
                                 selected = item
                             } label: {
                                 XDriveIOSLocalPhotoTile(candidate: item)
                             }
                             .buttonStyle(.plain)
                             .id(item.id)
+                            .accessibilityFocused($accessibilityFocusedTileID, equals: item.id)
                         }
                     }
                     HStack {
@@ -323,12 +328,17 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
             authorized: authorized
         )
         clearViewerTileAnchor()
-        if let target { scroll.scrollTo(target, anchor: .center) }
+        if let target {
+            scroll.scrollTo(target, anchor: .center)
+            // Restore VoiceOver only to the reauthorized originating tile.
+            accessibilityFocusedTileID = target
+        }
     }
 
     private func clearViewerTileAnchor() {
         viewerReturnID = nil
         shouldRestoreViewerTile = false
+        accessibilityFocusedTileID = nil
     }
 
     private func reload() {

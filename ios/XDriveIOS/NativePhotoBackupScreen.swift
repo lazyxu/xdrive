@@ -10,6 +10,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
     @StateObject private var background = XDriveIOSNativeBackgroundPhotoControls()
     @Environment(\.scenePhase) private var phase
     @State private var interval = 60
+    @State private var photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @State private var allowICloud = false
     @State private var autoAllowICloud = false
     @State private var showAutoConsent = false
@@ -67,6 +68,17 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                 }
             }
             Section("前台自动增量") {
+                if photoAuthorization != .authorized && photoAuthorization != .limited {
+                    Label("照片访问权限不可用：已保存的前台自动计划不会执行。请在 iOS 设置中恢复照片访问。",
+                          systemImage: "exclamationmark.triangle")
+                        .font(.footnote).foregroundStyle(.orange)
+                        .accessibilityIdentifier("native-ios-photos-auto-permission-blocked")
+                } else if photoAuthorization == .limited {
+                    Label("当前仅授权部分照片：自动增量只处理系统允许读取的项目，不代表整机照片已备份。",
+                          systemImage: "info.circle")
+                        .font(.footnote).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("native-ios-photos-auto-permission-limited")
+                }
                 Picker("检查间隔", selection: $interval) {
                     Text("15 分钟").tag(15)
                     Text("1 小时").tag(60)
@@ -271,7 +283,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                 }
                 .disabled(login.owner == nil)
                 .accessibilityIdentifier("native-ios-photos-cloud-originals")
-                Text("只读查看当前 Owner 根目录中已写入的备份文件。待核对收据不代表上传成功；Live 双原件 ZIP 尚不支持云端动态播放。")
+                Text("只读查看当前 Owner 根目录中已写入的备份文件。待核对收据不代表上传成功；Live ZIP 通过双资源校验后可在 Viewer 中播放原生实况，也可查看静态原件和独立视频回退。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
             Section("执行结果") {
@@ -434,6 +446,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             Text("会优先停用本机后台授权，即使网络不可达；远端撤销需要服务器确认。已上传原件和加密收据不会删除，不影响前台自动计划。")
         }
         .onAppear {
+            photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             syncSavedAutomaticSettings()
             receipts.refresh(login: login)
             background.refresh(login: login)
@@ -462,7 +475,15 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                 background.refresh(login: login)
             }
         }
+        .onChange(of: phase) { state in
+            if state == .active {
+                photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                // BGProcessing or Settings may change state while this view is mounted.
+                controller.refresh(owner: login.owner)
+            }
+        }
         .onChange(of: login.owner) { _ in
+            photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             // Invalidate any consent that was opened for the previous Owner.
             background.invalidateRead()
             showBackgroundEnableConsent = false

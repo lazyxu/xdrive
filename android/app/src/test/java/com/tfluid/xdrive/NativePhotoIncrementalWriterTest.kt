@@ -58,6 +58,9 @@ class NativePhotoIncrementalWriterTest {
         var calls = 0
         var timeoutAfterSend = false
         var invalidReceipt = false
+        var resumeKeyUsed: String? = null
+        var recoveredNode: DriveNode? = null
+        var lookups = 0
         override suspend fun login(username: String, password: String): AuthSession =
             error("not used")
         override suspend fun refresh(refreshToken: String): AuthSession =
@@ -71,6 +74,28 @@ class NativePhotoIncrementalWriterTest {
         override suspend fun children(
             accessToken: String, parentId: Long, offset: Int,
         ): NodeRange = error("not used")
+        override suspend fun uploadNativePhotoOriginal(
+            accessToken: String, parent: DriveNode, name: String, size: Long,
+            originalSha256: String, resumeKey: String,
+            openSource: () -> InputStream, onProgress: (Long) -> Unit,
+        ): DriveNode {
+            assertTrue(originalSha256.matches(Regex("[0-9a-f]{64}")))
+            assertTrue(resumeKey.matches(Regex("and_[0-9a-f]{64}")))
+            resumeKeyUsed = resumeKey
+            return uploadFile(accessToken, parent, name, size, openSource, onProgress)
+        }
+        override suspend fun inspectNativePhotoUpload(
+            accessToken: String, parentId: Long, name: String, size: Long,
+            originalSha256: String, resumeKey: String,
+        ): DriveNode? {
+            check(accessToken == "owner-token" && parentId == 1L)
+            assertEquals(resumeKeyUsed, resumeKey)
+            assertEquals(6L, size)
+            assertTrue(originalSha256.matches(Regex("[0-9a-f]{64}")))
+            lookups++
+            return recoveredNode
+        }
+
         override suspend fun uploadFile(
             accessToken: String, parent: DriveNode, name: String, size: Long,
             openSource: () -> InputStream, onProgress: (Long) -> Unit,
@@ -228,4 +253,94 @@ class NativePhotoIncrementalWriterTest {
             assertTrue(journal.rows.isEmpty())
         }
     }
+    @Test fun unknownFinalizeAckResolvedByExactReadOnlyOwnerReceiptNeverReuploaded(): Unit =
+        runBlocking {
+            val journal = Journal()
+            val index = Index()
+            val service = UploadService().apply { timeoutAfterSend = true }
+            val writer = NativePhotoIncrementalWriter(journal, index)
+            staged().use { original ->
+                val source = source(original)
+                assertThrows(IOException::class.java) {
+                    runBlocking { writer.uploadOne(
+                        service, "owner-token", scope, deviceId,
+                        root, source, original, { true }) }
+                }
+                val unresolved = journal.rows.single()
+                assertEquals(NativePhotoBackupPhase.UNKNOWN_ACK, unresolved.phase)
+                assertEquals(source.destinationName, unresolved.destinationName)
+                assertEquals(NativePhotoResumeKey.forIntent(unresolved), service.resumeKeyUsed)
+                service.timeoutAfterSend = false
+                // ACTIVE does NOT prove the write was finalized.
+                assertThrows(IllegalStateException::class.java) {
+                    runBlocking { writer.reconcileUncertain(
+                        service, "owner-token", scope, deviceId, { true }) }
+                }
+                assertEquals(1, service.lookups)
+                assertEquals(1, service.calls)
+                assertEquals(NativePhotoBackupPhase.UNKNOWN_ACK, journal.rows.single().phase)
+                // This node represents an exact Go GET finalized proof; neither
+                // a filename match nor an unverified byte counter is sufficient.
+                service.recoveredNode = DriveNode(201, 1, source.destinationName,
+                    "file", original.bytes, revision = 11)
+                assertEquals(1, writer.reconcileUncertain(
+                    service, "owner-token", scope, deviceId, { true }))
+                assertEquals(1, service.calls)
+                assertTrue(journal.rows.isEmpty()) // SQLite receipt then compaction.
+                assertEquals(NativePhotoIncrementalOutcome.ALREADY_VERIFIED,
+                    writer.uploadOne(service, "owner-token", scope, deviceId,
+                        root, source, original, { true }))
+                assertEquals(1, service.calls)
+                assertEquals(2, service.lookups)
+            }
+        }
+
+    @Test fun forgedOrMissingUnknownReceiptCannotClearJournal(): Unit = runBlocking {
+        val journal = Journal()
+        val service = UploadService().apply { timeoutAfterSend = true }
+        val writer = NativePhotoIncrementalWriter(journal, Index())
+        staged().use { original ->
+            val source = source(original)
+            assertThrows(IOException::class.java) {
+                runBlocking { writer.uploadOne(
+                    service, "owner-token", scope, deviceId,
+                    root, source, original, { true }) }
+            }
+            service.recoveredNode = DriveNode(400, 1, "another-photo.jpg",
+                "file", original.bytes, revision = 1)
+            assertThrows(IllegalStateException::class.java) {
+                runBlocking { writer.reconcileUncertain(
+                    service, "owner-token", scope, deviceId, { true }) }
+            }
+            assertEquals(NativePhotoBackupPhase.UNKNOWN_ACK, journal.rows.single().phase)
+            assertEquals(1, service.calls)
+            assertThrows(IllegalStateException::class.java) {
+                runBlocking { writer.reconcileUncertain(
+                    service, "owner-token", scope, deviceId, { false }) }
+            }
+            assertEquals(1, service.calls)
+        }
+    }
+
+    @Test fun sameIntentKeySurvivesRootRevisionButChangesWithOwnerAndAsset() {
+        staged().use { original ->
+            val source = source(original)
+            val owner = NativePhotoBackupOwner(
+                scope.origin, scope.serverInstanceId, scope.ownerId,
+                scope.username, scope.rootId, scope.rootRevision, deviceId)
+            val journal = Journal()
+            val item = NativePhotoBackupLedger(journal).plan(
+                owner, source.assetKey, source.versionKey, source.resource,
+                original.sha256, original.bytes, source.destinationName)
+            val key = NativePhotoResumeKey.forIntent(item)
+            assertTrue(key.matches(Regex("and_[0-9a-f]{64}")))
+            assertEquals(key, NativePhotoResumeKey.forIntent(item.copy(
+                owner = owner.copy(rootRevision = 99))))
+            assertNotEquals(key, NativePhotoResumeKey.forIntent(item.copy(
+                owner = owner.copy(ownerId = owner.ownerId + 1))))
+            assertNotEquals(key, NativePhotoResumeKey.forIntent(item.copy(
+                assetKey = "d".repeat(64))))
+        }
+    }
+
 }
