@@ -127,7 +127,7 @@ test('native manual, auto and receipt-resume consent is pinned to the exact veri
 test('native cloud original list and preview clear stale media across Owner switches', () => {
   // Server/Owner logout or switch must immediately remove the old filenames
   // and stop the AVPlayer, not merely protect a future page response.
-  assert.match(cloud, /func invalidate\(\) \{\s*cancel\(\)\s*nodes = \[\]\s*total = 0\s*scanned = 0\s*error = nil/)
+  assert.match(cloud, /func invalidate\(\) \{\s*cancel\(\)\s*nodes = \[\]\s*seenNodeIDs\.removeAll\(\)\s*total = 0\s*scanned = 0\s*error = nil/)
   assert.match(cloud, /func reload\(login: XDriveIOSNativeOwnerLoginModel\) \{\s*invalidate\(\)/)
   const preview = cloud.slice(cloud.indexOf('struct XDriveIOSNativeCloudOriginalPreview: View'),
     cloud.indexOf('struct XDriveIOSNativeCloudOriginalGallery: View'))

@@ -71,3 +71,25 @@ test('foreground native Viewer preempts every queued cloud-original tile without
   assert.match(wall, /onDismiss: \{[\s\S]*?if refreshAfterViewer \{[\s\S]*?model\.reload\(login: login\)/)
   assert.match(wall, /\.onChange\(of: login\.owner\)[\s\S]*?model\.invalidate\(\)/)
 })
+
+test('native cloud original pages stay unique while automatic uploads shift descending offsets', () => {
+  const model = src.slice(src.indexOf('final class XDriveIOSNativeCloudOriginalModel'),
+    src.indexOf('struct XDriveIOSNativeCloudOriginalPreview: View'))
+  const clear = model.slice(model.indexOf('func invalidate()'), model.indexOf('func reload('))
+  const read = model.slice(model.indexOf('func loadNext('))
+  const suspend = model.slice(model.indexOf('func suspendForViewer()'), model.indexOf('func cancel()'))
+  assert.match(model, /private var seenNodeIDs = Set<UInt64>\(\)/)
+  assert.match(clear, /nodes = \[\]\s*seenNodeIDs\.removeAll\(\)\s*total = 0/)
+  assert.match(read, /guard self\?\.epoch == ticket,[\s\S]*?XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expected\)/)
+  assert.match(read, /for node in reply\.nodes \{\s*guard model\.seenNodeIDs\.insert\(node\.id\)\.inserted else \{ continue \}\s*model\.nodes\.append\(node\)/)
+  assert.match(read, /model\.scanned = min\(reply\.total, start \+ 48\)/)
+  assert.doesNotMatch(suspend, /seenNodeIDs\.removeAll\(\)/)
+  const pages = [Array.from({length:48}, (_, i) => 100 - i),
+    [54, 53, ...Array.from({length:46}, (_, i) => 52 - i)]]
+  const ids = new Set(), visible = []
+  for (const page of pages) for (const id of page) {
+    if (!ids.has(id)) { ids.add(id); visible.push(id) }
+  }
+  assert.equal(visible.length, 94)
+  assert.equal(new Set(visible).size, visible.length)
+})
