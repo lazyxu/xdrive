@@ -20,6 +20,12 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
 import android.provider.MediaStore
+import android.database.ContentObserver
+import android.os.Handler
+import android.os.Looper
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -141,6 +147,45 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
         }
     }
     val nativeAuthenticated = state.screen in setOf(Screen.FILES, Screen.GALLERY, Screen.TRASH)
+    // Gallery's MediaStore tiles, album cursors and LazyGrid anchors are
+    // strictly Owner-session memory. Inactive native tabs can release their
+    // views; only the bounded data/viewport remains, never persisted IDs.
+    val localGalleryMemory = remember(state.nativeUiSessionId, state.server,
+        state.username, nativeAuthenticated) { NativeLocalGalleryMemory() }
+    val mediaLifecycle = LocalLifecycleOwner.current
+    DisposableEffect(localGalleryMemory, mediaLifecycle, nativeAuthenticated) {
+        if (!nativeAuthenticated) {
+            onDispose { localGalleryMemory.invalidate() }
+        } else {
+            val resolver = androidContext.contentResolver
+            val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
+                override fun onChange(selfChange: Boolean) {
+                    localGalleryMemory.invalidate()
+                }
+            }
+            val registered = runCatching {
+                resolver.registerContentObserver(
+                    MediaStore.Files.getContentUri("external"), true, observer)
+                true
+            }.getOrDefault(false)
+            // Failure to observe invalidations disables reuse. Each Gallery
+            // instance then falls back to its existing scoped observer.
+            localGalleryMemory.watcherRegistered.value = registered
+            val lifecycleObserver = LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_STOP ||
+                    event == Lifecycle.Event.ON_RESUME) {
+                    localGalleryMemory.invalidate()
+                }
+            }
+            mediaLifecycle.lifecycle.addObserver(lifecycleObserver)
+            onDispose {
+                if (registered) runCatching { resolver.unregisterContentObserver(observer) }
+                mediaLifecycle.lifecycle.removeObserver(lifecycleObserver)
+                localGalleryMemory.watcherRegistered.value = false
+                localGalleryMemory.invalidate()
+            }
+        }
+    }
     // A real authentication epoch, not a username, owns native navigation.
     var nativeNavigation by remember(state.nativeUiSessionId, nativeAuthenticated) {
         mutableStateOf(NativeHomeNavigation())
@@ -622,7 +667,10 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                             NativeGallerySource.LOCAL -> Box(Modifier.weight(1f)) {
                                 NativeLocalMediaStoreGallery(albumsOnly = false,
                                     sessionId = state.nativeUiSessionId,
-                                    onBackupOriginal = { backupSelection = it })
+                                    onBackupOriginal = { backupSelection = it },
+                                    memory = localGalleryMemory.takeIf {
+                                        it.watcherRegistered.value
+                                    })
                             }
                             NativeGallerySource.ALBUMS -> Box(Modifier.weight(1f)) {
                                 NativeLocalMediaStoreGallery(
@@ -631,6 +679,9 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                                     selectedAlbum = localAlbumSelection,
                                     onAlbumSelected = { localAlbumSelection = it },
                                     onBackupOriginal = { backupSelection = it },
+                                    memory = localGalleryMemory.takeIf {
+                                        it.watcherRegistered.value
+                                    },
                                 )
                             }
                             NativeGallerySource.MAP -> TextButton(
