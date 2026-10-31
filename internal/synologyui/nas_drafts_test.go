@@ -14,10 +14,10 @@ import (
 
 type fakeDSMNativeDraftReader struct {
 	*fakeNASSourceCreator
-	items          []localbackupipc.LocalBackupDraft
-	readErr        error
-	reads          int
-	changeOwner    bool
+	items       []localbackupipc.LocalBackupDraft
+	readErr     error
+	reads       int
+	changeOwner bool
 }
 
 func (f *fakeDSMNativeDraftReader) LocalDrafts(context.Context) ([]localbackupipc.LocalBackupDraft, error) {
@@ -51,10 +51,10 @@ func TestDSMNativeDraftInspectionOwnedUnboundReadOnlyAndNoSecrets(t *testing.T) 
 	}
 	var body struct {
 		OwnerScope string `json:"owner_scope"`
-		Items []struct {
-			SourceID uint64 `json:"source_id"`
-			Name string `json:"name"`
-			Revision uint64 `json:"revision"`
+		Items      []struct {
+			SourceID  uint64    `json:"source_id"`
+			Name      string    `json:"name"`
+			Revision  uint64    `json:"revision"`
 			CreatedAt time.Time `json:"created_at"`
 		} `json:"items"`
 	}
@@ -82,8 +82,11 @@ func TestDSMNativeDraftInspectionOwnedUnboundReadOnlyAndNoSecrets(t *testing.T) 
 
 func TestDSMNativeDraftInspectionRequiresOwnerAndStrictGET(t *testing.T) {
 	g, agent, _ := nativeDraftFixture(t)
-	base := DSMCGIPath+"?op=nas-drafts"
-	for _, tc := range []struct{method, path string; expected int}{
+	base := DSMCGIPath + "?op=nas-drafts"
+	for _, tc := range []struct {
+		method, path string
+		expected     int
+	}{
 		{http.MethodGet, base+"&path=/volume1/photo", http.StatusBadRequest},
 		{http.MethodGet, base+"&source_id=57", http.StatusBadRequest},
 		{http.MethodPost, base, http.StatusMethodNotAllowed},
@@ -127,7 +130,7 @@ func TestDSMNativeDraftInspectionNeverLeaksUncertainOrForeignState(t *testing.T)
 			items := make([]localbackupipc.LocalBackupDraft, 101)
 			for i := range items {
 				items[i] = localbackupipc.LocalBackupDraft{
-					SourceID: uint64(i+1), Revision: 1, Name: "NAS", Created: time.Now(),
+					SourceID: uint64(i + 1), Revision: 1, Name: "NAS", Created: time.Now(),
 				}
 			}
 			return items
