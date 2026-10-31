@@ -299,11 +299,29 @@ struct XDriveIOSForegroundPhotoBackupMVP {
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
-                if let current = try? await journal.operation(
-                    scope: binding.scope, id: prepared.id
-                ), current.state != .prepared {
+                // The transport may have committed an UploadSession while its
+                // HTTP ACK was lost. A failed/corrupt readback is NOT proof
+                // that the sealed intent is still safely prepared.
+                let current: XDrivePhotoSyncOperation?
+                do {
+                    current = try await journal.operation(
+                        scope: binding.scope, id: prepared.id
+                    )
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch {
+                    // Fail closed: stop this whole 256-slot run rather than
+                    // treating an unreadable Owner journal as a missing
+                    // PhotoKit original and uploading the next candidate.
                     return .requiresReview
                 }
+                guard let current, current.state == .prepared else {
+                    // Missing or potentially committed/confirmed record must
+                    // never authorize another new original in this run.
+                    return .requiresReview
+                }
+                // Only a *readable*, authenticated, still-prepared intent
+                // proves the failed transport did not start a Server write.
                 throw error
             }
         case .creating, .uploading, .finalizing, .needsReconciliation:
