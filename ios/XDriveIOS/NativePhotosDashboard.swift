@@ -109,6 +109,7 @@ struct XDriveIOSNativePhotosDashboard: View {
     @State private var showSignOutConsent = false
     @State private var signOutConsentOwner: XDriveNativeOwnerRoot?
     @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.scenePhase) private var phase
     @State private var photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @State private var tab: XDriveIOSNativeBottomTab = .gallery
@@ -362,9 +363,11 @@ struct XDriveIOSNativePhotosDashboard: View {
         .accessibilityIdentifier("native-ios-tab-\(destination.rawValue)")
     }
 
-    private var gallery: some View {
-        VStack(spacing: 0) {
-            if !galleryFocused {
+
+    // On short, sufficiently wide safe-area viewports, the Gallery source
+    // chooser and backup shortcut share one row. The media wall below is
+    // outside the branch so rotation does not remount Gallery/Viewer state.
+    private var galleryStatusRow: some View {
                 HStack(spacing: 10) {
                     if backup.busy {
                         Label("正在检查相册备份", systemImage: "arrow.triangle.2.circlepath")
@@ -394,6 +397,9 @@ struct XDriveIOSNativePhotosDashboard: View {
                 .font(.caption)
                 .padding(.horizontal, 12)
                 .frame(minHeight: 44)
+    }
+
+    private var gallerySourceRow: some View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(XDriveIOSNativeGallerySource.allCases) { source in
@@ -420,7 +426,52 @@ struct XDriveIOSNativePhotosDashboard: View {
                 .padding(.horizontal, 12)
             }
             .padding(.vertical, 3)
-            }
+    }
+
+    private var galleryCompactBackupAction: some View {
+        Button {
+            openDynamic(.backup)
+        } label: {
+            Image(systemName: backup.busy ? "arrow.triangle.2.circlepath" :
+                  backup.schedule?.pausedForReview == true ? "exclamationmark.shield" :
+                  (photoAuthorization != .authorized && photoAuthorization != .limited) ?
+                      "exclamationmark.triangle" : "icloud.and.arrow.up")
+                .font(.body)
+                .frame(width: 48, height: 44)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(
+            backup.schedule?.pausedForReview == true ? Color.orange : Color.accentColor
+        )
+        .accessibilityLabel("备份设置")
+        .accessibilityValue(
+            backup.busy ? "正在检查备份" :
+            backup.schedule?.pausedForReview == true ? "自动备份已暂停，需核对收据" :
+            (photoAuthorization != .authorized && photoAuthorization != .limited) ?
+                "照片权限不可用" :
+            backup.schedule?.enabled == true ? "前台自动备份已开启" :
+                "前台自动备份未开启"
+        )
+        .accessibilityIdentifier("native-ios-gallery-backup-settings-compact")
+    }
+
+    private var gallery: some View {
+        GeometryReader { availableSpace in
+            VStack(spacing: 0) {
+                if !galleryFocused {
+                    if availableSpace.size.width >= 680 &&
+                        availableSpace.size.height < 500 &&
+                        !dynamicTypeSize.isAccessibilitySize {
+                        HStack(spacing: 0) {
+                            gallerySourceRow
+                            galleryCompactBackupAction
+                        }
+                        .frame(minHeight: 48)
+                    } else {
+                        galleryStatusRow
+                        gallerySourceRow
+                    }
+                }
             Group {
                 switch gallerySource {
                 case .local:
@@ -442,6 +493,7 @@ struct XDriveIOSNativePhotosDashboard: View {
                         onFocusChange: { galleryFocused = $0 }
                     )
                 }
+            }
             }
         }
     }
