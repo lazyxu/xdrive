@@ -44,7 +44,7 @@ func TestDSMNativeDraftInspectionOwnedUnboundReadOnlyAndNoSecrets(t *testing.T) 
 		{SourceID: 58, Name: "NAS Documents", Revision: 1, Created: created},
 	}
 	reply := requestServerLogin(g, http.MethodGet, "", "", "",
-		DSMCGIPath+"?op=nas-drafts")
+		DSMCGIPath + "?op=nas-drafts")
 	if reply.Code != http.StatusOK || agent.reads != 1 ||
 		agent.creates != 0 || agent.binds != 0 || agent.preflights != 0 {
 		t.Fatalf("DSM read-only draft inspection is unsafe: HTTP %d %s", reply.Code, reply.Body.String())
@@ -72,7 +72,7 @@ func TestDSMNativeDraftInspectionOwnedUnboundReadOnlyAndNoSecrets(t *testing.T) 
 	}
 	agent.items = nil
 	empty := requestServerLogin(g, http.MethodGet, "", "", "",
-		DSMCGIPath+"?op=nas-drafts")
+		DSMCGIPath + "?op=nas-drafts")
 	if empty.Code != http.StatusOK ||
 		!strings.Contains(empty.Body.String(), `"items":[]`) {
 		t.Fatalf("no owning drafts must mean empty inventory, not a new Source: %d %s",
@@ -87,8 +87,8 @@ func TestDSMNativeDraftInspectionRequiresOwnerAndStrictGET(t *testing.T) {
 		method, path string
 		expected     int
 	}{
-		{http.MethodGet, base+"&path=/volume1/photo", http.StatusBadRequest},
-		{http.MethodGet, base+"&source_id=57", http.StatusBadRequest},
+		{http.MethodGet, base + "&path=/volume1/photo", http.StatusBadRequest},
+		{http.MethodGet, base + "&source_id=57", http.StatusBadRequest},
 		{http.MethodPost, base, http.StatusMethodNotAllowed},
 		{http.MethodGet, "/v1/nas-drafts", http.StatusForbidden},
 	} {
@@ -142,7 +142,7 @@ func TestDSMNativeDraftInspectionNeverLeaksUncertainOrForeignState(t *testing.T)
 			agent.changeOwner = tc.changeOwner
 			agent.readErr = tc.readErr
 			res := requestServerLogin(g, http.MethodGet, "", "", "",
-				DSMCGIPath+"?op=nas-drafts")
+				DSMCGIPath + "?op=nas-drafts")
 			if res.Code != tc.wantStatus || agent.reads != 1 ||
 				strings.Contains(res.Body.String(), `"source_id"`) ||
 				strings.Contains(res.Body.String(), agent.wantPath) {
@@ -159,7 +159,7 @@ func TestDSMNativeDraftInspectionOldAgentFailsClosed(t *testing.T) {
 		return &fakeServerLoginAgent{fakeAgent: base}, nil
 	}
 	res := requestServerLogin(g, http.MethodGet, "", "", "",
-		DSMCGIPath+"?op=nas-drafts")
+		DSMCGIPath + "?op=nas-drafts")
 	if res.Code != http.StatusNotImplemented {
 		t.Fatalf("old Agent cannot claim native draft inspection: %d", res.Code)
 	}
