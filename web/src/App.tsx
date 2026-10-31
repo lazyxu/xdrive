@@ -91,7 +91,7 @@ import type {
   XDriveWebAppBrowseContext,
   XDriveWebAppRoute,
 } from '../../ui/shared/src'
-import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerCaseInsensitiveNameLookupPageOptions, xDriveFileExplorerEnsureUploadDirectory, xDriveFileExplorerResolveFolderUploadTargets, xDriveLatestRedoableFileOperation, xDriveLatestUndoableFileOperation, xDriveUsernameValidationError, xDrivePasswordValidationError, xDriveWebAppViewer, xDriveParseWebAppHash, xDriveSystemDependenciesNeedsExitConfirmation } from '../../ui/shared/src'
+import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerCaseInsensitiveNameLookupPageOptions, xDriveFileExplorerEnsureUploadDirectory, xDriveFileExplorerResolveFolderUploadTargets, xDriveLatestRedoableFileOperation, xDriveLatestUndoableFileOperation, xDriveUsernameValidationError, xDrivePasswordValidationError, xDriveWebAppViewer, xDriveWebAppHash, xDriveParseWebAppHash, xDriveSystemDependenciesNeedsExitConfirmation } from '../../ui/shared/src'
 import PublicShareView from './PublicShare'
 import WebOverviewPage from './WebOverviewPage'
 import WebUnsupportedFileDialog from './WebUnsupportedFileDialog'
@@ -2340,8 +2340,12 @@ function FileManager({
   }
   const selectMobileSlot = (slot: XDriveMobileSlot) => {
     const next = xDriveMobileRouteForSlot(currentMobileNavigation, slot, serverAdminVerified)
-    if (next) launchWebApp(next)
-    else setMobileRecentOpen(true)
+    // Re-selecting the current fixed Tab must not create an invisible browser
+    // History entry. Safari's Back swipe should reach the real previous route.
+    // Compare canonical hashes, not route object identity or raw params order.
+    if (next) {
+      if (xDriveWebAppHash(next) !== xDriveWebAppHash(route)) launchWebApp(next)
+    } else setMobileRecentOpen(true)
   }
   const mobileParent = xDriveMobileFeatureParentRoute(route)
   const mobileFolderParent = route.app === 'files' && crumbs.length > 1
