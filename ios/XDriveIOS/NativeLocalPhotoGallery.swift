@@ -128,13 +128,24 @@ final class XDriveIOSLocalPhotoDetailModel: ObservableObject {
             let id = PHImageManager.default().requestImage(
                 for: asset, targetSize: CGSize(width: 1800, height: 1800),
                 contentMode: .aspectFit, options: options
-            ) { [weak self] picture, _ in
+            ) { [weak self] picture, info in
+                // PhotoKit can return no local pixels for an iCloud-only
+                // original when network access is intentionally disabled.
+                // Never leave a permanent spinner for this terminal result.
+                let degraded = info?[PHImageResultIsDegradedKey] as? Bool == true
+                let cancelled = info?[PHImageCancelledKey] as? Bool == true
                 Task { @MainActor [weak self] in
                     guard let self, self.epoch == token,
                           [.authorized, .limited].contains(
                             PHPhotoLibrary.authorizationStatus(for: .readWrite)
                           ) else { return }
-                    if let picture { self.still = picture }
+                    if let picture {
+                        self.still = picture
+                        self.message = nil
+                    } else if !degraded && !cancelled &&
+                              self.still == nil && self.live == nil {
+                        self.message = "本机照片暂不可读取（可能仅保存在 iCloud）。"
+                    }
                 }
             }
             requests.append(id)
@@ -229,7 +240,20 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                     XDriveIOSNativeZoomablePhotoView(image: image)
                         .accessibilityLabel("本机照片，可双指缩放或双击放大")
                 } else if let message = model.message {
-                    Text(message).foregroundStyle(.secondary)
+                    VStack(spacing: 8) {
+                        Text(message).foregroundStyle(.secondary)
+                        Button("重试") {
+                            // The existing loader cancels the prior request and
+                            // re-fetches this exact ID from the current PhotoKit
+                            // authorization. Never enable an iCloud download.
+                            guard phase == .active,
+                                  [.authorized, .limited].contains(
+                                    PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                                  ) else { return }
+                            model.load(candidate)
+                        }
+                        .accessibilityIdentifier("native-ios-local-viewer-retry")
+                    }
                 } else {
                     ProgressView("正在读取已授权的本机媒体…")
                 }
