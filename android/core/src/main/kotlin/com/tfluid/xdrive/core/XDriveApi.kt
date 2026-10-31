@@ -1087,8 +1087,27 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
     override suspend fun uploadFile(
         accessToken: String, parent: DriveNode, name: String, size: Long,
         openSource: () -> InputStream, onProgress: (Long) -> Unit,
+    ): DriveNode = uploadFileWithPhotoIdentity(
+        accessToken, parent, name, size, openSource, onProgress, null, null)
+
+    override suspend fun uploadNativePhotoOriginal(
+        accessToken: String, parent: DriveNode, name: String, size: Long,
+        originalSha256: String, resumeKey: String,
+        openSource: () -> InputStream, onProgress: (Long) -> Unit,
+    ): DriveNode = uploadFileWithPhotoIdentity(
+        accessToken, parent, name, size, openSource, onProgress, originalSha256, resumeKey)
+
+    private suspend fun uploadFileWithPhotoIdentity(
+        accessToken: String, parent: DriveNode, name: String, size: Long,
+        openSource: () -> InputStream, onProgress: (Long) -> Unit,
+        originalSha256: String?, resumeKey: String?,
     ): DriveNode = withContext(Dispatchers.IO) {
         NativeUploadAdmission.withWriter {
+        require((resumeKey == null && originalSha256 == null) ||
+            (resumeKey != null && originalSha256 != null &&
+                resumeKey.matches(Regex("and_[0-9a-f]{64}")) &&
+                originalSha256.matches(Regex("[0-9a-f]{64}")) && size > 0))
+
         require(parent.isDirectory && parent.id > 0 && validDriveNodeName(name) && size >= 0)
         require(validToken(accessToken)) { "Invalid access token" }
         val chunkSize = 8 * 1024 * 1024
@@ -1100,14 +1119,30 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
             "size" to JsonPrimitive(size),
             "chunk_size" to JsonPrimitive(chunkSize),
             "conflict_policy" to JsonPrimitive("fail"),
-        )))
+        ) + (if (resumeKey != null) mapOf(
+            "resume_key" to JsonPrimitive(resumeKey),
+            "sha256" to JsonPrimitive(requireNotNull(originalSha256))
+        ) else emptyMap())))
         val id = session.string("id")
         if (!id.matches(Regex("[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}")) ||
-            session.string("status") != "active" || session.long("parent_id") != parent.id ||
+            session.long("parent_id") != parent.id ||
             session.string("name") != name || session.long("size") != size ||
             session.long("chunk_size") != chunkSize.toLong() ||
-            session.long("chunk_count") != chunkCount) invalidPayload()
-
+            session.long("chunk_count") != chunkCount ||
+            (resumeKey != null && (session.string("resume_key") != resumeKey ||
+                session.string("sha256") != originalSha256))) invalidPayload()
+        val status = session.string("status")
+        // A SHA-specified photo can be instant-finalized by existing Go CAS
+        // reuse. Only an exact finalized Node+SHA is proof; no chunk replay.
+        if (status == "finalized" && resumeKey != null) {
+            val result = node(session["result"] as? JsonObject ?: invalidPayload())
+            if (result.id <= 0 || result.parentId != parent.id ||
+                result.type != "file" || result.name != name ||
+                result.size != size || result.revision <= 0) invalidPayload()
+            onProgress(size)
+            return@withWriter result
+        }
+        if (status != "active") invalidPayload()
         var completed = false
         try {
             var uploaded = 0L
@@ -1166,6 +1201,45 @@ class XDriveApi(private val address: ServerAddress, client: OkHttpClient = OkHtt
             }
         }
         } // NativeUploadAdmission.withWriter: permit after network cleanup.
+    }
+
+    /** Exact, logically read-only Android original recovery by unpredictable
+     * per-intent resume key, current authenticated Owner and full source hash.
+     * Missing/expired/ambiguous or unfinalized sessions NEVER authorize POST. */
+    override suspend fun inspectNativePhotoUpload(
+        accessToken: String, parentId: Long, name: String, size: Long,
+        originalSha256: String, resumeKey: String,
+    ): DriveNode? {
+        require(validToken(accessToken) && parentId > 0 && size > 0 &&
+            validDriveNodeName(name) &&
+            originalSha256.matches(Regex("[0-9a-f]{64}")) &&
+            resumeKey.matches(Regex("and_[0-9a-f]{64}")))
+        val dto = request("uploads/android-photo-receipt", accessToken,
+            bodyObject = JsonObject(mapOf(
+                "resume_key" to JsonPrimitive(resumeKey),
+                "parent_id" to JsonPrimitive(parentId),
+                "name" to JsonPrimitive(name),
+                "size" to JsonPrimitive(size),
+                "chunk_size" to JsonPrimitive(8 * 1024 * 1024),
+                "sha256" to JsonPrimitive(originalSha256),
+            )))
+        if (dto.long("parent_id") != parentId ||
+            dto.string("resume_key") != resumeKey ||
+            dto.string("name") != name || dto.long("size") != size ||
+            dto.long("chunk_size") != 8L * 1024 * 1024 ||
+            dto.string("sha256") != originalSha256)
+            invalidPayload()
+        return when (dto.string("status")) {
+            "active" -> null
+            "finalized" -> node(dto["result"] as? JsonObject ?: invalidPayload())
+                .also { result ->
+                    if (result.id <= 0 || result.parentId != parentId ||
+                        result.name != name || result.type != "file" ||
+                        result.size != size || result.revision <= 0)
+                        invalidPayload()
+                }
+            else -> invalidPayload()
+        }
     }
 
     private suspend fun putUploadChunk(
