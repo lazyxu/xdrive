@@ -156,7 +156,7 @@ test('DSM clears prior owner operation notice on Host replacement and keeps fres
     await Promise.resolve()
   })
   assert.equal(renders.notices.some(v => String(v).includes('Owner A private')), false,
-    'old owner's operation notice must never render in B Host generation')
+    "old owner\'s operation notice must never render in B Host generation")
   assert.equal(tree.root.findAllByType('status-alert').length, 0,
     'successful new Owner listing must clear the old completion notice')
   assert.deepEqual(tree.root.findAllByType('folder-accordion').map(x => x.props.folder.name),
