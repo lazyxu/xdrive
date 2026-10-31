@@ -505,7 +505,9 @@ class DriveController(
                 checkCurrent(ticket)
                 val restoredApi = if (ip == null) serviceFactory(server) else routedServiceFactory(server, ip)
                 candidate = restoredApi
-                val restored = restoredApi.refresh(saved.refreshToken)
+                val coordinated = vault.coordinatedRefresh(
+                    restoredApi, server.url, saved.username)
+                val restored = coordinated ?: restoredApi.refresh(saved.refreshToken)
                 checkCurrent(ticket)
                 if (restored.username != saved.username) throw ApiException(401, "Owner mismatch")
                 api = restoredApi
@@ -517,7 +519,7 @@ class DriveController(
                     server = server.url, route = route, connectionIp = ip, username = restored.username,
                     nativeUiSessionId = ++nativeUiSessionCounter,
                 )
-                persistRefreshSession()
+                if (coordinated == null) persistRefreshSession()
                 // A valid refreshed session survives a later transient directory read error.
                 // Let request() report it without turning a network outage into logout.
                 if (!restored.mustChangePassword) {
@@ -3886,8 +3888,13 @@ class DriveController(
                 (allowPasswordChange && failure.reason == ApiFailureReason.CURRENT_PASSWORD_INCORRECT)) throw failure
         }
         checkCurrent(ticket)
+        var alreadyPersisted = false
         val refreshed = try {
-            service.refresh(current.refreshToken)
+            val coordinated = if (keepLogin && state.value.server.startsWith("https://"))
+                sessionPersistence?.coordinatedRefresh(
+                    service, state.value.server, current.username) else null
+            alreadyPersisted = coordinated != null
+            coordinated ?: service.refresh(current.refreshToken)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
@@ -3896,7 +3903,7 @@ class DriveController(
         }
         checkCurrent(ticket)
         session = refreshed
-        persistRefreshSession()
+        if (!alreadyPersisted) persistRefreshSession()
         if (refreshed.mustChangePassword && !allowPasswordChange) {
             // A token refresh may require password rotation while the
             // destination picker is open. Clear its Owner-private folder rows
