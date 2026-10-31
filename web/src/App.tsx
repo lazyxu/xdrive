@@ -1158,6 +1158,11 @@ function FileManager({
       mobileAlbumBackRef.current = null
     }
   }, [mobileOwnerScope])
+  // An asynchronous Files header Back must not navigate after a Tab/Owner
+  // switch or a later route intent. Browser Hash guards changes that precede
+  // React's next render; the live identity ref also fences A→B→A navigations.
+  const mobileBackContextRef = useRef({ owner: mobileOwnerScope, route })
+  mobileBackContextRef.current = { owner: mobileOwnerScope, route }
   // <main> survives app switches. A previous page's scrollTop must not shift
   // the first frame of a different app. The Viewer is a sibling overlay and
   // keeps the same appView, so its dedicated Gallery anchor remains intact.
@@ -2357,9 +2362,21 @@ function FileManager({
       albumBack?.back()
       return
     }
-    if (mobileFolderParent && route.app === 'files') {
-      void loadDirectory(mobileFolderParent.id, crumbs.slice(0, -1))
-      launchWebApp({ app: 'files', params: { dir: mobileFolderParent.id } }, { replace: true })
+    if (route.app === 'files' && route.params.select && mobileParent) {
+      // Clearing a selected file is one step; do not skip it by jumping from
+      // a nested Files directory directly to its parent.
+      launchWebApp(mobileParent, { replace: true })
+    } else if (mobileFolderParent && route.app === 'files') {
+      const fromHash = xDriveWebAppHash(route)
+      // The shared Files controller commits crumbs only after its current
+      // Owner's first counted Range is accepted. A failed/superseded Back
+      // must not change the visible directory or the browser URL.
+      void loadDirectory(mobileFolderParent.id, crumbs.slice(0, -1)).then(accepted => {
+        if (!accepted || mobileBackContextRef.current.owner !== mobileOwnerScope ||
+            mobileBackContextRef.current.route !== route ||
+            window.location.hash !== fromHash) return
+        launchWebApp({ app: 'files', params: { dir: mobileFolderParent.id } }, { replace: true })
+      })
     } else if (mobileParent) launchWebApp(mobileParent, { replace: true })
   }
   const mobileMapFocused = xDriveMobileMapFocused(route,

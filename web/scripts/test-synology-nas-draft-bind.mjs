@@ -96,6 +96,8 @@ assert.match(binder, /bootstrap\.AuthorizeLocalRoot\(ctx, input\.SourceID, path\
 assert.match(binder, /grant\.StrongIdentity/)
 assert.doesNotMatch(binder, /CreateLocalBackupSource\(|Start\(|exec\.Command/)
 assert.match(review, /client\.bindNativeDraft\(draft\.source_id, pinnedSelection, pinnedScope\)/)
+assert.match(review, /currentScope\.current\.client !== pinnedClient/)
+assert.match(review, /\[client, ownerScope, selectionID\]/)
 assert.match(review, /!confirmed \|\| attemptedRef\.current/)
 assert.match(review, /confirmedBoundSourceRef\.current = draft\.source_id/)
 assert.match(review, /onBound\(draft\.source_id\)/)

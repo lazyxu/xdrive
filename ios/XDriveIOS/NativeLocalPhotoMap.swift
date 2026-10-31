@@ -488,11 +488,13 @@ private struct XDriveIOSMapSpatialAlbum: View {
 /// explicit, transient full-authorized-library GPS overview. No WebView or
 /// second backup/upload worker; never persists or sends GPS/local IDs.
 struct XDriveIOSNativeLocalPhotoMapScreen: View {
-    // Parent-owned route hints; current PhotoKit reads and camera remain transient.
+    // Parent-owned non-secret route hints. PhotoKit pages and map camera
+    // remain transient and require fresh authorization after reentry.
     @Binding var mapScope: XDriveIOSNativeLocalMapScope
     @Binding var offset: Int
     var onFocusChange: ((Bool) -> Void)?
     @Environment(\.scenePhase) private var phase
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @StateObject private var changes = XDriveIOSMapPhotoChanges()
     @State private var scanner: XDrivePhotoKitBoundedSnapshotScanner?
     @State private var page: XDrivePhotoKitLocatedPage?
@@ -515,9 +517,16 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
     @State private var globalTotal = 0
     @State private var globalLocated = 0
     @State private var globalSelection: XDriveIOSMapSpatialSelection?
+    @State private var showingMapHelp = false
 
     var body: some View {
-        VStack(spacing: 8) {
+        GeometryReader { viewport in
+        let compactMap = XDriveIOSNativePhotoMapPolicy.compactViewport(
+            width: Double(viewport.size.width),
+            height: Double(viewport.size.height),
+            accessibilityText: dynamicTypeSize.isAccessibilitySize
+        )
+        VStack(spacing: compactMap ? 4 : 8) {
             Picker("本机地图扫描范围", selection: $mapScope) {
                 ForEach(XDriveIOSNativeLocalMapScope.allCases, id: \.self) { item in
                     Text(item.label).tag(item)
@@ -525,10 +534,12 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
             }
             .pickerStyle(.segmented)
             .accessibilityIdentifier("native-ios-map-library-scope")
-            Text(mapScope == .page ?
-                 "本机照片地图：仅当前64条范围，不是完整云端地图" :
-                 "本机完整已授权图库的只读 GPS 聚合；位置和照片 ID 不上传、不持久化。")
-                .font(.caption).foregroundStyle(.secondary)
+            if !compactMap {
+                Text(mapScope == .page ?
+                     "本机照片地图：仅当前64条范围，不是完整云端地图" :
+                     "本机完整已授权图库的只读 GPS 聚合；位置和照片 ID 不上传、不持久化。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             if authorization == .notDetermined {
                 Button("允许查看本机照片") {
                     Task {
@@ -582,8 +593,10 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                 .frame(minHeight: 44)
                 .buttonStyle(.bordered)
                 .accessibilityIdentifier("native-ios-map-scan-full-library")
-                Text("扫描过程中可离开页面取消；100k 张照片只生成有界聚合，不缓存全部照片 ID。点击位置后按 48 张逐批查找。")
-                    .font(.footnote).foregroundStyle(.secondary)
+                if !compactMap {
+                    Text("扫描过程中可离开页面取消；100k 张照片只生成有界聚合，不缓存全部照片 ID。点击位置后按 48 张逐批查找。")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
             } else if let page {
                 Text("已检查 \(page.page.startOffset)–\(page.page.nextOffset) / \(page.page.totalAccessibleAssets)，当前页有 \(page.items.count) 张带位置照片")
                     .font(.footnote).monospacedDigit()
@@ -632,8 +645,10 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                 .frame(minHeight: 44)
                 .buttonStyle(.bordered)
                 .accessibilityIdentifier("native-ios-map-find-next-gps-page")
-                Text("每次最多连续检查 16 页（1,024 张照片元数据），可重复查找；不自动读取 iCloud 原件。")
-                    .font(.footnote).foregroundStyle(.secondary)
+                if !compactMap {
+                    Text("每次最多连续检查 16 页（1,024 张照片元数据），可重复查找；不自动读取 iCloud 原件。")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
             } else if busy {
                 ProgressView("读取授权照片位置…")
             }
@@ -642,11 +657,19 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                 Button("刷新当前页") { refresh(at: offset) }
                     .disabled(busy || authorization == .denied || authorization == .restricted)
             }
-            Text("地图只使用本机授权照片，缩略图不下载 iCloud 原件，照片 ID 和位置不会上传。")
-                .font(.footnote).foregroundStyle(.secondary)
+            if !compactMap {
+                Text("地图只使用本机授权照片，缩略图不下载 iCloud 原件，照片 ID 和位置不会上传。")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+        }
         }
         .padding(.horizontal, 8)
         .navigationTitle("地图")
+        .alert("本机照片地图说明", isPresented: $showingMapHelp) {
+            Button("完成", role: .cancel) {}
+        } message: {
+            Text("当前页最多展示 64 条授权照片。全库地图需要主动扫描，只保留最多 64 个位置区域；每个区域按 48 张分页重新验证。查找下一批 GPS 最多检查 16 页。照片 ID 与位置不上传服务器，缩略图不下载 iCloud 原件。")
+        }
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button(focused ? "显示底部导航" : "专注地图") {
@@ -654,6 +677,14 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                     onFocusChange?(focused)
                 }
                 .accessibilityIdentifier("native-ios-map-focus-toggle")
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    showingMapHelp = true
+                } label: {
+                    Label("地图说明", systemImage: "info.circle")
+                }
+                .accessibilityIdentifier("native-ios-map-layout-help")
             }
         }
         .sheet(item: $selection, onDismiss: {

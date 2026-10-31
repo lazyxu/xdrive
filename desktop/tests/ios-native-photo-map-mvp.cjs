@@ -148,6 +148,21 @@ test('global map aggregates 100k GPS with only 64 representatives and on-demand 
   assert.doesNotMatch(map, /PHImageRequestOptions\(\)[\s\S]*?isNetworkAccessAllowed = true/)
 })
 
+test('short landscape local map preserves controls and PhotoKit authority while recovering map height', () => {
+  assert.match(map, /@Environment\(\\\.dynamicTypeSize\) private var dynamicTypeSize/);
+  assert.match(map, /GeometryReader \{ viewport in[\s\S]*?XDriveIOSNativePhotoMapPolicy\.compactViewport\(/);
+  assert.match(map, /accessibilityText: dynamicTypeSize\.isAccessibilitySize/);
+  assert.match(map, /VStack\(spacing: compactMap \? 4 : 8\)/);
+  assert.match(map, /if !compactMap \{\s*Text\(mapScope == \.page/);
+  assert.match(map, /if !compactMap \{\s*Text\("地图只使用本机授权照片/);
+  assert.match(map, /\.alert\("本机照片地图说明", isPresented: \$showingMapHelp\)/);
+  assert.match(map, /\.accessibilityIdentifier\("native-ios-map-layout-help"\)/);
+  assert.match(map, /Button\("查找下一批有定位照片"\)/);
+  assert.match(map, /Button\("刷新当前页"\)/);
+  assert.match(map, /Button\(focused \? "显示底部导航" : "专注地图"\)/);
+  assert.doesNotMatch(map, /onChange\(of: compactMap\)|\.id\(compactMap\)/);
+});
+
 test('local Gallery map retains parent-owned mode and page only, but revalidates PhotoKit on entry', () => {
   assert.match(map, /enum XDriveIOSNativeLocalMapScope: String, CaseIterable/);
   assert.match(map, /@Binding var mapScope: XDriveIOSNativeLocalMapScope/);

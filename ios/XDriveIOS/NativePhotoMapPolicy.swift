@@ -4,6 +4,16 @@ import Foundation
 enum XDriveIOSNativePhotoMapPolicy {
     static let pageSize = 64
 
+    /// Both native PhotoKit and Owner-cloud maps use the *actual* safe-area
+    /// viewport. Rotation alone never changes the L1/L2 navigation level.
+    /// Accessibility text preserves the full explanatory rows.
+    static func compactViewport(
+        width: Double, height: Double, accessibilityText: Bool
+    ) -> Bool {
+        width.isFinite && height.isFinite &&
+            width >= 680 && height > 0 && height < 500 && !accessibilityText
+    }
+
     static func validCoordinate(latitude: Double, longitude: Double) -> Bool {
         latitude.isFinite && longitude.isFinite &&
         abs(latitude) <= 90 && abs(longitude) <= 180
