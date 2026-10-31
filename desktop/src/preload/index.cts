@@ -1060,6 +1060,7 @@ contextBridge.exposeInMainWorld('xdriveDesktop', Object.freeze({
   getLANTrust: (server: string) => ipcRenderer.invoke('desktop:get-lan-trust', server),
   revokeLANTrust: (server: string) => ipcRenderer.invoke('desktop:revoke-lan-trust', server),
   clearSavedPassword: (server: string, username: string) => ipcRenderer.invoke('desktop:clear-saved-password', server, username),
+  forgetLoginProfile: (server: string, username: string) => ipcRenderer.invoke('desktop:forget-login-profile', server, username),
   getWindowState: () => ipcRenderer.invoke('desktop:get-window-state'),
   minimizeWindow: () => ipcRenderer.send('desktop:window-minimize'),
   toggleMaximizeWindow: () => ipcRenderer.send('desktop:window-toggle-maximize'),

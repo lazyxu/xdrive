@@ -1562,6 +1562,38 @@ export default function App({
     setPassword('')
   }
 
+  const forgetSavedLoginProfile = () => {
+    const selectedServer = server.trim()
+    const selectedUsername = username.trim()
+    if (!matchingLoginProfile || busy) return
+    requestConfirmation(
+      '忘记此账号的本机登录资料？',
+      '将删除该服务器和用户名对应的历史记录、系统加密保存的密码以及自动登录选项；其他账号、同步文件夹、备份任务和 Server 账号不受影响。此操作不代表退出 Agent 会话。',
+      '忘记此账号资料',
+      async () => {
+        const remaining = await run(
+          'forget-login-profile',
+          () => window.xdriveDesktop.forgetLoginProfile(selectedServer, selectedUsername),
+        )
+        if (!remaining) return
+        setLoginHistory(remaining)
+        // Do not let the asynchronous history bootstrap reselect the deleted
+        // profile, and do not preserve a stale secret or LAN route in the draft.
+        loginDraftUserEditedRef.current = true
+        setPassword('')
+        setRememberPassword(false)
+        setAutoLogin(false)
+        if (server.trim() === selectedServer && username.trim() === selectedUsername) {
+          setServer('')
+          setUsername('')
+          setLoginMount('')
+          setConnectionRoute({ mode: 'auto', lan_ip: '', public_ip: '' })
+        }
+      },
+      'warning',
+    )
+  }
+
   const changePassword = async (event: FormEvent) => {
     event.preventDefault()
     const validationError = xDrivePasswordChangeValidationError({
@@ -2464,6 +2496,14 @@ export default function App({
                 label="启动 xDrive 时自动登录"
               />
             </Stack>
+
+            {matchingLoginProfile ? (
+              <XDriveActionButton compact disabled={!!busy}
+                onClick={forgetSavedLoginProfile}
+                title="删除此服务器和用户名的本机历史记录及已保存密码，不删除同步或备份配置">
+                忘记此账号资料
+              </XDriveActionButton>
+            ) : null}
 
             {loginHistory.secure_password_storage ? (
               <Stack direction="row" spacing={1} alignItems="flex-start" sx={{ color: 'text.secondary' }}>
