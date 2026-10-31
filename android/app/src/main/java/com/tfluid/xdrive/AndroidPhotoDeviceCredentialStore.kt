@@ -40,6 +40,12 @@ internal class AndroidPhotoDeviceCredentialStore(
     fun readFor(verifiedOwner: NativePhotoBackupScope): NativeAndroidDeviceEnrollment? =
         readStored()?.takeIf { sameOwner(it.owner, verifiedOwner) }?.device
 
+    /** Do not POST another registration when any retained Owner credential
+     * exists; a different Owner or a corrupt Keystore requires explicit user
+     * reset/revoke, never an implicit silent replacement. */
+    @Synchronized
+    fun hasAnyRegistration(): Boolean = readStored() != null
+
     /**
      * Read-only resumption after a restart. The on-disk token is NOT proof:
      * verify live /me + /nodes/root, scope it to one Owner and then GET
