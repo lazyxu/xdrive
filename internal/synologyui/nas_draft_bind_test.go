@@ -119,6 +119,47 @@ func TestDSMNativeDraftBindFailClosedWithoutConfirmedSourceOrSelection(t *testin
 	}
 }
 
+// A correct numeric ID is insufficient if the creating-device draft page
+// itself is malformed. Deny native mutation before any Root authorization.
+func TestDSMNativeDraftBindRejectsMalformedAgentInventoryBeforeRootGrant(t *testing.T) {
+	created := time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name   string
+		drafts []localbackupipc.LocalBackupDraft
+	}{
+		{"missing_creation_time", []localbackupipc.LocalBackupDraft{{
+			SourceID: 57, Name: "NAS Photos", Revision: 1,
+		}}},
+		{"empty_name", []localbackupipc.LocalBackupDraft{{
+			SourceID: 57, Revision: 1, Created: created,
+		}}},
+		{"revision_changed", []localbackupipc.LocalBackupDraft{{
+			SourceID: 57, Name: "NAS Photos", Revision: 2, Created: created,
+		}}},
+		{"unsafe_name", []localbackupipc.LocalBackupDraft{{
+			SourceID: 57, Name: "NAS\nPhotos", Revision: 1, Created: created,
+		}}},
+		{"duplicate_unordered", []localbackupipc.LocalBackupDraft{
+			{SourceID: 57, Name: "NAS Photos", Revision: 1, Created: created},
+			{SourceID: 57, Name: "duplicate", Revision: 1, Created: created},
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g, agent, selection, scope := dsmDraftBindFixture(t)
+			agent.items = tc.drafts
+			got := requestServerLogin(g, http.MethodPost,
+				dsmDraftBindBody(57, selection, scope, true),
+				"https://nas.example:5001", getCSRF(t, g),
+				DSMCGIPath+"?op=nas-draft-bind")
+			if got.Code != http.StatusServiceUnavailable ||
+				agent.binds != 0 || agent.creates != 0 || agent.runs != 0 {
+				t.Fatalf("malformed Agent inventory reached Root grant: HTTP %d (%s)",
+					got.Code, got.Body.String())
+			}
+		})
+	}
+}
+
 func TestDSMNativeDraftBindWeakUnknownOrRotatedOwnerNeedsInspection(t *testing.T) {
 	for _, name := range []string{"weak", "uncertain", "owner-changed"} {
 		t.Run(name, func(t *testing.T) {
