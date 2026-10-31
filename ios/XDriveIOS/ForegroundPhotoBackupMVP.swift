@@ -54,6 +54,7 @@ struct XDriveIOSForegroundPhotoBackupMVP {
 
     func run(allowICloudOriginals: Bool, startOffset: Int = 0,
              maximumNewOriginals: Int = Self.maxNewOriginalsPerRun,
+             onPotentialWrite: @MainActor @escaping () -> Void = {},
              onProgress: @MainActor @escaping (XDriveIOSPhotoBackupProgress) -> Void)
         async throws -> XDriveIOSPhotoBackupProgress {
         guard startOffset >= 0, maximumNewOriginals > 0,
@@ -117,7 +118,8 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                     do {
                         let outcome = try await uploadOrVerifyOriginal(
                             candidate.id, isVideo: isVideo, isLive: isLive,
-                            allowICloud: allowICloudOriginals
+                            allowICloud: allowICloudOriginals,
+                            onPotentialWrite: onPotentialWrite
                         )
                         switch outcome {
                         case .uploaded:
@@ -174,7 +176,8 @@ struct XDriveIOSForegroundPhotoBackupMVP {
 
     private func uploadOrVerifyOriginal(
         _ localIdentifier: String, isVideo: Bool, isLive: Bool,
-        allowICloud: Bool
+        allowICloud: Bool,
+        onPotentialWrite: @MainActor @escaping () -> Void
     ) async throws -> StillOutcome {
         // This stable Keychain namespace is used ONLY for user-initiated
         // Owner Files. It is not a registered Server Device and never grants
@@ -286,6 +289,11 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                         approvedBackgroundGrant: approved, ledger: journal
                     )
                 }
+                // Only this exact transition can begin a Server write.
+                // Background cancellation before this point is not an
+                // uncertain UploadSession ACK and must not poison BG cursors.
+                await onPotentialWrite()
+                try Task.checkCancellation()
                 _ = try await writer.uploadPrepared(prepared, from: uploadFile)
                 return .uploaded
             } catch is CancellationError {

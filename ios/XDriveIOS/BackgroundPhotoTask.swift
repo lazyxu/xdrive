@@ -39,6 +39,7 @@ enum XDriveIOSBackgroundPhotoTask {
             // Once an original writer starts, an interrupted create/finalize
             // may have committed remotely. Never auto-reschedule that case.
             var beganOriginalWrite = false
+            var attemptedOwner: XDriveNativeOwnerRoot?
             defer {
                 active = nil
                 // success means the bounded local scan completed with no
@@ -88,13 +89,14 @@ enum XDriveIOSBackgroundPhotoTask {
                 // One newly committed original max per BGTask, even if the
                 // original is a video or an entire still+motion Live ZIP.
                 // The exact Owner journal and Go CAS writer are unchanged.
-                beganOriginalWrite = true
+                attemptedOwner = owner
                 let progress = try await XDriveIOSForegroundPhotoBackupMVP(
                     owner: owner, approvedBackgroundGrant: approved
                 ).run(
                     allowICloudOriginals: false,
                     startOffset: offset,
-                    maximumNewOriginals: 1
+                    maximumNewOriginals: 1,
+                    onPotentialWrite: { beganOriginalWrite = true }
                 ) { _ in
                     // No inactive WebView progress or long-lived credentials.
                 }
@@ -110,13 +112,25 @@ enum XDriveIOSBackgroundPhotoTask {
                     )
                 }
             } catch is CancellationError {
-                // Unknown remote ACK stays in the encrypted journal.
+                // A cancelled writer might already have committed remotely.
+                // Preserve an explicit pause even if it could not finish the
+                // normal record() call. No automatic resubmission.
+                if beganOriginalWrite, let attemptedOwner {
+                    try? XDriveIOSBGOriginalWindowStore.shared.pause(
+                        owner: attemptedOwner
+                    )
+                }
             } catch {
-                // Only an independently identified, transient network failure
-                // BEFORE any potential Server write may keep the schedule
-                // alive. Invalid/revoked grants, missing permission, cancelled
-                // work or a possible lost finalize ACK MUST NOT auto-retry.
-                if !beganOriginalWrite && retryablePreflightNetworkFailure(error) {
+                if beganOriginalWrite, let attemptedOwner {
+                    // Fail closed after any potentially ambiguous UploadSession
+                    // stage; only a trusted zero-pending receipt review may
+                    // later clear this durable BG pause.
+                    try? XDriveIOSBGOriginalWindowStore.shared.pause(
+                        owner: attemptedOwner
+                    )
+                } else if retryablePreflightNetworkFailure(error) {
+                    // Only a transient read-only proof failure, BEFORE a
+                    // possible Server write, may keep the BG schedule alive.
                     await resubmitOnlyIfStillApproved()
                 }
             }
