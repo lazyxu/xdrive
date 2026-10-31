@@ -485,6 +485,7 @@ declare global {
       }>>
       revokeLANTrust: (server: string) => Promise<DesktopResult<{ revoked: boolean }>>
       clearSavedPassword: (server: string, username: string) => Promise<DesktopResult<DesktopLoginHistory>>
+      forgetLoginProfile: (server: string, username: string) => Promise<DesktopResult<DesktopLoginHistory>>
       getWindowState: () => Promise<DesktopWindowState>
       minimizeWindow: () => void
       toggleMaximizeWindow: () => void
