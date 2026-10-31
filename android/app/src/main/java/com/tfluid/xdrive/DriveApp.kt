@@ -543,6 +543,10 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                             }
                             nativeNavigation = nativeNavigation.copy(gallerySource = source)
                         }
+                        if (nativeNavigation.gallerySource == NativeGallerySource.LOCAL ||
+                            nativeNavigation.gallerySource == NativeGallerySource.ALBUMS) {
+                            NativePhotoBatchPanel(state, controller)
+                        }
                         when (nativeNavigation.gallerySource) {
                             NativeGallerySource.LOCAL -> Box(Modifier.weight(1f)) {
                                 NativeLocalMediaStoreGallery(albumsOnly = false,
