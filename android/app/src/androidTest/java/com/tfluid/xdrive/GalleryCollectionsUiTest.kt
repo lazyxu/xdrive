@@ -68,7 +68,7 @@ class GalleryCollectionsUiTest {
     @After fun close() { controller.close(); scope.cancel() }
 
     @Test fun realCollectionsListOpensAlbumReturnsAndRestoresPhotoLibrary() {
-        compose.setContent { XDriveTheme { DriveApp(controller) } }
+        compose.setContent { XDriveTheme { DriveApp(controller, galleryFirstOnLogin = false) } }
         compose.onNodeWithTag("server").performTextInput("https://drive.example")
         compose.onNodeWithTag("username").performTextInput("owner")
         compose.onNodeWithTag("password").performTextInput("synthetic-password")
