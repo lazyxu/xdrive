@@ -170,3 +170,22 @@ test('canonical PhotoAsset Viewer exposes explicit fenced Retry on preview failu
   assert.match(preview, /\.task\(id: previewRequestID\)[\s\S]*?login\.verifiedAuthorization\(\)/)
   assert.doesNotMatch(preview, /document\.cookie|WKWebView/)
 })
+
+
+test('fullscreen PhotoAsset Viewer cancels the still-mounted cloud wall and keeps the item return anchor', () => {
+  const tile = view.slice(view.indexOf('private struct XDriveIOSNativeMediaWallTile: View'),
+    view.indexOf('/// Fullscreen media View.'))
+  const wall = view.slice(view.indexOf('struct XDriveIOSNativeServerMediaWall: View'),
+    view.indexOf('struct XDriveIOSNativeServerMediaAlbums: View'))
+  assert.match(tile, /let viewerActive: Bool/)
+  assert.match(tile, /\.task\(id: "\\\(item.id\)-\\\(item.node.revision\)-\\\(viewerActive\)"\)/)
+  assert.match(tile, /guard !viewerActive, image == nil else \{ return \}/)
+  assert.match(tile, /model\.thumbnail\(item, login: login\)/)
+  assert.match(tile, /try Task\.checkCancellation\(\)/)
+  assert.match(tile, /if !viewerActive \{ image = nil \}/)
+  assert.match(wall, /viewerActive: selected != nil/)
+  assert.match(wall, /\.onChange\(of: selected\?\.id\) \{ selectedID in[\s\S]*?lastOpenedMediaID = selectedID[\s\S]*?model\.suspendForViewer\(\)/)
+  assert.match(wall, /returnScroll\.scrollTo\(anchor, anchor: \.center\)/)
+  assert.match(view, /func suspendForViewer\(\) \{[\s\S]*?job\?\.cancel\(\)/)
+  assert.match(wall, /\.onChange\(of: login\.owner\)[\s\S]*?model\.invalidate\(\)/)
+})

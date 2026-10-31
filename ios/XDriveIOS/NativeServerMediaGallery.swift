@@ -179,6 +179,7 @@ final class XDriveIOSNativeMediaWallModel: ObservableObject {
 
 private struct XDriveIOSNativeMediaWallTile: View {
     let item: XDriveIOSNativeMediaItem
+    let viewerActive: Bool
     @ObservedObject var model: XDriveIOSNativeMediaWallModel
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     @State private var image: UIImage?
@@ -206,7 +207,10 @@ private struct XDriveIOSNativeMediaWallTile: View {
             item.isLive ? "实况媒体：\(item.node.name)" :
                 item.isVideo ? "视频：\(item.node.name)" : "照片：\(item.node.name)"
         )
-        .task(id: "\(item.id)-\(item.node.revision)") {
+        .task(id: "\(item.id)-\(item.node.revision)-\(viewerActive)") {
+            // A selected L3 Viewer cancels thumbnail work even if the L2
+            // ScrollView is still mounted behind fullScreenCover.
+            guard !viewerActive, image == nil else { return }
             do {
                 let result = try await model.thumbnail(item, login: login)
                 try Task.checkCancellation()
@@ -215,7 +219,9 @@ private struct XDriveIOSNativeMediaWallTile: View {
                 // No thumbnail derivative does NOT mean the original is absent.
             }
         }
-        .onDisappear { image = nil }
+        .onDisappear {
+            if !viewerActive { image = nil }
+        }
     }
 }
 
@@ -373,7 +379,8 @@ struct XDriveIOSNativeServerMediaWall: View {
                         ForEach(page.items) { item in
                             Button { selected = item } label: {
                                 XDriveIOSNativeMediaWallTile(
-                                    item: item, model: model, login: login
+                                    item: item, viewerActive: selected != nil,
+                                    model: model, login: login
                                 )
                             }
                             .buttonStyle(.plain)
@@ -413,6 +420,9 @@ struct XDriveIOSNativeServerMediaWall: View {
         .onChange(of: selected?.id) { selectedID in
             if let selectedID {
                 lastOpenedMediaID = selectedID
+                // Guaranteed foreground priority, independent of whether
+                // SwiftUI sends onDisappear to the covered photo wall.
+                model.suspendForViewer()
             } else if let anchor = lastOpenedMediaID,
                       model.page?.items.contains(where: { $0.id == anchor }) == true {
                 // Return to the exact logical item, not the first page.

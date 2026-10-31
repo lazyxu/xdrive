@@ -387,6 +387,16 @@ final class XDriveIOSNativeCloudOriginalModel: ObservableObject {
     // from the last independently verified page request.
     private var currentReader: XDriveIOSNativeCloudOriginalReader?
 
+    /// Opening L3 Viewer retires *all* in-flight page/thumbnail generations
+    /// while retaining the verified 48-item wall and visible scroll anchor.
+    /// On route/Owner/scene changes the existing invalidate/cancel still wins.
+    func suspendForViewer() {
+        epoch = UUID()
+        work?.cancel()
+        work = nil
+        busy = false
+    }
+
     func cancel() {
         epoch = UUID()
         currentReader = nil
@@ -681,6 +691,8 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
 /// SwiftUI cancels .task on reuse/disappearance. No cache survives Owner switch.
 private struct XDriveIOSNativeCloudOriginalTile: View {
     let node: XDriveIOSNativeCloudOriginal
+    // A full-screen Viewer must outrank even an already-composed tile.
+    let viewerActive: Bool
     @ObservedObject var model: XDriveIOSNativeCloudOriginalModel
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     @State private var thumb: UIImage?
@@ -717,8 +729,11 @@ private struct XDriveIOSNativeCloudOriginalTile: View {
         .accessibilityLabel(node.isLiveArchive
             ? "已备份的 Live ZIP：\(node.name)" : node.isVideo
             ? "已备份视频：\(node.name)" : "已备份照片：\(node.name)")
-        .task(id: "\(node.id)-\(node.revision)") {
-            guard node.isImage || node.isVideo else { return }
+        .task(id: "\(node.id)-\(node.revision)-\(viewerActive)") {
+            // Task-ID transition cancels this request even when fullScreenCover
+            // keeps the underlying LazyVGrid mounted.
+            guard !viewerActive, thumb == nil,
+                  node.isImage || node.isVideo else { return }
             do {
                 let image = try await model.thumbnail(node, login: login)
                 try Task.checkCancellation()
@@ -728,7 +743,11 @@ private struct XDriveIOSNativeCloudOriginalTile: View {
                 // failure; keep the visible type placeholder and file row.
             }
         }
-        .onDisappear { thumb = nil }
+        .onDisappear {
+            // Preserve an already decoded <=280px tile under Viewer; discard
+            // it on real navigation, while owner changes rebuild the wall.
+            if !viewerActive { thumb = nil }
+        }
     }
 }
 
@@ -759,7 +778,8 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
                     ForEach(model.nodes) { node in
                         Button { selected = node } label: {
                             XDriveIOSNativeCloudOriginalTile(
-                                node: node, model: model, login: login
+                                node: node, viewerActive: selected != nil,
+                                model: model, login: login
                             )
                         }
                         .buttonStyle(.plain)
@@ -797,6 +817,13 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
             }
         }) {
             XDriveIOSNativeCloudOriginalPreview(node: $0, login: login)
+        }
+        .onChange(of: selected?.id) { selectedID in
+            if selectedID != nil {
+                // Do not wait for presenter's onDisappear: SwiftUI can keep
+                // the background page mounted while the Viewer is visible.
+                model.suspendForViewer()
+            }
         }
         .task {
             guard phase == .active else {

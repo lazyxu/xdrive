@@ -10,9 +10,9 @@ test('cloud originals render a bounded adaptive native thumbnail grid', () => {
   assert.match(src, /private struct XDriveIOSNativeCloudOriginalTile: View/)
   assert.match(src, /LazyVGrid\(/)
   assert.match(src, /ForEach\(model.nodes\)/)
-  assert.match(src, /node: node, model: model, login: login/)
-  assert.match(src, /\.task\(id: "\\\(node.id\)-\\\(node.revision\)"\)/)
-  assert.match(src, /\.onDisappear \{ thumb = nil \}/)
+  assert.match(src, /node: node, viewerActive: selected != nil,\s*model: model, login: login/)
+  assert.match(src, /\.task\(id: "\\\(node.id\)-\\\(node.revision\)-\\\(viewerActive\)"\)/)
+  assert.match(src, /\.onDisappear \{[\s\S]*?if !viewerActive \{ thumb = nil \}/)
   assert.match(src, /node.isLiveArchive \|\| node.isVideo/)
 })
 
@@ -47,4 +47,27 @@ test('thumbnail authority is reused only inside one verified Owner page generati
   assert.match(src, /guard epoch == token/)
   assert.match(src, /XDriveIOSNativeCloudOriginalGallery: View/)
   assert.doesNotMatch(src, /WKWebView|document\.cookie|localStorage|UserDefaults\.standard/)
+})
+
+
+test('foreground native Viewer preempts every queued cloud-original tile without dropping its 48-item page', () => {
+  const model = src.slice(src.indexOf('final class XDriveIOSNativeCloudOriginalModel'),
+    src.indexOf('private struct XDriveIOSNativeCloudOriginalTile'))
+  const tile = src.slice(src.indexOf('private struct XDriveIOSNativeCloudOriginalTile'),
+    src.indexOf('struct XDriveIOSNativeCloudOriginalGallery: View'))
+  const wall = src.slice(src.indexOf('struct XDriveIOSNativeCloudOriginalGallery: View'))
+  assert.match(tile, /let viewerActive: Bool/)
+  assert.match(tile, /guard !viewerActive, thumb == nil/)
+  assert.match(tile, /model\.thumbnail\(node, login: login\)/)
+  assert.match(tile, /try Task\.checkCancellation\(\)/)
+  assert.match(tile, /if !viewerActive \{ thumb = nil \}/)
+  assert.match(wall, /viewerActive: selected != nil/)
+  assert.match(wall, /\.onChange\(of: selected\?\.id\) \{ selectedID in[\s\S]*?model\.suspendForViewer\(\)/)
+  const suspend = model.slice(model.indexOf('func suspendForViewer()'), model.indexOf('func cancel()'))
+  assert.match(suspend, /epoch = UUID\(\)/)
+  assert.match(suspend, /work\?\.cancel\(\)/)
+  assert.match(suspend, /busy = false/)
+  assert.doesNotMatch(suspend, /nodes = \[\]|currentReader = nil|total = 0|scanned = 0/)
+  assert.match(wall, /onDismiss: \{[\s\S]*?if refreshAfterViewer \{[\s\S]*?model\.reload\(login: login\)/)
+  assert.match(wall, /\.onChange\(of: login\.owner\)[\s\S]*?model\.invalidate\(\)/)
 })
