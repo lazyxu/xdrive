@@ -1,7 +1,6 @@
 package com.tfluid.xdrive.core
 
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 
 /**
  * Exactly one Android app-process Go UploadSession writer across all XDriveApi
@@ -19,6 +18,14 @@ import kotlinx.coroutines.sync.withLock
 internal object NativeUploadAdmission {
     private val uploadMutex = Mutex()
 
-    suspend fun <T> withWriter(block: suspend () -> T): T =
-        uploadMutex.withLock { block() }
+    suspend fun <T> withWriter(block: suspend () -> T): T {
+        // The waiting coroutine is cancellable before it owns the permit.
+        uploadMutex.lock()
+        return try {
+            block()
+        } finally {
+            // A lost/cancelled Go finalize cannot strand the app writer.
+            uploadMutex.unlock()
+        }
+    }
 }
