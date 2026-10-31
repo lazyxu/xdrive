@@ -112,6 +112,10 @@ assert.match(appSource, /onSearchChange=\{setMobileLauncherSearch\}/)
 assert.match(launcherSource, /onChange=\{event => onSearchChange\(event\.target\.value\)\}/)
 assert.match(gallerySource, /const mobileMapFocusActive = compactGallery && showPlacesIndex && placesPanels\.map/,
   'Gallery reports its actual map/list presentation rather than route-only Places')
+assert.match(gallerySource, /onMobileMapFocusChange=\{onMobileMapFocusChange\}/,
+  'the page passes its callback to the inner Gallery that actually owns Map/List mode')
+assert.match(gallerySource, /export function XDriveMediaGallery\(\{\s*mobileWebChrome = false,\s*onMobileMapFocusChange,/,
+  'the inner Gallery must receive the callback used by its layout effect')
 assert.match(gallerySource, /onMobileMapFocusChange\?\.\(mobileMapFocusActive\)/,
   'Gallery must report active focus to the shell')
 assert.match(gallerySource, /onMobileMapFocusChange\?\.\(false\)/,

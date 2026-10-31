@@ -4133,6 +4133,7 @@ export function XDriveMediaGalleryPage({
         preferenceScope={preferenceScope}
         onRegisterViewerThumbnailCache={onRegisterViewerThumbnailCache}
         mobileWebChrome={mobileWebChrome}
+        onMobileMapFocusChange={onMobileMapFocusChange}
         suspendBackgroundThumbnails={suspendBackgroundThumbnails}
         onUploadRequested={onUploadRequested}
         mobileCollectionsOverview={mobileCollectionsOverview}
@@ -4693,6 +4694,8 @@ export type XDriveMediaGalleryVirtualCollection = {
 
 export interface XDriveMediaGalleryProps {
   mobileWebChrome?: boolean
+  /** The inner Gallery owns Map/List mode; report real L2 visibility to Web shell. */
+  onMobileMapFocusChange?: (focused: boolean) => void
   suspendBackgroundThumbnails?: boolean
   mobileCollectionsOverview?: boolean
   onMobileCollectionsOverviewChange?: (overview: boolean) => void
@@ -6445,6 +6448,7 @@ const personDialogDescriptions = {
 
 export function XDriveMediaGallery({
   mobileWebChrome = false,
+  onMobileMapFocusChange,
   suspendBackgroundThumbnails = false,
   mobileCollectionsOverview = false,
   onMobileCollectionsOverviewChange,

@@ -2786,8 +2786,8 @@ function FileManager({
                   scope,target,signal,camera)
               : undefined}
             mobileWebChrome
-            onMobileMapFocusChange={onMobileMapFocusChange}
             source={gallerySource}
+            onMobileMapFocusChange={onMobileMapFocusChange}
             suspendBackgroundThumbnails={viewerActive}
             onRegisterViewerThumbnailCache={galleryThumbnailBridge.register}
             uploadRevision={galleryUploadRevision}
