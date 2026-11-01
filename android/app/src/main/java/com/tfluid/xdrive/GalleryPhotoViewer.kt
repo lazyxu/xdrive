@@ -33,6 +33,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tfluid.xdrive.core.GalleryAsset
+import com.tfluid.xdrive.core.DriveNode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
@@ -107,6 +108,8 @@ private fun decodeGalleryOriginal(bytes: ByteArray): GalleryDecodedOriginal? {
 internal fun GalleryPhotoViewer(
     photo: GalleryAsset, controller: DriveController,
     thumbnails: LruCache<String, ImageBitmap>,
+    onDownload: ((DriveNode) -> Unit)? = null,
+    canDownload: Boolean = false,
 ) {
     // Persist no private media bytes; zoom and pan only live for one image.
     var zoom by remember(photo.node.id, photo.node.revision) { mutableFloatStateOf(1f) }
@@ -203,6 +206,15 @@ internal fun GalleryPhotoViewer(
             Text(photo.node.name, modifier = Modifier.weight(1f),
                 color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.titleSmall)
+            if (onDownload != null) TextButton(
+                onClick = {
+                    if (canDownload && controller.state.value.galleryViewer == photo)
+                        onDownload(photo.node)
+                },
+                enabled = canDownload,
+                modifier = Modifier.heightIn(min = 48.dp)
+                    .testTag("gallery-photo-save-original"),
+            ) { Text("保存原件", color = Color.White) }
             TextButton(onClick = { controller.showGalleryInfo(photo) },
                 modifier = Modifier.heightIn(min = 48.dp).testTag("gallery-photo-info")) {
                 Text("信息", color = Color.White)
