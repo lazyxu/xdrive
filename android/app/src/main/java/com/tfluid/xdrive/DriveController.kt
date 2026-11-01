@@ -2297,15 +2297,18 @@ class DriveController(
 
     /** The SDK returns BD09LL camera bounds, not a trusted Owner map response.
      * A manual refresh reuses the original authenticated /cells GET. */
-    fun galleryBd09CameraSettled(bounds: OwnerBd09Bounds) {
+    fun galleryBd09CameraSettled(bounds: OwnerBd09Bounds?) {
         val current = state.value
         if (current.screen != Screen.GALLERY || !current.galleryMapOpen ||
             !current.galleryBd09Requested || current.galleryMapCellSelected != null ||
             current.hasActiveNativeTransfer() || session == null || api == null) return
+        val exactBounds = bounds?.takeIf { it.valid() }
         mutableState.value = current.copy(
-            galleryBd09CameraMoving = false,
-            galleryBd09CameraPending = bounds.takeIf {
-                it.valid() && it != current.galleryBd09Bounds
+            // An invalid/unavailable SDK rectangle cannot reauthorize old taps.
+            // A subsequent zoom/drag can provide a valid viewport.
+            galleryBd09CameraMoving = exactBounds == null,
+            galleryBd09CameraPending = exactBounds?.takeIf {
+                it != current.galleryBd09Bounds
             },
             galleryBd09PreserveCamera = true)
     }
