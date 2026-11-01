@@ -14,6 +14,7 @@ class AuthToggleUiTest {
     @get:Rule val compose = createComposeRule()
     private var formState by mutableStateOf(DriveState())
     private var submitted: Pair<Boolean, Boolean>? = null // allowHttp, remember
+    private var submittedSavePassword: Boolean? = null
     private var savedRestoreRetries = 0
 
     private fun showForm() {
@@ -21,8 +22,9 @@ class AuthToggleUiTest {
             XDriveTheme {
                 UnifiedLoginForm(
                     state = formState,
-                    login = { _, allowHttp, _, _, _, remember, _ ->
+                    login = { _, allowHttp, _, _, _, remember, savePassword ->
                         submitted = allowHttp to remember
+                        submittedSavePassword = savePassword
                     },
                     retrySavedSession = { savedRestoreRetries++ },
                     actions = {},
@@ -90,5 +92,19 @@ class AuthToggleUiTest {
         compose.onNodeWithTag("allow-http").assertDoesNotExist()
         compose.runOnIdle { formState = formState.copy(loading = false) }
         compose.onNodeWithTag("keep-login").assertIsEnabled()
+    }
+    @Test fun manualServerOrUsernameEditMustResetSavedPasswordConsent() {
+        showForm()
+        compose.onNodeWithTag("auth-remember-password")
+            .performScrollTo().assertIsOff().performClick()
+        compose.onNodeWithTag("auth-remember-password").assertIsOn()
+        compose.onNodeWithTag("server").performTextInput("https://drive.example")
+        compose.onNodeWithTag("auth-remember-password").assertIsOff()
+        compose.onNodeWithTag("auth-remember-password").performClick()
+        compose.onNodeWithTag("username").performTextInput("owner")
+        compose.onNodeWithTag("auth-remember-password").assertIsOff()
+        compose.onNodeWithTag("password").performTextInput("fixture-only")
+        compose.onNodeWithTag("auth-submit").performScrollTo().performClick()
+        compose.runOnIdle { Assert.assertEquals(false, submittedSavePassword) }
     }
 }

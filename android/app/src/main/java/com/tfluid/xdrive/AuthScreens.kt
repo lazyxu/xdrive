@@ -190,13 +190,18 @@ internal fun UnifiedLoginForm(
             if (oldOrigin != newOrigin) lanIp = ""
             server = value
             password = ""
+            rememberPassword = false
         }, "server", !state.loading,
             keyboardType = KeyboardType.Uri, placeholder = "https://drive.example.com:8443")
-        AuthField("内网 IP（可选）", lanIp, { lanIp = it; password = "" }, "lan-ip", !state.loading,
+        AuthField("内网 IP（可选）", lanIp, {
+            lanIp = it; password = ""; rememberPassword = false
+        }, "lan-ip", !state.loading,
             keyboardType = KeyboardType.Uri, placeholder = "192.168.2.4")
         Text("自动优先连接内网，网络不可达时通过服务器域名连接公网；始终验证 HTTPS 身份。",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        AuthField("用户名", username, { username = it; password = "" }, "username", !state.loading)
+        AuthField("用户名", username, {
+            username = it; password = ""; rememberPassword = false
+        }, "username", !state.loading)
         AuthField("密码", password, { password = it }, "password", !state.loading, secret = true)
         // One accessible checkbox action covers the entire 48dp row, including
         // its label. Only the parent handles toggles; the child is a visual
