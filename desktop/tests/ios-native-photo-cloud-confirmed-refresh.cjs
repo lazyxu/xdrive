@@ -131,7 +131,7 @@ test('confirmed original temporary readback outage retains cursor instead of an 
   const scanning = runner.slice(runner.indexOf('scanning: while'),
     runner.indexOf('private static func mustAbortRun('))
   assert.match(confirmed, /return \.alreadyConfirmed/)
-  assert.match(confirmed, /if Self\.isTransientConfirmedReadbackFailure\(error\) \{ throw error \}/)
+  assert.match(confirmed, /if Self\.isTransientConfirmedReadbackFailure\(error\) \|\|\s*Self\.mustAbortRun\(after: error\) \{ throw error \}/)
   assert.match(confirmed, /return \.requiresReview/)
   assert.ok(confirmed.indexOf('isTransientConfirmedReadbackFailure(error)') <
     confirmed.lastIndexOf('return .requiresReview'))
@@ -195,9 +195,38 @@ test('temporary background grant proof does not masquerade as revoked Owner or p
   assert.match(wholeRun, /error is XDriveIOSPhotoBGVaultFailure/)
   assert.match(transient, /case \.transientServerStatus\(let code\) = grant/)
   assert.match(retry, /case \.transientServerStatus\(let code\) = grant/)
-  assert.match(confirmed, /if Self\.isTransientConfirmedReadbackFailure\(error\) \{ throw error \}/)
+  assert.match(confirmed, /if Self\.isTransientConfirmedReadbackFailure\(error\) \|\|\s*Self\.mustAbortRun\(after: error\) \{ throw error \}/)
   assert.match(confirmed, /return \.requiresReview/)
   assert.match(task, /if beganOriginalWrite, let attemptedOwner \{[\s\S]*?BGOriginalWindowStore\.shared\.pause/)
   assert.doesNotMatch(proof + bgVerify + retry,
     /URLSessionConfiguration\.background|createUploadSession|confirmReceipt|window\.webkit|localStorage/)
+})
+test('confirmed original Owner, ledger and BG grant failures abort the scan without an uncertain-ACK pause', () => {
+  const source = read('ios/XDriveIOS/ForegroundPhotoBackupMVP.swift')
+  const start = source.indexOf('case .confirmed:')
+  const stop = source.indexOf('case .prepared:', start)
+  const confirmed = source.slice(start, stop)
+  const abort = source.slice(source.indexOf('private static func mustAbortRun('),
+    source.indexOf('private static func isTransientConfirmedReadbackFailure('))
+  const outer = source.slice(source.indexOf('scanning: while'),
+    source.indexOf('private static func mustAbortRun('))
+  assert.ok(start >= 0 && stop > start)
+  const verified = confirmed.indexOf('return .alreadyConfirmed')
+  const revoked = confirmed.indexOf('Self.mustAbortRun(after: error)')
+  const review = confirmed.lastIndexOf('return .requiresReview')
+  assert.ok(verified >= 0 && revoked > verified && review > revoked,
+    'verified Node path checks global identity/ledger errors before receipt review')
+  assert.match(confirmed, /if Self\.isTransientConfirmedReadbackFailure\(error\) \|\|\s*Self\.mustAbortRun\(after: error\) \{ throw error \}/)
+  assert.match(abort, /error is XDriveNativeOwnerRootFailure/)
+  assert.match(abort, /error is XDrivePhotoSyncLedgerError/)
+  assert.match(abort, /error is XDriveIOSPhotoBGVaultFailure/)
+  assert.match(abort, /case \.notAuthorized = source/)
+  assert.match(outer, /if Self\.isTransientConfirmedReadbackFailure\(error\) \|\|\s*Self\.mustAbortRun\(after: error\) \{ throw error \}/)
+  assert.ok(outer.indexOf('if Self.isTransientConfirmedReadbackFailure(error) ||') <
+    outer.indexOf('report.unavailable += 1'))
+  assert.match(outer, /await scanner\.reset\(\)\s*throw error/)
+  // Missing/mismatched current Owner Node remains uncertain; no new Server
+  // mutation, blind replay, or ledger record is introduced by this branch.
+  assert.match(confirmed, /return \.requiresReview/)
+  assert.doesNotMatch(confirmed, /uploadPrepared|confirmReceipt|clearLedger|beginCreate|beginFinalize/)
 })
