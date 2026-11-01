@@ -698,6 +698,19 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                     ProgressView("正在安全读取云端预览…")
                 }
             }
+            .overlay(alignment: .topLeading) {
+                if let still {
+                    XDriveIOSNativeViewerQualityPanel(
+                        fileName: viewed.name,
+                        source: viewed.isLiveArchive
+                            ? "实况静态原件 · 适屏解码" : "原件 · 适屏解码",
+                        image: still,
+                        originalBytes: viewed.size,
+                        archiveOriginal: viewed.isLiveArchive,
+                        liveFiles: liveResources
+                    )
+                }
+            }
             .navigationTitle(viewed.name)
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom) {

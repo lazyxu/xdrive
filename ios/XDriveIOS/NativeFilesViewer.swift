@@ -127,6 +127,14 @@ struct XDriveIOSNativeFilesViewer: View {
                     case .image(let image):
                         XDriveIOSNativeZoomablePhotoView(image: image)
                             .accessibilityLabel("图片，可双指缩放或双击")
+                            .overlay(alignment: .topLeading) {
+                                XDriveIOSNativeViewerQualityPanel(
+                                    fileName: viewed.name,
+                                    source: "原件 · 适屏解码",
+                                    image: image,
+                                    originalBytes: viewed.size
+                                )
+                            }
                     case .video:
                         if let player {
                             VideoPlayer(player: player)

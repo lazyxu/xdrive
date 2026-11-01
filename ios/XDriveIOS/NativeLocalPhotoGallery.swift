@@ -126,7 +126,7 @@ final class XDriveIOSLocalPhotoDetailModel: ObservableObject {
             options.isNetworkAccessAllowed = false
             options.deliveryMode = .highQualityFormat
             let id = PHImageManager.default().requestImage(
-                for: asset, targetSize: CGSize(width: 1800, height: 1800),
+                for: asset, targetSize: CGSize(width: 4096, height: 4096),
                 contentMode: .aspectFit, options: options
             ) { [weak self] picture, info in
                 // PhotoKit can return no local pixels for an iCloud-only
@@ -308,6 +308,15 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                     }
                 } else {
                     ProgressView("正在读取已授权的本机媒体…")
+                }
+            }
+            .overlay(alignment: .topLeading) {
+                if let still = model.still, viewed.kind == "image" {
+                    XDriveIOSNativeViewerQualityPanel(
+                        fileName: viewed.id,
+                        source: "PhotoKit 本机适屏图",
+                        image: still
+                    )
                 }
             }
             .navigationTitle(viewed.isLive ? "实况照片" :
