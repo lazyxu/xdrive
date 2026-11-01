@@ -57,7 +57,7 @@ internal fun galleryOriginalFallbackRetryVisible(
 internal fun galleryOriginalSampleSize(width: Int, height: Int): Int? {
     if (width !in 1..32768 || height !in 1..32768) return null
     var sample = 1
-    while (maxOf(width, height) / sample > 2048) sample *= 2
+    while (maxOf(width, height) / sample > 4096) sample *= 2
     return sample
 }
 
