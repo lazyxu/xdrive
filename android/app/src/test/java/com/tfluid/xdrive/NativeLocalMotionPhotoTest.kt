@@ -45,8 +45,8 @@ class NativeLocalMotionPhotoTest {
         assertTrue(nativeLocalMotionXmpCandidate(
             legacyPacket(offset = (512L * 1024 * 1024).toString())))
         assertTrue(nativeLocalMotionXmpCandidate(
-            "<rdf:Description GCamera:MicroVideo='1' " +
-                "GCamera:MicroVideoOffset='5115'/>".toByteArray()))
+            ("<rdf:Description GCamera:MicroVideo='1' " +
+                "GCamera:MicroVideoOffset='5115'/>").toByteArray()))
         // The existing modern Container format remains independently valid.
         assertTrue(nativeLocalMotionXmpCandidate(packet()))
     }
@@ -65,9 +65,9 @@ class NativeLocalMotionPhotoTest {
         assertFalse(nativeLocalMotionXmpCandidate(
             "<rdf:Description GCamera:MicroVideoOffset='100'/>".toByteArray()))
         assertFalse(nativeLocalMotionXmpCandidate(
-            "<rdf:Description GCamera:MicroVideo='1' " +
+            ("<rdf:Description GCamera:MicroVideo='1' " +
                 "GCamera:MicroVideoOffset='100' " +
-                "GCamera:MicroVideoOffset='200'/>".toByteArray()))
+                "GCamera:MicroVideoOffset='200'/>").toByteArray()))
     }
 
     @Test fun rejectsDisabledMissingTruncatedAndNonVideoMetadata() {
