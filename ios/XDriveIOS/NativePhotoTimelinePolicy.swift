@@ -120,6 +120,29 @@ enum XDriveIOSNativePhotoVirtualPagePolicy {
         return (total - 1) / pageSize + 1
     }
 
+    /// Numeric page boundary used by an explicit Viewer next/previous
+    /// action. Avoid overflow for huge but valid PhotoKit counts.
+    static func adjacentOffset(current: Int, total: Int, direction: Int) -> Int? {
+        guard total > 0, current >= 0, current < total,
+              current % pageSize == 0,
+              direction == -1 || direction == 1 else { return nil }
+        let page = current / pageSize
+        let lastPage = (total - 1) / pageSize
+        if direction < 0 {
+            guard page > 0 else { return nil }
+            return (page - 1) * pageSize
+        }
+        guard page < lastPage else { return nil }
+        return (page + 1) * pageSize
+    }
+
+    static func atBoundary(index: Int, visibleCount: Int, direction: Int) -> Bool {
+        guard visibleCount > 0, visibleCount <= pageSize,
+              index >= 0 && index < visibleCount else { return false }
+        return direction == -1 ? index == 0 :
+               direction == 1 ? index == visibleCount - 1 : false
+    }
+
     static func normalizedAnchor(requested: Int, total: Int) -> Int {
         guard total > 0 else { return 0 }
         let safe = max(0, requested)
