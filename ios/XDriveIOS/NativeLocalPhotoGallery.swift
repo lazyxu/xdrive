@@ -667,8 +667,8 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
             if phase == .active { model.load(viewed) }
         }
         .onChange(of: changes.generation) { _ in
-            cancelPhotoAction()
             cancelCrossing()
+            cancelPhotoAction()
             // Library mutation may revoke the selected media even when
             // the visible PhotoKit permission level stays Full or Limited.
             model.cancel()

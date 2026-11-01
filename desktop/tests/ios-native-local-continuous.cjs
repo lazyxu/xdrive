@@ -217,7 +217,7 @@ test('native local Viewer offers single-photo original share, favorites and syst
   assert.match(detail, /XDriveIOSNativeLocalPhotoSelectionActions\.setFavorite\(\s*\[captured\], to: favorite/)
   assert.match(detail, /XDriveIOSNativeLocalPhotoSelectionActions\.delete\(\[captured\]\)/)
   assert.match(detail, /photoActionTask\?\.cancel\(\)/)
-  assert.match(detail, /\.onChange\(of: changes\.generation\) \{ _ in\s*cancelPhotoAction\(\)/)
+  assert.match(detail, /\.onChange\(of: changes\.generation\) \{ _ in\s*cancelCrossing\(\)\s*cancelPhotoAction\(\)/)
   assert.match(action, /PHAssetChangeRequest\.deleteAssets\(assets as NSArray\)/)
   assert.match(share, /XDrivePhotoKitOriginalExporter\.stage\(/)
 });
