@@ -195,6 +195,16 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-saved-login-profiles"
           "$RUNNER_TEMP/xdrive-ios-saved-login-profiles"
 
+      - name: Verify native historical receipt counts never claim full-library completion
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativePhotoCoveragePolicy.swift \
+            ios/tests/NativePhotoCoveragePolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-photo-coverage"
+          "$RUNNER_TEMP/xdrive-ios-photo-coverage"
+          node --test desktop/tests/ios-native-photo-coverage.cjs
+
       - name: Verify native Photos Owner, auto backup, cloud thumbnail and receipt contracts
         run: |
           set -euo pipefail
