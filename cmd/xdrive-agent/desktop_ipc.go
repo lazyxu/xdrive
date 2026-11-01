@@ -453,13 +453,7 @@ func startDesktopIPC(ctx context.Context, ctrl desktopIPCController, shutdown fu
 		token:         token,
 	}
 
-	go func() {
-		err := s.server.Serve(listener)
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Printf("desktop IPC stopped: %v", err)
-		}
-		s.cleanup()
-	}()
+	go serveDesktopIPC(s, listener, shutdown, len(backupOnly) > 0 && backupOnly[0])
 
 	go func() {
 		<-ctx.Done()
@@ -470,6 +464,21 @@ func startDesktopIPC(ctx context.Context, ctrl desktopIPCController, shutdown fu
 	}()
 
 	return s, nil
+}
+
+// A failed authenticated IPC listener must not leave the DSM Backup-only
+// scheduler running without any local control or status access. Expected
+// shutdown (http.ErrServerClosed) and full Desktop mode keep their existing
+// behavior. This path does not retry uploads or release in-flight Operations.
+func serveDesktopIPC(s *desktopIPCServer, listener net.Listener, shutdown func(), backupOnly bool) {
+	err := s.server.Serve(listener)
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.Printf("desktop IPC stopped: %v", err)
+		if backupOnly && shutdown != nil {
+			shutdown()
+		}
+	}
+	s.cleanup()
 }
 
 func (s *desktopIPCServer) Close() error {
