@@ -132,7 +132,7 @@ private struct XDriveIOSNativeFilesDestinationWriter {
         let created: XDriveIOSNativeFilesNode
         switch kind {
         case .copy:
-            let bytes = try response(
+            let bytes = try await response(
                 endpoint("/api/v1/nodes/\(original.id)/copy"),
                 session: client, method: "POST",
                 body: JSONEncoder().encode(["parent_id": destination.id]),
@@ -148,7 +148,7 @@ private struct XDriveIOSNativeFilesDestinationWriter {
             }
             created = result
         case .move:
-            let bytes = try response(
+            let bytes = try await response(
                 endpoint("/api/v1/nodes/\(original.id)"),
                 session: client, method: "PATCH",
                 body: JSONEncoder().encode(["parent_id": destination.id]),

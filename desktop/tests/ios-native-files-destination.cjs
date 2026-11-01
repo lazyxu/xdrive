@@ -30,6 +30,9 @@ test('copy/move use real Server endpoints, exact source and target GET, version 
   assert.match(mutation, /target\.type == "dir"/)
   assert.match(mutation, /method: "POST"/)
   assert.match(mutation, /method: "PATCH"/)
+  // Swift's URLSession data(for:) wrapper is async for both write paths.
+  assert.equal((mutation.match(/let bytes = try await response\(/g) || []).length, 2,
+    'both copy and move await response')
   assert.match(mutation, /revision: original\.revision, accepted: 200/)
   assert.match(mutation, /forHTTPHeaderField: "If-Match"/)
   assert.match(mutation, /XDriveIOSNativeFilesDestinationReceiptPolicy\.copied\(/)
