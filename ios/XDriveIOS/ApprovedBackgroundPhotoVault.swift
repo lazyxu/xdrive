@@ -63,6 +63,9 @@ enum XDriveIOSPhotoBGVaultFailure: Error {
     case differentOwnerStillApproved
     case keychain(OSStatus)
     case serverRejected
+    /// Remote proof is unavailable, not revoked or a credential mismatch.
+    /// The caller may only reschedule when no UploadSession write began.
+    case transientServerStatus(Int)
     case invalidProof
 }
 
@@ -210,8 +213,19 @@ actor XDriveIOSApprovedPhotoBGVault {
         req.setValue("no-store", forHTTPHeaderField: "Cache-Control")
         let (body, response) = try await session.data(for: req)
         try Task.checkCancellation()
-        guard let http = response as? HTTPURLResponse,
-              http.statusCode == 200, body.count <= 4096,
+        guard let http = response as? HTTPURLResponse else {
+            throw XDriveIOSPhotoBGVaultFailure.invalidProof
+        }
+        guard http.statusCode == 200 else {
+            if http.statusCode == 408 || http.statusCode == 429 ||
+               (500...599).contains(http.statusCode) {
+                throw XDriveIOSPhotoBGVaultFailure.transientServerStatus(http.statusCode)
+            }
+            // 401/403/404, a revoked Device and any non-transient
+            // response are NEVER a renewable background permission.
+            throw XDriveIOSPhotoBGVaultFailure.serverRejected
+        }
+        guard body.count <= 4096,
               let proof = try? JSONDecoder().decode(
                 XDriveIOSBGOwnerProof.self, from: body
               ),
