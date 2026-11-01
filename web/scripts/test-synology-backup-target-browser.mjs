@@ -54,7 +54,12 @@ assert.match(picker, /xDriveSynologyBackupTargetDirectories\(items, parentID, ve
 assert.match(picker, /refreshAuthenticatedRoot/)
 assert.match(picker, /hasMore/)
 assert.match(picker, /loadMore/)
-assert.match(panel, /<XDriveSynologyBackupSourceSetup client=\{client\} onCreated=\{refresh\}/)
+assert.match(panel, /<XDriveSynologyBackupSourceSetup client=\{client\}\s+onCreated=\{\(\) => \{ if \(isCurrentHost\(\)\) refresh\(\) \}\}/,
+  'Source setup callback must be fenced to current Agent Host generation')
+assert.match(panel, /hostEpochRef\.current\.epoch === renderedHostEpoch/,
+  'returning to a previous Agent object must not restore stale callbacks')
+assert.doesNotMatch(panel, /<XDriveSynologyBackupSourceSetup client=\{client\} onCreated=\{refresh\}/,
+  'never expose an unguarded Source-created refresh into the replacement Host')
 assert.match(setup, /<XDriveSynologyBackupTargetBrowser client=\{client\} onSelectTarget=\{onSelectTarget\}/)
 assert.match(setup, /selectedTarget\.id/)
 assert.match(picker, /currentScopeVerified && isCurrentOwner\(\)/)
