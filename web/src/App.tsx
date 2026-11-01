@@ -2838,6 +2838,7 @@ function FileManager({
           >
               <WebFileExplorer
                 api={api}
+                mobileOwnerScope={mobileOwnerScope}
                 suspendBackgroundThumbnails={viewerActive}
                 items={items}
                 crumbs={crumbs}
