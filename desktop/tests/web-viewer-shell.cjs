@@ -2906,3 +2906,127 @@ test('P0 trusted Viewer metadata messages remain actionable without exposing arb
     assert.equal(buttons(renderer,'重试加载').length,1)
   }finally{if(renderer)await act(async()=>renderer.unmount())}
 })
+
+
+test('P0 Web Quick Look retains authorized loader leases across frame re-renders and HEIC/RAW derives JPEG', async () => {
+  const calls = []
+  const node = { id: 741, revision: 11, name: 'clip.mp4', type: 'file', size: 1024 }
+  const api = {
+    node: async () => node,
+    fileTextPreview: async () => ({ text: 'ok', size: 2, truncated: false }),
+    filePreviewURL: async (id) => {
+      calls.push(['original', id])
+      return 'https://api.xdrive.example/api/v1/file-preview/' + id + '?ticket=valid'
+    },
+    mediaAnalysisPreviewURL: async (id, _signal, revision) => {
+      calls.push(['derivative', id, revision])
+      return 'blob:compatible-jpeg'
+    },
+    mediaLivePhotoStillURL: async () => 'blob:live-still',
+    mediaLivePhotoMotionURL: async () => 'blob:live-motion',
+  }
+  const props = {
+    route: { app: 'preview', params: { node: 741 } },
+    api, gallerySource: {}, shareDialogAdapter: {},
+    onClose() {}, onReplaceRoute() {}, onError(error) { throw error },
+  }
+  let renderer
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(WebFileViewerApps, props),
+        { createNodeMock: () => ({ focus() {} }) })
+    })
+    const initial = renderer.root.findByType('preview-content').props
+    await act(async () => {
+      renderer.update(React.createElement(WebFileViewerApps, { ...props }))
+    })
+    const rerendered = renderer.root.findByType('preview-content').props
+    assert.equal(rerendered.loadPreviewURL, initial.loadPreviewURL,
+      'a frame redraw must not restart a playing signed video or PDF ticket')
+    assert.equal(rerendered.loadTextPreview, initial.loadTextPreview)
+    assert.equal(rerendered.loadLivePhotoMotion, initial.loadLivePhotoMotion)
+    const signal = new AbortController().signal
+    for (const name of ['photo.HEIC', 'camera.NEF', 'asset.CR3']) {
+      const url = await rerendered.loadPreviewURL(
+        { id: 741, revision: 11, name, kind: 'file' }, 'image', signal)
+      assert.equal(url, 'blob:compatible-jpeg')
+    }
+    assert.deepEqual(calls, [
+      ['derivative', 741, 11],
+      ['derivative', 741, 11],
+      ['derivative', 741, 11],
+    ], 'browser-incompatible photos use the version-scoped JPEG derivative')
+    await rerendered.loadPreviewURL({ id: 741, revision: 11, name: 'clip.mp4', kind: 'file' }, 'video', signal)
+    assert.deepEqual(calls.at(-1), ['original', 741],
+      'video retains its authorized streaming URL path, no thumbnail-as-frame workaround')
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+  }
+})
+
+test('P0 Web standalone PDF/audio retain stable loaders; PDF rejects HTML error pages before iframe', async () => {
+  const oldFetch = global.fetch
+  const oldLocation = window.location
+  window.location = { href: 'https://web.xdrive.example/#/files' }
+  const captures = []
+  global.fetch = async (url, options) => {
+    captures.push({ url, options })
+    return {
+      status: captures.length === 1 ? 404 : 200,
+      headers: { get: () => captures.length === 1 ? 'text/html' : 'application/pdf' },
+    }
+  }
+  try {
+    for (const app of ['pdf-viewer', 'audio-player']) {
+      const node = { id: 742, revision: 3, name: app === 'pdf-viewer' ? 'paper.pdf' : 'song.mp3',
+        type: 'file', size: 123 }
+      const api = {
+        node: async () => node,
+        filePreviewURL: async (id) =>
+          'https://api.xdrive.example/api/v1/file-preview/' + id + '?ticket=verified',
+      }
+      const props = {
+        route: { app, params: { node: 742 } }, api,
+        gallerySource: {}, shareDialogAdapter: {},
+        onClose() {}, onReplaceRoute() {}, onError(error) { throw error },
+      }
+      let renderer
+      try {
+        await act(async () => {
+          renderer = create(React.createElement(WebFileViewerApps, props),
+            { createNodeMock: () => ({ focus() {} }) })
+        })
+        const first = renderer.root.findByType('preview-content').props
+        await act(async () => renderer.update(React.createElement(WebFileViewerApps, { ...props })))
+        const next = renderer.root.findByType('preview-content').props
+        assert.equal(first.loadPreviewURL, next.loadPreviewURL,
+          app + ' should keep its existing renderer and HTTP range on redraw')
+        const signal = new AbortController().signal
+        if (app === 'pdf-viewer') {
+          await assert.rejects(
+            next.loadPreviewURL({ id: 742, kind: 'file', name: 'paper.pdf' }, 'pdf', signal),
+            /PDF preview stream is not available/)
+          const result = await next.loadPreviewURL(
+            { id: 742, kind: 'file', name: 'paper.pdf' }, 'pdf', signal)
+          assert.match(result, /ticket=verified/)
+          assert.equal(captures.length, 2)
+          for (const capture of captures) {
+            assert.equal(capture.options.method, 'HEAD')
+            assert.equal(capture.options.credentials, 'omit')
+          }
+        } else {
+          const url = await next.loadPreviewURL(
+            { id: 742, kind: 'file', name: 'song.mp3' }, 'audio', signal)
+          assert.match(url, /ticket=verified/)
+          assert.equal(captures.length, 2,
+            'audio path never performs a PDF-only request')
+        }
+      } finally {
+        if (renderer) await act(async () => renderer.unmount())
+      }
+    }
+  } finally {
+    global.fetch = oldFetch
+    window.location = oldLocation
+  }
+})
