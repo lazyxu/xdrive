@@ -94,6 +94,21 @@ class NativeBaiduMapPinsTest {
             139.0, 30.0, 140.0, 40.0)).validFor(bounds))
     }
 
+    @Test fun nativePhotoCoversChooseTwelveCurrentOwnerRepresentativesDeterministically() {
+        val signed = (0..63).map { index ->
+            sample.copy(cellX = index % 8, cellY = index / 8,
+                nodeId = index + 1000L, photoCount = (index % 4 + 1).toLong())
+        }
+        val chosen = nativeBaiduCoverCells(signed)
+        assertEquals(12, chosen.size)
+        assertEquals(4L, chosen.first().photoCount)
+        assertEquals(3, chosen.first().cellX)
+        assertEquals(0, chosen.first().cellY)
+        assertEquals((0..63).filter { it % 4 == 3 }.take(12)
+            .map { it + 1000L }, chosen.map { it.nodeId })
+        assertEquals(emptyList<OwnerBd09Cell>(), nativeBaiduCoverCells(emptyList()))
+    }
+
     @Test fun invalidBoundsAndImpossibleLongCountsFailClosed() {
         assertNull(nativeVerifiedBaiduPins(
             OwnerBd09Bounds(0.0, 0.0, 0.0, 10.0),

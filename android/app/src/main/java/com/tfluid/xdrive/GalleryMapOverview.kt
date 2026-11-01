@@ -1,6 +1,7 @@
 package com.tfluid.xdrive
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -9,7 +10,12 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -20,6 +26,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.tfluid.xdrive.core.OwnerBd09Bounds
+import com.tfluid.xdrive.core.OwnerBd09Cell
 import com.tfluid.xdrive.core.OwnerBd09MapCells
 import com.tfluid.xdrive.core.OwnerMapOverview
 import com.tfluid.xdrive.core.OwnerMapSample
@@ -83,7 +90,7 @@ internal fun ColumnScope.GalleryMapOverview(
                 state.galleryBd09CameraMoving, state.galleryBd09CameraPending,
                 state.galleryBd09PreserveCamera, state.loading,
                 state.error.takeIf { state.galleryMapCellSelected == null },
-                savedCamera, onCameraSnapshot)
+                savedCamera, onCameraSnapshot, state.nativeUiSessionId)
         state.error != null -> Column(Modifier.weight(1f).fillMaxWidth().padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -174,8 +181,30 @@ private fun ColumnScope.GalleryVerifiedBd09Cells(
     preserveCamera: Boolean, loading: Boolean, error: String?,
     savedCamera: NativeBaiduCameraPose?,
     onCameraSnapshot: (NativeBaiduCameraPose) -> Unit,
+    ownerEpoch: Long,
 ) {
     val blocked = loading || cameraMoving || pending != null || error != null
+    val representativeCells = remember(bounds, result) {
+        nativeVerifiedBaiduPins(bounds, result)?.let(::nativeBaiduCoverCells) ?: emptyList()
+    }
+    // Only a small capped sample from the current signed Owner map. Effects
+    // automatically cancel when Viewer replaces Map or the Owner changes.
+    val images = remember(ownerEpoch, bounds, result) {
+        mutableStateMapOf<OwnerBd09Cell, ImageBitmap>()
+    }
+    if (!blocked) for (cell in representativeCells) {
+        key(cell) {
+            LaunchedEffect(cell, ownerEpoch, bounds, result) {
+                val raw = controller.galleryBd09CoverThumbnail(cell)
+                val decoded = raw?.let {
+                    withContext(Dispatchers.Default) { decodeGalleryThumbnail(it) }
+                }
+                if (decoded != null) images[cell] = decoded
+            }
+        }
+    }
+    val visibleCovers: Map<OwnerBd09Cell, ImageBitmap> =
+        if (blocked) emptyMap() else images.toMap()
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxWidth().weight(1f)
@@ -214,10 +243,12 @@ private fun ColumnScope.GalleryVerifiedBd09Cells(
                     preserveCamera = preserveCamera,
                     savedCamera = savedCamera,
                     onCameraSnapshot = onCameraSnapshot,
+                    photoCovers = visibleCovers,
                 ) {
                     // Default no-SDK APK, declined consent and failed SDK
                     // initialization all retain the genuine signed grid.
-                    VerifiedBd09Grid(result, bounds)
+                    VerifiedBd09Grid(result, bounds, visibleCovers,
+                        !blocked, controller::openGalleryBd09Cell)
                 }
             }
         }
@@ -232,8 +263,18 @@ private fun ColumnScope.GalleryVerifiedBd09Cells(
                 modifier = Modifier.fillMaxWidth()
                     .testTag("gallery-map-bd09-cell-${cell.cellX}-${cell.cellY}")
                     .clickable(enabled = !blocked) { controller.openGalleryBd09Cell(cell) }) {
-                Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    visibleCovers[cell]?.let { cover ->
+                        Image(bitmap = cover, contentDescription = "真实照片聚合封面",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.size(64.dp)
+                                .clip(RoundedCornerShape(9.dp))
+                                .testTag("gallery-map-cover-row-${cell.cellX}-${cell.cellY}"))
+                    }
+                    Column(Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Row(Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically) {
                         Text("聚合网格 ${cell.cellX + 1}-${cell.cellY + 1}",
@@ -252,6 +293,7 @@ private fun ColumnScope.GalleryVerifiedBd09Cells(
                         formatGps(cell.longitude),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
             }
         }
@@ -261,11 +303,16 @@ private fun ColumnScope.GalleryVerifiedBd09Cells(
 @Composable
 private fun VerifiedBd09Grid(
     result: OwnerBd09MapCells, bounds: OwnerBd09Bounds,
+    covers: Map<OwnerBd09Cell, ImageBitmap>,
+    enabled: Boolean,
+    onOpenCell: (OwnerBd09Cell) -> Unit,
 ) {
     val dot = MaterialTheme.colorScheme.primary
     val grid = MaterialTheme.colorScheme.outlineVariant
     val paper = MaterialTheme.colorScheme.surfaceContainer
-    Canvas(Modifier.fillMaxWidth().height(190.dp)
+    BoxWithConstraints(Modifier.fillMaxWidth().height(190.dp)
+        .clip(RoundedCornerShape(12.dp))) {
+    Canvas(Modifier.fillMaxSize()
         .background(paper, RoundedCornerShape(12.dp))
         .semantics {
             contentDescription = "已验证 BD-09 代表点示意，非百度地图底图，共 ${result.cells.size} 个点"
@@ -289,6 +336,23 @@ private fun VerifiedBd09Grid(
             drawCircle(dot, radius = 4.5.dp.toPx(),
                 center = Offset(x.coerceIn(0f, w), y.coerceIn(0f, h)))
         }
+    }
+    // Overlay true photo derivatives in Compose. This is deliberately NOT
+    // a map SDK BitmapDescriptor, so provider never receives private pixels.
+    if (enabled) for ((cell, cover) in covers) {
+        val xy = bd09ViewportFraction(bounds, cell.latitude, cell.longitude)
+            ?: continue
+        val maxX = (maxWidth - 44.dp).coerceAtLeast(0.dp)
+        val x = (maxWidth * xy.first - 22.dp).coerceIn(0.dp, maxX)
+        val y = (190.dp * xy.second - 22.dp).coerceIn(0.dp, 146.dp)
+        Image(bitmap = cover,
+            contentDescription = "照片聚合 ${cell.photoCount} 张",
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.offset(x, y).size(44.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .clickable { onOpenCell(cell) }
+                .testTag("gallery-map-cover-marker-${cell.cellX}-${cell.cellY}"))
+    }
     }
 }
 

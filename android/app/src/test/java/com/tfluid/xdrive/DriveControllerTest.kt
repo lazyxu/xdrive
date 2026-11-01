@@ -4729,6 +4729,79 @@ class DriveControllerTest {
         c.close()
     }
 
+    @Test fun mapCoverReadsOnlySignedRepresentativeAndStopsOnUnverifiedCamera() = runTest {
+        val current = OwnerBd09Cell(2, 4, 3, 61, 420, 7, 35.505, 139.706)
+        val foreign = current.copy(nodeId = 421, nodeRevision = 8)
+        val reads = mutableListOf<Pair<Long, Long>>()
+        val api = object : Service() {
+            override suspend fun placesMapOverview(
+                accessToken: String, bounds: OwnerMapBounds, detail: Boolean,
+            ) = OwnerMapOverview(emptyList(), 0, true)
+            override suspend fun baiduNativeMapCells(
+                accessToken: String, bounds: OwnerBd09Bounds,
+            ) = OwnerBd09MapCells(listOf(current), 3)
+            override suspend fun galleryThumbnail(
+                accessToken: String, nodeId: Long, revision: Long,
+            ): ByteArray {
+                assertEquals("access", accessToken)
+                reads += nodeId to revision
+                return byteArrayOf(1, 2, 3)
+            }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.openGalleryMapOverview(); runCurrent()
+        c.openGalleryVerifiedBd09Cells(); runCurrent()
+        assertNull(c.galleryBd09CoverThumbnail(foreign))
+        assertArrayEquals(byteArrayOf(1, 2, 3), c.galleryBd09CoverThumbnail(current))
+        assertEquals(listOf(420L to 7L), reads)
+        c.galleryBd09CameraStarted()
+        assertNull(c.galleryBd09CoverThumbnail(current))
+        c.galleryBd09CameraSettled(OwnerBd09Bounds(139.0, 35.0, 140.0, 36.0))
+        assertNull(c.galleryBd09CoverThumbnail(current))
+        assertEquals(1, reads.size)
+        c.showGalleryGpsOverview(); runCurrent()
+        assertNull(c.galleryBd09CoverThumbnail(current))
+        c.logout(); runCurrent()
+        assertNull(c.galleryBd09CoverThumbnail(current))
+        c.close()
+    }
+
+    @Test fun delayedOwnerMapCoverCannotRepaintAfterMapExit() = runTest {
+        val cell = OwnerBd09Cell(2, 4, 3, 61, 420, 7, 35.505, 139.706)
+        val delayed = CompletableDeferred<ByteArray>()
+        val api = object : Service() {
+            override suspend fun placesMapOverview(
+                accessToken: String, bounds: OwnerMapBounds, detail: Boolean,
+            ) = OwnerMapOverview(emptyList(), 0, true)
+            override suspend fun baiduNativeMapCells(
+                accessToken: String, bounds: OwnerBd09Bounds,
+            ) = OwnerBd09MapCells(listOf(cell), 3)
+            override suspend fun galleryThumbnail(
+                accessToken: String, nodeId: Long, revision: Long,
+            ): ByteArray = withContext(NonCancellable) { delayed.await() }
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.openGalleryMapOverview(); runCurrent()
+        c.openGalleryVerifiedBd09Cells(); runCurrent()
+        val job = async { c.galleryBd09CoverThumbnail(cell) }
+        runCurrent()
+        c.closeGalleryMapOverview(); runCurrent()
+        delayed.complete(byteArrayOf(4, 5))
+        runCurrent()
+        // Cancellation is an intentional valid outcome; neither a cancelled
+        // nor a completed task may publish the discarded Owner's image.
+        try {
+            assertNull(job.await())
+        } catch (_: CancellationException) {
+            // checkCurrent() aborts a non-cooperative response after Map exit.
+        }
+        c.close()
+    }
+
     @Test fun nativeSdkCameraAutoreadsAfter500msAndRetainsExactSignedCells() = runTest {
         val old = OwnerBd09Cell(7, 5, 1, 61, 990, 1, 35.5, 139.5)
         val fresh = OwnerBd09Cell(0, 0, 2, 62, 991, 1, 35.6, 139.6)

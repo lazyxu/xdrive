@@ -65,7 +65,7 @@ test('Owner-specific cloud Viewer retains modal state but clears stale previews'
   const ownerChangeStart = cloud.lastIndexOf('.onChange(of: login.owner) { _ in')
   assert.ok(ownerChangeStart >= 0)
   const ownerChanged = cloud.slice(ownerChangeStart)
-  assert.match(ownerChanged, /refreshAfterViewer = false\s*selected = nil\s*model\.invalidate\(\)/)
+  assert.match(ownerChanged, /refreshAfterViewer = false\s*selected = nil\s*viewerOwner = nil\s*viewerLoadedNodes = \[\]\s*viewerReturnNode = nil\s*accessibilityFocusedNodeID = nil\s*model\.invalidate\(\)/)
   assert.match(cloud, /player\?\.pause\(\)[\s\S]*still = nil[\s\S]*dismiss\(\)/)
   assert.doesNotMatch(local + albums, /UserDefaults\.standard|URLSession\(|UploadSession|WKWebView/)
 })
