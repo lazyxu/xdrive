@@ -25,9 +25,9 @@ test('mutation and app background immediately clear still Live and video resourc
     detail.indexOf('.onChange(of: phase)'))
   assert.match(changeHandler, /model\.cancel\(\)\s*dismiss\(\)/)
   assert.match(detail, /\.onChange\(of: phase\) \{ state in\s*if state != \.active \{[\s\S]*?model\.cancel\(\)/)
-  const startup = detail.slice(detail.indexOf('.task(id: candidate.id)'),
+  const startup = detail.slice(detail.indexOf('.task(id: viewed.id)'),
     detail.indexOf('.onChange(of: changes.generation)'))
-  assert.match(startup, /if phase == \.active \{ model\.load\(candidate\) \}/)
+  assert.match(startup, /if phase == \.active \{ model\.load\(viewed\) \}/)
   assert.match(local, /func cancel\(\) \{\s*epoch = UUID\(\)[\s\S]*?player\?\.pause\(\)[\s\S]*?player = nil\s*live = nil\s*still = nil/)
   assert.match(local, /self\.epoch == token/)
   assert.doesNotMatch(monitor+detail, /URLSession|UploadSession|WebKit|Keychain|accessToken/)
@@ -35,7 +35,12 @@ test('mutation and app background immediately clear still Live and video resourc
 
 test('resume verifies currently authorized PhotoKit subset before fetching a fresh candidate', () => {
   assert.match(detail, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/)
-  assert.match(detail, /model\.load\(candidate\)/)
+  assert.match(detail, /model\.load\(viewed\)/)
+  assert.match(detail, /private var viewed: XDrivePhotoKitScanCandidate \{ activeItem \?\? candidate \}/)
+  assert.match(detail, /private var currentPageAuthorized: Bool \{[\s\S]*?changes\.generation == 0[\s\S]*?PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/)
+  assert.match(detail, /withLocalIdentifiers: \[next\.id\]/)
+  assert.match(detail, /asset\.creationDate == next\.capturedAt[\s\S]*?asset\.modificationDate == next\.modifiedAt/)
+  assert.match(detail, /model\.cancel\(\)\s*activeItem = next\s*onViewed\?\(next\)/)
   assert.match(detail, /else \{\s*model\.cancel\(\)\s*dismiss\(\)/)
   assert.match(local, /PHAsset\.fetchAssets\(\s*withLocalIdentifiers: \[candidate\.id\]/)
   assert.match(local, /if candidate\.kind == "video"/)
