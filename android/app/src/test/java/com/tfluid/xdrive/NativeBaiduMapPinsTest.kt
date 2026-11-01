@@ -67,6 +67,17 @@ class NativeBaiduMapPinsTest {
                 cellX = 0, cellY = 0, nodeId = 999L), 65L * 5L)))
     }
 
+    @Test fun nativeCameraUsesActualBd09RectangleAndWrappedDateline() {
+        assertEquals(OwnerBd09Bounds(130.0, 30.0, 145.0, 45.0),
+            nativeBaiduCameraBounds(30.0, 130.0, 45.0, 145.0))
+        assertEquals(OwnerBd09Bounds(170.0, -5.0, -170.0, 5.0),
+            nativeBaiduCameraBounds(-5.0, 170.0, 5.0, -170.0))
+        assertNull(nativeBaiduCameraBounds(30.0, 130.0, 30.0, 145.0))
+        assertNull(nativeBaiduCameraBounds(Double.NaN, 130.0, 45.0, 145.0))
+        assertNull(nativeBaiduCameraBounds(30.0, 130.0, 45.0, 130.0))
+        assertNull(nativeBaiduCameraBounds(30.0, 130.0, 91.0, 145.0))
+    }
+
     @Test fun invalidBoundsAndImpossibleLongCountsFailClosed() {
         assertNull(nativeVerifiedBaiduPins(
             OwnerBd09Bounds(0.0, 0.0, 0.0, 10.0),

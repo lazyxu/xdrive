@@ -134,6 +134,11 @@ data class DriveState(
     val galleryBd09Requested: Boolean = false,
     val galleryBd09Cells: OwnerBd09MapCells? = null,
     val galleryBd09Bounds: OwnerBd09Bounds = OwnerBd09Bounds.WORLD,
+    /** A Baidu SDK camera rectangle is a proposed query, never an authorized old Cell. */
+    val galleryBd09CameraPending: OwnerBd09Bounds? = null,
+    val galleryBd09CameraMoving: Boolean = false,
+    /** A user-moved MapView must not be recentered after its fresh Owner GET. */
+    val galleryBd09PreserveCamera: Boolean = false,
     /** Max 6 prior signed grid summaries, cleared with Owner session. */
     val galleryBd09History: List<Bd09GridLevel> = emptyList(),
     /** Exact signed cell currently scoping the existing Gallery and Viewer. */
@@ -2180,7 +2185,8 @@ class DriveController(
             galleryMapOpen = true, galleryMapLoaded = false, galleryMapOverview = null,
             galleryBd09Requested = false, galleryBd09Cells = null,
             galleryBd09Bounds = OwnerBd09Bounds.WORLD,
-            galleryBd09History = emptyList(),
+            galleryBd09History = emptyList(), galleryBd09CameraPending = null,
+            galleryBd09CameraMoving = false, galleryBd09PreserveCamera = false,
             galleryMapCellSelected = null, galleryMapReturn = null,
             loading = false, error = null, gallerySelected = null, galleryViewer = null)
         loadGalleryMapOverview()
@@ -2193,6 +2199,7 @@ class DriveController(
             current.galleryMetadataWriteAttempted) return
         when {
             current.galleryMapCellSelected != null -> retryGalleryBd09Cell()
+            current.galleryBd09CameraPending != null -> refreshGalleryBd09CameraViewport()
             current.galleryBd09Requested -> loadGalleryBd09MapCells()
             else -> loadGalleryMapOverview()
         }
@@ -2208,7 +2215,9 @@ class DriveController(
             current.hasActiveNativeTransfer() || current.galleryMetadataWriteAttempted ||
             session == null || api == null) return
         mutableState.value = current.copy(
-            galleryBd09Requested = true, galleryBd09Cells = null, error = null)
+            galleryBd09Requested = true, galleryBd09Cells = null,
+            galleryBd09CameraPending = null, galleryBd09CameraMoving = false,
+            galleryBd09PreserveCamera = false, error = null)
         loadGalleryBd09MapCells()
     }
 
@@ -2224,7 +2233,8 @@ class DriveController(
         mutableState.value = current.copy(
             galleryBd09Requested = false, galleryBd09Cells = null,
             galleryBd09Bounds = OwnerBd09Bounds.WORLD,
-            galleryBd09History = emptyList(),
+            galleryBd09History = emptyList(), galleryBd09CameraPending = null,
+            galleryBd09CameraMoving = false, galleryBd09PreserveCamera = false,
             loading = false, discardableReadInFlight = false, error = null)
         if (!state.value.galleryMapLoaded) loadGalleryMapOverview()
     }
@@ -2237,6 +2247,7 @@ class DriveController(
             !current.galleryBd09Requested || current.galleryBd09Cells == null ||
             current.galleryMapCellSelected != null || current.galleryViewer != null ||
             current.loading || current.error != null || session == null || api == null ||
+            current.galleryBd09CameraMoving || current.galleryBd09CameraPending != null ||
             current.hasActiveNativeTransfer() ||
             current.galleryBd09History.size >= MAX_BD09_DRILL_LEVELS ||
             current.galleryBd09Cells.cells.none { it == cell }) return
@@ -2246,7 +2257,9 @@ class DriveController(
         mutableState.value = current.copy(
             galleryBd09Bounds = next,
             galleryBd09History = current.galleryBd09History + previous,
-            galleryBd09Cells = null, loading = false,
+            galleryBd09Cells = null, galleryBd09CameraPending = null,
+            galleryBd09CameraMoving = false, galleryBd09PreserveCamera = false,
+            loading = false,
             discardableReadInFlight = false, error = null)
         loadGalleryBd09MapCells()
     }
@@ -2257,6 +2270,7 @@ class DriveController(
         val current = state.value
         if (current.screen != Screen.GALLERY || !current.galleryMapOpen ||
             !current.galleryBd09Requested || current.galleryMapCellSelected != null ||
+            current.galleryBd09CameraMoving || current.galleryBd09CameraPending != null ||
             current.hasActiveNativeTransfer() || current.galleryBd09History.isEmpty()) return
         val previous = current.galleryBd09History.last()
         invalidate()
@@ -2264,7 +2278,65 @@ class DriveController(
             galleryBd09Bounds = previous.bounds,
             galleryBd09Cells = previous.cells,
             galleryBd09History = current.galleryBd09History.dropLast(1),
+            galleryBd09PreserveCamera = false,
             loading = false, discardableReadInFlight = false, error = null)
+    }
+
+    /** Baidu SDK gestures immediately revoke old marker/Cell activation.
+     * The SDK never supplies media identities or authorization. */
+    fun galleryBd09CameraStarted() {
+        val current = state.value
+        if (current.screen != Screen.GALLERY || !current.galleryMapOpen ||
+            !current.galleryBd09Requested || current.galleryMapCellSelected != null ||
+            current.hasActiveNativeTransfer() || session == null || api == null) return
+        if (current.loading && current.discardableReadInFlight) invalidate()
+        mutableState.value = state.value.copy(
+            galleryBd09CameraMoving = true,
+            loading = false, discardableReadInFlight = false, error = null)
+    }
+
+    /** The SDK returns BD09LL camera bounds, not a trusted Owner map response.
+     * A manual refresh reuses the original authenticated /cells GET. */
+    fun galleryBd09CameraSettled(bounds: OwnerBd09Bounds) {
+        val current = state.value
+        if (current.screen != Screen.GALLERY || !current.galleryMapOpen ||
+            !current.galleryBd09Requested || current.galleryMapCellSelected != null ||
+            current.hasActiveNativeTransfer() || session == null || api == null) return
+        mutableState.value = current.copy(
+            galleryBd09CameraMoving = false,
+            galleryBd09CameraPending = bounds.takeIf {
+                it.valid() && it != current.galleryBd09Bounds
+            },
+            galleryBd09PreserveCamera = true)
+    }
+
+    /** Keep the old map mounted but NONINTERACTIVE while an actual Owner query
+     * verifies the new camera. No guessed Cell or unscoped Gallery fallback. */
+    fun refreshGalleryBd09CameraViewport() {
+        val current = state.value
+        val target = current.galleryBd09CameraPending ?: return
+        val service = api ?: return
+        if (session == null || current.screen != Screen.GALLERY ||
+            !current.galleryMapOpen || !current.galleryBd09Requested ||
+            current.galleryMapCellSelected != null || current.loading ||
+            current.galleryBd09CameraMoving || !target.valid() ||
+            current.hasActiveNativeTransfer()) return
+        request(discardableRead = true) { ticket ->
+            val cells = authenticated(service, ticket) { token ->
+                service.baiduNativeMapCells(token, target)
+            }
+            checkCurrent(ticket)
+            val latest = state.value
+            if (latest.screen != Screen.GALLERY || !latest.galleryMapOpen ||
+                !latest.galleryBd09Requested || latest.galleryBd09CameraMoving ||
+                latest.galleryMapCellSelected != null ||
+                latest.galleryBd09CameraPending != target) throw CancellationException()
+            mutableState.value = latest.copy(
+                galleryBd09Bounds = target, galleryBd09Cells = cells,
+                galleryBd09History = emptyList(), galleryBd09CameraPending = null,
+                galleryBd09CameraMoving = false, galleryBd09PreserveCamera = true,
+                error = null)
+        }
     }
 
     /** Only the actual current Owner/signed 8x8 cell can open a scoped wall.
@@ -2274,6 +2346,7 @@ class DriveController(
         if (current.screen != Screen.GALLERY || !current.galleryMapOpen ||
             !current.galleryBd09Requested || current.galleryBd09Cells == null ||
             current.galleryMapCellSelected != null || current.loading ||
+            current.galleryBd09CameraMoving || current.galleryBd09CameraPending != null ||
             current.error != null || current.galleryViewer != null ||
             current.hasActiveNativeTransfer() || current.galleryMetadataWriteAttempted ||
             session == null || api == null ||
@@ -2412,7 +2485,8 @@ class DriveController(
             galleryMapLoaded = false, galleryMapOverview = null,
             galleryBd09Requested = false, galleryBd09Cells = null,
             galleryBd09Bounds = OwnerBd09Bounds.WORLD,
-            galleryBd09History = emptyList(),
+            galleryBd09History = emptyList(), galleryBd09CameraPending = null,
+            galleryBd09CameraMoving = false, galleryBd09PreserveCamera = false,
             galleryMapCellSelected = null, galleryMapReturn = null,
             loading = false, discardableReadInFlight = false,
             error = null)

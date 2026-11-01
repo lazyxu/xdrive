@@ -14,6 +14,10 @@ internal fun NativeBaiduMapPanel(
     bounds: OwnerBd09Bounds,
     result: OwnerBd09MapCells,
     onOpenCell: (OwnerBd09Cell) -> Unit,
+    onCameraStart: () -> Unit,
+    onCameraSettled: (OwnerBd09Bounds) -> Unit,
+    markersEnabled: Boolean,
+    preserveCamera: Boolean,
     placeholder: @Composable () -> Unit,
 ) {
     // Real signed Owner records remain fully navigable through the existing
