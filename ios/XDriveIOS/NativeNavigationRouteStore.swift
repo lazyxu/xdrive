@@ -14,6 +14,8 @@ struct XDriveIOSNativeNavigationRouteSnapshot: Codable, Equatable {
     let mapPageOffset: Int?
     // Optional for backwards-compatible v1 Owner-scoped restoration.
     let localGalleryPageOffset: Int?
+    // An older v1 snapshot omits this 32-slot native album list position.
+    let localAlbumDirectoryOffset: Int?
 }
 
 /// One fail-closed, server/Owner/root-scoped navigation snapshot. A different
@@ -48,6 +50,9 @@ struct XDriveIOSNativeNavigationRouteStore {
               Self.validMapScope(saved.mapScope ?? "page"),
               Self.validMapPageOffset(saved.mapPageOffset ?? 0),
               Self.validMapPageOffset(saved.localGalleryPageOffset ?? 0),
+              XDriveIOSNativeAlbumDirectoryCursorPolicy.valid(
+                  saved.localAlbumDirectoryOffset ?? 0
+              ),
               saved.recentDynamic.count <= 6,
               saved.recentDynamic.allSatisfy({ $0 == "backup" })
         else {
@@ -70,7 +75,8 @@ struct XDriveIOSNativeNavigationRouteStore {
         recentDynamic: [String],
         mapScope: String = "page",
         mapPageOffset: Int = 0,
-        localGalleryPageOffset: Int = 0
+        localGalleryPageOffset: Int = 0,
+        localAlbumDirectoryOffset: Int = 0
     ) {
         guard validScopeHash(scopeHash) else { return }
         // Unknown/newer features and unavailable native routes are not
@@ -90,7 +96,10 @@ struct XDriveIOSNativeNavigationRouteStore {
             mapScope: Self.validMapScope(mapScope) ? mapScope : "page",
             mapPageOffset: Self.validMapPageOffset(mapPageOffset) ? mapPageOffset : 0,
             localGalleryPageOffset: Self.validMapPageOffset(localGalleryPageOffset)
-                ? localGalleryPageOffset : 0
+                ? localGalleryPageOffset : 0,
+            localAlbumDirectoryOffset: XDriveIOSNativeAlbumDirectoryCursorPolicy.valid(
+                localAlbumDirectoryOffset
+            ) ? localAlbumDirectoryOffset : 0
         )
         guard let data = try? JSONEncoder().encode(snapshot), data.count <= 2048 else {
             clear()
@@ -138,5 +147,22 @@ enum XDriveIOSNativeLocalGalleryPageCursorPolicy {
               requested >= 0, requested <= 1_000_000,
               requested % 64 == 0 else { return 0 }
         return min(requested, ((currentTotal - 1) / 64) * 64)
+    }
+}
+
+
+/// The local Gallery's album *directory*, not a persistent PhotoKit album
+/// identifier. Each entry reopens a fresh currently authorized 32-slot page.
+enum XDriveIOSNativeAlbumDirectoryCursorPolicy {
+    static let pageSize = 32
+    static let maximumOffset = 10_000
+
+    static func valid(_ value: Int) -> Bool {
+        value >= 0 && value <= maximumOffset && value % pageSize == 0
+    }
+
+    static func clamp(requested: Int, currentTotal: Int) -> Int {
+        guard valid(requested), currentTotal > 0 else { return 0 }
+        return min(requested, ((currentTotal - 1) / pageSize) * pageSize)
     }
 }

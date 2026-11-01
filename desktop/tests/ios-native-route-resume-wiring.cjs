@@ -94,3 +94,30 @@ test('native local PhotoKit Gallery retains only a bounded owner-scoped page cur
   assert.match(local, /\.fullScreenCover\(item: \$selected, onDismiss: \{ restoreAfterViewer\(\) \}\)/);
   assert.doesNotMatch(routes, /PHAsset|localIdentifier|signedURL|accessToken|latitude|longitude/);
 });
+
+
+test('native local albums directory restores only Owner-scoped 32-slot page position', () => {
+  const album = fs.readFileSync(path.join(root, 'ios/XDriveIOS/NativePhotoAlbumBrowser.swift'), 'utf8');
+  const list = album.split('struct XDriveIOSNativePhotoAlbumsScreen: View {')[1];
+  assert.match(ui, /@State private var localAlbumDirectoryOffset = 0/);
+  assert.match(ui, /XDriveIOSNativePhotoAlbumsScreen\(\s*savedOffset: \$localAlbumDirectoryOffset\s*\)/);
+  assert.match(ui, /\.onChange\(of: localAlbumDirectoryOffset\) \{ _ in saveNavigationIfReady\(\) \}/);
+  assert.match(ui, /snapshot\.localAlbumDirectoryOffset \?\? 0/);
+  assert.match(ui, /localAlbumDirectoryOffset: localAlbumDirectoryOffset/);
+  assert.match(ui, /localAlbumDirectoryOffset = 0\s*localGalleryPageOffset = 0/);
+  assert.match(routes, /let localAlbumDirectoryOffset: Int\?/);
+  assert.match(routes, /XDriveIOSNativeAlbumDirectoryCursorPolicy\.valid\(\s*saved\.localAlbumDirectoryOffset \?\? 0/);
+  assert.match(routes, /XDriveIOSNativeAlbumDirectoryCursorPolicy\.valid\(\s*localAlbumDirectoryOffset/);
+  assert.match(routes, /enum XDriveIOSNativeAlbumDirectoryCursorPolicy \{/);
+  assert.match(routes, /value >= 0 && value <= maximumOffset && value % pageSize == 0/);
+  assert.match(list, /@Binding var savedOffset: Int/);
+  assert.doesNotMatch(list, /@State private var offset = 0/);
+  assert.match(list, /XDriveLocalPhotoAlbumPager\.readPage\(\s*offset: requestedOffset/);
+  assert.match(list, /catch XDriveLocalPhotoAlbumFailure\.invalidRange \{/);
+  assert.match(list, /XDriveIOSNativeAlbumDirectoryCursorPolicy\.clamp\(/);
+  assert.match(list, /requestedOffset > 0 && page\.total > 0 && page\.items\.isEmpty/);
+  assert.match(list, /savedOffset = page\.offset/);
+  assert.match(list, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\) == permission/);
+  assert.match(list, /libraryMonitor\.start\(\); reload\(\)/);
+  assert.doesNotMatch(routes, /localIdentifier|collectionIdentifier|PHAsset|accessToken|latitude|longitude/);
+});
