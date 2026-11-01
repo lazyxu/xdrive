@@ -186,13 +186,13 @@ struct XDriveIOSForegroundPhotoBackupMVP {
            error is XDrivePhotoSyncLedgerError {
             return true
         }
-        if let source = error as? XDrivePhotoKitExportFailure {
-            switch source {
-            case .notAuthorized, .storageUnavailable:
-                return true
-            default:
-                break // iCloud-only, missing/oversized original: one item
-            }
+        if let source = error as? XDrivePhotoKitExportFailure,
+           case .notAuthorized = source {
+            return true
+        }
+        if let source = error as? XDrivePhotoKitExportFailure,
+           case .storageUnavailable = source {
+            return true
         }
         if let intent = error as? XDriveIOSPhotoIntentPreparationError,
            case .unverifiedOwnerOrDeviceScope = intent {
