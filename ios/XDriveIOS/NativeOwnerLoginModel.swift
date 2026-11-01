@@ -10,6 +10,8 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
     @Published var username = ""
     @Published var password = ""
     @Published var keepSignedIn = true
+    @Published var rememberPassword = false
+    @Published private(set) var savedProfiles: [XDriveIOSNativeLoginProfile] = []
     @Published private(set) var busy = false
     @Published private(set) var canRetryStoredSession = false
     @Published private(set) var owner: XDriveNativeOwnerRoot?
@@ -46,6 +48,63 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
         serverText = draft.server
         lanIPText = draft.lanIP
         username = draft.username
+        savedProfiles = XDriveIOSNativePasswordProfiles.list()
+        rememberPassword = savedProfilePasswordAvailable
+    }
+
+    var currentSavedProfile: XDriveIOSNativeLoginProfile? {
+        XDriveIOSNativePasswordProfiles.profile(
+            server: serverText, lanIP: lanIPText,
+            username: username.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    var savedProfilePasswordAvailable: Bool {
+        guard let item = currentSavedProfile else { return false }
+        return (try? XDriveIOSNativePasswordProfiles.password(for: item)) != nil
+    }
+
+    /// Account and route changes must not carry a prior account's typed password.
+    func discardPasswordAfterIdentityEdit() {
+        guard active == nil, !busy else { return }
+        password = ""
+        canRetryStoredSession = false
+        retryDraftSnapshot = nil
+    }
+
+    func chooseSavedProfile(_ item: XDriveIOSNativeLoginProfile) {
+        guard !busy, active == nil,
+              XDriveIOSNativePasswordProfiles.profile(
+                server: item.server, lanIP: item.lanIP, username: item.username) == item
+        else { return }
+        serverText = item.server
+        lanIPText = item.lanIP
+        username = item.username
+        password = ""
+        canRetryStoredSession = false
+        retryDraftSnapshot = nil
+        rememberPassword = (try? XDriveIOSNativePasswordProfiles.password(for: item)) != nil
+        errorMessage = nil
+        XDriveIOSNativeLoginDraftStore.save(
+            server: serverText, lanIP: lanIPText, username: username)
+    }
+
+    /// User-triggered only: never replay a password across identities or on a refresh loop.
+    func signInWithSavedPassword() async {
+        guard !busy, active == nil, let item = currentSavedProfile else { return }
+        do {
+            guard let saved = try XDriveIOSNativePasswordProfiles.password(for: item)
+            else {
+                errorMessage = "当前服务器和用户名没有可恢复的安全密码。"
+                return
+            }
+            let previous = password
+            password = saved
+            rememberPassword = true
+            await signIn()
+            if active == nil { password = previous }
+        } catch {
+            errorMessage = "系统 Keychain 中的密码不可用，请手动输入。"
+        }
     }
 
     private func currentAccessToken(_ response: AuthResponse) -> String? {
@@ -242,6 +301,11 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
             XDriveIOSNativeLoginDraftStore.save(
                 server: serverText, lanIP: lanIPText, username: username
             )
+            if let item = currentSavedProfile {
+                XDriveIOSNativePasswordProfiles.rememberProfile(item)
+                savedProfiles = XDriveIOSNativePasswordProfiles.list()
+                rememberPassword = savedProfilePasswordAvailable
+            }
             UserDefaults.standard.set(serverText,
                                       forKey: Self.lastNativeServerKey)
             keepSignedIn = true
@@ -281,33 +345,43 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
         await restore()
     }
 
-    /// Explicit signed-out cleanup, distinct from logout. Delete the Keychain
-    /// refresh credential before touching display-only preferences; never
-    /// claim that an inaccessible Keychain credential has been forgotten.
+    /// Forget only this Server+username. Keep every other profile and Owner.
+    /// The currently selected refresh credential is removed only when it belongs
+    /// to the same verified endpoint; a distinct Owner's token is never discarded.
     func clearSavedLogin() {
-        guard !busy, active == nil else { return }
+        guard !busy, active == nil, let selected = currentSavedProfile else {
+            errorMessage = "请选择有效服务器和用户名后再清除。"
+            return
+        }
         canRetryStoredSession = false
         retryDraftSnapshot = nil
         errorMessage = nil
         noticeMessage = nil
         generation &+= 1
         do {
-            try XDriveIOSNativeOwnerSessionStore.clear()
+            if let stored = try XDriveIOSNativeOwnerSessionStore.load(),
+               draftMatchesSavedCredential(stored) {
+                try XDriveIOSNativeOwnerSessionStore.clear()
+            }
+            try XDriveIOSNativePasswordProfiles.forget(selected)
         } catch {
-            errorMessage = humanMessage(error)
+            errorMessage = "无法确认当前账号的 Keychain 凭据已清除，请解锁设备后重试。"
             return
         }
+        savedProfiles = XDriveIOSNativePasswordProfiles.list()
+        // Clearing the selected draft must not clear another account's profile.
         guard XDriveIOSNativeLoginDraftStore.clear() else {
-            errorMessage = "本机会话凭据已清除，但无法确认登录填写记录已删除。请检查系统存储后重试。"
+            errorMessage = "本机账号凭据已清除，但无法确认当前登录填写记录已删除。"
             return
         }
         serverText = ""
         lanIPText = ""
         username = ""
         password = ""
+        rememberPassword = false
         keepSignedIn = true
         restoreAttempted = true
-        noticeMessage = "本机已清除保存的登录凭据、服务器和用户名。远端会话撤销未确认；备份记录未删除。"
+        noticeMessage = "已删除所选服务器和账号的本机资料；其他账号及备份记录不变。"
     }
 
     /// Explicit user sign-in, not a PWA Cookie session. A successful HTTP
@@ -323,6 +397,8 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
         let requestedUsername = username.trimmingCharacters(
             in: .whitespacesAndNewlines
         )
+        let attemptedPassword = password
+        let attemptedRememberPassword = rememberPassword
         // Non-secret draft is independent of Keychain/session success. An
         // offline or incorrect-password attempt must not erase entered fields.
         XDriveIOSNativeLoginDraftStore.save(
@@ -399,6 +475,24 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
             )
             owner = verified
             password = ""
+            // Only an authenticated, verified Server+Owner may gain a saved
+            // password record. Saving a password is distinct from keeping a session.
+            let attemptedProfile = XDriveIOSNativePasswordProfiles.profile(
+                server: serverInput, lanIP: lanInput, username: requestedUsername)
+            if let item = attemptedProfile {
+                XDriveIOSNativePasswordProfiles.rememberProfile(item)
+                savedProfiles = XDriveIOSNativePasswordProfiles.list()
+                do {
+                    if attemptedRememberPassword {
+                        try XDriveIOSNativePasswordProfiles.savePassword(
+                            attemptedPassword, for: item)
+                    } else {
+                        try XDriveIOSNativePasswordProfiles.removePassword(for: item)
+                    }
+                } catch {
+                    noticeMessage = "已登录，但无法更新当前账号的系统密码库，请检查 Keychain。"
+                }
+            }
             // The verified Session and Keychain retain the selected endpoint.
             // Keep the configured domain as the non-secret sign-in hint.
             serverText = configuredOrigin.absoluteString
@@ -409,7 +503,8 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
                 server: serverText, lanIP: lanIPText, username: username
             )
             let fixedRoute = "当前会话固定使用 \(origin.host ?? "服务器")，不在登录后切换入口。"
-            noticeMessage = (keepSignedIn
+            noticeMessage = (noticeMessage.map { $0 + " " } ?? "") +
+                (keepSignedIn
                 ? "已在本机安全保存当前 Owner 的保持登录凭据。"
                 : "本次仅内存登录，不保留刷新凭据。") + fixedRoute
         } catch is CancellationError {
