@@ -17,9 +17,11 @@ import kotlinx.coroutines.CancellationException
 /** Tile opt-in is a native, in-session view switch, not an SDK consent or
  * an Owner media permission. Default map entry never requests public tiles. */
 @Composable
-internal fun NativeLocalOsmToggle(enabled: Boolean, onToggle: () -> Unit) {
+internal fun NativeLocalOsmToggle(
+    enabled: Boolean, onToggle: () -> Unit, interactive: Boolean = true,
+) {
     TextButton(
-        onClick = onToggle,
+        onClick = onToggle, enabled = interactive,
         modifier = Modifier.heightIn(min = 48.dp).testTag("native-local-osm-toggle"),
     ) { Text(if (enabled) "关闭 OSM 底图" else "启用 OSM 底图") }
 }

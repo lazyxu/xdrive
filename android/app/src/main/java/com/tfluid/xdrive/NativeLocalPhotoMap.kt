@@ -41,6 +41,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import kotlin.math.log2
 
 /** ISO-6709 video location as exposed by Android's own metadata reader. */
 internal fun nativeVideoGps(value: String?): Pair<Double, Double>? {
@@ -268,12 +269,24 @@ private fun ColumnScope.NativeLocalPhotoMapCanvas(
     Column(Modifier.fillMaxWidth().weight(1f)) {
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.End) {
-            TextButton(onClick = { zoom = (zoom / 1.6f).coerceAtLeast(1f) },
-                modifier = Modifier.testTag("native-local-map-zoom-out")) { Text("－") }
-            TextButton(onClick = { zoom = (zoom * 1.6f).coerceAtMost(24f) },
-                modifier = Modifier.testTag("native-local-map-zoom-in")) { Text("＋") }
+            TextButton(onClick = {
+                zoom = if (osmEnabled) (zoom - 1f).coerceAtLeast(1f)
+                    else (zoom / 1.6f).coerceAtLeast(1f)
+            }, modifier = Modifier.testTag("native-local-map-zoom-out")) { Text("－") }
+            TextButton(onClick = {
+                zoom = if (osmEnabled) (zoom + 1f).coerceAtMost(18f)
+                    else (zoom * 1.6f).coerceAtMost(24f)
+            }, modifier = Modifier.testTag("native-local-map-zoom-in")) { Text("＋") }
             TextButton(onClick = { zoom = 1f; shift = Offset.Zero }) { Text("重置") }
-            NativeLocalOsmToggle(osmEnabled) { osmEnabled = !osmEnabled }
+            NativeLocalOsmToggle(
+                enabled = osmEnabled,
+                onToggle = {
+                    osmEnabled = !osmEnabled
+                    zoom = 1f
+                    shift = Offset.Zero
+                },
+                interactive = selectable,
+            )
         }
         if (osmEnabled) Text(
             "公开 OSM 底图：仅按当前视窗加载瓦片，公开服务会看到请求的地图范围；" +
@@ -285,7 +298,9 @@ private fun ColumnScope.NativeLocalPhotoMapCanvas(
             .clipToBounds()
             .pointerInput(Unit) {
                 detectTransformGestures { _, pan, factor, _ ->
-                    zoom = (zoom * factor).coerceIn(1f, 24f)
+                    zoom = if (osmEnabled)
+                        (zoom + log2(factor.toDouble()).toFloat()).coerceIn(1f, 18f)
+                    else (zoom * factor).coerceIn(1f, 24f)
                     shift = Offset(
                         (shift.x + pan.x / density).coerceIn(-3000f, 3000f),
                         (shift.y + pan.y / density).coerceIn(-3000f, 3000f))
@@ -293,10 +308,21 @@ private fun ColumnScope.NativeLocalPhotoMapCanvas(
             }.testTag("native-local-photo-map")) {
             val canvasWidth = maxWidth.value
             val canvasHeight = maxHeight.value
-            val tilePlan = remember(osmEnabled, canvasWidth, canvasHeight, zoom, shift) {
-                if (osmEnabled) NativeLocalOsmTilePolicy.plan(
-                    canvasWidth, canvasHeight, zoom, shift.x, shift.y)
-                else null
+            val tilePlan = remember(osmEnabled, canvasWidth, canvasHeight, zoom, shift, cells) {
+                if (osmEnabled) {
+                    // The full-library GPS overview remains independent of
+                    // the provider. Once user enables tiles, choose the real
+                    // most-represented scanned place as the initial camera,
+                    // so zooming reaches an actual location rather than 0°,0°.
+                    val focus = cells.firstOrNull {
+                        it.latitude in -NativeLocalOsmTilePolicy.MAX_LATITUDE..
+                            NativeLocalOsmTilePolicy.MAX_LATITUDE
+                    }
+                    NativeLocalOsmTilePolicy.plan(
+                        canvasWidth, canvasHeight, zoom, shift.x, shift.y,
+                        focus?.latitude ?: 0.0, focus?.longitude ?: 0.0,
+                    )
+                } else null
             }
             if (osmEnabled && tilePlan != null) {
                 NativeLocalOsmMapLayer(tilePlan) { tileFailed = true }

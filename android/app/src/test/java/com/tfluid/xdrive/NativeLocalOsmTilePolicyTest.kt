@@ -53,6 +53,18 @@ class NativeLocalOsmTilePolicyTest {
         assertNotNull(NativeLocalOsmTilePolicy.point(plan, 35.0, 139.0))
         assertNull(NativeLocalOsmTilePolicy.point(plan, 35.0, Double.NaN))
         assertNull(NativeLocalOsmTilePolicy.point(plan, 35.0, 181.0))
+        // A real high-density GPS place remains centered when zooming
+        // to street level; the older linear 24x map could never reach it.
+        val street = requireNotNull(NativeLocalOsmTilePolicy.plan(
+            390f, 680f, 18f, 0f, 0f, 35.505, 139.706))
+        assertTrue(street.tileZoom >= 15)
+        assertTrue(street.tiles.size <= NativeLocalOsmTilePolicy.MAX_TILES)
+        val focus = requireNotNull(NativeLocalOsmTilePolicy.point(
+            street, 35.505, 139.706))
+        assertEquals(195f, focus.first, 0.01f)
+        assertEquals(340f, focus.second, 0.01f)
+        assertNull(NativeLocalOsmTilePolicy.plan(
+            390f, 680f, 10f, 0f, 0f, 89.0, 0.0))
         val panned = requireNotNull(NativeLocalOsmTilePolicy.plan(
             390f, 680f, 1f, 30f, 20f))
         val moved = requireNotNull(NativeLocalOsmTilePolicy.point(panned, 0.0, 0.0))

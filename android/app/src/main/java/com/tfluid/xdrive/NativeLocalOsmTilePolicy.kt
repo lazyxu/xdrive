@@ -4,6 +4,7 @@ import kotlin.math.floor
 import kotlin.math.ln
 import kotlin.math.log2
 import kotlin.math.min
+import kotlin.math.pow
 import kotlin.math.tan
 
 /** Optional OSM XYZ raster tiles in the native Compose local photo map. */
@@ -47,14 +48,27 @@ internal object NativeLocalOsmTilePolicy {
     fun plan(
         widthDp: Float, heightDp: Float, zoom: Float,
         panXDp: Float, panYDp: Float,
+        centerLatitude: Double = 0.0, centerLongitude: Double = 0.0,
     ): NativeLocalOsmPlan? {
         if (!widthDp.isFinite() || !heightDp.isFinite() || !zoom.isFinite() ||
             !panXDp.isFinite() || !panYDp.isFinite() ||
+            !centerLatitude.isFinite() || !centerLongitude.isFinite() ||
+            centerLatitude !in -MAX_LATITUDE..MAX_LATITUDE ||
+            centerLongitude !in -180.0..180.0 ||
             widthDp !in 64f..8192f || heightDp !in 64f..8192f ||
             zoom !in 1f..24f) return null
-        val scale = min(widthDp.toDouble(), heightDp.toDouble()) * zoom
-        val originX = scale / 2.0 - widthDp / 2.0 - panXDp
-        val originY = scale / 2.0 - heightDp / 2.0 - panYDp
+        // Map zoom is measured in powers of two, unlike the original
+        // full-library WGS84 diagram's linear scale. This can reach nearby
+        // streets without granting the provider any additional GPS/metadata.
+        val scale = min(
+            min(widthDp.toDouble(), heightDp.toDouble()) *
+                2.0.pow((zoom - 1f).toDouble()),
+            TILE_WIDTH * (1 shl MAX_ZOOM).toDouble(),
+        )
+        val originX = (centerLongitude + 180.0) / 360.0 * scale -
+            widthDp / 2.0 - panXDp
+        val originY = mercatorY(centerLatitude) * scale -
+            heightDp / 2.0 - panYDp
         val initialZoom = floor(log2(scale / TILE_WIDTH))
             .toInt().coerceIn(0, MAX_ZOOM)
 
