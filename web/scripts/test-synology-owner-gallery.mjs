@@ -20,6 +20,11 @@ const item = { node, metadata: { media_kind: 'image', index_state: 'ready',
   has_thumbnail: true, mime_type: 'image/jpeg' }, favorite: false }
 const goodPage = { items: [item], total_count: 1, offset: 0, limit: 100 }
 const goodAlbums = [{ id: 'manual:abc', kind: 'manual', name: 'Album', item_count: 1 }]
+const goodPlaces = { items: [{
+  id: 'place:3550:13970', name: 'GPS place', latitude: 35.505, longitude: 139.706,
+  sample_latitude: 35.505, sample_longitude: 139.706,
+  coordinate_kind: 'grid_cell_center', item_count: 1,
+}], total_count: 1, offset: 0, limit: 48, has_more: false }
 let page = goodPage, albums = goodAlbums
 let mapPage = { items: [{
   id: 'map-region:1', name: '照片区域 1',
@@ -38,9 +43,12 @@ const ctx = vm.createContext({
   fetch: async (raw, options) => {
     const url = new URL(raw)
     calls.push({ url, options })
-    assert.ok(['cloud-gallery-items', 'cloud-gallery-albums', 'cloud-gallery-map-overview'].includes(url.searchParams.get('op')))
+    assert.ok(['cloud-gallery-items', 'cloud-gallery-albums', 'cloud-gallery-places',
+      'cloud-gallery-place-items', 'cloud-gallery-map-overview'].includes(url.searchParams.get('op')))
     return { ok: true, headers: { get: () => 'application/json' },
       json: async () => url.searchParams.get('op') === 'cloud-gallery-items' ? page :
+        url.searchParams.get('op') === 'cloud-gallery-places' ? goodPlaces :
+        url.searchParams.get('op') === 'cloud-gallery-place-items' ? goodPage :
         url.searchParams.get('op') === 'cloud-gallery-map-overview' ? mapPage : albums }
   },
 })
@@ -100,6 +108,12 @@ const other = await client.ownerGalleryItemsRange('image', 100, 0, 'manual:abc')
 assert.equal(other.items.length, 1)
 assert.equal(calls.at(-1).url.searchParams.get('album_id'), 'manual:abc')
 assert.ok(calls.every(({ options }) => !options.headers.Authorization && !options.body))
+const ownerPlaces = await client.ownerPlacesPage(48, 0, abort.signal)
+assert.equal(ownerPlaces.items[0].id, 'place:3550:13970')
+assert.equal(calls.at(-1).url.searchParams.get('op'), 'cloud-gallery-places')
+const placeWall = await client.ownerPlaceItemsRange('place:3550:13970', 100, 0, abort.signal)
+assert.equal(placeWall.items[0].node.id, 42)
+assert.equal(calls.at(-1).url.searchParams.get('op'), 'cloud-gallery-place-items')
 const bounds = { west: -180, south: -90, east: 180, north: 90 }
 const countBeforeMap = calls.length
 const verifiedMap = await client.ownerMapOverview(bounds, abort.signal)

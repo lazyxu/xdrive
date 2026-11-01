@@ -47,6 +47,7 @@ test('DSM WGS84 response is a strict bounded Owner viewport, never a partial Pla
     {items:[{...exact,metadata:{gps:'secret'}}],total_photo_count:3,aggregated:false},
     {items:[{...exact,id:'place:00:13970'}],total_photo_count:3,aggregated:false},
     {items:[{...exact,sample_longitude:-170,longitude:-170}],total_photo_count:3,aggregated:false},
+    {items:[{...exact,sample_latitude:35.515,latitude:35.515}],total_photo_count:3,aggregated:false},
     {items:Array(65).fill(exact),total_photo_count:195,aggregated:false},
     {items:[],total_photo_count:1,aggregated:true},
     {items:[exact],total_photo_count:3,aggregated:false,owner_id:1},

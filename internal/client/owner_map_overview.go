@@ -84,6 +84,23 @@ func ownerMapContains(b MediaPlacesViewportBounds, lat, lon float64) bool {
 	}
 	return lon >= b.West-eps || lon <= b.East+eps
 }
+func ownerMapSampleMatchesCell(id string, lat, lon float64) bool {
+	parts := strings.Split(id, ":")
+	if len(parts) != 3 {
+		return false
+	}
+	latCell, latErr := strconv.ParseInt(parts[1], 10, 64)
+	lonCell, lonErr := strconv.ParseInt(parts[2], 10, 64)
+	if latErr != nil || lonErr != nil {
+		return false
+	}
+	const tolerance = 1e-8
+	return lat >= float64(latCell)/100-tolerance &&
+		lat <= float64(latCell+1)/100+tolerance &&
+		lon >= float64(lonCell)/100-tolerance &&
+		lon <= float64(lonCell+1)/100+tolerance
+}
+
 func ValidOwnerMapOverview(page OwnerMapOverview, bounds MediaPlacesViewportBounds) bool {
 	if !ValidOwnerMapBounds(bounds) || page.Items == nil ||
 		len(page.Items) > OwnerMapMaxRepresentatives ||
@@ -111,6 +128,7 @@ func ValidOwnerMapOverview(page OwnerMapOverview, bounds MediaPlacesViewportBoun
 			}
 		} else if !ValidOwnerPlaceID(item.ID) ||
 			item.CoordinateKind != "grid_cell_center" ||
+			!ownerMapSampleMatchesCell(item.ID, item.SampleLatitude, item.SampleLongitude) ||
 			!validOwnerPlace(OwnerPlace{ID: item.ID, Name: item.Name,
 				Latitude: item.Latitude, Longitude: item.Longitude,
 				SampleLatitude: item.SampleLatitude, SampleLongitude: item.SampleLongitude,

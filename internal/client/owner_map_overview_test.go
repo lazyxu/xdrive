@@ -74,6 +74,7 @@ func TestOwnerGPSMapBoundingAndCountsFailClosed(t *testing.T) {
 		func(x *MediaPlacesMapOverview) { x.Items[0].SampleLongitude = math.Inf(1) },
 		func(x *MediaPlacesMapOverview) { x.Items[0].ItemCount = -1 },
 		func(x *MediaPlacesMapOverview) { x.Items[0].ID = "place:01:02" },
+		func(x *MediaPlacesMapOverview) { x.Items[0].SampleLongitude = -170 },
 		func(x *MediaPlacesMapOverview) { x.Items[0].CoordinateKind = "map_region_sample" },
 		func(x *MediaPlacesMapOverview) { x.Items = nil },
 	} {

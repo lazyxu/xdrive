@@ -201,6 +201,16 @@ const ownerMapPointKeys = new Set([
   'id', 'name', 'latitude', 'longitude', 'sample_latitude', 'sample_longitude',
   'coordinate_kind', 'item_count',
 ])
+function ownerMapSampleMatchesCell(id: string, latitude: number, longitude: number): boolean {
+  const parts = ownerGalleryPlaceID.exec(id)
+  if (!parts) return false
+  const latCell = Number(parts[1]), lonCell = Number(parts[2])
+  const tolerance = 1e-8
+  return latitude >= latCell / 100 - tolerance &&
+    latitude <= (latCell + 1) / 100 + tolerance &&
+    longitude >= lonCell / 100 - tolerance &&
+    longitude <= (lonCell + 1) / 100 + tolerance
+}
 const validOwnerMapBounds = (b: MediaPlacesViewportBounds): boolean =>
   [b.west, b.south, b.east, b.north].every(Number.isFinite) &&
   b.west >= -180 && b.west <= 180 && b.east >= -180 && b.east <= 180 &&
@@ -247,6 +257,9 @@ export function xDriveSynologyValidateOwnerMapOverview(
         ? lon < bounds.west - 0.000001 || lon > bounds.east + 0.000001
         : lon < bounds.west - 0.000001 && lon > bounds.east + 0.000001)) {
       throw new Error('Owner map contained nonmatching WGS84 sample')
+    }
+    if (!aggregated && !ownerMapSampleMatchesCell(candidate.id, lat, lon)) {
+      throw new Error('Owner GPS sample mismatches exact place cell')
     }
     total += candidate.item_count as number
     if (!Number.isSafeInteger(total)) {
@@ -460,7 +473,9 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
       'device-backups', 'device-backup-runs',
       'device-backup-page', 'device-backup-folders', 'cloud-quota', 'nas-volume',
       'cloud-root', 'cloud-children', 'cloud-text-preview', 'cloud-media-range', 'cloud-thumbnail',
-       'cloud-gallery-items', 'cloud-gallery-albums', 'cloud-live-motion', 'nas-shares',
+       'cloud-gallery-items', 'cloud-gallery-albums', 'cloud-gallery-places',
+       'cloud-gallery-place-items', 'cloud-gallery-map-overview',
+       'cloud-live-motion', 'nas-shares',
       'nas-share-preflight', 'nas-share-create', 'nas-draft-bind', 'nas-drafts', 'server-connection', 'server-login',
       'recovery-review'].includes(operation)) {
       throw new Error('Unsupported DSM backup operation')
