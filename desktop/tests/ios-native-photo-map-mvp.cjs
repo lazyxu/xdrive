@@ -12,7 +12,7 @@ const policy = read('ios/XDriveIOS/NativePhotoMapPolicy.swift')
 const spatial = read('ios/XDriveIOS/NativeLocalPhotoMapSpatialPolicy.swift')
 
 test('real native Gallery map uses MapKit and existing local Viewer, no WebView', () => {
-  assert.match(dashboard, /case \.map:\s*XDriveIOSNativeLocalPhotoMapScreen\(/)
+  assert.match(dashboard, /case \.map:\s*XDriveIOSNativePhotoMapsScreen\(/)
   assert.match(map, /MKMapView\(\)/)
   assert.match(map, /MKClusterAnnotation/)
   assert.match(map, /clusteringIdentifier = identifier == "photo"/)
@@ -54,7 +54,7 @@ test('native Launcher marks the real local map available, not as an unavailable 
   assert.ok(available, 'native launcher route availability must remain explicit')
   assert.match(available, /case \.local, \.albums, \.cloud, \.originals, \.map, \.files, \.backup: return true/)
   assert.match(dashboard, /case \.map:\s*openGallery\(\.map\)/)
-  assert.match(dashboard, /case \.map:\s*XDriveIOSNativeLocalPhotoMapScreen\(/)
+  assert.match(dashboard, /case \.map:\s*XDriveIOSNativePhotoMapsScreen\(/)
   assert.match(dashboard, /if !route\.available \{\s*Text\("未接入"\)/)
 })
 
