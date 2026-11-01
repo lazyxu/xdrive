@@ -214,3 +214,29 @@ test('cloud L3 Viewer return anchor is revision- and Owner-bound, not just a reu
   assert.match(wall, /if let anchor \{\s*returnScroll\.scrollTo\(anchor, anchor: \.center\)/)
   assert.doesNotMatch(wall, /model\.page\?\.items\.contains\(where: \{ \$0\.id == anchor \}\)/)
 });
+
+
+test('cloud PhotoAsset Gallery short landscape recovers wall height without losing Owner, focus or Viewer', () => {
+  const wall = view.slice(view.indexOf('struct XDriveIOSNativeServerMediaWall: View {'),
+    view.indexOf('struct XDriveIOSNativeServerMediaAlbums: View {'))
+  assert.match(wall, /@Environment\(\\\.dynamicTypeSize\) private var dynamicTypeSize/)
+  assert.match(wall, /GeometryReader \{ viewport in/)
+  assert.match(wall, /viewport\.size\.width >= 680 &&\s*viewport\.size\.height < 500 && !dynamicTypeSize\.isAccessibilitySize/)
+  assert.match(wall, /ScrollViewReader \{ returnScroll in\s*ScrollView \{/)
+  assert.match(wall, /if !compactGallery \{\s*Text\(placeID != nil/)
+  assert.match(wall, /if !compactGallery \{\s*Text\("每次最多保留 48 个逻辑媒体/)
+  assert.match(wall, /native-ios-cloud-gallery-layout-help/)
+  assert.match(wall, /accessibilityLabel\("云端图库说明"\)/)
+  assert.match(wall, /\.alert\("云端图库说明", isPresented: \$showingGalleryHelp\)/)
+  assert.match(wall, /if let page = model\.page \{/)
+  assert.match(wall, /if model\.busy \{ ProgressView\("读取云端图库/)
+  assert.match(wall, /if let message = model\.error \{/)
+  assert.match(wall, /Button\("搜索"\) \{ applySearch\(\) \}/)
+  assert.match(wall, /Button\("上一页"\)/)
+  assert.match(wall, /Button\("下一页"\)/)
+  assert.match(wall, /onFocusChange\?\(focusedBrowsing\)/)
+  assert.match(wall, /\.fullScreenCover\(item: \$selected\)/)
+  assert.match(wall, /XDriveIOSNativePhotoViewerReturnAnchorPolicy\.cloudTarget\(/)
+  assert.match(wall, /ownerAuthorized: ownerAuthorized && phase == \.active/)
+  assert.doesNotMatch(wall, /\.id\(compactGallery\)|onChange\(of: compactGallery\)|UploadSessionTransport|WKWebView/)
+});

@@ -1,0 +1,7 @@
+# iOS native Owner PhotoAsset short-landscape Gallery (2026-11-01)
+
+**P0 fixed Gallery view only**: the Owner-verified cloud PhotoAsset wall, cloud album's wall and the native mapped-place wall share one native component. For safe-area viewport width >=680pt, height <500pt and non-accessibility Dynamic Type, only static top/footer explanations are hidden so the 48-item adaptive photo grid has more room. A 44pt toolbar information action remains accessible with VoiceOver in every layout.
+
+Search, Owner/Root authority, current page count, pagination, error/progress/retry, L2 focus toggle, actual cloud/map navigation and L3 fullscreen Viewer stay unchanged. The exact Owner+Node ID+revision Viewer return anchor and ScrollViewReader remain in the original view across orientation; no new media request or cache, persistent media ID, signed ticket or backup writer is introduced.
+
+Portrait, narrow landscape and accessibility text retain full inline explanations. Existing iOS IPA source-contract tests cover both layout branches and Viewer-fencing signals; exact-HEAD iPhoneOS IPA, CI, Final Gate and mergeability are mandatory. Physical iPhone notch/safe-area, real VoiceOver and SideStore testing remain **跳过（未验收）**.
