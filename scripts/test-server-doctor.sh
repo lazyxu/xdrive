@@ -98,6 +98,15 @@ if [[ "$1" == "compose" ]]; then
           hang) sleep 30; exit 0 ;;
         esac
       fi
+      if [[ "$*" == *"caddy-host config-check"* ]]; then
+        case "${XD_TEST_CADDY_CONFIG_READER:-unavailable}" in
+          observed) echo 'Caddy host config observation: host-env-observed'; exit 0 ;;
+          unavailable) echo 'Caddy host config observation: host-env-unavailable'; exit 1 ;;
+          poisoned) echo 'ALIYUN_ACCESS_KEY_SECRET=poison-must-not-leak'; exit 0 ;;
+          hang) sleep 30; exit 0 ;;
+          *) exit 2 ;;
+        esac
+      fi
       if [[ "$*" == *"caddy-host witness-check"* ]]; then
         case "${XD_TEST_CADDY_WITNESS:-missing}" in
           observed) echo 'Caddy local observation: local-https-observed'; exit 0 ;;
@@ -193,6 +202,7 @@ grep -q '\[PASS\] CAS metadata health' "$TMP/report"
 grep -q 'Caddy Host witness.*reason=snapshot-missing' "$TMP/report"
 grep -q 'Caddy Host producer.*snapshot=directory-unavailable' "$TMP/report"
 grep -q 'Caddy Host correlation.*host-snapshot-not-produced' "$TMP/report"
+grep -q 'Caddy config Server reader.*host snapshot=directory-unavailable' "$TMP/report"
 
 # Host snapshot freshness is metadata-only: file bytes may contain a poison
 # credential, and must never be read into or echoed by the diagnostic report.
@@ -203,6 +213,24 @@ TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP/home" XD_CONFIG
   bash "$DOCTOR" >"$TMP/report-host-snapshot" 2>"$TMP/err-host-snapshot"
 grep -q 'Caddy Host producer.*heartbeat=fresh snapshot=fresh' "$TMP/report-host-snapshot"
 grep -q 'Caddy Host correlation.*host-snapshot-present-server-unreadable' "$TMP/report-host-snapshot"
+
+# A fresh Host config filename is insufficient: the actual Server admin
+# reader must validate its contents through its own shared bind mount.
+printf 'ALIYUN_ACCESS_KEY_SECRET=poison-must-not-leak\n' > "$TMP/home/state/control/caddy-env-observed.json"
+chmod 0660 "$TMP/home/state/control/caddy-env-observed.json"
+TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP/home" XD_CONFIG_DIR="$TMP/home" \
+  bash "$DOCTOR" >"$TMP/report-config-rejected" 2>"$TMP/err-config-rejected"
+grep -q 'Caddy config snapshot.*host .env observed=fresh' "$TMP/report-config-rejected"
+grep -q 'Caddy config Server reader.*host snapshot=fresh but running Server rejected it' "$TMP/report-config-rejected"
+XD_TEST_CADDY_CONFIG_READER=observed TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP/home" XD_CONFIG_DIR="$TMP/home" \
+  bash "$DOCTOR" >"$TMP/report-config-observed" 2>"$TMP/err-config-observed"
+grep -q '\[PASS\] Caddy config Server reader.*running Server validates fresh Host .env' "$TMP/report-config-observed"
+XD_TEST_CADDY_CONFIG_READER=poisoned TEST_STATE="$TMP/state" PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP/home" XD_CONFIG_DIR="$TMP/home" \
+  bash "$DOCTOR" >"$TMP/report-config-poisoned" 2>"$TMP/err-config-poisoned"
+grep -q 'Caddy config Server reader.*running-server-config-cli-unavailable-or-untrusted-output' "$TMP/report-config-poisoned"
+! grep -Fq 'poison-must-not-leak' "$TMP/report-config-rejected" "$TMP/err-config-rejected" \
+  "$TMP/report-config-observed" "$TMP/err-config-observed" "$TMP/report-config-poisoned" "$TMP/err-config-poisoned"
+rm -f "$TMP/home/state/control/caddy-env-observed.json"
 
 grep -q '\[PASS\] Caddy Server mount.*fixed host bridge bind source' "$TMP/report-host-snapshot" ||
   grep -q '\[PASS\] Caddy Server mount.*fixed host bridge bind matches' "$TMP/report-host-snapshot"
