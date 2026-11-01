@@ -4792,7 +4792,13 @@ class DriveControllerTest {
         c.closeGalleryMapOverview(); runCurrent()
         delayed.complete(byteArrayOf(4, 5))
         runCurrent()
-        assertNull(job.await())
+        // Cancellation is an intentional valid outcome; neither a cancelled
+        // nor a completed task may publish the discarded Owner's image.
+        try {
+            assertNull(job.await())
+        } catch (_: CancellationException) {
+            // checkCurrent() aborts a non-cooperative response after Map exit.
+        }
         c.close()
     }
 

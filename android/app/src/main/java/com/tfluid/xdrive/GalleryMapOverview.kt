@@ -26,6 +26,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.tfluid.xdrive.core.OwnerBd09Bounds
+import com.tfluid.xdrive.core.OwnerBd09Cell
 import com.tfluid.xdrive.core.OwnerBd09MapCells
 import com.tfluid.xdrive.core.OwnerMapOverview
 import com.tfluid.xdrive.core.OwnerMapSample
