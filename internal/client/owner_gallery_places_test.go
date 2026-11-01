@@ -25,10 +25,14 @@ func TestOwnerPlacesProjectionKeepsActualGPSButNeverProviderURLs(t *testing.T) {
 		t.Fatalf("valid Owner GPS projection denied: %+v %v", page, err)
 	}
 	bytes, err := json.Marshal(page)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	body := string(bytes)
 	for _, forbidden := range []string{"PRIVATE_PROVIDER", "untrusted.test", "token", "owner_id", "metadata"} {
-		if strings.Contains(body, forbidden) { t.Errorf("Owner Places leaked %s", forbidden) }
+		if strings.Contains(body, forbidden) {
+			t.Errorf("Owner Places leaked %s", forbidden)
+		}
 	}
 	if !strings.Contains(body, "\"sample_longitude\":139.706") ||
 		!strings.Contains(body, "\"item_count\":3") {
@@ -40,10 +44,14 @@ func TestOwnerPlacesRejectsMalformedAndWideRanges(t *testing.T) {
 		"", "place:00:1", "place:-0:1", "place:1:+2", "place:9001:0",
 		"place:0:18001", "place:1:2?q=all", "place:1:2:3", "map-region:1:2",
 	} {
-		if ValidOwnerPlaceID(id) { t.Errorf("unsafe place admitted: %s", id) }
+		if ValidOwnerPlaceID(id) {
+			t.Errorf("unsafe place admitted: %s", id)
+		}
 	}
 	for _, limit := range []int{0, 49, 100} {
-		if ValidOwnerPlacesWindow(limit, 0) { t.Errorf("unbounded limit: %d", limit) }
+		if ValidOwnerPlacesWindow(limit, 0) {
+			t.Errorf("unbounded limit: %d", limit)
+		}
 	}
 	for _, mutate := range []func(*MediaPlacesPage){
 		func(p *MediaPlacesPage) { p.TotalCount = -1 },
