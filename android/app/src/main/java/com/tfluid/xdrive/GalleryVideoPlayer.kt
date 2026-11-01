@@ -46,6 +46,13 @@ internal fun galleryVideoRetryAvailable(
     hasSource: Boolean, hasPlayer: Boolean, playbackFailed: Boolean,
 ): Boolean = !hasSource || !hasPlayer || playbackFailed
 
+/** The already-prepared Media3 player may report a terminal decoder/network
+ * failure without ever leaving this Viewer. Retire only its exact Owner
+ * media lease; source/setup failures are cleaned up by DisposableEffect. */
+internal fun galleryVideoShouldRetireFailedPlayback(
+    hasSource: Boolean, hasPlayer: Boolean, playbackFailed: Boolean,
+): Boolean = hasSource && hasPlayer && playbackFailed
+
 /** Observe a deliberate horizontal swipe without consuming Media3 touch events.
  * The bottom player-control area is excluded so seeking does not change files.
  * Native media controls retain full ownership of their touch and seek events. */
@@ -180,6 +187,18 @@ internal fun GalleryVideoPlayer(
             player?.removeListener(listener)
             player?.release()
             if (source != null && player != null) controller.closeGalleryVideoPlayback(source)
+        }
+    }
+    LaunchedEffect(player, source, failed) {
+        if (galleryVideoShouldRetireFailedPlayback(
+                hasSource = source != null,
+                hasPlayer = player != null,
+                playbackFailed = failed)) {
+            // Stop any residual buffering while retaining the visible poster
+            // and explicit manual retry. Disposal/logout may close this same
+            // resource again; OwnerVideoPlayback.close is idempotent.
+            runCatching { player?.stop() }
+            source?.let(controller::closeGalleryVideoPlayback)
         }
     }
     val canGoOlder = controller.galleryViewerCanShift(-1)
