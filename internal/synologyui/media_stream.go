@@ -63,8 +63,7 @@ func parseOwnerStreamSelector(rawQuery string) (ownerStreamSelector, error) {
 	out.mime = q.Get("mime")
 	switch out.mime {
 	case "video/mp4", "video/webm",
-		"audio/mpeg", "audio/mp4", "audio/ogg", "audio/wav", "audio/flac",
-		"application/pdf":
+		"audio/mpeg", "audio/mp4", "audio/ogg", "audio/wav", "audio/flac", "application/pdf":
 		return out, nil
 	default:
 		return ownerStreamSelector{}, errors.New("unsupported Owner stream media type")

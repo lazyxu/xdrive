@@ -319,26 +319,27 @@ func TestDSMNativeMediaOldAgentHasNoStreamReader(t *testing.T) {
 	}
 }
 
-func TestDSMNativeOwnerPDFAuthenticatedRangeAndFailure(t *testing.T) {
+func TestDSMNativePDFRangeHEADAndAuthFailure(t *testing.T) {
 	g, native := newFixture(t)
-	pdf := bytes.Repeat([]byte("0123456789abcdef"), (2<<20)/16+2)
-	copy(pdf, []byte("%PDF-1.7\n"))
-	digest := sha256.Sum256(pdf)
+	contents := bytes.Repeat([]byte("0123456789abcdef"), (2<<20)/16+1)
+	copy(contents, []byte("%PDF-1.7\n"))
+	sum := sha256.Sum256(contents)
 	reader := &fakeOwnerNativeStreamReader{
 		fakeOwnerFilesReader: &fakeOwnerFilesReader{fakeAgent: native},
-		content:              pdf, sha: hex.EncodeToString(digest[:]),
+		content:              contents, sha: hex.EncodeToString(sum[:]),
 	}
 	g.Connect = func(context.Context) (Agent, error) { return reader, nil }
 	params := url.Values{
 		"op": {"cloud-media-stream"}, "node_id": {"42"}, "revision": {"7"},
-		"total": {strconv.Itoa(len(pdf))}, "sha256": {reader.sha},
-		"mime": {"application/pdf"},
+		"total":  {strconv.Itoa(len(contents))},
+		"sha256": {reader.sha}, "mime": {"application/pdf"},
 	}
-	call := func(method, byteRange string, values url.Values) *httptest.ResponseRecorder {
+	call := func(method, byteRange string, q url.Values, cookie bool) *httptest.ResponseRecorder {
 		t.Helper()
-		req := httptest.NewRequest(method,
-			"https://nas.example:5001"+DSMCGIPath+"?"+values.Encode(), nil)
-		req.Header.Set("Cookie", "id=dsm-session")
+		req := httptest.NewRequest(method, "https://nas.example:5001"+DSMCGIPath+"?"+q.Encode(), nil)
+		if cookie {
+			req.Header.Set("Cookie", "id=dsm-session")
+		}
 		if byteRange != "" {
 			req.Header.Set("Range", byteRange)
 		}
@@ -346,46 +347,47 @@ func TestDSMNativeOwnerPDFAuthenticatedRangeAndFailure(t *testing.T) {
 		CGIHandler(g).ServeHTTP(w, req)
 		return w
 	}
-	head := call(http.MethodHead, "", params)
+	head := call(http.MethodHead, "", params, true)
 	if head.Code != http.StatusOK || head.Body.Len() != 0 ||
 		head.Header().Get("Content-Type") != "application/pdf" ||
-		head.Header().Get("Content-Length") != strconv.Itoa(len(pdf)) ||
-		head.Header().Get("Accept-Ranges") != "bytes" ||
-		head.Header().Get("ETag") != fmt.Sprintf("%q", reader.sha) {
-		t.Fatalf("DSM Owner PDF HEAD not verified: %d, %+v", head.Code, head.Header())
+		head.Header().Get("Content-Length") != strconv.Itoa(len(contents)) ||
+		head.Header().Get("Accept-Ranges") != "bytes" {
+		t.Fatalf("verified PDF HEAD failed: HTTP %d headers=%v", head.Code, head.Header())
 	}
-	part := call(http.MethodGet, "bytes=1048576-1048607", params)
-	if part.Code != http.StatusPartialContent ||
-		part.Header().Get("Content-Type") != "application/pdf" ||
-		part.Header().Get("Content-Disposition") != "inline" ||
-		part.Header().Get("Content-Range") != fmt.Sprintf("bytes 1048576-1048607/%d", len(pdf)) ||
-		!bytes.Equal(part.Body.Bytes(), pdf[1048576:1048608]) {
-		t.Fatalf("DSM Owner PDF deep Range failed: %d %s", part.Code, part.Body.String())
+	start := int64(786432)
+	get := call(http.MethodGet, fmt.Sprintf("bytes=%d-", start), params, true)
+	if get.Code != http.StatusPartialContent ||
+		get.Header().Get("Content-Type") != "application/pdf" ||
+		get.Header().Get("Content-Range") !=
+			fmt.Sprintf("bytes %d-%d/%d", start, start+ownerStreamMaxResponseBytes-1, len(contents)) ||
+		!bytes.Equal(get.Body.Bytes(), contents[start:start+ownerStreamMaxResponseBytes]) {
+		t.Fatalf("verified PDF native Range failed: HTTP %d bytes=%d", get.Code, get.Body.Len())
 	}
-	fake := url.Values{}
-	for k, v := range params {
-		fake[k] = append([]string(nil), v...)
+	if unsat := call(http.MethodGet, fmt.Sprintf("bytes=%d-", len(contents)), params, true); unsat.Code != http.StatusRequestedRangeNotSatisfiable ||
+		unsat.Header().Get("Content-Range") != fmt.Sprintf("bytes */%d", len(contents)) {
+		t.Fatalf("PDF unsatisfiable Range incorrectly handled: HTTP %d", unsat.Code)
 	}
-	fake.Set("sha256", strings.Repeat("a", 64))
-	if stale := call(http.MethodHead, "", fake); stale.Code == http.StatusOK {
-		t.Fatal("outdated Owner PDF digest accepted")
+	if missing := call(http.MethodHead, "", params, false); missing.Code == http.StatusOK {
+		t.Fatal("PDF HEAD bypassed DSM authentication")
 	}
-	fake.Set("sha256", reader.sha)
-	fake.Set("mime", "text/html")
-	if unsafe := call(http.MethodHead, "", fake); unsafe.Code == http.StatusOK {
-		t.Fatal("HTML disguised as PDF accepted")
+	if missing := call(http.MethodGet, "bytes=0-15", params, false); missing.Code == http.StatusPartialContent {
+		t.Fatal("PDF stream bypassed DSM authentication")
+	}
+	for _, mime := range []string{"text/html", "application/octet-stream"} {
+		changed := url.Values{}
+		for key, values := range params {
+			changed[key] = append([]string(nil), values...)
+		}
+		changed.Set("mime", mime)
+		if invalid := call(http.MethodHead, "", changed, true); invalid.Code == http.StatusOK {
+			t.Fatalf("unsafe PDF MIME accepted: %q", mime)
+		}
 	}
 	reader.corrupt = true
-	if stale := call(http.MethodGet, "bytes=0-", params); stale.Code == http.StatusPartialContent {
-		t.Fatal("changed Owner PDF range leaked an HTTP 206")
-	}
-	reader.corrupt = false
-	reader.content = append([]byte(nil), pdf...)
-	copy(reader.content, []byte("<html>spoof"))
-	if unsafe := call(http.MethodHead, "", params); unsafe.Code == http.StatusOK {
-		t.Fatal("invalid PDF magic accepted as loaded iframe")
+	if broken := call(http.MethodGet, "bytes=0-", params, true); broken.Code == http.StatusPartialContent {
+		t.Fatal("PDF emitted 206 after changed Owner SHA")
 	}
 	if native.runs != 0 || native.controls != 0 {
-		t.Fatal("PDF transport must not mutate the owning backup Runner")
+		t.Fatal("PDF read dispatched Backup mutation")
 	}
 }

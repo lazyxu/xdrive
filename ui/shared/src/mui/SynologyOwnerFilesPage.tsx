@@ -47,9 +47,9 @@ import {
 
 const pageSize = 200
 
-// Current Owner's authenticated, bounded derivative remains usable even if
-// an original JPEG/PNG/WebP/GIF exceeds 32 MiB or HEIC/RAW is not decodable.
-// Do not mistake a video, Live Photo or arbitrary file for an image fallback.
+// An authenticated Owner thumbnail remains usable when the original image
+// exceeds the verified Blob cap or needs a browser-compatible derivative.
+// Never offer this fallback for videos, Live Photos or unknown binary files.
 function usesOwnerThumbnailOnlyPreview(item: XDriveFileExplorerItem): boolean {
   return item.kind === 'file' &&
     typeof item.size === 'number' && Number.isSafeInteger(item.size) && item.size > 0 &&
@@ -63,8 +63,12 @@ function supportsOwnerPreview(item: XDriveFileExplorerItem): boolean {
   if (item.kind !== 'file') return false
   if (xDriveFileSupportsTextPreview(item.name, item.kind)) return true
   if (typeof item.size !== 'number' || !Number.isSafeInteger(item.size) || item.size < 1) return false
+  const mime = xDriveSynologyPreviewMIME(item.name)
   return Boolean(xDriveSynologyPlaybackMIME(item.name) ||
-    (xDriveSynologyPreviewMIME(item.name) && item.size <= XDRIVE_SYNOLOGY_MEDIA_BLOB_MAX_BYTES) ||
+    // Large PDFs are streamed by the already authorized DSM CGI Range reader.
+    // Images still use a bounded full-SHA Blob; no arbitrary binary proxy.
+    mime === 'application/pdf' ||
+    (mime?.startsWith('image/') && item.size <= XDRIVE_SYNOLOGY_MEDIA_BLOB_MAX_BYTES) ||
     usesOwnerThumbnailOnlyPreview(item))
 }
 
@@ -297,11 +301,12 @@ export function XDriveSynologyOwnerFilesPage({
     signal?: AbortSignal,
     onProgress?: XDriveByteProgressHandler,
   ) => {
-    if ((kind === 'video' || kind === 'audio' ||
-        (kind === 'pdf' && (item.size ?? 0) > XDRIVE_SYNOLOGY_MEDIA_BLOB_MAX_BYTES)) &&
-        xDriveSynologyPlaybackMIME(item.name)) {
-      // Large PDFs are streamed through authenticated Range + HEAD. Smaller
-      // images/PDFs retain the existing complete SHA-256-verified Blob path.
+    if ((kind === 'video' || kind === 'audio') && xDriveSynologyPlaybackMIME(item.name)) {
+      return xDriveSynologyLoadNativeMediaStream(client, item, signal)
+    }
+    if (kind === 'pdf' && typeof item.size === 'number' &&
+        item.size > XDRIVE_SYNOLOGY_MEDIA_BLOB_MAX_BYTES &&
+        xDriveSynologyPreviewMIME(item.name) === 'application/pdf') {
       return xDriveSynologyLoadNativeMediaStream(client, item, signal)
     }
     if ((kind !== 'image' && kind !== 'pdf') || !xDriveSynologyPreviewMIME(item.name)) {
@@ -505,8 +510,6 @@ export function XDriveSynologyOwnerFilesPage({
         // derivative falls back to the existing icon without delaying the
         // independent original/media Range request.
         loadImagePreview={loadOwnerThumbnail}
-        // No oversized original read or futile retry for a derivative-only
-        // image; the shared image pipeline still retries failed thumbnails.
         loadPreviewURL={thumbnailOnlyPreview ? undefined : loadMediaPreview}
         onClose={() => setPreview(null)}
       />
