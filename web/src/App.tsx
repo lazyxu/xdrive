@@ -877,7 +877,7 @@ function AuthView({
               )}
             />
           </XDriveAuthField>
-          {(loginUsername.trim() || rememberedUsernames.length > 0) && (
+          {Boolean(loginUsername.trim()) && (
             <Button
               variant="text"
               size="small"
