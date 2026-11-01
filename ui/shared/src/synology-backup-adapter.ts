@@ -55,6 +55,7 @@ export type XDriveSynologyOwnerThumbnail = {
 export type XDriveSynologyOwnerStreamMIME =
   | 'video/mp4' | 'video/webm'
   | 'audio/mpeg' | 'audio/mp4' | 'audio/ogg' | 'audio/wav' | 'audio/flac'
+  | 'application/pdf'
 
 /** One *bounded*, fully verified motion byte resource; never a signed
  * Server URL or general-purpose DSM media proxy. */
@@ -358,7 +359,7 @@ export interface XDriveSynologyBackupLocalClient extends XDriveLocalBackupCommon
     nodeID: number, revision: number, offset: number, length: number,
     signal?: AbortSignal,
   ): Promise<XDriveSynologyOwnerMediaRange>
-  /** Session-bound DSM URL for the browser's native HTMLMediaElement Range
+  /** Session-bound DSM URL for native media playback or an embedded PDF Range
    * requests. This URL is NOT a token: DSM and Agent reauthorize every request. */
   ownerFileMediaStreamURL(
     nodeID: number, revision: number, total: number, sha256: string,
@@ -830,7 +831,7 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
         Number.isSafeInteger(value) && value > 0) ||
         !/^[0-9a-f]{64}$/.test(sha256) ||
         !['video/mp4', 'video/webm', 'audio/mpeg', 'audio/mp4',
-          'audio/ogg', 'audio/wav', 'audio/flac'].includes(mime)) {
+          'audio/ogg', 'audio/wav', 'audio/flac', 'application/pdf'].includes(mime)) {
         throw new Error('Invalid authenticated Owner playback identity')
       }
       // Only the trusted, same-origin DSM CGI endpoint is used; arbitrary

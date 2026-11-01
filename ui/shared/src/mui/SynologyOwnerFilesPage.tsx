@@ -283,7 +283,11 @@ export function XDriveSynologyOwnerFilesPage({
     signal?: AbortSignal,
     onProgress?: XDriveByteProgressHandler,
   ) => {
-    if ((kind === 'video' || kind === 'audio') && xDriveSynologyPlaybackMIME(item.name)) {
+    if ((kind === 'video' || kind === 'audio' ||
+        (kind === 'pdf' && (item.size ?? 0) > XDRIVE_SYNOLOGY_MEDIA_BLOB_MAX_BYTES)) &&
+        xDriveSynologyPlaybackMIME(item.name)) {
+      // Large PDFs are streamed through authenticated Range + HEAD. Smaller
+      // images/PDFs retain the existing complete SHA-256-verified Blob path.
       return xDriveSynologyLoadNativeMediaStream(client, item, signal)
     }
     if ((kind !== 'image' && kind !== 'pdf') || !xDriveSynologyPreviewMIME(item.name)) {

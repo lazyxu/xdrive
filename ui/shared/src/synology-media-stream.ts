@@ -5,8 +5,8 @@ import type {
 } from './synology-backup-adapter'
 import { XDRIVE_SYNOLOGY_MEDIA_RANGE_BYTES } from './synology-backup-adapter'
 
-// Only browser-playable media formats with an auditable fixed MIME allowlist.
-// The existing shared Viewer still owns controls, seek/buffer state and cleanup.
+// Only supported native media and PDF formats with an auditable fixed MIME allowlist.
+// The shared Viewer owns playback/PDF UI, Retry, navigation and cleanup.
 export function xDriveSynologyPlaybackMIME(name: string): XDriveSynologyOwnerStreamMIME | null {
   const ext = name.slice(name.lastIndexOf('.') + 1).toLowerCase()
   switch (ext) {
@@ -18,6 +18,7 @@ export function xDriveSynologyPlaybackMIME(name: string): XDriveSynologyOwnerStr
     case 'ogg': return 'audio/ogg'
     case 'wav': return 'audio/wav'
     case 'flac': return 'audio/flac'
+    case 'pdf': return 'application/pdf'
     default: return null
   }
 }
@@ -37,14 +38,16 @@ export function xDriveSynologyPlaybackMagic(data: Uint8Array, mime: XDriveSynolo
     case 'audio/wav': return data.length >= 12 && starts('RIFF') &&
       [...'WAVE'].every((c, i) => data[8 + i] === c.charCodeAt(0))
     case 'audio/flac': return starts('fLaC')
+    case 'application/pdf': return starts('%PDF-')
   }
 }
 
-// The browser performs one small Owner-authenticated content proof. The
-// subsequent video/audio element fetches data natively via the exact DSM CGI
-// Range URL; it does not download the entire file into JavaScript memory.
-// No misleading whole-file byte progress is emitted: native buffering time is
-// provided by the existing shared Viewer.
+// The browser performs one small Owner-authenticated content proof. Native
+// video/audio and large PDF renderers subsequently request bounded bytes via
+// the exact DSM CGI Range URL, never a giant Blob or Server-issued token.
+// A PDF additionally verifies the real HEAD response before iframe mounting;
+// onLoad alone cannot distinguish a PDF from an HTML error document.
+// No false whole-file progress is emitted for native Range transport.
 export async function xDriveSynologyLoadNativeMediaStream(
   client: Pick<XDriveSynologyBackupLocalClient, 'ownerFileMediaRange' | 'ownerFileMediaStreamURL'>,
   item: XDriveFileExplorerItem,
@@ -69,5 +72,23 @@ export async function xDriveSynologyLoadNativeMediaStream(
   }
   // This is a scoped local route, NOT an authorization ticket. A copied URL
   // without the same logged-in DSM principal and owning Agent fails closed.
-  return client.ownerFileMediaStreamURL(item.id, item.revision, item.size, first.sha256, mime)
+  const url = client.ownerFileMediaStreamURL(item.id, item.revision, item.size, first.sha256, mime)
+  if (mime === 'application/pdf') {
+    // This fixed, same-origin DSM CGI requires the authenticated DSM cookie;
+    // signed Web tickets use a different credential-free HEAD verifier.
+    const response = await fetch(url, {
+      method: 'HEAD', signal, credentials: 'same-origin',
+      mode: 'same-origin', cache: 'no-store', redirect: 'error',
+      referrerPolicy: 'no-referrer',
+    })
+    if (signal?.aborted) throw new Error('Owner stream load cancelled')
+    const contentType = response.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase()
+    if (response.status !== 200 || contentType !== 'application/pdf' ||
+        response.headers.get('accept-ranges')?.toLowerCase() !== 'bytes' ||
+        response.headers.get('content-length') !== String(item.size) ||
+        response.headers.get('etag') !== '"' + first.sha256 + '"') {
+      throw new Error('Authenticated DSM PDF Range preflight unavailable')
+    }
+  }
+  return url
 }
