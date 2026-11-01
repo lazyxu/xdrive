@@ -2274,14 +2274,17 @@ class DriveAppTest {
             controller.state.value.fileTextPreview?.text == "hello xDrive" &&
                 !controller.state.value.fileTextPreviewLoading
         }
-        compose.onNodeWithTag("files-text-preview-content").assertIsDisplayed()
+        compose.onNodeWithTag("files-text-viewer").assertExists()
+        compose.onNodeWithTag("files-text-content").assertIsDisplayed()
         compose.onNodeWithText("hello xDrive").assertIsDisplayed()
+        compose.onNodeWithTag("files-text-status").assertExists()
         compose.runOnIdle { org.junit.Assert.assertEquals(1, textPreviewReads) }
-        compose.onNodeWithText("关闭").performClick()
+        compose.onNodeWithTag("files-text-close").performClick()
         compose.runOnIdle {
             org.junit.Assert.assertNull(controller.state.value.fileTextPreview)
-            org.junit.Assert.assertNull(controller.state.value.selected)
+            org.junit.Assert.assertNull(controller.state.value.filesTextViewer)
         }
+        compose.onNodeWithTag("files").assertExists()
         compose.onNodeWithContentDescription("返回上级").performClick()
         compose.onNodeWithContentDescription("账户菜单").performClick()
         compose.onNodeWithText("退出登录").performClick()
@@ -2291,7 +2294,8 @@ class DriveAppTest {
     @Test fun loginBrowseDetailsBackAndLogout() {
         startAndLogin()
         compose.onNodeWithText("假期照片").performClick()
-        compose.onNodeWithText("测试.txt").performClick()
+        compose.onNodeWithTag("files-item-3").performTouchInput { longClick() }
+        compose.onNodeWithText("属性").performClick()
         compose.onNode(hasText("12 B") and hasAnyAncestor(isDialog())).assertIsDisplayed()
         compose.onNodeWithText("关闭").performClick()
         compose.onNodeWithContentDescription("返回上级").performClick()
