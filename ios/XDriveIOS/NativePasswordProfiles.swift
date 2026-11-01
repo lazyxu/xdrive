@@ -7,7 +7,8 @@ struct XDriveIOSNativeLoginProfile: Codable, Hashable, Identifiable {
     let server: String
     let lanIP: String
     let username: String
-    var id: String { server + "\u{001F}" + username }
+    // A different LAN endpoint is not allowed to inherit this Server's password.
+    var id: String { server + "\u{001F}" + lanIP + "\u{001F}" + username }
 }
 
 enum XDriveIOSNativePasswordProfiles {
