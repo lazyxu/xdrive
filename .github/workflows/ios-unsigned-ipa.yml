@@ -32,6 +32,16 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
 
+      - name: Verify cold launch recovery and BG registration safety
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeLaunchCheckpoint.swift \
+            ios/tests/NativeLaunchCheckpointChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-launch-check"
+          "$RUNNER_TEMP/xdrive-ios-launch-check"
+          node --test desktop/tests/ios-native-launch-recovery.cjs
+
       # Pure Foundation contract test is quick and independent of signing.
       - name: Verify bounded iOS PhotoKit scan-window math
         run: |

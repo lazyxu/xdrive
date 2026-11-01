@@ -107,11 +107,22 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
             }
         }
         .task {
+            // Postpone the retired Keychain cleanup until the first native
+            // view has mounted. Keep the launch stage visible across exits.
+            XDriveIOSNativeLaunchCheckpoint.mark(.retiringCredential)
+            XDriveIOSRetiredNativeLogin.purgeLegacyRefreshToken()
+            XDriveIOSNativeLaunchCheckpoint.mark(.restoringSession)
             // Restore must verify Server instance, Owner and cloud root first.
             await model.restore()
             restoreFinished = true
+            XDriveIOSNativeLaunchCheckpoint.mark(.mountingWorkspace)
             backup.refresh(owner: model.owner)
             if phase == .active { backup.tickIfDue(login: model) }
+            // Do not claim a successful cold launch before the native signed-in
+            // dashboard and its initial PhotoKit/scene callbacks can run.
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard !Task.isCancelled else { return }
+            XDriveIOSNativeLaunchCheckpoint.mark(.ready)
         }
         .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
             guard phase == .active else { return }
