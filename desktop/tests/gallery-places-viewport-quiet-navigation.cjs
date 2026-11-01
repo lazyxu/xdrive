@@ -75,6 +75,10 @@ function loadSharedMap() {
     },
     // P0-01 extracted an opt-in diagnostic. Keep this map-lifecycle test
     // scoped to the map: coverage is exercised by its own contract tests.
+    './MediaGalleryOwnerGPSOverview': {
+      XDriveMediaGalleryOwnerGPSOverview: props =>
+        React.createElement('owner-gps-overview', props),
+    },
     './MediaGalleryMapGPSCoverage': {
       XDriveMediaGalleryMapGPSCoverage: props =>
         React.createElement('gps-coverage', props),
@@ -171,6 +175,16 @@ test('GPS place wall navigation remains available when SDK is blocked', async ()
   assert.equal(openButtons.length, 1)
   await act(async () => { openButtons[0].props.onClick() })
   assert.equal(opened, place.id)
+  await act(async () => view.unmount())
+})
+
+test('DSM mounts bounded current Owner GPS overview without an SDK Host', async () => {
+  global.window.location.href = 'https://gallery.example.test/gallery'
+  const view = await render({ onOpenPlace: () => {}, diagnosticScope: 'owner-dsm' })
+  const overview = view.root.findAllByType('owner-gps-overview')
+  assert.equal(overview.length, 1)
+  assert.equal(overview[0].props.listPage, base.listPlacesMapOverview)
+  assert.equal(view.root.findAllByType('isolated-child').length, 0)
   await act(async () => view.unmount())
 })
 
