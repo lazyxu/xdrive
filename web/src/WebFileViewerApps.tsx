@@ -49,6 +49,9 @@ import {
 } from '@xdrive/ui/mui'
 import type {
   MediaGalleryDataSource,
+  XDriveFilePreviewMotionLoader,
+  XDriveFilePreviewTextLoader,
+  XDriveFilePreviewURLLoader,
   XDriveShareDialogAdapter,
 } from '@xdrive/ui/mui'
 import {
@@ -83,6 +86,7 @@ import {
 } from '../../ui/shared/src/media-gallery-places-map-mode'
 import { xDriveContainViewerTabFocus } from './viewerFocusScope'
 import { xDriveWebTextSelection } from './webTextViewer'
+import { xDrivePreflightWebPDFTicket } from './webPDFTicketPreflight'
 import { xDriveMediaItemSupportsBasicEditing } from '../../ui/shared/src/media-edit'
 
 // Navigation metadata is not media byte progress. Hold a full-height, silent
@@ -935,6 +939,33 @@ function WebPreviewApp({
     }
   }, [api, viewer.node?.id, viewer.node?.revision])
 
+  // Keep the authenticated loader identity stable across Web frame/download/
+  // filmstrip updates. In particular, changing the callback must not tear down
+  // an already buffering or playing HTMLVideoElement or reload a PDF iframe.
+  // The current target provides its own Node/revision; no captured old Node.
+  const loadQuickLookText = useCallback<XDriveFilePreviewTextLoader>(
+    (currentTarget, signal) => api.fileTextPreview(Number(currentTarget.id), signal),
+    [api],
+  )
+  const loadQuickLookPreview = useCallback<XDriveFilePreviewURLLoader>(
+    async (currentTarget, kind, signal, onProgress) => {
+      const id = Number(currentTarget.id)
+      if (kind === 'live_photo') return api.mediaLivePhotoStillURL(id, signal)
+      if (kind === 'image' && xDriveFileNeedsBrowserCompatibleImagePreview(currentTarget.name)) {
+        return api.mediaAnalysisPreviewURL(id, signal, Number(currentTarget.revision), onProgress)
+      }
+      const url = await api.filePreviewURL(id, signal)
+      if (kind === 'pdf') await xDrivePreflightWebPDFTicket(url, signal)
+      return url
+    },
+    [api],
+  )
+  const loadQuickLookMotion = useCallback<XDriveFilePreviewMotionLoader>(
+    (currentTarget, _onProgress, signal) =>
+      api.mediaLivePhotoMotionURL(Number(currentTarget.id), signal),
+    [api],
+  )
+
   return (
     <>
       <WebViewerFrame
@@ -977,17 +1008,10 @@ function WebPreviewApp({
         ) : <XDriveFilePreviewSurface
           key={dialogOwner.session}
           target={target}
-          loadTextPreview={(currentTarget, signal) => api.fileTextPreview(Number(currentTarget.id), signal)}
+          loadTextPreview={loadQuickLookText}
           loadImagePreview={loadThumbnail}
-          loadPreviewURL={async (_target, kind, signal, onProgress) => (
-            kind === 'live_photo'
-              ? api.mediaLivePhotoStillURL(viewer.node!.id, signal)
-              : kind === 'image' && xDriveFileNeedsBrowserCompatibleImagePreview(_target.name)
-                ? api.mediaAnalysisPreviewURL(viewer.node!.id, signal, viewer.node!.revision, onProgress)
-                : api.filePreviewURL(viewer.node!.id, signal)
-          )}
-          loadLivePhotoMotion={(currentTarget, _progress, signal) =>
-            api.mediaLivePhotoMotionURL(Number(currentTarget.id), signal)}
+          loadPreviewURL={loadQuickLookPreview}
+          loadLivePhotoMotion={loadQuickLookMotion}
           onPresentationStateChange={presentation.onPresentationStateChange}
           interactiveImage
           onSwipePrevious={viewer.previous ? viewer.goPrevious : undefined}
@@ -2128,6 +2152,20 @@ function WebSinglePreviewApp({
   const node = read.value
   const error = read.error
   const download = useWebViewerDownload(api, readerOwner, node)
+  const pdfPage = route.app === 'pdf-viewer' ? route.params.page : undefined
+  const loadSinglePreview = useCallback<XDriveFilePreviewURLLoader>(
+    async (currentTarget, kind, signal) => {
+      if (readerOwner.app === 'pdf-viewer' && kind !== 'pdf') return null
+      if (readerOwner.app === 'audio-player' && kind !== 'audio') return null
+      const url = await api.filePreviewURL(Number(currentTarget.id), signal)
+      if (readerOwner.app === 'pdf-viewer') {
+        await xDrivePreflightWebPDFTicket(url, signal)
+        return pdfPage ? `${url}#page=${pdfPage}` : url
+      }
+      return url
+    },
+    [api, pdfPage, readerOwner],
+  )
 
   return (
     <WebViewerFrame
@@ -2158,14 +2196,7 @@ function WebSinglePreviewApp({
           size: node.size,
           revision: node.revision,
         }}
-        loadPreviewURL={async (_target, kind, signal) => {
-          if (route.app === 'pdf-viewer' && kind !== 'pdf') return null
-          if (route.app === 'audio-player' && kind !== 'audio') return null
-          const url = await api.filePreviewURL(node.id, signal)
-          return route.app === 'pdf-viewer' && route.params.page
-            ? `${url}#page=${route.params.page}`
-            : url
-        }}
+        loadPreviewURL={loadSinglePreview}
         minHeight={0}
         maxHeight="none"
       />}
