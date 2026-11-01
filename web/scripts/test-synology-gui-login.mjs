@@ -84,8 +84,20 @@ assert.ok(loginBlock.indexOf('client.serverConnection(controller.signal)') <
   loginBlock.indexOf('client.loginServer(requestedServer'))
 assert.ok(loginBlock.indexOf('xDriveDSMLoginOwnerError(requestedServer') <
   loginBlock.indexOf('client.loginServer(requestedServer'))
-assert.equal((loginBlock.match(/window\.location\.reload\(\)/g) || []).length, 2)
-assert.match(loginBlock, /setPassword\(''\)[\s\S]*setLoginState\('logging'\)/)
+// Only the verified, unchanged-Owner 401 rejection keeps this form's password.
+const postStart = loginBlock.indexOf('void client.loginServer(requestedServer, requestedUsername, requestedPassword, controller.signal).then(')
+assert.ok(postStart > loginBlock.indexOf("loginPhaseRef.current = 'logging'"))
+assert.doesNotMatch(loginBlock.slice(0, postStart), /setPassword\(''\)/,
+  'an uncommitted error must not discard the current password before the Agent responds')
+const postOutcome = loginBlock.slice(postStart)
+assert.match(postOutcome, /failure instanceof XDriveDSMLoginNoCommitError/)
+assert.match(postOutcome, /current.owner_scope !== info.owner_scope/)
+assert.match(postOutcome, /current.configured !== info.configured/)
+assert.match(postOutcome, /current.server !== info.server/)
+assert.match(postOutcome, /current.username !== info.username/)
+assert.match(postOutcome, /setLoginError\('用户名或密码错误/)
+assert.equal((postOutcome.match(/setPassword\(''\)\s*window\.location\.reload\(\)/g) || []).length, 4,
+  'success, changed Owner, failed Owner recheck and uncertain login all discard password and reload')
 assert.match(loginBlock, /setProfileStatus\('unavailable'\)[\s\S]*setLoginError\('无法读取本机 Agent/)
 console.log('DSM preflight rejects invalid Server/Owner and unreadable Agent without persisting secrets')
 
