@@ -1,14 +1,51 @@
 import SwiftUI
 import UIKit
 
+/// One-finger horizontal paging is admitted only at the base zoom; a
+/// pinched/zoomed image keeps its pan gesture rather than switching files.
+/// Direction -1 means previous and +1 means next.
+enum XDriveIOSNativeViewerSwipePolicy {
+    static func direction(
+        horizontal: CGFloat, vertical: CGFloat,
+        zoom: CGFloat, minimum: CGFloat
+    ) -> Int? {
+        guard horizontal.isFinite, vertical.isFinite,
+              zoom.isFinite, minimum.isFinite, minimum > 0,
+              zoom <= minimum + 0.01,
+              abs(horizontal) >= 72,
+              abs(horizontal) > abs(vertical) * 1.5 else { return nil }
+        return horizontal < 0 ? 1 : -1
+    }
+}
+
 /// Read-only UIKit zoom surface shared by local and authenticated cloud
 /// still-image previews. Owns no media loader, credential or image cache.
 struct XDriveIOSNativeZoomablePhotoView: UIViewRepresentable {
     let image: UIImage
+    var onSwipe: ((Int) -> Void)? = nil
+
+    /// Keep the same still-view initializer for Files, local Photos and cloud.
+    /// Only the owning Viewer can accept/reject a bounded neighbor.
+    func onNavigateSwipe(_ handler: @escaping (Int) -> Void) -> Self {
+        var copy = self
+        copy.onSwipe = handler
+        return copy
+    }
 
     final class Coordinator: NSObject, UIScrollViewDelegate {
         weak var photo: UIImageView?
         weak var scroll: UIScrollView?
+        var onSwipe: ((Int) -> Void)?
+
+        @objc func panEnded(_ recognizer: UIPanGestureRecognizer) {
+            guard recognizer.state == .ended, let scroll else { return }
+            let displacement = recognizer.translation(in: scroll)
+            guard let direction = XDriveIOSNativeViewerSwipePolicy.direction(
+                horizontal: displacement.x, vertical: displacement.y,
+                zoom: scroll.zoomScale, minimum: scroll.minimumZoomScale
+            ) else { return }
+            onSwipe?(direction)
+        }
 
         func viewForZooming(in scrollView: UIScrollView) -> UIView? {
             photo
@@ -40,6 +77,9 @@ struct XDriveIOSNativeZoomablePhotoView: UIViewRepresentable {
         scroll.minimumZoomScale = 1
         scroll.maximumZoomScale = 5
         scroll.bouncesZoom = true
+        // The content normally fits the viewport. Keep the system pan
+        // recognizer active for paging without stealing pinch-to-zoom.
+        scroll.alwaysBounceHorizontal = true
         scroll.contentInsetAdjustmentBehavior = .never
         scroll.showsHorizontalScrollIndicator = false
         scroll.showsVerticalScrollIndicator = false
@@ -60,6 +100,10 @@ struct XDriveIOSNativeZoomablePhotoView: UIViewRepresentable {
 
         context.coordinator.photo = photo
         context.coordinator.scroll = scroll
+        context.coordinator.onSwipe = onSwipe
+        scroll.panGestureRecognizer.addTarget(
+            context.coordinator, action: #selector(Coordinator.panEnded(_:))
+        )
         let doubleTap = UITapGestureRecognizer(
             target: context.coordinator,
             action: #selector(Coordinator.doubleTap(_:))
@@ -70,6 +114,7 @@ struct XDriveIOSNativeZoomablePhotoView: UIViewRepresentable {
     }
 
     func updateUIView(_ scroll: UIScrollView, context: Context) {
+        context.coordinator.onSwipe = onSwipe
         guard let photo = context.coordinator.photo else { return }
         // A reused detail view must never retain another picture's zoom.
         if photo.image !== image {
