@@ -32,6 +32,18 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
         schedule = owner.flatMap { XDriveIOSPhotoAutoScheduleStore.shared.status(owner: $0) }
     }
 
+    /// A receipt review has independently proven an old, potentially committed
+    /// original against the current Server Session AND Owner Node. Reusing the
+    /// existing event only re-reads the cloud wall; it never increments upload
+    /// progress, resumes an automatic schedule, or treats unknown ACKs as done.
+    func signalConfirmedReceiptReadback(
+        owner: XDriveNativeOwnerRoot,
+        login: XDriveIOSNativeOwnerLoginModel
+    ) {
+        guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner) else { return }
+        confirmedOriginalUpdate = ConfirmedOriginalUpdate(owner: owner, id: UUID())
+    }
+
     func cancel() {
         running?.cancel()
     }
