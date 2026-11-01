@@ -84,7 +84,7 @@ private enum XDriveIOSNativeLauncherRoute: String, CaseIterable, Identifiable {
     }
     var available: Bool {
         switch self {
-        case .local, .albums, .cloud, .originals, .map, .backup: return true
+        case .local, .albums, .cloud, .originals, .map, .files, .backup: return true
         default: return false
         }
     }
@@ -607,18 +607,7 @@ struct XDriveIOSNativePhotosDashboard: View {
     }
 
     private var files: some View {
-        unavailable(
-            title: "原生文件管理正在迁移",
-            detail: "目前只能通过「图库 → 云端原件」安全查看这台 iPhone 已备份的原件；它不是完整文件树。"
-        )
-        .safeAreaInset(edge: .bottom) {
-            Button("查看云端已备份原件") {
-                gallerySource = .originals
-                tab = .gallery
-            }
-            .buttonStyle(.bordered)
-            .padding(10)
-        }
+        XDriveIOSNativeFilesBrowser(login: login)
     }
 
     private var mine: some View {
