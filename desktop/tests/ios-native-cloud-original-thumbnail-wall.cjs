@@ -181,3 +181,27 @@ test('cloud originals retire thumbnail pixels on Node revision or exact Owner/ro
   assert.match(tile, /\.task\(id: "\\\(node.id\)-\\\(node.revision\)-\\\(viewerActive\)"\)/)
   assert.doesNotMatch(identity, /token|accessToken|localIdentifier|password|UserDefaults/)
 })
+
+
+test('native cloud-original Gallery short landscape returns grid height while retaining Owner and Viewer safety', () => {
+  const wall = src.slice(src.indexOf('struct XDriveIOSNativeCloudOriginalGallery: View {'))
+  assert.match(wall, /@Environment\(\\\.dynamicTypeSize\) private var dynamicTypeSize/)
+  assert.match(wall, /GeometryReader \{ viewport in/)
+  assert.match(wall, /viewport\.size\.width >= 680 &&\s*viewport\.size\.height < 500 && !dynamicTypeSize\.isAccessibilitySize/)
+  assert.match(wall, /ScrollView \{\s*LazyVStack\(alignment: \.leading, spacing: compactGallery \? 8 : 12\)/)
+  assert.match(wall, /if !compactGallery \{\s*Text\("当前账户的 Owner 根目录中/)
+  assert.match(wall, /if !compactGallery \{\s*Text\("仅可见项目请求 Server 缩略图/)
+  assert.match(wall, /native-ios-cloud-original-layout-help/)
+  assert.match(wall, /\.accessibilityLabel\("云端备份原件说明"\)/)
+  assert.match(wall, /\.alert\("云端备份原件说明", isPresented: \$showingGalleryHelp\)/)
+  assert.match(wall, /已检查根目录 \\?\(model\.scanned\) \/ \\?\(model\.total\) 项/)
+  assert.match(wall, /if model\.busy \{ ProgressView\("正在验证并读取云端目录/)
+  assert.match(wall, /if let error = model\.error \{/)
+  assert.match(wall, /Button\("继续检查下一批"\)/)
+  assert.match(wall, /Button\("刷新云端原件"\)/)
+  assert.match(wall, /\.fullScreenCover\(item: \$selected, onDismiss:/)
+  assert.match(wall, /if selectedID != nil \{[\s\S]*?model\.suspendForViewer\(\)/)
+  assert.match(wall, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, update\.owner\)/)
+  assert.match(wall, /XDriveIOSNativeCloudOriginalTileIdentity\(/)
+  assert.doesNotMatch(wall, /\.id\(compactGallery\)|onChange\(of: compactGallery\)|UploadSessionTransport|WKWebView/)
+});

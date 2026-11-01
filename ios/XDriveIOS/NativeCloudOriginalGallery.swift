@@ -852,6 +852,8 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     let confirmedOriginalUpdate: XDriveIOSNativePhotoBackupController.ConfirmedOriginalUpdate?
     @Environment(\.scenePhase) private var phase
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var showingGalleryHelp = false
     @StateObject private var model = XDriveIOSNativeCloudOriginalModel()
     @State private var selected: XDriveIOSNativeCloudOriginal?
     @State private var refreshAfterViewer = false
@@ -860,10 +862,17 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
     @State private var needsForegroundReload = false
 
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 12) {
-                Text("当前账户的 Owner 根目录中，已由 iPhone 原件备份写入的文件。按最近更新时间分批检查，每批最多 48 项。")
-                    .font(.footnote).foregroundStyle(.secondary)
+        GeometryReader { viewport in
+            // One Owner-scoped read/viewer tree; rotating only changes
+            // explanatory copy, not the 48-item page or backup lifecycle.
+            let compactGallery = viewport.size.width >= 680 &&
+                viewport.size.height < 500 && !dynamicTypeSize.isAccessibilitySize
+            ScrollView {
+            LazyVStack(alignment: .leading, spacing: compactGallery ? 8 : 12) {
+                if !compactGallery {
+                    Text("当前账户的 Owner 根目录中，已由 iPhone 原件备份写入的文件。按最近更新时间分批检查，每批最多 48 项。")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
                 Text("已检查根目录 \(model.scanned) / \(model.total) 项")
                     .font(.footnote).monospacedDigit()
                 LazyVGrid(
@@ -887,8 +896,10 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
                         .accessibilityIdentifier("native-ios-cloud-original-tile")
                     }
                 }
-                Text("仅可见项目请求 Server 缩略图；若尚未生成则保留文件图标，不下载大体积原件填充缩略图。")
-                    .font(.footnote).foregroundStyle(.secondary)
+                if !compactGallery {
+                    Text("仅可见项目请求 Server 缩略图；若尚未生成则保留文件图标，不下载大体积原件填充缩略图。")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
                 if model.busy { ProgressView("正在验证并读取云端目录…") }
                 if let error = model.error {
                     Text(error).foregroundStyle(.red)
@@ -907,8 +918,24 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
                 Button("刷新云端原件") { model.reload(login: login) }
                     .disabled(model.busy)
             }.padding()
+            }
         }
         .navigationTitle("云端备份原件")
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button { showingGalleryHelp = true } label: {
+                    Image(systemName: "info.circle")
+                        .frame(minWidth: 44, minHeight: 44)
+                }
+                .accessibilityLabel("云端备份原件说明")
+                .accessibilityIdentifier("native-ios-cloud-original-layout-help")
+            }
+        }
+        .alert("云端备份原件说明", isPresented: $showingGalleryHelp) {
+            Button("完成", role: .cancel) {}
+        } message: {
+            Text("只显示当前已验证 Owner 根目录中由 iPhone 原件备份写入的文件，每批最多检查 48 项。仅可见项目请求 Server 缩略图；缩略图缺失不代表原件丢失，不下载大体积原件填充。")
+        }
         .fullScreenCover(item: $selected, onDismiss: {
             // Never discard an actively playing signed preview. Re-read
             // after the Viewer closes and only for the current Owner.

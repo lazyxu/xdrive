@@ -1,0 +1,7 @@
+# iOS native backed-up cloud originals: short-landscape Gallery (2026-11-01)
+
+Scope: fixed Gallery source **云端原件** only. Safe-area measured width >=680pt, height <500pt and non-accessibility Dynamic Type collapses two static explanatory paragraphs and slightly tightens vertical spacing. Current verified Owner/root status, scanned/total, paged 48-item metadata lookup, thumbnails, missing-original uncertainty, loading/error/retry and refresh remain.
+
+A 44pt navigation-toolbar explanation button is available in portrait and landscape, including VoiceOver. Narrow and large text views retain inline explanations. One native View owns the existing selected full-screen Viewer, page model, BG-origin refresh fences and Owner-switch invalidation across rotation. No new downloader or background task is introduced; the runtime's signed thumbnail and revision/Owner tile identity remain unchanged.
+
+Existing iOS Native Unsigned IPA source test now checks both branches and the original Viewer's preemption, Owner fencing and continuation. Exact PR HEAD iOS IPA compile, applicable CI, Final Gate and GitHub branch protections are required before master merge. Real iPhone landscape/VoiceOver/safe areas remain **跳过（未验收）**.
