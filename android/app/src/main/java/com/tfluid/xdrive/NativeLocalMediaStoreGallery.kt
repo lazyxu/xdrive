@@ -133,9 +133,10 @@ internal fun rememberNativeLocalGalleryQuerySignal(
     permissionEpoch: Int,
     libraryEpoch: Int,
     allowed: Boolean,
+    mediaKind: String = "",
 ): CancellationSignal {
     val signal = remember(memory, sessionId, albumsOnly, albumId,
-        permissionEpoch, libraryEpoch, allowed) { CancellationSignal() }
+        permissionEpoch, libraryEpoch, allowed, mediaKind) { CancellationSignal() }
     DisposableEffect(signal) { onDispose { signal.cancel() } }
     return signal
 }
@@ -203,13 +204,16 @@ internal fun NativeLocalMediaStoreGallery(
     var permissionEpoch by remember(sessionId, cache) { mutableIntStateOf(0) }
     val libraryEpoch = cache.generation.intValue
     val jumpEpoch = wall.jumpEpoch.intValue
+    val filterEpoch = wall.filterEpoch.intValue
+    var mediaKind by wall.mediaKind
     var fullDateIndex by wall.fullDateIndex
     var fullDateBusy by wall.fullDateBusy
     var fullDateScanned by wall.fullDateScanned
     var fullDateError by wall.fullDateError
     var fullDateRequest by wall.fullDateRequest
     var dateScale by wall.dateScale
-    var requestedDateScale by remember(sessionId, cache, albumsOnly, selectedAlbum?.id, libraryEpoch) {
+    var requestedDateScale by remember(sessionId, cache, albumsOnly,
+        selectedAlbum?.id, libraryEpoch, mediaKind) {
         mutableStateOf<String?>(null)
     }
     val dateJumpScope = rememberCoroutineScope()
@@ -218,7 +222,7 @@ internal fun NativeLocalMediaStoreGallery(
     }
     val querySignal = rememberNativeLocalGalleryQuerySignal(
         cache, sessionId, albumsOnly, selectedAlbum?.id, permissionEpoch,
-        libraryEpoch, allowed)
+        libraryEpoch, allowed, mediaKind)
     val fullImages = Build.VERSION.SDK_INT >= 33 &&
         context.checkSelfPermission(Manifest.permission.READ_MEDIA_IMAGES) ==
             PackageManager.PERMISSION_GRANTED
@@ -287,7 +291,7 @@ internal fun NativeLocalMediaStoreGallery(
     }
 
     LaunchedEffect(querySignal, sessionId, albumsOnly, selectedAlbum?.id,
-        permissionEpoch, libraryEpoch, allowed, jumpEpoch) {
+        permissionEpoch, libraryEpoch, allowed, jumpEpoch, filterEpoch) {
         selectedMedia = null
         val sameOrigin = viewerReturn?.let { anchor ->
             anchor.generation == libraryEpoch && anchor.albumsOnly == albumsOnly &&
@@ -305,7 +309,7 @@ internal fun NativeLocalMediaStoreGallery(
         if ((!albumsOnly || selectedAlbum != null) && wall.loaded.value) return@LaunchedEffect
         // A date jump already reset only the wall; clearing here would erase
         // the verified full-prefix group index and its per-group anchors.
-        if (jumpEpoch == 0) wall.clear()
+        if (jumpEpoch == 0 && filterEpoch == 0) wall.clear()
         val pageStartAfter = wall.jumpAfter.value
         val pageStartOffset = wall.jumpOffset.intValue
         val readRevision = wall.revision.intValue
@@ -318,7 +322,8 @@ internal fun NativeLocalMediaStoreGallery(
             } else {
                 val page = NativeLocalMediaStore.pageAfter(resolver,
                     after = pageStartAfter, limit = NativeLocalMediaStore.PHOTO_PAGE_SIZE,
-                    albumId = selectedAlbum?.id, cancellationSignal = querySignal)
+                    albumId = selectedAlbum?.id, cancellationSignal = querySignal,
+                    mediaKind = mediaKind)
                 if (wall.revision.intValue != readRevision) return@LaunchedEffect
                 items = page
                 firstOffset = pageStartOffset
@@ -356,7 +361,7 @@ internal fun NativeLocalMediaStoreGallery(
         fullDateScanned = 0
         try {
             val index = scanNativeLocalFullDateIndex(
-                resolver, selectedAlbum?.id, querySignal) { count ->
+                resolver, selectedAlbum?.id, querySignal, mediaKind) { count ->
                 withContext(Dispatchers.Main.immediate) {
                     if (wall.revision.intValue == readRevision &&
                         !querySignal.isCanceled) fullDateScanned = count
@@ -396,7 +401,8 @@ internal fun NativeLocalMediaStoreGallery(
             val next = NativeLocalMediaStore.pageAfter(resolver,
                 after = nextPageKey,
                 limit = NativeLocalMediaStore.PHOTO_PAGE_SIZE,
-                albumId = selectedAlbum?.id, cancellationSignal = querySignal)
+                albumId = selectedAlbum?.id, cancellationSignal = querySignal,
+                mediaKind = mediaKind)
             if (wall.revision.intValue != readRevision) return@LaunchedEffect
             if (!NativeLocalMediaStore.canAppend(current, next)) {
                 failure = "媒体提供程序返回了重复页面；已停止加载以避免错乱。"
@@ -490,6 +496,18 @@ internal fun NativeLocalMediaStoreGallery(
             onRequest = { permissionPrompt.launch(nativePhotoPermissions()) },
         )
         if (!albumsOnly || selectedAlbum != null) {
+            NativeLocalMediaKindDock(
+                selectedKind = mediaKind,
+                enabled = allowed && !busy && !fullDateBusy &&
+                    selectedMedia == null,
+                onChoose = { kind ->
+                    if (mediaKind != kind) {
+                        requestedDateScale = null
+                        viewerReturn = null
+                        wall.selectMediaKind(kind)
+                    }
+                },
+            )
             NativeLocalDateWindowDock(
                 selectedScale = dateScale,
                 enabled = items.isNotEmpty() && !busy && !fullDateBusy && failure == null,
