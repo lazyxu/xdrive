@@ -113,6 +113,23 @@ actor XDriveIOSNativeGalleryMediaScanner {
         )
     }
 
+
+    /// Read precisely the previous slot in the SAME verified filtered
+    /// PhotoKit snapshot as nextPage(). No entire-page lookback or ID cache.
+    func precedingCaptureDate(beforeOffset offset: Int) throws -> Date? {
+        guard let snapshot, let permission else {
+            throw XDrivePhotoKitScanFailure.notStarted
+        }
+        guard offset > 0, offset <= snapshot.count, offset % 64 == 0 else {
+            throw XDrivePhotoKitScanFailure.invalidOffset
+        }
+        try ensureCurrent(permission)
+        try Task.checkCancellation()
+        let date = snapshot.object(at: offset - 1).creationDate
+        try ensureCurrent(permission)
+        return date
+    }
+
     func reset() {
         snapshot = nil
         permission = nil

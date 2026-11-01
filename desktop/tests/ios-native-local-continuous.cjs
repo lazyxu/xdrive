@@ -137,3 +137,18 @@ test('native Photos filter empty-state message reflects selected whole-library s
   assert.match(source, /mediaFilter == \.photos \? "当前已授权图库中没有照片。"/)
   assert.match(source, /当前已授权图库中没有可浏览的照片或视频。/)
 })
+
+
+test('native day section headers continue across real filtered 64-slot boundaries', () => {
+  const day = read('ios/XDriveIOS/NativePhotoDayGroupingPolicy.swift')
+  const scanner = read('ios/XDriveIOS/NativeGalleryMediaScanner.swift')
+  assert.match(day, /let continuesPreviousPage: Bool/)
+  assert.match(day, /hasPreviousPage: Bool = false/)
+  assert.match(day, /key\(for: previousCapturedAt, calendar: calendar\) == lastKey/)
+  assert.match(source, /hasPreviousPage: offset > 0, calendar: \.current/)
+  assert.match(source, /if !section\.continuesPreviousPage \{/)
+  assert.match(source, /preceding = try await reader\.precedingCaptureDate\(beforeOffset: offset\)/)
+  assert.match(scanner, /let date = snapshot\.object\(at: offset - 1\)\.creationDate/)
+  assert.match(scanner, /offset > 0, offset <= snapshot\.count, offset % 64 == 0/)
+  assert.match(scanner, /try ensureCurrent\(permission\)[\s\S]*?let date = snapshot\.object\(at: offset - 1\)\.creationDate[\s\S]*?try ensureCurrent\(permission\)/)
+});
