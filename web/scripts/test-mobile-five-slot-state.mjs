@@ -382,12 +382,14 @@ assert.match(galleryPageReturnSource,
   const openCompact = new Function(...Object.keys(env),
     js + '\nreturn make();')(...Object.values(env))
   openCompact('library')
-  assert.equal(firstMobileCollectionsReturnRef.current, false,
-    'restoration may be used only for the first cold Library request')
+  assert.equal(firstMobileCollectionsReturnRef.current, true,
+    'a pending first Range cannot consume the cold Collections retry hint')
   assert.deepEqual(overviewCommits, [],
     'a slow or denied first Range cannot prematurely replace Gallery presentation')
   assert.equal(loaded.length, 1)
   loaded[0][8]()
+  assert.equal(firstMobileCollectionsReturnRef.current, false,
+    'the winning first Range consumes the one-shot Collections return')
   assert.deepEqual(overviewCommits, [true],
     'confirmed first Range retains the original Collections selection')
   assert.deepEqual(warmed, [true], 'restored Collections must request bounded preview')
@@ -397,6 +399,41 @@ assert.match(galleryPageReturnSource,
     'a subsequent explicit Library selection must exit Collections')
   assert.deepEqual(warmed, [true],
     'normal Library navigation does not fetch the Collections preview')
+
+  // An unsuccessful first counted Range never calls onCommitted. Reentering
+  // Library after failure must still restore Collections, and a subsequent
+  // request that supersedes it must be the sole one allowed to commit.
+  firstMobileCollectionsReturnRef.current = true
+  overviewCommits.length = 0
+  warmed.length = 0
+  loaded.length = 0
+  openCompact('library')
+  assert.equal(firstMobileCollectionsReturnRef.current, true,
+    'first cold Library request remains retryable until accepted')
+  assert.deepEqual(overviewCommits, [])
+  // The first request fails or is superseded: no onCommitted callback.
+  openCompact('library')
+  assert.equal(firstMobileCollectionsReturnRef.current, true,
+    'a superseding Library request retains the cold Collections hint')
+  assert.deepEqual(overviewCommits, [],
+    'a failed/held first read cannot drop the previously visible Collections')
+  assert.equal(loaded.length, 2)
+  loaded[1][8]()
+  assert.equal(firstMobileCollectionsReturnRef.current, false,
+    'only the winning retried Range consumes the hint')
+  assert.deepEqual(overviewCommits, [true],
+    'the accepted retry preserves the requested Collections index')
+  assert.deepEqual(warmed, [true],
+    'the accepted retry refreshes bounded Collections previews exactly once')
+  openCompact('library')
+  loaded[2][8]()
+  assert.deepEqual(overviewCommits, [true, false],
+    'a later explicit Library tap exits Collections normally')
+
+  firstMobileCollectionsReturnRef.current = true
+  openCompact('favorites')
+  assert.equal(firstMobileCollectionsReturnRef.current, false,
+    'explicit Favorites intent must not replay an obsolete Library return')
 }
 
 const appSource = readFileSync(resolve(here, '../src/App.tsx'), 'utf8')
