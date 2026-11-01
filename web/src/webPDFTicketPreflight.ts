@@ -22,7 +22,7 @@ export async function xDrivePreflightWebPDFTicket(
   }
   if ((parsed.protocol !== 'https:' && parsed.protocol !== 'http:') ||
       parsed.username || parsed.password ||
-      !/^\\/api\\/v1\\/file-preview\\/[0-9]+$/.test(parsed.pathname) ||
+      !/^\/api\/v1\/file-preview\/[0-9]+$/.test(parsed.pathname) ||
       parsed.searchParams.size !== 1 ||
       !parsed.searchParams.get('ticket')) {
     throw new Error('Invalid PDF preview ticket')
