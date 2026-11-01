@@ -200,6 +200,23 @@ export function replaceSavedPassword(
   })
 }
 
+/** Explicit removal of exactly one Server+Owner's login history and cipher.
+ * Unlike clearSavedPassword, this also removes its non-secret profile.
+ * This never clears other accounts, trusted CA state, Agent sessions or backups.
+ */
+export function forgetLoginProfile(
+  history: LoginHistory, server: string, username: string,
+): LoginHistory {
+  const normalized = normalizeLoginHistory(history)
+  const selectedServer = server.trim()
+  const selectedUsername = username.trim()
+  return normalizeLoginHistory({
+    version: 1,
+    profiles: normalized.profiles.filter(profile =>
+      profile.server !== selectedServer || profile.username !== selectedUsername),
+  })
+}
+
 export function clearSavedPassword(
   history: LoginHistory,
   server: string,

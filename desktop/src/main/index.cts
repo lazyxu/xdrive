@@ -85,6 +85,7 @@ import {
   disableAutomaticLogin,
   emptyLoginHistory,
   findLoginProfile,
+  forgetLoginProfile,
   normalizeLoginHistory,
   publicLoginHistory,
   recordSuccessfulLogin,
@@ -2736,6 +2737,54 @@ function registerIPCHandlers() {
     loginHistory = clearSavedPassword(loginHistory, server, username)
     await persistLoginHistoryBestEffort()
     lastAutoLoginError = ''
+    return { ok: true, data: loginHistorySnapshot() }
+  })
+  ipcMain.handle('desktop:forget-login-profile', async (_event, serverValue: unknown, usernameValue: unknown) => {
+    if (typeof serverValue !== 'string' || typeof usernameValue !== 'string') {
+      return { ok: false, error: { code: 'invalid_input', message: 'Server and username are required.' } }
+    }
+    const server = serverValue.trim()
+    const username = usernameValue.trim()
+    if (!server || !username || server.length > 512 || username.length > 128) {
+      return { ok: false, error: { code: 'invalid_input', message: 'Invalid Server or username.' } }
+    }
+    // Only a positively verified *connected and signed-out* Agent permits
+    // removing a remembered profile. An unreadable/disconnected Agent might
+    // still own a durable authenticated background session: fail closed.
+    if (!agentState.connected || !agentState.status) {
+      return { ok: false, error: {
+        code: 'agent_status_unavailable',
+        message: '无法确认本机 Agent 已退出登录；请恢复连接并验证状态后再清除账号资料。',
+      } }
+    }
+    if (agentState.status.configured) {
+      return { ok: false, error: { code: 'owner_active', message: '请先安全退出当前 Agent 会话，再忘记此账号资料。' } }
+    }
+    if (!findLoginProfile(loginHistory, server, username)) {
+      return { ok: false, error: { code: 'profile_not_found', message: '此服务器和账号没有可删除的登录资料。' } }
+    }
+    // An older automatic or manual login must not persist the deleted cipher
+    // again after a delayed response. The encrypted record is not decrypted.
+    desktopLoginIntents.cancel()
+    const previous = loginHistory
+    const next = forgetLoginProfile(previous, server, username)
+    loginHistory = next
+    try {
+      // Strict write: best-effort persistence would falsely claim deletion
+      // even when permissions or disk space prevented saving the new history.
+      await saveLoginHistory()
+    } catch (error) {
+      if (loginHistory === next) loginHistory = previous
+      lifecycleLog?.record('login_history_forget_failed', { error: formatLifecycleError(error) })
+      return { ok: false, error: {
+        code: 'login_history_save_failed',
+        message: '无法确认本机账号资料已删除，请检查磁盘权限后重试。',
+      } }
+    }
+    lastAutoLoginError = ''
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('desktop:login-history', loginHistorySnapshot())
+    }
     return { ok: true, data: loginHistorySnapshot() }
   })
   ipcMain.handle('desktop:get-window-state', () => desktopWindowState())

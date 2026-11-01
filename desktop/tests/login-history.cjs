@@ -5,6 +5,7 @@ const {
   automaticLoginProfile,
   clearSavedPassword,
   clearSavedPasswordsForOrigin,
+  forgetLoginProfile,
   disableAutomaticLogin,
   normalizeLoginHistory,
   publicLoginHistory,
@@ -189,5 +190,28 @@ test('revoking exact LAN HTTPS origin clears all saved credentials without touch
       assert.match(profile.encrypted_password, /^ciphertext-for-/)
     }
   }
+  assert.equal(automaticLoginProfile(next), undefined)
+})
+
+
+test('forget exactly one Desktop Server+Owner profile and its encrypted password', () => {
+  const server = 'https://drive.example'
+  const created = normalizeLoginHistory({ profiles: [
+    { server, username: 'alice', last_used_at: '2026-11-01T00:00:00Z',
+      encrypted_password: 'cipher:alice', remember_password: true, auto_login: true },
+    { server, username: 'bob', last_used_at: '2026-10-31T00:00:00Z',
+      encrypted_password: 'cipher:bob', remember_password: true, auto_login: false },
+    { server: 'https://other.example', username: 'alice', last_used_at: '2026-10-30T00:00:00Z',
+      encrypted_password: 'cipher:other', remember_password: true, auto_login: false },
+  ] })
+  const next = forgetLoginProfile(created, server, 'alice')
+  assert.equal(next.profiles.length, 2)
+  assert.deepEqual(next.profiles.map(x => [x.server, x.username]), [
+    [server, 'bob'], ['https://other.example', 'alice'],
+  ])
+  assert.ok(next.profiles.every(x => x.encrypted_password !== 'cipher:alice'))
+  assert.deepEqual(forgetLoginProfile(next, server, 'missing'), next)
+  assert.deepEqual(forgetLoginProfile(next, '', 'bob'), next)
+  assert.equal(created.profiles.length, 3, 'history must be immutable')
   assert.equal(automaticLoginProfile(next), undefined)
 })
