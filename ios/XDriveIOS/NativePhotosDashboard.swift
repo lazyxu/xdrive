@@ -118,6 +118,8 @@ struct XDriveIOSNativePhotosDashboard: View {
     @State private var localMapPageOffset = 0
     // A bounded navigation position; never holds a PhotoKit asset identity.
     @State private var localGalleryPageOffset = 0
+    // Restore only the coarse 32-slot album directory, never album IDs.
+    @State private var localAlbumDirectoryOffset = 0
     @State private var dynamicFeature: XDriveIOSNativeDynamicFeature?
     @State private var recentDynamic: [XDriveIOSNativeDynamicFeature] = []
     @State private var launcherQuery = ""
@@ -287,6 +289,7 @@ struct XDriveIOSNativePhotosDashboard: View {
         .onChange(of: localMapScope) { _ in saveNavigationIfReady() }
         .onChange(of: localMapPageOffset) { _ in saveNavigationIfReady() }
         .onChange(of: localGalleryPageOffset) { _ in saveNavigationIfReady() }
+        .onChange(of: localAlbumDirectoryOffset) { _ in saveNavigationIfReady() }
         // Rotation does not change focus; changing the owning route does.
         .onChange(of: tab) { next in
             if next != .gallery { galleryFocused = false }
@@ -486,7 +489,9 @@ struct XDriveIOSNativePhotosDashboard: View {
                         savedOffset: $localGalleryPageOffset
                     )
                 case .albums:
-                    XDriveIOSNativePhotoAlbumsScreen()
+                    XDriveIOSNativePhotoAlbumsScreen(
+                        savedOffset: $localAlbumDirectoryOffset
+                    )
                 case .cloud:
                     XDriveIOSNativeServerMediaWall(
                         login: login, album: nil,
@@ -723,6 +728,7 @@ struct XDriveIOSNativePhotosDashboard: View {
         localMapScope = XDriveIOSNativeLocalMapScope(rawValue: snapshot.mapScope ?? "page") ?? .page
         localMapPageOffset = snapshot.mapPageOffset ?? 0
         localGalleryPageOffset = snapshot.localGalleryPageOffset ?? 0
+        localAlbumDirectoryOffset = snapshot.localAlbumDirectoryOffset ?? 0
         dynamicFeature = snapshot.activeDynamic.flatMap {
             XDriveIOSNativeDynamicFeature(rawValue: $0)
         }
@@ -743,7 +749,8 @@ struct XDriveIOSNativePhotosDashboard: View {
             recentDynamic: recentDynamic.filter { $0.implemented }.map { $0.rawValue },
             mapScope: localMapScope.rawValue,
             mapPageOffset: localMapPageOffset,
-            localGalleryPageOffset: localGalleryPageOffset
+            localGalleryPageOffset: localGalleryPageOffset,
+            localAlbumDirectoryOffset: localAlbumDirectoryOffset
         )
     }
 
@@ -752,6 +759,7 @@ struct XDriveIOSNativePhotosDashboard: View {
         gallerySource = .local
         localMapScope = .page
         localMapPageOffset = 0
+        localAlbumDirectoryOffset = 0
         localGalleryPageOffset = 0
         dynamicFeature = nil
         recentDynamic = []

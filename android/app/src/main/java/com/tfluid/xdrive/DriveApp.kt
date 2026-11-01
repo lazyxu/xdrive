@@ -66,6 +66,14 @@ internal fun nativeFeatureBackAllowed(
     NativeHomeTab.ALL, NativeHomeTab.DYNAMIC, NativeHomeTab.MINE -> false
 }
 
+/** A map cell has one native album sheet, not an extra Gallery route or
+ * authorization. A full-screen Viewer temporarily replaces the sheet.
+ * The originating map's Owner/Cell identity remains in DriveController. */
+internal fun nativeMapCellSheetVisible(state: DriveState): Boolean =
+    state.screen == Screen.GALLERY && state.galleryMapOpen &&
+        state.galleryBd09Requested && state.galleryBd09Cells != null &&
+        state.galleryMapCellSelected != null && state.galleryViewer == null
+
 /**
  * iOS-aligned Photos-first entry: only after this new authenticated session's
  * real Owner Files root has loaded. Never interrupt a write/confirmation or
@@ -94,6 +102,7 @@ internal fun nativePhotoBackupCanConfirm(
 ): Boolean = sameSession && galleryVisible && verifiedOriginal &&
     fullMediaGrant && !writerBusy && validDriveNodeName(destinationName)
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DriveApp(controller: DriveController, updates: UpdateController? = null, openUpdate: (String) -> Boolean = { false },
     initialFilesView: FileViewMode = FileViewMode.LIST, saveFilesView: (FileViewMode) -> Unit = {},
@@ -275,6 +284,13 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
             state.galleryBd09Bounds
         bd09Scroll.keys.retainAll(liveBounds) // bounded to six parent levels
     }
+    // An SDK MapView is destroyed while full-screen Viewer owns the screen.
+    // Keep only its primitive camera pose in memory for this current Owner's
+    // map lifetime; no GPS or provider status goes to SavedState/disk.
+    var bd09ViewerReturnCamera by remember(
+        state.nativeUiSessionId, state.server, state.username, state.galleryMapOpen
+    ) { mutableStateOf<NativeBaiduCameraPose?>(null) }
+
     // Preserve UI-only scroll state across Viewer -> Gallery, never across
     // leaving Gallery. The same user can log out/in against changed photo rows.
     val galleryStateKey = "gallery:${state.nativeUiSessionId}:${state.server}:${state.username}"
@@ -643,12 +659,7 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                 }
                 Screen.GALLERY -> {
                     val photo = state.galleryViewer
-                    if (state.galleryMapCellSelected != null && photo == null) {
-                        if (galleryMapCellStateKey != null)
-                            gallerySaveable.SaveableStateProvider(galleryMapCellStateKey) {
-                                GalleryMapCellWall(state, controller, galleryThumbnails)
-                            }
-                    } else if (photo != null && (!state.galleryMapOpen ||
+                    if (photo != null && (!state.galleryMapOpen ||
                         state.galleryMapCellSelected != null)) {
                         // Viewer-only filmstrip: never add a fixed strip to the
                         // map itself. Reserve space *outside* the Media3 player
@@ -677,10 +688,46 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                             )
                         }
                     } else if (state.galleryMapOpen) {
+                        // The native MapView remains mounted beneath the album
+                        // sheet; a cell selection no longer destroys its camera,
+                        // signed count markers or SDK lease.
                         GalleryMapOverview(state, controller,
                             bd09Scroll.getOrPut(state.galleryBd09Bounds) {
                                 LazyListState()
+                            },
+                            savedCamera = bd09ViewerReturnCamera,
+                            onCameraSnapshot = { pose ->
+                                val latest = controller.state.value
+                                if (latest.screen == Screen.GALLERY && latest.galleryMapOpen &&
+                                    latest.galleryBd09Requested && latest.galleryBd09Cells != null &&
+                                    !latest.galleryBd09CameraMoving &&
+                                    latest.galleryBd09CameraPending == null &&
+                                    pose.validFor(latest.galleryBd09Bounds) &&
+                                    pose != bd09ViewerReturnCamera) {
+                                    bd09ViewerReturnCamera = pose
+                                }
                             })
+                        if (nativeMapCellSheetVisible(state) && galleryMapCellStateKey != null) {
+                            val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+                            ModalBottomSheet(
+                                onDismissRequest = {
+                                    // Dismiss must use the original verified
+                                    // Controller return, never an all-Owner GET.
+                                    if (controller.state.value.galleryViewer == null)
+                                        controller.closeGalleryBd09Cell()
+                                },
+                                sheetState = sheet,
+                                modifier = Modifier.testTag("gallery-map-cell-album-sheet"),
+                            ) {
+                                // Medium/large native album presentation. One
+                                // existing authorized, bounded Grid + Viewer.
+                                Column(Modifier.fillMaxWidth().fillMaxHeight(0.85f)) {
+                                    gallerySaveable.SaveableStateProvider(galleryMapCellStateKey) {
+                                        GalleryMapCellWall(state, controller, galleryThumbnails)
+                                    }
+                                }
+                            }
+                        }
                     } else {
                         NativeGallerySourceSelector(nativeNavigation.gallerySource) { source ->
                             // Capture the originating local/cloud/album wall BEFORE changing chips.

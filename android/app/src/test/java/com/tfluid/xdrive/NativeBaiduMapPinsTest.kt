@@ -78,6 +78,22 @@ class NativeBaiduMapPinsTest {
         assertNull(nativeBaiduCameraBounds(30.0, 130.0, 91.0, 145.0))
     }
 
+    @Test fun onlyCurrentVerifiedOwnerCameraCanBeRestoredAfterViewer() {
+        val pose = NativeBaiduCameraPose(bounds, 35.505, 139.706,
+            11.75f, 30f, -25f)
+        assertTrue(pose.validFor(bounds))
+        assertFalse(pose.validFor(OwnerBd09Bounds.WORLD))
+        assertFalse(pose.copy(latitude = Double.NaN).validFor(bounds))
+        assertFalse(pose.copy(longitude = 190.0).validFor(bounds))
+        assertFalse(pose.copy(zoom = Float.NaN).validFor(bounds))
+        assertFalse(pose.copy(zoom = 0f).validFor(bounds))
+        assertFalse(pose.copy(zoom = 25f).validFor(bounds))
+        assertFalse(pose.copy(rotate = Float.POSITIVE_INFINITY).validFor(bounds))
+        assertFalse(pose.copy(overlook = Float.NEGATIVE_INFINITY).validFor(bounds))
+        assertFalse(pose.copy(ownerBounds = OwnerBd09Bounds(
+            139.0, 30.0, 140.0, 40.0)).validFor(bounds))
+    }
+
     @Test fun invalidBoundsAndImpossibleLongCountsFailClosed() {
         assertNull(nativeVerifiedBaiduPins(
             OwnerBd09Bounds(0.0, 0.0, 0.0, 10.0),

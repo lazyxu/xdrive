@@ -294,6 +294,17 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-files-page-check"
           node --test desktop/tests/ios-native-files-browser.cjs
 
+      - name: Verify native Files Viewer bounded navigation and Owner preview contracts
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeCloudFilesPolicy.swift \
+            ios/XDriveIOS/NativeFilesViewerPolicy.swift \
+            ios/tests/NativeFilesViewerPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-viewer-policy"
+          "$RUNNER_TEMP/xdrive-ios-files-viewer-policy"
+          node --test desktop/tests/ios-native-files-viewer.cjs
+
       - name: Prepare native brand and home screen icon
         run: bash ios/scripts/prepare-assets.sh
 

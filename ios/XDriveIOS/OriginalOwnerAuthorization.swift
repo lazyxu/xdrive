@@ -26,10 +26,15 @@ enum XDriveIOSOriginalOwnerAuthorization {
                 throw XDrivePhotoSyncLedgerError.identityMismatch
             }
         case .background(let approved):
-            guard approved.matches(owner),
-                  let verified = try? await XDriveIOSApprovedPhotoBGVault.shared
-                    .proveInBackground(),
-                  verified.grantID == approved.grantID,
+            guard approved.matches(owner) else {
+                throw XDrivePhotoSyncLedgerError.identityMismatch
+            }
+            // Preserve transient network/HTTP errors from this read-only
+            // proof. try? would collapse a temporary Server outage into
+            // identityMismatch and could falsely pause confirmed receipts.
+            let verified = try await XDriveIOSApprovedPhotoBGVault.shared
+                .proveInBackground()
+            guard verified.grantID == approved.grantID,
                   verified.deviceID == approved.deviceID,
                   verified.rootNodeID == owner.rootNodeID,
                   verified.ownerID == owner.ownerID,
@@ -143,8 +148,15 @@ private struct XDriveIOSBGOriginalNodeReceiptVerifier {
         request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
         let (bytes, response) = try await session.data(for: request)
         try Task.checkCancellation()
-        guard let http = response as? HTTPURLResponse,
-              http.statusCode == 200, bytes.count <= 65_536,
+        guard let http = response as? HTTPURLResponse else {
+            throw XDriveIOSNodeReceiptReadbackError.missingOrInconsistentNode
+        }
+        // A transient HTTP response to this read-only Owner Node proof is
+        // different from an actually absent or hash-mismatched Node.
+        guard http.statusCode == 200 else {
+            throw XDriveIOSNodeReceiptReadbackError.serverRejected(http.statusCode)
+        }
+        guard bytes.count <= 65_536,
               let node = try? JSONDecoder().decode(
                 XDriveIOSBGOriginalNodeDTO.self, from: bytes
               ),

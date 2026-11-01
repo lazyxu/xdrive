@@ -221,10 +221,11 @@ private struct XDriveIOSNativeFilesFolder: Hashable {
 }
 
 /// iOS fixed Files tab: genuine native bounded Owner directory navigation
-/// and whole-library search. Mutations, downloads and Viewer stay explicitly
-/// unavailable until their own verified native API/receipt routes are wired.
+/// and whole-library search. File previews reuse a separate, read-only native
+/// Viewer. Uploads, downloads and mutations remain unavailable.
 struct XDriveIOSNativeFilesBrowser: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
+    @Environment(\.scenePhase) private var phase
     @StateObject private var model = XDriveIOSNativeFilesPageModel()
     @State private var offset = 0
     @State private var queryDraft = ""
@@ -233,6 +234,9 @@ struct XDriveIOSNativeFilesBrowser: View {
     @State private var order = "asc"
     @State private var searchError: String?
     @State private var selectedFile: XDriveIOSNativeFilesEntry?
+    @State private var selectedOwner: XDriveNativeOwnerRoot?
+    @State private var returnOwner: XDriveNativeOwnerRoot?
+    @State private var lastViewedFile: XDriveIOSNativeFilesNode?
     private let folder: XDriveIOSNativeFilesFolder?
 
     init(login: XDriveIOSNativeOwnerLoginModel) {
@@ -252,6 +256,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     }
 
     var body: some View {
+        ScrollViewReader { returnScroll in
         List {
             Section {
                 HStack(spacing: 8) {
@@ -312,14 +317,22 @@ struct XDriveIOSNativeFilesBrowser: View {
                         row(entry)
                     }
                     .accessibilityIdentifier("native-ios-files-folder-\(entry.node.id)")
+                    .id(entry.node.id)
                 } else {
                     Button {
+                        guard !model.loading, let owner = login.owner,
+                              model.entries.contains(where: { $0.node == entry.node })
+                        else { return }
+                        selectedOwner = owner
+                        returnOwner = owner
+                        lastViewedFile = entry.node
                         selectedFile = entry
                     } label: {
                         row(entry)
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("native-ios-files-file-\(entry.node.id)")
+                    .id(entry.node.id)
                 }
             }
             Section {
@@ -361,40 +374,60 @@ struct XDriveIOSNativeFilesBrowser: View {
                 .accessibilityIdentifier("native-ios-files-refresh")
             }
         }
-        .sheet(item: $selectedFile) { entry in
-            NavigationStack {
-                Form {
-                    Section("文件信息") {
-                        LabeledContent("名称", value: entry.node.name)
-                        LabeledContent("大小", value: ByteCountFormatter.string(
-                            fromByteCount: entry.node.size, countStyle: .file
-                        ))
-                        LabeledContent("类型", value: "文件")
-                        if let path = entry.path {
-                            LabeledContent("路径", value: path)
-                        }
+        .fullScreenCover(item: $selectedFile, onDismiss: {
+            selectedOwner = nil
+            // Re-read the exact current directory/search page before returning
+            // focus to the last still-valid Node and revision.
+            reload()
+        }) { initial in
+            if let openedOwner = selectedOwner {
+                XDriveIOSNativeFilesViewer(
+                    initial: initial.node,
+                    loadedItems: model.entries.map(\.node).filter {
+                        $0.type == "file" && $0.parent_id == initial.node.parent_id
+                    },
+                    openedOwner: openedOwner,
+                    login: login,
+                    onNavigate: { next in
+                        guard phase == .active, !model.loading,
+                              selectedFile?.id == initial.id,
+                              XDriveIOSNativePhotoOwnerScope.matches(
+                                  login.owner, openedOwner
+                              ),
+                              model.entries.contains(where: { $0.node == next })
+                        else { return false }
+                        lastViewedFile = next
+                        return true
                     }
-                    Text("预览、下载和文件修改尚未接通 iOS 原生操作；当前仅显示服务器实际返回的文件信息。")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }
-                .navigationTitle("文件详情")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("完成") { selectedFile = nil }
-                    }
-                }
+                )
+            } else {
+                Text("当前账户已变化，请返回文件列表。")
             }
         }
         .onAppear { reload() }
-        .onDisappear { model.invalidate() }
+        .onDisappear { if selectedFile == nil { model.invalidate() } }
         .onChange(of: login.owner) { _ in
             selectedFile = nil
+            selectedOwner = nil
+            returnOwner = nil
+            lastViewedFile = nil
             offset = 0
             model.invalidate()
         }
         .onChange(of: sort) { _ in reload(resetOffset: true) }
         .onChange(of: order) { _ in reload(resetOffset: true) }
+        .onChange(of: model.loading) { loading in
+            guard !loading, selectedFile == nil,
+                  let target = lastViewedFile else { return }
+            if let owner = returnOwner,
+               XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
+               model.entries.contains(where: { $0.node == target }) {
+                returnScroll.scrollTo(target.id, anchor: .center)
+            }
+            lastViewedFile = nil
+            returnOwner = nil
+        }
+        }
     }
 
     private func row(_ entry: XDriveIOSNativeFilesEntry) -> some View {

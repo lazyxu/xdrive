@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"testing"
 )
 
@@ -31,4 +32,26 @@ func TestBackupOnlyAgentLifecycleDoesNotRequireMountedDrive(t *testing.T) {
 	// account, mount path or Desktop session is configured.
 	cancel()
 	c.RunBackupOnly()
+}
+
+func TestBackupOnlyRequiresAuthenticatedIPCBeforeScheduling(t *testing.T) {
+	failure := errors.New("local IPC port unavailable")
+	for _, tc := range []struct {
+		name       string
+		backupOnly bool
+		ipcErr     error
+		want       bool
+	}{
+		{name: "backup_only_ready", backupOnly: true, want: true},
+		{name: "backup_only_ipc_failed", backupOnly: true, ipcErr: failure, want: false},
+		{name: "desktop_ready", want: true},
+		{name: "desktop_ipc_optional", ipcErr: failure, want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := agentIPCStartupPermitsWorker(tc.backupOnly, tc.ipcErr); got != tc.want {
+				t.Fatalf("backupOnly=%v ipcErr=%v: worker admission=%v want=%v",
+					tc.backupOnly, tc.ipcErr, got, tc.want)
+			}
+		})
+	}
 }

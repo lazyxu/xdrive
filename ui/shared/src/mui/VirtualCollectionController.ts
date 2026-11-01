@@ -44,9 +44,15 @@ function xDriveVirtualCollectionPageMatchesRequest<TItem>(
       (page.totalCount !== null &&
         (!Number.isSafeInteger(page.totalCount) || page.totalCount < 0))) return false
   const total = page.totalCount ?? knownTotal
+  // An authenticated shrinking collection may return an exact empty EOF
+  // page for a viewport still scrolled past its new Count. Reconcile only
+  // an explicitly counted, *empty* response at the requested offset; never
+  // turn shifted, nonempty, count-free or malformed Host pages into success.
   return total === null ||
     (Number.isSafeInteger(total) && total >= 0 &&
-      page.offset + page.items.length <= total)
+      (page.offset + page.items.length <= total ||
+        (page.totalCount !== null && page.items.length === 0 &&
+          page.offset >= total)))
 }
 
 export function useXDriveVirtualCollection<TItem>({

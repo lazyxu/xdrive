@@ -621,6 +621,16 @@ internal fun NativeLocalMediaViewer(
     onPrevious: (() -> Unit)? = null,
     onNext: (() -> Unit)? = null,
 ) {
+    val context = LocalContext.current
+    val mediaKey = asset.viewerReturnKey()
+    // Metadata is a candidate only; actual motion must be rendered by Media3.
+    // Never scan the whole library or persist private media IDs.
+    var motionCandidate by remember(mediaKey) { mutableStateOf(false) }
+    var motionPlaying by remember(mediaKey) { mutableStateOf(false) }
+    LaunchedEffect(mediaKey, asset.uri) {
+        motionCandidate = false
+        if (!asset.isVideo) motionCandidate = nativeLocalHasMotionPhotoCandidate(context, asset)
+    }
     Dialog(onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize().testTag("native-local-viewer")) {
@@ -635,9 +645,21 @@ internal fun NativeLocalMediaViewer(
                 ) { Text("备份这一项原件") }
                 NativeLocalViewerLoadedNavigation(
                     loadedPosition, loadedCount, onPrevious, onNext)
-                if (asset.isVideo) NativeLocalVideoPlayer(asset)
-                else NativeLocalStillViewer(asset, onPrevious, onNext)
-                Text("本机原件只读预览（解码最长边不超过 4096 像素）；动态照片运动片段暂不支持播放，也不会自动备份。",
+                NativeLocalMotionControl(
+                    candidate = motionCandidate,
+                    playing = motionPlaying,
+                    onToggle = { motionPlaying = !motionPlaying },
+                )
+                if (asset.isVideo || (motionCandidate && motionPlaying)) {
+                    NativeLocalVideoPlayer(asset, autoPlay = !asset.isVideo)
+                } else {
+                    NativeLocalStillViewer(asset, onPrevious, onNext,
+                        onMotionRequested = if (motionCandidate) {
+                            { motionPlaying = true }
+                        } else null)
+                }
+                Text("本机原件只读预览（图片最长边解码不超过 4096 像素）；" +
+                    "动态片段仅在明确操作后尝试播放，浏览不会自动上传或备份。",
                     modifier = Modifier.navigationBarsPadding().padding(8.dp),
                     style = MaterialTheme.typography.bodySmall)
             }
@@ -765,6 +787,7 @@ private fun ColumnScope.NativeLocalStillViewer(
     asset: NativeLocalMedia,
     onPrevious: (() -> Unit)?,
     onNext: (() -> Unit)?,
+    onMotionRequested: (() -> Unit)? = null,
 ) {
     val resolver = LocalContext.current.contentResolver
     val mediaKey = asset.viewerReturnKey()
@@ -810,11 +833,14 @@ private fun ColumnScope.NativeLocalStillViewer(
         onNext = onNext,
         modifier = Modifier.fillMaxWidth().weight(1f).clipToBounds()
             .onSizeChanged { viewport = it }
-            .pointerInput(mediaKey) {
-                detectTapGestures(onDoubleTap = {
-                    scale = if (scale > 1f) 1f else 2f
-                    translation = Offset.Zero
-                })
+            .pointerInput(mediaKey, onMotionRequested != null) {
+                detectTapGestures(
+                    onDoubleTap = {
+                        scale = if (scale > 1f) 1f else 2f
+                        translation = Offset.Zero
+                    },
+                    onLongPress = { if (scale <= 1f) onMotionRequested?.invoke() },
+                )
             }
             // At 1× the one-finger horizontal gesture belongs to navigation.
             // Keep pinch zoom; only allow one-finger pan after magnification.
@@ -842,18 +868,24 @@ private fun ColumnScope.NativeLocalStillViewer(
  * current local asset; rebuilding never starts a Server upload or media query.
  */
 @Composable
-private fun ColumnScope.NativeLocalVideoPlayer(asset: NativeLocalMedia) {
+private fun ColumnScope.NativeLocalVideoPlayer(
+    asset: NativeLocalMedia, autoPlay: Boolean = false,
+) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current
     val mediaKey = asset.viewerReturnKey()
     var retryNonce by remember(mediaKey) { mutableIntStateOf(0) }
     var failed by remember(mediaKey, retryNonce) { mutableStateOf(false) }
-    val player = remember(context, mediaKey, retryNonce) {
+    val player = remember(context, mediaKey, retryNonce, autoPlay) {
         createPreparedMediaResource(
             build = { ExoPlayer.Builder(context).build() },
             prepare = { prepared ->
+                // Media3 plays the embedded JPEG/HEIC Motion Photo video when
+                // imageDurationMs is intentionally not supplied. Ordinary
+                // videos keep their existing no-autoplay behavior.
                 prepared.setMediaItem(MediaItem.fromUri(asset.uri))
                 prepared.prepare()
+                if (autoPlay) prepared.playWhenReady = true
             },
             release = { it.release() },
         )

@@ -196,6 +196,22 @@ enum XDriveIOSBackgroundPhotoTask {
     /// strand a valid user-approved backup. Never resubmit when a network
     /// write might have begun or the Server rejected the grant.
     private static func retryablePreflightNetworkFailure(_ error: Error) -> Bool {
+        if let grant = error as? XDriveIOSPhotoBGVaultFailure,
+           case .transientServerStatus(let code) = grant {
+            return code == 408 || code == 429 || (500...599).contains(code)
+        }
+        // An already-confirmed Node may have been checked during this task.
+        // Only a transient READ status, with no UploadSession mutation,
+        // qualifies for a future OS-admitted attempt. Never rearm on a
+        // missing/mismatched Node or a revoked Owner/Device grant.
+        if let readback = error as? XDriveIOSNodeReceiptReadbackError,
+           case .serverRejected(let code) = readback {
+            return code == 408 || code == 429 || (500...599).contains(code)
+        }
+        if let owner = error as? XDriveNativeOwnerRootFailure,
+           case .serverStatus(let code) = owner {
+            return code == 408 || code == 429 || (500...599).contains(code)
+        }
         guard let network = error as? URLError else { return false }
         switch network.code {
         case .timedOut, .networkConnectionLost, .notConnectedToInternet,
