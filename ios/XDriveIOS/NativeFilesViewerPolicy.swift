@@ -12,7 +12,8 @@ enum XDriveIOSNativeFilesViewerPolicy {
     static let maximumPDFBytes: Int64 = 64 * 1_048_576
 
     private static let images: Set<String> = [
-        "jpg", "jpeg", "png", "gif", "webp", "heic", "heif", "tif", "tiff"
+        "jpg", "jpeg", "png", "gif", "webp", "heic", "heif", "tif", "tiff",
+        "avif", "bmp"
     ]
     private static let videos: Set<String> = ["mp4", "mov", "m4v"]
     private static let audio: Set<String> = ["mp3", "m4a", "aac", "wav"]
@@ -51,7 +52,7 @@ enum XDriveIOSNativeFilesViewerPolicy {
               node.name.utf8.count <= 255, node.size >= 0 else { return false }
         switch kind(for: node.name) {
         case .unsupported: return false
-        case .image: return node.size > 0 && node.size <= maximumImageBytes
+        case .image: return node.size > 0 // Oversize originals use indexed thumbnails; raw GET remains bounded.
         case .pdf: return node.size > 0 && node.size <= maximumPDFBytes
         case .video, .audio: return node.size > 0
         case .text: return true

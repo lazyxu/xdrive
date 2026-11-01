@@ -14,6 +14,7 @@ export function XDriveMobileAppHeader({
   disabled = false,
   onBack,
   onOpenApps,
+  focusAction,
   transferAction,
 }: {
   title: string
@@ -22,6 +23,7 @@ export function XDriveMobileAppHeader({
   disabled?: boolean
   onBack: () => void
   onOpenApps: () => void
+  focusAction?: ReactNode
   transferAction?: ReactNode
 }) {
   return (
@@ -61,6 +63,7 @@ export function XDriveMobileAppHeader({
         sx={{ flex: 1, minWidth: 0, pl: 0.5 }}>
         {title}
       </Typography>
+      {focusAction}
       {transferAction}
       <Tooltip title="切换应用">
         <IconButton

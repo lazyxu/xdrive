@@ -3,7 +3,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
-mkdir -p "$tmp/release" "$tmp/package"
+mkdir -p "$tmp/release" "$tmp/package" "$tmp/payload"
+# The publication fixture also uses literal root entries from its first build.
+tar -C "$tmp/payload" -czf "$tmp/package/package.tgz" .
 cat > "$tmp/package/INFO" <<'INFO'
 package="xdrivenas"
 version="0.0.0-123"
@@ -11,7 +13,7 @@ arch="armada38x"
 os_min_ver="7.0-40759"
 INFO
 spk="$tmp/release/xdrivenas-armada38x-0.0.0-123.spk"
-tar -C "$tmp/package" -cf "$spk" .
+tar --format=ustar -C "$tmp/package" -cf "$spk" INFO package.tgz
 (cd "$tmp/release"; sha256sum "$(basename "$spk")" > "$(basename "$spk").sha256")
 printf 'fake CLI asset' > "$tmp/release/xdrive-backup-linux-amd64.tar.gz"
 printf 'fake CLI asset' > "$tmp/release/xdrive-backup-windows-amd64.zip"
@@ -34,16 +36,31 @@ cat >> "$tmp/package/INFO" <<'INFO'
 dsmuidir="ui"
 dsmappname="com.xdrive.NASBackup"
 INFO
-tar -C "$tmp/package" -cf "$spk" .
+tar --format=ustar -C "$tmp/package" -cf "$spk" INFO package.tgz
 (cd "$tmp/release"; sha256sum "$(basename "$spk")" > "$(basename "$spk").sha256")
 bash "$ROOT/scripts/ci/verify-synology-spk-release.sh" "$tmp/release" --require-mui
 bash "$ROOT/scripts/ci/verify-release-archive-allowlist.sh" "$tmp/release"
+
+# Both variants extract under GNU tar; an old ./INFO or late INFO must fail
+# even if its SHA256 is freshly recomputed and the UI payload is valid.
+tar -C "$tmp/package" -cf "$spk" .
+(cd "$tmp/release"; sha256sum "$(basename "$spk")" > "$(basename "$spk").sha256")
+if bash "$ROOT/scripts/ci/verify-synology-spk-release.sh" "$tmp/release" --require-mui >/dev/null 2>&1; then
+  echo "legacy dot-prefixed DSM outer tar passed publication gate" >&2; exit 1
+fi
+tar --format=ustar -C "$tmp/package" -cf "$spk" package.tgz INFO
+(cd "$tmp/release"; sha256sum "$(basename "$spk")" > "$(basename "$spk").sha256")
+if bash "$ROOT/scripts/ci/verify-synology-spk-release.sh" "$tmp/release" --require-mui >/dev/null 2>&1; then
+  echo "DSM SPK with INFO after payload passed publication gate" >&2; exit 1
+fi
+tar --format=ustar -C "$tmp/package" -cf "$spk" INFO package.tgz
+(cd "$tmp/release"; sha256sum "$(basename "$spk")" > "$(basename "$spk").sha256")
 
 printf 'tampered' >> "$spk"
 if bash "$ROOT/scripts/ci/verify-synology-spk-release.sh" "$tmp/release" >/dev/null 2>&1; then
   echo "tampered Synology package passed release verification" >&2; exit 1
 fi
-tar -C "$tmp/package" -cf "$spk" .
+tar --format=ustar -C "$tmp/package" -cf "$spk" INFO package.tgz
 (cd "$tmp/release"; sha256sum "$(basename "$spk")" > "$(basename "$spk").sha256")
 cp "$spk" "$tmp/release/xdrivenas-armada38x-0.0.0-124.spk"
 if bash "$ROOT/scripts/ci/verify-synology-spk-release.sh" "$tmp/release" >/dev/null 2>&1; then

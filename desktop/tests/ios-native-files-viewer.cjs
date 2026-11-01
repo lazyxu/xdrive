@@ -60,9 +60,41 @@ test('Owner, Node revision, exact MIME and ticket are checked before payload use
   assert.match(reader, /completionHandler\(nil\)/);
   assert.match(reader, /expectedMIME: ticket\.mime_type/);
   assert.match(reader, /kCGImageSourceThumbnailMaxPixelSize as String: 4096/);
+  // Preserve bounded-memory previews; oversized originals take the existing
+  // Files management export route rather than an unbounded UIKit decode.
+  assert.match(reader, /selected.size > XDriveIOSNativeFilesViewerPolicy.maximumImageBytes/);
+  assert.match(reader, /selected.size > XDriveIOSNativeFilesViewerPolicy.maximumPDFBytes/);
+  assert.match(reader, /throw XDriveIOSNativeFilesPreviewError.tooLarge/);
+  assert.match(view, /导出上限 512 MiB/);
   assert.match(reader, /PDFDocument\(data: bytes\), document\.pageCount > 0/);
   assert.match(policy, /static let maximumLoadedRows = 64/);
   assert.match(policy, /Set\(loaded\.map\(\\\.id\)\)\.count == loaded\.count/);
   assert.match(policy, /return files\[fileIndex \+ direction\]/);
   assert.doesNotMatch(reader, /POST.*UploadSession|FileManager\.default\.createFile|WKWebView/);
+});
+
+test('large and incompatible stills use revision-bound indexed derivatives only', () => {
+  assert.match(policy, /"avif", "bmp"/);
+  assert.match(policy, /case \.image: return node\.size > 0/);
+  assert.match(reader, /if kind == \.image && selected\.size > XDriveIOSNativeFilesViewerPolicy\.maximumImageBytes \{[\s\S]*?return try await fallbackThumbnail\(selected\)/);
+  assert.match(reader, /endpoint\("\/api\/v1\/media\/items\/\\\(selected\.id\)\/thumbnail"\)/);
+  assert.match(reader, /URLQueryItem\(name: "revision", value: String\(selected\.revision\)\)/);
+  assert.match(reader, /allowedMIMEs: \["image\/jpeg", "image\/png", "image\/heic", "image\/webp"\]/);
+  assert.match(reader, /kCGImageSourceThumbnailMaxPixelSize as String: 1024/);
+  assert.match(reader, /try await verifyNode\(selected\)[\s\S]*?return UIImage\(cgImage: image\)/);
+  assert.match(reader, /case \.changed, \.invalidOwner, \.response\(401\), \.response\(403\)/);
+  assert.match(view, /case \.imageThumbnail\(let image\):/);
+  assert.match(view, /case \.noThumbnail:/);
+  assert.doesNotMatch(reader, /URLSessionConfiguration\.default|URLSession\.shared/);
+});
+
+
+test('indexed low-res Files still keeps the native zoom swipe navigation and original recovery copy', () => {
+  const lowRes = view.slice(view.indexOf('case .imageThumbnail(let image):'), view.indexOf('case .video:'));
+  assert.match(lowRes, /XDriveIOSNativeZoomablePhotoView\(image: image\)/);
+  assert.match(lowRes, /\.onNavigateSwipe \{ move\(\$0\) \}/);
+  assert.match(lowRes, /低清缩略图/);
+  assert.match(view, /case \.noThumbnail:/);
+  assert.match(view, /导出上限 512 MiB/);
+  assert.match(reader, /fallbackThumbnail\(selected\)/);
 });

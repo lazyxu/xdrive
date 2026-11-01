@@ -8,6 +8,7 @@ const map = read('ios/XDriveIOS/NativeOwnerPhotoMapGallery.swift')
 const policy = read('ios/XDriveIOS/NativeOwnerMapSelectionPolicy.swift')
 const reader = read('ios/XDriveIOS/NativeServerMediaGalleryTransport.swift')
 const wall = read('ios/XDriveIOS/NativeServerMediaGallery.swift')
+const dashboard = read('ios/XDriveIOS/NativePhotosDashboard.swift')
 
 test('cloud Gallery navigates to WGS84 native MapKit under fresh verified Owner', () => {
   assert.match(wall, /NavigationLink \{\s*XDriveIOSNativeOwnerPhotoMapScreen\(/)
@@ -134,9 +135,9 @@ test('cloud MapKit cluster cover prefers an available verified member thumbnail 
   assert.match(policy, /\.prefix\(maximumPhotoCovers\)/)
 })
 
-test('cloud map prioritizes largest canonical Owner photo clusters within the same 12-cover request cap', () => {
+test('cloud map prioritizes all 64 canonical Owner photo clusters without querying aggregates', () => {
   assert.match(map, /XDriveIOSNativeOwnerMapSelectionPolicy[\s\S]*?\.prioritizedPhotoCovers\(result\.items\)/)
-  assert.match(policy, /static let maximumPhotoCovers = 12/)
+  assert.match(policy, /static let maximumPhotoCovers = XDriveIOSNativeOwnerMapOverviewPolicy\.maximumCells/)
   assert.match(policy, /guard places\.count <= XDriveIOSNativeOwnerMapOverviewPolicy\.maximumCells/)
   assert.match(policy, /guard Set\(ids\)\.count == ids\.count/)
   assert.match(policy, /places\.filter \{ canOpenPhotoRange\(\$0\) \}/)
@@ -172,3 +173,16 @@ test('short landscape Owner map retains verified camera, feedback, Sheet and acc
   assert.match(map, /\.sheet\(item: \$selected, onDismiss:/);
   assert.doesNotMatch(map, /onChange\(of: compactMap\)|\.id\(compactMap\)/);
 });
+
+test('single native Gallery map entry exposes local and Owner cloud sources without dropping saved local map navigation', () => {
+  assert.match(dashboard, /case \.map:\s*XDriveIOSNativePhotoMapsScreen\(\s*login: login,\s*localMapScope: \$localMapScope,\s*localMapPageOffset: \$localMapPageOffset,\s*onFocusChange:/)
+  assert.match(dashboard, /localMapScope = XDriveIOSNativeLocalMapScope\(rawValue: snapshot\.mapScope/)
+  assert.match(dashboard, /localMapPageOffset = snapshot\.mapPageOffset \?\? 0/)
+  assert.match(map, /struct XDriveIOSNativePhotoMapsScreen: View \{[\s\S]*?@ObservedObject var login: XDriveIOSNativeOwnerLoginModel[\s\S]*?@Binding var localMapScope: XDriveIOSNativeLocalMapScope[\s\S]*?@Binding var localMapPageOffset: Int/)
+  assert.match(map, /Picker\("地图照片来源", selection: \$source\)/)
+  assert.match(map, /case \.local:\s*XDriveIOSNativeLocalPhotoMapScreen\(\s*mapScope: \$localMapScope,\s*offset: \$localMapPageOffset/)
+  assert.match(map, /case \.cloud:\s*XDriveIOSNativeOwnerPhotoMapScreen\(\s*login: login, onFocusChange: onFocusChange\)/)
+  assert.match(map, /\.onChange\(of: source\) \{ _ in onFocusChange\?\(false\) \}/)
+  assert.doesNotMatch(dashboard, /case \.map:\s*XDriveIOSNativeLocalPhotoMapScreen\(/)
+  assert.doesNotMatch(map, /@State private var localMapScope|@State private var localMapPageOffset/)
+})

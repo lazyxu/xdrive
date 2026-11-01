@@ -1595,7 +1595,15 @@ function createMainWindow(showOnReady = true) {
   win.on('closed', () => {
     clearRendererLoadTimer()
     clearRendererRecoveryStableTimer()
+    filePreviewProxy?.releaseAll()
     if (mainWindow === win) mainWindow = null
+  })
+  // A PDF subframe navigation must not revoke its parent Viewer ticket.
+  // Only a full Renderer navigation discards all outstanding media leases.
+  win.webContents.on('did-start-navigation', (navigationInfo) => {
+    if (navigationInfo.isMainFrame && !navigationInfo.isSameDocument) {
+      filePreviewProxy?.releaseAll()
+    }
   })
   win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
     if (!isMainFrame || errorCode === -3) return
@@ -1617,6 +1625,7 @@ function createMainWindow(showOnReady = true) {
     Menu.buildFromTemplate(editContextMenuTemplate(params.editFlags)).popup({ window: win })
   })
   win.webContents.on('render-process-gone', (_event, details) => {
+    filePreviewProxy?.releaseAll()
     lifecycleLog?.record('render_process_gone', {
       reason: details.reason,
       exit_code: details.exitCode,

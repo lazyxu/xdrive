@@ -150,6 +150,20 @@ private class PdfHolder : Closeable {
 internal fun nativePdfForegroundPermitted(state: Lifecycle.State): Boolean =
     state.isAtLeast(Lifecycle.State.STARTED)
 
+/** A cancelled or superseded page render cannot publish even if an OEM
+ * PdfRenderer completes after another page, retry or Owner lease is active. */
+internal fun nativePdfRenderMayComplete(
+    requestedPage: Int, visiblePage: Int,
+    ticket: Long, activeTicket: Long,
+): Boolean = requestedPage == visiblePage && ticket == activeTicket
+
+internal fun nativePdfRenderMayPublish(
+    requestedPage: Int, visiblePage: Int,
+    ticket: Long, activeTicket: Long,
+    leaseCurrent: Boolean, viewerCurrent: Boolean,
+): Boolean = nativePdfRenderMayComplete(requestedPage, visiblePage, ticket, activeTicket) &&
+    leaseCurrent && viewerCurrent
+
 /** A complete native Files PDF Viewer with bounded verified stream, lazy
  * single-page render, zoom/pan, previous/next, and original Files return. */
 @Composable
@@ -163,10 +177,14 @@ internal fun NativeFilesPdfViewer(
     val holder = remember(node.id, node.revision) { PdfHolder() }
     var lease by remember(node.id, node.revision) { mutableStateOf<PdfLease?>(null) }
     var retry by remember(node.id, node.revision) { mutableIntStateOf(0) }
+    var renderRetry by remember(node.id, node.revision) { mutableIntStateOf(0) }
+    var renderEpoch by remember(node.id, node.revision) { mutableLongStateOf(0L) }
     var error by remember(node.id, node.revision) { mutableStateOf<String?>(null) }
+    var errorPage by remember(node.id, node.revision) { mutableIntStateOf(-1) }
     var pageIndex by remember(node.id, node.revision) { mutableIntStateOf(0) }
     var drawing by remember(node.id, node.revision) { mutableStateOf(false) }
     var bitmap by remember(node.id, node.revision) { mutableStateOf<ImageBitmap?>(null) }
+    var bitmapPage by remember(node.id, node.revision) { mutableIntStateOf(-1) }
     var zoom by remember(node.id, node.revision) { mutableFloatStateOf(1f) }
     var pan by remember(node.id, node.revision) { mutableStateOf(Offset.Zero) }
 
@@ -184,8 +202,10 @@ internal fun NativeFilesPdfViewer(
             var temporary: File? = null
             var created: PdfLease? = null
             error = null
+            errorPage = -1
             lease = null
             bitmap = null
+            bitmapPage = -1
             holder.replace(null)
             try {
                 // NonCancellable is limited to allocation/cleanup of local
@@ -224,6 +244,7 @@ internal fun NativeFilesPdfViewer(
                 // session can load a different version of the same file.
                 lease = null
                 bitmap = null
+                bitmapPage = -1
                 drawing = false
                 withContext(NonCancellable + Dispatchers.IO) {
                     try { created?.close() }
@@ -239,28 +260,48 @@ internal fun NativeFilesPdfViewer(
             }
         }
     }
-    LaunchedEffect(lease, pageIndex, lifecycleOwner) {
+    LaunchedEffect(lease, pageIndex, renderRetry, lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             if (!nativePdfForegroundPermitted(
                     lifecycleOwner.lifecycle.currentState)) return@repeatOnLifecycle
             val doc = lease ?: return@repeatOnLifecycle
-            if (pageIndex !in 0 until doc.pageCount) return@repeatOnLifecycle
+            val requestedPage = pageIndex
+            if (requestedPage !in 0 until doc.pageCount) return@repeatOnLifecycle
+            // Capture the page before crossing to IO. Do not read a mutable
+            // Compose page index on the renderer thread or publish a late result.
+            val ticket = ++renderEpoch
             bitmap = null
+            bitmapPage = -1
             drawing = true
             error = null
+            errorPage = -1
             zoom = 1f
             pan = Offset.Zero
             try {
-                val image = withContext(Dispatchers.IO) { doc.render(pageIndex) }
-                if (holder.current === doc &&
-                    controller.state.value.filesPdfViewer == node) bitmap = image
+                val image = withContext(Dispatchers.IO) { doc.render(requestedPage) }
+                if (nativePdfRenderMayPublish(
+                        requestedPage, pageIndex, ticket, renderEpoch,
+                        holder.current === doc,
+                        controller.state.value.filesPdfViewer == node)) {
+                    bitmapPage = requestedPage
+                    bitmap = image
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
-                if (holder.current === doc)
-                    error = "PDF 第 ${pageIndex + 1} 页无法渲染。"
+                if (nativePdfRenderMayPublish(
+                        requestedPage, pageIndex, ticket, renderEpoch,
+                        holder.current === doc,
+                        controller.state.value.filesPdfViewer == node)) {
+                    errorPage = requestedPage
+                    error = "PDF 第 ${requestedPage + 1} 页无法渲染。"
+                }
             } finally {
-                drawing = false
+                // A delayed cancellation must not clear the *new* page's
+                // drawing indicator after a rapid A→B→A or foreground restart.
+                if (nativePdfRenderMayComplete(
+                        requestedPage, pageIndex, ticket, renderEpoch))
+                    drawing = false
             }
         }
     }
@@ -281,7 +322,10 @@ internal fun NativeFilesPdfViewer(
         }
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(),
             contentAlignment = Alignment.Center) {
-            val shown = bitmap
+            // The old page must disappear immediately on a page selection,
+            // even before its cancelled IO effect reaches its finally block.
+            val shown = bitmap.takeIf { bitmapPage == pageIndex }
+            val visibleError = error?.takeIf { lease == null || errorPage == pageIndex }
             val gesture = rememberTransformableState { scale, drag, _ ->
                 val next = (zoom * scale).coerceIn(1f, 4f)
                 zoom = next
@@ -322,7 +366,7 @@ internal fun NativeFilesPdfViewer(
                         )
                         .testTag("files-pdf-page-ready"),
                 )
-            } else if (error == null) {
+            } else if (visibleError == null) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator(color = Color.White,
                         modifier = Modifier.testTag("files-pdf-loading"))
@@ -337,16 +381,23 @@ internal fun NativeFilesPdfViewer(
                     )
                 }
             }
-            if (error != null) {
+            if (visibleError != null) {
                 Column(
                     Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Text(requireNotNull(error), color = Color.White,
+                    Text(requireNotNull(visibleError), color = Color.White,
                         modifier = Modifier.testTag("files-pdf-error"))
                     if (lease == null) TextButton(
                         onClick = { retry++ },
                         modifier = Modifier.heightIn(min = 48.dp).testTag("files-pdf-retry"),
                     ) { Text("重试预览", color = Color.White) }
+                    else TextButton(
+                        // Re-render the exact current page. No re-download,
+                        // no second PdfRenderer and no stale Owner content.
+                        onClick = { renderRetry++ },
+                        modifier = Modifier.heightIn(min = 48.dp)
+                            .testTag("files-pdf-page-retry"),
+                    ) { Text("重试此页", color = Color.White) }
                 }
             }
         }

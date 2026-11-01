@@ -63,7 +63,7 @@ func parseOwnerStreamSelector(rawQuery string) (ownerStreamSelector, error) {
 	out.mime = q.Get("mime")
 	switch out.mime {
 	case "video/mp4", "video/webm",
-		"audio/mpeg", "audio/mp4", "audio/ogg", "audio/wav", "audio/flac":
+		"audio/mpeg", "audio/mp4", "audio/ogg", "audio/wav", "audio/flac", "application/pdf":
 		return out, nil
 	default:
 		return ownerStreamSelector{}, errors.New("unsupported Owner stream media type")
@@ -90,6 +90,8 @@ func ownerStreamMediaSignature(data []byte, mime string) bool {
 		return len(data) >= 12 && starts("RIFF") && string(data[8:12]) == "WAVE"
 	case "audio/flac":
 		return starts("fLaC")
+	case "application/pdf":
+		return starts("%PDF-")
 	default:
 		return false
 	}

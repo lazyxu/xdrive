@@ -505,9 +505,10 @@ struct XDriveIOSNativePhotosDashboard: View {
                         confirmedOriginalUpdate: backup.confirmedOriginalUpdate
                     )
                 case .map:
-                    XDriveIOSNativeLocalPhotoMapScreen(
-                        mapScope: $localMapScope,
-                        offset: $localMapPageOffset,
+                    XDriveIOSNativePhotoMapsScreen(
+                        login: login,
+                        localMapScope: $localMapScope,
+                        localMapPageOffset: $localMapPageOffset,
                         onFocusChange: { galleryFocused = $0 }
                     )
                 }
