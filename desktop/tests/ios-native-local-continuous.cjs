@@ -16,7 +16,9 @@ test('local PhotoKit Gallery defaults to continuous lazy virtual pages with lega
   assert.match(shell, /Button\("连续滚动"\) \{ useContinuousWall = true \}/)
   assert.match(source, /LazyVStack\(alignment: \.leading/)
   assert.match(source, /ForEach\(0\.\.<XDriveIOSNativePhotoVirtualPagePolicy\.pageCount\(total: total\)/)
-  assert.match(source, /ForEach\(page\.items\)/)
+  assert.match(source, /ForEach\(daySections\)/)
+  assert.match(source, /ForEach\(page\.items\[section\.startIndex\.\.<section\.endIndex\]\)/)
+  assert.match(source, /XDriveIOSNativePhotoDayGroupingPolicy\.sections\(/)
   assert.match(source, /ForEach\(0\.\.<min\(64, expectedTotal - offset\)/)
   assert.match(source, /private var placeholderTile: some View/)
   assert.match(source, /XDrivePhotoKitBoundedSnapshotScanner\(\)/)
@@ -89,4 +91,16 @@ test('native local Photos original Share Sheet uses current PhotoKit originals a
   assert.match(policy, /static let maximumTotalBytes/)
   const codeOnly = share.replace(/\/\/[^\n]*/g, '')
   assert.doesNotMatch(codeOnly, /uploadSession|journalWriter|credential|download-ticket|cloudOwner/i)
+})
+
+
+test('native local day headings reflect real PhotoKit creation dates, not fixed 64-slot titles', () => {
+  const day = read('ios/XDriveIOS/NativePhotoDayGroupingPolicy.swift')
+  assert.match(source, /dates: page\.items\.map\(\\\.capturedAt\), calendar: \.current/)
+  assert.match(source, /Text\(section\.title\)/)
+  assert.match(source, /\.accessibilityAddTraits\(\.isHeader\)/)
+  assert.doesNotMatch(source, /Text\("起始日期：/)
+  assert.match(day, /guard !dates\.isEmpty, dates\.count <= 64/)
+  assert.match(day, /calendar\.dateComponents\(\[\.year, \.month, \.day\], from: date\)/)
+  assert.match(day, /var id: Int \{ startIndex \}/)
 })

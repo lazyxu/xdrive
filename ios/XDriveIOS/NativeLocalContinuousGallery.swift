@@ -28,20 +28,25 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             if let page {
-                let first = page.items.first(where: { $0.kind != "unsupported" })
+                let daySections = XDriveIOSNativePhotoDayGroupingPolicy.sections(
+                    dates: page.items.map(\.capturedAt), calendar: .current
+                )
                 HStack {
-                    if let date = first?.capturedAt {
-                        Text("起始日期：\(date.formatted(date: .abbreviated, time: .omitted))")
-                            .lineLimit(1)
-                    }
+                    Text("当前照片页")
                     Spacer(minLength: 4)
                     Text("\(page.startOffset + 1)–\(page.nextOffset) / \(page.totalAccessibleAssets)")
                         .monospacedDigit()
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 95, maximum: 150), spacing: 3)], spacing: 3) {
-                    ForEach(page.items) { candidate in
+                ForEach(daySections) { section in
+                    Text(section.title)
+                        .font(.headline)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, 4)
+                        .accessibilityAddTraits(.isHeader)
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 95, maximum: 150), spacing: 3)], spacing: 3) {
+                        ForEach(page.items[section.startIndex..<section.endIndex]) { candidate in
                         if candidate.kind != "unsupported" {
                             Button { onSelect(candidate, page) } label: {
                                 ZStack(alignment: .topTrailing) {
@@ -72,6 +77,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                         } else {
                             placeholderTile.accessibilityHidden(true)
                         }
+                    }
                     }
                 }
             } else {
@@ -204,7 +210,7 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                         }
                     } else {
                         HStack(spacing: 10) {
-                            Text("本机已授权照片 · 连续滚动")
+                            Text("本机已授权照片 · 按日分组")
                                 .font(.subheadline).foregroundStyle(.secondary)
                             Spacer(minLength: 6)
                             Button(selectionMode ? "取消选择" : "选择") {

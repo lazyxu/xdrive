@@ -221,6 +221,15 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-local-share-policy"
           "$RUNNER_TEMP/xdrive-ios-local-share-policy"
 
+      - name: Verify native PhotoKit actual-day group boundaries
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativePhotoDayGroupingPolicy.swift \
+            ios/tests/NativePhotoDayGroupingPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-photo-day-group"
+          "$RUNNER_TEMP/xdrive-ios-photo-day-group"
+
       - name: Verify native PhotoAsset Viewer bounded neighbors
         run: |
           set -euo pipefail
