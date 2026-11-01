@@ -1,4 +1,4 @@
-import { useCallback, useContext, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Box, Button, Stack, Typography } from '@mui/material'
 import type { XDriveFilePreviewMediaTransform, XDriveFilePreviewPresentationState, XDriveFilePreviewTarget } from '../file-preview'
@@ -78,7 +78,6 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
   const [thumbnailProgress, setThumbnailProgress] = useState<{ loadedBytes: number; totalBytes?: number }>({ loadedBytes: 0 })
   const [retryNonce, setRetryNonce] = useState(0)
   const [detailsOpen, setDetailsOpen] = useState(false)
-  const liveMotion = useContext(XDriveLivePhotoMotionDiagnosticsContext)
   const sourceIdentity = JSON.stringify([target.id, target.revision, kind])
   // Capture the source AND attempt in each retry handler. A retained callback
   // must never restart the previous Node's authorized image request.
@@ -479,6 +478,8 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
         </Box>
       ) : null}
       {showImageDetails && (
+        <XDriveLivePhotoMotionDiagnosticsContext.Consumer>
+        {(liveMotion) => (
         <Box data-xdrive-viewer-image-quality
           onPointerDown={(event) => event.stopPropagation()}
           onPointerUp={(event) => event.stopPropagation()}
@@ -547,6 +548,8 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
             </Stack>
           )}
         </Box>
+        )}
+        </XDriveLivePhotoMotionDiagnosticsContext.Consumer>
       )}
       {failed ? (
         <Stack data-xdrive-image-preview-retry spacing={1} alignItems="center"
