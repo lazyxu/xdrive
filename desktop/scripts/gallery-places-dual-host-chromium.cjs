@@ -516,6 +516,104 @@ async function testPendingMapHandoffRejectsChangedParentRoute(browser,from,port)
   }
 }
 
+// Browser Back can restore the same URL (history ABA) before an Owner
+// handoff ticket arrives. A routeHref equality check would then pass even
+// though the user navigated away. Each SDK Host must revoke the pending
+// one-use map switch on real popstate/hashchange and keep the Owner map.
+async function testPendingMapHandoffRejectsHistoryABA(browser,from,port){
+  const target=from==='inline'?'isolated':'prototype'
+  const context=await browser.newContext({
+    viewport:{width:390,height:844},locale:'zh-CN',
+    ignoreHTTPSErrors:true,serviceWorkers:'block'})
+  const page=await context.newPage()
+  page.setDefaultTimeout(30000)
+  const errors=[]
+  page.on('pageerror',error=>errors.push(error.message))
+  let releaseTicket=()=>{}
+  const ticketGate=new Promise(resolve=>{releaseTicket=resolve})
+  let observedTicket=()=>{}
+  const ticketObserved=new Promise(resolve=>{observedTicket=resolve})
+  let heldRequests=0
+  await page.route('https://api.map.baidu.com/api?**',route=>{
+    assert.equal(new URL(route.request().url()).searchParams.get('ak'),
+      'TEST_ONLY_BROWSER_AK')
+    return route.fulfill({status:200,contentType:'text/javascript',body:sdkStub})
+  })
+  await page.route('**/api/v1/media/places/baidu-jsapi/scope-handoff',
+    async route=>{
+      if(route.request().method()!=='POST')return route.continue()
+      heldRequests++
+      observedTicket()
+      await ticketGate
+      // Parent abort on popstate can retire this intercepted request before
+      // the route is released. Its cancellation is the expected outcome.
+      try{await route.continue()}catch{}
+    })
+  try{
+    const initial='https://'+galleryHost+':'+port+'/?handoff_doc=1'+
+      (from==='isolated'?'&places_map_mode=isolated':'')+
+      '#/app/gallery?section=places'
+    await page.goto(initial,{waitUntil:'domcontentloaded'})
+    await page.getByText('当前地图可查看 3 张照片',{exact:true}).waitFor()
+    const before=await page.evaluate(()=>({
+      href:location.href,
+      reads:window.__mapProbe.queries.length,
+      issues:window.__mapProbe.handoff.issues,
+      consumes:window.__mapProbe.handoff.consumes,
+    }))
+    await page.locator('[data-xdrive-places-map-more-menu] > summary').click()
+    await page.locator('[data-xdrive-map-mode-'+target+']').click()
+    await Promise.race([
+      ticketObserved,
+      new Promise((_,reject)=>setTimeout(()=>
+        reject(Error('Owner map handoff POST did not reach Chromium')),15000))
+    ])
+    // pushState does not itself emit popstate. Real browser Back does;
+    // the Gallery returns to its exact original Owner/hash/URL before the
+    // server ticket is allowed to finish. Only a navigation-generation
+    // revoke, not final routeHref comparison, can block the stale switch.
+    await page.evaluate(()=>{
+      const previous=location.hash
+      window.__xdriveMapHistoryABA={previous,pops:0}
+      window.addEventListener('popstate',()=>{
+        window.__xdriveMapHistoryABA.pops++
+      },{once:true})
+      const temporary=new URL(location.href)
+      temporary.hash='#/app/files'
+      history.pushState(null,'',temporary.href)
+      history.back()
+    })
+    await page.waitForFunction(()=>
+      window.__xdriveMapHistoryABA?.pops===1 &&
+      location.hash===window.__xdriveMapHistoryABA.previous)
+    await page.getByText(
+      '地图范围或位置已变化，请重新选择地图模式。',
+      {exact:true}).waitFor()
+    releaseTicket()
+    const after=await page.evaluate(()=>({
+      href:location.href,
+      issues:window.__mapProbe.handoff.issues,
+      consumes:window.__mapProbe.handoff.consumes,
+      reads:window.__mapProbe.queries.length,
+      pops:window.__xdriveMapHistoryABA.pops,
+      mapCount:document.querySelectorAll('[data-xdrive-gallery-places-map]').length,
+      warning:document.querySelector('[data-xdrive-map-mode-scope-warning]')?.textContent,
+      count:document.querySelector('[data-xdrive-places-map-photo-summary]')?.textContent,
+    }))
+    record(from+': real Back/history ABA revokes pending Owner handoff without URL widening',
+      before.issues===0&&before.consumes===0&&heldRequests===1&&
+      after.href===before.href&&after.pops===1&&after.issues===1&&
+      after.consumes===0&&after.reads===before.reads&&
+      after.mapCount===1&&after.count?.includes('3 张照片')&&
+      after.warning?.includes('范围或位置已变化')&&
+      !after.href.includes('places_map_scope_required=1')&&
+      !after.href.includes('places_map_handoff=')&&errors.length===0)
+  }finally{
+    releaseTicket()
+    await context.close()
+  }
+}
+
 /** Real loopback Gin + PostgreSQL pending ticket, then a test-only bounded
  * Album/Owner state change before full-document mode handoff consumption.
  * The authentic Web startup scrubber must deny SDK, Viewer and all Cells;
@@ -4228,6 +4326,8 @@ async function main(){
       await testFullDocumentMapHandoff(browser,'isolated',port)
       await testPendingMapHandoffRejectsChangedParentRoute(browser,'inline',port)
       await testPendingMapHandoffRejectsChangedParentRoute(browser,'isolated',port)
+      await testPendingMapHandoffRejectsHistoryABA(browser,'inline',port)
+      await testPendingMapHandoffRejectsHistoryABA(browser,'isolated',port)
       record('both SDK Hosts perform real one-use Gin scope handoff across full document',
         summary.fullDocumentHandoffModes.join(',')==='inline,isolated')
       await testFullDocumentMapHandoff(browser,'inline',port,true)
