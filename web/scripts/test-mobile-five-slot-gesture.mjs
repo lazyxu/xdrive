@@ -43,7 +43,7 @@ const fireTimers = () => {
   }
 }
 const hooks = []
-const cleanups = []
+const effectHooks = new Map()
 let cursor = 0
 const react = {
   useRef(initial) {
@@ -51,9 +51,14 @@ const react = {
     if (!hooks[index]) hooks[index] = { current: initial }
     return hooks[index]
   },
-  useEffect(effect) {
+  useEffect(effect, deps) {
+    const index = cursor++
+    const previous = effectHooks.get(index)
+    if (previous && deps && previous.deps && deps.length === previous.deps.length &&
+        deps.every((value, i) => Object.is(value, previous.deps[i]))) return
+    previous?.cleanup?.()
     const cleanup = effect()
-    if (typeof cleanup === 'function') cleanups.push(cleanup)
+    effectHooks.set(index, { deps: deps?.slice(), cleanup })
   },
   useState(initial) {
     const index = cursor++
@@ -174,11 +179,46 @@ dynamic.props.onPointerUp(pointer(10))
 dynamic.props.onClick(click(0))
 assert.equal(navigations.length, 4)
 
-// Unmount clears a pending long-press timer without changing route state.
+// The bar stays mounted when Safari History changes the fixed destination.
+// A rerender in the SAME destination must not interrupt a legitimate hold;
+// an actual tab switch must invalidate it without waiting for pointercancel.
 dynamic.props.onPointerDown(pointer(11))
 assert.equal(timers.size, 1)
-for (const cleanup of cleanups) cleanup()
+cursor = 0
+module.exports.XDriveMobileFiveSlotNavigation({
+  selected: 'all', dynamicLabel: '任务', recent: [], recentOpen: false,
+  onRecentOpenChange: value => recentUpdates.push(value),
+  onSelect: slot => navigations.push(slot),
+  onPickRecent: () => assert.fail('Unexpected recent selection'),
+})
+assert.equal(timers.size, 1, 'same-slot rerender must retain pending genuine hold')
+cursor = 0
+const switchedTree = module.exports.XDriveMobileFiveSlotNavigation({
+  selected: 'gallery', dynamicLabel: '任务', recent: [], recentOpen: false,
+  onRecentOpenChange: value => recentUpdates.push(value),
+  onSelect: slot => navigations.push(slot),
+  onPickRecent: () => assert.fail('Unexpected recent selection'),
+})
+assert.equal(timers.size, 0, 'switching fixed tab cancels pending long-press timer')
+fireTimers()
+assert.deepEqual(recentUpdates, [true, true], 'late old-tab timer cannot reopen recent picker')
+const switchedDynamic = locate(switchedTree, node =>
+  node.type === 'BottomNavigationAction' && node.props.value === 'dynamic')
+assert.ok(switchedDynamic)
+const staleReleaseClick = click()
+switchedDynamic.props.onClick(staleReleaseClick)
+assert.equal(staleReleaseClick.prevented, true, 'old Safari release click is fenced')
+assert.equal(navigations.length, 4, 'stale click cannot navigate back to dynamic')
+switchedDynamic.props.onPointerDown(pointer(12))
+switchedDynamic.props.onPointerUp(pointer(12))
+switchedDynamic.props.onClick(click())
+assert.equal(navigations.length, 5, 'new tap after route switch remains functional')
+
+// Unmount still clears a pending long-press timer without changing route state.
+switchedDynamic.props.onPointerDown(pointer(13))
+assert.equal(timers.size, 1)
+for (const item of effectHooks.values()) item.cleanup?.()
 assert.equal(timers.size, 0)
 fireTimers()
-assert.equal(navigations.length, 4)
-console.log('Mobile five-slot genuine events: tap, pan, hold, release, mouse, keyboard and unmount passed')
+assert.equal(navigations.length, 5)
+console.log('Mobile five-slot genuine events: tap, pan, hold, release, route-switch, mouse, keyboard and unmount passed')
