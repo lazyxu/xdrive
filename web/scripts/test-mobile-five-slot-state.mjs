@@ -517,4 +517,38 @@ assert.doesNotMatch(launcherSource, /const \[search, setSearch\] = useState/,
 // history receipt before ever using the caller's safe fallback.
 const browserRuntime = readFileSync(resolve(here, '../src/webAppRuntime.ts'), 'utf8')
 assert.match(browserRuntime, /if \(state\?\.viewerReturn\) \{\s*window\.history\.back\(\)/)
+// A real Gallery Places map is L2: neither the five-slot bar nor its 52px
+// L1 app header should consume the canvas. The Places *list* remains L1,
+// and only the current Owner's actual map focus can suppress both chrome tiers.
+{
+  const ast = ts.createSourceFile('App.tsx', appSource, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TSX)
+  const headerBranches = []
+  function visit(node) {
+    if (ts.isConditionalExpression(node) &&
+        node.whenTrue.getText(ast).includes('<XDriveMobileAppHeader')) headerBranches.push(node)
+    ts.forEachChild(node, visit)
+  }
+  visit(ast)
+  assert.equal(headerBranches.length, 1, 'one canonical Web Mobile L1 app header')
+  const condition = headerBranches[0].condition.getText(ast)
+  assert.equal(condition, 'compactWorkspace && !mobileMapFocused',
+    'only the actual Gallery map L2 may hide the global 52px app header')
+  const showsHeader = new Function('compactWorkspace', 'mobileMapFocused',
+    'return (' + condition + ')')
+  assert.equal(showsHeader(true, true), false, 'L2 map hides L1 header')
+  assert.equal(showsHeader(true, false), true, 'Places list/Library/Files keep L1 header')
+  assert.equal(showsHeader(false, true), false, 'wide Web keeps its own workspace chrome')
+  assert.match(appSource, /mobileMapVisibility\.owner === mobileOwnerScope/,
+    'L2 focus remains fenced by a verified current Owner')
+  const mapSource = readFileSync(resolve(here, '../../ui/shared/src/mui/MediaGalleryPlacesMap.tsx'), 'utf8')
+  assert.match(mapSource, /\{onCloseMap && !desktopOnly \? \(/,
+    'mobile L2 map retains a visible close affordance when L1 header is hidden')
+  assert.match(mapSource, /aria-label="关闭地图" onClick=\{onCloseMap\}/)
+  assert.match(mapSource, /minWidth:44,minHeight:44/,
+    'map close must remain a 44px touch target')
+  assert.match(gallerySource, /onCloseMap=\{onBack && onSectionChange/,
+    'map Close reuses the actual authenticated Gallery Back contract')
+  assert.match(gallerySource, /if \(canReturnToMapEntry\) onBack\(\)\s*else onSectionChange\('library'\)/,
+    'return to current Owner collection or safe Gallery library, never another tab')
+}
 console.log('mobile five-slot state: routes, Owner, Viewer, back, role, favorites and Owner-scoped search passed')
