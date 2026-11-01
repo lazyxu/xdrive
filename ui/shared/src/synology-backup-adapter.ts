@@ -164,6 +164,7 @@ function validateOwnerPlacesPage(raw: unknown, limit: number, offset: number): M
   if (!ownerGalleryObject(raw) ||
     Object.keys(raw).some(k => !['items', 'total_count', 'offset', 'limit', 'has_more'].includes(k)) ||
     !Array.isArray(raw.items) || raw.items.length > limit ||
+    (raw.has_more === true && raw.items.length !== limit) ||
     !ownerGalleryInt(raw.total_count) || raw.offset !== offset || raw.limit !== limit ||
     typeof raw.has_more !== 'boolean' ||
     (raw.items.length === 0 && offset < raw.total_count) ||
