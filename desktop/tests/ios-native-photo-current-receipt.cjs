@@ -27,7 +27,7 @@ test('one selected original is checked against exact current Owner/Node and sour
   assert.match(model, /XDrivePhotoKitOriginalExporter\.stage\(/)
   assert.match(model, /allowICloudDownload: allowICloudOriginals/)
   assert.match(model, /sha256 = try Self\.hashOriginal\(original\)/)
-  assert.match(model, /XDriveIOSNativeCurrentPhotoReceiptPolicy\.destinationName\(/)
+  assert.match(model, /XDriveIOSNativeCurrentPhotoReceiptPolicy\s*\.destinationName\(/)
   assert.match(model, /\.existingReceiptForCurrentOriginal\(/)
   assert.match(model, /receipt\.state == \.confirmed/)
   assert.match(model, /try await auth\.verifyNodeReceipt\(/)
