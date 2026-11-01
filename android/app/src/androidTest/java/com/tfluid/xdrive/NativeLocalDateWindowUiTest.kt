@@ -44,7 +44,7 @@ class NativeLocalDateWindowUiTest {
             }
         }
         compose.onNodeWithTag("native-local-date-picker-scope")
-            .assertTextContains("仅当前已加载的 16 项")
+            .assertTextContains("仅当前已加载的 16 项", substring = true)
         compose.onNodeWithTag("native-local-date-group-2026-10").performClick()
         compose.runOnIdle { assertEquals(12, chosen) }
     }

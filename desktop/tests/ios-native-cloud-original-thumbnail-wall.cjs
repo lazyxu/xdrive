@@ -240,3 +240,33 @@ test('cloud-backed originals Viewer navigates only frozen same-Owner loaded 48-r
   assert.match(wall, /onChange\(of: login\.owner\) \{ _ in[\s\S]*?viewerOwner = nil[\s\S]*?model\.invalidate\(\)/)
   assert.doesNotMatch(viewer + wall, /UserDefaults|@AppStorage|CloudKit\.modifyRecords|UploadSessionTransport/)
 });
+
+
+test('cloud backed-up original Viewer exports via the existing verified native Files model', () => {
+  const viewer = src.slice(src.indexOf('struct XDriveIOSNativeCloudOriginalPreview: View'),
+    src.indexOf('struct XDriveIOSNativeCloudOriginalGallery: View'))
+  const exporter = fs.readFileSync(path.join(root, 'ios/XDriveIOS/NativeFilesDownloadExport.swift'), 'utf8')
+  assert.match(viewer, /@StateObject private var exporter = XDriveIOSNativeFilesExportModel\(\)/)
+  assert.match(viewer, /private var exportNode: XDriveIOSNativeFilesNode\?/)
+  assert.match(viewer, /parent_id: owner\.rootNodeID/)
+  assert.match(viewer, /viewed\.size <= 512 \* 1_048_576/)
+  assert.match(viewer, /XDriveIOSBackgroundOriginalNamePolicy\.valid\(viewed\.name\)/)
+  assert.match(viewer, /exporter\.prepare\(node, login: login\)/)
+  assert.match(viewer, /ShareLink\(item: file\.fileURL\)/)
+  assert.match(viewer, /native-ios-original-export-status/)
+  assert.match(viewer, /native-ios-original-export/)
+  assert.match(viewer, /native-ios-original-share/)
+  assert.match(exporter, /guard current == node/)
+  assert.match(exporter, /guard stillCurrent == node/)
+  assert.match(exporter, /prepared\?\.discard\(\)/)
+  assert.doesNotMatch(viewer, /\/files\/\$\{.*\}\/download-ticket|URLSession\(configuration:|UploadSession|\.upload\(/)
+})
+
+test('cloud original export is invalidated at item, Owner, scene and Viewer boundaries', () => {
+  const viewer = src.slice(src.indexOf('struct XDriveIOSNativeCloudOriginalPreview: View'),
+    src.indexOf('struct XDriveIOSNativeCloudOriginalGallery: View'))
+  assert.match(viewer, /private func showNeighbor\(_ direction: Int\) \{[\s\S]*?exporter\.invalidate\(\)[\s\S]*?activeNode = next/)
+  assert.match(viewer, /\.onChange\(of: phase\) \{ state in\s*if state != \.active \{\s*exporter\.invalidate\(\)/)
+  assert.match(viewer, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?exporter\.invalidate\(\)[\s\S]*?dismiss\(\)/)
+  assert.match(viewer, /\.onDisappear \{\s*exporter\.invalidate\(\)/)
+})

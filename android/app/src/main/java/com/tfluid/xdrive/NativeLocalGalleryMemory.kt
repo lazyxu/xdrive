@@ -29,6 +29,7 @@ internal class NativeLocalGalleryWallMemory {
     val dateScale: MutableState<String> = mutableStateOf("all")
 
 
+
     private var albumId: String? = null
 
     fun selectAlbum(id: String?) {
