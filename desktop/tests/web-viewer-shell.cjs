@@ -3030,3 +3030,53 @@ test('P0 Web standalone PDF/audio retain stable loaders; PDF rejects HTML error 
     window.location = oldLocation
   }
 })
+
+
+test('P0 Web Gallery same Node in two browse positions updates the active Viewer selection', async () => {
+  const contextID = 'web-pwa-duplicate-node-index'
+  const key = 'xdrive.web_app.session.v1:' + contextID
+  const node = { id: 743, revision: 1, name: 'repeat.jpg', type: 'file', size: 32 }
+  const items = ['2026-10-01T00:00:00Z', '2026-11-01T00:00:00Z'].map(date => ({
+    node, metadata: {
+      media_kind: 'image', mime_type: 'image/jpeg',
+      index_state: 'ready', has_thumbnail: false, captured_at: date,
+    },
+  }))
+  storage.set(key, JSON.stringify({ version: 1, context: {
+    kind: 'gallery', target: { kind: 'all', query: {} }, activeIndex: 0, totalCount: 2,
+  } }))
+  const visits = []
+  const api = { node: async () => node, mediaItem: async () => items[0] }
+  const gallerySource = {
+    loadThumbnail: async () => null,
+    listItemRange: async (limit, offset) => ({
+      items: items.slice(offset, offset + limit), offset, limit, total_count: 2,
+    }),
+  }
+  let renderer
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(WebFileViewerApps, {
+        route: { app: 'media-viewer', params: { node: node.id, context: contextID } },
+        api, gallerySource, shareDialogAdapter: {},
+        onReplaceRoute(next) { visits.push(next.params.node) },
+        onClose() {}, onError(error) { throw error },
+      }), { createNodeMock: () => ({ focus() {} }) })
+    })
+    for (let n = 0; n < 4; n++) {
+      await act(async () => new Promise(resolve => setImmediate(resolve)))
+    }
+    const current = () => renderer.root.findByType('media-content').props.item
+    assert.equal(current().metadata.captured_at, '2026-10-01T00:00:00Z')
+    const strip = renderer.root.findByType('gallery-filmstrip')
+    await act(async () => { strip.props.onSelect(1) })
+    assert.deepEqual(visits, [743], 'same Node ID still preserves its browse index navigation')
+    assert.equal(current().metadata.captured_at, '2026-11-01T00:00:00Z',
+      'previous index metadata must not overwrite the selected entry')
+    assert.equal(renderer.root.findByType('gallery-filmstrip').props.activeIndex, 1)
+    assert.equal(JSON.parse(storage.get(key)).context.activeIndex, 1)
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    storage.delete(key)
+  }
+})
