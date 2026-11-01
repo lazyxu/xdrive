@@ -534,7 +534,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                 Text(originalProof.message)
                     .font(.footnote).foregroundStyle(.secondary)
                     .accessibilityIdentifier("native-ios-photo-current-receipt-message")
-                Text("只核验当前选择的普通照片或视频；Live Photo 双资源 ZIP 暂不支持单项核验。此结果仅代表核验时刻，不能据此宣布全部照片已备份。")
+                Text("只核验当前选择的普通照片或视频；Live Photo 需要同时核验静态图、动态视频和完整 ZIP 清单。此结果仅代表核验时刻，不能据此宣布全部照片已备份。")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("可选系统后台原件备份") {

@@ -282,7 +282,9 @@ actor XDrivePhotoSyncLedger {
     func historicalReceiptTally(scope: XDrivePhotoSyncScope)
         throws -> XDriveIOSNativePhotoReceiptTally {
         try Task.checkCancellation()
-        let key = try encryptionKey()
+        guard let key = try existingEncryptionKeyForReadOnly() else {
+            throw XDrivePhotoSyncLedgerError.corruptOrInaccessible
+        }
         let legacy = try read(scope: scope, key: key).operations
         let legacyIDs = Set(legacy.map(\.id))
         let legacyFingerprints = Set(legacy.map(\.assetFingerprint))
@@ -327,7 +329,7 @@ actor XDrivePhotoSyncLedger {
         role: XDrivePhotoSyncResourceRole,
         name: String, size: Int64, sha256: String
     ) throws -> XDrivePhotoSyncOperation? {
-        guard role == .still || role == .video,
+        guard role == .still || role == .video || role == .liveBundle,
               scope.rootNodeID > 0, validName(name),
               size > 0, validSHA256(sha256),
               sha256 == sha256.lowercased() else {

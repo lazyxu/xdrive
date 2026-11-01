@@ -114,11 +114,11 @@ final class XDriveIOSNativeCurrentPhotoReceiptModel: ObservableObject {
                       let stamp = XDriveIOSNativePhotoProofStamp.current(localIdentifier)
                 else { throw XDriveIOSNativeCurrentPhotoReceiptError.staleSource }
 
-                guard XDriveIOSNativeCurrentPhotoReceiptPolicy.canVerifySingleOriginal(
+                guard XDriveIOSNativeCurrentPhotoReceiptPolicy.canVerifyOriginal(
                     kind: stamp.kind, isLive: stamp.isLive
                 ) else {
                     self.publishUnverified(
-                        "当前版本只支持单张普通照片或视频。Live Photo 需要校验静态与动态双原件归档，不能以单资源收据判定完成。",
+                        "此媒体类型暂不可核验，不能将单项收据当成完整备份证明。",
                         token: token
                     )
                     return
@@ -139,30 +139,91 @@ final class XDriveIOSNativeCurrentPhotoReceiptModel: ObservableObject {
                 let staged = try await XDrivePhotoKitOriginalExporter.stage(
                     localIdentifier: localIdentifier,
                     allowICloudDownload: allowICloudOriginals,
-                    maximumBytesPerResource: 1_073_741_824
+                    maximumBytesPerResource: stamp.isLive
+                        ? XDriveIOSLiveOriginalArchive.maximumPartBytes
+                        : 1_073_741_824
                 )
                 defer { staged.delete() }
-                guard staged.kind == stamp.kind,
-                      staged.resources.count == 1,
-                      let original = staged.resources.first,
-                      original.role == (stamp.kind == "video" ? "video" : "still"),
-                      original.byteCount > 0,
+                guard staged.kind == (stamp.isLive ? "live" : stamp.kind),
                       XDriveIOSNativePhotoProofStamp.current(localIdentifier) == stamp
                 else { throw XDriveIOSNativeCurrentPhotoReceiptError.staleSource }
 
-                let sha256 = try Self.hashOriginal(original)
-                guard XDriveIOSNativePhotoProofStamp.current(localIdentifier) == stamp,
-                      let name = XDriveIOSNativeCurrentPhotoReceiptPolicy.destinationName(
-                        originalFilename: original.originalFilename,
-                        tag: identity.tag, sha256: sha256
-                      )
-                else { throw XDriveIOSNativeCurrentPhotoReceiptError.invalidOriginal }
-                let role: XDrivePhotoSyncResourceRole =
-                    stamp.kind == "video" ? .video : .still
+                let role: XDrivePhotoSyncResourceRole
+                let sha256: String
+                let name: String
+                let payloadBytes: Int64
+                if stamp.isLive {
+                    // Live: ONE deterministic ZIP containing the original still,
+                    // paired-motion video and original-filename/CRC manifest.
+                    guard staged.resources.count == 2,
+                          let still = staged.resources.first(where: { $0.role == "still" }),
+                          let motion = staged.resources.first(where: { $0.role == "motion" }),
+                          still.byteCount > 0, motion.byteCount > 0,
+                          let evidence = XDrivePhotoKitResourceInspector.inspect(
+                            localIdentifier: localIdentifier
+                          ),
+                          evidence.isLive, evidence.originalResourceManifestComplete,
+                          evidence.stillFilename == still.originalFilename,
+                          evidence.motionFilename == motion.originalFilename else {
+                        throw XDriveIOSNativeCurrentPhotoReceiptError.invalidOriginal
+                    }
+                    let archiveURL = staged.folderURL.appendingPathComponent(
+                        "original-live-pair.zip", isDirectory: false
+                    )
+                    let bytes = try XDriveIOSLiveOriginalArchive.create(
+                        still: XDriveIOSLiveArchiveInput(
+                            role: "still", fileURL: still.fileURL,
+                            originalFilename: still.originalFilename,
+                            byteCount: still.byteCount
+                        ),
+                        motion: XDriveIOSLiveArchiveInput(
+                            role: "motion", fileURL: motion.fileURL,
+                            originalFilename: motion.originalFilename,
+                            byteCount: motion.byteCount
+                        ),
+                        outputURL: archiveURL
+                    )
+                    // Same archive writer as prepareLiveBundle(), but neither
+                    // ledger.prepare nor an UploadSession is called here.
+                    let zipped = XDriveStagedPhotoKitResource(
+                        role: "liveBundle", originalFilename: "original-live-pair.zip",
+                        fileURL: archiveURL, byteCount: bytes
+                    )
+                    sha256 = try Self.hashOriginal(zipped)
+                    guard XDriveIOSNativePhotoProofStamp.current(localIdentifier) == stamp,
+                          let latest = XDrivePhotoKitResourceInspector.inspect(
+                            localIdentifier: localIdentifier
+                          ),
+                          latest.isLive, latest.originalResourceManifestComplete,
+                          latest.stillFilename == still.originalFilename,
+                          latest.motionFilename == motion.originalFilename,
+                          let exactName = XDriveIOSNativeCurrentPhotoReceiptPolicy
+                            .liveDestinationName(tag: identity.tag, sha256: sha256)
+                    else { throw XDriveIOSNativeCurrentPhotoReceiptError.staleSource }
+                    role = .liveBundle
+                    name = exactName
+                    payloadBytes = bytes
+                } else {
+                    guard staged.resources.count == 1,
+                          let original = staged.resources.first,
+                          original.role == (stamp.kind == "video" ? "video" : "still"),
+                          original.byteCount > 0 else {
+                        throw XDriveIOSNativeCurrentPhotoReceiptError.invalidOriginal
+                    }
+                    sha256 = try Self.hashOriginal(original)
+                    guard XDriveIOSNativePhotoProofStamp.current(localIdentifier) == stamp,
+                          let exactName = XDriveIOSNativeCurrentPhotoReceiptPolicy
+                            .destinationName(originalFilename: original.originalFilename,
+                                             tag: identity.tag, sha256: sha256)
+                    else { throw XDriveIOSNativeCurrentPhotoReceiptError.invalidOriginal }
+                    role = stamp.kind == "video" ? .video : .still
+                    name = exactName
+                    payloadBytes = original.byteCount
+                }
                 let receipt = try await XDrivePhotoSyncLedger.shared
                     .existingReceiptForCurrentOriginal(
                         scope: scope, role: role, name: name,
-                        size: original.byteCount, sha256: sha256
+                        size: payloadBytes, sha256: sha256
                     )
                 try Task.checkCancellation()
                 guard self.epoch == token else { return }
@@ -207,7 +268,7 @@ final class XDriveIOSNativeCurrentPhotoReceiptModel: ObservableObject {
                 guard XDriveIOSNativeCurrentPhotoReceiptPolicy.canPublishCurrentProof(
                     matchedRoleAndDigest: receipt.role == role &&
                         receipt.sha256 == sha256 &&
-                        receipt.byteSize == original.byteCount &&
+                        receipt.byteSize == payloadBytes &&
                         receipt.destinationName == name,
                     historicalConfirmed: receipt.state == .confirmed,
                     completeReceipt: true,
@@ -219,7 +280,7 @@ final class XDriveIOSNativeCurrentPhotoReceiptModel: ObservableObject {
                 self.currentNodeVerified = true
                 self.verifiedAt = Date()
                 self.message =
-                    "当前照片／视频的原始字节 SHA-256 与既有收据一致，且刚从当前 Owner 云端重新验证了文件 Node。"
+                    "当前照片／视频／Live 双原件 ZIP 的 SHA-256 与既有收据一致，且刚从当前 Owner 云端重新验证了文件 Node。"
             } catch is CancellationError {
             } catch {
                 self.publishUnverified(

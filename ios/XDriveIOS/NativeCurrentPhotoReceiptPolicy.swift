@@ -19,8 +19,19 @@ enum XDriveIOSNativeCurrentPhotoReceiptPolicy {
         return validSourceFilename(output) ? output : nil
     }
 
-    static func canVerifySingleOriginal(kind: String, isLive: Bool) -> Bool {
-        (kind == "image" && !isLive) || kind == "video"
+
+    /// The actual upload writer stores the still+motion pair in ONE ZIP node,
+    /// named from the deterministic ZIP hash. Never verify just one part.
+    static func liveDestinationName(tag: String, sha256: String) -> String? {
+        guard tag.utf8.count == 24, tag.utf8.allSatisfy(isLowerHex),
+              sha256.utf8.count == 64, sha256.utf8.allSatisfy(isLowerHex)
+        else { return nil }
+        let name = "Live-xios-" + tag + "-" + String(sha256.prefix(12)) + ".zip"
+        return validSourceFilename(name) ? name : nil
+    }
+
+    static func canVerifyOriginal(kind: String, isLive: Bool) -> Bool {
+        kind == "image" || (kind == "video" && !isLive)
     }
 
     /// A local .confirmed bit or historical record count never suffices.

@@ -26,10 +26,15 @@ struct NativeCurrentPhotoReceiptPolicyChecks {
         precondition(Policy.destinationName(
             originalFilename: "CON.jpg", tag: tag, sha256: digest
         ) == nil)
-        precondition(Policy.canVerifySingleOriginal(kind: "image", isLive: false))
-        precondition(Policy.canVerifySingleOriginal(kind: "video", isLive: false))
-        precondition(!Policy.canVerifySingleOriginal(kind: "image", isLive: true))
-        precondition(!Policy.canVerifySingleOriginal(kind: "unsupported", isLive: false))
+        precondition(Policy.canVerifyOriginal(kind: "image", isLive: false))
+        precondition(Policy.canVerifyOriginal(kind: "video", isLive: false))
+        precondition(Policy.canVerifyOriginal(kind: "image", isLive: true))
+        precondition(!Policy.canVerifyOriginal(kind: "video", isLive: true))
+        precondition(Policy.liveDestinationName(tag: tag, sha256: digest) ==
+                     "Live-xios-\(tag)-\(String(digest.prefix(12))).zip")
+        precondition(Policy.liveDestinationName(tag: "bad", sha256: digest) == nil)
+        precondition(Policy.liveDestinationName(tag: tag, sha256: "bad") == nil)
+        precondition(!Policy.canVerifyOriginal(kind: "unsupported", isLive: false))
 
         for mask in 0..<32 {
             let allowed = Policy.canPublishCurrentProof(
