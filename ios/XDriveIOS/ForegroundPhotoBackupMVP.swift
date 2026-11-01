@@ -177,12 +177,21 @@ struct XDriveIOSForegroundPhotoBackupMVP {
     /// A global authorization/receipt trust loss must not be reclassified
     /// as one unavailable PhotoKit original and scanned past.
     private static func mustAbortRun(after error: Error) -> Bool {
-        if error is XDriveNativeOwnerRootFailure ||
+        // Network outages are not "one inaccessible photo". Advancing a
+        // completed 256-slot cursor after repeated offline failures can
+        // strand entire older windows until a future full-library wrap.
+        // A disk staging failure is equally global, not a missing original.
+        if error is URLError ||
+           error is XDriveNativeOwnerRootFailure ||
            error is XDrivePhotoSyncLedgerError {
             return true
         }
         if let source = error as? XDrivePhotoKitExportFailure,
            case .notAuthorized = source {
+            return true
+        }
+        if let source = error as? XDrivePhotoKitExportFailure,
+           case .storageUnavailable = source {
             return true
         }
         if let intent = error as? XDriveIOSPhotoIntentPreparationError,
