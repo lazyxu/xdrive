@@ -171,6 +171,15 @@ private struct XDriveIOSNativeFilesDestinationWriter {
         guard saved == created else {
             throw XDriveIOSNativeFilesDestinationFailure.malformedReceipt
         }
+        if kind == .copy {
+            // The canonical copy endpoint has no If-Match parameter. Verify
+            // that the source still has the precise selected version after
+            // the copy; otherwise report an uncertain result, never success.
+            let unchangedSource = try await readNode(original.id, session: client)
+            guard unchangedSource == original else {
+                throw XDriveIOSNativeFilesDestinationFailure.sourceChanged
+            }
+        }
     }
 }
 

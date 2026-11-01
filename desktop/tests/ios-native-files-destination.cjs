@@ -35,6 +35,7 @@ test('copy/move use real Server endpoints, exact source and target GET, version 
   assert.match(mutation, /XDriveIOSNativeFilesDestinationReceiptPolicy\.copied\(/)
   assert.match(mutation, /XDriveIOSNativeFilesDestinationReceiptPolicy\.moved\(/)
   assert.match(mutation, /guard saved == created/)
+  assert.match(mutation, /if kind == \.copy \{[\s\S]*?let unchangedSource = try await readNode\(original\.id, session: client\)[\s\S]*?guard unchangedSource == original/)
   assert.match(mutation, /let after = try await login\.verifiedAuthorization\(\)/)
   assert.match(mutation, /不要盲目重复操作/)
   assert.match(policy, /result\.revision > original\.revision/)
