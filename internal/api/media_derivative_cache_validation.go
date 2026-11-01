@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"encoding/binary"
 	"os"
 	"strings"
 
@@ -28,20 +29,30 @@ func mediaDerivativeCacheValid(file *os.File, key string) bool {
 	}
 	jpg := strings.HasSuffix(key, ".jpg")
 	thumb := strings.HasSuffix(key, ".thumb")
-	if !jpg && !thumb {
+	webp := strings.HasSuffix(key, ".webp")
+	if !jpg && !thumb && !webp {
 		return true
 	}
 	stat, err := file.Stat()
 	if err != nil || stat.Size() < 45 {
 		return false
 	}
-	var beginning [8]byte
+	var beginning [16]byte
 	var ending [12]byte
 	if _, err := file.ReadAt(beginning[:], 0); err != nil {
 		return false
 	}
 	if _, err := file.ReadAt(ending[:], stat.Size()-int64(len(ending))); err != nil {
 		return false
+	}
+	if webp {
+		// RIFF size is the actual encoded body size (minus 8), not an arbitrary
+		// HTTP length. Reject truncated/stale WebP cache entries before serving.
+		chunk := string(beginning[12:16])
+		return string(beginning[0:4]) == "RIFF" &&
+			string(beginning[8:12]) == "WEBP" &&
+			(chunk == "VP8 " || chunk == "VP8L" || chunk == "VP8X") &&
+			uint64(binary.LittleEndian.Uint32(beginning[4:8]))+8 == uint64(stat.Size())
 	}
 	isJPEG := stat.Size() >= 64 &&
 		beginning[0] == 0xff && beginning[1] == 0xd8 && beginning[2] == 0xff &&
