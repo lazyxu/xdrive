@@ -11,11 +11,13 @@ import (
 	"github.com/lazyxu/xdrive/internal/client"
 	"github.com/lazyxu/xdrive/internal/localbackupipc"
 )
+
 type fakeDSMOwnerPlaces struct {
 	*fakeAgent
 	readPlaces, readPhotos int
-	unsafe bool
+	unsafe                 bool
 }
+
 func (f *fakeDSMOwnerPlaces) OwnerPlacesPage(_ context.Context, limit, offset int) (localbackupipc.OwnerPlacesPage, error) {
 	f.readPlaces++
 	page, err := client.ProjectOwnerPlacesPage(client.MediaPlacesPage{
@@ -27,7 +29,9 @@ func (f *fakeDSMOwnerPlaces) OwnerPlacesPage(_ context.Context, limit, offset in
 		}},
 		TotalCount: 1, Limit: limit, Offset: offset,
 	}, limit, offset)
-	if f.unsafe { page.Items[0].Latitude = 100 }
+	if f.unsafe {
+		page.Items[0].Latitude = 100
+	}
 	return page, err
 }
 func (f *fakeDSMOwnerPlaces) OwnerPlaceItems(_ context.Context, place string, limit, offset int) (localbackupipc.OwnerGalleryPage, error) {
@@ -54,7 +58,9 @@ func TestDSMOwnerPlacesReadOnlyCGIAndExactPhotoScope(t *testing.T) {
 	send := func(method, query string, withCookie bool) *httptest.ResponseRecorder {
 		t.Helper()
 		r := httptest.NewRequest(method, "https://nas.example:5001"+DSMCGIPath+query, nil)
-		if withCookie { r.Header.Set("Cookie", "id=dsm-session") }
+		if withCookie {
+			r.Header.Set("Cookie", "id=dsm-session")
+		}
 		w := httptest.NewRecorder()
 		CGIHandler(g).ServeHTTP(w, r)
 		return w
