@@ -385,6 +385,79 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-files-batch-trash-check"
           node --test desktop/tests/ios-native-files-batch-trash.cjs
 
+      - name: Verify native Files one-page atomic batch copy and move
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeCloudFilesPolicy.swift \
+            ios/XDriveIOS/NativeFilesBatchTrashPolicy.swift \
+            ios/XDriveIOS/NativeFilesBatchTargetPolicy.swift \
+            ios/tests/NativeFilesBatchTargetChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-batch-target-check"
+          "$RUNNER_TEMP/xdrive-ios-files-batch-target-check"
+          node --test desktop/tests/ios-native-files-batch-target.cjs
+
+      - name: Verify native Files shared list/grid presentation and actions
+        run: node --test desktop/tests/ios-native-files-list-grid.cjs
+
+      - name: Verify native Files Owner-scoped recycle bin read and restore
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeCloudFilesPolicy.swift \
+            ios/XDriveIOS/NativeFilesTrashPolicy.swift \
+            ios/tests/NativeFilesTrashPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-trash-policy"
+          "$RUNNER_TEMP/xdrive-ios-trash-policy"
+          node --test desktop/tests/ios-native-files-trash.cjs
+
+      - name: Verify native Files recent/favorites Owner projections and routes
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5             ios/XDriveIOS/NativeCloudFilesPolicy.swift             ios/XDriveIOS/NativeFilesCollectionsPolicy.swift             ios/tests/NativeFilesCollectionsPolicyChecks.swift             -o "$RUNNER_TEMP/xdrive-ios-file-collections"
+          "$RUNNER_TEMP/xdrive-ios-file-collections"
+          node --test desktop/tests/ios-native-files-collections.cjs
+
+      - name: Verify native Files bounded sequential multi-file upload
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeFilesFolderNamePolicy.swift \
+            ios/XDriveIOS/NativeFilesUploadBatchPolicy.swift \
+            ios/tests/NativeFilesUploadBatchPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-upload-batch-check"
+          "$RUNNER_TEMP/xdrive-ios-files-upload-batch-check"
+          node --test desktop/tests/ios-native-files-upload-batch.cjs
+
+      - name: Verify native Files search result locate-in-folder
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5             ios/XDriveIOS/NativeCloudFilesPolicy.swift             ios/XDriveIOS/NativeFilesLocationPolicy.swift             ios/tests/NativeFilesLocationPolicyChecks.swift             -o "$RUNNER_TEMP/xdrive-ios-file-location"
+          "$RUNNER_TEMP/xdrive-ios-file-location"
+          node --test desktop/tests/ios-native-files-location.cjs
+
+      - name: Verify native Files revision-scoped Server thumbnail derivative policy
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeCloudFilesPolicy.swift \
+            ios/XDriveIOS/NativeFilesThumbnailPolicy.swift \
+            ios/tests/NativeFilesThumbnailPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-thumbnail-policy"
+          "$RUNNER_TEMP/xdrive-ios-files-thumbnail-policy"
+          node --test desktop/tests/ios-native-files-thumbnail.cjs
+
+      - name: Verify native Files two-slot cancellation-aware thumbnail admission
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeCloudFilesPolicy.swift \
+            ios/XDriveIOS/NativeFilesThumbnailPolicy.swift \
+            ios/XDriveIOS/NativeFilesThumbnailSlots.swift \
+            ios/tests/NativeFilesThumbnailSlotsChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-thumbnail-slots"
+          "$RUNNER_TEMP/xdrive-ios-files-thumbnail-slots"
+
       - name: Prepare native brand and home screen icon
         run: bash ios/scripts/prepare-assets.sh
 

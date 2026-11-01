@@ -25,8 +25,8 @@ test('native directory copy/move reuse current Owner destination and Server Node
   assert.match(api, /func \(s \*Server\) updateNode\(c \*gin\.Context\)/)
 })
 test('directory cannot select self or descend into itself; root blocked and Server denies cycles', () => {
-  assert.match(picker, /!\(selected\.isDirectory && selected\.id == folder\.id\)/)
-  assert.match(picker, /\.disabled\(selected\.isDirectory && entry\.id == selected\.id\)/)
+  assert.match(picker, /allSelected\.contains\(where: \{ \$0\.isDirectory && \$0\.id == folder\.id \}\)/)
+  assert.match(picker, /\.disabled\(allSelected\.contains\(where: \{ \$0\.isDirectory && \$0\.id == entry\.id \}\)\)/)
   assert.match(policy, /targetID != original\.id/)
   assert.match(policy, /original\.parent_id != nil/)
   assert.match(policy, /result\.type == original\.type/)

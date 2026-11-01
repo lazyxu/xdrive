@@ -276,6 +276,10 @@ struct XDriveIOSNativeFilesViewer: View {
             display = result
             failure = nil
             loading = false
+            XDriveIOSNativeFilesRecentRecorder.recordLoadedPreview(
+                current, owner: credentials.owner,
+                accessToken: credentials.accessToken, login: login
+            )
         } catch is CancellationError {
             // A replacement Viewer owns its own read and progress.
         } catch {
