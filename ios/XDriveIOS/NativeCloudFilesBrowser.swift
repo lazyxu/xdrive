@@ -1,8 +1,6 @@
 import Combine
 import Foundation
-import QuickLook
 import SwiftUI
-import UniformTypeIdentifiers
 
 private enum XDriveIOSNativeFilesReadError: Error {
     case invalidScope
@@ -217,11 +215,10 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
     }
 }
 
-private struct XDriveIOSNativeFilesDestinationIntent: Identifiable {
+private struct XDriveIOSNativeFilesManagementIntent: Identifiable {
     let id = UUID()
-    let node: XDriveIOSNativeFilesNode
     let owner: XDriveNativeOwnerRoot
-    let kind: XDriveIOSNativeFilesDestinationKind
+    let file: XDriveIOSNativeFilesNode?
 }
 
 private struct XDriveIOSNativeFilesFolder: Hashable {
@@ -229,16 +226,13 @@ private struct XDriveIOSNativeFilesFolder: Hashable {
     let name: String
 }
 
-/// iOS fixed Files tab: genuine native bounded Owner directory navigation,
-/// search and 512 MiB single-file export. Preview, batch actions and full
-/// durable transfers remain explicitly unavailable until verified.
+/// iOS fixed Files tab: genuine native bounded Owner directory navigation
+/// and whole-library search. File previews use the separate native L3 Viewer;
+/// Owner-bound creation, transfers and mutations live in the native action sheet.
 struct XDriveIOSNativeFilesBrowser: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
+    @Environment(\.scenePhase) private var phase
     @StateObject private var model = XDriveIOSNativeFilesPageModel()
-    @StateObject private var exporter = XDriveIOSNativeFilesExportModel()
-    @StateObject private var uploader = XDriveIOSNativeFilesManualUploadModel()
-    @StateObject private var mutator = XDriveIOSNativeFilesMutationModel()
-    @StateObject private var destinationWriter = XDriveIOSNativeFilesDestinationMutationModel()
     @State private var offset = 0
     @State private var queryDraft = ""
     @State private var activeQuery = ""
@@ -246,18 +240,10 @@ struct XDriveIOSNativeFilesBrowser: View {
     @State private var order = "asc"
     @State private var searchError: String?
     @State private var selectedFile: XDriveIOSNativeFilesEntry?
-    @State private var quickLookURL: URL?
-    @State private var destinationIntent: XDriveIOSNativeFilesDestinationIntent?
-    @State private var showingRename = false
-    @State private var showingTrashConfirm = false
-    @State private var renameDraft = ""
-    @State private var showingCreateFolder = false
-    @State private var showingFileImporter = false
-    @State private var newFolderName = ""
-    @State private var createBusy = false
-    @State private var createNotice: String?
-    @State private var createEpoch = UUID()
-    @State private var createTask: Task<Void, Never>?
+    @State private var managementIntent: XDriveIOSNativeFilesManagementIntent?
+    @State private var selectedOwner: XDriveNativeOwnerRoot?
+    @State private var returnOwner: XDriveNativeOwnerRoot?
+    @State private var lastViewedFile: XDriveIOSNativeFilesNode?
     private let folder: XDriveIOSNativeFilesFolder?
 
     init(login: XDriveIOSNativeOwnerLoginModel) {
@@ -277,6 +263,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     }
 
     var body: some View {
+        ScrollViewReader { returnScroll in
         List {
             Section {
                 HStack(spacing: 8) {
@@ -304,22 +291,6 @@ struct XDriveIOSNativeFilesBrowser: View {
                 }
                 if let searchError {
                     Text(searchError).foregroundStyle(.orange).font(.footnote)
-                }
-                if let createNotice {
-                    Text(createNotice).foregroundStyle(.secondary).font(.footnote)
-                        .accessibilityIdentifier("native-ios-files-create-status")
-                }
-                if let uploadStatus = uploader.status {
-                    Text(uploadStatus).font(.footnote).foregroundStyle(.secondary)
-                        .accessibilityIdentifier("native-ios-files-upload-status")
-                }
-                if let mutationStatus = mutator.status {
-                    Text(mutationStatus).font(.footnote).foregroundStyle(.secondary)
-                        .accessibilityIdentifier("native-ios-files-mutation-status")
-                }
-                if let destinationStatus = destinationWriter.status {
-                    Text(destinationStatus).font(.footnote).foregroundStyle(.secondary)
-                        .accessibilityIdentifier("native-ios-files-destination-status")
                 }
                 HStack {
                     Picker("排序", selection: $sort) {
@@ -353,17 +324,35 @@ struct XDriveIOSNativeFilesBrowser: View {
                         row(entry)
                     }
                     .accessibilityIdentifier("native-ios-files-folder-\(entry.node.id)")
+                    .id(entry.node.id)
                 } else {
-                    Button {
-                        exporter.invalidate()
-                        mutator.invalidate()
-                        selectedFile = entry
-                    } label: {
-                        row(entry)
+                    HStack(spacing: 8) {
+                        Button {
+                            guard !model.loading, let owner = login.owner,
+                                  model.entries.contains(where: { $0.node == entry.node })
+                            else { return }
+                            selectedOwner = owner
+                            returnOwner = owner
+                            lastViewedFile = entry.node
+                            selectedFile = entry
+                        } label: {
+                            row(entry)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("native-ios-files-file-\(entry.node.id)")
+                        Button {
+                            openManagement(for: entry.node)
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                                .frame(minWidth: 44, minHeight: 44)
+                        }
+                        .accessibilityLabel("管理 \(entry.node.name)")
+                        .accessibilityIdentifier("native-ios-files-more-\(entry.node.id)")
                     }
-                    .buttonStyle(.plain)
-                    .disabled(mutator.busy)
-                    .accessibilityIdentifier("native-ios-files-file-\(entry.node.id)")
+                    .contextMenu {
+                        Button("文件操作") { openManagement(for: entry.node) }
+                    }
+                    .id(entry.node.id)
                 }
             }
             Section {
@@ -397,24 +386,11 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button {
-                    showingFileImporter = true
-                } label: {
-                    Label("上传文件", systemImage: "square.and.arrow.up")
+                Button { openManagement(for: nil) } label: {
+                    Label("文件夹操作", systemImage: "folder.badge.gearshape")
                 }
-                .disabled(uploader.busy || createBusy || !activeQuery.isEmpty ||
-                          login.owner == nil)
-                .accessibilityIdentifier("native-ios-files-manual-upload")
-            }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button {
-                    newFolderName = ""
-                    showingCreateFolder = true
-                } label: {
-                    Label("新建文件夹", systemImage: "folder.badge.plus")
-                }
-                .disabled(createBusy || !activeQuery.isEmpty || login.owner == nil)
-                .accessibilityIdentifier("native-ios-files-create-folder")
+                .disabled(model.loading || login.owner == nil || !activeQuery.isEmpty)
+                .accessibilityIdentifier("native-ios-files-folder-actions")
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
@@ -425,214 +401,79 @@ struct XDriveIOSNativeFilesBrowser: View {
                 .accessibilityIdentifier("native-ios-files-refresh")
             }
         }
-        .fileImporter(isPresented: $showingFileImporter,
-                      allowedContentTypes: [.item]) { result in
-            switch result {
-            case .success(let url):
-                guard activeQuery.isEmpty, let parentID else {
-                    uploader.pickerFailed()
-                    return
+        .sheet(item: $managementIntent, onDismiss: {
+            reload()
+        }) { intent in
+            if XDriveIOSNativePhotoOwnerScope.matches(login.owner, intent.owner) {
+                XDriveIOSNativeFilesManagementPanel(
+                    login: login, expectedOwner: intent.owner,
+                    folderID: folder?.id ?? intent.owner.rootNodeID,
+                    folderName: folder?.name,
+                    file: intent.file
+                ) {
+                    managementIntent = nil
+                    reload()
                 }
-                uploader.start(fileURL: url, login: login, parentID: parentID,
-                               expectedFolderName: folder?.name) {
-                    reload(resetOffset: true)
-                }
-            case .failure:
-                uploader.pickerFailed()
+            } else {
+                Text("当前账户已变化，请关闭并重新选择文件。")
+                    .foregroundStyle(.secondary)
             }
         }
-        .alert("新建文件夹", isPresented: $showingCreateFolder) {
-            TextField("文件夹名称", text: $newFolderName)
-            Button("创建") { createDirectory() }
-            Button("取消", role: .cancel) {}
-        } message: {
-            Text("仅在当前目录创建。若连接中断导致结果不确定，请刷新目录确认，不要连续重试。")
-        }
-        .sheet(item: $selectedFile, onDismiss: {
-            destinationIntent = nil
-            quickLookURL = nil
-            exporter.invalidate()
-        }) { entry in
-            NavigationStack {
-                Form {
-                    Section("文件信息") {
-                        LabeledContent("名称", value: entry.node.name)
-                        LabeledContent("大小", value: ByteCountFormatter.string(
-                            fromByteCount: entry.node.size, countStyle: .file
-                        ))
-                        LabeledContent("类型", value: "文件")
-                        if let path = entry.path {
-                            LabeledContent("路径", value: path)
-                        }
+        .fullScreenCover(item: $selectedFile, onDismiss: {
+            selectedOwner = nil
+            // Re-read the exact current directory/search page before returning
+            // focus to the last still-valid Node and revision.
+            reload()
+        }) { initial in
+            if let openedOwner = selectedOwner {
+                XDriveIOSNativeFilesViewer(
+                    initial: initial.node,
+                    loadedItems: model.entries.map(\.node).filter {
+                        $0.type == "file" && $0.parent_id == initial.node.parent_id
+                    },
+                    openedOwner: openedOwner,
+                    login: login,
+                    onNavigate: { next in
+                        guard phase == .active, !model.loading,
+                              selectedFile?.id == initial.id,
+                              XDriveIOSNativePhotoOwnerScope.matches(
+                                  login.owner, openedOwner
+                              ),
+                              model.entries.contains(where: { $0.node == next })
+                        else { return false }
+                        lastViewedFile = next
+                        return true
                     }
-                    Section("下载与导出") {
-                        if let prepared = exporter.prepared,
-                           prepared.nodeID == entry.node.id,
-                           prepared.revision == entry.node.revision {
-                            Button {
-                                quickLookURL = prepared.fileURL
-                            } label: {
-                                Label("原生只读预览", systemImage: "eye")
-                            }
-                            .accessibilityIdentifier("native-ios-files-quicklook")
-                            ShareLink(item: prepared.fileURL) {
-                                Label("保存到“文件”或分享", systemImage: "square.and.arrow.up")
-                            }
-                            Text("需要在系统分享菜单中主动选择保存位置；此处并不代表已经保存。")
-                                .font(.footnote).foregroundStyle(.secondary)
-                        } else {
-                            Button(exporter.busy ? "正在下载…" : "下载并准备系统导出") {
-                                exporter.prepare(entry.node, login: login)
-                            }
-                            .disabled(exporter.busy)
-                            Text("首版支持 512 MiB 以内的单个文件；无后台下载，不显示虚构进度。")
-                                .font(.footnote).foregroundStyle(.secondary)
-                        }
-                        if let status = exporter.status {
-                            Text(status).font(.footnote).foregroundStyle(.secondary)
-                                .accessibilityIdentifier("native-ios-files-export-status")
-                        }
-                    }
-                    Section("单文件管理") {
-                        Button("复制到…") {
-                            guard let owner = login.owner else { return }
-                            destinationIntent = XDriveIOSNativeFilesDestinationIntent(
-                                node: entry.node, owner: owner, kind: .copy
-                            )
-                        }
-                        .disabled(mutator.busy || destinationWriter.busy ||
-                                  uploader.busy || exporter.busy)
-                        .accessibilityIdentifier("native-ios-files-copy-to")
-                        Button("移动到…") {
-                            guard let owner = login.owner else { return }
-                            destinationIntent = XDriveIOSNativeFilesDestinationIntent(
-                                node: entry.node, owner: owner, kind: .move
-                            )
-                        }
-                        .disabled(mutator.busy || destinationWriter.busy ||
-                                  uploader.busy || exporter.busy)
-                        .accessibilityIdentifier("native-ios-files-move-to")
-                        Button("重命名文件") {
-                            renameDraft = entry.node.name
-                            showingRename = true
-                        }
-                        .disabled(mutator.busy || destinationWriter.busy ||
-                                  uploader.busy || exporter.busy)
-                        .accessibilityIdentifier("native-ios-files-rename")
-                        Button("移入回收站", role: .destructive) {
-                            showingTrashConfirm = true
-                        }
-                        .disabled(mutator.busy || uploader.busy || exporter.busy)
-                        .accessibilityIdentifier("native-ios-files-trash")
-                        if let status = mutator.status {
-                            Text(status).font(.footnote).foregroundStyle(.secondary)
-                        }
-                        if let status = destinationWriter.status {
-                            Text(status).font(.footnote).foregroundStyle(.secondary)
-                        }
-                    }
-                    Text("多文件批量管理和目录级复制/移动暂未接通；原生预览以系统支持格式为准。")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }
-                .navigationTitle("文件详情")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("完成") { selectedFile = nil }
-                            .disabled(mutator.busy || destinationWriter.busy)
-                    }
-                }
-                .quickLookPreview($quickLookURL)
-                .sheet(item: $destinationIntent) { intent in
-                    XDriveIOSNativeFilesDestinationPicker(
-                        login: login, originalOwner: intent.owner,
-                        selected: intent.node, kind: intent.kind
-                    ) { target in
-                        destinationIntent = nil
-                        guard XDriveIOSNativePhotoOwnerScope.matches(
-                            login.owner, intent.owner
-                        ) else { return }
-                        destinationWriter.perform(
-                            intent.kind, original: intent.node,
-                            destination: target, login: login
-                        ) {
-                            selectedFile = nil
-                            reload(resetOffset: true)
-                        }
-                    }
-                }
-                .alert("重命名文件", isPresented: $showingRename) {
-                    TextField("新文件名", text: $renameDraft)
-                    Button("保存") {
-                        mutator.perform(node: entry.node, kind: .rename(renameDraft),
-                                        login: login) {
-                            selectedFile = nil
-                            reload(resetOffset: true)
-                        }
-                    }
-                    Button("取消", role: .cancel) {}
-                } message: {
-                    Text("服务器会验证当前文件版本和同名冲突；结果不确定时请先刷新。")
-                }
-                .confirmationDialog("将“\(entry.node.name)”移入回收站？",
-                                    isPresented: $showingTrashConfirm,
-                                    titleVisibility: .visible) {
-                    Button("确认移入回收站", role: .destructive) {
-                        mutator.perform(node: entry.node, kind: .trash,
-                                        login: login) {
-                            selectedFile = nil
-                            reload(resetOffset: true)
-                        }
-                    }
-                } message: {
-                    Text("这会修改服务器上的文件。提交后如网络中断，请先刷新核对，不要盲目重复操作。")
-                }
+                )
+            } else {
+                Text("当前账户已变化，请返回文件列表。")
             }
         }
         .onAppear { reload() }
-        .onDisappear { model.invalidate() }
-        .onDisappear {
-            quickLookURL = nil
-            exporter.invalidate()
-        }
-        .onDisappear {
-            uploader.invalidate()
-            showingFileImporter = false
-            destinationIntent = nil
-            destinationWriter.invalidate()
-            mutator.invalidate()
-            showingRename = false
-            showingTrashConfirm = false
-        }
-        .onDisappear {
-            createEpoch = UUID()
-            createTask?.cancel()
-            createTask = nil
-            createBusy = false
-            createNotice = nil
-        }
+        .onDisappear { if selectedFile == nil { model.invalidate() } }
         .onChange(of: login.owner) { _ in
+            managementIntent = nil
             selectedFile = nil
+            selectedOwner = nil
+            returnOwner = nil
+            lastViewedFile = nil
             offset = 0
             model.invalidate()
-            quickLookURL = nil
-            exporter.invalidate()
-            uploader.invalidate()
-            destinationIntent = nil
-            destinationWriter.invalidate()
-            mutator.invalidate()
-            showingRename = false
-            showingTrashConfirm = false
-            showingFileImporter = false
-            createEpoch = UUID()
-            createTask?.cancel()
-            createTask = nil
-            createBusy = false
-            createNotice = nil
-            showingCreateFolder = false
         }
         .onChange(of: sort) { _ in reload(resetOffset: true) }
         .onChange(of: order) { _ in reload(resetOffset: true) }
+        .onChange(of: model.loading) { loading in
+            guard !loading, selectedFile == nil,
+                  let target = lastViewedFile else { return }
+            if let owner = returnOwner,
+               XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
+               model.entries.contains(where: { $0.node == target }) {
+                returnScroll.scrollTo(target.id, anchor: .center)
+            }
+            lastViewedFile = nil
+            returnOwner = nil
+        }
+        }
     }
 
     private func row(_ entry: XDriveIOSNativeFilesEntry) -> some View {
@@ -657,62 +498,16 @@ struct XDriveIOSNativeFilesBrowser: View {
         .frame(minHeight: 44)
     }
 
-    private func createDirectory() {
-        guard !createBusy, activeQuery.isEmpty,
-              let parentID, let expected = login.owner else {
-            createNotice = "当前目录不可创建，请退出搜索并刷新账户。"
-            return
+    private func openManagement(for node: XDriveIOSNativeFilesNode?) {
+        guard !model.loading, selectedFile == nil,
+              let owner = login.owner,
+              node != nil || activeQuery.isEmpty else { return }
+        if let node {
+            guard model.entries.contains(where: { $0.node == node }) else { return }
         }
-        guard let name = XDriveIOSNativeFilesFolderNamePolicy.normalized(newFolderName) else {
-            createNotice = "文件夹名称无效，请修改后重试。"
-            return
-        }
-        let epoch = UUID()
-        createEpoch = epoch
-        createBusy = true
-        createNotice = "正在向服务器创建文件夹…"
-        createTask = Task { @MainActor in
-            defer {
-                if createEpoch == epoch {
-                    createBusy = false
-                    createTask = nil
-                }
-            }
-            do {
-                let authorization = try await login.verifiedAuthorization()
-                try Task.checkCancellation()
-                guard createEpoch == epoch,
-                      XDriveIOSNativePhotoOwnerScope.matches(authorization.owner, expected),
-                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
-                else { throw XDriveIOSNativeFilesCreateError.invalidOwner }
-                _ = try await XDriveIOSNativeFilesDirectoryCreator(
-                    owner: authorization.owner, accessToken: authorization.accessToken
-                ).create(parentID: parentID, name: name)
-                try Task.checkCancellation()
-                guard createEpoch == epoch,
-                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected) else { return }
-                createNotice = "服务器已确认创建“\(name)”。"
-                reload(resetOffset: true)
-            } catch is CancellationError {
-                if createEpoch == epoch {
-                    createNotice = "操作已取消，若请求已发出，请刷新目录确认结果。"
-                }
-            } catch {
-                guard createEpoch == epoch else { return }
-                if let response = error as? XDriveIOSNativeFilesCreateError {
-                    switch response {
-                    case .server(409):
-                        createNotice = "同名文件或文件夹已存在；没有覆盖任何内容。"
-                    case .server(401), .server(403), .server(404), .invalidOwner:
-                        createNotice = "目录或账户权限已变化，未确认创建；请刷新。"
-                    default:
-                        createNotice = "创建结果未确认，请先刷新目录核对，不要盲目重复提交。"
-                    }
-                } else {
-                    createNotice = "创建结果未确认，请刷新目录核对后再操作。"
-                }
-            }
-        }
+        managementIntent = XDriveIOSNativeFilesManagementIntent(
+            owner: owner, file: node
+        )
     }
 
     private func submitSearch() {

@@ -294,6 +294,17 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-files-page-check"
           node --test desktop/tests/ios-native-files-browser.cjs
 
+      - name: Verify native Files Viewer bounded navigation and Owner preview contracts
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeCloudFilesPolicy.swift \
+            ios/XDriveIOS/NativeFilesViewerPolicy.swift \
+            ios/tests/NativeFilesViewerPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-viewer-policy"
+          "$RUNNER_TEMP/xdrive-ios-files-viewer-policy"
+          node --test desktop/tests/ios-native-files-viewer.cjs
+
       - name: Verify native Files folder creation name and Owner-scoped POST
         run: |
           set -euo pipefail
@@ -302,7 +313,7 @@ jobs:
             ios/tests/NativeFilesFolderNameChecks.swift \
             -o "$RUNNER_TEMP/xdrive-ios-files-folder-check"
           "$RUNNER_TEMP/xdrive-ios-files-folder-check"
-          node --test desktop/tests/ios-native-files-create-folder.cjs desktop/tests/ios-native-files-download-export.cjs desktop/tests/ios-native-files-quicklook.cjs
+          node --test desktop/tests/ios-native-files-create-folder.cjs desktop/tests/ios-native-files-download-export.cjs
 
       - name: Verify native Files manual original receipt and Files picker integration
         run: |

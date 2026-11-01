@@ -28,13 +28,14 @@ test('directory and full-library search use canonical counted Owner Range', () =
   assert.match(source, /searchRange\([\s\S]*?\/api\/v1\/search/);
   assert.match(view, /URLSessionConfiguration\.ephemeral/);
   assert.match(view, /completionHandler\(nil\)/);
-  assert.match(view, /\.onDisappear \{ model\.invalidate\(\) \}/);
+  assert.match(view, /\.onDisappear \{ if selectedFile == nil \{ model\.invalidate\(\) \} \}/);
   assert.match(view, /job\?\.cancel\(\)/);
   assert.match(page, /static let pageSize = 64/);
   assert.match(page, /Set\(items\.map\(\\\.id\)\)\.count/);
 });
 
-test('unimplemented file mutations, previews and downloads remain explicit', () => {
-  assert.match(view, /目录批量操作、复制和跨目录移动仍未接通/);
+test('file mutations and downloads remain unavailable; Viewer uses one native modal', () => {
+  assert.match(view, /\.fullScreenCover\(item: \$selectedFile/);
+  assert.match(view, /XDriveIOSNativeFilesViewer\(/);
   assert.doesNotMatch(view, /\/api\/v1\/uploads|\/api\/v1\/file-operations|POST.*nodes|DELETE.*nodes/);
 });
