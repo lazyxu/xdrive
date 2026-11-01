@@ -2813,7 +2813,7 @@ test('P0 old metadata-retry callback cannot re-read another route, including A�
   }
 })
 
-test('P0 PDF keeps no metadata-retry action and masks untrusted terminal errors', async () => {
+test('P0 PDF metadata errors have an explicit retry without exposing untrusted details', async () => {
   let renderer
   try {
     await act(async () => {
@@ -2824,7 +2824,7 @@ test('P0 PDF keeps no metadata-retry action and masks untrusted terminal errors'
         onReplaceRoute() {}, onClose() {}, onError(error) { throw error },
       }), { createNodeMock: () => ({ focus() {} }) })
     })
-    assert.equal(buttons(renderer, '重试加载').length, 0)
+    assert.equal(buttons(renderer, '重试加载').length, 1)
     const errors = renderer.root.findAll(el => el.type === 'p' && el.props.role === 'alert')
     assert.equal(errors.length, 1)
     assert.equal(errors[0].children.join(''), '读取失败，请重试。')
@@ -2833,7 +2833,7 @@ test('P0 PDF keeps no metadata-retry action and masks untrusted terminal errors'
   }
 })
 
-for (const app of ['media-viewer', 'text-viewer', 'audio-player']) {
+for (const app of ['media-viewer', 'text-viewer', 'audio-player', 'pdf-viewer']) {
   test(`P0 ${app} empty successful metadata becomes retryable error instead of infinite quiet loading`, async () => {
     const actualNode = { id: 987, revision: 1, name: 'unexpected-empty.png', type: 'file', size: 13 }
     const api = {
@@ -2885,7 +2885,7 @@ test('P0 routed Viewer never renders signed URL, token or filesystem path from m
       assert.equal(visible,'读取失败，请重试。')
       assert.ok(!visible.includes('ticket=') && !visible.includes('Bearer') &&
         !visible.includes('/var/private') && !visible.includes('a'.repeat(64)))
-      assert.equal(buttons(renderer,'重试加载').length, app === 'pdf-viewer' ? 0 : 1)
+      assert.equal(buttons(renderer,'重试加载').length, 1)
     } finally {if(renderer)await act(async()=>renderer.unmount())}
   }
 })
