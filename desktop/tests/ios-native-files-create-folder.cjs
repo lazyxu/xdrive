@@ -28,6 +28,6 @@ test('reject fabricated or stale 201 and retire pending Owner navigation writes'
   assert.match(browser, /createEpoch = UUID\(\)\s*createTask\?\.cancel\(\)/)
   assert.match(browser, /createNotice = "服务器已确认创建/)
   assert.match(browser, /创建结果未确认，请先刷新目录核对/)
-  assert.match(browser, /Button\("新建文件夹"/)
+  assert.match(browser, /Label\("新建文件夹", systemImage: "folder.badge.plus"\)/)
   assert.doesNotMatch(creator, /WKWebView\s*\(|document\.cookie|localStorage|UploadSession/)
 })

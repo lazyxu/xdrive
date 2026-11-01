@@ -487,7 +487,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                       XDriveIOSNativePhotoOwnerScope.matches(authorization.owner, expected),
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
                 else { throw XDriveIOSNativeFilesCreateError.invalidOwner }
-                let _ = try await XDriveIOSNativeFilesDirectoryCreator(
+                _ = try await XDriveIOSNativeFilesDirectoryCreator(
                     owner: authorization.owner, accessToken: authorization.accessToken
                 ).create(parentID: parentID, name: name)
                 try Task.checkCancellation()

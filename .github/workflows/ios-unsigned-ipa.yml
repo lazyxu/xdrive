@@ -298,7 +298,7 @@ jobs:
         run: |
           set -euo pipefail
           swiftc -swift-version 5 \
-            ios/XDriveIOS/NativeFilesDirectoryCreator.swift \
+            ios/XDriveIOS/NativeFilesFolderNamePolicy.swift \
             ios/tests/NativeFilesFolderNameChecks.swift \
             -o "$RUNNER_TEMP/xdrive-ios-files-folder-check"
           "$RUNNER_TEMP/xdrive-ios-files-folder-check"
