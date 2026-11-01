@@ -348,6 +348,9 @@ jobs:
       - name: Verify native Files user-cancellable foreground transfers
         run: node --test desktop/tests/ios-native-files-transfer-cancel.cjs
 
+      - name: Verify native Files folder copy/move and cycle guard
+        run: node --test desktop/tests/ios-native-files-folder-copy-move.cjs
+
       - name: Prepare native brand and home screen icon
         run: bash ios/scripts/prepare-assets.sh
 

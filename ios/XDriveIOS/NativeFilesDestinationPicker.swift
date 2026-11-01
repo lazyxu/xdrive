@@ -54,7 +54,8 @@ private struct XDriveIOSNativeFilesDestinationPage: View {
     private var canUseTarget: Bool {
         page != nil && !busy && failure == nil &&
             XDriveIOSNativePhotoOwnerScope.matches(login.owner, originalOwner) &&
-            !(kind == .move && selected.parent_id == folder.id)
+            !(kind == .move && selected.parent_id == folder.id) &&
+            !(selected.isDirectory && selected.id == folder.id)
     }
 
     var body: some View {
@@ -88,6 +89,10 @@ private struct XDriveIOSNativeFilesDestinationPage: View {
                             Label(entry.name, systemImage: "folder.fill")
                                 .frame(minHeight: 44, alignment: .leading)
                         }
+                        // Prevent entering this folder or any of its
+                        // descendants as a copy/move destination. The Server
+                        // also rejects cycles if the tree changes after GET.
+                        .disabled(selected.isDirectory && entry.id == selected.id)
                     }
                     if !page.items.contains(where: \.isDirectory) {
                         Text("本页没有子文件夹")

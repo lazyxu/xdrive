@@ -139,7 +139,7 @@ struct XDriveIOSNativeFilesManagementPanel: View {
                         if let status = destinationWriter.status {
                             Text(status).font(.footnote).foregroundStyle(.secondary)
                         }
-                        Text("多选、目录级复制/移动和后台传输仍待实现。")
+                        Text("多选批量管理和后台传输仍待实现。")
                             .font(.footnote).foregroundStyle(.secondary)
                     }
                 } else if let directory {
@@ -148,6 +148,16 @@ struct XDriveIOSNativeFilesManagementPanel: View {
                         LabeledContent("版本", value: String(directory.revision))
                     }
                     Section("文件夹管理") {
+                        Button("复制文件夹到…") {
+                            destinationIntent = .init(node: directory, kind: .copy)
+                        }
+                        .disabled(anyBusy)
+                        .accessibilityIdentifier("native-ios-files-copy-folder-to")
+                        Button("移动文件夹到…") {
+                            destinationIntent = .init(node: directory, kind: .move)
+                        }
+                        .disabled(anyBusy)
+                        .accessibilityIdentifier("native-ios-files-move-folder-to")
                         Button("重命名文件夹") {
                             renameDraft = directory.name
                             showingRename = true

@@ -109,8 +109,9 @@ private struct XDriveIOSNativeFilesDestinationWriter {
                  original: XDriveIOSNativeFilesNode,
                  destination: XDriveIOSNativeFilesDestination) async throws {
         guard original.id > 0, original.revision > 0,
-              original.parent_id != nil, original.type == "file",
-              destination.id > 0,
+              original.parent_id != nil,
+               (original.type == "file" || original.type == "dir"),
+              destination.id > 0, destination.id != original.id,
               kind != .move || original.parent_id != destination.id
         else { throw XDriveIOSNativeFilesDestinationFailure.invalidScope }
         let client = session()
