@@ -231,6 +231,12 @@ func loadProtectedThumbnailKeys(
 				}
 				protected[key] = struct{}{}
 			}
+			// Viewer quality derivatives are protected for current revisions.
+			// Obsolete revisions remain eligible for the existing aged GC.
+			for _, format := range []string{"webp", "jpeg"} {
+				key := mediapkg.ViewerPreviewStorageKey(row.NodeID, row.NodeRevision, row.SHA256, format)
+				protected[key] = struct{}{}
+			}
 		}
 	}
 	return protected, nil
