@@ -48,7 +48,7 @@ class NativeLocalMediaInfoTest {
     }
 
     @Test fun mimeValidationDoesNotTrimMalformedUntrustedTokens() {
-        listOf("\\ntext", "text", "image/", "image /jpeg", "image/jpeg\\n",
+        listOf("\ntext", "\\ntext", "text", "image/", "image /jpeg", "image/jpeg\n",
             "image//jpeg", "image/jpeg; charset=utf-8").forEach { invalid ->
             assertEquals("invalid MIME: [" + invalid + "]",
                 "未知", rows(NativeLocalMediaInfo(mime = invalid))["格式"])
