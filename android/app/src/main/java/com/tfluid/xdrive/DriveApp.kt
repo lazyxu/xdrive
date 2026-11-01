@@ -66,6 +66,14 @@ internal fun nativeFeatureBackAllowed(
     NativeHomeTab.ALL, NativeHomeTab.DYNAMIC, NativeHomeTab.MINE -> false
 }
 
+/** A map cell has one native album sheet, not an extra Gallery route or
+ * authorization. A full-screen Viewer temporarily replaces the sheet.
+ * The originating map's Owner/Cell identity remains in DriveController. */
+internal fun nativeMapCellSheetVisible(state: DriveState): Boolean =
+    state.screen == Screen.GALLERY && state.galleryMapOpen &&
+        state.galleryBd09Requested && state.galleryBd09Cells != null &&
+        state.galleryMapCellSelected != null && state.galleryViewer == null
+
 /**
  * iOS-aligned Photos-first entry: only after this new authenticated session's
  * real Owner Files root has loaded. Never interrupt a write/confirmation or
@@ -94,6 +102,7 @@ internal fun nativePhotoBackupCanConfirm(
 ): Boolean = sameSession && galleryVisible && verifiedOriginal &&
     fullMediaGrant && !writerBusy && validDriveNodeName(destinationName)
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DriveApp(controller: DriveController, updates: UpdateController? = null, openUpdate: (String) -> Boolean = { false },
     initialFilesView: FileViewMode = FileViewMode.LIST, saveFilesView: (FileViewMode) -> Unit = {},
@@ -643,12 +652,7 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                 }
                 Screen.GALLERY -> {
                     val photo = state.galleryViewer
-                    if (state.galleryMapCellSelected != null && photo == null) {
-                        if (galleryMapCellStateKey != null)
-                            gallerySaveable.SaveableStateProvider(galleryMapCellStateKey) {
-                                GalleryMapCellWall(state, controller, galleryThumbnails)
-                            }
-                    } else if (photo != null && (!state.galleryMapOpen ||
+                    if (photo != null && (!state.galleryMapOpen ||
                         state.galleryMapCellSelected != null)) {
                         // Viewer-only filmstrip: never add a fixed strip to the
                         // map itself. Reserve space *outside* the Media3 player
@@ -677,10 +681,34 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                             )
                         }
                     } else if (state.galleryMapOpen) {
+                        // The native MapView remains mounted beneath the album
+                        // sheet; a cell selection no longer destroys its camera,
+                        // signed count markers or SDK lease.
                         GalleryMapOverview(state, controller,
                             bd09Scroll.getOrPut(state.galleryBd09Bounds) {
                                 LazyListState()
                             })
+                        if (nativeMapCellSheetVisible(state) && galleryMapCellStateKey != null) {
+                            val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+                            ModalBottomSheet(
+                                onDismissRequest = {
+                                    // Dismiss must use the original verified
+                                    // Controller return, never an all-Owner GET.
+                                    if (controller.state.value.galleryViewer == null)
+                                        controller.closeGalleryBd09Cell()
+                                },
+                                sheetState = sheet,
+                                modifier = Modifier.testTag("gallery-map-cell-album-sheet"),
+                            ) {
+                                // Medium/large native album presentation. One
+                                // existing authorized, bounded Grid + Viewer.
+                                Column(Modifier.fillMaxWidth().fillMaxHeight(0.85f)) {
+                                    gallerySaveable.SaveableStateProvider(galleryMapCellStateKey) {
+                                        GalleryMapCellWall(state, controller, galleryThumbnails)
+                                    }
+                                }
+                            }
+                        }
                     } else {
                         NativeGallerySourceSelector(nativeNavigation.gallerySource) { source ->
                             // Capture the originating local/cloud/album wall BEFORE changing chips.
