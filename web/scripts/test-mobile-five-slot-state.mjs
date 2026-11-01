@@ -269,6 +269,136 @@ assert.match(galleryPageReturnSource,
   /section === 'library' && acceptedKind === 'all' &&[\s\S]*?!currentAlbum && !currentFolderView && preferenceScope/,
   'only accepted unscoped Library filter updates may refresh return hints')
 
+// The Collections overview is presentation only, but bottom-tab reentry
+// should not return to Library if the same verified Gallery source is alive.
+const mobileCollectionsReturnSource = readFileSync(resolve(
+  here, '../../ui/shared/src/mui/MobileGalleryCollectionsReturn.ts',
+), 'utf8')
+const mobileCollectionsCompiled = ts.transpileModule(mobileCollectionsReturnSource, {
+  compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+  reportDiagnostics: true,
+})
+assert.equal(mobileCollectionsCompiled.diagnostics?.length ?? 0, 0)
+const mobileCollectionsReturn = await import('data:text/javascript;base64,' +
+  Buffer.from(mobileCollectionsCompiled.outputText).toString('base64'))
+const collectionSourceA = {}
+const collectionSourceB = {}
+assert.equal(mobileCollectionsReturn.xDriveReadMobileGalleryCollectionsReturn(
+  collectionSourceA, owner, 'library'), false, 'cold Gallery opens Library')
+mobileCollectionsReturn.xDriveRememberMobileGalleryCollectionsReturn(
+  collectionSourceA, owner, 'library', true)
+assert.equal(mobileCollectionsReturn.xDriveReadMobileGalleryCollectionsReturn(
+  collectionSourceA, owner, 'library'), true, 'same source and Owner resume Collections')
+assert.equal(mobileCollectionsReturn.xDriveReadMobileGalleryCollectionsReturn(
+  collectionSourceA, owner, undefined), true, 'bare Gallery root is Library')
+assert.equal(mobileCollectionsReturn.xDriveReadMobileGalleryCollectionsReturn(
+  collectionSourceA, owner, 'albums'), false, 'Album route never reopens Collections')
+assert.equal(mobileCollectionsReturn.xDriveReadMobileGalleryCollectionsReturn(
+  collectionSourceA, 'https://example.test:2', 'library'), false, 'Owner B never sees A presentation')
+assert.equal(mobileCollectionsReturn.xDriveReadMobileGalleryCollectionsReturn(
+  collectionSourceB, owner, 'library'), false, 'new API/source never inherits stale state')
+mobileCollectionsReturn.xDriveRememberMobileGalleryCollectionsReturn(
+  collectionSourceA, 'https://example.test:2', 'library', false)
+assert.equal(mobileCollectionsReturn.xDriveReadMobileGalleryCollectionsReturn(
+  collectionSourceA, owner, 'library'), false, 'A→B→A cannot revive old Collections')
+mobileCollectionsReturn.xDriveRememberMobileGalleryCollectionsReturn(
+  collectionSourceA, owner, 'library', true)
+mobileCollectionsReturn.xDriveRememberMobileGalleryCollectionsReturn(
+  collectionSourceA, owner, 'albums', true)
+assert.equal(mobileCollectionsReturn.xDriveReadMobileGalleryCollectionsReturn(
+  collectionSourceA, owner, 'library'), false, 'entering Album clears pending Collections return')
+mobileCollectionsReturn.xDriveRememberMobileGalleryCollectionsReturn(
+  collectionSourceA, '', 'library', true)
+assert.equal(mobileCollectionsReturn.xDriveReadMobileGalleryCollectionsReturn(
+  collectionSourceA, '', 'library'), false, 'unverified session cannot restore Collections')
+assert.equal(mobileCollectionsReturn.xDriveReadMobileGalleryCollectionsReturn(
+  collectionSourceA, owner, 'library'), false, 'unverified writes are ignored')
+
+// Execute the real shared Gallery callback, not a rewritten test-only replica.
+// It must show the old Collections after the first accepted Owner Range and
+// must exit Collections after a later explicit Library selection.
+assert.match(galleryPageReturnSource,
+  /const initialMobileCollectionsReturn = mobileGalleryViewport &&/,
+  'Only compact Gallery can restore its Collections presentation')
+assert.match(galleryPageReturnSource,
+  /if \(mobileCollectionsReturnScopeRef\.current\.source !== source \|\|[\s\S]*?mobileCollectionsReturnScopeRef\.current\.owner !== preferenceScope\)/,
+  'Owner/source replacement must retire the previously visible Collections')
+assert.match(galleryPageReturnSource,
+  /mobileCollectionsOverview=\{mobileCollectionsOverview &&[\s\S]*?mobileCollectionsReturnScopeRef\.current\.owner === preferenceScope\}/,
+  'Old Owner Collections cannot flash during a source transition')
+{
+  const ast = ts.createSourceFile(
+    'MediaGallery.tsx', galleryPageReturnSource, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TSX)
+  const found = []
+  function visit(node) {
+    if (ts.isVariableDeclaration(node) &&
+        node.name.getText(ast) === 'openCompactPhotoSection') found.push(node.getText(ast))
+    ts.forEachChild(node, visit)
+  }
+  visit(ast)
+  assert.equal(found.length, 1, 'one shared Gallery compact photo-tab loader')
+  const js = ts.transpileModule(
+    'function make() { const ' + found[0] + '; return openCompactPhotoSection; }',
+    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } },
+  ).outputText
+  const loaded = []
+  const overviewCommits = []
+  const warmed = []
+  const firstMobileCollectionsReturnRef = { current: true }
+  const mobileCollectionsReturnScopeRef = { current: { source: collectionSourceA, owner } }
+  const firstMobileLibraryQueryRef = { current: null }
+  const env = {
+    useCallback: callback => callback,
+    source: collectionSourceA,
+    preferenceScope: owner,
+    firstMobileCollectionsReturnRef, mobileCollectionsReturnScopeRef,
+    firstMobileLibraryQueryRef,
+    mediaGallerySectionDraft: () => ({}),
+    mediaGalleryDraftFromQuery: () => ({}),
+    mediaGalleryQueryFromDraft: () => ({}),
+    loadFirstPage: (...args) => loaded.push(args),
+    xDriveRememberMobileLibraryQuery: () => {},
+    placesReturnPageRef: { current: null },
+    placeOpenedFromCollectionsRef: { current: false },
+    setLastOpenedPlaceID: () => {},
+    placePageRequestID: { current: 0 },
+    setPlacesPagePending: () => {},
+    setPlacesPageError: () => {},
+    syncFolderRequestID: { current: 0 },
+    setCurrentFolderView: () => {},
+    setCurrentPet: () => {},
+    setCurrentMemory: () => {},
+    setCurrentCleanupReview: () => {},
+    placesExpandedRef: { current: false },
+    setSection: () => {},
+    setActiveMediaType: () => {},
+    setDraftFilters: () => {},
+    setQuery: () => {},
+    setMobileCollectionsOverview: visible => overviewCommits.push(visible),
+    warmMobileCollectionsPreview: () => warmed.push(true),
+    routeSectionAppliedRef: { current: null },
+    onSectionRouteChange: () => {},
+  }
+  const openCompact = new Function(...Object.keys(env),
+    js + '\nreturn make();')(...Object.values(env))
+  openCompact('library')
+  assert.equal(firstMobileCollectionsReturnRef.current, false,
+    'restoration may be used only for the first cold Library request')
+  assert.deepEqual(overviewCommits, [],
+    'a slow or denied first Range cannot prematurely replace Gallery presentation')
+  assert.equal(loaded.length, 1)
+  loaded[0][8]()
+  assert.deepEqual(overviewCommits, [true],
+    'confirmed first Range retains the original Collections selection')
+  assert.deepEqual(warmed, [true], 'restored Collections must request bounded preview')
+  openCompact('library')
+  loaded[1][8]()
+  assert.deepEqual(overviewCommits, [true, false],
+    'a subsequent explicit Library selection must exit Collections')
+  assert.deepEqual(warmed, [true],
+    'normal Library navigation does not fetch the Collections preview')
+}
+
 const appSource = readFileSync(resolve(here, '../src/App.tsx'), 'utf8')
 assert.match(appSource, /const mobileOverviewSlot = compactWorkspace \? xDriveMobileOverviewScrollSlot\(route\) : null/)
 assert.match(appSource, /xDriveMobileOverviewScrollOffset\(mobileOverviewScrollRef\.current/)

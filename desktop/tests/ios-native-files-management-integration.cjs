@@ -18,7 +18,8 @@ test('Files retains the same independent native L3 Viewer and file-specific acti
   assert.match(files, /XDriveIOSNativeFilesManagementPanel\(/)
   assert.match(files, /folderID: folder\?\.id \?\? intent\.owner\.rootNodeID/)
   assert.match(files, /guard model\.entries\.contains\(where: \{ \$0\.node == node \}\)/)
-  assert.match(files, /managementIntent = nil\s*selectedFile = nil/)
+  // Owner switching must retire both management and locate sheets before the Viewer.
+  assert.match(files, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?managementIntent = nil\s*locateIntent = nil\s*selectedFile = nil\s*selectedOwner = nil/)
   assert.match(files, /if selectedFile == nil \{ model\.invalidate\(\) \}/)
   assert.match(viewer, /XDriveIOSNativeFilesPreviewReader\(/)
   assert.match(management, /let expectedOwner: XDriveNativeOwnerRoot/)

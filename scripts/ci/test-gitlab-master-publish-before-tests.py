@@ -47,6 +47,20 @@ for name in sorted(master_builds):
     )
     assert match, f"{name}: master must export real artifacts without GitLab runtime smoke; stable/MR run full tests"
     assert "      allow_failure: true\n" not in block, f"{name} image/package build must NEVER be allowed to fail"
+    if name in required_images:
+        # Image packaging uses the base Go image's curl/CA and cached Docker
+        # CLI; never gate the required Snapshot build on Debian APT access.
+        assert re.search(
+            r"(?m)^  before_script:\n    - \*install_docker_cli_only$", block
+        ), f"{name}: required Docker image build must not run APT setup"
+        assert "*ensure_linux_fetch_tools" not in block, f"{name}: APT setup reintroduced"
+
+# Both mandatory image publishing stages extend this template. Keep the
+# cached Docker CLI installer without reintroducing network-dependent APT.
+release_docker = jobs[".release-linux-docker"]
+assert "apt-get" not in release_docker, "GitLab release Docker jobs must not depend on APT"
+assert "scripts/ci/install-docker-cli.sh" in release_docker
+assert "docker info >/dev/null" in release_docker
 
 for name in sorted(nonblocking_tests):
     block = jobs[name]

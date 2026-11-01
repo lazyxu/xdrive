@@ -67,6 +67,7 @@ export type XDriveFilePreviewSurfaceProps<T extends XDriveFilePreviewTarget = XD
   maxHeight?: number | string
   imageFit?: 'contain' | 'cover'
   interactiveImage?: boolean
+  showImageDetails?: boolean
   onSwipePrevious?: () => void
   onSwipeNext?: () => void
   mediaTransform?: XDriveFilePreviewMediaTransform
@@ -189,6 +190,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   maxHeight = 420,
   imageFit = 'contain',
   interactiveImage = false,
+  showImageDetails = false,
   onSwipePrevious,
   onSwipeNext,
   mediaTransform,
@@ -933,6 +935,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
       return (
         <XDriveDecodedImagePreview
           key={decodedImageSourceKey}
+            showImageDetails={showImageDetails}
           target={target}
           kind="live_photo"
           loadPreviewURL={loadPreviewURL}
@@ -989,6 +992,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
         >
           <XDriveDecodedImagePreview
             key={decodedImageSourceKey}
+            showImageDetails={showImageDetails}
             target={target}
             kind="image"
             loadPreviewURL={loadPreviewURL}

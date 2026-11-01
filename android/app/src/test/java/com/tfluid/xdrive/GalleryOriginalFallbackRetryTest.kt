@@ -10,10 +10,10 @@ import org.junit.Test
  * Retry is an explicit current-Owner action, not a background fetch loop. */
 class GalleryOriginalFallbackRetryTest {
     @Test fun sampleSizeDisclosesThatDecodedOriginalIsNotFullResolution() {
-        assertEquals(1, galleryOriginalSampleSize(2048, 2048))
-        assertEquals(2, galleryOriginalSampleSize(2049, 1000))
-        assertEquals(4, galleryOriginalSampleSize(8000, 1200))
-        assertEquals(16, galleryOriginalSampleSize(32768, 800))
+        assertEquals(1, galleryOriginalSampleSize(4096, 4096))
+        assertEquals(2, galleryOriginalSampleSize(4097, 1000))
+        assertEquals(2, galleryOriginalSampleSize(8000, 1200))
+        assertEquals(8, galleryOriginalSampleSize(32768, 800))
         assertNull(galleryOriginalSampleSize(0, 1000))
         assertNull(galleryOriginalSampleSize(33000, 1000))
     }

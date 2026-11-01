@@ -24,7 +24,7 @@ test('calendar counts use original PhotoKit slots and invalidate on any library/
   assert.match(browser, /PHPhotoLibrary\.shared\(\)\.register\(observer\)/)
   assert.match(browser, /defer \{ PHPhotoLibrary\.shared\(\)\.unregisterChangeObserver\(observer\) \}/)
   assert.match(browser, /NSSortDescriptor\(key: "creationDate", ascending: false\)/)
-  assert.match(browser, /NSSortDescriptor\(key: "localIdentifier", ascending: true\)/)
+  assert.match(browser, /NSSortDescriptor\(key: "modificationDate", ascending: false\)/)
   assert.match(browser, /for slot in 0\.\.<snapshot\.count/)
   assert.match(browser, /if asset\.mediaType == \.image \|\| asset\.mediaType == \.video/)
   assert.match(browser, /index\.append\(capturedAt: asset\.creationDate, slot: slot\)/)

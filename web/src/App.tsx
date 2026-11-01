@@ -877,7 +877,7 @@ function AuthView({
               )}
             />
           </XDriveAuthField>
-          {(loginUsername.trim() || rememberedUsernames.length > 0) && (
+          {Boolean(loginUsername.trim()) && (
             <Button
               variant="text"
               size="small"
@@ -2838,6 +2838,7 @@ function FileManager({
           >
               <WebFileExplorer
                 api={api}
+                mobileOwnerScope={mobileOwnerScope}
                 suspendBackgroundThumbnails={viewerActive}
                 items={items}
                 crumbs={crumbs}

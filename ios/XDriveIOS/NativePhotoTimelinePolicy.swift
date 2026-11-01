@@ -108,3 +108,33 @@ struct XDriveIOSNativePhotoTimelineBuilder {
         }
     }
 }
+
+
+/// Numeric-only virtual page policy. The LazyVStack stores N/64 page
+/// descriptors, never a library-sized list of PhotoKit identifiers.
+enum XDriveIOSNativePhotoVirtualPagePolicy {
+    static let pageSize = 64
+
+    static func pageCount(total: Int) -> Int {
+        guard total > 0 else { return 0 }
+        return (total - 1) / pageSize + 1
+    }
+
+    static func normalizedAnchor(requested: Int, total: Int) -> Int {
+        guard total > 0 else { return 0 }
+        let safe = max(0, requested)
+        return min((safe / pageSize) * pageSize, ((total - 1) / pageSize) * pageSize)
+    }
+}
+
+
+/// Bounded, transient local Photos selection; never part of route persistence.
+enum XDriveIOSNativePhotoSelectionPolicy {
+    static let maximumItems = 128
+
+    static func canAdd(selectedCount: Int, identifier: String,
+                       alreadySelected: Bool) -> Bool {
+        !alreadySelected && selectedCount >= 0 && selectedCount < maximumItems &&
+        !identifier.isEmpty && identifier.utf8.count <= 1024
+    }
+}

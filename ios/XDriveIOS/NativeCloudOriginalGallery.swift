@@ -748,9 +748,15 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                 if viewed.isLiveArchive, let still {
                     VStack(spacing: 10) {
                         if showingLiveMotion, let player {
-                            VideoPlayer(player: player)
-                                .onAppear { player.play() }
-                                .onDisappear { player.pause() }
+                            XDriveIOSNativeAVPlayerStatusObserver(
+                                player: player,
+                                content: VideoPlayer(player: player)
+                                    .onAppear {
+                                        if currentOwnerAuthorized { player.play() }
+                                    }
+                                    .onDisappear { player.pause() },
+                                onFailed: { playbackLoadFailed($0) }
+                            )
                         } else if let resources = liveResources,
                                   !nativeLiveUnavailable, !showsStaticStill {
                             ZStack {
@@ -820,8 +826,15 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                         .onNavigateSwipe { showNeighbor($0) }
                         .accessibilityLabel("云端照片，可双指缩放或双击放大")
                 } else if let player {
-                    VideoPlayer(player: player)
-                        .onAppear { player.play() }
+                    XDriveIOSNativeAVPlayerStatusObserver(
+                        player: player,
+                        content: VideoPlayer(player: player)
+                            .onAppear {
+                                if currentOwnerAuthorized { player.play() }
+                            }
+                            .onDisappear { player.pause() },
+                        onFailed: { playbackLoadFailed($0) }
+                    )
                 } else if let error {
                     VStack(spacing: 8) {
                         Text(error).foregroundStyle(.red).padding(.horizontal)
@@ -891,6 +904,17 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                         }
                         .disabled(exporter.busy || exportNode == nil)
                         .accessibilityIdentifier("native-ios-original-export")
+                    }
+                }
+                ToolbarItem(placement: .navigationBarLeading) {
+                    if currentOwnerAuthorized, player != nil {
+                        Button {
+                            retryPreview()
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        .accessibilityLabel("重新加载云端原件视频")
+                        .accessibilityIdentifier("native-ios-original-player-reload")
                     }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -1157,6 +1181,17 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                 showsPhotoRestoreNotice = true
             }
         }
+    }
+
+    @MainActor
+    private func playbackLoadFailed(_ failed: AVPlayerItem) {
+        guard currentOwnerAuthorized,
+              let playing = player?.currentItem, failed === playing else { return }
+        player?.pause()
+        player?.replaceCurrentItem(with: nil)
+        player = nil
+        showingLiveMotion = false
+        error = "媒体播放失败，可重新读取当前云端原件。"
     }
 
     private func retryPreview() {

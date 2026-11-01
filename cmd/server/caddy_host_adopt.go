@@ -37,7 +37,17 @@ func parseCaddyHostAdoptStdin(raw []byte) (api.CaddyHostDeploymentImport, error)
 
 func runCaddyHostCommand(args []string) error {
 	if len(args) != 1 {
-		return errors.New("usage: xdrive-server caddy-host <adopt-stdin|witness-check>")
+		return errors.New("usage: xdrive-server caddy-host <adopt-stdin|witness-check|config-check>")
+	}
+	if args[0] == "config-check" {
+		// The Server's exact Host .env reader, but no DB, Docker or secrets.
+		// Keep output to fixed nonsecret reason codes, never raw snapshot data.
+		if api.CaddyHostEnvReadOnlyWitness(os.Getenv("XD_HOST_CONTROL_DIR")) {
+			fmt.Println("Caddy host config observation: host-env-observed")
+			return nil
+		}
+		fmt.Println("Caddy host config observation: host-env-unavailable")
+		return errors.New("trusted Caddy Host .env configuration observation unavailable")
 	}
 	if args[0] == "witness-check" {
 		// No database, encryption keyring, provider credentials or Docker API.
@@ -49,7 +59,7 @@ func runCaddyHostCommand(args []string) error {
 		return nil
 	}
 	if args[0] != "adopt-stdin" {
-		return errors.New("usage: xdrive-server caddy-host <adopt-stdin|witness-check>")
+		return errors.New("usage: xdrive-server caddy-host <adopt-stdin|witness-check|config-check>")
 	}
 	raw, readErr := io.ReadAll(io.LimitReader(os.Stdin, caddyHostAdoptMaxBytes+1))
 	if readErr != nil {

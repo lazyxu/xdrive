@@ -147,6 +147,7 @@ import {
 } from './MediaGalleryFilters'
 import type { MediaGalleryFilterDraft } from './MediaGalleryFilters'
 import { xDriveReadMobileLibraryQuery, xDriveRememberMobileLibraryQuery } from './MobileGalleryLibraryQueryReturn'
+import { xDriveReadMobileGalleryCollectionsReturn, xDriveRememberMobileGalleryCollectionsReturn } from './MobileGalleryCollectionsReturn'
 import {
   xDriveGalleryAppliedChips,
   xDriveGalleryFilterSignature,
@@ -906,7 +907,33 @@ export function XDriveMediaGalleryPage({
     owner: string
   } | null>(null)
   const [section, setSection] = useState<MediaGallerySection>(initialSection ?? 'library')
-  const [mobileCollectionsOverview, setMobileCollectionsOverview] = useState(false)
+  // An L1 bottom-tab change unmounts the Gallery while its authenticated
+  // data-source remains alive. Preserve only the Collections/Library choice;
+  // media and album authorization always come from the next Server Range.
+  const initialMobileCollectionsReturn = mobileGalleryViewport &&
+    xDriveReadMobileGalleryCollectionsReturn(source, preferenceScope, initialSection)
+  const [mobileCollectionsOverview, setMobileCollectionsOverview] =
+    useState(initialMobileCollectionsReturn)
+  const firstMobileCollectionsReturnRef = useRef(initialMobileCollectionsReturn)
+  const mobileCollectionsReturnScopeRef = useRef({ source, owner: preferenceScope })
+  const mobileCollectionsVisibleRef = useRef({
+    source, owner: preferenceScope, section, selected: mobileCollectionsOverview,
+  })
+  mobileCollectionsVisibleRef.current = {
+    source, owner: preferenceScope, section,
+    selected: mobileCollectionsOverview &&
+      mobileCollectionsReturnScopeRef.current.source === source &&
+      mobileCollectionsReturnScopeRef.current.owner === preferenceScope,
+  }
+  // Capture the last committed presentation on tab unmount only. This avoids
+  // persisting an older owner's state during a source/Owner render transition.
+  useEffect(() => () => {
+    const latest = mobileCollectionsVisibleRef.current
+    if (!mobileGalleryViewport || latest.source !== source ||
+        latest.owner !== preferenceScope) return
+    xDriveRememberMobileGalleryCollectionsReturn(
+      source, preferenceScope, latest.section, latest.selected)
+  }, [mobileGalleryViewport, preferenceScope, source])
   const [activeMediaType, setActiveMediaType] = useState('')
   const [draftFilters, setDraftFilters] = useState<MediaGalleryFilterDraft>(
     emptyMediaGalleryFilterDraft,
@@ -1767,7 +1794,14 @@ export function XDriveMediaGalleryPage({
     collectionsPreviewRef.current.request += 1
     collectionsPreviewRef.current.key = ''
     collectionsSourcesLoadedRef.current = false
-    setMobileCollectionsOverview(false)
+    // Do not erase a same-source, same-Owner cold tab-return on mount.
+    // A truly changed Owner or API source revokes the old presentation first.
+    if (mobileCollectionsReturnScopeRef.current.source !== source ||
+        mobileCollectionsReturnScopeRef.current.owner !== preferenceScope) {
+      mobileCollectionsReturnScopeRef.current = { source, owner: preferenceScope }
+      firstMobileCollectionsReturnRef.current = false
+      setMobileCollectionsOverview(false)
+    }
     setMemories([])
     setBurstReviews(null)
     setCollectionsMemoryPreviewReceipt(null)
@@ -1904,6 +1938,14 @@ export function XDriveMediaGalleryPage({
   // Reuse the original Owner/Port/request first counted Range transaction:
   // current Gallery tiles, scroll and Collections stay mounted until it commits.
   const openCompactPhotoSection = useCallback((nextSection: 'library' | 'favorites') => {
+    // The FIRST cold, Owner-authorized Library Range may keep a remembered
+    // Collections index visible. Subsequent explicit Library taps must
+    // exit Collections normally; an aborted request cannot commit the route.
+    const keepCollectionsOnColdReturn = nextSection === 'library' &&
+      firstMobileCollectionsReturnRef.current &&
+      mobileCollectionsReturnScopeRef.current.source === source &&
+      mobileCollectionsReturnScopeRef.current.owner === preferenceScope
+    firstMobileCollectionsReturnRef.current = false
     const firstReturn = firstMobileLibraryQueryRef.current
     const savedQuery = nextSection === 'library' &&
       firstReturn?.owner === preferenceScope && firstReturn.source === source
@@ -1935,13 +1977,14 @@ export function XDriveMediaGalleryPage({
       setActiveMediaType('')
       setDraftFilters(nextDraft)
       setQuery(nextQuery)
-      setMobileCollectionsOverview(false)
+      setMobileCollectionsOverview(keepCollectionsOnColdReturn)
+      if (keepCollectionsOnColdReturn) warmMobileCollectionsPreview()
       // Do not replay this authorized first Range when our own URL callback
       // feeds the same section back through initialSection on the next render.
       routeSectionAppliedRef.current = nextSection
       onSectionRouteChange?.(nextSection)
     })
-  }, [loadFirstPage, onSectionRouteChange, preferenceScope, source])
+  }, [loadFirstPage, onSectionRouteChange, preferenceScope, source, warmMobileCollectionsPreview])
 
   // Every compact Cleanup entry (navigation/Collections/Refresh/Back)
   // shares one Owner-accepted list receipt; never expose an empty interim
@@ -4244,7 +4287,9 @@ export function XDriveMediaGalleryPage({
         onMobileMapFocusChange={onMobileMapFocusChange}
         suspendBackgroundThumbnails={suspendBackgroundThumbnails}
         onUploadRequested={onUploadRequested}
-        mobileCollectionsOverview={mobileCollectionsOverview}
+        mobileCollectionsOverview={mobileCollectionsOverview &&
+          mobileCollectionsReturnScopeRef.current.source === source &&
+          mobileCollectionsReturnScopeRef.current.owner === preferenceScope}
         onMobileCollectionsOverviewChange={setMobileCollectionsOverview}
         onOpenMobileFilters={() => { void requestFacets() }}
         onShowMap={showMapFromCurrentGallery}

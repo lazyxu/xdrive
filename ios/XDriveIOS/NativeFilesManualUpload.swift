@@ -126,9 +126,10 @@ private struct XDriveIOSNativeFilesUploadReadback {
     }
 }
 
-/// Explicit one-file foreground operation using the existing 128 MiB private
-/// Files-provider stager and the single native UploadSession/CAS writer.
-/// No automatic upload retries or a second CAS writer are introduced.
+/// One or at most eight explicit foreground files. A single Owner-bound
+/// OriginalRunGate covers the whole sequential batch, and each document is
+/// staged/verified/retired separately using ONE UploadSession/CAS writer.
+/// If any item fails or loses an ACK, do not submit another item.
 @MainActor
 final class XDriveIOSNativeFilesManualUploadModel: ObservableObject {
     @Published private(set) var busy = false
@@ -144,8 +145,8 @@ final class XDriveIOSNativeFilesManualUploadModel: ObservableObject {
         status = nil
     }
 
-    /// User-requested cancellation is not proof that the Server did not
-    /// accept a chunk or finalize. Keep the task active until it settles.
+    /// Cancellation is uncertain once a Server POST may have been submitted;
+    /// do not free the global writer gate until the task has actually settled.
     func cancelCurrentTransfer() {
         guard busy, let running else { return }
         running.cancel()
@@ -154,17 +155,33 @@ final class XDriveIOSNativeFilesManualUploadModel: ObservableObject {
 
     func pickerFailed() {
         guard !busy else { return }
-        status = "没有选择可读取的单个文件，未上传。"
+        status = "没有选择可读取的文件，未上传。"
     }
 
+    /// Keep existing single-file caller semantics and every receipt check.
     func start(fileURL: URL, login: XDriveIOSNativeOwnerLoginModel,
                parentID: UInt64, expectedFolderName: String?,
                onConfirmed: @MainActor @escaping () -> Void) {
-        guard !busy, running == nil,
-              let expected = login.owner, parentID > 0 else {
+        start(files: [fileURL], login: login, parentID: parentID,
+              expectedFolderName: expectedFolderName, onConfirmed: onConfirmed)
+    }
+
+    /// Picker-only, bounded multi-select. No fan-out, background queue,
+    /// retrying a lost response, or alternate writer.
+    func start(files: [URL], login: XDriveIOSNativeOwnerLoginModel,
+               parentID: UInt64, expectedFolderName: String?,
+               onConfirmed: @MainActor @escaping () -> Void) {
+        guard !busy, running == nil, let expected = login.owner,
+              parentID > 0 else {
             status = "当前账户或目录不可上传；请先刷新。"
             return
         }
+        guard XDriveIOSNativeFilesUploadBatchPolicy.validSelection(files) else {
+            status = "一次最多选择 8 个不同文件名的有效文件，未提交任何上传。"
+            return
+        }
+        // Keep one exclusive run for the entire batch, not once per item:
+        // concurrent manual, photo or sign-out operations cannot interleave.
         guard let gate = XDriveIOSOriginalRunGate.shared.acquire() else {
             status = "另一项原件上传或退出操作正在进行；本次未开始上传。"
             return
@@ -174,6 +191,7 @@ final class XDriveIOSNativeFilesManualUploadModel: ObservableObject {
         busy = true
         status = "正在检查文件和目标目录…"
         running = Task { @MainActor in
+            var confirmed = 0
             defer {
                 XDriveIOSOriginalRunGate.shared.release(gate)
                 if epoch == ticket {
@@ -182,93 +200,135 @@ final class XDriveIOSNativeFilesManualUploadModel: ObservableObject {
                 }
             }
             do {
-                let initial = try await login.verifiedAuthorization()
-                try Task.checkCancellation()
-                guard epoch == ticket,
-                      XDriveIOSNativePhotoOwnerScope.matches(initial.owner, expected),
-                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected) else {
-                    throw XDriveIOSNativeFilesManualUploadFailure.invalidOwner
+                for (index, fileURL) in files.enumerated() {
+                    try Task.checkCancellation()
+                    let name = try await uploadOne(
+                        fileURL: fileURL, index: index, count: files.count,
+                        login: login, expected: expected, ticket: ticket,
+                        parentID: parentID, expectedFolderName: expectedFolderName
+                    )
+                    confirmed += 1
+                    status = files.count == 1
+                        ? "服务器已确认文件“\(name)”的原件收据；请在当前文件夹核对。"
+                        : "服务器已确认 \(confirmed)/\(files.count) 项；正在核对下一项。"
                 }
-                try await XDriveIOSNativeFilesUploadReadback(
-                    owner: initial.owner, accessToken: initial.accessToken
-                ).requireDestination(parentID, expectedName: expectedFolderName)
-                try Task.checkCancellation()
-
-                // The document-provider URL is scoped to the picker callback,
-                // then copied to a caller-owned protected one-shot staging file.
-                let staged = try await XDriveManualDocumentStager.stage(fileURL)
-                defer { staged.delete() }
                 try Task.checkCancellation()
                 guard epoch == ticket,
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected) else {
                     throw XDriveIOSNativeFilesManualUploadFailure.invalidOwner
                 }
-                status = "正在上传“\(staged.originalName)”；若网络中断，请先核对云端结果。"
-
-                // Files-provider access and hashing can take time. Re-prove
-                // the Owner and target after staging, immediately before POST.
-                let beforeUpload = try await login.verifiedAuthorization()
-                guard epoch == ticket,
-                      XDriveIOSNativePhotoOwnerScope.matches(beforeUpload.owner, expected),
-                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected) else {
-                    throw XDriveIOSNativeFilesManualUploadFailure.invalidOwner
-                }
-                try await XDriveIOSNativeFilesUploadReadback(
-                    owner: beforeUpload.owner, accessToken: beforeUpload.accessToken
-                ).requireDestination(parentID, expectedName: expectedFolderName)
-                try Task.checkCancellation()
-
-                let writer = try XDriveNativeUploadSessionTransport(
-                    origin: beforeUpload.owner.origin, accessToken: beforeUpload.accessToken
-                )
-                let receipt = try await writer.uploadOnce(
-                    from: staged.fileURL, name: staged.originalName, parentID: parentID
-                )
-                // A completed upload session is not a confirmed visible file.
-                // Revalidate Owner/root then exact durable Node metadata.
-                let afterUpload = try await login.verifiedAuthorization()
-                guard epoch == ticket,
-                      XDriveIOSNativePhotoOwnerScope.matches(afterUpload.owner, expected),
-                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected) else {
-                    throw XDriveIOSNativeFilesManualUploadFailure.invalidOwner
-                }
-                let proof = XDriveIOSNativeFilesUploadReadback(
-                    owner: afterUpload.owner, accessToken: afterUpload.accessToken
-                )
-                try await proof.requireDestination(parentID,
-                                                   expectedName: expectedFolderName)
-                try await proof.requireCommitted(receipt, parentID: parentID,
-                                                 name: staged.originalName,
-                                                 byteCount: staged.byteCount)
-                try Task.checkCancellation()
-                guard epoch == ticket,
-                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected) else {
-                    return
-                }
-                status = "服务器已确认文件“\(staged.originalName)”的原件收据；请在当前文件夹核对。"
+                status = files.count == 1
+                    ? status
+                    : "全部 \(confirmed) 项已有真实服务器原件收据；正在刷新当前目录。"
                 onConfirmed()
             } catch is CancellationError {
                 if epoch == ticket {
-                    status = "本次已取消。若上传请求已发出，结果可能不确定，请先检查目录，勿盲目重传。"
+                    status = files.count == 1
+                        ? "本次已取消。若上传请求已发出，结果可能不确定，请先检查目录，勿盲目重传。"
+                        : "已确认 \(confirmed)/\(files.count) 项。本次已取消；当前请求结果可能不确定，请刷新目录核对，勿盲目重传。"
                 }
             } catch XDriveManualDocumentStageError.tooLarge {
-                if epoch == ticket { status = "首版只支持 128 MiB 以内的单个文件，未上传。" }
+                if epoch == ticket {
+                    status = "已确认 \(confirmed)/\(files.count) 项；当前文件超过 128 MiB，后续未提交。"
+                }
             } catch XDriveManualDocumentStageError.invalidName {
-                if epoch == ticket { status = "文件名不符合服务器规范，未上传。" }
+                if epoch == ticket {
+                    status = "已确认 \(confirmed)/\(files.count) 项；当前文件名无效，后续未提交。"
+                }
+            } catch XDriveManualDocumentStageError.notAnAccessibleFile {
+                if epoch == ticket {
+                    status = "已确认 \(confirmed)/\(files.count) 项；无法读取当前提供者文件，后续未提交。"
+                }
             } catch {
                 guard epoch == ticket else { return }
+                let prefix = files.count == 1 ? "" : "已确认 \(confirmed)/\(files.count) 项；"
                 if let failure = error as? XDriveIOSNativeFilesManualUploadFailure {
                     switch failure {
                     case .invalidOwner, .folderChanged, .server(401),
                          .server(403), .server(404):
-                        status = "目标目录或账户权限已变化，请重新进入目录。上传是否提交需核对。"
+                        status = prefix + "目标目录或账户权限已变化，请重新进入目录。上传是否提交需核对。"
                     default:
-                        status = "上传未获得完整确认；请刷新目录核对，不要盲目重复提交。"
+                        status = prefix + "上传未获得完整确认；请刷新目录核对，不要盲目重复提交。"
                     }
                 } else {
-                    status = "上传未获得完整确认；请刷新目录核对，不要盲目重复提交。"
+                    status = prefix + "上传未获得完整确认；请刷新目录核对，不要盲目重复提交。"
                 }
             }
         }
+    }
+
+    /// One complete item at a time: temporary private staging is discarded
+    /// before the next file, and every POST has a current Owner/destination
+    /// proof and a new verified Node+SHA receipt.
+    private func uploadOne(
+        fileURL: URL, index: Int, count: Int,
+        login: XDriveIOSNativeOwnerLoginModel,
+        expected: XDriveNativeOwnerRoot, ticket: UUID,
+        parentID: UInt64, expectedFolderName: String?
+    ) async throws -> String {
+        let initial = try await login.verifiedAuthorization()
+        try Task.checkCancellation()
+        guard epoch == ticket,
+              XDriveIOSNativePhotoOwnerScope.matches(initial.owner, expected),
+              XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected) else {
+            throw XDriveIOSNativeFilesManualUploadFailure.invalidOwner
+        }
+        try await XDriveIOSNativeFilesUploadReadback(
+            owner: initial.owner, accessToken: initial.accessToken
+        ).requireDestination(parentID, expectedName: expectedFolderName)
+        try Task.checkCancellation()
+        status = "正在处理第 \(index + 1)/\(count) 个文件…"
+
+        let staged = try await XDriveManualDocumentStager.stage(fileURL)
+        defer { staged.delete() }
+        try Task.checkCancellation()
+        guard epoch == ticket,
+              XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected) else {
+            throw XDriveIOSNativeFilesManualUploadFailure.invalidOwner
+        }
+        status = "正在上传第 \(index + 1)/\(count) 项“\(staged.originalName)”；结果不明确时停止后续文件。"
+
+        // File-provider staging and hashing can take time. Re-prove this
+        // Owner and parent immediately before each new UploadSession POST.
+        let beforeUpload = try await login.verifiedAuthorization()
+        try Task.checkCancellation()
+        guard epoch == ticket,
+              XDriveIOSNativePhotoOwnerScope.matches(beforeUpload.owner, expected),
+              XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected) else {
+            throw XDriveIOSNativeFilesManualUploadFailure.invalidOwner
+        }
+        try await XDriveIOSNativeFilesUploadReadback(
+            owner: beforeUpload.owner, accessToken: beforeUpload.accessToken
+        ).requireDestination(parentID, expectedName: expectedFolderName)
+        try Task.checkCancellation()
+        let writer = try XDriveNativeUploadSessionTransport(
+            origin: beforeUpload.owner.origin, accessToken: beforeUpload.accessToken
+        )
+        let receipt = try await writer.uploadOnce(
+            from: staged.fileURL, name: staged.originalName, parentID: parentID
+        )
+
+        // No next upload starts until this exact item's durable Node
+        // identity, revision, byte count and SHA-256 have been read back.
+        let afterUpload = try await login.verifiedAuthorization()
+        try Task.checkCancellation()
+        guard epoch == ticket,
+              XDriveIOSNativePhotoOwnerScope.matches(afterUpload.owner, expected),
+              XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected) else {
+            throw XDriveIOSNativeFilesManualUploadFailure.invalidOwner
+        }
+        let proof = XDriveIOSNativeFilesUploadReadback(
+            owner: afterUpload.owner, accessToken: afterUpload.accessToken
+        )
+        try await proof.requireDestination(parentID, expectedName: expectedFolderName)
+        try await proof.requireCommitted(receipt, parentID: parentID,
+                                         name: staged.originalName,
+                                         byteCount: staged.byteCount)
+        try Task.checkCancellation()
+        guard epoch == ticket,
+              XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected) else {
+            throw XDriveIOSNativeFilesManualUploadFailure.invalidOwner
+        }
+        return staged.originalName
     }
 }

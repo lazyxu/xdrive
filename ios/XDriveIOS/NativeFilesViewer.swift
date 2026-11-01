@@ -105,6 +105,10 @@ struct XDriveIOSNativeFilesViewer: View {
     @State private var player: AVPlayer?
     @State private var failure: String?
     @State private var loading = true
+    // Reuse Files' existing verified, signed original-export model. This
+    // staged file belongs to exactly this L3 item, never the hidden page.
+    @StateObject private var exporter = XDriveIOSNativeFilesExportModel()
+    @State private var exportFallbackEligible = false
 
     private var viewed: XDriveIOSNativeFilesNode { active ?? initial }
     private var authorized: Bool {
@@ -140,13 +144,19 @@ struct XDriveIOSNativeFilesViewer: View {
                         }
                     case .video:
                         if let player {
-                            VideoPlayer(player: player)
-                                .onAppear { if phase == .active { player.play() } }
+                            observingPlayer(
+                                VideoPlayer(player: player)
+                                    .onAppear { if authorized { player.play() } },
+                                player: player
+                            )
                         }
                     case .audio:
                         if let player {
-                            XDriveIOSNativeFileAudioSurface(player: player)
-                                .id(viewed.id)
+                            observingPlayer(
+                                XDriveIOSNativeFileAudioSurface(player: player)
+                                    .id(viewed.id),
+                                player: player
+                            )
                         }
                     case .pdf(let document):
                         XDriveIOSNativePDFDocumentSurface(document: document)
@@ -167,20 +177,26 @@ struct XDriveIOSNativeFilesViewer: View {
                         }
                     }
                 } else if let failure {
-                    VStack(spacing: 16) {
-                        Label(failure, systemImage: "exclamationmark.circle")
-                            .multilineTextAlignment(.center)
-                            .foregroundStyle(.secondary)
-                        if authorized {
-                            Button("重试") {
-                                retire()
-                                attempt = UUID()
+                    // The error and its verified original-export fallback must
+                    // stay reachable on a short iPhone landscape viewport.
+                    ScrollView {
+                        VStack(spacing: 14) {
+                            Label(failure, systemImage: "exclamationmark.circle")
+                                .multilineTextAlignment(.center)
+                                .foregroundStyle(.secondary)
+                            if authorized {
+                                Button("重试") { reloadCurrent() }
+                                    .frame(minWidth: 96, minHeight: 48)
+                                    .accessibilityIdentifier("native-ios-files-viewer-retry")
+                                if exportFallbackEligible {
+                                    originalExportFallback
+                                }
                             }
-                            .frame(minWidth: 96, minHeight: 48)
-                            .accessibilityIdentifier("native-ios-files-viewer-retry")
                         }
+                        .frame(maxWidth: .infinity)
+                        .padding(24)
                     }
-                    .padding(24)
+                    .accessibilityIdentifier("native-ios-files-viewer-error-scroll")
                 } else if loading {
                     ProgressView("正在读取当前文件…")
                 } else {
@@ -194,6 +210,14 @@ struct XDriveIOSNativeFilesViewer: View {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("完成") { close() }
                         .frame(minWidth: 44, minHeight: 44)
+                }
+                // This remains reachable on short landscape layouts, including
+                // when the player stalls without emitting a terminal error.
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    if authorized, player != nil {
+                        Button("重新加载媒体") { reloadCurrent() }
+                            .accessibilityIdentifier("native-ios-files-player-reload")
+                    }
                 }
                 ToolbarItemGroup(placement: .bottomBar) {
                     Button {
@@ -231,6 +255,7 @@ struct XDriveIOSNativeFilesViewer: View {
             else { return }
             retire()
             failure = "媒体播放失败，请重试当前文件。"
+            exportFallbackEligible = true
             loading = false
         }
         .onChange(of: login.owner) { _ in close() }
@@ -246,11 +271,97 @@ struct XDriveIOSNativeFilesViewer: View {
         .onDisappear { retire() }
     }
 
+    /// An unsupported/oversized/undecodable original is still a file; keep
+    /// the user inside this L3 Viewer rather than requiring a second visit to
+    /// the Files row's management menu. Never download without a tap.
+    @ViewBuilder
+    private var originalExportFallback: some View {
+        if authorized && exportFallbackEligible {
+            if let staged = exporter.prepared,
+               staged.nodeID == viewed.id && staged.revision == viewed.revision {
+                ShareLink(item: staged.fileURL) {
+                    Label("用其他 App 打开或保存原件",
+                          systemImage: "square.and.arrow.up")
+                        .frame(minHeight: 48)
+                }
+                .accessibilityIdentifier("native-ios-files-viewer-export-share")
+            } else {
+                Button {
+                    guard authorized, exportFallbackEligible else { return }
+                    exporter.prepare(viewed, login: login)
+                } label: {
+                    Label("下载原件以使用其他 App",
+                          systemImage: "square.and.arrow.down")
+                        .frame(minHeight: 48)
+                }
+                .disabled(exporter.busy)
+                .accessibilityIdentifier("native-ios-files-viewer-export-prepare")
+            }
+            if exporter.busy {
+                ProgressView("正在准备原件…")
+                Button("取消下载") { exporter.invalidate() }
+                    .accessibilityIdentifier("native-ios-files-viewer-export-cancel")
+            }
+            if let status = exporter.status {
+                Text(status)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .accessibilityIdentifier("native-ios-files-viewer-export-status")
+            }
+        }
+    }
+
+    /// Observe both initial stream-load failures and later item failures.
+    /// KVO subscriptions are owned by the currently rendered player surface;
+    /// retiring the player removes them, preventing stale cross-item errors.
+    @ViewBuilder
+    private func observingPlayer<Content: View>(
+        _ content: Content, player: AVPlayer
+    ) -> some View {
+        if let item = player.currentItem {
+            content
+                .onReceive(
+                    item.publisher(for: \.status, options: [.initial, .new])
+                        .receive(on: RunLoop.main)
+                ) { status in
+                    if status == .failed { playbackFailed(item) }
+                }
+                .onReceive(
+                    player.publisher(for: \.status, options: [.initial, .new])
+                        .receive(on: RunLoop.main)
+                ) { status in
+                    if status == .failed { playbackFailed(item) }
+                }
+        } else {
+            content
+        }
+    }
+
+    @MainActor
+    private func reloadCurrent() {
+        guard authorized else { return }
+        retire()
+        failure = nil
+        loading = true
+        attempt = UUID()
+    }
+
+    @MainActor
+    private func playbackFailed(_ failed: AVPlayerItem) {
+        guard authorized, let current = player?.currentItem,
+              failed === current else { return }
+        retire()
+        failure = "媒体播放失败，请重试当前文件。"
+        exportFallbackEligible = true
+    }
+
     @MainActor
     private func openCurrent() async {
         let current = viewed
         let generation = attempt
         retire()
+        failure = nil
         loading = true
         guard authorized else {
             failure = "当前账户或应用状态已变化，请返回文件列表。"
@@ -276,6 +387,10 @@ struct XDriveIOSNativeFilesViewer: View {
             display = result
             failure = nil
             loading = false
+            XDriveIOSNativeFilesRecentRecorder.recordLoadedPreview(
+                current, owner: credentials.owner,
+                accessToken: credentials.accessToken, login: login
+            )
         } catch is CancellationError {
             // A replacement Viewer owns its own read and progress.
         } catch {
@@ -285,11 +400,17 @@ struct XDriveIOSNativeFilesViewer: View {
             if let reason = error as? XDriveIOSNativeFilesPreviewError {
                 switch reason {
                 case .unsupported:
-                    failure = "当前格式不支持原生预览。可返回列表，通过「管理」下载并导出原件（导出上限 512 MiB）。"
+                    failure = "当前格式不支持原生预览。可以在此下载原件并使用其他 App（导出上限 512 MiB）。"
+                    exportFallbackEligible = true
                 case .tooLarge:
-                    failure = "文件超过本机预览上限。可返回列表，通过「管理」下载并导出原件（导出上限 512 MiB）。"
+                    failure = "文件超过本机预览上限。可以在此下载原件并使用其他 App（导出上限 512 MiB）。"
+                    exportFallbackEligible = true
+                case .malformed:
+                    failure = "原生预览无法解码当前文件。可以尝试导出原件至其他 App（导出上限 512 MiB）。"
+                    exportFallbackEligible = true
                 case .noThumbnail:
-                    failure = "原图过大或格式无法解码，且没有可用的云端缩略图。请返回文件列表，从“更多”中下载并导出原件（当前导出上限 512 MiB）。"
+                    failure = "原图过大或格式无法解码，且没有可用的云端缩略图。可以在此下载原件并使用其他 App（导出上限 512 MiB）。"
+                    exportFallbackEligible = true
                 case .changed, .invalidOwner, .response(401), .response(403), .response(404):
                     failure = "文件版本或当前账户已变化，请返回目录重新读取。"
                 default:
@@ -311,6 +432,10 @@ struct XDriveIOSNativeFilesViewer: View {
 
     @MainActor
     private func retire() {
+        // Cancel the old item's signed download and delete any staged bytes
+        // before a swipe, retry, Owner/scene exit or Viewer dismissal.
+        exporter.invalidate()
+        exportFallbackEligible = false
         player?.pause()
         player?.replaceCurrentItem(with: nil)
         player = nil
