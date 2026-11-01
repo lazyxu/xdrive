@@ -305,19 +305,80 @@ private struct XDriveIOSMapPhotoSelection: Identifiable {
     let items: [XDrivePhotoKitScanCandidate]
 }
 
+/// Keep the map sheet's Viewer inside its already-loaded, currently authorized
+/// PhotoKit slice. This revalidates the exact member on tap/return; the map
+/// never fetches out-of-page neighbors or stores an identifier in navigation.
+private enum XDriveIOSNativeMapViewerAdmission {
+    static func supported(_ item: XDrivePhotoKitScanCandidate) -> Bool {
+        item.kind == "image" || item.kind == "video"
+    }
+
+    static func allows(
+        _ item: XDrivePhotoKitScanCandidate,
+        in loaded: [XDrivePhotoKitScanCandidate],
+        sceneActive: Bool
+    ) -> Bool {
+        let permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        guard sceneActive, permission == .authorized || permission == .limited,
+              supported(item),
+              XDriveIOSNativePhotoViewerReturnAnchorPolicy.localLoadedIndex(
+                  currentID: item.id, in: loaded.map(\.id), authorized: true
+              ) != nil,
+              loaded.contains(where: {
+                  $0.id == item.id && $0.kind == item.kind &&
+                  $0.isLive == item.isLive &&
+                  $0.capturedAt == item.capturedAt &&
+                  $0.modifiedAt == item.modifiedAt
+              }),
+              let asset = PHAsset.fetchAssets(
+                  withLocalIdentifiers: [item.id], options: nil
+              ).firstObject
+        else { return false }
+        let matchingMedia = (item.kind == "image" &&
+            asset.mediaType == .image &&
+            item.isLive == asset.mediaSubtypes.contains(.photoLive)) ||
+            (item.kind == "video" && asset.mediaType == .video)
+        return matchingMedia && asset.creationDate == item.capturedAt &&
+            asset.modificationDate == item.modifiedAt &&
+            PHPhotoLibrary.authorizationStatus(for: .readWrite) == permission
+    }
+}
+
 private struct XDriveIOSMapPhotoAlbum: View {
     let items: [XDrivePhotoKitScanCandidate]
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var phase
     @State private var selected: XDrivePhotoKitScanCandidate?
+    @State private var viewerReturnID: String?
+    @AccessibilityFocusState private var focusedTileID: String?
+
+    private var previewItems: [XDrivePhotoKitScanCandidate] {
+        items.prefix(XDriveIOSNativePhotoMapPolicy.pageSize).filter {
+            XDriveIOSNativeMapViewerAdmission.supported($0)
+        }
+    }
 
     var body: some View {
+        ScrollViewReader { returnScroll in
         NavigationStack {
             ScrollView {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 4)], spacing: 4) {
                     ForEach(items.prefix(XDriveIOSNativePhotoMapPolicy.pageSize)) { item in
-                        Button { selected = item } label: {
+                        Button {
+                            guard XDriveIOSNativeMapViewerAdmission.allows(
+                                item, in: previewItems, sceneActive: phase == .active
+                            ) else { return }
+                            viewerReturnID = item.id
+                            focusedTileID = nil
+                            selected = item
+                        } label: {
                             XDriveIOSLocalPhotoTile(candidate: item)
-                        }.buttonStyle(.plain)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!XDriveIOSNativeMapViewerAdmission.supported(item) ||
+                                  phase != .active)
+                        .id(item.id)
+                        .accessibilityFocused($focusedTileID, equals: item.id)
                     }
                 }.padding(8)
             }
@@ -327,10 +388,34 @@ private struct XDriveIOSMapPhotoAlbum: View {
                     Button("完成") { dismiss() }
                 }
             }
-            .fullScreenCover(item: $selected) {
-                XDriveIOSNativeLocalPhotoDetail(candidate: $0)
+            .fullScreenCover(item: $selected, onDismiss: {
+                restoreViewerTile(using: returnScroll)
+            }) { initial in
+                XDriveIOSNativeLocalPhotoDetail(
+                    candidate: initial, loadedItems: previewItems,
+                    onViewed: { next in
+                        guard selected?.id == initial.id,
+                              XDriveIOSNativeMapViewerAdmission.allows(
+                                  next, in: previewItems, sceneActive: phase == .active
+                              ) else { return }
+                        viewerReturnID = next.id
+                        focusedTileID = nil
+                    }
+                )
             }
         }
+        }
+    }
+
+    private func restoreViewerTile(using scroll: ScrollViewProxy) {
+        defer { viewerReturnID = nil }
+        guard let id = viewerReturnID,
+              let target = previewItems.first(where: { $0.id == id }),
+              XDriveIOSNativeMapViewerAdmission.allows(
+                  target, in: previewItems, sceneActive: phase == .active
+              ) else { return }
+        scroll.scrollTo(id, anchor: .center)
+        focusedTileID = id
     }
 }
 
@@ -360,6 +445,8 @@ private struct XDriveIOSMapSpatialAlbum: View {
     @StateObject private var changes = XDriveIOSMapPhotoChanges()
     @State private var items: [XDrivePhotoKitScanCandidate] = []
     @State private var viewer: XDrivePhotoKitScanCandidate?
+    @State private var viewerReturnID: String?
+    @AccessibilityFocusState private var focusedTileID: String?
     @State private var worker: XDrivePhotoKitBoundedSnapshotScanner?
     @State private var readTask: Task<Void, Never>?
     @State private var generation = UUID()
@@ -371,7 +458,25 @@ private struct XDriveIOSMapSpatialAlbum: View {
     @State private var hasNext = false
     @State private var error: String?
 
+    private var previewItems: [XDrivePhotoKitScanCandidate] {
+        items.prefix(48).filter {
+            XDriveIOSNativeMapViewerAdmission.supported($0)
+        }
+    }
+
+    private func restoreViewerTile(using scroll: ScrollViewProxy) {
+        defer { viewerReturnID = nil }
+        guard let id = viewerReturnID,
+              let target = previewItems.first(where: { $0.id == id }),
+              XDriveIOSNativeMapViewerAdmission.allows(
+                  target, in: previewItems, sceneActive: phase == .active
+              ) else { return }
+        scroll.scrollTo(id, anchor: .center)
+        focusedTileID = id
+    }
+
     var body: some View {
+        ScrollViewReader { returnScroll in
         NavigationStack {
             VStack(spacing: 8) {
                 Text("本机已授权图库中的同一 GPS 聚合区域；全库扫描统计有 \(selection.cell.count) 张。")
@@ -382,9 +487,23 @@ private struct XDriveIOSMapSpatialAlbum: View {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 4)],
                               spacing: 4) {
                         ForEach(items) { item in
-                            Button { viewer = item } label: {
+                            Button {
+                                guard !busy,
+                                      XDriveIOSNativeMapViewerAdmission.allows(
+                                          item, in: previewItems,
+                                          sceneActive: phase == .active
+                                      ) else { return }
+                                viewerReturnID = item.id
+                                focusedTileID = nil
+                                viewer = item
+                            } label: {
                                 XDriveIOSLocalPhotoTile(candidate: item)
-                            }.buttonStyle(.plain)
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(busy ||
+                                      !XDriveIOSNativeMapViewerAdmission.supported(item))
+                            .id(item.id)
+                            .accessibilityFocused($focusedTileID, equals: item.id)
                         }
                     }.padding(8)
                 }
@@ -415,8 +534,20 @@ private struct XDriveIOSMapSpatialAlbum: View {
                     Button("完成") { dismiss() }
                 }
             }
-            .fullScreenCover(item: $viewer) {
-                XDriveIOSNativeLocalPhotoDetail(candidate: $0)
+            .fullScreenCover(item: $viewer, onDismiss: {
+                restoreViewerTile(using: returnScroll)
+            }) { initial in
+                XDriveIOSNativeLocalPhotoDetail(
+                    candidate: initial, loadedItems: previewItems,
+                    onViewed: { next in
+                        guard viewer?.id == initial.id,
+                              XDriveIOSNativeMapViewerAdmission.allows(
+                                  next, in: previewItems, sceneActive: phase == .active
+                              ) else { return }
+                        viewerReturnID = next.id
+                        focusedTileID = nil
+                    }
+                )
             }
             .onAppear {
                 changes.start()
@@ -424,12 +555,18 @@ private struct XDriveIOSMapSpatialAlbum: View {
             }
             .onChange(of: changes.revision) { _ in
                 retire()
+                viewerReturnID = nil
+                focusedTileID = nil
+                viewer = nil
                 items = []
                 dismiss()
             }
             .onChange(of: phase) { state in
                 if state != .active {
                     retire()
+                    viewerReturnID = nil
+                    focusedTileID = nil
+                    viewer = nil
                     items = []
                     dismiss()
                 }
@@ -438,8 +575,13 @@ private struct XDriveIOSMapSpatialAlbum: View {
                 retire()
                 // The L3 original Viewer may cover this sheet; keep its
                 // PHChange observer live until the viewer is dismissed.
-                if viewer == nil { changes.stop() }
+                if viewer == nil {
+                    viewerReturnID = nil
+                    focusedTileID = nil
+                    changes.stop()
+                }
             }
+        }
         }
     }
 
