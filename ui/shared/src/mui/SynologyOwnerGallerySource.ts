@@ -42,7 +42,7 @@ export function xDriveSynologyOwnerGalleryQuerySupported(query?: MediaGalleryQue
   if (!query) return true
   const supported = new Set([
     'time_zone', 'sort_by', 'sort_dir', 'fold_duplicates', 'unknown_first',
-    'initial_position', 'place',
+    'initial_position', 'place', 'has_location',
   ])
   for (const [key, value] of Object.entries(query)) {
     if (value === undefined) continue
@@ -56,6 +56,13 @@ export function xDriveSynologyOwnerGalleryQuerySupported(query?: MediaGalleryQue
     if (key === 'initial_position' && value !== 'latest') return false
     if (key === 'place' && (typeof value !== 'string' ||
       !xDriveSynologyValidOwnerPlaceID(value))) return false
+    // An exact canonical Owner Place already implies current valid GPS.
+    // The shared Gallery's location=with filter is therefore redundant,
+    // but a generic has_location filter with no Place remains unsupported.
+    if (key === 'has_location' &&
+      (value !== true || !query.place || !xDriveSynologyValidOwnerPlaceID(query.place))) {
+      return false
+    }
   }
   return true
 }
