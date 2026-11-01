@@ -15,22 +15,26 @@ const detail = source.slice(
 )
 
 test('terminal PhotoKit still failure is not an infinite local Viewer spinner', () => {
-  assert.match(model, /options\.isNetworkAccessAllowed = false/)
+  assert.match(model, /func load\(_ candidate: XDrivePhotoKitScanCandidate, allowICloud: Bool = false\)/)
+  assert.match(model, /options\.isNetworkAccessAllowed = allowICloud/)
+  assert.match(model, /liveOptions\.isNetworkAccessAllowed = allowICloud/)
   assert.match(model, /let degraded = info\?\[PHImageResultIsDegradedKey\] as\? Bool == true/)
   assert.match(model, /let cancelled = info\?\[PHImageCancelledKey\] as\? Bool == true/)
-  assert.match(model, /else if !degraded && !cancelled &&[\s\S]*?self\.still == nil && self\.live == nil \{\s*self\.message =/)
+  assert.match(model, /else if !degraded && !cancelled && self\.live == nil \{[\s\S]*?if self\.still == nil \{[\s\S]*?self\.message =/)
   assert.match(model, /guard let self, self\.epoch == token/)
   assert.match(model, /self\.still = picture\s*self\.message = nil/)
 })
 
 test('manual local Viewer retry revalidates current scene and PhotoKit permissions', () => {
   assert.match(detail, /else if let message = model\.message \{[\s\S]*?Button\("重试"\)/)
-  assert.match(detail, /guard phase == \.active,[\s\S]*?PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)[\s\S]*?else \{ return \}\s*model\.load\(viewed\)/)
+  assert.match(detail, /guard phase == \.active,[\s\S]*?PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)[\s\S]*?else \{ return \}\s*reloadCurrent\(\)/)
+  assert.match(detail, /private func reloadCurrent\(\)[\s\S]*?guard currentPageAuthorized else \{ return \}[\s\S]*?model\.load\(viewed, allowICloud: requestedICloudForCurrentItem\)/)
   assert.match(detail, /if phase == \.active,\s*\[\.authorized, \.limited\]\.contains\([\s\S]*?PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)[\s\S]*?\) \{\s*Button\("重试"\)/)
   assert.match(detail, /accessibilityIdentifier\("native-ios-local-viewer-retry"\)/)
-  assert.match(model, /func load\(_ candidate: XDrivePhotoKitScanCandidate\) \{\s*cancel\(\)/)
+  assert.match(model, /func load\(_ candidate: XDrivePhotoKitScanCandidate, allowICloud: Bool = false\) \{\s*cancel\(\)/)
   assert.match(model, /PHAsset\.fetchAssets\(\s*withLocalIdentifiers: \[candidate\.id\]/)
   assert.doesNotMatch(model + detail, /URLSession|UploadSession|Keychain|UserDefaults|isNetworkAccessAllowed = true/)
+  assert.match(detail, /model\.load\(viewed, allowICloud: true\)/)
 })
 
 test('local Viewer still retires media when scene or PhotoKit authorization changes', () => {

@@ -1,16 +1,9 @@
 name: Compact only unstarted superseded master CI
 
-# Trusted master code only. No workflow_run/pull_request_target write-token execution.
-# No per-master-push fanout: this runs once when changed and periodically.
+# Manual maintenance only. Periodic compaction cancelled intact master
+# CI runs and displayed dozens of cancelled checks on each merge commit.
+# Never auto-prune master, even when a newer commit or Snapshot appears.
 on:
-  push:
-    branches: [master]
-    paths:
-      - '.github/workflows/compact-unstarted-master-ci.yml'
-      - 'scripts/ci/compact-unstarted-master-ci.cjs'
-      - 'scripts/ci/compact-unstarted-master-ci.test.cjs'
-  schedule:
-    - cron: '7,17,27,37,47,57 * * * *'
   workflow_dispatch:
     inputs:
       dry_run:
@@ -23,10 +16,8 @@ permissions:
   actions: write
 
 concurrency:
-  # GitHub's default single-pending slot replaces an older queued cleaner on
-  # every push/schedule event. Under a long Actions backlog this starves the
-  # only workflow capable of cancelling obsolete master CI.
-  # Serialize cleanups, but queue rather than discard waiting executions.
+  # Serialize explicit maintenance requests; never generate automatic
+  # cancellation runs while master or PR pipelines are queued.
   group: xdrive-compact-unstarted-master-ci
   queue: max
   cancel-in-progress: false
@@ -50,10 +41,10 @@ jobs:
         run: |
           node --check scripts/ci/compact-unstarted-master-ci.cjs
           node --test scripts/ci/compact-unstarted-master-ci.test.cjs
-      - name: Cancel only exact unstarted and superseded master CI
+      - name: Manually cancel only exact unstarted and superseded master CI
         uses: actions/github-script@v7
         env:
-          COMPACTION_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+          COMPACTION_DRY_RUN: ${{ inputs.dry_run }}
         with:
           script: |
             const {compactUnstartedMasterCI} =

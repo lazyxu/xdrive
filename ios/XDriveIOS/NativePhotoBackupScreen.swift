@@ -8,6 +8,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
     let onShowCloudOriginals: () -> Void
     @StateObject private var receipts = XDriveIOSNativePhotoReceiptReviewController()
     @StateObject private var background = XDriveIOSNativeBackgroundPhotoControls()
+    @StateObject private var coverage = XDriveIOSNativePhotoCoverageModel()
     @Environment(\.scenePhase) private var phase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var interval = 60
@@ -211,6 +212,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             background.refresh(login: login)
         }
         .onDisappear {
+            coverage.cancel()
             receipts.cancel()
             background.invalidateRead()
             showBackgroundEnableConsent = false
@@ -242,8 +244,14 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             controller.signalConfirmedReceiptReadback(
                 owner: readback.owner, login: login
             )
+            // Historical counts may have changed after receipt review.
+            coverage.cancel()
+        }
+        .onChange(of: controller.confirmedOriginalUpdate) { _ in
+            coverage.cancel()
         }
         .onChange(of: phase) { state in
+            if state != .active { coverage.cancel() }
             if state == .active {
                 photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
                 // BGProcessing or Settings may change state while this view is mounted.
@@ -251,6 +259,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             }
         }
         .onChange(of: login.owner) { _ in
+            coverage.cancel()
             photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             // Invalidate any consent that was opened for the previous Owner.
             background.invalidateRead()
@@ -414,6 +423,51 @@ struct XDriveIOSNativePhotoBackupScreen: View {
 
     @ViewBuilder
     private var backupStatusSections: some View {
+            Section("当前图库与历史原件收据") {
+                Button("只读统计当前图库和既有收据") {
+                    coverage.refresh(login: login)
+                }
+                .disabled(coverage.busy || controller.busy || login.owner == nil ||
+                          (photoAuthorization != .authorized &&
+                           photoAuthorization != .limited))
+                .accessibilityIdentifier("native-ios-photo-coverage-refresh")
+                if coverage.busy {
+                    ProgressView("正在读取已授权图库和历史收据…")
+                    Button("取消读取") { coverage.cancel() }
+                        .accessibilityIdentifier("native-ios-photo-coverage-cancel")
+                }
+                if let snapshot = coverage.snapshot {
+                    Text("当前已授权媒体：\(snapshot.currentAuthorizedMedia) 项（照片 \(snapshot.localImages)，视频 \(snapshot.localVideos)）")
+                        .monospacedDigit()
+                        .accessibilityIdentifier("native-ios-photo-coverage-local-total")
+                    if snapshot.limitedAuthorization {
+                        Text("当前为 iOS 部分照片授权；此数量不是手机全部照片。")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                    if let tally = snapshot.historicLedger {
+                        Text("当前账户既有账本：历史已确认 \(tally.historicallyConfirmed) 项 · 待核对 \(tally.uncertain) 项")
+                            .monospacedDigit()
+                            .accessibilityIdentifier("native-ios-photo-coverage-receipts")
+                        Text("尚未上传 \(tally.preparedOnly) 项 · 收据不完整 \(tally.incompleteReceipt) 项 · 合计记录 \(tally.totalOperations) 项")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    } else {
+                        Text("此设备当前账户尚无既有备份账本身份；历史收据数未知，不代表从未备份。")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                    Text("统计时间：\(snapshot.checkedAt.formatted(date: .abbreviated, time: .shortened))")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else if !coverage.busy {
+                    Text("尚未读取当前授权图库和历史收据。")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+                Text("整库是否已经备份：尚未逐张核验。历史收据数量不是当前照片数量，也不能证明远端原件今天仍存在。不能以两者相除显示完成百分比。")
+                    .font(.footnote).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("native-ios-photo-coverage-no-false-completion")
+                if let error = coverage.errorMessage {
+                    Text(error).font(.footnote).foregroundStyle(.red)
+                        .accessibilityIdentifier("native-ios-photo-coverage-error")
+                }
+            }
             Section("可选系统后台原件备份") {
                 Text("前台自动备份与系统 BGProcessing 相互独立。后台需要单独授权当前设备及 Owner 根目录；iOS 决定执行时机，首次约 6 小时后才可尝试，每次最多新增 1 个原件。锁屏时若原件或加密账本不可读就安全退出；强制退出后不保证运行。")
                     .font(.footnote).foregroundStyle(.secondary)

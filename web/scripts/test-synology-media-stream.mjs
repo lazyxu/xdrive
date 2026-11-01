@@ -41,8 +41,19 @@ const cgi = 'https://nas.example/webman/3rdparty/xdrivenas/backup.cgi'
 const local = adapter.createXDriveSynologyBackupLocalClient(cgi)
 assert.throws(() => adapter.createXDriveSynologyBackupLocalClient(
   'https://other.example/webman/3rdparty/xdrivenas/backup.cgi'), /same-origin/)
+// Deterministic DSM HEAD stub: no remote network call in fixture tests.
+const pdfHEADCalls = []
+let pdfHEADStatus = 200
+let pdfHEADHeaders = {}
 const source = transpile('ui/shared/src/synology-media-stream.ts', {
   './synology-backup-adapter': adapter,
+}, {
+  fetch: async (url, options) => {
+    pdfHEADCalls.push({url, options})
+    return {status: pdfHEADStatus, headers: {
+      get: name => pdfHEADHeaders[name.toLowerCase()] ?? null,
+    }}
+  },
 })
 const { xDriveSynologyLoadNativeMediaStream, xDriveSynologyPlaybackMIME,
   xDriveSynologyNativeStreamMIME, xDriveSynologyPlaybackMagic } = source
@@ -106,6 +117,12 @@ const pdfClient = {
     return { offset, revision, total: pdf.size, sha256: sha, data: pdfBytes }
   },
 }
+pdfHEADHeaders = {
+  'content-type': 'application/pdf',
+  'accept-ranges': 'bytes',
+  'content-length': String(pdf.size),
+  'etag': '"' + sha + '"',
+}
 const pdfURL = new URL(await xDriveSynologyLoadNativeMediaStream(pdfClient, pdf))
 assert.equal(pdfURL.origin, location.origin)
 assert.equal(pdfURL.searchParams.get('op'), 'cloud-media-stream')
@@ -113,6 +130,29 @@ assert.equal(pdfURL.searchParams.get('mime'), 'application/pdf')
 assert.equal(pdfURL.searchParams.get('total'), String(pdf.size))
 assert.equal(pdfURL.searchParams.size, 6)
 assert.equal(pdfReads, 1)
+assert.equal(pdfHEADCalls.length, 1, 'exactly one initial PDF HEAD')
+assert.equal(pdfHEADCalls[0].options.method, 'HEAD')
+assert.equal(pdfHEADCalls[0].options.credentials, 'same-origin')
+assert.equal(pdfHEADCalls[0].options.mode, 'same-origin')
+assert.equal(pdfHEADCalls[0].options.cache, 'no-store')
+assert.equal(pdfHEADCalls[0].options.redirect, 'error')
+assert.equal(pdfHEADCalls[0].options.referrerPolicy, 'no-referrer')
+for (const variation of [
+  {status: 401}, {status: 403}, {status: 404}, {status: 410},
+  {headers: {...pdfHEADHeaders, 'content-type': 'text/html'}},
+  {headers: {...pdfHEADHeaders, 'accept-ranges': 'none'}},
+  {headers: {...pdfHEADHeaders, 'content-length': '1'}},
+  {headers: {...pdfHEADHeaders, 'etag': '"stale-version"'}},
+]) {
+  pdfHEADStatus = variation.status ?? 200
+  const valid = pdfHEADHeaders
+  pdfHEADHeaders = variation.headers ?? valid
+  await assert.rejects(xDriveSynologyLoadNativeMediaStream(pdfClient, pdf, signal),
+    /Authenticated DSM PDF Range preflight unavailable/)
+  pdfHEADStatus = 200
+  pdfHEADHeaders = valid
+}
+assert.equal(pdfHEADCalls.length, 9, 'every rejected HTTP HEAD checked exactly once')
 assert.equal(xDriveSynologyPlaybackMagic(pdfBytes, 'application/pdf'), true)
 assert.equal(xDriveSynologyPlaybackMagic(
   Uint8Array.from(Buffer.from('<html>unauthorized</html>')), 'application/pdf'), false)

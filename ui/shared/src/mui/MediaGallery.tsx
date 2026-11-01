@@ -31,6 +31,7 @@ import {
 } from '../media-gallery-baidu-map-photo-scope'
 import type { XDriveBaiduMapPhotoScope } from '../media-gallery-baidu-map-photo-scope'
 import { xDriveGalleryMapEntryScope } from '../media-gallery-baidu-map-entry'
+import { xDriveLoadOwnerGPSPhotoCover } from '../media-gallery-owner-gps-cover'
 import { xDriveResolveBaiduOwnerPhotoFocusCamera } from '../media-gallery-baidu-photo-focus-camera'
 import type { XDrivePhotoFocusOwnerState } from '../media-gallery-baidu-photo-focus-camera'
 import type { XDriveViewerPhotoMapSelection } from '../media-gallery-viewer-photo-map-selection'
@@ -145,6 +146,8 @@ import {
   mediaGalleryQueryFromDraft,
 } from './MediaGalleryFilters'
 import type { MediaGalleryFilterDraft } from './MediaGalleryFilters'
+import { xDriveReadMobileLibraryQuery, xDriveRememberMobileLibraryQuery } from './MobileGalleryLibraryQueryReturn'
+import { xDriveReadMobileGalleryCollectionsReturn, xDriveRememberMobileGalleryCollectionsReturn } from './MobileGalleryCollectionsReturn'
 import {
   xDriveGalleryAppliedChips,
   xDriveGalleryFilterSignature,
@@ -724,6 +727,9 @@ export function XDriveMediaGalleryPage({
   onOpenBaiduMapDiagnostics,
   onError,
 }: XDriveMediaGalleryPageProps) {
+  const loadOwnerGPSPlaceCover = useCallback((place: MediaPlaceFacet, signal: AbortSignal) =>
+    xDriveLoadOwnerGPSPhotoCover(place, source.listItemRange, source.loadThumbnail, signal),
+  [source])
   const mobileGalleryViewport = useMediaQuery('(max-width:899.95px)') && mobileWebChrome
   const [facets, setFacets] = useState<MediaGalleryFacets>({ cameras: [], formats: [] })
   const [facetsLoading, setFacetsLoading] = useState(false)
@@ -901,7 +907,33 @@ export function XDriveMediaGalleryPage({
     owner: string
   } | null>(null)
   const [section, setSection] = useState<MediaGallerySection>(initialSection ?? 'library')
-  const [mobileCollectionsOverview, setMobileCollectionsOverview] = useState(false)
+  // An L1 bottom-tab change unmounts the Gallery while its authenticated
+  // data-source remains alive. Preserve only the Collections/Library choice;
+  // media and album authorization always come from the next Server Range.
+  const initialMobileCollectionsReturn = mobileGalleryViewport &&
+    xDriveReadMobileGalleryCollectionsReturn(source, preferenceScope, initialSection)
+  const [mobileCollectionsOverview, setMobileCollectionsOverview] =
+    useState(initialMobileCollectionsReturn)
+  const firstMobileCollectionsReturnRef = useRef(initialMobileCollectionsReturn)
+  const mobileCollectionsReturnScopeRef = useRef({ source, owner: preferenceScope })
+  const mobileCollectionsVisibleRef = useRef({
+    source, owner: preferenceScope, section, selected: mobileCollectionsOverview,
+  })
+  mobileCollectionsVisibleRef.current = {
+    source, owner: preferenceScope, section,
+    selected: mobileCollectionsOverview &&
+      mobileCollectionsReturnScopeRef.current.source === source &&
+      mobileCollectionsReturnScopeRef.current.owner === preferenceScope,
+  }
+  // Capture the last committed presentation on tab unmount only. This avoids
+  // persisting an older owner's state during a source/Owner render transition.
+  useEffect(() => () => {
+    const latest = mobileCollectionsVisibleRef.current
+    if (!mobileGalleryViewport || latest.source !== source ||
+        latest.owner !== preferenceScope) return
+    xDriveRememberMobileGalleryCollectionsReturn(
+      source, preferenceScope, latest.section, latest.selected)
+  }, [mobileGalleryViewport, preferenceScope, source])
   const [activeMediaType, setActiveMediaType] = useState('')
   const [draftFilters, setDraftFilters] = useState<MediaGalleryFilterDraft>(
     emptyMediaGalleryFilterDraft,
@@ -914,6 +946,19 @@ export function XDriveMediaGalleryPage({
   }, [preferenceScope])
 
   const [query, setQuery] = useState<MediaGalleryQuery>({})
+  // A Web Mobile Gallery remount can restore only a query previously accepted
+  // by this same Owner's live API source. Keep it as a one-time navigation
+  // hint; the next counted Server Range must succeed before rendering it.
+  const initialMobileLibraryQuery = mobileGalleryViewport && preferenceScope &&
+    (!initialSection || initialSection === 'library')
+      ? xDriveReadMobileLibraryQuery(source, preferenceScope) : null
+  const firstMobileLibraryQueryRef = useRef<{
+    owner: string
+    source: MediaGalleryDataSource
+    query: MediaGalleryQuery
+  } | null>(initialMobileLibraryQuery ? {
+    owner: preferenceScope, source, query: initialMobileLibraryQuery,
+  } : null)
   const [foldDuplicates, setFoldDuplicates] = useState(false)
   const foldDuplicatesRef = useRef(false)
   const [foldDialog, setFoldDialog] = useState<{ nodeIDs: number[]; items: MediaItem[]; loading: boolean; error: string } | null>(null)
@@ -1749,7 +1794,14 @@ export function XDriveMediaGalleryPage({
     collectionsPreviewRef.current.request += 1
     collectionsPreviewRef.current.key = ''
     collectionsSourcesLoadedRef.current = false
-    setMobileCollectionsOverview(false)
+    // Do not erase a same-source, same-Owner cold tab-return on mount.
+    // A truly changed Owner or API source revokes the old presentation first.
+    if (mobileCollectionsReturnScopeRef.current.source !== source ||
+        mobileCollectionsReturnScopeRef.current.owner !== preferenceScope) {
+      mobileCollectionsReturnScopeRef.current = { source, owner: preferenceScope }
+      firstMobileCollectionsReturnRef.current = false
+      setMobileCollectionsOverview(false)
+    }
     setMemories([])
     setBurstReviews(null)
     setCollectionsMemoryPreviewReceipt(null)
@@ -1886,9 +1938,29 @@ export function XDriveMediaGalleryPage({
   // Reuse the original Owner/Port/request first counted Range transaction:
   // current Gallery tiles, scroll and Collections stay mounted until it commits.
   const openCompactPhotoSection = useCallback((nextSection: 'library' | 'favorites') => {
-    const nextDraft = mediaGallerySectionDraft(nextSection)
-    const nextQuery = mediaGalleryQueryFromDraft(nextDraft)
+    // The FIRST cold, Owner-authorized Library Range may keep a remembered
+    // Collections index visible. Subsequent explicit Library taps must
+    // exit Collections normally; an aborted request cannot commit the route.
+    const keepCollectionsOnColdReturn = nextSection === 'library' &&
+      firstMobileCollectionsReturnRef.current &&
+      mobileCollectionsReturnScopeRef.current.source === source &&
+      mobileCollectionsReturnScopeRef.current.owner === preferenceScope
+    firstMobileCollectionsReturnRef.current = false
+    const firstReturn = firstMobileLibraryQueryRef.current
+    const savedQuery = nextSection === 'library' &&
+      firstReturn?.owner === preferenceScope && firstReturn.source === source
+        ? firstReturn.query : null
+    const nextDraft = savedQuery
+      ? mediaGalleryDraftFromQuery(savedQuery) : mediaGallerySectionDraft(nextSection)
+    const nextQuery = savedQuery ? { ...savedQuery } : mediaGalleryQueryFromDraft(nextDraft)
     void loadFirstPage(null, nextQuery, null, null, 'default', null, null, null, () => {
+      if (nextSection === 'library' && preferenceScope) {
+        // This callback is invoked only for a winning authorized first Range.
+        // A failed/superseded request cannot commit restored chips or cache.
+        xDriveRememberMobileLibraryQuery(source, preferenceScope, nextQuery)
+        if (firstMobileLibraryQueryRef.current === firstReturn)
+          firstMobileLibraryQueryRef.current = null
+      }
       placesReturnPageRef.current = null
       placeOpenedFromCollectionsRef.current = false
       setLastOpenedPlaceID(null)
@@ -1905,13 +1977,14 @@ export function XDriveMediaGalleryPage({
       setActiveMediaType('')
       setDraftFilters(nextDraft)
       setQuery(nextQuery)
-      setMobileCollectionsOverview(false)
+      setMobileCollectionsOverview(keepCollectionsOnColdReturn)
+      if (keepCollectionsOnColdReturn) warmMobileCollectionsPreview()
       // Do not replay this authorized first Range when our own URL callback
       // feeds the same section back through initialSection on the next render.
       routeSectionAppliedRef.current = nextSection
       onSectionRouteChange?.(nextSection)
     })
-  }, [loadFirstPage, onSectionRouteChange])
+  }, [loadFirstPage, onSectionRouteChange, preferenceScope, source, warmMobileCollectionsPreview])
 
   // Every compact Cleanup entry (navigation/Collections/Refresh/Back)
   // shares one Owner-accepted list receipt; never expose an empty interim
@@ -2149,12 +2222,21 @@ export function XDriveMediaGalleryPage({
     const acceptedKind = collectionTargetRef.current?.kind
     if (mobileGalleryViewport && (acceptedKind === 'all' || acceptedKind === 'album')) {
       void loadFirstPage(currentAlbum, nextQuery, currentSuggestedPerson, currentPerson,
-        'default', null, null, null, () => setQuery(nextQuery))
+        'default', null, null, null, () => {
+          setQuery(nextQuery)
+          // Remember only a committed Library Range, not draft/failed filters
+          // nor album, map, private Cell/viewport or folder-scoped queries.
+          if (section === 'library' && acceptedKind === 'all' &&
+              !currentAlbum && !currentFolderView && preferenceScope) {
+            xDriveRememberMobileLibraryQuery(source, preferenceScope, nextQuery)
+          }
+        })
       return
     }
     setQuery(nextQuery)
     void loadFirstPage(currentAlbum, nextQuery, currentSuggestedPerson, currentPerson)
-  }, [currentAlbum, currentPerson, currentSuggestedPerson, loadFirstPage, mobileGalleryViewport])
+  }, [currentAlbum, currentFolderView, currentPerson, currentSuggestedPerson,
+    loadFirstPage, mobileGalleryViewport, preferenceScope, section, source])
 
   const applyFilters = useCallback(() => {
     const nextQuery = xDriveKeepMediaPlaceHierarchyQuery({
@@ -4205,7 +4287,9 @@ export function XDriveMediaGalleryPage({
         onMobileMapFocusChange={onMobileMapFocusChange}
         suspendBackgroundThumbnails={suspendBackgroundThumbnails}
         onUploadRequested={onUploadRequested}
-        mobileCollectionsOverview={mobileCollectionsOverview}
+        mobileCollectionsOverview={mobileCollectionsOverview &&
+          mobileCollectionsReturnScopeRef.current.source === source &&
+          mobileCollectionsReturnScopeRef.current.owner === preferenceScope}
         onMobileCollectionsOverviewChange={setMobileCollectionsOverview}
         onOpenMobileFilters={() => { void requestFacets() }}
         onShowMap={showMapFromCurrentGallery}
@@ -4275,6 +4359,8 @@ export function XDriveMediaGalleryPage({
         listPlacesPage={source.listPlacesPage}
         listPlacesHierarchy={source.listPlacesHierarchy}
         listPlacesMapOverview={source.listPlacesMapOverview}
+        loadPlacesMapCover={source.listPlacesMapOverview && !source.getBaiduJSAPI4Status
+          ? loadOwnerGPSPlaceCover : undefined}
         listPlacesViewport={source.listPlacesViewport}
         listBaiduNativeViewport={source.listBaiduNativeViewport}
         listBaiduNativeCells={source.listBaiduNativeCells}
@@ -4799,6 +4885,7 @@ export interface XDriveMediaGalleryProps {
   listPlacesPage?: MediaGalleryDataSource['listPlacesPage']
   listPlacesHierarchy?: MediaGalleryDataSource['listPlacesHierarchy']
   listPlacesMapOverview?: MediaGalleryDataSource['listPlacesMapOverview']
+  loadPlacesMapCover?: (place: MediaPlaceFacet, signal: AbortSignal) => Promise<string | null>
   baiduNativeCameraSnapshot?: XDriveBaiduNativeCameraSnapshot
   onBaiduNativeCameraChange?: (camera: XDriveBaiduNativeCameraSnapshot) => void
   onBaiduNativeCameraClear?: () => void
@@ -6546,6 +6633,7 @@ export function XDriveMediaGallery({
   listPlacesPage,
   listPlacesHierarchy,
   listPlacesMapOverview,
+  loadPlacesMapCover,
   listPlacesViewport,
   listBaiduNativeViewport,
   listBaiduNativeCells,
@@ -8874,6 +8962,7 @@ export function XDriveMediaGallery({
             listBaiduNativeCells={listBaiduNativeCells}
             listBaiduNativeCellItems={listBaiduNativeCellItems}
             listPlacesMapOverview={listPlacesMapOverview}
+            loadPlacesMapCover={loadPlacesMapCover}
             loadPhotoCoverThumbnail={loadThumbnail}
             loadPhotoCoverPreviewURL={loadPreviewURL}
             savePhotoCoverVideoPoster={saveVideoPoster}

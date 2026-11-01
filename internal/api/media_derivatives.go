@@ -20,9 +20,9 @@ import (
 type mediaDerivativeKind string
 
 const (
-	mediaDerivativeThumbnail mediaDerivativeKind = "thumbnail"
-	mediaDerivativeAnalysis  mediaDerivativeKind = "analysis_preview"
-	mediaDerivativeCreative  mediaDerivativeKind = "creative_preview"
+	mediaDerivativeThumbnail  mediaDerivativeKind = "thumbnail"
+	mediaDerivativeAnalysis   mediaDerivativeKind = "analysis_preview"
+	mediaDerivativeCreative   mediaDerivativeKind = "creative_preview"
 	mediaDerivativeViewerWebP mediaDerivativeKind = "viewer_webp"
 	mediaDerivativeViewerJPEG mediaDerivativeKind = "viewer_jpeg"
 

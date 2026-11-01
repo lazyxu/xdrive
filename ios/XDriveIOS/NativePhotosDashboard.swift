@@ -485,9 +485,11 @@ struct XDriveIOSNativePhotosDashboard: View {
             Group {
                 switch gallerySource {
                 case .local:
-                    XDriveIOSNativeLocalGalleryScreen(
-                        savedOffset: $localGalleryPageOffset
-                    )
+                    XDriveIOSNativeLocalPhotoTimelineContainer(savedOffset: $localGalleryPageOffset) {
+                        XDriveIOSNativeLocalGalleryScreen(
+                            savedOffset: $localGalleryPageOffset
+                        )
+                    }
                 case .albums:
                     XDriveIOSNativePhotoAlbumsScreen(
                         savedOffset: $localAlbumDirectoryOffset
@@ -503,9 +505,10 @@ struct XDriveIOSNativePhotosDashboard: View {
                         confirmedOriginalUpdate: backup.confirmedOriginalUpdate
                     )
                 case .map:
-                    XDriveIOSNativeLocalPhotoMapScreen(
-                        mapScope: $localMapScope,
-                        offset: $localMapPageOffset,
+                    XDriveIOSNativePhotoMapsScreen(
+                        login: login,
+                        localMapScope: $localMapScope,
+                        localMapPageOffset: $localMapPageOffset,
                         onFocusChange: { galleryFocused = $0 }
                     )
                 }

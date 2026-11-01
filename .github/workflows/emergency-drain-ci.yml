@@ -1,14 +1,8 @@
 name: Emergency prune superseded CI backlog
 
-# One-shot emergency only: trusted master file change, or manual dispatch.
-# Does not subscribe to PR code, tags, scheduled releases, or run completions.
+# Destructive emergency cleanup is manual-only. A master source change
+# must never auto-cancel active PR tests or older master Snapshot builds.
 on:
-  push:
-    branches: [master]
-    paths:
-      - '.github/workflows/emergency-drain-ci.yml'
-      - 'scripts/ci/emergency-drain-ci.cjs'
-      - 'scripts/ci/emergency-drain-ci.test.cjs'
   workflow_dispatch:
     inputs:
       dry_run:
@@ -42,7 +36,7 @@ jobs:
       - name: Cancel obsolete PR and older master Actions runs
         uses: actions/github-script@v7
         env:
-          EMERGENCY_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+          EMERGENCY_DRY_RUN: ${{ inputs.dry_run }}
         with:
           script: |
             const {drain} = require('./scripts/ci/emergency-drain-ci.cjs')

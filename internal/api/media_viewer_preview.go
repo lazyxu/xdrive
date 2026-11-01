@@ -70,12 +70,12 @@ func (s *Server) mediaViewerPreview(c *gin.Context) {
 	}
 	key, err = s.ensureMediaDerivative(c.Request.Context(), node, metadata,
 		mediaDerivativeRequest{
-			Kind: kind,
-			Priority: background.PriorityP1,
-			Trigger: background.TriggerUserAction,
-			Initiator: background.InitiatorUser,
+			Kind:        kind,
+			Priority:    background.PriorityP1,
+			Trigger:     background.TriggerUserAction,
+			Initiator:   background.InitiatorUser,
 			InitiatorID: node.OwnerID,
-			TraceID: requestIDFromContext(c),
+			TraceID:     requestIDFromContext(c),
 		})
 	if err != nil {
 		writeMediaDerivativeError(c, err, "viewer image format is not supported")

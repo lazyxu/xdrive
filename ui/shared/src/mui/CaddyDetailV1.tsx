@@ -540,7 +540,9 @@ export function XDriveCaddyDetailV1({
         {readFailed && (
           <Typography variant="caption" color="text.secondary"
             data-xdrive-caddy-v1-config-read-failed sx={{ mt: 1, display: 'block' }}>
-            无法读取管理配置；请使用「重新检测」重试。
+            无法读取管理员配置，不能据此判定 Caddy 已停止。Host .env 模式请在宿主机运行 xdrive-server doctor，
+            检查 Host Control 心跳、caddy-env-observed.json 快照及 Server 的 /host-control 挂载；
+            旧数据库模式再检查 PostgreSQL。请使用「重新检测」重试，勿据此重建网关。
           </Typography>
         )}
       </Box>
@@ -678,7 +680,7 @@ export function XDriveCaddyDetailV1({
       </Box>
 
       <Box id="caddy-v1-evidence" sx={{ scrollMarginTop: 72 }}>
-        {config?.source !== 'host-env' && <XDriveCaddyPreflightPanel source={source} refreshID={evidenceRevision} />}
+        {config && config.source !== 'host-env' && <XDriveCaddyPreflightPanel source={source} refreshID={evidenceRevision} />}
       </Box>
     </Box>
   )

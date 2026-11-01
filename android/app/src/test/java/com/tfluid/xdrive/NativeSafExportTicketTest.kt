@@ -98,6 +98,30 @@ class NativeSafExportTicketTest {
         assertNull(NativeSafExportTicket.capture(start.copy(screen = Screen.FILES)))
     }
 
+    @Test fun currentCloudPhotoViewerIsExactAuthorizedSafSource() {
+        val selected = gallery()
+        val visible = selected.galleryItems.single()
+        val viewer = selected.copy(gallerySelected = null, galleryViewer = visible)
+        assertTrue(nativeGalleryViewerExportEligible(viewer, photo))
+        val ticket = requireNotNull(NativeSafExportTicket.capture(viewer))
+        assertTrue(ticket.isCurrent(viewer))
+        assertFalse(ticket.isCurrent(viewer.copy()))
+        for (bad in listOf(
+            viewer.copy(galleryViewer = null),
+            viewer.copy(galleryItems = emptyList()),
+            viewer.copy(galleryLoaded = false),
+            viewer.copy(galleryViewerPageBusy = true),
+            viewer.copy(viewerReturnToFiles = true),
+            viewer.copy(galleryViewer = visible.copy(node = photo.copy(revision = 8L))),
+            viewer.copy(fileExportPending = photo.copy(revision = 8L)),
+            viewer.copy(fileExportPending = null),
+            viewer.copy(screen = Screen.FILES),
+            viewer.copy(loading = true),
+        )) assertNull(NativeSafExportTicket.capture(bad))
+        assertFalse(nativeGalleryViewerExportEligible(viewer, photo.copy(revision = 9L)))
+        assertFalse(nativeGalleryViewerExportEligible(viewer, photo.copy(type = "dir")))
+    }
+
     @Test fun invalidOrMissingPendingExportNeverMakesAnOSResultAuthorized() {
         val state = files()
         assertNull(NativeSafExportTicket.capture(state.copy(fileExportPending = null)))

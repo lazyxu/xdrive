@@ -32,6 +32,11 @@ def members(tar):
 
 
 with tarfile.open(spk) as outer:
+    headers = outer.getmembers()
+    assert headers and headers[0].name == "INFO", "DSM outer SPK must start with literal INFO"
+    assert all(not item.name.startswith("./") and item.name != "." for item in headers), (
+        "DSM outer SPK cannot contain dot-prefixed paths"
+    )
     content = members(outer)
     allowed = {"INFO", "package.tgz", "LICENSE", "PACKAGE_ICON.PNG",
                "PACKAGE_ICON_256.PNG", "conf", "conf/privilege", "scripts"}

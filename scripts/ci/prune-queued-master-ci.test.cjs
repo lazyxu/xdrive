@@ -1,7 +1,7 @@
 'use strict'
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const {pruneQueuedMasterCI} = require('./prune-queued-master-ci.cjs')
+const {isUnstartedOrClassifierOnlyJob, completeUnstartedInventory, pruneQueuedMasterCI} = require('./prune-queued-master-ci.cjs')
 
 const sha = c => c.repeat(40)
 const snapshot = sha('b'), currentMaster = sha('c'), old = sha('a'), unpublished = sha('d')
@@ -40,7 +40,7 @@ function fixture(options={}) {
     }
   }}
   const core={info:()=>{},warning:()=>{}}
-  const context={repo:{owner:'lazyxu',repo:'xdrive'},eventName:'repository_dispatch',payload:{action:'xdrive_snapshot_published'},runId:987}
+  const context={repo:{owner:'lazyxu',repo:'xdrive'},eventName:'workflow_dispatch',payload:{action:'xdrive_snapshot_published'},runId:987}
   return {github,core,context,calls,run,runs}
 }
 
@@ -242,6 +242,7 @@ test('release edits and unrelated repository_dispatch events cannot prune CI', a
   await assert.rejects(pruneQueuedMasterCI(release),/unsupported event/)
   assert.deepEqual(release.calls.cancel,[])
   const wrong=fixture()
+  wrong.context.eventName='repository_dispatch'
   wrong.context.payload.action='other_repo_dispatch'
   await assert.rejects(pruneQueuedMasterCI(wrong),/explicit Snapshot-published event/)
   assert.deepEqual(wrong.calls.cancel,[])
@@ -267,10 +268,89 @@ test('cleanup is dispatched once from the verified publisher, never from release
   assert.equal(workflow.includes('    types: [edited]'),false)
   assert.equal(workflow.includes("github.event_name == 'release'"),false)
   assert.ok(workflow.includes("github.event.action == 'xdrive_snapshot_published'"))
+  assert.ok(workflow.includes("PRUNE_DRY_RUN: ${{ github.event_name != 'workflow_dispatch' || inputs.dry_run }}"))
   const assetCheck=release.indexOf('      - name: Assert distribution assets are not archive-wrapped')
   const notification=release.indexOf('      - name: Notify bounded queued-CI prune after verified Snapshot publication')
   const stableRelease=release.indexOf('      - name: Publish GitHub Release',notification)
   assert.ok(assetCheck>=0 && notification>assetCheck && stableRelease>notification)
   assert.ok(release.includes('-f event_type=xdrive_snapshot_published'))
   assert.ok(release.includes('if [[ "$published" != "$GITHUB_SHA" ]]'))
+})
+
+// Auto-dispatch must never issue master cancellations even if YAML drifts.
+test('published Snapshot dispatch is strictly audit-only', async () => {
+  const automatic=fixture()
+  automatic.context.eventName='repository_dispatch'
+  await assert.rejects(pruneQueuedMasterCI(automatic), /audit-only/)
+  assert.deepEqual(automatic.calls.cancel, [])
+
+  const readOnly=fixture()
+  readOnly.context.eventName='repository_dispatch'
+  const report=await pruneQueuedMasterCI({...readOnly,dryRun:true})
+  assert.equal(report.eligible,1)
+  assert.equal(report.cancelled,0)
+  assert.deepEqual(readOnly.calls.cancel, [])
+})
+
+test('queued jobs with a runner, completed step or nonzero elapsed timestamp are not unstarted', () => {
+  const job = {id:10,run_id:1,status:'queued',conclusion:null,
+    runner_id:0,runner_name:'',created_at:'2026-11-01T08:00:00Z',
+    started_at:'2026-11-01T08:00:00Z',steps:[]}
+  assert.equal(isUnstartedOrClassifierOnlyJob(job,1),true)
+  for (const update of [
+    {runner_id:27}, {runner_name:'hosted-runner'},
+    {started_at:'2026-11-01T08:00:02Z'},
+    {steps:[{status:'in_progress'}]}, {steps:[{status:'completed'}]},
+    {conclusion:'success'}, {run_id:2},
+  ]) assert.equal(isUnstartedOrClassifierOnlyJob({...job,...update},1),false)
+  assert.equal(completeUnstartedInventory({total_count:1,jobs:[job]},1),true)
+  assert.equal(completeUnstartedInventory({total_count:2,jobs:[job]},1),false)
+  assert.equal(completeUnstartedInventory({total_count:1,jobs:[{...job,id:undefined}]},1),false)
+})
+
+test('queued CI with an assigned child runner is preserved even during manual cancellation', async () => {
+  const job={id:10,run_id:1,status:'queued',conclusion:null,runner_id:83,runner_name:'hosted'}
+  const t=fixture({jobsById:{1:[job]}})
+  const result=await pruneQueuedMasterCI(t)
+  assert.equal(result.eligible,0)
+  assert.equal(result.cancelled,0)
+  assert.deepEqual(t.calls.cancel,[])
+  assert.equal(result.audit[0].action,'preserved-started-or-unknown-jobs')
+})
+
+test('manual Snapshot cleanup rechecks jobs immediately before cancellation', async () => {
+  const t=fixture()
+  let checks=0
+  t.github.rest.actions.listJobsForWorkflowRun=async ({run_id})=>{
+    checks++
+    return {data:{total_count:1,jobs:[{
+      id:1001,run_id,status:'queued',conclusion:null,
+      runner_id:checks===1?0:9001,runner_name:checks===1?'':'hosted-runner',
+      created_at:'2026-11-01T08:00:00Z',started_at:'2026-11-01T08:00:00Z',
+      steps:checks===1?[]:[{status:'in_progress'}],
+    }]}}
+  }
+  const result=await pruneQueuedMasterCI(t)
+  assert.equal(result.eligible,1)
+  assert.equal(result.cancelled,0)
+  assert.equal(checks,2)
+  assert.equal(result.audit[0].action,'preserved-final-race')
+  assert.deepEqual(t.calls.cancel,[])
+})
+
+test('manual Snapshot cleanup preserves a replaced child job and incomplete final inventory', async () => {
+  for (const kind of ['replaced','truncated']) {
+    const t=fixture()
+    let call=0
+    t.github.rest.actions.listJobsForWorkflowRun=async ({run_id})=>{
+      call++
+      const jobs=call===1?[{id:1001,run_id,status:'queued',conclusion:null}]:
+        (kind==='replaced'?[{id:2001,run_id,status:'queued',conclusion:null}]:[])
+      return {data:{total_count:1,jobs}}
+    }
+    const result=await pruneQueuedMasterCI(t)
+    assert.equal(result.cancelled,0)
+    assert.equal(result.audit[0].action,'preserved-final-race')
+    assert.deepEqual(t.calls.cancel,[])
+  }
 })

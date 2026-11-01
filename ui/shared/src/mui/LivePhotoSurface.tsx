@@ -865,16 +865,9 @@ export function XDriveLivePhotoSurface({
 
   const statusLabel = failed ? '实况不可用' : '实况'
 
-  return (
-    <XDriveLivePhotoMotionDiagnosticsContext.Provider value={{
-      state: failed ? '失败' : loading ? '加载中' :
-        (playing || bufferProgress.bufferedSeconds > 0) ? '已部分缓冲' :
-        motionURL ? '视频地址已获取' : '未请求',
-      loadedBytes: motionBytes.loadedBytes,
-      totalBytes: motionBytes.totalBytes,
-      bufferedSeconds: bufferProgress.bufferedSeconds,
-      durationSeconds: bufferProgress.durationSeconds,
-    }}>
+  // Keep the real motion player independently mountable by existing tests
+  // that compile the live-photo function body without shared module exports.
+  const surface = (
     <Box
       ref={viewportElementRef}
       role="button"
@@ -1036,6 +1029,19 @@ export function XDriveLivePhotoSurface({
       ) : null}
 
     </Box>
+  )
+  if (typeof XDriveLivePhotoMotionDiagnosticsContext === 'undefined') return surface
+  return (
+    <XDriveLivePhotoMotionDiagnosticsContext.Provider value={{
+      state: failed ? '失败' : loading ? '加载中' :
+        (playing || bufferProgress.bufferedSeconds > 0) ? '已部分缓冲' :
+        motionURL ? '视频地址已获取' : '未请求',
+      loadedBytes: motionBytes.loadedBytes,
+      totalBytes: motionBytes.totalBytes,
+      bufferedSeconds: bufferProgress.bufferedSeconds,
+      durationSeconds: bufferProgress.durationSeconds,
+    }}>
+      {surface}
     </XDriveLivePhotoMotionDiagnosticsContext.Provider>
   )
 }

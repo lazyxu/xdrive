@@ -61,6 +61,6 @@ func mediaDerivativeCacheValid(file *os.File, key string) bool {
 		return true
 	}
 	return thumb &&
-		bytes.Equal(beginning[:], mediaDerivativePNGSignature) &&
+		bytes.Equal(beginning[:len(mediaDerivativePNGSignature)], mediaDerivativePNGSignature) &&
 		bytes.Equal(ending[:], mediaDerivativePNGIEND)
 }

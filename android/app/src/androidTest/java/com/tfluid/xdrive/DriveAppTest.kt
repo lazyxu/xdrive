@@ -1374,7 +1374,8 @@ class DriveAppTest {
         }
         val beforeJump = galleryTimelineRequests.size
         compose.onNodeWithTag("gallery-time-dock").assertIsDisplayed()
-        compose.onNodeWithTag("gallery-time-scale-day").assertDoesNotExist()
+        // The native four-scale dock now exposes the actual Owner-indexed day.
+        compose.onNodeWithTag("gallery-time-scale-day").assertIsEnabled()
         compose.onNodeWithTag("gallery-time-scale-year").performClick()
         compose.onNodeWithTag("gallery-time-groups").assertExists()
         compose.onNodeWithTag("gallery-time-group-2026").performClick()
@@ -1644,7 +1645,7 @@ class DriveAppTest {
         }
     }
 
-    @Test fun failedNativePhotoRequiresExplicitRetryAndRecoversSameOwnerThumbnail() {
+    @Test fun oversizedNativePhotoWithoutThumbnailNeverOffersImpossibleRetry() {
         galleryOversizeFixture = true
         galleryThumbnailFailuresRemaining = 2
         startAndLogin()
@@ -1656,25 +1657,18 @@ class DriveAppTest {
                 compose.onAllNodesWithTag("gallery-thumbnail-failed-46",
                     useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
         }
-        // A missing Gallery tile and then the Viewer fallback fail once each.
-        // No cached success exists in this fixture; manual Retry is the third
-        // authenticated request and may never start on its own.
+        // The tile and Viewer both failed to read a thumbnail. The original
+        // exceeds the supported 32 MiB reader, so a third request cannot help.
         compose.onNodeWithTag("gallery-item-46", useUnmergedTree = true).performClick()
         compose.waitUntil(timeoutMillis = 10_000) {
-            compose.onAllNodesWithTag("gallery-photo-retry").fetchSemanticsNodes().isNotEmpty()
+            compose.onAllNodesWithTag("gallery-photo-failure").fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithTag("gallery-photo-image").assertDoesNotExist()
-        compose.onNodeWithTag("gallery-photo-retry").assertIsDisplayed()
+        compose.onNodeWithTag("gallery-photo-retry").assertDoesNotExist()
+        compose.onNodeWithText("原图超过 32 MiB，当前无法直接预览").assertExists()
         val failureReads = galleryThumbnailReads
         compose.waitForIdle()
         org.junit.Assert.assertEquals(failureReads, galleryThumbnailReads)
-        compose.onNodeWithTag("gallery-photo-retry").performClick()
-        compose.waitUntil(timeoutMillis = 10_000) {
-            compose.onAllNodesWithTag("gallery-photo-fallback").fetchSemanticsNodes().isNotEmpty()
-        }
-        compose.onNodeWithTag("gallery-photo-image").assertIsDisplayed()
-        compose.onNodeWithTag("gallery-photo-retry").assertDoesNotExist()
-        org.junit.Assert.assertEquals(failureReads + 1, galleryThumbnailReads)
         compose.onNodeWithTag("gallery-photo-close").performClick()
         compose.onNodeWithTag("gallery-wall").assertExists()
     }
@@ -1924,6 +1918,26 @@ class DriveAppTest {
         }
         compose.onNodeWithTag("gallery-photo-close").performClick()
         compose.onNodeWithTag("gallery-wall").assertExists()
+    }
+
+    @Test fun cloudGalleryPhotoViewerDirectSaveUsesExistingSafWithoutInfoDialog() {
+        val downloads = mutableListOf<Long>()
+        startAndLogin(onDownload = { downloads += it.id })
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryLoaded &&
+                !controller.state.value.loading
+        }
+        compose.onNodeWithTag("gallery-item-40").performClick()
+        compose.onNodeWithTag("gallery-photo-viewer").assertExists()
+        compose.onNodeWithTag("gallery-photo-save-original")
+            .assertIsEnabled().performClick()
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(listOf(40L), downloads)
+            org.junit.Assert.assertNull(controller.state.value.gallerySelected)
+        }
+        compose.onNodeWithTag("gallery-download-action").assertDoesNotExist()
     }
 
     @Test fun galleryInfoOffersRealOwnerPhotoSafDownloadAndNoPlaceholderWhenUnavailable() {

@@ -3,6 +3,7 @@ import AVKit
 import Combine
 import Foundation
 import ImageIO
+import Photos
 import SwiftUI
 import UIKit
 
@@ -23,6 +24,16 @@ struct XDriveIOSNativeCloudOriginal: Decodable, Identifiable {
             (name as NSString).pathExtension.lowercased()
         )
     }
+}
+
+// Independent current-Node check for an Owner-root item restored to Photos.
+private struct XDriveIOSNativeCloudOriginalProof: Decodable {
+    let id: UInt64
+    let parent_id: UInt64?
+    let name: String
+    let type: String
+    let size: Int64
+    let revision: UInt64
 }
 
 private struct XDriveIOSNativeCloudOriginalPage: Decodable {
@@ -263,6 +274,111 @@ struct XDriveIOSNativeCloudOriginalReader {
             throw XDriveIOSNativeCloudReadError.invalidResponse
         }
         return (UIImage(cgImage: decoded), nil)
+    }
+
+
+    private func requireCurrentOriginal(
+        _ node: XDriveIOSNativeCloudOriginal, session client: URLSession
+    ) async throws {
+        let url = try endpoint("/api/v1/nodes/\(node.id)")
+        let (data, response) = try await client.data(for: request(url))
+        try Task.checkCancellation()
+        try check(response, size: data.count, maximum: 65_536)
+        let current = try JSONDecoder().decode(
+            XDriveIOSNativeCloudOriginalProof.self, from: data
+        )
+        guard current.id == node.id, current.parent_id == owner.rootNodeID,
+              current.name == node.name, current.type == node.type,
+              current.size == node.size, current.revision == node.revision
+        else { throw XDriveIOSNativeCloudReadError.invalidResponse }
+    }
+
+    /// Downloads one original, never a 4096px preview or thumbnail. The
+    /// short-lived signed ticket must resolve to this exact Node, on the
+    /// already verified Owner origin. The caller deletes the returned folder.
+    func downloadOriginalForPhotos(_ node: XDriveIOSNativeCloudOriginal) async throws -> URL {
+        let ext = (node.name as NSString).pathExtension.lowercased()
+        let supported = (node.isImage &&
+            ["jpg", "jpeg", "png", "heic", "heif", "tif", "tiff"].contains(ext)) ||
+            (node.isVideo && ["mov", "mp4", "m4v"].contains(ext))
+        guard supported, !node.isLiveArchive,
+              node.id > 0, node.revision > 0, node.type == "file",
+              node.size > 0, node.size <= 4 * 1_073_741_824,
+              XDriveIOSBackgroundOriginalNamePolicy.valid(node.name),
+              !accessToken.isEmpty
+        else { throw XDriveIOSNativeCloudReadError.notSupported }
+        let client = session()
+        defer { client.invalidateAndCancel() }
+        try await requireCurrentOriginal(node, session: client)
+        let ticketURL = try endpoint("/api/v1/files/\(node.id)/download-ticket")
+        let (ticketBytes, ticketResponse) = try await client.data(
+            for: request(ticketURL, method: "POST")
+        )
+        try Task.checkCancellation()
+        try check(ticketResponse, size: ticketBytes.count, maximum: 32_768)
+        let ticket = try JSONDecoder().decode(
+            XDriveIOSNativeCloudDownloadTicket.self, from: ticketBytes
+        )
+        let expectedPath = "/api/v1/file-download/\(node.id)"
+        guard let parsed = URLComponents(string: ticket.url),
+              parsed.scheme == nil, parsed.host == nil,
+              parsed.user == nil, parsed.password == nil,
+              parsed.fragment == nil, parsed.path == expectedPath,
+              let query = parsed.queryItems, query.count == 1,
+              query[0].name == "ticket",
+              let secret = query[0].value, !secret.isEmpty,
+              secret.utf8.count <= 8192,
+              let origin = URLComponents(
+                url: try ServerAddress.parse(owner.origin.absoluteString),
+                resolvingAgainstBaseURL: false
+              ),
+              var resolved = URLComponents(url: owner.origin,
+                                           resolvingAgainstBaseURL: false)
+        else { throw XDriveIOSNativeCloudReadError.invalidResponse }
+        resolved.path = expectedPath
+        resolved.percentEncodedQuery = parsed.percentEncodedQuery
+        resolved.fragment = nil
+        guard resolved.scheme == "https", resolved.host == origin.host,
+              resolved.port == origin.port, let signedURL = resolved.url
+        else { throw XDriveIOSNativeCloudReadError.invalidResponse }
+
+        var download = request(signedURL, bearer: false)
+        download.setValue("application/octet-stream", forHTTPHeaderField: "Accept")
+        let (temporary, response) = try await client.download(for: download)
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        try Task.checkCancellation()
+        guard let http = response as? HTTPURLResponse,
+              http.statusCode == 200,
+              (http.expectedContentLength < 0 ||
+                http.expectedContentLength == node.size),
+              let attributes = try? FileManager.default.attributesOfItem(
+                atPath: temporary.path
+              ),
+              attributes[.type] as? FileAttributeType == .typeRegular,
+              (attributes[.size] as? NSNumber)?.int64Value == node.size
+        else { throw XDriveIOSNativeCloudReadError.invalidResponse }
+        // Do not import a same-ID replacement or an item moved from Owner root.
+        try await requireCurrentOriginal(node, session: client)
+        try Task.checkCancellation()
+
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "xdrive-ios-restore-\(UUID().uuidString)", isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: folder, withIntermediateDirectories: false,
+            attributes: [.posixPermissions: NSNumber(value: 0o700)]
+        )
+        do {
+            // Keep the resource's original extension for PhotoKit's decoder,
+            // but never use an untrusted remote basename as a local path.
+            let file = folder.appendingPathComponent("original.\(ext)")
+            try FileManager.default.moveItem(at: temporary, to: file)
+            try Task.checkCancellation()
+            return file
+        } catch {
+            try? FileManager.default.removeItem(at: folder)
+            throw error
+        }
     }
 
     /// Fetch the exact verified Owner's original ZIP to a temporary file.
@@ -551,6 +667,12 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
     @State private var showsStaticStill = false
     @State private var nativeLivePlaybackRequest: UUID?
     @State private var error: String?
+    @State private var photoRestoreEpoch = UUID()
+    @State private var photoRestoreTask: Task<Void, Never>?
+    @State private var restoringToPhotos = false
+    @State private var requestingPhotoRestorePermission = false
+    @State private var photoRestoreNotice = ""
+    @State private var showsPhotoRestoreNotice = false
 
     private var viewed: XDriveIOSNativeCloudOriginal { activeNode ?? node }
 
@@ -599,6 +721,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
 
     private func showNeighbor(_ direction: Int) {
         guard let next = neighbor(direction), onViewed?(next) == true else { return }
+        cancelPhotoRestore()
         // Retire the previous signed still/video, Live pair and temporary
         // originals before presenting a different verified loaded Node.
         exporter.invalidate()
@@ -625,9 +748,15 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                 if viewed.isLiveArchive, let still {
                     VStack(spacing: 10) {
                         if showingLiveMotion, let player {
-                            VideoPlayer(player: player)
-                                .onAppear { player.play() }
-                                .onDisappear { player.pause() }
+                            XDriveIOSNativeAVPlayerStatusObserver(
+                                player: player,
+                                content: VideoPlayer(player: player)
+                                    .onAppear {
+                                        if currentOwnerAuthorized { player.play() }
+                                    }
+                                    .onDisappear { player.pause() },
+                                onFailed: { playbackLoadFailed($0) }
+                            )
                         } else if let resources = liveResources,
                                   !nativeLiveUnavailable, !showsStaticStill {
                             ZStack {
@@ -651,21 +780,25 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                             .accessibilityLabel("云端实况照片，长按播放")
                         } else {
                             XDriveIOSNativeZoomablePhotoView(image: still)
+                                .onNavigateSwipe { showNeighbor($0) }
                                 .accessibilityLabel("云端 Live 静态原件")
                         }
-                        if nativeLiveReady && !showingLiveMotion {
+                        if nativeLiveReady && currentOwnerAuthorized && !showingLiveMotion {
                             HStack(spacing: 12) {
                                 Button("播放原生实况") {
+                                    guard currentOwnerAuthorized else { return }
                                     showsStaticStill = false
                                     nativeLivePlaybackRequest = UUID()
                                 }
                                 .accessibilityIdentifier("native-ios-cloud-live-native-playback")
                                 Button(showsStaticStill ? "返回原生实况" : "放大静态原件") {
+                                    guard currentOwnerAuthorized else { return }
                                     showsStaticStill.toggle()
                                 }
                             }
                         }
                         Button(showingLiveMotion ? "返回静态原件" : "播放原始动态视频") {
+                            guard currentOwnerAuthorized, player != nil else { return }
                             if showingLiveMotion {
                                 player?.pause()
                                 nativeLivePlaybackRequest = nil
@@ -676,18 +809,32 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                             }
                             showingLiveMotion.toggle()
                         }
+                        .disabled(!currentOwnerAuthorized || player == nil)
                         .accessibilityIdentifier("native-ios-cloud-live-motion-toggle")
                         Text(nativeLiveUnavailable
                              ? "原生实况配对不可用，仍可查看静态原件和播放原始动态视频。"
                              : "已校验 Live ZIP 双资源；优先显示原生同步实况，保留独立视频回退。")
                             .font(.caption).foregroundStyle(.secondary)
+                        if let error {
+                            Text(error).font(.caption).foregroundStyle(.secondary)
+                            Button("重试") { retryPreview() }
+                                .accessibilityIdentifier("native-ios-original-live-retry")
+                        }
                     }
                 } else if let still {
                     XDriveIOSNativeZoomablePhotoView(image: still)
+                        .onNavigateSwipe { showNeighbor($0) }
                         .accessibilityLabel("云端照片，可双指缩放或双击放大")
                 } else if let player {
-                    VideoPlayer(player: player)
-                        .onAppear { player.play() }
+                    XDriveIOSNativeAVPlayerStatusObserver(
+                        player: player,
+                        content: VideoPlayer(player: player)
+                            .onAppear {
+                                if currentOwnerAuthorized { player.play() }
+                            }
+                            .onDisappear { player.pause() },
+                        onFailed: { playbackLoadFailed($0) }
+                    )
                 } else if let error {
                     VStack(spacing: 8) {
                         Text(error).foregroundStyle(.red).padding(.horizontal)
@@ -772,9 +919,39 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                         .accessibilityIdentifier("native-ios-original-export")
                     }
                 }
+                ToolbarItem(placement: .navigationBarLeading) {
+                    if currentOwnerAuthorized, player != nil {
+                        Button {
+                            retryPreview()
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        .accessibilityLabel("重新加载云端原件视频")
+                        .accessibilityIdentifier("native-ios-original-player-reload")
+                    }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    if restoringToPhotos {
+                        ProgressView().accessibilityLabel("正在恢复原件到 iOS 照片")
+                    } else {
+                        Button {
+                            restoreCurrentOriginalToPhotos()
+                        } label: {
+                            Label("保存到 iOS 照片", systemImage: "square.and.arrow.down")
+                        }
+                        .disabled(!currentOwnerAuthorized ||
+                                  !(viewed.isImage || viewed.isVideo || viewed.isLiveArchive))
+                        .accessibilityIdentifier("native-ios-cloud-original-save-to-photos")
+                    }
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("完成") { dismiss() }
                 }
+            }
+            .alert("保存到 iOS 照片", isPresented: $showsPhotoRestoreNotice) {
+                Button("完成", role: .cancel) {}
+            } message: {
+                Text(photoRestoreNotice)
             }
         }
         .task(id: previewRequestID) {
@@ -839,8 +1016,28 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                     : "此文件的云端预览不可用，未读取其他账户的数据。"
             }
         }
+        // Explicitly recover from a failed AVPlayer item instead of leaving
+        // a blank native VideoPlayer. A Live still is retained as fallback.
+        .onReceive(NotificationCenter.default.publisher(
+            for: .AVPlayerItemFailedToPlayToEndTime
+        ).receive(on: RunLoop.main)) { notification in
+            guard currentOwnerAuthorized,
+                  let failed = notification.object as? AVPlayerItem,
+                  let playing = player?.currentItem, failed === playing else { return }
+            player?.pause()
+            player?.replaceCurrentItem(with: nil)
+            player = nil
+            showingLiveMotion = false
+            error = "媒体播放失败，可重新读取当前云端原件。"
+        }
         .onChange(of: phase) { state in
             if state != .active {
+                // The native Photos permission sheet may temporarily mark
+                // the scene inactive. There is no network transfer yet: let
+                // authorization return, but still cancel on real background.
+                if state != .inactive || !requestingPhotoRestorePermission {
+                    cancelPhotoRestore()
+                }
                 exporter.invalidate()
                 // Never keep a signed video URL or rendered still alive while
                 // the app is inactive/backgrounded. The next foreground
@@ -860,6 +1057,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
             previewRequestID = UUID()
         }
         .onChange(of: login.owner) { _ in
+            cancelPhotoRestore()
             // Retire the former Owner's signed media URL immediately.
             exporter.invalidate()
             player?.pause()
@@ -876,6 +1074,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
             dismiss()
         }
         .onDisappear {
+            cancelPhotoRestore()
             exporter.invalidate()
             player?.pause()
             player = nil
@@ -888,6 +1087,124 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
             showsStaticStill = false
             nativeLivePlaybackRequest = nil
         }
+    }
+
+
+    private func cancelPhotoRestore() {
+        photoRestoreEpoch = UUID()
+        photoRestoreTask?.cancel()
+        photoRestoreTask = nil
+        restoringToPhotos = false
+        requestingPhotoRestorePermission = false
+        showsPhotoRestoreNotice = false
+    }
+
+    private func canCommitPhotoRestore(
+        _ original: XDriveIOSNativeCloudOriginal,
+        owner: XDriveNativeOwnerRoot, epoch: UUID
+    ) -> Bool {
+        currentOwnerAuthorized && !Task.isCancelled &&
+        photoRestoreEpoch == epoch &&
+        viewed.id == original.id && viewed.revision == original.revision &&
+        XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner)
+    }
+
+    /// Explicit foreground restore only. PhotoKit receives the real file
+    /// or verified still/MOV Live pair, never a downsampled Viewer preview.
+    /// This does not alter the Server original or its backup receipt.
+    private func restoreCurrentOriginalToPhotos() {
+        guard !restoringToPhotos, currentOwnerAuthorized,
+              let owner = presentingOwner,
+              viewed.isImage || viewed.isVideo || viewed.isLiveArchive
+        else { return }
+        let original = viewed
+        let epoch = UUID()
+        photoRestoreEpoch = epoch
+        restoringToPhotos = true
+        photoRestoreTask = Task { @MainActor in
+            defer {
+                if photoRestoreEpoch == epoch {
+                    restoringToPhotos = false
+                    photoRestoreTask = nil
+                }
+            }
+            do {
+                // Request add-only access only from the user's restore tap.
+                // iOS can mark the app temporarily inactive during its native
+                // permission prompt; no download starts until it returns.
+                requestingPhotoRestorePermission = true
+                let permission = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+                if photoRestoreEpoch == epoch {
+                    requestingPhotoRestorePermission = false
+                }
+                try Task.checkCancellation()
+                guard canCommitPhotoRestore(original, owner: owner, epoch: epoch)
+                else { return }
+                guard permission == .authorized || permission == .limited else {
+                    photoRestoreNotice = "请在 iOS 设置中允许 xDrive 向照片添加内容。"
+                    showsPhotoRestoreNotice = true
+                    return
+                }
+                let auth = try await login.verifiedAuthorization()
+                try Task.checkCancellation()
+                guard canCommitPhotoRestore(original, owner: owner, epoch: epoch),
+                      XDriveIOSNativePhotoOwnerScope.matches(auth.owner, owner)
+                else { return }
+                let reader = XDriveIOSNativeCloudOriginalReader(
+                    owner: auth.owner, accessToken: auth.accessToken
+                )
+                if original.isLiveArchive {
+                    let verified = try await reader.livePreview(original)
+                    defer { verified.files.discard() }
+                    guard canCommitPhotoRestore(original, owner: owner, epoch: epoch)
+                    else { return }
+                    try await PHPhotoLibrary.shared().performChanges {
+                        let asset = PHAssetCreationRequest.forAsset()
+                        asset.addResource(
+                            with: .photo, fileURL: verified.files.stillURL, options: nil
+                        )
+                        asset.addResource(
+                            with: .pairedVideo, fileURL: verified.files.motionURL, options: nil
+                        )
+                    }
+                } else {
+                    let file = try await reader.downloadOriginalForPhotos(original)
+                    defer {
+                        try? FileManager.default.removeItem(at: file.deletingLastPathComponent())
+                    }
+                    guard canCommitPhotoRestore(original, owner: owner, epoch: epoch)
+                    else { return }
+                    let resource: PHAssetResourceType = original.isVideo ? .video : .photo
+                    try await PHPhotoLibrary.shared().performChanges {
+                        let asset = PHAssetCreationRequest.forAsset()
+                        asset.addResource(with: resource, fileURL: file, options: nil)
+                    }
+                }
+                try Task.checkCancellation()
+                guard canCommitPhotoRestore(original, owner: owner, epoch: epoch)
+                else { return }
+                photoRestoreNotice = "原件已添加到 iOS 照片，xDrive 云端备份保持不变。"
+                showsPhotoRestoreNotice = true
+            } catch is CancellationError {
+                // Viewer/Owner/scene changed; discard any downloaded originals.
+            } catch {
+                guard canCommitPhotoRestore(original, owner: owner, epoch: epoch)
+                else { return }
+                photoRestoreNotice = "保存未完成。请检查照片添加权限、网络、设备空间及原件格式后重试。"
+                showsPhotoRestoreNotice = true
+            }
+        }
+    }
+
+    @MainActor
+    private func playbackLoadFailed(_ failed: AVPlayerItem) {
+        guard currentOwnerAuthorized,
+              let playing = player?.currentItem, failed === playing else { return }
+        player?.pause()
+        player?.replaceCurrentItem(with: nil)
+        player = nil
+        showingLiveMotion = false
+        error = "媒体播放失败，可重新读取当前云端原件。"
     }
 
     private func retryPreview() {

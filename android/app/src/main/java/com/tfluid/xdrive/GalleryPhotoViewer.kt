@@ -33,6 +33,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tfluid.xdrive.core.GalleryAsset
+import com.tfluid.xdrive.core.DriveNode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
@@ -51,6 +52,33 @@ private sealed interface ImageStage {
 internal fun galleryOriginalFallbackRetryVisible(
     thumbnailOnly: Boolean, upgrading: Boolean, originalEligible: Boolean,
 ): Boolean = thumbnailOnly && !upgrading && originalEligible
+
+internal fun galleryOriginalFailedRetryVisible(originalEligible: Boolean): Boolean =
+    originalEligible
+
+@Composable
+internal fun GalleryPhotoFailureNotice(
+    originalEligible: Boolean, originalSize: Long, onRetry: () -> Unit,
+) {
+    val oversized = !originalEligible && originalSize > 32L * 1024 * 1024
+    Column(Modifier.testTag("gallery-photo-failure"),
+        horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(if (oversized) "原图超过 32 MiB，当前无法直接预览"
+            else "原图无法预览", color = Color.White)
+        Text(when {
+            oversized -> "当前版本不支持该原件的分块预览；可在文件模块下载原件。"
+            !originalEligible -> "当前媒体没有受支持的原图预览；重复请求无法改变此限制。"
+            else -> "请检查连接或图片格式。"
+        }, color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
+        if (galleryOriginalFailedRetryVisible(originalEligible)) {
+            TextButton(
+                onClick = onRetry,
+                modifier = Modifier.heightIn(min = 48.dp)
+                    .testTag("gallery-photo-retry"),
+            ) { Text("重试预览", color = Color.White) }
+        }
+    }
+}
 
 /** Native sampled decode is not original-resolution display. The separate
  * 32 MiB Owner read bound remains in the Controller; never bypass it. */
@@ -88,6 +116,8 @@ private fun decodeGalleryOriginal(bytes: ByteArray): GalleryDecodedOriginal? {
 internal fun GalleryPhotoViewer(
     photo: GalleryAsset, controller: DriveController,
     thumbnails: LruCache<String, ImageBitmap>,
+    onDownload: ((DriveNode) -> Unit)? = null,
+    canDownload: Boolean = false,
 ) {
     // Persist no private media bytes; zoom and pan only live for one image.
     var zoom by remember(photo.node.id, photo.node.revision) { mutableFloatStateOf(1f) }
@@ -195,6 +225,15 @@ internal fun GalleryPhotoViewer(
             Text(photo.node.name, modifier = Modifier.weight(1f),
                 color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.titleSmall)
+            if (onDownload != null) TextButton(
+                onClick = {
+                    if (canDownload && controller.state.value.galleryViewer == photo)
+                        onDownload(photo.node)
+                },
+                enabled = canDownload,
+                modifier = Modifier.heightIn(min = 48.dp)
+                    .testTag("gallery-photo-save-original"),
+            ) { Text("保存原件", color = Color.White) }
             TextButton(onClick = { controller.showGalleryInfo(photo) },
                 modifier = Modifier.heightIn(min = 48.dp).testTag("gallery-photo-info")) {
                 Text("信息", color = Color.White)
@@ -300,18 +339,11 @@ internal fun GalleryPhotoViewer(
                         color = Color.White, style = MaterialTheme.typography.labelSmall,
                     )
                 }
-                ImageStage.Failed -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("原图无法预览", color = Color.White)
-                    Text("请检查连接或图片格式；大于 32 MiB 的原图尚不支持分块预览。",
-                        color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
-                    TextButton(
-                        onClick = retryPreview,
-                        modifier = Modifier.heightIn(min = 48.dp)
-                            .testTag("gallery-photo-retry"),
-                    ) {
-                        Text("重试预览", color = Color.White)
-                    }
-                }
+                ImageStage.Failed -> GalleryPhotoFailureNotice(
+                    originalEligible = canReadOriginal,
+                    originalSize = photo.node.size,
+                    onRetry = retryPreview,
+                )
                 is ImageStage.Ready -> {
                     val maxX = constraints.maxWidth.toFloat()
                     val maxY = constraints.maxHeight.toFloat()

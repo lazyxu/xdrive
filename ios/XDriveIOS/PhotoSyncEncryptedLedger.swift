@@ -275,6 +275,49 @@ actor XDrivePhotoSyncLedger {
         return all
     }
 
+    /// Count historical sealed upload operations for this current Owner scope.
+    /// One V1 block and one V2 shard are held at a time (unlike operations()).
+    /// A confirmed entry only means a complete receipt was recorded at some
+    /// previous point in time; no current cloud Node was read here.
+    func historicalReceiptTally(scope: XDrivePhotoSyncScope)
+        throws -> XDriveIOSNativePhotoReceiptTally {
+        try Task.checkCancellation()
+        let key = try encryptionKey()
+        let legacy = try read(scope: scope, key: key).operations
+        let legacyIDs = Set(legacy.map(\.id))
+        let legacyFingerprints = Set(legacy.map(\.assetFingerprint))
+        var counts = XDriveIOSNativePhotoReceiptTally()
+
+        func add(_ entry: XDrivePhotoSyncOperation) {
+            let hasReceipt = entry.verifiedNodeID != nil &&
+                entry.verifiedNodeRevision != nil &&
+                entry.sessionID != nil &&
+                (entry.verifiedNodeID ?? 0) > 0 &&
+                (entry.verifiedNodeRevision ?? 0) > 0 &&
+                UUID(uuidString: entry.sessionID ?? "") != nil
+            counts.include(state: entry.state.rawValue, hasVerifiedReceipt: hasReceipt)
+        }
+
+        for entry in legacy {
+            try Task.checkCancellation()
+            add(entry)
+        }
+        for prefix in try availableShardPrefixes(scope: scope) {
+            try Task.checkCancellation()
+            let shard = try readShard(scope: scope, key: key, prefix: prefix)
+            for entry in shard.operations {
+                try Task.checkCancellation()
+                guard !legacyIDs.contains(entry.id),
+                      !legacyFingerprints.contains(entry.assetFingerprint) else {
+                    throw XDrivePhotoSyncLedgerError.identityMismatch
+                }
+                add(entry)
+            }
+        }
+        try Task.checkCancellation()
+        return counts
+    }
+
     /// Report the exact number of potentially committed / unverified
     /// originals while retaining only a small review batch. Decrypt one
     /// Owner-bound shard at a time; never materialize the entire 100k ledger.
