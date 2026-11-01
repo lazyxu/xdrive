@@ -125,6 +125,7 @@ var desktopIPCCapabilities = []string{
 	"cloud-file-text-preview",
 	"cloud-media-range-read",
 	"cloud-thumbnail-read",
+	"cloud-viewer-preview-read",
 	"cloud-owner-gallery-read",
 	"cloud-owner-places-read",
 	"cloud-owner-live-motion-read",
@@ -709,6 +710,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/cloud/text-preview", h.cloudFileTextPreview)
 	mux.HandleFunc("GET /v1/cloud/media-range", h.cloudOwnerMediaRange)
 	mux.HandleFunc("GET /v1/cloud/thumbnail", h.cloudOwnerThumbnail)
+	mux.HandleFunc("GET /v1/cloud/viewer-preview", h.cloudOwnerViewerPreviewRange)
 	mux.HandleFunc("GET /v1/cloud/owner-gallery-items", h.cloudOwnerGalleryItems)
 	mux.HandleFunc("GET /v1/cloud/owner-gallery-albums", h.cloudOwnerGalleryAlbums)
 	mux.HandleFunc("GET /v1/cloud/owner-places-page", h.cloudOwnerPlacesPage)
