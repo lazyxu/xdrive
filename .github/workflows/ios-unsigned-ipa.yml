@@ -214,7 +214,7 @@ jobs:
             ios/tests/NativePhotoTimelinePolicyChecks.swift \
             -o "$RUNNER_TEMP/xdrive-ios-local-calendar-check"
           "$RUNNER_TEMP/xdrive-ios-local-calendar-check"
-          node --test desktop/tests/ios-native-photo-timeline.cjs
+          node --test desktop/tests/ios-native-photo-timeline.cjs desktop/tests/ios-native-local-continuous.cjs
 
       - name: Verify native PhotoAsset Viewer bounded neighbors
         run: |
