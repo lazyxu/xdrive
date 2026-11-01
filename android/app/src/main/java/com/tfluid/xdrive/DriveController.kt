@@ -790,6 +790,14 @@ class DriveController(
             checkCurrent(ticket)
             session = result
             persistRefreshSession()
+            // A verified password change updates only the same already-saved
+            // profile; it never opts a new account into password retention.
+            val savedProfile = AndroidSavedLoginPasswords.profile(
+                state.value.server, state.value.route.lanIp, state.value.username)
+            if (savedProfile != null && savedLoginStore != null &&
+                runCatching { savedLoginStore.passwordFor(savedProfile) != null }.getOrDefault(false)) {
+                runCatching { savedLoginStore.savePassword(savedProfile, replacement) }
+            }
             mutableState.value = state.value.copy(screen = if (result.mustChangePassword) Screen.PASSWORD else Screen.FILES)
             if (!result.mustChangePassword) {
                 refreshTransferRecoveryNotices()
@@ -4453,18 +4461,33 @@ class DriveController(
         val previous = state.value
         if (previous.screen !in setOf(Screen.CONNECT, Screen.LOGIN) ||
             previous.loading || session != null) return
+        val selected = AndroidSavedLoginPasswords.profile(
+            previous.server, previous.route.lanIp, previous.username)
+        if (selected == null) {
+            mutableState.value = previous.copy(error = "请先选择有效的服务器和用户名，再清除该账号资料。")
+            return
+        }
         try {
-            sessionPersistence?.clear()
+            val saved = sessionPersistence?.load()
+            // Deleting this account must never revoke a different Owner's refresh.
+            if (saved != null && saved.server == selected.server && saved.username == selected.username)
+                sessionPersistence.clear()
+            // Old installs have no profile password store; the legacy draft
+            // cleanup remains usable without this new optional dependency.
+            if (savedLoginStore != null && !savedLoginStore.forgetProfile(selected)) {
+                mutableState.value = previous.copy(error = "无法确认当前账号安全密码已删除，请重试。")
+                return
+            }
         } catch (_: Exception) {
             mutableState.value = previous.copy(
-                error = "无法确认系统安全存储中的登录凭据已清除；请解锁设备后重试。")
+                error = "无法确认当前账号的系统安全凭据已清除；请解锁设备后重试。")
             return
         }
         val cleared = runCatching { clearLoginDraft(previous.server) }.getOrDefault(false)
         if (!cleared) {
             mutableState.value = state.value.copy(
                 savedSessionRestoreRetryAvailable = false,
-                error = "已清除本机会话凭据，但无法确认服务器、IP 和用户名填写记录已删除。")
+                error = "已清除当前账号安全凭据，但填写信息未能清除。")
             return
         }
         val oldApi = api

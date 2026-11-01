@@ -161,6 +161,7 @@ internal fun UnifiedLoginForm(
         mutableStateOf(hasSavedPassword(state.server, state.route.lanIp, state.username))
     }
     var profilesExpanded by remember { mutableStateOf(false) }
+    var confirmForgottenProfile by remember { mutableStateOf<NativeLoginProfile?>(null) }
     // Login only accepts HTTPS. The old HTTP opt-in is no longer exposed.
     AuthCard("欢迎使用 xDrive", "连接到你的个人云端", actions) {
         if (savedProfiles.isNotEmpty()) {
@@ -237,11 +238,29 @@ internal fun UnifiedLoginForm(
             }
         }
         if (selectedProfile != null && savedProfiles.any { it.id == selectedProfile.id }) {
-            TextButton(onClick = { password = ""; forgetSavedProfile(selectedProfile) },
+            TextButton(onClick = { confirmForgottenProfile = selectedProfile },
                 enabled = !state.loading, modifier = Modifier.fillMaxWidth()
                     .heightIn(min = 48.dp).testTag("auth-forget-profile")) {
                 Text("忘记当前服务器和账号资料")
             }
+        }
+        val awaitingForget = confirmForgottenProfile
+        if (awaitingForget != null) {
+            AlertDialog(
+                onDismissRequest = { confirmForgottenProfile = null },
+                title = { Text("确认忘记当前账号？") },
+                text = { Text("只清除本机该服务器与用户名的已保存密码和匹配会话；其他账号不会被删除。") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        confirmForgottenProfile = null
+                        password = ""
+                        forgetSavedProfile(awaitingForget)
+                    }) { Text("确认忘记") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { confirmForgottenProfile = null }) { Text("取消") }
+                }
+            )
         }
         if (state.savedSessionRestoreRetryAvailable && !state.loading &&
             server == state.server && username == state.username &&
