@@ -2,6 +2,7 @@ package com.tfluid.xdrive
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.unit.Dp
 import com.tfluid.xdrive.core.OwnerBd09Bounds
 import com.tfluid.xdrive.core.OwnerBd09Cell
 import com.tfluid.xdrive.core.OwnerBd09MapCells
@@ -22,6 +23,7 @@ internal fun NativeBaiduMapPanel(
     savedCamera: NativeBaiduCameraPose?,
     onCameraSnapshot: (NativeBaiduCameraPose) -> Unit,
     photoCovers: Map<OwnerBd09Cell, ImageBitmap>,
+    mapHeight: Dp,
     placeholder: @Composable () -> Unit,
 ) {
     // Real signed Owner records remain fully navigable through the existing

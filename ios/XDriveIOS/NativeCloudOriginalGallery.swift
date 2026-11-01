@@ -540,6 +540,8 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var phase
     @State private var previewRequestID = UUID()
+    // Reuse the native Files verified-Node exporter, never a second download writer.
+    @StateObject private var exporter = XDriveIOSNativeFilesExportModel()
     @State private var still: UIImage?
     @State private var player: AVPlayer?
     @State private var liveResources: XDriveIOSLivePreviewFiles?
@@ -565,6 +567,21 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
         return XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner)
     }
 
+    private var exportNode: XDriveIOSNativeFilesNode? {
+        // Files export re-reads this exact Node and rejects a changed revision,
+        // parent, name or size before and after the signed original download.
+        guard currentOwnerAuthorized, let owner = presentingOwner,
+              viewed.type == "file", viewed.id > 0, viewed.revision > 0,
+              viewed.size >= 0, viewed.size <= 512 * 1_048_576,
+              XDriveIOSBackgroundOriginalNamePolicy.valid(viewed.name)
+        else { return nil }
+        return XDriveIOSNativeFilesNode(
+            id: viewed.id, parent_id: owner.rootNodeID,
+            name: viewed.name, type: viewed.type,
+            size: viewed.size, revision: viewed.revision
+        )
+    }
+
     private var loadedPosition: Int? {
         XDriveIOSNativePhotoAssetViewerNeighborPolicy.loadedIndex(
             current: key(viewed), in: loadedNodes.map(key),
@@ -584,6 +601,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
         guard let next = neighbor(direction), onViewed?(next) == true else { return }
         // Retire the previous signed still/video, Live pair and temporary
         // originals before presenting a different verified loaded Node.
+        exporter.invalidate()
         player?.pause()
         player = nil
         still = nil
@@ -639,6 +657,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                             .accessibilityLabel("云端实况照片，长按播放")
                         } else {
                             XDriveIOSNativeZoomablePhotoView(image: still)
+                                .onNavigateSwipe { showNeighbor($0) }
                                 .accessibilityLabel("云端 Live 静态原件")
                         }
                         if nativeLiveReady && currentOwnerAuthorized && !showingLiveMotion {
@@ -681,6 +700,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                     }
                 } else if let still {
                     XDriveIOSNativeZoomablePhotoView(image: still)
+                        .onNavigateSwipe { showNeighbor($0) }
                         .accessibilityLabel("云端照片，可双指缩放或双击放大")
                 } else if let player {
                     XDriveIOSNativeAVPlayerStatusObserver(
@@ -705,29 +725,64 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
             .navigationTitle(viewed.name)
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom) {
-                if loadedNodes.count > 1 {
-                    HStack(spacing: 12) {
-                        Button("上一项") { showNeighbor(-1) }
-                            .disabled(neighbor(-1) == nil)
-                            .frame(minHeight: 44)
-                            .accessibilityIdentifier("native-ios-original-viewer-previous")
-                        Spacer(minLength: 4)
-                        Text(loadedPosition.map {
-                            "\($0 + 1)/\(loadedNodes.count)（已加载）"
-                        } ?? "当前原件已变化")
-                            .font(.caption).monospacedDigit()
-                            .accessibilityIdentifier("native-ios-original-viewer-position")
-                        Spacer(minLength: 4)
-                        Button("下一项") { showNeighbor(1) }
-                            .disabled(neighbor(1) == nil)
-                            .frame(minHeight: 44)
-                            .accessibilityIdentifier("native-ios-original-viewer-next")
+                if loadedNodes.count > 1 || exporter.status != nil ||
+                   (currentOwnerAuthorized && viewed.size > 512 * 1_048_576) {
+                    VStack(spacing: 8) {
+                        if let status = exporter.status {
+                            Text(status)
+                                .font(.caption).foregroundStyle(.secondary)
+                                .accessibilityIdentifier("native-ios-original-export-status")
+                        }
+                        if currentOwnerAuthorized && viewed.size > 512 * 1_048_576 {
+                            Text("原件超过目前 512 MiB 的原生导出上限，无法在此直接导出。")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        if loadedNodes.count > 1 {
+                            HStack(spacing: 12) {
+                                Button("上一项") { showNeighbor(-1) }
+                                    .disabled(neighbor(-1) == nil)
+                                    .frame(minHeight: 44)
+                                    .accessibilityIdentifier("native-ios-original-viewer-previous")
+                                Spacer(minLength: 4)
+                                Text(loadedPosition.map {
+                                    "\($0 + 1)/\(loadedNodes.count)（已加载）"
+                                } ?? "当前原件已变化")
+                                    .font(.caption).monospacedDigit()
+                                    .accessibilityIdentifier("native-ios-original-viewer-position")
+                                Spacer(minLength: 4)
+                                Button("下一项") { showNeighbor(1) }
+                                    .disabled(neighbor(1) == nil)
+                                    .frame(minHeight: 44)
+                                    .accessibilityIdentifier("native-ios-original-viewer-next")
+                            }
+                        }
                     }
                     .padding(.horizontal, 12).padding(.vertical, 6)
                     .background(.ultraThinMaterial)
                 }
             }
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    if let file = exporter.prepared,
+                       file.nodeID == viewed.id,
+                       file.revision == viewed.revision,
+                       currentOwnerAuthorized {
+                        ShareLink(item: file.fileURL) {
+                            Label("分享或保存原件", systemImage: "square.and.arrow.up")
+                        }
+                        .accessibilityIdentifier("native-ios-original-share")
+                    } else {
+                        Button {
+                            guard let node = exportNode else { return }
+                            exporter.prepare(node, login: login)
+                        } label: {
+                            Label(exporter.busy ? "正在下载" : "导出原件",
+                                  systemImage: "square.and.arrow.up")
+                        }
+                        .disabled(exporter.busy || exportNode == nil)
+                        .accessibilityIdentifier("native-ios-original-export")
+                    }
+                }
                 ToolbarItem(placement: .navigationBarLeading) {
                     if currentOwnerAuthorized, player != nil {
                         Button {
@@ -822,6 +877,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
         }
         .onChange(of: phase) { state in
             if state != .active {
+                exporter.invalidate()
                 // Never keep a signed video URL or rendered still alive while
                 // the app is inactive/backgrounded. The next foreground
                 // request must independently re-verify native Owner/root.
@@ -841,6 +897,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
         }
         .onChange(of: login.owner) { _ in
             // Retire the former Owner's signed media URL immediately.
+            exporter.invalidate()
             player?.pause()
             player = nil
             still = nil
@@ -855,6 +912,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
             dismiss()
         }
         .onDisappear {
+            exporter.invalidate()
             player?.pause()
             player = nil
             still = nil

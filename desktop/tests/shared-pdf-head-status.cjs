@@ -182,3 +182,132 @@ test('P1 unrelated PDF URLs and Blob previews keep the old renderer contract wit
     global.fetch = saved
   }
 })
+
+function dsmPDF(id = 42, total = (32 << 20) + 1) {
+  const url = new URL('https://xdrive.invalid/webman/3rdparty/xdrivenas/backup.cgi')
+  for (const [key, value] of Object.entries({
+    op: 'cloud-media-stream', node_id: String(id), revision: '7',
+    total: String(total), sha256: 'a'.repeat(64), mime: 'application/pdf',
+  })) url.searchParams.set(key, value)
+  return url.href
+}
+
+test('DSM PDF Owner Range HEAD 403 never mounts an HTML iframe; retry rechecks current Owner', async () => {
+  const saved = global.fetch, calls = []
+  let renderer
+  global.fetch = async (url, options) => {
+    calls.push({ url, options })
+    return response(calls.length === 1 ? 403 : 200)
+  }
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(XDriveFilePreviewSurface, {
+        target: node(42), loadPreviewURL: async () => dsmPDF(),
+      }))
+    })
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0].url, dsmPDF())
+    assert.equal(calls[0].options.method, 'HEAD')
+    assert.equal(calls[0].options.credentials, 'same-origin')
+    assert.equal(calls[0].options.redirect, 'error')
+    assert.equal(calls[0].options.cache, 'no-store')
+    assert.equal(calls[0].options.referrerPolicy, 'no-referrer')
+    assert.equal(renderer.root.findAllByType('iframe').length, 0)
+    const retry = findRetry(renderer)[0].props.onClick
+    await act(async () => { retry(); retry(); await Promise.resolve() })
+    assert.equal(calls.length, 2)
+    assert.equal(renderer.root.findByType('iframe').props.src, dsmPDF())
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    global.fetch = saved
+  }
+})
+
+test('DSM Owner PDF valid status with HTML MIME fails without embedding an error page', async () => {
+  const saved = global.fetch
+  let renderer
+  global.fetch = async () => response(200, 'text/html; charset=utf-8')
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(XDriveFilePreviewSurface, {
+        target: node(43), loadPreviewURL: async () => dsmPDF(43),
+      }))
+    })
+    assert.equal(renderer.root.findAllByType('iframe').length, 0)
+    assert.equal(findRetry(renderer).length, 1)
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    global.fetch = saved
+  }
+})
+
+test('DSM PDF HEAD is abortable on Viewer source change and uses new Owner URL only', async () => {
+  const saved = global.fetch, pending = deferred(), calls = []
+  let renderer
+  global.fetch = async (url, options) => {
+    calls.push({ url, options })
+    return calls.length === 1 ? pending.promise : response(200)
+  }
+  const props = (id) => ({
+    target: node(id), loadPreviewURL: async () => dsmPDF(id),
+  })
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(XDriveFilePreviewSurface, props(44)))
+    })
+    assert.equal(renderer.root.findAllByType('iframe').length, 0)
+    await act(async () => renderer.update(React.createElement(XDriveFilePreviewSurface, props(45))))
+    assert.equal(calls[0].options.signal.aborted, true)
+    assert.equal(renderer.root.findByType('iframe').props.src, dsmPDF(45))
+    await act(async () => { pending.resolve(response(200)); await Promise.resolve() })
+    assert.equal(renderer.root.findByType('iframe').props.src, dsmPDF(45))
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    global.fetch = saved
+  }
+})
+
+test('foreign lookalike CGI PDF must never receive authenticated HEAD', async () => {
+  const saved = global.fetch, calls = []
+  let renderer
+  global.fetch = async (...args) => { calls.push(args); throw Error('Unexpected credentialed HEAD') }
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(XDriveFilePreviewSurface, {
+        target: node(46),
+        loadPreviewURL: async () => dsmPDF(46).replace('xdrive.invalid', 'foreign.invalid'),
+      }))
+    })
+    assert.deepEqual(calls, [])
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    global.fetch = saved
+  }
+})
+
+test('malformed same-origin DSM CGI PDF selector fails closed before iframe or HEAD', async () => {
+  const saved = global.fetch, calls = []
+  let renderer
+  global.fetch = async (...args) => { calls.push(args); throw Error('Invalid selector must not reach Agent') }
+  try {
+    for (const url of [
+      dsmPDF(47) + '&unexpected=1',
+      dsmPDF(47).replace('application%2Fpdf', 'text%2Fhtml'),
+      dsmPDF(47).replace('sha256=' + 'a'.repeat(64), 'sha256=invalid'),
+    ]) {
+      await act(async () => {
+        renderer = create(React.createElement(XDriveFilePreviewSurface, {
+          target: node(47), loadPreviewURL: async () => url,
+        }))
+      })
+      assert.equal(renderer.root.findAllByType('iframe').length, 0)
+      assert.equal(findRetry(renderer).length, 1)
+      await act(async () => renderer.unmount())
+      renderer = null
+    }
+    assert.deepEqual(calls, [])
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    global.fetch = saved
+  }
+})

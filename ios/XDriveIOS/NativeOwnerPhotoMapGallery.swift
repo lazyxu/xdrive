@@ -499,7 +499,7 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
     ) {
         coverTask?.cancel()
         coverTask = Task { @MainActor in
-            // At most 12 covers per viewport, sourced from fresh exact-place
+            // At most 64 bounded covers per viewport, sourced from fresh exact-place
             // Owner Range pages. Never trust bare cover_node_id as an image
             // credential. Sequential requests bound foreground memory/traffic.
             for facet in XDriveIOSNativeOwnerMapSelectionPolicy

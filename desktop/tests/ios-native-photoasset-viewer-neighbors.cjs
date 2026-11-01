@@ -80,7 +80,7 @@ test('cloud Viewers fence playback failure to the active Owner and AVPlayer item
   const originals = src('ios/XDriveIOS/NativeCloudOriginalGallery.swift');
   const original = originals.slice(originals.indexOf('struct XDriveIOSNativeCloudOriginalPreview: View'),
     originals.indexOf('/// SwiftUI\'s ForEach identity', originals.indexOf('struct XDriveIOSNativeCloudOriginalPreview: View')));
-  assert.match(detail, /guard ownerAuthorized, let expected = openedOwner/);
+  assert.match(detail, /guard phase == \.active, let expected = openedOwner,[\s\S]*?ownerAuthorized/);
   assert.match(detail, /matches\(login\.owner, expected\)/);
   assert.match(detail, /matches\(auth\.owner, expected\)/);
   for (const scoped of [detail, original]) {
@@ -121,4 +121,16 @@ test('cloud player KVO failures are bound to the current Owner and item with man
   assert.match(original, /native-ios-original-player-reload/);
   assert.match(detail, /\.AVPlayerItemFailedToPlayToEndTime/);
   assert.match(original, /\.AVPlayerItemFailedToPlayToEndTime/);
+});
+
+
+test('cloud initial player status recovery coexists with exported original actions', () => {
+  const cloud = src('ios/XDriveIOS/NativeCloudOriginalGallery.swift');
+  const viewer = cloud.slice(cloud.indexOf('struct XDriveIOSNativeCloudOriginalPreview: View'),
+    cloud.indexOf('/// SwiftUI\'s ForEach identity'));
+  assert.match(viewer, /native-ios-original-export/);
+  assert.match(viewer, /native-ios-original-share/);
+  assert.match(viewer, /native-ios-original-player-reload/);
+  assert.match(viewer, /XDriveIOSNativeAVPlayerStatusObserver\(/);
+  assert.match(viewer, /@StateObject private var exporter = XDriveIOSNativeFilesExportModel\(\)/);
 });
