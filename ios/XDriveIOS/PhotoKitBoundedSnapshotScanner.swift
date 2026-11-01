@@ -86,7 +86,8 @@ actor XDrivePhotoKitBoundedSnapshotScanner {
 
     /// Explicit user-triggered initial scan; no permission prompt. If iOS
     /// Limited access is granted, the result is only the authorized subset.
-    func start(atOffset requestedOffset: Int = 0) throws -> Int {
+    func start(atOffset requestedOffset: Int = 0,
+               requireStableResume: Bool = false) throws -> Int {
         reset()
         guard requestedOffset >= 0 else {
             throw XDrivePhotoKitScanFailure.invalidOffset
@@ -99,19 +100,33 @@ actor XDrivePhotoKitBoundedSnapshotScanner {
         listening = true
         let beginVersion = observer.currentVersion()
         let options = PHFetchOptions()
-        // Creation dates can tie (including nil). Without an identity
-        // tie-breaker, an otherwise unchanged 256-slot automatic cursor can
-        // observe a different order on the next PhotoKit fetch. This key
-        // stays inside the native PHFetchResult; IDs are never persisted here.
+        // PhotoKit throws an Objective-C exception for a localIdentifier
+        // NSSortDescriptor. Only supported date keys may enter fetch options.
+        // modificationDate reduces ties but is NOT a unique identity key:
+        // a persisted backup offset must reject an ambiguous tie boundary.
         options.sortDescriptors = [
             NSSortDescriptor(key: "creationDate", ascending: false),
-            NSSortDescriptor(key: "localIdentifier", ascending: true)
+            NSSortDescriptor(key: "modificationDate", ascending: false)
         ]
         let snapshot = PHAsset.fetchAssets(with: options)
         guard observer.currentVersion() == beginVersion,
               PHPhotoLibrary.authorizationStatus(for: .readWrite) == status else {
             reset()
             throw XDrivePhotoKitScanFailure.snapshotChanged
+        }
+        let resumeOffset = min(requestedOffset, snapshot.count)
+        if requireStableResume && resumeOffset > 0 &&
+            resumeOffset < snapshot.count {
+            // Offset-based backup resumes must not split an equal-key group:
+            // PhotoKit may rearrange tied assets across separate fetches.
+            // Fail closed rather than skip an original at a 256-slot checkpoint.
+            let previous = snapshot.object(at: resumeOffset - 1)
+            let current = snapshot.object(at: resumeOffset)
+            guard previous.creationDate != current.creationDate ||
+                  previous.modificationDate != current.modificationDate else {
+                reset()
+                throw XDrivePhotoKitScanFailure.snapshotChanged
+            }
         }
         result = snapshot
         authorization = status

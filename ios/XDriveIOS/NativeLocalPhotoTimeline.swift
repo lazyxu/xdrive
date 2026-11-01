@@ -103,7 +103,7 @@ actor XDriveIOSNativeTimelineReader {
         let options = PHFetchOptions()
         options.sortDescriptors = [
             NSSortDescriptor(key: "creationDate", ascending: false),
-            NSSortDescriptor(key: "localIdentifier", ascending: true)
+            NSSortDescriptor(key: "modificationDate", ascending: false)
         ]
         let calendar = Calendar.autoupdatingCurrent
         if scale != .all {
@@ -190,7 +190,7 @@ actor XDriveIOSNativeTimelineReader {
         opts.fetchLimit = 1
         opts.sortDescriptors = [
             NSSortDescriptor(key: "creationDate", ascending: direction == 1),
-            NSSortDescriptor(key: "localIdentifier", ascending: true)
+            NSSortDescriptor(key: "modificationDate", ascending: false)
         ]
         if direction < 0 {
             opts.predicate = NSPredicate(
