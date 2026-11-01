@@ -1,0 +1,37 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const base = path.resolve(__dirname, '../..')
+const read = file => fs.readFileSync(path.join(base, file), 'utf8')
+const model = read('ios/XDriveIOS/NativeOwnerLoginModel.swift')
+const policy = read('ios/XDriveIOS/NativeOwnerLoginFailurePolicy.swift')
+const auth = read('ios/XDriveIOS/AuthService.swift')
+const route = read('ios/XDriveIOS/NativeLANLoginRoute.swift')
+const flow = read('.github/workflows/ios-unsigned-ipa.yml')
+
+test('exact native login screen now delegates error category and retry to tested policy', () => {
+  assert.match(model, /XDriveIOSNativeOwnerLoginFailurePolicy\.message\(for: failure\)/)
+  assert.match(model, /XDriveIOSNativeOwnerLoginFailurePolicy\.canRetrySavedSession\(after: failure\)/)
+  assert.match(policy, /if failure is AuthFailure \|\| failure is URLError/)
+  assert.match(policy, /if let owner = failure as\? XDriveNativeOwnerRootFailure/)
+  assert.match(policy, /case \.invalidServerReply:/)
+  assert.match(policy, /case \.missingServerIdentity:/)
+  assert.match(policy, /case \.serverStatus\(let status\):/)
+  assert.match(flow, /ios\/tests\/NativeOwnerLoginFailureChecks\.swift/)
+  assert.match(flow, /xdrive-ios-login-failure-policy/)
+})
+
+test('password and origin are not replayed, and LAN cert validation is still enforced', () => {
+  // A certificate failure is not in the exact network-fallback allowlist.
+  assert.match(route, /if let failure = error as\? URLError/)
+  assert.match(route, /\.cannotConnectToHost, \.timedOut, \.networkConnectionLost/)
+  assert.doesNotMatch(route, /if let failure = error as\? URLError,[\s\S]{0,200}\.serverCertificateUntrusted/)
+  assert.match(route, /throw error/)
+  assert.match(route, /URLSessionConfiguration\.ephemeral/)
+  assert.match(auth, /证书包含该 IP 的 SAN/)
+  assert.match(policy, /case \.cannotFindHost, \.dnsLookupFailed, \.cannotConnectToHost/)
+  assert.match(policy, /default:\s*return false/)
+  assert.doesNotMatch(policy, /refreshToken|accessToken|localizedDescription|print\(/)
+})
