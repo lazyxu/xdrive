@@ -36,6 +36,26 @@ struct NativeCurrentPhotoReceiptPolicyChecks {
         precondition(Policy.liveDestinationName(tag: tag, sha256: "bad") == nil)
         precondition(!Policy.canVerifyOriginal(kind: "unsupported", isLive: false))
 
+        precondition(Policy.fitsStagedPayload(
+            bytes: Policy.maximumOriginalBytes, isLiveArchive: false
+        ))
+        precondition(!Policy.fitsStagedPayload(
+            bytes: Policy.maximumOriginalBytes + 1, isLiveArchive: false
+        ))
+        precondition(Policy.fitsStagedPayload(
+            bytes: Policy.maximumOriginalBytes + 1, isLiveArchive: true
+        ))
+        precondition(Policy.fitsStagedPayload(
+            bytes: Policy.maximumOriginalBytes + Policy.maximumLiveZIPOverhead,
+            isLiveArchive: true
+        ))
+        precondition(!Policy.fitsStagedPayload(
+            bytes: Policy.maximumOriginalBytes + Policy.maximumLiveZIPOverhead + 1,
+            isLiveArchive: true
+        ))
+        precondition(!Policy.fitsStagedPayload(bytes: 0, isLiveArchive: true))
+        precondition(!Policy.fitsStagedPayload(bytes: Int64.max, isLiveArchive: true))
+
         for mask in 0..<32 {
             let allowed = Policy.canPublishCurrentProof(
                 matchedRoleAndDigest: mask & 1 != 0,

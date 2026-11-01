@@ -30,6 +30,17 @@ enum XDriveIOSNativeCurrentPhotoReceiptPolicy {
         return validSourceFilename(name) ? name : nil
     }
 
+    // A Live ZIP contains up to 1 GiB of original still+motion bytes plus
+    // ZIP local headers, manifest and central directory. This is a bounded
+    // allowance for deterministic archive overhead, not a larger original.
+    static let maximumOriginalBytes: Int64 = 1_073_741_824
+    static let maximumLiveZIPOverhead: Int64 = 1_048_576
+
+    static func fitsStagedPayload(bytes: Int64, isLiveArchive: Bool) -> Bool {
+        bytes > 0 && bytes <= maximumOriginalBytes +
+            (isLiveArchive ? maximumLiveZIPOverhead : 0)
+    }
+
     static func canVerifyOriginal(kind: String, isLive: Bool) -> Bool {
         kind == "image" || (kind == "video" && !isLive)
     }

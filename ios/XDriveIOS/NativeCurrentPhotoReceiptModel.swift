@@ -301,7 +301,9 @@ final class XDriveIOSNativeCurrentPhotoReceiptModel: ObservableObject {
     }
 
     private static func hashOriginal(_ item: XDriveStagedPhotoKitResource) throws -> String {
-        guard item.byteCount > 0, item.byteCount <= 1_073_741_824,
+        guard XDriveIOSNativeCurrentPhotoReceiptPolicy.fitsStagedPayload(
+                bytes: item.byteCount, isLiveArchive: item.role == "liveBundle"
+              ),
               let details = try? FileManager.default.attributesOfItem(
                 atPath: item.fileURL.path
               ),
