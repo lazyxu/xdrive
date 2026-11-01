@@ -9,6 +9,7 @@ import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 import type { ChangeEvent, FormEvent } from 'react'
 import InstallDesktopRoundedIcon from '@mui/icons-material/InstallDesktopRounded'
 import DnsRoundedIcon from '@mui/icons-material/DnsRounded'
+import FullscreenRoundedIcon from '@mui/icons-material/FullscreenRounded'
 import {
   AppBar,
   Autocomplete,
@@ -101,8 +102,8 @@ import { useXDriveWebAppRuntime, xDriveCreateWebAppBrowseSession, xDriveReadWebA
 import { xDriveWebAppRouteForWorkspaceKey, xDriveWebAppWorkspaceKey } from './webApps'
 import { XDriveMobileAllLauncher, XDriveMobileFiveSlotNavigation, XDriveMobileMinePage, xDriveBrowserMobileDestinations, xDriveBrowserMobileGalleryShortcuts } from './MobileFiveSlotNavigation'
 import { xDriveMobileLauncherSections, xDriveMobileLauncherGalleryRoute } from './mobileLauncherSections'
-import { xDriveInitialMobileNavigation, xDriveMobileFeatureParentRoute, xDriveMobileRouteForSlot, xDriveMobileSlotForRoute, xDriveRememberMobileNavigation, xDriveToggleMobileFavorite, xDriveSetMobileLauncherSearch, xDriveRememberMobileGalleryAlbum, xDriveMobileGallerySectionForViewer, xDriveMobileViewerSafeFallbackRoute, xDriveMobileAlbumOwnsBack, xDriveMobileMapFocused } from './mobileFiveSlotState'
-import type { XDriveMobileSlot } from './mobileFiveSlotState'
+import { xDriveInitialMobileNavigation, xDriveMobileFeatureParentRoute, xDriveMobileRouteForSlot, xDriveMobileSlotForRoute, xDriveRememberMobileNavigation, xDriveToggleMobileFavorite, xDriveSetMobileLauncherSearch, xDriveRememberMobileGalleryAlbum, xDriveMobileGallerySectionForViewer, xDriveMobileViewerSafeFallbackRoute, xDriveMobileAlbumOwnsBack, xDriveMobileMapFocused, xDriveMobileManualFocusTarget, xDriveMobileManualFocusActive } from './mobileFiveSlotState'
+import type { XDriveMobileSlot, XDriveMobileManualFocusSelection } from './mobileFiveSlotState'
 import { createWebMediaGalleryDataSource } from './mediaGalleryAdapter'
 import { XDriveRoutedGalleryThumbnailBridge } from './routedGalleryThumbnailBridge'
 import { xDriveTakeMapScopeHandoffFromURL, xDriveAbandonMapScopeRequired, xDriveRestoreMapReferrerAfterScrub } from './mapScopeHandoff'
@@ -1199,6 +1200,11 @@ function FileManager({
     !profile.must_change_password ? window.location.origin + ':' + profile.id : ''
   const mobileAdminVerified = profile?.username === username && profile?.role === 'admin' &&
     profile.must_change_password !== true
+  // Explicit L2 is volatile and Owner-fenced; returning from a Viewer keeps
+  // the source wall's focus, while an Owner change resets it (including A→B→A).
+  const [mobileManualFocus, setMobileManualFocus] =
+    useState<XDriveMobileManualFocusSelection | null>(null)
+  useEffect(() => { setMobileManualFocus(null) }, [mobileOwnerScope])
   const [mobileNavigation, setMobileNavigation] = useState(() => xDriveInitialMobileNavigation())
   useEffect(() => {
     setMobileNavigation(previous => xDriveRememberMobileNavigation(
@@ -2479,6 +2485,9 @@ function FileManager({
   }
   const mobileMapFocused = xDriveMobileMapFocused(route,
     mobileMapVisibility.owner === mobileOwnerScope && Boolean(mobileOwnerScope) && mobileMapVisibility.visible)
+  const mobileFocusTarget = compactWorkspace ? xDriveMobileManualFocusTarget(route) : null
+  const mobileManualFocused = compactWorkspace &&
+    xDriveMobileManualFocusActive(route, mobileOwnerScope, mobileManualFocus)
   const mobileRouteTitle = route.app === 'overview'
     ? route.params.section === 'mine' ? '我的' : '全部'
     : mobileMapFocused ? '地图' : xDriveWorkspaceRouteTitle(appView)
@@ -2664,7 +2673,7 @@ function FileManager({
           {/* L2 Places map owns a 44px in-map Close control. Suppress the
               L1 52px app bar only for the actual verified Owner map panel,
               not the Places list, a stale map focus or other features. */}
-          {compactWorkspace && !mobileMapFocused ? (
+          {compactWorkspace && !mobileMapFocused && !mobileManualFocused ? (
             <XDriveMobileAppHeader
               title={mobileRouteTitle}
               canGoBack={mobileCanGoBack}
@@ -2672,8 +2681,40 @@ function FileManager({
               disabled={viewerActive}
               onBack={goBackWithinMobileFeature}
               onOpenApps={() => selectMobileSlot('all')}
-              transferAction={transferAction}
+              transferAction={mobileFocusTarget && mobileOwnerScope ? (
+                <Stack direction="row" alignItems="center" spacing={0.25}>
+                  <Button aria-label="进入专注模式" title="进入专注模式"
+                    data-xdrive-mobile-enter-focus
+                    sx={{ minWidth: 44, minHeight: 44, p: 0 }}
+                    onClick={() => setMobileManualFocus({
+                      ownerScope: mobileOwnerScope, target: mobileFocusTarget,
+                    })}>
+                    <FullscreenRoundedIcon fontSize="small" />
+                  </Button>
+                  {transferAction}
+                </Stack>
+              ) : transferAction}
             />
+          ) : null}
+          {compactWorkspace && mobileManualFocused && !viewerActive ? (
+            <Box component="header" data-xdrive-mobile-focus-header
+              aria-label="专注模式导航"
+              sx={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                flexShrink: 0, gap: 1, px: 1.5, bgcolor: 'background.paper',
+                minHeight: 'calc(44px + env(safe-area-inset-top))',
+                pt: 'env(safe-area-inset-top)',
+                borderBottom: 1, borderColor: 'divider',
+              }}>
+              <Typography component="h1" variant="subtitle2" noWrap>
+                {mobileFocusTarget === 'files' ? '文件' : '图库'} · 专注
+              </Typography>
+              <Button size="small" data-xdrive-mobile-restore-navigation
+                onClick={() => setMobileManualFocus(null)}
+                sx={{ minHeight: 44, flexShrink: 0 }}>
+                恢复导航
+              </Button>
+            </Box>
           ) : null}
         <Suspense fallback={
           <Box data-xdrive-web-route-first-read aria-busy={true}
@@ -2996,7 +3037,7 @@ function FileManager({
         </XDriveWorkspaceRouteSurface>
         <XDriveCommittedWorkspaceRoute view={appView} onReady={markLoadedWorkspaceApp} />
         </Suspense>
-        {compactWorkspace && !viewerActive && !mobileMapFocused ? (
+        {compactWorkspace && !viewerActive && !mobileMapFocused && !mobileManualFocused ? (
           <XDriveMobileFiveSlotNavigation
             selected={xDriveMobileSlotForRoute(route) ?? 'all'}
             dynamicLabel={latestMobileDynamic?.label ?? '最近'}
