@@ -1,4 +1,5 @@
 import { xDriveGalleryMapEntryScope } from '../../ui/shared/src/media-gallery-baidu-map-entry'
+import { xDriveEmptyBaiduMapPhotoScope } from '../../ui/shared/src/media-gallery-baidu-map-photo-scope'
 import type { XDriveBaiduMapPhotoScope } from '../../ui/shared/src/media-gallery-baidu-map-photo-scope'
 import type { XDriveWebAppBrowseContext } from '../../ui/shared/src/web-app'
 
@@ -59,4 +60,46 @@ export function xDriveRoutedViewerMapEntry(
     timeZone,
   })
   return entry.ok ? entry.scope : null
+}
+
+/**
+ * Explicit cross-collection navigation from an authenticated FILE Viewer to
+ * the full Owner Gallery map. Unlike xDriveRoutedViewerMapEntry, this does
+ * NOT claim to preserve directory/search/selection membership: the UI must
+ * disclose that the map displays the entire Owner library before invoking it.
+ *
+ * No fallback is allowed for any Gallery context (including an expired
+ * signed Cell/Viewport, unsupported album filter or corrupt Gallery range).
+ * The caller must still verify the exact Node/revision with the Server focus
+ * API and redeem a one-use same-origin map handoff before showing /cells.
+ */
+export function xDriveRoutedViewerFilePhotoMapEntry(
+  context: XDriveWebAppBrowseContext | null | undefined,
+  selectedNodeID: number,
+): XDriveBaiduMapPhotoScope | null {
+  if (!context || typeof context !== 'object' ||
+      !Number.isSafeInteger(selectedNodeID) || selectedNodeID <= 0 ||
+      !Number.isSafeInteger(context.activeIndex) || context.activeIndex < 0)
+    return null
+  switch (context.kind) {
+    case 'directory':
+      if (!Number.isSafeInteger(context.directoryID) || context.directoryID < 0)
+        return null
+      break
+    case 'search':
+      if (typeof context.query !== 'string') return null
+      break
+    case 'selection':
+      if (!Array.isArray(context.nodeIDs) ||
+          context.activeIndex >= context.nodeIDs.length ||
+          context.nodeIDs[context.activeIndex] !== selectedNodeID ||
+          context.nodeIDs.some(id => !Number.isSafeInteger(id) || id <= 0))
+        return null
+      break
+    default:
+      return null
+  }
+  // A fresh object prevents an accidental mutation of the shared default.
+  // Only the authenticated Owner endpoints give this scope meaning.
+  return { albumKey: '', filters: { ...xDriveEmptyBaiduMapPhotoScope.filters } }
 }

@@ -74,9 +74,9 @@ import {
 } from './webViewerContext'
 import { useViewerNode } from './useWebViewerNode'
 import { xDriveReadWebAppBrowseSession } from './webAppRuntime'
-import { xDriveRoutedViewerMapEntry } from './routedViewerMapEntry'
+import { xDriveRoutedViewerFilePhotoMapEntry, xDriveRoutedViewerMapEntry } from './routedViewerMapEntry'
 import { xDriveResolveBaiduOwnerPhotoFocusCamera } from '../../ui/shared/src/media-gallery-baidu-photo-focus-camera'
-import { xDriveBaiduMapPhotoScopeKey } from '../../ui/shared/src/media-gallery-baidu-map-photo-scope'
+import { xDriveBaiduMapPhotoScopeKey, xDriveEmptyBaiduMapPhotoScope } from '../../ui/shared/src/media-gallery-baidu-map-photo-scope'
 import { xDriveOwnerPhotoFocusSignalActive } from '../../ui/shared/src/media-gallery-baidu-photo-focus'
 import {
   xDrivePlacesMapModeFromHref, xDrivePlacesMapScopeHandoffURL,
@@ -1111,13 +1111,19 @@ function WebMediaViewerApp({
     }
   }
   const modalOwner = modalOwnerRef.current
-  // A routed Viewer without a still-live accepted Gallery context cannot
-  // infer album, favorite, date, Cell or viewport membership from its URL.
-  // Never redirect such a Viewer to an unfiltered #gallery/places screen.
+  // Preserve every approved Gallery filter. From Files or an explicit direct
+  // Owner Viewer, the user may separately CHOOSE the clearly labeled full-
+  // library map; never turn an expired/restricted Gallery map into Library.
+  const browseContext = route.params.context
+    ? xDriveReadWebAppBrowseSession(route.params.context) : null
   const mapEntryScope = route.params.context && ownerScope
-    ? xDriveRoutedViewerMapEntry(
-      xDriveReadWebAppBrowseSession(route.params.context))
+    ? xDriveRoutedViewerMapEntry(browseContext) : null
+  const fullLibraryMapScope = ownerScope && !mapEntryScope
+    ? (route.params.context
+      ? xDriveRoutedViewerFilePhotoMapEntry(browseContext, route.params.node)
+      : xDriveEmptyBaiduMapPhotoScope)
     : null
+  const routedMapScope = mapEntryScope ?? fullLibraryMapScope
   const mapFocusAbort = useRef<AbortController | null>(null)
   useEffect(() => () => {
     mapFocusAbort.current?.abort()
@@ -1160,7 +1166,7 @@ function WebMediaViewerApp({
   }
 
   const openRoutedPhotoMap = (picked?: { nodeID: number; revision: number }) => {
-    if (!mapEntryScope || !ownerScope || !route.params.context ||
+    if (!routedMapScope || !ownerScope ||
         modalOwnerRef.current !== modalOwner ||
         !mediaItem || !viewer.node ||
         viewer.node.id !== mediaItem.node.id ||
@@ -1175,13 +1181,25 @@ function WebMediaViewerApp({
     const controller = new AbortController()
     mapFocusAbort.current = controller
     const contextID = route.params.context
-    const sourceScope = mapEntryScope
+    const sourceScope = routedMapScope
     const originalKey = xDriveBaiduMapPhotoScopeKey(sourceScope)
+    const fullLibrary = Boolean(fullLibraryMapScope)
+    // The context can be replaced within the same session ID. An exact
+    // snapshot prevents mid-flight source changes or a gallery-to-files swap
+    // from widening a previously admitted map selection.
+    const originalContext = contextID ? JSON.stringify(browseContext) : null
     const active = () => {
       if (modalOwnerRef.current !== modalOwner ||
           !xDriveOwnerPhotoFocusSignalActive(controller.signal)) return null
-      const current = xDriveRoutedViewerMapEntry(
-        xDriveReadWebAppBrowseSession(contextID))
+      let current = !contextID && fullLibrary
+        ? xDriveEmptyBaiduMapPhotoScope : null
+      if (contextID) {
+        const renewed = xDriveReadWebAppBrowseSession(contextID)
+        if (!renewed || JSON.stringify(renewed) !== originalContext) return null
+        current = fullLibrary
+          ? xDriveRoutedViewerFilePhotoMapEntry(renewed, selected.nodeID)
+          : xDriveRoutedViewerMapEntry(renewed)
+      }
       return current && xDriveBaiduMapPhotoScopeKey(current) === originalKey
         ? { ownerScope, photoScope: current, focusIntent: selected } : null
     }
@@ -1199,8 +1217,9 @@ function WebMediaViewerApp({
           : '当前照片位置或图库范围无效，请返回图库重新进入。')
       const mode = xDrivePlacesMapModeFromHref(window.location.href)
       // The existing Server handoff is one-use, bound to the current signed
-      // Owner/session/map release. It carries the ORIGINAL filtered scope and
-      // a validated derived camera; the Child never receives this photo.
+      // Owner/session/map release. It carries the preserved Gallery scope or
+      // explicitly chosen full-library scope plus derived camera; the Child
+      // never receives the current photo identity or its original GPS.
       const ticket = await api.mediaBaiduMapScopeHandoffIssue(
         sourceScope, mode, controller.signal, focus.camera)
       if (!active()) return
@@ -1649,8 +1668,9 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
         <XDriveMediaGalleryViewerLocationDialog
           open
           item={mediaItem}
-          onOpenDynamicMap={mapEntryScope && ownerScope
+          onOpenDynamicMap={routedMapScope && ownerScope
             ? openRoutedPhotoMap : undefined}
+          opensFullLibrary={Boolean(fullLibraryMapScope)}
           onClose={() => setLocationOpen(false)}
         />
       ) : null}
