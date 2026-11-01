@@ -1485,10 +1485,14 @@ function FileManager({
   } | null>(null)
   const taskCenterFocusSequenceRef = useRef(0)
 
+  // A browser Back/Forward, tab, Owner or L2 map-focus transition must retire
+  // transient navigation drawers. Otherwise an unmounted five-slot picker can
+  // reopen over an unrelated page when the bottom bar becomes visible again.
   useEffect(() => {
     setMobileRecentOpen(false)
     setTransferPopoverOpen(false)
-  }, [compactWorkspace, viewerActive])
+  }, [compactWorkspace, viewerActive, route, mobileOwnerScope,
+    mobileMapVisibility.owner, mobileMapVisibility.visible])
 
   const trashDialogAdapter = useMemo(() => createWebTrashDialogAdapter(api), [api])
   const versionHistoryDialogAdapter = useMemo(() => createWebVersionHistoryDialogAdapter(api), [api])
