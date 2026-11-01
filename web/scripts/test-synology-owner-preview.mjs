@@ -305,7 +305,8 @@ test('DSM image size/compatibility use Owner thumbnails, never a fake video or L
   for (const id of [11, 12, 14]) {
     app.state.openFilePreview(app.state.displayedItems.find(item => item.id === id))
     await app.flush()
-    assert.equal(app.state.previewItem, null, 'unsupported type must not impersonate an image')
+    assert.equal(app.state.previewItem?.id, 13,
+      'an unsupported callback must not displace the already verified Viewer')
   }
   app.state.openFilePreview(app.state.displayedItems.find(item => item.id === 4))
   await app.flush()
