@@ -73,7 +73,9 @@ data class DriveState(
     val filesPdfBytes: Long = 0,
     /** Owner-private foreground audio session; never persists URL or tokens. */
     val filesAudioViewer: DriveNode? = null,
-    /** Private in-memory text is scoped to one visible Owner file and one detail dialog. */
+    /** Current Owner-verified full-screen Files text, never persisted. */
+    val filesTextViewer: DriveNode? = null,
+    /** The existing bounded 1 MiB preview is shared with long-press details. */
     val fileTextPreview: FileTextPreview? = null,
     val fileTextPreviewLoading: Boolean = false,
     val fileTextPreviewError: String? = null,
@@ -208,7 +210,7 @@ internal fun DriveState.canStartNativePhotoForeground(): Boolean =
         !galleryMetadataWriteAttempted && !galleryAlbumCreateAttempted &&
         !galleryAlbumEditAttempted && !browseBatchWriteAttempted &&
         fileUploadPickerParent == null && fileExportPending == null &&
-        filesPdfViewer == null && filesAudioViewer == null
+        filesPdfViewer == null && filesAudioViewer == null && filesTextViewer == null
 
 /** A lost batch DELETE ACK is resolved by a fresh GET, never by replaying DELETE. */
 internal fun DriveState.canReconcileBatchBrowse(): Boolean =
@@ -721,6 +723,7 @@ class DriveController(
         if (!state.value.canNavigateFiles() || state.value.filesSection != FilesSection.BROWSE ||
             state.value.browseSelectionMode ||
             state.value.filesPdfViewer != null || state.value.filesAudioViewer != null ||
+            state.value.filesTextViewer != null ||
             state.value.items.none { it == node }) return
         if (node.isDirectory) load(state.value.path + node, 0)
         else if (fileKind(node.name, false) in setOf("image", "video") &&
@@ -729,15 +732,20 @@ class DriveController(
             node.revision > 0 && node.size > 0) openFilesPdf(node)
         else if (fileKind(node.name, false) == "audio" &&
             node.revision > 0 && node.size > 0) openFilesAudio(node)
+        else if (node.revision > 0 && nativeTextPreviewCandidate(node.name))
+            openFilesText(node)
         else showDetails(node)
     }
 
     /** No synthetic Gallery Range is queried. A singleton presentation adapter
      * lets all existing secure image/video/Live Viewers keep their contracts. */
-    private fun filesNodeVisible(current: DriveState, node: DriveNode): Boolean {
+    private fun filesNodeVisible(
+        current: DriveState, node: DriveNode, allowEmpty: Boolean = false,
+    ): Boolean {
         if (current.screen != Screen.FILES || node.id <= 0 ||
             node.revision <= 0 || node.type != "file" ||
-            node.size <= 0 || current.destinationKind != null) return false
+            node.size < 0 || (!allowEmpty && node.size == 0L) ||
+            current.destinationKind != null) return false
         return if (current.filesSection == FilesSection.BROWSE)
             current.loaded && current.items.any { it == node }
         else current.collectionLoaded && current.collectionItems.any { it.node == node }
@@ -748,7 +756,7 @@ class DriveController(
         val current = state.value
         if (!filesNodeVisible(current, node) || !current.canNavigateFiles() ||
             current.browseSelectionMode || current.filesPdfViewer != null ||
-            current.filesAudioViewer != null ||
+            current.filesAudioViewer != null || current.filesTextViewer != null ||
             fileKind(node.name, false) != "pdf" || session == null || api == null) return
         if (current.discardableReadInFlight) invalidate()
         filesPdfEpoch++
@@ -807,7 +815,7 @@ class DriveController(
         val current = state.value
         if (!filesNodeVisible(current, node) || !current.canNavigateFiles() ||
             current.browseSelectionMode || current.filesAudioViewer != null ||
-            current.filesPdfViewer != null ||
+            current.filesPdfViewer != null || current.filesTextViewer != null ||
             fileKind(node.name, false) != "audio" || session == null ||
             api == null) return
         if (current.discardableReadInFlight) invalidate()
@@ -864,7 +872,7 @@ class DriveController(
         if (!filesNodeVisible(current, node) || !current.canNavigateFiles() ||
             current.browseSelectionMode ||
             current.filesAudioViewer != null || current.filesPdfViewer != null ||
-            session == null ||
+            current.filesTextViewer != null || session == null ||
             fileKind(node.name, false) !in setOf("image", "video")) return
         val service = api ?: return
         // Owner-only media detail is a disposable GET. A second tapped file
@@ -894,11 +902,40 @@ class DriveController(
         }
     }
 
+    /** Full-screen text reuses the Owner-scoped UTF-8 preview GET and
+     * retains Files rows, cursor and viewport for the original return. */
+    fun openFilesText(node: DriveNode) {
+        val current = state.value
+        // An empty UTF-8 file is a valid Owner file: open a real native
+        // Viewer rather than silently ignoring a tap on its 0-byte row.
+        if (!filesNodeVisible(current, node, allowEmpty = true) ||
+            !current.canNavigateFiles() ||
+            current.browseSelectionMode || current.filesPdfViewer != null ||
+            current.filesAudioViewer != null || current.filesTextViewer != null ||
+            !nativeTextPreviewCandidate(node.name) || session == null || api == null) return
+        if (current.discardableReadInFlight) invalidate()
+        stopTextPreview()
+        mutableState.value = state.value.copy(filesTextViewer = node, selected = null,
+            loading = false, discardableReadInFlight = false, error = null,
+            fileTextPreview = null, fileTextPreviewLoading = false,
+            fileTextPreviewError = null)
+        retryTextPreview()
+    }
+
+    fun dismissFilesTextViewer() {
+        if (state.value.filesTextViewer == null) return
+        stopTextPreview()
+        mutableState.value = state.value.copy(filesTextViewer = null,
+            fileTextPreview = null, fileTextPreviewLoading = false,
+            fileTextPreviewError = null)
+    }
+
     /** Long-press details may include folders; never use a stale/foreign row. */
     fun showDetails(node: DriveNode) {
         val current = state.value
         if (!current.canNavigateFiles() ||
-            current.filesPdfViewer != null || current.filesAudioViewer != null) return
+            current.filesPdfViewer != null || current.filesAudioViewer != null ||
+            current.filesTextViewer != null) return
         val visible = if (current.filesSection == FilesSection.BROWSE) current.items.any { it == node }
             else current.collectionItems.any { it.node == node }
         if (!visible) return
@@ -931,7 +968,7 @@ class DriveController(
      * checks prevent an A->B->A private-text replay. */
     fun retryTextPreview() {
         val current = state.value
-        val node = current.selected ?: return
+        val node = current.filesTextViewer ?: current.selected ?: return
         if (current.screen != Screen.FILES || current.destinationKind != null ||
             node.isDirectory || node.revision <= 0 || !nativeTextPreviewCandidate(node.name) ||
             session == null || current.fileTextPreviewLoading) return
@@ -949,7 +986,7 @@ class DriveController(
                 checkCurrent(ownerTicket)
                 val latest = state.value
                 if (textPreviewEpoch == previewTicket && latest.screen == Screen.FILES &&
-                    latest.selected == node) {
+                    (latest.filesTextViewer == node || latest.selected == node)) {
                     mutableState.value = latest.copy(fileTextPreview = preview,
                         fileTextPreviewLoading = false, fileTextPreviewError = null)
                 }
@@ -958,7 +995,8 @@ class DriveController(
             } catch (failure: Exception) {
                 val latest = state.value
                 if (ownerTicket != generation || textPreviewEpoch != previewTicket ||
-                    latest.screen != Screen.FILES || latest.selected != node) return@launch
+                    latest.screen != Screen.FILES ||
+                    (latest.filesTextViewer != node && latest.selected != node)) return@launch
                 if (failure is ApiException && failure.statusCode == 401) {
                     endSession(changeServer = false)
                     return@launch
@@ -1526,7 +1564,7 @@ class DriveController(
             !current.loaded || current.loading || current.destinationKind != null ||
             !current.browseSelectionMode || current.error != null ||
             current.browseBatchWriteAttempted || current.path.isEmpty() ||
-            current.filesPdfViewer != null ||
+            current.filesPdfViewer != null || current.filesTextViewer != null ||
             current.browseSelectedIds.size !in 1..200 || session == null) return
         val sourceID = current.path.last().id
         val rows = current.items.filter { it.id in current.browseSelectedIds &&
@@ -1890,6 +1928,7 @@ class DriveController(
         val current = state.value
         if (!current.canNavigateFiles() || current.filesSection == FilesSection.BROWSE ||
             current.filesAudioViewer != null || current.filesPdfViewer != null ||
+            current.filesTextViewer != null ||
             current.collectionItems.none { it == item }) return
         if (item.node.isDirectory) openCollectionFolder(item)
         else if (fileKind(item.node.name, false) in setOf("image", "video") &&
@@ -1898,6 +1937,8 @@ class DriveController(
             item.node.revision > 0 && item.node.size > 0) openFilesPdf(item.node)
         else if (fileKind(item.node.name, false) == "audio" &&
             item.node.revision > 0 && item.node.size > 0) openFilesAudio(item.node)
+        else if (item.node.revision > 0 && nativeTextPreviewCandidate(item.node.name))
+            openFilesText(item.node)
         else showDetails(item.node)
     }
 
@@ -3992,6 +4033,10 @@ class DriveController(
             dismissFilesAudioViewer()
             return
         }
+        if (current.filesTextViewer != null) {
+            dismissFilesTextViewer()
+            return
+        }
         if (current.destinationKind != null) dismissDestination()
         else if (current.browseSelectionMode) {
             mutableState.value = current.copy(
@@ -4083,7 +4128,7 @@ class DriveController(
             current.path.isEmpty() || !current.loaded || current.browseSelectionMode ||
             current.error != null || current.filesArrangement == target ||
             current.filesPdfViewer != null || current.filesAudioViewer != null ||
-            session == null) return
+            current.filesTextViewer != null || session == null) return
         val service = api ?: return
         val path = current.path.toList()
         request(discardableRead = true) { ticket ->
@@ -4220,7 +4265,8 @@ class DriveController(
             mutableState.value = state.value.withoutDestination().copy(
                 screen = Screen.PASSWORD, path = emptyList(),
                 items = emptyList(), loaded = false, collectionItems = emptyList(),
-                collectionLoaded = false, selected = null, fileExportPending = null,
+                collectionLoaded = false, selected = null,
+                filesTextViewer = null, fileExportPending = null,
                 fileDownloadSaved = false, fileUploadPickerParent = null,
                 fileUploadActive = false, fileUploadCommitted = false,
                 galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
@@ -4250,7 +4296,7 @@ class DriveController(
                 !isFileDownload && !isFileUpload,
             error = null, selected = null,
             filesPdfViewer = null, filesPdfBytes = 0,
-            filesAudioViewer = null,
+            filesAudioViewer = null, filesTextViewer = null,
             fileExportPending = null, fileExportOrigin = null,
             fileDownloadActive = isFileDownload && prior.fileDownloadActive,
             fileDownloadSaved = false, fileDownloadError = null,

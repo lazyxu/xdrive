@@ -214,11 +214,20 @@ struct XDriveIOSNativeFilesPreviewReader {
 
     func preview(_ selected: XDriveIOSNativeFilesNode) async throws
         -> XDriveIOSNativeFilesPreviewPayload {
+        let kind = XDriveIOSNativeFilesViewerPolicy.kind(for: selected.name)
         guard XDriveIOSNativeFilesViewerPolicy.canPreview(selected) else {
+            // An oversized but otherwise previewable still/PDF is not a
+            // decoder error. The Files management sheet can export originals
+            // that exceed the in-memory Viewer limits.
+            if (kind == .image &&
+                selected.size > XDriveIOSNativeFilesViewerPolicy.maximumImageBytes) ||
+               (kind == .pdf &&
+                selected.size > XDriveIOSNativeFilesViewerPolicy.maximumPDFBytes) {
+                throw XDriveIOSNativeFilesPreviewError.tooLarge
+            }
             throw XDriveIOSNativeFilesPreviewError.unsupported
         }
         try await verifyNode(selected)
-        let kind = XDriveIOSNativeFilesViewerPolicy.kind(for: selected.name)
 
         if kind == .text {
             let bytes = try await read(

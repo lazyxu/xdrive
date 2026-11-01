@@ -126,10 +126,12 @@ struct XDriveIOSNativeFilesViewer: View {
                     switch display {
                     case .image(let image):
                         XDriveIOSNativeZoomablePhotoView(image: image)
+                            .onNavigateSwipe { move($0) }
                             .accessibilityLabel("图片，可双指缩放或双击")
                     case .imageThumbnail(let image):
                         VStack(spacing: 0) {
                             XDriveIOSNativeZoomablePhotoView(image: image)
+                                .onNavigateSwipe { move($0) }
                                 .accessibilityLabel("低清缩略图，可双指缩放")
                             Text("当前只显示已索引的云端缩略图（低清）。查看原件请返回文件列表，通过“更多”→“下载并准备导出”。")
                                 .font(.caption).foregroundStyle(.secondary)
@@ -283,9 +285,9 @@ struct XDriveIOSNativeFilesViewer: View {
             if let reason = error as? XDriveIOSNativeFilesPreviewError {
                 switch reason {
                 case .unsupported:
-                    failure = "当前文件格式不支持原生预览。"
+                    failure = "当前格式不支持原生预览。可返回列表，通过「管理」下载并导出原件（导出上限 512 MiB）。"
                 case .tooLarge:
-                    failure = "文件超过本机预览上限。请返回文件列表，从“更多”中下载并导出原件。"
+                    failure = "文件超过本机预览上限。可返回列表，通过「管理」下载并导出原件（导出上限 512 MiB）。"
                 case .noThumbnail:
                     failure = "原图过大或格式无法解码，且没有可用的云端缩略图。请返回文件列表，从“更多”中下载并导出原件（当前导出上限 512 MiB）。"
                 case .changed, .invalidOwner, .response(401), .response(403), .response(404):
