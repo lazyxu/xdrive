@@ -1,7 +1,7 @@
 import type { XDriveSynologyNASShare } from './synology-nas-share-inventory'
 import type { XDriveDiagnosticReport } from './mui/DiagnosticsPage'
 import type { XDriveFileTextPreview } from './file-preview'
-import type { QuotaUsage, MediaItemRange, MediaAlbum } from './models'
+import type { QuotaUsage, MediaItemRange, MediaAlbum, MediaPlacesPage } from './models'
 import type { XDriveCloudStorageDataSource } from './mui/CloudStoragePage'
 import type {
   XDriveDeviceBackupOverview, XDriveDeviceBackupRunPage,
@@ -147,6 +147,54 @@ const ownerGalleryAlbumKeys = new Set([
   'revision', 'cover_node_id', 'updated_at',
 ])
 const ownerGalleryAlbumID = /^(?:manual|source|folder|smart):[A-Za-z0-9_:-]{1,150}$/
+const ownerGalleryPlaceID = /^place:(0|-?[1-9][0-9]*):(0|-?[1-9][0-9]*)$/
+export function xDriveSynologyValidOwnerPlaceID(value: string): boolean {
+  if (value.length > 64 || !ownerGalleryPlaceID.test(value)) return false
+  const match = ownerGalleryPlaceID.exec(value)!
+  const latitudeCell = Number(match[1])
+  const longitudeCell = Number(match[2])
+  return Number.isSafeInteger(latitudeCell) && Math.abs(latitudeCell) <= 9000 &&
+    Number.isSafeInteger(longitudeCell) && Math.abs(longitudeCell) <= 18000
+}
+const ownerPlaceKeys = new Set([
+  'id', 'name', 'latitude', 'longitude', 'sample_latitude', 'sample_longitude',
+  'coordinate_kind', 'item_count', 'cover_node_id',
+])
+function validateOwnerPlacesPage(raw: unknown, limit: number, offset: number): MediaPlacesPage {
+  if (!ownerGalleryObject(raw) ||
+    Object.keys(raw).some(k => !['items', 'total_count', 'offset', 'limit', 'has_more'].includes(k)) ||
+    !Array.isArray(raw.items) || raw.items.length > limit ||
+    !ownerGalleryInt(raw.total_count) || raw.offset !== offset || raw.limit !== limit ||
+    typeof raw.has_more !== 'boolean' ||
+    (raw.items.length === 0 && offset < raw.total_count) ||
+    (raw.items.length > 0 && offset + raw.items.length > raw.total_count) ||
+    raw.has_more !== (offset + raw.items.length < raw.total_count)) {
+    throw new Error('Invalid authenticated Server Owner Places Range')
+  }
+  const seen = new Set<string>()
+  for (const rawPlace of raw.items) {
+    if (!ownerGalleryObject(rawPlace) ||
+      Object.keys(rawPlace).some(k => !ownerPlaceKeys.has(k)) ||
+      typeof rawPlace.id !== 'string' ||
+      !xDriveSynologyValidOwnerPlaceID(rawPlace.id) ||
+      seen.has(rawPlace.id) ||
+      typeof rawPlace.name !== 'string' ||
+      rawPlace.name.length === 0 || rawPlace.name.length > 512 ||
+      /[\u0000\r\n]/.test(rawPlace.name) ||
+      !ownerGalleryInt(rawPlace.item_count, true) ||
+      (rawPlace.cover_node_id !== undefined && !ownerGalleryInt(rawPlace.cover_node_id, true)) ||
+      !['grid_cell_center', 'map_region_sample'].includes(String(rawPlace.coordinate_kind)) ||
+      !['latitude', 'sample_latitude', 'longitude', 'sample_longitude'].every(key => {
+        const v = rawPlace[key]
+        return typeof v === 'number' && Number.isFinite(v) &&
+          Math.abs(v) <= (key.endsWith('latitude') ? 90 : 180)
+      })) {
+      throw new Error('Invalid or duplicated authenticated Owner GPS place')
+    }
+    seen.add(rawPlace.id)
+  }
+  return raw as unknown as MediaPlacesPage
+}
 const ownerGalleryObject = (raw: unknown): raw is Record<string, unknown> =>
   raw !== null && typeof raw === 'object' && !Array.isArray(raw)
 const ownerGalleryInt = (raw: unknown, positive = false): raw is number =>
@@ -289,6 +337,11 @@ export interface XDriveSynologyBackupLocalClient extends XDriveLocalBackupCommon
     albumID?: string, signal?: AbortSignal,
   ): Promise<MediaItemRange>
   ownerGalleryAlbums(signal?: AbortSignal): Promise<MediaAlbum[]>
+  /** Current Owner's indexed places; only bounded, credential-free GPS summary. */
+  ownerPlacesPage(limit: number, offset: number, signal?: AbortSignal): Promise<MediaPlacesPage>
+  /** One canonical signed-in Owner place, not a client-side filter of 100k assets. */
+  ownerPlaceItemsRange(placeID: string, limit: number, offset: number,
+    signal?: AbortSignal): Promise<MediaItemRange>
   /** Exact current Owner Live Photo only; 4 MiB bounded video bytes. */
   ownerLivePhotoMotion(
     nodeID: number, revision: number, signal?: AbortSignal,
@@ -597,6 +650,26 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
     },
     ownerGalleryAlbums: async (signal) => validateOwnerGalleryAlbums(
       await request<unknown>('/v1/cloud-gallery-albums', 'GET', undefined, signal)),
+    ownerPlacesPage: async (limit, offset, signal) => {
+      if (!Number.isSafeInteger(limit) || limit < 1 || limit > 48 ||
+        !Number.isSafeInteger(offset) || offset < 0 || offset > 10_000_000) {
+        throw new Error('Invalid Owner Places page selector')
+      }
+      const path = '/v1/cloud-gallery-places?limit=' + limit + '&offset=' + offset
+      return validateOwnerPlacesPage(
+        await request<unknown>(path, 'GET', undefined, signal), limit, offset)
+    },
+    ownerPlaceItemsRange: async (placeID, limit, offset, signal) => {
+      if (!xDriveSynologyValidOwnerPlaceID(placeID) ||
+        !Number.isSafeInteger(limit) || limit < 1 || limit > 100 ||
+        !Number.isSafeInteger(offset) || offset < 0 || offset > 10_000_000) {
+        throw new Error('Invalid current Owner place photo range')
+      }
+      const path = '/v1/cloud-gallery-place-items?place_id=' +
+        encodeURIComponent(placeID) + '&limit=' + limit + '&offset=' + offset
+      return validateOwnerGalleryPage(
+        await request<unknown>(path, 'GET', undefined, signal), limit, offset)
+    },
     ownerLivePhotoMotion: async (nodeID, revision, signal) => {
       if (![nodeID, revision].every(value => Number.isSafeInteger(value) && value > 0)) {
         throw new Error('Invalid Owner Live Photo identity')
