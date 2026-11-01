@@ -17,7 +17,7 @@ test('local PhotoKit Gallery defaults to continuous lazy virtual pages with lega
   assert.match(source, /LazyVStack\(alignment: \.leading/)
   assert.match(source, /ForEach\(0\.\.<XDriveIOSNativePhotoVirtualPagePolicy\.pageCount\(total: total\)/)
   assert.match(source, /ForEach\(page\.items\)/)
-  assert.match(source, /ForEach\(offset\.\.<min\(offset \+ 64, expectedTotal\)/)
+  assert.match(source, /ForEach\(0\.\.<min\(64, expectedTotal - offset\)/)
   assert.match(source, /private var placeholderTile: some View/)
   assert.match(source, /XDrivePhotoKitBoundedSnapshotScanner\(\)/)
   assert.match(source, /let count = try await reader\.start\(atOffset: offset\)/)

@@ -78,7 +78,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                 // Match the number of real grid cells before PhotoKit finishes.
                 // A one-row spinner would shift the entire scroll offset later.
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 95, maximum: 150), spacing: 3)], spacing: 3) {
-                    ForEach(offset..<min(offset + 64, expectedTotal), id: \.self) { _ in
+                    ForEach(0..<min(64, expectedTotal - offset), id: \.self) { _ in
                         placeholderTile.accessibilityHidden(true)
                     }
                 }

@@ -2,7 +2,7 @@ import Foundation
 import Photos
 
 /// Native Photos operations are explicit, user-triggered PhotoKit writes.
-/// No backup upload cursor, cloud Owner, credential or media byte path is used.
+/// Only the authorized native photo library is changed; this module has no network or persistent writer.
 enum XDriveIOSNativeLocalPhotoActionError: Error {
     case unauthorized
     case staleSelection
