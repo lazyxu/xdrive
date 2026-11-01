@@ -124,8 +124,12 @@ forbidText(files.audit, ['正在加载审计日志'], '审计日志禁止首次�
 if ((files.audit.match(/<XDriveDescriptionItem\b/g) || []).length !== 8) throw new Error('审计事件详情没有完整复用共享描述网格')
 if (/from ['"]antd['"]/.test(files.audit) || files.audit.includes('@ant-design/icons')) throw new Error('审计日志仍依赖 Ant Design')
 requireText(files.share, ['分享令牌只显示一次', '创建下载链接', '已有分享', 'XDriveSectionHeader', 'XDriveShareList', 'XDriveStatusAlert', 'XDriveDialogTitle', 'XDriveDialogContent', 'XDriveActionButton'], '分享窗口')
-requireText(files.shareFields, ['XDriveCreatedShareLink', 'XDriveShareCreateFields', '新创建的分享链接', '最大下载次数', '密码（可选）', '有效期', '过期时间', '0 表示不限'], '共享分享字段')
-requireText(files.shareList, ['XDriveShareList', "variant === 'compact'", 'XDriveShareStatusBadge', 'XDriveTableSurface', '保护方式', '过期时间', '下载次数', '密码保护', '永不过期', '撤销'], '共享已有分享列表')
+requireText(files.shareFields, ['XDriveCreatedShareLink', 'XDriveShareCreateFields', '新创建的分享链接', '密码（可选）', '有效期', '过期时间'], '共享分享字段')
+requireText(files.share + files.shareList, ['访问权限', '只读', '查看 + 上传', '编辑已有分享'], '共享分享权限与可修改有效期')
+if (files.shareFields.includes('最大下载次数') || files.shareFields.includes('maxDownloadsValue')) {
+  throw new Error('已取消下载次数上限，分享创建表单不得再提供配额字段')
+}
+requireText(files.shareList, ['XDriveShareList', "variant === 'compact'", 'XDriveShareStatusBadge', 'XDriveTableSurface', '保护方式', '过期时间', '访问权限', '密码保护', '永不过期', '撤销'], '共享已有分享列表')
 if ((files.share.match(/<XDriveShareList\b/g) || []).length !== 1) throw new Error('Web 已有分享没有复用共享列表')
 if (files.share.includes('shares.map((share)') || files.share.includes('<XDriveShareStatusBadge')) throw new Error('Web 已有分享仍保留本地映射')
 if ((files.share.match(/<XDriveCreatedShareLink\b/g) || []).length !== 1) throw new Error('Web 新建分享链接没有复用共享展示')
