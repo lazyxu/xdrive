@@ -667,7 +667,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                     }
                 } else if let still {
                     XDriveIOSNativeZoomablePhotoView(image: still)
-                                .onNavigateSwipe { showNeighbor($0) }
+                        .onNavigateSwipe { showNeighbor($0) }
                         .accessibilityLabel("云端照片，可双指缩放或双击放大")
                 } else if let player {
                     VideoPlayer(player: player)
