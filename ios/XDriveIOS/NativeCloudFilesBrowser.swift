@@ -300,8 +300,9 @@ struct XDriveIOSNativeFilesBrowser: View {
                 Button("重试当前页") { reload() }
                     .accessibilityIdentifier("native-ios-files-retry")
             } else if model.entries.isEmpty {
-                ContentUnavailableView("这里没有文件", systemImage: "folder",
-                                       description: Text("当前目录或搜索结果为空。"))
+                Label("当前目录或搜索结果为空。", systemImage: "folder")
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 96)
             }
             ForEach(model.entries) { entry in
                 if entry.node.isDirectory {
