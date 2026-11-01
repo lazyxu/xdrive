@@ -106,6 +106,7 @@ export function XDriveMediaViewerContent({
         target={target}
         loadPreviewURL={loadOpenPreview}
         loadImagePreview={loadOpenThumbnail}
+        showImageDetails
         loadLivePhotoMotion={loadSurfaceLivePhotoMotion}
         fallback={fallback}
         minHeight={minHeight}
@@ -136,6 +137,7 @@ export function XDriveMediaViewerContent({
             target={target}
             loadPreviewURL={loadOpenPreview}
             loadImagePreview={loadOpenThumbnail}
+        showImageDetails
             fallback={fallback}
             minHeight={minHeight}
             maxHeight={maxHeight}
@@ -152,6 +154,7 @@ export function XDriveMediaViewerContent({
       target={target}
       loadPreviewURL={loadOpenPreview}
       loadImagePreview={loadOpenThumbnail}
+        showImageDetails
       fallback={fallback}
       minHeight={minHeight}
       maxHeight={maxHeight}
