@@ -248,3 +248,26 @@ test('native local and album photo walls free short landscape grid space while r
   assert.match(localWall, /只读取当前授权子集/)
   assert.match(albumWall, /不读取 iCloud 原件、不上传、不保存相册成员标识/)
 });
+
+test('native automatic scan stops for revoked Owner, sealed ledger or revoked Photos permission', () => {
+  const backup = read('ios/XDriveIOS/ForegroundPhotoBackupMVP.swift')
+  const run = backup.slice(backup.indexOf('    func run('), backup.indexOf('    private static func mustAbortRun('))
+  const policy = backup.slice(backup.indexOf('    private static func mustAbortRun('),
+    backup.indexOf('    private enum StillOutcome'))
+  const callback = run.slice(run.indexOf('let outcome = try await uploadOrVerifyOriginal('),
+    run.indexOf('await scanner.reset()'))
+  const abort = callback.indexOf('if Self.mustAbortRun(after: error) { throw error }')
+  const countUnavailable = callback.indexOf('report.unavailable += 1')
+  assert.ok(abort >= 0 && countUnavailable > abort,
+    'global trust failure must escape before counting an ordinary unavailable original')
+  assert.match(callback, /catch is CancellationError \{\s*throw CancellationError\(\)/)
+  assert.match(policy, /error is XDriveNativeOwnerRootFailure/)
+  assert.match(policy, /error is XDrivePhotoSyncLedgerError/)
+  assert.match(policy, /error as\? XDrivePhotoKitExportFailure,[\s\S]*?case \.notAuthorized = source/)
+  assert.match(policy, /error as\? XDriveIOSPhotoIntentPreparationError,[\s\S]*?case \.unverifiedOwnerOrDeviceScope = intent/)
+  assert.match(policy, /return false/)
+  assert.doesNotMatch(policy, /URLSession|UploadSession|ledger\.prepare|revokePendingRequests|localIdentifier/)
+  assert.match(backup, /case \.requiresReview:\s*report\.needsReview \+= 1\s*report\.stoppedForReview = true/)
+  assert.match(backup, /await scanner\.reset\(\)\s*throw error/,
+    'failed run must dispose native PhotoKit snapshot rather than resume a stale cursor')
+})
