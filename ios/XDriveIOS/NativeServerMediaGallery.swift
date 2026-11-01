@@ -367,6 +367,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
                         .accessibilityLabel("云端 Live Photo，长按播放")
                     } else {
                         XDriveIOSNativeZoomablePhotoView(image: still)
+                            .onNavigateSwipe { navigateLoaded($0) }
                     }
                     if liveResources != nil {
                         HStack(spacing: 12) {
@@ -421,6 +422,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
                         .onDisappear { player.pause() }
                 } else if let image {
                     XDriveIOSNativeZoomablePhotoView(image: image)
+                        .onNavigateSwipe { navigateLoaded($0) }
                 } else if let failure {
                     VStack(spacing: 8) {
                         Text(failure).foregroundStyle(.secondary).padding(.horizontal)
@@ -470,7 +472,10 @@ struct XDriveIOSNativeServerMediaPreview: View {
             // Signed previews must not survive a scene/Owner generation.
             // The Viewer remains bound to the source Owner captured by L2,
             // even if the account has switched before this task begins.
-            guard ownerAuthorized, let expected = openedOwner else { return }
+            guard phase == .active, let expected = openedOwner,
+                  ownerAuthorized,
+                  XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
+            else { return }
             let requestID = previewRequestID
             let target = viewed
             do {

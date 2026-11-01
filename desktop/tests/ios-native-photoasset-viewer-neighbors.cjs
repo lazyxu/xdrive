@@ -80,7 +80,7 @@ test('cloud Viewers fence playback failure to the active Owner and AVPlayer item
   const originals = src('ios/XDriveIOS/NativeCloudOriginalGallery.swift');
   const original = originals.slice(originals.indexOf('struct XDriveIOSNativeCloudOriginalPreview: View'),
     originals.indexOf('/// SwiftUI\'s ForEach identity', originals.indexOf('struct XDriveIOSNativeCloudOriginalPreview: View')));
-  assert.match(detail, /guard ownerAuthorized, let expected = openedOwner/);
+  assert.match(detail, /guard phase == \.active, let expected = openedOwner,[\s\S]*?ownerAuthorized/);
   assert.match(detail, /matches\(login\.owner, expected\)/);
   assert.match(detail, /matches\(auth\.owner, expected\)/);
   for (const scoped of [detail, original]) {

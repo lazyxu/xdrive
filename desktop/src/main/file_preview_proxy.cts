@@ -122,6 +122,9 @@ export class DesktopFilePreviewProxy {
   private server: http.Server | null = null
   private baseURL = ''
   private readonly tickets = new Map<string, LocalPreviewTicket>()
+  // Concurrent Viewer opens must share one listener, never leave an orphan port.
+  private starting: Promise<void> | null = null
+  private disposed = false
 
   constructor(
     private readonly loadTicket: (nodeID: number, signal?: AbortSignal) => Promise<DesktopFilePreviewTicket>,
@@ -129,7 +132,19 @@ export class DesktopFilePreviewProxy {
   ) {}
 
   async start() {
+    if (this.disposed) throw new Error('File preview proxy is closed.')
     if (this.server) return
+    if (!this.starting) this.starting = this.listen()
+    const starting = this.starting
+    try {
+      await starting
+    } finally {
+      if (this.starting === starting) this.starting = null
+    }
+    if (this.disposed) throw new Error('File preview proxy is closed.')
+  }
+
+  private async listen() {
     const server = http.createServer((req, res) => {
       void this.handle(req, res)
     })
@@ -200,6 +215,7 @@ export class DesktopFilePreviewProxy {
     if (ticket.expiresAt <= Date.now()) throw new Error('File preview ticket is expired.')
     await this.start()
     signal?.throwIfAborted()
+    if (this.disposed) throw new Error('File preview proxy is closed.')
     this.purgeExpiredTickets()
     const localToken = randomBytes(32).toString('hex')
     this.tickets.set(localToken, {
@@ -242,21 +258,35 @@ export class DesktopFilePreviewProxy {
     if (!localPreviewTokenPattern.test(token)) return false
     const ticket = this.tickets.get(token)
     if (!ticket) return false
-    this.tickets.delete(token)
-    for (const controller of ticket.controllers) controller.abort()
-    ticket.controllers.clear()
+    this.revokeTicket(token, ticket)
     return true
   }
 
+  private revokeTicket(token: string, ticket: LocalPreviewTicket) {
+    this.tickets.delete(token)
+    for (const controller of ticket.controllers) controller.abort()
+    ticket.controllers.clear()
+  }
+
+  /** Used when the owning Renderer navigates, crashes or is destroyed. */
+  releaseAll() {
+    const count = this.tickets.size
+    for (const [token, ticket] of this.tickets) this.revokeTicket(token, ticket)
+    return count
+  }
+
   async close() {
+    // Closing while listen() is pending must not resurrect a listener or mint
+    // a token after application shutdown has already started.
+    this.disposed = true
+    this.releaseAll()
+    const starting = this.starting
+    if (starting) {
+      try { await starting } catch { /* Failed listener has nothing to close. */ }
+    }
     const server = this.server
     this.server = null
     this.baseURL = ''
-    for (const ticket of this.tickets.values()) {
-      for (const controller of ticket.controllers) controller.abort()
-      ticket.controllers.clear()
-    }
-    this.tickets.clear()
     if (!server) return
     await new Promise<void>((resolve) => server.close(() => resolve()))
   }
@@ -265,9 +295,7 @@ export class DesktopFilePreviewProxy {
     const now = Date.now()
     for (const [token, ticket] of this.tickets) {
       if (ticket.expiresAt > now) continue
-      this.tickets.delete(token)
-      for (const controller of ticket.controllers) controller.abort()
-      ticket.controllers.clear()
+      this.revokeTicket(token, ticket)
     }
   }
 
@@ -310,6 +338,7 @@ export class DesktopFilePreviewProxy {
   private async handle(req: http.IncomingMessage, res: http.ServerResponse) {
     let activeTicket: LocalPreviewTicket | undefined
     let activeController: AbortController | undefined
+    let activeReader: ReadableStreamDefaultReader<Uint8Array> | undefined
     try {
       if (!isLoopbackAddress(req.socket.remoteAddress)) {
         res.writeHead(403).end()
@@ -332,7 +361,7 @@ export class DesktopFilePreviewProxy {
       }
       const ticket = this.tickets.get(token)
       if (!ticket || ticket.expiresAt <= Date.now()) {
-        this.tickets.delete(token)
+        if (ticket) this.revokeTicket(token, ticket)
         res.writeHead(410).end()
         return
       }
@@ -346,9 +375,12 @@ export class DesktopFilePreviewProxy {
         method: req.method,
         headers: req.headers.range ? { Range: req.headers.range } : undefined,
         cache: 'no-store',
+        credentials: 'omit',
+        referrerPolicy: 'no-referrer',
         redirect: 'error',
         signal: controller.signal,
       })
+      controller.signal.throwIfAborted()
 
       for (const name of previewResponseHeaders) {
         const value = upstream.headers.get(name)
@@ -377,9 +409,11 @@ export class DesktopFilePreviewProxy {
       if (range.total) ticket.totalBytes = range.total
       this.emitProgress(ticket, true)
       const reader = upstream.body.getReader()
+      activeReader = reader
       let responseOffset = 0
       while (true) {
         const { done, value } = await reader.read()
+        controller.signal.throwIfAborted()
         if (done) break
         if (!value?.byteLength) continue
         if (range.start !== undefined) {
@@ -391,8 +425,13 @@ export class DesktopFilePreviewProxy {
           )
         }
         responseOffset += value.byteLength
-        if (!res.write(Buffer.from(value))) await once(res, 'drain')
+        // A released Viewer can close its downstream socket while writable
+        // backpressure is active. Abort must also break this drain wait.
+        if (!res.write(Buffer.from(value))) {
+          await once(res, 'drain', { signal: controller.signal })
+        }
       }
+      controller.signal.throwIfAborted()
       this.emitProgress(ticket, true)
       res.end()
     } catch (error) {
@@ -401,8 +440,11 @@ export class DesktopFilePreviewProxy {
         res.setHeader('X-Content-Type-Options', 'nosniff')
         res.writeHead(502)
       }
-      res.end()
+      if (!res.destroyed) res.end()
     } finally {
+      if (activeReader && activeController?.signal.aborted) {
+        void activeReader.cancel().catch(() => {})
+      }
       if (activeTicket && activeController) {
         activeTicket.controllers.delete(activeController)
       }

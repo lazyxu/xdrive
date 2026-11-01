@@ -41,7 +41,7 @@ type OwnerGalleryPreviewIdentity = {
 type OwnerGalleryReadPort = Pick<XDriveSynologyBackupLocalClient,
   'ownerGalleryItemsRange' | 'ownerGalleryAlbums' | 'ownerFileThumbnail' |
   'ownerFileMediaRange' | 'ownerFileMediaStreamURL' | 'ownerLivePhotoMotion' |
-  'ownerPlacesPage' | 'ownerPlaceItemsRange'>
+  'ownerPlacesPage' | 'ownerPlaceItemsRange' | 'ownerMapOverview'>
 
 /**
  * Current Owner CGI supports captured-descending original Gallery/Album Range.
@@ -169,6 +169,8 @@ export function createXDriveSynologyOwnerGallerySource(
     listPlaces: async (limit = 24) => (await client.ownerPlacesPage(
       Math.min(48, Math.max(1, limit)), 0)).items,
     listPlacesPage: (limit = 48, offset = 0) => client.ownerPlacesPage(limit, offset),
+    listPlacesMapOverview: (bounds, _detail = true, signal) =>
+      client.ownerMapOverview(bounds, signal),
     listAlbumItems: async (albumID, limit, offset, query) =>
       (await loadRange(limit, offset, query, undefined, albumID)).items,
     listAlbumItemRange: (albumID, limit, offset, query, signal) =>
