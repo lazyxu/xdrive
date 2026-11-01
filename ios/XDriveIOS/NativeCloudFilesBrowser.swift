@@ -316,9 +316,7 @@ struct XDriveIOSNativeFilesBrowser: View {
         model.entries.filter { selectedIDs.contains($0.id) }.map(\.node)
     }
 
-    var body: some View {
-        ScrollViewReader { returnScroll in
-        List {
+    private var filesHeader: some View {
             Section {
                 HStack(spacing: 8) {
                     TextField("搜索全部文件", text: $queryDraft)
@@ -391,6 +389,9 @@ struct XDriveIOSNativeFilesBrowser: View {
                 .disabled(login.owner == nil || batchTrash.busy || batchTarget.busy)
                 .accessibilityIdentifier("native-ios-files-open-trash")
             }
+    }
+
+    @ViewBuilder private var filesLoadStatus: some View {
             if model.loading {
                 HStack { ProgressView(); Text("正在读取当前页…") }
             } else if let error = model.errorMessage {
@@ -402,23 +403,9 @@ struct XDriveIOSNativeFilesBrowser: View {
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, minHeight: 96)
             }
-            if viewMode == "grid" {
-                LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 128, maximum: 184), spacing: 10)],
-                    spacing: 10
-                ) {
-                    ForEach(model.entries) { entry in
-                        gridTile(entry)
-                            .id(entry.id)
-                    }
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-                .listRowInsets(EdgeInsets())
-                .listRowSeparator(.hidden)
-                .accessibilityIdentifier("native-ios-files-grid")
-            } else {
-                ForEach(model.entries) { entry in
+    }
+
+    @ViewBuilder private func fileEntryRow(_ entry: XDriveIOSNativeFilesEntry) -> some View {
                     if selecting {
                         Button { toggleSelection(entry) } label: {
                             HStack(spacing: 12) {
@@ -489,8 +476,9 @@ struct XDriveIOSNativeFilesBrowser: View {
                         }
                         .id(entry.node.id)
                     }
-                }
-            }
+    }
+
+    private var filesPager: some View {
             Section {
                 HStack {
                     Button("上一页") {
@@ -513,6 +501,9 @@ struct XDriveIOSNativeFilesBrowser: View {
                 }
                 .accessibilityIdentifier("native-ios-files-page-controls")
             }
+    }
+
+    @ViewBuilder private var filesBatchOperations: some View {
             if selecting {
                 Section("本页批量操作") {
                     Text("已选 \(selectedIDs.count) 项（最多 64 项，仅当前文件夹本页）")
@@ -562,7 +553,39 @@ struct XDriveIOSNativeFilesBrowser: View {
                     }
                 }
             }
+    }
+
+    private var filesList: some View {
+        List {
+            filesHeader
+            filesLoadStatus
+            if viewMode == "grid" {
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 128, maximum: 184), spacing: 10)],
+                    spacing: 10
+                ) {
+                    ForEach(model.entries) { entry in
+                        gridTile(entry)
+                            .id(entry.id)
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .listRowInsets(EdgeInsets())
+                .listRowSeparator(.hidden)
+                .accessibilityIdentifier("native-ios-files-grid")
+            } else {
+                ForEach(model.entries) { entry in
+                    fileEntryRow(entry)
+                }
+            }
+            filesPager
+            filesBatchOperations
         }
+    }
+
+    private var filesChrome: some View {
+        filesList
         .listStyle(.plain)
         .navigationTitle(folder?.name ?? "文件")
         .navigationBarTitleDisplayMode(.inline)
@@ -599,6 +622,10 @@ struct XDriveIOSNativeFilesBrowser: View {
                 .disabled(batchTrash.busy || batchTarget.busy)
             }
         }
+    }
+
+    private var filesModals: some View {
+        filesChrome
         .sheet(item: $batchDestinationIntent) { intent in
             if XDriveIOSNativePhotoOwnerScope.matches(login.owner, intent.owner) {
                 XDriveIOSNativeFilesDestinationPicker(
@@ -714,6 +741,11 @@ struct XDriveIOSNativeFilesBrowser: View {
                 Text("当前账户已变化，请返回文件列表。")
             }
         }
+    }
+
+    var body: some View {
+        ScrollViewReader { returnScroll in
+            filesModals
         .onAppear { reload() }
         .onDisappear { if selectedFile == nil { model.invalidate() } }
         .onDisappear {
