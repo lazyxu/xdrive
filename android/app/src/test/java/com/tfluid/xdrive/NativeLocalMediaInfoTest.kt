@@ -47,6 +47,18 @@ class NativeLocalMediaInfoTest {
         assertEquals("Camera", values["相册"])
     }
 
+    @Test fun mimeValidationDoesNotTrimMalformedUntrustedTokens() {
+        listOf("\\ntext", "text", "image/", "image /jpeg", "image/jpeg\\n",
+            "image//jpeg", "image/jpeg; charset=utf-8").forEach { invalid ->
+            assertEquals("invalid MIME: [" + invalid + "]",
+                "未知", rows(NativeLocalMediaInfo(mime = invalid))["格式"])
+        }
+        listOf("image/heic", "image/x-adobe-dng",
+            "application/vnd.apple.mpegurl").forEach { valid ->
+            assertEquals(valid, rows(NativeLocalMediaInfo(mime = valid))["格式"])
+        }
+    }
+
     @Test fun invalidTimestampsDoNotCrashInfo() {
         val values = rows(NativeLocalMediaInfo(
             takenAtMillis = Long.MAX_VALUE, durationMillis = -1L

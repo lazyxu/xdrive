@@ -101,13 +101,11 @@ internal fun nativeLocalMediaInfoRows(
     } ?: "未记录"
     // A MIME type must contain one valid type/subtype, not merely become
     // printable after trimming control bytes (e.g. "\\ntext" -> "text").
-    val mime = info.mime?.takeIf {
-        it.length in 3..100 &&
-            it.matches(Regex("[A-Za-z0-9!#    val mime = info.mime?.trim()?.take(100)?.takeIf {
-        it.isNotEmpty() && it.none { c -> c.isISOControl() }
-    } ?: "未知"^_.+-]+/[A-Za-z0-9!#    val mime = info.mime?.trim()?.take(100)?.takeIf {
-        it.isNotEmpty() && it.none { c -> c.isISOControl() }
-    } ?: "未知"^_.+-]+"))
+    // MediaStore MIME metadata is untrusted. Do not trim controls, accept a
+    // missing slash, or silently turn a malformed type into a valid subtype.
+    val mime = info.mime?.takeIf { value ->
+        value.length in 3..100 &&
+            value.matches(Regex("""[A-Za-z0-9!#$%&'*+.^_`|~-]+/[A-Za-z0-9!#$%&'*+.^_`|~-]+"""))
     } ?: "未知"
     val dimensions = if (info.width != null && info.width in 1..100_000 &&
         info.height != null && info.height in 1..100_000)
