@@ -17,8 +17,8 @@ import (
 const (
 	// A separate, foreground-only derivative. These values must NOT affect
 	// the existing 512px Gallery wall cache or 1280px analysis endpoint.
-	ViewerPreviewEdge = 4096
-	ViewerPreviewVersion = 1
+	ViewerPreviewEdge        = 4096
+	ViewerPreviewVersion     = 1
 	ViewerPreviewWebPQuality = 90
 	ViewerPreviewJPEGQuality = 93
 )

@@ -40,6 +40,15 @@ new Function('exports', 'module', 'require', compiled)(
     if (name === './MediaLoadProgress') {
       return { XDriveMediaLoadingProgress: passthrough('span') }
     }
+    if (name === './ViewerImageSourceInfo') {
+      // Only the transient quality-metadata side channel is stubbed; the
+      // transport cancellation under test still uses its real HTTP reader.
+      return { xDriveViewerImageSource: () => null,
+        xDriveForgetViewerImageSource: () => {} }
+    }
+    if (name === './LivePhotoSurface') {
+      return { XDriveLivePhotoMotionDiagnosticsContext: React.createContext(null) }
+    }
     return require(name)
   },
 )

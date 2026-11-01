@@ -66,7 +66,9 @@ func TestMediaViewerWebPCacheEnvelope(t *testing.T) {
 		t.Fatal(err)
 	}
 	webp, err := mediapkg.ViewerPreviewWebP(bytes.NewReader(jpegBytes.Bytes()), 1, 64)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	key := mediapkg.ViewerPreviewStorageKey(12, 3, "aa1234", "webp")
 	for _, tc := range []struct {
 		name string
@@ -79,9 +81,13 @@ func TestMediaViewerWebPCacheEnvelope(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "viewer.webp")
-			if err := os.WriteFile(path, tc.body, 0600); err != nil { t.Fatal(err) }
+			if err := os.WriteFile(path, tc.body, 0600); err != nil {
+				t.Fatal(err)
+			}
 			f, err := os.Open(path)
-			if err != nil { t.Fatal(err) }
+			if err != nil {
+				t.Fatal(err)
+			}
 			defer f.Close()
 			if got := mediaDerivativeCacheValid(f, key); got != tc.want {
 				t.Fatalf("valid=%v want=%v", got, tc.want)
