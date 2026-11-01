@@ -55,6 +55,13 @@ for name in sorted(master_builds):
         ), f"{name}: required Docker image build must not run APT setup"
         assert "*ensure_linux_fetch_tools" not in block, f"{name}: APT setup reintroduced"
 
+# Both mandatory image publishing stages extend this template. Keep the
+# cached Docker CLI installer without reintroducing network-dependent APT.
+release_docker = jobs[".release-linux-docker"]
+assert "apt-get" not in release_docker, "GitLab release Docker jobs must not depend on APT"
+assert "scripts/ci/install-docker-cli.sh" in release_docker
+assert "docker info >/dev/null" in release_docker
+
 for name in sorted(nonblocking_tests):
     block = jobs[name]
     assert "  stage: test\n" in block
