@@ -86,6 +86,20 @@ class NativePhotoAutoConsentUiTest {
         compose.runOnIdle { assertEquals(0, enabled) }
     }
 
+    @Test fun ordinaryScanFailureIsRetryableWithoutClaimingAnUploadReceipt() {
+        compose.setContent {
+            XDriveTheme {
+                NativePhotoBatchControls(ready, true, {}, {}, {}, {},
+                    autoConfigured = true,
+                    autoStatus = AndroidPhotoAutoPolicyStore.STATUS_RETRYABLE_FAILURE)
+            }
+        }
+        compose.onNodeWithTag("native-photo-batch-open").performClick()
+        compose.onNodeWithTag("native-photo-auto-retryable")
+            .performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("native-photo-auto-needs-review").assertDoesNotExist()
+    }
+
     @Test fun manualUploadCannotGrantWorkManagerConsent() {
         var enabled = 0
         compose.setContent {

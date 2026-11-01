@@ -66,6 +66,18 @@ class AndroidPhotoAutoPolicyStoreTest {
         assertNull(store().snapshot())
     }
 
+    @Test fun retryableBackgroundScanKeepsConsentWhileUnknownAckStopsIt() {
+        val captured = store().enable(owner)
+        assertTrue(store().updateIfCurrent(owner, captured.epoch,
+            AndroidPhotoAutoPolicyStore.STATUS_RETRYABLE_FAILURE))
+        assertEquals(AndroidPhotoAutoPolicyStore.STATUS_RETRYABLE_FAILURE,
+            store().snapshot()?.status)
+        assertTrue(store().matches(owner, captured.epoch))
+        assertTrue(store().updateIfCurrent(owner, captured.epoch,
+            AndroidPhotoAutoPolicyStore.STATUS_NEEDS_REVIEW))
+        assertFalse(store().matches(owner, captured.epoch))
+    }
+
     @Test fun ownerChangeCannotReclassifyAnotherOwnersUnconfirmedUpload() {
         val old = store().enable(owner)
         val replacement = store().enable(owner.copy(ownerId = 44))
