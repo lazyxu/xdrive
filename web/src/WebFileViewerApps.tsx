@@ -89,6 +89,11 @@ import { xDriveWebTextSelection } from './webTextViewer'
 import { xDrivePreflightWebPDFTicket } from './webPDFTicketPreflight'
 import { xDriveMediaItemSupportsBasicEditing } from '../../ui/shared/src/media-edit'
 
+// Short landscape phones can exceed the 900px portrait breakpoint (e.g. a 956px iPhone).
+// Keep touch-sized controls and native video safe areas without changing tablet/desktop layouts.
+const XDRIVE_WEB_VIEWER_PHONE_LANDSCAPE_TOUCH_QUERY =
+  '(orientation: landscape) and (max-height: 500px) and (pointer: coarse)'
+
 // Navigation metadata is not media byte progress. Hold a full-height, silent
 // first-read canvas; the verified preview renderer still owns real thumbnails,
 // decoded media, Live Photo, PDF/audio and file-transfer progress.
@@ -226,7 +231,8 @@ function WebViewerFrame({
   const narrowViewport = useMediaQuery('(max-width:899.95px)')
   const ultraNarrowViewport = useMediaQuery('(max-width:367.95px)')
   const coarseMobilePointer = useMediaQuery('(max-width:899.95px) and (pointer: coarse)')
-  const compactTouch = coarseMobilePointer || (photosViewer && immersive && narrowViewport)
+  const shortLandscapeTouch = useMediaQuery(XDRIVE_WEB_VIEWER_PHONE_LANDSCAPE_TOUCH_QUERY)
+  const compactTouch = coarseMobilePointer || shortLandscapeTouch || (photosViewer && immersive && narrowViewport)
   const compactImmersive = compactTouch && immersive
   const hasNavigation = canPrevious || canNext
   const showMobileNavigation = hasNavigation && !(compactImmersive && photosViewer && ultraNarrowViewport)
@@ -467,7 +473,7 @@ function WebViewerFrame({
       onKeyDown={handleKeyDown}
       onFocusCapture={handleChromeFocusCapture}
       onBlurCapture={handleChromeBlurCapture}
-      onMouseMove={coarseMobilePointer ? undefined : showChrome}
+      onMouseMove={coarseMobilePointer || shortLandscapeTouch ? undefined : showChrome}
       onPointerDownCapture={handleTouchPointerDown}
       onPointerMoveCapture={handleTouchPointerMove}
       onPointerUpCapture={handleTouchPointerRelease}
@@ -1103,7 +1109,9 @@ function WebMediaViewerApp({
   // The actual routed Viewer is common to Mobile Web and wide Web. An iOS 27
   // compact rail cannot show ten 44px controls at 390px without sideways
   // scrolling; move only the presentation of secondary actions to More.
-  const narrowMediaViewer = useMediaQuery('(max-width:899.95px)')
+  const narrowViewport = useMediaQuery('(max-width:899.95px)')
+  const shortLandscapeTouch = useMediaQuery(XDRIVE_WEB_VIEWER_PHONE_LANDSCAPE_TOUCH_QUERY)
+  const narrowMediaViewer = narrowViewport || shortLandscapeTouch
   const ultraNarrowMediaViewer = useMediaQuery('(max-width:367.95px)')
   const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null)
   const [shareOpen, setShareOpen] = useState(false)
@@ -2017,7 +2025,9 @@ function WebTextViewerApp({
   api: XDriveApi
   onClose: (node: Node | null) => void
 }) {
-  const compactTouch = useMediaQuery('(max-width:899.95px) and (pointer: coarse)')
+  const coarseMobilePointer = useMediaQuery('(max-width:899.95px) and (pointer: coarse)')
+  const shortLandscapeTouch = useMediaQuery(XDRIVE_WEB_VIEWER_PHONE_LANDSCAPE_TOUCH_QUERY)
+  const compactTouch = coarseMobilePointer || shortLandscapeTouch
   // One reader per API and route, even when navigation returns A→B→A.
   // Ownership changes during render, before any stale response can paint.
   const readerOwnerRef = useRef({ api, nodeID: route.params.node })

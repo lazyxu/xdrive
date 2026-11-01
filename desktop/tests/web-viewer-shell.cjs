@@ -9,6 +9,8 @@ const { act, create } = require('react-test-renderer')
 const repo = path.resolve(__dirname, '../..')
 let compactTouch = false
 let viewportWidth = 390
+let viewportHeight = 844
+let landscape = false
 const timers = new Map()
 let timerID = 0
 const storage = new Map()
@@ -37,6 +39,9 @@ const mui = {
     if (query === '(max-width:367.95px)') return viewportWidth < 368
     if (query === '(max-width:899.95px) and (pointer: coarse)') {
       return compactTouch && viewportWidth < 900
+    }
+    if (query === '(orientation: landscape) and (max-height: 500px) and (pointer: coarse)') {
+      return compactTouch && landscape && viewportHeight <= 500
     }
     return compactTouch
   },
@@ -413,6 +418,110 @@ test('P1-2c Web media-viewer uses the same narrow Photos chrome on coarse and fi
   } finally {
     compactTouch = false
     viewportWidth = 390
+  }
+})
+
+
+test('P0 Web/PWA wide phone landscape keeps Gallery Viewer touch chrome and media lease through rotation', async () => {
+  compactTouch = true
+  viewportWidth = 390
+  viewportHeight = 844
+  landscape = false
+  const node = { id: 886, revision: 12, type: 'file', name: 'clip.mp4', size: 3000 }
+  const item = { node, metadata: { media_kind: 'video', mime_type: 'video/mp4', index_state: 'ready' } }
+  const api = { node: async () => node, mediaItem: async () => item }
+  const gallerySource = { loadPreviewURL: async () => 'https://example.invalid/video.mp4', loadThumbnail: async () => null }
+  const props = {
+    route: { app: 'media-viewer', params: { node: node.id } },
+    api, gallerySource, shareDialogAdapter: {}, onClose() {}, onReplaceRoute() {},
+    onError(error) { throw error },
+  }
+  let renderer
+  const frame = () => renderer.root.find(el => el.props['data-xdrive-web-viewer'] !== undefined)
+  const content = () => renderer.root.find(el => el.type === 'media-content')
+  try {
+    await act(async () => { renderer = create(React.createElement(WebFileViewerApps, props),
+      { createNodeMock: () => ({ focus() {} }) }) })
+    const originalContent = content()
+    assert.equal(originalContent.props.videoControlsSafeArea, 'actions')
+
+    // Real wide iPhone landscape CSS viewport: 956x440, above the 900px cutoff.
+    // Re-render the same mounted Viewer: only chrome changes, no media remount.
+    viewportWidth = 956
+    viewportHeight = 440
+    landscape = true
+    await act(async () => renderer.update(React.createElement(WebFileViewerApps, props)))
+    assert.equal(frame().props.sx.height, '100dvh')
+    assert.equal(frame().children[0].props.sx.position, 'absolute')
+    assert.equal(frame().props.onMouseMove, undefined, 'touch moves must not revive faded controls')
+    const rails = frame().findAll(el => el.props['data-xdrive-web-viewer-mobile-actions'] !== undefined)
+    assert.equal(rails.length, 1)
+    assert.equal(rails[0].props.sx['& .MuiIconButton-root'].width, 44)
+    assert.equal(rails[0].props.sx.pb, 'env(safe-area-inset-bottom)')
+    assert.equal(rails[0].findAll(el => el.props['aria-label'] === '更多照片操作').length, 1)
+    assert.equal(frame().props.sx['--xdrive-viewer-video-actions-clearance'],
+      'calc(56px + env(safe-area-inset-bottom))')
+    assert.equal(content(), originalContent, 'rotation must retain the same media renderer')
+    assert.equal(content().props.videoControlsSafeArea, 'actions')
+
+    viewportWidth = 390
+    viewportHeight = 844
+    landscape = false
+    await act(async () => renderer.update(React.createElement(WebFileViewerApps, props)))
+    assert.equal(content(), originalContent, 'returning to portrait must retain video playback')
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    compactTouch = false
+    viewportWidth = 390
+    viewportHeight = 844
+    landscape = false
+  }
+})
+
+test('P0 Web/PWA short phone landscape preserves Files Quick Look and standalone touch actions', async () => {
+  try {
+    compactTouch = true
+    viewportWidth = 956
+    viewportHeight = 440
+    landscape = true
+    for (const [app, name] of [
+      ['preview', 'clip.mp4'], ['text-viewer', 'notes.txt'],
+      ['pdf-viewer', 'book.pdf'], ['audio-player', 'recording.mp3'],
+    ]) {
+      const renderer = await mount(app, name)
+      try {
+        const frame = renderer.root.find(el => el.props['data-xdrive-web-viewer'] !== undefined)
+        const rails = frame.findAll(el => el.props['data-xdrive-web-viewer-mobile-actions'] !== undefined)
+        assert.equal(frame.props.sx.height, '100dvh', app)
+        assert.equal(frame.children[0].props.sx.position, app === 'preview' ? 'absolute' : 'relative',
+          app + ' keeps its own immersive header policy')
+        assert.equal(rails.length, 1, app + ' keeps a reachable mobile action rail')
+        assert.equal(rails[0].props.sx['& .MuiIconButton-root'].width, 44)
+        assert.equal(buttons(renderer, '返回').length, 1)
+        if (app === 'text-viewer') {
+          const textarea = renderer.root.find(el => el.type === 'textarea')
+          assert.equal(textarea.props.sx.fontSize, 16, 'mobile code text avoids iOS focus zoom')
+        }
+      } finally {
+        await act(async () => renderer.unmount())
+      }
+    }
+    // A wide but taller touch tablet must retain desktop chrome; width is
+    // not enough to make it a short-landscape phone.
+    viewportHeight = 650
+    const tablet = await mount('media-viewer', 'photo.jpg')
+    try {
+      const frame = tablet.root.find(el => el.props['data-xdrive-web-viewer'] !== undefined)
+      assert.equal(frame.props.sx.height, undefined)
+      assert.equal(frame.findAll(el => el.props['data-xdrive-web-viewer-mobile-actions'] !== undefined).length, 0)
+    } finally {
+      await act(async () => tablet.unmount())
+    }
+  } finally {
+    compactTouch = false
+    viewportWidth = 390
+    viewportHeight = 844
+    landscape = false
   }
 })
 
