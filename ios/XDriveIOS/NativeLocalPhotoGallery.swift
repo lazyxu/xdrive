@@ -404,13 +404,15 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
         }
         showsStaticStill = false
         livePlaybackRequest = nil
-        requestedICloudForCurrentItem = false
         crossingMessage = nil
         if let page {
             currentCrossedPage = page
             onCrossedPage?(next, page)
         }
         favoriteStatus = nil
+        // Retire the old item's explicit iCloud lease immediately before the
+        // old PhotoKit requests and selected item are replaced.
+        requestedICloudForCurrentItem = false
         model.cancel()
         activeItem = next
         onViewed?(next)
