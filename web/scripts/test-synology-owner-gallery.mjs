@@ -21,10 +21,16 @@ const item = { node, metadata: { media_kind: 'image', index_state: 'ready',
 const goodPage = { items: [item], total_count: 1, offset: 0, limit: 100 }
 const goodAlbums = [{ id: 'manual:abc', kind: 'manual', name: 'Album', item_count: 1 }]
 let page = goodPage, albums = goodAlbums
+let mapPage = { items: [{
+  id: 'map-region:1', name: '照片区域 1',
+  latitude: 35.505, longitude: 139.706,
+  sample_latitude: 35.505, sample_longitude: 139.706,
+  coordinate_kind: 'map_region_sample', item_count: 3,
+}], total_photo_count: 3, aggregated: true }
 const calls = []
 const exports = {}
 const ctx = vm.createContext({
-  exports, module: { exports }, URL, TextEncoder,
+  exports, module: { exports }, URL, URLSearchParams, TextEncoder,
   window: { location: {
     href: 'https://nas.example/webman/3rdparty/xdrivenas/index.html',
     origin: 'https://nas.example',
@@ -32,9 +38,10 @@ const ctx = vm.createContext({
   fetch: async (raw, options) => {
     const url = new URL(raw)
     calls.push({ url, options })
-    assert.ok(['cloud-gallery-items', 'cloud-gallery-albums'].includes(url.searchParams.get('op')))
+    assert.ok(['cloud-gallery-items', 'cloud-gallery-albums', 'cloud-gallery-map-overview'].includes(url.searchParams.get('op')))
     return { ok: true, headers: { get: () => 'application/json' },
-      json: async () => url.searchParams.get('op') === 'cloud-gallery-items' ? page : albums }
+      json: async () => url.searchParams.get('op') === 'cloud-gallery-items' ? page :
+        url.searchParams.get('op') === 'cloud-gallery-map-overview' ? mapPage : albums }
   },
 })
 vm.runInContext(output.outputText, ctx, { filename, timeout: 1000 })
@@ -93,4 +100,27 @@ const other = await client.ownerGalleryItemsRange('image', 100, 0, 'manual:abc')
 assert.equal(other.items.length, 1)
 assert.equal(calls.at(-1).url.searchParams.get('album_id'), 'manual:abc')
 assert.ok(calls.every(({ options }) => !options.headers.Authorization && !options.body))
+const bounds = { west: -180, south: -90, east: 180, north: 90 }
+const countBeforeMap = calls.length
+const verifiedMap = await client.ownerMapOverview(bounds, abort.signal)
+assert.equal(verifiedMap.total_photo_count, 3)
+assert.equal(verifiedMap.aggregated, true)
+assert.equal(verifiedMap.items[0].id, 'map-region:1')
+assert.equal(calls.length, countBeforeMap + 1)
+assert.equal(calls.at(-1).url.searchParams.get('op'), 'cloud-gallery-map-overview')
+assert.equal(calls.at(-1).url.searchParams.get('north'), '90')
+assert.equal(calls.at(-1).url.searchParams.get('south'), '-90')
+assert.equal(calls.at(-1).options.signal, abort.signal)
+const mapCalls = calls.length
+await assert.rejects(client.ownerMapOverview({ ...bounds, north: NaN }), /Invalid/)
+assert.equal(calls.length, mapCalls)
+for (const malformed of [
+  { ...mapPage, total_photo_count: 4 },
+  { ...mapPage, items: [mapPage.items[0], mapPage.items[0]] },
+  { ...mapPage, items: [{ ...mapPage.items[0], id: 'place:3550:13970' }] },
+  { ...mapPage, items: [{ ...mapPage.items[0], exif: 'private' }] },
+]) {
+  mapPage = malformed
+  await assert.rejects(client.ownerMapOverview(bounds), /Invalid|disagreement/)
+}
 console.log('DSM Owner Gallery uses only authorized read-only same-origin redacted CGIs')
