@@ -852,6 +852,7 @@ internal fun NativeLocalMediaViewer(
                     modifier = Modifier.heightIn(min = 48.dp)
                         .testTag("native-local-backup-request"),
                 ) { Text("备份这一项原件") }
+                NativeLocalPhotoShareAction(asset)
                 NativeLocalViewerLoadedNavigation(
                     loadedPosition, loadedCount, onPrevious, onNext)
                 NativeLocalMotionControl(
