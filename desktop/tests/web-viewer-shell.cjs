@@ -3080,3 +3080,77 @@ test('P0 Web Gallery same Node in two browse positions updates the active Viewer
     storage.delete(key)
   }
 })
+
+
+test('P0 Web/PWA cross-format route A→PDF→A aborts superseded metadata without old media', async () => {
+  const still = { id: 851, revision: 2, name: 'first.HEIC', type: 'file', size: 121 }
+  const pdf = { id: 852, revision: 4, name: 'second.pdf', type: 'file', size: 222 }
+  const requests = []
+  const api = {
+    node(id, signal) {
+      return new Promise(resolve => requests.push({ id, signal, resolve }))
+    },
+    mediaAnalysisPreviewURL: async () => 'blob:compatible-jpeg',
+    filePreviewURL: async id => '/api/v1/file-preview/' + id + '?ticket=test',
+    mediaLivePhotoStillURL: async () => 'blob:still',
+    mediaLivePhotoMotionURL: async () => 'blob:motion',
+  }
+  const props = (app, id) => ({
+    route: { app, params: { node: id } },
+    api, gallerySource: {}, shareDialogAdapter: {},
+    onClose() {}, onReplaceRoute() {}, onError(error) { throw error },
+  })
+  let renderer
+  const surface = () => renderer.root.findAll(el => el.type === 'preview-content')
+  const quiet = () => renderer.root.findAll(el =>
+    el.props['data-xdrive-web-viewer-quiet-first-read'] !== undefined)
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(WebFileViewerApps, props('preview', still.id)),
+        { createNodeMock: () => ({ focus() {} }) })
+    })
+    assert.equal(requests.length, 1)
+    const first = requests[0]
+    assert.equal(first.id, still.id)
+    assert.equal(quiet().length, 1)
+
+    await act(async () => {
+      renderer.update(React.createElement(WebFileViewerApps, props('pdf-viewer', pdf.id)))
+    })
+    assert.equal(first.signal.aborted, true,
+      'leaving Files Quick Look must revoke the pending metadata request')
+    assert.equal(surface().length, 0, 'no HEIC preview can remain under the PDF route')
+    assert.equal(quiet().length, 1)
+    assert.equal(requests.length, 2)
+    const middle = requests[1]
+    assert.equal(middle.id, pdf.id)
+
+    await act(async () => { first.resolve(still); await Promise.resolve() })
+    assert.equal(surface().length, 0, 'late HEIC metadata cannot paint into PDF')
+    await act(async () => { middle.resolve(pdf); await Promise.resolve() })
+    assert.equal(surface().length, 1)
+    assert.equal(surface()[0].props.target.id, pdf.id)
+
+    await act(async () => {
+      renderer.update(React.createElement(WebFileViewerApps, props('preview', still.id)))
+    })
+    assert.equal(middle.signal.aborted, true)
+    assert.equal(surface().length, 0,
+      'returning to A cannot reuse the retired first A or PDF render')
+    assert.equal(quiet().length, 1)
+    assert.equal(requests.length, 3)
+    const current = requests[2]
+    assert.equal(current.id, still.id)
+    assert.notEqual(current.signal, first.signal)
+    await act(async () => { current.resolve(still); await Promise.resolve() })
+    assert.equal(surface().length, 1)
+    assert.equal(surface()[0].props.target.id, still.id)
+    assert.equal(surface()[0].props.target.revision, still.revision)
+    const compatible = await surface()[0].props.loadPreviewURL(
+      { id: still.id, revision: still.revision, name: still.name, kind: 'file' },
+      'image', new AbortController().signal)
+    assert.equal(compatible, 'blob:compatible-jpeg')
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+  }
+})
