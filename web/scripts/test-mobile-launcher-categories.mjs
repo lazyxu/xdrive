@@ -94,9 +94,10 @@ assert.match(launcher, /key: 'gallery-places', label: '地图'/)
     'const selectMobileLauncher = ' + candidates[0].getText(ast) + ';', {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
     }).outputText
-  function makeLauncher(allowGallery = true) {
+  function makeLauncher(allowGallery = true, overviewSlot = null) {
     const launched = []
     const requestedPermissions = []
+    const snapshots = []
     const mobileLauncherDestinations = keys.filter(key =>
       key !== 'gallery' && !key.startsWith('gallery-') || allowGallery).map(key => ({ key }))
     const env = {
@@ -110,11 +111,13 @@ assert.match(launcher, /key: 'gallery-places', label: '地图'/)
         return key === 'files' || key === 'gallery' && allowGallery
       },
       serverAdminVerified: false,
+      mobileOverviewSlot: overviewSlot,
+      saveVisibleMobileOverviewScroll: () => snapshots.push(overviewSlot),
       launchWebApp: route => launched.push(route),
     }
     const select = new Function(...Object.keys(env),
       code + '\nreturn selectMobileLauncher;')(...Object.values(env))
-    return { select, launched, requestedPermissions }
+    return { select, launched, requestedPermissions, snapshots }
   }
   const allowed = makeLauncher()
   allowed.select('gallery-albums')
@@ -135,5 +138,29 @@ assert.match(launcher, /key: 'gallery-places', label: '地图'/)
   denied.select('gallery')
   assert.deepEqual(denied.launched, [],
     'unavailable Gallery cannot be opened through a stale Launcher shortcut')
+  assert.deepEqual(allowed.snapshots, [],
+    'a non-overview route must not snapshot Launcher scroll')
+  assert.deepEqual(denied.snapshots, [],
+    'an unapproved route cannot snapshot Launcher scroll')
+
+  // Reuse the ACTUAL production Launcher callback for all/mine. The snapshot
+  // happens only when a requested destination passes the existing Owner and
+  // workspace admission gate; it does not turn unauthorized routes into UI.
+  const fromAll = makeLauncher(true, 'all')
+  fromAll.select('gallery-albums')
+  fromAll.select('files')
+  fromAll.select('unknown-route')
+  fromAll.select('admin-users')
+  assert.deepEqual(fromAll.launched, [
+    { app: 'gallery', params: { section: 'albums' } },
+    { app: 'files', params: {} },
+  ])
+  assert.deepEqual(fromAll.snapshots, ['all', 'all'],
+    'accepted Launcher navigation preserves the outgoing All scroll')
+  const fromMine = makeLauncher(false, 'mine')
+  fromMine.select('gallery-places')
+  fromMine.select('files')
+  assert.deepEqual(fromMine.snapshots, ['mine'],
+    'rejected Gallery does not snapshot Mine; accepted Files does')
 }
 console.log('Mobile Launcher categories: authorized destinations, role, search and 44px favorite control passed')
