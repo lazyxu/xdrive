@@ -66,3 +66,18 @@ test('Owner, Node revision, exact MIME and ticket are checked before payload use
   assert.match(policy, /return files\[fileIndex \+ direction\]/);
   assert.doesNotMatch(reader, /POST.*UploadSession|FileManager\.default\.createFile|WKWebView/);
 });
+
+test('large and incompatible stills use revision-bound indexed derivatives only', () => {
+  assert.match(policy, /"avif", "bmp"/);
+  assert.match(policy, /case \.image: return node\.size > 0/);
+  assert.match(reader, /if kind == \.image && selected\.size > XDriveIOSNativeFilesViewerPolicy\.maximumImageBytes \{[\s\S]*?return try await fallbackThumbnail\(selected\)/);
+  assert.match(reader, /endpoint\("\/api\/v1\/media\/items\/\\\(selected\.id\)\/thumbnail"\)/);
+  assert.match(reader, /URLQueryItem\(name: "revision", value: String\(selected\.revision\)\)/);
+  assert.match(reader, /allowedMIMEs: \["image\/jpeg", "image\/png", "image\/heic", "image\/webp"\]/);
+  assert.match(reader, /kCGImageSourceThumbnailMaxPixelSize as String: 1024/);
+  assert.match(reader, /try await verifyNode\(selected\)[\s\S]*?return UIImage\(cgImage: image\)/);
+  assert.match(reader, /case \.changed, \.invalidOwner, \.response\(401\), \.response\(403\)/);
+  assert.match(view, /case \.imageThumbnail\(let image\):/);
+  assert.match(view, /case \.noThumbnail:/);
+  assert.doesNotMatch(reader, /URLSessionConfiguration\.default|URLSession\.shared/);
+});

@@ -8,6 +8,7 @@ import UIKit
 /// ticket, embeds the bearer in a URL, or downloads a video/audio into a Blob.
 enum XDriveIOSNativeFilesPreviewPayload {
     case image(UIImage)
+    case imageThumbnail(UIImage) // Indexed low-res fallback, not an original.
     case video(URL)
     case audio(URL)
     case pdf(PDFDocument)
@@ -20,6 +21,7 @@ enum XDriveIOSNativeFilesPreviewError: Error {
     case invalidOwner
     case malformed
     case tooLarge
+    case noThumbnail
     case response(Int)
 }
 
@@ -89,7 +91,8 @@ struct XDriveIOSNativeFilesPreviewReader {
 
     private func read(
         _ url: URL, method: String = "GET", authenticated: Bool = true,
-        maximum: Int, expectedMIME: String? = nil
+        maximum: Int, expectedMIME: String? = nil,
+        allowedMIMEs: Set<String>? = nil
     ) async throws -> Data {
         let config = URLSessionConfiguration.ephemeral
         config.httpShouldSetCookies = false
@@ -106,7 +109,8 @@ struct XDriveIOSNativeFilesPreviewReader {
         request.httpMethod = method
         request.httpShouldHandleCookies = false
         request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
-        request.setValue(expectedMIME ?? "application/json", forHTTPHeaderField: "Accept")
+        request.setValue(allowedMIMEs == nil ? (expectedMIME ?? "application/json") :
+            "image/jpeg, image/png, image/heic, image/webp", forHTTPHeaderField: "Accept")
         if authenticated {
             request.setValue("Bearer " + accessToken, forHTTPHeaderField: "Authorization")
         }
@@ -118,10 +122,14 @@ struct XDriveIOSNativeFilesPreviewReader {
         guard http.statusCode == 200 else {
             throw XDriveIOSNativeFilesPreviewError.response(http.statusCode)
         }
-        if let expectedMIME {
+        if expectedMIME != nil || allowedMIMEs != nil {
             let actual = (http.value(forHTTPHeaderField: "Content-Type") ?? "")
-                .split(separator: ";", maxSplits: 1).first.map(String.init) ?? ""
-            guard actual.lowercased() == expectedMIME.lowercased() else {
+                .split(separator: ";", maxSplits: 1).first.map(String.init)?
+                .lowercased() ?? ""
+            if let expectedMIME, actual != expectedMIME.lowercased() {
+                throw XDriveIOSNativeFilesPreviewError.malformed
+            }
+            if let allowedMIMEs, !allowedMIMEs.contains(actual) {
                 throw XDriveIOSNativeFilesPreviewError.malformed
             }
         }
@@ -138,6 +146,70 @@ struct XDriveIOSNativeFilesPreviewReader {
         )
         let actual = try JSONDecoder().decode(XDriveIOSNativeFilesNode.self, from: data)
         guard actual == selected else { throw XDriveIOSNativeFilesPreviewError.changed }
+    }
+
+
+    /// The indexed derivative is fetched with the verified Owner bearer.
+    /// No raw ticket is minted for an oversized original.
+    private func indexedThumbnail(_ selected: XDriveIOSNativeFilesNode) async throws -> UIImage {
+        let base = try endpoint("/api/v1/media/items/\(selected.id)/thumbnail")
+        guard var parts = URLComponents(url: base, resolvingAgainstBaseURL: false)
+        else { throw XDriveIOSNativeFilesPreviewError.malformed }
+        parts.queryItems = [
+            URLQueryItem(name: "v", value: "4"),
+            URLQueryItem(name: "revision", value: String(selected.revision))
+        ]
+        guard let url = parts.url else {
+            throw XDriveIOSNativeFilesPreviewError.malformed
+        }
+        let bytes = try await read(
+            url, maximum: 2 * 1_048_576,
+            allowedMIMEs: ["image/jpeg", "image/png", "image/heic", "image/webp"]
+        )
+        let decode = Task.detached(priority: .utility) { () -> CGImage? in
+            guard !Task.isCancelled,
+                  let source = CGImageSourceCreateWithData(
+                    bytes as CFData, [kCGImageSourceShouldCache: false] as CFDictionary
+                  ), CGImageSourceGetCount(source) > 0 else { return nil }
+            let options: [String: Any] = [
+                kCGImageSourceCreateThumbnailFromImageAlways as String: true,
+                kCGImageSourceCreateThumbnailWithTransform as String: true,
+                kCGImageSourceThumbnailMaxPixelSize as String: 1024,
+                kCGImageSourceShouldCacheImmediately as String: false
+            ]
+            let image = CGImageSourceCreateThumbnailAtIndex(
+                source, 0, options as CFDictionary
+            )
+            return Task.isCancelled ? nil : image
+        }
+        let image = await withTaskCancellationHandler {
+            await decode.value
+        } onCancel: {
+            decode.cancel()
+        }
+        try Task.checkCancellation()
+        guard let image else { throw XDriveIOSNativeFilesPreviewError.malformed }
+        try await verifyNode(selected)
+        return UIImage(cgImage: image)
+    }
+
+    private func fallbackThumbnail(
+        _ selected: XDriveIOSNativeFilesNode
+    ) async throws -> XDriveIOSNativeFilesPreviewPayload {
+        do {
+            return .imageThumbnail(try await indexedThumbnail(selected))
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let reason as XDriveIOSNativeFilesPreviewError {
+            switch reason {
+            case .changed, .invalidOwner, .response(401), .response(403):
+                throw reason
+            default:
+                throw XDriveIOSNativeFilesPreviewError.noThumbnail
+            }
+        } catch {
+            throw XDriveIOSNativeFilesPreviewError.noThumbnail
+        }
     }
 
     func preview(_ selected: XDriveIOSNativeFilesNode) async throws
@@ -166,6 +238,10 @@ struct XDriveIOSNativeFilesPreviewReader {
             return .text(preview.text, preview.truncated)
         }
 
+        if kind == .image && selected.size > XDriveIOSNativeFilesViewerPolicy.maximumImageBytes {
+            return try await fallbackThumbnail(selected)
+        }
+
         let payload = try await read(
             endpoint("/api/v1/files/\(selected.id)/preview-ticket"),
             method: "POST", maximum: 32_768
@@ -183,37 +259,49 @@ struct XDriveIOSNativeFilesPreviewReader {
         case .video: return .video(url)
         case .audio: return .audio(url)
         case .image:
-            let data = try await read(
-                url, authenticated: false,
-                maximum: Int(XDriveIOSNativeFilesViewerPolicy.maximumImageBytes),
-                expectedMIME: ticket.mime_type
-            )
-            try Task.checkCancellation()
-            let work = Task.detached(priority: .userInitiated) { () -> CGImage? in
-                guard !Task.isCancelled, let source = CGImageSourceCreateWithData(
-                    data as CFData,
-                    [kCGImageSourceShouldCache: false] as CFDictionary
-                ) else { return nil }
-                let options: [String: Any] = [
-                    kCGImageSourceCreateThumbnailFromImageAlways as String: true,
-                    kCGImageSourceCreateThumbnailWithTransform as String: true,
-                    kCGImageSourceThumbnailMaxPixelSize as String: 4096,
-                    kCGImageSourceShouldCacheImmediately as String: false
-                ]
-                let decoded = CGImageSourceCreateThumbnailAtIndex(
-                    source, 0, options as CFDictionary
+            do {
+                let data = try await read(
+                    url, authenticated: false,
+                    maximum: Int(XDriveIOSNativeFilesViewerPolicy.maximumImageBytes),
+                    expectedMIME: ticket.mime_type
                 )
-                return Task.isCancelled ? nil : decoded
+                try Task.checkCancellation()
+                let work = Task.detached(priority: .userInitiated) { () -> CGImage? in
+                    guard !Task.isCancelled, let source = CGImageSourceCreateWithData(
+                        data as CFData,
+                        [kCGImageSourceShouldCache: false] as CFDictionary
+                    ) else { return nil }
+                    let options: [String: Any] = [
+                        kCGImageSourceCreateThumbnailFromImageAlways as String: true,
+                        kCGImageSourceCreateThumbnailWithTransform as String: true,
+                        kCGImageSourceThumbnailMaxPixelSize as String: 4096,
+                        kCGImageSourceShouldCacheImmediately as String: false
+                    ]
+                    let decoded = CGImageSourceCreateThumbnailAtIndex(
+                        source, 0, options as CFDictionary
+                    )
+                    return Task.isCancelled ? nil : decoded
+                }
+                let image = await withTaskCancellationHandler {
+                    await work.value
+                } onCancel: {
+                    work.cancel()
+                }
+                try Task.checkCancellation()
+                if let image {
+                    try await verifyNode(selected)
+                    return .image(UIImage(cgImage: image))
+                }
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch let reason as XDriveIOSNativeFilesPreviewError {
+                // Revoked Owner or stale metadata must never use a derivative.
+                switch reason {
+                case .malformed, .tooLarge: break
+                default: throw reason
+                }
             }
-            let image = await withTaskCancellationHandler {
-                await work.value
-            } onCancel: {
-                work.cancel()
-            }
-            try Task.checkCancellation()
-            guard let image else { throw XDriveIOSNativeFilesPreviewError.malformed }
-            try await verifyNode(selected)
-            return .image(UIImage(cgImage: image))
+            return try await fallbackThumbnail(selected)
         case .pdf:
             let bytes = try await read(
                 url, authenticated: false,
