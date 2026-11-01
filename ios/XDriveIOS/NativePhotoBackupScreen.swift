@@ -294,6 +294,9 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("手动备份") {
+                Text("下一次手动扫描：第 \(controller.manualNextWindow + 1) 段。每段最多 256 项；达到 20 项新增上限会重复当前段，完成后才进入下一段。重启 App、切换账户或相册变化会重新从头检查。")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("native-ios-photos-manual-window")
                 if photoAuthorization != .authorized && photoAuthorization != .limited {
                     Text("照片访问权限不可用，无法启动手动原件备份。请先在本机相册授权，或在 iOS 设置中恢复照片访问。")
                         .font(.footnote).foregroundStyle(.orange)
@@ -315,6 +318,9 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                 }
                 if let result = controller.progress {
                     Text(result.stage)
+                    Text("本轮第 \(result.startOffset / 256 + 1) 段 · 当前已授权 \(result.totalVisible) 项（不代表全部已备份）")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("native-ios-photos-manual-coverage")
                     Text("当前段已扫描 \(result.scanned) · 新增 \(result.uploaded) · 已验证 \(result.verifiedAlready)")
                         .monospacedDigit()
                     Text("视频新增 \(result.videoUploaded)，Live ZIP 新增 \(result.liveBundleUploaded)，待核对 \(result.needsReview)，不可用 \(result.unavailable)")
