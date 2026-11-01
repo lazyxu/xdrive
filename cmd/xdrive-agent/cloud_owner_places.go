@@ -14,24 +14,42 @@ import (
 func ownerPlacesPageSelector(raw string, placeRequired bool) (limit, offset int, place string, ok bool) {
 	q, err := url.ParseQuery(raw)
 	want := 2
-	if placeRequired { want = 3 }
-	if err != nil || len(q) != want { return }
-	for key, values := range q {
-		if len(values) != 1 { return }
-		if key != "limit" && key != "offset" && (!placeRequired || key != "place_id") { return }
+	if placeRequired {
+		want = 3
 	}
-	if len(q["limit"]) != 1 || len(q["offset"]) != 1 { return }
+	if err != nil || len(q) != want {
+		return
+	}
+	for key, values := range q {
+		if len(values) != 1 {
+			return
+		}
+		if key != "limit" && key != "offset" && (!placeRequired || key != "place_id") {
+			return
+		}
+	}
+	if len(q["limit"]) != 1 || len(q["offset"]) != 1 {
+		return
+	}
 	limit, e1 := strconv.Atoi(q.Get("limit"))
 	offset, e2 := strconv.Atoi(q.Get("offset"))
 	max := client.OwnerPlacesPageLimit
-	if placeRequired { max = client.OwnerGalleryPageLimit }
+	if placeRequired {
+		max = client.OwnerGalleryPageLimit
+	}
 	if e1 != nil || e2 != nil || limit < 1 || limit > max ||
 		offset < 0 || offset > client.OwnerGalleryMaxOffset ||
-		strconv.Itoa(limit) != q.Get("limit") || strconv.Itoa(offset) != q.Get("offset") { return }
+		strconv.Itoa(limit) != q.Get("limit") || strconv.Itoa(offset) != q.Get("offset") {
+		return
+	}
 	if placeRequired {
 		place = q.Get("place_id")
-		if !client.ValidOwnerPlaceID(place) { return limit, offset, "", false }
-	} else if len(q["place_id"]) > 0 { return limit, offset, "", false }
+		if !client.ValidOwnerPlaceID(place) {
+			return limit, offset, "", false
+		}
+	} else if len(q["place_id"]) > 0 {
+		return limit, offset, "", false
+	}
 	return limit, offset, place, true
 }
 func (h *desktopIPCHandler) cloudOwnerPlacesPage(w http.ResponseWriter, r *http.Request) {
@@ -48,7 +66,10 @@ func (h *desktopIPCHandler) cloudOwnerPlacesPage(w http.ResponseWriter, r *http.
 		return
 	}
 	raw, err := provider.CloudMediaPlacesPage(r.Context(), limit, offset)
-	if err != nil { writeDesktopIPCControllerError(w, err); return }
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
 	page, err := client.ProjectOwnerPlacesPage(raw, limit, offset)
 	if err != nil {
 		writeDesktopIPCError(w, http.StatusServiceUnavailable, "invalid_owner_places", "Owner Places unavailable")
@@ -64,7 +85,10 @@ func (h *desktopIPCHandler) cloudOwnerPlaceItems(w http.ResponseWriter, r *http.
 	}
 	raw, err := h.ctrl.CloudMediaItemsRange(r.Context(),
 		client.MediaQuery{Place: place, SortBy: "captured", SortDir: "desc"}, limit, offset)
-	if err != nil { writeDesktopIPCControllerError(w, err); return }
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
 	page, err := client.ProjectOwnerGalleryPage(raw, limit, offset)
 	if err != nil {
 		writeDesktopIPCError(w, http.StatusServiceUnavailable, "invalid_owner_place_items", "Owner place items unavailable")
