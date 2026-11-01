@@ -31,11 +31,16 @@ class NativeLocalMotionControlUiTest {
                 })
             }
         }
-        compose.onNodeWithTag("native-local-motion-toggle")
-            .assertIsDisplayed().assertTextContains("尝试播放动态片段")
-            .performClick()
-        compose.onNodeWithTag("native-local-motion-toggle")
-            .assertTextContains("返回静态照片").performClick()
+        // Material3 TextButton's testTag identifies the actionable surface;
+        // its text is a descendant and does not live on that tag's semantics
+        // node. Assert text from the real Text composable, then click the
+        // native button surface instead of assuming merged semantics.
+        compose.onNodeWithText("尝试播放动态片段（也可长按照片）",
+            useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithTag("native-local-motion-toggle").performClick()
+        compose.onNodeWithText("返回静态照片",
+            useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithTag("native-local-motion-toggle").performClick()
         compose.runOnIdle { assertEquals(2, changes) }
     }
 }
