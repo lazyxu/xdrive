@@ -56,3 +56,14 @@ test('date jump reuses the real PhotoKit media filter instead of all-photo offse
   assert.match(browser, /Button\("按页查看"\) \{[\s\S]*?mediaFilter = \.all[\s\S]*?savedOffset = 0/)
   assert.match(browser, /model\.load\(mediaFilter: mediaFilter\)/)
 });
+
+
+test('favorite day jump uses the same scoped PhotoKit predicate as favorite wall', () => {
+  const wall = read('ios/XDriveIOS/NativeLocalContinuousGallery.swift')
+  const filter = read('ios/XDriveIOS/NativePhotoMediaFilterPolicy.swift')
+  assert.match(browser, /case \.favorites:\s*snapshot = PHAsset\.fetchAssets\(with: options\)/)
+  assert.match(browser, /options\.predicate = NSPredicate\(format: "favorite == YES"\)/)
+  assert.match(browser, /model\.indexFilter == mediaFilter/)
+  assert.match(wall, /Picker\("媒体类型", selection: \$mediaFilter\)/)
+  assert.match(filter, /case all, photos, videos, favorites/)
+})

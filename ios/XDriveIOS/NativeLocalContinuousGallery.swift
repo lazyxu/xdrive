@@ -329,6 +329,7 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                         } else if failure == nil {
                             Text(mediaFilter == .videos ? "当前已授权图库中没有视频。" :
                                  mediaFilter == .photos ? "当前已授权图库中没有照片。" :
+                                 mediaFilter == .favorites ? "当前已授权图库中没有收藏照片。" :
                                  "当前已授权图库中没有可浏览的照片或视频。")
                                 .foregroundStyle(.secondary).padding(12)
                         }

@@ -73,6 +73,9 @@ private actor XDriveIOSNativePhotoTimelineReader {
             NSSortDescriptor(key: "creationDate", ascending: false),
             NSSortDescriptor(key: "localIdentifier", ascending: true)
         ]
+        if mediaFilter.requiresFavorite {
+            options.predicate = NSPredicate(format: "favorite == YES")
+        }
         let snapshot: PHFetchResult<PHAsset>
         switch mediaFilter {
         case .all:
@@ -81,6 +84,8 @@ private actor XDriveIOSNativePhotoTimelineReader {
             snapshot = PHAsset.fetchAssets(with: .image, options: options)
         case .videos:
             snapshot = PHAsset.fetchAssets(with: .video, options: options)
+        case .favorites:
+            snapshot = PHAsset.fetchAssets(with: options)
         }
         try verify(status: status, observer: observer, revision: revision)
         var index = XDriveIOSNativePhotoTimelineBuilder(calendar: .current)
@@ -93,7 +98,8 @@ private actor XDriveIOSNativePhotoTimelineReader {
             let asset = snapshot.object(at: slot)
             if asset.mediaType == .image || asset.mediaType == .video {
                 let kind = asset.mediaType == .image ? "image" : "video"
-                guard mediaFilter.includes(kind: kind) else {
+                guard mediaFilter.includes(kind: kind),
+                      !mediaFilter.requiresFavorite || asset.isFavorite else {
                     throw XDriveIOSNativePhotoTimelineError.libraryChanged
                 }
                 index.append(capturedAt: asset.creationDate, slot: slot)
@@ -263,6 +269,7 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer<Content: View>: View {
                             Section {
                                 Button(mediaFilter == .videos ? "所有视频（返回第一页）" :
                                        mediaFilter == .photos ? "所有照片（返回第一页）" :
+                                       mediaFilter == .favorites ? "所有收藏（返回第一页）" :
                                        "所有媒体（返回第一页）") {
                                     jump(to: 0)
                                 }

@@ -50,6 +50,9 @@ actor XDriveIOSNativeGalleryMediaScanner {
             NSSortDescriptor(key: "creationDate", ascending: false),
             NSSortDescriptor(key: "localIdentifier", ascending: true)
         ]
+        if mediaFilter.requiresFavorite {
+            options.predicate = NSPredicate(format: "favorite == YES")
+        }
         let result: PHFetchResult<PHAsset>
         switch mediaFilter {
         case .all:
@@ -58,6 +61,8 @@ actor XDriveIOSNativeGalleryMediaScanner {
             result = PHAsset.fetchAssets(with: .image, options: options)
         case .videos:
             result = PHAsset.fetchAssets(with: .video, options: options)
+        case .favorites:
+            result = PHAsset.fetchAssets(with: options)
         }
         guard observer.current() == revision,
               PHPhotoLibrary.authorizationStatus(for: .readWrite) == current else {
@@ -91,6 +96,10 @@ actor XDriveIOSNativeGalleryMediaScanner {
                 case .image: kind = "image"
                 case .video: kind = "video"
                 default: kind = "unsupported"
+                }
+                if filter.requiresFavorite && !asset.isFavorite {
+                    reset()
+                    throw XDrivePhotoKitScanFailure.snapshotChanged
                 }
                 if let expected = filter.expectedKind, expected != kind {
                     reset()

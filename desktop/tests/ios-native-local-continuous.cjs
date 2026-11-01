@@ -182,3 +182,20 @@ test('Viewer steps across the correct filtered 64-slot PhotoKit page and returns
   assert.match(dates, /static func adjacentOffset\(current: Int, total: Int, direction: Int\)/)
   assert.match(dates, /static func atBoundary\(index: Int, visibleCount: Int, direction: Int\)/)
 })
+
+
+test('native Favorites filter uses a real full-library PhotoKit predicate', () => {
+  const scanner = read('ios/XDriveIOS/NativeGalleryMediaScanner.swift')
+  const timeline = read('ios/XDriveIOS/NativePhotoTimelineBrowser.swift')
+  const filter = read('ios/XDriveIOS/NativePhotoMediaFilterPolicy.swift')
+  assert.match(filter, /case all, photos, videos, favorites/)
+  assert.match(filter, /var requiresFavorite: Bool \{ self == \.favorites \}/)
+  assert.match(scanner, /if mediaFilter\.requiresFavorite \{\s*options\.predicate = NSPredicate\(format: "favorite == YES"\)/)
+  assert.match(scanner, /case \.favorites:\s*result = PHAsset\.fetchAssets\(with: options\)/)
+  assert.match(scanner, /filter\.requiresFavorite && !asset\.isFavorite/)
+  assert.match(timeline, /if mediaFilter\.requiresFavorite \{\s*options\.predicate = NSPredicate\(format: "favorite == YES"\)/)
+  assert.match(timeline, /case \.favorites:\s*snapshot = PHAsset\.fetchAssets\(with: options\)/)
+  assert.match(timeline, /!mediaFilter\.requiresFavorite \|\| asset\.isFavorite/)
+  assert.match(timeline, /mediaFilter == \.favorites \? "所有收藏（返回第一页）"/)
+  assert.match(source, /mediaFilter == \.favorites \? "当前已授权图库中没有收藏照片。"/)
+})
