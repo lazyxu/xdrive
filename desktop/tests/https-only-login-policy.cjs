@@ -57,7 +57,13 @@ test('CLI and DSM keep distinct but HTTPS-only user login boundaries', () => {
   assert.match(cli, /server := fs\.String\("server", ""/)
   assert.match(cli, /u\.Scheme != "https"/)
   assert.match(dsm, /window\.location\.protocol === 'https:'/)
-  assert.match(dsm, /client\.loginServer\(server\.trim\(\), username\.trim\(\), requestedPassword, controller\.signal\)/)
+  // The DSM preflight normalizes the address and username once, then verifies
+  // the owning Agent before the first credential-bearing POST.
+  assert.match(dsm, /const requestedServer = server\.trim\(\)/)
+  assert.match(dsm, /const requestedUsername = username\.trim\(\)/)
+  assert.match(dsm, /xDriveDSMLoginInputError\(requestedServer, requestedUsername, requestedPassword\)/)
+  assert.match(dsm, /xDriveDSMLoginOwnerError\(requestedServer, requestedUsername, info\)/)
+  assert.match(dsm, /client\.serverConnection\(controller\.signal\)[\s\S]*client\.loginServer\(requestedServer, requestedUsername, requestedPassword, controller\.signal\)/)
   assert.match(dsm, /label="Server HTTPS 地址"/)
   assert.doesNotMatch(dsm, /ServerAddress\.parse|UserPassword/)
 })
