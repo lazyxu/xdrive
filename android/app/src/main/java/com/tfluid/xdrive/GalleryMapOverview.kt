@@ -31,6 +31,8 @@ import java.util.Locale
 internal fun ColumnScope.GalleryMapOverview(
     state: DriveState, controller: DriveController,
     bd09Scroll: LazyListState,
+    cameraBookmark: NativeBaiduCameraBookmark? = null,
+    onCameraBookmark: (NativeBaiduCameraBookmark?) -> Unit = {},
 ) {
     val overview = state.galleryMapOverview
     val bd09Cells = state.galleryBd09Cells
@@ -80,7 +82,8 @@ internal fun ColumnScope.GalleryMapOverview(
                 state.galleryBd09History.size, controller, bd09Scroll,
                 state.galleryBd09CameraMoving, state.galleryBd09CameraPending,
                 state.galleryBd09PreserveCamera, state.loading,
-                state.error.takeIf { state.galleryMapCellSelected == null })
+                state.error.takeIf { state.galleryMapCellSelected == null },
+                cameraBookmark, onCameraBookmark)
         state.error != null -> Column(Modifier.weight(1f).fillMaxWidth().padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -169,6 +172,8 @@ private fun ColumnScope.GalleryVerifiedBd09Cells(
     listState: LazyListState,
     cameraMoving: Boolean, pending: OwnerBd09Bounds?,
     preserveCamera: Boolean, loading: Boolean, error: String?,
+    cameraBookmark: NativeBaiduCameraBookmark?,
+    onCameraBookmark: (NativeBaiduCameraBookmark?) -> Unit,
 ) {
     val blocked = loading || cameraMoving || pending != null || error != null
     LazyColumn(
@@ -207,6 +212,8 @@ private fun ColumnScope.GalleryVerifiedBd09Cells(
                     onCameraSettled = controller::galleryBd09CameraSettled,
                     markersEnabled = !blocked,
                     preserveCamera = preserveCamera,
+                    cameraBookmark = cameraBookmark,
+                    onCameraBookmark = onCameraBookmark,
                 ) {
                     // Default no-SDK APK, declined consent and failed SDK
                     // initialization all retain the genuine signed grid.

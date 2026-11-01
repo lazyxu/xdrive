@@ -12,6 +12,25 @@ import com.tfluid.xdrive.core.OwnerBd09MapCells
  * A malformed count, duplicate cell or out-of-viewport sample must fail
  * closed rather than showing a plausible but unverified pin.
  */
+/**
+ * Temporary, Owner-hosted SDK camera snapshot across Gallery Map Cell Viewer
+ * unmount. The signed Owner rectangle is its scope, NOT authorization to
+ * open photos. Nothing in this state survives leaving the map/login epoch.
+ */
+internal data class NativeBaiduCameraBookmark(
+    val signedBounds: OwnerBd09Bounds,
+    val latitude: Double,
+    val longitude: Double,
+    val zoom: Float,
+) {
+    fun canRestore(current: OwnerBd09Bounds): Boolean =
+        signedBounds == current && current.valid() &&
+            latitude.isFinite() && latitude in -90.0..90.0 &&
+            longitude.isFinite() && longitude in -180.0..180.0 &&
+            current.contains(latitude, longitude) &&
+            zoom.isFinite() && zoom in 3f..22f
+}
+
 /** Only accept the real SDK's final BD09 rectangle, never a WGS84 point
  * or a pixel estimate. A wrapped west>east viewport remains valid. */
 internal fun nativeBaiduCameraBounds(

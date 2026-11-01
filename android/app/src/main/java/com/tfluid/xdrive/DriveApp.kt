@@ -279,6 +279,14 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     val bd09Scroll = remember(state.server, state.username, state.galleryMapOpen) {
         mutableMapOf<OwnerBd09Bounds, LazyListState>()
     }
+    // A Viewer replaces its map composition, releasing the SDK as required
+    // for media priority. Restore only the same verified rectangle after Back;
+    // route, server or Owner changes discard the camera bookmark immediately.
+    val bd09CameraReturn = remember(
+        state.nativeUiSessionId, state.server, state.username,
+        state.screen == Screen.GALLERY && state.galleryMapOpen &&
+            state.galleryBd09Requested,
+    ) { mutableStateOf<NativeBaiduCameraBookmark?>(null) }
     if (state.galleryMapOpen) {
         val liveBounds = state.galleryBd09History.map { it.bounds }.toSet() +
             state.galleryBd09Bounds
@@ -687,7 +695,9 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                         GalleryMapOverview(state, controller,
                             bd09Scroll.getOrPut(state.galleryBd09Bounds) {
                                 LazyListState()
-                            })
+                            },
+                            cameraBookmark = bd09CameraReturn.value,
+                            onCameraBookmark = { bd09CameraReturn.value = it })
                         if (nativeMapCellSheetVisible(state) && galleryMapCellStateKey != null) {
                             val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = false)
                             ModalBottomSheet(

@@ -109,14 +109,25 @@ private class NativeBaiduLease(val view: MapView) {
         })
     }
 
+    fun cameraBookmark(): NativeBaiduCameraBookmark? {
+        if (closed) return null
+        val bounds = lastBounds ?: return null
+        val status = view.map.mapStatus ?: return null
+        val center = status.target ?: return null
+        val bookmark = NativeBaiduCameraBookmark(
+            bounds, center.latitude, center.longitude, status.zoom)
+        return bookmark.takeIf { it.canRestore(bounds) }
+    }
+
     fun draw(bounds: OwnerBd09Bounds, pins: List<OwnerBd09Cell>,
-             preserveCamera: Boolean) {
+             preserveCamera: Boolean, cameraBookmark: NativeBaiduCameraBookmark?) {
         if (closed || (lastBounds == bounds && lastPins == pins)) return
         val baidu = view.map
         baidu.clear()
         bindings.clear()
         icons.forEach { it.recycle() }
         icons.clear()
+        val firstDraw = lastBounds == null
         val changedBounds = lastBounds != bounds
         lastBounds = bounds
         lastPins = pins.toList()
@@ -134,17 +145,28 @@ private class NativeBaiduLease(val view: MapView) {
 
         // Only reposition for a new verified Owner rectangle, not after every
         // Compose render; users may freely pan/zoom existing signed points.
-        if (changedBounds && !preserveCamera && pins.isNotEmpty()) {
-            val first = pins.first()
-            val uniquePlaces = pins.map { it.latitude to it.longitude }.toSet()
-            if (uniquePlaces.size == 1) {
-                baidu.setMapStatus(MapStatusUpdateFactory.newLatLngZoom(
-                    LatLng(first.latitude, first.longitude), 10f))
-            } else {
-                val builder = LatLngBounds.Builder()
-                pins.forEach { builder.include(LatLng(it.latitude, it.longitude)) }
-                baidu.setMapStatus(MapStatusUpdateFactory.newLatLngBounds(
-                    builder.build()))
+        if (changedBounds && pins.isNotEmpty()) {
+            val bookmark = cameraBookmark?.takeIf { firstDraw && it.canRestore(bounds) }
+            when {
+                // Restore an SDK-local viewport, not an unverified Map Cell.
+                bookmark != null -> baidu.setMapStatus(
+                    MapStatusUpdateFactory.newLatLngZoom(
+                        LatLng(bookmark.latitude, bookmark.longitude), bookmark.zoom))
+                // A newly created MapView must not stay at its default
+                // provider camera when the old SDK lease was destroyed.
+                !preserveCamera || firstDraw -> {
+                    val first = pins.first()
+                    val uniquePlaces = pins.map { it.latitude to it.longitude }.toSet()
+                    if (uniquePlaces.size == 1) {
+                        baidu.setMapStatus(MapStatusUpdateFactory.newLatLngZoom(
+                            LatLng(first.latitude, first.longitude), 10f))
+                    } else {
+                        val builder = LatLngBounds.Builder()
+                        pins.forEach { builder.include(LatLng(it.latitude, it.longitude)) }
+                        baidu.setMapStatus(MapStatusUpdateFactory.newLatLngBounds(
+                            builder.build()))
+                    }
+                }
             }
         }
     }
@@ -196,6 +218,8 @@ internal fun NativeBaiduMapPanel(
     onCameraSettled: (OwnerBd09Bounds?) -> Unit,
     markersEnabled: Boolean,
     preserveCamera: Boolean,
+    cameraBookmark: NativeBaiduCameraBookmark?,
+    onCameraBookmark: (NativeBaiduCameraBookmark?) -> Unit,
     placeholder: @Composable () -> Unit,
 ) {
     val context = LocalContext.current
@@ -258,6 +282,7 @@ internal fun NativeBaiduMapPanel(
     val currentOnSelect by rememberUpdatedState(onOpenCell)
     val currentOnCameraStart by rememberUpdatedState(onCameraStart)
     val currentOnCameraSettled by rememberUpdatedState(onCameraSettled)
+    val currentOnCameraBookmark by rememberUpdatedState(onCameraBookmark)
     DisposableEffect(host, lifecycle) {
         if (host == null) onDispose {} else {
             val observer = LifecycleEventObserver { _, event ->
@@ -272,9 +297,16 @@ internal fun NativeBaiduMapPanel(
                 host.view.onResume()
             onDispose {
                 lifecycle.lifecycle.removeObserver(observer)
-                host.close()
-                if (!preferences.getBoolean(SDK_PRIVACY_VERSION, false))
-                    BaiduMapStartup.revoke(context)
+                try {
+                    // Save before onDestroy; only the current signed viewport
+                    // may restore the same SDK camera on Viewer Back.
+                    if (preferences.getBoolean(SDK_PRIVACY_VERSION, false))
+                        host.cameraBookmark()?.let { currentOnCameraBookmark(it) }
+                } finally {
+                    host.close()
+                    if (!preferences.getBoolean(SDK_PRIVACY_VERSION, false))
+                        BaiduMapStartup.revoke(context)
+                }
             }
         }
     }
@@ -294,7 +326,7 @@ internal fun NativeBaiduMapPanel(
                     host.onCameraStart = { currentOnCameraStart() }
                     host.onCameraSettled = { next -> currentOnCameraSettled(next) }
                     host.markersEnabled = markersEnabled
-                    host.draw(bounds, pins, preserveCamera)
+                    host.draw(bounds, pins, preserveCamera, cameraBookmark)
                 },
                 modifier = Modifier.fillMaxWidth().height(290.dp)
                     .testTag("native-baidu-map"),
@@ -307,6 +339,7 @@ internal fun NativeBaiduMapPanel(
                     // Only a genuine explicit revocation changes the provider
                     // consent flag. Navigating away leaves one-time choice.
                     preferences.edit().putBoolean(SDK_PRIVACY_VERSION, false).apply()
+                    onCameraBookmark(null)
                     agreed = false // onDispose closes MapView before SDK revoke.
                 },
                 modifier = Modifier.testTag("native-baidu-disable"),

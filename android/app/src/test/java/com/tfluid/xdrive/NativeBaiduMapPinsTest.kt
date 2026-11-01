@@ -78,6 +78,26 @@ class NativeBaiduMapPinsTest {
         assertNull(nativeBaiduCameraBounds(30.0, 130.0, 91.0, 145.0))
     }
 
+    @Test fun viewerCameraRestoreRequiresExactSignedOwnerRectAndValidSdkTarget() {
+        val saved = NativeBaiduCameraBookmark(bounds, 35.505, 139.706, 13f)
+        assertTrue(saved.canRestore(bounds))
+        assertFalse(saved.canRestore(OwnerBd09Bounds.WORLD))
+        assertFalse(saved.copy(signedBounds = OwnerBd09Bounds.WORLD).canRestore(bounds))
+        assertFalse(saved.copy(latitude = Double.NaN).canRestore(bounds))
+        assertFalse(saved.copy(latitude = -2.0).canRestore(bounds))
+        assertFalse(saved.copy(longitude = Double.POSITIVE_INFINITY).canRestore(bounds))
+        assertFalse(saved.copy(longitude = 25.0).canRestore(bounds))
+        assertFalse(saved.copy(zoom = Float.NaN).canRestore(bounds))
+        assertFalse(saved.copy(zoom = 0f).canRestore(bounds))
+        assertFalse(saved.copy(zoom = 99f).canRestore(bounds))
+
+        val wrapped = OwnerBd09Bounds(170.0, -5.0, -170.0, 5.0)
+        val acrossDateLine = NativeBaiduCameraBookmark(wrapped, 0.0, 179.8, 9f)
+        assertTrue(acrossDateLine.canRestore(wrapped))
+        assertTrue(acrossDateLine.copy(longitude = -179.8).canRestore(wrapped))
+        assertFalse(acrossDateLine.copy(longitude = 20.0).canRestore(wrapped))
+    }
+
     @Test fun invalidBoundsAndImpossibleLongCountsFailClosed() {
         assertNull(nativeVerifiedBaiduPins(
             OwnerBd09Bounds(0.0, 0.0, 0.0, 10.0),
