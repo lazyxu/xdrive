@@ -638,6 +638,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
     @State private var photoRestoreEpoch = UUID()
     @State private var photoRestoreTask: Task<Void, Never>?
     @State private var restoringToPhotos = false
+    @State private var requestingPhotoRestorePermission = false
     @State private var photoRestoreNotice = ""
     @State private var showsPhotoRestoreNotice = false
 
@@ -886,7 +887,12 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
         }
         .onChange(of: phase) { state in
             if state != .active {
-                cancelPhotoRestore()
+                // The native Photos permission sheet may temporarily mark
+                // the scene inactive. There is no network transfer yet: let
+                // authorization return, but still cancel on real background.
+                if state != .inactive || !requestingPhotoRestorePermission {
+                    cancelPhotoRestore()
+                }
                 // Never keep a signed video URL or rendered still alive while
                 // the app is inactive/backgrounded. The next foreground
                 // request must independently re-verify native Owner/root.
@@ -941,6 +947,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
         photoRestoreTask?.cancel()
         photoRestoreTask = nil
         restoringToPhotos = false
+        requestingPhotoRestorePermission = false
         showsPhotoRestoreNotice = false
     }
 
@@ -975,7 +982,13 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
             }
             do {
                 // Request add-only access only from the user's restore tap.
+                // iOS can mark the app temporarily inactive during its native
+                // permission prompt; no download starts until it returns.
+                requestingPhotoRestorePermission = true
                 let permission = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+                if photoRestoreEpoch == epoch {
+                    requestingPhotoRestorePermission = false
+                }
                 try Task.checkCancellation()
                 guard canCommitPhotoRestore(original, owner: owner, epoch: epoch)
                 else { return }
