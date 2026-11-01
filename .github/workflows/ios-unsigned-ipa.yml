@@ -274,6 +274,16 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-owner-map-selection-policy"
           node --test desktop/tests/ios-native-owner-map-gallery.cjs
 
+      - name: Verify native Files Owner Range, search and fixed-tab wiring
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeCloudFilesPolicy.swift \
+            ios/tests/NativeCloudFilesPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-page-check"
+          "$RUNNER_TEMP/xdrive-ios-files-page-check"
+          node --test desktop/tests/ios-native-files-browser.cjs
+
       - name: Prepare native brand and home screen icon
         run: bash ios/scripts/prepare-assets.sh
 
