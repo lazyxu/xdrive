@@ -6,6 +6,29 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NativeHomeNavigationTest {
+    @Test fun nativeOwnerMapCellIsASheetOnlyWhileCurrentMapIsVisible() {
+        val cell = com.tfluid.xdrive.core.OwnerBd09Cell(
+            3, 4, 2, 81, 901, 1, 35.5, 139.5)
+        val verified = com.tfluid.xdrive.core.OwnerBd09MapCells(listOf(cell), 2)
+        val ready = DriveState(
+            screen = Screen.GALLERY,
+            galleryMapOpen = true, galleryBd09Requested = true,
+            galleryBd09Cells = verified, galleryMapCellSelected = cell)
+        assertTrue(nativeMapCellSheetVisible(ready))
+        assertFalse(nativeMapCellSheetVisible(ready.copy(galleryMapOpen = false)))
+        assertFalse(nativeMapCellSheetVisible(ready.copy(galleryBd09Requested = false)))
+        assertFalse(nativeMapCellSheetVisible(ready.copy(galleryBd09Cells = null)))
+        assertFalse(nativeMapCellSheetVisible(ready.copy(galleryMapCellSelected = null)))
+        assertFalse(nativeMapCellSheetVisible(ready.copy(screen = Screen.LOGIN)))
+        val photo = com.tfluid.xdrive.core.GalleryAsset(
+            com.tfluid.xdrive.core.DriveNode(
+                901L, 1L, "owner.jpg", "file", size = 10, revision = 1),
+            "image", hasThumbnail = true)
+        // The full-screen Viewer wins over the sheet; the current Owner Cell
+        // is retained for Back -> same verified map selection.
+        assertFalse(nativeMapCellSheetVisible(ready.copy(galleryViewer = photo)))
+    }
+
     @Test fun fixedSlotsNeverReorderAndOnlyDynamicLabelChanges() {
         val initial = NativeHomeNavigation()
         assertEquals(listOf("全部", "最近", "图库", "文件", "我的"), initial.labels)
