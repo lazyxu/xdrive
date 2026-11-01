@@ -28,4 +28,9 @@ class GalleryOriginalFallbackRetryTest {
         assertFalse(galleryOriginalFallbackRetryVisible(
             thumbnailOnly = false, upgrading = true, originalEligible = true))
     }
+    @Test fun failedViewerNeverOffersRetryForOversizeOrUnsupportedOriginal() {
+        assertFalse(galleryOriginalFailedRetryVisible(originalEligible = false))
+        assertTrue(galleryOriginalFailedRetryVisible(originalEligible = true))
+    }
+
 }
