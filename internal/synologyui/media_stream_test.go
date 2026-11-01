@@ -322,11 +322,11 @@ func TestDSMNativeMediaOldAgentHasNoStreamReader(t *testing.T) {
 func TestDSMNativeOwnerPDFAuthenticatedRangeAndFailure(t *testing.T) {
 	g, native := newFixture(t)
 	pdf := bytes.Repeat([]byte("0123456789abcdef"), (2<<20)/16+2)
-	copy(pdf, []byte("%PDF-1.7\\n"))
+	copy(pdf, []byte("%PDF-1.7\n"))
 	digest := sha256.Sum256(pdf)
 	reader := &fakeOwnerNativeStreamReader{
 		fakeOwnerFilesReader: &fakeOwnerFilesReader{fakeAgent: native},
-		content: pdf, sha: hex.EncodeToString(digest[:]),
+		content:              pdf, sha: hex.EncodeToString(digest[:]),
 	}
 	g.Connect = func(context.Context) (Agent, error) { return reader, nil }
 	params := url.Values{

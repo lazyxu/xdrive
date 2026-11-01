@@ -139,7 +139,7 @@ assert.equal(xDriveSynologyPlaybackMagic(Uint8Array.from([0x3c,0x68,0x74,0x6d,0x
 const largePDF = { id: 99, revision: 8, name: 'report.PDF',
   size: (32 << 20) + 1, kind: 'file' }
 const pdfBytes = new Uint8Array(256 << 10)
-pdfBytes.set(Buffer.from('%PDF-1.7\\n'.replace('\\n', '\n')))
+pdfBytes.set(Buffer.from('%PDF-1.7\n'))
 const pdfSHA = 'b'.repeat(64)
 let pdfReads = 0
 const pdfClient = {
