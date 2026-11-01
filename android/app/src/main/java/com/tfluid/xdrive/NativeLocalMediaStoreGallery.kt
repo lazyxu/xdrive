@@ -18,6 +18,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.*
@@ -633,7 +634,7 @@ internal fun NativeLocalMediaViewer(
                 NativeLocalViewerLoadedNavigation(
                     loadedPosition, loadedCount, onPrevious, onNext)
                 if (asset.isVideo) NativeLocalVideoPlayer(asset)
-                else NativeLocalStillViewer(asset)
+                else NativeLocalStillViewer(asset, onPrevious, onNext)
                 Text("本机原件只读预览（解码最长边不超过 4096 像素）；动态照片运动片段暂不支持播放，也不会自动备份。",
                     modifier = Modifier.navigationBarsPadding().padding(8.dp),
                     style = MaterialTheme.typography.bodySmall)
@@ -682,13 +683,64 @@ internal fun NativeLocalViewerLoadedNavigation(
     }
 }
 
+
+/**
+ * Only a single horizontal drag on an unzoomed still photo can navigate.
+ * The existing real photo card and Owner-scoped loaded-neighbor callbacks
+ * decide what is eligible; this gesture never performs a MediaStore read.
+ * Video retains the explicit buttons so Media3 seek controls are not stolen.
+ */
+@Composable
+internal fun NativeLocalPhotoSwipeSurface(
+    mediaKey: NativeLocalViewerItemKey,
+    zoomed: Boolean,
+    onPrevious: (() -> Unit)?,
+    onNext: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+    content: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit,
+) {
+    // Pointer input must be restarted on a new photo or zoom state, but a
+    // normal host recomposition must not leave an old callback in its scope.
+    val currentPrevious by rememberUpdatedState(onPrevious)
+    val currentNext by rememberUpdatedState(onNext)
+    val canSwipe = !zoomed && (onPrevious != null || onNext != null)
+    Box(
+        modifier = modifier.pointerInput(mediaKey, canSwipe) {
+            if (!canSwipe) return@pointerInput
+            var horizontalDistance = 0f
+            val threshold = 64.dp.toPx()
+            detectHorizontalDragGestures(
+                onDragStart = { horizontalDistance = 0f },
+                onDragCancel = { horizontalDistance = 0f },
+                onDragEnd = {
+                    when (nativeLocalViewerSwipeDirection(
+                        horizontalDistance, threshold, zoomed = false)) {
+                        -1 -> currentPrevious?.invoke()
+                        1 -> currentNext?.invoke()
+                    }
+                    horizontalDistance = 0f
+                },
+                onHorizontalDrag = { change, drag ->
+                    horizontalDistance += drag
+                    change.consume()
+                },
+            )
+        },
+        content = content,
+    )
+}
+
 /**
  * Original-resolution ContentResolver still decode, capped for GPU/heap safety.
  * Viewer owns its bitmap. Source revocation, Owner switch and background
  * unmount the dialog so no old picture survives the next authenticated page.
  */
 @Composable
-private fun ColumnScope.NativeLocalStillViewer(asset: NativeLocalMedia) {
+private fun ColumnScope.NativeLocalStillViewer(
+    asset: NativeLocalMedia,
+    onPrevious: (() -> Unit)?,
+    onNext: (() -> Unit)?,
+) {
     val resolver = LocalContext.current.contentResolver
     // null result means "still decoding", not a misleading permission failure.
     val preview by produceState<Result<ImageBitmap>?>(null, asset.uri) {
@@ -721,8 +773,12 @@ private fun ColumnScope.NativeLocalStillViewer(asset: NativeLocalMedia) {
             (translation.y + pan.y).coerceIn(-maxY, maxY))
         scale = nextScale
     }
-    Box(
-        Modifier.fillMaxWidth().weight(1f).clipToBounds()
+    NativeLocalPhotoSwipeSurface(
+        mediaKey = asset.viewerReturnKey(),
+        zoomed = scale > 1f,
+        onPrevious = onPrevious,
+        onNext = onNext,
+        modifier = Modifier.fillMaxWidth().weight(1f).clipToBounds()
             .onSizeChanged { viewport = it }
             .pointerInput(asset.uri) {
                 detectTapGestures(onDoubleTap = {
@@ -730,9 +786,10 @@ private fun ColumnScope.NativeLocalStillViewer(asset: NativeLocalMedia) {
                     translation = Offset.Zero
                 })
             }
-            .transformable(gesture)
+            // At 1× the one-finger horizontal gesture belongs to navigation.
+            // Keep pinch zoom; only allow one-finger pan after magnification.
+            .transformable(gesture, canPan = { scale > 1f })
             .testTag("native-local-still-zoom"),
-        contentAlignment = Alignment.Center,
     ) {
         val bitmap = preview?.getOrNull()
         if (preview == null) CircularProgressIndicator()
