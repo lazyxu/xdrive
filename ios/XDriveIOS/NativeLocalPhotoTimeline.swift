@@ -471,7 +471,7 @@ struct XDriveIOSNativeLocalPhotoTimelineScreen: View {
             } catch is CancellationError {
             } catch {
                 guard epoch == token else { return }
-                error = "时间范围或相册授权已变化，请重新读取。"
+                self.error = "时间范围或相册授权已变化，请重新读取。"
             }
             if epoch == token {
                 busy = false
