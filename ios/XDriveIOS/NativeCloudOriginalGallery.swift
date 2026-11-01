@@ -26,6 +26,16 @@ struct XDriveIOSNativeCloudOriginal: Decodable, Identifiable {
     }
 }
 
+// Independent current-Node check for an Owner-root item restored to Photos.
+private struct XDriveIOSNativeCloudOriginalProof: Decodable {
+    let id: UInt64
+    let parent_id: UInt64?
+    let name: String
+    let type: String
+    let size: Int64
+    let revision: UInt64
+}
+
 private struct XDriveIOSNativeCloudOriginalPage: Decodable {
     let items: [XDriveIOSNativeCloudOriginal]
     let total_count: Int
@@ -267,6 +277,22 @@ struct XDriveIOSNativeCloudOriginalReader {
     }
 
 
+    private func requireCurrentOriginal(
+        _ node: XDriveIOSNativeCloudOriginal, session client: URLSession
+    ) async throws {
+        let url = try endpoint("/api/v1/nodes/\(node.id)")
+        let (data, response) = try await client.data(for: request(url))
+        try Task.checkCancellation()
+        try check(response, size: data.count, maximum: 65_536)
+        let current = try JSONDecoder().decode(
+            XDriveIOSNativeCloudOriginalProof.self, from: data
+        )
+        guard current.id == node.id, current.parent_id == owner.rootNodeID,
+              current.name == node.name, current.type == node.type,
+              current.size == node.size, current.revision == node.revision
+        else { throw XDriveIOSNativeCloudReadError.invalidResponse }
+    }
+
     /// Downloads one original, never a 4096px preview or thumbnail. The
     /// short-lived signed ticket must resolve to this exact Node, on the
     /// already verified Owner origin. The caller deletes the returned folder.
@@ -283,6 +309,7 @@ struct XDriveIOSNativeCloudOriginalReader {
         else { throw XDriveIOSNativeCloudReadError.notSupported }
         let client = session()
         defer { client.invalidateAndCancel() }
+        try await requireCurrentOriginal(node, session: client)
         let ticketURL = try endpoint("/api/v1/files/\(node.id)/download-ticket")
         let (ticketBytes, ticketResponse) = try await client.data(
             for: request(ticketURL, method: "POST")
@@ -330,6 +357,9 @@ struct XDriveIOSNativeCloudOriginalReader {
               attributes[.type] as? FileAttributeType == .typeRegular,
               (attributes[.size] as? NSNumber)?.int64Value == node.size
         else { throw XDriveIOSNativeCloudReadError.invalidResponse }
+        // Do not import a same-ID replacement or an item moved from Owner root.
+        try await requireCurrentOriginal(node, session: client)
+        try Task.checkCancellation()
 
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(
             "xdrive-ios-restore-\(UUID().uuidString)", isDirectory: true
