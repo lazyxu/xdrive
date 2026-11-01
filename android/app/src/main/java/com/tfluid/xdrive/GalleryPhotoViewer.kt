@@ -61,6 +61,14 @@ internal fun galleryOriginalSampleSize(width: Int, height: Int): Int? {
     return sample
 }
 
+/** A sampled original is not an original-resolution image; labels must remain truthful. */
+internal fun galleryViewerQualitySource(thumbnailOnly: Boolean, sampledOriginal: Boolean): String =
+    when {
+        thumbnailOnly -> "缩略图"
+        sampledOriginal -> "原件 · 适屏采样"
+        else -> "原件 · 原始分辨率"
+    }
+
 private data class GalleryDecodedOriginal(val bitmap: ImageBitmap, val sampled: Boolean)
 
 private fun decodeGalleryOriginal(bytes: ByteArray): GalleryDecodedOriginal? {
@@ -107,6 +115,15 @@ internal fun GalleryPhotoViewer(
     val canGoNewer = controller.galleryViewerCanShift(1)
     val cacheKey = "${photo.node.id}:${photo.node.revision}"
     val cachedThumbnail = thumbnails.get(cacheKey)
+    var qualityPanelVisible by remember(photo.node.id, photo.node.revision) {
+        mutableStateOf(false)
+    }
+    var thumbnailDecoded by remember(photo.node.id, photo.node.revision) {
+        mutableStateOf(cachedThumbnail != null)
+    }
+    var thumbnailBodyBytes by remember(photo.node.id, photo.node.revision) {
+        mutableStateOf<Long?>(null)
+    }
     val canReadOriginal =
         (photo.livePhoto && photo.node.name.endsWith(".livp", ignoreCase = true)) ||
         photo.node.size in 1L..(32L * 1024 * 1024)
@@ -139,6 +156,7 @@ internal fun GalleryPhotoViewer(
             if (!thumbnailDone) launch {
                 val decoded = try {
                     val bytes = controller.galleryViewerThumbnail(photo)
+                    if (bytes != null) thumbnailBodyBytes = bytes.size.toLong()
                     if (bytes == null) null else withContext(Dispatchers.Default) {
                         decodeGalleryThumbnail(bytes)
                     }
@@ -147,6 +165,7 @@ internal fun GalleryPhotoViewer(
                 } catch (_: Exception) { null }
                 if (decoded != null) {
                     thumbnail = decoded
+                    thumbnailDecoded = true
                     thumbnails.put(cacheKey, decoded)
                 }
                 thumbnailDone = true
@@ -375,6 +394,70 @@ internal fun GalleryPhotoViewer(
                                 ) { Text("重试原图", color = Color.White) }
                             }
                         }
+                    }
+                }
+            }
+
+            // This is only a foreground Viewer overlay. Never download files
+            // just to populate technical details, and never label bitmap
+            // sampling as original-resolution display.
+            val readyImage = stage as? ImageStage.Ready
+            if (readyImage != null) {
+                Column(
+                    Modifier.align(Alignment.TopStart).padding(10.dp)
+                        .background(Color.Black.copy(alpha = 0.80f))
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                ) {
+                    TextButton(
+                        onClick = { qualityPanelVisible = !qualityPanelVisible },
+                        modifier = Modifier.testTag("gallery-viewer-quality-toggle"),
+                    ) {
+                        Text(
+                            "画质：" + galleryViewerQualitySource(
+                                readyImage.thumbnailOnly, readyImage.sampledOriginal),
+                            color = Color.White, style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
+                    if (qualityPanelVisible) {
+                        Text(
+                            "当前已解码：" + readyImage.image.width + " × " +
+                                readyImage.image.height,
+                            color = Color.White, style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.testTag("gallery-viewer-quality-dimensions"),
+                        )
+                        Text(
+                            (if (photo.node.name.endsWith(".livp", ignoreCase = true))
+                                "LIVP 容器" else "原件") + "：" +
+                                galleryByteLabel(photo.node.size, null),
+                            color = Color.LightGray, style = MaterialTheme.typography.labelSmall,
+                        )
+                        Text(
+                            "缩略图：" + (if (thumbnailDecoded) "已解码" else "未解码") +
+                                " · " + (thumbnailBodyBytes?.let { galleryByteLabel(it, null) }
+                                    ?: "传输大小未知"),
+                            color = Color.LightGray, style = MaterialTheme.typography.labelSmall,
+                        )
+                        Text(
+                            "静态原件：" + when {
+                                readyImage.thumbnailOnly && readyImage.upgrading -> "加载中"
+                                readyImage.thumbnailOnly -> "当前未显示"
+                                readyImage.sampledOriginal -> "已读入内存并采样解码"
+                                else -> "已读入内存并解码"
+                            } +
+                                if (originalProgress.first > 0L)
+                                    " · " + galleryByteLabel(
+                                        originalProgress.first, originalProgress.second)
+                                else "",
+                            color = Color.LightGray, style = MaterialTheme.typography.labelSmall,
+                        )
+                        if (photo.livePhoto) Text(
+                            "实况动态：长按后按需缓冲，不代表已完整下载",
+                            color = Color.LightGray, style = MaterialTheme.typography.labelSmall,
+                        )
+                        Text(
+                            "读取到本次会话内存，不等于已保存到设备磁盘。",
+                            color = Color.LightGray, style = MaterialTheme.typography.labelSmall,
+                        )
                     }
                 }
             }
