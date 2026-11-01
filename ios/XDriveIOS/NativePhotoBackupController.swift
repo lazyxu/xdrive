@@ -80,6 +80,8 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
             return
         }
         let selected = expectedOwner
+        refresh(owner: selected)
+        let uiEpoch = displayEpoch
         let store = XDriveIOSPhotoAutoScheduleStore.shared
         let stopVersion = store.localStopGeneration
         guard [.authorized, .limited].contains(
@@ -114,9 +116,15 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
             }
             let scope = try await XDriveIOSForegroundBackupIdentity.shared
                 .existingLocalScope(owner: selected)
+            guard displayEpoch == uiEpoch,
+                  XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected)
+            else { throw XDriveIOSNativeSessionError.staleSession }
             if let scope {
                 let pending = try await XDrivePhotoSyncLedger.shared
                     .pendingReceiptSnapshot(scope: scope, limit: 0).pending
+                guard displayEpoch == uiEpoch,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected)
+                else { throw XDriveIOSNativeSessionError.staleSession }
                 guard pending == 0 else {
                     errorMessage = "当前账户还有 \(pending) 项结果不确定的上传收据，请先核对；自动备份未开启。"
                     return
@@ -133,6 +141,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                   XDriveIOSNativePhotoOwnerScope.matches(first.owner, selected),
                   XDriveIOSNativePhotoOwnerScope.matches(second.owner, selected),
                   store.localStopGeneration == stopVersion,
+                  displayEpoch == uiEpoch,
                   UIApplication.shared.applicationState == .active,
                   [.authorized, .limited].contains(
                     PHPhotoLibrary.authorizationStatus(for: .readWrite)
@@ -145,7 +154,10 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
             message = "已开启原生前台自动增量备份。仅 App 活跃时按计划检查，系统不保证锁屏或强制退出后定时执行。"
             configured = true
         } catch {
-            errorMessage = "无法验证当前 Owner 或既有加密账本，自动备份未开启；不会清除不确定收据。"
+            if displayEpoch == uiEpoch,
+               XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected) {
+                errorMessage = "无法验证当前 Owner 或既有加密账本，自动备份未开启；不会清除不确定收据。"
+            }
         }
         // Do not tick while holding the shared writer gate: it would reject
         // this newly enabled schedule as an overlapping original operation.
