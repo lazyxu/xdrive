@@ -46,7 +46,7 @@ internal fun ColumnScope.GalleryMapOverview(
         }
         Text(if (state.galleryBd09Requested)
             if (nativeBaiduMapSdkCompiled())
-                "当前 Owner 的 BD-09LL 网格已验证。可选百度原生底图与聚合点，点击数量标记进入当前网格照片墙和 Viewer；地图相机新范围请求尚待下一阶段。"
+                "当前 Owner 的 BD-09LL 网格已验证。可选百度原生底图与聚合点，点击数量标记进入当前网格照片墙和 Viewer；地图拖动或缩放后，可点击“刷新当前视窗”重新读取 Owner 照片。"
             else "BD-09LL 网格来自当前 Owner 的真实数据；点击网格进入照片墙和 Viewer。当前 APK 未配置 Android 专用百度 AK，继续提供可信的非底图网格。"
             else "显示当前账户真实 WGS84 GPS 概览；可切换已验证的 BD-09 网格查看照片。百度 Android 底图仅在配置有效的专用 AK 后提供。",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -86,9 +86,11 @@ internal fun ColumnScope.GalleryMapOverview(
                 else "重新读取 GPS 概览") }
         }
         state.galleryBd09Requested -> when {
-            !state.loading && bd09Cells != null ->
+            bd09Cells != null ->
                 GalleryVerifiedBd09Cells(bd09Cells, state.galleryBd09Bounds,
-                    state.galleryBd09History.size, controller, bd09Scroll)
+                    state.galleryBd09History.size, controller, bd09Scroll,
+                    state.galleryBd09CameraMoving, state.galleryBd09CameraPending,
+                    state.galleryBd09PreserveCamera, state.loading)
             else -> Box(Modifier.weight(1f).fillMaxWidth()
                 .testTag("gallery-map-bd09-loading"), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
@@ -163,7 +165,10 @@ private fun ColumnScope.GalleryVerifiedBd09Cells(
     result: OwnerBd09MapCells, bounds: OwnerBd09Bounds,
     depth: Int, controller: DriveController,
     listState: LazyListState,
+    cameraMoving: Boolean, pending: OwnerBd09Bounds?,
+    preserveCamera: Boolean, loading: Boolean,
 ) {
+    val blocked = loading || cameraMoving || pending != null
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxWidth().weight(1f)
@@ -177,10 +182,25 @@ private fun ColumnScope.GalleryVerifiedBd09Cells(
                     "${result.cells.size} 个真实 BD-09 代表点（最多 64 格）",
                     modifier = Modifier.testTag("gallery-map-bd09-count"),
                     style = MaterialTheme.typography.bodyMedium)
+                if (cameraMoving || pending != null || loading) {
+                    Text("视窗已变化或正在核对，旧照片标记暂不可打开。",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.testTag("gallery-map-bd09-camera-pending"))
+                }
+                if (pending != null) TextButton(
+                    onClick = controller::refreshGalleryBd09CameraViewport,
+                    enabled = !loading && !cameraMoving,
+                    modifier = Modifier.heightIn(min = 48.dp)
+                        .testTag("gallery-map-bd09-refresh-camera"),
+                ) { Text("刷新当前视窗") }
                 NativeBaiduMapPanel(
                     bounds = bounds,
                     result = result,
                     onOpenCell = controller::openGalleryBd09Cell,
+                    onCameraStart = controller::galleryBd09CameraStarted,
+                    onCameraSettled = controller::galleryBd09CameraSettled,
+                    markersEnabled = !blocked,
+                    preserveCamera = preserveCamera,
                 ) {
                     // Default no-SDK APK, declined consent and failed SDK
                     // initialization all retain the genuine signed grid.
@@ -198,7 +218,7 @@ private fun ColumnScope.GalleryVerifiedBd09Cells(
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth()
                     .testTag("gallery-map-bd09-cell-${cell.cellX}-${cell.cellY}")
-                    .clickable { controller.openGalleryBd09Cell(cell) }) {
+                    .clickable(enabled = !blocked) { controller.openGalleryBd09Cell(cell) }) {
                 Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Row(Modifier.fillMaxWidth(),
@@ -211,6 +231,7 @@ private fun ColumnScope.GalleryVerifiedBd09Cells(
                     }
                     if (depth < MAX_BD09_DRILL_LEVELS) TextButton(
                         onClick = { controller.drillDownGalleryBd09Cell(cell) },
+                        enabled = !blocked,
                         modifier = Modifier.heightIn(min = 48.dp)
                             .testTag("gallery-map-zoom-${cell.cellX}-${cell.cellY}"),
                     ) { Text("放大此区域") }
