@@ -980,16 +980,22 @@ function WebPreviewApp({
           loadTextPreview={(currentTarget, signal) => api.fileTextPreview(Number(currentTarget.id), signal)}
           loadImagePreview={loadThumbnail}
           loadPreviewURL={async (_target, kind, signal, onProgress) => (
-            kind === 'live_photo'
-              ? api.mediaLivePhotoStillURL(viewer.node!.id, signal)
-              : kind === 'image' && xDriveFileNeedsBrowserCompatibleImagePreview(_target.name)
-                ? api.mediaAnalysisPreviewURL(viewer.node!.id, signal, viewer.node!.revision, onProgress)
-                : api.filePreviewURL(viewer.node!.id, signal)
+            kind === 'live_photo' ||
+              (kind === 'image' && xDriveFileNeedsBrowserCompatibleImagePreview(_target.name))
+              ? api.mediaViewerPreviewURL(viewer.node!.id, signal, viewer.node!.revision, onProgress)
+                  .catch(() => {
+                    signal?.throwIfAborted()
+                    return kind === 'live_photo'
+                      ? api.mediaLivePhotoStillURL(viewer.node!.id, signal)
+                      : api.mediaAnalysisPreviewURL(viewer.node!.id, signal, viewer.node!.revision, onProgress)
+                  })
+              : api.filePreviewURL(viewer.node!.id, signal)
           )}
           loadLivePhotoMotion={(currentTarget, _progress, signal) =>
             api.mediaLivePhotoMotionURL(Number(currentTarget.id), signal)}
           onPresentationStateChange={presentation.onPresentationStateChange}
           interactiveImage
+          showImageDetails
           onSwipePrevious={viewer.previous ? viewer.goPrevious : undefined}
           onSwipeNext={viewer.next ? viewer.goNext : undefined}
           fallback={(
