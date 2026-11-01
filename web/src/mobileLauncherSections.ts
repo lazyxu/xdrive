@@ -1,3 +1,5 @@
+import type { XDriveWebAppRoute } from '../../ui/shared/src'
+
 /** A presentation-only category view of already authorized Web destinations.
  * Never mint routes or infer admin privileges from a category name. */
 export type XDriveMobileLauncherSection<T> = {
@@ -7,7 +9,7 @@ export type XDriveMobileLauncherSection<T> = {
 }
 
 const categories = [
-  { key: 'photos', label: '图库与相册', keys: ['gallery'] },
+  { key: 'photos', label: '图库与相册', keys: ['gallery', 'gallery-albums', 'gallery-places'] },
   { key: 'files', label: '文件与存储', keys: ['files', 'cloud-storage', 'local-storage'] },
   { key: 'backup', label: '备份与同步', keys: ['device-backup', 'remote-pull'] },
   { key: 'tasks', label: '任务与传输', keys: ['transfers'] },
@@ -35,4 +37,14 @@ export function xDriveMobileLauncherSections<T extends { key: string }>(
     sections.push({ key: 'other', label: '其他功能', items: [...remaining.values()] })
   }
   return sections
+}
+
+/** Browser-only Launcher shortcuts are Gallery *subroutes*, never dynamic
+ * features. Existing Gallery authorization and Owner Range remain decisive. */
+export function xDriveMobileLauncherGalleryRoute(key: string): XDriveWebAppRoute | null {
+  switch (key) {
+    case 'gallery-albums': return { app: 'gallery', params: { section: 'albums' } }
+    case 'gallery-places': return { app: 'gallery', params: { section: 'places' } }
+    default: return null
+  }
 }
