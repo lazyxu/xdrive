@@ -23,7 +23,7 @@ private final class XDriveIOSNativeFilesRejectRedirects: NSObject, URLSessionTas
 /// Read-only use of the existing Server Node and Search endpoints. Each page
 /// uses a short-lived, in-memory native Owner bearer; no alternate writer,
 /// WebView cookie or implicit File Provider rights are introduced.
-private struct XDriveIOSNativeFilesReader {
+struct XDriveIOSNativeFilesReader {
     let owner: XDriveNativeOwnerRoot
     let accessToken: String
 
