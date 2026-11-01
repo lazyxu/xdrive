@@ -246,6 +246,19 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     var mapOriginSource by remember(state.nativeUiSessionId) {
         mutableStateOf(NativeGallerySource.CLOUD)
     }
+    // One Gallery Map entry can switch between local MediaStore GPS and cloud
+    // Owner BD-09. Local IDs/coordinates remain in native view memory only.
+    var localPhotoMapOpen by remember(
+        state.nativeUiSessionId, state.server, state.username
+    ) { mutableStateOf(false) }
+    LaunchedEffect(state.screen, nativeNavigation.selected,
+        nativeNavigation.gallerySource, state.nativeUiSessionId) {
+        if (state.screen != Screen.GALLERY ||
+            nativeNavigation.selected != NativeHomeTab.GALLERY ||
+            nativeNavigation.gallerySource != NativeGallerySource.MAP) {
+            localPhotoMapOpen = false
+        }
+    }
     LaunchedEffect(state.screen, nativeNavigation.gallerySource, state.nativeUiSessionId) {
         if (state.screen != Screen.GALLERY ||
             nativeNavigation.gallerySource !in setOf(
@@ -330,11 +343,11 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     val mobilePage = Color(if (LocalXDriveDarkTheme.current) SharedVisuals.darkMobilePage else SharedVisuals.lightMobilePage)
     val galleryHasLocalBack = state.screen == Screen.GALLERY && (
         state.galleryMapCellSelected != null || state.galleryMapOpen ||
-        state.gallerySelectionMode || state.gallerySelected != null ||
+        localPhotoMapOpen || state.gallerySelectionMode || state.gallerySelected != null ||
         state.galleryViewer != null || state.gallerySelectedAlbum != null ||
         state.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS)
     val showingCloudGallery = nativeNavigation.gallerySource == NativeGallerySource.CLOUD ||
-        state.galleryMapOpen || state.galleryViewer != null
+        state.galleryMapOpen || localPhotoMapOpen || state.galleryViewer != null
     val localAlbumTopBack = state.screen == Screen.GALLERY &&
         nativeLocalAlbumTopBackVisible(
             nativeNavigation, localAlbumSelection != null,
@@ -350,6 +363,11 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
         else if (batchTrashConfirm) batchTrashConfirm = false
         else if (filesEdit != null) filesEdit = null
         else if (localAlbumTopBack) localAlbumSelection = null
+        else if (localPhotoMapOpen && state.screen == Screen.GALLERY) {
+            localPhotoMapOpen = false
+            nativeNavigation = nativeNavigation.copy(gallerySource = mapOriginSource)
+            if (state.galleryMapOpen) controller.closeGalleryMapOverview()
+        }
         else if (state.galleryMapOpen && state.galleryBd09History.isEmpty() &&
             state.galleryMapCellSelected == null && state.galleryViewer == null) {
             nativeNavigation = nativeNavigation.copy(gallerySource = mapOriginSource)
@@ -511,7 +529,8 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
         contentColor = MaterialTheme.colorScheme.onSurface,
         bottomBar = {
             if (nativeAuthenticated && !photoViewerOpen &&
-                (nativeNavigation.selected != NativeHomeTab.GALLERY || !state.galleryMapOpen))
+                (nativeNavigation.selected != NativeHomeTab.GALLERY ||
+                    (!state.galleryMapOpen && !localPhotoMapOpen)))
                 NativeHomeBottomBar(nativeNavigation, ::selectNativeTab,
                     onShowDynamicPicker = { dynamicPickerOpen = true })
         },
@@ -540,6 +559,11 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                     IconButton(onClick = {
                         if (state.screen == Screen.TRASH) controller.closeTrash()
                         else if (localAlbumTopBack) localAlbumSelection = null
+                        else if (localPhotoMapOpen && state.screen == Screen.GALLERY) {
+                            localPhotoMapOpen = false
+                            nativeNavigation = nativeNavigation.copy(gallerySource = mapOriginSource)
+                            if (state.galleryMapOpen) controller.closeGalleryMapOverview()
+                        }
                         else if (state.galleryMapOpen && state.galleryBd09History.isEmpty() &&
                             state.galleryMapCellSelected == null && state.galleryViewer == null) {
                             nativeNavigation = nativeNavigation.copy(gallerySource = mapOriginSource)
@@ -573,6 +597,7 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                     }
                     val title = if (state.screen == Screen.TRASH) "回收站"
                         else if (state.screen == Screen.GALLERY) when {
+                            localPhotoMapOpen -> "本机位置"
                             state.galleryMapOpen -> "地点"
                             localAlbumTopBack -> localAlbumSelection?.title ?: "本机相册"
                             nativeNavigation.gallerySource == NativeGallerySource.LOCAL -> "本机照片"
@@ -705,10 +730,36 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                                 controller = controller,
                             )
                         }
+                    } else if (localPhotoMapOpen &&
+                        nativeNavigation.gallerySource == NativeGallerySource.MAP) {
+                        NativePhotoMapSourceBar(
+                            localSelected = true,
+                            onLocal = {},
+                            onCloud = {
+                                localPhotoMapOpen = false
+                                if (!state.galleryMapOpen) controller.openGalleryMapOverview()
+                            })
+                        NativeLocalPhotoMap(
+                            sessionId = state.nativeUiSessionId,
+                            libraryEpoch = localGalleryMemory.generation.intValue,
+                            onClose = {
+                                localPhotoMapOpen = false
+                                nativeNavigation = nativeNavigation.copy(gallerySource = mapOriginSource)
+                            })
                     } else if (state.galleryMapOpen) {
                         // The native MapView remains mounted beneath the album
                         // sheet; a cell selection no longer destroys its camera,
                         // signed count markers or SDK lease.
+                        NativePhotoMapSourceBar(
+                            localSelected = false,
+                            onLocal = {
+                                if (!state.hasActiveNativeTransfer() &&
+                                    state.galleryMapCellSelected == null) {
+                                    localPhotoMapOpen = true
+                                    controller.closeGalleryMapOverview()
+                                }
+                            },
+                            onCloud = {})
                         GalleryMapOverview(state, controller,
                             bd09Scroll.getOrPut(state.galleryBd09Bounds) {
                                 LazyListState()
