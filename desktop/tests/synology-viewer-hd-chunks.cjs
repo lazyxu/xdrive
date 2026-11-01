@@ -142,5 +142,5 @@ test('aborted private media read cannot start a JPEG retry or publish a URL', as
   }
   await assert.rejects(load(client, original, controller.signal), /abort/i)
   assert.equal(registered.length, 0)
-  assert.equal(created.size, 0)
+  assert.deepEqual(revoked, ['blob:owner-hd-1'], 'aborted object URL must be revoked')
 })
