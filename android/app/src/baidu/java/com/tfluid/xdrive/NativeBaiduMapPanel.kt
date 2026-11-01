@@ -6,6 +6,17 @@ import android.graphics.Canvas as AndroidCanvas
 import android.graphics.Color as AndroidColor
 import android.graphics.Paint
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -63,6 +74,10 @@ private object BaiduMapStartup {
  * contains no bearer token, private image bytes, origin or persisted IDs.
  * Tap always calls the existing Controller, which re-verifies the exact cell
  * against the currently authenticated Owner response before any Gallery GET. */
+private data class NativeBaiduProjectedCell(
+    val cell: OwnerBd09Cell, val x: Int, val y: Int,
+)
+
 private class NativeBaiduLease(val view: MapView) {
     private val bindings = IdentityHashMap<Marker, OwnerBd09Cell>()
     private val icons = mutableListOf<BitmapDescriptor>()
@@ -72,6 +87,8 @@ private class NativeBaiduLease(val view: MapView) {
     var onCameraStart: () -> Unit = {}
     var onCameraSettled: (OwnerBd09Bounds?) -> Unit = {}
     var onCameraSnapshot: (NativeBaiduCameraPose) -> Unit = {}
+    var onProjectedCells: (List<NativeBaiduProjectedCell>) -> Unit = {}
+    private var lastProjected: List<NativeBaiduProjectedCell> = emptyList()
     var markersEnabled = true
     private var sdkCameraGesture = false
     private var closed = false
@@ -93,9 +110,12 @@ private class NativeBaiduLease(val view: MapView) {
                     BaiduMap.OnMapStatusChangeListener.REASON_DEVELOPER_ANIMATION) return
                 sdkCameraGesture = true
                 markersEnabled = false // Immediately fence stale taps before Compose redraw.
+                clearProjected()
                 onCameraStart()
             }
-            override fun onMapStatusChange(status: MapStatus) = Unit
+            override fun onMapStatusChange(status: MapStatus) {
+                if (!sdkCameraGesture) publishProjected()
+            }
             override fun onMapStatusChangeFinish(status: MapStatus) {
                 if (closed || !sdkCameraGesture) return
                 sdkCameraGesture = false
@@ -107,6 +127,7 @@ private class NativeBaiduLease(val view: MapView) {
                 }
                 onCameraSettled(target)
                 cameraPose(status)?.let(onCameraSnapshot)
+                publishProjected()
             }
         })
     }
@@ -118,6 +139,36 @@ private class NativeBaiduLease(val view: MapView) {
             current, center.latitude, center.longitude,
             status.zoom, status.rotate, status.overlook,
         ).takeIf { it.validFor(current) }
+    }
+
+    private fun clearProjected() {
+        if (lastProjected.isEmpty()) return
+        lastProjected = emptyList()
+        onProjectedCells(emptyList())
+    }
+
+    /** Screen pixel locations come only from the REAL active Baidu projection.
+     * Compose owns the private photo pixels and click targets: the SDK sees
+     * only signed coordinates and unsigned count markers, never thumbnails. */
+    fun publishProjected() {
+        if (closed || sdkCameraGesture || !markersEnabled ||
+            view.width <= 0 || view.height <= 0) {
+            clearProjected()
+            return
+        }
+        val projection = try { view.map.projection } catch (_: Exception) { null }
+            ?: return
+        val points = lastPins.orEmpty().mapNotNull { cell ->
+            val pixel = try {
+                projection.toScreenLocation(LatLng(cell.latitude, cell.longitude))
+            } catch (_: Exception) { null } ?: return@mapNotNull null
+            if (pixel.x !in 0..view.width || pixel.y !in 0..view.height) null
+            else NativeBaiduProjectedCell(cell, pixel.x, pixel.y)
+        }
+        if (points != lastProjected) {
+            lastProjected = points
+            onProjectedCells(points)
+        }
     }
 
     /** Capture on Viewer disposal as well; onMapStatusChangeFinish is not
@@ -177,11 +228,13 @@ private class NativeBaiduLease(val view: MapView) {
                     builder.build()))
             }
         }
+        publishProjected()
     }
 
     fun close() {
         if (closed) return
         closed = true
+        lastProjected = emptyList()
         view.map.setOnMapStatusChangeListener(null)
         bindings.clear()
         try {
@@ -228,6 +281,7 @@ internal fun NativeBaiduMapPanel(
     preserveCamera: Boolean,
     savedCamera: NativeBaiduCameraPose?,
     onCameraSnapshot: (NativeBaiduCameraPose) -> Unit,
+    photoCovers: Map<OwnerBd09Cell, ImageBitmap>,
     placeholder: @Composable () -> Unit,
 ) {
     val context = LocalContext.current
@@ -291,6 +345,10 @@ internal fun NativeBaiduMapPanel(
     val currentOnCameraStart by rememberUpdatedState(onCameraStart)
     val currentOnCameraSettled by rememberUpdatedState(onCameraSettled)
     val currentOnCameraSnapshot by rememberUpdatedState(onCameraSnapshot)
+    var projectedCells by remember(host, bounds, result) {
+        mutableStateOf<List<NativeBaiduProjectedCell>>(emptyList())
+    }
+    val density = LocalDensity.current
     DisposableEffect(host, lifecycle) {
         if (host == null) onDispose {} else {
             val observer = LifecycleEventObserver { _, event ->
@@ -301,10 +359,15 @@ internal fun NativeBaiduMapPanel(
                 }
             }
             lifecycle.lifecycle.addObserver(observer)
+            val projectionLayout = android.view.View.OnLayoutChangeListener {
+                    _, _, _, _, _, _, _, _, _ -> host.publishProjected()
+            }
+            host.view.addOnLayoutChangeListener(projectionLayout)
             if (lifecycle.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
                 host.view.onResume()
             onDispose {
                 lifecycle.lifecycle.removeObserver(observer)
+                host.view.removeOnLayoutChangeListener(projectionLayout)
                 host.captureCamera() // Viewer may unmount Map before SDK finish.
                 host.close()
                 if (!preferences.getBoolean(SDK_PRIVACY_VERSION, false))
@@ -321,20 +384,49 @@ internal fun NativeBaiduMapPanel(
         placeholder()
     } else {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            AndroidView(
-                factory = { host.view },
-                update = {
-                    host.onSelect = { cell -> currentOnSelect(cell) }
-                    host.onCameraStart = { currentOnCameraStart() }
-                    host.onCameraSettled = { next -> currentOnCameraSettled(next) }
-                    host.onCameraSnapshot = { pose -> currentOnCameraSnapshot(pose) }
-                    host.markersEnabled = markersEnabled
-                    host.draw(bounds, pins, preserveCamera, savedCamera)
-                    host.captureCamera()
-                },
-                modifier = Modifier.fillMaxWidth().height(290.dp)
-                    .testTag("native-baidu-map"),
-            )
+            Box(Modifier.fillMaxWidth().height(290.dp).clip(RoundedCornerShape(12.dp))) {
+                AndroidView(
+                    factory = { host.view },
+                    update = {
+                        host.onSelect = { cell -> currentOnSelect(cell) }
+                        host.onCameraStart = { currentOnCameraStart() }
+                        host.onCameraSettled = { next -> currentOnCameraSettled(next) }
+                        host.onCameraSnapshot = { pose -> currentOnCameraSnapshot(pose) }
+                        host.onProjectedCells = { points -> projectedCells = points }
+                        host.markersEnabled = markersEnabled
+                        host.draw(bounds, pins, preserveCamera, savedCamera)
+                        host.publishProjected()
+                        host.captureCamera()
+                    },
+                    modifier = Modifier.fillMaxSize().testTag("native-baidu-map"),
+                )
+                if (markersEnabled) for (p in projectedCells) {
+                    val cover = photoCovers[p.cell] ?: continue
+                    key(p.cell.nodeId, p.cell.nodeRevision) {
+                        val widthPx = with(density) { 44.dp.roundToPx() }
+                        Box(Modifier.offset {
+                                IntOffset((p.x - widthPx / 2)
+                                    .coerceIn(0, (host.view.width - widthPx).coerceAtLeast(0)),
+                                    (p.y - widthPx / 2)
+                                    .coerceIn(0, (host.view.height - widthPx).coerceAtLeast(0)))
+                            }
+                            .size(44.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable { currentOnSelect(p.cell) }
+                            .testTag("native-baidu-cover-${p.cell.cellX}-${p.cell.cellY}")) {
+                            Image(cover, contentDescription = "聚合 ${p.cell.photoCount} 张照片",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize())
+                            Text("${p.cell.photoCount}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White,
+                                modifier = Modifier.align(Alignment.BottomEnd)
+                                    .background(Color.Black.copy(alpha = 0.65f))
+                                    .padding(horizontal = 3.dp))
+                        }
+                    }
+                }
+            }
             Text("百度原生底图 · ${pins.size} 个经服务端验证的 BD-09 聚合点。拖动或缩放后，静止 500ms 自动核对新范围，失败可手动刷新。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
