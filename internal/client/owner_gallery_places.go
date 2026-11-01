@@ -30,10 +30,15 @@ type OwnerPlacesPage struct {
 	Limit      int          `json:"limit"`
 	HasMore    bool         `json:"has_more"`
 }
+
 func ValidOwnerPlaceID(id string) bool {
-	if len(id) < 9 || len(id) > 64 { return false }
+	if len(id) < 9 || len(id) > 64 {
+		return false
+	}
 	parts := strings.Split(id, ":")
-	if len(parts) != 3 || parts[0] != "place" { return false }
+	if len(parts) != 3 || parts[0] != "place" {
+		return false
+	}
 	lat, e1 := strconv.Atoi(parts[1])
 	lon, e2 := strconv.Atoi(parts[2])
 	return e1 == nil && e2 == nil && lat >= -9000 && lat <= 9000 &&
@@ -49,13 +54,21 @@ func validOwnerPlace(item OwnerPlace) bool {
 		!utf8.ValidString(item.Name) || item.ItemCount < 1 ||
 		uint64(item.ItemCount) > ownerGalleryMaxSafe ||
 		(item.CoordinateKind != "grid_cell_center" &&
-		 item.CoordinateKind != "map_region_sample") ||
+			item.CoordinateKind != "map_region_sample") ||
 		(item.CoverNodeID != nil && (*item.CoverNodeID == 0 || *item.CoverNodeID > ownerGalleryMaxSafe)) {
 		return false
 	}
-	for _, c := range item.Name { if c == 0 || c == '\r' || c == '\n' { return false } }
+	for _, c := range item.Name {
+		if c == 0 || c == '\r' || c == '\n' {
+			return false
+		}
+	}
 	coordinates := []float64{item.Latitude, item.SampleLatitude, item.Longitude, item.SampleLongitude}
-	for _, v := range coordinates { if math.IsNaN(v) || math.IsInf(v, 0) { return false } }
+	for _, v := range coordinates {
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			return false
+		}
+	}
 	return math.Abs(item.Latitude) <= 90 && math.Abs(item.SampleLatitude) <= 90 &&
 		math.Abs(item.Longitude) <= 180 && math.Abs(item.SampleLongitude) <= 180
 }
@@ -70,14 +83,16 @@ func ValidOwnerPlacesPage(page OwnerPlacesPage, limit, offset int) bool {
 	}
 	seen := make(map[string]bool, len(page.Items))
 	for _, item := range page.Items {
-		if !validOwnerPlace(item) || seen[item.ID] { return false }
+		if !validOwnerPlace(item) || seen[item.ID] {
+			return false
+		}
 		seen[item.ID] = true
 	}
 	return true
 }
 func ProjectOwnerPlacesPage(raw MediaPlacesPage, limit, offset int) (OwnerPlacesPage, error) {
 	page := OwnerPlacesPage{
-		Items: make([]OwnerPlace, 0, len(raw.Items)),
+		Items:      make([]OwnerPlace, 0, len(raw.Items)),
 		TotalCount: raw.TotalCount, Offset: raw.Offset, Limit: raw.Limit,
 		HasMore: raw.HasMore,
 	}
