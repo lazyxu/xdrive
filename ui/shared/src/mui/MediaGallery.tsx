@@ -31,6 +31,7 @@ import {
 } from '../media-gallery-baidu-map-photo-scope'
 import type { XDriveBaiduMapPhotoScope } from '../media-gallery-baidu-map-photo-scope'
 import { xDriveGalleryMapEntryScope } from '../media-gallery-baidu-map-entry'
+import { xDriveLoadOwnerGPSPhotoCover } from '../media-gallery-owner-gps-cover'
 import { xDriveResolveBaiduOwnerPhotoFocusCamera } from '../media-gallery-baidu-photo-focus-camera'
 import type { XDrivePhotoFocusOwnerState } from '../media-gallery-baidu-photo-focus-camera'
 import type { XDriveViewerPhotoMapSelection } from '../media-gallery-viewer-photo-map-selection'
@@ -724,6 +725,9 @@ export function XDriveMediaGalleryPage({
   onOpenBaiduMapDiagnostics,
   onError,
 }: XDriveMediaGalleryPageProps) {
+  const loadOwnerGPSPlaceCover = useCallback((place: MediaPlaceFacet, signal: AbortSignal) =>
+    xDriveLoadOwnerGPSPhotoCover(place, source.listItemRange, source.loadThumbnail, signal),
+  [source])
   const mobileGalleryViewport = useMediaQuery('(max-width:899.95px)') && mobileWebChrome
   const [facets, setFacets] = useState<MediaGalleryFacets>({ cameras: [], formats: [] })
   const [facetsLoading, setFacetsLoading] = useState(false)
@@ -4275,6 +4279,8 @@ export function XDriveMediaGalleryPage({
         listPlacesPage={source.listPlacesPage}
         listPlacesHierarchy={source.listPlacesHierarchy}
         listPlacesMapOverview={source.listPlacesMapOverview}
+        loadPlacesMapCover={source.listPlacesMapOverview && !source.getBaiduJSAPI4Status
+          ? loadOwnerGPSPlaceCover : undefined}
         listPlacesViewport={source.listPlacesViewport}
         listBaiduNativeViewport={source.listBaiduNativeViewport}
         listBaiduNativeCells={source.listBaiduNativeCells}
@@ -4799,6 +4805,7 @@ export interface XDriveMediaGalleryProps {
   listPlacesPage?: MediaGalleryDataSource['listPlacesPage']
   listPlacesHierarchy?: MediaGalleryDataSource['listPlacesHierarchy']
   listPlacesMapOverview?: MediaGalleryDataSource['listPlacesMapOverview']
+  loadPlacesMapCover?: (place: MediaPlaceFacet, signal: AbortSignal) => Promise<string | null>
   baiduNativeCameraSnapshot?: XDriveBaiduNativeCameraSnapshot
   onBaiduNativeCameraChange?: (camera: XDriveBaiduNativeCameraSnapshot) => void
   onBaiduNativeCameraClear?: () => void
@@ -6546,6 +6553,7 @@ export function XDriveMediaGallery({
   listPlacesPage,
   listPlacesHierarchy,
   listPlacesMapOverview,
+  loadPlacesMapCover,
   listPlacesViewport,
   listBaiduNativeViewport,
   listBaiduNativeCells,
@@ -8874,6 +8882,7 @@ export function XDriveMediaGallery({
             listBaiduNativeCells={listBaiduNativeCells}
             listBaiduNativeCellItems={listBaiduNativeCellItems}
             listPlacesMapOverview={listPlacesMapOverview}
+            loadPlacesMapCover={loadPlacesMapCover}
             loadPhotoCoverThumbnail={loadThumbnail}
             loadPhotoCoverPreviewURL={loadPreviewURL}
             savePhotoCoverVideoPoster={saveVideoPoster}
