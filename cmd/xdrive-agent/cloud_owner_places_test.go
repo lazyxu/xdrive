@@ -3,7 +3,7 @@ package main
 import "testing"
 
 func TestOwnerPlacesAgentSelectorsAndBackupOnlyReadScope(t *testing.T) {
-	for _, tc := range []struct{
+	for _, tc := range []struct {
 		query string
 		items bool
 		place string
@@ -40,10 +40,16 @@ func TestOwnerPlacesAgentSelectorsAndBackupOnlyReadScope(t *testing.T) {
 	}
 	capability := false
 	for _, name := range desktopIPCCapabilitiesForRuntime(true) {
-		if name == "cloud-owner-places-read" { capability = true }
-		if name == "media-gallery" { t.Fatal("backup-only gained Desktop media API") }
+		if name == "cloud-owner-places-read" {
+			capability = true
+		}
+		if name == "media-gallery" {
+			t.Fatal("backup-only gained Desktop media API")
+		}
 	}
-	if !capability { t.Fatal("backup-only lost read-only Owner Places capability") }
+	if !capability {
+		t.Fatal("backup-only lost read-only Owner Places capability")
+	}
 	for _, path := range []string{"/v1/cloud/owner-places-page", "/v1/cloud/owner-place-items"} {
 		if fullAgentOnlyRequest("GET", path) || !fullAgentOnlyRequest("POST", path) {
 			t.Errorf("incorrect Backup-only route admission: %s", path)
