@@ -12,12 +12,12 @@ private enum XDriveIOSNativePhotoMapSource: String, CaseIterable {
 /// native tab or a second Owner authentication/backup writer.
 struct XDriveIOSNativePhotoMapsScreen: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
-    var onFocusChange: ((Bool) -> Void)?
-    @State private var source: XDriveIOSNativePhotoMapSource = .local
     // The Gallery parent retains only bounded local PhotoKit navigation hints.
     // Source switches never reset the parent's map scope or page cursor.
     @Binding var localMapScope: XDriveIOSNativeLocalMapScope
     @Binding var localMapPageOffset: Int
+    var onFocusChange: ((Bool) -> Void)?
+    @State private var source: XDriveIOSNativePhotoMapSource = .local
 
     var body: some View {
         VStack(spacing: 4) {
