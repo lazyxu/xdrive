@@ -105,7 +105,7 @@ struct XDriveIOSNativeFilesViewer: View {
     @State private var player: AVPlayer?
     @State private var failure: String?
     @State private var loading = true
-    // Reuse Files' already verified/download-ticket based export path. This
+    // Reuse Files' existing verified, signed original-export model. This
     // staged file belongs to exactly this L3 item, never the hidden page.
     @StateObject private var exporter = XDriveIOSNativeFilesExportModel()
     @State private var exportFallbackEligible = false
