@@ -16,6 +16,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -61,6 +62,7 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
@@ -142,6 +144,33 @@ internal fun nativeStillDecodeSize(width: Int, height: Int): Pair<Int, Int> {
     val factor = 4096.0 / maxEdge.toDouble()
     return maxOf(1, (width * factor).roundToInt()) to
         maxOf(1, (height * factor).roundToInt())
+}
+
+/**
+ * The currently authorized MediaStore wall prefetches only after a real drag
+ * reaches the visible tail. Programmatic restore and an initially short grid
+ * never trigger an unbounded walk across the local photo library.
+ */
+internal data class NativeLocalWallPageViewport(
+    val userGestureSeen: Boolean,
+    val lastVisibleIndex: Int,
+    val loadedCount: Int,
+    val cursor: NativeLocalPageKey?,
+    val canFetch: Boolean,
+)
+
+internal class NativeLocalWallAutoPager(private val prefetchDistance: Int = 12) {
+    private var lastRequestedCursor: NativeLocalPageKey? = null
+
+    fun shouldRequest(viewport: NativeLocalWallPageViewport): Boolean {
+        if (!viewport.userGestureSeen || !viewport.canFetch ||
+            viewport.loadedCount == 0 || viewport.cursor == null ||
+            viewport.lastVisibleIndex < 0 ||
+            viewport.lastVisibleIndex < (viewport.loadedCount - prefetchDistance).coerceAtLeast(0) ||
+            lastRequestedCursor == viewport.cursor) return false
+        lastRequestedCursor = viewport.cursor
+        return true
+    }
 }
 
 /**
@@ -331,6 +360,34 @@ internal fun NativeLocalMediaStoreGallery(
                 failure = "下一页读取失败；现有照片保持不变。"
         } finally {
             if (wall.revision.intValue == readRevision) busy = false
+        }
+    }
+    // Follow a *real* wall drag instead of restoring a saved LazyGrid viewport.
+    // No initial 100k traversal, and no second page while an existing query or
+    // manual next-page intent is outstanding. The existing 64-row keyset query,
+    // 512-tile retention and explicit retry button remain authoritative.
+    var localWallDragged by remember(querySignal, photoGridState) {
+        mutableStateOf(false)
+    }
+    LaunchedEffect(querySignal, photoGridState) {
+        photoGridState.interactionSource.interactions.collect { interaction ->
+            if (interaction is DragInteraction.Start) localWallDragged = true
+        }
+    }
+    LaunchedEffect(querySignal, photoGridState) {
+        val pager = NativeLocalWallAutoPager()
+        snapshotFlow {
+            NativeLocalWallPageViewport(
+                userGestureSeen = localWallDragged,
+                lastVisibleIndex = photoGridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1,
+                loadedCount = items.size,
+                cursor = nextPageKey,
+                canFetch = allowed && wall.loaded.value && selectedMedia == null &&
+                    !busy && failure == null && !exhausted &&
+                    pageIntent == consumedPageIntent,
+            )
+        }.collect { viewport ->
+            if (pager.shouldRequest(viewport)) pageIntent++
         }
     }
     if (!allowed) {

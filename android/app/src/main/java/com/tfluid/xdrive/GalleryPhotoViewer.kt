@@ -42,7 +42,7 @@ import kotlinx.coroutines.withContext
 private sealed interface ImageStage {
     data object Loading : ImageStage
     data class Ready(val image: ImageBitmap, val thumbnailOnly: Boolean = false,
-        val upgrading: Boolean = false) : ImageStage
+        val upgrading: Boolean = false, val sampledOriginal: Boolean = false) : ImageStage
     data object Failed : ImageStage
 }
 
@@ -52,7 +52,6 @@ internal fun galleryOriginalFallbackRetryVisible(
     thumbnailOnly: Boolean, upgrading: Boolean, originalEligible: Boolean,
 ): Boolean = thumbnailOnly && !upgrading && originalEligible
 
-/** Never offer retry if this original cannot pass the current size/format gate. */
 internal fun galleryOriginalFailedRetryVisible(originalEligible: Boolean): Boolean =
     originalEligible
 
@@ -80,17 +79,25 @@ internal fun GalleryPhotoFailureNotice(
     }
 }
 
-/** Sample pixels off the main thread and cap the decoded long edge to 2048.
- * This first stage intentionally rejects >32 MiB originals in the Controller
- * instead of risking unbounded memory; a later tiled decoder removes the cap. */
-private fun decodeGalleryOriginal(bytes: ByteArray): ImageBitmap? {
-    val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
-    if (options.outWidth !in 1..32768 || options.outHeight !in 1..32768) return null
+/** Native sampled decode is not original-resolution display. The separate
+ * 32 MiB Owner read bound remains in the Controller; never bypass it. */
+internal fun galleryOriginalSampleSize(width: Int, height: Int): Int? {
+    if (width !in 1..32768 || height !in 1..32768) return null
     var sample = 1
-    while (maxOf(options.outWidth, options.outHeight) / sample > 2048) sample *= 2
-    val sampled = BitmapFactory.Options().apply { inSampleSize = sample }
-    return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, sampled)?.asImageBitmap()
+    while (maxOf(width, height) / sample > 2048) sample *= 2
+    return sample
+}
+
+private data class GalleryDecodedOriginal(val bitmap: ImageBitmap, val sampled: Boolean)
+
+private fun decodeGalleryOriginal(bytes: ByteArray): GalleryDecodedOriginal? {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+    val sample = galleryOriginalSampleSize(bounds.outWidth, bounds.outHeight) ?: return null
+    val options = BitmapFactory.Options().apply { inSampleSize = sample }
+    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+        ?.asImageBitmap() ?: return null
+    return GalleryDecodedOriginal(bitmap, sampled = sample > 1)
 }
 
 /** Native Owner photo Viewer with bounded original decode and explicit
@@ -142,12 +149,13 @@ internal fun GalleryPhotoViewer(
         // a ready original. The parent effect cancels both on Viewer change.
         coroutineScope {
             var thumbnail = thumbnails.get(cacheKey)
-            var original: ImageBitmap? = null
+            var original: GalleryDecodedOriginal? = null
             var originalDone = !canReadOriginal
             var thumbnailDone = thumbnail != null || !photo.hasThumbnail
             fun publish() {
                 value = when {
-                    original != null -> ImageStage.Ready(original!!)
+                    original != null -> ImageStage.Ready(
+                        original!!.bitmap, sampledOriginal = original!!.sampled)
                     thumbnail != null -> ImageStage.Ready(
                         thumbnail!!, thumbnailOnly = true, upgrading = !originalDone)
                     originalDone && thumbnailDone -> ImageStage.Failed
@@ -352,6 +360,15 @@ internal fun GalleryPhotoViewer(
                                 .size(22.dp).testTag("gallery-photo-upgrading"),
                             color = Color.White, strokeWidth = 2.dp,
                         )
+                    } else if (current.sampledOriginal) {
+                        Text("原图已读取 · 当前为适屏采样预览，非完整原始分辨率",
+                            modifier = Modifier.align(Alignment.BottomCenter)
+                                .padding(bottom = 16.dp)
+                                .background(Color.Black.copy(alpha = 0.72f))
+                                .padding(horizontal = 12.dp, vertical = 7.dp)
+                                .testTag("gallery-photo-sampled-original"),
+                            color = Color.White,
+                            style = MaterialTheme.typography.labelMedium)
                     } else if (current.thumbnailOnly) {
                         Column(
                             modifier = Modifier.align(Alignment.BottomCenter)
