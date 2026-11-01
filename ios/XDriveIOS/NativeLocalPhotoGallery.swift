@@ -358,9 +358,9 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                                       [.authorized, .limited].contains(
                                         PHPhotoLibrary.authorizationStatus(for: .readWrite)
                                       ) else { return }
+                                model.load(viewed)
                                 showsStaticStill = false
                                 livePlaybackRequest = nil
-                                model.load(viewed)
                             }
                             .accessibilityIdentifier("native-ios-local-viewer-retry")
                         }
