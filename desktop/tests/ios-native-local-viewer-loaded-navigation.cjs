@@ -40,7 +40,7 @@ test('iOS native local fullscreen keeps one modal and cancels old media between 
   assert.match(viewer, /PHAsset\.fetchAssets\(\s*withLocalIdentifiers: \[next\.id\], options: nil/)
   assert.match(viewer, /asset\.creationDate == next\.capturedAt/)
   assert.match(viewer, /asset\.modificationDate == next\.modifiedAt/)
-  assert.match(viewer, /model\.cancel\(\)\s+activeItem = next\s+onViewed\?\(next\)/)
+  assert.match(viewer, /requestedICloudForCurrentItem = false\s+model\.cancel\(\)\s+activeItem = next\s+onViewed\?\(next\)/)
   assert.match(viewer, /\.task\(id: viewed\.id\)/)
   assert.match(viewer, /model\.load\(viewed\)/)
   assert.match(viewer, /native-ios-local-viewer-previous/)
@@ -62,55 +62,37 @@ test('return anchor follows last actually viewed PhotoKit item after authenticat
   assert.doesNotMatch(gallery, /UserDefaults\.standard|localStorage|CloudKit\.modifyRecords|PhotoKit.*upload/)
 })
 
-test('local PhotoKit Live can switch to zoomable still and explicit native playback', () => {
-  const start = gallery.indexOf('struct XDriveIOSNativeLocalPhotoDetail: View')
-  const end = gallery.indexOf('/// Read-only, 64-at-a-time PhotoKit grid.', start)
-  const viewer = gallery.slice(start, end)
-  const live = gallery.slice(gallery.indexOf('private struct XDriveIOSNativeLivePhotoView: UIViewRepresentable'),
-    gallery.indexOf('/// A full-screen detail has its own observer'))
-  assert.match(viewer, /@State private var showsLiveStill = false/);
-  assert.match(viewer, /@State private var livePlaybackRequest: UUID\?/);
-  assert.match(viewer, /let live = model\.live, !showsLiveStill/);
-  assert.match(viewer, /XDriveIOSNativeLivePhotoView\(\s*live: live, playbackRequest: livePlaybackRequest/);
-  assert.match(viewer, /else if let image = model\.still \{\s*XDriveIOSNativeZoomablePhotoView\(image: image\)/);
-  assert.match(viewer, /showsLiveStill\.toggle\(\)\s*livePlaybackRequest = nil/);
-  assert.match(viewer, /Button\("播放实况"\) \{[\s\S]*?showsLiveStill = false\s*livePlaybackRequest = UUID\(\)/);
-  assert.match(viewer, /native-ios-local-live-still-toggle/);
-  assert.match(viewer, /native-ios-local-live-play/);
-  assert.match(viewer, /showsLiveStill = false\s*livePlaybackRequest = nil\s*requestedICloudForCurrentItem = false\s*model\.cancel\(\)/);
-  assert.match(live, /view\.startPlayback\(with: \.full\)/);
-  assert.match(live, /context\.coordinator\.lastPlayed != playbackRequest/);
-  assert.match(live, /static func dismantleUIView\(_ view: PHLivePhotoView, coordinator: Coordinator\)/);
-  assert.match(live, /view\.stopPlayback\(\)[\s\S]*?view\.livePhoto = nil/);
-  assert.doesNotMatch(live, /PHPhotoLibrary\.shared\(\)\.performChanges|URLSession|upload/);
-});
 
-test('local PhotoKit AVPlayer fails closed and retries only the active item', () => {
-  const start = gallery.indexOf('struct XDriveIOSNativeLocalPhotoDetail: View')
-  const end = gallery.indexOf('/// Read-only, 64-at-a-time PhotoKit grid.', start)
-  const viewer = gallery.slice(start, end)
-  assert.match(gallery, /func playbackFailed\(_ failed: AVPlayerItem\)/);
-  assert.match(gallery, /active === failed/);
-  assert.match(gallery, /player\?\.replaceCurrentItem\(with: nil\)/);
-  assert.match(gallery, /message = "本机视频播放失败，请重试当前媒体。"/);
-  assert.match(viewer, /\.AVPlayerItemFailedToPlayToEndTime/);
-  assert.match(viewer, /guard currentPageAuthorized,[\s\S]*?model\.player\?\.currentItem === failed/);
-  assert.match(viewer, /model\.playbackFailed\(failed\)/);
-  assert.match(viewer, /Button\("重试"\) \{[\s\S]*?reloadCurrent\(\)/);
-});
-
-test('local PhotoKit media handles initial AVPlayer failure and retries only explicit iCloud intent', () => {
+test('iOS local Viewer preserves Live playback, zoom swipes and explicit iCloud requests together', () => {
   const viewer = gallery.slice(gallery.indexOf('struct XDriveIOSNativeLocalPhotoDetail: View'),
     gallery.indexOf('/// Read-only, 64-at-a-time PhotoKit grid.'));
-  assert.match(viewer, /if let player = model\.player \{\s*videoSurface\(player\)/);
-  assert.match(viewer, /VideoPlayer\(player: player\)/);
+  assert.match(viewer, /@State private var showsStaticStill = false/);
+  assert.match(viewer, /@State private var requestedICloudForCurrentItem = false/);
+  assert.match(viewer, /native-ios-local-live-play/);
+  assert.match(viewer, /native-ios-local-live-static-toggle/);
+  assert.match(viewer, /\.onNavigateSwipe \{ showNeighbor\(\$0\) \}/);
+  assert.match(viewer, /native-ios-local-viewer-icloud-load/);
+  assert.match(viewer, /model\.load\(viewed, allowICloud: true\)/);
+  assert.match(viewer, /requestedICloudForCurrentItem = false[\s\S]*?model\.cancel\(\)[\s\S]*?activeItem = next/);
+  assert.match(viewer, /showsStaticStill = false[\s\S]*?livePlaybackRequest = nil/);
+});
+
+
+test('native PhotoKit video initial failure and manual retry preserve explicit iCloud intent and existing Live Viewer', () => {
+  const model = gallery.slice(gallery.indexOf('final class XDriveIOSLocalPhotoDetailModel'),
+    gallery.indexOf('private struct XDriveIOSNativeLivePhotoView'));
+  const viewer = gallery.slice(gallery.indexOf('struct XDriveIOSNativeLocalPhotoDetail: View'),
+    gallery.indexOf('/// Read-only, 64-at-a-time PhotoKit grid.'));
+  assert.match(model, /func playbackFailed\(_ failed: AVPlayerItem\)/);
+  assert.match(model, /guard let active = player\?\.currentItem, active === failed/);
   assert.match(viewer, /item\.publisher\(for: \\\.status, options: \[\.initial, \.new\]\)/);
   assert.match(viewer, /player\.publisher\(for: \\\.status, options: \[\.initial, \.new\]\)/);
-  assert.match(viewer, /guard status == \.failed, currentPageAuthorized,\s*model\.player\?\.currentItem === item/);
-  assert.match(viewer, /model\.playbackFailed\(item\)/);
-  assert.match(viewer, /private func reloadCurrent\(\)[\s\S]*?guard currentPageAuthorized else \{ return \}[\s\S]*?model\.load\(viewed, allowICloud: requestedICloudForCurrentItem\)/);
-  assert.match(viewer, /native-ios-local-player-reload/);
-  assert.match(viewer, /Button\("重试"\) \{[\s\S]*?reloadCurrent\(\)/);
-  assert.match(viewer, /requestedICloudForCurrentItem = false[\s\S]*?model\.cancel\(\)/);
+  assert.match(viewer, /model\.player\?\.currentItem === item/);
   assert.match(viewer, /\.AVPlayerItemFailedToPlayToEndTime/);
+  assert.match(viewer, /native-ios-local-player-reload/);
+  assert.match(viewer, /model\.load\(viewed, allowICloud: requestedICloudForCurrentItem\)/);
+  assert.match(viewer, /requestedICloudForCurrentItem = false/);
+  assert.match(viewer, /native-ios-local-live-play/);
+  assert.match(viewer, /native-ios-local-live-static-toggle/);
+  assert.match(viewer, /\.onNavigateSwipe \{ showNeighbor\(\$0\) \}/);
 });

@@ -163,6 +163,7 @@ internal fun NativeFilesPdfViewer(
     val holder = remember(node.id, node.revision) { PdfHolder() }
     var lease by remember(node.id, node.revision) { mutableStateOf<PdfLease?>(null) }
     var retry by remember(node.id, node.revision) { mutableIntStateOf(0) }
+    var renderRetry by remember(node.id, node.revision) { mutableIntStateOf(0) }
     var error by remember(node.id, node.revision) { mutableStateOf<String?>(null) }
     var pageIndex by remember(node.id, node.revision) { mutableIntStateOf(0) }
     var drawing by remember(node.id, node.revision) { mutableStateOf(false) }
@@ -239,7 +240,7 @@ internal fun NativeFilesPdfViewer(
             }
         }
     }
-    LaunchedEffect(lease, pageIndex, lifecycleOwner) {
+    LaunchedEffect(lease, pageIndex, renderRetry, lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             if (!nativePdfForegroundPermitted(
                     lifecycleOwner.lifecycle.currentState)) return@repeatOnLifecycle
@@ -347,6 +348,13 @@ internal fun NativeFilesPdfViewer(
                         onClick = { retry++ },
                         modifier = Modifier.heightIn(min = 48.dp).testTag("files-pdf-retry"),
                     ) { Text("重试预览", color = Color.White) }
+                    else TextButton(
+                        // Re-render the exact current page. No re-download,
+                        // no second PdfRenderer and no stale Owner content.
+                        onClick = { renderRetry++ },
+                        modifier = Modifier.heightIn(min = 48.dp)
+                            .testTag("files-pdf-page-retry"),
+                    ) { Text("重试此页", color = Color.White) }
                 }
             }
         }

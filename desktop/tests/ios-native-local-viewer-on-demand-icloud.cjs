@@ -1,9 +1,12 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
+const path = require('node:path')
+const root = path.resolve(__dirname, '../..')
+const read = file => fs.readFileSync(path.join(root, file), 'utf8')
 
-const local = fs.readFileSync('ios/XDriveIOS/NativeLocalPhotoGallery.swift', 'utf8')
-const albums = fs.readFileSync('ios/XDriveIOS/NativePhotoAlbumBrowser.swift', 'utf8')
+const local = read('ios/XDriveIOS/NativeLocalPhotoGallery.swift')
+const albums = read('ios/XDriveIOS/NativePhotoAlbumBrowser.swift')
 
 test('local PhotoKit thumbnails never request iCloud originals implicitly', () => {
   assert.match(local, /settings\.isNetworkAccessAllowed = false/)
@@ -26,7 +29,7 @@ test('remote PhotoKit requests are cancellable on item, scene and library change
   assert.match(local, /private func finishICloudPart\(_ part: String, token: UUID\)/)
   assert.match(local, /func cancel\(\) \{[\s\S]*?pendingICloudParts\.removeAll\(\)[\s\S]*?downloadingFromICloud = false[\s\S]*?needsICloudFetch = false/)
   assert.match(local, /requestedICloudForCurrentItem = false\s*model\.cancel\(\)\s*activeItem = next/)
-  assert.match(local, /if state != \.active \{\s*requestedICloudForCurrentItem = false[\s\S]*?model\.cancel\(\)/)
+  assert.match(local, /if state != \.active \{[\s\S]*?requestedICloudForCurrentItem = false[\s\S]*?model\.cancel\(\)/)
   assert.match(local, /\.onChange\(of: changes\.generation\) \{ _ in[\s\S]*?model\.cancel\(\)[\s\S]*?dismiss\(\)/)
   assert.match(local, /guard let self, self\.epoch == token/)
   assert.match(albums, /XDriveIOSNativeLocalPhotoDetail\(/)

@@ -17,6 +17,7 @@ struct XDriveIOSNativeFilesManagementPanel: View {
     let folderID: UInt64
     let folderName: String?
     let file: XDriveIOSNativeFilesNode?
+    let directory: XDriveIOSNativeFilesNode?
     let onConfirmed: @MainActor () -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -79,6 +80,12 @@ struct XDriveIOSNativeFilesManagementPanel: View {
                             Text("首版上限 512 MiB，使用实际下载结果；无后台任务或虚构进度。")
                                 .font(.footnote).foregroundStyle(.secondary)
                         }
+                        if exporter.busy {
+                            Button("取消当前下载", role: .cancel) {
+                                exporter.cancelCurrentTransfer()
+                            }
+                            .accessibilityIdentifier("native-ios-files-download-cancel")
+                        }
                         if let status = exporter.status {
                             Text(status).font(.footnote).foregroundStyle(.secondary)
                         }
@@ -132,8 +139,63 @@ struct XDriveIOSNativeFilesManagementPanel: View {
                         if let status = destinationWriter.status {
                             Text(status).font(.footnote).foregroundStyle(.secondary)
                         }
-                        Text("多选、目录级复制/移动和后台传输仍待实现。")
+                        Text("多选批量管理和后台传输仍待实现。")
                             .font(.footnote).foregroundStyle(.secondary)
+                    }
+                } else if let directory {
+                    Section("文件夹信息") {
+                        LabeledContent("名称", value: directory.name)
+                        LabeledContent("版本", value: String(directory.revision))
+                    }
+                    Section("文件夹管理") {
+                        Button("复制文件夹到…") {
+                            destinationIntent = .init(node: directory, kind: .copy)
+                        }
+                        .disabled(anyBusy)
+                        .accessibilityIdentifier("native-ios-files-copy-folder-to")
+                        Button("移动文件夹到…") {
+                            destinationIntent = .init(node: directory, kind: .move)
+                        }
+                        .disabled(anyBusy)
+                        .accessibilityIdentifier("native-ios-files-move-folder-to")
+                        Button("重命名文件夹") {
+                            renameDraft = directory.name
+                            showingRename = true
+                        }
+                        .disabled(anyBusy)
+                        .alert("重命名文件夹", isPresented: $showingRename) {
+                            TextField("新文件夹名称", text: $renameDraft)
+                            Button("保存") {
+                                mutator.perform(node: directory,
+                                                kind: .rename(renameDraft),
+                                                login: login,
+                                                onConfirmed: finishConfirmed)
+                            }
+                            Button("取消", role: .cancel) {}
+                        } message: {
+                            Text("只更改当前文件夹的名称；服务器将核对版本和同名冲突。")
+                        }
+                        .accessibilityIdentifier("native-ios-files-rename-folder")
+                        Button("将文件夹移入回收站", role: .destructive) {
+                            showingTrash = true
+                        }
+                        .disabled(anyBusy)
+                        .confirmationDialog(
+                            "将“\(directory.name)”及其子文件移入回收站？",
+                            isPresented: $showingTrash, titleVisibility: .visible
+                        ) {
+                            Button("确认移入回收站", role: .destructive) {
+                                mutator.perform(node: directory, kind: .trash,
+                                                login: login,
+                                                onConfirmed: finishConfirmed)
+                            }
+                        } message: {
+                            Text("会影响这个文件夹中的全部内容及其共享链接；结果未确认时先刷新核对。")
+                        }
+                        .accessibilityIdentifier("native-ios-files-trash-folder")
+                        if let status = mutator.status {
+                            Text(status).font(.footnote).foregroundStyle(.secondary)
+                        }
                     }
                 } else {
                     Section("当前目录") {
@@ -176,6 +238,12 @@ struct XDriveIOSNativeFilesManagementPanel: View {
                         .accessibilityIdentifier("native-ios-files-manual-upload")
                         Text("一次仅选一个不超过 128 MiB 的原文件；不自动重新提交未知结果。")
                             .font(.footnote).foregroundStyle(.secondary)
+                        if uploader.busy {
+                            Button("取消当前上传", role: .cancel) {
+                                uploader.cancelCurrentTransfer()
+                            }
+                            .accessibilityIdentifier("native-ios-files-upload-cancel")
+                        }
                         if let status = uploader.status {
                             Text(status).font(.footnote).foregroundStyle(.secondary)
                         }
@@ -185,7 +253,7 @@ struct XDriveIOSNativeFilesManagementPanel: View {
                     }
                 }
             }
-            .navigationTitle(file?.name ?? "文件夹操作")
+            .navigationTitle(file?.name ?? directory?.name ?? "文件夹操作")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {

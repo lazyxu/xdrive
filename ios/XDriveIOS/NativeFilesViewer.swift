@@ -126,6 +126,7 @@ struct XDriveIOSNativeFilesViewer: View {
                     switch display {
                     case .image(let image):
                         XDriveIOSNativeZoomablePhotoView(image: image)
+                            .onNavigateSwipe { move($0) }
                             .accessibilityLabel("图片，可双指缩放或双击")
                     case .video:
                         if let player {
@@ -274,9 +275,9 @@ struct XDriveIOSNativeFilesViewer: View {
             if let reason = error as? XDriveIOSNativeFilesPreviewError {
                 switch reason {
                 case .unsupported:
-                    failure = "当前文件格式不支持原生预览。"
+                    failure = "当前格式不支持原生预览。可返回列表，通过「管理」下载并导出原件（导出上限 512 MiB）。"
                 case .tooLarge:
-                    failure = "文件超过本机预览上限。"
+                    failure = "文件超过本机预览上限。可返回列表，通过「管理」下载并导出原件（导出上限 512 MiB）。"
                 case .changed, .invalidOwner, .response(401), .response(403), .response(404):
                     failure = "文件版本或当前账户已变化，请返回目录重新读取。"
                 default:
