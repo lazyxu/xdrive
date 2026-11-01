@@ -119,14 +119,18 @@ fi
   assets/icon/web/pwa-512.png "$pkg/PACKAGE_ICON.PNG" "$pkg/PACKAGE_ICON_256.PNG")
 
 # DSM's .spk is an outer tar archive containing the gzip-compressed payload.
-# Normalize package metadata for reproducibility from byte-identical binaries.
+# Package Center needs literal top-level INFO as the FIRST archive member.
+# Archiving "." emits "./" and "./INFO", which normal tar readers accept but
+# some DSM 7 installers reject as "invalid package file format".
+# Use explicitly ordered root entries in POSIX ustar with stable metadata.
 epoch="${SOURCE_DATE_EPOCH:-0}"
 [[ "$epoch" =~ ^[0-9]+$ ]] || { echo 'SOURCE_DATE_EPOCH must be numeric' >&2; exit 2; }
 tar --sort=name --mtime="@$epoch" --owner=0 --group=0 --numeric-owner \
   -C "$payload" -cf - . | gzip -n > "$pkg/package.tgz"
 spk="$OUTPUT_DIR/xdrivenas-armada38x-$SPK_VERSION.spk"
-tar --sort=name --mtime="@$epoch" --owner=0 --group=0 --numeric-owner \
-  -C "$pkg" -cf "$spk" .
+tar --format=ustar --sort=name --mtime="@$epoch" --owner=0 --group=0 --numeric-owner \
+  -C "$pkg" -cf "$spk" \
+  INFO package.tgz scripts conf LICENSE PACKAGE_ICON.PNG PACKAGE_ICON_256.PNG
 (cd "$OUTPUT_DIR" && sha256sum "$(basename "$spk")" > "$(basename "$spk").sha256")
 echo "SPK: $spk"
 echo 'Contains the original ARMv7 xd + xdrive-agent; never Electron or a second upload engine.'

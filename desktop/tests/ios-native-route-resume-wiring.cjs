@@ -35,7 +35,7 @@ test('switching Owner/Root/Server invalidates previous navigation and avoids bac
 });
 
 test('native Gallery MapKit route restores only under its verified Owner-scoped navigation hint', () => {
-  assert.match(ui, /case \.map:\s*XDriveIOSNativeLocalPhotoMapScreen\(/);
+  assert.match(ui, /case \.map:\s*XDriveIOSNativePhotoMapsScreen\(/);
   assert.match(ui, /case \.map:\s*openGallery\(\.map\)/);
   const galleryAllowlist = routes.match(/private static func validGallery\(_ source: String\) -> Bool \{([\s\S]*?)\n    \}/)?.[1];
   assert.ok(galleryAllowlist, 'exact Gallery navigation allowlist missing');
@@ -49,7 +49,7 @@ test('native Gallery MapKit route restores only under its verified Owner-scoped 
 test('Owner-scoped native Gallery map resumes mode/page without storing media identity', () => {
   assert.match(ui, /@State private var localMapScope: XDriveIOSNativeLocalMapScope = \.page/);
   assert.match(ui, /@State private var localMapPageOffset = 0/);
-  assert.match(ui, /XDriveIOSNativeLocalPhotoMapScreen\(\s*mapScope: \$localMapScope,\s*offset: \$localMapPageOffset/);
+  assert.match(ui, /XDriveIOSNativePhotoMapsScreen\(\s*login: login,\s*localMapScope: \$localMapScope,\s*localMapPageOffset: \$localMapPageOffset/);
   assert.match(ui, /\.onChange\(of: localMapScope\) \{ _ in saveNavigationIfReady\(\) \}/);
   assert.match(ui, /\.onChange\(of: localMapPageOffset\) \{ _ in saveNavigationIfReady\(\) \}/);
   assert.match(ui, /snapshot\.mapScope \?\? "page"/);
@@ -64,12 +64,15 @@ test('Owner-scoped native Gallery map resumes mode/page without storing media id
   assert.doesNotMatch(routes, /assetID|latitude|longitude|photoID|previewTicket|location/);
 });
 
-test('the secondary native map-source wrapper supplies owned bindings to local MapKit', () => {
+test('mounted native map source picker borrows parent route hints for local MapKit and supports Owner cloud', () => {
   const wrapper = fs.readFileSync(path.join(root, 'ios/XDriveIOS/NativeOwnerPhotoMapGallery.swift'), 'utf8');
-  assert.match(wrapper, /@State private var localMapScope: XDriveIOSNativeLocalMapScope = \.page/);
-  assert.match(wrapper, /@State private var localMapPageOffset = 0/);
+  assert.match(wrapper, /@Binding var localMapScope: XDriveIOSNativeLocalMapScope/);
+  assert.match(wrapper, /@Binding var localMapPageOffset: Int/);
   assert.match(wrapper, /XDriveIOSNativeLocalPhotoMapScreen\(\s*mapScope: \$localMapScope,\s*offset: \$localMapPageOffset,\s*onFocusChange: onFocusChange/);
   assert.match(wrapper, /case \.cloud:\s*XDriveIOSNativeOwnerPhotoMapScreen\(/);
+  assert.match(wrapper, /Picker\("地图照片来源", selection: \$source\)/);
+  assert.match(wrapper, /\.onChange\(of: source\) \{ _ in onFocusChange\?\(false\) \}/);
+  assert.doesNotMatch(wrapper, /@State private var localMapScope|@State private var localMapPageOffset/);
 });
 
 

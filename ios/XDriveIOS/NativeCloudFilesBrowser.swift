@@ -223,6 +223,7 @@ private struct XDriveIOSNativeFilesManagementIntent: Identifiable {
     let id = UUID()
     let owner: XDriveNativeOwnerRoot
     let file: XDriveIOSNativeFilesNode?
+    let directory: XDriveIOSNativeFilesNode?
 }
 
 private struct XDriveIOSNativeFilesFolder: Hashable {
@@ -237,6 +238,10 @@ struct XDriveIOSNativeFilesBrowser: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     @Environment(\.scenePhase) private var phase
     @StateObject private var model = XDriveIOSNativeFilesPageModel()
+    @StateObject private var batchTrash = XDriveIOSNativeFilesBatchTrashModel()
+    @State private var selecting = false
+    @State private var selectedIDs = Set<UInt64>()
+    @State private var showingBatchTrashConfirmation = false
     @State private var offset = 0
     @State private var queryDraft = ""
     @State private var activeQuery = ""
@@ -264,6 +269,15 @@ struct XDriveIOSNativeFilesBrowser: View {
     private var parentID: UInt64? {
         guard let owner = login.owner else { return nil }
         return folder?.id ?? owner.rootNodeID
+    }
+
+    private var canSelectPage: Bool {
+        !model.loading && model.verifiedPage && activeQuery.isEmpty &&
+            login.owner != nil && !model.entries.isEmpty && !batchTrash.busy
+    }
+
+    private var chosenItems: [XDriveIOSNativeFilesNode] {
+        model.entries.filter { selectedIDs.contains($0.id) }.map(\.node)
     }
 
     var body: some View {
@@ -321,13 +335,43 @@ struct XDriveIOSNativeFilesBrowser: View {
                     .frame(maxWidth: .infinity, minHeight: 96)
             }
             ForEach(model.entries) { entry in
-                if entry.node.isDirectory {
-                    NavigationLink(value: XDriveIOSNativeFilesFolder(
-                        id: entry.node.id, name: entry.node.name
-                    )) {
-                        row(entry)
+                if selecting {
+                    Button {
+                        guard canSelectPage else { return }
+                        if !selectedIDs.insert(entry.id).inserted {
+                            selectedIDs.remove(entry.id)
+                        }
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: selectedIDs.contains(entry.id)
+                                  ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(Color.accentColor)
+                            row(entry)
+                        }
                     }
-                    .accessibilityIdentifier("native-ios-files-folder-\(entry.node.id)")
+                    .buttonStyle(.plain)
+                    .disabled(!canSelectPage)
+                    .accessibilityIdentifier("native-ios-files-select-\(entry.id)")
+                } else if entry.node.isDirectory {
+                    HStack(spacing: 8) {
+                        NavigationLink(value: XDriveIOSNativeFilesFolder(
+                            id: entry.node.id, name: entry.node.name
+                        )) {
+                            row(entry)
+                        }
+                        .accessibilityIdentifier("native-ios-files-folder-\(entry.node.id)")
+                        Button {
+                            openManagement(for: entry.node)
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                                .frame(minWidth: 44, minHeight: 44)
+                        }
+                        .accessibilityLabel("管理文件夹 \(entry.node.name)")
+                        .accessibilityIdentifier("native-ios-files-folder-more-\(entry.node.id)")
+                    }
+                    .contextMenu {
+                        Button("文件夹操作") { openManagement(for: entry.node) }
+                    }
                     .id(entry.node.id)
                 } else {
                     HStack(spacing: 8) {
@@ -382,6 +426,34 @@ struct XDriveIOSNativeFilesBrowser: View {
                 }
                 .accessibilityIdentifier("native-ios-files-page-controls")
             }
+            if selecting {
+                Section("本页批量操作") {
+                    Text("已选 \(selectedIDs.count) 项（最多 64 项，仅当前文件夹本页）")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    Button("全选本页") {
+                        guard canSelectPage else { return }
+                        selectedIDs = Set(model.entries.map(\.id))
+                    }
+                    .disabled(!canSelectPage)
+                    Button("清空选择") { selectedIDs.removeAll() }
+                        .disabled(batchTrash.busy || selectedIDs.isEmpty)
+                    Button("已选项移入回收站", role: .destructive) {
+                        showingBatchTrashConfirmation = true
+                    }
+                    .disabled(!canSelectPage || selectedIDs.isEmpty)
+                    .accessibilityIdentifier("native-ios-files-batch-trash")
+                    if batchTrash.busy {
+                        ProgressView("正在处理已选项目…")
+                        Button("取消批量操作", role: .cancel) {
+                            batchTrash.cancelCurrent()
+                        }
+                    }
+                    if let status = batchTrash.status {
+                        Text(status).font(.footnote).foregroundStyle(.secondary)
+                            .accessibilityIdentifier("native-ios-files-batch-status")
+                    }
+                }
+            }
         }
         .listStyle(.plain)
         .navigationTitle(folder?.name ?? "文件")
@@ -391,11 +463,20 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
+                Button(selecting ? "完成多选" : "多选") {
+                    guard canSelectPage || selecting, !batchTrash.busy else { return }
+                    selecting.toggle()
+                    selectedIDs.removeAll()
+                }
+                .disabled(!canSelectPage && !selecting)
+                .accessibilityIdentifier("native-ios-files-multi-select")
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
                 Button { openManagement(for: nil) } label: {
                     Label("文件夹操作", systemImage: "folder.badge.gearshape")
                 }
-                .disabled(model.loading || !model.verifiedPage ||
-                          login.owner == nil || !activeQuery.isEmpty)
+                .disabled(model.loading || !model.verifiedPage || selecting ||
+                          batchTrash.busy || login.owner == nil || !activeQuery.isEmpty)
                 .accessibilityIdentifier("native-ios-files-folder-actions")
             }
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -407,6 +488,29 @@ struct XDriveIOSNativeFilesBrowser: View {
                 .accessibilityIdentifier("native-ios-files-refresh")
             }
         }
+        .confirmationDialog(
+            "将 \(selectedIDs.count) 项及所含子文件移入回收站？",
+            isPresented: $showingBatchTrashConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("确认批量移入回收站", role: .destructive) {
+                guard selecting, canSelectPage,
+                      let folderID = parentID,
+                      selectedIDs == Set(chosenItems.map(\.id)),
+                      XDriveIOSNativeFilesBatchTrashPolicy.validSelection(
+                        chosenItems, parentID: folderID
+                      ) else { return }
+                batchTrash.trash(
+                    chosenItems, parentID: folderID, login: login
+                ) {
+                    selecting = false
+                    selectedIDs.removeAll()
+                    reload(resetOffset: true)
+                }
+            }
+        } message: {
+            Text("包括选中文件夹的所有子文件。结果不确定时先刷新目录，不能重复提交。")
+        }
         .sheet(item: $managementIntent, onDismiss: {
             reload()
         }) { intent in
@@ -415,7 +519,8 @@ struct XDriveIOSNativeFilesBrowser: View {
                     login: login, expectedOwner: intent.owner,
                     folderID: folder?.id ?? intent.owner.rootNodeID,
                     folderName: folder?.name,
-                    file: intent.file
+                    file: intent.file,
+                    directory: intent.directory
                 ) {
                     managementIntent = nil
                     reload()
@@ -457,7 +562,17 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
         .onAppear { reload() }
         .onDisappear { if selectedFile == nil { model.invalidate() } }
+        .onDisappear {
+            batchTrash.invalidate()
+            selecting = false
+            selectedIDs.removeAll()
+            showingBatchTrashConfirmation = false
+        }
         .onChange(of: login.owner) { _ in
+            batchTrash.invalidate()
+            selecting = false
+            selectedIDs.removeAll()
+            showingBatchTrashConfirmation = false
             managementIntent = nil
             selectedFile = nil
             selectedOwner = nil
@@ -465,6 +580,9 @@ struct XDriveIOSNativeFilesBrowser: View {
             lastViewedFile = nil
             offset = 0
             model.invalidate()
+        }
+        .onChange(of: model.verifiedPage) { now in
+            if !now { selectedIDs.removeAll(); selecting = false }
         }
         .onChange(of: sort) { _ in reload(resetOffset: true) }
         .onChange(of: order) { _ in reload(resetOffset: true) }
@@ -512,7 +630,9 @@ struct XDriveIOSNativeFilesBrowser: View {
             guard model.entries.contains(where: { $0.node == node }) else { return }
         }
         managementIntent = XDriveIOSNativeFilesManagementIntent(
-            owner: owner, file: node
+            owner: owner,
+            file: node?.isDirectory == false ? node : nil,
+            directory: node?.isDirectory == true ? node : nil
         )
     }
 
@@ -528,6 +648,8 @@ struct XDriveIOSNativeFilesBrowser: View {
     }
 
     private func reload(resetOffset: Bool = false) {
+        selecting = false
+        selectedIDs.removeAll()
         if resetOffset { offset = 0 }
         guard let parentID else {
             model.invalidate()

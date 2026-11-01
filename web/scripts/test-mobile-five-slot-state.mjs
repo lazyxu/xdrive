@@ -178,7 +178,103 @@ assert.equal(staleSearch, searchState, 'late callback from previous Owner must b
 searchState = nav.xDriveRememberMobileNavigation(searchState, all, owner, false)
 assert.equal(searchState.launcherSearch, '', 'A→B→A must not recover old search')
 
+// All and Mine share one host, but their viewport and Owner-scoped scroll
+// positions must remain independent. Virtualized Files/Gallery are excluded.
+assert.equal(nav.xDriveMobileOverviewScrollSlot(all), 'all')
+assert.equal(nav.xDriveMobileOverviewScrollSlot(mine), 'mine')
+assert.equal(nav.xDriveMobileOverviewScrollSlot(files), null)
+assert.equal(nav.xDriveMobileOverviewScrollSlot(library), null)
+assert.equal(nav.xDriveMobileOverviewScrollSlot(preview), null)
+let overviewScroll = nav.xDriveInitialMobileOverviewScroll(owner, 390)
+overviewScroll = nav.xDriveRememberMobileOverviewScroll(overviewScroll, owner, 390, 'all', 241.6)
+overviewScroll = nav.xDriveRememberMobileOverviewScroll(overviewScroll, owner, 390, 'mine', 63)
+assert.equal(nav.xDriveMobileOverviewScrollOffset(overviewScroll, owner, 390, 'all'), 242)
+assert.equal(nav.xDriveMobileOverviewScrollOffset(overviewScroll, owner, 390, 'mine'), 63)
+assert.equal(nav.xDriveMobileOverviewScrollOffset(overviewScroll, owner, 375, 'all'), 0)
+assert.equal(nav.xDriveMobileOverviewScrollOffset(overviewScroll, '', 390, 'all'), 0)
+assert.equal(nav.xDriveMobileOverviewScrollOffset(overviewScroll, 'https://example.test:2', 390, 'mine'), 0)
+assert.equal(nav.xDriveRememberMobileOverviewScroll(overviewScroll, owner, 390, 'all', NaN),
+  overviewScroll, 'nonfinite scroll never changes memory')
+overviewScroll = nav.xDriveRememberMobileOverviewScroll(overviewScroll,
+  'https://example.test:2', 390, 'mine', 18)
+assert.equal(nav.xDriveMobileOverviewScrollOffset(overviewScroll, owner, 390, 'all'), 0,
+  'Owner B must revoke A scroll history')
+overviewScroll = nav.xDriveRememberMobileOverviewScroll(overviewScroll, owner, 390, 'all', 0)
+assert.equal(nav.xDriveMobileOverviewScrollOffset(overviewScroll, owner, 390, 'mine'), 0,
+  'A→B→A must not recover Mine position')
+assert.equal(nav.xDriveMobileOverviewScrollOffset(
+  nav.xDriveRememberMobileOverviewScroll(overviewScroll, owner, 390, 'all', -1),
+  owner, 390, 'all',
+), 0, 'negative scroll is never retained')
+assert.equal(nav.xDriveMobileOverviewScrollOffset(
+  nav.xDriveRememberMobileOverviewScroll(overviewScroll, owner, 390, 'all', 99_999_999),
+  owner, 390, 'all',
+), 10_000_000, 'offset is bounded')
+
+// Restoring Gallery after Files is distinct from restoring All/Mine pixel
+// offsets: only a same-live-source confirmed Library query can be hinted.
+const galleryQueryReturnSource = readFileSync(resolve(
+  here, '../../ui/shared/src/mui/MobileGalleryLibraryQueryReturn.ts',
+), 'utf8')
+const galleryQueryCompiled = ts.transpileModule(galleryQueryReturnSource, {
+  compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+  reportDiagnostics: true,
+})
+assert.equal(galleryQueryCompiled.diagnostics?.length ?? 0, 0)
+const galleryQueryReturn = await import('data:text/javascript;base64,' +
+  Buffer.from(galleryQueryCompiled.outputText).toString('base64'))
+const gallerySourceA = {}
+const gallerySourceB = {}
+assert.equal(galleryQueryReturn.xDriveReadMobileLibraryQuery(gallerySourceA, owner), null)
+galleryQueryReturn.xDriveRememberMobileLibraryQuery(gallerySourceA, owner, {
+  search: 'sunset', cameras: ['camera A'], favorite: true, has_location: false,
+  anchor_node_id: 42, initial_position: 'latest',
+  folder_id: 7, include_descendants: true, nearby: '1,2,3', bbox: '1,2,3,4',
+  place: 'place:1', place_hierarchy: 'world', fold_member_ids: [9, 10],
+  sort_dir: 'asc', sort_by: 'added', time_zone: 'UTC',
+})
+const restoredGalleryQuery = galleryQueryReturn.xDriveReadMobileLibraryQuery(
+  gallerySourceA, owner)
+assert.deepEqual(restoredGalleryQuery, {
+  search: 'sunset', cameras: ['camera A'], favorite: true, has_location: false,
+}, 'query hints keep ordinary filters but never map, folder, one-shot or sort authority')
+restoredGalleryQuery.cameras.push('mutated')
+assert.deepEqual(galleryQueryReturn.xDriveReadMobileLibraryQuery(gallerySourceA, owner)?.cameras,
+  ['camera A'], 'return reads cannot mutate cached accepted filters')
+assert.equal(galleryQueryReturn.xDriveReadMobileLibraryQuery(gallerySourceA,
+  'https://example.test:2'), null, 'Owner B never inherits A filters')
+assert.equal(galleryQueryReturn.xDriveReadMobileLibraryQuery(gallerySourceB,
+  owner), null, 'same Owner with a fresh API session cannot inherit old filters')
+assert.equal(galleryQueryReturn.xDriveReadMobileLibraryQuery(gallerySourceA,
+  ''), null, 'unverified Owner cannot restore filters')
+galleryQueryReturn.xDriveRememberMobileLibraryQuery(gallerySourceA, owner, {})
+assert.deepEqual(galleryQueryReturn.xDriveReadMobileLibraryQuery(gallerySourceA, owner),
+  {}, 'accepted clear-filters replaces the previous search')
+
+// Cold Gallery's first valid Owner Range must precede applying the old query;
+// only the first remount may consume it, not a later manual Library tap.
+const galleryPageReturnSource = readFileSync(resolve(
+  here, '../../ui/shared/src/mui/MediaGallery.tsx',
+), 'utf8')
+assert.match(galleryPageReturnSource,
+  /firstReturn\?\.owner === preferenceScope && firstReturn\.source === source/,
+  'Gallery query return must be fenced by the current Owner and API source')
+assert.match(galleryPageReturnSource,
+  /const savedQuery = nextSection === 'library'/,
+  'only initial Library may replay the cached query')
+assert.match(galleryPageReturnSource,
+  /xDriveRememberMobileLibraryQuery\(source, preferenceScope, nextQuery\)/,
+  'accepted Library range must replace the remembered query')
+assert.match(galleryPageReturnSource,
+  /section === 'library' && acceptedKind === 'all' &&[\s\S]*?!currentAlbum && !currentFolderView && preferenceScope/,
+  'only accepted unscoped Library filter updates may refresh return hints')
+
 const appSource = readFileSync(resolve(here, '../src/App.tsx'), 'utf8')
+assert.match(appSource, /const mobileOverviewSlot = compactWorkspace \? xDriveMobileOverviewScrollSlot\(route\) : null/)
+assert.match(appSource, /xDriveMobileOverviewScrollOffset\(mobileOverviewScrollRef\.current/)
+assert.match(appSource, /main\.addEventListener\('scroll', onScroll, \{ passive: true \}\)/)
+assert.match(appSource, /main\.removeEventListener\('scroll', onScroll\)/)
+
 
 /** Execute the original App's navigation callback, not a copy of its logic. */
 function originalMobileSlotSelector(env) {
@@ -206,9 +302,10 @@ const testCanonicalHash = route => [route.app, ...Object.entries(route.params)
   .filter(([,value]) => value !== undefined)
   .sort(([left],[right]) => left.localeCompare(right))
   .map(([key,value]) => key + '=' + value)].join('|')
-function mobileTabHarness(route, memory) {
+function mobileTabHarness(route, memory, overviewSlot = null) {
   const launched = []
   const recent = []
+  const snapshots = []
   const select = originalMobileSlotSelector({
     currentMobileNavigation: memory,
     serverAdminVerified: false,
@@ -217,9 +314,20 @@ function mobileTabHarness(route, memory) {
     xDriveWebAppHash: testCanonicalHash,
     launchWebApp: next => launched.push(next),
     setMobileRecentOpen: open => recent.push(open),
+    mobileOverviewSlot: overviewSlot,
+    saveVisibleMobileOverviewScroll: () => snapshots.push(true),
   })
-  return { select, launched, recent }
+  return { select, launched, recent, snapshots }
 }
+const overviewTabs = mobileTabHarness(all, nav.xDriveInitialMobileNavigation(owner), 'all')
+overviewTabs.select('mine')
+assert.deepEqual(overviewTabs.snapshots, [true],
+  'All scroll is captured before a real tab switch')
+assert.deepEqual(overviewTabs.launched, [mine])
+overviewTabs.select('all')
+assert.deepEqual(overviewTabs.snapshots, [true],
+  'tapping the active All destination does not create a new snapshot')
+
 const activeAlbums = { app: 'gallery', params: { section: 'albums' } }
 const galleryTabs = {
   ...nav.xDriveInitialMobileNavigation(owner),
