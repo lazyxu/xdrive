@@ -82,6 +82,7 @@ import { xDriveResolveFileExplorerCapabilities } from '../../ui/shared/src/file-
 import type { XDriveFileExplorerDataAdapter } from '../../ui/shared/src/file-explorer-capabilities'
 import { xDriveFileExplorerVerifiedChildReanchor, xDriveFileExplorerVerifiedChildReveal } from '../../ui/shared/src/mui/FileExplorerReanchor'
 import { xDriveResolveRoutedDirectoryAncestors } from './routedDirectoryAncestors'
+import { xDriveRememberMobileFilesSearchReturn, xDriveReadMobileFilesSearchReturn, xDriveClearMobileFilesSearchReturn } from './mobileFilesSearchReturn'
 
 /** The existing Files Search input in either responsive presentation. */
 function xDriveWebFilesSearchInput(target: Element | null): target is HTMLInputElement {
@@ -113,6 +114,7 @@ type Crumb = { id: number; name: string }
 
 export default function WebFileExplorer({
   api,
+  mobileOwnerScope = '',
   items,
   crumbs,
   virtualDirectory,
@@ -152,6 +154,7 @@ export default function WebFileExplorer({
   onError,
 }: {
   api: XDriveApi
+  mobileOwnerScope?: string
   items: Node[]
   crumbs: Crumb[]
   virtualDirectory?: XDriveFileExplorerWorkspaceVirtualDirectory<Node> | null
@@ -592,6 +595,52 @@ export default function WebFileExplorer({
   const organizationLifecycleKeyRef = useRef(navigationSessionStorageKey ?? '')
   organizationLifecycleKeyRef.current = navigationSessionStorageKey ?? ''
   const persistedSearchFilters = xDriveFileExplorerPersistedSearchFilters(searchFilters)
+  // Files Search is owned by the existing virtual Server Range reader.
+  // When the mobile Files tab unmounts, remember only a successfully accepted
+  // search definition, not results, private Node bytes or pending requests.
+  const mobileSearchSnapshotRef = useRef({
+    api, owner: mobileOwnerScope, compact: compactMobile, trashActive,
+    ready: searchReady, active: searchState.results !== null,
+    query: searchState.query, filters: persistedSearchFilters,
+    directoryID: current?.id,
+  })
+  mobileSearchSnapshotRef.current = {
+    api, owner: mobileOwnerScope, compact: compactMobile, trashActive,
+    ready: searchReady, active: searchState.results !== null,
+    query: searchState.query, filters: persistedSearchFilters,
+    directoryID: current?.id,
+  }
+  const mobileSearchRestoreRef = useRef<{ api: XDriveApi; owner: string } | null>(null)
+  useEffect(() => {
+    if (!compactMobile || !mobileOwnerScope || trashActive) return
+    if (mobileSearchRestoreRef.current?.api === api &&
+        mobileSearchRestoreRef.current.owner === mobileOwnerScope) return
+    mobileSearchRestoreRef.current = { api, owner: mobileOwnerScope }
+    // A trusted Show in Folder / reveal route takes precedence over any
+    // previous search. Never replace its explicit Node destination.
+    if (initialRevealNodeID) {
+      xDriveClearMobileFilesSearchReturn(api, mobileOwnerScope)
+      return
+    }
+    const saved = xDriveReadMobileFilesSearchReturn(
+      api, mobileOwnerScope, initialDirectoryID)
+    if (!saved || searchState.query ||
+        xDriveFileExplorerSearchFiltersActive(searchFilters)) return
+    // Revalidate with the canonical Owner searchRange, never restore cached
+    // rows as an authenticated result. The shared hook aborts superseded reads.
+    void applySearch(saved.query, saved.filters)
+  }, [api, mobileOwnerScope, compactMobile, trashActive, initialRevealNodeID,
+    initialDirectoryID, searchState.query, searchFilters, applySearch])
+  useEffect(() => () => {
+    const last = mobileSearchSnapshotRef.current
+    if (last.api !== api || last.owner !== mobileOwnerScope || !mobileOwnerScope) return
+    if (!last.compact || last.trashActive || !last.active) {
+      xDriveClearMobileFilesSearchReturn(api, mobileOwnerScope)
+    } else if (last.ready) {
+      xDriveRememberMobileFilesSearchReturn(
+        api, mobileOwnerScope, last.query, last.filters, last.directoryID)
+    }
+  }, [api, mobileOwnerScope, compactMobile])
   const organizationSearchScopeKey = `${searchState.query}\n${xDriveFileExplorerSearchFiltersSignature(searchFilters)}`
   const organizationSearchScopeKeyRef = useRef(organizationSearchScopeKey)
   organizationSearchScopeKeyRef.current = organizationSearchScopeKey
