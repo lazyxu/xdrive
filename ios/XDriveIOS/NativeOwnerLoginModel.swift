@@ -30,6 +30,9 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
     private var generation: UInt64 = 0
     private var restoreAttempted = false
     private var retryDraftSnapshot: (server: String, lanIP: String, username: String)?
+    // Track deliberate profile selection separately from SwiftUI TextField edits:
+    // picking a saved profile may trigger three onChange notifications later.
+    private var displayedIdentity = ""
 
     /// A retry can only restore the currently displayed Server/Owner hint,
     /// never a different Keychain Owner after the user starts editing.
@@ -48,6 +51,7 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
         serverText = draft.server
         lanIPText = draft.lanIP
         username = draft.username
+        displayedIdentity = [serverText, lanIPText, username].joined(separator: "\u{001F}")
         savedProfiles = XDriveIOSNativePasswordProfiles.list()
         rememberPassword = savedProfilePasswordAvailable
     }
@@ -65,8 +69,13 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
 
     /// Account and route changes must not carry a prior account's typed password.
     func discardPasswordAfterIdentityEdit() {
+        let now = [serverText, lanIPText, username].joined(separator: "\u{001F}")
+        guard now != displayedIdentity else { return }
+        displayedIdentity = now
         guard active == nil, !busy else { return }
         password = ""
+        // Approval to save Owner A's password never follows edits to Owner B.
+        rememberPassword = false
         canRetryStoredSession = false
         retryDraftSnapshot = nil
     }
@@ -79,6 +88,7 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
         serverText = item.server
         lanIPText = item.lanIP
         username = item.username
+        displayedIdentity = [serverText, lanIPText, username].joined(separator: "\u{001F}")
         password = ""
         canRetryStoredSession = false
         retryDraftSnapshot = nil
