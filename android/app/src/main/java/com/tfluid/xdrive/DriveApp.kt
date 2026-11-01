@@ -640,7 +640,16 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                     else -> Unit
                 }
             } else when (state.screen) {
-                Screen.CONNECT, Screen.LOGIN -> UnifiedLoginForm(state, controller::connectAndLogin, controller::restoreSession) {
+                Screen.CONNECT, Screen.LOGIN -> UnifiedLoginForm(
+                    state = state,
+                    login = controller::connectAndLogin,
+                    retrySavedSession = controller::restoreSession,
+                    savedProfiles = controller.savedLoginProfiles(),
+                    hasSavedPassword = controller::savedPasswordAvailable,
+                    selectSavedProfile = controller::selectSavedLoginProfile,
+                    loginWithSavedPassword = controller::loginWithSavedPassword,
+                    forgetSavedProfile = controller::forgetSavedLoginProfile
+                ) {
                     AccountMenu(state, controller, updates?.let { it::show })
                 }
                 Screen.PASSWORD -> PasswordForm(state, controller::changePassword) { AccountMenu(state, controller, updates?.let { it::show }) }
