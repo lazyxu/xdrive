@@ -202,19 +202,19 @@ async function compactUnstartedMasterCI({
       continue
     }
 
-    // One final job snapshot prevents cancelling a publisher that was
-    // assigned a runner between the first proof and the workflow recheck.
-    if (run.status === 'pending') {
-      const final = (await github.rest.actions.listJobsForWorkflowRun({
-        owner, repo, run_id: run.id, per_page: 100,
-      })).data
-      if (!Array.isArray(final?.jobs) || final.total_count !== inventory.total_count ||
-          final.jobs.length !== inventory.total_count ||
-          !(terminalFailedJobInventory(final.jobs, run.id) ||
-            terminalFailedPendingBundleInventory(final.jobs, run.id))) {
-        audit.push({id: run.id, decision: 'preserved-publisher-started'})
-        continue
-      }
+    // For queued *and* pending runs, re-read child jobs immediately before
+    // sending cancellation. Workflow-level queued status alone can be stale.
+    const final = (await github.rest.actions.listJobsForWorkflowRun({
+      owner, repo, run_id: run.id, per_page: 100,
+    })).data
+    if (!Array.isArray(final?.jobs) || final.total_count !== inventory.total_count ||
+        final.jobs.length !== inventory.total_count ||
+        !(run.status === 'queued'
+          ? final.jobs.every(job => unstartedJob(job, run.id))
+          : (terminalFailedJobInventory(final.jobs, run.id) ||
+            terminalFailedPendingBundleInventory(final.jobs, run.id)))) {
+      audit.push({id: run.id, decision: 'preserved-publisher-started'})
+      continue
     }
 
     eligible++

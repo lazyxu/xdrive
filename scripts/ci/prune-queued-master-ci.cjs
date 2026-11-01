@@ -13,11 +13,30 @@ function invariant(condition, explanation) {
 }
 
 function isUnstartedOrClassifierOnlyJob(job, runId) {
-  if (job.run_id !== runId) return false
-  if (job.status === 'queued') return true
+  if (job?.run_id !== runId) return false
+  if (job.status === 'queued') {
+    // GitHub can report a child as queued after assigning a runner. Treat
+    // any assignment, completed step or differing start timestamp as started.
+    if (job.conclusion != null || job.runner_name ||
+        (job.runner_id != null && job.runner_id !== 0) ||
+        (job.started_at && job.started_at !== job.created_at) ||
+        job.steps?.some(step => step.status === 'completed' || step.status === 'in_progress')) {
+      return false
+    }
+    return true
+  }
   if (job.status !== 'completed') return false
   return job.conclusion === 'skipped' ||
     (job.name === 'pr-scope' && job.conclusion === 'success')
+}
+
+function completeUnstartedInventory(inventory, runId) {
+  const jobs = inventory?.jobs
+  return Number.isSafeInteger(inventory?.total_count) &&
+    inventory.total_count > 0 && inventory.total_count <= 100 &&
+    Array.isArray(jobs) && jobs.length === inventory.total_count &&
+    jobs.every(job => Number.isSafeInteger(job.id) &&
+      isUnstartedOrClassifierOnlyJob(job, runId))
 }
 
 async function pruneQueuedMasterCI({github, context, core, dryRun = false, maxCancels = 25}) {
@@ -142,20 +161,43 @@ async function pruneQueuedMasterCI({github, context, core, dryRun = false, maxCa
       audit.push(entry)
       continue
     }
-    const jobs = jobSnapshot?.jobs
-    if (!Number.isSafeInteger(jobSnapshot?.total_count) ||
-      jobSnapshot.total_count < 1 || jobSnapshot.total_count > 100 ||
-      !Array.isArray(jobs) || jobs.length !== jobSnapshot.total_count ||
-      !jobs.every(job => isUnstartedOrClassifierOnlyJob(job, run.id))) {
+    if (!completeUnstartedInventory(jobSnapshot, run.id)) {
       entry.action = 'preserved-started-or-unknown-jobs'
       audit.push(entry)
       continue
     }
-    // There is no atomic GitHub API 'cancel only if no job has started'.
-    // This immediate status check narrows but cannot eliminate that race.
     eligible++
     if (dryRun) {
       entry.action = 'would-cancel'
+      audit.push(entry)
+      continue
+    }
+
+    // GitHub provides no atomic cancel-if-unstarted API. Revalidate the exact
+    // run and every child job immediately before the manual cancellation.
+    let immediate, finalInventory
+    try {
+      immediate = (await github.rest.actions.getWorkflowRun({
+        owner, repo, run_id: run.id,
+      })).data
+      finalInventory = (await github.rest.actions.listJobsForWorkflowRun({
+        owner, repo, run_id: run.id, per_page: 100,
+      })).data
+    } catch (error) {
+      entry.action = 'preserved-final-recheck-unavailable'
+      core.warning('Preserved CI #' + run.id + ': final run/job recheck unavailable')
+      audit.push(entry)
+      continue
+    }
+    const expectedIDs = new Set(jobSnapshot.jobs.map(job => job.id))
+    if (immediate?.status !== 'queued' || immediate.run_attempt !== 1 ||
+        immediate.head_sha !== run.head_sha || immediate.event !== 'push' ||
+        immediate.head_branch !== 'master' || immediate.name !== 'CI' ||
+        immediate.path !== '.github/workflows/ci.yml' ||
+        !completeUnstartedInventory(finalInventory, run.id) ||
+        finalInventory.total_count !== jobSnapshot.total_count ||
+        finalInventory.jobs.some(job => !expectedIDs.has(job.id))) {
+      entry.action = 'preserved-final-race'
       audit.push(entry)
       continue
     }
@@ -174,4 +216,4 @@ async function pruneQueuedMasterCI({github, context, core, dryRun = false, maxCa
   return {published, masterHead, observed: all.length, eligible, cancelled, dryRun, audit}
 }
 
-module.exports = {pruneQueuedMasterCI}
+module.exports = {isUnstartedOrClassifierOnlyJob, completeUnstartedInventory, pruneQueuedMasterCI}

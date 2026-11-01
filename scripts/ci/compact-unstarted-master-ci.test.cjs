@@ -247,3 +247,21 @@ test('master CI compaction cannot be triggered automatically', () => {
   assert.ok(workflow.includes('        default: true'))
   assert.ok(workflow.includes("COMPACTION_DRY_RUN: ${{ inputs.dry_run }}"))
 })
+
+test('queued master compaction preserves child assigned between initial and final inventory', async () => {
+  const runs=[run(1),run(2),run(3),run(4)]
+  const h=mock({runs})
+  let checks=0
+  h.github.rest.actions.listJobsForWorkflowRun=async ({run_id})=>{
+    checks++
+    return {data:{total_count:1,jobs:[{
+      run_id,status:'queued',runner_id:checks===1?0:77,
+      runner_name:checks===1?'':'hosted-runner',conclusion:null,steps:[],
+    }]}}
+  }
+  const result=await compactUnstartedMasterCI({...h,preserveNewest:3})
+  assert.equal(result.requested,0)
+  assert.equal(checks,2)
+  assert.ok(result.audit.some(x=>x.decision==='preserved-publisher-started'))
+  assert.deepEqual(h.calls.cancels,[])
+})
