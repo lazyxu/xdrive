@@ -8,8 +8,9 @@ enum XDriveIOSNativeFilesMutationFailure: Error {
     case server(Int)
 }
 
-/// Single current-Owner file rename or trash action. Never use a stale Node
-/// revision or replace a failed Server mutation with an optimistic local row.
+/// Single current-Owner file or directory rename/trash action. The Go Server
+/// enforces subtree/managed-target protections for directory mutations. No
+/// stale revision or optimistic local success is ever accepted.
 private struct XDriveIOSNativeFilesMutationTransport {
     let owner: XDriveNativeOwnerRoot
     let accessToken: String
@@ -80,7 +81,7 @@ private struct XDriveIOSNativeFilesMutationTransport {
     private func requireCurrent(_ node: XDriveIOSNativeFilesNode, session: URLSession)
         async throws {
         guard node.id > 0, node.revision > 0, node.parent_id != nil,
-              node.type == "file" else {
+              (node.type == "file" || node.type == "dir") else {
             throw XDriveIOSNativeFilesMutationFailure.invalidScope
         }
         let (body, response) = try await session.data(for: request(
