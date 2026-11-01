@@ -1,9 +1,12 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
+const path = require('node:path')
+const root = path.resolve(__dirname, '../..')
+const read = file => fs.readFileSync(path.join(root, file), 'utf8')
 
-const local = fs.readFileSync('ios/XDriveIOS/NativeLocalPhotoGallery.swift', 'utf8')
-const albums = fs.readFileSync('ios/XDriveIOS/NativePhotoAlbumBrowser.swift', 'utf8')
+const local = read('ios/XDriveIOS/NativeLocalPhotoGallery.swift')
+const albums = read('ios/XDriveIOS/NativePhotoAlbumBrowser.swift')
 
 test('local PhotoKit thumbnails never request iCloud originals implicitly', () => {
   assert.match(local, /settings\.isNetworkAccessAllowed = false/)
