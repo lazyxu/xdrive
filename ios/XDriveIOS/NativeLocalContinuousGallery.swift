@@ -9,6 +9,8 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
     let offset: Int
     let expectedTotal: Int
     let generation: UUID
+    let selectionMode: Bool
+    let selectedIDs: Set<String>
     let onSelect: (XDrivePhotoKitScanCandidate, XDrivePhotoKitScanPage) -> Void
     let onRead: (XDrivePhotoKitScanPage) -> Void
     let onFailure: () -> Void
@@ -41,8 +43,23 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                     ForEach(page.items) { candidate in
                         if candidate.kind != "unsupported" {
                             Button { onSelect(candidate, page) } label: {
-                                XDriveIOSLocalPhotoTile(candidate: candidate)
+                                ZStack(alignment: .topTrailing) {
+                                    XDriveIOSLocalPhotoTile(candidate: candidate)
+                                    if selectionMode {
+                                        Image(systemName: selectedIDs.contains(candidate.id)
+                                            ? "checkmark.circle.fill" : "circle")
+                                            .font(.title2)
+                                            .symbolRenderingMode(.palette)
+                                            .foregroundStyle(.white, Color.accentColor)
+                                            .padding(6)
+                                    }
+                                }
                             }
+                            .accessibilityLabel(
+                                selectionMode
+                                    ? (selectedIDs.contains(candidate.id) ? "已选择照片" : "选择照片")
+                                    : (candidate.kind == "video" ? "播放视频" : "查看照片")
+                            )
                             .buttonStyle(.plain)
                             .id("photo:\(candidate.id)")
                         } else {
@@ -147,6 +164,12 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
     @State private var returnModified: Date?
     @State private var returnPageOffset: Int?
     @State private var requestedOffset: Int?
+    @State private var selectionMode = false
+    @State private var selectedCandidates: [String: XDrivePhotoKitScanCandidate] = [:]
+    @State private var confirmingDelete = false
+    @State private var actionBusy = false
+    @State private var actionToken = UUID()
+    @State private var actionMessage: String?
 
     var body: some View {
         ScrollViewReader { scroll in
@@ -167,14 +190,52 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                             Link("打开 iOS 设置", destination: settings)
                         }
                     } else {
-                        Text("本机已授权照片 · 连续滚动")
-                            .font(.subheadline).foregroundStyle(.secondary).padding(.horizontal, 12)
+                        HStack(spacing: 10) {
+                            Text("本机已授权照片 · 连续滚动")
+                                .font(.subheadline).foregroundStyle(.secondary)
+                            Spacer(minLength: 6)
+                            Button(selectionMode ? "取消选择" : "选择") {
+                                selectionMode.toggle()
+                                selectedCandidates.removeAll()
+                                actionMessage = nil
+                            }
+                            .disabled(actionBusy)
+                            .accessibilityIdentifier("native-ios-photos-local-select-mode")
+                        }
+                        .padding(.horizontal, 12)
+                        if selectionMode {
+                            HStack(spacing: 10) {
+                                Text("已选择 \(selectedCandidates.count) 项（上限 \(XDriveIOSNativePhotoSelectionPolicy.maximumItems)）")
+                                    .font(.caption).monospacedDigit()
+                                Spacer(minLength: 4)
+                                Menu("操作") {
+                                    Button("收藏选中") { updateFavorites(true) }
+                                    Button("取消收藏") { updateFavorites(false) }
+                                    Button("删除选中", role: .destructive) {
+                                        confirmingDelete = true
+                                    }
+                                }
+                                .disabled(selectedCandidates.isEmpty || actionBusy)
+                                .accessibilityIdentifier("native-ios-photos-local-selected-actions")
+                            }
+                            .padding(.horizontal, 12)
+                        }
+                        if actionBusy { ProgressView("正在更新系统照片库…").padding(.horizontal, 12) }
+                        if let actionMessage {
+                            Text(actionMessage).font(.caption)
+                                .foregroundStyle(.secondary).padding(.horizontal, 12)
+                        }
                         if total > 0 {
                             ForEach(0..<XDriveIOSNativePhotoVirtualPagePolicy.pageCount(total: total), id: \.self) { number in
                                 let offset = number * 64
                                 XDriveIOSNativeVirtualPhotoPage(
                                     offset: offset, expectedTotal: total, generation: generation,
-                                    onSelect: { asset, page in openViewer(asset, in: page) },
+                                    selectionMode: selectionMode,
+                                    selectedIDs: Set(selectedCandidates.keys),
+                                    onSelect: { asset, page in
+                                        if selectionMode { toggleSelection(asset) }
+                                        else { openViewer(asset, in: page) }
+                                    },
                                     onRead: { page in
                                         if let expected = returnID, returnPageOffset == page.startOffset,
                                            let candidate = page.items.first(where: {
@@ -220,6 +281,15 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
             }
         }
         .navigationTitle("本机照片")
+        .confirmationDialog(
+            "确定删除选中的 \(selectedCandidates.count) 项系统照片吗？",
+            isPresented: $confirmingDelete, titleVisibility: .visible
+        ) {
+            Button("删除选中照片", role: .destructive) { deleteSelection() }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("系统照片会按 iOS 的照片删除规则处理；xDrive 云端备份不会在这里删除。")
+        }
         .fullScreenCover(item: $selected, onDismiss: restoreAfterViewer) { current in
             XDriveIOSNativeLocalPhotoDetail(
                 candidate: current.candidate,
@@ -250,6 +320,10 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
             else if selected == nil && authorized { reload() }
         }
         .onDisappear {
+            actionToken = UUID()
+            actionBusy = false
+            selectedCandidates.removeAll()
+            selectionMode = false
             invalidate(with: nil)
             monitor?.stop()
             monitor = nil
@@ -257,6 +331,64 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
     }
 
     private var authorized: Bool { permission == .authorized || permission == .limited }
+
+    private func toggleSelection(_ candidate: XDrivePhotoKitScanCandidate) {
+        guard selectionMode, authorized, !actionBusy, phase == .active else { return }
+        if selectedCandidates.removeValue(forKey: candidate.id) != nil { return }
+        guard XDriveIOSNativePhotoSelectionPolicy.canAdd(
+            selectedCount: selectedCandidates.count,
+            identifier: candidate.id,
+            alreadySelected: false
+        ) else {
+            actionMessage = "最多选择 \(XDriveIOSNativePhotoSelectionPolicy.maximumItems) 项。"
+            return
+        }
+        selectedCandidates[candidate.id] = candidate
+    }
+
+    private func updateFavorites(_ value: Bool) {
+        runSelectionAction(delete: false, favorite: value)
+    }
+
+    private func deleteSelection() {
+        runSelectionAction(delete: true, favorite: nil)
+    }
+
+    private func runSelectionAction(delete: Bool, favorite: Bool?) {
+        guard authorized, phase == .active, !actionBusy,
+              !selectedCandidates.isEmpty else { return }
+        let batch = Array(selectedCandidates.values)
+        let token = UUID()
+        actionToken = token
+        actionBusy = true
+        actionMessage = nil
+        Task { @MainActor in
+            do {
+                if delete {
+                    try await XDriveIOSNativeLocalPhotoSelectionActions.delete(batch)
+                } else if let favorite {
+                    try await XDriveIOSNativeLocalPhotoSelectionActions.setFavorite(batch, to: favorite)
+                }
+                guard actionToken == token else { return }
+                actionBusy = false
+                selectionMode = false
+                selectedCandidates.removeAll()
+                reload()
+                actionMessage = delete ? "照片删除操作已完成。" :
+                    (favorite == true ? "已收藏选中照片。" : "已取消选中照片的收藏。")
+            } catch is CancellationError {
+                guard actionToken == token else { return }
+                actionBusy = false
+                selectedCandidates.removeAll()
+                actionMessage = "照片操作已取消，请重新选择。"
+            } catch {
+                guard actionToken == token else { return }
+                actionBusy = false
+                selectedCandidates.removeAll()
+                actionMessage = "系统照片操作未完成，可能是授权或照片已变化；请重新选择。"
+            }
+        }
+    }
 
     private func openViewer(_ candidate: XDrivePhotoKitScanCandidate, in page: XDrivePhotoKitScanPage) {
         guard authorized, phase == .active, selected == nil,
@@ -317,6 +449,8 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
     }
 
     private func invalidate(with message: String?) {
+        selectedCandidates.removeAll()
+        confirmingDelete = false
         generation = UUID()
         scanTask?.cancel()
         scanTask = nil

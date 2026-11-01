@@ -57,6 +57,25 @@ struct NativePhotoTimelinePolicyChecks {
         precondition(virtual.normalizedAnchor(requested: 120, total: 300) == 64)
         precondition(virtual.normalizedAnchor(requested: Int.max, total: 100) == 64)
         precondition(virtual.normalizedAnchor(requested: 500, total: 0) == 0)
+        precondition(XDriveIOSNativePhotoSelectionPolicy.canAdd(
+            selectedCount: 0, identifier: "photo-1", alreadySelected: false
+        ))
+        precondition(!XDriveIOSNativePhotoSelectionPolicy.canAdd(
+            selectedCount: 128, identifier: "photo-2", alreadySelected: false
+        ))
+        precondition(!XDriveIOSNativePhotoSelectionPolicy.canAdd(
+            selectedCount: -1, identifier: "photo", alreadySelected: false
+        ))
+        precondition(!XDriveIOSNativePhotoSelectionPolicy.canAdd(
+            selectedCount: 1, identifier: "", alreadySelected: false
+        ))
+        precondition(!XDriveIOSNativePhotoSelectionPolicy.canAdd(
+            selectedCount: 1, identifier: "photo-1", alreadySelected: true
+        ))
+        precondition(!XDriveIOSNativePhotoSelectionPolicy.canAdd(
+            selectedCount: 1, identifier: String(repeating: "a", count: 1025),
+            alreadySelected: false
+        ))
         print("iOS Photos whole-library timeline grouping and page jumps: PASS")
     }
 }

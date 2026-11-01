@@ -126,3 +126,15 @@ enum XDriveIOSNativePhotoVirtualPagePolicy {
         return min((safe / pageSize) * pageSize, ((total - 1) / pageSize) * pageSize)
     }
 }
+
+
+/// Bounded, transient local Photos selection; never part of route persistence.
+enum XDriveIOSNativePhotoSelectionPolicy {
+    static let maximumItems = 128
+
+    static func canAdd(selectedCount: Int, identifier: String,
+                       alreadySelected: Bool) -> Bool {
+        !alreadySelected && selectedCount >= 0 && selectedCount < maximumItems &&
+        !identifier.isEmpty && identifier.utf8.count <= 1024
+    }
+}
