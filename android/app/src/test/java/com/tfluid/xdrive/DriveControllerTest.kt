@@ -3694,6 +3694,102 @@ class DriveControllerTest {
         override fun clear() { value = null; cleared++ }
     }
 
+    private class TestSavedLoginStore : NativeSavedLoginStore {
+        private val entries = linkedMapOf<String, Pair<NativeLoginProfile, String?>>()
+        override fun profiles(): List<NativeLoginProfile> = entries.values.map { it.first }
+        override fun passwordFor(profile: NativeLoginProfile): String? = entries[profile.id]?.second
+        override fun rememberProfile(profile: NativeLoginProfile): Boolean {
+            entries[profile.id] = profile to passwordFor(profile)
+            return true
+        }
+        override fun savePassword(profile: NativeLoginProfile, password: String): Boolean {
+            entries[profile.id] = profile to password
+            return true
+        }
+        override fun removePassword(profile: NativeLoginProfile): Boolean {
+            entries[profile.id]?.let { entries[profile.id] = profile to null }
+            return true
+        }
+        override fun forgetProfile(profile: NativeLoginProfile): Boolean {
+            entries.remove(profile.id)
+            return true
+        }
+    }
+
+    @Test fun invalidPasswordCannotOverwriteAnySavedPasswordProfile() = runTest {
+        val saved = TestSavedLoginStore()
+        val profile = AndroidSavedLoginPasswords.profile("https://drive.example", "", "owner")!!
+        saved.savePassword(profile, "last-known-good")
+        val service = object : Service() {
+            override suspend fun login(username: String, password: String): AuthSession =
+                throw ApiException(401, "invalid password")
+        }
+        val c = DriveController(this, { service }, initialServer = profile.server,
+            initialUsername = profile.username, savedLoginStore = saved)
+        c.connectAndLogin(profile.server, false, "", "owner", "new-wrong-password",
+            rememberSession = true, rememberPassword = true)
+        runCurrent()
+        assertEquals(Screen.CONNECT, c.state.value.screen)
+        assertEquals("last-known-good", saved.passwordFor(profile))
+        assertEquals(listOf(profile), saved.profiles())
+        c.close()
+    }
+
+    @Test fun revokedRefreshAllowsExplicitSameOwnerPasswordRecoveryWithoutAutoReplay() = runTest {
+        val saved = TestSavedLoginStore()
+        val profile = AndroidSavedLoginPasswords.profile("https://drive.example", "", "owner")!!
+        saved.savePassword(profile, "correct-password")
+        val vault = TestVault().apply {
+            value = SavedDriveSession(profile.server, profile.username, "revoked-refresh")
+        }
+        val submittedPasswords = mutableListOf<String>()
+        val service = object : Service() {
+            override suspend fun login(username: String, password: String): AuthSession {
+                submittedPasswords += password
+                return AuthSession("access", "new-refresh", username)
+            }
+        }.apply { refreshFailure = ApiException(401, "revoked") }
+        val c = DriveController(this, { service }, initialServer = profile.server,
+            initialUsername = profile.username, sessionPersistence = vault,
+            savedLoginStore = saved)
+        c.restoreSession()
+        runCurrent()
+        assertEquals(Screen.LOGIN, c.state.value.screen)
+        assertNull(vault.value)
+        assertTrue(submittedPasswords.isEmpty())
+        c.loginWithSavedPassword(profile.server, "", profile.username, true)
+        runCurrent()
+        assertEquals(listOf("correct-password"), submittedPasswords)
+        assertEquals(Screen.FILES, c.state.value.screen)
+        assertEquals("correct-password", saved.passwordFor(profile))
+        c.close()
+    }
+
+    @Test fun forgetOneProfileKeepsAnotherOwnerPasswordAndRefresh() = runTest {
+        val saved = TestSavedLoginStore()
+        val first = AndroidSavedLoginPasswords.profile("https://drive.example", "", "owner")!!
+        val other = AndroidSavedLoginPasswords.profile("https://drive.example", "", "other")!!
+        saved.savePassword(first, "first-password")
+        saved.savePassword(other, "other-password")
+        val vault = TestVault().apply {
+            value = SavedDriveSession(other.server, other.username, "other-refresh")
+        }
+        val cleared = mutableListOf<String>()
+        val c = DriveController(this, { Service() }, initialServer = first.server,
+            initialUsername = first.username, sessionPersistence = vault,
+            savedLoginStore = saved, clearLoginDraft = { origin ->
+                cleared += origin; true
+            })
+        c.forgetSavedLoginProfile(first)
+        assertNull(saved.passwordFor(first))
+        assertEquals(listOf(other), saved.profiles())
+        assertEquals("other-password", saved.passwordFor(other))
+        assertEquals("other-refresh", vault.value?.refreshToken)
+        assertEquals(listOf(first.server), cleared)
+        assertEquals(Screen.CONNECT, c.state.value.screen)
+        c.close()
+    }
+
     @Test fun unifiedLoginPersistsRefreshAndColdStartRestoresWithoutPassword() = runTest {
         val vault = TestVault()
         val service = Service()
