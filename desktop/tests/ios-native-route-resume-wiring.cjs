@@ -71,3 +71,26 @@ test('the secondary native map-source wrapper supplies owned bindings to local M
   assert.match(wrapper, /XDriveIOSNativeLocalPhotoMapScreen\(\s*mapScope: \$localMapScope,\s*offset: \$localMapPageOffset,\s*onFocusChange: onFocusChange/);
   assert.match(wrapper, /case \.cloud:\s*XDriveIOSNativeOwnerPhotoMapScreen\(/);
 });
+
+
+test('native local PhotoKit Gallery retains only a bounded owner-scoped page cursor', () => {
+  const local = fs.readFileSync(path.join(root, 'ios/XDriveIOS/NativeLocalPhotoGallery.swift'), 'utf8');
+  assert.match(ui, /@State private var localGalleryPageOffset = 0/);
+  assert.match(ui, /XDriveIOSNativeLocalGalleryScreen\(\s*savedOffset: \$localGalleryPageOffset/);
+  assert.match(ui, /\.onChange\(of: localGalleryPageOffset\) \{ _ in saveNavigationIfReady\(\) \}/);
+  assert.match(ui, /snapshot\.localGalleryPageOffset \?\? 0/);
+  assert.match(ui, /localGalleryPageOffset: localGalleryPageOffset/);
+  assert.match(ui, /localGalleryPageOffset = 0\s*dynamicFeature = nil/);
+  assert.match(routes, /let localGalleryPageOffset: Int\?/);
+  assert.match(routes, /Self\.validMapPageOffset\(saved\.localGalleryPageOffset \?\? 0\)/);
+  assert.match(routes, /localGalleryPageOffset: Self\.validMapPageOffset\(localGalleryPageOffset\)/);
+  assert.match(routes, /enum XDriveIOSNativeLocalGalleryPageCursorPolicy \{/);
+  assert.match(local, /@Binding var savedOffset: Int/);
+  assert.doesNotMatch(local, /@State private var savedOffset = 0/);
+  assert.match(local, /XDriveIOSNativeLocalGalleryPageCursorPolicy\.clamp\(/);
+  assert.match(local, /let total = try await current\.start\(atOffset: offset\)/);
+  assert.match(local, /if bounded != offset \{[\s\S]*?current\.start\(atOffset: bounded\)/);
+  assert.match(local, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/);
+  assert.match(local, /\.fullScreenCover\(item: \$selected, onDismiss: \{ restoreAfterViewer\(\) \}\)/);
+  assert.doesNotMatch(routes, /PHAsset|localIdentifier|signedURL|accessToken|latitude|longitude/);
+});

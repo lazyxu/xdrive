@@ -104,12 +104,15 @@ struct XDriveNativeRouteChecks {
                 "legacy v1 route snapshot decodes without mode")
         require(store.restore(scopeHash: ownerB)?.mapPageOffset == nil,
                 "legacy v1 route snapshot decodes without cursor")
+        require(store.restore(scopeHash: ownerB)?.localGalleryPageOffset == nil,
+                "older v1 snapshot decodes without local PhotoKit page cursor")
         // Tampered persisted data fails closed instead of replaying a stale
         // unverified page or crossing Owner identity.
         let bad = XDriveIOSNativeNavigationRouteSnapshot(
             version: 1, scopeHash: ownerB, selectedTab: "gallery",
             gallerySource: "map", activeDynamic: nil, recentDynamic: [],
-            mapScope: "page", mapPageOffset: 65
+            mapScope: "page", mapPageOffset: 65,
+            localGalleryPageOffset: nil
         )
         defaults.set(try! JSONEncoder().encode(bad),
                      forKey: XDriveIOSNativeNavigationRouteStore.key)
@@ -122,6 +125,54 @@ struct XDriveNativeRouteChecks {
                    mapScope: "page", mapPageOffset: 192)
         require(store.restore(scopeHash: ownerA) == nil,
                 "map cursor never crosses Owner")
+        // A verified Owner can resume the local Gallery page without persisting
+        // a photo identity. Switching Owner (including A -> B -> A) purges it.
+        store.save(scopeHash: ownerB, selectedTab: "gallery", gallerySource: "local",
+                   activeDynamic: nil, recentDynamic: [],
+                   localGalleryPageOffset: 128)
+        require(store.restore(scopeHash: ownerB)?.localGalleryPageOffset == 128,
+                "local Gallery bounded page cursor resumes")
+        store.save(scopeHash: ownerB, selectedTab: "gallery", gallerySource: "map",
+                   activeDynamic: nil, recentDynamic: [],
+                   localGalleryPageOffset: 192)
+        require(store.restore(scopeHash: ownerB)?.localGalleryPageOffset == 192,
+                "local page survives a different Gallery source")
+        for invalid in [-64, 65, 1_000_064] {
+            store.save(scopeHash: ownerB, selectedTab: "gallery", gallerySource: "local",
+                       activeDynamic: nil, recentDynamic: [],
+                       localGalleryPageOffset: invalid)
+            require(store.restore(scopeHash: ownerB)?.localGalleryPageOffset == 0,
+                    "invalid local cursor must sanitize")
+        }
+        let tamperedGallery = XDriveIOSNativeNavigationRouteSnapshot(
+            version: 1, scopeHash: ownerB, selectedTab: "gallery",
+            gallerySource: "local", activeDynamic: nil, recentDynamic: [],
+            mapScope: "page", mapPageOffset: 0, localGalleryPageOffset: 65
+        )
+        defaults.set(try! JSONEncoder().encode(tamperedGallery),
+                     forKey: XDriveIOSNativeNavigationRouteStore.key)
+        require(store.restore(scopeHash: ownerB) == nil,
+                "tampered local Gallery cursor rejected")
+        let policy = XDriveIOSNativeLocalGalleryPageCursorPolicy.self
+        require(policy.clamp(requested: 128, currentTotal: 1000) == 128,
+                "unchanged authorized 64-slot page")
+        require(policy.clamp(requested: 192, currentTotal: 130) == 128,
+                "authorization shrink clamps to the final real page")
+        require(policy.clamp(requested: 128, currentTotal: 64) == 0,
+                "last deleted page moves to first available page")
+        require(policy.clamp(requested: 64, currentTotal: 65) == 64,
+                "single media item on last page remains readable")
+        require(policy.clamp(requested: 64, currentTotal: 0) == 0,
+                "empty library never restores a stale page")
+        require(policy.clamp(requested: -64, currentTotal: 10) == 0,
+                "negative PhotoKit page cursor denied")
+        require(policy.clamp(requested: 65, currentTotal: 1000) == 0,
+                "unaligned PhotoKit page cursor denied")
+        store.save(scopeHash: ownerB, selectedTab: "gallery", gallerySource: "local",
+                   activeDynamic: nil, recentDynamic: [],
+                   localGalleryPageOffset: 128)
+        require(store.restore(scopeHash: ownerA) == nil,
+                "local PhotoKit page cursor is removed on Owner switch")
         print("native iOS navigation route scoped persistence checks passed")
     }
 }

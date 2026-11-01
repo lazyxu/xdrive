@@ -25,7 +25,11 @@ test('native bottom destinations have fixed order and only one dynamic slot', ()
   assert.doesNotMatch(ui, /WebView|WKWebView|document\.cookie/);
 });
 test('Gallery owns local, albums, cloud and map subroutes; media uses native fullscreen', () => {
-  assert.match(ui, /XDriveIOSNativeLocalGalleryScreen\(\)/);
+  assert.match(ui, /@State private var localGalleryPageOffset = 0/);
+  assert.match(ui, /XDriveIOSNativeLocalGalleryScreen\(\s*savedOffset: \$localGalleryPageOffset\s*\)/);
+  assert.match(ui, /\.onChange\(of: localGalleryPageOffset\) \{ _ in saveNavigationIfReady\(\) \}/);
+  assert.match(ui, /localGalleryPageOffset = 0\s*dynamicFeature = nil/);
+  assert.doesNotMatch(ui, /XDriveIOSNativeLocalGalleryScreen\(\s*\)/);
   assert.match(ui, /XDriveIOSNativePhotoAlbumsScreen\(\)/);
   assert.match(ui, /XDriveIOSNativeCloudOriginalGallery\([\s\S]*?login: login,[\s\S]*?confirmedOriginalUpdate: backup\.confirmedOriginalUpdate/);
   assert.match(ui, /gallerySource = source\s+tab = \.gallery/);

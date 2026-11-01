@@ -12,6 +12,8 @@ struct XDriveIOSNativeNavigationRouteSnapshot: Codable, Equatable {
     // Optional so the previous v1 snapshots continue decoding.
     let mapScope: String?
     let mapPageOffset: Int?
+    // Optional for backwards-compatible v1 Owner-scoped restoration.
+    let localGalleryPageOffset: Int?
 }
 
 /// One fail-closed, server/Owner/root-scoped navigation snapshot. A different
@@ -45,6 +47,7 @@ struct XDriveIOSNativeNavigationRouteStore {
               Self.validDynamic(saved.activeDynamic),
               Self.validMapScope(saved.mapScope ?? "page"),
               Self.validMapPageOffset(saved.mapPageOffset ?? 0),
+              Self.validMapPageOffset(saved.localGalleryPageOffset ?? 0),
               saved.recentDynamic.count <= 6,
               saved.recentDynamic.allSatisfy({ $0 == "backup" })
         else {
@@ -66,7 +69,8 @@ struct XDriveIOSNativeNavigationRouteStore {
         activeDynamic: String?,
         recentDynamic: [String],
         mapScope: String = "page",
-        mapPageOffset: Int = 0
+        mapPageOffset: Int = 0,
+        localGalleryPageOffset: Int = 0
     ) {
         guard validScopeHash(scopeHash) else { return }
         // Unknown/newer features and unavailable native routes are not
@@ -84,7 +88,9 @@ struct XDriveIOSNativeNavigationRouteStore {
             activeDynamic: safeDynamic,
             recentDynamic: Array(recentDynamic.filter { $0 == "backup" }.prefix(6)),
             mapScope: Self.validMapScope(mapScope) ? mapScope : "page",
-            mapPageOffset: Self.validMapPageOffset(mapPageOffset) ? mapPageOffset : 0
+            mapPageOffset: Self.validMapPageOffset(mapPageOffset) ? mapPageOffset : 0,
+            localGalleryPageOffset: Self.validMapPageOffset(localGalleryPageOffset)
+                ? localGalleryPageOffset : 0
         )
         guard let data = try? JSONEncoder().encode(snapshot), data.count <= 2048 else {
             clear()
@@ -119,5 +125,18 @@ struct XDriveIOSNativeNavigationRouteStore {
     // The active authorized library is always reread on reentry.
     private static func validMapPageOffset(_ value: Int) -> Bool {
         value >= 0 && value <= 1_000_000 && value % 64 == 0
+    }
+}
+
+
+/// Recover the last readable 64-slot page after the current PhotoKit grant
+/// and current library count are rechecked. No asset IDs are stored, and an
+/// index into yesterday's library cannot be mistaken for media identity.
+enum XDriveIOSNativeLocalGalleryPageCursorPolicy {
+    static func clamp(requested: Int, currentTotal: Int) -> Int {
+        guard currentTotal > 0,
+              requested >= 0, requested <= 1_000_000,
+              requested % 64 == 0 else { return 0 }
+        return min(requested, ((currentTotal - 1) / 64) * 64)
     }
 }
