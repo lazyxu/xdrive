@@ -12,6 +12,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
     let selectionMode: Bool
     let selectedIDs: Set<String>
     let onSelect: (XDrivePhotoKitScanCandidate, XDrivePhotoKitScanPage) -> Void
+    let onShare: (XDrivePhotoKitScanCandidate, Bool) -> Void
     let onRead: (XDrivePhotoKitScanPage) -> Void
     let onFailure: () -> Void
     @State private var page: XDrivePhotoKitScanPage?
@@ -61,6 +62,12 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                                     : (candidate.kind == "video" ? "播放视频" : "查看照片")
                             )
                             .buttonStyle(.plain)
+                            .contextMenu {
+                                Button("分享本机原件") { onShare(candidate, false) }
+                                Button("从 iCloud 下载原件并分享") {
+                                    onShare(candidate, true)
+                                }
+                            }
                             .id("photo:\(candidate.id)")
                         } else {
                             placeholderTile.accessibilityHidden(true)
@@ -170,6 +177,12 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
     @State private var actionBusy = false
     @State private var actionToken = UUID()
     @State private var actionMessage: String?
+    @State private var shareTask: Task<Void, Never>?
+    @State private var shareEpoch = UUID()
+    @State private var shareBusy = false
+    @State private var shareSession: XDriveIOSNativeLocalPhotoShareSession?
+    @State private var retainedShare: XDriveIOSNativeLocalPhotoShareSession?
+    @State private var shareMessage: String?
 
     var body: some View {
         ScrollViewReader { scroll in
@@ -209,6 +222,18 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                                     .font(.caption).monospacedDigit()
                                 Spacer(minLength: 4)
                                 Menu("操作") {
+                                    Button("分享选中原件") {
+                                        prepareShare(Array(selectedCandidates.values),
+                                                     allowICloudDownload: false)
+                                    }
+                                    .disabled(selectedCandidates.count >
+                                        XDriveIOSNativeLocalPhotoSharePolicy.maximumItems)
+                                    Button("从 iCloud 下载后分享") {
+                                        prepareShare(Array(selectedCandidates.values),
+                                                     allowICloudDownload: true)
+                                    }
+                                    .disabled(selectedCandidates.count >
+                                        XDriveIOSNativeLocalPhotoSharePolicy.maximumItems)
                                     Button("收藏选中") { updateFavorites(true) }
                                     Button("取消收藏") { updateFavorites(false) }
                                     Button("删除选中", role: .destructive) {
@@ -219,6 +244,18 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                                 .accessibilityIdentifier("native-ios-photos-local-selected-actions")
                             }
                             .padding(.horizontal, 12)
+                        }
+                        if selectedCandidates.count >
+                            XDriveIOSNativeLocalPhotoSharePolicy.maximumItems {
+                            Text("批量分享最多 8 项；收藏与删除支持最多 128 项。")
+                                .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 12)
+                        }
+                        if shareBusy {
+                            ProgressView("正在准备本机原件…").padding(.horizontal, 12)
+                        }
+                        if let shareMessage {
+                            Text(shareMessage).font(.caption)
+                                .foregroundStyle(.secondary).padding(.horizontal, 12)
                         }
                         if actionBusy { ProgressView("正在更新系统照片库…").padding(.horizontal, 12) }
                         if let actionMessage {
@@ -235,6 +272,10 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                                     onSelect: { asset, page in
                                         if selectionMode { toggleSelection(asset) }
                                         else { openViewer(asset, in: page) }
+                                    },
+                                    onShare: { candidate, allowICloud in
+                                        prepareShare([candidate],
+                                                     allowICloudDownload: allowICloud)
                                     },
                                     onRead: { page in
                                         if let expected = returnID, returnPageOffset == page.startOffset,
@@ -281,6 +322,12 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
             }
         }
         .navigationTitle("本机照片")
+        .sheet(item: $shareSession, onDismiss: {
+            retainedShare?.discard()
+            retainedShare = nil
+        }) { session in
+            XDriveIOSNativeLocalPhotoActivitySheet(fileURLs: session.fileURLs)
+        }
         .confirmationDialog(
             "确定删除选中的 \(selectedCandidates.count) 项系统照片吗？",
             isPresented: $confirmingDelete, titleVisibility: .visible
@@ -316,10 +363,14 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
         }
         .onChange(of: phase) { value in
             permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-            if value != .active { invalidate(with: nil) }
+            if value != .active {
+                cancelSharePreparation()
+                invalidate(with: nil)
+            }
             else if selected == nil && authorized { reload() }
         }
         .onDisappear {
+            cancelSharePreparation()
             actionToken = UUID()
             actionBusy = false
             selectedCandidates.removeAll()
@@ -344,6 +395,60 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
             return
         }
         selectedCandidates[candidate.id] = candidate
+    }
+
+    private func prepareShare(
+        _ candidates: [XDrivePhotoKitScanCandidate],
+        allowICloudDownload: Bool
+    ) {
+        guard authorized, phase == .active, !actionBusy, !shareBusy,
+              shareSession == nil else { return }
+        guard !candidates.isEmpty,
+              candidates.count <= XDriveIOSNativeLocalPhotoSharePolicy.maximumItems else {
+            shareMessage = "一次最多分享 8 项原件；可分批选择。"
+            return
+        }
+        cancelSharePreparation()
+        let epoch = shareEpoch
+        shareBusy = true
+        shareMessage = nil
+        // Deterministic order for multi-file Share Sheet destinations.
+        let ordered = candidates.sorted { $0.id < $1.id }
+        shareTask = Task { @MainActor in
+            do {
+                let prepared = try await XDriveIOSNativeLocalOriginalSharer.prepare(
+                    ordered, allowICloudDownload: allowICloudDownload
+                )
+                guard !Task.isCancelled, shareEpoch == epoch,
+                      phase == .active, authorized else {
+                    prepared.discard()
+                    return
+                }
+                retainedShare = prepared
+                shareSession = prepared
+                if prepared.containsLivePair {
+                    shareMessage = "Live Photo 作为静态原件和 MOV 动态视频分享；目标 App 不一定自动还原实况配对。"
+                }
+            } catch is CancellationError {
+            } catch {
+                if shareEpoch == epoch {
+                    shareMessage = allowICloudDownload
+                        ? "无法准备原件，请检查 iCloud 网络、照片访问权限与可用空间。"
+                        : "无法读取本机原件；如照片仅在 iCloud，请明确选择“从 iCloud 下载原件并分享”。"
+                }
+            }
+            if shareEpoch == epoch {
+                shareBusy = false
+                shareTask = nil
+            }
+        }
+    }
+
+    private func cancelSharePreparation() {
+        shareEpoch = UUID()
+        shareTask?.cancel()
+        shareTask = nil
+        shareBusy = false
     }
 
     private func updateFavorites(_ value: Bool) {
@@ -449,6 +554,7 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
     }
 
     private func invalidate(with message: String?) {
+        cancelSharePreparation()
         selectedCandidates.removeAll()
         confirmingDelete = false
         generation = UUID()
