@@ -409,7 +409,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
                         Text(failure).foregroundStyle(.secondary)
                             .font(.caption).padding(.horizontal)
                         Button("重试") {
-                            if phase == .active && login.owner != nil {
+                            if ownerAuthorized {
                                 retirePreview()
                             }
                         }
@@ -425,7 +425,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
                     VStack(spacing: 8) {
                         Text(failure).foregroundStyle(.secondary).padding(.horizontal)
                         Button("重试") {
-                            if phase == .active && login.owner != nil {
+                            if ownerAuthorized {
                                 retirePreview()
                             }
                         }
@@ -468,7 +468,9 @@ struct XDriveIOSNativeServerMediaPreview: View {
         }
         .task(id: previewRequestID) {
             // Signed previews must not survive a scene/Owner generation.
-            guard phase == .active, let expected = login.owner else { return }
+            // The Viewer remains bound to the source Owner captured by L2,
+            // even if the account has switched before this task begins.
+            guard ownerAuthorized, let expected = openedOwner else { return }
             let requestID = previewRequestID
             let target = viewed
             do {
@@ -542,6 +544,21 @@ struct XDriveIOSNativeServerMediaPreview: View {
                 else { return }
                 failure = "该云端媒体预览暂不可用，未读取其他账户的数据。"
             }
+        }
+        // AVPlayer may fail after the signed URL has already been accepted.
+        // Handle only this exact active item; an old player must not change
+        // the new Viewer during rapid left/right navigation or account switch.
+        .onReceive(NotificationCenter.default.publisher(
+            for: .AVPlayerItemFailedToPlayToEndTime
+        ).receive(on: RunLoop.main)) { notification in
+            guard ownerAuthorized,
+                  let failed = notification.object as? AVPlayerItem,
+                  let playing = player?.currentItem, failed === playing else { return }
+            player?.pause()
+            player?.replaceCurrentItem(with: nil)
+            player = nil
+            showingLiveMotion = false
+            failure = "媒体播放失败，请重试当前云端照片或视频。"
         }
         .onChange(of: phase) { _ in
             // iOS app switcher must not expose signed still/video or local
