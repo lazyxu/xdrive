@@ -244,10 +244,15 @@ export function createDesktopMediaGalleryDataSource(
           signal?.throwIfAborted()
           return {
             ok: true as const,
-            data: URL.createObjectURL(new Blob(
-              [result.data.data],
-              { type: result.data.content_type || 'image/jpeg' },
-            )),
+            data: (() => {
+              const blob = new Blob(
+                [result.data.data], { type: result.data.content_type || 'image/jpeg' })
+              const url = URL.createObjectURL(blob)
+              xDriveRegisterViewerImageSource(url, {
+                format: 'JPEG', quality: 84, byteSize: blob.size,
+              })
+              return url
+            })(),
           }
         }
       }

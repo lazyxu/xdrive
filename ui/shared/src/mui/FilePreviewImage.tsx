@@ -340,7 +340,8 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
   const readyURL = readySource?.url || ''
   const readyMetadata = xDriveViewerImageSource(readyURL)
   const shownFormat = readyRole === 'thumbnail' ? '缩略图' :
-    readyMetadata ? readyMetadata.format + ' 高清预览' :
+    readyMetadata ? readyMetadata.format + ' 派生预览' :
+    readyRole === 'original' && kind === 'live_photo' ? '实况静态资源（格式未确认）' :
     readyRole === 'original' ? '原始文件' : '加载中'
   const sizeLabel = (bytes?: number) =>
     bytes && Number.isFinite(bytes) && bytes > 0
@@ -508,6 +509,16 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
                   readyRole === 'original'
                     ? readyMetadata?.byteSize || target.size
                     : progress.totalBytes || progress.loadedBytes)}
+              </Typography>
+              <Typography variant="caption" sx={{ color: 'inherit' }}>
+                WebP 高清：{readyMetadata?.format === 'WebP'
+                  ? '已解码 · 当前显示 · ' + sizeLabel(readyMetadata.byteSize)
+                  : '未显示（未请求或加载失败）'}
+              </Typography>
+              <Typography variant="caption" sx={{ color: 'inherit' }}>
+                JPEG 派生图：{readyMetadata?.format === 'JPEG'
+                  ? '已解码 · 当前显示 · ' + sizeLabel(readyMetadata.byteSize)
+                  : '未显示（可能尚未请求）'}
               </Typography>
               <Typography variant="caption" sx={{ color: 'inherit' }}>
                 缩略图：{statusLabel('thumbnail')}
