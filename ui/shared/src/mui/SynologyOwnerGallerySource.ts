@@ -1,7 +1,6 @@
 import type { MediaGalleryDataSource } from './MediaGallery'
 import type { MediaGalleryQuery, MediaItem, MediaItemRange } from '../models'
 import type { XDriveSynologyBackupLocalClient } from '../synology-backup-adapter'
-import { xDriveSynologyValidOwnerPlaceID } from '../synology-backup-adapter'
 import { xDriveSynologyLoadBoundedMediaPreview, xDriveSynologyPreviewMIME } from '../synology-media-preview'
 import { xDriveSynologyLoadOwnerThumbnail } from '../synology-owner-thumbnail'
 import {
@@ -19,6 +18,18 @@ import {
 const OWNER_GALLERY_PAGE_LIMIT = 100
 const OWNER_GALLERY_MAX_UI_BATCH = 500
 const OWNER_GALLERY_PREVIEW_CACHE = 512
+// Pure Gallery-side admission check. The same-current-Owner CGI transport
+// independently validates this canonical place selector before every GET;
+// importing the transport runtime here would couple the shared Gallery to
+// a second Client implementation and break its existing isolated Host tests.
+const validDSMOwnerPlaceID = (value: string): boolean => {
+  if (typeof value !== 'string' || value.length > 64) return false
+  const match = /^place:(0|-?[1-9][0-9]*):(0|-?[1-9][0-9]*)$/.exec(value)
+  if (!match) return false
+  const latCell = Number(match[1]), lonCell = Number(match[2])
+  return Number.isSafeInteger(latCell) && Math.abs(latCell) <= 9000 &&
+    Number.isSafeInteger(lonCell) && Math.abs(lonCell) <= 18000
+}
 
 type OwnerGalleryPreviewIdentity = {
   id: number
@@ -55,12 +66,12 @@ export function xDriveSynologyOwnerGalleryQuerySupported(query?: MediaGalleryQue
     if (key === 'unknown_first' && value !== false) return false
     if (key === 'initial_position' && value !== 'latest') return false
     if (key === 'place' && (typeof value !== 'string' ||
-      !xDriveSynologyValidOwnerPlaceID(value))) return false
+      !validDSMOwnerPlaceID(value))) return false
     // An exact canonical Owner Place already implies current valid GPS.
     // The shared Gallery's location=with filter is therefore redundant,
     // but a generic has_location filter with no Place remains unsupported.
     if (key === 'has_location' &&
-      (value !== true || !query.place || !xDriveSynologyValidOwnerPlaceID(query.place))) {
+      (value !== true || !query.place || !validDSMOwnerPlaceID(query.place))) {
       return false
     }
   }
