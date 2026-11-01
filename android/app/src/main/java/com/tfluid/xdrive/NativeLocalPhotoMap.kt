@@ -136,17 +136,16 @@ internal fun ColumnScope.NativeLocalPhotoMap(
     var chosen by remember(sessionId, libraryEpoch, permissionEpoch) {
         mutableStateOf<NativeLocalMapCell<NativeLocalMedia>?>(null)
     }
-    var viewer by remember(sessionId, libraryEpoch, permissionEpoch) {
-        mutableStateOf<NativeLocalMedia?>(null)
-    }
-    // Moving away from this native screen disposes the coroutine, closing
-    // its query signal. The Owner-level MediaStore observer bumps libraryEpoch.
-    LaunchedEffect(sessionId, libraryEpoch, permissionEpoch, scanRequest, hasMedia, hasGps) {
+    // Dispose the Android provider CancellationSignal synchronously when
+    // leaving the map, switching Owner or changing media grants. Coroutine
+    // cancellation alone cannot interrupt a blocked ContentResolver.query().
+    val signal = remember(sessionId, libraryEpoch, permissionEpoch,
+        scanRequest, hasMedia, hasGps) { CancellationSignal() }
+    DisposableEffect(signal) { onDispose { signal.cancel() } }
+    LaunchedEffect(signal, hasMedia, hasGps) {
         if (!hasMedia || !hasGps) return@LaunchedEffect
-        val signal = CancellationSignal()
         scan = NativeLocalPhotoMapScan(scanning = true)
         chosen = null
-        viewer = null
         var index = NativeLocalMapIndex<NativeLocalMedia>()
         var scanned = 0
         var key: NativeLocalPageKey? = null
