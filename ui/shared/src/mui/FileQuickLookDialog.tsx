@@ -307,6 +307,7 @@ export function XDriveFileQuickLookDialog<T extends XDriveFilePreviewTarget>({
         loadLivePhotoMotion={loadLivePhotoMotion}
         onPresentationStateChange={presentation.onPresentationStateChange}
         interactiveImage
+        showImageDetails
         onSwipePrevious={canPrevious ? previousIfCurrent : undefined}
         onSwipeNext={canNext ? nextIfCurrent : undefined}
         fallback={(

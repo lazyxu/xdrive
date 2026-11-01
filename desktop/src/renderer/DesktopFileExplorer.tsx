@@ -35,6 +35,7 @@ import {
   xDriveFileExplorerSearchFiltersSignature,
   xDriveFileExplorerSearchFilterLabels,
   xDriveFileNeedsBrowserCompatibleImagePreview,
+  xDriveRegisterViewerImageSource,
   XDRIVE_NATIVE_FILE_AVAILABILITY_OPTIONS,
   xDriveFileExplorerThrowUploadFailure,
 } from '@xdrive/shared'
@@ -1001,11 +1002,39 @@ export default function DesktopFileExplorer({
   ) => {
     const plan = xDriveFileExplorerPreviewRequest(item, kind, previewStreamSupported && !signal?.aborted)
     if (!plan) return null
+    const agent = hostPort.media
+    if (plan.mode === 'analysis-image' || plan.mode === 'live-still') {
+      for (const format of ['webp', 'jpeg'] as const) {
+        signal?.throwIfAborted()
+        try {
+          const result = await hostPort.requestViewport(
+            signal,
+            (requestID) => agent.getMediaViewerPreview(plan.nodeID, format, requestID, onProgress),
+          )
+          if (!result.ok) continue
+          const expected = format === 'webp' ? 'image/webp' : 'image/jpeg'
+          if (result.data.content_type?.toLowerCase() !== expected) continue
+          signal?.throwIfAborted()
+          const blob = new Blob([result.data.data], { type: expected })
+          if (blob.size === 0) continue
+          const url = URL.createObjectURL(blob)
+          xDriveRegisterViewerImageSource(url, {
+            format: format === 'webp' ? 'WebP' : 'JPEG',
+            quality: format === 'webp' ? 90 : 93,
+            byteSize: blob.size,
+          })
+          return url
+        } catch {
+          signal?.throwIfAborted()
+          // Old Server/Agent or unavailable codec: try JPEG, then legacy.
+        }
+      }
+    }
     if (plan.mode === 'analysis-image') {
       try {
         const result = await hostPort.requestViewport(
           signal,
-          (requestID) => hostPort.media.getMediaAnalysisPreview(plan.nodeID, requestID, onProgress),
+          (requestID) => agent.getMediaAnalysisPreview(plan.nodeID, requestID, onProgress),
         )
         if (!result.ok || signal?.aborted) return null
         return URL.createObjectURL(new Blob(
@@ -1013,10 +1042,10 @@ export default function DesktopFileExplorer({
           { type: result.data.content_type || 'image/jpeg' },
         ))
       } catch {
+        signal?.throwIfAborted()
         return null
       }
     }
-    const agent = hostPort.media
     const discardLate = (late: { ok: boolean; data?: string }) => {
       if (late.ok && typeof late.data === 'string') {
         hostPort.releaseDiscardedPreviewURL(late.data,
