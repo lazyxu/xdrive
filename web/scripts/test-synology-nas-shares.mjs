@@ -47,7 +47,12 @@ assert.doesNotMatch(browser, /\{share\.selection_id\}\s*</,
   'opaque share IDs must not be visibly rendered')
 assert.doesNotMatch(browser, /AuthorizeLocalRoot|createLocalBackupSource|fetch\(/,
   'native preflight must not grant Root authority')
-assert.match(panel, /<XDriveSynologyBackupSourceSetup client=\{client\} onCreated=\{refresh\}/)
+assert.match(panel, /<XDriveSynologyBackupSourceSetup client=\{client\}\s+onCreated=\{\(\) => \{ if \(isCurrentHost\(\)\) refresh\(\) \}\}/,
+  'Source creation must refresh only the current owning Agent Host generation')
+assert.match(panel, /hostEpochRef\.current\.epoch === renderedHostEpoch/,
+  'returning to an older Agent client must not reactivate stale Source callbacks')
+assert.doesNotMatch(panel, /<XDriveSynologyBackupSourceSetup client=\{client\} onCreated=\{refresh\}/,
+  'unguarded Source callbacks must not cross DSM Host identity')
 assert.match(setup, /<XDriveSynologyNASShareInventory key=\{shareRevision\}\s+client=\{client\} onVerifiedShare=\{onVerifiedShare\}/)
 assert.match(setup, /shareRevision !== shareRevisionRef\.current/)
 assert.match(setup, /resetShareAuthorization\(\)/)

@@ -183,8 +183,17 @@ if (!verifiedOwnerDownload.includes('xDriveSynologyFetchVerifiedDownload') ||
     !muiExports.includes("export * from './DeviceBackupFolderAccordion'") ||
     !muiExports.includes("export * from './DeviceBackupLocalPrimaryActions'") ||
     !desktop.includes('verifiedLocalDeviceID === device.id && !device.revoked') ||
-    !nas.includes('onRun={() => setActiveID(item.source_id)}') ||
-    !nas.includes('onSchedule={() => setScheduleID(item.source_id)}') ||
+    // The NAS shares Desktop's primary actions, but retained callbacks must
+    // be Host-generation fenced. Do not accept the old unguarded DSM actions:
+    // they could mutate the replacement Agent after a delayed Source ACK.
+    !nas.includes('if (hostEpochRef.current.client !== client)') ||
+    !nas.includes('hostEpochRef.current = { client, epoch: hostEpochRef.current.epoch + 1 }') ||
+    !nas.includes('hostEpochRef.current.client === client &&') ||
+    !nas.includes('hostEpochRef.current.epoch === renderedHostEpoch') ||
+    !nas.includes('onRun={() => { if (isCurrentHost()) setActiveID(item.source_id) }}') ||
+    !nas.includes('onSchedule={() => { if (isCurrentHost()) setScheduleID(item.source_id) }}') ||
+    !nas.includes('onCreated={() => { if (isCurrentHost()) refresh() }}') ||
+    !/onFinished=\{\(message\) => \{\s*if \(!isCurrentHost\(\)\) return\s*setScheduleID\(null\)/.test(nas) ||
     !common.includes('targetUnavailableLabel') ||
     !nas.includes('Synology DSM') ||
     !cgi.includes('AuthenticateDSM') ||
