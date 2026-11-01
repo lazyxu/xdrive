@@ -15,7 +15,7 @@ internal fun NativeBaiduMapPanel(
     result: OwnerBd09MapCells,
     onOpenCell: (OwnerBd09Cell) -> Unit,
     onCameraStart: () -> Unit,
-    onCameraSettled: (OwnerBd09Bounds) -> Unit,
+    onCameraSettled: (OwnerBd09Bounds?) -> Unit,
     markersEnabled: Boolean,
     preserveCamera: Boolean,
     placeholder: @Composable () -> Unit,
