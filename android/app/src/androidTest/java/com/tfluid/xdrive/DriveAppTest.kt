@@ -2675,6 +2675,10 @@ class DriveAppTest {
         compose.waitUntil(timeoutMillis = 10_000) {
             controller.state.value.galleryBd09Cells != null && !controller.state.value.loading
         }
+        // Focused map fills the viewport; explicitly switch to the location list.
+        compose.onNodeWithTag("gallery-map-focus-toggle").performClick()
+        compose.onNodeWithText("展开地图，专注浏览").assertExists()
+        compose.onNodeWithTag("gallery-map-bd09-cells").performScrollToIndex(1)
         compose.onNodeWithTag("gallery-map-zoom-7-5")
             .performScrollTo().performClick()
         compose.waitUntil(timeoutMillis = 10_000) {
@@ -2685,6 +2689,7 @@ class DriveAppTest {
         compose.onNodeWithTag("gallery-map-back-one-level").assertExists()
         compose.onNodeWithContentDescription("返回上一级聚合").assertExists()
         compose.onNodeWithTag("gallery-map-bd09-distribution").assertExists()
+        compose.onNodeWithTag("gallery-map-bd09-cells").performScrollToIndex(1)
         compose.onNodeWithTag("gallery-map-bd09-cell-0-4")
             .performScrollTo().performClick()
         compose.waitUntil(timeoutMillis = 10_000) {
@@ -2708,6 +2713,7 @@ class DriveAppTest {
         }
         compose.onNodeWithTag("gallery-map-back-one-level").performClick()
         compose.onNodeWithContentDescription("返回图库").assertExists()
+        compose.onNodeWithTag("gallery-map-bd09-cells").performScrollToIndex(1)
         compose.onNodeWithTag("gallery-map-bd09-cell-7-5").assertExists()
         compose.runOnIdle {
             org.junit.Assert.assertEquals(OwnerBd09Bounds.WORLD,
@@ -2744,6 +2750,10 @@ class DriveAppTest {
         compose.waitUntil(timeoutMillis = 10_000) {
             controller.state.value.galleryBd09Cells != null && !controller.state.value.loading
         }
+        // Focused map fills the viewport; explicitly switch to the location list.
+        compose.onNodeWithTag("gallery-map-focus-toggle").performClick()
+        compose.onNodeWithText("展开地图，专注浏览").assertExists()
+        compose.onNodeWithTag("gallery-map-bd09-cells").performScrollToIndex(1)
         compose.onNodeWithTag("gallery-map-bd09-cell-7-5")
             .performScrollTo().performClick()
         compose.waitUntil(timeoutMillis = 10_000) {
@@ -2767,6 +2777,7 @@ class DriveAppTest {
             controller.state.value.galleryMapCellSelected == null &&
                 controller.state.value.galleryBd09Cells != null
         }
+        compose.onNodeWithTag("gallery-map-bd09-cells").performScrollToIndex(1)
         compose.onNodeWithTag("gallery-map-bd09-cell-7-5").assertExists()
         compose.onNodeWithTag("gallery-map-close").performClick()
         compose.onNodeWithTag("gallery-wall").assertExists()
@@ -2802,6 +2813,10 @@ class DriveAppTest {
         }
         compose.onNodeWithTag("gallery-map-bd09-count").assertExists()
         compose.onNodeWithTag("gallery-map-bd09-distribution").assertExists()
+        // Focused map fills the viewport; explicitly switch to the location list.
+        compose.onNodeWithTag("gallery-map-focus-toggle").performClick()
+        compose.onNodeWithText("展开地图，专注浏览").assertExists()
+        compose.onNodeWithTag("gallery-map-bd09-cells").performScrollToIndex(1)
         compose.onNodeWithTag("gallery-map-bd09-cell-7-5").assertExists()
         compose.onNodeWithTag("gallery-map-unavailable-basemap").assertExists()
         compose.runOnIdle {
