@@ -1920,6 +1920,26 @@ class DriveAppTest {
         compose.onNodeWithTag("gallery-wall").assertExists()
     }
 
+    @Test fun cloudGalleryPhotoViewerDirectSaveUsesExistingSafWithoutInfoDialog() {
+        val downloads = mutableListOf<Long>()
+        startAndLogin(onDownload = { downloads += it.id })
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryLoaded &&
+                !controller.state.value.loading
+        }
+        compose.onNodeWithTag("gallery-item-40").performClick()
+        compose.onNodeWithTag("gallery-photo-viewer").assertExists()
+        compose.onNodeWithTag("gallery-photo-save-original")
+            .assertIsEnabled().performClick()
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(listOf(40L), downloads)
+            org.junit.Assert.assertNull(controller.state.value.gallerySelected)
+        }
+        compose.onNodeWithTag("gallery-download-action").assertDoesNotExist()
+    }
+
     @Test fun galleryInfoOffersRealOwnerPhotoSafDownloadAndNoPlaceholderWhenUnavailable() {
         val downloads = mutableListOf<Long>()
         startAndLogin(onDownload = { downloads += it.id })
