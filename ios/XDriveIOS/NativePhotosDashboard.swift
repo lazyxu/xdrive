@@ -125,6 +125,9 @@ struct XDriveIOSNativePhotosDashboard: View {
     @State private var launcherQuery = ""
     @State private var showRecentPicker = false
     @State private var galleryFocused = false
+    // A source/tab/scene navigation creates a new focus owner even when
+    // the user returns to the same source later (cloud -> map -> cloud).
+    @State private var galleryFocusGeneration = UUID()
     @State private var routeRestoreScopeKey: String?
     private let navigationRouteStore = XDriveIOSNativeNavigationRouteStore()
 
@@ -257,7 +260,11 @@ struct XDriveIOSNativePhotosDashboard: View {
             backup.refresh(owner: login.owner)
         }
         .onChange(of: phase) { state in
-            guard state == .active else { return }
+            guard state == .active else {
+                galleryFocusGeneration = UUID()
+                galleryFocused = false
+                return
+            }
             // Settings may revoke PhotoKit permission or a BGTask may pause
             // the durable plan without changing the logged-in Owner.
             photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
@@ -292,9 +299,13 @@ struct XDriveIOSNativePhotosDashboard: View {
         .onChange(of: localAlbumDirectoryOffset) { _ in saveNavigationIfReady() }
         // Rotation does not change focus; changing the owning route does.
         .onChange(of: tab) { next in
+            galleryFocusGeneration = UUID()
             if next != .gallery { galleryFocused = false }
         }
-        .onChange(of: gallerySource) { _ in galleryFocused = false }
+        .onChange(of: gallerySource) { _ in
+            galleryFocusGeneration = UUID()
+            galleryFocused = false
+        }
     }
 
     // L1 native bottom bar. The system safe-area inset remains managed by
@@ -469,6 +480,7 @@ struct XDriveIOSNativePhotosDashboard: View {
         // Capture the presenting Owner when this source's focus callback is
         // built; a disappearing view must not affect a later Owner's Gallery.
         let focusOwnerKey = ownerScopeKey
+        let focusGeneration = galleryFocusGeneration
         return GeometryReader { availableSpace in
             VStack(spacing: 0) {
                 if !galleryFocused {
@@ -500,7 +512,8 @@ struct XDriveIOSNativePhotosDashboard: View {
                         login: login, album: nil,
                         onFocusChange: {
                             updateGalleryFocus(
-                                $0, from: .cloud, expectedOwnerKey: focusOwnerKey
+                                $0, from: .cloud, expectedOwnerKey: focusOwnerKey,
+                                expectedGeneration: focusGeneration
                             )
                         }
                     )
@@ -516,7 +529,8 @@ struct XDriveIOSNativePhotosDashboard: View {
                         localMapPageOffset: $localMapPageOffset,
                         onFocusChange: {
                             updateGalleryFocus(
-                                $0, from: .map, expectedOwnerKey: focusOwnerKey
+                                $0, from: .map, expectedOwnerKey: focusOwnerKey,
+                                expectedGeneration: focusGeneration
                             )
                         }
                     )
@@ -532,9 +546,11 @@ struct XDriveIOSNativePhotosDashboard: View {
     private func updateGalleryFocus(
         _ focused: Bool,
         from source: XDriveIOSNativeGallerySource,
-        expectedOwnerKey: String
+        expectedOwnerKey: String,
+        expectedGeneration: UUID
     ) {
         guard phase == .active, expectedOwnerKey == ownerScopeKey,
+              expectedGeneration == galleryFocusGeneration,
               XDriveIOSNativeFocusVisibilityPolicy.acceptsFocusUpdate(
                 tab: tab.rawValue, gallerySource: gallerySource.rawValue,
                 callbackSource: source.rawValue, ownerVerified: login.owner != nil
@@ -784,6 +800,7 @@ struct XDriveIOSNativePhotosDashboard: View {
     }
 
     private func resetNavigation() {
+        galleryFocusGeneration = UUID()
         galleryFocused = false
         gallerySource = .local
         localMapScope = .page

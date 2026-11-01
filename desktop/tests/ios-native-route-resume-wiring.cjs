@@ -128,6 +128,12 @@ test('native local albums directory restores only Owner-scoped 32-slot page posi
 
 test('outgoing cloud/map focus events cannot overwrite a different native Gallery source or tab', () => {
   assert.match(ui, /let focusOwnerKey = ownerScopeKey/);
+  assert.match(ui, /let focusGeneration = galleryFocusGeneration/);
+  assert.match(ui, /@State private var galleryFocusGeneration = UUID\(\)/);
+  assert.match(ui, /expectedGeneration == galleryFocusGeneration/);
+  assert.match(ui, /expectedGeneration: focusGeneration/g);
+  assert.match(ui, /\.onChange\(of: tab\) \{ next in\s*galleryFocusGeneration = UUID\(\)/);
+  assert.match(ui, /\.onChange\(of: phase\) \{ state in[\s\S]*?galleryFocusGeneration = UUID\(\)/);
   assert.match(ui, /private func updateGalleryFocus\(/);
   assert.match(ui, /guard phase == \.active, expectedOwnerKey == ownerScopeKey,/);
   assert.match(ui, /XDriveIOSNativeFocusVisibilityPolicy\.acceptsFocusUpdate\(/);
@@ -137,5 +143,6 @@ test('outgoing cloud/map focus events cannot overwrite a different native Galler
   assert.doesNotMatch(ui, /onFocusChange: \{ galleryFocused = \$0 \}/);
   assert.match(focusPolicy, /gallerySource == callbackSource/);
   assert.match(focusPolicy, /ownerVerified && tab == "gallery"/);
-  assert.match(ui, /\.onChange\(of: gallerySource\) \{ _ in galleryFocused = false \}/);
+  assert.match(ui, /\.onChange\(of: gallerySource\) \{ _ in\s*galleryFocusGeneration = UUID\(\)\s*galleryFocused = false/);
+  assert.match(ui, /private func resetNavigation\(\) \{\s*galleryFocusGeneration = UUID\(\)/);
 });
