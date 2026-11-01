@@ -654,19 +654,22 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                                 .onNavigateSwipe { showNeighbor($0) }
                                 .accessibilityLabel("云端 Live 静态原件")
                         }
-                        if nativeLiveReady && !showingLiveMotion {
+                        if nativeLiveReady && currentOwnerAuthorized && !showingLiveMotion {
                             HStack(spacing: 12) {
                                 Button("播放原生实况") {
+                                    guard currentOwnerAuthorized else { return }
                                     showsStaticStill = false
                                     nativeLivePlaybackRequest = UUID()
                                 }
                                 .accessibilityIdentifier("native-ios-cloud-live-native-playback")
                                 Button(showsStaticStill ? "返回原生实况" : "放大静态原件") {
+                                    guard currentOwnerAuthorized else { return }
                                     showsStaticStill.toggle()
                                 }
                             }
                         }
                         Button(showingLiveMotion ? "返回静态原件" : "播放原始动态视频") {
+                            guard currentOwnerAuthorized, player != nil else { return }
                             if showingLiveMotion {
                                 player?.pause()
                                 nativeLivePlaybackRequest = nil
@@ -677,11 +680,17 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                             }
                             showingLiveMotion.toggle()
                         }
+                        .disabled(!currentOwnerAuthorized || player == nil)
                         .accessibilityIdentifier("native-ios-cloud-live-motion-toggle")
                         Text(nativeLiveUnavailable
                              ? "原生实况配对不可用，仍可查看静态原件和播放原始动态视频。"
                              : "已校验 Live ZIP 双资源；优先显示原生同步实况，保留独立视频回退。")
                             .font(.caption).foregroundStyle(.secondary)
+                        if let error {
+                            Text(error).font(.caption).foregroundStyle(.secondary)
+                            Button("重试") { retryPreview() }
+                                .accessibilityIdentifier("native-ios-original-live-retry")
+                        }
                     }
                 } else if let still {
                     XDriveIOSNativeZoomablePhotoView(image: still)
@@ -827,6 +836,20 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                     ? "此 Live ZIP 原件无法读取或未通过双资源校验；请检查空间、网络与权限。"
                     : "此文件的云端预览不可用，未读取其他账户的数据。"
             }
+        }
+        // Explicitly recover from a failed AVPlayer item instead of leaving
+        // a blank native VideoPlayer. A Live still is retained as fallback.
+        .onReceive(NotificationCenter.default.publisher(
+            for: .AVPlayerItemFailedToPlayToEndTime
+        ).receive(on: RunLoop.main)) { notification in
+            guard currentOwnerAuthorized,
+                  let failed = notification.object as? AVPlayerItem,
+                  let playing = player?.currentItem, failed === playing else { return }
+            player?.pause()
+            player?.replaceCurrentItem(with: nil)
+            player = nil
+            showingLiveMotion = false
+            error = "媒体播放失败，可重新读取当前云端原件。"
         }
         .onChange(of: phase) { state in
             if state != .active {

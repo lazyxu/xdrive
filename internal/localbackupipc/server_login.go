@@ -11,6 +11,10 @@ import (
 
 // ServerConnection is a non-secret projection of the owning Agent's current
 // login. It does not grant an xDrive Server role to the DSM browser.
+// The owning Agent returns an HTTP 401 during credential verification
+// BEFORE userconfig.Save; unlike ambiguous failures, no Owner was committed.
+var ErrDSMLoginRejectedBeforeCommit = errors.New("DSM login rejected before Owner commit")
+
 type ServerConnection struct {
 	Configured         bool   `json:"configured"`
 	Server             string `json:"server,omitempty"`
@@ -96,6 +100,13 @@ func (c *Client) LoginServer(ctx context.Context, server, username, password str
 	if err := c.request(ctx, http.MethodPost, "/v1/auth/login", map[string]string{
 		"server": server, "username": username, "password": password, "mount_path": "",
 	}, &acknowledged); err != nil {
+		var rejected *AgentHTTPStatusError
+		// Only a proven Agent 401 qualifies; generic 403/409/5xx and transport
+		// failures cannot prove the Owner was not changed.
+		if errors.As(err, &rejected) && rejected.Method == http.MethodPost &&
+			rejected.StatusCode == http.StatusUnauthorized {
+			return ErrDSMLoginRejectedBeforeCommit
+		}
 		return err
 	}
 	if !acknowledged.Configured || !sameDSMLoginServer(acknowledged.Server, server) ||

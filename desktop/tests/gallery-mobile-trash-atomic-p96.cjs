@@ -68,6 +68,11 @@ function owner(compact) {
   const record = key => value => { mutations.push({ key, value }) }
   let generation = 0
   let publishSection = () => {}
+  // The real shared Gallery callback now reads live Owner/source-scoped
+  // Library/Collections return hints. Supply its actual dependencies rather
+  // than replacing, stripping or weakening the extracted production callback.
+  const galleryDataSource = {}
+  const rememberedLibraryQueries = []
   const env = {
     // The real Gallery provides this Owner-local return ref; ordinary
     // navigation under test has no pending map-to-album return.
@@ -75,6 +80,19 @@ function owner(compact) {
     // A3h Cell isolation: no Cell request is active in this legacy fixture.
     nativeCellOpenAbort: { current: null },
     preferenceScope: 'p96',
+    source: galleryDataSource,
+    firstMobileLibraryQueryRef: { current: null },
+    firstMobileCollectionsReturnRef: { current: false },
+    mobileCollectionsReturnScopeRef: {
+      current: { source: galleryDataSource, owner: 'p96' },
+    },
+    mediaGalleryDraftFromQuery: query => ({ ...query }),
+    xDriveRememberMobileLibraryQuery: (actualSource, scope, query) => {
+      assert.equal(actualSource, galleryDataSource)
+      assert.equal(scope, 'p96')
+      rememberedLibraryQueries.push(query)
+    },
+    warmMobileCollectionsPreview: () => assert.fail('ordinary section navigation cannot resume Collections'),
     xDriveClearBaiduCellViewerReturn: scope => { assert.equal(scope, 'p96') },
     xDriveClearPlacesDrawerViewerReturn: scope => { assert.equal(scope, 'p96') },
     useCallback: fn => fn,
@@ -118,7 +136,7 @@ function owner(compact) {
     },
   }
   return {
-    mutations, requests, callbacks: actualCallbacks(env),
+    mutations, requests, rememberedLibraryQueries, callbacks: actualCallbacks(env),
     setPublisher: callback => { publishSection = callback },
   }
 }
@@ -184,6 +202,8 @@ test('P96 newer ordinary Gallery intent invalidates obsolete compact Trash first
   state.requests[1].accept()
   assert.equal(count(state.mutations, 'section', 'library'), 1)
   assert.equal(count(state.mutations, 'route', 'library'), 1)
+  assert.deepEqual(state.rememberedLibraryQueries, [{ section: 'library' }],
+    'only the accepted Library Range may update browser return hints')
 })
 
 test('P96 wide Web/Desktop Trash section navigation remains immediate', () => {

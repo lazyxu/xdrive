@@ -374,6 +374,7 @@ class DriveViewModel(application: Application) : AndroidViewModel(application) {
             putString("route.public:$origin", route.publicIp)
         } },
         sessionPersistence = AndroidSessionStore(application),
+        savedLoginStore = AndroidSavedLoginPasswords(application),
         saveLoginDraft = { server, lanIp, username -> preferences.edit {
             putString("login.draft.server", server)
             putString("login.draft.lan-ip", lanIp)

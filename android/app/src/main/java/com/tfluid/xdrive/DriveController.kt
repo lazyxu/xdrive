@@ -247,6 +247,7 @@ class DriveController(
     initialUsername: String = "",
     private val saveLoginDraft: (String, String, String) -> Unit = { _, _, _ -> },
     private val clearLoginDraft: (String) -> Boolean = { true },
+    private val savedLoginStore: NativeSavedLoginStore? = null,
 ) : Closeable {
     private val mutableState = MutableStateFlow(DriveState(server = initialServer, username = initialUsername, allowHttp = initialAllowHttp,
         route = savedRoute(initialServer, initialAllowHttp)))
@@ -606,10 +607,80 @@ class DriveController(
         }
     }
 
+    fun savedLoginProfiles(): List<NativeLoginProfile> =
+        runCatching { savedLoginStore?.profiles().orEmpty() }.getOrDefault(emptyList())
+
+    fun savedPasswordAvailable(server: String, lanIp: String, username: String): Boolean {
+        val selected = AndroidSavedLoginPasswords.profile(server, lanIp, username) ?: return false
+        return runCatching { savedLoginStore?.passwordFor(selected) != null }.getOrDefault(false)
+    }
+
+    /** Never replay a saved password without an explicit same-identity user action. */
+    fun loginWithSavedPassword(server: String, lanIp: String, username: String, rememberSession: Boolean) {
+        if (state.value.screen !in setOf(Screen.CONNECT, Screen.LOGIN) ||
+            state.value.loading || session != null) return
+        val selected = AndroidSavedLoginPasswords.profile(server, lanIp, username)
+        val saved = if (selected == null) null else
+            runCatching { savedLoginStore?.passwordFor(selected) }.getOrNull()
+        if (selected == null || saved.isNullOrEmpty()) {
+            mutableState.value = state.value.copy(error = "当前服务器和用户名没有可用的系统安全密码，请手动输入。")
+            return
+        }
+        connectAndLogin(selected.server, false, selected.lanIp, selected.username,
+            saved, rememberSession, true)
+    }
+
+    fun selectSavedLoginProfile(profile: NativeLoginProfile) {
+        if (state.value.screen !in setOf(Screen.CONNECT, Screen.LOGIN) ||
+            state.value.loading || session != null ||
+            AndroidSavedLoginPasswords.profile(profile.server, profile.lanIp, profile.username) != profile ||
+            savedLoginProfiles().none { it.id == profile.id }) return
+        invalidate()
+        (api as? Closeable)?.close()
+        api = null
+        address = null
+        runCatching { saveLoginDraft(profile.server, profile.lanIp, profile.username) }
+        mutableState.value = DriveState(
+            screen = Screen.CONNECT, server = profile.server,
+            route = ConnectionRoute(lanIp = profile.lanIp), username = profile.username)
+    }
+
+    /** Only the current visible Server+username is eligible; never clear other Owners. */
+    fun forgetSavedLoginProfile(profile: NativeLoginProfile) {
+        val current = state.value
+        if (current.screen !in setOf(Screen.CONNECT, Screen.LOGIN) ||
+            current.loading || session != null ||
+            AndroidSavedLoginPasswords.profile(profile.server, profile.lanIp, profile.username) != profile ||
+            current.server != profile.server || current.username != profile.username ||
+            current.route.lanIp != profile.lanIp) return
+        try {
+            val saved = sessionPersistence?.load()
+            if (saved != null && saved.server == profile.server && saved.username == profile.username)
+                sessionPersistence.clear()
+            if (savedLoginStore?.forgetProfile(profile) != true) {
+                mutableState.value = current.copy(error = "无法确认安全密码档案已删除，请重试。")
+                return
+            }
+        } catch (_: Exception) {
+            mutableState.value = current.copy(error = "无法访问安全凭据存储，请解锁设备后重试。")
+            return
+        }
+        if (!runCatching { clearLoginDraft(profile.server) }.getOrDefault(false)) {
+            mutableState.value = current.copy(error = "密码已删除，但登录填写信息未能清除。")
+            return
+        }
+        invalidate()
+        (api as? Closeable)?.close()
+        api = null
+        address = null
+        mutableState.value = DriveState(screen = Screen.CONNECT)
+    }
+
     /** One-page native login. Never persist or route credentials until HTTPS identity checks finish. */
     fun connectAndLogin(
         serverInput: String, allowHttp: Boolean, lanIp: String,
         username: String, password: String, rememberSession: Boolean,
+        rememberPassword: Boolean = false,
     ) {
         if (state.value.screen !in listOf(Screen.CONNECT, Screen.LOGIN) || state.value.loading) return
         if (username.isBlank() || password.isEmpty()) {
@@ -650,6 +721,19 @@ class DriveController(
                     nativeUiSessionId = ++nativeUiSessionCounter,
                 )
                 persistRefreshSession()
+                val profile = AndroidSavedLoginPasswords.profile(next.url, route.lanIp, result.username)
+                // A stable local alias allows a non-null check to survive the
+                // runCatching closure without changing the optional-store contract.
+                val passwordStore = savedLoginStore
+                if (profile != null && passwordStore != null) {
+                    val saved = runCatching {
+                        if (rememberPassword) passwordStore.savePassword(profile, password)
+                        else passwordStore.rememberProfile(profile) &&
+                            passwordStore.removePassword(profile)
+                    }.getOrDefault(false)
+                    if (!saved) mutableState.value = state.value.copy(
+                        error = "已登录，但系统安全密码保存状态未能确认。")
+                }
                 if (oldApi !== candidate) (oldApi as? Closeable)?.close()
                 if (!result.mustChangePassword) {
                     refreshTransferRecoveryNotices()
@@ -711,6 +795,15 @@ class DriveController(
             checkCurrent(ticket)
             session = result
             persistRefreshSession()
+            // A verified password change updates only the same already-saved
+            // profile; it never opts a new account into password retention.
+            val savedProfile = AndroidSavedLoginPasswords.profile(
+                state.value.server, state.value.route.lanIp, state.value.username)
+            val passwordStore = savedLoginStore
+            if (savedProfile != null && passwordStore != null &&
+                runCatching { passwordStore.passwordFor(savedProfile) != null }.getOrDefault(false)) {
+                runCatching { passwordStore.savePassword(savedProfile, replacement) }
+            }
             mutableState.value = state.value.copy(screen = if (result.mustChangePassword) Screen.PASSWORD else Screen.FILES)
             if (!result.mustChangePassword) {
                 refreshTransferRecoveryNotices()
@@ -4418,18 +4511,33 @@ class DriveController(
         val previous = state.value
         if (previous.screen !in setOf(Screen.CONNECT, Screen.LOGIN) ||
             previous.loading || session != null) return
+        val selected = AndroidSavedLoginPasswords.profile(
+            previous.server, previous.route.lanIp, previous.username)
+        if (selected == null) {
+            mutableState.value = previous.copy(error = "请先选择有效的服务器和用户名，再清除该账号资料。")
+            return
+        }
         try {
-            sessionPersistence?.clear()
+            val saved = sessionPersistence?.load()
+            // Deleting this account must never revoke a different Owner's refresh.
+            if (saved != null && saved.server == selected.server && saved.username == selected.username)
+                sessionPersistence.clear()
+            // Old installs have no profile password store; the legacy draft
+            // cleanup remains usable without this new optional dependency.
+            if (savedLoginStore != null && !savedLoginStore.forgetProfile(selected)) {
+                mutableState.value = previous.copy(error = "无法确认当前账号安全密码已删除，请重试。")
+                return
+            }
         } catch (_: Exception) {
             mutableState.value = previous.copy(
-                error = "无法确认系统安全存储中的登录凭据已清除；请解锁设备后重试。")
+                error = "无法确认当前账号的系统安全凭据已清除；请解锁设备后重试。")
             return
         }
         val cleared = runCatching { clearLoginDraft(previous.server) }.getOrDefault(false)
         if (!cleared) {
             mutableState.value = state.value.copy(
                 savedSessionRestoreRetryAvailable = false,
-                error = "已清除本机会话凭据，但无法确认服务器、IP 和用户名填写记录已删除。")
+                error = "已清除当前账号安全凭据，但填写信息未能清除。")
             return
         }
         val oldApi = api
