@@ -774,6 +774,44 @@ class DriveAppTest {
         compose.onNodeWithTag("native-five-slot-bar").assertDoesNotExist()
     }
 
+    @Test fun dynamicTransferTabAndPickerResumeActualCenterOnOneTap() {
+        startAndLogin(galleryFirstOnLogin = false)
+        // With no permitted dynamic feature, the reserved slot cannot
+        // fabricate a Transfer Center or a previously visited route.
+        compose.onNodeWithTag("native-tab-dynamic").performClick()
+        compose.onNodeWithTag("native-transfer-center").assertDoesNotExist()
+
+        // The real Launcher shortcut binds the dynamic slot to Transfers.
+        compose.onNodeWithTag("native-tab-all").performClick()
+        clickNativeLauncherShortcut(NativeHomeShortcut.TRANSFERS)
+        compose.onNodeWithTag("native-transfer-center").assertExists()
+        compose.onNodeWithTag("native-transfer-close").performClick()
+
+        // Returning to the dynamic slot resumes its actual feature with one
+        // tap, not a placeholder/summary requiring a second button press.
+        compose.onNodeWithTag("native-tab-files").performClick()
+        compose.onNodeWithTag("native-tab-dynamic").performClick()
+        compose.onNodeWithTag("native-transfer-center").assertExists()
+        compose.onNodeWithTag("native-transfer-close").performClick()
+
+        // Long-press selection is another direct entry to the same feature.
+        compose.onNodeWithTag("native-tab-dynamic").performTouchInput { longClick() }
+        compose.onNodeWithTag("native-dynamic-picker").assertExists()
+        compose.onNodeWithTag("native-dynamic-choice-transfers").performClick()
+        compose.onNodeWithTag("native-dynamic-picker").assertDoesNotExist()
+        compose.onNodeWithTag("native-transfer-center").assertExists()
+        compose.onNodeWithTag("native-transfer-close").performClick()
+
+        // The Gallery still owns its fixed destination after the transfer
+        // overlay closes. Neither path creates a sixth tab.
+        compose.onNodeWithTag("native-tab-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.GALLERY && controller.state.value.galleryLoaded
+        }
+        compose.onNodeWithTag("native-five-slot-bar").assertExists()
+        compose.onNodeWithTag("native-transfer-center").assertDoesNotExist()
+    }
+
     @Test fun nativeTransfersOpenFromFilesAndGalleryWithoutInventingHistory() {
         startAndLogin()
         compose.onNodeWithTag("native-transfer-open").assertIsDisplayed().performClick()
