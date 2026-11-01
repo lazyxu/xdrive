@@ -85,3 +85,55 @@ test('saved auto-backup status and enable action do not advertise success withou
   assert.match(backupScreen, /onChange\(of: phase\) \{ state in[\s\S]*?photoAuthorization = PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/)
   assert.doesNotMatch(auto, /requestAuthorization|UploadSession|performChanges/)
 })
+
+test('backup display and delayed original progress never cross Owner changes or A-to-B-to-A sessions', () => {
+  const refresh = ctrl.slice(ctrl.indexOf('    func refresh(owner:'),
+    ctrl.indexOf('    /// A receipt review', ctrl.indexOf('    func refresh(owner:')))
+  const start = ctrl.slice(ctrl.indexOf('    private func start('))
+  const callback = start.slice(start.indexOf('.run(allowICloudOriginals: cloud'),
+    start.indexOf('                self.progress = result'))
+  const terminal = start.slice(start.indexOf('            } catch is CancellationError {'))
+  const ownerChanged = login.slice(login.indexOf('.onChange(of: model.owner)'),
+    login.indexOf('    private var loginForm'))
+  assert.match(ctrl, /private var displayOwner: XDriveNativeOwnerRoot\?/)
+  assert.match(ctrl, /private var displayEpoch = UUID\(\)/)
+  assert.match(refresh, /switch \(displayOwner, owner\)/)
+  assert.match(refresh, /case \(nil, nil\):\s*unchanged = true/)
+  assert.match(refresh, /case \(let previous\?, let current\?\):\s*unchanged = XDriveIOSNativePhotoOwnerScope\.matches\(current, previous\)/)
+  assert.match(refresh, /if !unchanged \{\s*displayEpoch = UUID\(\)\s*progress = nil\s*message = "未启动相册备份"\s*errorMessage = nil\s*\}/)
+  assert.ok(refresh.indexOf('displayOwner = owner') < refresh.indexOf('schedule = owner.flatMap'),
+    'clear old UI before current Owner schedule is published')
+  assert.match(ownerChanged, /backup\.cancel\(\)\s*backup\.refresh\(owner: model\.owner\)/)
+  const gate = start.indexOf('XDriveIOSOriginalRunGate.shared.acquire()')
+  const bind = start.indexOf('refresh(owner: selected)')
+  const ticket = start.indexOf('let uiEpoch = displayEpoch')
+  const launch = start.indexOf('running = Task')
+  assert.ok(gate >= 0 && bind > gate && ticket > bind && launch > ticket,
+    'bind visible report to the current Owner generation before the async run')
+  assert.match(callback, /guard XDriveIOSNativePhotoOwnerScope\.matches\(self\?\.runningOwner, selected\),\s*self\?\.displayEpoch == uiEpoch,\s*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\)\s*else \{ return \}/)
+  assert.match(start, /guard XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\),\s*self\.displayEpoch == uiEpoch else \{\s*throw XDriveIOSNativeSessionError\.staleSession/)
+  assert.match(terminal, /catch is CancellationError \{\s*if self\.displayEpoch == uiEpoch,\s*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\)/)
+  assert.match(terminal, /\} catch \{\s*if self\.displayEpoch == uiEpoch,\s*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\)/)
+  assert.match(terminal, /if let current = self\.progress, current\.uploaded > 0,\s*self\.displayEpoch == uiEpoch,\s*XDriveIOSNativePhotoOwnerScope\.matches\(self\.runningOwner, selected\),\s*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\)/)
+  assert.doesNotMatch(refresh, /cancel\(|delete\(|disable\(|uploadPrepared|confirmReceipt|reserveDue/)
+})
+
+test('late auto-enable ledger or authorization responses cannot set a different Owner status', () => {
+  const configure = ctrl.slice(ctrl.indexOf('    func configure('),
+    ctrl.indexOf('    /// Local stop'))
+  const selected = configure.indexOf('let selected = expectedOwner')
+  const refresh = configure.indexOf('refresh(owner: selected)')
+  const ticket = configure.indexOf('let uiEpoch = displayEpoch')
+  const verify = configure.indexOf('let first = try await login.verifiedAuthorization()')
+  const local = configure.indexOf('.existingLocalScope(owner: selected)')
+  const pending = configure.indexOf('.pendingReceiptSnapshot(scope: scope, limit: 0)')
+  const commit = configure.indexOf('schedule = try store.configure(')
+  assert.ok(selected >= 0 && selected < refresh && refresh < ticket &&
+    ticket < verify && verify < local && local < pending && pending < commit,
+    'capture the visible Owner epoch before any asynchronous credential or ledger work')
+  assert.match(configure, /let scope = try await XDriveIOSForegroundBackupIdentity.shared[\s\S]*?guard displayEpoch == uiEpoch,\s*XDriveIOSNativePhotoOwnerScope.matches\(login.owner, selected\)/)
+  assert.match(configure, /let pending = try await XDrivePhotoSyncLedger.shared[\s\S]*?guard displayEpoch == uiEpoch,\s*XDriveIOSNativePhotoOwnerScope.matches\(login.owner, selected\)/)
+  assert.match(configure, /store\.localStopGeneration == stopVersion,\s*displayEpoch == uiEpoch,\s*UIApplication.shared.applicationState == \.active/)
+  assert.match(configure, /\} catch \{\s*if displayEpoch == uiEpoch,\s*XDriveIOSNativePhotoOwnerScope.matches\(login.owner, selected\) \{\s*errorMessage =/)
+  assert.doesNotMatch(configure, /clearLedger|deleteReceipt|UploadSessionTransport|URLSession\(/)
+})
