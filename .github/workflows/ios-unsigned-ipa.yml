@@ -314,6 +314,9 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-files-upload-proof"
           node --test desktop/tests/ios-native-files-manual-upload.cjs
 
+      - name: Verify native Files revision-bound rename and trash
+        run: node --test desktop/tests/ios-native-files-single-mutation.cjs
+
       - name: Prepare native brand and home screen icon
         run: bash ios/scripts/prepare-assets.sh
 

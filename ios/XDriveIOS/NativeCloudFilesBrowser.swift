@@ -230,6 +230,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     @StateObject private var model = XDriveIOSNativeFilesPageModel()
     @StateObject private var exporter = XDriveIOSNativeFilesExportModel()
     @StateObject private var uploader = XDriveIOSNativeFilesManualUploadModel()
+    @StateObject private var mutator = XDriveIOSNativeFilesMutationModel()
     @State private var offset = 0
     @State private var queryDraft = ""
     @State private var activeQuery = ""
@@ -238,6 +239,9 @@ struct XDriveIOSNativeFilesBrowser: View {
     @State private var searchError: String?
     @State private var selectedFile: XDriveIOSNativeFilesEntry?
     @State private var quickLookURL: URL?
+    @State private var showingRename = false
+    @State private var showingTrashConfirm = false
+    @State private var renameDraft = ""
     @State private var showingCreateFolder = false
     @State private var showingFileImporter = false
     @State private var newFolderName = ""
@@ -299,6 +303,10 @@ struct XDriveIOSNativeFilesBrowser: View {
                 if let uploadStatus = uploader.status {
                     Text(uploadStatus).font(.footnote).foregroundStyle(.secondary)
                         .accessibilityIdentifier("native-ios-files-upload-status")
+                }
+                if let mutationStatus = mutator.status {
+                    Text(mutationStatus).font(.footnote).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("native-ios-files-mutation-status")
                 }
                 HStack {
                     Picker("排序", selection: $sort) {
@@ -469,7 +477,23 @@ struct XDriveIOSNativeFilesBrowser: View {
                                 .accessibilityIdentifier("native-ios-files-export-status")
                         }
                     }
-                    Text("重命名、复制、移动、删除仍未接通；原生预览须先下载到临时目录，并以系统支持的类型为准。")
+                    Section("单文件管理") {
+                        Button("重命名文件") {
+                            renameDraft = entry.node.name
+                            showingRename = true
+                        }
+                        .disabled(mutator.busy || uploader.busy || exporter.busy)
+                        .accessibilityIdentifier("native-ios-files-rename")
+                        Button("移入回收站", role: .destructive) {
+                            showingTrashConfirm = true
+                        }
+                        .disabled(mutator.busy || uploader.busy || exporter.busy)
+                        .accessibilityIdentifier("native-ios-files-trash")
+                        if let status = mutator.status {
+                            Text(status).font(.footnote).foregroundStyle(.secondary)
+                        }
+                    }
+                    Text("目录批量操作、复制和跨目录移动仍未接通；原生预览须先下载到临时目录，并以系统支持的类型为准。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 .navigationTitle("文件详情")
@@ -480,6 +504,32 @@ struct XDriveIOSNativeFilesBrowser: View {
                     }
                 }
                 .quickLookPreview($quickLookURL)
+                .alert("重命名文件", isPresented: $showingRename) {
+                    TextField("新文件名", text: $renameDraft)
+                    Button("保存") {
+                        mutator.perform(node: entry.node, kind: .rename(renameDraft),
+                                        login: login) {
+                            selectedFile = nil
+                            reload(resetOffset: true)
+                        }
+                    }
+                    Button("取消", role: .cancel) {}
+                } message: {
+                    Text("服务器会验证当前文件版本和同名冲突；结果不确定时请先刷新。")
+                }
+                .confirmationDialog("将“\(entry.node.name)”移入回收站？",
+                                    isPresented: $showingTrashConfirm,
+                                    titleVisibility: .visible) {
+                    Button("确认移入回收站", role: .destructive) {
+                        mutator.perform(node: entry.node, kind: .trash,
+                                        login: login) {
+                            selectedFile = nil
+                            reload(resetOffset: true)
+                        }
+                    }
+                } message: {
+                    Text("这会修改服务器上的文件。提交后如网络中断，请先刷新核对，不要盲目重复操作。")
+                }
             }
         }
         .onAppear { reload() }
@@ -491,6 +541,9 @@ struct XDriveIOSNativeFilesBrowser: View {
         .onDisappear {
             uploader.invalidate()
             showingFileImporter = false
+            mutator.invalidate()
+            showingRename = false
+            showingTrashConfirm = false
         }
         .onDisappear {
             createEpoch = UUID()
@@ -506,6 +559,9 @@ struct XDriveIOSNativeFilesBrowser: View {
             quickLookURL = nil
             exporter.invalidate()
             uploader.invalidate()
+            mutator.invalidate()
+            showingRename = false
+            showingTrashConfirm = false
             showingFileImporter = false
             createEpoch = UUID()
             createTask?.cancel()
