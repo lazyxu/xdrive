@@ -153,7 +153,8 @@ internal fun UnifiedLoginForm(
     actions: @Composable () -> Unit,
 ) {
     var server by remember(state.server) { mutableStateOf(state.server) }
-    var lanIp by remember(state.server) { mutableStateOf(state.route.lanIp) }
+    // Selecting another saved LAN route for the *same* Server must update UI.
+    var lanIp by remember(state.server, state.route.lanIp) { mutableStateOf(state.route.lanIp) }
     var username by remember(state.username) { mutableStateOf(state.username) }
     var password by remember(state.server, state.route.lanIp, state.username) { mutableStateOf("") }
     var keepLogin by remember { mutableStateOf(true) }
