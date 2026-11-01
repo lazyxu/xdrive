@@ -160,3 +160,44 @@ test('confirmed original temporary readback outage retains cursor instead of an 
   assert.match(failed, /else if retryablePreflightNetworkFailure\(error\) \{[\s\S]*?await resubmitOnlyIfStillApproved/)
   assert.doesNotMatch(confirmed + classification, /ledger\.confirmReceipt|writer\.uploadPrepared|recordResult\(/)
 })
+
+
+test('temporary background grant proof does not masquerade as revoked Owner or pending receipt', () => {
+  const vault = read('ios/XDriveIOS/ApprovedBackgroundPhotoVault.swift')
+  const auth = read('ios/XDriveIOS/OriginalOwnerAuthorization.swift')
+  const runner = read('ios/XDriveIOS/ForegroundPhotoBackupMVP.swift')
+  const task = read('ios/XDriveIOS/BackgroundPhotoTask.swift')
+  const proof = vault.slice(vault.indexOf('func proveInBackground()'),
+    vault.indexOf('private func base()', vault.indexOf('func proveInBackground()')))
+  const bgVerify = auth.slice(auth.indexOf('case .background(let approved):'),
+    auth.indexOf('func transport('))
+  const transient = runner.slice(runner.indexOf('private static func isTransientConfirmedReadbackFailure('),
+    runner.indexOf('private enum StillOutcome'))
+  const retry = task.slice(task.indexOf('private static func retryablePreflightNetworkFailure('),
+    task.indexOf('private static func resubmitOnlyIfStillApproved('))
+  const confirmed = runner.slice(runner.indexOf('case .confirmed:'),
+    runner.indexOf('case .prepared:', runner.indexOf('case .confirmed:')))
+  assert.match(vault, /case transientServerStatus\(Int\)/)
+  assert.match(proof, /guard http\.statusCode == 200 else \{/)
+  assert.match(proof, /http\.statusCode == 408 \|\| http\.statusCode == 429 \|\|\s*\(500\.\.\.599\)\.contains\(http\.statusCode\)/)
+  assert.match(proof, /throw XDriveIOSPhotoBGVaultFailure\.transientServerStatus\(http\.statusCode\)/)
+  assert.match(proof, /throw XDriveIOSPhotoBGVaultFailure\.serverRejected/)
+  assert.ok(proof.indexOf('throw XDriveIOSPhotoBGVaultFailure.transientServerStatus') <
+    proof.indexOf('throw XDriveIOSPhotoBGVaultFailure.serverRejected'))
+  assert.match(bgVerify, /guard approved\.matches\(owner\) else \{\s*throw XDrivePhotoSyncLedgerError\.identityMismatch/)
+  assert.match(bgVerify, /let verified = try await XDriveIOSApprovedPhotoBGVault\.shared\s*\.proveInBackground\(\)/)
+  assert.doesNotMatch(bgVerify, /let verified = try\? await/)
+  assert.match(bgVerify, /verified\.grantID == approved\.grantID/)
+  assert.match(bgVerify, /verified\.deviceID == approved\.deviceID/)
+  assert.match(bgVerify, /verified\.instanceID == owner\.instanceID/)
+  const wholeRun = runner.slice(runner.indexOf('private static func mustAbortRun('),
+    runner.indexOf('private static func isTransientConfirmedReadbackFailure('))
+  assert.match(wholeRun, /error is XDriveIOSPhotoBGVaultFailure/)
+  assert.match(transient, /case \.transientServerStatus\(let code\) = grant/)
+  assert.match(retry, /case \.transientServerStatus\(let code\) = grant/)
+  assert.match(confirmed, /if Self\.isTransientConfirmedReadbackFailure\(error\) \{ throw error \}/)
+  assert.match(confirmed, /return \.requiresReview/)
+  assert.match(task, /if beganOriginalWrite, let attemptedOwner \{[\s\S]*?BGOriginalWindowStore\.shared\.pause/)
+  assert.doesNotMatch(proof + bgVerify + retry,
+    /URLSessionConfiguration\.background|createUploadSession|confirmReceipt|window\.webkit|localStorage/)
+})
