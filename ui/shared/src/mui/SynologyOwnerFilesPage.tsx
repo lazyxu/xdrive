@@ -51,8 +51,12 @@ function supportsOwnerPreview(item: XDriveFileExplorerItem): boolean {
   if (item.kind !== 'file') return false
   if (xDriveFileSupportsTextPreview(item.name, item.kind)) return true
   if (typeof item.size !== 'number' || !Number.isSafeInteger(item.size) || item.size < 1) return false
+  const mime = xDriveSynologyPreviewMIME(item.name)
   return Boolean(xDriveSynologyPlaybackMIME(item.name) ||
-    (xDriveSynologyPreviewMIME(item.name) && item.size <= XDRIVE_SYNOLOGY_MEDIA_BLOB_MAX_BYTES))
+    // Large PDFs are streamed by the already authorized DSM CGI Range reader.
+    // Images still use a bounded full-SHA Blob; no arbitrary binary proxy.
+    mime === 'application/pdf' ||
+    (mime?.startsWith('image/') && item.size <= XDRIVE_SYNOLOGY_MEDIA_BLOB_MAX_BYTES))
 }
 
 function itemForExplorer(node: XDriveSynologyOwnerFileNode): XDriveFileExplorerItem {
@@ -284,6 +288,11 @@ export function XDriveSynologyOwnerFilesPage({
     onProgress?: XDriveByteProgressHandler,
   ) => {
     if ((kind === 'video' || kind === 'audio') && xDriveSynologyPlaybackMIME(item.name)) {
+      return xDriveSynologyLoadNativeMediaStream(client, item, signal)
+    }
+    if (kind === 'pdf' && typeof item.size === 'number' &&
+        item.size > XDRIVE_SYNOLOGY_MEDIA_BLOB_MAX_BYTES &&
+        xDriveSynologyPreviewMIME(item.name) === 'application/pdf') {
       return xDriveSynologyLoadNativeMediaStream(client, item, signal)
     }
     if ((kind !== 'image' && kind !== 'pdf') || !xDriveSynologyPreviewMIME(item.name)) {

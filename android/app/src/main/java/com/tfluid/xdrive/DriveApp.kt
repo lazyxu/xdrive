@@ -45,6 +45,7 @@ internal fun shouldHandleFilesBack(state: DriveState, editOpen: Boolean, batchCo
     state.hasActiveNativeTransfer() ||
     state.destinationKind != null || batchConfirmOpen || editOpen || state.selected != null ||
         state.filesPdfViewer != null || state.filesAudioViewer != null ||
+        state.filesTextViewer != null ||
         (state.screen == Screen.FILES &&
             (state.browseSelectionMode || state.filesSection != FilesSection.BROWSE || state.path.size > 1))
 
@@ -88,7 +89,7 @@ internal fun nativeGalleryFirstLandingAllowed(
     state.selected == null && state.fileUploadPickerParent == null &&
     state.fileExportPending == null &&
     state.filesPdfViewer == null && state.filesAudioViewer == null &&
-    state.canNavigateFiles()
+    state.filesTextViewer == null && state.canNavigateFiles()
 
 /**
  * Actual one-original request requires current Gallery, exact login epoch,
@@ -290,6 +291,11 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     var bd09ViewerReturnCamera by remember(
         state.nativeUiSessionId, state.server, state.username, state.galleryMapOpen
     ) { mutableStateOf<NativeBaiduCameraPose?>(null) }
+    // L2 focus is UI-only and survives Viewer unmount; leaving this Owner's
+    // Gallery map resets it. Changing size never changes the SDK map source.
+    var nativeMapFocused by remember(
+        state.nativeUiSessionId, state.server, state.username, state.galleryMapOpen,
+    ) { mutableStateOf(true) }
 
     // Preserve UI-only scroll state across Viewer -> Gallery, never across
     // leaving Gallery. The same user can log out/in against changed photo rows.
@@ -356,7 +362,8 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     }
     val photoViewerOpen = (state.screen == Screen.GALLERY && state.galleryViewer != null) ||
         (state.screen == Screen.FILES &&
-            (state.filesPdfViewer != null || state.filesAudioViewer != null))
+            (state.filesPdfViewer != null || state.filesAudioViewer != null ||
+                state.filesTextViewer != null))
     val nativeOverlay = nativeAuthenticated && !photoViewerOpen &&
         nativeNavigation.selected in setOf(NativeHomeTab.ALL, NativeHomeTab.DYNAMIC, NativeHomeTab.MINE)
     // Old native AccountMenu can still change a Controller route directly.
@@ -426,6 +433,15 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                 }
                 Screen.FILES -> nativeNavigation = nativeNavigation.select(tab)
                 else -> Unit
+            }
+            NativeHomeTab.DYNAMIC -> {
+                nativeNavigation = nativeNavigation.select(tab)
+                // A single tap resumes the last permitted native dynamic
+                // feature. It must not require opening a second summary button.
+                if (nativeNavigation.dynamicFeature == NativeDynamicFeature.TRANSFERS) {
+                    controller.refreshTransferRecoveryNotices()
+                    transferCenterOpen = true
+                }
             }
             else -> nativeNavigation = nativeNavigation.select(tab)
         }
@@ -649,6 +665,8 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                         controller, state.filesPdfBytes)
                 } else if (state.filesAudioViewer != null) {
                     NativeFilesAudioViewer(requireNotNull(state.filesAudioViewer), controller)
+                } else if (state.filesTextViewer != null) {
+                    NativeFilesTextViewer(requireNotNull(state.filesTextViewer), state, controller)
                 } else filesSaveable.SaveableStateProvider(filesStateKey) {
                     Files(state, controller, filesView,
                         onRename = { filesEdit = FilesEditIntent(FilesEditKind.RENAME, it) },
@@ -696,6 +714,8 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                                 LazyListState()
                             },
                             savedCamera = bd09ViewerReturnCamera,
+                            focused = nativeMapFocused,
+                            onFocusChange = { nativeMapFocused = it },
                             onCameraSnapshot = { pose ->
                                 val latest = controller.state.value
                                 if (latest.screen == Screen.GALLERY && latest.galleryMapOpen &&
@@ -816,8 +836,10 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                             onClick = {
                                 nativeNavigation = nativeNavigation.openDynamic(feature)
                                 dynamicPickerOpen = false
-                                if (feature == NativeDynamicFeature.TRANSFERS)
+                                if (feature == NativeDynamicFeature.TRANSFERS) {
                                     controller.refreshTransferRecoveryNotices()
+                                    transferCenterOpen = true
+                                }
                             },
                             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                                 .testTag("native-dynamic-choice-${feature.name.lowercase()}"),

@@ -132,6 +132,16 @@ struct XDriveIOSNativeFilesViewer: View {
                         XDriveIOSNativeZoomablePhotoView(image: image)
                             .onNavigateSwipe { move($0) }
                             .accessibilityLabel("图片，可双指缩放或双击")
+                    case .imageThumbnail(let image):
+                        VStack(spacing: 0) {
+                            XDriveIOSNativeZoomablePhotoView(image: image)
+                                .onNavigateSwipe { move($0) }
+                                .accessibilityLabel("低清缩略图，可双指缩放")
+                            Text("当前只显示已索引的云端缩略图（低清）。查看原件请返回文件列表，通过“更多”→“下载并准备导出”。")
+                                .font(.caption).foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                                .padding(8)
+                        }
                     case .video:
                         if let player {
                             observingPlayer(
@@ -389,10 +399,14 @@ struct XDriveIOSNativeFilesViewer: View {
                     failure = "当前格式不支持原生预览。可以在此下载原件并使用其他 App（导出上限 512 MiB）。"
                     exportFallbackEligible = true
                 case .tooLarge:
+                    failure = "文件超过本机预览上限。可返回列表，通过「管理」下载并导出原件（导出上限 512 MiB）。"
                     failure = "文件超过本机预览上限。可以在此下载原件并使用其他 App（导出上限 512 MiB）。"
                     exportFallbackEligible = true
                 case .malformed:
                     failure = "原生预览无法解码当前文件。可以尝试导出原件至其他 App（导出上限 512 MiB）。"
+                    exportFallbackEligible = true
+                case .noThumbnail:
+                    failure = "原图过大或格式无法解码，且没有可用的云端缩略图。可以在此下载原件并使用其他 App（导出上限 512 MiB）。"
                     exportFallbackEligible = true
                 case .changed, .invalidOwner, .response(401), .response(403), .response(404):
                     failure = "文件版本或当前账户已变化，请返回目录重新读取。"
