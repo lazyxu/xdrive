@@ -3775,6 +3775,64 @@ class DriveControllerTest {
         c.close()
     }
 
+    @Test fun clearSavedLoginAfterOfflineRestoreRevokesLocalSessionAndHints() = runTest {
+        val server = ServerAddress.parse("https://drive.example").url
+        val vault = TestVault().apply {
+            value = SavedDriveSession(server, "owner", "saved-refresh")
+        }
+        val api = Service().apply { refreshFailure = ApiException(503, "offline") }
+        val cleared = mutableListOf<String>()
+        val c = DriveController(this, { api }, initialServer = server,
+            initialUsername = "owner", sessionPersistence = vault,
+            clearLoginDraft = { origin -> cleared += origin; true })
+        c.restoreSession()
+        runCurrent()
+        assertEquals(Screen.CONNECT, c.state.value.screen)
+        assertTrue(c.state.value.savedSessionRestoreRetryAvailable)
+        c.clearSavedLogin()
+        assertEquals(Screen.CONNECT, c.state.value.screen)
+        assertEquals("", c.state.value.server)
+        assertEquals("", c.state.value.username)
+        assertNull(vault.value)
+        assertEquals(listOf(server), cleared)
+        c.restoreSession()
+        runCurrent()
+        assertEquals("forgotten refresh token cannot replay", 1, api.refreshed)
+        c.close()
+    }
+
+    @Test fun failedEncryptedCredentialDeletionKeepsLoginHintsAndBlocksForget() = runTest {
+        val server = ServerAddress.parse("https://drive.example").url
+        val vault = object : DriveSessionPersistence {
+            override fun load() = SavedDriveSession(server, "owner", "saved-refresh")
+            override fun save(server: String, session: AuthSession) = Unit
+            override fun clear(): Unit = error("Keystore write failed")
+        }
+        var draftCleared = false
+        val c = DriveController(this, { Service() }, initialServer = server,
+            initialUsername = "owner", sessionPersistence = vault,
+            clearLoginDraft = { draftCleared = true; true })
+        c.clearSavedLogin()
+        assertEquals(server, c.state.value.server)
+        assertEquals("owner", c.state.value.username)
+        assertFalse(draftCleared)
+        assertNotNull(c.state.value.error)
+        c.close()
+    }
+
+    @Test fun activeOwnerCannotForgetLocalLoginWithoutExplicitLogout() = runTest {
+        val vault = TestVault()
+        val c = DriveController(this, { Service() }, sessionPersistence = vault)
+        c.connectAndLogin("https://drive.example", false, "", "owner", "pw", true)
+        runCurrent()
+        assertEquals(Screen.FILES, c.state.value.screen)
+        assertNotNull(vault.value)
+        c.clearSavedLogin()
+        assertEquals(Screen.FILES, c.state.value.screen)
+        assertNotNull(vault.value)
+        c.close()
+    }
+
     @Test fun offlineRestoreKeepsVaultButRevokedRefreshReturnsToLogin() = runTest {
         val vault = TestVault().apply {
             value = SavedDriveSession("https://drive.example/", "owner", "saved-refresh")

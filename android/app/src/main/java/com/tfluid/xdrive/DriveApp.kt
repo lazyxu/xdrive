@@ -998,6 +998,7 @@ internal fun AccountMenu(state: DriveState, controller: DriveController, checkUp
     fileView: FileViewMode? = null, onFileViewChange: (FileViewMode) -> Unit = {},
     onCreateFolder: (() -> Unit)? = null, onUpload: (() -> Unit)? = null) {
     var expanded by remember(state.screen) { mutableStateOf(false) }
+    var clearSavedLoginConfirm by remember(state.screen) { mutableStateOf(false) }
     var arrangeOpen by remember(state.screen, state.server, state.username) {
         mutableStateOf(false)
     }
@@ -1104,7 +1105,39 @@ internal fun AccountMenu(state: DriveState, controller: DriveController, checkUp
                 leadingIcon = { Icon(painterResource(R.drawable.xd_logout), null) }, onClick = { expanded = false; controller.logout() })
             if (state.screen != Screen.CONNECT) DropdownMenuItem(text = { Text("更换服务器") }, leadingIcon = { Icon(painterResource(R.drawable.xd_settings), null) },
                 onClick = { expanded = false; controller.changeServer() })
+            if (state.screen in setOf(Screen.CONNECT, Screen.LOGIN) &&
+                (state.server.isNotBlank() || state.username.isNotBlank())) {
+                DropdownMenuItem(
+                    text = { Text("清除本机保存的登录资料") },
+                    modifier = Modifier.testTag("auth-clear-saved-login"),
+                    enabled = !state.loading,
+                    onClick = {
+                        expanded = false
+                        clearSavedLoginConfirm = true
+                    })
+            }
         }
+    }
+    if (clearSavedLoginConfirm && state.screen in setOf(Screen.CONNECT, Screen.LOGIN)) {
+        AlertDialog(
+            onDismissRequest = { clearSavedLoginConfirm = false },
+            modifier = Modifier.testTag("auth-clear-saved-login-confirm"),
+            title = { Text("确认清除本机登录资料？") },
+            text = { Text("将清除本机 Keystore 保存的会话和最近填写的服务器、内网 IP、用户名。不会删除照片或备份记录；远端会话撤销未确认。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    clearSavedLoginConfirm = false
+                    controller.clearSavedLogin()
+                }, modifier = Modifier.testTag("auth-clear-saved-login-submit")) {
+                    Text("确认清除")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { clearSavedLoginConfirm = false }) {
+                    Text("取消")
+                }
+            },
+        )
     }
     if (arrangeOpen && state.screen == Screen.FILES && fileView != null) {
         AlertDialog(

@@ -11,6 +11,7 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
     @State private var logoutWarning: String?
     @State private var signingOut = false
     @State private var restoreFinished = false
+    @State private var clearSavedLoginConfirm = false
     @State private var emergencyStopBusy = false
     @State private var emergencyStopNotice: String?
 
@@ -193,6 +194,23 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
             .buttonStyle(.borderedProminent)
             .disabled(model.busy)
             .accessibilityIdentifier("native-ios-login-submit")
+
+            Button("清除本机保存的登录资料", role: .destructive) {
+                clearSavedLoginConfirm = true
+            }
+            .accessibilityIdentifier("native-ios-clear-saved-login")
+            .confirmationDialog(
+                "确认清除本机登录资料？",
+                isPresented: $clearSavedLoginConfirm,
+                titleVisibility: .visible
+            ) {
+                Button("确认清除本机登录", role: .destructive) {
+                    backup.cancel()
+                    model.clearSavedLogin()
+                }
+            } message: {
+                Text("仅清除本机 Keychain 登录会话、服务器、内网 IP、用户名和当前密码；不会删除照片或备份记录，也不能保证远端立即撤销会话。")
+            }
 
             Text("仅使用原生 HTTPS 会话；不会读取或复制 PWA Cookie。")
                 .font(.caption)

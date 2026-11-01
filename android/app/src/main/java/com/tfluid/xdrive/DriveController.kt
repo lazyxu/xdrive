@@ -239,6 +239,7 @@ class DriveController(
     private val transferClockMillis: () -> Long = { System.nanoTime() / 1_000_000L },
     initialUsername: String = "",
     private val saveLoginDraft: (String, String, String) -> Unit = { _, _, _ -> },
+    private val clearLoginDraft: (String) -> Boolean = { true },
 ) : Closeable {
     private val mutableState = MutableStateFlow(DriveState(server = initialServer, username = initialUsername, allowHttp = initialAllowHttp,
         route = savedRoute(initialServer, initialAllowHttp)))
@@ -4150,6 +4151,38 @@ class DriveController(
                             else state.value.nativePhotoBatchRunning)
             }
         }
+    }
+
+    /** Explicit signed-out local login cleanup, not an implicit logout.
+     * Never claim that an inaccessible saved refresh credential is gone.
+     * The existing backup uncertainty journal remains untouched.
+     */
+    fun clearSavedLogin() {
+        val previous = state.value
+        if (previous.screen !in setOf(Screen.CONNECT, Screen.LOGIN) ||
+            previous.loading || session != null) return
+        try {
+            sessionPersistence?.clear()
+        } catch (_: Exception) {
+            mutableState.value = previous.copy(
+                error = "无法确认系统安全存储中的登录凭据已清除；请解锁设备后重试。")
+            return
+        }
+        val cleared = runCatching { clearLoginDraft(previous.server) }.getOrDefault(false)
+        if (!cleared) {
+            mutableState.value = state.value.copy(
+                savedSessionRestoreRetryAvailable = false,
+                error = "已清除本机会话凭据，但无法确认服务器、IP 和用户名填写记录已删除。")
+            return
+        }
+        val oldApi = api
+        invalidate()
+        api = null
+        address = null
+        session = null
+        keepLogin = false
+        (oldApi as? Closeable)?.close()
+        mutableState.value = DriveState(screen = Screen.CONNECT)
     }
 
     fun logout() = endSession(changeServer = false)
