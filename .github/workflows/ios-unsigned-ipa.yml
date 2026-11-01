@@ -305,6 +305,43 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-files-viewer-policy"
           node --test desktop/tests/ios-native-files-viewer.cjs
 
+      - name: Verify native Files folder creation name and Owner-scoped POST
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeFilesFolderNamePolicy.swift \
+            ios/tests/NativeFilesFolderNameChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-folder-check"
+          "$RUNNER_TEMP/xdrive-ios-files-folder-check"
+          node --test desktop/tests/ios-native-files-create-folder.cjs desktop/tests/ios-native-files-download-export.cjs
+
+      - name: Verify native Files manual original receipt and Files picker integration
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeFilesUploadConfirmationPolicy.swift \
+            ios/tests/NativeFilesUploadEvidenceChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-upload-proof"
+          "$RUNNER_TEMP/xdrive-ios-files-upload-proof"
+          node --test desktop/tests/ios-native-files-manual-upload.cjs
+
+      - name: Verify native Files revision-bound rename and trash
+        run: node --test desktop/tests/ios-native-files-single-mutation.cjs
+
+      - name: Verify native Files real destination selection and single-file copy/move
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeCloudFilesPolicy.swift \
+            ios/XDriveIOS/NativeFilesDestinationReceiptPolicy.swift \
+            ios/tests/NativeFilesDestinationReceiptChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-destination-check"
+          "$RUNNER_TEMP/xdrive-ios-files-destination-check"
+          node --test desktop/tests/ios-native-files-destination.cjs
+
+      - name: Verify native Files Viewer and management action integration
+        run: node --test desktop/tests/ios-native-files-management-integration.cjs
+
       - name: Prepare native brand and home screen icon
         run: bash ios/scripts/prepare-assets.sh
 

@@ -21,7 +21,7 @@ private final class XDriveIOSNativeFilesRejectRedirects: NSObject, URLSessionTas
 /// Read-only use of the existing Server Node and Search endpoints. Each page
 /// uses a short-lived, in-memory native Owner bearer; no alternate writer,
 /// WebView cookie or implicit File Provider rights are introduced.
-private struct XDriveIOSNativeFilesReader {
+struct XDriveIOSNativeFilesReader {
     let owner: XDriveNativeOwnerRoot
     let accessToken: String
 
@@ -125,6 +125,7 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
     @Published private(set) var entries: [XDriveIOSNativeFilesEntry] = []
     @Published private(set) var total = 0
     @Published private(set) var loading = false
+    @Published private(set) var verifiedPage = false
     @Published private(set) var errorMessage: String?
 
     private var epoch = UUID()
@@ -136,6 +137,7 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
         job = nil
         entries = []
         total = 0
+        verifiedPage = false
         loading = false
         errorMessage = nil
     }
@@ -191,6 +193,7 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
                 else { return }
                 self?.entries = found
                 self?.total = count
+                self?.verifiedPage = true
                 self?.errorMessage = nil
             } catch is CancellationError {
                 // Navigation and tab changes cancel disposable reads only.
@@ -198,6 +201,7 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
                 guard self?.epoch == ticket else { return }
                 self?.entries = []
                 self?.total = 0
+                self?.verifiedPage = false
                 if let failure = error as? XDriveIOSNativeFilesReadError {
                     switch failure {
                     case .server(401), .server(403), .server(404), .invalidScope:
@@ -215,14 +219,20 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
     }
 }
 
+private struct XDriveIOSNativeFilesManagementIntent: Identifiable {
+    let id = UUID()
+    let owner: XDriveNativeOwnerRoot
+    let file: XDriveIOSNativeFilesNode?
+}
+
 private struct XDriveIOSNativeFilesFolder: Hashable {
     let id: UInt64
     let name: String
 }
 
 /// iOS fixed Files tab: genuine native bounded Owner directory navigation
-/// and whole-library search. File previews reuse a separate, read-only native
-/// Viewer. Uploads, downloads and mutations remain unavailable.
+/// and whole-library search. File previews use the separate native L3 Viewer;
+/// Owner-bound creation, transfers and mutations live in the native action sheet.
 struct XDriveIOSNativeFilesBrowser: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     @Environment(\.scenePhase) private var phase
@@ -234,6 +244,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     @State private var order = "asc"
     @State private var searchError: String?
     @State private var selectedFile: XDriveIOSNativeFilesEntry?
+    @State private var managementIntent: XDriveIOSNativeFilesManagementIntent?
     @State private var selectedOwner: XDriveNativeOwnerRoot?
     @State private var returnOwner: XDriveNativeOwnerRoot?
     @State private var lastViewedFile: XDriveIOSNativeFilesNode?
@@ -319,19 +330,33 @@ struct XDriveIOSNativeFilesBrowser: View {
                     .accessibilityIdentifier("native-ios-files-folder-\(entry.node.id)")
                     .id(entry.node.id)
                 } else {
-                    Button {
-                        guard !model.loading, let owner = login.owner,
-                              model.entries.contains(where: { $0.node == entry.node })
-                        else { return }
-                        selectedOwner = owner
-                        returnOwner = owner
-                        lastViewedFile = entry.node
-                        selectedFile = entry
-                    } label: {
-                        row(entry)
+                    HStack(spacing: 8) {
+                        Button {
+                            guard !model.loading, model.verifiedPage,
+                                  let owner = login.owner,
+                                  model.entries.contains(where: { $0.node == entry.node })
+                            else { return }
+                            selectedOwner = owner
+                            returnOwner = owner
+                            lastViewedFile = entry.node
+                            selectedFile = entry
+                        } label: {
+                            row(entry)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("native-ios-files-file-\(entry.node.id)")
+                        Button {
+                            openManagement(for: entry.node)
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                                .frame(minWidth: 44, minHeight: 44)
+                        }
+                        .accessibilityLabel("管理 \(entry.node.name)")
+                        .accessibilityIdentifier("native-ios-files-more-\(entry.node.id)")
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("native-ios-files-file-\(entry.node.id)")
+                    .contextMenu {
+                        Button("文件操作") { openManagement(for: entry.node) }
+                    }
                     .id(entry.node.id)
                 }
             }
@@ -366,12 +391,38 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
+                Button { openManagement(for: nil) } label: {
+                    Label("文件夹操作", systemImage: "folder.badge.gearshape")
+                }
+                .disabled(model.loading || !model.verifiedPage ||
+                          login.owner == nil || !activeQuery.isEmpty)
+                .accessibilityIdentifier("native-ios-files-folder-actions")
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
                     reload()
                 } label: {
                     Label("刷新", systemImage: "arrow.clockwise")
                 }
                 .accessibilityIdentifier("native-ios-files-refresh")
+            }
+        }
+        .sheet(item: $managementIntent, onDismiss: {
+            reload()
+        }) { intent in
+            if XDriveIOSNativePhotoOwnerScope.matches(login.owner, intent.owner) {
+                XDriveIOSNativeFilesManagementPanel(
+                    login: login, expectedOwner: intent.owner,
+                    folderID: folder?.id ?? intent.owner.rootNodeID,
+                    folderName: folder?.name,
+                    file: intent.file
+                ) {
+                    managementIntent = nil
+                    reload()
+                }
+            } else {
+                Text("当前账户已变化，请关闭并重新选择文件。")
+                    .foregroundStyle(.secondary)
             }
         }
         .fullScreenCover(item: $selectedFile, onDismiss: {
@@ -407,6 +458,7 @@ struct XDriveIOSNativeFilesBrowser: View {
         .onAppear { reload() }
         .onDisappear { if selectedFile == nil { model.invalidate() } }
         .onChange(of: login.owner) { _ in
+            managementIntent = nil
             selectedFile = nil
             selectedOwner = nil
             returnOwner = nil
@@ -450,6 +502,18 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
         .contentShape(Rectangle())
         .frame(minHeight: 44)
+    }
+
+    private func openManagement(for node: XDriveIOSNativeFilesNode?) {
+        guard !model.loading, model.verifiedPage, selectedFile == nil,
+              let owner = login.owner,
+              node != nil || activeQuery.isEmpty else { return }
+        if let node {
+            guard model.entries.contains(where: { $0.node == node }) else { return }
+        }
+        managementIntent = XDriveIOSNativeFilesManagementIntent(
+            owner: owner, file: node
+        )
     }
 
     private func submitSearch() {
