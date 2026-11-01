@@ -4,6 +4,13 @@ import (
 	"errors"
 )
 
+// The full Desktop Agent may continue without optional local IPC, as before.
+// Backup-only on DSM cannot be used without it: a still-running scheduler
+// would be invisible to the authenticated CGI and Package Center users.
+func agentIPCStartupPermitsWorker(backupOnly bool, ipcErr error) bool {
+	return ipcErr == nil || !backupOnly
+}
+
 // agentBackupOnlyRequested selects an Agent-only runtime: keep the original
 // Desktop invocation unchanged and reject malformed headless invocations.
 func agentBackupOnlyRequested(args []string) (bool, error) {

@@ -256,7 +256,8 @@ test('native automatic scan stops for revoked Owner, sealed ledger or revoked Ph
     backup.indexOf('    private enum StillOutcome'))
   const callback = run.slice(run.indexOf('let outcome = try await uploadOrVerifyOriginal('),
     run.indexOf('await scanner.reset()'))
-  const abort = callback.indexOf('if Self.mustAbortRun(after: error) { throw error }')
+  const abort = callback.indexOf('if Self.isTransientConfirmedReadbackFailure(error) ||')
+  assert.match(callback, /if Self\.isTransientConfirmedReadbackFailure\(error\) \|\|\s*Self\.mustAbortRun\(after: error\) \{ throw error \}/)
   const countUnavailable = callback.indexOf('report.unavailable += 1')
   assert.ok(abort >= 0 && countUnavailable > abort,
     'global trust failure must escape before counting an ordinary unavailable original')
@@ -271,3 +272,42 @@ test('native automatic scan stops for revoked Owner, sealed ledger or revoked Ph
   assert.match(backup, /await scanner\.reset\(\)\s*throw error/,
     'failed run must dispose native PhotoKit snapshot rather than resume a stale cursor')
 })
+
+test('manual original backup continues the same bounded window before visiting older assets', () => {
+  const store = read('ios/XDriveIOS/PhotoAutoScheduleStore.swift')
+  const policy = read('ios/XDriveIOS/PhotoAutoSchedulePolicy.swift')
+  const epoch = read('ios/XDriveIOS/PhotoKitLibraryEpoch.swift')
+  const start = controller.slice(controller.indexOf('    private func start('))
+  const manual = start.slice(start.indexOf('let window: Int'),
+    start.indexOf('guard let offset = XDrivePhotoBackupScanWindow.offset('))
+  const receipt = start.slice(start.indexOf('self.progress = result'),
+    start.indexOf('self.message = "本轮确认新增'))
+  const refresh = controller.slice(controller.indexOf('    func refresh(owner:'),
+    controller.indexOf('    /// A receipt review'))
+  assert.match(controller, /@Published private\(set\) var manualNextWindow = 0/)
+  assert.match(controller, /private var manualLibraryEpoch: Data\?/)
+  assert.match(controller, /private var manualAuthorizationRaw: Int\?/)
+  assert.match(refresh, /if !unchanged \{\s*displayEpoch = UUID\(\)\s*manualNextWindow = 0\s*manualLibraryEpoch = nil\s*manualAuthorizationRaw = nil/)
+  assert.match(manual, /XDriveIOSPhotoKitLibraryEpoch\.capture\(\)/)
+  assert.match(manual, /XDrivePhotoCursorEpochPolicy\.trustedWindow\(/)
+  assert.match(manual, /requested: self\.manualNextWindow/)
+  assert.match(manual, /tokenUnchanged: XDriveIOSPhotoKitLibraryEpoch\.matches\(/)
+  assert.match(manual, /previousAuthorization: self\.manualAuthorizationRaw/)
+  assert.match(manual, /self\.manualNextWindow = window/)
+  assert.match(manual, /manualStartEpoch = epoch/)
+  assert.match(receipt, /if kind == \.automatic \{\s*self\.schedule = try XDriveIOSPhotoAutoScheduleStore\.shared\.recordResult/)
+  assert.match(receipt, /else if let initial = manualStartEpoch \{/)
+  assert.match(receipt, /let completed = try XDriveIOSPhotoKitLibraryEpoch\.capture\(\)/)
+  assert.match(receipt, /self\.manualNextWindow = unchanged\s*\? XDriveIOSPhotoAutoSchedulePolicy\.nextWindow\(/)
+  assert.match(receipt, /needsReview: result\.stoppedForReview \|\| result\.needsReview > 0/)
+  assert.match(receipt, /self\.manualLibraryEpoch = completed\.serialized/)
+  assert.match(receipt, /self\.manualAuthorizationRaw = completed\.authorization/)
+  assert.match(ui, /native-ios-photos-manual-window/)
+  assert.match(ui, /native-ios-photos-manual-coverage/)
+  assert.match(ui, /不代表全部已备份/)
+  assert.match(policy, /guard scanned == capacity, uploaded <= maxNewFiles/)
+  assert.match(epoch, /currentChangeToken/)
+  assert.doesNotMatch(manual + receipt, /store\.configure|SecItemAdd|UploadSessionTransport|URLSession/)
+  assert.doesNotMatch(store, /manualNextWindow|manualLibraryEpoch/,
+    'manual progress stays ephemeral, never silently advances the saved automatic schedule')
+});

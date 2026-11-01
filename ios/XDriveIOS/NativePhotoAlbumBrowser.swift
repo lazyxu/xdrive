@@ -467,13 +467,14 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
 /// Photos-first list of local smart/user albums. Entries come from the
 /// existing 32-at-a-time PhotoKit album pager, never a 100k-sized array.
 struct XDriveIOSNativePhotoAlbumsScreen: View {
+    // Parent-owned route hint, never a PhotoKit album ID.
+    @Binding var savedOffset: Int
     @Environment(\.scenePhase) private var phase
     @StateObject private var libraryMonitor = XDriveIOSNativeAlbumChangeMonitor()
     @State private var page: XDriveLocalPhotoAlbumPage?
     @State private var permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @State private var loading = false
     @State private var error: String?
-    @State private var offset = 0
     @State private var epoch = UUID()
     @State private var task: Task<Void, Never>?
 
@@ -524,7 +525,7 @@ struct XDriveIOSNativePhotoAlbumsScreen: View {
                 if loading { ProgressView("读取已授权相册…") }
                 if let error {
                     Text(error).foregroundStyle(.red)
-                    Button("从第一页重试") { offset = 0; reload() }
+                    Button("从第一页重试") { savedOffset = 0; reload() }
                 }
                 Button("刷新相册") { reload() }
                     .disabled(loading || permission == .denied || permission == .restricted)
@@ -558,7 +559,7 @@ struct XDriveIOSNativePhotoAlbumsScreen: View {
         permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
         invalidate()
         guard permission == .authorized || permission == .limited else { return }
-        load(offset: offset)
+        load(offset: savedOffset)
     }
 
     private func load(offset requestedOffset: Int) {
@@ -567,13 +568,44 @@ struct XDriveIOSNativePhotoAlbumsScreen: View {
         loading = true
         task = Task { @MainActor in
             do {
-                let page = try await XDriveLocalPhotoAlbumPager.readPage(offset: requestedOffset)
+                // Saved 32-slot offsets may become invalid after album deletion.
+                // Recheck the currently authorized index, never stale IDs.
+                var page: XDriveLocalPhotoAlbumPage
+                do {
+                    page = try await XDriveLocalPhotoAlbumPager.readPage(
+                        offset: requestedOffset
+                    )
+                } catch XDriveLocalPhotoAlbumFailure.invalidRange {
+                    let first = try await XDriveLocalPhotoAlbumPager.readPage(offset: 0)
+                    try Task.checkCancellation()
+                    let bounded = XDriveIOSNativeAlbumDirectoryCursorPolicy.clamp(
+                        requested: requestedOffset, currentTotal: first.total
+                    )
+                    if bounded == 0 {
+                        page = first
+                    } else {
+                        page = try await XDriveLocalPhotoAlbumPager.readPage(
+                            offset: bounded
+                        )
+                    }
+                }
+                try Task.checkCancellation()
+                if requestedOffset > 0 && page.total > 0 && page.items.isEmpty {
+                    let bounded = XDriveIOSNativeAlbumDirectoryCursorPolicy.clamp(
+                        requested: requestedOffset, currentTotal: page.total
+                    )
+                    if bounded != page.offset {
+                        page = try await XDriveLocalPhotoAlbumPager.readPage(
+                            offset: bounded
+                        )
+                    }
+                }
                 try Task.checkCancellation()
                 guard epoch == ticket, phase == .active,
                       PHPhotoLibrary.authorizationStatus(for: .readWrite) == permission
                 else { return }
                 self.page = page
-                offset = page.offset
+                savedOffset = page.offset
             } catch is CancellationError {
             } catch {
                 guard epoch == ticket else { return }

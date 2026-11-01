@@ -10,6 +10,8 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
     @Published private(set) var busy = false
     @Published private(set) var schedule: XDriveIOSPhotoAutoScheduleStore.State?
     @Published private(set) var progress: XDriveIOSPhotoBackupProgress?
+    // RAM-only manual first-pass position; never persists PhotoKit identities.
+    @Published private(set) var manualNextWindow = 0
     /// Read-only UI invalidation only after this Owner's original writer
     /// returns a Server-confirmed new Node receipt. Never asserts a write.
     struct ConfirmedOriginalUpdate: Equatable {
@@ -28,6 +30,8 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
     // render an old Owner's photo counts or terminal report after A -> B -> A.
     private var displayOwner: XDriveNativeOwnerRoot?
     private var displayEpoch = UUID()
+    private var manualLibraryEpoch: Data?
+    private var manualAuthorizationRaw: Int?
 
     func refresh(owner: XDriveNativeOwnerRoot?) {
         let unchanged: Bool
@@ -41,6 +45,9 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
         }
         if !unchanged {
             displayEpoch = UUID()
+            manualNextWindow = 0
+            manualLibraryEpoch = nil
+            manualAuthorizationRaw = nil
             progress = nil
             message = "未启动相册备份"
             errorMessage = nil
@@ -264,6 +271,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
 
                 let window: Int
                 let cloud: Bool
+                let manualStartEpoch: XDriveIOSPhotoKitLibraryEpoch.Snapshot?
                 if kind == .automatic {
                     guard let due = try XDriveIOSPhotoAutoScheduleStore.shared
                         .reserveDue(owner: selected) else {
@@ -272,16 +280,31 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     }
                     window = due.windowIndex
                     cloud = due.allowICloudOriginals
+                    manualStartEpoch = nil
                 } else {
-                    // Manual scan is always the first bounded 256-item window.
-                    window = 0
+                    // Manual and automatic passes share the same 256-slot
+                    // completion policy, but NOT the saved auto schedule.
+                    // An old positional index is unusable after Photos edits
+                    // or Full/Limited access changes; restart from the front.
+                    let epoch = try XDriveIOSPhotoKitLibraryEpoch.capture()
+                    window = XDrivePhotoCursorEpochPolicy.trustedWindow(
+                        requested: self.manualNextWindow,
+                        hasPriorToken: self.manualLibraryEpoch != nil,
+                        tokenUnchanged: XDriveIOSPhotoKitLibraryEpoch.matches(
+                            self.manualLibraryEpoch, as: epoch.token
+                        ),
+                        previousAuthorization: self.manualAuthorizationRaw,
+                        currentAuthorization: epoch.authorization
+                    )
+                    self.manualNextWindow = window
                     cloud = allowICloud
+                    manualStartEpoch = epoch
                 }
                 guard let offset = XDrivePhotoBackupScanWindow.offset(for: window)
                 else { throw XDriveIOSPhotoAutoScheduleError.persistenceUnavailable }
                 self.message = kind == .automatic
                     ? "自动增量备份正在检查第 \(window + 1) 段…"
-                    : "手动备份正在检查已授权相册…"
+                    : "手动备份正在检查第 \(window + 1) 段…"
                 let result = try await XDriveIOSForegroundPhotoBackupMVP(
                     owner: selected, accessToken: verified.accessToken
                 ).run(allowICloudOriginals: cloud, startOffset: offset) { [weak self] value in
@@ -301,6 +324,27 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     self.schedule = try XDriveIOSPhotoAutoScheduleStore.shared.recordResult(
                         owner: selected, progress: result
                     )
+                } else if let initial = manualStartEpoch {
+                    // Never advance a manual cursor if PhotoKit changed while
+                    // an original was staged/uploaded. Repeat a partial
+                    // 20-upload-cap window; wrap only at the authorized end.
+                    let completed = try XDriveIOSPhotoKitLibraryEpoch.capture()
+                    let unchanged = XDrivePhotoCursorEpochPolicy.canResume(
+                        hasPriorToken: true,
+                        tokenUnchanged: XDriveIOSPhotoKitLibraryEpoch.matches(
+                            initial.serialized, as: completed.token
+                        ),
+                        previousAuthorization: initial.authorization,
+                        currentAuthorization: completed.authorization
+                    )
+                    self.manualNextWindow = unchanged
+                        ? XDriveIOSPhotoAutoSchedulePolicy.nextWindow(
+                            current: window, visibleTotal: result.totalVisible,
+                            scanned: result.scanned, uploaded: result.uploaded,
+                            needsReview: result.stoppedForReview || result.needsReview > 0
+                          ) : 0
+                    self.manualLibraryEpoch = completed.serialized
+                    self.manualAuthorizationRaw = completed.authorization
                 }
                 self.message = "本轮确认新增 \(result.uploaded)，已验证存在 \(result.verifiedAlready)，待核对 \(result.needsReview)，不可用 \(result.unavailable)。"
                 if result.stoppedForReview {

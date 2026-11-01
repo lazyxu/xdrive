@@ -142,7 +142,12 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                         // Photos permission loss invalidates this WHOLE run.
                         // Counting these as a single unavailable original
                         // would continue into other assets and conceal failure.
-                        if Self.mustAbortRun(after: error) { throw error }
+                        // A temporary read-only check of an ALREADY
+                        // confirmed Node is not proof of an unknown write.
+                        // Stop this window; do not mark its other 255 assets
+                        // unavailable or advance the automatic cursor.
+                        if Self.isTransientConfirmedReadbackFailure(error) ||
+                           Self.mustAbortRun(after: error) { throw error }
                         // Missing/oversized iCloud or incompatible originals
                         // remain local per-item failures, never confirmed.
                         // Unknown Server ACK remains a distinct review pause.
@@ -177,7 +182,12 @@ struct XDriveIOSForegroundPhotoBackupMVP {
     /// A global authorization/receipt trust loss must not be reclassified
     /// as one unavailable PhotoKit original and scanned past.
     private static func mustAbortRun(after error: Error) -> Bool {
-        if error is XDriveNativeOwnerRootFailure ||
+        // Network outages are not "one inaccessible photo". Advancing a
+        // completed 256-slot cursor after repeated offline failures can
+        // strand entire older windows until a future full-library wrap.
+        // A disk staging failure is equally global, not a missing original.
+        if error is URLError ||
+           error is XDriveNativeOwnerRootFailure ||
            error is XDrivePhotoSyncLedgerError {
             return true
         }
@@ -185,9 +195,29 @@ struct XDriveIOSForegroundPhotoBackupMVP {
            case .notAuthorized = source {
             return true
         }
+        if let source = error as? XDrivePhotoKitExportFailure,
+           case .storageUnavailable = source {
+            return true
+        }
         if let intent = error as? XDriveIOSPhotoIntentPreparationError,
            case .unverifiedOwnerOrDeviceScope = intent {
             return true
+        }
+        return false
+    }
+
+    /// Only transient READ failures are retryable. In particular 401/403,
+    /// 404/410, an inconsistent SHA/revision, or missing ledger evidence are
+    /// not converted into a confirmed skip or an automatic upload retry.
+    private static func isTransientConfirmedReadbackFailure(_ error: Error) -> Bool {
+        if error is URLError { return true }
+        if let readback = error as? XDriveIOSNodeReceiptReadbackError,
+           case .serverRejected(let code) = readback {
+            return code == 408 || code == 429 || (500...599).contains(code)
+        }
+        if let owner = error as? XDriveNativeOwnerRootFailure,
+           case .serverStatus(let code) = owner {
+            return code == 408 || code == 429 || (500...599).contains(code)
         }
         return false
     }
@@ -292,8 +322,13 @@ struct XDriveIOSForegroundPhotoBackupMVP {
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
-                // A file may have been modified/deleted in the cloud.
-                // Do not silently resend into a conflict or erase history.
+                // An offline/overloaded read-only Server is not evidence
+                // that a previously confirmed Node changed or disappeared.
+                // Keep its sealed confirmation and retry this same window
+                // at the next eligible run; never count an unverified skip.
+                if Self.isTransientConfirmedReadbackFailure(error) { throw error }
+                // Missing Node, digest/revision mismatch, revoked Owner or
+                // malformed evidence still require deliberate review.
                 return .requiresReview
             }
         case .prepared:

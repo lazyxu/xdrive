@@ -99,8 +99,8 @@ import WebUnsupportedFileDialog from './WebUnsupportedFileDialog'
 import { xDriveWebOpenRouteForNode } from './webViewerRoute'
 import { useXDriveWebAppRuntime, xDriveCreateWebAppBrowseSession, xDriveClearPrivateMapBrowseSessions } from './webAppRuntime'
 import { xDriveWebAppRouteForWorkspaceKey, xDriveWebAppWorkspaceKey } from './webApps'
-import { XDriveMobileAllLauncher, XDriveMobileFiveSlotNavigation, XDriveMobileMinePage, xDriveBrowserMobileDestinations } from './MobileFiveSlotNavigation'
-import { xDriveMobileLauncherSections } from './mobileLauncherSections'
+import { XDriveMobileAllLauncher, XDriveMobileFiveSlotNavigation, XDriveMobileMinePage, xDriveBrowserMobileDestinations, xDriveBrowserMobileGalleryShortcuts } from './MobileFiveSlotNavigation'
+import { xDriveMobileLauncherSections, xDriveMobileLauncherGalleryRoute } from './mobileLauncherSections'
 import { xDriveInitialMobileNavigation, xDriveMobileFeatureParentRoute, xDriveMobileRouteForSlot, xDriveMobileSlotForRoute, xDriveRememberMobileNavigation, xDriveToggleMobileFavorite, xDriveSetMobileLauncherSearch, xDriveRememberMobileGalleryAlbum, xDriveMobileGallerySectionForViewer, xDriveMobileAlbumOwnsBack, xDriveMobileMapFocused } from './mobileFiveSlotState'
 import type { XDriveMobileSlot } from './mobileFiveSlotState'
 import { createWebMediaGalleryDataSource } from './mediaGalleryAdapter'
@@ -2404,9 +2404,16 @@ function FileManager({
   // second routing/backup stack. The iOS contract determines only mobile UX.
   const mobileDestinations = xDriveBrowserMobileDestinations(serverAdminVerified)
     .filter(destination => xDriveWorkspaceNavigationAllowed(destination.key, serverAdminVerified))
-  const mobileLauncherSections = xDriveMobileLauncherSections(mobileDestinations)
+  // Album and Map are authenticated Gallery subroutes, never extra dynamic
+  // features. Only expose them when the canonical Gallery itself is allowed.
+  const mobileLauncherDestinations = [
+    ...mobileDestinations,
+    ...xDriveBrowserMobileGalleryShortcuts(
+      mobileDestinations.some(item => item.key === 'gallery')),
+  ]
+  const mobileLauncherSections = xDriveMobileLauncherSections(mobileLauncherDestinations)
   const toggleMobileFavorite = (key: string) => {
-    if (!mobileOwnerScope || !mobileDestinations.some(item => item.key === key)) return
+    if (!mobileOwnerScope || !mobileLauncherDestinations.some(item => item.key === key)) return
     setMobileNavigation(previous => xDriveToggleMobileFavorite(
       previous, mobileOwnerScope, key, serverAdminVerified,
     ))
@@ -2424,8 +2431,15 @@ function FileManager({
   })
   const latestMobileDynamic = mobileRecentDestinations[0]
   const selectMobileLauncher = (destination: string) => {
-    const next = xDriveWebAppRouteForWorkspaceKey(destination)
-    if (next && xDriveWorkspaceNavigationAllowed(destination, serverAdminVerified)) launchWebApp(next)
+    const galleryShortcut = xDriveMobileLauncherGalleryRoute(destination)
+    const next = galleryShortcut ?? xDriveWebAppRouteForWorkspaceKey(destination)
+    // Browser/Server Gallery authority remains the gate; the shortcut cannot
+    // create a workspace route, grant a new feature or replace the dynamic tab.
+    const allowedWorkspace = galleryShortcut ? 'gallery' : destination
+    if (next && mobileLauncherDestinations.some(item => item.key === destination) &&
+        xDriveWorkspaceNavigationAllowed(allowedWorkspace, serverAdminVerified)) {
+      launchWebApp(next)
+    }
   }
   const selectMobileSlot = (slot: XDriveMobileSlot) => {
     const next = xDriveMobileRouteForSlot(currentMobileNavigation, slot, serverAdminVerified)

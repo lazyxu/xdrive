@@ -213,3 +213,34 @@ test('BG run shares current-Owner pending ACK gate with foreground before due re
   assert.doesNotMatch(task.slice(count, reserve), /scheduleApprovedProbe\(|UploadSessionTransport\(|uploadPreparedOriginal\(/)
   assert.doesNotMatch(task.slice(count, reserve), /successful = true/)
 })
+
+test('network or temporary-disk outage aborts whole original window instead of advancing auto/BG cursor', () => {
+  const runner = read('ForegroundPhotoBackupMVP.swift')
+  const store = read('PhotoAutoScheduleStore.swift')
+  const bg = read('BGOriginalWindowStore.swift')
+  const policy = runner.slice(runner.indexOf('private static func mustAbortRun('),
+    runner.indexOf('private enum StillOutcome'))
+  const scan = runner.slice(runner.indexOf('func run('),
+    runner.indexOf('private static func mustAbortRun('))
+  const checked = scan.indexOf('if Self.mustAbortRun(after: error) { throw error }')
+  const unavailable = scan.indexOf('report.unavailable += 1', checked)
+  const cursor = store.slice(store.indexOf('func recordResult('))
+  assert.ok(checked > 0 && unavailable > checked,
+    'do not count global failure as one unavailable original')
+  assert.match(policy, /error is URLError/)
+  assert.match(policy, /error is XDriveNativeOwnerRootFailure/)
+  assert.match(policy, /error is XDrivePhotoSyncLedgerError/)
+  assert.match(policy, /case \.notAuthorized = source/)
+  assert.match(policy, /case \.storageUnavailable = source/)
+  assert.match(policy, /return false/, 'only named global failures stop the whole scan')
+  assert.match(policy, /case \.unverifiedOwnerOrDeviceScope = intent/)
+  assert.match(scan, /await scanner\.reset\(\)\s*throw error/)
+  assert.match(cursor, /progress: XDriveIOSPhotoBackupProgress/)
+  assert.match(bg, /report: XDriveIOSPhotoBackupProgress/)
+  // Unresolved ACK remains separate from uncommitted/transient network
+  // failures. Neither foreground nor BG writes may advance their windows
+  // after an exception from the shared run.
+  assert.match(scan, /case \.requiresReview:\s*report\.needsReview \+= 1\s*report\.stoppedForReview = true/)
+  assert.match(runner, /case \.creating, \.uploading, \.finalizing, \.needsReconciliation:/)
+  assert.doesNotMatch(policy, /UploadSession|beginCreate|confirmReceipt|localIdentifier|UserDefaults/)
+})

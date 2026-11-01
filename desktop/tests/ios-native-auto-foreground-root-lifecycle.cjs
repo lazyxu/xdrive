@@ -100,7 +100,7 @@ test('backup display and delayed original progress never cross Owner changes or 
   assert.match(refresh, /switch \(displayOwner, owner\)/)
   assert.match(refresh, /case \(nil, nil\):\s*unchanged = true/)
   assert.match(refresh, /case \(let previous\?, let current\?\):\s*unchanged = XDriveIOSNativePhotoOwnerScope\.matches\(current, previous\)/)
-  assert.match(refresh, /if !unchanged \{\s*displayEpoch = UUID\(\)\s*progress = nil\s*message = "未启动相册备份"\s*errorMessage = nil\s*\}/)
+  assert.match(refresh, /if !unchanged \{\s*displayEpoch = UUID\(\)\s*manualNextWindow = 0\s*manualLibraryEpoch = nil\s*manualAuthorizationRaw = nil\s*progress = nil\s*message = "未启动相册备份"\s*errorMessage = nil\s*\}/)
   assert.ok(refresh.indexOf('displayOwner = owner') < refresh.indexOf('schedule = owner.flatMap'),
     'clear old UI before current Owner schedule is published')
   assert.match(ownerChanged, /backup\.cancel\(\)\s*backup\.refresh\(owner: model\.owner\)/)

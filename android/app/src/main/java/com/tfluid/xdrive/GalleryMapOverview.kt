@@ -79,7 +79,8 @@ internal fun ColumnScope.GalleryMapOverview(
             GalleryVerifiedBd09Cells(bd09Cells, state.galleryBd09Bounds,
                 state.galleryBd09History.size, controller, bd09Scroll,
                 state.galleryBd09CameraMoving, state.galleryBd09CameraPending,
-                state.galleryBd09PreserveCamera, state.loading, state.error)
+                state.galleryBd09PreserveCamera, state.loading,
+                state.error.takeIf { state.galleryMapCellSelected == null })
         state.error != null -> Column(Modifier.weight(1f).fillMaxWidth().padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp)) {

@@ -13,7 +13,7 @@ const compiled = ts.transpileModule(source, {
 assert.equal(compiled.diagnostics?.length ?? 0, 0, 'category helper must transpile')
 const model = await import('data:text/javascript;base64,' + Buffer.from(compiled.outputText).toString('base64'))
 const keys = [
-  'files', 'gallery', 'device-backup', 'remote-pull', 'transfers',
+  'files', 'gallery', 'gallery-albums', 'gallery-places', 'device-backup', 'remote-pull', 'transfers',
   'cloud-storage', 'local-storage', 'custom-feature',
 ]
 const input = keys.map(key => ({ key, label: key }))
@@ -23,7 +23,7 @@ assert.deepEqual(groups.map(group => group.label), [
   '图库与相册', '文件与存储', '备份与同步', '任务与传输', '其他功能',
 ])
 assert.deepEqual(groups.flatMap(group => group.items.map(item => item.key)), [
-  'gallery', 'files', 'cloud-storage', 'local-storage', 'device-backup',
+  'gallery', 'gallery-albums', 'gallery-places', 'files', 'cloud-storage', 'local-storage', 'device-backup',
   'remote-pull', 'transfers', 'custom-feature',
 ])
 assert.deepEqual(input.map(item => item.key), keys, 'must not mutate authenticated destinations')
@@ -42,8 +42,12 @@ const duplicate = model.xDriveMobileLauncherSections([
 assert.deepEqual(duplicate.flatMap(group => group.items).map(item => item.label), ['new'])
 const app = readFileSync(resolve(here, '../src/App.tsx'), 'utf8')
 const launcher = readFileSync(resolve(here, '../src/MobileFiveSlotNavigation.tsx'), 'utf8')
-assert.match(app, /xDriveMobileLauncherSections\(mobileDestinations\)/,
-  'categories must start from server-authorized Web navigation only')
+assert.match(app, /xDriveMobileLauncherSections\(mobileLauncherDestinations\)/,
+  'categories include Gallery subroutes only from authorized Web navigation')
+assert.match(app, /xDriveBrowserMobileGalleryShortcuts\(\s*mobileDestinations\.some\(item => item\.key === 'gallery'\)/,
+  'Album and Map shortcuts need a real allowed Gallery destination')
+assert.match(app, /!mobileOwnerScope \|\| !mobileLauncherDestinations\.some/,
+  'shortcut favorites are still fenced by the verified Owner and visible destinations')
 assert.match(launcher, /sections\.map\(section => showGroup\(String\(section\.label/,
   'Launcher must actually render category headings instead of one flat grid')
 assert.match(launcher, /showGroup\('收藏', favoritesItems\)/, 'retain Owner favorites above categories')
@@ -53,4 +57,83 @@ assert.match(launcher, /width: 44, height: 44/,
   'favorite touch hit targets must be at least 44 by 44 CSS pixels')
 assert.doesNotMatch(launcher, /setFavorites\(/,
   'category switching must not restore remount-local favorite state')
+
+// These are canonical Gallery sections, never new apps or fabricated albums.
+assert.deepEqual(model.xDriveMobileLauncherGalleryRoute('gallery-albums'),
+  { app: 'gallery', params: { section: 'albums' } })
+assert.deepEqual(model.xDriveMobileLauncherGalleryRoute('gallery-places'),
+  { app: 'gallery', params: { section: 'places' } })
+assert.equal(model.xDriveMobileLauncherGalleryRoute('files'), null)
+assert.equal(model.xDriveMobileLauncherGalleryRoute('admin-users'), null)
+assert.equal(model.xDriveMobileLauncherGalleryRoute('gallery'), null)
+const withoutGallery = model.xDriveMobileLauncherSections(
+  input.filter(item => item.key !== 'gallery' &&
+    item.key !== 'gallery-albums' && item.key !== 'gallery-places'))
+assert.equal(withoutGallery.some(group => group.key === 'photos'), false,
+  'a disabled Gallery must not produce a fallback Album or Map shortcut')
+
+assert.match(launcher, /export function xDriveBrowserMobileGalleryShortcuts\(/)
+assert.match(launcher, /if \(!galleryAvailable\) return \[\]/)
+assert.match(launcher, /key: 'gallery-albums', label: '相册'/)
+assert.match(launcher, /key: 'gallery-places', label: '地图'/)
+
+// Exercise the real App Launcher callback, not an independently coded route
+// selector. Both shortcuts must open the fixed Gallery; unknown or denied
+// destinations cannot bypass the same authorized-workspace check.
+{
+  const ast = ts.createSourceFile('App.tsx', app, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TSX)
+  const candidates = []
+  function visit(node) {
+    if (ts.isVariableDeclaration(node) && node.name.getText(ast) === 'selectMobileLauncher' &&
+        node.initializer && ts.isArrowFunction(node.initializer)) candidates.push(node.initializer)
+    ts.forEachChild(node, visit)
+  }
+  visit(ast)
+  assert.equal(candidates.length, 1, 'one production Launcher selection callback')
+  const code = ts.transpileModule(
+    'const selectMobileLauncher = ' + candidates[0].getText(ast) + ';', {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+    }).outputText
+  function makeLauncher(allowGallery = true) {
+    const launched = []
+    const requestedPermissions = []
+    const mobileLauncherDestinations = keys.filter(key =>
+      key !== 'gallery' && !key.startsWith('gallery-') || allowGallery).map(key => ({ key }))
+    const env = {
+      xDriveMobileLauncherGalleryRoute: model.xDriveMobileLauncherGalleryRoute,
+      xDriveWebAppRouteForWorkspaceKey: key =>
+        key === 'files' ? { app: 'files', params: {} } :
+        key === 'gallery' ? { app: 'gallery', params: {} } : null,
+      mobileLauncherDestinations,
+      xDriveWorkspaceNavigationAllowed: key => {
+        requestedPermissions.push(key)
+        return key === 'files' || key === 'gallery' && allowGallery
+      },
+      serverAdminVerified: false,
+      launchWebApp: route => launched.push(route),
+    }
+    const select = new Function(...Object.keys(env),
+      code + '\nreturn selectMobileLauncher;')(...Object.values(env))
+    return { select, launched, requestedPermissions }
+  }
+  const allowed = makeLauncher()
+  allowed.select('gallery-albums')
+  allowed.select('gallery-places')
+  allowed.select('files')
+  allowed.select('unknown-route')
+  allowed.select('admin-users')
+  assert.deepEqual(allowed.launched, [
+    { app: 'gallery', params: { section: 'albums' } },
+    { app: 'gallery', params: { section: 'places' } },
+    { app: 'files', params: {} },
+  ], 'shortcuts use existing Gallery route and never create dynamic/admin routes')
+  assert.deepEqual(allowed.requestedPermissions,
+    ['gallery', 'gallery', 'files'], 'Gallery authorization gates every photo shortcut')
+  const denied = makeLauncher(false)
+  denied.select('gallery-albums')
+  denied.select('gallery-places')
+  denied.select('gallery')
+  assert.deepEqual(denied.launched, [],
+    'unavailable Gallery cannot be opened through a stale Launcher shortcut')
+}
 console.log('Mobile Launcher categories: authorized destinations, role, search and 44px favorite control passed')

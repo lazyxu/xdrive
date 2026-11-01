@@ -143,8 +143,15 @@ private struct XDriveIOSBGOriginalNodeReceiptVerifier {
         request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
         let (bytes, response) = try await session.data(for: request)
         try Task.checkCancellation()
-        guard let http = response as? HTTPURLResponse,
-              http.statusCode == 200, bytes.count <= 65_536,
+        guard let http = response as? HTTPURLResponse else {
+            throw XDriveIOSNodeReceiptReadbackError.missingOrInconsistentNode
+        }
+        // A transient HTTP response to this read-only Owner Node proof is
+        // different from an actually absent or hash-mismatched Node.
+        guard http.statusCode == 200 else {
+            throw XDriveIOSNodeReceiptReadbackError.serverRejected(http.statusCode)
+        }
+        guard bytes.count <= 65_536,
               let node = try? JSONDecoder().decode(
                 XDriveIOSBGOriginalNodeDTO.self, from: bytes
               ),
