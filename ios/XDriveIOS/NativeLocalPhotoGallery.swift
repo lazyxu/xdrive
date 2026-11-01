@@ -183,11 +183,37 @@ final class XDriveIOSLocalPhotoDetailModel: ObservableObject {
 
 private struct XDriveIOSNativeLivePhotoView: UIViewRepresentable {
     let live: PHLivePhoto
-    func makeUIView(context: Context) -> PHLivePhotoView {
-        PHLivePhotoView()
+    let playbackRequest: UUID?
+
+    final class Coordinator {
+        var lastPlaybackRequest: UUID?
     }
-    func updateUIView(_ view: PHLivePhotoView, context: Context) {
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIView(context: Context) -> PHLivePhotoView {
+        let view = PHLivePhotoView()
         view.livePhoto = live
+        return view
+    }
+
+    func updateUIView(_ view: PHLivePhotoView, context: Context) {
+        if view.livePhoto !== live {
+            view.stopPlayback()
+            view.livePhoto = live
+            context.coordinator.lastPlaybackRequest = nil
+        }
+        if let request = playbackRequest,
+           request != context.coordinator.lastPlaybackRequest {
+            context.coordinator.lastPlaybackRequest = request
+            view.startPlayback(with: .full)
+        }
+    }
+
+    static func dismantleUIView(_ view: PHLivePhotoView, coordinator: Coordinator) {
+        view.stopPlayback()
+        view.livePhoto = nil
+        coordinator.lastPlaybackRequest = nil
     }
 }
 
@@ -226,6 +252,8 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
     var loadedItems: [XDrivePhotoKitScanCandidate] = []
     var onViewed: ((XDrivePhotoKitScanCandidate) -> Void)? = nil
     @State private var activeItem: XDrivePhotoKitScanCandidate?
+    @State private var showsStaticStill = false
+    @State private var livePlaybackRequest: UUID?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var phase
     @StateObject private var model = XDriveIOSLocalPhotoDetailModel()
@@ -268,6 +296,8 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
         else { return }
         // Revoke the previous item's PhotoKit requests and playback before
         // admitting a replacement. No hidden wall/next-page fetch or upload.
+        showsStaticStill = false
+        livePlaybackRequest = nil
         model.cancel()
         activeItem = next
         onViewed?(next)
@@ -280,10 +310,37 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                     VideoPlayer(player: player)
                         .onAppear { player.play() }
                 } else if let live = model.live {
-                    XDriveIOSNativeLivePhotoView(live: live)
-                        .accessibilityLabel("实况照片，长按播放")
+                    VStack(spacing: 10) {
+                        if showsStaticStill, let image = model.still {
+                            XDriveIOSNativeZoomablePhotoView(image: image)
+                                .onNavigateSwipe { showNeighbor($0) }
+                                .accessibilityLabel("实况静态照片，可双指缩放")
+                        } else {
+                            XDriveIOSNativeLivePhotoView(
+                                live: live, playbackRequest: livePlaybackRequest
+                            )
+                            .id(viewed.id)
+                            .accessibilityLabel("实况照片，长按播放")
+                        }
+                        HStack(spacing: 12) {
+                            Button("播放实况") {
+                                showsStaticStill = false
+                                livePlaybackRequest = UUID()
+                            }
+                            .accessibilityIdentifier("native-ios-local-live-play")
+                            if model.still != nil {
+                                Button(showsStaticStill ? "返回实况照片" : "放大静态照片") {
+                                    if !showsStaticStill { livePlaybackRequest = nil }
+                                    showsStaticStill.toggle()
+                                }
+                                .accessibilityIdentifier("native-ios-local-live-static-toggle")
+                            }
+                        }
+                        .padding(.horizontal, 12)
+                    }
                 } else if let image = model.still {
                     XDriveIOSNativeZoomablePhotoView(image: image)
+                        .onNavigateSwipe { showNeighbor($0) }
                         .accessibilityLabel("本机照片，可双指缩放或双击放大")
                 } else if let message = model.message {
                     VStack(spacing: 8) {
@@ -301,6 +358,8 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                                       [.authorized, .limited].contains(
                                         PHPhotoLibrary.authorizationStatus(for: .readWrite)
                                       ) else { return }
+                                showsStaticStill = false
+                                livePlaybackRequest = nil
                                 model.load(viewed)
                             }
                             .accessibilityIdentifier("native-ios-local-viewer-retry")
@@ -354,6 +413,8 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
         }
         .onChange(of: phase) { state in
             if state != .active {
+                showsStaticStill = false
+                livePlaybackRequest = nil
                 // Remove still/Live/video from the app-switcher snapshot and
                 // fence any asynchronous PhotoKit callbacks immediately.
                 model.cancel()
@@ -371,6 +432,8 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
         .onDisappear {
             changes.stop()
             model.cancel()
+            showsStaticStill = false
+            livePlaybackRequest = nil
         }
     }
 }
