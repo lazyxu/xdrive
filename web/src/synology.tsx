@@ -7,6 +7,7 @@ import {
   xDriveWorkspaceHostSections,
   useXDriveWorkspaceNavigationState,
 } from '@xdrive/ui/mui'
+import { XDriveDSMLoginNoCommitError } from '@xdrive/ui/mui'
 import type { XDriveSynologyBackupLocalClient } from '@xdrive/ui/mui'
 import './styles.css'
 import { createXDriveSynologyHost } from './synologyHost'
@@ -164,21 +165,44 @@ function SynologyServerConnectionSettings({
         // A POST may have changed Owner before its ACK is lost. From this
         // boundary onward, reload on both success and ambiguous failure.
         loginPhaseRef.current = 'logging'
-        setPassword('')
         setLoginState('logging')
         void client.loginServer(requestedServer, requestedUsername, requestedPassword, controller.signal).then(
           () => {
             if (loginRef.current !== controller || controller.signal.aborted) return
             loginRef.current = null
             loginPhaseRef.current = 'idle'
+            setPassword('')
             window.location.reload()
           },
-          () => {
+          failure => {
             if (loginRef.current !== controller || controller.signal.aborted) return
+            if (failure instanceof XDriveDSMLoginNoCommitError) {
+              // A positive pre-commit proof is still not proof another actor
+              // did not replace the Agent's Owner. Re-read and compare scope.
+              void client.serverConnection(controller.signal).then(current => {
+                if (loginRef.current !== controller || controller.signal.aborted) return
+                if (current.owner_scope !== info.owner_scope ||
+                    current.configured !== info.configured ||
+                    current.server !== info.server || current.username !== info.username) {
+                  setPassword('')
+                  window.location.reload()
+                  return
+                }
+                loginRef.current = null
+                loginPhaseRef.current = 'idle'
+                setLoginError('用户名或密码错误；Owner 未改变，可直接修改密码重试。')
+                setLoginState('failed')
+              }, () => {
+                if (loginRef.current !== controller || controller.signal.aborted) return
+                setPassword('')
+                window.location.reload()
+              })
+              return
+            }
             loginRef.current = null
             loginPhaseRef.current = 'idle'
-            // HTTP failure may still follow a committed Owner change: discard
-            // all shared Owner-scoped UI, thumbnails, caches and async reads.
+            // A lost ACK may conceal committed Owner change: always reload.
+            setPassword('')
             window.location.reload()
           },
         )

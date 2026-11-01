@@ -370,6 +370,11 @@ export interface XDriveSynologyBackupLocalClient extends XDriveLocalBackupCommon
   ): Promise<XDriveSynologyOwnerFilePageResponse>
 }
 
+/** Only an authenticated CGI rejection with explicit pre-commit proof. */
+export class XDriveDSMLoginNoCommitError extends Error {
+  constructor() { super('DSM Server credentials rejected without Owner commit') }
+}
+
 // Transport only. A DSM CGI backend authenticates every request and delegates
 // owner-verified operations to the original xdrive-agent. Nothing is persisted.
 export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSynologyBackupLocalClient {
@@ -424,6 +429,10 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
     })
     if (!response.ok) {
       if (response.status === 401 || response.status === 403) token = null
+      if (operation === 'server-login' && method === 'POST' &&
+          response.status === 422 && response.headers.get('X-XDrive-Login-No-Commit') === '1') {
+        throw new XDriveDSMLoginNoCommitError()
+      }
       throw new Error(`DSM backup request rejected (HTTP ${response.status})`)
     }
     if (!response.headers.get('content-type')?.toLowerCase().includes('application/json')) {

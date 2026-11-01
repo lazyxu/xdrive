@@ -88,3 +88,11 @@ assert.equal((loginBlock.match(/window\.location\.reload\(\)/g) || []).length, 2
 assert.match(loginBlock, /setPassword\(''\)[\s\S]*setLoginState\('logging'\)/)
 assert.match(loginBlock, /setProfileStatus\('unavailable'\)[\s\S]*setLoginError\('无法读取本机 Agent/)
 console.log('DSM preflight rejects invalid Server/Owner and unreadable Agent without persisting secrets')
+
+const ipc = read('internal/localbackupipc/client.go')
+assert.match(ipc, /type AgentHTTPStatusError struct/)
+assert.match(native, /ErrDSMLoginRejectedBeforeCommit/)
+assert.match(gateway, /X-XDrive-Login-No-Commit/)
+assert.match(adapter, /response.status === 422 && response.headers.get\('X-XDrive-Login-No-Commit'\) === '1'/)
+assert.match(gui, /failure instanceof XDriveDSMLoginNoCommitError/)
+assert.match(gui, /current.owner_scope !== info.owner_scope/)

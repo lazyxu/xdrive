@@ -25,6 +25,12 @@ const (
 	protocolVersion   = 2
 )
 
+// Structured status for the trusted Go IPC caller only; no Agent error body is relayed.
+type AgentHTTPStatusError struct { Method string; StatusCode int }
+func (e *AgentHTTPStatusError) Error() string {
+    return fmt.Sprintf("owning Agent rejected %s (HTTP %d)", e.Method, e.StatusCode)
+}
+
 type discovery struct {
 	Version int    `json:"version"`
 	BaseURL string `json:"base_url"`
@@ -192,7 +198,7 @@ func (c *Client) requestWithLimit(
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted &&
 		resp.StatusCode != http.StatusCreated {
 		// Never relay remote error bodies; they can contain private data.
-		return fmt.Errorf("owning Agent rejected %s (HTTP %d)", method, resp.StatusCode)
+		return &AgentHTTPStatusError{Method: method, StatusCode: resp.StatusCode}
 	}
 	if target == nil {
 		return nil
