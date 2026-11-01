@@ -31,11 +31,11 @@ func (c *Client) OwnerFileViewerPreviewRange(ctx context.Context,
 		return zero, errors.New("Owner Viewer preview capability or selector unavailable")
 	}
 	query := url.Values{
-		"node_id": {strconv.FormatUint(id, 10)},
+		"node_id":  {strconv.FormatUint(id, 10)},
 		"revision": {strconv.FormatUint(revision, 10)},
-		"format": {format},
-		"offset": {strconv.FormatInt(offset, 10)},
-		"length": {strconv.Itoa(length)},
+		"format":   {format},
+		"offset":   {strconv.FormatInt(offset, 10)},
+		"length":   {strconv.Itoa(length)},
 	}
 	var out OwnerViewerPreviewRange
 	if err := c.request(ctx, http.MethodGet,
