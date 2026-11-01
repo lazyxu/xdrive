@@ -1029,7 +1029,9 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                                 // Virtualized chunks avoid composing a single giant Text when
                                 // Go returns a 1 MiB text file with no line breaks.
                                 val chunks = remember(preview.text) {
-                                    preview.text.chunked(4096)
+                                    // Reuse the native full-screen reader's Unicode
+                                    // and CRLF-safe bounded display chunker.
+                                    nativeTextViewerDisplayChunks(preview.text)
                                 }
                                 if (chunks.isEmpty()) {
                                     Text("空文件", modifier = Modifier.testTag("files-text-preview-empty"))
