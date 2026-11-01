@@ -202,6 +202,148 @@ test('P103 compact Album Back clears mobile return only after accepted first Ran
     [null], 'only accepted index Range clears the mobile Album target')
 })
 
+
+/** Mount the exact production Gallery header Back layout effect with a
+ * minimal hook fixture; do not duplicate its detail/Owner routing logic. */
+function registerOriginalHeaderBack(env) {
+  const matches = []
+  function visit(node) {
+    if (ts.isCallExpression(node) &&
+        node.expression.getText(ast) === 'useLayoutEffect' &&
+        node.getText(ast).includes('onMobileAlbumDetailBackChange?.(leaveCollection)')) {
+      matches.push(node)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(ast)
+  assert.equal(matches.length, 1, 'one live shared Gallery header Back effect')
+  const js = ts.transpileModule(
+    'function mount() { ' + matches[0].getText(ast) + '; }',
+    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } },
+  ).outputText
+  return new Function(...Object.keys(env), js + '\nreturn mount();')(...Object.values(env))
+}
+
+test('P103 committed Sync Folder detail registers original mobile header Back; index and wide Web do not', () => {
+  const folder = {
+    source: { source_id: 7, source_name: '设备' },
+    current: { id: 12, name: '照片' },
+    breadcrumbs: [{ id: 12, name: '照片' }],
+    children: [],
+  }
+  const cases = [
+    { label: 'Sync Folder', section: 'albums', mobile: true, album: null, folder, expected: true },
+    { label: 'ordinary Album', section: 'albums', mobile: true, album: { id: 'a' }, folder: null, expected: true },
+    { label: 'Albums index', section: 'albums', mobile: true, album: null, folder: null, expected: false },
+    { label: 'another section', section: 'library', mobile: true, album: null, folder, expected: false },
+    { label: 'wide Web', section: 'albums', mobile: false, album: null, folder, expected: false },
+  ]
+  for (const sample of cases) {
+    const registrations = []
+    const back = () => undefined
+    const callback = fn => registrations.push(fn)
+    registerOriginalHeaderBack({
+      mobileGalleryViewport: sample.mobile,
+      section: sample.section,
+      currentAlbum: sample.album,
+      currentFolderView: sample.folder,
+      leaveCollection: back,
+      onMobileAlbumDetailBackChange: callback,
+      useLayoutEffect: effect => { const cleanup = effect(); if (cleanup) cleanup() },
+    })
+    assert.deepEqual(registrations, sample.expected ? [back, null] : [], sample.label)
+  }
+})
+
+test('P103 real Sync Folder opens only replace stale Album tab-return hint after accepted first Range', async () => {
+  const records = [], requests = [], callbacks = []
+  const record = kind => value => records.push({ kind, value })
+  const sourceFolder = {
+    source: { source_id: 7, source_name: '备份' },
+    current: { id: 12, name: '照片' },
+    breadcrumbs: [{ id: 12, name: '照片' }],
+    children: [],
+  }
+  const env = {
+    useCallback: fn => fn,
+    source: { getSyncFolder: async () => sourceFolder },
+    syncFolderRequestID: { current: 0 },
+    setSyncFoldersLoading: record('loading'),
+    setSyncFoldersError: record('error'),
+    draftFilters: {},
+    query: { include_descendants: false },
+    emptyMediaGalleryFilterDraft: {},
+    mediaGalleryQueryFromDraft: draft => ({ ...draft }),
+    mobileGalleryViewport: true,
+    setCurrentFolderView: record('folder'),
+    setCurrentAlbum: record('album'),
+    setCurrentSuggestedPerson: record('suggested'),
+    setCurrentPerson: record('person'),
+    setCurrentPet: record('pet'),
+    setCurrentMemory: record('memory'),
+    setCurrentCleanupReview: record('cleanup'),
+    setSection: record('section'),
+    setActiveMediaType: record('mediaType'),
+    setDraftFilters: record('draft'),
+    setQuery: record('query'),
+    setMobileCollectionsOverview: record('collections'),
+    onMobileAlbumSelectionChange: record('albumReturn'),
+    onError: error => { throw error },
+    loadFirstPage: async (...args) => { requests.push(args) },
+  }
+  const factory = 'function instantiate() { const ' + original('openSyncFolderDirectory') +
+    '; return openSyncFolderDirectory; }'
+  const js = ts.transpileModule(factory, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText
+  const open = new Function(...Object.keys(env), js + '\nreturn instantiate();')(...Object.values(env))
+  await open(7, 12, true, true)
+  assert.equal(requests.length, 1)
+  assert.equal(typeof requests[0][8], 'function', 'first authorized Range owns folder commit')
+  assert.equal(records.filter(x => x.kind === 'albumReturn').length, 0,
+    'metadata alone cannot clear the previous accepted Album return')
+  assert.equal(records.filter(x => x.kind === 'folder').length, 0,
+    'metadata alone cannot display a new folder detail')
+  await open(7, 13, true, true)
+  requests[0][8]()
+  assert.equal(records.filter(x => x.kind === 'albumReturn').length, 0,
+    'superseded folder Range cannot invalidate the last Album')
+  requests[1][8]()
+  assert.deepEqual(records.filter(x => x.kind === 'albumReturn').map(x => x.value),
+    [null], 'only the accepted current folder Range clears the stale Album return')
+  assert.equal(records.filter(x => x.kind === 'folder').length, 1)
+
+  const wideRecords = []
+  const wideEnv = {
+    ...env, mobileGalleryViewport: false,
+    onMobileAlbumSelectionChange: value => wideRecords.push(value),
+    loadFirstPage: async () => undefined,
+  }
+  const wide = new Function(...Object.keys(wideEnv), js + '\nreturn instantiate();')(
+    ...Object.values(wideEnv))
+  await wide(7, 12, true, true)
+  assert.deepEqual(wideRecords, [], 'wide Web/Desktop never changes mobile Album return')
+})
+
+test('P103 nested Sync Folder header Back delegates to the original authorized ancestor navigation', () => {
+  const h = harness('album')
+  const requests = []
+  const folder = {
+    source: { source_id: 7 },
+    current: { id: 33 },
+    breadcrumbs: [{ id: 12 }, { id: 33 }],
+  }
+  const back = createBack({
+    ...h.env,
+    currentFolderView: folder,
+    openSyncFolderDirectory: (...args) => requests.push(args),
+  })
+  back()
+  assert.deepEqual(requests, [[7, 12]])
+  assert.equal(h.requests.length, 0, 'header Back must not open Library Range for an ancestor folder')
+  assert.equal(h.updates.length, 0, 'pending nested Back retains the verified folder view')
+})
+
 test('P103 wide Web/Desktop Pet and detail Back retain their pre-existing eager navigation', () => {
   for (const kind of ['pet', 'media-type', 'album', 'place']) {
     const h = harness(kind, false)

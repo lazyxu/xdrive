@@ -1819,6 +1819,9 @@ export function XDriveMediaGalleryPage({
         if (request !== syncFolderRequestID.current) return
         setCurrentFolderView(view)
         setCurrentAlbum(null)
+        // The committed Sync Folder replaces any previous concrete Album in
+        // the same 'albums' route. Do not restore that stale Album on tab return.
+        if (mobileGalleryViewport) onMobileAlbumSelectionChange?.(null)
         setCurrentSuggestedPerson(null)
         setCurrentPerson(null)
         setCurrentPet(null)
@@ -1849,7 +1852,8 @@ export function XDriveMediaGalleryPage({
     } finally {
       if (request === syncFolderRequestID.current) setSyncFoldersLoading(false)
     }
-  }, [draftFilters, loadFirstPage, mobileGalleryViewport, onError, query.include_descendants, source])
+  }, [draftFilters, loadFirstPage, mobileGalleryViewport, onError,
+    onMobileAlbumSelectionChange, query.include_descendants, source])
 
   // All compact Mobile Gallery Trash entries (navigation tab AND Collections
   // card) share the same verified first Range commit. No early route/title,
@@ -3281,16 +3285,18 @@ export function XDriveMediaGalleryPage({
     query.bbox,
   ])
 
-  // The global Web app header must not skip a concrete Album's index. Let
-  // the shared Gallery perform its existing verified first-Range Back instead
-  // of rewriting the hash to Library. Clear on unmount, Owner/section change
-  // or when the detail is no longer the committed current Album.
+  // The global Web app header must not skip a concrete Album OR a committed
+  // Sync Folder. Both use the shared Gallery's actual detail Back (including
+  // authenticated ancestor folder paging), not the Albums route's Library
+  // parent. The Albums index itself retains the normal header Back to Library.
+  // Unregister when the active detail/section/Owner changes or unmounts.
   useLayoutEffect(() => {
-    if (!mobileGalleryViewport || section !== 'albums' || !currentAlbum) return
+    if (!mobileGalleryViewport || section !== 'albums' ||
+        (!currentAlbum && !currentFolderView)) return
     onMobileAlbumDetailBackChange?.(leaveCollection)
     return () => onMobileAlbumDetailBackChange?.(null)
   }, [mobileGalleryViewport, section, currentAlbum?.id,
-    leaveCollection, onMobileAlbumDetailBackChange])
+    currentFolderView?.current.id, leaveCollection, onMobileAlbumDetailBackChange])
 
   const reviewSuggestedPerson = useCallback(async (
     suggestion: MediaSuggestedPerson,
