@@ -144,8 +144,11 @@ export function XDriveMediaGalleryOwnerGPSOverview({
           transform:drag ? `translate(${drag.x}px,${drag.y}px)` : 'none',
           pointerEvents:drag ? 'none' : 'auto'}}>
           {current?.items.map(item => {
-            const point = xDriveOwnerGPSPoint(bounds,
-              item.sample_latitude, item.sample_longitude)
+            const latitude = item.sample_latitude
+            const longitude = item.sample_longitude
+            if (typeof latitude !== 'number' || typeof longitude !== 'number' ||
+              !Number.isFinite(latitude) || !Number.isFinite(longitude)) return null
+            const point = xDriveOwnerGPSPoint(bounds, latitude, longitude)
             if (!point) return null
             const realPlace = xDriveOwnerGPSCanOpenPlace(current, item)
             return (
@@ -156,7 +159,7 @@ export function XDriveMediaGalleryOwnerGPSOverview({
                   if (!current) return
                   if (realPlace) onOpenPlace(item)
                   else moveTo(xDriveOwnerGPSZoom(
-                    bounds, item.sample_latitude, item.sample_longitude, 0.3))
+                    bounds, latitude, longitude, 0.3))
                 }}
                 aria-label={realPlace
                   ? item.name + '，' + item.item_count + ' 张照片，打开地点照片'

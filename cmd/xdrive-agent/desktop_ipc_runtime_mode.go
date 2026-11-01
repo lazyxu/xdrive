@@ -79,7 +79,7 @@ var backupOnlyAllowedIPCRoutes = map[string]struct{}{
 	"GET /v1/cloud/owner-gallery-items":                         {},
 	"GET /v1/cloud/owner-gallery-albums":                        {},
 	"GET /v1/cloud/owner-places-page":                           {},
-	"GET /v1/cloud/owner-map-overview":                         {},
+	"GET /v1/cloud/owner-map-overview":                          {},
 	"GET /v1/cloud/owner-place-items":                           {},
 	"GET /v1/cloud/owner-live-motion":                           {},
 	"GET /v1/device-backups":                                    {},
