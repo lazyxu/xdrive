@@ -125,6 +125,7 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
     @Published private(set) var entries: [XDriveIOSNativeFilesEntry] = []
     @Published private(set) var total = 0
     @Published private(set) var loading = false
+    @Published private(set) var verifiedPage = false
     @Published private(set) var errorMessage: String?
 
     private var epoch = UUID()
@@ -136,6 +137,7 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
         job = nil
         entries = []
         total = 0
+        verifiedPage = false
         loading = false
         errorMessage = nil
     }
@@ -191,6 +193,7 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
                 else { return }
                 self?.entries = found
                 self?.total = count
+                self?.verifiedPage = true
                 self?.errorMessage = nil
             } catch is CancellationError {
                 // Navigation and tab changes cancel disposable reads only.
@@ -198,6 +201,7 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
                 guard self?.epoch == ticket else { return }
                 self?.entries = []
                 self?.total = 0
+                self?.verifiedPage = false
                 if let failure = error as? XDriveIOSNativeFilesReadError {
                     switch failure {
                     case .server(401), .server(403), .server(404), .invalidScope:
@@ -328,7 +332,8 @@ struct XDriveIOSNativeFilesBrowser: View {
                 } else {
                     HStack(spacing: 8) {
                         Button {
-                            guard !model.loading, let owner = login.owner,
+                            guard !model.loading, model.verifiedPage,
+                                  let owner = login.owner,
                                   model.entries.contains(where: { $0.node == entry.node })
                             else { return }
                             selectedOwner = owner
@@ -389,7 +394,8 @@ struct XDriveIOSNativeFilesBrowser: View {
                 Button { openManagement(for: nil) } label: {
                     Label("文件夹操作", systemImage: "folder.badge.gearshape")
                 }
-                .disabled(model.loading || login.owner == nil || !activeQuery.isEmpty)
+                .disabled(model.loading || !model.verifiedPage ||
+                          login.owner == nil || !activeQuery.isEmpty)
                 .accessibilityIdentifier("native-ios-files-folder-actions")
             }
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -499,7 +505,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     }
 
     private func openManagement(for node: XDriveIOSNativeFilesNode?) {
-        guard !model.loading, selectedFile == nil,
+        guard !model.loading, model.verifiedPage, selectedFile == nil,
               let owner = login.owner,
               node != nil || activeQuery.isEmpty else { return }
         if let node {

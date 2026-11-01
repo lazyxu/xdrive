@@ -26,6 +26,15 @@ test('Files retains the same independent native L3 Viewer and file-specific acti
   assert.doesNotMatch(management, /QuickLook|quickLookPreview|WKWebView|URLRequest\(url:.*http:\/\//)
 })
 
+test('File operations require an actually verified Owner page, never an initial or failed placeholder', () => {
+  assert.match(files, /@Published private\(set\) var verifiedPage = false/)
+  assert.match(files, /verifiedPage = false\s*loading = false/)
+  assert.match(files, /self\?\.verifiedPage = true/)
+  assert.match(files, /self\?\.verifiedPage = false/)
+  assert.match(files, /\.disabled\(model\.loading \|\| !model\.verifiedPage \|\|/)
+  assert.match(files, /guard !model\.loading, model\.verifiedPage, selectedFile == nil,/)
+})
+
 test('native file management uses one Owner/root authorization envelope without altering photo writer', () => {
   assert.match(login, /func verifiedAuthorization\(\) async throws/)
   assert.match(management, /\.onChange\(of: login\.owner\) \{ _ in/)
