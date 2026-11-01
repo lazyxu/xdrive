@@ -915,6 +915,69 @@ class DriveControllerTest {
         assertEquals(0, c.state.value.offset)
     }
 
+    @Test fun filesTextViewerReadsCurrentOwnerThenBackRestoresExactFilesRows() = runTest {
+        val api = Service()
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        val originalRows = c.state.value.items
+        val originalPath = c.state.value.path
+        c.open(file); runCurrent()
+        assertEquals(file, c.state.value.filesTextViewer)
+        assertNull(c.state.value.selected)
+        assertEquals("Hello xDrive", c.state.value.fileTextPreview?.text)
+        assertEquals(1, api.textPreviewReads)
+        c.open(folder) // An offscreen tap cannot bypass the active Viewer.
+        assertEquals(file, c.state.value.filesTextViewer)
+        c.back()
+        assertNull(c.state.value.filesTextViewer)
+        assertNull(c.state.value.fileTextPreview)
+        assertEquals(Screen.FILES, c.state.value.screen)
+        assertEquals(originalRows, c.state.value.items)
+        assertEquals(originalPath, c.state.value.path)
+        c.close()
+    }
+
+    @Test fun filesTextViewerIgnoresLateNoncooperativeResponseAcrossCloseAndReopen() = runTest {
+        val stale = CompletableDeferred<FileTextPreview>()
+        val api = Service()
+        api.textPreviewRequest = { node ->
+            if (api.textPreviewReads == 1) withContext(NonCancellable) { stale.await() }
+            else FileTextPreview("new", false, node.size)
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.open(file); runCurrent()
+        assertTrue(c.state.value.fileTextPreviewLoading)
+        c.back()
+        assertNull(c.state.value.fileTextPreview)
+        c.open(file); runCurrent()
+        assertEquals("new", c.state.value.fileTextPreview?.text)
+        stale.complete(FileTextPreview("stale", false, file.size)); runCurrent()
+        assertEquals("new", c.state.value.fileTextPreview?.text)
+        assertEquals(2, api.textPreviewReads)
+        c.logout(); runCurrent()
+        assertNull(c.state.value.filesTextViewer)
+        assertNull(c.state.value.fileTextPreview)
+        c.close()
+    }
+
+    @Test fun collectionTextViewerDoesNotChangeOriginatingOwnerCollection() = runTest {
+        val api = Service()
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.changeFilesSection(FilesSection.FAVORITES); runCurrent()
+        val collection = c.state.value.collectionItems
+        val owned = collection.single { it.node == file }
+        c.openCollectionItem(owned); runCurrent()
+        assertEquals(file, c.state.value.filesTextViewer)
+        assertEquals("Hello xDrive", c.state.value.fileTextPreview?.text)
+        c.back()
+        assertEquals(collection, c.state.value.collectionItems)
+        assertEquals(FilesSection.FAVORITES, c.state.value.filesSection)
+        assertNull(c.state.value.filesTextViewer)
+        c.close()
+    }
+
     @Test fun textPreviewShowsOnlyCurrentOwnedFileAndClearsOnClose() = runTest {
         val api = Service()
         val c = controller(this, api)
@@ -948,10 +1011,10 @@ class DriveControllerTest {
         }
         val c = controller(this, api)
         c.login("owner", "password"); runCurrent()
-        c.open(file); runCurrent()
+        c.showDetails(file); runCurrent()
         assertTrue(c.state.value.fileTextPreviewLoading)
         c.dismissDetails(); runCurrent()
-        c.open(file); runCurrent()
+        c.showDetails(file); runCurrent()
         assertEquals("current", c.state.value.fileTextPreview?.text)
         stale.complete(FileTextPreview("old Owner context", false, file.size))
         runCurrent()
@@ -967,7 +1030,7 @@ class DriveControllerTest {
         api.textPreviewRequest = { throw ApiException(415, "binary content") }
         val c = controller(this, api)
         c.login("owner", "password"); runCurrent()
-        c.open(file); runCurrent()
+        c.showDetails(file); runCurrent()
         assertEquals(1, api.textPreviewReads)
         assertNull(c.state.value.fileTextPreview)
         assertEquals("当前文件不是可预览的 UTF-8 文本。", c.state.value.fileTextPreviewError)
@@ -987,7 +1050,7 @@ class DriveControllerTest {
         api.listing = { _, offset -> if (offset == 100) withContext(NonCancellable) { late.await() }
             else NodeRange(listOf(folder, file), 101, offset) }
         c.loadMore(); runCurrent()
-        c.open(file); runCurrent()
+        c.showDetails(file); runCurrent()
         assertEquals(file, c.state.value.selected)
         late.complete(NodeRange(listOf(file), 101, 100)); runCurrent()
         assertEquals(file, c.state.value.selected)
