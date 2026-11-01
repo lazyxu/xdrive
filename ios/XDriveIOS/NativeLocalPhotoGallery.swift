@@ -679,10 +679,8 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
         .onAppear { changes.start() }
         .task(id: viewed.id) {
             // Never materialize PhotoKit pixels while the App is inactive.
-            if phase == .active {
-                model.load(viewed)
-                refreshFavoriteStatus()
-            }
+            if phase == .active { model.load(viewed) }
+            if phase == .active { refreshFavoriteStatus() }
         }
         .onChange(of: changes.generation) { _ in
             cancelCrossing()
