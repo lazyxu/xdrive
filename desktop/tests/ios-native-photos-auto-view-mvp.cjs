@@ -222,3 +222,29 @@ test('backup portrait stays one ordered form and short landscape splits status f
   assert.match(ui, /\.confirmationDialog\("开启自动原件备份？"/);
   assert.doesNotMatch(ui, /\.onChange\(of: viewport\)|\.id\(viewport\)/);
 });
+
+
+test('native local and album photo walls free short landscape grid space while retaining Viewer return', () => {
+  const local = read('ios/XDriveIOS/NativeLocalPhotoGallery.swift')
+  const album = read('ios/XDriveIOS/NativePhotoAlbumBrowser.swift')
+  const localWall = local.slice(local.indexOf('struct XDriveIOSNativeLocalGalleryScreen: View {'))
+  const albumWall = album.slice(album.indexOf('struct XDriveIOSNativeAlbumContentsScreen: View {'),
+    album.indexOf('/// Photos-first list of local smart/user albums.'))
+  for (const [name, screen] of [['local', localWall], ['album', albumWall]]) {
+    assert.match(screen, /@Environment\(\\\.dynamicTypeSize\) private var dynamicTypeSize/, name)
+    assert.match(screen, /GeometryReader \{ viewport in/, name)
+    assert.match(screen, /viewport\.size\.width >= 680 &&\s*viewport\.size\.height < 500 && !dynamicTypeSize\.isAccessibilitySize/, name)
+    assert.match(screen, /ScrollViewReader \{ returnScroll in\s*ScrollView \{/, name)
+    assert.match(screen, /if !compactGallery \{[\s\S]*?Text\(/, name)
+    assert.match(screen, /@AccessibilityFocusState private var accessibilityFocusedTileID: String\?/, name)
+    assert.match(screen, /\.onChange\(of: pageRenderRevision\)/, name)
+    assert.match(screen, /\.fullScreenCover\(item: \$selected, onDismiss: \{ restoreAfterViewer\(\) \}\)/, name)
+    assert.match(screen, /if selected != nil \{ suspendForViewer\(\) \}/, name)
+    assert.doesNotMatch(screen, /\.id\(compactGallery\)|onChange\(of: compactGallery\)|UploadSession|URLSession/, name)
+  }
+  assert.match(localWall, /if authorization == \.limited \|\| !compactGallery/)
+  assert.match(localWall, /native-ios-local-gallery-layout-help/)
+  assert.match(albumWall, /native-ios-local-album-layout-help/)
+  assert.match(localWall, /只读取当前授权子集/)
+  assert.match(albumWall, /不读取 iCloud 原件、不上传、不保存相册成员标识/)
+});

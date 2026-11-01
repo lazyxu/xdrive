@@ -310,6 +310,8 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
 /// Read-only, 64-at-a-time PhotoKit grid. No 100k-sized Swift arrays.
 struct XDriveIOSNativeLocalGalleryScreen: View {
     @Environment(\.scenePhase) private var phase
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var showingGalleryHelp = false
     @State private var scanner: XDrivePhotoKitBoundedSnapshotScanner?
     @State private var page: XDrivePhotoKitScanPage?
     @State private var selected: XDrivePhotoKitScanCandidate?
@@ -329,13 +331,19 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
     @State private var authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
 
     var body: some View {
+        GeometryReader { viewport in
+        let compactGallery = viewport.size.width >= 680 &&
+            viewport.size.height < 500 && !dynamicTypeSize.isAccessibilitySize
         ScrollViewReader { returnScroll in
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text(authorization == .limited
-                    ? "仅展示 iOS 已授权的部分照片与视频"
-                    : "本机照片、视频、Live Photo")
-                    .font(.subheadline).foregroundStyle(.secondary)
+                // Always display the limited-access notice, even when short.
+                if authorization == .limited || !compactGallery {
+                    Text(authorization == .limited
+                        ? "仅展示 iOS 已授权的部分照片与视频"
+                        : "本机照片、视频、Live Photo")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                }
                 if authorization == .notDetermined {
                     Button("允许查看本机相册") {
                         Task {
@@ -379,8 +387,10 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
                 }
                 if busy { ProgressView("读取本机相册…") }
                 if let errorMessage { Text(errorMessage).foregroundStyle(.red) }
-                Text("只读取当前授权子集，缩略图不自动下载 iCloud 原件。权限、相册或 App 状态变化时旧页立即废弃。")
-                    .font(.footnote).foregroundStyle(.secondary)
+                if !compactGallery {
+                    Text("只读取当前授权子集，缩略图不自动下载 iCloud 原件。权限、相册或 App 状态变化时旧页立即废弃。")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
                 Button("刷新") { refresh() }.disabled(busy)
             }.padding(12)
         }
@@ -388,7 +398,21 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
             restoreViewerTile(using: returnScroll)
         }
         }
+        }
         .navigationTitle("本机相册")
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button { showingGalleryHelp = true } label: {
+                    Label("图库说明", systemImage: "info.circle")
+                }
+                .accessibilityIdentifier("native-ios-local-gallery-layout-help")
+            }
+        }
+        .alert("本机相册说明", isPresented: $showingGalleryHelp) {
+            Button("完成", role: .cancel) {}
+        } message: {
+            Text("仅展示 iOS 当前授权的照片、视频与 Live Photo；缩略图不自动下载 iCloud 原件，权限、相册或 App 状态变化时旧页立即废弃。每次最多读取 64 项。")
+        }
         .fullScreenCover(item: $selected, onDismiss: { restoreAfterViewer() }) {
             XDriveIOSNativeLocalPhotoDetail(candidate: $0)
         }
