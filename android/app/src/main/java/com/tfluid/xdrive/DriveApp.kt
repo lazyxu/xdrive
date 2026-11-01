@@ -427,6 +427,15 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                 Screen.FILES -> nativeNavigation = nativeNavigation.select(tab)
                 else -> Unit
             }
+            NativeHomeTab.DYNAMIC -> {
+                nativeNavigation = nativeNavigation.select(tab)
+                // A single tap resumes the last permitted native dynamic
+                // feature. It must not require opening a second summary button.
+                if (nativeNavigation.dynamicFeature == NativeDynamicFeature.TRANSFERS) {
+                    controller.refreshTransferRecoveryNotices()
+                    transferCenterOpen = true
+                }
+            }
             else -> nativeNavigation = nativeNavigation.select(tab)
         }
     }
@@ -816,8 +825,10 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                             onClick = {
                                 nativeNavigation = nativeNavigation.openDynamic(feature)
                                 dynamicPickerOpen = false
-                                if (feature == NativeDynamicFeature.TRANSFERS)
+                                if (feature == NativeDynamicFeature.TRANSFERS) {
                                     controller.refreshTransferRecoveryNotices()
+                                    transferCenterOpen = true
+                                }
                             },
                             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                                 .testTag("native-dynamic-choice-${feature.name.lowercase()}"),

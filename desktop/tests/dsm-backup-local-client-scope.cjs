@@ -256,3 +256,59 @@ test('DSM ignores old run/close callbacks after Host A -> B -> A even with ident
   assert.equal(tree.root.findAllByType('batch-dialog').length, 0)
   await act(async () => tree.unmount())
 })
+
+function renderedDSMText(node) {
+  if (typeof node === 'string') return node
+  if (Array.isArray(node)) return node.map(renderedDSMText).join('')
+  if (!node || typeof node !== 'object') return ''
+  return (node.children || []).map(renderedDSMText).join('')
+}
+
+test('DSM first-use 403 gives NAS-only principal setup steps without contaminating another Host', async () => {
+  const denied = {
+    list: async () => { throw new Error('DSM backup request rejected (HTTP 403)') },
+    history: async id => emptyHistory(id),
+  }
+  const offline = {
+    list: async () => { throw new Error('DSM backup request rejected (HTTP 503)') },
+    history: async id => emptyHistory(id),
+  }
+  const ready = {
+    list: async () => [folder(58, 'Approved NAS folder')],
+    history: async id => emptyHistory(id),
+  }
+  let tree
+  await act(async () => {
+    tree = Renderer.create(React.createElement(Panel, { client: denied }))
+    await Promise.resolve()
+  })
+  const unauthorizedView = renderedDSMText(tree.toJSON())
+  assert.match(unauthorizedView, /HTTP 403/)
+  assert.match(unauthorizedView, /sudo -u xdrivenas env HOME=/)
+  assert.match(unauthorizedView, /xd backup synology-ui authorize --dsm-user DSM_USERNAME/)
+  assert.match(unauthorizedView, /网页不会代为授权/)
+  assert.equal(tree.root.findAllByType('folder-accordion').length, 0)
+  // The MUI Box fixture renders a composite wrapper and one host "Box".
+  // Count only the actual host to require exactly one visible NAS hint.
+  assert.equal(tree.root.findAllByType('Box').filter(node =>
+    node.props['data-xdrive-dsm-first-use-authorization'] === true).length, 1)
+
+  await act(async () => {
+    tree.update(React.createElement(Panel, { client: offline }))
+    await Promise.resolve()
+  })
+  const offlineView = renderedDSMText(tree.toJSON())
+  assert.match(offlineView, /本机备份暂不可用/)
+  assert.doesNotMatch(offlineView, /xd backup synology-ui authorize --dsm-user/)
+  assert.equal(tree.root.findAllByProps({ 'data-xdrive-dsm-first-use-authorization': true }).length, 0)
+
+  await act(async () => {
+    tree.update(React.createElement(Panel, { client: ready }))
+    await Promise.resolve()
+  })
+  const approvedView = renderedDSMText(tree.toJSON())
+  assert.doesNotMatch(approvedView, /xd backup synology-ui authorize --dsm-user/)
+  assert.deepEqual(tree.root.findAllByType('folder-accordion').map(x => x.props.folder.name),
+    ['Approved NAS folder'])
+  await act(async () => tree.unmount())
+})

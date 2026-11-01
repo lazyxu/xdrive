@@ -329,13 +329,14 @@ struct XDriveIOSForegroundPhotoBackupMVP {
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
-                // An offline/overloaded read-only Server is not evidence
-                // that a previously confirmed Node changed or disappeared.
-                // Keep its sealed confirmation and retry this same window
-                // at the next eligible run; never count an unverified skip.
-                if Self.isTransientConfirmedReadbackFailure(error) { throw error }
-                // Missing Node, digest/revision mismatch, revoked Owner or
-                // malformed evidence still require deliberate review.
+                // Temporary read errors or a revoked Owner, ledger or
+                // background grant invalidate this WHOLE scan window.
+                // Never misclassify a revoked identity as an uncertain
+                // previously confirmed UploadSession receipt.
+                if Self.isTransientConfirmedReadbackFailure(error) ||
+                   Self.mustAbortRun(after: error) { throw error }
+                // Missing Node, digest/revision mismatch or malformed
+                // evidence still require explicit receipt review.
                 return .requiresReview
             }
         case .prepared:

@@ -309,7 +309,7 @@ jobs:
           go test -count=1 ./internal/synologyui
           go test -count=1 ./internal/localbackupipc -run 'Test(Remote|OwnerQuota|OwnerFile|OwnerTextPreview|OwnerMediaRange|OwnerThumbnail|OwnerGallery|OwnerLiveMotion|ServerLogin|RecoveryReview)'
           go test -count=1 ./internal/client -run 'Test(DownloadVerifiedRange|OwnerThumbnail|MediaOwnerThumbnail|OwnerGallery|ReadVerifiedOwnerLiveMotion|OwnerLiveMotion)'
-          go test -count=1 ./cmd/xdrive-agent -run 'Test(BackupOnly(CloudQuota|CloudFileRead|OwnerMediaRange|OwnerThumbnail|RequiresAuthenticatedIPCBeforeScheduling)|OwnerGallery|OwnerLiveMotion)'
+          go test -count=1 ./cmd/xdrive-agent -run 'Test(BackupOnly(CloudQuota|CloudFileRead|OwnerMediaRange|OwnerThumbnail|RequiresAuthenticatedIPCBeforeScheduling|IPCServeFailureStopsScheduler)|OwnerGallery|OwnerLiveMotion)'
           # Keep the existing real authenticated xd→owning-Agent IPC two-pass
           # fixture in the DSM gate. Its Server responses are simulated:
           # first-file and unchanged-file observations are not physical CAS proof.

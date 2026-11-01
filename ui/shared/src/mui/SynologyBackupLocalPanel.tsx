@@ -46,6 +46,10 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
   const [loading, setLoading] = useState(true)
   const visibleLoading = loading || !sameOwningClient
   const [error, setError] = useState('')
+  // A 403 from the authenticated DSM CGI may mean the installing owner has
+  // not approved this DSM principal on the NAS. It is never permission to
+  // approve a user through the browser or to bypass the existing allowlist.
+  const [principalDenied, setPrincipalDenied] = useState(false)
   const [refreshID, setRefreshID] = useState(0)
   const [expandedID, setExpandedID] = useState<number | null>(null)
   const [activeID, setActiveID] = useState<number | null>(null)
@@ -54,6 +58,7 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
   const [historyRevision, setHistoryRevision] = useState(0)
   const [histories, setHistories] = useState<Record<number, LocalHistory>>({})
   const visibleError = sameOwningClient ? error : ''
+  const visiblePrincipalDenied = sameOwningClient && principalDenied && Boolean(error)
   const visibleNotice = sameOwningClient ? notice : ''
   const refresh = useCallback(() => { setRefreshID((n) => n + 1) }, [])
 
@@ -62,6 +67,7 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
     const abort = new AbortController()
     setLoading(true)
     setError('')
+    setPrincipalDenied(false)
     // A normal same-client refresh must keep its legitimate outcome notice.
     // Revoke it only when a different owning Host client replaces this one.
     if (viewClient !== client) setNotice('')
@@ -75,8 +81,13 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
     setHistories({})
     void client.list(abort.signal).then((items) => {
       if (active) setSources(items)
-    }).catch(() => {
-      if (active) setError('本机备份暂不可用。请检查 DSM 登录权限和 xdrive-agent。')
+    }).catch((failure: unknown) => {
+      if (!active) return
+      // Keep all other failure classes (including 401/503) on the existing
+      // neutral error path. A 403 is only a possible first-install hint.
+      setPrincipalDenied(failure instanceof Error &&
+        failure.message === 'DSM backup request rejected (HTTP 403)')
+      setError('本机备份暂不可用。请检查 DSM 登录权限和 xdrive-agent。')
     }).finally(() => {
       if (active) setLoading(false)
     })
@@ -122,6 +133,27 @@ export function XDriveSynologyBackupLocalPanel({ client }: {
       }
     >
       {visibleError ? <XDriveStatusAlert tone="neutral">{visibleError}</XDriveStatusAlert> : null}
+      {visiblePrincipalDenied ? (
+        <Box data-xdrive-dsm-first-use-authorization sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+          <Stack spacing={1}>
+            <Typography variant="body2">
+              DSM 返回 HTTP 403。请先确认当前 DSM HTTPS 登录有效。若为首次安装，
+              可能还需要 NAS 管理员通过 SSH 在本机为当前 DSM 用户执行一次授权。
+              将 DSM_USERNAME 替换为实际 DSM 登录名，再刷新此页面：
+            </Typography>
+            <Box component="code" sx={{
+              display: 'block', fontFamily: 'monospace', fontSize: '0.8rem',
+              whiteSpace: 'pre-wrap', overflowWrap: 'anywhere',
+            }}>
+              {'sudo -u xdrivenas env HOME=/var/packages/xdrivenas/home XDG_CONFIG_HOME=/var/packages/xdrivenas/home/.config XDG_CACHE_HOME=/var/packages/xdrivenas/var/cache XD_DISABLE_SECRET_SERVICE=1 /var/packages/xdrivenas/target/bin/xd backup synology-ui authorize --dsm-user DSM_USERNAME'}
+            </Box>
+            <Typography variant="caption" color="text.secondary">
+              此命令只能在 NAS 本机运行；网页不会代为授权，也不需要在此输入 DSM 管理员密码。
+              如果已经完成授权，请检查 DSM 会话、套件用户及 Agent 运行状态。
+            </Typography>
+          </Stack>
+        </Box>
+      ) : null}
       {visibleNotice ? <XDriveStatusAlert tone="neutral">{visibleNotice}</XDriveStatusAlert> : null}
       <Box data-xdrive-device-backup-overview sx={{
         position: 'relative', minWidth: 0,

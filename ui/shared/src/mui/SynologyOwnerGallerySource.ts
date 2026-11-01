@@ -18,6 +18,18 @@ import {
 const OWNER_GALLERY_PAGE_LIMIT = 100
 const OWNER_GALLERY_MAX_UI_BATCH = 500
 const OWNER_GALLERY_PREVIEW_CACHE = 512
+// Pure Gallery-side admission check. The same-current-Owner CGI transport
+// independently validates this canonical place selector before every GET;
+// importing the transport runtime here would couple the shared Gallery to
+// a second Client implementation and break its existing isolated Host tests.
+const validDSMOwnerPlaceID = (value: string): boolean => {
+  if (typeof value !== 'string' || value.length > 64) return false
+  const match = /^place:(0|-?[1-9][0-9]*):(0|-?[1-9][0-9]*)$/.exec(value)
+  if (!match) return false
+  const latCell = Number(match[1]), lonCell = Number(match[2])
+  return Number.isSafeInteger(latCell) && Math.abs(latCell) <= 9000 &&
+    Number.isSafeInteger(lonCell) && Math.abs(lonCell) <= 18000
+}
 
 type OwnerGalleryPreviewIdentity = {
   id: number
@@ -28,7 +40,8 @@ type OwnerGalleryPreviewIdentity = {
 }
 type OwnerGalleryReadPort = Pick<XDriveSynologyBackupLocalClient,
   'ownerGalleryItemsRange' | 'ownerGalleryAlbums' | 'ownerFileThumbnail' |
-  'ownerFileMediaRange' | 'ownerFileMediaStreamURL' | 'ownerLivePhotoMotion'>
+  'ownerFileMediaRange' | 'ownerFileMediaStreamURL' | 'ownerLivePhotoMotion' |
+  'ownerPlacesPage' | 'ownerPlaceItemsRange'>
 
 /**
  * Current Owner CGI supports captured-descending original Gallery/Album Range.
@@ -40,7 +53,7 @@ export function xDriveSynologyOwnerGalleryQuerySupported(query?: MediaGalleryQue
   if (!query) return true
   const supported = new Set([
     'time_zone', 'sort_by', 'sort_dir', 'fold_duplicates', 'unknown_first',
-    'initial_position',
+    'initial_position', 'place', 'has_location',
   ])
   for (const [key, value] of Object.entries(query)) {
     if (value === undefined) continue
@@ -52,6 +65,15 @@ export function xDriveSynologyOwnerGalleryQuerySupported(query?: MediaGalleryQue
     if (key === 'fold_duplicates' && value !== false) return false
     if (key === 'unknown_first' && value !== false) return false
     if (key === 'initial_position' && value !== 'latest') return false
+    if (key === 'place' && (typeof value !== 'string' ||
+      !validDSMOwnerPlaceID(value))) return false
+    // An exact canonical Owner Place already implies current valid GPS.
+    // The shared Gallery's location=with filter is therefore redundant,
+    // but a generic has_location filter with no Place remains unsupported.
+    if (key === 'has_location' &&
+      (value !== true || !query.place || !validDSMOwnerPlaceID(query.place))) {
+      return false
+    }
   }
   return true
 }
@@ -94,7 +116,8 @@ export function createXDriveSynologyOwnerGallerySource(
     if (!xDriveSynologyOwnerGalleryQuerySupported(query) ||
       !Number.isSafeInteger(limit) || limit < 1 || limit > OWNER_GALLERY_MAX_UI_BATCH ||
       !Number.isSafeInteger(offset) || offset < 0 || offset > 10_000_000 ||
-      (query?.initial_position === 'latest' && offset !== 0)) {
+      (query?.initial_position === 'latest' && offset !== 0) ||
+      (query?.place !== undefined && albumID !== '')) {
       throw new Error('DSM Owner 图库尚未支持此筛选、排序或分页；不会显示未经核实的结果。')
     }
     let total: number | null = null
@@ -104,8 +127,11 @@ export function createXDriveSynologyOwnerGallerySource(
       if (signal?.aborted) throw new Error('Owner Gallery read cancelled')
       if (total !== null && offset + items.length >= total) break
       const chunk = Math.min(OWNER_GALLERY_PAGE_LIMIT, limit - items.length)
-      const page = await client.ownerGalleryItemsRange(
-        'all', chunk, offset + items.length, albumID, signal)
+      const page = query?.place
+        ? await client.ownerPlaceItemsRange(
+            query.place, chunk, offset + items.length, signal)
+        : await client.ownerGalleryItemsRange(
+            'all', chunk, offset + items.length, albumID, signal)
       if (signal?.aborted) throw new Error('Owner Gallery read cancelled')
       if (!Number.isSafeInteger(page.total_count) || page.total_count < 0 ||
         (total !== null && page.total_count !== total) ||
@@ -140,6 +166,9 @@ export function createXDriveSynologyOwnerGallerySource(
     listItemRange: (limit, offset, query, signal) =>
       loadRange(limit, offset, query, signal),
     listAlbums: () => client.ownerGalleryAlbums(),
+    listPlaces: async (limit = 24) => (await client.ownerPlacesPage(
+      Math.min(48, Math.max(1, limit)), 0)).items,
+    listPlacesPage: (limit = 48, offset = 0) => client.ownerPlacesPage(limit, offset),
     listAlbumItems: async (albumID, limit, offset, query) =>
       (await loadRange(limit, offset, query, undefined, albumID)).items,
     listAlbumItemRange: (albumID, limit, offset, query, signal) =>
