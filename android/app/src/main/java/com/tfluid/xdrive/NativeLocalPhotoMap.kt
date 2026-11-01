@@ -223,7 +223,7 @@ internal fun ColumnScope.NativeLocalPhotoMap(
     if (scan.error != null) Text(scan.error.orEmpty(),
         color = MaterialTheme.colorScheme.error,
         modifier = Modifier.testTag("native-local-map-error"))
-    Text("本机 WGS84 位置分布（无地图底图）。双指缩放和拖动；点击封面查看此处已扫描的照片。",
+    Text("按本机照片位置适配 WGS84 视窗（无地图底图）。双指缩放和拖动；点击封面查看已扫描照片。",
         modifier = Modifier.padding(horizontal = 12.dp),
         style = MaterialTheme.typography.bodySmall)
     if (scan.index.cells.isEmpty() && !scan.scanning) {
@@ -248,13 +248,19 @@ internal fun ColumnScope.NativeLocalPhotoMap(
 }
 
 @Composable
-private fun ColumnScope.NativeLocalPhotoMapCanvas(
+internal fun ColumnScope.NativeLocalPhotoMapCanvas(
     cells: List<NativeLocalMapCell<NativeLocalMedia>>,
     selectable: Boolean,
     onSelect: (NativeLocalMapCell<NativeLocalMedia>) -> Unit,
 ) {
     var zoom by remember { mutableFloatStateOf(1f) }
     var shift by remember { mutableStateOf(Offset.Zero) }
+    // The source already holds at most 64 verified, streaming WGS84 cells.
+    // Fit the smallest longitude arc, not [-180, 180]; a photo on each
+    // side of the antimeridian must appear as neighbors in the native map.
+    val camera = remember(cells) {
+        nativeLocalMapViewport(cells.map { it.latitude to it.longitude })
+    }
     val density = LocalDensity.current.density
     Column(Modifier.fillMaxWidth().weight(1f)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -262,7 +268,8 @@ private fun ColumnScope.NativeLocalPhotoMapCanvas(
                 modifier = Modifier.testTag("native-local-map-zoom-out")) { Text("－") }
             TextButton(onClick = { zoom = (zoom * 1.6f).coerceAtMost(24f) },
                 modifier = Modifier.testTag("native-local-map-zoom-in")) { Text("＋") }
-            TextButton(onClick = { zoom = 1f; shift = Offset.Zero }) { Text("重置") }
+            TextButton(onClick = { zoom = 1f; shift = Offset.Zero },
+                modifier = Modifier.testTag("native-local-map-fit")) { Text("适配照片") }
         }
         BoxWithConstraints(Modifier.fillMaxSize().background(
             MaterialTheme.colorScheme.surfaceContainerLow)
@@ -286,10 +293,12 @@ private fun ColumnScope.NativeLocalPhotoMapCanvas(
                 }
             }
             for (cell in cells) {
-                val x = (((cell.longitude + 180.0) / 360.0 - 0.5) *
-                    canvasWidth * zoom + canvasWidth / 2 + shift.x).toFloat()
-                val y = (((90.0 - cell.latitude) / 180.0 - 0.5) *
-                    canvasHeight * zoom + canvasHeight / 2 + shift.y).toFloat()
+                val point = camera?.position(
+                    cell.latitude, cell.longitude,
+                    canvasWidth, canvasHeight, zoom,
+                    shift.x, shift.y,
+                ) ?: continue
+                val (x, y) = point
                 if (x < 0f || x >= canvasWidth || y < 0f || y >= canvasHeight) continue
                 Surface(
                     shape = RoundedCornerShape(9.dp),
