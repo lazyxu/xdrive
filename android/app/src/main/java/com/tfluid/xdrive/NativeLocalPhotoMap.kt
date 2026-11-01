@@ -40,7 +40,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
-import java.util.Locale
 
 /** ISO-6709 video location as exposed by Android's own metadata reader. */
 internal fun nativeVideoGps(value: String?): Pair<Double, Double>? {
@@ -57,8 +56,8 @@ private suspend fun readLocalMediaGps(
     context: Context, asset: NativeLocalMedia,
 ): Pair<Double, Double>? = withContext(Dispatchers.IO) {
     currentCoroutineContext().ensureActive()
-    val original = MediaStore.setRequireOriginal(asset.uri)
     try {
+        val original = MediaStore.setRequireOriginal(asset.uri)
         if (asset.isVideo) {
             val reader = MediaMetadataRetriever()
             try {
