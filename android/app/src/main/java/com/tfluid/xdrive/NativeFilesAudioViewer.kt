@@ -34,6 +34,13 @@ import androidx.lifecycle.repeatOnLifecycle
 internal fun filesAudioMayAutoPlay(lifecycleState: Lifecycle.State): Boolean =
     lifecycleState.isAtLeast(Lifecycle.State.STARTED)
 
+/** Media3 initialization or a terminal player error must retire this exact
+ * verified Owner lease immediately, not hold its pinned HTTP dispatcher
+ * until the user retries or exits. Healthy playback is never closed here. */
+internal fun filesAudioShouldReleaseFailedLease(
+    sourcePresent: Boolean, playerReady: Boolean, terminalFailure: Boolean,
+): Boolean = sourcePresent && (!playerReady || terminalFailure)
+
 /** Files-only read-only audio. Media3 reuses the same pinned Owner Range/ETag
  * transport as the Gallery video Viewer. No downloaded audio file or token is
  * written to the device. Closing this screen releases and cancels the source. */
@@ -45,7 +52,9 @@ internal fun NativeFilesAudioViewer(node: DriveNode, controller: DriveController
     var source by remember(node.id, node.revision) {
         mutableStateOf<OwnerVideoPlayback?>(null)
     }
-    var failed by remember(node.id, node.revision) { mutableStateOf(false) }
+    var failed by remember(node.id, node.revision, retryNonce) {
+        mutableStateOf(false)
+    }
     LaunchedEffect(controller, node.id, node.revision, retryNonce) {
         source = null
         failed = false
@@ -72,12 +81,14 @@ internal fun NativeFilesAudioViewer(node: DriveNode, controller: DriveController
     // A verified Owner stream can exist even when Media3 initialization fails
     // (decoder/device resource unavailable). Never show inert play controls.
     val playerSetupFailed = activeSource != null && player == null
-    var isPlaying by remember(node.id, node.revision) { mutableStateOf(false) }
-    var positionMs by remember(node.id, node.revision) { mutableLongStateOf(0L) }
-    var durationMs by remember(node.id, node.revision) { mutableLongStateOf(0L) }
-    var bufferedMs by remember(node.id, node.revision) { mutableLongStateOf(0L) }
-    var seeking by remember(node.id, node.revision) { mutableStateOf(false) }
-    var seekProgress by remember(node.id, node.revision) { mutableFloatStateOf(0f) }
+    // A manual retry is a new playback generation: old seek/duration or
+    // Media3 callbacks cannot be presented as the new file's playback state.
+    var isPlaying by remember(node.id, node.revision, retryNonce) { mutableStateOf(false) }
+    var positionMs by remember(node.id, node.revision, retryNonce) { mutableLongStateOf(0L) }
+    var durationMs by remember(node.id, node.revision, retryNonce) { mutableLongStateOf(0L) }
+    var bufferedMs by remember(node.id, node.revision, retryNonce) { mutableLongStateOf(0L) }
+    var seeking by remember(node.id, node.revision, retryNonce) { mutableStateOf(false) }
+    var seekProgress by remember(node.id, node.revision, retryNonce) { mutableFloatStateOf(0f) }
     DisposableEffect(player, activeSource, lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_STOP) player?.pause()
@@ -100,6 +111,18 @@ internal fun NativeFilesAudioViewer(node: DriveNode, controller: DriveController
             // Reading mutable 'source' here would leak the old Owner client
             // when a failed playback is retried (source = null -> new source).
             activeSource?.let { controller.closeGalleryVideoPlayback(it) }
+        }
+    }
+    LaunchedEffect(player, activeSource, failed) {
+        val exactSource = activeSource
+        if (filesAudioShouldReleaseFailedLease(
+                sourcePresent = exactSource != null, playerReady = player != null,
+                terminalFailure = failed)) {
+            // On a decoder error, stop any residual buffering before
+            // retiring the scoped Owner HTTP dispatcher. close() is idempotent
+            // with both dispose and Owner logout; never close a later retry.
+            runCatching { player?.stop() }
+            exactSource?.let(controller::closeGalleryVideoPlayback)
         }
     }
     LaunchedEffect(player, lifecycleOwner) {
