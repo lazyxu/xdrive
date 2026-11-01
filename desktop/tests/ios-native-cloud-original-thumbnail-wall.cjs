@@ -136,12 +136,14 @@ test('cloud original Viewer fences Owner and request generation BEFORE issuing s
     src.indexOf('private struct XDriveIOSNativeCloudOriginalTile: View'))
   const work = viewer.slice(viewer.indexOf('.task(id: previewRequestID) {'),
     viewer.indexOf('.onChange(of: phase)'))
+  const pinned = work.indexOf('let target = viewed')
   const verify = work.indexOf('let auth = try await login.verifiedAuthorization()')
+  assert.ok(pinned >= 0 && pinned < verify, 'each viewer request pins its selected Node')
   const cancel = work.indexOf('try Task.checkCancellation()', verify)
   const fence = work.indexOf('guard phase == .active, previewRequestID == requestID,', cancel)
   const reader = work.indexOf('let reader = XDriveIOSNativeCloudOriginalReader(')
-  const liveRead = work.indexOf('reader.livePreview(node)')
-  const otherRead = work.indexOf('reader.preview(node)')
+  const liveRead = work.indexOf('reader.livePreview(target)')
+  const otherRead = work.indexOf('reader.preview(target)')
   assert.ok(verify >= 0 && verify < cancel && cancel < fence &&
     fence < reader && reader < liveRead && reader < otherRead,
     'no Live ZIP download-ticket or still/video preview-ticket until current Owner and Viewer generation are verified')
@@ -204,4 +206,37 @@ test('native cloud-original Gallery short landscape returns grid height while re
   assert.match(wall, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, update\.owner\)/)
   assert.match(wall, /XDriveIOSNativeCloudOriginalTileIdentity\(/)
   assert.doesNotMatch(wall, /\.id\(compactGallery\)|onChange\(of: compactGallery\)|UploadSessionTransport|WKWebView/)
+});
+
+
+test('cloud-backed originals Viewer navigates only frozen same-Owner loaded 48-row slice', () => {
+  const viewer = src.slice(src.indexOf('struct XDriveIOSNativeCloudOriginalPreview: View {'),
+    src.indexOf("/// SwiftUI's ForEach identity"))
+  const wall = src.slice(src.indexOf('struct XDriveIOSNativeCloudOriginalGallery: View {'))
+  assert.match(viewer, /let presentingOwner: XDriveNativeOwnerRoot\?/)
+  assert.match(viewer, /let loadedNodes: \[XDriveIOSNativeCloudOriginal\]/)
+  assert.match(viewer, /@State private var activeNode: XDriveIOSNativeCloudOriginal\?/)
+  assert.match(viewer, /XDriveIOSNativePhotoAssetViewerNeighborPolicy\.loadedIndex\(/)
+  assert.match(viewer, /XDriveIOSNativePhotoAssetViewerNeighborPolicy\.neighborIndex\(/)
+  assert.match(viewer, /ownerAuthorized: currentOwnerAuthorized/)
+  assert.match(viewer, /current: key\(viewed\), in: loadedNodes\.map\(key\)/)
+  assert.match(viewer, /let next = neighbor\(direction\), onViewed\?\(next\) == true/)
+  assert.match(viewer, /liveResources\?\.discard\(\)[\s\S]*?activeNode = next[\s\S]*?previewRequestID = UUID\(\)/)
+  assert.match(viewer, /let before = presentingOwner,[\s\S]*?matches\(login\.owner, before\)/)
+  assert.match(viewer, /let target = viewed[\s\S]*?reader\.livePreview\(target\)/)
+  assert.match(viewer, /reader\.preview\(target\)/)
+  assert.match(viewer, /native-ios-original-viewer-previous/)
+  assert.match(viewer, /native-ios-original-viewer-next/)
+  assert.match(viewer, /（已加载）/)
+  assert.match(wall, /let start = \(index \/ 48\) \* 48/)
+  assert.match(wall, /model\.nodes\[start\.\.<min\(start \+ 48, model\.nodes\.count\)\]/)
+  assert.match(wall, /viewerOwner = owner[\s\S]*?selected = node/)
+  assert.match(wall, /onViewed: \{ next in[\s\S]*?model\.nodes\.contains\(where: \{/)
+  assert.match(wall, /viewerReturnNode = next/)
+  assert.match(wall, /ScrollViewReader \{ returnScroll in/)
+  assert.match(wall, /returnScroll\.scrollTo\(node\.id, anchor: \.center\)/)
+  assert.match(wall, /accessibilityFocused\(\$accessibilityFocusedNodeID, equals: node\.id\)/)
+  assert.match(wall, /if refreshAfterViewer \{[\s\S]*?model\.reload\(login: login\)/)
+  assert.match(wall, /onChange\(of: login\.owner\) \{ _ in[\s\S]*?viewerOwner = nil[\s\S]*?model\.invalidate\(\)/)
+  assert.doesNotMatch(viewer + wall, /UserDefaults|@AppStorage|CloudKit\.modifyRecords|UploadSessionTransport/)
 });
