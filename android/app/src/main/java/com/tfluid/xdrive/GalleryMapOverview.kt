@@ -73,6 +73,13 @@ internal fun ColumnScope.GalleryMapOverview(
         ) { Text("查看已验证 BD-09 网格") }
     }
     when {
+        // Keep the real MapView mounted on a failed camera read. Otherwise
+        // dismiss/retry recreates the SDK and loses the user's moved viewport.
+        state.galleryBd09Requested && bd09Cells != null ->
+            GalleryVerifiedBd09Cells(bd09Cells, state.galleryBd09Bounds,
+                state.galleryBd09History.size, controller, bd09Scroll,
+                state.galleryBd09CameraMoving, state.galleryBd09CameraPending,
+                state.galleryBd09PreserveCamera, state.loading, state.error)
         state.error != null -> Column(Modifier.weight(1f).fillMaxWidth().padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -85,17 +92,11 @@ internal fun ColumnScope.GalleryMapOverview(
             ) { Text(if (state.galleryBd09Requested) "重新读取 BD-09 网格"
                 else "重新读取 GPS 概览") }
         }
-        state.galleryBd09Requested -> when {
-            bd09Cells != null ->
-                GalleryVerifiedBd09Cells(bd09Cells, state.galleryBd09Bounds,
-                    state.galleryBd09History.size, controller, bd09Scroll,
-                    state.galleryBd09CameraMoving, state.galleryBd09CameraPending,
-                    state.galleryBd09PreserveCamera, state.loading)
-            else -> Box(Modifier.weight(1f).fillMaxWidth()
+        state.galleryBd09Requested ->
+            Box(Modifier.weight(1f).fillMaxWidth()
                 .testTag("gallery-map-bd09-loading"), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
-        }
         !state.galleryMapLoaded || overview == null ->
             Box(Modifier.weight(1f).fillMaxWidth()
                 .testTag("gallery-map-loading"), contentAlignment = Alignment.Center) {
@@ -166,9 +167,9 @@ private fun ColumnScope.GalleryVerifiedBd09Cells(
     depth: Int, controller: DriveController,
     listState: LazyListState,
     cameraMoving: Boolean, pending: OwnerBd09Bounds?,
-    preserveCamera: Boolean, loading: Boolean,
+    preserveCamera: Boolean, loading: Boolean, error: String?,
 ) {
-    val blocked = loading || cameraMoving || pending != null
+    val blocked = loading || cameraMoving || pending != null || error != null
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxWidth().weight(1f)
@@ -187,6 +188,10 @@ private fun ColumnScope.GalleryVerifiedBd09Cells(
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.testTag("gallery-map-bd09-camera-pending"))
                 }
+                if (error != null) Text(error,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.testTag("gallery-map-bd09-camera-error"))
                 if (pending != null) TextButton(
                     onClick = controller::refreshGalleryBd09CameraViewport,
                     enabled = !loading && !cameraMoving,

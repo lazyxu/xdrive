@@ -2600,6 +2600,7 @@ class DriveController(
         if (current.screen != Screen.GALLERY || current.hasActiveNativeTransfer() ||
             current.galleryMetadataWriteAttempted ||
             current.galleryAlbumCreateAttempted || current.galleryAlbumEditAttempted) return
+        retireGalleryCameraSession()
         invalidate() // Cancels the outstanding Gallery Range and item thumbnails.
         mutableState.value = current.withoutGallerySelection().copy(
             screen = Screen.FILES, loading = false,
@@ -4411,7 +4412,13 @@ class DriveController(
         audioPlaybackRequestEpoch++
     }
     private fun checkCurrent(ticket: Long) { if (ticket != generation) throw CancellationException() }
-    override fun close() { invalidate(); session = null; (api as? Closeable)?.close(); api = null }
+    override fun close() {
+        retireGalleryCameraSession()
+        invalidate()
+        session = null
+        (api as? Closeable)?.close()
+        api = null
+    }
 
     private fun safeError(failure: Exception): String {
         when ((failure as? ApiException)?.reason) {
