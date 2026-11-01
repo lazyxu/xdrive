@@ -110,6 +110,10 @@ export interface XDriveShareDialogPort {
   revokeShare: (
     shareID: number,
   ) => Promise<XDriveFileDialogTransportResult<unknown>>
+  updateShare?: (
+    shareID: number,
+    input: { expires_at?: string | null; access: import('../models').XDriveShareAccess },
+  ) => Promise<XDriveFileDialogTransportResult<FileShare>>
 }
 
 export function createXDriveShareDialogAdapter(
@@ -135,5 +139,8 @@ export function createXDriveShareDialogAdapter(
     revokeShare: (shareID) => resolveXDriveFileDialogTransport(
       port.revokeShare(shareID),
     ),
+    updateShare: port.updateShare
+      ? (shareID, input) => resolveXDriveFileDialogTransport(port.updateShare!(shareID, input))
+      : undefined,
   }
 }

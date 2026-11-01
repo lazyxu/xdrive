@@ -239,7 +239,7 @@ test('SH-P023 single-file share uses the same FileExplorer Core, bounded one ite
   assert.deepEqual(view.downloads, [{
     token: 'test-share-token', password: '', filename: 'photo.jpg',
   }])
-  assert.ok(view.text().includes('剩余 1 / 2 次下载'))
+  assert.ok(view.text().includes('下载不限次数'))
 })
 
 test('SH-P023 Share server grants deny single-file native download independently of preview', async (t) => {
@@ -286,17 +286,18 @@ test('Public Share submission rejects a missing required password', async (t) =>
   assert.equal(view.button().props.disabled, true)
   await view.submit()
   assert.equal(view.downloads.length, 0, 'keyboard/form submission must obey the disabled password condition')
-  assert.ok(view.text().includes('剩余 2 / 3 次下载'))
+  assert.ok(view.text().includes('下载不限次数'))
   assert.ok(!view.text().includes('已交给浏览器下载。'))
 })
 
-test('Public Share submission rejects an exhausted share even with a password', async (t) => {
+test('Public Share submission ignores historical max-download counters while preserving password', async (t) => {
   const view = await mountShare(t, { share: { max_downloads: 2, download_count: 2 } })
+  assert.equal(view.button().props.disabled, true, 'password is still required')
   await view.password('correct password')
-  assert.equal(view.button().props.disabled, true)
+  assert.equal(view.button().props.disabled, false)
   await view.submit()
-  assert.equal(view.downloads.length, 0, 'exhaustion must gate the handler as well as the button')
-  assert.ok(view.text().includes('剩余 0 / 2 次下载'))
+  assert.equal(view.downloads.length, 1, 'download counters no longer revoke a valid share')
+  assert.ok(view.text().includes('下载不限次数'))
 })
 
 test('Public Share submission cannot issue another ticket while a download is pending', async (t) => {
@@ -312,7 +313,7 @@ test('Public Share submission cannot issue another ticket while a download is pe
   } finally {
     await act(async () => { pending.resolve() })
   }
-  assert.ok(view.text().includes('剩余 1 / 3 次下载'))
+  assert.ok(view.text().includes('下载不限次数'))
   assert.ok(view.text().includes('已交给浏览器下载。'))
 })
 
@@ -324,7 +325,7 @@ test('Public Share successful submission preserves the exact password and consum
   assert.deepEqual(view.downloads, [{
     token: 'test-share-token', password: ' password with surrounding spaces ', filename: 'shared-report.txt',
   }])
-  assert.ok(view.text().includes('剩余 1 / 3 次下载'))
+  assert.ok(view.text().includes('下载不限次数'))
   assert.ok(view.text().includes('已交给浏览器下载。'))
   assert.equal(view.button().props.disabled, false)
 })
@@ -338,14 +339,14 @@ test('Public Share 401 preserves the local count and permits a corrected passwor
   await view.submit()
   assert.equal(view.downloads.length, 1)
   assert.ok(view.text().includes('分享密码错误。'))
-  assert.ok(view.text().includes('剩余 2 / 3 次下载'), 'a rejected ticket must not consume the local count')
+  assert.ok(view.text().includes('下载不限次数'), 'a rejected ticket must not consume the local count')
   assert.ok(!view.text().includes('已交给浏览器下载。'))
   assert.equal(view.button().props.disabled, false)
   await view.password('correct')
   await view.submit()
   assert.deepEqual(view.downloads.map((call) => call.password), ['wrong', 'correct'])
   assert.ok(!view.text().includes('分享密码错误。'))
-  assert.ok(view.text().includes('剩余 1 / 3 次下载'))
+  assert.ok(view.text().includes('下载不限次数'))
   assert.ok(view.text().includes('已交给浏览器下载。'))
 })
 
@@ -355,7 +356,7 @@ test('Public Share without password protection accepts submission with no passwo
   assert.equal(view.button().props.disabled, false)
   await view.submit()
   assert.deepEqual(view.downloads.map((call) => call.password), [''])
-  assert.ok(view.text().includes('剩余 1 / 3 次下载'))
+  assert.ok(view.text().includes('下载不限次数'))
   assert.ok(view.text().includes('已交给浏览器下载。'))
 })
 
@@ -793,7 +794,7 @@ test('Public folder ZIP prepares durable job and uses ONE anonymous signed archi
     ['prepare','test-share-token',' exact-password ',true],
     ['download','test-share-token',' exact-password ','prepared-zip-uuid','family photos.zip',true],
   ])
-  assert.ok(textContent(renderer.toJSON()).includes('剩余 1 / 2 次下载'))
+  assert.ok(textContent(renderer.toJSON()).includes('下载不限次数'))
   assert.ok(textContent(renderer.toJSON()).includes('ZIP 已交给浏览器下载'))
   for(const forbidden of ['上传','删除','移动','重命名','粘贴']) {
     assert.equal(renderer.root.findAllByType('button').filter(x => textContent(x.children).trim() === forbidden).length,0)
@@ -1158,10 +1159,12 @@ test('Public JPEG image Quick Look requests one Share-only preview URL on explic
     typeof node.type === 'string' && node.props['data-xdrive-public-preview-target'] !== undefined).length, 0)
 })
 
-test('SH-P011: passworded and exhausted folder shares do not auto-open or expose children', async () => {
+test('SH-P011: passworded or server-denied folder grants cannot auto-open children', async () => {
   for (const scope of [
     { requires_password: true, max_downloads: 0, download_count: 0 },
-    { requires_password: false, max_downloads: 1, download_count: 1 },
+    { requires_password: false, max_downloads: 1, download_count: 1,
+      capabilities: { list: false, preview: false, download: false, downloadZip: false,
+        search: false, write: false, delete: false, upload: false } },
   ]) {
     let childRequests = 0
     class Api {

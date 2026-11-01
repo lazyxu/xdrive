@@ -78,9 +78,6 @@ export function XDriveShareCreateFields({
   onExpiryChange,
   expiryError,
   expiryHelperText,
-  maxDownloadsValue,
-  onMaxDownloadsChange,
-  maxDownloadsHelperText = '0 表示不限',
   password,
   onPasswordChange,
   passwordError,
@@ -93,9 +90,6 @@ export function XDriveShareCreateFields({
   onExpiryChange: (value: string) => void
   expiryError?: boolean
   expiryHelperText?: ReactNode
-  maxDownloadsValue: string | number
-  onMaxDownloadsChange: (value: string) => void
-  maxDownloadsHelperText?: ReactNode
   password: string
   onPasswordChange: (value: string) => void
   passwordError?: boolean
@@ -133,16 +127,6 @@ export function XDriveShareCreateFields({
             }
           : { inputLabel: { shrink: true } }}
         sx={{ minWidth: { md: 200 } }}
-      />
-      <TextField
-        size="small"
-        type="number"
-        label="最大下载次数"
-        value={maxDownloadsValue}
-        helperText={maxDownloadsHelperText}
-        onChange={(event) => onMaxDownloadsChange(event.target.value)}
-        slotProps={{ htmlInput: { min: 0, step: 1 } }}
-        sx={{ minWidth: { md: 180 } }}
       />
       <XDriveSensitiveField
         label="密码（可选）"

@@ -35,6 +35,7 @@ export function createWebShareDialogAdapter(api: XDriveApi) {
     listShares: (nodeID) => api.shares(nodeID),
     createShare: (nodeID, input) => api.createShare(nodeID, input),
     revokeShare: (shareID) => api.revokeShare(shareID),
+    updateShare: (shareID, input) => api.updateShare(shareID, input),
   }, {
     shareURL: (created) => {
       if (!created.token) throw new Error('Share token missing from Web response.')

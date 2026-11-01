@@ -2331,6 +2331,7 @@ export type AgentCloudVersion = {
 }
 
 export type AgentCloudShare = {
+  access?: 'read_only' | 'view_upload'
   id: number
   node_id: number
   has_password: boolean
@@ -4703,12 +4704,18 @@ export class AgentIPCClient {
     return this.request<AgentCloudShare[]>('GET', `/v1/cloud/shares?${query.toString()}`)
   }
 
-  cloudCreateShare(nodeID: number, input: { expires_at?: string; password?: string; max_downloads?: number }) {
+  cloudCreateShare(nodeID: number, input: { expires_at?: string; password?: string; access?: 'read_only' | 'view_upload' }) {
     return this.request<AgentCreatedCloudShare>('POST', '/v1/cloud/shares', {
       node_id: nodeID,
       expires_at: input.expires_at || '',
       password: input.password || '',
-      max_downloads: input.max_downloads ?? 0,
+      access: input.access ?? 'read_only',
+    })
+  }
+
+  cloudUpdateShare(id: number, input: { expires_at?: string | null; access: 'read_only' | 'view_upload' }) {
+    return this.request<AgentCloudShare>('POST', '/v1/cloud/shares/update', {
+      id, access: input.access, expires_at: input.expires_at ?? '',
     })
   }
 

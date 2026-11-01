@@ -124,8 +124,12 @@ forbidText(files.audit, ['正在加载审计日志'], '审计日志禁止首次�
 if ((files.audit.match(/<XDriveDescriptionItem\b/g) || []).length !== 8) throw new Error('审计事件详情没有完整复用共享描述网格')
 if (/from ['"]antd['"]/.test(files.audit) || files.audit.includes('@ant-design/icons')) throw new Error('审计日志仍依赖 Ant Design')
 requireText(files.share, ['分享令牌只显示一次', '创建下载链接', '已有分享', 'XDriveSectionHeader', 'XDriveShareList', 'XDriveStatusAlert', 'XDriveDialogTitle', 'XDriveDialogContent', 'XDriveActionButton'], '分享窗口')
-requireText(files.shareFields, ['XDriveCreatedShareLink', 'XDriveShareCreateFields', '新创建的分享链接', '最大下载次数', '密码（可选）', '有效期', '过期时间', '0 表示不限'], '共享分享字段')
-requireText(files.shareList, ['XDriveShareList', "variant === 'compact'", 'XDriveShareStatusBadge', 'XDriveTableSurface', '保护方式', '过期时间', '下载次数', '密码保护', '永不过期', '撤销'], '共享已有分享列表')
+requireText(files.shareFields, ['XDriveCreatedShareLink', 'XDriveShareCreateFields', '新创建的分享链接', '密码（可选）', '有效期', '过期时间'], '共享分享字段')
+requireText(files.share + files.shareList, ['访问权限', '只读', '查看 + 上传', '编辑已有分享'], '共享分享权限与可修改有效期')
+if (files.shareFields.includes('最大下载次数') || files.shareFields.includes('maxDownloadsValue')) {
+  throw new Error('已取消下载次数上限，分享创建表单不得再提供配额字段')
+}
+requireText(files.shareList, ['XDriveShareList', "variant === 'compact'", 'XDriveShareStatusBadge', 'XDriveTableSurface', '保护方式', '过期时间', '访问权限', '密码保护', '永不过期', '撤销'], '共享已有分享列表')
 if ((files.share.match(/<XDriveShareList\b/g) || []).length !== 1) throw new Error('Web 已有分享没有复用共享列表')
 if (files.share.includes('shares.map((share)') || files.share.includes('<XDriveShareStatusBadge')) throw new Error('Web 已有分享仍保留本地映射')
 if ((files.share.match(/<XDriveCreatedShareLink\b/g) || []).length !== 1) throw new Error('Web 新建分享链接没有复用共享展示')
@@ -133,7 +137,7 @@ if ((files.share.match(/<XDriveShareCreateFields\b/g) || []).length !== 1) throw
 if (files.share.includes('type="datetime-local"') || files.share.includes('label="最大下载次数"') || files.share.includes('label="密码（可选）"')) throw new Error('Web 分享窗口仍保留本地创建字段')
 if (/<Alert\b/.test(files.share)) throw new Error('分享窗口仍在直接渲染 AntD Alert')
 if (/from ['"]antd['"]/.test(files.share) || files.share.includes('@ant-design/icons')) throw new Error('分享窗口仍依赖 Ant Design')
-requireText(files.publicShare, ['安全文件分享', '分享密码', '不限下载次数', 'XDriveStatusAlert', 'XDriveActionButton'], '公开分享')
+requireText(files.publicShare, ['安全文件分享', '分享密码', '下载不限次数', 'XDriveStatusAlert', 'XDriveActionButton'], '公开分享')
 if (/<Alert\b/.test(files.publicShare)) throw new Error('公开分享仍在直接渲染 AntD Alert')
 if (/from ['"]antd['"]/.test(files.publicShare) || files.publicShare.includes('@ant-design/icons')) throw new Error('公开分享仍依赖 Ant Design')
 requireText(files.sources + files.externalSourcesShared + files.sourceRunProgress + files.sourceFailureItem + files.paginationControls + files.sourceRunSummary + files.sourceScheduleFields + files.sourceCredentialFields, ['拉取来源', '添加{sourceNoun}', '群晖 Photos', '一刻相册', '群晖 Photos · Push', '群晖 File Station', '保存设置', 'XDriveYikeCookieHelp', 'yikeConnectorNotice', 'yikeManagedTargetDisplayLabel', '存储子目录', '立即重试', '已自动撤销', 'LinearProgress', '当前文件：', '正在取消…', '停止', '调度方式', '固定间隔', '仅手动', 'Cron 表达式', '运行间隔', 'IANA 时区', '相册与集合', '该来源暂无相册/集合元数据', 'sourceCollections', 'sourceCollectionItems', 'XDriveSourceTargetField', 'XDriveSensitiveField', '一刻相册 Cookie', 'DSM 密码', 'revealSourceCredential', 'XDriveStatusBadge', 'runDetail.statusTone', 'XDriveSourceRunProgress', 'XDriveSourceFailureItem', 'XDrivePaginationControls', 'XDriveDialogTitle', 'xDriveDialogPaperProps', 'XDriveDialogActions', 'XDriveDialogContent', 'XDriveStatusAlert', 'WorkspaceSurface', 'presentation="page"', 'pageActions={', 'XDriveSectionHeader'], '同步文件夹')

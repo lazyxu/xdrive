@@ -24,7 +24,10 @@ export interface FileVersion {
 
 export type ShareStatus = 'active' | 'expired' | 'exhausted' | 'revoked'
 
+export type XDriveShareAccess = 'read_only' | 'view_upload'
+
 export interface FileShare {
+  access?: XDriveShareAccess
   id: number
   node_id: number
   has_password: boolean
@@ -61,6 +64,7 @@ export interface PublicShareChildren {
 // Grants supplied by the Go Share metadata endpoint. The UI can only narrow
 // these grants; direct Go operations still validate password/revoke/quota/root.
 export interface PublicShareCapabilities {
+  upload?: boolean
   list: boolean
   preview: boolean
   download: boolean

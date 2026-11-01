@@ -983,8 +983,10 @@ const agent = Object.freeze({
   cloudRestoreVersion: (nodeID: number, revision: number, versionID: number) =>
     ipcRenderer.invoke('agent:cloud-restore-version', nodeID, revision, versionID),
   cloudShares: (nodeID: number) => ipcRenderer.invoke('agent:cloud-shares', nodeID),
-  cloudCreateShare: (nodeID: number, input: { expires_at?: string; password?: string; max_downloads?: number }) =>
+  cloudCreateShare: (nodeID: number, input: { expires_at?: string; password?: string; access?: 'read_only' | 'view_upload' }) =>
     ipcRenderer.invoke('agent:cloud-create-share', nodeID, input),
+  cloudUpdateShare: (id: number, input: { expires_at?: string | null; access: 'read_only' | 'view_upload' }) =>
+    ipcRenderer.invoke('agent:cloud-update-share', id, input),
   cloudRevokeShare: (id: number) => ipcRenderer.invoke('agent:cloud-revoke-share', id),
   getDiagnostics: () => ipcRenderer.invoke('agent:get-diagnostics'),
   reconnect: () => ipcRenderer.invoke('agent:reconnect'),

@@ -23,7 +23,31 @@ import (
 
 var errShareUnavailable = errors.New("share unavailable")
 
+const (
+	shareAccessReadOnly   = "read_only"
+	shareAccessViewUpload = "view_upload"
+)
+
+func normalizeShareAccess(value string) (string, bool) {
+	switch value {
+	case "", shareAccessReadOnly:
+		return shareAccessReadOnly, true
+	case shareAccessViewUpload:
+		return shareAccessViewUpload, true
+	default:
+		return "", false
+	}
+}
+
+func validateShareUploadSettings(access, rootType string) error {
+	if access == shareAccessViewUpload && rootType != meta.NodeTypeDir {
+		return errors.New("only folders can accept uploads")
+	}
+	return nil
+}
+
 type shareDTO struct {
+	Access        string     `json:"access"`
 	ID            uint64     `json:"id"`
 	NodeID        uint64     `json:"node_id"`
 	HasPassword   bool       `json:"has_password"`
@@ -46,6 +70,7 @@ type createdShareDTO struct {
 // Every actual Share API, derivative, signed ticket, Range and ZIP path must
 // continue validating capability, password, expiry, quota and share subtree.
 type publicShareCapabilitiesDTO struct {
+	Upload      bool `json:"upload"`
 	List        bool `json:"list"`
 	Preview     bool `json:"preview"`
 	Download    bool `json:"download"`
@@ -53,6 +78,12 @@ type publicShareCapabilitiesDTO struct {
 	Search      bool `json:"search"`
 	Write       bool `json:"write"`
 	Delete      bool `json:"delete"`
+}
+
+func publicShareCapabilitiesForShare(share meta.Share, nodeType string) publicShareCapabilitiesDTO {
+	result := publicShareCapabilitiesForNode(nodeType)
+	result.Upload = nodeType == meta.NodeTypeDir && share.Access == shareAccessViewUpload
+	return result
 }
 
 func publicShareCapabilitiesForNode(nodeType string) publicShareCapabilitiesDTO {
@@ -78,11 +109,15 @@ type publicShareDTO struct {
 
 func toShareDTO(share meta.Share, now time.Time) shareDTO {
 	return shareDTO{
-		ID:            share.ID,
-		NodeID:        share.NodeID,
-		HasPassword:   share.PasswordHash != "",
-		ExpiresAt:     share.ExpiresAt,
-		MaxDownloads:  share.MaxDownloads,
+		Access:      share.Access,
+		ID:          share.ID,
+		NodeID:      share.NodeID,
+		HasPassword: share.PasswordHash != "",
+		ExpiresAt:   share.ExpiresAt,
+		// Legacy rows may store a historical download limit. The link now
+		// allows unlimited downloads, including for older clients which
+		// still honor the additive max_downloads response field.
+		MaxDownloads:  0,
 		DownloadCount: share.DownloadCount,
 		RevokedAt:     share.RevokedAt,
 		Status:        shareStatus(share, now),
@@ -97,8 +132,6 @@ func shareStatus(share meta.Share, now time.Time) string {
 		return "revoked"
 	case share.ExpiresAt != nil && !now.Before(*share.ExpiresAt):
 		return "expired"
-	case share.MaxDownloads > 0 && share.DownloadCount >= share.MaxDownloads:
-		return "exhausted"
 	default:
 		return "active"
 	}
@@ -137,18 +170,24 @@ func (s *Server) createFileShare(c *gin.Context) {
 		ExpiresAt    *time.Time `json:"expires_at"`
 		Password     string     `json:"password"`
 		MaxDownloads int64      `json:"max_downloads"`
+		Access       string     `json:"access"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		fail(c, http.StatusBadRequest, "invalid request")
 		return
 	}
+	access, ok := normalizeShareAccess(req.Access)
+	if !ok {
+		fail(c, http.StatusBadRequest, "invalid share access")
+		return
+	}
+	if err := validateShareUploadSettings(access, node.Type); err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
 	now := time.Now()
 	if req.ExpiresAt != nil && !req.ExpiresAt.After(now) {
 		fail(c, http.StatusBadRequest, "expires_at must be in the future")
-		return
-	}
-	if req.MaxDownloads < 0 {
-		fail(c, http.StatusBadRequest, "max_downloads must be zero or greater")
 		return
 	}
 
@@ -167,12 +206,13 @@ func (s *Server) createFileShare(c *gin.Context) {
 		return
 	}
 	share := meta.Share{
+		Access:        access,
 		OwnerID:       userID(c),
 		NodeID:        node.ID,
 		TokenHash:     tokenHash,
 		PasswordHash:  passwordHash,
 		ExpiresAt:     req.ExpiresAt,
-		MaxDownloads:  req.MaxDownloads,
+		MaxDownloads:  0,
 		DownloadCount: 0,
 	}
 	if err := s.DB.Create(&share).Error; err != nil {
@@ -181,6 +221,70 @@ func (s *Server) createFileShare(c *gin.Context) {
 	}
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusCreated, createdShareDTO{shareDTO: toShareDTO(share, now), Token: rawToken})
+}
+
+// updateShare changes an Owner's existing link policy without rotating its token.
+// Revocation stays irreversible; in-flight uploads must re-check this policy at finalize.
+func (s *Server) updateShare(c *gin.Context) {
+	shareID, ok := parseID(c.Param("id"))
+	if !ok {
+		fail(c, http.StatusBadRequest, "invalid share id")
+		return
+	}
+	var req struct {
+		ExpiresAt *time.Time `json:"expires_at"`
+		Access    string     `json:"access"`
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 8<<10)
+	if err := c.ShouldBindJSON(&req); err != nil || req.Access == "" {
+		fail(c, http.StatusBadRequest, "invalid share update")
+		return
+	}
+	access, valid := normalizeShareAccess(req.Access)
+	if !valid || (req.ExpiresAt != nil && !req.ExpiresAt.After(time.Now())) {
+		fail(c, http.StatusBadRequest, "invalid share policy or expiry")
+		return
+	}
+	now := time.Now()
+	var updated meta.Share
+	err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND owner_id = ?", shareID, userID(c)).First(&updated).Error; err != nil {
+			return err
+		}
+		if updated.RevokedAt != nil {
+			return errShareUnavailable
+		}
+		var node meta.Node
+		if err := tx.Where("id = ? AND owner_id = ? AND deleted_at IS NULL",
+			updated.NodeID, updated.OwnerID).First(&node).Error; err != nil {
+			return err
+		}
+		if err := validateShareUploadSettings(access, node.Type); err != nil {
+			return err
+		}
+		if err := tx.Model(&updated).Updates(map[string]any{
+			"access": access, "expires_at": req.ExpiresAt,
+			"max_downloads": int64(0),
+			"updated_at":    now,
+		}).Error; err != nil {
+			return err
+		}
+		return tx.First(&updated, updated.ID).Error
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			fail(c, http.StatusNotFound, "share not found")
+		case errors.Is(err, errShareUnavailable):
+			fail(c, http.StatusGone, "share revoked")
+		default:
+			fail(c, http.StatusBadRequest, "share update rejected")
+		}
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, toShareDTO(updated, now))
 }
 
 func (s *Server) listFileShares(c *gin.Context) {
@@ -268,9 +372,9 @@ func (s *Server) publicShareMetadata(c *gin.Context) {
 		UpdatedAt:        updatedAt,
 		RequiresPassword: share.PasswordHash != "",
 		ExpiresAt:        share.ExpiresAt,
-		MaxDownloads:     share.MaxDownloads,
+		MaxDownloads:     0, // never advertise a retired limit to old clients
 		DownloadCount:    share.DownloadCount,
-		Capabilities:     publicShareCapabilitiesForNode(node.Type),
+		Capabilities:     publicShareCapabilitiesForShare(share, node.Type),
 	})
 }
 

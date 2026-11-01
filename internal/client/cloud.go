@@ -20,6 +20,7 @@ type FileVersion struct {
 }
 
 type FileShare struct {
+	Access        string     `json:"access"`
 	ID            uint64     `json:"id"`
 	NodeID        uint64     `json:"node_id"`
 	HasPassword   bool       `json:"has_password"`
@@ -38,6 +39,7 @@ type CreatedFileShare struct {
 }
 
 type CreateShareInput struct {
+	Access       string     `json:"access"`
 	ExpiresAt    *time.Time `json:"expires_at,omitempty"`
 	Password     string     `json:"password"`
 	MaxDownloads int64      `json:"max_downloads"`
@@ -130,6 +132,17 @@ func (c *Client) Shares(ctx context.Context, nodeID uint64) ([]FileShare, error)
 	var out []FileShare
 	err := c.json(ctx, http.MethodGet, fmt.Sprintf("/api/v1/nodes/%d/shares", nodeID), nil, &out)
 	return out, err
+}
+
+type UpdateShareInput struct {
+	Access    string     `json:"access"`
+	ExpiresAt *time.Time `json:"expires_at"`
+}
+
+func (c *Client) UpdateShare(ctx context.Context, shareID uint64, input UpdateShareInput) (FileShare, error) {
+	var share FileShare
+	err := c.json(ctx, http.MethodPatch, fmt.Sprintf("/api/v1/shares/%d", shareID), input, &share)
+	return share, err
 }
 
 func (c *Client) RevokeShare(ctx context.Context, shareID uint64) error {

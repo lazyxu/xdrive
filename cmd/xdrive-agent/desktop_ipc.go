@@ -720,6 +720,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("POST /v1/cloud/versions/restore", h.cloudRestoreVersion)
 	mux.HandleFunc("GET /v1/cloud/shares", h.cloudShares)
 	mux.HandleFunc("POST /v1/cloud/shares", h.cloudCreateShare)
+	mux.HandleFunc("POST /v1/cloud/shares/update", h.cloudUpdateShare)
 	mux.HandleFunc("POST /v1/cloud/shares/revoke", h.cloudRevokeShare)
 	mux.HandleFunc("GET /v1/media/items", h.mediaItems)
 	mux.HandleFunc("GET /v1/media/item", h.mediaItem)
@@ -3970,16 +3971,19 @@ func (h *desktopIPCHandler) cloudShares(w http.ResponseWriter, r *http.Request) 
 
 func (h *desktopIPCHandler) cloudCreateShare(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		NodeID       uint64 `json:"node_id"`
-		ExpiresAt    string `json:"expires_at,omitempty"`
-		Password     string `json:"password,omitempty"`
-		MaxDownloads int64  `json:"max_downloads,omitempty"`
+		NodeID    uint64 `json:"node_id"`
+		ExpiresAt string `json:"expires_at,omitempty"`
+		Password  string `json:"password,omitempty"`
+		Access    string `json:"access"`
+		// Older Desktop clients can still send the retired limit.
+		// Decode for wire compatibility but do not enforce or forward it.
+		MaxDownloads int64 `json:"max_downloads,omitempty"`
 	}
 	if !decodeDesktopIPCJSON(w, r, &input) {
 		return
 	}
-	if input.NodeID == 0 || input.MaxDownloads < 0 {
-		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_share", "node_id is required and max_downloads must be non-negative")
+	if input.NodeID == 0 || (input.Access != "" && input.Access != "read_only" && input.Access != "view_upload") {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_share", "node_id and valid access are required")
 		return
 	}
 	var expiresAt *time.Time
@@ -3992,13 +3996,55 @@ func (h *desktopIPCHandler) cloudCreateShare(w http.ResponseWriter, r *http.Requ
 		expiresAt = &parsed
 	}
 	created, err := h.ctrl.CloudCreateShare(r.Context(), input.NodeID, client.CreateShareInput{
-		ExpiresAt: expiresAt, Password: input.Password, MaxDownloads: input.MaxDownloads,
+		ExpiresAt: expiresAt, Password: input.Password, Access: input.Access,
 	})
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusCreated, created)
+}
+
+// Existing narrow Agent IPC controllers retain their previous contract.
+type desktopIPCShareUpdateController interface {
+	CloudUpdateShare(context.Context, uint64, client.UpdateShareInput) (client.FileShare, error)
+}
+
+func (h *desktopIPCHandler) cloudUpdateShare(w http.ResponseWriter, r *http.Request) {
+	controller, ok := h.ctrl.(desktopIPCShareUpdateController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "share_update_unavailable", "Share update unavailable")
+		return
+	}
+	var input struct {
+		ID        uint64 `json:"id"`
+		Access    string `json:"access"`
+		ExpiresAt string `json:"expires_at"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.ID == 0 || (input.Access != "read_only" && input.Access != "view_upload") {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_share", "share id and access are required")
+		return
+	}
+	var expiry *time.Time
+	if value := strings.TrimSpace(input.ExpiresAt); value != "" {
+		parsed, err := time.Parse(time.RFC3339, value)
+		if err != nil || !parsed.After(time.Now()) {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_share_expiry", "expires_at must be a future RFC3339 timestamp")
+			return
+		}
+		expiry = &parsed
+	}
+	updated, err := controller.CloudUpdateShare(r.Context(), input.ID, client.UpdateShareInput{
+		Access: input.Access, ExpiresAt: expiry,
+	})
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, updated)
 }
 
 func (h *desktopIPCHandler) cloudRevokeShare(w http.ResponseWriter, r *http.Request) {

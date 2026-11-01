@@ -2479,6 +2479,14 @@ func (c *agentController) CloudCreateShare(ctx context.Context, nodeID uint64, i
 	return agentCreatedShare{Share: created, URL: link}, nil
 }
 
+func (c *agentController) CloudUpdateShare(ctx context.Context, shareID uint64, input client.UpdateShareInput) (client.FileShare, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.FileShare{}, err
+	}
+	return cli.UpdateShare(ctx, shareID, input)
+}
+
 func (c *agentController) CloudRevokeShare(ctx context.Context, shareID uint64) error {
 	cli, _, err := c.cloudClient()
 	if err != nil {

@@ -20,13 +20,13 @@ test('Web and Desktop reuse shared share creation fields', () => {
     'datetime-local',
     '有效期',
     '过期时间',
-    '最大下载次数',
     '密码（可选）',
-    '0 表示不限',
   ]) {
     assert.ok(shared.includes(token), `shared share fields missing: ${token}`)
   }
 
+  assert.equal(shared.includes('最大下载次数'), false, 'download caps are no longer configurable')
+  assert.ok(sharedDialog.includes('value="view_upload"'), 'both clients must expose the upload grant')
   assert.equal((web.match(/<XDriveCreatedShareLink\b/g) || []).length, 1, 'Web should reuse shared created-link presentation')
   assert.equal((desktop.match(/<XDriveCreatedShareLink\b/g) || []).length, 1, 'Desktop should reuse shared created-link presentation')
   assert.equal((web.match(/<XDriveShareCreateFields\b/g) || []).length, 1, 'Web should reuse shared share fields')
@@ -48,7 +48,7 @@ test('Web and Desktop reuse shared existing-share list presentation', () => {
     'XDriveTableSurface',
     '保护方式',
     '过期时间',
-    '下载次数',
+    '访问权限',
     '密码保护',
     '永不过期',
     '撤销',

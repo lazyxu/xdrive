@@ -209,8 +209,10 @@ func TestFolderShareBoundedPrivateNavigationAndFileTicket(t *testing.T) {
 	}
 	requestWithHeaders(t, router, http.MethodGet, secondTicket.URL, "", nil,
 		http.StatusGone, nil)
+	// The share remains active and download counts are unlimited. A moved-out
+	// descendant is now an out-of-scope file (404), not an exhausted link (410).
 	requestWithHeaders(t, router, http.MethodPost, "/api/v1/public/share/download-ticket",
-		"", strings.NewReader(downloadBody), http.StatusGone,
+		"", strings.NewReader(downloadBody), http.StatusNotFound,
 		map[string]string{"X-XDrive-Share-Token": created.Token})
 
 	request(t, router, http.MethodDelete, fmt.Sprintf("/api/v1/shares/%d", created.ID),

@@ -201,5 +201,6 @@ func TestPublicShareScopedImagePreviewAndRevocation(t *testing.T) {
 		Update("download_count", int64(1)).Error; err != nil {
 		t.Fatal(err)
 	}
-	request(t, router, http.MethodGet, single.URL, "", nil, http.StatusGone)
+	// A legacy max_downloads field no longer blocks previews or downloads.
+	request(t, router, http.MethodGet, single.URL, "", nil, http.StatusOK)
 }
