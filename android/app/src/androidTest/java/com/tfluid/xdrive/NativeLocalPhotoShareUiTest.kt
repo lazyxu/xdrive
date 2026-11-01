@@ -6,7 +6,6 @@ import android.net.Uri
 import android.provider.MediaStore
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -22,14 +21,13 @@ class NativeLocalPhotoShareUiTest {
             video, "camera", "Camera", 1700000000L)
 
     @Test fun sharesExactlyOneOriginalWithTemporaryReadGrant() {
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
         for (video in listOf(false, true)) {
             val source = photo(video = video)
             assertTrue(nativeLocalPhotoShareEligible(source))
-            val intent = requireNotNull(nativeLocalPhotoShareIntent(context, source))
+            val intent = requireNotNull(nativeLocalPhotoShareIntent(source))
             assertEquals(Intent.ACTION_SEND, intent.action)
             assertEquals(if (video) "video/*" else "image/*", intent.type)
-            assertEquals(source.uri, intent.getParcelableExtra(Intent.EXTRA_STREAM))
+            assertEquals(source.uri, intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM))
             assertEquals(source.uri, intent.clipData?.getItemAt(0)?.uri)
             assertEquals(1, intent.clipData?.itemCount)
             assertTrue(intent.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0)
@@ -39,7 +37,6 @@ class NativeLocalPhotoShareUiTest {
     }
 
     @Test fun rejectsOtherSchemeWrongCollectionOrRecycledId() {
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
         val good = photo()
         for (bad in listOf(
             good.copy(id = 0),
@@ -52,7 +49,7 @@ class NativeLocalPhotoShareUiTest {
             good.copy(uri = Uri.parse(good.uri.toString() + "?other=1"))
         )) {
             assertFalse(nativeLocalPhotoShareEligible(bad))
-            assertNull(nativeLocalPhotoShareIntent(context, bad))
+            assertNull(nativeLocalPhotoShareIntent(bad))
         }
     }
 
