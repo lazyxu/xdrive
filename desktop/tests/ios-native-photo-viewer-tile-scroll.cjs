@@ -85,3 +85,22 @@ for (const [name, view, permission] of [
     assert.match(view, /\.fullScreenCover\(item: \$selected, onDismiss: \{ restoreAfterViewer\(\) \}\)/);
   });
 }
+
+
+test('PhotoKit album L3 Viewer navigates only its loaded authorized 64-item page and restores last tile', () => {
+  const source = read('ios/XDriveIOS/NativePhotoAlbumBrowser.swift')
+  const contents = source.split('struct XDriveIOSNativeAlbumContentsScreen: View {')[1]
+    .split('struct XDriveIOSNativePhotoAlbumsScreen: View {')[0]
+  assert.match(contents, /\.fullScreenCover\(item: \$selected, onDismiss: \{ restoreAfterViewer\(\) \}\) \{ initial in/)
+  assert.match(contents, /XDriveIOSNativeLocalPhotoDetail\(\s*candidate: initial/)
+  assert.match(contents, /loadedItems: page\?\.items\.filter \{ \$0\.kind != "unsupported" \} \?\? \[\]/)
+  assert.match(contents, /onViewed: \{ next in[\s\S]*?phase == \.active, selected\?\.id == initial\.id/)
+  assert.match(contents, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/)
+  assert.match(contents, /page\?\.items\.contains\(where: \{[\s\S]*?\$0\.id == next\.id[\s\S]*?\$0\.kind == next\.kind[\s\S]*?\$0\.isLive == next\.isLive[\s\S]*?\$0\.capturedAt == next\.capturedAt[\s\S]*?\$0\.modifiedAt == next\.modifiedAt/)
+  assert.match(contents, /viewerReturnID = next\.id\s+accessibilityFocusedTileID = nil/)
+  assert.match(contents, /private func restoreAfterViewer\(\)[\s\S]*?if phase == \.active \{ reload\(\) \}/)
+  assert.match(contents, /private func restoreViewerTile\(using scroll: ScrollViewProxy\)[\s\S]*?XDriveIOSNativePhotoViewerReturnAnchorPolicy\.target\(/)
+  assert.match(contents, /onChange\(of: libraryMonitor\.revision\) \{ _ in[\s\S]*?clearViewerTileAnchor\(\)[\s\S]*?invalidate\(\)/)
+  assert.match(contents, /if selected != nil \{ suspendForViewer\(\) \}/)
+  assert.doesNotMatch(contents, /UserDefaults|@AppStorage|CloudKit|UploadSession|isNetworkAccessAllowed = true/)
+});

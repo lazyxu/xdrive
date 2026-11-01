@@ -46,7 +46,7 @@ internal fun ColumnScope.GalleryMapOverview(
         }
         Text(if (state.galleryBd09Requested)
             if (nativeBaiduMapSdkCompiled())
-                "当前 Owner 的 BD-09LL 网格已验证。可选百度原生底图与聚合点，点击数量标记进入当前网格照片墙和 Viewer；地图拖动或缩放后，可点击“刷新当前视窗”重新读取 Owner 照片。"
+                "当前 Owner 的 BD-09LL 网格已验证。可选百度原生底图与聚合点，点击数量标记进入当前网格照片墙和 Viewer；地图拖动或缩放后，静止 500ms 后自动重新读取当前 Owner 照片，失败可手动重试。"
             else "BD-09LL 网格来自当前 Owner 的真实数据；点击网格进入照片墙和 Viewer。当前 APK 未配置 Android 专用百度 AK，继续提供可信的非底图网格。"
             else "显示当前账户真实 WGS84 GPS 概览；可切换已验证的 BD-09 网格查看照片。百度 Android 底图仅在配置有效的专用 AK 后提供。",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -73,6 +73,13 @@ internal fun ColumnScope.GalleryMapOverview(
         ) { Text("查看已验证 BD-09 网格") }
     }
     when {
+        // Keep the real MapView mounted on a failed camera read. Otherwise
+        // dismiss/retry recreates the SDK and loses the user's moved viewport.
+        state.galleryBd09Requested && bd09Cells != null ->
+            GalleryVerifiedBd09Cells(bd09Cells, state.galleryBd09Bounds,
+                state.galleryBd09History.size, controller, bd09Scroll,
+                state.galleryBd09CameraMoving, state.galleryBd09CameraPending,
+                state.galleryBd09PreserveCamera, state.loading, state.error)
         state.error != null -> Column(Modifier.weight(1f).fillMaxWidth().padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -85,17 +92,11 @@ internal fun ColumnScope.GalleryMapOverview(
             ) { Text(if (state.galleryBd09Requested) "重新读取 BD-09 网格"
                 else "重新读取 GPS 概览") }
         }
-        state.galleryBd09Requested -> when {
-            bd09Cells != null ->
-                GalleryVerifiedBd09Cells(bd09Cells, state.galleryBd09Bounds,
-                    state.galleryBd09History.size, controller, bd09Scroll,
-                    state.galleryBd09CameraMoving, state.galleryBd09CameraPending,
-                    state.galleryBd09PreserveCamera, state.loading)
-            else -> Box(Modifier.weight(1f).fillMaxWidth()
+        state.galleryBd09Requested ->
+            Box(Modifier.weight(1f).fillMaxWidth()
                 .testTag("gallery-map-bd09-loading"), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
-        }
         !state.galleryMapLoaded || overview == null ->
             Box(Modifier.weight(1f).fillMaxWidth()
                 .testTag("gallery-map-loading"), contentAlignment = Alignment.Center) {
@@ -166,9 +167,9 @@ private fun ColumnScope.GalleryVerifiedBd09Cells(
     depth: Int, controller: DriveController,
     listState: LazyListState,
     cameraMoving: Boolean, pending: OwnerBd09Bounds?,
-    preserveCamera: Boolean, loading: Boolean,
+    preserveCamera: Boolean, loading: Boolean, error: String?,
 ) {
-    val blocked = loading || cameraMoving || pending != null
+    val blocked = loading || cameraMoving || pending != null || error != null
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxWidth().weight(1f)
@@ -187,12 +188,16 @@ private fun ColumnScope.GalleryVerifiedBd09Cells(
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.testTag("gallery-map-bd09-camera-pending"))
                 }
+                if (error != null) Text(error,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.testTag("gallery-map-bd09-camera-error"))
                 if (pending != null) TextButton(
                     onClick = controller::refreshGalleryBd09CameraViewport,
                     enabled = !loading && !cameraMoving,
                     modifier = Modifier.heightIn(min = 48.dp)
                         .testTag("gallery-map-bd09-refresh-camera"),
-                ) { Text("刷新当前视窗") }
+                ) { Text("立即刷新当前视窗") }
                 NativeBaiduMapPanel(
                     bounds = bounds,
                     result = result,
