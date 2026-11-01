@@ -5,8 +5,8 @@ import type {
 } from './synology-backup-adapter'
 import { XDRIVE_SYNOLOGY_MEDIA_RANGE_BYTES } from './synology-backup-adapter'
 
-// Only supported native media and PDF formats with an auditable fixed MIME allowlist.
-// The shared Viewer owns playback/PDF UI, Retry, navigation and cleanup.
+// Only browser-playable media formats with an auditable fixed MIME allowlist.
+// The existing shared Viewer still owns controls, seek/buffer state and cleanup.
 export function xDriveSynologyPlaybackMIME(name: string): XDriveSynologyOwnerStreamMIME | null {
   const ext = name.slice(name.lastIndexOf('.') + 1).toLowerCase()
   switch (ext) {
@@ -18,9 +18,14 @@ export function xDriveSynologyPlaybackMIME(name: string): XDriveSynologyOwnerStr
     case 'ogg': return 'audio/ogg'
     case 'wav': return 'audio/wav'
     case 'flac': return 'audio/flac'
-    case 'pdf': return 'application/pdf'
     default: return null
   }
+}
+
+// PDFs above the bounded Blob limit reuse the same Owner-scoped, session-bound
+// CGI Range transport as media. Small PDFs keep full-SHA Blob verification.
+export function xDriveSynologyNativeStreamMIME(name: string): XDriveSynologyOwnerStreamMIME | null {
+  return name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : xDriveSynologyPlaybackMIME(name)
 }
 
 export function xDriveSynologyPlaybackMagic(data: Uint8Array, mime: XDriveSynologyOwnerStreamMIME): boolean {
@@ -42,23 +47,22 @@ export function xDriveSynologyPlaybackMagic(data: Uint8Array, mime: XDriveSynolo
   }
 }
 
-// The browser performs one small Owner-authenticated content proof. Native
-// video/audio and large PDF renderers subsequently request bounded bytes via
-// the exact DSM CGI Range URL, never a giant Blob or Server-issued token.
-// A PDF additionally verifies the real HEAD response before iframe mounting;
-// onLoad alone cannot distinguish a PDF from an HTML error document.
-// No false whole-file progress is emitted for native Range transport.
+// The browser performs one small Owner-authenticated content proof. The
+// subsequent video/audio element fetches data natively via the exact DSM CGI
+// Range URL; it does not download the entire file into JavaScript memory.
+// No misleading whole-file byte progress is emitted: native buffering time is
+// provided by the existing shared Viewer.
 export async function xDriveSynologyLoadNativeMediaStream(
   client: Pick<XDriveSynologyBackupLocalClient, 'ownerFileMediaRange' | 'ownerFileMediaStreamURL'>,
   item: XDriveFileExplorerItem,
   signal?: AbortSignal,
 ): Promise<string> {
-  const mime = item.kind === 'file' ? xDriveSynologyPlaybackMIME(item.name) : null
+  const mime = item.kind === 'file' ? xDriveSynologyNativeStreamMIME(item.name) : null
   if (!mime ||
     typeof item.id !== 'number' || !Number.isSafeInteger(item.id) || item.id < 1 ||
     typeof item.revision !== 'number' || !Number.isSafeInteger(item.revision) || item.revision < 1 ||
     typeof item.size !== 'number' || !Number.isSafeInteger(item.size) || item.size < 1) {
-    throw new Error('Only Owner-authenticated playable media files can use DSM Range streaming')
+    throw new Error('Only Owner-authenticated supported media or PDF files can use DSM Range streaming')
   }
   if (signal?.aborted) throw new Error('Owner stream load cancelled')
   const length = Math.min(XDRIVE_SYNOLOGY_MEDIA_RANGE_BYTES, item.size)
@@ -74,15 +78,16 @@ export async function xDriveSynologyLoadNativeMediaStream(
   // without the same logged-in DSM principal and owning Agent fails closed.
   const url = client.ownerFileMediaStreamURL(item.id, item.revision, item.size, first.sha256, mime)
   if (mime === 'application/pdf') {
-    // This fixed, same-origin DSM CGI requires the authenticated DSM cookie;
-    // signed Web tickets use a different credential-free HEAD verifier.
+    // Only the verified, fixed same-origin DSM CGI gets session credentials.
+    // Keep existing shared Viewer HEAD preflight as a separate presentation gate.
     const response = await fetch(url, {
       method: 'HEAD', signal, credentials: 'same-origin',
       mode: 'same-origin', cache: 'no-store', redirect: 'error',
       referrerPolicy: 'no-referrer',
     })
     if (signal?.aborted) throw new Error('Owner stream load cancelled')
-    const contentType = response.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase()
+    const contentType = response.headers.get('content-type')
+      ?.split(';', 1)[0]?.trim().toLowerCase()
     if (response.status !== 200 || contentType !== 'application/pdf' ||
         response.headers.get('accept-ranges')?.toLowerCase() !== 'bytes' ||
         response.headers.get('content-length') !== String(item.size) ||

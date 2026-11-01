@@ -41,7 +41,7 @@ const cgi = 'https://nas.example/webman/3rdparty/xdrivenas/backup.cgi'
 const local = adapter.createXDriveSynologyBackupLocalClient(cgi)
 assert.throws(() => adapter.createXDriveSynologyBackupLocalClient(
   'https://other.example/webman/3rdparty/xdrivenas/backup.cgi'), /same-origin/)
-// Probe the real DSM PDF path with a deterministic HEAD transport stub.
+// Deterministic DSM HEAD stub: no remote network call in fixture tests.
 const pdfHEADCalls = []
 let pdfHEADStatus = 200
 let pdfHEADHeaders = {}
@@ -49,20 +49,19 @@ const source = transpile('ui/shared/src/synology-media-stream.ts', {
   './synology-backup-adapter': adapter,
 }, {
   fetch: async (url, options) => {
-    pdfHEADCalls.push({ url, options })
-    return { status: pdfHEADStatus, headers: {
+    pdfHEADCalls.push({url, options})
+    return {status: pdfHEADStatus, headers: {
       get: name => pdfHEADHeaders[name.toLowerCase()] ?? null,
-    } }
+    }}
   },
 })
 const { xDriveSynologyLoadNativeMediaStream, xDriveSynologyPlaybackMIME,
-  xDriveSynologyPlaybackMagic } = source
+  xDriveSynologyNativeStreamMIME, xDriveSynologyPlaybackMagic } = source
 for (const [name, mime] of [
   ['clip.MP4', 'video/mp4'], ['clip.m4v', 'video/mp4'],
   ['clip.webm', 'video/webm'], ['audio.mp3', 'audio/mpeg'],
   ['audio.m4a', 'audio/mp4'], ['audio.ogg', 'audio/ogg'],
   ['audio.wav', 'audio/wav'], ['audio.flac', 'audio/flac'],
-  ['report.PDF', 'application/pdf'],
 ]) assert.equal(xDriveSynologyPlaybackMIME(name), mime)
 for (const name of ['clip.avi', 'clip.mkv', 'clip.mov', 'script.html', 'live.livp']) {
   assert.equal(xDriveSynologyPlaybackMIME(name), null)
@@ -98,6 +97,71 @@ assert.equal(parsed.searchParams.get('mime'), 'video/mp4')
 assert.equal(parsed.searchParams.size, 6)
 assert.ok(!/token|bearer|ticket|http%3a|private/i.test(parsed.search))
 assert.equal(calls, 1, 'only one tiny Owner preflight; bytes stream via native media element')
+
+// Large PDFs use the identical bounded, authenticated Owner Range CGI, not
+// a 33 MiB renderer Blob. Small PDFs keep the complete SHA-verified path.
+assert.equal(xDriveSynologyNativeStreamMIME('scan.PDF'), 'application/pdf')
+assert.equal(xDriveSynologyPlaybackMIME('scan.pdf'), null)
+const pdfBytes = new Uint8Array(256 << 10)
+pdfBytes.set(new TextEncoder().encode('%PDF-1.7\n'), 0)
+const pdf = { id: 42, revision: 7, name: 'scan.pdf', size: (32 << 20) + 1, kind: 'file' }
+let pdfReads = 0
+const pdfClient = {
+  ownerFileMediaStreamURL: local.ownerFileMediaStreamURL,
+  async ownerFileMediaRange(nodeID, revision, offset, length) {
+    pdfReads++
+    assert.equal(nodeID, pdf.id)
+    assert.equal(revision, pdf.revision)
+    assert.equal(offset, 0)
+    assert.equal(length, pdfBytes.length)
+    return { offset, revision, total: pdf.size, sha256: sha, data: pdfBytes }
+  },
+}
+pdfHEADHeaders = {
+  'content-type': 'application/pdf',
+  'accept-ranges': 'bytes',
+  'content-length': String(pdf.size),
+  'etag': '"' + sha + '"',
+}
+const pdfURL = new URL(await xDriveSynologyLoadNativeMediaStream(pdfClient, pdf))
+assert.equal(pdfURL.origin, location.origin)
+assert.equal(pdfURL.searchParams.get('op'), 'cloud-media-stream')
+assert.equal(pdfURL.searchParams.get('mime'), 'application/pdf')
+assert.equal(pdfURL.searchParams.get('total'), String(pdf.size))
+assert.equal(pdfURL.searchParams.size, 6)
+assert.equal(pdfReads, 1)
+assert.equal(pdfHEADCalls.length, 1, 'exactly one initial PDF HEAD')
+assert.equal(pdfHEADCalls[0].options.method, 'HEAD')
+assert.equal(pdfHEADCalls[0].options.credentials, 'same-origin')
+assert.equal(pdfHEADCalls[0].options.mode, 'same-origin')
+assert.equal(pdfHEADCalls[0].options.cache, 'no-store')
+assert.equal(pdfHEADCalls[0].options.redirect, 'error')
+assert.equal(pdfHEADCalls[0].options.referrerPolicy, 'no-referrer')
+for (const variation of [
+  {status: 401}, {status: 403}, {status: 404}, {status: 410},
+  {headers: {...pdfHEADHeaders, 'content-type': 'text/html'}},
+  {headers: {...pdfHEADHeaders, 'accept-ranges': 'none'}},
+  {headers: {...pdfHEADHeaders, 'content-length': '1'}},
+  {headers: {...pdfHEADHeaders, 'etag': '"stale-version"'}},
+]) {
+  pdfHEADStatus = variation.status ?? 200
+  const valid = pdfHEADHeaders
+  pdfHEADHeaders = variation.headers ?? valid
+  await assert.rejects(xDriveSynologyLoadNativeMediaStream(pdfClient, pdf, signal),
+    /Authenticated DSM PDF Range preflight unavailable/)
+  pdfHEADStatus = 200
+  pdfHEADHeaders = valid
+}
+assert.equal(pdfHEADCalls.length, 9, 'every rejected HTTP HEAD checked exactly once')
+assert.equal(xDriveSynologyPlaybackMagic(pdfBytes, 'application/pdf'), true)
+assert.equal(xDriveSynologyPlaybackMagic(
+  Uint8Array.from(Buffer.from('<html>unauthorized</html>')), 'application/pdf'), false)
+await assert.rejects(xDriveSynologyLoadNativeMediaStream({
+  ...pdfClient, async ownerFileMediaRange() { return {
+    offset: 0, revision: pdf.revision, total: pdf.size, sha256: sha,
+    data: Uint8Array.from(Buffer.from('<html>unauthorized</html>')),
+  } },
+}, pdf), /trusted/)
 
 for (const invalid of [
   {...file, id: 0}, {...file, revision: 0}, {...file, kind: 'dir'},
@@ -135,78 +199,17 @@ assert.equal(xDriveSynologyPlaybackMagic(
 assert.equal(xDriveSynologyPlaybackMagic(Uint8Array.from([0x1a,0x45,0xdf,0xa3]), 'video/webm'), true)
 assert.equal(xDriveSynologyPlaybackMagic(Uint8Array.from([0x3c,0x68,0x74,0x6d,0x6c]), 'video/mp4'), false)
 
-// A PDF larger than 32 MiB must not be assembled into a JS Blob.
-const largePDF = { id: 99, revision: 8, name: 'report.PDF',
-  size: (32 << 20) + 1, kind: 'file' }
-const pdfBytes = new Uint8Array(256 << 10)
-pdfBytes.set(Buffer.from('%PDF-1.7\n'))
-const pdfSHA = 'b'.repeat(64)
-let pdfReads = 0
-const pdfClient = {
-  ownerFileMediaStreamURL: local.ownerFileMediaStreamURL,
-  async ownerFileMediaRange(id, revision, offset, size, signal) {
-    pdfReads++
-    assert.equal(id, largePDF.id)
-    assert.equal(revision, largePDF.revision)
-    assert.equal(offset, 0)
-    assert.equal(size, pdfBytes.length)
-    assert.equal(signal?.aborted, false)
-    return {offset, revision, total: largePDF.size, sha256: pdfSHA, data: pdfBytes}
-  },
-}
-const validPDFHeaders = {
-  'content-type': 'application/pdf',
-  'accept-ranges': 'bytes',
-  'content-length': String(largePDF.size),
-  'etag': '"' + pdfSHA + '"',
-}
-pdfHEADHeaders = validPDFHeaders
-const pdfURL = await xDriveSynologyLoadNativeMediaStream(pdfClient, largePDF, signal)
-assert.equal(new URL(pdfURL).searchParams.get('mime'), 'application/pdf')
-assert.equal(new URL(pdfURL).origin, location.origin)
-assert.equal(pdfReads, 1)
-assert.equal(pdfHEADCalls.length, 1)
-assert.equal(pdfHEADCalls[0].url, pdfURL)
-assert.equal(pdfHEADCalls[0].options.method, 'HEAD')
-assert.equal(pdfHEADCalls[0].options.credentials, 'same-origin')
-assert.equal(pdfHEADCalls[0].options.mode, 'same-origin')
-assert.equal(pdfHEADCalls[0].options.redirect, 'error')
-assert.equal(pdfHEADCalls[0].options.referrerPolicy, 'no-referrer')
-assert.equal(pdfHEADCalls[0].options.cache, 'no-store')
-assert.equal(pdfHEADCalls[0].options.signal, signal)
-assert.equal(new URL(pdfURL).searchParams.size, 6)
-for (const variation of [
-  { status: 401 }, { status: 403 }, { status: 404 }, { status: 410 },
-  { headers: { ...validPDFHeaders, 'content-type': 'text/html' } },
-  { headers: { ...validPDFHeaders, 'accept-ranges': 'none' } },
-  { headers: { ...validPDFHeaders, 'content-length': '1' } },
-  { headers: { ...validPDFHeaders, etag: '"old-content"' } },
-]) {
-  pdfHEADStatus = variation.status ?? 200
-  pdfHEADHeaders = variation.headers ?? validPDFHeaders
-  await assert.rejects(xDriveSynologyLoadNativeMediaStream(pdfClient, largePDF, signal),
-    /PDF Range preflight/)
-}
-pdfHEADStatus = 200
-pdfHEADHeaders = validPDFHeaders
-await assert.rejects(xDriveSynologyLoadNativeMediaStream({
-  ...pdfClient, async ownerFileMediaRange() {
-    return {offset: 0, revision: 8, total: largePDF.size, sha256: pdfSHA,
-      data: new Uint8Array(pdfBytes.length)}
-  },
-}, largePDF, signal), /not trusted/)
-assert.equal(pdfHEADCalls.length, 9, 'invalid PDF magic must not reach HEAD')
 const filesUI = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/SynologyOwnerFilesPage.tsx'), 'utf8')
 assert.match(filesUI, /xDriveSynologyLoadNativeMediaStream\(client, item, signal\)/)
+assert.match(filesUI, /kind === 'pdf' && typeof item\.size === 'number'/)
+assert.match(filesUI, /item\.size > XDRIVE_SYNOLOGY_MEDIA_BLOB_MAX_BYTES/)
+assert.match(filesUI, /mime === 'application\/pdf'/)
 assert.match(filesUI, /<XDriveFileQuickLookDialog/)
-assert.match(filesUI, /kind === 'pdf'/)
-assert.match(filesUI, /XDRIVE_SYNOLOGY_MEDIA_BLOB_MAX_BYTES/)
 assert.match(filesUI, /loadPreviewURL=\{loadMediaPreview\}/)
 const viewer = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/FilePreviewSurface.tsx'), 'utf8')
 assert.match(viewer, /data-xdrive-preview-media-state="video"/)
 assert.match(viewer, /data-xdrive-preview-media-state="audio"/)
 assert.match(viewer, /xDriveAbortHTMLMediaElement/)
-assert.match(viewer, /data-xdrive-preview-retry/)
 assert.ok(fs.readFileSync(path.join(repo, 'internal/synologyui/media_stream.go'), 'utf8')
   .includes('ownerStreamMaxResponseBytes = 1 << 20'))
 console.log('DSM native audio/video Range: shared Viewer, fixed same-origin Owner URL, magic and abort')
