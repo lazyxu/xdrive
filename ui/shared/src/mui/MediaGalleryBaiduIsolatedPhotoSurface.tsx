@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Box, Button, Typography } from '@mui/material'
 import PhotoLibraryOutlinedIcon from '@mui/icons-material/PhotoLibraryOutlined'
@@ -110,6 +110,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   const errorElement = useRef<HTMLDivElement | null>(null)
   const mapFrameRef = useRef<{
     setPhotoCoverSelections(selections: readonly MediaBaiduNativeCellSelection[]): boolean
+    requestCurrentViewport(): boolean
   } | null>(null)
   const failureCallback = useRef(onFailure)
   failureCallback.current = onFailure
@@ -144,6 +145,12 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
   const acceptedScope = useRef<{key:string;scope:XDriveBaiduMapPhotoScope}|null>(null)
   const failedCellsScopeRef = useRef<{owner:string;key:string} | null>(null)
   const acceptedCells = useRef<MediaBaiduNativeCellSelection[]>([])
+  // A former photo cover is an interaction hint, never an Owner grant. A
+  // clicked, visually retained cover can open only after a new /cells receipt.
+  const pendingCoverClick = useRef<{
+    owner:string;key:string;assetID:number;nodeID:number;revision:number
+  } | null>(null)
+  const [coverClickStatus,setCoverClickStatus] = useState('')
   const lastViewport = useRef<{bounds:Bounds;live:boolean}|null>(null)
   const refreshFilteredCells = useRef<((skipPending?:boolean) => void) | null>(null)
   const lastFilterKey = useRef(currentFilterKey)
@@ -384,6 +391,8 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
     if(lastFilterKey.current===currentFilterKey)return
     lastFilterKey.current=currentFilterKey
     pendingResizeDrawer.current=null
+    pendingCoverClick.current=null
+    setCoverClickStatus('')
     committedPresentation.current=null
     clearGesturePresentation()
     refreshFilteredCells.current?.()
@@ -480,6 +489,9 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         }
       },
       onCancel:()=>{
+        // A new actual SDK gesture supersedes the former cover click intent.
+        pendingCoverClick.current=null
+        setCoverClickStatus('')
         cameraTouched=true
         const nextSize=canvasSize(), before=lastCanvasSize
         const resized=Boolean(before && nextSize &&
@@ -673,6 +685,23 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
           page.total_count > 0 && cells.length > 0
         if (!liveCamera) initialWorldEmpty = page.total_count === 0 && !cameraTouched
         setSummary(page)
+        // The previous image has no independent click authority. Match its
+        // representative Asset/Node/revision against THIS newly validated
+        // Owner, filter and current-camera /cells response before opening.
+        if (liveCamera && pendingCoverClick.current) {
+          const intent=pendingCoverClick.current
+          pendingCoverClick.current=null
+          const fresh=intent.owner===(scope??'') && intent.key===approved.key
+            ? cells.find(item=>item.selection.asset_id===intent.assetID &&
+                item.selection.node_id===intent.nodeID &&
+                item.selection.node_revision===intent.revision) : undefined
+          if (fresh) {
+            setCoverClickStatus('')
+            selectCellRef.current(fresh.selection)
+          } else {
+            setCoverClickStatus('该照片位置已不在当前地图的已验证范围，请点击新的照片标记。')
+          }
+        }
         // Only a live, Owner-verified SDK viewport can open the full photo
         // wall. The bootstrapping worldwide /cells query is not a camera.
         const accepted = liveCamera ? { ...bounds } : null
@@ -694,7 +723,13 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
         }
         return true
       } catch {
-        if (run===generation) pendingResizeDrawer.current=null
+        if (run===generation) {
+          pendingResizeDrawer.current=null
+          if (pendingCoverClick.current && !request.signal.aborted) {
+            pendingCoverClick.current=null
+            setCoverClickStatus('重新确认地点照片失败，请点击照片重试。')
+          }
+        }
         if(!request.signal.aborted && !lifetime.signal.aborted && run===generation &&
             approved.key===filterRef.current.key) {
           // A failed/invalid Owner Cells response has NO media authority.
@@ -752,6 +787,7 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
       refreshFilteredCells.current=null
       pendingResizeDrawer.current=null
       cancel()
+      pendingCoverClick.current=null
       lifetime.abort()
       if(refresh!==null)clearInterval(refresh)
       if (mapFrameRef.current === frame) mapFrameRef.current = null
@@ -889,7 +925,34 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
       alt={alt} loadThumbnail={loadThumbnail} fallback={fallback}/>
   }
   const openVerifiedCell=(selection:MediaBaiduNativeCellSelection)=>{
+    if (!acceptedScope.current || !hasAcceptedCell(selection)) {
+      setCoverClickStatus('当前位置正在重新确认照片，请点击标记重试。')
+      return
+    }
+    setCoverClickStatus('')
     selectCellRef.current(selection)
+  }
+  const revalidateGestureCover=(selection:MediaBaiduNativeCellSelection)=>{
+    const prior=gesturePresentationRef.current
+    if(!prior || prior.owner!==(scope??'') ||
+       prior.key!==currentFilterKey ||
+       !prior.cells.some(cell=>
+         cell.selection.asset_id===selection.asset_id &&
+         cell.selection.node_id===selection.node_id &&
+         cell.selection.node_revision===selection.node_revision)) return
+    // No old Cell is passed to the SDK host or to a photo query. It can
+    // provide ONLY a hint to match once the new signed camera is accepted.
+    pendingCoverClick.current={
+      owner:scope??'',key:currentFilterKey,
+      assetID:selection.asset_id,nodeID:selection.node_id,
+      revision:selection.node_revision,
+    }
+    if (!mapFrameRef.current?.requestCurrentViewport()) {
+      pendingCoverClick.current=null
+      setCoverClickStatus('地图视窗尚未就绪，请重试。')
+      return
+    }
+    setCoverClickStatus('正在重新确认该地点的照片…')
   }
   // Reuse the same signed Owner camera wall as the existing map action.
   // Never derive an unsigned radius or fall back to a generic Gallery query.
@@ -934,7 +997,8 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
           <Box data-xdrive-places-trusted-photo-cover-pins
             sx={{position:'absolute',inset:0,pointerEvents:'none',zIndex:2}}>
             {paintedCovers.map((pin) => (
-              <Box key={pin.selection.node_id} component="button" type="button"
+              <Fragment key={pin.selection.node_id}>
+              <Box component="button" type="button"
                 disabled={!currentCoverActive}
                 // Stale gesture covers are visual-only, with no screen-reader
                 // announcement, focus stop or stale Owner Cell activation.
@@ -984,9 +1048,34 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
                   </Box>
                 ) : null}
               </Box>
+              {!currentCoverActive ? (
+                <Box component="button" type="button"
+                  data-xdrive-places-photo-cover-revalidate={pin.selection.node_id}
+                  aria-label={`重新确认该区域 ${pin.count} 张照片`}
+                  onClick={() => revalidateGestureCover(pin.selection)}
+                  sx={{position:'absolute',
+                    left:`${pin.x/paintedProjection.width*100}%`,
+                    top:`${pin.y/paintedProjection.height*100}%`,
+                    transform:'translate(-50%,-50%)',
+                    width:{xs:64,sm:72},height:{xs:64,sm:72},
+                    p:0,border:0,bgcolor:'transparent',
+                    pointerEvents:'auto',touchAction:'manipulation',cursor:'pointer',
+                    '&:focus-visible':{outline:'3px solid',outlineColor:'primary.main',
+                      outlineOffset:3,borderRadius:2}}}/>
+              ) : null}
+              </Fragment>
             ))}
           </Box>
         ) : null}
+      {coverClickStatus ? (
+        <Typography role="status" data-xdrive-places-cover-click-status
+          sx={{position:'absolute',top:12,left:12,right:12,zIndex:8,
+            width:'fit-content',maxWidth:'calc(100% - 24px)',
+            bgcolor:'background.paper',color:'text.primary',
+            p:1,borderRadius:1.5,boxShadow:2,pointerEvents:'none'}}>
+          {coverClickStatus}
+        </Typography>
+      ) : null}
       {!activeDrawer && trustedSummary ? (
         <Box ref={summaryElement} data-xdrive-places-map-photo-summary
           sx={{position:'absolute',
