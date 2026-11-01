@@ -276,7 +276,8 @@ export function XDriveMediaGalleryPlacesMap({
     if (desktopOnly) return
     if (!hasMapPorts || !getBaiduJSAPI4Status) {
       setStatus('unsupported')
-      if (diagnosticScope) xDriveRecordBaiduMapDiagnostic(diagnosticScope, 'client_transport_missing')
+      if (diagnosticScope && !listPlacesMapOverview)
+        xDriveRecordBaiduMapDiagnostic(diagnosticScope, 'client_transport_missing')
       return
     }
     const controller = new AbortController()
@@ -303,7 +304,7 @@ export function XDriveMediaGalleryPlacesMap({
         diagnosticScope, xDriveClassifyBaiduMapRequestFailure('status', error))
     })
     return () => controller.abort()
-  }, [desktopOnly, mapMode, hasMapPorts, getBaiduJSAPI4Status, diagnosticScope, retry])
+  }, [desktopOnly, mapMode, hasMapPorts, getBaiduJSAPI4Status, diagnosticScope, listPlacesMapOverview, retry])
   const nativeEnabled = status === 'authorized' && !childFailed &&
     (mapMode === 'prototype' || childOrigin !== '')
   // Only the parent owns the selected Album/filters; nothing here is sent to
