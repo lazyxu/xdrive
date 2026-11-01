@@ -1,6 +1,10 @@
-import { useEffect, useRef, useState, type PointerEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react'
 import { Box, Button, CircularProgress, Paper, Stack, Typography } from '@mui/material'
 import { xDriveOwnerGPSCoverCandidates } from '../media-gallery-owner-gps-cover'
+import {
+  XDRIVE_GPS_OSM_COPYRIGHT, xDriveOwnerGPSBasemapPlan, xDriveOwnerGPSTilePoint,
+  xDriveOwnerGPSTilePan, xDriveOwnerGPSTileZoom,
+} from '../media-gallery-owner-gps-tiles'
 import type { MediaPlaceFacet, MediaPlacesMapOverview, MediaPlacesViewportBounds } from '../models'
 import {
   xDriveOwnerGPSBoundsValid, xDriveOwnerGPSCanOpenPlace, xDriveOwnerGPSPan,
@@ -37,6 +41,38 @@ export function XDriveMediaGalleryOwnerGPSOverview({
   const [retry, setRetry] = useState(0)
   const start = useRef<{ id: number; x: number; y: number; width: number; height: number } | null>(null)
   const [drag, setDrag] = useState<{ x: number; y: number } | null>(null)
+  const [tileOwner, setTileOwner] = useState('')
+  const tilesEnabled = Boolean(scope) && tileOwner === scope
+  const [tileError, setTileError] = useState(false)
+  const canvasRef = useRef<HTMLDivElement | null>(null)
+  const [canvasSize, setCanvasSize] = useState({width:0,height:0})
+  useEffect(() => {
+    const element = canvasRef.current
+    if (!element) return
+    const measure = () => {
+      const rect = element.getBoundingClientRect()
+      const width = Math.round(rect.width), height = Math.round(rect.height)
+      setCanvasSize(old => old.width === width && old.height === height
+        ? old : {width,height})
+    }
+    measure()
+    if (typeof ResizeObserver !== 'undefined') {
+      const watcher = new ResizeObserver(measure)
+      watcher.observe(element)
+      return () => watcher.disconnect()
+    }
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [])
+  const tilePlan = useMemo(
+    () => tilesEnabled
+      ? xDriveOwnerGPSBasemapPlan(bounds, canvasSize.width, canvasSize.height)
+      : null,
+    // The viewport key is the frozen, current Owner's WGS84 camera.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [tilesEnabled, key, canvasSize.width, canvasSize.height],
+  )
+  useEffect(() => setTileError(false), [tilesEnabled, key])
   useEffect(() => {
     const controller = new AbortController()
     setLoaded(null)
@@ -106,6 +142,10 @@ export function XDriveMediaGalleryOwnerGPSOverview({
     setCamera({ scope, bounds: next })
   }
   const zoom = (factor: number) => {
+    if (tilesEnabled) {
+      moveTo(xDriveOwnerGPSTileZoom(bounds, factor))
+      return
+    }
     const lat = (bounds.south + bounds.north) / 2
     const lon = (bounds.west + bounds.east) / 2
     if (factor < 1) moveTo(xDriveOwnerGPSZoom(bounds, lat, lon, factor))
@@ -130,7 +170,8 @@ export function XDriveMediaGalleryOwnerGPSOverview({
     const dx = (event.clientX - previous.x) / previous.width
     const dy = (event.clientY - previous.y) / previous.height
     if (Math.hypot(event.clientX - previous.x, event.clientY - previous.y) >= 8) {
-      moveTo(xDriveOwnerGPSPan(bounds, dx, dy))
+      moveTo(tilesEnabled ? xDriveOwnerGPSTilePan(bounds, dx, dy)
+        : xDriveOwnerGPSPan(bounds, dx, dy))
     }
   }
   return (
@@ -140,7 +181,9 @@ export function XDriveMediaGalleryOwnerGPSOverview({
         <Box sx={{ minWidth: 0 }}>
           <Typography variant="subtitle2">真实 WGS84 GPS 位置概览</Typography>
           <Typography variant="caption" color="text.secondary">
-            经纬度坐标示意（无地图底图）。移动后重新查询当前 Owner；聚合区域可继续放大。
+            {tilesEnabled
+              ? 'OpenStreetMap 地理底图；照片仍来自当前 Owner 的真实 WGS84 视窗。墨卡托底图不显示纬度高于 85.05° 的极地照片，关闭底图可恢复完整 WGS84 分布。'
+              : '经纬度坐标示意（无地图底图）。移动后重新查询当前 Owner；聚合区域可继续放大。'}
           </Typography>
         </Box>
         <Stack direction="row" gap={0.5} alignItems="center">
@@ -150,10 +193,24 @@ export function XDriveMediaGalleryOwnerGPSOverview({
             sx={{minWidth:44,minHeight:44}} aria-label="缩小 GPS 地图">－</Button>
           <Button size="small" variant="outlined" onClick={() => moveTo(world())}
             sx={{minHeight:44}}>全图</Button>
+          <Button size="small" variant={tilesEnabled ? 'contained' : 'outlined'}
+            onClick={() => setTileOwner(tilesEnabled ? '' : scope)}
+            disabled={!scope}
+            data-xdrive-owner-gps-tiles-toggle
+            sx={{minHeight:44}}>
+            {tilesEnabled ? '关闭外部底图' : '启用 OSM 底图'}
+          </Button>
         </Stack>
       </Stack>
-      <Box data-xdrive-owner-gps-canvas role="group"
-        aria-label="可拖动的 WGS84 照片位置分布，非百度地图底图"
+      {!tilesEnabled ? <Typography variant="caption" color="text.secondary"
+        data-xdrive-owner-gps-external-tiles-notice>
+        可选择启用公开 OpenStreetMap 底图。启用后浏览器仅请求当前视窗需要的瓦片，
+        位置范围会由瓦片请求间接体现；照片文件及登录令牌不发送到地图服务。
+      </Typography> : null}
+      <Box ref={canvasRef} data-xdrive-owner-gps-canvas role="group"
+        aria-label={tilesEnabled
+          ? '可拖动的 OpenStreetMap 底图与当前 Owner WGS84 真实照片位置'
+          : '可拖动的 WGS84 照片位置分布，非百度地图底图'}
         onPointerDown={event => {
           if (event.button !== 0 || start.current) return
           const rect = event.currentTarget.getBoundingClientRect()
@@ -175,18 +232,32 @@ export function XDriveMediaGalleryOwnerGPSOverview({
           minHeight:280,overflow:'hidden',touchAction:'none',
           borderRadius:2,border:1,borderColor:'divider',
           bgcolor:'action.hover',
-          backgroundImage:'linear-gradient(to right, transparent 24.8%, currentColor 25%, transparent 25.2%, transparent 49.8%, currentColor 50%, transparent 50.2%, transparent 74.8%, currentColor 75%, transparent 75.2%), linear-gradient(to bottom, transparent 24.8%, currentColor 25%, transparent 25.2%, transparent 49.8%, currentColor 50%, transparent 50.2%, transparent 74.8%, currentColor 75%, transparent 75.2%)',
+          backgroundImage:tilesEnabled ? 'none'
+            : 'linear-gradient(to right, transparent 24.8%, currentColor 25%, transparent 25.2%, transparent 49.8%, currentColor 50%, transparent 50.2%, transparent 74.8%, currentColor 75%, transparent 75.2%), linear-gradient(to bottom, transparent 24.8%, currentColor 25%, transparent 25.2%, transparent 49.8%, currentColor 50%, transparent 50.2%, transparent 74.8%, currentColor 75%, transparent 75.2%)',
           color:'divider',opacity:1,cursor:drag ? 'grabbing' : 'grab'}}>
         <Box sx={{position:'absolute',inset:0,
           transform:drag ? `translate(${drag.x}px,${drag.y}px)` : 'none',
           pointerEvents:drag ? 'none' : 'auto'}}>
+          {tilesEnabled && tilePlan ? tilePlan.tiles.map(tile => (
+            <Box key={tile.z + ':' + tile.x + ':' + tile.y + ':' + tile.left}
+              component="img" src={tile.url} alt="" draggable={false}
+              loading="lazy" referrerPolicy="strict-origin-when-cross-origin"
+              data-xdrive-owner-gps-tile={tile.z + '/' + tile.x + '/' + tile.y}
+              onError={() => setTileError(true)}
+              sx={{position:'absolute',left:tile.left,top:tile.top,
+                width:tile.size + 0.5,height:tile.size + 0.5,
+                maxWidth:'none',pointerEvents:'none',userSelect:'none'}}/>
+          )) : null}
           {current?.items.map(item => {
             const latitude = item.sample_latitude
             const longitude = item.sample_longitude
             if (typeof latitude !== 'number' || typeof longitude !== 'number' ||
               !Number.isFinite(latitude) || !Number.isFinite(longitude)) return null
-            const point = xDriveOwnerGPSPoint(bounds, latitude, longitude)
-            if (!point) return null
+            const point = tilesEnabled && tilePlan
+              ? xDriveOwnerGPSTilePoint(bounds, tilePlan, latitude, longitude)
+              : xDriveOwnerGPSPoint(bounds, latitude, longitude)
+            if (!point || point.x < 0 || point.x > 1 ||
+              point.y < 0 || point.y > 1) return null
             const realPlace = xDriveOwnerGPSCanOpenPlace(current, item)
             const cover = realPlace && covers.owner === scope && covers.key === key
               ? covers.urls[item.id] : undefined
@@ -220,6 +291,21 @@ export function XDriveMediaGalleryOwnerGPSOverview({
             )
           })}
         </Box>
+        {tilesEnabled ? <Box component="a"
+          href={XDRIVE_GPS_OSM_COPYRIGHT} target="_blank" rel="noopener noreferrer"
+          onPointerDown={event => event.stopPropagation()}
+          data-xdrive-owner-gps-tile-attribution
+          sx={{position:'absolute',right:8,bottom:8,py:0.5,px:1,
+            borderRadius:1,bgcolor:'background.paper',color:'text.primary',
+            fontSize:11,zIndex:3,textDecoration:'underline'}}>
+          © OpenStreetMap contributors
+        </Box> : null}
+        {tileError && tilesEnabled ? <Typography variant="caption" role="alert"
+          data-xdrive-owner-gps-tile-failed
+          sx={{position:'absolute',left:8,bottom:44,p:1,
+            color:'text.primary',bgcolor:'background.paper',borderRadius:1,zIndex:3}}>
+          公开底图瓦片加载失败；可关闭外部底图，继续使用本机 GPS 坐标视图。
+        </Typography> : null}
         {pending ? <Stack direction="row" gap={1} role="status"
           sx={{position:'absolute',bottom:8,left:8,p:1,borderRadius:1,
             bgcolor:'background.paper',color:'text.primary',pointerEvents:'none'}}>
