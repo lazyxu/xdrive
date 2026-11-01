@@ -96,5 +96,21 @@ test('local PhotoKit AVPlayer fails closed and retries only the active item', ()
   assert.match(viewer, /\.AVPlayerItemFailedToPlayToEndTime/);
   assert.match(viewer, /guard currentPageAuthorized,[\s\S]*?model\.player\?\.currentItem === failed/);
   assert.match(viewer, /model\.playbackFailed\(failed\)/);
-  assert.match(viewer, /Button\("重试"\) \{[\s\S]*?model\.load\(viewed\)/);
+  assert.match(viewer, /Button\("重试"\) \{[\s\S]*?reloadCurrent\(\)/);
+});
+
+test('local PhotoKit media handles initial AVPlayer failure and retries only explicit iCloud intent', () => {
+  const viewer = gallery.slice(gallery.indexOf('struct XDriveIOSNativeLocalPhotoDetail: View'),
+    gallery.indexOf('/// Read-only, 64-at-a-time PhotoKit grid.'));
+  assert.match(viewer, /if let player = model\.player \{\s*videoSurface\(player\)/);
+  assert.match(viewer, /VideoPlayer\(player: player\)/);
+  assert.match(viewer, /item\.publisher\(for: \\\.status, options: \[\.initial, \.new\]\)/);
+  assert.match(viewer, /player\.publisher\(for: \\\.status, options: \[\.initial, \.new\]\)/);
+  assert.match(viewer, /guard status == \.failed, currentPageAuthorized,\s*model\.player\?\.currentItem === item/);
+  assert.match(viewer, /model\.playbackFailed\(item\)/);
+  assert.match(viewer, /private func reloadCurrent\(\)[\s\S]*?guard currentPageAuthorized else \{ return \}[\s\S]*?model\.load\(viewed, allowICloud: requestedICloudForCurrentItem\)/);
+  assert.match(viewer, /native-ios-local-player-reload/);
+  assert.match(viewer, /Button\("重试"\) \{[\s\S]*?reloadCurrent\(\)/);
+  assert.match(viewer, /requestedICloudForCurrentItem = false[\s\S]*?model\.cancel\(\)/);
+  assert.match(viewer, /\.AVPlayerItemFailedToPlayToEndTime/);
 });

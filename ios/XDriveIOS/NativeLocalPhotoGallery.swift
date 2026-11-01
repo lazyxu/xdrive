@@ -385,8 +385,7 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
         NavigationStack {
             Group {
                 if let player = model.player {
-                    VideoPlayer(player: player)
-                        .onAppear { player.play() }
+                    videoSurface(player)
                 } else if let live = model.live, !showsLiveStill {
                     XDriveIOSNativeLivePhotoView(
                         live: live, playbackRequest: livePlaybackRequest
@@ -411,7 +410,7 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                                       [.authorized, .limited].contains(
                                         PHPhotoLibrary.authorizationStatus(for: .readWrite)
                                       ) else { return }
-                                model.load(viewed)
+                                reloadCurrent()
                             }
                             .accessibilityIdentifier("native-ios-local-viewer-retry")
                         }
@@ -479,6 +478,19 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                 }
             }
             .toolbar {
+                // Accessible during short landscape playback and when an
+                // AVPlayer buffers indefinitely without a terminal error.
+                ToolbarItem(placement: .navigationBarLeading) {
+                    if currentPageAuthorized, model.player != nil {
+                        Button {
+                            reloadCurrent()
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        .accessibilityLabel("重新加载本机视频")
+                        .accessibilityIdentifier("native-ios-local-player-reload")
+                    }
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("完成") { dismiss() }
                 }
@@ -528,6 +540,41 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
             changes.stop()
             model.cancel()
         }
+    }
+
+    @ViewBuilder
+    private func videoSurface(_ player: AVPlayer) -> some View {
+        if let item = player.currentItem {
+            VideoPlayer(player: player)
+                .onAppear { if currentPageAuthorized { player.play() } }
+                .onReceive(
+                    item.publisher(for: \.status, options: [.initial, .new])
+                        .receive(on: RunLoop.main)
+                ) { status in
+                    guard status == .failed, currentPageAuthorized,
+                          model.player?.currentItem === item else { return }
+                    model.playbackFailed(item)
+                }
+                .onReceive(
+                    player.publisher(for: \.status, options: [.initial, .new])
+                        .receive(on: RunLoop.main)
+                ) { status in
+                    guard status == .failed, currentPageAuthorized,
+                          model.player?.currentItem === item else { return }
+                    model.playbackFailed(item)
+                }
+        } else {
+            Text("本机视频播放器不可用，可重新加载当前视频。")
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @MainActor
+    private func reloadCurrent() {
+        guard currentPageAuthorized else { return }
+        // Only an explicit user iCloud request for this exact selected item
+        // may be retried with network access. Neighbor/scene changes reset it.
+        model.load(viewed, allowICloud: requestedICloudForCurrentItem)
     }
 }
 
