@@ -497,7 +497,9 @@ internal fun NativeLocalMediaStoreGallery(
                     if (scale == "all") {
                         requestedDateScale = null
                         dateScale = "all"
-                        if (wall.jumpOffset.intValue > 0 || wall.jumpAfter.value != null) {
+                        if (nativeLocalMustRestartNewest(
+                                firstOffset, wall.jumpOffset.intValue,
+                                wall.jumpAfter.value)) {
                             viewerReturn = null
                             wall.jumpTo(null, 0)
                         } else dateJumpScope.launch { photoGridState.scrollToItem(0) }

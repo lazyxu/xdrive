@@ -147,6 +147,13 @@ internal suspend fun scanNativeLocalFullDateIndex(
     return builder.snapshot(complete, groupBudgetHit)
 }
 
+/** Return to the actual newest provider page when the bounded 512-tile wall
+ * has evicted recent media, even without an explicit indexed-date jump.
+ */
+internal fun nativeLocalMustRestartNewest(
+    firstOffset: Int, jumpOffset: Int, jumpAfter: NativeLocalPageKey?,
+): Boolean = firstOffset > 0 || jumpOffset > 0 || jumpAfter != null
+
 /** Full index covers the scanned authorized prefix only, never hidden photos. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

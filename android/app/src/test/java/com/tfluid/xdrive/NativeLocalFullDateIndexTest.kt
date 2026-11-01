@@ -79,6 +79,13 @@ class NativeLocalFullDateIndexTest {
         assertFalse(index.complete)
     }
 
+    @Test fun allReloadsActualNewestAfterBoundedWallEviction() {
+        assertFalse(nativeLocalMustRestartNewest(0, 0, null))
+        assertTrue(nativeLocalMustRestartNewest(128, 0, null))
+        assertTrue(nativeLocalMustRestartNewest(0, 1536, NativeLocalPageKey(200, 5)))
+        assertTrue(nativeLocalMustRestartNewest(0, 0, NativeLocalPageKey(200, 5)))
+    }
+
     @Test fun zeroMediaCanProduceCompleteEmptyIndex() {
         val snapshot = NativeLocalFullDateIndexBuilder(ZoneId.of("UTC"))
             .snapshot(true)
