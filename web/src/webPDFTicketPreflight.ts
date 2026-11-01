@@ -28,6 +28,10 @@ export async function xDrivePreflightWebPDFTicket(
     throw new Error('Invalid PDF preview ticket')
   }
   if (signal?.aborted) throw new DOMException('PDF preview cancelled', 'AbortError')
+  // The shared FilePreviewSurface already performs this same-origin HEAD
+  // (including its own iframe status gate). Avoid duplicate reads of the
+  // signed stream. Cross-origin trusted API_BASE needs this Web-only gate.
+  if (parsed.origin === new URL(base).origin) return
   const response = await fetch(parsed.toString(), {
     method: 'HEAD',
     signal,
