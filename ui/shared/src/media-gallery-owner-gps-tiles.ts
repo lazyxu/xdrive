@@ -117,6 +117,10 @@ export function xDriveOwnerGPSTilePoint(
   latitude: number, longitude: number,
 ): {x:number;y:number} | null {
   if (!validBounds(bounds) || !finite(latitude) || !finite(longitude) ||
+      // EPSG:3857 has no defined pole imagery; never pin valid polar GPS
+      // photos onto a fictitious +/-85-degree tile edge. The unchanged
+      // WGS84-only map still displays them when the basemap is disabled.
+      latitude < -MAX_LAT || latitude > MAX_LAT ||
       latitude < bounds.south || latitude > bounds.north ||
       longitude < bounds.west || longitude > bounds.east) return null
   return {

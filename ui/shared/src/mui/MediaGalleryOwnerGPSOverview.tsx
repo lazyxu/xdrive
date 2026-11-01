@@ -182,7 +182,7 @@ export function XDriveMediaGalleryOwnerGPSOverview({
           <Typography variant="subtitle2">真实 WGS84 GPS 位置概览</Typography>
           <Typography variant="caption" color="text.secondary">
             {tilesEnabled
-              ? 'OpenStreetMap 地理底图；照片仍来自当前 Owner 的真实 WGS84 视窗。'
+              ? 'OpenStreetMap 地理底图；照片仍来自当前 Owner 的真实 WGS84 视窗。墨卡托底图不显示纬度高于 85.05° 的极地照片，关闭底图可恢复完整 WGS84 分布。'
               : '经纬度坐标示意（无地图底图）。移动后重新查询当前 Owner；聚合区域可继续放大。'}
           </Typography>
         </Box>

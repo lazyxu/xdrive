@@ -54,6 +54,11 @@ test('real Owner WGS84 representative pins use the exact same tile projection',(
   assert.equal(geo.xDriveOwnerGPSTilePoint(japan,plan,70,139.7),null)
   assert.equal(geo.xDriveOwnerGPSTilePoint(japan,plan,35.6,NaN),null)
   assert.equal(geo.xDriveOwnerGPSTilePoint(japan,plan,35.6,-180),null)
+  // Real polar photos must not be drawn at a falsely clamped tile latitude.
+  const globalPlan=geo.xDriveOwnerGPSBasemapPlan(world,960,540)
+  assert.equal(geo.xDriveOwnerGPSTilePoint(world,globalPlan,86.5,0),null)
+  assert.equal(geo.xDriveOwnerGPSTilePoint(world,globalPlan,-86.5,0),null)
+  assert.ok(geo.xDriveOwnerGPSTilePoint(world,globalPlan,84.0,0))
 })
 
 test('zoom/drag preserve the authentic WGS84 Owner camera, never BD-09 or file IDs',()=>{
@@ -85,6 +90,7 @@ test('raster tiles are explicit opt-in, with OSM attribution and denial fallback
   assert.match(source,/data-xdrive-owner-gps-tile-attribution/)
   assert.match(source,/data-xdrive-owner-gps-tile-failed/)
   assert.match(source,/经纬度坐标示意（无地图底图）/)
+  assert.match(source,/墨卡托底图不显示纬度高于 85\.05° 的极地照片/)
   assert.match(source,/xDriveOwnerGPSCanOpenPlace\(current, item\)/)
   assert.doesNotMatch(source,/BMap|JWT|location\.href|fetch\(/)
 })
