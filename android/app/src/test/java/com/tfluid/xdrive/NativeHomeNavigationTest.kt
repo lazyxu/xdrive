@@ -82,6 +82,46 @@ class NativeHomeNavigationTest {
             album.open(NativeHomeShortcut.GALLERY_MAP), true, false))
     }
 
+    @Test fun systemBackOnlyTargetsTheVisibleFeatureAndPreservesFilesViewerReturn() {
+        val files = NativeHomeNavigation().select(NativeHomeTab.FILES)
+        val gallery = files.select(NativeHomeTab.GALLERY)
+
+        assertTrue(nativeFeatureBackAllowed(NativeHomeTab.FILES,
+            Screen.FILES, galleryBack = false, filesBack = true))
+        assertTrue(nativeFeatureBackAllowed(NativeHomeTab.FILES,
+            Screen.TRASH, galleryBack = false, filesBack = false))
+        assertTrue(nativeFeatureBackAllowed(NativeHomeTab.GALLERY,
+            Screen.GALLERY, galleryBack = true, filesBack = false))
+        assertFalse(nativeFeatureBackAllowed(NativeHomeTab.GALLERY,
+            Screen.GALLERY, galleryBack = false, filesBack = true))
+
+        // The Controller intentionally retains Files/Gallery routes while an
+        // unrelated root tab is visible. They must not consume Android Back.
+        for (inactive in listOf(NativeHomeTab.ALL, NativeHomeTab.DYNAMIC,
+            NativeHomeTab.MINE)) {
+            assertFalse(nativeFeatureBackAllowed(inactive, Screen.FILES,
+                galleryBack = false, filesBack = true))
+            assertFalse(nativeFeatureBackAllowed(inactive, Screen.TRASH,
+                galleryBack = false, filesBack = false))
+            assertFalse(nativeFeatureBackAllowed(inactive, Screen.GALLERY,
+                galleryBack = true, filesBack = false))
+        }
+        assertFalse(nativeFeatureBackAllowed(gallery.selected, Screen.FILES,
+            galleryBack = true, filesBack = true))
+        assertFalse(nativeFeatureBackAllowed(files.selected, Screen.GALLERY,
+            galleryBack = true, filesBack = true))
+
+        // A Files image uses the existing Gallery Viewer transport, but the
+        // current route still belongs to Files. Back must return to Files,
+        // without promoting the background Gallery to an active tab.
+        assertTrue(nativeFeatureBackAllowed(files.selected, Screen.GALLERY,
+            galleryBack = true, filesBack = false, filesOriginViewer = true))
+        assertFalse(nativeFeatureBackAllowed(gallery.selected, Screen.GALLERY,
+            galleryBack = true, filesBack = false, filesOriginViewer = true))
+        assertFalse(nativeFeatureBackAllowed(files.selected, Screen.GALLERY,
+            galleryBack = false, filesBack = false, filesOriginViewer = true))
+    }
+
     @Test fun unfinishedRouteCannotOverrideNewTabOrGallerySourceChoice() {
         val pending = NativeHomePendingRoutes(
             galleryTab = true, galleryMap = true, trash = true)
