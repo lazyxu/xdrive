@@ -61,3 +61,40 @@ test('return anchor follows last actually viewed PhotoKit item after authenticat
   assert.match(gallery, /XDriveIOSNativePhotoViewerReturnAnchorPolicy\.target\(/)
   assert.doesNotMatch(gallery, /UserDefaults\.standard|localStorage|CloudKit\.modifyRecords|PhotoKit.*upload/)
 })
+
+test('local PhotoKit Live can switch to zoomable still and explicit native playback', () => {
+  const start = gallery.indexOf('struct XDriveIOSNativeLocalPhotoDetail: View')
+  const end = gallery.indexOf('/// Read-only, 64-at-a-time PhotoKit grid.', start)
+  const viewer = gallery.slice(start, end)
+  const live = gallery.slice(gallery.indexOf('private struct XDriveIOSNativeLivePhotoView: UIViewRepresentable'),
+    gallery.indexOf('/// A full-screen detail has its own observer'))
+  assert.match(viewer, /@State private var showsLiveStill = false/);
+  assert.match(viewer, /@State private var livePlaybackRequest: UUID\?/);
+  assert.match(viewer, /let live = model\.live, !showsLiveStill/);
+  assert.match(viewer, /XDriveIOSNativeLivePhotoView\(\s*live: live, playbackRequest: livePlaybackRequest/);
+  assert.match(viewer, /else if let image = model\.still \{\s*XDriveIOSNativeZoomablePhotoView\(image: image\)/);
+  assert.match(viewer, /showsLiveStill\.toggle\(\)\s*livePlaybackRequest = nil/);
+  assert.match(viewer, /Button\("播放实况"\) \{[\s\S]*?showsLiveStill = false\s*livePlaybackRequest = UUID\(\)/);
+  assert.match(viewer, /native-ios-local-live-still-toggle/);
+  assert.match(viewer, /native-ios-local-live-play/);
+  assert.match(viewer, /showsLiveStill = false\s*livePlaybackRequest = nil\s*requestedICloudForCurrentItem = false\s*model\.cancel\(\)/);
+  assert.match(live, /view\.startPlayback\(with: \.full\)/);
+  assert.match(live, /context\.coordinator\.lastPlayed != playbackRequest/);
+  assert.match(live, /static func dismantleUIView\(_ view: PHLivePhotoView, coordinator: Coordinator\)/);
+  assert.match(live, /view\.stopPlayback\(\)[\s\S]*?view\.livePhoto = nil/);
+  assert.doesNotMatch(live, /PHPhotoLibrary\.shared\(\)\.performChanges|URLSession|upload/);
+});
+
+test('local PhotoKit AVPlayer fails closed and retries only the active item', () => {
+  const start = gallery.indexOf('struct XDriveIOSNativeLocalPhotoDetail: View')
+  const end = gallery.indexOf('/// Read-only, 64-at-a-time PhotoKit grid.', start)
+  const viewer = gallery.slice(start, end)
+  assert.match(gallery, /func playbackFailed\(_ failed: AVPlayerItem\)/);
+  assert.match(gallery, /active === failed/);
+  assert.match(gallery, /player\?\.replaceCurrentItem\(with: nil\)/);
+  assert.match(gallery, /message = "本机视频播放失败，请重试当前媒体。"/);
+  assert.match(viewer, /\.AVPlayerItemFailedToPlayToEndTime/);
+  assert.match(viewer, /guard currentPageAuthorized,[\s\S]*?model\.player\?\.currentItem === failed/);
+  assert.match(viewer, /model\.playbackFailed\(failed\)/);
+  assert.match(viewer, /Button\("重试"\) \{[\s\S]*?model\.load\(viewed\)/);
+});

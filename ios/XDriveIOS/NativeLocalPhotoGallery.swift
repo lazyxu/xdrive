@@ -212,6 +212,16 @@ final class XDriveIOSLocalPhotoDetailModel: ObservableObject {
         downloadingFromICloud = !pendingICloudParts.isEmpty
     }
 
+    /// A failed AVPlayer item must not leave a blank native VideoPlayer.
+    /// Retire only the item currently owned by this PhotoKit detail model.
+    func playbackFailed(_ failed: AVPlayerItem) {
+        guard let active = player?.currentItem, active === failed else { return }
+        player?.pause()
+        player?.replaceCurrentItem(with: nil)
+        player = nil
+        message = "本机视频播放失败，请重试当前媒体。"
+    }
+
     func cancel() {
         epoch = UUID()
         pendingICloudParts.removeAll()
@@ -229,11 +239,38 @@ final class XDriveIOSLocalPhotoDetailModel: ObservableObject {
 
 private struct XDriveIOSNativeLivePhotoView: UIViewRepresentable {
     let live: PHLivePhoto
-    func makeUIView(context: Context) -> PHLivePhotoView {
-        PHLivePhotoView()
+    let playbackRequest: UUID?
+
+    final class Coordinator {
+        var lastPlayed: UUID?
     }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIView(context: Context) -> PHLivePhotoView {
+        let view = PHLivePhotoView()
+        view.backgroundColor = .clear
+        return view
+    }
+
     func updateUIView(_ view: PHLivePhotoView, context: Context) {
-        view.livePhoto = live
+        if view.livePhoto !== live {
+            view.stopPlayback()
+            view.livePhoto = live
+            context.coordinator.lastPlayed = nil
+        }
+        // A stable render or rotation must not restart a Live Photo. Playback
+        // begins only after a fresh tap, or by the system's normal long press.
+        if let playbackRequest, context.coordinator.lastPlayed != playbackRequest {
+            context.coordinator.lastPlayed = playbackRequest
+            view.startPlayback(with: .full)
+        }
+    }
+
+    static func dismantleUIView(_ view: PHLivePhotoView, coordinator: Coordinator) {
+        view.stopPlayback()
+        view.livePhoto = nil
+        coordinator.lastPlayed = nil
     }
 }
 
@@ -273,6 +310,8 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
     var onViewed: ((XDrivePhotoKitScanCandidate) -> Void)? = nil
     @State private var activeItem: XDrivePhotoKitScanCandidate?
     @State private var requestedICloudForCurrentItem = false
+    @State private var showsLiveStill = false
+    @State private var livePlaybackRequest: UUID?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var phase
     @StateObject private var model = XDriveIOSLocalPhotoDetailModel()
@@ -315,6 +354,8 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
         else { return }
         // Revoke the previous item's PhotoKit requests and playback before
         // admitting a replacement. No hidden wall/next-page fetch or upload.
+        showsLiveStill = false
+        livePlaybackRequest = nil
         requestedICloudForCurrentItem = false
         model.cancel()
         activeItem = next
@@ -346,9 +387,11 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                 if let player = model.player {
                     VideoPlayer(player: player)
                         .onAppear { player.play() }
-                } else if let live = model.live {
-                    XDriveIOSNativeLivePhotoView(live: live)
-                        .accessibilityLabel("实况照片，长按播放")
+                } else if let live = model.live, !showsLiveStill {
+                    XDriveIOSNativeLivePhotoView(
+                        live: live, playbackRequest: livePlaybackRequest
+                    )
+                    .accessibilityLabel("实况照片，长按播放，或点击播放实况")
                 } else if let image = model.still {
                     XDriveIOSNativeZoomablePhotoView(image: image)
                         .accessibilityLabel("本机照片，可双指缩放或双击放大")
@@ -382,8 +425,27 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom) {
                 if model.needsICloudFetch || model.downloadingFromICloud ||
-                   loadedItems.count > 1 {
+                   loadedItems.count > 1 || (viewed.isLive && model.live != nil) {
                     VStack(spacing: 8) {
+                        if viewed.isLive && model.live != nil && currentPageAuthorized {
+                            HStack(spacing: 12) {
+                                Button(showsLiveStill ? "返回实况" : "放大静态照片") {
+                                    guard currentPageAuthorized else { return }
+                                    showsLiveStill.toggle()
+                                    livePlaybackRequest = nil
+                                }
+                                .disabled(model.still == nil)
+                                .accessibilityIdentifier("native-ios-local-live-still-toggle")
+
+                                Button("播放实况") {
+                                    guard currentPageAuthorized else { return }
+                                    showsLiveStill = false
+                                    livePlaybackRequest = UUID()
+                                }
+                                .accessibilityIdentifier("native-ios-local-live-play")
+                            }
+                            .frame(minHeight: 44)
+                        }
                         if model.downloadingFromICloud {
                             ProgressView("正在从 iCloud 获取当前原件…")
                                 .accessibilityIdentifier("native-ios-local-viewer-icloud-progress")
@@ -436,6 +498,8 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
         .onChange(of: phase) { state in
             if state != .active {
                 requestedICloudForCurrentItem = false
+                showsLiveStill = false
+                livePlaybackRequest = nil
                 // Remove still/Live/video from the app-switcher snapshot and
                 // fence any asynchronous PhotoKit callbacks immediately.
                 model.cancel()
@@ -449,6 +513,16 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                 model.cancel()
                 dismiss()
             }
+        }
+        // A PhotoKit AVAsset can fail only after a successful requestAVAsset.
+        // Reject failures from previous neighbors or retired modal players.
+        .onReceive(NotificationCenter.default.publisher(
+            for: .AVPlayerItemFailedToPlayToEndTime
+        ).receive(on: RunLoop.main)) { notice in
+            guard currentPageAuthorized,
+                  let failed = notice.object as? AVPlayerItem,
+                  model.player?.currentItem === failed else { return }
+            model.playbackFailed(failed)
         }
         .onDisappear {
             changes.stop()
