@@ -51,7 +51,7 @@ for name in sorted(master_builds):
         # Image packaging uses the base Go image's curl/CA and cached Docker
         # CLI; never gate the required Snapshot build on Debian APT access.
         assert re.search(
-            r"(?m)^  before_script:\\n    - \\*install_docker_cli_only$", block
+            r"(?m)^  before_script:\n    - \*install_docker_cli_only$", block
         ), f"{name}: required Docker image build must not run APT setup"
         assert "*ensure_linux_fetch_tools" not in block, f"{name}: APT setup reintroduced"
 
