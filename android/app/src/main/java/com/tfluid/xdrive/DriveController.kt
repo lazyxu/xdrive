@@ -739,10 +739,13 @@ class DriveController(
 
     /** No synthetic Gallery Range is queried. A singleton presentation adapter
      * lets all existing secure image/video/Live Viewers keep their contracts. */
-    private fun filesNodeVisible(current: DriveState, node: DriveNode): Boolean {
+    private fun filesNodeVisible(
+        current: DriveState, node: DriveNode, allowEmpty: Boolean = false,
+    ): Boolean {
         if (current.screen != Screen.FILES || node.id <= 0 ||
             node.revision <= 0 || node.type != "file" ||
-            node.size <= 0 || current.destinationKind != null) return false
+            node.size < 0 || (!allowEmpty && node.size == 0L) ||
+            current.destinationKind != null) return false
         return if (current.filesSection == FilesSection.BROWSE)
             current.loaded && current.items.any { it == node }
         else current.collectionLoaded && current.collectionItems.any { it.node == node }
@@ -903,7 +906,10 @@ class DriveController(
      * retains Files rows, cursor and viewport for the original return. */
     fun openFilesText(node: DriveNode) {
         val current = state.value
-        if (!filesNodeVisible(current, node) || !current.canNavigateFiles() ||
+        // An empty UTF-8 file is a valid Owner file: open a real native
+        // Viewer rather than silently ignoring a tap on its 0-byte row.
+        if (!filesNodeVisible(current, node, allowEmpty = true) ||
+            !current.canNavigateFiles() ||
             current.browseSelectionMode || current.filesPdfViewer != null ||
             current.filesAudioViewer != null || current.filesTextViewer != null ||
             !nativeTextPreviewCandidate(node.name) || session == null || api == null) return
