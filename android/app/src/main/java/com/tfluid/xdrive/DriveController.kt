@@ -3547,6 +3547,42 @@ class DriveController(
     }
 
 
+    /** Read only a representative Node in this CURRENT authenticated signed
+     * BD09 /cells result. Its authority is NOT the ordinary Gallery wall.
+     * A cancelled/moved/old Owner response cannot repaint a new camera.
+     * Reuse the Gallery's four-request semaphore and thumbnail transport. */
+    suspend fun galleryBd09CoverThumbnail(cell: OwnerBd09Cell): ByteArray? {
+        val ticket = generation
+        val initial = state.value
+        val service = api ?: return null
+        val token = session?.accessToken ?: return null
+        val bounds = initial.galleryBd09Bounds
+        fun eligible(value: DriveState): Boolean =
+            value.screen == Screen.GALLERY && value.galleryMapOpen &&
+                value.galleryBd09Requested && value.galleryBd09Cells != null &&
+                value.galleryBd09Bounds == bounds &&
+                value.galleryBd09Cells.cells.any { it == cell } &&
+                !value.galleryBd09CameraMoving &&
+                value.galleryBd09CameraPending == null &&
+                value.galleryMapCellSelected == null &&
+                value.galleryViewer == null && value.error == null &&
+                cell.nodeId > 0L && cell.nodeRevision > 0L
+        if (!eligible(initial)) return null
+        return try {
+            galleryThumbnailLimit.withPermit {
+                checkCurrent(ticket)
+                if (!eligible(state.value)) return@withPermit null
+                val raw = service.galleryThumbnail(token, cell.nodeId, cell.nodeRevision)
+                checkCurrent(ticket)
+                if (eligible(state.value)) raw else null
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null // A missing thumbnail must not hide the real Owner count pin.
+        }
+    }
+
     /** The Viewer may fall back to the existing small JPEG thumbnail when the
      * verified original exceeds 32 MiB or cannot decode on this device.
      * Never fetch an old Owner's thumbnail into an A -> B -> A Viewer session. */
