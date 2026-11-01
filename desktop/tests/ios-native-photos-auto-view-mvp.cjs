@@ -256,7 +256,8 @@ test('native automatic scan stops for revoked Owner, sealed ledger or revoked Ph
     backup.indexOf('    private enum StillOutcome'))
   const callback = run.slice(run.indexOf('let outcome = try await uploadOrVerifyOriginal('),
     run.indexOf('await scanner.reset()'))
-  const abort = callback.indexOf('if Self.mustAbortRun(after: error) { throw error }')
+  const abort = callback.indexOf('if Self.isTransientConfirmedReadbackFailure(error) ||')
+  assert.match(callback, /if Self\.isTransientConfirmedReadbackFailure\(error\) \|\|\s*Self\.mustAbortRun\(after: error\) \{ throw error \}/)
   const countUnavailable = callback.indexOf('report.unavailable += 1')
   assert.ok(abort >= 0 && countUnavailable > abort,
     'global trust failure must escape before counting an ordinary unavailable original')
