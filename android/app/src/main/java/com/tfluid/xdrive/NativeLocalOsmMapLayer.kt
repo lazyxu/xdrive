@@ -18,7 +18,7 @@ import kotlinx.coroutines.CancellationException
  * an Owner media permission. Default map entry never requests public tiles. */
 @Composable
 internal fun NativeLocalOsmToggle(
-    enabled: Boolean, onToggle: () -> Unit, interactive: Boolean = true,
+    enabled: Boolean, interactive: Boolean = true, onToggle: () -> Unit,
 ) {
     TextButton(
         onClick = onToggle, enabled = interactive,

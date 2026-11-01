@@ -280,13 +280,12 @@ private fun ColumnScope.NativeLocalPhotoMapCanvas(
             TextButton(onClick = { zoom = 1f; shift = Offset.Zero }) { Text("重置") }
             NativeLocalOsmToggle(
                 enabled = osmEnabled,
-                onToggle = {
-                    osmEnabled = !osmEnabled
-                    zoom = 1f
-                    shift = Offset.Zero
-                },
                 interactive = selectable,
-            )
+            ) {
+                osmEnabled = !osmEnabled
+                zoom = 1f
+                shift = Offset.Zero
+            }
         }
         if (osmEnabled) Text(
             "公开 OSM 底图：仅按当前视窗加载瓦片，公开服务会看到请求的地图范围；" +
