@@ -99,8 +99,15 @@ internal fun nativeLocalMediaInfoRows(
     val name = info.name?.trim()?.take(180)?.takeIf {
         it.isNotEmpty() && it.none { c -> c.isISOControl() }
     } ?: "未记录"
-    val mime = info.mime?.trim()?.take(100)?.takeIf {
+    // A MIME type must contain one valid type/subtype, not merely become
+    // printable after trimming control bytes (e.g. "\\ntext" -> "text").
+    val mime = info.mime?.takeIf {
+        it.length in 3..100 &&
+            it.matches(Regex("[A-Za-z0-9!#    val mime = info.mime?.trim()?.take(100)?.takeIf {
         it.isNotEmpty() && it.none { c -> c.isISOControl() }
+    } ?: "未知"^_.+-]+/[A-Za-z0-9!#    val mime = info.mime?.trim()?.take(100)?.takeIf {
+        it.isNotEmpty() && it.none { c -> c.isISOControl() }
+    } ?: "未知"^_.+-]+"))
     } ?: "未知"
     val dimensions = if (info.width != null && info.width in 1..100_000 &&
         info.height != null && info.height in 1..100_000)
