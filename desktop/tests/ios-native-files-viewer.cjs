@@ -72,3 +72,18 @@ test('Owner, Node revision, exact MIME and ticket are checked before payload use
   assert.match(policy, /return files\[fileIndex \+ direction\]/);
   assert.doesNotMatch(reader, /POST.*UploadSession|FileManager\.default\.createFile|WKWebView/);
 });
+
+test('Files audio and video expose initial KVO loading failure, scoped retry and landscape recovery', () => {
+  const modal = view.slice(view.indexOf('struct XDriveIOSNativeFilesViewer: View'));
+  assert.match(modal, /case \.video:[\s\S]*?observingPlayer\(/);
+  assert.match(modal, /case \.audio:[\s\S]*?observingPlayer\(/);
+  assert.equal((modal.match(/\.publisher\(for: \\\.status, options: \[\.initial, \.new\]\)/g) || []).length, 2);
+  assert.match(modal, /if status == \.failed \{ playbackFailed\(item\) \}/);
+  assert.match(modal, /guard authorized, let current = player\?\.currentItem,\s*failed === current/);
+  assert.match(modal, /ToolbarItem\(placement: \.navigationBarTrailing\)[\s\S]*?Button\("重新加载媒体"\) \{ reloadCurrent\(\) \}/);
+  assert.match(modal, /accessibilityIdentifier\("native-ios-files-player-reload"\)/);
+  assert.match(modal, /Button\("重试"\) \{ reloadCurrent\(\) \}/);
+  assert.match(modal, /private func reloadCurrent\(\)[\s\S]*?guard authorized else \{ return \}[\s\S]*?retire\(\)[\s\S]*?failure = nil[\s\S]*?loading = true[\s\S]*?attempt = UUID\(\)/);
+  assert.match(modal, /private func openCurrent\(\) async[\s\S]*?retire\(\)\s*failure = nil\s*loading = true/);
+  assert.match(modal, /\.onChange\(of: phase\)[\s\S]*?retire\(\)/);
+});

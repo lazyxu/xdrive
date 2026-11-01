@@ -130,13 +130,19 @@ struct XDriveIOSNativeFilesViewer: View {
                             .accessibilityLabel("图片，可双指缩放或双击")
                     case .video:
                         if let player {
-                            VideoPlayer(player: player)
-                                .onAppear { if phase == .active { player.play() } }
+                            observingPlayer(
+                                VideoPlayer(player: player)
+                                    .onAppear { if authorized { player.play() } },
+                                player: player
+                            )
                         }
                     case .audio:
                         if let player {
-                            XDriveIOSNativeFileAudioSurface(player: player)
-                                .id(viewed.id)
+                            observingPlayer(
+                                XDriveIOSNativeFileAudioSurface(player: player)
+                                    .id(viewed.id),
+                                player: player
+                            )
                         }
                     case .pdf(let document):
                         XDriveIOSNativePDFDocumentSurface(document: document)
@@ -162,10 +168,7 @@ struct XDriveIOSNativeFilesViewer: View {
                             .multilineTextAlignment(.center)
                             .foregroundStyle(.secondary)
                         if authorized {
-                            Button("重试") {
-                                retire()
-                                attempt = UUID()
-                            }
+                            Button("重试") { reloadCurrent() }
                             .frame(minWidth: 96, minHeight: 48)
                             .accessibilityIdentifier("native-ios-files-viewer-retry")
                         }
@@ -184,6 +187,14 @@ struct XDriveIOSNativeFilesViewer: View {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("完成") { close() }
                         .frame(minWidth: 44, minHeight: 44)
+                }
+                // This remains reachable on short landscape layouts, including
+                // when the player stalls without emitting a terminal error.
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    if authorized, player != nil {
+                        Button("重新加载媒体") { reloadCurrent() }
+                            .accessibilityIdentifier("native-ios-files-player-reload")
+                    }
                 }
                 ToolbarItemGroup(placement: .bottomBar) {
                     Button {
@@ -236,11 +247,55 @@ struct XDriveIOSNativeFilesViewer: View {
         .onDisappear { retire() }
     }
 
+    /// Observe both initial stream-load failures and later item failures.
+    /// KVO subscriptions are owned by the currently rendered player surface;
+    /// retiring the player removes them, preventing stale cross-item errors.
+    @ViewBuilder
+    private func observingPlayer<Content: View>(
+        _ content: Content, player: AVPlayer
+    ) -> some View {
+        if let item = player.currentItem {
+            content
+                .onReceive(
+                    item.publisher(for: \.status, options: [.initial, .new])
+                        .receive(on: RunLoop.main)
+                ) { status in
+                    if status == .failed { playbackFailed(item) }
+                }
+                .onReceive(
+                    player.publisher(for: \.status, options: [.initial, .new])
+                        .receive(on: RunLoop.main)
+                ) { status in
+                    if status == .failed { playbackFailed(item) }
+                }
+        } else {
+            content
+        }
+    }
+
+    @MainActor
+    private func reloadCurrent() {
+        guard authorized else { return }
+        retire()
+        failure = nil
+        loading = true
+        attempt = UUID()
+    }
+
+    @MainActor
+    private func playbackFailed(_ failed: AVPlayerItem) {
+        guard authorized, let current = player?.currentItem,
+              failed === current else { return }
+        retire()
+        failure = "媒体播放失败，请重试当前文件。"
+    }
+
     @MainActor
     private func openCurrent() async {
         let current = viewed
         let generation = attempt
         retire()
+        failure = nil
         loading = true
         guard authorized else {
             failure = "当前账户或应用状态已变化，请返回文件列表。"
