@@ -3,6 +3,7 @@ package localbackupipc
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -94,4 +95,47 @@ func TestServerLoginRejectsAgentWithoutCapability(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "does not support") {
 		t.Fatal("unadvertised Agent login must fail closed")
 	}
+}
+
+func TestServerLoginOnlyAgent401IsConfirmedBeforeCommit(t *testing.T) {
+    for _, status := range []int{
+        http.StatusUnauthorized, http.StatusForbidden, http.StatusConflict,
+        http.StatusTooManyRequests, http.StatusInternalServerError,
+    } {
+        t.Run(http.StatusText(status), func(t *testing.T) {
+            var posted bool
+            service := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+                if r.Header.Get("Authorization") != "Bearer "+strings.Repeat("a", 64) {
+                    t.Error("Agent bearer missing")
+                    w.WriteHeader(http.StatusUnauthorized)
+                    return
+                }
+                w.Header().Set("Content-Type", "application/json")
+                switch r.URL.Path {
+                case "/v1/status":
+                    _, _ = w.Write([]byte(`{"configured":false,"must_change_password":false}`))
+                case "/v1/auth/login":
+                    posted = true
+                    w.WriteHeader(status)
+                    _, _ = w.Write([]byte(`{"error":"redacted","private":"do-not-forward"}`))
+                default:
+                    w.WriteHeader(http.StatusNotFound)
+                }
+            }))
+            defer service.Close()
+            c := &Client{baseURL: service.URL, token: strings.Repeat("a", 64),
+                capabilities: []string{"auth"}, http: service.Client()}
+            err := c.LoginServer(context.Background(), "https://drive.example.com", "owner", "wrong")
+            if !posted || err == nil {
+                t.Fatal("expected real Agent credential request to fail")
+            }
+            confirmed := errors.Is(err, ErrDSMLoginRejectedBeforeCommit)
+            if confirmed != (status == http.StatusUnauthorized) {
+                t.Fatalf("Agent HTTP %d incorrectly marked no-commit: %v", status, err)
+            }
+            if strings.Contains(err.Error(), "do-not-forward") {
+                t.Fatal("Agent error body leaked into browser-exposed error")
+            }
+        })
+    }
 }
