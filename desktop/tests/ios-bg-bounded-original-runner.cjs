@@ -232,7 +232,7 @@ test('network or temporary-disk outage aborts whole original window instead of a
   assert.match(policy, /error is XDrivePhotoSyncLedgerError/)
   assert.match(policy, /case \.notAuthorized = source/)
   assert.match(policy, /case \.storageUnavailable = source/)
-  assert.match(policy, /default:\s*break/)
+  assert.match(policy, /return false/, 'only named global failures stop the whole scan')
   assert.match(policy, /case \.unverifiedOwnerOrDeviceScope = intent/)
   assert.match(scan, /await scanner\.reset\(\)\s*throw error/)
   assert.match(cursor, /progress: XDriveIOSPhotoBackupProgress/)
