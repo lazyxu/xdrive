@@ -339,6 +339,9 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-files-destination-check"
           node --test desktop/tests/ios-native-files-destination.cjs
 
+      - name: Verify native Files Viewer and management action integration
+        run: node --test desktop/tests/ios-native-files-management-integration.cjs
+
       - name: Prepare native brand and home screen icon
         run: bash ios/scripts/prepare-assets.sh
 
