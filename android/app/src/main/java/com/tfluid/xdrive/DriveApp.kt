@@ -290,6 +290,11 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     var bd09ViewerReturnCamera by remember(
         state.nativeUiSessionId, state.server, state.username, state.galleryMapOpen
     ) { mutableStateOf<NativeBaiduCameraPose?>(null) }
+    // L2 focus is UI-only and survives Viewer unmount; leaving this Owner's
+    // Gallery map resets it. Changing size never changes the SDK map source.
+    var nativeMapFocused by remember(
+        state.nativeUiSessionId, state.server, state.username, state.galleryMapOpen,
+    ) { mutableStateOf(true) }
 
     // Preserve UI-only scroll state across Viewer -> Gallery, never across
     // leaving Gallery. The same user can log out/in against changed photo rows.
@@ -696,6 +701,8 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                                 LazyListState()
                             },
                             savedCamera = bd09ViewerReturnCamera,
+                            focused = nativeMapFocused,
+                            onFocusChange = { nativeMapFocused = it },
                             onCameraSnapshot = { pose ->
                                 val latest = controller.state.value
                                 if (latest.screen == Screen.GALLERY && latest.galleryMapOpen &&
