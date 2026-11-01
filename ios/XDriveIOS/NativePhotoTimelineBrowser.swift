@@ -149,7 +149,7 @@ private final class XDriveIOSNativePhotoTimelineModel: ObservableObject {
 /// manufacture a 100k-row photo array or replace Viewer/backup ownership.
 /// The chosen date lands on the enclosing 64-slot wall page, which must read
 /// and reauthorize its own fresh PHFetchResult before showing any pixels.
-struct XDriveIOSNativePhotoTimelineContainer<Content: View>: View {
+struct XDriveIOSNativeLocalPhotoTimelineContainer<Content: View>: View {
     @Binding var savedOffset: Int
     let content: Content
 
