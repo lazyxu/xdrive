@@ -712,6 +712,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/cloud/owner-gallery-items", h.cloudOwnerGalleryItems)
 	mux.HandleFunc("GET /v1/cloud/owner-gallery-albums", h.cloudOwnerGalleryAlbums)
 	mux.HandleFunc("GET /v1/cloud/owner-places-page", h.cloudOwnerPlacesPage)
+	mux.HandleFunc("GET /v1/cloud/owner-map-overview", h.cloudOwnerMapOverview)
 	mux.HandleFunc("GET /v1/cloud/owner-place-items", h.cloudOwnerPlaceItems)
 	mux.HandleFunc("GET /v1/cloud/owner-live-motion", h.cloudOwnerLiveMotion)
 	mux.HandleFunc("GET /v1/cloud/file-preview-ticket", h.cloudFilePreviewTicket)

@@ -90,6 +90,27 @@ struct XDriveNativePhotoViewerReturnAnchorChecks {
               "malformed oversized local identifier")
         check(neighbor("photo-33", 1, []) == nil, "empty page")
 
-        print("native PhotoKit Viewer tile anchor policy checks passed")
+        // One-finger paging must never steal pan/zoom/vertical scrolling,
+        // even when an authorized Viewer has valid adjacent page items.
+        func swipe(_ dx: CGFloat, _ dy: CGFloat,
+                   zoom: CGFloat = 1, minimum: CGFloat = 1) -> Int? {
+            XDriveIOSNativeViewerSwipePolicy.direction(
+                horizontal: dx, vertical: dy, zoom: zoom, minimum: minimum
+            )
+        }
+        check(swipe(-96, 10) == 1, "left swipe is next")
+        check(swipe(96, 10) == -1, "right swipe is previous")
+        check(swipe(-71, 0) == nil, "short horizontal drag")
+        check(swipe(-96, 80) == nil, "vertical scroll is not page swipe")
+        check(swipe(96, 65) == nil, "diagonal drag is not page swipe")
+        check(swipe(100, 0, zoom: 1.4) == nil, "zoomed photo pan")
+        check(swipe(-100, 0, zoom: 1.02) == nil, "outside base zoom")
+        check(swipe(-100, 0, zoom: 1.005) == 1, "base zoom tolerance")
+        check(swipe(-100, 0, zoom: 0) == nil, "invalid below-minimum zoom")
+        check(swipe(100, 0, minimum: 0) == nil, "invalid zero minimum")
+        check(swipe(.nan, 0) == nil, "nonfinite horizontal delta")
+        check(swipe(100, .infinity) == nil, "nonfinite vertical delta")
+
+        print("native PhotoKit Viewer tile anchor and swipe policy checks passed")
     }
 }
