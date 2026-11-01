@@ -87,3 +87,25 @@ test('Files audio and video expose initial KVO loading failure, scoped retry and
   assert.match(modal, /private func openCurrent\(\) async[\s\S]*?retire\(\)\s*failure = nil\s*loading = true/);
   assert.match(modal, /\.onChange\(of: phase\)[\s\S]*?retire\(\)/);
 });
+
+test('unsupported, oversized, undecodable and failed-player Files previews expose current-original export', () => {
+  const exportModel = read('ios/XDriveIOS/NativeFilesDownloadExport.swift');
+  const modal = view.slice(view.indexOf('struct XDriveIOSNativeFilesViewer: View'));
+  assert.match(modal, /@StateObject private var exporter = XDriveIOSNativeFilesExportModel\(\)/);
+  assert.match(modal, /if authorized && exportFallbackEligible/);
+  assert.match(modal, /case \.unsupported:[\s\S]*?exportFallbackEligible = true/);
+  assert.match(modal, /case \.tooLarge:[\s\S]*?exportFallbackEligible = true/);
+  assert.match(modal, /case \.malformed:[\s\S]*?exportFallbackEligible = true/);
+  assert.match(modal, /failure = "媒体播放失败，请重试当前文件。"\s*exportFallbackEligible = true/);
+  assert.match(modal, /staged\.nodeID == viewed\.id && staged\.revision == viewed\.revision/);
+  assert.match(modal, /exporter\.prepare\(viewed, login: login\)/);
+  assert.match(modal, /ShareLink\(item: staged\.fileURL\)/);
+  assert.match(modal, /exporter\.invalidate\(\)[\s\S]*?exportFallbackEligible = false/);
+  assert.match(modal, /accessibilityIdentifier\("native-ios-files-viewer-error-scroll"\)/);
+  assert.match(modal, /accessibilityIdentifier\("native-ios-files-viewer-export-cancel"\)/);
+  assert.match(exportModel, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expected\)/);
+  assert.match(exportModel, /let stillCurrent: XDriveIOSNativeFilesNode = try await read\(/);
+  assert.match(exportModel, /guard stillCurrent == node/);
+  assert.match(exportModel, /prepared\?\.discard\(\)/);
+  assert.doesNotMatch(modal, /URLSessionConfiguration|download-ticket|FileManager\.default\.moveItem/);
+});
