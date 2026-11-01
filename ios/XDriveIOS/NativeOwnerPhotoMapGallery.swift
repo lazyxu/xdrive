@@ -14,9 +14,10 @@ struct XDriveIOSNativePhotoMapsScreen: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     var onFocusChange: ((Bool) -> Void)?
     @State private var source: XDriveIOSNativePhotoMapSource = .local
-    // Secondary map-source wrapper keeps local route hints transient.
-    @State private var localMapScope: XDriveIOSNativeLocalMapScope = .page
-    @State private var localMapPageOffset = 0
+    // The Gallery parent retains only bounded local PhotoKit navigation hints.
+    // Source switches never reset the parent's map scope or page cursor.
+    @Binding var localMapScope: XDriveIOSNativeLocalMapScope
+    @Binding var localMapPageOffset: Int
 
     var body: some View {
         VStack(spacing: 4) {
