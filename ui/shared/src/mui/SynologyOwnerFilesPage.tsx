@@ -13,7 +13,7 @@ import type { XDriveFileExplorerUnavailableActions } from './FileExplorer'
 import { useXDriveFileExplorerCursorDirectory } from './FileExplorerCursorDirectoryController'
 import type { XDriveFileExplorerCursorPort } from './FileExplorerCursorDirectoryController'
 import { XDriveFileQuickLookDialog } from './FileQuickLookDialog'
-import { xDriveFileSupportsTextPreview } from '../file-preview'
+import { xDriveClassifyFilePreview, xDriveFileSupportsTextPreview } from '../file-preview'
 import { xDriveFileSupportsThumbnail } from './FileExplorerItemPresentation'
 import { xDriveSynologyLoadOwnerThumbnail } from '../synology-owner-thumbnail'
 import {
@@ -47,12 +47,25 @@ import {
 
 const pageSize = 200
 
+// Current Owner's authenticated, bounded derivative remains usable even if
+// an original JPEG/PNG/WebP/GIF exceeds 32 MiB or HEIC/RAW is not decodable.
+// Do not mistake a video, Live Photo or arbitrary file for an image fallback.
+function usesOwnerThumbnailOnlyPreview(item: XDriveFileExplorerItem): boolean {
+  return item.kind === 'file' &&
+    typeof item.size === 'number' && Number.isSafeInteger(item.size) && item.size > 0 &&
+    xDriveClassifyFilePreview(item) === 'image' &&
+    xDriveFileSupportsThumbnail(item.name, item.kind) &&
+    (!xDriveSynologyPreviewMIME(item.name) ||
+      item.size > XDRIVE_SYNOLOGY_MEDIA_BLOB_MAX_BYTES)
+}
+
 function supportsOwnerPreview(item: XDriveFileExplorerItem): boolean {
   if (item.kind !== 'file') return false
   if (xDriveFileSupportsTextPreview(item.name, item.kind)) return true
   if (typeof item.size !== 'number' || !Number.isSafeInteger(item.size) || item.size < 1) return false
   return Boolean(xDriveSynologyPlaybackMIME(item.name) ||
-    (xDriveSynologyPreviewMIME(item.name) && item.size <= XDRIVE_SYNOLOGY_MEDIA_BLOB_MAX_BYTES))
+    (xDriveSynologyPreviewMIME(item.name) && item.size <= XDRIVE_SYNOLOGY_MEDIA_BLOB_MAX_BYTES) ||
+    usesOwnerThumbnailOnlyPreview(item))
 }
 
 function itemForExplorer(node: XDriveSynologyOwnerFileNode): XDriveFileExplorerItem {
@@ -148,6 +161,7 @@ export function XDriveSynologyOwnerFilesPage({
   const previewIndex = viewerSelection.index
   const previewItem = viewerSelection.item
   const previewPositionLabel = viewerSelection.positionLabel
+  const thumbnailOnlyPreview = previewItem !== null && usesOwnerThumbnailOnlyPreview(previewItem)
   // A verified explicit download is not a disposable directory read. Keep
   // its proven Blob/save action across same-Owner folder and sort changes.
   // Never offer it after an account/client or root-session replacement.
@@ -478,6 +492,7 @@ export function XDriveSynologyOwnerFilesPage({
         open={previewItem !== null}
         item={previewItem}
         positionLabel={previewPositionLabel}
+        subtitle={thumbnailOnlyPreview ? '仅显示已认证的缩略预览；原件格式或大小暂不支持直接查看' : undefined}
         canPrevious={previewIndex > 0}
         canNext={previewIndex >= 0 && previewIndex < previewItems.length - 1}
         onPrevious={() => movePreview(-1)}
@@ -490,7 +505,9 @@ export function XDriveSynologyOwnerFilesPage({
         // derivative falls back to the existing icon without delaying the
         // independent original/media Range request.
         loadImagePreview={loadOwnerThumbnail}
-        loadPreviewURL={loadMediaPreview}
+        // No oversized original read or futile retry for a derivative-only
+        // image; the shared image pipeline still retries failed thumbnails.
+        loadPreviewURL={thumbnailOnlyPreview ? undefined : loadMediaPreview}
         onClose={() => setPreview(null)}
       />
     </XDriveFilesWorkspacePage>
