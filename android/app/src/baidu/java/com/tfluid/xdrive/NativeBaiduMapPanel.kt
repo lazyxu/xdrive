@@ -71,6 +71,7 @@ private class NativeBaiduLease(val view: MapView) {
     var onSelect: (OwnerBd09Cell) -> Unit = {}
     var onCameraStart: () -> Unit = {}
     var onCameraSettled: (OwnerBd09Bounds?) -> Unit = {}
+    var onCameraSnapshot: (NativeBaiduCameraPose) -> Unit = {}
     var markersEnabled = true
     private var sdkCameraGesture = false
     private var closed = false
@@ -105,18 +106,35 @@ private class NativeBaiduLease(val view: MapView) {
                         it.northeast.latitude, it.northeast.longitude)
                 }
                 onCameraSettled(target)
+                cameraPose(status)?.let(onCameraSnapshot)
             }
         })
     }
 
+    private fun cameraPose(status: MapStatus?): NativeBaiduCameraPose? {
+        val current = lastBounds ?: return null
+        val center = status?.target ?: return null
+        return NativeBaiduCameraPose(
+            current, center.latitude, center.longitude,
+            status.zoom, status.rotate, status.overlook,
+        ).takeIf { it.validFor(current) }
+    }
+
+    /** Capture on Viewer disposal as well; onMapStatusChangeFinish is not
+     * guaranteed to fire after every programmatic SDK status assignment. */
+    fun captureCamera() {
+        if (!closed) cameraPose(view.map.mapStatus)?.let(onCameraSnapshot)
+    }
+
     fun draw(bounds: OwnerBd09Bounds, pins: List<OwnerBd09Cell>,
-             preserveCamera: Boolean) {
+             preserveCamera: Boolean, savedCamera: NativeBaiduCameraPose?) {
         if (closed || (lastBounds == bounds && lastPins == pins)) return
         val baidu = view.map
         baidu.clear()
         bindings.clear()
         icons.forEach { it.recycle() }
         icons.clear()
+        val freshLease = lastBounds == null
         val changedBounds = lastBounds != bounds
         lastBounds = bounds
         lastPins = pins.toList()
@@ -134,7 +152,19 @@ private class NativeBaiduLease(val view: MapView) {
 
         // Only reposition for a new verified Owner rectangle, not after every
         // Compose render; users may freely pan/zoom existing signed points.
-        if (changedBounds && !preserveCamera && pins.isNotEmpty()) {
+        if (freshLease && savedCamera?.validFor(bounds) == true) {
+            // Returning from Viewer restores exact SDK center/zoom/bearing/tilt
+            // only for the SAME authenticated Owner camera, not old coordinates
+            // from another server or map session.
+            val restored = MapStatus.Builder()
+                .target(LatLng(savedCamera.latitude, savedCamera.longitude))
+                .zoom(savedCamera.zoom).rotate(savedCamera.rotate)
+                .overlook(savedCamera.overlook).build()
+            baidu.setMapStatus(MapStatusUpdateFactory.newMapStatus(restored))
+        } else if (changedBounds && (!preserveCamera || freshLease) && pins.isNotEmpty()) {
+            // Never recenter the *existing* MapView after an automatic viewport
+            // read. A newly recreated SDK lease without a valid snapshot can
+            // use its current authorized pins instead of its default city.
             val first = pins.first()
             val uniquePlaces = pins.map { it.latitude to it.longitude }.toSet()
             if (uniquePlaces.size == 1) {
@@ -196,6 +226,8 @@ internal fun NativeBaiduMapPanel(
     onCameraSettled: (OwnerBd09Bounds?) -> Unit,
     markersEnabled: Boolean,
     preserveCamera: Boolean,
+    savedCamera: NativeBaiduCameraPose?,
+    onCameraSnapshot: (NativeBaiduCameraPose) -> Unit,
     placeholder: @Composable () -> Unit,
 ) {
     val context = LocalContext.current
@@ -258,6 +290,7 @@ internal fun NativeBaiduMapPanel(
     val currentOnSelect by rememberUpdatedState(onOpenCell)
     val currentOnCameraStart by rememberUpdatedState(onCameraStart)
     val currentOnCameraSettled by rememberUpdatedState(onCameraSettled)
+    val currentOnCameraSnapshot by rememberUpdatedState(onCameraSnapshot)
     DisposableEffect(host, lifecycle) {
         if (host == null) onDispose {} else {
             val observer = LifecycleEventObserver { _, event ->
@@ -272,6 +305,7 @@ internal fun NativeBaiduMapPanel(
                 host.view.onResume()
             onDispose {
                 lifecycle.lifecycle.removeObserver(observer)
+                host.captureCamera() // Viewer may unmount Map before SDK finish.
                 host.close()
                 if (!preferences.getBoolean(SDK_PRIVACY_VERSION, false))
                     BaiduMapStartup.revoke(context)
@@ -293,8 +327,10 @@ internal fun NativeBaiduMapPanel(
                     host.onSelect = { cell -> currentOnSelect(cell) }
                     host.onCameraStart = { currentOnCameraStart() }
                     host.onCameraSettled = { next -> currentOnCameraSettled(next) }
+                    host.onCameraSnapshot = { pose -> currentOnCameraSnapshot(pose) }
                     host.markersEnabled = markersEnabled
-                    host.draw(bounds, pins, preserveCamera)
+                    host.draw(bounds, pins, preserveCamera, savedCamera)
+                    host.captureCamera()
                 },
                 modifier = Modifier.fillMaxWidth().height(290.dp)
                     .testTag("native-baidu-map"),
