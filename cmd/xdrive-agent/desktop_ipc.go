@@ -819,6 +819,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("POST /v1/media/creative/cancel", h.cancelMediaCreativeGeneration)
 	mux.HandleFunc("GET /v1/media/thumbnail", h.mediaThumbnail)
 	mux.HandleFunc("GET /v1/media/analysis-preview", h.mediaAnalysisPreview)
+	mux.HandleFunc("GET /v1/media/viewer-preview", h.mediaViewerPreview)
 	mux.HandleFunc("PUT /v1/media/video-poster", h.mediaVideoPoster)
 	mux.HandleFunc("GET /v1/media/live-photo-still-ticket", h.mediaLivePhotoStillTicket)
 	mux.HandleFunc("GET /v1/media/live-photo-motion-ticket", h.mediaLivePhotoMotionTicket)
@@ -6011,6 +6012,51 @@ func (h *desktopIPCHandler) mediaThumbnail(w http.ResponseWriter, r *http.Reques
 	w.Header().Set("Content-Length", strconv.Itoa(len(thumbnail.Data)))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(thumbnail.Data)
+}
+
+// Optional interface preserves test controllers that implement only the
+// existing thumbnail/analysis contract.
+type desktopIPCMediaViewerPreviewController interface {
+	CloudMediaViewerPreview(context.Context, uint64, string) (agentMediaThumbnail, error)
+}
+
+func (h *desktopIPCHandler) mediaViewerPreview(w http.ResponseWriter, r *http.Request) {
+	nodeID, ok := desktopIPCUint64Query(w, r, "node_id")
+	if !ok {
+		return
+	}
+	format := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("format")))
+	var want string
+	switch format {
+	case "webp":
+		want = "image/webp"
+	case "jpeg":
+		want = "image/jpeg"
+	default:
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_format", "viewer format must be webp or jpeg")
+		return
+	}
+	ctrl, ok := h.ctrl.(desktopIPCMediaViewerPreviewController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "unsupported", "viewer preview not supported by Agent")
+		return
+	}
+	preview, err := ctrl.CloudMediaViewerPreview(r.Context(), nodeID, format)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	if strings.ToLower(strings.TrimSpace(preview.ContentType)) != want || len(preview.Data) == 0 ||
+		len(preview.Data) > 64<<20 {
+		writeDesktopIPCError(w, http.StatusBadGateway, "invalid_preview", "viewer image MIME or byte length invalid")
+		return
+	}
+	w.Header().Set("Content-Type", want)
+	w.Header().Set("Content-Length", strconv.Itoa(len(preview.Data)))
+	w.Header().Set("Cache-Control", "private, no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(preview.Data)
 }
 
 // mediaAnalysisPreview forwards only the bounded JPEG derivative; RAW bytes are never exposed.
