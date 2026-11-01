@@ -338,9 +338,13 @@ struct XDriveIOSNativeServerMediaPreview: View {
             VStack(spacing: 12) {
                 if viewed.isLive, let still = image {
                     if showingLiveMotion, let player {
-                        VideoPlayer(player: player)
-                            .onAppear { player.play() }
-                            .onDisappear { player.pause() }
+                        XDriveIOSNativeAVPlayerStatusObserver(
+                            player: player,
+                            content: VideoPlayer(player: player)
+                                .onAppear { if ownerAuthorized { player.play() } }
+                                .onDisappear { player.pause() },
+                            onFailed: { playbackLoadFailed($0) }
+                        )
                     } else if let resources = liveResources,
                               !nativeLiveUnavailable {
                         ZStack {
@@ -384,7 +388,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
                                 .accessibilityIdentifier("native-ios-photoasset-live-play")
                             }
                             Button(showingLiveMotion ? "返回静态照片" : "播放原始动态视频") {
-                                guard phase == .active,
+                                guard ownerAuthorized, player != nil,
                                       let currentOwner = liveOwner,
                                       XDriveIOSNativePhotoOwnerScope.matches(
                                         login.owner, currentOwner
@@ -399,6 +403,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
                                 }
                                 showingLiveMotion.toggle()
                             }
+                            .disabled(!ownerAuthorized || player == nil)
                             .accessibilityIdentifier("native-ios-photoasset-live-motion")
                         }
                         Text(nativeLiveUnavailable
@@ -417,9 +422,13 @@ struct XDriveIOSNativeServerMediaPreview: View {
                         .accessibilityIdentifier("native-ios-photoasset-viewer-retry")
                     }
                 } else if let player {
-                    VideoPlayer(player: player)
-                        .onAppear { player.play() }
-                        .onDisappear { player.pause() }
+                    XDriveIOSNativeAVPlayerStatusObserver(
+                        player: player,
+                        content: VideoPlayer(player: player)
+                            .onAppear { if ownerAuthorized { player.play() } }
+                            .onDisappear { player.pause() },
+                        onFailed: { playbackLoadFailed($0) }
+                    )
                 } else if let image {
                     XDriveIOSNativeZoomablePhotoView(image: image)
                         .onNavigateSwipe { navigateLoaded($0) }
@@ -463,6 +472,19 @@ struct XDriveIOSNativeServerMediaPreview: View {
                 }
             }
             .toolbar {
+                // Available even if an AVPlayer stalls without a terminal
+                // status or the bottom controls are cramped in landscape.
+                ToolbarItem(placement: .navigationBarLeading) {
+                    if ownerAuthorized, player != nil {
+                        Button {
+                            retirePreview()
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        .accessibilityLabel("重新加载云端视频")
+                        .accessibilityIdentifier("native-ios-photoasset-player-reload")
+                    }
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("完成") { dismiss() }
                 }
@@ -575,6 +597,17 @@ struct XDriveIOSNativeServerMediaPreview: View {
             dismiss()
         }
         .onDisappear { retirePreview() }
+    }
+
+    @MainActor
+    private func playbackLoadFailed(_ failed: AVPlayerItem) {
+        guard ownerAuthorized,
+              let playing = player?.currentItem, failed === playing else { return }
+        player?.pause()
+        player?.replaceCurrentItem(with: nil)
+        player = nil
+        showingLiveMotion = false
+        failure = "媒体播放失败，请重试当前云端照片或视频。"
     }
 
     private func retirePreview() {

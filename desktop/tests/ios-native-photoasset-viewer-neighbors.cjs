@@ -99,3 +99,54 @@ test('cloud Viewers fence playback failure to the active Owner and AVPlayer item
   assert.match(original, /guard currentOwnerAuthorized, player != nil else \{ return \}/);
   assert.doesNotMatch(detail + original, /WKWebView|UploadSession|AVPlayerItemPlaybackStalled/);
 });
+
+test('cloud player KVO failures are bound to the current Owner and item with manual landscape reload', () => {
+  const monitor = src('ios/XDriveIOS/NativeAVPlayerStatusObserver.swift');
+  const detail = view.slice(view.indexOf('struct XDriveIOSNativeServerMediaPreview: View'),
+    view.indexOf('/// Root and album-specific media wall'));
+  const originalSource = src('ios/XDriveIOS/NativeCloudOriginalGallery.swift');
+  const original = originalSource.slice(originalSource.indexOf('struct XDriveIOSNativeCloudOriginalPreview: View'),
+    originalSource.indexOf('/// SwiftUI\'s ForEach identity'));
+  assert.match(monitor, /struct XDriveIOSNativeAVPlayerStatusObserver<Content: View>: View/);
+  assert.match(monitor, /item\.publisher\(for: \\\.status, options: \[\.initial, \.new\]\)/);
+  assert.match(monitor, /player\.publisher\(for: \\\.status, options: \[\.initial, \.new\]\)/);
+  assert.match(monitor, /\.receive\(on: RunLoop\.main\)/);
+  assert.equal((detail.match(/XDriveIOSNativeAVPlayerStatusObserver\(/g) || []).length, 2);
+  assert.equal((original.match(/XDriveIOSNativeAVPlayerStatusObserver\(/g) || []).length, 2);
+  assert.match(detail, /onFailed: \{ playbackLoadFailed\(\$0\) \}/);
+  assert.match(detail, /private func playbackLoadFailed\(_ failed: AVPlayerItem\)[\s\S]*?guard ownerAuthorized,[\s\S]*?failed === playing/);
+  assert.match(original, /private func playbackLoadFailed\(_ failed: AVPlayerItem\)[\s\S]*?guard currentOwnerAuthorized,[\s\S]*?failed === playing/);
+  assert.match(detail, /\.disabled\(!ownerAuthorized \|\| player == nil\)[\s\S]*?native-ios-photoasset-live-motion/);
+  assert.match(detail, /native-ios-photoasset-player-reload/);
+  assert.match(original, /native-ios-original-player-reload/);
+  assert.match(detail, /\.AVPlayerItemFailedToPlayToEndTime/);
+  assert.match(original, /\.AVPlayerItemFailedToPlayToEndTime/);
+});
+
+
+test('cloud initial player status recovery coexists with exported original actions', () => {
+  const cloud = src('ios/XDriveIOS/NativeCloudOriginalGallery.swift');
+  const viewer = cloud.slice(cloud.indexOf('struct XDriveIOSNativeCloudOriginalPreview: View'),
+    cloud.indexOf('/// SwiftUI\'s ForEach identity'));
+  assert.match(viewer, /native-ios-original-export/);
+  assert.match(viewer, /native-ios-original-share/);
+  assert.match(viewer, /native-ios-original-player-reload/);
+  assert.match(viewer, /XDriveIOSNativeAVPlayerStatusObserver\(/);
+  assert.match(viewer, /@StateObject private var exporter = XDriveIOSNativeFilesExportModel\(\)/);
+});
+
+
+test('native backed-up-original Viewer preserves PhotoKit restore alongside AVPlayer retries and original export', () => {
+  const full = src('ios/XDriveIOS/NativeCloudOriginalGallery.swift');
+  const view = full.slice(full.indexOf('struct XDriveIOSNativeCloudOriginalPreview: View'),
+    full.indexOf('/// SwiftUI\'s ForEach identity'));
+  assert.match(view, /private func restoreCurrentOriginalToPhotos\(\)/);
+  assert.match(view, /native-ios-cloud-original-save-to-photos/);
+  assert.match(view, /private func cancelPhotoRestore\(\)/);
+  assert.match(view, /private func playbackLoadFailed\(_ failed: AVPlayerItem\)/);
+  assert.match(view, /XDriveIOSNativeAVPlayerStatusObserver\(/);
+  assert.match(view, /native-ios-original-player-reload/);
+  assert.match(view, /ShareLink\(item: file\.fileURL\)/);
+  assert.match(view, /XDriveIOSNativeFilesExportModel\(\)/);
+  assert.match(view, /owner: owner, epoch: epoch/);
+});
