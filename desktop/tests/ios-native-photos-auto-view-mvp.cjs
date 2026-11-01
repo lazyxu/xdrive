@@ -135,7 +135,7 @@ test('native cloud original list and preview clear stale media across Owner swit
   const gallery = cloud.slice(cloud.indexOf('struct XDriveIOSNativeCloudOriginalGallery: View'))
   // Owner switch clears old rows synchronously. A foreground scene reloads
   // immediately; an inactive scene defers the same verified read until active.
-  assert.match(gallery, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?refreshAfterViewer = false[\s\S]*?selected = nil\s*model\.invalidate\(\)/)
+  assert.match(gallery, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?refreshAfterViewer = false[\s\S]*?selected = nil\s*viewerOwner = nil\s*viewerLoadedNodes = \[\]\s*viewerReturnNode = nil\s*accessibilityFocusedNodeID = nil\s*model\.invalidate\(\)/)
   assert.match(gallery, /if login\.owner != nil \{\s*if phase == \.active \{\s*model\.reload\(login: login\)\s*\} else \{\s*needsForegroundReload = true/)
   assert.match(gallery, /\.fullScreenCover\(item: \$selected, onDismiss:/)
   assert.match(gallery, /\.onDisappear \{[\s\S]*?if selected == nil \{\s*refreshAfterViewer = false\s*model\.invalidate\(\)/)

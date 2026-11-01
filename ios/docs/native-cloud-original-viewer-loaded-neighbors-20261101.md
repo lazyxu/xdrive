@@ -1,0 +1,9 @@
+# Native iOS backed-up cloud originals Viewer loaded neighbors (2026-11-01)
+
+**Scope:** the existing Gallery **备份原件** source only. Native PhotoKit local Viewer (#3437/#3446) and Owner PhotoAsset Viewer (#3440) already support neighboring items, but the backed-up originals Viewer still required closing for every item. This PR reuses the existing pure Foundation `XDriveIOSNativePhotoAssetViewerNeighborPolicy` without modifying it, adding no new network API, photo download, backup or browser UI.
+
+On opening a backed-up original, the existing verified Owner-scoped wall freezes only one **already loaded, at most 48-element slice** and the exact current Owner/root. The same full-screen Viewer uses its existing ticketed still/video/Live pipeline for previous/next, with only ±1 motion. Every action requires the frozen current item and exact ID+revision under the same Owner; the parent confirms source membership and rejects changes while a receipt/scene refresh is pending. Before switching, old player, rendered pixels, signed URLs and Live pair temp files are retired. Every new attempt obtains fresh `verifiedAuthorization()` and checks the unchanged expected Owner before signed preview reads.
+
+The original root wall remains mounted, suspends in-flight thumbnail fetches for Viewer priority and returns focus to the last accepted ID+revision only while that same verified Owner and loaded node still exist. Receipt/Owner/scene changes instead refresh or invalidate the wall. The displayed position is explicitly marked **已加载**; this is neither all server files nor a full 100k-photo Viewer.
+
+The existing iOS IPA-wired native cloud-original thumbnail/Viewer contract now checks these behaviors. The current exact PR HEAD must pass unsigned IPA and Xcode device build, applicable full CI, Final Gate, and GitHub merge protection. Physical iPhone, Live hold, accessibility and multi-page acceptance: **跳过（未验收）**.
