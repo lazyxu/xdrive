@@ -123,18 +123,18 @@ test('confirmed original temporary readback outage retains cursor instead of an 
   const runner = read('ios/XDriveIOS/ForegroundPhotoBackupMVP.swift')
   const original = read('ios/XDriveIOS/OriginalOwnerAuthorization.swift')
   const background = read('ios/XDriveIOS/BackgroundPhotoTask.swift')
-  const read = runner.slice(runner.indexOf('case .confirmed:'),
+  const confirmed = runner.slice(runner.indexOf('case .confirmed:'),
     runner.indexOf('case .prepared:', runner.indexOf('case .confirmed:')))
   const classification = runner.slice(
     runner.indexOf('private static func isTransientConfirmedReadbackFailure('),
     runner.indexOf('private enum StillOutcome'))
   const scanning = runner.slice(runner.indexOf('scanning: while'),
     runner.indexOf('private static func mustAbortRun('))
-  assert.match(read, /return \.alreadyConfirmed/)
-  assert.match(read, /if Self\.isTransientConfirmedReadbackFailure\(error\) \{ throw error \}/)
-  assert.match(read, /return \.requiresReview/)
-  assert.ok(read.indexOf('isTransientConfirmedReadbackFailure(error)') <
-    read.lastIndexOf('return .requiresReview'))
+  assert.match(confirmed, /return \.alreadyConfirmed/)
+  assert.match(confirmed, /if Self\.isTransientConfirmedReadbackFailure\(error\) \{ throw error \}/)
+  assert.match(confirmed, /return \.requiresReview/)
+  assert.ok(confirmed.indexOf('isTransientConfirmedReadbackFailure(error)') <
+    confirmed.lastIndexOf('return .requiresReview'))
   assert.match(scanning, /if Self\.isTransientConfirmedReadbackFailure\(error\) \|\|\s*Self\.mustAbortRun\(after: error\) \{ throw error \}/)
   assert.match(scanning, /await scanner\.reset\(\)\s*throw error/)
   assert.match(scanning, /case \.requiresReview:\s*report\.needsReview \+= 1\s*report\.stoppedForReview = true/)
@@ -158,5 +158,5 @@ test('confirmed original temporary readback outage retains cursor instead of an 
     background.indexOf('task.expirationHandler ='))
   assert.match(failed, /if beganOriginalWrite, let attemptedOwner \{[\s\S]*?BGOriginalWindowStore\.shared\.pause/)
   assert.match(failed, /else if retryablePreflightNetworkFailure\(error\) \{[\s\S]*?await resubmitOnlyIfStillApproved/)
-  assert.doesNotMatch(read + classification, /ledger\.confirmReceipt|writer\.uploadPrepared|recordResult\(/)
+  assert.doesNotMatch(confirmed + classification, /ledger\.confirmReceipt|writer\.uploadPrepared|recordResult\(/)
 })
