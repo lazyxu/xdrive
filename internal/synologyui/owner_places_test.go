@@ -104,7 +104,7 @@ func TestDSMOwnerPlacesReadOnlyCGIAndExactPhotoScope(t *testing.T) {
 	if w := send("GET", list, true); w.Code == http.StatusOK {
 		t.Fatal("unsafe Owner GPS could reach browser")
 	}
-	g.Authenticate = func(context.Context) (string, error) { return "wrong" }
+	g.Authenticate = func(context.Context) (string, error) { return "wrong", nil }
 	if w := send("GET", photos, true); w.Code != http.StatusForbidden {
 		t.Fatal("foreign DSM principal accessed Owner place media")
 	}
