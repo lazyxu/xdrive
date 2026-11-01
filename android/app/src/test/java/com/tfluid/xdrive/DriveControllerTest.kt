@@ -2595,6 +2595,45 @@ class DriveControllerTest {
         assertNull(c.state.value.fileUploadPickerParent)
     }
 
+    @Test fun cloudGalleryPhotoViewerDirectSafSavesRealOwnerOriginal() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        val photo = c.state.value.galleryItems.single()
+        c.openGalleryViewer(photo)
+        assertTrue(nativeGalleryViewerExportEligible(c.state.value, photo.node))
+        assertTrue(c.prepareFileExport(photo.node))
+        val ticket = requireNotNull(NativeSafExportTicket.capture(c.state.value))
+        assertTrue(ticket.isCurrent(c.state.value))
+        val destination = ByteArrayOutputStream()
+        var discarded = 0
+        c.saveFileExport({ destination }, { discarded++ }); runCurrent()
+        assertEquals("hello", destination.toString("UTF-8"))
+        assertEquals(1, api.downloadReads)
+        assertTrue(c.state.value.fileDownloadSaved)
+        assertNull(c.state.value.galleryViewer)
+        assertEquals(Screen.GALLERY, c.state.value.screen)
+        assertEquals(0, discarded)
+        assertFalse(ticket.isCurrent(c.state.value))
+    }
+
+    @Test fun cloudGalleryPhotoViewerSafPickerRejectsClosedSourceBeforeWriting() = runTest {
+        val api = Service(); val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        val photo = c.state.value.galleryItems.single()
+        c.openGalleryViewer(photo)
+        assertTrue(c.prepareFileExport(photo.node))
+        c.dismissGalleryViewer()
+        var discarded = 0
+        c.saveFileExport({ error("Stale Viewer cannot open SAF output") },
+            { discarded++ }); runCurrent()
+        assertEquals(1, discarded)
+        assertEquals(0, api.downloadReads)
+        assertNull(c.state.value.fileExportPending)
+        assertFalse(c.state.value.fileDownloadSaved)
+    }
+
     @Test fun galleryExportsOnlySelectedVerifiedOwnerAssetViaExistingSafPipeline() = runTest {
         val api = Service(); val c = controller(this, api)
         c.login("owner", "password"); runCurrent()
