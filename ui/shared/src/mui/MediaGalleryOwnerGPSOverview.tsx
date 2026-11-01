@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type PointerEvent } from 'react'
 import { Box, Button, CircularProgress, Paper, Stack, Typography } from '@mui/material'
 import type { MediaPlaceFacet, MediaPlacesMapOverview, MediaPlacesViewportBounds } from '../models'
 import {
@@ -64,7 +64,7 @@ export function XDriveMediaGalleryOwnerGPSOverview({
   }, [scope, key, listPage, retry])
   const current = !pending && loaded?.scope === scope && loaded.key === key ? loaded.page : null
   const moveTo = (next: MediaPlacesViewportBounds | null) => {
-    if (!next || !xDriveOwnerGPSBoundsValid(next)) return
+    if (!next || !xDriveOwnerGPSBoundsValid(next) || keyOf(next) === key) return
     setLoaded(null)
     setCamera({ scope, bounds: next })
   }
@@ -73,8 +73,6 @@ export function XDriveMediaGalleryOwnerGPSOverview({
     const lon = (bounds.west + bounds.east) / 2
     if (factor < 1) moveTo(xDriveOwnerGPSZoom(bounds, lat, lon, factor))
     else {
-      const next = xDriveOwnerGPSZoom(bounds, lat, lon, 1 / factor)
-      if (!next) return
       // Zoom-out grows the geographic span; the zoom helper only shrinks.
       const wide = Math.min(360, (bounds.east - bounds.west) * factor)
       const tall = Math.min(180, (bounds.north - bounds.south) * factor)
@@ -83,7 +81,7 @@ export function XDriveMediaGalleryOwnerGPSOverview({
       moveTo({ west, east: west + wide, south, north: south + tall })
     }
   }
-  const endDrag = (event: React.PointerEvent<HTMLDivElement>, cancelled = false) => {
+  const endDrag = (event: PointerEvent<HTMLDivElement>, cancelled = false) => {
     const previous = start.current
     if (!previous || previous.id !== event.pointerId) return
     start.current = null
