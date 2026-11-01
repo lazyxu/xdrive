@@ -33,6 +33,12 @@ class NativeLocalMapIndexTest {
         })
     }
 
+    @Test fun shortenedFinalBatchDoesNotLoseUnreadTailAfterFortyEightMatches() {
+        assertFalse(nativeLocalMapBatchExhausted(61, 64, 50))
+        assertTrue(nativeLocalMapBatchExhausted(61, 64, 61))
+        assertFalse(nativeLocalMapBatchExhausted(64, 64, 64))
+    }
+
     @Test fun locationPagingNeverWandersBeyondIndexedPrefixOrKnownCount() {
         assertTrue(nativeLocalMapHasMore(48, 142, 4096, 10000, false))
         assertFalse(nativeLocalMapHasMore(142, 142, 4096, 10000, false))

@@ -38,6 +38,12 @@ internal fun nativeLocalMapHasMore(
     providerExhausted: Boolean,
 ): Boolean = !providerExhausted && matched < knownCount && scanned < scanLimit
 
+/** A truncated final batch still has unread rows if the 48th match
+ * was found before the last row. The next keyset cursor starts there. */
+internal fun nativeLocalMapBatchExhausted(
+    returned: Int, requested: Int, consumed: Int,
+): Boolean = returned < requested && consumed == returned
+
 internal suspend fun readNativeLocalMapCellPage(
     context: Context,
     cell: NativeLocalMapCell<NativeLocalMedia>,
@@ -69,7 +75,9 @@ internal suspend fun readNativeLocalMapCellPage(
             exhausted = true
             break
         }
+        var consumed = 0
         for (asset in batch) {
+            consumed++
             currentCoroutineContext().ensureActive()
             signal.throwIfCanceled()
             scanned++
@@ -80,7 +88,10 @@ internal suspend fun readNativeLocalMapCellPage(
                 if (found.size == NativeLocalMapIndex.MAX_PREVIEW_ITEMS) break
             }
         }
-        if (batch.size < limit) exhausted = true
+        // A short final provider batch is NOT exhausted if the 48th match
+        // stopped before consuming every row returned in that same batch.
+        if (nativeLocalMapBatchExhausted(batch.size, limit, consumed))
+            exhausted = true
         if (exhausted) break
     }
     val matched = start.matched + found.size
