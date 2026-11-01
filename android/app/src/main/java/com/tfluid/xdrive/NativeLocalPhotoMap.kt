@@ -261,7 +261,8 @@ internal fun ColumnScope.NativeLocalPhotoMap(
                     items(members, key = { it.id }) { asset ->
                         NativeLocalPhotoWallTile(
                             asset = asset, restoreFocus = false,
-                            onOpen = { viewer = asset })
+                            onOpen = { viewer = asset },
+                            onFocusRestored = {})
                     }
                 }
             }
