@@ -693,6 +693,10 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		serveOwnerPlaces(w, r, agent)
 		return
 	}
+	if r.URL.Path == "/v1/cloud-gallery-map-overview" {
+		serveOwnerMapOverview(w, r, agent)
+		return
+	}
 	// Fixed, bounded Owner cloud files GETs, using the Agent's actual Server
 	// session; DSM login is not an xDrive account and grants no filesystem
 	// mutation, byte streaming, arbitrary upstream URL or credential read.
