@@ -152,11 +152,16 @@ internal fun nativePdfForegroundPermitted(state: Lifecycle.State): Boolean =
 
 /** A cancelled or superseded page render cannot publish even if an OEM
  * PdfRenderer completes after another page, retry or Owner lease is active. */
+internal fun nativePdfRenderMayComplete(
+    requestedPage: Int, visiblePage: Int,
+    ticket: Long, activeTicket: Long,
+): Boolean = requestedPage == visiblePage && ticket == activeTicket
+
 internal fun nativePdfRenderMayPublish(
     requestedPage: Int, visiblePage: Int,
     ticket: Long, activeTicket: Long,
     leaseCurrent: Boolean, viewerCurrent: Boolean,
-): Boolean = requestedPage == visiblePage && ticket == activeTicket &&
+): Boolean = nativePdfRenderMayComplete(requestedPage, visiblePage, ticket, activeTicket) &&
     leaseCurrent && viewerCurrent
 
 /** A complete native Files PDF Viewer with bounded verified stream, lazy
@@ -294,7 +299,8 @@ internal fun NativeFilesPdfViewer(
             } finally {
                 // A delayed cancellation must not clear the *new* page's
                 // drawing indicator after a rapid A→B→A or foreground restart.
-                if (ticket == renderEpoch && requestedPage == pageIndex)
+                if (nativePdfRenderMayComplete(
+                        requestedPage, pageIndex, ticket, renderEpoch))
                     drawing = false
             }
         }
