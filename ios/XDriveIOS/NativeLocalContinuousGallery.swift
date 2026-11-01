@@ -164,9 +164,9 @@ private struct XDriveIOSNativeVirtualViewerSelection: Identifiable {
 /// uses the existing scanner and releases IDs/thumbnail loaders on disappearance.
 struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
     @Binding var savedOffset: Int
+    @Binding var mediaFilter: XDriveIOSNativePhotoMediaFilter
     @Environment(\.scenePhase) private var phase
     @State private var total = 0
-    @State private var mediaFilter: XDriveIOSNativePhotoMediaFilter = .all
     @State private var permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @State private var loading = false
     @State private var failure: String?

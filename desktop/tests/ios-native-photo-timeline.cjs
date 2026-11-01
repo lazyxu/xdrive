@@ -34,3 +34,25 @@ test('calendar counts use original PhotoKit slots and invalidate on any library/
   assert.match(policy, /var firstPageOffset: Int \{ \(firstSlot \/ 64\) \* 64 \}/)
   assert.doesNotMatch(policy, /import Photos|PHAsset\.fetchAssets|localIdentifier:|accessToken|uploadSession/)
 })
+
+
+test('date jump reuses the real PhotoKit media filter instead of all-photo offsets', () => {
+  const wall = read('ios/XDriveIOS/NativeLocalContinuousGallery.swift')
+  assert.match(browser, /@State private var mediaFilter: XDriveIOSNativePhotoMediaFilter = \.all/)
+  assert.match(browser, /XDriveIOSNativeLocalContinuousGalleryScreen\(\s*savedOffset: \$savedOffset, mediaFilter: \$mediaFilter/)
+  assert.match(wall, /@Binding var mediaFilter: XDriveIOSNativePhotoMediaFilter/)
+  assert.doesNotMatch(wall, /@State private var mediaFilter/)
+  assert.match(browser, /func read\(mediaFilter: XDriveIOSNativePhotoMediaFilter\)/)
+  assert.match(browser, /case \.all:\s*snapshot = PHAsset\.fetchAssets\(with: options\)/)
+  assert.match(browser, /case \.photos:\s*snapshot = PHAsset\.fetchAssets\(with: \.image, options: options\)/)
+  assert.match(browser, /case \.videos:\s*snapshot = PHAsset\.fetchAssets\(with: \.video, options: options\)/)
+  assert.match(browser, /mediaFilter\.includes\(kind: kind\)/)
+  assert.match(browser, /result\.indexedMediaCount == result\.totalSlots/)
+  assert.match(browser, /\.read\(mediaFilter: mediaFilter\)/)
+  assert.match(browser, /model\.indexFilter == mediaFilter/)
+  assert.match(browser, /\.onChange\(of: mediaFilter\) \{ _ in[\s\S]*?model\.invalidate\(\)/)
+  assert.match(browser, /let index = model\.index, model\.indexFilter == mediaFilter/)
+  assert.match(browser, /requestedOffset % 64 == 0/)
+  assert.match(browser, /Button\("按页查看"\) \{[\s\S]*?mediaFilter = \.all[\s\S]*?savedOffset = 0/)
+  assert.match(browser, /model\.load\(mediaFilter: mediaFilter\)/)
+});

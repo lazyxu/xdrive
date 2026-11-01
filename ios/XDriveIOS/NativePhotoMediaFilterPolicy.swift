@@ -13,6 +13,14 @@ enum XDriveIOSNativePhotoMediaFilter: String, CaseIterable, Identifiable {
         case .videos: return "视频"
         }
     }
+    func includes(kind: String) -> Bool {
+        switch self {
+        case .all: return kind == "image" || kind == "video"
+        case .photos: return kind == "image"
+        case .videos: return kind == "video"
+        }
+    }
+
     var expectedKind: String? {
         switch self {
         case .all: return nil

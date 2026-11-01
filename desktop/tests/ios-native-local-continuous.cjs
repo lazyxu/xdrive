@@ -11,9 +11,10 @@ const policy = read('ios/XDriveIOS/NativePhotoTimelinePolicy.swift')
 
 test('local PhotoKit Gallery defaults to continuous lazy virtual pages with legacy pagination fallback', () => {
   assert.match(shell, /@State private var useContinuousWall = true/)
-  assert.match(shell, /XDriveIOSNativeLocalContinuousGalleryScreen\(savedOffset: \$savedOffset\)/)
+  assert.match(shell, /XDriveIOSNativeLocalContinuousGalleryScreen\(\s*savedOffset: \$savedOffset, mediaFilter: \$mediaFilter/)
   assert.match(shell, /content\.id\(wallRevision\)/)
   assert.match(shell, /Button\("连续滚动"\) \{ useContinuousWall = true \}/)
+  assert.match(shell, /Button\("按页查看"\) \{[\s\S]*?mediaFilter = \.all/)
   assert.match(source, /LazyVStack\(alignment: \.leading/)
   assert.match(source, /ForEach\(0\.\.<XDriveIOSNativePhotoVirtualPagePolicy\.pageCount\(total: total\)/)
   assert.match(source, /ForEach\(daySections\)/)
@@ -109,7 +110,8 @@ test('native local day headings reflect real PhotoKit creation dates, not fixed 
 test('native media selector queries the entire authorized PhotoKit snapshot', () => {
   const reader = read('ios/XDriveIOS/NativeGalleryMediaScanner.swift')
   const policy = read('ios/XDriveIOS/NativePhotoMediaFilterPolicy.swift')
-  assert.match(source, /@State private var mediaFilter: XDriveIOSNativePhotoMediaFilter = \.all/)
+  assert.match(source, /@Binding var mediaFilter: XDriveIOSNativePhotoMediaFilter/)
+  assert.match(shell, /@State private var mediaFilter: XDriveIOSNativePhotoMediaFilter = \.all/)
   assert.match(source, /Picker\("媒体类型", selection: \$mediaFilter\)/)
   assert.match(source, /ForEach\(XDriveIOSNativePhotoMediaFilter\.allCases\)/)
   assert.match(source, /mediaFilter: mediaFilter/)
