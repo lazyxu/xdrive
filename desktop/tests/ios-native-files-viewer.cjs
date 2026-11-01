@@ -109,3 +109,14 @@ test('unsupported, oversized, undecodable and failed-player Files previews expos
   assert.match(exportModel, /prepared\?\.discard\(\)/);
   assert.doesNotMatch(modal, /URLSessionConfiguration|download-ticket|FileManager\.default\.moveItem/);
 });
+
+test('L3 navigation can escape an unsupported or oversize file within the verified 64-row page', () => {
+  assert.match(policy, /private static func validFileRow\(_ node: XDriveIOSNativeFilesNode\)/);
+  assert.match(policy, /guard validFileRow\(node\) else \{ return false \}/);
+  assert.match(policy, /guard authorized, validFileRow\(current\),/);
+  assert.match(policy, /if let fileIndex = files\.firstIndex\(of: loaded\[index\]\)/);
+  assert.match(policy, /return loaded\[\.\.<index\]\.reversed\(\)\.first\(where: canPreview\)/);
+  assert.match(policy, /return loaded\[\(index \+ 1\)\.\.\.\]\.first\(where: canPreview\)/);
+  assert.match(view, /Button\("上一项"|Label\("上一项"/);
+  assert.match(view, /Button\("下一项"|Label\("下一项"/);
+});
