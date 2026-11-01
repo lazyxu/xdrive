@@ -127,3 +127,11 @@ test('native media selector queries the entire authorized PhotoKit snapshot', ()
   assert.doesNotMatch(reader, /UploadSession|journal|XDriveIOSForegroundPhotoBackupMVP/)
   assert.match(policy, /case all, photos, videos/)
 })
+
+
+test('native Photos filter empty-state message reflects selected whole-library source', () => {
+  assert.match(source, /Text\("本机已授权\\\(mediaFilter\.title\) · 按日分组"\)/)
+  assert.match(source, /mediaFilter == \.videos \? "当前已授权图库中没有视频。"/)
+  assert.match(source, /mediaFilter == \.photos \? "当前已授权图库中没有照片。"/)
+  assert.match(source, /当前已授权图库中没有可浏览的照片或视频。/)
+})

@@ -212,7 +212,7 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                         }
                     } else {
                         HStack(spacing: 10) {
-                            Text("本机已授权照片 · 按日分组")
+                            Text("本机已授权\(mediaFilter.title) · 按日分组")
                                 .font(.subheadline).foregroundStyle(.secondary)
                             Spacer(minLength: 6)
                             Button(selectionMode ? "取消选择" : "选择") {
@@ -315,7 +315,9 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                             ProgressView("正在读取已授权图库…")
                                 .frame(maxWidth: .infinity).padding()
                         } else if failure == nil {
-                            Text("当前授权的相册没有可浏览的照片。")
+                            Text(mediaFilter == .videos ? "当前已授权图库中没有视频。" :
+                                 mediaFilter == .photos ? "当前已授权图库中没有照片。" :
+                                 "当前已授权图库中没有可浏览的照片或视频。")
                                 .foregroundStyle(.secondary).padding(12)
                         }
                         if let failure {
