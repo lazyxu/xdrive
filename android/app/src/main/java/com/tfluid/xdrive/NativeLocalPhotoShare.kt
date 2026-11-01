@@ -34,15 +34,14 @@ internal fun nativeLocalPhotoShareEligible(asset: NativeLocalMedia): Boolean {
 /** No file copy, thumbnail surrogate, Server call or long-lived URI grant:
  * Android's chooser and the selected target receive only the one OS URI.
  */
-internal fun nativeLocalPhotoShareIntent(
-    context: Context, asset: NativeLocalMedia,
-): Intent? {
+internal fun nativeLocalPhotoShareIntent(asset: NativeLocalMedia): Intent? {
     if (!nativeLocalPhotoShareEligible(asset)) return null
     return Intent(Intent.ACTION_SEND).apply {
         type = if (asset.isVideo) "video/*" else "image/*"
         putExtra(Intent.EXTRA_STREAM, asset.uri)
-        clipData = ClipData.newUri(context.contentResolver,
-            "xDrive local media", asset.uri)
+        // Construct an exact URI grant without probing MediaStore or opening
+        // original bytes before the user selects a share target.
+        clipData = ClipData.newRawUri("xDrive local media", asset.uri)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
 }
@@ -50,7 +49,7 @@ internal fun nativeLocalPhotoShareIntent(
 internal fun nativeDispatchLocalPhotoShare(
     context: Context, asset: NativeLocalMedia,
 ): Boolean {
-    val send = nativeLocalPhotoShareIntent(context, asset) ?: return false
+    val send = nativeLocalPhotoShareIntent(asset) ?: return false
     return runCatching {
         val chooser = Intent.createChooser(send, "分享本机原件").apply {
             clipData = send.clipData
