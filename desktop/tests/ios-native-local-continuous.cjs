@@ -199,3 +199,25 @@ test('native Favorites filter uses a real full-library PhotoKit predicate', () =
   assert.match(timeline, /mediaFilter == \.favorites \? "所有收藏（返回第一页）"/)
   assert.match(source, /mediaFilter == \.favorites \? "当前已授权图库中没有收藏照片。"/)
 })
+
+
+test('native local Viewer offers single-photo original share, favorites and system delete', () => {
+  const detail = read('ios/XDriveIOS/NativeLocalPhotoGallery.swift')
+  const action = read('ios/XDriveIOS/NativeLocalPhotoActions.swift')
+  const share = read('ios/XDriveIOS/NativeLocalPhotoShare.swift')
+  assert.match(detail, /Button\("分享本机原件"\) \{ shareOriginal\(allowICloud: false\) \}/)
+  assert.match(detail, /Button\("从 iCloud 下载原件并分享"\)/)
+  assert.match(detail, /Button\("收藏照片"\) \{ editFavorite\(true\) \}/)
+  assert.match(detail, /Button\("取消收藏"\) \{ editFavorite\(false\) \}/)
+  assert.match(detail, /Button\("删除照片", role: \.destructive\)/)
+  assert.match(detail, /isPresented: \$showDeleteConfirm/)
+  assert.match(detail, /XDriveIOSNativeLocalOriginalSharer\.prepare\(\s*\[captured\], allowICloudDownload: allowICloud/)
+  assert.match(detail, /XDriveIOSNativeLocalPhotoActivitySheet\(fileURLs: current\.fileURLs\)/)
+  assert.match(detail, /retainedPhotoShare\?\.discard\(\)/)
+  assert.match(detail, /XDriveIOSNativeLocalPhotoSelectionActions\.setFavorite\(\s*\[captured\], to: favorite/)
+  assert.match(detail, /XDriveIOSNativeLocalPhotoSelectionActions\.delete\(\[captured\]\)/)
+  assert.match(detail, /photoActionTask\?\.cancel\(\)/)
+  assert.match(detail, /\.onChange\(of: changes\.generation\) \{ _ in\s*cancelPhotoAction\(\)/)
+  assert.match(action, /PHAssetChangeRequest\.deleteAssets\(assets as NSArray\)/)
+  assert.match(share, /XDrivePhotoKitOriginalExporter\.stage\(/)
+});

@@ -263,6 +263,13 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
     @State private var crossingEpoch = UUID()
     @State private var crossingTask: Task<Void, Never>?
     @State private var crossingMessage: String?
+    @State private var photoActionBusy = false
+    @State private var photoActionEpoch = UUID()
+    @State private var photoActionTask: Task<Void, Never>?
+    @State private var photoActionMessage: String?
+    @State private var showDeleteConfirm = false
+    @State private var photoShareSession: XDriveIOSNativeLocalPhotoShareSession?
+    @State private var retainedPhotoShare: XDriveIOSNativeLocalPhotoShareSession?
     @State private var activeItem: XDrivePhotoKitScanCandidate?
     @State private var showsStaticStill = false
     @State private var livePlaybackRequest: UUID?
@@ -349,8 +356,112 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
         onViewed?(next)
     }
 
+    private func shareOriginal(allowICloud: Bool) {
+        guard currentPageAuthorized, !crossing, !photoActionBusy,
+              photoShareSession == nil else { return }
+        let captured = viewed
+        let token = UUID()
+        photoActionEpoch = token
+        photoActionBusy = true
+        photoActionMessage = nil
+        photoActionTask = Task { @MainActor in
+            do {
+                let shared = try await XDriveIOSNativeLocalOriginalSharer.prepare(
+                    [captured], allowICloudDownload: allowICloud
+                )
+                guard photoActionEpoch == token, !Task.isCancelled,
+                      currentPageAuthorized, viewed.id == captured.id else {
+                    shared.discard()
+                    return
+                }
+                retainedPhotoShare = shared
+                photoShareSession = shared
+                if shared.containsLivePair {
+                    photoActionMessage = "实况原件以照片和 MOV 两项分享，目标 App 可能不会自动配对。"
+                }
+            } catch is CancellationError {
+            } catch {
+                if photoActionEpoch == token {
+                    photoActionMessage = allowICloud
+                        ? "原件下载或分享准备失败，请检查 iCloud、权限和可用空间。"
+                        : "无法读取本机原件；仅在 iCloud 时可显式选择下载后分享。"
+                }
+            }
+            if photoActionEpoch == token {
+                photoActionBusy = false
+                photoActionTask = nil
+            }
+        }
+    }
+
+    private func editFavorite(_ favorite: Bool) {
+        guard currentPageAuthorized, !crossing, !photoActionBusy else { return }
+        let captured = viewed
+        let token = UUID()
+        photoActionEpoch = token
+        photoActionBusy = true
+        photoActionMessage = nil
+        photoActionTask = Task { @MainActor in
+            do {
+                try await XDriveIOSNativeLocalPhotoSelectionActions.setFavorite(
+                    [captured], to: favorite
+                )
+                if photoActionEpoch == token, currentPageAuthorized {
+                    // PhotoKit change notifications independently revoke old
+                    // Viewers and force a fresh source wall.
+                    photoActionMessage = favorite ? "已收藏。" : "已取消收藏。"
+                }
+            } catch is CancellationError {
+            } catch {
+                if photoActionEpoch == token {
+                    photoActionMessage = "收藏操作未完成，照片或访问权限可能已变化。"
+                }
+            }
+            if photoActionEpoch == token {
+                photoActionBusy = false
+                photoActionTask = nil
+            }
+        }
+    }
+
+    private func deleteViewed() {
+        guard currentPageAuthorized, !crossing, !photoActionBusy else { return }
+        let captured = viewed
+        let token = UUID()
+        photoActionEpoch = token
+        photoActionBusy = true
+        photoActionMessage = nil
+        photoActionTask = Task { @MainActor in
+            do {
+                try await XDriveIOSNativeLocalPhotoSelectionActions.delete([captured])
+                guard photoActionEpoch == token else { return }
+                // System Photos confirmation is part of performChanges;
+                // never delete a cloud backup copy from this UI.
+                dismiss()
+            } catch is CancellationError {
+            } catch {
+                if photoActionEpoch == token {
+                    photoActionMessage = "未能删除这张系统照片，请检查访问权限。"
+                }
+            }
+            if photoActionEpoch == token {
+                photoActionBusy = false
+                photoActionTask = nil
+            }
+        }
+    }
+
+    private func cancelPhotoAction() {
+        photoActionEpoch = UUID()
+        photoActionTask?.cancel()
+        photoActionTask = nil
+        photoActionBusy = false
+        photoActionMessage = nil
+        showDeleteConfirm = false
+    }
+
     private func showNeighbor(_ direction: Int) {
-        guard currentPageAuthorized, !crossing else { return }
+        guard currentPageAuthorized, !crossing, !photoActionBusy else { return }
         if let next = neighbor(direction) {
             show(next)
             return
@@ -501,11 +612,53 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                     Text(crossingMessage)
                         .font(.caption).foregroundStyle(.secondary)
                 }
+                if photoActionBusy {
+                    ProgressView("正在处理当前照片…").font(.caption)
+                }
+                if let photoActionMessage {
+                    Text(photoActionMessage)
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Menu {
+                        Button("分享本机原件") { shareOriginal(allowICloud: false) }
+                        Button("从 iCloud 下载原件并分享") {
+                            shareOriginal(allowICloud: true)
+                        }
+                        Divider()
+                        Button("收藏照片") { editFavorite(true) }
+                        Button("取消收藏") { editFavorite(false) }
+                        Divider()
+                        Button("删除照片", role: .destructive) {
+                            showDeleteConfirm = true
+                        }
+                    } label: {
+                        Label("照片操作", systemImage: "ellipsis.circle")
+                    }
+                    .disabled(!currentPageAuthorized || crossing || photoActionBusy)
+                    .accessibilityIdentifier("native-ios-local-viewer-photo-actions")
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("完成") { dismiss() }
                 }
+            }
+            .sheet(item: $photoShareSession, onDismiss: {
+                retainedPhotoShare?.discard()
+                retainedPhotoShare = nil
+            }) { current in
+                XDriveIOSNativeLocalPhotoActivitySheet(fileURLs: current.fileURLs)
+            }
+            .confirmationDialog(
+                "确认删除当前系统照片？",
+                isPresented: $showDeleteConfirm,
+                titleVisibility: .visible
+            ) {
+                Button("删除这张照片", role: .destructive) { deleteViewed() }
+                Button("取消", role: .cancel) {}
+            } message: {
+                Text("会按 iOS 系统照片规则删除本机照片；不会删除 xDrive 云端备份。")
             }
         }
         .onAppear { changes.start() }
@@ -514,6 +667,7 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
             if phase == .active { model.load(viewed) }
         }
         .onChange(of: changes.generation) { _ in
+            cancelPhotoAction()
             cancelCrossing()
             // Library mutation may revoke the selected media even when
             // the visible PhotoKit permission level stays Full or Limited.
@@ -522,6 +676,7 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
         }
         .onChange(of: phase) { state in
             if state != .active {
+                cancelPhotoAction()
                 cancelCrossing()
                 showsStaticStill = false
                 livePlaybackRequest = nil
@@ -539,7 +694,10 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                 dismiss()
             }
         }
-        .onDisappear { cancelCrossing() }
+        .onDisappear {
+            cancelPhotoAction()
+            cancelCrossing()
+        }
         .onDisappear {
             changes.stop()
             model.cancel()
