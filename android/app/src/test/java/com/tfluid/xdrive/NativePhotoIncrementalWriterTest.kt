@@ -6,9 +6,11 @@ import com.tfluid.xdrive.core.NativePhotoBackupScope
 import com.tfluid.xdrive.core.NodeRange
 import com.tfluid.xdrive.core.ServerAddress
 import com.tfluid.xdrive.core.XDriveService
+import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
+import java.nio.file.Files
 import java.security.MessageDigest
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
@@ -56,6 +58,7 @@ class NativePhotoIncrementalWriterTest {
 
     private class UploadService : XDriveService {
         var calls = 0
+        var lastReceivedOriginal: ByteArray? = null
         var timeoutAfterSend = false
         var invalidReceipt = false
         var resumeKeyUsed: String? = null
@@ -103,6 +106,7 @@ class NativePhotoIncrementalWriterTest {
             check(accessToken == "owner-token" && parent.id == 1L)
             val read = openSource().use { it.readBytes() }
             assertEquals(size, read.size.toLong())
+            lastReceivedOriginal = read
             calls++
             onProgress(size)
             if (timeoutAfterSend) throw IOException("Lost finalize ACK")
@@ -147,6 +151,63 @@ class NativePhotoIncrementalWriterTest {
             assertEquals(NativePhotoIncrementalOutcome.ALREADY_VERIFIED, writer.uploadOne(
                 service, "owner-token", scope, deviceId, root, identity, original, { true }))
             assertEquals(1, service.calls)
+        }
+    }
+
+    /**
+     * Android Motion Photo 1.0 can store JPEG still and an appended MP4 in
+     * ONE MediaStore image original. The existing Owner writer must upload
+     * the *entire* source, not a decoded still or a guessed second resource.
+     * This byte fixture proves transport integrity, NOT OEM codec playback.
+     */
+    @Test fun embeddedMotionJpegPreservesWholeOriginalAndVersionsVideoBytes(): Unit = runBlocking {
+        val privateRoot = Files.createTempDirectory("xdrive-motion-original-").toFile()
+        try {
+            val jpegStill = byteArrayOf(0xff.toByte(), 0xd8.toByte()) +
+                "<xmpmeta Camera:MotionPhoto=\"1\"/>".toByteArray(Charsets.UTF_8) +
+                byteArrayOf(0xff.toByte(), 0xd9.toByte())
+            val appendedMp4 = byteArrayOf(0, 0, 0, 24) +
+                "ftypmp42-motion-sample-A".toByteArray(Charsets.UTF_8)
+            val fullOriginal = jpegStill + appendedMp4
+            val editedOriginal = jpegStill + byteArrayOf(0, 0, 0, 24) +
+                "ftypmp42-motion-sample-B".toByteArray(Charsets.UTF_8)
+            val journal = Journal()
+            val index = Index()
+            val service = UploadService()
+            val writer = NativePhotoIncrementalWriter(journal, index)
+
+            NativePhotoOriginalStager.stage(privateRoot, fullOriginal.size.toLong()) {
+                ByteArrayInputStream(fullOriginal)
+            }.use { first ->
+                assertEquals(fullOriginal.size.toLong(), first.bytes)
+                assertTrue(first.verifyBeforeWrite())
+                assertArrayEquals(fullOriginal, first.openVerifiedSource().use { it.readBytes() })
+                val originalKey = source(first, id = 81L)
+                assertEquals(NativePhotoBackupResource.STILL, originalKey.resource)
+                assertTrue(originalKey.destinationName.endsWith(".jpg"))
+                assertEquals(NativePhotoIncrementalOutcome.UPLOADED, writer.uploadOne(
+                    service, "owner-token", scope, deviceId, root, originalKey, first, { true }))
+                assertArrayEquals(fullOriginal, service.lastReceivedOriginal)
+                assertEquals(1, service.calls)
+                assertEquals(NativePhotoIncrementalOutcome.ALREADY_VERIFIED, writer.uploadOne(
+                    service, "owner-token", scope, deviceId, root, originalKey, first, { true }))
+                assertEquals(1, service.calls)
+
+                // Keeping the same local MediaStore ID/timestamp while the
+                // embedded motion bytes change must yield a NEW version hash.
+                NativePhotoOriginalStager.stage(privateRoot, editedOriginal.size.toLong()) {
+                    ByteArrayInputStream(editedOriginal)
+                }.use { edited ->
+                    val editedKey = source(edited, id = 81L)
+                    assertEquals(originalKey.assetKey, editedKey.assetKey)
+                    assertNotEquals(originalKey.versionKey, editedKey.versionKey)
+                    assertNotEquals(originalKey.destinationName, editedKey.destinationName)
+                }
+            }
+            assertTrue(File(privateRoot, "photo-original-stage")
+                .listFiles().orEmpty().isEmpty())
+        } finally {
+            privateRoot.deleteRecursively()
         }
     }
 
