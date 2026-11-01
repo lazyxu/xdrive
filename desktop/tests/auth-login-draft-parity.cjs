@@ -29,7 +29,17 @@ test('Desktop first failed attempt survives startup history and restores LAN met
 })
 test('Web/PWA persist only an editable username, independent of cookie', () => {
   assert.ok(browser.includes('LOGIN_DRAFT_USERNAME_KEY'))
-  assert.ok(browser.includes('xDriveBrowserStorageWrite(LOGIN_DRAFT_USERNAME_KEY, event.target.value)'))
+  // Manual edits and saved-profile Autocomplete selections now share one
+  // callback. Verify the *actual* callback preserves the original draft
+  // persistence behavior and clears only the in-memory password on switches.
+  const edit = browser.split('const editLoginUsername = (next: string) => {')[1]
+    ?.split('const forgetLoginUsername = () => {')[0]
+  assert.ok(edit, 'login-username edit callback must exist')
+  assert.match(edit, /if \(next !== loginUsername\)/)
+  assert.match(edit, /setLoginUsername\(next\)/)
+  assert.match(edit, /xDriveBrowserStorageWrite\(LOGIN_DRAFT_USERNAME_KEY, next\)/)
+  assert.match(edit, /setPassword\(''\)/)
+  assert.match(browser, /if \(reason !== 'reset'\) editLoginUsername\(value\)/)
   assert.ok(browser.includes('const COOKIE_MODE_KEY'))
 })
 test('DSM reloads on ambiguous Agent outcome and restores only public login hints', () => {

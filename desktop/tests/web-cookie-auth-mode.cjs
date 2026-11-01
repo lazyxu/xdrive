@@ -702,7 +702,7 @@ test('Manual login response after an Owner epoch change cannot remount old priva
     { compilerOptions }).outputText
 
   async function simulate(stale) {
-    const writes = [], notices = [], owners = [], events = [], persisted = [], passwordGates = []
+    const writes = [], notices = [], owners = [], events = [], persisted = [], passwordGates = [], rememberedNames = []
     const authEpochRef = { current: 9 }
     const parentVars = {
       authEpochRef, setAuthNotice: value => notices.push(value),
@@ -711,6 +711,7 @@ test('Manual login response after an Owner epoch change cannot remount old priva
       xDriveBrowserStorageRemove: key => writes.push(['remove', key]),
       persistSession: (session, preference) => persisted.push({ session, preference }),
       sessionFromAuth: result => result, rememberLogin: true,
+      xDriveRememberWebLoginUsername: name => { rememberedNames.push(name); return true },
       xDriveBrowserStorageWrite: (key, value) => { writes.push(['write', key, value]); return true },
       LAST_USERNAME_KEY: 'last', USER_KEY: 'user', AUTH_STORAGE_KEYS: ['access','refresh'],
       setUsername: name => owners.push(name),
@@ -736,7 +737,7 @@ test('Manual login response after an Owner epoch change cannot remount old priva
     if (stale) authEpochRef.current++ // peer logout / account switch arrived
     completeLogin({ username: 'owner', access_token: 'old-access', browser_session: true })
     await pending
-    return { writes, notices, owners, events, persisted, passwordGates, epoch: authEpochRef.current }
+    return { writes, notices, owners, events, persisted, passwordGates, rememberedNames, epoch: authEpochRef.current }
   }
   const stale = await simulate(true)
   assert.deepEqual(stale.persisted, [], 'late login must never persist revoked Owner')
@@ -744,9 +745,11 @@ test('Manual login response after an Owner epoch change cannot remount old priva
   assert.deepEqual(stale.writes, [], 'late login must not remove a newer tombstone')
   assert.deepEqual(stale.events, [], 'late login must not broadcast a resurrected Owner')
   assert.deepEqual(stale.passwordGates, [], 'late login must not set any previous Owner password gate')
+  assert.deepEqual(stale.rememberedNames, [], 'stale Owner must not enter the saved username suggestions')
   const valid = await simulate(false)
   assert.equal(valid.persisted.length, 1, 'current login can still mount its Owner')
   assert.deepEqual(valid.owners, ['owner'])
+  assert.deepEqual(valid.rememberedNames, ['owner'], 'only accepted Owner login is added to suggestions')
   assert.deepEqual(valid.events, [['login','owner']])
   assert.deepEqual(valid.passwordGates, [false], 'current login must use Server password gate only')
 })
