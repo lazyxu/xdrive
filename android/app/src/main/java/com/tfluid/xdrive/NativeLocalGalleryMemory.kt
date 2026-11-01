@@ -27,6 +27,9 @@ internal class NativeLocalGalleryWallMemory {
     val gridState: MutableState<LazyGridState> = mutableStateOf(LazyGridState())
     /** Only the UI-selected scale; never a persisted MediaStore or Server index. */
     val dateScale: MutableState<String> = mutableStateOf("all")
+    /** Separate native local photo/video wall queries, never tile-only filtering. */
+    val mediaKind: MutableState<String> = mutableStateOf("")
+    val filterEpoch: MutableIntState = mutableIntStateOf(0)
     /** Foreground, per-Owner/source and permission-epoch date metadata only. */
     val fullDateIndex: MutableState<NativeLocalFullDateIndex?> = mutableStateOf(null)
     val fullDateBusy: MutableState<Boolean> = mutableStateOf(false)
@@ -59,6 +62,17 @@ internal class NativeLocalGalleryWallMemory {
         jumpEpoch.intValue++
     }
 
+    /** A real filter switch discards only the affected 512-row wall and
+     * keyset/full-date metadata; the other Gallery source remains intact.
+     */
+    fun selectMediaKind(kind: String) {
+        nativeLocalMediaTypesForKind(kind) // Reject untrusted/unsupported values.
+        if (mediaKind.value == kind) return
+        clear()
+        mediaKind.value = kind
+        filterEpoch.intValue = 1
+    }
+
     private var albumId: String? = null
 
     fun selectAlbum(id: String?) {
@@ -82,6 +96,8 @@ internal class NativeLocalGalleryWallMemory {
         loaded.value = false
         gridState.value = LazyGridState()
         dateScale.value = "all"
+        mediaKind.value = ""
+        filterEpoch.intValue = 0
         fullDateIndex.value = null
         fullDateBusy.value = false
         fullDateScanned.intValue = 0
