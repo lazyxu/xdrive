@@ -147,6 +147,19 @@ function isXDriveDSMOwnerPDFStream(url: string): boolean {
 
 async function verifySignedPDFPreview(url: string, signal: AbortSignal): Promise<void> {
   const dsmOwnerPDF = isXDriveDSMOwnerPDFStream(url)
+  // Do not silently iframe-load a malformed DSM Owner CGI URL. A failed
+  // selector must be a Retry state, not a browser-rendered JSON/HTML error.
+  try {
+    const base = typeof window === 'undefined' ? 'https://xdrive.invalid/' : window.location.href
+    const parsed = new URL(url, base)
+    if (parsed.origin === new URL(base).origin &&
+        parsed.pathname === '/webman/3rdparty/xdrivenas/backup.cgi' &&
+        !dsmOwnerPDF) {
+      throw new Error('Invalid DSM authenticated PDF stream selector')
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message === 'Invalid DSM authenticated PDF stream selector') throw error
+  }
   if (!dsmOwnerPDF && !isXDriveSignedPDFStream(url)) return
   const response = await fetch(url, {
     method: 'HEAD',

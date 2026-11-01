@@ -92,7 +92,7 @@ assert.equal(calls, 1, 'only one tiny Owner preflight; bytes stream via native m
 assert.equal(xDriveSynologyNativeStreamMIME('scan.PDF'), 'application/pdf')
 assert.equal(xDriveSynologyPlaybackMIME('scan.pdf'), null)
 const pdfBytes = new Uint8Array(256 << 10)
-pdfBytes.set(new TextEncoder().encode('%PDF-1.7\\n'), 0)
+pdfBytes.set(new TextEncoder().encode('%PDF-1.7\n'), 0)
 const pdf = { id: 42, revision: 7, name: 'scan.pdf', size: (32 << 20) + 1, kind: 'file' }
 let pdfReads = 0
 const pdfClient = {
@@ -161,7 +161,8 @@ assert.equal(xDriveSynologyPlaybackMagic(Uint8Array.from([0x3c,0x68,0x74,0x6d,0x
 
 const filesUI = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/SynologyOwnerFilesPage.tsx'), 'utf8')
 assert.match(filesUI, /xDriveSynologyLoadNativeMediaStream\(client, item, signal\)/)
-assert.match(filesUI, /kind === 'pdf' && item\.size > XDRIVE_SYNOLOGY_MEDIA_BLOB_MAX_BYTES/)
+assert.match(filesUI, /kind === 'pdf' && typeof item\.size === 'number'/)
+assert.match(filesUI, /item\.size > XDRIVE_SYNOLOGY_MEDIA_BLOB_MAX_BYTES/)
 assert.match(filesUI, /mime === 'application\/pdf'/)
 assert.match(filesUI, /<XDriveFileQuickLookDialog/)
 assert.match(filesUI, /loadPreviewURL=\{loadMediaPreview\}/)

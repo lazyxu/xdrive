@@ -290,7 +290,8 @@ export function XDriveSynologyOwnerFilesPage({
     if ((kind === 'video' || kind === 'audio') && xDriveSynologyPlaybackMIME(item.name)) {
       return xDriveSynologyLoadNativeMediaStream(client, item, signal)
     }
-    if (kind === 'pdf' && item.size > XDRIVE_SYNOLOGY_MEDIA_BLOB_MAX_BYTES &&
+    if (kind === 'pdf' && typeof item.size === 'number' &&
+        item.size > XDRIVE_SYNOLOGY_MEDIA_BLOB_MAX_BYTES &&
         xDriveSynologyPreviewMIME(item.name) === 'application/pdf') {
       return xDriveSynologyLoadNativeMediaStream(client, item, signal)
     }

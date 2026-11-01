@@ -326,19 +326,23 @@ func TestDSMNativePDFRangeHEADAndAuthFailure(t *testing.T) {
 	sum := sha256.Sum256(contents)
 	reader := &fakeOwnerNativeStreamReader{
 		fakeOwnerFilesReader: &fakeOwnerFilesReader{fakeAgent: native},
-		content: contents, sha: hex.EncodeToString(sum[:]),
+		content:              contents, sha: hex.EncodeToString(sum[:]),
 	}
 	g.Connect = func(context.Context) (Agent, error) { return reader, nil }
 	params := url.Values{
 		"op": {"cloud-media-stream"}, "node_id": {"42"}, "revision": {"7"},
-		"total": {strconv.Itoa(len(contents))},
+		"total":  {strconv.Itoa(len(contents))},
 		"sha256": {reader.sha}, "mime": {"application/pdf"},
 	}
 	call := func(method, byteRange string, q url.Values, cookie bool) *httptest.ResponseRecorder {
 		t.Helper()
 		req := httptest.NewRequest(method, "https://nas.example:5001"+DSMCGIPath+"?"+q.Encode(), nil)
-		if cookie { req.Header.Set("Cookie", "id=dsm-session") }
-		if byteRange != "" { req.Header.Set("Range", byteRange) }
+		if cookie {
+			req.Header.Set("Cookie", "id=dsm-session")
+		}
+		if byteRange != "" {
+			req.Header.Set("Range", byteRange)
+		}
 		w := httptest.NewRecorder()
 		CGIHandler(g).ServeHTTP(w, req)
 		return w
@@ -373,7 +377,9 @@ func TestDSMNativePDFRangeHEADAndAuthFailure(t *testing.T) {
 	}
 	for _, mime := range []string{"text/html", "application/octet-stream"} {
 		changed := url.Values{}
-		for key, values := range params { changed[key] = append([]string(nil), values...) }
+		for key, values := range params {
+			changed[key] = append([]string(nil), values...)
+		}
 		changed.Set("mime", mime)
 		if invalid := call(http.MethodHead, "", changed, true); invalid.Code == http.StatusOK {
 			t.Fatalf("unsafe PDF MIME accepted: %q", mime)

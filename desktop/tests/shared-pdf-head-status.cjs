@@ -284,3 +284,30 @@ test('foreign lookalike CGI PDF must never receive authenticated HEAD', async ()
     global.fetch = saved
   }
 })
+
+test('malformed same-origin DSM CGI PDF selector fails closed before iframe or HEAD', async () => {
+  const saved = global.fetch, calls = []
+  let renderer
+  global.fetch = async (...args) => { calls.push(args); throw Error('Invalid selector must not reach Agent') }
+  try {
+    for (const url of [
+      dsmPDF(47) + '&unexpected=1',
+      dsmPDF(47).replace('application%2Fpdf', 'text%2Fhtml'),
+      dsmPDF(47).replace('sha256=' + 'a'.repeat(64), 'sha256=invalid'),
+    ]) {
+      await act(async () => {
+        renderer = create(React.createElement(XDriveFilePreviewSurface, {
+          target: node(47), loadPreviewURL: async () => url,
+        }))
+      })
+      assert.equal(renderer.root.findAllByType('iframe').length, 0)
+      assert.equal(findRetry(renderer).length, 1)
+      await act(async () => renderer.unmount())
+      renderer = null
+    }
+    assert.deepEqual(calls, [])
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    global.fetch = saved
+  }
+})
