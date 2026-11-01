@@ -315,8 +315,8 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
         else { return }
         // Revoke the previous item's PhotoKit requests and playback before
         // admitting a replacement. No hidden wall/next-page fetch or upload.
-        model.cancel()
         requestedICloudForCurrentItem = false
+        model.cancel()
         activeItem = next
         onViewed?(next)
     }
@@ -451,7 +451,6 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
             }
         }
         .onDisappear {
-            requestedICloudForCurrentItem = false
             changes.stop()
             model.cancel()
         }
