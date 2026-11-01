@@ -14,18 +14,25 @@ import (
 )
 
 func main() {
+	os.Exit(runAgent())
+}
+
+// runAgent returns a status after deferring the instance lock and IPC cleanup.
+// In Backup-only mode, DSM must not report a running Agent whose authenticated
+// local control interface failed to start.
+func runAgent() int {
 	if handled, err := runShellAction(os.Args[1:]); handled {
 		if err != nil {
 			writeEarlyError(err)
-			os.Exit(1)
+			return 1
 		}
-		return
+		return 0
 	}
 
 	backupOnly, err := agentBackupOnlyRequested(os.Args[1:])
 	if err != nil {
 		writeEarlyError(err)
-		os.Exit(2)
+		return 2
 	}
 
 	// Install the shutdown handler before potentially slow instance-lock and
@@ -39,10 +46,10 @@ func main() {
 	closeInstance, err := acquireSingleInstance()
 	if err != nil {
 		if errors.Is(err, errAlreadyRunning) {
-			return
+			return 0
 		}
 		writeEarlyError(err)
-		return
+		return 0
 	}
 	defer closeInstance()
 
@@ -57,7 +64,15 @@ func main() {
 	ipc, ipcErr := startDesktopIPC(ctx, ctrl, cancel, backupOnly)
 	if ipcErr != nil {
 		log.Printf("desktop IPC unavailable: %v", ipcErr)
-	} else {
+	}
+	if !agentIPCStartupPermitsWorker(backupOnly, ipcErr) {
+		// Without authenticated IPC, the DSM CGI and xd cannot start, inspect
+		// or stop local backups. Do not leave a headless scheduler running
+		// while Package Center incorrectly reports a usable Backup-only Agent.
+		log.Print("Backup-only requires authenticated local IPC; refusing to start scheduler")
+		return 1
+	}
+	if ipc != nil {
 		defer ipc.Close()
 	}
 	done := make(chan struct{})
@@ -73,6 +88,7 @@ func main() {
 	<-ctx.Done()
 	cancel()
 	<-done
+	return 0
 }
 
 func agentLogDir() (string, error) {
