@@ -156,6 +156,8 @@ test('cloud restore requires user tap and Photos add-only access for original st
   assert.match(preview, /native-ios-cloud-original-save-to-photos/)
   assert.match(preview, /private func restoreCurrentOriginalToPhotos\(\)/)
   assert.match(preview, /PHPhotoLibrary\.requestAuthorization\(for: \.addOnly\)/)
+  assert.match(preview, /requestingPhotoRestorePermission = true/)
+  assert.match(preview, /state != \.inactive \|\| !requestingPhotoRestorePermission/)
   assert.match(preview, /login\.verifiedAuthorization\(\)/)
   assert.match(preview, /downloadOriginalForPhotos\(original\)/)
   assert.match(preview, /let verified = try await reader\.livePreview\(original\)/)
