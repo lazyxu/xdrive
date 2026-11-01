@@ -17,6 +17,36 @@ enum XDriveIOSNativePhotoViewerReturnAnchorPolicy {
         return currentPageIDs.contains(lastOpenedID) ? lastOpenedID : nil
     }
 
+    /// Local Viewer neighbors must belong to this one authorized 64-slot
+    /// PhotoKit page. No library-wide cursor or saved local ID is accepted.
+    static func localLoadedIndex(
+        currentID: String,
+        in pageIDs: [String],
+        authorized: Bool
+    ) -> Int? {
+        guard authorized, !currentID.isEmpty, currentID.utf8.count <= 1024,
+              !pageIDs.isEmpty, pageIDs.count <= 64,
+              pageIDs.allSatisfy({ !$0.isEmpty && $0.utf8.count <= 1024 }),
+              Set(pageIDs).count == pageIDs.count
+        else { return nil }
+        return pageIDs.firstIndex(of: currentID)
+    }
+
+    static func localNeighborID(
+        currentID: String,
+        in pageIDs: [String],
+        direction: Int,
+        authorized: Bool
+    ) -> String? {
+        guard direction == -1 || direction == 1,
+              let index = localLoadedIndex(
+                currentID: currentID, in: pageIDs, authorized: authorized
+              ),
+              pageIDs.indices.contains(index + direction)
+        else { return nil }
+        return pageIDs[index + direction]
+    }
+
     /// Cloud PhotoAsset return targets are transient. An item can keep its
     /// Node ID across revisions, so matching the ID alone may highlight a
     /// different revision after a page refresh. The caller also fences the

@@ -48,6 +48,48 @@ struct XDriveNativePhotoViewerReturnAnchorChecks {
               "ambiguous revision for same ID")
         check(cloud(39, 9, [(id: 39, revision: 0)]) == nil,
               "invalid page revision")
+        // L3 local Viewer next/previous operates only in the already
+        // authorized 64-item PhotoKit window, without a new library scan.
+        let localPage = (0..<64).map { "photo-\($0)" }
+        func localIndex(_ current: String, _ page: [String] = localPage,
+                        _ allowed: Bool = true) -> Int? {
+            XDriveIOSNativePhotoViewerReturnAnchorPolicy.localLoadedIndex(
+                currentID: current, in: page, authorized: allowed
+            )
+        }
+        func neighbor(_ current: String, _ direction: Int,
+                      _ page: [String] = localPage,
+                      _ allowed: Bool = true) -> String? {
+            XDriveIOSNativePhotoViewerReturnAnchorPolicy.localNeighborID(
+                currentID: current, in: page, direction: direction,
+                authorized: allowed
+            )
+        }
+        check(localIndex("photo-33") == 33, "current loaded item")
+        check(neighbor("photo-33", -1) == "photo-32", "previous loaded item")
+        check(neighbor("photo-33", 1) == "photo-34", "next loaded item")
+        check(neighbor("photo-0", -1) == nil, "first loaded edge")
+        check(neighbor("photo-63", 1) == nil, "last loaded edge")
+        check(neighbor("photo-33", 0) == nil, "invalid zero direction")
+        check(neighbor("photo-33", 2) == nil, "invalid skipped direction")
+        check(neighbor("photo-33", 1, localPage, false) == nil,
+              "revoked PhotoKit permission")
+        check(localIndex("photo-33", localPage, false) == nil,
+              "revoked input focus")
+        check(neighbor("missing", 1) == nil, "evicted source")
+        check(neighbor("photo-33", 1, localPage + ["extra"]) == nil,
+              "unbounded page")
+        check(neighbor("photo-33", 1,
+                       localPage + ["photo-33"]) == nil,
+              "duplicate local identifier")
+        check(neighbor("photo-33", 1,
+                       ["photo-33", ""]) == nil,
+              "malformed empty local identifier")
+        check(neighbor("photo-33", 1,
+                       ["photo-33", String(repeating: "x", count: 1025)]) == nil,
+              "malformed oversized local identifier")
+        check(neighbor("photo-33", 1, []) == nil, "empty page")
+
         print("native PhotoKit Viewer tile anchor policy checks passed")
     }
 }
