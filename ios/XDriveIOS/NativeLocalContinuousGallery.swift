@@ -376,6 +376,41 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                     returnID = next.id
                     returnDate = next.capturedAt
                     returnModified = next.modifiedAt
+                },
+                loadedPage: current.page,
+                onCrossPage: { page, anchor, direction in
+                    guard phase == .active, authorized else {
+                        throw XDrivePhotoKitScanFailure.notAuthorized
+                    }
+                    let currentFilter = mediaFilter
+                    let reader = XDriveIOSNativeGalleryMediaScanner()
+                    do {
+                        let count = try await reader.start(
+                            atOffset: page.startOffset, mediaFilter: currentFilter
+                        )
+                        guard count == page.totalAccessibleAssets else {
+                            throw XDrivePhotoKitScanFailure.snapshotChanged
+                        }
+                        let next = try await reader.adjacentPage(
+                            from: page, anchoredAt: anchor, direction: direction
+                        )
+                        await reader.reset()
+                        guard phase == .active, authorized,
+                              mediaFilter == currentFilter else {
+                            throw XDrivePhotoKitScanFailure.snapshotChanged
+                        }
+                        return next
+                    } catch {
+                        await reader.reset()
+                        throw error
+                    }
+                },
+                onCrossedPage: { next, page in
+                    returnPageOffset = page.startOffset
+                    savedOffset = page.startOffset
+                    returnID = next.id
+                    returnDate = next.capturedAt
+                    returnModified = next.modifiedAt
                 }
             )
         }
