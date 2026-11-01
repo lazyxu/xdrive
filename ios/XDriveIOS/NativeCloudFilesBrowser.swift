@@ -479,6 +479,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                         Button("完成") { selectedFile = nil }
                     }
                 }
+                .quickLookPreview($quickLookURL)
             }
         }
         .onAppear { reload() }
@@ -513,7 +514,6 @@ struct XDriveIOSNativeFilesBrowser: View {
             createNotice = nil
             showingCreateFolder = false
         }
-        .quickLookPreview($quickLookURL)
         .onChange(of: sort) { _ in reload(resetOffset: true) }
         .onChange(of: order) { _ in reload(resetOffset: true) }
     }

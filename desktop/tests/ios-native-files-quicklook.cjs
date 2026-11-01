@@ -12,7 +12,7 @@ test('native Files uses system Quick Look on one verified already-downloaded pri
   assert.match(view, /@State private var quickLookURL: URL\?/)
   assert.match(view, /if let prepared = exporter\.prepared,[\s\S]*?prepared\.nodeID == entry\.node\.id,[\s\S]*?prepared\.revision == entry\.node\.revision/)
   assert.match(view, /quickLookURL = prepared\.fileURL/)
-  assert.match(view, /\.quickLookPreview\(\$quickLookURL\)/)
+  assert.match(view, /Button\("完成"\) \{ selectedFile = nil \}[\s\S]*?\.quickLookPreview\(\$quickLookURL\)\s*\}\s*\.onAppear/);
   assert.match(view, /Label\("原生只读预览", systemImage: "eye"\)/)
   assert.match(view, /原生预览须先下载到临时目录/)
   assert.doesNotMatch(view, /WKWebView|UIWebView|PDFDocument\(|fileExporter\(/)
