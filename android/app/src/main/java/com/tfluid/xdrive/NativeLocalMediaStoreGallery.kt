@@ -853,6 +853,7 @@ internal fun NativeLocalMediaViewer(
                         .testTag("native-local-backup-request"),
                 ) { Text("备份这一项原件") }
                 NativeLocalPhotoShareAction(asset)
+                NativeLocalMediaInfoAction(asset)
                 NativeLocalViewerLoadedNavigation(
                     loadedPosition, loadedCount, onPrevious, onNext)
                 NativeLocalMotionControl(
