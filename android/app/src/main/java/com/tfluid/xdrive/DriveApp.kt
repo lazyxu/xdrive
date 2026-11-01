@@ -681,7 +681,16 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                     else -> Unit
                 }
             } else when (state.screen) {
-                Screen.CONNECT, Screen.LOGIN -> UnifiedLoginForm(state, controller::connectAndLogin, controller::restoreSession) {
+                Screen.CONNECT, Screen.LOGIN -> UnifiedLoginForm(
+                    state = state,
+                    login = controller::connectAndLogin,
+                    retrySavedSession = controller::restoreSession,
+                    savedProfiles = controller.savedLoginProfiles(),
+                    hasSavedPassword = controller::savedPasswordAvailable,
+                    selectSavedProfile = controller::selectSavedLoginProfile,
+                    loginWithSavedPassword = controller::loginWithSavedPassword,
+                    forgetSavedProfile = controller::forgetSavedLoginProfile
+                ) {
                     AccountMenu(state, controller, updates?.let { it::show })
                 }
                 Screen.PASSWORD -> PasswordForm(state, controller::changePassword) { AccountMenu(state, controller, updates?.let { it::show }) }
@@ -1249,7 +1258,7 @@ internal fun AccountMenu(state: DriveState, controller: DriveController, checkUp
             if (state.screen in setOf(Screen.CONNECT, Screen.LOGIN) &&
                 (state.server.isNotBlank() || state.username.isNotBlank())) {
                 DropdownMenuItem(
-                    text = { Text("清除本机保存的登录资料") },
+                    text = { Text("忘记当前服务器和账号资料") },
                     modifier = Modifier.testTag("auth-clear-saved-login"),
                     enabled = !state.loading,
                     onClick = {
@@ -1263,8 +1272,8 @@ internal fun AccountMenu(state: DriveState, controller: DriveController, checkUp
         AlertDialog(
             onDismissRequest = { clearSavedLoginConfirm = false },
             modifier = Modifier.testTag("auth-clear-saved-login-confirm"),
-            title = { Text("确认清除本机登录资料？") },
-            text = { Text("将清除本机 Keystore 保存的会话和最近填写的服务器、内网 IP、用户名。不会删除照片或备份记录；远端会话撤销未确认。") },
+            title = { Text("确认忘记当前服务器和账号？") },
+            text = { Text("只清除选中服务器和用户名的本机安全密码、匹配的刷新会话与登录草稿。其他账号、照片和备份记录不受影响。") },
             confirmButton = {
                 TextButton(onClick = {
                     clearSavedLoginConfirm = false
