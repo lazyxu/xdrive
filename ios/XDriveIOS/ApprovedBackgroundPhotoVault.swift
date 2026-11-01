@@ -63,8 +63,10 @@ enum XDriveIOSPhotoBGVaultFailure: Error {
     case differentOwnerStillApproved
     case keychain(OSStatus)
     case serverRejected
-    /// Remote proof is unavailable, not revoked or a credential mismatch.
-    /// The caller may only reschedule when no UploadSession write began.
+    /// Read-only proof HTTP 408/429/5xx is temporarily unavailable, not
+    /// evidence that the Device grant was revoked or the Owner changed.
+    /// Transport URLErrors propagate; 401/403 and malformed proof fail closed.
+    /// A caller may reschedule only if no UploadSession mutation began.
     case transientServerStatus(Int)
     case invalidProof
 }
