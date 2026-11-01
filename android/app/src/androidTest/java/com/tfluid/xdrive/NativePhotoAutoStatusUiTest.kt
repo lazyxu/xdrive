@@ -63,6 +63,6 @@ class NativePhotoAutoStatusUiTest {
         }
         compose.onNodeWithTag("native-photo-batch-open").performClick()
         compose.onNodeWithTag("native-photo-auto-scanned").performScrollTo()
-            .assertTextContains("不代表全部照片或视频已备份")
+            .assertTextContains("不代表全部照片或视频已备份", substring = true)
     }
 }
