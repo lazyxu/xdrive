@@ -34,5 +34,7 @@ test('real file detail actions guard stale writes and report uncertainty on canc
   assert.match(view, /mutator\.perform\(node: entry\.node, kind: \.rename\(renameDraft\),/)
   assert.match(view, /mutator\.invalidate\(\)/)
   assert.match(s, /status = "文件操作结果未确认，请刷新核对后再操作。"/)
+  assert.match(s, /status = "新文件名无效或未改变；未发送修改请求。"/)
+  assert.match(view, /\.disabled\(mutator\.busy\)/)
   assert.doesNotMatch(s, /localStorage|WKWebView\s*\(|\/api\/v1\/file-operations/)
 })

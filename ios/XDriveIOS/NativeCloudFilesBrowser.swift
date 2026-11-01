@@ -343,11 +343,13 @@ struct XDriveIOSNativeFilesBrowser: View {
                 } else {
                     Button {
                         exporter.invalidate()
+                        mutator.invalidate()
                         selectedFile = entry
                     } label: {
                         row(entry)
                     }
                     .buttonStyle(.plain)
+                    .disabled(mutator.busy)
                     .accessibilityIdentifier("native-ios-files-file-\(entry.node.id)")
                 }
             }

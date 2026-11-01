@@ -168,6 +168,13 @@ final class XDriveIOSNativeFilesMutationModel: ObservableObject {
             status = "当前账户尚未验证，不能修改文件。"
             return
         }
+        if case .rename(let name) = kind {
+            guard let valid = XDriveIOSNativeFilesFolderNamePolicy.normalized(name),
+                  valid == name, name != node.name else {
+                status = "新文件名无效或未改变；未发送修改请求。"
+                return
+            }
+        }
         let ticket = UUID()
         epoch = ticket
         busy = true
