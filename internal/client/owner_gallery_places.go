@@ -53,8 +53,7 @@ func validOwnerPlace(item OwnerPlace) bool {
 		(item.CoverNodeID != nil && (*item.CoverNodeID == 0 || *item.CoverNodeID > ownerGalleryMaxSafe)) {
 		return false
 	}
-	for _, c := range item.Name { if c == 0 || c == '' || c == '
-' { return false } }
+	for _, c := range item.Name { if c == 0 || c == '\r' || c == '\n' { return false } }
 	coordinates := []float64{item.Latitude, item.SampleLatitude, item.Longitude, item.SampleLongitude}
 	for _, v := range coordinates { if math.IsNaN(v) || math.IsInf(v, 0) { return false } }
 	return math.Abs(item.Latitude) <= 90 && math.Abs(item.SampleLatitude) <= 90 &&
