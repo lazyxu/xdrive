@@ -340,11 +340,11 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
         showsStaticStill = false
         livePlaybackRequest = nil
         crossingMessage = nil
-        model.cancel()
         if let page {
             currentCrossedPage = page
             onCrossedPage?(next, page)
         }
+        model.cancel()
         activeItem = next
         onViewed?(next)
     }
@@ -539,8 +539,8 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                 dismiss()
             }
         }
+        .onDisappear { cancelCrossing() }
         .onDisappear {
-            cancelCrossing()
             changes.stop()
             model.cancel()
             showsStaticStill = false
