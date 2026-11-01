@@ -18,6 +18,8 @@ internal fun NativeBaiduMapPanel(
     onCameraSettled: (OwnerBd09Bounds?) -> Unit,
     markersEnabled: Boolean,
     preserveCamera: Boolean,
+    savedCamera: NativeBaiduCameraPose?,
+    onCameraSnapshot: (NativeBaiduCameraPose) -> Unit,
     placeholder: @Composable () -> Unit,
 ) {
     // Real signed Owner records remain fully navigable through the existing
