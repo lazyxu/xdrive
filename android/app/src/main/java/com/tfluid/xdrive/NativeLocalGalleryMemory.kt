@@ -27,8 +27,37 @@ internal class NativeLocalGalleryWallMemory {
     val gridState: MutableState<LazyGridState> = mutableStateOf(LazyGridState())
     /** Only the UI-selected scale; never a persisted MediaStore or Server index. */
     val dateScale: MutableState<String> = mutableStateOf("all")
+    /** Foreground, per-Owner/source and permission-epoch date metadata only. */
+    val fullDateIndex: MutableState<NativeLocalFullDateIndex?> = mutableStateOf(null)
+    val fullDateBusy: MutableState<Boolean> = mutableStateOf(false)
+    val fullDateScanned: MutableIntState = mutableIntStateOf(0)
+    val fullDateError: MutableState<String?> = mutableStateOf(null)
+    val fullDateRequest: MutableIntState = mutableIntStateOf(0)
+    /** Exact key preceding the selected date group, never a guessed OFFSET. */
+    val jumpAfter: MutableState<NativeLocalPageKey?> = mutableStateOf(null)
+    val jumpOffset: MutableIntState = mutableIntStateOf(0)
+    val jumpEpoch: MutableIntState = mutableIntStateOf(0)
 
-
+    /** Replace only the visible bounded wall; retain the verified date index. */
+    fun jumpTo(after: NativeLocalPageKey?, index: Int) {
+        require(index in 0..NativeLocalMediaStore.MAX_SCAN)
+        require(index == 0 || after != null)
+        revision.intValue++
+        items.value = emptyList()
+        exhausted.value = false
+        scannedCount.intValue = index
+        nextPageKey.value = after
+        firstOffset.intValue = index
+        failure.value = null
+        busy.value = false
+        pageIntent.intValue = 0
+        consumedPageIntent.intValue = 0
+        loaded.value = false
+        gridState.value = LazyGridState()
+        jumpAfter.value = after
+        jumpOffset.intValue = index
+        jumpEpoch.intValue++
+    }
 
     private var albumId: String? = null
 
@@ -53,6 +82,14 @@ internal class NativeLocalGalleryWallMemory {
         loaded.value = false
         gridState.value = LazyGridState()
         dateScale.value = "all"
+        fullDateIndex.value = null
+        fullDateBusy.value = false
+        fullDateScanned.intValue = 0
+        fullDateError.value = null
+        fullDateRequest.intValue = 0
+        jumpAfter.value = null
+        jumpOffset.intValue = 0
+        jumpEpoch.intValue = 0
     }
 }
 
