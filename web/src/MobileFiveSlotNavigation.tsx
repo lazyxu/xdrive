@@ -182,7 +182,7 @@ export function XDriveMobileFiveSlotNavigation({
           <BottomNavigationAction value="all" label="全部"
             icon={<AppsRoundedIcon fontSize="small" />} aria-current={selected === 'all' ? 'page' : undefined}
             onClick={() => onSelect('all')} />
-          <BottomNavigationAction value="dynamic" label={dynamicLabel}
+          <BottomNavigationAction value="dynamic" label="动态功能"
             icon={dynamicIcon ?? <HistoryRoundedIcon fontSize="small" />}
             aria-current={selected === 'dynamic' ? 'page' : undefined}
             aria-label={'动态功能：' + String(dynamicLabel) + '，长按查看最近功能'}

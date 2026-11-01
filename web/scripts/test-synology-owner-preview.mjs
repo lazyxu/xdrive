@@ -288,6 +288,18 @@ test('loaded-file and selected-file navigation preserve order and stop at both b
   assert.equal(app.requests.length, 0)
 })
 
+test('DSM large PDF opens the same shared Viewer without broadening download limits', async () => {
+  const app = await mount([node(9, 'manual.pdf', (32 << 20) + 1)])
+  const item = app.state.displayedItems.find(row => row.id === 9)
+  assert.ok(item)
+  app.state.openFilePreview(item); await app.flush()
+  assert.equal(app.state.previewItem?.id, 9)
+  assert.equal(app.state.previewActions[0].disabled, true)
+  app.state.movePreview(-1); await app.flush()
+  assert.notEqual(app.state.previewItem?.id, 9)
+  app.unmount()
+})
+
 test('DSM image size/compatibility use Owner thumbnails, never a fake video or Live Photo', async () => {
   const app = await mount([
     node(9, 'cloud.heic', 24 << 20), node(10, 'raw.dng', 64 << 20),

@@ -73,3 +73,29 @@ test('L2 retains the original modal and restores the last accepted Node+revision
   assert.match(wall, /viewerOpenedOwner = nil/)
   assert.doesNotMatch(wall, /nextPage\(|UploadSession|\.upload\(|new FullScreenCover/)
 })
+
+test('cloud Viewers fence playback failure to the active Owner and AVPlayer item', () => {
+  const detail = view.slice(view.indexOf('struct XDriveIOSNativeServerMediaPreview: View'),
+    view.indexOf('/// Root and album-specific media wall'));
+  const originals = src('ios/XDriveIOS/NativeCloudOriginalGallery.swift');
+  const original = originals.slice(originals.indexOf('struct XDriveIOSNativeCloudOriginalPreview: View'),
+    originals.indexOf('/// SwiftUI\'s ForEach identity', originals.indexOf('struct XDriveIOSNativeCloudOriginalPreview: View')));
+  assert.match(detail, /guard phase == \.active, let expected = openedOwner,[\s\S]*?ownerAuthorized/);
+  assert.match(detail, /matches\(login\.owner, expected\)/);
+  assert.match(detail, /matches\(auth\.owner, expected\)/);
+  for (const scoped of [detail, original]) {
+    assert.match(scoped, /\.AVPlayerItemFailedToPlayToEndTime/);
+    assert.match(scoped, /let failed = notification\.object as\? AVPlayerItem/);
+    assert.match(scoped, /let playing = player\?\.currentItem, failed === playing/);
+    assert.match(scoped, /player\?\.pause\(\)[\s\S]*?player\?\.replaceCurrentItem\(with: nil\)[\s\S]*?player = nil/);
+    assert.match(scoped, /showingLiveMotion = false/);
+  }
+  assert.match(detail, /guard ownerAuthorized,[\s\S]*?failed === playing/);
+  assert.match(detail, /failure = "媒体播放失败/);
+  assert.match(detail, /if ownerAuthorized \{\s*retirePreview\(\)/);
+  assert.match(original, /guard currentOwnerAuthorized,[\s\S]*?failed === playing/);
+  assert.match(original, /error = "媒体播放失败/);
+  assert.match(original, /native-ios-original-live-retry/);
+  assert.match(original, /guard currentOwnerAuthorized, player != nil else \{ return \}/);
+  assert.doesNotMatch(detail + original, /WKWebView|UploadSession|AVPlayerItemPlaybackStalled/);
+});
