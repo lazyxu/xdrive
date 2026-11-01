@@ -120,3 +120,23 @@ test('Web/PWA PDF preflight cannot publish success after a Viewer replacement ab
     global.fetch = oldFetch
   }
 })
+
+
+test('Web/PWA same-origin signed PDF relies on shared iframe preflight without duplicate HEAD', async () => {
+  const oldFetch = global.fetch
+  const oldWindow = global.window
+  const calls = []
+  global.window = { location: { href: 'https://web.xdrive.example/#/files' } }
+  global.fetch = async (...args) => {
+    calls.push(args)
+    throw new Error('same-origin gate is owned by FilePreviewSurface')
+  }
+  try {
+    await xDrivePreflightWebPDFTicket(
+      ticket('https://web.xdrive.example'), new AbortController().signal)
+    assert.deepEqual(calls, [])
+  } finally {
+    global.fetch = oldFetch
+    global.window = oldWindow
+  }
+})
