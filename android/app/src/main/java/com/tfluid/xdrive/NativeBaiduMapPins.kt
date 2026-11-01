@@ -43,6 +43,15 @@ internal data class NativeBaiduCameraPose(
             rotate.isFinite() && overlook.isFinite()
 }
 
+/** A deterministic capped set of ALREADY Owner-signed representative photos.
+ * No WGS84 conversion, new media endpoint or third-party SDK photo upload. */
+internal const val NATIVE_BAIDU_COVER_LIMIT = 12
+
+internal fun nativeBaiduCoverCells(cells: List<OwnerBd09Cell>): List<OwnerBd09Cell> =
+    cells.sortedWith(compareByDescending<OwnerBd09Cell> { it.photoCount }
+        .thenBy { it.cellY }.thenBy { it.cellX })
+        .take(NATIVE_BAIDU_COVER_LIMIT)
+
 internal fun nativeVerifiedBaiduPins(
     bounds: OwnerBd09Bounds,
     snapshot: OwnerBd09MapCells,
