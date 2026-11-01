@@ -266,7 +266,7 @@ test('cloud original export is invalidated at item, Owner, scene and Viewer boun
   const viewer = src.slice(src.indexOf('struct XDriveIOSNativeCloudOriginalPreview: View'),
     src.indexOf('struct XDriveIOSNativeCloudOriginalGallery: View'))
   assert.match(viewer, /private func showNeighbor\(_ direction: Int\) \{[\s\S]*?exporter\.invalidate\(\)[\s\S]*?activeNode = next/)
-  assert.match(viewer, /\.onChange\(of: phase\) \{ state in\s*if state != \.active \{\s*exporter\.invalidate\(\)/)
+  assert.match(viewer, /\.onChange\(of: phase\) \{ state in\s*if state != \.active \{[\s\S]*?cancelPhotoRestore\(\)[\s\S]*?exporter\.invalidate\(\)/)
   assert.match(viewer, /\.onChange\(of: login\.owner\) \{ _ in[\s\S]*?exporter\.invalidate\(\)[\s\S]*?dismiss\(\)/)
-  assert.match(viewer, /\.onDisappear \{\s*exporter\.invalidate\(\)/)
+  assert.match(viewer, /\.onDisappear \{\s*cancelPhotoRestore\(\)\s*exporter\.invalidate\(\)/)
 })
