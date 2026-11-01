@@ -434,14 +434,14 @@ struct XDriveIOSNativeFilesBrowser: View {
                             }
                             .accessibilityLabel("管理文件夹 \(entry.node.name)")
                             .accessibilityIdentifier("native-ios-files-folder-more-\(entry.node.id)")
-                        }
-                        if !activeQuery.isEmpty {
-                            Button { requestLocation(for: entry) } label: {
-                                Image(systemName: "folder.badge.questionmark")
-                                    .frame(minWidth: 44, minHeight: 44)
+                            if !activeQuery.isEmpty {
+                                Button { requestLocation(for: entry) } label: {
+                                    Image(systemName: "folder.badge.questionmark")
+                                        .frame(minWidth: 44, minHeight: 44)
+                                }
+                                .accessibilityLabel("定位文件夹 \(entry.node.name) 的位置")
+                                .accessibilityIdentifier("native-ios-files-locate-\(entry.id)")
                             }
-                            .accessibilityLabel("定位文件夹 \(entry.node.name) 的位置")
-                            .accessibilityIdentifier("native-ios-files-locate-\(entry.id)")
                         }
                         .contextMenu {
                             Button("文件夹操作") { openManagement(for: entry.node) }
@@ -462,14 +462,14 @@ struct XDriveIOSNativeFilesBrowser: View {
                             }
                             .accessibilityLabel("管理 \(entry.node.name)")
                             .accessibilityIdentifier("native-ios-files-more-\(entry.node.id)")
-                        }
-                        if !activeQuery.isEmpty {
-                            Button { requestLocation(for: entry) } label: {
-                                Image(systemName: "folder.badge.questionmark")
-                                    .frame(minWidth: 44, minHeight: 44)
+                            if !activeQuery.isEmpty {
+                                Button { requestLocation(for: entry) } label: {
+                                    Image(systemName: "folder.badge.questionmark")
+                                        .frame(minWidth: 44, minHeight: 44)
+                                }
+                                .accessibilityLabel("定位 \(entry.node.name) 所在文件夹")
+                                .accessibilityIdentifier("native-ios-files-locate-\(entry.id)")
                             }
-                            .accessibilityLabel("定位 \(entry.node.name) 所在文件夹")
-                            .accessibilityIdentifier("native-ios-files-locate-\(entry.id)")
                         }
                         .contextMenu {
                             Button("文件操作") { openManagement(for: entry.node) }

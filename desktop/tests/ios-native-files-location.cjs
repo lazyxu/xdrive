@@ -22,6 +22,15 @@ test('native Files search has bounded actual Server parent location from list an
   assert.match(browser, /returnScroll\.scrollTo\(target\.id, anchor: \.center\)/)
 })
 
+test('native Files locate buttons stay inside concrete rows before the context menu modifier', () => {
+  const start = browser.indexOf('@ViewBuilder private func fileEntryRow(')
+  const end = browser.indexOf('private var filesPager:', start)
+  assert.ok(start >= 0 && end > start, 'native Files row must exist')
+  const row = browser.slice(start, end)
+  assert.match(row, /\.accessibilityIdentifier\("native-ios-files-locate-\\\(entry\.id\)"\)\s*\}\s*\}\s*\.contextMenu \{\s*Button\("文件夹操作"\)/)
+  assert.match(row, /\.accessibilityIdentifier\("native-ios-files-locate-\\\(entry\.id\)"\)\s*\}\s*\}\s*\.contextMenu \{\s*Button\("文件操作"\)/)
+})
+
 test('location is a server-confirmed Owner path, not guessed search-hit text', () => {
   assert.match(router, /authed\.GET\("\/nodes\/:id\/location", s\.getNodeLocation\)/)
   assert.match(server, /func \(s \*Server\) getNodeLocation\(c \*gin\.Context\)/)
