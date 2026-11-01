@@ -40,7 +40,7 @@ test('iOS native local fullscreen keeps one modal and cancels old media between 
   assert.match(viewer, /PHAsset\.fetchAssets\(\s*withLocalIdentifiers: \[next\.id\], options: nil/)
   assert.match(viewer, /asset\.creationDate == next\.capturedAt/)
   assert.match(viewer, /asset\.modificationDate == next\.modifiedAt/)
-  assert.match(viewer, /model\.cancel\(\)\s+activeItem = next\s+onViewed\?\(next\)/)
+  assert.match(viewer, /requestedICloudForCurrentItem = false\s+model\.cancel\(\)\s+activeItem = next\s+onViewed\?\(next\)/)
   assert.match(viewer, /\.task\(id: viewed\.id\)/)
   assert.match(viewer, /model\.load\(viewed\)/)
   assert.match(viewer, /native-ios-local-viewer-previous/)
