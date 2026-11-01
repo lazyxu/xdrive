@@ -56,6 +56,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.Dispatchers
@@ -731,6 +733,29 @@ internal fun NativeLocalPhotoSwipeSurface(
 }
 
 /**
+ * Native local Viewer terminal state, intentionally not a generic HTTP retry.
+ * Only the currently open content:// asset can be requested by the caller.
+ */
+@Composable
+internal fun NativeLocalViewerRetryNotice(isVideo: Boolean, onRetry: () -> Unit) {
+    val type = if (isVideo) "video" else "still"
+    Column(
+        Modifier.fillMaxWidth().padding(12.dp)
+            .testTag("native-local-${type}-failure"),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(if (isVideo) "本机视频无法播放，请确认权限或文件格式。"
+            else "本机原件无法读取，请确认照片权限或文件状态。")
+        TextButton(
+            onClick = onRetry,
+            modifier = Modifier.heightIn(min = 48.dp)
+                .testTag("native-local-${type}-retry"),
+        ) { Text(if (isVideo) "重试播放" else "重试读取") }
+    }
+}
+
+/**
  * Original-resolution ContentResolver still decode, capped for GPU/heap safety.
  * Viewer owns its bitmap. Source revocation, Owner switch and background
  * unmount the dialog so no old picture survives the next authenticated page.
@@ -742,9 +767,14 @@ private fun ColumnScope.NativeLocalStillViewer(
     onNext: (() -> Unit)?,
 ) {
     val resolver = LocalContext.current.contentResolver
-    // null result means "still decoding", not a misleading permission failure.
-    val preview by produceState<Result<ImageBitmap>?>(null, asset.uri) {
-        value = try {
+    val mediaKey = asset.viewerReturnKey()
+    var retryNonce by remember(mediaKey) { mutableIntStateOf(0) }
+    // Reset the old error before each deliberate retry; one exact content URI
+    // is decoded again, never a speculative read of a different local asset.
+    var preview by remember(mediaKey) { mutableStateOf<Result<ImageBitmap>?>(null) }
+    LaunchedEffect(mediaKey, asset.uri, retryNonce) {
+        preview = null
+        preview = try {
             Result.success(withContext(Dispatchers.IO) {
                 ImageDecoder.decodeBitmap(ImageDecoder.createSource(resolver, asset.uri)) {
                     decoder, info, _ ->
@@ -761,9 +791,9 @@ private fun ColumnScope.NativeLocalStillViewer(
             Result.failure(failure) // Never fabricate a successful preview.
         }
     }
-    var scale by remember(asset.uri) { mutableFloatStateOf(1f) }
-    var translation by remember(asset.uri) { mutableStateOf(Offset.Zero) }
-    var viewport by remember(asset.uri) { mutableStateOf(IntSize.Zero) }
+    var scale by remember(mediaKey) { mutableFloatStateOf(1f) }
+    var translation by remember(mediaKey) { mutableStateOf(Offset.Zero) }
+    var viewport by remember(mediaKey) { mutableStateOf(IntSize.Zero) }
     val gesture = rememberTransformableState { zoom, pan, _ ->
         val nextScale = (scale * zoom).coerceIn(1f, 5f)
         val maxX = viewport.width * (nextScale - 1f) / 2f
@@ -780,7 +810,7 @@ private fun ColumnScope.NativeLocalStillViewer(
         onNext = onNext,
         modifier = Modifier.fillMaxWidth().weight(1f).clipToBounds()
             .onSizeChanged { viewport = it }
-            .pointerInput(asset.uri) {
+            .pointerInput(mediaKey) {
                 detectTapGestures(onDoubleTap = {
                     scale = if (scale > 1f) 1f else 2f
                     translation = Offset.Zero
@@ -794,7 +824,7 @@ private fun ColumnScope.NativeLocalStillViewer(
         val bitmap = preview?.getOrNull()
         if (preview == null) CircularProgressIndicator()
         else if (bitmap == null)
-            Text("本机原件无法读取；请确认照片权限或返回刷新。")
+            NativeLocalViewerRetryNotice(isVideo = false, onRetry = { retryNonce++ })
         else Image(
             bitmap = bitmap,
             contentDescription = "本机照片原件",
@@ -806,30 +836,57 @@ private fun ColumnScope.NativeLocalStillViewer(
     }
 }
 
+/**
+ * A setup/codec/permission failure must never crash the native Viewer or
+ * silently leave a blank PlayerView. Retry is explicit, scoped to the same
+ * current local asset; rebuilding never starts a Server upload or media query.
+ */
 @Composable
 private fun ColumnScope.NativeLocalVideoPlayer(asset: NativeLocalMedia) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current
-    val player = remember(asset.uri) {
-        ExoPlayer.Builder(context).build().apply {
-            setMediaItem(MediaItem.fromUri(asset.uri))
-            prepare()
-        }
+    val mediaKey = asset.viewerReturnKey()
+    var retryNonce by remember(mediaKey) { mutableIntStateOf(0) }
+    var failed by remember(mediaKey, retryNonce) { mutableStateOf(false) }
+    val player = remember(context, mediaKey, retryNonce) {
+        createPreparedMediaResource(
+            build = { ExoPlayer.Builder(context).build() },
+            prepare = { prepared ->
+                prepared.setMediaItem(MediaItem.fromUri(asset.uri))
+                prepared.prepare()
+            },
+            release = { it.release() },
+        )
     }
     DisposableEffect(player, lifecycle) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) player.pause()
+            if (event == Lifecycle.Event.ON_STOP) player?.pause()
+        }
+        val listener = object : Player.Listener {
+            override fun onPlayerError(error: PlaybackException) {
+                failed = true
+            }
         }
         lifecycle.lifecycle.addObserver(observer)
+        player?.addListener(listener)
+        if (!lifecycle.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED))
+            player?.pause()
         onDispose {
             lifecycle.lifecycle.removeObserver(observer)
-            player.release()
+            player?.removeListener(listener)
+            player?.release()
         }
     }
-    AndroidView(
-        factory = { ctx -> PlayerView(ctx).apply { this.player = player } },
-        update = { view -> view.player = player },
-        modifier = Modifier.fillMaxWidth().weight(1f)
-            .testTag("native-local-video-player"),
-    )
+    if (player == null || failed) {
+        Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+            NativeLocalViewerRetryNotice(isVideo = true, onRetry = { retryNonce++ })
+        }
+    } else {
+        AndroidView(
+            factory = { ctx -> PlayerView(ctx).apply { this.player = player } },
+            update = { view -> view.player = player },
+            modifier = Modifier.fillMaxWidth().weight(1f)
+                .testTag("native-local-video-player"),
+        )
+    }
 }
