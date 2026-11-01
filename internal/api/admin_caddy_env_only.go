@@ -17,6 +17,7 @@ func (s *Server) adminCaddyHTTPSConfigHost(c *gin.Context) {
 		return
 	}
 	host, observed := s.readCaddyHostStatus()
+	certificates := s.caddyCertificateInventory(c.Request.Context(), snap, host, observed)
 	tls := "unknown"
 	if observed && host.TLSCheckSupported {
 		tls = host.TLSState
@@ -32,6 +33,7 @@ func (s *Server) adminCaddyHTTPSConfigHost(c *gin.Context) {
 		HostTLSState: tls, HostLANTLSState: caddyLANLocalEffectState(host, observed, snap.LANIP),
 		HostLANConfigured: host.LANHTTPSConfigured, HostLANIP: snap.LANIP,
 		HostEnvSHA256: snap.SHA256, HostEnvPendingRedeploy: snap.PendingRedeploy,
+		Certificates: &certificates,
 	})
 }
 

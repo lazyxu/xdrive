@@ -178,6 +178,12 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
             Text("登录前检测一次内网 HTTPS；不可达或超时才使用上方域名。登录后固定已选入口，不自动切换；内网证书必须匹配 IP。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            if !model.lanIPText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text("内网证书信任：管理员 → 系统依赖 → Caddy → HTTPS 证书管理，核对根 CA SHA-256 后下载 CER。iPhone 在“设置 → 通用 → VPN 与设备管理”安装，再在“关于本机 → 证书信任设置”手动完全信任。不要忽略证书警告或自动信任未核实的 CA。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("native-ios-lan-certificate-help")
+            }
 
             Text("用户名").font(.subheadline.weight(.medium))
             TextField("用户名", text: $model.username)
