@@ -446,4 +446,75 @@ assert.doesNotMatch(launcherSource, /const \[search, setSearch\] = useState/,
   assert.deepEqual(closed, [['recent', false], ['transfer', false]],
     'route/Owner/map transitions close both live navigation overlays')
 }
+// Standalone/reloaded Gallery media Viewers have no trusted browser-return
+// entry. Only a safe Gallery Library root is permitted, never an Album or
+// private map Cell reconstructed from sessionStorage. File Viewers remain in Files.
+{
+  const media = { app: 'media-viewer', params: { node: 13, context: 'normal' } }
+  const privateMap = { app: 'media-viewer', params: { node: 13, context: 'map-expired' } }
+  const galleryRoot = { app: 'gallery', params: { section: 'library' } }
+  const fileParent = { app: 'files', params: { dir: 8 } }
+  assert.deepEqual(nav.xDriveMobileViewerSafeFallbackRoute(media, 'gallery', false, 8), galleryRoot)
+  assert.deepEqual(nav.xDriveMobileViewerSafeFallbackRoute(privateMap, null, true, 8), galleryRoot,
+    'expired/one-use private map marker may only navigate to Gallery safe root')
+  assert.deepEqual(nav.xDriveMobileViewerSafeFallbackRoute(media, 'directory', false, 8), fileParent)
+  assert.deepEqual(nav.xDriveMobileViewerSafeFallbackRoute(media, 'search', false, 8), fileParent)
+  assert.deepEqual(nav.xDriveMobileViewerSafeFallbackRoute(media, null, false, 8), fileParent)
+  assert.deepEqual(nav.xDriveMobileViewerSafeFallbackRoute(
+    { app: 'pdf-viewer', params: { node: 13 } }, 'gallery', true, 8), fileParent,
+    'non-media Viewer must not accept an untrusted Gallery/Map hint')
+  assert.deepEqual(nav.xDriveMobileViewerSafeFallbackRoute(media, 'gallery', false, undefined),
+    galleryRoot, 'missing media metadata never opens an unverified File directory')
+}
+
+// Run the App's actual onClose prop callback (not a separately recreated
+// route selector). Runtime closeViewer() still owns normal History Back;
+// this listener supplies only its missing-History fallback.
+{
+  const ast = ts.createSourceFile('App.tsx', appSource, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TSX)
+  const matches = []
+  function visit(node) {
+    if (ts.isJsxAttribute(node) && node.name.getText(ast) === 'onClose' &&
+      node.getText(ast).includes('xDriveMobileViewerSafeFallbackRoute')) matches.push(node)
+    ts.forEachChild(node, visit)
+  }
+  visit(ast)
+  assert.equal(matches.length, 1, 'one real routed Viewer Close callback')
+  assert.ok(ts.isJsxExpression(matches[0].initializer))
+  const callback = matches[0].initializer.expression
+  assert.ok(callback && ts.isArrowFunction(callback))
+  const code = ts.transpileModule('const listener = ' + callback.getText(ast) + ';', {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText
+  const runClose = (compactWorkspace, route, context) => {
+    const closed = []
+    const env = {
+      compactWorkspace, route,
+      xDriveReadWebAppBrowseSession: () => context,
+      xDriveIsPrivateMapBrowseSessionID: id => Boolean(id?.startsWith('map-')),
+      xDriveMobileViewerSafeFallbackRoute: nav.xDriveMobileViewerSafeFallbackRoute,
+      closeViewer: target => closed.push(target),
+    }
+    new Function(...Object.keys(env), code + '\nreturn listener;')
+      (...Object.values(env))({ parent_id: 8 })
+    assert.equal(closed.length, 1, 'one Viewer Close per user action')
+    return closed[0]
+  }
+  const route = { app: 'media-viewer', params: { node: 13, context: 'ordinary-1' } }
+  assert.deepEqual(runClose(true, route, { kind: 'gallery' }),
+    { app: 'gallery', params: { section: 'library' } })
+  assert.deepEqual(runClose(true, { ...route, params: { ...route.params, context: 'map-expired' } }, null),
+    { app: 'gallery', params: { section: 'library' } })
+  assert.deepEqual(runClose(true, route, { kind: 'directory' }),
+    { app: 'files', params: { dir: 8 } })
+  assert.deepEqual(runClose(false, route, { kind: 'gallery' }),
+    { app: 'files', params: { dir: 8 } }, 'wide Web behavior unchanged')
+  assert.deepEqual(runClose(true, { app: 'pdf-viewer', params: { node: 13 } }, { kind: 'gallery' }),
+    { app: 'files', params: { dir: 8 } })
+}
+
+// The original Browser runtime must continue to privilege a real Viewer
+// history receipt before ever using the caller's safe fallback.
+const browserRuntime = readFileSync(resolve(here, '../src/webAppRuntime.ts'), 'utf8')
+assert.match(browserRuntime, /if \(state\?\.viewerReturn\) \{\s*window\.history\.back\(\)/)
 console.log('mobile five-slot state: routes, Owner, Viewer, back, role, favorites and Owner-scoped search passed')

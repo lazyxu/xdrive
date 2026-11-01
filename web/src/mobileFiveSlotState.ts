@@ -96,6 +96,25 @@ export function xDriveMobileGallerySectionForViewer(
   return lastGallery.section
 }
 
+/** When the browser has no traversable Viewer history (cold deep link,
+ * reload, restricted Safari history), do not send a known Gallery caller into
+ * Files. This is a safe-root *navigation hint*, never Album/Cell authorization.
+ * Private Map session markers can outlive their deliberately volatile context;
+ * they may select only the Gallery Library root, never old map coordinates.
+ * Other or unrecognized origins retain the existing Files fallback. */
+export function xDriveMobileViewerSafeFallbackRoute(
+  route: XDriveWebAppRoute,
+  browseKind: string | null | undefined,
+  privateMapSession: boolean,
+  parentDirectoryID: number | undefined,
+): XDriveWebAppRoute {
+  if (route.app === 'media-viewer' &&
+      (browseKind === 'gallery' || privateMapSession)) {
+    return { app: 'gallery', params: { section: 'library' } }
+  }
+  return { app: 'files', params: { dir: parentDirectoryID } }
+}
+
 /** An Owner-scoped committed Album ID is a return hint, never media authority. */
 export function xDriveRememberMobileGalleryAlbum(
   previous: XDriveMobileNavigationMemory,

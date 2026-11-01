@@ -26,10 +26,15 @@ enum XDriveIOSOriginalOwnerAuthorization {
                 throw XDrivePhotoSyncLedgerError.identityMismatch
             }
         case .background(let approved):
-            guard approved.matches(owner),
-                  let verified = try? await XDriveIOSApprovedPhotoBGVault.shared
-                    .proveInBackground(),
-                  verified.grantID == approved.grantID,
+            guard approved.matches(owner) else {
+                throw XDrivePhotoSyncLedgerError.identityMismatch
+            }
+            // Preserve transient network/HTTP errors from this read-only
+            // proof. try? would collapse a temporary Server outage into
+            // identityMismatch and could falsely pause confirmed receipts.
+            let verified = try await XDriveIOSApprovedPhotoBGVault.shared
+                .proveInBackground()
+            guard verified.grantID == approved.grantID,
                   verified.deviceID == approved.deviceID,
                   verified.rootNodeID == owner.rootNodeID,
                   verified.ownerID == owner.ownerID,

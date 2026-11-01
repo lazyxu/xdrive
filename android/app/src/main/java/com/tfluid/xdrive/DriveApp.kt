@@ -284,6 +284,13 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
             state.galleryBd09Bounds
         bd09Scroll.keys.retainAll(liveBounds) // bounded to six parent levels
     }
+    // An SDK MapView is destroyed while full-screen Viewer owns the screen.
+    // Keep only its primitive camera pose in memory for this current Owner's
+    // map lifetime; no GPS or provider status goes to SavedState/disk.
+    var bd09ViewerReturnCamera by remember(
+        state.nativeUiSessionId, state.server, state.username, state.galleryMapOpen
+    ) { mutableStateOf<NativeBaiduCameraPose?>(null) }
+
     // Preserve UI-only scroll state across Viewer -> Gallery, never across
     // leaving Gallery. The same user can log out/in against changed photo rows.
     val galleryStateKey = "gallery:${state.nativeUiSessionId}:${state.server}:${state.username}"
@@ -687,6 +694,18 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                         GalleryMapOverview(state, controller,
                             bd09Scroll.getOrPut(state.galleryBd09Bounds) {
                                 LazyListState()
+                            },
+                            savedCamera = bd09ViewerReturnCamera,
+                            onCameraSnapshot = { pose ->
+                                val latest = controller.state.value
+                                if (latest.screen == Screen.GALLERY && latest.galleryMapOpen &&
+                                    latest.galleryBd09Requested && latest.galleryBd09Cells != null &&
+                                    !latest.galleryBd09CameraMoving &&
+                                    latest.galleryBd09CameraPending == null &&
+                                    pose.validFor(latest.galleryBd09Bounds) &&
+                                    pose != bd09ViewerReturnCamera) {
+                                    bd09ViewerReturnCamera = pose
+                                }
                             })
                         if (nativeMapCellSheetVisible(state) && galleryMapCellStateKey != null) {
                             val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = false)
