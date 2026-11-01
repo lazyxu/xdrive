@@ -844,36 +844,34 @@ private fun ColumnScope.NativeLocalStillViewer(
         if (previousThumbnail == null) preview = NativeLocalStillStage.Loading
         retryingOriginal = previousThumbnail != null
         try {
-            val original = withContext(Dispatchers.IO) {
-                ImageDecoder.decodeBitmap(ImageDecoder.createSource(resolver, asset.uri)) {
-                    decoder, info, _ ->
-                    val (width, height) = nativeStillDecodeSize(
-                        info.size.width, info.size.height)
-                    if (width != info.size.width || height != info.size.height)
-                        decoder.setTargetSize(width, height)
-                    decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
-                }.asImageBitmap()
-            }
-            currentCoroutineContext().ensureActive()
-            preview = NativeLocalStillStage.Original(original)
-        } catch (cancelled: kotlinx.coroutines.CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            currentCoroutineContext().ensureActive()
-            // The same authorized MediaStore URI supplies the fallback. A
-            // revoked grant or unsupported OEM provider returns a real error.
-            if (previousThumbnail == null) {
-                val fallback = try {
+            val result = readLocalStillWithFallback(
+                previousThumbnail = previousThumbnail?.bitmap,
+                original = {
+                    withContext(Dispatchers.IO) {
+                        ImageDecoder.decodeBitmap(ImageDecoder.createSource(resolver, asset.uri)) {
+                            decoder, info, _ ->
+                            val (width, height) = nativeStillDecodeSize(
+                                info.size.width, info.size.height)
+                            if (width != info.size.width || height != info.size.height)
+                                decoder.setTargetSize(width, height)
+                            decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+                        }.asImageBitmap()
+                    }
+                },
+                thumbnail = {
+                    // Exactly this current MediaStore URI: no whole-library
+                    // scan, no upload and no speculative alternate permission.
                     withContext(Dispatchers.IO) {
                         resolver.loadThumbnail(
                             asset.uri, Size(512, 512), thumbnailSignal).asImageBitmap()
                     }
-                } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                    throw cancelled
-                } catch (_: Exception) { null }
-                currentCoroutineContext().ensureActive()
-                preview = if (fallback != null) NativeLocalStillStage.Thumbnail(fallback)
-                    else NativeLocalStillStage.Failed
+                },
+            )
+            currentCoroutineContext().ensureActive()
+            preview = when (result) {
+                is NativeLocalStillRead.Original -> NativeLocalStillStage.Original(result.value)
+                is NativeLocalStillRead.Thumbnail -> NativeLocalStillStage.Thumbnail(result.value)
+                NativeLocalStillRead.Failed -> NativeLocalStillStage.Failed
             }
         } finally {
             retryingOriginal = false
