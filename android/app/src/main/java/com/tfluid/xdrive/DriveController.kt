@@ -720,11 +720,14 @@ class DriveController(
                 )
                 persistRefreshSession()
                 val profile = AndroidSavedLoginPasswords.profile(next.url, route.lanIp, result.username)
-                if (profile != null && savedLoginStore != null) {
+                // A stable local alias allows a non-null check to survive the
+                // runCatching closure without changing the optional-store contract.
+                val passwordStore = savedLoginStore
+                if (profile != null && passwordStore != null) {
                     val saved = runCatching {
-                        if (rememberPassword) savedLoginStore.savePassword(profile, password)
-                        else savedLoginStore.rememberProfile(profile) &&
-                            savedLoginStore.removePassword(profile)
+                        if (rememberPassword) passwordStore.savePassword(profile, password)
+                        else passwordStore.rememberProfile(profile) &&
+                            passwordStore.removePassword(profile)
                     }.getOrDefault(false)
                     if (!saved) mutableState.value = state.value.copy(
                         error = "已登录，但系统安全密码保存状态未能确认。")
@@ -794,9 +797,10 @@ class DriveController(
             // profile; it never opts a new account into password retention.
             val savedProfile = AndroidSavedLoginPasswords.profile(
                 state.value.server, state.value.route.lanIp, state.value.username)
-            if (savedProfile != null && savedLoginStore != null &&
-                runCatching { savedLoginStore.passwordFor(savedProfile) != null }.getOrDefault(false)) {
-                runCatching { savedLoginStore.savePassword(savedProfile, replacement) }
+            val passwordStore = savedLoginStore
+            if (savedProfile != null && passwordStore != null &&
+                runCatching { passwordStore.passwordFor(savedProfile) != null }.getOrDefault(false)) {
+                runCatching { passwordStore.savePassword(savedProfile, replacement) }
             }
             mutableState.value = state.value.copy(screen = if (result.mustChangePassword) Screen.PASSWORD else Screen.FILES)
             if (!result.mustChangePassword) {
