@@ -4,6 +4,8 @@ import { XDRIVE_MOBILE_ITEM_HOLD_MS, xDriveMobileItemMoved } from '../../ui/shar
 import AppsRoundedIcon from '@mui/icons-material/AppsRounded'
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded'
 import PhotoLibraryRoundedIcon from '@mui/icons-material/PhotoLibraryRounded'
+import PhotoAlbumRoundedIcon from '@mui/icons-material/PhotoAlbumRounded'
+import MapRoundedIcon from '@mui/icons-material/MapRounded'
 import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded'
 import PersonRoundedIcon from '@mui/icons-material/PersonRounded'
 import BackupRoundedIcon from '@mui/icons-material/BackupRounded'
@@ -51,6 +53,18 @@ export function xDriveBrowserMobileDestinations(
       label: item.title,
       icon: xDriveBrowserMobileDestinationIcon(item.workspaceKey!),
     }))
+}
+
+/** Only expose Gallery subroutes when the canonical authorized Gallery
+ * destination is available. Neither shortcut creates a dynamic feature. */
+export function xDriveBrowserMobileGalleryShortcuts(
+  galleryAvailable: boolean,
+): XDriveSidebarDestinationModel[] {
+  if (!galleryAvailable) return []
+  return [
+    { key: 'gallery-albums', label: '相册', icon: <PhotoAlbumRoundedIcon fontSize="small" /> },
+    { key: 'gallery-places', label: '地图', icon: <MapRoundedIcon fontSize="small" /> },
+  ]
 }
 
 export type XDriveMobileRecentDestination = {
