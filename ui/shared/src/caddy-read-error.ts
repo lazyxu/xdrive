@@ -13,13 +13,19 @@ export function xDriveCaddyReadFailureMessage(error: unknown, scope: XDriveCaddy
     error instanceof Error ? error.message : ''
   const directStatus = typeof source?.status === 'number' && Number.isInteger(source.status) &&
     source.status >= 400 && source.status <= 599 ? source.status : null
-  const recognized = /(?:^|\b)(?:HTTP(?:Error)?|status(?: code)?|response status)\s*[:=]?\s*(401|403|404|408|429|500|502|503|504)\b/i.exec(message)
-  const status = directStatus ?? (recognized ? Number(recognized[1]) : null)
+  const recognized = /(?:^|\b)(?:HTTP(?:Error)?|status(?: code)?|response status)\s*[:=]?\s*(401|403|404|408|429|500|501|502|503|504)\b/i.exec(message)
+  // The Go Client uses "xdrive API: <fixed server error> (503)".
+  // Desktop Agent may forward only that message, dropping the typed status.
+  // Extract strictly the terminal status; never display the untrusted text.
+  const apiWrapped = /^xdrive API: [^\r\n]{1,240} \((401|403|404|408|429|500|501|502|503|504)\)$/.exec(message)
+  const status = directStatus ?? (recognized ? Number(recognized[1]) :
+    apiWrapped ? Number(apiWrapped[1]) : null)
   switch (status) {
     case 401: return label + '读取失败（HTTP 401）：登录会话已失效，请重新登录后再试。'
     case 403: return label + '读取失败（HTTP 403）：当前账号没有管理员权限，或账户尚需完成安全验证。'
     case 404: return label + '读取失败（HTTP 404）：已连接的 Server/Agent 未提供此管理接口；请核对服务器、Agent 和前端是否为兼容版本。'
-    case 503: return label + '读取失败（HTTP 503）：服务端配置存储不可用；请检查 PostgreSQL、迁移状态和服务器日志，勿删除配置数据。'
+    case 501: return label + '读取失败（HTTP 501）：此管理请求不适用于当前接口或配置模式；请核对 Server/Agent 版本，勿据此重建 Caddy。'
+    case 503: return label + '读取失败（HTTP 503）：管理配置快照不可用。Host .env 模式请检查 Host Control 心跳、caddy-env-observed.json 与 Server /host-control 挂载；旧数据库模式再检查 PostgreSQL。勿删除配置或重启 Caddy。'
     case 502:
     case 504: return label + '读取失败（HTTP ' + status + '）：网关或 Agent 无法完成请求，请核对实际连接地址及服务状态。'
     case 408: return label + '读取超时（HTTP 408），请检查服务器或代理连通性后重试。'

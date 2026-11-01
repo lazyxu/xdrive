@@ -20,7 +20,7 @@ test('Caddy config failures classify real HTTP statuses without reflecting secre
   const f = diagnostic()
   for (const [status, expected] of [
     [401, '重新登录'], [403, '管理员权限'], [404, '兼容版本'],
-    [503, 'PostgreSQL'], [502, '网关或 Agent'], [504, '网关或 Agent'],
+    [501, '不适用于'], [503, 'Host Control'], [502, '网关或 Agent'], [504, '网关或 Agent'],
   ]) {
     const msg = f({ status, message: 'token=NEVER_PRINT_SECRET /private/path' }, 'https')
     assert.match(msg, new RegExp(expected))
@@ -31,6 +31,31 @@ test('Caddy config failures classify real HTTP statuses without reflecting secre
   assert.match(f(new Error('Failed to fetch'), 'history'), /无法连接/)
   assert.match(f(new Error('secret=value-should-never-appear'), 'alidns'), /无法确认具体 HTTP 状态/)
   assert.doesNotMatch(f(new Error('secret=value-should-never-appear'), 'alidns'), /value-should-never-appear/)
+})
+
+test('Desktop Go API wrapped statuses survive untyped Agent transport without leaking errors', () => {
+  const f = diagnostic()
+  const hostUnavailable = new Error('xdrive API: Caddy host .env snapshot unavailable (503)')
+  assert.match(f(hostUnavailable, 'https'), /HTTP 503.*Host Control/)
+  const legacyPreflight = new Error('xdrive API: Caddy configuration is managed by Host .env (501)')
+  assert.match(f(legacyPreflight, 'alidns'), /HTTP 501.*不适用于/)
+  // Explicit structured status wins over a conflicting status in error text.
+  assert.match(f({ status: 503, message: legacyPreflight.message }, 'https'), /HTTP 503/)
+  const poisoned = new Error('xdrive API: token=NEVER_PRINT_SECRET\nanything (503)')
+  const safe = f(poisoned, 'https')
+  assert.match(safe, /无法确认具体 HTTP 状态/)
+  assert.doesNotMatch(safe, /NEVER_PRINT_SECRET|anything/)
+})
+
+test('Unknown Caddy config must never render the retired Host-incompatible preflight', () => {
+  const detail = read('ui/shared/src/mui/CaddyDetailV1.tsx')
+  const server = read('internal/api/admin_caddy_preflight.go')
+  assert.match(detail, /\{config && config\.source !== 'host-env' && <XDriveCaddyPreflightPanel/)
+  assert.doesNotMatch(detail, /\{config\?\.source !== 'host-env' && <XDriveCaddyPreflightPanel/)
+  assert.match(detail, /caddy-env-observed\.json/)
+  assert.match(detail, /不能据此判定 Caddy 已停止/)
+  assert.match(server, /s\.CaddyHostEnvAuthoritative/)
+  assert.match(server, /http\.StatusNotImplemented/)
 })
 
 test('Caddy HTTPS and AliDNS failures do not masquerade as API unsupported or editable configuration', () => {
