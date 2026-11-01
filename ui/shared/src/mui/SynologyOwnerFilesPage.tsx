@@ -26,6 +26,7 @@ import {
   xDriveSynologyLoadBoundedMediaPreview, xDriveSynologyPreviewMIME,
   XDRIVE_SYNOLOGY_MEDIA_BLOB_MAX_BYTES,
 } from '../synology-media-preview'
+import { xDriveSynologyLoadViewerPreview, xDriveSynologyViewerNeedsDerived } from '../synology-viewer-preview'
 import {
   xDriveSynologyLoadNativeMediaStream, xDriveSynologyPlaybackMIME,
 } from '../synology-media-stream'
@@ -56,7 +57,9 @@ function supportsOwnerPreview(item: XDriveFileExplorerItem): boolean {
     // Large PDFs are streamed by the already authorized DSM CGI Range reader.
     // Images still use a bounded full-SHA Blob; no arbitrary binary proxy.
     mime === 'application/pdf' ||
-    (mime?.startsWith('image/') && item.size <= XDRIVE_SYNOLOGY_MEDIA_BLOB_MAX_BYTES))
+    (mime?.startsWith('image/') && item.size <= XDRIVE_SYNOLOGY_MEDIA_BLOB_MAX_BYTES) ||
+    xDriveSynologyViewerNeedsDerived(item.name) ||
+    (mime?.startsWith('image/') && item.size > XDRIVE_SYNOLOGY_MEDIA_BLOB_MAX_BYTES))
 }
 
 function itemForExplorer(node: XDriveSynologyOwnerFileNode): XDriveFileExplorerItem {
@@ -294,6 +297,11 @@ export function XDriveSynologyOwnerFilesPage({
         item.size > XDRIVE_SYNOLOGY_MEDIA_BLOB_MAX_BYTES &&
         xDriveSynologyPreviewMIME(item.name) === 'application/pdf') {
       return xDriveSynologyLoadNativeMediaStream(client, item, signal)
+    }
+    if ((kind === 'image' || kind === 'live_photo') &&
+        (xDriveSynologyViewerNeedsDerived(item.name) ||
+         (typeof item.size === 'number' && item.size > XDRIVE_SYNOLOGY_MEDIA_BLOB_MAX_BYTES))) {
+      return xDriveSynologyLoadViewerPreview(client, item, signal, onProgress)
     }
     if ((kind !== 'image' && kind !== 'pdf') || !xDriveSynologyPreviewMIME(item.name)) {
       return Promise.reject(new Error('DSM 暂不支持此媒体类型的预览'))

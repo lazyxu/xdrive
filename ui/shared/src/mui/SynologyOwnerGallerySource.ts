@@ -2,6 +2,7 @@ import type { MediaGalleryDataSource } from './MediaGallery'
 import type { MediaGalleryQuery, MediaItem, MediaItemRange } from '../models'
 import type { XDriveSynologyBackupLocalClient } from '../synology-backup-adapter'
 import { xDriveSynologyLoadBoundedMediaPreview, xDriveSynologyPreviewMIME } from '../synology-media-preview'
+import { xDriveSynologyLoadViewerPreview, xDriveSynologyViewerNeedsDerived } from '../synology-viewer-preview'
 import { xDriveSynologyLoadOwnerThumbnail } from '../synology-owner-thumbnail'
 import {
   xDriveSynologyLoadNativeMediaStream, xDriveSynologyPlaybackMIME,
@@ -41,6 +42,7 @@ type OwnerGalleryPreviewIdentity = {
 type OwnerGalleryReadPort = Pick<XDriveSynologyBackupLocalClient,
   'ownerGalleryItemsRange' | 'ownerGalleryAlbums' | 'ownerFileThumbnail' |
   'ownerFileMediaRange' | 'ownerFileMediaStreamURL' | 'ownerLivePhotoMotion' |
+  'ownerFileViewerPreviewRange' |
   'ownerPlacesPage' | 'ownerPlaceItemsRange' | 'ownerMapOverview'>
 
 /**
@@ -230,7 +232,7 @@ export function createXDriveSynologyOwnerGallerySource(
       return url
     },
     loadPreviewURL: async (nodeID, kind, signal, _fileName, revision, onProgress) => {
-      if ((kind !== 'image' && kind !== 'video') || signal?.aborted) return null
+      if ((kind !== 'image' && kind !== 'video' && kind !== 'live_photo') || signal?.aborted) return null
       const identity = previews.get(nodeID)
       if (!identity || (revision && revision !== identity.revision)) return null
       // Gallery reuses the SAME Owner-scoped native Range player as DSM Files
@@ -248,8 +250,22 @@ export function createXDriveSynologyOwnerGallerySource(
         } as Parameters<typeof xDriveSynologyLoadNativeMediaStream>[1], signal)
         return signal?.aborted || previews.get(nodeID) !== identity ? null : url
       }
-      // A claimed image cannot reinterpret a video or PDF as a still Blob.
-      // Image originals remain SHA-verified and bounded to 32 MiB.
+      // HEIC/RAW and .livp static frames require a compatible browser
+      // image. Oversized JPEG originals also use the bounded 4K derivative.
+      if (kind === 'live_photo' || xDriveSynologyViewerNeedsDerived(identity.name) ||
+        identity.size > 32 * (1 << 20)) {
+        const url = await xDriveSynologyLoadViewerPreview(client, {
+          kind: 'file', id: identity.id, name: identity.name,
+          revision: identity.revision,
+        }, signal, onProgress)
+        if (signal?.aborted || previews.get(nodeID) !== identity) {
+          URL.revokeObjectURL(url)
+          return null
+        }
+        return url
+      }
+      // Ordinary browser-supported originals still use the full-SHA
+      // bounded owner media reader, without recompressing photos.
       const imageMIME = xDriveSynologyPreviewMIME(identity.name)
       if (!imageMIME || !imageMIME.startsWith('image/') ||
         identity.size <= 0 || identity.size > 32 * (1 << 20)) return null
