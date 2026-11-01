@@ -35,7 +35,11 @@ function loadPlainModule(filename, names, bindings = {}) {
     .replace(/^export (?=(?:async )?(?:function|const)\b)/gm, '')
   return new Function(...Object.keys(bindings), stripped + '\nreturn {' + names.join(',') + '}')(...Object.values(bindings))
 }
-const classification = loadPlainModule('ui/shared/src/file-preview.ts', ['xDriveFileSupportsTextPreview'])
+const classification = loadPlainModule('ui/shared/src/file-preview.ts',
+  ['xDriveFileSupportsTextPreview', 'xDriveFileNeedsBrowserCompatibleImagePreview'])
+// Mount the real derived-image classifier, not a synthetic test-only stub.
+const derived = loadPlainModule('ui/shared/src/synology-viewer-preview.ts',
+  ['xDriveSynologyViewerNeedsDerived'], classification)
 const range = { XDRIVE_SYNOLOGY_MEDIA_RANGE_BYTES: 256 << 10 }
 const media = loadPlainModule('ui/shared/src/synology-media-preview.ts',
   ['xDriveSynologyPreviewMIME', 'XDRIVE_SYNOLOGY_MEDIA_BLOB_MAX_BYTES'], range)
@@ -135,7 +139,7 @@ async function mount(extraRows = []) {
   let currentClient = client
   const bindings = { ...hooks, ...ownerFence, ...cursorDirectory, ...quota, ...viewPreference,
     ...viewerSelection, ...readOnlyDownload,
-    ...ownerIdentity, ...classification, ...media, ...stream, ...scope,
+    ...ownerIdentity, ...classification, ...derived, ...media, ...stream, ...scope,
     XDRIVE_SYNOLOGY_OWNER_DOWNLOAD_MAX_BYTES: 32 << 20,
     xDriveFileSupportsThumbnail: () => false,
     xDriveSynologyLoadOwnerThumbnail: () => { throw Error('Controller must not preload media') },
