@@ -2,7 +2,7 @@ import { xDriveDesktopViewportRequest } from './abortableViewportRequest'
 
 let mediaOCRDetailRequestSequence = 0
 import { xDriveLeaseDesktopPreviewURL, xDriveReleaseDiscardedDesktopPreviewURL } from './desktopPreviewURLLease'
-import { xDriveCompleteLivePhotoOriginalNodeIDs, xDriveFileNeedsBrowserCompatibleImagePreview } from '@xdrive/shared'
+import { xDriveCompleteLivePhotoOriginalNodeIDs, xDriveFileNeedsBrowserCompatibleImagePreview, xDriveRegisterViewerImageSource } from '@xdrive/shared'
 import {
   createXDriveMediaGalleryDataSource,
   xDriveMediaGalleryTrashRoots,
@@ -206,19 +206,49 @@ export function createDesktopMediaGalleryDataSource(
       }
     },
     loadPreviewURL: async (nodeID, kind, signal, fileName, _revision, onProgress) => {
-      if (kind === 'image' && xDriveFileNeedsBrowserCompatibleImagePreview(fileName ?? '')) {
-        const result = await xDriveDesktopViewportRequest(
-          signal,
-          (requestID) => agent.getMediaAnalysisPreview(nodeID, requestID, onProgress),
-        )
-        if (!result.ok) return result
-        signal?.throwIfAborted()
-        return {
-          ok: true as const,
-          data: URL.createObjectURL(new Blob(
-            [result.data.data],
-            { type: result.data.content_type || 'image/jpeg' },
-          )),
+      const needsConversion = kind === 'live_photo' ||
+        (kind === 'image' && xDriveFileNeedsBrowserCompatibleImagePreview(fileName ?? ''))
+      if (needsConversion) {
+        for (const format of ['webp', 'jpeg'] as const) {
+          signal?.throwIfAborted()
+          try {
+            const result = await xDriveDesktopViewportRequest(
+              signal,
+              (requestID) => agent.getMediaViewerPreview(nodeID, format, requestID, onProgress),
+            )
+            if (!result.ok) continue
+            signal?.throwIfAborted()
+            const expected = format === 'webp' ? 'image/webp' : 'image/jpeg'
+            if (result.data.content_type?.toLowerCase() !== expected) continue
+            const blob = new Blob([result.data.data], { type: expected })
+            if (!blob.size) continue
+            const url = URL.createObjectURL(blob)
+            xDriveRegisterViewerImageSource(url, {
+              format: format === 'webp' ? 'WebP' : 'JPEG',
+              quality: format === 'webp' ? 90 : 93,
+              byteSize: blob.size,
+            })
+            return { ok: true as const, data: url }
+          } catch {
+            signal?.throwIfAborted()
+            // Old Agent/Server or unsupported encoder: fall through to JPEG
+            // or the original analysis/still path without hiding the thumbnail.
+          }
+        }
+        if (kind === 'image') {
+          const result = await xDriveDesktopViewportRequest(
+            signal,
+            (requestID) => agent.getMediaAnalysisPreview(nodeID, requestID, onProgress),
+          )
+          if (!result.ok) return result
+          signal?.throwIfAborted()
+          return {
+            ok: true as const,
+            data: URL.createObjectURL(new Blob(
+              [result.data.data],
+              { type: result.data.content_type || 'image/jpeg' },
+            )),
+          }
         }
       }
       signal?.throwIfAborted()
