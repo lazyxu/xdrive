@@ -318,6 +318,84 @@ actor XDrivePhotoSyncLedger {
         return counts
     }
 
+    /// Exact, read-only matching of one CURRENT local original's canonical
+    /// content digest and deterministic destination name. Never calls
+    /// prepare/beginCreate, never creates an encryption key, never marks a
+    /// locally confirmed operation as a current remote Node proof.
+    func existingReceiptForCurrentOriginal(
+        scope: XDrivePhotoSyncScope,
+        role: XDrivePhotoSyncResourceRole,
+        name: String, size: Int64, sha256: String
+    ) throws -> XDrivePhotoSyncOperation? {
+        guard role == .still || role == .video,
+              scope.rootNodeID > 0, validName(name),
+              size > 0, validSHA256(sha256),
+              sha256 == sha256.lowercased() else {
+            throw XDrivePhotoSyncLedgerError.invalidResource
+        }
+        try Task.checkCancellation()
+        guard let key = try existingEncryptionKeyForReadOnly() else {
+            return nil
+        }
+        let legacy = try read(scope: scope, key: key).operations
+        let legacyIDs = Set(legacy.map(\.id))
+        let legacyFingerprints = Set(legacy.map(\.assetFingerprint))
+        var found: XDrivePhotoSyncOperation?
+
+        func consider(_ item: XDrivePhotoSyncOperation) throws {
+            guard item.role == role,
+                  item.destinationParentID == scope.rootNodeID,
+                  item.destinationName == name,
+                  item.byteSize == size,
+                  item.sha256 == sha256 else { return }
+            guard found == nil else {
+                throw XDrivePhotoSyncLedgerError.identityMismatch
+            }
+            found = item
+        }
+        for item in legacy {
+            try Task.checkCancellation()
+            try consider(item)
+        }
+        for prefix in try availableShardPrefixes(scope: scope) {
+            try Task.checkCancellation()
+            let shard = try readShard(scope: scope, key: key, prefix: prefix)
+            for item in shard.operations {
+                try Task.checkCancellation()
+                guard !legacyIDs.contains(item.id),
+                      !legacyFingerprints.contains(item.assetFingerprint) else {
+                    throw XDrivePhotoSyncLedgerError.identityMismatch
+                }
+                try consider(item)
+            }
+        }
+        try Task.checkCancellation()
+        return found
+    }
+
+    /// A status-only lookup must not mint the ledger Keychain secret. If
+    /// the old key was lost, there is no usable authenticated receipt; the
+    /// UI must report "unverified", never "no upload happened".
+    private func existingEncryptionKeyForReadOnly() throws -> Data? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: keychainAccount,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecReturnData as String: true
+        ]
+        var raw: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &raw)
+        if status == errSecItemNotFound { return nil }
+        guard status == errSecSuccess else {
+            throw XDrivePhotoSyncLedgerError.keychainUnavailable(status)
+        }
+        guard let data = raw as? Data, data.count == 32 else {
+            throw XDrivePhotoSyncLedgerError.corruptOrInaccessible
+        }
+        return data
+    }
+
     /// Report the exact number of potentially committed / unverified
     /// originals while retaining only a small review batch. Decrypt one
     /// Owner-bound shard at a time; never materialize the entire 100k ledger.
