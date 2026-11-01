@@ -97,11 +97,11 @@ import PublicShareView from './PublicShare'
 import WebOverviewPage from './WebOverviewPage'
 import WebUnsupportedFileDialog from './WebUnsupportedFileDialog'
 import { xDriveWebOpenRouteForNode } from './webViewerRoute'
-import { useXDriveWebAppRuntime, xDriveCreateWebAppBrowseSession, xDriveClearPrivateMapBrowseSessions } from './webAppRuntime'
+import { useXDriveWebAppRuntime, xDriveCreateWebAppBrowseSession, xDriveReadWebAppBrowseSession, xDriveIsPrivateMapBrowseSessionID, xDriveClearPrivateMapBrowseSessions } from './webAppRuntime'
 import { xDriveWebAppRouteForWorkspaceKey, xDriveWebAppWorkspaceKey } from './webApps'
 import { XDriveMobileAllLauncher, XDriveMobileFiveSlotNavigation, XDriveMobileMinePage, xDriveBrowserMobileDestinations, xDriveBrowserMobileGalleryShortcuts } from './MobileFiveSlotNavigation'
 import { xDriveMobileLauncherSections, xDriveMobileLauncherGalleryRoute } from './mobileLauncherSections'
-import { xDriveInitialMobileNavigation, xDriveMobileFeatureParentRoute, xDriveMobileRouteForSlot, xDriveMobileSlotForRoute, xDriveRememberMobileNavigation, xDriveToggleMobileFavorite, xDriveSetMobileLauncherSearch, xDriveRememberMobileGalleryAlbum, xDriveMobileGallerySectionForViewer, xDriveMobileAlbumOwnsBack, xDriveMobileMapFocused } from './mobileFiveSlotState'
+import { xDriveInitialMobileNavigation, xDriveMobileFeatureParentRoute, xDriveMobileRouteForSlot, xDriveMobileSlotForRoute, xDriveRememberMobileNavigation, xDriveToggleMobileFavorite, xDriveSetMobileLauncherSearch, xDriveRememberMobileGalleryAlbum, xDriveMobileGallerySectionForViewer, xDriveMobileViewerSafeFallbackRoute, xDriveMobileAlbumOwnsBack, xDriveMobileMapFocused } from './mobileFiveSlotState'
 import type { XDriveMobileSlot } from './mobileFiveSlotState'
 import { createWebMediaGalleryDataSource } from './mediaGalleryAdapter'
 import { XDriveRoutedGalleryThumbnailBridge } from './routedGalleryThumbnailBridge'
@@ -3028,10 +3028,20 @@ function FileManager({
               dir: location.parent_id, select: location.node_id,
             } })
           }}
-          onClose={(node) => closeViewer({
-            app: 'files',
-            params: { dir: node?.parent_id },
-          })}
+          onClose={(node) => {
+            // A trusted browser history entry still returns to the exact caller.
+            // With no return entry, a Gallery-origin Viewer may only navigate
+            // to the Gallery root; all media/Album/Map reads reauthorize there.
+            const contextID = route.app === 'media-viewer' ? route.params.context : undefined
+            const browseKind = compactWorkspace && contextID
+              ? xDriveReadWebAppBrowseSession(contextID)?.kind : undefined
+            closeViewer(compactWorkspace
+              ? xDriveMobileViewerSafeFallbackRoute(
+                  route, browseKind, xDriveIsPrivateMapBrowseSessionID(contextID),
+                  node?.parent_id,
+                )
+              : { app: 'files', params: { dir: node?.parent_id } })
+          }}
           onFileOperationQueued={() => {
             void refreshFileOperations()
             setFeedback({ tone: 'good', message: '已提交删除任务；实际执行结果请查看任务中心。' })
