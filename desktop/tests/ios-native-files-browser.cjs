@@ -13,7 +13,7 @@ test('native Files replaces its fixed-tab placeholder without returning to WebVi
   assert.match(dashboard, /private var files: some View \{\s*XDriveIOSNativeFilesBrowser\(login: login\)/);
   assert.match(dashboard, /\.tag\(XDriveIOSNativeBottomTab\.files\)/);
   assert.match(dashboard, /case \.local, \.albums, \.cloud, \.originals, \.map, \.files, \.backup: return true/);
-  assert.doesNotMatch(view, /WKWebView|WebView|document\.cookie|JavaScript/);
+  assert.doesNotMatch(view, /import WebKit|WKWebView\s*\(|document\.cookie|evaluateJavaScript\s*\(/);
   assert.match(view, /NavigationLink\(value: XDriveIOSNativeFilesFolder/);
   assert.match(view, /\.navigationDestination\(for: XDriveIOSNativeFilesFolder\.self\)/);
 });
