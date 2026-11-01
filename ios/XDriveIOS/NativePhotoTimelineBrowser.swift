@@ -70,7 +70,7 @@ private actor XDriveIOSNativePhotoTimelineReader {
         // Match the existing 64-slot wall's exact ordering and offset basis.
         options.sortDescriptors = [
             NSSortDescriptor(key: "creationDate", ascending: false),
-            NSSortDescriptor(key: "localIdentifier", ascending: true)
+            NSSortDescriptor(key: "modificationDate", ascending: false)
         ]
         let snapshot = PHAsset.fetchAssets(with: options)
         try verify(status: status, observer: observer, revision: revision)
