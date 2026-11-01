@@ -235,6 +235,7 @@ export function createXDriveSynologyOwnerGallerySource(
       if ((kind !== 'image' && kind !== 'video' && kind !== 'live_photo') || signal?.aborted) return null
       const identity = previews.get(nodeID)
       if (!identity || (revision && revision !== identity.revision)) return null
+      if (kind === 'live_photo' && (!identity.livePhoto || !/\.livp$/i.test(identity.name))) return null
       // Gallery reuses the SAME Owner-scoped native Range player as DSM Files
       // Quick Look. The initial authenticated bytes are checked for media
       // magic, Node/revision/length/SHA and a fixed browser-playable MIME.

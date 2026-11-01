@@ -347,7 +347,9 @@ test('superseded Owner thumbnail and original must not publish an old revision a
 test('DSM Viewer authenticates HEIC and LIVP 4K image reads using only the current Owner row', async () => {
   calls.length = 0
   const createRow = (name, id) => ({
-    ...record(id), node: { ...record(id).node, name, size: 4900000 },
+    ...record(id),
+    node: { ...record(id).node, name, size: 4900000 },
+    live_photo: /\.livp$/i.test(name),
   })
   const source = create(fakeClient([createRow('image.heic', 31), createRow('motion.livp', 32)]))
   assert.equal(await source.loadPreviewURL(31, 'image', undefined, 'evil.jpg', 7), null,
