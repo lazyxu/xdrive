@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useContext, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Box, Button, Stack, Typography } from '@mui/material'
 import type { XDriveFilePreviewMediaTransform, XDriveFilePreviewPresentationState, XDriveFilePreviewTarget } from '../file-preview'
@@ -7,6 +7,7 @@ import type { XDrivePreviewImageDimensions } from '../file-preview-viewport'
 import type { XDriveBorrowedPreviewImageURL, XDriveFilePreviewImageLoader, XDriveFilePreviewURLLoader } from './FilePreviewSurface'
 import { XDriveTransformedImagePreview } from './FilePreviewTransformedMedia'
 import { xDriveForgetViewerImageSource, xDriveViewerImageSource } from './ViewerImageSourceInfo'
+import { XDriveLivePhotoMotionDiagnosticsContext } from './LivePhotoSurface'
 
 type ImageRole = 'original' | 'thumbnail'
 type ImageSource = {
@@ -77,6 +78,7 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
   const [thumbnailProgress, setThumbnailProgress] = useState<{ loadedBytes: number; totalBytes?: number }>({ loadedBytes: 0 })
   const [retryNonce, setRetryNonce] = useState(0)
   const [detailsOpen, setDetailsOpen] = useState(false)
+  const liveMotion = useContext(XDriveLivePhotoMotionDiagnosticsContext)
   const sourceIdentity = JSON.stringify([target.id, target.revision, kind])
   // Capture the source AND attempt in each retry handler. A retained callback
   // must never restart the previous Node's authorized image request.
@@ -518,9 +520,14 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
                 原件：{target.name} · {sizeLabel(target.size)} ·
                 {readyRole === 'original' && !readyMetadata ? ' 已解码' : ' 未单独下载'}
               </Typography>
-              {kind === 'live_photo' && (
+              {liveMotion && (
                 <Typography variant="caption" sx={{ color: 'inherit' }}>
-                  实况动态部分：按住才加载，未主动预取
+                  实况动态：{liveMotion.state}
+                  {' · '}{sizeLabel(liveMotion.totalBytes)}
+                  {liveMotion.bufferedSeconds && liveMotion.durationSeconds
+                    ? ' · 缓冲 ' + liveMotion.bufferedSeconds.toFixed(1) +
+                      '/' + liveMotion.durationSeconds.toFixed(1) + ' 秒'
+                    : ''}
                 </Typography>
               )}
               <Typography variant="caption" sx={{ color: '#bbb' }}>

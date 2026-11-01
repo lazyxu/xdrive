@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createContext, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent, ReactNode, WheelEvent } from 'react'
 import { Box, Chip, CircularProgress } from '@mui/material'
 import { XDriveMediaLoadingProgress } from './MediaLoadProgress'
@@ -35,6 +35,17 @@ export function XDriveLivePhotoGlyph({ size = 14 }: { size?: number }) {
     </svg>
   )
 }
+
+/** Browser media Range buffering is not the same as a whole-file download. */
+export type XDriveLivePhotoMotionDiagnostics = {
+  state: '未请求' | '加载中' | '视频地址已获取' | '已部分缓冲' | '失败'
+  loadedBytes?: number
+  totalBytes?: number
+  bufferedSeconds?: number
+  durationSeconds?: number
+}
+export const XDriveLivePhotoMotionDiagnosticsContext =
+  createContext<XDriveLivePhotoMotionDiagnostics | null>(null)
 
 export type XDriveLivePhotoMotionLoader = (
   onProgress?: XDriveByteProgressHandler,
@@ -855,6 +866,15 @@ export function XDriveLivePhotoSurface({
   const statusLabel = failed ? '实况不可用' : '实况'
 
   return (
+    <XDriveLivePhotoMotionDiagnosticsContext.Provider value={{
+      state: failed ? '失败' : loading ? '加载中' :
+        (playing || bufferProgress.bufferedSeconds > 0) ? '已部分缓冲' :
+        motionURL ? '视频地址已获取' : '未请求',
+      loadedBytes: motionBytes.loadedBytes,
+      totalBytes: motionBytes.totalBytes,
+      bufferedSeconds: bufferProgress.bufferedSeconds,
+      durationSeconds: bufferProgress.durationSeconds,
+    }}>
     <Box
       ref={viewportElementRef}
       role="button"
@@ -1016,5 +1036,6 @@ export function XDriveLivePhotoSurface({
       ) : null}
 
     </Box>
+    </XDriveLivePhotoMotionDiagnosticsContext.Provider>
   )
 }
