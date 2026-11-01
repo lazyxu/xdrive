@@ -3,6 +3,8 @@ name: Prune queued CI superseded by published Snapshot
 # Never subscribe to release.edited: each asset replacement can fan out
 # multiple events and redundant Actions jobs. The trusted publisher sends
 # one explicit repository_dispatch only AFTER verifying the full Snapshot.
+# That event is audit-only: only a manual workflow_dispatch with dry_run=false
+# can request cancellation of any prior master CI.
 # No per-master-push workflow; manual dry-run and scoped PR tests remain.
 on:
   repository_dispatch:
@@ -19,6 +21,12 @@ on:
       - '.github/workflows/snapshot-prune-queued-master-ci.yml'
       - 'scripts/ci/prune-queued-master-ci.cjs'
       - 'scripts/ci/prune-queued-master-ci.test.cjs'
+      - '.github/workflows/compact-unstarted-master-ci.yml'
+      - 'scripts/ci/compact-unstarted-master-ci.cjs'
+      - 'scripts/ci/compact-unstarted-master-ci.test.cjs'
+      - '.github/workflows/emergency-drain-ci.yml'
+      - 'scripts/ci/emergency-drain-ci.cjs'
+      - 'scripts/ci/emergency-drain-ci.test.cjs'
 
 permissions:
   contents: read
@@ -42,10 +50,12 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
-      - name: Run isolated cancellation selector regression without write permission
+      - name: Run all master cancellation selector regressions with read-only token
         run: |
           node --check scripts/ci/prune-queued-master-ci.cjs
-          node --test scripts/ci/prune-queued-master-ci.test.cjs
+          node --check scripts/ci/compact-unstarted-master-ci.cjs
+          node --check scripts/ci/emergency-drain-ci.cjs
+          node --test scripts/ci/prune-queued-master-ci.test.cjs scripts/ci/compact-unstarted-master-ci.test.cjs scripts/ci/emergency-drain-ci.test.cjs
 
   # Never run PR-supplied code with Actions write. Only post-publish dispatches
   # or explicit manual runs execute checkout from trusted master.
@@ -66,10 +76,10 @@ jobs:
           persist-credentials: false
       - name: Run fail-closed cancellation selector regression
         run: node --test scripts/ci/prune-queued-master-ci.test.cjs
-      - name: Prune only old queued CI already superseded by Snapshot
+      - name: Audit published Snapshot (manual dry-run override to prune)
         uses: actions/github-script@v7
         env:
-          PRUNE_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+          PRUNE_DRY_RUN: ${{ github.event_name != 'workflow_dispatch' || inputs.dry_run }}
         with:
           script: |
             const {pruneQueuedMasterCI} = require('./scripts/ci/prune-queued-master-ci.cjs')
