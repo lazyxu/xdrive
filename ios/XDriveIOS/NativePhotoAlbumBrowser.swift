@@ -306,8 +306,30 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
         } message: {
             Text("仅预览 iOS 当前授权的相册成员，不读取 iCloud 原件、不上传或保存相册成员 ID。每页最多读取 64 项。")
         }
-        .fullScreenCover(item: $selected, onDismiss: { restoreAfterViewer() }) {
-            XDriveIOSNativeLocalPhotoDetail(candidate: $0)
+        .fullScreenCover(item: $selected, onDismiss: { restoreAfterViewer() }) { initial in
+            XDriveIOSNativeLocalPhotoDetail(
+                candidate: initial,
+                // Only this currently authorized album's loaded 64-slot page.
+                // The Viewer never fetches an adjacent page or saves asset IDs.
+                loadedItems: page?.items.filter { $0.kind != "unsupported" } ?? [],
+                onViewed: { next in
+                    // Album changes may invalidate this wall while L3 is open.
+                    // Revalidate the exact row before accepting a return tile.
+                    guard phase == .active, selected?.id == initial.id,
+                          [.authorized, .limited].contains(
+                            PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                          ),
+                          page?.items.contains(where: {
+                            $0.id == next.id && $0.kind == next.kind &&
+                            $0.isLive == next.isLive &&
+                            $0.capturedAt == next.capturedAt &&
+                            $0.modifiedAt == next.modifiedAt
+                          }) == true
+                    else { return }
+                    viewerReturnID = next.id
+                    accessibilityFocusedTileID = nil
+                }
+            )
         }
         .onAppear {
             libraryMonitor.start()
