@@ -299,8 +299,11 @@ test('DSM image size/compatibility use Owner thumbnails, never a fake video or L
     await app.flush()
     assert.equal(app.state.previewItem?.id, id, 'thumbnail-compatible image must remain previewable')
     assert.equal(app.state.thumbnailOnlyPreview, true)
-    assert.equal(app.state.previewActions[0].disabled, true,
-      'thumbnail fallback does not expand original-file download limits')
+    // A 24 MiB HEIC may still be downloaded intact: preview compatibility
+    // does not tighten or broaden the independent 32 MiB download policy.
+    assert.equal(app.state.previewActions[0].disabled, id !== 9,
+      'derivative-only Viewer must preserve existing original download admission')
+    assert.equal(Boolean(app.state.getDownloadDisabledReason([app.state.previewItem])), id !== 9)
   }
   for (const id of [11, 12, 14]) {
     app.state.openFilePreview(app.state.displayedItems.find(item => item.id === id))
