@@ -1913,6 +1913,10 @@ test('P0 Files Quick Look fences Share/Tags across routes and identical Node/rev
 })
 
 test('P0 Web Quick Look thumbnail and standalone PDF/audio forward the real abort signal', async () => {
+  // The real PDF ticket preflight needs an origin; the cross-origin HEAD/MIME
+  // checks have dedicated tests. Exercise the authenticated same-origin path.
+  const previousLocation = window.location
+  window.location = { href: 'https://web.xdrive.example/#/files' }
   const seen = []
   const api = {
     node: async id => ({ id, revision: 9, type: 'file',
@@ -1923,7 +1927,7 @@ test('P0 Web Quick Look thumbnail and standalone PDF/audio forward the real abor
     },
     filePreviewURL: async (id, signal) => {
       seen.push(['preview-ticket', id, signal])
-      return '/authenticated/preview'
+      return `/api/v1/file-preview/${id}?ticket=signed-fixture-${id}`
     },
   }
   const props = (app, node) => ({
@@ -1950,12 +1954,13 @@ test('P0 Web Quick Look thumbnail and standalone PDF/audio forward the real abor
       content = renderer.root.find(el => el.type === 'preview-content')
       const controller = new AbortController()
       assert.equal(await content.props.loadPreviewURL(content.props.target, kind, controller.signal),
-        '/authenticated/preview')
+        `/api/v1/file-preview/${id}?ticket=signed-fixture-${id}`)
       assert.deepEqual(seen.at(-1), ['preview-ticket', id, controller.signal],
         app + ' must forward the shared surface AbortSignal to the signed ticket request')
     }
   } finally {
     if (renderer) await act(async () => renderer.unmount())
+    window.location = previousLocation
   }
 })
 
@@ -3211,7 +3216,7 @@ test('P0 Web/PWA cross-format route A→PDF→A aborts superseded metadata witho
   })
   let renderer
   const surface = () => renderer.root.findAll(el => el.type === 'preview-content')
-  const quiet = () => renderer.root.findAll(el =>
+  const quiet = () => renderer.root.findAll(el => el.type === 'div' &&
     el.props['data-xdrive-web-viewer-quiet-first-read'] !== undefined)
   try {
     await act(async () => {
