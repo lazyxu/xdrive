@@ -60,6 +60,12 @@ test('Owner, Node revision, exact MIME and ticket are checked before payload use
   assert.match(reader, /completionHandler\(nil\)/);
   assert.match(reader, /expectedMIME: ticket\.mime_type/);
   assert.match(reader, /kCGImageSourceThumbnailMaxPixelSize as String: 4096/);
+  // Preserve bounded-memory previews; oversized originals take the existing
+  // Files management export route rather than an unbounded UIKit decode.
+  assert.match(reader, /selected.size > XDriveIOSNativeFilesViewerPolicy.maximumImageBytes/);
+  assert.match(reader, /selected.size > XDriveIOSNativeFilesViewerPolicy.maximumPDFBytes/);
+  assert.match(reader, /throw XDriveIOSNativeFilesPreviewError.tooLarge/);
+  assert.match(view, /导出上限 512 MiB/);
   assert.match(reader, /PDFDocument\(data: bytes\), document\.pageCount > 0/);
   assert.match(policy, /static let maximumLoadedRows = 64/);
   assert.match(policy, /Set\(loaded\.map\(\\\.id\)\)\.count == loaded\.count/);

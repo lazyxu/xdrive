@@ -20,10 +20,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.tfluid.xdrive.core.OwnerBd09Bounds
 import com.tfluid.xdrive.core.OwnerBd09Cell
@@ -40,6 +42,8 @@ internal fun ColumnScope.GalleryMapOverview(
     bd09Scroll: LazyListState,
     savedCamera: NativeBaiduCameraPose?,
     onCameraSnapshot: (NativeBaiduCameraPose) -> Unit,
+    focused: Boolean = true,
+    onFocusChange: (Boolean) -> Unit = {},
 ) {
     val overview = state.galleryMapOverview
     val bd09Cells = state.galleryBd09Cells
@@ -90,7 +94,8 @@ internal fun ColumnScope.GalleryMapOverview(
                 state.galleryBd09CameraMoving, state.galleryBd09CameraPending,
                 state.galleryBd09PreserveCamera, state.loading,
                 state.error.takeIf { state.galleryMapCellSelected == null },
-                savedCamera, onCameraSnapshot, state.nativeUiSessionId)
+                savedCamera, onCameraSnapshot, state.nativeUiSessionId,
+                focused, onFocusChange)
         state.error != null -> Column(Modifier.weight(1f).fillMaxWidth().padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -182,7 +187,12 @@ private fun ColumnScope.GalleryVerifiedBd09Cells(
     savedCamera: NativeBaiduCameraPose?,
     onCameraSnapshot: (NativeBaiduCameraPose) -> Unit,
     ownerEpoch: Long,
+    focused: Boolean,
+    onFocusChange: (Boolean) -> Unit,
 ) {
+    val screenHeightDp = LocalConfiguration.current.screenHeightDp
+    val mapHeight = nativeGalleryMapPanelHeightDp(screenHeightDp, focused).dp
+    val fallbackHeight = if (focused) mapHeight else 190.dp
     val blocked = loading || cameraMoving || pending != null || error != null
     val representativeCells = remember(bounds, result) {
         nativeVerifiedBaiduPins(bounds, result)?.let(::nativeBaiduCoverCells) ?: emptyList()
@@ -227,6 +237,7 @@ private fun ColumnScope.GalleryVerifiedBd09Cells(
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.testTag("gallery-map-bd09-camera-error"))
+                NativeGalleryMapFocusToggle(focused, onFocusChange)
                 if (pending != null) TextButton(
                     onClick = controller::refreshGalleryBd09CameraViewport,
                     enabled = !loading && !cameraMoving,
@@ -244,11 +255,12 @@ private fun ColumnScope.GalleryVerifiedBd09Cells(
                     savedCamera = savedCamera,
                     onCameraSnapshot = onCameraSnapshot,
                     photoCovers = visibleCovers,
+                    mapHeight = mapHeight,
                 ) {
                     // Default no-SDK APK, declined consent and failed SDK
                     // initialization all retain the genuine signed grid.
                     VerifiedBd09Grid(result, bounds, visibleCovers,
-                        !blocked, controller::openGalleryBd09Cell)
+                        !blocked, controller::openGalleryBd09Cell, fallbackHeight)
                 }
             }
         }
@@ -300,17 +312,32 @@ private fun ColumnScope.GalleryVerifiedBd09Cells(
     }
 }
 
+/** One native accessibility target for switching map-dominant L2 and rows. */
+@Composable
+internal fun NativeGalleryMapFocusToggle(
+    focused: Boolean, onFocusChange: (Boolean) -> Unit,
+) {
+    TextButton(
+        onClick = { onFocusChange(!focused) },
+        modifier = Modifier.heightIn(min = 48.dp)
+            .testTag("gallery-map-focus-toggle"),
+    ) {
+        Text(if (focused) "收起地图，查看地点列表" else "展开地图，专注浏览")
+    }
+}
+
 @Composable
 private fun VerifiedBd09Grid(
     result: OwnerBd09MapCells, bounds: OwnerBd09Bounds,
     covers: Map<OwnerBd09Cell, ImageBitmap>,
     enabled: Boolean,
     onOpenCell: (OwnerBd09Cell) -> Unit,
+    mapHeight: Dp,
 ) {
     val dot = MaterialTheme.colorScheme.primary
     val grid = MaterialTheme.colorScheme.outlineVariant
     val paper = MaterialTheme.colorScheme.surfaceContainer
-    BoxWithConstraints(Modifier.fillMaxWidth().height(190.dp)
+    BoxWithConstraints(Modifier.fillMaxWidth().height(mapHeight)
         .clip(RoundedCornerShape(12.dp))) {
     Canvas(Modifier.fillMaxSize()
         .background(paper, RoundedCornerShape(12.dp))

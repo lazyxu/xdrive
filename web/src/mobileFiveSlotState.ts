@@ -188,6 +188,33 @@ export function xDriveMobileAlbumOwnsBack(
     Boolean(ownerScope) && registeredOwner === ownerScope
 }
 
+/** Browser L2 is explicit and restricted to the Gallery's photo wall or Files.
+ * The Places map has its own authoritative focus state and close affordance.
+ * Neither route state nor a saved tab preference grants media authority. */
+export type XDriveMobileManualFocusTarget = 'gallery-library' | 'files'
+export type XDriveMobileManualFocusSelection = {
+  ownerScope: string
+  target: XDriveMobileManualFocusTarget
+}
+
+export function xDriveMobileManualFocusTarget(
+  route: XDriveWebAppRoute,
+): XDriveMobileManualFocusTarget | null {
+  if (route.app === 'files') return 'files'
+  if (route.app === 'gallery' &&
+      (!route.params.section || route.params.section === 'library')) return 'gallery-library'
+  return null
+}
+
+export function xDriveMobileManualFocusActive(
+  route: XDriveWebAppRoute,
+  ownerScope: string,
+  selection: XDriveMobileManualFocusSelection | null,
+): boolean {
+  return Boolean(ownerScope) && selection?.ownerScope === ownerScope &&
+    selection.target === xDriveMobileManualFocusTarget(route)
+}
+
 /** L2 map focus belongs to the actual Gallery map panel, NOT every Places
  * route: Places list is L1 and must keep the global five-slot navigation. */
 export function xDriveMobileMapFocused(route: XDriveWebAppRoute, mapPanelVisible: boolean): boolean {
