@@ -730,7 +730,7 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
       if (!validOwnerMapBounds(bounds)) throw new Error('Invalid Owner map bounds')
       // The Agent parser deliberately accepts only finite, plain-decimal
       // coordinates; this rounding also bounds request length and precision.
-      const decimal = (n: number) => n.toFixed(6).replace(/\\.?0+$/, '')
+      const decimal = (n: number) => n.toFixed(6).replace(/\.?0+$/, '')
       const requested: MediaPlacesViewportBounds = {
         west: Number(decimal(bounds.west)), south: Number(decimal(bounds.south)),
         east: Number(decimal(bounds.east)), north: Number(decimal(bounds.north)),
