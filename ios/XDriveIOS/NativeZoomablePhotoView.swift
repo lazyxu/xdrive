@@ -1,23 +1,6 @@
 import SwiftUI
 import UIKit
 
-/// One-finger horizontal paging is admitted only at the base zoom; a
-/// pinched/zoomed image keeps its pan gesture rather than switching files.
-/// Direction -1 means previous and +1 means next.
-enum XDriveIOSNativeViewerSwipePolicy {
-    static func direction(
-        horizontal: CGFloat, vertical: CGFloat,
-        zoom: CGFloat, minimum: CGFloat
-    ) -> Int? {
-        guard horizontal.isFinite, vertical.isFinite,
-              zoom.isFinite, minimum.isFinite, minimum > 0,
-              zoom <= minimum + 0.01,
-              abs(horizontal) >= 72,
-              abs(horizontal) > abs(vertical) * 1.5 else { return nil }
-        return horizontal < 0 ? 1 : -1
-    }
-}
-
 /// Read-only UIKit zoom surface shared by local and authenticated cloud
 /// still-image previews. Owns no media loader, credential or image cache.
 struct XDriveIOSNativeZoomablePhotoView: UIViewRepresentable {
