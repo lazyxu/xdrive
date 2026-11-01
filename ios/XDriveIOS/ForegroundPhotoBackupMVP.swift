@@ -138,10 +138,14 @@ struct XDriveIOSForegroundPhotoBackupMVP {
                     } catch is CancellationError {
                         throw CancellationError()
                     } catch {
-                        // A missing iCloud original, incompatible filename or
-                        // access loss must never appear in the confirmed count.
-                        // Unknown Server intent is detected and paused by the
-                        // per-resource journal readback in uploadOrVerifyStill.
+                        // Owner/root revocation, sealed-ledger corruption or
+                        // Photos permission loss invalidates this WHOLE run.
+                        // Counting these as a single unavailable original
+                        // would continue into other assets and conceal failure.
+                        if Self.mustAbortRun(after: error) { throw error }
+                        // Missing/oversized iCloud or incompatible originals
+                        // remain local per-item failures, never confirmed.
+                        // Unknown Server ACK remains a distinct review pause.
                         report.unavailable += 1
                         report.stage = "有照片原件无法确认，请查看备份汇总"
                     }
@@ -168,6 +172,24 @@ struct XDriveIOSForegroundPhotoBackupMVP {
             await scanner.reset()
             throw error
         }
+    }
+
+    /// A global authorization/receipt trust loss must not be reclassified
+    /// as one unavailable PhotoKit original and scanned past.
+    private static func mustAbortRun(after error: Error) -> Bool {
+        if error is XDriveNativeOwnerRootFailure ||
+           error is XDrivePhotoSyncLedgerError {
+            return true
+        }
+        if let source = error as? XDrivePhotoKitExportFailure,
+           case .notAuthorized = source {
+            return true
+        }
+        if let intent = error as? XDriveIOSPhotoIntentPreparationError,
+           case .unverifiedOwnerOrDeviceScope = intent {
+            return true
+        }
+        return false
     }
 
     private enum StillOutcome {
