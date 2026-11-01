@@ -29,7 +29,7 @@ test('remote PhotoKit requests are cancellable on item, scene and library change
   assert.match(local, /private func finishICloudPart\(_ part: String, token: UUID\)/)
   assert.match(local, /func cancel\(\) \{[\s\S]*?pendingICloudParts\.removeAll\(\)[\s\S]*?downloadingFromICloud = false[\s\S]*?needsICloudFetch = false/)
   assert.match(local, /requestedICloudForCurrentItem = false\s*model\.cancel\(\)\s*activeItem = next/)
-  assert.match(local, /if state != \.active \{\s*requestedICloudForCurrentItem = false[\s\S]*?model\.cancel\(\)/)
+  assert.match(local, /if state != \.active \{[\s\S]*?requestedICloudForCurrentItem = false[\s\S]*?model\.cancel\(\)/)
   assert.match(local, /\.onChange\(of: changes\.generation\) \{ _ in[\s\S]*?model\.cancel\(\)[\s\S]*?dismiss\(\)/)
   assert.match(local, /guard let self, self\.epoch == token/)
   assert.match(albums, /XDriveIOSNativeLocalPhotoDetail\(/)
