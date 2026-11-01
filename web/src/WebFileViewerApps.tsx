@@ -2141,10 +2141,10 @@ function WebSinglePreviewApp({
   const readerOwner = readerOwnerRef.current
   const loadNode = useCallback(async (signal: AbortSignal) => {
     const value = await api.node(readerOwner.nodeID, signal)
-    // Leave PDF's existing behavior unchanged; Audio must not silently stay
-    // pending after an empty but successful metadata response.
-    if (readerOwner.app === 'audio-player' && !value) {
-      throw new Error('当前音频文件信息不可用，请重试。')
+    // A successful but empty metadata response is terminal for PDF as well
+    // as audio; neither full-screen Viewer may remain silently busy forever.
+    if (!value) {
+      throw new Error('当前文件信息不可用，请重试。')
     }
     return value
   }, [api, readerOwner])
@@ -2184,7 +2184,7 @@ function WebSinglePreviewApp({
       {error ? (
         <WebViewerReadError
           message={error}
-          onRetry={route.app === 'audio-player' ? read.retryRead : undefined}
+          onRetry={read.retryRead}
         />
       ) : !node ? (
         <WebViewerQuietFirstRead />
