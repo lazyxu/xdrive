@@ -71,7 +71,7 @@ private actor XDriveIOSNativePhotoTimelineReader {
         // Match the existing 64-slot wall's exact ordering and offset basis.
         options.sortDescriptors = [
             NSSortDescriptor(key: "creationDate", ascending: false),
-            NSSortDescriptor(key: "localIdentifier", ascending: true)
+            NSSortDescriptor(key: "modificationDate", ascending: false)
         ]
         if mediaFilter.requiresFavorite {
             options.predicate = NSPredicate(format: "favorite == YES")

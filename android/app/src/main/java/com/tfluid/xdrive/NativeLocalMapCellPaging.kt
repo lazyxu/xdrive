@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.os.CancellationSignal
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material3.*
@@ -102,6 +103,18 @@ internal suspend fun readNativeLocalMapCellPage(
     )
 }
 
+/** Restore only the exact row of the same 48-member, authorized cell page.
+ * Numeric IDs alone are unsafe after an Owner/permission/media change.
+ */
+internal fun nativeLocalMapCellReturnIndex(
+    anchor: NativeLocalViewerItemKey?,
+    page: List<NativeLocalViewerItemKey>,
+): Int? {
+    if (anchor == null || page.size > NativeLocalMapIndex.MAX_PREVIEW_ITEMS)
+        return null
+    return page.indexOf(anchor).takeIf { it >= 0 }
+}
+
 /** One real local spatial cell, re-reading its exact WGS84 cell by keyset.
  * At most ten opaque page anchors are retained, never all 100k media URIs. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -121,6 +134,14 @@ internal fun NativeLocalMapCellSheet(
     var ordinal by remember(cell.key, sessionId, libraryEpoch) { mutableIntStateOf(1) }
     var viewer by remember(cell.key, sessionId, libraryEpoch) {
         mutableStateOf<NativeLocalMedia?>(null)
+    }
+    // One cell page owns its viewport and return anchor. New page, Owner,
+    // location level or media generation cannot reuse a previous return.
+    val wallGrid = remember(cell.key, position, sessionId, libraryEpoch) {
+        LazyGridState()
+    }
+    var viewerReturn by remember(cell.key, position, sessionId, libraryEpoch) {
+        mutableStateOf<NativeLocalViewerItemKey?>(null)
     }
     val signal = remember(cell.key, position, sessionId, libraryEpoch) {
         CancellationSignal()
@@ -162,6 +183,27 @@ internal fun NativeLocalMapCellSheet(
     // The first 48 image covers are already verified by the foreground map
     // scan; display them only while the reauthorizing first Range is pending.
     val members = page?.members ?: if (position == 0 && busy) cell.members else emptyList()
+    // Initial scan covers are not admission for a Viewer return. Wait until
+    // the actual, same-current-page keyset read has completed successfully.
+    val returningIndex = remember(viewerReturn, page?.members) {
+        nativeLocalMapCellReturnIndex(viewerReturn,
+            page?.members.orEmpty().map { it.viewerReturnKey() })
+    }
+    LaunchedEffect(viewer, viewerReturn, returningIndex, page, busy, error, wallGrid) {
+        if (viewer != null || viewerReturn == null || busy || error != null)
+            return@LaunchedEffect
+        if (returningIndex == null) {
+            // Row disappeared or changed identity: never focus by recycled ID.
+            viewerReturn = null
+        } else if (wallGrid.layoutInfo.visibleItemsInfo.none {
+                it.key == page?.members?.getOrNull(returningIndex)?.id }) {
+            wallGrid.scrollToItem(returningIndex)
+        }
+    }
+    fun openExactItem(asset: NativeLocalMedia) {
+        viewerReturn = asset.viewerReturnKey()
+        viewer = asset
+    }
     ModalBottomSheet(
         onDismissRequest = { if (viewer == null) onClose() },
         modifier = Modifier.testTag("native-local-map-cell-sheet"),
@@ -186,16 +228,28 @@ internal fun NativeLocalMapCellSheet(
             }
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(96.dp),
+                state = wallGrid,
                 modifier = Modifier.weight(1f).testTag("native-local-map-cell-wall"),
                 contentPadding = PaddingValues(8.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 items(members, key = { it.id }) { asset ->
+                    val mediaKey = asset.viewerReturnKey()
                     NativeLocalPhotoWallTile(
-                        asset = asset, restoreFocus = false,
-                        onOpen = { if (!busy && error == null) viewer = asset },
-                        onFocusRestored = {},
+                        asset = asset,
+                        restoreFocus = viewer == null && page != null &&
+                            returningIndex != null && viewerReturn == mediaKey,
+                        onOpen = {
+                            if (!busy && error == null && page != null)
+                                openExactItem(asset)
+                        },
+                        onFocusRestored = {
+                            // Only the actual focused same page/URI row retires
+                            // this in-memory return anchor.
+                            if (viewer == null && viewerReturn == mediaKey)
+                                viewerReturn = null
+                        },
                     )
                 }
             }
@@ -226,15 +280,16 @@ internal fun NativeLocalMapCellSheet(
         }
     }
     viewer?.let { asset ->
-        val index = members.indexOfFirst { it.id == asset.id }
+        val index = nativeLocalMapCellReturnIndex(
+            asset.viewerReturnKey(), members.map { it.viewerReturnKey() }) ?: -1
         NativeLocalMediaViewer(
             asset = asset,
             loadedPosition = index.takeIf { it >= 0 },
             loadedCount = members.size,
             onDismiss = { viewer = null },
-            onPrevious = if (index > 0) ({ viewer = members[index - 1] }) else null,
+            onPrevious = if (index > 0) ({ openExactItem(members[index - 1]) }) else null,
             onNext = if (index in 0 until members.lastIndex) ({
-                viewer = members[index + 1]
+                openExactItem(members[index + 1])
             }) else null,
         )
     }

@@ -58,3 +58,40 @@ func TestMediaDerivativeCacheImageEnvelopeValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestMediaViewerWebPCacheEnvelope(t *testing.T) {
+	src := image.NewNRGBA(image.Rect(0, 0, 64, 40))
+	var jpegBytes bytes.Buffer
+	if err := jpeg.Encode(&jpegBytes, src, nil); err != nil {
+		t.Fatal(err)
+	}
+	webp, err := mediapkg.ViewerPreviewWebP(bytes.NewReader(jpegBytes.Bytes()), 1, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := mediapkg.ViewerPreviewStorageKey(12, 3, "aa1234", "webp")
+	for _, tc := range []struct {
+		name string
+		body []byte
+		want bool
+	}{
+		{"good", webp.Data, true},
+		{"truncated", webp.Data[:len(webp.Data)-4], false},
+		{"fake jpeg", jpegBytes.Bytes(), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "viewer.webp")
+			if err := os.WriteFile(path, tc.body, 0600); err != nil {
+				t.Fatal(err)
+			}
+			f, err := os.Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer f.Close()
+			if got := mediaDerivativeCacheValid(f, key); got != tc.want {
+				t.Fatalf("valid=%v want=%v", got, tc.want)
+			}
+		})
+	}
+}

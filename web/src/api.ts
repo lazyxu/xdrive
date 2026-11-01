@@ -135,6 +135,7 @@ import type {
 import { xDriveCloudFilesPositionMatchesRequest } from '../../ui/shared/src/cloud-files'
 import { webTransferStore } from './transfers'
 import { xDriveMediaResponseBlob } from './mediaBinaryProgress'
+import { xDriveRegisterViewerImageSource } from '../../ui/shared/src/mui/ViewerImageSourceInfo'
 import { XDRIVE_NATIVE_SHARE_MAX_BYTES, xDriveReadBoundedNativeShareBlob } from './nativeFileShare'
 import {
   xDriveAbortWebDownloadSink,
@@ -2756,6 +2757,55 @@ export class XDriveApi {
     const blob = await this.mediaAnalysisPreview(nodeID, signal, revision, onProgress)
     signal?.throwIfAborted()
     return URL.createObjectURL(blob)
+  }
+
+  /** Foreground-only 4K derivative; the gallery wall remains 512px. */
+  async mediaViewerPreviewURL(
+    nodeID: number,
+    signal?: AbortSignal,
+    revision?: number,
+    onProgress?: (loaded: number, total?: number) => void,
+  ): Promise<string> {
+    await this.ensureFresh(signal)
+    const get = async (format: 'webp' | 'jpeg') => {
+      signal?.throwIfAborted()
+      const query = new URLSearchParams({ format })
+      if (revision && Number.isSafeInteger(revision)) query.set('revision', String(revision))
+      const path = '/api/v1/media/items/' + nodeID + '/viewer-preview?' + query.toString()
+      const send = () => fetch(API_BASE + path, {
+        cache: revision ? 'default' : 'no-store',
+        headers: this.session.accessToken
+          ? { Authorization: 'Bearer ' + this.session.accessToken } : undefined,
+        signal,
+      })
+      let response = await send()
+      if (response.status === 401 && this.session.refreshToken) {
+        await this.refresh(true, signal)
+        signal?.throwIfAborted()
+        response = await send()
+      }
+      if (!response.ok) throw new ApiError(response.status, '高清预览不可用')
+      const expected = format === 'webp' ? 'image/webp' : 'image/jpeg'
+      if (response.headers.get('Content-Type')?.split(';')[0].trim().toLowerCase() !== expected) {
+        throw new ApiError(502, '高清预览格式不匹配')
+      }
+      const blob = await xDriveMediaResponseBlob(response, signal, onProgress)
+      signal?.throwIfAborted()
+      if (!blob.size) throw new ApiError(502, '高清预览内容为空')
+      const url = URL.createObjectURL(blob)
+      xDriveRegisterViewerImageSource(url, {
+        format: format === 'webp' ? 'WebP' : 'JPEG',
+        quality: format === 'webp' ? 90 : 93,
+        byteSize: blob.size,
+      })
+      return url
+    }
+    try {
+      return await get('webp')
+    } catch (error) {
+      signal?.throwIfAborted()
+      return get('jpeg')
+    }
   }
 
   async mediaVideoPoster(nodeID: number, revision: number, poster: Blob, signal?: AbortSignal): Promise<void> {

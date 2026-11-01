@@ -12,7 +12,8 @@ enum XDriveIOSNativeFilesViewerPolicy {
     static let maximumPDFBytes: Int64 = 64 * 1_048_576
 
     private static let images: Set<String> = [
-        "jpg", "jpeg", "png", "gif", "webp", "heic", "heif", "tif", "tiff"
+        "jpg", "jpeg", "png", "gif", "webp", "heic", "heif", "tif", "tiff",
+        "avif", "bmp"
     ]
     private static let videos: Set<String> = ["mp4", "mov", "m4v"]
     private static let audio: Set<String> = ["mp3", "m4a", "aac", "wav"]
@@ -45,13 +46,17 @@ enum XDriveIOSNativeFilesViewerPolicy {
         return .unsupported
     }
 
+    private static func validFileRow(_ node: XDriveIOSNativeFilesNode) -> Bool {
+        node.id > 0 && node.revision > 0 && node.type == "file" &&
+            node.parent_id != nil && !node.name.isEmpty &&
+            node.name.utf8.count <= 255 && node.size >= 0
+    }
+
     static func canPreview(_ node: XDriveIOSNativeFilesNode) -> Bool {
-        guard node.id > 0, node.revision > 0, node.type == "file",
-              node.parent_id != nil, !node.name.isEmpty,
-              node.name.utf8.count <= 255, node.size >= 0 else { return false }
+        guard validFileRow(node) else { return false }
         switch kind(for: node.name) {
         case .unsupported: return false
-        case .image: return node.size > 0 && node.size <= maximumImageBytes
+        case .image: return node.size > 0 // Oversize originals use indexed thumbnails; raw GET remains bounded.
         case .pdf: return node.size > 0 && node.size <= maximumPDFBytes
         case .video, .audio: return node.size > 0
         case .text: return true
@@ -63,7 +68,7 @@ enum XDriveIOSNativeFilesViewerPolicy {
         in loaded: [XDriveIOSNativeFilesNode],
         authorized: Bool
     ) -> Int? {
-        guard authorized, canPreview(current),
+        guard authorized, validFileRow(current),
               !loaded.isEmpty, loaded.count <= maximumLoadedRows,
               Set(loaded.map(\.id)).count == loaded.count,
               loaded.allSatisfy({
@@ -84,9 +89,17 @@ enum XDriveIOSNativeFilesViewerPolicy {
                 current: current, in: loaded, authorized: authorized
               ) else { return nil }
         let files = loaded.filter { canPreview($0) }
-        guard let fileIndex = files.firstIndex(of: loaded[index]),
-              files.indices.contains(fileIndex + direction) else { return nil }
-        return files[fileIndex + direction]
+        if let fileIndex = files.firstIndex(of: loaded[index]) {
+            guard files.indices.contains(fileIndex + direction) else { return nil }
+            return files[fileIndex + direction]
+        }
+        // The user can open an unsupported/oversized file to export it.
+        // From that error state, navigation still reaches the nearest
+        // previewable sibling, without crossing an Owner, parent or 64-row page.
+        if direction == -1 {
+            return loaded[..<index].reversed().first(where: canPreview)
+        }
+        return loaded[(index + 1)...].first(where: canPreview)
     }
 
     /// Signed tickets are relative, single-resource, single-query URLs only.

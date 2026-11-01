@@ -721,7 +721,14 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                                 key(photo.node.id, photo.node.revision) {
                                     if (photo.mediaKind == "video")
                                         GalleryVideoPlayer(photo, controller, galleryThumbnails)
-                                    else GalleryPhotoViewer(photo, controller, galleryThumbnails)
+                                    else GalleryPhotoViewer(
+                                        photo, controller, galleryThumbnails,
+                                        onDownload = onDownload,
+                                        canDownload = onDownload != null &&
+                                            state.fileExportPending == null &&
+                                            !state.hasActiveNativeTransfer() &&
+                                            nativeGalleryViewerExportEligible(state, photo.node),
+                                    )
                                 }
                                 if (state.galleryViewerPageBusy ||
                                     state.galleryViewerPageError != null) {

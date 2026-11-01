@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react'
 import { Box, Button, CircularProgress, Paper, Stack, Typography } from '@mui/material'
+import { xDriveOwnerGPSCoverCandidates } from '../media-gallery-owner-gps-cover'
 import type { MediaPlaceFacet, MediaPlacesMapOverview, MediaPlacesViewportBounds } from '../models'
 import {
   xDriveOwnerGPSBoundsValid, xDriveOwnerGPSCanOpenPlace, xDriveOwnerGPSPan,
@@ -17,9 +18,10 @@ const world = (): MediaPlacesViewportBounds => ({ ...xDriveOwnerGPSWorld })
  * overview when it cannot honestly mount the authenticated BD09 SDK Host.
  * This is explicitly a coordinate distribution, NOT a map basemap. */
 export function XDriveMediaGalleryOwnerGPSOverview({
-  listPage, onOpenPlace, scope, compact,
+  listPage, loadCover, onOpenPlace, scope, compact,
 }: {
   listPage: Request
+  loadCover?: (place: MediaPlaceFacet, signal: AbortSignal) => Promise<string | null>
   onOpenPlace: (place: MediaPlaceFacet) => void
   scope: string
   compact: boolean
@@ -63,6 +65,41 @@ export function XDriveMediaGalleryOwnerGPSOverview({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scope, key, listPage, retry])
   const current = !pending && loaded?.scope === scope && loaded.key === key ? loaded.page : null
+  const [covers, setCovers] = useState<{owner: string; key: string; urls: Record<string,string>}>(
+    {owner:'',key:'',urls:{}})
+  useEffect(() => {
+    const controller = new AbortController()
+    const owned = new Set<string>()
+    setCovers({owner:scope,key,urls:{}})
+    if (current && loadCover) {
+      const candidates = xDriveOwnerGPSCoverCandidates(current)
+      let next = 0
+      const worker = async () => {
+        while (!controller.signal.aborted) {
+          const candidate = candidates[next++]
+          if (!candidate) return
+          let url: string | null = null
+          try { url = await loadCover(candidate, controller.signal) }
+          catch { /* Missing derivative never blocks the count-bearing map */ }
+          if (!url) continue
+          if (controller.signal.aborted) {
+            if (url.startsWith('blob:')) URL.revokeObjectURL(url)
+            return
+          }
+          if (!url.startsWith('blob:')) continue
+          owned.add(url)
+          setCovers(prev => prev.owner === scope && prev.key === key
+            ? {...prev,urls:{...prev.urls,[candidate.id]:url}} : prev)
+        }
+      }
+      // Two bounded in-flight Owner Range + derivative requests. No new API.
+      void Promise.all([worker(),worker()])
+    }
+    return () => {
+      controller.abort()
+      for (const url of owned) URL.revokeObjectURL(url)
+    }
+  }, [current, loadCover, scope, key])
   const moveTo = (next: MediaPlacesViewportBounds | null) => {
     if (!next || !xDriveOwnerGPSBoundsValid(next) || keyOf(next) === key) return
     setLoaded(null)
@@ -151,6 +188,8 @@ export function XDriveMediaGalleryOwnerGPSOverview({
             const point = xDriveOwnerGPSPoint(bounds, latitude, longitude)
             if (!point) return null
             const realPlace = xDriveOwnerGPSCanOpenPlace(current, item)
+            const cover = realPlace && covers.owner === scope && covers.key === key
+              ? covers.urls[item.id] : undefined
             return (
               <Button key={item.id} variant="contained" size="small"
                 data-xdrive-owner-gps-point={item.id}
@@ -166,9 +205,17 @@ export function XDriveMediaGalleryOwnerGPSOverview({
                   : item.item_count + ' 张照片的聚合区域，放大查看'}
                 sx={{position:'absolute',left:(point.x * 100)+'%',top:(point.y * 100)+'%',
                   transform:'translate(-50%,-50%)',minHeight:44,minWidth:44,
-                  borderRadius:'999px',px:1.25,whiteSpace:'nowrap',
+                  borderRadius:cover ? 2 : '999px',px:cover ? 0.5 : 1.25,
+                  whiteSpace:'nowrap',display:'flex',flexDirection:'column',
                   boxShadow:3}}>
-                {item.item_count.toLocaleString('zh-CN')}
+                {cover ? <Box component="img" src={cover} alt=""
+                  data-xdrive-owner-gps-cover={item.id}
+                  sx={{width:52,height:52,objectFit:'cover',borderRadius:1,
+                    display:'block',pointerEvents:'none'}}/> : null}
+                <Typography component="span" variant="caption"
+                  sx={{fontWeight:700,color:'inherit'}}>
+                  {item.item_count.toLocaleString('zh-CN')}
+                </Typography>
               </Button>
             )
           })}

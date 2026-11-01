@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useContext, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Box, Button, Stack, Typography } from '@mui/material'
 import type { XDriveFilePreviewMediaTransform, XDriveFilePreviewPresentationState, XDriveFilePreviewTarget } from '../file-preview'
@@ -6,6 +6,8 @@ import { XDriveMediaLoadingProgress } from './MediaLoadProgress'
 import type { XDrivePreviewImageDimensions } from '../file-preview-viewport'
 import type { XDriveBorrowedPreviewImageURL, XDriveFilePreviewImageLoader, XDriveFilePreviewURLLoader } from './FilePreviewSurface'
 import { XDriveTransformedImagePreview } from './FilePreviewTransformedMedia'
+import { xDriveForgetViewerImageSource, xDriveViewerImageSource } from './ViewerImageSourceInfo'
+import { XDriveLivePhotoMotionDiagnosticsContext } from './LivePhotoSurface'
 
 type ImageRole = 'original' | 'thumbnail'
 type ImageSource = {
@@ -49,6 +51,7 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
   viewportTransform,
   viewportTransition,
   mediaTransform,
+  showImageDetails = false,
   onPresentationStateChange,
   onImageDimensionsChange,
   children,
@@ -63,6 +66,7 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
   viewportTransform?: string
   viewportTransition?: string
   mediaTransform?: XDriveFilePreviewMediaTransform
+  showImageDetails?: boolean
   onPresentationStateChange?: (state: XDriveFilePreviewPresentationState) => void
   onImageDimensionsChange?: (dimensions: XDrivePreviewImageDimensions | null) => void
   children?: (still: ReactNode, ready: boolean) => ReactNode
@@ -73,6 +77,8 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
   const [progress, setProgress] = useState<{ loadedBytes: number; totalBytes?: number }>({ loadedBytes: 0 })
   const [thumbnailProgress, setThumbnailProgress] = useState<{ loadedBytes: number; totalBytes?: number }>({ loadedBytes: 0 })
   const [retryNonce, setRetryNonce] = useState(0)
+  const [detailsOpen, setDetailsOpen] = useState(false)
+  const liveMotion = useContext(XDriveLivePhotoMotionDiagnosticsContext)
   const sourceIdentity = JSON.stringify([target.id, target.revision, kind])
   // Capture the source AND attempt in each retry handler. A retained callback
   // must never restart the previous Node's authorized image request.
@@ -130,6 +136,7 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
           liveBlobImageLeases.has(url)) return
       releasedURLs.add(url)
       URL.revokeObjectURL(url)
+      xDriveForgetViewerImageSource(url)
     }
     // A broken decoded original can be large. Release its owned Blob as soon
     // as decoding fails, not only on Retry/Close. Another role may use the
@@ -331,6 +338,20 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
     : sources.thumbnail.status === 'ready' ? 'thumbnail' : null
   const readySource = readyRole ? sources[readyRole] : null
   const readyURL = readySource?.url || ''
+  const readyMetadata = xDriveViewerImageSource(readyURL)
+  const shownFormat = readyRole === 'thumbnail' ? '缩略图' :
+    readyMetadata ? readyMetadata.format + ' 高清预览' :
+    readyRole === 'original' ? '原始文件' : '加载中'
+  const sizeLabel = (bytes?: number) =>
+    bytes && Number.isFinite(bytes) && bytes > 0
+      ? bytes >= 1048576
+        ? (bytes / 1048576).toFixed(2) + ' MB'
+        : (bytes / 1024).toFixed(1) + ' KB'
+      : '—'
+  const statusLabel = (role: ImageRole) =>
+    sources[role].status === 'ready'
+      ? role === readyRole ? '已解码 · 当前显示' : '已解码'
+      : sources[role].status === 'loading' ? '加载中' : '未加载'
   const handleTransformError = useCallback(() => {
     if (readyRole && readySource) failImage(readyRole, readyURL, renderGeneration, readySource.attempt)
   }, [failImage, readyRole, readyURL, renderGeneration, readySource])
@@ -456,6 +477,66 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
             onClick={retryOriginal}>重试原图</Button>
         </Box>
       ) : null}
+      {showImageDetails && (
+        <Box data-xdrive-viewer-image-quality
+          onPointerDown={(event) => event.stopPropagation()}
+          onPointerUp={(event) => event.stopPropagation()}
+          onPointerMove={(event) => event.stopPropagation()}
+          onWheel={(event) => event.stopPropagation()}
+          onDoubleClick={(event) => event.stopPropagation()}
+          sx={{ position: 'absolute', zIndex: 4, bottom: 10, left: 10,
+            maxWidth: 'min(340px, calc(100vw - 32px))', pointerEvents: 'auto' }}>
+          <Button size="small" variant="contained" color="inherit"
+            aria-label="画质与加载详情" aria-expanded={detailsOpen}
+            onClick={(event) => { event.stopPropagation(); setDetailsOpen(value => !value) }}
+            sx={{ minHeight: 30, bgcolor: 'rgba(20,20,20,.8)', color: '#fff',
+              '&:hover': { bgcolor: 'rgba(20,20,20,.94)' } }}>
+            画质：{readyRole ? shownFormat : '加载中'}
+          </Button>
+          {detailsOpen && (
+            <Stack gap={0.6} data-xdrive-viewer-quality-details
+              sx={{ mt: 0.5, p: 1.5, bgcolor: 'rgba(20,20,20,.94)', color: '#fff',
+                borderRadius: 1, fontSize: 12, maxHeight: 'min(275px, 42vh)', overflowY: 'auto' }}>
+              <Typography variant="subtitle2" sx={{ color: 'inherit' }}>画质与加载详情</Typography>
+              <Typography variant="caption" sx={{ color: 'inherit' }}>
+                当前：{readyRole ? shownFormat : '没有可解码画面'}
+                {readySource?.image ? ' · ' + readySource.image.naturalWidth + ' × ' + readySource.image.naturalHeight : ''}
+                {readyMetadata ? ' · Q' + readyMetadata.quality : ''}
+              </Typography>
+              <Typography variant="caption" sx={{ color: 'inherit' }}>
+                高清画面：{statusLabel('original')} · {sizeLabel(
+                  readyRole === 'original'
+                    ? readyMetadata?.byteSize || target.size
+                    : progress.totalBytes || progress.loadedBytes)}
+              </Typography>
+              <Typography variant="caption" sx={{ color: 'inherit' }}>
+                缩略图：{statusLabel('thumbnail')}
+                {sources.thumbnail.image
+                  ? ' · ' + sources.thumbnail.image.naturalWidth + ' × ' + sources.thumbnail.image.naturalHeight
+                  : ''}
+                {' · '}{sizeLabel(thumbnailProgress.totalBytes || thumbnailProgress.loadedBytes)}
+              </Typography>
+              <Typography variant="caption" sx={{ color: 'inherit' }}>
+                原件：{target.name} · {sizeLabel(target.size)} ·
+                {readyRole === 'original' && !readyMetadata ? ' 已解码' : ' 未单独下载'}
+              </Typography>
+              {liveMotion && (
+                <Typography variant="caption" sx={{ color: 'inherit' }}>
+                  实况动态：{liveMotion.state}
+                  {' · '}{sizeLabel(liveMotion.totalBytes)}
+                  {liveMotion.bufferedSeconds && liveMotion.durationSeconds
+                    ? ' · 缓冲 ' + liveMotion.bufferedSeconds.toFixed(1) +
+                      '/' + liveMotion.durationSeconds.toFixed(1) + ' 秒'
+                    : ''}
+                </Typography>
+              )}
+              <Typography variant="caption" sx={{ color: '#bbb' }}>
+                “已加载”表示本次浏览器会话已接收，不代表已保存到电脑或可离线使用。
+              </Typography>
+            </Stack>
+          )}
+        </Box>
+      )}
       {failed ? (
         <Stack data-xdrive-image-preview-retry spacing={1} alignItems="center"
           justifyContent="center" sx={{ position: 'absolute', inset: 0, p: 2, textAlign: 'center' }}>

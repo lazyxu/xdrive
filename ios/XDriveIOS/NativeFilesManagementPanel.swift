@@ -24,9 +24,11 @@ struct XDriveIOSNativeFilesManagementPanel: View {
     @StateObject private var exporter = XDriveIOSNativeFilesExportModel()
     @StateObject private var uploader = XDriveIOSNativeFilesManualUploadModel()
     @StateObject private var mutator = XDriveIOSNativeFilesMutationModel()
+    @StateObject private var favoriteMutation = XDriveIOSNativeFilesFavoriteMutationModel()
     @StateObject private var destinationWriter =
         XDriveIOSNativeFilesDestinationMutationModel()
     @State private var showingImporter = false
+    @State private var showingMultiImporter = false
     @State private var showingCreate = false
     @State private var showingRename = false
     @State private var showingTrash = false
@@ -43,7 +45,7 @@ struct XDriveIOSNativeFilesManagementPanel: View {
     }
     private var anyBusy: Bool {
         createBusy || exporter.busy || uploader.busy ||
-            mutator.busy || destinationWriter.busy
+            mutator.busy || destinationWriter.busy || favoriteMutation.busy
     }
 
     var body: some View {
@@ -62,6 +64,16 @@ struct XDriveIOSNativeFilesManagementPanel: View {
                             fromByteCount: file.size, countStyle: .file
                         ))
                         LabeledContent("版本", value: String(file.revision))
+                    }
+                    Section("收藏夹") {
+                        Button("收藏此文件") {
+                            favoriteMutation.add(file, login: login)
+                        }
+                        .disabled(anyBusy)
+                        .accessibilityIdentifier("native-ios-files-add-favorite")
+                        if let status = favoriteMutation.status {
+                            Text(status).font(.footnote).foregroundStyle(.secondary)
+                        }
                     }
                     Section("下载与系统导出") {
                         if let staged = exporter.prepared,
@@ -236,7 +248,32 @@ struct XDriveIOSNativeFilesManagementPanel: View {
                             }
                         }
                         .accessibilityIdentifier("native-ios-files-manual-upload")
-                        Text("一次仅选一个不超过 128 MiB 的原文件；不自动重新提交未知结果。")
+                        Button("从 iOS“文件”批量上传（最多 8 项）") {
+                            showingMultiImporter = true
+                        }
+                        .disabled(anyBusy)
+                        .fileImporter(
+                            isPresented: $showingMultiImporter,
+                            allowedContentTypes: [.item],
+                            allowsMultipleSelection: true
+                        ) { result in
+                            switch result {
+                            case .success(let pickedURLs):
+                                guard verified else {
+                                    uploader.pickerFailed()
+                                    return
+                                }
+                                uploader.start(
+                                    files: pickedURLs, login: login,
+                                    parentID: folderID, expectedFolderName: folderName,
+                                    onConfirmed: finishConfirmed
+                                )
+                            case .failure:
+                                uploader.pickerFailed()
+                            }
+                        }
+                        .accessibilityIdentifier("native-ios-files-manual-batch-upload")
+                        Text("单文件最大 128 MiB；批量最多 8 个文件，按顺序核对收据。遇到失败或未知结果立即停止。")
                             .font(.footnote).foregroundStyle(.secondary)
                         if uploader.busy {
                             Button("取消当前上传", role: .cancel) {
@@ -301,11 +338,13 @@ struct XDriveIOSNativeFilesManagementPanel: View {
         showingRename = false
         showingTrash = false
         showingImporter = false
+        showingMultiImporter = false
         destinationIntent = nil
         exporter.invalidate()
         uploader.invalidate()
         mutator.invalidate()
         destinationWriter.invalidate()
+        favoriteMutation.invalidate()
     }
 
     private func createDirectory() {

@@ -33,3 +33,41 @@ assert.match(dashboard, /@State private var localAlbumDirectoryOffset = 0/);
 assert.match(album, /@Binding var savedOffset: Int/);
 assert.match(album, /XDriveIOSNativeAlbumDirectoryCursorPolicy\.clamp\(/);
 assert.match(album, /catch XDriveLocalPhotoAlbumFailure\.invalidRange \{/);
+
+
+const timeline = read('ios/XDriveIOS/NativeLocalPhotoTimeline.swift');
+const timelineView = timeline.slice(
+  timeline.indexOf('struct XDriveIOSNativeLocalPhotoTimelineScreen: View')
+);
+assert.match(album, /XDriveIOSNativeLocalPhotoTimelineScreen\(\)/);
+assert.match(album, /native-ios-gallery-timeline-entry/);
+assert.match(timeline, /case year, month, day, all/);
+assert.match(timeline, /calendar\.dateInterval\(of: component, for: date\)/);
+assert.match(timeline, /creationDate >= %@ AND creationDate < %@/);
+assert.match(timeline, /opts\.fetchLimit = 1/);
+assert.match(timeline, /creationDate < %@/);
+assert.match(timeline, /creationDate >= %@/);
+assert.match(timeline, /PHAsset\.fetchAssets\(with: options\)/);
+assert.match(timeline, /PHAsset\.fetchAssets\(with: opts\)\.firstObject/);
+assert.match(timeline, /static let pageSize = 64/);
+assert.match(timeline, /boundedOffset\(\s*requested, total: snapshot\.count/);
+assert.match(timeline, /let end = min\(snapshot\.count, offset \+ XDriveIOSNativeTimelinePolicy\.pageSize\)/);
+assert.match(timeline, /for index in offset\.\.<end/);
+assert.match(timeline, /PHPhotoLibrary\.shared\(\)\.register\(changes\)/);
+assert.match(timeline, /defer \{ PHPhotoLibrary\.shared\(\)\.unregisterChangeObserver\(changes\) \}/);
+assert.match(timeline, /changes\.generation\(\) == generation/);
+assert.match(timeline, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\) == permission/);
+assert.match(timeline, /try Task\.checkCancellation\(\)/);
+assert.match(timeline, /XDrivePhotoKitScanCandidate\(/);
+assert.match(timelineView, /Picker\("时间范围", selection: \$scale\)/);
+assert.match(timelineView, /DatePicker\("选择日期", selection: \$anchorDate/);
+assert.match(timelineView, /XDriveIOSLocalPhotoTile\(candidate: candidate\)/);
+assert.match(timelineView, /XDriveIOSNativeLocalPhotoDetail\(\s*candidate: first,\s*loadedItems: frozenViewerItems/);
+assert.match(timelineView, /onViewed: \{ next in[\s\S]*?viewerReturnID = next\.id/);
+assert.match(timelineView, /scroll\.scrollTo\(id, anchor: \.center\)/);
+assert.match(timelineView, /\.onChange\(of: changes\.revision\)/);
+assert.match(timelineView, /\.onChange\(of: phase\)/);
+assert.match(timelineView, /onDisappear \{[\s\S]*?stopReading\(\)[\s\S]*?changes\.stop\(\)/);
+assert.doesNotMatch(timeline,
+  /UploadSession|\.upload\(|URLSession|UserDefaults|WKWebView|PHAssetCreationRequest|PHPhotoLibrary\.shared\(\)\.performChanges/);
+console.log('native iOS date navigator: full-library calendar query, bounded PhotoKit paging and Viewer return');

@@ -23,7 +23,7 @@ import { XDriveMediaGalleryOwnerGPSOverview } from './MediaGalleryOwnerGPSOvervi
 /** Two user-selected dynamic SDK runtimes. A denied signed release never
  * silently downgrades the isolated Child to the legacy direct prototype. */
 export function XDriveMediaGalleryPlacesMap({
-  places, totalCount, listPlacesMapOverview, initialNativeCamera, onNativeCameraChange, onNativeCameraClear,
+  places, totalCount, listPlacesMapOverview, loadPlacesMapCover, initialNativeCamera, onNativeCameraChange, onNativeCameraClear,
   listBaiduNativeCells, listBaiduNativeCellItems, loadPhotoCoverThumbnail, loadPhotoCoverPreviewURL, savePhotoCoverVideoPoster, getBaiduMapCoverage, getBaiduMapCoverageReasons, getBaiduJSAPI4Status,
   getBaiduJSAPIPrototype, mintBaiduIsolatedChildTicket, onOpenBaiduNativeCell, onOpenBaiduNativeCellPhoto, onOpenBaiduNativeViewport, onBaiduNativeCellInvalidated,
   onOpenSecureDesktopMap, diagnosticScope, onOpenDiagnostics, onCloseMap,
@@ -38,6 +38,7 @@ export function XDriveMediaGalleryPlacesMap({
   listBaiduNativeCells?: import('./MediaGallery').MediaGalleryDataSource['listBaiduNativeCells']
   listBaiduNativeCellItems?: import('./MediaGallery').MediaGalleryDataSource['listBaiduNativeCellItems']
   listPlacesMapOverview?: import('./MediaGallery').MediaGalleryDataSource['listPlacesMapOverview']
+  loadPlacesMapCover?: (place: MediaPlaceFacet, signal: AbortSignal) => Promise<string | null>
   getBaiduJSAPIPrototype?: import('./MediaGallery').MediaGalleryDataSource['getBaiduJSAPIPrototype']
   onOpenViewportPhotos?: (bounds: MediaPlacesViewportBounds) => void
   loadPhotoCoverThumbnail?: import('./MediaGallery').MediaThumbnailLoader
@@ -654,6 +655,7 @@ export function XDriveMediaGalleryPlacesMap({
       ) : !getBaiduJSAPI4Status && listPlacesMapOverview && onOpenPlace ? (
         <XDriveMediaGalleryOwnerGPSOverview
           scope={diagnosticScope ?? ''} listPage={listPlacesMapOverview}
+          loadCover={loadPlacesMapCover}
           onOpenPlace={onOpenPlace} compact={compact}/>
       ) : nativeEnabled && listBaiduNativeCells && onOpenBaiduNativeCell &&
           (mapMode === 'prototype' ? getBaiduJSAPIPrototype : mintBaiduIsolatedChildTicket) ? (

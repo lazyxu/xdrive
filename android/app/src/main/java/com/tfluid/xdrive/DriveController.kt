@@ -1125,8 +1125,9 @@ class DriveController(
         val visibleOwnerRow = when (current.screen) {
             Screen.FILES -> editableBrowseState(node) != null
             Screen.GALLERY -> current.galleryLoaded && !current.loading &&
-                current.gallerySelected?.node == node &&
-                current.galleryItems.any { it.node == node } && session != null
+                current.galleryItems.any { it.node == node } && session != null &&
+                (current.gallerySelected?.node == node ||
+                    nativeGalleryViewerExportEligible(current, node))
             else -> false
         }
         if (!visibleOwnerRow || node.isDirectory || node.revision <= 0 || node.size < 0 ||
@@ -1157,8 +1158,9 @@ class DriveController(
                 current.path.isNotEmpty() && node?.parentId == current.path.last().id &&
                 current.items.any { it == node }
             Screen.GALLERY -> current.screen == Screen.GALLERY && current.galleryLoaded &&
-                current.gallerySelected?.node == node &&
-                current.galleryItems.any { it.node == node }
+                node != null && current.galleryItems.any { it.node == node } &&
+                (current.gallerySelected?.node == node ||
+                    nativeGalleryViewerExportEligible(current, node))
             else -> false
         }
         val valid = node != null && verifiedSurface &&
@@ -1176,10 +1178,20 @@ class DriveController(
             return
         }
         val owned = node!!
-        mutableState.value = current.copy(
+        val viewerExport = current.fileExportOrigin == Screen.GALLERY &&
+            nativeGalleryViewerExportEligible(current, owned)
+        if (viewerExport) {
+            // After the user chooses a real SAF destination, close only this
+            // Viewer so the existing Gallery transfer progress is visible.
+            // Cancelling the system picker leaves the Viewer untouched.
+            dismissGalleryViewer()
+        }
+        val activeState = state.value
+        mutableState.value = activeState.copy(
             fileExportPending = null, fileExportOrigin = null, fileDownloadActive = true,
             fileDownloadSaved = false, fileDownloadError = null,
-            gallerySelected = if (current.screen == Screen.GALLERY) null else current.gallerySelected,
+            gallerySelected = if (activeState.screen == Screen.GALLERY)
+                null else activeState.gallerySelected,
             fileDownloadBytes = 0, fileDownloadTotal = owned.size)
         request(isFileDownload = true) { ticket ->
             var complete = false

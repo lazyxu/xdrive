@@ -81,7 +81,9 @@ struct XDriveIOSForegroundPhotoBackupMVP {
         await onProgress(report)
 
         do {
-            report.totalVisible = try await scanner.start(atOffset: startOffset)
+            report.totalVisible = try await scanner.start(
+                atOffset: startOffset, requireStableResume: true
+            )
             report.isLimited = await currentLimitedAuthorization()
             let windowCapacity = XDrivePhotoBackupScanWindow.capacity(
                 visibleTotal: report.totalVisible, offset: startOffset
