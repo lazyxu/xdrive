@@ -33,6 +33,21 @@ struct NativeOwnerMapSelectionPolicyChecks {
         let world = policy.viewportBounds(
             latitude: 0, longitude: 0, latitudeSpan: 160, longitudeSpan: 360)
         precondition(world?.west == -180 && world?.east == 180)
+        // A nearly global viewport must not broaden the Owner's signed GPS
+        // camera scope to include unseen locations across the small gap.
+        let nearWorld = policy.viewportBounds(
+            latitude: 0, longitude: 0, latitudeSpan: 160, longitudeSpan: 359.95)
+        precondition(nearWorld != nil && nearWorld!.west > -180 &&
+                     nearWorld!.east < 180)
+        precondition(!policy.isSameViewport(world!, current: nearWorld))
+        // Longitude wrapping remains valid when that narrow gap straddles
+        // the prime meridian instead of the antimeridian.
+        let wrappedNearWorld = policy.viewportBounds(
+            latitude: 0, longitude: 179.95,
+            latitudeSpan: 160, longitudeSpan: 359.95)
+        precondition(wrappedNearWorld != nil &&
+                     wrappedNearWorld!.west > wrappedNearWorld!.east)
+
         let dateline = policy.viewportBounds(
             latitude: 10, longitude: 179, latitudeSpan: 2, longitudeSpan: 6)
         precondition(dateline != nil && dateline!.west > dateline!.east)

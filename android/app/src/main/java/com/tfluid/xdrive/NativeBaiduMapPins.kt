@@ -12,6 +12,15 @@ import com.tfluid.xdrive.core.OwnerBd09MapCells
  * A malformed count, duplicate cell or out-of-viewport sample must fail
  * closed rather than showing a plausible but unverified pin.
  */
+/** Only accept the real SDK's final BD09 rectangle, never a WGS84 point
+ * or a pixel estimate. A wrapped west>east viewport remains valid. */
+internal fun nativeBaiduCameraBounds(
+    southLatitude: Double, westLongitude: Double,
+    northLatitude: Double, eastLongitude: Double,
+): OwnerBd09Bounds? = OwnerBd09Bounds(
+    westLongitude, southLatitude, eastLongitude, northLatitude,
+).takeIf { it.valid() }
+
 internal fun nativeVerifiedBaiduPins(
     bounds: OwnerBd09Bounds,
     snapshot: OwnerBd09MapCells,

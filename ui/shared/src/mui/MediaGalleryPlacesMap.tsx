@@ -119,6 +119,20 @@ export function XDriveMediaGalleryPlacesMap({
     setModeWarning('地图范围或位置已变化，请重新选择地图模式。')
   }, [])
   useEffect(() => () => { handoffAbort.current?.abort() }, [])
+  // A user may navigate away and return to the SAME URL while the one-use
+  // Owner handoff POST is still pending. A final href comparison alone cannot
+  // detect that history ABA: popstate/hashchange revoke the original intent.
+  // Both map SDK Hosts use this one trusted Parent and identical cancellation.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.addEventListener('popstate', cancelStaleHandoff)
+    window.addEventListener('hashchange', cancelStaleHandoff)
+    return () => {
+      window.removeEventListener('popstate', cancelStaleHandoff)
+      window.removeEventListener('hashchange', cancelStaleHandoff)
+    }
+  }, [cancelStaleHandoff])
+
   // External Owner, album or filter changes must cancel the old one-use
   // ticket request, not navigate the new Gallery with the old snapshot.
   useEffect(() => {

@@ -49,6 +49,24 @@ internal fun shouldHandleFilesBack(state: DriveState, editOpen: Boolean, batchCo
             (state.browseSelectionMode || state.filesSection != FilesSection.BROWSE || state.path.size > 1))
 
 /**
+ * Android Back belongs to the visible native feature, not a hidden Controller
+ * screen retained beneath 全部/动态功能/我的. A Gallery Viewer opened from Files
+ * is the sole cross-screen exception: it is still owned by Files and Back must
+ * dismiss the Viewer to its original Files anchor.
+ */
+internal fun nativeFeatureBackAllowed(
+    tab: NativeHomeTab, screen: Screen, galleryBack: Boolean, filesBack: Boolean,
+    filesOriginViewer: Boolean = false,
+): Boolean = when (tab) {
+    NativeHomeTab.GALLERY ->
+        screen == Screen.GALLERY && galleryBack && !filesOriginViewer
+    NativeHomeTab.FILES ->
+        (screen == Screen.FILES && filesBack) || screen == Screen.TRASH ||
+            (screen == Screen.GALLERY && filesOriginViewer && galleryBack)
+    NativeHomeTab.ALL, NativeHomeTab.DYNAMIC, NativeHomeTab.MINE -> false
+}
+
+/**
  * iOS-aligned Photos-first entry: only after this new authenticated session's
  * real Owner Files root has loaded. Never interrupt a write/confirmation or
  * override a user's explicit tab selection to jump back from Files.
@@ -300,9 +318,12 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
             nativeNavigation, localAlbumSelection != null,
             state.galleryMapOpen || state.galleryMapCellSelected != null ||
                 state.galleryViewer != null)
-    BackHandler((galleryHasLocalBack && showingCloudGallery) || localAlbumTopBack ||
-        state.screen == Screen.TRASH ||
-        shouldHandleFilesBack(state, filesEdit != null, batchTrashConfirm)) {
+    BackHandler(nativeFeatureBackAllowed(
+        nativeNavigation.selected, state.screen,
+        (galleryHasLocalBack && showingCloudGallery) || localAlbumTopBack,
+        shouldHandleFilesBack(state, filesEdit != null, batchTrashConfirm),
+        filesOriginViewer = state.viewerReturnToFiles && state.galleryViewer != null,
+    )) {
         if (state.destinationKind != null) controller.dismissDestination()
         else if (batchTrashConfirm) batchTrashConfirm = false
         else if (filesEdit != null) filesEdit = null

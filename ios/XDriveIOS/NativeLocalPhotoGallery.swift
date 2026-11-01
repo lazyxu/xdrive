@@ -222,10 +222,56 @@ private final class XDriveIOSNativePhotoDetailChangeMonitor: NSObject,
 
 struct XDriveIOSNativeLocalPhotoDetail: View {
     let candidate: XDrivePhotoKitScanCandidate
+    /// A bounded copy of the currently authorized PhotoKit page, never full-library.
+    var loadedItems: [XDrivePhotoKitScanCandidate] = []
+    var onViewed: ((XDrivePhotoKitScanCandidate) -> Void)? = nil
+    @State private var activeItem: XDrivePhotoKitScanCandidate?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var phase
     @StateObject private var model = XDriveIOSLocalPhotoDetailModel()
     @StateObject private var changes = XDriveIOSNativePhotoDetailChangeMonitor()
+
+    private var viewed: XDrivePhotoKitScanCandidate { activeItem ?? candidate }
+
+    private var currentPageAuthorized: Bool {
+        phase == .active && changes.generation == 0 &&
+        [.authorized, .limited].contains(
+            PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        )
+    }
+
+    private var loadedPosition: Int? {
+        XDriveIOSNativePhotoViewerReturnAnchorPolicy.localLoadedIndex(
+            currentID: viewed.id, in: loadedItems.map(\.id),
+            authorized: currentPageAuthorized
+        )
+    }
+
+    private func neighbor(_ direction: Int) -> XDrivePhotoKitScanCandidate? {
+        guard let id = XDriveIOSNativePhotoViewerReturnAnchorPolicy.localNeighborID(
+            currentID: viewed.id, in: loadedItems.map(\.id),
+            direction: direction, authorized: currentPageAuthorized
+        ) else { return nil }
+        return loadedItems.first(where: { $0.id == id })
+    }
+
+    private func showNeighbor(_ direction: Int) {
+        guard let next = neighbor(direction),
+              let asset = PHAsset.fetchAssets(
+                withLocalIdentifiers: [next.id], options: nil
+              ).firstObject,
+              asset.creationDate == next.capturedAt,
+              asset.modificationDate == next.modifiedAt,
+              (next.kind == "image" && asset.mediaType == .image &&
+                 next.isLive == asset.mediaSubtypes.contains(.photoLive)) ||
+              (next.kind == "video" && asset.mediaType == .video)
+        else { return }
+        // Revoke the previous item's PhotoKit requests and playback before
+        // admitting a replacement. No hidden wall/next-page fetch or upload.
+        model.cancel()
+        activeItem = next
+        onViewed?(next)
+    }
 
     var body: some View {
         NavigationStack {
@@ -255,7 +301,7 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                                       [.authorized, .limited].contains(
                                         PHPhotoLibrary.authorizationStatus(for: .readWrite)
                                       ) else { return }
-                                model.load(candidate)
+                                model.load(viewed)
                             }
                             .accessibilityIdentifier("native-ios-local-viewer-retry")
                         }
@@ -264,9 +310,31 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                     ProgressView("正在读取已授权的本机媒体…")
                 }
             }
-            .navigationTitle(candidate.isLive ? "实况照片" :
-                candidate.kind == "video" ? "视频" : "照片")
+            .navigationTitle(viewed.isLive ? "实况照片" :
+                viewed.kind == "video" ? "视频" : "照片")
             .navigationBarTitleDisplayMode(.inline)
+            .safeAreaInset(edge: .bottom) {
+                if loadedItems.count > 1 {
+                    HStack(spacing: 12) {
+                        Button("上一项") { showNeighbor(-1) }
+                            .disabled(neighbor(-1) == nil)
+                            .accessibilityIdentifier("native-ios-local-viewer-previous")
+                        Spacer(minLength: 4)
+                        Text(loadedPosition.map {
+                            "\($0 + 1)/\(loadedItems.count)（已加载）"
+                        } ?? "当前媒体已变化")
+                            .font(.caption).monospacedDigit()
+                            .accessibilityIdentifier("native-ios-local-viewer-position")
+                        Spacer(minLength: 4)
+                        Button("下一项") { showNeighbor(1) }
+                            .disabled(neighbor(1) == nil)
+                            .accessibilityIdentifier("native-ios-local-viewer-next")
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(.ultraThinMaterial)
+                    .accessibilityIdentifier("native-ios-local-viewer-neighbors")
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("完成") { dismiss() }
@@ -274,9 +342,9 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
             }
         }
         .onAppear { changes.start() }
-        .task(id: candidate.id) {
+        .task(id: viewed.id) {
             // Never materialize PhotoKit pixels while the App is inactive.
-            if phase == .active { model.load(candidate) }
+            if phase == .active { model.load(viewed) }
         }
         .onChange(of: changes.generation) { _ in
             // Library mutation may revoke the selected media even when
@@ -294,7 +362,7 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
             ) {
                 // Re-check the exact selected ID in the currently allowed
                 // PhotoKit subset; never reuse an old image/pixel buffer.
-                model.load(candidate)
+                model.load(viewed)
             } else {
                 model.cancel()
                 dismiss()
@@ -415,8 +483,28 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
         } message: {
             Text("仅展示 iOS 当前授权的照片、视频与 Live Photo；缩略图不自动下载 iCloud 原件，权限、相册或 App 状态变化时旧页立即废弃。每次最多读取 64 项。")
         }
-        .fullScreenCover(item: $selected, onDismiss: { restoreAfterViewer() }) {
-            XDriveIOSNativeLocalPhotoDetail(candidate: $0)
+        .fullScreenCover(item: $selected, onDismiss: { restoreAfterViewer() }) { initial in
+            XDriveIOSNativeLocalPhotoDetail(
+                candidate: initial,
+                loadedItems: page?.items.filter { $0.kind != "unsupported" } ?? [],
+                onViewed: { next in
+                    // Keep the last actually viewed local item for the normal
+                    // post-dismiss authorized re-read + focus restoration.
+                    guard phase == .active, selected?.id == initial.id,
+                          [.authorized, .limited].contains(
+                            PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                          ),
+                          page?.items.contains(where: {
+                            $0.id == next.id && $0.kind == next.kind &&
+                            $0.isLive == next.isLive &&
+                            $0.capturedAt == next.capturedAt &&
+                            $0.modifiedAt == next.modifiedAt
+                          }) == true
+                    else { return }
+                    viewerReturnID = next.id
+                    accessibilityFocusedTileID = nil
+                }
+            )
         }
         .onAppear {
             // Returning from a full-screen Viewer must not discard its source.

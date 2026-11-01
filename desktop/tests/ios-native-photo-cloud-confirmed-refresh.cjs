@@ -14,7 +14,7 @@ test('only Server-confirmed original receipts refresh the cloud wall, even after
   const runner = controller.slice(controller.indexOf('    private func start('))
   const backup = read('ios/XDriveIOS/ForegroundPhotoBackupMVP.swift')
   const callback = runner.indexOf('self?.progress = value')
-  const verified = runner.indexOf('XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected)', runner.indexOf('let result = try await'))
+  const verified = runner.indexOf('guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected),', callback)
   const finalProgress = runner.indexOf('self.progress = result')
   const persist = runner.indexOf('self.schedule = try XDriveIOSPhotoAutoScheduleStore.shared.recordResult(')
   const cancelled = runner.indexOf('} catch is CancellationError {')
@@ -24,6 +24,13 @@ test('only Server-confirmed original receipts refresh the cloud wall, even after
   assert.match(controller, /struct ConfirmedOriginalUpdate: Equatable/)
   assert.match(controller, /@Published private\(set\) var confirmedOriginalUpdate/)
   assert.ok(callback >= 0 && verified > callback && finalProgress > verified)
+  // The live progress closure now has its own Owner/epoch guard. Locate the
+  // independent post-await guard AFTER the closure, before committing the
+  // final report; do not mistake callback checks for completed-run authority.
+  assert.match(runner.slice(runner.indexOf('.run(allowICloudOriginals: cloud'), callback),
+    /self\?\.displayEpoch == uiEpoch,\s*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\)/)
+  assert.match(runner.slice(verified, finalProgress),
+    /guard XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\),\s*self\.displayEpoch == uiEpoch else \{\s*throw XDriveIOSNativeSessionError\.staleSession/)
   assert.ok(persist > finalProgress && cancelled > persist && failed > cancelled)
   assert.ok(notify > failed && refresh > notify,
     'a successful original must refresh even if PhotoKit scanning or schedule persistence later throws')
