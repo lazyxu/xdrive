@@ -15,6 +15,13 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
     @State private var page: XDrivePhotoKitScanPage?
     @State private var scanner: XDrivePhotoKitBoundedSnapshotScanner?
 
+
+    private var placeholderTile: some View {
+        RoundedRectangle(cornerRadius: 7)
+            .fill(Color(uiColor: .secondarySystemGroupedBackground))
+            .frame(height: 108)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             if let page {
@@ -31,17 +38,33 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 95, maximum: 150), spacing: 3)], spacing: 3) {
-                    ForEach(page.items.filter { $0.kind != "unsupported" }) { candidate in
-                        Button { onSelect(candidate, page) } label: {
-                            XDriveIOSLocalPhotoTile(candidate: candidate)
+                    ForEach(page.items) { candidate in
+                        if candidate.kind != "unsupported" {
+                            Button { onSelect(candidate, page) } label: {
+                                XDriveIOSLocalPhotoTile(candidate: candidate)
+                            }
+                            .buttonStyle(.plain)
+                            .id("photo:\(candidate.id)")
+                        } else {
+                            placeholderTile.accessibilityHidden(true)
                         }
-                        .buttonStyle(.plain)
-                        .id("photo:\(candidate.id)")
                     }
                 }
             } else {
-                ProgressView("正在读取第 \(offset / 64 + 1) 组照片…")
-                    .frame(maxWidth: .infinity, minHeight: 108)
+                HStack {
+                    Text("正在读取第 \(offset / 64 + 1) 组照片…")
+                    Spacer()
+                    ProgressView()
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                // Match the number of real grid cells before PhotoKit finishes.
+                // A one-row spinner would shift the entire scroll offset later.
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 95, maximum: 150), spacing: 3)], spacing: 3) {
+                    ForEach(offset..<min(offset + 64, expectedTotal), id: \.self) { _ in
+                        placeholderTile.accessibilityHidden(true)
+                    }
+                }
             }
         }
         .padding(.horizontal, 12)
