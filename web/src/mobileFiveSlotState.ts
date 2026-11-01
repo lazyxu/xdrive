@@ -161,6 +161,56 @@ export function xDriveSetMobileLauncherSearch(
   return base.launcherSearch === launcherSearch ? base : { ...base, launcherSearch }
 }
 
+/** Only synchronous All/Mine surfaces use pixel scroll snapshots. The
+ * virtualized Gallery/Files keep their existing authoritative row anchors. */
+export type XDriveMobileOverviewScrollSlot = 'all' | 'mine'
+export type XDriveMobileOverviewScrollMemory = {
+  ownerScope: string
+  viewportWidth: number
+  all: number
+  mine: number
+}
+
+export function xDriveMobileOverviewScrollSlot(
+  route: XDriveWebAppRoute,
+): XDriveMobileOverviewScrollSlot | null {
+  if (route.app !== 'overview') return null
+  return route.params.section === 'mine' ? 'mine' : 'all'
+}
+
+export function xDriveInitialMobileOverviewScroll(
+  ownerScope = '', viewportWidth = 0,
+): XDriveMobileOverviewScrollMemory {
+  return { ownerScope, viewportWidth, all: 0, mine: 0 }
+}
+
+/** No session storage, unverified Owner reads, or cross-breakpoint replays. */
+export function xDriveMobileOverviewScrollOffset(
+  memory: XDriveMobileOverviewScrollMemory,
+  ownerScope: string,
+  viewportWidth: number,
+  slot: XDriveMobileOverviewScrollSlot,
+): number {
+  return ownerScope && memory.ownerScope === ownerScope &&
+    Number.isSafeInteger(viewportWidth) && viewportWidth > 0 &&
+    memory.viewportWidth === viewportWidth ? memory[slot] : 0
+}
+
+export function xDriveRememberMobileOverviewScroll(
+  previous: XDriveMobileOverviewScrollMemory,
+  ownerScope: string,
+  viewportWidth: number,
+  slot: XDriveMobileOverviewScrollSlot,
+  scrollTop: number,
+): XDriveMobileOverviewScrollMemory {
+  const base = previous.ownerScope === ownerScope && previous.viewportWidth === viewportWidth
+    ? previous : xDriveInitialMobileOverviewScroll(ownerScope, viewportWidth)
+  if (!ownerScope || !Number.isSafeInteger(viewportWidth) || viewportWidth <= 0 ||
+      !Number.isFinite(scrollTop) || scrollTop < 0) return base
+  const offset = Math.min(10_000_000, Math.round(scrollTop))
+  return base[slot] === offset ? base : { ...base, [slot]: offset }
+}
+
 export function xDriveMobileRouteForSlot(
   memory: XDriveMobileNavigationMemory,
   slot: XDriveMobileSlot,

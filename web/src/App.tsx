@@ -102,7 +102,7 @@ import { useXDriveWebAppRuntime, xDriveCreateWebAppBrowseSession, xDriveReadWebA
 import { xDriveWebAppRouteForWorkspaceKey, xDriveWebAppWorkspaceKey } from './webApps'
 import { XDriveMobileAllLauncher, XDriveMobileFiveSlotNavigation, XDriveMobileMinePage, xDriveBrowserMobileDestinations, xDriveBrowserMobileGalleryShortcuts } from './MobileFiveSlotNavigation'
 import { xDriveMobileLauncherSections, xDriveMobileLauncherGalleryRoute } from './mobileLauncherSections'
-import { xDriveInitialMobileNavigation, xDriveMobileFeatureParentRoute, xDriveMobileRouteForSlot, xDriveMobileSlotForRoute, xDriveRememberMobileNavigation, xDriveToggleMobileFavorite, xDriveSetMobileLauncherSearch, xDriveRememberMobileGalleryAlbum, xDriveMobileGallerySectionForViewer, xDriveMobileViewerSafeFallbackRoute, xDriveMobileAlbumOwnsBack, xDriveMobileMapFocused, xDriveMobileManualFocusTarget, xDriveMobileManualFocusActive } from './mobileFiveSlotState'
+import { xDriveInitialMobileNavigation, xDriveMobileFeatureParentRoute, xDriveMobileRouteForSlot, xDriveMobileSlotForRoute, xDriveRememberMobileNavigation, xDriveToggleMobileFavorite, xDriveSetMobileLauncherSearch, xDriveRememberMobileGalleryAlbum, xDriveMobileGallerySectionForViewer, xDriveMobileViewerSafeFallbackRoute, xDriveMobileAlbumOwnsBack, xDriveMobileMapFocused, xDriveMobileManualFocusTarget, xDriveMobileManualFocusActive, xDriveInitialMobileOverviewScroll, xDriveMobileOverviewScrollSlot, xDriveMobileOverviewScrollOffset, xDriveRememberMobileOverviewScroll } from './mobileFiveSlotState'
 import type { XDriveMobileSlot, XDriveMobileManualFocusSelection } from './mobileFiveSlotState'
 import { createWebMediaGalleryDataSource } from './mediaGalleryAdapter'
 import { XDriveRoutedGalleryThumbnailBridge } from './routedGalleryThumbnailBridge'
@@ -1244,6 +1244,36 @@ function FileManager({
     const main = document.querySelector<HTMLElement>('[data-xdrive-workspace-background] main')
     if (main) main.scrollTop = 0
   }, [appView])
+  // All and Mine share the overview workspace host. They must not inherit
+  // each other's scrollTop, even though appView itself does not change.
+  // Gallery/Files are virtualized; their own row/Node anchors are untouched.
+  const mobileOverviewScrollRef = useRef(xDriveInitialMobileOverviewScroll())
+  const mobileOverviewSlot = compactWorkspace ? xDriveMobileOverviewScrollSlot(route) : null
+  useLayoutEffect(() => {
+    const viewportWidth = window.innerWidth
+    const previous = mobileOverviewScrollRef.current
+    if (previous.ownerScope !== mobileOwnerScope ||
+        previous.viewportWidth !== viewportWidth) {
+      mobileOverviewScrollRef.current = xDriveInitialMobileOverviewScroll(
+        mobileOwnerScope, viewportWidth,
+      )
+    }
+    if (!mobileOverviewSlot) return
+    const main = document.querySelector<HTMLElement>('[data-xdrive-workspace-background] main')
+    if (!main) return
+    const offset = xDriveMobileOverviewScrollOffset(mobileOverviewScrollRef.current,
+      mobileOwnerScope, viewportWidth, mobileOverviewSlot)
+    if (Math.abs(main.scrollTop - offset) > 1) main.scrollTop = offset
+    const onScroll = () => {
+      if (!main.isConnected || window.innerWidth !== viewportWidth) return
+      mobileOverviewScrollRef.current = xDriveRememberMobileOverviewScroll(
+        mobileOverviewScrollRef.current, mobileOwnerScope, viewportWidth,
+        mobileOverviewSlot, main.scrollTop,
+      )
+    }
+    main.addEventListener('scroll', onScroll, { passive: true })
+    return () => main.removeEventListener('scroll', onScroll)
+  }, [compactWorkspace, mobileOwnerScope, mobileOverviewSlot])
   const viewerActive = Boolean(xDriveWebAppViewer(route.app))
   // A routed Viewer overlays the still-mounted Gallery, so do not send an
   // undefined initialSection and silently navigate its photo wall to Library.
@@ -2436,6 +2466,17 @@ function FileManager({
     return destination ? [{ route: recent, label: destination.label, icon: destination.icon }] : []
   })
   const latestMobileDynamic = mobileRecentDestinations[0]
+  // Capture the exact visible position before synchronous bottom-tab or
+  // launcher navigation; passive scroll events cover browser Back/Forward.
+  const saveVisibleMobileOverviewScroll = () => {
+    if (!mobileOverviewSlot || !mobileOwnerScope) return
+    const main = document.querySelector<HTMLElement>('[data-xdrive-workspace-background] main')
+    if (!main) return
+    mobileOverviewScrollRef.current = xDriveRememberMobileOverviewScroll(
+      mobileOverviewScrollRef.current, mobileOwnerScope, window.innerWidth,
+      mobileOverviewSlot, main.scrollTop,
+    )
+  }
   const selectMobileLauncher = (destination: string) => {
     const galleryShortcut = xDriveMobileLauncherGalleryRoute(destination)
     const next = galleryShortcut ?? xDriveWebAppRouteForWorkspaceKey(destination)
@@ -2444,6 +2485,7 @@ function FileManager({
     const allowedWorkspace = galleryShortcut ? 'gallery' : destination
     if (next && mobileLauncherDestinations.some(item => item.key === destination) &&
         xDriveWorkspaceNavigationAllowed(allowedWorkspace, serverAdminVerified)) {
+      if (mobileOverviewSlot) saveVisibleMobileOverviewScroll()
       launchWebApp(next)
     }
   }
@@ -2453,7 +2495,10 @@ function FileManager({
     // History entry. Safari's Back swipe should reach the real previous route.
     // Compare canonical hashes, not route object identity or raw params order.
     if (next) {
-      if (xDriveWebAppHash(next) !== xDriveWebAppHash(route)) launchWebApp(next)
+      if (xDriveWebAppHash(next) !== xDriveWebAppHash(route)) {
+        if (mobileOverviewSlot) saveVisibleMobileOverviewScroll()
+        launchWebApp(next)
+      }
     } else setMobileRecentOpen(true)
   }
   const mobileParent = xDriveMobileFeatureParentRoute(route)
