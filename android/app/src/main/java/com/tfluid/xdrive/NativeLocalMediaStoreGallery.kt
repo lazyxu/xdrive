@@ -61,6 +61,7 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
@@ -169,6 +170,11 @@ internal fun NativeLocalMediaStoreGallery(
     }
     var permissionEpoch by remember(sessionId, cache) { mutableIntStateOf(0) }
     val libraryEpoch = cache.generation.intValue
+    var dateScale by wall.dateScale
+    var requestedDateScale by remember(sessionId, cache, albumsOnly, selectedAlbum?.id, libraryEpoch) {
+        mutableStateOf<String?>(null)
+    }
+    val dateJumpScope = rememberCoroutineScope()
     val allowed = remember(sessionId, permissionEpoch, libraryEpoch) {
         nativePhotoAccess(context)
     }
@@ -372,6 +378,28 @@ internal fun NativeLocalMediaStoreGallery(
             fullVideos = fullVideos,
             onRequest = { permissionPrompt.launch(nativePhotoPermissions()) },
         )
+        if (!albumsOnly || selectedAlbum != null) {
+            NativeLocalDateWindowDock(
+                selectedScale = dateScale,
+                enabled = items.isNotEmpty() && !busy && failure == null,
+                onPick = { scale ->
+                    if (scale == "all") {
+                        requestedDateScale = null
+                        dateScale = "all"
+                        dateJumpScope.launch { photoGridState.scrollToItem(0) }
+                    } else {
+                        requestedDateScale = scale
+                    }
+                },
+            )
+            if (items.isNotEmpty()) Text(
+                "按加入时间定位 · 仅当前已加载的 ${items.size} 项；继续加载可扩展日期范围",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(horizontal = 12.dp)
+                    .testTag("native-local-date-window-scope"),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         if (failure != null) {
             Text(failure.orEmpty(), color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.padding(horizontal = 12.dp)
@@ -483,6 +511,29 @@ internal fun NativeLocalMediaStoreGallery(
                     }
             } else Spacer(Modifier.weight(1f))
         }
+    }
+    val datePicker = requestedDateScale
+    if (datePicker != null && selectedMedia == null &&
+        (!albumsOnly || selectedAlbum != null)) {
+        val groups = remember(items, datePicker) {
+            nativeLocalDateWindowGroups(items.map { it.addedAtSeconds }, datePicker)
+        }
+        NativeLocalDateWindowPicker(
+            scale = datePicker,
+            groups = groups,
+            loadedCount = items.size,
+            onDismiss = { requestedDateScale = null },
+            onChoose = { group ->
+                // A group is scoped only to this exact current MediaStore
+                // window. The provider cursor and original media order stay
+                // untouched, including the separate automatic page gate.
+                if (group.firstIndex in items.indices) {
+                    dateScale = datePicker
+                    requestedDateScale = null
+                    dateJumpScope.launch { photoGridState.scrollToItem(group.firstIndex) }
+                }
+            },
+        )
     }
     selectedMedia?.let { asset ->
         val sourceKey = asset.viewerReturnKey()

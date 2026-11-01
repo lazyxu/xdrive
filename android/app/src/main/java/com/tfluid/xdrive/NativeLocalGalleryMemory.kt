@@ -25,6 +25,8 @@ internal class NativeLocalGalleryWallMemory {
     val loaded: MutableState<Boolean> = mutableStateOf(false)
     val revision: MutableIntState = mutableIntStateOf(0)
     val gridState: MutableState<LazyGridState> = mutableStateOf(LazyGridState())
+    /** Only the UI-selected scale; never a persisted MediaStore or Server index. */
+    val dateScale: MutableState<String> = mutableStateOf("all")
 
     private var albumId: String? = null
 
@@ -48,6 +50,7 @@ internal class NativeLocalGalleryWallMemory {
         consumedPageIntent.intValue = 0
         loaded.value = false
         gridState.value = LazyGridState()
+        dateScale.value = "all"
     }
 }
 
