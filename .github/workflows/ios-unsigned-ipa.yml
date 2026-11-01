@@ -215,6 +215,7 @@ jobs:
             desktop/tests/ios-native-cloud-still-bounded-preview.cjs \
             desktop/tests/ios-native-photo-auto-ack-enable-guard.cjs \
             desktop/tests/ios-native-photo-detail-permission-fence.cjs \
+            desktop/tests/ios-native-local-viewer-on-demand-icloud.cjs \
             desktop/tests/ios-native-photo-cloud-confirmed-refresh.cjs \
             desktop/tests/ios-native-cloud-preview-scene-lifecycle.cjs
 

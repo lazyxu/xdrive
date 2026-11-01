@@ -87,10 +87,15 @@ final class XDriveIOSLocalPhotoDetailModel: ObservableObject {
     @Published var live: PHLivePhoto?
     @Published var player: AVPlayer?
     @Published var message: String?
+    // iCloud originals are requested only after a direct tap in the Viewer.
+    // Thumbnail/wall requests and the automatic backup runner remain unchanged.
+    @Published private(set) var needsICloudFetch = false
+    @Published private(set) var downloadingFromICloud = false
+    private var pendingICloudParts = Set<String>()
     private var requests: [PHImageRequestID] = []
     private var epoch = UUID()
 
-    func load(_ candidate: XDrivePhotoKitScanCandidate) {
+    func load(_ candidate: XDrivePhotoKitScanCandidate, allowICloud: Bool = false) {
         cancel()
         let token = epoch
         guard [.authorized, .limited].contains(
@@ -101,10 +106,15 @@ final class XDriveIOSLocalPhotoDetailModel: ObservableObject {
             message = "照片授权已更改，或这张原件已不可访问。"
             return
         }
+        if allowICloud {
+            pendingICloudParts.insert("primary")
+            if candidate.isLive { pendingICloudParts.insert("live") }
+            downloadingFromICloud = true
+        }
 
         if candidate.kind == "video" {
             let options = PHVideoRequestOptions()
-            options.isNetworkAccessAllowed = false
+            options.isNetworkAccessAllowed = allowICloud
             let id = PHImageManager.default().requestAVAsset(
                 forVideo: asset, options: options
             ) { [weak self] movie, _, _ in
@@ -115,15 +125,20 @@ final class XDriveIOSLocalPhotoDetailModel: ObservableObject {
                           ) else { return }
                     if let movie {
                         self.player = AVPlayer(playerItem: AVPlayerItem(asset: movie))
+                        self.needsICloudFetch = false
                     } else {
-                        self.message = "本机视频不可读取（可能仅保存在 iCloud）。"
+                        self.needsICloudFetch = true
+                        self.message = allowICloud ?
+                            "从 iCloud 获取当前视频失败，可检查网络后重试。" :
+                            "本机视频不可读取（可能仅保存在 iCloud）。"
                     }
+                    self.finishICloudPart("primary", token: token)
                 }
             }
             requests.append(id)
         } else {
             let options = PHImageRequestOptions()
-            options.isNetworkAccessAllowed = false
+            options.isNetworkAccessAllowed = allowICloud
             options.deliveryMode = .highQualityFormat
             let id = PHImageManager.default().requestImage(
                 for: asset, targetSize: CGSize(width: 1800, height: 1800),
@@ -134,6 +149,7 @@ final class XDriveIOSLocalPhotoDetailModel: ObservableObject {
                 // Never leave a permanent spinner for this terminal result.
                 let degraded = info?[PHImageResultIsDegradedKey] as? Bool == true
                 let cancelled = info?[PHImageCancelledKey] as? Bool == true
+                let inCloud = info?[PHImageResultIsInCloudKey] as? Bool == true
                 Task { @MainActor [weak self] in
                     guard let self, self.epoch == token,
                           [.authorized, .limited].contains(
@@ -142,26 +158,47 @@ final class XDriveIOSLocalPhotoDetailModel: ObservableObject {
                     if let picture {
                         self.still = picture
                         self.message = nil
-                    } else if !degraded && !cancelled &&
-                              self.still == nil && self.live == nil {
-                        self.message = "本机照片暂不可读取（可能仅保存在 iCloud）。"
+                        if !degraded && !candidate.isLive {
+                            self.needsICloudFetch = false
+                        }
+                    } else if !degraded && !cancelled && self.live == nil {
+                        self.needsICloudFetch = true
+                        if self.still == nil {
+                            self.message = allowICloud ?
+                                "从 iCloud 获取当前照片失败，可检查网络后重试。" :
+                                "本机照片暂不可读取（可能仅保存在 iCloud）。"
+                        }
                     }
+                    if !allowICloud && inCloud { self.needsICloudFetch = true }
+                    if !degraded { self.finishICloudPart("primary", token: token) }
                 }
             }
             requests.append(id)
             if candidate.isLive {
                 let liveOptions = PHLivePhotoRequestOptions()
-                liveOptions.isNetworkAccessAllowed = false
+                liveOptions.isNetworkAccessAllowed = allowICloud
                 let liveID = PHImageManager.default().requestLivePhoto(
                     for: asset, targetSize: CGSize(width: 1800, height: 1800),
                     contentMode: .aspectFit, options: liveOptions
-                ) { [weak self] photo, _ in
+                ) { [weak self] photo, info in
+                    let degraded = info?[PHImageResultIsDegradedKey] as? Bool == true
+                    let cancelled = info?[PHImageCancelledKey] as? Bool == true
                     Task { @MainActor [weak self] in
                         guard let self, self.epoch == token,
                               [.authorized, .limited].contains(
                                 PHPhotoLibrary.authorizationStatus(for: .readWrite)
                               ) else { return }
-                        if let photo { self.live = photo }
+                        if let photo {
+                            self.live = photo
+                            self.needsICloudFetch = false
+                            self.message = nil
+                        } else if !degraded && !cancelled {
+                            self.needsICloudFetch = true
+                            if allowICloud {
+                                self.message = "iCloud 实况动态资源暂不可用，仍可查看静态照片并重试。"
+                            }
+                        }
+                        if !degraded { self.finishICloudPart("live", token: token) }
                     }
                 }
                 requests.append(liveID)
@@ -169,8 +206,17 @@ final class XDriveIOSLocalPhotoDetailModel: ObservableObject {
         }
     }
 
+    private func finishICloudPart(_ part: String, token: UUID) {
+        guard epoch == token else { return }
+        pendingICloudParts.remove(part)
+        downloadingFromICloud = !pendingICloudParts.isEmpty
+    }
+
     func cancel() {
         epoch = UUID()
+        pendingICloudParts.removeAll()
+        downloadingFromICloud = false
+        needsICloudFetch = false
         player?.pause()
         for id in requests { PHImageManager.default().cancelImageRequest(id) }
         requests = []
@@ -254,6 +300,7 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
     @State private var activeItem: XDrivePhotoKitScanCandidate?
     @State private var showsStaticStill = false
     @State private var livePlaybackRequest: UUID?
+    @State private var requestedICloudForCurrentItem = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var phase
     @StateObject private var model = XDriveIOSLocalPhotoDetailModel()
@@ -298,9 +345,29 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
         // admitting a replacement. No hidden wall/next-page fetch or upload.
         showsStaticStill = false
         livePlaybackRequest = nil
+        requestedICloudForCurrentItem = false
         model.cancel()
         activeItem = next
         onViewed?(next)
+    }
+
+    private func loadCurrentFromICloud() {
+        // The action must never fetch an older deleted/edited/restricted ID.
+        guard currentPageAuthorized,
+              let asset = PHAsset.fetchAssets(
+                withLocalIdentifiers: [viewed.id], options: nil
+              ).firstObject,
+              asset.creationDate == viewed.capturedAt,
+              asset.modificationDate == viewed.modifiedAt,
+              (viewed.kind == "image" && asset.mediaType == .image &&
+               viewed.isLive == asset.mediaSubtypes.contains(.photoLive)) ||
+              (viewed.kind == "video" && asset.mediaType == .video)
+        else {
+            model.cancel()
+            return
+        }
+        requestedICloudForCurrentItem = true
+        model.load(viewed, allowICloud: true)
     }
 
     var body: some View {
@@ -374,25 +441,41 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                 viewed.kind == "video" ? "视频" : "照片")
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom) {
-                if loadedItems.count > 1 {
-                    HStack(spacing: 12) {
-                        Button("上一项") { showNeighbor(-1) }
-                            .disabled(neighbor(-1) == nil)
-                            .accessibilityIdentifier("native-ios-local-viewer-previous")
-                        Spacer(minLength: 4)
-                        Text(loadedPosition.map {
-                            "\($0 + 1)/\(loadedItems.count)（已加载）"
-                        } ?? "当前媒体已变化")
-                            .font(.caption).monospacedDigit()
-                            .accessibilityIdentifier("native-ios-local-viewer-position")
-                        Spacer(minLength: 4)
-                        Button("下一项") { showNeighbor(1) }
-                            .disabled(neighbor(1) == nil)
-                            .accessibilityIdentifier("native-ios-local-viewer-next")
+                if model.needsICloudFetch || model.downloadingFromICloud ||
+                   loadedItems.count > 1 {
+                    VStack(spacing: 8) {
+                        if model.downloadingFromICloud {
+                            ProgressView("正在从 iCloud 获取当前原件…")
+                                .accessibilityIdentifier("native-ios-local-viewer-icloud-progress")
+                        } else if model.needsICloudFetch && currentPageAuthorized {
+                            Button(requestedICloudForCurrentItem ?
+                                   "重试从 iCloud 加载当前原件" : "从 iCloud 加载当前原件") {
+                                loadCurrentFromICloud()
+                            }
+                            .frame(minHeight: 44)
+                            .accessibilityIdentifier("native-ios-local-viewer-icloud-load")
+                        }
+                        if loadedItems.count > 1 {
+                            HStack(spacing: 12) {
+                                Button("上一项") { showNeighbor(-1) }
+                                    .disabled(neighbor(-1) == nil)
+                                    .accessibilityIdentifier("native-ios-local-viewer-previous")
+                                Spacer(minLength: 4)
+                                Text(loadedPosition.map {
+                                    "\($0 + 1)/\(loadedItems.count)（已加载）"
+                                } ?? "当前媒体已变化")
+                                    .font(.caption).monospacedDigit()
+                                    .accessibilityIdentifier("native-ios-local-viewer-position")
+                                Spacer(minLength: 4)
+                                Button("下一项") { showNeighbor(1) }
+                                    .disabled(neighbor(1) == nil)
+                                    .accessibilityIdentifier("native-ios-local-viewer-next")
+                            }
+                            .accessibilityIdentifier("native-ios-local-viewer-neighbors")
+                        }
                     }
                     .padding(.horizontal, 12).padding(.vertical, 6)
                     .background(.ultraThinMaterial)
-                    .accessibilityIdentifier("native-ios-local-viewer-neighbors")
                 }
             }
             .toolbar {
@@ -416,6 +499,7 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
             if state != .active {
                 showsStaticStill = false
                 livePlaybackRequest = nil
+                requestedICloudForCurrentItem = false
                 // Remove still/Live/video from the app-switcher snapshot and
                 // fence any asynchronous PhotoKit callbacks immediately.
                 model.cancel()
