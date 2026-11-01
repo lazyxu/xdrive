@@ -21,7 +21,7 @@ class AuthToggleUiTest {
             XDriveTheme {
                 UnifiedLoginForm(
                     state = formState,
-                    login = { _, allowHttp, _, _, _, remember ->
+                    login = { _, allowHttp, _, _, _, remember, _ ->
                         submitted = allowHttp to remember
                     },
                     retrySavedSession = { savedRestoreRetries++ },
