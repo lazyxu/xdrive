@@ -46,7 +46,9 @@ enum XDriveIOSNativeOwnerMapSelectionPolicy {
     /// Choose a bounded number of canonical Owner GPS places for visual
     /// photo covers. Keep SDK/aggregate identities out of the photo Reader,
     /// prioritize the actual signed photo count, and reject duplicates.
-    static let maximumPhotoCovers = 12
+    // Cover every canonical Owner place in this signed viewport (max 64).
+    // Aggregated region IDs remain visual-only; no broad photo queries.
+    static let maximumPhotoCovers = XDriveIOSNativeOwnerMapOverviewPolicy.maximumCells
 
     static func prioritizedPhotoCovers(
         _ places: [XDriveIOSNativeOwnerMapFacet]
