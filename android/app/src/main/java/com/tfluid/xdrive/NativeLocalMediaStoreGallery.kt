@@ -202,6 +202,12 @@ internal fun NativeLocalMediaStoreGallery(
     }
     var permissionEpoch by remember(sessionId, cache) { mutableIntStateOf(0) }
     val libraryEpoch = cache.generation.intValue
+    val jumpEpoch = wall.jumpEpoch.intValue
+    var fullDateIndex by wall.fullDateIndex
+    var fullDateBusy by wall.fullDateBusy
+    var fullDateScanned by wall.fullDateScanned
+    var fullDateError by wall.fullDateError
+    var fullDateRequest by wall.fullDateRequest
     var dateScale by wall.dateScale
     var requestedDateScale by remember(sessionId, cache, albumsOnly, selectedAlbum?.id, libraryEpoch) {
         mutableStateOf<String?>(null)
@@ -281,7 +287,7 @@ internal fun NativeLocalMediaStoreGallery(
     }
 
     LaunchedEffect(querySignal, sessionId, albumsOnly, selectedAlbum?.id,
-        permissionEpoch, libraryEpoch, allowed) {
+        permissionEpoch, libraryEpoch, allowed, jumpEpoch) {
         selectedMedia = null
         val sameOrigin = viewerReturn?.let { anchor ->
             anchor.generation == libraryEpoch && anchor.albumsOnly == albumsOnly &&
@@ -297,7 +303,11 @@ internal fun NativeLocalMediaStoreGallery(
         // app background, or logout before any stale tile can be reused.
         if (albumsOnly && selectedAlbum == null && albums != null) return@LaunchedEffect
         if ((!albumsOnly || selectedAlbum != null) && wall.loaded.value) return@LaunchedEffect
-        wall.clear()
+        // A date jump already reset only the wall; clearing here would erase
+        // the verified full-prefix group index and its per-group anchors.
+        if (jumpEpoch == 0) wall.clear()
+        val pageStartAfter = wall.jumpAfter.value
+        val pageStartOffset = wall.jumpOffset.intValue
         val readRevision = wall.revision.intValue
         busy = true
         try {
@@ -307,13 +317,15 @@ internal fun NativeLocalMediaStoreGallery(
                 albums = page
             } else {
                 val page = NativeLocalMediaStore.pageAfter(resolver,
-                    limit = NativeLocalMediaStore.PHOTO_PAGE_SIZE,
+                    after = pageStartAfter, limit = NativeLocalMediaStore.PHOTO_PAGE_SIZE,
                     albumId = selectedAlbum?.id, cancellationSignal = querySignal)
                 if (wall.revision.intValue != readRevision) return@LaunchedEffect
                 items = page
-                nextPageKey = page.lastOrNull()?.pageKey
-                scannedCount = page.size
-                exhausted = page.size < NativeLocalMediaStore.PHOTO_PAGE_SIZE
+                firstOffset = pageStartOffset
+                nextPageKey = page.lastOrNull()?.pageKey ?: pageStartAfter
+                scannedCount = pageStartOffset + page.size
+                exhausted = page.size < NativeLocalMediaStore.PHOTO_PAGE_SIZE ||
+                    scannedCount >= NativeLocalMediaStore.MAX_SCAN
             }
             if (wall.revision.intValue == readRevision) wall.loaded.value = true
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -331,12 +343,51 @@ internal fun NativeLocalMediaStoreGallery(
             if (wall.revision.intValue == readRevision) busy = false
         }
     }
+    // Full date metadata is built only after the user explicitly taps the
+    // index action. No startup/Viewer/album navigation triggers 115k scanning.
+    LaunchedEffect(querySignal, fullDateRequest, sessionId, albumsOnly,
+        selectedAlbum?.id, permissionEpoch, libraryEpoch, allowed) {
+        if (fullDateRequest == 0 || !allowed || !wall.loaded.value ||
+            fullDateBusy || busy || failure != null || selectedMedia != null)
+            return@LaunchedEffect
+        val readRevision = wall.revision.intValue
+        fullDateBusy = true
+        fullDateError = null
+        fullDateScanned = 0
+        try {
+            val index = scanNativeLocalFullDateIndex(
+                resolver, selectedAlbum?.id, querySignal) { count ->
+                withContext(Dispatchers.Main.immediate) {
+                    if (wall.revision.intValue == readRevision &&
+                        !querySignal.isCanceled) fullDateScanned = count
+                }
+            }
+            if (wall.revision.intValue == readRevision && !querySignal.isCanceled) {
+                fullDateIndex = index
+                fullDateScanned = index.scanned
+            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: OperationCanceledException) {
+            if (!querySignal.isCanceled && wall.revision.intValue == readRevision)
+                fullDateError = "本机日期索引扫描已中断；现有照片不受影响。"
+        } catch (_: SecurityException) {
+            if (wall.revision.intValue == readRevision)
+                fullDateError = "照片或视频读取权限已变化，请返回重新授权。"
+        } catch (_: Exception) {
+            if (wall.revision.intValue == readRevision)
+                fullDateError = "无法读取当前授权范围的日期索引，请手动重试。"
+        } finally {
+            if (wall.revision.intValue == readRevision) fullDateBusy = false
+        }
+    }
     LaunchedEffect(querySignal, pageIntent, sessionId, albumsOnly, selectedAlbum?.id,
         permissionEpoch, libraryEpoch, allowed) {
         // Re-entering an inactive tab must not accidentally request another
         // page merely because its old pageIntent was already consumed.
         if (pageIntent == 0 || pageIntent == consumedPageIntent || !wall.loaded.value ||
-            !allowed || exhausted || busy || failure != null) return@LaunchedEffect
+            !allowed || exhausted || busy || fullDateBusy ||
+            failure != null) return@LaunchedEffect
         consumedPageIntent = pageIntent
         val readRevision = wall.revision.intValue
         busy = true
@@ -392,7 +443,7 @@ internal fun NativeLocalMediaStoreGallery(
                 loadedCount = items.size,
                 cursor = nextPageKey,
                 canFetch = allowed && wall.loaded.value && selectedMedia == null &&
-                    !busy && failure == null && !exhausted &&
+                    !busy && !fullDateBusy && failure == null && !exhausted &&
                     pageIntent == consumedPageIntent,
             )
         }.collect { viewport ->
@@ -441,24 +492,57 @@ internal fun NativeLocalMediaStoreGallery(
         if (!albumsOnly || selectedAlbum != null) {
             NativeLocalDateWindowDock(
                 selectedScale = dateScale,
-                enabled = items.isNotEmpty() && !busy && failure == null,
+                enabled = items.isNotEmpty() && !busy && !fullDateBusy && failure == null,
                 onPick = { scale ->
                     if (scale == "all") {
                         requestedDateScale = null
                         dateScale = "all"
-                        dateJumpScope.launch { photoGridState.scrollToItem(0) }
-                    } else {
-                        requestedDateScale = scale
-                    }
+                        if (nativeLocalMustRestartNewest(
+                                firstOffset, wall.jumpOffset.intValue,
+                                wall.jumpAfter.value)) {
+                            viewerReturn = null
+                            wall.jumpTo(null, 0)
+                        } else dateJumpScope.launch { photoGridState.scrollToItem(0) }
+                    } else requestedDateScale = scale
                 },
             )
             if (items.isNotEmpty()) Text(
-                "按加入时间定位 · 仅当前已加载的 ${items.size} 项；继续加载可扩展日期范围",
+                "按加入时间定位 · 当前显示 ${items.size} 项",
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(horizontal = 12.dp)
                     .testTag("native-local-date-window-scope"),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            TextButton(
+                onClick = {
+                    fullDateIndex = null
+                    fullDateError = null
+                    fullDateRequest++
+                },
+                enabled = wall.loaded.value && !busy && !fullDateBusy &&
+                    selectedMedia == null && failure == null,
+                modifier = Modifier.padding(horizontal = 12.dp).heightIn(min = 48.dp)
+                    .testTag("native-local-full-date-scan"),
+            ) { Text(if (fullDateIndex == null) "扫描当前授权范围的全部日期"
+                else "重新扫描当前授权范围的日期") }
+            if (fullDateBusy) {
+                LinearProgressIndicator(Modifier.fillMaxWidth()
+                    .testTag("native-local-full-date-progress"))
+                Text("已扫描 ${fullDateScanned} 项；不读取照片原件",
+                    style = MaterialTheme.typography.bodySmall)
+            }
+            if (fullDateIndex != null) Text(
+                if (fullDateIndex!!.complete)
+                    "日期索引已覆盖当前授权范围 ${fullDateIndex!!.scanned} 项（按加入时间）"
+                else "仅覆盖前 ${fullDateIndex!!.scanned} 项；上限之外的日期未索引",
+                modifier = Modifier.padding(horizontal = 12.dp)
+                    .testTag("native-local-full-date-status"),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            if (fullDateError != null) Text(fullDateError.orEmpty(),
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(horizontal = 12.dp)
+                    .testTag("native-local-full-date-error"))
         }
         if (failure != null) {
             Text(failure.orEmpty(), color = MaterialTheme.colorScheme.error,
@@ -575,25 +659,39 @@ internal fun NativeLocalMediaStoreGallery(
     val datePicker = requestedDateScale
     if (datePicker != null && selectedMedia == null &&
         (!albumsOnly || selectedAlbum != null)) {
-        val groups = remember(items, datePicker) {
-            nativeLocalDateWindowGroups(items.map { it.addedAtSeconds }, datePicker)
+        val indexed = fullDateIndex
+        if (indexed != null && !fullDateBusy) {
+            NativeLocalFullDatePicker(
+                scale = datePicker, index = indexed,
+                onDismiss = { requestedDateScale = null },
+                onChoose = { group ->
+                    // Keyset anchors originate only from the same current
+                    // authorized snapshot; a stale sheet cannot jump sources.
+                    if (wall.fullDateIndex.value === indexed &&
+                        group.firstIndex in 0 until indexed.scanned && !busy) {
+                        dateScale = datePicker
+                        requestedDateScale = null
+                        viewerReturn = null
+                        wall.jumpTo(group.before, group.firstIndex)
+                    }
+                },
+            )
+        } else {
+            val groups = remember(items, datePicker) {
+                nativeLocalDateWindowGroups(items.map { it.addedAtSeconds }, datePicker)
+            }
+            NativeLocalDateWindowPicker(
+                scale = datePicker, groups = groups, loadedCount = items.size,
+                onDismiss = { requestedDateScale = null },
+                onChoose = { group ->
+                    if (group.firstIndex in items.indices) {
+                        dateScale = datePicker
+                        requestedDateScale = null
+                        dateJumpScope.launch { photoGridState.scrollToItem(group.firstIndex) }
+                    }
+                },
+            )
         }
-        NativeLocalDateWindowPicker(
-            scale = datePicker,
-            groups = groups,
-            loadedCount = items.size,
-            onDismiss = { requestedDateScale = null },
-            onChoose = { group ->
-                // A group is scoped only to this exact current MediaStore
-                // window. The provider cursor and original media order stay
-                // untouched, including the separate automatic page gate.
-                if (group.firstIndex in items.indices) {
-                    dateScale = datePicker
-                    requestedDateScale = null
-                    dateJumpScope.launch { photoGridState.scrollToItem(group.firstIndex) }
-                }
-            },
-        )
     }
     selectedMedia?.let { asset ->
         val sourceKey = asset.viewerReturnKey()
@@ -754,6 +852,7 @@ internal fun NativeLocalMediaViewer(
                     modifier = Modifier.heightIn(min = 48.dp)
                         .testTag("native-local-backup-request"),
                 ) { Text("备份这一项原件") }
+                NativeLocalPhotoShareAction(asset)
                 NativeLocalViewerLoadedNavigation(
                     loadedPosition, loadedCount, onPrevious, onNext)
                 NativeLocalMotionControl(

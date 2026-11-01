@@ -134,3 +134,19 @@ test('cloud initial player status recovery coexists with exported original actio
   assert.match(viewer, /XDriveIOSNativeAVPlayerStatusObserver\(/);
   assert.match(viewer, /@StateObject private var exporter = XDriveIOSNativeFilesExportModel\(\)/);
 });
+
+
+test('native backed-up-original Viewer preserves PhotoKit restore alongside AVPlayer retries and original export', () => {
+  const full = src('ios/XDriveIOS/NativeCloudOriginalGallery.swift');
+  const view = full.slice(full.indexOf('struct XDriveIOSNativeCloudOriginalPreview: View'),
+    full.indexOf('/// SwiftUI\'s ForEach identity'));
+  assert.match(view, /private func restoreCurrentOriginalToPhotos\(\)/);
+  assert.match(view, /native-ios-cloud-original-save-to-photos/);
+  assert.match(view, /private func cancelPhotoRestore\(\)/);
+  assert.match(view, /private func playbackLoadFailed\(_ failed: AVPlayerItem\)/);
+  assert.match(view, /XDriveIOSNativeAVPlayerStatusObserver\(/);
+  assert.match(view, /native-ios-original-player-reload/);
+  assert.match(view, /ShareLink\(item: file\.fileURL\)/);
+  assert.match(view, /XDriveIOSNativeFilesExportModel\(\)/);
+  assert.match(view, /owner: owner, epoch: epoch/);
+});
