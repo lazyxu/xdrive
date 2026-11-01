@@ -33,6 +33,15 @@ class NativeLocalMapIndexTest {
         })
     }
 
+    @Test fun readsOnlyCanonicalIso6709VideoLocations() {
+        assertEquals(37.4219 to -122.0840, nativeVideoGps("+37.4219-122.0840/"))
+        assertEquals(-33.86 to 151.2, nativeVideoGps("-33.86+151.200/"))
+        assertNull(nativeVideoGps("37.42,-122.08"))
+        assertNull(nativeVideoGps("+91.0+001.000/"))
+        assertNull(nativeVideoGps("+22.2+181.000/"))
+        assertNull(nativeVideoGps(null))
+    }
+
     @Test fun sameCellCountsMoreThanBoundedPreviewAndPreservesEarliestMembers() {
         var index = NativeLocalMapIndex<Int>()
         for (i in 0..142) index = index.append(35.0, 139.0, i)
