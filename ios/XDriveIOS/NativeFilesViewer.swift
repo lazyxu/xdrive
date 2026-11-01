@@ -399,7 +399,6 @@ struct XDriveIOSNativeFilesViewer: View {
                     failure = "当前格式不支持原生预览。可以在此下载原件并使用其他 App（导出上限 512 MiB）。"
                     exportFallbackEligible = true
                 case .tooLarge:
-                    failure = "文件超过本机预览上限。可返回列表，通过「管理」下载并导出原件（导出上限 512 MiB）。"
                     failure = "文件超过本机预览上限。可以在此下载原件并使用其他 App（导出上限 512 MiB）。"
                     exportFallbackEligible = true
                 case .malformed:
