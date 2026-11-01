@@ -411,4 +411,36 @@ assert.match(appSource, /xDriveMobileMapFocused\(route,/,
   'bottom nav must use actual map focus instead of route-only section')
 assert.doesNotMatch(launcherSource, /const \[search, setSearch\] = useState/,
   'Launcher must not own a query that is lost on tab unmount')
+
+// Run the actual App navigation-overlay effect and inspect its real React
+// dependency array. Safari browser Back/Forward may change a tab without a
+// click on the drawer; L2 map focus temporarily unmounts the five-slot bar.
+// Both transitions (and Owner changes) must retire the open modal before the
+// bar is mounted again. This is not a duplicated route-state implementation.
+{
+  const ast = ts.createSourceFile('App.tsx', appSource, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TSX)
+  const matches = []
+  function visit(node) {
+    if (ts.isCallExpression(node) && node.expression.getText(ast) === 'useEffect' &&
+        node.getText(ast).includes('setMobileRecentOpen(false)') &&
+        node.getText(ast).includes('setTransferPopoverOpen(false)')) matches.push(node)
+    ts.forEachChild(node, visit)
+  }
+  visit(ast)
+  assert.equal(matches.length, 1, 'only one App navigation-overlay lifecycle effect')
+  const [callback, dependencies] = matches[0].arguments
+  assert.ok(ts.isArrayLiteralExpression(dependencies), 'effect must declare explicit dependencies')
+  const keys = dependencies.elements.map(item => item.getText(ast))
+  for (const key of ['compactWorkspace', 'viewerActive', 'route', 'mobileOwnerScope',
+    'mobileMapVisibility.owner', 'mobileMapVisibility.visible']) {
+    assert.ok(keys.includes(key), key + ' must dismiss stale navigation drawers')
+  }
+  const closed = []
+  const originalEffect = new Function('setMobileRecentOpen', 'setTransferPopoverOpen',
+    'return (' + callback.getText(ast) + ')')(
+    value => closed.push(['recent', value]), value => closed.push(['transfer', value]))
+  originalEffect()
+  assert.deepEqual(closed, [['recent', false], ['transfer', false]],
+    'route/Owner/map transitions close both live navigation overlays')
+}
 console.log('mobile five-slot state: routes, Owner, Viewer, back, role, favorites and Owner-scoped search passed')
