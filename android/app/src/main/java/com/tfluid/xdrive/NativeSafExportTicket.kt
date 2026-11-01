@@ -1,5 +1,7 @@
 package com.tfluid.xdrive
 
+import com.tfluid.xdrive.core.DriveNode
+
 /** One in-memory ACTION_CREATE_DOCUMENT launch, not a stored URI or download
  * authorization. ActivityResult callbacks are asynchronous and cannot carry
  * the original app Owner, folder, file revision or session epoch. Keep the
@@ -19,6 +21,22 @@ internal class NativeSafExportTicket private constructor(
             if (validNativeSafExportPicker(state)) NativeSafExportTicket(state)
             else null
     }
+}
+
+/** Exact Owner Gallery photo Viewer can start the existing SAF document picker.
+ * Source identity must still match the currently loaded authenticated row:
+ * never admit Files-origin Viewers, an obsolete revision, or Node ID alone.
+ */
+internal fun nativeGalleryViewerExportEligible(
+    state: DriveState, node: DriveNode,
+): Boolean {
+    val item = state.galleryViewer ?: return false
+    return state.screen == Screen.GALLERY && state.galleryLoaded &&
+        !state.loading && !state.viewerReturnToFiles &&
+        !state.galleryViewerPageBusy && state.gallerySelected == null &&
+        node.id > 0L && node.type == "file" && node.revision > 0L &&
+        node.size >= 0L && item.mediaKind == "image" &&
+        item.node == node && state.galleryItems.any { it == item }
 }
 
 /** Mirrors the real Controller.saveFileExport Owner/loaded-row preflight.
@@ -47,8 +65,9 @@ internal fun validNativeSafExportPicker(state: DriveState): Boolean {
         }
         Screen.GALLERY ->
             state.screen == Screen.GALLERY && state.galleryLoaded &&
-                state.gallerySelected?.node == node &&
-                state.galleryItems.any { it.node == node }
+                state.galleryItems.any { it.node == node } &&
+                (state.gallerySelected?.node == node ||
+                    nativeGalleryViewerExportEligible(state, node))
         else -> false
     }
 }
