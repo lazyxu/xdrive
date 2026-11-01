@@ -363,16 +363,14 @@ func TestDSMNativePDFRangeHEADAndAuthFailure(t *testing.T) {
 		!bytes.Equal(get.Body.Bytes(), contents[start:start+ownerStreamMaxResponseBytes]) {
 		t.Fatalf("verified PDF native Range failed: HTTP %d bytes=%d", get.Code, get.Body.Len())
 	}
-	if unsat := call(http.MethodGet, fmt.Sprintf("bytes=%d-", len(contents)), params, true);
-		unsat.Code != http.StatusRequestedRangeNotSatisfiable ||
+	if unsat := call(http.MethodGet, fmt.Sprintf("bytes=%d-", len(contents)), params, true); unsat.Code != http.StatusRequestedRangeNotSatisfiable ||
 		unsat.Header().Get("Content-Range") != fmt.Sprintf("bytes */%d", len(contents)) {
 		t.Fatalf("PDF unsatisfiable Range incorrectly handled: HTTP %d", unsat.Code)
 	}
 	if missing := call(http.MethodHead, "", params, false); missing.Code == http.StatusOK {
 		t.Fatal("PDF HEAD bypassed DSM authentication")
 	}
-	if missing := call(http.MethodGet, "bytes=0-15", params, false);
-		missing.Code == http.StatusPartialContent {
+	if missing := call(http.MethodGet, "bytes=0-15", params, false); missing.Code == http.StatusPartialContent {
 		t.Fatal("PDF stream bypassed DSM authentication")
 	}
 	for _, mime := range []string{"text/html", "application/octet-stream"} {
@@ -386,8 +384,7 @@ func TestDSMNativePDFRangeHEADAndAuthFailure(t *testing.T) {
 		}
 	}
 	reader.corrupt = true
-	if broken := call(http.MethodGet, "bytes=0-", params, true);
-		broken.Code == http.StatusPartialContent {
+	if broken := call(http.MethodGet, "bytes=0-", params, true); broken.Code == http.StatusPartialContent {
 		t.Fatal("PDF emitted 206 after changed Owner SHA")
 	}
 	if native.runs != 0 || native.controls != 0 {
