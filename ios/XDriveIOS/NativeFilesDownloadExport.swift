@@ -201,6 +201,14 @@ final class XDriveIOSNativeFilesExportModel: ObservableObject {
         status = nil
     }
 
+    /// A cancel only cancels the scoped native download, never asserts
+    /// that an exported original has already been written to iPhone Files.
+    func cancelCurrentTransfer() {
+        guard busy, let task else { return }
+        task.cancel()
+        status = "已请求取消下载；正在清理临时文件。"
+    }
+
     func prepare(_ node: XDriveIOSNativeFilesNode,
                  login: XDriveIOSNativeOwnerLoginModel) {
         invalidate()

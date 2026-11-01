@@ -80,6 +80,12 @@ struct XDriveIOSNativeFilesManagementPanel: View {
                             Text("首版上限 512 MiB，使用实际下载结果；无后台任务或虚构进度。")
                                 .font(.footnote).foregroundStyle(.secondary)
                         }
+                        if exporter.busy {
+                            Button("取消当前下载", role: .cancel) {
+                                exporter.cancelCurrentTransfer()
+                            }
+                            .accessibilityIdentifier("native-ios-files-download-cancel")
+                        }
                         if let status = exporter.status {
                             Text(status).font(.footnote).foregroundStyle(.secondary)
                         }
@@ -222,6 +228,12 @@ struct XDriveIOSNativeFilesManagementPanel: View {
                         .accessibilityIdentifier("native-ios-files-manual-upload")
                         Text("一次仅选一个不超过 128 MiB 的原文件；不自动重新提交未知结果。")
                             .font(.footnote).foregroundStyle(.secondary)
+                        if uploader.busy {
+                            Button("取消当前上传", role: .cancel) {
+                                uploader.cancelCurrentTransfer()
+                            }
+                            .accessibilityIdentifier("native-ios-files-upload-cancel")
+                        }
                         if let status = uploader.status {
                             Text(status).font(.footnote).foregroundStyle(.secondary)
                         }

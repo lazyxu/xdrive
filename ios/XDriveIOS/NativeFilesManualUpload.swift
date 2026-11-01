@@ -144,6 +144,14 @@ final class XDriveIOSNativeFilesManualUploadModel: ObservableObject {
         status = nil
     }
 
+    /// User-requested cancellation is not proof that the Server did not
+    /// accept a chunk or finalize. Keep the task active until it settles.
+    func cancelCurrentTransfer() {
+        guard busy, let running else { return }
+        running.cancel()
+        status = "已请求取消上传；若服务器已接收请求，结果可能不确定。请刷新云端目录核对。"
+    }
+
     func pickerFailed() {
         guard !busy else { return }
         status = "没有选择可读取的单个文件，未上传。"
