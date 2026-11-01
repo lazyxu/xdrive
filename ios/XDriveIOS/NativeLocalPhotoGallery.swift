@@ -153,7 +153,7 @@ final class XDriveIOSLocalPhotoDetailModel: ObservableObject {
                 let liveOptions = PHLivePhotoRequestOptions()
                 liveOptions.isNetworkAccessAllowed = false
                 let liveID = PHImageManager.default().requestLivePhoto(
-                    for: asset, targetSize: CGSize(width: 1800, height: 1800),
+                    for: asset, targetSize: CGSize(width: 4096, height: 4096),
                     contentMode: .aspectFit, options: liveOptions
                 ) { [weak self] photo, _ in
                     Task { @MainActor [weak self] in
