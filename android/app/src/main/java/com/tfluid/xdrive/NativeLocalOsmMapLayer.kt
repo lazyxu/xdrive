@@ -36,7 +36,9 @@ internal fun NativeLocalOsmMapLayer(
     Box(Modifier.fillMaxSize().clipToBounds()
         .testTag("native-local-osm-map-layer")) {
         for (tile in plan.tiles) {
-            key(tile.zoom, tile.x, tile.y, tile.leftDp, tile.topDp) {
+            // Screen position changes on every drag frame. Keep the same
+            // bitmap and HTTP lease until this actual world tile leaves view.
+            key(tile.zoom, tile.worldX, tile.y) {
                 val picture by produceState<ImageBitmap?>(null, tile.url) {
                     try {
                         value = NativeLocalOsmTileLoader.image(context, tile)

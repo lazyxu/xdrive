@@ -11,6 +11,9 @@ internal data class NativeLocalOsmTile(
     val zoom: Int,
     val x: Int,
     val y: Int,
+    // The world tile column is intentionally NOT wrapped, so repeated
+    // longitude tiles retain independent, stable Compose identity on pan.
+    val worldX: Int,
     val leftDp: Float,
     val topDp: Float,
     val sizeDp: Float,
@@ -66,7 +69,7 @@ internal object NativeLocalOsmTilePolicy {
             for (y in north..south) {
                 for (x in west..east) {
                     val wrappedX = ((x % count) + count) % count
-                    tiles += NativeLocalOsmTile(z, wrappedX, y,
+                    tiles += NativeLocalOsmTile(z, wrappedX, y, x,
                         (x * sizeDp - originX).toFloat(),
                         (y * sizeDp - originY).toFloat(), sizeDp.toFloat())
                     if (tiles.size > MAX_TILES) return tiles

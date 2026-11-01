@@ -22,9 +22,14 @@ class NativeLocalOsmTilePolicyTest {
                 camera[0], camera[1], camera[2], 0f, 0f))
             assertTrue(plan.tiles.isNotEmpty())
             assertTrue(plan.tiles.size <= NativeLocalOsmTilePolicy.MAX_TILES)
+            assertEquals(plan.tiles.size, plan.tiles.distinctBy {
+                Triple(it.zoom, it.worldX, it.y)
+            }.size)
             assertTrue(plan.tiles.all {
                 it.zoom == plan.tileZoom &&
                     it.x in 0 until (1 shl it.zoom) &&
+                    (((it.worldX % (1 shl it.zoom)) +
+                        (1 shl it.zoom)) % (1 shl it.zoom)) == it.x &&
                     it.y in 0 until (1 shl it.zoom) &&
                     it.sizeDp > 0f &&
                     it.url == "https://tile.openstreetmap.org/" +
