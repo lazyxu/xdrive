@@ -23,8 +23,29 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
     private enum RunKind { case manual, automatic }
     private var running: Task<Void, Never>?
     private var runningOwner: XDriveNativeOwnerRoot?
+    // The native login model and backup controller survive tab switches.
+    // Persist only the display Owner and a generation marker in RAM; never
+    // render an old Owner's photo counts or terminal report after A -> B -> A.
+    private var displayOwner: XDriveNativeOwnerRoot?
+    private var displayEpoch = UUID()
 
     func refresh(owner: XDriveNativeOwnerRoot?) {
+        let unchanged: Bool
+        switch (displayOwner, owner) {
+        case (nil, nil):
+            unchanged = true
+        case (let previous?, let current?):
+            unchanged = XDriveIOSNativePhotoOwnerScope.matches(current, previous)
+        default:
+            unchanged = false
+        }
+        if !unchanged {
+            displayEpoch = UUID()
+            progress = nil
+            message = "未启动相册备份"
+            errorMessage = nil
+        }
+        displayOwner = owner
         if let last = confirmedOriginalUpdate,
            !XDriveIOSNativePhotoOwnerScope.matches(owner, last.owner) {
             confirmedOriginalUpdate = nil
@@ -182,6 +203,10 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
             message = "另一项原件操作正在进行，本次未占用自动备份计划。"
             return
         }
+        // A pending task from a former account must not repopulate this
+        // Owner's result fields after account switch / logout.
+        refresh(owner: selected)
+        let uiEpoch = displayEpoch
         busy = true
         runningOwner = selected
         progress = nil
@@ -248,12 +273,15 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                 let result = try await XDriveIOSForegroundPhotoBackupMVP(
                     owner: selected, accessToken: verified.accessToken
                 ).run(allowICloudOriginals: cloud, startOffset: offset) { [weak self] value in
-                    guard XDriveIOSNativePhotoOwnerScope.matches(self?.runningOwner, selected)
+                    guard XDriveIOSNativePhotoOwnerScope.matches(self?.runningOwner, selected),
+                          self?.displayEpoch == uiEpoch,
+                          XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected)
                     else { return }
                     self?.progress = value
                 }
                 try Task.checkCancellation()
-                guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected) else {
+                guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected),
+                      self.displayEpoch == uiEpoch else {
                     throw XDriveIOSNativeSessionError.staleSession
                 }
                 self.progress = result
@@ -267,9 +295,15 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     self.errorMessage = "发现结果不确定的上传收据：本轮已暂停，不会盲目重传。"
                 }
             } catch is CancellationError {
-                self.message = "原件任务已取消。可能已经提交的原件须通过加密账本与 Server 收据确认。"
+                if self.displayEpoch == uiEpoch,
+                   XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected) {
+                    self.message = "原件任务已取消。可能已经提交的原件须通过加密账本与 Server 收据确认。"
+                }
             } catch {
-                self.errorMessage = "本轮未完成：请检查当前 Owner、PhotoKit 权限、连接与本机加密账本；不能假定上传成功。"
+                if self.displayEpoch == uiEpoch,
+                   XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected) {
+                    self.errorMessage = "本轮未完成：请检查当前 Owner、PhotoKit 权限、连接与本机加密账本；不能假定上传成功。"
+                }
             }
             // A successful original may be followed by a PhotoKit scan error,
             // cancellation, or failure persisting the automatic cursor.
@@ -279,6 +313,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
             // only that confirmed count; never interpret an unknown ACK as
             // a successful backup or let an old Owner refresh another account.
             if let current = self.progress, current.uploaded > 0,
+               self.displayEpoch == uiEpoch,
                XDriveIOSNativePhotoOwnerScope.matches(self.runningOwner, selected),
                XDriveIOSNativePhotoOwnerScope.matches(login.owner, selected) {
                 self.confirmedOriginalUpdate = ConfirmedOriginalUpdate(
