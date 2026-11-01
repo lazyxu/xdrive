@@ -82,7 +82,12 @@ test('iOS and Android clear stored native login only while signed out', () => {
   const start = model.indexOf('func clearSavedLogin()')
   assert.ok(start > 0)
   const clear = model.slice(start, model.indexOf('/// Explicit user sign-in', start))
-  assert.match(clear, /guard !busy, active == nil else \{ return \}/)
+  // Multi-account cleanup must stay signed-out AND scope the deletion to the
+  // visible Server + username; never revoke another saved Owner's refresh.
+  assert.match(clear, /guard !busy, active == nil, let selected = currentSavedProfile else \{[\s\S]*?return[\s\S]*?\}/)
+  assert.match(clear, /if let stored = try XDriveIOSNativeOwnerSessionStore\.load\(\),\s*draftMatchesSavedCredential\(stored\) \{\s*try XDriveIOSNativeOwnerSessionStore\.clear\(\)/)
+  assert.match(clear, /try XDriveIOSNativePasswordProfiles\.forget\(selected\)/)
+  assert.match(clear, /savedProfiles = XDriveIOSNativePasswordProfiles\.list\(\)/)
   assert.ok(clear.indexOf('try XDriveIOSNativeOwnerSessionStore.clear()') <
     clear.indexOf('XDriveIOSNativeLoginDraftStore.clear()'))
   assert.match(swiftStore, /UserDefaults.standard.removeObject\(forKey: key\)/)
