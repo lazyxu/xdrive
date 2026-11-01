@@ -40,7 +40,7 @@ test('iOS native local fullscreen keeps one modal and cancels old media between 
   assert.match(viewer, /PHAsset\.fetchAssets\(\s*withLocalIdentifiers: \[next\.id\], options: nil/)
   assert.match(viewer, /asset\.creationDate == next\.capturedAt/)
   assert.match(viewer, /asset\.modificationDate == next\.modifiedAt/)
-  assert.match(viewer, /model\.cancel\(\)\s+activeItem = next\s+onViewed\?\(next\)/)
+  assert.match(viewer, /requestedICloudForCurrentItem = false\s+model\.cancel\(\)\s+activeItem = next\s+onViewed\?\(next\)/)
   assert.match(viewer, /\.task\(id: viewed\.id\)/)
   assert.match(viewer, /model\.load\(viewed\)/)
   assert.match(viewer, /native-ios-local-viewer-previous/)
@@ -61,3 +61,18 @@ test('return anchor follows last actually viewed PhotoKit item after authenticat
   assert.match(gallery, /XDriveIOSNativePhotoViewerReturnAnchorPolicy\.target\(/)
   assert.doesNotMatch(gallery, /UserDefaults\.standard|localStorage|CloudKit\.modifyRecords|PhotoKit.*upload/)
 })
+
+
+test('iOS local Viewer preserves Live playback, zoom swipes and explicit iCloud requests together', () => {
+  const viewer = gallery.slice(gallery.indexOf('struct XDriveIOSNativeLocalPhotoDetail: View'),
+    gallery.indexOf('/// Read-only, 64-at-a-time PhotoKit grid.'));
+  assert.match(viewer, /@State private var showsStaticStill = false/);
+  assert.match(viewer, /@State private var requestedICloudForCurrentItem = false/);
+  assert.match(viewer, /native-ios-local-live-play/);
+  assert.match(viewer, /native-ios-local-live-static-toggle/);
+  assert.match(viewer, /\.onNavigateSwipe \{ showNeighbor\(\$0\) \}/);
+  assert.match(viewer, /native-ios-local-viewer-icloud-load/);
+  assert.match(viewer, /model\.load\(viewed, allowICloud: true\)/);
+  assert.match(viewer, /requestedICloudForCurrentItem = false[\s\S]*?model\.cancel\(\)[\s\S]*?activeItem = next/);
+  assert.match(viewer, /showsStaticStill = false[\s\S]*?livePlaybackRequest = nil/);
+});

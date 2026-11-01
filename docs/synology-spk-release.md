@@ -37,6 +37,11 @@ an installed SPK, real Server backups or physical DS218j acceptance.
   release identity.
 - The CI original binary version, source architecture (`linux/arm, GOARM=7`),
   payload allowlist and `conf/privilege` are checked before upload.
+- The **outer SPK** is POSIX ustar with literal `INFO` as its **first member**,
+  followed by literal `package.tgz` and the documented root entries. Do not
+  archive `.` (which produces `./INFO`): tarfile may accept that form but DSM
+  Package Center can reject it. The SPK structure checks and publication gate
+  both reject dot-prefixed or reordered outer entries.
 - Release requires exactly one non-symlink `xdrivenas-armada38x-*.spk` and
   its matching portable `.spk.sha256`. Reject duplicate SPKs, digest
   mismatch, a mismatched `INFO.version`, wrong package or architecture,

@@ -236,14 +236,21 @@ with tempfile.TemporaryDirectory(prefix='xdrive-gitlab-snapshot-') as temp:
             member = tarfile.TarInfo(item_name)
             member.size = len(body)
             payload.addfile(member, io.BytesIO(body))
-    with tarfile.open(spk_path, 'w') as archive:
-        member = tarfile.TarInfo('./INFO')
+    # The real DSM package publisher requires the canonical raw outer SPK
+    # layout. A legacy "./INFO" fixture used to pass here and masked the
+    # format regression that prevents DS218j Package Center installation.
+    with tarfile.open(spk_path, 'w', format=tarfile.USTAR_FORMAT) as archive:
+        member = tarfile.TarInfo('INFO')
         member.size = len(spk_info)
         archive.addfile(member, io.BytesIO(spk_info))
         packaged = nested.getvalue()
-        member = tarfile.TarInfo('./package.tgz')
+        member = tarfile.TarInfo('package.tgz')
         member.size = len(packaged)
         archive.addfile(member, io.BytesIO(packaged))
+    with tarfile.open(spk_path, 'r:') as archive:
+        assert [member.name for member in archive.getmembers()] == [
+            'INFO', 'package.tgz',
+        ], 'GitLab publisher fixture must match literal INFO-first DSM SPK'
     (tmp/'release'/(SPK_NAME + '.sha256')).write_text(
         f'{hashlib.sha256(spk_path.read_bytes()).hexdigest()}  {SPK_NAME}\n')
     (tmp/'bin').mkdir()

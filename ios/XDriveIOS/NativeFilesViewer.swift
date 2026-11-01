@@ -128,6 +128,16 @@ struct XDriveIOSNativeFilesViewer: View {
                         XDriveIOSNativeZoomablePhotoView(image: image)
                             .onNavigateSwipe { move($0) }
                             .accessibilityLabel("图片，可双指缩放或双击")
+                    case .imageThumbnail(let image):
+                        VStack(spacing: 0) {
+                            XDriveIOSNativeZoomablePhotoView(image: image)
+                                .onNavigateSwipe { move($0) }
+                                .accessibilityLabel("低清缩略图，可双指缩放")
+                            Text("当前只显示已索引的云端缩略图（低清）。查看原件请返回文件列表，通过“更多”→“下载并准备导出”。")
+                                .font(.caption).foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                                .padding(8)
+                        }
                     case .video:
                         if let player {
                             observingPlayer(
@@ -188,8 +198,7 @@ struct XDriveIOSNativeFilesViewer: View {
                     Button("完成") { close() }
                         .frame(minWidth: 44, minHeight: 44)
                 }
-                // This remains reachable on short landscape layouts, including
-                // when the player stalls without emitting a terminal error.
+                // Remain reachable in landscape even when playback never reports failure.
                 ToolbarItem(placement: .navigationBarTrailing) {
                     if authorized, player != nil {
                         Button("重新加载媒体") { reloadCurrent() }
@@ -247,9 +256,8 @@ struct XDriveIOSNativeFilesViewer: View {
         .onDisappear { retire() }
     }
 
-    /// Observe both initial stream-load failures and later item failures.
-    /// KVO subscriptions are owned by the currently rendered player surface;
-    /// retiring the player removes them, preventing stale cross-item errors.
+    /// Observe initial stream-load failures and later failures for the active player.
+    /// KVO subscriptions are scoped to the rendered player surface.
     @ViewBuilder
     private func observingPlayer<Content: View>(
         _ content: Content, player: AVPlayer
@@ -333,6 +341,8 @@ struct XDriveIOSNativeFilesViewer: View {
                     failure = "当前格式不支持原生预览。可返回列表，通过「管理」下载并导出原件（导出上限 512 MiB）。"
                 case .tooLarge:
                     failure = "文件超过本机预览上限。可返回列表，通过「管理」下载并导出原件（导出上限 512 MiB）。"
+                case .noThumbnail:
+                    failure = "原图过大或格式无法解码，且没有可用的云端缩略图。请返回文件列表，从“更多”中下载并导出原件（当前导出上限 512 MiB）。"
                 case .changed, .invalidOwner, .response(401), .response(403), .response(404):
                     failure = "文件版本或当前账户已变化，请返回目录重新读取。"
                 default:

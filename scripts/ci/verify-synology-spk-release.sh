@@ -31,7 +31,21 @@ expected_version="${expected_version%.spk}"
   echo "invalid DSM package asset version" >&2
   exit 1
 }
-actual_info="$(tar -xOf "$spk" ./INFO)"
+# Ordinary tar extraction silently accepts ./INFO, but DSM Package Center
+# can reject that external layout before package installation begins.
+outer_entries="$(tar -tf "$spk")" || {
+  echo "DSM SPK outer tar cannot be listed" >&2; exit 1;
+}
+[[ "${outer_entries%%$'\n'*}" == "INFO" ]] || {
+  echo "DSM SPK must have literal INFO as first tar member" >&2; exit 1;
+}
+if grep -Eq '^\./|^\.$' <<< "$outer_entries"; then
+  echo "DSM SPK outer archive uses invalid dot-prefixed paths" >&2; exit 1;
+fi
+grep -Fxq 'package.tgz' <<< "$outer_entries" || {
+  echo "DSM SPK lacks literal root package.tgz" >&2; exit 1;
+}
+actual_info="$(tar -xOf "$spk" INFO)"
 grep -Fxq "package=\"xdrivenas\"" <<<"$actual_info"
 grep -Fxq "version=\"$expected_version\"" <<<"$actual_info"
 grep -Fxq 'arch="armada38x"' <<<"$actual_info"
@@ -45,7 +59,7 @@ if [[ "$required_flavor" == "--require-mui" ]]; then
   }
   # Inspect the real nested archive; INFO metadata alone is not sufficient.
   # Source-exact Go binaries, bundled UI and CGI bytes are verified separately.
-  payload_entries="$(tar -xOf "$spk" ./package.tgz | tar -tzf -)" || {
+  payload_entries="$(tar -xOf "$spk" package.tgz | tar -tzf -)" || {
     echo "published DSM GUI payload cannot be read" >&2; exit 1;
   }
   for required in ./ui/config ./ui/backup.cgi ./ui/synology.html; do
