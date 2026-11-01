@@ -595,6 +595,11 @@ export default function WebFileExplorer({
   const organizationLifecycleKeyRef = useRef(navigationSessionStorageKey ?? '')
   organizationLifecycleKeyRef.current = navigationSessionStorageKey ?? ''
   const persistedSearchFilters = xDriveFileExplorerPersistedSearchFilters(searchFilters)
+  const organizationSearchScopeKey = `${searchState.query}\n${xDriveFileExplorerSearchFiltersSignature(searchFilters)}`
+  const organizationSearchScopeKeyRef = useRef(organizationSearchScopeKey)
+  organizationSearchScopeKeyRef.current = organizationSearchScopeKey
+  const canSaveSmartFolder = organizationSearchState.canSaveCurrentSearch
+
   // Files Search is owned by the existing virtual Server Range reader.
   // When the mobile Files tab unmounts, remember only a successfully accepted
   // search definition, not results, private Node bytes or pending requests.
@@ -641,11 +646,6 @@ export default function WebFileExplorer({
         api, mobileOwnerScope, last.query, last.filters, last.directoryID)
     }
   }, [api, mobileOwnerScope, compactMobile])
-  const organizationSearchScopeKey = `${searchState.query}\n${xDriveFileExplorerSearchFiltersSignature(searchFilters)}`
-  const organizationSearchScopeKeyRef = useRef(organizationSearchScopeKey)
-  organizationSearchScopeKeyRef.current = organizationSearchScopeKey
-  const canSaveSmartFolder = organizationSearchState.canSaveCurrentSearch
-
   const logicalIndexForItem = useCallback((item: XDriveFileExplorerItem) => {
     if (explorerVirtualCollection) {
       for (const [index, candidate] of explorerVirtualCollection.loadedItems) {
