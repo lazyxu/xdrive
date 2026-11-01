@@ -15,6 +15,18 @@ struct XDriveIOSNativeViewerQualityPanel: View {
 
     @State private var expanded = false
 
+    // Display the known file/resource suffix, not an invented decoder MIME.
+    // A Live container's outer LIVP/ZIP extension is not its still-image format.
+    private var resourceFormat: String {
+        if let liveFiles {
+            let ext = liveFiles.stillURL.pathExtension.uppercased()
+            return ext.isEmpty ? "实况静态资源（格式未知）" : ext + "（实况静态资源）"
+        }
+        let ext = URL(fileURLWithPath: fileName).pathExtension.uppercased()
+        return ext.isEmpty ? "本机 PhotoKit（原始格式未确认）" :
+            (archiveOriginal ? ext + "（实况容器）" : ext + "（文件扩展名）")
+    }
+
     private var pixelWidth: Int {
         image.cgImage?.width ?? Int(image.size.width * image.scale)
     }
@@ -45,6 +57,7 @@ struct XDriveIOSNativeViewerQualityPanel: View {
 
             if expanded {
                 VStack(alignment: .leading, spacing: 5) {
+                    Text("来源格式：\(resourceFormat)")
                     Text("当前已解码：\(pixelWidth) × \(pixelHeight)")
                     Text("\(archiveOriginal ? "归档容器" : "原件")：\(sizeLabel(originalBytes))")
                     if let liveFiles {
