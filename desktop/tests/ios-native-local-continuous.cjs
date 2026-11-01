@@ -97,7 +97,7 @@ test('native local Photos original Share Sheet uses current PhotoKit originals a
 
 test('native local day headings reflect real PhotoKit creation dates, not fixed 64-slot titles', () => {
   const day = read('ios/XDriveIOS/NativePhotoDayGroupingPolicy.swift')
-  assert.match(source, /dates: page\.items\.map\(\\\.capturedAt\), calendar: \.current/)
+  assert.match(source, /dates: page\.items\.map\(\\\.capturedAt\),[\s\S]*?calendar: \.current/)
   assert.match(source, /Text\(section\.title\)/)
   assert.match(source, /\.accessibilityAddTraits\(\.isHeader\)/)
   assert.doesNotMatch(source, /Text\("起始日期：/)
