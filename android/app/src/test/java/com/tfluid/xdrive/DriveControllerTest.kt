@@ -937,6 +937,28 @@ class DriveControllerTest {
         c.close()
     }
 
+    @Test fun filesTextViewerOpensEmptyUtf8FileWithoutLooseningMediaSizeValidation() = runTest {
+        val empty = DriveNode(345, 1, "empty.txt", "file", 0, revision = 7)
+        val api = Service()
+        api.listing = { _, offset ->
+            NodeRange(if (offset == 0) listOf(empty) else emptyList(), 1, offset)
+        }
+        api.textPreviewRequest = { node ->
+            assertEquals(empty, node)
+            FileTextPreview("", false, 0)
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.open(empty); runCurrent()
+        assertEquals(empty, c.state.value.filesTextViewer)
+        assertEquals("", c.state.value.fileTextPreview?.text)
+        assertEquals(1, api.textPreviewReads)
+        c.back()
+        assertNull(c.state.value.filesTextViewer)
+        assertEquals(listOf(empty), c.state.value.items)
+        c.close()
+    }
+
     @Test fun filesTextViewerIgnoresLateNoncooperativeResponseAcrossCloseAndReopen() = runTest {
         val stale = CompletableDeferred<FileTextPreview>()
         val api = Service()
