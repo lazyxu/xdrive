@@ -454,11 +454,13 @@ test('P0 Web/PWA wide phone landscape keeps Gallery Viewer touch chrome and medi
     assert.equal(frame().props.sx.height, '100dvh')
     assert.equal(frame().find(el => el.props['data-xdrive-web-viewer-chrome'] === 'header').props.sx.position, 'absolute')
     assert.equal(frame().props.onMouseMove, undefined, 'touch moves must not revive faded controls')
-    const rails = frame().findAll(el => el.props['data-xdrive-web-viewer-mobile-actions'] !== undefined)
+    const rails = frame().findAll(el => el.type === 'div' &&
+      el.props['data-xdrive-web-viewer-mobile-actions'] !== undefined)
     assert.equal(rails.length, 1)
     assert.equal(rails[0].props.sx['& .MuiIconButton-root'].width, 44)
     assert.equal(rails[0].props.sx.pb, 'env(safe-area-inset-bottom)')
-    assert.equal(rails[0].findAll(el => el.props['aria-label'] === '更多照片操作').length, 1)
+    assert.equal(rails[0].findAll(el => el.type === 'button' &&
+      el.props['aria-label'] === '更多照片操作').length, 1)
     assert.equal(frame().props.sx['--xdrive-viewer-video-actions-clearance'],
       'calc(56px + env(safe-area-inset-bottom))')
     assert.equal(content(), originalContent, 'rotation must retain the same media renderer')
@@ -491,7 +493,8 @@ test('P0 Web/PWA short phone landscape preserves Files Quick Look and standalone
       const renderer = await mount(app, name)
       try {
         const frame = renderer.root.find(el => el.props['data-xdrive-web-viewer'] !== undefined)
-        const rails = frame.findAll(el => el.props['data-xdrive-web-viewer-mobile-actions'] !== undefined)
+        const rails = frame.findAll(el => el.type === 'div' &&
+          el.props['data-xdrive-web-viewer-mobile-actions'] !== undefined)
         assert.equal(frame.props.sx.height, '100dvh', app)
         assert.equal(frame.find(el => el.props['data-xdrive-web-viewer-chrome'] === 'header').props.sx.position, app === 'preview' ? 'absolute' : 'relative',
           app + ' keeps its own immersive header policy')
@@ -513,7 +516,8 @@ test('P0 Web/PWA short phone landscape preserves Files Quick Look and standalone
     try {
       const frame = tablet.root.find(el => el.props['data-xdrive-web-viewer'] !== undefined)
       assert.equal(frame.props.sx.height, undefined)
-      assert.equal(frame.findAll(el => el.props['data-xdrive-web-viewer-mobile-actions'] !== undefined).length, 0)
+      assert.equal(frame.findAll(el => el.type === 'div' &&
+        el.props['data-xdrive-web-viewer-mobile-actions'] !== undefined).length, 0)
     } finally {
       await act(async () => tablet.unmount())
     }
