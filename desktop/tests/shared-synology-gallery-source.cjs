@@ -28,6 +28,13 @@ const moduleRef = { exports: {} }
 new Function('module', 'exports', 'require', 'URL', 'Blob', transpiled.outputText)(
   moduleRef, moduleRef.exports,
   name => {
+    if (name === '../synology-viewer-preview') return {
+      xDriveSynologyViewerNeedsDerived: filename => /\.(livp|heic|heif|arw|cr3|dng|nef)$/i.test(filename),
+      xDriveSynologyLoadViewerPreview: async (_client, selected, signal) => {
+        calls.push(['hd-viewer', selected.id, selected.revision, selected.name, signal])
+        return 'blob:verified-4k'
+      },
+    }
     if (name === '../synology-media-preview') return {
       xDriveSynologyPreviewMIME: filename =>
         /\.(jpg|jpeg|png|webp|gif)$/i.test(filename) ? 'image/jpeg' : null,
@@ -334,4 +341,25 @@ test('superseded Owner thumbnail and original must not publish an old revision a
   assert.ok(revoked.includes('blob:verified-old-owner'),
     'the stale original preview must be revoked')
   deferredPreview = null
+})
+
+
+test('DSM Viewer authenticates HEIC and LIVP 4K image reads using only the current Owner row', async () => {
+  calls.length = 0
+  const createRow = (name, id) => ({
+    ...record(id), node: { ...record(id).node, name, size: 4900000 },
+  })
+  const source = create(fakeClient([createRow('image.heic', 31), createRow('motion.livp', 32)]))
+  assert.equal(await source.loadPreviewURL(31, 'image', undefined, 'evil.jpg', 7), null,
+    'no current authenticated range means no HD image read')
+  await source.listItemRange(2, 0)
+  assert.equal(await source.loadPreviewURL(31, 'image', undefined, 'evil.jpg', 7), 'blob:verified-4k')
+  assert.equal(await source.loadPreviewURL(32, 'live_photo', undefined, 'evil.mp4', 7), 'blob:verified-4k')
+  assert.deepEqual(calls.filter(x => x[0] === 'hd-viewer').map(x => x.slice(1, 4)),
+    [[31, 7, 'image.heic'], [32, 7, 'motion.livp']],
+    'the caller cannot replace the trusted Owner/revision/file kind')
+  assert.equal(await source.loadPreviewURL(31, 'image', undefined, 'image.heic', 8), null)
+  const signal = new AbortController()
+  signal.abort()
+  assert.equal(await source.loadPreviewURL(31, 'image', signal.signal, 'image.heic', 7), null)
 })
