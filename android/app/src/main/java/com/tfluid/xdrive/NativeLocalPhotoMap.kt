@@ -14,6 +14,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,6 +23,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -29,6 +32,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.exifinterface.media.ExifInterface
@@ -255,17 +259,30 @@ private fun ColumnScope.NativeLocalPhotoMapCanvas(
 ) {
     var zoom by remember { mutableFloatStateOf(1f) }
     var shift by remember { mutableStateOf(Offset.Zero) }
+    // First map entry always displays the offline WGS84 diagram. Public map
+    // tiles are a user gesture only; no third-party requests during scan.
+    var osmEnabled by remember { mutableStateOf(false) }
+    var tileFailed by remember(osmEnabled, zoom, shift) { mutableStateOf(false) }
     val density = LocalDensity.current.density
+    val uriHandler = LocalUriHandler.current
     Column(Modifier.fillMaxWidth().weight(1f)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.End) {
             TextButton(onClick = { zoom = (zoom / 1.6f).coerceAtLeast(1f) },
                 modifier = Modifier.testTag("native-local-map-zoom-out")) { Text("－") }
             TextButton(onClick = { zoom = (zoom * 1.6f).coerceAtMost(24f) },
                 modifier = Modifier.testTag("native-local-map-zoom-in")) { Text("＋") }
             TextButton(onClick = { zoom = 1f; shift = Offset.Zero }) { Text("重置") }
+            NativeLocalOsmToggle(osmEnabled) { osmEnabled = !osmEnabled }
         }
+        if (osmEnabled) Text(
+            "公开 OSM 底图：仅按当前视窗加载瓦片，公开服务会看到请求的地图范围；" +
+                "不会收到本机照片或登录凭据。极区纬度超过 85.05° 的照片仅在关闭底图后显示。",
+            modifier = Modifier.padding(horizontal = 12.dp),
+            style = MaterialTheme.typography.bodySmall)
         BoxWithConstraints(Modifier.fillMaxSize().background(
             MaterialTheme.colorScheme.surfaceContainerLow)
+            .clipToBounds()
             .pointerInput(Unit) {
                 detectTransformGestures { _, pan, factor, _ ->
                     zoom = (zoom * factor).coerceIn(1f, 24f)
@@ -276,20 +293,36 @@ private fun ColumnScope.NativeLocalPhotoMapCanvas(
             }.testTag("native-local-photo-map")) {
             val canvasWidth = maxWidth.value
             val canvasHeight = maxHeight.value
-            Canvas(Modifier.fillMaxSize()) {
-                val stroke = Color.Gray.copy(alpha = 0.2f)
-                for (k in 1..5) {
-                    val x = size.width * k / 6f
-                    val y = size.height * k / 6f
-                    drawLine(stroke, Offset(x, 0f), Offset(x, size.height))
-                    drawLine(stroke, Offset(0f, y), Offset(size.width, y))
+            val tilePlan = remember(osmEnabled, canvasWidth, canvasHeight, zoom, shift) {
+                if (osmEnabled) NativeLocalOsmTilePolicy.plan(
+                    canvasWidth, canvasHeight, zoom, shift.x, shift.y)
+                else null
+            }
+            if (osmEnabled && tilePlan != null) {
+                NativeLocalOsmMapLayer(tilePlan) { tileFailed = true }
+            } else {
+                Canvas(Modifier.fillMaxSize()) {
+                    val stroke = Color.Gray.copy(alpha = 0.2f)
+                    for (k in 1..5) {
+                        val x = size.width * k / 6f
+                        val y = size.height * k / 6f
+                        drawLine(stroke, Offset(x, 0f), Offset(x, size.height))
+                        drawLine(stroke, Offset(0f, y), Offset(size.width, y))
+                    }
                 }
             }
             for (cell in cells) {
-                val x = (((cell.longitude + 180.0) / 360.0 - 0.5) *
-                    canvasWidth * zoom + canvasWidth / 2 + shift.x).toFloat()
-                val y = (((90.0 - cell.latitude) / 180.0 - 0.5) *
-                    canvasHeight * zoom + canvasHeight / 2 + shift.y).toFloat()
+                val projected = if (osmEnabled && tilePlan != null) {
+                    NativeLocalOsmTilePolicy.point(
+                        tilePlan, cell.latitude, cell.longitude)
+                } else {
+                    (((cell.longitude + 180.0) / 360.0 - 0.5) *
+                        canvasWidth * zoom + canvasWidth / 2 + shift.x).toFloat() to
+                    (((90.0 - cell.latitude) / 180.0 - 0.5) *
+                        canvasHeight * zoom + canvasHeight / 2 + shift.y).toFloat()
+                }
+                val x = projected?.first ?: continue
+                val y = projected.second
                 if (x < 0f || x >= canvasWidth || y < 0f || y >= canvasHeight) continue
                 Surface(
                     shape = RoundedCornerShape(9.dp),
@@ -310,6 +343,20 @@ private fun ColumnScope.NativeLocalPhotoMapCanvas(
                             style = MaterialTheme.typography.labelSmall)
                     }
                 }
+            }
+            if (osmEnabled) {
+                TextButton(
+                    onClick = { uriHandler.openUri(NativeLocalOsmTileLoader.PROVIDER_COPYRIGHT) },
+                    modifier = Modifier.align(Alignment.BottomEnd)
+                        .testTag("native-local-osm-attribution"),
+                ) { Text("© OpenStreetMap contributors") }
+                if (tileFailed) Text(
+                    "OSM 瓦片加载失败；关闭底图仍可浏览本机 GPS 照片。",
+                    modifier = Modifier.align(Alignment.BottomStart)
+                        .padding(8.dp).testTag("native-local-osm-error"),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
             }
         }
     }
