@@ -20,22 +20,36 @@ type OwnerPlacesReader interface {
 func ownerPlacesDSMSelector(raw string, items bool) (limit, offset int, place string, ok bool) {
 	q, err := url.ParseQuery(raw)
 	expected := 2
-	if items { expected = 3 }
-	if err != nil || len(q) != expected { return }
-	for key, values := range q {
-		if len(values) != 1 || (key != "limit" && key != "offset" && (!items || key != "place_id")) { return }
+	if items {
+		expected = 3
 	}
-	if len(q["limit"]) != 1 || len(q["offset"]) != 1 { return }
+	if err != nil || len(q) != expected {
+		return
+	}
+	for key, values := range q {
+		if len(values) != 1 || (key != "limit" && key != "offset" && (!items || key != "place_id")) {
+			return
+		}
+	}
+	if len(q["limit"]) != 1 || len(q["offset"]) != 1 {
+		return
+	}
 	limit, e1 := strconv.Atoi(q.Get("limit"))
 	offset, e2 := strconv.Atoi(q.Get("offset"))
 	max := client.OwnerPlacesPageLimit
-	if items { max = client.OwnerGalleryPageLimit }
+	if items {
+		max = client.OwnerGalleryPageLimit
+	}
 	if e1 != nil || e2 != nil || limit < 1 || limit > max ||
 		offset < 0 || offset > client.OwnerGalleryMaxOffset ||
-		strconv.Itoa(limit) != q.Get("limit") || strconv.Itoa(offset) != q.Get("offset") { return }
+		strconv.Itoa(limit) != q.Get("limit") || strconv.Itoa(offset) != q.Get("offset") {
+		return
+	}
 	if items {
 		place = q.Get("place_id")
-		if !client.ValidOwnerPlaceID(place) { return limit, offset, "", false }
+		if !client.ValidOwnerPlaceID(place) {
+			return limit, offset, "", false
+		}
 	}
 	return limit, offset, place, true
 }
