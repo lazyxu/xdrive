@@ -27,7 +27,8 @@ test('terminal PhotoKit still failure is not an infinite local Viewer spinner', 
 
 test('manual local Viewer retry revalidates current scene and PhotoKit permissions', () => {
   assert.match(detail, /else if let message = model\.message \{[\s\S]*?Button\("重试"\)/)
-  assert.match(detail, /guard phase == \.active,[\s\S]*?PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)[\s\S]*?else \{ return \}\s*model\.load\(viewed\)/)
+  assert.match(detail, /guard phase == \.active,[\s\S]*?PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)[\s\S]*?else \{ return \}\s*reloadCurrent\(\)/)
+  assert.match(detail, /private func reloadCurrent\(\)[\s\S]*?guard currentPageAuthorized else \{ return \}[\s\S]*?model\.load\(viewed, allowICloud: requestedICloudForCurrentItem\)/)
   assert.match(detail, /if phase == \.active,\s*\[\.authorized, \.limited\]\.contains\([\s\S]*?PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)[\s\S]*?\) \{\s*Button\("重试"\)/)
   assert.match(detail, /accessibilityIdentifier\("native-ios-local-viewer-retry"\)/)
   assert.match(model, /func load\(_ candidate: XDrivePhotoKitScanCandidate, allowICloud: Bool = false\) \{\s*cancel\(\)/)

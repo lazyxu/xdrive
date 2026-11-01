@@ -212,6 +212,16 @@ final class XDriveIOSLocalPhotoDetailModel: ObservableObject {
         downloadingFromICloud = !pendingICloudParts.isEmpty
     }
 
+    /// A PhotoKit AVAsset may be returned successfully and still fail when
+    /// the native AVPlayer starts. Only retire the currently displayed item.
+    func playbackFailed(_ failed: AVPlayerItem) {
+        guard let active = player?.currentItem, active === failed else { return }
+        player?.pause()
+        player?.replaceCurrentItem(with: nil)
+        player = nil
+        message = "本机视频播放失败，请重试当前媒体。"
+    }
+
     func cancel() {
         epoch = UUID()
         pendingICloudParts.removeAll()
@@ -374,8 +384,7 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
         NavigationStack {
             Group {
                 if let player = model.player {
-                    VideoPlayer(player: player)
-                        .onAppear { player.play() }
+                    videoSurface(player)
                 } else if let live = model.live {
                     VStack(spacing: 10) {
                         if showsStaticStill, let image = model.still {
@@ -426,9 +435,7 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                                       [.authorized, .limited].contains(
                                         PHPhotoLibrary.authorizationStatus(for: .readWrite)
                                       ) else { return }
-                                model.load(viewed)
-                                showsStaticStill = false
-                                livePlaybackRequest = nil
+                                reloadCurrent()
                             }
                             .accessibilityIdentifier("native-ios-local-viewer-retry")
                         }
@@ -479,6 +486,14 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                 }
             }
             .toolbar {
+                // Remains reachable when a video stalls in landscape without
+                // firing a terminal failure callback.
+                ToolbarItem(placement: .navigationBarLeading) {
+                    if currentPageAuthorized, model.player != nil {
+                        Button("重新加载本机视频") { reloadCurrent() }
+                            .accessibilityIdentifier("native-ios-local-player-reload")
+                    }
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("完成") { dismiss() }
                 }
@@ -514,12 +529,60 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                 dismiss()
             }
         }
+        // A valid PhotoKit AVAsset can fail after the initial request.
+        // Obsolete callbacks must never affect another selected photo/video.
+        .onReceive(NotificationCenter.default.publisher(
+            for: .AVPlayerItemFailedToPlayToEndTime
+        ).receive(on: RunLoop.main)) { notice in
+            guard currentPageAuthorized,
+                  let failed = notice.object as? AVPlayerItem,
+                  model.player?.currentItem === failed else { return }
+            model.playbackFailed(failed)
+        }
         .onDisappear {
             changes.stop()
             model.cancel()
             showsStaticStill = false
             livePlaybackRequest = nil
         }
+    }
+
+    @ViewBuilder
+    private func videoSurface(_ player: AVPlayer) -> some View {
+        if let item = player.currentItem {
+            VideoPlayer(player: player)
+                .onAppear { if currentPageAuthorized { player.play() } }
+                .onDisappear { player.pause() }
+                .onReceive(
+                    item.publisher(for: \.status, options: [.initial, .new])
+                        .receive(on: RunLoop.main)
+                ) { status in
+                    guard status == .failed, currentPageAuthorized,
+                          model.player?.currentItem === item else { return }
+                    model.playbackFailed(item)
+                }
+                .onReceive(
+                    player.publisher(for: \.status, options: [.initial, .new])
+                        .receive(on: RunLoop.main)
+                ) { status in
+                    guard status == .failed, currentPageAuthorized,
+                          model.player?.currentItem === item else { return }
+                    model.playbackFailed(item)
+                }
+        } else {
+            Text("本机视频播放器不可用，可重新加载当前视频。")
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @MainActor
+    private func reloadCurrent() {
+        guard currentPageAuthorized else { return }
+        // Only a previous explicit request for this exact item may retry
+        // through iCloud. Neighbor/scene changes clear the request intent.
+        showsStaticStill = false
+        livePlaybackRequest = nil
+        model.load(viewed, allowICloud: requestedICloudForCurrentItem)
     }
 }
 
