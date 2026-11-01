@@ -288,7 +288,10 @@ test('DSM first-use 403 gives NAS-only principal setup steps without contaminati
   assert.match(unauthorizedView, /xd backup synology-ui authorize --dsm-user DSM_USERNAME/)
   assert.match(unauthorizedView, /网页不会代为授权/)
   assert.equal(tree.root.findAllByType('folder-accordion').length, 0)
-  assert.equal(tree.root.findAllByProps({ 'data-xdrive-dsm-first-use-authorization': true }).length, 1)
+  // The MUI Box fixture renders a composite wrapper and one host "Box".
+  // Count only the actual host to require exactly one visible NAS hint.
+  assert.equal(tree.root.findAllByType('Box').filter(node =>
+    node.props['data-xdrive-dsm-first-use-authorization'] === true).length, 1)
 
   await act(async () => {
     tree.update(React.createElement(Panel, { client: offline }))
