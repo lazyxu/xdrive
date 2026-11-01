@@ -695,8 +695,8 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
             }
         }
         .onDisappear {
-            cancelPhotoAction()
             cancelCrossing()
+            cancelPhotoAction()
         }
         .onDisappear {
             changes.stop()
