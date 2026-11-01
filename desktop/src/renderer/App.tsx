@@ -324,7 +324,10 @@ export default function App({
     [loginHistory.profiles, server, username],
   )
   const hasStoredPassword = !!matchingLoginProfile?.password_available
-  const savedPasswordAvailable = password.length === 0 && hasStoredPassword
+  // A remembered password belongs to this exact Server/username AND its saved
+  // LAN route. Manually choosing another LAN IP must never replay it there.
+  const savedPasswordAvailable = password.length === 0 && hasStoredPassword &&
+    (matchingLoginProfile?.connection_route?.lan_ip || '') === connectionRoute.lan_ip
 
   const status = agent.status
   const baiduDiagnosticScope = `desktop:${status?.server ?? ''}:${status?.username ?? ''}`
@@ -1477,6 +1480,13 @@ export default function App({
 
   const selectLoginServer = (value: string) => {
     loginDraftUserEditedRef.current = true
+    if (value !== server) {
+      // FreeSolo also accepts previously unseen Servers. Do not leave A's
+      // typed password or persistence toggles on the form for B.
+      setPassword('')
+      setRememberPassword(false)
+      setAutoLogin(false)
+    }
     setServer(value)
     const normalized = value.trim()
     const profile = loginHistory.profiles.find((item) => item.server === normalized)
@@ -1488,6 +1498,11 @@ export default function App({
 
   const selectLoginUsername = (value: string) => {
     loginDraftUserEditedRef.current = true
+    if (value !== username) {
+      setPassword('')
+      setRememberPassword(false)
+      setAutoLogin(false)
+    }
     setUsername(value)
     const normalized = value.trim()
     const currentServer = server.trim()
@@ -2345,6 +2360,11 @@ export default function App({
                 onInputChange={(_event, value, reason) => {
                   if (reason !== 'reset') {
                     loginDraftUserEditedRef.current = true
+                    if (value !== server) {
+                      setPassword('')
+                      setRememberPassword(false)
+                      setAutoLogin(false)
+                    }
                     setServer(value)
                     setError('')
                   }
@@ -2370,7 +2390,13 @@ export default function App({
               value={connectionRoute.lan_ip} disabled={!!busy}
               onChange={event => {
                 loginDraftUserEditedRef.current = true
-                setConnectionRoute({ mode: 'auto', lan_ip: event.target.value.trim(), public_ip: '' })
+                const nextLAN = event.target.value.trim()
+                if (nextLAN !== connectionRoute.lan_ip) {
+                  setPassword('')
+                  setRememberPassword(false)
+                  setAutoLogin(false)
+                }
+                setConnectionRoute({ mode: 'auto', lan_ip: nextLAN, public_ip: '' })
               }}
               helperText="自动优先尝试此内网地址；网络不可达时使用服务器域名 DNS。不会跳过 HTTPS 身份校验。"
             />
@@ -2407,6 +2433,11 @@ export default function App({
                 onInputChange={(_event, value, reason) => {
                   if (reason !== 'reset') {
                     loginDraftUserEditedRef.current = true
+                    if (value !== username) {
+                      setPassword('')
+                      setRememberPassword(false)
+                      setAutoLogin(false)
+                    }
                     setUsername(value)
                     setError('')
                   }

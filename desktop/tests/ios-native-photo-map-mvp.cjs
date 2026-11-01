@@ -12,11 +12,11 @@ const policy = read('ios/XDriveIOS/NativePhotoMapPolicy.swift')
 const spatial = read('ios/XDriveIOS/NativeLocalPhotoMapSpatialPolicy.swift')
 
 test('real native Gallery map uses MapKit and existing local Viewer, no WebView', () => {
-  assert.match(dashboard, /case \.map:\s*XDriveIOSNativeLocalPhotoMapScreen\(/)
+  assert.match(dashboard, /case \.map:\s*XDriveIOSNativePhotoMapsScreen\(/)
   assert.match(map, /MKMapView\(\)/)
   assert.match(map, /MKClusterAnnotation/)
   assert.match(map, /clusteringIdentifier = identifier == "photo"/)
-  assert.match(map, /XDriveIOSNativeLocalPhotoDetail\(candidate: \$0\)/)
+  assert.match(map, /XDriveIOSNativeLocalPhotoDetail\(\s*candidate: initial, loadedItems: previewItems,/)
   assert.match(focus, /gallerySource == "map"/)
   assert.doesNotMatch(map, /WKWebView|URLSession|UploadSession|Keychain|UserDefaults/)
 })
@@ -54,7 +54,7 @@ test('native Launcher marks the real local map available, not as an unavailable 
   assert.ok(available, 'native launcher route availability must remain explicit')
   assert.match(available, /case \.local, \.albums, \.cloud, \.originals, \.map, \.files, \.backup: return true/)
   assert.match(dashboard, /case \.map:\s*openGallery\(\.map\)/)
-  assert.match(dashboard, /case \.map:\s*XDriveIOSNativeLocalPhotoMapScreen\(/)
+  assert.match(dashboard, /case \.map:\s*XDriveIOSNativePhotoMapsScreen\(/)
   assert.match(dashboard, /if !route\.available \{\s*Text\("未接入"\)/)
 })
 
@@ -246,4 +246,40 @@ test('local Gallery map retains parent-owned mode and page only, but revalidates
   assert.match(map, /XDriveIOSNativePhotoMapPolicy\.validPage\(/);
   assert.match(map, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/);
   assert.doesNotMatch(map, /UserDefaults|WKWebView|UploadSession/);
+});
+
+
+test('both local MapKit album sheets browse a frozen authorized slice and restore last viewed tile', () => {
+  const bounded = map.slice(map.indexOf('private struct XDriveIOSMapPhotoAlbum: View'),
+    map.indexOf('enum XDriveIOSNativeLocalMapScope'));
+  const spatialAlbum = map.slice(map.indexOf('private struct XDriveIOSMapSpatialAlbum: View'),
+    map.indexOf('/// One native map route'));
+  const admission = map.slice(map.indexOf('private enum XDriveIOSNativeMapViewerAdmission'),
+    map.indexOf('private struct XDriveIOSMapPhotoAlbum: View'));
+  assert.match(admission, /XDriveIOSNativePhotoViewerReturnAnchorPolicy\.localLoadedIndex\(/);
+  assert.match(admission, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\)/);
+  assert.match(admission, /PHAsset\.fetchAssets\(\s*withLocalIdentifiers: \[item\.id\]/);
+  assert.match(admission, /asset\.creationDate == item\.capturedAt/);
+  assert.match(admission, /asset\.modificationDate == item\.modifiedAt/);
+  assert.match(admission, /item\.isLive == asset\.mediaSubtypes\.contains\(\.photoLive\)/);
+  assert.doesNotMatch(admission, /isNetworkAccessAllowed|URLSession|UserDefaults|UploadSession/);
+  for (const [name, screen] of [['bounded map pins', bounded], ['48-row GPS cell', spatialAlbum]]) {
+    assert.match(screen, /ScrollViewReader \{ returnScroll in/, name);
+    assert.match(screen, /XDriveIOSNativeLocalPhotoDetail\(\s*candidate: initial, loadedItems: previewItems,/,
+      name + ' must provide neighbors to the native Viewer');
+    assert.match(screen, /onViewed: \{ next in[\s\S]*?viewerReturnID = next\.id/,
+      name + ' must track the actual last viewed member');
+    assert.match(screen, /XDriveIOSNativeMapViewerAdmission\.allows\(/,
+      name + ' must revalidate the currently authorized member');
+    assert.match(screen, /\.fullScreenCover\(item: \$(selected|viewer), onDismiss: \{\s*restoreViewerTile\(using: returnScroll\)/,
+      name + ' must restore after modal dismissal');
+    assert.match(screen, /scroll\.scrollTo\(id, anchor: \.center\)/, name);
+    assert.match(screen, /\.id\(item\.id\)/, name);
+    assert.match(screen, /\.accessibilityFocused\(\$focusedTileID, equals: item\.id\)/, name);
+    assert.match(screen, /defer \{ viewerReturnID = nil \}/, name);
+  }
+  assert.match(bounded, /items\.prefix\(XDriveIOSNativePhotoMapPolicy\.pageSize\)/);
+  assert.match(spatialAlbum, /items\.prefix\(48\)/);
+  assert.match(spatialAlbum, /guard !busy,[\s\S]*?XDriveIOSNativeMapViewerAdmission\.allows\(/);
+  assert.match(spatialAlbum, /viewerReturnID = nil\s*focusedTileID = nil\s*viewer = nil\s*items = \[\]\s*dismiss\(\)/);
 });

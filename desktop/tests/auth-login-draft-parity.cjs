@@ -49,7 +49,19 @@ test('DSM reloads on ambiguous Agent outcome and restores only public login hint
   assert.match(dsmDraft, /xDriveBrowserStorageWrite\(DSM_LOGIN_DRAFT_KEY/)
   assert.doesNotMatch(dsm, /window\.localStorage/)
   assert.match(dsm, /if \(info\.configured\)/)
-  assert.match(dsm, /setPassword\(''\)[\s\S]{0,250}setLoginState\('logging'\)/)
+  // Agent's authenticated pre-commit 401 proof allows a safe same-Owner retry.
+  // Retaining the password on the *current page* is intentional, never durable.
+  const loginStart = dsm.indexOf("loginPhaseRef.current = 'logging'")
+  const post = dsm.indexOf('void client.loginServer(requestedServer, requestedUsername, requestedPassword, controller.signal).then(', loginStart)
+  assert.ok(loginStart >= 0 && post > loginStart, 'must enter and submit an Owner-fenced login')
+  assert.doesNotMatch(dsm.slice(loginStart, post), /setPassword\(''\)/,
+    'do not discard the password before a proven pre-commit rejection can return')
+  const postResult = dsm.slice(post, dsm.indexOf('\n      },\n      () => {', post))
+  assert.match(postResult, /failure instanceof XDriveDSMLoginNoCommitError/)
+  assert.match(postResult, /current.owner_scope !== info.owner_scope/)
+  assert.match(postResult, /setPassword\(''\)[\s\S]{0,100}window.location.reload\(\)/)
+  assert.ok((postResult.match(/window.location.reload\(\)/g) || []).length >= 3,
+    'success, ambiguous failure and Owner mismatch must each retire the workspace')
   assert.ok((dsm.match(/window\.location\.reload\(\)/g) || []).length >= 2)
   assert.doesNotMatch(dsmDraft, /(?:password|refreshToken|accessToken): string/)
   assert.doesNotMatch(dsmDraft, /window\.localStorage/)

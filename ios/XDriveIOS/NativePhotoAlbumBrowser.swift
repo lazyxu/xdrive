@@ -499,6 +499,21 @@ struct XDriveIOSNativePhotoAlbumsScreen: View {
                         Label("仅可查看 iOS 已授权的相册成员", systemImage: "lock.shield")
                             .font(.caption).foregroundStyle(.secondary)
                     }
+                    NavigationLink {
+                        XDriveIOSNativeLocalPhotoTimelineScreen()
+                    } label: {
+                        Label("按年、月、日浏览全部照片", systemImage: "calendar")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(12)
+                            .background(
+                                Color(uiColor: .secondarySystemGroupedBackground),
+                                in: RoundedRectangle(cornerRadius: 12)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("native-ios-gallery-timeline-entry")
+
                     if let page {
                         Text(page.total == 0 ? "没有可访问的相册。" :
                             "相册 \(page.offset + 1)–\(page.offset + page.items.count) / \(page.total)")

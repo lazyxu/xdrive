@@ -100,6 +100,8 @@ const locate = (node, match) => {
 }
 const dynamic = locate(tree, node => node.type === 'BottomNavigationAction' && node.props.value === 'dynamic')
 assert.ok(dynamic, 'Actual dynamic tab must be mounted')
+assert.equal(dynamic.props.label, '动态功能', 'fixed slot title must not change to the latest route')
+assert.match(dynamic.props['aria-label'], /任务/, 'latest route remains available to assistive users')
 assert.match(dynamic.props['aria-label'], /长按查看最近功能/)
 assert.equal(dynamic.props['aria-haspopup'], 'dialog')
 assert.equal(dynamic.props['aria-expanded'], false)

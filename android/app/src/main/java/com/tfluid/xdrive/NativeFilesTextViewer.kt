@@ -20,6 +20,31 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tfluid.xdrive.core.DriveNode
 
+/** Split the bounded 1 MiB UTF-8 preview for Compose without cutting a UTF-16
+ * surrogate pair (emoji) or a Windows CRLF at a render item boundary. The
+ * original text is retained unchanged and chunks stay <= 4096 code units.
+ * This is a visual chunking policy, not a new transport or unbounded read. */
+internal fun nativeTextViewerDisplayChunks(
+    text: String, maxUnits: Int = 4096,
+): List<String> {
+    require(maxUnits >= 2)
+    if (text.isEmpty()) return emptyList()
+    val result = ArrayList<String>((text.length + maxUnits - 1) / maxUnits)
+    var offset = 0
+    while (offset < text.length) {
+        var end = minOf(offset + maxUnits, text.length)
+        if (end < text.length && (
+                (Character.isHighSurrogate(text[end - 1]) &&
+                    Character.isLowSurrogate(text[end])) ||
+                (text[end - 1] == '\r' && text[end] == '\n')
+            )) end--
+        check(end > offset)
+        result += text.substring(offset, end)
+        offset = end
+    }
+    return result
+}
+
 /** Real native UTF-8 Files Viewer. Reuses the existing 1 MiB Owner/revision
  * verified text endpoint and Controller retry fence; never writes media to disk,
  * stores tokens, or builds one pathological million-character Compose Text. */
@@ -71,7 +96,7 @@ internal fun NativeFilesTextViewer(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
                         .testTag("files-text-status"))
                 val chunks = remember(node.id, node.revision, preview.text) {
-                    preview.text.chunked(4096)
+                    nativeTextViewerDisplayChunks(preview.text)
                 }
                 if (chunks.isEmpty()) {
                     Box(Modifier.fillMaxWidth().weight(1f),
