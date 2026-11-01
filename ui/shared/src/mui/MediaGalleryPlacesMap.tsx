@@ -18,11 +18,12 @@ import {
 } from '../media-gallery-baidu-diagnostics'
 import type { XDriveBaiduMapDiagnostic } from '../media-gallery-baidu-diagnostics'
 import { XDriveMediaGalleryMapGPSCoverage } from './MediaGalleryMapGPSCoverage'
+import { XDriveMediaGalleryOwnerGPSOverview } from './MediaGalleryOwnerGPSOverview'
 
 /** Two user-selected dynamic SDK runtimes. A denied signed release never
  * silently downgrades the isolated Child to the legacy direct prototype. */
 export function XDriveMediaGalleryPlacesMap({
-  places, totalCount, initialNativeCamera, onNativeCameraChange, onNativeCameraClear,
+  places, totalCount, listPlacesMapOverview, initialNativeCamera, onNativeCameraChange, onNativeCameraClear,
   listBaiduNativeCells, listBaiduNativeCellItems, loadPhotoCoverThumbnail, loadPhotoCoverPreviewURL, savePhotoCoverVideoPoster, getBaiduMapCoverage, getBaiduMapCoverageReasons, getBaiduJSAPI4Status,
   getBaiduJSAPIPrototype, mintBaiduIsolatedChildTicket, onOpenBaiduNativeCell, onOpenBaiduNativeCellPhoto, onOpenBaiduNativeViewport, onBaiduNativeCellInvalidated,
   onOpenSecureDesktopMap, diagnosticScope, onOpenDiagnostics, onCloseMap,
@@ -649,6 +650,10 @@ export function XDriveMediaGalleryPlacesMap({
             动态地图由 Server 签名发布，不在 Electron file 页面加载第三方脚本。
           </Typography>
         </Box>
+      ) : !getBaiduJSAPI4Status && listPlacesMapOverview && onOpenPlace ? (
+        <XDriveMediaGalleryOwnerGPSOverview
+          scope={diagnosticScope ?? ''} listPage={listPlacesMapOverview}
+          onOpenPlace={onOpenPlace} compact={compact}/>
       ) : nativeEnabled && listBaiduNativeCells && onOpenBaiduNativeCell &&
           (mapMode === 'prototype' ? getBaiduJSAPIPrototype : mintBaiduIsolatedChildTicket) ? (
         <XDriveMediaGalleryBaiduIsolatedPhotoSurface
