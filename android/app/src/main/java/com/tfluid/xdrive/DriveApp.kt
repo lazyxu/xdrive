@@ -102,6 +102,7 @@ internal fun nativePhotoBackupCanConfirm(
 ): Boolean = sameSession && galleryVisible && verifiedOriginal &&
     fullMediaGrant && !writerBusy && validDriveNodeName(destinationName)
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DriveApp(controller: DriveController, updates: UpdateController? = null, openUpdate: (String) -> Boolean = { false },
     initialFilesView: FileViewMode = FileViewMode.LIST, saveFilesView: (FileViewMode) -> Unit = {},
