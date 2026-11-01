@@ -220,12 +220,13 @@ private struct XDriveIOSNativeFilesFolder: Hashable {
     let name: String
 }
 
-/// iOS fixed Files tab: genuine native bounded Owner directory navigation
-/// and whole-library search. Mutations, downloads and Viewer stay explicitly
-/// unavailable until their own verified native API/receipt routes are wired.
+/// iOS fixed Files tab: genuine native bounded Owner directory navigation,
+/// search and 512 MiB single-file export. Preview, batch actions and full
+/// durable transfers remain explicitly unavailable until verified.
 struct XDriveIOSNativeFilesBrowser: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     @StateObject private var model = XDriveIOSNativeFilesPageModel()
+    @StateObject private var exporter = XDriveIOSNativeFilesExportModel()
     @State private var offset = 0
     @State private var queryDraft = ""
     @State private var activeQuery = ""
@@ -324,6 +325,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                     .accessibilityIdentifier("native-ios-files-folder-\(entry.node.id)")
                 } else {
                     Button {
+                        exporter.invalidate()
                         selectedFile = entry
                     } label: {
                         row(entry)
@@ -388,7 +390,7 @@ struct XDriveIOSNativeFilesBrowser: View {
         } message: {
             Text("仅在当前目录创建。若连接中断导致结果不确定，请刷新目录确认，不要连续重试。")
         }
-        .sheet(item: $selectedFile) { entry in
+        .sheet(item: $selectedFile, onDismiss: { exporter.invalidate() }) { entry in
             NavigationStack {
                 Form {
                     Section("文件信息") {
@@ -401,7 +403,29 @@ struct XDriveIOSNativeFilesBrowser: View {
                             LabeledContent("路径", value: path)
                         }
                     }
-                    Text("预览、下载和文件修改尚未接通 iOS 原生操作；当前仅显示服务器实际返回的文件信息。")
+                    Section("下载与导出") {
+                        if let prepared = exporter.prepared,
+                           prepared.nodeID == entry.node.id,
+                           prepared.revision == entry.node.revision {
+                            ShareLink(item: prepared.fileURL) {
+                                Label("保存到“文件”或分享", systemImage: "square.and.arrow.up")
+                            }
+                            Text("需要在系统分享菜单中主动选择保存位置；此处并不代表已经保存。")
+                                .font(.footnote).foregroundStyle(.secondary)
+                        } else {
+                            Button(exporter.busy ? "正在下载…" : "下载并准备系统导出") {
+                                exporter.prepare(entry.node, login: login)
+                            }
+                            .disabled(exporter.busy)
+                            Text("首版支持 512 MiB 以内的单个文件；无后台下载，不显示虚构进度。")
+                                .font(.footnote).foregroundStyle(.secondary)
+                        }
+                        if let status = exporter.status {
+                            Text(status).font(.footnote).foregroundStyle(.secondary)
+                                .accessibilityIdentifier("native-ios-files-export-status")
+                        }
+                    }
+                    Text("预览及重命名、复制、移动、删除仍未接通 iOS 原生操作。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 .navigationTitle("文件详情")
@@ -415,6 +439,7 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
         .onAppear { reload() }
         .onDisappear { model.invalidate() }
+        .onDisappear { exporter.invalidate() }
         .onDisappear {
             createEpoch = UUID()
             createTask?.cancel()
@@ -426,6 +451,7 @@ struct XDriveIOSNativeFilesBrowser: View {
             selectedFile = nil
             offset = 0
             model.invalidate()
+            exporter.invalidate()
             createEpoch = UUID()
             createTask?.cancel()
             createTask = nil

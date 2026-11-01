@@ -302,7 +302,7 @@ jobs:
             ios/tests/NativeFilesFolderNameChecks.swift \
             -o "$RUNNER_TEMP/xdrive-ios-files-folder-check"
           "$RUNNER_TEMP/xdrive-ios-files-folder-check"
-          node --test desktop/tests/ios-native-files-create-folder.cjs
+          node --test desktop/tests/ios-native-files-create-folder.cjs desktop/tests/ios-native-files-download-export.cjs
 
       - name: Prepare native brand and home screen icon
         run: bash ios/scripts/prepare-assets.sh
