@@ -48,6 +48,7 @@ class DriveAppTest {
     private var moveCalls = 0
     private var extraRootFile = false
     private var textPreviewFixture = false
+    private var textPreviewText = "hello xDrive"
     private var textPreviewReads = 0
     private var locateLargeFolder = false
     private var locateRangeReads = 0
@@ -545,7 +546,7 @@ class DriveAppTest {
         ): FileTextPreview {
             check(textPreviewFixture && node.id == 3L && node.revision == 2L)
             textPreviewReads++
-            return FileTextPreview("hello xDrive", false, node.size)
+            return FileTextPreview(textPreviewText, false, node.size)
         }
         override suspend fun childrenArranged(
             accessToken: String, parentId: Long, offset: Int,
@@ -2283,6 +2284,28 @@ class DriveAppTest {
         compose.onNodeWithContentDescription("账户菜单").performClick()
         compose.onNodeWithText("退出登录").performClick()
         compose.runOnIdle { org.junit.Assert.assertNull(controller.state.value.fileTextPreview) }
+    }
+
+    @Test fun nativeFilesDetailsPreviewUsesUnicodeSafeTextChunks() {
+        // The same exact Owner text is shown both in the full-screen reader
+        // and in Files properties. Neither surface may render half an emoji.
+        textPreviewFixture = true
+        textPreviewText = "x".repeat(4095) + "😀tail"
+        startAndLogin()
+        compose.onNodeWithText("假期照片").performClick()
+        compose.onNodeWithTag("files-item-3").performTouchInput { longClick() }
+        compose.onNodeWithText("属性").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.fileTextPreview?.text == textPreviewText &&
+                !controller.state.value.fileTextPreviewLoading
+        }
+        compose.onNodeWithTag("files-text-preview-content").assertExists()
+            .performScrollToNode(hasText("😀tail"))
+        compose.onNodeWithText("😀tail").assertExists()
+        compose.onNodeWithText("关闭").performClick()
+        compose.runOnIdle {
+            org.junit.Assert.assertNull(controller.state.value.fileTextPreview)
+        }
     }
 
     @Test fun loginBrowseDetailsBackAndLogout() {
