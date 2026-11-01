@@ -21,6 +21,28 @@ internal fun nativeBaiduCameraBounds(
     westLongitude, southLatitude, eastLongitude, northLatitude,
 ).takeIf { it.valid() }
 
+/**
+ * Verified Owner-map camera pose held only in the native Compose session.
+ * SDK MapStatus objects must never be retained across a destroyed MapView.
+ * The independent current Owner bounds authorize only the matching camera,
+ * never a new /cells or photo read.
+ */
+internal data class NativeBaiduCameraPose(
+    val ownerBounds: OwnerBd09Bounds,
+    val latitude: Double,
+    val longitude: Double,
+    val zoom: Float,
+    val rotate: Float,
+    val overlook: Float,
+) {
+    fun validFor(bounds: OwnerBd09Bounds): Boolean =
+        bounds.valid() && ownerBounds == bounds &&
+            latitude.isFinite() && latitude in -90.0..90.0 &&
+            longitude.isFinite() && longitude in -180.0..180.0 &&
+            zoom.isFinite() && zoom > 0f && zoom <= 24f &&
+            rotate.isFinite() && overlook.isFinite()
+}
+
 internal fun nativeVerifiedBaiduPins(
     bounds: OwnerBd09Bounds,
     snapshot: OwnerBd09MapCells,

@@ -222,7 +222,11 @@ test('network or temporary-disk outage aborts whole original window instead of a
     runner.indexOf('private enum StillOutcome'))
   const scan = runner.slice(runner.indexOf('func run('),
     runner.indexOf('private static func mustAbortRun('))
-  const checked = scan.indexOf('if Self.mustAbortRun(after: error) { throw error }')
+  const checked = scan.indexOf('if Self.isTransientConfirmedReadbackFailure(error) ||')
+  // A read-only confirmed-Node outage and a global Owner/ledger failure
+  // must BOTH escape before any per-photo unavailable accounting.
+  assert.match(scan,
+    /if Self\.isTransientConfirmedReadbackFailure\(error\) \|\|\s*Self\.mustAbortRun\(after: error\) \{ throw error \}/)
   const unavailable = scan.indexOf('report.unavailable += 1', checked)
   const cursor = store.slice(store.indexOf('func recordResult('))
   assert.ok(checked > 0 && unavailable > checked,
@@ -230,6 +234,8 @@ test('network or temporary-disk outage aborts whole original window instead of a
   assert.match(policy, /error is URLError/)
   assert.match(policy, /error is XDriveNativeOwnerRootFailure/)
   assert.match(policy, /error is XDrivePhotoSyncLedgerError/)
+  assert.match(policy, /error is XDriveIOSPhotoBGVaultFailure/)
+  assert.match(policy, /case \.transientServerStatus\(let code\) = grant/)
   assert.match(policy, /case \.notAuthorized = source/)
   assert.match(policy, /case \.storageUnavailable = source/)
   assert.match(policy, /return false/, 'only named global failures stop the whole scan')

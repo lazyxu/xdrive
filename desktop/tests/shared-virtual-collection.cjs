@@ -282,6 +282,78 @@ test('VirtualCollection does not cache count-free pages before a generation has 
   )
 })
 
+
+test('authenticated empty EOF range reconciles a shortened Gallery after map Close', async () => {
+  const runtime = createHookRuntime()
+  const useVirtualCollection = loadVirtualCollectionHook(runtime.react)
+  const errors = []
+  const reads = []
+  const render = () => runtime.render(() => useVirtualCollection({
+    queryKey: 'owner:gallery-map-close',
+    loadRange: async (range) => {
+      reads.push({ ...range })
+      return {
+        offset: range.offset,
+        limit: range.limit,
+        totalCount: 3,
+        items: range.offset === 0 ? [{ id: 1 }, { id: 2 }, { id: 3 }] : [],
+      }
+    },
+    onError: error => errors.push(String(error.message)),
+    pageSize: 48, overscanPages: 0, retentionOverscanPages: 0,
+  }))
+
+  let collection = render()
+  // The native map unmounted while the virtual wall still reports a
+  // previously visible page 2. The now-current Owner Count is only 3.
+  await collection.ensureViewport(96, 143)
+  collection = render()
+  assert.deepEqual(errors, [], 'an authoritative empty EOF is not a Gallery error')
+  assert.deepEqual(reads, [{ offset: 96, limit: 48 }])
+  assert.equal(collection.totalCount, 3)
+  assert.equal(collection.loadedCount, 0, 'EOF must not fabricate media rows')
+  await collection.ensureViewport(96, 143)
+  assert.equal(reads.length, 1, 'reconciled Count must bound future viewport requests')
+
+  await collection.ensureViewport(0, 2)
+  collection = render()
+  assert.equal(collection.totalCount, 3)
+  assert.equal(collection.loadedCount, 3)
+  assert.deepEqual(collection.itemAt(0), { id: 1 })
+  assert.deepEqual(errors, [])
+})
+
+test('EOF reconciliation never accepts shifted, nonempty or count-free Host pages', async () => {
+  for (const mutation of [
+    { offset: 97, items: [], totalCount: 3 },
+    { offset: 96, items: [{ id: 99 }], totalCount: 3 },
+    { offset: 96, items: [], totalCount: null },
+  ]) {
+    const runtime = createHookRuntime()
+    const useVirtualCollection = loadVirtualCollectionHook(runtime.react)
+    const errors = []
+    let calls = 0
+    const render = () => runtime.render(() => useVirtualCollection({
+      queryKey: 'owner:strict-eof-' + String(mutation.totalCount),
+      loadRange: async (range) => {
+        calls++
+        return { offset: range.offset, limit: range.limit, ...mutation }
+      },
+      onError: error => errors.push(String(error.message)),
+      pageSize: 48, overscanPages: 0, retentionOverscanPages: 0,
+    }))
+
+    let collection = render()
+    await collection.ensureViewport(96, 143)
+    collection = render()
+    assert.equal(errors.length, 1, JSON.stringify(mutation))
+    assert.equal(collection.totalCount, null)
+    assert.equal(collection.loadedCount, 0)
+    await collection.ensureViewport(96, 143)
+    assert.equal(calls, 2, 'rejected range must stay retryable: ' + JSON.stringify(mutation))
+  }
+})
+
 test('VirtualCollection refuses to prime a generation without total count', () => {
   const runtime = createHookRuntime()
   const useVirtualCollection = loadVirtualCollectionHook(runtime.react)

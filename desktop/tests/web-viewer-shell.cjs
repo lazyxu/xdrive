@@ -499,7 +499,16 @@ test('P1-2c Gallery Viewer return scroll snapshot belongs to same Web route, hos
   assert.match(app, /galleryViewerScrollRef\.current = host \? \{/)
   assert.match(app, /offset: host\.scrollTop/)
   assert.match(app, /<WebFileViewerApps/)
-  assert.match(app, /onClose=\{\(node\) => closeViewer\(/)
+  // Closing a Viewer still invokes the single browser runtime, but mobile
+  // may choose a safe Gallery root when the original History entry is absent.
+  // Check both the real callback handoff and preserved Browser Back precedence.
+  assert.match(app, /onClose=\{\(node\) => \{[\s\S]*?closeViewer\(compactWorkspace/)
+  assert.match(app, /xDriveMobileViewerSafeFallbackRoute\([\s\S]*?node\?\.parent_id/)
+  assert.match(app, /: \{ app: 'files', params: \{ dir: node\?\.parent_id \} \}/,
+    'wide Web still uses the original Files fallback')
+  const runtime = fs.readFileSync(path.join(repo, 'web/src/webAppRuntime.ts'), 'utf8')
+  assert.match(runtime, /if \(state\?\.viewerReturn\) \{\s*window\.history\.back\(\)/,
+    'an existing Viewer return History entry must override any fallback')
   const openStart = app.indexOf('onOpenViewer={(item, context) => {')
   const openEnd = app.indexOf('const contextID = xDriveCreateWebAppBrowseSession', openStart)
   assert.ok(openStart >= 0 && openEnd > openStart)

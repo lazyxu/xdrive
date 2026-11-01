@@ -188,7 +188,10 @@ struct XDriveIOSForegroundPhotoBackupMVP {
         // A disk staging failure is equally global, not a missing original.
         if error is URLError ||
            error is XDriveNativeOwnerRootFailure ||
-           error is XDrivePhotoSyncLedgerError {
+           error is XDrivePhotoSyncLedgerError ||
+           error is XDriveIOSPhotoBGVaultFailure {
+            // An expired/revoked BG Device grant invalidates this whole run.
+            // It must never be classified as one unavailable PhotoKit item.
             return true
         }
         if let source = error as? XDrivePhotoKitExportFailure,
@@ -211,6 +214,10 @@ struct XDriveIOSForegroundPhotoBackupMVP {
     /// not converted into a confirmed skip or an automatic upload retry.
     private static func isTransientConfirmedReadbackFailure(_ error: Error) -> Bool {
         if error is URLError { return true }
+        if let grant = error as? XDriveIOSPhotoBGVaultFailure,
+           case .transientServerStatus(let code) = grant {
+            return code == 408 || code == 429 || (500...599).contains(code)
+        }
         if let readback = error as? XDriveIOSNodeReceiptReadbackError,
            case .serverRejected(let code) = readback {
             return code == 408 || code == 429 || (500...599).contains(code)
