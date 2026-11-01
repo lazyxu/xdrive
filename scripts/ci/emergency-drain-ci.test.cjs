@@ -22,7 +22,7 @@ function harness(rows, movingHead = head) {
   }}
   return {calls, github: gh, core: {info: () => {}, warning: () => {}},
     context: {repo: {owner: 'lazyxu', repo: 'xdrive'}, ref: 'refs/heads/master',
-      eventName: 'push', runId: 999}}
+      eventName: 'workflow_dispatch', runId: 999}}
 }
 test('only obsolete PR and master push runs are eligible', () => {
   assert.equal(eligible(run(1), head, 999), true)
@@ -58,8 +58,24 @@ test('changes in status or SHA before cancellation fail closed', async () => {
   assert.equal(result.requested, 0)
   assert.deepEqual(h.calls, [])
 })
-test('untrusted event/repository and excessive budget fail closed', async () => {
+test('untrusted and automatic event/repository and excessive budget fail closed', async () => {
   const h = harness([run(1)])
+  for (const eventName of ['push', 'schedule', 'repository_dispatch']) {
+    await assert.rejects(drain({
+      ...h, context: {...h.context, eventName},
+    }), /manual dispatch/)
+  }
   await assert.rejects(drain({...h, context: {...h.context, ref: 'refs/heads/feature'}}), /trusted master/)
   await assert.rejects(drain({...h, maxCancels: 999}), /Invalid drain controls/)
+})
+
+test('emergency drain workflow has no automatic destructive trigger', () => {
+  const fs = require('node:fs')
+  const path = require('node:path')
+  const file = fs.readFileSync(
+    path.resolve(__dirname, '../../.github/workflows/emergency-drain-ci.yml'), 'utf8')
+  assert.match(file, /^on:\n  workflow_dispatch:/m)
+  assert.doesNotMatch(file, /^  (?:push|schedule|repository_dispatch):/m)
+  assert.ok(file.includes('        default: true'))
+  assert.ok(file.includes("EMERGENCY_DRY_RUN: ${{ inputs.dry_run }}"))
 })

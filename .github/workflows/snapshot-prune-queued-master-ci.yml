@@ -24,6 +24,9 @@ on:
       - '.github/workflows/compact-unstarted-master-ci.yml'
       - 'scripts/ci/compact-unstarted-master-ci.cjs'
       - 'scripts/ci/compact-unstarted-master-ci.test.cjs'
+      - '.github/workflows/emergency-drain-ci.yml'
+      - 'scripts/ci/emergency-drain-ci.cjs'
+      - 'scripts/ci/emergency-drain-ci.test.cjs'
 
 permissions:
   contents: read
@@ -47,11 +50,12 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
-      - name: Run both cancellation selectors and manual-only guards without write permission
+      - name: Run all master cancellation selector regressions with read-only token
         run: |
           node --check scripts/ci/prune-queued-master-ci.cjs
           node --check scripts/ci/compact-unstarted-master-ci.cjs
-          node --test scripts/ci/prune-queued-master-ci.test.cjs scripts/ci/compact-unstarted-master-ci.test.cjs
+          node --check scripts/ci/emergency-drain-ci.cjs
+          node --test scripts/ci/prune-queued-master-ci.test.cjs scripts/ci/compact-unstarted-master-ci.test.cjs scripts/ci/emergency-drain-ci.test.cjs
 
   # Never run PR-supplied code with Actions write. Only post-publish dispatches
   # or explicit manual runs execute checkout from trusted master.

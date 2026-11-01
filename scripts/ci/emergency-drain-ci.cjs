@@ -1,6 +1,6 @@
 'use strict'
 
-// Emergency, one-shot cleanup from trusted master. Cancel obsolete PR checks
+// Manual-only emergency cleanup from trusted master. Cancel obsolete PR checks
 // and old master-push workflows, but keep CURRENT master, tag releases,
 // manually requested workflows, and this cleanup execution.
 const ACTIVE = new Set(['queued', 'pending', 'in_progress', 'waiting', 'requested'])
@@ -21,8 +21,8 @@ function eligible(run, masterHead, selfId) {
 async function drain({github, context, core, dryRun = false, maxCancels = 400}) {
   const {owner, repo} = context.repo
   if (owner + '/' + repo !== REPO || context.ref !== 'refs/heads/master' ||
-      !['push', 'workflow_dispatch'].includes(context.eventName)) {
-    throw new Error('Emergency CI drain requires trusted master')
+      context.eventName !== 'workflow_dispatch') {
+    throw new Error('Emergency CI drain requires trusted master and manual dispatch')
   }
   if (typeof dryRun !== 'boolean' || !Number.isInteger(maxCancels) ||
       maxCancels < 1 || maxCancels > 400) throw new Error('Invalid drain controls')
