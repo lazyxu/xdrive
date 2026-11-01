@@ -70,7 +70,7 @@ private class NativeBaiduLease(val view: MapView) {
     private var lastPins: List<OwnerBd09Cell>? = null
     var onSelect: (OwnerBd09Cell) -> Unit = {}
     var onCameraStart: () -> Unit = {}
-    var onCameraSettled: (OwnerBd09Bounds) -> Unit = {}
+    var onCameraSettled: (OwnerBd09Bounds?) -> Unit = {}
     var markersEnabled = true
     private var sdkCameraGesture = false
     private var closed = false
@@ -98,11 +98,13 @@ private class NativeBaiduLease(val view: MapView) {
             override fun onMapStatusChangeFinish(status: MapStatus) {
                 if (closed || !sdkCameraGesture) return
                 sdkCameraGesture = false
-                val rect = status.bound ?: return
-                val target = nativeBaiduCameraBounds(
-                    rect.southwest.latitude, rect.southwest.longitude,
-                    rect.northeast.latitude, rect.northeast.longitude)
-                if (target != null) onCameraSettled(target)
+                val rect = status.bound
+                val target = rect?.let {
+                    nativeBaiduCameraBounds(
+                        it.southwest.latitude, it.southwest.longitude,
+                        it.northeast.latitude, it.northeast.longitude)
+                }
+                onCameraSettled(target)
             }
         })
     }
@@ -191,7 +193,7 @@ internal fun NativeBaiduMapPanel(
     result: OwnerBd09MapCells,
     onOpenCell: (OwnerBd09Cell) -> Unit,
     onCameraStart: () -> Unit,
-    onCameraSettled: (OwnerBd09Bounds) -> Unit,
+    onCameraSettled: (OwnerBd09Bounds?) -> Unit,
     markersEnabled: Boolean,
     preserveCamera: Boolean,
     placeholder: @Composable () -> Unit,
