@@ -21,7 +21,7 @@ test('native copy/move choose a real bounded current-Owner directory, never synt
   assert.match(picker, /parentID: folder\.id, offset: offset, sort: "name", order: "asc"/)
   assert.match(picker, /page != nil && !busy && failure == nil/)
   assert.match(picker, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, originalOwner\)/)
-  assert.match(picker, /kind == \.move && selected\.parent_id == folder\.id/)
+  assert.match(picker, /kind == \.move && allSelected\.contains\(where: \{ \$0\.parent_id == folder\.id \}\)/)
 })
 test('copy/move use real Server endpoints, exact source and target GET, version and post-commit readback', () => {
   assert.match(go, /authed\.POST\("\/nodes\/:id\/copy", s\.copyNode\)/)
