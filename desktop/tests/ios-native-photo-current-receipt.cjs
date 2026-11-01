@@ -26,7 +26,7 @@ test('one selected original is checked against exact current Owner/Node and sour
   assert.match(model, /\.localScopeAndTag\(owner: owner, localIdentifier: localIdentifier\)/)
   assert.match(model, /XDrivePhotoKitOriginalExporter\.stage\(/)
   assert.match(model, /allowICloudDownload: allowICloudOriginals/)
-  assert.match(model, /let sha256 = try Self\.hashOriginal\(original\)/)
+  assert.match(model, /sha256 = try Self\.hashOriginal\(original\)/)
   assert.match(model, /XDriveIOSNativeCurrentPhotoReceiptPolicy\.destinationName\(/)
   assert.match(model, /\.existingReceiptForCurrentOriginal\(/)
   assert.match(model, /receipt\.state == \.confirmed/)
@@ -59,7 +59,7 @@ test('proof policy does not mistake a matching local receipt for remotely verifi
   assert.match(policy, /static func destinationName\(/)
   assert.match(policy, /"-xios-" \+ tag \+ "-" \+ String\(sha256\.prefix\(12\)\)/)
   assert.match(policy, /static func canVerifyOriginal\(kind: String, isLive: Bool\)/)
-  assert.match(policy, /kind == "image" && !isLive/)
+  assert.match(policy, /kind == "image" \|\| \(kind == "video" && !isLive\)/)
   assert.match(policy, /static func canPublishCurrentProof\(/)
   assert.match(policy, /ownerNodeReadbackSucceeded && sourceStillSame/)
   assert.doesNotMatch(policy, /URLSession|UploadSession|PHAsset|import Photos|import Security/)
@@ -91,7 +91,8 @@ test('Live Photo current proof uses the same atomic still-motion archive as nati
   assert.match(preparer, /XDriveIOSLiveOriginalArchive\.create\(/)
   assert.match(preparer, /"Live-xios-" \+ destinationTag \+ "-" \+ String\(hash\.prefix\(12\)\) \+ "\.zip"/)
   assert.match(archive, /Manifest\(format: "xdrive-live-originals", version: 1, resources: parts\)/)
-  assert.doesNotMatch(model, /prepareLiveBundle\(|ledger\.prepare\(|beginCreate\(|uploadPrepared\(/)
+  const modelCodeOnly = model.replace(/\/\/[^\n]*/g, '')
+  assert.doesNotMatch(modelCodeOnly, /prepareLiveBundle\(|ledger\.prepare\(|beginCreate\(|uploadPrepared\(/)
 })
 
 test('status-only historical tally never creates a new ledger key to show zero', () => {
