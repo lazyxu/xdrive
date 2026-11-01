@@ -65,13 +65,15 @@ struct NativeOwnerMapSelectionPolicyChecks {
         precondition(dateline != nil && policy.isSameViewport(dateline!, current: dateline))
         precondition(!policy.isSameViewport(dateline!, current: world))
         // Executed Swift policy proof: 64 authenticated candidates keep
-        // only 12 count-prioritized exact places with deterministic ties.
+        // all 64 count-prioritized exact places with deterministic ties.
         let candidates = (0..<64).map {
             facet("place:10:\($0)", count: $0 + 1)
         }
+        precondition(policy.maximumPhotoCovers ==
+                     XDriveIOSNativeOwnerMapOverviewPolicy.maximumCells)
         let covers = policy.prioritizedPhotoCovers(Array(candidates.reversed()))
         precondition(covers.count == policy.maximumPhotoCovers)
-        precondition(covers.map(\.item_count) == Array((53...64).reversed()))
+        precondition(covers.map(\.item_count) == Array((1...64).reversed()))
         precondition(covers.first?.id == "place:10:63")
         let ties = policy.prioritizedPhotoCovers([
             facet("place:10:2", count: 5),

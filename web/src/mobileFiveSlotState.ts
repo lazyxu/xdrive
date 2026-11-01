@@ -161,6 +161,56 @@ export function xDriveSetMobileLauncherSearch(
   return base.launcherSearch === launcherSearch ? base : { ...base, launcherSearch }
 }
 
+/** Only synchronous All/Mine surfaces use pixel scroll snapshots. The
+ * virtualized Gallery/Files keep their existing authoritative row anchors. */
+export type XDriveMobileOverviewScrollSlot = 'all' | 'mine'
+export type XDriveMobileOverviewScrollMemory = {
+  ownerScope: string
+  viewportWidth: number
+  all: number
+  mine: number
+}
+
+export function xDriveMobileOverviewScrollSlot(
+  route: XDriveWebAppRoute,
+): XDriveMobileOverviewScrollSlot | null {
+  if (route.app !== 'overview') return null
+  return route.params.section === 'mine' ? 'mine' : 'all'
+}
+
+export function xDriveInitialMobileOverviewScroll(
+  ownerScope = '', viewportWidth = 0,
+): XDriveMobileOverviewScrollMemory {
+  return { ownerScope, viewportWidth, all: 0, mine: 0 }
+}
+
+/** No session storage, unverified Owner reads, or cross-breakpoint replays. */
+export function xDriveMobileOverviewScrollOffset(
+  memory: XDriveMobileOverviewScrollMemory,
+  ownerScope: string,
+  viewportWidth: number,
+  slot: XDriveMobileOverviewScrollSlot,
+): number {
+  return ownerScope && memory.ownerScope === ownerScope &&
+    Number.isSafeInteger(viewportWidth) && viewportWidth > 0 &&
+    memory.viewportWidth === viewportWidth ? memory[slot] : 0
+}
+
+export function xDriveRememberMobileOverviewScroll(
+  previous: XDriveMobileOverviewScrollMemory,
+  ownerScope: string,
+  viewportWidth: number,
+  slot: XDriveMobileOverviewScrollSlot,
+  scrollTop: number,
+): XDriveMobileOverviewScrollMemory {
+  const base = previous.ownerScope === ownerScope && previous.viewportWidth === viewportWidth
+    ? previous : xDriveInitialMobileOverviewScroll(ownerScope, viewportWidth)
+  if (!ownerScope || !Number.isSafeInteger(viewportWidth) || viewportWidth <= 0 ||
+      !Number.isFinite(scrollTop) || scrollTop < 0) return base
+  const offset = Math.min(10_000_000, Math.round(scrollTop))
+  return base[slot] === offset ? base : { ...base, [slot]: offset }
+}
+
 export function xDriveMobileRouteForSlot(
   memory: XDriveMobileNavigationMemory,
   slot: XDriveMobileSlot,
@@ -186,6 +236,33 @@ export function xDriveMobileAlbumOwnsBack(
 ): boolean {
   return route.app === 'gallery' && route.params.section === 'albums' &&
     Boolean(ownerScope) && registeredOwner === ownerScope
+}
+
+/** Browser L2 is explicit and restricted to the Gallery's photo wall or Files.
+ * The Places map has its own authoritative focus state and close affordance.
+ * Neither route state nor a saved tab preference grants media authority. */
+export type XDriveMobileManualFocusTarget = 'gallery-library' | 'files'
+export type XDriveMobileManualFocusSelection = {
+  ownerScope: string
+  target: XDriveMobileManualFocusTarget
+}
+
+export function xDriveMobileManualFocusTarget(
+  route: XDriveWebAppRoute,
+): XDriveMobileManualFocusTarget | null {
+  if (route.app === 'files') return 'files'
+  if (route.app === 'gallery' &&
+      (!route.params.section || route.params.section === 'library')) return 'gallery-library'
+  return null
+}
+
+export function xDriveMobileManualFocusActive(
+  route: XDriveWebAppRoute,
+  ownerScope: string,
+  selection: XDriveMobileManualFocusSelection | null,
+): boolean {
+  return Boolean(ownerScope) && selection?.ownerScope === ownerScope &&
+    selection.target === xDriveMobileManualFocusTarget(route)
 }
 
 /** L2 map focus belongs to the actual Gallery map panel, NOT every Places

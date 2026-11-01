@@ -956,9 +956,18 @@ function WebPreviewApp({
   const loadQuickLookPreview = useCallback<XDriveFilePreviewURLLoader>(
     async (currentTarget, kind, signal, onProgress) => {
       const id = Number(currentTarget.id)
-      if (kind === 'live_photo') return api.mediaLivePhotoStillURL(id, signal)
-      if (kind === 'image' && xDriveFileNeedsBrowserCompatibleImagePreview(currentTarget.name)) {
-        return api.mediaAnalysisPreviewURL(id, signal, Number(currentTarget.revision), onProgress)
+      if (kind === 'live_photo' ||
+          (kind === 'image' && xDriveFileNeedsBrowserCompatibleImagePreview(currentTarget.name))) {
+        try {
+          // Keep the current Owner/revision and stable Viewer lease for 4K WebP/JPEG.
+          return await api.mediaViewerPreviewURL(id, signal, Number(currentTarget.revision), onProgress)
+        } catch {
+          signal?.throwIfAborted()
+          // Older Servers retain the signed still or measured bounded JPEG.
+          return kind === 'live_photo'
+            ? api.mediaLivePhotoStillURL(id, signal)
+            : api.mediaAnalysisPreviewURL(id, signal, Number(currentTarget.revision), onProgress)
+        }
       }
       const url = await api.filePreviewURL(id, signal)
       if (kind === 'pdf') await xDrivePreflightWebPDFTicket(url, signal)
@@ -1020,6 +1029,7 @@ function WebPreviewApp({
           loadLivePhotoMotion={loadQuickLookMotion}
           onPresentationStateChange={presentation.onPresentationStateChange}
           interactiveImage
+          showImageDetails
           onSwipePrevious={viewer.previous ? viewer.goPrevious : undefined}
           onSwipeNext={viewer.next ? viewer.goNext : undefined}
           fallback={(

@@ -20,9 +20,11 @@ import (
 type mediaDerivativeKind string
 
 const (
-	mediaDerivativeThumbnail mediaDerivativeKind = "thumbnail"
-	mediaDerivativeAnalysis  mediaDerivativeKind = "analysis_preview"
-	mediaDerivativeCreative  mediaDerivativeKind = "creative_preview"
+	mediaDerivativeThumbnail  mediaDerivativeKind = "thumbnail"
+	mediaDerivativeAnalysis   mediaDerivativeKind = "analysis_preview"
+	mediaDerivativeCreative   mediaDerivativeKind = "creative_preview"
+	mediaDerivativeViewerWebP mediaDerivativeKind = "viewer_webp"
+	mediaDerivativeViewerJPEG mediaDerivativeKind = "viewer_jpeg"
 
 	mediaDerivativeRunTimeout = 2 * time.Minute
 )
@@ -84,6 +86,8 @@ func (s *Server) ensureMediaDerivative(
 		taskKind = "media.analysis_preview"
 	case mediaDerivativeCreative:
 		taskKind = "media.creative_preview"
+	case mediaDerivativeViewerWebP, mediaDerivativeViewerJPEG:
+		taskKind = "media.viewer_preview"
 	}
 	handle, err := s.BackgroundScheduler.Submit(background.Task{
 		Key:               taskKey,
@@ -161,6 +165,12 @@ func mediaDerivativeIdentity(
 			mediapkg.AnalysisPreviewEdge,
 			mediapkg.AnalysisPreviewVersion,
 			nil
+	case mediaDerivativeViewerWebP:
+		return mediapkg.ViewerPreviewStorageKey(node.ID, node.Revision, metadata.SHA256, "webp"),
+			mediapkg.ViewerPreviewEdge, mediapkg.ViewerPreviewVersion, nil
+	case mediaDerivativeViewerJPEG:
+		return mediapkg.ViewerPreviewStorageKey(node.ID, node.Revision, metadata.SHA256, "jpeg"),
+			mediapkg.ViewerPreviewEdge, mediapkg.ViewerPreviewVersion, nil
 	case mediaDerivativeCreative:
 		return mediapkg.CreativePreviewStorageKey(
 				node.ID,
@@ -217,9 +227,15 @@ func (s *Server) generateMediaDerivative(
 		return fmt.Errorf("%w: %v", errMediaDerivativeUnsupported, err)
 	}
 	render := mediapkg.ThumbnailJPEG
-	if kind == mediaDerivativeThumbnail &&
-		mediaThumbnailVersion(metadata) == mediapkg.ThumbnailAlphaVersion {
-		render = mediapkg.ThumbnailWithAlpha
+	switch kind {
+	case mediaDerivativeViewerWebP:
+		render = mediapkg.ViewerPreviewWebP
+	case mediaDerivativeViewerJPEG:
+		render = mediapkg.ViewerPreviewJPEG
+	case mediaDerivativeThumbnail:
+		if mediaThumbnailVersion(metadata) == mediapkg.ThumbnailAlphaVersion {
+			render = mediapkg.ThumbnailWithAlpha
+		}
 	}
 	preview, err := render(
 		previewSource,

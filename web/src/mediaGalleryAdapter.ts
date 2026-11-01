@@ -141,11 +141,20 @@ export function createWebMediaGalleryDataSource(api: XDriveApi, options?: {
     loadThumbnail: (nodeID, signal, revision, onProgress, bypassHTTPCache) => api.mediaThumbnail(nodeID, signal, revision, onProgress, bypassHTTPCache),
     saveVideoPoster: (nodeID, revision, poster, signal) => api.mediaVideoPoster(nodeID, revision, poster, signal),
     loadLivePhotoMotion: (nodeID, _onProgress, signal) => api.mediaLivePhotoMotionURL(nodeID, signal),
-    loadPreviewURL: (nodeID, kind, signal, fileName, revision, onProgress) => kind === 'live_photo'
-      ? api.mediaLivePhotoStillURL(nodeID, signal)
-      : kind === 'image' && xDriveFileNeedsBrowserCompatibleImagePreview(fileName ?? '')
-        ? api.mediaAnalysisPreviewURL(nodeID, signal, revision, onProgress)
-        : api.filePreviewURL(nodeID, signal),
+    loadPreviewURL: async (nodeID, kind, signal, fileName, revision, onProgress) => {
+      const needsConversion = kind === 'live_photo' ||
+        (kind === 'image' && xDriveFileNeedsBrowserCompatibleImagePreview(fileName ?? ''))
+      if (!needsConversion) return api.filePreviewURL(nodeID, signal)
+      try {
+        return await api.mediaViewerPreviewURL(nodeID, signal, revision, onProgress)
+      } catch {
+        signal?.throwIfAborted()
+        // Older Servers retain the pre-upgrade bounded JPEG preview.
+        return kind === 'live_photo'
+          ? api.mediaLivePhotoStillURL(nodeID, signal)
+          : api.mediaAnalysisPreviewURL(nodeID, signal, revision, onProgress)
+      }
+    },
     setFavorite: (nodeID, favorite) => api.setMediaFavorite(nodeID, favorite),
     setFavoriteBatch: (nodeIDs, favorite) => api.setMediaFavoriteBatch(nodeIDs, favorite),
     addTagsBatch: (nodeIDs, tags) => api.addMediaTagsBatch(nodeIDs, tags),

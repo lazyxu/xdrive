@@ -97,6 +97,15 @@ func (s *Server) readCaddyHostEnv() (caddyHostEnvSnapshot, error) {
 	return snap, nil
 }
 
+// CaddyHostEnvReadOnlyWitness verifies the exact fresh, sanitized Host .env
+// observation consumed by administrator HTTPS and AliDNS GETs. Unlike a
+// runtime/TLS witness, this is only configuration-readiness evidence. It needs
+// no database, credentials, Host mutation, Docker access or network call.
+func CaddyHostEnvReadOnlyWitness(hostControlDir string) bool {
+	_, err := (&Server{HostControlDir: hostControlDir}).readCaddyHostEnv()
+	return err == nil
+}
+
 // Go's map JSON ordering agrees with the restricted ASCII Python Host map.
 // The digest never substitutes for authorization or TLS verification.
 func caddyHostEnvFingerprint(domain, lan, keyID, secret string) string {

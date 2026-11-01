@@ -8,17 +8,13 @@ struct XDriveIOSNativeFilesDestination: Hashable, Identifiable {
     let name: String
 }
 
-enum XDriveIOSNativeFilesDestinationKind: String, Equatable {
-    case copy, move
-
-    var title: String { self == .copy ? "复制到…" : "移动到…" }
-    var confirmLabel: String { self == .copy ? "复制到此文件夹" : "移动到此文件夹" }
-}
 
 struct XDriveIOSNativeFilesDestinationPicker: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     let originalOwner: XDriveNativeOwnerRoot
     let selected: XDriveIOSNativeFilesNode
+    // Default keeps existing single-node callers source-compatible.
+    var selectedItems: [XDriveIOSNativeFilesNode] = []
     let kind: XDriveIOSNativeFilesDestinationKind
     let onChoose: (XDriveIOSNativeFilesDestination) -> Void
 
@@ -27,7 +23,8 @@ struct XDriveIOSNativeFilesDestinationPicker: View {
             XDriveIOSNativeFilesDestinationPage(
                 login: login, originalOwner: originalOwner,
                 folder: .init(id: originalOwner.rootNodeID, name: "云端根目录"),
-                selected: selected, kind: kind, onChoose: onChoose
+                selected: selected, selectedItems: selectedItems,
+                kind: kind, onChoose: onChoose
             )
         }
     }
@@ -40,6 +37,8 @@ private struct XDriveIOSNativeFilesDestinationPage: View {
     let originalOwner: XDriveNativeOwnerRoot
     let folder: XDriveIOSNativeFilesDestination
     let selected: XDriveIOSNativeFilesNode
+    // Default keeps existing single-node callers source-compatible.
+    var selectedItems: [XDriveIOSNativeFilesNode] = []
     let kind: XDriveIOSNativeFilesDestinationKind
     let onChoose: (XDriveIOSNativeFilesDestination) -> Void
 
@@ -51,10 +50,15 @@ private struct XDriveIOSNativeFilesDestinationPage: View {
     @State private var epoch = UUID()
     @State private var work: Task<Void, Never>?
 
+    private var allSelected: [XDriveIOSNativeFilesNode] {
+        selectedItems.isEmpty ? [selected] : selectedItems
+    }
+
     private var canUseTarget: Bool {
         page != nil && !busy && failure == nil &&
             XDriveIOSNativePhotoOwnerScope.matches(login.owner, originalOwner) &&
-            !(kind == .move && selected.parent_id == folder.id)
+            !allSelected.contains(where: { $0.isDirectory && $0.id == folder.id }) &&
+            !(kind == .move && allSelected.contains(where: { $0.parent_id == folder.id }))
     }
 
     var body: some View {
@@ -69,7 +73,7 @@ private struct XDriveIOSNativeFilesDestinationPage: View {
                 .disabled(!canUseTarget)
                 .frame(minHeight: 44)
                 .accessibilityIdentifier("native-ios-files-destination-confirm")
-                if kind == .move && selected.parent_id == folder.id {
+                if kind == .move && allSelected.contains(where: { $0.parent_id == folder.id }) {
                     Text("文件已在这个目录，不能重复移动。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
@@ -88,6 +92,10 @@ private struct XDriveIOSNativeFilesDestinationPage: View {
                             Label(entry.name, systemImage: "folder.fill")
                                 .frame(minHeight: 44, alignment: .leading)
                         }
+                        // Prevent entering this folder or any of its
+                        // descendants as a copy/move destination. The Server
+                        // also rejects cycles if the tree changes after GET.
+                        .disabled(allSelected.contains(where: { $0.isDirectory && $0.id == entry.id }))
                     }
                     if !page.items.contains(where: \.isDirectory) {
                         Text("本页没有子文件夹")
@@ -120,7 +128,8 @@ private struct XDriveIOSNativeFilesDestinationPage: View {
         .navigationDestination(for: XDriveIOSNativeFilesDestination.self) { target in
             XDriveIOSNativeFilesDestinationPage(
                 login: login, originalOwner: originalOwner,
-                folder: target, selected: selected, kind: kind, onChoose: onChoose
+                folder: target, selected: selected, selectedItems: selectedItems,
+                kind: kind, onChoose: onChoose
             )
         }
         .toolbar {

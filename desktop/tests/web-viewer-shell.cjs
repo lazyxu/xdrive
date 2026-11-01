@@ -3082,6 +3082,81 @@ test('P0 Web Quick Look retains authorized loader leases across frame re-renders
   }
 })
 
+
+test('P0 Web Quick Look preserves 4K Viewer image preview with older Server fallback', async () => {
+  const node = { id: 892, revision: 14, name: 'photo.HEIC', type: 'file', size: 250 }
+  const calls = []
+  let newServerAvailable = true
+  const api = {
+    node: async () => node,
+    mediaViewerPreviewURL: async (id, signal, revision, onProgress) => {
+      calls.push(['4k', id, signal, revision, onProgress])
+      if (!newServerAvailable) throw new Error('older Server')
+      return 'blob:4k-webp'
+    },
+    mediaAnalysisPreviewURL: async (id, signal, revision, onProgress) => {
+      calls.push(['jpeg', id, signal, revision, onProgress])
+      return 'blob:older-jpeg'
+    },
+    mediaLivePhotoStillURL: async (id, signal) => {
+      calls.push(['still', id, signal])
+      return 'blob:still'
+    },
+    filePreviewURL: async (id, signal) => {
+      calls.push(['video', id, signal])
+      return 'blob:video'
+    },
+  }
+  const props = {
+    route: { app: 'preview', params: { node: 892 } },
+    api, gallerySource: {}, shareDialogAdapter: {},
+    onClose() {}, onReplaceRoute() {}, onError(error) { throw error },
+  }
+  let renderer
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(WebFileViewerApps, props),
+        { createNodeMock: () => ({ focus() {} }) })
+    })
+    const preview = renderer.root.findByType('preview-content').props
+    assert.equal(preview.showImageDetails, true,
+      '4K Viewer metadata remains visible in the shared Web preview')
+    const signal = new AbortController().signal
+    const progress = () => {}
+    const file = { id: 892, revision: 14, name: 'photo.HEIC', kind: 'file' }
+    assert.equal(await preview.loadPreviewURL(file, 'image', signal, progress), 'blob:4k-webp')
+    assert.deepEqual(calls.at(-1), ['4k', 892, signal, 14, progress])
+
+    newServerAvailable = false
+    assert.equal(await preview.loadPreviewURL(
+      { ...file, name: 'camera.CR3' }, 'image', signal, progress), 'blob:older-jpeg')
+    assert.deepEqual(calls.slice(-2), [
+      ['4k', 892, signal, 14, progress], ['jpeg', 892, signal, 14, progress],
+    ], 'legacy JPEG reads the same current version with true byte progress')
+    assert.equal(await preview.loadPreviewURL(
+      { ...file, name: 'live.livp' }, 'live_photo', signal), 'blob:still')
+    assert.deepEqual(calls.slice(-2).map(row => row[0]), ['4k', 'still'],
+      'unsupported Live derivation retains the exact signed still URL')
+
+    const controller = new AbortController()
+    controller.abort()
+    const count = calls.length
+    await assert.rejects(preview.loadPreviewURL(file, 'image', controller.signal, progress),
+      error => error?.name === 'AbortError')
+    assert.equal(calls.length, count + 1,
+      'cancelled 4K request must not launch a legacy JPEG request')
+    assert.equal(await preview.loadPreviewURL(
+      { ...file, name: 'clip.mp4' }, 'video', signal), 'blob:video')
+    assert.equal(calls.at(-1)[0], 'video',
+      'native video retains its original signed media stream')
+    await act(async () => renderer.update(React.createElement(WebFileViewerApps, { ...props })))
+    assert.equal(renderer.root.findByType('preview-content').props.loadPreviewURL, preview.loadPreviewURL,
+      'a Web frame redraw must not recreate the active media loader')
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+  }
+})
+
 test('P0 Web standalone PDF/audio retain stable loaders; PDF rejects HTML error pages before iframe', async () => {
   const oldFetch = global.fetch
   const oldLocation = window.location

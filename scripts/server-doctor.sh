@@ -441,6 +441,29 @@ if [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]] && command -v docker >/dev/null 2>
     record WARN "Caddy config snapshot" "host .env observed=$caddy_host_env_state; missing/stale snapshot makes HTTPS and AliDNS admin reads return HTTP 503"
   fi
 
+  # Metadata freshness on the Host does not prove the running Server can
+  # parse this same fixed snapshot through its /host-control mount. This
+  # bounded CLI calls the exact HTTPS/AliDNS admin reader, without DB or
+  # credentials. Only allowlisted static output is considered a PASS.
+  caddy_config_reader_output=""
+  caddy_config_reader_status=0
+  caddy_config_reader_output="$(bounded "$WITNESS_TIMEOUT_SECONDS" docker compose --env-file "$ENV_PATH" -f "$COMPOSE_PATH" exec -T server xdrive-server caddy-host config-check 2>/dev/null)" || caddy_config_reader_status=$?
+  if [[ "$caddy_config_reader_status" -eq 0 &&
+        "$caddy_config_reader_output" == "Caddy host config observation: host-env-observed" ]]; then
+    record PASS "Caddy config Server reader" "running Server validates fresh Host .env configuration observation (read-only; not applied TLS proof)"
+  elif [[ "$caddy_config_reader_status" -eq 124 || "$caddy_config_reader_status" -eq 137 ]]; then
+    record WARN "Caddy config Server reader" "read-only check timed out; status unknown"
+  elif [[ "$caddy_config_reader_output" == "Caddy host config observation: host-env-unavailable" ]]; then
+    if [[ "$caddy_host_env_state" == fresh ]]; then
+      record WARN "Caddy config Server reader" "host snapshot=fresh but running Server rejected it: inspect /host-control mount, GID/mode, freshness and JSON validity; admin reads can return HTTP 503"
+    else
+      record WARN "Caddy config Server reader" "host snapshot=$caddy_host_env_state; running Server cannot validate Host .env observation; admin reads can return HTTP 503"
+    fi
+  else
+    # A legacy or poisoned CLI output is not displayed or mistaken for OK.
+    record WARN "Caddy config Server reader" "running-server-config-cli-unavailable-or-untrusted-output; verify deployed Server version and /host-control mount"
+  fi
+
   # Same actual Server mount and reader as the Admin UI; never infer
   # observability from a healthy Caddy alone. Avoid printing untrusted CLI
   # output, which an older or misrouted binary might fill with secrets.

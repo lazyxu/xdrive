@@ -32,6 +32,16 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
 
+      - name: Verify cold launch recovery and BG registration safety
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeLaunchCheckpoint.swift \
+            ios/tests/NativeLaunchCheckpointChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-launch-check"
+          "$RUNNER_TEMP/xdrive-ios-launch-check"
+          node --test desktop/tests/ios-native-launch-recovery.cjs
+
       # Pure Foundation contract test is quick and independent of signing.
       - name: Verify bounded iOS PhotoKit scan-window math
         run: |
@@ -183,6 +193,28 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-login-failure-policy"
           node --test desktop/tests/ios-native-owner-login-errors.cjs
 
+      - name: Verify native password profiles never mix LAN routes or Owner keys
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 -parse-as-library \
+            ios/XDriveIOS/AuthService.swift \
+            ios/XDriveIOS/NativeLANLoginRoute.swift \
+            ios/XDriveIOS/NativeOwnerSessionStore.swift \
+            ios/XDriveIOS/NativePasswordProfiles.swift \
+            ios/tests/NativePasswordProfilesChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-saved-login-profiles"
+          "$RUNNER_TEMP/xdrive-ios-saved-login-profiles"
+
+      - name: Verify native historical receipt counts never claim full-library completion
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativePhotoCoveragePolicy.swift \
+            ios/tests/NativePhotoCoveragePolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-photo-coverage"
+          "$RUNNER_TEMP/xdrive-ios-photo-coverage"
+          node --test desktop/tests/ios-native-photo-coverage.cjs
+
       - name: Verify native Photos Owner, auto backup, cloud thumbnail and receipt contracts
         run: |
           set -euo pipefail
@@ -203,8 +235,42 @@ jobs:
             desktop/tests/ios-native-cloud-still-bounded-preview.cjs \
             desktop/tests/ios-native-photo-auto-ack-enable-guard.cjs \
             desktop/tests/ios-native-photo-detail-permission-fence.cjs \
+            desktop/tests/ios-native-local-viewer-on-demand-icloud.cjs \
             desktop/tests/ios-native-photo-cloud-confirmed-refresh.cjs \
             desktop/tests/ios-native-cloud-preview-scene-lifecycle.cjs
+
+      - name: Verify native whole-library PhotoKit calendar jump policy
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativePhotoTimelinePolicy.swift \
+            ios/tests/NativePhotoTimelinePolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-local-calendar-check"
+          "$RUNNER_TEMP/xdrive-ios-local-calendar-check"
+          node --test desktop/tests/ios-native-photo-timeline.cjs desktop/tests/ios-native-local-continuous.cjs
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeLocalPhotoSharePolicy.swift \
+            ios/tests/NativeLocalPhotoSharePolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-local-share-policy"
+          "$RUNNER_TEMP/xdrive-ios-local-share-policy"
+
+      - name: Verify native PhotoKit actual-day group boundaries
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativePhotoDayGroupingPolicy.swift \
+            ios/tests/NativePhotoDayGroupingPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-photo-day-group"
+          "$RUNNER_TEMP/xdrive-ios-photo-day-group"
+
+      - name: Verify native PhotoKit full-library media filtering
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativePhotoMediaFilterPolicy.swift \
+            ios/tests/NativePhotoMediaFilterChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-media-filter"
+          "$RUNNER_TEMP/xdrive-ios-media-filter"
 
       - name: Verify native PhotoAsset Viewer bounded neighbors
         run: |
@@ -341,6 +407,99 @@ jobs:
 
       - name: Verify native Files Viewer and management action integration
         run: node --test desktop/tests/ios-native-files-management-integration.cjs
+
+      - name: Verify native Files directory rename and subtree trash
+        run: node --test desktop/tests/ios-native-files-folder-actions.cjs
+
+      - name: Verify native Files user-cancellable foreground transfers
+        run: node --test desktop/tests/ios-native-files-transfer-cancel.cjs
+
+      - name: Verify native Files folder copy/move and cycle guard
+        run: node --test desktop/tests/ios-native-files-folder-copy-move.cjs
+
+      - name: Verify native Files one-page atomic batch trash
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeCloudFilesPolicy.swift \
+            ios/XDriveIOS/NativeFilesBatchTrashPolicy.swift \
+            ios/tests/NativeFilesBatchTrashChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-batch-trash-check"
+          "$RUNNER_TEMP/xdrive-ios-files-batch-trash-check"
+          node --test desktop/tests/ios-native-files-batch-trash.cjs
+
+      - name: Verify native Files one-page atomic batch copy and move
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeCloudFilesPolicy.swift \
+            ios/XDriveIOS/NativeFilesBatchTrashPolicy.swift \
+            ios/XDriveIOS/NativeFilesBatchTargetPolicy.swift \
+            ios/tests/NativeFilesBatchTargetChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-batch-target-check"
+          "$RUNNER_TEMP/xdrive-ios-files-batch-target-check"
+          node --test desktop/tests/ios-native-files-batch-target.cjs
+
+      - name: Verify native Files shared list/grid presentation and actions
+        run: node --test desktop/tests/ios-native-files-list-grid.cjs
+
+      - name: Verify native Files Owner-scoped recycle bin read and restore
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeCloudFilesPolicy.swift \
+            ios/XDriveIOS/NativeFilesTrashPolicy.swift \
+            ios/tests/NativeFilesTrashPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-trash-policy"
+          "$RUNNER_TEMP/xdrive-ios-trash-policy"
+          node --test desktop/tests/ios-native-files-trash.cjs
+
+      - name: Verify native Files recent/favorites Owner projections and routes
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5             ios/XDriveIOS/NativeCloudFilesPolicy.swift             ios/XDriveIOS/NativeFilesCollectionsPolicy.swift             ios/tests/NativeFilesCollectionsPolicyChecks.swift             -o "$RUNNER_TEMP/xdrive-ios-file-collections"
+          "$RUNNER_TEMP/xdrive-ios-file-collections"
+          node --test desktop/tests/ios-native-files-collections.cjs
+
+      - name: Verify native Files bounded sequential multi-file upload
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeFilesFolderNamePolicy.swift \
+            ios/XDriveIOS/NativeFilesUploadBatchPolicy.swift \
+            ios/tests/NativeFilesUploadBatchPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-upload-batch-check"
+          "$RUNNER_TEMP/xdrive-ios-files-upload-batch-check"
+          node --test desktop/tests/ios-native-files-upload-batch.cjs
+
+      - name: Verify native Files search result locate-in-folder
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5             ios/XDriveIOS/NativeCloudFilesPolicy.swift             ios/XDriveIOS/NativeFilesLocationPolicy.swift             ios/tests/NativeFilesLocationPolicyChecks.swift             -o "$RUNNER_TEMP/xdrive-ios-file-location"
+          "$RUNNER_TEMP/xdrive-ios-file-location"
+          node --test desktop/tests/ios-native-files-location.cjs
+
+      - name: Verify native Files revision-scoped Server thumbnail derivative policy
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeCloudFilesPolicy.swift \
+            ios/XDriveIOS/NativeFilesThumbnailPolicy.swift \
+            ios/tests/NativeFilesThumbnailPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-thumbnail-policy"
+          "$RUNNER_TEMP/xdrive-ios-files-thumbnail-policy"
+          node --test desktop/tests/ios-native-files-thumbnail.cjs
+
+      - name: Verify native Files two-slot cancellation-aware thumbnail admission
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeCloudFilesPolicy.swift \
+            ios/XDriveIOS/NativeFilesThumbnailPolicy.swift \
+            ios/XDriveIOS/NativeFilesThumbnailSlots.swift \
+            ios/tests/NativeFilesThumbnailSlotsChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-thumbnail-slots"
+          "$RUNNER_TEMP/xdrive-ios-files-thumbnail-slots"
 
       - name: Prepare native brand and home screen icon
         run: bash ios/scripts/prepare-assets.sh

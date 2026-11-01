@@ -107,7 +107,7 @@ test('Web Gallery, routed Viewer and FileExplorer all forward their active Owner
     ['web/src/WebFileExplorer.tsx',
       /return await api\.mediaLivePhotoStillURL\(plan\.nodeID,\s*signal\)/],
     ['web/src/WebFileViewerApps.tsx',
-      /if \(kind === 'live_photo'\) return api\.mediaLivePhotoStillURL\(id,\s*signal\)/],
+      /kind === 'live_photo'\s*\?\s*api\.mediaLivePhotoStillURL\(id,\s*signal\)/],
   ]
   for (const [file, check] of expected) {
     assert.match(read(file), check, file + ' must not drop the current abort signal')

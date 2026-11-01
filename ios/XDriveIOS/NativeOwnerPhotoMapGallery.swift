@@ -12,11 +12,12 @@ private enum XDriveIOSNativePhotoMapSource: String, CaseIterable {
 /// native tab or a second Owner authentication/backup writer.
 struct XDriveIOSNativePhotoMapsScreen: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
+    // The Gallery parent retains only bounded local PhotoKit navigation hints.
+    // Source switches never reset the parent's map scope or page cursor.
+    @Binding var localMapScope: XDriveIOSNativeLocalMapScope
+    @Binding var localMapPageOffset: Int
     var onFocusChange: ((Bool) -> Void)?
     @State private var source: XDriveIOSNativePhotoMapSource = .local
-    // Secondary map-source wrapper keeps local route hints transient.
-    @State private var localMapScope: XDriveIOSNativeLocalMapScope = .page
-    @State private var localMapPageOffset = 0
 
     var body: some View {
         VStack(spacing: 4) {
@@ -499,7 +500,7 @@ struct XDriveIOSNativeOwnerPhotoMapScreen: View {
     ) {
         coverTask?.cancel()
         coverTask = Task { @MainActor in
-            // At most 12 covers per viewport, sourced from fresh exact-place
+            // At most 64 bounded covers per viewport, sourced from fresh exact-place
             // Owner Range pages. Never trust bare cover_node_id as an image
             // credential. Sequential requests bound foreground memory/traffic.
             for facet in XDriveIOSNativeOwnerMapSelectionPolicy

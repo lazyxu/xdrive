@@ -19,8 +19,14 @@ private final class XDriveIOSBGExpirationSignal {
 /// WhenUnlocked/FileProtection.complete. If protected data is unavailable,
 /// fail closed; do not weaken legacy protection or claim locked-screen
 /// progress. The OS may postpone/skip a scheduled task or block force-quit.
+enum XDriveIOSBGRegistrationFailure: Error {
+    case unavailable
+}
+
 enum XDriveIOSBackgroundPhotoTask {
     static let identifier = "com.lazyxu.xdrive.ios.photos.backup"
+    private static var attemptedRegistration = false
+    private(set) static var registeredAtLaunch = false
     @MainActor private static var active: Task<Void, Never>?
     @MainActor private static var activeRunID: UUID?
     // Incremented by explicit native local stop/revocation, not by an
@@ -29,7 +35,14 @@ enum XDriveIOSBackgroundPhotoTask {
     @MainActor private static var localStopVersion: UInt64 = 0
 
     static func registerAtLaunch() {
-        _ = BGTaskScheduler.shared.register(
+        // Apple terminates the process if one identifier is registered twice.
+        // SwiftUI may reconstruct its app value; registration is process-once.
+        guard !attemptedRegistration else { return }
+        attemptedRegistration = true
+        guard let allowed = Bundle.main.object(
+            forInfoDictionaryKey: "BGTaskSchedulerPermittedIdentifiers"
+        ) as? [String], allowed.contains(identifier) else { return }
+        registeredAtLaunch = BGTaskScheduler.shared.register(
             forTaskWithIdentifier: identifier, using: nil
         ) { task in
             guard let work = task as? BGProcessingTask else {
@@ -271,6 +284,9 @@ enum XDriveIOSBackgroundPhotoTask {
     /// OS scheduling is advisory, not a precise timer and not a promise
     /// that tasks can run after force-quit or before first unlock.
     static func scheduleApprovedProbe(afterMinutes minutes: Int) throws {
+        guard registeredAtLaunch else {
+            throw XDriveIOSBGRegistrationFailure.unavailable
+        }
         guard XDriveIOSBGApprovalPolicy.validInterval(minutes) else {
             throw XDriveIOSPhotoBGVaultFailure.corrupt
         }

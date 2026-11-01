@@ -22,12 +22,15 @@ test('Web Files Quick Look passes true RAW preview transfer bytes to the shared 
   assert.match(loader, /const id = Number\(currentTarget\.id\)/,
     'the signed request must bind to the current rendered Node, not a captured old Node')
   assert.match(loader,
+    /api\.mediaViewerPreviewURL\(id, signal, Number\(currentTarget\.revision\), onProgress\)/,
+    '4K WebP/JPEG must use the current revision and abortable byte observer')
+  assert.match(loader,
     /api\.mediaAnalysisPreviewURL\(id, signal, Number\(currentTarget\.revision\), onProgress\)/,
-    'the current revision and AbortSignal must own the real binary observer')
+    'the older Server JPEG fallback retains the same measured bytes')
   assert.match(loader, /api\.filePreviewURL\(id, signal\)/,
     'native signed media must keep its existing playback reader')
-  assert.match(loader, /if \(kind === 'live_photo'\) return api\.mediaLivePhotoStillURL\(id, signal\)/,
-    'the Live Photo still remains a signed resource, not a guessed file byte count')
+  assert.match(loader, /kind === 'live_photo'\s*\?\s*api\.mediaLivePhotoStillURL\(id, signal\)/,
+    'the Live Photo still keeps its signed fallback rather than guessed byte counts')
 })
 
 test('RAW Web response progress is measured by existing bounded streaming transport', () => {

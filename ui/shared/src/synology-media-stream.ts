@@ -22,6 +22,12 @@ export function xDriveSynologyPlaybackMIME(name: string): XDriveSynologyOwnerStr
   }
 }
 
+// PDFs above the bounded Blob limit reuse the same Owner-scoped, session-bound
+// CGI Range transport as media. Small PDFs keep full-SHA Blob verification.
+export function xDriveSynologyNativeStreamMIME(name: string): XDriveSynologyOwnerStreamMIME | null {
+  return name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : xDriveSynologyPlaybackMIME(name)
+}
+
 export function xDriveSynologyPlaybackMagic(data: Uint8Array, mime: XDriveSynologyOwnerStreamMIME): boolean {
   const starts = (prefix: string) => [...prefix].every((c, i) =>
     i < data.length && data[i] === c.charCodeAt(0))
@@ -37,6 +43,7 @@ export function xDriveSynologyPlaybackMagic(data: Uint8Array, mime: XDriveSynolo
     case 'audio/wav': return data.length >= 12 && starts('RIFF') &&
       [...'WAVE'].every((c, i) => data[8 + i] === c.charCodeAt(0))
     case 'audio/flac': return starts('fLaC')
+    case 'application/pdf': return starts('%PDF-')
   }
 }
 
@@ -50,12 +57,12 @@ export async function xDriveSynologyLoadNativeMediaStream(
   item: XDriveFileExplorerItem,
   signal?: AbortSignal,
 ): Promise<string> {
-  const mime = item.kind === 'file' ? xDriveSynologyPlaybackMIME(item.name) : null
+  const mime = item.kind === 'file' ? xDriveSynologyNativeStreamMIME(item.name) : null
   if (!mime ||
     typeof item.id !== 'number' || !Number.isSafeInteger(item.id) || item.id < 1 ||
     typeof item.revision !== 'number' || !Number.isSafeInteger(item.revision) || item.revision < 1 ||
     typeof item.size !== 'number' || !Number.isSafeInteger(item.size) || item.size < 1) {
-    throw new Error('Only Owner-authenticated playable media files can use DSM Range streaming')
+    throw new Error('Only Owner-authenticated supported media or PDF files can use DSM Range streaming')
   }
   if (signal?.aborted) throw new Error('Owner stream load cancelled')
   const length = Math.min(XDRIVE_SYNOLOGY_MEDIA_RANGE_BYTES, item.size)
@@ -69,5 +76,24 @@ export async function xDriveSynologyLoadNativeMediaStream(
   }
   // This is a scoped local route, NOT an authorization ticket. A copied URL
   // without the same logged-in DSM principal and owning Agent fails closed.
-  return client.ownerFileMediaStreamURL(item.id, item.revision, item.size, first.sha256, mime)
+  const url = client.ownerFileMediaStreamURL(item.id, item.revision, item.size, first.sha256, mime)
+  if (mime === 'application/pdf') {
+    // Only the verified, fixed same-origin DSM CGI gets session credentials.
+    // Keep existing shared Viewer HEAD preflight as a separate presentation gate.
+    const response = await fetch(url, {
+      method: 'HEAD', signal, credentials: 'same-origin',
+      mode: 'same-origin', cache: 'no-store', redirect: 'error',
+      referrerPolicy: 'no-referrer',
+    })
+    if (signal?.aborted) throw new Error('Owner stream load cancelled')
+    const contentType = response.headers.get('content-type')
+      ?.split(';', 1)[0]?.trim().toLowerCase()
+    if (response.status !== 200 || contentType !== 'application/pdf' ||
+        response.headers.get('accept-ranges')?.toLowerCase() !== 'bytes' ||
+        response.headers.get('content-length') !== String(item.size) ||
+        response.headers.get('etag') !== '"' + first.sha256 + '"') {
+      throw new Error('Authenticated DSM PDF Range preflight unavailable')
+    }
+  }
+  return url
 }

@@ -107,11 +107,22 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
             }
         }
         .task {
+            // Postpone the retired Keychain cleanup until the first native
+            // view has mounted. Keep the launch stage visible across exits.
+            XDriveIOSNativeLaunchCheckpoint.mark(.retiringCredential)
+            XDriveIOSRetiredNativeLogin.purgeLegacyRefreshToken()
+            XDriveIOSNativeLaunchCheckpoint.mark(.restoringSession)
             // Restore must verify Server instance, Owner and cloud root first.
             await model.restore()
             restoreFinished = true
+            XDriveIOSNativeLaunchCheckpoint.mark(.mountingWorkspace)
             backup.refresh(owner: model.owner)
             if phase == .active { backup.tickIfDue(login: model) }
+            // Do not claim a successful cold launch before the native signed-in
+            // dashboard and its initial PhotoKit/scene callbacks can run.
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard !Task.isCancelled else { return }
+            XDriveIOSNativeLaunchCheckpoint.mark(.ready)
         }
         .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
             guard phase == .active else { return }
@@ -131,6 +142,17 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
 
     private var loginForm: some View {
         VStack(alignment: .leading, spacing: 14) {
+            if !model.savedProfiles.isEmpty {
+                Menu("选择已保存的服务器和账号") {
+                    ForEach(model.savedProfiles) { profile in
+                        Button(profile.username + " · " + profile.server) {
+                            model.chooseSavedProfile(profile)
+                        }
+                    }
+                }
+                .accessibilityIdentifier("native-ios-saved-login-profiles")
+            }
+
             Text("服务器 HTTPS 地址").font(.subheadline.weight(.medium))
             TextField("https://drive.example.com", text: $model.serverText)
                 .keyboardType(.URL)
@@ -139,6 +161,9 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                 .textContentType(.URL)
                 .textFieldStyle(.roundedBorder)
                 .accessibilityIdentifier("native-ios-login-server")
+                .onChange(of: model.serverText) { _ in
+                    model.discardPasswordAfterIdentityEdit()
+                }
 
             Text("内网 IP（可选）").font(.subheadline.weight(.medium))
             TextField("192.168.2.4", text: $model.lanIPText)
@@ -147,6 +172,9 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                 .autocorrectionDisabled()
                 .textFieldStyle(.roundedBorder)
                 .accessibilityIdentifier("native-ios-login-lan-ip")
+                .onChange(of: model.lanIPText) { _ in
+                    model.discardPasswordAfterIdentityEdit()
+                }
             Text("登录前检测一次内网 HTTPS；不可达或超时才使用上方域名。登录后固定已选入口，不自动切换；内网证书必须匹配 IP。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -158,6 +186,9 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
                 .autocorrectionDisabled()
                 .textFieldStyle(.roundedBorder)
                 .accessibilityIdentifier("native-ios-login-username")
+                .onChange(of: model.username) { _ in
+                    model.discardPasswordAfterIdentityEdit()
+                }
 
             Text("密码").font(.subheadline.weight(.medium))
             HStack {
@@ -181,6 +212,8 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
             .textFieldStyle(.roundedBorder)
             .accessibilityIdentifier("native-ios-login-password")
 
+            Toggle("安全保存当前账号密码", isOn: $model.rememberPassword)
+                .accessibilityIdentifier("native-ios-remember-password")
             Toggle("保持登录", isOn: $model.keepSignedIn)
             Button {
                 Task { await model.signIn() }
@@ -194,22 +227,29 @@ struct XDriveIOSNativeOwnerLoginScreen: View {
             .buttonStyle(.borderedProminent)
             .disabled(model.busy)
             .accessibilityIdentifier("native-ios-login-submit")
+            if model.savedProfilePasswordAvailable {
+                Button("使用已安全保存的密码重新登录") {
+                    Task { await model.signInWithSavedPassword() }
+                }
+                .disabled(model.busy)
+                .accessibilityIdentifier("native-ios-saved-password-login")
+            }
 
-            Button("清除本机保存的登录资料", role: .destructive) {
+            Button("忘记当前服务器和账号资料", role: .destructive) {
                 clearSavedLoginConfirm = true
             }
             .accessibilityIdentifier("native-ios-clear-saved-login")
             .confirmationDialog(
-                "确认清除本机登录资料？",
+                "确认只删除当前服务器和账号的本机资料？",
                 isPresented: $clearSavedLoginConfirm,
                 titleVisibility: .visible
             ) {
-                Button("确认清除本机登录", role: .destructive) {
+                Button("确认忘记当前账号", role: .destructive) {
                     backup.cancel()
                     model.clearSavedLogin()
                 }
             } message: {
-                Text("仅清除本机 Keychain 登录会话、服务器、内网 IP、用户名和当前密码；不会删除照片或备份记录，也不能保证远端立即撤销会话。")
+                Text("只删除选中服务器和用户名的本机密码档案与匹配的刷新会话，不影响其他账号、照片和备份记录。")
             }
 
             Text("仅使用原生 HTTPS 会话；不会读取或复制 PWA Cookie。")

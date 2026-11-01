@@ -48,11 +48,17 @@ func TestCaddyHostEnvReadFreshBounded(t *testing.T) {
 	if err != nil || result.Domain != snap.Domain {
 		t.Fatalf("read %#v %v", result, err)
 	}
+	if !CaddyHostEnvReadOnlyWitness(dir) || CaddyHostEnvReadOnlyWitness("") {
+		t.Fatal("read-only Server config CLI witness must use exactly the validated Host snapshot")
+	}
 	snap.DomainEnabled = false
 	raw, _ = json.Marshal(snap)
 	_ = os.WriteFile(path, raw, 0600)
 	if _, err := server.readCaddyHostEnv(); err == nil {
 		t.Fatal("accepted mismatched enabled flag")
+	}
+	if CaddyHostEnvReadOnlyWitness(dir) {
+		t.Fatal("config CLI witness accepted malformed Host snapshot")
 	}
 	snap.DomainEnabled = true
 	snap.ObservedAt = now.Add(-time.Hour)
@@ -61,12 +67,18 @@ func TestCaddyHostEnvReadFreshBounded(t *testing.T) {
 	if _, err := server.readCaddyHostEnv(); err == nil {
 		t.Fatal("accepted stale snapshot")
 	}
+	if CaddyHostEnvReadOnlyWitness(dir) {
+		t.Fatal("config CLI witness accepted stale Host snapshot")
+	}
 	_ = os.Remove(path)
 	if err := os.Symlink("heartbeat", path); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := server.readCaddyHostEnv(); err == nil {
 		t.Fatal("accepted symlink")
+	}
+	if CaddyHostEnvReadOnlyWitness(dir) {
+		t.Fatal("config CLI witness accepted Host snapshot symlink")
 	}
 }
 

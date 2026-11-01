@@ -45,6 +45,8 @@ variables:
 
 .ci-linux-helpers:
   before_script:
+    # Only use APT in jobs that actually need jq/xz. The Go image already
+    # provides curl/CA/tar for cached Docker CLI installation in image builds.
     - &ensure_linux_fetch_tools |
         set -euo pipefail
         export DEBIAN_FRONTEND=noninteractive
@@ -415,7 +417,6 @@ server-image:
   tags:
     - linux
   before_script:
-    - *ensure_linux_fetch_tools
     - *install_docker_cli_only
   script:
     - bash scripts/ci/gitlab-server-image.sh
@@ -443,7 +444,6 @@ media-worker-image:
   tags:
     - linux
   before_script:
-    - *ensure_linux_fetch_tools
     - *install_docker_cli_only
   script:
     - bash scripts/ci/test-media-worker-image.sh dist/media-worker-image
@@ -479,7 +479,6 @@ photo-face-image:
     policy: pull-push
     when: always
   before_script:
-    - *ensure_linux_fetch_tools
     - *install_docker_cli_only
   script:
     # Leave time below the 2h job limit for cache:when:always to save
@@ -511,7 +510,6 @@ caddy-image:
   tags:
     - linux
   before_script:
-    - *ensure_linux_fetch_tools
     - *install_docker_cli_only
   script:
     - bash scripts/ci/gitlab-caddy-image.sh

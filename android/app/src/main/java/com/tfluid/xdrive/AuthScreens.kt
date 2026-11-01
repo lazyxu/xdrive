@@ -143,17 +143,46 @@ private fun Submit(label: String, loading: Boolean, onClick: () -> Unit) {
 @Composable
 internal fun UnifiedLoginForm(
     state: DriveState,
-    login: (String, Boolean, String, String, String, Boolean) -> Unit,
+    login: (String, Boolean, String, String, String, Boolean, Boolean) -> Unit,
     retrySavedSession: () -> Unit,
+    savedProfiles: List<NativeLoginProfile> = emptyList(),
+    hasSavedPassword: (String, String, String) -> Boolean = { _, _, _ -> false },
+    selectSavedProfile: (NativeLoginProfile) -> Unit = {},
+    loginWithSavedPassword: (String, String, String, Boolean) -> Unit = { _, _, _, _ -> },
+    forgetSavedProfile: (NativeLoginProfile) -> Unit = {},
     actions: @Composable () -> Unit,
 ) {
     var server by remember(state.server) { mutableStateOf(state.server) }
-    var lanIp by remember(state.server) { mutableStateOf(state.route.lanIp) }
+    // Selecting another saved LAN route for the *same* Server must update UI.
+    var lanIp by remember(state.server, state.route.lanIp) { mutableStateOf(state.route.lanIp) }
     var username by remember(state.username) { mutableStateOf(state.username) }
-    var password by remember { mutableStateOf("") }
+    var password by remember(state.server, state.route.lanIp, state.username) { mutableStateOf("") }
     var keepLogin by remember { mutableStateOf(true) }
+    var rememberPassword by remember(state.server, state.route.lanIp, state.username) {
+        mutableStateOf(hasSavedPassword(state.server, state.route.lanIp, state.username))
+    }
+    var profilesExpanded by remember { mutableStateOf(false) }
+    var confirmForgottenProfile by remember { mutableStateOf<NativeLoginProfile?>(null) }
     // Login only accepts HTTPS. The old HTTP opt-in is no longer exposed.
     AuthCard("欢迎使用 xDrive", "连接到你的个人云端", actions) {
+        if (savedProfiles.isNotEmpty()) {
+            Box {
+                TextButton(onClick = { profilesExpanded = true },
+                    enabled = !state.loading, modifier = Modifier.testTag("auth-profile-picker")) {
+                    Text("选择已保存的服务器和账号")
+                }
+                DropdownMenu(expanded = profilesExpanded, onDismissRequest = { profilesExpanded = false }) {
+                    savedProfiles.forEach { profile ->
+                        DropdownMenuItem(text = { Text(profile.username + " · " + profile.server) },
+                            onClick = {
+                                profilesExpanded = false
+                                password = ""
+                                selectSavedProfile(profile)
+                            })
+                    }
+                }
+            }
+        }
         AuthField("服务器", server, { value ->
             // Do not carry an optional private socket from one Server to another.
             // Compare normalized HTTPS Origins, not a URL string's trailing slash.
@@ -161,13 +190,19 @@ internal fun UnifiedLoginForm(
             val newOrigin = runCatching { ServerAddress.parse(value, false).url }.getOrNull()
             if (oldOrigin != newOrigin) lanIp = ""
             server = value
+            password = ""
+            rememberPassword = false
         }, "server", !state.loading,
             keyboardType = KeyboardType.Uri, placeholder = "https://drive.example.com:8443")
-        AuthField("内网 IP（可选）", lanIp, { lanIp = it }, "lan-ip", !state.loading,
+        AuthField("内网 IP（可选）", lanIp, {
+            lanIp = it; password = ""; rememberPassword = false
+        }, "lan-ip", !state.loading,
             keyboardType = KeyboardType.Uri, placeholder = "192.168.2.4")
         Text("自动优先连接内网，网络不可达时通过服务器域名连接公网；始终验证 HTTPS 身份。",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        AuthField("用户名", username, { username = it }, "username", !state.loading)
+        AuthField("用户名", username, {
+            username = it; password = ""; rememberPassword = false
+        }, "username", !state.loading)
         AuthField("密码", password, { password = it }, "password", !state.loading, secret = true)
         // One accessible checkbox action covers the entire 48dp row, including
         // its label. Only the parent handles toggles; the child is a visual
@@ -188,7 +223,51 @@ internal fun UnifiedLoginForm(
             Text("保持登录", modifier = Modifier.padding(start = 8.dp),
                 style = MaterialTheme.typography.bodyMedium)
         }
+        Row(
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(
+                value = rememberPassword, enabled = !state.loading, role = Role.Checkbox,
+                onValueChange = { rememberPassword = it }
+            ).testTag("auth-remember-password"),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Checkbox(checked = rememberPassword, onCheckedChange = null, enabled = !state.loading)
+            Text("安全保存当前账号密码", modifier = Modifier.padding(start = 8.dp),
+                style = MaterialTheme.typography.bodyMedium)
+        }
         ErrorNotice(state.error)
+        val selectedProfile = AndroidSavedLoginPasswords.profile(server, lanIp, username)
+        if (selectedProfile != null && hasSavedPassword(server, lanIp, username)) {
+            TextButton(onClick = { loginWithSavedPassword(server, lanIp, username, keepLogin) },
+                enabled = !state.loading, modifier = Modifier.fillMaxWidth()
+                    .heightIn(min = 48.dp).testTag("auth-saved-password-login")) {
+                Text("使用系统安全保存的密码重新登录")
+            }
+        }
+        if (selectedProfile != null && savedProfiles.any { it.id == selectedProfile.id }) {
+            TextButton(onClick = { confirmForgottenProfile = selectedProfile },
+                enabled = !state.loading, modifier = Modifier.fillMaxWidth()
+                    .heightIn(min = 48.dp).testTag("auth-forget-profile")) {
+                Text("忘记当前服务器和账号资料")
+            }
+        }
+        val awaitingForget = confirmForgottenProfile
+        if (awaitingForget != null) {
+            AlertDialog(
+                onDismissRequest = { confirmForgottenProfile = null },
+                title = { Text("确认忘记当前账号？") },
+                text = { Text("只清除本机该服务器与用户名的已保存密码和匹配会话；其他账号不会被删除。") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        confirmForgottenProfile = null
+                        password = ""
+                        forgetSavedProfile(awaitingForget)
+                    }) { Text("确认忘记") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { confirmForgottenProfile = null }) { Text("取消") }
+                }
+            )
+        }
         if (state.savedSessionRestoreRetryAvailable && !state.loading &&
             server == state.server && username == state.username &&
             lanIp == state.route.lanIp) {
@@ -202,7 +281,7 @@ internal fun UnifiedLoginForm(
             // Keep the entered value until successful navigation so Android
             // Autofill can offer to save it; never persist it in app state.
             // Invalid server or password errors remain editable in place.
-            login(server, false, lanIp, username, password, keepLogin)
+            login(server, false, lanIp, username, password, keepLogin, rememberPassword)
         }
         Text("账户由 xDrive 管理员创建。", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)

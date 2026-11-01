@@ -98,3 +98,14 @@ test('login suggestions are never durable passwords and do not migrate between O
   assert.doesNotMatch(model, /refreshToken:|accessToken:|password:/)
   assert.match(login, /if \(session\.username\) xDriveBrowserStorageWrite\(COOKIE_LOGOUT_OWNER_KEY, session\.username\)/)
 })
+
+test('forget current login draft is unavailable without any selected username', () => {
+  // The presence of other saved accounts cannot make the empty draft
+  // forgettable. Extract and execute the real JSX admission expression.
+  const predicate = login.match(/\{(Boolean\(loginUsername\.trim\(\)\)) && \(\s*<Button\b[\s\S]{0,180}data-xdrive-login-forget-username/)
+  assert.ok(predicate, 'forget control must require an actual selected username')
+  const isVisible = new Function('loginUsername', 'rememberedUsernames', 'return ' + predicate[1])
+  assert.equal(isVisible('', ['other-saved-account']), false)
+  assert.equal(isVisible('   ', ['other-saved-account']), false)
+  assert.equal(isVisible('owner-a', ['owner-b']), true)
+})

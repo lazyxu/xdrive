@@ -66,6 +66,11 @@ function owner(mobile) {
   let generation = 0
   let setShown = () => {}
   const routeSectionAppliedRef = { current: 'albums' }
+  // The real shared Gallery callback now reads live Owner/source-scoped
+  // Library/Collections return hints. Supply its actual dependencies rather
+  // than replacing, stripping or weakening the extracted production callback.
+  const galleryDataSource = {}
+  const rememberedLibraryQueries = []
   const env = {
     // The real Gallery provides this Owner-local return ref; ordinary
     // navigation under test has no pending map-to-album return.
@@ -73,6 +78,19 @@ function owner(mobile) {
     // A3h Cell isolation: no Cell request is active in this legacy fixture.
     nativeCellOpenAbort: { current: null },
     preferenceScope: 'p97',
+    source: galleryDataSource,
+    firstMobileLibraryQueryRef: { current: null },
+    firstMobileCollectionsReturnRef: { current: false },
+    mobileCollectionsReturnScopeRef: {
+      current: { source: galleryDataSource, owner: 'p97' },
+    },
+    mediaGalleryDraftFromQuery: query => ({ ...query }),
+    xDriveRememberMobileLibraryQuery: (actualSource, scope, query) => {
+      assert.equal(actualSource, galleryDataSource)
+      assert.equal(scope, 'p97')
+      rememberedLibraryQueries.push(query)
+    },
+    warmMobileCollectionsPreview: () => assert.fail('ordinary section navigation cannot resume Collections'),
     xDriveClearBaiduCellViewerReturn: scope => { assert.equal(scope, 'p97') },
     xDriveClearPlacesDrawerViewerReturn: scope => { assert.equal(scope, 'p97') },
     useCallback: fn => fn,
@@ -115,7 +133,7 @@ function owner(mobile) {
       return Promise.resolve()
     },
   }
-  return { updates, requests, env, routeSectionAppliedRef,
+  return { updates, requests, env, routeSectionAppliedRef, rememberedLibraryQueries,
     callbacks: actualCallbacks(env), setPublisher: setter => { setShown = setter } }
 }
 const count = (list, key, value) => list.filter(
@@ -159,6 +177,8 @@ test('P97 original mounted Gallery Favorites/Library tabs hold accepted page und
     assert.equal(count(state.updates, 'section', 'library'), 1)
     assert.equal(count(state.updates, 'route', 'library'), 1)
     assert.equal(count(state.updates, 'collections', false), 1)
+    assert.deepEqual(state.rememberedLibraryQueries, [{ section: 'library' }],
+      'only the accepted Library Range may publish a return query')
     assert.equal(state.routeSectionAppliedRef.current, 'library',
       'own route echo must not trigger a second first Range')
   } finally {
@@ -182,6 +202,8 @@ test('P97 compact Favorites verified-zero commits once, reverse Library waits fo
   state.requests[2].accept()
   assert.equal(count(state.updates, 'section', 'library'), 1)
   assert.equal(count(state.updates, 'route', 'library'), 1)
+  assert.deepEqual(state.rememberedLibraryQueries, [{ section: 'library' }],
+    'stale or failed Library Range must not publish return query')
 })
 
 test('P97 Wide Web/Desktop photo-wall sections preserve established immediate navigation', () => {

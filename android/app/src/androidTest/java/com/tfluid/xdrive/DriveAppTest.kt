@@ -774,6 +774,44 @@ class DriveAppTest {
         compose.onNodeWithTag("native-five-slot-bar").assertDoesNotExist()
     }
 
+    @Test fun dynamicTransferTabAndPickerResumeActualCenterOnOneTap() {
+        startAndLogin(galleryFirstOnLogin = false)
+        // With no permitted dynamic feature, the reserved slot cannot
+        // fabricate a Transfer Center or a previously visited route.
+        compose.onNodeWithTag("native-tab-dynamic").performClick()
+        compose.onNodeWithTag("native-transfer-center").assertDoesNotExist()
+
+        // The real Launcher shortcut binds the dynamic slot to Transfers.
+        compose.onNodeWithTag("native-tab-all").performClick()
+        clickNativeLauncherShortcut(NativeHomeShortcut.TRANSFERS)
+        compose.onNodeWithTag("native-transfer-center").assertExists()
+        compose.onNodeWithTag("native-transfer-close").performClick()
+
+        // Returning to the dynamic slot resumes its actual feature with one
+        // tap, not a placeholder/summary requiring a second button press.
+        compose.onNodeWithTag("native-tab-files").performClick()
+        compose.onNodeWithTag("native-tab-dynamic").performClick()
+        compose.onNodeWithTag("native-transfer-center").assertExists()
+        compose.onNodeWithTag("native-transfer-close").performClick()
+
+        // Long-press selection is another direct entry to the same feature.
+        compose.onNodeWithTag("native-tab-dynamic").performTouchInput { longClick() }
+        compose.onNodeWithTag("native-dynamic-picker").assertExists()
+        compose.onNodeWithTag("native-dynamic-choice-transfers").performClick()
+        compose.onNodeWithTag("native-dynamic-picker").assertDoesNotExist()
+        compose.onNodeWithTag("native-transfer-center").assertExists()
+        compose.onNodeWithTag("native-transfer-close").performClick()
+
+        // The Gallery still owns its fixed destination after the transfer
+        // overlay closes. Neither path creates a sixth tab.
+        compose.onNodeWithTag("native-tab-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.GALLERY && controller.state.value.galleryLoaded
+        }
+        compose.onNodeWithTag("native-five-slot-bar").assertExists()
+        compose.onNodeWithTag("native-transfer-center").assertDoesNotExist()
+    }
+
     @Test fun nativeTransfersOpenFromFilesAndGalleryWithoutInventingHistory() {
         startAndLogin()
         compose.onNodeWithTag("native-transfer-open").assertIsDisplayed().performClick()
@@ -1336,7 +1374,8 @@ class DriveAppTest {
         }
         val beforeJump = galleryTimelineRequests.size
         compose.onNodeWithTag("gallery-time-dock").assertIsDisplayed()
-        compose.onNodeWithTag("gallery-time-scale-day").assertDoesNotExist()
+        // The native four-scale dock now exposes the actual Owner-indexed day.
+        compose.onNodeWithTag("gallery-time-scale-day").assertIsEnabled()
         compose.onNodeWithTag("gallery-time-scale-year").performClick()
         compose.onNodeWithTag("gallery-time-groups").assertExists()
         compose.onNodeWithTag("gallery-time-group-2026").performClick()
@@ -1606,7 +1645,7 @@ class DriveAppTest {
         }
     }
 
-    @Test fun failedNativePhotoRequiresExplicitRetryAndRecoversSameOwnerThumbnail() {
+    @Test fun oversizedNativePhotoWithoutThumbnailNeverOffersImpossibleRetry() {
         galleryOversizeFixture = true
         galleryThumbnailFailuresRemaining = 2
         startAndLogin()
@@ -1618,25 +1657,18 @@ class DriveAppTest {
                 compose.onAllNodesWithTag("gallery-thumbnail-failed-46",
                     useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
         }
-        // A missing Gallery tile and then the Viewer fallback fail once each.
-        // No cached success exists in this fixture; manual Retry is the third
-        // authenticated request and may never start on its own.
+        // The tile and Viewer both failed to read a thumbnail. The original
+        // exceeds the supported 32 MiB reader, so a third request cannot help.
         compose.onNodeWithTag("gallery-item-46", useUnmergedTree = true).performClick()
         compose.waitUntil(timeoutMillis = 10_000) {
-            compose.onAllNodesWithTag("gallery-photo-retry").fetchSemanticsNodes().isNotEmpty()
+            compose.onAllNodesWithTag("gallery-photo-failure").fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithTag("gallery-photo-image").assertDoesNotExist()
-        compose.onNodeWithTag("gallery-photo-retry").assertIsDisplayed()
+        compose.onNodeWithTag("gallery-photo-retry").assertDoesNotExist()
+        compose.onNodeWithText("原图超过 32 MiB，当前无法直接预览").assertExists()
         val failureReads = galleryThumbnailReads
         compose.waitForIdle()
         org.junit.Assert.assertEquals(failureReads, galleryThumbnailReads)
-        compose.onNodeWithTag("gallery-photo-retry").performClick()
-        compose.waitUntil(timeoutMillis = 10_000) {
-            compose.onAllNodesWithTag("gallery-photo-fallback").fetchSemanticsNodes().isNotEmpty()
-        }
-        compose.onNodeWithTag("gallery-photo-image").assertIsDisplayed()
-        compose.onNodeWithTag("gallery-photo-retry").assertDoesNotExist()
-        org.junit.Assert.assertEquals(failureReads + 1, galleryThumbnailReads)
         compose.onNodeWithTag("gallery-photo-close").performClick()
         compose.onNodeWithTag("gallery-wall").assertExists()
     }
@@ -1886,6 +1918,26 @@ class DriveAppTest {
         }
         compose.onNodeWithTag("gallery-photo-close").performClick()
         compose.onNodeWithTag("gallery-wall").assertExists()
+    }
+
+    @Test fun cloudGalleryPhotoViewerDirectSaveUsesExistingSafWithoutInfoDialog() {
+        val downloads = mutableListOf<Long>()
+        startAndLogin(onDownload = { downloads += it.id })
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryLoaded &&
+                !controller.state.value.loading
+        }
+        compose.onNodeWithTag("gallery-item-40").performClick()
+        compose.onNodeWithTag("gallery-photo-viewer").assertExists()
+        compose.onNodeWithTag("gallery-photo-save-original")
+            .assertIsEnabled().performClick()
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(listOf(40L), downloads)
+            org.junit.Assert.assertNull(controller.state.value.gallerySelected)
+        }
+        compose.onNodeWithTag("gallery-download-action").assertDoesNotExist()
     }
 
     @Test fun galleryInfoOffersRealOwnerPhotoSafDownloadAndNoPlaceholderWhenUnavailable() {
@@ -2236,14 +2288,17 @@ class DriveAppTest {
             controller.state.value.fileTextPreview?.text == "hello xDrive" &&
                 !controller.state.value.fileTextPreviewLoading
         }
-        compose.onNodeWithTag("files-text-preview-content").assertIsDisplayed()
+        compose.onNodeWithTag("files-text-viewer").assertExists()
+        compose.onNodeWithTag("files-text-content").assertIsDisplayed()
         compose.onNodeWithText("hello xDrive").assertIsDisplayed()
+        compose.onNodeWithTag("files-text-status").assertExists()
         compose.runOnIdle { org.junit.Assert.assertEquals(1, textPreviewReads) }
-        compose.onNodeWithText("关闭").performClick()
+        compose.onNodeWithTag("files-text-close").performClick()
         compose.runOnIdle {
             org.junit.Assert.assertNull(controller.state.value.fileTextPreview)
-            org.junit.Assert.assertNull(controller.state.value.selected)
+            org.junit.Assert.assertNull(controller.state.value.filesTextViewer)
         }
+        compose.onNodeWithTag("files").assertExists()
         compose.onNodeWithContentDescription("返回上级").performClick()
         compose.onNodeWithContentDescription("账户菜单").performClick()
         compose.onNodeWithText("退出登录").performClick()
@@ -2253,7 +2308,8 @@ class DriveAppTest {
     @Test fun loginBrowseDetailsBackAndLogout() {
         startAndLogin()
         compose.onNodeWithText("假期照片").performClick()
-        compose.onNodeWithText("测试.txt").performClick()
+        compose.onNodeWithTag("files-item-3").performTouchInput { longClick() }
+        compose.onNodeWithText("属性").performClick()
         compose.onNode(hasText("12 B") and hasAnyAncestor(isDialog())).assertIsDisplayed()
         compose.onNodeWithText("关闭").performClick()
         compose.onNodeWithContentDescription("返回上级").performClick()
@@ -2675,6 +2731,10 @@ class DriveAppTest {
         compose.waitUntil(timeoutMillis = 10_000) {
             controller.state.value.galleryBd09Cells != null && !controller.state.value.loading
         }
+        // Focused map fills the viewport; explicitly switch to the location list.
+        compose.onNodeWithTag("gallery-map-focus-toggle").performClick()
+        compose.onNodeWithText("展开地图，专注浏览").assertExists()
+        compose.onNodeWithTag("gallery-map-bd09-cells").performScrollToIndex(1)
         compose.onNodeWithTag("gallery-map-zoom-7-5")
             .performScrollTo().performClick()
         compose.waitUntil(timeoutMillis = 10_000) {
@@ -2685,6 +2745,7 @@ class DriveAppTest {
         compose.onNodeWithTag("gallery-map-back-one-level").assertExists()
         compose.onNodeWithContentDescription("返回上一级聚合").assertExists()
         compose.onNodeWithTag("gallery-map-bd09-distribution").assertExists()
+        compose.onNodeWithTag("gallery-map-bd09-cells").performScrollToIndex(1)
         compose.onNodeWithTag("gallery-map-bd09-cell-0-4")
             .performScrollTo().performClick()
         compose.waitUntil(timeoutMillis = 10_000) {
@@ -2708,6 +2769,7 @@ class DriveAppTest {
         }
         compose.onNodeWithTag("gallery-map-back-one-level").performClick()
         compose.onNodeWithContentDescription("返回图库").assertExists()
+        compose.onNodeWithTag("gallery-map-bd09-cells").performScrollToIndex(1)
         compose.onNodeWithTag("gallery-map-bd09-cell-7-5").assertExists()
         compose.runOnIdle {
             org.junit.Assert.assertEquals(OwnerBd09Bounds.WORLD,
@@ -2744,6 +2806,10 @@ class DriveAppTest {
         compose.waitUntil(timeoutMillis = 10_000) {
             controller.state.value.galleryBd09Cells != null && !controller.state.value.loading
         }
+        // Focused map fills the viewport; explicitly switch to the location list.
+        compose.onNodeWithTag("gallery-map-focus-toggle").performClick()
+        compose.onNodeWithText("展开地图，专注浏览").assertExists()
+        compose.onNodeWithTag("gallery-map-bd09-cells").performScrollToIndex(1)
         compose.onNodeWithTag("gallery-map-bd09-cell-7-5")
             .performScrollTo().performClick()
         compose.waitUntil(timeoutMillis = 10_000) {
@@ -2767,6 +2833,7 @@ class DriveAppTest {
             controller.state.value.galleryMapCellSelected == null &&
                 controller.state.value.galleryBd09Cells != null
         }
+        compose.onNodeWithTag("gallery-map-bd09-cells").performScrollToIndex(1)
         compose.onNodeWithTag("gallery-map-bd09-cell-7-5").assertExists()
         compose.onNodeWithTag("gallery-map-close").performClick()
         compose.onNodeWithTag("gallery-wall").assertExists()
@@ -2802,6 +2869,10 @@ class DriveAppTest {
         }
         compose.onNodeWithTag("gallery-map-bd09-count").assertExists()
         compose.onNodeWithTag("gallery-map-bd09-distribution").assertExists()
+        // Focused map fills the viewport; explicitly switch to the location list.
+        compose.onNodeWithTag("gallery-map-focus-toggle").performClick()
+        compose.onNodeWithText("展开地图，专注浏览").assertExists()
+        compose.onNodeWithTag("gallery-map-bd09-cells").performScrollToIndex(1)
         compose.onNodeWithTag("gallery-map-bd09-cell-7-5").assertExists()
         compose.onNodeWithTag("gallery-map-unavailable-basemap").assertExists()
         compose.runOnIdle {

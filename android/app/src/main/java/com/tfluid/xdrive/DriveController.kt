@@ -73,7 +73,9 @@ data class DriveState(
     val filesPdfBytes: Long = 0,
     /** Owner-private foreground audio session; never persists URL or tokens. */
     val filesAudioViewer: DriveNode? = null,
-    /** Private in-memory text is scoped to one visible Owner file and one detail dialog. */
+    /** Current Owner-verified full-screen Files text, never persisted. */
+    val filesTextViewer: DriveNode? = null,
+    /** The existing bounded 1 MiB preview is shared with long-press details. */
     val fileTextPreview: FileTextPreview? = null,
     val fileTextPreviewLoading: Boolean = false,
     val fileTextPreviewError: String? = null,
@@ -208,7 +210,7 @@ internal fun DriveState.canStartNativePhotoForeground(): Boolean =
         !galleryMetadataWriteAttempted && !galleryAlbumCreateAttempted &&
         !galleryAlbumEditAttempted && !browseBatchWriteAttempted &&
         fileUploadPickerParent == null && fileExportPending == null &&
-        filesPdfViewer == null && filesAudioViewer == null
+        filesPdfViewer == null && filesAudioViewer == null && filesTextViewer == null
 
 /** A lost batch DELETE ACK is resolved by a fresh GET, never by replaying DELETE. */
 internal fun DriveState.canReconcileBatchBrowse(): Boolean =
@@ -245,6 +247,7 @@ class DriveController(
     initialUsername: String = "",
     private val saveLoginDraft: (String, String, String) -> Unit = { _, _, _ -> },
     private val clearLoginDraft: (String) -> Boolean = { true },
+    private val savedLoginStore: NativeSavedLoginStore? = null,
 ) : Closeable {
     private val mutableState = MutableStateFlow(DriveState(server = initialServer, username = initialUsername, allowHttp = initialAllowHttp,
         route = savedRoute(initialServer, initialAllowHttp)))
@@ -604,10 +607,80 @@ class DriveController(
         }
     }
 
+    fun savedLoginProfiles(): List<NativeLoginProfile> =
+        runCatching { savedLoginStore?.profiles().orEmpty() }.getOrDefault(emptyList())
+
+    fun savedPasswordAvailable(server: String, lanIp: String, username: String): Boolean {
+        val selected = AndroidSavedLoginPasswords.profile(server, lanIp, username) ?: return false
+        return runCatching { savedLoginStore?.passwordFor(selected) != null }.getOrDefault(false)
+    }
+
+    /** Never replay a saved password without an explicit same-identity user action. */
+    fun loginWithSavedPassword(server: String, lanIp: String, username: String, rememberSession: Boolean) {
+        if (state.value.screen !in setOf(Screen.CONNECT, Screen.LOGIN) ||
+            state.value.loading || session != null) return
+        val selected = AndroidSavedLoginPasswords.profile(server, lanIp, username)
+        val saved = if (selected == null) null else
+            runCatching { savedLoginStore?.passwordFor(selected) }.getOrNull()
+        if (selected == null || saved.isNullOrEmpty()) {
+            mutableState.value = state.value.copy(error = "当前服务器和用户名没有可用的系统安全密码，请手动输入。")
+            return
+        }
+        connectAndLogin(selected.server, false, selected.lanIp, selected.username,
+            saved, rememberSession, true)
+    }
+
+    fun selectSavedLoginProfile(profile: NativeLoginProfile) {
+        if (state.value.screen !in setOf(Screen.CONNECT, Screen.LOGIN) ||
+            state.value.loading || session != null ||
+            AndroidSavedLoginPasswords.profile(profile.server, profile.lanIp, profile.username) != profile ||
+            savedLoginProfiles().none { it.id == profile.id }) return
+        invalidate()
+        (api as? Closeable)?.close()
+        api = null
+        address = null
+        runCatching { saveLoginDraft(profile.server, profile.lanIp, profile.username) }
+        mutableState.value = DriveState(
+            screen = Screen.CONNECT, server = profile.server,
+            route = ConnectionRoute(lanIp = profile.lanIp), username = profile.username)
+    }
+
+    /** Only the current visible Server+username is eligible; never clear other Owners. */
+    fun forgetSavedLoginProfile(profile: NativeLoginProfile) {
+        val current = state.value
+        if (current.screen !in setOf(Screen.CONNECT, Screen.LOGIN) ||
+            current.loading || session != null ||
+            AndroidSavedLoginPasswords.profile(profile.server, profile.lanIp, profile.username) != profile ||
+            current.server != profile.server || current.username != profile.username ||
+            current.route.lanIp != profile.lanIp) return
+        try {
+            val saved = sessionPersistence?.load()
+            if (saved != null && saved.server == profile.server && saved.username == profile.username)
+                sessionPersistence.clear()
+            if (savedLoginStore?.forgetProfile(profile) != true) {
+                mutableState.value = current.copy(error = "无法确认安全密码档案已删除，请重试。")
+                return
+            }
+        } catch (_: Exception) {
+            mutableState.value = current.copy(error = "无法访问安全凭据存储，请解锁设备后重试。")
+            return
+        }
+        if (!runCatching { clearLoginDraft(profile.server) }.getOrDefault(false)) {
+            mutableState.value = current.copy(error = "密码已删除，但登录填写信息未能清除。")
+            return
+        }
+        invalidate()
+        (api as? Closeable)?.close()
+        api = null
+        address = null
+        mutableState.value = DriveState(screen = Screen.CONNECT)
+    }
+
     /** One-page native login. Never persist or route credentials until HTTPS identity checks finish. */
     fun connectAndLogin(
         serverInput: String, allowHttp: Boolean, lanIp: String,
         username: String, password: String, rememberSession: Boolean,
+        rememberPassword: Boolean = false,
     ) {
         if (state.value.screen !in listOf(Screen.CONNECT, Screen.LOGIN) || state.value.loading) return
         if (username.isBlank() || password.isEmpty()) {
@@ -648,6 +721,19 @@ class DriveController(
                     nativeUiSessionId = ++nativeUiSessionCounter,
                 )
                 persistRefreshSession()
+                val profile = AndroidSavedLoginPasswords.profile(next.url, route.lanIp, result.username)
+                // A stable local alias allows a non-null check to survive the
+                // runCatching closure without changing the optional-store contract.
+                val passwordStore = savedLoginStore
+                if (profile != null && passwordStore != null) {
+                    val saved = runCatching {
+                        if (rememberPassword) passwordStore.savePassword(profile, password)
+                        else passwordStore.rememberProfile(profile) &&
+                            passwordStore.removePassword(profile)
+                    }.getOrDefault(false)
+                    if (!saved) mutableState.value = state.value.copy(
+                        error = "已登录，但系统安全密码保存状态未能确认。")
+                }
                 if (oldApi !== candidate) (oldApi as? Closeable)?.close()
                 if (!result.mustChangePassword) {
                     refreshTransferRecoveryNotices()
@@ -709,6 +795,15 @@ class DriveController(
             checkCurrent(ticket)
             session = result
             persistRefreshSession()
+            // A verified password change updates only the same already-saved
+            // profile; it never opts a new account into password retention.
+            val savedProfile = AndroidSavedLoginPasswords.profile(
+                state.value.server, state.value.route.lanIp, state.value.username)
+            val passwordStore = savedLoginStore
+            if (savedProfile != null && passwordStore != null &&
+                runCatching { passwordStore.passwordFor(savedProfile) != null }.getOrDefault(false)) {
+                runCatching { passwordStore.savePassword(savedProfile, replacement) }
+            }
             mutableState.value = state.value.copy(screen = if (result.mustChangePassword) Screen.PASSWORD else Screen.FILES)
             if (!result.mustChangePassword) {
                 refreshTransferRecoveryNotices()
@@ -721,6 +816,7 @@ class DriveController(
         if (!state.value.canNavigateFiles() || state.value.filesSection != FilesSection.BROWSE ||
             state.value.browseSelectionMode ||
             state.value.filesPdfViewer != null || state.value.filesAudioViewer != null ||
+            state.value.filesTextViewer != null ||
             state.value.items.none { it == node }) return
         if (node.isDirectory) load(state.value.path + node, 0)
         else if (fileKind(node.name, false) in setOf("image", "video") &&
@@ -729,15 +825,20 @@ class DriveController(
             node.revision > 0 && node.size > 0) openFilesPdf(node)
         else if (fileKind(node.name, false) == "audio" &&
             node.revision > 0 && node.size > 0) openFilesAudio(node)
+        else if (node.revision > 0 && nativeTextPreviewCandidate(node.name))
+            openFilesText(node)
         else showDetails(node)
     }
 
     /** No synthetic Gallery Range is queried. A singleton presentation adapter
      * lets all existing secure image/video/Live Viewers keep their contracts. */
-    private fun filesNodeVisible(current: DriveState, node: DriveNode): Boolean {
+    private fun filesNodeVisible(
+        current: DriveState, node: DriveNode, allowEmpty: Boolean = false,
+    ): Boolean {
         if (current.screen != Screen.FILES || node.id <= 0 ||
             node.revision <= 0 || node.type != "file" ||
-            node.size <= 0 || current.destinationKind != null) return false
+            node.size < 0 || (!allowEmpty && node.size == 0L) ||
+            current.destinationKind != null) return false
         return if (current.filesSection == FilesSection.BROWSE)
             current.loaded && current.items.any { it == node }
         else current.collectionLoaded && current.collectionItems.any { it.node == node }
@@ -748,7 +849,7 @@ class DriveController(
         val current = state.value
         if (!filesNodeVisible(current, node) || !current.canNavigateFiles() ||
             current.browseSelectionMode || current.filesPdfViewer != null ||
-            current.filesAudioViewer != null ||
+            current.filesAudioViewer != null || current.filesTextViewer != null ||
             fileKind(node.name, false) != "pdf" || session == null || api == null) return
         if (current.discardableReadInFlight) invalidate()
         filesPdfEpoch++
@@ -807,7 +908,7 @@ class DriveController(
         val current = state.value
         if (!filesNodeVisible(current, node) || !current.canNavigateFiles() ||
             current.browseSelectionMode || current.filesAudioViewer != null ||
-            current.filesPdfViewer != null ||
+            current.filesPdfViewer != null || current.filesTextViewer != null ||
             fileKind(node.name, false) != "audio" || session == null ||
             api == null) return
         if (current.discardableReadInFlight) invalidate()
@@ -864,7 +965,7 @@ class DriveController(
         if (!filesNodeVisible(current, node) || !current.canNavigateFiles() ||
             current.browseSelectionMode ||
             current.filesAudioViewer != null || current.filesPdfViewer != null ||
-            session == null ||
+            current.filesTextViewer != null || session == null ||
             fileKind(node.name, false) !in setOf("image", "video")) return
         val service = api ?: return
         // Owner-only media detail is a disposable GET. A second tapped file
@@ -894,11 +995,40 @@ class DriveController(
         }
     }
 
+    /** Full-screen text reuses the Owner-scoped UTF-8 preview GET and
+     * retains Files rows, cursor and viewport for the original return. */
+    fun openFilesText(node: DriveNode) {
+        val current = state.value
+        // An empty UTF-8 file is a valid Owner file: open a real native
+        // Viewer rather than silently ignoring a tap on its 0-byte row.
+        if (!filesNodeVisible(current, node, allowEmpty = true) ||
+            !current.canNavigateFiles() ||
+            current.browseSelectionMode || current.filesPdfViewer != null ||
+            current.filesAudioViewer != null || current.filesTextViewer != null ||
+            !nativeTextPreviewCandidate(node.name) || session == null || api == null) return
+        if (current.discardableReadInFlight) invalidate()
+        stopTextPreview()
+        mutableState.value = state.value.copy(filesTextViewer = node, selected = null,
+            loading = false, discardableReadInFlight = false, error = null,
+            fileTextPreview = null, fileTextPreviewLoading = false,
+            fileTextPreviewError = null)
+        retryTextPreview()
+    }
+
+    fun dismissFilesTextViewer() {
+        if (state.value.filesTextViewer == null) return
+        stopTextPreview()
+        mutableState.value = state.value.copy(filesTextViewer = null,
+            fileTextPreview = null, fileTextPreviewLoading = false,
+            fileTextPreviewError = null)
+    }
+
     /** Long-press details may include folders; never use a stale/foreign row. */
     fun showDetails(node: DriveNode) {
         val current = state.value
         if (!current.canNavigateFiles() ||
-            current.filesPdfViewer != null || current.filesAudioViewer != null) return
+            current.filesPdfViewer != null || current.filesAudioViewer != null ||
+            current.filesTextViewer != null) return
         val visible = if (current.filesSection == FilesSection.BROWSE) current.items.any { it == node }
             else current.collectionItems.any { it.node == node }
         if (!visible) return
@@ -931,7 +1061,7 @@ class DriveController(
      * checks prevent an A->B->A private-text replay. */
     fun retryTextPreview() {
         val current = state.value
-        val node = current.selected ?: return
+        val node = current.filesTextViewer ?: current.selected ?: return
         if (current.screen != Screen.FILES || current.destinationKind != null ||
             node.isDirectory || node.revision <= 0 || !nativeTextPreviewCandidate(node.name) ||
             session == null || current.fileTextPreviewLoading) return
@@ -949,7 +1079,7 @@ class DriveController(
                 checkCurrent(ownerTicket)
                 val latest = state.value
                 if (textPreviewEpoch == previewTicket && latest.screen == Screen.FILES &&
-                    latest.selected == node) {
+                    (latest.filesTextViewer == node || latest.selected == node)) {
                     mutableState.value = latest.copy(fileTextPreview = preview,
                         fileTextPreviewLoading = false, fileTextPreviewError = null)
                 }
@@ -958,7 +1088,8 @@ class DriveController(
             } catch (failure: Exception) {
                 val latest = state.value
                 if (ownerTicket != generation || textPreviewEpoch != previewTicket ||
-                    latest.screen != Screen.FILES || latest.selected != node) return@launch
+                    latest.screen != Screen.FILES ||
+                    (latest.filesTextViewer != node && latest.selected != node)) return@launch
                 if (failure is ApiException && failure.statusCode == 401) {
                     endSession(changeServer = false)
                     return@launch
@@ -994,8 +1125,9 @@ class DriveController(
         val visibleOwnerRow = when (current.screen) {
             Screen.FILES -> editableBrowseState(node) != null
             Screen.GALLERY -> current.galleryLoaded && !current.loading &&
-                current.gallerySelected?.node == node &&
-                current.galleryItems.any { it.node == node } && session != null
+                current.galleryItems.any { it.node == node } && session != null &&
+                (current.gallerySelected?.node == node ||
+                    nativeGalleryViewerExportEligible(current, node))
             else -> false
         }
         if (!visibleOwnerRow || node.isDirectory || node.revision <= 0 || node.size < 0 ||
@@ -1026,8 +1158,9 @@ class DriveController(
                 current.path.isNotEmpty() && node?.parentId == current.path.last().id &&
                 current.items.any { it == node }
             Screen.GALLERY -> current.screen == Screen.GALLERY && current.galleryLoaded &&
-                current.gallerySelected?.node == node &&
-                current.galleryItems.any { it.node == node }
+                node != null && current.galleryItems.any { it.node == node } &&
+                (current.gallerySelected?.node == node ||
+                    nativeGalleryViewerExportEligible(current, node))
             else -> false
         }
         val valid = node != null && verifiedSurface &&
@@ -1045,10 +1178,20 @@ class DriveController(
             return
         }
         val owned = node!!
-        mutableState.value = current.copy(
+        val viewerExport = current.fileExportOrigin == Screen.GALLERY &&
+            nativeGalleryViewerExportEligible(current, owned)
+        if (viewerExport) {
+            // After the user chooses a real SAF destination, close only this
+            // Viewer so the existing Gallery transfer progress is visible.
+            // Cancelling the system picker leaves the Viewer untouched.
+            dismissGalleryViewer()
+        }
+        val activeState = state.value
+        mutableState.value = activeState.copy(
             fileExportPending = null, fileExportOrigin = null, fileDownloadActive = true,
             fileDownloadSaved = false, fileDownloadError = null,
-            gallerySelected = if (current.screen == Screen.GALLERY) null else current.gallerySelected,
+            gallerySelected = if (activeState.screen == Screen.GALLERY)
+                null else activeState.gallerySelected,
             fileDownloadBytes = 0, fileDownloadTotal = owned.size)
         request(isFileDownload = true) { ticket ->
             var complete = false
@@ -1526,7 +1669,7 @@ class DriveController(
             !current.loaded || current.loading || current.destinationKind != null ||
             !current.browseSelectionMode || current.error != null ||
             current.browseBatchWriteAttempted || current.path.isEmpty() ||
-            current.filesPdfViewer != null ||
+            current.filesPdfViewer != null || current.filesTextViewer != null ||
             current.browseSelectedIds.size !in 1..200 || session == null) return
         val sourceID = current.path.last().id
         val rows = current.items.filter { it.id in current.browseSelectedIds &&
@@ -1890,6 +2033,7 @@ class DriveController(
         val current = state.value
         if (!current.canNavigateFiles() || current.filesSection == FilesSection.BROWSE ||
             current.filesAudioViewer != null || current.filesPdfViewer != null ||
+            current.filesTextViewer != null ||
             current.collectionItems.none { it == item }) return
         if (item.node.isDirectory) openCollectionFolder(item)
         else if (fileKind(item.node.name, false) in setOf("image", "video") &&
@@ -1898,6 +2042,8 @@ class DriveController(
             item.node.revision > 0 && item.node.size > 0) openFilesPdf(item.node)
         else if (fileKind(item.node.name, false) == "audio" &&
             item.node.revision > 0 && item.node.size > 0) openFilesAudio(item.node)
+        else if (item.node.revision > 0 && nativeTextPreviewCandidate(item.node.name))
+            openFilesText(item.node)
         else showDetails(item.node)
     }
 
@@ -3992,6 +4138,10 @@ class DriveController(
             dismissFilesAudioViewer()
             return
         }
+        if (current.filesTextViewer != null) {
+            dismissFilesTextViewer()
+            return
+        }
         if (current.destinationKind != null) dismissDestination()
         else if (current.browseSelectionMode) {
             mutableState.value = current.copy(
@@ -4083,7 +4233,7 @@ class DriveController(
             current.path.isEmpty() || !current.loaded || current.browseSelectionMode ||
             current.error != null || current.filesArrangement == target ||
             current.filesPdfViewer != null || current.filesAudioViewer != null ||
-            session == null) return
+            current.filesTextViewer != null || session == null) return
         val service = api ?: return
         val path = current.path.toList()
         request(discardableRead = true) { ticket ->
@@ -4220,7 +4370,8 @@ class DriveController(
             mutableState.value = state.value.withoutDestination().copy(
                 screen = Screen.PASSWORD, path = emptyList(),
                 items = emptyList(), loaded = false, collectionItems = emptyList(),
-                collectionLoaded = false, selected = null, fileExportPending = null,
+                collectionLoaded = false, selected = null,
+                filesTextViewer = null, fileExportPending = null,
                 fileDownloadSaved = false, fileUploadPickerParent = null,
                 fileUploadActive = false, fileUploadCommitted = false,
                 galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
@@ -4250,7 +4401,7 @@ class DriveController(
                 !isFileDownload && !isFileUpload,
             error = null, selected = null,
             filesPdfViewer = null, filesPdfBytes = 0,
-            filesAudioViewer = null,
+            filesAudioViewer = null, filesTextViewer = null,
             fileExportPending = null, fileExportOrigin = null,
             fileDownloadActive = isFileDownload && prior.fileDownloadActive,
             fileDownloadSaved = false, fileDownloadError = null,
@@ -4372,18 +4523,33 @@ class DriveController(
         val previous = state.value
         if (previous.screen !in setOf(Screen.CONNECT, Screen.LOGIN) ||
             previous.loading || session != null) return
+        val selected = AndroidSavedLoginPasswords.profile(
+            previous.server, previous.route.lanIp, previous.username)
+        if (selected == null) {
+            mutableState.value = previous.copy(error = "请先选择有效的服务器和用户名，再清除该账号资料。")
+            return
+        }
         try {
-            sessionPersistence?.clear()
+            val saved = sessionPersistence?.load()
+            // Deleting this account must never revoke a different Owner's refresh.
+            if (saved != null && saved.server == selected.server && saved.username == selected.username)
+                sessionPersistence.clear()
+            // Old installs have no profile password store; the legacy draft
+            // cleanup remains usable without this new optional dependency.
+            if (savedLoginStore != null && !savedLoginStore.forgetProfile(selected)) {
+                mutableState.value = previous.copy(error = "无法确认当前账号安全密码已删除，请重试。")
+                return
+            }
         } catch (_: Exception) {
             mutableState.value = previous.copy(
-                error = "无法确认系统安全存储中的登录凭据已清除；请解锁设备后重试。")
+                error = "无法确认当前账号的系统安全凭据已清除；请解锁设备后重试。")
             return
         }
         val cleared = runCatching { clearLoginDraft(previous.server) }.getOrDefault(false)
         if (!cleared) {
             mutableState.value = state.value.copy(
                 savedSessionRestoreRetryAvailable = false,
-                error = "已清除本机会话凭据，但无法确认服务器、IP 和用户名填写记录已删除。")
+                error = "已清除当前账号安全凭据，但填写信息未能清除。")
             return
         }
         val oldApi = api

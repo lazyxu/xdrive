@@ -338,9 +338,13 @@ struct XDriveIOSNativeServerMediaPreview: View {
             VStack(spacing: 12) {
                 if viewed.isLive, let still = image {
                     if showingLiveMotion, let player {
-                        VideoPlayer(player: player)
-                            .onAppear { player.play() }
-                            .onDisappear { player.pause() }
+                        XDriveIOSNativeAVPlayerStatusObserver(
+                            player: player,
+                            content: VideoPlayer(player: player)
+                                .onAppear { if ownerAuthorized { player.play() } }
+                                .onDisappear { player.pause() },
+                            onFailed: { playbackLoadFailed($0) }
+                        )
                     } else if let resources = liveResources,
                               !nativeLiveUnavailable {
                         ZStack {
@@ -367,6 +371,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
                         .accessibilityLabel("云端 Live Photo，长按播放")
                     } else {
                         XDriveIOSNativeZoomablePhotoView(image: still)
+                            .onNavigateSwipe { navigateLoaded($0) }
                     }
                     if liveResources != nil {
                         HStack(spacing: 12) {
@@ -383,7 +388,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
                                 .accessibilityIdentifier("native-ios-photoasset-live-play")
                             }
                             Button(showingLiveMotion ? "返回静态照片" : "播放原始动态视频") {
-                                guard phase == .active,
+                                guard ownerAuthorized, player != nil,
                                       let currentOwner = liveOwner,
                                       XDriveIOSNativePhotoOwnerScope.matches(
                                         login.owner, currentOwner
@@ -398,6 +403,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
                                 }
                                 showingLiveMotion.toggle()
                             }
+                            .disabled(!ownerAuthorized || player == nil)
                             .accessibilityIdentifier("native-ios-photoasset-live-motion")
                         }
                         Text(nativeLiveUnavailable
@@ -409,23 +415,28 @@ struct XDriveIOSNativeServerMediaPreview: View {
                         Text(failure).foregroundStyle(.secondary)
                             .font(.caption).padding(.horizontal)
                         Button("重试") {
-                            if phase == .active && login.owner != nil {
+                            if ownerAuthorized {
                                 retirePreview()
                             }
                         }
                         .accessibilityIdentifier("native-ios-photoasset-viewer-retry")
                     }
                 } else if let player {
-                    VideoPlayer(player: player)
-                        .onAppear { player.play() }
-                        .onDisappear { player.pause() }
+                    XDriveIOSNativeAVPlayerStatusObserver(
+                        player: player,
+                        content: VideoPlayer(player: player)
+                            .onAppear { if ownerAuthorized { player.play() } }
+                            .onDisappear { player.pause() },
+                        onFailed: { playbackLoadFailed($0) }
+                    )
                 } else if let image {
                     XDriveIOSNativeZoomablePhotoView(image: image)
+                        .onNavigateSwipe { navigateLoaded($0) }
                 } else if let failure {
                     VStack(spacing: 8) {
                         Text(failure).foregroundStyle(.secondary).padding(.horizontal)
                         Button("重试") {
-                            if phase == .active && login.owner != nil {
+                            if ownerAuthorized {
                                 retirePreview()
                             }
                         }
@@ -461,6 +472,19 @@ struct XDriveIOSNativeServerMediaPreview: View {
                 }
             }
             .toolbar {
+                // Available even if an AVPlayer stalls without a terminal
+                // status or the bottom controls are cramped in landscape.
+                ToolbarItem(placement: .navigationBarLeading) {
+                    if ownerAuthorized, player != nil {
+                        Button {
+                            retirePreview()
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        .accessibilityLabel("重新加载云端视频")
+                        .accessibilityIdentifier("native-ios-photoasset-player-reload")
+                    }
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("完成") { dismiss() }
                 }
@@ -468,7 +492,12 @@ struct XDriveIOSNativeServerMediaPreview: View {
         }
         .task(id: previewRequestID) {
             // Signed previews must not survive a scene/Owner generation.
-            guard phase == .active, let expected = login.owner else { return }
+            // The Viewer remains bound to the source Owner captured by L2,
+            // even if the account has switched before this task begins.
+            guard phase == .active, let expected = openedOwner,
+                  ownerAuthorized,
+                  XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
+            else { return }
             let requestID = previewRequestID
             let target = viewed
             do {
@@ -543,6 +572,21 @@ struct XDriveIOSNativeServerMediaPreview: View {
                 failure = "该云端媒体预览暂不可用，未读取其他账户的数据。"
             }
         }
+        // AVPlayer may fail after the signed URL has already been accepted.
+        // Handle only this exact active item; an old player must not change
+        // the new Viewer during rapid left/right navigation or account switch.
+        .onReceive(NotificationCenter.default.publisher(
+            for: .AVPlayerItemFailedToPlayToEndTime
+        ).receive(on: RunLoop.main)) { notification in
+            guard ownerAuthorized,
+                  let failed = notification.object as? AVPlayerItem,
+                  let playing = player?.currentItem, failed === playing else { return }
+            player?.pause()
+            player?.replaceCurrentItem(with: nil)
+            player = nil
+            showingLiveMotion = false
+            failure = "媒体播放失败，请重试当前云端照片或视频。"
+        }
         .onChange(of: phase) { _ in
             // iOS app switcher must not expose signed still/video or local
             // Live originals. Foreground re-verifies Owner before fetching.
@@ -553,6 +597,17 @@ struct XDriveIOSNativeServerMediaPreview: View {
             dismiss()
         }
         .onDisappear { retirePreview() }
+    }
+
+    @MainActor
+    private func playbackLoadFailed(_ failed: AVPlayerItem) {
+        guard ownerAuthorized,
+              let playing = player?.currentItem, failed === playing else { return }
+        player?.pause()
+        player?.replaceCurrentItem(with: nil)
+        player = nil
+        showingLiveMotion = false
+        failure = "媒体播放失败，请重试当前云端照片或视频。"
     }
 
     private func retirePreview() {
