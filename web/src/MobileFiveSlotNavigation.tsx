@@ -100,6 +100,16 @@ export function XDriveMobileFiveSlotNavigation({
     heldPointer.current = false
   }
   useEffect(() => () => cancelLongPress(), [])
+  // A browser Back/Forward or a different fixed tab can change `selected`
+  // without unmounting this bar. Revoke a pending long-press before its timer
+  // opens the old feature's recent picker over the new one. A late Safari
+  // release click is suppressed; a fresh pointerdown and keyboard click remain
+  // functional through the existing gesture contract.
+  useEffect(() => {
+    if (!activePointer.current) return
+    cancelLongPress()
+    suppressReleaseClick.current = true
+  }, [selected])
   const startLongPress = (event: ReactPointerEvent<HTMLElement>) => {
     // A new independent gesture must never inherit a missing synthetic click
     // from an earlier long hold. Secondary pointers and right-click do not hold.
