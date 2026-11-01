@@ -35,6 +35,6 @@ test('directory and full-library search use canonical counted Owner Range', () =
 });
 
 test('unimplemented file mutations, previews and downloads remain explicit', () => {
-  assert.match(view, /预览及重命名、复制、移动、删除仍未接通 iOS 原生操作/);
+  assert.match(view, /重命名、复制、移动、删除仍未接通/);
   assert.doesNotMatch(view, /\/api\/v1\/uploads|\/api\/v1\/file-operations|POST.*nodes|DELETE.*nodes/);
 });

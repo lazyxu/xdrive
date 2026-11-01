@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import QuickLook
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -236,6 +237,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     @State private var order = "asc"
     @State private var searchError: String?
     @State private var selectedFile: XDriveIOSNativeFilesEntry?
+    @State private var quickLookURL: URL?
     @State private var showingCreateFolder = false
     @State private var showingFileImporter = false
     @State private var newFolderName = ""
@@ -423,7 +425,10 @@ struct XDriveIOSNativeFilesBrowser: View {
         } message: {
             Text("仅在当前目录创建。若连接中断导致结果不确定，请刷新目录确认，不要连续重试。")
         }
-        .sheet(item: $selectedFile, onDismiss: { exporter.invalidate() }) { entry in
+        .sheet(item: $selectedFile, onDismiss: {
+            quickLookURL = nil
+            exporter.invalidate()
+        }) { entry in
             NavigationStack {
                 Form {
                     Section("文件信息") {
@@ -440,6 +445,12 @@ struct XDriveIOSNativeFilesBrowser: View {
                         if let prepared = exporter.prepared,
                            prepared.nodeID == entry.node.id,
                            prepared.revision == entry.node.revision {
+                            Button {
+                                quickLookURL = prepared.fileURL
+                            } label: {
+                                Label("原生只读预览", systemImage: "eye")
+                            }
+                            .accessibilityIdentifier("native-ios-files-quicklook")
                             ShareLink(item: prepared.fileURL) {
                                 Label("保存到“文件”或分享", systemImage: "square.and.arrow.up")
                             }
@@ -458,7 +469,7 @@ struct XDriveIOSNativeFilesBrowser: View {
                                 .accessibilityIdentifier("native-ios-files-export-status")
                         }
                     }
-                    Text("预览及重命名、复制、移动、删除仍未接通 iOS 原生操作。")
+                    Text("重命名、复制、移动、删除仍未接通；原生预览须先下载到临时目录，并以系统支持的类型为准。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 .navigationTitle("文件详情")
@@ -472,7 +483,10 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
         .onAppear { reload() }
         .onDisappear { model.invalidate() }
-        .onDisappear { exporter.invalidate() }
+        .onDisappear {
+            quickLookURL = nil
+            exporter.invalidate()
+        }
         .onDisappear {
             uploader.invalidate()
             showingFileImporter = false
@@ -488,6 +502,7 @@ struct XDriveIOSNativeFilesBrowser: View {
             selectedFile = nil
             offset = 0
             model.invalidate()
+            quickLookURL = nil
             exporter.invalidate()
             uploader.invalidate()
             showingFileImporter = false
@@ -498,6 +513,7 @@ struct XDriveIOSNativeFilesBrowser: View {
             createNotice = nil
             showingCreateFolder = false
         }
+        .quickLookPreview($quickLookURL)
         .onChange(of: sort) { _ in reload(resetOffset: true) }
         .onChange(of: order) { _ in reload(resetOffset: true) }
     }

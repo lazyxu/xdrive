@@ -302,7 +302,7 @@ jobs:
             ios/tests/NativeFilesFolderNameChecks.swift \
             -o "$RUNNER_TEMP/xdrive-ios-files-folder-check"
           "$RUNNER_TEMP/xdrive-ios-files-folder-check"
-          node --test desktop/tests/ios-native-files-create-folder.cjs desktop/tests/ios-native-files-download-export.cjs
+          node --test desktop/tests/ios-native-files-create-folder.cjs desktop/tests/ios-native-files-download-export.cjs desktop/tests/ios-native-files-quicklook.cjs
 
       - name: Verify native Files manual original receipt and Files picker integration
         run: |
