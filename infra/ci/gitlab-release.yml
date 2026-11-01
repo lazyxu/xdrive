@@ -15,12 +15,8 @@
     policy: pull-push
     when: always
   before_script:
-    - |
-      set -euo pipefail
-      export DEBIAN_FRONTEND=noninteractive
-      apt-get update
-      apt-get install -y --no-install-recommends ca-certificates curl
-      rm -rf /var/lib/apt/lists/*
+    # Go bookworm already includes curl and CA certs. Required image
+    # publication must not depend on Debian APT network reachability.
     - bash scripts/ci/install-docker-cli.sh
     - docker info >/dev/null
 
