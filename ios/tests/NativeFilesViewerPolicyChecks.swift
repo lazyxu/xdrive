@@ -43,6 +43,28 @@ struct XDriveIOSNativeFilesViewerPolicyChecks {
         require(XDriveIOSNativeFilesViewerPolicy.neighbor(
             current: third, in: loaded, direction: 1, authorized: true
         ) == nil, "no out-of-page next")
+        let unsupported = node(20, "archive.unknown")
+        let oversizedPDF = node(21, "huge.pdf", size: 65 * 1_048_576)
+        let mixed = [first, unsupported, oversizedPDF, second, third]
+        require(XDriveIOSNativeFilesViewerPolicy.loadedIndex(
+            current: unsupported, in: mixed, authorized: true
+        ) == 1, "unsupported file retains its bounded L3 position")
+        require(XDriveIOSNativeFilesViewerPolicy.neighbor(
+            current: unsupported, in: mixed, direction: -1, authorized: true
+        ) == first, "previous from an unsupported file")
+        require(XDriveIOSNativeFilesViewerPolicy.neighbor(
+            current: unsupported, in: mixed, direction: 1, authorized: true
+        ) == second, "skip oversized PDF to the next previewable sibling")
+        require(XDriveIOSNativeFilesViewerPolicy.neighbor(
+            current: oversizedPDF, in: mixed, direction: -1, authorized: true
+        ) == first, "skip unsupported file when moving back from oversized PDF")
+        require(XDriveIOSNativeFilesViewerPolicy.neighbor(
+            current: oversizedPDF, in: mixed, direction: 1, authorized: false
+        ) == nil, "do not navigate failed-preview source after Owner revocation")
+        require(XDriveIOSNativeFilesViewerPolicy.neighbor(
+            current: unsupported, in: [first, node(20, "archive.unknown", parent: 9)],
+            direction: 1, authorized: true
+        ) == nil, "unsupported source cannot cross directories")
         require(XDriveIOSNativeFilesViewerPolicy.neighbor(
             current: first, in: loaded, direction: 2, authorized: true
         ) == nil, "only adjacent directions")

@@ -98,3 +98,65 @@ test('indexed low-res Files still keeps the native zoom swipe navigation and ori
   assert.match(view, /导出上限 512 MiB/);
   assert.match(reader, /fallbackThumbnail\(selected\)/);
 });
+
+test('Files audio and video expose initial KVO loading failure, scoped retry and landscape recovery', () => {
+  const modal = view.slice(view.indexOf('struct XDriveIOSNativeFilesViewer: View'));
+  assert.match(modal, /case \.video:[\s\S]*?observingPlayer\(/);
+  assert.match(modal, /case \.audio:[\s\S]*?observingPlayer\(/);
+  assert.equal((modal.match(/\.publisher\(for: \\\.status, options: \[\.initial, \.new\]\)/g) || []).length, 2);
+  assert.match(modal, /if status == \.failed \{ playbackFailed\(item\) \}/);
+  assert.match(modal, /guard authorized, let current = player\?\.currentItem,\s*failed === current/);
+  assert.match(modal, /ToolbarItem\(placement: \.navigationBarTrailing\)[\s\S]*?Button\("重新加载媒体"\) \{ reloadCurrent\(\) \}/);
+  assert.match(modal, /accessibilityIdentifier\("native-ios-files-player-reload"\)/);
+  assert.match(modal, /Button\("重试"\) \{ reloadCurrent\(\) \}/);
+  assert.match(modal, /private func reloadCurrent\(\)[\s\S]*?guard authorized else \{ return \}[\s\S]*?retire\(\)[\s\S]*?failure = nil[\s\S]*?loading = true[\s\S]*?attempt = UUID\(\)/);
+  assert.match(modal, /private func openCurrent\(\) async[\s\S]*?retire\(\)\s*failure = nil\s*loading = true/);
+  assert.match(modal, /\.onChange\(of: phase\)[\s\S]*?retire\(\)/);
+});
+
+test('unsupported, oversized, undecodable and failed-player Files previews expose current-original export', () => {
+  const exportModel = read('ios/XDriveIOS/NativeFilesDownloadExport.swift');
+  const modal = view.slice(view.indexOf('struct XDriveIOSNativeFilesViewer: View'));
+  assert.match(modal, /@StateObject private var exporter = XDriveIOSNativeFilesExportModel\(\)/);
+  assert.match(modal, /if authorized && exportFallbackEligible/);
+  assert.match(modal, /case \.unsupported:[\s\S]*?exportFallbackEligible = true/);
+  assert.match(modal, /case \.tooLarge:[\s\S]*?exportFallbackEligible = true/);
+  assert.match(modal, /case \.malformed:[\s\S]*?exportFallbackEligible = true/);
+  assert.match(modal, /failure = "媒体播放失败，请重试当前文件。"\s*exportFallbackEligible = true/);
+  assert.match(modal, /staged\.nodeID == viewed\.id && staged\.revision == viewed\.revision/);
+  assert.match(modal, /exporter\.prepare\(viewed, login: login\)/);
+  assert.match(modal, /ShareLink\(item: staged\.fileURL\)/);
+  assert.match(modal, /exporter\.invalidate\(\)[\s\S]*?exportFallbackEligible = false/);
+  assert.match(modal, /accessibilityIdentifier\("native-ios-files-viewer-error-scroll"\)/);
+  assert.match(modal, /accessibilityIdentifier\("native-ios-files-viewer-export-cancel"\)/);
+  assert.match(exportModel, /XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expected\)/);
+  assert.match(exportModel, /let stillCurrent: XDriveIOSNativeFilesNode = try await read\(/);
+  assert.match(exportModel, /guard stillCurrent == node/);
+  assert.match(exportModel, /prepared\?\.discard\(\)/);
+  assert.doesNotMatch(modal, /URLSessionConfiguration|download-ticket|FileManager\.default\.moveItem/);
+});
+
+test('L3 navigation can escape an unsupported or oversize file within the verified 64-row page', () => {
+  assert.match(policy, /private static func validFileRow\(_ node: XDriveIOSNativeFilesNode\)/);
+  assert.match(policy, /guard validFileRow\(node\) else \{ return false \}/);
+  assert.match(policy, /guard authorized, validFileRow\(current\),/);
+  assert.match(policy, /if let fileIndex = files\.firstIndex\(of: loaded\[index\]\)/);
+  assert.match(policy, /return loaded\[\.\.<index\]\.reversed\(\)\.first\(where: canPreview\)/);
+  assert.match(policy, /return loaded\[\(index \+ 1\)\.\.\.\]\.first\(where: canPreview\)/);
+  assert.match(view, /Button\("上一项"|Label\("上一项"/);
+  assert.match(view, /Button\("下一项"|Label\("下一项"/);
+});
+
+
+test('iOS indexed still fallback coexists with L3 original export and scoped AVPlayer retry', () => {
+  const image = view.slice(view.indexOf('case .imageThumbnail(let image):'),
+    view.indexOf('case .video:', view.indexOf('case .imageThumbnail(let image):')));
+  assert.match(image, /XDriveIOSNativeZoomablePhotoView\(image: image\)/);
+  assert.match(image, /\.onNavigateSwipe \{ move\(\$0\) \}/);
+  assert.match(view, /case \.noThumbnail:[\s\S]*?exportFallbackEligible = true/);
+  assert.match(view, /@StateObject private var exporter = XDriveIOSNativeFilesExportModel\(\)/);
+  assert.match(view, /ShareLink\(item: staged\.fileURL\)/);
+  assert.match(view, /player\.publisher\(for: \\\.status, options: \[\.initial, \.new\]\)/);
+  assert.match(policy, /case \.image: return node\.size > 0/);
+  assert.match(policy, /return loaded\[\(index \+ 1\)\.\.\.\]\.first\(where: canPreview\)/);
+});
