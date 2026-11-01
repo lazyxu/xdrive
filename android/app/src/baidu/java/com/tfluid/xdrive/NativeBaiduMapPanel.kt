@@ -345,7 +345,7 @@ internal fun NativeBaiduMapPanel(
     val currentOnCameraStart by rememberUpdatedState(onCameraStart)
     val currentOnCameraSettled by rememberUpdatedState(onCameraSettled)
     val currentOnCameraSnapshot by rememberUpdatedState(onCameraSnapshot)
-    var projectedCells by remember(host, bounds, result) {
+    var projectedCells by remember(host) {
         mutableStateOf<List<NativeBaiduProjectedCell>>(emptyList())
     }
     val density = LocalDensity.current
