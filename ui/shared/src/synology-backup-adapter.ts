@@ -55,6 +55,7 @@ export type XDriveSynologyOwnerThumbnail = {
 export type XDriveSynologyOwnerStreamMIME =
   | 'video/mp4' | 'video/webm'
   | 'audio/mpeg' | 'audio/mp4' | 'audio/ogg' | 'audio/wav' | 'audio/flac'
+  | 'application/pdf'
 
 /** One *bounded*, fully verified motion byte resource; never a signed
  * Server URL or general-purpose DSM media proxy. */
@@ -830,8 +831,8 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
         Number.isSafeInteger(value) && value > 0) ||
         !/^[0-9a-f]{64}$/.test(sha256) ||
         !['video/mp4', 'video/webm', 'audio/mpeg', 'audio/mp4',
-          'audio/ogg', 'audio/wav', 'audio/flac'].includes(mime)) {
-        throw new Error('Invalid authenticated Owner playback identity')
+          'audio/ogg', 'audio/wav', 'audio/flac', 'application/pdf'].includes(mime)) {
+        throw new Error('Invalid authenticated Owner media stream identity')
       }
       // Only the trusted, same-origin DSM CGI endpoint is used; arbitrary
       // Server/CDN URLs, bearer tokens, source paths and redirects are absent.
