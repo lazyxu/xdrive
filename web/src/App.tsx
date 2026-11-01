@@ -2681,19 +2681,17 @@ function FileManager({
               disabled={viewerActive}
               onBack={goBackWithinMobileFeature}
               onOpenApps={() => selectMobileSlot('all')}
-              transferAction={mobileFocusTarget && mobileOwnerScope ? (
-                <Stack direction="row" alignItems="center" spacing={0.25}>
-                  <Button aria-label="进入专注模式" title="进入专注模式"
-                    data-xdrive-mobile-enter-focus
-                    sx={{ minWidth: 44, minHeight: 44, p: 0 }}
-                    onClick={() => setMobileManualFocus({
-                      ownerScope: mobileOwnerScope, target: mobileFocusTarget,
-                    })}>
-                    <FullscreenRoundedIcon fontSize="small" />
-                  </Button>
-                  {transferAction}
-                </Stack>
-              ) : transferAction}
+              transferAction={transferAction}
+              focusAction={mobileFocusTarget && mobileOwnerScope ? (
+                <Button aria-label="进入专注模式" title="进入专注模式"
+                  data-xdrive-mobile-enter-focus
+                  sx={{ minWidth: 44, minHeight: 44, p: 0 }}
+                  onClick={() => setMobileManualFocus({
+                    ownerScope: mobileOwnerScope, target: mobileFocusTarget,
+                  })}>
+                  <FullscreenRoundedIcon fontSize="small" />
+                </Button>
+              ) : null}
             />
           ) : null}
           {compactWorkspace && mobileManualFocused && !viewerActive ? (
