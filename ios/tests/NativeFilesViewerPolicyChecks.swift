@@ -68,9 +68,16 @@ struct XDriveIOSNativeFilesViewerPolicyChecks {
         require(!XDriveIOSNativeFilesViewerPolicy.canPreview(
             node(15, "huge.pdf", size: 65 * 1_048_576)
         ), "bounded PDF")
-        require(!XDriveIOSNativeFilesViewerPolicy.canPreview(
+        require(XDriveIOSNativeFilesViewerPolicy.canPreview(
             node(15, "huge.jpg", size: 33 * 1_048_576)
-        ), "bounded original still")
+        ), "oversize image eligible for thumbnail without raw stream")
+        require(XDriveIOSNativeFilesViewerPolicy.kind(for: "new.avif") == .image,
+                "AVIF can attempt safe fallback")
+        require(XDriveIOSNativeFilesViewerPolicy.kind(for: "old.bmp") == .image,
+                "BMP can attempt safe fallback")
+        require(!XDriveIOSNativeFilesViewerPolicy.canPreview(
+            node(15, "empty.jpg", size: 0)
+        ), "zero-byte image is not previewable")
         require(XDriveIOSNativeFilesViewerPolicy.validTicketPath(
             "/api/v1/file-preview/11?ticket=one", nodeID: 11
         ), "same-origin relative signed URL")
