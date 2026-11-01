@@ -2661,7 +2661,10 @@ function FileManager({
       >
 
         <Box data-xdrive-mobile-app-frame sx={{ minWidth: 0, minHeight: 0, height: '100%', flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          {compactWorkspace ? (
+          {/* L2 Places map owns a 44px in-map Close control. Suppress the
+              L1 52px app bar only for the actual verified Owner map panel,
+              not the Places list, a stale map focus or other features. */}
+          {compactWorkspace && !mobileMapFocused ? (
             <XDriveMobileAppHeader
               title={mobileRouteTitle}
               canGoBack={mobileCanGoBack}
