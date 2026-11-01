@@ -10,7 +10,7 @@ enum XDriveIOSNativeViewerSwipePolicy {
     ) -> Int? {
         guard horizontal.isFinite, vertical.isFinite,
               zoom.isFinite, minimum.isFinite, minimum > 0,
-              zoom <= minimum + 0.01,
+              zoom >= minimum - 0.01, zoom <= minimum + 0.01,
               abs(horizontal) >= 72,
               abs(horizontal) > abs(vertical) * 1.5 else { return nil }
         return horizontal < 0 ? 1 : -1
