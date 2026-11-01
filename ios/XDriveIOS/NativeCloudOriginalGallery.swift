@@ -532,9 +532,16 @@ final class XDriveIOSNativeCloudOriginalModel: ObservableObject {
 struct XDriveIOSNativeCloudOriginalPreview: View {
     let node: XDriveIOSNativeCloudOriginal
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
+    // Frozen foreground Owner and at most 48 currently loaded backed-up originals.
+    let presentingOwner: XDriveNativeOwnerRoot?
+    let loadedNodes: [XDriveIOSNativeCloudOriginal]
+    let onViewed: ((XDriveIOSNativeCloudOriginal) -> Bool)?
+    @State private var activeNode: XDriveIOSNativeCloudOriginal?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var phase
     @State private var previewRequestID = UUID()
+    // Reuse the native Files verified-Node exporter, never a second download writer.
+    @StateObject private var exporter = XDriveIOSNativeFilesExportModel()
     @State private var still: UIImage?
     @State private var player: AVPlayer?
     @State private var liveResources: XDriveIOSLivePreviewFiles?
@@ -545,10 +552,77 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
     @State private var nativeLivePlaybackRequest: UUID?
     @State private var error: String?
 
+    private var viewed: XDriveIOSNativeCloudOriginal { activeNode ?? node }
+
+    private func key(_ item: XDriveIOSNativeCloudOriginal)
+        -> XDriveIOSNativePhotoAssetViewerNeighborKey {
+        XDriveIOSNativePhotoAssetViewerNeighborKey(
+            nodeID: item.id, revision: item.revision,
+            previewable: item.isImage || item.isVideo || item.isLiveArchive
+        )
+    }
+
+    private var currentOwnerAuthorized: Bool {
+        guard phase == .active, let owner = presentingOwner else { return false }
+        return XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner)
+    }
+
+    private var exportNode: XDriveIOSNativeFilesNode? {
+        // Files export re-reads this exact Node and rejects a changed revision,
+        // parent, name or size before and after the signed original download.
+        guard currentOwnerAuthorized, let owner = presentingOwner,
+              viewed.type == "file", viewed.id > 0, viewed.revision > 0,
+              viewed.size >= 0, viewed.size <= 512 * 1_048_576,
+              XDriveIOSBackgroundOriginalNamePolicy.valid(viewed.name)
+        else { return nil }
+        return XDriveIOSNativeFilesNode(
+            id: viewed.id, parent_id: owner.rootNodeID,
+            name: viewed.name, type: viewed.type,
+            size: viewed.size, revision: viewed.revision
+        )
+    }
+
+    private var loadedPosition: Int? {
+        XDriveIOSNativePhotoAssetViewerNeighborPolicy.loadedIndex(
+            current: key(viewed), in: loadedNodes.map(key),
+            ownerAuthorized: currentOwnerAuthorized
+        )
+    }
+
+    private func neighbor(_ direction: Int) -> XDriveIOSNativeCloudOriginal? {
+        guard let index = XDriveIOSNativePhotoAssetViewerNeighborPolicy.neighborIndex(
+            current: key(viewed), in: loadedNodes.map(key),
+            direction: direction, ownerAuthorized: currentOwnerAuthorized
+        ) else { return nil }
+        return loadedNodes[index]
+    }
+
+    private func showNeighbor(_ direction: Int) {
+        guard let next = neighbor(direction), onViewed?(next) == true else { return }
+        // Retire the previous signed still/video, Live pair and temporary
+        // originals before presenting a different verified loaded Node.
+        exporter.invalidate()
+        player?.pause()
+        player = nil
+        still = nil
+        error = nil
+        liveResources?.discard()
+        liveResources = nil
+        showingLiveMotion = false
+        nativeLiveReady = false
+        nativeLiveUnavailable = false
+        showsStaticStill = false
+        nativeLivePlaybackRequest = nil
+        activeNode = next
+        // The previous .task receives cancellation; its request ID cannot
+        // update pixels or create a player after this new generation begins.
+        previewRequestID = UUID()
+    }
+
     var body: some View {
         NavigationStack {
             Group {
-                if node.isLiveArchive, let still {
+                if viewed.isLiveArchive, let still {
                     VStack(spacing: 10) {
                         if showingLiveMotion, let player {
                             VideoPlayer(player: player)
@@ -565,7 +639,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                                 ) { ready in
                                     // The async Photos callback must not make a
                                     // retired Owner/scene or old ZIP visible.
-                                    guard phase == .active, login.owner != nil,
+                                    guard currentOwnerAuthorized,
                                           liveResources?.folderURL == resources.folderURL
                                     else { return }
                                     nativeLiveReady = ready
@@ -577,6 +651,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                             .accessibilityLabel("云端实况照片，长按播放")
                         } else {
                             XDriveIOSNativeZoomablePhotoView(image: still)
+                                .onNavigateSwipe { showNeighbor($0) }
                                 .accessibilityLabel("云端 Live 静态原件")
                         }
                         if nativeLiveReady && !showingLiveMotion {
@@ -610,6 +685,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                     }
                 } else if let still {
                     XDriveIOSNativeZoomablePhotoView(image: still)
+                        .onNavigateSwipe { showNeighbor($0) }
                         .accessibilityLabel("云端照片，可双指缩放或双击放大")
                 } else if let player {
                     VideoPlayer(player: player)
@@ -624,16 +700,77 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                     ProgressView("正在安全读取云端预览…")
                 }
             }
-            .navigationTitle(node.name)
+            .navigationTitle(viewed.name)
             .navigationBarTitleDisplayMode(.inline)
+            .safeAreaInset(edge: .bottom) {
+                if loadedNodes.count > 1 || exporter.status != nil ||
+                   (currentOwnerAuthorized && viewed.size > 512 * 1_048_576) {
+                    VStack(spacing: 8) {
+                        if let status = exporter.status {
+                            Text(status)
+                                .font(.caption).foregroundStyle(.secondary)
+                                .accessibilityIdentifier("native-ios-original-export-status")
+                        }
+                        if currentOwnerAuthorized && viewed.size > 512 * 1_048_576 {
+                            Text("原件超过目前 512 MiB 的原生导出上限，无法在此直接导出。")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        if loadedNodes.count > 1 {
+                            HStack(spacing: 12) {
+                                Button("上一项") { showNeighbor(-1) }
+                                    .disabled(neighbor(-1) == nil)
+                                    .frame(minHeight: 44)
+                                    .accessibilityIdentifier("native-ios-original-viewer-previous")
+                                Spacer(minLength: 4)
+                                Text(loadedPosition.map {
+                                    "\($0 + 1)/\(loadedNodes.count)（已加载）"
+                                } ?? "当前原件已变化")
+                                    .font(.caption).monospacedDigit()
+                                    .accessibilityIdentifier("native-ios-original-viewer-position")
+                                Spacer(minLength: 4)
+                                Button("下一项") { showNeighbor(1) }
+                                    .disabled(neighbor(1) == nil)
+                                    .frame(minHeight: 44)
+                                    .accessibilityIdentifier("native-ios-original-viewer-next")
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(.ultraThinMaterial)
+                }
+            }
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    if let file = exporter.prepared,
+                       file.nodeID == viewed.id,
+                       file.revision == viewed.revision,
+                       currentOwnerAuthorized {
+                        ShareLink(item: file.fileURL) {
+                            Label("分享或保存原件", systemImage: "square.and.arrow.up")
+                        }
+                        .accessibilityIdentifier("native-ios-original-share")
+                    } else {
+                        Button {
+                            guard let node = exportNode else { return }
+                            exporter.prepare(node, login: login)
+                        } label: {
+                            Label(exporter.busy ? "正在下载" : "导出原件",
+                                  systemImage: "square.and.arrow.up")
+                        }
+                        .disabled(exporter.busy || exportNode == nil)
+                        .accessibilityIdentifier("native-ios-original-export")
+                    }
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("完成") { dismiss() }
                 }
             }
         }
         .task(id: previewRequestID) {
-            guard phase == .active, let before = login.owner else { return }
+            guard phase == .active, let before = presentingOwner,
+                  XDriveIOSNativePhotoOwnerScope.matches(login.owner, before)
+            else { return }
+            let target = viewed
             let requestID = previewRequestID
             do {
                 let auth = try await login.verifiedAuthorization()
@@ -649,8 +786,8 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                 let reader = XDriveIOSNativeCloudOriginalReader(
                     owner: auth.owner, accessToken: auth.accessToken
                 )
-                if node.isLiveArchive {
-                    let live = try await reader.livePreview(node)
+                if target.isLiveArchive {
+                    let live = try await reader.livePreview(target)
                     // All rejected/retired generations must remove the
                     // temporary originals, even after a slow download/decode.
                     guard !Task.isCancelled, phase == .active,
@@ -668,7 +805,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                     showsStaticStill = false
                     nativeLivePlaybackRequest = nil
                 } else {
-                    let media = try await reader.preview(node)
+                    let media = try await reader.preview(target)
                     try Task.checkCancellation()
                     guard phase == .active, previewRequestID == requestID,
                           XDriveIOSNativePhotoOwnerScope.matches(auth.owner, before),
@@ -686,13 +823,14 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                       previewRequestID == requestID,
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, before)
                 else { return }
-                self.error = node.isLiveArchive
+                self.error = target.isLiveArchive
                     ? "此 Live ZIP 原件无法读取或未通过双资源校验；请检查空间、网络与权限。"
                     : "此文件的云端预览不可用，未读取其他账户的数据。"
             }
         }
         .onChange(of: phase) { state in
             if state != .active {
+                exporter.invalidate()
                 // Never keep a signed video URL or rendered still alive while
                 // the app is inactive/backgrounded. The next foreground
                 // request must independently re-verify native Owner/root.
@@ -712,6 +850,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
         }
         .onChange(of: login.owner) { _ in
             // Retire the former Owner's signed media URL immediately.
+            exporter.invalidate()
             player?.pause()
             player = nil
             still = nil
@@ -726,6 +865,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
             dismiss()
         }
         .onDisappear {
+            exporter.invalidate()
             player?.pause()
             player = nil
             still = nil
@@ -740,7 +880,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
     }
 
     private func retryPreview() {
-        guard phase == .active, login.owner != nil else { return }
+        guard currentOwnerAuthorized else { return }
         // Do not reuse an expired signed URL, previous player, or old pixels.
         player?.pause()
         player = nil
@@ -856,12 +996,18 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
     @State private var showingGalleryHelp = false
     @StateObject private var model = XDriveIOSNativeCloudOriginalModel()
     @State private var selected: XDriveIOSNativeCloudOriginal?
+    // Transient 48-row slice and exact Owner/root of the fullscreen Viewer.
+    @State private var viewerOwner: XDriveNativeOwnerRoot?
+    @State private var viewerLoadedNodes: [XDriveIOSNativeCloudOriginal] = []
+    @State private var viewerReturnNode: XDriveIOSNativeCloudOriginal?
+    @AccessibilityFocusState private var accessibilityFocusedNodeID: UInt64?
     @State private var refreshAfterViewer = false
     // An OS BGTask can commit a new original without a foreground writer
     // notification. Revalidate once after returning from an inactive scene.
     @State private var needsForegroundReload = false
 
     var body: some View {
+        ScrollViewReader { returnScroll in
         GeometryReader { viewport in
             // One Owner-scoped read/viewer tree; rotating only changes
             // explanatory copy, not the 48-item page or backup lifecycle.
@@ -880,7 +1026,7 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
                     spacing: 9
                 ) {
                     ForEach(model.nodes) { node in
-                        Button { selected = node } label: {
+                        Button { openViewer(node) } label: {
                             XDriveIOSNativeCloudOriginalTile(
                                 node: node, viewerActive: selected != nil,
                                 model: model, login: login
@@ -893,6 +1039,8 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
                             ))
                         }
                         .buttonStyle(.plain)
+                        .id(node.id)
+                        .accessibilityFocused($accessibilityFocusedNodeID, equals: node.id)
                         .accessibilityIdentifier("native-ios-cloud-original-tile")
                     }
                 }
@@ -937,20 +1085,51 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
             Text("只显示当前已验证 Owner 根目录中由 iPhone 原件备份写入的文件，每批最多检查 48 项。仅可见项目请求 Server 缩略图；缩略图缺失不代表原件丢失，不下载大体积原件填充。")
         }
         .fullScreenCover(item: $selected, onDismiss: {
-            // Never discard an actively playing signed preview. Re-read
-            // after the Viewer closes and only for the current Owner.
+            // A new receipt/scene/Owner cannot re-focus an obsolete Node.
             if refreshAfterViewer {
                 refreshAfterViewer = false
                 model.reload(login: login)
+            } else if phase == .active, !needsForegroundReload,
+                      let node = viewerReturnNode, let owner = viewerOwner,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
+                      model.nodes.contains(where: {
+                        $0.id == node.id && $0.revision == node.revision
+                      }) {
+                returnScroll.scrollTo(node.id, anchor: .center)
+                accessibilityFocusedNodeID = node.id
             }
-        }) {
-            XDriveIOSNativeCloudOriginalPreview(node: $0, login: login)
+            viewerOwner = nil
+            viewerLoadedNodes = []
+            viewerReturnNode = nil
+        }) { initial in
+            XDriveIOSNativeCloudOriginalPreview(
+                node: initial, login: login, presentingOwner: viewerOwner,
+                loadedNodes: viewerLoadedNodes,
+                onViewed: { next in
+                    guard phase == .active, !refreshAfterViewer,
+                          !needsForegroundReload, selected?.id == initial.id,
+                          let owner = viewerOwner,
+                          XDriveIOSNativePhotoOwnerScope.matches(login.owner, owner),
+                          viewerLoadedNodes.contains(where: {
+                            $0.id == next.id && $0.revision == next.revision &&
+                            $0.name == next.name && $0.size == next.size &&
+                            $0.type == next.type
+                          }),
+                          model.nodes.contains(where: {
+                            $0.id == next.id && $0.revision == next.revision
+                          }) else { return false }
+                    viewerReturnNode = next
+                    accessibilityFocusedNodeID = nil
+                    return true
+                }
+            )
         }
         .onChange(of: selected?.id) { selectedID in
             if selectedID != nil {
                 // Do not wait for presenter's onDisappear: SwiftUI can keep
                 // the background page mounted while the Viewer is visible.
                 model.suspendForViewer()
+                accessibilityFocusedNodeID = nil
             }
         }
         .task {
@@ -965,6 +1144,7 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
                 // Stop directory/thumbnail work while the App is inactive.
                 // Keep the selected full-screen Viewer identity for return.
                 needsForegroundReload = true
+                accessibilityFocusedNodeID = nil
                 model.cancel()
                 return
             }
@@ -1003,6 +1183,10 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
             // Old Owner's pending refresh must never select the next Owner.
             refreshAfterViewer = false
             selected = nil
+            viewerOwner = nil
+            viewerLoadedNodes = []
+            viewerReturnNode = nil
+            accessibilityFocusedNodeID = nil
             model.invalidate()
             if login.owner != nil {
                 if phase == .active {
@@ -1021,5 +1205,23 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
                 model.invalidate()
             }
         }
+        }
+    }
+
+    private func openViewer(_ node: XDriveIOSNativeCloudOriginal) {
+        guard phase == .active, let owner = login.owner,
+              let index = model.nodes.firstIndex(where: {
+                $0.id == node.id && $0.revision == node.revision
+              }) else { return }
+        // The visible backed-up originals wall can contain multiple 48-row
+        // scans, but one Viewer freezes ONLY the already loaded 48-row slice.
+        let start = (index / 48) * 48
+        viewerLoadedNodes = Array(
+            model.nodes[start..<min(start + 48, model.nodes.count)]
+        )
+        viewerOwner = owner
+        viewerReturnNode = node
+        accessibilityFocusedNodeID = nil
+        selected = node
     }
 }

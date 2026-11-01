@@ -21,7 +21,7 @@ private final class XDriveIOSNativeFilesRejectRedirects: NSObject, URLSessionTas
 /// Read-only use of the existing Server Node and Search endpoints. Each page
 /// uses a short-lived, in-memory native Owner bearer; no alternate writer,
 /// WebView cookie or implicit File Provider rights are introduced.
-private struct XDriveIOSNativeFilesReader {
+struct XDriveIOSNativeFilesReader {
     let owner: XDriveNativeOwnerRoot
     let accessToken: String
 
@@ -125,6 +125,7 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
     @Published private(set) var entries: [XDriveIOSNativeFilesEntry] = []
     @Published private(set) var total = 0
     @Published private(set) var loading = false
+    @Published private(set) var verifiedPage = false
     @Published private(set) var errorMessage: String?
 
     private var epoch = UUID()
@@ -136,6 +137,7 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
         job = nil
         entries = []
         total = 0
+        verifiedPage = false
         loading = false
         errorMessage = nil
     }
@@ -191,6 +193,7 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
                 else { return }
                 self?.entries = found
                 self?.total = count
+                self?.verifiedPage = true
                 self?.errorMessage = nil
             } catch is CancellationError {
                 // Navigation and tab changes cancel disposable reads only.
@@ -198,6 +201,7 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
                 guard self?.epoch == ticket else { return }
                 self?.entries = []
                 self?.total = 0
+                self?.verifiedPage = false
                 if let failure = error as? XDriveIOSNativeFilesReadError {
                     switch failure {
                     case .server(401), .server(403), .server(404), .invalidScope:
@@ -215,18 +219,29 @@ private final class XDriveIOSNativeFilesPageModel: ObservableObject {
     }
 }
 
+private struct XDriveIOSNativeFilesManagementIntent: Identifiable {
+    let id = UUID()
+    let owner: XDriveNativeOwnerRoot
+    let file: XDriveIOSNativeFilesNode?
+    let directory: XDriveIOSNativeFilesNode?
+}
+
 private struct XDriveIOSNativeFilesFolder: Hashable {
     let id: UInt64
     let name: String
 }
 
 /// iOS fixed Files tab: genuine native bounded Owner directory navigation
-/// and whole-library search. File previews reuse a separate, read-only native
-/// Viewer. Uploads, downloads and mutations remain unavailable.
+/// and whole-library search. File previews use the separate native L3 Viewer;
+/// Owner-bound creation, transfers and mutations live in the native action sheet.
 struct XDriveIOSNativeFilesBrowser: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     @Environment(\.scenePhase) private var phase
     @StateObject private var model = XDriveIOSNativeFilesPageModel()
+    @StateObject private var batchTrash = XDriveIOSNativeFilesBatchTrashModel()
+    @State private var selecting = false
+    @State private var selectedIDs = Set<UInt64>()
+    @State private var showingBatchTrashConfirmation = false
     @State private var offset = 0
     @State private var queryDraft = ""
     @State private var activeQuery = ""
@@ -234,6 +249,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     @State private var order = "asc"
     @State private var searchError: String?
     @State private var selectedFile: XDriveIOSNativeFilesEntry?
+    @State private var managementIntent: XDriveIOSNativeFilesManagementIntent?
     @State private var selectedOwner: XDriveNativeOwnerRoot?
     @State private var returnOwner: XDriveNativeOwnerRoot?
     @State private var lastViewedFile: XDriveIOSNativeFilesNode?
@@ -253,6 +269,15 @@ struct XDriveIOSNativeFilesBrowser: View {
     private var parentID: UInt64? {
         guard let owner = login.owner else { return nil }
         return folder?.id ?? owner.rootNodeID
+    }
+
+    private var canSelectPage: Bool {
+        !model.loading && model.verifiedPage && activeQuery.isEmpty &&
+            login.owner != nil && !model.entries.isEmpty && !batchTrash.busy
+    }
+
+    private var chosenItems: [XDriveIOSNativeFilesNode] {
+        model.entries.filter { selectedIDs.contains($0.id) }.map(\.node)
     }
 
     var body: some View {
@@ -310,28 +335,72 @@ struct XDriveIOSNativeFilesBrowser: View {
                     .frame(maxWidth: .infinity, minHeight: 96)
             }
             ForEach(model.entries) { entry in
-                if entry.node.isDirectory {
-                    NavigationLink(value: XDriveIOSNativeFilesFolder(
-                        id: entry.node.id, name: entry.node.name
-                    )) {
-                        row(entry)
-                    }
-                    .accessibilityIdentifier("native-ios-files-folder-\(entry.node.id)")
-                    .id(entry.node.id)
-                } else {
+                if selecting {
                     Button {
-                        guard !model.loading, let owner = login.owner,
-                              model.entries.contains(where: { $0.node == entry.node })
-                        else { return }
-                        selectedOwner = owner
-                        returnOwner = owner
-                        lastViewedFile = entry.node
-                        selectedFile = entry
+                        guard canSelectPage else { return }
+                        if !selectedIDs.insert(entry.id).inserted {
+                            selectedIDs.remove(entry.id)
+                        }
                     } label: {
-                        row(entry)
+                        HStack(spacing: 12) {
+                            Image(systemName: selectedIDs.contains(entry.id)
+                                  ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(Color.accentColor)
+                            row(entry)
+                        }
                     }
                     .buttonStyle(.plain)
-                    .accessibilityIdentifier("native-ios-files-file-\(entry.node.id)")
+                    .disabled(!canSelectPage)
+                    .accessibilityIdentifier("native-ios-files-select-\(entry.id)")
+                } else if entry.node.isDirectory {
+                    HStack(spacing: 8) {
+                        NavigationLink(value: XDriveIOSNativeFilesFolder(
+                            id: entry.node.id, name: entry.node.name
+                        )) {
+                            row(entry)
+                        }
+                        .accessibilityIdentifier("native-ios-files-folder-\(entry.node.id)")
+                        Button {
+                            openManagement(for: entry.node)
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                                .frame(minWidth: 44, minHeight: 44)
+                        }
+                        .accessibilityLabel("管理文件夹 \(entry.node.name)")
+                        .accessibilityIdentifier("native-ios-files-folder-more-\(entry.node.id)")
+                    }
+                    .contextMenu {
+                        Button("文件夹操作") { openManagement(for: entry.node) }
+                    }
+                    .id(entry.node.id)
+                } else {
+                    HStack(spacing: 8) {
+                        Button {
+                            guard !model.loading, model.verifiedPage,
+                                  let owner = login.owner,
+                                  model.entries.contains(where: { $0.node == entry.node })
+                            else { return }
+                            selectedOwner = owner
+                            returnOwner = owner
+                            lastViewedFile = entry.node
+                            selectedFile = entry
+                        } label: {
+                            row(entry)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("native-ios-files-file-\(entry.node.id)")
+                        Button {
+                            openManagement(for: entry.node)
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                                .frame(minWidth: 44, minHeight: 44)
+                        }
+                        .accessibilityLabel("管理 \(entry.node.name)")
+                        .accessibilityIdentifier("native-ios-files-more-\(entry.node.id)")
+                    }
+                    .contextMenu {
+                        Button("文件操作") { openManagement(for: entry.node) }
+                    }
                     .id(entry.node.id)
                 }
             }
@@ -357,6 +426,34 @@ struct XDriveIOSNativeFilesBrowser: View {
                 }
                 .accessibilityIdentifier("native-ios-files-page-controls")
             }
+            if selecting {
+                Section("本页批量操作") {
+                    Text("已选 \(selectedIDs.count) 项（最多 64 项，仅当前文件夹本页）")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    Button("全选本页") {
+                        guard canSelectPage else { return }
+                        selectedIDs = Set(model.entries.map(\.id))
+                    }
+                    .disabled(!canSelectPage)
+                    Button("清空选择") { selectedIDs.removeAll() }
+                        .disabled(batchTrash.busy || selectedIDs.isEmpty)
+                    Button("已选项移入回收站", role: .destructive) {
+                        showingBatchTrashConfirmation = true
+                    }
+                    .disabled(!canSelectPage || selectedIDs.isEmpty)
+                    .accessibilityIdentifier("native-ios-files-batch-trash")
+                    if batchTrash.busy {
+                        ProgressView("正在处理已选项目…")
+                        Button("取消批量操作", role: .cancel) {
+                            batchTrash.cancelCurrent()
+                        }
+                    }
+                    if let status = batchTrash.status {
+                        Text(status).font(.footnote).foregroundStyle(.secondary)
+                            .accessibilityIdentifier("native-ios-files-batch-status")
+                    }
+                }
+            }
         }
         .listStyle(.plain)
         .navigationTitle(folder?.name ?? "文件")
@@ -366,12 +463,71 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
+                Button(selecting ? "完成多选" : "多选") {
+                    guard canSelectPage || selecting, !batchTrash.busy else { return }
+                    selecting.toggle()
+                    selectedIDs.removeAll()
+                }
+                .disabled(!canSelectPage && !selecting)
+                .accessibilityIdentifier("native-ios-files-multi-select")
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button { openManagement(for: nil) } label: {
+                    Label("文件夹操作", systemImage: "folder.badge.gearshape")
+                }
+                .disabled(model.loading || !model.verifiedPage || selecting ||
+                          batchTrash.busy || login.owner == nil || !activeQuery.isEmpty)
+                .accessibilityIdentifier("native-ios-files-folder-actions")
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
                     reload()
                 } label: {
                     Label("刷新", systemImage: "arrow.clockwise")
                 }
                 .accessibilityIdentifier("native-ios-files-refresh")
+            }
+        }
+        .confirmationDialog(
+            "将 \(selectedIDs.count) 项及所含子文件移入回收站？",
+            isPresented: $showingBatchTrashConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("确认批量移入回收站", role: .destructive) {
+                guard selecting, canSelectPage,
+                      let folderID = parentID,
+                      selectedIDs == Set(chosenItems.map(\.id)),
+                      XDriveIOSNativeFilesBatchTrashPolicy.validSelection(
+                        chosenItems, parentID: folderID
+                      ) else { return }
+                batchTrash.trash(
+                    chosenItems, parentID: folderID, login: login
+                ) {
+                    selecting = false
+                    selectedIDs.removeAll()
+                    reload(resetOffset: true)
+                }
+            }
+        } message: {
+            Text("包括选中文件夹的所有子文件。结果不确定时先刷新目录，不能重复提交。")
+        }
+        .sheet(item: $managementIntent, onDismiss: {
+            reload()
+        }) { intent in
+            if XDriveIOSNativePhotoOwnerScope.matches(login.owner, intent.owner) {
+                XDriveIOSNativeFilesManagementPanel(
+                    login: login, expectedOwner: intent.owner,
+                    folderID: folder?.id ?? intent.owner.rootNodeID,
+                    folderName: folder?.name,
+                    file: intent.file,
+                    directory: intent.directory
+                ) {
+                    managementIntent = nil
+                    reload()
+                }
+            } else {
+                Text("当前账户已变化，请关闭并重新选择文件。")
+                    .foregroundStyle(.secondary)
             }
         }
         .fullScreenCover(item: $selectedFile, onDismiss: {
@@ -406,13 +562,27 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
         .onAppear { reload() }
         .onDisappear { if selectedFile == nil { model.invalidate() } }
+        .onDisappear {
+            batchTrash.invalidate()
+            selecting = false
+            selectedIDs.removeAll()
+            showingBatchTrashConfirmation = false
+        }
         .onChange(of: login.owner) { _ in
+            batchTrash.invalidate()
+            selecting = false
+            selectedIDs.removeAll()
+            showingBatchTrashConfirmation = false
+            managementIntent = nil
             selectedFile = nil
             selectedOwner = nil
             returnOwner = nil
             lastViewedFile = nil
             offset = 0
             model.invalidate()
+        }
+        .onChange(of: model.verifiedPage) { now in
+            if !now { selectedIDs.removeAll(); selecting = false }
         }
         .onChange(of: sort) { _ in reload(resetOffset: true) }
         .onChange(of: order) { _ in reload(resetOffset: true) }
@@ -452,6 +622,20 @@ struct XDriveIOSNativeFilesBrowser: View {
         .frame(minHeight: 44)
     }
 
+    private func openManagement(for node: XDriveIOSNativeFilesNode?) {
+        guard !model.loading, model.verifiedPage, selectedFile == nil,
+              let owner = login.owner,
+              node != nil || activeQuery.isEmpty else { return }
+        if let node {
+            guard model.entries.contains(where: { $0.node == node }) else { return }
+        }
+        managementIntent = XDriveIOSNativeFilesManagementIntent(
+            owner: owner,
+            file: node?.isDirectory == false ? node : nil,
+            directory: node?.isDirectory == true ? node : nil
+        )
+    }
+
     private func submitSearch() {
         let query = queryDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard query.isEmpty || XDriveIOSNativeFilesPagePolicy.validSearch(query) else {
@@ -464,6 +648,8 @@ struct XDriveIOSNativeFilesBrowser: View {
     }
 
     private func reload(resetOffset: Bool = false) {
+        selecting = false
+        selectedIDs.removeAll()
         if resetOffset { offset = 0 }
         guard let parentID else {
             model.invalidate()

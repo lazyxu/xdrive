@@ -915,6 +915,91 @@ class DriveControllerTest {
         assertEquals(0, c.state.value.offset)
     }
 
+    @Test fun filesTextViewerReadsCurrentOwnerThenBackRestoresExactFilesRows() = runTest {
+        val api = Service()
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        val originalRows = c.state.value.items
+        val originalPath = c.state.value.path
+        c.open(file); runCurrent()
+        assertEquals(file, c.state.value.filesTextViewer)
+        assertNull(c.state.value.selected)
+        assertEquals("Hello xDrive", c.state.value.fileTextPreview?.text)
+        assertEquals(1, api.textPreviewReads)
+        c.open(folder) // An offscreen tap cannot bypass the active Viewer.
+        assertEquals(file, c.state.value.filesTextViewer)
+        c.back()
+        assertNull(c.state.value.filesTextViewer)
+        assertNull(c.state.value.fileTextPreview)
+        assertEquals(Screen.FILES, c.state.value.screen)
+        assertEquals(originalRows, c.state.value.items)
+        assertEquals(originalPath, c.state.value.path)
+        c.close()
+    }
+
+    @Test fun filesTextViewerOpensEmptyUtf8FileWithoutLooseningMediaSizeValidation() = runTest {
+        val empty = DriveNode(345, 1, "empty.txt", "file", 0, revision = 7)
+        val api = Service()
+        api.listing = { _, offset ->
+            NodeRange(if (offset == 0) listOf(empty) else emptyList(), 1, offset)
+        }
+        api.textPreviewRequest = { node ->
+            assertEquals(empty, node)
+            FileTextPreview("", false, 0)
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.open(empty); runCurrent()
+        assertEquals(empty, c.state.value.filesTextViewer)
+        assertEquals("", c.state.value.fileTextPreview?.text)
+        assertEquals(1, api.textPreviewReads)
+        c.back()
+        assertNull(c.state.value.filesTextViewer)
+        assertEquals(listOf(empty), c.state.value.items)
+        c.close()
+    }
+
+    @Test fun filesTextViewerIgnoresLateNoncooperativeResponseAcrossCloseAndReopen() = runTest {
+        val stale = CompletableDeferred<FileTextPreview>()
+        val api = Service()
+        api.textPreviewRequest = { node ->
+            if (api.textPreviewReads == 1) withContext(NonCancellable) { stale.await() }
+            else FileTextPreview("new", false, node.size)
+        }
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.open(file); runCurrent()
+        assertTrue(c.state.value.fileTextPreviewLoading)
+        c.back()
+        assertNull(c.state.value.fileTextPreview)
+        c.open(file); runCurrent()
+        assertEquals("new", c.state.value.fileTextPreview?.text)
+        stale.complete(FileTextPreview("stale", false, file.size)); runCurrent()
+        assertEquals("new", c.state.value.fileTextPreview?.text)
+        assertEquals(2, api.textPreviewReads)
+        c.logout(); runCurrent()
+        assertNull(c.state.value.filesTextViewer)
+        assertNull(c.state.value.fileTextPreview)
+        c.close()
+    }
+
+    @Test fun collectionTextViewerDoesNotChangeOriginatingOwnerCollection() = runTest {
+        val api = Service()
+        val c = controller(this, api)
+        c.login("owner", "password"); runCurrent()
+        c.changeFilesSection(FilesSection.FAVORITES); runCurrent()
+        val collection = c.state.value.collectionItems
+        val owned = collection.single { it.node == file }
+        c.openCollectionItem(owned); runCurrent()
+        assertEquals(file, c.state.value.filesTextViewer)
+        assertEquals("Hello xDrive", c.state.value.fileTextPreview?.text)
+        c.back()
+        assertEquals(collection, c.state.value.collectionItems)
+        assertEquals(FilesSection.FAVORITES, c.state.value.filesSection)
+        assertNull(c.state.value.filesTextViewer)
+        c.close()
+    }
+
     @Test fun textPreviewShowsOnlyCurrentOwnedFileAndClearsOnClose() = runTest {
         val api = Service()
         val c = controller(this, api)
@@ -948,10 +1033,10 @@ class DriveControllerTest {
         }
         val c = controller(this, api)
         c.login("owner", "password"); runCurrent()
-        c.open(file); runCurrent()
+        c.showDetails(file); runCurrent()
         assertTrue(c.state.value.fileTextPreviewLoading)
         c.dismissDetails(); runCurrent()
-        c.open(file); runCurrent()
+        c.showDetails(file); runCurrent()
         assertEquals("current", c.state.value.fileTextPreview?.text)
         stale.complete(FileTextPreview("old Owner context", false, file.size))
         runCurrent()
@@ -967,7 +1052,7 @@ class DriveControllerTest {
         api.textPreviewRequest = { throw ApiException(415, "binary content") }
         val c = controller(this, api)
         c.login("owner", "password"); runCurrent()
-        c.open(file); runCurrent()
+        c.showDetails(file); runCurrent()
         assertEquals(1, api.textPreviewReads)
         assertNull(c.state.value.fileTextPreview)
         assertEquals("当前文件不是可预览的 UTF-8 文本。", c.state.value.fileTextPreviewError)
@@ -987,7 +1072,7 @@ class DriveControllerTest {
         api.listing = { _, offset -> if (offset == 100) withContext(NonCancellable) { late.await() }
             else NodeRange(listOf(folder, file), 101, offset) }
         c.loadMore(); runCurrent()
-        c.open(file); runCurrent()
+        c.showDetails(file); runCurrent()
         assertEquals(file, c.state.value.selected)
         late.complete(NodeRange(listOf(file), 101, 100)); runCurrent()
         assertEquals(file, c.state.value.selected)
@@ -3692,6 +3777,102 @@ class DriveControllerTest {
             value = SavedDriveSession(server, session.username, session.refreshToken)
         }
         override fun clear() { value = null; cleared++ }
+    }
+
+    private class TestSavedLoginStore : NativeSavedLoginStore {
+        private val entries = linkedMapOf<String, Pair<NativeLoginProfile, String?>>()
+        override fun profiles(): List<NativeLoginProfile> = entries.values.map { it.first }
+        override fun passwordFor(profile: NativeLoginProfile): String? = entries[profile.id]?.second
+        override fun rememberProfile(profile: NativeLoginProfile): Boolean {
+            entries[profile.id] = profile to passwordFor(profile)
+            return true
+        }
+        override fun savePassword(profile: NativeLoginProfile, password: String): Boolean {
+            entries[profile.id] = profile to password
+            return true
+        }
+        override fun removePassword(profile: NativeLoginProfile): Boolean {
+            entries[profile.id]?.let { entries[profile.id] = profile to null }
+            return true
+        }
+        override fun forgetProfile(profile: NativeLoginProfile): Boolean {
+            entries.remove(profile.id)
+            return true
+        }
+    }
+
+    @Test fun invalidPasswordCannotOverwriteAnySavedPasswordProfile() = runTest {
+        val saved = TestSavedLoginStore()
+        val profile = AndroidSavedLoginPasswords.profile("https://drive.example", "", "owner")!!
+        saved.savePassword(profile, "last-known-good")
+        val service = object : Service() {
+            override suspend fun login(username: String, password: String): AuthSession =
+                throw ApiException(401, "invalid password")
+        }
+        val c = DriveController(this, { service }, initialServer = profile.server,
+            initialUsername = profile.username, savedLoginStore = saved)
+        c.connectAndLogin(profile.server, false, "", "owner", "new-wrong-password",
+            rememberSession = true, rememberPassword = true)
+        runCurrent()
+        assertEquals(Screen.CONNECT, c.state.value.screen)
+        assertEquals("last-known-good", saved.passwordFor(profile))
+        assertEquals(listOf(profile), saved.profiles())
+        c.close()
+    }
+
+    @Test fun revokedRefreshAllowsExplicitSameOwnerPasswordRecoveryWithoutAutoReplay() = runTest {
+        val saved = TestSavedLoginStore()
+        val profile = AndroidSavedLoginPasswords.profile("https://drive.example", "", "owner")!!
+        saved.savePassword(profile, "correct-password")
+        val vault = TestVault().apply {
+            value = SavedDriveSession(profile.server, profile.username, "revoked-refresh")
+        }
+        val submittedPasswords = mutableListOf<String>()
+        val service = object : Service() {
+            override suspend fun login(username: String, password: String): AuthSession {
+                submittedPasswords += password
+                return AuthSession("access", "new-refresh", username)
+            }
+        }.apply { refreshFailure = ApiException(401, "revoked") }
+        val c = DriveController(this, { service }, initialServer = profile.server,
+            initialUsername = profile.username, sessionPersistence = vault,
+            savedLoginStore = saved)
+        c.restoreSession()
+        runCurrent()
+        assertEquals(Screen.LOGIN, c.state.value.screen)
+        assertNull(vault.value)
+        assertTrue(submittedPasswords.isEmpty())
+        c.loginWithSavedPassword(profile.server, "", profile.username, true)
+        runCurrent()
+        assertEquals(listOf("correct-password"), submittedPasswords)
+        assertEquals(Screen.FILES, c.state.value.screen)
+        assertEquals("correct-password", saved.passwordFor(profile))
+        c.close()
+    }
+
+    @Test fun forgetOneProfileKeepsAnotherOwnerPasswordAndRefresh() = runTest {
+        val saved = TestSavedLoginStore()
+        val first = AndroidSavedLoginPasswords.profile("https://drive.example", "", "owner")!!
+        val other = AndroidSavedLoginPasswords.profile("https://drive.example", "", "other")!!
+        saved.savePassword(first, "first-password")
+        saved.savePassword(other, "other-password")
+        val vault = TestVault().apply {
+            value = SavedDriveSession(other.server, other.username, "other-refresh")
+        }
+        val cleared = mutableListOf<String>()
+        val c = DriveController(this, { Service() }, initialServer = first.server,
+            initialUsername = first.username, sessionPersistence = vault,
+            savedLoginStore = saved, clearLoginDraft = { origin ->
+                cleared += origin; true
+            })
+        c.forgetSavedLoginProfile(first)
+        assertNull(saved.passwordFor(first))
+        assertEquals(listOf(other), saved.profiles())
+        assertEquals("other-password", saved.passwordFor(other))
+        assertEquals("other-refresh", vault.value?.refreshToken)
+        assertEquals(listOf(first.server), cleared)
+        assertEquals(Screen.CONNECT, c.state.value.screen)
+        c.close()
     }
 
     @Test fun unifiedLoginPersistsRefreshAndColdStartRestoresWithoutPassword() = runTest {

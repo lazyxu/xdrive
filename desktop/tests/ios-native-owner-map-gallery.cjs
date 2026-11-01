@@ -135,9 +135,9 @@ test('cloud MapKit cluster cover prefers an available verified member thumbnail 
   assert.match(policy, /\.prefix\(maximumPhotoCovers\)/)
 })
 
-test('cloud map prioritizes largest canonical Owner photo clusters within the same 12-cover request cap', () => {
+test('cloud map prioritizes all 64 canonical Owner photo clusters without querying aggregates', () => {
   assert.match(map, /XDriveIOSNativeOwnerMapSelectionPolicy[\s\S]*?\.prioritizedPhotoCovers\(result\.items\)/)
-  assert.match(policy, /static let maximumPhotoCovers = 12/)
+  assert.match(policy, /static let maximumPhotoCovers = XDriveIOSNativeOwnerMapOverviewPolicy\.maximumCells/)
   assert.match(policy, /guard places\.count <= XDriveIOSNativeOwnerMapOverviewPolicy\.maximumCells/)
   assert.match(policy, /guard Set\(ids\)\.count == ids\.count/)
   assert.match(policy, /places\.filter \{ canOpenPhotoRange\(\$0\) \}/)

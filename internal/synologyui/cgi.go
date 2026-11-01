@@ -33,6 +33,7 @@ func CGIHandler(next http.Handler) http.Handler {
 			"device-backup-page", "device-backup-folders", "cloud-quota", "nas-volume",
 			"cloud-root", "cloud-children", "cloud-text-preview", "cloud-media-range",
 			"cloud-media-stream", "cloud-thumbnail", "cloud-gallery-items", "cloud-gallery-albums",
+			"cloud-gallery-places", "cloud-gallery-place-items", "cloud-gallery-map-overview",
 			"cloud-live-motion", "nas-shares", "nas-share-preflight",
 			"server-connection", "server-login", "nas-share-create", "nas-draft-bind", "nas-drafts", "recovery-review":
 		default:

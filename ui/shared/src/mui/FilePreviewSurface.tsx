@@ -119,12 +119,52 @@ function isXDriveSignedPDFStream(url: string): boolean {
   }
 }
 
+// DSM large PDF Range URLs are NOT bearer tickets. Only this canonical
+// same-origin, exactly scoped CGI selector may receive browser credentials.
+// Never HEAD an arbitrary URL supplied by another Host.
+function isXDriveDSMOwnerPDFStream(url: string): boolean {
+  try {
+    const base = typeof window === 'undefined' ? 'https://xdrive.invalid/' : window.location.href
+    const parsed = new URL(url, base)
+    if (parsed.origin !== new URL(base).origin || parsed.protocol !== 'https:' ||
+        parsed.pathname !== '/webman/3rdparty/xdrivenas/backup.cgi' ||
+        parsed.username || parsed.password || parsed.hash ||
+        parsed.searchParams.size !== 6) return false
+    const fields = ['op', 'node_id', 'revision', 'total', 'sha256', 'mime']
+    if (fields.some(field => parsed.searchParams.getAll(field).length !== 1)) return false
+    const validID = (field: string) => {
+      const value = parsed.searchParams.get(field) ?? ''
+      return /^[1-9][0-9]*$/.test(value) && Number.isSafeInteger(Number(value))
+    }
+    return parsed.searchParams.get('op') === 'cloud-media-stream' &&
+      parsed.searchParams.get('mime') === 'application/pdf' &&
+      validID('node_id') && validID('revision') && validID('total') &&
+      /^[0-9a-f]{64}$/.test(parsed.searchParams.get('sha256') ?? '')
+  } catch {
+    return false
+  }
+}
+
 async function verifySignedPDFPreview(url: string, signal: AbortSignal): Promise<void> {
-  if (!isXDriveSignedPDFStream(url)) return
+  const dsmOwnerPDF = isXDriveDSMOwnerPDFStream(url)
+  // Do not silently iframe-load a malformed DSM Owner CGI URL. A failed
+  // selector must be a Retry state, not a browser-rendered JSON/HTML error.
+  try {
+    const base = typeof window === 'undefined' ? 'https://xdrive.invalid/' : window.location.href
+    const parsed = new URL(url, base)
+    if (parsed.origin === new URL(base).origin &&
+        parsed.pathname === '/webman/3rdparty/xdrivenas/backup.cgi' &&
+        !dsmOwnerPDF) {
+      throw new Error('Invalid DSM authenticated PDF stream selector')
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message === 'Invalid DSM authenticated PDF stream selector') throw error
+  }
+  if (!dsmOwnerPDF && !isXDriveSignedPDFStream(url)) return
   const response = await fetch(url, {
     method: 'HEAD',
     signal,
-    credentials: 'omit',
+    credentials: dsmOwnerPDF ? 'same-origin' : 'omit',
     cache: 'no-store',
     redirect: 'error',
     referrerPolicy: 'no-referrer',
@@ -658,9 +698,10 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
           revokePreviewURL(value)
           return
         }
-        // Signed PDF streams can return an HTML error document which still
-        // fires iframe.onLoad. Check HTTP status and PDF MIME before mounting.
-        // This HEAD shares the request's AbortSignal and never forwards cookies.
+        // Signed Web and authenticated DSM PDF streams can return an HTML
+        // error document which still fires iframe.onLoad. Verify status/MIME
+        // with the same abort signal; DSM cookies go only to exact same-origin
+        // Owner CGI, never to Web tickets or arbitrary URLs.
         if (previewKind === 'pdf') await verifySignedPDFPreview(value, controller.signal)
         if (!active || controller.signal.aborted ||
             previewGenerationRef.current !== generation) {

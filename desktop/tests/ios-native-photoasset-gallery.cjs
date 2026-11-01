@@ -145,7 +145,7 @@ test('canonical PhotoAsset Viewer retires signed media on scene/Owner changes', 
   assert.match(preview, /@State private var previewRequestID = UUID\(\)/)
   assert.match(preview, /\.task\(id: previewRequestID\)/)
   assert.doesNotMatch(preview, /\.task\(id: item\.id\)/)
-  assert.match(preview, /phase == \.active, let expected = login\.owner/)
+  assert.match(preview, /phase == \.active, let expected = openedOwner,[\s\S]*?XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, expected\)/)
   assert.match(preview, /let auth = try await login\.verifiedAuthorization\(\)/)
   assert.match(preview, /previewRequestID == requestID/)
   assert.match(preview, /XDriveIOSNativePhotoOwnerScope\.matches\(auth\.owner, expected\)/)

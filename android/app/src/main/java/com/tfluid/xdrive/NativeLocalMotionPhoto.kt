@@ -20,26 +20,38 @@ import kotlinx.coroutines.withContext
  * via a positive byte length. A marker is only a CANDIDATE: editors can strip
  * the actual video while leaving XMP behind. Media3 must still decode video.
  *
- * This first native MVP accepts genuine new-format Container metadata only.
- * Legacy MicroVideoOffset and OEM private sidecars remain unimplemented.
+ * Support both modern Container metadata and older Pixel MicroVideoOffset
+ * XMP. OEM-specific private sidecar resources remain unimplemented.
  */
 internal fun nativeLocalMotionXmpCandidate(xmp: ByteArray?): Boolean {
     if (xmp == null || xmp.isEmpty() || xmp.size > 256 * 1024) return false
     val xml = xmp.toString(Charsets.UTF_8)
-    val enabled = Regex("""(?:GCamera|Camera):MotionPhoto\s*=\s*["']1["']""")
+    val maxMotionBytes = 512L * 1024 * 1024
+    val modernEnabled = Regex("""(?:GCamera|Camera):MotionPhoto\s*=\s*["']1["']""")
         .containsMatchIn(xml)
-    if (!enabled) return false
-    val itemTags = Regex("""<(?:GContainer|Container):Item\b[^>]*>""")
-        .findAll(xml)
-    fun attribute(tag: String, name: String): String? =
-        Regex("""\b""" + Regex.escape(name) + """\s*=\s*["']([^"']*)["']""")
-            .find(tag)?.groupValues?.getOrNull(1)
-    return itemTags.any { match ->
-        val tag = match.value
-        attribute(tag, "Item:Semantic") == "MotionPhoto" &&
-            attribute(tag, "Item:Mime") in setOf("video/mp4", "video/quicktime") &&
-            (attribute(tag, "Item:Length")?.toLongOrNull() ?: 0L) in 1L..(512L * 1024 * 1024)
+    if (modernEnabled) {
+        val itemTags = Regex("""<(?:GContainer|Container):Item\b[^>]*>""")
+            .findAll(xml)
+        fun attribute(tag: String, name: String): String? =
+            Regex("""\b""" + Regex.escape(name) + """\s*=\s*["']([^"']*)["']""")
+                .find(tag)?.groupValues?.getOrNull(1)
+        if (itemTags.any { match ->
+                val tag = match.value
+                attribute(tag, "Item:Semantic") == "MotionPhoto" &&
+                    attribute(tag, "Item:Mime") in setOf("video/mp4", "video/quicktime") &&
+                    (attribute(tag, "Item:Length")?.toLongOrNull() ?: 0L) in 1L..maxMotionBytes
+            }) return true
     }
+    // Legacy Android Pixel Motion Photo embeds MP4 at the end of a JPEG.
+    // MicroVideoOffset counts the trailing bytes (not the start position).
+    // A flag without exactly one positive bounded offset is not a candidate.
+    // This does not prove an MP4 exists; only Media3's extractor can do that.
+    if (!Regex("""(?:GCamera|Camera):MicroVideo\s*=\s*["']1["']""")
+            .containsMatchIn(xml)) return false
+    val offsets = Regex("""(?:GCamera|Camera):MicroVideoOffset\s*=\s*["']([^"']*)["']""")
+        .findAll(xml).take(2).map { it.groupValues[1] }.toList()
+    return offsets.size == 1 &&
+        (offsets.single().toLongOrNull() ?: 0L) in 1L..maxMotionBytes
 }
 
 /** Read only XMP for the exact currently visible, authorized content:// still. */

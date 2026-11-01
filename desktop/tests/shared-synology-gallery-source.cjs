@@ -115,6 +115,71 @@ test('unknown filters never silently search a partial 100k collection', async ()
   }
 })
 
+test('DSM exact Owner place uses original bounded photo Range, never a partial global scan', async () => {
+  calls.length = 0
+  const placeID = 'place:3550:13970'
+  const api = fakeClient()
+  const page = { items: [
+    { id: placeID, name: '实际定位', latitude: 35.5, longitude: 139.7,
+      sample_latitude: 35.505, sample_longitude: 139.706,
+      coordinate_kind: 'grid_cell_center', item_count: 3 },
+  ], total_count: 1, offset: 0, limit: 48, has_more: false }
+  api.ownerPlacesPage = async (limit, offset) => {
+    calls.push(['places', limit, offset])
+    return page
+  }
+  api.ownerPlaceItemsRange = async (id, limit, offset, signal) => {
+    assert.equal(id, placeID)
+    calls.push(['place-range', id, limit, offset, signal])
+    const rows = [record(1), record(2), record(3)]
+    return { items: rows.slice(offset, offset + limit),
+      total_count: rows.length, offset, limit }
+  }
+  const source = create(api)
+  assert.equal(supports({ place: placeID, has_location: true,
+    sort_by: 'captured', sort_dir: 'desc', fold_duplicates: false }), true)
+  for (const invalid of [
+    { place: 'place:3550:13970', has_location: false },
+    { place: 'place:03550:13970', has_location: true },
+    { place: 'place:3550:13970', favorite: true },
+    { has_location: true },
+  ]) assert.equal(supports(invalid), false, JSON.stringify(invalid))
+  assert.deepEqual((await source.listPlacesPage(48, 0)).items.map(p => p.id), [placeID])
+  const photos = await source.listItemRange(2, 0, {
+    place: placeID, has_location: true, sort_by: 'captured',
+    sort_dir: 'desc', fold_duplicates: false,
+    time_zone: 'Asia/Tokyo',
+  })
+  assert.deepEqual(photos.items.map(x => x.node.id), [1, 2])
+  assert.equal(photos.total_count, 3)
+  assert.deepEqual(calls.map(row => row[0]), ['places', 'place-range'])
+  assert.ok(!calls.some(row => row[0] === 'range'),
+    'place wall may not reuse unscoped Gallery Range when place is selected')
+})
+
+test('current Owner WGS84 map read belongs to the same shared Gallery source', async () => {
+  const api = fakeClient()
+  let requested
+  api.ownerMapOverview = async (bounds, signal) => {
+    requested = {bounds, signal}
+    return {items:[{id:'map-region:1',name:'照片区域 1',
+      sample_latitude:35.505,sample_longitude:139.706,
+      latitude:35.505,longitude:139.706,
+      coordinate_kind:'map_region_sample',item_count:3}],
+      total_photo_count:3,aggregated:true}
+  }
+  const source = create(api)
+  const bounds = {west:-180,south:-90,east:180,north:90}
+  const controller = new AbortController()
+  const result = await source.listPlacesMapOverview(bounds,true,controller.signal)
+  assert.deepEqual(requested, {bounds,signal:controller.signal})
+  assert.equal(result.aggregated,true)
+  assert.equal(result.total_photo_count,3)
+  assert.deepEqual(result.items.map(x => x.id),['map-region:1'])
+  assert.ok(!calls.some(row => row[0] === 'range'),
+    'map overview must not enumerate 100k Owner photos client-side')
+})
+
 test('large authorized UI windows are split into sequential bounded Agent ranges', async () => {
   calls.length = 0
   const source = create(fakeClient(Array.from({ length: 230 }, (_, i) => record(i + 1))))

@@ -50,6 +50,25 @@ assert.equal(nav.xDriveMobileMapFocused(map, false), false, 'Places list must ke
 assert.equal(nav.xDriveMobileMapFocused(library, true), false, 'Gallery library is L1')
 assert.equal(nav.xDriveMobileMapFocused(preview, true), false, 'Viewer is separately immersive')
 assert.equal(nav.xDriveMobileMapFocused(files, true), false, 'stale Gallery focus never hides Files')
+// A voluntary L2 for the cloud photo wall or Files has a real L1 restore path.
+// Never treat Places, Album, Viewer, an unverified Owner or wide Web as L2.
+const galleryManualFocus = { ownerScope: owner, target: 'gallery-library' }
+const filesManualFocus = { ownerScope: owner, target: 'files' }
+assert.equal(nav.xDriveMobileManualFocusTarget(library), 'gallery-library')
+assert.equal(nav.xDriveMobileManualFocusTarget({ app: 'gallery', params: {} }), 'gallery-library')
+assert.equal(nav.xDriveMobileManualFocusTarget(files), 'files')
+assert.equal(nav.xDriveMobileManualFocusTarget(map), null)
+assert.equal(nav.xDriveMobileManualFocusTarget({ app: 'gallery', params: { section: 'albums' } }), null)
+assert.equal(nav.xDriveMobileManualFocusTarget(preview), null)
+assert.equal(nav.xDriveMobileManualFocusActive(library, owner, galleryManualFocus), true)
+assert.equal(nav.xDriveMobileManualFocusActive(files, owner, filesManualFocus), true)
+assert.equal(nav.xDriveMobileManualFocusActive(map, owner, galleryManualFocus), false)
+assert.equal(nav.xDriveMobileManualFocusActive(files, owner, galleryManualFocus), false)
+assert.equal(nav.xDriveMobileManualFocusActive(preview, owner, filesManualFocus), false)
+assert.equal(nav.xDriveMobileManualFocusActive(files, '', filesManualFocus), false)
+assert.equal(nav.xDriveMobileManualFocusActive(files, owner, null), false)
+assert.equal(nav.xDriveMobileManualFocusActive(files, 'https://example.test:2', filesManualFocus), false)
+
 assert.deepEqual(nav.xDriveMobileFeatureParentRoute(transfers), { app: 'tasks', params: { scope: 'mine' } })
 assert.equal(nav.xDriveMobileFeatureParentRoute(library), null)
 state = nav.xDriveRememberMobileNavigation(state, admin, owner, true)
@@ -517,4 +536,48 @@ assert.doesNotMatch(launcherSource, /const \[search, setSearch\] = useState/,
 // history receipt before ever using the caller's safe fallback.
 const browserRuntime = readFileSync(resolve(here, '../src/webAppRuntime.ts'), 'utf8')
 assert.match(browserRuntime, /if \(state\?\.viewerReturn\) \{\s*window\.history\.back\(\)/)
+// A real Gallery Places map is L2: neither the five-slot bar nor its 52px
+// L1 app header should consume the canvas. The Places *list* remains L1,
+// and only the current Owner's actual map focus can suppress both chrome tiers.
+{
+  const ast = ts.createSourceFile('App.tsx', appSource, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TSX)
+  const headerBranches = []
+  function visit(node) {
+    if (ts.isConditionalExpression(node) &&
+        node.whenTrue.getText(ast).includes('<XDriveMobileAppHeader')) headerBranches.push(node)
+    ts.forEachChild(node, visit)
+  }
+  visit(ast)
+  assert.equal(headerBranches.length, 1, 'one canonical Web Mobile L1 app header')
+  const condition = headerBranches[0].condition.getText(ast)
+  assert.equal(condition, 'compactWorkspace && !mobileMapFocused && !mobileManualFocused',
+    'the map or voluntary Owner-scoped L2 may hide the full L1 app header')
+  const showsHeader = new Function('compactWorkspace', 'mobileMapFocused', 'mobileManualFocused',
+    'return (' + condition + ')')
+  assert.equal(showsHeader(true, true, false), false, 'L2 map hides L1 header')
+  assert.equal(showsHeader(true, false, true), false, 'explicit L2 hides L1 header')
+  assert.equal(showsHeader(true, false, false), true, 'ordinary Places/Library/Files keep L1')
+  assert.equal(showsHeader(false, true, true), false, 'wide Web keeps its own workspace chrome')
+  assert.match(appSource,
+    /compactWorkspace && !viewerActive && !mobileMapFocused && !mobileManualFocused/,
+    'L2 must hide the five-slot bar, not only its top header')
+  assert.match(appSource, /data-xdrive-mobile-enter-focus/,
+    'Library/Files have a visible explicit entry affordance')
+  assert.match(appSource, /data-xdrive-mobile-restore-navigation/,
+    'L2 always offers a visible 44px restore-navigation control')
+  assert.match(appSource, /useEffect\(\(\) => \{ setMobileManualFocus\(null\) \}, \[mobileOwnerScope\]\)/,
+    'Owner A→B→A must revoke voluntary L2')
+  assert.match(appSource, /mobileMapVisibility\.owner === mobileOwnerScope/,
+    'L2 focus remains fenced by a verified current Owner')
+  const mapSource = readFileSync(resolve(here, '../../ui/shared/src/mui/MediaGalleryPlacesMap.tsx'), 'utf8')
+  assert.match(mapSource, /\{onCloseMap && !desktopOnly \? \(/,
+    'mobile L2 map retains a visible close affordance when L1 header is hidden')
+  assert.match(mapSource, /aria-label="关闭地图" onClick=\{onCloseMap\}/)
+  assert.match(mapSource, /minWidth:44,minHeight:44/,
+    'map close must remain a 44px touch target')
+  assert.match(gallerySource, /onCloseMap=\{onBack && onSectionChange/,
+    'map Close reuses the actual authenticated Gallery Back contract')
+  assert.match(gallerySource, /if \(canReturnToMapEntry\) onBack\(\)\s*else onSectionChange\('library'\)/,
+    'return to current Owner collection or safe Gallery library, never another tab')
+}
 console.log('mobile five-slot state: routes, Owner, Viewer, back, role, favorites and Owner-scoped search passed')
