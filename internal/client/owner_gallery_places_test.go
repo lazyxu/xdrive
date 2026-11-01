@@ -55,6 +55,8 @@ func TestOwnerPlacesRejectsMalformedAndWideRanges(t *testing.T) {
 	}
 	for _, mutate := range []func(*MediaPlacesPage){
 		func(p *MediaPlacesPage) { p.TotalCount = -1 },
+		func(p *MediaPlacesPage) { p.Items = nil; p.TotalCount = 0 },
+		func(p *MediaPlacesPage) { p.TotalCount = 2; p.HasMore = true },
 		func(p *MediaPlacesPage) { p.Items[0].ID = "place:0:0?q=secret" },
 		func(p *MediaPlacesPage) { p.Items[0].Latitude = 91 },
 		func(p *MediaPlacesPage) { p.Items[0].SampleLongitude = 181 },
