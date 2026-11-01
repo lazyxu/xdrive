@@ -3735,6 +3735,36 @@ async function testPhotoMarkerPresentation(browser,mode,port){
     record(mode+': one verified photo layer removes competing SDK labels',
       presentation.pins===1&&presentation.cellCount===2&&
       presentation.count===14&&presentation.strip===0&&errors.length===0)
+    // Regress the actual wide-screen Web failure: real provider controls can
+    // have very high z-index and steal mouse clicks from React photo covers.
+    // A native Playwright pointer click must hit the trusted Owner button even
+    // with an exaggerated SDK-only layer; .evaluate(button.click) would miss it.
+    const cover=page.locator('[data-xdrive-places-trusted-photo-cover]').first()
+    const realHit=await page.evaluate(()=>{
+      const sdk=document.querySelector('[data-xdrive-places-map-sdk-layer]')
+      const photo=document.querySelector('[data-xdrive-places-trusted-photo-cover]')
+      if(!sdk||!photo)return false
+      const blocker=document.createElement('div')
+      blocker.dataset.xdriveSdkClickBlocker='1'
+      blocker.style.cssText='position:absolute;inset:0;z-index:2147483647;pointer-events:auto'
+      sdk.appendChild(blocker)
+      const rect=photo.getBoundingClientRect()
+      const target=document.elementFromPoint(rect.left+rect.width/2,
+        rect.top+rect.height/2)
+      return !!target && (target===photo || photo.contains(target))
+    })
+    record(mode+': wide Web photo cover remains the real hit target over SDK chrome',
+      realHit)
+    await cover.click()
+    await page.locator('[data-xdrive-places-photo-drawer-items] button')
+      .first().waitFor({state:'visible'})
+    const clickPreview=await page.evaluate(()=>
+      window.__mapProbe.photoPreviewRanges.at(-1))
+    record(mode+': native wide Web photo click opens exact signed 9-photo dialog',
+      clickPreview?.total===9&&clickPreview?.items===9&&errors.length===0)
+    await page.evaluate(()=>document.querySelector(
+      '[data-xdrive-sdk-click-blocker]')?.remove())
+    await page.getByRole('button',{name:'关闭照片抽屉'}).click()
     // The shared floating 44px action must reveal the ONE approved list of
     // otherwise decluttered Cells; no second SDK label or broader query.
     const reveal=page.locator('[data-xdrive-places-reveal-hidden-cells]')

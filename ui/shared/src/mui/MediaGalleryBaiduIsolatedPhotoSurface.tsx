@@ -924,8 +924,12 @@ export function XDriveMediaGalleryBaiduIsolatedPhotoSurface({
           },
           maxHeight:1400,borderRadius:edgeToEdge ? 0 : 1.5,
           overflow:'hidden',backgroundColor:'background.default'}}>
-        <Box ref={mount} sx={{position:'absolute',inset:0,
-          '& iframe':{width:'100%',height:'100%',display:'block',border:0}}}/>
+        <Box ref={mount} data-xdrive-places-map-sdk-layer
+          sx={{position:'absolute',inset:0,zIndex:0,isolation:'isolate',
+            // The real Baidu SDK may create controls with very high z-index.
+            // Contain that untrusted presentation below the trusted Parent's
+            // zIndex:2 photo buttons, so physical desktop clicks reach React.
+            '& iframe':{width:'100%',height:'100%',display:'block',border:0}}}/>
         {paintedCovers.length > 0 && paintedProjection ? (
           <Box data-xdrive-places-trusted-photo-cover-pins
             sx={{position:'absolute',inset:0,pointerEvents:'none',zIndex:2}}>
