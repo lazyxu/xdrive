@@ -22,6 +22,30 @@ struct XDriveIOSNativeFocusVisibilityPolicyChecks {
         verify("dynamic", "cloud", true, true, true)
         // Rotation is intentionally not an input and must not change L2.
         verify("gallery", "cloud", true, true, false)
+
+        func accept(_ tab: String, _ active: String, _ callback: String,
+                    _ verified: Bool, _ expected: Bool) {
+            precondition(
+                XDriveIOSNativeFocusVisibilityPolicy.acceptsFocusUpdate(
+                    tab: tab, gallerySource: active,
+                    callbackSource: callback, ownerVerified: verified
+                ) == expected,
+                "Stale iOS Gallery source focus callback was accepted"
+            )
+        }
+
+        // Both active source callbacks are accepted, but leaving either source
+        // or the Gallery tab must fence its delayed onDisappear(false/true).
+        accept("gallery", "cloud", "cloud", true, true)
+        accept("gallery", "map", "map", true, true)
+        accept("gallery", "map", "cloud", true, false)
+        accept("gallery", "cloud", "map", true, false)
+        accept("gallery", "local", "cloud", true, false)
+        accept("gallery", "originals", "cloud", true, false)
+        accept("gallery", "albums", "map", true, false)
+        accept("files", "cloud", "cloud", true, false)
+        accept("dynamic", "map", "map", true, false)
+        accept("gallery", "cloud", "cloud", false, false)
         print("native iOS L2 focus visibility: PASS")
     }
 }

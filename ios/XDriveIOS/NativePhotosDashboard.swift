@@ -466,7 +466,10 @@ struct XDriveIOSNativePhotosDashboard: View {
     }
 
     private var gallery: some View {
-        GeometryReader { availableSpace in
+        // Capture the presenting Owner when this source's focus callback is
+        // built; a disappearing view must not affect a later Owner's Gallery.
+        let focusOwnerKey = ownerScopeKey
+        return GeometryReader { availableSpace in
             VStack(spacing: 0) {
                 if !galleryFocused {
                     if availableSpace.size.width >= 680 &&
@@ -495,7 +498,11 @@ struct XDriveIOSNativePhotosDashboard: View {
                 case .cloud:
                     XDriveIOSNativeServerMediaWall(
                         login: login, album: nil,
-                        onFocusChange: { galleryFocused = $0 }
+                        onFocusChange: {
+                            updateGalleryFocus(
+                                $0, from: .cloud, expectedOwnerKey: focusOwnerKey
+                            )
+                        }
                     )
                 case .originals:
                     XDriveIOSNativeCloudOriginalGallery(
@@ -507,12 +514,33 @@ struct XDriveIOSNativePhotosDashboard: View {
                         login: login,
                         localMapScope: $localMapScope,
                         localMapPageOffset: $localMapPageOffset,
-                        onFocusChange: { galleryFocused = $0 }
+                        onFocusChange: {
+                            updateGalleryFocus(
+                                $0, from: .map, expectedOwnerKey: focusOwnerKey
+                            )
+                        }
                     )
                 }
             }
             }
         }
+    }
+
+    /// L2 callbacks may be delivered by a departing cloud/map child after the
+    /// user has changed source, tab, or verified Owner. The old callback owns
+    /// neither the new source's focus nor its native bottom-bar visibility.
+    private func updateGalleryFocus(
+        _ focused: Bool,
+        from source: XDriveIOSNativeGallerySource,
+        expectedOwnerKey: String
+    ) {
+        guard phase == .active, expectedOwnerKey == ownerScopeKey,
+              XDriveIOSNativeFocusVisibilityPolicy.acceptsFocusUpdate(
+                tab: tab.rawValue, gallerySource: gallerySource.rawValue,
+                callbackSource: source.rawValue, ownerVerified: login.owner != nil
+              )
+        else { return }
+        galleryFocused = focused
     }
 
     private var launcher: some View {
