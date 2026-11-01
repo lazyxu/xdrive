@@ -28,6 +28,48 @@ class NativeLocalMotionPhotoTest {
         assertTrue(nativeLocalMotionXmpCandidate(prefixed))
     }
 
+    private fun legacyPacket(
+        enabled: String = "1", offset: String = "248989",
+        namespace: String = "GCamera",
+    ): ByteArray = """
+        <x:xmpmeta xmlns:x="adobe:ns:meta/">
+          <rdf:Description ${namespace}:MicroVideoOffset="${offset}"
+              ${namespace}:MicroVideo="${enabled}" />
+        </x:xmpmeta>
+    """.trimIndent().toByteArray(Charsets.UTF_8)
+
+    @Test fun acceptsLegacyPixelMotionPhotoOnlyWithRealTrailingVideoBytes() {
+        assertTrue(nativeLocalMotionXmpCandidate(legacyPacket()))
+        assertTrue(nativeLocalMotionXmpCandidate(legacyPacket(namespace = "Camera")))
+        assertTrue(nativeLocalMotionXmpCandidate(legacyPacket(offset = "1")))
+        assertTrue(nativeLocalMotionXmpCandidate(
+            legacyPacket(offset = (512L * 1024 * 1024).toString())))
+        assertTrue(nativeLocalMotionXmpCandidate(
+            "<rdf:Description GCamera:MicroVideo='1' " +
+                "GCamera:MicroVideoOffset='5115'/>".toByteArray()))
+        // The existing modern Container format remains independently valid.
+        assertTrue(nativeLocalMotionXmpCandidate(packet()))
+    }
+
+    @Test fun rejectsLegacyMissingDisabledOrAmbiguousVideoOffset() {
+        assertFalse(nativeLocalMotionXmpCandidate(legacyPacket(enabled = "0")))
+        assertFalse(nativeLocalMotionXmpCandidate(legacyPacket(offset = "0")))
+        assertFalse(nativeLocalMotionXmpCandidate(legacyPacket(offset = "-15")))
+        assertFalse(nativeLocalMotionXmpCandidate(legacyPacket(offset = "not-a-number")))
+        assertFalse(nativeLocalMotionXmpCandidate(
+            legacyPacket(offset = Long.MAX_VALUE.toString())))
+        assertFalse(nativeLocalMotionXmpCandidate(
+            legacyPacket(offset = (512L * 1024 * 1024 + 1).toString())))
+        assertFalse(nativeLocalMotionXmpCandidate(
+            "<rdf:Description GCamera:MicroVideo='1'/>".toByteArray()))
+        assertFalse(nativeLocalMotionXmpCandidate(
+            "<rdf:Description GCamera:MicroVideoOffset='100'/>".toByteArray()))
+        assertFalse(nativeLocalMotionXmpCandidate(
+            "<rdf:Description GCamera:MicroVideo='1' " +
+                "GCamera:MicroVideoOffset='100' " +
+                "GCamera:MicroVideoOffset='200'/>".toByteArray()))
+    }
+
     @Test fun rejectsDisabledMissingTruncatedAndNonVideoMetadata() {
         assertFalse(nativeLocalMotionXmpCandidate(null))
         assertFalse(nativeLocalMotionXmpCandidate(byteArrayOf()))
