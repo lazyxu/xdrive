@@ -309,6 +309,9 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
 
 /// Read-only, 64-at-a-time PhotoKit grid. No 100k-sized Swift arrays.
 struct XDriveIOSNativeLocalGalleryScreen: View {
+    // Gallery shell retains only the coarse cursor across source/tab switches.
+    // A newly mounted view always scans the currently authorized PhotoKit set.
+    @Binding var savedOffset: Int
     @Environment(\.scenePhase) private var phase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showingGalleryHelp = false
@@ -320,7 +323,6 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
     @State private var task: Task<Void, Never>?
     @State private var errorMessage: String?
     // Page offset only: no PhotoKit ID is persisted across Viewer dismissal.
-    @State private var savedOffset = 0
     // This localIdentifier is in-memory only and never part of route persistence.
     @State private var viewerReturnID: String?
     @State private var shouldRestoreViewerTile = false
@@ -505,7 +507,15 @@ struct XDriveIOSNativeLocalGalleryScreen: View {
         busy = true
         task = Task { @MainActor in
             do {
-                _ = try await current.start(atOffset: offset)
+                let total = try await current.start(atOffset: offset)
+                let bounded = XDriveIOSNativeLocalGalleryPageCursorPolicy.clamp(
+                    requested: offset, currentTotal: total
+                )
+                if bounded != offset {
+                    // Only an out-of-range or invalid old cursor needs a
+                    // second, freshly authorized PhotoKit snapshot.
+                    _ = try await current.start(atOffset: bounded)
+                }
                 let next = try await current.nextPage()
                 try Task.checkCancellation()
                 guard generation == token, phase == .active else { return }

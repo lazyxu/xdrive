@@ -1,0 +1,7 @@
+# Native iOS local Gallery page return (2026-11-01)
+
+P0 navigation-only change to the existing Gallery-owned PhotoKit 64-slot wall. The five-tab shell owns a bounded 64-aligned page cursor, so source/tab switches and verified Owner-scoped cold-launch route restoration return to the same coarse page. The child view is still recreated from the currently authorized PhotoKit set and never reuses an asset ID, old thumbnail, GPS, Viewer selection or permission grant.
+
+Existing v1 navigation snapshot adds an **optional** localGalleryPageOffset; preexisting snapshots decode as before. Values outside 0–1,000,000 or not divisible by 64 fail closed at restore and sanitize to zero at save. Owner/Server/root changes and logout clear the cursor alongside map state. If the currently authorized library shrank, the existing lazy scanner restarts only for an invalid past-the-end cursor and selects the last readable 64-slot page; otherwise it performs its normal one-snapshot scan. The same in-memory Viewer tile anchor continues to require reauthorization on dismissal.
+
+Tests extend the pure Foundation native route-store suite (legacy v1, tampered payloads, Owner rotation, cursor clamping) and existing native iOS navigation/PhotoKit Node source checks. Exact-head unsigned IPA, applicable CI, Final Gate and mergeability are required before merge. Physical iPhone rotation, partial PhotoKit rights, large library and VoiceOver acceptance remain **跳过（未验收）**.

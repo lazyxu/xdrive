@@ -20,7 +20,7 @@ test('native Photos entry uses SwiftUI rather than WKWebView and supports verifi
   assert.match(app, /XDriveIOSNativeOwnerLoginScreen\(\)/)
   assert.doesNotMatch(app, /\bXDriveWebAppHome\(\)/)
   assert.match(login, /if model\.owner != nil \{[\s\S]*?XDriveIOSNativePhotosDashboard\(/)
-  assert.match(dashboard, /XDriveIOSNativeLocalGalleryScreen\(\)/)
+  assert.match(dashboard, /XDriveIOSNativeLocalGalleryScreen\(savedOffset: \$localGalleryPageOffset\)/)
   assert.match(dashboard, /XDriveIOSNativePhotoBackupScreen\(login: login, controller: backup\)/)
   assert.match(dashboard, /XDriveIOSNativeCloudOriginalGallery\([\s\S]*?login: login,[\s\S]*?confirmedOriginalUpdate: backup\.confirmedOriginalUpdate/)
   assert.match(login, /phase == \.active/)
