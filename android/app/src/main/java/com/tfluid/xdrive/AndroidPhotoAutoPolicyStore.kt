@@ -109,10 +109,11 @@ internal class AndroidPhotoAutoPolicyStore(
         const val STATUS_RUNNING = "running"
         const val STATUS_SCANNED = "scanned_not_complete"
         const val STATUS_NEEDS_REVIEW = "needs_receipt_review"
+        const val STATUS_RETRYABLE_FAILURE = "retryable_failure"
         const val STATUS_REQUIRES_SESSION = "requires_session"
         const val STATUS_REQUIRES_PERMISSION = "requires_full_media_grant"
         val ALLOWED_STATUSES = setOf(STATUS_WAITING, STATUS_RUNNING,
-            STATUS_SCANNED, STATUS_NEEDS_REVIEW,
+            STATUS_SCANNED, STATUS_NEEDS_REVIEW, STATUS_RETRYABLE_FAILURE,
             STATUS_REQUIRES_SESSION, STATUS_REQUIRES_PERMISSION)
         private const val KEY = "consent-v1"
         private val guard = Any()

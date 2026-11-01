@@ -13,6 +13,23 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 
 /**
+ * A failed WorkManager pass is not automatically an unknown upload ACK.
+ * Any unreadable journal or any unverified network attempt (including one
+ * from a previous Owner sharing the global writer) stays blocked for review.
+ * If the journal is readable and has no MAY_HAVE_SENT/UNKNOWN_ACK, retain the
+ * periodic grant for the next scheduled read; do NOT retry a POST in this pass.
+ */
+internal fun nativePhotoAutoFailureStatus(
+    ownerVerified: Boolean,
+    intents: List<NativePhotoBackupIntent>?,
+): String = when {
+    !ownerVerified -> AndroidPhotoAutoPolicyStore.STATUS_REQUIRES_SESSION
+    intents == null || intents.any { it.requiresReadOnlyReconciliation } ->
+        AndroidPhotoAutoPolicyStore.STATUS_NEEDS_REVIEW
+    else -> AndroidPhotoAutoPolicyStore.STATUS_RETRYABLE_FAILURE
+}
+
+/**
  * Periodic, explicitly approved Android original incremental batch.
  *
  * WorkData never carries a token, device secret, media ID, raw filename or
@@ -116,13 +133,16 @@ internal class AndroidPhotoAutoBackupWorker(
         } catch (_: Exception) {
             val owner = verifiedOwner
             if (owner != null) {
-                // Any uncertain chunk/finalize result is kept in the journal.
-                // This prevents WorkManager from ever turning a retry into
-                // another POST before an authorized exact read-only receipt.
+                // A failed provider read or transient network query is not a
+                // missing finalize ACK. Read the durable ledger first; if it
+                // cannot be inspected, fail closed instead of enabling writes.
+                val journal = try {
+                    AndroidPhotoBackupIntentStore(app).read()
+                } catch (_: Exception) { null }
                 policy.updateIfCurrent(owner, consent.epoch,
-                    AndroidPhotoAutoPolicyStore.STATUS_NEEDS_REVIEW)
+                    nativePhotoAutoFailureStatus(ownerVerified = true, intents = journal))
             } else markStatus(consent,
-                AndroidPhotoAutoPolicyStore.STATUS_REQUIRES_SESSION)
+                nativePhotoAutoFailureStatus(ownerVerified = false, intents = null))
             return Result.failure()
         }
     }

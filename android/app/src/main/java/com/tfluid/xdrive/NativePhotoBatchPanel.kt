@@ -148,6 +148,10 @@ internal fun NativePhotoBatchControls(
                         Text("后台备份已暂停：有上传结果需要核对，禁止自动重传。",
                             color = MaterialTheme.colorScheme.error,
                             modifier = Modifier.testTag("native-photo-auto-needs-review"))
+                    } else if (autoStatus == AndroidPhotoAutoPolicyStore.STATUS_RETRYABLE_FAILURE) {
+                        Text("上次后台扫描未完成；没有未知上传收据，保留已验证进度并等待下一轮系统调度。",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.testTag("native-photo-auto-retryable"))
                     }
                     if (!autoConfigured) {
                         OutlinedButton(
