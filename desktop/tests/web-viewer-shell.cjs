@@ -452,7 +452,7 @@ test('P0 Web/PWA wide phone landscape keeps Gallery Viewer touch chrome and medi
     landscape = true
     await act(async () => renderer.update(React.createElement(WebFileViewerApps, props)))
     assert.equal(frame().props.sx.height, '100dvh')
-    assert.equal(frame().children[0].props.sx.position, 'absolute')
+    assert.equal(frame().find(el => el.props['data-xdrive-web-viewer-chrome'] === 'header').props.sx.position, 'absolute')
     assert.equal(frame().props.onMouseMove, undefined, 'touch moves must not revive faded controls')
     const rails = frame().findAll(el => el.props['data-xdrive-web-viewer-mobile-actions'] !== undefined)
     assert.equal(rails.length, 1)
@@ -493,7 +493,7 @@ test('P0 Web/PWA short phone landscape preserves Files Quick Look and standalone
         const frame = renderer.root.find(el => el.props['data-xdrive-web-viewer'] !== undefined)
         const rails = frame.findAll(el => el.props['data-xdrive-web-viewer-mobile-actions'] !== undefined)
         assert.equal(frame.props.sx.height, '100dvh', app)
-        assert.equal(frame.children[0].props.sx.position, app === 'preview' ? 'absolute' : 'relative',
+        assert.equal(frame.find(el => el.props['data-xdrive-web-viewer-chrome'] === 'header').props.sx.position, app === 'preview' ? 'absolute' : 'relative',
           app + ' keeps its own immersive header policy')
         assert.equal(rails.length, 1, app + ' keeps a reachable mobile action rail')
         assert.equal(rails[0].props.sx['& .MuiIconButton-root'].width, 44)
