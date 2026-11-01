@@ -43,6 +43,16 @@ internal data class NativeBaiduCameraPose(
             rotate.isFinite() && overlook.isFinite()
 }
 
+/**
+ * L2 native Photos map prioritizes the real Owner viewport rather than a
+ * hard-coded 290dp SDK tile. The list mode retains the previous compact
+ * height. Neither layout changes signed cells, camera scope nor SDK life.
+ */
+internal fun nativeGalleryMapPanelHeightDp(
+    screenHeightDp: Int, focused: Boolean,
+): Int = if (!focused || screenHeightDp <= 0) 290
+    else (screenHeightDp - 160).coerceIn(290, 720)
+
 /** A deterministic capped set of ALREADY Owner-signed representative photos.
  * No WGS84 conversion, new media endpoint or third-party SDK photo upload. */
 internal const val NATIVE_BAIDU_COVER_LIMIT = 12

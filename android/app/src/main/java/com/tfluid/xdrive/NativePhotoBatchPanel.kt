@@ -14,6 +14,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -34,6 +35,53 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 
 internal enum class NativePhotoBatchConsent {
     REGISTER_DEVICE, START_BATCH, ENABLE_AUTO, DISABLE_AUTO,
+}
+
+/** UI-only interpretation of the persisted WorkManager *last-known* state.
+ * The policy/ledger stays authoritative; no item or byte count is inferred.
+ * A status is never evidence that a current Owner's entire library is backed up.
+ */
+internal data class NativePhotoAutoStatusPresentation(
+    val message: String,
+    val testTag: String,
+    val warning: Boolean = false,
+)
+
+internal fun nativePhotoAutoStatusPresentation(
+    configured: Boolean, status: String?,
+): NativePhotoAutoStatusPresentation? {
+    if (!configured) return null
+    return when (status) {
+        AndroidPhotoAutoPolicyStore.STATUS_WAITING -> NativePhotoAutoStatusPresentation(
+            "后台计划已保存；等待 Android 系统按网络与电量条件安排下一次执行。",
+            "native-photo-auto-waiting",
+        )
+        AndroidPhotoAutoPolicyStore.STATUS_RUNNING -> NativePhotoAutoStatusPresentation(
+            "上次记录为后台任务运行中；若应用曾中断，此状态不代表当前仍在上传。",
+            "native-photo-auto-running",
+        )
+        AndroidPhotoAutoPolicyStore.STATUS_SCANNED -> NativePhotoAutoStatusPresentation(
+            "上次只完成有限范围的增量扫描；不代表全部照片或视频已备份。",
+            "native-photo-auto-scanned",
+        )
+        AndroidPhotoAutoPolicyStore.STATUS_REQUIRES_SESSION -> NativePhotoAutoStatusPresentation(
+            "后台备份暂不能执行：需要可用的已保存登录会话，请重新登录核对。",
+            "native-photo-auto-requires-session", warning = true,
+        )
+        AndroidPhotoAutoPolicyStore.STATUS_REQUIRES_PERMISSION -> NativePhotoAutoStatusPresentation(
+            "后台备份暂不能执行：缺少完整照片与视频读取权限，请在本机图库重新授权。",
+            "native-photo-auto-requires-permission", warning = true,
+        )
+        AndroidPhotoAutoPolicyStore.STATUS_NEEDS_REVIEW -> NativePhotoAutoStatusPresentation(
+            "后台备份已暂停：有上传结果需要核对，禁止自动重传。",
+            "native-photo-auto-needs-review", warning = true,
+        )
+        AndroidPhotoAutoPolicyStore.STATUS_RETRYABLE_FAILURE -> NativePhotoAutoStatusPresentation(
+            "上次后台扫描未完成；没有未知上传收据，保留已验证进度并等待下一轮系统调度。",
+            "native-photo-auto-retryable",
+        )
+        else -> null
+    }
 }
 
 /**
@@ -123,6 +171,10 @@ internal fun NativePhotoBatchControls(
                             modifier = Modifier.testTag("native-photo-batch-other-writer"))
                     }
                     if (busy) {
+                        // The batch has no verified total byte denominator: a
+                        // determinate percentage would falsely imply completion.
+                        LinearProgressIndicator(Modifier.fillMaxWidth()
+                            .testTag("native-photo-batch-active-indeterminate"))
                         Text("正在处理本次授权的原件；停止可能使正在发送的原件进入待核对状态。",
                             color = MaterialTheme.colorScheme.error)
                         OutlinedButton(
@@ -144,14 +196,13 @@ internal fun NativePhotoBatchControls(
                         if (autoConfigured) "后台自动备份：本机已保存定时计划，需以当前 Owner 重新核验。"
                         else "后台自动备份：未开启（不会在后台读取照片）。",
                         modifier = Modifier.testTag("native-photo-auto-status"))
-                    if (autoStatus == AndroidPhotoAutoPolicyStore.STATUS_NEEDS_REVIEW) {
-                        Text("后台备份已暂停：有上传结果需要核对，禁止自动重传。",
-                            color = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.testTag("native-photo-auto-needs-review"))
-                    } else if (autoStatus == AndroidPhotoAutoPolicyStore.STATUS_RETRYABLE_FAILURE) {
-                        Text("上次后台扫描未完成；没有未知上传收据，保留已验证进度并等待下一轮系统调度。",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.testTag("native-photo-auto-retryable"))
+                    val autoDetail = nativePhotoAutoStatusPresentation(
+                        autoConfigured, autoStatus)
+                    if (autoDetail != null) {
+                        Text(autoDetail.message,
+                            color = if (autoDetail.warning) MaterialTheme.colorScheme.error
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.testTag(autoDetail.testTag))
                     }
                     if (!autoConfigured) {
                         OutlinedButton(

@@ -45,6 +45,7 @@ internal fun shouldHandleFilesBack(state: DriveState, editOpen: Boolean, batchCo
     state.hasActiveNativeTransfer() ||
     state.destinationKind != null || batchConfirmOpen || editOpen || state.selected != null ||
         state.filesPdfViewer != null || state.filesAudioViewer != null ||
+        state.filesTextViewer != null ||
         (state.screen == Screen.FILES &&
             (state.browseSelectionMode || state.filesSection != FilesSection.BROWSE || state.path.size > 1))
 
@@ -88,7 +89,7 @@ internal fun nativeGalleryFirstLandingAllowed(
     state.selected == null && state.fileUploadPickerParent == null &&
     state.fileExportPending == null &&
     state.filesPdfViewer == null && state.filesAudioViewer == null &&
-    state.canNavigateFiles()
+    state.filesTextViewer == null && state.canNavigateFiles()
 
 /**
  * Actual one-original request requires current Gallery, exact login epoch,
@@ -245,6 +246,19 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     var mapOriginSource by remember(state.nativeUiSessionId) {
         mutableStateOf(NativeGallerySource.CLOUD)
     }
+    // One Gallery Map entry can switch between local MediaStore GPS and cloud
+    // Owner BD-09. Local IDs/coordinates remain in native view memory only.
+    var localPhotoMapOpen by remember(
+        state.nativeUiSessionId, state.server, state.username
+    ) { mutableStateOf(false) }
+    LaunchedEffect(state.screen, nativeNavigation.selected,
+        nativeNavigation.gallerySource, state.nativeUiSessionId) {
+        if (state.screen != Screen.GALLERY ||
+            nativeNavigation.selected != NativeHomeTab.GALLERY ||
+            nativeNavigation.gallerySource != NativeGallerySource.MAP) {
+            localPhotoMapOpen = false
+        }
+    }
     LaunchedEffect(state.screen, nativeNavigation.gallerySource, state.nativeUiSessionId) {
         if (state.screen != Screen.GALLERY ||
             nativeNavigation.gallerySource !in setOf(
@@ -290,6 +304,11 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     var bd09ViewerReturnCamera by remember(
         state.nativeUiSessionId, state.server, state.username, state.galleryMapOpen
     ) { mutableStateOf<NativeBaiduCameraPose?>(null) }
+    // L2 focus is UI-only and survives Viewer unmount; leaving this Owner's
+    // Gallery map resets it. Changing size never changes the SDK map source.
+    var nativeMapFocused by remember(
+        state.nativeUiSessionId, state.server, state.username, state.galleryMapOpen,
+    ) { mutableStateOf(true) }
 
     // Preserve UI-only scroll state across Viewer -> Gallery, never across
     // leaving Gallery. The same user can log out/in against changed photo rows.
@@ -324,11 +343,11 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     val mobilePage = Color(if (LocalXDriveDarkTheme.current) SharedVisuals.darkMobilePage else SharedVisuals.lightMobilePage)
     val galleryHasLocalBack = state.screen == Screen.GALLERY && (
         state.galleryMapCellSelected != null || state.galleryMapOpen ||
-        state.gallerySelectionMode || state.gallerySelected != null ||
+        localPhotoMapOpen || state.gallerySelectionMode || state.gallerySelected != null ||
         state.galleryViewer != null || state.gallerySelectedAlbum != null ||
         state.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS)
     val showingCloudGallery = nativeNavigation.gallerySource == NativeGallerySource.CLOUD ||
-        state.galleryMapOpen || state.galleryViewer != null
+        state.galleryMapOpen || localPhotoMapOpen || state.galleryViewer != null
     val localAlbumTopBack = state.screen == Screen.GALLERY &&
         nativeLocalAlbumTopBackVisible(
             nativeNavigation, localAlbumSelection != null,
@@ -344,6 +363,11 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
         else if (batchTrashConfirm) batchTrashConfirm = false
         else if (filesEdit != null) filesEdit = null
         else if (localAlbumTopBack) localAlbumSelection = null
+        else if (localPhotoMapOpen && state.screen == Screen.GALLERY) {
+            localPhotoMapOpen = false
+            nativeNavigation = nativeNavigation.copy(gallerySource = mapOriginSource)
+            if (state.galleryMapOpen) controller.closeGalleryMapOverview()
+        }
         else if (state.galleryMapOpen && state.galleryBd09History.isEmpty() &&
             state.galleryMapCellSelected == null && state.galleryViewer == null) {
             nativeNavigation = nativeNavigation.copy(gallerySource = mapOriginSource)
@@ -356,7 +380,8 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
     }
     val photoViewerOpen = (state.screen == Screen.GALLERY && state.galleryViewer != null) ||
         (state.screen == Screen.FILES &&
-            (state.filesPdfViewer != null || state.filesAudioViewer != null))
+            (state.filesPdfViewer != null || state.filesAudioViewer != null ||
+                state.filesTextViewer != null))
     val nativeOverlay = nativeAuthenticated && !photoViewerOpen &&
         nativeNavigation.selected in setOf(NativeHomeTab.ALL, NativeHomeTab.DYNAMIC, NativeHomeTab.MINE)
     // Old native AccountMenu can still change a Controller route directly.
@@ -427,6 +452,15 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                 Screen.FILES -> nativeNavigation = nativeNavigation.select(tab)
                 else -> Unit
             }
+            NativeHomeTab.DYNAMIC -> {
+                nativeNavigation = nativeNavigation.select(tab)
+                // A single tap resumes the last permitted native dynamic
+                // feature. It must not require opening a second summary button.
+                if (nativeNavigation.dynamicFeature == NativeDynamicFeature.TRANSFERS) {
+                    controller.refreshTransferRecoveryNotices()
+                    transferCenterOpen = true
+                }
+            }
             else -> nativeNavigation = nativeNavigation.select(tab)
         }
     }
@@ -495,7 +529,8 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
         contentColor = MaterialTheme.colorScheme.onSurface,
         bottomBar = {
             if (nativeAuthenticated && !photoViewerOpen &&
-                (nativeNavigation.selected != NativeHomeTab.GALLERY || !state.galleryMapOpen))
+                (nativeNavigation.selected != NativeHomeTab.GALLERY ||
+                    (!state.galleryMapOpen && !localPhotoMapOpen)))
                 NativeHomeBottomBar(nativeNavigation, ::selectNativeTab,
                     onShowDynamicPicker = { dynamicPickerOpen = true })
         },
@@ -524,6 +559,11 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                     IconButton(onClick = {
                         if (state.screen == Screen.TRASH) controller.closeTrash()
                         else if (localAlbumTopBack) localAlbumSelection = null
+                        else if (localPhotoMapOpen && state.screen == Screen.GALLERY) {
+                            localPhotoMapOpen = false
+                            nativeNavigation = nativeNavigation.copy(gallerySource = mapOriginSource)
+                            if (state.galleryMapOpen) controller.closeGalleryMapOverview()
+                        }
                         else if (state.galleryMapOpen && state.galleryBd09History.isEmpty() &&
                             state.galleryMapCellSelected == null && state.galleryViewer == null) {
                             nativeNavigation = nativeNavigation.copy(gallerySource = mapOriginSource)
@@ -557,6 +597,7 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                     }
                     val title = if (state.screen == Screen.TRASH) "回收站"
                         else if (state.screen == Screen.GALLERY) when {
+                            localPhotoMapOpen -> "本机位置"
                             state.galleryMapOpen -> "地点"
                             localAlbumTopBack -> localAlbumSelection?.title ?: "本机相册"
                             nativeNavigation.gallerySource == NativeGallerySource.LOCAL -> "本机照片"
@@ -640,7 +681,16 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                     else -> Unit
                 }
             } else when (state.screen) {
-                Screen.CONNECT, Screen.LOGIN -> UnifiedLoginForm(state, controller::connectAndLogin, controller::restoreSession) {
+                Screen.CONNECT, Screen.LOGIN -> UnifiedLoginForm(
+                    state = state,
+                    login = controller::connectAndLogin,
+                    retrySavedSession = controller::restoreSession,
+                    savedProfiles = controller.savedLoginProfiles(),
+                    hasSavedPassword = controller::savedPasswordAvailable,
+                    selectSavedProfile = controller::selectSavedLoginProfile,
+                    loginWithSavedPassword = controller::loginWithSavedPassword,
+                    forgetSavedProfile = controller::forgetSavedLoginProfile
+                ) {
                     AccountMenu(state, controller, updates?.let { it::show })
                 }
                 Screen.PASSWORD -> PasswordForm(state, controller::changePassword) { AccountMenu(state, controller, updates?.let { it::show }) }
@@ -649,6 +699,8 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                         controller, state.filesPdfBytes)
                 } else if (state.filesAudioViewer != null) {
                     NativeFilesAudioViewer(requireNotNull(state.filesAudioViewer), controller)
+                } else if (state.filesTextViewer != null) {
+                    NativeFilesTextViewer(requireNotNull(state.filesTextViewer), state, controller)
                 } else filesSaveable.SaveableStateProvider(filesStateKey) {
                     Files(state, controller, filesView,
                         onRename = { filesEdit = FilesEditIntent(FilesEditKind.RENAME, it) },
@@ -687,15 +739,43 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                                 controller = controller,
                             )
                         }
+                    } else if (localPhotoMapOpen &&
+                        nativeNavigation.gallerySource == NativeGallerySource.MAP) {
+                        NativePhotoMapSourceBar(
+                            localSelected = true,
+                            onLocal = {},
+                            onCloud = {
+                                localPhotoMapOpen = false
+                                if (!state.galleryMapOpen) controller.openGalleryMapOverview()
+                            })
+                        NativeLocalPhotoMap(
+                            sessionId = state.nativeUiSessionId,
+                            libraryEpoch = localGalleryMemory.generation.intValue,
+                            onClose = {
+                                localPhotoMapOpen = false
+                                nativeNavigation = nativeNavigation.copy(gallerySource = mapOriginSource)
+                            })
                     } else if (state.galleryMapOpen) {
                         // The native MapView remains mounted beneath the album
                         // sheet; a cell selection no longer destroys its camera,
                         // signed count markers or SDK lease.
+                        NativePhotoMapSourceBar(
+                            localSelected = false,
+                            onLocal = {
+                                if (!state.hasActiveNativeTransfer() &&
+                                    state.galleryMapCellSelected == null) {
+                                    localPhotoMapOpen = true
+                                    controller.closeGalleryMapOverview()
+                                }
+                            },
+                            onCloud = {})
                         GalleryMapOverview(state, controller,
                             bd09Scroll.getOrPut(state.galleryBd09Bounds) {
                                 LazyListState()
                             },
                             savedCamera = bd09ViewerReturnCamera,
+                            focused = nativeMapFocused,
+                            onFocusChange = { nativeMapFocused = it },
                             onCameraSnapshot = { pose ->
                                 val latest = controller.state.value
                                 if (latest.screen == Screen.GALLERY && latest.galleryMapOpen &&
@@ -816,8 +896,10 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                             onClick = {
                                 nativeNavigation = nativeNavigation.openDynamic(feature)
                                 dynamicPickerOpen = false
-                                if (feature == NativeDynamicFeature.TRANSFERS)
+                                if (feature == NativeDynamicFeature.TRANSFERS) {
                                     controller.refreshTransferRecoveryNotices()
+                                    transferCenterOpen = true
+                                }
                             },
                             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                                 .testTag("native-dynamic-choice-${feature.name.lowercase()}"),
@@ -1176,7 +1258,7 @@ internal fun AccountMenu(state: DriveState, controller: DriveController, checkUp
             if (state.screen in setOf(Screen.CONNECT, Screen.LOGIN) &&
                 (state.server.isNotBlank() || state.username.isNotBlank())) {
                 DropdownMenuItem(
-                    text = { Text("清除本机保存的登录资料") },
+                    text = { Text("忘记当前服务器和账号资料") },
                     modifier = Modifier.testTag("auth-clear-saved-login"),
                     enabled = !state.loading,
                     onClick = {
@@ -1190,8 +1272,8 @@ internal fun AccountMenu(state: DriveState, controller: DriveController, checkUp
         AlertDialog(
             onDismissRequest = { clearSavedLoginConfirm = false },
             modifier = Modifier.testTag("auth-clear-saved-login-confirm"),
-            title = { Text("确认清除本机登录资料？") },
-            text = { Text("将清除本机 Keystore 保存的会话和最近填写的服务器、内网 IP、用户名。不会删除照片或备份记录；远端会话撤销未确认。") },
+            title = { Text("确认忘记当前服务器和账号？") },
+            text = { Text("只清除选中服务器和用户名的本机安全密码、匹配的刷新会话与登录草稿。其他账号、照片和备份记录不受影响。") },
             confirmButton = {
                 TextButton(onClick = {
                     clearSavedLoginConfirm = false
