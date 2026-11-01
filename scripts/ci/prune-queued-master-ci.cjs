@@ -1,6 +1,7 @@
 'use strict'
 
-// A published, verified Snapshot can supersede only older queued master CI.
+// Automatic post-Snapshot events may audit queued master CI but cannot cancel it.
+// Explicit manual requests may prune only older CI proved safe to retire.
 // Never cancel an in-progress run, an unpublished source, or a PR/tag/manual run.
 // The single pr-scope classifier is safe to have completed: it performs only
 // read-only CI scope detection, not build, test, packaging or publication.
@@ -28,6 +29,8 @@ async function pruneQueuedMasterCI({github, context, core, dryRun = false, maxCa
   if (context.eventName === 'repository_dispatch') {
     invariant(context.payload?.action === 'xdrive_snapshot_published',
       'only the explicit Snapshot-published event may trigger automatic pruning')
+    invariant(dryRun === true,
+      'automatic Snapshot dispatch is audit-only; manual dispatch required to cancel')
   }
 
   // The source of truth is the current ref plus completed Release metadata,

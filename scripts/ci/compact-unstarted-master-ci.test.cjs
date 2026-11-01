@@ -52,7 +52,7 @@ function mock({runs = [], jobs = {}, moved = {}, relation = 'ahead', jobCounts =
   }
   const context = {
     repo: {owner: 'lazyxu', repo: 'xdrive'},
-    ref: 'refs/heads/master', eventName: 'push', runId: 9999,
+    ref: 'refs/heads/master', eventName: 'workflow_dispatch', runId: 9999,
   }
   const notes = []
   const core = {info: s => notes.push(s), warning: s => notes.push(s)}
@@ -219,8 +219,13 @@ test('dry run must not send cancellation even when fully eligible', async () => 
   assert.ok(result.audit.some(x => x.decision === 'would-cancel'))
 })
 
-test('wrong repository/ref, and excessive removal budget fail closed', async () => {
+test('wrong repository/ref, automatic triggers, and excessive removal budget fail closed', async () => {
   const h = mock({runs: [run(1)]})
+  for (const eventName of ['push', 'schedule', 'repository_dispatch']) {
+    await assert.rejects(compactUnstartedMasterCI({
+      ...h, context: {...h.context, eventName},
+    }), /manual dispatch required/)
+  }
   await assert.rejects(compactUnstartedMasterCI({
     ...h, context: {...h.context, ref: 'refs/heads/not-master'},
   }), /not on trusted master/)
@@ -229,4 +234,16 @@ test('wrong repository/ref, and excessive removal budget fail closed', async () 
   }), /wrong repository/)
   await assert.rejects(compactUnstartedMasterCI({...h, maxCancels: 1000}), /budget/)
   assert.equal(h.calls.cancels.length, 0)
+})
+
+// Every workflow edit must preserve manual-only master cancellation.
+test('master CI compaction cannot be triggered automatically', () => {
+  const fs = require('node:fs')
+  const path = require('node:path')
+  const workflow = fs.readFileSync(
+    path.resolve(__dirname, '../../.github/workflows/compact-unstarted-master-ci.yml'), 'utf8')
+  assert.match(workflow, /^on:\n  workflow_dispatch:/m)
+  assert.doesNotMatch(workflow, /^  (?:push|schedule|repository_dispatch):/m)
+  assert.ok(workflow.includes('        default: true'))
+  assert.ok(workflow.includes("COMPACTION_DRY_RUN: ${{ inputs.dry_run }}"))
 })

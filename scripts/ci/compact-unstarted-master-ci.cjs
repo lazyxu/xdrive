@@ -1,6 +1,6 @@
 'use strict'
 
-// Prune only obsolete master CI after inspecting every job. Either ALL jobs
+// Manual-only cleanup: never cancel master CI automatically. Either ALL jobs
 // are unstarted, or a failed stale pending workflow has already completed
 // every test, build, and publisher. Never stop an active publisher.
 const SHA = /^[0-9a-f]{40}$/
@@ -102,8 +102,8 @@ async function compactUnstartedMasterCI({
   const {owner, repo} = context.repo
   assert(owner === 'lazyxu' && repo === 'xdrive', 'wrong repository')
   assert(context.ref === 'refs/heads/master', 'not on trusted master')
-  assert(['push', 'schedule', 'workflow_dispatch'].includes(context.eventName),
-    'unsupported workflow event')
+  assert(context.eventName === 'workflow_dispatch',
+    'automatic master CI cancellation disabled; manual dispatch required')
   assert(typeof dryRun === 'boolean', 'invalid dry run')
   assert(Number.isSafeInteger(maxCancels) && maxCancels >= 1 && maxCancels <= 60,
     'invalid cancellation budget')

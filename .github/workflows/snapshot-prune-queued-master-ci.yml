@@ -3,6 +3,8 @@ name: Prune queued CI superseded by published Snapshot
 # Never subscribe to release.edited: each asset replacement can fan out
 # multiple events and redundant Actions jobs. The trusted publisher sends
 # one explicit repository_dispatch only AFTER verifying the full Snapshot.
+# That event is audit-only: only a manual workflow_dispatch with dry_run=false
+# can request cancellation of any prior master CI.
 # No per-master-push workflow; manual dry-run and scoped PR tests remain.
 on:
   repository_dispatch:
@@ -66,10 +68,10 @@ jobs:
           persist-credentials: false
       - name: Run fail-closed cancellation selector regression
         run: node --test scripts/ci/prune-queued-master-ci.test.cjs
-      - name: Prune only old queued CI already superseded by Snapshot
+      - name: Audit published Snapshot (manual dry-run override to prune)
         uses: actions/github-script@v7
         env:
-          PRUNE_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+          PRUNE_DRY_RUN: ${{ github.event_name != 'workflow_dispatch' || inputs.dry_run }}
         with:
           script: |
             const {pruneQueuedMasterCI} = require('./scripts/ci/prune-queued-master-ci.cjs')

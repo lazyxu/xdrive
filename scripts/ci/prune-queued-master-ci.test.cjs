@@ -40,7 +40,7 @@ function fixture(options={}) {
     }
   }}
   const core={info:()=>{},warning:()=>{}}
-  const context={repo:{owner:'lazyxu',repo:'xdrive'},eventName:'repository_dispatch',payload:{action:'xdrive_snapshot_published'},runId:987}
+  const context={repo:{owner:'lazyxu',repo:'xdrive'},eventName:'workflow_dispatch',payload:{action:'xdrive_snapshot_published'},runId:987}
   return {github,core,context,calls,run,runs}
 }
 
@@ -242,6 +242,7 @@ test('release edits and unrelated repository_dispatch events cannot prune CI', a
   await assert.rejects(pruneQueuedMasterCI(release),/unsupported event/)
   assert.deepEqual(release.calls.cancel,[])
   const wrong=fixture()
+  wrong.context.eventName='repository_dispatch'
   wrong.context.payload.action='other_repo_dispatch'
   await assert.rejects(pruneQueuedMasterCI(wrong),/explicit Snapshot-published event/)
   assert.deepEqual(wrong.calls.cancel,[])
@@ -267,10 +268,26 @@ test('cleanup is dispatched once from the verified publisher, never from release
   assert.equal(workflow.includes('    types: [edited]'),false)
   assert.equal(workflow.includes("github.event_name == 'release'"),false)
   assert.ok(workflow.includes("github.event.action == 'xdrive_snapshot_published'"))
+  assert.ok(workflow.includes("PRUNE_DRY_RUN: ${{ github.event_name != 'workflow_dispatch' || inputs.dry_run }}"))
   const assetCheck=release.indexOf('      - name: Assert distribution assets are not archive-wrapped')
   const notification=release.indexOf('      - name: Notify bounded queued-CI prune after verified Snapshot publication')
   const stableRelease=release.indexOf('      - name: Publish GitHub Release',notification)
   assert.ok(assetCheck>=0 && notification>assetCheck && stableRelease>notification)
   assert.ok(release.includes('-f event_type=xdrive_snapshot_published'))
   assert.ok(release.includes('if [[ "$published" != "$GITHUB_SHA" ]]'))
+})
+
+// Auto-dispatch must never issue master cancellations even if YAML drifts.
+test('published Snapshot dispatch is strictly audit-only', async () => {
+  const automatic=fixture()
+  automatic.context.eventName='repository_dispatch'
+  await assert.rejects(pruneQueuedMasterCI(automatic), /audit-only/)
+  assert.deepEqual(automatic.calls.cancel, [])
+
+  const readOnly=fixture()
+  readOnly.context.eventName='repository_dispatch'
+  const report=await pruneQueuedMasterCI({...readOnly,dryRun:true})
+  assert.equal(report.eligible,1)
+  assert.equal(report.cancelled,0)
+  assert.deepEqual(readOnly.calls.cancel, [])
 })
