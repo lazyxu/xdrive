@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -223,5 +225,41 @@ func TestBackupOnlyCloudFileReadIsLimitedToRootChildrenAndTextPreview(t *testing
 		if !fullAgentOnlyRequest(http.MethodGet, route) {
 			t.Fatalf("full Agent feature unexpectedly enabled in Backup-only: %s", route)
 		}
+	}
+}
+
+type failedBackupOnlyIPCListener struct{ err error }
+
+func (l failedBackupOnlyIPCListener) Accept() (net.Conn, error) { return nil, l.err }
+func (l failedBackupOnlyIPCListener) Close() error              { return nil }
+func (l failedBackupOnlyIPCListener) Addr() net.Addr            { return &net.TCPAddr{} }
+
+func TestBackupOnlyIPCServeFailureStopsScheduler(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		backupOnly bool
+		graceful   bool
+		wantStops  int
+	}{
+		{name: "fatal_backup_only_listener", backupOnly: true, wantStops: 1},
+		{name: "fatal_full_desktop_listener", wantStops: 0},
+		{name: "graceful_backup_only_stop", backupOnly: true, graceful: true, wantStops: 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := &desktopIPCServer{server: &http.Server{}}
+			if tc.graceful {
+				if err := server.server.Close(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			shutdowns := 0
+			serveDesktopIPC(server,
+				failedBackupOnlyIPCListener{err: errors.New("injected listener failure")},
+				func() { shutdowns++ }, tc.backupOnly)
+			if shutdowns != tc.wantStops {
+				t.Fatalf("backupOnly=%v graceful=%v: shutdowns=%d want=%d",
+					tc.backupOnly, tc.graceful, shutdowns, tc.wantStops)
+			}
+		})
 	}
 }
