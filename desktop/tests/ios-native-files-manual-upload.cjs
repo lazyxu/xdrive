@@ -21,7 +21,7 @@ test('native Files-picker uploads reuse one verified foreground Server UploadSes
   assert.match(s, /XDriveIOSOriginalRunGate\.shared\.acquire\(\)/);
   assert.match(s, /XDriveIOSOriginalRunGate\.shared\.release\(gate\)/);
   assert.match(transport, /path: "\/api\/v1\/uploads"/);
-  assert.match(api, /POST\("\/uploads", s\.createUpload\)/);
+  assert.match(api, /authed\.POST\("\/uploads", s\.createUploadSession\)/);
   assert.match(stage, /static let maxFirstFileBytes: Int64 = 128 \* 1_048_576/);
   assert.doesNotMatch(s, /WKWebView\s*\(|document\.cookie|backgroundGrant:/);
 });
