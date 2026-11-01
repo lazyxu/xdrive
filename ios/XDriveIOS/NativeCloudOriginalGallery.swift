@@ -633,6 +633,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                             .accessibilityLabel("云端实况照片，长按播放")
                         } else {
                             XDriveIOSNativeZoomablePhotoView(image: still)
+                                .onNavigateSwipe { showNeighbor($0) }
                                 .accessibilityLabel("云端 Live 静态原件")
                         }
                         if nativeLiveReady && !showingLiveMotion {
@@ -666,6 +667,7 @@ struct XDriveIOSNativeCloudOriginalPreview: View {
                     }
                 } else if let still {
                     XDriveIOSNativeZoomablePhotoView(image: still)
+                                .onNavigateSwipe { showNeighbor($0) }
                         .accessibilityLabel("云端照片，可双指缩放或双击放大")
                 } else if let player {
                     VideoPlayer(player: player)
