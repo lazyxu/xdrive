@@ -267,16 +267,11 @@ struct XDriveIOSNativeFilesManagementPanel: View {
                       XDriveIOSNativePhotoOwnerScope.matches(
                         auth.owner, expectedOwner
                       ), verified else { return }
-                // A nested folder must remain an authorized current directory.
-                if folderID != expectedOwner.rootNodeID {
-                    let reader = XDriveIOSNativeFilesReader(
-                        owner: auth.owner, accessToken: auth.accessToken
-                    )
-                    // Exact GET semantics are checked by the Go Server on POST;
-                    // this read makes the target current before any write.
-                    _ = reader
-                    guard folderName != nil else { return }
-                }
+                // The Server revalidates the current Owner's directory ACL
+                // and its actual existence inside createDirectory. A path
+                // hint from earlier navigation is never independent authority.
+                guard folderID == expectedOwner.rootNodeID || folderName != nil
+                else { return }
                 _ = try await XDriveIOSNativeFilesDirectoryCreator(
                     owner: auth.owner, accessToken: auth.accessToken
                 ).create(parentID: folderID, name: name)
