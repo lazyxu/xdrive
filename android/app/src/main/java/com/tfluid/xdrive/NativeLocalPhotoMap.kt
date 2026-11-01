@@ -16,9 +16,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -52,7 +49,7 @@ internal fun nativeVideoGps(value: String?): Pair<Double, Double>? {
 
 /** Android 10+ redacts original EXIF location until the OS explicitly grants
  * ACCESS_MEDIA_LOCATION. No map coordinates are sent to a Server or SDK. */
-private suspend fun readLocalMediaGps(
+internal suspend fun readLocalMediaGps(
     context: Context, asset: NativeLocalMedia,
 ): Pair<Double, Double>? = withContext(Dispatchers.IO) {
     currentCoroutineContext().ensureActive()
@@ -236,57 +233,25 @@ internal fun ColumnScope.NativeLocalPhotoMap(
     }
     NativeLocalPhotoMapCanvas(
         cells = scan.index.cells,
+        selectable = !scan.scanning && scan.error == null,
         onSelect = { chosen = it },
     )
 
     chosen?.let { snapshot ->
-        val members = snapshot.members
-        ModalBottomSheet(
-            onDismissRequest = { if (viewer == null) chosen = null },
-            modifier = Modifier.testTag("native-local-map-cell-sheet"),
-        ) {
-            Column(Modifier.fillMaxWidth().fillMaxHeight(0.85f)) {
-                Text("此处已扫描到 " + snapshot.count + " 张 · " +
-                    "当前最多显示 " + members.size + " 张；其余照片仍可在本机图库查看。",
-                    modifier = Modifier.padding(16.dp),
-                    style = MaterialTheme.typography.bodySmall)
-                LazyVerticalGrid(
-                    columns = GridCells.Adaptive(96.dp),
-                    modifier = Modifier.weight(1f)
-                        .testTag("native-local-map-cell-wall"),
-                    contentPadding = PaddingValues(8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    items(members, key = { it.id }) { asset ->
-                        NativeLocalPhotoWallTile(
-                            asset = asset, restoreFocus = false,
-                            onOpen = { viewer = asset },
-                            onFocusRestored = {})
-                    }
-                }
-            }
-        }
-        viewer?.let { asset ->
-            val idx = members.indexOfFirst { it.id == asset.id }
-            NativeLocalMediaViewer(
-                asset = asset, onDismiss = { viewer = null },
-                loadedPosition = idx.takeIf { it >= 0 },
-                loadedCount = members.size,
-                onPrevious = if (idx > 0) {
-                    { viewer = members[idx - 1] }
-                } else null,
-                onNext = if (idx in 0 until members.lastIndex) {
-                    { viewer = members[idx + 1] }
-                } else null,
-            )
-        }
+        NativeLocalMapCellSheet(
+            cell = snapshot,
+            scanLimit = scan.scanned,
+            sessionId = sessionId,
+            libraryEpoch = libraryEpoch,
+            onClose = { chosen = null },
+        )
     }
 }
 
 @Composable
 private fun ColumnScope.NativeLocalPhotoMapCanvas(
     cells: List<NativeLocalMapCell<NativeLocalMedia>>,
+    selectable: Boolean,
     onSelect: (NativeLocalMapCell<NativeLocalMedia>) -> Unit,
 ) {
     var zoom by remember { mutableFloatStateOf(1f) }
@@ -335,7 +300,7 @@ private fun ColumnScope.NativeLocalPhotoMapCanvas(
                         (x - 26f).coerceIn(0f, (canvasWidth - 56f).coerceAtLeast(0f)).dp,
                         (y - 26f).coerceIn(0f, (canvasHeight - 66f).coerceAtLeast(0f)).dp
                     ).size(width = 56.dp, height = 66.dp)
-                        .clickable { onSelect(cell) }
+                        .clickable(enabled = selectable) { onSelect(cell) }
                         .testTag("native-local-map-cell-" +
                             cell.key.latitudeCell + "-" + cell.key.longitudeCell),
                 ) {

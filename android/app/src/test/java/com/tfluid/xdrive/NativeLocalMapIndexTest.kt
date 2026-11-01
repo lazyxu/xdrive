@@ -33,6 +33,13 @@ class NativeLocalMapIndexTest {
         })
     }
 
+    @Test fun locationPagingNeverWandersBeyondIndexedPrefixOrKnownCount() {
+        assertTrue(nativeLocalMapHasMore(48, 142, 4096, 10000, false))
+        assertFalse(nativeLocalMapHasMore(142, 142, 4096, 10000, false))
+        assertFalse(nativeLocalMapHasMore(48, 142, 10000, 10000, false))
+        assertFalse(nativeLocalMapHasMore(48, 142, 4096, 10000, true))
+    }
+
     @Test fun readsOnlyCanonicalIso6709VideoLocations() {
         assertEquals(37.4219 to -122.0840, nativeVideoGps("+37.4219-122.0840/"))
         assertEquals(-33.86 to 151.2, nativeVideoGps("-33.86+151.200/"))
