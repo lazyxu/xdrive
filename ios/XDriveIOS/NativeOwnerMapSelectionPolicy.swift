@@ -80,7 +80,9 @@ enum XDriveIOSNativeOwnerMapSelectionPolicy {
         let south = max(-90.0, latitude - latitudeSpan / 2)
         let north = min(90.0, latitude + latitudeSpan / 2)
         guard south < north else { return nil }
-        if longitudeSpan >= 359.9 {
+        // Only a true 360-degree camera may request the full-world bounds.
+        // 359.95 degrees still leaves a real, narrow longitude gap.
+        if longitudeSpan >= 360 {
             return XDriveIOSNativeOwnerMapBounds(west: -180, south: south,
                                                  east: 180, north: north)
         }
