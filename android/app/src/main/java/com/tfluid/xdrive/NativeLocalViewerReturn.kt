@@ -62,3 +62,20 @@ internal fun nativeLocalViewerNeighborIndex(
     val index = nativeLocalViewerLoadedIndex(available, current) ?: return null
     return (index + direction).takeIf { it in available.indices }
 }
+
+
+/**
+ * Direction for one completed drag on an authorized, already-loaded still
+ * Viewer: negative X advances to the next media; positive X goes previous.
+ * Return null on zoomed, non-finite, too-small or invalid thresholds.
+ * This policy never crosses a local wall boundary by itself.
+ */
+internal fun nativeLocalViewerSwipeDirection(
+    distanceX: Float,
+    thresholdPx: Float,
+    zoomed: Boolean,
+): Int? {
+    if (zoomed || !distanceX.isFinite() || !thresholdPx.isFinite() ||
+        thresholdPx <= 0f || kotlin.math.abs(distanceX) < thresholdPx) return null
+    return if (distanceX < 0f) 1 else -1
+}
