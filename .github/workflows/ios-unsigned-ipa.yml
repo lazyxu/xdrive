@@ -294,6 +294,16 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-files-page-check"
           node --test desktop/tests/ios-native-files-browser.cjs
 
+      - name: Verify native Files folder creation name and Owner-scoped POST
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeFilesDirectoryCreator.swift \
+            ios/tests/NativeFilesFolderNameChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-folder-check"
+          "$RUNNER_TEMP/xdrive-ios-files-folder-check"
+          node --test desktop/tests/ios-native-files-create-folder.cjs
+
       - name: Prepare native brand and home screen icon
         run: bash ios/scripts/prepare-assets.sh
 

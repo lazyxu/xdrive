@@ -233,6 +233,12 @@ struct XDriveIOSNativeFilesBrowser: View {
     @State private var order = "asc"
     @State private var searchError: String?
     @State private var selectedFile: XDriveIOSNativeFilesEntry?
+    @State private var showingCreateFolder = false
+    @State private var newFolderName = ""
+    @State private var createBusy = false
+    @State private var createNotice: String?
+    @State private var createEpoch = UUID()
+    @State private var createTask: Task<Void, Never>?
     private let folder: XDriveIOSNativeFilesFolder?
 
     init(login: XDriveIOSNativeOwnerLoginModel) {
@@ -279,6 +285,10 @@ struct XDriveIOSNativeFilesBrowser: View {
                 }
                 if let searchError {
                     Text(searchError).foregroundStyle(.orange).font(.footnote)
+                }
+                if let createNotice {
+                    Text(createNotice).foregroundStyle(.secondary).font(.footnote)
+                        .accessibilityIdentifier("native-ios-files-create-status")
                 }
                 HStack {
                     Picker("排序", selection: $sort) {
@@ -354,12 +364,29 @@ struct XDriveIOSNativeFilesBrowser: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
+                    newFolderName = ""
+                    showingCreateFolder = true
+                } label: {
+                    Label("新建文件夹", systemImage: "folder.badge.plus")
+                }
+                .disabled(createBusy || !activeQuery.isEmpty || login.owner == nil)
+                .accessibilityIdentifier("native-ios-files-create-folder")
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
                     reload()
                 } label: {
                     Label("刷新", systemImage: "arrow.clockwise")
                 }
                 .accessibilityIdentifier("native-ios-files-refresh")
             }
+        }
+        .alert("新建文件夹", isPresented: $showingCreateFolder) {
+            TextField("文件夹名称", text: $newFolderName)
+            Button("创建") { createDirectory() }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("仅在当前目录创建。若连接中断导致结果不确定，请刷新目录确认，不要连续重试。")
         }
         .sheet(item: $selectedFile) { entry in
             NavigationStack {
@@ -388,10 +415,23 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
         .onAppear { reload() }
         .onDisappear { model.invalidate() }
+        .onDisappear {
+            createEpoch = UUID()
+            createTask?.cancel()
+            createTask = nil
+            createBusy = false
+            createNotice = nil
+        }
         .onChange(of: login.owner) { _ in
             selectedFile = nil
             offset = 0
             model.invalidate()
+            createEpoch = UUID()
+            createTask?.cancel()
+            createTask = nil
+            createBusy = false
+            createNotice = nil
+            showingCreateFolder = false
         }
         .onChange(of: sort) { _ in reload(resetOffset: true) }
         .onChange(of: order) { _ in reload(resetOffset: true) }
@@ -417,6 +457,64 @@ struct XDriveIOSNativeFilesBrowser: View {
         }
         .contentShape(Rectangle())
         .frame(minHeight: 44)
+    }
+
+    private func createDirectory() {
+        guard !createBusy, activeQuery.isEmpty,
+              let parentID, let expected = login.owner else {
+            createNotice = "当前目录不可创建，请退出搜索并刷新账户。"
+            return
+        }
+        guard let name = XDriveIOSNativeFilesFolderNamePolicy.normalized(newFolderName) else {
+            createNotice = "文件夹名称无效，请修改后重试。"
+            return
+        }
+        let epoch = UUID()
+        createEpoch = epoch
+        createBusy = true
+        createNotice = "正在向服务器创建文件夹…"
+        createTask = Task { @MainActor in
+            defer {
+                if createEpoch == epoch {
+                    createBusy = false
+                    createTask = nil
+                }
+            }
+            do {
+                let authorization = try await login.verifiedAuthorization()
+                try Task.checkCancellation()
+                guard createEpoch == epoch,
+                      XDriveIOSNativePhotoOwnerScope.matches(authorization.owner, expected),
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
+                else { throw XDriveIOSNativeFilesCreateError.invalidOwner }
+                let _ = try await XDriveIOSNativeFilesDirectoryCreator(
+                    owner: authorization.owner, accessToken: authorization.accessToken
+                ).create(parentID: parentID, name: name)
+                try Task.checkCancellation()
+                guard createEpoch == epoch,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected) else { return }
+                createNotice = "服务器已确认创建“\(name)”。"
+                reload(resetOffset: true)
+            } catch is CancellationError {
+                if createEpoch == epoch {
+                    createNotice = "操作已取消，若请求已发出，请刷新目录确认结果。"
+                }
+            } catch {
+                guard createEpoch == epoch else { return }
+                if let response = error as? XDriveIOSNativeFilesCreateError {
+                    switch response {
+                    case .server(409):
+                        createNotice = "同名文件或文件夹已存在；没有覆盖任何内容。"
+                    case .server(401), .server(403), .server(404), .invalidOwner:
+                        createNotice = "目录或账户权限已变化，未确认创建；请刷新。"
+                    default:
+                        createNotice = "创建结果未确认，请先刷新目录核对，不要盲目重复提交。"
+                    }
+                } else {
+                    createNotice = "创建结果未确认，请刷新目录核对后再操作。"
+                }
+            }
+        }
     }
 
     private func submitSearch() {
