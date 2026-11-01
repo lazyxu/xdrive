@@ -34,6 +34,36 @@ class OwnerBd09ViewportGateTest {
         assertEquals(1, gate.cachedCount())
     }
 
+    @Test fun sdkGestureImmediatelyRevokesOldInFlightWithoutRateWindowReset() {
+        val gate = OwnerBd09ViewportGate()
+        gate.moved(bounds(0), 0)
+        val old = fetch(gate.poll(500))
+        gate.gestureStarted() // SDK has not delivered a new camera rectangle.
+        assertNull(gate.poll(1_000))
+        assertFalse(gate.succeeded(old, cells(0)))
+        gate.moved(bounds(1), 700)
+        assertNull(gate.poll(1_199)) // idle <500ms
+        assertNull(gate.poll(1_499)) // previous dispatch at 500ms + 1000ms
+        val next = fetch(gate.poll(1_500))
+        assertEquals(bounds(1), next.bounds)
+        assertTrue(gate.succeeded(next, cells(1)))
+        assertEquals(1, gate.cachedCount())
+    }
+
+    @Test fun sdkGestureRevocationAndOwnerResetDoNotReuseOldPhotoCounts() {
+        val gate = OwnerBd09ViewportGate()
+        gate.moved(bounds(0), 0)
+        val old = fetch(gate.poll(500))
+        gate.gestureStarted()
+        assertFalse(gate.failed(old)) // obsolete motion has no retry authority.
+        gate.moved(bounds(1), 1_000)
+        val fresh = fetch(gate.poll(1_500))
+        gate.clearSession()
+        assertFalse(gate.succeeded(fresh, cells(1)))
+        assertEquals(0, gate.cachedCount())
+        assertNull(gate.poll(10_000))
+    }
+
     @Test fun newMotionDropsOldIntentAndOnlyLatestCameraIsRead() {
         val gate = OwnerBd09ViewportGate()
         gate.moved(bounds(0), 100)

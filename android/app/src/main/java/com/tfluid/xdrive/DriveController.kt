@@ -256,6 +256,9 @@ class DriveController(
     private var generation = 0L
     private var nativeUiSessionCounter = 0L
     private var active: Job? = null
+    /** App-owned native SDK camera throttle; no second Server/Owner transport. */
+    private val galleryCameraGate = OwnerBd09ViewportGate()
+    private var galleryCameraPoll: Job? = null
     private val galleryThumbnailLimit = Semaphore(4)
     private var activeVideoPlayback: OwnerVideoPlayback? = null
     private var galleryViewerEpoch = 0L
@@ -2180,6 +2183,7 @@ class DriveController(
             current.hasActiveNativeTransfer() || current.galleryMetadataWriteAttempted ||
             current.galleryAlbumCreateAttempted || current.galleryAlbumEditAttempted ||
             session == null || api == null) return
+        retireGalleryCameraSession()
         invalidate() // The old Photo Range is a disposable GET.
         mutableState.value = current.withoutGallerySelection().copy(
             galleryMapOpen = true, galleryMapLoaded = false, galleryMapOverview = null,
@@ -2214,6 +2218,7 @@ class DriveController(
             current.galleryBd09Requested || current.loading ||
             current.hasActiveNativeTransfer() || current.galleryMetadataWriteAttempted ||
             session == null || api == null) return
+        retireGalleryCameraSession()
         mutableState.value = current.copy(
             galleryBd09Requested = true, galleryBd09Cells = null,
             galleryBd09CameraPending = null, galleryBd09CameraMoving = false,
@@ -2229,6 +2234,7 @@ class DriveController(
         if (current.screen != Screen.GALLERY || !current.galleryMapOpen ||
             !current.galleryBd09Requested || current.galleryMapCellSelected != null ||
             current.hasActiveNativeTransfer()) return
+        retireGalleryCameraSession()
         invalidate()
         mutableState.value = current.copy(
             galleryBd09Requested = false, galleryBd09Cells = null,
@@ -2253,6 +2259,7 @@ class DriveController(
             current.galleryBd09Cells.cells.none { it == cell }) return
         val next = bd09CellSubBounds(current.galleryBd09Bounds, cell) ?: return
         val previous = Bd09GridLevel(current.galleryBd09Bounds, current.galleryBd09Cells)
+        retireGalleryCameraSession()
         invalidate()
         mutableState.value = current.copy(
             galleryBd09Bounds = next,
@@ -2273,6 +2280,7 @@ class DriveController(
             current.galleryBd09CameraMoving || current.galleryBd09CameraPending != null ||
             current.hasActiveNativeTransfer() || current.galleryBd09History.isEmpty()) return
         val previous = current.galleryBd09History.last()
+        retireGalleryCameraSession()
         invalidate()
         mutableState.value = current.copy(
             galleryBd09Bounds = previous.bounds,
@@ -2282,6 +2290,63 @@ class DriveController(
             loading = false, discardableReadInFlight = false, error = null)
     }
 
+    private fun retireGalleryCameraSession() {
+        galleryCameraPoll?.cancel()
+        galleryCameraPoll = null
+        galleryCameraGate.clearSession()
+    }
+
+    /** Poll only while the original Owner/Map session is still mounted. The
+     * reusable core gate owns 500ms idle, 1Hz start spacing and one in-flight
+     * permit. Never run a speculative /cells GET while an active transfer or
+     * unrelated Controller operation is busy. */
+    private fun scheduleGalleryCameraAutoRead(bounds: OwnerBd09Bounds) {
+        galleryCameraPoll?.cancel()
+        val uiSession = state.value.nativeUiSessionId
+        galleryCameraPoll = scope.launch {
+            delay(500L)
+            // A cancelled HTTP read may take time to release its permit.
+            // Bound the retry loop: no periodic background map polling.
+            repeat(100) {
+                val current = state.value
+                if (!isActive || session == null || api == null ||
+                    current.nativeUiSessionId != uiSession ||
+                    current.screen != Screen.GALLERY || !current.galleryMapOpen ||
+                    !current.galleryBd09Requested || current.galleryMapCellSelected != null ||
+                    current.galleryBd09CameraMoving ||
+                    current.galleryBd09CameraPending != bounds ||
+                    current.hasActiveNativeTransfer()) return@launch
+                if (!current.loading) {
+                    when (val decision = galleryCameraGate.poll(transferClockMillis())) {
+                        is Bd09ViewportDecision.Cached -> {
+                            // Cache belongs to this authenticated in-memory Owner session,
+                            // and the Cell Reader still re-verifies identity upon opening.
+                            val latest = state.value
+                            if (latest.galleryMapOpen && latest.galleryBd09Requested &&
+                                latest.galleryBd09CameraPending == bounds &&
+                                !latest.galleryBd09CameraMoving &&
+                                latest.nativeUiSessionId == uiSession) {
+                                mutableState.value = latest.copy(
+                                    galleryBd09Bounds = bounds,
+                                    galleryBd09Cells = decision.cells,
+                                    galleryBd09History = emptyList(),
+                                    galleryBd09CameraPending = null,
+                                    galleryBd09PreserveCamera = true, error = null)
+                            }
+                            return@launch
+                        }
+                        is Bd09ViewportDecision.Fetch -> {
+                            refreshGalleryBd09CameraViewport(decision.permit)
+                            return@launch
+                        }
+                        null -> Unit
+                    }
+                }
+                delay(100L)
+            }
+        }
+    }
+
     /** Baidu SDK gestures immediately revoke old marker/Cell activation.
      * The SDK never supplies media identities or authorization. */
     fun galleryBd09CameraStarted() {
@@ -2289,33 +2354,49 @@ class DriveController(
         if (current.screen != Screen.GALLERY || !current.galleryMapOpen ||
             !current.galleryBd09Requested || current.galleryMapCellSelected != null ||
             current.hasActiveNativeTransfer() || session == null || api == null) return
+        galleryCameraPoll?.cancel()
+        galleryCameraPoll = null
+        galleryCameraGate.gestureStarted() // prior Cell authority revoked at pointer-down
         if (current.loading && current.discardableReadInFlight) invalidate()
         mutableState.value = state.value.copy(
-            galleryBd09CameraMoving = true,
+            galleryBd09CameraMoving = true, galleryBd09CameraPending = null,
             loading = false, discardableReadInFlight = false, error = null)
     }
 
     /** The SDK returns BD09LL camera bounds, not a trusted Owner map response.
-     * A manual refresh reuses the original authenticated /cells GET. */
+     * After 500ms idle, core policy automatically admits a single Owner read. */
     fun galleryBd09CameraSettled(bounds: OwnerBd09Bounds?) {
         val current = state.value
         if (current.screen != Screen.GALLERY || !current.galleryMapOpen ||
             !current.galleryBd09Requested || current.galleryMapCellSelected != null ||
             current.hasActiveNativeTransfer() || session == null || api == null) return
         val exactBounds = bounds?.takeIf { it.valid() }
+        val pending = exactBounds?.takeIf { it != current.galleryBd09Bounds }
         mutableState.value = current.copy(
             // An invalid/unavailable SDK rectangle cannot reauthorize old taps.
             // A subsequent zoom/drag can provide a valid viewport.
             galleryBd09CameraMoving = exactBounds == null,
-            galleryBd09CameraPending = exactBounds?.takeIf {
-                it != current.galleryBd09Bounds
-            },
+            galleryBd09CameraPending = pending,
             galleryBd09PreserveCamera = true)
+        if (pending != null && galleryCameraGate.moved(pending, transferClockMillis())) {
+            scheduleGalleryCameraAutoRead(pending)
+        }
+    }
+
+    /** Explicit Retry bypasses a prior failed automatic read, never serves
+     * old Owner Cell IDs as a new viewport. Automatic reads use a permit. */
+    fun refreshGalleryBd09CameraViewport() {
+        galleryCameraPoll?.cancel()
+        galleryCameraPoll = null
+        // Explicit user retry starts a fresh local gate session; it does not
+        // modify the verified Server Owner/session or permit photos by itself.
+        galleryCameraGate.clearSession()
+        refreshGalleryBd09CameraViewport(permit = null)
     }
 
     /** Keep the old map mounted but NONINTERACTIVE while an actual Owner query
      * verifies the new camera. No guessed Cell or unscoped Gallery fallback. */
-    fun refreshGalleryBd09CameraViewport() {
+    private fun refreshGalleryBd09CameraViewport(permit: Bd09ViewportPermit?) {
         val current = state.value
         val target = current.galleryBd09CameraPending ?: return
         val service = api ?: return
@@ -2323,22 +2404,36 @@ class DriveController(
             !current.galleryMapOpen || !current.galleryBd09Requested ||
             current.galleryMapCellSelected != null || current.loading ||
             current.galleryBd09CameraMoving || !target.valid() ||
-            current.hasActiveNativeTransfer()) return
+            permit?.bounds?.let { it != target } == true ||
+            current.hasActiveNativeTransfer()) {
+            if (permit != null) galleryCameraGate.failed(permit)
+            return
+        }
         request(discardableRead = true) { ticket ->
-            val cells = authenticated(service, ticket) { token ->
-                service.baiduNativeMapCells(token, target)
+            var accepted = false
+            try {
+                val cells = authenticated(service, ticket) { token ->
+                    service.baiduNativeMapCells(token, target)
+                }
+                checkCurrent(ticket)
+                val latest = state.value
+                if (latest.screen != Screen.GALLERY || !latest.galleryMapOpen ||
+                    !latest.galleryBd09Requested || latest.galleryBd09CameraMoving ||
+                    latest.galleryMapCellSelected != null ||
+                    latest.galleryBd09CameraPending != target) throw CancellationException()
+                if (permit != null) {
+                    if (!galleryCameraGate.succeeded(permit, cells))
+                        throw CancellationException()
+                    accepted = true
+                }
+                mutableState.value = latest.copy(
+                    galleryBd09Bounds = target, galleryBd09Cells = cells,
+                    galleryBd09History = emptyList(), galleryBd09CameraPending = null,
+                    galleryBd09CameraMoving = false, galleryBd09PreserveCamera = true,
+                    error = null)
+            } finally {
+                if (permit != null && !accepted) galleryCameraGate.failed(permit)
             }
-            checkCurrent(ticket)
-            val latest = state.value
-            if (latest.screen != Screen.GALLERY || !latest.galleryMapOpen ||
-                !latest.galleryBd09Requested || latest.galleryBd09CameraMoving ||
-                latest.galleryMapCellSelected != null ||
-                latest.galleryBd09CameraPending != target) throw CancellationException()
-            mutableState.value = latest.copy(
-                galleryBd09Bounds = target, galleryBd09Cells = cells,
-                galleryBd09History = emptyList(), galleryBd09CameraPending = null,
-                galleryBd09CameraMoving = false, galleryBd09PreserveCamera = true,
-                error = null)
         }
     }
 
@@ -2360,6 +2455,7 @@ class DriveController(
             current.gallerySortBy, current.gallerySortDir,
             current.galleryTimelineSets, current.galleryJumpIndex,
             current.galleryJumpEpoch, current.galleryPageIntent)
+        retireGalleryCameraSession()
         invalidate() // Prior disposable map GET only; no active SAF task.
         mutableState.value = current.withoutGallerySelection().copy(
             galleryMapCellSelected = cell, galleryMapReturn = saved,
@@ -2483,6 +2579,7 @@ class DriveController(
             if (state.value.galleryMapCellSelected != null) return
         }
         val latest = state.value
+        retireGalleryCameraSession()
         invalidate()
         mutableState.value = latest.copy(galleryMapOpen = false,
             galleryMapLoaded = false, galleryMapOverview = null,
@@ -4266,6 +4363,7 @@ class DriveController(
     fun changeServer() = endSession(changeServer = true)
 
     private fun endSession(changeServer: Boolean) {
+        retireGalleryCameraSession()
         val oldApi = api
         val oldSession = session
         invalidate()

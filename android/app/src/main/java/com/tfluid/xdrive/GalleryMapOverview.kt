@@ -46,7 +46,7 @@ internal fun ColumnScope.GalleryMapOverview(
         }
         Text(if (state.galleryBd09Requested)
             if (nativeBaiduMapSdkCompiled())
-                "当前 Owner 的 BD-09LL 网格已验证。可选百度原生底图与聚合点，点击数量标记进入当前网格照片墙和 Viewer；地图拖动或缩放后，可点击“刷新当前视窗”重新读取 Owner 照片。"
+                "当前 Owner 的 BD-09LL 网格已验证。可选百度原生底图与聚合点，点击数量标记进入当前网格照片墙和 Viewer；地图拖动或缩放后，静止 500ms 后自动重新读取当前 Owner 照片，失败可手动重试。"
             else "BD-09LL 网格来自当前 Owner 的真实数据；点击网格进入照片墙和 Viewer。当前 APK 未配置 Android 专用百度 AK，继续提供可信的非底图网格。"
             else "显示当前账户真实 WGS84 GPS 概览；可切换已验证的 BD-09 网格查看照片。百度 Android 底图仅在配置有效的专用 AK 后提供。",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -192,7 +192,7 @@ private fun ColumnScope.GalleryVerifiedBd09Cells(
                     enabled = !loading && !cameraMoving,
                     modifier = Modifier.heightIn(min = 48.dp)
                         .testTag("gallery-map-bd09-refresh-camera"),
-                ) { Text("刷新当前视窗") }
+                ) { Text("立即刷新当前视窗") }
                 NativeBaiduMapPanel(
                     bounds = bounds,
                     result = result,
