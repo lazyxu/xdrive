@@ -299,7 +299,7 @@ internal fun NativeBaiduMapPanel(
                 modifier = Modifier.fillMaxWidth().height(290.dp)
                     .testTag("native-baidu-map"),
             )
-            Text("百度原生底图 · ${pins.size} 个经服务端验证的 BD-09 聚合点。拖动或缩放后，点击“刷新当前视窗”读取新范围，再打开对应照片。",
+            Text("百度原生底图 · ${pins.size} 个经服务端验证的 BD-09 聚合点。拖动或缩放后，静止 500ms 自动核对新范围，失败可手动刷新。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             TextButton(

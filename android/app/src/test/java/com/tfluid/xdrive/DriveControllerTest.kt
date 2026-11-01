@@ -4729,6 +4729,146 @@ class DriveControllerTest {
         c.close()
     }
 
+    @Test fun nativeSdkCameraAutoreadsAfter500msAndRetainsExactSignedCells() = runTest {
+        val old = OwnerBd09Cell(7, 5, 1, 61, 990, 1, 35.5, 139.5)
+        val fresh = OwnerBd09Cell(0, 0, 2, 62, 991, 1, 35.6, 139.6)
+        val target = OwnerBd09Bounds(139.0, 35.0, 140.0, 36.0)
+        val reads = mutableListOf<OwnerBd09Bounds>()
+        val api = object : Service() {
+            override suspend fun placesMapOverview(
+                accessToken: String, bounds: OwnerMapBounds, detail: Boolean,
+            ) = OwnerMapOverview(emptyList(), 0, true)
+            override suspend fun baiduNativeMapCells(
+                accessToken: String, bounds: OwnerBd09Bounds,
+            ): OwnerBd09MapCells {
+                assertEquals("access", accessToken)
+                reads += bounds
+                return when (bounds) {
+                    OwnerBd09Bounds.WORLD -> OwnerBd09MapCells(listOf(old), 1)
+                    target -> OwnerBd09MapCells(listOf(fresh), 2)
+                    else -> throw AssertionError("Unverified camera read: $bounds")
+                }
+            }
+        }
+        val c = DriveController(this, { api },
+            transferClockMillis = { testScheduler.currentTime }).also {
+            it.connect("https://drive.example", false)
+        }
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.openGalleryMapOverview(); runCurrent()
+        c.openGalleryVerifiedBd09Cells(); runCurrent()
+        assertEquals(listOf(OwnerBd09Bounds.WORLD), reads)
+        c.galleryBd09CameraStarted()
+        assertTrue(c.state.value.galleryBd09CameraMoving)
+        c.openGalleryBd09Cell(old)
+        assertNull(c.state.value.galleryMapCellSelected)
+        c.galleryBd09CameraSettled(target); runCurrent()
+        advanceTimeBy(499L); runCurrent()
+        assertEquals(1, reads.size)
+        assertEquals(target, c.state.value.galleryBd09CameraPending)
+        advanceTimeBy(1L); runCurrent()
+        assertEquals(listOf(OwnerBd09Bounds.WORLD, target), reads)
+        assertEquals(target, c.state.value.galleryBd09Bounds)
+        assertEquals(listOf(fresh), c.state.value.galleryBd09Cells!!.cells)
+        assertTrue(c.state.value.galleryBd09PreserveCamera)
+        assertNull(c.state.value.galleryBd09CameraPending)
+        c.openGalleryBd09Cell(old) // An old Owner cell cannot reopen after refresh.
+        assertNull(c.state.value.galleryMapCellSelected)
+        c.close()
+    }
+
+    @Test fun nativeSdkCameraDebounceLatestViewportAndOneHzDispatch() = runTest {
+        val a = OwnerBd09Bounds(139.0, 35.0, 140.0, 36.0)
+        val b = OwnerBd09Bounds(140.0, 35.0, 141.0, 36.0)
+        val reads = mutableListOf<OwnerBd09Bounds>()
+        val api = object : Service() {
+            override suspend fun placesMapOverview(
+                accessToken: String, bounds: OwnerMapBounds, detail: Boolean,
+            ) = OwnerMapOverview(emptyList(), 0, true)
+            override suspend fun baiduNativeMapCells(
+                accessToken: String, bounds: OwnerBd09Bounds,
+            ): OwnerBd09MapCells {
+                reads += bounds
+                val cell = OwnerBd09Cell(0, 0, 1, 100L + reads.size,
+                    200L + reads.size, 1,
+                    if (bounds == b) 35.6 else 35.5,
+                    if (bounds == b) 140.5 else 139.5)
+                return OwnerBd09MapCells(listOf(cell), 1)
+            }
+        }
+        val c = DriveController(this, { api },
+            transferClockMillis = { testScheduler.currentTime }).also {
+            it.connect("https://drive.example", false)
+        }
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.openGalleryMapOverview(); runCurrent()
+        c.openGalleryVerifiedBd09Cells(); runCurrent()
+        c.galleryBd09CameraStarted(); c.galleryBd09CameraSettled(a); runCurrent()
+        advanceTimeBy(300L); runCurrent()
+        c.galleryBd09CameraStarted(); c.galleryBd09CameraSettled(b); runCurrent()
+        advanceTimeBy(499L); runCurrent()
+        assertEquals(1, reads.size)
+        advanceTimeBy(1L); runCurrent()
+        assertEquals(listOf(OwnerBd09Bounds.WORLD, b), reads)
+        assertEquals(b, c.state.value.galleryBd09Bounds)
+        c.galleryBd09CameraStarted(); c.galleryBd09CameraSettled(a); runCurrent()
+        advanceTimeBy(999L); runCurrent()
+        assertEquals(2, reads.size) // 1Hz from the first SDK camera GET.
+        advanceTimeBy(1L); runCurrent()
+        assertEquals(listOf(OwnerBd09Bounds.WORLD, b, a), reads)
+        assertEquals(a, c.state.value.galleryBd09Bounds)
+        c.close()
+    }
+
+    @Test fun nativeSdkCameraNoncooperativeOldGetCannotOverwriteLatestViewport() = runTest {
+        val a = OwnerBd09Bounds(139.0, 35.0, 140.0, 36.0)
+        val b = OwnerBd09Bounds(140.0, 35.0, 141.0, 36.0)
+        val stuck = CompletableDeferred<OwnerBd09MapCells>()
+        val reads = mutableListOf<OwnerBd09Bounds>()
+        val api = object : Service() {
+            override suspend fun placesMapOverview(
+                accessToken: String, bounds: OwnerMapBounds, detail: Boolean,
+            ) = OwnerMapOverview(emptyList(), 0, true)
+            override suspend fun baiduNativeMapCells(
+                accessToken: String, bounds: OwnerBd09Bounds,
+            ): OwnerBd09MapCells {
+                reads += bounds
+                if (bounds == a) return withContext(NonCancellable) { stuck.await() }
+                val cell = OwnerBd09Cell(0, 0, 1, 62, 992, 1,
+                    if (bounds == b) 35.6 else 35.5,
+                    if (bounds == b) 140.5 else 139.5)
+                return OwnerBd09MapCells(listOf(cell), 1)
+            }
+        }
+        val c = DriveController(this, { api },
+            transferClockMillis = { testScheduler.currentTime }).also {
+            it.connect("https://drive.example", false)
+        }
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.openGalleryMapOverview(); runCurrent()
+        c.openGalleryVerifiedBd09Cells(); runCurrent()
+        c.galleryBd09CameraStarted(); c.galleryBd09CameraSettled(a); runCurrent()
+        advanceTimeBy(500L); runCurrent()
+        assertEquals(listOf(OwnerBd09Bounds.WORLD, a), reads)
+        assertTrue(c.state.value.discardableReadInFlight)
+        c.galleryBd09CameraStarted(); c.galleryBd09CameraSettled(b); runCurrent()
+        advanceTimeBy(1_000L); runCurrent()
+        assertEquals(2, reads.size) // Block while the obsolete HTTP is still in flight.
+        stuck.complete(OwnerBd09MapCells(listOf(OwnerBd09Cell(
+            0, 0, 1, 77, 977, 1, 35.5, 139.5)), 1))
+        runCurrent()
+        advanceTimeBy(100L); runCurrent()
+        assertEquals(listOf(OwnerBd09Bounds.WORLD, a, b), reads)
+        assertEquals(b, c.state.value.galleryBd09Bounds)
+        assertEquals(992L, c.state.value.galleryBd09Cells!!.cells.single().nodeId)
+        c.logout(); runCurrent()
+        assertNull(c.state.value.galleryBd09Cells)
+        c.close()
+    }
+
     @Test fun bd09CellsUseSignedOwnerApiAndReturnToOriginalGpsWithoutRefetch() = runTest {
         val overview = OwnerMapOverview(listOf(
             OwnerMapSample("gps-a", "真实 GPS", 35.5, 139.7, 35.5, 139.7,

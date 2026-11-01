@@ -2,14 +2,14 @@ package com.tfluid.xdrive.core
 
 /** One unique read-only Owner BD09 viewport request, tied to the current
  * in-memory session epoch and camera motion. Not a JWT or a Server grant. */
-internal data class Bd09ViewportPermit(
+data class Bd09ViewportPermit(
     val bounds: OwnerBd09Bounds,
     val sessionEpoch: Long,
     val motionEpoch: Long,
     val requestId: Long,
 )
 
-internal sealed interface Bd09ViewportDecision {
+sealed interface Bd09ViewportDecision {
     data class Fetch(val permit: Bd09ViewportPermit) : Bd09ViewportDecision
     data class Cached(
         val bounds: OwnerBd09Bounds,
@@ -27,7 +27,7 @@ internal sealed interface Bd09ViewportDecision {
  * viewport winning. Failure blocks same-viewport auto-retries. Cached
  * 64-cell summaries never persist or cross Owner sessions.
  */
-internal class OwnerBd09ViewportGate(
+class OwnerBd09ViewportGate(
     private val idleMillis: Long = 500L,
     private val startIntervalMillis: Long = 1_000L,
     private val maxCacheEntries: Int = 32,
@@ -51,6 +51,18 @@ internal class OwnerBd09ViewportGate(
     private var inFlight: Bd09ViewportPermit? = null
     private var blockedAfterFailure: OwnerBd09Bounds? = null
     private var delivered = false
+
+    /** The finger has begun moving, before the SDK supplies its new BD09
+     * rectangle. Retire any old in-flight permit without resetting the
+     * Owner session, 1Hz dispatch clock or bounded same-session cache.
+     * A cancelled transport must still call failed(permit) in finally. */
+    @Synchronized
+    fun gestureStarted() {
+        motionEpoch++
+        viewport = null
+        lastMotionMillis = null
+        delivered = false
+    }
 
     /** Latest BD09 camera rectangle wins. Invalid coordinates cannot be
      * used to render or dispatch the previous viewport by accident. */
