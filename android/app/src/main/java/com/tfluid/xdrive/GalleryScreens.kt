@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.tfluid.xdrive.core.GalleryAsset
 import com.tfluid.xdrive.core.GalleryTimelineGroup
+import com.tfluid.xdrive.core.GalleryTimelineSets
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.android.awaitFrame
@@ -65,6 +66,67 @@ internal fun galleryTimelineGroupLabel(group: GalleryTimelineGroup): String = wh
         group.key.substring(5, 7) + "月"
     else -> group.key.substring(0, 4) + "年" +
         group.key.substring(5, 7) + "月" + group.key.substring(8, 10) + "日"
+}
+
+/** Native Photos time dock, driven only by the Owner's verified full-range index.
+ * The day option was previously buried in More although the Server day-index
+ * jump already exists. Never approximate day counts from loaded thumbnails.
+ */
+internal val nativeGalleryTimeDockScales = listOf(
+    "year" to "年", "month" to "月", "day" to "日", "all" to "全部",
+)
+
+internal fun nativeGalleryTimeDockEnabled(
+    scale: String, timeSets: GalleryTimelineSets, busy: Boolean,
+): Boolean = !busy && (scale == "all" ||
+    (scale in setOf("year", "month", "day") && timeSets.forScale(scale).isNotEmpty()))
+
+@Composable
+internal fun NativeGalleryTimeScaleDock(
+    timeSets: GalleryTimelineSets,
+    timeScale: String,
+    busy: Boolean,
+    onSelect: (String) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)
+            .testTag("gallery-time-dock"),
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.84f),
+            shape = RoundedCornerShape(50.dp),
+            tonalElevation = 2.dp,
+        ) {
+            Row(Modifier.padding(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                for ((scale, label) in nativeGalleryTimeDockScales) {
+                    val enabled = nativeGalleryTimeDockEnabled(scale, timeSets, busy)
+                    Box(
+                        modifier = Modifier.widthIn(min = 58.dp).heightIn(min = 44.dp)
+                            .background(
+                                if (timeScale == scale) MaterialTheme.colorScheme.surface
+                                else Color.Transparent,
+                                RoundedCornerShape(50.dp),
+                            )
+                            .clickable(enabled = enabled) { onSelect(scale) }
+                            .semantics { selected = timeScale == scale }
+                            .testTag("gallery-time-scale-" + scale),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(label,
+                            modifier = Modifier.padding(horizontal = 10.dp),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (!enabled)
+                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                            else if (timeScale == scale)
+                                MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurface)
+                    }
+                }
+            }
+        }
+    }
 }
 
 /** Native Owner Gallery with same Server range for wall and search, never a local
@@ -409,55 +471,19 @@ internal fun ColumnScope.Gallery(
         Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
             .testTag("gallery-floating-chrome")) {
             if (showTimeDock && timeSets != null) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)
-                        .testTag("gallery-time-dock"),
-                    horizontalArrangement = Arrangement.Center,
-                ) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.84f),
-                        shape = RoundedCornerShape(50.dp),
-                        tonalElevation = 2.dp,
-                    ) {
-                        Row(Modifier.padding(4.dp),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            for ((scale, label) in listOf(
-                                "year" to "年", "month" to "月", "all" to "全部"
-                            )) {
-                                val enabled = !state.loading &&
-                                    (scale == "all" || timeSets.forScale(scale).isNotEmpty())
-                                Box(
-                                    modifier = Modifier.widthIn(min = 58.dp).heightIn(min = 44.dp)
-                                        .background(
-                                            if (timeScale == scale) MaterialTheme.colorScheme.surface
-                                            else Color.Transparent,
-                                            RoundedCornerShape(50.dp),
-                                        )
-                                        .clickable(enabled = enabled) {
-                                            timeScale = scale
-                                            if (scale == "all") {
-                                                timePickerOpen = false
-                                                if (state.galleryJumpIndex != null)
-                                                    controller.refreshGallery()
-                                            } else timePickerOpen = true
-                                        }
-                                        .semantics { selected = timeScale == scale }
-                                        .testTag("gallery-time-scale-" + scale),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Text(label,
-                                        modifier = Modifier.padding(horizontal = 10.dp),
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = if (!enabled)
-                                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                                        else if (timeScale == scale)
-                                            MaterialTheme.colorScheme.primary
-                                        else MaterialTheme.colorScheme.onSurface)
-                                }
-                            }
-                        }
-                    }
-                }
+                NativeGalleryTimeScaleDock(
+                    timeSets = timeSets,
+                    timeScale = timeScale,
+                    busy = state.loading,
+                    onSelect = { scale ->
+                        timeScale = scale
+                        if (scale == "all") {
+                            timePickerOpen = false
+                            if (state.galleryJumpIndex != null)
+                                controller.refreshGallery()
+                        } else timePickerOpen = true
+                    },
+                )
             }
             // Real selection controls share the existing floating Gallery viewport.
             if (state.gallerySelectionMode) GallerySelectionActions(state, controller)

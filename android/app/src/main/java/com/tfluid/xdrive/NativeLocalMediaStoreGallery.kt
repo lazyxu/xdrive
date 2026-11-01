@@ -16,6 +16,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -63,6 +64,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
@@ -145,7 +148,6 @@ internal fun nativeStillDecodeSize(width: Int, height: Int): Pair<Int, Int> {
     return maxOf(1, (width * factor).roundToInt()) to
         maxOf(1, (height * factor).roundToInt())
 }
-
 /**
  * The currently authorized MediaStore wall prefetches only after a real drag
  * reaches the visible tail. Programmatic restore and an initially short grid
@@ -172,6 +174,7 @@ internal class NativeLocalWallAutoPager(private val prefetchDistance: Int = 12) 
         return true
     }
 }
+
 
 /**
  * Only a user action requests MediaStore permission. Android 14 Selected Photos
@@ -715,8 +718,8 @@ internal fun NativeLocalMediaViewer(
                             { motionPlaying = true }
                         } else null)
                 }
-                Text("本机原件只读预览（图片最长边解码不超过 4096 像素）；" +
-                    "动态片段仅在明确操作后尝试播放，浏览不会自动上传或备份。",
+                Text("本机媒体只读预览：可用时读取原件，图片解码最长边不超过 4096 像素；" +
+                    "原件失败时如可用则仅显示缩略图；动态片段需明确操作，不会自动上传或备份。",
                     modifier = Modifier.navigationBarsPadding().padding(8.dp),
                     style = MaterialTheme.typography.bodySmall)
             }
@@ -835,9 +838,46 @@ internal fun NativeLocalViewerRetryNotice(isVideo: Boolean, onRetry: () -> Unit)
 }
 
 /**
- * Original-resolution ContentResolver still decode, capped for GPU/heap safety.
- * Viewer owns its bitmap. Source revocation, Owner switch and background
- * unmount the dialog so no old picture survives the next authenticated page.
+ * Only the currently selected content:// URI can yield local preview bytes.
+ * A failed original may degrade to MediaStore's bounded thumbnail; that image
+ * must NEVER be presented as original pixels. On manual retry, retain the
+ * thumbnail until a real original succeeds, with no speculative gallery read.
+ */
+private sealed interface NativeLocalStillStage {
+    data object Loading : NativeLocalStillStage
+    data class Original(val bitmap: ImageBitmap) : NativeLocalStillStage
+    data class Thumbnail(val bitmap: ImageBitmap) : NativeLocalStillStage
+    data object Failed : NativeLocalStillStage
+}
+
+@Composable
+internal fun NativeLocalStillFallbackNotice(
+    retrying: Boolean,
+    onRetryOriginal: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier.background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .testTag("native-local-still-fallback"),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text("仅显示本机缩略图 · 原件暂不可读取",
+            style = MaterialTheme.typography.labelMedium)
+        if (retrying) Text("正在重试读取原件…",
+            style = MaterialTheme.typography.bodySmall)
+        TextButton(onClick = onRetryOriginal, enabled = !retrying,
+            modifier = Modifier.heightIn(min = 48.dp)
+                .testTag("native-local-still-original-retry")) {
+            Text("重试原件")
+        }
+    }
+}
+
+/**
+ * Bounded ContentResolver original decode with an honest MediaStore fallback.
+ * Viewer owns only its current bitmap and immediately cancels a stale thumbnail
+ * request on a source, URI, retry or dialog change.
  */
 @Composable
 private fun ColumnScope.NativeLocalStillViewer(
@@ -848,32 +888,55 @@ private fun ColumnScope.NativeLocalStillViewer(
 ) {
     val resolver = LocalContext.current.contentResolver
     val mediaKey = asset.viewerReturnKey()
-    var retryNonce by remember(mediaKey) { mutableIntStateOf(0) }
-    // Reset the old error before each deliberate retry; one exact content URI
-    // is decoded again, never a speculative read of a different local asset.
-    var preview by remember(mediaKey) { mutableStateOf<Result<ImageBitmap>?>(null) }
+    var retryNonce by remember(mediaKey, asset.uri) { mutableIntStateOf(0) }
+    var preview by remember(mediaKey, asset.uri) {
+        mutableStateOf<NativeLocalStillStage>(NativeLocalStillStage.Loading)
+    }
+    var retryingOriginal by remember(mediaKey, asset.uri) { mutableStateOf(false) }
+    val thumbnailSignal = remember(mediaKey, asset.uri, retryNonce) { CancellationSignal() }
+    DisposableEffect(thumbnailSignal) { onDispose { thumbnailSignal.cancel() } }
     LaunchedEffect(mediaKey, asset.uri, retryNonce) {
-        preview = null
-        preview = try {
-            Result.success(withContext(Dispatchers.IO) {
-                ImageDecoder.decodeBitmap(ImageDecoder.createSource(resolver, asset.uri)) {
-                    decoder, info, _ ->
-                    val (width, height) = nativeStillDecodeSize(
-                        info.size.width, info.size.height)
-                    if (width != info.size.width || height != info.size.height)
-                        decoder.setTargetSize(width, height)
-                    decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
-                }.asImageBitmap()
-            })
-        } catch (cancelled: kotlinx.coroutines.CancellationException) {
-            throw cancelled
-        } catch (failure: Exception) {
-            Result.failure(failure) // Never fabricate a successful preview.
+        val previousThumbnail = preview as? NativeLocalStillStage.Thumbnail
+        // A manual retry does not discard an already decoded fallback.
+        if (previousThumbnail == null) preview = NativeLocalStillStage.Loading
+        retryingOriginal = previousThumbnail != null
+        try {
+            val result = readLocalStillWithFallback(
+                previousThumbnail = previousThumbnail?.bitmap,
+                original = {
+                    withContext(Dispatchers.IO) {
+                        ImageDecoder.decodeBitmap(ImageDecoder.createSource(resolver, asset.uri)) {
+                            decoder, info, _ ->
+                            val (width, height) = nativeStillDecodeSize(
+                                info.size.width, info.size.height)
+                            if (width != info.size.width || height != info.size.height)
+                                decoder.setTargetSize(width, height)
+                            decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+                        }.asImageBitmap()
+                    }
+                },
+                thumbnail = {
+                    // Exactly this current MediaStore URI: no whole-library
+                    // scan, no upload and no speculative alternate permission.
+                    withContext(Dispatchers.IO) {
+                        resolver.loadThumbnail(
+                            asset.uri, Size(512, 512), thumbnailSignal).asImageBitmap()
+                    }
+                },
+            )
+            currentCoroutineContext().ensureActive()
+            preview = when (result) {
+                is NativeLocalStillRead.Original -> NativeLocalStillStage.Original(result.value)
+                is NativeLocalStillRead.Thumbnail -> NativeLocalStillStage.Thumbnail(result.value)
+                NativeLocalStillRead.Failed -> NativeLocalStillStage.Failed
+            }
+        } finally {
+            retryingOriginal = false
         }
     }
-    var scale by remember(mediaKey) { mutableFloatStateOf(1f) }
-    var translation by remember(mediaKey) { mutableStateOf(Offset.Zero) }
-    var viewport by remember(mediaKey) { mutableStateOf(IntSize.Zero) }
+    var scale by remember(mediaKey, asset.uri) { mutableFloatStateOf(1f) }
+    var translation by remember(mediaKey, asset.uri) { mutableStateOf(Offset.Zero) }
+    var viewport by remember(mediaKey, asset.uri) { mutableStateOf(IntSize.Zero) }
     val gesture = rememberTransformableState { zoom, pan, _ ->
         val nextScale = (scale * zoom).coerceIn(1f, 5f)
         val maxX = viewport.width * (nextScale - 1f) / 2f
@@ -904,18 +967,32 @@ private fun ColumnScope.NativeLocalStillViewer(
             .transformable(gesture, canPan = { scale > 1f })
             .testTag("native-local-still-zoom"),
     ) {
-        val bitmap = preview?.getOrNull()
-        if (preview == null) CircularProgressIndicator()
-        else if (bitmap == null)
+        val current = preview
+        val bitmap = when (current) {
+            is NativeLocalStillStage.Original -> current.bitmap
+            is NativeLocalStillStage.Thumbnail -> current.bitmap
+            else -> null
+        }
+        if (current == NativeLocalStillStage.Loading) CircularProgressIndicator()
+        else if (current == NativeLocalStillStage.Failed) {
             NativeLocalViewerRetryNotice(isVideo = false, onRetry = { retryNonce++ })
-        else Image(
-            bitmap = bitmap,
-            contentDescription = "本机照片原件",
-            modifier = Modifier.fillMaxSize().graphicsLayer(
-                scaleX = scale, scaleY = scale,
-                translationX = translation.x, translationY = translation.y),
-            contentScale = ContentScale.Fit,
-        )
+        } else if (bitmap != null) {
+            Image(
+                bitmap = bitmap,
+                contentDescription = if (current is NativeLocalStillStage.Thumbnail)
+                    "本机照片缩略图，原件不可用" else "本机照片原件适屏预览",
+                modifier = Modifier.fillMaxSize().graphicsLayer(
+                    scaleX = scale, scaleY = scale,
+                    translationX = translation.x, translationY = translation.y),
+                contentScale = ContentScale.Fit,
+            )
+            if (current is NativeLocalStillStage.Thumbnail)
+                NativeLocalStillFallbackNotice(
+                    retrying = retryingOriginal,
+                    onRetryOriginal = { retryNonce++ },
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp),
+                )
+        }
     }
 }
 

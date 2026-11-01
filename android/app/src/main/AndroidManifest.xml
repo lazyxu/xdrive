@@ -10,9 +10,12 @@
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
-    <!-- Photo-map pins use signed remote Owner metadata, NOT device location.
-         Baidu map-only dependency must not silently add location, phone,
-         or legacy broad-storage permissions through its AAR manifest. -->
+    <!-- Android 10+ requires this runtime grant to read unredacted EXIF GPS
+         for a user-opened local photo map; no device location permission. -->
+    <uses-permission android:name="android.permission.ACCESS_MEDIA_LOCATION" />
+    <!-- Cloud Owner map pins use signed remote metadata; local Photo Map reads
+         only media-file EXIF with ACCESS_MEDIA_LOCATION when user requests it.
+         The optional Baidu SDK must not add device-location, phone or write grants. -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" tools:node="remove" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" tools:node="remove" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" tools:node="remove" />
