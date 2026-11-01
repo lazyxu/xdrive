@@ -178,6 +178,9 @@ fireTimers()
 dynamic.props.onPointerUp(pointer(10))
 dynamic.props.onClick(click(0))
 assert.equal(navigations.length, 4)
+assert.deepEqual(recentUpdates, [true, true, true],
+  'preceding keyboard/assistive hold remains an independent real picker open')
+const recentBeforeTabSwitch = [...recentUpdates]
 
 // The bar stays mounted when Safari History changes the fixed destination.
 // A rerender in the SAME destination must not interrupt a legitimate hold;
@@ -201,7 +204,8 @@ const switchedTree = module.exports.XDriveMobileFiveSlotNavigation({
 })
 assert.equal(timers.size, 0, 'switching fixed tab cancels pending long-press timer')
 fireTimers()
-assert.deepEqual(recentUpdates, [true, true], 'late old-tab timer cannot reopen recent picker')
+assert.deepEqual(recentUpdates, recentBeforeTabSwitch,
+  'late old-tab timer cannot reopen picker beyond previously accepted hold events')
 const switchedDynamic = locate(switchedTree, node =>
   node.type === 'BottomNavigationAction' && node.props.value === 'dynamic')
 assert.ok(switchedDynamic)
