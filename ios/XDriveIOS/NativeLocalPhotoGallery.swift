@@ -320,6 +320,7 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                                 live: live, playbackRequest: livePlaybackRequest
                             )
                             .id(viewed.id)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .accessibilityLabel("实况照片，长按播放")
                         }
                         HStack(spacing: 12) {
