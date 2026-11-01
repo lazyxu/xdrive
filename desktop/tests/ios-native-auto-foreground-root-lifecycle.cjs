@@ -117,3 +117,23 @@ test('backup display and delayed original progress never cross Owner changes or 
   assert.match(terminal, /if let current = self\.progress, current\.uploaded > 0,\s*self\.displayEpoch == uiEpoch,\s*XDriveIOSNativePhotoOwnerScope\.matches\(self\.runningOwner, selected\),\s*XDriveIOSNativePhotoOwnerScope\.matches\(login\.owner, selected\)/)
   assert.doesNotMatch(refresh, /cancel\(|delete\(|disable\(|uploadPrepared|confirmReceipt|reserveDue/)
 })
+
+test('late auto-enable ledger or authorization responses cannot set a different Owner status', () => {
+  const configure = ctrl.slice(ctrl.indexOf('    func configure('),
+    ctrl.indexOf('    /// Local stop'))
+  const selected = configure.indexOf('let selected = expectedOwner')
+  const refresh = configure.indexOf('refresh(owner: selected)')
+  const ticket = configure.indexOf('let uiEpoch = displayEpoch')
+  const verify = configure.indexOf('let first = try await login.verifiedAuthorization()')
+  const local = configure.indexOf('.existingLocalScope(owner: selected)')
+  const pending = configure.indexOf('.pendingReceiptSnapshot(scope: scope, limit: 0)')
+  const commit = configure.indexOf('schedule = try store.configure(')
+  assert.ok(selected >= 0 && selected < refresh && refresh < ticket &&
+    ticket < verify && verify < local && local < pending && pending < commit,
+    'capture the visible Owner epoch before any asynchronous credential or ledger work')
+  assert.match(configure, /let scope = try await XDriveIOSForegroundBackupIdentity.shared[\s\S]*?guard displayEpoch == uiEpoch,\s*XDriveIOSNativePhotoOwnerScope.matches\(login.owner, selected\)/)
+  assert.match(configure, /let pending = try await XDrivePhotoSyncLedger.shared[\s\S]*?guard displayEpoch == uiEpoch,\s*XDriveIOSNativePhotoOwnerScope.matches\(login.owner, selected\)/)
+  assert.match(configure, /store\.localStopGeneration == stopVersion,\s*displayEpoch == uiEpoch,\s*UIApplication.shared.applicationState == \.active/)
+  assert.match(configure, /\} catch \{\s*if displayEpoch == uiEpoch,\s*XDriveIOSNativePhotoOwnerScope.matches\(login.owner, selected\) \{\s*errorMessage =/)
+  assert.doesNotMatch(configure, /clearLedger|deleteReceipt|UploadSessionTransport|URLSession\(/)
+})
