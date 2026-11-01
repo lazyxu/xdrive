@@ -23,15 +23,16 @@ test('only one native L1 bar: scoped Gallery L2 hides the custom bar, not a syst
 });
 
 test('cloud and album Viewer return uses source-local L2 and explicit restore action', () => {
-  assert.match(shell, /XDriveIOSNativeServerMediaWall\([\s\S]*?onFocusChange: \{ galleryFocused = \$0 \}/);
+  assert.match(shell, /XDriveIOSNativeServerMediaWall\([\s\S]*?onFocusChange: \{\s*updateGalleryFocus\(\s*\$0, from: \.cloud, expectedOwnerKey: focusOwnerKey,\s*expectedGeneration: focusGeneration/);
+  assert.match(shell, /private func updateGalleryFocus\([\s\S]*?guard phase == \.active, expectedOwnerKey == ownerScopeKey,\s*expectedGeneration == galleryFocusGeneration,[\s\S]*?XDriveIOSNativeFocusVisibilityPolicy\.acceptsFocusUpdate\([\s\S]*?galleryFocused = focused/);
   assert.match(wall, /focusedBrowsing\.toggle\(\)\s*onFocusChange\?\(focusedBrowsing\)/);
   assert.match(wall, /focusedBrowsing \? "显示底部导航" : "专注浏览"/);
   assert.match(wall, /onFocusChange: onFocusChange/);
   assert.match(wall, /if selected != nil \{\s*model\.suspendForViewer\(\)/);
   assert.match(wall, /focusedBrowsing = false\s*onFocusChange\?\(false\)\s*accessibilityFocusedMediaID = nil\s*model\.suspendForNavigation\(\)/);
-  assert.match(shell, /private func resetNavigation\(\) \{\s*galleryFocused = false/);
-  assert.match(shell, /\.onChange\(of: gallerySource\) \{ _ in galleryFocused = false \}/);
-  assert.match(shell, /\.onChange\(of: tab\) \{ next in\s*if next != \.gallery \{ galleryFocused = false \}/);
+  assert.match(shell, /private func resetNavigation\(\) \{\s*galleryFocusGeneration = UUID\(\)\s*galleryFocused = false/);
+  assert.match(shell, /\.onChange\(of: gallerySource\) \{ _ in\s*galleryFocusGeneration = UUID\(\)\s*galleryFocused = false/);
+  assert.match(shell, /\.onChange\(of: tab\) \{ next in\s*galleryFocusGeneration = UUID\(\)\s*if next != \.gallery \{ galleryFocused = false \}/);
 });
 
 test('rotation changes only presentation, not source identity, L2, or L3 Viewer', () => {
