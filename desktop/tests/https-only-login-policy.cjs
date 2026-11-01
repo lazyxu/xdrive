@@ -26,7 +26,7 @@ test('Android real native login is HTTPS-only while domain/SNI LAN dial stays in
   const state = read('android/app/src/main/java/com/tfluid/xdrive/DriveController.kt')
   const route = read('android/core/src/main/kotlin/com/tfluid/xdrive/core/ConnectionRoute.kt')
   const manifest = read('android/app/src/main/AndroidManifest.xml')
-  assert.match(ui, /login\(server, false, lanIp, username, password, keepLogin\)/)
+  assert.match(ui, /login\(server, false, lanIp, username, password, keepLogin, rememberPassword\)/)
   assert.doesNotMatch(ui, /allow-http|允许不安全的 HTTP 连接|advanced by remember|allowHttp by remember/)
   assert.match(state, /ServerAddress\.parse\(serverInput, false\)/)
   assert.match(state, /ServerAddress\.parse\(input, false\)/)

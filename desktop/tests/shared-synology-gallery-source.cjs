@@ -157,6 +157,29 @@ test('DSM exact Owner place uses original bounded photo Range, never a partial g
     'place wall may not reuse unscoped Gallery Range when place is selected')
 })
 
+test('current Owner WGS84 map read belongs to the same shared Gallery source', async () => {
+  const api = fakeClient()
+  let requested
+  api.ownerMapOverview = async (bounds, signal) => {
+    requested = {bounds, signal}
+    return {items:[{id:'map-region:1',name:'照片区域 1',
+      sample_latitude:35.505,sample_longitude:139.706,
+      latitude:35.505,longitude:139.706,
+      coordinate_kind:'map_region_sample',item_count:3}],
+      total_photo_count:3,aggregated:true}
+  }
+  const source = create(api)
+  const bounds = {west:-180,south:-90,east:180,north:90}
+  const controller = new AbortController()
+  const result = await source.listPlacesMapOverview(bounds,true,controller.signal)
+  assert.deepEqual(requested, {bounds,signal:controller.signal})
+  assert.equal(result.aggregated,true)
+  assert.equal(result.total_photo_count,3)
+  assert.deepEqual(result.items.map(x => x.id),['map-region:1'])
+  assert.ok(!calls.some(row => row[0] === 'range'),
+    'map overview must not enumerate 100k Owner photos client-side')
+})
+
 test('large authorized UI windows are split into sequential bounded Agent ranges', async () => {
   calls.length = 0
   const source = create(fakeClient(Array.from({ length: 230 }, (_, i) => record(i + 1))))

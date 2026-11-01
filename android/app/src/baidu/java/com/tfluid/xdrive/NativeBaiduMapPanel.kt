@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
@@ -282,6 +283,7 @@ internal fun NativeBaiduMapPanel(
     savedCamera: NativeBaiduCameraPose?,
     onCameraSnapshot: (NativeBaiduCameraPose) -> Unit,
     photoCovers: Map<OwnerBd09Cell, ImageBitmap>,
+    mapHeight: Dp,
     placeholder: @Composable () -> Unit,
 ) {
     val context = LocalContext.current
@@ -384,7 +386,7 @@ internal fun NativeBaiduMapPanel(
         placeholder()
     } else {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Box(Modifier.fillMaxWidth().height(290.dp).clip(RoundedCornerShape(12.dp))) {
+            Box(Modifier.fillMaxWidth().height(mapHeight).clip(RoundedCornerShape(12.dp))) {
                 AndroidView(
                     factory = { host.view },
                     update = {

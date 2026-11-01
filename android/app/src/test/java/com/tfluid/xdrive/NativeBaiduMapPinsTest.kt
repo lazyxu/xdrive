@@ -109,6 +109,18 @@ class NativeBaiduMapPinsTest {
         assertEquals(emptyList<OwnerBd09Cell>(), nativeBaiduCoverCells(emptyList()))
     }
 
+    @Test fun focusedNativeMapUsesViewportHeightAndCompactListKeepsOldSize() {
+        assertEquals(290, nativeGalleryMapPanelHeightDp(0, true))
+        assertEquals(290, nativeGalleryMapPanelHeightDp(320, true))
+        assertEquals(290, nativeGalleryMapPanelHeightDp(1080, false))
+        assertEquals(450, nativeGalleryMapPanelHeightDp(610, true))
+        assertEquals(640, nativeGalleryMapPanelHeightDp(800, true))
+        assertEquals(720, nativeGalleryMapPanelHeightDp(1900, true))
+        // Changing the map's visual footprint never mutates the Owner cells.
+        val initial = OwnerBd09MapCells(listOf(sample), 5L)
+        assertEquals(listOf(sample), nativeVerifiedBaiduPins(bounds, initial))
+    }
+
     @Test fun invalidBoundsAndImpossibleLongCountsFailClosed() {
         assertNull(nativeVerifiedBaiduPins(
             OwnerBd09Bounds(0.0, 0.0, 0.0, 10.0),
