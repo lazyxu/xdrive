@@ -99,3 +99,26 @@ test('cloud Viewers fence playback failure to the active Owner and AVPlayer item
   assert.match(original, /guard currentOwnerAuthorized, player != nil else \{ return \}/);
   assert.doesNotMatch(detail + original, /WKWebView|UploadSession|AVPlayerItemPlaybackStalled/);
 });
+
+test('cloud player KVO failures are bound to the current Owner and item with manual landscape reload', () => {
+  const monitor = src('ios/XDriveIOS/NativeAVPlayerStatusObserver.swift');
+  const detail = view.slice(view.indexOf('struct XDriveIOSNativeServerMediaPreview: View'),
+    view.indexOf('/// Root and album-specific media wall'));
+  const originalSource = src('ios/XDriveIOS/NativeCloudOriginalGallery.swift');
+  const original = originalSource.slice(originalSource.indexOf('struct XDriveIOSNativeCloudOriginalPreview: View'),
+    originalSource.indexOf('/// SwiftUI\'s ForEach identity'));
+  assert.match(monitor, /struct XDriveIOSNativeAVPlayerStatusObserver<Content: View>: View/);
+  assert.match(monitor, /item\.publisher\(for: \\\.status, options: \[\.initial, \.new\]\)/);
+  assert.match(monitor, /player\.publisher\(for: \\\.status, options: \[\.initial, \.new\]\)/);
+  assert.match(monitor, /\.receive\(on: RunLoop\.main\)/);
+  assert.equal((detail.match(/XDriveIOSNativeAVPlayerStatusObserver\(/g) || []).length, 2);
+  assert.equal((original.match(/XDriveIOSNativeAVPlayerStatusObserver\(/g) || []).length, 2);
+  assert.match(detail, /onFailed: \{ playbackLoadFailed\(\$0\) \}/);
+  assert.match(detail, /private func playbackLoadFailed\(_ failed: AVPlayerItem\)[\s\S]*?guard ownerAuthorized,[\s\S]*?failed === playing/);
+  assert.match(original, /private func playbackLoadFailed\(_ failed: AVPlayerItem\)[\s\S]*?guard currentOwnerAuthorized,[\s\S]*?failed === playing/);
+  assert.match(detail, /\.disabled\(!ownerAuthorized \|\| player == nil\)[\s\S]*?native-ios-photoasset-live-motion/);
+  assert.match(detail, /native-ios-photoasset-player-reload/);
+  assert.match(original, /native-ios-original-player-reload/);
+  assert.match(detail, /\.AVPlayerItemFailedToPlayToEndTime/);
+  assert.match(original, /\.AVPlayerItemFailedToPlayToEndTime/);
+});
