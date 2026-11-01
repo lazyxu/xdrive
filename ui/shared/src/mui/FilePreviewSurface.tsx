@@ -165,16 +165,31 @@ async function verifySignedPDFPreview(url: string, signal: AbortSignal): Promise
     method: 'HEAD',
     signal,
     credentials: dsmOwnerPDF ? 'same-origin' : 'omit',
+    ...(dsmOwnerPDF ? { mode: 'same-origin' as const } : {}),
     cache: 'no-store',
     redirect: 'error',
     referrerPolicy: 'no-referrer',
   })
-  if (response.status !== 200 && response.status !== 206) {
+  // Native DSM Owner Range is an authenticated HEAD 200 contract;
+  // unrelated Web ticket PDFs retain their existing 200/206 allowance.
+  if (dsmOwnerPDF ? response.status !== 200 :
+      response.status !== 200 && response.status !== 206) {
     throw new Error('PDF signed preview stream is not available')
   }
   const type = response.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase()
   if (type !== 'application/pdf') {
     throw new Error('PDF signed preview returned a non-PDF resource')
+  }
+  if (dsmOwnerPDF) {
+    // The canonical selector is already verified above. Every byte of the
+    // length/SHA-bound Owner stream must match the trusted current Node;
+    // do not mount a stale, incomplete or non-Range PDF iframe on HEAD 200.
+    const selector = new URL(url)
+    if (response.headers.get('accept-ranges')?.trim().toLowerCase() !== 'bytes' ||
+        response.headers.get('content-length') !== selector.searchParams.get('total') ||
+        response.headers.get('etag') !== '"' + selector.searchParams.get('sha256') + '"') {
+      throw new Error('DSM authenticated PDF Range identity mismatch')
+    }
   }
 }
 
