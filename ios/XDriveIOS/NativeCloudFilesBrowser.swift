@@ -1,6 +1,7 @@
 import Combine
 import Foundation
 import SwiftUI
+import UniformTypeIdentifiers
 
 private enum XDriveIOSNativeFilesReadError: Error {
     case invalidScope
@@ -227,6 +228,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
     @StateObject private var model = XDriveIOSNativeFilesPageModel()
     @StateObject private var exporter = XDriveIOSNativeFilesExportModel()
+    @StateObject private var uploader = XDriveIOSNativeFilesManualUploadModel()
     @State private var offset = 0
     @State private var queryDraft = ""
     @State private var activeQuery = ""
@@ -235,6 +237,7 @@ struct XDriveIOSNativeFilesBrowser: View {
     @State private var searchError: String?
     @State private var selectedFile: XDriveIOSNativeFilesEntry?
     @State private var showingCreateFolder = false
+    @State private var showingFileImporter = false
     @State private var newFolderName = ""
     @State private var createBusy = false
     @State private var createNotice: String?
@@ -290,6 +293,10 @@ struct XDriveIOSNativeFilesBrowser: View {
                 if let createNotice {
                     Text(createNotice).foregroundStyle(.secondary).font(.footnote)
                         .accessibilityIdentifier("native-ios-files-create-status")
+                }
+                if let uploadStatus = uploader.status {
+                    Text(uploadStatus).font(.footnote).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("native-ios-files-upload-status")
                 }
                 HStack {
                     Picker("排序", selection: $sort) {
@@ -366,6 +373,16 @@ struct XDriveIOSNativeFilesBrowser: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
+                    showingFileImporter = true
+                } label: {
+                    Label("上传文件", systemImage: "square.and.arrow.up")
+                }
+                .disabled(uploader.busy || createBusy || !activeQuery.isEmpty ||
+                          login.owner == nil)
+                .accessibilityIdentifier("native-ios-files-manual-upload")
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
                     newFolderName = ""
                     showingCreateFolder = true
                 } label: {
@@ -381,6 +398,22 @@ struct XDriveIOSNativeFilesBrowser: View {
                     Label("刷新", systemImage: "arrow.clockwise")
                 }
                 .accessibilityIdentifier("native-ios-files-refresh")
+            }
+        }
+        .fileImporter(isPresented: $showingFileImporter,
+                      allowedContentTypes: [.item]) { result in
+            switch result {
+            case .success(let url):
+                guard activeQuery.isEmpty, let parentID else {
+                    uploader.pickerFailed()
+                    return
+                }
+                uploader.start(fileURL: url, login: login, parentID: parentID,
+                               expectedFolderName: folder?.name) {
+                    reload(resetOffset: true)
+                }
+            case .failure:
+                uploader.pickerFailed()
             }
         }
         .alert("新建文件夹", isPresented: $showingCreateFolder) {
@@ -441,6 +474,10 @@ struct XDriveIOSNativeFilesBrowser: View {
         .onDisappear { model.invalidate() }
         .onDisappear { exporter.invalidate() }
         .onDisappear {
+            uploader.invalidate()
+            showingFileImporter = false
+        }
+        .onDisappear {
             createEpoch = UUID()
             createTask?.cancel()
             createTask = nil
@@ -452,6 +489,8 @@ struct XDriveIOSNativeFilesBrowser: View {
             offset = 0
             model.invalidate()
             exporter.invalidate()
+            uploader.invalidate()
+            showingFileImporter = false
             createEpoch = UUID()
             createTask?.cancel()
             createTask = nil

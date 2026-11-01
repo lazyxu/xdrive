@@ -304,6 +304,16 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-files-folder-check"
           node --test desktop/tests/ios-native-files-create-folder.cjs desktop/tests/ios-native-files-download-export.cjs
 
+      - name: Verify native Files manual original receipt and Files picker integration
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeFilesUploadConfirmationPolicy.swift \
+            ios/tests/NativeFilesUploadEvidenceChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-upload-proof"
+          "$RUNNER_TEMP/xdrive-ios-files-upload-proof"
+          node --test desktop/tests/ios-native-files-manual-upload.cjs
+
       - name: Prepare native brand and home screen icon
         run: bash ios/scripts/prepare-assets.sh
 
