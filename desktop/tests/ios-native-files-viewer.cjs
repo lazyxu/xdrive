@@ -39,6 +39,10 @@ test('native image/video/PDF/audio/text viewers share one read-only lifecycle', 
   assert.match(view, /generation == attempt, viewed == current, authorized/);
   assert.match(view, /player\?\.pause\(\)[\s\S]*?player\?\.replaceCurrentItem\(with: nil\)/);
   assert.match(view, /\.onChange\(of: login\.owner\) \{ _ in close\(\) \}/);
+  assert.match(view, /\.AVPlayerItemFailedToPlayToEndTime/);
+  assert.match(view, /failed === current/);
+  assert.match(view, /failure = "媒体播放失败，请重试当前文件。"/);
+  assert.match(view, /if let reason = error as\? XDriveIOSNativeFilesPreviewError/);
   assert.match(view, /\.onDisappear \{ retire\(\) \}/);
   assert.doesNotMatch(view, /import WebKit|WKWebView\s*\(|UploadSession|document\.cookie/);
 });

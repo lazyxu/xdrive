@@ -210,6 +210,18 @@ struct XDriveIOSNativeFilesViewer: View {
             }
         }
         .task(id: attempt) { await openCurrent() }
+        // AVPlayer may fail AFTER a valid signed ticket and initial render.
+        // Only this modal's current item may produce terminal retry feedback.
+        .onReceive(NotificationCenter.default.publisher(
+            for: .AVPlayerItemFailedToPlayToEndTime
+        ).receive(on: RunLoop.main)) { notification in
+            guard authorized, let failed = notification.object as? AVPlayerItem,
+                  let current = player?.currentItem, failed === current
+            else { return }
+            retire()
+            failure = "媒体播放失败，请重试当前文件。"
+            loading = false
+        }
         .onChange(of: login.owner) { _ in close() }
         .onChange(of: phase) { next in
             if next != .active {
@@ -259,8 +271,8 @@ struct XDriveIOSNativeFilesViewer: View {
             guard generation == attempt, viewed == current else { return }
             retire()
             loading = false
-            if error is XDriveIOSNativeFilesPreviewError {
-                switch error as! XDriveIOSNativeFilesPreviewError {
+            if let reason = error as? XDriveIOSNativeFilesPreviewError {
+                switch reason {
                 case .unsupported:
                     failure = "当前文件格式不支持原生预览。"
                 case .tooLarge:
