@@ -29,7 +29,7 @@ type OwnerViewerPreviewRange struct {
 }
 
 func validOwnerViewerPreviewETag(etag string, nodeID, revision uint64, format string) bool {
-	if len(etag) < 30 || !strings.HasPrefix(etag, "\"media-viewer:") ||
+	if !strings.HasPrefix(etag, "\"media-viewer:") ||
 		!strings.HasSuffix(etag, ":v1\"") {
 		return false
 	}
@@ -75,12 +75,11 @@ func (c *Client) MediaOwnerViewerPreviewRange(ctx context.Context,
 	nodeID, revision uint64, format string, offset int64, length int,
 ) (OwnerViewerPreviewRange, error) {
 	var zero OwnerViewerPreviewRange
-	if !ValidOwnerViewerPreviewRange(OwnerViewerPreviewRange{
-		NodeID: nodeID, Revision: revision, Format: format, Offset: offset,
-		Total: offset + int64(length), ETag: fmt.Sprintf(
-			"\"media-viewer::%d:%d:%s:v1\"", nodeID, revision, format,
-		), Data: make([]byte, length),
-	}, nodeID, revision, format, offset, length) {
+	if nodeID == 0 || revision == 0 || nodeID > 1<<53-1 || revision > 1<<53-1 ||
+		(format != "webp" && format != "jpeg") ||
+		offset < 0 || offset >= OwnerViewerPreviewMaxBytes ||
+		length < 1 || length > OwnerViewerPreviewChunkBytes ||
+		int64(length) > OwnerViewerPreviewMaxBytes-offset {
 		return zero, errors.New("invalid Owner Viewer preview selector")
 	}
 	path := fmt.Sprintf("/api/v1/media/items/%d/viewer-preview?format=%s&revision=%d",
