@@ -106,13 +106,15 @@ struct XDriveNativeRouteChecks {
                 "legacy v1 route snapshot decodes without cursor")
         require(store.restore(scopeHash: ownerB)?.localGalleryPageOffset == nil,
                 "older v1 snapshot decodes without local PhotoKit page cursor")
+        require(store.restore(scopeHash: ownerB)?.localAlbumDirectoryOffset == nil,
+                "older v1 snapshot decodes without native album directory cursor")
         // Tampered persisted data fails closed instead of replaying a stale
         // unverified page or crossing Owner identity.
         let bad = XDriveIOSNativeNavigationRouteSnapshot(
             version: 1, scopeHash: ownerB, selectedTab: "gallery",
             gallerySource: "map", activeDynamic: nil, recentDynamic: [],
             mapScope: "page", mapPageOffset: 65,
-            localGalleryPageOffset: nil
+            localGalleryPageOffset: nil, localAlbumDirectoryOffset: nil
         )
         defaults.set(try! JSONEncoder().encode(bad),
                      forKey: XDriveIOSNativeNavigationRouteStore.key)
@@ -147,7 +149,8 @@ struct XDriveNativeRouteChecks {
         let tamperedGallery = XDriveIOSNativeNavigationRouteSnapshot(
             version: 1, scopeHash: ownerB, selectedTab: "gallery",
             gallerySource: "local", activeDynamic: nil, recentDynamic: [],
-            mapScope: "page", mapPageOffset: 0, localGalleryPageOffset: 65
+            mapScope: "page", mapPageOffset: 0, localGalleryPageOffset: 65,
+            localAlbumDirectoryOffset: nil
         )
         defaults.set(try! JSONEncoder().encode(tamperedGallery),
                      forKey: XDriveIOSNativeNavigationRouteStore.key)
@@ -173,6 +176,49 @@ struct XDriveNativeRouteChecks {
                    localGalleryPageOffset: 128)
         require(store.restore(scopeHash: ownerA) == nil,
                 "local PhotoKit page cursor is removed on Owner switch")
+        // Native album directory paging is a 32-aligned Owner-bound route
+        // hint only; no album.localIdentifier or album members persist.
+        store.save(scopeHash: ownerB, selectedTab: "gallery", gallerySource: "albums",
+                   activeDynamic: nil, recentDynamic: [], localAlbumDirectoryOffset: 96)
+        require(store.restore(scopeHash: ownerB)?.localAlbumDirectoryOffset == 96,
+                "local albums directory page resumes")
+        store.save(scopeHash: ownerB, selectedTab: "gallery", gallerySource: "local",
+                   activeDynamic: nil, recentDynamic: [], localAlbumDirectoryOffset: 64)
+        require(store.restore(scopeHash: ownerB)?.localAlbumDirectoryOffset == 64,
+                "album cursor survives switching to local photo wall")
+        for invalid in [-32, 33, 10_016] {
+            store.save(scopeHash: ownerB, selectedTab: "gallery", gallerySource: "albums",
+                       activeDynamic: nil, recentDynamic: [], localAlbumDirectoryOffset: invalid)
+            require(store.restore(scopeHash: ownerB)?.localAlbumDirectoryOffset == 0,
+                    "invalid 32-slot album offset is sanitized")
+        }
+        let tamperedAlbum = XDriveIOSNativeNavigationRouteSnapshot(
+            version: 1, scopeHash: ownerB, selectedTab: "gallery",
+            gallerySource: "albums", activeDynamic: nil, recentDynamic: [],
+            mapScope: "page", mapPageOffset: 0, localGalleryPageOffset: 0,
+            localAlbumDirectoryOffset: 33
+        )
+        defaults.set(try! JSONEncoder().encode(tamperedAlbum),
+                     forKey: XDriveIOSNativeNavigationRouteStore.key)
+        require(store.restore(scopeHash: ownerB) == nil,
+                "tampered local album directory offset fails closed")
+        let albumCursor = XDriveIOSNativeAlbumDirectoryCursorPolicy.self
+        require(albumCursor.clamp(requested: 64, currentTotal: 120) == 64,
+                "live local albums page is retained")
+        require(albumCursor.clamp(requested: 96, currentTotal: 37) == 32,
+                "deleted albums clamp to last actual page")
+        require(albumCursor.clamp(requested: 32, currentTotal: 32) == 0,
+                "exact-end album cursor moves to previous nonempty page")
+        require(albumCursor.clamp(requested: 96, currentTotal: 0) == 0,
+                "empty album directory returns first page")
+        require(albumCursor.clamp(requested: -32, currentTotal: 99) == 0,
+                "negative album directory offset rejected")
+        require(albumCursor.clamp(requested: 33, currentTotal: 99) == 0,
+                "unaligned album directory offset rejected")
+        store.save(scopeHash: ownerB, selectedTab: "gallery", gallerySource: "albums",
+                   activeDynamic: nil, recentDynamic: [], localAlbumDirectoryOffset: 64)
+        require(store.restore(scopeHash: ownerA) == nil,
+                "album directory page cannot cross Owner switch")
         print("native iOS navigation route scoped persistence checks passed")
     }
 }
