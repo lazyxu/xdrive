@@ -57,7 +57,7 @@ const rows = [node(2, 'a.txt', 1), node(3, 'folder', 0, 'dir'),
   node(6, 'c.mp4', 64 << 20), node(7, 'empty.txt', 0), node(8, 'archive.zip', 10)]
 const same = (a, b) => a?.length === b?.length && a.every((value, i) => Object.is(value, b[i]))
 
-async function mount() {
+async function mount(extraRows = []) {
   const slots = [], requests = [], revoked = [], timers = [], listeners = new Map()
   let cursor = 0, dirty = true, snapshot, pending = [], urlSequence = 0
   const hooks = {
@@ -129,7 +129,7 @@ async function mount() {
   )
   const client = {
     async ownerFilesRoot() { return { id: 1, name: 'Owner' } },
-    async ownerFilesPage() { return { items: rows, has_more: false } },
+    async ownerFilesPage() { return { items: [...rows, ...extraRows], has_more: false } },
     async ownerQuota() { return { over_quota: false } },
   }
   let currentClient = client
@@ -265,6 +265,18 @@ test('loaded-file and selected-file navigation preserve order and stop at both b
   app.state.movePreview(-1); await app.flush()
   assert.equal(app.state.previewItem.id, 2)
   assert.equal(app.requests.length, 0)
+})
+
+test('DSM large PDF opens the same shared Viewer without broadening download limits', async () => {
+  const app = await mount([node(9, 'manual.pdf', (32 << 20) + 1)])
+  const item = app.state.displayedItems.find(row => row.id === 9)
+  assert.ok(item)
+  app.state.openFilePreview(item); await app.flush()
+  assert.equal(app.state.previewItem?.id, 9)
+  assert.equal(app.state.previewActions[0].disabled, true)
+  app.state.movePreview(-1); await app.flush()
+  assert.notEqual(app.state.previewItem?.id, 9)
+  app.unmount()
 })
 
 test('refresh and unmount revoke stale actions even when new Owner rows reuse identical IDs', async () => {
