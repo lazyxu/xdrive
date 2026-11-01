@@ -15,13 +15,18 @@ test('Web Files Quick Look passes true RAW preview transfer bytes to the shared 
   assert.ok(start > 0 && surface > start && end > surface,
     'this test must inspect the actual Files Quick Look, not a lookalike media Viewer')
   const callsite = source.slice(surface, end)
-  assert.match(callsite, /loadPreviewURL=\{async \(_target, kind, signal, onProgress\) => \(/)
-  assert.match(callsite,
-    /api\.mediaAnalysisPreviewURL\(viewer\.node!\.id, signal, viewer\.node!\.revision, onProgress\)/,
+  const loader = source.slice(start, surface)
+  assert.match(callsite, /loadPreviewURL=\{loadQuickLookPreview\}/,
+    'Quick Look mounts the real stable preview loader instead of a fresh callback each render')
+  assert.match(loader, /const loadQuickLookPreview = useCallback<XDriveFilePreviewURLLoader>\(/)
+  assert.match(loader, /const id = Number\(currentTarget\.id\)/,
+    'the signed request must bind to the current rendered Node, not a captured old Node')
+  assert.match(loader,
+    /api\.mediaAnalysisPreviewURL\(id, signal, Number\(currentTarget\.revision\), onProgress\)/,
     'the current revision and AbortSignal must own the real binary observer')
-  assert.match(callsite, /api\.filePreviewURL\(viewer\.node!\.id, signal\)/,
+  assert.match(loader, /api\.filePreviewURL\(id, signal\)/,
     'native signed media must keep its existing playback reader')
-  assert.match(callsite, /api\.mediaLivePhotoStillURL\(viewer\.node!\.id, signal\)/,
+  assert.match(loader, /if \(kind === 'live_photo'\) return api\.mediaLivePhotoStillURL\(id, signal\)/,
     'the Live Photo still remains a signed resource, not a guessed file byte count')
 })
 
