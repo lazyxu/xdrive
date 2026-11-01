@@ -1600,8 +1600,10 @@ function createMainWindow(showOnReady = true) {
   })
   // A PDF subframe navigation must not revoke its parent Viewer ticket.
   // Only a full Renderer navigation discards all outstanding media leases.
-  win.webContents.on('did-start-navigation', (_event, navigationInfo) => {
-    if (navigationInfo.isMainFrame) filePreviewProxy?.releaseAll()
+  win.webContents.on('did-start-navigation', (navigationInfo) => {
+    if (navigationInfo.isMainFrame && !navigationInfo.isSameDocument) {
+      filePreviewProxy?.releaseAll()
+    }
   })
   win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
     if (!isMainFrame || errorCode === -3) return
