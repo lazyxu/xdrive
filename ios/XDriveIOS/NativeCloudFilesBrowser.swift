@@ -223,6 +223,7 @@ private struct XDriveIOSNativeFilesManagementIntent: Identifiable {
     let id = UUID()
     let owner: XDriveNativeOwnerRoot
     let file: XDriveIOSNativeFilesNode?
+    let directory: XDriveIOSNativeFilesNode?
 }
 
 private struct XDriveIOSNativeFilesFolder: Hashable {
@@ -322,12 +323,25 @@ struct XDriveIOSNativeFilesBrowser: View {
             }
             ForEach(model.entries) { entry in
                 if entry.node.isDirectory {
-                    NavigationLink(value: XDriveIOSNativeFilesFolder(
-                        id: entry.node.id, name: entry.node.name
-                    )) {
-                        row(entry)
+                    HStack(spacing: 8) {
+                        NavigationLink(value: XDriveIOSNativeFilesFolder(
+                            id: entry.node.id, name: entry.node.name
+                        )) {
+                            row(entry)
+                        }
+                        .accessibilityIdentifier("native-ios-files-folder-\(entry.node.id)")
+                        Button {
+                            openManagement(for: entry.node)
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                                .frame(minWidth: 44, minHeight: 44)
+                        }
+                        .accessibilityLabel("管理文件夹 \(entry.node.name)")
+                        .accessibilityIdentifier("native-ios-files-folder-more-\(entry.node.id)")
                     }
-                    .accessibilityIdentifier("native-ios-files-folder-\(entry.node.id)")
+                    .contextMenu {
+                        Button("文件夹操作") { openManagement(for: entry.node) }
+                    }
                     .id(entry.node.id)
                 } else {
                     HStack(spacing: 8) {
@@ -415,7 +429,8 @@ struct XDriveIOSNativeFilesBrowser: View {
                     login: login, expectedOwner: intent.owner,
                     folderID: folder?.id ?? intent.owner.rootNodeID,
                     folderName: folder?.name,
-                    file: intent.file
+                    file: intent.file,
+                    directory: intent.directory
                 ) {
                     managementIntent = nil
                     reload()
@@ -512,7 +527,9 @@ struct XDriveIOSNativeFilesBrowser: View {
             guard model.entries.contains(where: { $0.node == node }) else { return }
         }
         managementIntent = XDriveIOSNativeFilesManagementIntent(
-            owner: owner, file: node
+            owner: owner,
+            file: node?.isDirectory == false ? node : nil,
+            directory: node?.isDirectory == true ? node : nil
         )
     }
 
