@@ -267,6 +267,11 @@ private struct XDriveIOSNativeMediaWallTile: View {
 struct XDriveIOSNativeServerMediaPreview: View {
     let item: XDriveIOSNativeMediaItem
     @ObservedObject var login: XDriveIOSNativeOwnerLoginModel
+    /// Immutable L2 Owner Range captured before presenting this one L3 Viewer.
+    var loadedItems: [XDriveIOSNativeMediaItem] = []
+    var openedOwner: XDriveNativeOwnerRoot? = nil
+    var onNavigate: ((XDriveIOSNativeMediaItem) -> Bool)? = nil
+    @State private var activeItem: XDriveIOSNativeMediaItem?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var phase
     @State private var previewRequestID = UUID()
@@ -281,10 +286,57 @@ struct XDriveIOSNativeServerMediaPreview: View {
     @State private var livePlaybackRequest: UUID?
     @State private var showingLiveMotion = false
 
+    private var viewed: XDriveIOSNativeMediaItem { activeItem ?? item }
+
+    private var ownerAuthorized: Bool {
+        phase == .active && openedOwner.map {
+            XDriveIOSNativePhotoOwnerScope.matches(login.owner, $0)
+        } == true
+    }
+
+    private var loadedKeys: [XDriveIOSNativePhotoAssetViewerNeighborKey] {
+        loadedItems.map {
+            XDriveIOSNativePhotoAssetViewerNeighborKey(
+                nodeID: $0.id, revision: $0.node.revision,
+                previewable: $0.supportsPreview
+            )
+        }
+    }
+
+    private var currentKey: XDriveIOSNativePhotoAssetViewerNeighborKey {
+        XDriveIOSNativePhotoAssetViewerNeighborKey(
+            nodeID: viewed.id, revision: viewed.node.revision,
+            previewable: viewed.supportsPreview
+        )
+    }
+
+    private var loadedPosition: Int? {
+        XDriveIOSNativePhotoAssetViewerNeighborPolicy.loadedIndex(
+            current: currentKey, in: loadedKeys, ownerAuthorized: ownerAuthorized
+        )
+    }
+
+    private func neighbor(_ direction: Int) -> XDriveIOSNativeMediaItem? {
+        guard let index = XDriveIOSNativePhotoAssetViewerNeighborPolicy.neighborIndex(
+            current: currentKey, in: loadedKeys, direction: direction,
+            ownerAuthorized: ownerAuthorized
+        ) else { return nil }
+        return loadedItems[index]
+    }
+
+    private func navigateLoaded(_ direction: Int) {
+        guard let next = neighbor(direction), onNavigate?(next) == true
+        else { return }
+        // Cancel old signed streams, AVPlayer, Live pairing and temporary
+        // resources before admitting exactly one new foreground preview.
+        retirePreview()
+        activeItem = next
+    }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 12) {
-                if item.isLive, let still = image {
+                if viewed.isLive, let still = image {
                     if showingLiveMotion, let player {
                         VideoPlayer(player: player)
                             .onAppear { player.play() }
@@ -383,8 +435,31 @@ struct XDriveIOSNativeServerMediaPreview: View {
                     ProgressView("正在验证并打开云端媒体…")
                 }
             }
-            .navigationTitle(item.node.name)
+            .navigationTitle(viewed.node.name)
             .navigationBarTitleDisplayMode(.inline)
+            .safeAreaInset(edge: .bottom) {
+                if loadedItems.count > 1 {
+                    HStack(spacing: 12) {
+                        Button("上一项") { navigateLoaded(-1) }
+                            .disabled(neighbor(-1) == nil)
+                            .frame(minHeight: 44)
+                            .accessibilityIdentifier("native-ios-photoasset-viewer-previous")
+                        Spacer(minLength: 4)
+                        Text(loadedPosition.map {
+                            "\($0 + 1)/\(loadedItems.count)（已加载）"
+                        } ?? "当前媒体已变化")
+                            .font(.caption).monospacedDigit()
+                            .accessibilityIdentifier("native-ios-photoasset-viewer-position")
+                        Spacer(minLength: 4)
+                        Button("下一项") { navigateLoaded(1) }
+                            .disabled(neighbor(1) == nil)
+                            .frame(minHeight: 44)
+                            .accessibilityIdentifier("native-ios-photoasset-viewer-next")
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(.ultraThinMaterial)
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("完成") { dismiss() }
@@ -395,6 +470,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
             // Signed previews must not survive a scene/Owner generation.
             guard phase == .active, let expected = login.owner else { return }
             let requestID = previewRequestID
+            let target = viewed
             do {
                 let auth = try await login.verifiedAuthorization()
                 try Task.checkCancellation()
@@ -402,12 +478,12 @@ struct XDriveIOSNativeServerMediaPreview: View {
                       XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected),
                       XDriveIOSNativePhotoOwnerScope.matches(auth.owner, expected)
                 else { return }
-                if item.isLive {
+                if target.isLive {
                     let reader = XDriveIOSNativeMediaGalleryReader(
                         owner: auth.owner, accessToken: auth.accessToken
                     )
                     do {
-                        let live = try await reader.livePreview(item)
+                        let live = try await reader.livePreview(target)
                         // If a logout/scene change races the final download,
                         // discard both local originals before returning.
                         guard !Task.isCancelled, phase == .active,
@@ -438,7 +514,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
                                 login.owner, expected
                               ) else { return }
                         failure = "Live 动态资源暂不可用；可重试配对，静态封面将独立读取。"
-                        if let still = try? await reader.thumbnail(item) {
+                        if let still = try? await reader.thumbnail(target) {
                             try Task.checkCancellation()
                             guard phase == .active, previewRequestID == requestID,
                                   XDriveIOSNativePhotoOwnerScope.matches(
@@ -450,7 +526,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
                 } else {
                     let media = try await XDriveIOSNativeMediaGalleryReader(
                         owner: auth.owner, accessToken: auth.accessToken
-                    ).preview(item)
+                    ).preview(target)
                     try Task.checkCancellation()
                     guard phase == .active, previewRequestID == requestID,
                           XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
@@ -508,6 +584,8 @@ struct XDriveIOSNativeServerMediaWall: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showingGalleryHelp = false
     @State private var selected: XDriveIOSNativeMediaItem?
+    @State private var viewerLoadedItems: [XDriveIOSNativeMediaItem] = []
+    @State private var viewerOpenedOwner: XDriveNativeOwnerRoot?
     @State private var searchDraft = ""
     @State private var appliedSearch = ""
     @State private var lastOpenedMediaID: UInt64?
@@ -565,7 +643,13 @@ struct XDriveIOSNativeServerMediaWall: View {
                         spacing: 3
                     ) {
                         ForEach(page.items) { item in
-                            Button { selected = item } label: {
+                            Button {
+                                // Freeze the already-authorized 48-item page.
+                                // The hidden L2 wall never fetches new neighbors.
+                                viewerLoadedItems = model.page?.items ?? []
+                                viewerOpenedOwner = login.owner
+                                selected = item
+                            } label: {
                                 XDriveIOSNativeMediaWallTile(
                                     item: item, viewerActive: selected != nil,
                                     model: model, login: login
@@ -622,6 +706,8 @@ struct XDriveIOSNativeServerMediaWall: View {
                 // SwiftUI sends onDisappear to the covered photo wall.
                 model.suspendForViewer()
             } else {
+                viewerLoadedItems = []
+                viewerOpenedOwner = nil
                 // Only return focus to the identical current Node revision
                 // under the same verified Owner. A different revision/page
                 // cannot inherit the prior Viewer focus just by reusing ID.
@@ -701,8 +787,37 @@ struct XDriveIOSNativeServerMediaWall: View {
         }
         // The owning five-tab shell controls its custom bar; never show a
         // second system strip through a child toolbar override.
-        .fullScreenCover(item: $selected) {
-            XDriveIOSNativeServerMediaPreview(item: $0, login: login)
+        .fullScreenCover(item: $selected) { initial in
+            XDriveIOSNativeServerMediaPreview(
+                item: initial, login: login,
+                loadedItems: viewerLoadedItems,
+                openedOwner: viewerOpenedOwner,
+                onNavigate: { next in
+                    guard phase == .active, selected?.id == initial.id,
+                          let opened = viewerOpenedOwner,
+                          XDriveIOSNativePhotoOwnerScope.matches(login.owner, opened),
+                          let current = model.page,
+                          current.items.count == viewerLoadedItems.count,
+                          current.items.count <= 48,
+                          zip(current.items, viewerLoadedItems).allSatisfy({
+                            $0.0.id == $0.1.id &&
+                            $0.0.node.revision == $0.1.node.revision
+                          }),
+                          next.supportsPreview,
+                          current.items.contains(where: {
+                            $0.id == next.id &&
+                            $0.node.revision == next.node.revision
+                          })
+                    else { return false }
+                    // L3 keeps the initial fullScreenCover identity. On close,
+                    // focus the LAST accepted Node+revision, not the first.
+                    lastOpenedMediaID = next.id
+                    lastOpenedRevision = next.node.revision
+                    lastOpenedOwner = opened
+                    accessibilityFocusedMediaID = nil
+                    return true
+                }
+            )
         }
         .onAppear {
             if model.page == nil, !model.busy {
@@ -710,6 +825,8 @@ struct XDriveIOSNativeServerMediaWall: View {
             }
         }
         .onChange(of: login.owner) { _ in
+            viewerLoadedItems = []
+            viewerOpenedOwner = nil
             focusedBrowsing = false
             onFocusChange?(false)
             lastOpenedMediaID = nil
@@ -724,6 +841,8 @@ struct XDriveIOSNativeServerMediaWall: View {
         }
         .onChange(of: phase) { state in
             if state != .active {
+                viewerLoadedItems = []
+                viewerOpenedOwner = nil
                 focusedBrowsing = false
                 onFocusChange?(false)
                 lastOpenedMediaID = nil
@@ -740,6 +859,8 @@ struct XDriveIOSNativeServerMediaWall: View {
             if selected != nil {
                 model.suspendForViewer()
             } else {
+                viewerLoadedItems = []
+                viewerOpenedOwner = nil
                 // A different feature/album should not inherit this wall's
                 // L2 focus state or hide the global bottom navigation.
                 focusedBrowsing = false
