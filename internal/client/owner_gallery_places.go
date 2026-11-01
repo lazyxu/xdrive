@@ -76,6 +76,7 @@ func ValidOwnerPlacesPage(page OwnerPlacesPage, limit, offset int) bool {
 	if !ValidOwnerPlacesWindow(limit, offset) || page.Offset != offset ||
 		page.Limit != limit || page.TotalCount < 0 || uint64(page.TotalCount) > ownerGalleryMaxSafe ||
 		page.Items == nil || len(page.Items) > limit ||
+		(page.HasMore && len(page.Items) != limit) ||
 		(len(page.Items) == 0 && int64(offset) < page.TotalCount) ||
 		int64(offset)+int64(len(page.Items)) > page.TotalCount && len(page.Items) > 0 ||
 		page.HasMore != (int64(offset)+int64(len(page.Items)) < page.TotalCount) {
@@ -91,6 +92,10 @@ func ValidOwnerPlacesPage(page OwnerPlacesPage, limit, offset int) bool {
 	return true
 }
 func ProjectOwnerPlacesPage(raw MediaPlacesPage, limit, offset int) (OwnerPlacesPage, error) {
+	// A missing array is a malformed Server DTO, not a verified empty Owner map.
+	if raw.Items == nil {
+		return OwnerPlacesPage{}, errors.New("missing Owner Places array")
+	}
 	page := OwnerPlacesPage{
 		Items:      make([]OwnerPlace, 0, len(raw.Items)),
 		TotalCount: raw.TotalCount, Offset: raw.Offset, Limit: raw.Limit,
