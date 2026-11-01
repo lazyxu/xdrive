@@ -263,6 +263,7 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
     @State private var crossingEpoch = UUID()
     @State private var crossingTask: Task<Void, Never>?
     @State private var crossingMessage: String?
+    @State private var favoriteStatus: Bool?
     @State private var photoActionBusy = false
     @State private var photoActionEpoch = UUID()
     @State private var photoActionTask: Task<Void, Never>?
@@ -351,9 +352,20 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
             currentCrossedPage = page
             onCrossedPage?(next, page)
         }
+        favoriteStatus = nil
         model.cancel()
         activeItem = next
         onViewed?(next)
+    }
+
+    private func refreshFavoriteStatus() {
+        guard verified(viewed), let asset = PHAsset.fetchAssets(
+            withLocalIdentifiers: [viewed.id], options: nil
+        ).firstObject else {
+            favoriteStatus = nil
+            return
+        }
+        favoriteStatus = asset.isFavorite
     }
 
     private func shareOriginal(allowICloud: Bool) {
@@ -407,6 +419,7 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                     [captured], to: favorite
                 )
                 if photoActionEpoch == token, currentPageAuthorized {
+                    favoriteStatus = favorite
                     // PhotoKit change notifications independently revoke old
                     // Viewers and force a fresh source wall.
                     photoActionMessage = favorite ? "已收藏。" : "已取消收藏。"
@@ -628,8 +641,10 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                             shareOriginal(allowICloud: true)
                         }
                         Divider()
-                        Button("收藏照片") { editFavorite(true) }
-                        Button("取消收藏") { editFavorite(false) }
+                        Button(favoriteStatus == true ? "取消收藏" : "收藏照片") {
+                            editFavorite(favoriteStatus != true)
+                        }
+                        .disabled(favoriteStatus == nil)
                         Divider()
                         Button("删除照片", role: .destructive) {
                             showDeleteConfirm = true
@@ -664,7 +679,10 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
         .onAppear { changes.start() }
         .task(id: viewed.id) {
             // Never materialize PhotoKit pixels while the App is inactive.
-            if phase == .active { model.load(viewed) }
+            if phase == .active {
+                model.load(viewed)
+                refreshFavoriteStatus()
+            }
         }
         .onChange(of: changes.generation) { _ in
             cancelCrossing()
@@ -676,6 +694,7 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
         }
         .onChange(of: phase) { state in
             if state != .active {
+                favoriteStatus = nil
                 cancelPhotoAction()
                 cancelCrossing()
                 showsStaticStill = false
@@ -689,6 +708,7 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                 // Re-check the exact selected ID in the currently allowed
                 // PhotoKit subset; never reuse an old image/pixel buffer.
                 model.load(viewed)
+                refreshFavoriteStatus()
             } else {
                 model.cancel()
                 dismiss()
