@@ -399,6 +399,7 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                             HStack(spacing: 12) {
                                 Button("上一项") { showNeighbor(-1) }
                                     .disabled(neighbor(-1) == nil)
+                                    .accessibilityIdentifier("native-ios-local-viewer-previous")
                                 Spacer(minLength: 4)
                                 Text(loadedPosition.map {
                                     "\($0 + 1)/\(loadedItems.count)（已加载）"
@@ -408,6 +409,7 @@ struct XDriveIOSNativeLocalPhotoDetail: View {
                                 Spacer(minLength: 4)
                                 Button("下一项") { showNeighbor(1) }
                                     .disabled(neighbor(1) == nil)
+                                    .accessibilityIdentifier("native-ios-local-viewer-next")
                             }
                             .accessibilityIdentifier("native-ios-local-viewer-neighbors")
                         }
