@@ -60,3 +60,48 @@ test('existing emergency all-Owner stop also deletes opaque generation with its 
   assert.match(emergency, /suffix\.utf8\.count == 64/)
   assert.match(store, /libraryChangeEpoch: existing\?\.libraryChangeEpoch/)
 })
+test('PhotoKit backup uses creation date plus unique local ID for stable 256-slot boundaries', () => {
+  const scanner = read('ios/XDriveIOS/PhotoKitBoundedSnapshotScanner.swift')
+  const start = scanner.slice(scanner.indexOf('func start(atOffset'),
+    scanner.indexOf('func nextPage()'))
+  const primary = 'NSSortDescriptor(key: "creationDate", ascending: false)'
+  const unique = 'NSSortDescriptor(key: "localIdentifier", ascending: true)'
+  assert.ok(start.includes(primary), 'newest-first primary sort must remain')
+  assert.ok(start.includes(unique), 'a unique, supported PHAsset sort key is required')
+  assert.ok(start.indexOf(primary) < start.indexOf(unique),
+    'date sort must precede localIdentifier tie-breaker')
+  assert.ok(start.indexOf(unique) < start.indexOf('PHAsset.fetchAssets(with: options)'),
+    'sort order must be applied to the actual PhotoKit fetch')
+  assert.match(scanner, /static let pageSize = 64/)
+  assert.match(scanner, /let snapshot = PHAsset\.fetchAssets\(with: options\)/)
+  assert.match(scanner, /nextOffset = min\(requestedOffset, snapshot\.count\)/)
+  assert.match(scanner, /observer\.currentVersion\(\) == changeVersion/)
+  // Model the same date-descending / unique-ID-ascending ordering over a
+  // 100k-asset synthetic library. Large equal-date groups cross 256-slot
+  // checkpoints; reversing discovery order cannot reorder or omit IDs.
+  // This checks ordering logic, not native PhotoKit's runtime implementation.
+  const assets = Array.from({ length: 100_000 }, (_, i) => ({
+    day: Math.floor(i / 300),
+    id: 'asset-' + String(i).padStart(6, '0')
+  }))
+  const compare = (a, b) => b.day - a.day ||
+    (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+  const forward = assets.slice().sort(compare).map(a => a.id)
+  const reversed = assets.slice().reverse().sort(compare).map(a => a.id)
+  assert.deepEqual(reversed, forward)
+  let scanned = 0
+  const seen = new Set()
+  for (let offset = 0; offset < forward.length; offset += 256) {
+    const page = forward.slice(offset, offset + 256)
+    assert.ok(page.length <= 256)
+    for (const id of page) {
+      assert.ok(!seen.has(id), 'one identity must not cross twice')
+      seen.add(id)
+      scanned++
+    }
+  }
+  assert.equal(scanned, 100_000)
+  assert.equal(seen.size, 100_000)
+  assert.doesNotMatch(scanner, /UserDefaults|JSONEncoder|SecItemAdd|localStorage/,
+    'the scanner must not persist or expose PhotoKit identifiers')
+})

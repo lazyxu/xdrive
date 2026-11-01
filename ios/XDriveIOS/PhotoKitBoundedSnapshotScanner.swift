@@ -99,8 +99,13 @@ actor XDrivePhotoKitBoundedSnapshotScanner {
         listening = true
         let beginVersion = observer.currentVersion()
         let options = PHFetchOptions()
+        // Creation dates can tie (including nil). Without an identity
+        // tie-breaker, an otherwise unchanged 256-slot automatic cursor can
+        // observe a different order on the next PhotoKit fetch. This key
+        // stays inside the native PHFetchResult; IDs are never persisted here.
         options.sortDescriptors = [
-            NSSortDescriptor(key: "creationDate", ascending: false)
+            NSSortDescriptor(key: "creationDate", ascending: false),
+            NSSortDescriptor(key: "localIdentifier", ascending: true)
         ]
         let snapshot = PHAsset.fetchAssets(with: options)
         guard observer.currentVersion() == beginVersion,
