@@ -48,7 +48,9 @@ actor XDriveIOSNativeGalleryMediaScanner {
         let options = PHFetchOptions()
         options.sortDescriptors = [
             NSSortDescriptor(key: "creationDate", ascending: false),
-            NSSortDescriptor(key: "localIdentifier", ascending: true)
+            // Only PhotoKit-supported fetch sort keys; never sort by localIdentifier.
+            // Filtered, bounded pages retain the existing authorization epoch fences.
+            NSSortDescriptor(key: "modificationDate", ascending: false)
         ]
         if mediaFilter.requiresFavorite {
             options.predicate = NSPredicate(format: "favorite == YES")
