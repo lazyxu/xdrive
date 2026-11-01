@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { DesktopFileExplorerHostPort } from './DesktopFileExplorerHostPort'
+import { xDriveDesktopDecodeViewerPreviewURL } from './desktopViewerPreviewDecode'
 import AppsRoundedIcon from '@mui/icons-material/AppsRounded'
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
 import CloudOutlinedIcon from '@mui/icons-material/CloudOutlined'
@@ -35,7 +36,6 @@ import {
   xDriveFileExplorerSearchFiltersSignature,
   xDriveFileExplorerSearchFilterLabels,
   xDriveFileNeedsBrowserCompatibleImagePreview,
-  xDriveRegisterViewerImageSource,
   XDRIVE_NATIVE_FILE_AVAILABILITY_OPTIONS,
   xDriveFileExplorerThrowUploadFailure,
 } from '@xdrive/shared'
@@ -1017,13 +1017,9 @@ export default function DesktopFileExplorer({
           signal?.throwIfAborted()
           const blob = new Blob([result.data.data], { type: expected })
           if (blob.size === 0) continue
-          const url = URL.createObjectURL(blob)
-          xDriveRegisterViewerImageSource(url, {
-            format: format === 'webp' ? 'WebP' : 'JPEG',
-            quality: format === 'webp' ? 90 : 93,
-            byteSize: blob.size,
-          })
-          return url
+          // Match the Gallery Viewer: never claim a WebP source is ready until
+          // the actual Electron decoder accepts it; JPEG remains the fallback.
+          return await xDriveDesktopDecodeViewerPreviewURL(blob, format, signal)
         } catch {
           signal?.throwIfAborted()
           // Old Server/Agent or unavailable codec: try JPEG, then legacy.

@@ -1,4 +1,5 @@
 import { xDriveDesktopViewportRequest } from './abortableViewportRequest'
+import { xDriveDesktopDecodeViewerPreviewURL } from './desktopViewerPreviewDecode'
 
 let mediaOCRDetailRequestSequence = 0
 import { xDriveLeaseDesktopPreviewURL, xDriveReleaseDiscardedDesktopPreviewURL } from './desktopPreviewURLLease'
@@ -222,12 +223,9 @@ export function createDesktopMediaGalleryDataSource(
             if (result.data.content_type?.toLowerCase() !== expected) continue
             const blob = new Blob([result.data.data], { type: expected })
             if (!blob.size) continue
-            const url = URL.createObjectURL(blob)
-            xDriveRegisterViewerImageSource(url, {
-              format: format === 'webp' ? 'WebP' : 'JPEG',
-              quality: format === 'webp' ? 90 : 93,
-              byteSize: blob.size,
-            })
+            // A valid WebP response may still be undecodable by this Chromium.
+            // Only admit decoded pixels; a failed decode must try JPEG next.
+            const url = await xDriveDesktopDecodeViewerPreviewURL(blob, format, signal)
             return { ok: true as const, data: url }
           } catch {
             signal?.throwIfAborted()
