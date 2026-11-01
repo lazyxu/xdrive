@@ -504,15 +504,15 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := login.LoginServer(ctx, input.Server, input.Username, input.Password); err != nil {
-            if errors.Is(err, localbackupipc.ErrDSMLoginRejectedBeforeCommit) {
-                // Same-Origin DSM authentication and CSRF have already passed.
-                w.Header().Set("X-XDrive-Login-No-Commit", "1")
-                http.Error(w, "DSM credentials rejected before Owner commit", http.StatusUnprocessableEntity)
-                return
-            }
-            http.Error(w, "owning Agent rejected DSM Server login", http.StatusConflict)
-            return
-        }
+			if errors.Is(err, localbackupipc.ErrDSMLoginRejectedBeforeCommit) {
+				// Same-Origin DSM authentication and CSRF have already passed.
+				w.Header().Set("X-XDrive-Login-No-Commit", "1")
+				http.Error(w, "DSM credentials rejected before Owner commit", http.StatusUnprocessableEntity)
+				return
+			}
+			http.Error(w, "owning Agent rejected DSM Server login", http.StatusConflict)
+			return
+		}
 		quota, err := quotaReader.OwnerQuota(ctx)
 		if err != nil || !localbackupipc.ValidateOwnerQuota(quota) {
 			http.Error(w, "Server Owner verification unavailable after login", http.StatusServiceUnavailable)

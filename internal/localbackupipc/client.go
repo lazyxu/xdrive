@@ -26,9 +26,13 @@ const (
 )
 
 // Structured status for the trusted Go IPC caller only; no Agent error body is relayed.
-type AgentHTTPStatusError struct { Method string; StatusCode int }
+type AgentHTTPStatusError struct {
+	Method     string
+	StatusCode int
+}
+
 func (e *AgentHTTPStatusError) Error() string {
-    return fmt.Sprintf("owning Agent rejected %s (HTTP %d)", e.Method, e.StatusCode)
+	return fmt.Sprintf("owning Agent rejected %s (HTTP %d)", e.Method, e.StatusCode)
 }
 
 type discovery struct {

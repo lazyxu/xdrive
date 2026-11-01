@@ -98,17 +98,17 @@ func (c *Client) LoginServer(ctx context.Context, server, username, password str
 	// Existing loopback Agent performs real Server TLS authentication and
 	// persists credentials only through the original restricted userconfig.
 	if err := c.request(ctx, http.MethodPost, "/v1/auth/login", map[string]string{
-        "server": server, "username": username, "password": password, "mount_path": "",
-    }, &acknowledged); err != nil {
-        var rejected *AgentHTTPStatusError
-        // Only a proven Agent 401 qualifies; generic 403/409/5xx and transport
-        // failures cannot prove the Owner was not changed.
-        if errors.As(err, &rejected) && rejected.Method == http.MethodPost &&
-            rejected.StatusCode == http.StatusUnauthorized {
-            return ErrDSMLoginRejectedBeforeCommit
-        }
-        return err
-    }
+		"server": server, "username": username, "password": password, "mount_path": "",
+	}, &acknowledged); err != nil {
+		var rejected *AgentHTTPStatusError
+		// Only a proven Agent 401 qualifies; generic 403/409/5xx and transport
+		// failures cannot prove the Owner was not changed.
+		if errors.As(err, &rejected) && rejected.Method == http.MethodPost &&
+			rejected.StatusCode == http.StatusUnauthorized {
+			return ErrDSMLoginRejectedBeforeCommit
+		}
+		return err
+	}
 	if !acknowledged.Configured || !sameDSMLoginServer(acknowledged.Server, server) ||
 		acknowledged.Username != username || acknowledged.MustChangePassword {
 		return errors.New("owning Agent did not confirm the requested Server login")

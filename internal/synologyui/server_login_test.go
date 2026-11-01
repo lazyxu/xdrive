@@ -13,9 +13,9 @@ import (
 
 type fakeServerLoginAgent struct {
 	*fakeAgent
-	loginCalls int
-    rejectBeforeCommit bool
-	quotaCalls int
+	loginCalls         int
+	rejectBeforeCommit bool
+	quotaCalls         int
 }
 
 func (f *fakeServerLoginAgent) ServerConnection(context.Context) (localbackupipc.ServerConnection, error) {
@@ -26,8 +26,10 @@ func (f *fakeServerLoginAgent) ServerConnection(context.Context) (localbackupipc
 
 func (f *fakeServerLoginAgent) LoginServer(_ context.Context, server, username, password string) error {
 	f.loginCalls++
-    if f.rejectBeforeCommit { return localbackupipc.ErrDSMLoginRejectedBeforeCommit }
-    if server != "https://drive.example.com" || username != "owner" || password != "private-password" {
+	if f.rejectBeforeCommit {
+		return localbackupipc.ErrDSMLoginRejectedBeforeCommit
+	}
+	if server != "https://drive.example.com" || username != "owner" || password != "private-password" {
 		return context.Canceled
 	}
 	return nil
@@ -113,15 +115,15 @@ func TestServerLoginNoCapabilityFailClosed(t *testing.T) {
 }
 
 func TestDSMLoginProofOnlyForKnownRejectedCredentials(t *testing.T) {
-    gateway, backing := newFixture(t)
-    agent := &fakeServerLoginAgent{fakeAgent: backing, rejectBeforeCommit: true}
-    gateway.Connect = func(context.Context) (Agent, error) { return agent, nil }
-    csrf := getCSRF(t, gateway)
-    body := `{"server":"https://drive.example.com","username":"owner","password":"bad-password"}`
-    r := requestServerLogin(gateway, http.MethodPost, body,
-        "https://nas.example:5001", csrf, DSMCGIPath+"?op=server-login")
-    if r.Code != http.StatusUnprocessableEntity ||
-        r.Header().Get("X-XDrive-Login-No-Commit") != "1" || agent.quotaCalls != 0 {
-        t.Fatalf("known pre-commit rejection must emit an exact marker: HTTP %d", r.Code)
-    }
+	gateway, backing := newFixture(t)
+	agent := &fakeServerLoginAgent{fakeAgent: backing, rejectBeforeCommit: true}
+	gateway.Connect = func(context.Context) (Agent, error) { return agent, nil }
+	csrf := getCSRF(t, gateway)
+	body := `{"server":"https://drive.example.com","username":"owner","password":"bad-password"}`
+	r := requestServerLogin(gateway, http.MethodPost, body,
+		"https://nas.example:5001", csrf, DSMCGIPath+"?op=server-login")
+	if r.Code != http.StatusUnprocessableEntity ||
+		r.Header().Get("X-XDrive-Login-No-Commit") != "1" || agent.quotaCalls != 0 {
+		t.Fatalf("known pre-commit rejection must emit an exact marker: HTTP %d", r.Code)
+	}
 }
