@@ -227,7 +227,30 @@ jobs:
             ios/tests/NativePhotoTimelinePolicyChecks.swift \
             -o "$RUNNER_TEMP/xdrive-ios-local-calendar-check"
           "$RUNNER_TEMP/xdrive-ios-local-calendar-check"
-          node --test desktop/tests/ios-native-photo-timeline.cjs
+          node --test desktop/tests/ios-native-photo-timeline.cjs desktop/tests/ios-native-local-continuous.cjs
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeLocalPhotoSharePolicy.swift \
+            ios/tests/NativeLocalPhotoSharePolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-local-share-policy"
+          "$RUNNER_TEMP/xdrive-ios-local-share-policy"
+
+      - name: Verify native PhotoKit actual-day group boundaries
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativePhotoDayGroupingPolicy.swift \
+            ios/tests/NativePhotoDayGroupingPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-photo-day-group"
+          "$RUNNER_TEMP/xdrive-ios-photo-day-group"
+
+      - name: Verify native PhotoKit full-library media filtering
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativePhotoMediaFilterPolicy.swift \
+            ios/tests/NativePhotoMediaFilterChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-media-filter"
+          "$RUNNER_TEMP/xdrive-ios-media-filter"
 
       - name: Verify native PhotoAsset Viewer bounded neighbors
         run: |

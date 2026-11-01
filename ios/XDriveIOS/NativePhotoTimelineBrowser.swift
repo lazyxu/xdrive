@@ -159,6 +159,7 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer<Content: View>: View {
     @State private var showingDates = false
     @State private var scale: XDriveIOSNativePhotoTimelineScale = .year
     @State private var wallRevision: UInt64 = 0
+    @State private var useContinuousWall = true
 
     init(savedOffset: Binding<Int>, @ViewBuilder content: () -> Content) {
         self._savedOffset = savedOffset
@@ -176,6 +177,13 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer<Content: View>: View {
                 }
                 .buttonStyle(.bordered)
                 .accessibilityIdentifier("native-ios-local-timeline-open")
+                Menu {
+                    Button("连续滚动") { useContinuousWall = true }
+                    Button("按页查看") { useContinuousWall = false }
+                } label: {
+                    Label(useContinuousWall ? "连续" : "分页", systemImage: "rectangle.stack")
+                }
+                .accessibilityIdentifier("native-ios-local-timeline-browse-mode")
                 Spacer(minLength: 4)
                 if let index = model.index {
                     Text("已索引 \(index.indexedMediaCount) 项")
@@ -185,7 +193,12 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer<Content: View>: View {
             }
             .padding(.horizontal, 12)
             .frame(minHeight: 46)
-            content.id(wallRevision)
+            if useContinuousWall {
+                XDriveIOSNativeLocalContinuousGalleryScreen(savedOffset: $savedOffset)
+                    .id(wallRevision)
+            } else {
+                content.id(wallRevision)
+            }
         }
         .sheet(isPresented: $showingDates) {
             NavigationStack {
@@ -216,7 +229,7 @@ struct XDriveIOSNativeLocalPhotoTimelineContainer<Content: View>: View {
                                 }
                                 .accessibilityIdentifier("native-ios-local-timeline-all")
                             } footer: {
-                                Text("仅索引当前授权的照片和视频（\(index.indexedMediaCount) 项）。点击日期将定位到所在的 64 项照片页；连续滚动时间轴仍需后续补齐。")
+                                Text("仅索引当前授权的照片和视频（\(index.indexedMediaCount) 项）。日期定位支持连续浏览及分页回退；完整逐日分组和跨页 Viewer 仍需补齐。")
                             }
                             Section("\(scale.title) · \(index.groups(for: scale).count) 个日期分组") {
                                 ForEach(index.groups(for: scale)) { group in
