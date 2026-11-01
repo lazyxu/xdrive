@@ -9,6 +9,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
     let offset: Int
     let expectedTotal: Int
     let generation: UUID
+    let mediaFilter: XDriveIOSNativePhotoMediaFilter
     let selectionMode: Bool
     let selectedIDs: Set<String>
     let onSelect: (XDrivePhotoKitScanCandidate, XDrivePhotoKitScanPage) -> Void
@@ -16,7 +17,7 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
     let onRead: (XDrivePhotoKitScanPage) -> Void
     let onFailure: () -> Void
     @State private var page: XDrivePhotoKitScanPage?
-    @State private var scanner: XDrivePhotoKitBoundedSnapshotScanner?
+    @State private var scanner: XDriveIOSNativeGalleryMediaScanner?
 
 
     private var placeholderTile: some View {
@@ -99,12 +100,12 @@ private struct XDriveIOSNativeVirtualPhotoPage: View {
         }
         .padding(.horizontal, 12)
         .id("page:\(offset)")
-        .task(id: "\(generation)-\(offset)") {
+        .task(id: "\(generation)-\(offset)-\(mediaFilter.rawValue)") {
             page = nil
-            let reader = XDrivePhotoKitBoundedSnapshotScanner()
+            let reader = XDriveIOSNativeGalleryMediaScanner()
             scanner = reader
             do {
-                let count = try await reader.start(atOffset: offset)
+                let count = try await reader.start(atOffset: offset, mediaFilter: mediaFilter)
                 let loaded = try await reader.nextPage()
                 try Task.checkCancellation()
                 guard count == expectedTotal,
@@ -165,6 +166,7 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
     @Binding var savedOffset: Int
     @Environment(\.scenePhase) private var phase
     @State private var total = 0
+    @State private var mediaFilter: XDriveIOSNativePhotoMediaFilter = .all
     @State private var permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @State private var loading = false
     @State private var failure: String?
@@ -222,6 +224,14 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                             .accessibilityIdentifier("native-ios-photos-local-select-mode")
                         }
                         .padding(.horizontal, 12)
+                        Picker("媒体类型", selection: $mediaFilter) {
+                            ForEach(XDriveIOSNativePhotoMediaFilter.allCases) { option in
+                                Text(option.title).tag(option)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .padding(.horizontal, 12)
+                        .accessibilityIdentifier("native-ios-local-gallery-media-filter")
                         if selectionMode {
                             HStack(spacing: 10) {
                                 Text("已选择 \(selectedCandidates.count) 项（上限 \(XDriveIOSNativePhotoSelectionPolicy.maximumItems)）")
@@ -273,6 +283,7 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                                 let offset = number * 64
                                 XDriveIOSNativeVirtualPhotoPage(
                                     offset: offset, expectedTotal: total, generation: generation,
+                                    mediaFilter: mediaFilter,
                                     selectionMode: selectionMode,
                                     selectedIDs: Set(selectedCandidates.keys),
                                     onSelect: { asset, page in
@@ -366,6 +377,15 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
                 monitor = observer
             }
             if authorized && selected == nil && !loading && total == 0 { reload() }
+        }
+        .onChange(of: mediaFilter) { _ in
+            guard phase == .active else { return }
+            selectionMode = false
+            selectedCandidates.removeAll()
+            actionMessage = nil
+            clearReturn()
+            savedOffset = 0
+            reload()
         }
         .onChange(of: phase) { value in
             permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
@@ -541,9 +561,9 @@ struct XDriveIOSNativeLocalContinuousGalleryScreen: View {
         let epoch = generation
         loading = true
         scanTask = Task { @MainActor in
-            let reader = XDrivePhotoKitBoundedSnapshotScanner()
+            let reader = XDriveIOSNativeGalleryMediaScanner()
             do {
-                let count = try await reader.start(atOffset: 0)
+                let count = try await reader.start(atOffset: 0, mediaFilter: mediaFilter)
                 try Task.checkCancellation()
                 guard epoch == generation, phase == .active else {
                     await reader.reset()
