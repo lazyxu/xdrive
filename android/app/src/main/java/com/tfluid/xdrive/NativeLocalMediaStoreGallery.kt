@@ -1011,36 +1011,80 @@ internal fun NativeLocalPhotoSwipeSurface(
     modifier: Modifier = Modifier,
     content: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit,
 ) {
-    // Pointer input must be restarted on a new photo or zoom state, but a
-    // normal host recomposition must not leave an old callback in its scope.
+    // A real horizontal drag translates the current local still while the
+    // finger moves. No MediaStore query or neighbor decoding is triggered.
     val currentPrevious by rememberUpdatedState(onPrevious)
     val currentNext by rememberUpdatedState(onNext)
     val canSwipe = !zoomed && (onPrevious != null || onNext != null)
+    var dragDistance by remember(mediaKey) { mutableFloatStateOf(0f) }
+    var slideX by remember(mediaKey) { mutableFloatStateOf(0f) }
+    val scope = rememberCoroutineScope()
+    var settling by remember(mediaKey) { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    DisposableEffect(mediaKey) {
+        onDispose { settling?.cancel() }
+    }
     Box(
-        modifier = modifier.pointerInput(mediaKey, canSwipe) {
-            if (!canSwipe) return@pointerInput
-            var horizontalDistance = 0f
-            val threshold = 64.dp.toPx()
-            detectHorizontalDragGestures(
-                onDragStart = { horizontalDistance = 0f },
-                onDragCancel = { horizontalDistance = 0f },
-                onDragEnd = {
-                    when (nativeLocalViewerSwipeDirection(
-                        horizontalDistance, threshold, zoomed = false)) {
-                        -1 -> currentPrevious?.invoke()
-                        1 -> currentNext?.invoke()
-                    }
-                    horizontalDistance = 0f
-                },
-                onHorizontalDrag = { change, drag ->
-                    horizontalDistance += drag
-                    change.consume()
-                },
-            )
-        },
+        modifier = modifier
+            .graphicsLayer { translationX = if (canSwipe) slideX else 0f }
+            .pointerInput(mediaKey, canSwipe) {
+                if (!canSwipe) return@pointerInput
+                val threshold = 64.dp.toPx()
+                detectHorizontalDragGestures(
+                    onDragStart = {
+                        settling?.cancel()
+                        dragDistance = 0f
+                        slideX = 0f
+                    },
+                    onDragCancel = {
+                        settling?.cancel()
+                        val start = slideX
+                        settling = scope.launch {
+                            androidx.compose.animation.core.Animatable(start).animateTo(
+                                targetValue = 0f,
+                                animationSpec = androidx.compose.animation.core.tween(170),
+                            ) { slideX = value }
+                            slideX = 0f
+                        }
+                    },
+                    onDragEnd = {
+                        val direction = nativeLocalViewerSwipeDirection(
+                            dragDistance, threshold, zoomed = false)
+                        val action = when (direction) {
+                            -1 -> currentPrevious
+                            1 -> currentNext
+                            else -> null
+                        }
+                        val start = slideX
+                        // The accepted loaded-neighbor callback runs only once
+                        // the currently displayed image finishes sliding.
+                        val target = if (action == null) 0f
+                            else if (direction == 1) -size.width.toFloat()
+                            else size.width.toFloat()
+                        settling?.cancel()
+                        settling = scope.launch {
+                            androidx.compose.animation.core.Animatable(start).animateTo(
+                                targetValue = target,
+                                animationSpec = androidx.compose.animation.core.tween(135),
+                            ) { slideX = value }
+                            slideX = 0f
+                            action?.invoke()
+                        }
+                        dragDistance = 0f
+                    },
+                    onHorizontalDrag = { change, drag ->
+                        dragDistance += drag
+                        val neighbor = if (dragDistance < 0f)
+                            currentNext != null else currentPrevious != null
+                        slideX = galleryPhotoDragTranslation(
+                            dragDistance, 0f, size.width.toFloat(), neighbor)
+                        change.consume()
+                    },
+                )
+            },
         content = content,
     )
 }
+
 
 /**
  * Passive INITIAL-pass observation leaves PlayerView's native seek/tap
