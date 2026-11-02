@@ -21,7 +21,7 @@ import {
   IconButton, List, ListItemButton, ListItemIcon, ListItemText,
   Stack, TextField, Typography,
 } from '@mui/material'
-import { xDriveWorkspaceRouteTitle } from '@xdrive/ui/mui'
+import { xDriveWorkspaceRouteTitle } from '../../ui/shared/src/mui/WorkspaceRouteTitles'
 import type { XDriveSidebarDestinationModel, XDriveSidebarSectionModel } from '@xdrive/ui/mui'
 import type { XDriveWebAppRoute } from '../../ui/shared/src'
 import type { XDriveMobileSlot } from './mobileFiveSlotState'
