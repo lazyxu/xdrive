@@ -3095,7 +3095,7 @@ export default function MobileFiles(props: Props) {
         </Box>
         {selectionActive ? (
           <Stack data-xdrive-mobile-selection-toolbar direction="row" alignItems="stretch" sx={{
-            px: 0.5, pt: 0.5, pb: 0.5,
+            px: 0.5, pt: 0.5, pb: 0.5, mb: 1,
             borderTop: 1, borderColor: 'divider', flexShrink: 0, bgcolor: 'background.paper',
           }}>
             <Button aria-label="复制已选" disabled={Boolean(selectionLoad || selectionDisabledReason('copy'))} onClick={() => selectedAction('copy')}

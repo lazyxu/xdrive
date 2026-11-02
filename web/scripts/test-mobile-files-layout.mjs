@@ -69,6 +69,9 @@ assert.match(search, /px: 2, py: 0\.75/, 'search has 16px gutters and 6px vertic
 assert.match(search, /<Stack direction="row" spacing={1}/, 'search/filter gap is 8px')
 assert.match(search, /minWidth: 44, minHeight: 44/, 'filter action has a 44px hit area')
 const localBar = excerpt(files, 'data-xdrive-mobile-selection-toolbar', 'data-mobile-files-location-menu')
+const selectionDock = excerpt(files, '<Stack data-xdrive-mobile-selection-toolbar', '</Stack>')
+assert.match(selectionDock, /pb: 0\.5, mb: 1/,
+  'selection action dock also leaves an 8px gap above global navigation')
 assert.doesNotMatch(localBar, /safe-area-inset-bottom/,
   'Files category and selection bars leave the system inset to global navigation')
 assert.match(localBar, /mb: 1/, 'category pill has 8px separation from global navigation')

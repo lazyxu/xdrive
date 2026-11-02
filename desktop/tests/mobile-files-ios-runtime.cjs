@@ -2442,6 +2442,8 @@ test('F-iOS27-08B: Recent/Favorites 68px row geometry matches the shared virtual
     assert.ok(select)
     await act(async () => { select.props.onClick() })
     item = h.view.root.findAll(node => node.props?.['data-mobile-files-item'] !== undefined)[0]
+    const selectionToolbar = find(h.view, 'data-xdrive-mobile-selection-toolbar', true)
+    assert.equal(selectionToolbar.props.sx.mb, 1, 'selection action dock keeps an 8px gap above global navigation')
     assert.equal(item.props.sx['&:not(:last-child)::after'].left, 120,
       '28px native gutter plus the selected circle adds exactly its true 36px slot')
     assert.equal(item.props.sx['&:not(:last-child)::after'].left -
