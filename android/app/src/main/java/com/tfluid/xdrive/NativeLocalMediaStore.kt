@@ -87,6 +87,7 @@ internal object NativeLocalMediaStore {
         limit: Int = PHOTO_PAGE_SIZE,
         albumId: String? = null,
         cancellationSignal: CancellationSignal? = null,
+        mediaKind: String = "",
     ): List<NativeLocalMedia> = withContext(Dispatchers.IO) {
         cancellationSignal?.throwIfCanceled()
         require(limit in 1..SCAN_BATCH_SIZE)
@@ -96,14 +97,12 @@ internal object NativeLocalMediaStore {
         val idColumn = MediaStore.Files.FileColumns._ID
         val mediaType = MediaStore.Files.FileColumns.MEDIA_TYPE
         val dateColumn = MediaStore.Files.FileColumns.DATE_ADDED
+        val kinds = nativeLocalMediaTypesForKind(mediaKind)
         val selection = mutableListOf(
-            "($mediaType=? OR $mediaType=?)",
+            "(" + kinds.joinToString(" OR ") { "$mediaType=?" } + ")",
             "${MediaStore.MediaColumns.IS_PENDING}=0",
         )
-        val values = mutableListOf(
-            MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE.toString(),
-            MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO.toString(),
-        )
+        val values = kinds.map { it.toString() }.toMutableList()
         if (Build.VERSION.SDK_INT >= 30) {
             selection += "${MediaStore.MediaColumns.IS_TRASHED}=0"
         }
@@ -156,7 +155,11 @@ internal object NativeLocalMediaStore {
                     (trashedIndex < 0 || cursor.getInt(trashedIndex) == 0)) {
                     "MediaStore returned a pending or trashed Gallery asset"
                 }
-                val video = when (cursor.getInt(kindIndex)) {
+                val providerKind = cursor.getInt(kindIndex)
+                check(providerKind in kinds) {
+                    "MediaStore ignored the current Gallery media type filter"
+                }
+                val video = when (providerKind) {
                     MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE -> false
                     MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO -> true
                     else -> throw IllegalStateException("Unsupported Gallery media type")

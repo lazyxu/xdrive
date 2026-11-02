@@ -24,7 +24,13 @@ test('routed Viewer receives exact current Web Server Owner scope, never an unsc
 
 test('selected Photo Info → Map still verifies Owner and original Gallery scope', () => {
   assert.match(viewer, /const mapEntryScope = route\.params\.context && ownerScope/)
-  assert.match(viewer, /if \(!mapEntryScope \|\| !ownerScope \|\| !route\.params\.context/)
+  // The Files Viewer can deliberately choose a labeled whole-library map;
+  // an existing Gallery context must preserve its restricted Owner membership.
+  assert.match(viewer, /if \(!routedMapScope \|\| !ownerScope \|\|/)
+  assert.match(viewer, /const routedMapScope = mapEntryScope \?\? fullLibraryMapScope/)
+  assert.match(viewer, /xDriveRoutedViewerFilePhotoMapEntry\(browseContext, route\.params\.node\)/)
+  assert.match(viewer, /const originalContext = contextID \? JSON\.stringify\(browseContext\) : null/)
+  assert.match(viewer, /!renewed \|\| JSON\.stringify\(renewed\) !== originalContext/)
   assert.match(viewer, /xDriveRoutedViewerMapEntry\(/)
   assert.match(viewer, /api\.mediaBaiduNativePhotoFocus\(/)
   assert.match(viewer, /xDriveBaiduMapPhotoScopeKey\(current\) === originalKey/)

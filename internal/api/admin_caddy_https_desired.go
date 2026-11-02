@@ -33,27 +33,28 @@ type adminCaddyHTTPSDesired struct {
 }
 
 type adminCaddyHTTPSConfigDTO struct {
-	DesiredEnabled                bool       `json:"desired_enabled"`
-	DesiredDomain                 string     `json:"desired_domain"`
-	DesiredLANEnabled             bool       `json:"desired_lan_enabled"`
-	DesiredLANIP                  string     `json:"desired_lan_ip"`
-	HostApplyPending              bool       `json:"host_apply_pending"`
-	HostLANConfigured             bool       `json:"host_lan_configured"`
-	HostLANIP                     string     `json:"host_lan_ip,omitempty"`
-	Revision                      uint64     `json:"revision"`
-	Source                        string     `json:"source"`
-	UpdatedAt                     *time.Time `json:"updated_at,omitempty"`
-	ApplyState                    string     `json:"apply_state"`
-	Editable                      bool       `json:"editable"`
-	ApplySupported                bool       `json:"apply_supported"`
-	RequiresRestrictedMaintenance bool       `json:"requires_restricted_maintenance"`
-	Requirement                   string     `json:"requirement"`
-	HostObserved                  bool       `json:"host_observed"`
-	HostHTTPSConfigured           bool       `json:"host_https_configured"`
-	HostTLSState                  string     `json:"host_tls_state"`
-	HostLANTLSState               string     `json:"host_lan_tls_state"`
-	HostEnvSHA256                 string     `json:"host_env_sha256,omitempty"`
-	HostEnvPendingRedeploy        bool       `json:"host_env_pending_redeploy,omitempty"`
+	DesiredEnabled                bool                       `json:"desired_enabled"`
+	DesiredDomain                 string                     `json:"desired_domain"`
+	DesiredLANEnabled             bool                       `json:"desired_lan_enabled"`
+	DesiredLANIP                  string                     `json:"desired_lan_ip"`
+	HostApplyPending              bool                       `json:"host_apply_pending"`
+	HostLANConfigured             bool                       `json:"host_lan_configured"`
+	HostLANIP                     string                     `json:"host_lan_ip,omitempty"`
+	Revision                      uint64                     `json:"revision"`
+	Source                        string                     `json:"source"`
+	UpdatedAt                     *time.Time                 `json:"updated_at,omitempty"`
+	ApplyState                    string                     `json:"apply_state"`
+	Editable                      bool                       `json:"editable"`
+	ApplySupported                bool                       `json:"apply_supported"`
+	RequiresRestrictedMaintenance bool                       `json:"requires_restricted_maintenance"`
+	Requirement                   string                     `json:"requirement"`
+	HostObserved                  bool                       `json:"host_observed"`
+	HostHTTPSConfigured           bool                       `json:"host_https_configured"`
+	HostTLSState                  string                     `json:"host_tls_state"`
+	HostLANTLSState               string                     `json:"host_lan_tls_state"`
+	HostEnvSHA256                 string                     `json:"host_env_sha256,omitempty"`
+	HostEnvPendingRedeploy        bool                       `json:"host_env_pending_redeploy,omitempty"`
+	Certificates                  *caddyCertificateInventory `json:"certificates,omitempty"`
 }
 
 const caddyHTTPSPendingRequirement = "存在待协调的 Host 配置申请；系统已锁定 IP/域名编辑和历史回滚。独立操作员完成受控核对或恢复之前，不得重新保存或宣称已应用。"

@@ -519,7 +519,13 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
             galleryFirstPending = false
             controller.openGallery()
             if (controller.state.value.screen == Screen.GALLERY) {
-                nativeNavigation = nativeNavigation.select(NativeHomeTab.GALLERY)
+                // A new verified Owner lands in the native local photo wall,
+                // like Photos-first iOS. The separate cloud source remains
+                // available through its explicit Gallery chip.
+                nativeNavigation = nativeNavigation.copy(
+                    selected = NativeHomeTab.GALLERY,
+                    gallerySource = NativeGallerySource.LOCAL,
+                )
             }
         }
     }
@@ -1029,7 +1035,9 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                                 // Virtualized chunks avoid composing a single giant Text when
                                 // Go returns a 1 MiB text file with no line breaks.
                                 val chunks = remember(preview.text) {
-                                    preview.text.chunked(4096)
+                                    // Reuse the native full-screen reader's Unicode
+                                    // and CRLF-safe bounded display chunker.
+                                    nativeTextViewerDisplayChunks(preview.text)
                                 }
                                 if (chunks.isEmpty()) {
                                     Text("空文件", modifier = Modifier.testTag("files-text-preview-empty"))

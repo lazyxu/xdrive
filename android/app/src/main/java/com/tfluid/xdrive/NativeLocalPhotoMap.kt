@@ -14,6 +14,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,6 +23,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -29,6 +32,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.exifinterface.media.ExifInterface
@@ -37,6 +41,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import kotlin.math.log2
 
 /** ISO-6709 video location as exposed by Android's own metadata reader. */
 internal fun nativeVideoGps(value: String?): Pair<Double, Double>? {
@@ -255,27 +260,54 @@ internal fun ColumnScope.NativeLocalPhotoMapCanvas(
 ) {
     var zoom by remember { mutableFloatStateOf(1f) }
     var shift by remember { mutableStateOf(Offset.Zero) }
-    // The source already holds at most 64 verified, streaming WGS84 cells.
-    // Fit the smallest longitude arc, not [-180, 180]; a photo on each
-    // side of the antimeridian must appear as neighbors in the native map.
+    // Reuse the already-merged fitted WGS84 camera for the default offline
+    // mode. Optional OSM tiles own their separate Web Mercator projection.
     val camera = remember(cells) {
         nativeLocalMapViewport(cells.map { it.latitude to it.longitude })
     }
+    // First map entry always displays the offline WGS84 diagram. Public map
+    // tiles are a user gesture only; no third-party requests during scan.
+    var osmEnabled by remember { mutableStateOf(false) }
+    var tileFailed by remember(osmEnabled, zoom, shift) { mutableStateOf(false) }
     val density = LocalDensity.current.density
+    val uriHandler = LocalUriHandler.current
     Column(Modifier.fillMaxWidth().weight(1f)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            TextButton(onClick = { zoom = (zoom / 1.6f).coerceAtLeast(1f) },
-                modifier = Modifier.testTag("native-local-map-zoom-out")) { Text("－") }
-            TextButton(onClick = { zoom = (zoom * 1.6f).coerceAtMost(24f) },
-                modifier = Modifier.testTag("native-local-map-zoom-in")) { Text("＋") }
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.End) {
+            TextButton(onClick = {
+                zoom = if (osmEnabled) (zoom - 1f).coerceAtLeast(1f)
+                    else (zoom / 1.6f).coerceAtLeast(1f)
+            }, modifier = Modifier.testTag("native-local-map-zoom-out")) { Text("－") }
+            TextButton(onClick = {
+                zoom = if (osmEnabled) (zoom + 1f).coerceAtMost(18f)
+                    else (zoom * 1.6f).coerceAtMost(24f)
+            }, modifier = Modifier.testTag("native-local-map-zoom-in")) { Text("＋") }
             TextButton(onClick = { zoom = 1f; shift = Offset.Zero },
-                modifier = Modifier.testTag("native-local-map-fit")) { Text("适配照片") }
+                modifier = Modifier.testTag("native-local-map-fit")) {
+                Text(if (osmEnabled) "返回照片位置" else "适配照片")
+            }
+            NativeLocalOsmToggle(
+                enabled = osmEnabled,
+                interactive = selectable,
+            ) {
+                osmEnabled = !osmEnabled
+                zoom = 1f
+                shift = Offset.Zero
+            }
         }
+        if (osmEnabled) Text(
+            "公开 OSM 底图：仅按当前视窗加载瓦片，公开服务会看到请求的地图范围；" +
+                "不会收到本机照片或登录凭据。极区纬度超过 85.05° 的照片仅在关闭底图后显示。",
+            modifier = Modifier.padding(horizontal = 12.dp),
+            style = MaterialTheme.typography.bodySmall)
         BoxWithConstraints(Modifier.fillMaxSize().background(
             MaterialTheme.colorScheme.surfaceContainerLow)
+            .clipToBounds()
             .pointerInput(Unit) {
                 detectTransformGestures { _, pan, factor, _ ->
-                    zoom = (zoom * factor).coerceIn(1f, 24f)
+                    zoom = if (osmEnabled)
+                        (zoom + log2(factor.toDouble()).toFloat()).coerceIn(1f, 18f)
+                    else (zoom * factor).coerceIn(1f, 24f)
                     shift = Offset(
                         (shift.x + pan.x / density).coerceIn(-3000f, 3000f),
                         (shift.y + pan.y / density).coerceIn(-3000f, 3000f))
@@ -283,22 +315,45 @@ internal fun ColumnScope.NativeLocalPhotoMapCanvas(
             }.testTag("native-local-photo-map")) {
             val canvasWidth = maxWidth.value
             val canvasHeight = maxHeight.value
-            Canvas(Modifier.fillMaxSize()) {
-                val stroke = Color.Gray.copy(alpha = 0.2f)
-                for (k in 1..5) {
-                    val x = size.width * k / 6f
-                    val y = size.height * k / 6f
-                    drawLine(stroke, Offset(x, 0f), Offset(x, size.height))
-                    drawLine(stroke, Offset(0f, y), Offset(size.width, y))
+            val tilePlan = remember(osmEnabled, canvasWidth, canvasHeight, zoom, shift, cells) {
+                if (osmEnabled) {
+                    // The full-library GPS overview remains independent of
+                    // the provider. Once user enables tiles, choose the real
+                    // most-represented scanned place as the initial camera,
+                    // so zooming reaches an actual location rather than 0°,0°.
+                    val focus = cells.firstOrNull {
+                        it.latitude in -NativeLocalOsmTilePolicy.MAX_LATITUDE..
+                            NativeLocalOsmTilePolicy.MAX_LATITUDE
+                    }
+                    NativeLocalOsmTilePolicy.plan(
+                        canvasWidth, canvasHeight, zoom, shift.x, shift.y,
+                        focus?.latitude ?: 0.0, focus?.longitude ?: 0.0,
+                    )
+                } else null
+            }
+            if (osmEnabled && tilePlan != null) {
+                NativeLocalOsmMapLayer(tilePlan) { tileFailed = true }
+            } else {
+                Canvas(Modifier.fillMaxSize()) {
+                    val stroke = Color.Gray.copy(alpha = 0.2f)
+                    for (k in 1..5) {
+                        val x = size.width * k / 6f
+                        val y = size.height * k / 6f
+                        drawLine(stroke, Offset(x, 0f), Offset(x, size.height))
+                        drawLine(stroke, Offset(0f, y), Offset(size.width, y))
+                    }
                 }
             }
             for (cell in cells) {
-                val point = camera?.position(
+                val projected = if (osmEnabled && tilePlan != null) {
+                    NativeLocalOsmTilePolicy.point(
+                        tilePlan, cell.latitude, cell.longitude)
+                } else camera?.position(
                     cell.latitude, cell.longitude,
-                    canvasWidth, canvasHeight, zoom,
-                    shift.x, shift.y,
-                ) ?: continue
-                val (x, y) = point
+                    canvasWidth, canvasHeight, zoom, shift.x, shift.y,
+                )
+                val x = projected?.first ?: continue
+                val y = projected.second
                 if (x < 0f || x >= canvasWidth || y < 0f || y >= canvasHeight) continue
                 Surface(
                     shape = RoundedCornerShape(9.dp),
@@ -319,6 +374,20 @@ internal fun ColumnScope.NativeLocalPhotoMapCanvas(
                             style = MaterialTheme.typography.labelSmall)
                     }
                 }
+            }
+            if (osmEnabled) {
+                TextButton(
+                    onClick = { uriHandler.openUri(NativeLocalOsmTileLoader.PROVIDER_COPYRIGHT) },
+                    modifier = Modifier.align(Alignment.BottomEnd)
+                        .testTag("native-local-osm-attribution"),
+                ) { Text("© OpenStreetMap contributors") }
+                if (tileFailed) Text(
+                    "OSM 瓦片加载失败；关闭底图仍可浏览本机 GPS 照片。",
+                    modifier = Modifier.align(Alignment.BottomStart)
+                        .padding(8.dp).testTag("native-local-osm-error"),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
             }
         }
     }

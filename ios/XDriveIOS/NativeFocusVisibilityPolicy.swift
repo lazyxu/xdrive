@@ -10,4 +10,15 @@ enum XDriveIOSNativeFocusVisibilityPolicy {
         !(ownerVerified && tab == "gallery" &&
           (gallerySource == "cloud" || gallerySource == "map") && focused)
     }
+
+    /// A departed Gallery child cannot set the current source's L2 focus.
+    /// Source changes and non-Gallery tabs always reject the old event, even
+    /// if its delayed value is false (which would override new L2 focus).
+    static func acceptsFocusUpdate(
+        tab: String, gallerySource: String, callbackSource: String,
+        ownerVerified: Bool
+    ) -> Bool {
+        ownerVerified && tab == "gallery" && gallerySource == callbackSource &&
+            (callbackSource == "cloud" || callbackSource == "map")
+    }
 }
