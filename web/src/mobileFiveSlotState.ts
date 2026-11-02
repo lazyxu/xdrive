@@ -19,8 +19,18 @@ const viewers = new Set<string>([
 ])
 const adminOnly = new Set<string>([
   'admin-users', 'admin-audit', 'admin-storage',
-  'admin-services', 'admin-maintenance',
+  'admin-services', 'admin-maintenance', 'global-tasks',
 ])
+
+/** Personal Transfers and global Server Tasks share the /tasks app ID, but
+ * they are separate authorized workspaces. Recent dynamic navigation must
+ * preserve both routes without mixing their details or Owner permissions. */
+function xDriveMobileDynamicRecentKey(route: XDriveWebAppRoute): string {
+  if (route.app === 'tasks') {
+    return route.params.scope === 'global' ? 'global-tasks' : 'transfers'
+  }
+  return route.app
+}
 
 /** Web hashes stay authoritative; fixed tabs are presentation, not another auth router. */
 export function xDriveMobileSlotForRoute(route: XDriveWebAppRoute): XDriveMobileSlot | null {
@@ -70,7 +80,9 @@ export function xDriveRememberMobileNavigation(
     case 'dynamic':
       return {
         ...base,
-        dynamic: [route, ...dynamic.filter(item => item.app !== route.app)].slice(0, 6),
+        dynamic: [route, ...dynamic.filter(item =>
+          xDriveMobileDynamicRecentKey(item) !== xDriveMobileDynamicRecentKey(route)
+        )].slice(0, 6),
         favorites,
       }
     default: return { ...base, dynamic, favorites }
