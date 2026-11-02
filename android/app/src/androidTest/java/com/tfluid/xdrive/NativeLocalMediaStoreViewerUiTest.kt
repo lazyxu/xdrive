@@ -97,7 +97,10 @@ class NativeLocalMediaStoreViewerUiTest {
             compose.onNodeWithTag(tileTag).assertExists()
         } finally {
             if (composed) runCatching {
-                compose.setContent {}
+                if (compose.onAllNodesWithTag("native-local-viewer-back")
+                        .fetchSemanticsNodes().isNotEmpty()) {
+                    compose.onNodeWithTag("native-local-viewer-back").performClick()
+                }
                 compose.waitForIdle()
             }
             bitmap?.recycle()
