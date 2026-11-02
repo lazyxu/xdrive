@@ -1,0 +1,23 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const root = path.resolve(__dirname, '../..')
+const read = p => fs.readFileSync(path.join(root, p), 'utf8')
+
+test('Gallery and Places photo walls omit filename captions without losing accessible names', () => {
+  const gallery = read('ui/shared/src/mui/MediaGallery.tsx')
+  const drawer = read('ui/shared/src/mui/MediaGalleryPlacesPhotoDrawer.tsx')
+  const tile = gallery.slice(gallery.indexOf('function MediaTile({'), gallery.indexOf('function MediaTileGrid({'))
+  assert.ok(tile.includes('data-xdrive-media-tile'))
+  assert.doesNotMatch(tile, /className="media-name"|&:hover \.media-name/)
+  assert.match(tile, /alt=\{item\.node\.name\}/)
+  assert.match(tile, /aria-label=\{livePhoto \? item\.node\.name/)
+  const cells = drawer.slice(drawer.indexOf('{items.map(item => ('), drawer.indexOf('<Stack direction="row" alignItems="center" justifyContent="space-between"', drawer.indexOf('{items.map(item => (')))
+  assert.doesNotMatch(cells, /\{item\.node\.name\}\s*<\/Typography>/)
+  assert.match(cells, /aria-label=/)
+  assert.match(cells, /alt=\{item\.node\.name\}/)
+  assert.match(drawer, /gridAutoRows:expanded\?'minmax\(108px, max-content\)'/)
+  assert.match(read('ui/shared/src/mui/MediaGalleryAlbumOrganizer.tsx'), /\{album\.name\}/)
+})

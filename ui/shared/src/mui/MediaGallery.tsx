@@ -5500,9 +5500,6 @@ function MediaTile({
         outline: selectedForAction ? '2px solid' : 'none',
         outlineColor: selectedForAction ? 'primary.main' : 'transparent',
         outlineOffset: selectedForAction ? -2 : 0,
-        '&:hover .media-name, &:focus-visible .media-name, &:focus-within .media-name': {
-          opacity: 1,
-        },
         '&:hover .media-favorite, &:focus-within .media-favorite': {
           opacity: 1,
           pointerEvents: 'auto',
@@ -5719,24 +5716,6 @@ function MediaTile({
           设封面
         </Button>
       ) : null}
-      <Box
-        className="media-name"
-        sx={{
-          position: 'absolute',
-          inset: 'auto 0 0',
-          px: 1,
-          pt: 2.5,
-          pb: 0.75,
-          opacity: 0,
-          pointerEvents: 'none',
-          transition: 'opacity 120ms ease',
-          background: 'linear-gradient(transparent, rgba(0,0,0,.72))',
-        }}
-      >
-        <Typography variant="caption" color="#fff" noWrap display="block">
-          {item.node.name}
-        </Typography>
-      </Box>
     </Paper>
   )
 }
