@@ -290,6 +290,9 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
     @State private var selectionMode = false
     @State private var selectedCandidates: [String: XDrivePhotoKitScanCandidate] = [:]
     @State private var confirmingAlbumDelete = false
+    @State private var confirmingAlbumRemove = false
+    @State private var showingDestinationPicker = false
+    @State private var destinationCandidates: [XDrivePhotoKitScanCandidate] = []
     @State private var albumActionBusy = false
     @State private var albumActionTask: Task<Void, Never>?
     @State private var albumActionEpoch = UUID()
@@ -361,6 +364,16 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
                                     XDriveIOSNativeLocalPhotoSharePolicy.maximumItems)
                                 Button("收藏选中") { runAlbumAction(favorite: true) }
                                 Button("取消收藏") { runAlbumAction(favorite: false) }
+                                Button("添加到其他相簿") {
+                                    destinationCandidates = selectedCandidates.values.sorted {
+                                        $0.id < $1.id
+                                    }
+                                    showingDestinationPicker = true
+                                }
+                                Button("从此相簿移除") {
+                                    confirmingAlbumRemove = true
+                                }
+                                .disabled(album.kind != "用户相册")
                                 Button("删除选中", role: .destructive) {
                                     confirmingAlbumDelete = true
                                 }
@@ -464,6 +477,30 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
             Button("取消", role: .cancel) {}
         } message: {
             Text("系统照片删除操作不影响 xDrive 云端备份。")
+        }
+        .confirmationDialog(
+            "从当前相簿移除选中的 \(selectedCandidates.count) 项？",
+            isPresented: $confirmingAlbumRemove, titleVisibility: .visible
+        ) {
+            Button("只从相簿移除", role: .destructive) {
+                runAlbumAction(removeFromAlbum: true)
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("这些照片仍保留在系统照片库及其他相簿，不会删除原件或云端备份。")
+        }
+        .sheet(isPresented: $showingDestinationPicker) {
+            XDriveIOSNativeAlbumDestinationPicker(
+                candidates: destinationCandidates,
+                excludingCollectionID: album.collectionIdentifier,
+                onAdded: {
+                    selectionMode = false
+                    selectedCandidates.removeAll()
+                    destinationCandidates.removeAll()
+                    reload()
+                    albumActionMessage = "已加入所选相簿。"
+                }
+            )
         }
         .sheet(item: $albumShareSession, onDismiss: {
             retainedAlbumShare?.discard()
@@ -692,10 +729,14 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
         }
     }
 
-    private func runAlbumAction(delete: Bool = false, favorite: Bool? = nil) {
+    private func runAlbumAction(
+        delete: Bool = false, favorite: Bool? = nil,
+        removeFromAlbum: Bool = false
+    ) {
         guard selectionMode, albumAuthorized, phase == .active,
               selected == nil, !albumActionBusy, !albumShareBusy,
-              let sourcePage = page, delete || favorite != nil else { return }
+              let sourcePage = page,
+              delete || favorite != nil || removeFromAlbum else { return }
         let batch = selectedCandidates.values.sorted { $0.id < $1.id }
         guard !batch.isEmpty, batch.count <= 64 else { return }
         let token = UUID()
@@ -705,7 +746,11 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
         albumActionTask = Task { @MainActor in
             do {
                 try await revalidateAlbumSelection(batch, expected: sourcePage)
-                if delete {
+                if removeFromAlbum {
+                    try await XDriveIOSNativePhotoAlbumMutations.remove(
+                        batch, from: album
+                    )
+                } else if delete {
                     try await XDriveIOSNativeLocalPhotoSelectionActions.delete(batch)
                 } else if let favorite {
                     try await XDriveIOSNativeLocalPhotoSelectionActions.setFavorite(
@@ -718,7 +763,8 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
                 // A PhotoKit change callback can independently invalidate
                 // the old page. Never keep selected IDs after an edit.
                 reload()
-                albumActionMessage = delete ? "系统照片删除操作已完成。" :
+                albumActionMessage = removeFromAlbum ? "已从相簿移除，系统原图未删除。" :
+                    delete ? "系统照片删除操作已完成。" :
                     (favorite == true ? "已收藏选中照片。" : "已取消选中照片的收藏。")
             } catch is CancellationError {
             } catch {
@@ -745,6 +791,9 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
         selectionMode = false
         selectedCandidates.removeAll()
         confirmingAlbumDelete = false
+        confirmingAlbumRemove = false
+        showingDestinationPicker = false
+        destinationCandidates.removeAll()
     }
 
     private func restoreAfterViewer() {
@@ -853,6 +902,17 @@ struct XDriveIOSNativePhotoAlbumsScreen: View {
     @State private var error: String?
     @State private var epoch = UUID()
     @State private var task: Task<Void, Never>?
+    @State private var showingCreateAlbum = false
+    @State private var showingRenameAlbum = false
+    @State private var createName = ""
+    @State private var renameName = ""
+    @State private var renameTarget: XDriveLocalPhotoAlbumSummary?
+    @State private var showingDeleteAlbum = false
+    @State private var deleteTarget: XDriveLocalPhotoAlbumSummary?
+    @State private var albumMutationBusy = false
+    @State private var albumMutationMessage: String?
+    @State private var albumMutationTask: Task<Void, Never>?
+    @State private var albumMutationEpoch = UUID()
 
     var body: some View {
         ScrollView {
@@ -895,13 +955,34 @@ struct XDriveIOSNativePhotoAlbumsScreen: View {
                             "相册 \(page.offset + 1)–\(page.offset + page.items.count) / \(page.total)")
                             .font(.caption).foregroundStyle(.secondary)
                         ForEach(page.items) { album in
-                            NavigationLink {
-                                XDriveIOSNativeAlbumContentsScreen(album: album)
-                            } label: {
-                                XDriveIOSNativeAlbumCover(album: album)
+                            HStack(spacing: 8) {
+                                NavigationLink {
+                                    XDriveIOSNativeAlbumContentsScreen(album: album)
+                                } label: {
+                                    XDriveIOSNativeAlbumCover(album: album)
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(albumMutationBusy)
+                                .accessibilityIdentifier("native-ios-gallery-album-open")
+                                if album.kind == "用户相册" {
+                                    Menu {
+                                        Button("重命名相簿") {
+                                            renameTarget = album
+                                            renameName = album.name
+                                            showingRenameAlbum = true
+                                        }
+                                        Button("删除相簿", role: .destructive) {
+                                            deleteTarget = album
+                                            showingDeleteAlbum = true
+                                        }
+                                    } label: {
+                                        Image(systemName: "ellipsis.circle")
+                                            .frame(width: 44, height: 44)
+                                    }
+                                    .disabled(albumMutationBusy)
+                                    .accessibilityIdentifier("native-ios-album-manage-menu")
+                                }
                             }
-                            .buttonStyle(.plain)
-                            .accessibilityIdentifier("native-ios-gallery-album-open")
                         }
                         HStack {
                             Button("上一页") { load(offset: max(0, page.offset - 32)) }
@@ -914,6 +995,10 @@ struct XDriveIOSNativePhotoAlbumsScreen: View {
                     }
                 }
                 if loading { ProgressView("读取已授权相册…") }
+                if albumMutationBusy { ProgressView("正在更新系统相簿…") }
+                if let albumMutationMessage {
+                    Text(albumMutationMessage).font(.footnote).foregroundStyle(.secondary)
+                }
                 if let error {
                     Text(error).foregroundStyle(.red)
                     Button("从第一页重试") { savedOffset = 0; reload() }
@@ -924,10 +1009,68 @@ struct XDriveIOSNativePhotoAlbumsScreen: View {
             .padding(12)
         }
         .navigationTitle("相册")
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    createName = ""
+                    showingCreateAlbum = true
+                } label: {
+                    Label("新建相簿", systemImage: "plus")
+                }
+                .disabled(albumMutationBusy ||
+                    (permission != .authorized && permission != .limited))
+                .accessibilityIdentifier("native-ios-album-create")
+            }
+        }
+        .alert("新建相簿", isPresented: $showingCreateAlbum) {
+            TextField("相簿名称", text: $createName)
+            Button("新建") {
+                let proposed = createName
+                runAlbumMutation(success: "已创建系统用户相簿。") {
+                    try await XDriveIOSNativePhotoAlbumMutations.create(proposed)
+                }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("创建 iOS 本机相簿，不会创建 xDrive 云端目录。")
+        }
+        .alert("重命名相簿", isPresented: $showingRenameAlbum) {
+            TextField("相簿名称", text: $renameName)
+            Button("保存") {
+                if let target = renameTarget {
+                    let proposed = renameName
+                    runAlbumMutation(success: "系统相簿已重命名。") {
+                        try await XDriveIOSNativePhotoAlbumMutations.rename(
+                            target, to: proposed
+                        )
+                    }
+                }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("仅修改用户相簿名称，不会修改照片或云端文件。")
+        }
+        .confirmationDialog(
+            "删除这个用户相簿？", isPresented: $showingDeleteAlbum,
+            titleVisibility: .visible
+        ) {
+            Button("只删除相簿", role: .destructive) {
+                if let target = deleteTarget {
+                    runAlbumMutation(success: "系统相簿已删除，原有照片保留。") {
+                        try await XDriveIOSNativePhotoAlbumMutations.delete(target)
+                    }
+                }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("仅删除相簿本身，照片仍在系统照片库，云端备份不受影响。")
+        }
         .onAppear { libraryMonitor.start(); reload() }
         .onChange(of: libraryMonitor.revision) { _ in
-            invalidate()
-            error = "相册目录发生变化，请重新读取。"
+            // External changes and our own successful PhotoKit mutations
+            // both require a new authorized 32-item album directory.
+            if phase == .active && !albumMutationBusy { reload() }
+            else { invalidate() }
         }
         .onChange(of: phase) { state in
             if state == .active { reload() } else { invalidate() }
@@ -935,6 +1078,35 @@ struct XDriveIOSNativePhotoAlbumsScreen: View {
         .onDisappear {
             libraryMonitor.stop()
             suspendForNavigation()
+        }
+    }
+
+    private func runAlbumMutation(
+        success: String,
+        _ operation: @escaping @MainActor () async throws -> Void
+    ) {
+        guard !albumMutationBusy, phase == .active,
+              permission == .authorized || permission == .limited else { return }
+        let ticket = UUID()
+        albumMutationEpoch = ticket
+        albumMutationBusy = true
+        albumMutationMessage = nil
+        albumMutationTask = Task { @MainActor in
+            do {
+                try await operation()
+                guard albumMutationEpoch == ticket else { return }
+                reload()
+                albumMutationMessage = success
+            } catch {
+                if albumMutationEpoch == ticket {
+                    albumMutationMessage =
+                        "相簿名称、访问权限或系统相簿已发生变化；本次操作未确认，请刷新。"
+                }
+            }
+            if albumMutationEpoch == ticket {
+                albumMutationBusy = false
+                albumMutationTask = nil
+            }
         }
     }
 
