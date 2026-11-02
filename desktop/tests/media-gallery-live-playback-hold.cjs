@@ -18,6 +18,7 @@ assert.ok(start > 0, 'the production Live Photo helpers and component must exist
 const source = [
   "import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'",
   "import { xDriveAbortHTMLMediaElement } from './teardown'",
+  "import { XDRIVE_PHOTO_PAGE_SETTLE_MS, xDrivePhotoFingerTranslation, xDrivePhotoPageTurn } from './swipe'",
   "import { Box, Chip, CircularProgress, XDriveLivePhotoGlyph, XDriveMediaLoadingProgress, xDriveAnchorPreviewZoom, xDriveClampPreviewViewport } from './fixture'",
   'type XDriveLivePhotoMotionSource = string | { url: string; dispose?: () => void }',
   'type XDriveByteProgressHandler = (loaded: number, total?: number) => void',
@@ -49,10 +50,20 @@ const teardownJS = ts.transpileModule(read('ui/shared/src/mui/mediaPreviewStream
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText
 new Function('exports', 'module', teardownJS)(teardownModule.exports, teardownModule)
+// Load the real pure swipe implementation: this test compiles the production
+// component body without the source file's imports, so its new dependency
+// must be bound rather than mocked or skipped.
+const swipeModule = { exports: {} }
+const swipeJS = ts.transpileModule(read('ui/shared/src/media-gallery-photo-swipe.ts'), {
+  fileName: 'media-gallery-photo-swipe.ts',
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText
+new Function('exports', 'module', swipeJS)(swipeModule.exports, swipeModule)
 const mocks = {
   react: React,
   'react/jsx-runtime': require('react/jsx-runtime'),
   './teardown': teardownModule.exports,
+  './swipe': swipeModule.exports,
   './fixture': {
     Box: 'mounted-live-box',
     Chip: 'mounted-live-chip',
