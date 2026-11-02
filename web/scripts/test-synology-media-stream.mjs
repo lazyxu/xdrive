@@ -42,16 +42,16 @@ const local = adapter.createXDriveSynologyBackupLocalClient(cgi)
 assert.throws(() => adapter.createXDriveSynologyBackupLocalClient(
   'https://other.example/webman/3rdparty/xdrivenas/backup.cgi'), /same-origin/)
 // Deterministic DSM HEAD stub: no remote network call in fixture tests.
-const pdfHEADCalls = []
-let pdfHEADStatus = 200
-let pdfHEADHeaders = {}
+const mediaHEADCalls = []
+let mediaHEADStatus = 200
+let mediaHEADHeaders = {}
 const source = transpile('ui/shared/src/synology-media-stream.ts', {
   './synology-backup-adapter': adapter,
 }, {
   fetch: async (url, options) => {
-    pdfHEADCalls.push({url, options})
-    return {status: pdfHEADStatus, headers: {
-      get: name => pdfHEADHeaders[name.toLowerCase()] ?? null,
+    mediaHEADCalls.push({url, options})
+    return {status: mediaHEADStatus, headers: {
+      get: name => mediaHEADHeaders[name.toLowerCase()] ?? null,
     }}
   },
 })
@@ -84,7 +84,20 @@ const checked = {
   },
 }
 const signal = new AbortController().signal
+mediaHEADHeaders = {
+  'content-type': 'video/mp4',
+  'accept-ranges': 'bytes',
+  'content-length': String(file.size),
+  'etag': '"' + sha + '"',
+}
 const streamURL = await xDriveSynologyLoadNativeMediaStream(checked, file, signal)
+assert.equal(mediaHEADCalls.length, 1, 'native video requires an authenticated HEAD')
+assert.equal(mediaHEADCalls[0].options.method, 'HEAD')
+assert.equal(mediaHEADCalls[0].options.credentials, 'same-origin')
+assert.equal(mediaHEADCalls[0].options.mode, 'same-origin')
+assert.equal(mediaHEADCalls[0].options.cache, 'no-store')
+assert.equal(mediaHEADCalls[0].options.redirect, 'error')
+assert.equal(mediaHEADCalls[0].options.referrerPolicy, 'no-referrer')
 const parsed = new URL(streamURL)
 assert.equal(parsed.origin, location.origin)
 assert.equal(parsed.pathname, '/webman/3rdparty/xdrivenas/backup.cgi')
@@ -96,7 +109,48 @@ assert.equal(parsed.searchParams.get('sha256'), sha)
 assert.equal(parsed.searchParams.get('mime'), 'video/mp4')
 assert.equal(parsed.searchParams.size, 6)
 assert.ok(!/token|bearer|ticket|http%3a|private/i.test(parsed.search))
-assert.equal(calls, 1, 'only one tiny Owner preflight; bytes stream via native media element')
+assert.equal(calls, 1, 'only one tiny Owner byte proof; bytes stream via native media element')
+
+// Missing Owner permission, stale revision or HTML masquerading as a video must
+// enter shared Viewer Retry *before* mounting the native playback element.
+const videoHEADHeaders = { ...mediaHEADHeaders }
+for (const variation of [
+  { status: 401 }, { status: 403 },
+  { headers: { ...videoHEADHeaders, 'content-type': 'text/html' } },
+  { headers: { ...videoHEADHeaders, 'accept-ranges': 'none' } },
+  { headers: { ...videoHEADHeaders, 'content-length': '1' } },
+  { headers: { ...videoHEADHeaders, 'etag': '"stale-version"' } },
+]) {
+  mediaHEADStatus = variation.status ?? 200
+  mediaHEADHeaders = variation.headers ?? videoHEADHeaders
+  await assert.rejects(xDriveSynologyLoadNativeMediaStream(checked, file, signal),
+    /Authenticated DSM media Range preflight unavailable/)
+}
+mediaHEADStatus = 200
+mediaHEADHeaders = videoHEADHeaders
+
+// Audio uses the same Owner HTTP contract, without loading the entire file.
+const audioBytes = Uint8Array.from([0x49, 0x44, 0x33, 4, 0, 0, 1, 2, 3])
+const audio = { ...file, id: 43, name: 'sound.mp3', size: audioBytes.length }
+const audioClient = {
+  ownerFileMediaStreamURL: local.ownerFileMediaStreamURL,
+  async ownerFileMediaRange(id, revision, offset, length) {
+    assert.equal(id, audio.id)
+    assert.equal(revision, audio.revision)
+    assert.equal(offset, 0)
+    assert.equal(length, audioBytes.length)
+    return { offset, revision, total: audio.size, sha256: sha, data: audioBytes }
+  },
+}
+mediaHEADHeaders = {
+  'content-type': 'audio/mpeg',
+  'accept-ranges': 'bytes',
+  'content-length': String(audio.size),
+  'etag': '"' + sha + '"',
+}
+const audioURL = await xDriveSynologyLoadNativeMediaStream(audioClient, audio, signal)
+assert.equal(new URL(audioURL).searchParams.get('mime'), 'audio/mpeg')
+assert.equal(mediaHEADCalls.at(-1).options.method, 'HEAD')
 
 // Large PDFs use the identical bounded, authenticated Owner Range CGI, not
 // a 33 MiB renderer Blob. Small PDFs keep the complete SHA-verified path.
@@ -117,12 +171,13 @@ const pdfClient = {
     return { offset, revision, total: pdf.size, sha256: sha, data: pdfBytes }
   },
 }
-pdfHEADHeaders = {
+mediaHEADHeaders = {
   'content-type': 'application/pdf',
   'accept-ranges': 'bytes',
   'content-length': String(pdf.size),
   'etag': '"' + sha + '"',
 }
+const pdfHEADStart = mediaHEADCalls.length
 const pdfURL = new URL(await xDriveSynologyLoadNativeMediaStream(pdfClient, pdf))
 assert.equal(pdfURL.origin, location.origin)
 assert.equal(pdfURL.searchParams.get('op'), 'cloud-media-stream')
@@ -130,29 +185,29 @@ assert.equal(pdfURL.searchParams.get('mime'), 'application/pdf')
 assert.equal(pdfURL.searchParams.get('total'), String(pdf.size))
 assert.equal(pdfURL.searchParams.size, 6)
 assert.equal(pdfReads, 1)
-assert.equal(pdfHEADCalls.length, 1, 'exactly one initial PDF HEAD')
-assert.equal(pdfHEADCalls[0].options.method, 'HEAD')
-assert.equal(pdfHEADCalls[0].options.credentials, 'same-origin')
-assert.equal(pdfHEADCalls[0].options.mode, 'same-origin')
-assert.equal(pdfHEADCalls[0].options.cache, 'no-store')
-assert.equal(pdfHEADCalls[0].options.redirect, 'error')
-assert.equal(pdfHEADCalls[0].options.referrerPolicy, 'no-referrer')
+assert.equal(mediaHEADCalls.length, pdfHEADStart + 1, 'exactly one initial PDF HEAD')
+assert.equal(mediaHEADCalls[pdfHEADStart].options.method, 'HEAD')
+assert.equal(mediaHEADCalls[pdfHEADStart].options.credentials, 'same-origin')
+assert.equal(mediaHEADCalls[pdfHEADStart].options.mode, 'same-origin')
+assert.equal(mediaHEADCalls[pdfHEADStart].options.cache, 'no-store')
+assert.equal(mediaHEADCalls[pdfHEADStart].options.redirect, 'error')
+assert.equal(mediaHEADCalls[pdfHEADStart].options.referrerPolicy, 'no-referrer')
 for (const variation of [
   {status: 401}, {status: 403}, {status: 404}, {status: 410},
-  {headers: {...pdfHEADHeaders, 'content-type': 'text/html'}},
-  {headers: {...pdfHEADHeaders, 'accept-ranges': 'none'}},
-  {headers: {...pdfHEADHeaders, 'content-length': '1'}},
-  {headers: {...pdfHEADHeaders, 'etag': '"stale-version"'}},
+  {headers: {...mediaHEADHeaders, 'content-type': 'text/html'}},
+  {headers: {...mediaHEADHeaders, 'accept-ranges': 'none'}},
+  {headers: {...mediaHEADHeaders, 'content-length': '1'}},
+  {headers: {...mediaHEADHeaders, 'etag': '"stale-version"'}},
 ]) {
-  pdfHEADStatus = variation.status ?? 200
-  const valid = pdfHEADHeaders
-  pdfHEADHeaders = variation.headers ?? valid
+  mediaHEADStatus = variation.status ?? 200
+  const valid = mediaHEADHeaders
+  mediaHEADHeaders = variation.headers ?? valid
   await assert.rejects(xDriveSynologyLoadNativeMediaStream(pdfClient, pdf, signal),
     /Authenticated DSM PDF Range preflight unavailable/)
-  pdfHEADStatus = 200
-  pdfHEADHeaders = valid
+  mediaHEADStatus = 200
+  mediaHEADHeaders = valid
 }
-assert.equal(pdfHEADCalls.length, 9, 'every rejected HTTP HEAD checked exactly once')
+assert.equal(mediaHEADCalls.length, pdfHEADStart + 9, 'every rejected PDF HEAD checked exactly once')
 assert.equal(xDriveSynologyPlaybackMagic(pdfBytes, 'application/pdf'), true)
 assert.equal(xDriveSynologyPlaybackMagic(
   Uint8Array.from(Buffer.from('<html>unauthorized</html>')), 'application/pdf'), false)
@@ -205,7 +260,7 @@ assert.match(filesUI, /kind === 'pdf' && typeof item\.size === 'number'/)
 assert.match(filesUI, /item\.size > XDRIVE_SYNOLOGY_MEDIA_BLOB_MAX_BYTES/)
 assert.match(filesUI, /mime === 'application\/pdf'/)
 assert.match(filesUI, /<XDriveFileQuickLookDialog/)
-assert.match(filesUI, /loadPreviewURL=\{loadMediaPreview\}/)
+assert.match(filesUI, /loadPreviewURL=\{thumbnailOnlyPreview \? undefined : loadMediaPreview\}/)
 const viewer = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/FilePreviewSurface.tsx'), 'utf8')
 assert.match(viewer, /data-xdrive-preview-media-state="video"/)
 assert.match(viewer, /data-xdrive-preview-media-state="audio"/)
