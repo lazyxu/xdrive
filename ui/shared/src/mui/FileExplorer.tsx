@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { xDriveFileExplorerMarqueeContentPoint } from './FileExplorerMarqueeGeometry'
 import { xDriveResolveFileExplorerCapabilities } from '../file-explorer-capabilities'
 import {
   XDriveFileExplorerItemIcon,
@@ -2067,6 +2068,21 @@ export function XDriveFileExplorer({
     return [...selected.values()]
   }
 
+  // Pointer capture continues outside the scroll host. Convert mouse points
+  // into bounded content coordinates so the absolutely positioned marquee
+  // cannot grow the scrollable area or trigger a grid/scrollbar layout shift.
+  const marqueeContentPoint = (host: HTMLDivElement, clientX: number, clientY: number) => {
+    const bounds = host.getBoundingClientRect()
+    return xDriveFileExplorerMarqueeContentPoint({
+      left: bounds.left + host.clientLeft,
+      top: bounds.top + host.clientTop,
+      width: host.clientWidth,
+      height: host.clientHeight,
+      scrollLeft: host.scrollLeft,
+      scrollTop: host.scrollTop,
+    }, clientX, clientY)
+  }
+
   const startMarqueeSelection = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (viewMode === 'columns') return
     if (event.pointerType !== 'mouse' || event.button !== 0 || renamingID !== null || draggedItems.length > 0) return
@@ -2083,8 +2099,7 @@ export function XDriveFileExplorer({
     if (horizontalScrollbar > 0 && event.clientY >= rect.bottom - horizontalScrollbar) return
 
     const additive = event.ctrlKey || event.metaKey
-    const contentX = event.clientX - rect.left + host.scrollLeft
-    const contentY = event.clientY - rect.top + host.scrollTop
+    const { x: contentX, y: contentY } = marqueeContentPoint(host, event.clientX, event.clientY)
     marqueeSessionRef.current = {
       pointerId: event.pointerId,
       startClientX: event.clientX,
@@ -2097,7 +2112,8 @@ export function XDriveFileExplorer({
     setSelectionAnchorID(null)
     setSelectionAnchorIndex(null)
     if (!additive) commitSelection([])
-    setMarqueeRect({ left: contentX, top: contentY, width: 0, height: 0 })
+    // Don't mount a zero-size bordered overlay on an ordinary background click.
+    setMarqueeRect(null)
     host.setPointerCapture(event.pointerId)
     event.preventDefault()
   }
@@ -2109,9 +2125,9 @@ export function XDriveFileExplorer({
     const session = marqueeSessionRef.current
     if (!pending || !session || session.pointerId !== pending.pointerId) return
     const host = pending.host
-    const rect = host.getBoundingClientRect()
-    const currentContentX = pending.clientX - rect.left + host.scrollLeft
-    const currentContentY = pending.clientY - rect.top + host.scrollTop
+    const { x: currentContentX, y: currentContentY } = marqueeContentPoint(
+      host, pending.clientX, pending.clientY,
+    )
     setMarqueeRect({
       left: Math.min(session.startContentX, currentContentX),
       top: Math.min(session.startContentY, currentContentY),
@@ -7054,8 +7070,9 @@ export function XDriveFileExplorer({
               top: marqueeRect.top,
               width: marqueeRect.width,
               height: marqueeRect.height,
-              border: '1px solid',
-              borderColor: 'primary.main',
+              // An outline paints the selection edge without adding scroll overflow.
+              outline: '1px solid',
+              outlineColor: 'primary.main',
               bgcolor: 'action.selected',
               pointerEvents: 'none',
               zIndex: 4,
