@@ -21,11 +21,10 @@ export function createXDriveSynologyHost(): XDriveWorkspaceHostAdapter & { reado
       localBackupClient: local,
       ownerBackupReadFallback: true,
       // Only the verified same-origin DSM CGI methods are enabled. The shared
-      // Desktop Files command bar remains visible; no fake NAS upload/write.
+      // Desktop Files command bar remains visible; no generic NAS-path upload or unrestricted Agent write.
       ownerFilesPage: {
         client: local,
         unavailableActions: {
-          uploadFiles: 'DSM Owner 文件上传尚未接通已授权 Host API。',
           uploadFolder: 'DSM Owner 文件夹上传尚未接通已授权 Host API。',
           copy: 'DSM Owner 文件目前没有经过授权的云端复制接口。',
           cut: 'DSM Owner 文件目前没有经过授权的移动接口。',
