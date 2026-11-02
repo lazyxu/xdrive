@@ -349,9 +349,7 @@ struct XDriveIOSNativeMediaGalleryReader {
         if item.isVideo { return (nil, signedURL) }
         let still: Data
         do {
-            still = try await read(
-                signedURL, bearer: false, maximum: 32 * 1_048_576
-            )
+            still = try await read(signedURL, bearer: false, maximum: 32 * 1_048_576)
         } catch XDriveIOSNativeMediaReadFailure.tooLarge {
             // The preview ticket was valid, but its image body is too large.
             // A separate bounded Owner/revision thumbnail can be requested.
