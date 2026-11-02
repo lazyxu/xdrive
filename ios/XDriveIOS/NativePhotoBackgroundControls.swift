@@ -172,6 +172,107 @@ final class XDriveIOSNativeBackgroundPhotoControls: ObservableObject {
         }
     }
 
+    /// A bounded, explicit foreground renewal. The Server transaction is
+    /// never retried automatically after an unknown ACK, and must not race
+    /// any original upload or receipt reconciliation.
+    func renew(login: XDriveIOSNativeOwnerLoginModel,
+               expectedOwner: XDriveNativeOwnerRoot) {
+        guard !busy, !checking, status?.enabled == true,
+              serverVerified, !pausedForReview,
+              XDriveIOSPhotoBackgroundGrantPolicy.mayOfferRenewal(
+                expiresAt: status?.expiresAt
+              ),
+              XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner),
+              UIApplication.shared.applicationState == .active,
+              [.authorized, .limited].contains(
+                PHPhotoLibrary.authorizationStatus(for: .readWrite)
+              ) else {
+            errorMessage = "授权不在可续期状态，或账户、照片权限已发生变化。"
+            return
+        }
+        guard let gate = XDriveIOSOriginalRunGate.shared.acquire() else {
+            errorMessage = "原件上传或收据核对正在进行，续期未启动。"
+            return
+        }
+        let stopVersion = XDriveIOSPhotoAutoScheduleStore.shared.localStopGeneration
+        busy = true
+        readGeneration = UUID()
+        errorMessage = nil
+        notice = nil
+        Task { @MainActor in
+            defer {
+                XDriveIOSOriginalRunGate.shared.release(gate)
+                busy = false
+                refresh(login: login)
+            }
+            do {
+                let auth = try await login.verifiedAuthorization()
+                guard XDriveIOSNativePhotoOwnerScope.matches(auth.owner, expectedOwner),
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner),
+                      XDriveIOSPhotoAutoScheduleStore.shared.localStopGeneration == stopVersion,
+                      UIApplication.shared.applicationState == .active,
+                      [.authorized, .limited].contains(
+                        PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                      ) else { throw XDriveIOSNativeSessionError.staleSession }
+                // Verify the present grant against the live Server first.
+                let current = try await manager.verifyRemote(
+                    owner: expectedOwner, accessToken: auth.accessToken
+                )
+                guard current.enabled,
+                      XDriveIOSPhotoBackgroundGrantPolicy.mayOfferRenewal(
+                        expiresAt: current.expiresAt
+                      ),
+                      !XDriveIOSBGOriginalWindowStore.shared.pausedForReview(
+                        owner: expectedOwner
+                      ) else {
+                    errorMessage = "服务器授权不可续期或原件收据待核对，未发起轮换。"
+                    return
+                }
+                let pending = try await XDriveIOSOriginalPendingReceiptPreflight
+                    .pendingCount(owner: expectedOwner)
+                guard pending == 0 else {
+                    errorMessage = "还有 \(pending) 项不确定原件收据，续期必须等待核对。"
+                    return
+                }
+                let reverified = try await login.verifiedAuthorization()
+                guard XDriveIOSNativePhotoOwnerScope.matches(reverified.owner, expectedOwner),
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner),
+                      XDriveIOSPhotoAutoScheduleStore.shared.localStopGeneration == stopVersion,
+                      UIApplication.shared.applicationState == .active,
+                      [.authorized, .limited].contains(
+                        PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                      ) else { throw XDriveIOSNativeSessionError.staleSession }
+                let rotated = try await manager.rotateNativeBackgroundGrant(
+                    owner: expectedOwner, expectedStopGeneration: stopVersion
+                )
+                guard rotated.enabled else {
+                    errorMessage = "本机停止指令已生效，新授权未启用；请核对远端撤销状态。"
+                    return
+                }
+                let after = try await login.verifiedAuthorization()
+                guard XDriveIOSNativePhotoOwnerScope.matches(after.owner, expectedOwner),
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner),
+                      XDriveIOSPhotoAutoScheduleStore.shared.localStopGeneration == stopVersion
+                else { throw XDriveIOSNativeSessionError.staleSession }
+                let confirmed = try await manager.verifyRemote(
+                    owner: expectedOwner, accessToken: after.accessToken
+                )
+                guard confirmed.enabled else {
+                    throw XDriveIOSPhotoBackgroundGrantError.invalidGrantResponse
+                }
+                status = confirmed
+                serverVerified = true
+                notice = "后台授权已续期并经服务器验证；iOS 仍自行决定实际后台执行时间。"
+            } catch {
+                guard XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner)
+                else { return }
+                status = try? await manager.localStatus(owner: expectedOwner)
+                serverVerified = false
+                errorMessage = "续期结果未确认，不会自动重试。请先刷新状态；如服务端已轮换但本机无法验证，请停用后核对撤销。"
+            }
+        }
+    }
+
     /// Stop first without connectivity; an offline revoke remains pending.
     func disable(login: XDriveIOSNativeOwnerLoginModel,
                  expectedOwner: XDriveNativeOwnerRoot) {
