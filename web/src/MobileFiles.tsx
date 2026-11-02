@@ -2677,7 +2677,8 @@ export default function MobileFiles(props: Props) {
         }}>
           {showDirectory ? (
             <IconButton aria-label="返回" onClick={navigateUp} sx={{
-              width: managedHeader ? 44 : 48, height: 44, flexShrink: 0,
+              width: managedHeader ? 44 : 48,
+              height: managedHeader ? 44 : 48, flexShrink: 0,
               color: theme => theme.palette.mode === 'dark' ? '#f7f7f7' : '#111111',
               bgcolor: theme => theme.palette.mode === 'dark' ? '#232326' : '#fafafa',
               boxShadow: '0 4px 20px rgba(0,0,0,0.035)',
