@@ -147,6 +147,7 @@ func TestAdminStartServerUpdateRejectsArbitraryOptions(t *testing.T) {
 	for _, body := range []string{
 		`{"source":"shell","channel":"stable"}`,
 		`{"source":"github","channel":"nightly"}`,
+		`{"source":"xdrive","channel":"stable"}`,
 	} {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/update", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
@@ -157,5 +158,32 @@ func TestAdminStartServerUpdateRejectsArbitraryOptions(t *testing.T) {
 		if res.Code != http.StatusBadRequest {
 			t.Fatalf("body=%s status=%d response=%s", body, res.Code, res.Body.String())
 		}
+	}
+}
+
+func TestAdminStartServerShareUpdatePreservesMasterSource(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	dir := t.TempDir()
+	server := &Server{HostControlDir: dir}
+	writeServerUpdateTestStatus(t, dir, serverUpdateState{
+		State: "idle", Source: "xdrive", Channel: "master",
+		RunnerHeartbeatAt: time.Now().UTC().Format(time.RFC3339),
+	})
+	if state := server.serverUpdateStatus(); state.Source != "xdrive" || !state.Supported {
+		t.Fatalf("Share source lost in idle status: %+v", state)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/update", strings.NewReader(`{"source":"xdrive","channel":"master","backup_file_data":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	res := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(res)
+	ctx.Request = req
+	ctx.Set("user", meta.User{Username: "admin", Role: meta.UserRoleAdmin})
+	server.adminStartServerUpdate(ctx)
+	if res.Code != http.StatusAccepted {
+		t.Fatalf("status=%d body=%s", res.Code, res.Body.String())
+	}
+	state := server.serverUpdateStatus()
+	if state.State != "queued" || state.Source != "xdrive" || state.Channel != "master" || !state.BackupFileData {
+		t.Fatalf("Share request lost in queued status: %+v", state)
 	}
 }

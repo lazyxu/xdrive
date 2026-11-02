@@ -3806,8 +3806,9 @@ func (h *desktopIPCHandler) startServerUpdate(w http.ResponseWriter, r *http.Req
 	}
 	input.Source = strings.ToLower(strings.TrimSpace(input.Source))
 	input.Channel = strings.ToLower(strings.TrimSpace(input.Channel))
-	if (input.Source != "github" && input.Source != "gitlab") ||
-		(input.Channel != "stable" && input.Channel != "master") {
+	if (input.Source != "github" && input.Source != "gitlab" && input.Source != "xdrive") ||
+		(input.Channel != "stable" && input.Channel != "master") ||
+		(input.Source == "xdrive" && input.Channel != "master") {
 		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_server_update", "source/channel are invalid")
 		return
 	}

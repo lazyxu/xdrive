@@ -17,8 +17,9 @@ assets = [
     "scripts/caddy-env-config.py",
     "scripts/caddy-admission.py",
     "scripts/xdrive-server-host.sh",
+    "scripts/xdrive-share-update.py",
 ]
-assert len(assets) == len(set(assets)) == 11
+assert len(assets) == len(set(assets)) == 12
 for asset in assets:
     assert asset in installer, f"installer missing {asset}"
     assert asset in release, f"release manifest missing {asset}"

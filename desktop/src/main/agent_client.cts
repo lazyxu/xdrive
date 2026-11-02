@@ -141,7 +141,7 @@ export type AgentUpdateSource = 'github' | 'gitlab'
 export type AgentServerUpdateState = {
   supported: boolean
   state: 'unavailable' | 'idle' | 'queued' | 'running' | 'success' | 'failed'
-  source: 'github' | 'gitlab'
+  source: 'github' | 'gitlab' | 'xdrive'
   channel: 'stable' | 'master'
   request_id?: string
   stage?: string
@@ -4677,7 +4677,7 @@ export class AgentIPCClient {
     return this.request<AgentServerUpdateState>('GET', '/v1/server-update')
   }
 
-  startServerUpdate(source: 'github' | 'gitlab', channel: 'stable' | 'master', backupFileData: boolean) {
+  startServerUpdate(source: 'github' | 'gitlab' | 'xdrive', channel: 'stable' | 'master', backupFileData: boolean) {
     return this.request<AgentServerUpdateState>('POST', '/v1/server-update', {
       source,
       channel,

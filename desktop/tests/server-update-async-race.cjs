@@ -49,6 +49,7 @@ function fixture(port) {
     resolveXDriveTransport: async (response) => response,
     port,
     source: 'github', channel: 'stable', backupFileData: false,
+    xDriveServerUpdateChannelForSource: (source, channel) => source === 'xdrive' ? 'master' : channel,
     forbiddenMessage: 'forbidden', loadErrorMessage: 'load failed',
     activeReconnectMessage: 'reconnect',
     errorStatus: (e) => typeof e?.status === 'number' ? e.status : undefined,
@@ -73,6 +74,45 @@ function fixture(port) {
     start: () => actual('start', fields),
   }
 }
+
+test('Server Update: an xDrive Share state remains selected and is restricted to master', () => {
+  let selectedSource, selectedChannel
+  const setSource = (value) => { selectedSource = value }
+  const setChannel = (value) => { selectedChannel = value }
+  const f = fixture({})
+  actual('applyState', { ...f.fields, initializedRef: {current: false},
+    setSource, setChannel, setSourceState: setSource, setChannelState: setChannel,
+  })(update('idle', {source: 'xdrive', channel: 'stable'}))
+  assert.equal(selectedSource, 'xdrive')
+  assert.equal(selectedChannel, 'master')
+})
+
+test('Server Update: selecting Share or a stale stable channel always chooses master', () => {
+  let selectedSource, selectedChannel
+  const fields = {
+    useCallback: (fn) => fn, source: 'xdrive',
+    setSourceState: (value) => { selectedSource = value },
+    setChannelState: (value) => { selectedChannel = value },
+    xDriveServerUpdateChannelForSource: (source, channel) => source === 'xdrive' ? 'master' : channel,
+  }
+  actual('setSource', fields)('xdrive')
+  assert.equal(selectedSource, 'xdrive')
+  assert.equal(selectedChannel, 'master')
+  actual('setChannel', fields)('stable')
+  assert.equal(selectedChannel, 'master')
+})
+
+test('Server Update: start cannot send xdrive/stable and preserves other provider channels', async () => {
+  for (const source of ['github', 'gitlab', 'xdrive']) {
+    for (const channel of ['stable', 'master']) {
+      let submitted
+      const f = fixture({startUpdate: async (...args) => { submitted = args; return update('queued') }})
+      Object.assign(f.fields, {source, channel, backupFileData: true})
+      await f.start()()
+      assert.deepEqual(submitted, [source, source === 'xdrive' ? 'master' : channel, true])
+    }
+  }
+})
 
 test('Server Update: slow old poll must not overwrite newer completed poll status', async () => {
   const old = deferred()

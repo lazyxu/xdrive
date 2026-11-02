@@ -19,6 +19,7 @@ func (s *Server) tryInstantUploadSession(
 	uid uint64,
 	req uploadInitRequest,
 	chunkCount int,
+	shareGrant *meta.Share,
 ) (meta.UploadSession, uint64, bool, error) {
 	var session meta.UploadSession
 	if req.SHA256 == "" {
@@ -28,12 +29,16 @@ func (s *Server) tryInstantUploadSession(
 	if err != nil {
 		return session, 0, false, nil
 	}
-	owned, err := userOwnsStorageKey(s.DB, uid, storageKey)
-	if err != nil {
-		return session, 0, false, err
-	}
-	if !owned {
-		return session, 0, false, nil
+	// Guest authorization must precede even an Owner-wide CAS lookup. A hash
+	// elsewhere in this Owner's account is not a public Share capability.
+	if shareGrant == nil {
+		owned, err := userOwnsStorageKey(s.DB, uid, storageKey)
+		if err != nil {
+			return session, 0, false, err
+		}
+		if !owned {
+			return session, 0, false, nil
+		}
 	}
 
 	session = meta.UploadSession{
@@ -55,9 +60,27 @@ func (s *Server) tryInstantUploadSession(
 		InstantCAS:       true,
 		ExpiresAt:        time.Now().Add(uploadSessionTTL),
 	}
+	if shareGrant != nil {
+		session.ShareID = &shareGrant.ID
+	}
 
 	var currentRevision uint64
-	err = s.DB.Transaction(func(tx *gorm.DB) error {
+	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if shareGrant != nil {
+			if err := s.publicShareInstantUploadAdmissionTx(ctx, tx, *shareGrant, uid, req, storageKey); err != nil {
+				return err
+			}
+			// A concurrent normal upload's active receipt wins too: returning
+			// it avoids a second receipt when bytes become visible mid-retry.
+			prior, err := publicShareUploadResumeTx(ctx, tx, shareGrant.ID, uid, req)
+			if err == nil {
+				session = prior
+				return nil
+			}
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+		}
 		now := time.Now()
 		var resultID uint64
 		if req.NodeID == nil {

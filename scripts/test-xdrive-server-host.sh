@@ -1044,4 +1044,28 @@ grep -q '"request_id":"stale-1"' "$TMP/home/state/control/status.json"
 grep -q 'invalid or stale host-control request' "$TMP/home/state/control/status.json"
 [[ ! -f "$TMP/home/state/control/request.json" ]]
 
+# The server bridge preserves the Share provider and file-backup option.
+# A fresh stable request is rejected before the provider is invoked.
+cat > "$TMP/home/bin/xdrive-share-update.py" <<'PY'
+import json, os, pathlib, sys
+pathlib.Path(os.environ["TEST_STATE"], "share-provider-args").write_text(json.dumps(sys.argv[1:]))
+PY
+for channel in master stable; do
+  rm -f "$TMP/state/share-provider-args"
+  cat > "$TMP/home/state/control/request.json" <<EOF
+{"request_id":"share-$channel","source":"xdrive","channel":"$channel","backup_file_data":true,"created_at":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
+EOF
+  TEST_STATE="$TMP/state" XD_CONFIG_DIR="$TMP/home" XD_CONTROL_ONCE=1 \
+    bash "$TMP/home/bin/server-control.sh" serve >"$TMP/control-share-$channel.out" 2>"$TMP/control-share-$channel.err"
+  grep -q '"source":"xdrive"' "$TMP/home/state/control/status.json"
+  if [[ "$channel" == master ]]; then
+    grep -q '"state":"success"' "$TMP/home/state/control/status.json"
+    grep -q -- '"--backup-file-data"' "$TMP/state/share-provider-args"
+  else
+    grep -q '"state":"failed"' "$TMP/home/state/control/status.json"
+    grep -q 'invalid or stale host-control request' "$TMP/home/state/control/status.json"
+    [[ ! -f "$TMP/state/share-provider-args" ]]
+  fi
+done
+
 echo "host xdrive-server manager tests passed"

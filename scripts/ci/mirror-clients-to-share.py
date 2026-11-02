@@ -235,6 +235,7 @@ class Share:
         if previous is not None:
             if previous.get('type') != 'file' or previous.get('size') != expected_size:
                 raise MirrorError(f'Existing {platform}/{commit[:12]} file conflicts; never overwrite')
+            self.verify_remote(previous, expected_size, digest)
             return 'skipped'
         # HMAC gives a stable unguessable session intent across GitHub retries.
         # Unlike random per-attempt keys, this cannot multiply finalized files.
@@ -270,6 +271,38 @@ class Share:
         if final.get('status') != 'finalized':
             raise MirrorError('Share did not confirm upload finalize')
         return 'uploaded'
+
+    def verify_remote(self, entry: dict, size: int, digest: str) -> None:
+        node = entry.get('id')
+        if type(node) is not int or node <= 0:
+            raise MirrorError('Existing Share file has no valid identity')
+        ticket = self.request('POST', '/api/v1/public/share/download-ticket',
+                              {'node_id': node, 'password': self.password})
+        url = ticket.get('url')
+        if not isinstance(url, str) or not re.fullmatch(
+                r'/api/v1/public-share-download/[1-9][0-9]*\?ticket=[A-Za-z0-9_.~%-]+', url):
+            raise MirrorError('Invalid or out-of-scope Share download ticket')
+        checksum, count = hashlib.sha256(), 0
+        try:
+            # Verify existing bytes without forwarding the upload capability.
+            with self.opener.open(Request(self.base + url, headers={'Accept-Encoding': 'identity'}), timeout=120) as stream:
+                if stream.status != 200 or stream.headers.get('Content-Encoding', 'identity') != 'identity':
+                    raise MirrorError('Unexpected Share download response')
+                length = stream.headers.get('Content-Length')
+                if length is not None and (not length.isdecimal() or int(length) != size):
+                    raise MirrorError('Share download length mismatch')
+                while True:
+                    chunk = stream.read(min(1024 * 1024, size - count + 1))
+                    if not chunk:
+                        break
+                    count += len(chunk)
+                    if count > size:
+                        raise MirrorError('Share stream exceeds declared size')
+                    checksum.update(chunk)
+        except (HTTPError, URLError, OSError, TimeoutError):
+            raise MirrorError('Share byte verification failed') from None
+        if count != size or checksum.hexdigest() != digest:
+            raise MirrorError('Share immutable file SHA256 or length mismatch')
 
 
 def publish(manifest: dict, share: Share) -> list[tuple[str, str, str]]:
