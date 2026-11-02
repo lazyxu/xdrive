@@ -8008,8 +8008,9 @@ function registerIPCHandlers() {
   ipcMain.handle('agent:start-server-update', (_event, sourceValue: unknown, channelValue: unknown, backupFileDataValue: unknown) => runAgentAction<AgentServerUpdateState>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'server-update')
-    if ((sourceValue !== 'github' && sourceValue !== 'gitlab') ||
+    if ((sourceValue !== 'github' && sourceValue !== 'gitlab' && sourceValue !== 'xdrive') ||
         (channelValue !== 'stable' && channelValue !== 'master') ||
+        (sourceValue === 'xdrive' && channelValue !== 'master') ||
         (backupFileDataValue !== undefined && typeof backupFileDataValue !== 'boolean')) {
       throw new AgentIPCError('invalid_input', 0, 'Server update source/channel/backup option are invalid.')
     }

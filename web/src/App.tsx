@@ -2070,7 +2070,7 @@ function FileManager({
 
   const maintenanceUpdatePort = useMemo(() => ({
     getState: () => api.adminServerUpdate(),
-    startUpdate: (source: 'github' | 'gitlab', channel: 'stable' | 'master', backupFileData: boolean) =>
+    startUpdate: (source: 'github' | 'gitlab' | 'xdrive', channel: 'stable' | 'master', backupFileData: boolean) =>
       api.adminStartServerUpdate(source, channel, backupFileData),
   }), [api])
 

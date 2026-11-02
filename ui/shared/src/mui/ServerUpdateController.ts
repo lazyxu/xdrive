@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { xDriveServerUpdateChannelForSource } from '../server-update'
 import type {
   XDriveServerUpdateChannel,
   XDriveServerUpdateSource,
@@ -68,8 +69,10 @@ export function useXDriveServerUpdateController({
   onBusyChange?: (busy: boolean) => void
 }) {
   const [state, setState] = useState<XDriveServerUpdateState | null>(null)
-  const [source, setSource] = useState<XDriveServerUpdateSource>(initialSource)
-  const [channel, setChannel] = useState<XDriveServerUpdateChannel>(initialChannel)
+  const [source, setSourceState] = useState<XDriveServerUpdateSource>(initialSource)
+  const [channel, setChannelState] = useState<XDriveServerUpdateChannel>(
+    xDriveServerUpdateChannelForSource(initialSource, initialChannel),
+  )
   const [backupFileData, setBackupFileData] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -80,21 +83,30 @@ export function useXDriveServerUpdateController({
   // A ref closes the same-render submission window before React publishes busy.
   const startInFlightRef = useRef(false)
 
+  const setSource = useCallback((next: XDriveServerUpdateSource) => {
+    setSourceState(next)
+    if (next === 'xdrive') setChannelState('master')
+  }, [])
+
+  const setChannel = useCallback((next: XDriveServerUpdateChannel) => {
+    setChannelState(xDriveServerUpdateChannelForSource(source, next))
+  }, [source])
+
   useEffect(() => {
     stateRef.current = state
   }, [state])
 
   useEffect(() => {
     if (initializedRef.current) return
-    setSource(initialSource)
-    setChannel(initialChannel)
+    setSourceState(initialSource)
+    setChannelState(xDriveServerUpdateChannelForSource(initialSource, initialChannel))
   }, [initialChannel, initialSource])
 
   const applyState = useCallback((next: XDriveServerUpdateState) => {
     if (!initializedRef.current) {
       initializedRef.current = true
-      setSource(next.source)
-      setChannel(next.channel)
+      setSourceState(next.source)
+      setChannelState(xDriveServerUpdateChannelForSource(next.source, next.channel))
     }
     setState(next)
     setError('')
@@ -188,7 +200,7 @@ export function useXDriveServerUpdateController({
     setError('')
     try {
       const next = await resolveXDriveTransport(
-        port.startUpdate(source, channel, backupFileData),
+        port.startUpdate(source, xDriveServerUpdateChannelForSource(source, channel), backupFileData),
       )
       applyState(next)
       return next
