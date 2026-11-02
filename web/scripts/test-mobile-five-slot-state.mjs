@@ -85,6 +85,12 @@ taskState = nav.xDriveRememberMobileNavigation(taskState, personalTask, owner, f
 taskState = nav.xDriveRememberMobileNavigation(taskState, globalTask, owner, true)
 assert.deepEqual(taskState.dynamic, [globalTask, personalTask],
   'global tasks do not displace the personal transfer workspace')
+const actualWebApp = readFileSync(resolve(here, '../src/App.tsx'), 'utf8')
+const actualMobileNavigation = readFileSync(resolve(here, '../src/MobileFiveSlotNavigation.tsx'), 'utf8')
+assert.match(actualWebApp, /return destination \? \[\{ key: destination\.key, route: recent/,
+  'recent entries carry the canonical shared workspace key')
+assert.match(actualMobileNavigation, /<ListItemButton key=\{item\.key\}/,
+  'two task scopes must render with different React identities')
 assert.deepEqual(nav.xDriveMobileRouteForSlot(taskState, 'dynamic', true), globalTask)
 assert.deepEqual(nav.xDriveMobileRouteForSlot(taskState, 'dynamic', false), personalTask,
   'a revoked administrator can still resume their personal transfers')
