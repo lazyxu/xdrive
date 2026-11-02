@@ -22,6 +22,7 @@ struct XDriveIOSNativePhotoBackupScreen: View {
     @State private var autoAllowICloud = false
     @State private var showAutoConsent = false
     @State private var showManualConsent = false
+    @State private var showFocusedConsent = false
     @State private var showResumeConsent = false
     @State private var showCatchUpConsent = false
     @State private var showBackgroundEnableConsent = false
@@ -35,6 +36,8 @@ struct XDriveIOSNativePhotoBackupScreen: View {
     // dialog; a late confirmation must never authorize another Server.
     @State private var manualConsentOwner: XDriveNativeOwnerRoot?
     @State private var manualConsentAllowICloud = false
+    @State private var focusedConsentOwner: XDriveNativeOwnerRoot?
+    @State private var focusedConsentAllowICloud = false
     @State private var autoConsentOwner: XDriveNativeOwnerRoot?
     @State private var autoConsentMinutes = 60
     @State private var autoConsentAllowICloud = false
@@ -82,6 +85,27 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             }
         } message: {
             Text("服务器：\(manualConsentOwner?.origin.host ?? "未验证") · Owner：\(manualConsentOwner?.username ?? "未验证")。本轮最多新增 20 个原件。\(manualConsentAllowICloud ? "允许按需下载 iCloud 原件。" : "不会下载 iCloud 原件。")")
+        }
+        .confirmationDialog(
+            "开始前台集中备份当前授权的全部媒体？",
+            isPresented: $showFocusedConsent, titleVisibility: .visible
+        ) {
+            Button("确认连续备份到当前云端 Owner") {
+                guard let expected = focusedConsentOwner,
+                      XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
+                else {
+                    consentError = "服务器或账户已变化，集中备份授权失效；未上传文件。"
+                    return
+                }
+                focusedConsentOwner = nil
+                controller.startFocused(
+                    login: login, expectedOwner: expected,
+                    allowICloud: focusedConsentAllowICloud
+                )
+            }
+            .accessibilityIdentifier("native-ios-photos-focused-confirm")
+        } message: {
+            Text("服务器：\(focusedConsentOwner?.origin.host ?? "未验证") · Owner：\(focusedConsentOwner?.username ?? "未验证")。仅 App 前台连续扫描，每个 256 项窗口最多新增 20 个原件；离开 App、图库变化或用户取消都会停止。\(focusedConsentAllowICloud ? "允许按需下载 iCloud 原件。" : "不会下载 iCloud 原件。") 未知上传收据将暂停，不能当作整库已备份。")
         }
         .confirmationDialog("开启自动原件备份？",
                             isPresented: $showAutoConsent, titleVisibility: .visible) {
@@ -230,6 +254,8 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             backgroundEnableOwner = nil
             backgroundDisableOwner = nil
             showManualConsent = false
+            showFocusedConsent = false
+            focusedConsentOwner = nil
             showAutoConsent = false
             showResumeConsent = false
             showCatchUpConsent = false
@@ -299,6 +325,8 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             backgroundDisableOwner = nil
             background.refresh(login: login)
             showManualConsent = false
+            showFocusedConsent = false
+            focusedConsentOwner = nil
             showAutoConsent = false
             showResumeConsent = false
             showCatchUpConsent = false
@@ -348,10 +376,49 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                     .disabled(controller.busy || background.busy || login.owner == nil ||
                               (photoAuthorization != .authorized && photoAuthorization != .limited))
                     .accessibilityIdentifier("native-ios-photos-manual-start")
+                Button("集中备份授权照片（仅前台连续）") {
+                    consentError = nil
+                    focusedConsentOwner = login.owner
+                    focusedConsentAllowICloud = allowICloud
+                    showFocusedConsent = focusedConsentOwner != nil
+                }
+                .disabled(controller.busy || background.busy || login.owner == nil ||
+                          (photoAuthorization != .authorized && photoAuthorization != .limited))
+                .accessibilityIdentifier("native-ios-photos-focused-start")
+                Text("适用于首次大量备份：从最新照片开始，连续处理所有已授权的分段；每段仍按原有 20 个新原件的安全上限执行。停止后再次启动会重新扫描并核验已确认文件，不假定旧进度代表全部已备份。")
+                    .font(.caption).foregroundStyle(.secondary)
+                if let focused = controller.focusedSummary {
+                    Text("集中备份进度：已完整扫描 \(focused.completedWindows)/\(focused.totalWindows) 个分段 · 当前第 \(focused.currentWindow + 1) 段 · 已确认新增 \(focused.confirmedNew) 个原件")
+                        .monospacedDigit()
+                        .accessibilityIdentifier("native-ios-photos-focused-progress")
+                    if focused.pausedForReview {
+                        Label("待核对上传收据；集中备份已暂停", systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.orange)
+                    } else if focused.finishedScan {
+                        Label("当前授权媒体已完成一次扫描；不代表远端全部原件已逐张核验",
+                              systemImage: "checkmark.circle")
+                    } else if !controller.busy {
+                        Label("集中备份已中断或停止；下次会重新扫描、核验已确认原件",
+                              systemImage: "info.circle")
+                    }
+                    if focused.hadUnavailable {
+                        Text("扫描中发现原件不可用或格式不支持；这些项目不计作备份成功。")
+                            .font(.footnote).foregroundStyle(.orange)
+                    }
+                    if focused.limitedAuthorization {
+                        Text("仅扫描当前 iOS 授权的照片，不代表设备完整相册。")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
                 if controller.busy {
                     ProgressView("正在验证并备份原件…")
-                    Button("取消本轮") { controller.cancel() }
-                        .accessibilityIdentifier("native-ios-photos-cancel")
+                    if controller.focusedSummary != nil {
+                        Button("停止集中备份") { controller.cancel() }
+                            .accessibilityIdentifier("native-ios-photos-cancel")
+                    } else {
+                        Button("取消本轮") { controller.cancel() }
+                            .accessibilityIdentifier("native-ios-photos-cancel")
+                    }
                 }
                 if let result = controller.progress {
                     Text(result.stage)
