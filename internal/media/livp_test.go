@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/binary"
+	"math"
 	"strings"
 	"testing"
 )
@@ -167,7 +168,6 @@ func TestInspectLIVPRejectsOversizedArchive(t *testing.T) {
 	}
 }
 
-
 func TestExtractLIVPProjectsStillGPSForPhotoMapIndex(t *testing.T) {
 	// The automatic Owner map queue consumes MediaMetadata GPS. An .livp
 	// projects its embedded still's EXIF coordinates, never its ZIP name
@@ -192,8 +192,11 @@ func TestExtractLIVPProjectsStillGPSForPhotoMapIndex(t *testing.T) {
 		result.MIMEType != LIVPMIMEType {
 		t.Fatalf("unexpected .livp media classification: %+v", result)
 	}
+	// EXIF DMS rationals can round by one ULP when converted to degrees.
+	// Preserve the same strict 1e-9-degree GPS tolerance as parseTIFF tests.
 	if result.Latitude == nil || result.Longitude == nil ||
-		*result.Latitude != 30.25 || *result.Longitude != 120.175 {
+		math.Abs(*result.Latitude-30.25) > 1e-9 ||
+		math.Abs(*result.Longitude-120.175) > 1e-9 {
 		t.Fatalf("embedded still GPS not projected to .livp: latitude=%v longitude=%v",
 			result.Latitude, result.Longitude)
 	}
