@@ -28,6 +28,11 @@ test('PhotoAsset original restore uses current exact Owner Node, not a preview d
   assert.match(download, /selected\.node\.size > 0/)
   assert.match(download, /selected\.node\.size <= 4 \* 1_073_741_824/)
   assert.match(download, /extensions\.contains\(ext\)/)
+  // Ordinary PhotoAsset names must not be forced to use backup-only -xios- receipts.
+  assert.match(download, /validOrdinaryPhotoAssetName\(selected\.node\.name\)/)
+  assert.doesNotMatch(download, /XDriveIOSBackgroundOriginalNamePolicy\.valid/)
+  assert.match(transport, /private func validOrdinaryPhotoAssetName\(_ name: String\) -> Bool/)
+  assert.match(transport, /name\.utf8\.count <= 255/)
   assert.equal((download.match(/currentOriginal\(selected\)/g) || []).length, 2,
     're-read current PhotoAsset before ticket and again after original download')
   assert.match(download, /"\/api\/v1\/files\/\\\(selected\.id\)\/download-ticket"/)
