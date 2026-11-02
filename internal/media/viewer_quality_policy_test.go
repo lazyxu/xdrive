@@ -9,8 +9,8 @@ import (
 func TestResolveViewerQualityUserAndAdminPrecedence(t *testing.T) {
 	cases := []struct {
 		account, device, maximum string
-		requested, effective ViewerQualityPreset
-		capped bool
+		requested, effective     ViewerQualityPreset
+		capped                   bool
 	}{
 		{"", "", "", ViewerQualityHigh, ViewerQualityHigh, false},
 		{"balanced", "", "high", ViewerQualityBalanced, ViewerQualityBalanced, false},
@@ -37,11 +37,17 @@ func TestViewerQualityCacheIdentityNoCollision(t *testing.T) {
 	for _, preset := range []ViewerQualityPreset{ViewerQualityEconomy, ViewerQualityBalanced, ViewerQualityHigh} {
 		for _, format := range []string{"webp", "jpeg"} {
 			v, err := ViewerQualityVariantFor(preset, format)
-			if err != nil { t.Fatal(err) }
+			if err != nil {
+				t.Fatal(err)
+			}
 			key, err := ViewerQualityStorageKey(12, 3, hash, v)
-			if err != nil { t.Fatal(err) }
+			if err != nil {
+				t.Fatal(err)
+			}
 			etag, err := ViewerQualityETag(12, 3, hash, v)
-			if err != nil { t.Fatal(err) }
+			if err != nil {
+				t.Fatal(err)
+			}
 			if !strings.HasPrefix(key, ThumbnailStoragePrefix) || !strings.Contains(key, hash) || seenKeys[key] || seenETags[etag] {
 				t.Fatalf("unexpected cache collision: %q %q", key, etag)
 			}
@@ -54,11 +60,23 @@ func TestViewerQualityCacheIdentityNoCollision(t *testing.T) {
 			} else if !strings.Contains(etag, ":v2") {
 				t.Fatal("new preset reused legacy ETag")
 			}
-			revised, err := ViewerQualityStorageKey(12, 4, hash, v)
-			if err != nil || revised == key { t.Fatal("source revision reused a stale cache key") }
+			revisedKey, err := ViewerQualityStorageKey(12, 4, hash, v)
+			if err != nil || revisedKey != key {
+				t.Fatal("unchanged SHA-256 should reuse the content-addressed derivative key")
+			}
+			revisedETag, err := ViewerQualityETag(12, 4, hash, v)
+			if err != nil || revisedETag == etag {
+				t.Fatal("changed revision reused an old HTTP ETag")
+			}
+			changedKey, err := ViewerQualityStorageKey(12, 4, strings.Repeat("b", 64), v)
+			if err != nil || changedKey == key {
+				t.Fatal("changed original bytes reused an old derivative cache key")
+			}
 		}
 	}
-	if len(seenKeys) != 6 || len(seenETags) != 6 { t.Fatal("expected six unique variants") }
+	if len(seenKeys) != 6 || len(seenETags) != 6 {
+		t.Fatal("expected six unique variants")
+	}
 	for _, format := range []string{"png", "JPEG", "../jpeg", ""} {
 		if _, err := ViewerQualityVariantFor(ViewerQualityHigh, format); err == nil {
 			t.Fatal("accepted unsupported format", format)
