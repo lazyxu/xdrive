@@ -138,6 +138,31 @@ export default function App({
 }) {
   // Stable lifetime: no new native connection or Owner token per repaint.
   const fileExplorerHostPort = useMemo(createDesktopFileExplorerHostPort, [])
+  const desktopShareCenterPort = useMemo(() => ({
+    listPage: async (cursor: number, limit: number, signal?: AbortSignal) => {
+      signal?.throwIfAborted()
+      const result = await window.xdriveDesktop.agent.cloudOwnerShares(cursor, limit)
+      signal?.throwIfAborted()
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    getShareLink: async (id: number) => {
+      const result = await window.xdriveDesktop.agent.cloudOwnShareLink(id)
+      if (!result.ok) throw new Error(result.error.message)
+      if (!result.data.url) throw new Error('分享链接不可用')
+      return result.data.url
+    },
+    updateShare: async (id: number, input: { expires_at: string | null; access: 'read_only' | 'view_upload' }) => {
+      const result = await window.xdriveDesktop.agent.cloudUpdateShare(id, input)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    revokeShare: async (id: number) => {
+      const result = await window.xdriveDesktop.agent.cloudRevokeShare(id)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+  }), [])
   const [info, setInfo] = useState<DesktopInfo | null>(null)
   const [desktopPreferences, setDesktopPreferences] = useState<DesktopPreferences>({
     appearance: 'system',
@@ -2217,6 +2242,7 @@ export default function App({
     adminRoleVerified: status?.role === 'admin',
     conflictCount: status?.conflict_count,
     diagnosticsAriaLabel: '桌面版辅助功能',
+    showShareCenter: agent.connected && configured && agent.hello?.capabilities.includes('cloud-files'),
   })
 
   if (!agent.connected) {
@@ -2728,6 +2754,8 @@ export default function App({
     platform: 'desktop',
     adminRoleVerified: status?.role === 'admin',
     services: {
+      shareCenterPage: agent.connected && configured && agent.hello?.capabilities.includes('cloud-files')
+        ? desktopShareCenterPort : undefined,
       workspaceAlerts: {
         lastError: status?.last_error,
         paused: status?.paused,

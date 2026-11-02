@@ -28,6 +28,7 @@ export const desktopVersionHistoryDialogAdapter = createXDriveVersionHistoryDial
 export const desktopShareDialogAdapter = createXDriveShareDialogAdapter({
   listShares: (nodeID) => agent().cloudShares(nodeID),
   createShare: (nodeID, input) => agent().cloudCreateShare(nodeID, input),
+  getShareLink: (id) => agent().cloudOwnShareLink(id),
   revokeShare: (shareID) => agent().cloudRevokeShare(shareID),
   updateShare: (shareID, input) => agent().cloudUpdateShare(shareID, input),
 })

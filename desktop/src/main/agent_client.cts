@@ -2373,6 +2373,12 @@ export type AgentCreatedCloudShare = {
   url: string
 }
 
+export type AgentOwnerSharePage = {
+  items: Array<AgentCloudShare & { node_name: string; node_type: string; node_missing: boolean }>
+  next_cursor: number
+}
+export type AgentOwnerShareLink = { url: string }
+
 export type AgentCloudCrumb = { id: number; name: string }
 
 export type AgentCloudSearchResult = {
@@ -4737,6 +4743,15 @@ export class AgentIPCClient {
   cloudShares(nodeID: number) {
     const query = new URLSearchParams({ node_id: String(nodeID) })
     return this.request<AgentCloudShare[]>('GET', `/v1/cloud/shares?${query.toString()}`)
+  }
+
+  cloudOwnerShares(cursor = 0, limit = 50) {
+    const query = new URLSearchParams({ cursor: String(cursor), limit: String(limit) })
+    return this.request<AgentOwnerSharePage>('GET', `/v1/cloud/shares/all?${query.toString()}`)
+  }
+
+  cloudOwnShareLink(id: number) {
+    return this.request<AgentOwnerShareLink>('POST', '/v1/cloud/shares/link', { id })
   }
 
   cloudCreateShare(nodeID: number, input: { expires_at?: string; password?: string; access?: 'read_only' | 'view_upload' }) {
