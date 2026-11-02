@@ -11,10 +11,10 @@ import (
 type ViewerQualityPreset string
 
 const (
-	ViewerQualityEconomy ViewerQualityPreset = "economy"
-	ViewerQualityBalanced ViewerQualityPreset = "balanced"
-	ViewerQualityHigh ViewerQualityPreset = "high"
-	viewerQualityVariantVersion = 2
+	ViewerQualityEconomy        ViewerQualityPreset = "economy"
+	ViewerQualityBalanced       ViewerQualityPreset = "balanced"
+	ViewerQualityHigh           ViewerQualityPreset = "high"
+	viewerQualityVariantVersion                     = 2
 )
 
 var ErrViewerQualityPreference = errors.New("invalid viewer quality preference")
@@ -34,63 +34,89 @@ func ParseViewerQualityPreset(raw string) (ViewerQualityPreset, error) {
 
 func viewerQualityRank(p ViewerQualityPreset) int {
 	switch p {
-	case ViewerQualityEconomy: return 1
-	case ViewerQualityBalanced: return 2
-	case ViewerQualityHigh: return 3
-	default: return 0
+	case ViewerQualityEconomy:
+		return 1
+	case ViewerQualityBalanced:
+		return 2
+	case ViewerQualityHigh:
+		return 3
+	default:
+		return 0
 	}
 }
 
 // Requested and Effective stay distinct so a UI can disclose a server cap.
 type ViewerQualityResolution struct {
-	Requested ViewerQualityPreset
-	Effective ViewerQualityPreset
+	Requested    ViewerQualityPreset
+	Effective    ViewerQualityPreset
 	AdminMaximum ViewerQualityPreset
-	Capped bool
+	Capped       bool
 }
 
 // Account default -> optional device override -> admin hard maximum.
 func ResolveViewerQuality(accountPreference, deviceOverride, adminMaximum string) (ViewerQualityResolution, error) {
 	var zero ViewerQualityResolution
 	account, err := ParseViewerQualityPreset(accountPreference)
-	if err != nil { return zero, err }
+	if err != nil {
+		return zero, err
+	}
 	maximum, err := ParseViewerQualityPreset(adminMaximum)
-	if err != nil { return zero, err }
+	if err != nil {
+		return zero, err
+	}
 	requested := account
 	if strings.TrimSpace(deviceOverride) != "" {
 		requested, err = ParseViewerQualityPreset(deviceOverride)
-		if err != nil { return zero, err }
+		if err != nil {
+			return zero, err
+		}
 	}
 	effective := requested
 	capped := viewerQualityRank(requested) > viewerQualityRank(maximum)
-	if capped { effective = maximum }
-	return ViewerQualityResolution{Requested:requested, Effective:effective, AdminMaximum:maximum, Capped:capped}, nil
+	if capped {
+		effective = maximum
+	}
+	return ViewerQualityResolution{Requested: requested, Effective: effective, AdminMaximum: maximum, Capped: capped}, nil
 }
 
 // Finite, trusted encoding settings. Direct arbitrary maxEdge/Q are forbidden.
 type ViewerQualityVariant struct {
-	Preset ViewerQualityPreset
-	Format string
-	MaxEdge int
-	Quality int
+	Preset         ViewerQualityPreset
+	Format         string
+	MaxEdge        int
+	Quality        int
 	EncoderVersion int
 }
 
 // Economy/balanced are reserved for the next gated rollout. Existing routes,
 // 4K ETags, and the DSM v1 Range contract are not changed by this module.
 func ViewerQualityVariantFor(preset ViewerQualityPreset, format string) (ViewerQualityVariant, error) {
-	if format != "webp" && format != "jpeg" { return ViewerQualityVariant{}, ErrViewerQualityPreference }
-	v := ViewerQualityVariant{Preset:preset, Format:format, EncoderVersion:viewerQualityVariantVersion}
+	if format != "webp" && format != "jpeg" {
+		return ViewerQualityVariant{}, ErrViewerQualityPreference
+	}
+	v := ViewerQualityVariant{Preset: preset, Format: format, EncoderVersion: viewerQualityVariantVersion}
 	switch preset {
 	case ViewerQualityEconomy:
 		v.MaxEdge = 1280
-		if format == "webp" { v.Quality = 82 } else { v.Quality = 84 }
+		if format == "webp" {
+			v.Quality = 82
+		} else {
+			v.Quality = 84
+		}
 	case ViewerQualityBalanced:
 		v.MaxEdge = 2048
-		if format == "webp" { v.Quality = 88 } else { v.Quality = 90 }
+		if format == "webp" {
+			v.Quality = 88
+		} else {
+			v.Quality = 90
+		}
 	case ViewerQualityHigh:
 		v.MaxEdge = ViewerPreviewEdge
-		if format == "webp" { v.Quality = ViewerPreviewWebPQuality } else { v.Quality = ViewerPreviewJPEGQuality }
+		if format == "webp" {
+			v.Quality = ViewerPreviewWebPQuality
+		} else {
+			v.Quality = ViewerPreviewJPEGQuality
+		}
 	default:
 		return ViewerQualityVariant{}, ErrViewerQualityPreference
 	}
@@ -115,7 +141,9 @@ func ViewerQualityStorageKey(nodeID, revision uint64, sha256 string, v ViewerQua
 		nodeID, revision, sha256, 100+ViewerPreviewVersion, v.MaxEdge,
 	), ".jpg")
 	ext := "jpg"
-	if v.Format == "webp" { ext = "webp" }
+	if v.Format == "webp" {
+		ext = "webp"
+	}
 	return fmt.Sprintf("%s-q%d-encoder%d.%s", base, v.Quality, v.EncoderVersion, ext), nil
 }
 
