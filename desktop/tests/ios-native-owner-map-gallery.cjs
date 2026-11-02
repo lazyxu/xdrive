@@ -28,7 +28,7 @@ test('only real canonical GPS places in the currently trusted map page open a fr
   assert.match(map, /XDriveIOSNativeOwnerMapSelectionPolicy\.acceptsSelectedPlace\(/)
   assert.match(map, /overview\.items\.contains\(where: \{/)
   assert.match(map, /XDriveIOSNativeServerMediaWall\(\s*login: login, album: nil, placeID: place\.id\)/)
-  assert.match(wall, /XDriveIOSNativeServerMediaPreview\(\s*item: initial, login: login,\s*loadedItems: viewerLoadedItems,\s*openedOwner: viewerOpenedOwner,\s*onNavigate: \{ next in/)
+  assert.match(wall, /XDriveIOSNativeServerMediaPreview\(\s*item: initial, login: login,\s*loadedItems: viewerLoadedItems,\s*loadedRange: viewerLoadedRange,\s*openedOwner: viewerOpenedOwner,\s*onNavigate: \{ next in/)
   assert.match(wall, /pagePlaceID == placeID/)
   assert.match(wall, /self\?\.pagePlaceID = placeID/)
   assert.match(wall, /model\.load\(login: login, albumID: album\?\.id, placeID: placeID/)
