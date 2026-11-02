@@ -167,9 +167,10 @@ test('Files directory Viewer range works on legacy WebKit and refuses an aborted
     'Files directory browsing keeps the exact Viewer cancellation signal')
 
   const cancelled = legacyController(true)
-  await assert.rejects(
-    api.listRange(7, 0, 128, 'name', 'asc', true, undefined, cancelled.signal),
+  assert.throws(
+    () => api.listRange(7, 0, 128, 'name', 'asc', true, undefined, cancelled.signal),
     error => error?.name === 'AbortError',
+    'the synchronous range admission must reject a cancelled legacy-WebKit signal',
   )
   assert.equal(calls.length, 1,
     'an already-aborted legacy WebKit Viewer must not issue another directory range')

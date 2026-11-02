@@ -64,8 +64,9 @@ function apiHarness() {
     return res()
   }
   const mod = { exports: {} }
-  new Function('exports', 'module', 'require', 'fetch', 'xDriveMediaResponseBlob', js)(
+  new Function('exports', 'module', 'require', 'fetch', 'xDriveMediaResponseBlob', 'xDriveAssertMediaReadActive', js)(
     mod.exports, mod, require, fetch, progModule.exports.xDriveMediaResponseBlob,
+    progModule.exports.xDriveAssertMediaReadActive,
   )
   const user = {
     session: { accessToken: 'owner-jwt', refreshToken: 'not-used' },

@@ -117,7 +117,17 @@ test('HEIC and HEIF resolve to the existing browser-compatible JPEG while JPEG s
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText
   const mod = { exports: {} }
+  // Execute the real browser-media abort gate used by this Gallery adapter.
+  const mediaJS = ts.transpileModule(source('web/src/mediaBinaryProgress.ts'), {
+    fileName: 'RealMediaBinaryProgress.ts',
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText
+  const mediaMod = { exports: {} }
+  new Function('exports', 'module', 'require', mediaJS)(mediaMod.exports, mediaMod, require)
   const mocks = {
+    './mediaBinaryProgress': {
+      xDriveAssertMediaReadActive: mediaMod.exports.xDriveAssertMediaReadActive,
+    },
     '@xdrive/ui/mui': {
       createXDriveMediaGalleryDataSource: port => port,
       xDriveMediaGalleryTrashRoots: () => [],
