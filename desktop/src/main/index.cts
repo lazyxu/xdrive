@@ -5490,6 +5490,52 @@ function registerIPCHandlers() {
     ),
   )
 
+  ipcMain.handle('agent:get-media-viewer-preview', (event, nodeID: unknown, format: unknown, requestID: unknown, reportProgress: unknown) =>
+    runAgentAction<AgentMediaThumbnail>(
+      () => viewportRequests.run(event.sender, requestID, async (signal) => {
+        const hello = await requireAgentLifecycle().ensureRunning()
+        requireAgentCapability(hello, 'media-gallery')
+        if (
+          typeof nodeID !== 'number' ||
+          !Number.isSafeInteger(nodeID) ||
+          nodeID <= 0
+        ) {
+          throw new AgentIPCError('invalid_input', 0, 'Viewer preview node id is required.')
+        }
+        if (format !== 'webp' && format !== 'jpeg') {
+          throw new AgentIPCError('invalid_input', 0, 'Viewer format must be webp or jpeg.')
+        }
+        if (signal?.aborted) throw new AgentIPCError('aborted', 0, 'Viewer preview was cancelled.')
+        type Packet = { request_id: string; loaded_bytes: number; total_bytes?: number; alpha_mask?: string | null }
+        // At most two genuine Agent-observed packets, not a synthesized completion.
+        const evidence: { first?: Packet; last?: Packet } = {}
+        const notify = reportProgress === true && typeof requestID === 'string'
+          ? (loadedBytes: number, totalBytes?: number, alphaMask?: string | null) => {
+              if (signal?.aborted || event.sender.isDestroyed()) return
+              const packet: Packet = {
+                request_id: requestID, loaded_bytes: loadedBytes,
+                total_bytes: totalBytes, alpha_mask: alphaMask,
+              }
+              if (!evidence.first) evidence.first = packet
+              evidence.last = packet
+              event.sender.send('agent:media-binary-progress', packet)
+            }
+          : undefined
+        const result = await requireAgentClient().mediaViewerPreview(nodeID, format, signal, notify)
+        // webContents.send can lag the invoke reply; record ONLY actual final
+        // progress observed upstream, never fabricate from ArrayBuffer size.
+        if (evidence.first?.loaded_bytes === 0 &&
+            evidence.last?.loaded_bytes === result.data.byteLength) {
+          return { ...result, ipc_progress_receipt: {
+            first: evidence.first, last: evidence.last,
+          } }
+        }
+        return result
+      }),
+      false,
+    ),
+  )
+
   ipcMain.handle('agent:put-media-video-poster', (_event, nodeID: unknown, revision: unknown, data: unknown) => runAgentAction<{ ok: boolean }>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'media-gallery')

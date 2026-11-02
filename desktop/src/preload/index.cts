@@ -535,6 +535,12 @@ const agent = Object.freeze({
     ipcRenderer.invoke('agent:revoke-media-baidu-consent', nodeID, revision),
   getMediaThumbnail: (nodeID: number, requestID?: string, revision?: number, onProgress?: XDriveByteProgressCallback) =>
     invokeMediaBinaryWithProgress('agent:get-media-thumbnail', [nodeID, requestID, revision], onProgress),
+  getMediaViewerPreview: (
+    nodeID: number, format: 'webp' | 'jpeg', requestID?: string,
+    onProgress?: XDriveByteProgressCallback,
+  ) => invokeMediaBinaryWithProgress(
+    'agent:get-media-viewer-preview', [nodeID, format, requestID], onProgress,
+  ),
   getMediaAnalysisPreview: (nodeID: number, requestID?: string, onProgress?: XDriveByteProgressCallback) =>
     invokeMediaBinaryWithProgress('agent:get-media-analysis-preview', [nodeID, requestID], onProgress),
   cancelViewportRequest: (requestID: string) => ipcRenderer.invoke('agent:cancel-viewport-request', requestID),

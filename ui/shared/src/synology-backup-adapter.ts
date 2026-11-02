@@ -43,6 +43,16 @@ export type XDriveSynologyOwnerMediaRange = {
   data: Uint8Array
 }
 export const XDRIVE_SYNOLOGY_MEDIA_RANGE_BYTES = 256 << 10
+export const XDRIVE_SYNOLOGY_VIEWER_PREVIEW_MAX_BYTES = 64 << 20
+export type XDriveSynologyOwnerViewerPreviewRange = {
+  nodeID: number
+  revision: number
+  format: 'webp' | 'jpeg'
+  offset: number
+  total: number
+  etag: string
+  data: Uint8Array
+}
 
 export const XDRIVE_SYNOLOGY_THUMBNAIL_MAX_BYTES = 2 << 20
 export type XDriveSynologyOwnerThumbnail = {
@@ -438,6 +448,10 @@ export interface XDriveSynologyBackupLocalClient extends XDriveLocalBackupCommon
     nodeID: number, revision: number, offset: number, length: number,
     signal?: AbortSignal,
   ): Promise<XDriveSynologyOwnerMediaRange>
+  ownerFileViewerPreviewRange(
+    nodeID: number, revision: number, format: 'webp' | 'jpeg',
+    offset: number, length: number, signal?: AbortSignal,
+  ): Promise<XDriveSynologyOwnerViewerPreviewRange>
   /** Session-bound DSM URL for the browser's native HTMLMediaElement Range
    * requests. This URL is NOT a token: DSM and Agent reauthorize every request. */
   ownerFileMediaStreamURL(
@@ -478,7 +492,7 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
     if (!['bootstrap', 'sources', 'status', 'history', 'run', 'control', 'schedule',
       'device-backups', 'device-backup-runs',
       'device-backup-page', 'device-backup-folders', 'cloud-quota', 'nas-volume',
-      'cloud-root', 'cloud-children', 'cloud-text-preview', 'cloud-media-range', 'cloud-thumbnail',
+      'cloud-root', 'cloud-children', 'cloud-text-preview', 'cloud-media-range', 'cloud-thumbnail', 'cloud-viewer-preview',
        'cloud-gallery-items', 'cloud-gallery-albums', 'cloud-gallery-places',
        'cloud-gallery-place-items', 'cloud-gallery-map-overview',
        'cloud-live-motion', 'nas-shares',
@@ -933,6 +947,49 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
         offset, total: response.total, revision,
         sha256: response.sha256, data,
       }
+    },
+    ownerFileViewerPreviewRange: async (nodeID, revision, format, offset, length, signal) => {
+      const validID = (value: number) => Number.isSafeInteger(value) && value > 0
+      if (!validID(nodeID) || !validID(revision) ||
+        (format !== 'webp' && format !== 'jpeg') ||
+        !Number.isSafeInteger(offset) || offset < 0 ||
+        offset >= XDRIVE_SYNOLOGY_VIEWER_PREVIEW_MAX_BYTES ||
+        !Number.isSafeInteger(length) || length < 1 ||
+        length > XDRIVE_SYNOLOGY_MEDIA_RANGE_BYTES) {
+        throw new Error('Invalid Owner Viewer image selector')
+      }
+      const raw = await request<unknown>(
+        '/v1/cloud-viewer-preview?node_id=' + nodeID +
+        '&revision=' + revision + '&format=' + format +
+        '&offset=' + offset + '&length=' + length, 'GET', undefined, signal)
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        throw new Error('Invalid Owner Viewer image projection')
+      }
+      const o = raw as Record<string, unknown>
+      const suffix = ':' + nodeID + ':' + revision + ':' + format + ':v1"'
+      if (Object.keys(o).length !== 7 ||
+        Object.keys(o).some(k => !['node_id', 'revision', 'format', 'offset', 'total', 'etag', 'data'].includes(k)) ||
+        o.node_id !== nodeID || o.revision !== revision || o.format !== format ||
+        o.offset !== offset ||
+        typeof o.total !== 'number' || !Number.isSafeInteger(o.total) ||
+        o.total <= offset || o.total > XDRIVE_SYNOLOGY_VIEWER_PREVIEW_MAX_BYTES ||
+        typeof o.etag !== 'string' || o.etag.length > 180 ||
+        !/^"media-viewer:(?:[a-f0-9]{64})?:[1-9][0-9]*:[1-9][0-9]*:(?:webp|jpeg):v1"$/.test(o.etag) ||
+        !o.etag.endsWith(suffix) ||
+        typeof o.data !== 'string' ||
+        o.data.length > Math.ceil(length / 3) * 4 ||
+        !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(o.data)) {
+        throw new Error('Invalid Owner Viewer revision/ETag/range')
+      }
+      const rawBytes = atob(o.data)
+      const data = new Uint8Array(rawBytes.length)
+      for (let i = 0; i < rawBytes.length; i++) data[i] = rawBytes.charCodeAt(i)
+      if (data.length < 1 || data.length > length ||
+        offset + data.length > o.total ||
+        (data.length < length && offset + data.length !== o.total)) {
+        throw new Error('Owner Viewer image chunk size mismatch')
+      }
+      return { nodeID, revision, format, offset, total: o.total, etag: o.etag, data }
     },
     ownerFileMediaStreamURL: (nodeID, revision, total, sha256, mime) => {
       if (![nodeID, revision, total].every(value =>

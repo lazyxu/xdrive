@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lazyxu/xdrive/internal/client"
 	"github.com/lazyxu/xdrive/internal/localbackupipc"
 )
 
@@ -69,6 +70,10 @@ type OwnerLiveMotionReader interface {
 
 type OwnerThumbnailReader interface {
 	OwnerFileThumbnail(context.Context, uint64, uint64) (localbackupipc.OwnerThumbnail, error)
+}
+
+type OwnerViewerPreviewRangeReader interface {
+	OwnerFileViewerPreviewRange(context.Context, uint64, uint64, string, int64, int) (localbackupipc.OwnerViewerPreviewRange, error)
 }
 
 type OwnerQuotaReader interface {
@@ -411,7 +416,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		sendJSON(w, map[string]any{"dsm_user": username, "csrf_token": csrf(key, username, r.Header.Get("Cookie"), r.Host, interval)})
 		return
 	}
-	if r.URL.Path != "/v1/sources" && r.URL.Path != "/v1/status" && r.URL.Path != "/v1/history" && r.URL.Path != "/v1/run" && r.URL.Path != "/v1/control" && r.URL.Path != "/v1/schedule" && r.URL.Path != "/v1/device-backups" && r.URL.Path != "/v1/device-backup-runs" && r.URL.Path != "/v1/device-backup-page" && r.URL.Path != "/v1/device-backup-folders" && r.URL.Path != "/v1/cloud-quota" && r.URL.Path != "/v1/nas-volume" && r.URL.Path != "/v1/cloud-root" && r.URL.Path != "/v1/cloud-children" && r.URL.Path != "/v1/cloud-text-preview" && r.URL.Path != "/v1/cloud-media-range" && r.URL.Path != "/v1/cloud-media-stream" && r.URL.Path != "/v1/cloud-thumbnail" && r.URL.Path != "/v1/cloud-gallery-items" && r.URL.Path != "/v1/cloud-gallery-albums" && r.URL.Path != "/v1/cloud-gallery-places" && r.URL.Path != "/v1/cloud-gallery-place-items" && r.URL.Path != "/v1/cloud-gallery-map-overview" && r.URL.Path != "/v1/cloud-live-motion" && r.URL.Path != "/v1/nas-shares" && r.URL.Path != "/v1/nas-share-preflight" && r.URL.Path != "/v1/server-connection" && r.URL.Path != "/v1/server-login" && r.URL.Path != "/v1/nas-share-create" && r.URL.Path != "/v1/nas-draft-bind" && r.URL.Path != "/v1/nas-drafts" && r.URL.Path != "/v1/recovery-review" {
+	if r.URL.Path != "/v1/sources" && r.URL.Path != "/v1/status" && r.URL.Path != "/v1/history" && r.URL.Path != "/v1/run" && r.URL.Path != "/v1/control" && r.URL.Path != "/v1/schedule" && r.URL.Path != "/v1/device-backups" && r.URL.Path != "/v1/device-backup-runs" && r.URL.Path != "/v1/device-backup-page" && r.URL.Path != "/v1/device-backup-folders" && r.URL.Path != "/v1/cloud-quota" && r.URL.Path != "/v1/nas-volume" && r.URL.Path != "/v1/cloud-root" && r.URL.Path != "/v1/cloud-children" && r.URL.Path != "/v1/cloud-text-preview" && r.URL.Path != "/v1/cloud-media-range" && r.URL.Path != "/v1/cloud-media-stream" && r.URL.Path != "/v1/cloud-thumbnail" && r.URL.Path != "/v1/cloud-viewer-preview" && r.URL.Path != "/v1/cloud-gallery-items" && r.URL.Path != "/v1/cloud-gallery-albums" && r.URL.Path != "/v1/cloud-gallery-places" && r.URL.Path != "/v1/cloud-gallery-place-items" && r.URL.Path != "/v1/cloud-gallery-map-overview" && r.URL.Path != "/v1/cloud-live-motion" && r.URL.Path != "/v1/nas-shares" && r.URL.Path != "/v1/nas-share-preflight" && r.URL.Path != "/v1/server-connection" && r.URL.Path != "/v1/server-login" && r.URL.Path != "/v1/nas-share-create" && r.URL.Path != "/v1/nas-draft-bind" && r.URL.Path != "/v1/nas-drafts" && r.URL.Path != "/v1/recovery-review" {
 		http.NotFound(w, r)
 		return
 	}
@@ -808,6 +813,51 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		sendJSON(w, thumbnail)
+		return
+	}
+	// A selected derivative slice is always reauthorized through the current
+	// DSM user and same-user Agent. Never relay Server credentials or URLs.
+	if r.URL.Path == "/v1/cloud-viewer-preview" {
+		q, err := url.ParseQuery(r.URL.RawQuery)
+		if err != nil || len(q) != 5 {
+			http.Error(w, "invalid Owner Viewer selector", http.StatusBadRequest)
+			return
+		}
+		for _, field := range []string{"node_id", "revision", "format", "offset", "length"} {
+			if len(q[field]) != 1 {
+				http.Error(w, "missing or duplicate Owner Viewer selector", http.StatusBadRequest)
+				return
+			}
+		}
+		id, e1 := strconv.ParseUint(q.Get("node_id"), 10, 64)
+		revision, e2 := strconv.ParseUint(q.Get("revision"), 10, 64)
+		offset, e3 := strconv.ParseInt(q.Get("offset"), 10, 64)
+		length, e4 := strconv.Atoi(q.Get("length"))
+		format := q.Get("format")
+		if e1 != nil || e2 != nil || e3 != nil || e4 != nil ||
+			!localbackupipc.ValidOwnerFileID(id) ||
+			!localbackupipc.ValidOwnerFileID(revision) ||
+			(format != "webp" && format != "jpeg") ||
+			offset < 0 || offset >= client.OwnerViewerPreviewMaxBytes ||
+			length < 1 || length > client.OwnerViewerPreviewChunkBytes ||
+			strconv.FormatUint(id, 10) != q.Get("node_id") ||
+			strconv.FormatUint(revision, 10) != q.Get("revision") ||
+			strconv.FormatInt(offset, 10) != q.Get("offset") ||
+			strconv.Itoa(length) != q.Get("length") {
+			http.Error(w, "invalid canonical Owner Viewer fields", http.StatusBadRequest)
+			return
+		}
+		reader, ok := agent.(OwnerViewerPreviewRangeReader)
+		if !ok {
+			http.Error(w, "Owner Viewer derivative unavailable", http.StatusNotImplemented)
+			return
+		}
+		part, err := reader.OwnerFileViewerPreviewRange(ctx, id, revision, format, offset, length)
+		if err != nil || !localbackupipc.ValidOwnerViewerPreviewRange(part, id, revision, format, offset, length) {
+			http.Error(w, "Owner Viewer image slice unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		sendJSON(w, part)
 		return
 	}
 	// Fixed 256 KiB immutable media slice. The request contains only canonical

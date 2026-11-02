@@ -2756,7 +2756,10 @@ export class XDriveApi {
   async mediaAnalysisPreviewURL(nodeID: number, signal?: AbortSignal, revision?: number, onProgress?: (loaded: number, total?: number) => void): Promise<string> {
     const blob = await this.mediaAnalysisPreview(nodeID, signal, revision, onProgress)
     signal?.throwIfAborted()
-    return URL.createObjectURL(blob)
+    const url = URL.createObjectURL(blob)
+    // Legacy 1280px analysis JPEG is a derivative, never label it "original".
+    xDriveRegisterViewerImageSource(url, { format: 'JPEG', quality: 84, byteSize: blob.size })
+    return url
   }
 
   /** Foreground-only 4K derivative; the gallery wall remains 512px. */
@@ -2793,12 +2796,41 @@ export class XDriveApi {
       signal?.throwIfAborted()
       if (!blob.size) throw new ApiError(502, '高清预览内容为空')
       const url = URL.createObjectURL(blob)
-      xDriveRegisterViewerImageSource(url, {
-        format: format === 'webp' ? 'WebP' : 'JPEG',
-        quality: format === 'webp' ? 90 : 93,
-        byteSize: blob.size,
-      })
-      return url
+      try {
+        // A valid RIFF/JPEG response is not proof that this browser can decode
+        // it. Check the actual browser decoder before accepting the source so
+        // unsupported/corrupt WebP genuinely falls back to JPEG.
+        if (typeof Image !== 'undefined') {
+          const probe = new Image()
+          if (signal?.aborted) signal.throwIfAborted()
+          probe.src = url
+          if (typeof probe.decode === 'function') {
+            await probe.decode()
+          } else {
+            await new Promise<void>((resolve, reject) => {
+              if (probe.complete) {
+                probe.naturalWidth ? resolve() : reject(new Error('preview decode failed'))
+                return
+              }
+              probe.onload = () => resolve()
+              probe.onerror = () => reject(new Error('preview decode failed'))
+            })
+          }
+          signal?.throwIfAborted()
+          if (!probe.naturalWidth || !probe.naturalHeight) {
+            throw new ApiError(502, '高清图片无法解码')
+          }
+        }
+        xDriveRegisterViewerImageSource(url, {
+          format: format === 'webp' ? 'WebP' : 'JPEG',
+          quality: format === 'webp' ? 90 : 93,
+          byteSize: blob.size,
+        })
+        return url
+      } catch (error) {
+        URL.revokeObjectURL(url)
+        throw error
+      }
     }
     try {
       return await get('webp')

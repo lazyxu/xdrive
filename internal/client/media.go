@@ -2232,6 +2232,41 @@ func (c *Client) PutMediaVideoPoster(
 	return nil
 }
 
+// MediaViewerPreview fetches a foreground-only, revision-scoped server
+// derivative. The owner stays authenticated; original bytes are untouched.
+func (c *Client) MediaViewerPreview(ctx context.Context, nodeID uint64, format string) ([]byte, string, error) {
+	if format != "webp" && format != "jpeg" {
+		return nil, "", fmt.Errorf("invalid viewer preview format %q", format)
+	}
+	req, err := c.request(ctx, http.MethodGet,
+		fmt.Sprintf("/api/v1/media/items/%d/viewer-preview?format=%s", nodeID, format), nil)
+	if err != nil {
+		return nil, "", err
+	}
+	resp, err := c.do(req)
+	if err != nil {
+		return nil, "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return nil, "", responseError(resp)
+	}
+	const limit = 64 << 20
+	data, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	if err != nil {
+		return nil, "", err
+	}
+	if len(data) == 0 || len(data) > limit {
+		return nil, "", fmt.Errorf("viewer preview byte length outside cap")
+	}
+	mime := strings.ToLower(strings.TrimSpace(strings.SplitN(resp.Header.Get("Content-Type"), ";", 2)[0]))
+	if (format == "webp" && mime != "image/webp") ||
+		(format == "jpeg" && mime != "image/jpeg") {
+		return nil, "", fmt.Errorf("viewer preview MIME mismatch: %q", mime)
+	}
+	return data, mime, nil
+}
+
 func (c *Client) MediaAnalysisPreview(
 	ctx context.Context,
 	nodeID uint64,

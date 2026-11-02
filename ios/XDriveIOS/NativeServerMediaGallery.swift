@@ -277,6 +277,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
     @Environment(\.scenePhase) private var phase
     @State private var previewRequestID = UUID()
     @State private var image: UIImage?
+    @State private var imageIsThumbnailOnly = false
     @State private var player: AVPlayer?
     @State private var failure: String?
     // Paired originals belong to this single verified L3 Viewer, never the wall.
@@ -486,6 +487,20 @@ struct XDriveIOSNativeServerMediaPreview: View {
                     ProgressView("正在验证并打开云端媒体…")
                 }
             }
+            .overlay(alignment: .topLeading) {
+                if let image {
+                    XDriveIOSNativeViewerQualityPanel(
+                        fileName: viewed.node.name,
+                        source: imageIsThumbnailOnly ? "缩略图回退" :
+                            viewed.isLive ? "实况静态原件 · 适屏解码" :
+                            "原件 · 适屏解码",
+                        image: image,
+                        originalBytes: viewed.node.size,
+                        archiveOriginal: viewed.node.name.lowercased().hasSuffix(".livp"),
+                        liveFiles: liveResources
+                    )
+                }
+            }
             .navigationTitle(viewed.node.name)
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom) {
@@ -594,6 +609,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
                         liveResources = live.files
                         liveOwner = expected
                         image = live.image
+                        imageIsThumbnailOnly = false
                         player = AVPlayer(url: live.files.motionURL)
                         failure = nil
                     } catch is CancellationError {
@@ -614,6 +630,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
                                     login.owner, expected
                                   ) else { return }
                             image = still
+                            imageIsThumbnailOnly = true
                         }
                     }
                 } else {
@@ -625,6 +642,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
                           XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
                     else { return }
                     image = media.image
+                    imageIsThumbnailOnly = false
                     if let url = media.videoURL { player = AVPlayer(url: url) }
                 }
             } catch is CancellationError {
@@ -780,6 +798,7 @@ struct XDriveIOSNativeServerMediaPreview: View {
         player?.pause()
         player = nil
         image = nil
+        imageIsThumbnailOnly = false
         failure = nil
         liveResources?.discard()
         liveResources = nil
