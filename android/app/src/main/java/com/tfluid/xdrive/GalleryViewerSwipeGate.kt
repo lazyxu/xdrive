@@ -40,6 +40,8 @@ internal class GalleryLiveHoldSwipeFence {
         liveActivatedInGesture = true
     }
 
+    fun canFollowSwipe(): Boolean = !liveActivatedInGesture
+
     fun mayShift(
         deltaX: Float,
         deltaY: Float,
@@ -53,3 +55,14 @@ internal class GalleryLiveHoldSwipeFence {
             singlePointer, atDefaultZoom,
         )
 }
+
+/** Visible drag progress for the current 1x still. Invalid axis/edge drags
+ * have gentle resistance, and no call to a Server or MediaStore occurs here. */
+internal fun galleryPhotoDragTranslation(
+    deltaX: Float, deltaY: Float, width: Float, neighborAvailable: Boolean,
+): Float {
+    if (!deltaX.isFinite() || !deltaY.isFinite() || !width.isFinite() || width <= 0f ||
+        abs(deltaX) < 8f || abs(deltaX) <= abs(deltaY) * 1.18f) return 0f
+    return deltaX.coerceIn(-width, width) * (if (neighborAvailable) 1f else 0.12f)
+}
+

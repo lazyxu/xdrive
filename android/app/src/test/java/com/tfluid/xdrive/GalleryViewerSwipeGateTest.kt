@@ -1,10 +1,27 @@
 package com.tfluid.xdrive
 
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GalleryViewerSwipeGateTest {
+    @Test fun visibleDragTracksFingerOnlyForHorizontalUnzoomedNavigation() {
+        assertEquals(-110f, galleryPhotoDragTranslation(-110f, 8f, 360f, true), 0.01f)
+        assertEquals(82f, galleryPhotoDragTranslation(200f, 0f, 82f, true), 0.01f)
+        assertEquals(-12f, galleryPhotoDragTranslation(-100f, 0f, 360f, false), 0.01f)
+        assertEquals(0f, galleryPhotoDragTranslation(-20f, 60f, 360f, true), 0.01f)
+        assertEquals(0f, galleryPhotoDragTranslation(-4f, 0f, 360f, true), 0.01f)
+        assertEquals(0f, galleryPhotoDragTranslation(Float.NaN, 0f, 360f, true), 0.01f)
+        val fence = GalleryLiveHoldSwipeFence()
+        fence.beginGesture()
+        assertTrue(fence.canFollowSwipe())
+        fence.liveHoldActivated()
+        assertFalse(fence.canFollowSwipe())
+        fence.beginGesture()
+        assertTrue(fence.canFollowSwipe())
+    }
+
     private fun gesture(
         fence: GalleryLiveHoldSwipeFence,
         dx: Float = -100f,
