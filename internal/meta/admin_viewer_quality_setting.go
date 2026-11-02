@@ -8,6 +8,7 @@ type AdminViewerQualitySetting struct {
 	Name          string `gorm:"size:48;primaryKey"`
 	Revision      uint64 `gorm:"not null"`
 	MaximumPreset string `gorm:"size:16;not null"`
+	CacheBudgetBytes int64 `gorm:"not null;default:10737418240"`
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 }

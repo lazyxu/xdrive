@@ -70,11 +70,12 @@ func TestAdminViewerQualityMaximumPersistenceCASPostgres(t *testing.T) {
 		return rec, result
 	}
 	r, defaults := invoke(http.MethodGet, "")
-	if r.Code != http.StatusOK || defaults.Revision != 0 || defaults.Maximum != "high" {
+	if r.Code != http.StatusOK || defaults.Revision != 0 || defaults.Maximum != "high" || defaults.CacheBudgetBytes != 10<<30 {
 		t.Fatal("unexpected administrator default", defaults)
 	}
 	r, changed := invoke(http.MethodPut, `{"revision":0,"maximum_preset":"balanced"}`)
-	if r.Code != http.StatusOK || changed.Revision != 1 || changed.Maximum != "balanced" {
+	if r.Code != http.StatusOK || changed.Revision != 1 || changed.Maximum != "balanced" ||
+		changed.CacheBudgetBytes != 10<<30 {
 		t.Fatal("administrator save failed", r.Body.String())
 	}
 	r, _ = invoke(http.MethodPut, `{"revision":0,"maximum_preset":"high"}`)
@@ -85,12 +86,17 @@ func TestAdminViewerQualityMaximumPersistenceCASPostgres(t *testing.T) {
 	if r.Code != http.StatusBadRequest {
 		t.Fatal("unbounded tier was accepted")
 	}
-	r, changed = invoke(http.MethodPut, `{"revision":1,"maximum_preset":"economy"}`)
-	if r.Code != http.StatusOK || changed.Maximum != "economy" {
+	r, changed = invoke(http.MethodPut, `{"revision":1,"maximum_preset":"economy","cache_budget_bytes":1073741824}`)
+	if r.Code != http.StatusOK || changed.Maximum != "economy" ||
+		changed.CacheBudgetBytes != 1<<30 {
 		t.Fatal("new administrator cap not persisted")
 	}
+	r, _ = invoke(http.MethodPut, `{"revision":2,"maximum_preset":"economy","cache_budget_bytes":0}`)
+	if r.Code != http.StatusBadRequest {
+		t.Fatal("zero cache budget accepted")
+	}
 	real, err := s.readAdminViewerQualityMaximum(httptest.NewRequest(http.MethodGet, "/", nil).Context())
-	if err != nil || real.Maximum != "economy" {
+	if err != nil || real.Maximum != "economy" || real.CacheBudgetBytes != 1<<30 {
 		t.Fatal("request-time administrator cap is inconsistent", err, real)
 	}
 }

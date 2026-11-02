@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	mediapkg "github.com/lazyxu/xdrive/internal/media"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/maintenance"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -22,12 +23,16 @@ var errAdminViewerQualityRevision = errors.New("viewer admin maximum revision ch
 type adminViewerQualityDTO struct {
 	Revision uint64 `json:"revision"`
 	Maximum  mediapkg.ViewerQualityPreset `json:"maximum_preset"`
+	CacheBudgetBytes int64 `json:"cache_budget_bytes"`
 }
 
 // Every Server request validates the persisted maximum. No client parameter
 // or account setting can raise the configured generated-image cap.
 func (s *Server) readAdminViewerQualityMaximum(ctx context.Context) (adminViewerQualityDTO, error) {
-	defaults := adminViewerQualityDTO{Maximum: mediapkg.ViewerQualityHigh}
+	defaults := adminViewerQualityDTO{
+		Maximum: mediapkg.ViewerQualityHigh,
+		CacheBudgetBytes: maintenance.ViewerVariantCacheDefaultBudgetBytes,
+	}
 	if s == nil || s.DB == nil {
 		return defaults, errors.New("viewer admin policy database unavailable")
 	}
@@ -41,10 +46,12 @@ func (s *Server) readAdminViewerQualityMaximum(ctx context.Context) (adminViewer
 		return defaults, err
 	}
 	preset, err := mediapkg.ParseViewerQualityPreset(row.MaximumPreset)
-	if err != nil || row.Revision == 0 || string(preset) != row.MaximumPreset {
+	if err != nil || row.Revision == 0 || string(preset) != row.MaximumPreset ||
+		!validViewerCacheBudget(row.CacheBudgetBytes) {
 		return defaults, errors.New("invalid stored viewer admin maximum")
 	}
-	return adminViewerQualityDTO{Revision: row.Revision, Maximum: preset}, nil
+	return adminViewerQualityDTO{Revision: row.Revision, Maximum: preset,
+		CacheBudgetBytes: row.CacheBudgetBytes}, nil
 }
 
 func (s *Server) adminGetViewerQuality(c *gin.Context) {
@@ -67,6 +74,7 @@ func (s *Server) adminPutViewerQuality(c *gin.Context) {
 	var input struct {
 		Revision *uint64 `json:"revision"`
 		Maximum  string  `json:"maximum_preset"`
+		CacheBudgetBytes *int64 `json:"cache_budget_bytes"`
 	}
 	decoder := json.NewDecoder(c.Request.Body)
 	decoder.DisallowUnknownFields()
@@ -81,6 +89,10 @@ func (s *Server) adminPutViewerQuality(c *gin.Context) {
 		return
 	}
 	maximum, err := mediapkg.ParseViewerQualityPreset(input.Maximum)
+	if input.CacheBudgetBytes != nil && !validViewerCacheBudget(*input.CacheBudgetBytes) {
+		fail(c, http.StatusBadRequest, "invalid Viewer cache budget")
+		return
+	}
 	if err != nil {
 		fail(c, http.StatusBadRequest, "invalid viewer quality maximum")
 		return
@@ -90,6 +102,7 @@ func (s *Server) adminPutViewerQuality(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "invalid viewer admin revision")
 		return
 	}
+	budget := maintenance.ViewerVariantCacheDefaultBudgetBytes
 	err = s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		var current meta.AdminViewerQualitySetting
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -98,11 +111,15 @@ func (s *Server) adminPutViewerQuality(c *gin.Context) {
 			if *input.Revision != 0 {
 				return errAdminViewerQualityRevision
 			}
+			if input.CacheBudgetBytes != nil {
+				budget = *input.CacheBudgetBytes
+			}
 			result := tx.Clauses(clause.OnConflict{DoNothing: true}).
 				Create(&meta.AdminViewerQualitySetting{
 					Name: adminViewerQualitySettingName,
 					Revision: next,
 					MaximumPreset: string(maximum),
+					CacheBudgetBytes: budget,
 				})
 			if result.Error != nil {
 				return result.Error
@@ -118,10 +135,18 @@ func (s *Server) adminPutViewerQuality(c *gin.Context) {
 		if current.Revision != *input.Revision {
 			return errAdminViewerQualityRevision
 		}
+		if !validViewerCacheBudget(current.CacheBudgetBytes) {
+			return errors.New("invalid persisted Viewer cache budget")
+		}
+		budget = current.CacheBudgetBytes
+		if input.CacheBudgetBytes != nil {
+			budget = *input.CacheBudgetBytes
+		}
 		result := tx.Model(&meta.AdminViewerQualitySetting{}).
 			Where("name = ? AND revision = ?", adminViewerQualitySettingName, current.Revision).
 			Updates(map[string]any{
 				"maximum_preset": string(maximum),
+				"cache_budget_bytes": budget,
 				"revision": next,
 			})
 		if result.Error != nil {
@@ -140,5 +165,10 @@ func (s *Server) adminPutViewerQuality(c *gin.Context) {
 		fail(c, http.StatusServiceUnavailable, "viewer administrator policy unavailable")
 		return
 	}
-	c.JSON(http.StatusOK, adminViewerQualityDTO{Revision: next, Maximum: maximum})
+	c.JSON(http.StatusOK, adminViewerQualityDTO{Revision: next, Maximum: maximum,
+		CacheBudgetBytes: budget})
+}
+
+func validViewerCacheBudget(bytes int64) bool {
+	return bytes >= 1<<20 && bytes <= 1<<40
 }
