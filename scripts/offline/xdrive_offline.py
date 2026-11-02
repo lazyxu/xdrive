@@ -312,6 +312,92 @@ def assemble_photo_runtime(root: Path, manifest: dict) -> str:
     return photo_ref
 
 
+def validate_active_contracts(home: Path, manifest: dict, selection: tuple[str, ...],
+                              process_profiles: set[str]) -> dict:
+    """Fail closed when enabled old optional modules cannot be proven compatible."""
+    state_file = home / "state" / "offline-installed.json"
+    state: dict = {}
+    if state_file.exists() or state_file.is_symlink():
+        safe_file(state_file)
+        value = json.loads(state_file.read_text(encoding="utf-8"))
+        require(isinstance(value, dict) and value.get("schema") == 1,
+                "invalid installed offline compatibility state")
+        state = value
+    enabled = set(process_profiles)
+    active_refs: dict[str, str] = {}
+    for env_path in (home / "config" / ".env", home / ".env"):
+        if env_path.is_file() and not env_path.is_symlink():
+            for line in env_path.read_text(encoding="utf-8").splitlines():
+                if line.startswith("COMPOSE_PROFILES="):
+                    enabled.update(part.strip() for part in
+                                   line.partition("=")[2].strip('"').split(",") if part.strip())
+                if line.startswith("XD_MEDIA_WORKER_IMAGE="):
+                    active_refs["media-worker"] = line.partition("=")[2].strip('"')
+                if line.startswith("XD_PHOTO_FACE_IMAGE="):
+                    active_refs["photo-intelligence"] = line.partition("=")[2].strip('"')
+            break
+    contracts = manifest.get("contracts", {})
+    module_rules = (
+        ("media-worker", "media-worker", ("media_worker_api",)),
+        ("photo-intelligence", "ai-runtime", ("photo_intelligence_api", "model_runtime_api")),
+    )
+    for profile, component, keys in module_rules:
+        if profile not in enabled or component in selection:
+            continue
+        old_contracts = state.get("contracts")
+        require(isinstance(old_contracts, dict) and
+                all(k in old_contracts and k in contracts and
+                    type(contracts[k]) is int and old_contracts[k] == contracts[k] for k in keys)
+                and bool(active_refs.get(profile))
+                and state.get("active_refs", {}).get(profile) == active_refs[profile],
+                f"enabled {profile} compatibility is unverified; supply its offline module")
+    return state
+
+
+def record_successful_offline_install(home: Path, previous: dict, manifest: dict,
+                                      selection: tuple[str, ...]) -> None:
+    """Record installed identities only after the existing transactional installer succeeds."""
+    state_dir = home / "state"
+    state_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    require(not state_dir.is_symlink(), "unsafe offline state directory")
+    state_file = state_dir / "offline-installed.json"
+    require(not state_file.is_symlink(), "unsafe offline state file")
+    installed = dict(previous.get("installed", {}))
+    for component in selection:
+        installed[component] = {
+            "fingerprint": manifest.get("fingerprints", {}).get(component),
+            "sha256": manifest["packages"][component]["sha256"],
+            "build_commit": manifest["packages"][component].get("built_from_commit"),
+        }
+    active_refs = {}
+    for env_path in (home / "config" / ".env", home / ".env"):
+        if env_path.is_file() and not env_path.is_symlink():
+            for line in env_path.read_text(encoding="utf-8").splitlines():
+                if line.startswith("XD_MEDIA_WORKER_IMAGE="):
+                    active_refs["media-worker"] = line.partition("=")[2].strip('"')
+                if line.startswith("XD_PHOTO_FACE_IMAGE="):
+                    active_refs["photo-intelligence"] = line.partition("=")[2].strip('"')
+            break
+    value = {
+        "schema": 1,
+        "active_refs": active_refs,
+        "source_commit": manifest["source_commit"],
+        "contracts": manifest.get("contracts", {}),
+        "installed": installed,
+    }
+    with tempfile.NamedTemporaryFile(mode="w", prefix=".offline-installed-", dir=state_dir,
+                                     encoding="utf-8", delete=False) as stream:
+        temp = Path(stream.name)
+        json.dump(value, stream, sort_keys=True)
+        stream.write("\n")
+    try:
+        temp.chmod(0o600)
+        temp.replace(state_file)
+    finally:
+        if temp.exists():
+            temp.unlink()
+
+
 def offline_install(args: argparse.Namespace, manifest: dict, selection: tuple[str, ...]) -> None:
     require("app" in selection, "offline install requires the App package")
     require(not ("ai-models" in selection) != ("ai-runtime" in selection),
@@ -337,6 +423,8 @@ def offline_install(args: argparse.Namespace, manifest: dict, selection: tuple[s
                             r"xdrive/offline-postgres:sha-[a-f0-9]{12}", current):
                         raise PackageError("existing custom PostgreSQL image needs a separate migration plan")
             break
+    previous_state = validate_active_contracts(home, manifest, selection,
+                                               set(filter(None, os.environ.get("COMPOSE_PROFILES", "").split(","))))
     # All hashes, paths and individual file contents are verified BEFORE any Docker
     # mutation or xDrive deployment change. The staged scripts are never fetched online.
     with tempfile.TemporaryDirectory(prefix="xdrive-offline-", dir=args.workdir) as tmp:
@@ -378,6 +466,8 @@ def offline_install(args: argparse.Namespace, manifest: dict, selection: tuple[s
                    "--channel", manifest["channel"]]
         print("[offline] activating verified local release via xDrive transactional installer", flush=True)
         subprocess.run(command, env=environment, stdin=None, check=True)
+        if not args.no_start:
+            record_successful_offline_install(home, previous_state, manifest, selection)
 
 
 def build_packages(args: argparse.Namespace) -> None:

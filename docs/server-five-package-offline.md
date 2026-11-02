@@ -51,6 +51,10 @@ requires its exact Final Gate.
 - PostgreSQL major upgrades require a separate data migration plan.
 - The existing installer still applies pre-upgrade backup, rollback and
   health gates. A checksum alone never proves protocol compatibility.
+- After a successful offline activation, the host records its installed
+  component fingerprints, declared contract versions and active module image
+  references in private state. App-only upgrades with an enabled optional
+  module fail closed when the previous contract or image identity is unknown.
 - New App/API combinations still require real integrated validation of
   optional Worker/AI protocols before claiming compatibility.
 

@@ -199,6 +199,50 @@ class OfflinePackageTests(unittest.TestCase):
                 channel="master", source="github", plan=plan,
                 reuse_manifest=old / "manifest.json"))
 
+    def test_enabled_optional_module_must_have_verified_prior_contract(self):
+        home = self.root / "existing"
+        (home / "config").mkdir(parents=True)
+        (home / "config" / ".env").write_text(
+            "COMPOSE_PROFILES=media-worker\nXD_MEDIA_WORKER_IMAGE=xdrive/media-worker:old\n",
+            encoding="utf-8")
+        current = dict(self.manifest)
+        current["contracts"] = {"postgres_major": 17, "media_worker_api": 1,
+                                "photo_intelligence_api": 1, "model_runtime_api": 1}
+        with self.assertRaisesRegex(offline.PackageError, "unverified"):
+            offline.validate_active_contracts(home, current, ("app",), set())
+        (home / "state").mkdir()
+        saved = {"schema": 1, "contracts": current["contracts"],
+                 "active_refs": {"media-worker": "xdrive/media-worker:old"}}
+        (home / "state" / "offline-installed.json").write_text(json.dumps(saved), encoding="utf-8")
+        self.assertEqual(offline.validate_active_contracts(home, current, ("app",), set()), saved)
+        (home / "config" / ".env").write_text(
+            "COMPOSE_PROFILES=media-worker\nXD_MEDIA_WORKER_IMAGE=xdrive/media-worker:unknown\n",
+            encoding="utf-8")
+        with self.assertRaisesRegex(offline.PackageError, "unverified"):
+            offline.validate_active_contracts(home, current, ("app",), set())
+        (home / "config" / ".env").write_text(
+            "COMPOSE_PROFILES=media-worker\nXD_MEDIA_WORKER_IMAGE=xdrive/media-worker:old\n",
+            encoding="utf-8")
+        changed = dict(current)
+        changed["contracts"] = dict(current["contracts"], media_worker_api=2)
+        with self.assertRaisesRegex(offline.PackageError, "unverified"):
+            offline.validate_active_contracts(home, changed, ("app",), set())
+
+    def test_installed_offline_state_record_is_atomic_and_private(self):
+        home = self.root / "record"
+        (home / "config").mkdir(parents=True)
+        (home / "config" / ".env").write_text(
+            "XD_MEDIA_WORKER_IMAGE=xdrive/media-worker:fixed\n",
+            encoding="utf-8")
+        offline.record_successful_offline_install(home, {}, self.manifest, ("app",))
+        path = home / "state" / "offline-installed.json"
+        state = json.loads(path.read_text())
+        self.assertEqual(state["schema"], 1)
+        self.assertEqual(state["source_commit"], self.commit)
+        self.assertIn("app", state["installed"])
+        self.assertEqual(state["active_refs"]["media-worker"], "xdrive/media-worker:fixed")
+        self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+
     def test_shell_and_workflow_enforce_no_pull_and_exact_assets(self):
         installer = (REPO / "deploy" / "install-server.sh").read_text()
         self.assertIn('OFFLINE_ASSET_DIR="${XD_OFFLINE_ASSET_DIR:-}"', installer)

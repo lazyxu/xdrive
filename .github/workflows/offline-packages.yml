@@ -20,6 +20,7 @@ permissions:
 
 concurrency:
   group: xdrive-offline-component-publish
+  queue: max
   cancel-in-progress: false
 
 jobs:
