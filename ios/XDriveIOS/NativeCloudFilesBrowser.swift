@@ -981,6 +981,12 @@ struct XDriveIOSNativeFilesBrowser: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+            if let modifiedDate = entry.node.modifiedDate {
+                Text("修改于 \(XDriveIOSNativeFilesDatePolicy.display(modifiedDate))")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
         }
         .frame(maxWidth: .infinity, minHeight: 130, alignment: .topLeading)
         .contentShape(Rectangle())
@@ -1000,10 +1006,19 @@ struct XDriveIOSNativeFilesBrowser: View {
                 if let path = entry.path {
                     Text(path).font(.caption).foregroundStyle(.secondary)
                         .lineLimit(1)
-                } else if !entry.node.isDirectory {
-                    Text(ByteCountFormatter.string(
-                        fromByteCount: entry.node.size, countStyle: .file
-                    )).font(.caption).foregroundStyle(.secondary)
+                }
+                HStack(spacing: 8) {
+                    if !entry.node.isDirectory {
+                        Text(ByteCountFormatter.string(
+                            fromByteCount: entry.node.size, countStyle: .file
+                        )).font(.caption).foregroundStyle(.secondary)
+                    }
+                    if let modifiedDate = entry.node.modifiedDate {
+                        Text("修改于 \(XDriveIOSNativeFilesDatePolicy.display(modifiedDate))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                 }
             }
             Spacer(minLength: 6)
