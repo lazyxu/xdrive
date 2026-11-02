@@ -1859,7 +1859,7 @@ func TestPhotoFaceTestsUseMountedBusinessSource(t *testing.T) {
 		"COPY analyzer.py creative.py /app/",
 		"COPY THIRD_PARTY.md /app/THIRD_PARTY.md",
 		"USER 65532:65532",
-		\x60ENTRYPOINT [\"python\", \"/app/analyzer.py\"]\x60,
+		`ENTRYPOINT ["python", "/app/analyzer.py"]`,
 	)
 	// The online runtime is the existing model-prefetch path. Exclude the
 	// deliberate model-free offline target when asserting it contains no
