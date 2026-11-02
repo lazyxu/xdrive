@@ -19,6 +19,11 @@ test('Desktop and Web mount the same HTTPS Places UI with prototype default',()=
   assert.match(gallery,/desktopEmbeddedPlacesURL=\{desktopEmbeddedPlacesURL\}/)
   assert.match(desktop,/desktopEmbeddedPlacesURL: xDriveDesktopEmbeddedPlacesURL\(status\?\.server\)/)
   assert.match(web,/data-xdrive-desktop-places-web-page/)
+  assert.equal((web.match(/<XDriveMediaGalleryPage\b/g)||[]).length,1,
+    'normal Web and embedded HTTPS map must share one Gallery implementation')
+  assert.match(web,/onOpenViewer=\{placesEmbedRequested \? undefined :/)
+  assert.match(web,/onSectionRouteChange=\{placesEmbedRequested \? undefined :/)
+  assert.match(web,/initialMapPhotoScope=\{placesEmbedRequested \? placesEmbedScope/)
   assert.match(web,/<XDriveMediaGalleryPage/)
   assert.match(mode,/if \(selections.length === 0\) return 'prototype'/)
   assert.match(desktop,/\?desktop_places_embed=1#\/app\/gallery\?section=places/)
@@ -49,7 +54,10 @@ test('webview guest exposes no native Agent, only same-Owner HTTPS Web login',()
   assert.doesNotMatch(main,/guest\.destroy\(\)/)
   assert.match(guest,/contextBridge\.exposeInMainWorld\('xdrivePlacesEmbedBridge'/)
   assert.doesNotMatch(guest,/node:fs|readFile\(|exec\(|getMedia|cloud[A-Z]|setCookie/)
-  assert.doesNotMatch(guest,/ipcRenderer\.invoke\('(?!desktop:places-embed-expected-owner)/)
+  assert.deepEqual([...guest.matchAll(/ipcRenderer\.invoke\('([^']+)'/g)]
+    .map(m=>m[1]).sort(),
+    ['desktop:places-embed-consume','desktop:places-embed-expected-owner'],
+    'Guest preload may call only these two Owner-bound read-only IPC operations')
   assert.match(web,/profile\.username!==placesEmbedOwner/)
   assert.match(web,/placesEmbedStatus==='denied'/)
   assert.match(web,/placesEmbedRequested && !placesEmbedBridge/)

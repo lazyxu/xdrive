@@ -33,6 +33,8 @@ function fixture() {
   const oldEntered = deferred()
   let statusCalls = 0
   const events = []
+  const guestClosures = []
+  const desktopPlacesGuests = new Map()
   const oldHello = { agent_version: 'test-v1' }
   const currentHello = { agent_version: 'test-v2' }
   const newest = { configured: true, auth_status: 'authenticated', username: 'current-B' }
@@ -66,6 +68,14 @@ function fixture() {
     // Agent-state publication WITHOUT a map window, exactly as Main starts.
     // Keep the original production body instead of stripping that guard.
     secureBaiduMapWindow: null,
+    // When exercising extracted Main functions, provide the real Guest
+    // registry dependency. A changed Owner must retire existing map guests.
+    desktopPlacesGuests,
+    desktopPlacesPending: null,
+    closeDesktopPlacesGuests: () => {
+      guestClosures.push('closed')
+      desktopPlacesGuests.clear()
+    },
     closeSecureBaiduMapWindow: () => {
       throw new Error('unexpected map-window close in Agent-only test')
     },
@@ -84,6 +94,7 @@ function fixture() {
     '\nreturn { refreshAgentState, publishAgentState, current: () => agentState }')(
     ...keys.map((key) => deps[key]))
   return { ...main, oldReply, oldEntered, old, newest, events,
+    desktopPlacesGuests,guestClosures,
     statusCallCount: () => statusCalls }
 }
 
@@ -142,4 +153,13 @@ test('uncontested sequential Main refresh preserves genuine Agent updates', asyn
   await f.refreshAgentState()
   assert.equal(f.current().status.username, 'current-B')
   assert.equal(f.events.length, 2)
+})
+
+test('an authenticated Owner switch closes embedded Places Guests before publishing a new map',()=>{
+  const f=fixture()
+  f.desktopPlacesGuests.set(33,{owner:'obsolete-A',origin:'https://drive.test',scope:null})
+  f.publishAgentState({connected:true,status:f.newest})
+  assert.deepEqual(f.guestClosures,['closed'])
+  assert.equal(f.desktopPlacesGuests.size,0)
+  assert.equal(f.current().status.username,'current-B')
 })
