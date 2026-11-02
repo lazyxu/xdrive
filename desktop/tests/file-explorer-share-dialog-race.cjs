@@ -414,3 +414,131 @@ test('stale ShareDialog revoke cannot reload A after switching to B', async () =
   )
   assert.equal(errors.length, 0)
 })
+
+test('lost Share token can issue an independent same-policy link without revoking the old one', async () => {
+  const runtime = createHookRuntime()
+  const ShareDialog = loadShareDialog(runtime.react)
+  const expiry = new Date(Date.now() + 86400000).toISOString()
+  const original = {
+    id: 111, status: 'active', has_password: false, access: 'view_upload',
+    expires_at: expiry, created_at: '2026-11-02T00:00:00Z',
+  }
+  let records = [original]
+  const mutations = []
+  const adapter = {
+    listShares: async () => records,
+    createShare: async (nodeID, data) => {
+      mutations.push({ nodeID, data })
+      records = [{ ...original, id: 222 }, ...records]
+      return { url: 'https://example.invalid/#/s/new-token' }
+    },
+    revokeShare: async () => { throw new Error('must never revoke the old link') },
+  }
+  const render = () => runtime.render(() => ShareDialog({
+    adapter, node: { id: 9, name: 'xDrive Release', type: 'dir' },
+    onClose: () => {}, onError: (error) => { throw error },
+  }))
+  render()
+  await flushAsync()
+  let tree = render()
+  const listing = findElement(tree, (element) => element.type === 'XDriveShareList')
+  assert.equal(listing.props.shares.length, 1)
+  listing.props.onNewLink(original)
+  tree = render()
+  const confirm = findElement(tree, (element) =>
+    element.type === 'XDriveActionButton' && element.props.children === '确认生成新链接')
+  assert.ok(confirm, 'recovering a lost token requires a second explicit confirmation')
+  assert.equal(mutations.length, 0)
+  confirm.props.onClick()
+  await flushAsync()
+  tree = render()
+  assert.deepEqual(mutations, [{
+    nodeID: 9, data: { expires_at: expiry, access: 'view_upload', password: undefined },
+  }])
+  assert.equal(findElement(tree, (element) =>
+    element.type === 'XDriveCreatedShareLink')?.props.value,
+    'https://example.invalid/#/s/new-token')
+  assert.deepEqual(findElement(tree, (element) =>
+    element.type === 'XDriveShareList').props.shares.map(s => s.id), [222, 111])
+})
+
+test('password-protected lost Share token requires new password, never drops protection', async () => {
+  const runtime = createHookRuntime()
+  const ShareDialog = loadShareDialog(runtime.react)
+  const old = {
+    id: 120, status: 'active', has_password: true, access: 'read_only',
+    expires_at: null, created_at: '2026-11-02T00:00:00Z',
+  }
+  const creates = []
+  const adapter = {
+    listShares: async () => [old],
+    createShare: async (id, input) => {
+      creates.push({ id, input })
+      return { url: 'https://example.invalid/#/s/protected-new' }
+    },
+    revokeShare: async () => { throw new Error('unexpected revoke') },
+  }
+  const render = () => runtime.render(() => ShareDialog({
+    adapter, node: { id: 25, name: 'private folder', type: 'dir' },
+    onClose: () => {}, onError: (error) => { throw error },
+  }))
+  render()
+  await flushAsync()
+  let tree = render()
+  findElement(tree, element => element.type === 'XDriveShareList').props.onNewLink(old)
+  tree = render()
+  const confirm = findElement(tree, element => element.type === 'XDriveActionButton' &&
+    element.props.children === '确认生成新链接')
+  confirm.props.onClick()
+  await flushAsync()
+  assert.equal(creates.length, 0, 'cannot silently issue a passwordless link')
+  tree = render()
+  const password = findElement(tree, element => element.props?.label?.startsWith('新链接密码'))
+  assert.ok(password)
+  assert.equal(password.props.error, true)
+  password.props.onChange({ target: { value: 'new-password-123' } })
+  tree = render()
+  findElement(tree, element => element.type === 'XDriveActionButton' &&
+    element.props.children === '确认生成新链接').props.onClick()
+  await flushAsync()
+  assert.deepEqual(creates, [{ id: 25, input: {
+    expires_at: undefined, access: 'read_only', password: 'new-password-123',
+  } }])
+})
+
+test('late lost-link recreation cannot leak the link into a different Share dialog', async () => {
+  const runtime = createHookRuntime()
+  const ShareDialog = loadShareDialog(runtime.react)
+  const shareA = { id: 1, status: 'active', has_password: false, access: 'read_only', expires_at: null }
+  const shareB = { id: 2, status: 'active', has_password: false, access: 'read_only', expires_at: null }
+  let node = { id: 1, name: 'A', type: 'dir' }
+  let finishCreate
+  const adapter = {
+    listShares: async (id) => id === 1 ? [shareA] : [shareB],
+    createShare: () => new Promise(resolve => { finishCreate = resolve }),
+    revokeShare: async () => undefined,
+  }
+  const errors = []
+  const render = () => runtime.render(() => ShareDialog({
+    adapter, node, onClose: () => {}, onError: e => errors.push(e),
+  }))
+  render()
+  await flushAsync()
+  let tree = render()
+  findElement(tree, e => e.type === 'XDriveShareList').props.onNewLink(shareA)
+  tree = render()
+  findElement(tree, e => e.type === 'XDriveActionButton' &&
+    e.props.children === '确认生成新链接').props.onClick()
+  await flushAsync()
+  assert.equal(typeof finishCreate, 'function')
+  node = { id: 2, name: 'B', type: 'dir' }
+  render()
+  await flushAsync()
+  finishCreate({ url: 'https://example.invalid/#/s/stale-secret' })
+  await flushAsync()
+  tree = render()
+  assert.equal(findElement(tree, e => e.type === 'XDriveCreatedShareLink'), null)
+  assert.deepEqual(findElement(tree, e => e.type === 'XDriveShareList')
+    .props.shares.map(s => s.id), [2])
+  assert.deepEqual(errors, [])
+})

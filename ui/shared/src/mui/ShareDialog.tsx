@@ -94,6 +94,12 @@ export function XDriveShareDialog({
   const [creating, setCreating] = useState(false)
   const [revokingID, setRevokingID] = useState<number | null>(null)
   const [createdLink, setCreatedLink] = useState('')
+  // Lost one-time tokens cannot be recovered from the Server's SHA-256 hash.
+  // A new independent share can be created without revoking the old one.
+  const [recreateTarget, setRecreateTarget] = useState<FileShare | null>(null)
+  const [recreatePassword, setRecreatePassword] = useState('')
+  const [recreatePasswordError, setRecreatePasswordError] = useState('')
+  const [recreating, setRecreating] = useState(false)
   const [expiresAt, setExpiresAt] = useState(() => defaultExpiryInput(expiryMode))
   const [password, setPassword] = useState('')
   const [access, setAccess] = useState<XDriveShareAccess>('read_only')
@@ -109,6 +115,8 @@ export function XDriveShareDialog({
   const nativeShareAvailable = compactTouch && xDriveCanUseNativeShare('link')
   const loadRequestRef = useRef(0)
   const nodeLifecycleGenerationRef = useRef(0)
+  const recreateInFlightRef = useRef(false)
+  const createdLinkAnchorRef = useRef<HTMLDivElement | null>(null)
 
   const load = useCallback(async () => {
     if (!node) return
@@ -129,6 +137,10 @@ export function XDriveShareDialog({
   useEffect(() => {
     nodeLifecycleGenerationRef.current += 1
     setCreating(false)
+    setRecreating(false)
+    setRecreateTarget(null)
+    setRecreatePassword('')
+    setRecreatePasswordError('')
     setRevokingID(null)
     setEditingShare(null)
     setSavingEdit(false)
@@ -161,9 +173,15 @@ export function XDriveShareDialog({
     nodeLifecycleGenerationRef.current += 1
   }, [])
 
+  // Bring the newly issued one-time link into view even when the user
+  // initiated recovery from the existing-share list at the bottom.
+  useEffect(() => {
+    if (createdLink) createdLinkAnchorRef.current?.scrollIntoView({ block: 'nearest' })
+  }, [createdLink])
+
   const create = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!node) return
+    if (!node || recreating || recreateInFlightRef.current) return
 
     const expiry = expiryInput(expiryMode, expiresAt)
     const nextPasswordError = password && password.length < 8 ? '至少需要 8 个字符' : ''
@@ -215,6 +233,54 @@ export function XDriveShareDialog({
       if (error instanceof DOMException && error.name === 'AbortError') return
       if (lifecycleGeneration !== nodeLifecycleGenerationRef.current) return
       setFeedback({ tone: 'bad', message: '无法打开系统分享，请使用复制链接。' })
+    }
+  }
+
+  const startRecreate = (share: FileShare) => {
+    if (share.status !== 'active' || creating || recreating || revokingID !== null || savingEdit) return
+    setEditingShare(null)
+    setRecreateTarget(share)
+    setRecreatePassword('')
+    setRecreatePasswordError('')
+  }
+
+  const confirmRecreate = async () => {
+    if (!node || !recreateTarget || recreateTarget.status !== 'active' ||
+        recreating || creating || revokingID !== null || savingEdit ||
+        recreateInFlightRef.current) return
+    // Password hashes must never be exported, so require a fresh password
+    // for the new link instead of silently dropping access protection.
+    const newPassword = recreateTarget.has_password ? recreatePassword : ''
+    if (recreateTarget.has_password && newPassword.length < 8) {
+      setRecreatePasswordError('新链接必须重新设置至少 8 个字符的密码')
+      return
+    }
+    if (recreateTarget.expires_at &&
+        new Date(recreateTarget.expires_at).getTime() <= Date.now()) {
+      setFeedback({ tone: 'bad', message: '原分享已过期，请使用上方表单设置新的有效期。' })
+      return
+    }
+    const lifecycleGeneration = nodeLifecycleGenerationRef.current
+    recreateInFlightRef.current = true
+    setRecreating(true)
+    try {
+      const created = await adapter.createShare(node.id, {
+        expires_at: recreateTarget.expires_at ?? undefined,
+        access: node.type === 'dir' ? (recreateTarget.access ?? 'read_only') : 'read_only',
+        password: newPassword || undefined,
+      })
+      if (lifecycleGeneration !== nodeLifecycleGenerationRef.current) return
+      setCreatedLink(created.url)
+      setRecreateTarget(null)
+      setRecreatePassword('')
+      setRecreatePasswordError('')
+      setFeedback({ tone: 'good', message: '新链接已创建，旧链接仍然有效。请立即复制上方的新链接。' })
+      await load()
+    } catch (error) {
+      if (lifecycleGeneration === nodeLifecycleGenerationRef.current) onError(error)
+    } finally {
+      recreateInFlightRef.current = false
+      if (lifecycleGeneration === nodeLifecycleGenerationRef.current) setRecreating(false)
     }
   }
 
@@ -275,7 +341,7 @@ export function XDriveShareDialog({
     }
   }
 
-  const closeDisabled = creating || revokingID !== null || savingEdit
+  const closeDisabled = creating || recreating || revokingID !== null || savingEdit
 
   return (
     <>
@@ -298,19 +364,20 @@ export function XDriveShareDialog({
         />
         <XDriveDialogContent dividers>
           <XDriveStatusAlert tone="neutral" title="分享令牌只显示一次" sx={{ mb: 2.25 }}>
-            xDrive 只保存单向令牌哈希。请立即复制新创建的链接；已有链接可以撤销，但无法再次显示。
+            xDrive 只保存不可逆的分享令牌哈希，无法重新显示旧链接。若未保存链接，可在“已有分享”选择“生成新链接”；旧链接保持有效，新链接仅显示一次，请立即复制保存。
           </XDriveStatusAlert>
 
           {createdLink ? (
-            <XDriveCreatedShareLink
-              value={createdLink}
-              onCopy={() => void copyCreatedLink()}
-              onShare={nativeShareAvailable ? () => void shareCreatedLink() : undefined}
-              copyLabel="复制链接"
-              shareLabel="系统分享"
-              copyIntent="primary"
-              sx={{ mb: 2.25 }}
-            />
+            <Box ref={createdLinkAnchorRef} sx={{ mb: 2.25 }}>
+              <XDriveCreatedShareLink
+                value={createdLink}
+                onCopy={() => void copyCreatedLink()}
+                onShare={nativeShareAvailable ? () => void shareCreatedLink() : undefined}
+                copyLabel="复制链接"
+                shareLabel="系统分享"
+                copyIntent="primary"
+              />
+            </Box>
           ) : null}
 
           <XDriveSectionHeader level="h3" title={node?.type === 'dir' ? '创建文件夹链接' : '创建下载链接'} sx={{ mb: 1.5 }} />
@@ -346,6 +413,7 @@ export function XDriveShareDialog({
               intent="primary"
               type="submit"
               loading={creating}
+              disabled={recreating}
               loadingLabel="正在创建…"
               startIcon={<LinkRoundedIcon />}
             >
@@ -363,11 +431,51 @@ export function XDriveShareDialog({
             <XDriveShareList
               shares={shares}
               variant={compactTouch ? 'compact' : listVariant}
-              revokeDisabled={revokingID !== null}
+              revokeDisabled={revokingID !== null || recreating}
+              newLinkDisabled={closeDisabled}
               onRevoke={(share) => void revoke(share)}
               onEdit={adapter.updateShare ? startEdit : undefined}
+              onNewLink={startRecreate}
             />
           )}
+          {recreateTarget ? (
+            <Box sx={{ mt: 2, p: 2, border: 1, borderColor: 'divider', borderRadius: 2 }}>
+              <XDriveSectionHeader level="h3" title="生成新的分享链接" sx={{ mb: 1.5 }} />
+              <XDriveStatusAlert tone="neutral" sx={{ mb: 1.5 }}>
+                旧链接无法恢复；确认后会新增一条独立链接，保留原分享的权限及有效期。
+                不撤销、不覆盖旧链接。新链接只显示一次，请及时复制。
+              </XDriveStatusAlert>
+              <Stack spacing={1.5}>
+                {recreateTarget.has_password ? (
+                  <TextField
+                    label="新链接密码（重新设置，至少 8 个字符）"
+                    type="password"
+                    size="small"
+                    autoComplete="new-password"
+                    value={recreatePassword}
+                    error={Boolean(recreatePasswordError)}
+                    helperText={recreatePasswordError || '原密码无法读取，不能创建无密码的新链接。'}
+                    onChange={(event) => {
+                      setRecreatePassword(event.target.value)
+                      if (recreatePasswordError) setRecreatePasswordError('')
+                    }}
+                  />
+                ) : null}
+                <Stack direction="row" spacing={1}>
+                  <XDriveActionButton intent="primary" loading={recreating}
+                    disabled={closeDisabled} onClick={() => void confirmRecreate()}>
+                    确认生成新链接
+                  </XDriveActionButton>
+                  <XDriveActionButton disabled={recreating}
+                    onClick={() => {
+                      setRecreateTarget(null)
+                      setRecreatePassword('')
+                      setRecreatePasswordError('')
+                    }}>取消</XDriveActionButton>
+                </Stack>
+              </Stack>
+            </Box>
+          ) : null}
           {editingShare && adapter.updateShare ? (
             <Box sx={{ mt: 2, p: 2, border: 1, borderColor: 'divider', borderRadius: 2 }}>
               <XDriveSectionHeader level="h3" title="编辑已有分享（不更换链接）" sx={{ mb: 1.5 }} />

@@ -1,5 +1,6 @@
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
+import LinkRoundedIcon from '@mui/icons-material/LinkRounded'
 import {
   Box,
   Stack,
@@ -36,13 +37,17 @@ export function XDriveShareList({
   shares,
   variant = 'table',
   revokeDisabled = false,
+  newLinkDisabled = false,
   onEdit,
+  onNewLink,
   onRevoke,
 }: {
   shares: FileShare[]
   variant?: XDriveShareListVariant
   revokeDisabled?: boolean
+  newLinkDisabled?: boolean
   onEdit?: (share: FileShare) => void
+  onNewLink?: (share: FileShare) => void
   onRevoke: (share: FileShare) => void | Promise<void>
 }) {
   if (variant === 'compact') {
@@ -74,6 +79,10 @@ export function XDriveShareList({
             <Stack direction="row" spacing={1}>
               {onEdit && share.status !== 'revoked' ? (
                 <XDriveActionButton compact onClick={() => onEdit(share)}>编辑</XDriveActionButton>
+              ) : null}
+              {onNewLink && share.status === 'active' ? (
+                <XDriveActionButton compact disabled={newLinkDisabled}
+                  onClick={() => onNewLink(share)}>生成新链接</XDriveActionButton>
               ) : null}
               <XDriveActionButton
                 compact
@@ -115,6 +124,11 @@ export function XDriveShareList({
                 {onEdit && share.status !== 'revoked' ? (
                   <XDriveActionButton compact startIcon={<EditOutlinedIcon />}
                     onClick={() => onEdit(share)}>编辑</XDriveActionButton>
+                ) : null}
+                {onNewLink && share.status === 'active' ? (
+                  <XDriveActionButton compact startIcon={<LinkRoundedIcon />}
+                    disabled={newLinkDisabled}
+                    onClick={() => onNewLink(share)}>生成新链接</XDriveActionButton>
                 ) : null}
                 <XDriveActionButton
                   compact
