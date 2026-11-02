@@ -39,7 +39,9 @@ export function XDriveSidebarSurface({
         color: dark ? '#e8eef9' : 'text.primary',
         borderRight: responsive ? { xs: 0, md: 1 } : 1,
         borderBottom: responsive ? { xs: 1, md: 0 } : 0,
-        borderColor: dark ? 'rgba(255,255,255,.08)' : 'divider',
+        // Match the dark surface with a single low-contrast 1px divider.
+        // Do not brighten the Desktop rail when Host appearance is inferred.
+        borderColor: dark ? 'rgba(255,255,255,.06)' : 'divider',
         px: responsive ? { xs: 1, md: 1.25 } : 1.25,
         pt: responsive ? { xs: 1, md: 1.25 } : 1.5,
         pb: responsive ? { xs: 1, md: 1.25 } : 1.25,

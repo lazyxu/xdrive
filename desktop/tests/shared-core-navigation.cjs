@@ -224,3 +224,22 @@ test('Desktop Files routing uses the shared files key directly', () => {
   assert.ok(desktop.includes("setSystemDependenciesNavigationResetKey((value) => value + 1)"),
     'system dependencies entry must reset to overview without changing the global App Frame')
 })
+
+
+test('Desktop sidebar uses the active MUI dark theme rather than the light fallback', () => {
+  const synology = read('web', 'src', 'synology.tsx')
+  assert.match(sharedApp, /import \{ useTheme \} from '@mui\/material\/styles'/)
+  assert.match(sharedApp, /const theme = useTheme\(\)/)
+  assert.match(sharedApp, /const sidebarAppearance = sidebar\.appearance \?\? theme\.palette\.mode/,
+    'Desktop omits appearance; the shared app must derive dark/light from the actual theme')
+  assert.match(sharedApp, /\{\.\.\.sidebar\}\s+appearance=\{sidebarAppearance\}/,
+    'the resolved appearance must override the primitive light default')
+  assert.match(synology, /appearance: theme\.palette\.mode/,
+    'DSM explicitly supplies the same resolved palette mode')
+  assert.match(sharedNav, /borderRight: responsive \? \{ xs: 0, md: 1 \} : 1/,
+    'keep exactly one normal-width rail divider without changing its geometry')
+  assert.match(sharedNav, /borderColor: dark \? 'rgba\(255,255,255,\.06\)' : 'divider'/,
+    'dark rail divider should stay subtle while light themes keep MUI divider tokens')
+  assert.doesNotMatch(sharedApp, /boxShadow:|outline:|borderLeft:/,
+    'do not add a second highlight/shadow at the shared app boundary')
+})
