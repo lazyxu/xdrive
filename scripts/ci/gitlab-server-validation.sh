@@ -103,6 +103,7 @@ bash -n scripts/ci/photo-face-runtime-cache-key.sh
 bash -n scripts/ci/test-photo-face-runtime-cache.sh
 bash scripts/ci/test-photo-face-runtime-cache.sh
 bash -n scripts/ci/test-go-api-race.sh
+bash scripts/ci/test-go-api-race-shards.sh
 bash -n scripts/ci/gitlab-server-backup.sh
 bash -n scripts/ci/gitlab-go-windows.sh
 bash -n scripts/ci/gitlab-package-windows-client.sh

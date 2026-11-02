@@ -443,7 +443,23 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"when: always",
 	)
 	assertGitLabJobTextContains(t, gitlab, "server-validation",
-		"apt-get install -y --no-install-recommends ca-certificates curl jq xz-utils",
+		"bash scripts/ci/install-linux-fetch-tools.sh",
+	)
+	fetchTools := readFile(t, filepath.Join(root, "scripts", "ci", "install-linux-fetch-tools.sh"))
+	requireRaw(t, "GitLab signed APT fetch tools", fetchTools,
+		"ca-certificates curl jq xz-utils",
+		"signed-by=/usr/share/keyrings/debian-archive-keyring.gpg",
+		"Acquire::Retries=2", "Acquire::https::Timeout=20", "APT::Update::Error-Mode=any",
+		"mirror failed; retrying original signed APT repositories",
+	)
+	apiJob := gitlab["go-linux-api"].(map[string]any)
+	if apiJob["parallel"] != 5 {
+		t.Fatal("GitLab API Race must run all five isolated PostgreSQL jobs")
+	}
+	requireRaw(t, "GitLab isolated API shards", gitlabGoLinux,
+		"${CI_NODE_INDEX:?missing parallel job index}",
+		"${CI_NODE_TOTAL:?missing parallel job total}",
+		"test-results/api-race.log", "exit \"$status\"",
 	)
 	assertGitLabJobTextContains(t, gitlab, "server-validation",
 		"bash scripts/ci/install-docker-cli.sh",

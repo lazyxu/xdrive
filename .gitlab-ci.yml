@@ -306,6 +306,9 @@ go-linux:
     - bash scripts/ci/gitlab-go-linux.sh
 
 go-linux-api:
+  # The five existing partitions exceed one job's 60-minute wall clock on
+  # local runners. Each job retains all tests in its partition and its own DB.
+  parallel: 5
   # GitHub CI is the required master test gate. Keep GitLab failures visible
   # without letting local Runner environment problems block snapshot release.
   rules:
@@ -332,6 +335,12 @@ go-linux-api:
     - *install_postgres_client
   script:
     - bash scripts/ci/gitlab-go-linux.sh
+
+  artifacts:
+    when: always
+    expire_in: 7 days
+    paths:
+      - test-results/api-race.log
 
 build-source-agent:
   # Preserve only master snapshot publication prerequisites across frequent pushes.
