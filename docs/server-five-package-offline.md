@@ -1,123 +1,105 @@
-# xDrive Linux AMD64 — five-package offline distribution
+# xDrive Linux AMD64 — content-addressed offline release design
 
-**Status:** Independent offline packaging, SHA-256 verification and a local-only
-transactional installer. A published offline release must be produced by the
-dedicated workflow from an **already successful GitHub master CI run**; adding
-these scripts to the source tree does not itself publish or test a real bundle.
+## Published components and frequency
 
-## Package boundaries
+Five independently downloadable modules share a complete, immutable Manifest:
 
-| Package | Files in archive | Required |
+| Package | Contents | Rebuild trigger |
 | --- | --- | --- |
-| App | Exact CI Server image + Caddy/Web image + rendered hash-bound installer + pinned Compose/host scripts | Always |
-| PostgreSQL | Exactly one postgres:17-alpine Linux AMD64 Docker image | Fresh installation, unless exact image is already cached |
-| Media Worker | CI-built FFmpeg/FFprobe worker image | Only with media-worker profile |
-| AI Runtime | Python/OpenCV/ONNX Runtime and analyzer code, without model weights | Only with Photo Intelligence |
-| AI Models | Exact CI image's verified models, tokenizer and licenses | Only with Photo Intelligence |
+| App | Exact CI Server + Caddy/Web images and pinned host installer/assets | Relevant Go/Web/Caddy/host inputs |
+| PostgreSQL | Linux AMD64 PostgreSQL 17 Alpine | Actual Docker image ID change |
+| Media Worker | Exact CI FFmpeg/FFprobe image | Worker/shared Go code or ABI change |
+| AI Runtime | Python/OpenCV/ONNX analyzer without models | Python code, dependencies or ABI change |
+| AI Models | Models, tokenizers and license files from verified CI image | Pinned model SHA-256/ABI change |
 
-Server, storage-init and worker use the **same Server image**. No extra Web
-image is needed because Caddy contains Web. No user data, PostgreSQL database
-files, Docker Engine, Docker Compose executable or OS packages are included.
+Server, storage-init and background worker reuse ONE Server image; Caddy
+already contains the Web files. User data, database files and Docker Engine
+are NOT in the offline package.
 
-A manifest pins the release commit, all five package SHA-256 hashes, **every
-archive member**, and each imported Docker image ID. Tar archives are
-normalized and named by content hash; byte-identical modules can be reused
-without downloading them again. A *logical* module name is not sufficient
-proof of interface compatibility: operators must retain validated module
-versions when changing App versions. A changed Server/media socket or
-Photo Intelligence API contract requires new compatible module builds.
+After the normal fast Snapshot publisher, every successful master CI Final
+Gate calls the offline publisher. The publisher computes a conservative source
+fingerprint for each component plus the current PostgreSQL Docker image ID.
+Unchanged packages retain their **existing immutable release tags and exact
+SHA-256 bytes**. Only changed packages are downloaded from CI, compressed,
+attested and published.
 
-## Build and publication
+The full Manifest is published for EVERY verified master Commit as an
+immutable offline-manifest-<SHA12> GitHub Release. Its five package descriptors
+each have release_tag, filename, content hash, original build Commit,
+per-file checksum and exact image identity. Component releases are tagged
+offline-<component>-<archive SHA12>. No mutable offline-current tag is used,
+and the rolling GitHub Snapshot asset allowlist is unchanged.
 
-1. Wait for the relevant master CI run to finish **successfully**, including its
-   exact-HEAD Final Gate and four required image artifacts.
-2. From the GitHub **Actions** tab, run
-   [Publish Five Offline Server Packages](../.github/workflows/offline-packages.yml)
-   on master, supplying that completed **CI run ID**.
-3. The workflow checks CI identity/ancestry, downloads the exact four image
-   archives and rendered installer, pulls the PostgreSQL 17 Alpine image,
-   extracts and SHA-verifies the exact CI-packaged models, and builds a separate
-   model-free AI Runtime. It packages and verifies the five modules, then
-   publishes an **immutable** offline-<source SHA 12> prerelease, with
-   GitHub Actions/Sigstore provenance and manifest SHA-256 in release notes.
+Normal master CI **still builds and tests its required images**. Selective
+distribution does not remove those correctness gates. The first valid offline
+publication seeds all five modules; subsequent publications may upload zero
+or only a few modified archives. Operators may also manually dispatch the
+offline workflow with an exact successful master CI run ID; every path
+requires its exact Final Gate.
 
-This expensive complete five-package export is **manual on purpose**;
-high-frequency master pushes do **not** repeatedly export 775 MB of AI
-assets. The ordinary GitHub/GitLab snapshot pipelines are unchanged.
-A regular App-only release can be transported separately with the matching
-published manifest when required components are already cached.
+## Compatibility and rollback
 
-The workflow never modifies the existing rolling snapshot release (which has
-its own strict asset allowlist). The output includes five xdrive component
-archives, manifest.json, SHA256SUMS.txt, MANIFEST_SHA256.txt,
-xdrive-offline.py, and publisher attestation bundle.
+- Tracked protocol contracts are stored in scripts/offline/contracts.json
+  (PostgreSQL major version, Media Worker API, Photo Intelligence API and
+  model/runtime API). Changing a contract invalidates dependent fingerprints
+  rather than silently mixing old incompatible components.
+- Media Worker is conservatively invalidated by shared Go changes because
+  its current build compiles the Server Go tree. Changing FFmpeg alone is
+  not the only reason to republish this component.
+- PostgreSQL gets an immutable content-derived Docker image tag, not merely
+  postgres:17-alpine, so prior rollback images remain available.
+- PostgreSQL major upgrades require a separate data migration plan.
+- The existing installer still applies pre-upgrade backup, rollback and
+  health gates. A checksum alone never proves protocol compatibility.
+- New App/API combinations still require real integrated validation of
+  optional Worker/AI protocols before claiming compatibility.
 
-## Fully offline install
+## Verify and install with no internet access
 
-On a trusted online workstation, download the release assets and separately
-authenticate the published manifest SHA-256 **from the official GitHub release
-notes** and the GitHub Actions provenance. A hash written only on the same
-untrusted USB drive does not authenticate an executable file. For extra
-assurance, verify the release Sigstore bundle on the trusted workstation
-before copying the packages.
+On a trusted online workstation, verify the official GitHub Actions
+publisher attestation and copy **both trusted SHA-256 values** (Manifest
+and standalone installer tool) from the authenticated Manifest Release.
+A checksum on the same untrusted USB drive is not a trusted source.
 
-Transfer the script, manifest and only the packages needed to the Linux
-AMD64 Docker host (USB/LAN). **Do not** use a download-to-shell pipe.
-Python 3, Bash, Docker Engine and Docker Compose v2 must already be installed.
+Download the Manifest, standalone installer tool and only the needed
+component packages. Each package is available from the immutable URL:
+
+    https://github.com/lazyxu/xdrive/releases/download/<release_tag>/<filename>
+
+A GitLab mirror can transfer identical signed bytes; its URL is not a
+replacement for the independent trust root.
+
+Python 3, bash, Docker Engine and Compose v2 must be installed on the
+Linux AMD64 host before going offline. No user files, PostgreSQL data,
+Docker Engine or DNS-01 certificate issuance are bundled.
 
 ~~~bash
-# Exact 64-character digest copied from authenticated release notes.
-TRUSTED_SHA256='replace-with-trusted-manifest-sha256'
+# Compare this installer SHA-256 to authenticated release notes FIRST.
+sha256sum xdrive-offline.py
+TRUSTED_MANIFEST_SHA256='64-character-sha256-from-authenticated-release'
+
 python3 xdrive-offline.py list --dir ./packages
 python3 xdrive-offline.py verify --dir ./packages \
-  --components app,postgres --trusted-manifest-sha256 "$TRUSTED_SHA256"
-
-# New basic server: App and PostgreSQL are enough.
+  --components app,postgres \
+  --trusted-manifest-sha256 "$TRUSTED_MANIFEST_SHA256"
 python3 xdrive-offline.py install --dir ./packages \
   --components app,postgres \
-  --trusted-manifest-sha256 "$TRUSTED_SHA256"
+  --trusted-manifest-sha256 "$TRUSTED_MANIFEST_SHA256"
 
-# A future App-only update may omit PostgreSQL if its exact image is cached.
+# App-only incremental update when all dependencies are present and compatible:
 python3 xdrive-offline.py install --dir ./packages \
   --components app \
-  --trusted-manifest-sha256 "$TRUSTED_SHA256"
-
-# Install all five components and enable both optional profiles:
-python3 xdrive-offline.py install --dir ./packages \
-  --components app,postgres,media-worker,ai-runtime,ai-models \
-  --enable-media --enable-ai \
-  --trusted-manifest-sha256 "$TRUSTED_SHA256"
+  --trusted-manifest-sha256 "$TRUSTED_MANIFEST_SHA256"
 ~~~
 
-Only components selected for import are required on disk. Verification checks
-all archive members before modifying Docker images or deployment state.
-Image loading is offline (Docker load); Photo Intelligence is assembled using
-Docker build --network=none --pull=false from the verified runtime and models.
-The trusted App installer stages verified local scripts, forbids Docker pulls
-and retains existing xDrive backup/rollback and health-check behavior.
+An App-only update need not download the AI Models or PostgreSQL again if
+the exact cached dependencies remain compatible. The current installer does
+not yet persist an independent model-cache archive; switching only the AI
+Runtime or only AI Models while the complementary package is absent still
+requires supplying both model and runtime bytes to assemble the photo
+container. Do not claim this corner case solved before a real test.
 
-The offline installer does **not** download OS dependencies or issue public TLS
-certificates. A brand-new public DNS-01 certificate requires DNS provider
-connectivity; use an already issued certificate or postpone public HTTPS setup
-until online. Local-IP HTTPS still needs appropriate local CA trust.
-
-## Safety and limitations
-
-- Missing/modified packages, unexpected tar members, symlinks, duplicate
-  filenames, malformed manifests and mismatched Docker IDs **abort**.
-- Install **requires** the independently authenticated manifest SHA-256.
-  The publisher bundle is supplementary; a copied local checksum alone is not
-  sufficient proof of a trusted publisher.
-- The installer does not erase PostgreSQL/user data. Upgrades retain the
-  existing transaction and rollback controls.
-- PostgreSQL major upgrades are database migrations, not image swaps.
-- Enabling optional profiles requires both supported module images locally.
-  New AI Runtime requires the matching AI Models package for assembly.
-- Offline packages for AMD64 cannot be used on ARM/DSM without separate builds.
-- Existing online GitHub/GitLab updates retain their own source handling.
-- Because optional worker and Photo APIs are not yet published as independently
-  versioned ABI contracts, operators should keep the **compatible versions
-  from a known validated release**; don't blindly mix unrelated versions.
-- Until the first real end-to-end five-package build, Docker host install and
-  no-network smoke test are completed, the result is **implementation in PR,
-  not a production-validated offline distribution**.
+Offline mode refuses unverified bytes and forbids new Docker image pulls.
+For a first-time public domain, DNS-01 certificate issuance still requires
+access to the DNS provider. Offline package metadata and code are currently
+in an open PR, not yet a published or physically validated distribution.

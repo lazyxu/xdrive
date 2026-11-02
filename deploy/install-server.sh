@@ -2311,6 +2311,12 @@ ensure_env XD_HTTPS_PORT "${XD_HTTPS_PORT:-8443}"
 ensure_env ALIYUN_ACCESS_KEY_ID "${ALIYUN_ACCESS_KEY_ID:-}"
 ensure_env ALIYUN_ACCESS_KEY_SECRET "${ALIYUN_ACCESS_KEY_SECRET:-}"
 ensure_env XD_POSTGRES_IMAGE "${XD_POSTGRES_IMAGE:-postgres:17-alpine}"
+if [[ -n "$OFFLINE_ASSET_DIR" ]]; then
+  [[ -n "${XD_POSTGRES_IMAGE:-}" ]] || {
+    echo "xDrive offline: exact PostgreSQL image is required." >&2; exit 1;
+  }
+  set_env XD_POSTGRES_IMAGE "$XD_POSTGRES_IMAGE"
+fi
 set_env XD_DOCKER_MODE "$DOCKER_MODE"
 set_env XD_SERVER_UID "$SERVER_UID"
 set_env XD_SERVER_GID "$SERVER_GID"

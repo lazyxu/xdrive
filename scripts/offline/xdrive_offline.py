@@ -129,7 +129,7 @@ def parse_manifest(directory: Path, trusted_digest: str | None, *, require_trust
         manifest = json.loads(path.read_text(encoding="utf-8"))
     except (UnicodeError, ValueError) as error:
         raise PackageError(f"invalid manifest JSON: {error}") from error
-    require(isinstance(manifest, dict) and manifest.get("schema") == 1, "unsupported manifest schema")
+    require(isinstance(manifest, dict) and manifest.get("schema") in (1, 2), "unsupported manifest schema")
     require(manifest.get("platform") == "linux/amd64", "unsupported offline platform")
     commit = manifest.get("source_commit")
     require(isinstance(commit, str) and bool(COMMIT_RE.fullmatch(commit)), "invalid source commit")
@@ -162,7 +162,37 @@ def parse_manifest(directory: Path, trusted_digest: str | None, *, require_trust
                 and isinstance(image.get("id"), str)
                 and bool(IMAGE_ID_RE.fullmatch(image["id"])), f"invalid image identity: {key}")
         require(name in packages[component]["members"], f"missing image archive: {name}")
-    if manifest["channel"] == "master":
+    if manifest["schema"] == 2:
+        fingerprints = manifest.get("fingerprints")
+        contracts = manifest.get("contracts")
+        require(isinstance(fingerprints, dict) and set(fingerprints) == set(COMPONENTS),
+                "missing component fingerprints")
+        require(all(isinstance(value, str) and bool(SHA_RE.fullmatch(value))
+                    for value in fingerprints.values()), "invalid component fingerprint")
+        expected_contracts = {"postgres_major", "media_worker_api",
+                              "photo_intelligence_api", "model_runtime_api"}
+        require(isinstance(contracts, dict) and set(contracts) == expected_contracts
+                and all(type(v) is int and v > 0 for v in contracts.values()),
+                "invalid compatibility contracts")
+        for component in COMPONENTS:
+            entry = packages[component]
+            revision = entry.get("built_from_commit")
+            tag = entry.get("release_tag")
+            require(isinstance(revision, str) and bool(COMMIT_RE.fullmatch(revision))
+                    and isinstance(tag, str) and
+                    bool(re.fullmatch(r"offline-(app|postgres|media-worker|ai-runtime|ai-models)-[a-f0-9]{12}", tag)),
+                    f"invalid immutable release identity: {component}")
+            require(entry.get("fingerprint") == fingerprints[component],
+                    f"component fingerprint mismatch: {component}")
+            require(tag == f"offline-{component}-{entry['sha256'][:12]}",
+                    f"immutable release tag not bound to archive digest: {component}")
+        if manifest["channel"] == "master":
+            revision = packages["app"]["built_from_commit"]
+            suffix = ":sha-" + revision[:12]
+            require(images["server"]["ref"].endswith(suffix)
+                    and images["caddy"]["ref"].endswith(suffix),
+                    "App images are not bound to the exact App build commit")
+    elif manifest["channel"] == "master":
         suffix = ":sha-" + commit[:12]
         require(images["server"]["ref"].endswith(suffix)
                 and images["caddy"]["ref"].endswith(suffix),
@@ -301,8 +331,11 @@ def offline_install(args: argparse.Namespace, manifest: dict, selection: tuple[s
     for env_path in (home / "config" / ".env", home / ".env"):
         if env_path.is_file():
             for line in env_path.read_text(encoding="utf-8").splitlines():
-                if line.startswith("XD_POSTGRES_IMAGE=") and line.split("=", 1)[1].strip('"') not in ("", postgres_ref):
-                    raise PackageError("existing custom PostgreSQL image must be handled separately; refusing replacement")
+                if line.startswith("XD_POSTGRES_IMAGE="):
+                    current = line.split("=", 1)[1].strip('"')
+                    if current not in ("", postgres_ref, "postgres:17-alpine") and not re.fullmatch(
+                            r"xdrive/offline-postgres:sha-[a-f0-9]{12}", current):
+                        raise PackageError("existing custom PostgreSQL image needs a separate migration plan")
             break
     # All hashes, paths and individual file contents are verified BEFORE any Docker
     # mutation or xDrive deployment change. The staged scripts are never fetched online.
@@ -323,6 +356,8 @@ def offline_install(args: argparse.Namespace, manifest: dict, selection: tuple[s
         environment["XD_INSTALL_SOURCE"] = manifest["source"]
         environment["XD_INSTALL_CHANNEL"] = manifest["channel"]
         environment["XD_POSTGRES_IMAGE"] = postgres_ref
+        # Never let an inherited online pull be enabled on this process.
+        environment["XD_OFFLINE_NO_PULL"] = "1"
         if "media-worker" in selection:
             environment["XD_OFFLINE_MEDIA_IMAGE"] = manifest["images"]["media-worker"]["ref"]
         if photo_ref:
@@ -353,6 +388,41 @@ def build_packages(args: argparse.Namespace) -> None:
     output = args.output
     output.mkdir(parents=True, exist_ok=True)
     require(not output.is_symlink(), "output must not be a symlink")
+    previous = None
+    if getattr(args, "reuse_manifest", None):
+        require(args.reuse_manifest.name == "manifest.json", "previous manifest must be named manifest.json")
+        previous = parse_manifest(args.reuse_manifest.parent, None, require_trust=False)
+        require(previous.get("schema") == 2, "cannot reuse legacy schema 1 packages")
+        require(previous["source"] == args.source and previous["channel"] == args.channel,
+                "cannot reuse a different provider or channel")
+    plan = None
+    if getattr(args, "plan", None):
+        plan = json.loads(safe_file(args.plan).read_text(encoding="utf-8"))
+        require(isinstance(plan, dict) and plan.get("schema") == 1, "invalid content-change plan")
+        fingerprints = plan.get("fingerprints")
+        changed = plan.get("changed")
+        contracts = plan.get("contracts")
+        require(isinstance(fingerprints, dict) and set(fingerprints) == set(COMPONENTS)
+                and all(isinstance(x, str) and bool(SHA_RE.fullmatch(x))
+                        for x in fingerprints.values()), "invalid planned fingerprints")
+        require(isinstance(changed, list) and set(changed).issubset(COMPONENTS)
+                and len(changed) == len(set(changed)), "invalid changed components")
+        require(isinstance(contracts, dict) and set(contracts) == {"postgres_major", "media_worker_api",
+                "photo_intelligence_api", "model_runtime_api"}
+                and all(type(x) is int and x > 0 for x in contracts.values()),
+                "invalid planned compatibility contracts")
+        if previous:
+            require(set(previous["packages"]) == set(COMPONENTS), "incomplete previous manifest")
+            require(all(previous["fingerprints"][n] == fingerprints[n] for n in COMPONENTS
+                        if n not in changed), "changed plan disagrees with previous manifest")
+            require(all(previous["fingerprints"][n] != fingerprints[n] for n in changed),
+                    "unchanged component marked for rebuilt publication")
+        else:
+            require(set(changed) == set(COMPONENTS), "first release must build all five components")
+    else:
+        changed = list(COMPONENTS)
+        fingerprints = None
+        contracts = None
     images = json.loads(safe_file(source / "images.json").read_text(encoding="utf-8"))
     require(isinstance(images, dict) and set(images) == set(IMAGE_MEMBERS), "invalid images.json keys")
     for key, value in images.items():
@@ -360,15 +430,24 @@ def build_packages(args: argparse.Namespace) -> None:
                 and bool(REF_RE.fullmatch(value["ref"]))
                 and isinstance(value.get("id"), str)
                 and bool(IMAGE_ID_RE.fullmatch(value["id"])), f"invalid image metadata: {key}")
-    for key, (component, member) in IMAGE_MEMBERS.items():
-        safe_file(source / component / member)
-    for asset in REQUIRED_ASSETS:
-        safe_file(source / "app" / asset)
+        if previous and IMAGE_MEMBERS[key][0] not in changed:
+            require(value == previous["images"][key], f"reused Docker image identity changed: {key}")
+
     packages = {}
     for component in COMPONENTS:
+        if component not in changed:
+            require(previous is not None, "cannot reuse without previous release")
+            packages[component] = previous["packages"][component]
+            continue
         component_dir = source / component
         members = component_members(component_dir)
-        with tempfile.NamedTemporaryFile(prefix=f".{component}-", suffix=".tar.gz", dir=output, delete=False) as tempfile_handle:
+        for key, (owner, member) in IMAGE_MEMBERS.items():
+            if component == owner:
+                require(member in members, f"missing component image archive: {member}")
+        if component == "app":
+            require(set(REQUIRED_ASSETS).issubset(members), "App package missing deployment scripts")
+        with tempfile.NamedTemporaryFile(prefix=f".{component}-", suffix=".tar.gz",
+                                         dir=output, delete=False) as tempfile_handle:
             temp_path = Path(tempfile_handle.name)
         try:
             deterministic_archive(component_dir, temp_path, members)
@@ -380,31 +459,45 @@ def build_packages(args: argparse.Namespace) -> None:
                 temp_path.unlink()
             else:
                 temp_path.rename(destination)
-            packages[component] = {"filename": name, "sha256": digest,
-                                   "size": destination.stat().st_size, "members": members}
+            entry = {"filename": name, "sha256": digest,
+                     "size": destination.stat().st_size, "members": members}
+            if plan:
+                entry.update({"fingerprint": fingerprints[component],
+                              "built_from_commit": args.commit,
+                              "release_tag": f"offline-{component}-{digest[:12]}"})
+            packages[component] = entry
         finally:
             if temp_path.exists():
                 temp_path.unlink()
     manifest = {
-        "schema": 1, "platform": "linux/amd64", "source": args.source,
+        "schema": 2 if plan else 1,
+        "platform": "linux/amd64", "source": args.source,
         "source_commit": args.commit, "channel": args.channel,
         "packages": packages, "images": images,
     }
+    if plan:
+        manifest["fingerprints"] = fingerprints
+        manifest["contracts"] = contracts
     manifest_path = output / "manifest.json"
-    manifest_bytes = (json.dumps(manifest, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
+    manifest_bytes = (json.dumps(manifest, ensure_ascii=False, sort_keys=True, indent=2)
+                      + "\n").encode("utf-8")
     if manifest_path.exists():
-        require(manifest_path.read_bytes() == manifest_bytes, "refusing to overwrite a different manifest")
+        require(manifest_path.read_bytes() == manifest_bytes,
+                "refusing to overwrite a different manifest")
     else:
         manifest_path.write_bytes(manifest_bytes)
     checksums = [f"{hash_file(manifest_path)}  manifest.json"]
     for component in COMPONENTS:
         item = packages[component]
-        checksums.append(f"{item['sha256']}  {item['filename']}")
+        # Omit reused archives from this release's local checksum list.
+        if (output / item["filename"]).is_file():
+            checksums.append(f"{item['sha256']}  {item['filename']}")
     (output / "SHA256SUMS.txt").write_text("\n".join(checksums) + "\n", encoding="utf-8")
-    print(f"[offline] trusted manifest SHA-256 (publish through authenticated release): {hash_file(manifest_path)}")
+    print(f"[offline] manifest SHA-256: {hash_file(manifest_path)}")
     for component in COMPONENTS:
-        item = packages[component]
-        print(f"[offline] {component}: {item['filename']} ({item['size']} bytes)")
+        entry = packages[component]
+        action = "new" if component in changed else "reuse"
+        print(f"[offline] {component} ({action}): {entry['filename']} ({entry['size']} bytes)")
 
 
 def main() -> int:
@@ -416,6 +509,8 @@ def main() -> int:
     make.add_argument("--commit", required=True)
     make.add_argument("--source", choices=("github", "gitlab"), default="github")
     make.add_argument("--channel", choices=("master", "stable"), default="master")
+    make.add_argument("--plan", type=Path, help="Content-fingerprint plan from component_plan.py")
+    make.add_argument("--reuse-manifest", type=Path, help="Previously authenticated immutable release Manifest")
     for verb in ("list", "verify", "install"):
         item = sub.add_parser(verb)
         item.add_argument("--dir", dest="directory", type=Path, required=True)

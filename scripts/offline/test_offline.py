@@ -136,6 +136,69 @@ class OfflinePackageTests(unittest.TestCase):
         with self.assertRaisesRegex(offline.PackageError, "must be installed together"):
             offline.offline_install(args, self.manifest, ("app", "ai-runtime"))
 
+    def test_incremental_manifest_reuses_four_immutable_components(self):
+        import types
+        fingerprint = {name: format(i + 1, "064x")
+                       for i, name in enumerate(offline.COMPONENTS)}
+        contracts = {"postgres_major": 17, "media_worker_api": 1,
+                     "photo_intelligence_api": 1, "model_runtime_api": 1}
+        plan = self.root / "plan.json"
+        first = self.root / "first"
+        plan.write_text(json.dumps({"schema": 1, "fingerprints": fingerprint,
+                        "changed": list(offline.COMPONENTS), "contracts": contracts}),
+                        encoding="utf-8")
+        offline.build_packages(types.SimpleNamespace(
+            prepared=self.prepared, output=first, commit=self.commit,
+            channel="master", source="github", plan=plan, reuse_manifest=None))
+        previous = offline.parse_manifest(first, sha(first / "manifest.json"), require_trust=True)
+        self.assertEqual(previous["schema"], 2)
+        old_postgres = previous["packages"]["postgres"]
+        # New Commit changes the App but leaves the independent dependency
+        # fingerprints untouched: the reused Postgres bytes must not be copied.
+        commit2 = "b" * 40
+        fingerprint["app"] = "f" * 64
+        plan.write_text(json.dumps({"schema": 1, "fingerprints": fingerprint,
+                        "changed": ["app"], "contracts": contracts}), encoding="utf-8")
+        images_path = self.prepared / "images.json"
+        images = json.loads(images_path.read_text())
+        for name in ("server", "caddy"):
+            images[name]["ref"] = images[name]["ref"].replace("sha-" + self.commit[:12],
+                                                                "sha-" + commit2[:12])
+        images_path.write_text(json.dumps(images), encoding="utf-8")
+        second = self.root / "second"
+        offline.build_packages(types.SimpleNamespace(
+            prepared=self.prepared, output=second, commit=commit2,
+            channel="master", source="github", plan=plan,
+            reuse_manifest=first / "manifest.json"))
+        new = offline.parse_manifest(second, sha(second / "manifest.json"), require_trust=True)
+        self.assertEqual(new["packages"]["postgres"], old_postgres)
+        self.assertEqual(new["packages"]["postgres"]["built_from_commit"], self.commit)
+        self.assertEqual(new["packages"]["app"]["built_from_commit"], commit2)
+        self.assertFalse((second / old_postgres["filename"]).exists())
+        offline.verify_selection(second, new, ("app",))
+
+    def test_rejects_fingerprint_reuse_for_changed_component(self):
+        import types
+        plan = self.root / "plan.json"
+        fingerprints = {c: format(i + 1, "064x")
+                        for i, c in enumerate(offline.COMPONENTS)}
+        base = {"schema": 1, "fingerprints": fingerprints,
+                "changed": list(offline.COMPONENTS),
+                "contracts": {"postgres_major": 17, "media_worker_api": 1,
+                              "photo_intelligence_api": 1, "model_runtime_api": 1}}
+        plan.write_text(json.dumps(base), encoding="utf-8")
+        old = self.root / "old"
+        offline.build_packages(types.SimpleNamespace(
+            prepared=self.prepared, output=old, commit=self.commit,
+            channel="master", source="github", plan=plan, reuse_manifest=None))
+        base["changed"] = ["app"]
+        plan.write_text(json.dumps(base), encoding="utf-8")
+        with self.assertRaisesRegex(offline.PackageError, "unchanged component marked"):
+            offline.build_packages(types.SimpleNamespace(
+                prepared=self.prepared, output=self.root / "new", commit=self.commit,
+                channel="master", source="github", plan=plan,
+                reuse_manifest=old / "manifest.json"))
+
     def test_shell_and_workflow_enforce_no_pull_and_exact_assets(self):
         installer = (REPO / "deploy" / "install-server.sh").read_text()
         self.assertIn('OFFLINE_ASSET_DIR="${XD_OFFLINE_ASSET_DIR:-}"', installer)
