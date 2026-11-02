@@ -25,6 +25,10 @@ const (
 	mediaDerivativeCreative   mediaDerivativeKind = "creative_preview"
 	mediaDerivativeViewerWebP mediaDerivativeKind = "viewer_webp"
 	mediaDerivativeViewerJPEG mediaDerivativeKind = "viewer_jpeg"
+	mediaDerivativeViewerEconomyWebP mediaDerivativeKind = "viewer_economy_webp"
+	mediaDerivativeViewerEconomyJPEG mediaDerivativeKind = "viewer_economy_jpeg"
+	mediaDerivativeViewerBalancedWebP mediaDerivativeKind = "viewer_balanced_webp"
+	mediaDerivativeViewerBalancedJPEG mediaDerivativeKind = "viewer_balanced_jpeg"
 
 	mediaDerivativeRunTimeout = 2 * time.Minute
 )
@@ -86,7 +90,9 @@ func (s *Server) ensureMediaDerivative(
 		taskKind = "media.analysis_preview"
 	case mediaDerivativeCreative:
 		taskKind = "media.creative_preview"
-	case mediaDerivativeViewerWebP, mediaDerivativeViewerJPEG:
+	case mediaDerivativeViewerWebP, mediaDerivativeViewerJPEG,
+		mediaDerivativeViewerEconomyWebP, mediaDerivativeViewerEconomyJPEG,
+		mediaDerivativeViewerBalancedWebP, mediaDerivativeViewerBalancedJPEG:
 		taskKind = "media.viewer_preview"
 	}
 	handle, err := s.BackgroundScheduler.Submit(background.Task{
@@ -171,6 +177,14 @@ func mediaDerivativeIdentity(
 	case mediaDerivativeViewerJPEG:
 		return mediapkg.ViewerPreviewStorageKey(node.ID, node.Revision, metadata.SHA256, "jpeg"),
 			mediapkg.ViewerPreviewEdge, mediapkg.ViewerPreviewVersion, nil
+	case mediaDerivativeViewerEconomyWebP, mediaDerivativeViewerEconomyJPEG,
+		mediaDerivativeViewerBalancedWebP, mediaDerivativeViewerBalancedJPEG:
+		variant, ok := mediaViewerVariantForDerivative(kind)
+		if !ok {
+			return "", 0, 0, errMediaDerivativeUnsupported
+		}
+		key, err := mediapkg.ViewerQualityStorageKey(node.ID, node.Revision, metadata.SHA256, variant)
+		return key, variant.MaxEdge, variant.EncoderVersion, err
 	case mediaDerivativeCreative:
 		return mediapkg.CreativePreviewStorageKey(
 				node.ID,
@@ -232,6 +246,15 @@ func (s *Server) generateMediaDerivative(
 		render = mediapkg.ViewerPreviewWebP
 	case mediaDerivativeViewerJPEG:
 		render = mediapkg.ViewerPreviewJPEG
+	case mediaDerivativeViewerEconomyWebP, mediaDerivativeViewerEconomyJPEG,
+		mediaDerivativeViewerBalancedWebP, mediaDerivativeViewerBalancedJPEG:
+		variant, ok := mediaViewerVariantForDerivative(kind)
+		if !ok {
+			return errMediaDerivativeUnsupported
+		}
+		render = func(reader io.ReadSeeker, orientation, _ int) (mediapkg.Thumbnail, error) {
+			return mediapkg.ViewerQualityPreview(reader, orientation, variant)
+		}
 	case mediaDerivativeThumbnail:
 		if mediaThumbnailVersion(metadata) == mediapkg.ThumbnailAlphaVersion {
 			render = mediapkg.ThumbnailWithAlpha

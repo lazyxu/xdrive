@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/background"
 	mediapkg "github.com/lazyxu/xdrive/internal/media"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"gorm.io/gorm"
 )
 
 // mediaViewerPreview renders only an authenticated foreground photo request.
@@ -20,21 +22,49 @@ func (s *Server) mediaViewerPreview(c *gin.Context) {
 		return
 	}
 	format := strings.ToLower(strings.TrimSpace(c.DefaultQuery("format", "webp")))
-	var kind mediaDerivativeKind
-	var mime string
-	var quality int
-	switch format {
-	case "webp":
-		kind = mediaDerivativeViewerWebP
-		mime = "image/webp"
-		quality = mediapkg.ViewerPreviewWebPQuality
-	case "jpeg":
-		kind = mediaDerivativeViewerJPEG
-		mime = "image/jpeg"
-		quality = mediapkg.ViewerPreviewJPEGQuality
-	default:
+	// Absent preset preserves existing v1 4K clients, especially DSM's strict
+	// Range/ETag verifier. Only explicit opt-in may request a v2 variant.
+	preset := mediapkg.ViewerQualityHigh
+	rawPreset := strings.TrimSpace(c.Query("preset"))
+	if rawPreset == "account" {
+		if s.DB == nil {
+			fail(c, http.StatusServiceUnavailable, "viewer preferences unavailable")
+			return
+		}
+		var selected meta.ViewerQualityPreference
+		err := s.DB.WithContext(c.Request.Context()).
+			Where("user_id = ?", userID(c)).Take(&selected).Error
+		if err == nil {
+			preset, err = mediapkg.ParseViewerQualityPreset(selected.Preset)
+			if err != nil || selected.Revision == 0 {
+				fail(c, http.StatusServiceUnavailable, "viewer preferences unavailable")
+				return
+			}
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			fail(c, http.StatusServiceUnavailable, "viewer preferences unavailable")
+			return
+		}
+	} else if rawPreset != "" {
+		var err error
+		preset, err = mediapkg.ParseViewerQualityPreset(rawPreset)
+		if err != nil {
+			fail(c, http.StatusBadRequest, "invalid viewer quality preset")
+			return
+		}
+	}
+	variant, err := mediapkg.ViewerQualityVariantFor(preset, format)
+	if err != nil {
 		fail(c, http.StatusBadRequest, "unsupported viewer preview format")
 		return
+	}
+	kind, ok := mediaViewerKindForVariant(variant)
+	if !ok {
+		fail(c, http.StatusBadRequest, "unsupported viewer quality preset")
+		return
+	}
+	mime := "image/jpeg"
+	if format == "webp" {
+		mime = "image/webp"
 	}
 	node, err := s.ownedNode(userID(c), id, true)
 	if err != nil || node.Type != meta.NodeTypeFile || node.File == nil {
@@ -53,10 +83,20 @@ func (s *Server) mediaViewerPreview(c *gin.Context) {
 		fail(c, http.StatusUnsupportedMediaType, "viewer image format is not supported")
 		return
 	}
-	key := mediapkg.ViewerPreviewStorageKey(node.ID, node.Revision, metadata.SHA256, format)
-	c.Header("ETag", mediapkg.ViewerPreviewETag(node.ID, node.Revision, metadata.SHA256, format))
-	c.Header("X-XDrive-Viewer-Preview-Edge", strconv.Itoa(mediapkg.ViewerPreviewEdge))
-	c.Header("X-XDrive-Viewer-Preview-Quality", strconv.Itoa(quality))
+	key, err := mediapkg.ViewerQualityStorageKey(node.ID, node.Revision, metadata.SHA256, variant)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "viewer image identity unavailable")
+		return
+	}
+	etag, err := mediapkg.ViewerQualityETag(node.ID, node.Revision, metadata.SHA256, variant)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "viewer image identity unavailable")
+		return
+	}
+	c.Header("ETag", etag)
+	c.Header("X-XDrive-Viewer-Preview-Edge", strconv.Itoa(variant.MaxEdge))
+	c.Header("X-XDrive-Viewer-Preview-Quality", strconv.Itoa(variant.Quality))
+	c.Header("X-XDrive-Viewer-Preview-Preset", string(preset))
 	c.Header("X-Content-Type-Options", "nosniff")
 	c.Header("Referrer-Policy", "no-referrer")
 	if strings.TrimSpace(c.Query("revision")) != "" {

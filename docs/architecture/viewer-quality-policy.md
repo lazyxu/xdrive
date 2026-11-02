@@ -38,3 +38,15 @@ for the six bounded variants. The existing Viewer route still requests legacy
 high and does not consume these alternate formats until the authenticated
 admin-cap and cache/GC pipeline is wired. A codec unit test decodes generated
 JPEG/WebP pixels, checks long-edge dimensions and rejects arbitrary quality.
+
+## Server-side derivative bridge (draft stage)
+
+The authenticated Viewer endpoint accepts an **explicit opt-in** `preset`
+of economy, balanced or high (or `account` for the Owner's saved preference).
+An **absent** preset always returns the legacy high/v1 result, preserving
+unupgraded Web/Desktop/DSM clients. New tiers use v2 ETags and independent
+scheduler kinds and cache keys; the existing aged GC protects current revisions.
+
+Do not activate the selector in the user UI or DSM until the server-side admin
+cap and bounded cache budget are implemented and verified. This draft bridges
+the codec and account API but does not yet enforce an editable admin maximum.
