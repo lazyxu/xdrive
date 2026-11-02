@@ -10,6 +10,7 @@ import android.os.Looper
 import android.os.CancellationSignal
 import android.os.OperationCanceledException
 import android.graphics.ImageDecoder
+import android.view.TextureView
 import android.provider.MediaStore
 import android.util.Size
 import androidx.activity.compose.BackHandler
@@ -857,11 +858,33 @@ internal fun NativeLocalMediaViewer(
     // Exact URI is part of both the motion candidate and play intent. A
     // replaced/reselected MediaStore resource requires another explicit tap.
     var motionCandidate by remember(mediaIdentity) { mutableStateOf(false) }
-    var motionPlaying by remember(mediaIdentity) { mutableStateOf(false) }
+    var motionHeld by remember(mediaIdentity) { mutableStateOf(false) }
+    var stillReady by remember(mediaIdentity) { mutableStateOf(false) }
+    val lifecycle = LocalLifecycleOwner.current
+    var foreground by remember(mediaIdentity, lifecycle) {
+        mutableStateOf(lifecycle.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED))
+    }
+    DisposableEffect(mediaIdentity, lifecycle) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_STOP -> {
+                    foreground = false
+                    // A surviving pointer cannot restart Motion Photo on resume.
+                    motionHeld = false
+                }
+                Lifecycle.Event.ON_START -> foreground = true
+                else -> Unit
+            }
+        }
+        lifecycle.lifecycle.addObserver(observer)
+        onDispose { lifecycle.lifecycle.removeObserver(observer) }
+    }
     LaunchedEffect(mediaIdentity) {
         motionCandidate = false
         if (!asset.isVideo) motionCandidate = nativeLocalHasMotionPhotoCandidate(context, asset)
     }
+    val activeMotion = nativeLocalMotionMayPlay(
+        motionCandidate, stillReady, motionHeld, foreground)
     Dialog(onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize().testTag("native-local-viewer")) {
@@ -879,23 +902,46 @@ internal fun NativeLocalMediaViewer(
                 NativeLocalViewerLoadedNavigation(
                     loadedPosition, loadedCount, onPrevious, onNext)
                 NativeLocalMotionControl(
-                    candidate = motionCandidate,
-                    playing = motionPlaying,
-                    onToggle = { motionPlaying = !motionPlaying },
-                )
-                if (asset.isVideo || (motionCandidate && motionPlaying)) {
-                    NativeLocalVideoPlayer(
-                        asset, autoPlay = !asset.isVideo,
-                        onPrevious = onPrevious, onNext = onNext,
-                    )
-                } else {
-                    NativeLocalStillViewer(asset, onPrevious, onNext,
-                        onMotionRequested = if (motionCandidate) {
-                            { motionPlaying = true }
-                        } else null)
+                    candidate = motionCandidate, held = activeMotion)
+                // This gesture owner stays mounted during the entire touch.
+                // Switching to Motion Photo must not destroy the still bitmap
+                // or lose the finger-up event that retires the Media3 player.
+                Box(
+                    Modifier.fillMaxWidth().weight(1f)
+                        .galleryLivePhotoHold(
+                            enabled = !asset.isVideo && motionCandidate &&
+                                stillReady && foreground,
+                            sourceIdentity = mediaIdentity.toString(),
+                        ) { pressed ->
+                            motionHeld = pressed && foreground
+                        }.testTag("native-local-motion-surface"),
+                ) {
+                    if (!asset.isVideo) {
+                        Column(Modifier.fillMaxSize()) {
+                            NativeLocalStillViewer(
+                                asset,
+                                onPrevious = if (activeMotion) null else onPrevious,
+                                onNext = if (activeMotion) null else onNext,
+                                onStillReady = { ready ->
+                                    stillReady = ready
+                                    if (!ready) motionHeld = false
+                                },
+                            )
+                        }
+                    }
+                    if (asset.isVideo || activeMotion) {
+                        Column(Modifier.fillMaxSize()) {
+                            NativeLocalVideoPlayer(
+                                asset, autoPlay = !asset.isVideo,
+                                // Video seeking and Live hold take precedence.
+                                onPrevious = if (asset.isVideo) onPrevious else null,
+                                onNext = if (asset.isVideo) onNext else null,
+                            )
+                        }
+                    }
                 }
                 Text("本机媒体只读预览：可用时读取原件，图片解码最长边不超过 4096 像素；" +
-                    "原件失败时如可用则仅显示缩略图；动态片段需明确操作，不会自动上传或备份。",
+                    "原件失败时仅显示缩略图；动态片段仅在按住时播放，松手停止。不会自动上传或备份。",
                     modifier = Modifier.navigationBarsPadding().padding(8.dp),
                     style = MaterialTheme.typography.bodySmall)
             }
@@ -1109,7 +1155,7 @@ private fun ColumnScope.NativeLocalStillViewer(
     asset: NativeLocalMedia,
     onPrevious: (() -> Unit)?,
     onNext: (() -> Unit)?,
-    onMotionRequested: (() -> Unit)? = null,
+    onStillReady: (Boolean) -> Unit = {},
 ) {
     val resolver = LocalContext.current.contentResolver
     val mediaKey = asset.viewerReturnKey()
@@ -1159,6 +1205,12 @@ private fun ColumnScope.NativeLocalStillViewer(
             retryingOriginal = false
         }
     }
+    // The parent needs an actual decoded poster before permitting Motion Photo;
+    // detecting XMP alone never makes a moving image ready.
+    LaunchedEffect(mediaKey, asset.uri, preview) {
+        onStillReady(preview is NativeLocalStillStage.Original ||
+            preview is NativeLocalStillStage.Thumbnail)
+    }
     var scale by remember(mediaKey, asset.uri) { mutableFloatStateOf(1f) }
     var translation by remember(mediaKey, asset.uri) { mutableStateOf(Offset.Zero) }
     var viewport by remember(mediaKey, asset.uri) { mutableStateOf(IntSize.Zero) }
@@ -1178,14 +1230,11 @@ private fun ColumnScope.NativeLocalStillViewer(
         onNext = onNext,
         modifier = Modifier.fillMaxWidth().weight(1f).clipToBounds()
             .onSizeChanged { viewport = it }
-            .pointerInput(mediaKey, onMotionRequested != null) {
-                detectTapGestures(
-                    onDoubleTap = {
-                        scale = if (scale > 1f) 1f else 2f
-                        translation = Offset.Zero
-                    },
-                    onLongPress = { if (scale <= 1f) onMotionRequested?.invoke() },
-                )
+            .pointerInput(mediaKey, asset.uri) {
+                detectTapGestures(onDoubleTap = {
+                    scale = if (scale > 1f) 1f else 2f
+                    translation = Offset.Zero
+                })
             }
             // At 1× the one-finger horizontal gesture belongs to navigation.
             // Keep pinch zoom; only allow one-finger pan after magnification.
@@ -1244,6 +1293,7 @@ private fun ColumnScope.NativeLocalVideoPlayer(
     val mediaIdentity = NativeLocalVideoSourceKey(mediaKey, asset.uri.toString())
     var retryNonce by remember(mediaIdentity) { mutableIntStateOf(0) }
     var failed by remember(mediaIdentity, retryNonce) { mutableStateOf(false) }
+    var firstFrame by remember(mediaIdentity, retryNonce) { mutableStateOf(false) }
     val player = remember(context, lifecycle, mediaIdentity, retryNonce, autoPlay) {
         createPreparedMediaResource(
             build = { ExoPlayer.Builder(context).build() },
@@ -1269,6 +1319,16 @@ private fun ColumnScope.NativeLocalVideoPlayer(
         val listener = object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
                 failed = true
+                firstFrame = false
+            }
+            override fun onRenderedFirstFrame() { firstFrame = true }
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (autoPlay && playbackState == Player.STATE_ENDED) {
+                    // Motion ends on its own while the finger is still held:
+                    // show the persistent still rather than a frozen last frame.
+                    firstFrame = false
+                    player?.pause()
+                }
             }
         }
         lifecycle.lifecycle.addObserver(observer)
@@ -1291,6 +1351,20 @@ private fun ColumnScope.NativeLocalVideoPlayer(
     if (player == null || failed) {
         Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
             NativeLocalViewerRetryNotice(isVideo = true, onRetry = { retryNonce++ })
+        }
+    } else if (autoPlay) {
+        // Local Motion Photo uses a TextureView just like cloud Live Photo:
+        // the decoded still underneath remains visible until a real video
+        // frame renders. A SurfaceView may cover the still before first frame.
+        key(player) {
+            AndroidView(
+                factory = { ctx ->
+                    TextureView(ctx).also { player.setVideoTextureView(it) }
+                },
+                modifier = Modifier.fillMaxWidth().weight(1f)
+                    .graphicsLayer { alpha = if (firstFrame && !failed) 1f else 0f }
+                    .testTag("native-local-motion-video"),
+            )
         }
     } else {
         AndroidView(
