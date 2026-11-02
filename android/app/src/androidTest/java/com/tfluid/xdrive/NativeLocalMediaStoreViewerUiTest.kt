@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.os.Environment
 import android.provider.MediaStore
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.platform.app.InstrumentationRegistry
@@ -32,6 +33,7 @@ class NativeLocalMediaStoreViewerUiTest {
         var uri: android.net.Uri? = null
         var bitmap: Bitmap? = null
         var composed = false
+        val showGallery = mutableStateOf(true)
 
         try {
             if (!hadPermission)
@@ -65,11 +67,13 @@ class NativeLocalMediaStoreViewerUiTest {
             val tileTag = "native-local-media-$mediaId"
 
             compose.setContent {
-                XDriveTheme {
-                    NativeLocalMediaStoreGallery(
-                        albumsOnly = false,
-                        sessionId = 991L,
-                    )
+                if (showGallery.value) {
+                    XDriveTheme {
+                        NativeLocalMediaStoreGallery(
+                            albumsOnly = false,
+                            sessionId = 991L,
+                        )
+                    }
                 }
             }
             composed = true
@@ -97,10 +101,7 @@ class NativeLocalMediaStoreViewerUiTest {
             compose.onNodeWithTag(tileTag).assertExists()
         } finally {
             if (composed) runCatching {
-                if (compose.onAllNodesWithTag("native-local-viewer-back")
-                        .fetchSemanticsNodes().isNotEmpty()) {
-                    compose.onNodeWithTag("native-local-viewer-back").performClick()
-                }
+                compose.runOnIdle { showGallery.value = false }
                 compose.waitForIdle()
             }
             bitmap?.recycle()
