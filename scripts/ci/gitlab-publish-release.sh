@@ -36,6 +36,14 @@ done
 
 unset GITLAB_TOKEN GITLAB_ACCESS_TOKEN OAUTH_TOKEN || true
 export GLAB_ENABLE_CI_AUTOLOGIN=true
+# glab does not implement gh's --jq flag. Capture the API result before parsing
+# so POSIX sh cannot hide an HTTP failure behind a successful jq pipeline.
+glab_api_jq() {
+  local filter="$1" response
+  shift
+  response="$(glab api "$@")" || return "$?"
+  printf '%s\n' "$response" | jq -r "$filter"
+}
 short_sha="$(printf '%s' "$CI_COMMIT_SHA" | cut -c1-12)"
 if [ -n "${CI_COMMIT_TAG:-}" ]; then
   # Stable v* tags remain immutable and require the separate full CI gate.
@@ -66,7 +74,7 @@ old_release_exists=0
 old_description=""
 if glab api "$release_endpoint" >/dev/null 2>&1; then
   old_release_exists=1
-  old_description="$(glab api "$release_endpoint" --jq '.description')"
+  old_description="$(glab_api_jq '.description' "$release_endpoint")"
   old_commit="$(printf '%s' "$old_description" | grep -oE 'XDRIVE_RELEASE_COMMIT=[0-9a-fA-F]{40}' | head -n1 | cut -d= -f2 || true)"
   if [ -n "$old_commit" ]; then
     # GitLab's snapshot tag may be immovable with CI_JOB_TOKEN; the verified
@@ -81,12 +89,12 @@ fi
 # Query remote package file digests; never accept duplicate or changed files
 # under a nominally immutable commit-version key (including retry attempts).
 remote_package_id() {
-  glab api "$project_api/packages?package_type=generic&package_name=$package_name&package_version=$package_version&per_page=100" \
-    --jq ".[] | select(.name == \"$package_name\" and .version == \"$package_version\") | .id"
+  glab_api_jq ".[] | select(.name == \"$package_name\" and .version == \"$package_version\") | .id" \
+    "$project_api/packages?package_type=generic&package_name=$package_name&package_version=$package_version&per_page=100"
 }
 remote_package_files() {
-  glab api "$project_api/packages/$1/package_files?per_page=100" \
-    --jq '.[] | "\(.file_name)\t\(.file_sha256)"'
+  glab_api_jq '.[] | "\(.file_name)\t\(.file_sha256)"' \
+    "$project_api/packages/$1/package_files?per_page=100"
 }
 file_state() {
   local rows="$1" name="$2" digest="$3" count good
@@ -145,9 +153,10 @@ echo "[xDrive] all $# GitLab package files SHA-256 verified"
 if [ "$old_release_exists" = 0 ]; then
   glab release create snapshot --ref "$CI_COMMIT_SHA" \
     --name "$release_name (publishing)" --notes 'Publication pending: no verified snapshot commit yet.'
-  old_description="$(glab api "$release_endpoint" --jq '.description')"
+  old_description="$(glab_api_jq '.description' "$release_endpoint")"
 fi
-if [ "$(glab api "$release_endpoint" --jq '.description')" != "$old_description" ]; then
+current_description="$(glab_api_jq '.description' "$release_endpoint")"
+if [ "$current_description" != "$old_description" ]; then
   echo "GitLab snapshot changed during staging; refusing stale promotion" >&2
   exit 1
 fi
@@ -177,7 +186,7 @@ on_exit() {
 }
 trap on_exit 0
 
-existing_links="$(glab api "$release_endpoint/assets/links" --jq '.[] | "\(.name)\t\(.id)\t\(.url)"')"
+existing_links="$(glab_api_jq '.[] | "\(.name)\t\(.id)\t\(.url)"' "$release_endpoint/assets/links")"
 for name in "$@"; do
   url="${CI_API_V4_URL%/}/$package_endpoint/$name"
   links="$(printf '%s\n' "$existing_links" | awk -F '\t' -v n="$name" '$1==n {print $0}')"
@@ -196,27 +205,29 @@ for name in "$@"; do
       glab api --method PUT "$release_endpoint/assets/links/$link_id" -f "url=$url" >/dev/null
     fi
   else
-    link_id="$(glab api --method POST "$release_endpoint/assets/links" -f "name=$name" \
-      -f "url=$url" -f 'link_type=package' --jq '.id')"
+    link_id="$(glab_api_jq '.id' --method POST "$release_endpoint/assets/links" -f "name=$name" \
+      -f "url=$url" -f 'link_type=package')"
     printf '%s' "$link_id" | grep -Eq '^[0-9]+$' || { echo "could not confirm new GitLab Release link" >&2; exit 1; }
     printf 'delete\t%s\t-\n' "$link_id" >> "$rollback_file"
   fi
 done
 
-active_links="$(glab api "$release_endpoint/assets/links" --jq '.[] | "\(.name)\t\(.id)\t\(.url)"')"
+active_links="$(glab_api_jq '.[] | "\(.name)\t\(.id)\t\(.url)"' "$release_endpoint/assets/links")"
 for name in "$@"; do
   expected_url="${CI_API_V4_URL%/}/$package_endpoint/$name"
   count="$(printf '%s\n' "$active_links" | awk -F '\t' -v n="$name" -v u="$expected_url" '$1==n && $3==u {c++} END {print c+0}')"
   [ "$count" = 1 ] || { echo "GitLab Release link verification failed: $name" >&2; exit 1; }
 done
-if [ "$(glab api "$release_endpoint" --jq '.description')" != "$old_description" ]; then
+current_description="$(glab_api_jq '.description' "$release_endpoint")"
+if [ "$current_description" != "$old_description" ]; then
   echo "GitLab Release changed during link update; refusing promotion" >&2
   exit 1
 fi
 # Publish the verified commit marker LAST, after all Package SHA-256s and URLs.
 glab api --method PUT "$release_endpoint" -f "name=$release_name" -f "description=$release_notes" >/dev/null
 committed=1
-[ "$(glab api "$release_endpoint" --jq '.description')" = "$release_notes" ] || {
+current_description="$(glab_api_jq '.description' "$release_endpoint")"
+[ "$current_description" = "$release_notes" ] || {
   echo "GitLab Release commit-marker read-back disagrees; inspect publication" >&2
   exit 1
 }

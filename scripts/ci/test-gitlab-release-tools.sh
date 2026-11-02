@@ -23,7 +23,7 @@ for plan in mirror-ok mirror-fails; do
   : > "$APK_TEST_LOG"
   APK_TEST_PLAN="$plan" sh "$ROOT/scripts/ci/install-gitlab-release-tools.sh" https://mirror.invalid/alpine 3.22
   grep -q 'https://mirror.invalid/alpine/v3.22/main' "$APK_TEST_LOG"
-  grep -q -- '--timeout 20 --no-cache add bash coreutils tar xz' "$APK_TEST_LOG"
+  grep -q -- '--timeout 20 --no-cache add bash coreutils tar xz jq' "$APK_TEST_LOG"
   ! grep -Eq -- '--allow-untrusted|--no-check-certificate' "$APK_TEST_LOG"
   if [[ "$plan" == mirror-fails ]]; then
     grep -q 'https://dl-cdn.alpinelinux.org/alpine/v3.22/community' "$APK_TEST_LOG"
