@@ -407,6 +407,16 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-files-folder-check"
           node --test desktop/tests/ios-native-files-create-folder.cjs desktop/tests/ios-native-files-download-export.cjs
 
+      - name: Verify native Files 1 GiB single-export capacity and signed ticket
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeFilesExportCapacityPolicy.swift \
+            ios/tests/NativeFilesExportCapacityPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-export-capacity"
+          "$RUNNER_TEMP/xdrive-ios-files-export-capacity"
+          node --test desktop/tests/ios-native-files-download-export.cjs
+
       - name: Verify native Files manual original receipt and Files picker integration
         run: |
           set -euo pipefail
