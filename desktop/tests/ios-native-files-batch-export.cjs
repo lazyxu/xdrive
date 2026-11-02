@@ -45,3 +45,21 @@ test('all staged bytes are retired on failure/cancel/Owner navigation, never cla
   assert.match(model, /尚未保存到 iPhone/)
   assert.doesNotMatch(model, /status = "已保存到|Data\(contentsOf:|UserDefaults/)
 })
+
+
+test('native safe-area editing toolbar retains bounded explicit export and cleanup', () => {
+  assert.match(browser, /\.safeAreaInset\(edge: \.bottom, spacing: 0\) \{\s*if selecting \{ filesSelectionToolbar \}/)
+  assert.match(browser, /private var filesSelectionToolbar: some View/)
+  assert.match(browser, /private func prepareSelectedExport\(\)/)
+  assert.match(browser, /Button\("已选项批量下载并导出"\) \{\s*prepareSelectedExport\(\)/)
+  assert.match(browser, /guard canSelectPage, let sourceParentID = parentID,/)
+  assert.match(browser, /XDriveIOSNativeFilesBatchExportPolicy\.validSelection\(/)
+  assert.match(browser, /batchExport\.prepare\(\s*chosenItems, parentID: sourceParentID, login: login/)
+  assert.match(browser, /Button\("已选项移入回收站", role: \.destructive\)/)
+  assert.match(browser, /showingBatchTrashConfirmation = true/)
+  assert.match(browser, /if !batchExport\.prepared\.isEmpty \{\s*Button\("用系统分享导出/)
+  assert.match(browser, /Button\("删除临时下载文件"\)/)
+  assert.match(browser, /native-ios-files-batch-toolbar/)
+  assert.match(browser, /native-ios-files-batch-more/)
+  assert.doesNotMatch(browser, /position: fixed|bottom: 0px/)
+})
