@@ -267,6 +267,16 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-local-share-policy"
           "$RUNNER_TEMP/xdrive-ios-local-share-policy"
 
+      - name: Verify native Photos square thumbnail density without rescan
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativePhotoWallDensityPolicy.swift \
+            ios/tests/NativePhotoWallDensityPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-wall-density-policy"
+          "$RUNNER_TEMP/xdrive-ios-wall-density-policy"
+          node --test desktop/tests/ios-native-photo-wall-density.cjs
+
       - name: Verify native PhotoKit actual-day group boundaries
         run: |
           set -euo pipefail
@@ -324,6 +334,9 @@ jobs:
             desktop/tests/ios-native-compact-bottom-bar.cjs \
             desktop/tests/ios-native-l2-focus-bar-integration.cjs \
             desktop/tests/ios-native-supported-orientations.cjs
+
+      - name: Verify native album Viewer exact adjacent PhotoKit page and return anchor
+        run: node --test desktop/tests/ios-native-album-viewer-adjacent.cjs
 
       - name: Verify native bounded MapKit PhotoKit page and Gallery route
         run: |
@@ -393,6 +406,16 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-files-folder-check"
           "$RUNNER_TEMP/xdrive-ios-files-folder-check"
           node --test desktop/tests/ios-native-files-create-folder.cjs desktop/tests/ios-native-files-download-export.cjs
+
+      - name: Verify native Files 1 GiB single-export capacity and signed ticket
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeFilesExportCapacityPolicy.swift \
+            ios/tests/NativeFilesExportCapacityPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-export-capacity"
+          "$RUNNER_TEMP/xdrive-ios-files-export-capacity"
+          node --test desktop/tests/ios-native-files-download-export.cjs
 
       - name: Verify native Files manual original receipt and Files picker integration
         run: |
@@ -525,6 +548,16 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-files-batch-export"
           "$RUNNER_TEMP/xdrive-ios-files-batch-export"
           node --test desktop/tests/ios-native-files-batch-export.cjs
+
+      - name: Verify native Files cloud share permission, expiry and existing-link edit
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeFilesShareLinkPolicy.swift \
+            ios/tests/NativeFilesShareLinkPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-share-policy-check"
+          "$RUNNER_TEMP/xdrive-ios-files-share-policy-check"
+          node --test desktop/tests/ios-native-files-share-links.cjs
 
       - name: Prepare native brand and home screen icon
         run: bash ios/scripts/prepare-assets.sh

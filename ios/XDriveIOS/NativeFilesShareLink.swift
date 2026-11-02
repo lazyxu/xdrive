@@ -10,11 +10,12 @@ enum XDriveIOSNativeFilesShareFailure: Error {
     case server(Int)
 }
 
-struct XDriveIOSNativeFilesShareRecord: Decodable, Identifiable {
+struct XDriveIOSNativeFilesShareRecord: Decodable, Identifiable, Equatable {
     let id: UInt64
     let node_id: UInt64
     let access: String
     let status: String
+    let expires_at: String?
 }
 
 struct XDriveIOSNativeFilesCreatedShareLink {
@@ -52,6 +53,7 @@ struct XDriveIOSNativeFilesShareTransport {
     enum Action {
         case load
         case create(access: String, expiryDays: Int)
+        case update(original: XDriveIOSNativeFilesShareRecord, access: String, expiryDays: Int)
         case revoke(UInt64)
     }
 
@@ -151,6 +153,7 @@ struct XDriveIOSNativeFilesShareTransport {
             throw XDriveIOSNativeFilesShareFailure.changedNode
         }
         var created: XDriveIOSNativeFilesCreatedShareLink?
+        var updated: XDriveIOSNativeFilesShareRecord?
         switch action {
         case .load:
             break
@@ -180,6 +183,36 @@ struct XDriveIOSNativeFilesShareTransport {
                     origin: owner.origin, token: dto.token
                   ) else { throw XDriveIOSNativeFilesShareFailure.invalidResponse }
             created = .init(id: dto.id, url: url)
+        case .update(let original, let access, let expiryDays):
+            guard original.id > 0, original.node_id == node.id,
+                  original.status == "active",
+                  XDriveIOSNativeFilesShareLinkPolicy.validAccess(
+                    access, isDirectory: node.isDirectory
+                  ),
+                  XDriveIOSNativeFilesShareLinkPolicy.allowedExpiryDays.contains(expiryDays),
+                  try await list(node.id, session: client).contains(original) else {
+                throw XDriveIOSNativeFilesShareFailure.invalidResponse
+            }
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            let body = try encoder.encode(XDriveIOSNativeFilesSharePolicyUpdateBody(
+                access: access,
+                expires_at: XDriveIOSNativeFilesShareLinkPolicy.expiry(
+                    days: expiryDays, now: Date()
+                )
+            ))
+            let response = try await send("/api/v1/shares/\(original.id)",
+                                          method: "PATCH", body: body,
+                                          expecting: 200, maximumBytes: 32_768,
+                                          session: client)
+            let changed = try JSONDecoder().decode(
+                XDriveIOSNativeFilesShareRecord.self, from: response
+            )
+            guard changed.id == original.id, changed.node_id == node.id,
+                  changed.access == access, changed.status == "active" else {
+                throw XDriveIOSNativeFilesShareFailure.invalidResponse
+            }
+            updated = changed
         case .revoke(let id):
             guard id > 0, try await list(node.id, session: client).contains(where: {
                 $0.id == id && $0.status == "active"
@@ -190,6 +223,11 @@ struct XDriveIOSNativeFilesShareTransport {
         let rows = try await list(node.id, session: client)
         if let created {
             guard rows.contains(where: { $0.id == created.id && $0.status == "active" }) else {
+                throw XDriveIOSNativeFilesShareFailure.invalidResponse
+            }
+        }
+        if let updated {
+            guard rows.contains(updated) else {
                 throw XDriveIOSNativeFilesShareFailure.invalidResponse
             }
         }
@@ -226,6 +264,16 @@ final class XDriveIOSNativeFilesShareModel: ObservableObject {
                 login: XDriveIOSNativeOwnerLoginModel, expectedOwner: XDriveNativeOwnerRoot) {
         run(.create(access: access, expiryDays: expiryDays), node: node,
             login: login, expectedOwner: expectedOwner)
+    }
+
+    func update(_ original: XDriveIOSNativeFilesShareRecord,
+                access: String, expiryDays: Int,
+                node: XDriveIOSNativeFilesNode,
+                login: XDriveIOSNativeOwnerLoginModel,
+                expectedOwner: XDriveNativeOwnerRoot) {
+        guard records.contains(original), original.status == "active" else { return }
+        run(.update(original: original, access: access, expiryDays: expiryDays),
+            node: node, login: login, expectedOwner: expectedOwner)
     }
 
     func revoke(_ shareID: UInt64, node: XDriveIOSNativeFilesNode,
@@ -284,6 +332,8 @@ final class XDriveIOSNativeFilesShareModel: ObservableObject {
                     notice = "已读取当前文件的分享链接状态。"
                 case .create:
                     notice = "服务器已确认创建。请立即复制或通过系统分享保存链接。"
+                case .update:
+                    notice = "服务器已确认修改。原分享链接地址不变。"
                 case .revoke:
                     notice = "服务器已确认撤销链接。"
                 }
@@ -306,6 +356,8 @@ final class XDriveIOSNativeFilesShareModel: ObservableObject {
                     notice = "无法读取分享链接，请检查网络后重试。"
                 case .create:
                     notice = "创建结果未能确认。请刷新已有链接核对，避免重复创建。"
+                case .update:
+                    notice = "修改结果未能确认。请刷新已有链接核对，不要盲目重复提交。"
                 case .revoke:
                     notice = "撤销结果未能确认。请刷新已有链接核对，不要重复操作。"
                 }
@@ -323,6 +375,9 @@ struct XDriveIOSNativeFilesShareScreen: View {
     @StateObject private var model = XDriveIOSNativeFilesShareModel()
     @State private var access = "read_only"
     @State private var expiryDays = 7
+    @State private var editingRecord: XDriveIOSNativeFilesShareRecord?
+    @State private var editAccess = "read_only"
+    @State private var editExpiryDays = 7
     @State private var pendingRevoke: UInt64?
     @State private var confirmingRevoke = false
 
@@ -391,14 +446,26 @@ struct XDriveIOSNativeFilesShareScreen: View {
                                     Text(record.status == "active" ? "有效" :
                                          (record.status == "expired" ? "已过期" : "已撤销"))
                                         .font(.caption).foregroundStyle(.secondary)
+                                    Text(record.expires_at.map { "到期：\($0)" } ?? "长期有效")
+                                        .font(.caption2).foregroundStyle(.secondary)
+                                        .lineLimit(2)
                                 }
                                 Spacer()
                                 if record.status == "active" {
-                                    Button("撤销", role: .destructive) {
-                                        pendingRevoke = record.id
-                                        confirmingRevoke = true
+                                    VStack(alignment: .trailing, spacing: 8) {
+                                        Button("修改") {
+                                            editingRecord = record
+                                            editAccess = record.access
+                                            editExpiryDays = 7
+                                        }
+                                        .disabled(model.busy)
+                                        .accessibilityIdentifier("native-ios-files-share-edit-\(record.id)")
+                                        Button("撤销", role: .destructive) {
+                                            pendingRevoke = record.id
+                                            confirmingRevoke = true
+                                        }
+                                        .disabled(model.busy)
                                     }
-                                    .disabled(model.busy)
                                 }
                             }
                         }
@@ -407,6 +474,43 @@ struct XDriveIOSNativeFilesShareScreen: View {
                         }
                         .disabled(model.busy)
                         .accessibilityIdentifier("native-ios-files-share-refresh")
+                    }
+                    if let editingRecord,
+                       editingRecord.status == "active",
+                       model.records.contains(editingRecord) {
+                        Section("修改链接 #\(editingRecord.id)") {
+                            if node.isDirectory {
+                                Picker("访问权限", selection: $editAccess) {
+                                    Text("只读").tag("read_only")
+                                    Text("查看并上传").tag("view_upload")
+                                }
+                                .disabled(model.busy)
+                            } else {
+                                LabeledContent("访问权限", value: "只读")
+                            }
+                            Picker("新的有效期（从保存时起）", selection: $editExpiryDays) {
+                                Text("1 天").tag(1)
+                                Text("7 天").tag(7)
+                                Text("30 天").tag(30)
+                                Text("永久").tag(0)
+                            }
+                            .disabled(model.busy)
+                            Text("修改权限和有效期不会改变已发出的链接地址。")
+                                .font(.footnote).foregroundStyle(.secondary)
+                            Button("保存修改") {
+                                model.update(
+                                    editingRecord,
+                                    access: node.isDirectory ? editAccess : "read_only",
+                                    expiryDays: editExpiryDays,
+                                    node: node, login: login, expectedOwner: expectedOwner
+                                )
+                                self.editingRecord = nil
+                            }
+                            .disabled(model.busy)
+                            .accessibilityIdentifier("native-ios-files-share-update")
+                            Button("取消修改", role: .cancel) { self.editingRecord = nil }
+                                .disabled(model.busy)
+                        }
                     }
                     if model.busy { ProgressView("正在等待服务器确认…") }
                     if let notice = model.notice {
@@ -440,6 +544,7 @@ struct XDriveIOSNativeFilesShareScreen: View {
         .onDisappear { model.invalidate() }
         .onChange(of: login.owner) { _ in
             if !verified {
+                editingRecord = nil
                 model.invalidate()
                 dismiss()
             }

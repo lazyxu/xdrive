@@ -128,7 +128,7 @@ test('optional deep-link arguments are consumed by their owning apps', () => {
   // Actual Viewer overlay keeps the currently authorized Gallery section
   // instead of interpreting an undefined Viewer route as Library. An explicit
   // map handoff still wins; other Owners/workspaces never inherit the hint.
-  assert.match(app, /initialSection=\{webMapScopeOwnerReady \? 'places' :\s*xDriveMobileGallerySectionForViewer\(\s*route, appView, mobileOwnerScope, retainedGallerySectionRef\.current,\s*\)\}/)
+  assert.match(app, /initialSection=\{placesEmbedRequested \? 'places' : webMapScopeOwnerReady \? 'places' :\s*xDriveMobileGallerySectionForViewer\(\s*route, appView, mobileOwnerScope, retainedGallerySectionRef\.current,\s*\)\}/)
   assert.match(app, /if \(!mobileOwnerScope\) retainedGallerySectionRef\.current = null/)
   assert.match(app, /else if \(route\.app === 'gallery'\) \{\s*retainedGallerySectionRef\.current = \{\s*ownerScope: mobileOwnerScope,\s*section: route\.params\.section,/)
   const mobileRouteState = read('web', 'src', 'mobileFiveSlotState.ts')

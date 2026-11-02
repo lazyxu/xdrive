@@ -972,6 +972,36 @@ function FileManager({
   const compactWorkspace = useMediaQuery('(max-width:899.95px)')
   const [profile, setProfile] = useState<MeResult | null>(null)
   const [profileReadFailed, setProfileReadFailed] = useState(false)
+  const placesEmbedRequested=new URLSearchParams(window.location.search)
+    .get('desktop_places_embed')==='1'
+  const placesEmbedBridge=(window as Window & {xdrivePlacesEmbedBridge?:{
+    expectedOwner:()=>Promise<string|null>
+    consume:(username:string)=>Promise<{
+      ok:boolean;data?:{scope:XDriveBaiduMapPhotoScope}
+    }>
+  }}).xdrivePlacesEmbedBridge
+  const [placesEmbedOwner,setPlacesEmbedOwner] = useState<string|null>(null)
+  const [placesEmbedScope,setPlacesEmbedScope] =
+    useState<XDriveBaiduMapPhotoScope|null>(null)
+  const [placesEmbedStatus,setPlacesEmbedStatus] =
+    useState<'pending'|'owner-ready'|'ready'|'denied'>('pending')
+  const placesEmbedClaimRef = useRef<{
+    owner:string;api:XDriveApi
+    promise:Promise<{ok:boolean;data?:{scope:XDriveBaiduMapPhotoScope}}>
+  } | null>(null)
+  useEffect(()=>{
+    if(!placesEmbedRequested || !placesEmbedBridge)return
+    let active=true
+    void placesEmbedBridge.expectedOwner().then(owner=>{
+      if(!active)return
+      if(typeof owner==='string' && owner.length>0 && owner.length<=128) {
+        setPlacesEmbedOwner(owner)
+        setPlacesEmbedStatus('owner-ready')
+      } else setPlacesEmbedStatus('denied')
+    }).catch(()=>{if(active)setPlacesEmbedStatus('denied')})
+    return()=>{active=false}
+  },[placesEmbedRequested,placesEmbedBridge])
+
   const [webMapScopeHandoff,setWebMapScopeHandoff] = useState<XDriveMapScopeHandoffState>(
     () => window.xdriveSecureMapBridge ? {state:'none'} : initialWebMapScopeHandoff)
   // The promise is reused through StrictMode effect replay; never redeem the
@@ -1091,6 +1121,60 @@ function FileManager({
     webMapScopeHandoff.username===profile.username &&
     profile.username===username &&
     !profile.must_change_password
+  useEffect(()=>{
+    if(!placesEmbedRequested || !placesEmbedBridge ||
+       !placesEmbedOwner || !profile?.id || profile.must_change_password ||
+       profile.username!==placesEmbedOwner || username!==placesEmbedOwner) return
+    // An actual Server one-use camera/mode handoff supersedes the original
+    // Desktop entry scope. Without this, full-document SDK mode changes would
+    // wrongly return to the old Desktop filter.
+    if(webMapScopeHandoff.state==='pending')return
+    if(webMapScopeHandoff.state==='denied') {
+      setPlacesEmbedStatus('denied')
+      return
+    }
+    if(webMapScopeHandoff.state==='ready') {
+      if(webMapScopeOwnerReady) {
+        const restored=xDriveNormalizeBaiduMapPhotoScope(webMapScopeHandoff.scope)
+        if (restored) {
+          setPlacesEmbedScope(restored)
+          setPlacesEmbedStatus('ready')
+        } else setPlacesEmbedStatus('denied')
+      }
+      return
+    }
+    if(placesEmbedStatus!=='owner-ready')return
+    const expectedOwner=placesEmbedOwner, expectedApi=api
+    if(placesEmbedClaimRef.current &&
+       (placesEmbedClaimRef.current.owner!==expectedOwner ||
+        placesEmbedClaimRef.current.api!==expectedApi)) {
+      setPlacesEmbedStatus('denied')
+      return
+    }
+    if(!placesEmbedClaimRef.current) {
+      // StrictMode replays this effect; do not send a duplicate Owner claim.
+      placesEmbedClaimRef.current={
+        owner:expectedOwner,api:expectedApi,
+        promise:placesEmbedBridge.consume(expectedOwner),
+      }
+    }
+    const claim=placesEmbedClaimRef.current.promise
+    let active=true
+    void claim.then(result=>{
+      if(!active || placesEmbedClaimRef.current?.promise!==claim)return
+      const approved=result.ok
+        ? xDriveNormalizeBaiduMapPhotoScope(result.data?.scope):null
+      if(!approved) {setPlacesEmbedStatus('denied');return}
+      setPlacesEmbedScope(approved)
+      setPlacesEmbedStatus('ready')
+    }).catch(()=>{
+      if(active && placesEmbedClaimRef.current?.promise===claim)
+        setPlacesEmbedStatus('denied')
+    })
+    return()=>{active=false}
+  },[api,profile?.id,profile?.username,profile?.must_change_password,
+    username,placesEmbedBridge,placesEmbedRequested,placesEmbedOwner,
+    placesEmbedStatus,webMapScopeHandoff,webMapScopeOwnerReady])
   // Compare Owner synchronously in render; there is no frame in which a
   // previous account's accepted scope can appear under a newly logged-in one.
   const secureMapOwnerReady=desktopMapHandoff.state==='ready' && !!profile &&
@@ -2470,7 +2554,7 @@ function FileManager({
   const mobileRecentDestinations = currentMobileNavigation.dynamic.flatMap(recent => {
     const key = xDriveWebAppWorkspaceKey(recent.app, recent.params)
     const destination = mobileDestinations.find(item => item.key === key)
-    return destination ? [{ route: recent, label: destination.label, icon: destination.icon }] : []
+    return destination ? [{ key: destination.key, route: recent, label: destination.label, icon: destination.icon }] : []
   })
   const latestMobileDynamic = mobileRecentDestinations[0]
   // Capture the exact visible position before synchronous bottom-tab or
@@ -2638,7 +2722,143 @@ function FileManager({
   )
 
 
+  // Exactly one authenticated Web Gallery implementation is mounted in either
+  // the normal Web workspace or the Desktop HTTPS map guest. The map guest
+  // disables routed Viewer/section actions so preview and Back remain in map.
+  const sharedGalleryPage = (
+<XDriveMediaGalleryPage
+            key={placesEmbedRequested ? 'desktop-places-web-'+profile?.id+'-'+
+              (webMapScopeOwnerReady && webMapScopeHandoff.state==='ready'
+                ? webMapScopeHandoff.revision : 0)
+              : secureMapOwnerReady ? 'secure-map-'+desktopMapHandoff.revision
+              : webMapScopeOwnerReady && webMapScopeHandoff.state==='ready'
+                ? 'web-map-scope-'+webMapScopeHandoff.revision : 'web-gallery'}
+            initialMapPhotoScope={placesEmbedRequested ? placesEmbedScope ?? undefined :
+              secureMapOwnerReady && desktopMapHandoff.state==='ready'
+              ? desktopMapHandoff.scope :
+                webMapScopeOwnerReady && webMapScopeHandoff.state==='ready'
+                  ? webMapScopeHandoff.scope : undefined}
+            initialBaiduNativeCamera={webMapScopeOwnerReady && webMapScopeHandoff.state==='ready'
+              ? webMapScopeHandoff.camera : undefined}
+            onMapModeHandoff={!window.xdriveSecureMapBridge
+              ? (scope,target,signal,camera)=>api.mediaBaiduMapScopeHandoffIssue(
+                  scope,target,signal,camera)
+              : undefined}
+            mobileWebChrome
+            source={gallerySource}
+            onMobileMapFocusChange={onMobileMapFocusChange}
+            suspendBackgroundThumbnails={viewerActive}
+            onRegisterViewerThumbnailCache={galleryThumbnailBridge.register}
+            uploadRevision={galleryUploadRevision}
+            onUploadRequested={() => galleryUploadInputRef.current?.click()}
+            fileOperations={fileOperations}
+            onFileOperationQueued={() => { void refreshFileOperations() }}
+            onShowInFolder={placesEmbedRequested ? undefined : (location) => {
+              if (location.parent_id) launchWebApp({ app: 'files', params: {
+              dir: location.parent_id, select: location.node_id,
+            } })
+            }}
+            preferenceScope={placesEmbedRequested
+              ? `desktop-places-web:${profile?.id ?? username}`
+              : `web:${profile?.id ?? username}`}
+            onOpenBaiduMapDiagnostics={!placesEmbedRequested && profile?.role === 'admin' ? () =>
+              launchWebApp({ app: 'admin-services', params: { service: 'baidu-map', tab: 'verify' } })
+              : undefined}
+            initialSection={placesEmbedRequested ? 'places' : webMapScopeOwnerReady ? 'places' :
+              xDriveMobileGallerySectionForViewer(
+                route, appView, mobileOwnerScope, retainedGallerySectionRef.current,
+              )}
+            initialMobileAlbumID={compactWorkspace && route.app === 'gallery' &&
+              route.params.section === 'albums'
+                ? currentMobileNavigation.galleryAlbumID ?? undefined : undefined}
+            onMobileAlbumSelectionChange={compactWorkspace ? rememberMobileGalleryAlbum : undefined}
+            onMobileAlbumDetailBackChange={compactWorkspace ? registerMobileAlbumBack : undefined}
+            onSectionRouteChange={placesEmbedRequested ? undefined : (section) => {
+              if (route.app === 'gallery' && route.params.section !== section) {
+                launchWebApp({ app: 'gallery', params: { section } }, { replace: true })
+              }
+            }}
+            shareDialog={{
+              adapter: shareDialogAdapter,
+              expiryMode: 'datetime',
+              listVariant: 'table',
+            }}
+            onOpenViewer={placesEmbedRequested ? undefined : (item, context) => {
+              const host = document.querySelector<HTMLElement>('[data-xdrive-workspace-background] main')
+              galleryViewerScrollRef.current = host ? {
+                host,
+                offset: host.scrollTop,
+                callerHash: window.location.hash,
+                viewportWidth: window.innerWidth,
+                ownerApi: api,
+                focus: xDriveCaptureGalleryViewerFocus(
+                  host, item.node.id, context.activeIndex, document.activeElement,
+                ),
+              } : null
+              const contextID = xDriveCreateWebAppBrowseSession({
+                kind: 'gallery',
+                target: context.target,
+                activeIndex: context.activeIndex,
+                totalCount: context.totalCount,
+              })
+              galleryThumbnailBridge.activate(contextID)
+              launchWebApp({
+                app: 'media-viewer',
+                params: { node: item.node.id, context: contextID },
+              }, { viewerReturn: true })
+            }}
+            onError={handleError}
+          />
+  )
+
   if (forcedPasswordContent) return forcedPasswordContent
+
+  // Map-only HTTPS guest inside the Desktop Gallery. This renders the
+  // identical Web React Places component, defaulting to the normal inline
+  // (non-isolated) Baidu SDK. Desktop privileges never enter this guest.
+  // A different Web login is refused before any Owner photo/map mounts.
+  if (placesEmbedRequested && !placesEmbedBridge) return (
+    <Box role="alert" sx={{p:2}}>
+      当前页面没有可信 Desktop 地图身份接口，不会展示任何账户的照片。
+    </Box>
+  )
+  if (placesEmbedRequested && placesEmbedBridge) {
+    if(placesEmbedStatus==='denied') return (
+      <Box role="alert" sx={{p:2}}>
+        Desktop 地图身份校验失败；请返回 Desktop 的图库重新打开地点。
+      </Box>
+    )
+    if(profileReadFailed) return (
+      <Box role="alert" sx={{p:2}}>
+        Web 地图当前账户验证失败，请重新登录或重试。
+        <Button variant="outlined" sx={{ml:1}}
+          onClick={() => window.location.reload()}>重试</Button>
+      </Box>
+    )
+    if(!placesEmbedOwner || !profile) return (
+      <Box role="status" sx={{p:2}}>正在确认 Desktop 地图登录账户…</Box>
+    )
+    if(profile.username!==placesEmbedOwner || username!==placesEmbedOwner) return (
+      <Box role="alert" sx={{p:2}}>
+        <Typography variant="body2">Web 地图当前账户与 Desktop 不一致；不会显示其他账户的照片。</Typography>
+        <Button sx={{mt:1}} variant="outlined" onClick={onLogout}>
+          退出此地图网页登录
+        </Button>
+      </Box>
+    )
+    if(placesEmbedStatus!=='ready' || !placesEmbedScope ||
+       (webMapScopeHandoff.state!=='none' && !webMapScopeOwnerReady)) return (
+      <Box role="status" sx={{p:2}}>
+        正在重新验证当前账户的相册地图范围；不会切换至全图库。
+      </Box>
+    )
+    return (
+      <Box data-xdrive-desktop-places-web-page
+        sx={{height:'100dvh',minHeight:0,overflow:'auto',bgcolor:'background.default'}}>
+        {sharedGalleryPage}
+      </Box>
+    )
+  }
 
   const workspaceActions = (
     <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={{ xs: 0.5, sm: 1 }}>
@@ -2974,83 +3194,7 @@ function FileManager({
                 </Button>
               ) : null}
             </Box>
-          ) : <XDriveMediaGalleryPage
-            key={secureMapOwnerReady ? 'secure-map-'+desktopMapHandoff.revision
-              : webMapScopeOwnerReady && webMapScopeHandoff.state==='ready'
-                ? 'web-map-scope-'+webMapScopeHandoff.revision : 'web-gallery'}
-            initialMapPhotoScope={secureMapOwnerReady && desktopMapHandoff.state==='ready'
-              ? desktopMapHandoff.scope :
-                webMapScopeOwnerReady && webMapScopeHandoff.state==='ready'
-                  ? webMapScopeHandoff.scope : undefined}
-            initialBaiduNativeCamera={webMapScopeOwnerReady && webMapScopeHandoff.state==='ready'
-              ? webMapScopeHandoff.camera : undefined}
-            onMapModeHandoff={!window.xdriveSecureMapBridge
-              ? (scope,target,signal,camera)=>api.mediaBaiduMapScopeHandoffIssue(
-                  scope,target,signal,camera)
-              : undefined}
-            mobileWebChrome
-            source={gallerySource}
-            onMobileMapFocusChange={onMobileMapFocusChange}
-            suspendBackgroundThumbnails={viewerActive}
-            onRegisterViewerThumbnailCache={galleryThumbnailBridge.register}
-            uploadRevision={galleryUploadRevision}
-            onUploadRequested={() => galleryUploadInputRef.current?.click()}
-            fileOperations={fileOperations}
-            onFileOperationQueued={() => { void refreshFileOperations() }}
-            onShowInFolder={(location) => {
-              if (location.parent_id) launchWebApp({ app: 'files', params: {
-              dir: location.parent_id, select: location.node_id,
-            } })
-            }}
-            preferenceScope={`web:${profile?.id ?? username}`}
-            onOpenBaiduMapDiagnostics={profile?.role === 'admin' ? () =>
-              launchWebApp({ app: 'admin-services', params: { service: 'baidu-map', tab: 'verify' } })
-              : undefined}
-            initialSection={webMapScopeOwnerReady ? 'places' :
-              xDriveMobileGallerySectionForViewer(
-                route, appView, mobileOwnerScope, retainedGallerySectionRef.current,
-              )}
-            initialMobileAlbumID={compactWorkspace && route.app === 'gallery' &&
-              route.params.section === 'albums'
-                ? currentMobileNavigation.galleryAlbumID ?? undefined : undefined}
-            onMobileAlbumSelectionChange={compactWorkspace ? rememberMobileGalleryAlbum : undefined}
-            onMobileAlbumDetailBackChange={compactWorkspace ? registerMobileAlbumBack : undefined}
-            onSectionRouteChange={(section) => {
-              if (route.app === 'gallery' && route.params.section !== section) {
-                launchWebApp({ app: 'gallery', params: { section } }, { replace: true })
-              }
-            }}
-            shareDialog={{
-              adapter: shareDialogAdapter,
-              expiryMode: 'datetime',
-              listVariant: 'table',
-            }}
-            onOpenViewer={(item, context) => {
-              const host = document.querySelector<HTMLElement>('[data-xdrive-workspace-background] main')
-              galleryViewerScrollRef.current = host ? {
-                host,
-                offset: host.scrollTop,
-                callerHash: window.location.hash,
-                viewportWidth: window.innerWidth,
-                ownerApi: api,
-                focus: xDriveCaptureGalleryViewerFocus(
-                  host, item.node.id, context.activeIndex, document.activeElement,
-                ),
-              } : null
-              const contextID = xDriveCreateWebAppBrowseSession({
-                kind: 'gallery',
-                target: context.target,
-                activeIndex: context.activeIndex,
-                totalCount: context.totalCount,
-              })
-              galleryThumbnailBridge.activate(contextID)
-              launchWebApp({
-                app: 'media-viewer',
-                params: { node: item.node.id, context: contextID },
-              }, { viewerReturn: true })
-            }}
-            onError={handleError}
-          />}
+          ) : sharedGalleryPage}
           </>
         ) : appView === 'device-backup' ? (
           <XDriveAppPageOutlet host={browserWorkspaceHost} view={appView} />

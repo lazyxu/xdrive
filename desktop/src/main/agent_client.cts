@@ -3608,6 +3608,17 @@ export class AgentIPCClient {
     )
   }
 
+  mediaViewerPreview(
+    nodeID: number, format: 'webp' | 'jpeg', signal?: AbortSignal,
+    onProgress?: AgentBinaryProgressHandler,
+  ) {
+    const query = new URLSearchParams({ node_id: String(nodeID), format })
+    return this.requestBinary(
+      '/v1/media/viewer-preview?' + query.toString(),
+      120_000, signal, onProgress,
+    )
+  }
+
   mediaAnalysisPreview(nodeID: number, signal?: AbortSignal, onProgress?: AgentBinaryProgressHandler) {
     const query = new URLSearchParams({ node_id: String(nodeID) })
     return this.requestBinary(

@@ -70,6 +70,15 @@ internal fun nativeGalleryMapReturnSource(
 internal fun nativeGalleryMapStartsLocal(origin: NativeGallerySource): Boolean =
     origin == NativeGallerySource.LOCAL || origin == NativeGallerySource.ALBUMS
 
+/** L2 cloud Places hides tabs until explicitly restored; local Viewer remains L3. */
+internal fun nativeGalleryMapHidesBottomBar(
+    selected: NativeHomeTab,
+    cloudMapOpen: Boolean,
+    localMapOpen: Boolean,
+    cloudFocused: Boolean,
+): Boolean = selected == NativeHomeTab.GALLERY &&
+    (localMapOpen || (cloudMapOpen && cloudFocused))
+
 internal data class NativeHomeNavigation(
     val selected: NativeHomeTab = NativeHomeTab.FILES,
     val dynamicFeature: NativeDynamicFeature? = null,

@@ -258,6 +258,27 @@ class DriveController(
     private var keepLogin = false
     private var generation = 0L
     private var nativeUiSessionCounter = 0L
+
+    /** A private Owner-scoped route intent, never cached photo/album data.
+     * Files releases all Gallery pages; reentry authenticates fresh Owner GETs. */
+    private data class CloudGalleryReturnIntent(
+        val uiSessionId: Long,
+        val server: String,
+        val username: String,
+        val tab: GalleryPrimaryTab,
+        val albumId: String?,
+        val search: String,
+        val kind: String,
+        val sortBy: String,
+        val sortDir: String,
+    ) {
+        fun belongsTo(current: DriveState): Boolean =
+            uiSessionId > 0 && uiSessionId == current.nativeUiSessionId &&
+                current.server == server && current.username == username
+    }
+    private var cloudGalleryReturnIntent: CloudGalleryReturnIntent? = null
+    /** An album ID is a hint only, never Owner authorization or a cached row. */
+    private var pendingCloudAlbumReturnId: String? = null
     private var active: Job? = null
     /** App-owned native SDK camera throttle; no second Server/Owner transport. */
     private val galleryCameraGate = OwnerBd09ViewportGate()
@@ -2295,13 +2316,18 @@ class DriveController(
     fun openGallery() {
         val current = state.value
         if (!current.canNavigateFiles() || session == null || api == null) return
+        val saved = cloudGalleryReturnIntent?.takeIf { it.belongsTo(current) }
+        cloudGalleryReturnIntent = null
+        val collections = saved?.tab == GalleryPrimaryTab.COLLECTIONS
+        pendingCloudAlbumReturnId = if (collections) saved?.albumId else null
         invalidate()
         mutableState.value = current.withoutGallerySelection().copy(
             screen = Screen.GALLERY, loading = false, selected = null, error = null,
             fileExportPending = null, fileExportOrigin = null,
             fileDownloadSaved = false, fileDownloadError = null, fileUploadPickerParent = null,
             browseSelectionMode = false, browseSelectedIds = emptySet(),
-            galleryPrimaryTab = GalleryPrimaryTab.LIBRARY,
+            galleryPrimaryTab = if (collections) GalleryPrimaryTab.COLLECTIONS
+                else GalleryPrimaryTab.LIBRARY,
             galleryAlbums = emptyList(), galleryAlbumsLoaded = false,
             gallerySelectedAlbum = null,
             galleryMapOpen = false, galleryMapLoaded = false, galleryMapOverview = null,
@@ -2310,12 +2336,15 @@ class DriveController(
             galleryBd09History = emptyList(),
             galleryMapCellSelected = null, galleryMapReturn = null,
             galleryItems = emptyList(), galleryOffset = 0, galleryTotal = 0,
-            galleryLoaded = false, gallerySearchQuery = "", galleryMediaKind = "",
-            gallerySortBy = "captured", gallerySortDir = "asc",
+            galleryLoaded = false,
+            gallerySearchQuery = if (collections) "" else saved?.search.orEmpty(),
+            galleryMediaKind = if (collections) "" else saved?.kind.orEmpty(),
+            gallerySortBy = saved?.sortBy ?: "captured",
+            gallerySortDir = saved?.sortDir ?: "asc",
             galleryTimelineSets = null, galleryJumpIndex = null,
             galleryJumpEpoch = current.galleryJumpEpoch + 1, galleryPageIntent = "",
             gallerySelected = null, galleryViewer = null)
-        loadGallery(initialLatest = true)
+        if (collections) readGalleryAlbums() else loadGallery(initialLatest = true)
     }
 
     /** iOS PWA More → 显示地图: native Owner GPS *summary*, not a Baidu
@@ -2746,6 +2775,17 @@ class DriveController(
         if (current.screen != Screen.GALLERY || current.hasActiveNativeTransfer() ||
             current.galleryMetadataWriteAttempted ||
             current.galleryAlbumCreateAttempted || current.galleryAlbumEditAttempted) return
+        // Keep only feature-local navigation; never retain old Owner albums,
+        // media nodes, signed cells or Viewer bytes across tab switches.
+        if (!current.viewerReturnToFiles && current.nativeUiSessionId > 0) {
+            cloudGalleryReturnIntent = CloudGalleryReturnIntent(
+                current.nativeUiSessionId, current.server, current.username,
+                current.galleryPrimaryTab,
+                current.gallerySelectedAlbum?.id ?: pendingCloudAlbumReturnId,
+                current.gallerySearchQuery, current.galleryMediaKind,
+                current.gallerySortBy, current.gallerySortDir)
+        }
+        pendingCloudAlbumReturnId = null
         retireGalleryCameraSession()
         invalidate() // Cancels the outstanding Gallery Range and item thumbnails.
         mutableState.value = current.withoutGallerySelection().copy(
@@ -2781,6 +2821,7 @@ class DriveController(
             previous.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS ||
             previous.galleryMetadataWriteAttempted ||
             previous.galleryAlbumCreateAttempted || previous.galleryAlbumEditAttempted) return
+        pendingCloudAlbumReturnId = null // Explicit user route wins.
         invalidate()
         mutableState.value = previous.withoutGallerySelection().copy(
             galleryPrimaryTab = GalleryPrimaryTab.COLLECTIONS,
@@ -2805,11 +2846,33 @@ class DriveController(
             if (latest.screen != Screen.GALLERY ||
                 latest.galleryPrimaryTab != GalleryPrimaryTab.COLLECTIONS ||
                 latest.gallerySelectedAlbum != null) throw CancellationException()
-            mutableState.value = latest.copy(galleryAlbums = albums,
-                galleryAlbumsLoaded = true, galleryAlbumCreateAttempted = false,
+            val wanted = pendingCloudAlbumReturnId
+            // Never trust an album ID from an earlier screen: only the current
+            // authenticated Owner list may grant a member Range request.
+            val verified = wanted?.let { id -> albums.firstOrNull { it.id == id } }
+            pendingCloudAlbumReturnId = null
+            mutableState.value = latest.copy(
+                galleryAlbums = albums, galleryAlbumsLoaded = true,
+                gallerySelectedAlbum = verified,
+                galleryAlbumCreateAttempted = false,
                 galleryAlbumCreateCommittedNeedsRefresh = false,
                 galleryAlbumEditAttempted = false,
-                galleryAlbumEditCommittedNeedsRefresh = false, error = null)
+                galleryAlbumEditCommittedNeedsRefresh = false,
+                error = if (wanted != null && verified == null)
+                    "原相册已删除或当前账户无法访问，已返回合集。" else null)
+            if (verified != null) {
+                val page = fetchGalleryPage(service, ticket, 0, true, "", "", verified.id)
+                checkCurrent(ticket)
+                val after = state.value
+                if (after.screen != Screen.GALLERY ||
+                    after.galleryPrimaryTab != GalleryPrimaryTab.COLLECTIONS ||
+                    after.gallerySelectedAlbum != verified) throw CancellationException()
+                mutableState.value = after.copy(
+                    galleryItems = page.items, galleryOffset = page.offset,
+                    galleryTotal = page.totalCount, galleryLoaded = true,
+                    galleryTimelineSets = page.timeline, galleryJumpIndex = null,
+                    galleryPageIntent = "", error = null)
+            }
         }
     }
 
@@ -3011,6 +3074,7 @@ class DriveController(
             previous.galleryAlbumCreateAttempted || previous.galleryAlbumEditAttempted ||
             (previous.galleryPrimaryTab == GalleryPrimaryTab.LIBRARY &&
                 previous.gallerySelectedAlbum == null)) return
+        pendingCloudAlbumReturnId = null // Explicit library route wins.
         invalidate()
         mutableState.value = previous.withoutGallerySelection().copy(galleryPrimaryTab = GalleryPrimaryTab.LIBRARY,
             gallerySelectedAlbum = null, loading = false, error = null,
@@ -3060,6 +3124,7 @@ class DriveController(
             previous.galleryMetadataWriteAttempted ||
             previous.galleryAlbumCreateAttempted || previous.galleryAlbumEditAttempted ||
             previous.galleryAlbums.none { it == album }) return
+        pendingCloudAlbumReturnId = null // Explicit verified album wins.
         invalidate()
         mutableState.value = previous.withoutGallerySelection().copy(gallerySelectedAlbum = album,
             loading = false, error = null, galleryItems = emptyList(), galleryLoaded = false,
@@ -4432,6 +4497,8 @@ class DriveController(
                         failure.reason != ApiFailureReason.CURRENT_PASSWORD_INCORRECT && session != null) {
                         session = null
                         keepLogin = false
+                        cloudGalleryReturnIntent = null
+                        pendingCloudAlbumReturnId = null
                         runCatching { sessionPersistence?.clear() }
                         retryPath = null
                         retryAppend = false
@@ -4566,6 +4633,8 @@ class DriveController(
     fun changeServer() = endSession(changeServer = true)
 
     private fun endSession(changeServer: Boolean) {
+        cloudGalleryReturnIntent = null
+        pendingCloudAlbumReturnId = null
         retireGalleryCameraSession()
         val oldApi = api
         val oldSession = session
@@ -4615,6 +4684,8 @@ class DriveController(
     }
     private fun checkCurrent(ticket: Long) { if (ticket != generation) throw CancellationException() }
     override fun close() {
+        cloudGalleryReturnIntent = null
+        pendingCloudAlbumReturnId = null
         retireGalleryCameraSession()
         invalidate()
         session = null

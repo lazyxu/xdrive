@@ -3558,6 +3558,18 @@ func (c *agentController) CloudMediaThumbnail(
 	})
 }
 
+func (c *agentController) CloudMediaViewerPreview(ctx context.Context, nodeID uint64, format string) (agentMediaThumbnail, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return agentMediaThumbnail{}, err
+	}
+	data, contentType, err := cli.MediaViewerPreview(ctx, nodeID, format)
+	if err != nil {
+		return agentMediaThumbnail{}, err
+	}
+	return agentMediaThumbnail{ContentType: contentType, Data: data}, nil
+}
+
 func (c *agentController) CloudMediaAnalysisPreview(ctx context.Context, nodeID uint64) (agentMediaThumbnail, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

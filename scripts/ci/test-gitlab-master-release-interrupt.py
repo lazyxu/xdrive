@@ -97,4 +97,18 @@ assert "final-gate" not in visited
 assert "final-gate" in CI_BLOCKS["release-assets"]
 assert "final-gate" in CI_BLOCKS["publish-server-images"]
 assert re.search(r"(?m)^  resource_group: xdrive-gitlab-release-publish$", CI_BLOCKS["publish-release"])
+
+# The Go job image is not the GitHub Ubuntu runner: DSM's XZ payload and
+# the shared-MUI verifier need explicit tools before any packaging starts.
+core = CI_BLOCKS["build-client-core"]
+assert re.search(
+    r"(?m)^  before_script:\n    - \*ensure_linux_fetch_tools\n    - \*install_node22$",
+    core,
+), "build-client-core must install XZ before Node and DSM packaging"
+assert "bash scripts/ci/install-linux-fetch-tools.sh" in CI_BLOCKS[".ci-linux-helpers"]
+tools = (ROOT / "scripts/ci/install-linux-fetch-tools.sh").read_text()
+assert re.search(r"apt-get [^\n]*install[^\n]*\bxz-utils\b", tools)
+assert "  image: $XDRIVE_CI_GO_IMAGE\n" in core
+assert "bash scripts/ci/test-synology-release.sh" in core
+assert "web/dist-synology" in core
 print("GitLab master release dependency closure protected; unrelated tests and MR jobs remain interruptible")

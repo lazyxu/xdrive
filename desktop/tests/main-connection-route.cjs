@@ -38,6 +38,7 @@ function fixture(routeFailure, gate) {
     decryptLoginPassword: () => { events.push(['decrypt']); return 'fixture-password' },
     encryptLoginPassword: () => 'synthetic-ciphertext',
     runAgentAction: action => action(), closeSecureBaiduMapWindow: () => {},
+    closeDesktopPlacesGuests: () => { events.push(['close-map-guests']) },
     requireAgentClient: () => ({ login: async input => { events.push(['login', input]); return { ok: true, data: {} } }, logout: async () => { events.push(['logout']); return { ok: true, data: {} } } }),
     recordSuccessfulLogin: (current, input) => { stored = input; return history.recordSuccessfulLogin(current, input) },
     persistLoginHistoryBestEffort: async () => {},
@@ -86,6 +87,6 @@ test('logout during an original Main pending probe prevents late credential send
   await f.logout(); release()
   const result = await pending
   assert.equal(result.ok, false)
-  assert.deepEqual(f.events.map(event => event[0]), ['probe', 'logout'])
+  assert.deepEqual(f.events.map(event => event[0]), ['probe', 'close-map-guests', 'logout'])
   assert.equal(f.stored(), undefined)
 })

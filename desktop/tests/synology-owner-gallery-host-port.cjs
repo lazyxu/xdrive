@@ -26,6 +26,12 @@ function compiledGallery() {
   const mod = { exports: {} }
   new Function('module', 'exports', 'require', compile(gallery, galleryFile))(
     mod, mod.exports, name => {
+      if (name === '../synology-viewer-preview') return {
+        xDriveSynologyViewerNeedsDerived: filename => /\.(livp|heic|heif)$/i.test(filename),
+        xDriveSynologyLoadViewerPreview: async () => {
+          throw Error('no unverified HD original requested')
+        },
+      }
       if (name === '../synology-media-preview') return {
         xDriveSynologyPreviewMIME: filename =>
           /\.(jpg|jpeg|png|webp|gif)$/i.test(filename) ? 'image/jpeg' : null,

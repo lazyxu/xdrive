@@ -18,6 +18,13 @@ class GalleryOriginalFallbackRetryTest {
         assertNull(galleryOriginalSampleSize(33000, 1000))
     }
 
+    @Test fun qualitySourceNeverMislabelsSampledPixelsAsOriginalResolution() {
+        assertEquals("缩略图", galleryViewerQualitySource(true, false))
+        assertEquals("缩略图", galleryViewerQualitySource(true, true))
+        assertEquals("原件 · 适屏采样", galleryViewerQualitySource(false, true))
+        assertEquals("原件 · 原始分辨率", galleryViewerQualitySource(false, false))
+    }
+
     @Test fun failedEligibleOriginalOffersRetryWithoutDiscardingThumbnail() {
         assertTrue(galleryOriginalFallbackRetryVisible(
             thumbnailOnly = true, upgrading = false, originalEligible = true))

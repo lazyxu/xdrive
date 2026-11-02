@@ -107,7 +107,8 @@ test('A3c17 Desktop Gallery launches only the sandboxed independent HTTPS dynami
   // A validated map-scope handoff still has priority over the retained
   // Viewer Gallery section. Neither change may weaken the isolated-child
   // map boundary or open the ordinary unrestricted Library by default.
-  assert.match(webApp, /initialSection=\{webMapScopeOwnerReady \? 'places' :\s*xDriveMobileGallerySectionForViewer\(/)
+  // The restricted Desktop HTTPS guest wins before any retained Web Gallery route.
+  assert.match(webApp, /initialSection=\{placesEmbedRequested \? 'places' : webMapScopeOwnerReady \? 'places' :\s*xDriveMobileGallerySectionForViewer\(/)
   assert.match(webApp, /route, appView, mobileOwnerScope, retainedGallerySectionRef\.current,/)
   assert.match(webApp,/webMapScopeHandoff\.state!=='none' && !webMapScopeOwnerReady/)
   assert.doesNotMatch(main, /BaiduBrowserAK|BMapSecurityConfig|allowRunningInsecureContent: true/)

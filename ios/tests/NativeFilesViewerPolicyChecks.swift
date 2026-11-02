@@ -28,6 +28,27 @@ struct XDriveIOSNativeFilesViewerPolicyChecks {
                 "PDF classification")
         require(XDriveIOSNativeFilesViewerPolicy.kind(for: "README") == .text,
                 "extension-free text")
+        // Names accepted by the existing Go UTF-8 preview endpoint must
+        // remain selectable in the native iOS Files Viewer.
+        for fileName in [
+        "example.astro", "example.cljs", "example.clj", "example.cmd", "example.cxx",
+        "example.erl", "example.ex", "example.exs", "example.fish", "example.fs",
+        "example.fsx", "example.gql", "example.gradle", "example.graphql", "example.groovy",
+        "example.hrl", "example.hs", "example.hxx", "example.kts", "example.less",
+        "example.lock", "example.markdown", "example.mk", "example.nix", "example.pl",
+        "example.pm", "example.proto", "example.ps1", "example.s", "example.scala",
+        "example.scss", "example.sol", "example.svelte", "example.svg", "example.tex",
+        "example.tf", "example.tfvars", "example.vb", "example.vbs", "example.vue",
+        "example.zig", "cmakelists.txt", "procfile", "rakefile", ".babelrc",
+        ".browserslistrc", ".eslintignore", ".eslintrc", ".gitattributes", ".gitmodules",
+        ".npmignore", ".prettierignore", ".prettierrc", ".stylelintrc", ".yarnrc",
+        ".env.custom", ".eslintrc.custom", ".prettierrc.custom", ".stylelintrc.custom"
+        ] {
+            require(XDriveIOSNativeFilesViewerPolicy.kind(for: fileName) == .text,
+                    "Server-supported native text preview: " + fileName)
+        }
+        require(XDriveIOSNativeFilesViewerPolicy.kind(for: "example.PEM") == .unsupported,
+                "unsupported binary extension remains rejected")
         require(XDriveIOSNativeFilesViewerPolicy.kind(for: "a.mp3") == .audio,
                 "audio")
         require(XDriveIOSNativeFilesViewerPolicy.kind(for: "a.mkv") == .unsupported,

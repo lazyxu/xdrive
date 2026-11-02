@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto'
 import {
   app,
   BrowserWindow,
+  webContents as electronWebContents,
   dialog,
   ipcMain,
   Menu,
@@ -313,6 +314,51 @@ type DesktopResult<T> =
 
 let mainWindow: BrowserWindow | null = null
 let secureBaiduMapWindow: BrowserWindow | null = null
+// An ordinary HTTPS Web Gallery guest has NO Desktop Agent preload. Its
+// immutable expected Owner comes from the native host's authenticated state.
+const desktopPlacesGuests = new Map<number,{
+  owner:string;origin:string;scope:XDriveDesktopBaiduMapScope|null
+}>()
+let desktopPlacesPending:{
+  owner:string;origin:string;scope:XDriveDesktopBaiduMapScope
+  expiresAt:number;windowID:number
+}|null=null
+function closeDesktopPlacesGuests() {
+  desktopPlacesPending=null
+  for (const id of desktopPlacesGuests.keys()) {
+    const guest=electronWebContents.fromId(id)
+    if (guest && !guest.isDestroyed()) guest.close()
+  }
+  desktopPlacesGuests.clear()
+}
+function desktopPlacesGuestURL(server: unknown): string | null {
+  const target=xDriveResolveSecureBaiduMapTarget(server)
+  return target ? target.origin+'/?desktop_places_embed=1#/app/gallery?section=places' : null
+}
+/** Same authenticated HTTPS Places route on SDK reload, not a new gallery
+ * permission. Web's one-use Server ticket remains independently verified. */
+function desktopPlacesGuestFrameAllowed(raw:unknown,origin:string):boolean {
+  if(typeof raw!=='string' || raw.length>4096)return false
+  try {
+    const url=new URL(raw)
+    if(url.protocol!=='https:' || url.origin!==origin ||
+       url.username || url.password ||
+       (url.pathname!=='/' && url.pathname!=='/index.html') ||
+       url.searchParams.getAll('desktop_places_embed').length!==1 ||
+       url.searchParams.get('desktop_places_embed')!=='1')return false
+    for(const key of url.searchParams.keys())
+      if(!['desktop_places_embed','places_map_mode',
+           'places_map_handoff','places_map_scope_required'].includes(key) ||
+         url.searchParams.getAll(key).length!==1)return false
+    const mode=url.searchParams.get('places_map_mode')
+    if(mode!==null && mode!=='isolated' && mode!=='prototype')return false
+    const required=url.searchParams.get('places_map_scope_required')
+    if(required!==null && required!=='1')return false
+    const ticket=url.searchParams.get('places_map_handoff')
+    if(ticket!==null && !/^[a-f0-9]{64}$/.test(ticket))return false
+    return url.hash==='#/app/gallery?section=places'
+  }catch{return false}
+}
 // Main-only accepted Child Origin; never copied to Renderer or persisted.
 let secureBaiduMapChildOrigin: string | null = null
 // A previously authenticated HTTPS Session can NEVER be reused for another
@@ -1535,6 +1581,9 @@ function createMainWindow(showOnReady = true) {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // Web guests are admitted only to the exact Agent-configured HTTPS
+      // Places URL, with a dedicated minimal preload and no native APIs.
+      webviewTag: true,
     },
   })
   mainWindow = win
@@ -1596,6 +1645,7 @@ function createMainWindow(showOnReady = true) {
     clearRendererLoadTimer()
     clearRendererRecoveryStableTimer()
     filePreviewProxy?.releaseAll()
+    closeDesktopPlacesGuests()
     if (mainWindow === win) mainWindow = null
   })
   // A PDF subframe navigation must not revoke its parent Viewer ticket.
@@ -1661,6 +1711,64 @@ function createMainWindow(showOnReady = true) {
     void performDesktopShortcutAction(action)
   })
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  // The local renderer may mount ONLY this one HTTPS Web Gallery Places view.
+  // It cannot choose another host, load arbitrary remote content or supply
+  // an untrusted preload to a guest with Desktop native permissions.
+  // HTTPS guest uses its own ephemeral session; no device-location,
+  // clipboard or native permission may be requested by provider scripts.
+  // The exact remote URL is separately enforced at will-attach-webview.
+  const placesSession=session.fromPartition('xdrive-places-web',{cache:false})
+  placesSession.setPermissionRequestHandler((_guest,_permission,answer)=>answer(false))
+  placesSession.setPermissionCheckHandler(()=>false)
+  win.webContents.on('will-attach-webview',(event,preferences,params)=>{
+    const expected=desktopPlacesGuestURL(agentState.status?.server)
+    const pending=desktopPlacesPending
+    if (!agentState.connected || !agentState.status?.username ||
+        !expected || params.src!==expected ||
+        params.partition!=='xdrive-places-web' ||
+        params.preload || params.nodeintegration || params.disablewebsecurity ||
+        !pending || pending.windowID!==win.webContents.id ||
+        pending.expiresAt<=Date.now() ||
+        pending.owner!==agentState.status.username ||
+        pending.origin!==xDriveResolveSecureBaiduMapTarget(agentState.status.server)?.origin) {
+      event.preventDefault()
+      return
+    }
+    preferences.preload=path.join(__dirname,'..','preload','places_embed.cjs')
+    preferences.contextIsolation=true
+    preferences.nodeIntegration=false
+    preferences.sandbox=true
+    preferences.webSecurity=true
+    preferences.webviewTag=false
+  })
+  win.webContents.on('did-attach-webview',(_event,guest)=>{
+    const owner=agentState.status?.username
+    const target=xDriveResolveSecureBaiduMapTarget(agentState.status?.server)
+    const pending=desktopPlacesPending
+    desktopPlacesPending=null // one embed attach, never reused by a second guest
+    if (!agentState.connected || !owner || !target || !pending ||
+        pending.windowID!==win.webContents.id ||
+        pending.expiresAt<=Date.now() ||
+        pending.owner!==owner || pending.origin!==target.origin) {
+      guest.close();return
+    }
+    const identity={owner,origin:target.origin,scope:pending.scope}
+    desktopPlacesGuests.set(guest.id,identity)
+    guest.setWindowOpenHandler(()=>({action:'deny'}))
+    const authorized=(rawURL:string)=>{
+      try {
+        const url=new URL(rawURL)
+        return url.protocol==='https:' && url.origin===identity.origin &&
+          (url.pathname==='/' || url.pathname==='/index.html') &&
+          url.searchParams.get('desktop_places_embed')==='1' &&
+          agentState.connected && agentState.status?.username===identity.owner &&
+          xDriveResolveSecureBaiduMapTarget(agentState.status?.server)?.origin===identity.origin
+      } catch {return false}
+    }
+    guest.on('will-navigate',(event,url)=>{if(!authorized(url))event.preventDefault()})
+    guest.on('will-redirect',(event,url)=>{if(!authorized(url))event.preventDefault()})
+    guest.on('destroyed',()=>desktopPlacesGuests.delete(guest.id))
+  })
   win.webContents.on('will-navigate', (event, url) => {
     const devURL = process.env.XD_DESKTOP_DEV_URL
     if (devURL) {
@@ -1945,6 +2053,13 @@ function notifyUpdateTransition(previous: AgentUpdateState | null, next: AgentUp
 
 function publishAgentState(next: AgentConnectionState) {
   const previous = agentState
+  if ((desktopPlacesGuests.size || desktopPlacesPending) && (
+      !next.connected || !next.status?.configured ||
+      next.status.server!==previous.status?.server ||
+      next.status.username!==previous.status?.username ||
+      next.status.auth_status==='登录已过期' ||
+      next.status.auth_status==='账户已禁用'
+  )) closeDesktopPlacesGuests()
   if (secureBaiduMapWindow && (
       !next.connected || !next.status?.configured ||
       next.status.server !== previous.status?.server ||
@@ -2833,6 +2948,59 @@ function registerIPCHandlers() {
     } catch (error) {
       return { ok: false, error: agentError(error) }
     }
+  })
+  // Source is the verified local file Renderer, not HTTPS or a map Child.
+  // Preparation is one-use per guest attach and bound to this Desktop Owner.
+  ipcMain.handle('desktop:prepare-places-embed',(event,rawScope:unknown)=>{
+    const status=agentState.status
+    const target=xDriveResolveSecureBaiduMapTarget(status?.server)
+    const scope=xDriveParseDesktopBaiduMapScope(rawScope)
+    if (!mainWindow || mainWindow.isDestroyed() ||
+        event.sender!==mainWindow.webContents ||
+        event.senderFrame!==mainWindow.webContents.mainFrame ||
+        !agentState.connected || !status?.configured ||
+        !status.username || !target || !scope) {
+      desktopPlacesPending=null
+      return {ok:false,error:{code:'map_scope_denied',
+        message:'当前 Desktop 地图范围或账户不受信任。'}}
+    }
+    desktopPlacesPending={
+      windowID:mainWindow.webContents.id,
+      owner:status.username,origin:target.origin,scope,
+      expiresAt:Date.now()+60_000,
+    }
+    return {ok:true,data:{allowed:true}}
+  })
+  ipcMain.handle('desktop:places-embed-consume',(event,webUsername:unknown)=>{
+    const guest=desktopPlacesGuests.get(event.sender.id)
+    const status=agentState.status
+    const expectedOrigin=xDriveResolveSecureBaiduMapTarget(status?.server)?.origin
+    if (!guest || !guest.scope ||
+        event.senderFrame!==event.sender.mainFrame ||
+        !agentState.connected || !status?.configured ||
+        guest.owner!==status.username || guest.origin!==expectedOrigin ||
+        webUsername!==guest.owner) {
+      return {ok:false,error:{code:'map_scope_denied',
+        message:'地图身份或一次性筛选交接已失效。'}}
+    }
+    if (!desktopPlacesGuestFrameAllowed(event.senderFrame.url,guest.origin)) {
+      return {ok:false,error:{code:'map_scope_denied',
+        message:'地图页面已离开受信任路径。'}}
+    }
+    // The exact same guest can reload when switching SDK modes or retrying
+    // Web login. This is a read-only scope definition, NOT a Server photo
+    // capability; each new /cells and /cell-items rechecks Owner membership.
+    return {ok:true,data:{scope:guest.scope}}
+  })
+  ipcMain.handle('desktop:places-embed-expected-owner',event=>{
+    const stored=desktopPlacesGuests.get(event.sender.id)
+    const status=agentState.status
+    if (!stored || event.senderFrame!==event.sender.mainFrame ||
+        !agentState.connected || !status?.configured ||
+        stored.owner!==status.username ||
+        stored.origin!==xDriveResolveSecureBaiduMapTarget(status.server)?.origin)
+      return null
+    return stored.owner
   })
   ipcMain.handle('desktop:open-baidu-map-secure', (event, rawScope: unknown) => {
     if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) {
@@ -5490,6 +5658,52 @@ function registerIPCHandlers() {
     ),
   )
 
+  ipcMain.handle('agent:get-media-viewer-preview', (event, nodeID: unknown, format: unknown, requestID: unknown, reportProgress: unknown) =>
+    runAgentAction<AgentMediaThumbnail>(
+      () => viewportRequests.run(event.sender, requestID, async (signal) => {
+        const hello = await requireAgentLifecycle().ensureRunning()
+        requireAgentCapability(hello, 'media-gallery')
+        if (
+          typeof nodeID !== 'number' ||
+          !Number.isSafeInteger(nodeID) ||
+          nodeID <= 0
+        ) {
+          throw new AgentIPCError('invalid_input', 0, 'Viewer preview node id is required.')
+        }
+        if (format !== 'webp' && format !== 'jpeg') {
+          throw new AgentIPCError('invalid_input', 0, 'Viewer format must be webp or jpeg.')
+        }
+        if (signal?.aborted) throw new AgentIPCError('aborted', 0, 'Viewer preview was cancelled.')
+        type Packet = { request_id: string; loaded_bytes: number; total_bytes?: number; alpha_mask?: string | null }
+        // At most two genuine Agent-observed packets, not a synthesized completion.
+        const evidence: { first?: Packet; last?: Packet } = {}
+        const notify = reportProgress === true && typeof requestID === 'string'
+          ? (loadedBytes: number, totalBytes?: number, alphaMask?: string | null) => {
+              if (signal?.aborted || event.sender.isDestroyed()) return
+              const packet: Packet = {
+                request_id: requestID, loaded_bytes: loadedBytes,
+                total_bytes: totalBytes, alpha_mask: alphaMask,
+              }
+              if (!evidence.first) evidence.first = packet
+              evidence.last = packet
+              event.sender.send('agent:media-binary-progress', packet)
+            }
+          : undefined
+        const result = await requireAgentClient().mediaViewerPreview(nodeID, format, signal, notify)
+        // webContents.send can lag the invoke reply; record ONLY actual final
+        // progress observed upstream, never fabricate from ArrayBuffer size.
+        if (evidence.first?.loaded_bytes === 0 &&
+            evidence.last?.loaded_bytes === result.data.byteLength) {
+          return { ...result, ipc_progress_receipt: {
+            first: evidence.first, last: evidence.last,
+          } }
+        }
+        return result
+      }),
+      false,
+    ),
+  )
+
   ipcMain.handle('agent:put-media-video-poster', (_event, nodeID: unknown, revision: unknown, data: unknown) => runAgentAction<{ ok: boolean }>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'media-gallery')
@@ -8068,6 +8282,7 @@ function registerIPCHandlers() {
     }
   })
   ipcMain.handle('agent:logout', () => {
+    closeDesktopPlacesGuests()
     closeSecureBaiduMapWindow()
     return desktopLoginIntents.logout(() => runAgentAction(() => requireAgentClient().logout()))
   })

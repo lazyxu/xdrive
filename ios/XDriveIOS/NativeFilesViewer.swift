@@ -132,6 +132,14 @@ struct XDriveIOSNativeFilesViewer: View {
                         XDriveIOSNativeZoomablePhotoView(image: image)
                             .onNavigateSwipe { move($0) }
                             .accessibilityLabel("图片，可双指缩放或双击")
+                            .overlay(alignment: .topLeading) {
+                                XDriveIOSNativeViewerQualityPanel(
+                                    fileName: viewed.name,
+                                    source: "原件 · 适屏解码",
+                                    image: image,
+                                    originalBytes: viewed.size
+                                )
+                            }
                     case .imageThumbnail(let image):
                         VStack(spacing: 0) {
                             XDriveIOSNativeZoomablePhotoView(image: image)

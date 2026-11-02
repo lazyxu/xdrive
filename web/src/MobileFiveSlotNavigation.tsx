@@ -82,6 +82,7 @@ export function xDriveBrowserMobileGalleryShortcuts(
 }
 
 export type XDriveMobileRecentDestination = {
+  key: string
   route: XDriveWebAppRoute
   label: ReactNode
   icon: ReactNode
@@ -242,7 +243,7 @@ export function XDriveMobileFiveSlotNavigation({
         </Stack>
         {recent.length ? <List component="nav" aria-label="最近动态功能" sx={{ overflowY: 'auto' }}>
           {recent.map(item => (
-            <ListItemButton key={item.route.app} sx={{ minHeight: 48 }}
+            <ListItemButton key={item.key} sx={{ minHeight: 48 }}
               onClick={() => { onRecentOpenChange(false); onPickRecent(item.route) }}>
               <ListItemIcon sx={{ minWidth: 36 }}>{item.icon}</ListItemIcon>
               <ListItemText primary={item.label} />

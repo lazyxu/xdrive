@@ -22,7 +22,18 @@ PGPASSWORD="$POSTGRES_PASSWORD" psql   -h postgres -p 5432 -U "$POSTGRES_USER" -
 scope="${XDRIVE_GO_TEST_SCOPE:-rest}"
 case "$scope" in
   api)
-    bash scripts/ci/test-go-api-race.sh
+    # Each GitLab parallel job owns its own PostgreSQL service. Preserve the
+    # full JSON log as an artifact instead of exhausting Runner's 4 MiB trace.
+    mkdir -p test-results
+    export XDRIVE_API_RACE_SHARD="${CI_NODE_INDEX:?missing parallel job index}"
+    export XDRIVE_API_RACE_SHARD_TOTAL="${CI_NODE_TOTAL:?missing parallel job total}"
+    if bash scripts/ci/test-go-api-race.sh > test-results/api-race.log 2>&1; then
+      tail -n 5 test-results/api-race.log
+    else
+      status=$?
+      tail -n 80 test-results/api-race.log >&2
+      exit "$status"
+    fi
     ;;
   rest)
     go mod tidy "-go=1.25"

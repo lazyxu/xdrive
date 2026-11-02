@@ -7,6 +7,7 @@ enum XDriveIOSNativeFilesExportFailure: Error {
     case staleNode
     case invalidTicket
     case invalidDownload
+    case insufficientDiskSpace
     case server(Int)
 }
 
@@ -39,7 +40,7 @@ private final class XDriveIOSFilesDenyDownloadRedirects: NSObject, URLSessionTas
 /// A file is only staged inside app-private, file-protected temporary storage;
 /// Save to Files is an explicit OS share action, NOT assumed on completion.
 struct XDriveIOSNativeFilesExportReader {
-    static let maximumTemporaryBytes: Int64 = 512 * 1_048_576
+    static let maximumTemporaryBytes: Int64 = XDriveIOSNativeFilesExportCapacityPolicy.maximumSingleFileBytes
 
     let owner: XDriveNativeOwnerRoot
     let accessToken: String
@@ -97,13 +98,23 @@ struct XDriveIOSNativeFilesExportReader {
               XDriveIOSNativeFilesFolderNamePolicy.normalized(node.name) == node.name else {
             throw XDriveIOSNativeFilesExportFailure.unsupported
         }
+        // URLSession.download writes to a local temporary file before the
+        // protected share staging move. Do not start a 1 GiB transfer if
+        // the iPhone cannot accommodate a complete copy with free reserve.
+        let freeSpace = (try? FileManager.default.attributesOfFileSystem(
+            forPath: FileManager.default.temporaryDirectory.path
+        ))?[.systemFreeSize] as? NSNumber
+        guard XDriveIOSNativeFilesExportCapacityPolicy.mayStage(
+            size: node.size, availableFreeBytes: freeSpace?.int64Value
+        ) else { throw XDriveIOSNativeFilesExportFailure.insufficientDiskSpace }
+
         let config = URLSessionConfiguration.ephemeral
         config.httpShouldSetCookies = false
         config.httpCookieAcceptPolicy = .never
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
         config.urlCache = nil
         config.timeoutIntervalForRequest = 30
-        config.timeoutIntervalForResource = 600
+        config.timeoutIntervalForResource = 1800
         let session = URLSession(configuration: config,
                                  delegate: XDriveIOSFilesDenyDownloadRedirects(),
                                  delegateQueue: nil)
@@ -256,7 +267,9 @@ final class XDriveIOSNativeFilesExportModel: ObservableObject {
                 if let failure = error as? XDriveIOSNativeFilesExportFailure {
                     switch failure {
                     case .unsupported:
-                        status = "当前只支持 512 MiB 以内的常规文件导出，未下载。"
+                        status = "当前只支持 1 GiB 以内的常规文件导出，未下载。"
+                    case .insufficientDiskSpace:
+                        status = "本机暂存空间不足（需额外保留 128 MiB），没有开始下载。"
                     case .staleNode, .server(401), .server(403), .server(404):
                         status = "文件版本或访问权限已变化，请刷新文件列表。"
                     default:

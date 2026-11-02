@@ -127,7 +127,10 @@ test('P0-C2 real Preload helper accepts only bounded authentic Main progress bef
   assert.deepEqual(events, [], 'no-progress binary fast path remains untouched')
   assert.equal(listeners.size, 0)
   const main = read('desktop/src/main/index.cts')
-  assert.equal(main.split('ipc_progress_receipt:').length - 1, 2)
+  // Both existing thumbnail/analysis paths and the new 4K derived Viewer
+  // must expose only genuine first/final Agent progress evidence.
+  assert.equal(main.split('ipc_progress_receipt:').length - 1, 3)
+  assert.match(main, /mediaViewerPreview\(nodeID, format, signal, notify\)[\s\S]*?evidence\.last\?\.loaded_bytes === result\.data\.byteLength[\s\S]*?ipc_progress_receipt:/)
   assert.ok(main.includes('evidence.last?.loaded_bytes === result.data.byteLength'))
   assert.ok(!source.includes('onProgress(body.byteLength'))
 })

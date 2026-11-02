@@ -37,3 +37,23 @@ enum XDriveIOSNativeFilesShareLinkPolicy {
         return components.url
     }
 }
+
+/// PATCH /api/v1/shares/:id explicitly writes null for "permanent" expiry.
+struct XDriveIOSNativeFilesSharePolicyUpdateBody: Encodable {
+    let access: String
+    let expires_at: Date?
+
+    private enum CodingKeys: String, CodingKey {
+        case access, expires_at
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var fields = encoder.container(keyedBy: CodingKeys.self)
+        try fields.encode(access, forKey: .access)
+        if let expires_at {
+            try fields.encode(expires_at, forKey: .expires_at)
+        } else {
+            try fields.encodeNil(forKey: .expires_at)
+        }
+    }
+}

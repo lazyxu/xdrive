@@ -15,6 +15,15 @@ shards=(
   '^Test[N-S]'
   '^Test[T-Z]'
 )
+indices=("${!shards[@]}")
+if [[ -n "${XDRIVE_API_RACE_SHARD:-}${XDRIVE_API_RACE_SHARD_TOTAL:-}" ]]; then
+  [[ "${XDRIVE_API_RACE_SHARD:-}" =~ ^[1-5]$ &&
+     "${XDRIVE_API_RACE_SHARD_TOTAL:-}" == "${#shards[@]}" ]] || {
+    echo '[ci] invalid API Race shard index/total; require one of five complete partitions' >&2
+    exit 2
+  }
+  indices=("$((XDRIVE_API_RACE_SHARD - 1))")
+fi
 mapfile -t listed < <(go test -race -mod=readonly -list '^(Test|Example|Fuzz)' ./internal/api |
   grep -E '^(Test|Example|Fuzz)[[:alnum:]_]*$' || true)
 if (( ${#listed[@]} == 0 )); then
@@ -34,9 +43,9 @@ for name in "${listed[@]}"; do
   fi
 done
 
-echo "[ci] internal/api race: ${#listed[@]} tests; five sequential processes; timeout=30m each"
+echo "[ci] internal/api race: ${#listed[@]} tests partitioned exactly once; ${#indices[@]} selected processes; timeout=30m each"
 status=0
-for i in "${!shards[@]}"; do
+for i in "${indices[@]}"; do
   echo "[ci] start shard $((i + 1))/${#shards[@]}: ${shards[i]}"
   set +e
   go test -race -timeout=30m -count=1 -json -run "${shards[i]}" ./internal/api

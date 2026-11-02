@@ -535,6 +535,12 @@ const agent = Object.freeze({
     ipcRenderer.invoke('agent:revoke-media-baidu-consent', nodeID, revision),
   getMediaThumbnail: (nodeID: number, requestID?: string, revision?: number, onProgress?: XDriveByteProgressCallback) =>
     invokeMediaBinaryWithProgress('agent:get-media-thumbnail', [nodeID, requestID, revision], onProgress),
+  getMediaViewerPreview: (
+    nodeID: number, format: 'webp' | 'jpeg', requestID?: string,
+    onProgress?: XDriveByteProgressCallback,
+  ) => invokeMediaBinaryWithProgress(
+    'agent:get-media-viewer-preview', [nodeID, format, requestID], onProgress,
+  ),
   getMediaAnalysisPreview: (nodeID: number, requestID?: string, onProgress?: XDriveByteProgressCallback) =>
     invokeMediaBinaryWithProgress('agent:get-media-analysis-preview', [nodeID, requestID], onProgress),
   cancelViewportRequest: (requestID: string) => ipcRenderer.invoke('agent:cancel-viewport-request', requestID),
@@ -1079,6 +1085,8 @@ contextBridge.exposeInMainWorld('xdriveDesktop', Object.freeze({
   authorizeLocalFolder: (sourceID: number) => ipcRenderer.invoke('desktop:authorize-local-folder', sourceID),
   openExternal: (url: string) => ipcRenderer.invoke('desktop:open-external', url),
   openBaiduMapSecure: (scope: unknown) => ipcRenderer.invoke('desktop:open-baidu-map-secure',scope),
+  preparePlacesEmbed: (scope: unknown) =>
+    ipcRenderer.invoke('desktop:prepare-places-embed',scope),
   startNativeDragOut: (relativePath: string) =>
     ipcRenderer.send('desktop:start-native-drag-out', relativePath),
   copyText: (text: string) => clipboard.writeText(text),

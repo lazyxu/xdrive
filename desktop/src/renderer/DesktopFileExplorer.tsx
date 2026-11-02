@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { DesktopFileExplorerHostPort } from './DesktopFileExplorerHostPort'
+import { xDriveDesktopDecodeViewerPreviewURL } from './desktopViewerPreviewDecode'
 import AppsRoundedIcon from '@mui/icons-material/AppsRounded'
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
 import CloudOutlinedIcon from '@mui/icons-material/CloudOutlined'
@@ -1001,11 +1002,35 @@ export default function DesktopFileExplorer({
   ) => {
     const plan = xDriveFileExplorerPreviewRequest(item, kind, previewStreamSupported && !signal?.aborted)
     if (!plan) return null
+    const agent = hostPort.media
+    if (plan.mode === 'analysis-image' || plan.mode === 'live-still') {
+      for (const format of ['webp', 'jpeg'] as const) {
+        signal?.throwIfAborted()
+        try {
+          const result = await hostPort.requestViewport(
+            signal,
+            (requestID) => agent.getMediaViewerPreview(plan.nodeID, format, requestID, onProgress),
+          )
+          if (!result.ok) continue
+          const expected = format === 'webp' ? 'image/webp' : 'image/jpeg'
+          if (result.data.content_type?.toLowerCase() !== expected) continue
+          signal?.throwIfAborted()
+          const blob = new Blob([result.data.data], { type: expected })
+          if (blob.size === 0) continue
+          // Match the Gallery Viewer: never claim a WebP source is ready until
+          // the actual Electron decoder accepts it; JPEG remains the fallback.
+          return await xDriveDesktopDecodeViewerPreviewURL(blob, format, signal)
+        } catch {
+          signal?.throwIfAborted()
+          // Old Server/Agent or unavailable codec: try JPEG, then legacy.
+        }
+      }
+    }
     if (plan.mode === 'analysis-image') {
       try {
         const result = await hostPort.requestViewport(
           signal,
-          (requestID) => hostPort.media.getMediaAnalysisPreview(plan.nodeID, requestID, onProgress),
+          (requestID) => agent.getMediaAnalysisPreview(plan.nodeID, requestID, onProgress),
         )
         if (!result.ok || signal?.aborted) return null
         return URL.createObjectURL(new Blob(
@@ -1013,10 +1038,10 @@ export default function DesktopFileExplorer({
           { type: result.data.content_type || 'image/jpeg' },
         ))
       } catch {
+        signal?.throwIfAborted()
         return null
       }
     }
-    const agent = hostPort.media
     const discardLate = (late: { ok: boolean; data?: string }) => {
       if (late.ok && typeof late.data === 'string') {
         hostPort.releaseDiscardedPreviewURL(late.data,

@@ -105,7 +105,9 @@ test('G04 album organizer shares one Web/Desktop component, scoped to the signed
   assert.match(organization, /data-xdrive-gallery-album-sort/)
   assert.match(organization, /data-xdrive-gallery-album-move-up/)
   assert.match(gallery, /key=\{preferenceScope \|\| 'gallery-default'\}/)
-  assert.match(web, /preferenceScope=\{\x60web:\$\{profile\?\.id \?\? username\}\x60\}/)
+  // Account identity stays scoped in both the ordinary Web Gallery and
+  // the dedicated Desktop HTTPS map guest, without leaking preferences.
+  assert.match(web, /preferenceScope=\{placesEmbedRequested[\s\S]*?desktop-places-web:[\s\S]*?\x60web:\$\{profile\?\.id \?\? username\}\x60\}/)
   assert.match(desktop, /preferenceScope:\s*\x60desktop:\$\{status\?\.server/)
   assert.doesNotMatch(organization, /mediaItemRange|new Array\(100000\)/)
 })

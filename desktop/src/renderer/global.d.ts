@@ -510,6 +510,7 @@ declare global {
       openBaiduMapSecure: (scope: import('../../../ui/shared/src/media-gallery-baidu-map-photo-scope').XDriveBaiduMapPhotoScope) => Promise<DesktopResult<{
         opened: true; separate_login_required: true
       }>>
+      preparePlacesEmbed: (scope: import('../../../ui/shared/src/media-gallery-baidu-map-photo-scope').XDriveBaiduMapPhotoScope) => Promise<DesktopResult<{allowed:true}>>
       startNativeDragOut: (relativePath: string) => void
       copyText: (text: string) => void
       hide: () => void
@@ -772,6 +773,7 @@ declare global {
         saveMediaBaiduConsent: (nodeID: number, input: MediaBaiduMapConsentInput) => Promise<DesktopResult<MediaBaiduMapConsent>>
         revokeMediaBaiduConsent: (nodeID: number, revision: number) => Promise<DesktopResult<MediaBaiduMapConsent>>
         getMediaThumbnail: (nodeID: number, requestID?: string, revision?: number, onProgress?: XDriveByteProgressHandler) => Promise<DesktopResult<AgentMediaThumbnail>>
+        getMediaViewerPreview: (nodeID: number, format: 'webp' | 'jpeg', requestID?: string, onProgress?: XDriveByteProgressHandler) => Promise<DesktopResult<AgentMediaThumbnail>>
         getMediaAnalysisPreview: (nodeID: number, requestID?: string, onProgress?: XDriveByteProgressHandler) => Promise<DesktopResult<AgentMediaThumbnail>>
         cancelViewportRequest: (requestID: string) => Promise<DesktopResult<{ cancelled: boolean }>>
         getMediaLivePhotoStill: (nodeID: number, requestID?: string) => Promise<DesktopResult<string>>

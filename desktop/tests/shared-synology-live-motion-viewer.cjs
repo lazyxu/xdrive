@@ -23,6 +23,12 @@ const urls = {
 new Function('module','exports','require','URL','Blob',diagnostics.outputText)(
   moduleRef,moduleRef.exports,
   name => {
+    if (name === '../synology-viewer-preview') return {
+      xDriveSynologyViewerNeedsDerived: filename => /\.(livp|heic|heif)$/i.test(filename),
+      xDriveSynologyLoadViewerPreview: async () => {
+        throw Error('no HD still read during independent Live motion tests')
+      },
+    }
     if (name === '../synology-media-stream') return {
       xDriveSynologyPlaybackMIME: () => null,
       xDriveSynologyLoadNativeMediaStream: async () => { throw Error('video stream is independent') },
