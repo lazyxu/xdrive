@@ -16,6 +16,11 @@ const compiled = ts.transpileModule(read(sourcePath), {
     target: ts.ScriptTarget.ES2022, esModuleInterop: true,
   },
 }).outputText
+const dockCompiled = ts.transpileModule(read('ui/shared/src/mui/MobileGalleryDockLayout.ts'), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText
+const dockModule = { exports: {} }
+new Function('module', 'exports', dockCompiled)(dockModule, dockModule.exports)
 const mocks = {
   react: React,
   'react/jsx-runtime': require('react/jsx-runtime'),
@@ -24,6 +29,7 @@ const mocks = {
     'Slider','Stack','TextField','Typography',
   ].map(x => [x, x.toLowerCase()])),
   './useMobilePanelViewport': { useXDriveMobilePanelViewport: () => null },
+  './MobileGalleryDockLayout': dockModule.exports,
   './MediaGalleryNavigation': {
     XDriveMediaGalleryNavigation: 'gallery-navigation',
   },
@@ -87,10 +93,13 @@ test('iOS 27 Mobile Gallery keeps top actions and gives Library/Collections sepa
   const timeDock = find(view, 'data-xdrive-mobile-gallery-time-scale')
   assert.ok(timeDock)
   assert.equal(timeDock.props.sx.position, 'fixed', 'native Years/Months/All is not a top sticky toolbar')
-  assert.equal(timeDock.props.sx.bottom, 'calc(64px + env(safe-area-inset-bottom, 0px))')
-  assert.equal(timeDock.props.sx.minHeight, 52)
+  assert.equal(timeDock.props.sx.bottom,
+    'calc(var(--xdrive-mobile-five-slot-inset, env(safe-area-inset-bottom, 0px)) + 56px)')
+  assert.equal(timeDock.props.sx.minHeight, 48)
   assert.equal(timeDock.props.sx.zIndex, 7)
-  assert.equal(find(view, 'data-xdrive-mobile-gallery-bottom').props.sx.bottom, 0)
+  assert.equal(find(view, 'data-xdrive-mobile-gallery-bottom').props.sx.bottom,
+    dockModule.exports.xDriveMobileGalleryDockBottom())
+  assert.equal(find(view, 'data-xdrive-mobile-gallery-bottom').props.sx.minHeight, 48)
   assert.ok(find(view, 'data-xdrive-mobile-gallery-select'))
   const combined = find(view, 'data-xdrive-mobile-gallery-sort-filter')
   assert.ok(combined, 'native-style sort/filter shares a single header action')
@@ -517,7 +526,8 @@ test('P0-3i bottom time controls add safe scroll clearance without forking Web r
   const appHeader = read('ui/shared/src/mui/MobileAppHeader.tsx')
   assert.match(gallery, /!mobileCollectionsOverview && section === 'library' && showPhotoCollection/)
   assert.match(gallery, /calc\(140px \+ env\(safe-area-inset-bottom, 0px\)\)/)
-  assert.match(chrome, /bottom: 'calc\(64px \+ env\(safe-area-inset-bottom, 0px\)\)'/)
+  assert.match(chrome, /bottom: xDriveMobileGalleryDockBottom\(XDRIVE_MOBILE_GALLERY_DOCK_HEIGHT \+ 8\)/)
+  assert.match(chrome, /bottom: xDriveMobileGalleryDockBottom\(\), zIndex: 7/)
   assert.equal((chrome.match(/data-xdrive-mobile-gallery-time-scale/g) || []).length,1)
   assert.match(gallery, /useXDriveVirtualCollection/)
   assert.match(gallery, /<MediaVirtualTileGrid/)
