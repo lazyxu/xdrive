@@ -127,6 +127,7 @@ struct XDriveIOSNativePhotosDashboard: View {
     @State private var recentDynamic: [XDriveIOSNativeDynamicFeature] = []
     @State private var launcherQuery = ""
     @State private var showRecentPicker = false
+    @State private var showingLocalPhotoSearch = false
     @State private var galleryFocused = false
     // A source/tab/scene navigation creates a new focus owner even when
     // the user returns to the same source later (cloud -> map -> cloud).
@@ -214,6 +215,9 @@ struct XDriveIOSNativePhotosDashboard: View {
         }
         .id(ownerScopeKey)
         .navigationBarBackButtonHidden(true)
+        .sheet(isPresented: $showingLocalPhotoSearch) {
+            XDriveIOSNativePhotoSearchScreen()
+        }
         .sheet(isPresented: $showRecentPicker) {
             NavigationStack {
                 List {
@@ -287,6 +291,7 @@ struct XDriveIOSNativePhotosDashboard: View {
             // No push-route account card: parent root owns signed-out state.
             showSignOutConsent = false
             signOutConsentOwner = nil
+            showingLocalPhotoSearch = false
             if owner == nil {
                 navigationRouteStore.clear()
                 resetNavigation()
@@ -415,6 +420,9 @@ struct XDriveIOSNativePhotosDashboard: View {
                         Label("前台自动备份未开启", systemImage: "icloud.slash")
                     }
                     Spacer(minLength: 4)
+                    if gallerySource == .local || gallerySource == .albums {
+                        gallerySearchAction
+                    }
                     Button("备份设置") { openDynamic(.backup) }
                         .accessibilityIdentifier("native-ios-gallery-backup-settings")
                 }
@@ -450,6 +458,20 @@ struct XDriveIOSNativePhotosDashboard: View {
                 .padding(.horizontal, 12)
             }
             .padding(.vertical, 3)
+    }
+
+    private var gallerySearchAction: some View {
+        Button {
+            showingLocalPhotoSearch = true
+        } label: {
+            Image(systemName: "magnifyingglass")
+                .frame(width: 44, height: 44)
+        }
+        .buttonStyle(.plain)
+        .disabled(photoAuthorization != .authorized &&
+                  photoAuthorization != .limited)
+        .accessibilityLabel("搜索本机照片")
+        .accessibilityIdentifier("native-ios-gallery-local-photo-search")
     }
 
     private var galleryCompactBackupAction: some View {
@@ -492,6 +514,9 @@ struct XDriveIOSNativePhotosDashboard: View {
                         !dynamicTypeSize.isAccessibilitySize {
                         HStack(spacing: 0) {
                             gallerySourceRow
+                            if gallerySource == .local || gallerySource == .albums {
+                                gallerySearchAction
+                            }
                             galleryCompactBackupAction
                         }
                         .frame(minHeight: 48)
