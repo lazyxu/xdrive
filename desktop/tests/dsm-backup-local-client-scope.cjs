@@ -39,6 +39,7 @@ const imports = {
   './WorkspaceSurface': { XDriveWorkspaceSurface: stub('workspace') },
   './StatePanel': { XDriveStatePanel: stub('state-panel') },
   './SynologyBackupSourceSetup': { XDriveSynologyBackupSourceSetup: stub('source-setup') },
+  './SynologyBackupSourceProgress': { XDriveSynologyBackupSourceProgress: stub('source-progress') },
   './StatusAlert': { XDriveStatusAlert: stub('status-alert') },
 }
 const filename = path.resolve(__dirname, '../../ui/shared/src/mui/SynologyBackupLocalPanel.tsx')
@@ -97,11 +98,15 @@ test('DSM Host replacement never renders old-owner Source names, history, task d
     await Promise.resolve()
   })
   assert.equal(tree.root.findAllByType('folder-accordion').length, 1)
+  assert.equal(tree.root.findAllByType('source-progress').length, 0,
+    'DSM must not prefetch progress for all listed Sources')
   await act(async () => {
     tree.root.findByType('folder-accordion').props.onExpandedChange(true)
     await Promise.resolve()
   })
   assert.equal(tree.root.findByType('history-list').props.entries.length, 1)
+  assert.equal(tree.root.findByType('source-progress').props.sourceID, 57,
+    'exactly the expanded owning Source gets one Agent status component')
   await act(async () => {
     tree.root.findByType('local-actions').props.onRun()
   })
@@ -117,6 +122,7 @@ test('DSM Host replacement never renders old-owner Source names, history, task d
     'an old Source dialog may not bind to the replacement Agent even for one render')
   assert.deepEqual(calls, [], 'replacement Agent may not read old Source history on the Host swap')
   assert.equal(tree.root.findAllByType('folder-accordion').length, 0)
+  assert.equal(tree.root.findAllByType('source-progress').length, 0)
   assert.equal(tree.root.findAllByType('batch-dialog').length, 0)
   assert.equal(tree.root.findAllByType('workspace').length, 1)
   await act(async () => {
