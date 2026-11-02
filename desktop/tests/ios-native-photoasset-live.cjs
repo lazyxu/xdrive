@@ -106,7 +106,7 @@ test('paired PhotoAsset Live offers full-zoom still and bounded neighbor swipe, 
   assert.match(detail, /native-ios-photoasset-live-still-toggle/)
   assert.match(detail, /livePlaybackRequest = nil\s*nativeLiveReady = false\s*showsStaticStill\.toggle\(\)/)
   assert.match(detail, /XDriveIOSNativeZoomablePhotoView\(image: still\)\s*\.onNavigateSwipe \{ navigateLoaded\(\$0\) \}/)
-  assert.match(detail, /XDriveIOSNativeCloudPairedLivePhotoView\([\s\S]*?\)\s*\.xdriveCloudLivePhotoPaging \{ navigateLoaded\(\$0\) \}/)
+  assert.match(detail, /XDriveIOSNativeCloudPairedLivePhotoView\([\s\S]*?\)\s*\{ ready in[\s\S]*?\}\s*\.xdriveCloudLivePhotoPaging \{ navigateLoaded\(\$0\) \}/)
   assert.match(detail, /云端 Live Photo，长按播放或左右滑动切换/)
   assert.match(paired, /extension View[\s\S]*?func xdriveCloudLivePhotoPaging/)
   assert.match(paired, /simultaneousGesture\(\s*DragGesture\(minimumDistance: 72\)/)
