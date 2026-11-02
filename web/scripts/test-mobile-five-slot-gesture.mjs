@@ -78,6 +78,18 @@ const fakeRequire = (id) => {
   if (id.startsWith('@mui/icons-material/')) return { __esModule: true, default: () => null }
   if (id === '../../ui/shared/src/mobile-item-gesture') return gesture.exports
   if (id === './webApps') return { XDRIVE_WEB_APPS: {} }
+  // The real Launcher tests cover these production helpers; this harness
+  // isolates the long-press component without pulling the workspace runtime.
+  if (id === '../../ui/shared/src/mui/WorkspaceRouteTitles') return {
+    xDriveWorkspaceRouteTitle: key => {
+      assert.equal(key, 'global-tasks', 'only the declared task workspace may be titled')
+      return '全局后台任务'
+    },
+  }
+  if (id === './mobileLauncherSections') return {
+    xDriveMobileSupplementalDynamicDestinationKeys: adminVerified =>
+      adminVerified ? ['global-tasks'] : [],
+  }
   throw Error('Unexpected production import: ' + id)
 }
 new Function('module', 'exports', 'require', 'setTimeout', 'clearTimeout',

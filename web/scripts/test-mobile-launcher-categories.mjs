@@ -29,6 +29,13 @@ assert.deepEqual(groups.flatMap(group => group.items.map(item => item.key)), [
 assert.deepEqual(input.map(item => item.key), keys, 'must not mutate authenticated destinations')
 assert.equal(groups.some(group => group.key === 'admin'), false,
   'non-admin destination input may never grow new privileged destinations')
+assert.deepEqual(model.xDriveMobileSupplementalDynamicDestinationKeys(false), [],
+  'ordinary Server Owners never gain the global task shortcut')
+assert.deepEqual(model.xDriveMobileSupplementalDynamicDestinationKeys(true), ['global-tasks'])
+assert.deepEqual(model.xDriveMobileLauncherSections([
+  { key: 'transfers' }, { key: 'global-tasks' },
+]).find(group => group.key === 'tasks')?.items.map(item => item.key),
+  ['transfers', 'global-tasks'])
 const admin = model.xDriveMobileLauncherSections([
   ...input, { key: 'admin-users', label: '用户管理' },
   { key: 'admin-services', label: '系统依赖' },
@@ -94,7 +101,8 @@ assert.match(launcher, /key: 'gallery-places', label: '地图'/)
     'const selectMobileLauncher = ' + candidates[0].getText(ast) + ';', {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
     }).outputText
-  function makeLauncher(allowGallery = true, overviewSlot = null) {
+  function makeLauncher(allowGallery = true, overviewSlot = null,
+    route = { app: 'overview', params: {} }) {
     const launched = []
     const requestedPermissions = []
     const snapshots = []
@@ -106,6 +114,17 @@ assert.match(launcher, /key: 'gallery-places', label: '地图'/)
         key === 'files' ? { app: 'files', params: {} } :
         key === 'gallery' ? { app: 'gallery', params: {} } : null,
       mobileLauncherDestinations,
+      route,
+      // The callback uses the real canonical hash format to avoid adding
+      // duplicate browser history entries after an already-selected route.
+      xDriveWebAppHash: target => {
+        const query = new URLSearchParams()
+        for (const [key, value] of Object.entries(target.params ?? {})) {
+          if (value !== undefined && value !== null && value !== '') query.set(key, String(value))
+        }
+        const suffix = query.toString()
+        return '#/app/' + target.app + (suffix ? '?' + suffix : '')
+      },
       xDriveWorkspaceNavigationAllowed: key => {
         requestedPermissions.push(key)
         return key === 'files' || key === 'gallery' && allowGallery
@@ -162,5 +181,12 @@ assert.match(launcher, /key: 'gallery-places', label: '地图'/)
   fromMine.select('files')
   assert.deepEqual(fromMine.snapshots, ['mine'],
     'rejected Gallery does not snapshot Mine; accepted Files does')
+  const sameRoute = makeLauncher(true, 'all',
+    { app: 'gallery', params: { section: 'albums' } })
+  sameRoute.select('gallery-albums')
+  assert.deepEqual(sameRoute.launched, [],
+    'same Gallery subroute does not add an invisible browser history entry')
+  assert.deepEqual(sameRoute.snapshots, [],
+    'no-op route does not overwrite the Launcher scroll anchor')
 }
 console.log('Mobile Launcher categories: authorized destinations, role, search and 44px favorite control passed')

@@ -208,3 +208,40 @@ test('compact shell has no floating trigger or per-item action chrome', () => {
   assert.doesNotMatch(gallery, /data-xdrive-gallery-touch-info/)
   assert.match(gallery, /!compactTouch && onSetFavorite/)
 })
+
+test('Web Mobile verified admin global tasks stay discoverable and role-scoped', () => {
+  const slots = loadTS('web/src/mobileFiveSlotState.ts')
+  const launcher = loadTS('web/src/mobileLauncherSections.ts')
+  assert.deepEqual(launcher.xDriveMobileSupplementalDynamicDestinationKeys(false), [])
+  assert.deepEqual(launcher.xDriveMobileSupplementalDynamicDestinationKeys(true), ['global-tasks'])
+
+  const groups = launcher.xDriveMobileLauncherSections([
+    { key: 'files' }, { key: 'transfers' }, { key: 'global-tasks' },
+  ])
+  assert.deepEqual(groups.find(group => group.key === 'tasks').items.map(item => item.key),
+    ['transfers', 'global-tasks'])
+
+  const original = slots.xDriveInitialMobileNavigation('server-A:owner-7')
+  const globalTask = { app: 'tasks', params: { scope: 'global', task: 'job-123' } }
+  const remembered = slots.xDriveRememberMobileNavigation(
+    original, globalTask, 'server-A:owner-7', true,
+  )
+  assert.equal(slots.xDriveMobileRouteForSlot(remembered, 'dynamic', true).params.task, 'job-123')
+  assert.equal(slots.xDriveMobileRouteForSlot(remembered, 'dynamic', false), null)
+  const revoked = slots.xDriveRememberMobileNavigation(
+    remembered, { app: 'overview', params: {} }, 'server-A:owner-7', false,
+  )
+  assert.deepEqual(revoked.dynamic, [])
+  assert.equal(slots.xDriveMobileRouteForSlot(revoked, 'dynamic', false), null)
+  const switchedOwner = slots.xDriveRememberMobileNavigation(
+    remembered, { app: 'overview', params: {} }, 'server-A:owner-8', true,
+  )
+  assert.deepEqual(switchedOwner.dynamic, [])
+
+  const navSource = fs.readFileSync(path.join(root, 'web/src/MobileFiveSlotNavigation.tsx'), 'utf8')
+  const appSource = fs.readFileSync(path.join(root, 'web/src/App.tsx'), 'utf8')
+  assert.match(navSource, /xDriveMobileSupplementalDynamicDestinationKeys\(adminVerified\)/)
+  assert.match(appSource, /onPickRecent=\{pickMobileRecent\}/)
+  assert.match(appSource, /const pickMobileRecent = \(next: XDriveWebAppRoute\) =>/)
+  assert.match(appSource, /xDriveWebAppHash\(next\) === xDriveWebAppHash\(route\)/)
+})

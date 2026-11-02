@@ -8,11 +8,19 @@ export type XDriveMobileLauncherSection<T> = {
   items: T[]
 }
 
+/** The Server-wide task center is an existing Web workspace, but it is not
+ * represented by XDRIVE_WEB_APPS because both task scopes share one app ID.
+ * Expose it only for a verified administrator, not as a second task API. */
+const VERIFIED_ADMIN_DYNAMIC_KEYS = ['global-tasks'] as const
+export function xDriveMobileSupplementalDynamicDestinationKeys(adminVerified: boolean): readonly string[] {
+  return adminVerified ? VERIFIED_ADMIN_DYNAMIC_KEYS : []
+}
+
 const categories = [
   { key: 'photos', label: '图库与相册', keys: ['gallery', 'gallery-albums', 'gallery-places'] },
   { key: 'files', label: '文件与存储', keys: ['files', 'cloud-storage', 'local-storage'] },
   { key: 'backup', label: '备份与同步', keys: ['device-backup', 'remote-pull'] },
-  { key: 'tasks', label: '任务与传输', keys: ['transfers'] },
+  { key: 'tasks', label: '任务与传输', keys: ['transfers', 'global-tasks'] },
   { key: 'admin', label: '管理', keys: [
     'admin-users', 'admin-audit', 'admin-storage', 'admin-services', 'admin-maintenance',
   ] },
