@@ -784,17 +784,18 @@ internal fun NativeLocalMediaStoreGallery(
             loadedIndex == loadedKeys.lastIndex
         val canFetchNext = nativeLocalViewerCanRequestNextPage(
             loadedIndex = loadedIndex, loadedCount = loadedKeys.size,
-            exhausted = exhausted, hasCursor = nextPageKey != null,
+            exhausted = exhausted, hasCursor = nextPageKey == asset.pageKey,
             busy = busy || fullDateBusy || pageIntent != consumedPageIntent,
             hasError = failure != null, pending = viewerNextPending != null,
             readable = allowed && wall.loaded.value &&
-                cache.generation.intValue == libraryEpoch,
+                cache.generation.intValue == libraryEpoch &&
+                !querySignal.isCanceled,
         )
         val requestOneNextPage: () -> Unit = request@{
             val current = selectedMedia ?: return@request
             val cursor = nextPageKey ?: return@request
             if (current.viewerReturnKey() != sourceKey ||
-                current.uri != asset.uri ||
+                current.uri != asset.uri || cursor != current.pageKey ||
                 !nativeLocalViewerCanRequestNextPage(
                     loadedIndex = nativeLocalViewerLoadedIndex(
                         items.map { it.viewerReturnKey() }, sourceKey),
@@ -803,7 +804,8 @@ internal fun NativeLocalMediaStoreGallery(
                     busy = busy || fullDateBusy || pageIntent != consumedPageIntent,
                     hasError = failure != null, pending = viewerNextPending != null,
                     readable = allowed && wall.loaded.value &&
-                        cache.generation.intValue == libraryEpoch))
+                        cache.generation.intValue == libraryEpoch &&
+                        !querySignal.isCanceled))
                 return@request
             val requestId = pageIntent + 1
             viewerNextPending = NativeLocalViewerNextPageIntent(
