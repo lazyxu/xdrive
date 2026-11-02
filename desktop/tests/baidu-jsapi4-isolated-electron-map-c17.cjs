@@ -97,7 +97,7 @@ test('A3c17 Desktop Gallery launches only the sandboxed independent HTTPS dynami
   assert.match(places, /const hasMapPorts = Boolean\(/)
   assert.match(places, /activation_state === 'authorized_signed_release'/)
   assert.match(places, /XDriveMediaGalleryBaiduIsolatedPhotoSurface/)
-  assert.match(places, /在独立 HTTPS 安全窗口打开动态地图/)
+  assert.match(places, /在独立 HTTPS 安全窗口打开(?:百度)?动态地图/)
   assert.doesNotMatch(places, /BaiduStaticMap/)
   assert.match(places, /const desktopOnly = Boolean\(onOpenSecureDesktopMap\)/)
   assert.match(places, /const mapMode = desktopOnly \? 'isolated'/)

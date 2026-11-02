@@ -42,6 +42,12 @@ function harness({badResponse=false,aborted=false}={}){
   // Failed/aborted Owner Cells must discard any one-shot rotation visual hint.
   const pendingResizeDrawer={current:{owner:'fixture-owner-a',key:'owner:family',hint:{}}}
   const gesturePresentationRef={current:null}
+  // This is a real branch of queryCells: a previously tapped, inert cover
+  // must never open from a rejected new signed Owner Cell query.
+  const pendingCoverClick={current:{
+    owner:'fixture-owner-a',key:'owner:family',assetID:33,nodeID:75,revision:2,
+  }}
+  const coverStatuses=[]
   const canceledVisual=[],clearedVisual=[]
   const failed=[],summaries=[],published=[],accessible=[]
   const controller=new AbortController()
@@ -64,6 +70,7 @@ function harness({badResponse=false,aborted=false}={}){
     xDriveSelectBaiduNativeCell:()=>null,
     acceptedScope,acceptedCells,restoreHint:{current:null},pendingResizeDrawer,
     selectCellRef:{current:()=>{}},xDrivePlacesDrawerMatchesFresh:()=>false,
+    pendingCoverClick,setCoverClickStatus:value=>coverStatuses.push(value),
     setAccessible:items=>accessible.push(items),
     setSummary:page=>summaries.push(page),
     setAcceptedViewport:()=>{},latestAcceptedViewport,
@@ -75,7 +82,8 @@ function harness({badResponse=false,aborted=false}={}){
   const names=Object.keys(deps)
   const query=new Function(...names,compiledQuery+'; return queryCells;')(...names.map(n=>deps[n]))
   return {run:()=>query(b,true),ref:failedCellsScopeRef,failed,summaries,published,
-    accessible,bounds:b,pendingResizeDrawer,canceledVisual,clearedVisual}
+    accessible,bounds:b,pendingResizeDrawer,pendingCoverClick,coverStatuses,
+    canceledVisual,clearedVisual}
 }
 
 test('rejected current Owner /cells cannot keep stale pins or silently show zero photos',async()=>{
@@ -89,6 +97,9 @@ test('rejected current Owner /cells cannot keep stale pins or silently show zero
   assert.deepEqual(f.clearedVisual,[true], 'failed Owner read clears gesture presentation')
   assert.equal(f.pendingResizeDrawer.current,null,
     'failed Owner Cells must discard stale rotation intent')
+  assert.equal(f.pendingCoverClick.current,null,
+    'failed fresh Owner Cells must revoke a former-cover click intent')
+  assert.deepEqual(f.coverStatuses,['重新确认地点照片失败，请点击照片重试。'])
 })
 
 test('invalid signed cells page takes the same fail-closed retry path',async()=>{
@@ -101,6 +112,9 @@ test('invalid signed cells page takes the same fail-closed retry path',async()=>
   assert.deepEqual(f.clearedVisual,[true], 'failed Owner read clears gesture presentation')
   assert.equal(f.pendingResizeDrawer.current,null,
     'invalid Owner Cells must discard stale rotation intent')
+  assert.equal(f.pendingCoverClick.current,null,
+    'invalid signed Owner Cells must revoke a former-cover click intent')
+  assert.deepEqual(f.coverStatuses,['重新确认地点照片失败，请点击照片重试。'])
 })
 
 test('aborted request never grants a retry scope or reports an error',async()=>{
@@ -113,6 +127,8 @@ test('aborted request never grants a retry scope or reports an error',async()=>{
   assert.deepEqual(f.clearedVisual,[], 'abort never publishes a new Owner error')
   assert.equal(f.pendingResizeDrawer.current,null,
     'aborted Owner Cells must discard stale rotation intent')
+  assert.deepEqual(f.coverStatuses,[],
+    'an aborted request must not report a failed media reauthorization')
 })
 
 test('current failed Owner scope can retry once, in-flight and cross-scope cannot',()=>{
