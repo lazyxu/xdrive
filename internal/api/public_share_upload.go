@@ -194,6 +194,9 @@ func (s *Server) publicShareCreateDirectory(c *gin.Context) {
 		if err != nil {
 			return err
 		}
+		if err := notesRejectDestinationWithReason(c.Request.Context(), tx, share.OwnerID, req.ParentID, req.Name); err != nil {
+			return errShareUploadDenied
+		}
 		if err := tx.Where(
 			"owner_id = ? AND parent_id = ? AND lower(name) = lower(?) AND deleted_at IS NULL",
 			share.OwnerID, req.ParentID, req.Name,
