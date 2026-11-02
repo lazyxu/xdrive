@@ -218,6 +218,7 @@ await assert.rejects(xDriveSynologyLoadNativeMediaStream({
   } },
 }, pdf), /trusted/)
 
+const byteProofsBeforeInvalid = calls
 for (const invalid of [
   {...file, id: 0}, {...file, revision: 0}, {...file, kind: 'dir'},
   {...file, size: 0}, {...file, size: Number.MAX_SAFE_INTEGER+1},
@@ -225,11 +226,11 @@ for (const invalid of [
 ]) {
   await assert.rejects(xDriveSynologyLoadNativeMediaStream(checked, invalid), /Only Owner/)
 }
-assert.equal(calls, 1, 'invalid media identities reached Agent')
+assert.equal(calls, byteProofsBeforeInvalid, 'invalid media identities reached Agent')
 const aborted = new AbortController()
 aborted.abort()
 await assert.rejects(xDriveSynologyLoadNativeMediaStream(checked, file, aborted.signal), /cancelled/)
-assert.equal(calls, 1)
+assert.equal(calls, byteProofsBeforeInvalid)
 for (const corrupt of ['revision', 'total', 'sha256', 'magic']) {
   const wrong = {
     ...checked,
