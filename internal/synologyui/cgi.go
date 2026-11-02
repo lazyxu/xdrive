@@ -31,7 +31,7 @@ func CGIHandler(next http.Handler) http.Handler {
 		case "bootstrap", "sources", "status", "history", "run", "control", "schedule",
 			"device-backups", "device-backup-runs",
 			"device-backup-page", "device-backup-folders", "cloud-quota", "nas-volume",
-			"cloud-root", "cloud-children", "cloud-create-folder", "cloud-text-preview", "cloud-media-range",
+			"cloud-root", "cloud-children", "cloud-create-folder", "cloud-rename-node", "cloud-text-preview", "cloud-media-range",
 			"cloud-media-stream", "cloud-thumbnail", "cloud-viewer-preview", "cloud-gallery-items", "cloud-gallery-albums",
 			"cloud-gallery-places", "cloud-gallery-place-items", "cloud-gallery-map-overview",
 			"cloud-live-motion", "nas-shares", "nas-share-preflight",

@@ -82,9 +82,17 @@ test('disabled native-like Host actions use the same menu and shortcut boundary'
   assert.ok(dsmEntry.includes('const host = createXDriveSynologyHost()') &&
     !dsmEntry.includes('filesUnavailableActions:'),
     'DSM entry must use the authenticated Host adapter instead of a page-local capability list')
-  for (const key of ['copy','cut','paste','delete','rename','moveTo','copyTo','manageTags']) {
+  for (const key of ['copy','cut','paste','delete','moveTo','copyTo','manageTags']) {
     assert.ok(dsm.includes(key + ": 'DSM"), key + ' must be declared only at authenticated DSM Host boundary')
   }
+  assert.equal(dsm.includes("rename: 'DSM"), false,
+    'DSM rename is now provided by its exact-revision authenticated Owner operation')
+  assert.ok(dsm.includes('onRenameItem={async (item, name) => {'),
+    'DSM rename must enter through the shared FileExplorer callback')
+  assert.ok(dsm.includes('xDriveFindVerifiedOwnerSelection(item, itemsRef.current)'),
+    'DSM rename must verify the item against the current authenticated Owner cursor page')
+  assert.ok(dsm.includes('client.ownerRenameNode('),
+    'DSM rename must use the narrow authenticated Owner Agent adapter')
   assert.ok(dsm.includes('ownerFilesPage: {') && dsm.includes('client: local,'))
   assert.ok(outlet.includes('client={services.ownerFilesPage.client}'))
   assert.ok(outlet.includes('unavailableActions={services.ownerFilesPage.unavailableActions}'))

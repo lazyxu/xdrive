@@ -46,7 +46,7 @@ test('Host-disabled Search never dispatches even through direct command callback
 test('shared Files toolbar disables unsupported operations while allowing verified Owner folder creation', () => {
   for (const name of [
     'search', 'uploadFiles', 'uploadFolder',
-    'copy', 'cut', 'paste', 'delete', 'rename', 'moveTo', 'copyTo', 'manageTags',
+    'copy', 'cut', 'paste', 'delete', 'moveTo', 'copyTo', 'manageTags',
   ]) {
     assert.ok(explorer.includes("'" + name + "'"), name + ' missing from shared capability contract')
     assert.ok(host.includes(name + ": 'DSM"), name + ' missing genuine DSM Host explanation')
@@ -55,6 +55,14 @@ test('shared Files toolbar disables unsupported operations while allowing verifi
   // remaining unsupported mutations still require genuine Host reasons.
   assert.equal(host.includes("createFolder: 'DSM"), false,
     'Owner-scoped new-folder action must not be falsely disabled by DSM Host')
+  assert.equal(host.includes("rename: 'DSM"), false,
+    'Owner-scoped revision-checked rename must not be disabled')
+  assert.ok(dsm.includes('onRenameItem={async (item, name) => {'),
+    'only verified DSM Owner cursor items may be renamed')
+  assert.ok(dsm.includes('xDriveFindVerifiedOwnerSelection(item, itemsRef.current)'),
+    'renaming must recheck selected item against authenticated current rows')
+  assert.ok(dsm.includes('client.ownerRenameNode('),
+    'the shared Files inline rename must use the typed DSM Owner API')
   assert.ok(dsm.includes('onCreateFolder={() =>'),
     'only the verified DSM Owner folder grants an actual create callback')
   assert.ok(dsm.includes('client.ownerCreateFolder('),

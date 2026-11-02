@@ -123,6 +123,7 @@ var desktopIPCCapabilities = []string{
 	"cloud-quota-read",
 	"cloud-files-read",
 	"cloud-folder-create",
+	"cloud-node-rename",
 	"cloud-file-text-preview",
 	"cloud-media-range-read",
 	"cloud-thumbnail-read",
