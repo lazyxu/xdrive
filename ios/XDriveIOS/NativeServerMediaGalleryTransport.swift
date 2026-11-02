@@ -368,6 +368,18 @@ struct XDriveIOSNativeMediaGalleryReader {
         return (UIImage(cgImage: bounded), nil)
     }
 
+    /// Generic cloud PhotoAsset names are NOT necessarily iPhone-generated
+    /// -xios- backup receipts. Only inspect the untrusted display name here:
+    /// the staged local path is a fixed "original.<checked extension>".
+    private func validOrdinaryPhotoAssetName(_ name: String) -> Bool {
+        guard !name.isEmpty, name.utf8.count <= 255,
+              !name.hasSuffix(" "), !name.hasSuffix(".") else { return false }
+        return !name.unicodeScalars.contains { scalar in
+            scalar.value < 32 || scalar.value == 127 ||
+                "/\\:".unicodeScalars.contains(scalar)
+        }
+    }
+
     /// Re-fetch the selected logical PhotoAsset. A signed original download
     /// must not silently import a renamed/replaced Node, a changed media
     /// classification or a now-unpaired resource under the old Viewer item.
@@ -407,7 +419,7 @@ struct XDriveIOSNativeMediaGalleryReader {
               selected.node.revision > 0, selected.node.size > 0,
               selected.node.size <= 4 * 1_073_741_824,
               extensions.contains(ext),
-              XDriveIOSBackgroundOriginalNamePolicy.valid(selected.node.name),
+              validOrdinaryPhotoAssetName(selected.node.name),
               !accessToken.isEmpty else {
             throw XDriveIOSNativeMediaReadFailure.unsupported
         }
