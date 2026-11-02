@@ -383,7 +383,10 @@ struct XDriveIOSNativeServerMediaPreview: View {
             current: currentKey, in: loadedKeys, direction: direction,
             ownerAuthorized: ownerAuthorized
         ) else { return nil }
-        return loadedItems[index]
+        // The neighbor index comes from the active crossed Range, not the
+        // 48 items frozen when the Viewer first opened. The last Range may
+        // contain fewer rows; indexing the old array can show the wrong Node.
+        return visibleItems[index]
     }
 
     private func canCrossRange(_ direction: Int) -> Bool {

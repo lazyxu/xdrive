@@ -91,5 +91,8 @@ test('return wall uses verified adjacent range and last accepted Node revision',
   assert.match(wall, /viewerLoadedRange = nil/)
   assert.match(preview, /visibleItems: \[XDriveIOSNativeMediaItem\]/)
   assert.match(preview, /crossedRange\?\.items \?\? loadedItems/)
+  assert.match(preview, /return visibleItems\[index\]/,
+    'after crossing, next and previous MUST read the current range, never the initial range')
+  assert.doesNotMatch(preview, /return loadedItems\[index\]/)
   assert.match(preview, /visibleItems\.map/)
 })
