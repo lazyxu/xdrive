@@ -56,12 +56,13 @@ export function useViewerNode({ api, gallerySource, nodeID, contextID, predicate
   const [content, setContent] = useState<{
     owner: typeof owner
     nodeID: number
+    index: number
     node: Node | null
     mediaItem: MediaItem | null
     totalCount: number
     loading: boolean
     error: string
-  }>({ owner, nodeID, node: null, mediaItem: null, totalCount: 0, loading: true, error: '' })
+  }>({ owner, nodeID, index: activeIndex, node: null, mediaItem: null, totalCount: 0, loading: true, error: '' })
   const [neighbors, setNeighbors] = useState<{
     session: typeof session
     index: number
@@ -81,27 +82,27 @@ export function useViewerNode({ api, gallerySource, nodeID, contextID, predicate
     let active = true
     const selected = currentCandidateRef.current
     if (selected?.owner !== owner || selected.candidate.node.id !== nodeID || selected.candidate.index !== activeIndex) {
-      setContent({ owner, nodeID, node: null, mediaItem: null, totalCount: 0, loading: true, error: '' })
+      setContent({ owner, nodeID, index: activeIndex, node: null, mediaItem: null, totalCount: 0, loading: true, error: '' })
     }
     if (unavailableBrowseScope) {
-      setContent({ owner, nodeID, node: null, mediaItem: null, totalCount: 0,
+      setContent({ owner, nodeID, index: activeIndex, node: null, mediaItem: null, totalCount: 0,
         loading: false, error: privateMapRoute
           ? '地图照片范围已失效，请返回地图重新选择。'
           : '浏览范围已失效，请返回重新打开。' })
       return
     }
     void session.current(nodeID, activeIndex, wantsMedia).then((candidate) => {
-      if (active) {
+      if (active && activeReaderRef.current.session === session) {
         if (wantsMedia && !candidate.mediaItem) {
-          setContent({owner,nodeID,node:null,mediaItem:null,totalCount:0,
+          setContent({owner,nodeID,index:activeIndex,node:null,mediaItem:null,totalCount:0,
             loading:false,error:'当前媒体信息不可用，请重试。'})
           return
         }
         currentCandidateRef.current = { owner, candidate }
-        setContent({ owner, nodeID, node: candidate.node, mediaItem: candidate.mediaItem ?? null, totalCount: candidate.totalCount, loading: false, error: '' })
+        setContent({ owner, nodeID, index: activeIndex, node: candidate.node, mediaItem: candidate.mediaItem ?? null, totalCount: candidate.totalCount, loading: false, error: '' })
       }
     }).catch((reason) => {
-      if (active) setContent({ owner, nodeID, node: null, mediaItem: null, totalCount: 0, loading: false, error: reason instanceof Error ? reason.message : String(reason) })
+      if (active && activeReaderRef.current.session === session) setContent({ owner, nodeID, index: activeIndex, node: null, mediaItem: null, totalCount: 0, loading: false, error: reason instanceof Error ? reason.message : String(reason) })
     })
     return () => { active = false }
   }, [owner, session, nodeID, activeIndex, wantsMedia, refresh, unavailableBrowseScope, privateMapRoute])
@@ -121,7 +122,11 @@ export function useViewerNode({ api, gallerySource, nodeID, contextID, predicate
     return () => { active = false }
   }, [session, activeIndex, nodeID, predicate, refresh, unavailableBrowseScope])
 
-  const currentContent = content.owner === owner && content.nodeID === nodeID ? content : null
+  // Directory/search/gallery membership may include repeated Node IDs. A
+  // different browse index owns a different selection even for the same file;
+  // never keep a previous index's media, error or loading state on screen.
+  const currentContent = content.owner === owner && content.nodeID === nodeID &&
+    content.index === activeIndex ? content : null
   const currentNeighbors = neighbors?.session === session && neighbors.index === activeIndex && neighbors.nodeID === nodeID ? neighbors : null
   const previous = currentNeighbors?.previous ?? null
   const next = currentNeighbors?.next ?? null
@@ -162,9 +167,11 @@ export function useViewerNode({ api, gallerySource, nodeID, contextID, predicate
     filmstrip.nodeID === nodeID ? filmstrip.entries : []
 
   function navigate(candidate: XDriveWebViewerCandidate | null) {
-    if (unavailableBrowseScope || !candidate) return
+    if (unavailableBrowseScope || !candidate ||
+        activeReaderRef.current.owner !== owner ||
+        activeReaderRef.current.session !== session) return
     currentCandidateRef.current = { owner, candidate }
-    setContent({ owner, nodeID: candidate.node.id, node: candidate.node, mediaItem: candidate.mediaItem ?? null,
+    setContent({ owner, nodeID: candidate.node.id, index: candidate.index, node: candidate.node, mediaItem: candidate.mediaItem ?? null,
       totalCount: candidate.totalCount, loading: false, error: '' })
     setPosition({ context, index: candidate.index })
     if (context && contextID) xDriveWriteWebAppBrowseSession(contextID, { ...context, activeIndex: candidate.index } as XDriveWebAppBrowseContext)
@@ -180,7 +187,8 @@ export function useViewerNode({ api, gallerySource, nodeID, contextID, predicate
       selected.candidate.node.revision === updated.node.revision) {
       currentCandidateRef.current = { owner, candidate: { ...selected.candidate, node: updated.node, mediaItem: updated } }
     }
-    setContent((current) => current.owner === owner && current.nodeID === item.node.id && current.node?.revision === item.node.revision
+    setContent((current) => current.owner === owner && current.index === activeIndex &&
+      current.nodeID === item.node.id && current.node?.revision === item.node.revision
       ? { ...current, node: updated.node, mediaItem: patch ? { ...(current.mediaItem ?? updated), ...patch } : updated } : current)
     setNeighbors((current) => {
       if (current?.session !== activeReaderRef.current.session) return current
@@ -201,7 +209,7 @@ export function useViewerNode({ api, gallerySource, nodeID, contextID, predicate
         !currentContent?.error || currentContent.loading) return
     retrySessionRef.current = session
     currentCandidateRef.current = null
-    setContent({owner,nodeID,node:null,mediaItem:null,totalCount:0,
+    setContent({owner,nodeID,index:activeIndex,node:null,mediaItem:null,totalCount:0,
       loading:true,error:''})
     setRefresh((value)=>value+1)
   }

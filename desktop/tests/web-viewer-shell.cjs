@@ -9,6 +9,8 @@ const { act, create } = require('react-test-renderer')
 const repo = path.resolve(__dirname, '../..')
 let compactTouch = false
 let viewportWidth = 390
+let viewportHeight = 844
+let landscape = false
 const timers = new Map()
 let timerID = 0
 const storage = new Map()
@@ -37,6 +39,9 @@ const mui = {
     if (query === '(max-width:367.95px)') return viewportWidth < 368
     if (query === '(max-width:899.95px) and (pointer: coarse)') {
       return compactTouch && viewportWidth < 900
+    }
+    if (query === '(orientation: landscape) and (max-height: 500px) and (pointer: coarse)') {
+      return compactTouch && landscape && viewportHeight <= 500
     }
     return compactTouch
   },
@@ -413,6 +418,114 @@ test('P1-2c Web media-viewer uses the same narrow Photos chrome on coarse and fi
   } finally {
     compactTouch = false
     viewportWidth = 390
+  }
+})
+
+
+test('P0 Web/PWA wide phone landscape keeps Gallery Viewer touch chrome and media lease through rotation', async () => {
+  compactTouch = true
+  viewportWidth = 390
+  viewportHeight = 844
+  landscape = false
+  const node = { id: 886, revision: 12, type: 'file', name: 'clip.mp4', size: 3000 }
+  const item = { node, metadata: { media_kind: 'video', mime_type: 'video/mp4', index_state: 'ready' } }
+  const api = { node: async () => node, mediaItem: async () => item }
+  const gallerySource = { loadPreviewURL: async () => 'https://example.invalid/video.mp4', loadThumbnail: async () => null }
+  const props = {
+    route: { app: 'media-viewer', params: { node: node.id } },
+    api, gallerySource, shareDialogAdapter: {}, onClose() {}, onReplaceRoute() {},
+    onError(error) { throw error },
+  }
+  let renderer
+  const frame = () => renderer.root.find(el => el.props['data-xdrive-web-viewer'] !== undefined)
+  const content = () => renderer.root.find(el => el.type === 'media-content')
+  try {
+    await act(async () => { renderer = create(React.createElement(WebFileViewerApps, props),
+      { createNodeMock: () => ({ focus() {} }) }) })
+    const originalContent = content()
+    assert.equal(originalContent.props.videoControlsSafeArea, 'actions')
+
+    // Real wide iPhone landscape CSS viewport: 956x440, above the 900px cutoff.
+    // Re-render the same mounted Viewer: only chrome changes, no media remount.
+    viewportWidth = 956
+    viewportHeight = 440
+    landscape = true
+    await act(async () => renderer.update(React.createElement(WebFileViewerApps, props)))
+    assert.equal(frame().props.sx.height, '100dvh')
+    assert.equal(frame().find(el => el.props['data-xdrive-web-viewer-chrome'] === 'header').props.sx.position, 'absolute')
+    assert.equal(frame().props.onMouseMove, undefined, 'touch moves must not revive faded controls')
+    const rails = frame().findAll(el => el.type === 'div' &&
+      el.props['data-xdrive-web-viewer-mobile-actions'] !== undefined)
+    assert.equal(rails.length, 1)
+    assert.equal(rails[0].props.sx['& .MuiIconButton-root'].width, 44)
+    assert.equal(rails[0].props.sx.pb, 'env(safe-area-inset-bottom)')
+    assert.equal(rails[0].findAll(el => el.type === 'button' &&
+      el.props['aria-label'] === '更多照片操作').length, 1)
+    assert.equal(frame().props.sx['--xdrive-viewer-video-actions-clearance'],
+      'calc(56px + env(safe-area-inset-bottom))')
+    assert.equal(content(), originalContent, 'rotation must retain the same media renderer')
+    assert.equal(content().props.videoControlsSafeArea, 'actions')
+
+    viewportWidth = 390
+    viewportHeight = 844
+    landscape = false
+    await act(async () => renderer.update(React.createElement(WebFileViewerApps, props)))
+    assert.equal(content(), originalContent, 'returning to portrait must retain video playback')
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    compactTouch = false
+    viewportWidth = 390
+    viewportHeight = 844
+    landscape = false
+  }
+})
+
+test('P0 Web/PWA short phone landscape preserves Files Quick Look and standalone touch actions', async () => {
+  try {
+    compactTouch = true
+    viewportWidth = 956
+    viewportHeight = 440
+    landscape = true
+    for (const [app, name] of [
+      ['preview', 'clip.mp4'], ['text-viewer', 'notes.txt'],
+      ['pdf-viewer', 'book.pdf'], ['audio-player', 'recording.mp3'],
+    ]) {
+      const renderer = await mount(app, name)
+      try {
+        const frame = renderer.root.find(el => el.props['data-xdrive-web-viewer'] !== undefined)
+        const rails = frame.findAll(el => el.type === 'div' &&
+          el.props['data-xdrive-web-viewer-mobile-actions'] !== undefined)
+        assert.equal(frame.props.sx.height, '100dvh', app)
+        assert.equal(frame.find(el => el.props['data-xdrive-web-viewer-chrome'] === 'header').props.sx.position, app === 'preview' ? 'absolute' : 'relative',
+          app + ' keeps its own immersive header policy')
+        assert.equal(rails.length, 1, app + ' keeps a reachable mobile action rail')
+        assert.equal(rails[0].props.sx['& .MuiIconButton-root'].width, 44)
+        assert.equal(buttons(renderer, '返回').length, 1)
+        if (app === 'text-viewer') {
+          const textarea = renderer.root.find(el => el.type === 'textarea')
+          assert.equal(textarea.props.sx.fontSize, 16, 'mobile code text avoids iOS focus zoom')
+        }
+      } finally {
+        await act(async () => renderer.unmount())
+      }
+    }
+    // A wide but taller touch tablet must retain desktop chrome; width is
+    // not enough to make it a short-landscape phone.
+    viewportHeight = 650
+    const tablet = await mount('media-viewer', 'photo.jpg')
+    try {
+      const frame = tablet.root.find(el => el.props['data-xdrive-web-viewer'] !== undefined)
+      assert.equal(frame.props.sx.height, undefined)
+      assert.equal(frame.findAll(el => el.type === 'div' &&
+        el.props['data-xdrive-web-viewer-mobile-actions'] !== undefined).length, 0)
+    } finally {
+      await act(async () => tablet.unmount())
+    }
+  } finally {
+    compactTouch = false
+    viewportWidth = 390
+    viewportHeight = 844
+    landscape = false
   }
 })
 
@@ -1804,6 +1917,10 @@ test('P0 Files Quick Look fences Share/Tags across routes and identical Node/rev
 })
 
 test('P0 Web Quick Look thumbnail and standalone PDF/audio forward the real abort signal', async () => {
+  // The real PDF ticket preflight needs an origin; the cross-origin HEAD/MIME
+  // checks have dedicated tests. Exercise the authenticated same-origin path.
+  const previousLocation = window.location
+  window.location = { href: 'https://web.xdrive.example/#/files' }
   const seen = []
   const api = {
     node: async id => ({ id, revision: 9, type: 'file',
@@ -1814,7 +1931,7 @@ test('P0 Web Quick Look thumbnail and standalone PDF/audio forward the real abor
     },
     filePreviewURL: async (id, signal) => {
       seen.push(['preview-ticket', id, signal])
-      return '/authenticated/preview'
+      return `/api/v1/file-preview/${id}?ticket=signed-fixture-${id}`
     },
   }
   const props = (app, node) => ({
@@ -1841,12 +1958,13 @@ test('P0 Web Quick Look thumbnail and standalone PDF/audio forward the real abor
       content = renderer.root.find(el => el.type === 'preview-content')
       const controller = new AbortController()
       assert.equal(await content.props.loadPreviewURL(content.props.target, kind, controller.signal),
-        '/authenticated/preview')
+        `/api/v1/file-preview/${id}?ticket=signed-fixture-${id}`)
       assert.deepEqual(seen.at(-1), ['preview-ticket', id, controller.signal],
         app + ' must forward the shared surface AbortSignal to the signed ticket request')
     }
   } finally {
     if (renderer) await act(async () => renderer.unmount())
+    window.location = previousLocation
   }
 })
 
@@ -2813,7 +2931,7 @@ test('P0 old metadata-retry callback cannot re-read another route, including A�
   }
 })
 
-test('P0 PDF keeps no metadata-retry action and masks untrusted terminal errors', async () => {
+test('P0 PDF metadata errors have an explicit retry without exposing untrusted details', async () => {
   let renderer
   try {
     await act(async () => {
@@ -2824,7 +2942,7 @@ test('P0 PDF keeps no metadata-retry action and masks untrusted terminal errors'
         onReplaceRoute() {}, onClose() {}, onError(error) { throw error },
       }), { createNodeMock: () => ({ focus() {} }) })
     })
-    assert.equal(buttons(renderer, '重试加载').length, 0)
+    assert.equal(buttons(renderer, '重试加载').length, 1)
     const errors = renderer.root.findAll(el => el.type === 'p' && el.props.role === 'alert')
     assert.equal(errors.length, 1)
     assert.equal(errors[0].children.join(''), '读取失败，请重试。')
@@ -2833,7 +2951,7 @@ test('P0 PDF keeps no metadata-retry action and masks untrusted terminal errors'
   }
 })
 
-for (const app of ['media-viewer', 'text-viewer', 'audio-player']) {
+for (const app of ['media-viewer', 'text-viewer', 'audio-player', 'pdf-viewer']) {
   test(`P0 ${app} empty successful metadata becomes retryable error instead of infinite quiet loading`, async () => {
     const actualNode = { id: 987, revision: 1, name: 'unexpected-empty.png', type: 'file', size: 13 }
     const api = {
@@ -2885,7 +3003,7 @@ test('P0 routed Viewer never renders signed URL, token or filesystem path from m
       assert.equal(visible,'读取失败，请重试。')
       assert.ok(!visible.includes('ticket=') && !visible.includes('Bearer') &&
         !visible.includes('/var/private') && !visible.includes('a'.repeat(64)))
-      assert.equal(buttons(renderer,'重试加载').length, app === 'pdf-viewer' ? 0 : 1)
+      assert.equal(buttons(renderer,'重试加载').length, 1)
     } finally {if(renderer)await act(async()=>renderer.unmount())}
   }
 })
@@ -2905,4 +3023,327 @@ test('P0 trusted Viewer metadata messages remain actionable without exposing arb
     assert.equal(message.children.join(''),'文件版本已更改，请重新打开。')
     assert.equal(buttons(renderer,'重试加载').length,1)
   }finally{if(renderer)await act(async()=>renderer.unmount())}
+})
+
+
+test('P0 Web Quick Look retains authorized loader leases across frame re-renders and HEIC/RAW derives JPEG', async () => {
+  const calls = []
+  const node = { id: 741, revision: 11, name: 'clip.mp4', type: 'file', size: 1024 }
+  const api = {
+    node: async () => node,
+    fileTextPreview: async () => ({ text: 'ok', size: 2, truncated: false }),
+    filePreviewURL: async (id) => {
+      calls.push(['original', id])
+      return 'https://api.xdrive.example/api/v1/file-preview/' + id + '?ticket=valid'
+    },
+    mediaAnalysisPreviewURL: async (id, _signal, revision) => {
+      calls.push(['derivative', id, revision])
+      return 'blob:compatible-jpeg'
+    },
+    mediaLivePhotoStillURL: async () => 'blob:live-still',
+    mediaLivePhotoMotionURL: async () => 'blob:live-motion',
+  }
+  const props = {
+    route: { app: 'preview', params: { node: 741 } },
+    api, gallerySource: {}, shareDialogAdapter: {},
+    onClose() {}, onReplaceRoute() {}, onError(error) { throw error },
+  }
+  let renderer
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(WebFileViewerApps, props),
+        { createNodeMock: () => ({ focus() {} }) })
+    })
+    const initial = renderer.root.findByType('preview-content').props
+    await act(async () => {
+      renderer.update(React.createElement(WebFileViewerApps, { ...props }))
+    })
+    const rerendered = renderer.root.findByType('preview-content').props
+    assert.equal(rerendered.loadPreviewURL, initial.loadPreviewURL,
+      'a frame redraw must not restart a playing signed video or PDF ticket')
+    assert.equal(rerendered.loadTextPreview, initial.loadTextPreview)
+    assert.equal(rerendered.loadLivePhotoMotion, initial.loadLivePhotoMotion)
+    const signal = new AbortController().signal
+    for (const name of ['photo.HEIC', 'camera.NEF', 'asset.CR3']) {
+      const url = await rerendered.loadPreviewURL(
+        { id: 741, revision: 11, name, kind: 'file' }, 'image', signal)
+      assert.equal(url, 'blob:compatible-jpeg')
+    }
+    assert.deepEqual(calls, [
+      ['derivative', 741, 11],
+      ['derivative', 741, 11],
+      ['derivative', 741, 11],
+    ], 'browser-incompatible photos use the version-scoped JPEG derivative')
+    await rerendered.loadPreviewURL({ id: 741, revision: 11, name: 'clip.mp4', kind: 'file' }, 'video', signal)
+    assert.deepEqual(calls.at(-1), ['original', 741],
+      'video retains its authorized streaming URL path, no thumbnail-as-frame workaround')
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+  }
+})
+
+
+test('P0 Web Quick Look preserves 4K Viewer image preview with older Server fallback', async () => {
+  const node = { id: 892, revision: 14, name: 'photo.HEIC', type: 'file', size: 250 }
+  const calls = []
+  let newServerAvailable = true
+  const api = {
+    node: async () => node,
+    mediaViewerPreviewURL: async (id, signal, revision, onProgress) => {
+      calls.push(['4k', id, signal, revision, onProgress])
+      if (!newServerAvailable) throw new Error('older Server')
+      return 'blob:4k-webp'
+    },
+    mediaAnalysisPreviewURL: async (id, signal, revision, onProgress) => {
+      calls.push(['jpeg', id, signal, revision, onProgress])
+      return 'blob:older-jpeg'
+    },
+    mediaLivePhotoStillURL: async (id, signal) => {
+      calls.push(['still', id, signal])
+      return 'blob:still'
+    },
+    filePreviewURL: async (id, signal) => {
+      calls.push(['video', id, signal])
+      return 'blob:video'
+    },
+  }
+  const props = {
+    route: { app: 'preview', params: { node: 892 } },
+    api, gallerySource: {}, shareDialogAdapter: {},
+    onClose() {}, onReplaceRoute() {}, onError(error) { throw error },
+  }
+  let renderer
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(WebFileViewerApps, props),
+        { createNodeMock: () => ({ focus() {} }) })
+    })
+    const preview = renderer.root.findByType('preview-content').props
+    assert.equal(preview.showImageDetails, true,
+      '4K Viewer metadata remains visible in the shared Web preview')
+    const signal = new AbortController().signal
+    const progress = () => {}
+    const file = { id: 892, revision: 14, name: 'photo.HEIC', kind: 'file' }
+    assert.equal(await preview.loadPreviewURL(file, 'image', signal, progress), 'blob:4k-webp')
+    assert.deepEqual(calls.at(-1), ['4k', 892, signal, 14, progress])
+
+    newServerAvailable = false
+    assert.equal(await preview.loadPreviewURL(
+      { ...file, name: 'camera.CR3' }, 'image', signal, progress), 'blob:older-jpeg')
+    assert.deepEqual(calls.slice(-2), [
+      ['4k', 892, signal, 14, progress], ['jpeg', 892, signal, 14, progress],
+    ], 'legacy JPEG reads the same current version with true byte progress')
+    assert.equal(await preview.loadPreviewURL(
+      { ...file, name: 'live.livp' }, 'live_photo', signal), 'blob:still')
+    assert.deepEqual(calls.slice(-2).map(row => row[0]), ['4k', 'still'],
+      'unsupported Live derivation retains the exact signed still URL')
+
+    const controller = new AbortController()
+    controller.abort()
+    const count = calls.length
+    await assert.rejects(preview.loadPreviewURL(file, 'image', controller.signal, progress),
+      error => error?.name === 'AbortError')
+    assert.equal(calls.length, count + 1,
+      'cancelled 4K request must not launch a legacy JPEG request')
+    assert.equal(await preview.loadPreviewURL(
+      { ...file, name: 'clip.mp4' }, 'video', signal), 'blob:video')
+    assert.equal(calls.at(-1)[0], 'video',
+      'native video retains its original signed media stream')
+    await act(async () => renderer.update(React.createElement(WebFileViewerApps, { ...props })))
+    assert.equal(renderer.root.findByType('preview-content').props.loadPreviewURL, preview.loadPreviewURL,
+      'a Web frame redraw must not recreate the active media loader')
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+  }
+})
+
+test('P0 Web standalone PDF/audio retain stable loaders; PDF rejects HTML error pages before iframe', async () => {
+  const oldFetch = global.fetch
+  const oldLocation = window.location
+  window.location = { href: 'https://web.xdrive.example/#/files' }
+  const captures = []
+  global.fetch = async (url, options) => {
+    captures.push({ url, options })
+    return {
+      status: captures.length === 1 ? 404 : 200,
+      headers: { get: () => captures.length === 1 ? 'text/html' : 'application/pdf' },
+    }
+  }
+  try {
+    for (const app of ['pdf-viewer', 'audio-player']) {
+      const node = { id: 742, revision: 3, name: app === 'pdf-viewer' ? 'paper.pdf' : 'song.mp3',
+        type: 'file', size: 123 }
+      const api = {
+        node: async () => node,
+        filePreviewURL: async (id) =>
+          'https://api.xdrive.example/api/v1/file-preview/' + id + '?ticket=verified',
+      }
+      const props = {
+        route: { app, params: { node: 742 } }, api,
+        gallerySource: {}, shareDialogAdapter: {},
+        onClose() {}, onReplaceRoute() {}, onError(error) { throw error },
+      }
+      let renderer
+      try {
+        await act(async () => {
+          renderer = create(React.createElement(WebFileViewerApps, props),
+            { createNodeMock: () => ({ focus() {} }) })
+        })
+        const first = renderer.root.findByType('preview-content').props
+        await act(async () => renderer.update(React.createElement(WebFileViewerApps, { ...props })))
+        const next = renderer.root.findByType('preview-content').props
+        assert.equal(first.loadPreviewURL, next.loadPreviewURL,
+          app + ' should keep its existing renderer and HTTP range on redraw')
+        const signal = new AbortController().signal
+        if (app === 'pdf-viewer') {
+          await assert.rejects(
+            next.loadPreviewURL({ id: 742, kind: 'file', name: 'paper.pdf' }, 'pdf', signal),
+            /PDF preview stream is not available/)
+          const result = await next.loadPreviewURL(
+            { id: 742, kind: 'file', name: 'paper.pdf' }, 'pdf', signal)
+          assert.match(result, /ticket=verified/)
+          assert.equal(captures.length, 2)
+          for (const capture of captures) {
+            assert.equal(capture.options.method, 'HEAD')
+            assert.equal(capture.options.credentials, 'omit')
+          }
+        } else {
+          const url = await next.loadPreviewURL(
+            { id: 742, kind: 'file', name: 'song.mp3' }, 'audio', signal)
+          assert.match(url, /ticket=verified/)
+          assert.equal(captures.length, 2,
+            'audio path never performs a PDF-only request')
+        }
+      } finally {
+        if (renderer) await act(async () => renderer.unmount())
+      }
+    }
+  } finally {
+    global.fetch = oldFetch
+    window.location = oldLocation
+  }
+})
+
+
+test('P0 Web Gallery same Node in two browse positions updates the active Viewer selection', async () => {
+  const contextID = 'web-pwa-duplicate-node-index'
+  const key = 'xdrive.web_app.session.v1:' + contextID
+  const node = { id: 743, revision: 1, name: 'repeat.jpg', type: 'file', size: 32 }
+  const items = ['2026-10-01T00:00:00Z', '2026-11-01T00:00:00Z'].map(date => ({
+    node, metadata: {
+      media_kind: 'image', mime_type: 'image/jpeg',
+      index_state: 'ready', has_thumbnail: false, captured_at: date,
+    },
+  }))
+  storage.set(key, JSON.stringify({ version: 1, context: {
+    kind: 'gallery', target: { kind: 'all', query: {} }, activeIndex: 0, totalCount: 2,
+  } }))
+  const visits = []
+  const api = { node: async () => node, mediaItem: async () => items[0] }
+  const gallerySource = {
+    loadThumbnail: async () => null,
+    listItemRange: async (limit, offset) => ({
+      items: items.slice(offset, offset + limit), offset, limit, total_count: 2,
+    }),
+  }
+  let renderer
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(WebFileViewerApps, {
+        route: { app: 'media-viewer', params: { node: node.id, context: contextID } },
+        api, gallerySource, shareDialogAdapter: {},
+        onReplaceRoute(next) { visits.push(next.params.node) },
+        onClose() {}, onError(error) { throw error },
+      }), { createNodeMock: () => ({ focus() {} }) })
+    })
+    for (let n = 0; n < 4; n++) {
+      await act(async () => new Promise(resolve => setImmediate(resolve)))
+    }
+    const current = () => renderer.root.findByType('media-content').props.item
+    assert.equal(current().metadata.captured_at, '2026-10-01T00:00:00Z')
+    const strip = renderer.root.findByType('gallery-filmstrip')
+    await act(async () => { strip.props.onSelect(1) })
+    assert.deepEqual(visits, [743], 'same Node ID still preserves its browse index navigation')
+    assert.equal(current().metadata.captured_at, '2026-11-01T00:00:00Z',
+      'previous index metadata must not overwrite the selected entry')
+    assert.equal(renderer.root.findByType('gallery-filmstrip').props.activeIndex, 1)
+    assert.equal(JSON.parse(storage.get(key)).context.activeIndex, 1)
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    storage.delete(key)
+  }
+})
+
+
+test('P0 Web/PWA cross-format route A→PDF→A aborts superseded metadata without old media', async () => {
+  const still = { id: 851, revision: 2, name: 'first.HEIC', type: 'file', size: 121 }
+  const pdf = { id: 852, revision: 4, name: 'second.pdf', type: 'file', size: 222 }
+  const requests = []
+  const api = {
+    node(id, signal) {
+      return new Promise(resolve => requests.push({ id, signal, resolve }))
+    },
+    mediaAnalysisPreviewURL: async () => 'blob:compatible-jpeg',
+    filePreviewURL: async id => '/api/v1/file-preview/' + id + '?ticket=test',
+    mediaLivePhotoStillURL: async () => 'blob:still',
+    mediaLivePhotoMotionURL: async () => 'blob:motion',
+  }
+  const props = (app, id) => ({
+    route: { app, params: { node: id } },
+    api, gallerySource: {}, shareDialogAdapter: {},
+    onClose() {}, onReplaceRoute() {}, onError(error) { throw error },
+  })
+  let renderer
+  const surface = () => renderer.root.findAll(el => el.type === 'preview-content')
+  const quiet = () => renderer.root.findAll(el => el.type === 'div' &&
+    el.props['data-xdrive-web-viewer-quiet-first-read'] !== undefined)
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(WebFileViewerApps, props('preview', still.id)),
+        { createNodeMock: () => ({ focus() {} }) })
+    })
+    assert.equal(requests.length, 1)
+    const first = requests[0]
+    assert.equal(first.id, still.id)
+    assert.equal(quiet().length, 1)
+
+    await act(async () => {
+      renderer.update(React.createElement(WebFileViewerApps, props('pdf-viewer', pdf.id)))
+    })
+    assert.equal(first.signal.aborted, true,
+      'leaving Files Quick Look must revoke the pending metadata request')
+    assert.equal(surface().length, 0, 'no HEIC preview can remain under the PDF route')
+    assert.equal(quiet().length, 1)
+    assert.equal(requests.length, 2)
+    const middle = requests[1]
+    assert.equal(middle.id, pdf.id)
+
+    await act(async () => { first.resolve(still); await Promise.resolve() })
+    assert.equal(surface().length, 0, 'late HEIC metadata cannot paint into PDF')
+    await act(async () => { middle.resolve(pdf); await Promise.resolve() })
+    assert.equal(surface().length, 1)
+    assert.equal(surface()[0].props.target.id, pdf.id)
+
+    await act(async () => {
+      renderer.update(React.createElement(WebFileViewerApps, props('preview', still.id)))
+    })
+    assert.equal(middle.signal.aborted, true)
+    assert.equal(surface().length, 0,
+      'returning to A cannot reuse the retired first A or PDF render')
+    assert.equal(quiet().length, 1)
+    assert.equal(requests.length, 3)
+    const current = requests[2]
+    assert.equal(current.id, still.id)
+    assert.notEqual(current.signal, first.signal)
+    await act(async () => { current.resolve(still); await Promise.resolve() })
+    assert.equal(surface().length, 1)
+    assert.equal(surface()[0].props.target.id, still.id)
+    assert.equal(surface()[0].props.target.revision, still.revision)
+    const compatible = await surface()[0].props.loadPreviewURL(
+      { id: still.id, revision: still.revision, name: still.name, kind: 'file' },
+      'image', new AbortController().signal)
+    assert.equal(compatible, 'blob:compatible-jpeg')
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+  }
 })
