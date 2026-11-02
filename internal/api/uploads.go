@@ -992,6 +992,13 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 		if time.Now().After(currentSession.ExpiresAt) {
 			return errUploadExpired
 		}
+		// A session created before namespace initialization cannot write into
+		// the now-managed subtree, even after it finished sending all chunks.
+		if currentSession.NodeID != nil {
+			if err := notesRejectNodeWithReason(c.Request.Context(), tx, currentSession.OwnerID, *currentSession.NodeID); err != nil { return err }
+		} else if currentSession.ParentID != nil {
+			if err := notesRejectDestinationWithReason(c.Request.Context(), tx, currentSession.OwnerID, *currentSession.ParentID, currentSession.Name); err != nil { return err }
+		}
 		if currentSession.ShareID != nil {
 			if currentSession.ParentID == nil || currentSession.NodeID != nil ||
 				currentSession.ConflictPolicy != meta.UploadConflictPolicyKeepBoth {
@@ -1163,6 +1170,8 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 			revisionConflict(c, session.ExpectedRevision, currentRevision)
 		case errors.Is(err, errUploadNameTaken) || isDuplicate(err):
 			fail(c, http.StatusConflict, "name already exists")
+		case errors.Is(err, errNotesManagedPath):
+			fail(c, http.StatusConflict, errNotesManagedPath.Error())
 		case errors.Is(err, errLocalPushCommonUploadUnavailable):
 			fail(c, http.StatusConflict, "private local upload operation unavailable")
 		default:
