@@ -43,14 +43,19 @@ test('Host-disabled Search never dispatches even through direct command callback
   assert.deepEqual(calls, ['authorized'], 'Desktop keeps its original authenticated search')
 })
 
-test('shared Files toolbar disables unsupported operations while allowing verified Owner folder creation', () => {
+test('shared Files toolbar disables unsupported operations while allowing verified Owner folder creation and search', () => {
   for (const name of [
-    'search', 'uploadFiles', 'uploadFolder',
+    'uploadFiles', 'uploadFolder',
     'copy', 'cut', 'paste', 'delete', 'moveTo', 'copyTo', 'manageTags',
   ]) {
     assert.ok(explorer.includes("'" + name + "'"), name + ' missing from shared capability contract')
     assert.ok(host.includes(name + ": 'DSM"), name + ' missing genuine DSM Host explanation')
   }
+  assert.equal(host.includes("search: 'DSM"), false,
+    'verified Owner-wide search must not remain disabled by the DSM Host')
+  assert.ok(dsm.includes('onSearch={search.start}') &&
+    dsm.includes('searchEnabled'),
+    'the shared search bar must dispatch only through the authenticated DSM search hook')
   // DSM now explicitly supports only Owner-scoped new-folder creation;
   // remaining unsupported mutations still require genuine Host reasons.
   assert.equal(host.includes("createFolder: 'DSM"), false,

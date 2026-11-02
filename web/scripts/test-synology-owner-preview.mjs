@@ -137,14 +137,35 @@ async function mount(extraRows = []) {
     ['xDriveFileExplorerReadOnlyDownloadReason'],
     ownerIdentity,
   )
+  // Run the actual Owner search Hook, including the real Server UTF-8 query
+  // validator, alongside the original Viewer/download controller. Preview
+  // tests may not accidentally dispatch search or bypass Owner identity.
+  const adapter = read('ui/shared/src/synology-backup-adapter.ts')
+  const validatorSource = adapter.match(/export function xDriveSynologyValidOwnerSearchQuery\([\s\S]*?\n}\n/)?.[0]
+  assert.ok(validatorSource, 'Owner search query validator must remain present')
+  const validateOwnerSearchQuery = new Function(
+    stripTypeScriptTypes(validatorSource).replace(/^export function /, 'function ') +
+      '\nreturn xDriveSynologyValidOwnerSearchQuery',
+  )()
+  const searchHook = loadPlainModule(
+    'ui/shared/src/mui/SynologyOwnerFilesSearch.ts',
+    ['useXDriveSynologyOwnerFilesSearch'],
+    { ...hooks, xDriveSynologyValidOwnerSearchQuery: validateOwnerSearchQuery,
+      xDriveFileSupportsThumbnail: name =>
+        /\.(?:jpg|jpeg|png|gif|webp|heic|heif|dng|tif|tiff|arw|nef|cr3|avif|bmp|livp|mov|mp4)$/i.test(name),
+      AbortController },
+  )
   const client = {
+    async ownerSearchPage() {
+      throw Error('Viewer/download tests must never issue an Owner-wide search')
+    },
     async ownerFilesRoot() { return { id: 1, name: 'Owner' } },
     async ownerFilesPage() { return { items: [...rows, ...extraRows], has_more: false } },
     async ownerQuota() { return { over_quota: false } },
   }
   let currentClient = client
   const bindings = { ...hooks, ...ownerFence, ...cursorDirectory, ...quota, ...viewPreference,
-    ...viewerSelection, ...readOnlyDownload,
+    ...searchHook, ...viewerSelection, ...readOnlyDownload,
     ...ownerIdentity, ...classification, ...derived, ...media, ...stream, ...scope,
     XDRIVE_SYNOLOGY_OWNER_DOWNLOAD_MAX_BYTES: 32 << 20,
     // Test the real Controller's fallback admission, modeling only the

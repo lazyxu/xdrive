@@ -75,7 +75,7 @@ var backupOnlyAllowedIPCRoutes = map[string]struct{}{
 	"DELETE /v1/device-backups/local-bound":                     {},
 	"GET /v1/cloud/quota":                                       {},
 	"GET /v1/cloud/root":                                        {},
-	"GET /v1/cloud/owner-search":                               {},
+	"GET /v1/cloud/owner-search":                                {},
 	"GET /v1/cloud/children":                                    {},
 	"POST /v1/cloud/directories":                                {},
 	"PATCH /v1/cloud/nodes":                                     {},

@@ -16,7 +16,7 @@ func TestOwnerSearchPageIsBoundedAndOwnerScoped(t *testing.T) {
 	parent := uint64(17)
 	now := time.Now().UTC()
 	valid := client.SearchPage{
-		Items:      []client.SearchResult{{
+		Items: []client.SearchResult{{
 			Node: client.Node{
 				ID: 42, ParentID: &parent, Name: "family.jpg", Type: "file",
 				Size: 1200, Revision: 3, CreatedAt: now, UpdatedAt: now,
