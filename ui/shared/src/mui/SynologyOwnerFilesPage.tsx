@@ -6,6 +6,7 @@ import type {
   XDriveSynologyBackupLocalClient, XDriveSynologyOwnerFileNode,
 } from '../synology-backup-adapter'
 import { XDriveFileExplorer } from './FileExplorer'
+import { XDriveFileNameDialog } from './FileNameDialog'
 import { xDriveFindVerifiedOwnerSelection } from './FileExplorerVerifiedOwnerSelection'
 import { xDriveFileExplorerReadOnlyDownloadReason } from './FileExplorerReadOnlyDownloadAdmission'
 import { xDriveFileExplorerReadOnlyViewerSelection } from './FileExplorerReadOnlyViewerSelection'
@@ -130,6 +131,11 @@ export function XDriveSynologyOwnerFilesPage({
     client, rootRevision, authenticatedRootCurrent,
   )
   const [notice, setNotice] = useState('')
+  const [createFolderTarget, setCreateFolderTarget] = useState<{
+    parentID: number; scopeKey: string; rootRevision: number
+    client: XDriveSynologyBackupLocalClient
+  } | null>(null)
+  useEffect(() => setCreateFolderTarget(null), [client, rootRevision, currentScopeKey])
   const [preview, setPreview] = useState<{
     scopeKey: string; rootRevision: number; client: XDriveSynologyBackupLocalClient
     item: XDriveFileExplorerItem; sessionIDs?: (string | number)[]
@@ -344,6 +350,7 @@ export function XDriveSynologyOwnerFilesPage({
     setVerifiedDownload(null)
     setNotice('')
     setPreview(null)
+    setCreateFolderTarget(null)
   }, [refreshAuthenticatedRoot])
 
   // An explicit verified Owner download continues while browsing another
@@ -457,6 +464,17 @@ export function XDriveSynologyOwnerFilesPage({
                 setCrumbs(current => current.slice(0, index + 1))
               }}
               onRefresh={refreshAuthenticatedOwner}
+              onCreateFolder={() => {
+                if (!isCurrentOwner() || !currentScopeVerified) {
+                  setNotice('请先确认当前 Server Owner 文件目录，再新建文件夹。')
+                  return
+                }
+                const parent = crumbs[crumbs.length - 1]?.id
+                if (!Number.isSafeInteger(parent) || parent < 1) return
+                setCreateFolderTarget({
+                  parentID: parent, scopeKey: currentScopeKey, rootRevision, client,
+                })
+              }}
               loadTextPreview={loadTextPreview}
               loadThumbnail={loadOwnerThumbnail}
               loadPreviewURL={loadMediaPreview}
@@ -482,7 +500,7 @@ export function XDriveSynologyOwnerFilesPage({
                 }
               }}
               statusText={currentScopeVerified
-                ? `已核实 ${displayedItems.length.toLocaleString('zh-CN')} 项${hasMore ? ' · 仍有后续页' : ''} · 云端只读`
+                ? `已核实 ${displayedItems.length.toLocaleString('zh-CN')} 项${hasMore ? ' · 仍有后续页' : ''} · 云端已开放新建文件夹`
                 : '云端账号目录尚未确认'}
             />
             {currentScopeVerified && hasMore ? (
@@ -499,6 +517,34 @@ export function XDriveSynologyOwnerFilesPage({
           </>
         ) : null}
       </Stack>
+      <XDriveFileNameDialog
+        open={createFolderTarget !== null}
+        mode="create-folder"
+        lifecycleKey={rootRevision + ':' + currentScopeKey}
+        onClose={() => setCreateFolderTarget(null)}
+        onSubmit={async (name) => {
+          const target = createFolderTarget
+          if (!target || target.client !== client || target.rootRevision !== rootRevision ||
+            target.scopeKey !== currentScopeKey || !currentScopeVerified || !isCurrentOwner() ||
+            crumbs[crumbs.length - 1]?.id !== target.parentID) {
+            throw new Error('Server Owner 文件目录已改变，请重新确认。')
+          }
+          const connection = await client.serverConnection()
+          if (!connection.configured || !/^[0-9a-f]{64}$/.test(connection.owner_scope) ||
+            !isCurrentOwner()) {
+            throw new Error('当前 Server Owner 登录状态不可用，请先刷新。')
+          }
+          const created = await client.ownerCreateFolder(target.parentID, name, connection.owner_scope)
+          if (!isCurrentOwner()) {
+            refreshAuthenticatedOwner()
+            throw new Error('Server Owner 已改变，不能确认新文件夹；请刷新核实。')
+          }
+          // Same verified folder and sort: replay its first authenticated
+          // cursor page, never splice an unverified Server node into old rows.
+          setCrumbs(current => [...current])
+          setNotice('已创建文件夹：' + created.name)
+        }}
+      />
       <XDriveFileQuickLookDialog
         key={rootRevision + ':' + currentScopeKey}
         open={previewItem !== null}

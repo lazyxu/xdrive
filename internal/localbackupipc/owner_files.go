@@ -46,6 +46,50 @@ func ValidOwnerFileCursor(cursor string) bool {
 		!strings.ContainsAny(cursor, "\x00\r\n")
 }
 
+// ValidOwnerFolderName is one literal Server Owner folder name, not a NAS path.
+func ValidOwnerFolderName(name string) bool {
+	if name == "" || name != strings.TrimSpace(name) ||
+		len(name) > 255 || !utf8.ValidString(name) ||
+		name == "." || name == ".." || strings.ContainsAny(name, "/\\") {
+		return false
+	}
+	for _, r := range name {
+		if r < 32 || r == 127 {
+			return false
+		}
+	}
+	return true
+}
+
+// ValidateOwnerCreatedFolder accepts only the exact newly created directory.
+func ValidateOwnerCreatedFolder(n OwnerFileNode, parentID uint64, name string) bool {
+	return ValidOwnerFileID(parentID) && ValidOwnerFolderName(name) &&
+		ValidOwnerFileID(n.ID) && ValidOwnerFileID(n.Revision) &&
+		n.ParentID != nil && *n.ParentID == parentID &&
+		n.Type == "dir" && n.Name == name && n.Size == 0 &&
+		!n.CreatedAt.IsZero() && !n.UpdatedAt.IsZero()
+}
+
+func (c *Client) OwnerCreateFolder(ctx context.Context, parentID uint64, name string) (OwnerFileNode, error) {
+	if c == nil || !hasCapability(c.capabilities, "cloud-folder-create") {
+		return OwnerFileNode{}, errors.New("owning Agent does not support Server Owner folder creation")
+	}
+	if !ValidOwnerFileID(parentID) || !ValidOwnerFolderName(name) {
+		return OwnerFileNode{}, errors.New("invalid Server Owner folder create selector")
+	}
+	var node client.Node
+	if err := c.request(ctx, http.MethodPost, "/v1/cloud/directories",
+		map[string]any{"parent_id": parentID, "name": name}, &node); err != nil {
+		return OwnerFileNode{}, err
+	}
+	parent := parentID
+	projected, err := ownerFileNode(node, &parent)
+	if err != nil || !ValidateOwnerCreatedFolder(projected, parentID, name) {
+		return OwnerFileNode{}, errors.New("unverified Server Owner created directory")
+	}
+	return projected, nil
+}
+
 func ownerFileNode(n client.Node, parentID *uint64) (OwnerFileNode, error) {
 	if !ValidOwnerFileID(n.ID) || !ValidOwnerFileID(n.Revision) ||
 		!safeQuotaAmount(n.Size) || !utf8.ValidString(n.Name) ||

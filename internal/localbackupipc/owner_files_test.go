@@ -2,6 +2,8 @@ package localbackupipc
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -131,5 +133,63 @@ func TestOwnerFileAgentReadRequiresCapabilityAndFixedGETOnlyIPC(t *testing.T) {
 	malformed = true
 	if _, err := agent.OwnerFilePage(context.Background(), 17, 200, "name", "asc", ""); err == nil {
 		t.Fatal("cross-parent Server result was admitted")
+	}
+}
+
+func TestOwnerFolderCreateRequiresExplicitCapabilityAndVerifiedParent(t *testing.T) {
+	now := "2026-11-02T00:00:00Z"
+	writes := 0
+	invalidParent := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writes++
+		if r.URL.Path != "/v1/cloud/directories" || r.URL.RawQuery != "" ||
+			r.Method != http.MethodPost ||
+			r.Header.Get("Authorization") != "Bearer "+strings.Repeat("a", 64) {
+			t.Errorf("unexpected native Agent folder create: %s %s", r.Method, r.URL.String())
+			http.Error(w, "invalid", http.StatusBadRequest)
+			return
+		}
+		var input map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil ||
+			len(input) != 2 || input["parent_id"] != float64(17) || input["name"] != "新文件夹" {
+			t.Errorf("wrong Owner create payload: %+v %v", input, err)
+			http.Error(w, "invalid", http.StatusBadRequest)
+			return
+		}
+		parent := 17
+		if invalidParent {
+			parent = 99
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w,
+			"{\"id\":57,\"parent_id\":%d,\"name\":\"新文件夹\",\"type\":\"dir\",\"size\":0,\"revision\":1,\"created_at\":\"%s\",\"updated_at\":\"%s\"}",
+			parent, now, now)
+	}))
+	defer server.Close()
+	agent := &Client{baseURL: server.URL, token: strings.Repeat("a", 64), http: server.Client()}
+	if _, err := agent.OwnerCreateFolder(context.Background(), 17, "新文件夹"); err == nil || writes != 0 {
+		t.Fatal("Agent without explicit create capability made a folder")
+	}
+	agent.capabilities = []string{"cloud-folder-create"}
+	for _, name := range []string{"", " ", ".", "..", "/home", "a/b", "a\\b", " bad", "bad ", "bad\nname", strings.Repeat("x", 256)} {
+		if _, err := agent.OwnerCreateFolder(context.Background(), 17, name); err == nil {
+			t.Fatalf("invalid folder name accepted: %q", name)
+		}
+	}
+	for _, id := range []uint64{0, MaxSafeSourceID + 1} {
+		if _, err := agent.OwnerCreateFolder(context.Background(), id, "New"); err == nil {
+			t.Fatal("unsafe folder parent accepted")
+		}
+	}
+	if writes != 0 {
+		t.Fatal("invalid folder selector contacted owning Agent")
+	}
+	node, err := agent.OwnerCreateFolder(context.Background(), 17, "新文件夹")
+	if err != nil || node.ID != 57 || node.ParentID == nil || *node.ParentID != 17 || writes != 1 {
+		t.Fatalf("valid Owner folder create failed: %+v %v writes=%d", node, err, writes)
+	}
+	invalidParent = true
+	if _, err := agent.OwnerCreateFolder(context.Background(), 17, "新文件夹"); err == nil || writes != 2 {
+		t.Fatal("foreign parent returned by Server was accepted")
 	}
 }
