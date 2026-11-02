@@ -84,7 +84,7 @@ function reset() {
 test('Desktop Gallery and FileExplorer both use the same decode gate for WebP/JPEG', () => {
   for (const file of ['mediaGalleryAdapter.ts', 'DesktopFileExplorer.tsx']) {
     const source = fs.readFileSync(path.join(root, 'desktop/src/renderer', file), 'utf8')
-    assert.match(source, /import \{ xDriveDesktopDecodeViewerPreviewURL \}/)
+    assert.match(source, /import \{ xDriveDesktopDecodeViewerPreviewURL(?:, xDriveDesktopRegisterLegacyJPEGViewerPreviewURL)? \}/)
     assert.match(source, /for \(const format of \['webp', 'jpeg'\] as const\)/)
     assert.match(source, /await xDriveDesktopDecodeViewerPreviewURL\(blob, format, signal\)/)
     assert.match(source, /xDriveDesktopRegisterLegacyJPEGViewerPreviewURL\(blob\)/,
