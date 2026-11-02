@@ -50,3 +50,16 @@ scheduler kinds and cache keys; the existing aged GC protects current revisions.
 Do not activate the selector in the user UI or DSM until the server-side admin
 cap and bounded cache budget are implemented and verified. This draft bridges
 the codec and account API but does not yet enforce an editable admin maximum.
+
+## Capacity planner (no deletion in this stage)
+
+The Viewer-only eviction planner recognizes precisely the six supported
+derived key signatures and models a 10 GiB default budget. It selects cold
+entries by observed last-access age, but never targets assets younger than
+24 hours, active readers/writers, or any original/CAS/thumbnail path.
+When all remaining entries are protected, it returns an explicit over-budget
+result rather than deleting live assets.
+
+This is deliberately a **dry, pure plan**: do not wire a destructive cache
+cleanup action until the actual on-disk executor can prove file identity,
+DB revision, media advisory lock and active reader leases for every deletion.
