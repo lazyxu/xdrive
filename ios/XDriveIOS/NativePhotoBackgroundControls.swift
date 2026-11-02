@@ -222,9 +222,9 @@ final class XDriveIOSNativeBackgroundPhotoControls: ObservableObject {
                       XDriveIOSPhotoBackgroundGrantPolicy.mayOfferRenewal(
                         expiresAt: current.expiresAt
                       ),
-                      !XDriveIOSBGOriginalWindowStore.shared.pausedForReview(
+                      (try XDriveIOSBGOriginalWindowStore.shared.pausedForReview(
                         owner: expectedOwner
-                      ) else {
+                      )) == false else {
                     errorMessage = "服务器授权不可续期或原件收据待核对，未发起轮换。"
                     return
                 }
