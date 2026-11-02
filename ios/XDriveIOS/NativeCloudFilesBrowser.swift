@@ -638,31 +638,6 @@ struct XDriveIOSNativeFilesBrowser: View {
                         .disabled(batchTrash.busy || batchTarget.busy ||
                               batchExport.busy || !batchExport.prepared.isEmpty ||
                               selectedIDs.isEmpty)
-                    Button("已选项复制到…") {
-                        openBatchDestination(.copy)
-                    }
-                    .disabled(!canSelectPage || selectedIDs.isEmpty)
-                    .accessibilityIdentifier("native-ios-files-batch-copy")
-                    Button("已选项移动到…") {
-                        openBatchDestination(.move)
-                    }
-                    .disabled(!canSelectPage || selectedIDs.isEmpty)
-                    .accessibilityIdentifier("native-ios-files-batch-move")
-                    Button("已选项批量下载并导出") {
-                        guard canSelectPage, let sourceParentID = parentID,
-                              selectedIDs == Set(chosenItems.map(\.id)),
-                              XDriveIOSNativeFilesBatchExportPolicy.validSelection(
-                                  chosenItems, parentID: sourceParentID
-                              ) else {
-                            batchExport.invalidSelection()
-                            return
-                        }
-                        batchExport.prepare(
-                            chosenItems, parentID: sourceParentID, login: login
-                        )
-                    }
-                    .disabled(!canSelectPage || selectedIDs.isEmpty)
-                    .accessibilityIdentifier("native-ios-files-batch-export")
                     if batchExport.busy {
                         ProgressView("正在顺序下载和核对文件…")
                         Button("取消批量下载", role: .cancel) {
@@ -683,11 +658,6 @@ struct XDriveIOSNativeFilesBrowser: View {
                         Text(status).font(.footnote).foregroundStyle(.secondary)
                             .accessibilityIdentifier("native-ios-files-batch-export-status")
                     }
-                    Button("已选项移入回收站", role: .destructive) {
-                        showingBatchTrashConfirmation = true
-                    }
-                    .disabled(!canSelectPage || selectedIDs.isEmpty)
-                    .accessibilityIdentifier("native-ios-files-batch-trash")
                     if batchTrash.busy {
                         ProgressView("正在处理已选项目…")
                         Button("取消批量操作", role: .cancel) {
@@ -711,6 +681,67 @@ struct XDriveIOSNativeFilesBrowser: View {
                     }
                 }
             }
+    }
+
+    /// Native Files-style edit bar, positioned above the five-module tab
+    /// chrome by SwiftUI safe-area layout rather than a fixed global overlay.
+    private var filesSelectionToolbar: some View {
+        HStack(spacing: 12) {
+            Text("已选 \\(selectedIDs.count)")
+                .font(.footnote.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("native-ios-files-selection-count")
+            Spacer(minLength: 4)
+            Button {
+                openBatchDestination(.copy)
+            } label: {
+                Label("复制", systemImage: "doc.on.doc")
+            }
+            .disabled(!canSelectPage || selectedIDs.isEmpty)
+            .accessibilityIdentifier("native-ios-files-batch-copy")
+            Button {
+                openBatchDestination(.move)
+            } label: {
+                Label("移动", systemImage: "folder")
+            }
+            .disabled(!canSelectPage || selectedIDs.isEmpty)
+            .accessibilityIdentifier("native-ios-files-batch-move")
+            Menu {
+                Button("已选项批量下载并导出") {
+                    prepareSelectedExport()
+                }
+                .disabled(!canSelectPage || selectedIDs.isEmpty)
+                .accessibilityIdentifier("native-ios-files-batch-export")
+                Button("已选项移入回收站", role: .destructive) {
+                    showingBatchTrashConfirmation = true
+                }
+                .disabled(!canSelectPage || selectedIDs.isEmpty)
+                .accessibilityIdentifier("native-ios-files-batch-trash")
+            } label: {
+                Label("更多", systemImage: "ellipsis.circle")
+            }
+            .disabled(!canSelectPage || selectedIDs.isEmpty)
+            .accessibilityIdentifier("native-ios-files-batch-more")
+        }
+        .font(.subheadline)
+        .padding(.horizontal, 12)
+        .frame(minHeight: 52)
+        .background(.bar)
+        .accessibilityIdentifier("native-ios-files-batch-toolbar")
+    }
+
+    private func prepareSelectedExport() {
+        guard canSelectPage, let sourceParentID = parentID,
+              selectedIDs == Set(chosenItems.map(\\.id)),
+              XDriveIOSNativeFilesBatchExportPolicy.validSelection(
+                  chosenItems, parentID: sourceParentID
+              ) else {
+            batchExport.invalidSelection()
+            return
+        }
+        batchExport.prepare(
+            chosenItems, parentID: sourceParentID, login: login
+        )
     }
 
     private var filesList: some View {
@@ -747,6 +778,9 @@ struct XDriveIOSNativeFilesBrowser: View {
     private var filesChrome: some View {
         filesList
         .listStyle(.plain)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if selecting { filesSelectionToolbar }
+        }
         .navigationTitle(folder?.name ?? "文件")
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(for: XDriveIOSNativeFilesFolder.self) { next in
