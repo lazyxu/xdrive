@@ -287,6 +287,8 @@ internal fun GalleryPhotoViewer(
                                         deltaX = dx, deltaY = dy,
                                         durationMillis = pointer.uptimeMillis - down.uptimeMillis,
                                         thresholdPx = swipeThreshold,
+                                        deliberateThresholdPx = maxOf(swipeThreshold + 1f,
+                                            size.width.toFloat() * 0.28f),
                                         singlePointer = singlePointer,
                                         atDefaultZoom = currentZoom <= 1.001f,
                                     ) && controller.state.value.galleryViewer == photo

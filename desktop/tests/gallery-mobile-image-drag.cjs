@@ -30,3 +30,14 @@ test('mobile Live Photo still follows one-finger pan without starting motion', (
   assert.match(live, /gesture\.held \|\| gesture\.multi/)
   assert.match(live, /clearHoldTimer\(\)/)
 })
+
+test('slow deliberate drags remain valid without weakening zoom or Live fences', () => {
+  const image = read('ui/shared/src/mui/FilePreviewSurface.tsx')
+  const live = read('ui/shared/src/mui/LivePhotoSurface.tsx')
+  const gate = read('android/app/src/main/java/com/tfluid/xdrive/GalleryViewerSwipeGate.kt')
+  assert.match(image, /const deliberate = absX >=/)
+  assert.match(image, /\(elapsed <= 700 && absX >= 56\) \|\| deliberate/)
+  assert.match(live, /const deliberate = absX >=/)
+  assert.match(gate, /deliberateThresholdPx: Float = Float.POSITIVE_INFINITY/)
+  assert.match(gate, /durationMillis >= 0L/)
+})

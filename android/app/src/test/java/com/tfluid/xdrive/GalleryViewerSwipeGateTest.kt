@@ -30,7 +30,8 @@ class GalleryViewerSwipeGateTest {
         threshold: Float = 72f,
         single: Boolean = true,
         zoom1x: Boolean = true,
-    ): Boolean = fence.mayShift(dx, dy, duration, threshold, single, zoom1x)
+        deliberate: Float = Float.POSITIVE_INFINITY,
+    ): Boolean = fence.mayShift(dx, dy, duration, threshold, single, zoom1x, deliberate)
 
     @Test fun ordinaryHorizontalSwipeWorksBothDirectionsAtOneX() {
         val fence = GalleryLiveHoldSwipeFence()
@@ -39,6 +40,19 @@ class GalleryViewerSwipeGateTest {
         fence.beginGesture()
         assertTrue(gesture(fence, dx = 110f))
         assertTrue(gesture(fence, dx = 72f, dy = 0f))
+    }
+
+    @Test fun slowDeliberateLongDragMayPageButDiagonalAndLiveHoldCannot() {
+        val fence = GalleryLiveHoldSwipeFence()
+        fence.beginGesture()
+        assertTrue(gesture(fence, dx = -180f, dy = 12f,
+            duration = 1800L, deliberate = 110f))
+        assertFalse(gesture(fence, dx = -90f, dy = 8f,
+            duration = 1800L, deliberate = 110f))
+        assertFalse(gesture(fence, dx = -180f, dy = 190f,
+            duration = 1800L, deliberate = 110f))
+        fence.liveHoldActivated()
+        assertFalse(gesture(fence, dx = -180f, duration = 1800L, deliberate = 110f))
     }
 
     @Test fun liveLongPressThenDragCannotTriggerPageTurnOnRelease() {

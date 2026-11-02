@@ -600,7 +600,11 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
         const dy = event.clientY - swipe.startY
         const absX = Math.abs(dx), absY = Math.abs(dy)
         const elapsed = Date.now() - swipe.startedAt
-        const horizontalSwipe = imageScale <= 1.01 && elapsed <= 700 && absX >= 56 && absX > absY * 1.25
+        // Accept a brisk flick OR a deliberate long drag held for >700ms.
+        // A slow 30%-width drag is an intentional page turn, not a failed swipe.
+        const deliberate = absX >= Math.max(96, Math.min(240, imageViewportSizeRef.current.width * 0.28))
+        const horizontalSwipe = imageScale <= 1.01 && absX > absY * 1.25 &&
+          ((elapsed <= 700 && absX >= 56) || deliberate)
         const next = dx < 0 ? onSwipeNext : onSwipePrevious
         if (horizontalSwipe && next) {
           lastTouchTapRef.current = null

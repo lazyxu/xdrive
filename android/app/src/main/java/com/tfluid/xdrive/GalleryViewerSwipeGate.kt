@@ -13,11 +13,15 @@ internal fun shouldShiftGalleryPhotoSwipe(
     thresholdPx: Float,
     singlePointer: Boolean,
     atDefaultZoom: Boolean,
+    deliberateThresholdPx: Float = Float.POSITIVE_INFINITY,
 ): Boolean =
-    singlePointer && atDefaultZoom && durationMillis in 0L..800L &&
+    singlePointer && atDefaultZoom && durationMillis >= 0L &&
         thresholdPx.isFinite() && thresholdPx > 0f &&
         deltaX.isFinite() && deltaY.isFinite() &&
-        abs(deltaX) >= thresholdPx && abs(deltaX) > abs(deltaY) * 1.25f
+        abs(deltaX) > abs(deltaY) * 1.25f &&
+        ((durationMillis <= 800L && abs(deltaX) >= thresholdPx) ||
+            (deliberateThresholdPx.isFinite() && deliberateThresholdPx > thresholdPx &&
+                abs(deltaX) >= deliberateThresholdPx))
 
 /**
  * A Live Photo long-press is an intentional motion playback gesture. The Live
@@ -49,10 +53,11 @@ internal class GalleryLiveHoldSwipeFence {
         thresholdPx: Float,
         singlePointer: Boolean,
         atDefaultZoom: Boolean,
+        deliberateThresholdPx: Float = Float.POSITIVE_INFINITY,
     ): Boolean =
         !liveActivatedInGesture && shouldShiftGalleryPhotoSwipe(
             deltaX, deltaY, durationMillis, thresholdPx,
-            singlePointer, atDefaultZoom,
+            singlePointer, atDefaultZoom, deliberateThresholdPx,
         )
 }
 

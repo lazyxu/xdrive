@@ -871,9 +871,11 @@ export function XDriveLivePhotoSurface({
     const dy = event.clientY - gesture.startY
     // Match ordinary images: only a brisk unzoomed horizontal swipe navigates.
     // Slow drags or post-pinch releases must remain on the current still.
+    const absX = Math.abs(dx), absY = Math.abs(dy)
+    const deliberate = absX >= Math.max(96, Math.min(240, viewportSizeRef.current.width * 0.28))
     if (viewportRef.current.scale > 1.01 ||
-        Date.now() - gesture.startedAt > 700 ||
-        Math.abs(dx) < 56 || Math.abs(dx) <= Math.abs(dy) * 1.25) {
+        absX <= absY * 1.25 ||
+        !((Date.now() - gesture.startedAt <= 700 && absX >= 56) || deliberate)) {
       paintPhotoSlide(0, true)
       return
     }
