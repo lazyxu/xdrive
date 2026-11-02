@@ -34,6 +34,16 @@ test('directory and full-library search use canonical counted Owner Range', () =
   assert.match(page, /Set\(items\.map\(\\\.id\)\)\.count/);
 });
 
+test('native Files decodes and displays Server modification timestamps in list and grid', () => {
+  assert.match(page, /var created_at: String\? = nil/)
+  assert.match(page, /var updated_at: String\? = nil/)
+  assert.match(page, /enum XDriveIOSNativeFilesDatePolicy/)
+  assert.match(page, /fractionDigits\.utf8\.count <= 9/)
+  assert.equal((view.match(/Text\("修改于 \\(XDriveIOSNativeFilesDatePolicy\.display\(modifiedDate\)\)"\)/g) || []).length, 2)
+  assert.match(management, /file\.modifiedDate/)
+  assert.match(management, /directory\.modifiedDate/)
+})
+
 test('file mutations and downloads remain unavailable; Viewer uses one native modal', () => {
   assert.match(view, /\.fullScreenCover\(item: \$selectedFile/);
   assert.match(view, /XDriveIOSNativeFilesViewer\(/);
