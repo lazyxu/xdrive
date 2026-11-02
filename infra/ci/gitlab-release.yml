@@ -132,6 +132,8 @@ publish-release:
     - linux
   variables:
     GLAB_ENABLE_CI_AUTOLOGIN: "true"
+  before_script:
+    - sh scripts/ci/install-gitlab-release-tools.sh
   # A Snapshot with complete artifacts may publish even if unrelated tests fail.
   # A missing image/client artifact must still fail closed.
   rules:

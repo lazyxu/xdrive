@@ -1173,6 +1173,9 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 	// Both providers must consume the original xd/Agent core before advertising an SPK.
 	// Do not relax either publisher to a post-build or best-effort dependency.
 	assertGitLabJobNeeds(t, gitlabReleaseYAML, "publish-release", []string{"build-client-core", "package-linux-client", "package-windows-client", "release-assets", "promote-server-images"})
+	assertGitLabJobTextContains(t, gitlabReleaseYAML, "publish-release",
+		"sh scripts/ci/install-gitlab-release-tools.sh",
+	)
 	assertGitLabRuleNeeds(t, gitlabReleaseYAML, "release-assets", `$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG =~ /^v.+/`, []string{"build-source-agent", "final-gate"})
 	assertGitLabRuleNeeds(t, gitlabReleaseYAML, "release-assets", `$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE`, []string{"build-source-agent"})
 	assertGitLabRuleNeeds(t, gitlabReleaseYAML, "publish-server-images", `$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG =~ /^v.+/`, []string{"final-gate", "server-image", "caddy-image", "photo-face-image", "media-worker-image"})

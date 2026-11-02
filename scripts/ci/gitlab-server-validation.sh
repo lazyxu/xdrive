@@ -100,6 +100,8 @@ bash -n scripts/ci/gitlab-server-image.sh
 bash -n scripts/ci/gitlab-caddy-image.sh
 bash -n scripts/ci/test-photo-face-image.sh
 bash scripts/ci/test-media-worker-apk.sh
+sh -n scripts/ci/install-gitlab-release-tools.sh
+bash scripts/ci/test-gitlab-release-tools.sh
 bash -n scripts/ci/photo-face-runtime-cache-key.sh
 bash -n scripts/ci/test-photo-face-runtime-cache.sh
 bash scripts/ci/test-photo-face-runtime-cache.sh
