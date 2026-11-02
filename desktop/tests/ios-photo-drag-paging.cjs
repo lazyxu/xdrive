@@ -1,0 +1,17 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const src = fs.readFileSync(path.join(__dirname, '../../ios/XDriveIOS/NativeZoomablePhotoView.swift'), 'utf8')
+test('iOS local and cloud zoomable photos follow the pan and settle without stale navigation', () => {
+  assert.match(src, /case \.changed:/)
+  assert.match(src, /CGAffineTransform\(translationX: follow, y: 0\)/)
+  assert.match(src, /abs\(dx\) <= abs\(dy\) \* 1\.18/)
+  assert.match(src, /photo\.image === image/)
+  assert.match(src, /UIAccessibility\.isReduceMotionEnabled/)
+  assert.match(src, /case \.cancelled, \.failed:/)
+  assert.match(src, /scroll\.zoomScale <= scroll\.minimumZoomScale/)
+  assert.match(src, /self\.onSwipe\?\(direction\)/)
+  assert.match(src, /photo\.layer\.removeAllAnimations\(\)/)
+})
