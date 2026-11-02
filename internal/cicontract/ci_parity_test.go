@@ -48,8 +48,11 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"server-rootless-e2e": {},
 		// GitHub-hosted post-build real-model acceptance; GitLab is package-first.
 		"photo-ocr-master-smoke": {},
-		"publish-master":         {},
-		"publish-stable":         {},
+		"publish-master":                  {},
+		"publish-stable":                  {},
+		// Content-addressed offline packages are a GitHub release publisher;
+		// GitLab retains the fast Snapshot and its independent acceptance path.
+		"publish-content-addressed-offline": {},
 	}
 	var githubCoreJobs []string
 	for _, name := range githubJobs {
@@ -1845,7 +1848,23 @@ func TestPhotoFaceTestsUseMountedBusinessSource(t *testing.T) {
 	if finalIndex < 0 {
 		t.Fatalf("Photo Face Dockerfile is missing %q", finalMarker)
 	}
-	runtimeSection := dockerfile[:finalIndex]
+	offlineRuntimeIndex := strings.Index(dockerfile, "FROM dependencies AS offline-runtime")
+	runtimeIndex := strings.Index(dockerfile, "FROM dependencies AS runtime")
+	if offlineRuntimeIndex < 0 || runtimeIndex <= offlineRuntimeIndex || finalIndex <= runtimeIndex {
+		t.Fatal("Photo Face Dockerfile must keep model-free offline runtime separate from the online model-prefetch runtime")
+	}
+	offlineRuntime := dockerfile[offlineRuntimeIndex:runtimeIndex]
+	requireRaw(t, "Photo Face model-free offline runtime image", offlineRuntime,
+		"FROM dependencies AS offline-runtime",
+		"COPY analyzer.py creative.py /app/",
+		"COPY THIRD_PARTY.md /app/THIRD_PARTY.md",
+		"USER 65532:65532",
+		\x60ENTRYPOINT [\"python\", \"/app/analyzer.py\"]\x60,
+	)
+	// The online runtime is the existing model-prefetch path. Exclude the
+	// deliberate model-free offline target when asserting it contains no
+	// mutable analyzer/test inputs.
+	runtimeSection := dockerfile[:offlineRuntimeIndex] + dockerfile[runtimeIndex:finalIndex]
 	requireRaw(t, "Photo Face runtime image", runtimeSection,
 		"FROM python:3.12-slim-bookworm AS dependencies",
 		"FROM dependencies AS runtime",
