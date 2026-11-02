@@ -14,8 +14,6 @@ import (
 	"github.com/lazyxu/xdrive/internal/auth"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/storage"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
 )
 
 func TestNodeChangeJournalLifecycleAndOwnerScope(t *testing.T) {
@@ -24,23 +22,12 @@ func TestNodeChangeJournalLifecycleAndOwnerScope(t *testing.T) {
 		t.Skip("XD_TEST_DATABASE_URL is not set")
 	}
 	gin.SetMode(gin.TestMode)
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Exec(`DROP TRIGGER IF EXISTS xd_nodes_change_journal ON xd_nodes`).Error; err != nil {
-		// xd_nodes may not exist in a fresh database.
-		_ = err
-	}
-	if err := db.Migrator().DropTable(
-		&meta.NodeChange{}, &meta.AuditEvent{}, &meta.Share{}, &meta.UploadPart{}, &meta.UploadSession{},
-		&meta.ContentBlob{}, &meta.FileVersion{}, &meta.File{}, &meta.Node{}, &meta.RefreshToken{}, &meta.User{},
-	); err != nil {
-		t.Fatal(err)
-	}
+	// The fixture owns its schema and SQL pools; it must not inherit quota
+	// tables from an earlier test or drop another fixture's journal and data.
+	db := fileExplorerMediaPerfDatabase(t, dsn)
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{},
-		&meta.ContentBlob{}, &meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.AuditEvent{},
+		&meta.ContentBlob{}, &meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.LocalPushQuotaHold{}, &meta.AuditEvent{},
 	); err != nil {
 		t.Fatal(err)
 	}
