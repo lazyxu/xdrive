@@ -215,6 +215,16 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-photo-coverage"
           node --test desktop/tests/ios-native-photo-coverage.cjs
 
+      - name: Verify explicit current PhotoKit original Owner Node proof policy
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeCurrentPhotoReceiptPolicy.swift \
+            ios/tests/NativeCurrentPhotoReceiptPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-current-photo-receipt-check"
+          "$RUNNER_TEMP/xdrive-ios-current-photo-receipt-check"
+          node --test desktop/tests/ios-native-photo-current-receipt.cjs
+
       - name: Verify native Photos Owner, auto backup, cloud thumbnail and receipt contracts
         run: |
           set -euo pipefail

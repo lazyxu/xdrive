@@ -1,4 +1,5 @@
 import Photos
+import PhotosUI
 import SwiftUI
 
 /// Native opt-in for bounded still/video/Live originals, not a WebView bridge.
@@ -9,6 +10,10 @@ struct XDriveIOSNativePhotoBackupScreen: View {
     @StateObject private var receipts = XDriveIOSNativePhotoReceiptReviewController()
     @StateObject private var background = XDriveIOSNativeBackgroundPhotoControls()
     @StateObject private var coverage = XDriveIOSNativePhotoCoverageModel()
+    @StateObject private var originalProof = XDriveIOSNativeCurrentPhotoReceiptModel()
+    @State private var selectedOriginalToVerify: PhotosPickerItem?
+    @State private var selectedOriginalIdentifier: String?
+    @State private var checkICloudOriginal = false
     @Environment(\.scenePhase) private var phase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var interval = 60
@@ -212,6 +217,9 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             background.refresh(login: login)
         }
         .onDisappear {
+            originalProof.cancel()
+            selectedOriginalIdentifier = nil
+            selectedOriginalToVerify = nil
             coverage.cancel()
             receipts.cancel()
             background.invalidateRead()
@@ -246,19 +254,39 @@ struct XDriveIOSNativePhotoBackupScreen: View {
             )
             // Historical counts may have changed after receipt review.
             coverage.cancel()
+            originalProof.cancel()
         }
         .onChange(of: controller.confirmedOriginalUpdate) { _ in
             coverage.cancel()
+            originalProof.cancel()
         }
         .onChange(of: phase) { state in
-            if state != .active { coverage.cancel() }
+            if state != .active {
+                coverage.cancel()
+                originalProof.cancel()
+            }
             if state == .active {
                 photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
                 // BGProcessing or Settings may change state while this view is mounted.
                 controller.refresh(owner: login.owner)
             }
         }
+        .onChange(of: selectedOriginalToVerify) { item in
+            guard let id = item?.itemIdentifier else {
+                selectedOriginalIdentifier = nil
+                if item != nil { originalProof.unsupportedPickerItem() }
+                return
+            }
+            selectedOriginalIdentifier = id
+            originalProof.verify(
+                localIdentifier: id, login: login,
+                allowICloudOriginals: checkICloudOriginal
+            )
+        }
         .onChange(of: login.owner) { _ in
+            originalProof.cancel()
+            selectedOriginalToVerify = nil
+            selectedOriginalIdentifier = nil
             coverage.cancel()
             photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
             // Invalidate any consent that was opened for the previous Owner.
@@ -467,6 +495,47 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                     Text(error).font(.footnote).foregroundStyle(.red)
                         .accessibilityIdentifier("native-ios-photo-coverage-error")
                 }
+            }
+            Section("逐照片当前云端原件核验") {
+                Text("显式选择一张当前授权的普通照片或视频；会重新读取原件 SHA-256，并只读核对当前 Owner 账本和服务器文件 Node。历史确认记录单独不能证明现在仍有备份。")
+                    .font(.footnote).foregroundStyle(.secondary)
+                Toggle("核验时允许按需下载 iCloud 原件", isOn: $checkICloudOriginal)
+                    .disabled(originalProof.busy)
+                PhotosPicker(selection: $selectedOriginalToVerify,
+                             matching: .any(of: [.images, .videos])) {
+                    Label("选择一张照片或视频核验", systemImage: "checkmark.shield")
+                }
+                .disabled(originalProof.busy || login.owner == nil ||
+                          (photoAuthorization != .authorized &&
+                           photoAuthorization != .limited))
+                .accessibilityIdentifier("native-ios-photo-current-receipt-picker")
+                if selectedOriginalIdentifier != nil {
+                    Button("重新核验已选原件") {
+                        guard let id = selectedOriginalIdentifier else { return }
+                        originalProof.verify(
+                            localIdentifier: id, login: login,
+                            allowICloudOriginals: checkICloudOriginal
+                        )
+                    }
+                    .disabled(originalProof.busy)
+                    .accessibilityIdentifier("native-ios-photo-current-receipt-recheck")
+                }
+                if originalProof.busy {
+                    ProgressView("正在核实当前原件与服务器 Node…")
+                    Button("取消单张核验") { originalProof.cancel() }
+                        .accessibilityIdentifier("native-ios-photo-current-receipt-cancel")
+                }
+                if originalProof.currentNodeVerified,
+                   let checked = originalProof.verifiedAt {
+                    Label("当前云端原件已核验（截至 \(checked.formatted(date: .abbreviated, time: .shortened))）",
+                          systemImage: "checkmark.shield")
+                        .accessibilityIdentifier("native-ios-photo-current-receipt-verified")
+                }
+                Text(originalProof.message)
+                    .font(.footnote).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("native-ios-photo-current-receipt-message")
+                Text("只核验当前选择的普通照片或视频；Live Photo 需要同时核验静态图、动态视频和完整 ZIP 清单。此结果仅代表核验时刻，不能据此宣布全部照片已备份。")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Section("可选系统后台原件备份") {
                 Text("前台自动备份与系统 BGProcessing 相互独立。后台需要单独授权当前设备及 Owner 根目录；iOS 决定执行时机，首次约 6 小时后才可尝试，每次最多新增 1 个原件。锁屏时若原件或加密账本不可读就安全退出；强制退出后不保证运行。")
