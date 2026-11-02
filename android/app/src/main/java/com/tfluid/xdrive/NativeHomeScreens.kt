@@ -1,6 +1,7 @@
 package com.tfluid.xdrive
 
 import android.content.res.Configuration
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -20,6 +21,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -47,11 +50,19 @@ internal fun NativeHomeBottomBar(
                     if (tab == NativeHomeTab.DYNAMIC) {
                         Row(
                             modifier = Modifier.weight(1f).fillMaxHeight()
+                                .background(
+                                    if (navigation.selected == tab)
+                                        MaterialTheme.colorScheme.secondaryContainer
+                                    else Color.Transparent,
+                                    RoundedCornerShape(14.dp),
+                                )
                                 .combinedClickable(
                                     onClick = { onSelect(tab) },
                                     onLongClickLabel = "选择最近动态功能",
                                     onLongClick = onShowDynamicPicker,
-                                ).testTag("native-tab-dynamic"),
+                                )
+                                .semantics { selected = navigation.selected == tab }
+                                .testTag("native-tab-dynamic"),
                             horizontalArrangement = Arrangement.Center,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
@@ -63,7 +74,16 @@ internal fun NativeHomeBottomBar(
                     } else TextButton(
                         onClick = { onSelect(tab) },
                         modifier = Modifier.weight(1f).fillMaxHeight()
+                            .semantics { selected = navigation.selected == tab }
                             .testTag("native-tab-${tab.name.lowercase()}"),
+                        colors = ButtonDefaults.textButtonColors(
+                            containerColor = if (navigation.selected == tab)
+                                MaterialTheme.colorScheme.secondaryContainer
+                            else Color.Transparent,
+                            contentColor = if (navigation.selected == tab)
+                                MaterialTheme.colorScheme.onSecondaryContainer
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
                         contentPadding = PaddingValues(horizontal = 2.dp, vertical = 0.dp),
                     ) {
                         Icon(painterResource(icons[index]), null, Modifier.size(18.dp))
@@ -91,7 +111,9 @@ internal fun NativeHomeBottomBar(
                                 onClick = { onSelect(tab) },
                                 onLongClickLabel = "选择最近动态功能",
                                 onLongClick = onShowDynamicPicker,
-                            ).testTag("native-tab-dynamic"),
+                            )
+                            .semantics { selected = navigation.selected == tab }
+                            .testTag("native-tab-dynamic"),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center,
                     ) {
