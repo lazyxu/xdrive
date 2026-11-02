@@ -63,10 +63,10 @@ class GalleryViewerSwipeGateTest {
             true, true) == -120f)
         assertTrue(galleryPhotoFingerDrag(120f, 2f, 390f, true, true,
             true, true) == 120f)
-        assertTrue(galleryPhotoFingerDrag(-120f, 2f, 390f, true, true,
-            true, false) == -21.6f)
-        assertTrue(galleryPhotoFingerDrag(120f, 2f, 390f, true, true,
-            false, true) == 21.6f)
+        assertTrue(kotlin.math.abs(galleryPhotoFingerDrag(-120f, 2f, 390f, true, true,
+            true, false) + 21.6f) < 0.01f)
+        assertTrue(kotlin.math.abs(galleryPhotoFingerDrag(120f, 2f, 390f, true, true,
+            false, true) - 21.6f) < 0.01f)
         assertTrue(galleryPhotoFingerDrag(-800f, 1f, 390f, true, true,
             true, true) == -390f)
         assertTrue(galleryPhotoFingerDrag(-10f, 180f, 390f, true, true,
