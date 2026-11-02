@@ -93,6 +93,70 @@ struct XDriveIOSNativeFilesPageChecks {
         require(!XDriveIOSNativeFilesPagePolicy.validResults(
             badSearch, offset: 0, sort: "name", order: "asc"
         ), "reject missing search path")
+        // Continuous iOS rendering must NEVER trust a next page solely
+        // because the individual Server Range decoded successfully.
+        typealias C = XDriveIOSNativeFilesContinuousPolicy
+        let ids = Set(nodes.map(\.id))
+        let laterNodes: [XDriveIOSNativeFilesNode] = (0..<64).map { index in
+            XDriveIOSNativeFilesNode(
+                id: UInt64(200 + index), parent_id: parent,
+                name: "next-\(index).txt", type: "file",
+                size: Int64(index), revision: 1
+            )
+        }
+        let laterIDs = laterNodes.map(\.id)
+        require(C.validJoin(
+            loadedIDs: ids, loadedCount: 64, startOffset: 0, total: 100_000,
+            pageIDs: laterIDs, pageOffset: 64, pageTotal: 100_000,
+            direction: .after
+        ), "append adjacent verified Server range")
+        require(C.validJoin(
+            loadedIDs: Set(laterIDs), loadedCount: 64,
+            startOffset: 64, total: 100_000,
+            pageIDs: nodes.map(\.id), pageOffset: 0, pageTotal: 100_000,
+            direction: .before
+        ), "prepend adjacent verified Server range for located files")
+        require(!C.validJoin(
+            loadedIDs: ids, loadedCount: 64, startOffset: 0, total: 100_000,
+            pageIDs: laterIDs, pageOffset: 128, pageTotal: 100_000,
+            direction: .after
+        ), "never skip an undisplayed page")
+        require(!C.validJoin(
+            loadedIDs: ids, loadedCount: 64, startOffset: 0, total: 100_000,
+            pageIDs: laterIDs, pageOffset: 64, pageTotal: 100_001,
+            direction: .after
+        ), "reject changed result count between chunks")
+        require(!C.validJoin(
+            loadedIDs: ids, loadedCount: 64, startOffset: 0, total: 100_000,
+            pageIDs: [nodes[0].id], pageOffset: 64, pageTotal: 100_000,
+            direction: .after
+        ), "reject already visible Node across page boundary")
+        require(!C.validJoin(
+            loadedIDs: ids, loadedCount: 64, startOffset: 0, total: 100_000,
+            pageIDs: [laterNodes[0].id, laterNodes[0].id],
+            pageOffset: 64, pageTotal: 100_000, direction: .after
+        ), "reject duplicate IDs within a new page")
+        require(!C.validJoin(
+            loadedIDs: ids, loadedCount: 64, startOffset: 0, total: 100_000,
+            pageIDs: Array(laterIDs.prefix(3)),
+            pageOffset: 64, pageTotal: 100_000, direction: .after
+        ), "reject short nonterminal range")
+        require(C.validJoin(
+            loadedIDs: ids, loadedCount: 64, startOffset: 0, total: 100,
+            pageIDs: Array(laterIDs.prefix(36)),
+            pageOffset: 64, pageTotal: 100, direction: .after
+        ), "accept exact terminal partial range")
+        require(!C.validJoin(
+            loadedIDs: ids, loadedCount: 64, startOffset: 0, total: 100_000,
+            pageIDs: Array(laterIDs.prefix(36)),
+            pageOffset: 64, pageTotal: 100_000, direction: .before
+        ), "reject nonadjacent / short backwards range")
+        require(!C.validJoin(
+            loadedIDs: Set(laterIDs), loadedCount: 65,
+            startOffset: 64, total: 100_000,
+            pageIDs: nodes.map(\.id), pageOffset: 0, pageTotal: 100_000,
+            direction: .before
+        ), "never trust a window with inconsistent identity count")
         print("native Files bounded Owner Range checks passed")
     }
 }
