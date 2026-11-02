@@ -16,7 +16,13 @@ assert.match(album, /PHAsset\.fetchAssets\(in: collection, options: options\)/);
 assert.match(album, /offset \+ 64/);
 assert.match(album, /XDriveIOSLocalPhotoTile\(candidate: item\)/);
 assert.match(album, /XDriveIOSNativeLocalPhotoDetail\(\s*candidate: initial,/);
-assert.match(album, /loadedItems: page\?\.items\.filter \{ \$0\.kind != "unsupported" \} \?\? \[\]/);
+// The active Viewer may cross a 64-item album boundary; its single verified
+// current page replaces the initially mounted wall page, without a full album
+// array or a stale media snapshot.
+assert.match(album, /loadedItems: \(viewerPage \?\? page\)\?\.items\.filter \{\s*\$0\.kind != "unsupported"\s*\} \?\? \[\]/);
+assert.match(album, /loadedPage: viewerPage \?\? page/);
+assert.match(album, /onCrossPage: \{ oldPage, anchor, direction in/);
+assert.match(album, /onCrossedPage: \{ next, verifiedPage in/);
 assert.match(album, /onViewed: \{ next in[\s\S]*?viewerReturnID = next\.id/);
 assert.match(album, /XDriveLocalPhotoAlbumPager\.readPage\(\s*offset: requestedOffset/);
 assert.match(album, /PHPhotoLibraryChangeObserver/);
