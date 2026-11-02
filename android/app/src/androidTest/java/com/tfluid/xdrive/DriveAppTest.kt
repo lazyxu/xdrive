@@ -2710,6 +2710,64 @@ class DriveAppTest {
         compose.onNodeWithTag("files-collection-item-7").assertExists()
     }
 
+    /**
+     * The exact same pinned Files category row must remain directly above the
+     * native five-slot bar as the Owner switches Browse/Recent/Favorites and
+     * after returning to Browse. Test actual Compose bounds, not source order.
+     */
+    @Test fun filesCategoryDockStaysAtBottomAcrossOwnerSectionsAndSelection() {
+        startAndLogin()
+
+        fun checkPinned(section: FilesSection): Float {
+            compose.waitUntil(timeoutMillis = 10_000) {
+                val s = controller.state.value
+                s.screen == Screen.FILES && s.filesSection == section && !s.loading &&
+                    (section == FilesSection.BROWSE && s.loaded ||
+                        section != FilesSection.BROWSE && s.collectionLoaded)
+            }
+            val dock = compose.onNodeWithTag("files-sections-bar")
+                .assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            val global = compose.onNodeWithTag("native-five-slot-bar")
+                .assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            org.junit.Assert.assertTrue("Files dock must end at global nav, not at header",
+                dock.bottom <= global.top + 2f)
+            org.junit.Assert.assertTrue("Files dock must touch global nav without a blank strip",
+                global.top - dock.bottom <= 2f)
+            org.junit.Assert.assertTrue("Files dock is above the global bar",
+                dock.top < global.top)
+            return dock.top
+        }
+
+        val browseTop = checkPinned(FilesSection.BROWSE)
+        compose.onNodeWithTag("files-section-recent").performClick()
+        val recentTop = checkPinned(FilesSection.RECENT)
+        compose.onNodeWithTag("files-collection").assertExists()
+        compose.onNodeWithTag("files-section-favorites").performClick()
+        val favoritesTop = checkPinned(FilesSection.FAVORITES)
+        compose.onNodeWithTag("files-collection").assertExists()
+        compose.onNodeWithTag("files-section-browse").performClick()
+        val returnTop = checkPinned(FilesSection.BROWSE)
+        org.junit.Assert.assertTrue("same dock position after switching to Recent",
+            kotlin.math.abs(recentTop - browseTop) <= 2f)
+        org.junit.Assert.assertTrue("same dock position after switching to Favorites",
+            kotlin.math.abs(favoritesTop - browseTop) <= 2f)
+        org.junit.Assert.assertTrue("return to Browse keeps the bottom dock",
+            kotlin.math.abs(returnTop - browseTop) <= 2f)
+
+        compose.onNodeWithTag("files-select-mode").performClick()
+        compose.onNodeWithTag("files-sections-bar").assertDoesNotExist()
+        val actions = compose.onNodeWithTag("files-selection-actions")
+            .assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        val global = compose.onNodeWithTag("native-five-slot-bar")
+            .assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        org.junit.Assert.assertTrue("selection actions replace the local dock above global tabs",
+            actions.bottom <= global.top + 2f)
+        org.junit.Assert.assertTrue("selection actions do not leave a duplicate local dock",
+            global.top - actions.bottom <= 2f)
+        compose.onNodeWithTag("files-select-mode").performClick()
+        checkPinned(FilesSection.BROWSE)
+    }
+
     @Test fun recentBrowseFavoritesAreRealOwnerLoadedSections() {
         startAndLogin()
         compose.onNodeWithTag("files-section-recent").performClick()

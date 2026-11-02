@@ -568,9 +568,20 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
             if (nativeAuthenticated && !photoViewerOpen &&
                 !nativeGalleryMapHidesBottomBar(
                     nativeNavigation.selected, state.galleryMapOpen,
-                    localPhotoMapOpen, nativeMapFocused))
-                NativeHomeBottomBar(nativeNavigation, ::selectNativeTab,
-                    onShowDynamicPicker = { dynamicPickerOpen = true })
+                    localPhotoMapOpen, nativeMapFocused)) {
+                // This common Scaffold slot pins Files' local category/action
+                // dock ABOVE the global five tabs in Browse, Recent, Favorites
+                // and Search. It is never rendered as a scrollable list child.
+                Column(Modifier.fillMaxWidth().testTag("native-bottom-stack")) {
+                    if (!nativeOverlay && state.screen == Screen.FILES &&
+                        nativeNavigation.selected == NativeHomeTab.FILES) {
+                        FilesBottomDock(state, controller,
+                            onBatchTrash = { batchTrashConfirm = true })
+                    }
+                    NativeHomeBottomBar(nativeNavigation, ::selectNativeTab,
+                        onShowDynamicPicker = { dynamicPickerOpen = true })
+                }
+            }
         },
         topBar = {
         if (nativeOverlay) {
@@ -756,7 +767,7 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                         onTrash = { filesEdit = FilesEditIntent(FilesEditKind.TRASH, it) },
                         onCopy = { controller.chooseDestination(it, FilesTransferKind.COPY) },
                         onMove = { controller.chooseDestination(it, FilesTransferKind.MOVE) },
-                        onBatchTrash = { batchTrashConfirm = true }, onDownload = onDownload)
+                        onDownload = onDownload)
                 }
                 Screen.GALLERY -> {
                     val photo = state.galleryViewer
