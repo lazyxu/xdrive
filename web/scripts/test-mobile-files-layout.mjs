@@ -61,8 +61,12 @@ assert.match(collection, /gap: 1\.5/, 'collection thumbnails retain the 12px vis
 assert.match(collection, /rowGap: '3px'/, 'collection metadata matches directory spacing')
 
 const top = excerpt(files, 'data-mobile-files-navigation-bar', 'data-xdrive-mobile-files-scroll')
-assert.match(top, /px: 2, flexShrink: 0, minHeight: 52/,
-  'local title bar is 52px with 16px gutters')
+assert.match(files, /<XDriveMobileHeaderNavigation>/,
+  'Files navigation is portaled into the single global header under managed L1')
+assert.match(top, /px: managedHeader \\? 0\\.25 : 2, flexShrink: 0/,
+  'global header uses compact gutters, standalone Files retains 16px gutters')
+assert.match(top, /minHeight: managedHeader \\? 44 : 52/,
+  'global shell contains 44px controls within its 52px bar; standalone bar remains 52px')
 assert.match(top, /width: 44, height: 44/, 'local navigation targets remain tappable')
 const search = excerpt(files, 'data-mobile-files-search-region', 'data-xdrive-mobile-files-home')
 assert.match(search, /px: 2, py: 0\.75/, 'search has 16px gutters and 6px vertical padding')
