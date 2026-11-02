@@ -22,6 +22,7 @@ struct XDriveIOSNativeFilesManagementPanel: View {
 
     @Environment(\.dismiss) private var dismiss
     @StateObject private var exporter = XDriveIOSNativeFilesExportModel()
+    @StateObject private var folderArchive = XDriveIOSNativeFilesFolderArchiveModel()
     @StateObject private var uploader = XDriveIOSNativeFilesManualUploadModel()
     @StateObject private var mutator = XDriveIOSNativeFilesMutationModel()
     @StateObject private var favoriteMutation = XDriveIOSNativeFilesFavoriteMutationModel()
@@ -45,7 +46,7 @@ struct XDriveIOSNativeFilesManagementPanel: View {
         XDriveIOSNativePhotoOwnerScope.matches(login.owner, expectedOwner)
     }
     private var anyBusy: Bool {
-        createBusy || exporter.busy || uploader.busy ||
+        createBusy || exporter.busy || folderArchive.busy || uploader.busy ||
             mutator.busy || destinationWriter.busy || favoriteMutation.busy
     }
 
@@ -173,6 +174,35 @@ struct XDriveIOSNativeFilesManagementPanel: View {
                             .accessibilityIdentifier("native-ios-files-share-folder")
                         Text("可创建只读或查看并上传的云端文件夹分享链接。")
                             .font(.footnote).foregroundStyle(.secondary)
+                    }
+                    Section("下载文件夹 ZIP") {
+                        if let archive = folderArchive.prepared {
+                            ShareLink(item: archive.fileURL) {
+                                Label("存储 ZIP 到“文件”或分享",
+                                      systemImage: "square.and.arrow.up")
+                            }
+                            .accessibilityIdentifier("native-ios-files-folder-zip-share")
+                            Text("服务器已生成 ZIP，仍须在系统界面选择保存位置。")
+                                .font(.footnote).foregroundStyle(.secondary)
+                        } else {
+                            Button(folderArchive.busy ? "正在准备 ZIP…" : "下载并导出文件夹 ZIP") {
+                                folderArchive.prepare(directory, login: login,
+                                                      expectedOwner: expectedOwner)
+                            }
+                            .disabled(anyBusy)
+                            .accessibilityIdentifier("native-ios-files-folder-zip-download")
+                        }
+                        Text("前台限源文件合计 512 MiB 和最多 2048 个文件；需至少 768 MiB 本机暂存空间。")
+                            .font(.footnote).foregroundStyle(.secondary)
+                        if folderArchive.busy {
+                            Button("取消 ZIP 下载", role: .cancel) {
+                                folderArchive.cancelCurrentTransfer()
+                            }
+                            .accessibilityIdentifier("native-ios-files-folder-zip-cancel")
+                        }
+                        if let status = folderArchive.status {
+                            Text(status).font(.footnote).foregroundStyle(.secondary)
+                        }
                     }
                     Section("文件夹管理") {
                         Button("复制文件夹到…") {
@@ -366,6 +396,7 @@ struct XDriveIOSNativeFilesManagementPanel: View {
         destinationIntent = nil
         shareNode = nil
         exporter.invalidate()
+        folderArchive.invalidate()
         uploader.invalidate()
         mutator.invalidate()
         destinationWriter.invalidate()
