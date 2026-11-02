@@ -179,7 +179,9 @@ internal fun nativeLocalViewerNextPageDecision(
         wallRevision != request.wallRevision ||
         albumsOnly != request.albumsOnly || albumId != request.albumId ||
         mediaKind != request.mediaKind || pageIntent != request.requestId ||
-        request.requestId <= 0 || request.cursor.id <= 0)
+        request.requestId <= 0 ||
+        request.cursor != NativeLocalPageKey(
+            request.source.item.addedAtSeconds, request.source.item.id))
         return NativeLocalNextPageDecision.STALE
     val index = nativeLocalViewerLoadedIndex(loaded, activeSource.item)
         ?: return NativeLocalNextPageDecision.STALE
