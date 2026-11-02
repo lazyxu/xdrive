@@ -50,6 +50,7 @@ class DriveAppTest {
     private var textPreviewFixture = false
     private var textPreviewText = "hello xDrive"
     private var textPreviewReads = 0
+    private var textPreviewFailuresRemaining = 0
     private var locateLargeFolder = false
     private var locateRangeReads = 0
     private val locatedFile = DriveNode(1155, 1, "target-155.txt", "file", 12, revision = 2)
@@ -546,6 +547,10 @@ class DriveAppTest {
         ): FileTextPreview {
             check(textPreviewFixture && node.id == 3L && node.revision == 2L)
             textPreviewReads++
+            if (textPreviewFailuresRemaining > 0) {
+                textPreviewFailuresRemaining--
+                throw ApiException(503, "Fixture transient text preview failure")
+            }
             return FileTextPreview(textPreviewText, false, node.size)
         }
         override suspend fun childrenArranged(
@@ -2259,6 +2264,40 @@ class DriveAppTest {
         }
     }
 
+    @Test fun filesAudioTerminalFailureRetriesFreshOwnerLeaseAndReturnsToBrowse() {
+        filesAudioFixture = true
+        startAndLogin()
+        val before = controller.state.value.path.map { it.id }
+        compose.onNodeWithTag("files-item-50").assertExists().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.filesAudioViewer == filesAudioNode &&
+                filesAudioSessions == 1
+        }
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.onAllNodesWithTag("files-audio-error").fetchSemanticsNodes().isNotEmpty() &&
+                filesAudioClosures == 1
+        }
+        compose.onNodeWithTag("files-audio-retry").assertIsDisplayed().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            filesAudioSessions == 2
+        }
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.onAllNodesWithTag("files-audio-error").fetchSemanticsNodes().isNotEmpty() &&
+                filesAudioClosures == 2
+        }
+        compose.onNodeWithTag("files-audio-close").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.filesAudioViewer == null
+        }
+        compose.onNodeWithTag("files").assertExists()
+        compose.onNodeWithTag("files-item-50").assertExists()
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(2, filesAudioSessions)
+            org.junit.Assert.assertEquals(2, filesAudioClosures)
+            org.junit.Assert.assertEquals(before, controller.state.value.path.map { it.id })
+        }
+    }
+
     @Test fun filesImageUsesSameOwnerViewerAndReturnsToOriginalBrowse() {
         filesViewerFixture = true
         startAndLogin()
@@ -2523,6 +2562,37 @@ class DriveAppTest {
         compose.onNodeWithContentDescription("账户菜单").performClick()
         compose.onNodeWithText("退出登录").performClick()
         compose.runOnIdle { org.junit.Assert.assertNull(controller.state.value.fileTextPreview) }
+    }
+
+    @Test fun nativeFilesTextViewerRetriesTransientOwnerPreviewFailure() {
+        textPreviewFixture = true
+        textPreviewFailuresRemaining = 1
+        startAndLogin()
+        compose.onNodeWithText("假期照片").performClick()
+        compose.onNodeWithText("测试.txt").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.filesTextViewer != null &&
+                controller.state.value.fileTextPreviewError != null &&
+                !controller.state.value.fileTextPreviewLoading
+        }
+        compose.onNodeWithTag("files-text-viewer").assertExists()
+        compose.onNodeWithTag("files-text-error").assertIsDisplayed()
+        compose.onNodeWithTag("files-text-retry").assertIsDisplayed().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.fileTextPreview?.text == "hello xDrive" &&
+                !controller.state.value.fileTextPreviewLoading
+        }
+        compose.onNodeWithTag("files-text-content").assertIsDisplayed()
+        compose.onNodeWithText("hello xDrive").assertIsDisplayed()
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(2, textPreviewReads)
+        }
+        compose.onNodeWithTag("files-text-close").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.filesTextViewer == null &&
+                controller.state.value.fileTextPreview == null
+        }
+        compose.onNodeWithTag("files").assertExists()
     }
 
     @Test fun nativeFilesDetailsPreviewUsesUnicodeSafeTextChunks() {
