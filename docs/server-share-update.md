@@ -80,6 +80,16 @@ initial release, additionally provision both `initial_source_commit` and
 `initial_descriptor_sha256` from a trusted channel. An optional
 `share_password` stays in this same private configuration.
 
+If the Share is hosted on the updating Server and its public DNS address is
+unreachable from that host, optionally set `"connect_address": "127.0.0.1"`
+in this trusted configuration. It must be a literal IPv4 or IPv6 address (no
+hostname, port or IPv6 zone). This changes only this Share client's socket
+destination, retaining the original HTTPS URL, port, Host, SNI and default CA
+and hostname verification. The selected address must serve that HTTPS identity.
+An explicit pin bypasses ambient proxies for this Share client; redirects remain
+forbidden. Omitting the field preserves normal DNS and proxy behavior. It does
+not change system hosts, proxy settings or other update providers.
+
 Verification pins repository ID `1382670236`, `lazyxu/xdrive`, the
 `offline-packages.yml` signer workflow, `refs/heads/master` and hosted runners.
 Metadata, HTTPS origin, ticket routes, paths, sizes and SHA-256 values are

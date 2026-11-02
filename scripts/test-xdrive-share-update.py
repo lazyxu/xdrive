@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
 """Behavioral security tests for the Share transport; no external services."""
 import hashlib
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import importlib.util
 import io
 import json
 import os
 from pathlib import Path
+import socket
+import ssl
 import subprocess
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch
+from urllib.request import ProxyHandler, Request
 
 
 PATH = Path(__file__).with_name('xdrive-share-update.py')
@@ -23,6 +28,26 @@ def digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
+# Public, test-only loopback certificate/key; never used as a production trust root.
+TLS_CERT = '''-----BEGIN CERTIFICATE-----
+MIIBVDCB+6ADAgECAgEBMAoGCCqGSM49BAMCMBUxEzARBgNVBAMMCnNoYXJlLnRl
+c3QwIBcNMjAwMTAxMDAwMDAwWhgPMjEyMDAxMDEwMDAwMDBaMBUxEzARBgNVBAMM
+CnNoYXJlLnRlc3QwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAATQIkoDST82DE7y
+vEBlcjrzjuADze6FuRvRIaaZk4SwQAt9QS4XParrQhvpVsG92XNzVKpXFSRtep1L
+sdqtnWRDozowODAPBgNVHRMBAf8EBTADAQH/MBUGA1UdEQQOMAyCCnNoYXJlLnRl
+c3QwDgYDVR0PAQH/BAQDAgGGMAoGCCqGSM49BAMCA0gAMEUCIENqqR/VDh8lXeQN
+uddyel8hgjCYP5VY3PM7ey0Pv9EpAiEA4vtPNWy+6KwUxFd2mH4IHHSswIMsELtU
+q0NLu917gn0=
+-----END CERTIFICATE-----
+'''
+TLS_KEY = '''-----BEGIN PRIVATE KEY-----
+MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgjfoUldckoqG2QHmF
+6Xi4pckiKwa6g3Uygphq8yovKPyhRANCAATQIkoDST82DE7yvEBlcjrzjuADze6F
+uRvRIaaZk4SwQAt9QS4XParrQhvpVsG92XNzVKpXFSRtep1LsdqtnWRD
+-----END PRIVATE KEY-----
+'''
+
+
 class ProviderTests(unittest.TestCase):
     def setUp(self):
         self.assertIsNotNone(provider, 'Share update provider must be implemented')
@@ -32,6 +57,98 @@ class ProviderTests(unittest.TestCase):
 
     def test_provider_is_implemented(self):
         self.assertTrue(callable(provider.read_config))
+
+    def tls_share_server(self, *, redirect=False):
+        certificate, key = self.root / 'test-cert.pem', self.root / 'test-key.pem'
+        certificate.write_text(TLS_CERT)
+        key.write_text(TLS_KEY)
+        observed = {'sni': [], 'requests': []}
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                observed['requests'].append((self.path, self.headers['Host'],
+                                             self.headers.get('X-XDrive-Share-Token')))
+                body = b'{"type":"dir"}' if self.path == '/api/v1/public/share' else b'package'
+                self.send_response(302 if redirect else 200)
+                if redirect:
+                    self.send_header('Location', 'https://other.test/redirected')
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            def log_message(self, *args):
+                pass
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(certificate, key)
+        context.set_servername_callback(lambda _socket, hostname, _context: observed['sni'].append(hostname))
+        server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        self.addCleanup(server.server_close)
+        server.socket = context.wrap_socket(server.socket, server_side=True)
+        thread = threading.Thread(target=server.serve_forever, kwargs={'poll_interval': 0.01}, daemon=True)
+        thread.start()
+        def stop():
+            server.shutdown()
+            thread.join(timeout=5)
+            self.assertFalse(thread.is_alive(), 'Loopback TLS server did not stop')
+        self.addCleanup(stop)
+        return server.server_port, observed
+
+    def test_connect_address_routes_metadata_and_download_with_original_tls_identity(self):
+        port, observed = self.tls_share_server()
+        context = ssl.create_default_context()
+        context.load_verify_locations(cadata=TLS_CERT)
+        with patch.dict(os.environ, {'https_proxy': 'http://127.0.0.1:1', 'no_proxy': ''}, clear=True), \
+             patch.object(provider.ssl, 'create_default_context', return_value=context), \
+             patch.object(socket, 'create_connection', wraps=socket.create_connection) as connected:
+            share = provider.Share(f'https://share.test:{port}/#/s/' + 'T' * 40,
+                                   connect_address='127.0.0.1')
+            self.assertEqual(share.request('GET', '/api/v1/public/share'), {'type': 'dir'})
+            ticket = '/api/v1/public-share-download/9?ticket=test'
+            with patch.object(share, 'request', return_value={'url': ticket}):
+                share.download(9, self.root / 'download', 7)
+        self.assertEqual((self.root / 'download').read_bytes(), b'package')
+        self.assertEqual([call.args[0] for call in connected.call_args_list], [('127.0.0.1', port)] * 2)
+        self.assertEqual(observed['sni'], ['share.test'] * 2)
+        self.assertEqual(observed['requests'], [('/api/v1/public/share', f'share.test:{port}', 'T' * 40),
+                                               (ticket, f'share.test:{port}', None)])
+        self.assertTrue(context.check_hostname)
+        self.assertEqual(context.verify_mode, ssl.CERT_REQUIRED)
+
+    def test_connect_address_rejects_wrong_hostname_untrusted_certificate_and_redirect(self):
+        port, observed = self.tls_share_server(redirect=True)
+        trusted = ssl.create_default_context()
+        trusted.load_verify_locations(cadata=TLS_CERT)
+        for hostname, context, message in (('wrong.test', trusted, 'bounded retries'),
+                                            ('share.test', ssl.create_default_context(), 'bounded retries'),
+                                            ('share.test', trusted, 'redirect rejected')):
+            with self.subTest(hostname=hostname, message=message), \
+                 patch.object(provider.ssl, 'create_default_context', return_value=context), \
+                 patch.object(provider.time, 'sleep'):
+                share = provider.Share(f'https://{hostname}:{port}/#/s/' + 'T' * 40,
+                                       connect_address='127.0.0.1')
+                with self.assertRaisesRegex(provider.UpdateError, message):
+                    share.request('GET', '/api/v1/public/share')
+        self.assertEqual(len(observed['requests']), 1, 'Invalid TLS peers received HTTP credentials')
+        self.assertEqual(observed['sni'], ['wrong.test'] * 3 + ['share.test'] * 4)
+
+    def test_connect_address_is_literal_and_origin_bound_with_default_proxy_unchanged(self):
+        url = 'https://share.test/#/s/' + 'T' * 40
+        for address in ('', 'localhost', ' 127.0.0.1', '127.0.0.1:443', 'https://127.0.0.1',
+                        '[::1]', 'fe80::1%lo', '127.1', True, 2130706433, {}):
+            with self.subTest(address=address), self.assertRaises(provider.UpdateError):
+                provider.Share(url, connect_address=address)
+        provider.Share(url, connect_address='::1')
+        with patch.dict(os.environ, {'https_proxy': 'http://proxy.test:8888'}, clear=True):
+            ordinary = provider.Share(url)
+            self.assertTrue(any(isinstance(handler, ProxyHandler) and handler.proxies.get('https') ==
+                                'http://proxy.test:8888' for handler in ordinary.opener.handlers))
+            pinned = provider.Share(url, connect_address='127.0.0.1')
+            with patch.object(socket, 'create_connection', side_effect=AssertionError('Escaped pinned origin')):
+                for target in ('https://other.test/', 'https://share.test:444/'):
+                    with self.assertRaises(provider.UpdateError):
+                        pinned.opener.open(Request(target), timeout=1)
+                tunnel = Request('https://share.test/')
+                tunnel.set_proxy('share.test:443', 'http')
+                with self.assertRaises(provider.UpdateError):
+                    pinned.opener.open(tunnel, timeout=1)
 
     def test_pagination_uses_password_and_rejects_repeated_cursor_and_duplicate_names(self):
         share = provider.Share('https://share.example/#/s/' + 'T' * 40, 'secret')
@@ -168,6 +285,11 @@ class ProviderTests(unittest.TestCase):
         config.write_text(json.dumps(value))
         config.chmod(0o600)
         self.assertEqual(provider.read_config(config)['initial_sequence'], 2)
+        config.write_text(json.dumps(dict(value, connect_address='127.0.0.1')))
+        self.assertEqual(provider.read_config(config)['connect_address'], '127.0.0.1')
+        config.write_text(json.dumps(dict(value, connect_address='localhost')))
+        with self.assertRaises(provider.UpdateError):
+            provider.read_config(config)
         for url in ('http://example.test/#/s/' + 'x' * 40, 'https://user:secret@example.test/#/s/' + 'x' * 40):
             config.write_text(json.dumps(dict(value, share_url=url)))
             with self.assertRaises(provider.UpdateError):
@@ -240,6 +362,17 @@ class ProviderTests(unittest.TestCase):
         high_water = json.loads((home / 'state/xdrive-share-update/high-water.json').read_text())
         self.assertEqual(high_water['source_commit'], 'a' * 40)
         self.assertEqual(high_water['descriptor_sha256'], digest(contents[10]))
+
+    def test_update_passes_trusted_connect_address_to_share(self):
+        share, _, _ = self.fixture_share()
+        home = self.root / 'home'
+        home.mkdir(mode=0o700)
+        config = dict(self.pipeline_config(), connect_address='127.0.0.1', share_password='secret')
+        with patch.object(provider, 'Share', return_value=share) as factory, \
+             patch.object(provider, 'verify_publisher', return_value=[{}]), \
+             patch.object(provider, 'run_offline_install', side_effect=AssertionError('prefetch executed installer')):
+            provider.update(config, home, prefetch_only=True)
+        factory.assert_called_once_with(config['share_url'], 'secret', connect_address='127.0.0.1')
 
     def test_corrupt_final_package_prevents_any_installer_execution(self):
         self.assertTrue(callable(getattr(provider, 'update', None)), 'Install pipeline is missing')

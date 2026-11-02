@@ -9,6 +9,8 @@ from __future__ import annotations
 import argparse
 from contextlib import contextmanager
 import hashlib
+from http.client import HTTPSConnection
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -22,7 +24,7 @@ import tempfile
 import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qsl, urlsplit
-from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_opener
+from urllib.request import HTTPRedirectHandler, HTTPSHandler, ProxyHandler, Request, build_opener
 
 REPOSITORY = 'lazyxu/xdrive'
 REPOSITORY_ID = 1382670236
@@ -117,7 +119,9 @@ def read_config(path):
             'Unsupported Share configuration')
     require(isinstance(config.get('share_url'), str) and isinstance(config.get('share_password', ''), str),
             'Invalid Share configuration')
-    Share(config['share_url'], config.get('share_password', ''))
+    require('connect_address' not in config or isinstance(config['connect_address'], str),
+            'Share connect_address must be a literal IP address')
+    Share(config['share_url'], config.get('share_password', ''), connect_address=config.get('connect_address'))
     for key in ('verifier_path', 'trust_root_path'):
         require(isinstance(config.get(key), str) and Path(config[key]).is_absolute(),
                 'Verifier and trust-root paths must be absolute')
@@ -137,8 +141,34 @@ class RejectRedirects(HTTPRedirectHandler):
         raise UpdateError('Share redirect rejected')
 
 
+class PinnedHTTPSConnection(HTTPSConnection):
+    def __init__(self, host, *, origin, connect_address, **kwargs):
+        super().__init__(host, **kwargs)
+        require((self.host.lower(), self.port) == origin, 'Out-of-scope Share connection')
+        create_connection = self._create_connection
+        # Keep self.host unchanged: stdlib uses it for Host, SNI and certificate verification.
+        self._create_connection = lambda address, *args, **options: create_connection(
+            (connect_address, address[1]), *args, **options)
+
+    def set_tunnel(self, *args, **kwargs):
+        raise UpdateError('Pinned Share proxy tunnel rejected')
+
+
+class PinnedHTTPSHandler(HTTPSHandler):
+    def __init__(self, origin, connect_address):
+        super().__init__(context=ssl.create_default_context())
+        self.origin = origin
+        self.connect_address = connect_address
+
+    def https_open(self, request):
+        def connection(host, **kwargs):
+            return PinnedHTTPSConnection(host, origin=self.origin,
+                                         connect_address=self.connect_address, **kwargs)
+        return self.do_open(connection, request, context=self._context)
+
+
 class Share:
-    def __init__(self, url, password=''):
+    def __init__(self, url, password='', *, connect_address=None):
         try:
             parsed = urlsplit(url)
             port = parsed.port
@@ -153,7 +183,17 @@ class Share:
         self.base = 'https://' + parsed.netloc
         self.token = token.group(1)
         self.password = password
-        self.opener = build_opener(RejectRedirects(), HTTPSHandler(context=ssl.create_default_context()))
+        if connect_address is None:
+            self.opener = build_opener(RejectRedirects(), HTTPSHandler(context=ssl.create_default_context()))
+        else:
+            require(isinstance(connect_address, str) and '%' not in connect_address,
+                    'Share connect_address must be a literal IP address')
+            try:
+                address = str(ipaddress.ip_address(connect_address))
+            except ValueError:
+                raise UpdateError('Share connect_address must be a literal IP address') from None
+            self.opener = build_opener(RejectRedirects(), ProxyHandler({}),
+                                      PinnedHTTPSHandler((parsed.hostname, port or 443), address))
 
     def request(self, method, path, body=None):
         require(path in ('/api/v1/public/share', '/api/v1/public/share/children',
@@ -583,7 +623,8 @@ def update(config, home, *, prefetch_only=False, backup_file_data=False, share=N
     work = private_directory(state / 'work')
     with update_lock(state), tempfile.TemporaryDirectory(prefix='fetch-', dir=work) as temporary:
         staging = Path(temporary)
-        share = share or Share(config['share_url'], config.get('share_password', ''))
+        share = share or Share(config['share_url'], config.get('share_password', ''),
+                               connect_address=config.get('connect_address'))
         release = discover_release(share, read_floor(state, config), staging=staging, config=config)
         # Remember a valid newest identity even if subsequent transport fails.
         # Exact retry remains allowed; failed activation retains normal local rollback.
