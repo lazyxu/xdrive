@@ -434,16 +434,10 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                     )
                 }
             }
-            /* Only verified new receipts produce a cloud-wall refresh.
-               The foreground focused session may have uploaded several
-               completed windows before the final window returned 0. */
-            /*
-               Legacy single-window terminal handling is superseded by
-               the Owner-fenced block above.
-            */
             self.refresh(owner: login.owner)
         }
     }
+
     /// The independent focused session never modifies a saved interval,
     /// BG grant, manual cursor, or persistent encrypted receipt. Each window
     /// re-verifies the Owner to allow native refresh while the App is visible.
@@ -489,6 +483,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
             message = "集中备份正在处理第 \(window + 1) 段…"
             let alreadyNew = confirmedNew
             let unavailableBefore = hadUnavailable
+            let currentWindow = window
             let result = try await XDriveIOSForegroundPhotoBackupMVP(
                 owner: owner, accessToken: auth.accessToken
             ).run(allowICloudOriginals: allowICloud, startOffset: offset) { [weak self] value in
@@ -499,7 +494,7 @@ final class XDriveIOSNativePhotoBackupController: ObservableObject {
                 else { return }
                 self.progress = value
                 var live = self.focusedSummary ?? XDriveIOSFocusedBackupSummary()
-                live.currentWindow = window
+                live.currentWindow = currentWindow
                 live.totalVisible = value.totalVisible
                 live.totalWindows = XDrivePhotoBackupScanWindow.count(
                     visibleTotal: value.totalVisible
