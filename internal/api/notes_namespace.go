@@ -120,10 +120,12 @@ func (s *Server) initializeNotesNamespace(c *gin.Context) {
 		if shared != 0 {
 			return errNotesPathConflict
 		}
+		// Existing unrelated Files content must not become managed by
+		// initializing Notes. Reuse only an empty @xDrive parent.
 		var occupied int64
 		if err := tx.Model(&meta.Node{}).Where(
-			"owner_id = ? AND parent_id = ? AND lower(name) = lower(?) AND deleted_at IS NULL",
-			uid, system.ID, notesRootDirectory).Count(&occupied).Error; err != nil { return err }
+			"owner_id = ? AND parent_id = ? AND deleted_at IS NULL",
+			uid, system.ID).Count(&occupied).Error; err != nil { return err }
 		if occupied != 0 {
 			return errNotesPathConflict
 		}
