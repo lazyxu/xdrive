@@ -95,6 +95,21 @@ private data class NativeLocalPhotoMapScan(
     val scanning: Boolean = false,
 )
 
+/** A finished page of indexed GPS cells can be opened before the *entire*
+ * MediaStore scan completes. The cell sheet independently verifies its
+ * bounded range; a currently failed scan cannot claim a valid snapshot. */
+internal fun nativeLocalMapCanOpenScannedCells(
+    scanned: Int, located: Int, error: String?,
+): Boolean = scanned > 0 && located > 0 && error == null
+
+/** An in-progress scan keeps publishing newer cells. Freeze both the exact
+ * selected indexed cell and its scanned prefix: the sheet cannot silently
+ * expand its read to photos scanned AFTER the user's tap. */
+private data class NativeLocalSelectedCell(
+    val cell: NativeLocalMapCell<NativeLocalMedia>,
+    val scannedPrefix: Int,
+)
+
 /** The cloud and local map are two sources of ONE Gallery map route. */
 @Composable
 internal fun NativePhotoMapSourceBar(
@@ -139,7 +154,7 @@ internal fun ColumnScope.NativeLocalPhotoMap(
         mutableStateOf(NativeLocalPhotoMapScan())
     }
     var chosen by remember(sessionId, libraryEpoch, permissionEpoch) {
-        mutableStateOf<NativeLocalMapCell<NativeLocalMedia>?>(null)
+        mutableStateOf<NativeLocalSelectedCell?>(null)
     }
     // Dispose the Android provider CancellationSignal synchronously when
     // leaving the map, switching Owner or changing media grants. Coroutine
@@ -228,7 +243,10 @@ internal fun ColumnScope.NativeLocalPhotoMap(
     if (scan.error != null) Text(scan.error.orEmpty(),
         color = MaterialTheme.colorScheme.error,
         modifier = Modifier.testTag("native-local-map-error"))
-    Text("按本机照片位置适配 WGS84 视窗（无地图底图）。双指缩放和拖动；点击封面查看已扫描照片。",
+    Text(
+        if (scan.scanning && scan.index.locatedCount > 0)
+            "正在继续扫描；已出现的位置封面可点击，仅查看点击时已扫描的照片。"
+        else "按本机照片位置适配 WGS84 视窗（无地图底图）。双指缩放和拖动；点击封面查看已扫描照片。",
         modifier = Modifier.padding(horizontal = 12.dp),
         style = MaterialTheme.typography.bodySmall)
     if (scan.index.cells.isEmpty() && !scan.scanning) {
@@ -237,14 +255,21 @@ internal fun ColumnScope.NativeLocalPhotoMap(
     }
     NativeLocalPhotoMapCanvas(
         cells = scan.index.cells,
-        selectable = !scan.scanning && scan.error == null,
-        onSelect = { chosen = it },
+        selectable = nativeLocalMapCanOpenScannedCells(
+            scan.scanned, scan.index.locatedCount, scan.error),
+        onSelect = { cell ->
+            // Cells are generated from fully scanned pages. The original
+            // selected prefix is not upgraded by subsequent scan progress.
+            if (nativeLocalMapCanOpenScannedCells(
+                    scan.scanned, scan.index.locatedCount, scan.error))
+                chosen = NativeLocalSelectedCell(cell, scan.scanned)
+        },
     )
 
     chosen?.let { snapshot ->
         NativeLocalMapCellSheet(
-            cell = snapshot,
-            scanLimit = scan.scanned,
+            cell = snapshot.cell,
+            scanLimit = snapshot.scannedPrefix,
             sessionId = sessionId,
             libraryEpoch = libraryEpoch,
             onClose = { chosen = null },
