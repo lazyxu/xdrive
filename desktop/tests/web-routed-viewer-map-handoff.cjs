@@ -27,7 +27,8 @@ function load(relative){
     })
   return mod.exports
 }
-const {xDriveRoutedViewerMapEntry: mapEntry}=load(
+const {xDriveRoutedViewerMapEntry: mapEntry,
+  xDriveRoutedViewerFilePhotoMapEntry: fileMapEntry}=load(
   'web/src/routedViewerMapEntry.ts')
 const {xDrivePlacesMapScopeHandoffURL: handoffURL}=load(
   'ui/shared/src/media-gallery-places-map-mode.ts')
@@ -134,6 +135,44 @@ test('File, Search, stale and unrepresentable Viewer contexts fail closed',()=>{
   }
 })
 
+test('a FILE Viewer can explicitly choose the Owner-wide map without inheriting file filters',()=>{
+  const full={albumKey:'',filters:{sort_by:'captured',sort_dir:'desc'}}
+  for(const source of [
+    {kind:'directory',directoryID:0,activeIndex:0},
+    {kind:'directory',directoryID:3,activeIndex:4},
+    {kind:'search',query:'1715596915087.livp',activeIndex:0},
+    {kind:'selection',nodeIDs:[42,43],activeIndex:0},
+  ]){
+    assert.deepEqual(fileMapEntry(source,42),full)
+    assert.equal(mapEntry(source),null,
+      'the original file-specific collection must not masquerade as a Gallery range')
+  }
+  assert.notStrictEqual(fileMapEntry({kind:'directory',directoryID:3,activeIndex:0},42),
+    fileMapEntry({kind:'directory',directoryID:3,activeIndex:0},42))
+  // Never mutate the singleton Owner-library scope across sessions.
+  const returned=fileMapEntry({kind:'directory',directoryID:3,activeIndex:0},42)
+  returned.filters.sort_dir='asc'
+  assert.deepEqual(fileMapEntry({kind:'directory',directoryID:3,activeIndex:0},42),full)
+})
+
+test('file-wide map jump rejects stale, corrupt and ALL Gallery contexts',()=>{
+  for(const source of [
+    null,undefined,{}, {kind:'directory',directoryID:-2,activeIndex:0},
+    {kind:'directory',directoryID:5,activeIndex:-1},
+    {kind:'search',query:null,activeIndex:0},
+    {kind:'selection',nodeIDs:[43],activeIndex:0},
+    {kind:'selection',nodeIDs:[42],activeIndex:1},
+    {kind:'selection',nodeIDs:['42'],activeIndex:0},
+    context(all), context({kind:'baidu-cell',query:{}}),
+    context({kind:'baidu-viewport',query:{}}),
+    context({kind:'album',id:'manual:Family',query:{search:'secret'}}),
+    context({kind:'person',id:'person:1',query:{}}),
+  ]) assert.equal(fileMapEntry(source,42),null,
+    'never silently widen an unsupported/expired Gallery or invalid File range')
+  for(const id of [0,-1,1.4,'42',Number.MAX_SAFE_INTEGER+1])
+    assert.equal(fileMapEntry({kind:'directory',directoryID:3,activeIndex:0},id),null)
+})
+
 test('only an opaque Server-issued same-origin HTTPS ticket enters map URL',()=>{
   const ticket='a'.repeat(64)
   const url=handoffURL('https://gallery.example.invalid/?filter=none#media-viewer/42',
@@ -159,6 +198,13 @@ test('actual routed Viewer must use Server handoff and deny unscope hash navigat
   const end=app.indexOf('function WebSinglePreviewApp(',start)
   const chunk=end>start ? app.slice(start,end) : app.slice(start)
   assert.match(chunk,/xDriveRoutedViewerMapEntry\(/)
+  assert.match(chunk,/xDriveRoutedViewerFilePhotoMapEntry\(/)
+  assert.match(chunk,/JSON\.stringify\(renewed\) !== originalContext/)
+  assert.match(chunk,/opensFullLibrary=\{Boolean\(fullLibraryMapScope\)\}/)
+  const dialog=fs.readFileSync(path.join(repo,
+    'ui/shared/src/mui/MediaGalleryViewerLocationDialog.tsx'),'utf8')
+  assert.match(dialog,/在完整图库地图中定位/)
+  assert.match(dialog,/data-xdrive-full-library-map-notice/)
   assert.match(chunk,/xDriveResolveBaiduOwnerPhotoFocusCamera\(/)
   assert.match(chunk,/mediaBaiduNativePhotoFocus\(/)
   assert.match(chunk,/mediaBaiduMapScopeHandoffIssue\(/)

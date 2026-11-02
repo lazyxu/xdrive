@@ -6,6 +6,7 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '../..');
 const ui = fs.readFileSync(path.join(root, 'ios/XDriveIOS/NativePhotosDashboard.swift'), 'utf8');
 const routes = fs.readFileSync(path.join(root, 'ios/XDriveIOS/NativeNavigationRouteStore.swift'), 'utf8');
+const focusPolicy = fs.readFileSync(path.join(root, 'ios/XDriveIOS/NativeFocusVisibilityPolicy.swift'), 'utf8');
 
 test('native shell restores route hints only after verified Owner', () => {
   assert.match(ui, /import CryptoKit/);
@@ -123,4 +124,25 @@ test('native local albums directory restores only Owner-scoped 32-slot page posi
   assert.match(list, /PHPhotoLibrary\.authorizationStatus\(for: \.readWrite\) == permission/);
   assert.match(list, /libraryMonitor\.start\(\); reload\(\)/);
   assert.doesNotMatch(routes, /localIdentifier|collectionIdentifier|PHAsset|accessToken|latitude|longitude/);
+});
+
+test('outgoing cloud/map focus events cannot overwrite a different native Gallery source or tab', () => {
+  assert.match(ui, /let focusOwnerKey = ownerScopeKey/);
+  assert.match(ui, /let focusGeneration = galleryFocusGeneration/);
+  assert.match(ui, /@State private var galleryFocusGeneration = UUID\(\)/);
+  assert.match(ui, /expectedGeneration == galleryFocusGeneration/);
+  assert.match(ui, /expectedGeneration: focusGeneration/g);
+  assert.match(ui, /\.onChange\(of: tab\) \{ next in\s*galleryFocusGeneration = UUID\(\)/);
+  assert.match(ui, /\.onChange\(of: phase\) \{ state in[\s\S]*?galleryFocusGeneration = UUID\(\)/);
+  assert.match(ui, /private func updateGalleryFocus\(/);
+  assert.match(ui, /guard phase == \.active, expectedOwnerKey == ownerScopeKey,/);
+  assert.match(ui, /XDriveIOSNativeFocusVisibilityPolicy\.acceptsFocusUpdate\(/);
+  assert.match(ui, /galleryFocused = focused/);
+  assert.match(ui, /case \.cloud:[\s\S]*?onFocusChange: \{\s*updateGalleryFocus\(\s*\$0, from: \.cloud, expectedOwnerKey: focusOwnerKey/);
+  assert.match(ui, /case \.map:[\s\S]*?onFocusChange: \{\s*updateGalleryFocus\(\s*\$0, from: \.map, expectedOwnerKey: focusOwnerKey/);
+  assert.doesNotMatch(ui, /onFocusChange: \{ galleryFocused = \$0 \}/);
+  assert.match(focusPolicy, /gallerySource == callbackSource/);
+  assert.match(focusPolicy, /ownerVerified && tab == "gallery"/);
+  assert.match(ui, /\.onChange\(of: gallerySource\) \{ _ in\s*galleryFocusGeneration = UUID\(\)\s*galleryFocused = false/);
+  assert.match(ui, /private func resetNavigation\(\) \{\s*galleryFocusGeneration = UUID\(\)/);
 });

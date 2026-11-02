@@ -62,6 +62,8 @@ export interface XDriveBaiduIsolatedFrameHost<T> {
   setPhotoCoverSelections(selections: readonly T[]): boolean
   /** One-use map-only redeem ticket, NEVER a JWT, AK or Owner identity. */
   bootstrapMapSession(ticket: string): boolean
+  /** Request current anonymous SDK viewport; no Owner/Cell data. */
+  requestCurrentViewport(): boolean
   /** BD-09 camera return hint after SDK map-ready; no original WGS84. */
   restoreCamera(camera: XDriveBaiduIsolatedCamera): boolean
   /** Immediately invalidate the entire generation on logout/revoke/navigation. */
@@ -299,6 +301,16 @@ export function xDriveMountBaiduIsolatedFrame<T>(
         try {
           iframe.contentWindow.postMessage({version:1,generation:boundary.generation,
             nonce:boundary.nonce,kind:'map-session',ticket},boundary.childOrigin)
+          return true
+        } catch { detach(); return false }
+      },
+      requestCurrentViewport() {
+        if (!alive || !ready || !mapReady || !boundary || !iframe.contentWindow) return false
+        try {
+          iframe.contentWindow.postMessage({
+            version:1,generation:boundary.generation,nonce:boundary.nonce,
+            kind:'request-viewport',
+          },boundary.childOrigin)
           return true
         } catch { detach(); return false }
       },
