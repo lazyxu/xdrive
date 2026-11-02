@@ -24,6 +24,26 @@ import Foundation
         precondition(!XDriveIOSPhotoBackgroundGrantPolicy.validExpiration(
             now.addingTimeInterval(16 * 86400), now: now
         ))
+        // Explicit foreground renewal is offered only for a still-valid
+        // grant inside its final 72 hours; never revive an expired credential.
+        precondition(!XDriveIOSPhotoBackgroundGrantPolicy.mayOfferRenewal(
+            expiresAt: nil, now: now
+        ))
+        precondition(!XDriveIOSPhotoBackgroundGrantPolicy.mayOfferRenewal(
+            expiresAt: now, now: now
+        ))
+        precondition(!XDriveIOSPhotoBackgroundGrantPolicy.mayOfferRenewal(
+            expiresAt: now.addingTimeInterval(-1), now: now
+        ))
+        precondition(!XDriveIOSPhotoBackgroundGrantPolicy.mayOfferRenewal(
+            expiresAt: now.addingTimeInterval(72 * 3600 + 1), now: now
+        ))
+        precondition(XDriveIOSPhotoBackgroundGrantPolicy.mayOfferRenewal(
+            expiresAt: now.addingTimeInterval(72 * 3600), now: now
+        ))
+        precondition(XDriveIOSPhotoBackgroundGrantPolicy.mayOfferRenewal(
+            expiresAt: now.addingTimeInterval(1), now: now
+        ))
         print("iOS native background grant token/expiry contract: PASS")
     }
 }
