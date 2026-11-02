@@ -77,7 +77,8 @@ internal suspend fun nativeLocalHasMotionPhotoCandidate(
  * A previous hold is invalidated on STOP or source/URI change. */
 internal fun nativeLocalMotionMayPlay(
     candidate: Boolean, stillReady: Boolean, held: Boolean, foreground: Boolean,
-): Boolean = candidate && stillReady && held && foreground
+    atDefaultZoom: Boolean = true,
+): Boolean = candidate && stillReady && held && foreground && atDefaultZoom
 
 /** Noninteractive hint: no persistent toggle that keeps Motion Photo playing
  * after the finger is lifted. The actual still stays mounted below the player. */
