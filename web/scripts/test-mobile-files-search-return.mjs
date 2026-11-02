@@ -73,3 +73,6 @@ assert.match(files, /last.ready\)[\s\S]*?xDriveRememberMobileFilesSearchReturn\(
 assert.match(files, /last.api !== api \|\| last.owner !== mobileOwnerScope/,
   'previous Owner cannot write its data during account switch')
 console.log('Mobile Files search reentry: real Owner/API, directory, filters and canonical read wiring passed')
+// Run the Files layout suite through the existing lint entry point; a parallel
+// navigation PR is already updating web/package.json.
+await import('./test-mobile-files-layout.mjs')

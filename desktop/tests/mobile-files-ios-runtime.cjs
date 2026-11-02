@@ -949,7 +949,7 @@ test('Safari denied platform/userAgent getters preserve mounted Files browsing a
 test('F-iOS-01A: one visible large heading collapses into the compact title while scroll owner stays mounted', async () => {
   await withView(async h => {
     const nav = find(h.view, 'data-mobile-files-navigation-bar', true)
-    assert.equal(nav.props.sx.minHeight, 56)
+    assert.equal(nav.props.sx.minHeight, 52)
     assert.equal(count(h.view, 'data-mobile-files-large-title'), 1)
     assert.equal(find(h.view, 'data-mobile-files-compact-title', true).props['aria-hidden'], true)
     assert.equal(count(h.view, 'data-xdrive-mobile-files-scroll'), 1)
@@ -1043,7 +1043,11 @@ test('F-iOS27-02: rounded Files-internal bottom navigator retains same scroll ow
     assert.equal(bars.length, 1)
     assert.equal(bars[0].props.sx.borderRadius, '999px')
     assert.match(bars[0].props.sx.backdropFilter, /blur/)
-    assert.match(bars[0].props.sx.mb, /safe-area-inset-bottom/)
+    assert.equal(bars[0].props.sx.mb, 1, 'local category dock keeps an 8px gap above global navigation')
+    assert.doesNotMatch(JSON.stringify(bars[0].props.sx), /safe-area-inset-bottom/)
+    const globalNavigation = fs.readFileSync(path.join(root, 'web/src/MobileFiveSlotNavigation.tsx'), 'utf8')
+    assert.ok(globalNavigation.includes("pb: 'env(safe-area-inset-bottom)'"),
+      'global five-slot navigation exclusively owns the Home Indicator inset')
     assert.equal(count(h.view, 'data-xdrive-mobile-files-scroll'), 1)
   })
 })
@@ -1601,7 +1605,7 @@ test('F-iOS27-10C: mounted Files shows genuine date/decimal size without hiding 
   } })
 })
 
-test('F-iOS27-10B: native List leading disclosure and files share one 84px text baseline', async () => {
+test('F-iOS27-10B: native List disclosure, thumbnail and title share one 96px text baseline', async () => {
   const expanded = []
   const opened = []
   await withView(async h => {
@@ -1620,14 +1624,14 @@ test('F-iOS27-10B: native List leading disclosure and files share one 84px text 
     assert.equal(row.props.sx.gap, 0)
     assert.equal(row.props.sx.px, 0)
     assert.equal(thumb.props.sx.width, 40)
-    assert.equal(row.props.sx['&:not(:last-child)::after'].left, 84)
+    assert.equal(row.props.sx['&:not(:last-child)::after'].left, 96)
     const ordinary = h.view.root.findAll(node => node.props?.['data-mobile-files-item'] !== undefined)
       .find(node => node.props['aria-label'] === '说明.txt')
     assert.ok(ordinary)
     assert.equal(ordinary.children[0].props['data-mobile-files-leading-spacer'], true)
     assert.equal(ordinary.props.sx.gap, 0)
     assert.equal(ordinary.props.sx.px, 0)
-    assert.equal(ordinary.props.sx['&:not(:last-child)::after'].left, 84)
+    assert.equal(ordinary.props.sx['&:not(:last-child)::after'].left, 96)
     let stopped = 0
     await act(async () => { disclosure.props.onClick({ stopPropagation() { stopped++ } }) })
     assert.equal(stopped, 1)
@@ -2432,12 +2436,14 @@ test('F-iOS27-08B: Recent/Favorites 68px row geometry matches the shared virtual
     let item = h.view.root.findAll(node => node.props?.['data-mobile-files-item'] !== undefined)[0]
     assert.ok(item)
     assert.equal(item.props.sx.minHeight, state.MOBILE_FILES_ROW_HEIGHT)
-    assert.equal(item.props.sx['&:not(:last-child)::after'].left, 84)
+    assert.equal(item.props.sx['&:not(:last-child)::after'].left, 96)
     await act(async () => { find(h.view, 'aria-label', '文件操作菜单').props.onClick({ currentTarget: {} }) })
     const select = h.view.root.findAll(node => node.type === 'MenuItem' && node.props?.children === '选择')[0]
     assert.ok(select)
     await act(async () => { select.props.onClick() })
     item = h.view.root.findAll(node => node.props?.['data-mobile-files-item'] !== undefined)[0]
+    const selectionToolbar = find(h.view, 'data-xdrive-mobile-selection-toolbar', true)
+    assert.equal(selectionToolbar.props.sx.mb, 1, 'selection action dock keeps an 8px gap above global navigation')
     assert.equal(item.props.sx['&:not(:last-child)::after'].left, 120,
       '28px native gutter plus the selected circle adds exactly its true 36px slot')
     assert.equal(item.props.sx['&:not(:last-child)::after'].left -
@@ -3058,8 +3064,8 @@ test('F-iOS27-10D: folder title opens ancestors without a second heading or path
     assert.equal(compact.props['aria-hidden'], false)
     assert.equal(textOf(compact.props.children), '照片文件夹')
     const back = find(h.view, 'aria-label', '返回')
-    assert.equal(back.props.sx.width, 48)
-    assert.equal(back.props.sx.height, 48)
+    assert.equal(back.props.sx.width, 44)
+    assert.equal(back.props.sx.height, 44)
     const list = find(h.view, 'data-mobile-files-group', 'directory')
     assert.equal(list.props.sx.mx, 0)
     assert.equal(list.props.sx.borderRadius, 0)
