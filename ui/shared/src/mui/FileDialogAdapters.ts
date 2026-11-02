@@ -107,6 +107,9 @@ export interface XDriveShareDialogPort {
     nodeID: number,
     input: XDriveShareCreateInput,
   ) => Promise<XDriveFileDialogTransportResult<XDriveCreatedShareTransport>>
+  getShareLink?: (
+    shareID: number,
+  ) => Promise<XDriveFileDialogTransportResult<XDriveCreatedShareTransport>>
   revokeShare: (
     shareID: number,
   ) => Promise<XDriveFileDialogTransportResult<unknown>>
@@ -136,6 +139,14 @@ export function createXDriveShareDialogAdapter(
       if (!url) throw new Error('Share transport did not return a usable URL.')
       return { url }
     },
+    getShareLink: port.getShareLink
+      ? async (shareID) => {
+          const revealed = await resolveXDriveFileDialogTransport(port.getShareLink!(shareID))
+          const url = revealed.url || shareURL?.(revealed)
+          if (!url) throw new Error('Share transport did not return a usable URL.')
+          return { url }
+        }
+      : undefined,
     revokeShare: (shareID) => resolveXDriveFileDialogTransport(
       port.revokeShare(shareID),
     ),

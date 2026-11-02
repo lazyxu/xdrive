@@ -34,6 +34,7 @@ export interface XDriveShareCreateInput {
 export interface XDriveShareDialogAdapter {
   listShares(nodeID: number): Promise<FileShare[]>
   createShare(nodeID: number, input: XDriveShareCreateInput): Promise<{ url: string }>
+  getShareLink?(shareID: number): Promise<{ url: string }>
   revokeShare(shareID: number): Promise<unknown>
   updateShare?(shareID: number, input: { expires_at?: string | null; access: XDriveShareAccess }): Promise<FileShare>
 }
@@ -93,6 +94,7 @@ export function XDriveShareDialog({
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
   const [revokingID, setRevokingID] = useState<number | null>(null)
+  const [copyingID, setCopyingID] = useState<number | null>(null)
   const [createdLink, setCreatedLink] = useState('')
   const [expiresAt, setExpiresAt] = useState(() => defaultExpiryInput(expiryMode))
   const [password, setPassword] = useState('')
@@ -130,6 +132,7 @@ export function XDriveShareDialog({
     nodeLifecycleGenerationRef.current += 1
     setCreating(false)
     setRevokingID(null)
+    setCopyingID(null)
     setEditingShare(null)
     setSavingEdit(false)
     setFeedback(null)
@@ -215,6 +218,24 @@ export function XDriveShareDialog({
       if (error instanceof DOMException && error.name === 'AbortError') return
       if (lifecycleGeneration !== nodeLifecycleGenerationRef.current) return
       setFeedback({ tone: 'bad', message: '无法打开系统分享，请使用复制链接。' })
+    }
+  }
+
+  const copyExisting = async (share: FileShare) => {
+    if (!adapter.getShareLink || share.status !== 'active') return
+    const generation = nodeLifecycleGenerationRef.current
+    setCopyingID(share.id)
+    try {
+      const { url } = await adapter.getShareLink(share.id)
+      if (generation !== nodeLifecycleGenerationRef.current) return
+      await navigator.clipboard.writeText(url)
+      if (generation === nodeLifecycleGenerationRef.current) {
+        setFeedback({ tone: 'good', message: '分享链接已复制；原分享权限和有效期不变' })
+      }
+    } catch (error) {
+      if (generation === nodeLifecycleGenerationRef.current) onError(error)
+    } finally {
+      if (generation === nodeLifecycleGenerationRef.current) setCopyingID(null)
     }
   }
 
@@ -364,6 +385,8 @@ export function XDriveShareDialog({
               shares={shares}
               variant={compactTouch ? 'compact' : listVariant}
               revokeDisabled={revokingID !== null}
+                copyBusy={copyingID !== null}
+                onCopy={adapter.getShareLink ? copyExisting : undefined}
               onRevoke={(share) => void revoke(share)}
               onEdit={adapter.updateShare ? startEdit : undefined}
             />

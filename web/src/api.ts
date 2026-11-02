@@ -20,6 +20,7 @@ import type {
   AuditEventRange,
   CreateExternalSourceInput,
   CreatedFileShare,
+  OwnerFileSharePage,
   ExternalSource,
   ExternalSourceCollection,
   ExternalSourceCollectionItem,
@@ -3863,6 +3864,16 @@ export class XDriveApi {
 
   shares(nodeID: number) {
     return this.request<FileShare[]>(`/api/v1/nodes/${nodeID}/shares`)
+  }
+  ownerShares(cursor = 0, limit = 50, signal?: AbortSignal) {
+    const query = new URLSearchParams({ limit: String(limit) })
+    if (cursor > 0) query.set('cursor', String(cursor))
+    return this.request<OwnerFileSharePage>(`/api/v1/shares?${query}`, { cache: 'no-store', signal })
+  }
+  shareLink(shareID: number) {
+    return this.request<{ token: string; legacy_alias: boolean }>(`/api/v1/shares/${shareID}/link`, {
+      method: 'POST', body: '{}', cache: 'no-store',
+    })
   }
 
   revokeShare(shareID: number) {

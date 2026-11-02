@@ -1,5 +1,6 @@
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
+import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded'
 import {
   Box,
   Stack,
@@ -36,12 +37,16 @@ export function XDriveShareList({
   shares,
   variant = 'table',
   revokeDisabled = false,
+  copyBusy = false,
+  onCopy,
   onEdit,
   onRevoke,
 }: {
   shares: FileShare[]
   variant?: XDriveShareListVariant
   revokeDisabled?: boolean
+  copyBusy?: boolean
+  onCopy?: (share: FileShare) => void | Promise<void>
   onEdit?: (share: FileShare) => void
   onRevoke: (share: FileShare) => void | Promise<void>
 }) {
@@ -72,6 +77,9 @@ export function XDriveShareList({
               </Typography>
             </Box>
             <Stack direction="row" spacing={1}>
+              {onCopy && share.status === 'active' ? (
+                <XDriveActionButton compact disabled={copyBusy} onClick={() => void onCopy(share)}>复制链接</XDriveActionButton>
+              ) : null}
               {onEdit && share.status !== 'revoked' ? (
                 <XDriveActionButton compact onClick={() => onEdit(share)}>编辑</XDriveActionButton>
               ) : null}
@@ -112,6 +120,10 @@ export function XDriveShareList({
               <TableCell>{expiryLabel(share, false)}</TableCell>
               <TableCell>{accessLabel(share)}</TableCell>
               <TableCell align="right">
+                {onCopy && share.status === 'active' ? (
+                  <XDriveActionButton compact startIcon={<ContentCopyRoundedIcon />}
+                    disabled={copyBusy} onClick={() => void onCopy(share)}>复制链接</XDriveActionButton>
+                ) : null}
                 {onEdit && share.status !== 'revoked' ? (
                   <XDriveActionButton compact startIcon={<EditOutlinedIcon />}
                     onClick={() => onEdit(share)}>编辑</XDriveActionButton>
