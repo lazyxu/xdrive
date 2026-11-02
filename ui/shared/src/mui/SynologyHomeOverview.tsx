@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import { Box, Paper, Stack, Typography } from '@mui/material'
-import type { XDriveSynologyBackupLocalClient, XDriveSynologyLocalSource } from '../synology-backup-adapter'
+import type {
+  XDriveSynologyBackupLocalClient, XDriveSynologyLocalSource, XDriveSynologyNASVolumeSpace,
+} from '../synology-backup-adapter'
 import type { QuotaUsage } from '../models'
 import { formatBytes } from '../format'
 import { XDriveActionButton } from './ActionButton'
@@ -32,6 +34,8 @@ export function XDriveSynologyHomeOverview({
   const [error, setError] = useState('')
   const [quota, setQuota] = useState<QuotaUsage | null>(null)
   const [quotaLoading, setQuotaLoading] = useState(true)
+  const [nasSpace, setNasSpace] = useState<XDriveSynologyNASVolumeSpace | null>(null)
+  const [nasSpaceLoading, setNasSpaceLoading] = useState(true)
   const [revision, setRevision] = useState(0)
 
   useEffect(() => {
@@ -40,6 +44,8 @@ export function XDriveSynologyHomeOverview({
     setSources([])
     setQuota(null)
     setQuotaLoading(true)
+    setNasSpace(null)
+    setNasSpaceLoading(true)
     setLoading(true)
     setError('')
     void client.list(abort.signal).then((items) => {
@@ -58,19 +64,28 @@ export function XDriveSynologyHomeOverview({
     }).finally(() => {
       if (active) setQuotaLoading(false)
     })
+    // This is the filesystem containing the DSM package's own data only;
+    // never present it as capacity for every NAS volume or shared folder.
+    void client.nasVolumeSpace(abort.signal).then((value) => {
+      if (active) setNasSpace(value)
+    }).catch(() => {
+      if (active) setNasSpace(null)
+    }).finally(() => {
+      if (active) setNasSpaceLoading(false)
+    })
     return () => { active = false; abort.abort() }
   }, [client, revision])
 
   return (
     <XDriveWorkspaceSurface presentation="page" title="主页"
-      subtitle="查看经 DSM 验证的本机备份与 Agent 当前 Server 账号配额；未授权的统计不作推断。"
+      subtitle="查看经 DSM 验证的本机备份、Server 账号配额和 xDrive 套件数据所在文件系统容量。"
       pageActions={<XDriveActionButton startIcon={<RefreshRoundedIcon />}
         compact disabled={loading} onClick={() => setRevision((n) => n + 1)}>刷新</XDriveActionButton>}>
       <Stack spacing={2.25}>
         <XDriveStatusAlert tone="neutral">
           本页只读当前 NAS 上经过 DSM 登录和 Agent Source 授权验证的备份来源。
           云端容量仅取自 Agent 当前 xDrive Server 账号的授权结果；
-          云端文件、NAS 磁盘及完整后台任务不在此验证范围。
+          文件系统容量仅表示 DSM 套件数据所在文件系统，不代表 NAS 全部磁盘或共享文件夹。
         </XDriveStatusAlert>
         {loading ? (
           <Box data-xdrive-nas-home-first-read aria-busy="true" sx={{ minHeight: 180 }} />
@@ -93,8 +108,13 @@ export function XDriveSynologyHomeOverview({
                 suffix={quota
                   ? 'xDrive Server 当前账号占用与配额，并非 NAS 磁盘容量'
                   : 'Agent Server 会话或只读配额能力不可用，不推断空闲容量'} />
-              <XDriveMetricCard title="NAS 物理磁盘"
-                value="未检测" suffix="浏览器存储与 NAS 磁盘不同" />
+              <XDriveMetricCard title="DSM 套件数据所在文件系统"
+                value={nasSpace
+                  ? `${formatBytes(nasSpace.capacity_bytes - nasSpace.available_bytes)} / ${formatBytes(nasSpace.capacity_bytes)}`
+                  : nasSpaceLoading ? '读取中' : '无法确认'}
+                suffix={nasSpace
+                  ? `可用 ${formatBytes(nasSpace.available_bytes)} · 仅表示 xDrive 套件数据所在文件系统`
+                  : 'Agent 无法确认套件数据所在文件系统容量；不推断 NAS 全部磁盘空间'} />
             </XDriveMetricGrid>
             <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
               <XDriveSectionHeader level="h3" title="本机同步文件夹"
