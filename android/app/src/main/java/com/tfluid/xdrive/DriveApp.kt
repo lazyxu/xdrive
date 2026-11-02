@@ -901,6 +901,16 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                                 } else gallerySaveable.SaveableStateProvider(galleryStateKey) {
                                     Gallery(state, controller, galleryThumbnails,
                                         returnAnchor = cloudViewerReturn,
+                                        onOpenMap = {
+                                            controller.openGalleryMapOverview()
+                                            if (controller.state.value.galleryMapOpen) {
+                                                // Gallery's More menu bypasses the
+                                                // MAP source chip. Explicitly capture
+                                                // the true cloud origin or a previous
+                                                // local-map entry can hijack Back/Close.
+                                                mapOriginSource = NativeGallerySource.CLOUD
+                                            }
+                                        },
                                         onViewerOpened = { opened ->
                                             if (controller.state.value.galleryViewer == opened &&
                                                 state.screen == Screen.GALLERY &&

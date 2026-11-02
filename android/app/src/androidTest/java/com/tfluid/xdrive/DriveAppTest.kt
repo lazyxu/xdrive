@@ -2826,6 +2826,46 @@ class DriveAppTest {
         }
     }
 
+    @Test fun cloudMoreMapAfterLocalMapHistoryReturnsToCloudForBothExitActions() {
+        galleryGpsOverviewFixture = true
+        startAndLogin(galleryFirstOnLogin = true)
+        compose.onNodeWithTag("native-gallery-source-local").assertIsSelected()
+        compose.onNodeWithTag("native-gallery-source-map").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.onAllNodesWithTag("native-photo-map-sources")
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        // Record a genuine local map origin before using cloud Gallery More.
+        compose.onNodeWithContentDescription("返回图库").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("native-gallery-source-local").assertIsSelected()
+        compose.onNodeWithTag("native-gallery-source-cloud").performClick()
+        compose.onNodeWithTag("native-gallery-source-cloud").assertIsSelected()
+
+        // Both the in-map Close button and top-bar Back must restore CLOUD,
+        // not the stale LOCAL source from the prior map visit.
+        repeat(2) { exitIndex ->
+            compose.onNodeWithTag("gallery-view-options").performClick()
+            compose.onNodeWithTag("gallery-show-map").performScrollTo().performClick()
+            compose.waitUntil(timeoutMillis = 10_000) {
+                controller.state.value.galleryMapOpen &&
+                    controller.state.value.galleryMapLoaded &&
+                    !controller.state.value.loading
+            }
+            if (exitIndex == 0)
+                compose.onNodeWithTag("gallery-map-close").performClick()
+            else
+                compose.onNodeWithContentDescription("返回图库")
+                    .assertIsDisplayed().performClick()
+            compose.waitUntil(timeoutMillis = 10_000) {
+                controller.state.value.screen == Screen.GALLERY &&
+                    !controller.state.value.galleryMapOpen
+            }
+            compose.onNodeWithTag("native-gallery-source-cloud").assertIsSelected()
+            compose.onNodeWithTag("gallery-wall").assertExists()
+        }
+        compose.runOnIdle { org.junit.Assert.assertEquals(2, gpsOverviewReads) }
+    }
+
     @Test fun galleryMoreOpensRealWgs84SummaryAndBackRestoresOriginalGallery() {
         galleryGpsOverviewFixture = true
         startAndLogin()
