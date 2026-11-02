@@ -35,6 +35,71 @@ export type XDriveSynologyOwnerFilePageResponse = {
   sort: 'name' | 'updated' | 'type' | 'size'
   order: 'asc' | 'desc'
 }
+export type XDriveSynologyOwnerSearchHit = {
+  node: XDriveSynologyOwnerFileNode
+  crumbs: { id: number; name: string }[]
+}
+export type XDriveSynologyOwnerSearchPage = {
+  items: XDriveSynologyOwnerSearchHit[]
+  next_cursor?: string
+  has_more: boolean
+}
+
+export function xDriveSynologyValidOwnerSearchQuery(query: string): boolean {
+  return query === query.trim() && Array.from(query).length >= 2 &&
+    Array.from(query).length <= 128 &&
+    new TextEncoder().encode(query).length <= 512 &&
+    !/[\u0000-\u001f\u007f]/.test(query)
+}
+
+export function xDriveValidateSynologyOwnerSearchPage(
+  raw: unknown, cursor: string,
+): XDriveSynologyOwnerSearchPage {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error('Invalid Owner search page')
+  }
+  const page = raw as XDriveSynologyOwnerSearchPage
+  const keys = Object.keys(page)
+  if (keys.some(key => !['items', 'next_cursor', 'has_more'].includes(key)) ||
+      !Array.isArray(page.items) || page.items.length > 200 ||
+      typeof page.has_more !== 'boolean' ||
+      (page.next_cursor !== undefined &&
+        (typeof page.next_cursor !== 'string' || page.next_cursor.length > 1024 ||
+         /[\u0000\r\n]/.test(page.next_cursor))) ||
+      page.has_more !== Boolean(page.next_cursor) ||
+      (page.has_more && (page.items.length === 0 || page.next_cursor === cursor))) {
+    throw new Error('Invalid Owner search pagination')
+  }
+  const seen = new Set<number>()
+  for (const hit of page.items) {
+    if (!hit || typeof hit !== 'object' || Array.isArray(hit) ||
+        Object.keys(hit).length !== 2 || !('node' in hit) || !('crumbs' in hit) ||
+        !Array.isArray(hit.crumbs) || hit.crumbs.length < 1 || hit.crumbs.length > 48) {
+      throw new Error('Invalid Owner search result')
+    }
+    const visited = new Set<number>()
+    for (let i = 0; i < hit.crumbs.length; i++) {
+      const crumb = hit.crumbs[i]
+      if (!crumb || typeof crumb !== 'object' || Array.isArray(crumb) ||
+          Object.keys(crumb).length !== 2 ||
+          !Number.isSafeInteger(crumb.id) || crumb.id < 1 || visited.has(crumb.id) ||
+          typeof crumb.name !== 'string' || crumb.name.length > 512 ||
+          (i !== 0 && crumb.name.length === 0) ||
+          /[\u0000\r\n]/.test(crumb.name)) {
+        throw new Error('Invalid Owner search breadcrumbs')
+      }
+      visited.add(crumb.id)
+    }
+    const parentID = hit.crumbs[hit.crumbs.length - 1].id
+    if (!validOwnerFileNode(hit.node, parentID) ||
+        seen.has(hit.node.id) || visited.has(hit.node.id)) {
+      throw new Error('Unverified Owner search identity')
+    }
+    seen.add(hit.node.id)
+  }
+  return page
+}
+
 export type XDriveSynologyOwnerMediaRange = {
   offset: number
   total: number
@@ -452,6 +517,7 @@ export interface XDriveSynologyBackupLocalClient extends XDriveLocalBackupCommon
   /** Authenticated Agent Server Owner quota, not a DSM volume metric. */
   ownerQuota(signal?: AbortSignal): Promise<QuotaUsage>
   ownerFilesRoot(signal?: AbortSignal): Promise<XDriveSynologyOwnerFileNode>
+  ownerSearchPage(query: string, cursor?: string, signal?: AbortSignal): Promise<XDriveSynologyOwnerSearchPage>
   /** Current DSM Server Owner creates one named folder through the original Agent. */
   ownerCreateFolder(parentID: number, name: string, ownerScope: string,
     signal?: AbortSignal): Promise<XDriveSynologyOwnerFileNode>
@@ -533,7 +599,7 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
     if (!['bootstrap', 'sources', 'status', 'history', 'run', 'control', 'schedule',
       'device-backups', 'device-backup-runs',
       'device-backup-page', 'device-backup-folders', 'cloud-quota', 'nas-volume',
-      'cloud-root', 'cloud-children', 'cloud-create-folder', 'cloud-rename-node', 'cloud-text-preview', 'cloud-media-range', 'cloud-thumbnail', 'cloud-viewer-preview',
+      'cloud-root', 'cloud-children', 'cloud-search', 'cloud-create-folder', 'cloud-rename-node', 'cloud-text-preview', 'cloud-media-range', 'cloud-thumbnail', 'cloud-viewer-preview',
        'cloud-gallery-items', 'cloud-gallery-albums', 'cloud-gallery-places',
        'cloud-gallery-place-items', 'cloud-gallery-map-overview',
        'cloud-live-motion', 'nas-shares',
@@ -872,6 +938,18 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
         mimeType: data.mime_type as XDriveSynologyOwnerLiveMotion['mimeType'],
         size: bytes.length, sha256: data.sha256, data: bytes,
       }
+    },
+    ownerSearchPage: async (query, cursor = '', signal) => {
+      if (!xDriveSynologyValidOwnerSearchQuery(query) ||
+          typeof cursor !== 'string' || cursor.length > 1024 ||
+          /[\u0000\r\n]/.test(cursor)) {
+        throw new Error('Invalid Owner search selector')
+      }
+      const params = new URLSearchParams({ q: query })
+      if (cursor) params.set('cursor', cursor)
+      return xDriveValidateSynologyOwnerSearchPage(
+        await request<unknown>('/v1/cloud-search?' + params.toString(),
+          'GET', undefined, signal), cursor)
     },
     ownerFilesRoot: async (signal) =>
       xDriveValidateSynologyOwnerFileRoot(
