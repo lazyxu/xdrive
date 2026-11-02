@@ -90,8 +90,9 @@ test('one Host-owned capability declaration feeds shared Outlet and canonical Fi
   assert.ok(host.includes('ownerFilesPage: {') && host.includes('client: local,'))
   assert.ok(outlet.includes('client={services.ownerFilesPage.client}'))
   assert.ok(outlet.includes('unavailableActions={services.ownerFilesPage.unavailableActions}'))
-  assert.ok(dsm.includes('unavailableActions={unavailableActions}'))
+  assert.ok(dsm.includes('unavailableActions={search.current'))
   assert.ok(dsm.includes('searchEnabled'))
+  assert.ok(dsm.includes('onSearch={search.start}'))
   assert.equal(dsm.includes('searchEnabled={false}'), false)
   assert.ok(dsm.includes('client.ownerFilesRoot(') && dsm.includes('client.ownerFilesPage('),
     'real Owner reads remain authenticated in the existing CGI')
