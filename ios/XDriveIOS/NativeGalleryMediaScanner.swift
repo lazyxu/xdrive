@@ -48,10 +48,13 @@ actor XDriveIOSNativeGalleryMediaScanner {
         let options = PHFetchOptions()
         options.sortDescriptors = [
             NSSortDescriptor(key: "creationDate", ascending: false),
-            // Match the main native PhotoKit wall's supported fetch sort.
-            // This read-only filtered wall has no persisted backup cursor.
+            // Only PhotoKit-supported fetch sort keys; never sort by localIdentifier.
+            // Filtered, bounded pages retain the existing authorization epoch fences.
             NSSortDescriptor(key: "modificationDate", ascending: false)
         ]
+        if mediaFilter.requiresFavorite {
+            options.predicate = NSPredicate(format: "favorite == YES")
+        }
         let result: PHFetchResult<PHAsset>
         switch mediaFilter {
         case .all:
@@ -60,6 +63,8 @@ actor XDriveIOSNativeGalleryMediaScanner {
             result = PHAsset.fetchAssets(with: .image, options: options)
         case .videos:
             result = PHAsset.fetchAssets(with: .video, options: options)
+        case .favorites:
+            result = PHAsset.fetchAssets(with: options)
         }
         guard observer.current() == revision,
               PHPhotoLibrary.authorizationStatus(for: .readWrite) == current else {
@@ -94,6 +99,10 @@ actor XDriveIOSNativeGalleryMediaScanner {
                 case .video: kind = "video"
                 default: kind = "unsupported"
                 }
+                if filter.requiresFavorite && !asset.isFavorite {
+                    reset()
+                    throw XDrivePhotoKitScanFailure.snapshotChanged
+                }
                 if let expected = filter.expectedKind, expected != kind {
                     reset()
                     throw XDrivePhotoKitScanFailure.snapshotChanged
@@ -113,6 +122,94 @@ actor XDriveIOSNativeGalleryMediaScanner {
             nextOffset: end, limitedAuthorization: permission == .limited,
             items: items
         )
+    }
+
+
+    /// Read precisely the previous slot in the SAME verified filtered
+    /// PhotoKit snapshot as nextPage(). No entire-page lookback or ID cache.
+    func precedingCaptureDate(beforeOffset offset: Int) throws -> Date? {
+        guard let snapshot, let permission else {
+            throw XDrivePhotoKitScanFailure.notStarted
+        }
+        guard offset > 0, offset <= snapshot.count, offset % 64 == 0 else {
+            throw XDrivePhotoKitScanFailure.invalidOffset
+        }
+        try ensureCurrent(permission)
+        try Task.checkCancellation()
+        let date = snapshot.object(at: offset - 1).creationDate
+        try ensureCurrent(permission)
+        return date
+    }
+
+
+    /// Read one adjacent 64-slot page from the SAME filtered PhotoKit
+    /// snapshot. Verify each current-page slot first, not just the selected
+    /// ID, so insertions/reordering cannot silently shift a Viewer cursor.
+    /// The caller must reset() in success, failure and cancellation cases.
+    func adjacentPage(
+        from current: XDrivePhotoKitScanPage,
+        anchoredAt selected: XDrivePhotoKitScanCandidate,
+        direction: Int
+    ) throws -> XDrivePhotoKitScanPage? {
+        guard let snapshot, let permission else {
+            throw XDrivePhotoKitScanFailure.notStarted
+        }
+        try ensureCurrent(permission)
+        try Task.checkCancellation()
+        let total = snapshot.count
+        guard current.totalAccessibleAssets == total,
+              current.limitedAuthorization == (permission == .limited),
+              current.startOffset >= 0, current.startOffset < total,
+              current.startOffset % 64 == 0,
+              current.items.count == min(64, total - current.startOffset),
+              current.nextOffset == current.startOffset + current.items.count,
+              direction == -1 || direction == 1
+        else { throw XDrivePhotoKitScanFailure.snapshotChanged }
+
+        let supported = current.items.filter {
+            $0.kind == "image" || $0.kind == "video"
+        }
+        guard let edge = direction > 0 ? supported.last : supported.first,
+              Self.sameMedia(edge, selected)
+        else { throw XDrivePhotoKitScanFailure.snapshotChanged }
+
+        for (index, expected) in current.items.enumerated() {
+            try Task.checkCancellation()
+            let asset = snapshot.object(at: current.startOffset + index)
+            let type: String
+            switch asset.mediaType {
+            case .image: type = "image"
+            case .video: type = "video"
+            default: type = "unsupported"
+            }
+            guard asset.localIdentifier == expected.id,
+                  asset.creationDate == expected.capturedAt,
+                  asset.modificationDate == expected.modifiedAt,
+                  type == expected.kind,
+                  expected.isLive == (type == "image" &&
+                      asset.mediaSubtypes.contains(.photoLive))
+            else { throw XDrivePhotoKitScanFailure.snapshotChanged }
+        }
+        try ensureCurrent(permission)
+        guard let target = XDriveIOSNativePhotoVirtualPagePolicy.adjacentOffset(
+            current: current.startOffset, total: total, direction: direction
+        ) else { return nil }
+
+        nextOffset = target
+        let result = try nextPage()
+        // Only one adjacent page, at most 64 returned candidates. Never
+        // silently skip an unsupported-only page to reach arbitrary photos.
+        return result.items.contains {
+            $0.kind == "image" || $0.kind == "video"
+        } ? result : nil
+    }
+
+    private static func sameMedia(
+        _ lhs: XDrivePhotoKitScanCandidate, _ rhs: XDrivePhotoKitScanCandidate
+    ) -> Bool {
+        lhs.id == rhs.id && lhs.kind == rhs.kind &&
+        lhs.isLive == rhs.isLive && lhs.capturedAt == rhs.capturedAt &&
+        lhs.modifiedAt == rhs.modifiedAt
     }
 
     func reset() {

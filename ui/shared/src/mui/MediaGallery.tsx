@@ -1945,7 +1945,11 @@ export function XDriveMediaGalleryPage({
       firstMobileCollectionsReturnRef.current &&
       mobileCollectionsReturnScopeRef.current.source === source &&
       mobileCollectionsReturnScopeRef.current.owner === preferenceScope
-    firstMobileCollectionsReturnRef.current = false
+    // Keep the cold Collections hint until the winning first Library Range
+    // actually commits. A rejected, aborted or superseded first read must
+    // leave the previous Collections presentation and its retry intact.
+    // A different photo section is an explicit navigation away from Library.
+    if (nextSection !== 'library') firstMobileCollectionsReturnRef.current = false
     const firstReturn = firstMobileLibraryQueryRef.current
     const savedQuery = nextSection === 'library' &&
       firstReturn?.owner === preferenceScope && firstReturn.source === source
@@ -1954,6 +1958,9 @@ export function XDriveMediaGalleryPage({
       ? mediaGalleryDraftFromQuery(savedQuery) : mediaGallerySectionDraft(nextSection)
     const nextQuery = savedQuery ? { ...savedQuery } : mediaGalleryQueryFromDraft(nextDraft)
     void loadFirstPage(null, nextQuery, null, null, 'default', null, null, null, () => {
+      // Only a winning, Owner-authorized first Range may consume the return
+      // hint; failures do not invoke onCommitted in the shared loader.
+      if (keepCollectionsOnColdReturn) firstMobileCollectionsReturnRef.current = false
       if (nextSection === 'library' && preferenceScope) {
         // This callback is invoked only for a winning authorized first Range.
         // A failed/superseded request cannot commit restored chips or cache.

@@ -57,6 +57,24 @@ struct NativePhotoTimelinePolicyChecks {
         precondition(virtual.normalizedAnchor(requested: 120, total: 300) == 64)
         precondition(virtual.normalizedAnchor(requested: Int.max, total: 100) == 64)
         precondition(virtual.normalizedAnchor(requested: 500, total: 0) == 0)
+        // Viewer crosses only adjacent 64-slot pages; offsets never wrap.
+        precondition(virtual.adjacentOffset(current: 0, total: 65, direction: 1) == 64)
+        precondition(virtual.adjacentOffset(current: 64, total: 65, direction: -1) == 0)
+        precondition(virtual.adjacentOffset(current: 64, total: 65, direction: 1) == nil)
+        precondition(virtual.adjacentOffset(current: 0, total: 65, direction: -1) == nil)
+        precondition(virtual.adjacentOffset(current: 1, total: 65, direction: 1) == nil)
+        precondition(virtual.adjacentOffset(current: -64, total: 65, direction: 1) == nil)
+        precondition(virtual.adjacentOffset(current: 0, total: 64, direction: 1) == nil)
+        precondition(virtual.adjacentOffset(current: 0, total: 0, direction: 1) == nil)
+        precondition(virtual.adjacentOffset(current: Int.max - 63, total: Int.max,
+                                            direction: 1) == nil)
+        precondition(virtual.adjacentOffset(current: 0, total: Int.max,
+                                            direction: 1) == 64)
+        precondition(virtual.atBoundary(index: 63, visibleCount: 64, direction: 1))
+        precondition(virtual.atBoundary(index: 0, visibleCount: 64, direction: -1))
+        precondition(!virtual.atBoundary(index: 50, visibleCount: 64, direction: 1))
+        precondition(!virtual.atBoundary(index: 0, visibleCount: 65, direction: -1))
+        precondition(!virtual.atBoundary(index: 0, visibleCount: 64, direction: 0))
         precondition(XDriveIOSNativePhotoSelectionPolicy.canAdd(
             selectedCount: 0, identifier: "photo-1", alreadySelected: false
         ))
