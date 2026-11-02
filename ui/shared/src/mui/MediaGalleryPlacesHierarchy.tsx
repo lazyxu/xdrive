@@ -7,6 +7,7 @@ import type {
 import type { MediaThumbnailLoader } from './MediaGallery'
 import { XDriveMediaGalleryCoverThumbnail } from './MediaGalleryCoverThumbnail'
 import { xDriveValidMediaPlaceHierarchyPage } from '../media-gallery-places-hierarchy-validation'
+import { xDrivePlacesHierarchyRequestFilters } from '../media-gallery-places-hierarchy-query'
 
 type HierarchyLevel = MediaPlaceHierarchyRequest['level']
 type HierarchyNavigation = {
@@ -63,12 +64,8 @@ export function XDriveMediaGalleryPlacesHierarchy({
   loadThumbnail: MediaThumbnailLoader
   onOpenPhotoRange: (place: MediaPlaceHierarchyItem) => void
 }) {
-  const filters = useMemo<MediaGalleryQuery>(() => ({
-    ...query,
-    place: undefined, place_hierarchy: undefined, nearby: undefined,
-    bbox: undefined, anchor_node_id: undefined, initial_position: undefined,
-    has_location: true,
-  }), [query])
+  const filters = useMemo(
+    () => xDrivePlacesHierarchyRequestFilters(query), [query])
   const filterKey = JSON.stringify(filters)
   const first = useRef<HierarchyNavigation | null>(null)
   if (first.current === null) first.current = restore(scope, filterKey)

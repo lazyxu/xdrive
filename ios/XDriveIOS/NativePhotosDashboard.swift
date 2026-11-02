@@ -125,6 +125,9 @@ struct XDriveIOSNativePhotosDashboard: View {
     @State private var launcherQuery = ""
     @State private var showRecentPicker = false
     @State private var galleryFocused = false
+    // A source/tab/scene navigation creates a new focus owner even when
+    // the user returns to the same source later (cloud -> map -> cloud).
+    @State private var galleryFocusGeneration = UUID()
     @State private var routeRestoreScopeKey: String?
     private let navigationRouteStore = XDriveIOSNativeNavigationRouteStore()
 
@@ -257,7 +260,11 @@ struct XDriveIOSNativePhotosDashboard: View {
             backup.refresh(owner: login.owner)
         }
         .onChange(of: phase) { state in
-            guard state == .active else { return }
+            guard state == .active else {
+                galleryFocusGeneration = UUID()
+                galleryFocused = false
+                return
+            }
             // Settings may revoke PhotoKit permission or a BGTask may pause
             // the durable plan without changing the logged-in Owner.
             photoAuthorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
@@ -292,9 +299,13 @@ struct XDriveIOSNativePhotosDashboard: View {
         .onChange(of: localAlbumDirectoryOffset) { _ in saveNavigationIfReady() }
         // Rotation does not change focus; changing the owning route does.
         .onChange(of: tab) { next in
+            galleryFocusGeneration = UUID()
             if next != .gallery { galleryFocused = false }
         }
-        .onChange(of: gallerySource) { _ in galleryFocused = false }
+        .onChange(of: gallerySource) { _ in
+            galleryFocusGeneration = UUID()
+            galleryFocused = false
+        }
     }
 
     // L1 native bottom bar. The system safe-area inset remains managed by
@@ -466,7 +477,11 @@ struct XDriveIOSNativePhotosDashboard: View {
     }
 
     private var gallery: some View {
-        GeometryReader { availableSpace in
+        // Capture the presenting Owner when this source's focus callback is
+        // built; a disappearing view must not affect a later Owner's Gallery.
+        let focusOwnerKey = ownerScopeKey
+        let focusGeneration = galleryFocusGeneration
+        return GeometryReader { availableSpace in
             VStack(spacing: 0) {
                 if !galleryFocused {
                     if availableSpace.size.width >= 680 &&
@@ -497,7 +512,12 @@ struct XDriveIOSNativePhotosDashboard: View {
                 case .cloud:
                     XDriveIOSNativeServerMediaWall(
                         login: login, album: nil,
-                        onFocusChange: { galleryFocused = $0 }
+                        onFocusChange: {
+                            updateGalleryFocus(
+                                $0, from: .cloud, expectedOwnerKey: focusOwnerKey,
+                                expectedGeneration: focusGeneration
+                            )
+                        }
                     )
                 case .originals:
                     XDriveIOSNativeCloudOriginalGallery(
@@ -509,12 +529,36 @@ struct XDriveIOSNativePhotosDashboard: View {
                         login: login,
                         localMapScope: $localMapScope,
                         localMapPageOffset: $localMapPageOffset,
-                        onFocusChange: { galleryFocused = $0 }
+                        onFocusChange: {
+                            updateGalleryFocus(
+                                $0, from: .map, expectedOwnerKey: focusOwnerKey,
+                                expectedGeneration: focusGeneration
+                            )
+                        }
                     )
                 }
             }
             }
         }
+    }
+
+    /// L2 callbacks may be delivered by a departing cloud/map child after the
+    /// user has changed source, tab, or verified Owner. The old callback owns
+    /// neither the new source's focus nor its native bottom-bar visibility.
+    private func updateGalleryFocus(
+        _ focused: Bool,
+        from source: XDriveIOSNativeGallerySource,
+        expectedOwnerKey: String,
+        expectedGeneration: UUID
+    ) {
+        guard phase == .active, expectedOwnerKey == ownerScopeKey,
+              expectedGeneration == galleryFocusGeneration,
+              XDriveIOSNativeFocusVisibilityPolicy.acceptsFocusUpdate(
+                tab: tab.rawValue, gallerySource: gallerySource.rawValue,
+                callbackSource: source.rawValue, ownerVerified: login.owner != nil
+              )
+        else { return }
+        galleryFocused = focused
     }
 
     private var launcher: some View {
@@ -758,6 +802,7 @@ struct XDriveIOSNativePhotosDashboard: View {
     }
 
     private func resetNavigation() {
+        galleryFocusGeneration = UUID()
         galleryFocused = false
         gallerySource = .local
         localMapScope = .page

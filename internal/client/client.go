@@ -342,27 +342,57 @@ type ServiceDependency struct {
 	PhotoHostProfileConfigured       *bool  `json:"photo_host_profile_configured,omitempty"`
 }
 
+// Public X.509 material must survive Go Agent -> Desktop IPC round trips.
+// No private key, ACME token or Host credential is carried in this DTO.
+type AdminCaddyCertificateInfo struct {
+	State             string   `json:"state"`
+	DNSNames          []string `json:"dns_names,omitempty"`
+	IPAddresses       []string `json:"ip_addresses,omitempty"`
+	NotBefore         string   `json:"not_before,omitempty"`
+	NotAfter          string   `json:"not_after,omitempty"`
+	LeafSHA256        string   `json:"leaf_sha256,omitempty"`
+	ChainRootSHA256   string   `json:"chain_root_sha256,omitempty"`
+	ChainRootNotAfter string   `json:"chain_root_not_after,omitempty"`
+	Issuer            string   `json:"issuer,omitempty"`
+	LeafPEM           string   `json:"leaf_pem,omitempty"`
+	VerifiedAt        string   `json:"verified_at,omitempty"`
+}
+type AdminCaddyPublicRootInfo struct {
+	SHA256   string `json:"sha256"`
+	NotAfter string `json:"not_after"`
+	PEM      string `json:"pem"`
+}
+type AdminCaddyCertificateInventory struct {
+	Scope  string                    `json:"scope"`
+	Domain AdminCaddyCertificateInfo `json:"domain"`
+	LAN    AdminCaddyCertificateInfo `json:"lan"`
+	RootCA *AdminCaddyPublicRootInfo `json:"root_ca,omitempty"`
+}
+
 // Caddy HTTPS administrator-desired state; never implies host activation.
 type AdminCaddyHTTPSConfig struct {
-	DesiredEnabled                bool       `json:"desired_enabled"`
-	DesiredDomain                 string     `json:"desired_domain"`
-	DesiredLANEnabled             bool       `json:"desired_lan_enabled"`
-	DesiredLANIP                  string     `json:"desired_lan_ip"`
-	HostLANConfigured             bool       `json:"host_lan_configured"`
-	HostLANIP                     string     `json:"host_lan_ip,omitempty"`
-	Revision                      uint64     `json:"revision"`
-	Source                        string     `json:"source"`
-	UpdatedAt                     *time.Time `json:"updated_at,omitempty"`
-	ApplyState                    string     `json:"apply_state"`
-	Editable                      bool       `json:"editable"`
-	ApplySupported                bool       `json:"apply_supported"`
-	HostApplyPending              bool       `json:"host_apply_pending"`
-	RequiresRestrictedMaintenance bool       `json:"requires_restricted_maintenance"`
-	Requirement                   string     `json:"requirement"`
-	HostObserved                  bool       `json:"host_observed"`
-	HostHTTPSConfigured           bool       `json:"host_https_configured"`
-	HostTLSState                  string     `json:"host_tls_state"`
-	HostLANTLSState               string     `json:"host_lan_tls_state"`
+	DesiredEnabled                bool                            `json:"desired_enabled"`
+	DesiredDomain                 string                          `json:"desired_domain"`
+	DesiredLANEnabled             bool                            `json:"desired_lan_enabled"`
+	DesiredLANIP                  string                          `json:"desired_lan_ip"`
+	HostLANConfigured             bool                            `json:"host_lan_configured"`
+	HostLANIP                     string                          `json:"host_lan_ip,omitempty"`
+	Revision                      uint64                          `json:"revision"`
+	Source                        string                          `json:"source"`
+	UpdatedAt                     *time.Time                      `json:"updated_at,omitempty"`
+	ApplyState                    string                          `json:"apply_state"`
+	Editable                      bool                            `json:"editable"`
+	ApplySupported                bool                            `json:"apply_supported"`
+	HostApplyPending              bool                            `json:"host_apply_pending"`
+	RequiresRestrictedMaintenance bool                            `json:"requires_restricted_maintenance"`
+	Requirement                   string                          `json:"requirement"`
+	HostObserved                  bool                            `json:"host_observed"`
+	HostHTTPSConfigured           bool                            `json:"host_https_configured"`
+	HostTLSState                  string                          `json:"host_tls_state"`
+	HostLANTLSState               string                          `json:"host_lan_tls_state"`
+	HostEnvSHA256                 string                          `json:"host_env_sha256,omitempty"`
+	HostEnvPendingRedeploy        bool                            `json:"host_env_pending_redeploy,omitempty"`
+	Certificates                  *AdminCaddyCertificateInventory `json:"certificates,omitempty"`
 }
 type AdminCaddyHTTPSUpdate struct {
 	Revision   uint64  `json:"revision"`
