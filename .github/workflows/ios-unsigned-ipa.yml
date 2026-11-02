@@ -267,6 +267,16 @@ jobs:
             -o "$RUNNER_TEMP/xdrive-ios-local-share-policy"
           "$RUNNER_TEMP/xdrive-ios-local-share-policy"
 
+      - name: Verify native Photos square thumbnail density without rescan
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativePhotoWallDensityPolicy.swift \
+            ios/tests/NativePhotoWallDensityPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-wall-density-policy"
+          "$RUNNER_TEMP/xdrive-ios-wall-density-policy"
+          node --test desktop/tests/ios-native-photo-wall-density.cjs
+
       - name: Verify native PhotoKit actual-day group boundaries
         run: |
           set -euo pipefail
