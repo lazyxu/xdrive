@@ -14,8 +14,11 @@ test('one native Files modal opens from the current real page and reanchors afte
   assert.match(browser, /selectedOwner = owner[\s\S]*?lastViewedFile = entry\.node[\s\S]*?selectedFile = entry/);
   assert.match(browser, /\.fullScreenCover\(item: \$selectedFile, onDismiss:/);
   assert.match(browser, /XDriveIOSNativeFilesViewer\(\s*initial: initial\.node,/);
-  assert.match(browser, /loadedItems: model\.entries\.map\(\\\.node\)\.filter/);
-  assert.match(browser, /\$0\.parent_id == initial\.node\.parent_id/);
+  assert.match(browser, /loadedItems: viewerWindow\(for: initial\.node\)/);
+  assert.match(browser, /private func viewerWindow\(for selected: XDriveIOSNativeFilesNode\)/);
+  assert.match(browser, /\$0\.parent_id == selected\.parent_id/);
+  assert.match(browser, /XDriveIOSNativeFilesViewerPolicy\.maximumLoadedRows/);
+  assert.match(browser, /Array\(siblings\[start\.\.<min\(start \+ maximum, siblings\.count\)\]\)/);
   assert.match(browser, /onNavigate: \{ next in[\s\S]*?selectedFile\?\.id == initial\.id/);
   assert.match(browser, /model\.entries\.contains\(where: \{ \$0\.node == next \}\)/);
   assert.match(browser, /lastViewedFile = next/);
