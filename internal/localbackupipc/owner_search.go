@@ -105,9 +105,9 @@ func (c *Client) OwnerSearchPage(ctx context.Context, query, cursor string) (Own
 		return OwnerSearchPage{}, errors.New("unbounded Owner search page")
 	}
 	result := OwnerSearchPage{
-		Items: make([]OwnerSearchHit, 0, len(page.Items)),
+		Items:      make([]OwnerSearchHit, 0, len(page.Items)),
 		NextCursor: page.NextCursor,
-		HasMore: page.NextCursor != "",
+		HasMore:    page.NextCursor != "",
 	}
 	for _, item := range page.Items {
 		if item.Node.ParentID == nil || !ValidOwnerFileID(*item.Node.ParentID) {
