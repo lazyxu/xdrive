@@ -10,11 +10,12 @@ const policy = read('ios/XDriveIOS/NativeFilesBatchTrashPolicy.swift')
 const api = read('internal/api/batch_nodes.go')
 const routes = read('internal/api/router.go')
 
-test('real native multi-select is bounded to one currently verified Owner directory page', () => {
+test('real native multi-select accepts at most 64 verified loaded Owner Nodes', () => {
   assert.match(page, /@State private var selectedIDs = Set<UInt64>\(\)/)
   assert.match(page, /private var canSelectPage: Bool \{[\s\S]*?model\.verifiedPage && activeQuery\.isEmpty/)
   assert.match(page, /if selecting \{[\s\S]*?native-ios-files-select-/)
-  assert.match(page, /selectedIDs = Set\(model\.entries\.map\(\\\.id\)\)/)
+  assert.match(page, /selectedIDs = Set\(model\.entries\.prefix\(\s*XDriveIOSNativeFilesPagePolicy\.pageSize\s*\)\.map\(\\\.id\)\)/)
+  assert.match(page, /selectedIDs\.count < XDriveIOSNativeFilesPagePolicy\.pageSize/)
   assert.match(page, /native-ios-files-multi-select/)
   assert.match(page, /showingBatchTrashConfirmation = true/)
   assert.match(page, /selectedIDs == Set\(chosenItems\.map\(\\\.id\)\)/)
