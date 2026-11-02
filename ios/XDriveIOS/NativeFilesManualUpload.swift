@@ -229,7 +229,11 @@ final class XDriveIOSNativeFilesManualUploadModel: ObservableObject {
                 }
             } catch XDriveManualDocumentStageError.tooLarge {
                 if epoch == ticket {
-                    status = "已确认 \(confirmed)/\(files.count) 项；当前文件超过 128 MiB，后续未提交。"
+                    status = "已确认 \(confirmed)/\(files.count) 项；当前文件超过 1 GiB，后续未提交。"
+                }
+            } catch XDriveManualDocumentStageError.insufficientDiskSpace {
+                if epoch == ticket {
+                    status = "已确认 \(confirmed)/\(files.count) 项；手机可用暂存空间不足（需额外保留 128 MiB），后续未提交。"
                 }
             } catch XDriveManualDocumentStageError.invalidName {
                 if epoch == ticket {
