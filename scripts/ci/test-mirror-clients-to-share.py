@@ -87,6 +87,23 @@ class MirrorTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
 
+    def test_snapshot_published_dispatch_is_opt_in_and_pr_cannot_upload(self):
+        root = Path(__file__).resolve().parents[2]
+        workflow = (root / '.github/workflows/client-artifact-share-mirror.yml').read_text()
+        publisher = (root / '.github/workflows/release.yml').read_text()
+        self.assertIn('repository_dispatch:\n    types: [xdrive_snapshot_published]', workflow)
+        self.assertIn('event_type=xdrive_snapshot_published', publisher)
+        self.assertIn("github.ref == 'refs/heads/master'", workflow)
+        self.assertIn("vars.XDRIVE_CLIENT_MIRROR_ENABLED == 'true'", workflow)
+        self.assertIn("github.event_name == 'repository_dispatch' || github.event_name == 'schedule'", workflow)
+        self.assertIn("if: github.event_name == 'pull_request'", workflow)
+        self.assertIn("if: github.event_name != 'workflow_dispatch' || inputs.dry_run == false", workflow)
+        self.assertIn(
+            "if: github.event_name == 'repository_dispatch' || github.event_name == 'schedule' || inputs.dry_run == false",
+            workflow,
+        )
+        self.assertIn('secrets.XDRIVE_CLIENT_MIRROR_SHARE_URL', workflow)
+
     def test_url_validation_requires_https_and_full_share_hash_route(self):
         valid = 'https://example.test:8443/#/s/' + 'Z' * 43
         share = mirror.Share(valid)

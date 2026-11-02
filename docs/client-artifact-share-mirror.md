@@ -3,8 +3,11 @@
 ## Included assets and observed size baseline
 
 The separate **Mirror Client Installers To xDrive Share** GitHub Action collects only
-existing, already-successful artifacts. It never builds or signs a client and
-never delays or alters existing CI/Snapshot publication.
+existing, already-successful artifacts. The GitHub Snapshot publisher emits
+`xdrive_snapshot_published` **after** it has verified and published its assets;
+the mirror then runs automatically when enabled. A daily run retries publication
+after delayed Android/iOS builds. It never builds or signs a client and never
+delays or alters existing CI/Snapshot publication.
 
 | Platform | Source | Example filename | Approx. bytes | Include |
 | --- | --- | --- | ---: | --- |
@@ -42,9 +45,12 @@ is served from the xDrive HTTPS website and has no offline installer to upload.
    on `master`, with default `dry_run=true`. This verifies available source
    bytes and reports real sizes/commits **without uploading or using secrets**.
 4. Once permitted and trusted, set repository variable
-   `XDRIVE_CLIENT_MIRROR_ENABLED=true`. The job runs daily at **04:37 UTC**
-   and uploads. `workflow_dispatch` with `dry_run=false` runs on demand even
-   if the schedule variable is not yet enabled (but requires secrets).
+   `XDRIVE_CLIENT_MIRROR_ENABLED=true`. Each **successfully published master
+   GitHub Snapshot** triggers an upload via the existing trusted
+   `xdrive_snapshot_published` repository dispatch. The daily **04:37 UTC**
+   schedule retries any late/failed mirror attempt; no new client build is
+   started. `workflow_dispatch` with `dry_run=false` runs on demand even
+   if the repository variable is not yet enabled (but requires secrets).
 5. Confirm the new Share directory `xDrive-Clients/`, with per-platform,
    12-character-commit subfolders and `<filename>.sha256` companion files.
 
@@ -95,11 +101,29 @@ is **excluded**, not advertised as installable.
 - The source plan excludes files over 256 MiB and any unsupported archive;
   the local source is hashed again just before upload, and all files are
   validated **before the first remote write**.
-- The optional scheduled uploader does not run unless the owner explicitly
-  sets `XDRIVE_CLIENT_MIRROR_ENABLED=true`. PR tests run offline, never receive
-  the credential and cannot upload. Scheduler and manual pushes use a single
-  non-canceling concurrency group.
+- Automatic post-publication upload and the daily recovery schedule do not
+  run unless the owner explicitly sets `XDRIVE_CLIENT_MIRROR_ENABLED=true`.
+  Both require `XDRIVE_CLIENT_MIRROR_SHARE_URL` as a separate Actions secret;
+  the job checks that it exists before downloading large artifacts. Manual
+  `dry_run=true` never needs the secret. PR tests run offline, never receive
+  the credential and cannot upload. Publisher dispatch, scheduler and manual
+  runs use a single non-canceling concurrency group.
 - CI/GitHub/Share hosting, WAN route, server storage and actual uploaded-byte
   acceptance are outside repository-only validation until a secret is
   configured and a real workflow has successfully completed. Physical device
   installation is **跳过（未验收）**.
+
+## Scope boundary: client mirror is not a Server update provider
+
+This folder contains **client installers only**, not Docker images, deployment
+scripts or a full compatible Server release bundle. It **must not** be passed to
+`xdrive-server update` as if it were GitHub or GitLab. An upload Share is also
+an untrusted distribution source: a colocated `.sha256` file can be forged
+alongside its binary. A future `--source xdrive` updater requires an
+authenticated/signature-verified, rollback-protected component manifest bound
+to exact image digests and a read-only download capability. The current
+five-component offline Manifest is tracked in PR #3625; until its manifest
+and the Share reader have passed separate CI/restore acceptance, keep the
+existing `--source github|gitlab` Server updater unchanged. The public
+download link should remain read-only, with a separate **private** uploader
+capability to the same Owner-controlled storage directory.
