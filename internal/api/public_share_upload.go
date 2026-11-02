@@ -139,6 +139,12 @@ func (s *Server) publicShareUploadAdmissionTx(
 		parentID, ownerID, meta.NodeTypeDir).First(&parent).Error; err != nil {
 		return share, errShareUploadDenied
 	}
+	if err := notesRejectNodeWithReason(ctx, tx, ownerID, root.ID); err != nil {
+		return share, errShareUploadDenied
+	}
+	if err := notesRejectNodeWithReason(ctx, tx, ownerID, parent.ID); err != nil {
+		return share, errShareUploadDenied
+	}
 	allowed, err := publicShareUploadContainsNodeTx(ctx, tx, ownerID, root.ID, parent.ID)
 	if err != nil || !allowed {
 		return share, errShareUploadDenied
