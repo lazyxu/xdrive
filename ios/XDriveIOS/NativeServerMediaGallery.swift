@@ -471,8 +471,18 @@ struct XDriveIOSNativeServerMediaPreview: View {
                         onFailed: { playbackLoadFailed($0) }
                     )
                 } else if let image {
-                    XDriveIOSNativeZoomablePhotoView(image: image)
-                        .onNavigateSwipe { navigateLoaded($0) }
+                    VStack(spacing: 6) {
+                        XDriveIOSNativeZoomablePhotoView(image: image)
+                            .onNavigateSwipe { navigateLoaded($0) }
+                        if imageIsThumbnailOnly {
+                            Text("原件适屏预览过大或无法解码，当前仅显示低清缩略图。可从顶部重试。")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 8)
+                                .accessibilityIdentifier("native-ios-photoasset-still-lowres")
+                        }
+                    }
                 } else if let failure {
                     VStack(spacing: 8) {
                         Text(failure).foregroundStyle(.secondary).padding(.horizontal)
@@ -538,6 +548,15 @@ struct XDriveIOSNativeServerMediaPreview: View {
                         }
                         .accessibilityLabel("重新加载云端视频")
                         .accessibilityIdentifier("native-ios-photoasset-player-reload")
+                    }
+                }
+                ToolbarItem(placement: .navigationBarLeading) {
+                    if ownerAuthorized && imageIsThumbnailOnly {
+                        Button { retirePreview() } label: {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        .accessibilityLabel("重新加载高清照片预览")
+                        .accessibilityIdentifier("native-ios-photoasset-still-reload")
                     }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -634,16 +653,40 @@ struct XDriveIOSNativeServerMediaPreview: View {
                         }
                     }
                 } else {
-                    let media = try await XDriveIOSNativeMediaGalleryReader(
+                    let reader = XDriveIOSNativeMediaGalleryReader(
                         owner: auth.owner, accessToken: auth.accessToken
-                    ).preview(target)
-                    try Task.checkCancellation()
-                    guard phase == .active, previewRequestID == requestID,
-                          XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected)
-                    else { return }
-                    image = media.image
-                    imageIsThumbnailOnly = false
-                    if let url = media.videoURL { player = AVPlayer(url: url) }
+                    )
+                    do {
+                        // Preserve the verified one-shot preview contract.
+                        // The fallback Reader below is constructed with the
+                        // identical frozen Owner and bearer only on demand.
+                        let media = try await XDriveIOSNativeMediaGalleryReader(
+                            owner: auth.owner, accessToken: auth.accessToken
+                        ).preview(target)
+                        try Task.checkCancellation()
+                        guard phase == .active, previewRequestID == requestID,
+                              XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected),
+                              XDriveIOSNativePhotoOwnerScope.matches(auth.owner, expected)
+                        else { return }
+                        image = media.image
+                        imageIsThumbnailOnly = false
+                        if let url = media.videoURL { player = AVPlayer(url: url) }
+                    } catch XDriveIOSNativeMediaStillPreviewFallback.unavailable {
+                        // Never hide access revocation or a failed video/Live
+                        // behind a thumbnail. Only this already selected still
+                        // can use its independent bounded revision derivative.
+                        guard target.supportsPreview, !target.isLive, !target.isVideo
+                        else { throw XDriveIOSNativeMediaReadFailure.unsupported }
+                        let thumbnail = try await reader.thumbnail(target)
+                        try Task.checkCancellation()
+                        guard phase == .active, previewRequestID == requestID,
+                              XDriveIOSNativePhotoOwnerScope.matches(login.owner, expected),
+                              XDriveIOSNativePhotoOwnerScope.matches(auth.owner, expected)
+                        else { return }
+                        image = thumbnail
+                        imageIsThumbnailOnly = true
+                        failure = nil
+                    }
                 }
             } catch is CancellationError {
                 // The generation has retired. Do not display a stale error.

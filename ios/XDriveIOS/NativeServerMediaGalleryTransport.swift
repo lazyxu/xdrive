@@ -79,6 +79,13 @@ enum XDriveIOSNativeMediaReadFailure: Error {
     case tooLarge
 }
 
+// This specifically means the *image body* exceeded the native preview
+// buffer or ImageIO could not decode it. It never converts bad tickets,
+// denied Owner access or transient HTTP failures into a successful preview.
+enum XDriveIOSNativeMediaStillPreviewFallback: Error {
+    case unavailable
+}
+
 /// Never follow an authenticated Owner request to another origin.
 private final class XDriveIOSNativeMediaRejectRedirect: NSObject, URLSessionTaskDelegate {
     func urlSession(_ session: URLSession, task: URLSessionTask,
@@ -320,6 +327,9 @@ struct XDriveIOSNativeMediaGalleryReader {
         let data = try await read(ticketURL, method: "POST", maximum: 32_768)
         let ticket = try JSONDecoder().decode(XDriveIOSNativeMediaPreviewTicket.self, from: data)
         guard ticket.url.hasPrefix("/api/v1/file-preview/"),
+              XDriveIOSNativeFilesViewerPolicy.validTicketPath(
+                ticket.url, nodeID: item.id
+              ),
               !ticket.url.hasPrefix("//"),
               (item.isVideo ? ticket.kind == "video" : ticket.kind == "image"),
               let parsed = URLComponents(string: ticket.url),
@@ -337,7 +347,16 @@ struct XDriveIOSNativeMediaGalleryReader {
             throw XDriveIOSNativeMediaReadFailure.malformed
         }
         if item.isVideo { return (nil, signedURL) }
-        let still = try await read(signedURL, bearer: false, maximum: 32 * 1_048_576)
+        let still: Data
+        do {
+            still = try await read(
+                signedURL, bearer: false, maximum: 32 * 1_048_576
+            )
+        } catch XDriveIOSNativeMediaReadFailure.tooLarge {
+            // The preview ticket was valid, but its image body is too large.
+            // A separate bounded Owner/revision thumbnail can be requested.
+            throw XDriveIOSNativeMediaStillPreviewFallback.unavailable
+        }
         // Preview responses can be compressed yet huge when decoded.
         // Downsample off the MainActor instead of allocating unbounded pixels.
         // The selected Viewer may close or switch Owner while ImageIO decodes
@@ -363,7 +382,9 @@ struct XDriveIOSNativeMediaGalleryReader {
         }
         try Task.checkCancellation()
         guard let bounded else {
-            throw XDriveIOSNativeMediaReadFailure.malformed
+            // Do not claim this image is an original-resolution still.
+            // The presenting Viewer may try the indexed low-res derivative.
+            throw XDriveIOSNativeMediaStillPreviewFallback.unavailable
         }
         return (UIImage(cgImage: bounded), nil)
     }
