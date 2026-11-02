@@ -201,8 +201,25 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
             // Foreground schedules can outlive a short-lived access token.
             // Renew ONLY using the isolated native refresh credential and
             // re-prove the exact old Owner/root before any further file I/O.
+            // A scheduled Apple Notes Shortcut may have rotated the native
+            // saved refresh credential while this SwiftUI session stayed open.
+            // Adopt it only for the SAME verified Server/Owner/root identity.
+            let refreshCandidate: String
+            if keepSignedIn {
+                guard let stored = try XDriveIOSNativeOwnerSessionStore.load(),
+                      stored.origin == snapshot.origin.absoluteString,
+                      stored.username == snapshot.username,
+                      stored.serverInstanceID == snapshot.verifiedOwner.instanceID,
+                      stored.ownerID == snapshot.verifiedOwner.ownerID,
+                      stored.rootNodeID == snapshot.verifiedOwner.rootNodeID else {
+                    throw XDriveIOSNativeSessionError.staleSession
+                }
+                refreshCandidate = stored.refreshToken
+            } else {
+                refreshCandidate = snapshot.refreshToken
+            }
             let replacement = try await AuthService(origin: snapshot.origin)
-                .refresh(token: snapshot.refreshToken)
+                .refresh(token: refreshCandidate)
             try Task.checkCancellation()
             guard generation == ticket,
                   replacement.must_change_password != true,
@@ -227,6 +244,17 @@ final class XDriveIOSNativeOwnerLoginModel: ObservableObject {
         else { throw XDriveIOSNativeSessionError.staleSession }
         if token != snapshot.accessToken || refresh != snapshot.refreshToken {
             if keepSignedIn {
+                // Do not resurrect a cleared or switched login after a
+                // concurrent Shortcut/account mutation during the await.
+                guard let stored = try XDriveIOSNativeOwnerSessionStore.load(),
+                      stored.origin == snapshot.origin.absoluteString,
+                      stored.username == snapshot.username,
+                      stored.serverInstanceID == snapshot.verifiedOwner.instanceID,
+                      stored.ownerID == snapshot.verifiedOwner.ownerID,
+                      stored.rootNodeID == snapshot.verifiedOwner.rootNodeID,
+                      stored.refreshToken == refreshCandidate else {
+                    throw XDriveIOSNativeSessionError.staleSession
+                }
                 try XDriveIOSNativeOwnerSessionStore.save(record(
                     owner: fresh, refreshToken: refresh
                 ))
