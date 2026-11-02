@@ -1462,6 +1462,13 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
     // An OS BGTask can commit a new original without a foreground writer
     // notification. Revalidate once after returning from an inactive scene.
     @State private var needsForegroundReload = false
+    @State private var scanTailVisible = false
+    @State private var lastAutoScanOffset: Int?
+    @State private var lastObservedOriginalCount = 0
+    @State private var consecutiveEmptyScans = 0
+    // Empty Owner-root ranges may contain only unrelated files. Never crawl
+    // the entire Server root simply because a short list fits on screen.
+    private let maxAutomaticEmptyScans = 4
 
     var body: some View {
         ScrollViewReader { returnScroll in
@@ -1473,7 +1480,7 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
             ScrollView {
             LazyVStack(alignment: .leading, spacing: compactGallery ? 8 : 12) {
                 if !compactGallery {
-                    Text("当前账户的 Owner 根目录中，已由 iPhone 原件备份写入的文件。按最近更新时间分批检查，每批最多 48 项。")
+                    Text("当前账户已备份的 iPhone 原件，向下滚动时自动查找后续照片和视频。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 Text("已检查根目录 \(model.scanned) / \(model.total) 项")
@@ -1499,6 +1506,11 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
                         .id(node.id)
                         .accessibilityFocused($accessibilityFocusedNodeID, equals: node.id)
                         .accessibilityIdentifier("native-ios-cloud-original-tile")
+                        .onAppear {
+                            if node.id == model.nodes.last?.id {
+                                requestMoreOnScroll()
+                            }
+                        }
                     }
                 }
                 if !compactGallery {
@@ -1511,19 +1523,43 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
                     Button("重试") { model.loadNext(login: login) }
                         .buttonStyle(.bordered)
                 }
-                if model.scanned < model.total && !model.busy {
-                    Button("继续检查下一批") { model.loadNext(login: login) }
-                        .buttonStyle(.bordered)
-                        .accessibilityIdentifier("native-ios-cloud-next")
+                if model.scanned < model.total && model.error == nil {
+                    VStack(spacing: 8) {
+                        if model.busy {
+                            ProgressView()
+                        } else {
+                            Text(consecutiveEmptyScans >= maxAutomaticEmptyScans
+                                ? "继续向下滑动，查找后续备份照片"
+                                : "向下浏览以继续查找备份照片")
+                                .font(.footnote).foregroundStyle(.secondary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 128)
+                    .accessibilityIdentifier("native-ios-cloud-original-continuous-tail")
+                    .onAppear {
+                        scanTailVisible = true
+                        requestMoreOnScroll()
+                    }
+                    .onDisappear { scanTailVisible = false }
                 }
                 if model.scanned > 0 && model.nodes.isEmpty {
-                    Text("已检查的目录页没有 iPhone 备份原件，可继续查找后续页；这不代表全库没有文件。")
+                    Text("当前已检查范围没有找到 iPhone 备份原件；继续向下滚动查找，不能据此认为云端没有文件。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 Button("刷新云端原件") { model.reload(login: login) }
                     .disabled(model.busy)
             }.padding()
             }
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 14).onEnded { _ in
+                    // A fresh swipe explicitly admits another bounded scan
+                    // budget even if preceding root ranges had no originals.
+                    guard scanTailVisible, selected == nil else { return }
+                    consecutiveEmptyScans = 0
+                    lastAutoScanOffset = nil
+                    requestMoreOnScroll()
+                }
+            )
         }
         .navigationTitle("云端备份原件")
         .toolbar {
@@ -1539,7 +1575,7 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
         .alert("云端备份原件说明", isPresented: $showingGalleryHelp) {
             Button("完成", role: .cancel) {}
         } message: {
-            Text("只显示当前已验证 Owner 根目录中由 iPhone 原件备份写入的文件，每批最多检查 48 项。仅可见项目请求 Server 缩略图；缩略图缺失不代表原件丢失，不下载大体积原件填充。")
+            Text("只显示当前已验证 Owner 根目录中由 iPhone 备份的原件；连续滚动时按需检查后续范围。仅可见项目请求 Server 缩略图，缩略图缺失不代表原件丢失，不下载大体积原件填充。")
         }
         .fullScreenCover(item: $selected, onDismiss: {
             // A new receipt/scene/Owner cannot re-focus an obsolete Node.
@@ -1587,6 +1623,28 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
                 // the background page mounted while the Viewer is visible.
                 model.suspendForViewer()
                 accessibilityFocusedNodeID = nil
+            }
+        }
+        .onChange(of: model.busy) { pending in
+            if !pending && scanTailVisible {
+                requestMoreOnScroll()
+            }
+        }
+        .onChange(of: model.scanned) { scanned in
+            if scanned == 0 {
+                consecutiveEmptyScans = 0
+                lastObservedOriginalCount = 0
+                lastAutoScanOffset = nil
+            } else {
+                if model.nodes.count > lastObservedOriginalCount {
+                    consecutiveEmptyScans = 0
+                } else {
+                    consecutiveEmptyScans += 1
+                }
+                lastObservedOriginalCount = model.nodes.count
+                if scanTailVisible {
+                    DispatchQueue.main.async { requestMoreOnScroll() }
+                }
             }
         }
         .task {
@@ -1663,6 +1721,16 @@ struct XDriveIOSNativeCloudOriginalGallery: View {
             }
         }
         }
+    }
+
+    private func requestMoreOnScroll() {
+        guard phase == .active, selected == nil, scanTailVisible,
+              login.owner != nil, !model.busy, model.error == nil,
+              model.scanned < model.total,
+              consecutiveEmptyScans < maxAutomaticEmptyScans,
+              lastAutoScanOffset != model.scanned else { return }
+        lastAutoScanOffset = model.scanned
+        model.loadNext(login: login)
     }
 
     private func openViewer(_ node: XDriveIOSNativeCloudOriginal) {
