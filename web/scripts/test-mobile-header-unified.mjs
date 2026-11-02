@@ -137,6 +137,8 @@ assert.match(filesSource, /managedHeader \|\| \(compactTitleVisible && !savedRes
 assert.match(gallerySource, /data-xdrive-mobile-gallery-more-select/)
 assert.match(gallerySource, /data-xdrive-mobile-gallery-more-sort/)
 assert.match(gallerySource, /data-xdrive-mobile-gallery-more-filter/)
+assert.match(gallerySource, /ref=\{narrowManagedHeader && showCollection \? selectionControlRef : undefined\}/,
+  'selection focus is restored to a visible control on narrow phones')
 assert.match(gallerySource, /sx=\{narrowManagedHeader \? \{ display: 'none' \} : undefined\}/)
 assert.match(appSource, /compactWorkspace \? \{ px: 0, py: 0 \}/,
   'wide iPad in five-slot mode cannot retain old desktop page padding')

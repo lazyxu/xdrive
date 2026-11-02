@@ -203,7 +203,8 @@ export function XDriveMobileGalleryChrome({
           sx={{ flexShrink: 0, '& .MuiButton-root, & .MuiIconButton-root': { minHeight: 44, minWidth: 44 } }}>
           {showCollection ? (
             <>
-              <Button ref={selectionControlRef} size="small" aria-pressed={selectionMode}
+              <Button ref={narrowManagedHeader ? undefined : selectionControlRef}
+                size="small" aria-pressed={selectionMode}
                 data-xdrive-mobile-gallery-select onClick={onToggleSelection}
                 sx={narrowManagedHeader ? { display: 'none' } : undefined}>
                 {selectionMode ? '完成' : '选择'}
@@ -221,7 +222,8 @@ export function XDriveMobileGalleryChrome({
             </>
           ) : null}
           {canShowMore ? (
-            <IconButton aria-label="图库更多操作" aria-haspopup="dialog"
+            <IconButton ref={narrowManagedHeader && showCollection ? selectionControlRef : undefined}
+              aria-label="图库更多操作" aria-haspopup="dialog"
               aria-expanded={moreOpen}
               onClick={() => setMoreOpen(true)} data-xdrive-mobile-gallery-more
               sx={{ minWidth: 44, minHeight: 44 }}>
