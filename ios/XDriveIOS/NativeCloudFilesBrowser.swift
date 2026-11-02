@@ -482,24 +482,6 @@ struct XDriveIOSNativeFilesBrowser: View {
                 if let locatedFileNotice {
                     Text(locatedFileNotice).foregroundStyle(.orange).font(.footnote)
                 }
-                HStack {
-                    Picker("排序", selection: $sort) {
-                        Text("名称").tag("name")
-                        Text("修改时间").tag("updated")
-                        Text("大小").tag("size")
-                        Text("类型").tag("type")
-                    }
-                    Picker("顺序", selection: $order) {
-                        Text("升序").tag("asc")
-                        Text("降序").tag("desc")
-                    }
-                }
-                Picker("显示方式", selection: $viewMode) {
-                    Text("列表").tag("list")
-                    Text("网格").tag("grid")
-                }
-                .pickerStyle(.segmented)
-                .accessibilityIdentifier("native-ios-files-view-mode")
                 if folder == nil {
                     NavigationLink {
                         XDriveIOSNativeFilesCollectionScreen(login: login, kind: .recent)
@@ -782,24 +764,45 @@ struct XDriveIOSNativeFilesBrowser: View {
                 .accessibilityIdentifier("native-ios-files-multi-select")
             }
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button { openManagement(for: nil) } label: {
-                    Label("文件夹操作", systemImage: "folder.badge.gearshape")
-                }
-                .disabled(model.loading || !model.verifiedPage || selecting ||
-                          batchTrash.busy || batchTarget.busy ||
-                          batchExport.busy || !batchExport.prepared.isEmpty ||
-                          login.owner == nil || !activeQuery.isEmpty)
-                .accessibilityIdentifier("native-ios-files-folder-actions")
-            }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button {
-                    reload()
+                Menu {
+                    Picker("显示方式", selection: $viewMode) {
+                        Text("列表").tag("list")
+                        Text("网格").tag("grid")
+                    }
+                    .accessibilityIdentifier("native-ios-files-view-mode")
+                    Picker("排序", selection: $sort) {
+                        Text("名称").tag("name")
+                        Text("修改时间").tag("updated")
+                        Text("大小").tag("size")
+                        Text("类型").tag("type")
+                    }
+                    .disabled(selecting || model.loading)
+                    Picker("顺序", selection: $order) {
+                        Text("升序").tag("asc")
+                        Text("降序").tag("desc")
+                    }
+                    .disabled(selecting || model.loading)
+                    Divider()
+                    Button { openManagement(for: nil) } label: {
+                        Label("新建文件夹或上传", systemImage: "folder.badge.plus")
+                    }
+                    .disabled(model.loading || !model.verifiedPage || selecting ||
+                              batchTrash.busy || batchTarget.busy ||
+                              batchExport.busy || !batchExport.prepared.isEmpty ||
+                              login.owner == nil || !activeQuery.isEmpty)
+                    .accessibilityIdentifier("native-ios-files-folder-actions")
+                    Button {
+                        reload()
+                    } label: {
+                        Label("刷新", systemImage: "arrow.clockwise")
+                    }
+                    .accessibilityIdentifier("native-ios-files-refresh")
+                    .disabled(batchTrash.busy || batchTarget.busy ||
+                              batchExport.busy || !batchExport.prepared.isEmpty)
                 } label: {
-                    Label("刷新", systemImage: "arrow.clockwise")
+                    Label("更多", systemImage: "ellipsis.circle")
                 }
-                .accessibilityIdentifier("native-ios-files-refresh")
-                .disabled(batchTrash.busy || batchTarget.busy ||
-                          batchExport.busy || !batchExport.prepared.isEmpty)
+                .accessibilityIdentifier("native-ios-files-more-options")
             }
         }
     }
