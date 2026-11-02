@@ -28,7 +28,10 @@ LABEL org.opencontainers.image.source="https://github.com/lazyxu/xdrive" \
       org.opencontainers.image.version="$VERSION" \
       org.opencontainers.image.revision="$BUILD_COMMIT" \
       org.opencontainers.image.created="$BUILD_TIME"
-RUN apk add --no-cache ffmpeg
+ARG ALPINE_MIRROR=https://dl-cdn.alpinelinux.org/alpine
+COPY deploy/install-media-worker-ffmpeg.sh /tmp/install-media-worker-ffmpeg.sh
+RUN sh /tmp/install-media-worker-ffmpeg.sh "$ALPINE_MIRROR" "$(cut -d. -f1,2 /etc/alpine-release)" \
+    && rm /tmp/install-media-worker-ffmpeg.sh
 COPY --from=build /out/xdrive-server /usr/local/bin/xdrive-server
 USER 65532:65532
 ENV XD_MEDIA_WORKER_SOCKET=/run/xdrive-media-worker/media-worker.sock

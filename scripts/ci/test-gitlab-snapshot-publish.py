@@ -26,6 +26,7 @@ FILES = (
     'xdrive-server-install.sh', 'server-backup.sh', 'server-backup-scheduled.sh',
     'server-restore.sh', 'server-verify.sh', 'server-doctor.sh',
     'server-migrate-user.sh', 'xdrive-server', 'docker-compose.yml',
+    'server-control.sh', 'caddy-env-config.py', 'caddy-admission.py',
     'xdrive.env.example', 'SHA256SUMS.txt',
 )
 

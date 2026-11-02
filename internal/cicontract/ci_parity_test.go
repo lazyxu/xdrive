@@ -237,6 +237,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	gitlabServerImage := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-server-image.sh"))
 	gitlabCaddyImage := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-caddy-image.sh"))
 	gitlabServerBackup := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-server-backup.sh"))
+	gitlabBackupWorkspace := readFile(t, filepath.Join(root, "scripts", "ci", "run-backup-daemon-workspace.sh"))
 	gitlabGoWindows := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-go-windows.sh"))
 	gitlabPackageWindows := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-package-windows-client.sh"))
 	gitlabTestLinuxArtifact := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-test-linux-artifact.sh"))
@@ -250,7 +251,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	gitlabWindowsBash := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-desktop-windows.sh")) + "\n" +
 		gitlabGoWindows + "\n" + gitlabPackageWindows + "\n" + gitlabTestWindowsArtifact + "\n" + gitlabTestWindowsSmoke
 	gitlabLinuxBash := clientCoreBuild + "\n" + gitlabGoLinux + "\n" + gitlabPackageLinux + "\n" + gitlabSourceAgent + "\n" +
-		gitlabServerValidation + "\n" + gitlabServerImage + "\n" + gitlabCaddyImage + "\n" + gitlabServerBackup + "\n" +
+		gitlabServerValidation + "\n" + gitlabServerImage + "\n" + gitlabCaddyImage + "\n" + gitlabServerBackup + "\n" + gitlabBackupWorkspace + "\n" +
 		gitlabTestLinuxArtifact + "\n" + gitlabTestSourceArtifact
 	gitlabWindowsNative := readFile(t, filepath.Join(root, "scripts", "ci", "gitlab-windows-native.ps1"))
 	windowsUninstallerResolver := readFile(t, filepath.Join(root, "scripts", "ci", "resolve-windows-uninstaller.ps1"))
@@ -450,6 +451,17 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	assertGitLabJobTextContains(t, gitlab, "server-validation",
 		"bash scripts/ci/install-linux-fetch-tools.sh",
 	)
+	for _, jobName := range []string{"go-linux", "go-linux-api"} {
+		assertGitLabJobTextContains(t, gitlab, jobName,
+			"bash scripts/ci/install-linux-fetch-tools.sh postgresql-client",
+		)
+	}
+	assertGitLabJobTextContains(t, gitlab, "build-client-core",
+		"bash scripts/ci/install-linux-fetch-tools.sh python3",
+	)
+	for _, jobName := range []string{"test-backup-cli-windows", "test-windows-rollback-artifact", "test-windows-upgrade-artifact", "test-windows-smoke-artifact"} {
+		assertGitLabJobTextContains(t, gitlab, jobName, "xdrive-test-windows-client-artifact")
+	}
 	fetchTools := readFile(t, filepath.Join(root, "scripts", "ci", "install-linux-fetch-tools.sh"))
 	requireRaw(t, "GitLab signed APT fetch tools", fetchTools,
 		"ca-certificates curl jq xz-utils",
@@ -1013,6 +1025,9 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 		"server-verify.sh",
 		"server-doctor.sh",
 		"server-migrate-user.sh",
+		"server-control.sh",
+		"caddy-env-config.py",
+		"caddy-admission.py",
 		"xdrive-server",
 		"docker-compose.yml",
 		"xdrive.env.example",
@@ -1163,6 +1178,9 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 	// Both providers must consume the original xd/Agent core before advertising an SPK.
 	// Do not relax either publisher to a post-build or best-effort dependency.
 	assertGitLabJobNeeds(t, gitlabReleaseYAML, "publish-release", []string{"build-client-core", "package-linux-client", "package-windows-client", "release-assets", "promote-server-images"})
+	assertGitLabJobTextContains(t, gitlabReleaseYAML, "publish-release",
+		"sh scripts/ci/install-gitlab-release-tools.sh",
+	)
 	assertGitLabRuleNeeds(t, gitlabReleaseYAML, "release-assets", `$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG =~ /^v.+/`, []string{"build-source-agent", "final-gate"})
 	assertGitLabRuleNeeds(t, gitlabReleaseYAML, "release-assets", `$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE`, []string{"build-source-agent"})
 	assertGitLabRuleNeeds(t, gitlabReleaseYAML, "publish-server-images", `$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG =~ /^v.+/`, []string{"final-gate", "server-image", "caddy-image", "photo-face-image", "media-worker-image"})
@@ -1183,6 +1201,9 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 		"GLAB_ENABLE_CI_AUTOLOGIN: \"true\"",
 		"image: $XDRIVE_CI_GLAB_IMAGE",
 		"- release/server-migrate-user.sh",
+		"- release/server-control.sh",
+		"- release/caddy-env-config.py",
+		"- release/caddy-admission.py",
 	)
 	for _, legacyJob := range []string{"package-linux-amd64:", "package-windows-amd64:", "package-server-images:"} {
 		if strings.Contains(gitlabRelease, legacyJob) {

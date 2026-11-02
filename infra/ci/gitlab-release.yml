@@ -57,6 +57,9 @@ release-assets:
       - release/server-verify.sh
       - release/server-doctor.sh
       - release/server-migrate-user.sh
+      - release/server-control.sh
+      - release/caddy-env-config.py
+      - release/caddy-admission.py
       - release/xdrive-server
       - release/docker-compose.yml
       - release/xdrive.env.example
@@ -129,6 +132,8 @@ publish-release:
     - linux
   variables:
     GLAB_ENABLE_CI_AUTOLOGIN: "true"
+  before_script:
+    - sh scripts/ci/install-gitlab-release-tools.sh
   # A Snapshot with complete artifacts may publish even if unrelated tests fail.
   # A missing image/client artifact must still fail closed.
   rules:

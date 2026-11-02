@@ -74,6 +74,24 @@ cmp -s "$fixture/embedded.sha256" "$expected" || {
   exit 1
 }
 
+# The manifest must describe files actually shipped to the installer, not
+# merely files present in the source checkout. Check every staged byte.
+while read -r digest source_path; do
+  case "$source_path" in
+    scripts/xdrive-server-host.sh) staged="$fixture/release/xdrive-server" ;;
+    *) staged="$fixture/release/$(basename "$source_path")" ;;
+  esac
+  [[ -s "$staged" ]] || { echo "Missing staged deployment asset: $source_path" >&2; exit 1; }
+  [[ "$(sha256sum "$staged" | cut -d' ' -f1)" == "$digest" ]] || {
+    echo "Staged deployment asset differs from embedded digest: $source_path" >&2; exit 1
+  }
+done < "$fixture/embedded.sha256"
+for name in server-control.sh caddy-env-config.py caddy-admission.py; do
+  grep -Fq -- "- release/$name" "$ROOT/infra/ci/gitlab-release.yml" || {
+    echo "Deployment asset missing from GitLab artifact handoff: $name" >&2; exit 1
+  }
+done
+
 printf '\n# tamper\n' >> "$fixture/scripts/server-control.sh"
 if (cd "$fixture"; sha256sum --check --status "$fixture/embedded.sha256"); then
   echo "Tampered GitLab deployment asset unexpectedly passed verification" >&2
