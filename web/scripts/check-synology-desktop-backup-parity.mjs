@@ -346,7 +346,7 @@ if (!desktop.includes('function XDriveDeviceBackupServerPage') ||
     !hostDiag.includes('<XDriveDiagnosticsPage') ||
     !appPageOutlet.includes('<XDriveDiagnosticsHostController') ||
     !dsmHost.includes('diagnosticsSource: {') ||
-    !dsmHost.includes('read: signal => local.diagnostics(signal)') ||
+    !dsmHost.includes('read: signal => xDriveSynologyReadOwnerLoginDiagnostics(local, signal)') ||
     dsmEntry.includes('coreKeys=') ||
     !nav.includes('xDriveDiagnosticsSidebarDestination') ||
     !diag.includes('scopeNotice') ||
