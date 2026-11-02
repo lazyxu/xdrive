@@ -30,3 +30,11 @@ Follow-up rollout gates:
 6. Validate full applicable CI and device behavior before master merge.
 
 Never accept arbitrary client quality, proxy URLs, or unsafely shared cache tokens.
+
+## Codec proof (account-preference stacked stage)
+
+The real `ViewerQualityPreview` encoder is now available to Server integrations
+for the six bounded variants. The existing Viewer route still requests legacy
+high and does not consume these alternate formats until the authenticated
+admin-cap and cache/GC pipeline is wired. A codec unit test decodes generated
+JPEG/WebP pixels, checks long-edge dimensions and rejects arbitrary quality.

@@ -48,7 +48,27 @@ func ViewerPreviewJPEG(r io.ReadSeeker, orientation, maxEdge int) (Thumbnail, er
 	return renderViewerPreview(r, orientation, maxEdge, "jpeg")
 }
 
+// ViewerQualityPreview renders only a previously validated, finite Viewer
+// quality variant. It does not change the current 4096px/v1 Server route.
+func ViewerQualityPreview(r io.ReadSeeker, orientation int, variant ViewerQualityVariant) (Thumbnail, error) {
+	if !validViewerQualityVariant(variant) {
+		return Thumbnail{}, ErrViewerQualityPreference
+	}
+	return renderViewerPreviewWithQuality(r, orientation, variant.MaxEdge, variant.Format, variant.Quality)
+}
+
 func renderViewerPreview(r io.ReadSeeker, orientation, maxEdge int, format string) (Thumbnail, error) {
+	switch format {
+	case "webp":
+		return renderViewerPreviewWithQuality(r, orientation, maxEdge, format, ViewerPreviewWebPQuality)
+	case "jpeg":
+		return renderViewerPreviewWithQuality(r, orientation, maxEdge, format, ViewerPreviewJPEGQuality)
+	default:
+		return Thumbnail{}, fmt.Errorf("unsupported viewer format %q", format)
+	}
+}
+
+func renderViewerPreviewWithQuality(r io.ReadSeeker, orientation, maxEdge int, format string, quality int) (Thumbnail, error) {
 	var out Thumbnail
 	if r == nil {
 		return out, fmt.Errorf("viewer source is nil")
@@ -101,12 +121,12 @@ func renderViewerPreview(r io.ReadSeeker, orientation, maxEdge int, format strin
 	switch format {
 	case "webp":
 		if err := webpcodec.Encode(&encoded, dst, webpcodec.Options{
-			Quality: ViewerPreviewWebPQuality, Method: 4,
+			Quality: quality, Method: 4,
 		}); err != nil {
 			return Thumbnail{}, err
 		}
 		out.MIMEType = "image/webp"
-		out.Quality = ViewerPreviewWebPQuality
+		out.Quality = quality
 	case "jpeg":
 		// JPEG lacks alpha: composite transparent pixels over white rather
 		// than allowing uninitialized black pixels to appear in fallback.
@@ -115,12 +135,12 @@ func renderViewerPreview(r io.ReadSeeker, orientation, maxEdge int, format strin
 			image.Point{}, draw.Src)
 		draw.Draw(opaque, opaque.Bounds(), dst, image.Point{}, draw.Over)
 		if err := jpeg.Encode(&encoded, opaque, &jpeg.Options{
-			Quality: ViewerPreviewJPEGQuality,
+			Quality: quality,
 		}); err != nil {
 			return Thumbnail{}, err
 		}
 		out.MIMEType = "image/jpeg"
-		out.Quality = ViewerPreviewJPEGQuality
+		out.Quality = quality
 	default:
 		return Thumbnail{}, fmt.Errorf("unsupported viewer format %q", format)
 	}
