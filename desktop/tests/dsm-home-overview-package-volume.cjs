@@ -32,7 +32,10 @@ const dependencies = {
   './SectionHeader': { XDriveSectionHeader: 'SectionHeader' },
   './StatePanel': { XDriveStatePanel: 'StatePanel' },
   './StatusAlert': { XDriveStatusAlert: 'StatusAlert' },
-  './WorkspaceSurface': { XDriveWorkspaceSurface: 'WorkspaceSurface' },
+  './WorkspaceSurface': {
+    XDriveWorkspaceSurface: ({ children, pageActions }) =>
+      React.createElement('WorkspaceSurface', null, pageActions, children),
+  },
 }
 const mod = { exports: {} }
 new Function('module', 'exports', 'require', compiled.outputText)(
