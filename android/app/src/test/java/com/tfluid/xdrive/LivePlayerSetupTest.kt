@@ -85,6 +85,32 @@ class LivePlayerSetupTest {
         assertTrue(liveMotionMayStart(true, true, true, false))
     }
 
+    @Test fun cloudLivePhotoRequiresDecodedStillAndDefaultZoom() {
+        assertTrue(galleryLivePhotoHoldAllowed(true, true, 1f))
+        assertTrue(galleryLivePhotoHoldAllowed(true, true, 1.001f))
+        assertFalse(galleryLivePhotoHoldAllowed(false, true, 1f))
+        assertFalse(galleryLivePhotoHoldAllowed(true, false, 1f))
+        assertFalse(galleryLivePhotoHoldAllowed(true, true, 1.01f))
+        assertFalse(galleryLivePhotoHoldAllowed(true, true, 2f))
+        assertFalse(galleryLivePhotoHoldAllowed(true, true, 5f))
+        assertFalse(galleryLivePhotoHoldAllowed(true, true, 0.5f))
+        assertFalse(galleryLivePhotoHoldAllowed(true, true, Float.NaN))
+        assertFalse(galleryLivePhotoHoldAllowed(true, true, Float.POSITIVE_INFINITY))
+    }
+
+    @Test fun magnificationOrStillEvictionRevokesCurrentLiveHold() {
+        var held = true
+        val stillReady = true
+        // A valid hold starts only while the still is decoded and at 1x.
+        assertTrue(held && galleryLivePhotoHoldAllowed(true, stillReady, 1f))
+        // Even before the observer's cancellation callback runs, the Viewer
+        // must pass held=false to the Media3 effect at magnified zoom.
+        assertFalse(held && galleryLivePhotoHoldAllowed(true, stillReady, 2f))
+        held = false // zoom action clears the original press intent
+        assertFalse(held && galleryLivePhotoHoldAllowed(true, stillReady, 1f))
+        assertFalse(held && galleryLivePhotoHoldAllowed(true, false, 1f))
+    }
+
     @Test fun missingOwnerMotionLeaseIsTerminalOnlyWhileCurrentHoldIsActive() {
         assertTrue(liveMotionUnavailableAfterRead(
             activeHold = true, sourceReturned = false))
