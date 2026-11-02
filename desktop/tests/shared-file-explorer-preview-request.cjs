@@ -42,8 +42,22 @@ function extracted(file,name,deps){
   assert.equal(found.length,1)
   return new Function(...Object.keys(deps),compile('const cb='+found[0]+';',file+'.preview.ts')+'\nreturn cb')(...Object.values(deps))
 }
+const loadRealDesktopLegacyJPEG=(register)=>{
+  const p='desktop/src/renderer/desktopViewerPreviewDecode.ts'
+  const mod={exports:{}}
+  new Function('module','exports','require',compile(read(p),p))(
+    mod,mod.exports,id=>{
+      assert.equal(id,'@xdrive/shared')
+      return {xDriveRegisterViewerImageSource:register}
+    })
+  return mod.exports.xDriveDesktopRegisterLegacyJPEGViewerPreviewURL
+}
 const makeHost=kind=>{
   const calls=[]
+  const quality=[]
+  // Load the actual production Q84 helper, not a permissive stand-in: this
+  // extracted Host callback otherwise has no module-import scope.
+  const registerLegacyJPEG=loadRealDesktopLegacyJPEG((url,info)=>quality.push({url,info}))
   const callsByName=(name,nodeID)=>{calls.push([name,nodeID]);return name}
   const api={
     filePreviewURL:async id=>callsByName('file-stream',id),
@@ -52,6 +66,10 @@ const makeHost=kind=>{
   }
   const hostPort={
     media:{
+      getMediaViewerPreview:async(id,format)=>{
+        calls.push(['4k-unavailable-'+format,id])
+        return {ok:false,error:{code:'unsupported_capability',message:'legacy Agent'}}
+      },
       getMediaAnalysisPreview:async id=>{calls.push(['analysis-image',id]);return {ok:true,data:{data:new Uint8Array([1]),content_type:'image/jpeg'}}},
       getMediaLivePhotoStill:async id=>{calls.push(['live-still',id]);return {ok:true,data:'localhost:live'}},
       cloudFilePreviewURL:async id=>{calls.push(['file-stream',id]);return {ok:true,data:'localhost:file'}},
@@ -65,8 +83,9 @@ const makeHost=kind=>{
   const load=extracted(file,'loadPreviewURL',{
     useCallback:callback=>callback, xDriveFileExplorerPreviewRequest:plan,
     previewStreamSupported:true, hostPort, api,
+    xDriveDesktopRegisterLegacyJPEGViewerPreviewURL:registerLegacyJPEG,
   })
-  return {load,calls}
+  return {load,calls,quality}
 }
 test('shared plan keeps HEIC/HEIF/RAW derivatives and never streams a Live ZIP as video',()=>{
   for(const name of ['photo.heic','photo.heif','photo.arw','photo.cr3','photo.dng','photo.nef']){
@@ -89,7 +108,7 @@ test('invalid or disabled FileExplorer rows never enter a Host preview',()=>{
 })
 test('real Desktop and Web preview callbacks use exactly the same read strategy',async()=>{
   for(const host of ['desktop','web']){
-    const {load,calls}=makeHost(host)
+    const {load,calls,quality}=makeHost(host)
     for(const [filename,kind,route] of [
       ['photo.heic','image','analysis-image'],['photo.livp','live_photo','live-still'],
       ['photo.jpg','image','file-stream'],['clip.mp4','video','file-stream'],
@@ -98,6 +117,15 @@ test('real Desktop and Web preview callbacks use exactly the same read strategy'
       const r=await load({...item,name:filename},kind)
       assert.ok(r,host+': '+filename)
       assert.deepEqual(calls.at(-1),[route,42])
+      if(host==='desktop'&&filename==='photo.heic'){
+        assert.deepEqual(calls.slice(0,3),[
+          ['4k-unavailable-webp',42],['4k-unavailable-jpeg',42],['analysis-image',42],
+        ],'legacy Agent must fall back after both attempted modern formats')
+        assert.equal(quality.length,1)
+        assert.equal(quality[0].url,r)
+        assert.deepEqual(quality[0].info,{format:'JPEG',quality:84,byteSize:1})
+        URL.revokeObjectURL(r)
+      }
     }
     const count=calls.length
     const signal=new AbortController();signal.abort()
