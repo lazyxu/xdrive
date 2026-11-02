@@ -311,30 +311,31 @@ actor XDriveIOSPhotoBackgroundGrantManager {
               approved.matches(owner), approved.grantID == old.grantID else {
             throw XDriveIOSPhotoBackgroundGrantError.invalidOwner
         }
-        do {
-            try await XDriveIOSApprovedPhotoBGVault.shared.install(
-                owner: owner, device: device,
-                grantID: next.grantID, grantSecret: next.rawSecret,
-                expiresAt: next.expiresAt, intervalMinutes: approved.intervalMinutes
-            )
-            let stoppedAfterInstall = await MainActor.run {
-                XDriveIOSPhotoAutoScheduleStore.shared.localStopGeneration != expectedStopGeneration
-            }
-            if stoppedAfterInstall {
-                // The vault now matches the rotated grant, so canonical
-                // local-first stop durably records remote revocation pending.
-                _ = try await stopLocally(owner: owner)
-                return try localStatus(owner: owner)
-            }
-            try XDriveIOSBackgroundPhotoTask.scheduleApprovedProbe(
-                afterMinutes: approved.intervalMinutes
-            )
-        } catch {
-            // The server may already have committed rotation. The caller
-            // must treat local validation/install failure as UNKNOWN; no
-            // blind retry or successful BG status is permitted.
-            throw error
+        try await XDriveIOSApprovedPhotoBGVault.shared.install(
+            owner: owner, device: device,
+            grantID: next.grantID, grantSecret: next.rawSecret,
+            expiresAt: next.expiresAt, intervalMinutes: approved.intervalMinutes
+        )
+        let stoppedAfterInstall = await MainActor.run {
+            XDriveIOSPhotoAutoScheduleStore.shared.localStopGeneration != expectedStopGeneration
         }
+        if stoppedAfterInstall {
+            // The vault now matches the rotated grant, so canonical
+            // local-first stop durably records remote revocation pending.
+            _ = try await stopLocally(owner: owner)
+            return try localStatus(owner: owner)
+        }
+        try XDriveIOSBackgroundPhotoTask.scheduleApprovedProbe(
+            afterMinutes: approved.intervalMinutes
+        )
+        let stoppedAfterSchedule = await MainActor.run {
+            XDriveIOSPhotoAutoScheduleStore.shared.localStopGeneration != expectedStopGeneration
+        }
+        if stoppedAfterSchedule {
+            _ = try await stopLocally(owner: owner)
+        }
+        // Any post-commit validation/install failure is UNKNOWN to the UI;
+        // neither Server ACK loss nor a revoked grant permits blind replay.
         return try localStatus(owner: owner)
     }
 
