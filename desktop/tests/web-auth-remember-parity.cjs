@@ -14,9 +14,9 @@ test('Browser keep-login does not persist tokens after user opt-out', () => {
   assert.ok(web.includes('label="保持登录"'))
 })
 
-test('Existing Web/PWA connection and offline-history entry points stay unchanged', () => {
-  assert.ok(web.includes('data-xdrive-manual-connection-login'))
-  assert.ok(web.includes('data-xdrive-manual-connection-menu'))
+test('Web/PWA offline-history route remains after manual Origin buttons retire', () => {
+  assert.equal(web.includes('data-xdrive-manual-connection-login'), false)
+  assert.equal(web.includes('data-xdrive-manual-connection-menu'), false)
   assert.ok(web.includes('data-xdrive-pwa-offline-login-entry'))
   assert.ok(web.includes("window.location.hash === '#/offline/files'"))
 })

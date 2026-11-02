@@ -1,97 +1,49 @@
+'use strict'
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const ts = require('typescript')
 
 const root = path.resolve(__dirname, '..', '..')
-const read = (name) => fs.readFileSync(path.join(root, name), 'utf8')
-const file = 'web/src/manualConnection.ts'
-function loadHelper() {
-  const compiled = ts.transpileModule(read(file), {
-    fileName: file,
-    reportDiagnostics: true,
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-  })
-  const failures = (compiled.diagnostics || []).filter(x => x.category === ts.DiagnosticCategory.Error)
-  assert.deepEqual(failures.map(x => ts.flattenDiagnosticMessageText(x.messageText, '\n')), [])
-  const exports = {}
-  new Function('exports', 'require', compiled.outputText)(exports, () => {
-    throw new Error('manual connection validation must be pure')
-  })
-  return exports
-}
+const read = name => fs.readFileSync(path.join(root, name), 'utf8')
 
-test('manual LAN origin accepts only canonical private IPv4 with explicit scheme/port', () => {
-  const { xDriveManualEndpoint: check } = loadHelper()
-  for (const ip of ['192.168.2.4', '10.0.0.5', '172.16.0.1', '172.31.255.254']) {
-    assert.deepEqual(check('lan', 'https://' + ip + ':8443'), {
-      origin: 'https://' + ip + ':8443', insecure: false, error: '',
-    })
-  }
-  assert.ok(check('lan', 'http://192.168.2.4:3000').error,
-    'HTTP private LAN must never be an enabled browser entry')
-  assert.equal(check('lan', 'http://192.168.2.4:3000').origin, '')
-  for (const candidate of [
-    'https://8.8.8.8:8443', 'https://172.32.0.1',
-    'https://127.0.0.1', 'https://169.254.0.1', 'https://0.0.0.0',
-    'https://192.168.02.4:8443', 'https://192.168.2.4.example.com',
-    'https://user:password@192.168.2.4', 'https://192.168.2.4/?token=secret',
-    'https://192.168.2.4/#/app', 'https://192.168.2.4/files',
-    'javascript:alert(1)', '//192.168.2.4', 'http://192.168.2.4:65536',
-  ]) {
-    const result = check('lan', candidate)
-    assert.ok(result.error && !result.origin, 'must fail closed: ' + candidate)
-  }
-})
-
-test('manual public entry requires HTTPS domain and strips path-bearing inputs', () => {
-  const { xDriveManualEndpoint: check } = loadHelper()
-  assert.deepEqual(check('public', ' https://drive.example.com:8443/ '), {
-    origin: 'https://drive.example.com:8443', insecure: false, error: '',
-  })
-  for (const url of [
-    'http://drive.example.com', 'https://192.168.2.4',
-    'https://localhost:8443', 'https://internal.local',
-    'https://evil.example.com/a', 'https://drive.example.com/?s=1',
-    'https://drive.example.com/#/app', 'https://user@drive.example.com',
-    'file:///etc/passwd', 'data:text/plain,hi',
-  ]) {
-    const result = check('public', url)
-    assert.ok(result.error && !result.origin, 'reject public endpoint: ' + url)
-  }
-})
-
-test('Web/Mobile Web/PWA login and account menu expose manual origin navigation without token migration', () => {
+test('Web, Mobile Web and installed PWA no longer expose redundant manual origin navigation', () => {
   const app = read('web/src/App.tsx')
-  const dialog = read('web/src/ManualConnectionDialog.tsx')
-  const helper = read(file)
-  assert.match(app, /data-xdrive-manual-connection-login/)
-  assert.match(app, /data-xdrive-manual-connection-menu/)
-  assert.ok((app.match(/<XDriveManualConnectionDialog/g) || []).length >= 2)
-  assert.match(dialog, /data-xdrive-open-manual-lan/)
-  assert.match(dialog, /data-xdrive-open-manual-public/)
-  assert.match(dialog, /target="_blank" rel="noopener noreferrer"/)
-  assert.doesNotMatch(dialog, /allowInsecureLAN|setAllowInsecureLAN|明文登录风险/)
-  assert.match(dialog, /lanReady = !lanTarget\.error && lanTarget\.origin !== currentOrigin/)
-  assert.match(dialog, /HTTPS.*证书/)
-  assert.match(dialog, /window\.location\.origin/)
-  assert.match(dialog, /window\.localStorage\.(?:getItem|setItem)/)
-  assert.match(helper, /'xdrive\.manual_endpoint\.lan'/)
-  assert.match(helper, /'xdrive\.manual_endpoint\.public'/)
-  for (const forbidden of ['Authorization', 'refresh_token', 'access_token',
-    'window.location.assign', 'window.location.replace', 'location.href', 'fetch(',
-    'window.opener', 'document.cookie']) {
-    assert.equal(dialog.includes(forbidden), false, 'manual navigation never touches credentials or running transports: ' + forbidden)
-  }
-  assert.match(app, /return xDriveObservePwaBeforeUnload\(window\)/)
-  const unload = read('web/src/pwaTransferSafety.ts')
-  assert.match(unload, /host\.addEventListener\('beforeunload', xDriveWarnBeforeLeavingUpload\)/)
-  assert.match(unload, /host\.removeEventListener\('beforeunload', xDriveWarnBeforeLeavingUpload\)/)
-  assert.match(app, /setTransferSessionKey\(username \?/)
+  assert.doesNotMatch(app, /XDriveManualConnectionDialog|data-xdrive-manual-connection-(login|menu)/)
+  assert.doesNotMatch(app, /\bconnectionOpen\b|\bsetConnectionOpen\b|手动切换公网\s*\/\s*局域网入口/)
+  for (const oldFile of [
+    'web/src/manualConnection.ts',
+    'web/src/ManualConnectionDialog.tsx',
+    'web/scripts/test-https-manual-connection.mjs',
+  ]) assert.equal(fs.existsSync(path.join(root, oldFile)), false, 'retired Web-only file: ' + oldFile)
+  assert.match(read('web/package.json'), /node scripts\/test-no-manual-connection\.mjs/)
+  assert.doesNotMatch(read('web/package.json'), /test-https-manual-connection\.mjs/)
 })
 
-test('Desktop explicit switch goes through existing logout confirmation and editable Server login', () => {
+test('Removing the shortcut preserves Web/PWA login, offline routes, upload guard and origin isolation', () => {
+  const app = read('web/src/App.tsx')
+  const api = read('web/src/api.ts')
+  const worker = read('assets/icon/web/sw.js')
+  const manifest = read('assets/icon/web/site.webmanifest')
+  const offline = read('web/src/pwaOfflineDirectory.ts')
+  assert.match(app, /data-xdrive-pwa-login-entry/)
+  assert.match(app, /data-xdrive-pwa-offline-login-entry/)
+  assert.match(app, /data-xdrive-pwa-account-entry/)
+  assert.match(app, /xDriveObservePwaBeforeUnload\(window\)/)
+  assert.match(app, /setTransferSessionKey\(username \?/)
+  assert.match(app, /XDriveAccountMenuActions/)
+  assert.match(api, /Browser refresh requires HTTPS/)
+  assert.match(api, /credentials: 'same-origin'/)
+  assert.match(api, /const API_BASE = /)
+  assert.match(worker, /url\.origin !== self\.location\.origin/)
+  assert.match(offline, /owner\.origin !== window\.location\.origin/)
+  assert.match(manifest, /"start_url": "\/"/)
+  assert.match(manifest, /"scope": "\/"/)
+  // Do not erase previously saved, nonsecret endpoint hints during this UI cleanup.
+  assert.doesNotMatch(app, /(?:removeItem|localStorage\.clear)\([^)]*manual_endpoint/)
+})
+
+test('Desktop native manual server switch still requires logout and an editable login origin', () => {
   const app = read('desktop/src/renderer/App.tsx')
   assert.match(app, /data-xdrive-manual-server-switch/)
   assert.match(app, /const requestSwitchServer = \(\) => \{/)
