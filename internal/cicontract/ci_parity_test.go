@@ -48,8 +48,8 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"server-rootless-e2e": {},
 		// GitHub-hosted post-build real-model acceptance; GitLab is package-first.
 		"photo-ocr-master-smoke": {},
-		"publish-master":                  {},
-		"publish-stable":                  {},
+		"publish-master":         {},
+		"publish-stable":         {},
 		// Content-addressed offline packages are a GitHub release publisher;
 		// GitLab retains the fast Snapshot and its independent acceptance path.
 		"publish-content-addressed-offline": {},
