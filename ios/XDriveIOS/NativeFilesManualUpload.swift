@@ -10,7 +10,7 @@ private enum XDriveIOSNativeFilesManualUploadFailure: Error {
     case malformed
 }
 
-private struct XDriveIOSNativeFilesUploadNodeDTO: Decodable {
+struct XDriveIOSNativeFilesUploadNodeDTO: Decodable {
     let id: UInt64
     let parent_id: UInt64?
     let name: String
@@ -32,11 +32,11 @@ private final class XDriveIOSNativeFilesUploadDenyRedirect: NSObject, URLSession
 /// Read-only trust checks before and after the existing UploadSession writer.
 /// Photo backup's root-only receipt verifier stays unchanged; nested Files
 /// folders require their own exact parent Node evidence.
-private struct XDriveIOSNativeFilesUploadReadback {
+struct XDriveIOSNativeFilesUploadReadback {
     let owner: XDriveNativeOwnerRoot
     let accessToken: String
 
-    private func getNode(_ id: UInt64) async throws -> XDriveIOSNativeFilesUploadNodeDTO {
+    func getNode(_ id: UInt64) async throws -> XDriveIOSNativeFilesUploadNodeDTO {
         guard id > 0, owner.ownerID > 0, owner.rootNodeID > 0,
               !owner.instanceID.isEmpty, !accessToken.isEmpty,
               let origin = try? ServerAddress.parse(owner.origin.absoluteString),
