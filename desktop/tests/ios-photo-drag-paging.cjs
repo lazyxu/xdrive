@@ -14,4 +14,7 @@ test('iOS local and cloud zoomable photos follow the pan and settle without stal
   assert.match(src, /scroll\.zoomScale <= scroll\.minimumZoomScale/)
   assert.match(src, /self\.onSwipe\?\(direction\)/)
   assert.match(src, /photo\.layer\.removeAllAnimations\(\)/)
+  assert.match(src, /gestureGeneration == acceptedGeneration/)
+  assert.match(src, /static func dismantleUIView/)
+  assert.match(src, /cancelPendingNavigation\(\)/)
 })

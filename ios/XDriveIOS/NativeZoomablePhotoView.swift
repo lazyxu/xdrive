@@ -23,13 +23,26 @@ struct XDriveIOSNativeZoomablePhotoView: UIViewRepresentable {
         // Keep the exact image identity during a gesture; a superseded Owner,
         // PhotoKit selection or Video transition must never receive its swipe.
         private var gestureImage: UIImage?
+        private var gestureGeneration: UInt64 = 0
+
+        // A fast second swipe, Owner switch or Viewer dismissal invalidates
+        // animation completions belonging to the earlier image/session.
+        func cancelPendingNavigation() {
+            gestureGeneration &+= 1
+            gestureImage = nil
+            onSwipe = nil
+            photo?.layer.removeAllAnimations()
+            photo?.transform = .identity
+        }
 
         @objc func panEnded(_ recognizer: UIPanGestureRecognizer) {
             guard let scroll, let photo else { return }
             let delta = recognizer.translation(in: scroll)
             switch recognizer.state {
             case .began:
+                gestureGeneration &+= 1
                 gestureImage = photo.image
+                photo.layer.removeAllAnimations()
                 photo.transform = .identity
             case .changed:
                 guard onSwipe != nil, let image = gestureImage,
@@ -56,6 +69,7 @@ struct XDriveIOSNativeZoomablePhotoView: UIViewRepresentable {
                     return
                 }
                 gestureImage = nil
+                let acceptedGeneration = gestureGeneration
                 let direction = onSwipe == nil ? nil :
                     XDriveIOSNativeViewerSwipePolicy.direction(
                         horizontal: delta.x, vertical: delta.y,
@@ -82,11 +96,13 @@ struct XDriveIOSNativeZoomablePhotoView: UIViewRepresentable {
                         translationX: CGFloat(-direction) * max(1, scroll.bounds.width), y: 0
                     )
                 } completion: { [weak self, weak photo] completed in
-                    guard completed, let self, let photo, photo.image === image else { return }
+                    guard completed, let self, let photo, photo.image === image,
+                          self.gestureGeneration == acceptedGeneration else { return }
                     photo.transform = .identity
                     self.onSwipe?(direction)
                 }
             case .cancelled, .failed:
+                gestureGeneration &+= 1
                 gestureImage = nil
                 UIView.animate(withDuration: 0.18, delay: 0,
                                options: [.curveEaseOut, .beginFromCurrentState]) {
@@ -164,15 +180,19 @@ struct XDriveIOSNativeZoomablePhotoView: UIViewRepresentable {
     }
 
     func updateUIView(_ scroll: UIScrollView, context: Context) {
-        context.coordinator.onSwipe = onSwipe
         guard let photo = context.coordinator.photo else { return }
         // A reused detail view must never retain another picture's zoom.
         if photo.image !== image {
-            // Cancel any outstanding pan/slide before swapping identity.
-            photo.layer.removeAllAnimations()
-            photo.transform = .identity
+            context.coordinator.cancelPendingNavigation()
             scroll.setZoomScale(scroll.minimumZoomScale, animated: false)
             photo.image = image
         }
+        context.coordinator.onSwipe = onSwipe
+    }
+
+    static func dismantleUIView(_ scroll: UIScrollView, coordinator: Coordinator) {
+        coordinator.cancelPendingNavigation()
+        scroll.panGestureRecognizer.removeTarget(coordinator,
+            action: #selector(Coordinator.panEnded(_:)))
     }
 }
