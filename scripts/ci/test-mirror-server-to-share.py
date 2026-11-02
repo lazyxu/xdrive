@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import subprocess
 import unittest
+from contextlib import redirect_stderr
 from unittest.mock import patch
 
 HERE = Path(__file__).resolve().parent
@@ -230,8 +231,8 @@ class MemoryGitHub:
     def get(self, tag):
         if self.record is None:
             return None
-        return dict(self.record, assets=[dict(name=n, size=len(v), digest='sha256:' + digest(v))
-                                        for n, v in self.files.items()])
+        return dict(self.record, assets=[dict(id=i, name=n, size=len(v), digest='sha256:' + digest(v))
+                                        for i, (n, v) in enumerate(self.files.items(), 1)])
 
     def download(self, tag, name, directory):
         (directory / name).write_bytes(self.files[name])
@@ -393,6 +394,90 @@ class DraftRecoveryTests(unittest.TestCase):
         self.assertEqual(uploads[0], 'upload:manifest.json')
         self.assertEqual(github.events[-1], 'publish')
         self.assertFalse(github.record['draft'])
+
+    def test_publication_ignores_non_identity_asset_metadata_changes(self):
+        for field, before, after in (
+                ('download_count', 0, 1),
+                ('browser_download_url', 'https://github.com/draft/asset', 'https://github.com/published/asset'),
+                ('updated_at', '2026-11-02T23:08:40Z', '2026-11-02T23:08:41Z')):
+            with self.subTest(field=field):
+                github = MemoryGitHub()
+                original_get = github.get
+                def get(tag):
+                    record = original_get(tag)
+                    if record is not None:
+                        for asset in record['assets']:
+                            asset[field] = before if record['draft'] else after
+                    return record
+                github.get = get
+                mirror.publish_github(self.root, self.commit, github)
+                self.assertFalse(github.record['draft'])
+                self.assertEqual(github.files, self.files)
+
+    def test_publication_rejects_changed_fixed_asset_or_release_identity(self):
+        changes = {
+            'asset-id': lambda r: r['assets'][0].update(id=999),
+            'asset-size': lambda r: r['assets'][0].update(size=r['assets'][0]['size'] + 1),
+            'asset-digest': lambda r: r['assets'][0].update(digest='sha256:' + '0' * 64),
+            'asset-name': lambda r: r['assets'][0].update(name='unexpected.json'),
+            'missing-asset': lambda r: r['assets'].pop(),
+            'release-id': lambda r: r.update(id=999),
+            'source-commit': lambda r: r.update(target_commitish='b' * 40),
+        }
+        for name, change in changes.items():
+            with self.subTest(change=name):
+                github = MemoryGitHub()
+                original_get = github.get
+                def get(tag):
+                    record = original_get(tag)
+                    if record is not None and not record['draft']:
+                        change(record)
+                    return record
+                github.get = get
+                with self.assertRaises(mirror.MirrorError):
+                    mirror.publish_github(self.root, self.commit, github)
+
+    def test_unverifiable_asset_id_blocks_publication(self):
+        for asset_id in (None, True, 0, -1, '7'):
+            with self.subTest(asset_id=asset_id):
+                github = MemoryGitHub(dict(self.record), self.files)
+                original_get = github.get
+                def get(tag):
+                    record = original_get(tag)
+                    record['assets'][0]['id'] = asset_id
+                    return record
+                github.get = get
+                with self.assertRaises(mirror.MirrorError):
+                    mirror.publish_github(self.root, self.commit, github)
+                self.assertNotIn('publish', github.events)
+
+    def test_publication_failure_diagnostics_are_controlled_and_hide_exception_text(self):
+        secret = 'https://user:private-token@example.invalid/secret'
+        for stage in ('github-publish', 'github-post-publish-lookup', 'github-post-publish-identity'):
+            with self.subTest(stage=stage):
+                github = MemoryGitHub()
+                original_get = github.get
+                original_publish = github.publish
+                def publish(tag):
+                    if stage == 'github-publish':
+                        raise OSError(secret)
+                    original_publish(tag)
+                def get(tag):
+                    record = original_get(tag)
+                    if record is not None and not record['draft']:
+                        if stage == 'github-post-publish-lookup':
+                            raise mirror.MirrorError(secret)
+                        record['assets'][0]['id'] = 999
+                    return record
+                github.publish, github.get = publish, get
+                stderr = io.StringIO()
+                with patch.object(mirror, 'GitHub', return_value=github), patch.object(
+                        mirror.sys, 'argv', ['mirror', 'publish-github', '--directory', str(self.root),
+                                            '--commit', self.commit]), redirect_stderr(stderr):
+                    self.assertEqual(mirror.main(), 1)
+                self.assertEqual(stderr.getvalue(),
+                                 f'Server release verification failed [{stage}]; no publication may be assumed\n')
+                self.assertNotIn(secret, stderr.getvalue())
 
     def test_new_release_rejects_inconsistent_attestation_alias_before_creation(self):
         github = MemoryGitHub()
