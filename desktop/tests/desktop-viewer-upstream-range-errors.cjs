@@ -90,6 +90,17 @@ test('Chromium video seeks reject invalid 206 envelopes while preserving a valid
           ...headers, 'Content-Encoding': 'gzip',
         } })
       }
+      if (mode === 'html-success') {
+        return new Response('<html>login</html>', {
+          status: 200, headers: { 'Content-Type': 'text/html' },
+        })
+      }
+      if (mode === 'json-partial') {
+        return new Response('0123', { status: 206, headers: {
+          'Content-Type': 'application/problem+json',
+          'Content-Range': 'bytes 0-3/16', 'Content-Length': '4',
+        } })
+      }
       if (mode === 'unsatisfiable') {
         return new Response('{"ticket":"private-server-token"}', {
           status: 416, headers: {
@@ -109,7 +120,7 @@ test('Chromium video seeks reject invalid 206 envelopes while preserving a valid
   })
   const seek = () => fetch(localURL, { headers: { Range: 'bytes=0-3' } })
   for (mode of ['wrong-offset', 'missing-content-range', 'impossible-total',
-    'wrong-length', 'expired', 'encoded']) {
+    'wrong-length', 'expired', 'encoded', 'html-success', 'json-partial']) {
     const response = await seek()
     assert.equal(response.status, 502, mode)
     assert.equal(await response.text(), '', mode + ' must not relay stale/invalid bytes')

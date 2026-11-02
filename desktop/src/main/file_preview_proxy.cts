@@ -395,6 +395,10 @@ export class DesktopFilePreviewProxy {
       const contentLength = upstream.headers.get('content-length')
       const contentType = upstream.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase()
       const contentEncoding = upstream.headers.get('content-encoding')?.trim().toLowerCase()
+      // A reverse proxy may return a 200 login page or JSON error even if the
+      // signed media request did not receive a 4xx. Neither is playable media.
+      const errorDocument = contentType?.startsWith('text/') ||
+        contentType === 'application/json' || contentType?.endsWith('+json')
       const validPartialRange = upstream.status !== 206 || (
         range.start !== undefined &&
         range.end !== undefined &&
@@ -406,6 +410,7 @@ export class DesktopFilePreviewProxy {
       const validStatus = upstream.status === 200 || upstream.status === 206 ||
         (upstream.status === 416 && Boolean(requestedRange))
       if (!validStatus || !validPartialRange ||
+          (upstream.status !== 416 && errorDocument) ||
           (ticket.kind === 'pdf' && upstream.status !== 416 && contentType !== 'application/pdf') ||
           (contentEncoding && contentEncoding !== 'identity')) {
         // Never leak signed upstream error content into an Electron Viewer.
