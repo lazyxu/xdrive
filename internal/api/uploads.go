@@ -324,9 +324,13 @@ func (s *Server) createUploadSession(c *gin.Context) {
 		return
 	}
 	if req.NodeID != nil {
-		if notesRejectNodeMutation(c, s.DB, *req.NodeID) { return }
+		if notesRejectNodeMutation(c, s.DB, *req.NodeID) {
+			return
+		}
 	} else if req.ParentID != nil {
-		if notesRejectDestination(c, s.DB, *req.ParentID, req.Name) { return }
+		if notesRejectDestination(c, s.DB, *req.ParentID, req.Name) {
+			return
+		}
 	}
 	if req.SHA256 == "" && req.MD5 != "" {
 		resolved, ok, err := verifiedDigestSHA256(
@@ -841,9 +845,13 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 		return
 	}
 	if session.NodeID != nil {
-		if notesRejectNodeMutation(c, s.DB, *session.NodeID) { return }
+		if notesRejectNodeMutation(c, s.DB, *session.NodeID) {
+			return
+		}
 	} else if session.ParentID != nil {
-		if notesRejectDestination(c, s.DB, *session.ParentID, session.Name) { return }
+		if notesRejectDestination(c, s.DB, *session.ParentID, session.Name) {
+			return
+		}
 	}
 	if time.Now().After(session.ExpiresAt) {
 		_ = s.abortUploadSessionData(c.Request.Context(), session)
@@ -995,9 +1003,13 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 		// A session created before namespace initialization cannot write into
 		// the now-managed subtree, even after it finished sending all chunks.
 		if currentSession.NodeID != nil {
-			if err := notesRejectNodeWithReason(c.Request.Context(), tx, currentSession.OwnerID, *currentSession.NodeID); err != nil { return err }
+			if err := notesRejectNodeWithReason(c.Request.Context(), tx, currentSession.OwnerID, *currentSession.NodeID); err != nil {
+				return err
+			}
 		} else if currentSession.ParentID != nil {
-			if err := notesRejectDestinationWithReason(c.Request.Context(), tx, currentSession.OwnerID, *currentSession.ParentID, currentSession.Name); err != nil { return err }
+			if err := notesRejectDestinationWithReason(c.Request.Context(), tx, currentSession.OwnerID, *currentSession.ParentID, currentSession.Name); err != nil {
+				return err
+			}
 		}
 		if currentSession.ShareID != nil {
 			if currentSession.ParentID == nil || currentSession.NodeID != nil ||
