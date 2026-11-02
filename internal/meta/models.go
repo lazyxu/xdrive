@@ -255,7 +255,10 @@ type Share struct {
 	ID            uint64     `gorm:"primaryKey"`
 	OwnerID       uint64     `gorm:"not null;index;index:idx_xd_shares_owner_node"`
 	NodeID        uint64     `gorm:"not null;index;index:idx_xd_shares_owner_node"`
-	TokenHash     string     `gorm:"size:64;not null;uniqueIndex"`
+	TokenHash           string     `gorm:"size:64;not null;uniqueIndex"`
+	LinkAliasHash       *string    `gorm:"size:64;uniqueIndex:idx_xd_shares_link_alias_hash"`
+	LinkTokenCiphertext []byte     `gorm:"type:bytea"`
+	LinkTokenKeyVersion uint32     `gorm:"not null;default:0"`
 	PasswordHash  string     `gorm:"size:255"`
 	ExpiresAt     *time.Time `gorm:"index"`
 	MaxDownloads  int64      `gorm:"not null;default:0"`
