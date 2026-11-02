@@ -734,7 +734,9 @@ export function XDriveMediaGalleryPage({
   const loadOwnerGPSPlaceCover = useCallback((place: MediaPlaceFacet, signal: AbortSignal) =>
     xDriveLoadOwnerGPSPhotoCover(place, source.listItemRange, source.loadThumbnail, signal),
   [source])
-  const mobileGalleryViewport = useMediaQuery('(max-width:899.95px)') && mobileWebChrome
+  // The embedding workspace has already selected its phone/tablet layout.
+  // A second width-only gate would turn a rotated iPad back into Desktop UI.
+  const mobileGalleryViewport = mobileWebChrome
   const [facets, setFacets] = useState<MediaGalleryFacets>({ cameras: [], formats: [] })
   const [facetsLoading, setFacetsLoading] = useState(false)
   const [facetsError, setFacetsError] = useState('')
@@ -6812,7 +6814,7 @@ export function XDriveMediaGallery({
     (nodeID, revision) => thumbnailScheduler.borrowCachedForViewer(nodeID, revision),
   ), [onRegisterViewerThumbnailCache, thumbnailScheduler])
   const availableTimeZones = useMemo(xDriveMediaTimeZoneChoices, [])
-  const compactGallery = useMediaQuery('(max-width:899.95px)') && mobileWebChrome
+  const compactGallery = mobileWebChrome
   const [placesMobileMode, setPlacesMobileMode] = useState<'map' | 'list'>('map')
   const placesPanels = xDrivePlacesVisiblePanels(compactGallery, placesMobileMode)
   useEffect(() => () => {

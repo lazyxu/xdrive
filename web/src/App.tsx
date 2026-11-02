@@ -99,6 +99,7 @@ import WebOverviewPage from './WebOverviewPage'
 import WebUnsupportedFileDialog from './WebUnsupportedFileDialog'
 import { xDriveWebOpenRouteForNode } from './webViewerRoute'
 import { useXDriveWebAppRuntime, xDriveCreateWebAppBrowseSession, xDriveReadWebAppBrowseSession, xDriveIsPrivateMapBrowseSessionID, xDriveClearPrivateMapBrowseSessions } from './webAppRuntime'
+import { XDRIVE_WEB_NARROW_QUERY, XDRIVE_WEB_TOUCH_ONLY_QUERY, xDriveWebCompactNavigation } from './webMobileNavigationLayout'
 import { xDriveWebAppRouteForWorkspaceKey, xDriveWebAppWorkspaceKey } from './webApps'
 import { XDriveMobileAllLauncher, XDriveMobileFiveSlotNavigation, XDriveMobileMinePage, xDriveBrowserMobileDestinations, xDriveBrowserMobileGalleryShortcuts } from './MobileFiveSlotNavigation'
 import { xDriveMobileLauncherSections, xDriveMobileLauncherGalleryRoute } from './mobileLauncherSections'
@@ -969,7 +970,14 @@ function FileManager({
   loginPasswordChangeRequired: boolean
   onPasswordChanged: () => void
 }) {
-  const compactWorkspace = useMediaQuery('(max-width:899.95px)')
+  const compactWidth = useMediaQuery(XDRIVE_WEB_NARROW_QUERY)
+  const touchOnly = useMediaQuery(XDRIVE_WEB_TOUCH_ONLY_QUERY)
+  const compactWorkspace = xDriveWebCompactNavigation(compactWidth, {
+    userAgent: navigator.userAgent,
+    platform: navigator.platform,
+    maxTouchPoints: navigator.maxTouchPoints,
+    touchOnly,
+  })
   const [profile, setProfile] = useState<MeResult | null>(null)
   const [profileReadFailed, setProfileReadFailed] = useState(false)
   const placesEmbedRequested=new URLSearchParams(window.location.search)
@@ -2744,7 +2752,7 @@ function FileManager({
               ? (scope,target,signal,camera)=>api.mediaBaiduMapScopeHandoffIssue(
                   scope,target,signal,camera)
               : undefined}
-            mobileWebChrome
+            mobileWebChrome={placesEmbedRequested ? compactWidth : compactWorkspace}
             source={gallerySource}
             onMobileMapFocusChange={onMobileMapFocusChange}
             suspendBackgroundThumbnails={viewerActive}
@@ -2898,7 +2906,7 @@ function FileManager({
           elevation={0}
           color="inherit"
           className="web-appbar"
-          sx={{ display: { xs: 'none', md: 'flex' }, borderBottom: 1, borderColor: 'divider', bgcolor: 'background.paper', pt: 'env(safe-area-inset-top)' }}
+          sx={{ display: compactWorkspace ? 'none' : 'flex', borderBottom: 1, borderColor: 'divider', bgcolor: 'background.paper', pt: 'env(safe-area-inset-top)' }}
         >
         <Toolbar
             sx={{
@@ -3079,6 +3087,7 @@ function FileManager({
               <WebFileExplorer
                 api={api}
                 mobileOwnerScope={mobileOwnerScope}
+                compactNavigation={compactWorkspace}
                 suspendBackgroundThumbnails={viewerActive}
                 items={items}
                 crumbs={crumbs}

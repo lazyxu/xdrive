@@ -115,6 +115,7 @@ type Crumb = { id: number; name: string }
 export default function WebFileExplorer({
   api,
   mobileOwnerScope = '',
+  compactNavigation,
   items,
   crumbs,
   virtualDirectory,
@@ -155,6 +156,8 @@ export default function WebFileExplorer({
 }: {
   api: XDriveApi
   mobileOwnerScope?: string
+  /** Explicit parent shell layout wins over independent width-only detection. */
+  compactNavigation?: boolean
   items: Node[]
   crumbs: Crumb[]
   virtualDirectory?: XDriveFileExplorerWorkspaceVirtualDirectory<Node> | null
@@ -203,7 +206,8 @@ export default function WebFileExplorer({
   onDirectoryChange?: (nodeID: number) => void
   onError: (error: unknown) => void
 }) {
-  const compactMobile = useMediaQuery('(max-width:899.95px)')
+  const narrowFilesViewport = useMediaQuery('(max-width:899.95px)')
+  const compactMobile = compactNavigation ?? narrowFilesViewport
   // A no-?dir Mobile Files opening may have a persisted last folder. Its
   // bootstrap Cloud root is not a confirmed navigation and must never be
   // mirrored into ?dir=root before that saved folder finishes restoring.

@@ -17,7 +17,7 @@ const fixture = read('internal/api/gallery_ios27_live_go_browser_integration_tes
 
 test('P1-3c2b mobile and wide remain single Gallery/REST/virtualizer/Inspector implementations', () => {
   assert.equal((web.match(/<XDriveMediaGalleryPage\b/g) || []).length, 1)
-  assert.match(web, /mobileWebChrome\s+source=\{gallerySource\}/)
+  assert.match(web, /mobileWebChrome=\{placesEmbedRequested \? compactWidth : compactWorkspace\}\s+source=\{gallerySource\}/)
   assert.match(source, /removeFromAlbum: \(albumID, revision, nodeID\) =>/)
   assert.match(shared, /onRemoveFromAlbum=\{isTrashSection \? undefined : onRemoveFromAlbum\}/)
   assert.match(shared, /useXDriveVirtualCollection/)

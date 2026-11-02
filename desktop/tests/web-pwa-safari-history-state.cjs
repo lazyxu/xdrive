@@ -89,6 +89,9 @@ function withBrowser({ denied = false, initialHash = '#/app/overview', initialSt
         if (name === '../../ui/shared/src/mui/ViewerForegroundPriority') {
           return { xDriveEnterForegroundPage: label => foreground.push(label) }
         }
+        if (name === './webMobileNavigationLayout') {
+          return { xDriveWebBrowserCompactNavigation: () => false }
+        }
         throw new Error('unexpected dependency: ' + name)
       },
     )
