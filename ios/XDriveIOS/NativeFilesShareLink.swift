@@ -419,6 +419,7 @@ struct XDriveIOSNativeFilesShareScreen: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("完成") { dismiss() }
+                        .disabled(model.busy)
                 }
             }
             .confirmationDialog("撤销这条分享链接？", isPresented: $confirmingRevoke,
