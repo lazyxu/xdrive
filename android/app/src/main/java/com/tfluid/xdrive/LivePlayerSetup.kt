@@ -44,6 +44,15 @@ internal fun liveMotionMayStart(
 ): Boolean =
     held && stillReady && lifecycleStarted && !freshPressRequired
 
+/** Cloud Live Photo long-press and image zoom must not compete for the same
+ * pointer. Only an actually decoded still at 1x permits a new hold; an
+ * invalid/magnified zoom fails closed rather than launching Owner playback.
+ * This is a presentation gate, not a replacement for Owner/revision checks. */
+internal fun galleryLivePhotoHoldAllowed(
+    livePhoto: Boolean, stillReady: Boolean, zoom: Float,
+): Boolean = livePhoto && stillReady && zoom.isFinite() &&
+    zoom in 1f..1.001f
+
 /** A completed, missing Owner motion lease is a terminal result for this
  * current deliberate hold. Release/Owner switches cannot show stale errors. */
 internal fun liveMotionUnavailableAfterRead(

@@ -215,6 +215,8 @@ internal fun GalleryPhotoViewer(
             }
         }
     }
+    val liveHoldAllowed = galleryLivePhotoHoldAllowed(
+        photo.livePhoto, stage is ImageStage.Ready, zoom)
     Column(Modifier.fillMaxSize().background(Color.Black).testTag("gallery-photo-viewer")) {
         Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically) {
@@ -243,11 +245,11 @@ internal fun GalleryPhotoViewer(
             Modifier.weight(1f).fillMaxWidth()
                 .testTag("gallery-photo-gesture")
                 .galleryLivePhotoHold(
-                    enabled = photo.livePhoto && stage is ImageStage.Ready,
+                    enabled = liveHoldAllowed,
                     sourceIdentity = "${photo.node.id}:${photo.node.revision}",
                 ) { pressed ->
-                    if (pressed) liveSwipeFence.liveHoldActivated()
-                    liveHeld = pressed
+                    if (pressed && liveHoldAllowed) liveSwipeFence.liveHoldActivated()
+                    liveHeld = pressed && liveHoldAllowed
                 }
                 // One-finger swipes are only page navigation at default zoom.
                 // Pinch/pan remains owned by the image transformable recognizer.
@@ -308,17 +310,20 @@ internal fun GalleryPhotoViewer(
                         })
                         if (stage is ImageStage.Ready) {
                             if (zoom < 4.999f) add(CustomAccessibilityAction("放大图片") {
+                                liveHeld = false
                                 zoom = galleryAccessibleZoomStep(zoom, 1)
                                 pan = Offset.Zero
                                 true
                             })
                             if (zoom > 1.001f) {
                                 add(CustomAccessibilityAction("缩小图片") {
+                                    liveHeld = false
                                     zoom = galleryAccessibleZoomStep(zoom, -1)
                                     pan = Offset.Zero
                                     true
                                 })
                                 add(CustomAccessibilityAction("恢复图片大小") {
+                                    liveHeld = false
                                     zoom = 1f
                                     pan = Offset.Zero
                                     true
@@ -349,6 +354,7 @@ internal fun GalleryPhotoViewer(
                     val maxY = constraints.maxHeight.toFloat()
                     val gesture = rememberTransformableState { change, drag, _ ->
                         val next = (zoom * change).coerceIn(1f, 5f)
+                        if (next > 1.001f) liveHeld = false
                         zoom = next
                         val boundX = maxX * (next - 1f) / 2f
                         val boundY = maxY * (next - 1f) / 2f
@@ -369,6 +375,7 @@ internal fun GalleryPhotoViewer(
                             .transformable(gesture)
                             .pointerInput(photo.node.id, photo.node.revision) {
                                 detectTapGestures(onDoubleTap = {
+                                    liveHeld = false
                                     zoom = if (zoom > 1f) 1f else 2f
                                     pan = Offset.Zero
                                 })
@@ -497,7 +504,7 @@ internal fun GalleryPhotoViewer(
                 GalleryLivePhotoMotion(
                     photo = photo,
                     controller = controller,
-                    held = liveHeld,
+                    held = liveHeld && liveHoldAllowed,
                     stillReady = stage is ImageStage.Ready,
                 )
             }
