@@ -102,5 +102,7 @@ class NativeLocalViewerNextPageTest {
             decide(intent = request.copy(requestId = 0)))
         assertEquals(NativeLocalNextPageDecision.STALE,
             decide(intent = request.copy(cursor = NativeLocalPageKey(100L, 0L))))
+        assertEquals(NativeLocalNextPageDecision.STALE,
+            decide(intent = request.copy(cursor = NativeLocalPageKey(99L, 1L))))
     }
 }
