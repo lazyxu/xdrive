@@ -22,6 +22,9 @@ const inspection = `
     movePreview: typeof movePreview === 'function' ? movePreview : null,
     previewPositionLabel: typeof previewPositionLabel === 'string' ? previewPositionLabel : '',
     thumbnailOnlyPreview: typeof thumbnailOnlyPreview === 'boolean' ? thumbnailOnlyPreview : false,
+    ownerDerivedPreview: typeof ownerDerivedPreview === 'boolean' ? ownerDerivedPreview : false,
+    quickLookPreviewURLLoader: typeof quickLookPreviewURLLoader === 'function'
+      ? quickLookPreviewURLLoader : null,
     previewActions: typeof previewActions === 'object' ? previewActions : [],
     getDownloadDisabledReason: typeof getDownloadDisabledReason === 'function' ? getDownloadDisabledReason : null,
     cancelDownload: typeof cancelDownload === 'function' ? cancelDownload : null,
@@ -65,7 +68,7 @@ const rows = [node(2, 'a.txt', 1), node(3, 'folder', 0, 'dir'),
 const same = (a, b) => a?.length === b?.length && a.every((value, i) => Object.is(value, b[i]))
 
 async function mount(extraRows = []) {
-  const slots = [], requests = [], revoked = [], timers = [], listeners = new Map()
+  const slots = [], requests = [], viewerLoads = [], revoked = [], timers = [], listeners = new Map()
   let cursor = 0, dirty = true, snapshot, pending = [], urlSequence = 0
   const hooks = {
     useState(initial) {
@@ -151,6 +154,10 @@ async function mount(extraRows = []) {
     xDriveSynologyLoadOwnerThumbnail: () => { throw Error('Controller must not preload media') },
     xDriveSynologyLoadBoundedMediaPreview: () => { throw Error('Controller must not preload originals') },
     xDriveSynologyLoadNativeMediaStream: () => { throw Error('Controller must not preload a player') },
+    xDriveSynologyLoadViewerPreview(_client, item, signal) {
+      viewerLoads.push({ item, signal })
+      return Promise.resolve('blob:verified-4k')
+    },
     xDriveSynologyFetchVerifiedDownload(_client, item, signal, onProgress) {
       return new Promise((resolve, reject) => {
         requests.push({ item, signal, onProgress, resolve: () => resolve({ filename: item.name,
@@ -178,17 +185,19 @@ async function mount(extraRows = []) {
     assert.equal(dirty, false, 'controller must settle')
   }
   await flush()
-  return { get state() { return snapshot }, flush, requests, revoked, timers,
+  return { get state() { return snapshot }, flush, requests, viewerLoads, revoked, timers,
     replaceClient() { currentClient = { ...client }; dirty = true; render() },
     unmount() { for (const slot of slots) slot?.cleanup?.() } }
 }
 
-test('shared QuickLook shows the derivative notice and does not request prohibited originals', () => {
+test('shared QuickLook preserves thumb fallback and connects current Owner 4K image source', () => {
   const quickLook = read('ui/shared/src/mui/FileQuickLookDialog.tsx')
   assert.match(quickLook, /subtitle=\{subtitle\}/)
-  assert.match(page, /subtitle=\{thumbnailOnlyPreview \?/)
-  assert.match(page, /loadPreviewURL=\{thumbnailOnlyPreview \? undefined : loadMediaPreview\}/)
+  assert.match(page, /subtitle=\{thumbnailOnlyPreview/)
+  assert.match(page, /loadPreviewURL=\{quickLookPreviewURLLoader\}/)
   assert.match(page, /loadImagePreview=\{loadOwnerThumbnail\}/)
+  assert.match(page, /quickLookPreviewURLLoader\s*=\s*thumbnailOnlyPreview && !ownerDerivedPreview/)
+  assert.match(page, /不直接读取原件；优先加载已认证的 4K 派生图/)
 })
 
 test('rejecting an empty-file download must not revoke a previously verified save link', async () => {
@@ -302,6 +311,53 @@ test('DSM large PDF opens the same shared Viewer without broadening download lim
   assert.equal(app.state.previewActions[0].disabled, true)
   app.state.movePreview(-1); await app.flush()
   assert.notEqual(app.state.previewItem?.id, 9)
+  app.unmount()
+})
+
+test('DSM Files QuickLook reaches Owner 4K WebP/JPEG without losing thumbnail-only fallback', async () => {
+  const app = await mount([
+    node(9, 'cloud.heic', 24 << 20), node(10, 'raw.dng', 64 << 20),
+    node(11, 'large.png', 128 << 20), node(12, 'legacy.bmp', 4 << 20),
+    node(13, 'live.livp', 16 << 20), node(14, 'danger.exe', 1 << 20),
+  ])
+  for (const [id, kind] of [[9, 'image'], [10, 'image'], [11, 'image'], [13, 'live_photo']]) {
+    const item = app.state.displayedItems.find(entry => entry.id === id)
+    app.state.openFilePreview(item); await app.flush()
+    assert.equal(app.state.previewItem?.id, id)
+    assert.equal(app.state.ownerDerivedPreview, true,
+      'verified 4K derivative must be enabled for eligible Owner stills')
+    assert.equal(typeof app.state.quickLookPreviewURLLoader, 'function',
+      'a thumbnail-only flag must not hide the authenticated derivative loader')
+    assert.equal(app.viewerLoads.length,
+      [[9, 'image'], [10, 'image'], [11, 'image'], [13, 'live_photo']]
+        .findIndex(([candidate]) => candidate === id),
+      'opening a Viewer must not eagerly read the high-res resource')
+    assert.equal(await app.state.quickLookPreviewURLLoader(item, kind), 'blob:verified-4k')
+    assert.equal(app.viewerLoads.at(-1)?.item?.id, id)
+    assert.equal(app.viewerLoads.at(-1)?.item?.revision, item.revision)
+  }
+  assert.deepEqual(app.viewerLoads.map(({ item }) => [item.id, item.name]),
+    [[9, 'cloud.heic'], [10, 'raw.dng'], [11, 'large.png'], [13, 'live.livp']])
+  // Legacy unsupported original with no derivative stays thumbnail-only; do
+  // not accidentally route BMP or another binary through the original reader.
+  const bmp = app.state.displayedItems.find(entry => entry.id === 12)
+  app.state.openFilePreview(bmp); await app.flush()
+  assert.equal(app.state.thumbnailOnlyPreview, true)
+  assert.equal(app.state.ownerDerivedPreview, false)
+  assert.equal(app.state.quickLookPreviewURLLoader, null)
+  assert.equal(app.viewerLoads.length, 4)
+  // Small JPEG retains its bounded complete-SHA original path.
+  const jpeg = app.state.displayedItems.find(entry => entry.id === 4)
+  app.state.openFilePreview(jpeg); await app.flush()
+  assert.equal(app.state.thumbnailOnlyPreview, false)
+  assert.equal(app.state.ownerDerivedPreview, false)
+  assert.equal(typeof app.state.quickLookPreviewURLLoader, 'function')
+  assert.equal(app.viewerLoads.length, 4)
+  // Unsupported binary cannot replace the current, authenticated selection.
+  app.state.openFilePreview(app.state.displayedItems.find(entry => entry.id === 14))
+  await app.flush()
+  assert.equal(app.state.previewItem?.id, jpeg.id)
+  assert.equal(app.viewerLoads.length, 4)
   app.unmount()
 })
 
