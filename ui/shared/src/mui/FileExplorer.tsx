@@ -6661,6 +6661,16 @@ export function XDriveFileExplorer({
           minHeight: 0,
           overflow: 'auto',
           userSelect: marqueeRect ? 'none' : undefined,
+          // Both Owner Files and public Share focus this large scroll viewport
+          // after mouse background actions. Never paint the browser's default
+          // white rectangle around the entire virtualized file list.
+          '&:focus:not(:focus-visible)': { outline: 'none' },
+          // Keep a deliberate, theme-aware focus cue for keyboard navigation.
+          '&:focus-visible': {
+            outline: '2px solid',
+            outlineColor: 'primary.main',
+            outlineOffset: -2,
+          },
         }}
         tabIndex={logicalItemCount === 0 ? 0 : -1}
         onScroll={handleScroll}
