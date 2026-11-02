@@ -263,6 +263,9 @@ func (s *Server) executeUndoCopyTx(
 			First(&root).Error; err != nil {
 			return undoConflict(index, snapshot.Root.ID, "copied item is no longer available")
 		}
+		if err := notesRejectNodeWithReason(ctx, tx, uid, root.ID); err != nil {
+			return undoConflict(index, root.ID, "managed Notes cannot be changed")
+		}
 		if root.Revision != snapshot.Root.Revision {
 			return undoConflict(index, root.ID, "copied item changed after the copy operation")
 		}
@@ -374,6 +377,12 @@ func (s *Server) executeUndoMoveTx(
 		if node.ParentID == nil {
 			return undoConflict(index, node.ID, "moved item has no redo target parent")
 		}
+		if err := notesRejectNodeWithReason(ctx, tx, uid, node.ID); err != nil {
+			return undoConflict(index, node.ID, "managed Notes cannot be moved")
+		}
+		if err := notesRejectDestinationWithReason(ctx, tx, uid, snapshot.ParentID, snapshot.Name); err != nil {
+			return undoConflict(index, node.ID, "managed Notes destination is protected")
+		}
 		redoParentID := *node.ParentID
 		redoName := node.Name
 		if _, err := batchTargetDirectoryTx(tx, uid, snapshot.ParentID); err != nil {
@@ -466,6 +475,9 @@ func (s *Server) executeUndoDeleteTx(
 			meta.NodeTypeDir,
 		).First(&parent).Error; err != nil {
 			return undoConflict(index, root.ID, "original parent folder is unavailable")
+		}
+		if err := notesRejectDestinationWithReason(ctx, tx, uid, *root.ParentID, root.Name); err != nil {
+			return undoConflict(index, root.ID, "managed Notes destination is protected")
 		}
 		var count int64
 		if err := tx.Model(&meta.Node{}).
