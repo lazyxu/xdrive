@@ -1,9 +1,9 @@
 import { xDriveDesktopViewportRequest } from './abortableViewportRequest'
-import { xDriveDesktopDecodeViewerPreviewURL } from './desktopViewerPreviewDecode'
+import { xDriveDesktopDecodeViewerPreviewURL, xDriveDesktopRegisterLegacyJPEGViewerPreviewURL } from './desktopViewerPreviewDecode'
 
 let mediaOCRDetailRequestSequence = 0
 import { xDriveLeaseDesktopPreviewURL, xDriveReleaseDiscardedDesktopPreviewURL } from './desktopPreviewURLLease'
-import { xDriveCompleteLivePhotoOriginalNodeIDs, xDriveFileNeedsBrowserCompatibleImagePreview, xDriveRegisterViewerImageSource } from '@xdrive/shared'
+import { xDriveCompleteLivePhotoOriginalNodeIDs, xDriveFileNeedsBrowserCompatibleImagePreview } from '@xdrive/shared'
 import {
   createXDriveMediaGalleryDataSource,
   xDriveMediaGalleryTrashRoots,
@@ -240,17 +240,11 @@ export function createDesktopMediaGalleryDataSource(
           )
           if (!result.ok) return result
           signal?.throwIfAborted()
+          const blob = new Blob(
+            [result.data.data], { type: result.data.content_type || 'image/jpeg' })
           return {
             ok: true as const,
-            data: (() => {
-              const blob = new Blob(
-                [result.data.data], { type: result.data.content_type || 'image/jpeg' })
-              const url = URL.createObjectURL(blob)
-              xDriveRegisterViewerImageSource(url, {
-                format: 'JPEG', quality: 84, byteSize: blob.size,
-              })
-              return url
-            })(),
+            data: xDriveDesktopRegisterLegacyJPEGViewerPreviewURL(blob),
           }
         }
       }
