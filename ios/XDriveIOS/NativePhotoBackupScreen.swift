@@ -362,6 +362,26 @@ struct XDriveIOSNativePhotoBackupScreen: View {
                         .monospacedDigit()
                     Text("视频新增 \(result.videoUploaded)，Live ZIP 新增 \(result.liveBundleUploaded)，待核对 \(result.needsReview)，不可用 \(result.unavailable)")
                         .font(.footnote)
+                    // This fraction counts only slots read in THIS 256-item
+                    // window. It is not a remote backup coverage percentage.
+                    if let window = XDriveIOSNativeBackupWindowReadProgress.current(
+                        totalVisible: result.totalVisible,
+                        startOffset: result.startOffset, scanned: result.scanned,
+                        uploaded: result.uploaded,
+                        verifiedAlready: result.verifiedAlready,
+                        unavailable: result.unavailable,
+                        needsReview: result.needsReview,
+                        unsupported: result.videosNotSupported
+                    ) {
+                        ProgressView(value: window.fractionScanned)
+                            .accessibilityLabel("本轮分段已扫描比例")
+                            .accessibilityIdentifier("native-ios-photo-window-scanned-progress")
+                        Text("当前分段已检查 \(window.scanned)/\(window.capacity) 项，尚未扫描 \(window.remaining) 项；已确认 \(window.confirmed) 项，待核对 \(window.needsReview) 项，不可用 \(window.unavailable) 项。")
+                            .font(.caption).monospacedDigit()
+                            .accessibilityIdentifier("native-ios-photo-window-read-count")
+                        Text("仅表示当前分段的读取进度，不代表整库已备份；已扫描不等于已成功备份，仍需逐张核验当前云端原件。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
             }
             Section("前台自动增量") {
