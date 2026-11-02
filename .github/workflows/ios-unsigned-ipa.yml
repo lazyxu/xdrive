@@ -526,6 +526,16 @@ jobs:
           "$RUNNER_TEMP/xdrive-ios-files-batch-export"
           node --test desktop/tests/ios-native-files-batch-export.cjs
 
+      - name: Verify native Files cloud share permission, expiry and existing-link edit
+        run: |
+          set -euo pipefail
+          swiftc -swift-version 5 \
+            ios/XDriveIOS/NativeFilesShareLinkPolicy.swift \
+            ios/tests/NativeFilesShareLinkPolicyChecks.swift \
+            -o "$RUNNER_TEMP/xdrive-ios-files-share-policy-check"
+          "$RUNNER_TEMP/xdrive-ios-files-share-policy-check"
+          node --test desktop/tests/ios-native-files-share-links.cjs
+
       - name: Prepare native brand and home screen icon
         run: bash ios/scripts/prepare-assets.sh
 

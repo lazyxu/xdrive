@@ -30,6 +30,32 @@ struct NativeFilesShareLinkPolicyChecks {
         precondition(policy.url(origin: URL(string: "https://nas.example/?q=x")!, token: token) == nil)
         precondition(policy.url(origin: URL(string: "https://nas.example/#frag")!, token: token) == nil)
         precondition(policy.url(origin: URL(string: "https://person@nas.example")!, token: token) == nil)
+        // PATCH must send an explicit null to remove expiry without rotating
+        // the opaque link. Valid expiry continues using UTC ISO-8601.
+        let serializer = JSONEncoder()
+        serializer.dateEncodingStrategy = .iso8601
+        let permanent = try! serializer.encode(
+            XDriveIOSNativeFilesSharePolicyUpdateBody(
+                access: "read_only", expires_at: nil
+            )
+        )
+        let permanentJSON = try! JSONSerialization.jsonObject(
+            with: permanent
+        ) as! [String: Any]
+        precondition(permanentJSON["expires_at"] is NSNull)
+        precondition(permanentJSON["access"] as? String == "read_only")
+        precondition(permanentJSON["token"] == nil)
+        let temporary = try! serializer.encode(
+            XDriveIOSNativeFilesSharePolicyUpdateBody(
+                access: "view_upload", expires_at: now
+            )
+        )
+        let temporaryJSON = try! JSONSerialization.jsonObject(
+            with: temporary
+        ) as! [String: Any]
+        precondition(temporaryJSON["expires_at"] as? String == "1970-01-01T00:16:40Z")
+        precondition(temporaryJSON["access"] as? String == "view_upload")
+        precondition(temporaryJSON["token"] == nil)
         print("iOS native Files share link policy: PASS")
     }
 }
