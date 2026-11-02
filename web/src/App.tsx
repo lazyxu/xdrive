@@ -2484,7 +2484,8 @@ function FileManager({
     // create a workspace route, grant a new feature or replace the dynamic tab.
     const allowedWorkspace = galleryShortcut ? 'gallery' : destination
     if (next && mobileLauncherDestinations.some(item => item.key === destination) &&
-        xDriveWorkspaceNavigationAllowed(allowedWorkspace, serverAdminVerified)) {
+        xDriveWorkspaceNavigationAllowed(allowedWorkspace, serverAdminVerified) &&
+        xDriveWebAppHash(next) !== xDriveWebAppHash(route)) {
       if (mobileOverviewSlot) saveVisibleMobileOverviewScroll()
       launchWebApp(next)
     }
@@ -2500,6 +2501,18 @@ function FileManager({
         launchWebApp(next)
       }
     } else setMobileRecentOpen(true)
+  }
+  const pickMobileRecent = (next: XDriveWebAppRoute) => {
+    const workspace = xDriveWebAppWorkspaceKey(next.app, next.params)
+    // A stale drawer callback cannot navigate to an unverified administrator
+    // route. Reuse the same actual Web workspace/role admission as Launcher.
+    if (!workspace || !mobileDestinations.some(item => item.key === workspace) ||
+        !xDriveWorkspaceNavigationAllowed(workspace, serverAdminVerified) ||
+        xDriveWebAppHash(next) === xDriveWebAppHash(route)) return
+    // Unlike bottom-tab taps, Recent also exits All. Preserve its current
+    // scroll anchor before the shared <main> is reused by another workspace.
+    if (mobileOverviewSlot) saveVisibleMobileOverviewScroll()
+    launchWebApp(next)
   }
   const mobileParent = xDriveMobileFeatureParentRoute(route)
   const mobileFolderParent = route.app === 'files' && crumbs.length > 1
@@ -3090,7 +3103,7 @@ function FileManager({
             recentOpen={mobileRecentOpen}
             onRecentOpenChange={setMobileRecentOpen}
             onSelect={selectMobileSlot}
-            onPickRecent={next => launchWebApp(next)}
+            onPickRecent={pickMobileRecent}
           />
         ) : null}
         </Box>
