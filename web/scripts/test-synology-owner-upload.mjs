@@ -81,8 +81,9 @@ for (const invalid of [
   { ...picked, size: content.length + 1 },
   { ...picked, arrayBuffer: null },
 ]) {
+  const before = calls()
   await assert.rejects(() => client.ownerUploadSmallFile(17, invalid, ownerScope))
-  assert.equal(sent.length, calls(), 'invalid file reached upload transport')
+  assert.equal(calls(), before, 'invalid file reached upload transport')
 }
 const countBefore = calls()
 await assert.rejects(() => client.ownerUploadSmallFile(17, picked, 'bad-owner-scope'))

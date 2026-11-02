@@ -11,6 +11,8 @@ on:
       - 'internal/localbackupipc/recovery_review_test.go'
       - 'internal/localbackupipc/owner_quota.go'
       - 'internal/localbackupipc/owner_files.go'
+      - 'internal/localbackupipc/owner_upload.go'
+      - 'internal/localbackupipc/owner_upload_test.go'
       - 'internal/localbackupipc/owner_search.go'
       - 'internal/localbackupipc/owner_search_test.go'
       - 'internal/localbackupipc/owner_files_test.go'
@@ -60,9 +62,12 @@ on:
       - 'ui/shared/src/mui/FilePreviewSurface.tsx'
       - 'ui/shared/src/synology-owner-files-scope.ts'
       - 'web/scripts/test-synology-owner-files.mjs'
+      - 'web/scripts/test-synology-owner-upload.mjs'
       - 'web/scripts/test-synology-owner-search.mjs'
       - 'internal/localbackupipc/owner_quota_test.go'
       - 'cmd/xdrive-agent/desktop_ipc.go'
+      - 'cmd/xdrive-agent/desktop_ipc_owner_upload.go'
+      - 'cmd/xdrive-agent/desktop_ipc_owner_upload_test.go'
       - 'cmd/xdrive-agent/desktop_ipc_runtime_mode.go'
       - 'cmd/xdrive-agent/desktop_ipc_runtime_mode_test.go'
       - 'cmd/xdrive-agent/main.go'
@@ -155,6 +160,8 @@ on:
       - 'internal/localbackupipc/recovery_review_test.go'
       - 'internal/localbackupipc/owner_quota.go'
       - 'internal/localbackupipc/owner_files.go'
+      - 'internal/localbackupipc/owner_upload.go'
+      - 'internal/localbackupipc/owner_upload_test.go'
       - 'internal/localbackupipc/owner_files_test.go'
       - 'internal/localbackupipc/owner_text_preview.go'
       - 'internal/localbackupipc/owner_text_preview_test.go'
@@ -197,9 +204,12 @@ on:
       - 'ui/shared/src/mui/FilePreviewSurface.tsx'
       - 'ui/shared/src/synology-owner-files-scope.ts'
       - 'web/scripts/test-synology-owner-files.mjs'
+      - 'web/scripts/test-synology-owner-upload.mjs'
       - 'web/scripts/test-synology-owner-search.mjs'
       - 'internal/localbackupipc/owner_quota_test.go'
       - 'cmd/xdrive-agent/desktop_ipc.go'
+      - 'cmd/xdrive-agent/desktop_ipc_owner_upload.go'
+      - 'cmd/xdrive-agent/desktop_ipc_owner_upload_test.go'
       - 'cmd/xdrive-agent/desktop_ipc_runtime_mode.go'
       - 'cmd/xdrive-agent/desktop_ipc_runtime_mode_test.go'
       - 'cmd/xdrive-agent/main.go'
@@ -316,9 +326,9 @@ jobs:
             exit 1
           fi
           go test -count=1 ./internal/synologyui
-          go test -count=1 ./internal/localbackupipc -run 'Test(Remote|OwnerQuota|OwnerFile|OwnerSearch|OwnerTextPreview|OwnerMediaRange|OwnerThumbnail|OwnerGallery|OwnerLiveMotion|ServerLogin|RecoveryReview)'
+          go test -count=1 ./internal/localbackupipc -run 'Test(Remote|OwnerQuota|OwnerFile|OwnerSearch|OwnerTextPreview|OwnerMediaRange|OwnerThumbnail|OwnerGallery|OwnerLiveMotion|OwnerUploadedFile|ServerLogin|RecoveryReview)'
           go test -count=1 ./internal/client -run 'Test(DownloadVerifiedRange|OwnerThumbnail|MediaOwnerThumbnail|OwnerGallery|ReadVerifiedOwnerLiveMotion|OwnerLiveMotion)'
-          go test -count=1 ./cmd/xdrive-agent -run 'Test(BackupOnly(CloudQuota|CloudFileRead|ExplicitOwnerSearch|OwnerMediaRange|OwnerThumbnail|RequiresAuthenticatedIPCBeforeScheduling|IPCServeFailureStopsScheduler)|OwnerGallery|OwnerLiveMotion)'
+          go test -count=1 ./cmd/xdrive-agent -run 'Test(BackupOnly(CloudQuota|CloudFileRead|ExplicitOwnerSearch|OwnerMediaRange|OwnerThumbnail|RequiresAuthenticatedIPCBeforeScheduling|IPCServeFailureStopsScheduler)|OwnerGallery|OwnerLiveMotion|AgentOwnerSmallUpload)'
           # Keep the existing real authenticated xd→owning-Agent IPC two-pass
           # fixture in the DSM gate. Its Server responses are simulated:
           # first-file and unchanged-file observations are not physical CAS proof.
@@ -343,6 +353,7 @@ jobs:
           node web/scripts/test-synology-owner-gallery.mjs
           node web/scripts/test-synology-owner-live-motion.mjs
           node web/scripts/test-synology-owner-files.mjs
+          node web/scripts/test-synology-owner-upload.mjs
           node web/scripts/test-synology-owner-search.mjs
           node web/scripts/test-synology-media-preview.mjs
           node web/scripts/test-synology-owner-download.mjs
