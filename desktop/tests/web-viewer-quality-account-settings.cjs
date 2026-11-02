@@ -1,0 +1,32 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const root = path.join(__dirname, '../..')
+const read = relative => fs.readFileSync(path.join(root, relative), 'utf8')
+
+test('Web Viewer account settings never use user-provided Owner IDs or unversioned writes', () => {
+  const api = read('web/src/api.ts')
+  const source = read('web/src/ViewerQualitySettingsSection.tsx')
+  const app = read('web/src/App.tsx')
+  assert.match(api, /async viewerQualityPreference\(/)
+  assert.match(api, /async saveViewerQualityPreference\(/)
+  assert.match(api, /body: JSON.stringify\(\{ revision, preset \}\)/)
+  assert.match(api, /body: JSON.stringify\(\{ revision, maximum_preset: maximumPreset \}\)/)
+  assert.doesNotMatch(source, /localStorage|sessionStorage|user_id|owner_id/)
+  assert.match(source, /error instanceof ApiError && error.status === 409/)
+  assert.match(app, /viewerQualityApi=\{api\}/)
+  assert.match(app, /isAdmin=\{profile\?\.role === 'admin'\}/)
+  assert.match(source, /data-xdrive-viewer-quality-admin/)
+})
+
+test('Web derived LIVP/HEIC/RAW uses Server-authoritative account preset and real encoding metadata', () => {
+  const api = read('web/src/api.ts')
+  assert.match(api, /new URLSearchParams\(\{ format, preset: 'account' \}\)/)
+  assert.match(api, /X-XDrive-Viewer-Preview-Quality/)
+  assert.match(api, /quality,\s*byteSize: blob.size/)
+  const gallery = read('web/src/mediaGalleryAdapter.ts')
+  assert.match(gallery, /kind === 'live_photo'/)
+  assert.match(gallery, /mediaViewerPreviewURL\(nodeID, signal, revision, onProgress\)/)
+})
