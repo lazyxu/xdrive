@@ -31,6 +31,11 @@ const modules = {
   '@mui/icons-material/MoreHorizRounded': 'icon',
   '@mui/icons-material/SearchRounded': 'icon',
   '@mui/icons-material/SortRounded': 'icon',
+  './MobileHeaderPortal': {
+    XDriveMobileHeaderNavigation: ({ children }) =>
+      React.createElement(React.Fragment, null, children),
+    useXDriveMobileHeaderMode: () => 'standalone',
+  },
   './useMobilePanelViewport': { useXDriveMobilePanelViewport: () => null },
   './MobileGalleryDockLayout': dockModule.exports,
   '../media-timezone': { xDriveMediaTimeZoneChoices: () => [] },

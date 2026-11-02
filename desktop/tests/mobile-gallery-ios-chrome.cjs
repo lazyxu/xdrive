@@ -28,6 +28,11 @@ const mocks = {
     'Autocomplete','Box','Button','Drawer','IconButton','Menu','MenuItem',
     'Slider','Stack','TextField','Typography',
   ].map(x => [x, x.toLowerCase()])),
+  './MobileHeaderPortal': {
+    XDriveMobileHeaderNavigation: ({ children }) =>
+      React.createElement(React.Fragment, null, children),
+    useXDriveMobileHeaderMode: () => 'standalone',
+  },
   './useMobilePanelViewport': { useXDriveMobilePanelViewport: () => null },
   './MobileGalleryDockLayout': dockModule.exports,
   './MediaGalleryNavigation': {
