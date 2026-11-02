@@ -58,6 +58,10 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		}
 		githubCoreJobs = append(githubCoreJobs, name)
 	}
+	// GitLab's 12 explicit master-only replicas run after the Snapshot is
+	// published; each must inherit its exact GitHub-parity test job. Keep them
+	// out of name parity only after validating their full scheduling contract.
+	masterDiagnostics := assertGitLabMasterSnapshotDiagnostics(t, gitlab)
 	// GitHub produces the isolated DSM MUI within build-client-core, whereas
 	// GitLab has a dedicated Node runner that hands its verified static assets
 	// to build-client-core as an explicit artifact dependency. Preserve the
@@ -66,7 +70,8 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	// assert the matching build steps and dependency below.
 	var gitlabCoreJobs []string
 	for _, name := range gitlabJobs {
-		if name != "build-synology-ui" {
+		_, isMasterDiagnostic := masterDiagnostics[name]
+		if name != "build-synology-ui" && !isMasterDiagnostic {
 			gitlabCoreJobs = append(gitlabCoreJobs, name)
 		}
 	}
@@ -1388,6 +1393,134 @@ func gitlabJobKeys(root map[string]any) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// assertGitLabMasterSnapshotDiagnostics enforces the 1:1 scheduling split:
+// GitLab Snapshot tests may run after publish-release, but MR/stable must keep
+// the original full test jobs and no unrelated core job can escape parity.
+func assertGitLabMasterSnapshotDiagnostics(t *testing.T, gitlab map[string]any) map[string]struct{} {
+	t.Helper()
+
+	const snapshotRule = `$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE`
+	const masterRule = `$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master"`
+	// Explicit list: do not broadly ignore every job prefixed with master-.
+	// Package dependencies must remain available to the exact-artifact tests.
+	expectedNeeds := map[string][]string{
+		"desktop-tests":                  {"publish-release"},
+		"go-linux":                       {"publish-release"},
+		"go-linux-api":                   {"publish-release"},
+		"go-windows":                     {"publish-release"},
+		"server-validation":              {"publish-release"},
+		"server-backup":                  {"publish-release", "server-image"},
+		"test-backup-cli-windows":        {"publish-release", "build-client-core"},
+		"test-linux-artifact":            {"publish-release", "package-linux-client"},
+		"test-source-agent-artifact":     {"publish-release", "build-source-agent"},
+		"test-windows-rollback-artifact": {"publish-release", "package-windows-client"},
+		"test-windows-upgrade-artifact":  {"publish-release", "package-windows-client", "master-test-windows-rollback-artifact"},
+		"test-windows-smoke-artifact":    {"publish-release", "package-windows-client", "master-test-windows-upgrade-artifact"},
+	}
+	parent, ok := gitlab[".master-post-release-test"].(map[string]any)
+	if !ok {
+		t.Fatal("GitLab Snapshot diagnostic template is missing")
+	}
+	if parent["stage"] != "post-release-test" {
+		t.Errorf("GitLab Snapshot diagnostic stage=%v, want post-release-test", parent["stage"])
+	}
+	assertNeedNames(t, "GitLab Snapshot template", ".master-post-release-test", parent["needs"], []string{"publish-release"})
+	parentRules, ok := parent["rules"].([]any)
+	if !ok || len(parentRules) != 2 {
+		t.Fatalf("GitLab Snapshot diagnostic template rules=%v, want master-only + fallback never", parent["rules"])
+	}
+	mustRule := func(jobName string, raw any) map[string]any {
+		t.Helper()
+		rule, ok := raw.(map[string]any)
+		if !ok {
+			t.Fatalf("GitLab job %s has malformed rule: %v", jobName, raw)
+		}
+		return rule
+	}
+	if rule := mustRule(".master-post-release-test", parentRules[0]); rule["if"] != snapshotRule || rule["allow_failure"] != true {
+		t.Errorf("GitLab Snapshot diagnostic must require registry-backed master and be nonblocking: %v", rule)
+	}
+	if rule := mustRule(".master-post-release-test", parentRules[1]); rule["when"] != "never" {
+		t.Errorf("GitLab Snapshot diagnostic must be absent on MR/stable tags: %v", rule)
+	}
+	for jobName, stage := range map[string]string{
+		"web":                "build",
+		"server-image":       "package",
+		"caddy-image":        "package",
+		"photo-face-image":   "package",
+		"media-worker-image": "package",
+	} {
+		job, ok := gitlab[jobName].(map[string]any)
+		if !ok || job["stage"] != stage {
+			t.Errorf("GitLab publication prerequisite %s must use %s stage, got %v", jobName, stage, job)
+		}
+	}
+
+	allowed := make(map[string]struct{}, len(expectedNeeds))
+	for originalName, needs := range expectedNeeds {
+		name := "master-" + originalName
+		allowed[name] = struct{}{}
+		original, ok := gitlab[originalName].(map[string]any)
+		if !ok {
+			t.Fatalf("GitLab formal test %s is missing", originalName)
+		}
+		if original["stage"] != "test" {
+			t.Errorf("GitLab formal test %s must remain in pre-release test stage", originalName)
+		}
+		rules, ok := original["rules"].([]any)
+		if !ok || len(rules) != 3 {
+			t.Fatalf("GitLab formal test %s rules=%v, want master exclusion, master fallback and MR/tag gate", originalName, original["rules"])
+		}
+		if rule := mustRule(originalName, rules[0]); rule["if"] != snapshotRule || rule["when"] != "never" {
+			t.Errorf("GitLab formal test %s must skip registry-backed master: %v", originalName, rule)
+		}
+		if rule := mustRule(originalName, rules[1]); rule["if"] != masterRule || rule["allow_failure"] != true {
+			t.Errorf("GitLab formal test %s must preserve nonregistry master fallback: %v", originalName, rule)
+		}
+		if rule := mustRule(originalName, rules[2]); rule["when"] != "on_success" {
+			t.Errorf("GitLab formal test %s must remain required on MR and stable tags: %v", originalName, rule)
+		}
+
+		clone, ok := gitlab[name].(map[string]any)
+		if !ok {
+			t.Fatalf("GitLab post-release test %s is missing", name)
+		}
+		// No script/runner/image/rules overrides: inherit exactly the same test.
+		for key := range clone {
+			if key != "extends" && key != "needs" {
+				t.Errorf("GitLab post-release test %s may not override inherited %s", name, key)
+			}
+		}
+		extends, ok := clone["extends"].([]any)
+		if !ok || !reflect.DeepEqual(extends, []any{originalName, ".master-post-release-test"}) {
+			t.Errorf("GitLab post-release test %s extends=%v, want original test then Snapshot schedule", name, clone["extends"])
+		}
+		actualNeeds, hasOwnNeeds := clone["needs"]
+		if !hasOwnNeeds {
+			actualNeeds = parent["needs"]
+		}
+		assertNeedNames(t, "GitLab post-release", name, actualNeeds, needs)
+		// Publication is not an artifact source; preserve built packages/images
+		// and the Windows rollback -> upgrade -> smoke test ordering.
+		needList, ok := actualNeeds.([]any)
+		if !ok {
+			t.Fatalf("GitLab post-release test %s needs must be a list", name)
+		}
+		for _, rawNeed := range needList {
+			entry, ok := rawNeed.(map[string]any)
+			if !ok {
+				t.Fatalf("GitLab post-release test %s has malformed need %v", name, rawNeed)
+			}
+			dep, _ := entry["job"].(string)
+			wantArtifacts := dep != "publish-release" && !strings.HasPrefix(dep, "master-test-windows-")
+			if entry["artifacts"] != wantArtifacts {
+				t.Errorf("GitLab post-release test %s dependency %s artifacts=%v want=%v", name, dep, entry["artifacts"], wantArtifacts)
+			}
+		}
+	}
+	return allowed
 }
 
 func assertYAMLStringList(t *testing.T, root map[string]any, key string, want []string) {
