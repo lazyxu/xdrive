@@ -77,23 +77,25 @@ export async function xDriveSynologyLoadNativeMediaStream(
   // This is a scoped local route, NOT an authorization ticket. A copied URL
   // without the same logged-in DSM principal and owning Agent fails closed.
   const url = client.ownerFileMediaStreamURL(item.id, item.revision, item.size, first.sha256, mime)
-  if (mime === 'application/pdf') {
-    // Only the verified, fixed same-origin DSM CGI gets session credentials.
-    // Keep existing shared Viewer HEAD preflight as a separate presentation gate.
-    const response = await fetch(url, {
-      method: 'HEAD', signal, credentials: 'same-origin',
-      mode: 'same-origin', cache: 'no-store', redirect: 'error',
-      referrerPolicy: 'no-referrer',
-    })
-    if (signal?.aborted) throw new Error('Owner stream load cancelled')
-    const contentType = response.headers.get('content-type')
-      ?.split(';', 1)[0]?.trim().toLowerCase()
-    if (response.status !== 200 || contentType !== 'application/pdf' ||
-        response.headers.get('accept-ranges')?.toLowerCase() !== 'bytes' ||
-        response.headers.get('content-length') !== String(item.size) ||
-        response.headers.get('etag') !== '"' + first.sha256 + '"') {
-      throw new Error('Authenticated DSM PDF Range preflight unavailable')
-    }
+  // The authenticated DSM CGI supports HEAD for every allowed media type.
+  // Native video/audio can otherwise buffer indefinitely after a 200 HTML
+  // login/error response. Verify the exact Owner revision before playback.
+  // The shared PDF iframe retains its additional presentation-time check.
+  const response = await fetch(url, {
+    method: 'HEAD', signal, credentials: 'same-origin',
+    mode: 'same-origin', cache: 'no-store', redirect: 'error',
+    referrerPolicy: 'no-referrer',
+  })
+  if (signal?.aborted) throw new Error('Owner stream load cancelled')
+  const contentType = response.headers.get('content-type')
+    ?.split(';', 1)[0]?.trim().toLowerCase()
+  if (response.status !== 200 || contentType !== mime ||
+      response.headers.get('accept-ranges')?.toLowerCase() !== 'bytes' ||
+      response.headers.get('content-length') !== String(item.size) ||
+      response.headers.get('etag') !== '"' + first.sha256 + '"') {
+    throw new Error(mime === 'application/pdf'
+      ? 'Authenticated DSM PDF Range preflight unavailable'
+      : 'Authenticated DSM media Range preflight unavailable')
   }
   return url
 }
