@@ -46,6 +46,74 @@ class NativeFilesAudioForegroundTest {
         assertEquals(2, releases)
     }
 
+    @Test fun terminalDecoderErrorStopsAndReleasesExactlyOnceBeforeLeavingViewer() {
+        var stops = 0
+        var releases = 0
+        val cleanup = FilesAudioPlayerReleaseOnce(
+            stop = { stops++ },
+            release = { releases++ },
+        )
+        assertFalse(cleanup.isReleased)
+        cleanup.retireFailed()
+        assertTrue(cleanup.isReleased)
+        assertEquals(1, stops)
+        assertEquals(1, releases)
+        // Both a second failure and Compose dispose must be harmless.
+        cleanup.retireFailed()
+        cleanup.dispose()
+        assertEquals(1, stops)
+        assertEquals(1, releases)
+    }
+
+    @Test fun healthyAudioExitsWithoutUnnecessaryStopAndReleasesOnce() {
+        var stops = 0
+        var releases = 0
+        val cleanup = FilesAudioPlayerReleaseOnce(
+            stop = { stops++ },
+            release = { releases++ },
+        )
+        cleanup.dispose()
+        cleanup.retireFailed()
+        cleanup.dispose()
+        assertEquals(0, stops)
+        assertEquals(1, releases)
+    }
+
+    @Test fun vendorStopFailureStillReleasesAndNeverCrashesCleanup() {
+        var releases = 0
+        val cleanup = FilesAudioPlayerReleaseOnce(
+            stop = { throw IllegalStateException("codec stop failed") },
+            release = {
+                releases++
+                throw IllegalStateException("codec release failed")
+            },
+        )
+        cleanup.retireFailed()
+        cleanup.dispose()
+        assertTrue(cleanup.isReleased)
+        assertEquals(1, releases)
+    }
+
+    @Test fun nextRetryOwnsFreshPlayerAndOldErrorCannotReleaseIt() {
+        var firstReleases = 0
+        var nextReleases = 0
+        val first = FilesAudioPlayerReleaseOnce(
+            stop = {},
+            release = { firstReleases++ },
+        )
+        val next = FilesAudioPlayerReleaseOnce(
+            stop = {},
+            release = { nextReleases++ },
+        )
+        first.retireFailed()
+        first.dispose()
+        assertEquals(1, firstReleases)
+        assertEquals(0, nextReleases)
+        assertFalse(next.isReleased)
+        next.dispose()
+        assertEquals(1, nextReleases)
+    }
+
     @Test fun noAutoplayBeforeStartOrAfterStopOrDestroy() {
         for (state in listOf(
             Lifecycle.State.INITIALIZED,
