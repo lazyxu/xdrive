@@ -26,7 +26,7 @@ export function XDriveMediaGalleryPlacesMap({
   places, totalCount, listPlacesMapOverview, loadPlacesMapCover, initialNativeCamera, onNativeCameraChange, onNativeCameraClear,
   listBaiduNativeCells, listBaiduNativeCellItems, loadPhotoCoverThumbnail, loadPhotoCoverPreviewURL, savePhotoCoverVideoPoster, getBaiduMapCoverage, getBaiduMapCoverageReasons, getBaiduJSAPI4Status,
   getBaiduJSAPIPrototype, mintBaiduIsolatedChildTicket, onOpenBaiduNativeCell, onOpenBaiduNativeCellPhoto, onOpenBaiduNativeViewport, onBaiduNativeCellInvalidated,
-  onOpenSecureDesktopMap, diagnosticScope, onOpenDiagnostics, onCloseMap,
+  onOpenSecureDesktopMap, desktopEmbeddedPlacesURL, onPrepareDesktopPlaces, diagnosticScope, onOpenDiagnostics, onCloseMap,
   activePlaceID, focusPlaceID, onOpenPlace, onOpenPrototypePlace, onOpenNearby, compact = false,
   mapPhotoScope = xDriveEmptyBaiduMapPhotoScope, onMapPhotoScopeChange, onMapModeHandoff, mapAlbums = [],
 }: {
@@ -57,6 +57,10 @@ export function XDriveMediaGalleryPlacesMap({
     scope: XDriveBaiduMapPhotoScope) => void
   onBaiduNativeCellInvalidated?: () => void
   onOpenSecureDesktopMap?: (scope: XDriveBaiduMapPhotoScope) => void
+  /** Trusted Agent HTTPS Web Gallery in an Electron guest with no Desktop API. */
+  desktopEmbeddedPlacesURL?: string
+  /** Prepare this exact Owner/filter scope in Desktop Main before guest attach. */
+  onPrepareDesktopPlaces?: (scope:XDriveBaiduMapPhotoScope) => Promise<boolean>
   diagnosticScope?: string
   onOpenDiagnostics?: () => void
   /** Close Places using existing authenticated Gallery navigation (Parent only). */
@@ -75,6 +79,14 @@ export function XDriveMediaGalleryPlacesMap({
   mapAlbums?: MediaAlbum[]
   compact?: boolean
 }) {
+  const [desktopFallback,setDesktopFallback] = useState(false)
+  const [desktopEmbedError,setDesktopEmbedError] = useState('')
+  const embeddedWebviewRef=useRef<HTMLDivElement|null>(null)
+  const [embedPrepared,setEmbedPrepared] = useState<{key:string;state:'ready'|'denied'}|null>(null)
+  const embedPrepareRef=useRef(onPrepareDesktopPlaces)
+  embedPrepareRef.current=onPrepareDesktopPlaces
+  const embedScopeRef=useRef(mapPhotoScope)
+  embedScopeRef.current=mapPhotoScope
   const [selectedPlaceID, setSelectedPlaceID] = useState<string | null>(null)
   const selectedPlace = places.find(p => p.id === selectedPlaceID) ??
     places.find(p => p.id === focusPlaceID) ??
@@ -141,6 +153,60 @@ export function XDriveMediaGalleryPlacesMap({
     cancelStaleHandoff()
   }, [currentHandoffOwnerScope, currentHandoffPhotoScopeKey, cancelStaleHandoff])
   const desktopOnly = Boolean(onOpenSecureDesktopMap)
+  const embedIdentity=JSON.stringify([
+    diagnosticScope??'',desktopEmbeddedPlacesURL??'',xDriveBaiduMapPhotoScopeKey(mapPhotoScope),
+  ])
+  useEffect(()=>{
+    if(!desktopOnly || !desktopEmbeddedPlacesURL || !embedPrepareRef.current ||
+       desktopFallback || !xDriveBaiduMapScopeSurvivesFullReload(mapPhotoScope)) return
+    let active=true
+    // Invalidate on Owner/filter/Server or return from GPS fallback; never
+    // display an earlier guest under a newer selected map membership.
+    setEmbedPrepared(null)
+    const scope=xDriveNormalizeBaiduMapPhotoScope(embedScopeRef.current)
+    if(!scope) {
+      setDesktopEmbedError('地图筛选范围无法验证')
+      setDesktopFallback(true)
+      return
+    }
+    void embedPrepareRef.current(scope).then(ok=>{
+      if(!active)return
+      if(ok)setEmbedPrepared({key:embedIdentity,state:'ready'})
+      else {
+        setDesktopEmbedError('Desktop 与 Web 地图账户交接失败')
+        setDesktopFallback(true)
+      }
+    }).catch(()=>{
+      if(active) {
+        setDesktopEmbedError('HTTPS 地图连接准备失败')
+        setDesktopFallback(true)
+      }
+    })
+    return()=>{active=false}
+  },[desktopOnly,desktopEmbeddedPlacesURL,desktopFallback,diagnosticScope,embedIdentity])
+  useEffect(()=>{
+    if(desktopFallback || embedPrepared?.key!==embedIdentity ||
+       embedPrepared.state!=='ready')return
+    const guest=embeddedWebviewRef.current
+    if(!guest)return
+    const fail=(event:Event)=>{
+      const load=event as Event & {errorCode?:number;isMainFrame?:boolean}
+      // A canceled navigation or a failed SDK subframe is not a guest failure.
+      if(load.errorCode===-3 || load.isMainFrame===false)return
+      setDesktopEmbedError('HTTPS Web 地图页面加载失败')
+      setDesktopFallback(true)
+    }
+    const crashed=()=>{
+      setDesktopEmbedError('HTTPS 地图页面已退出')
+      setDesktopFallback(true)
+    }
+    guest.addEventListener('did-fail-load',fail)
+    guest.addEventListener('render-process-gone',crashed)
+    return()=>{
+      guest.removeEventListener('did-fail-load',fail)
+      guest.removeEventListener('render-process-gone',crashed)
+    }
+  },[desktopFallback,embedPrepared,embedIdentity])
   // Desktop file never loads third-party JSAPI; Web and PWA default to legacy.
   const mapMode = desktopOnly ? 'isolated' : xDrivePlacesMapModeFromHref(
     typeof window === 'undefined' ? '' : window.location.href,
@@ -328,6 +394,51 @@ export function XDriveMediaGalleryPlacesMap({
     mapPhotoScope.filters.captured_from || mapPhotoScope.filters.captured_to ||
     (mapPhotoScope.filters.sort_by && mapPhotoScope.filters.sort_by !== 'captured') ||
     (mapPhotoScope.filters.sort_dir && mapPhotoScope.filters.sort_dir !== 'desc'))
+
+  // Desktop's file:// renderer cannot safely run provider scripts alongside
+  // the Agent's privileged preload. Mount the SAME trusted HTTPS Web Places
+  // page in a sandboxed Electron guest. That guest defaults to Web's inline
+  // (non-isolated) map, while this file:// parent retains the rest of XDriveApp.
+  if (desktopOnly && desktopEmbeddedPlacesURL && !desktopFallback &&
+      xDriveBaiduMapScopeSurvivesFullReload(mapPhotoScope) &&
+      onPrepareDesktopPlaces) {
+    const ready=embedPrepared?.key===embedIdentity && embedPrepared.state==='ready'
+    const denied=embedPrepared?.key===embedIdentity && embedPrepared.state==='denied'
+    return (
+      <Paper variant="outlined" data-xdrive-gallery-places-map
+        data-xdrive-desktop-places-shared-web sx={{overflow:'hidden',borderRadius:2}}>
+        <Stack direction="row" alignItems="center" justifyContent="space-between"
+          sx={{px:1.25,py:0.75,gap:1,flexWrap:'wrap'}}>
+          <Typography variant="subtitle2">地点 · Web 共用地图</Typography>
+          <Button variant="outlined" size="small" onClick={() => setDesktopFallback(true)}>
+            GPS 备用地图
+          </Button>
+        </Stack>
+        {ready ? (
+          <Box component={'webview' as 'div'} ref={embeddedWebviewRef}
+            {...{partition:'xdrive-places-web',src:desktopEmbeddedPlacesURL}}
+            data-xdrive-desktop-embedded-places
+            sx={{display:'flex',width:'100%',
+              height:'max(640px, calc(100dvh - 170px))',
+              maxHeight:1300,border:0}}/>
+        ) : (
+          <Box role={denied?'alert':'status'} sx={{p:2,minHeight:280}}>
+            <Typography variant="body2" color="text.secondary">
+              {denied
+                ? '无法安全交接当前账户的地图筛选；未打开未经确认的 Web 地图。可使用 GPS 备用地图。'
+                : '正在按当前 Desktop 账户准备 Web 共用地点地图…'}
+            </Typography>
+          </Box>
+        )}
+        <Typography variant="caption" color="text.secondary"
+          sx={{display:'block',px:1.5,py:0.75}}>
+          此处运行同一 HTTPS Web 地点页面，默认同页未隔离地图；
+          当前相册、收藏和日期筛选由 Desktop 交接后重新按 Web 登录账户验证。
+          Web 登录仍须与 Desktop 当前账户一致，本机权限不交给地图脚本。
+        </Typography>
+      </Paper>
+    )
+  }
 
   return (
     <Paper variant="outlined" data-xdrive-gallery-places-map
@@ -647,6 +758,27 @@ export function XDriveMediaGalleryPlacesMap({
       ) : null}
       {desktopOnly ? (
         <Box sx={{ px: 1.5, pb: 1.5 }}>
+          {desktopEmbeddedPlacesURL && (!onPrepareDesktopPlaces ||
+              !xDriveBaiduMapScopeSurvivesFullReload(mapPhotoScope)) ? (
+            <Typography role="status" variant="caption"
+              data-xdrive-desktop-places-restricted-scope sx={{display:'block',mb:1}}>
+              当前地图包含受限相册、收藏或日期筛选；保留当前范围，不会静默切换到全部照片。
+              继续使用 GPS 备用地图。
+            </Typography>
+          ) : null}
+          {desktopEmbedError ? (
+            <Typography role="status" variant="caption" color="warning.main"
+              data-xdrive-desktop-places-load-fallback sx={{display:'block',mb:1}}>
+              {desktopEmbedError}，已切换到可交互 GPS 备用地图。
+            </Typography>
+          ) : null}
+          {desktopEmbeddedPlacesURL && onPrepareDesktopPlaces &&
+              xDriveBaiduMapScopeSurvivesFullReload(mapPhotoScope) ? (
+            <Button variant="outlined" sx={{mb:1}}
+              onClick={() => {setDesktopEmbedError('');setDesktopFallback(false)}}>
+              返回 Web 共用地点地图
+            </Button>
+          ) : null}
           {listPlacesMapOverview && onOpenPlace ? (
             <XDriveMediaGalleryOwnerGPSOverview
               scope={diagnosticScope ?? ''} listPage={listPlacesMapOverview}

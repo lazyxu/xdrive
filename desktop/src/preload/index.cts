@@ -1079,6 +1079,8 @@ contextBridge.exposeInMainWorld('xdriveDesktop', Object.freeze({
   authorizeLocalFolder: (sourceID: number) => ipcRenderer.invoke('desktop:authorize-local-folder', sourceID),
   openExternal: (url: string) => ipcRenderer.invoke('desktop:open-external', url),
   openBaiduMapSecure: (scope: unknown) => ipcRenderer.invoke('desktop:open-baidu-map-secure',scope),
+  preparePlacesEmbed: (scope: unknown) =>
+    ipcRenderer.invoke('desktop:prepare-places-embed',scope),
   startNativeDragOut: (relativePath: string) =>
     ipcRenderer.send('desktop:start-native-drag-out', relativePath),
   copyText: (text: string) => clipboard.writeText(text),
