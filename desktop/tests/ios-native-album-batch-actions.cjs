@@ -31,7 +31,9 @@ test('album selection only accepts currently authorized, immutable 64-slot page 
   assert.match(source, /selectedCandidates\[item\.id\] = item/)
   assert.match(source, /let batch = selectedCandidates\.values\.sorted \{ \$0\.id < \$1\.id \}/)
   assert.match(source, /batch\.count <= 64/)
-  assert.doesNotMatch(source, /UserDefaults|@AppStorage|persist.*PhotoKit|UploadSession/)
+  // Comments may forbid persistence; test executable Swift, not that prohibition text.
+  const executable = source.replace(/^\s*\/\/[^\n]*/gm, '')
+  assert.doesNotMatch(executable, /UserDefaults|@AppStorage|persist.*PhotoKit|UploadSession/)
 })
 
 test('exact collection membership and full current page are checked before each batch operation', () => {
