@@ -384,6 +384,8 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
     @State private var selectedFile: XDriveIOSNativeFilesCollectionItem?
     @State private var selectedOwner: XDriveNativeOwnerRoot?
     @State private var returnFile: XDriveIOSNativeFilesNode?
+    // Match Browse's chosen presentation when switching between Files subroutes.
+    @AppStorage("xdrive.ios.files.view-mode.v1") private var viewMode = "list"
 
     var body: some View {
         ScrollViewReader { returnScroll in
@@ -398,9 +400,26 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                     Text(kind == .recent ? "暂时没有最近使用的文件。" : "尚未收藏文件。")
                         .foregroundStyle(.secondary)
                 }
-                ForEach(model.items) { item in
-                    row(item)
-                        .id(item.id)
+                if viewMode == "grid" {
+                    LazyVGrid(
+                        columns: [GridItem(.adaptive(minimum: 128, maximum: 184), spacing: 10)],
+                        spacing: 10
+                    ) {
+                        ForEach(model.items) { item in
+                            gridTile(item)
+                                .id(item.id)
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
+                    .accessibilityIdentifier("native-ios-files-collection-grid")
+                } else {
+                    ForEach(model.items) { item in
+                        row(item)
+                            .id(item.id)
+                    }
                 }
                 if favorites.busy {
                     HStack { ProgressView(); Text("正在更新收藏…") }
@@ -413,6 +432,18 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
             .navigationTitle(kind.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Menu {
+                        Picker("显示方式", selection: $viewMode) {
+                            Label("列表", systemImage: "list.bullet").tag("list")
+                            Label("图标", systemImage: "square.grid.2x2").tag("grid")
+                        }
+                    } label: {
+                        Label("显示方式", systemImage: viewMode == "grid"
+                              ? "square.grid.2x2" : "list.bullet")
+                    }
+                    .accessibilityIdentifier("native-ios-files-collection-view-mode")
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button { reload() } label: {
                         Label("刷新", systemImage: "arrow.clockwise")
@@ -470,6 +501,75 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
         }
     }
 
+    private func openFile(_ item: XDriveIOSNativeFilesCollectionItem) {
+        guard model.verified, !model.loading, !favorites.busy,
+              let owner = login.owner, model.items.contains(item) else { return }
+        selectedOwner = owner
+        returnFile = item.node
+        selectedFile = item
+    }
+
+    /// The same verified collection items and native destination/Viewer serve
+    /// both presentations; switching modes never starts an extra API read.
+    private func gridTile(_ item: XDriveIOSNativeFilesCollectionItem) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if item.node.isDirectory {
+                NavigationLink {
+                    XDriveIOSNativeFilesBrowser(
+                        login: login, folderID: item.node.id, folderName: item.node.name
+                    )
+                } label: {
+                    gridEntryLabel(item)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("native-ios-files-recent-folder-\(item.id)")
+            } else {
+                Button { openFile(item) } label: {
+                    gridEntryLabel(item)
+                }
+                .buttonStyle(.plain)
+                .disabled(!model.verified || model.loading || favorites.busy)
+                .accessibilityIdentifier("native-ios-files-collection-open-\(item.id)")
+            }
+            if kind == .favorites && !item.node.isDirectory {
+                Button {
+                    guard model.verified, !model.loading,
+                          model.items.contains(item) else { return }
+                    favorites.remove(item, login: login) { reload() }
+                } label: {
+                    Label("取消收藏", systemImage: "star.slash")
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .trailing)
+                }
+                .disabled(!model.verified || model.loading || favorites.busy)
+                .accessibilityIdentifier("native-ios-files-unfavorite-\(item.id)")
+            }
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(Color(uiColor: .secondarySystemGroupedBackground),
+                    in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func gridEntryLabel(_ item: XDriveIOSNativeFilesCollectionItem) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            XDriveIOSNativeFilesThumbnailTile(
+                node: item.node, login: login,
+                height: 72, viewerActive: selectedFile != nil
+            )
+            Text(item.node.name)
+                .font(.footnote)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, minHeight: 36, alignment: .topLeading)
+            Text(item.path)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, minHeight: 130, alignment: .topLeading)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+    }
+
     private func row(_ item: XDriveIOSNativeFilesCollectionItem) -> some View {
         HStack(spacing: 8) {
             if item.node.isDirectory {
@@ -482,13 +582,7 @@ struct XDriveIOSNativeFilesCollectionScreen: View {
                 }
                 .accessibilityIdentifier("native-ios-files-recent-folder-\(item.id)")
             } else {
-                Button {
-                    guard model.verified, !model.loading, !favorites.busy,
-                          let owner = login.owner, model.items.contains(item) else { return }
-                    selectedOwner = owner
-                    returnFile = item.node
-                    selectedFile = item
-                } label: {
+                Button { openFile(item) } label: {
                     entryLabel(item)
                 }
                 .buttonStyle(.plain)
