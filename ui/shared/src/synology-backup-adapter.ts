@@ -115,6 +115,24 @@ export function xDriveValidateSynologyOwnerCreatedFolder(
   return raw
 }
 
+export function xDriveValidateSynologyOwnerRenamedNode(
+  raw: unknown, nodeID: number, revision: number, parentID: number,
+  kind: 'file' | 'dir', name: string,
+): XDriveSynologyOwnerFileNode {
+  if (![nodeID, revision, parentID].every(value =>
+      Number.isSafeInteger(value) && value > 0) ||
+    (kind !== 'file' && kind !== 'dir') ||
+    typeof name !== 'string' || !name || name !== name.trim() ||
+    name === '.' || name === '..' ||
+    /[\/\\\u0000-\u001f\u007f]/.test(name) ||
+    new TextEncoder().encode(name).length > 255 ||
+    !validOwnerFileNode(raw, parentID) || raw.id !== nodeID ||
+    raw.type !== kind || raw.name !== name || raw.revision <= revision) {
+    throw new Error('Invalid authenticated Owner renamed node')
+  }
+  return raw
+}
+
 export function xDriveValidateSynologyOwnerFileRoot(raw: unknown): XDriveSynologyOwnerFileNode {
   if (!validOwnerFileNode(raw) || (raw as XDriveSynologyOwnerFileNode).type !== 'dir') {
     throw new Error('Invalid authenticated Server Owner cloud root')
@@ -475,6 +493,12 @@ export interface XDriveSynologyBackupLocalClient extends XDriveLocalBackupCommon
     nodeID: number, revision: number, total: number, sha256: string,
     mime: XDriveSynologyOwnerStreamMIME,
   ): string
+  /** Exact-revision rename of one current Server Owner file or folder. */
+  ownerRenameNode(
+    nodeID: number, revision: number, parentID: number,
+    kind: 'file' | 'dir', name: string, ownerScope: string,
+    signal?: AbortSignal,
+  ): Promise<XDriveSynologyOwnerFileNode>
   ownerFilesPage(
     parentID: number, limit: number, sort: XDriveSynologyOwnerFileSort,
     order: XDriveSynologyOwnerFileOrder, cursor: string, signal?: AbortSignal,
@@ -509,7 +533,7 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
     if (!['bootstrap', 'sources', 'status', 'history', 'run', 'control', 'schedule',
       'device-backups', 'device-backup-runs',
       'device-backup-page', 'device-backup-folders', 'cloud-quota', 'nas-volume',
-      'cloud-root', 'cloud-children', 'cloud-create-folder', 'cloud-text-preview', 'cloud-media-range', 'cloud-thumbnail', 'cloud-viewer-preview',
+      'cloud-root', 'cloud-children', 'cloud-create-folder', 'cloud-rename-node', 'cloud-text-preview', 'cloud-media-range', 'cloud-thumbnail', 'cloud-viewer-preview',
        'cloud-gallery-items', 'cloud-gallery-albums', 'cloud-gallery-places',
        'cloud-gallery-place-items', 'cloud-gallery-map-overview',
        'cloud-live-motion', 'nas-shares',
@@ -865,6 +889,24 @@ export function createXDriveSynologyBackupLocalClient(cgiURL: string): XDriveSyn
         await request<unknown>('/v1/cloud-create-folder', 'POST',
           { parent_id: parentID, name, owner_scope: ownerScope }, signal),
         parentID, name)
+    },
+    ownerRenameNode: async (nodeID, revision, parentID, kind, name, ownerScope, signal) => {
+      if (![nodeID, revision, parentID].every(value =>
+          Number.isSafeInteger(value) && value > 0) ||
+        (kind !== 'file' && kind !== 'dir') ||
+        typeof name !== 'string' || !name || name !== name.trim() ||
+        name === '.' || name === '..' ||
+        /[\/\\\u0000-\u001f\u007f]/.test(name) ||
+        new TextEncoder().encode(name).length > 255 ||
+        !/^[0-9a-f]{64}$/.test(ownerScope)) {
+        throw new Error('Invalid Server Owner rename node selector')
+      }
+      return xDriveValidateSynologyOwnerRenamedNode(
+        await request<unknown>('/v1/cloud-rename-node', 'POST', {
+          id: nodeID, revision, parent_id: parentID,
+          type: kind, name, owner_scope: ownerScope,
+        }, signal),
+        nodeID, revision, parentID, kind, name)
     },
     ownerFileTextPreview: async (nodeID, signal) => {
       if (!Number.isSafeInteger(nodeID) || nodeID < 1) {

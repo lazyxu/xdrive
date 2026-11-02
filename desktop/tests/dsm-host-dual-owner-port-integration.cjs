@@ -73,11 +73,12 @@ test('Gallery cannot silently re-enable missing Owner Files write operations', (
   const h = create()
   const disabled = h.services.ownerFilesPage.unavailableActions
   for (const action of ['search', 'uploadFiles', 'uploadFolder',
-    'copy', 'cut', 'paste', 'delete', 'rename', 'moveTo', 'copyTo', 'manageTags']) {
+    'copy', 'cut', 'paste', 'delete', 'moveTo', 'copyTo', 'manageTags']) {
     assert.equal(typeof disabled[action], 'string', action)
     assert.ok(disabled[action].length > 5, action)
   }
   assert.equal(disabled.createFolder, undefined, 'DSM has one verified Owner folder-create action')
+  assert.equal(disabled.rename, undefined, 'DSM permits only verified Owner node rename')
   assert.equal(h.services.filesUnavailableActions, undefined,
     'obsolete top-level Files fallback is forbidden')
   assert.doesNotMatch(source, /window\.xdriveDesktop|ipcRenderer|fetch\s*\(/)

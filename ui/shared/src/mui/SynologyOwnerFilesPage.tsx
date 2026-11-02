@@ -489,6 +489,45 @@ export function XDriveSynologyOwnerFilesPage({
                   parentID: parent, scopeKey: currentScopeKey, rootRevision, client,
                 })
               }}
+              onRenameItem={async (item, name) => {
+                // Rebind the inline FileExplorer draft to the current
+                // authenticated Server Owner cursor row, not a stale selection.
+                if (!isCurrentOwner() || !currentScopeVerified ||
+                  typeof item.id !== 'number' || typeof item.revision !== 'number') {
+                  throw new Error('请先核实当前 Server Owner 文件目录。')
+                }
+                const selected = xDriveFindVerifiedOwnerSelection(item, itemsRef.current)
+                const parent = crumbs[crumbs.length - 1]?.id
+                if (!selected || !Number.isSafeInteger(parent) || parent < 1 ||
+                  selected.parent_id !== parent ||
+                  (selected.type !== 'file' && selected.type !== 'dir')) {
+                  throw new Error('所选文件已改变，请刷新当前 Owner 目录。')
+                }
+                const connection = await client.serverConnection()
+                if (!connection.configured || !/^[0-9a-f]{64}$/.test(connection.owner_scope) ||
+                  !isCurrentOwner()) {
+                  throw new Error('当前 Server Owner 已改变，请刷新目录后重试。')
+                }
+                setPreview(null)
+                try {
+                  const renamed = await client.ownerRenameNode(
+                    selected.id, selected.revision, parent, selected.type,
+                    name, connection.owner_scope)
+                  if (!isCurrentOwner()) {
+                    refreshAuthenticatedOwner()
+                    throw new Error('Server Owner 已改变，请刷新目录确认重命名结果。')
+                  }
+                  // Replay the first authenticated cursor page instead of
+                  // splicing a mutable node into the sorted directory rows.
+                  setCrumbs(current => [...current])
+                  setNotice('已重命名：' + renamed.name)
+                } catch (cause) {
+                  // A lost ACK may still mean a committed rename; refresh
+                  // rather than auto-retrying an uncertain Server mutation.
+                  if (isCurrentOwner()) setCrumbs(current => [...current])
+                  throw cause
+                }
+              }}
               loadTextPreview={loadTextPreview}
               loadThumbnail={loadOwnerThumbnail}
               loadPreviewURL={loadMediaPreview}
@@ -514,7 +553,7 @@ export function XDriveSynologyOwnerFilesPage({
                 }
               }}
               statusText={currentScopeVerified
-                ? `已核实 ${displayedItems.length.toLocaleString('zh-CN')} 项${hasMore ? ' · 仍有后续页' : ''} · 云端已开放新建文件夹`
+                ? `已核实 ${displayedItems.length.toLocaleString('zh-CN')} 项${hasMore ? ' · 仍有后续页' : ''} · 云端已开放新建文件夹与重命名`
                 : '云端账号目录尚未确认'}
             />
             {currentScopeVerified && hasMore ? (
