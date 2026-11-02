@@ -493,11 +493,20 @@ fun DriveApp(controller: DriveController, updates: UpdateController? = null, ope
                         !state.hasActiveNativeTransfer())
                 selectNativeTab(NativeHomeTab.GALLERY)
                 if (mayEnter) {
-                    // A launcher photo/album shortcut is an explicit route
-                    // override. Drop a previously pending map resume before
-                    // the new source can be rendered.
-                    if (shortcut != NativeHomeShortcut.GALLERY_MAP)
+                    // The Launcher is an explicit Gallery destination, not a
+                    // request to keep the previous Places child. Changing
+                    // only the chip previously left the Controller's cloud
+                    // map open, masking even the newly selected local wall.
+                    if (shortcut != NativeHomeShortcut.GALLERY_MAP) {
+                        if (controller.state.value.galleryMapOpen) {
+                            controller.closeGalleryMapOverview()
+                            // A transfer or unresolved Viewer may prevent a
+                            // safe close. Do not claim the new source then.
+                            if (controller.state.value.galleryMapOpen) return
+                        }
+                        localPhotoMapOpen = false
                         pendingRoutes = pendingRoutes.afterGallerySource(next.gallerySource)
+                    }
                     nativeNavigation = next
                     if (shortcut == NativeHomeShortcut.GALLERY_MAP) {
                         mapOriginSource = nativeGalleryMapReturnSource(
