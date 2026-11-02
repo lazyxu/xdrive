@@ -287,6 +287,19 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
     @State private var reader: XDriveIOSNativeAlbumPageReader?
     @State private var page: XDrivePhotoKitScanPage?
     @State private var selected: XDrivePhotoKitScanCandidate?
+    @State private var selectionMode = false
+    @State private var selectedCandidates: [String: XDrivePhotoKitScanCandidate] = [:]
+    @State private var confirmingAlbumDelete = false
+    @State private var albumActionBusy = false
+    @State private var albumActionTask: Task<Void, Never>?
+    @State private var albumActionEpoch = UUID()
+    @State private var albumActionMessage: String?
+    @State private var albumShareBusy = false
+    @State private var albumShareTask: Task<Void, Never>?
+    @State private var albumShareEpoch = UUID()
+    @State private var albumShareMessage: String?
+    @State private var albumShareSession: XDriveIOSNativeLocalPhotoShareSession?
+    @State private var retainedAlbumShare: XDriveIOSNativeLocalPhotoShareSession?
     // Only the one currently viewed verified page is retained in memory.
     // It may change when L3 crosses a 64-slot album boundary.
     @State private var viewerPage: XDrivePhotoKitScanPage?
@@ -316,21 +329,84 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 if let page {
-                    Text(page.totalAccessibleAssets == 0 ? "相册内没有可访问的照片或视频。" :
-                        "已显示 \(page.startOffset + 1)–\(page.nextOffset) / \(page.totalAccessibleAssets) 项")
-                        .font(.caption).foregroundStyle(.secondary)
+                    HStack(spacing: 8) {
+                        Text(page.totalAccessibleAssets == 0 ? "相簿内没有可访问的媒体。" :
+                            "已显示 \(page.startOffset + 1)–\(page.nextOffset) / \(page.totalAccessibleAssets) 项")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Spacer(minLength: 4)
+                        Button(selectionMode ? "取消选择" : "选择") {
+                            selectionMode.toggle()
+                            selectedCandidates.removeAll()
+                            albumActionMessage = nil
+                            albumShareMessage = nil
+                        }
+                        .disabled(loading || albumActionBusy || albumShareBusy)
+                        .accessibilityIdentifier("native-ios-album-select-mode")
+                    }
+                    if selectionMode {
+                        HStack(spacing: 8) {
+                            Text("本页已选择 \(selectedCandidates.count) 项")
+                                .font(.caption).monospacedDigit()
+                            Spacer(minLength: 4)
+                            Menu("操作") {
+                                Button("分享选中原件") {
+                                    prepareAlbumShare(allowICloud: false)
+                                }
+                                .disabled(selectedCandidates.count >
+                                    XDriveIOSNativeLocalPhotoSharePolicy.maximumItems)
+                                Button("从 iCloud 下载后分享") {
+                                    prepareAlbumShare(allowICloud: true)
+                                }
+                                .disabled(selectedCandidates.count >
+                                    XDriveIOSNativeLocalPhotoSharePolicy.maximumItems)
+                                Button("收藏选中") { runAlbumAction(favorite: true) }
+                                Button("取消收藏") { runAlbumAction(favorite: false) }
+                                Button("删除选中", role: .destructive) {
+                                    confirmingAlbumDelete = true
+                                }
+                            }
+                            .disabled(selectedCandidates.isEmpty ||
+                                albumActionBusy || albumShareBusy)
+                            .accessibilityIdentifier("native-ios-album-selected-actions")
+                        }
+                        if selectedCandidates.count >
+                            XDriveIOSNativeLocalPhotoSharePolicy.maximumItems {
+                            Text("一次最多分享 8 项原件；收藏和删除仅限当前页。")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    if albumShareBusy { ProgressView("准备相簿原件…") }
+                    if albumActionBusy { ProgressView("正在更新系统照片库…") }
+                    if let albumShareMessage {
+                        Text(albumShareMessage).font(.caption).foregroundStyle(.secondary)
+                    }
+                    if let albumActionMessage {
+                        Text(albumActionMessage).font(.caption).foregroundStyle(.secondary)
+                    }
                     LazyVGrid(
                         columns: [GridItem(.adaptive(minimum: 95, maximum: 150), spacing: 3)],
                         spacing: 3
                     ) {
                         ForEach(page.items.filter { $0.kind != "unsupported" }) { item in
                             Button {
-                                viewerReturnID = item.id
-                                accessibilityFocusedTileID = nil
-                                viewerPage = page
-                                selected = item
+                                if selectionMode {
+                                    toggleAlbumSelection(item)
+                                } else {
+                                    viewerReturnID = item.id
+                                    accessibilityFocusedTileID = nil
+                                    viewerPage = page
+                                    selected = item
+                                }
                             } label: {
-                                XDriveIOSLocalPhotoTile(candidate: item)
+                                ZStack(alignment: .topTrailing) {
+                                    XDriveIOSLocalPhotoTile(candidate: item)
+                                    if selectionMode {
+                                        Image(systemName: selectedCandidates[item.id] != nil
+                                            ? "checkmark.circle.fill" : "circle")
+                                            .font(.title2).foregroundStyle(.white)
+                                            .padding(6)
+                                    }
+                                }
                             }
                             .buttonStyle(.plain)
                             .id(item.id)
@@ -352,7 +428,7 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
                     Button("重新读取") { savedOffset = 0; reload() }
                 }
                 if !compactGallery {
-                    Text("仅预览已授权的本机资源；不读取 iCloud 原件、不上传、不保存相册成员标识。")
+                    Text("仅操作当前授权相簿的媒体；原件分享需明确点击，不上传或持久保存相簿成员标识。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -376,7 +452,24 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
         .alert("相册说明", isPresented: $showingAlbumHelp) {
             Button("完成", role: .cancel) {}
         } message: {
-            Text("仅预览 iOS 当前授权的相册成员，不读取 iCloud 原件、不上传或保存相册成员 ID。每页最多读取 64 项。")
+            Text("每页最多读取 64 项；只可选择当前页成员。分享原件需明确点击，删除遵循系统确认规则，不影响云端备份。")
+        }
+        .confirmationDialog(
+            "删除本页选中的 \(selectedCandidates.count) 张系统照片？",
+            isPresented: $confirmingAlbumDelete, titleVisibility: .visible
+        ) {
+            Button("删除选中照片", role: .destructive) {
+                runAlbumAction(delete: true)
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("系统照片删除操作不影响 xDrive 云端备份。")
+        }
+        .sheet(item: $albumShareSession, onDismiss: {
+            retainedAlbumShare?.discard()
+            retainedAlbumShare = nil
+        }) { session in
+            XDriveIOSNativeLocalPhotoActivitySheet(fileURLs: session.fileURLs)
         }
         .fullScreenCover(item: $selected, onDismiss: { restoreAfterViewer() }) { initial in
             XDriveIOSNativeLocalPhotoDetail(
@@ -481,6 +574,179 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
         }
     }
 
+    private var albumAuthorized: Bool {
+        permission == .authorized || permission == .limited
+    }
+
+    private func toggleAlbumSelection(_ item: XDrivePhotoKitScanCandidate) {
+        guard selectionMode, !loading, !albumActionBusy, !albumShareBusy,
+              albumAuthorized, phase == .active, selected == nil,
+              page?.items.contains(where: {
+                $0.id == item.id && $0.kind == item.kind &&
+                $0.isLive == item.isLive && $0.capturedAt == item.capturedAt &&
+                $0.modifiedAt == item.modifiedAt
+              }) == true else { return }
+        if selectedCandidates.removeValue(forKey: item.id) != nil { return }
+        guard XDriveIOSNativePhotoSelectionPolicy.canAdd(
+            selectedCount: selectedCandidates.count, identifier: item.id,
+            alreadySelected: false
+        ) else {
+            albumActionMessage = "选择数量超过当前支持上限。"
+            return
+        }
+        selectedCandidates[item.id] = item
+    }
+
+    /// Reopen exactly this authorized album, and compare EVERY slot of the
+    /// current 64-item page before changing or sharing the selected originals.
+    private func revalidateAlbumSelection(
+        _ batch: [XDrivePhotoKitScanCandidate],
+        expected: XDrivePhotoKitScanPage
+    ) async throws {
+        guard !batch.isEmpty, batch.count <= 64, let current = page,
+              current.startOffset == expected.startOffset,
+              current.totalAccessibleAssets == expected.totalAccessibleAssets,
+              current.items.count == expected.items.count,
+              batch.allSatisfy({ candidate in
+                expected.items.contains(where: {
+                    $0.id == candidate.id && $0.kind == candidate.kind &&
+                    $0.isLive == candidate.isLive &&
+                    $0.capturedAt == candidate.capturedAt &&
+                    $0.modifiedAt == candidate.modifiedAt
+                })
+              })
+        else { throw XDriveIOSAlbumReadFailure.changed }
+        let verifier = XDriveIOSNativeAlbumPageReader()
+        do {
+            let count = try await verifier.open(album)
+            let now = try await verifier.page(offset: expected.startOffset)
+            try Task.checkCancellation()
+            guard count == expected.totalAccessibleAssets,
+                  now.items.count == expected.items.count,
+                  zip(now.items, expected.items).allSatisfy({
+                    $0.0.id == $0.1.id && $0.0.kind == $0.1.kind &&
+                    $0.0.isLive == $0.1.isLive &&
+                    $0.0.capturedAt == $0.1.capturedAt &&
+                    $0.0.modifiedAt == $0.1.modifiedAt
+                  })
+            else { throw XDriveIOSAlbumReadFailure.changed }
+            await verifier.reset()
+        } catch {
+            await verifier.reset()
+            throw error
+        }
+    }
+
+    private func prepareAlbumShare(allowICloud: Bool) {
+        guard selectionMode, albumAuthorized, phase == .active,
+              selected == nil, !albumShareBusy, !albumActionBusy,
+              albumShareSession == nil, let sourcePage = page else { return }
+        let batch = selectedCandidates.values.sorted { $0.id < $1.id }
+        guard !batch.isEmpty,
+              batch.count <= XDriveIOSNativeLocalPhotoSharePolicy.maximumItems else {
+            albumShareMessage = "一次最多分享 8 项系统原件。"
+            return
+        }
+        let token = UUID()
+        albumShareEpoch = token
+        albumShareBusy = true
+        albumShareMessage = nil
+        albumShareTask = Task { @MainActor in
+            defer {
+                if albumShareEpoch == token {
+                    albumShareBusy = false
+                    albumShareTask = nil
+                }
+            }
+            do {
+                try await revalidateAlbumSelection(batch, expected: sourcePage)
+                let session = try await XDriveIOSNativeLocalOriginalSharer.prepare(
+                    batch, allowICloudDownload: allowICloud
+                )
+                guard albumShareEpoch == token, !Task.isCancelled,
+                      phase == .active, albumAuthorized,
+                      page?.startOffset == sourcePage.startOffset
+                else {
+                    session.discard()
+                    return
+                }
+                do {
+                    try await revalidateAlbumSelection(batch, expected: sourcePage)
+                } catch {
+                    session.discard()
+                    throw error
+                }
+                retainedAlbumShare = session
+                albumShareSession = session
+                if session.containsLivePair {
+                    albumShareMessage = "实况原件以照片与 MOV 分享，目标 App 可能无法自动配对。"
+                }
+            } catch is CancellationError {
+            } catch {
+                if albumShareEpoch == token {
+                    albumShareMessage = allowICloud
+                        ? "无法准备原件，请核对 iCloud、相簿成员和授权。"
+                        : "原件不可用，若仅在 iCloud 请显式选择下载后分享。"
+                }
+            }
+        }
+    }
+
+    private func runAlbumAction(delete: Bool = false, favorite: Bool? = nil) {
+        guard selectionMode, albumAuthorized, phase == .active,
+              selected == nil, !albumActionBusy, !albumShareBusy,
+              let sourcePage = page, delete || favorite != nil else { return }
+        let batch = selectedCandidates.values.sorted { $0.id < $1.id }
+        guard !batch.isEmpty, batch.count <= 64 else { return }
+        let token = UUID()
+        albumActionEpoch = token
+        albumActionBusy = true
+        albumActionMessage = nil
+        albumActionTask = Task { @MainActor in
+            do {
+                try await revalidateAlbumSelection(batch, expected: sourcePage)
+                if delete {
+                    try await XDriveIOSNativeLocalPhotoSelectionActions.delete(batch)
+                } else if let favorite {
+                    try await XDriveIOSNativeLocalPhotoSelectionActions.setFavorite(
+                        batch, to: favorite
+                    )
+                }
+                guard albumActionEpoch == token, !Task.isCancelled else { return }
+                albumActionBusy = false
+                albumActionTask = nil
+                // A PhotoKit change callback can independently invalidate
+                // the old page. Never keep selected IDs after an edit.
+                reload()
+                albumActionMessage = delete ? "系统照片删除操作已完成。" :
+                    (favorite == true ? "已收藏选中照片。" : "已取消选中照片的收藏。")
+            } catch is CancellationError {
+            } catch {
+                if albumActionEpoch == token {
+                    albumActionMessage = "系统相簿或照片已变化；请重新选择后操作。"
+                }
+            }
+            if albumActionEpoch == token {
+                albumActionBusy = false
+                albumActionTask = nil
+            }
+        }
+    }
+
+    private func cancelAlbumOperations() {
+        albumActionEpoch = UUID()
+        albumActionTask?.cancel()
+        albumActionTask = nil
+        albumActionBusy = false
+        albumShareEpoch = UUID()
+        albumShareTask?.cancel()
+        albumShareTask = nil
+        albumShareBusy = false
+        selectionMode = false
+        selectedCandidates.removeAll()
+        confirmingAlbumDelete = false
+    }
+
     private func restoreAfterViewer() {
         viewerPage = nil
         shouldRestoreViewerTile = viewerReturnID != nil && phase == .active
@@ -560,6 +826,7 @@ struct XDriveIOSNativeAlbumContentsScreen: View {
     }
 
     private func invalidate() {
+        cancelAlbumOperations()
         epoch = UUID()
         task?.cancel()
         task = nil

@@ -345,6 +345,9 @@ jobs:
             desktop/tests/ios-native-l2-focus-bar-integration.cjs \
             desktop/tests/ios-native-supported-orientations.cjs
 
+      - name: Verify native album single-page selection and PhotoKit actions
+        run: node --test desktop/tests/ios-native-album-batch-actions.cjs
+
       - name: Verify native album Viewer exact adjacent PhotoKit page and return anchor
         run: node --test desktop/tests/ios-native-album-viewer-adjacent.cjs
 
