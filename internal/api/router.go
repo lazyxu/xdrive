@@ -611,6 +611,8 @@ func (s *Server) Router() *gin.Engine {
 	admin.GET("/storage/staging", s.adminUploadStaging)
 	admin.POST("/storage/staging/cleanup", s.adminCleanupUploadStaging)
 	admin.POST("/storage/cache/cleanup", s.adminCleanupStorageCache)
+	admin.GET("/storage/cache/viewer", s.adminViewerCacheStatus)
+	admin.POST("/storage/cache/viewer/evict", s.adminEvictViewerCache)
 	admin.GET("/storage/staging/cleanup-runs", s.adminStagingCleanupRuns)
 	admin.GET("/storage/staging/cleanup-runs/:runID/failures", s.adminStagingCleanupFailures)
 	admin.POST("/users", s.adminCreateUser)
