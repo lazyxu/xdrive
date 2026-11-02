@@ -159,6 +159,10 @@ internal fun GalleryPhotoViewer(
     val swipeThreshold = with(LocalDensity.current) { 72.dp.toPx() }
     val canGoOlder = controller.galleryViewerCanShift(-1)
     val canGoNewer = controller.galleryViewerCanShift(1)
+    // The bounded neighbor page may finish loading after pointerInput mounts.
+    // Read fresh eligibility without restarting an in-progress touch.
+    val latestCanGoOlder by rememberUpdatedState(canGoOlder)
+    val latestCanGoNewer by rememberUpdatedState(canGoNewer)
     val cacheKey = "${photo.node.id}:${photo.node.revision}"
     val cachedThumbnail = thumbnails.get(cacheKey)
     var qualityPanelVisible by remember(photo.node.id, photo.node.revision) {
@@ -293,7 +297,7 @@ internal fun GalleryPhotoViewer(
                             } ?: break
                             val dx = pointer.position.x - origin.x
                             val dy = pointer.position.y - origin.y
-                            val available = if (dx < 0f) canGoNewer else canGoOlder
+                            val available = if (dx < 0f) latestCanGoNewer else latestCanGoOlder
                             if (!pointer.pressed) {
                                 released = true
                                 val permitted = available && liveSwipeFence.mayShift(
