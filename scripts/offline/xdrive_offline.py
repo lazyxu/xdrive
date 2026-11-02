@@ -53,6 +53,14 @@ COMMIT_RE = re.compile(r"[a-f0-9]{40}\Z")
 IMAGE_ID_RE = re.compile(r"sha256:[a-f0-9]{64}\Z")
 REF_RE = re.compile(r"[a-z0-9._/-]+(?::[a-zA-Z0-9_.-]+)?\Z")
 CHUNK = 1024 * 1024
+IMAGE_METADATA_LIMIT = 1024 * 1024
+IMAGE_METADATA_TOTAL_LIMIT = 16 * 1024 * 1024
+IMAGE_ARCHIVE_ENTRIES = 4096
+IMAGE_ARCHIVE_BYTES = 16 * 1024**3
+OCI_MANIFEST = "application/vnd.oci.image.manifest.v1+json"
+OCI_INDEX = "application/vnd.oci.image.index.v1+json"
+DOCKER_MANIFEST = "application/vnd.docker.distribution.manifest.v2+json"
+DOCKER_INDEX = "application/vnd.docker.distribution.manifest.list.v2+json"
 
 
 class PackageError(Exception):
@@ -291,10 +299,173 @@ def image_exists(image_ref: str) -> bool:
                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False).returncode == 0
 
 
+class ImageTarInfo(tarfile.TarInfo):
+    def _proc_member(self, archive):
+        # Reject extension headers before tarfile allocates their payload. Docker
+        # save paths fit ordinary headers; no links, PAX overrides or sparse files.
+        require(self.type in (tarfile.REGTYPE, tarfile.AREGTYPE, tarfile.DIRTYPE),
+                "unsupported image tar entry")
+        return super()._proc_member(archive)
+
+
+def image_archive_metadata(path: Path) -> dict:
+    entries, retained, total = {}, 0, 0
+    try:
+        with tarfile.open(safe_file(path), mode="r|gz", tarinfo=ImageTarInfo) as archive:
+            for member in archive:
+                name = member.name
+                require(valid_member(name) and name not in entries and len(entries) < IMAGE_ARCHIVE_ENTRIES,
+                        "unsafe, duplicate or excessive image tar entries")
+                total += member.size + 512
+                require(0 <= member.size <= IMAGE_ARCHIVE_BYTES and total <= IMAGE_ARCHIVE_BYTES,
+                        "image archive exceeds unpacked byte limit")
+                if member.isdir():
+                    require(member.size == 0, "invalid image directory")
+                    entries[name] = None
+                    continue
+                content = archive.extractfile(member)
+                require(content is not None, "missing image tar content")
+                digest, remaining, data = hashlib.sha256(), member.size, None
+                with content:
+                    while remaining:
+                        block = content.read(min(CHUNK, remaining))
+                        require(bool(block), "truncated image tar content")
+                        # Keep bounded JSON metadata only; layer bytes are hashed
+                        # incrementally and never accumulated in memory.
+                        if remaining == member.size and member.size <= IMAGE_METADATA_LIMIT and block.lstrip()[:1] in (b"{", b"["):
+                            retained += member.size
+                            require(retained <= IMAGE_METADATA_TOTAL_LIMIT, "excessive image JSON metadata")
+                            data = bytearray()
+                        if data is not None:
+                            data.extend(block)
+                        digest.update(block)
+                        remaining -= len(block)
+                entries[name] = dict(size=member.size, digest="sha256:" + digest.hexdigest(), data=data)
+    except (tarfile.TarError, OSError, EOFError) as error:
+        raise PackageError("cannot read image archive") from error
+    return entries
+
+
+def image_json(entry: dict) -> object:
+    require(isinstance(entry, dict) and entry.get("data") is not None, "missing or excessive image metadata")
+
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            require(key not in result, "duplicate image JSON key")
+            result[key] = value
+        return result
+
+    try:
+        return json.loads(entry["data"], object_pairs_hook=unique)
+    except (ValueError, UnicodeError, RecursionError) as error:
+        raise PackageError("invalid image JSON metadata") from error
+
+
+def archive_image_identity(archive: Path, image: dict) -> dict:
+    """Bind one exact ref to its config and optional single OCI descriptor path.
+
+    The caller has already authenticated this complete archive through the signed
+    package/member hashes. Docker stores may report either the config digest or
+    a descriptor digest; the index.json export wrapper is never an image ID.
+    """
+    entries = image_archive_metadata(archive)
+    docker_manifest = image_json(entries.get("manifest.json"))
+    require(isinstance(docker_manifest, list) and len(docker_manifest) == 1 and
+            isinstance(docker_manifest[0], dict), "ambiguous Docker image manifest")
+    selected = docker_manifest[0]
+    require(selected.get("RepoTags") == [image["ref"]], "image archive tag does not match signed reference")
+    config_name, layers = selected.get("Config"), selected.get("Layers")
+    require(isinstance(config_name, str) and valid_member(config_name) and
+            isinstance(layers, list) and len(layers) <= 128 and
+            all(isinstance(name, str) and valid_member(name) and isinstance(entries.get(name), dict) for name in layers),
+            "invalid Docker image config or layers")
+    config_entry = entries.get(config_name)
+    config = image_json(config_entry)
+    config_id = config_entry["digest"]
+    require(config_name in (config_id[7:] + ".json", "blobs/sha256/" + config_id[7:]),
+            "image config content does not match its archive name")
+    require(isinstance(config, dict) and config.get("os") == "linux" and config.get("architecture") == "amd64" and
+            config.get("variant", "") == "", "image config platform is not linux/amd64")
+    rootfs = config.get("rootfs")
+    require(isinstance(rootfs, dict) and rootfs.get("type") == "layers" and
+            isinstance(rootfs.get("diff_ids"), list) and len(rootfs["diff_ids"]) == len(layers) and
+            all(isinstance(value, str) and IMAGE_ID_RE.fullmatch(value) for value in rootfs["diff_ids"]),
+            "invalid image root filesystem identity")
+    chain = []
+    if "index.json" in entries or "oci-layout" in entries:
+        require(image_json(entries.get("oci-layout")) == {"imageLayoutVersion": "1.0.0"}, "unsupported OCI layout")
+        index = image_json(entries.get("index.json"))
+        for depth in range(8):
+            require(isinstance(index, dict) and index.get("schemaVersion") == 2 and
+                    index.get("mediaType", OCI_INDEX) in (OCI_INDEX, DOCKER_INDEX) and
+                    isinstance(index.get("manifests"), list) and len(index["manifests"]) == 1,
+                    "ambiguous or unsupported OCI image index")
+            descriptor = index["manifests"][0]
+            require(isinstance(descriptor, dict), "invalid OCI descriptor")
+            annotations = descriptor.get("annotations", {})
+            require(isinstance(annotations, dict), "invalid OCI image name annotations")
+            if depth == 0:
+                require(annotations.get("io.containerd.image.name") == image["ref"] or
+                        annotations.get("org.opencontainers.image.ref.name") == image["ref"],
+                        "OCI descriptor does not name the exact signed image")
+            if "io.containerd.image.name" in annotations:
+                require(annotations["io.containerd.image.name"] == image["ref"], "conflicting OCI image name")
+            if "org.opencontainers.image.ref.name" in annotations:
+                require(annotations["org.opencontainers.image.ref.name"] in (image["ref"], image["ref"].rsplit(":", 1)[-1]),
+                        "conflicting OCI image tag")
+            platform = descriptor.get("platform")
+            require(platform is None or isinstance(platform, dict) and platform.get("os") == "linux" and
+                    platform.get("architecture") == "amd64" and platform.get("variant", "") == "",
+                    "OCI descriptor platform is not linux/amd64")
+            identity, media_type = descriptor.get("digest"), descriptor.get("mediaType")
+            require(isinstance(identity, str) and IMAGE_ID_RE.fullmatch(identity) and identity not in chain and
+                    media_type in (OCI_MANIFEST, DOCKER_MANIFEST, OCI_INDEX, DOCKER_INDEX),
+                    "invalid or cyclic OCI image descriptor")
+            entry = entries.get("blobs/sha256/" + identity[7:])
+            require(isinstance(entry, dict) and entry["digest"] == identity and
+                    type(descriptor.get("size")) is int and descriptor["size"] == entry["size"],
+                    "OCI image descriptor bytes differ")
+            document = image_json(entry)
+            require(isinstance(document, dict) and document.get("schemaVersion") == 2 and
+                    document.get("mediaType") == media_type, "OCI image descriptor type differs")
+            chain.append(identity)
+            if media_type in (OCI_INDEX, DOCKER_INDEX):
+                index = document
+                continue
+            config_descriptor = document.get("config")
+            require(isinstance(config_descriptor, dict) and config_descriptor.get("digest") == config_id and
+                    type(config_descriptor.get("size")) is int and config_descriptor["size"] == config_entry["size"] and
+                    config_descriptor.get("mediaType") in ("application/vnd.oci.image.config.v1+json",
+                                                          "application/vnd.docker.container.image.v1+json"),
+                    "OCI and Docker config identities differ")
+            oci_layers = document.get("layers")
+            require(isinstance(oci_layers, list) and len(oci_layers) == len(layers), "OCI and Docker layers differ")
+            for name, layer, diff_id in zip(layers, oci_layers, rootfs["diff_ids"]):
+                require(isinstance(layer, dict) and layer.get("digest") == entries[name]["digest"] and
+                        type(layer.get("size")) is int and layer["size"] == entries[name]["size"] and
+                        layer.get("mediaType") in ("application/vnd.oci.image.layer.v1.tar",
+                                                  "application/vnd.oci.image.layer.v1.tar+gzip",
+                                                  "application/vnd.docker.image.rootfs.diff.tar.gzip"),
+                        "OCI layer does not match Docker archive layer")
+                if layer["mediaType"] == "application/vnd.oci.image.layer.v1.tar":
+                    require(layer["digest"] == diff_id, "uncompressed image layer differs from config rootfs")
+            break
+        else:
+            raise PackageError("OCI image descriptor chain is too deep")
+    else:
+        require(all(entries[name]["digest"] == diff_id for name, diff_id in zip(layers, rootfs["diff_ids"])),
+                "classic image layers differ from config rootfs")
+    require(image["id"] == config_id or image["id"] in chain, "signed image identity is not linked to its archive reference")
+    return dict(config=config_id, descriptors=tuple(chain))
+
+
 def load_image(archive: Path, image: dict) -> None:
+    identity = archive_image_identity(archive, image)
     docker("load", "-i", str(archive), quiet=True)
     actual = docker("image", "inspect", "--format", "{{.Id}}", image["ref"], quiet=True)
-    require(actual == image["id"], f"imported Docker image identity mismatch: {image['ref']}")
+    require(actual == identity["config"] or actual in identity["descriptors"],
+            f"imported Docker image identity mismatch: {image['ref']}")
     print(f"[offline] imported {image['ref']}", flush=True)
 
 
