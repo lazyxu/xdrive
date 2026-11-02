@@ -310,7 +310,7 @@ export function XDriveSynologyOwnerFilesPage({
       setNotice('请先进入当前已验证的云端文件夹，并等待正在执行的操作完成。')
       return
     }
-    if (!Number.isSafeInteger(file.size) || file.size < 1 || file.size > 4 << 20) {
+    if (!Number.isSafeInteger(file.size) || file.size < 1 || file.size > (4 << 20)) {
       setNotice('DSM 当前每次仅支持上传 1 B～4 MiB 的单个文件；更大的文件暂请使用 Desktop/Web。')
       return
     }
