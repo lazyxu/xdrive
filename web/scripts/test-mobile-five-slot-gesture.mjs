@@ -112,7 +112,34 @@ const locate = (node, match) => {
 }
 const dynamic = locate(tree, node => node.type === 'BottomNavigationAction' && node.props.value === 'dynamic')
 assert.ok(dynamic, 'Actual dynamic tab must be mounted')
-assert.equal(dynamic.props.label, '动态功能', 'fixed slot title must not change to the latest route')
+assert.equal(dynamic.props.label, '任务',
+  'the second fixed position must show its current dynamic feature title')
+const bottomBar = locate(tree, node => node.type === 'BottomNavigation')
+const compactLabelStyle = bottomBar.props.sx['& .MuiBottomNavigationAction-root']['& .MuiBottomNavigationAction-label']
+assert.equal(compactLabelStyle.textOverflow, 'ellipsis',
+  'long feature labels cannot obscure neighboring fixed slots')
+assert.equal(compactLabelStyle.whiteSpace, 'nowrap')
+assert.equal(compactLabelStyle.minWidth, 0)
+cursor = 0
+const longTitleTree = module.exports.XDriveMobileFiveSlotNavigation({
+  selected: 'all', dynamicLabel: '全局后台任务', recent: [], recentOpen: false,
+  onRecentOpenChange: value => recentUpdates.push(value),
+  onSelect: slot => navigations.push(slot),
+  onPickRecent: () => assert.fail('Unexpected recent selection'),
+})
+assert.equal(locate(longTitleTree, node => node.type === 'BottomNavigationAction' &&
+  node.props.value === 'dynamic').props.label, '全局后台任务',
+  'a new authorized dynamic workspace replaces the visible slot label')
+cursor = 0
+const emptyTitleTree = module.exports.XDriveMobileFiveSlotNavigation({
+  selected: 'all', dynamicLabel: '最近', recent: [], recentOpen: false,
+  onRecentOpenChange: value => recentUpdates.push(value),
+  onSelect: slot => navigations.push(slot),
+  onPickRecent: () => assert.fail('Unexpected recent selection'),
+})
+assert.equal(locate(emptyTitleTree, node => node.type === 'BottomNavigationAction' &&
+  node.props.value === 'dynamic').props.label, '最近',
+  'the empty dynamic workspace uses the visible Recent fallback')
 assert.match(dynamic.props['aria-label'], /任务/, 'latest route remains available to assistive users')
 assert.match(dynamic.props['aria-label'], /长按查看最近功能/)
 assert.equal(dynamic.props['aria-haspopup'], 'dialog')

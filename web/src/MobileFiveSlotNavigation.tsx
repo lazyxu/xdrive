@@ -184,7 +184,10 @@ export function XDriveMobileFiveSlotNavigation({
             height: 58, bgcolor: 'transparent',
             '& .MuiBottomNavigationAction-root': {
               minWidth: 0, maxWidth: 'none', px: 0.25, minHeight: 58,
-              '& .MuiBottomNavigationAction-label': { fontSize: 11 },
+              '& .MuiBottomNavigationAction-label': {
+                fontSize: 11, minWidth: 0, maxWidth: '100%',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              },
               '& .MuiBottomNavigationAction-label.Mui-selected': { fontSize: 11 },
             },
             '@media (orientation: landscape) and (max-height: 500px)': {
@@ -197,7 +200,7 @@ export function XDriveMobileFiveSlotNavigation({
           <BottomNavigationAction value="all" label="全部"
             icon={<AppsRoundedIcon fontSize="small" />} aria-current={selected === 'all' ? 'page' : undefined}
             onClick={() => onSelect('all')} />
-          <BottomNavigationAction value="dynamic" label="动态功能"
+          <BottomNavigationAction value="dynamic" label={dynamicLabel}
             icon={dynamicIcon ?? <HistoryRoundedIcon fontSize="small" />}
             aria-current={selected === 'dynamic' ? 'page' : undefined}
             aria-label={'动态功能：' + String(dynamicLabel) + '，长按查看最近功能'}
