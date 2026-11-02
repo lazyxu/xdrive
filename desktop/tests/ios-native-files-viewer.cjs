@@ -68,7 +68,7 @@ test('Owner, Node revision, exact MIME and ticket are checked before payload use
   assert.match(reader, /selected.size > XDriveIOSNativeFilesViewerPolicy.maximumImageBytes/);
   assert.match(reader, /selected.size > XDriveIOSNativeFilesViewerPolicy.maximumPDFBytes/);
   assert.match(reader, /throw XDriveIOSNativeFilesPreviewError.tooLarge/);
-  assert.match(view, /导出上限 512 MiB/);
+  assert.match(view, /导出上限 1 GiB/);
   assert.match(reader, /PDFDocument\(data: bytes\), document\.pageCount > 0/);
   assert.match(policy, /static let maximumLoadedRows = 64/);
   assert.match(policy, /Set\(loaded\.map\(\\\.id\)\)\.count == loaded\.count/);
@@ -97,8 +97,15 @@ test('indexed low-res Files still keeps the native zoom swipe navigation and ori
   assert.match(lowRes, /XDriveIOSNativeZoomablePhotoView\(image: image\)/);
   assert.match(lowRes, /\.onNavigateSwipe \{ move\(\$0\) \}/);
   assert.match(lowRes, /低清缩略图/);
+  assert.match(lowRes, /XDriveIOSNativeViewerQualityPanel\(/);
+  assert.match(lowRes, /source: "缩略图回退"/);
+  assert.match(lowRes, /originalExportFallback/);
+  assert.match(lowRes, /native-ios-files-viewer-thumbnail-recovery/);
+  assert.match(view, /if case \.imageThumbnail = result \{\s*exportFallbackEligible = true/);
+  assert.match(view, /viewed\.size > XDriveIOSNativeFilesExportCapacityPolicy\.maximumSingleFileBytes/);
+  assert.match(view, /native-ios-files-viewer-export-over-limit/);
   assert.match(view, /case \.noThumbnail:/);
-  assert.match(view, /导出上限 512 MiB/);
+  assert.match(view, /导出上限 1 GiB/);
   assert.match(reader, /fallbackThumbnail\(selected\)/);
 });
 
