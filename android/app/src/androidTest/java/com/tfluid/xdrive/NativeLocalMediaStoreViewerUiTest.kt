@@ -96,7 +96,10 @@ class NativeLocalMediaStoreViewerUiTest {
             }
             compose.onNodeWithTag(tileTag).assertExists()
         } finally {
-            if (composed) runCatching { compose.setContent {} }
+            if (composed) runCatching {
+                compose.setContent {}
+                compose.waitForIdle()
+            }
             bitmap?.recycle()
             uri?.let { runCatching { resolver.delete(it, null, null) } }
             if (!hadPermission) runCatching {
