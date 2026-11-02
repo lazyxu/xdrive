@@ -816,6 +816,92 @@ class DriveAppTest {
         compose.onNodeWithTag("native-gallery-source-local").assertIsSelected()
     }
 
+    @Test fun cloudMapReturnsAfterFilesTabWithoutASecondMapOpenTap() {
+        galleryGpsOverviewFixture = true
+        startAndLogin(galleryFirstOnLogin = false)
+        compose.onNodeWithTag("native-tab-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.GALLERY &&
+                controller.state.value.galleryLoaded
+        }
+        compose.onNodeWithTag("native-gallery-source-map").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryMapOpen
+        }
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-files").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.FILES &&
+                controller.state.value.loaded
+        }
+        compose.onNodeWithTag("native-tab-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.GALLERY &&
+                controller.state.value.galleryMapOpen
+        }
+        compose.onNodeWithTag("gallery-map-close").assertExists()
+        compose.onNodeWithTag("native-gallery-open-map").assertDoesNotExist()
+    }
+
+    @Test fun localMapReturnsAfterAccountMenuFilesGalleryWithoutCloudGpsRead() {
+        galleryGpsOverviewFixture = true
+        startAndLogin(galleryFirstOnLogin = true)
+        compose.onNodeWithTag("native-gallery-source-map").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.onAllNodesWithTag("native-photo-map-source-local")
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-files").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.FILES &&
+                controller.state.value.loaded
+        }
+        // This older, Controller-owned menu bypasses selectNativeTab:
+        // both entry paths must restore the same Gallery-local map child.
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.onAllNodesWithTag("native-photo-map-source-local")
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag("native-photo-map-source-local").assertIsNotEnabled()
+        compose.runOnIdle {
+            org.junit.Assert.assertFalse(controller.state.value.galleryMapOpen)
+            org.junit.Assert.assertEquals(0, gpsOverviewReads)
+        }
+    }
+
+    @Test fun explicitLauncherGalleryShortcutOverridesStaleMapResume() {
+        galleryGpsOverviewFixture = true
+        startAndLogin(galleryFirstOnLogin = false)
+        compose.onNodeWithTag("native-tab-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.GALLERY &&
+                controller.state.value.galleryLoaded
+        }
+        compose.onNodeWithTag("native-gallery-source-map").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryMapOpen
+        }
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-files").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.FILES && controller.state.value.loaded
+        }
+        compose.onNodeWithTag("native-tab-all").performClick()
+        clickNativeLauncherShortcut(NativeHomeShortcut.CLOUD_GALLERY)
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.GALLERY &&
+                controller.state.value.galleryLoaded
+        }
+        compose.onNodeWithTag("native-gallery-source-cloud").assertIsSelected()
+        compose.onNodeWithTag("native-gallery-open-map").assertDoesNotExist()
+        compose.runOnIdle {
+            org.junit.Assert.assertFalse(controller.state.value.galleryMapOpen)
+        }
+    }
+
     @Test fun dynamicTransferTabAndPickerResumeActualCenterOnOneTap() {
         startAndLogin(galleryFirstOnLogin = false)
         // With no permitted dynamic feature, the reserved slot cannot
