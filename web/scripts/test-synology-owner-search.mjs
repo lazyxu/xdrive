@@ -51,8 +51,10 @@ assert.equal(calls[0].options.signal, abort.signal)
 assert.equal(calls[0].options.credentials, 'same-origin')
 assert.equal(calls[0].options.redirect, 'error')
 assert.equal(calls[0].options.headers.Authorization, undefined)
+response = { items: [], has_more: false }
 await client.ownerSearchPage('family', 'next-page')
 assert.equal(calls.at(-1).url.searchParams.get('cursor'), 'next-page')
+response = page
 const before = calls.length
 for (const [q,cursor] of [
   ['', ''], ['f', ''], [' x', ''], ['x ', ''], ['family\nfiles', ''],
