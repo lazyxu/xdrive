@@ -139,3 +139,16 @@ test('DSM Home refresh re-reads the package filesystem through the same cancella
     await act(async () => view.unmount())
   }
 })
+
+test('DSM Home aborts an outstanding package filesystem read on unmount', async () => {
+  let requestSignal
+  const client = clientWith(signal => {
+    requestSignal = signal
+    return new Promise(() => {})
+  })
+  const view = await mount(client)
+  assert.ok(requestSignal instanceof AbortSignal)
+  assert.equal(requestSignal.aborted, false)
+  await act(async () => view.unmount())
+  assert.equal(requestSignal.aborted, true)
+})
