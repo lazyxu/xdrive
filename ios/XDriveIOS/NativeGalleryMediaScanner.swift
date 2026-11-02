@@ -54,6 +54,16 @@ actor XDriveIOSNativeGalleryMediaScanner {
         ]
         if mediaFilter.requiresFavorite {
             options.predicate = NSPredicate(format: "favorite == YES")
+        } else if mediaFilter.requiresLive {
+            options.predicate = NSPredicate(
+                format: "(mediaSubtypes & %d) != 0",
+                PHAssetMediaSubtype.photoLive.rawValue
+            )
+        } else if mediaFilter.requiresScreenshot {
+            options.predicate = NSPredicate(
+                format: "(mediaSubtypes & %d) != 0",
+                PHAssetMediaSubtype.photoScreenshot.rawValue
+            )
         }
         let result: PHFetchResult<PHAsset>
         switch mediaFilter {
@@ -65,6 +75,8 @@ actor XDriveIOSNativeGalleryMediaScanner {
             result = PHAsset.fetchAssets(with: .video, options: options)
         case .favorites:
             result = PHAsset.fetchAssets(with: options)
+        case .livePhotos, .screenshots:
+            result = PHAsset.fetchAssets(with: .image, options: options)
         }
         guard observer.current() == revision,
               PHPhotoLibrary.authorizationStatus(for: .readWrite) == current else {
@@ -104,6 +116,15 @@ actor XDriveIOSNativeGalleryMediaScanner {
                     throw XDrivePhotoKitScanFailure.snapshotChanged
                 }
                 if let expected = filter.expectedKind, expected != kind {
+                    reset()
+                    throw XDrivePhotoKitScanFailure.snapshotChanged
+                }
+                if filter.requiresLive && !asset.mediaSubtypes.contains(.photoLive) {
+                    reset()
+                    throw XDrivePhotoKitScanFailure.snapshotChanged
+                }
+                if filter.requiresScreenshot &&
+                    !asset.mediaSubtypes.contains(.photoScreenshot) {
                     reset()
                     throw XDrivePhotoKitScanFailure.snapshotChanged
                 }
@@ -187,7 +208,11 @@ actor XDriveIOSNativeGalleryMediaScanner {
                   asset.modificationDate == expected.modifiedAt,
                   type == expected.kind,
                   expected.isLive == (type == "image" &&
-                      asset.mediaSubtypes.contains(.photoLive))
+                      asset.mediaSubtypes.contains(.photoLive)),
+                  (!filter.requiresLive ||
+                      asset.mediaSubtypes.contains(.photoLive)),
+                  (!filter.requiresScreenshot ||
+                      asset.mediaSubtypes.contains(.photoScreenshot))
             else { throw XDrivePhotoKitScanFailure.snapshotChanged }
         }
         try ensureCurrent(permission)
