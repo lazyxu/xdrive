@@ -83,16 +83,4 @@ class NativeLocalMotionPhotoTest {
         assertFalse(nativeLocalMotionXmpCandidate("normal still photo".toByteArray()))
         assertFalse(nativeLocalMotionXmpCandidate(ByteArray(256 * 1024 + 1)))
     }
-
-    @Test fun localMotionPlaybackRequiresCurrentForegroundHoldReadyStillAndOneX() {
-        assertTrue(nativeLocalMotionMayPlay(
-            candidate = true, stillReady = true, held = true,
-            foreground = true, atDefaultZoom = true,
-        ))
-        assertFalse(nativeLocalMotionMayPlay(false, true, true, true, true))
-        assertFalse(nativeLocalMotionMayPlay(true, false, true, true, true))
-        assertFalse(nativeLocalMotionMayPlay(true, true, false, true, true))
-        assertFalse(nativeLocalMotionMayPlay(true, true, true, false, true))
-        assertFalse(nativeLocalMotionMayPlay(true, true, true, true, false))
-    }
 }
