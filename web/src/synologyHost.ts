@@ -6,6 +6,7 @@ import {
 } from '@xdrive/ui/mui'
 import type { XDriveWorkspaceHostAdapter } from '@xdrive/ui/mui'
 import { createXDriveSynologyOwnerGallerySource } from '../../ui/shared/src/mui/SynologyOwnerGallerySource'
+import { xDriveSynologyReadOwnerLoginDiagnostics } from '../../ui/shared/src/synology-owner-diagnostics'
 
 /**
  * DSM-only authenticated transport adapter for the shared xDrive application.
@@ -48,8 +49,8 @@ export function createXDriveSynologyHost(): XDriveWorkspaceHostAdapter & { reado
       cloudStorageRefresh: { clearOnRefresh: true },
       localStorage: createXDriveSynologyNASStorageSource(local),
       diagnosticsSource: {
-        read: signal => local.diagnostics(signal),
-        scopeNotice: 'NAS 仅检测 DSM 登录授权和本机备份 Agent 读取；Server、磁盘、更新、传输等未检测。',
+        read: signal => xDriveSynologyReadOwnerLoginDiagnostics(local, signal),
+        scopeNotice: 'NAS 检查 DSM 登录、本机备份 Agent 和当前 Server Owner 的真实配额读取；未检测 Server 整体健康、更新或传输。',
         failureMessage: '当前 DSM 授权或本机备份 Agent 接口不可访问；未完成诊断。',
       },
     },
