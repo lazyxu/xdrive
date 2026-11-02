@@ -44,6 +44,7 @@ function extracted(file,name,deps){
 }
 const makeHost=kind=>{
   const calls=[]
+  const pdfPreflightCalls=[]
   const callsByName=(name,nodeID)=>{calls.push([name,nodeID]);return name}
   const api={
     filePreviewURL:async id=>callsByName('file-stream',id),
@@ -65,8 +66,11 @@ const makeHost=kind=>{
   const load=extracted(file,'loadPreviewURL',{
     useCallback:callback=>callback, xDriveFileExplorerPreviewRequest:plan,
     previewStreamSupported:true, hostPort, api,
+    xDrivePreflightWebPDFTicket: async (url, signal) => {
+      pdfPreflightCalls.push({ url, signal })
+    },
   })
-  return {load,calls}
+  return {load,calls,pdfPreflightCalls}
 }
 test('shared plan keeps HEIC/HEIF/RAW derivatives and never streams a Live ZIP as video',()=>{
   for(const name of ['photo.heic','photo.heif','photo.arw','photo.cr3','photo.dng','photo.nef']){
@@ -89,15 +93,25 @@ test('invalid or disabled FileExplorer rows never enter a Host preview',()=>{
 })
 test('real Desktop and Web preview callbacks use exactly the same read strategy',async()=>{
   for(const host of ['desktop','web']){
-    const {load,calls}=makeHost(host)
+    const {load,calls,pdfPreflightCalls}=makeHost(host)
+    const viewerSignal=new AbortController().signal
     for(const [filename,kind,route] of [
       ['photo.heic','image','analysis-image'],['photo.livp','live_photo','live-still'],
       ['photo.jpg','image','file-stream'],['clip.mp4','video','file-stream'],
       ['sound.m4a','audio','file-stream'],['report.pdf','pdf','file-stream'],
     ]){
-      const r=await load({...item,name:filename},kind)
+      const r=await load({...item,name:filename},kind,viewerSignal)
       assert.ok(r,host+': '+filename)
       assert.deepEqual(calls.at(-1),[route,42])
+      if(host==='web' && kind==='pdf'){
+        assert.equal(pdfPreflightCalls.length,1,'Web Files must preflight its cross-origin PDF ticket')
+        assert.deepEqual(pdfPreflightCalls[0],{
+          url:'file-stream',signal:viewerSignal,
+        },'the PDF preflight receives the signed ticket and the exact Viewer signal')
+        pdfPreflightCalls.length=0
+      }else{
+        assert.equal(pdfPreflightCalls.length,0,host+': '+filename+' must not issue a PDF preflight')
+      }
     }
     const count=calls.length
     const signal=new AbortController();signal.abort()
