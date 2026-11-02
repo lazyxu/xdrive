@@ -65,7 +65,10 @@ new Function('module', 'exports', 'require', 'URL', 'Image', js.outputText)(
     throw Error('Unexpected viewer preview import ' + name)
   }, fakeURL, ViewerImage,
 )
-const { xDriveDesktopDecodeViewerPreviewURL: decode } = mod.exports
+const {
+  xDriveDesktopDecodeViewerPreviewURL: decode,
+  xDriveDesktopRegisterLegacyJPEGViewerPreviewURL: registerLegacyJPEG,
+} = mod.exports
 const raw = format => new Blob([new Uint8Array(24)], { type: 'image/' + format })
 
 function reset() {
@@ -84,6 +87,8 @@ test('Desktop Gallery and FileExplorer both use the same decode gate for WebP/JP
     assert.match(source, /import \{ xDriveDesktopDecodeViewerPreviewURL \}/)
     assert.match(source, /for \(const format of \['webp', 'jpeg'\] as const\)/)
     assert.match(source, /await xDriveDesktopDecodeViewerPreviewURL\(blob, format, signal\)/)
+    assert.match(source, /xDriveDesktopRegisterLegacyJPEGViewerPreviewURL\(blob\)/,
+      'both entry points must report the shared legacy JPEG Q84 metadata')
   }
 })
 
@@ -95,6 +100,27 @@ test('a decoded WebP is admitted with exact quality/bytes', async () => {
   assert.deepEqual(registered, [{
     url, format: 'WebP', quality: 90, byteSize: 24,
   }])
+})
+
+test('legacy analysis JPEG fallback records its actual Q84 format and byte count', () => {
+  reset()
+  const blob = raw('jpeg')
+  const url = registerLegacyJPEG(blob)
+  assert.equal(url, 'blob:xdrive-desktop-preview-1')
+  assert.equal(created.get(url), blob)
+  assert.deepEqual(registered, [{
+    url, format: 'JPEG', quality: 84, byteSize: 24,
+  }])
+  assert.deepEqual(revoked, [])
+})
+
+test('empty legacy JPEG fallback is rejected without publishing an image source', () => {
+  reset()
+  assert.throws(() => registerLegacyJPEG(new Blob([], { type: 'image/jpeg' })),
+    /Empty Desktop legacy JPEG/)
+  assert.equal(number, 0)
+  assert.deepEqual(registered, [])
+  assert.deepEqual(revoked, [])
 })
 
 test('decoder rejected WebP revokes its Blob and permits JPEG fallback', async () => {
