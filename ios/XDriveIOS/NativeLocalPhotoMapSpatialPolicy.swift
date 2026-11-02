@@ -93,6 +93,24 @@ enum XDriveIOSNativeLocalMapSpatialPolicy {
                longitudeDistance(scanned.east, current.east) <= lonTolerance
     }
 
+    /// An MKClusterAnnotation is just a visual union. A tap must select a
+    /// nonempty, distinct, bounded subset of the CURRENT PhotoKit cells,
+    /// never a stale or fabricated aggregate cell identity.
+    static func acceptsCellSelection(
+        selectedIDs: [String], currentCellIDs: [String]
+    ) -> Bool {
+        guard !selectedIDs.isEmpty, selectedIDs.count <= maximumCells,
+              currentCellIDs.count <= maximumCells,
+              !selectedIDs.contains(""), !currentCellIDs.contains("") else {
+            return false
+        }
+        let selected = Set(selectedIDs)
+        let current = Set(currentCellIDs)
+        return selected.count == selectedIDs.count &&
+            current.count == currentCellIDs.count &&
+            selected.isSubset(of: current)
+    }
+
     struct Key: Hashable {
         let level: Int
         let latitudeCell: Int

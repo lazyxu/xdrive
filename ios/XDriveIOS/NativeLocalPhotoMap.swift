@@ -135,13 +135,13 @@ private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
     // no GPS or PhotoKit identity is persisted between views or Owners.
     let cameraReturn: MKCoordinateRegion?
     var canSelectCells = true
-    var onCell: ((Cell, MKCoordinateRegion) -> Void)? = nil
+    var onCells: (([Cell], MKCoordinateRegion) -> Void)? = nil
     var onCamera: ((MKCoordinateRegion) -> Void)? = nil
     var onCameraWillChange: (() -> Void)? = nil
     let onOpen: ([XDrivePhotoKitScanCandidate], MKCoordinateRegion) -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onOpen: onOpen, onCell: onCell, onCamera: onCamera,
+        Coordinator(onOpen: onOpen, onCells: onCells, onCamera: onCamera,
                     onCameraWillChange: onCameraWillChange)
     }
 
@@ -156,7 +156,7 @@ private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
 
     func updateUIView(_ map: MKMapView, context: Context) {
         context.coordinator.onOpen = onOpen
-        context.coordinator.onCell = onCell
+        context.coordinator.onCells = onCells
         context.coordinator.onCamera = onCamera
         context.coordinator.onCameraWillChange = onCameraWillChange
         context.coordinator.canSelectCells = canSelectCells
@@ -200,17 +200,17 @@ private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
     final class Coordinator: NSObject, MKMapViewDelegate {
         var revision: UUID?
         var onOpen: ([XDrivePhotoKitScanCandidate], MKCoordinateRegion) -> Void
-        var onCell: ((Cell, MKCoordinateRegion) -> Void)?
+        var onCells: (([Cell], MKCoordinateRegion) -> Void)?
         var onCamera: ((MKCoordinateRegion) -> Void)?
         var onCameraWillChange: (() -> Void)?
         var canSelectCells = true
 
         init(onOpen: @escaping ([XDrivePhotoKitScanCandidate], MKCoordinateRegion) -> Void,
-             onCell: ((Cell, MKCoordinateRegion) -> Void)?,
+             onCells: (([Cell], MKCoordinateRegion) -> Void)?,
              onCamera: ((MKCoordinateRegion) -> Void)?,
              onCameraWillChange: (() -> Void)?) {
             self.onOpen = onOpen
-            self.onCell = onCell
+            self.onCells = onCells
             self.onCamera = onCamera
             self.onCameraWillChange = onCameraWillChange
         }
@@ -259,13 +259,14 @@ private struct XDriveIOSMapKitPhotoPage: UIViewRepresentable {
             mapView.deselectAnnotation(view.annotation, animated: false)
             guard canSelectCells else { return }
             if items.contains(where: { $0.cell != nil }) {
-                // Native MapKit clusters zoom first; never open a partly
-                // verified union of unrelated spatial GPS cells.
-                if let cluster = view.annotation as? MKClusterAnnotation {
-                    mapView.showAnnotations(cluster.memberAnnotations, animated: true)
-                } else if let cell = items.first?.cell {
-                    onCell?(cell, mapView.region)
-                }
+                // A MapKit cluster represents multiple *already scanned* GPS
+                // cells. Open their complete bounded identity set, not just
+                // the first representative and not an extra zoom step.
+                // The parent revalidates every ID/count before any PhotoKit read.
+                let cells = items.compactMap(\.cell)
+                guard cells.count == items.count, !cells.isEmpty,
+                      Set(cells.map(\.id)).count == cells.count else { return }
+                onCells?(cells.sorted { $0.id < $1.id }, mapView.region)
                 return
             }
             let members = items.map(\.candidate).sorted {
@@ -428,7 +429,7 @@ enum XDriveIOSNativeLocalMapScope: String, CaseIterable {
 
 private struct XDriveIOSMapSpatialSelection: Identifiable {
     let id = UUID()
-    let cell: XDriveIOSNativeLocalMapSpatialCell<XDrivePhotoKitLocatedCandidate>
+    let cells: [XDriveIOSNativeLocalMapSpatialCell<XDrivePhotoKitLocatedCandidate>]
     // Frozen scope of the completed viewport scan. Changing the camera does
     // not widen the transient 48-item cell wall to all-library coordinates.
     let viewport: XDriveIOSNativeLocalMapViewport?
@@ -464,6 +465,10 @@ private struct XDriveIOSMapSpatialAlbum: View {
         }
     }
 
+    private var selectedPhotoCount: Int {
+        selection.cells.reduce(0) { $0 + $1.count }
+    }
+
     private func restoreViewerTile(using scroll: ScrollViewProxy) {
         defer { viewerReturnID = nil }
         guard let id = viewerReturnID,
@@ -479,7 +484,7 @@ private struct XDriveIOSMapSpatialAlbum: View {
         ScrollViewReader { returnScroll in
         NavigationStack {
             VStack(spacing: 8) {
-                Text("本机已授权图库中的同一 GPS 聚合区域；全库扫描统计有 \(selection.cell.count) 张。")
+                Text("本机已授权图库中的 \(selection.cells.count) 个 GPS 位置区域；全库扫描统计有 \(selectedPhotoCount) 张。")
                     .font(.footnote).foregroundStyle(.secondary)
                 if busy { ProgressView("按区域筛选已授权照片…") }
                 if let error { Text(error).font(.footnote).foregroundStyle(.secondary) }
@@ -603,6 +608,19 @@ private struct XDriveIOSMapSpatialAlbum: View {
             error = "照片库权限已变化，请返回地图重新扫描。"
             return
         }
+        // A selected MapKit cluster is a union of bounded, currently scanned
+        // cell keys. Re-scan PhotoKit only when the user opens its album; never
+        // trust annotation counts as a PhotoKit authorization credential.
+        guard let level = selection.cells.first?.key.level,
+              Policy.acceptsCellSelection(
+                selectedIDs: selection.cells.map(\.id),
+                currentCellIDs: selection.cells.map(\.id)
+              ),
+              selection.cells.allSatisfy({ $0.key.level == level }) else {
+            error = "位置聚合已失效，请返回地图重新扫描。"
+            return
+        }
+        let selectedKeys = Set(selection.cells.map(\.key))
         let scanner = XDrivePhotoKitBoundedSnapshotScanner()
         worker = scanner
         let ticket = generation
@@ -620,10 +638,10 @@ private struct XDriveIOSMapSpatialAlbum: View {
                         guard Policy.includes(
                             selection.viewport,
                             latitude: asset.latitude, longitude: asset.longitude
-                        ), Policy.key(
+                        ), let key = Policy.key(
                             latitude: asset.latitude, longitude: asset.longitude,
-                            level: selection.cell.key.level
-                        ) == selection.cell.key else { continue }
+                            level: level
+                        ), selectedKeys.contains(key) else { continue }
                         rows.append(asset.candidate)
                         if rows.count == 48 {
                             // The last member may be in the middle of a
@@ -772,20 +790,30 @@ struct XDriveIOSNativeLocalPhotoMapScreen: View {
                         items: [], globalCells: globalCells,
                         revision: mapRevision, cameraReturn: globalCamera,
                         canSelectCells: refinedViewportIsCurrent,
-                        onCell: { cell, _ in
-                            // The current fully verified PhotoKit generation,
-                            // never an old MapKit annotation, owns the cell.
+                        onCells: { cells, _ in
+                            // A MapKit cluster may contain several spatial cells.
+                            // Admit only the exact complete set still held by
+                            // this PhotoKit scan; never trust stale SDK markers.
                             guard phase == .active, !busy, globalComplete,
                                   refinedViewportIsCurrent,
                                   [.authorized, .limited].contains(
                                     PHPhotoLibrary.authorizationStatus(for: .readWrite)
                                   ),
-                                  let trusted = globalCells.first(where: { $0.id == cell.id }),
-                                  trusted.count == cell.count,
-                                  trusted.representative.id == cell.representative.id
+                                  XDriveIOSNativeLocalMapSpatialPolicy.acceptsCellSelection(
+                                    selectedIDs: cells.map(\.id),
+                                    currentCellIDs: globalCells.map(\.id)
+                                  ),
+                                  cells.allSatisfy({ cell in
+                                    guard let trusted = globalCells.first(where: {
+                                        $0.id == cell.id
+                                    }) else { return false }
+                                    return trusted.count == cell.count &&
+                                        trusted.representative.id == cell.representative.id &&
+                                        trusted.key == cell.key
+                                  })
                             else { return }
                             globalSelection = XDriveIOSMapSpatialSelection(
-                                cell: trusted, viewport: globalViewport)
+                                cells: cells, viewport: globalViewport)
                         },
                         onCamera: { current in
                             guard mapScope == .library, globalComplete else { return }
