@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
-import { Box, Dialog } from '@mui/material'
+import { Box, Dialog, Typography } from '@mui/material'
+import { XDriveMobileHeaderPageActions, useXDriveMobileHeaderMode } from './MobileHeaderPortal'
 import { XDriveDialogActions } from './DialogActions'
 import { XDriveDialogContent } from './DialogContent'
 import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
@@ -34,12 +35,14 @@ export function XDriveWorkspaceSurface({
   children: ReactNode
 }) {
   const close = onClose ?? (() => undefined)
+  const mobileShell = useXDriveMobileHeaderMode() === 'shell'
 
   if (presentation === 'page') {
     return (
       <Box component="section" className="workspace-page-surface" sx={{
         width: '100%',
         minWidth: 0,
+        ...(mobileShell ? { px: 2, pt: 1.5 } : {}),
         ...(fillHeight ? {
           flex: 1,
           minHeight: 0,
@@ -49,11 +52,20 @@ export function XDriveWorkspaceSurface({
           overflow: 'hidden',
         } : {}),
       }}>
-        {showPageHeader ? (
+        {showPageHeader && !mobileShell ? (
           <XDrivePageHeader title={title} subtitle={subtitle} actions={pageActions} />
         ) : null}
+        {showPageHeader && mobileShell ? (
+          <>
+            <XDriveMobileHeaderPageActions title={title} actions={pageActions} />
+            {subtitle ? (
+              <Typography data-xdrive-mobile-page-subtitle variant="body2"
+                color="text.secondary">{subtitle}</Typography>
+            ) : null}
+          </>
+        ) : null}
         <Box sx={{
-          mt: showPageHeader ? 2 : 0,
+          mt: showPageHeader ? (mobileShell ? (subtitle ? 1.5 : 0) : 2) : 0,
           ...(fillHeight ? {
             flex: 1,
             minHeight: 0,

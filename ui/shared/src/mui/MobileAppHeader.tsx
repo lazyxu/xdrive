@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import type { ReactNode, Ref } from 'react'
 import AppsRoundedIcon from '@mui/icons-material/AppsRounded'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import { Box, IconButton, Tooltip, Typography } from '@mui/material'
@@ -16,6 +16,9 @@ export function XDriveMobileAppHeader({
   onOpenApps,
   focusAction,
   transferAction,
+  pageNavigation = false,
+  navigationSlotRef,
+  actionsSlotRef,
 }: {
   title: string
   canGoBack: boolean
@@ -25,6 +28,9 @@ export function XDriveMobileAppHeader({
   onOpenApps: () => void
   focusAction?: ReactNode
   transferAction?: ReactNode
+  pageNavigation?: boolean
+  navigationSlotRef?: Ref<HTMLDivElement>
+  actionsSlotRef?: Ref<HTMLDivElement>
 }) {
   return (
     <Box
@@ -47,6 +53,15 @@ export function XDriveMobileAppHeader({
         borderColor: 'divider',
       }}
     >
+      {pageNavigation ? (
+        <Box ref={navigationSlotRef} data-xdrive-mobile-header-page-slot
+          sx={{ flex: 1, minWidth: 0, minHeight: 44, display: 'flex', alignItems: 'center',
+            '& > [data-xdrive-mobile-header-fallback]:not(:only-child)': {
+              display: 'none',
+            },
+          }}>
+          <Box data-xdrive-mobile-header-fallback
+            sx={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: 0 }}>
       <Tooltip title={backLabel}>
         <span>
           <IconButton
@@ -63,6 +78,30 @@ export function XDriveMobileAppHeader({
         sx={{ flex: 1, minWidth: 0, pl: 0.5 }}>
         {title}
       </Typography>
+          </Box>
+        </Box>
+      ) : (
+        <>
+      <Tooltip title={backLabel}>
+        <span>
+          <IconButton
+            aria-label={backLabel}
+            disabled={!canGoBack || disabled}
+            onClick={onBack}
+            sx={{ width: 44, height: 44 }}
+          >
+            <ArrowBackRoundedIcon />
+          </IconButton>
+        </span>
+      </Tooltip>
+      <Typography component="h1" variant="subtitle1" fontWeight={600} noWrap
+        sx={{ flex: 1, minWidth: 0, pl: 0.5 }}>
+        {title}
+      </Typography>
+        </>
+      )}
+      <Box ref={actionsSlotRef} data-xdrive-mobile-header-page-actions
+        sx={{ flexShrink: 0, display: 'flex', alignItems: 'center' }} />
       {focusAction}
       {transferAction}
       <Tooltip title="切换应用">
