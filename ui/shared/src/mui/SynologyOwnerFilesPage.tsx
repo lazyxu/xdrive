@@ -132,6 +132,15 @@ export function XDriveSynologyOwnerFilesPage({
     client, rootRevision, authenticatedRootCurrent,
   )
   const [notice, setNotice] = useState('')
+  const uploadInputRef = useRef<HTMLInputElement | null>(null)
+  const uploadAbort = useRef<AbortController | null>(null)
+  const [uploading, setUploading] = useState<string | null>(null)
+  useEffect(() => {
+    return () => {
+      uploadAbort.current?.abort()
+      uploadAbort.current = null
+    }
+  }, [client, rootRevision, currentScopeKey])
   const [createFolderTarget, setCreateFolderTarget] = useState<{
     parentID: number; scopeKey: string; rootRevision: number
     client: XDriveSynologyBackupLocalClient
@@ -290,6 +299,56 @@ export function XDriveSynologyOwnerFilesPage({
         }
       })
   }, [client, currentScopeKey, rootRevision, getDownloadDisabledReason, isCurrentOwner])
+
+
+  // A user-picked browser File is the only upload input. The original DSM
+  // CGI and owning Agent verify the current Owner and use the existing CAS
+  // upload writer. No browser-controlled absolute NAS path is accepted.
+  const uploadSmallOwnerFile = useCallback((file: File) => {
+    if (uploadAbort.current || !isCurrentOwner() || !currentScopeVerified ||
+      search.current || verifiedOverQuota === true) {
+      setNotice('请先进入当前已验证的云端文件夹，并等待正在执行的操作完成。')
+      return
+    }
+    if (!Number.isSafeInteger(file.size) || file.size < 1 || file.size > 4 << 20) {
+      setNotice('DSM 当前每次仅支持上传 1 B～4 MiB 的单个文件；更大的文件暂请使用 Desktop/Web。')
+      return
+    }
+    const parentID = crumbs[crumbs.length - 1]?.id
+    if (!Number.isSafeInteger(parentID) || parentID < 1) return
+    const controller = new AbortController()
+    uploadAbort.current = controller
+    setUploading(file.name)
+    setNotice('')
+    void (async () => {
+      const status = await client.serverConnection(controller.signal)
+      if (!status.configured || !/^[0-9a-f]{64}$/.test(status.owner_scope) ||
+        !isCurrentOwner() || controller.signal.aborted) {
+        throw new Error('Server Owner login changed before upload')
+      }
+      const created = await client.ownerUploadSmallFile(
+        parentID, file, status.owner_scope, controller.signal)
+      if (controller.signal.aborted || !isCurrentOwner()) {
+        throw new Error('Server Owner changed during upload')
+      }
+      setPreview(null)
+      setCrumbs(previous => [...previous])
+      setNotice('已上传文件：' + created.name)
+    })().catch(() => {
+      if (uploadAbort.current === controller && isCurrentOwner()) {
+        // If HTTP abort/lost acknowledgement happens after CAS commit,
+        // never automatically retry and create an accidental duplicate.
+        setCrumbs(previous => [...previous])
+        setNotice('上传失败或结果尚未确认；请刷新目录核对后再重试，已有文件不会被覆盖。')
+      }
+    }).finally(() => {
+      if (uploadAbort.current === controller) {
+        uploadAbort.current = null
+        setUploading(null)
+      }
+    })
+  }, [client, crumbs, currentScopeVerified, isCurrentOwner,
+    search.current, verifiedOverQuota])
 
   const cancelDownload = useCallback(() => {
     if (!isCurrentOwner()) return
@@ -471,6 +530,29 @@ export function XDriveSynologyOwnerFilesPage({
                 <XDriveActionButton compact onClick={cancelDownload}>取消下载</XDriveActionButton>
               </XDriveStatusAlert>
             ) : null}
+            <input
+              ref={uploadInputRef}
+              type="file"
+              hidden
+              aria-label="选择要上传到当前 Owner 文件夹的文件"
+              onChange={event => {
+                const file = event.currentTarget.files?.[0]
+                event.currentTarget.value = ''
+                if (file) uploadSmallOwnerFile(file)
+              }}
+            />
+            {uploading ? (
+              <XDriveStatusAlert tone="neutral">
+                正在上传并等待 Server 确认：{uploading}
+                <XDriveActionButton compact onClick={() => {
+                  uploadAbort.current?.abort()
+                  uploadAbort.current = null
+                  setUploading(null)
+                  setCrumbs(previous => [...previous])
+                  setNotice('已请求取消上传；Server 可能已经完成，请刷新后核对。')
+                }}>取消上传</XDriveActionButton>
+              </XDriveStatusAlert>
+            ) : null}
             <XDriveFileExplorer
               presentation="workspace"
               viewMode={viewMode}
@@ -493,6 +575,7 @@ export function XDriveSynologyOwnerFilesPage({
               unavailableActions={search.current
                 ? { ...unavailableActions,
                     createFolder: '退出搜索后可新建文件夹。',
+                    uploadFiles: '退出搜索后可上传文件。',
                     rename: '退出搜索并进入文件夹后可重命名。' }
                 : unavailableActions}
               groupingEnabled={false}
@@ -508,6 +591,14 @@ export function XDriveSynologyOwnerFilesPage({
                 setCrumbs(current => current.slice(0, index + 1))
               }}
               onRefresh={search.current ? () => search.start(search.current!.query) : refreshAuthenticatedOwner}
+              onUpload={() => {
+                if (!isCurrentOwner() || !currentScopeVerified || search.current ||
+                  uploadAbort.current) {
+                  setNotice('当前文件夹尚未核实或有正在执行的上传，请稍后重试。')
+                  return
+                }
+                uploadInputRef.current?.click()
+              }}
               onCreateFolder={() => {
                 if (search.current) return
                 if (!isCurrentOwner() || !currentScopeVerified) {
@@ -608,7 +699,7 @@ export function XDriveSynologyOwnerFilesPage({
                 }
               }}
               statusText={currentScopeVerified
-                ? `已核实 ${displayedItems.length.toLocaleString('zh-CN')} 项${hasMore ? ' · 仍有后续页' : ''} · 云端已开放新建文件夹与重命名`
+                ? `已核实 ${displayedItems.length.toLocaleString('zh-CN')} 项${hasMore ? ' · 仍有后续页' : ''} · 云端已开放新建文件夹、重命名及小文件上传`
                 : '云端账号目录尚未确认'}
             />
             {search.current?.hasMore ? (
