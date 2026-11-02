@@ -141,14 +141,35 @@ struct XDriveIOSNativeFilesViewer: View {
                                 )
                             }
                     case .imageThumbnail(let image):
-                        VStack(spacing: 0) {
+                        VStack(spacing: 6) {
                             XDriveIOSNativeZoomablePhotoView(image: image)
                                 .onNavigateSwipe { move($0) }
                                 .accessibilityLabel("低清缩略图，可双指缩放")
-                            Text("当前只显示已索引的云端缩略图（低清）。查看原件请返回文件列表，通过“更多”→“下载并准备导出”。")
-                                .font(.caption).foregroundStyle(.secondary)
-                                .multilineTextAlignment(.center)
-                                .padding(8)
+                                .overlay(alignment: .topLeading) {
+                                    XDriveIOSNativeViewerQualityPanel(
+                                        fileName: viewed.name,
+                                        source: "缩略图回退",
+                                        image: image,
+                                        originalBytes: viewed.size
+                                    )
+                                }
+                            // The selected 1 GiB-or-smaller original is exported
+                            // only after a user tap. Keep controls scrollable in
+                            // short landscape and at large Dynamic Type sizes.
+                            ScrollView {
+                                VStack(spacing: 8) {
+                                    Text("当前仅显示云端低清缩略图。可以在此下载当前版本原件，再选择保存到“文件”或用其他 App 打开；不会自动下载或保存。")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .multilineTextAlignment(.center)
+                                    originalExportFallback
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                            }
+                            .frame(maxHeight: 160)
+                            .accessibilityIdentifier("native-ios-files-viewer-thumbnail-recovery")
                         }
                     case .video:
                         if let player {
@@ -285,7 +306,13 @@ struct XDriveIOSNativeFilesViewer: View {
     @ViewBuilder
     private var originalExportFallback: some View {
         if authorized && exportFallbackEligible {
-            if let staged = exporter.prepared,
+            if viewed.size > XDriveIOSNativeFilesExportCapacityPolicy.maximumSingleFileBytes {
+                Text("原件超过 1 GiB，本机 Viewer 无法直接导出。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .accessibilityIdentifier("native-ios-files-viewer-export-over-limit")
+            } else if let staged = exporter.prepared,
                staged.nodeID == viewed.id && staged.revision == viewed.revision {
                 ShareLink(item: staged.fileURL) {
                     Label("用其他 App 打开或保存原件",
@@ -392,6 +419,12 @@ struct XDriveIOSNativeFilesViewer: View {
                 player = AVPlayer(url: url)
             default: break
             }
+            // A successful bounded thumbnail still needs a separate, explicit
+            // foreground original-export tap. Reuse the exact Node/revision
+            // reader already used for unsupported formats, never auto-fetch.
+            if case .imageThumbnail = result {
+                exportFallbackEligible = true
+            }
             display = result
             failure = nil
             loading = false
@@ -408,16 +441,16 @@ struct XDriveIOSNativeFilesViewer: View {
             if let reason = error as? XDriveIOSNativeFilesPreviewError {
                 switch reason {
                 case .unsupported:
-                    failure = "当前格式不支持原生预览。可以在此下载原件并使用其他 App（导出上限 512 MiB）。"
+                    failure = "当前格式不支持原生预览。可以在此下载原件并使用其他 App（导出上限 1 GiB）。"
                     exportFallbackEligible = true
                 case .tooLarge:
-                    failure = "文件超过本机预览上限。可以在此下载原件并使用其他 App（导出上限 512 MiB）。"
+                    failure = "文件超过本机预览上限。可以在此下载原件并使用其他 App（导出上限 1 GiB）。"
                     exportFallbackEligible = true
                 case .malformed:
-                    failure = "原生预览无法解码当前文件。可以尝试导出原件至其他 App（导出上限 512 MiB）。"
+                    failure = "原生预览无法解码当前文件。可以尝试导出原件至其他 App（导出上限 1 GiB）。"
                     exportFallbackEligible = true
                 case .noThumbnail:
-                    failure = "原图过大或格式无法解码，且没有可用的云端缩略图。可以在此下载原件并使用其他 App（导出上限 512 MiB）。"
+                    failure = "原图过大或格式无法解码，且没有可用的云端缩略图。可以在此下载原件并使用其他 App（导出上限 1 GiB）。"
                     exportFallbackEligible = true
                 case .changed, .invalidOwner, .response(401), .response(403), .response(404):
                     failure = "文件版本或当前账户已变化，请返回目录重新读取。"
