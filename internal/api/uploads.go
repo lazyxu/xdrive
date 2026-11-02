@@ -323,6 +323,11 @@ func (s *Server) createUploadSession(c *gin.Context) {
 		fail(c, http.StatusForbidden, "invalid share upload owner")
 		return
 	}
+	if req.NodeID != nil {
+		if notesRejectNodeMutation(c, s.DB, *req.NodeID) { return }
+	} else if req.ParentID != nil {
+		if notesRejectDestination(c, s.DB, *req.ParentID, req.Name) { return }
+	}
 	if req.SHA256 == "" && req.MD5 != "" {
 		resolved, ok, err := verifiedDigestSHA256(
 			c.Request.Context(), s.DB, uid, contentDigestAlgorithmMD5, req.MD5, req.Size,
@@ -834,6 +839,11 @@ func (s *Server) finalizeUploadSession(c *gin.Context) {
 	if session.Status == meta.UploadStatusFinalized {
 		s.writeUploadSession(c, session, http.StatusOK)
 		return
+	}
+	if session.NodeID != nil {
+		if notesRejectNodeMutation(c, s.DB, *session.NodeID) { return }
+	} else if session.ParentID != nil {
+		if notesRejectDestination(c, s.DB, *session.ParentID, session.Name) { return }
 	}
 	if time.Now().After(session.ExpiresAt) {
 		_ = s.abortUploadSessionData(c.Request.Context(), session)
