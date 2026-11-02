@@ -103,6 +103,7 @@ class DriveAppTest {
     private var filesViewerDetailReads = 0
     private var galleryThumbnailFailuresRemaining = 0
     private var galleryThumbnailReads = 0
+    private var videoTransportOpened = 0
     private var videoTransportClosed = 0
     private val galleryOffsets = mutableListOf<Int>()
     private var galleryRangeReads = 0
@@ -449,13 +450,15 @@ class DriveAppTest {
                 }.build(), 0L,
             ) { liveMotionClosed++ }
         }
-        override fun galleryVideoPlayback(accessToken: String, node: DriveNode): OwnerVideoPlayback =
-            OwnerVideoPlayback(
+        override fun galleryVideoPlayback(accessToken: String, node: DriveNode): OwnerVideoPlayback {
+            videoTransportOpened++
+            return OwnerVideoPlayback(
                 "https://fixture.invalid/api/v1/files/" + node.id + "/content",
                 okhttp3.OkHttpClient.Builder().addInterceptor {
                     throw java.io.IOException("Fixture intentionally has no MP4")
                 }.build(), node.size,
             ) { videoTransportClosed++ }
+        }
         override suspend fun fileRecent(accessToken: String) = listOf(
             DriveCollectionItem(DriveNode(2, 1, "假期照片", "dir"), "假期照片",
                 listOf(DriveCrumb(1, ""), DriveCrumb(2, "假期照片"))))
@@ -2065,6 +2068,47 @@ class DriveAppTest {
         compose.runOnIdle {
             org.junit.Assert.assertNull(controller.state.value.galleryViewer)
             org.junit.Assert.assertEquals(1, videoTransportClosed)
+        }
+    }
+
+    @Test fun nativeVideoTerminalFailureRetriesFreshOwnerLeaseAndReturnsToGallery() {
+        galleryVideoFixture = true
+        startAndLogin()
+        compose.onNodeWithContentDescription("账户菜单").performClick()
+        compose.onNodeWithTag("switch-to-gallery").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.screen == Screen.GALLERY &&
+                controller.state.value.galleryLoaded
+        }
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.onAllNodesWithTag("gallery-thumbnail-ready-45",
+                useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag("gallery-item-45", useUnmergedTree = true).performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryViewer?.node?.id == 45L &&
+                videoTransportOpened == 1
+        }
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.onAllNodesWithTag("gallery-video-retry").fetchSemanticsNodes().isNotEmpty() &&
+                videoTransportClosed == 1
+        }
+        compose.onNodeWithTag("gallery-video-retry").assertIsDisplayed().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            videoTransportOpened == 2
+        }
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.onAllNodesWithTag("gallery-video-retry").fetchSemanticsNodes().isNotEmpty() &&
+                videoTransportClosed == 2
+        }
+        compose.onNodeWithTag("gallery-video-close").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            controller.state.value.galleryViewer == null
+        }
+        compose.onNodeWithTag("gallery-wall").assertExists()
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(2, videoTransportOpened)
+            org.junit.Assert.assertEquals(2, videoTransportClosed)
         }
     }
 
