@@ -280,7 +280,7 @@ test('cloud backed-up original Live Photo surface supports bounded swipe paging'
   const end = src.indexOf('private struct XDriveIOSNativeCloudOriginalTile: View', start)
   assert.ok(start >= 0 && end > start)
   const viewer = src.slice(start, end)
-  assert.match(viewer, /XDriveIOSNativeCloudPairedLivePhotoView\([\s\S]*?\)\s*\.xdriveCloudLivePhotoPaging \{ showNeighbor\(\$0\) \}/)
+  assert.match(viewer, /XDriveIOSNativeCloudPairedLivePhotoView\([\s\S]*?\)\s*\{ ready in[\s\S]*?\}\s*\.xdriveCloudLivePhotoPaging \{ showNeighbor\(\$0\) \}/)
   assert.match(viewer, /云端实况照片，长按播放或左右滑动切换/)
   assert.match(paired, /simultaneousGesture\(\s*DragGesture\(minimumDistance: 72\)/)
   assert.match(paired, /XDriveIOSNativeViewerSwipePolicy\.direction\(/)
