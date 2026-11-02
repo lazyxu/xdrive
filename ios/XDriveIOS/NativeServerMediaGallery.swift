@@ -402,6 +402,19 @@ struct XDriveIOSNativeServerMediaPreview: View {
                                 }
                                 .accessibilityIdentifier("native-ios-photoasset-live-play")
                             }
+                            if ownerAuthorized && nativeLiveUnavailable &&
+                                !showingLiveMotion {
+                                Button("重试原生实况配对") {
+                                    guard ownerAuthorized, liveResources != nil else { return }
+                                    // Re-pair the existing verified still/MOV locally;
+                                    // a failed Photos pairing needs no new Server ticket.
+                                    livePlaybackRequest = nil
+                                    nativeLiveReady = false
+                                    showsStaticStill = false
+                                    nativeLiveUnavailable = false
+                                }
+                                .accessibilityIdentifier("native-ios-photoasset-live-pair-retry")
+                            }
                             Button(showingLiveMotion ? "返回静态照片" : "播放原始动态视频") {
                                 guard ownerAuthorized, player != nil,
                                       let currentOwner = liveOwner,

@@ -113,3 +113,32 @@ test('paired PhotoAsset Live offers full-zoom still and bounded neighbor swipe, 
   assert.match(detail, /guard ownerAuthorized else \{ return \}/)
   assert.match(paired, /static func dismantleUIView[\s\S]*?coordinator\.retire\(\)/)
 })
+
+
+test('both native cloud Live variants allow explicit local re-pair after Photos failure', () => {
+  const start = view.indexOf('struct XDriveIOSNativeServerMediaPreview: View')
+  const end = view.indexOf('/// Root and album-specific media wall', start)
+  const photoAsset = view.slice(start, end)
+  const originalSource = read('ios/XDriveIOS/NativeCloudOriginalGallery.swift')
+  const first = originalSource.indexOf('struct XDriveIOSNativeCloudOriginalPreview: View')
+  const last = originalSource.indexOf('/// SwiftUI\'s ForEach identity', first)
+  const original = originalSource.slice(first, last)
+  assert.ok(first >= 0 && last > first)
+  for (const [name, scoped, id, isAuthorized, request] of [
+    ['photoasset', photoAsset, 'native-ios-photoasset-live-pair-retry',
+      'ownerAuthorized', 'livePlaybackRequest'],
+    ['original', original, 'native-ios-original-live-pair-retry',
+      'currentOwnerAuthorized', 'nativeLivePlaybackRequest']
+  ]) {
+    assert.match(scoped, /Button\("重试原生实况配对"\)/, name)
+    assert.ok(scoped.includes(id), name)
+    assert.ok(scoped.includes('guard ' + isAuthorized + ', liveResources != nil'), name)
+    const retry = scoped.slice(scoped.indexOf('Button("重试原生实况配对")'),
+      scoped.indexOf('.accessibilityIdentifier("' + id + '")'))
+    assert.ok(retry.includes(request + ' = nil'), name)
+    assert.ok(retry.includes('nativeLiveReady = false'), name)
+    assert.ok(retry.includes('showsStaticStill = false'), name)
+    assert.ok(retry.includes('nativeLiveUnavailable = false'), name)
+    assert.doesNotMatch(retry, /retryPreview\(|retirePreview\(|downloadOriginal|livePreview\(|URLSession/, name)
+  }
+})
