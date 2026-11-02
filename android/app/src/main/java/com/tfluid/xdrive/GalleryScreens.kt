@@ -151,8 +151,10 @@ internal fun ColumnScope.Gallery(
     var displayMenuOpen by remember { mutableStateOf(false) }
     var kindMenuOpen by remember { mutableStateOf(false) }
     var timeScale by rememberSaveable(state.gallerySearchQuery, state.galleryMediaKind,
-        state.gallerySortBy, state.gallerySortDir) {
-        mutableStateOf("all")
+        state.gallerySortBy, state.gallerySortDir, state.galleryTimeGroupScale) {
+        // A returned Owner timeline is revalidated before selecting this
+        // scale; an invalidated date group falls back to the all-photo wall.
+        mutableStateOf(state.galleryTimeGroupScale ?: "all")
     }
     var timePickerOpen by remember { mutableStateOf(false) }
     // Preserve the visible photo anchor while the Viewer is open.
@@ -319,6 +321,13 @@ internal fun ColumnScope.Gallery(
         }
     }
     DownloadToDeviceStatus(state, controller, "gallery")
+    if (state.galleryTimeReturnNotice != null) {
+        Text(state.galleryTimeReturnNotice,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                .testTag("gallery-date-return-notice"),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
     if (state.error != null) {
         ErrorNotice(state.error)
         TextButton(onClick = controller::retryGallery,
@@ -480,7 +489,8 @@ internal fun ColumnScope.Gallery(
                         timeScale = scale
                         if (scale == "all") {
                             timePickerOpen = false
-                            if (state.galleryJumpIndex != null)
+                            if (state.galleryJumpIndex != null ||
+                                state.galleryTimeGroupScale != null)
                                 controller.refreshGallery()
                         } else timePickerOpen = true
                     },

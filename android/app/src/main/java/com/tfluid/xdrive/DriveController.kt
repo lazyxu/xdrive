@@ -156,6 +156,10 @@ data class DriveState(
     val gallerySortDir: String = "asc",
     val galleryTimelineSets: GalleryTimelineSets? = null,
     val galleryJumpIndex: Int? = null,
+    /** Verified current-Owner time group, not an old absolute media offset. */
+    val galleryTimeGroupScale: String? = null,
+    val galleryTimeGroupKey: String? = null,
+    val galleryTimeReturnNotice: String? = null,
     val galleryJumpEpoch: Long = 0,
     val galleryPageIntent: String = "",
     val gallerySelected: GalleryAsset? = null,
@@ -271,6 +275,8 @@ class DriveController(
         val kind: String,
         val sortBy: String,
         val sortDir: String,
+        val timeScale: String?,
+        val timeKey: String?,
     ) {
         fun belongsTo(current: DriveState): Boolean =
             uiSessionId > 0 && uiSessionId == current.nativeUiSessionId &&
@@ -279,6 +285,10 @@ class DriveController(
     private var cloudGalleryReturnIntent: CloudGalleryReturnIntent? = null
     /** An album ID is a hint only, never Owner authorization or a cached row. */
     private var pendingCloudAlbumReturnId: String? = null
+    /** A date key is a return hint only; only the NEW Owner timeline can
+     * resolve it to an offset, after fresh authentication. */
+    private data class PendingCloudTimeGroup(val scale: String, val key: String)
+    private var pendingCloudTimeGroupReturn: PendingCloudTimeGroup? = null
     private var active: Job? = null
     /** App-owned native SDK camera throttle; no second Server/Owner transport. */
     private val galleryCameraGate = OwnerBd09ViewportGate()
@@ -2320,6 +2330,16 @@ class DriveController(
         cloudGalleryReturnIntent = null
         val collections = saved?.tab == GalleryPrimaryTab.COLLECTIONS
         pendingCloudAlbumReturnId = if (collections) saved?.albumId else null
+        pendingCloudTimeGroupReturn = saved?.takeIf {
+            !collections && it.search.isEmpty() &&
+                it.sortBy == "captured" && it.sortDir == "asc"
+        }?.let {
+            if (it.timeScale in setOf("year", "month", "day") &&
+                !it.timeKey.isNullOrBlank())
+                PendingCloudTimeGroup(requireNotNull(it.timeScale),
+                    requireNotNull(it.timeKey))
+            else null
+        }
         invalidate()
         mutableState.value = current.withoutGallerySelection().copy(
             screen = Screen.GALLERY, loading = false, selected = null, error = null,
@@ -2342,6 +2362,8 @@ class DriveController(
             gallerySortBy = saved?.sortBy ?: "captured",
             gallerySortDir = saved?.sortDir ?: "asc",
             galleryTimelineSets = null, galleryJumpIndex = null,
+            galleryTimeGroupScale = null, galleryTimeGroupKey = null,
+            galleryTimeReturnNotice = null,
             galleryJumpEpoch = current.galleryJumpEpoch + 1, galleryPageIntent = "",
             gallerySelected = null, galleryViewer = null)
         if (collections) readGalleryAlbums() else loadGallery(initialLatest = true)
@@ -2777,15 +2799,20 @@ class DriveController(
             current.galleryAlbumCreateAttempted || current.galleryAlbumEditAttempted) return
         // Keep only feature-local navigation; never retain old Owner albums,
         // media nodes, signed cells or Viewer bytes across tab switches.
+        val dateGroup = current.galleryTimeGroupScale?.let { scale ->
+            current.galleryTimeGroupKey?.let { PendingCloudTimeGroup(scale, it) }
+        } ?: pendingCloudTimeGroupReturn
         if (!current.viewerReturnToFiles && current.nativeUiSessionId > 0) {
             cloudGalleryReturnIntent = CloudGalleryReturnIntent(
                 current.nativeUiSessionId, current.server, current.username,
                 current.galleryPrimaryTab,
                 current.gallerySelectedAlbum?.id ?: pendingCloudAlbumReturnId,
                 current.gallerySearchQuery, current.galleryMediaKind,
-                current.gallerySortBy, current.gallerySortDir)
+                current.gallerySortBy, current.gallerySortDir,
+                dateGroup?.scale, dateGroup?.key)
         }
         pendingCloudAlbumReturnId = null
+        pendingCloudTimeGroupReturn = null
         retireGalleryCameraSession()
         invalidate() // Cancels the outstanding Gallery Range and item thumbnails.
         mutableState.value = current.withoutGallerySelection().copy(
@@ -2806,6 +2833,8 @@ class DriveController(
             galleryLoaded = false, gallerySearchQuery = "", galleryMediaKind = "",
             gallerySortBy = "captured", gallerySortDir = "asc",
             galleryTimelineSets = null, galleryJumpIndex = null,
+            galleryTimeGroupScale = null, galleryTimeGroupKey = null,
+            galleryTimeReturnNotice = null,
             galleryJumpEpoch = current.galleryJumpEpoch + 1, galleryPageIntent = "",
             gallerySelected = null, galleryViewer = null)
         if (!state.value.loaded) refresh()
@@ -2822,12 +2851,15 @@ class DriveController(
             previous.galleryMetadataWriteAttempted ||
             previous.galleryAlbumCreateAttempted || previous.galleryAlbumEditAttempted) return
         pendingCloudAlbumReturnId = null // Explicit user route wins.
+        pendingCloudTimeGroupReturn = null
         invalidate()
         mutableState.value = previous.withoutGallerySelection().copy(
             galleryPrimaryTab = GalleryPrimaryTab.COLLECTIONS,
             gallerySelectedAlbum = null, loading = false, error = null,
             galleryItems = emptyList(), galleryLoaded = false, galleryOffset = 0,
             galleryTotal = 0, galleryTimelineSets = null, galleryJumpIndex = null,
+            galleryTimeGroupScale = null, galleryTimeGroupKey = null,
+            galleryTimeReturnNotice = null,
             galleryJumpEpoch = previous.galleryJumpEpoch + 1, galleryPageIntent = "",
             gallerySelected = null, galleryViewer = null)
         if (!state.value.galleryAlbumsLoaded) readGalleryAlbums()
@@ -3075,12 +3107,15 @@ class DriveController(
             (previous.galleryPrimaryTab == GalleryPrimaryTab.LIBRARY &&
                 previous.gallerySelectedAlbum == null)) return
         pendingCloudAlbumReturnId = null // Explicit library route wins.
+        pendingCloudTimeGroupReturn = null
         invalidate()
         mutableState.value = previous.withoutGallerySelection().copy(galleryPrimaryTab = GalleryPrimaryTab.LIBRARY,
             gallerySelectedAlbum = null, loading = false, error = null,
             galleryItems = emptyList(), galleryLoaded = false, galleryOffset = 0,
             galleryTotal = 0, gallerySearchQuery = "", galleryMediaKind = "",
             galleryTimelineSets = null, galleryJumpIndex = null,
+            galleryTimeGroupScale = null, galleryTimeGroupKey = null,
+            galleryTimeReturnNotice = null,
             galleryJumpEpoch = previous.galleryJumpEpoch + 1, galleryPageIntent = "",
             gallerySelected = null, galleryViewer = null)
         loadGallery(initialLatest = true)
@@ -3125,11 +3160,14 @@ class DriveController(
             previous.galleryAlbumCreateAttempted || previous.galleryAlbumEditAttempted ||
             previous.galleryAlbums.none { it == album }) return
         pendingCloudAlbumReturnId = null // Explicit verified album wins.
+        pendingCloudTimeGroupReturn = null
         invalidate()
         mutableState.value = previous.withoutGallerySelection().copy(gallerySelectedAlbum = album,
             loading = false, error = null, galleryItems = emptyList(), galleryLoaded = false,
             galleryOffset = 0, galleryTotal = 0, gallerySearchQuery = "",
             galleryMediaKind = "", galleryTimelineSets = null, galleryJumpIndex = null,
+            galleryTimeGroupScale = null, galleryTimeGroupKey = null,
+            galleryTimeReturnNotice = null,
             galleryJumpEpoch = previous.galleryJumpEpoch + 1, galleryPageIntent = "",
             gallerySelected = null, galleryViewer = null)
         loadGallery(initialLatest = true)
@@ -3439,6 +3477,8 @@ class DriveController(
         if (state.value.screen != Screen.GALLERY ||
             (state.value.galleryPrimaryTab == GalleryPrimaryTab.COLLECTIONS &&
                 state.value.gallerySelectedAlbum == null)) return
+        // A failed return GET may retry its date key. Explicit ordinary
+        // refresh drops the old date anchor and requests a fresh latest page.
         invalidate() // Stop prior Owner range before replacing its query intent.
         mutableState.value = state.value.withoutGallerySelection().copy(loading = false, error = null,
             fileExportPending = null, fileExportOrigin = null,
@@ -3446,6 +3486,8 @@ class DriveController(
             galleryItems = emptyList(), galleryOffset = 0,
             galleryTotal = 0, galleryLoaded = false, gallerySelected = null,
             galleryTimelineSets = null, galleryJumpIndex = null,
+            galleryTimeGroupScale = null, galleryTimeGroupKey = null,
+            galleryTimeReturnNotice = null,
             galleryJumpEpoch = state.value.galleryJumpEpoch + 1,
             galleryPageIntent = "", galleryViewer = null)
         loadGallery(initialLatest = true)
@@ -3462,6 +3504,7 @@ class DriveController(
             current.gallerySelectionMode || current.galleryMetadataWriteAttempted ||
             current.hasActiveNativeTransfer() || session == null || api == null ||
             (current.gallerySortBy == by && current.gallerySortDir == dir)) return
+        pendingCloudTimeGroupReturn = null
         invalidate() // Cancel old Owner pages, thumbnails and pending SAF picker.
         mutableState.value = current.withoutGallerySelection().copy(loading = false, error = null,
             fileExportPending = null, fileExportOrigin = null,
@@ -3471,6 +3514,8 @@ class DriveController(
             galleryOffset = 0, galleryTotal = 0, galleryLoaded = false,
             gallerySelected = null, galleryViewer = null,
             galleryTimelineSets = null, galleryJumpIndex = null,
+            galleryTimeGroupScale = null, galleryTimeGroupKey = null,
+            galleryTimeReturnNotice = null,
             galleryJumpEpoch = current.galleryJumpEpoch + 1, galleryPageIntent = "")
         loadGallery(initialLatest = true)
     }
@@ -3485,6 +3530,7 @@ class DriveController(
             current.gallerySelectedAlbum != null || session == null || api == null) return
         val query = input.trim()
         if (query.length > 200 || query == current.gallerySearchQuery) return
+        pendingCloudTimeGroupReturn = null
         invalidate() // Cancel the previous query and prevent A→B→A stale replies.
         mutableState.value = current.withoutGallerySelection().copy(loading = false, error = null,
             fileExportPending = null, fileExportOrigin = null,
@@ -3493,6 +3539,8 @@ class DriveController(
             gallerySearchQuery = query, galleryItems = emptyList(), galleryOffset = 0,
             galleryTotal = 0, galleryLoaded = false, gallerySelected = null,
             galleryTimelineSets = null, galleryJumpIndex = null,
+            galleryTimeGroupScale = null, galleryTimeGroupKey = null,
+            galleryTimeReturnNotice = null,
             galleryJumpEpoch = current.galleryJumpEpoch + 1,
             galleryPageIntent = "", galleryViewer = null)
         loadGallery(initialLatest = true)
@@ -3509,6 +3557,7 @@ class DriveController(
             current.galleryPrimaryTab != GalleryPrimaryTab.LIBRARY ||
             current.gallerySelectedAlbum != null || session == null || api == null ||
             kind == current.galleryMediaKind) return
+        pendingCloudTimeGroupReturn = null
         invalidate() // Cancels prior Range/thumbnail/Viewer and fences stale replies.
         mutableState.value = current.withoutGallerySelection().copy(loading = false, error = null,
             fileExportPending = null, fileExportOrigin = null,
@@ -3517,6 +3566,8 @@ class DriveController(
             galleryMediaKind = kind, galleryItems = emptyList(), galleryOffset = 0,
             galleryTotal = 0, galleryLoaded = false, gallerySelected = null,
             galleryTimelineSets = null, galleryJumpIndex = null,
+            galleryTimeGroupScale = null, galleryTimeGroupKey = null,
+            galleryTimeReturnNotice = null,
             galleryJumpEpoch = current.galleryJumpEpoch + 1,
             galleryPageIntent = "", galleryViewer = null)
         loadGallery(initialLatest = true)
@@ -3596,6 +3647,7 @@ class DriveController(
         val group = current.galleryTimelineSets?.forScale(scale)
             ?.firstOrNull { it.key == key && it.itemCount > 0 } ?: return
         if (group.startIndex.toLong() >= current.galleryTotal) return
+        pendingCloudTimeGroupReturn = null
         invalidate()
         mutableState.value = current.withoutGallerySelection().copy(loading = false, error = null,
             fileExportPending = null, fileExportOrigin = null,
@@ -3604,6 +3656,8 @@ class DriveController(
             galleryItems = emptyList(), galleryOffset = group.startIndex,
             galleryLoaded = false, gallerySelected = null, galleryViewer = null,
             galleryJumpIndex = group.startIndex,
+            galleryTimeGroupScale = scale, galleryTimeGroupKey = key,
+            galleryTimeReturnNotice = null,
             galleryJumpEpoch = current.galleryJumpEpoch + 1, galleryPageIntent = "jump")
         loadGalleryJump(group.startIndex)
     }
@@ -3673,11 +3727,55 @@ class DriveController(
                 latest.galleryMediaKind != kind || latest.gallerySelectedAlbum?.id != albumId)
                 throw CancellationException()
             if (initialLatest) {
-                mutableState.value = latest.copy(
-                    galleryItems = page.items, galleryOffset = page.offset,
-                    galleryTotal = page.totalCount, galleryLoaded = true, error = null,
-                    galleryTimelineSets = page.timeline, galleryJumpIndex = null,
-                    galleryPageIntent = "")
+                val pending = pendingCloudTimeGroupReturn
+                val group = if (pending != null &&
+                    latest.galleryPrimaryTab == GalleryPrimaryTab.LIBRARY &&
+                    latest.gallerySearchQuery.isEmpty() &&
+                    latest.gallerySortBy == "captured" && latest.gallerySortDir == "asc") {
+                    page.timeline?.forScale(pending.scale)?.firstOrNull {
+                        it.key == pending.key && it.itemCount > 0 &&
+                            it.startIndex >= 0 &&
+                            it.startIndex.toLong() < page.totalCount
+                    }
+                } else null
+                if (group != null && pending != null) {
+                    // Never replay an old absolute offset. The new authenticated
+                    // Owner timeline is the only authority for this position.
+                    val located = fetchGalleryPage(
+                        service, ticket, group.startIndex, false, search, kind, albumId)
+                    checkCurrent(ticket)
+                    val now = state.value
+                    if (now.screen != Screen.GALLERY || now.gallerySearchQuery != search ||
+                        now.galleryMediaKind != kind ||
+                        now.gallerySelectedAlbum?.id != albumId) throw CancellationException()
+                    if (located.offset != group.startIndex ||
+                        located.totalCount != page.totalCount || located.items.isEmpty() ||
+                        group.startIndex.toLong() + located.items.size > page.totalCount)
+                        throw ApiException(0, "Gallery date range changed",
+                            ApiFailureReason.INVALID_RESPONSE)
+                    pendingCloudTimeGroupReturn = null
+                    mutableState.value = now.copy(
+                        galleryItems = located.items, galleryOffset = located.offset,
+                        galleryTotal = page.totalCount, galleryLoaded = true, error = null,
+                        galleryTimelineSets = page.timeline,
+                        galleryJumpIndex = group.startIndex,
+                        galleryTimeGroupScale = pending.scale,
+                        galleryTimeGroupKey = pending.key,
+                        galleryTimeReturnNotice = null,
+                        galleryJumpEpoch = now.galleryJumpEpoch + 1,
+                        galleryPageIntent = "")
+                } else {
+                    pendingCloudTimeGroupReturn = null
+                    mutableState.value = latest.copy(
+                        galleryItems = page.items, galleryOffset = page.offset,
+                        galleryTotal = page.totalCount, galleryLoaded = true, error = null,
+                        galleryTimelineSets = page.timeline, galleryJumpIndex = null,
+                        galleryTimeGroupScale = null, galleryTimeGroupKey = null,
+                        galleryTimeReturnNotice = if (pending != null)
+                            "原日期分组已变化，已显示当前图库。"
+                        else null,
+                        galleryPageIntent = "")
+                }
             } else {
                 // Offset < 60 requires a fixed-size page overlapping the existing
                 // first rows. Validate exact IDs and revisions before prepending.
@@ -4499,6 +4597,7 @@ class DriveController(
                         keepLogin = false
                         cloudGalleryReturnIntent = null
                         pendingCloudAlbumReturnId = null
+                        pendingCloudTimeGroupReturn = null
                         runCatching { sessionPersistence?.clear() }
                         retryPath = null
                         retryAppend = false
@@ -4635,6 +4734,7 @@ class DriveController(
     private fun endSession(changeServer: Boolean) {
         cloudGalleryReturnIntent = null
         pendingCloudAlbumReturnId = null
+        pendingCloudTimeGroupReturn = null
         retireGalleryCameraSession()
         val oldApi = api
         val oldSession = session
@@ -4686,6 +4786,7 @@ class DriveController(
     override fun close() {
         cloudGalleryReturnIntent = null
         pendingCloudAlbumReturnId = null
+        pendingCloudTimeGroupReturn = null
         retireGalleryCameraSession()
         invalidate()
         session = null

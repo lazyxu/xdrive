@@ -1768,6 +1768,162 @@ class DriveControllerTest {
         c.close()
     }
 
+
+    @Test fun galleryDateGroupReentryUsesFreshOwnerIndexNotOldAbsoluteOffset() = runTest {
+        var startIndex = 60
+        val reads = mutableListOf<Pair<Int, Boolean>>()
+        val svc = object : Service() {
+            override suspend fun galleryPage(
+                accessToken: String, offset: Int, initialLatest: Boolean,
+            ): GalleryPage {
+                assertEquals("access", accessToken)
+                reads += offset to initialLatest
+                return if (initialLatest) {
+                    val group = GalleryTimelineGroup("2026-10-30", 5, startIndex)
+                    GalleryPage(listOf(latestGallery), 121, 120,
+                        timeline = GalleryTimelineSets(
+                            year = listOf(group.copy(key = "2026")),
+                            month = listOf(group.copy(key = "2026-10")),
+                            day = listOf(group)))
+                } else GalleryPage(listOf(GalleryAsset(
+                    DriveNode(8000L + offset, 1, "day-$offset.jpg", "file",
+                        size = 12, revision = 1),
+                    "image", hasThumbnail = true)), 121, offset)
+            }
+        }
+        val c = controller(this, svc)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.jumpGalleryToGroup("day", "2026-10-30"); runCurrent()
+        assertEquals(60, c.state.value.galleryJumpIndex)
+        assertEquals("day", c.state.value.galleryTimeGroupScale)
+        assertEquals("2026-10-30", c.state.value.galleryTimeGroupKey)
+        assertEquals(8060L, c.state.value.galleryItems.single().node.id)
+
+        c.openFilesApp(); runCurrent()
+        assertTrue(c.state.value.galleryItems.isEmpty())
+        assertNull(c.state.value.galleryTimeGroupKey)
+        startIndex = 40 // Library changed; prior 60 is not a valid location.
+        c.openGallery(); runCurrent()
+        assertEquals(Screen.GALLERY, c.state.value.screen)
+        assertEquals(40, c.state.value.galleryJumpIndex)
+        assertEquals("day", c.state.value.galleryTimeGroupScale)
+        assertEquals("2026-10-30", c.state.value.galleryTimeGroupKey)
+        assertEquals(8040L, c.state.value.galleryItems.single().node.id)
+        assertNull(c.state.value.galleryTimeReturnNotice)
+        assertEquals(listOf(0 to true, 60 to false, 0 to true, 40 to false), reads)
+        c.close()
+    }
+
+    @Test fun missingDateGroupFallsBackToFreshOwnerWallWithVisibleNotice() = runTest {
+        var originalGroupAvailable = true
+        val reads = mutableListOf<Pair<Int, Boolean>>()
+        val svc = object : Service() {
+            override suspend fun galleryPage(
+                accessToken: String, offset: Int, initialLatest: Boolean,
+            ): GalleryPage {
+                reads += offset to initialLatest
+                if (!initialLatest) return GalleryPage(listOf(latestGallery), 121, offset)
+                val group = GalleryTimelineGroup(
+                    if (originalGroupAvailable) "2026-10-30" else "2026-10-31",
+                    5, if (originalGroupAvailable) 60 else 80)
+                return GalleryPage(listOf(latestGallery), 121, 120,
+                    timeline = GalleryTimelineSets(
+                        year = listOf(group.copy(key = "2026")),
+                        month = listOf(group.copy(key = "2026-10")),
+                        day = listOf(group)))
+            }
+        }
+        val c = controller(this, svc)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.jumpGalleryToGroup("day", "2026-10-30"); runCurrent()
+        c.openFilesApp(); runCurrent()
+        originalGroupAvailable = false
+        c.openGallery(); runCurrent()
+        assertTrue(c.state.value.galleryLoaded)
+        assertNull(c.state.value.galleryJumpIndex)
+        assertNull(c.state.value.galleryTimeGroupScale)
+        assertNull(c.state.value.galleryTimeGroupKey)
+        assertNotNull(c.state.value.galleryTimelineSets)
+        assertTrue(c.state.value.galleryTimeReturnNotice.orEmpty().contains("日期分组"))
+        assertEquals(990L, c.state.value.galleryItems.single().node.id)
+        assertEquals(listOf(0 to true, 60 to false, 0 to true), reads)
+        c.refreshGallery(); runCurrent()
+        assertNull(c.state.value.galleryTimeReturnNotice)
+        assertNull(c.state.value.galleryTimeGroupKey)
+        c.close()
+    }
+
+    @Test fun failedDateReturnRetriesOwnerTimelineBeforeRecomputingOffset() = runTest {
+        var groupIndex = 60
+        var failNextReturnRead = false
+        val reads = mutableListOf<Pair<Int, Boolean>>()
+        val svc = object : Service() {
+            override suspend fun galleryPage(
+                accessToken: String, offset: Int, initialLatest: Boolean,
+            ): GalleryPage {
+                reads += offset to initialLatest
+                if (!initialLatest && offset == 40 && failNextReturnRead) {
+                    failNextReturnRead = false
+                    throw ApiException(503, "temporary date group outage")
+                }
+                if (!initialLatest) return GalleryPage(listOf(GalleryAsset(
+                    DriveNode(8000L + offset, 1, "day-$offset.jpg",
+                        "file", size = 10, revision = 1),
+                    "image", hasThumbnail = true)), 121, offset)
+                val group = GalleryTimelineGroup("2026-10-30", 5, groupIndex)
+                return GalleryPage(listOf(latestGallery), 121, 120,
+                    timeline = GalleryTimelineSets(
+                        year = listOf(group.copy(key = "2026")),
+                        month = listOf(group.copy(key = "2026-10")),
+                        day = listOf(group)))
+            }
+        }
+        val c = controller(this, svc)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.jumpGalleryToGroup("day", "2026-10-30"); runCurrent()
+        c.openFilesApp(); runCurrent()
+        groupIndex = 40
+        failNextReturnRead = true
+        c.openGallery(); runCurrent()
+        assertFalse(c.state.value.galleryLoaded)
+        assertNotNull(c.state.value.error)
+        assertNull(c.state.value.galleryTimeGroupScale)
+        // An incomplete second GET does not install old rows or an old offset.
+        assertTrue(c.state.value.galleryItems.isEmpty())
+        c.retryGallery(); runCurrent()
+        assertTrue(c.state.value.galleryLoaded)
+        assertNull(c.state.value.error)
+        assertEquals(40, c.state.value.galleryJumpIndex)
+        assertEquals(8040L, c.state.value.galleryItems.single().node.id)
+        assertEquals(listOf(0 to true, 60 to false, 0 to true,
+            40 to false, 0 to true, 40 to false), reads)
+        c.close()
+    }
+
+    @Test fun explicitGalleryQueryClearsDateReturnAcrossOwnerSwitch() = runTest {
+        val svc = Service().apply { provideGalleryTimeline = true }
+        val c = controller(this, svc)
+        c.login("owner", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        c.jumpGalleryToGroup("year", "2026"); runCurrent()
+        assertEquals("year", c.state.value.galleryTimeGroupScale)
+        c.searchGallery("sunset"); runCurrent()
+        assertNull(c.state.value.galleryTimeGroupScale)
+        assertNull(c.state.value.galleryTimeGroupKey)
+        c.openFilesApp(); runCurrent()
+        c.logout(); runCurrent()
+        c.login("other", "password"); runCurrent()
+        c.openGallery(); runCurrent()
+        assertEquals("other", c.state.value.username)
+        assertNull(c.state.value.galleryTimeGroupKey)
+        assertNull(c.state.value.galleryTimeReturnNotice)
+        assertNull(c.state.value.galleryJumpIndex)
+        c.close()
+    }
+
     @Test fun GalleryTimelinePartialOlderRangeMustMatchAlreadyLoadedOwnerRows() = runTest {
         val api = object : Service() {
             private val rows = (0 until 41).map { i ->
