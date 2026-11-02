@@ -5,11 +5,14 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import subprocess
 import tarfile
 import tempfile
+import types
 import unittest
+from unittest import mock
 
 HERE = Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location("xdrive_offline", HERE / "xdrive_offline.py")
@@ -227,6 +230,71 @@ class OfflinePackageTests(unittest.TestCase):
         changed["contracts"] = dict(current["contracts"], media_worker_api=2)
         with self.assertRaisesRegex(offline.PackageError, "unverified"):
             offline.validate_active_contracts(home, changed, ("app",), set())
+
+    def check_enabled_profile_preserves_existing(self, existing_profile, enabled_profile):
+        home = self.root / "existing-profile"
+        (home / "config").mkdir(parents=True)
+        (home / "state").mkdir()
+        image_key = ("XD_MEDIA_WORKER_IMAGE" if existing_profile == "media-worker"
+                     else "XD_PHOTO_FACE_IMAGE")
+        image_ref = "xdrive/existing-module:verified"
+        (home / "config" / ".env").write_text(
+            f'COMPOSE_PROFILES="{existing_profile}"\n{image_key}={image_ref}\n',
+            encoding="utf-8")
+        manifest = dict(self.manifest)
+        manifest["contracts"] = {"postgres_major": 17, "media_worker_api": 1,
+                                 "photo_intelligence_api": 1, "model_runtime_api": 1}
+        (home / "state" / "offline-installed.json").write_text(json.dumps({
+            "schema": 1, "contracts": manifest["contracts"],
+            "active_refs": {existing_profile: image_ref},
+        }), encoding="utf-8")
+        selection = (("app", "postgres", "ai-runtime", "ai-models")
+                     if enabled_profile == "photo-intelligence"
+                     else ("app", "postgres", "media-worker"))
+        args = types.SimpleNamespace(directory=self.out, config_dir=home,
+                                     workdir=self.root, no_start=False,
+                                     enable_ai=enabled_profile == "photo-intelligence",
+                                     enable_media=enabled_profile == "media-worker")
+        installer_profiles = []
+
+        def run_process(command, **kwargs):
+            if command == ["docker", "info"]:
+                return subprocess.CompletedProcess(command, 0)
+            if command[0] == "bash":
+                installer_profiles.append(kwargs["env"]["COMPOSE_PROFILES"])
+                return subprocess.CompletedProcess(command, 0)
+            self.fail(f"unexpected external process: {command}")
+
+        # Verify real package contents and saved compatibility state; replace
+        # only Docker mutation and the host activation process boundary.
+        with mock.patch.dict(os.environ, {"COMPOSE_PROFILES": ""}), \
+                mock.patch.object(offline.shutil, "which", return_value="/fake/bin"), \
+                mock.patch.object(offline.subprocess, "run", side_effect=run_process), \
+                mock.patch.object(offline, "load_image"), \
+                mock.patch.object(offline, "assemble_photo_runtime",
+                                  return_value="xdrive/offline-photo:verified"):
+            offline.offline_install(args, manifest, selection)
+        self.assertEqual(installer_profiles, ["media-worker,photo-intelligence"])
+
+    def test_enable_ai_preserves_existing_media_worker(self):
+        self.check_enabled_profile_preserves_existing("media-worker", "photo-intelligence")
+
+    def test_enable_media_preserves_existing_ai(self):
+        self.check_enabled_profile_preserves_existing("photo-intelligence", "media-worker")
+
+    def test_rejects_unsupported_profiles_without_evaluating_env_text(self):
+        home = self.root / "invalid-profile"
+        (home / "config").mkdir(parents=True)
+        for value in ("unrecognized", "$(touch marker)", "media-worker;echo injected"):
+            with self.subTest(value=value, source="saved config"):
+                (home / "config" / ".env").write_text(
+                    f"COMPOSE_PROFILES={value}\n", encoding="utf-8")
+                with self.assertRaisesRegex(offline.PackageError, "unsupported Compose profile"):
+                    offline.validate_active_contracts(home, self.manifest, ("app",), set())
+            with self.subTest(value=value, source="process environment"):
+                (home / "config" / ".env").write_text("", encoding="utf-8")
+                with self.assertRaisesRegex(offline.PackageError, "unsupported Compose profile"):
+                    offline.validate_active_contracts(home, self.manifest, ("app",), {value})
 
     def test_installed_offline_state_record_is_atomic_and_private(self):
         home = self.root / "record"

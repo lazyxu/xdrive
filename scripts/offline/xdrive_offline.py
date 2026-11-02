@@ -22,6 +22,7 @@ import tarfile
 import tempfile
 
 COMPONENTS = ("app", "postgres", "media-worker", "ai-runtime", "ai-models")
+SUPPORTED_PROFILES = frozenset(("media-worker", "photo-intelligence", "caddy-rescue"))
 IMAGE_MEMBERS = {
     "server": ("app", "images/server.tar.gz"),
     "caddy": ("app", "images/caddy.tar.gz"),
@@ -312,6 +313,28 @@ def assemble_photo_runtime(root: Path, manifest: dict) -> str:
     return photo_ref
 
 
+def read_active_environment(home: Path) -> dict[str, str]:
+    """Read only existing module settings as literal values, never shell code."""
+    keys = {"COMPOSE_PROFILES", "XD_MEDIA_WORKER_IMAGE", "XD_PHOTO_FACE_IMAGE"}
+    for env_path in (home / "config" / ".env", home / ".env"):
+        if env_path.is_file() and not env_path.is_symlink():
+            values = {}
+            for line in env_path.read_text(encoding="utf-8").splitlines():
+                key, separator, value = line.partition("=")
+                if separator and key in keys:
+                    values[key] = value.strip('"')
+            return values
+    return {}
+
+
+def active_profiles(environment: dict[str, str], process_profiles: set[str]) -> set[str]:
+    enabled = {part.strip() for part in process_profiles if part.strip()}
+    enabled.update(part.strip() for part in environment.get("COMPOSE_PROFILES", "").split(",")
+                   if part.strip())
+    require(enabled.issubset(SUPPORTED_PROFILES), "unsupported Compose profile in offline configuration")
+    return enabled
+
+
 def validate_active_contracts(home: Path, manifest: dict, selection: tuple[str, ...],
                               process_profiles: set[str]) -> dict:
     """Fail closed when enabled old optional modules cannot be proven compatible."""
@@ -323,19 +346,10 @@ def validate_active_contracts(home: Path, manifest: dict, selection: tuple[str, 
         require(isinstance(value, dict) and value.get("schema") == 1,
                 "invalid installed offline compatibility state")
         state = value
-    enabled = set(process_profiles)
-    active_refs: dict[str, str] = {}
-    for env_path in (home / "config" / ".env", home / ".env"):
-        if env_path.is_file() and not env_path.is_symlink():
-            for line in env_path.read_text(encoding="utf-8").splitlines():
-                if line.startswith("COMPOSE_PROFILES="):
-                    enabled.update(part.strip() for part in
-                                   line.partition("=")[2].strip('"').split(",") if part.strip())
-                if line.startswith("XD_MEDIA_WORKER_IMAGE="):
-                    active_refs["media-worker"] = line.partition("=")[2].strip('"')
-                if line.startswith("XD_PHOTO_FACE_IMAGE="):
-                    active_refs["photo-intelligence"] = line.partition("=")[2].strip('"')
-            break
+    environment = read_active_environment(home)
+    enabled = active_profiles(environment, process_profiles)
+    active_refs = {"media-worker": environment.get("XD_MEDIA_WORKER_IMAGE", ""),
+                   "photo-intelligence": environment.get("XD_PHOTO_FACE_IMAGE", "")}
     contracts = manifest.get("contracts", {})
     module_rules = (
         ("media-worker", "media-worker", ("media_worker_api",)),
@@ -423,8 +437,9 @@ def offline_install(args: argparse.Namespace, manifest: dict, selection: tuple[s
                             r"xdrive/offline-postgres:sha-[a-f0-9]{12}", current):
                         raise PackageError("existing custom PostgreSQL image needs a separate migration plan")
             break
-    previous_state = validate_active_contracts(home, manifest, selection,
-                                               set(filter(None, os.environ.get("COMPOSE_PROFILES", "").split(","))))
+    profiles = active_profiles(read_active_environment(home),
+                               set(os.environ.get("COMPOSE_PROFILES", "").split(",")))
+    previous_state = validate_active_contracts(home, manifest, selection, profiles)
     # All hashes, paths and individual file contents are verified BEFORE any Docker
     # mutation or xDrive deployment change. The staged scripts are never fetched online.
     with tempfile.TemporaryDirectory(prefix="xdrive-offline-", dir=args.workdir) as tmp:
@@ -454,7 +469,6 @@ def offline_install(args: argparse.Namespace, manifest: dict, selection: tuple[s
             environment["XD_CONFIG_DIR"] = str(args.config_dir)
         if args.no_start:
             environment["XD_INSTALL_NO_START"] = "1"
-        profiles = set(filter(None, environment.get("COMPOSE_PROFILES", "").split(",")))
         if args.enable_media:
             require("media-worker" in selection, "--enable-media requires the Media Worker package")
             profiles.add("media-worker")
