@@ -43,14 +43,22 @@ test('Host-disabled Search never dispatches even through direct command callback
   assert.deepEqual(calls, ['authorized'], 'Desktop keeps its original authenticated search')
 })
 
-test('shared Files toolbar exposes unavailable operations in both layouts with real disabled predicates', () => {
+test('shared Files toolbar disables unsupported operations while allowing verified Owner folder creation', () => {
   for (const name of [
-    'search', 'createFolder', 'uploadFiles', 'uploadFolder',
+    'search', 'uploadFiles', 'uploadFolder',
     'copy', 'cut', 'paste', 'delete', 'rename', 'moveTo', 'copyTo', 'manageTags',
   ]) {
     assert.ok(explorer.includes("'" + name + "'"), name + ' missing from shared capability contract')
     assert.ok(host.includes(name + ": 'DSM"), name + ' missing genuine DSM Host explanation')
   }
+  // DSM now explicitly supports only Owner-scoped new-folder creation;
+  // remaining unsupported mutations still require genuine Host reasons.
+  assert.equal(host.includes("createFolder: 'DSM"), false,
+    'Owner-scoped new-folder action must not be falsely disabled by DSM Host')
+  assert.ok(dsm.includes('onCreateFolder={() =>'),
+    'only the verified DSM Owner folder grants an actual create callback')
+  assert.ok(dsm.includes('client.ownerCreateFolder('),
+    'new folder must use the typed authenticated DSM Owner adapter')
   for (const field of ['createFolder', 'uploadFiles', 'uploadFolder', 'copy', 'cut', 'delete', 'rename', 'moveTo', 'copyTo', 'manageTags']) {
     assert.ok(explorer.includes('unavailableActions?.' + field), field + ' missing disabled reason')
     assert.ok(explorer.includes('!unavailableActions?.' + field), field + ' missing capability predicate')

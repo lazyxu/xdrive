@@ -130,6 +130,7 @@ func TestBackupOnlyStrictRouteAllowlist(t *testing.T) {
 		{http.MethodPost, "/v1/auth/logout"},
 		{http.MethodGet, "/v1/sources"},
 		{http.MethodPost, "/v1/sources"},
+		{http.MethodPost, "/v1/cloud/directories"},
 		{http.MethodPost, "/v1/local-folder/authorize"},
 		{http.MethodGet, "/v1/device-backups/local-drafts"},
 		{http.MethodPost, "/v1/device-backups/local-cli-preflight"},
@@ -189,9 +190,10 @@ func TestBackupOnlyCloudQuotaIsExplicitlyReadOnly(t *testing.T) {
 	}
 }
 
-func TestBackupOnlyCloudFileReadIsLimitedToRootChildrenAndTextPreview(t *testing.T) {
+func TestBackupOnlyCloudFileReadAndExplicitFolderCreate(t *testing.T) {
 	seen := false
 	preview := false
+	createFolder := false
 	for _, capability := range desktopIPCCapabilitiesForRuntime(true) {
 		if capability == "cloud-files-read" {
 			seen = true
@@ -199,12 +201,23 @@ func TestBackupOnlyCloudFileReadIsLimitedToRootChildrenAndTextPreview(t *testing
 		if capability == "cloud-file-text-preview" {
 			preview = true
 		}
+		if capability == "cloud-folder-create" {
+			createFolder = true
+		}
 		if capability == "cloud-files" {
 			t.Fatal("Backup-only cannot claim the full FileExplorer capability")
 		}
 	}
-	if !seen || !preview {
-		t.Fatal("missing bounded Owner cloud files/text-preview capabilities")
+	if !seen || !preview || !createFolder {
+		t.Fatal("missing bounded Owner files, preview or folder-create capability")
+	}
+	if fullAgentOnlyRequest(http.MethodPost, "/v1/cloud/directories") {
+		t.Fatal("Owner folder create was blocked in Backup-only runtime")
+	}
+	for _, method := range []string{http.MethodGet, http.MethodPatch, http.MethodPut, http.MethodDelete} {
+		if !fullAgentOnlyRequest(method, "/v1/cloud/directories") {
+			t.Fatalf("unapproved folder operation permitted: %s", method)
+		}
 	}
 	for _, route := range []string{"/v1/cloud/root", "/v1/cloud/children", "/v1/cloud/text-preview"} {
 		if fullAgentOnlyRequest(http.MethodGet, route) {

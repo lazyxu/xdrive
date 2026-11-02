@@ -35,7 +35,7 @@ const context = vm.createContext({
   fetch: async (raw, options) => {
     const url = new URL(raw)
     calls.push({url, options})
-    assert.ok(['cloud-root', 'cloud-children', 'cloud-text-preview', 'cloud-media-range'].includes(url.searchParams.get('op')))
+    assert.ok(['cloud-root', 'cloud-children', 'cloud-create-folder', 'bootstrap', 'cloud-text-preview', 'cloud-media-range'].includes(url.searchParams.get('op')))
     return { ok: true, headers: { get: () => 'application/json' }, json: async () => response(url) }
   },
 })
@@ -231,4 +231,43 @@ for (const bad of [
   await assert.rejects(client.ownerFileMediaRange(42,7,0,4), /Invalid|Inconsistent/)
 }
 
-console.log('Owner read-only FileExplorer accepts only bounded redacted Server root/children, no leaked Agent bearer')
+// A single current-Owner create action uses the same CGI/CSRF transport and
+// cannot introduce arbitrary cloud writes or private Node fields.
+const folder = {id:57,parent_id:17,name:'新文件夹',type:'dir',size:0,
+  revision:1,created_at:date,updated_at:date}
+response = url => url.searchParams.get('op') === 'bootstrap'
+  ? {csrf_token:'b'.repeat(64)} : folder
+const firstCreateIndex = calls.length
+const created = await client.ownerCreateFolder(17, '新文件夹', 'a'.repeat(64))
+assert.equal(created.id,57)
+assert.equal(calls.length,firstCreateIndex+2)
+assert.equal(calls.at(-2).url.search,'?op=bootstrap')
+assert.equal(calls.at(-1).url.search,'?op=cloud-create-folder')
+assert.equal(calls.at(-1).options.method,'POST')
+assert.equal(calls.at(-1).options.headers['X-CSRF-Token'],'b'.repeat(64))
+assert.deepEqual(JSON.parse(calls.at(-1).options.body),
+  {parent_id:17,name:'新文件夹',owner_scope:'a'.repeat(64)})
+assert.equal(calls.at(-1).options.headers.Authorization,undefined)
+const beforeInvalid = calls.length
+for (const [parent, name, scope] of [
+  [0,'A','a'.repeat(64)], [17,'/private','a'.repeat(64)],
+  [17,'..','a'.repeat(64)], [17,'bad\nname','a'.repeat(64)],
+  [17,'A','bogus'], [17,'x'.repeat(256),'a'.repeat(64)],
+]) {
+  await assert.rejects(client.ownerCreateFolder(parent,name,scope), /Invalid/)
+}
+assert.equal(calls.length,beforeInvalid,'invalid folder create touched DSM CGI')
+for (const invalid of [
+  {...folder,parent_id:99},
+  {...folder,type:'file'},
+  {...folder,name:'switched-owner'},
+  {...folder,root_path:'/volume1/private'},
+]) {
+  response = url => url.searchParams.get('op') === 'bootstrap'
+    ? {csrf_token:'b'.repeat(64)} : invalid
+  await assert.rejects(client.ownerCreateFolder(17,'新文件夹','a'.repeat(64)),/Invalid/)
+}
+assert.match(pageSource, /onCreateFolder=\{/)
+assert.match(pageSource, /<XDriveFileNameDialog/)
+assert.match(pageSource, /client\.ownerCreateFolder\(/)
+console.log('DSM Owner Files: verified read and one CSRF-protected folder creation operation')

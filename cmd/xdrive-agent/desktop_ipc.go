@@ -122,6 +122,7 @@ var desktopIPCCapabilities = []string{
 	"device-backup-read",
 	"cloud-quota-read",
 	"cloud-files-read",
+	"cloud-folder-create",
 	"cloud-file-text-preview",
 	"cloud-media-range-read",
 	"cloud-thumbnail-read",
