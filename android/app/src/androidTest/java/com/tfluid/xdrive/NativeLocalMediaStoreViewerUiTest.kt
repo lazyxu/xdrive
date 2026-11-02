@@ -106,9 +106,12 @@ class NativeLocalMediaStoreViewerUiTest {
             }
             bitmap?.recycle()
             uri?.let { runCatching { resolver.delete(it, null, null) } }
-            if (!hadPermission) runCatching {
-                automation.revokeRuntimePermission(context.packageName, permission)
-            }
+            // Android 14/15 can kill the instrumentation host when a runtime
+            // media grant is revoked while the test runner is still alive.
+            // This hid the original assertion and failed the entire suite as
+            // "Process crashed" in CI. The CI emulator is disposable; leave
+            // the test-only grant to be dropped with its APK/emulator instead
+            // of disrupting instrumentation cleanup and later test results.
         }
     }
 }
